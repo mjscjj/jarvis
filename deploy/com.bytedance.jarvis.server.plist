@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bytedance.jarvis.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/bytedance/workspace-local/jarvis/bin/jarvis-server</string>
+        <string>-config</string>
+        <string>/Users/bytedance/workspace-local/jarvis/conf/config.yaml</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/bytedance/workspace-local/jarvis</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/bytedance/.local/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/bytedance/workspace-local/jarvis/var/log/jarvis-server.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/bytedance/workspace-local/jarvis/var/log/jarvis-server.error.log</string>
+</dict>
+</plist>

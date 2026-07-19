@@ -10,6 +10,7 @@ vendor/
 
 # 本地运行时数据
 /data/
+/var/
 *.log
 
 # 操作系统 / IDE
