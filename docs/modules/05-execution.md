@@ -3,9 +3,10 @@
 > **版本说明**：本次项目重大调整后重写。隶属总纲 `docs/00-overview.md`（顶层设计与跨模块契约以总纲为准）。
 > **技术栈**：Go 1.26（后端）+ robfig/cron v3（调度）+ GORM/MySQL 8（存储），子进程 codex CLI / lark-cli / ripgrep 走 `os/exec`。**不引入 Eino/Kitex**。
 > **消费物**：M5 消费 **Task**（`status=pending` 的明确可执行任务），不消费 Todo。Task 由 M4 把 Todo 确认后固化生成（含问题背景快照 `background` + 明确方案 `plan`）。
+> **当前 MVP（2026-07-19）**：先采用人工执行闭环。`GET /api/tasks` 展示待执行 Task，用户完成实际动作后调用 `POST /api/tasks/:task_id/finish` 回写 `done/failed + result`。暂不实现 executor 注册表、自动子进程、并发队列、`execution_*` 三表、飞书通知和 mem0 回写。
 >
 > 所属系统：基于飞书的本地个人 Jarvis 管家（字节研发工程师 chujiejie.1 本地 Mac）。
-> 模块定位：流水线 `采集(M2) → 记忆化(M2) → 提取Todo(M3) → 打分确认生成Task(M4) → 【执行Task(M5)】 → 回写后台(M0)` 中的执行环节。
+> 模块定位：流水线 `采集(M2) → 提取Todo(M3) → 人工确认生成Task(M4) → 【人工执行并回写Task(M5)】 → 回写后台(M0)` 中的执行环节。
 > 设计原则（全程遵守）：①本地可信明文存储；②fail-fast 暴露问题、不静默降级；③不乱兼容旧数据/逻辑；④模块化；⑤优先官方包与已有实现。
 
 ---
@@ -678,7 +679,19 @@ func (ExecutionArtifact) TableName() string { return "execution_artifact" }
 
 ---
 
-## 9. 开放问题清单（需用户确认）
+## 9. 当前 MVP 实现（2026-07-19）
+
+- 新增 `internal/execute.Store`，直接使用现有 `task` 表，不新增支撑表。
+- `GET /api/tasks` 默认列出 `pending`，也可显式查询 `done/failed`；返回确认时冻结的 background/plan/slots，供人工执行。
+- `POST /api/tasks/:task_id/finish` 只允许 `pending → done/failed`，要求 `expected_version` 和非空 JSON result；状态、结果、version 在一个 MySQL 事务中更新。
+- 状态不符、版本冲突、重复完成全部 fail-fast，不重试、不降级、不覆盖第一次结果。
+- 真实 MySQL 合成回滚验收已覆盖 `extracted Todo → need_decision → approve → pending Task → done` 完整链路，不调用飞书、mem0、模型或 codex。
+
+自动 executor、外部副作用、调度并发和详细执行留痕均为后续增强项；先通过人工闭环验证 Todo/Task 是否真的有用，再决定实现顺序。
+
+---
+
+## 10. 开放问题清单（需用户确认）
 
 > 以下均为默认保守、待用户拍板的项；尤其涉及提交/推送、对外强制确认。技术栈相关（Go / Hertz / GORM / robfig/cron，不用 Eino/Kitex）已在总纲定稿，不再列为开放问题。
 
