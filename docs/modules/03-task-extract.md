@@ -608,7 +608,7 @@ func Extract(ctx context.Context, cli ModelClient, req ChatRequest) (*Extraction
 ### 5.2 第二层：语义近邻（抓改写/换词）
 
 - 每个落库 `Todo`，用配置的 embedding 模型（**复用 mem0 同一 embedder**，保证向量空间一致）对 `"{action_type}｜{title}｜{description}｜identity_slots"` 向量化，写入 **Qdrant 专用集合 `todo_semantic`**（与 mem0 集合分离，cosine 距离）。向量化经 mem0 sidecar 或独立 embedding 端点，Go 侧 HTTP 调用。
-- 新候选先在 `todo_semantic` 里 `score_threshold` 检索，`filter` 限定 `project_id` + `status ∈ 活跃态`（**领域过滤防跨项目串味**）。
+- 新候选先在 `todo_semantic` 里 `score_threshold` 检索，`filter` 限定 `project_id` + `status ∈ 活跃态` + `action_type`（**领域过滤防跨项目/跨类型串味**）。
 - 阈值起点 **0.85**（cosine），必须在**真实数据上标定**——不同 embedding 模型甜点差异大（业界经验 0.80–0.92 之间浮动，>0.95 过严、<0.75 易误合）。阈值与模型写进配置，列入开放问题（§8）。
 
 > 向量同步状态不落 `todo` 表列（原 `embedding_synced` 已移除）；同步失败按 §7 fail-fast 处理（抛错中断本轮，不写半截）。
@@ -822,7 +822,10 @@ M3 回写的记忆若被下轮检索回来、又被当成新行动线索，会�
 - `internal/extract/candidate.go` 已落封闭 action/slot 词表、缺 slot 显式降级、strict JSON 解码和 NFKC + case-fold 指纹归一。
 - `internal/extract/provider` 已落 OpenAI-compatible `POST /chat/completions` + `response_format=json_schema, strict=true` client；拒答、非 `stop`、非法 JSON/schema 均直接报错，不回退 JSON mode。
 - `internal/extract` worker 已落 related group 增量读取、chat/topic 聚合、受限回看、Person/Project/Resource/Todo 背景、mem0 检索、逐字新证据校验、完整候选的精确指纹去重，以及 Todo/Event/水位的 per-chat 事务提交；`extract.schedule` 使用非重叠 cron，`--extract-once` 支持手工验收。
-- 真实验收已覆盖 Kimi strict schema 与 `MySQL → mem0 → model → Todo/Event/watermark` 全链路；全链路测试临时隔离真实群并在外层事务回滚，不发送真实飞书消息、不残留 fixture。
+- `internal/embedding` + `internal/semantic` 已落第二层语义去重：复用 mem0 的 `bge_m3_embed`，官方 Qdrant Go client 连接 gRPC 6334，独立 `todo_semantic` 集合按 cosine 检索；集合启动时强校验 embedding 模型元数据、1024 维和距离类型，阈值/近邻数可配置。
+- 语义近邻只作为疑似候选；`internal/extract/provider` 追加 strict boolean `same_action` 裁决。裁决失败、索引陈旧、领域不一致均直接中断，不默认合并或新建。确认同项后按 Todo ID 更新既有行，原精确指纹保持不变。
+- Qdrant 同步位于 per-chat MySQL 事务末尾；同步失败会回滚 Todo/Event/watermark。无 outbox 或静默降级路径。
+- 真实验收已覆盖 Kimi strict 抽取、strict 同事项裁决，以及 `MySQL → mem0 → model → embedding → Qdrant → Todo/Event/watermark` 全链路；全链路测试临时隔离真实群，只发送合成消息，MySQL 外层事务回滚并删除临时 Qdrant 集合，不残留 fixture。
 - `GET /api/todos` / `GET /api/todos/{id}` 与 `web/` 只读看板已完成；M0.5 前不提供修改/确认接口。
 - 身份 slot 缺失的候选当前允许通过领域校验，但指纹计算显式返回 `ErrFingerprintIncomplete`，整个 chat 不写 Todo/水位，避免用 `null` 形成跨 Todo 碰撞。其最终持久化身份策略仍需确认后再实现，不加临时 fallback。
-- 尚未实现 §5 的 Qdrant 语义近邻 + LLM 裁决；当前只完成精确指纹层，不能把 M0.4 表述为全部去重完成。
+- 当前 `semantic_threshold=0.85`、`semantic_neighbor_limit=3` 是上线起点，仍需用真实标注样本完成 §8.5 阈值标定；本轮没有读取或外发真实相关群消息。
