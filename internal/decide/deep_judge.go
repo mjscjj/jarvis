@@ -13,6 +13,7 @@ import (
 const (
 	DecisionEngineRule          = "rule"
 	DecisionEngineCodex         = "codex"
+	DecisionEngineManual        = "manual"
 	DecisionRouteNeedDecision   = "need_decision"
 	BudgetRouteNeedDecision     = "route_need_decision"
 	BudgetDegradeToRule         = "degrade_to_rule"

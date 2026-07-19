@@ -146,7 +146,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		assertDecisionArtifacts(t, tx, todo.ID, 0, "dismissed")
 	})
 
-	t.Run("evaluation routes Todo and audit atomically", func(t *testing.T) {
+	t.Run("MVP routes Todo through confirmation into Task", func(t *testing.T) {
 		tx := beginRollbackTransaction(t, db)
 		todo := createConfirmationFixture(t, tx, "extracted", time.Now().UnixNano())
 		fixtureFingerprints = append(fixtureFingerprints, todo.DedupFingerprint)
@@ -163,18 +163,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewEvaluationStore() error = %v", err)
 		}
-		input := fixtureEvaluationInput()
-		input.TodoID = todo.ID
-		input.ProposedPlan = &PlanDraft{
-			Summary: "Inspect synthetic fixture", Steps: []string{"inspect"},
-			Parameters: []PlanParameter{{Name: "scope", Value: "fixture"}}, Basis: []string{"synthetic evidence"},
-		}
-		worker, err := NewDecisionWorker(source, todoEvaluatorFunc(func(_ context.Context, loaded *domain.Todo) (*EvaluationInput, error) {
-			copy := input
-			copy.TodoID = loaded.ID
-			copy.ExpectedVersion = loaded.Version
-			return &copy, nil
-		}), evaluationStore, WorkerOptions{BatchLimit: 10})
+		worker, err := NewDecisionWorker(source, ManualGateEvaluator{}, evaluationStore, WorkerOptions{BatchLimit: 10})
 		if err != nil {
 			t.Fatalf("NewDecisionWorker() error = %v", err)
 		}
@@ -189,7 +178,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		if err := tx.First(&storedTodo, todo.ID).Error; err != nil {
 			t.Fatalf("load evaluated Todo: %v", err)
 		}
-		if storedTodo.Status != RouteNeedDecision || storedTodo.Route == nil || *storedTodo.Route != RouteNeedDecision || storedTodo.Confidence == nil || *storedTodo.Confidence != input.Confidence {
+		if storedTodo.Status != RouteNeedDecision || storedTodo.Route == nil || *storedTodo.Route != RouteNeedDecision || storedTodo.Confidence != nil || storedTodo.Risk != nil {
 			t.Fatalf("stored evaluated Todo = %#v", storedTodo)
 		}
 		var taskCount int64
@@ -210,7 +199,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		if err := tx.Where("todo_id = ?", todo.ID).First(&audit).Error; err != nil {
 			t.Fatalf("load evaluation audit: %v", err)
 		}
-		if audit.DecisionEngine != DecisionEngineRule || audit.FinalStatus != RouteNeedDecision || audit.TaskID != nil {
+		if audit.DecisionEngine != DecisionEngineManual || audit.FinalStatus != RouteNeedDecision || audit.TaskID != nil || audit.ConfidenceEff != nil || audit.RiskEff != nil {
 			t.Fatalf("evaluation audit = %#v", audit)
 		}
 		todoReader, err := extract.NewTodoStore(tx)
@@ -225,14 +214,54 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetConfirmation() error = %v", err)
 		}
-		if detail.Todo.ID != todo.ID || len(detail.SourceMessages) != 1 || len(detail.Events) != 1 || len(detail.Audits) != 1 {
+		if detail.Todo.ID != todo.ID || detail.Todo.Status != RouteNeedDecision || len(detail.SourceMessages) != 1 || len(detail.Events) != 1 || len(detail.Audits) != 1 {
 			t.Fatalf("confirmation detail = %#v", detail)
 		}
 		if detail.Assigner == nil || detail.Assigner.Name == nil || *detail.Assigner.Name != "Synthetic assigner" {
 			t.Fatalf("confirmation assigner = %#v", detail.Assigner)
 		}
-		if detail.ProposedPlan == nil || detail.ProposedPlan.Summary != input.ProposedPlan.Summary {
+		if detail.ProposedPlan != nil {
 			t.Fatalf("confirmation proposed plan = %#v", detail.ProposedPlan)
+		}
+
+		snapshotter, err := NewMVPBackgroundSnapshotter(tx)
+		if err != nil {
+			t.Fatalf("NewMVPBackgroundSnapshotter() error = %v", err)
+		}
+		confirmationService, err := NewService(tx, snapshotter)
+		if err != nil {
+			t.Fatalf("NewService() error = %v", err)
+		}
+		task, err := confirmationService.Approve(context.Background(), ApproveInput{
+			TodoID: todo.ID, ExpectedVersion: 1, Plan: json.RawMessage(`{"steps":["review synthetic Todo"]}`), Channel: "backend",
+		})
+		if err != nil {
+			t.Fatalf("Approve() error = %v", err)
+		}
+		if task.TodoID != todo.ID || task.Status != "pending" {
+			t.Fatalf("approved Task = %#v", task)
+		}
+		var taskBackground backgroundSnapshot
+		if err := json.Unmarshal(task.Background, &taskBackground); err != nil {
+			t.Fatalf("decode MVP Task background: %v", err)
+		}
+		if len(taskBackground.Messages) != 1 || len(taskBackground.Memories) != 0 {
+			t.Fatalf("MVP Task background = %#v", taskBackground)
+		}
+		if err := tx.First(&storedTodo, todo.ID).Error; err != nil {
+			t.Fatalf("reload confirmed Todo: %v", err)
+		}
+		if storedTodo.Status != "confirmed" || storedTodo.Version != 2 {
+			t.Fatalf("confirmed Todo = %#v", storedTodo)
+		}
+		for model, want := range map[any]int64{&domain.Task{}: 1, &domain.TodoEvent{}: 2, &domain.DecisionAudit{}: 2} {
+			var count int64
+			if err := tx.Model(model).Where("todo_id = ?", todo.ID).Count(&count).Error; err != nil {
+				t.Fatalf("count MVP artifacts: %v", err)
+			}
+			if count != want {
+				t.Fatalf("MVP artifact %T count=%d, want %d", model, count, want)
+			}
 		}
 	})
 
@@ -248,12 +277,6 @@ func TestConfirmationTransactionLive(t *testing.T) {
 type backgroundSnapshotFunc func(context.Context, *domain.Todo) (json.RawMessage, error)
 
 func (f backgroundSnapshotFunc) Snapshot(ctx context.Context, todo *domain.Todo) (json.RawMessage, error) {
-	return f(ctx, todo)
-}
-
-type todoEvaluatorFunc func(context.Context, *domain.Todo) (*EvaluationInput, error)
-
-func (f todoEvaluatorFunc) Evaluate(ctx context.Context, todo *domain.Todo) (*EvaluationInput, error) {
 	return f(ctx, todo)
 }
 

@@ -73,6 +73,13 @@ capture:
   warm_schedule: "@every 30m"
   cold_schedule: "@every 6h"
 
+# M4 MVP：所有提取出的 Todo 都进入人工确认，不做评分、不调用 codex。
+decide:
+  enabled: true
+  mode: "manual_mvp"
+  schedule: "@every 10m"
+  batch_limit: 50
+
 # M4 决策用 codex CLI（总纲 §11.2，全部可配置）
 codex:
   bin: "codex"

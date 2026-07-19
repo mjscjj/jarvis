@@ -29,6 +29,7 @@ type EvaluationInput struct {
 	ThresholdConfigVersion string
 	FailureDetail          string
 	ProposedPlan           *PlanDraft
+	ManualGate             bool
 }
 
 type EvaluationResult struct {
@@ -79,12 +80,16 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 		if todo.Status != "extracted" {
 			return transitionError(todo.ID, todo.Status, input.Route)
 		}
+		updates := map[string]any{
+			"route": input.Route, "status": input.Route, "version": gorm.Expr("version + 1"),
+		}
+		if !input.ManualGate {
+			updates["confidence"] = input.Confidence
+			updates["risk"] = input.Risk
+		}
 		update := tx.Model(&domain.Todo{}).
 			Where("id = ? AND version = ? AND status = ?", todo.ID, input.ExpectedVersion, "extracted").
-			Updates(map[string]any{
-				"confidence": input.Confidence, "risk": input.Risk, "route": input.Route,
-				"status": input.Route, "version": gorm.Expr("version + 1"),
-			})
+			Updates(updates)
 		if update.Error != nil {
 			return fmt.Errorf("apply Todo evaluation id=%d: %w", todo.ID, update.Error)
 		}
@@ -93,21 +98,28 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 		}
 		eventDetail := map[string]any{
 			"event_type": "evaluated", "route_reason": input.RouteReason,
-			"confidence": input.Confidence, "risk": input.Risk,
-			"confidence_factors": input.ConfidenceFactors, "risk_factors": input.RiskFactors,
 			"matched_rules": input.MatchedRules, "decision_engine": input.DecisionEngine,
 			"prompt_version": input.PromptVersion, "failure_detail": input.FailureDetail,
 			"proposed_plan": input.ProposedPlan,
+		}
+		if !input.ManualGate {
+			eventDetail["confidence"] = input.Confidence
+			eventDetail["risk"] = input.Risk
+			eventDetail["confidence_factors"] = input.ConfidenceFactors
+			eventDetail["risk_factors"] = input.RiskFactors
 		}
 		if err := createTodoEvent(tx, todo.ID, "extracted", input.Route, eventDetail); err != nil {
 			return err
 		}
 		audit := domain.DecisionAudit{
 			TodoID: todo.ID, TS: s.now().UTC(), Route: input.Route, RouteReason: input.RouteReason,
-			ConfidenceEff: float64Pointer(input.Confidence), ConfidenceFactors: datatypes.JSON(confidenceFactors),
-			RiskEff: float64Pointer(input.Risk), RiskFactors: datatypes.JSON(riskFactors), MatchedRules: datatypes.JSON(matchedRules),
+			ConfidenceFactors: datatypes.JSON(confidenceFactors), RiskFactors: datatypes.JSON(riskFactors), MatchedRules: datatypes.JSON(matchedRules),
 			DecisionEngine: input.DecisionEngine, CodexSessionID: copyString(input.CodexSessionID),
 			ThresholdConfigVersion: input.ThresholdConfigVersion, Channel: "auto", FinalStatus: input.Route,
+		}
+		if !input.ManualGate {
+			audit.ConfidenceEff = float64Pointer(input.Confidence)
+			audit.RiskEff = float64Pointer(input.Risk)
 		}
 		if err := tx.Create(&audit).Error; err != nil {
 			return fmt.Errorf("create evaluation audit todo_id=%d: %w", todo.ID, err)
@@ -128,20 +140,29 @@ func validateEvaluationInput(input EvaluationInput) error {
 	if input.TodoID == 0 || input.ExpectedVersion < 0 {
 		return fmt.Errorf("%w: evaluation Todo ID/version is invalid", ErrInvalidInput)
 	}
-	if err := validateRuleScore(RuleScore{Confidence: input.Confidence, Risk: input.Risk}); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
 	if input.Route != RouteNeedInfo && input.Route != RouteNeedDecision {
 		return fmt.Errorf("%w: evaluation route must be need_info or need_decision", ErrInvalidInput)
 	}
 	if strings.TrimSpace(input.RouteReason) == "" {
 		return fmt.Errorf("%w: evaluation route reason is blank", ErrInvalidInput)
 	}
-	if err := validateFactors("confidence", input.ConfidenceFactors); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-	if err := validateFactors("risk", input.RiskFactors); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	if input.ManualGate {
+		if input.Route != RouteNeedDecision || input.DecisionEngine != DecisionEngineManual {
+			return fmt.Errorf("%w: manual gate must route to need_decision with manual engine", ErrInvalidInput)
+		}
+		if len(input.ConfidenceFactors) != 0 || len(input.RiskFactors) != 0 || input.ProposedPlan != nil || input.CodexSessionID != nil || input.PromptVersion != "" {
+			return fmt.Errorf("%w: manual gate must not contain scoring or Codex data", ErrInvalidInput)
+		}
+	} else {
+		if err := validateRuleScore(RuleScore{Confidence: input.Confidence, Risk: input.Risk}); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		if err := validateFactors("confidence", input.ConfidenceFactors); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		if err := validateFactors("risk", input.RiskFactors); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
 	}
 	if len(input.MatchedRules) == 0 {
 		return fmt.Errorf("%w: evaluation matched rules is empty", ErrInvalidInput)
@@ -151,8 +172,11 @@ func validateEvaluationInput(input EvaluationInput) error {
 			return fmt.Errorf("%w: evaluation matched_rules[%d] is blank", ErrInvalidInput, position)
 		}
 	}
-	if input.DecisionEngine != DecisionEngineRule && input.DecisionEngine != DecisionEngineCodex {
+	if input.DecisionEngine != DecisionEngineRule && input.DecisionEngine != DecisionEngineCodex && input.DecisionEngine != DecisionEngineManual {
 		return fmt.Errorf("%w: evaluation decision engine is unsupported", ErrInvalidInput)
+	}
+	if input.DecisionEngine == DecisionEngineManual && !input.ManualGate {
+		return fmt.Errorf("%w: manual decision engine requires manual gate", ErrInvalidInput)
 	}
 	if strings.TrimSpace(input.ThresholdConfigVersion) == "" {
 		return fmt.Errorf("%w: evaluation threshold config version is blank", ErrInvalidInput)

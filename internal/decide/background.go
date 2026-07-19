@@ -27,10 +27,11 @@ type backgroundSnapshotter interface {
 }
 
 type BackgroundSnapshotter struct {
-	db     *gorm.DB
-	memory memorySearcher
-	opts   BackgroundOptions
-	now    func() time.Time
+	db        *gorm.DB
+	memory    memorySearcher
+	useMemory bool
+	opts      BackgroundOptions
+	now       func() time.Time
 }
 
 func NewBackgroundSnapshotter(db *gorm.DB, memories memorySearcher, opts BackgroundOptions) (*BackgroundSnapshotter, error) {
@@ -46,7 +47,16 @@ func NewBackgroundSnapshotter(db *gorm.DB, memories memorySearcher, opts Backgro
 	if opts.MemoryThreshold < 0 || opts.MemoryThreshold > 1 {
 		return nil, fmt.Errorf("background snapshotter memory threshold must be between 0 and 1")
 	}
-	return &BackgroundSnapshotter{db: db, memory: memories, opts: opts, now: time.Now}, nil
+	return &BackgroundSnapshotter{db: db, memory: memories, useMemory: true, opts: opts, now: time.Now}, nil
+}
+
+// NewMVPBackgroundSnapshotter builds Task background only from MySQL source of
+// truth. It is the explicit manual_mvp path and never calls mem0.
+func NewMVPBackgroundSnapshotter(db *gorm.DB) (*BackgroundSnapshotter, error) {
+	if db == nil {
+		return nil, fmt.Errorf("MVP background snapshotter db is nil")
+	}
+	return &BackgroundSnapshotter{db: db, now: time.Now}, nil
 }
 
 func (s *BackgroundSnapshotter) Snapshot(ctx context.Context, todo *domain.Todo) (json.RawMessage, error) {
@@ -122,22 +132,29 @@ func (s *BackgroundSnapshotter) Snapshot(ctx context.Context, todo *domain.Todo)
 		}
 	}
 
-	query := strings.TrimSpace(todo.Title + "\n" + todo.Description)
-	memories, err := s.memory.Search(ctx, memory.SearchInput{
-		Query: query, Filters: filters, TopK: s.opts.MemoryTopK,
-		Threshold: s.opts.MemoryThreshold, Rerank: false,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("search Task background memories todo_id=%d: %w", todo.ID, err)
-	}
-	if memories == nil {
-		return nil, fmt.Errorf("search Task background memories todo_id=%d: nil response", todo.ID)
+	memoryResults := make([]map[string]any, 0)
+	if s.useMemory {
+		if s.memory == nil {
+			return nil, fmt.Errorf("memory-enabled background snapshotter has nil memory client")
+		}
+		query := strings.TrimSpace(todo.Title + "\n" + todo.Description)
+		memories, err := s.memory.Search(ctx, memory.SearchInput{
+			Query: query, Filters: filters, TopK: s.opts.MemoryTopK,
+			Threshold: s.opts.MemoryThreshold, Rerank: false,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("search Task background memories todo_id=%d: %w", todo.ID, err)
+		}
+		if memories == nil {
+			return nil, fmt.Errorf("search Task background memories todo_id=%d: nil response", todo.ID)
+		}
+		memoryResults = memories.Results
 	}
 
 	snapshot := backgroundSnapshot{
 		CapturedAt: s.now().UTC(), TodoID: todo.ID, TodoRevision: todo.Revision,
 		Project: project, Group: group, Assigner: assigner, Messages: messages,
-		Memories: memories.Results,
+		Memories: memoryResults,
 	}
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {

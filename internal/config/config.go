@@ -21,6 +21,7 @@ type Config struct {
 	Extract ExtractConfig `yaml:"extract"`
 	LarkCLI LarkCLIConfig `yaml:"lark_cli"`
 	Capture CaptureConfig `yaml:"capture"`
+	Decide  DecideConfig  `yaml:"decide"`
 	Codex   CodexConfig   `yaml:"codex"`
 }
 
@@ -102,6 +103,15 @@ type CaptureConfig struct {
 	HotSchedule      string `yaml:"hot_schedule"`
 	WarmSchedule     string `yaml:"warm_schedule"`
 	ColdSchedule     string `yaml:"cold_schedule"`
+}
+
+// DecideConfig controls the M4 MVP gate. The only enabled mode for now is
+// manual_mvp: extracted Todos wait for explicit user approval.
+type DecideConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	Mode       string `yaml:"mode"`
+	Schedule   string `yaml:"schedule"`
+	BatchLimit int    `yaml:"batch_limit"`
 }
 
 // CodexConfig M4 决策用 codex CLI（总纲 §11.2，全部可配置、不硬编码）。
@@ -273,6 +283,17 @@ func (c *Config) validate() error {
 	}
 	if c.Capture.DiscoverSchedule == "" || c.Capture.HotSchedule == "" || c.Capture.WarmSchedule == "" || c.Capture.ColdSchedule == "" {
 		return fmt.Errorf("capture 的 discover/hot/warm/cold schedule 均不能为空")
+	}
+	if c.Decide.Enabled {
+		if c.Decide.Mode != "manual_mvp" {
+			return fmt.Errorf("decide.mode 必须是 manual_mvp")
+		}
+		if c.Decide.Schedule == "" {
+			return fmt.Errorf("decide.schedule 不能为空")
+		}
+		if c.Decide.BatchLimit <= 0 {
+			return fmt.Errorf("decide.batch_limit 必须大于 0")
+		}
 	}
 	if c.Codex.Bin == "" {
 		return fmt.Errorf("codex.bin 不能为空")

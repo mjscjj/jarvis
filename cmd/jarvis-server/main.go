@@ -35,9 +35,10 @@ func main() {
 	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
 	memorizeOnce := flag.Bool("memorize-once", false, "执行一次消息记忆化，成功后退出")
 	extractOnce := flag.Bool("extract-once", false, "执行一次 Todo 提取，成功后退出")
+	decideOnce := flag.Bool("decide-once", false, "执行一次 MVP 人工确认分流，成功后退出")
 	flag.Parse()
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce} {
+	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce} {
 		if selected {
 			actionCount++
 		}
@@ -69,6 +70,41 @@ func main() {
 	}
 	if *migrateOnly {
 		hlog.Infof("mysql schema migration completed")
+		return
+	}
+
+	var decisionWorker *decide.DecisionWorker
+	if cfg.Decide.Enabled || *decideOnce {
+		if cfg.Decide.Mode != decide.ManualMVPMode || cfg.Decide.BatchLimit <= 0 {
+			hlog.Fatalf("MVP decision requires decide.mode=%s and positive batch_limit", decide.ManualMVPMode)
+		}
+		decisionSource, err := decide.NewEvaluationSource(db)
+		if err != nil {
+			hlog.Fatalf("initialize MVP decision source failed: %v", err)
+		}
+		decisionStore, err := decide.NewEvaluationStore(db)
+		if err != nil {
+			hlog.Fatalf("initialize MVP decision store failed: %v", err)
+		}
+		decisionWorker, err = decide.NewDecisionWorker(
+			decisionSource,
+			decide.ManualGateEvaluator{},
+			decisionStore,
+			decide.WorkerOptions{BatchLimit: cfg.Decide.BatchLimit},
+		)
+		if err != nil {
+			hlog.Fatalf("initialize MVP decision worker failed: %v", err)
+		}
+	}
+	if *decideOnce {
+		stats, err := decisionWorker.EvaluateOnce(context.Background())
+		if err != nil {
+			hlog.Fatalf("route Todos to manual confirmation failed: %v", err)
+		}
+		hlog.Infof(
+			"MVP decision completed: loaded=%d evaluated=%d need_decision=%d",
+			stats.Loaded, stats.Evaluated, stats.NeedDecision,
+		)
 		return
 	}
 
@@ -117,9 +153,7 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize todo store failed: %v", err)
 	}
-	backgroundSnapshotter, err := decide.NewBackgroundSnapshotter(db, memoryClient, decide.BackgroundOptions{
-		MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
-	})
+	backgroundSnapshotter, err := decide.NewMVPBackgroundSnapshotter(db)
 	if err != nil {
 		hlog.Fatalf("initialize confirmation background snapshotter failed: %v", err)
 	}
@@ -279,11 +313,29 @@ func main() {
 		}
 		stopExtractScheduler = func() { <-extractScheduler.Stop().Done() }
 	}
+	stopDecisionScheduler := func() {}
+	if cfg.Decide.Enabled {
+		decisionScheduler, err := decide.StartWorkerScheduler(
+			captureCtx,
+			decisionWorker,
+			cfg.Decide.Schedule,
+			log.New(os.Stderr, "decide-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			cancelCapture()
+			<-scheduler.Stop().Done()
+			<-memoryScheduler.Stop().Done()
+			stopExtractScheduler()
+			hlog.Fatalf("start MVP decision scheduler failed: %v", err)
+		}
+		stopDecisionScheduler = func() { <-decisionScheduler.Stop().Done() }
+	}
 	defer func() {
 		cancelCapture()
 		<-scheduler.Stop().Done()
 		<-memoryScheduler.Stop().Done()
 		stopExtractScheduler()
+		stopDecisionScheduler()
 	}()
 
 	h := server.New(

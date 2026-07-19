@@ -63,7 +63,8 @@ func TestValidate(t *testing.T) {
 			WarmSchedule:     "@every 30m",
 			ColdSchedule:     "@every 6h",
 		},
-		Codex: validCodexConfig(),
+		Decide: DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
+		Codex:  validCodexConfig(),
 	}
 
 	tests := []struct {
@@ -115,6 +116,9 @@ func TestValidate(t *testing.T) {
 		{name: "capture warm age", mutate: func(c *Config) { c.Capture.WarmAgeHours = 6 }, wantErr: "capture.warm_age_hours"},
 		{name: "capture timezone", mutate: func(c *Config) { c.Capture.Timezone = "" }, wantErr: "capture.timezone"},
 		{name: "capture schedules", mutate: func(c *Config) { c.Capture.HotSchedule = "" }, wantErr: "schedule"},
+		{name: "decide mode", mutate: func(c *Config) { c.Decide.Mode = "scored" }, wantErr: "decide.mode"},
+		{name: "decide schedule", mutate: func(c *Config) { c.Decide.Schedule = "" }, wantErr: "decide.schedule"},
+		{name: "decide batch", mutate: func(c *Config) { c.Decide.BatchLimit = 0 }, wantErr: "decide.batch_limit"},
 		{name: "codex binary", mutate: func(c *Config) { c.Codex.Bin = "" }, wantErr: "codex.bin"},
 		{name: "codex model", mutate: func(c *Config) { c.Codex.Model = "" }, wantErr: "codex.model"},
 		{name: "codex timeout", mutate: func(c *Config) { c.Codex.TimeoutSeconds = 0 }, wantErr: "codex.timeout_seconds"},
@@ -175,7 +179,8 @@ func TestValidateExtractEnabled(t *testing.T) {
 			Timezone: "Asia/Shanghai", DiscoverSchedule: "@every 1h", HotSchedule: "@every 5m",
 			WarmSchedule: "@every 30m", ColdSchedule: "@every 6h",
 		},
-		Codex: validCodexConfig(),
+		Decide: DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
+		Codex:  validCodexConfig(),
 	}
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("validate() error = %v", err)
