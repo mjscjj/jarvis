@@ -25,7 +25,7 @@
 | 定时调度 | **robfig/cron v3** | 分层扫描、记忆化、过期扫描（替代原 APScheduler） |
 | 结构化存储 | **MySQL 8**（InnoDB / utf8mb4） | 7 实体 + 消息明文，source of truth |
 | 记忆层 | **mem0**（Python）以 **sidecar** 形式，Go 通过 HTTP 调用 | 见 §5 |
-| 向量库 | **Qdrant**（Docker，localhost:6333） | mem0 后端 |
+| 向量库 | **Qdrant v1.18.2**（Apple Silicon 原生二进制 + launchd，localhost:6333） | mem0 后端；不使用嵌入式 local mode |
 | LLM 抽取（M2/M3） | **model API**（OpenAI 兼容 / 本地 ollama / 字节网关，可配置） | 结构化输出，追求稳定与速度 |
 | LLM 决策（M4） | **codex CLI**（`codex exec` 子进程） | 复杂确认/风险决策，见 §6 |
 | 代码执行后端（M5） | **codex CLI** / cursor-agent | `code_change` executor 后端 |
@@ -59,7 +59,7 @@
 
 外部依赖：
 - **lark-cli**：`--as user` 读全量消息、`--as bot` 收发消息 / 事件 / 交互卡片。
-- **mem0 sidecar**：Python FastAPI 薄服务包 mem0，暴露 `/add` `/search` 等；内部连 Qdrant。
+- **mem0 sidecar**：Python FastAPI 薄服务包 mem0，暴露 `/memories`、`/memories/search` 等；内部连 Qdrant。
 - **codex CLI**：`codex exec` 非交互子进程，用于 M4 决策与 M5 代码执行。
 - **model API**：可配置 OpenAI 兼容端点，供 M2/M3 高频抽取（Go 直接 HTTP 调用，不经 Eino）。
 
@@ -478,7 +478,7 @@ mem0 是 Python 库、无 Go SDK。采用 **sidecar 进程**隔离：
 ┌────────────────────┐   HTTP/JSON     ┌──────────────────────────┐
 │ jarvis-server (Go) │ ───────────────▶│ mem0-sidecar (Python)     │
 │  MemoryClient      │                 │  FastAPI + mem0.Memory    │
-│  (Go http client)  │◀─────────────── │  POST /add /search /delete │
+│  (Go http client)  │◀─────────────── │  POST /memories /memories/search │
 └────────────────────┘                 │  ↕ Qdrant (localhost:6333) │
                                         └──────────────────────────┘
 ```

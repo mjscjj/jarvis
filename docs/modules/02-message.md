@@ -792,7 +792,7 @@ def health():
     return {"status": "ok"}
 ```
 
-> sidecar 的 mem0 `config`（vector_store=qdrant、llm/embedder=model API、`custom_fact_extraction_prompt` 聚焦「交办/行动线索/决策/deadline/职责」、`embedding_model_dims` 与 embedder 维度严格对齐）沿用原方案设计，此处属 sidecar 内部实现细节，M2 不展开；Qdrant 采用 Docker server 模式（`localhost:6333`），不可达即 fail-fast。
+> sidecar 当前锁定 `mem0ai==2.0.12`，用 `Memory.from_config` 配置 `vector_store=qdrant`、`llm/embedder=OpenAI-compatible model API`，并以 `custom_instructions` 聚焦「交办/行动线索/决策/deadline/职责」；`embedding_model_dims` 与 embedder 维度严格对齐。Qdrant 采用 v1.18.2 Apple Silicon 原生 server + launchd（`localhost:6333`），不可达即 fail-fast；不降级为 qdrant-client 嵌入式 local mode。
 
 ### 6.4 记忆化 worker（Go 实现示意）
 
@@ -1091,7 +1091,7 @@ func mustAdd(c *cron.Cron, spec string, fn func()) {
 | lark-cli | 本机实测版本 | 经 Go `exec.Command` 子进程调用；`im +chat-list/+chat-messages-list --as user`、`event schema` 已核 |
 | mem0（sidecar） | Python `mem0` v2.x（V3 pipeline） | 独立 FastAPI 进程 `127.0.0.1:18900`；ADD-only + 内建实体链接，**勿配外部图库** |
 | qdrant-client | `>=1.12.0` | sidecar 内 mem0 要求 |
-| Qdrant | 最新 stable | Docker server 模式，`localhost:6333` |
+| Qdrant | `v1.18.2` | Apple Silicon 原生 server + launchd，`localhost:6333`；安装包 SHA256 固定 |
 | MySQL | 8.x | InnoDB / utf8mb4 |
 | model API | OpenAI 兼容端点（可配置） | sidecar 内 LLM 抽取，不经 Eino |
 

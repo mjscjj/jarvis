@@ -10,7 +10,9 @@ Go 1.26 + Hertz + GORM + codex CLI（M4 决策 / M5 代码执行）+ model API�
 
 ## 当前进度
 
-已完成 M0.2：在 M0.1 的 Go/Hertz、7 个核心实体和 MySQL 基础上，加入统一 `lark-cli` 子进程层、`message` / `chat_checkpoint` 支撑表、会话发现、无历史回溯的增量扫描、线程回复拍平、Resource 元数据沉淀和分层 cron 调度。
+- M0.2 已完成：统一 `lark-cli` 子进程层、无历史回溯的增量扫描、线程回复拍平、Resource 元数据沉淀和分层 cron 调度。消息扫描只处理数据库中动态标记的 `related_group`。
+- M0.3 核心链路已实现：Go 侧 mem0 HTTP client、消息窗口化 worker、每 10 分钟记忆化任务、Python FastAPI sidecar、Qdrant v1.18.2 原生 launchd 服务与锁定依赖。
+- 本机 Qdrant 已运行；mem0 sidecar 的真实模型验收等待在 `conf/config.yaml` 填入同时支持 chat 与 embedding 的 OpenAI 兼容端点。
 
 ## 本地运行
 
@@ -38,6 +40,8 @@ go run ./cmd/jarvis-server -config conf/config.yaml -discover-once
 go run ./cmd/jarvis-server -config conf/config.yaml -scan-chat oc_xxx
 ```
 
+该会话必须已动态标记为 `related_group=1`。名单可通过 `-set-related-groups` 原子替换，数量不写死。
+
 启动服务后会注册 discover/hot/warm/cold 四类定时任务；健康检查同时验证 MySQL：
 
 ```bash
@@ -55,6 +59,25 @@ curl http://127.0.0.1:18800/healthz
 ```
 
 日志写入 `var/log/jarvis-server.log` 和 `var/log/jarvis-server.error.log`。
+
+## mem0 与 Qdrant
+
+先在 `conf/config.yaml` 的 `model` 段填写明文 `base_url`、`api_key`、`model`；该端点还必须支持 `mem0.embedding_model`。随后安装两个独立服务：
+
+```bash
+./scripts/install-qdrant.sh
+./scripts/install-mem0-sidecar.sh
+curl http://127.0.0.1:6333/healthz
+curl http://127.0.0.1:18900/health
+```
+
+手工执行一次记忆化：
+
+```bash
+go run ./cmd/jarvis-server -config conf/config.yaml -memorize-once
+```
+
+sidecar 依赖由 `sidecar/mem0/uv.lock` 固定；Qdrant 数据、mem0 history 和日志都落在被 Git 忽略的 `var/`。
 
 ## 测试
 
@@ -80,11 +103,13 @@ jarvis/
 │   ├── capture/         # M2 会话发现、增量扫描与调度
 │   ├── domain/          # 7 个核心实体 GORM model
 │   ├── larkcli/         # lark-cli 子进程、限流、并发和超时
+│   ├── memory/          # 消息窗口化与 mem0 sidecar client
 │   └── store/           # MySQL 连接与迁移
+├── sidecar/mem0/        # FastAPI + mem0 Python sidecar
 ├── conf/config.yaml     # 本地配置（本地可信环境，含明文 DSN）
 ├── deploy/              # launchd plist
 ├── scripts/             # 安装/运维脚本
 └── docs/                # 方案文档
 ```
 
-下一里程碑 M0.3：mem0 sidecar、Qdrant 和消息记忆化 job。
+M0.3 完成真实模型验收后，下一里程碑是 M0.4：M3 Todo 提取和后台 Todo 看板。
