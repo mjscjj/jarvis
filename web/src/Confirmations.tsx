@@ -142,7 +142,6 @@ export default function Confirmations() {
     { title: '待确认事项', dataIndex: 'title', render: (_, todo) => <Space direction="vertical" size={2}><Text strong>{todo.title}</Text><Text type="secondary">{todo.description}</Text></Space> },
     { title: '类型', dataIndex: 'action_type', width: 150, render: (value: string) => <Tag>{value}</Tag> },
     { title: '来源', width: 220, render: (_, todo) => todo.group?.name || todo.group?.chat_id || '未知会话' },
-    { title: '操作', width: 100, render: (_, todo) => <Button type="link" onClick={() => openDetail(todo)}>查看</Button> },
   ]
 
   return <>
@@ -152,7 +151,7 @@ export default function Confirmations() {
     </Flex>
     {error && <Alert type="error" showIcon message="操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
-      <Table<Todo> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} />
+      <Table<Todo> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(todo) => ({ onClick: () => openDetail(todo), className: 'clickable-row' })} />
     </Card>
     <Drawer title={detail?.todo.title || '确认详情'} open={Boolean(detail) || detailLoading} loading={detailLoading} width={680} onClose={() => setDetail(undefined)}>
       {detail && <Space direction="vertical" size={20} className="drawer-content">

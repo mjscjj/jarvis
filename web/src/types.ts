@@ -505,3 +505,48 @@ export interface ResourceInput {
   link_principal: boolean
   is_active?: boolean
 }
+
+// --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---
+
+// PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。
+// 由各页面写入 PageContext（React Context），发送对话时随请求带给后端注入 prompt。
+export interface PageContext {
+  // 当前左侧导航 key：overview/todos/confirmations/tasks/background/progress/debug
+  active_key: string
+  // 当前选中项的可读摘要（如 "Todo #12 修复登录超时"）；无选中则 null
+  selection: PageSelection | null
+}
+
+export interface PageSelection {
+  // 选中项类型：todo/task/project/person/group/resource
+  kind: string
+  id: number
+  // 一行可读摘要，直接进 prompt
+  label: string
+}
+
+// POST /api/chat 请求体。thread_id 为空表示新会话；非空表示 codex resume 多轮。
+export interface ChatRequest {
+  message: string
+  thread_id?: string | null
+  page_context?: PageContext | null
+}
+
+// SSE 事件类型（event 字段）：
+//   'thread'  data={thread_id}         —— 会话建立/恢复，前端记住以便多轮 resume
+//   'delta'   data={text}              —— codex 增量输出，前端追加渲染
+//   'done'    data={}                  —— 本轮结束，可关闭流
+//   'error'   data={message}           —— 出错（fail-fast，前端直接展示）
+export type ChatEventType = 'thread' | 'delta' | 'done' | 'error'
+
+export interface ChatThreadEvent {
+  thread_id: string
+}
+
+export interface ChatDeltaEvent {
+  text: string
+}
+
+export interface ChatErrorEvent {
+  message: string
+}
