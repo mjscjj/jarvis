@@ -100,7 +100,7 @@ func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {
 
 // groupCount runs SELECT status, COUNT(*) GROUP BY status for a table.
 func (s *OverviewService) groupCount(ctx context.Context, model any) ([]StatusCount, error) {
-	var rows []StatusCount
+	rows := []StatusCount{}
 	if err := s.db.WithContext(ctx).Model(model).
 		Select("status, COUNT(*) AS count").
 		Group("status").

@@ -79,7 +79,7 @@ export default function Overview() {
               {todoStatusMeta[item.status]?.label ?? item.status} · {item.count}
             </Tag>
           ))}
-          {(data?.todos.by_status.length ?? 0) === 0 && !loading && <Text type="secondary">暂无数据</Text>}
+          {(data?.todos.by_status?.length ?? 0) === 0 && !loading && <Text type="secondary">暂无数据</Text>}
         </div>
       </Card>
 
@@ -114,7 +114,7 @@ export default function Overview() {
               {taskStatusMeta[item.status]?.label ?? item.status} · {item.count}
             </Tag>
           ))}
-          {(data?.tasks.by_status.length ?? 0) === 0 && !loading && <Text type="secondary">暂无数据</Text>}
+          {(data?.tasks.by_status?.length ?? 0) === 0 && !loading && <Text type="secondary">暂无数据</Text>}
         </div>
       </Card>
     </div>
