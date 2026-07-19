@@ -99,7 +99,7 @@ export interface ConfirmationDetail {
   proposed_plan: ProposedPlan | null
 }
 
-export type TaskStatus = 'pending' | 'done' | 'failed'
+export type TaskStatus = 'pending' | 'executing' | 'done' | 'failed'
 
 export interface Task {
   id: number

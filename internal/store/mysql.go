@@ -49,6 +49,7 @@ func Migrate(db *gorm.DB) error {
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
 	models = append(models, domain.DecideModels()...)
+	models = append(models, domain.ExecuteModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}

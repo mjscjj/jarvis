@@ -6,13 +6,13 @@ import (
 )
 
 func TestValidateTaskFilter(t *testing.T) {
-	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"pending", "done"}, Page: 1, PageSize: 20}); err != nil {
+	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"pending", "executing", "done"}, Page: 1, PageSize: 20}); err != nil {
 		t.Fatalf("ValidateTaskFilter() error = %v", err)
 	}
 	for _, filter := range []TaskFilter{
 		{Page: 0, PageSize: 20},
 		{Page: 1, PageSize: 101},
-		{Statuses: []string{"executing"}, Page: 1, PageSize: 20},
+		{Statuses: []string{"nonsense"}, Page: 1, PageSize: 20},
 	} {
 		if err := ValidateTaskFilter(filter); !errors.Is(err, ErrInvalidInput) {
 			t.Fatalf("ValidateTaskFilter(%#v) error = %v", filter, err)

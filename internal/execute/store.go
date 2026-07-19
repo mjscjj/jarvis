@@ -26,7 +26,7 @@ var (
 )
 
 var taskStatuses = map[string]struct{}{
-	"pending": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "done": {}, "failed": {},
 }
 
 type TaskFilter struct {
@@ -133,11 +133,12 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 		if task.Version != input.ExpectedVersion {
 			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, input.ExpectedVersion, task.Version)
 		}
-		if task.Status != "pending" {
+		if task.Status != "pending" && task.Status != "executing" {
 			return fmt.Errorf("%w: task_id=%d from=%s to=%s", ErrInvalidTransition, task.ID, task.Status, input.Status)
 		}
+		fromStatus := task.Status
 		update := tx.Model(&domain.Task{}).
-			Where("id = ? AND version = ? AND status = ?", task.ID, input.ExpectedVersion, "pending").
+			Where("id = ? AND version = ? AND status = ?", task.ID, input.ExpectedVersion, fromStatus).
 			Updates(map[string]any{
 				"status": input.Status, "execution_result": datatypes.JSON(result), "version": gorm.Expr("version + 1"),
 			})
@@ -158,6 +159,62 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 	}
 	view := taskView(&finished)
 	return &view, nil
+}
+
+// MarkExecuting transitions a Task from pending to executing under optimistic
+// lock and returns the new version. It is the guard that prevents two runners
+// from grabbing the same Task concurrently (manual button + cron).
+func (s *Store) MarkExecuting(ctx context.Context, taskID uint64, expectedVersion int32) (int32, error) {
+	if taskID == 0 || expectedVersion < 0 {
+		return 0, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
+	}
+	var newVersion int32
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task domain.Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		if err != nil {
+			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
+		}
+		if task.Version != expectedVersion {
+			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+		}
+		if task.Status != "pending" {
+			return fmt.Errorf("%w: task_id=%d from=%s to=executing", ErrInvalidTransition, task.ID, task.Status)
+		}
+		update := tx.Model(&domain.Task{}).
+			Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "pending").
+			Updates(map[string]any{"status": "executing", "version": gorm.Expr("version + 1")})
+		if update.Error != nil {
+			return fmt.Errorf("mark executing Task id=%d: %w", task.ID, update.Error)
+		}
+		if update.RowsAffected != 1 {
+			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
+		}
+		newVersion = task.Version + 1
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+// LoadPending returns pending Tasks for the cron auto-executor, oldest first.
+func (s *Store) LoadPending(ctx context.Context, limit int) ([]domain.Task, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("%w: pending load limit must be positive", ErrInvalidInput)
+	}
+	var rows []domain.Task
+	if err := s.db.WithContext(ctx).
+		Where("status = ?", "pending").
+		Order("confirmed_at ASC, id ASC").
+		Limit(limit).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("load pending execution Tasks: %w", err)
+	}
+	return rows, nil
 }
 
 func ValidateTaskFilter(filter TaskFilter) error {

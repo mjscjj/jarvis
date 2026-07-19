@@ -92,6 +92,22 @@ export function finishTask(id: number, expectedVersion: number, status: 'done' |
   })
 }
 
+export interface ExecuteResult {
+  task_id: number
+  run_id: number
+  status: string
+  branch?: string
+  commit?: string
+  diff_path?: string
+  summary?: string
+}
+
+// executeTask triggers agent-driven codex execution. The click approves any
+// external side effects, so the backend runs the Task immediately.
+export function executeTask(id: number): Promise<ExecuteResult> {
+  return request<ExecuteResult>(`/api/tasks/${id}/execute`, { method: 'POST' })
+}
+
 // --- M1 background management ---
 
 export function listProjects(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Project>> {

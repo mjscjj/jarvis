@@ -16,6 +16,7 @@ import (
 	"jarvis/internal/capture"
 	"jarvis/internal/config"
 	"jarvis/internal/decide"
+	"jarvis/internal/domain"
 	"jarvis/internal/embedding"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -91,25 +92,63 @@ func main() {
 
 	var decisionWorker *decide.DecisionWorker
 	if cfg.Decide.Enabled || *decideOnce {
-		if cfg.Decide.Mode != decide.ManualMVPMode || cfg.Decide.BatchLimit <= 0 {
-			hlog.Fatalf("MVP decision requires decide.mode=%s and positive batch_limit", decide.ManualMVPMode)
+		if cfg.Decide.BatchLimit <= 0 {
+			hlog.Fatalf("decision requires positive decide.batch_limit")
 		}
 		decisionSource, err := decide.NewEvaluationSource(db)
 		if err != nil {
-			hlog.Fatalf("initialize MVP decision source failed: %v", err)
+			hlog.Fatalf("initialize decision source failed: %v", err)
 		}
 		decisionStore, err := decide.NewEvaluationStore(db)
 		if err != nil {
-			hlog.Fatalf("initialize MVP decision store failed: %v", err)
+			hlog.Fatalf("initialize decision store failed: %v", err)
+		}
+		var evaluator interface {
+			Evaluate(context.Context, *domain.Todo) (*decide.EvaluationInput, error)
+		}
+		switch cfg.Decide.Mode {
+		case decide.ManualMVPMode:
+			evaluator = decide.ManualGateEvaluator{}
+		case "codex":
+			// M4 codex mode: judge each Todo read-only with codex gpt-5.5 and
+			// route by disposition. Background is built from MySQL only (no mem0)
+			// to keep the decision path deterministic and offline-safe.
+			budget, err := decide.NewCodexBudget(decide.BudgetOptions{
+				MaxCallsPerHour: cfg.Codex.MaxCallsPerHour,
+				MaxCallsPerDay:  cfg.Codex.MaxCallsPerDay,
+			})
+			if err != nil {
+				hlog.Fatalf("initialize codex decision budget failed: %v", err)
+			}
+			decider, err := decide.NewCodexDecider(decide.CodexOptions{
+				Bin:     cfg.Codex.Bin,
+				Model:   cfg.Codex.Model,
+				Timeout: time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
+				Budget:  budget,
+			})
+			if err != nil {
+				hlog.Fatalf("initialize codex decider failed: %v", err)
+			}
+			decisionSnapshotter, err := decide.NewMVPBackgroundSnapshotter(db)
+			if err != nil {
+				hlog.Fatalf("initialize codex decision background snapshotter failed: %v", err)
+			}
+			codexEvaluator, err := decide.NewCodexEvaluator(decider, decisionSnapshotter)
+			if err != nil {
+				hlog.Fatalf("initialize codex evaluator failed: %v", err)
+			}
+			evaluator = codexEvaluator
+		default:
+			hlog.Fatalf("decide.mode 必须是 %s 或 codex", decide.ManualMVPMode)
 		}
 		decisionWorker, err = decide.NewDecisionWorker(
 			decisionSource,
-			decide.ManualGateEvaluator{},
+			evaluator,
 			decisionStore,
 			decide.WorkerOptions{BatchLimit: cfg.Decide.BatchLimit},
 		)
 		if err != nil {
-			hlog.Fatalf("initialize MVP decision worker failed: %v", err)
+			hlog.Fatalf("initialize decision worker failed: %v", err)
 		}
 	}
 	if *decideOnce {
@@ -118,8 +157,8 @@ func main() {
 			hlog.Fatalf("route Todos to manual confirmation failed: %v", err)
 		}
 		hlog.Infof(
-			"MVP decision completed: loaded=%d evaluated=%d need_decision=%d",
-			stats.Loaded, stats.Evaluated, stats.NeedDecision,
+			"decision completed: loaded=%d evaluated=%d need_decision=%d need_info=%d",
+			stats.Loaded, stats.Evaluated, stats.NeedDecision, stats.NeedInfo,
 		)
 		return
 	}
@@ -196,6 +235,16 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize MVP Task service failed: %v", err)
 	}
+	codexRunner, err := execute.NewCodexRunner(
+		cfg.Codex.Bin, cfg.Codex.Model, time.Duration(cfg.Execute.TimeoutSecond)*time.Second,
+	)
+	if err != nil {
+		hlog.Fatalf("initialize codex execution runner failed: %v", err)
+	}
+	agentExecutor, err := execute.NewAgentExecutor(db, taskService, codexRunner, cfg.Execute.RepoRoot, cfg.Execute.RunsDir)
+	if err != nil {
+		hlog.Fatalf("initialize agent executor failed: %v", err)
+	}
 	projectService, err := background.NewProjectService(db)
 	if err != nil {
 		hlog.Fatalf("initialize project service failed: %v", err)
@@ -262,7 +311,18 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize Todo semantic deduplicator failed: %v", err)
 		}
-		extractWorker, err = extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, extract.WorkerOptions{
+		toolBoxBuilder, err := extract.NewRegistryToolBoxBuilder(db, memoryClient, extract.ToolBoxConfig{
+			ToolTimeout:     time.Duration(cfg.Extract.ToolTimeoutSec) * time.Second,
+			HistoryMaxLimit: cfg.Extract.HistoryToolLimit,
+			MemoryDefaultK:  cfg.Extract.MemoryTopK,
+			MemoryMaxK:      cfg.Extract.ToolMemoryMaxTopK,
+			MemoryThreshold: cfg.Extract.MemoryThreshold,
+			Location:        location,
+		})
+		if err != nil {
+			hlog.Fatalf("initialize extraction tool box builder failed: %v", err)
+		}
+		extractWorker, err = extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, toolBoxBuilder, extract.WorkerOptions{
 			Load: extract.LoadOptions{
 				BatchMessages: cfg.Extract.BatchMessages, ContextMessages: cfg.Extract.ContextMessages,
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
@@ -270,7 +330,7 @@ func main() {
 			},
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
 			MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
-			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
+			MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: cfg.Extract.MaxToolRounds, Location: location,
 		})
 		if err != nil {
 			hlog.Fatalf("initialize extraction worker failed: %v", err)
@@ -379,12 +439,32 @@ func main() {
 		}
 		stopDecisionScheduler = func() { <-decisionScheduler.Stop().Done() }
 	}
+	stopExecuteScheduler := func() {}
+	if cfg.Execute.Enabled {
+		executeScheduler, err := execute.StartScheduler(
+			captureCtx,
+			agentExecutor,
+			cfg.Execute.Schedule,
+			cfg.Execute.BatchLimit,
+			log.New(os.Stderr, "execute-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			cancelCapture()
+			<-scheduler.Stop().Done()
+			<-memoryScheduler.Stop().Done()
+			stopExtractScheduler()
+			stopDecisionScheduler()
+			hlog.Fatalf("start execution scheduler failed: %v", err)
+		}
+		stopExecuteScheduler = func() { <-executeScheduler.Stop().Done() }
+	}
 	defer func() {
 		cancelCapture()
 		<-scheduler.Stop().Done()
 		<-memoryScheduler.Stop().Done()
 		stopExtractScheduler()
 		stopDecisionScheduler()
+		stopExecuteScheduler()
 	}()
 
 	h := server.New(
@@ -392,7 +472,7 @@ func main() {
 	)
 	if err := api.Register(h, api.Dependencies{
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
-		Tasks:    taskService,
+		Tasks: taskService, Executor: agentExecutor,
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService,
 	}); err != nil {

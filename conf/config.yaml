@@ -53,6 +53,11 @@ extract:
   semantic_collection: "todo_semantic"
   semantic_threshold: 0.85
   semantic_neighbor_limit: 3
+  # M3 function-calling 工具循环
+  max_tool_rounds: 5          # 单 unit 最多工具调用轮数，超出 fail-fast
+  tool_timeout_sec: 10        # 单次工具调用超时（秒）
+  history_tool_limit: 50      # query_chat_history 单次最多返回消息数
+  tool_memory_max_top_k: 20   # search_memory 允许模型请求的 top_k 上限
 
 # lark-cli 子进程封装（总纲 §4）
 lark_cli:
@@ -76,21 +81,24 @@ capture:
 # M4 MVP：所有提取出的 Todo 都进入人工确认，不做评分、不调用 codex。
 decide:
   enabled: true
-  mode: "manual_mvp"
+  mode: "codex"          # codex: 用 codex gpt-5.5 只读判 auto_execute/need_review/need_info；manual_mvp: 全部走人工确认
   schedule: "@every 10m"
   batch_limit: 50
 
 # M4 决策用 codex CLI（总纲 §11.2，全部可配置）
 codex:
   bin: "codex"
-  model: "gpt-5.1-codex"
+  model: "gpt-5.5"
   timeout_seconds: 120
   max_calls_per_hour: 30
   max_calls_per_day: 200
-  on_budget_exceeded: "route_need_decision" # 或 degrade_to_rule
-  on_timeout: "route_need_decision"         # 固定 fail-safe
-  gray_zone:
-    conf_low: 0.60
-    conf_high: 0.85
-    risk_low: 0.25
-    risk_high: 0.60
+
+# M5 agent 驱动执行：codex 用 workspace-write 真实改代码，改完自动 commit 到独立分支不 push。
+# 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron（只跑本地动作）。
+execute:
+  enabled: false                                   # 先手动触发，观察稳了再开自动
+  schedule: "@every 5m"
+  batch_limit: 5
+  repo_root: "/Users/bytedance/workspace-local"    # code_change 的 repo_ref 基目录
+  runs_dir: "/Users/bytedance/workspace-local/jarvis/runs"  # diff/产物落盘
+  timeout_second: 600                              # codex 执行单次超时（改代码可能久）

@@ -81,6 +81,24 @@ func FinishTask(service execute.TaskService) app.HandlerFunc {
 	}
 }
 
+// ExecuteTask triggers agent-driven execution of a confirmed Task. The manual
+// click is treated as approval for external-side-effect actions.
+func ExecuteTask(executor *execute.AgentExecutor) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		result, err := executor.Execute(ctx, execute.ExecuteInput{TaskID: taskID, ApproveExternal: true})
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func writeExecutionError(c *app.RequestContext, err error) {
 	switch {
 	case errors.Is(err, execute.ErrInvalidInput):
@@ -89,7 +107,11 @@ func writeExecutionError(c *app.RequestContext, err error) {
 		writeAPIError(c, consts.StatusNotFound, 40420, err)
 	case errors.Is(err, execute.ErrVersionConflict), errors.Is(err, execute.ErrInvalidTransition):
 		writeAPIError(c, consts.StatusConflict, 40920, err)
+	case errors.Is(err, execute.ErrExternalNeedsApproval):
+		writeAPIError(c, consts.StatusConflict, 40923, err)
+	case errors.Is(err, execute.ErrUnknownActionType):
+		writeAPIError(c, consts.StatusBadRequest, 40024, err)
 	default:
-		writeAPIError(c, consts.StatusInternalServerError, 50021, fmt.Errorf("finish Task failed: %s", strings.TrimSpace(err.Error())))
+		writeAPIError(c, consts.StatusInternalServerError, 50021, fmt.Errorf("execute Task failed: %s", strings.TrimSpace(err.Error())))
 	}
 }

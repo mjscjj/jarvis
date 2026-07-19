@@ -20,6 +20,7 @@ type Dependencies struct {
 	Confirmations       decide.ConfirmationService
 	ConfirmationDetails decide.ConfirmationDetailReader
 	Tasks               execute.TaskService
+	Executor            *execute.AgentExecutor
 	Projects            *background.ProjectService
 	Persons             *background.PersonService
 	Groups              *background.GroupBackgroundService
@@ -71,6 +72,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/confirmations/:todo_id/reject", RejectConfirmation(deps.Confirmations))
 	h.GET("/api/tasks", ListTasks(deps.Tasks))
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
+	if deps.Executor != nil {
+		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
+	}
 	// M1 背景管理：Project/Person 全量 CRUD；Group 只可改人工背景字段（采集字段归 M2）。
 	h.GET("/api/projects", ListProjects(deps.Projects))
 	h.POST("/api/projects", CreateProject(deps.Projects))

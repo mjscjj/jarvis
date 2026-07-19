@@ -44,6 +44,10 @@ func TestValidate(t *testing.T) {
 			SemanticCollection:    "todo_semantic",
 			SemanticThreshold:     0.85,
 			SemanticNeighborLimit: 3,
+			MaxToolRounds:         5,
+			ToolTimeoutSec:        10,
+			HistoryToolLimit:      50,
+			ToolMemoryMaxTopK:     20,
 		},
 		LarkCLI: LarkCLIConfig{
 			Bin:        "lark-cli",
@@ -61,8 +65,9 @@ func TestValidate(t *testing.T) {
 			DiscoverSchedule: "@every 6h",
 			ScanSchedule:     "@every 5m",
 		},
-		Decide: DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
-		Codex:  validCodexConfig(),
+		Decide:  DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
+		Codex:   validCodexConfig(),
+		Execute: validExecuteConfig(),
 	}
 
 	tests := []struct {
@@ -99,6 +104,10 @@ func TestValidate(t *testing.T) {
 		{name: "extract semantic collection", mutate: func(c *Config) { c.Extract.SemanticCollection = "" }, wantErr: "semantic_collection"},
 		{name: "extract semantic threshold", mutate: func(c *Config) { c.Extract.SemanticThreshold = 0 }, wantErr: "semantic_threshold"},
 		{name: "extract semantic neighbor limit", mutate: func(c *Config) { c.Extract.SemanticNeighborLimit = 0 }, wantErr: "semantic_neighbor_limit"},
+		{name: "extract max tool rounds", mutate: func(c *Config) { c.Extract.MaxToolRounds = 0 }, wantErr: "max_tool_rounds"},
+		{name: "extract tool timeout", mutate: func(c *Config) { c.Extract.ToolTimeoutSec = 0 }, wantErr: "tool_timeout_sec"},
+		{name: "extract history tool limit", mutate: func(c *Config) { c.Extract.HistoryToolLimit = 0 }, wantErr: "history_tool_limit"},
+		{name: "extract tool memory max top k", mutate: func(c *Config) { c.Extract.ToolMemoryMaxTopK = 1 }, wantErr: "tool_memory_max_top_k"},
 		{name: "extract principal", mutate: func(c *Config) { c.Extract.Enabled = true }, wantErr: "principal_open_id"},
 		{name: "extract model", mutate: func(c *Config) {
 			c.Extract.Enabled = true
@@ -123,10 +132,6 @@ func TestValidate(t *testing.T) {
 		{name: "codex timeout", mutate: func(c *Config) { c.Codex.TimeoutSeconds = 0 }, wantErr: "codex.timeout_seconds"},
 		{name: "codex hourly budget", mutate: func(c *Config) { c.Codex.MaxCallsPerHour = 0 }, wantErr: "max_calls_per_hour"},
 		{name: "codex inverted budget", mutate: func(c *Config) { c.Codex.MaxCallsPerDay = 1 }, wantErr: "不能小于"},
-		{name: "codex budget behavior", mutate: func(c *Config) { c.Codex.OnBudgetExceeded = "auto" }, wantErr: "on_budget_exceeded"},
-		{name: "codex timeout behavior", mutate: func(c *Config) { c.Codex.OnTimeout = "degrade_to_rule" }, wantErr: "on_timeout"},
-		{name: "codex confidence gray zone", mutate: func(c *Config) { c.Codex.GrayZone.ConfHigh = 1.1 }, wantErr: "gray_zone.confidence"},
-		{name: "codex risk gray zone", mutate: func(c *Config) { c.Codex.GrayZone.RiskLow = c.Codex.GrayZone.RiskHigh }, wantErr: "gray_zone.risk"},
 	}
 
 	for _, tt := range tests {
@@ -171,14 +176,16 @@ func TestValidateExtractEnabled(t *testing.T) {
 			BatchMessages: 400, ContextMessages: 20, ContextWindowMinutes: 120,
 			OpenTodoLimit: 50, MemoryTopK: 8, MemoryThreshold: 0.5, MaxPromptChars: 60000,
 			SemanticCollection: "todo_semantic", SemanticThreshold: 0.85, SemanticNeighborLimit: 3,
+			MaxToolRounds: 5, ToolTimeoutSec: 10, HistoryToolLimit: 50, ToolMemoryMaxTopK: 20,
 		},
 		LarkCLI: LarkCLIConfig{Bin: "lark-cli", RateLimit: 5, Burst: 10, Concurrent: 2, TimeoutSec: 60},
 		Capture: CaptureConfig{
 			PageSize: 50, ScanWorkers: 2, HotAgeHours: 6, WarmAgeHours: 168,
 			Timezone: "Asia/Shanghai", DiscoverSchedule: "@every 6h", ScanSchedule: "@every 5m",
 		},
-		Decide: DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
-		Codex:  validCodexConfig(),
+		Decide:  DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
+		Codex:   validCodexConfig(),
+		Execute: validExecuteConfig(),
 	}
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("validate() error = %v", err)
@@ -189,11 +196,16 @@ func TestValidateExtractEnabled(t *testing.T) {
 	}
 }
 
+func validExecuteConfig() ExecuteConfig {
+	return ExecuteConfig{
+		Enabled: false, Schedule: "@every 5m", BatchLimit: 5,
+		RepoRoot: "/tmp/repos", RunsDir: "/tmp/runs", TimeoutSecond: 600,
+	}
+}
+
 func validCodexConfig() CodexConfig {
 	return CodexConfig{
 		Bin: "codex", Model: "fixture-model", TimeoutSeconds: 120,
 		MaxCallsPerHour: 30, MaxCallsPerDay: 200,
-		OnBudgetExceeded: "route_need_decision", OnTimeout: "route_need_decision",
-		GrayZone: GrayZoneRange{ConfLow: 0.6, ConfHigh: 0.85, RiskLow: 0.25, RiskHigh: 0.6},
 	}
 }

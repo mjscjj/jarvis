@@ -96,6 +96,17 @@ export default function Confirmations() {
           <Descriptions.Item label="项目">{detail.todo.project?.name || '未关联'}</Descriptions.Item>
           <Descriptions.Item label="会话">{detail.todo.group?.name || detail.todo.group?.chat_id || '未知'}</Descriptions.Item>
         </Descriptions>
+        {(detail.todo.confidence != null || detail.todo.risk != null || detail.proposed_plan) && <section>
+          <Text type="secondary">codex 判断</Text>
+          <Space size={12} style={{ display: 'flex', marginTop: 4 }}>
+            {detail.todo.confidence != null && <Tag color="blue">信心 {(detail.todo.confidence * 100).toFixed(0)}%</Tag>}
+            {detail.todo.risk != null && <Tag color={detail.todo.risk >= 0.6 ? 'red' : 'orange'}>风险 {(detail.todo.risk * 100).toFixed(0)}%</Tag>}
+          </Space>
+          {detail.proposed_plan && <>
+            <Paragraph style={{ marginTop: 8, marginBottom: 4 }}><Text strong>建议方案：</Text>{detail.proposed_plan.summary}</Paragraph>
+            {detail.proposed_plan.basis?.length > 0 && <Paragraph type="secondary" style={{ marginBottom: 0 }}>理由：{detail.proposed_plan.basis.join('；')}</Paragraph>}
+          </>}
+        </section>}
         <section><Text type="secondary">结构化参数</Text><pre>{JSON.stringify(detail.todo.slots, null, 2)}</pre></section>
         <section><Text type="secondary">证据消息</Text>{detail.source_messages.map((message) => <blockquote key={message.message_id}><Text strong>{message.sender_name || message.sender_open_id}</Text><br />{message.content}</blockquote>)}</section>
         {detail.todo.status === 'need_decision'

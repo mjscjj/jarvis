@@ -6,7 +6,6 @@ package config
 
 import (
 	"fmt"
-	"math"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -23,6 +22,7 @@ type Config struct {
 	Capture CaptureConfig `yaml:"capture"`
 	Decide  DecideConfig  `yaml:"decide"`
 	Codex   CodexConfig   `yaml:"codex"`
+	Execute ExecuteConfig `yaml:"execute"`
 }
 
 // ServerConfig Hertz 监听配置。
@@ -82,6 +82,15 @@ type ExtractConfig struct {
 	SemanticCollection    string  `yaml:"semantic_collection"`
 	SemanticThreshold     float64 `yaml:"semantic_threshold"`
 	SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
+
+	// M3 function-calling tool loop. MaxToolRounds hard-caps model tool calls
+	// per unit (fail-fast when exceeded); ToolTimeoutSec bounds one tool call;
+	// HistoryToolLimit caps rows returned by query_chat_history; ToolMemoryMaxTopK
+	// caps top_k the model may request from search_memory.
+	MaxToolRounds     int `yaml:"max_tool_rounds"`
+	ToolTimeoutSec    int `yaml:"tool_timeout_sec"`
+	HistoryToolLimit  int `yaml:"history_tool_limit"`
+	ToolMemoryMaxTopK int `yaml:"tool_memory_max_top_k"`
 }
 
 // LarkCLIConfig lark-cli 子进程封装（总纲 §4）。
@@ -117,22 +126,24 @@ type DecideConfig struct {
 
 // CodexConfig M4 决策用 codex CLI（总纲 §11.2，全部可配置、不硬编码）。
 type CodexConfig struct {
-	Bin              string        `yaml:"bin"`
-	Model            string        `yaml:"model"`
-	TimeoutSeconds   int           `yaml:"timeout_seconds"`
-	MaxCallsPerHour  int           `yaml:"max_calls_per_hour"`
-	MaxCallsPerDay   int           `yaml:"max_calls_per_day"`
-	OnBudgetExceeded string        `yaml:"on_budget_exceeded"` // route_need_decision | degrade_to_rule
-	OnTimeout        string        `yaml:"on_timeout"`         // 固定 route_need_decision(fail-safe)
-	GrayZone         GrayZoneRange `yaml:"gray_zone"`
+	Bin             string `yaml:"bin"`
+	Model           string `yaml:"model"`
+	TimeoutSeconds  int    `yaml:"timeout_seconds"`
+	MaxCallsPerHour int    `yaml:"max_calls_per_hour"`
+	MaxCallsPerDay  int    `yaml:"max_calls_per_day"`
 }
 
-// GrayZoneRange 灰区边界：落此区间的 Todo 才触发 codex 深判（总纲 §11.2）。
-type GrayZoneRange struct {
-	ConfLow  float64 `yaml:"conf_low"`
-	ConfHigh float64 `yaml:"conf_high"`
-	RiskLow  float64 `yaml:"risk_low"`
-	RiskHigh float64 `yaml:"risk_high"`
+// ExecuteConfig controls M5 agent-driven execution. Enabled turns on the
+// auto-execution cron (local actions only); manual execution via the API is
+// always available regardless. RepoRoot is the base directory a Task's
+// repo_ref slot is joined under for code changes.
+type ExecuteConfig struct {
+	Enabled       bool   `yaml:"enabled"`        // 是否开自动执行 cron（本地动作）
+	Schedule      string `yaml:"schedule"`       // cron 表达式
+	BatchLimit    int    `yaml:"batch_limit"`    // 单次 sweep 最多执行的 Task 数
+	RepoRoot      string `yaml:"repo_root"`      // code_change repo_ref 的基目录
+	RunsDir       string `yaml:"runs_dir"`       // diff/产物落盘目录
+	TimeoutSecond int    `yaml:"timeout_second"` // 单次 codex 执行超时
 }
 
 // Load 从指定路径读取并解析 YAML 配置。fail-fast：任何错误直接返回。
@@ -244,6 +255,18 @@ func (c *Config) validate() error {
 	if c.Extract.SemanticNeighborLimit <= 0 {
 		return fmt.Errorf("extract.semantic_neighbor_limit 必须大于 0")
 	}
+	if c.Extract.MaxToolRounds <= 0 {
+		return fmt.Errorf("extract.max_tool_rounds 必须大于 0")
+	}
+	if c.Extract.ToolTimeoutSec <= 0 {
+		return fmt.Errorf("extract.tool_timeout_sec 必须大于 0")
+	}
+	if c.Extract.HistoryToolLimit <= 0 {
+		return fmt.Errorf("extract.history_tool_limit 必须大于 0")
+	}
+	if c.Extract.ToolMemoryMaxTopK < c.Extract.MemoryTopK {
+		return fmt.Errorf("extract.tool_memory_max_top_k 不能小于 extract.memory_top_k")
+	}
 	if c.Extract.Enabled {
 		if c.Extract.PrincipalOpenID == "" {
 			return fmt.Errorf("extract.principal_open_id 不能为空")
@@ -289,8 +312,8 @@ func (c *Config) validate() error {
 		return fmt.Errorf("capture 的 discover/scan schedule 均不能为空")
 	}
 	if c.Decide.Enabled {
-		if c.Decide.Mode != "manual_mvp" {
-			return fmt.Errorf("decide.mode 必须是 manual_mvp")
+		if c.Decide.Mode != "manual_mvp" && c.Decide.Mode != "codex" {
+			return fmt.Errorf("decide.mode 必须是 manual_mvp 或 codex")
 		}
 		if c.Decide.Schedule == "" {
 			return fmt.Errorf("decide.schedule 不能为空")
@@ -314,27 +337,22 @@ func (c *Config) validate() error {
 	if c.Codex.MaxCallsPerDay < c.Codex.MaxCallsPerHour {
 		return fmt.Errorf("codex.max_calls_per_day 不能小于 max_calls_per_hour")
 	}
-	if c.Codex.OnBudgetExceeded != "route_need_decision" && c.Codex.OnBudgetExceeded != "degrade_to_rule" {
-		return fmt.Errorf("codex.on_budget_exceeded 必须是 route_need_decision 或 degrade_to_rule")
+	if c.Execute.RepoRoot == "" {
+		return fmt.Errorf("execute.repo_root 不能为空")
 	}
-	if c.Codex.OnTimeout != "route_need_decision" {
-		return fmt.Errorf("codex.on_timeout 必须是 route_need_decision")
+	if c.Execute.RunsDir == "" {
+		return fmt.Errorf("execute.runs_dir 不能为空")
 	}
-	if err := validateGrayZone("confidence", c.Codex.GrayZone.ConfLow, c.Codex.GrayZone.ConfHigh); err != nil {
-		return err
+	if c.Execute.TimeoutSecond <= 0 {
+		return fmt.Errorf("execute.timeout_second 必须大于 0")
 	}
-	if err := validateGrayZone("risk", c.Codex.GrayZone.RiskLow, c.Codex.GrayZone.RiskHigh); err != nil {
-		return err
-	}
-	return nil
-}
-
-func validateGrayZone(name string, low, high float64) error {
-	if math.IsNaN(low) || math.IsInf(low, 0) || math.IsNaN(high) || math.IsInf(high, 0) || low < 0 || low > 1 || high < 0 || high > 1 {
-		return fmt.Errorf("codex.gray_zone.%s 边界必须在 0 到 1 之间", name)
-	}
-	if low >= high {
-		return fmt.Errorf("codex.gray_zone.%s low 必须小于 high", name)
+	if c.Execute.Enabled {
+		if c.Execute.Schedule == "" {
+			return fmt.Errorf("execute.schedule 不能为空")
+		}
+		if c.Execute.BatchLimit <= 0 {
+			return fmt.Errorf("execute.batch_limit 必须大于 0")
+		}
 	}
 	return nil
 }

@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Flex, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { finishTask, listTasks } from './api'
+import { executeTask, finishTask, listTasks } from './api'
 import type { Task, TaskStatus } from './types'
 
 const { Text } = Typography
 
 const statusMeta: Record<TaskStatus, { label: string; color: string }> = {
   pending: { label: '待执行', color: 'blue' },
+  executing: { label: '执行中', color: 'gold' },
   done: { label: '已完成', color: 'green' },
   failed: { label: '失败', color: 'red' },
 }
+
+// External actions reach outside this machine and cannot be auto-run; the
+// backend still requires the click, but we warn before triggering.
+const externalActions = new Set(['summary_post', 'reply_message', 'schedule_meeting', 'doc_write', 'manual_followup'])
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
@@ -26,6 +31,7 @@ export default function Tasks() {
   const [finishStatus, setFinishStatus] = useState<'done' | 'failed'>('done')
   const [summary, setSummary] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [executingId, setExecutingId] = useState<number>()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -60,12 +66,41 @@ export default function Tasks() {
     }
   }
 
+  const runExecute = async (task: Task) => {
+    if (externalActions.has(task.action_type)) {
+      const ok = window.confirm(`「${task.title}」是对外动作（${task.action_type}），执行会真实触达外部。确认由 codex 执行？`)
+      if (!ok) return
+    }
+    setExecutingId(task.id)
+    setError(undefined)
+    try {
+      await executeTask(task.id)
+      setRefreshKey((value) => value + 1)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setExecutingId(undefined)
+    }
+  }
+
   const columns: TableColumnsType<Task> = [
     { title: '任务', dataIndex: 'title', render: (_, task) => <Space direction="vertical" size={2}><Text strong>{task.title}</Text><Text type="secondary">Todo #{task.todo_id} · {task.action_type}</Text></Space> },
     { title: '状态', dataIndex: 'status', width: 110, render: (status: TaskStatus) => <Tag color={statusMeta[status].color}>{statusMeta[status].label}</Tag> },
     { title: '方案', width: 320, render: (_, task) => <pre className="inline-json">{JSON.stringify(task.plan, null, 2)}</pre> },
-    { title: '结果', width: 220, render: (_, task) => task.execution_result ? <pre className="inline-json">{JSON.stringify(task.execution_result, null, 2)}</pre> : '—' },
-    { title: '操作', width: 170, render: (_, task) => task.status === 'pending' ? <Space><Button type="primary" size="small" onClick={() => openFinish(task, 'done')}>完成</Button><Button danger size="small" onClick={() => openFinish(task, 'failed')}>失败</Button></Space> : '—' },
+    { title: '结果', width: 260, render: (_, task) => task.execution_result ? <pre className="inline-json">{JSON.stringify(task.execution_result, null, 2)}</pre> : '—' },
+    {
+      title: '操作', width: 220, render: (_, task) => {
+        if (task.status === 'pending') {
+          return <Space>
+            <Button type="primary" size="small" loading={executingId === task.id} onClick={() => runExecute(task)}>执行</Button>
+            <Button size="small" onClick={() => openFinish(task, 'done')}>手动完成</Button>
+            <Button danger size="small" onClick={() => openFinish(task, 'failed')}>失败</Button>
+          </Space>
+        }
+        if (task.status === 'executing') return <Tag color="gold">codex 执行中…</Tag>
+        return '—'
+      },
+    },
   ]
 
   return <>

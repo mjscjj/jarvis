@@ -16,7 +16,7 @@ func TestValidateEvaluationInput(t *testing.T) {
 		mutate func(*EvaluationInput)
 	}{
 		{name: "zero id", mutate: func(input *EvaluationInput) { input.TodoID = 0 }},
-		{name: "auto route", mutate: func(input *EvaluationInput) { input.Route = RouteAuto }},
+		{name: "unsupported route", mutate: func(input *EvaluationInput) { input.Route = "auto" }},
 		{name: "nan score", mutate: func(input *EvaluationInput) { input.Confidence = math.NaN() }},
 		{name: "no factors", mutate: func(input *EvaluationInput) { input.ConfidenceFactors = nil }},
 		{name: "no rules", mutate: func(input *EvaluationInput) { input.MatchedRules = nil }},
