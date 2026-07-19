@@ -17,6 +17,7 @@ type Config struct {
 	MySQL   MySQLConfig   `yaml:"mysql"`
 	Mem0    Mem0Config    `yaml:"mem0"`
 	Model   ModelConfig   `yaml:"model"`
+	Extract ExtractConfig `yaml:"extract"`
 	LarkCLI LarkCLIConfig `yaml:"lark_cli"`
 	Capture CaptureConfig `yaml:"capture"`
 	Codex   CodexConfig   `yaml:"codex"`
@@ -48,9 +49,26 @@ type Mem0Config struct {
 
 // ModelConfig 高频抽取用的 OpenAI 兼容端点（M2/M3，总纲 §6）。
 type ModelConfig struct {
-	BaseURL string `yaml:"base_url"`
-	APIKey  string `yaml:"api_key"` // 本地明文
-	Model   string `yaml:"model"`
+	BaseURL          string `yaml:"base_url"`
+	APIKey           string `yaml:"api_key"` // 本地明文
+	Model            string `yaml:"model"`
+	IsReasoningModel bool   `yaml:"is_reasoning_model"`
+	TimeoutSec       int    `yaml:"timeout_sec"`
+}
+
+// ExtractConfig controls the M3 extraction worker. Disabled is an explicit
+// deployment state; once enabled every required dependency is validated.
+type ExtractConfig struct {
+	Enabled              bool    `yaml:"enabled"`
+	PrincipalOpenID      string  `yaml:"principal_open_id"`
+	Schedule             string  `yaml:"schedule"`
+	BatchMessages        int     `yaml:"batch_messages"`
+	ContextMessages      int     `yaml:"context_messages"`
+	ContextWindowMinutes int     `yaml:"context_window_minutes"`
+	OpenTodoLimit        int     `yaml:"open_todo_limit"`
+	MemoryTopK           int     `yaml:"memory_top_k"`
+	MemoryThreshold      float64 `yaml:"memory_threshold"`
+	MaxPromptChars       int     `yaml:"max_prompt_chars"`
 }
 
 // LarkCLIConfig lark-cli 子进程封装（总纲 §4）。
@@ -152,6 +170,41 @@ func (c *Config) validate() error {
 	}
 	if c.Mem0.Schedule == "" {
 		return fmt.Errorf("mem0.schedule 不能为空")
+	}
+	if c.Extract.Schedule == "" {
+		return fmt.Errorf("extract.schedule 不能为空")
+	}
+	if c.Extract.BatchMessages <= 0 {
+		return fmt.Errorf("extract.batch_messages 必须大于 0")
+	}
+	if c.Extract.ContextMessages < 0 {
+		return fmt.Errorf("extract.context_messages 不能小于 0")
+	}
+	if c.Extract.ContextWindowMinutes <= 0 {
+		return fmt.Errorf("extract.context_window_minutes 必须大于 0")
+	}
+	if c.Extract.OpenTodoLimit <= 0 {
+		return fmt.Errorf("extract.open_todo_limit 必须大于 0")
+	}
+	if c.Extract.MemoryTopK <= 0 {
+		return fmt.Errorf("extract.memory_top_k 必须大于 0")
+	}
+	if c.Extract.MemoryThreshold < 0 || c.Extract.MemoryThreshold > 1 {
+		return fmt.Errorf("extract.memory_threshold 必须在 0 到 1 之间")
+	}
+	if c.Extract.MaxPromptChars <= 0 {
+		return fmt.Errorf("extract.max_prompt_chars 必须大于 0")
+	}
+	if c.Extract.Enabled {
+		if c.Extract.PrincipalOpenID == "" {
+			return fmt.Errorf("extract.principal_open_id 不能为空")
+		}
+		if c.Model.BaseURL == "" || c.Model.APIKey == "" || c.Model.Model == "" {
+			return fmt.Errorf("extract 启用时 model.base_url/api_key/model 均不能为空")
+		}
+		if c.Model.TimeoutSec <= 0 {
+			return fmt.Errorf("extract 启用时 model.timeout_sec 必须大于 0")
+		}
 	}
 	if c.LarkCLI.Bin == "" {
 		return fmt.Errorf("lark_cli.bin 不能为空")

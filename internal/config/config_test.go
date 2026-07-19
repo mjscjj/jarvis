@@ -25,6 +25,16 @@ func TestValidate(t *testing.T) {
 			WindowMaxMessages: 40,
 			Schedule:          "@every 10m",
 		},
+		Extract: ExtractConfig{
+			Schedule:             "@every 10m",
+			BatchMessages:        400,
+			ContextMessages:      20,
+			ContextWindowMinutes: 120,
+			OpenTodoLimit:        50,
+			MemoryTopK:           8,
+			MemoryThreshold:      0.5,
+			MaxPromptChars:       60000,
+		},
 		LarkCLI: LarkCLIConfig{
 			Bin:        "lark-cli",
 			RateLimit:  5,
@@ -64,6 +74,19 @@ func TestValidate(t *testing.T) {
 		{name: "mem0 window gap", mutate: func(c *Config) { c.Mem0.WindowGapMinutes = 0 }, wantErr: "mem0.window_gap_minutes"},
 		{name: "mem0 window max", mutate: func(c *Config) { c.Mem0.WindowMaxMessages = 0 }, wantErr: "mem0.window_max_messages"},
 		{name: "mem0 schedule", mutate: func(c *Config) { c.Mem0.Schedule = "" }, wantErr: "mem0.schedule"},
+		{name: "extract schedule", mutate: func(c *Config) { c.Extract.Schedule = "" }, wantErr: "extract.schedule"},
+		{name: "extract batch", mutate: func(c *Config) { c.Extract.BatchMessages = 0 }, wantErr: "extract.batch_messages"},
+		{name: "extract context count", mutate: func(c *Config) { c.Extract.ContextMessages = -1 }, wantErr: "extract.context_messages"},
+		{name: "extract context window", mutate: func(c *Config) { c.Extract.ContextWindowMinutes = 0 }, wantErr: "extract.context_window_minutes"},
+		{name: "extract todo limit", mutate: func(c *Config) { c.Extract.OpenTodoLimit = 0 }, wantErr: "extract.open_todo_limit"},
+		{name: "extract memory top k", mutate: func(c *Config) { c.Extract.MemoryTopK = 0 }, wantErr: "extract.memory_top_k"},
+		{name: "extract memory threshold", mutate: func(c *Config) { c.Extract.MemoryThreshold = 1.1 }, wantErr: "extract.memory_threshold"},
+		{name: "extract prompt limit", mutate: func(c *Config) { c.Extract.MaxPromptChars = 0 }, wantErr: "extract.max_prompt_chars"},
+		{name: "extract principal", mutate: func(c *Config) { c.Extract.Enabled = true }, wantErr: "principal_open_id"},
+		{name: "extract model", mutate: func(c *Config) {
+			c.Extract.Enabled = true
+			c.Extract.PrincipalOpenID = "ou_owner"
+		}, wantErr: "model.base_url"},
 		{name: "lark binary", mutate: func(c *Config) { c.LarkCLI.Bin = "" }, wantErr: "lark_cli.bin"},
 		{name: "lark rate", mutate: func(c *Config) { c.LarkCLI.RateLimit = 0 }, wantErr: "lark_cli.rate_limit"},
 		{name: "lark burst", mutate: func(c *Config) { c.LarkCLI.Burst = 0 }, wantErr: "lark_cli.burst"},
@@ -95,5 +118,40 @@ func TestValidate(t *testing.T) {
 				t.Fatalf("validate() error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestValidateExtractEnabled(t *testing.T) {
+	cfg := Config{
+		Server: ServerConfig{Addr: "127.0.0.1:18800"},
+		MySQL: MySQLConfig{
+			DSN: "user:pass@tcp(127.0.0.1:3306)/jarvis", MaxOpenConns: 20,
+			MaxIdleConns: 5, ConnMaxLifetime: 3600,
+		},
+		Mem0: Mem0Config{
+			BaseURL: "http://127.0.0.1:18900", OwnerID: "owner", TimeoutSec: 60,
+			BatchLimit: 400, WindowGapMinutes: 30, WindowMaxMessages: 40, Schedule: "@every 10m",
+		},
+		Model: ModelConfig{
+			BaseURL: "https://model.test/v1", APIKey: "plain-key", Model: "model", TimeoutSec: 60,
+		},
+		Extract: ExtractConfig{
+			Enabled: true, PrincipalOpenID: "ou_owner", Schedule: "@every 10m",
+			BatchMessages: 400, ContextMessages: 20, ContextWindowMinutes: 120,
+			OpenTodoLimit: 50, MemoryTopK: 8, MemoryThreshold: 0.5, MaxPromptChars: 60000,
+		},
+		LarkCLI: LarkCLIConfig{Bin: "lark-cli", RateLimit: 5, Burst: 10, Concurrent: 2, TimeoutSec: 60},
+		Capture: CaptureConfig{
+			PageSize: 50, ScanWorkers: 2, HotAgeHours: 6, WarmAgeHours: 168,
+			Timezone: "Asia/Shanghai", DiscoverSchedule: "@every 1h", HotSchedule: "@every 5m",
+			WarmSchedule: "@every 30m", ColdSchedule: "@every 6h",
+		},
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("validate() error = %v", err)
+	}
+	cfg.Model.TimeoutSec = 0
+	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "model.timeout_sec") {
+		t.Fatalf("validate() error = %v", err)
 	}
 }

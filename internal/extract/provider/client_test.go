@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"jarvis/internal/extract"
 )
 
 func TestClientExtractUsesStrictSchema(t *testing.T) {
@@ -23,6 +25,9 @@ func TestClientExtractUsesStrictSchema(t *testing.T) {
 		if got := request.Header.Get("Authorization"); got != "Bearer plain-key" {
 			t.Fatalf("Authorization = %q", got)
 		}
+		if got := request.Header.Get("User-Agent"); got != "jarvis/0.1" {
+			t.Fatalf("User-Agent = %q", got)
+		}
 		var body map[string]any
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -31,9 +36,12 @@ func TestClientExtractUsesStrictSchema(t *testing.T) {
 		if format["type"] != "json_schema" || format["json_schema"].(map[string]any)["strict"] != true {
 			t.Fatalf("response_format = %#v", format)
 		}
+		if _, ok := body["temperature"]; ok {
+			t.Fatalf("request must leave provider temperature unset: %#v", body)
+		}
 		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"{\"candidates\":[]}","refusal":""}}]}`), nil
 	})
-	result, err := client.Extract(context.Background(), Prompt{System: "system", User: "user"})
+	result, err := client.Extract(context.Background(), extract.Prompt{System: "system", User: "user"})
 	if err != nil {
 		t.Fatalf("Extract() error = %v", err)
 	}
@@ -50,7 +58,7 @@ func TestClientExtractFailsOnRefusal(t *testing.T) {
 	client.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"","refusal":"cannot comply"}}]}`), nil
 	})
-	_, err = client.Extract(context.Background(), Prompt{System: "system", User: "user"})
+	_, err = client.Extract(context.Background(), extract.Prompt{System: "system", User: "user"})
 	if !errors.Is(err, ErrModelRefusal) {
 		t.Fatalf("Extract() error = %v", err)
 	}
@@ -64,7 +72,7 @@ func TestClientExtractFailsOnInvalidCandidateJSON(t *testing.T) {
 	client.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"{}","refusal":""}}]}`), nil
 	})
-	if _, err := client.Extract(context.Background(), Prompt{System: "system", User: "user"}); err == nil {
+	if _, err := client.Extract(context.Background(), extract.Prompt{System: "system", User: "user"}); err == nil {
 		t.Fatal("Extract() accepted missing candidates field")
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"jarvis/internal/capture"
 	"jarvis/internal/config"
 	"jarvis/internal/extract"
+	"jarvis/internal/extract/provider"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/memory"
 	"jarvis/internal/store"
@@ -30,9 +31,10 @@ func main() {
 	scanChat := flag.String("scan-chat", "", "增量扫描指定飞书 chat_id，成功后退出")
 	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
 	memorizeOnce := flag.Bool("memorize-once", false, "执行一次消息记忆化，成功后退出")
+	extractOnce := flag.Bool("extract-once", false, "执行一次 Todo 提取，成功后退出")
 	flag.Parse()
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce} {
+	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce} {
 		if selected {
 			actionCount++
 		}
@@ -112,6 +114,35 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize todo store failed: %v", err)
 	}
+	var extractWorker *extract.Worker
+	if cfg.Extract.Enabled || *extractOnce {
+		modelClient, err := provider.NewClient(
+			cfg.Model.BaseURL,
+			cfg.Model.APIKey,
+			cfg.Model.Model,
+			time.Duration(cfg.Model.TimeoutSec)*time.Second,
+		)
+		if err != nil {
+			hlog.Fatalf("initialize extraction model client failed: %v", err)
+		}
+		pipelineStore, err := extract.NewPipelineStore(db, location)
+		if err != nil {
+			hlog.Fatalf("initialize extraction pipeline store failed: %v", err)
+		}
+		extractWorker, err = extract.NewWorker(pipelineStore, modelClient, memoryClient, extract.WorkerOptions{
+			Load: extract.LoadOptions{
+				BatchMessages: cfg.Extract.BatchMessages, ContextMessages: cfg.Extract.ContextMessages,
+				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
+				OpenTodoLimit: cfg.Extract.OpenTodoLimit,
+			},
+			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
+			MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
+			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
+		})
+		if err != nil {
+			hlog.Fatalf("initialize extraction worker failed: %v", err)
+		}
+	}
 	if *discoverOnce {
 		if err := captureService.DiscoverChats(context.Background()); err != nil {
 			hlog.Fatalf("discover chats failed: %v", err)
@@ -144,6 +175,17 @@ func main() {
 		)
 		return
 	}
+	if *extractOnce {
+		stats, err := extractWorker.ExtractOnce(context.Background())
+		if err != nil {
+			hlog.Fatalf("extract todos failed: %v", err)
+		}
+		hlog.Infof(
+			"todo extraction completed: chats_loaded=%d chats_processed=%d units=%d candidates=%d created=%d updated=%d",
+			stats.ChatsLoaded, stats.ChatsProcessed, stats.Units, stats.Candidates, stats.Created, stats.Updated,
+		)
+		return
+	}
 	captureCtx, cancelCapture := context.WithCancel(context.Background())
 	defer cancelCapture()
 	scheduler, err := capture.StartScheduler(captureCtx, captureService, capture.ScheduleConfig{
@@ -166,10 +208,27 @@ func main() {
 		<-scheduler.Stop().Done()
 		hlog.Fatalf("start memory scheduler failed: %v", err)
 	}
+	stopExtractScheduler := func() {}
+	if cfg.Extract.Enabled {
+		extractScheduler, err := extract.StartScheduler(
+			captureCtx,
+			extractWorker,
+			cfg.Extract.Schedule,
+			log.New(os.Stderr, "extract-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			cancelCapture()
+			<-scheduler.Stop().Done()
+			<-memoryScheduler.Stop().Done()
+			hlog.Fatalf("start extraction scheduler failed: %v", err)
+		}
+		stopExtractScheduler = func() { <-extractScheduler.Stop().Done() }
+	}
 	defer func() {
 		cancelCapture()
 		<-scheduler.Stop().Done()
 		<-memoryScheduler.Stop().Done()
+		stopExtractScheduler()
 	}()
 
 	h := server.New(

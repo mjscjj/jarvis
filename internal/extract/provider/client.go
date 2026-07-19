@@ -21,11 +21,6 @@ const maxResponseBody = 4 << 20
 
 var ErrModelRefusal = errors.New("model refused todo extraction")
 
-type Prompt struct {
-	System string
-	User   string
-}
-
 type Client struct {
 	baseURL string
 	apiKey  string
@@ -58,7 +53,7 @@ func NewClient(baseURL, apiKey, model string, timeout time.Duration) (*Client, e
 	}, nil
 }
 
-func (c *Client) Extract(ctx context.Context, prompt Prompt) (*extract.ExtractionResult, error) {
+func (c *Client) Extract(ctx context.Context, prompt extract.Prompt) (*extract.ExtractionResult, error) {
 	if strings.TrimSpace(prompt.System) == "" || strings.TrimSpace(prompt.User) == "" {
 		return nil, fmt.Errorf("model extraction system and user prompts must be non-empty")
 	}
@@ -68,7 +63,6 @@ func (c *Client) Extract(ctx context.Context, prompt Prompt) (*extract.Extractio
 			{"role": "system", "content": prompt.System},
 			{"role": "user", "content": prompt.User},
 		},
-		"temperature": 0.1,
 		"response_format": map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
@@ -86,6 +80,7 @@ func (c *Client) Extract(ctx context.Context, prompt Prompt) (*extract.Extractio
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "jarvis/0.1")
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("send model extraction request: %w", err)
