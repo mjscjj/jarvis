@@ -7,6 +7,7 @@ import type {
   PersonInput,
   Project,
   ProjectInput,
+  ResolveResult,
   Task,
   TaskList,
   TaskStatus,
@@ -107,6 +108,10 @@ export function deleteProject(id: number): Promise<{ id: number; deleted: boolea
 
 export function listPersons(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Person>> {
   return request<Paged<Person>>(`/api/persons?page=${page}&page_size=${pageSize}`, { signal })
+}
+
+export function resolvePerson(query: string): Promise<ResolveResult> {
+  return request<ResolveResult>('/api/persons/resolve', { method: 'POST', body: { query } })
 }
 
 export function createPerson(body: PersonInput): Promise<Person> {

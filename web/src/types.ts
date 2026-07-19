@@ -218,8 +218,25 @@ export interface PersonInput {
   department?: string | null
   title?: string | null
   relation?: string | null
+  comm_style?: string | null
+  p2p_chat_id?: string | null
   notes?: string | null
   is_active?: boolean
+}
+
+export interface ResolveCandidate {
+  open_id: string
+  name: string
+  email: string
+  department: string
+  p2p_chat_id: string
+  is_external: boolean
+  has_chatted: boolean
+}
+
+export interface ResolveResult {
+  candidates: ResolveCandidate[]
+  has_more: boolean
 }
 
 export interface GroupBackgroundInput {

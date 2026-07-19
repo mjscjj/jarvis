@@ -25,6 +25,7 @@ import {
   listGroups,
   listPersons,
   listProjects,
+  resolvePerson,
   updateGroupBackground,
   updatePerson,
   updateProject,
@@ -39,6 +40,7 @@ import type {
   ProjectInput,
   ProjectRole,
   ProjectStatus,
+  ResolveCandidate,
 } from './types'
 
 const { Text } = Typography
@@ -158,6 +160,8 @@ function ProjectsPanel() {
 
 // --- Persons ---
 
+const roleDefaultWeight: Record<PersonRole, number> = { leader: 1.0, key: 0.7, colleague: 0.4, other: 0.1 }
+
 function PersonsPanel() {
   const [items, setItems] = useState<Person[]>([])
   const [loading, setLoading] = useState(false)
@@ -166,6 +170,11 @@ function PersonsPanel() {
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form] = Form.useForm<PersonInput>()
+  const [boundOpenID, setBoundOpenID] = useState('')
+  const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [candidates, setCandidates] = useState<ResolveCandidate[] | null>(null)
+  const [hasMore, setHasMore] = useState(false)
 
   const reload = useCallback(() => {
     setLoading(true)
@@ -176,25 +185,55 @@ function PersonsPanel() {
   }, [])
   useEffect(reload, [reload])
 
+  const resetResolve = () => { setQuery(''); setCandidates(null); setHasMore(false); setBoundOpenID('') }
   const openCreate = () => {
     setEditing(null)
-    form.setFieldsValue({ open_id: '', name: '', role: 'colleague', priority_weight: 0.5, department: null, title: null, relation: null, notes: null, is_active: true })
+    resetResolve()
+    form.setFieldsValue({ open_id: '', name: '', role: 'colleague', priority_weight: 0.4, department: null, title: null, relation: null, comm_style: null, p2p_chat_id: null, notes: null, is_active: true })
     setOpen(true)
   }
   const openEdit = (person: Person) => {
     setEditing(person)
+    resetResolve()
+    setBoundOpenID(person.open_id)
     form.setFieldsValue({
       open_id: person.open_id, name: person.name, role: person.role, priority_weight: person.priority_weight,
-      department: person.department, title: person.title, relation: person.relation, notes: person.notes, is_active: person.is_active,
+      department: person.department, title: person.title, relation: person.relation,
+      comm_style: person.comm_style, p2p_chat_id: person.p2p_chat_id, notes: person.notes, is_active: person.is_active,
     })
     setOpen(true)
   }
+  const runResolve = async () => {
+    if (!query.trim()) return
+    setSearching(true)
+    try {
+      const result = await resolvePerson(query.trim())
+      setCandidates(result.candidates)
+      setHasMore(result.has_more)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSearching(false)
+    }
+  }
+  const pickCandidate = (candidate: ResolveCandidate) => {
+    setBoundOpenID(candidate.open_id)
+    const role = (form.getFieldValue('role') as PersonRole) || 'colleague'
+    form.setFieldsValue({
+      open_id: candidate.open_id, name: candidate.name,
+      department: candidate.department || null, p2p_chat_id: candidate.p2p_chat_id || null,
+      priority_weight: form.getFieldValue('priority_weight') ?? roleDefaultWeight[role],
+    })
+    setCandidates(null)
+  }
   const submit = async () => {
     const values = await form.validateFields()
+    if (!editing && !boundOpenID) { setError('请先搜索并选择一个飞书用户'); return }
     setSubmitting(true)
     try {
       if (editing) await updatePerson(editing.id, values)
-      else await createPerson(values)
+      else await createPerson({ ...values, open_id: boundOpenID })
       setOpen(false)
       reload()
     } catch (cause: unknown) {
@@ -212,7 +251,7 @@ function PersonsPanel() {
     { title: '角色', dataIndex: 'role', width: 120, render: (r: PersonRole) => <Tag color={personRoleColors[r]}>{personRoleLabels[r]}</Tag> },
     { title: '权重', dataIndex: 'priority_weight', width: 80 },
     { title: '部门/职位', width: 200, render: (_, p) => [p.department, p.title].filter(Boolean).join(' · ') || '—' },
-    { title: 'open_id', dataIndex: 'open_id', ellipsis: true },
+    { title: '沟通风格', dataIndex: 'comm_style', ellipsis: true, render: (v: string | null) => v || '—' },
     { title: '启用', dataIndex: 'is_active', width: 70, render: (v: boolean) => v ? <Tag color="green">是</Tag> : <Tag>否</Tag> },
     {
       title: '操作', width: 150, render: (_, p) => (
@@ -234,14 +273,39 @@ function PersonsPanel() {
     {error && <Alert type="error" showIcon message="人物操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless"><Table<Person> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 900 }} /></Card>
     <Modal title={editing ? '编辑人物' : '新建人物'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
+      {!editing && (
+        <Card size="small" style={{ marginBottom: 16 }}>
+          <Flex gap={8}>
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} onPressEnter={runResolve} placeholder="输入姓名或邮箱搜索飞书用户" allowClear />
+            <Button type="primary" onClick={runResolve} loading={searching}>搜索</Button>
+          </Flex>
+          {hasMore && <Alert style={{ marginTop: 8 }} type="warning" showIcon message="结果过多，请补全姓名或改用邮箱缩小范围" />}
+          {candidates && candidates.length === 0 && <Alert style={{ marginTop: 8 }} type="info" showIcon message="未找到匹配用户，换个关键词试试" />}
+          {candidates && candidates.length > 0 && (
+            <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
+              {candidates.map((c) => (
+                <Flex key={c.open_id} justify="space-between" align="center" style={{ padding: '6px 4px', borderBottom: '1px solid #f0f0f0' }}>
+                  <div>
+                    <Text strong>{c.name}</Text>{c.is_external && <Tag color="orange" style={{ marginLeft: 6 }}>外部</Tag>}
+                    <div><Text type="secondary" style={{ fontSize: 12 }}>{[c.department, c.email].filter(Boolean).join(' · ') || c.open_id}</Text></div>
+                  </div>
+                  <Button size="small" type="link" onClick={() => pickCandidate(c)}>选择</Button>
+                </Flex>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
       <Form form={form} layout="vertical">
         <Flex gap={16}>
-          <Form.Item name="name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]} style={{ flex: 1 }}><Input /></Form.Item>
+          <Form.Item name="name" label="姓名" rules={[{ required: true, message: '请先搜索选择用户' }]} style={{ flex: 1 }}><Input disabled={!editing} /></Form.Item>
           <Form.Item name="role" label="角色" rules={[{ required: true }]} style={{ width: 160 }}>
-            <Select options={Object.entries(personRoleLabels).map(([value, label]) => ({ value, label }))} />
+            <Select options={Object.entries(personRoleLabels).map(([value, label]) => ({ value, label }))} onChange={(role: PersonRole) => { if (!editing) form.setFieldValue('priority_weight', roleDefaultWeight[role]) }} />
           </Form.Item>
         </Flex>
-        <Form.Item name="open_id" label="飞书 open_id" rules={[{ required: true, message: '请输入 open_id' }]} extra="可从飞书通讯录/消息中获取，形如 ou_xxx"><Input /></Form.Item>
+        <Form.Item name="open_id" label="飞书 open_id" extra={editing ? '绑定键不可变更' : '由上方搜索选择自动绑定'}>
+          <Input disabled value={boundOpenID} placeholder="搜索并选择用户后自动填入" />
+        </Form.Item>
         <Flex gap={16}>
           <Form.Item name="priority_weight" label="优先权重(0-1)" rules={[{ required: true }]} style={{ width: 160 }}>
             <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
@@ -253,6 +317,7 @@ function PersonsPanel() {
           <Form.Item name="title" label="职位(可选)" style={{ flex: 1 }}><Input allowClear /></Form.Item>
         </Flex>
         <Form.Item name="relation" label="与我的关系(可选)"><Input allowClear placeholder="如：直属领导 / 同组同事" /></Form.Item>
+        <Form.Item name="comm_style" label="沟通风格(可选)" extra="辅助 AI 识别 leader 的隐含交办，如：结论先行、指令常以「看下」隐含表达"><Input.TextArea rows={2} /></Form.Item>
         <Form.Item name="notes" label="备注(可选)"><Input.TextArea rows={2} /></Form.Item>
       </Form>
     </Modal>
