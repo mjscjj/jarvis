@@ -1,0 +1,34 @@
+---
+description: 管理后台展示列表的编辑交互规范：优先行内编辑
+globs: web/**/*.tsx
+alwaysApply: false
+---
+
+# 列表页优先行内编辑
+
+做展示列表（Table/List）时，**优先在列表页直接编辑条目**，让改动就地发生、少一次弹窗跳转。
+
+## 约定
+
+- 新建或改动列表时，字段能行内编辑的就行内编辑（可编辑单元格 / 行编辑），**不要默认全塞进 Modal/Drawer 表单**。
+- 行内编辑要有明确的进入编辑态与保存/取消，保存即调后端并就地刷新该行。
+- 仅当条目有复杂结构（多个动态子列表、需要搜索绑定等）时，才退回 Modal/Drawer，并在改动说明里点明原因。
+
+## 做法（Ant Design）
+
+- 列表行内编辑：可编辑单元格用受控 state 记录「正在编辑的行/列」，`Table` 的列 `render` 里按编辑态切换展示/输入控件；或用 `Form` 包 `Table` 做整行编辑。
+- 开关/标签类字段（如 is_active、is_key_group）直接用行内 `Switch`/`Select` 的 `onChange` 落库，无需进入编辑态。
+
+```tsx
+// 布尔字段：列表页直接切换并落库，不弹窗
+{
+  title: '启用', dataIndex: 'is_active', width: 80,
+  render: (v: boolean, row) => (
+    <Switch checked={v} onChange={(next) => savePatch(row.id, { is_active: next })} />
+  ),
+}
+```
+
+## 例外
+
+- 现有已用 Modal/Drawer 的页面不强制立刻重写；下次改动到它时按本规范朝行内编辑演进。
