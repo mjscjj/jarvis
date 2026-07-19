@@ -180,18 +180,9 @@ func Fingerprint(candidate *Candidate, projectID *uint64) (string, error) {
 	if err := ValidateCandidate(candidate); err != nil {
 		return "", err
 	}
-	names := identitySlots[candidate.ActionType]
-	identity := make(map[string]any, len(names))
-	for _, name := range names {
-		value := candidate.Slots[name]
-		if isEmptySlot(value) {
-			return "", fmt.Errorf("%w: action_type=%s slot=%s", ErrFingerprintIncomplete, candidate.ActionType, name)
-		}
-		normalized, err := normalizeIdentityValue(name, value)
-		if err != nil {
-			return "", err
-		}
-		identity[name] = normalized
+	identity, err := normalizedIdentitySlots(candidate)
+	if err != nil {
+		return "", err
 	}
 	payload := struct {
 		ActionType    string         `json:"action_type"`
@@ -204,6 +195,48 @@ func Fingerprint(candidate *Candidate, projectID *uint64) (string, error) {
 	}
 	hash := sha256.Sum256(encoded)
 	return hex.EncodeToString(hash[:]), nil
+}
+
+// SemanticText is the stable text embedded into todo_semantic. It deliberately
+// includes both natural-language fields and normalized identity slots.
+func SemanticText(candidate *Candidate) (string, error) {
+	if err := ValidateCandidate(candidate); err != nil {
+		return "", err
+	}
+	identity, err := normalizedIdentitySlots(candidate)
+	if err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		return "", fmt.Errorf("encode Todo semantic identity: %w", err)
+	}
+	return strings.Join([]string{
+		candidate.ActionType,
+		strings.TrimSpace(candidate.Title),
+		strings.TrimSpace(candidate.Description),
+		string(encoded),
+	}, "｜"), nil
+}
+
+func normalizedIdentitySlots(candidate *Candidate) (map[string]any, error) {
+	names, ok := identitySlots[candidate.ActionType]
+	if !ok {
+		return nil, fmt.Errorf("%w: unknown action_type %q", ErrInvalidCandidate, candidate.ActionType)
+	}
+	identity := make(map[string]any, len(names))
+	for _, name := range names {
+		value := candidate.Slots[name]
+		if isEmptySlot(value) {
+			return nil, fmt.Errorf("%w: action_type=%s slot=%s", ErrFingerprintIncomplete, candidate.ActionType, name)
+		}
+		normalized, err := normalizeIdentityValue(name, value)
+		if err != nil {
+			return nil, err
+		}
+		identity[name] = normalized
+	}
+	return identity, nil
 }
 
 func ensureJSONEOF(decoder *json.Decoder) error {

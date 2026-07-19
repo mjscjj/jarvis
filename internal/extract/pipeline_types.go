@@ -94,7 +94,17 @@ type ChatBatch struct {
 
 type UnitExtraction struct {
 	UnitKey    string
-	Candidates []Candidate
+	Candidates []ResolvedCandidate
+}
+
+type ResolvedCandidate struct {
+	Candidate Candidate
+	Semantic  SemanticResolution
+}
+
+type SemanticResolution struct {
+	MatchedTodoID *uint64
+	Vector        []float32
 }
 
 type PersistStats struct {
@@ -109,4 +119,8 @@ type pipelineStore interface {
 
 type modelExtractor interface {
 	Extract(context.Context, Prompt) (*ExtractionResult, error)
+}
+
+type candidateDeduplicator interface {
+	Resolve(context.Context, Candidate, *uint64) (SemanticResolution, error)
 }

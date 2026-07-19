@@ -86,6 +86,62 @@ func TestNewClientValidation(t *testing.T) {
 	}
 }
 
+func TestClientSameActionUsesStrictBooleanSchema(t *testing.T) {
+	client, err := NewClient("https://model.test/v1", "plain-key", "model-name", time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	client.http.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		format := body["response_format"].(map[string]any)["json_schema"].(map[string]any)
+		if format["name"] != "todo_same_action" || format["strict"] != true {
+			t.Fatalf("response_format = %#v", format)
+		}
+		schema := format["schema"].(map[string]any)
+		if schema["additionalProperties"] != false {
+			t.Fatalf("schema = %#v", schema)
+		}
+		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"{\"same_action\":true}","refusal":""}}]}`), nil
+	})
+	same, err := client.SameAction(context.Background(), providerCandidate(), extract.SemanticTodo{
+		ID: 7, ActionType: "code_change", Title: "修改鉴权", Description: "修改鉴权逻辑",
+		Slots: map[string]any{"repo_ref": "jarvis", "change_summary": "修改鉴权"}, Status: "extracted",
+	})
+	if err != nil {
+		t.Fatalf("SameAction() error = %v", err)
+	}
+	if !same {
+		t.Fatal("SameAction() = false, want true")
+	}
+}
+
+func TestClientSameActionRejectsNonBooleanResult(t *testing.T) {
+	client, err := NewClient("https://model.test/v1", "plain-key", "model-name", time.Second)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	client.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"{\"same_action\":\"yes\"}","refusal":""}}]}`), nil
+	})
+	_, err = client.SameAction(context.Background(), providerCandidate(), extract.SemanticTodo{
+		ID: 7, ActionType: "code_change", Title: "修改鉴权", Description: "修改鉴权逻辑",
+	})
+	if err == nil {
+		t.Fatal("SameAction() accepted non-boolean result")
+	}
+}
+
+func providerCandidate() extract.Candidate {
+	return extract.Candidate{
+		ActionType: "code_change", Title: "修改鉴权", Description: "修改鉴权逻辑",
+		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"}, SourceQuote: "修改鉴权",
+		Slots: map[string]any{"repo_ref": "jarvis", "change_summary": "修改鉴权"}, InfoSufficient: true,
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

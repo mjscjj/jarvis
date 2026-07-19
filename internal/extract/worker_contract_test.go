@@ -63,7 +63,7 @@ func TestPrepareResultsRejectsIncompleteFingerprint(t *testing.T) {
 	candidate.Slots["change_summary"] = nil
 	candidate.InfoSufficient = false
 	candidate.MissingInfo = []string{"change_summary"}
-	_, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []Candidate{candidate}}})
+	_, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
 	if !errors.Is(err, ErrFingerprintIncomplete) {
 		t.Fatalf("prepareResults() error = %v", err)
 	}
@@ -72,7 +72,7 @@ func TestPrepareResultsRejectsIncompleteFingerprint(t *testing.T) {
 func TestPrepareResultsDerivesLeaderAssigner(t *testing.T) {
 	store := &PipelineStore{location: time.UTC}
 	batch := contractChatBatch()
-	prepared, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []Candidate{contractStrictCandidate()}}})
+	prepared, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(contractStrictCandidate())}}})
 	if err != nil {
 		t.Fatalf("prepareResults() error = %v", err)
 	}

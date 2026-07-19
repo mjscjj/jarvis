@@ -2,6 +2,7 @@ package extract_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -9,11 +10,14 @@ import (
 
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
+	"jarvis/internal/embedding"
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/provider"
 	"jarvis/internal/memory"
+	"jarvis/internal/semantic"
 	"jarvis/internal/store"
 
+	"github.com/qdrant/go-client/qdrant"
 	"gorm.io/gorm"
 )
 
@@ -91,11 +95,55 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("time.LoadLocation() error = %v", err)
 	}
-	pipelineStore, err := extract.NewPipelineStore(tx, location)
+	embeddingClient, err := embedding.NewClient(
+		cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Mem0.EmbeddingModel,
+		cfg.Mem0.EmbeddingDims, time.Duration(cfg.Model.TimeoutSec)*time.Second,
+	)
+	if err != nil {
+		t.Fatalf("embedding.NewClient() error = %v", err)
+	}
+	semanticCollection := fmt.Sprintf("todo_semantic_pipeline_test_%d", suffix)
+	semanticIndex, err := semantic.NewIndex(semantic.Options{
+		Host: cfg.Mem0.QdrantHost, Port: cfg.Mem0.QdrantGRPCPort, Collection: semanticCollection,
+		EmbeddingModel: cfg.Mem0.EmbeddingModel, Dimensions: cfg.Mem0.EmbeddingDims, ScoreThreshold: cfg.Extract.SemanticThreshold,
+		NeighborLimit: cfg.Extract.SemanticNeighborLimit, ActiveStatuses: extract.ActiveTodoStatuses(),
+	})
+	if err != nil {
+		t.Fatalf("semantic.NewIndex() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := semanticIndex.Close(); err != nil {
+			t.Errorf("semanticIndex.Close() error = %v", err)
+		}
+		cleanupClient, err := qdrant.NewClient(&qdrant.Config{
+			Host: cfg.Mem0.QdrantHost, Port: cfg.Mem0.QdrantGRPCPort, PoolSize: 1, SkipCompatibilityCheck: true,
+		})
+		if err != nil {
+			t.Errorf("create Qdrant cleanup client: %v", err)
+			return
+		}
+		defer cleanupClient.Close()
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := cleanupClient.DeleteCollection(cleanupCtx, semanticCollection); err != nil {
+			t.Errorf("delete semantic test collection: %v", err)
+		}
+	})
+	ensureCtx, cancelEnsure := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := semanticIndex.Ensure(ensureCtx); err != nil {
+		cancelEnsure()
+		t.Fatalf("semanticIndex.Ensure() error = %v", err)
+	}
+	cancelEnsure()
+	pipelineStore, err := extract.NewPipelineStore(tx, location, semanticIndex)
 	if err != nil {
 		t.Fatalf("extract.NewPipelineStore() error = %v", err)
 	}
-	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, extract.WorkerOptions{
+	deduplicator, err := extract.NewDeduplicator(embeddingClient, semanticIndex, pipelineStore, modelClient)
+	if err != nil {
+		t.Fatalf("extract.NewDeduplicator() error = %v", err)
+	}
+	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, extract.WorkerOptions{
 		Load: extract.LoadOptions{
 			BatchMessages: 10, ContextMessages: cfg.Extract.ContextMessages,
 			ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
@@ -134,4 +182,157 @@ func TestPipelineLive(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("fixture group remains after rollback: count=%d", count)
 	}
+}
+
+func TestPersistSemanticMatchLive(t *testing.T) {
+	cfg, db := openPipelineTestDB(t)
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	t.Cleanup(func() { _ = tx.Rollback().Error })
+
+	suffix := time.Now().UnixNano()
+	chatID := fmt.Sprintf("oc_semantic_persist_%d", suffix)
+	name := "semantic persistence fixture"
+	group := domain.Group{ChatID: chatID, ChatMode: "group", Name: &name, Tier: "hot", RelatedGroup: true}
+	if err := tx.Create(&group).Error; err != nil {
+		t.Fatalf("create fixture group: %v", err)
+	}
+	sink := &recordingSemanticSink{}
+	pipelineStore, err := extract.NewPipelineStore(tx, time.UTC, sink)
+	if err != nil {
+		t.Fatalf("extract.NewPipelineStore() error = %v", err)
+	}
+	firstBatch, firstResult := semanticPersistFixture(group, "om_semantic_first", "修改鉴权", "修改旧鉴权逻辑")
+	stats, err := pipelineStore.PersistChat(context.Background(), firstBatch, firstResult, cfg.Model.Model)
+	if err != nil {
+		t.Fatalf("first PersistChat() error = %v", err)
+	}
+	if stats.Created != 1 || len(sink.calls) != 1 || len(sink.calls[0]) != 1 {
+		t.Fatalf("first stats=%#v sink.calls=%#v", stats, sink.calls)
+	}
+	var existing domain.Todo
+	if err := tx.Where("group_id = ?", group.ID).Take(&existing).Error; err != nil {
+		t.Fatalf("load created Todo: %v", err)
+	}
+	originalFingerprint := existing.DedupFingerprint
+
+	secondBatch, secondResult := semanticPersistFixture(group, "om_semantic_second", "重构认证", "以新方案重构认证流程")
+	secondResult[0].Candidates[0].Semantic.MatchedTodoID = &existing.ID
+	stats, err = pipelineStore.PersistChat(context.Background(), secondBatch, secondResult, cfg.Model.Model)
+	if err != nil {
+		t.Fatalf("semantic PersistChat() error = %v", err)
+	}
+	if stats.Created != 0 || stats.Updated != 1 || len(sink.calls) != 2 {
+		t.Fatalf("semantic stats=%#v sink.calls=%d", stats, len(sink.calls))
+	}
+	if err := tx.Where("id = ?", existing.ID).Take(&existing).Error; err != nil {
+		t.Fatalf("reload semantic Todo: %v", err)
+	}
+	if existing.Title != "重构认证" || existing.DedupFingerprint != originalFingerprint || existing.Revision != 2 {
+		t.Fatalf("updated Todo = %#v", existing)
+	}
+	lastRecord := sink.calls[1][0]
+	if lastRecord.TodoID != existing.ID || lastRecord.Fingerprint != originalFingerprint || lastRecord.ActionType != "code_change" {
+		t.Fatalf("semantic record = %#v", lastRecord)
+	}
+}
+
+func TestPersistSemanticFailureRollsBackLive(t *testing.T) {
+	cfg, db := openPipelineTestDB(t)
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	t.Cleanup(func() { _ = tx.Rollback().Error })
+
+	suffix := time.Now().UnixNano()
+	chatID := fmt.Sprintf("oc_semantic_failure_%d", suffix)
+	name := "semantic rollback fixture"
+	group := domain.Group{ChatID: chatID, ChatMode: "group", Name: &name, Tier: "hot", RelatedGroup: true}
+	if err := tx.Create(&group).Error; err != nil {
+		t.Fatalf("create fixture group: %v", err)
+	}
+	pipelineStore, err := extract.NewPipelineStore(tx, time.UTC, &recordingSemanticSink{err: errors.New("qdrant unavailable")})
+	if err != nil {
+		t.Fatalf("extract.NewPipelineStore() error = %v", err)
+	}
+	batch, results := semanticPersistFixture(group, "om_semantic_failure", "修改鉴权", "修改鉴权逻辑")
+	if _, err := pipelineStore.PersistChat(context.Background(), batch, results, cfg.Model.Model); err == nil {
+		t.Fatal("PersistChat() accepted semantic sync failure")
+	}
+	var todoCount, eventCount, watermarkCount int64
+	if err := tx.Model(&domain.Todo{}).Where("group_id = ?", group.ID).Count(&todoCount).Error; err != nil {
+		t.Fatalf("count Todos: %v", err)
+	}
+	if err := tx.Table("todo_event AS te").Joins("JOIN todo t ON t.id = te.todo_id").Where("t.group_id = ?", group.ID).Count(&eventCount).Error; err != nil {
+		t.Fatalf("count Todo events: %v", err)
+	}
+	if err := tx.Model(&domain.TodoExtractWatermark{}).Where("chat_id = ?", chatID).Count(&watermarkCount).Error; err != nil {
+		t.Fatalf("count watermarks: %v", err)
+	}
+	if todoCount != 0 || eventCount != 0 || watermarkCount != 0 {
+		t.Fatalf("rollback counts: todo=%d event=%d watermark=%d", todoCount, eventCount, watermarkCount)
+	}
+}
+
+type recordingSemanticSink struct {
+	calls [][]semantic.Record
+	err   error
+}
+
+func (s *recordingSemanticSink) Upsert(_ context.Context, records []semantic.Record) error {
+	copyRecords := append([]semantic.Record(nil), records...)
+	s.calls = append(s.calls, copyRecords)
+	return s.err
+}
+
+func semanticPersistFixture(group domain.Group, messageID, title, summary string) (extract.ChatBatch, []extract.UnitExtraction) {
+	message := extract.MessageContext{
+		MessageID: messageID, ChatID: group.ChatID, SenderOpenID: "ou_owner", Content: title,
+		CreateTime: time.Now().UnixMilli(), IsNew: true, Extractable: true,
+	}
+	slots := map[string]any{
+		"repo_ref": "jarvis", "change_summary": summary, "based_on": nil, "scope": nil, "acceptance": nil,
+		"source_ref": nil, "target_chat_id": nil, "summary_scope": nil, "assignees": nil,
+		"question": nil, "lookup_sources": nil, "deliverable": nil, "meeting_title": nil,
+		"attendees": nil, "proposed_time": nil, "duration_minutes": nil, "agenda": nil,
+		"meeting_room": nil, "message_body": nil, "doc_title": nil, "followup_action": nil,
+	}
+	candidate := extract.Candidate{
+		ActionType: "code_change", Title: title, Description: summary, CommitmentStrength: "firm",
+		SourceMessageIDs: []string{messageID}, SourceQuote: title, Slots: slots,
+		InfoSufficient: true, MissingInfo: []string{},
+	}
+	batch := extract.ChatBatch{
+		Group: extract.GroupContext{ID: group.ID, ChatID: group.ChatID},
+		Units: []extract.ConversationUnit{{Key: "chat", Messages: []extract.MessageContext{message}}}, LastNew: message,
+	}
+	results := []extract.UnitExtraction{{UnitKey: "chat", Candidates: []extract.ResolvedCandidate{{
+		Candidate: candidate, Semantic: extract.SemanticResolution{Vector: []float32{1}},
+	}}}}
+	return batch, results
+}
+
+func openPipelineTestDB(t *testing.T) (*config.Config, *gorm.DB) {
+	t.Helper()
+	configPath := os.Getenv("JARVIS_TEST_PIPELINE_CONFIG")
+	if configPath == "" {
+		t.Skip("JARVIS_TEST_PIPELINE_CONFIG is required for live pipeline test")
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	db, err := store.OpenMySQL(context.Background(), cfg.MySQL)
+	if err != nil {
+		t.Fatalf("store.OpenMySQL() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(db); err != nil {
+			t.Errorf("store.Close() error = %v", err)
+		}
+	})
+	return cfg, db
 }

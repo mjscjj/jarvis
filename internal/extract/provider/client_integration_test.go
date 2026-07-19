@@ -43,4 +43,20 @@ func TestClientLiveStructuredOutput(t *testing.T) {
 	if len(result.Candidates) != 0 {
 		t.Fatalf("Extract() candidates = %#v, want empty", result.Candidates)
 	}
+	candidate := extract.Candidate{
+		ActionType: "code_change", Title: "Refactor synthetic auth", Description: "Refactor the synthetic auth flow",
+		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_synthetic"},
+		SourceQuote: "Refactor synthetic auth", InfoSufficient: true,
+		Slots: map[string]any{"repo_ref": "synthetic/repo", "change_summary": "refactor auth flow"},
+	}
+	same, err := client.SameAction(ctx, candidate, extract.SemanticTodo{
+		ID: 1, ActionType: candidate.ActionType, Title: candidate.Title, Description: candidate.Description,
+		Slots: candidate.Slots, Status: "extracted", DedupFingerprint: "synthetic",
+	})
+	if err != nil {
+		t.Fatalf("SameAction() error = %v", err)
+	}
+	if !same {
+		t.Fatal("SameAction() = false for identical synthetic actions")
+	}
 }

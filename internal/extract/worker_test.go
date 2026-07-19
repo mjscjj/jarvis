@@ -3,6 +3,7 @@ package extract
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,19 @@ type fakeMemorySearcher struct {
 	err    error
 }
 
+type fakeCandidateDeduplicator struct {
+	inputs []Candidate
+	err    error
+}
+
+func (f *fakeCandidateDeduplicator) Resolve(_ context.Context, candidate Candidate, _ *uint64) (SemanticResolution, error) {
+	f.inputs = append(f.inputs, candidate)
+	if f.err != nil {
+		return SemanticResolution{}, f.err
+	}
+	return SemanticResolution{Vector: []float32{1}}, nil
+}
+
 func (f *fakeMemorySearcher) Search(_ context.Context, input memory.SearchInput) (*memory.SearchResponse, error) {
 	f.inputs = append(f.inputs, input)
 	if f.err != nil {
@@ -66,7 +80,7 @@ func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	}}}
 	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{}}}
 	memories := &fakeMemorySearcher{}
-	worker, err := NewWorker(store, model, memories, validWorkerOptions())
+	worker, err := NewWorker(store, model, memories, &fakeCandidateDeduplicator{}, validWorkerOptions())
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -94,7 +108,7 @@ func TestWorkerDoesNotAdvanceWatermarkAfterModelFailure(t *testing.T) {
 		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_1", IsNew: true},
 	}}}
 	model := &fakeModelExtractor{err: errors.New("model unavailable")}
-	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, validWorkerOptions())
+	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, validWorkerOptions())
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -103,6 +117,36 @@ func TestWorkerDoesNotAdvanceWatermarkAfterModelFailure(t *testing.T) {
 	}
 	if store.persistCalls != 0 {
 		t.Fatalf("PersistChat() calls = %d, want 0", store.persistCalls)
+	}
+}
+
+func TestWorkerDoesNotPersistAfterSemanticDedupFailure(t *testing.T) {
+	candidate := strictCandidate()
+	store := &fakePipelineStore{batches: []ChatBatch{{
+		Group: GroupContext{ID: 1, ChatID: "oc_1"},
+		Units: []ConversationUnit{{
+			Key: "chat",
+			Messages: []MessageContext{{
+				MessageID: "om_1", ChatID: "oc_1", Content: candidate.SourceQuote,
+				CreateTime: 1_700_000_000_000, IsNew: true, Extractable: true,
+			}},
+		}},
+		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_1", IsNew: true, CreateTime: 1_700_000_000_000},
+	}}}
+	dedup := &fakeCandidateDeduplicator{err: errors.New("qdrant unavailable")}
+	worker, err := NewWorker(
+		store,
+		&fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{candidate}}},
+		&fakeMemorySearcher{}, dedup, validWorkerOptions(),
+	)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	if _, err := worker.ExtractOnce(context.Background()); err == nil || !strings.Contains(err.Error(), "qdrant unavailable") {
+		t.Fatalf("ExtractOnce() error = %v", err)
+	}
+	if store.persistCalls != 0 || len(dedup.inputs) != 1 {
+		t.Fatalf("persistCalls=%d dedup.inputs=%d", store.persistCalls, len(dedup.inputs))
 	}
 }
 

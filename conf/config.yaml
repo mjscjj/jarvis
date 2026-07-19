@@ -22,6 +22,7 @@ mem0:
   schedule: "@every 10m"
   qdrant_host: "127.0.0.1"
   qdrant_port: 6333
+  qdrant_grpc_port: 6334
   collection: "jarvis_memories"
   state_dir: "var/mem0"
   embedding_model: "bge_m3_embed"
@@ -35,8 +36,8 @@ model:
   is_reasoning_model: true
   timeout_sec: 60
 
-# M3 Todo 提取。principal open_id 补齐前保持显式禁用；enabled=true 时
-# 任一必填依赖为空都会启动失败，不静默跳过。
+# M3 Todo 提取。enabled=true 时任一必填依赖为空都会启动失败，不静默跳过。
+# 语义去重复用 mem0 embedding 模型，Qdrant 集合独立于 jarvis_memories。
 extract:
   enabled: true
   principal_open_id: "ou_cfd9e106436c46adf20aaf9fe076c65d"
@@ -48,6 +49,9 @@ extract:
   memory_top_k: 8
   memory_threshold: 0.5
   max_prompt_chars: 60000
+  semantic_collection: "todo_semantic"
+  semantic_threshold: 0.85
+  semantic_neighbor_limit: 3
 
 # lark-cli 子进程封装（总纲 §4）
 lark_cli:

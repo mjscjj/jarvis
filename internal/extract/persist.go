@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/semantic"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -23,6 +24,8 @@ type preparedCandidate struct {
 	DueAt           *time.Time
 	FirstEvidenceAt time.Time
 	LastEvidenceAt  time.Time
+	MatchedTodoID   *uint64
+	SemanticVector  []float32
 }
 
 func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, results []UnitExtraction, modelName string) (PersistStats, error) {
@@ -42,8 +45,10 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 
 	stats := PersistStats{}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		records := make(map[uint64]semantic.Record, len(prepared))
+		order := make([]uint64, 0, len(prepared))
 		for i := range prepared {
-			created, err := s.persistCandidate(tx, batch, &prepared[i], modelName)
+			created, todo, err := s.persistCandidate(tx, batch, &prepared[i], modelName)
 			if err != nil {
 				return err
 			}
@@ -51,6 +56,13 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 				stats.Created++
 			} else {
 				stats.Updated++
+			}
+			if _, exists := records[todo.ID]; !exists {
+				order = append(order, todo.ID)
+			}
+			records[todo.ID] = semantic.Record{
+				TodoID: todo.ID, Fingerprint: todo.DedupFingerprint, ProjectID: copyUint64(todo.ProjectID),
+				Status: todo.Status, ActionType: todo.ActionType, Vector: append([]float32(nil), prepared[i].SemanticVector...),
 			}
 		}
 		watermark := domain.TodoExtractWatermark{
@@ -62,6 +74,15 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 			DoUpdates: clause.AssignmentColumns([]string{"last_scanned_message_id", "last_scanned_at", "updated_at"}),
 		}).Create(&watermark).Error; err != nil {
 			return fmt.Errorf("advance extract watermark chat_id=%s message_id=%s: %w", batch.Group.ChatID, batch.LastNew.MessageID, err)
+		}
+		semanticRecords := make([]semantic.Record, 0, len(order))
+		for _, todoID := range order {
+			semanticRecords = append(semanticRecords, records[todoID])
+		}
+		// Qdrant is called at the end of the MySQL transaction so a sync failure
+		// rolls back Todo/Event/watermark together. There is no silent outbox fallback.
+		if err := s.semantic.Upsert(ctx, semanticRecords); err != nil {
+			return fmt.Errorf("sync Todo semantic index: %w", err)
 		}
 		return nil
 	})
@@ -91,10 +112,15 @@ func (s *PipelineStore) prepareResults(batch ChatBatch, results []UnitExtraction
 		}
 		seenResults[result.UnitKey] = struct{}{}
 		for i := range result.Candidates {
-			candidate, err := s.prepareCandidate(batch, unit, result.Candidates[i])
+			candidate, err := s.prepareCandidate(batch, unit, result.Candidates[i].Candidate)
 			if err != nil {
 				return nil, fmt.Errorf("prepare candidate unit=%s index=%d: %w", unit.Key, i, err)
 			}
+			if len(result.Candidates[i].Semantic.Vector) == 0 {
+				return nil, fmt.Errorf("prepare candidate unit=%s index=%d: semantic vector is empty", unit.Key, i)
+			}
+			candidate.MatchedTodoID = copyUint64(result.Candidates[i].Semantic.MatchedTodoID)
+			candidate.SemanticVector = append([]float32(nil), result.Candidates[i].Semantic.Vector...)
 			prepared = append(prepared, *candidate)
 		}
 	}
@@ -173,34 +199,56 @@ func (s *PipelineStore) prepareCandidate(batch ChatBatch, unit ConversationUnit,
 	}, nil
 }
 
-func (s *PipelineStore) persistCandidate(tx *gorm.DB, batch ChatBatch, prepared *preparedCandidate, modelName string) (bool, error) {
+func (s *PipelineStore) persistCandidate(tx *gorm.DB, batch ChatBatch, prepared *preparedCandidate, modelName string) (bool, *domain.Todo, error) {
 	var existing domain.Todo
-	result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("dedup_fingerprint = ?", prepared.Fingerprint).Limit(1).Find(&existing)
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
+	if prepared.MatchedTodoID != nil {
+		query = query.Where("id = ?", *prepared.MatchedTodoID)
+	} else {
+		query = query.Where("dedup_fingerprint = ?", prepared.Fingerprint)
+	}
+	result := query.Limit(1).Find(&existing)
 	switch {
 	case result.Error != nil:
-		return false, fmt.Errorf("find todo fingerprint=%s: %w", prepared.Fingerprint, result.Error)
+		return false, nil, fmt.Errorf("find Todo for candidate fingerprint=%s: %w", prepared.Fingerprint, result.Error)
 	case result.RowsAffected == 1:
-		return false, s.updateTodo(tx, &existing, prepared, modelName)
+		if prepared.MatchedTodoID != nil {
+			if existing.ActionType != prepared.Candidate.ActionType || !sameUint64(existing.ProjectID, batch.Group.ProjectID) {
+				return false, nil, fmt.Errorf("semantic match todo_id=%d changed domain before persistence", existing.ID)
+			}
+			if _, active := activeTodoStatuses[existing.Status]; !active {
+				return false, nil, fmt.Errorf("semantic match todo_id=%d became inactive with status=%s", existing.ID, existing.Status)
+			}
+		}
+		if err := s.updateTodo(tx, &existing, prepared, modelName); err != nil {
+			return false, nil, err
+		}
+		if err := tx.Where("id = ?", existing.ID).Take(&existing).Error; err != nil {
+			return false, nil, fmt.Errorf("reload updated Todo id=%d: %w", existing.ID, err)
+		}
+		return false, &existing, nil
 	case result.RowsAffected == 0:
+		if prepared.MatchedTodoID != nil {
+			return false, nil, fmt.Errorf("semantic match todo_id=%d no longer exists", *prepared.MatchedTodoID)
+		}
 		return s.createTodo(tx, batch, prepared, modelName)
 	default:
-		return false, fmt.Errorf("find todo fingerprint=%s returned rows=%d, want 0 or 1", prepared.Fingerprint, result.RowsAffected)
+		return false, nil, fmt.Errorf("find Todo fingerprint=%s returned rows=%d, want 0 or 1", prepared.Fingerprint, result.RowsAffected)
 	}
 }
 
-func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *preparedCandidate, modelName string) (bool, error) {
+func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *preparedCandidate, modelName string) (bool, *domain.Todo, error) {
 	slots, err := json.Marshal(prepared.Candidate.Slots)
 	if err != nil {
-		return false, fmt.Errorf("encode todo slots: %w", err)
+		return false, nil, fmt.Errorf("encode todo slots: %w", err)
 	}
 	sourceIDs, err := json.Marshal(prepared.Candidate.SourceMessageIDs)
 	if err != nil {
-		return false, fmt.Errorf("encode todo source message IDs: %w", err)
+		return false, nil, fmt.Errorf("encode todo source message IDs: %w", err)
 	}
 	missingInfo, err := json.Marshal(prepared.Candidate.MissingInfo)
 	if err != nil {
-		return false, fmt.Errorf("encode todo missing info: %w", err)
+		return false, nil, fmt.Errorf("encode todo missing info: %w", err)
 	}
 	todo := domain.Todo{
 		Title: prepared.Candidate.Title, Description: prepared.Candidate.Description,
@@ -214,17 +262,17 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 		Revision: 1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
 	}
 	if err := tx.Create(&todo).Error; err != nil {
-		return false, fmt.Errorf("create todo fingerprint=%s: %w", prepared.Fingerprint, err)
+		return false, nil, fmt.Errorf("create todo fingerprint=%s: %w", prepared.Fingerprint, err)
 	}
 	detail, err := eventDetail("created", todo.Revision, prepared.Candidate.SourceMessageIDs)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	event := domain.TodoEvent{TodoID: todo.ID, ToStatus: "extracted", Actor: "m3", Detail: detail}
 	if err := tx.Create(&event).Error; err != nil {
-		return false, fmt.Errorf("create todo event todo_id=%d: %w", todo.ID, err)
+		return false, nil, fmt.Errorf("create todo event todo_id=%d: %w", todo.ID, err)
 	}
-	return true, nil
+	return true, &todo, nil
 }
 
 func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared *preparedCandidate, modelName string) error {

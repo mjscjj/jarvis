@@ -38,11 +38,12 @@ type Worker struct {
 	store  pipelineStore
 	model  modelExtractor
 	memory memorySearcher
+	dedup  candidateDeduplicator
 	opts   WorkerOptions
 	now    func() time.Time
 }
 
-func NewWorker(store pipelineStore, model modelExtractor, memories memorySearcher, opts WorkerOptions) (*Worker, error) {
+func NewWorker(store pipelineStore, model modelExtractor, memories memorySearcher, dedup candidateDeduplicator, opts WorkerOptions) (*Worker, error) {
 	if store == nil {
 		return nil, fmt.Errorf("extract worker store is nil")
 	}
@@ -51,6 +52,9 @@ func NewWorker(store pipelineStore, model modelExtractor, memories memorySearche
 	}
 	if memories == nil {
 		return nil, fmt.Errorf("extract worker memory client is nil")
+	}
+	if dedup == nil {
+		return nil, fmt.Errorf("extract worker semantic deduplicator is nil")
 	}
 	if err := validateLoadOptions(opts.Load); err != nil {
 		return nil, err
@@ -73,7 +77,7 @@ func NewWorker(store pipelineStore, model modelExtractor, memories memorySearche
 	if opts.Location == nil {
 		return nil, fmt.Errorf("extract worker location is nil")
 	}
-	return &Worker{store: store, model: model, memory: memories, opts: opts, now: time.Now}, nil
+	return &Worker{store: store, model: model, memory: memories, dedup: dedup, opts: opts, now: time.Now}, nil
 }
 
 func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
@@ -117,6 +121,7 @@ func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
 			if extracted == nil {
 				return stats, fmt.Errorf("extract todos chat_id=%s unit=%s: nil result", batch.Group.ChatID, unit.Key)
 			}
+			resolved := make([]ResolvedCandidate, len(extracted.Candidates))
 			for i := range extracted.Candidates {
 				if err := validateStrictSlotShape(extracted.Candidates[i].Slots); err != nil {
 					return stats, fmt.Errorf("validate extracted candidate chat_id=%s unit=%s candidate=%d: %w", batch.Group.ChatID, unit.Key, i, err)
@@ -127,8 +132,13 @@ func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
 				if err := validateCandidateEvidence(unit, &extracted.Candidates[i]); err != nil {
 					return stats, fmt.Errorf("validate extracted evidence chat_id=%s unit=%s candidate=%d: %w", batch.Group.ChatID, unit.Key, i, err)
 				}
+				resolution, err := w.dedup.Resolve(ctx, extracted.Candidates[i], batch.Group.ProjectID)
+				if err != nil {
+					return stats, fmt.Errorf("deduplicate extracted candidate chat_id=%s unit=%s candidate=%d: %w", batch.Group.ChatID, unit.Key, i, err)
+				}
+				resolved[i] = ResolvedCandidate{Candidate: extracted.Candidates[i], Semantic: resolution}
 			}
-			results = append(results, UnitExtraction{UnitKey: unit.Key, Candidates: extracted.Candidates})
+			results = append(results, UnitExtraction{UnitKey: unit.Key, Candidates: resolved})
 			stats.Units++
 			stats.Candidates += len(extracted.Candidates)
 		}

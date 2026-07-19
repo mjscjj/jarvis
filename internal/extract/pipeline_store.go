@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/semantic"
 
 	"gorm.io/gorm"
 )
@@ -17,16 +18,24 @@ import (
 type PipelineStore struct {
 	db       *gorm.DB
 	location *time.Location
+	semantic semanticSink
 }
 
-func NewPipelineStore(db *gorm.DB, location *time.Location) (*PipelineStore, error) {
+type semanticSink interface {
+	Upsert(context.Context, []semantic.Record) error
+}
+
+func NewPipelineStore(db *gorm.DB, location *time.Location, sink semanticSink) (*PipelineStore, error) {
 	if db == nil {
 		return nil, fmt.Errorf("extract pipeline store db is nil")
 	}
 	if location == nil {
 		return nil, fmt.Errorf("extract pipeline store location is nil")
 	}
-	return &PipelineStore{db: db, location: location}, nil
+	if sink == nil {
+		return nil, fmt.Errorf("extract pipeline semantic sink is nil")
+	}
+	return &PipelineStore{db: db, location: location, semantic: sink}, nil
 }
 
 func (s *PipelineStore) LoadPendingChats(ctx context.Context, opts LoadOptions) ([]ChatBatch, error) {

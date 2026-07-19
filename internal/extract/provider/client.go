@@ -19,7 +19,7 @@ import (
 
 const maxResponseBody = 4 << 20
 
-var ErrModelRefusal = errors.New("model refused todo extraction")
+var ErrModelRefusal = errors.New("model refused structured output")
 
 type Client struct {
 	baseURL string
@@ -57,6 +57,66 @@ func (c *Client) Extract(ctx context.Context, prompt extract.Prompt) (*extract.E
 	if strings.TrimSpace(prompt.System) == "" || strings.TrimSpace(prompt.User) == "" {
 		return nil, fmt.Errorf("model extraction system and user prompts must be non-empty")
 	}
+	payload, err := c.completeStructured(ctx, "extraction", "todo_extraction", TodoExtractionJSONSchema(), prompt)
+	if err != nil {
+		return nil, err
+	}
+	result, err := extract.DecodeExtractionResult(payload)
+	if err != nil {
+		return nil, fmt.Errorf("validate model extraction result: %w", err)
+	}
+	return result, nil
+}
+
+func (c *Client) SameAction(ctx context.Context, incoming extract.Candidate, existing extract.SemanticTodo) (bool, error) {
+	if err := extract.ValidateCandidate(&incoming); err != nil {
+		return false, fmt.Errorf("semantic adjudication incoming candidate: %w", err)
+	}
+	if existing.ID == 0 || strings.TrimSpace(existing.Title) == "" || strings.TrimSpace(existing.ActionType) == "" {
+		return false, fmt.Errorf("semantic adjudication existing Todo is invalid")
+	}
+	if incoming.ActionType != existing.ActionType {
+		return false, fmt.Errorf("semantic adjudication action types differ: %s vs %s", incoming.ActionType, existing.ActionType)
+	}
+	pair, err := json.Marshal(map[string]any{"incoming": incoming, "existing": existing})
+	if err != nil {
+		return false, fmt.Errorf("encode semantic adjudication pair: %w", err)
+	}
+	prompt := extract.Prompt{
+		System: "You are a strict Todo deduplication classifier. Return same_action=true only when both records refer to the same concrete real-world action and deliverable. Similar topics, repositories, people, or action types are not enough. If scope, target, or intended outcome differs, return false.",
+		User:   string(pair),
+	}
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"same_action": map[string]any{"type": "boolean"},
+		},
+		"required":             []string{"same_action"},
+		"additionalProperties": false,
+	}
+	payload, err := c.completeStructured(ctx, "semantic adjudication", "todo_same_action", schema, prompt)
+	if err != nil {
+		return false, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var result struct {
+		SameAction bool `json:"same_action"`
+	}
+	if err := decoder.Decode(&result); err != nil {
+		return false, fmt.Errorf("decode semantic adjudication result: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return false, fmt.Errorf("decode semantic adjudication result: multiple JSON values")
+		}
+		return false, fmt.Errorf("decode semantic adjudication trailing JSON: %w", err)
+	}
+	return result.SameAction, nil
+}
+
+func (c *Client) completeStructured(ctx context.Context, operation, schemaName string, schema map[string]any, prompt extract.Prompt) ([]byte, error) {
 	requestBody := map[string]any{
 		"model": c.model,
 		"messages": []map[string]string{
@@ -66,35 +126,35 @@ func (c *Client) Extract(ctx context.Context, prompt extract.Prompt) (*extract.E
 		"response_format": map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
-				"name": "todo_extraction", "strict": true, "schema": TodoExtractionJSONSchema(),
+				"name": schemaName, "strict": true, "schema": schema,
 			},
 		},
 	}
 	encoded, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("encode model extraction request: %w", err)
+		return nil, fmt.Errorf("encode model %s request: %w", operation, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(encoded))
 	if err != nil {
-		return nil, fmt.Errorf("create model extraction request: %w", err)
+		return nil, fmt.Errorf("create model %s request: %w", operation, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "jarvis/0.1")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("send model extraction request: %w", err)
+		return nil, fmt.Errorf("send model %s request: %w", operation, err)
 	}
 	defer resp.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
 	if err != nil {
-		return nil, fmt.Errorf("read model extraction response: %w", err)
+		return nil, fmt.Errorf("read model %s response: %w", operation, err)
 	}
 	if len(payload) > maxResponseBody {
-		return nil, fmt.Errorf("model extraction response exceeds %d bytes", maxResponseBody)
+		return nil, fmt.Errorf("model %s response exceeds %d bytes", operation, maxResponseBody)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("model extraction status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(payload)))
+		return nil, fmt.Errorf("model %s status=%d body=%s", operation, resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	var response struct {
 		Choices []struct {
@@ -106,24 +166,20 @@ func (c *Client) Extract(ctx context.Context, prompt extract.Prompt) (*extract.E
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
-		return nil, fmt.Errorf("decode model extraction envelope: %w", err)
+		return nil, fmt.Errorf("decode model %s envelope: %w", operation, err)
 	}
 	if len(response.Choices) != 1 {
-		return nil, fmt.Errorf("model extraction choices=%d, want 1", len(response.Choices))
+		return nil, fmt.Errorf("model %s choices=%d, want 1", operation, len(response.Choices))
 	}
 	choice := response.Choices[0]
 	if strings.TrimSpace(choice.Message.Refusal) != "" {
 		return nil, fmt.Errorf("%w: %s", ErrModelRefusal, choice.Message.Refusal)
 	}
 	if choice.FinishReason != "stop" {
-		return nil, fmt.Errorf("model extraction finish_reason=%q, want stop", choice.FinishReason)
+		return nil, fmt.Errorf("model %s finish_reason=%q, want stop", operation, choice.FinishReason)
 	}
 	if strings.TrimSpace(choice.Message.Content) == "" {
-		return nil, fmt.Errorf("model extraction content is empty")
+		return nil, fmt.Errorf("model %s content is empty", operation)
 	}
-	result, err := extract.DecodeExtractionResult([]byte(choice.Message.Content))
-	if err != nil {
-		return nil, fmt.Errorf("validate model extraction result: %w", err)
-	}
-	return result, nil
+	return []byte(choice.Message.Content), nil
 }

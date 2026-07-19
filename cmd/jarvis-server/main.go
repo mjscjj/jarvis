@@ -14,10 +14,12 @@ import (
 	"jarvis/internal/api"
 	"jarvis/internal/capture"
 	"jarvis/internal/config"
+	"jarvis/internal/embedding"
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/provider"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/memory"
+	"jarvis/internal/semantic"
 	"jarvis/internal/store"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -115,6 +117,7 @@ func main() {
 		hlog.Fatalf("initialize todo store failed: %v", err)
 	}
 	var extractWorker *extract.Worker
+	var semanticIndex *semantic.Index
 	if cfg.Extract.Enabled || *extractOnce {
 		modelClient, err := provider.NewClient(
 			cfg.Model.BaseURL,
@@ -125,11 +128,41 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize extraction model client failed: %v", err)
 		}
-		pipelineStore, err := extract.NewPipelineStore(db, location)
+		embeddingClient, err := embedding.NewClient(
+			cfg.Model.BaseURL,
+			cfg.Model.APIKey,
+			cfg.Mem0.EmbeddingModel,
+			cfg.Mem0.EmbeddingDims,
+			time.Duration(cfg.Model.TimeoutSec)*time.Second,
+		)
+		if err != nil {
+			hlog.Fatalf("initialize Todo embedding client failed: %v", err)
+		}
+		semanticIndex, err = semantic.NewIndex(semantic.Options{
+			Host: cfg.Mem0.QdrantHost, Port: cfg.Mem0.QdrantGRPCPort,
+			Collection: cfg.Extract.SemanticCollection, EmbeddingModel: cfg.Mem0.EmbeddingModel,
+			Dimensions:     cfg.Mem0.EmbeddingDims,
+			ScoreThreshold: cfg.Extract.SemanticThreshold, NeighborLimit: cfg.Extract.SemanticNeighborLimit,
+			ActiveStatuses: extract.ActiveTodoStatuses(),
+		})
+		if err != nil {
+			hlog.Fatalf("initialize Todo semantic index failed: %v", err)
+		}
+		ensureCtx, cancelEnsure := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := semanticIndex.Ensure(ensureCtx); err != nil {
+			cancelEnsure()
+			hlog.Fatalf("ensure Todo semantic index failed: %v", err)
+		}
+		cancelEnsure()
+		pipelineStore, err := extract.NewPipelineStore(db, location, semanticIndex)
 		if err != nil {
 			hlog.Fatalf("initialize extraction pipeline store failed: %v", err)
 		}
-		extractWorker, err = extract.NewWorker(pipelineStore, modelClient, memoryClient, extract.WorkerOptions{
+		deduplicator, err := extract.NewDeduplicator(embeddingClient, semanticIndex, pipelineStore, modelClient)
+		if err != nil {
+			hlog.Fatalf("initialize Todo semantic deduplicator failed: %v", err)
+		}
+		extractWorker, err = extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, extract.WorkerOptions{
 			Load: extract.LoadOptions{
 				BatchMessages: cfg.Extract.BatchMessages, ContextMessages: cfg.Extract.ContextMessages,
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
@@ -142,6 +175,13 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize extraction worker failed: %v", err)
 		}
+	}
+	if semanticIndex != nil {
+		defer func() {
+			if err := semanticIndex.Close(); err != nil {
+				hlog.Errorf("close Todo semantic index failed: %v", err)
+			}
+		}()
 	}
 	if *discoverOnce {
 		if err := captureService.DiscoverChats(context.Background()); err != nil {

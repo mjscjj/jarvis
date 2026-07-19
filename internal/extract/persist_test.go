@@ -22,7 +22,7 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 			Participants: []ParticipantContext{{OpenID: "ou_leader", Role: "leader", IsLeader: true}},
 		}},
 	}
-	prepared, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []Candidate{candidate}}})
+	prepared, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
 	if err != nil {
 		t.Fatalf("prepareResults() error = %v", err)
 	}
@@ -44,7 +44,7 @@ func TestPrepareResultsRejectsIncompleteIdentity(t *testing.T) {
 			MessageID: "om_1", Content: "请修改鉴权逻辑", IsNew: true, Extractable: true,
 		}}}},
 	}
-	_, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []Candidate{candidate}}})
+	_, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
 	if !errors.Is(err, ErrFingerprintIncomplete) {
 		t.Fatalf("prepareResults() error = %v", err)
 	}
@@ -86,4 +86,8 @@ func strictCandidate() Candidate {
 		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"},
 		SourceQuote: "请修改鉴权逻辑", Slots: slots, InfoSufficient: true, MissingInfo: []string{},
 	}
+}
+
+func resolvedCandidate(candidate Candidate) ResolvedCandidate {
+	return ResolvedCandidate{Candidate: candidate, Semantic: SemanticResolution{Vector: []float32{1}}}
 }
