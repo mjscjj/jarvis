@@ -4,6 +4,9 @@ import type { TableColumnsType } from 'antd'
 import { approveConfirmation, getConfirmation, listConfirmations, rejectConfirmation, supplementConfirmation } from './api'
 import type { ConfirmationDetail, ContextSnapshot, Resolution, Todo } from './types'
 import { SlotDescriptions } from './slots'
+import PageHeader from './components/PageHeader'
+import StatusBadge from './components/StatusBadge'
+import { todoStatusMeta } from './status'
 
 const { Paragraph, Text } = Typography
 
@@ -145,17 +148,16 @@ export default function Confirmations() {
   ]
 
   return <>
-    <Flex justify="space-between" align="center" className="section-heading">
-      <div><Text strong>人工确认队列</Text><Text type="secondary"> · {total} 条</Text></div>
+    <PageHeader title="待确认" subtitle={`人工确认队列 · 共 ${total} 条，点行查看并决策`}>
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
-    </Flex>
+    </PageHeader>
     {error && <Alert type="error" showIcon message="操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
       <Table<Todo> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(todo) => ({ onClick: () => openDetail(todo), className: 'clickable-row' })} />
     </Card>
     <Drawer title={detail?.todo.title || '确认详情'} open={Boolean(detail) || detailLoading} loading={detailLoading} width={680} onClose={() => setDetail(undefined)}>
       {detail && <Space direction="vertical" size={20} className="drawer-content">
-        <Space><Tag color="gold">待决策</Tag><Tag>{detail.todo.action_type}</Tag></Space>
+        <Space><StatusBadge label={todoStatusMeta.need_decision.label} color={todoStatusMeta.need_decision.color} /><Tag>{detail.todo.action_type}</Tag></Space>
         <Paragraph>{detail.todo.description}</Paragraph>
         <Descriptions column={2} size="small">
           <Descriptions.Item label="交办人">{detail.assigner?.name || detail.todo.assigner_open_id || '未知'}</Descriptions.Item>

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Empty, Segmented, Space, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Segmented, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { getDigests, summarizeDigest } from './api'
+import PageHeader from './components/PageHeader'
+import EmptyState from './components/EmptyState'
 import type { Digest, GroupProgress, MyDay } from './types'
 
 const { Text, Paragraph } = Typography
@@ -67,17 +69,17 @@ export default function Progress() {
 
   return (
     <div className="progress">
+      <PageHeader title="进度" subtitle="个人与核心群的近况一览">
+        <Button type="primary" loading={summarizing} onClick={generateSummary}>生成人话总结（codex）</Button>
+      </PageHeader>
       <Card className="filter-card" variant="borderless">
-        <Space size={16} wrap>
-          <Space size={8}>
-            <Text type="secondary">时间窗口</Text>
-            <Segmented
-              value={days}
-              onChange={(value) => setDays(value as number)}
-              options={[{ label: '近 7 天', value: 7 }, { label: '近 14 天', value: 14 }, { label: '近 30 天', value: 30 }]}
-            />
-          </Space>
-          <Button type="primary" loading={summarizing} onClick={generateSummary}>生成人话总结（codex）</Button>
+        <Space size={8}>
+          <Text type="secondary">时间窗口</Text>
+          <Segmented
+            value={days}
+            onChange={(value) => setDays(value as number)}
+            options={[{ label: '近 7 天', value: 7 }, { label: '近 14 天', value: 14 }, { label: '近 30 天', value: 30 }]}
+          />
         </Space>
       </Card>
 
@@ -120,7 +122,7 @@ export default function Progress() {
             children:
               !loading && (data?.key_groups.length ?? 0) === 0 ? (
                 <Card variant="borderless">
-                  <Empty description="暂无标记为核心群的会话（可在“背景设置 → 群”里标记 is_key_group）" />
+                  <EmptyState description="暂无标记为核心群的会话" hint="可在「背景 → 会话背景」里标记 is_key_group" />
                 </Card>
               ) : (
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>

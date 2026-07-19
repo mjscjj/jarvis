@@ -4,15 +4,11 @@ import type { TableColumnsType } from 'antd'
 import { executeTask, finishTask, listTasks, rerunTask } from './api'
 import type { Task, TaskStatus } from './types'
 import { SlotDescriptions } from './slots'
+import PageHeader from './components/PageHeader'
+import StatusBadge from './components/StatusBadge'
+import { taskStatusMeta as statusMeta } from './status'
 
 const { Paragraph, Text } = Typography
-
-const statusMeta: Record<TaskStatus, { label: string; color: string }> = {
-  pending: { label: '待执行', color: 'blue' },
-  executing: { label: '执行中', color: 'gold' },
-  done: { label: '已完成', color: 'green' },
-  failed: { label: '失败', color: 'red' },
-}
 
 // External actions reach outside this machine and cannot be auto-run; the
 // backend still requires the click, but we warn before triggering.
@@ -106,7 +102,7 @@ export default function Tasks() {
 
   const columns: TableColumnsType<Task> = [
     { title: '任务', dataIndex: 'title', render: (_, task) => <Space direction="vertical" size={2}><Text strong>{task.title}</Text><Text type="secondary">Todo #{task.todo_id} · {task.action_type}</Text></Space> },
-    { title: '状态', dataIndex: 'status', width: 110, render: (status: TaskStatus) => <Tag color={statusMeta[status].color}>{statusMeta[status].label}</Tag> },
+    { title: '状态', dataIndex: 'status', width: 110, render: (status: TaskStatus) => <StatusBadge label={statusMeta[status].label} color={statusMeta[status].color} /> },
     { title: '方案', width: 320, render: (_, task) => <pre className="inline-json">{JSON.stringify(task.plan, null, 2)}</pre> },
     { title: '结果', width: 260, render: (_, task) => task.execution_result ? <pre className="inline-json">{JSON.stringify(task.execution_result, null, 2)}</pre> : '—' },
     {
@@ -118,7 +114,7 @@ export default function Tasks() {
             <Button danger size="small" onClick={(e) => { e.stopPropagation(); openFinish(task, 'failed') }}>失败</Button>
           </Space>
         }
-        if (task.status === 'executing') return <Tag color="gold">codex 执行中…</Tag>
+        if (task.status === 'executing') return <StatusBadge label="codex 执行中…" color={statusMeta.executing.color} />
         if (task.status === 'done' || task.status === 'failed') {
           return <Space onClick={(e) => e.stopPropagation()}>
             <Button size="small" loading={executingId === task.id} onClick={(e) => { e.stopPropagation(); runRerun(task) }}>重跑</Button>
@@ -130,15 +126,19 @@ export default function Tasks() {
   ]
 
   return <>
-    <Flex justify="space-between" align="end" className="section-heading">
-      <label className="filter-field"><Text type="secondary">Task 状态</Text><Select mode="multiple" value={statuses} options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} onChange={(values) => setStatuses(values.length ? values : ['pending', 'executing', 'done', 'failed'])} /></label>
+    <PageHeader title="任务执行" subtitle="已确认的可执行任务，点行查看方案与结果">
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
-    </Flex>
+    </PageHeader>
+    <Card className="filter-card" variant="borderless">
+      <Flex gap={16} align="end" wrap>
+        <label className="filter-field filter-status"><Text type="secondary">Task 状态</Text><Select mode="multiple" value={statuses} options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} onChange={(values) => setStatuses(values.length ? values : ['pending', 'executing', 'done', 'failed'])} /></label>
+      </Flex>
+    </Card>
     {error && <Alert type="error" showIcon message="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless"><Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1050 }} onRow={(task) => ({ onClick: () => setDetail(task), className: 'clickable-row' })} /></Card>
     <Drawer title={detail?.title || 'Task 详情'} open={Boolean(detail)} width={680} onClose={() => setDetail(undefined)}>
       {detail && <Space direction="vertical" size={20} className="drawer-content">
-        <Space><Tag color={statusMeta[detail.status].color}>{statusMeta[detail.status].label}</Tag><Tag>{detail.action_type}</Tag></Space>
+        <Space><StatusBadge label={statusMeta[detail.status].label} color={statusMeta[detail.status].color} /><Tag>{detail.action_type}</Tag></Space>
         <Descriptions column={2} size="small">
           <Descriptions.Item label="Todo">#{detail.todo_id}</Descriptions.Item>
           <Descriptions.Item label="版本">v{detail.version}</Descriptions.Item>

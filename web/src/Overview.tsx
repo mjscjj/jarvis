@@ -13,26 +13,10 @@ import MetricCard from './components/MetricCard'
 import PageHeader from './components/PageHeader'
 import EmptyState from './components/EmptyState'
 import StatusStackBar from './components/StatusStackBar'
+import { taskStatusMeta, todoStatusMeta } from './status'
 import type { Overview as OverviewData } from './types'
 
 const { Text, Title } = Typography
-
-const todoStatusMeta: Record<string, { label: string; color: string }> = {
-  extracted: { label: '待评估', color: 'blue' },
-  scoring: { label: '评估中', color: 'processing' },
-  need_info: { label: '待补信息', color: 'orange' },
-  need_decision: { label: '待决策', color: 'gold' },
-  confirmed: { label: '已确认', color: 'green' },
-  dismissed: { label: '已忽略', color: 'default' },
-  expired: { label: '已过期', color: 'red' },
-}
-
-const taskStatusMeta: Record<string, { label: string; color: string }> = {
-  pending: { label: '待执行', color: 'blue' },
-  executing: { label: '执行中', color: 'gold' },
-  done: { label: '已完成', color: 'green' },
-  failed: { label: '失败', color: 'red' },
-}
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
@@ -86,7 +70,7 @@ export default function Overview() {
             hint="need_info / need_decision"
             loading={loading}
             icon={<ClockCircleOutlined />}
-            valueStyle={{ color: '#d48806' }}
+            valueStyle={{ color: 'var(--status-warning)' }}
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -95,7 +79,7 @@ export default function Overview() {
             value={data?.todos.leader_open ?? 0}
             loading={loading}
             icon={<FireOutlined />}
-            valueStyle={{ color: '#cf1322' }}
+            valueStyle={{ color: 'var(--status-error)' }}
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -142,7 +126,7 @@ export default function Overview() {
             value={data?.tasks.pending ?? 0}
             loading={loading}
             icon={<RocketOutlined />}
-            valueStyle={{ color: '#096dd9' }}
+            valueStyle={{ color: 'var(--status-info)' }}
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -151,7 +135,7 @@ export default function Overview() {
             value={data?.tasks.done ?? 0}
             loading={loading}
             icon={<CheckCircleOutlined />}
-            valueStyle={{ color: '#389e0d' }}
+            valueStyle={{ color: 'var(--status-success)' }}
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -160,7 +144,7 @@ export default function Overview() {
             value={data?.tasks.failed ?? 0}
             loading={loading}
             icon={<CloseCircleOutlined />}
-            valueStyle={{ color: '#cf1322' }}
+            valueStyle={{ color: 'var(--status-error)' }}
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>

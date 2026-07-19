@@ -10,6 +10,7 @@ import {
   getDebugTodos,
   getDebugWatermarks,
 } from './api'
+import PageHeader from './components/PageHeader'
 import type { DebugRecord, DebugStatus, LogTail, ModuleRun, ScanRow, StatusCount, WatermarkRow } from './types'
 
 const { Text, Paragraph } = Typography
@@ -300,10 +301,9 @@ function LogsTab() {
 
 export default function Debug() {
   return (
-    <Card variant="borderless">
-      <Paragraph type="secondary" style={{ marginTop: 0 }}>
-        运行时诊断：依赖健康/积压、模块运行、采集流水、抽取水位、最近 Todo/Task 与运行日志。JSON 默认折叠，点击展开。
-      </Paragraph>
+    <>
+      <PageHeader title="调试" subtitle="运行时诊断：依赖健康/积压、模块运行、采集流水、抽取水位、最近 Todo/Task 与运行日志" />
+      <Card variant="borderless">
       <Tabs
         items={[
           { key: 'status', label: '健康与积压', children: <StatusTab /> },
@@ -315,6 +315,7 @@ export default function Debug() {
           { key: 'logs', label: '运行日志', children: <LogsTab /> },
         ]}
       />
-    </Card>
+      </Card>
+    </>
   )
 }

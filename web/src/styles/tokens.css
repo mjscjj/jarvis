@@ -1,47 +1,55 @@
-/* Design tokens for Jarvis web UI.
+/* Design tokens for Jarvis web UI — Linear/Vercel-style.
+ * 冷中性灰 + 克制的绿色强调；卡片用细边框、几乎不用阴影；
+ * 阴影只留给真正浮起的层（Drawer/Modal/Popover）。
  * Keep this file flat and dependency-free; it only declares CSS custom properties.
  */
 
 :root {
-  /* Color palette: warm neutral + fresh green accent */
-  --color-bg: #fafaf9;
-  --color-bg-elevated: #ffffff;
-  --color-bg-soft: #f5f5f4;
-  --color-bg-hover: #f0f0ef;
+  /* --- Neutral surfaces (cool gray) --- */
+  --color-bg: #f7f8f9;          /* app 背景，微冷灰 */
+  --color-bg-elevated: #ffffff; /* 卡片/面板 */
+  --color-bg-soft: #f2f3f5;     /* 次级区块、hover 底 */
+  --color-bg-hover: #eceef1;    /* 行 hover */
+  --color-bg-code: #f6f7f9;     /* 内联 JSON/代码浅底 */
 
-  --color-primary: #166534;
-  --color-primary-hover: #14532d;
-  --color-primary-light: #dcfce7;
+  /* --- Accent (克制的绿) --- */
+  --color-primary: #15803d;
+  --color-primary-hover: #166534;
+  --color-primary-active: #14532d;
+  --color-primary-light: #e9f5ee; /* 选中态浅底 */
 
-  --color-text: #1c1917;
-  --color-text-secondary: #78716c;
-  --color-text-tertiary: #a8a29e;
+  /* --- Text --- */
+  --color-text: #101418;         /* 主文本，近黑但不死黑 */
+  --color-text-secondary: #5b6470;
+  --color-text-tertiary: #9099a3;
   --color-text-inverse: #ffffff;
 
-  --color-border: #e7e5e4;
-  --color-border-strong: #d6d3d1;
+  /* --- Borders (极淡) --- */
+  --color-border: #e8eaed;
+  --color-border-strong: #d5d9de;
 
+  /* --- Semantic (低饱和) --- */
   --color-success: #16a34a;
-  --color-success-bg: #f0fdf4;
-  --color-warning: #d97706;
-  --color-warning-bg: #fffbeb;
+  --color-success-bg: #edf7f0;
+  --color-warning: #b45309;
+  --color-warning-bg: #fbf4e9;
   --color-error: #dc2626;
-  --color-error-bg: #fef2f2;
+  --color-error-bg: #fbeeee;
   --color-info: #2563eb;
-  --color-info-bg: #eff6ff;
+  --color-info-bg: #eef2fb;
 
   --color-leader: #7c3aed;
-  --color-leader-bg: #f3f0ff;
+  --color-leader-bg: #f3eefb;
 
-  /* Status colors (semantic) */
-  --status-pending: #2563eb;
-  --status-processing: #d97706;
-  --status-success: #16a34a;
-  --status-error: #dc2626;
-  --status-default: #78716c;
-  --status-warning: #ea580c;
+  /* --- Status colors (semantic, 低饱和统一入口) --- */
+  --status-default: #6b7280;   /* 灰 */
+  --status-info: #3b6fd4;      /* 蓝：待处理/待评估 */
+  --status-processing: #b45309;/* 琥珀：进行中/评估中 */
+  --status-warning: #c2620b;   /* 橙：待补/待决策 */
+  --status-success: #16a34a;   /* 绿：已确认/完成 */
+  --status-error: #dc2626;     /* 红：失败/过期 */
 
-  /* Spacing scale */
+  /* --- Spacing --- */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -51,22 +59,22 @@
   --space-8: 32px;
   --space-10: 40px;
 
-  /* Radius */
+  /* --- Radius (略收敛，Linear 感) --- */
   --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08);
+  /* --- Shadows：仅浮层用 --- */
+  --shadow-sm: 0 1px 2px rgba(16, 20, 24, 0.04);
+  --shadow-md: 0 4px 16px rgba(16, 20, 24, 0.08);
+  --shadow-lg: 0 12px 40px rgba(16, 20, 24, 0.12);
 
-  /* Typography */
-  --font-sans: Inter, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* --- Typography --- */
+  --font-sans: "Inter", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* Layout */
+  /* --- Layout --- */
   --sider-width: 220px;
   --chat-width: 380px;
   --header-height: 56px;

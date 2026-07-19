@@ -16,29 +16,12 @@ import type { TableColumnsType } from 'antd'
 import { getTodo, listTodos } from './api'
 import { usePageContext } from './pageContext'
 import { SlotDescriptions } from './slots'
+import PageHeader from './components/PageHeader'
+import StatusBadge from './components/StatusBadge'
+import { actionLabels, leaderColor, todoStatusMeta as statusMeta } from './status'
 import type { ActionType, Todo, TodoQuery, TodoStatus } from './types'
 
 const { Text, Paragraph } = Typography
-
-const statusMeta: Record<TodoStatus, { label: string; color: string }> = {
-  extracted: { label: '待评估', color: 'blue' },
-  scoring: { label: '评估中', color: 'processing' },
-  need_info: { label: '待补信息', color: 'orange' },
-  need_decision: { label: '待决策', color: 'gold' },
-  confirmed: { label: '已确认', color: 'green' },
-  dismissed: { label: '已忽略', color: 'default' },
-  expired: { label: '已过期', color: 'red' },
-}
-
-const actionLabels: Record<ActionType, string> = {
-  code_change: '代码修改',
-  summary_post: '总结并发群',
-  investigate: '查证澄清',
-  schedule_meeting: '安排会议',
-  reply_message: '回复消息',
-  doc_write: '撰写文档',
-  manual_followup: '人工跟进',
-}
 
 const initialQuery: TodoQuery = {
   statuses: ['extracted', 'need_info', 'need_decision'],
@@ -115,7 +98,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         render: (_, todo) => (
           <Space direction="vertical" size={3}>
             <Space size={8} wrap>
-              {todo.is_leader_assigned && <Tag color="volcano">Leader</Tag>}
+              {todo.is_leader_assigned && <StatusBadge label="Leader" color={leaderColor} />}
               <Text strong>{todo.title}</Text>
             </Space>
             <Text type="secondary" ellipsis={{ tooltip: todo.description }} className="description-cell">
@@ -134,7 +117,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         title: '状态',
         dataIndex: 'status',
         width: 110,
-        render: (value: TodoStatus) => <Tag color={statusMeta[value].color}>{statusMeta[value].label}</Tag>,
+        render: (value: TodoStatus) => <StatusBadge label={statusMeta[value].label} color={statusMeta[value].color} />,
       },
       {
         title: '项目 / 会话',
@@ -171,6 +154,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
 
   return (
     <>
+      <PageHeader title="待办线索" subtitle="从会话中抽取的行动线索，点行查看详情" />
       <Card className="filter-card" variant="borderless">
         <Flex gap={16} align="end" wrap>
           <label className="filter-field filter-status">
@@ -247,9 +231,9 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         {selected && (
           <Space direction="vertical" size={24} className="drawer-content">
             <Space wrap>
-              <Tag color={statusMeta[selected.status].color}>{statusMeta[selected.status].label}</Tag>
+              <StatusBadge label={statusMeta[selected.status].label} color={statusMeta[selected.status].color} />
               <Tag>{actionLabels[selected.action_type]}</Tag>
-              {selected.is_leader_assigned && <Tag color="volcano">Leader 交办</Tag>}
+              {selected.is_leader_assigned && <StatusBadge label="Leader 交办" color={leaderColor} />}
             </Space>
             <Paragraph>{selected.description}</Paragraph>
             <Descriptions column={2} size="small">

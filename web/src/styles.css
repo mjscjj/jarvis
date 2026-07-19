@@ -15,10 +15,12 @@
 
 body {
   margin: 0;
-  min-width: 1080px;
+  min-width: 960px;
   min-height: 100vh;
   background: var(--color-bg);
   color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 /* App shell */
@@ -99,7 +101,6 @@ body {
   align-items: flex-start;
   min-height: 100vh;
   margin-left: var(--sider-width);
-  transition: margin-right 0.25s ease;
 }
 
 .app-content {
@@ -114,16 +115,19 @@ body {
   margin-bottom: var(--space-4);
 }
 
-/* Chat dock */
+/* Chat dock：固定一屏高、吸顶，内部自己滚动，不随主内容撑高 */
 .chat-dock {
-  position: relative;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
   flex: 0 0 var(--chat-width);
   width: var(--chat-width);
-  align-self: stretch;
+  height: 100vh;
   border-left: 1px solid var(--color-border);
   background: var(--color-bg-elevated);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   transition: width 0.25s ease, flex-basis 0.25s ease;
 }
 
@@ -142,19 +146,33 @@ body {
 /* 拖拽手柄：贴在对话框左边缘，向左拖变宽 */
 .chat-resize-handle {
   position: absolute;
-  left: -3px;
+  left: -4px;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: 8px;
   cursor: col-resize;
   z-index: 10;
   background: transparent;
   transition: background 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.chat-resize-handle:hover,
-.chat-dock.resizing .chat-resize-handle {
+/* 中间一条竖向 grip，提示可拖 */
+.chat-resize-handle::after {
+  content: '';
+  width: 3px;
+  height: 32px;
+  border-radius: 3px;
+  background: var(--color-border-strong);
+  transition: background 0.15s ease, height 0.15s ease;
+}
+
+.chat-resize-handle:hover::after,
+.chat-dock.resizing .chat-resize-handle::after {
   background: var(--color-primary);
+  height: 52px;
 }
 
 .chat-dock.collapsed .chat-resize-handle {
@@ -181,20 +199,20 @@ body {
   box-shadow: var(--shadow-lg);
 }
 
-/* Cards & tables */
-.card-surface {
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-}
-
+/* Cards & tables — Linear 风：细边框、无阴影 */
+.card-surface,
 .filter-card,
 .table-card {
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
+}
+
+/* 全站 antd 卡片统一：细边框、无阴影 */
+.app-content .ant-card {
+  border: 1px solid var(--color-border);
+  box-shadow: none;
 }
 
 .filter-card {
@@ -264,10 +282,15 @@ body {
   max-height: 120px;
   margin: 0;
   padding: var(--space-2) var(--space-3);
+  overflow: auto;
   white-space: pre-wrap;
+  word-break: break-word;
   font-family: var(--font-mono);
   font-size: 12px;
-  background: var(--color-bg-soft);
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-bg-code);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
 }
 
@@ -284,15 +307,17 @@ blockquote {
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
+/* JSON / 代码块 — Linear 风：浅底 + 细边框，不再纯黑块 */
 pre {
   margin: 10px 0 0;
   padding: var(--space-4);
   overflow: auto;
   border-radius: var(--radius-md);
-  background: #1c1917;
-  color: #e7e5e4;
-  font-size: 12px;
-  line-height: 1.65;
+  background: var(--color-bg-code);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 12.5px;
+  line-height: 1.7;
   font-family: var(--font-mono);
 }
 
@@ -333,23 +358,23 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
 }
 
 .chat-header .ant-typography {
-  color: var(--color-text-inverse);
+  color: var(--color-text);
 }
 
 .chat-context {
   font-size: 12px;
-  opacity: 0.82;
+  color: var(--color-text-tertiary);
 }
 
 .chat-header .chat-context.ant-typography {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-text-tertiary);
 }
 
 .chat-messages {
@@ -380,27 +405,34 @@ pre {
 }
 
 .chat-bubble {
-  max-width: 86%;
-  padding: var(--space-2) var(--space-3);
+  max-width: 88%;
+  padding: var(--space-3) var(--space-3);
   border-radius: var(--radius-lg);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 13.5px;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
 }
 
 .chat-bubble.user {
   background: var(--color-primary);
   color: var(--color-text-inverse);
-  border-bottom-right-radius: var(--space-1);
+  border-bottom-right-radius: var(--radius-sm);
 }
 
 .chat-bubble.codex {
   background: var(--color-bg-soft);
   color: var(--color-text);
   border: 1px solid var(--color-border);
-  border-bottom-left-radius: var(--space-1);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+/* 气泡内的代码/JSON 才用等宽 */
+.chat-bubble code,
+.chat-bubble pre {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
 }
 
 .chat-typing {
@@ -422,6 +454,6 @@ pre {
 }
 
 .chat-input .ant-input {
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
 }
