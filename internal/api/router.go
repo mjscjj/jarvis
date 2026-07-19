@@ -2,17 +2,33 @@
 package api
 
 import (
+	"fmt"
+
+	"jarvis/internal/extract"
+
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"gorm.io/gorm"
 )
 
 // Dependencies are process-level dependencies shared by API handlers.
 type Dependencies struct {
-	DB *gorm.DB
+	DB    *gorm.DB
+	Todos extract.TodoReader
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
-// 骨架阶段只有 /healthz；后续各模块（M0 后台、M2~M5）在此扩展分组路由。
-func Register(h *server.Hertz, deps Dependencies) {
+func Register(h *server.Hertz, deps Dependencies) error {
+	if h == nil {
+		return fmt.Errorf("api hertz server is nil")
+	}
+	if deps.DB == nil {
+		return fmt.Errorf("api mysql dependency is nil")
+	}
+	if deps.Todos == nil {
+		return fmt.Errorf("api todo reader dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
+	h.GET("/api/todos", ListTodos(deps.Todos))
+	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
+	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"jarvis/internal/api"
 	"jarvis/internal/capture"
 	"jarvis/internal/config"
+	"jarvis/internal/extract"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/memory"
 	"jarvis/internal/store"
@@ -107,6 +108,10 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize memory worker failed: %v", err)
 	}
+	todoStore, err := extract.NewTodoStore(db)
+	if err != nil {
+		hlog.Fatalf("initialize todo store failed: %v", err)
+	}
 	if *discoverOnce {
 		if err := captureService.DiscoverChats(context.Background()); err != nil {
 			hlog.Fatalf("discover chats failed: %v", err)
@@ -170,7 +175,9 @@ func main() {
 	h := server.New(
 		server.WithHostPorts(cfg.Server.Addr),
 	)
-	api.Register(h, api.Dependencies{DB: db})
+	if err := api.Register(h, api.Dependencies{DB: db, Todos: todoStore}); err != nil {
+		hlog.Fatalf("register API routes failed: %v", err)
+	}
 
 	hlog.Infof("jarvis-server listening on %s", cfg.Server.Addr)
 	// Spin 阻塞运行并处理优雅退出（SIGINT/SIGTERM/SIGHUP）。

@@ -40,3 +40,17 @@ func TestCaptureModels(t *testing.T) {
 		t.Errorf("Checkpoint table = %q", got)
 	}
 }
+
+func TestExtractModels(t *testing.T) {
+	t.Parallel()
+	models := ExtractModels()
+	if got, want := len(models), 2; got != want {
+		t.Fatalf("ExtractModels() length = %d, want %d", got, want)
+	}
+	if got := models[0].(*TodoExtractWatermark).TableName(); got != "todo_extract_watermark" {
+		t.Errorf("TodoExtractWatermark table = %q", got)
+	}
+	if got := models[1].(*TodoEvent).TableName(); got != "todo_event" {
+		t.Errorf("TodoEvent table = %q", got)
+	}
+}

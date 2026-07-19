@@ -1,0 +1,33 @@
+package extract
+
+import "testing"
+
+func TestValidateTodoFilter(t *testing.T) {
+	valid := TodoListFilter{Statuses: []string{"extracted", "need_info"}, ActionType: "investigate", Page: 1, PageSize: 20}
+	if err := ValidateTodoFilter(valid); err != nil {
+		t.Fatalf("ValidateTodoFilter() error = %v", err)
+	}
+	invalid := valid
+	invalid.Statuses = []string{"duplicate"}
+	if err := ValidateTodoFilter(invalid); err == nil {
+		t.Fatal("ValidateTodoFilter() accepted removed duplicate status")
+	}
+	invalid = valid
+	invalid.PageSize = 101
+	if err := ValidateTodoFilter(invalid); err == nil {
+		t.Fatal("ValidateTodoFilter() accepted page_size > 100")
+	}
+}
+
+func TestParseStatuses(t *testing.T) {
+	got, err := ParseStatuses(" extracted,need_info,extracted ")
+	if err != nil {
+		t.Fatalf("ParseStatuses() error = %v", err)
+	}
+	if len(got) != 2 || got[0] != "extracted" || got[1] != "need_info" {
+		t.Fatalf("ParseStatuses() = %#v", got)
+	}
+	if _, err := ParseStatuses("extracted,,need_info"); err == nil {
+		t.Fatal("ParseStatuses() accepted empty status segment")
+	}
+}
