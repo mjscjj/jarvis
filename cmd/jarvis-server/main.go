@@ -15,6 +15,7 @@ import (
 	"jarvis/internal/api"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
+	"jarvis/internal/chat"
 	"jarvis/internal/config"
 	"jarvis/internal/decide"
 	"jarvis/internal/domain"
@@ -500,6 +501,23 @@ func main() {
 		stopExecuteScheduler()
 	}()
 
+	// 流式对话服务：enabled 时实例化并注入 Dependencies.Chat；disabled 时留 nil，
+	// router 据此不注册 /api/chat 路由（与 execute 的 Executor 一致）。
+	var chatService *chat.Service
+	if cfg.Chat.Enabled {
+		chatService, err = chat.NewService(chat.Options{
+			Bin:             cfg.Codex.Bin,
+			Model:           cfg.Chat.Model,
+			Sandbox:         cfg.Chat.Sandbox,
+			ReasoningEffort: cfg.Chat.ReasoningEffort,
+			Timeout:         time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,
+			DSN:             cfg.MySQL.DSN,
+		})
+		if err != nil {
+			hlog.Fatalf("initialize chat service failed: %v", err)
+		}
+	}
+
 	h := server.New(
 		server.WithHostPorts(cfg.Server.Addr),
 	)
@@ -509,7 +527,7 @@ func main() {
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		Overview: overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
-		Debug: debugService, Logs: logReader,
+		Debug: debugService, Logs: logReader, Chat: chatService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}

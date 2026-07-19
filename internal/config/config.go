@@ -23,6 +23,7 @@ type Config struct {
 	Decide  DecideConfig  `yaml:"decide"`
 	Codex   CodexConfig   `yaml:"codex"`
 	Execute ExecuteConfig `yaml:"execute"`
+	Chat    ChatConfig    `yaml:"chat"`
 }
 
 // ServerConfig Hertz 监听配置。
@@ -163,6 +164,17 @@ type ExecuteConfig struct {
 	RepoRoot      string `yaml:"repo_root"`      // code_change repo_ref 的基目录
 	RunsDir       string `yaml:"runs_dir"`       // diff/产物落盘目录
 	TimeoutSecond int    `yaml:"timeout_second"` // 单次 codex 执行超时
+}
+
+// ChatConfig 控制「基于 codex CLI 的流式对话服务」（/api/chat，SSE）。
+// Enabled=false 时不注册路由。复用 codex.bin；沙箱固定为对话场景的
+// danger-full-access + 联网（本地可信环境），reasoning_effort 可调。
+type ChatConfig struct {
+	Enabled         bool   `yaml:"enabled"`
+	Model           string `yaml:"model"`
+	TimeoutSeconds  int    `yaml:"timeout_seconds"`
+	Sandbox         string `yaml:"sandbox"`
+	ReasoningEffort string `yaml:"reasoning_effort"`
 }
 
 // Load 从指定路径读取并解析 YAML 配置。fail-fast：任何错误直接返回。
@@ -390,6 +402,18 @@ func (c *Config) validate() error {
 		if c.Execute.Concurrency <= 0 {
 			return fmt.Errorf("execute.concurrency 必须大于 0")
 		}
+	}
+	if err := validateCodexSandbox("chat", c.Chat.Sandbox); err != nil {
+		return err
+	}
+	if err := validateReasoningEffort("chat", c.Chat.ReasoningEffort); err != nil {
+		return err
+	}
+	if c.Chat.TimeoutSeconds <= 0 {
+		return fmt.Errorf("chat.timeout_seconds 必须大于 0")
+	}
+	if c.Chat.Enabled && c.Chat.Model == "" {
+		return fmt.Errorf("chat 启用时 chat.model 不能为空")
 	}
 	return nil
 }

@@ -113,3 +113,12 @@ execute:
   repo_root: "/Users/bytedance/workspace-local"    # code_change 的 repo_ref 基目录
   runs_dir: "/Users/bytedance/workspace-local/jarvis/runs"  # diff/产物落盘
   timeout_second: 600                              # codex 执行单次超时（改代码可能久）
+
+# 基于 codex CLI 的流式对话（右侧对话框，SSE /api/chat）。enabled=false 时不注册路由。
+# 复用 codex.bin；本地可信环境固定 danger-full-access + 联网，可直接读写 Jarvis MySQL、跑 CLI。
+chat:
+  enabled: true
+  model: "gpt-5.5"                     # 对话模型（可与 codex.model 不同）
+  timeout_seconds: 600                 # 单轮对话超时（可能自跑工具，放宽）
+  sandbox: "danger-full-access"        # 对话场景最大权限
+  reasoning_effort: "medium"           # 对话质量优先，覆盖用户全局 xhigh

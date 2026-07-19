@@ -72,6 +72,7 @@ func TestValidate(t *testing.T) {
 		Decide:  DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
 		Codex:   validCodexConfig(),
 		Execute: validExecuteConfig(),
+		Chat:    validChatConfig(),
 	}
 
 	tests := []struct {
@@ -138,6 +139,13 @@ func TestValidate(t *testing.T) {
 			c.Execute.Enabled = true
 			c.Execute.Concurrency = 0
 		}, wantErr: "execute.concurrency"},
+		{name: "chat sandbox", mutate: func(c *Config) { c.Chat.Sandbox = "sandbox-x" }, wantErr: "chat.codex_sandbox"},
+		{name: "chat reasoning effort", mutate: func(c *Config) { c.Chat.ReasoningEffort = "ultra" }, wantErr: "chat.codex_reasoning_effort"},
+		{name: "chat timeout", mutate: func(c *Config) { c.Chat.TimeoutSeconds = 0 }, wantErr: "chat.timeout_seconds"},
+		{name: "chat model when enabled", mutate: func(c *Config) {
+			c.Chat.Enabled = true
+			c.Chat.Model = ""
+		}, wantErr: "chat.model"},
 	}
 
 	for _, tt := range tests {
@@ -193,6 +201,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 		Decide:  DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
 		Codex:   validCodexConfig(),
 		Execute: validExecuteConfig(),
+		Chat:    validChatConfig(),
 	}
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("validate() error = %v", err)
@@ -213,5 +222,12 @@ func validExecuteConfig() ExecuteConfig {
 func validCodexConfig() CodexConfig {
 	return CodexConfig{
 		Bin: "codex", Model: "fixture-model", TimeoutSeconds: 120,
+	}
+}
+
+func validChatConfig() ChatConfig {
+	return ChatConfig{
+		Enabled: true, Model: "fixture-model", TimeoutSeconds: 600,
+		Sandbox: "danger-full-access", ReasoningEffort: "medium",
 	}
 }

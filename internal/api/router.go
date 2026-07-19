@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"jarvis/internal/background"
+	"jarvis/internal/chat"
 	"jarvis/internal/decide"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -33,6 +34,7 @@ type Dependencies struct {
 	DigestSummarizer    *insight.Summarizer // 可选：codex 未启用时为 nil，总结接口返回 503
 	Debug               *insight.DebugService
 	Logs                *insight.LogReader
+	Chat                *chat.Service // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -133,5 +135,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/resources/:resource_id", GetResource(deps.Resources))
 	h.PUT("/api/resources/:resource_id", UpdateResource(deps.Resources))
 	h.DELETE("/api/resources/:resource_id", DeleteResource(deps.Resources))
+	// 基于 codex CLI 的流式对话（SSE）。与 execute 一致：未启用（nil）则不注册路由。
+	if deps.Chat != nil {
+		h.POST("/api/chat", Chat(deps.Chat))
+	}
 	return nil
 }
