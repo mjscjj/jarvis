@@ -26,7 +26,7 @@ type ServerConfig struct {
 	Addr string `yaml:"addr"` // 形如 127.0.0.1:18800
 }
 
-// MySQLConfig 结构化存储（source of truth）。本轮骨架预留，不实际连接。
+// MySQLConfig 结构化存储（source of truth）。
 type MySQLConfig struct {
 	DSN             string `yaml:"dsn"`               // user:pass@tcp(127.0.0.1:3306)/jarvis?charset=utf8mb4&parseTime=true&loc=Local
 	MaxOpenConns    int    `yaml:"max_open_conns"`    // 连接池上限
@@ -92,11 +92,26 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// validate 只校验"最小可跑"必需项。其余（MySQL/mem0/codex）在对应模块启用时再各自校验，
-// 避免骨架阶段因未配置外部依赖而无法启动。
+// validate 校验当前已启用模块的全部启动条件。尚未接入的 mem0/model/
+// lark-cli/codex 会在各自里程碑启用时加入对应校验。
 func (c *Config) validate() error {
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")
+	}
+	if c.MySQL.DSN == "" {
+		return fmt.Errorf("mysql.dsn 不能为空")
+	}
+	if c.MySQL.MaxOpenConns <= 0 {
+		return fmt.Errorf("mysql.max_open_conns 必须大于 0")
+	}
+	if c.MySQL.MaxIdleConns < 0 {
+		return fmt.Errorf("mysql.max_idle_conns 不能小于 0")
+	}
+	if c.MySQL.MaxIdleConns > c.MySQL.MaxOpenConns {
+		return fmt.Errorf("mysql.max_idle_conns 不能大于 mysql.max_open_conns")
+	}
+	if c.MySQL.ConnMaxLifetime <= 0 {
+		return fmt.Errorf("mysql.conn_max_lifetime 必须大于 0")
 	}
 	return nil
 }

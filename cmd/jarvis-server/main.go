@@ -1,14 +1,16 @@
 // Command jarvis-server 是 Jarvis 的单体主进程（总纲 §1.1）。
 //
-// 骨架阶段只做三件事：加载配置 → 起 Hertz → 注册路由（/healthz）。
-// cron 调度、流水线编排、MySQL/mem0/codex 接入等在后续里程碑逐步加入。
+// 当前启动链路：加载配置 → 连接 MySQL → 迁移核心表 → 起 Hertz。
 package main
 
 import (
+	"context"
 	"flag"
+	"time"
 
 	"jarvis/internal/api"
 	"jarvis/internal/config"
+	"jarvis/internal/store"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
@@ -16,6 +18,7 @@ import (
 
 func main() {
 	configPath := flag.String("config", "conf/config.yaml", "配置文件路径")
+	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库迁移，成功后退出")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
@@ -24,10 +27,30 @@ func main() {
 		hlog.Fatalf("load config failed: %v", err)
 	}
 
+	connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	db, err := store.OpenMySQL(connectCtx, cfg.MySQL)
+	if err != nil {
+		hlog.Fatalf("connect mysql failed: %v", err)
+	}
+	defer func() {
+		if err := store.Close(db); err != nil {
+			hlog.Errorf("close mysql failed: %v", err)
+		}
+	}()
+
+	if err := store.MigrateCore(db); err != nil {
+		hlog.Fatalf("migrate mysql failed: %v", err)
+	}
+	if *migrateOnly {
+		hlog.Infof("mysql core schema migration completed")
+		return
+	}
+
 	h := server.New(
 		server.WithHostPorts(cfg.Server.Addr),
 	)
-	api.Register(h)
+	api.Register(h, api.Dependencies{DB: db})
 
 	hlog.Infof("jarvis-server listening on %s", cfg.Server.Addr)
 	// Spin 阻塞运行并处理优雅退出（SIGINT/SIGTERM/SIGHUP）。

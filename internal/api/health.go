@@ -6,14 +6,41 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"gorm.io/gorm"
 )
 
-// Health 存活探针。骨架阶段只报进程存活，不探 MySQL/mem0/codex 等下游
-// （下游健康检查待各模块接入后再加，避免此时误报不健康）。
-func Health(ctx context.Context, c *app.RequestContext) {
-	c.JSON(consts.StatusOK, map[string]any{
-		"status":  "ok",
-		"service": "jarvis-server",
-		"time":    time.Now().Format(time.RFC3339),
-	})
+// Health reports process and MySQL readiness. Once a dependency is part of the
+// startup contract it must be checked here instead of reporting a false green.
+func Health(db *gorm.DB) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if db == nil {
+			c.JSON(consts.StatusServiceUnavailable, healthPayload("error", "mysql dependency is nil"))
+			return
+		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			c.JSON(consts.StatusServiceUnavailable, healthPayload("error", err.Error()))
+			return
+		}
+		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if err := sqlDB.PingContext(pingCtx); err != nil {
+			c.JSON(consts.StatusServiceUnavailable, healthPayload("error", err.Error()))
+			return
+		}
+		c.JSON(consts.StatusOK, healthPayload("ok", ""))
+	}
+}
+
+func healthPayload(status, dbError string) map[string]any {
+	database := map[string]any{"status": status}
+	if dbError != "" {
+		database["error"] = dbError
+	}
+	return map[string]any{
+		"status":   status,
+		"service":  "jarvis-server",
+		"database": database,
+		"time":     time.Now().Format(time.RFC3339),
+	}
 }
