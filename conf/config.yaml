@@ -24,11 +24,23 @@ model:
 
 # lark-cli 子进程封装（总纲 §4）
 lark_cli:
-  bin: "lark-cli"
+  bin: "/Users/bytedance/.local/lib/node_modules/@larksuite/cli/bin/lark-cli"
   rate_limit: 5
   burst: 10
   concurrent: 2
   timeout_sec: 60
+
+# M2 消息采集：首次发现从当前时刻起步，不回溯历史。
+capture:
+  page_size: 50
+  scan_workers: 2
+  hot_age_hours: 6
+  warm_age_hours: 168
+  timezone: "Asia/Shanghai"
+  discover_schedule: "@every 1h"
+  hot_schedule: "@every 5m"
+  warm_schedule: "@every 30m"
+  cold_schedule: "@every 6h"
 
 # M4 决策用 codex CLI（总纲 §11.2，全部可配置）
 codex:

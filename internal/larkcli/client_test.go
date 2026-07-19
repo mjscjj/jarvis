@@ -1,0 +1,119 @@
+package larkcli
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+)
+
+type testResponse struct {
+	OK   bool `json:"ok"`
+	Data struct {
+		Value string `json:"value"`
+	} `json:"data"`
+}
+
+func TestRun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+
+	tests := []struct {
+		name       string
+		script     string
+		timeout    time.Duration
+		wantValue  string
+		wantErr    string
+		wantAPIErr bool
+		wantCmdErr bool
+	}{
+		{
+			name:      "success",
+			script:    `printf '%s' '{"ok":true,"data":{"value":"captured"}}'`,
+			wantValue: "captured",
+		},
+		{
+			name:       "api error with zero exit",
+			script:     `printf '%s' '{"ok":false,"error":{"type":"api","subtype":"rate_limited","message":"slow down"}}'`,
+			wantErr:    "slow down",
+			wantAPIErr: true,
+		},
+		{
+			name:    "invalid json",
+			script:  `printf '%s' 'not-json'`,
+			wantErr: "decode lark-cli envelope",
+		},
+		{
+			name:       "non-zero exit",
+			script:     `printf '%s' 'boom' >&2; exit 7`,
+			wantErr:    "boom",
+			wantCmdErr: true,
+		},
+		{
+			name:       "timeout",
+			script:     `sleep 1`,
+			timeout:    20 * time.Millisecond,
+			wantErr:    "deadline exceeded",
+			wantCmdErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bin := writeScript(t, tt.script)
+			timeout := tt.timeout
+			if timeout == 0 {
+				timeout = 5 * time.Second
+			}
+			client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: timeout})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			var got testResponse
+			err = client.Run(context.Background(), &got, "im", "+chat-list")
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Run() error = %v", err)
+				}
+				if got.Data.Value != tt.wantValue {
+					t.Fatalf("Run() value = %q, want %q", got.Data.Value, tt.wantValue)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Run() error = %v, want containing %q", err, tt.wantErr)
+			}
+			var apiErr *APIError
+			if errors.As(err, &apiErr) != tt.wantAPIErr {
+				t.Errorf("errors.As(APIError) = %v, want %v", errors.As(err, &apiErr), tt.wantAPIErr)
+			}
+			var cmdErr *CommandError
+			if errors.As(err, &cmdErr) != tt.wantCmdErr {
+				t.Errorf("errors.As(CommandError) = %v, want %v", errors.As(err, &cmdErr), tt.wantCmdErr)
+			}
+		})
+	}
+}
+
+func TestRunRejectsCallerFormat(t *testing.T) {
+	client := &Client{}
+	err := client.Run(context.Background(), &testResponse{}, "im", "+chat-list", "--format", "pretty")
+	if err == nil || !strings.Contains(err.Error(), "owned by the client") {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+func writeScript(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "fake-lark-cli")
+	content := "#!/bin/sh\n" + body + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+		t.Fatalf("write fake lark-cli: %v", err)
+	}
+	return path
+}

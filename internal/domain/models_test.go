@@ -26,3 +26,17 @@ func TestCoreModels(t *testing.T) {
 		}
 	}
 }
+
+func TestCaptureModels(t *testing.T) {
+	t.Parallel()
+	models := CaptureModels()
+	if got, want := len(models), 2; got != want {
+		t.Fatalf("CaptureModels() length = %d, want %d", got, want)
+	}
+	if got := models[0].(*Message).TableName(); got != "message" {
+		t.Errorf("Message table = %q", got)
+	}
+	if got := models[1].(*Checkpoint).TableName(); got != "chat_checkpoint" {
+		t.Errorf("Checkpoint table = %q", got)
+	}
+}

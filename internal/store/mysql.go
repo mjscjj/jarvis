@@ -40,14 +40,15 @@ func OpenMySQL(ctx context.Context, cfg config.MySQLConfig) (*gorm.DB, error) {
 	return db, nil
 }
 
-// MigrateCore creates or updates the seven canonical entity tables. Migration
-// errors abort startup so the process never serves against a partial schema.
-func MigrateCore(db *gorm.DB) error {
+// Migrate creates or updates all tables owned by implemented milestones.
+// Migration errors abort startup so the process never serves a partial schema.
+func Migrate(db *gorm.DB) error {
 	if db == nil {
-		return fmt.Errorf("migrate core schema: db is nil")
+		return fmt.Errorf("migrate schema: db is nil")
 	}
-	if err := db.AutoMigrate(domain.CoreModels()...); err != nil {
-		return fmt.Errorf("migrate core schema: %w", err)
+	models := append(domain.CoreModels(), domain.CaptureModels()...)
+	if err := db.AutoMigrate(models...); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
 	}
 	return nil
 }

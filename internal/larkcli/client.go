@@ -1,0 +1,166 @@
+// Package larkcli provides the single process boundary used for all lark-cli
+// calls. It owns path resolution, rate/concurrency limits, timeout handling and
+// the CLI response envelope contract.
+package larkcli
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os/exec"
+	"strings"
+	"time"
+
+	"golang.org/x/time/rate"
+)
+
+// Options configures a Client. Invalid values are rejected at construction.
+type Options struct {
+	Bin         string
+	RateLimit   float64
+	Burst       int
+	Concurrency int
+	Timeout     time.Duration
+}
+
+// Client is safe for concurrent use by all capture jobs.
+type Client struct {
+	bin     string
+	limiter *rate.Limiter
+	sem     chan struct{}
+	timeout time.Duration
+}
+
+// APIError is the structured error returned in a lark-cli {ok:false} envelope.
+type APIError struct {
+	Type    string `json:"type"`
+	Subtype string `json:"subtype"`
+	Message string `json:"message"`
+	Hint    string `json:"hint"`
+}
+
+func (e *APIError) Error() string {
+	if e.Hint == "" {
+		return fmt.Sprintf("lark-cli api error type=%s subtype=%s: %s", e.Type, e.Subtype, e.Message)
+	}
+	return fmt.Sprintf("lark-cli api error type=%s subtype=%s: %s (hint: %s)", e.Type, e.Subtype, e.Message, e.Hint)
+}
+
+// CommandError reports failures before a valid successful CLI envelope exists.
+type CommandError struct {
+	Args     []string
+	ExitCode int
+	Stderr   string
+	Cause    error
+}
+
+func (e *CommandError) Error() string {
+	return fmt.Sprintf("lark-cli %q exit=%d: %v; stderr=%s", e.Args, e.ExitCode, e.Cause, e.Stderr)
+}
+
+func (e *CommandError) Unwrap() error { return e.Cause }
+
+type envelope struct {
+	OK    bool      `json:"ok"`
+	Error *APIError `json:"error"`
+}
+
+// New resolves the binary eagerly so a broken deployment fails at startup.
+func New(opts Options) (*Client, error) {
+	if opts.Bin == "" {
+		return nil, fmt.Errorf("lark-cli bin is empty")
+	}
+	if opts.RateLimit <= 0 {
+		return nil, fmt.Errorf("lark-cli rate limit must be positive")
+	}
+	if opts.Burst <= 0 {
+		return nil, fmt.Errorf("lark-cli burst must be positive")
+	}
+	if opts.Concurrency <= 0 {
+		return nil, fmt.Errorf("lark-cli concurrency must be positive")
+	}
+	if opts.Timeout <= 0 {
+		return nil, fmt.Errorf("lark-cli timeout must be positive")
+	}
+
+	bin, err := exec.LookPath(opts.Bin)
+	if err != nil {
+		return nil, fmt.Errorf("resolve lark-cli binary %q: %w", opts.Bin, err)
+	}
+	return &Client{
+		bin:     bin,
+		limiter: rate.NewLimiter(rate.Limit(opts.RateLimit), opts.Burst),
+		sem:     make(chan struct{}, opts.Concurrency),
+		timeout: opts.Timeout,
+	}, nil
+}
+
+// Run executes a lark-cli command and unmarshals its successful JSON envelope.
+// Callers must not pass --format; this boundary always forces JSON.
+func (c *Client) Run(ctx context.Context, out any, args ...string) error {
+	if c == nil {
+		return fmt.Errorf("lark-cli client is nil")
+	}
+	if out == nil {
+		return fmt.Errorf("lark-cli output target is nil")
+	}
+	for _, arg := range args {
+		if arg == "--format" || strings.HasPrefix(arg, "--format=") || arg == "--json" {
+			return fmt.Errorf("lark-cli output format is owned by the client")
+		}
+	}
+	if err := c.limiter.Wait(ctx); err != nil {
+		return fmt.Errorf("wait for lark-cli rate limit: %w", err)
+	}
+	select {
+	case c.sem <- struct{}{}:
+		defer func() { <-c.sem }()
+	case <-ctx.Done():
+		return fmt.Errorf("wait for lark-cli process slot: %w", ctx.Err())
+	}
+
+	commandCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	commandArgs := append(append([]string(nil), args...), "--format", "json")
+	cmd := exec.CommandContext(commandCtx, c.bin, commandArgs...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		exitCode := -1
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		cause := err
+		if commandCtx.Err() != nil {
+			cause = commandCtx.Err()
+		}
+		return &CommandError{
+			Args:     commandArgs,
+			ExitCode: exitCode,
+			Stderr:   strings.TrimSpace(stderr.String()),
+			Cause:    cause,
+		}
+	}
+
+	raw := stdout.Bytes()
+	var meta envelope
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return fmt.Errorf("decode lark-cli envelope for %q: %w", commandArgs, err)
+	}
+	if !meta.OK {
+		if meta.Error == nil {
+			return fmt.Errorf("lark-cli %q returned ok=false without error", commandArgs)
+		}
+		return meta.Error
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("decode lark-cli response for %q: %w", commandArgs, err)
+	}
+	return nil
+}

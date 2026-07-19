@@ -18,6 +18,7 @@ type Config struct {
 	Mem0    Mem0Config    `yaml:"mem0"`
 	Model   ModelConfig   `yaml:"model"`
 	LarkCLI LarkCLIConfig `yaml:"lark_cli"`
+	Capture CaptureConfig `yaml:"capture"`
 	Codex   CodexConfig   `yaml:"codex"`
 }
 
@@ -51,9 +52,22 @@ type ModelConfig struct {
 type LarkCLIConfig struct {
 	Bin        string  `yaml:"bin"`         // lark-cli 绝对路径
 	RateLimit  float64 `yaml:"rate_limit"`  // 令牌桶补充速率 tokens/s
-	Burst      float64 `yaml:"burst"`       // 令牌桶容量
+	Burst      int     `yaml:"burst"`       // 令牌桶容量
 	Concurrent int     `yaml:"concurrent"`  // 并发子进程上限
 	TimeoutSec int     `yaml:"timeout_sec"` // 单次调用超时
+}
+
+// CaptureConfig controls M2 pagination, time parsing and chat tier thresholds.
+type CaptureConfig struct {
+	PageSize         int    `yaml:"page_size"`
+	ScanWorkers      int    `yaml:"scan_workers"`
+	HotAgeHours      int    `yaml:"hot_age_hours"`
+	WarmAgeHours     int    `yaml:"warm_age_hours"`
+	Timezone         string `yaml:"timezone"`
+	DiscoverSchedule string `yaml:"discover_schedule"`
+	HotSchedule      string `yaml:"hot_schedule"`
+	WarmSchedule     string `yaml:"warm_schedule"`
+	ColdSchedule     string `yaml:"cold_schedule"`
 }
 
 // CodexConfig M4 决策用 codex CLI（总纲 §11.2，全部可配置、不硬编码）。
@@ -112,6 +126,39 @@ func (c *Config) validate() error {
 	}
 	if c.MySQL.ConnMaxLifetime <= 0 {
 		return fmt.Errorf("mysql.conn_max_lifetime 必须大于 0")
+	}
+	if c.LarkCLI.Bin == "" {
+		return fmt.Errorf("lark_cli.bin 不能为空")
+	}
+	if c.LarkCLI.RateLimit <= 0 {
+		return fmt.Errorf("lark_cli.rate_limit 必须大于 0")
+	}
+	if c.LarkCLI.Burst <= 0 {
+		return fmt.Errorf("lark_cli.burst 必须大于 0")
+	}
+	if c.LarkCLI.Concurrent <= 0 {
+		return fmt.Errorf("lark_cli.concurrent 必须大于 0")
+	}
+	if c.LarkCLI.TimeoutSec <= 0 {
+		return fmt.Errorf("lark_cli.timeout_sec 必须大于 0")
+	}
+	if c.Capture.PageSize < 1 || c.Capture.PageSize > 50 {
+		return fmt.Errorf("capture.page_size 必须在 1 到 50 之间")
+	}
+	if c.Capture.ScanWorkers <= 0 {
+		return fmt.Errorf("capture.scan_workers 必须大于 0")
+	}
+	if c.Capture.HotAgeHours <= 0 {
+		return fmt.Errorf("capture.hot_age_hours 必须大于 0")
+	}
+	if c.Capture.WarmAgeHours <= c.Capture.HotAgeHours {
+		return fmt.Errorf("capture.warm_age_hours 必须大于 capture.hot_age_hours")
+	}
+	if c.Capture.Timezone == "" {
+		return fmt.Errorf("capture.timezone 不能为空")
+	}
+	if c.Capture.DiscoverSchedule == "" || c.Capture.HotSchedule == "" || c.Capture.WarmSchedule == "" || c.Capture.ColdSchedule == "" {
+		return fmt.Errorf("capture 的 discover/hot/warm/cold schedule 均不能为空")
 	}
 	return nil
 }

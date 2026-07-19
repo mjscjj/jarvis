@@ -37,7 +37,7 @@ func (Project) TableName() string { return "project" }
 type Group struct {
 	ID              uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
 	ChatID          string    `gorm:"column:chat_id;type:varchar(64);not null;uniqueIndex:uk_group_chat_id"`
-	ChatMode        string    `gorm:"column:chat_mode;type:varchar(16);not null"`
+	ChatMode        string    `gorm:"column:chat_mode;type:varchar(16);not null"` // group | p2p | topic
 	Name            *string   `gorm:"column:name;type:varchar(512)"`
 	Description     *string   `gorm:"column:description;type:text"`
 	OwnerOpenID     *string   `gorm:"column:owner_open_id;type:varchar(64)"`

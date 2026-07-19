@@ -13,11 +13,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestMigrateCoreMySQL validates the actual MySQL DDL. It is opt-in because it
+// TestMigrateMySQL validates the actual MySQL DDL. It is opt-in because it
 // requires a dedicated empty database:
 //
-// JARVIS_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/jarvis_migration_test?parseTime=true' go test ./internal/store -run TestMigrateCoreMySQL
-func TestMigrateCoreMySQL(t *testing.T) {
+// JARVIS_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/jarvis_migration_test?parseTime=true' go test ./internal/store -run TestMigrateMySQL
+func TestMigrateMySQL(t *testing.T) {
 	dsn := os.Getenv("JARVIS_TEST_MYSQL_DSN")
 	if dsn == "" {
 		t.Skip("JARVIS_TEST_MYSQL_DSN is required for MySQL integration test")
@@ -40,15 +40,16 @@ func TestMigrateCoreMySQL(t *testing.T) {
 		}
 	})
 
-	for _, model := range domain.CoreModels() {
+	models := append(domain.CoreModels(), domain.CaptureModels()...)
+	for _, model := range models {
 		if db.Migrator().HasTable(model) {
 			t.Fatalf("integration database is not empty: table %T already exists", model)
 		}
 	}
-	if err := MigrateCore(db); err != nil {
-		t.Fatalf("MigrateCore() error = %v", err)
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
 	}
-	for _, model := range domain.CoreModels() {
+	for _, model := range models {
 		if !db.Migrator().HasTable(model) {
 			t.Errorf("missing migrated table %T", model)
 		}

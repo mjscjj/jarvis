@@ -4,6 +4,8 @@ go 1.26.4
 
 require (
 	github.com/cloudwego/hertz v0.10.5
+	github.com/robfig/cron/v3 v3.0.1
+	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/mysql v1.6.0
