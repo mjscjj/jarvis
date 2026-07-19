@@ -29,8 +29,9 @@ type preparedCandidate struct {
 	// ProjectID is the resolved project (group-bound has priority, else matched
 	// from project_hint). It is authoritative for both the Todo column and the
 	// dedup fingerprint so the same clue dedups stably across runs.
-	ProjectID  *uint64
-	Resolution datatypes.JSON
+	ProjectID       *uint64
+	Resolution      datatypes.JSON
+	ContextSnapshot datatypes.JSON
 }
 
 func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, results []UnitExtraction, modelName string) (PersistStats, error) {
@@ -43,7 +44,7 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 	if strings.TrimSpace(modelName) == "" || len(modelName) > 64 {
 		return PersistStats{}, fmt.Errorf("persist extraction model name must contain 1 to 64 bytes")
 	}
-	prepared, err := s.prepareResults(batch, results)
+	prepared, err := s.prepareResults(ctx, batch, results)
 	if err != nil {
 		return PersistStats{}, err
 	}
@@ -97,7 +98,7 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 	return stats, nil
 }
 
-func (s *PipelineStore) prepareResults(batch ChatBatch, results []UnitExtraction) ([]preparedCandidate, error) {
+func (s *PipelineStore) prepareResults(ctx context.Context, batch ChatBatch, results []UnitExtraction) ([]preparedCandidate, error) {
 	units := make(map[string]ConversationUnit, len(batch.Units))
 	for _, unit := range batch.Units {
 		if _, exists := units[unit.Key]; exists {
@@ -117,7 +118,7 @@ func (s *PipelineStore) prepareResults(batch ChatBatch, results []UnitExtraction
 		}
 		seenResults[result.UnitKey] = struct{}{}
 		for i := range result.Candidates {
-			candidate, err := s.prepareCandidate(batch, unit, result.Candidates[i].Candidate)
+			candidate, err := s.prepareCandidate(ctx, batch, unit, result.Candidates[i].Candidate, result.Memories)
 			if err != nil {
 				return nil, fmt.Errorf("prepare candidate unit=%s index=%d: %w", unit.Key, i, err)
 			}
@@ -142,7 +143,7 @@ func (s *PipelineStore) prepareResults(batch ChatBatch, results []UnitExtraction
 	return prepared, nil
 }
 
-func (s *PipelineStore) prepareCandidate(batch ChatBatch, unit ConversationUnit, candidate Candidate) (*preparedCandidate, error) {
+func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, memories []map[string]any) (*preparedCandidate, error) {
 	if err := validateStrictSlotShape(candidate.Slots); err != nil {
 		return nil, err
 	}
@@ -164,6 +165,15 @@ func (s *PipelineStore) prepareCandidate(batch ChatBatch, unit ConversationUnit,
 	if err != nil {
 		return nil, err
 	}
+	snapshot, err := s.buildContextSnapshot(ctx, batch, unit, candidate, projectID, memories)
+	if err != nil {
+		return nil, err
+	}
+	snapshotRaw, err := snapshot.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode context snapshot: %w", err)
+	}
+	snapshotJSON := datatypes.JSON(snapshotRaw)
 
 	byID := make(map[string]MessageContext, len(unit.Messages))
 	for _, message := range unit.Messages {
@@ -209,7 +219,7 @@ func (s *PipelineStore) prepareCandidate(batch ChatBatch, unit ConversationUnit,
 	return &preparedCandidate{
 		Candidate: candidate, Fingerprint: fingerprint, AssignerOpenID: assigner,
 		LeaderAssigned: len(leaders) > 0, DueAt: dueAt, FirstEvidenceAt: first, LastEvidenceAt: last,
-		ProjectID: projectID, Resolution: resolutionJSON,
+		ProjectID: projectID, Resolution: resolutionJSON, ContextSnapshot: snapshotJSON,
 	}, nil
 }
 
@@ -273,8 +283,8 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 		AssignerOpenID: prepared.AssignerOpenID, IsLeaderAssigned: prepared.LeaderAssigned,
 		DueAt: prepared.DueAt, Status: "extracted", MissingInfo: datatypes.JSON(missingInfo),
 		DedupFingerprint: prepared.Fingerprint, ExtractionModel: modelName, PromptVersion: PromptVersion,
-		Resolution: prepared.Resolution,
-		Revision:   1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
+		Resolution: prepared.Resolution, ContextSnapshot: prepared.ContextSnapshot,
+		Revision: 1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
 	}
 	if err := tx.Create(&todo).Error; err != nil {
 		return false, nil, fmt.Errorf("create todo fingerprint=%s: %w", prepared.Fingerprint, err)
@@ -343,6 +353,10 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		"prompt_version": PromptVersion, "revision": existing.Revision + 1,
 		"last_evidence_at": maxTime(existing.LastEvidenceAt, prepared.LastEvidenceAt),
 		"version":          gorm.Expr("version + 1"),
+		// Refresh the frozen snapshot/resolution on new evidence so M4/M5 always
+		// replay the latest background for this clue.
+		"context_snapshot": prepared.ContextSnapshot,
+		"resolution":       prepared.Resolution,
 	}
 	if prepared.AssignerOpenID != nil {
 		updates["assigner_open_id"] = *prepared.AssignerOpenID

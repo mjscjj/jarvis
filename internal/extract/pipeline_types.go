@@ -19,11 +19,12 @@ type LoadOptions struct {
 }
 
 type GroupContext struct {
-	ID         uint64
-	ChatID     string
-	Name       string
-	IsKeyGroup bool
-	ProjectID  *uint64
+	ID          uint64
+	ChatID      string
+	Name        string
+	Description  string // group announcement; a strong signal for project attribution
+	IsKeyGroup   bool
+	ProjectID    *uint64
 }
 
 type ProjectContext struct {
@@ -126,6 +127,9 @@ type ChatBatch struct {
 type UnitExtraction struct {
 	UnitKey    string
 	Candidates []ResolvedCandidate
+	// Memories are the per-unit retrieved memories (filtered) frozen into each
+	// Todo's context_snapshot so M4/M5 replay the same background.
+	Memories []map[string]any
 }
 
 type ResolvedCandidate struct {

@@ -156,7 +156,7 @@ func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
 				}
 				resolved[i] = ResolvedCandidate{Candidate: extracted.Candidates[i], Semantic: resolution}
 			}
-			results = append(results, UnitExtraction{UnitKey: unit.Key, Candidates: resolved})
+			results = append(results, UnitExtraction{UnitKey: unit.Key, Candidates: resolved, Memories: FilterMemoriesForSnapshot(memories.Results)})
 			stats.Units++
 			stats.Candidates += len(extracted.Candidates)
 		}

@@ -262,7 +262,8 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 	batch := &ChatBatch{
 		Group: GroupContext{
 			ID: group.ID, ChatID: group.ChatID, Name: stringValue(group.Name),
-			IsKeyGroup: group.IsKeyGroup, ProjectID: copyUint64(group.ProjectID),
+			Description: stringValue(group.Description),
+			IsKeyGroup:  group.IsKeyGroup, ProjectID: copyUint64(group.ProjectID),
 		},
 		OpenTodos: openTodos,
 		Units:     units,

@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 			Participants: []ParticipantContext{{OpenID: "ou_leader", Role: "leader", IsLeader: true}},
 		}},
 	}
-	prepared, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
+	prepared, err := store.prepareResults(context.Background(), batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
 	if err != nil {
 		t.Fatalf("prepareResults() error = %v", err)
 	}
@@ -44,7 +45,7 @@ func TestPrepareResultsRejectsIncompleteIdentity(t *testing.T) {
 			MessageID: "om_1", Content: "请修改鉴权逻辑", IsNew: true, Extractable: true,
 		}}}},
 	}
-	_, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
+	_, err := store.prepareResults(context.Background(), batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
 	if !errors.Is(err, ErrFingerprintIncomplete) {
 		t.Fatalf("prepareResults() error = %v", err)
 	}
@@ -53,7 +54,7 @@ func TestPrepareResultsRejectsIncompleteIdentity(t *testing.T) {
 func TestPrepareResultsRequiresEveryConversationUnit(t *testing.T) {
 	store := &PipelineStore{location: time.UTC}
 	batch := ChatBatch{Units: []ConversationUnit{{Key: "chat"}, {Key: "topic:om_root"}}}
-	if _, err := store.prepareResults(batch, []UnitExtraction{{UnitKey: "chat"}}); err == nil {
+	if _, err := store.prepareResults(context.Background(), batch, []UnitExtraction{{UnitKey: "chat"}}); err == nil {
 		t.Fatal("prepareResults() accepted missing conversation unit result")
 	}
 }

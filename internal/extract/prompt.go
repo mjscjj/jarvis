@@ -257,6 +257,12 @@ func renderConversation(messages []MessageContext, location *time.Location) stri
 }
 
 func filterMemories(memories []map[string]any) []map[string]any {
+	return FilterMemoriesForSnapshot(memories)
+}
+
+// FilterMemoriesForSnapshot drops M3's own memories (metadata.source == "m3") so
+// neither the prompt nor the frozen context_snapshot self-reinforces.
+func FilterMemoriesForSnapshot(memories []map[string]any) []map[string]any {
 	result := make([]map[string]any, 0, len(memories))
 	for _, item := range memories {
 		metadata, _ := item["metadata"].(map[string]any)
