@@ -53,10 +53,12 @@ type MessageContext struct {
 }
 
 type ParticipantContext struct {
-	OpenID   string
-	Name     string
-	Role     string
-	IsLeader bool
+	OpenID    string
+	Name      string
+	Role      string
+	IsLeader  bool
+	Relation  string
+	CommStyle string
 }
 
 type ResourceContext struct {

@@ -55,6 +55,22 @@ func TestBuildPromptTrimsContextBeforeFailing(t *testing.T) {
 	}
 }
 
+func TestRenderParticipantsInjectsCommStyle(t *testing.T) {
+	rendered := renderParticipants([]ParticipantContext{
+		{OpenID: "ou_leader", Name: "老板", Role: "leader", IsLeader: true, Relation: "直属领导", CommStyle: "指令常以「看下」隐含表达"},
+		{OpenID: "ou_peer", Name: "同事", Role: "colleague"},
+	})
+	for _, want := range []string{`relation="直属领导"`, `comm_style="指令常以「看下」隐含表达"`} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("renderParticipants missing %q:\n%s", want, rendered)
+		}
+	}
+	// A participant without comm_style must not emit an empty comm_style token.
+	if strings.Contains(rendered, `name="同事" role=colleague is_leader=false comm_style`) {
+		t.Fatalf("renderParticipants emitted empty comm_style for peer:\n%s", rendered)
+	}
+}
+
 func TestSalientQueryRequiresExtractableNewMessage(t *testing.T) {
 	_, err := SalientQuery(ConversationUnit{Key: "chat", Messages: []MessageContext{{
 		MessageID: "om_context", Content: "only context", IsNew: false, Extractable: true,

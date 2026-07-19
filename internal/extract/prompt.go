@@ -119,7 +119,14 @@ func renderParticipants(participants []ParticipantContext) string {
 	}
 	lines := make([]string, len(participants))
 	for i, participant := range participants {
-		lines[i] = fmt.Sprintf("open_id=%s name=%q role=%s is_leader=%t", participant.OpenID, participant.Name, participant.Role, participant.IsLeader)
+		line := fmt.Sprintf("open_id=%s name=%q role=%s is_leader=%t", participant.OpenID, participant.Name, participant.Role, participant.IsLeader)
+		if participant.Relation != "" {
+			line += fmt.Sprintf(" relation=%q", participant.Relation)
+		}
+		if participant.CommStyle != "" {
+			line += fmt.Sprintf(" comm_style=%q", participant.CommStyle)
+		}
+		lines[i] = line
 	}
 	return strings.Join(lines, "\n")
 }

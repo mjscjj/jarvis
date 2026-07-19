@@ -248,6 +248,8 @@ func (s *PipelineStore) enrichParticipants(ctx context.Context, messages []Messa
 			participant.Name = person.Name
 			participant.Role = person.Role
 			participant.IsLeader = person.Role == "leader"
+			participant.Relation = stringValue(person.Relation)
+			participant.CommStyle = stringValue(person.CommStyle)
 		}
 		if participant.Name == "" {
 			for _, message := range messages {
