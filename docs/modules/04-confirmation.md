@@ -388,7 +388,7 @@ Todo 和 Task 是**两个生命周期**，M4 是衔接点：
 - **M4 写入的 Todo 状态**：`scoring / need_info / need_decision / auto(瞬态) / confirmed / dismissed / expired`。
 - **M4 生成 Task**：只在 Todo 进入 `confirmed` 的**同一事务**里 `INSERT task(status=pending)`，保证"确认"与"生成 Task"原子。
 - **Task 的 `pending→executing→done/failed` 归 M5**，M4 不碰。
-- 状态守卫：Todo 带 `version`（乐观锁）；`need_* → confirmed/dismissed` 只允许一次，重复请求 no-op。双通道（后台+卡片）靠 `version` + `event_id` 去重。
+- 状态守卫：Todo 带 `version`（乐观锁）；`need_* → confirmed/dismissed` 只允许一次，重复/过期请求返回 409 且不产生副作用。双通道（后台+卡片）靠 `version` + `event_id` 去重。
 
 ### 5.0 TaskFactory 固化逻辑（Go）
 
@@ -545,7 +545,7 @@ type DecisionAudit struct {
     RiskEff                float64
     RiskFactors            datatypes.JSON
     MatchedRules           datatypes.JSON
-    DecisionEngine         string // rule | codex
+    DecisionEngine         string // rule | codex | manual
     CodexSessionID         string // codex 深判时
     ThresholdConfigVersion string
     Approver               string // system / user
@@ -585,7 +585,7 @@ CREATE TABLE decision_audit (
   risk_eff                 DECIMAL(4,3),
   risk_factors             JSON,
   matched_rules            JSON,
-  decision_engine          VARCHAR(16),   -- rule | codex
+  decision_engine          VARCHAR(16),   -- rule | codex | manual
   codex_session_id         VARCHAR(128),
   threshold_config_version VARCHAR(32),
   approver                 VARCHAR(16),   -- system / user
@@ -625,7 +625,23 @@ CREATE TABLE decision_audit (
 
 ---
 
-## 11. 参考资料（2026 HITL 最佳实践）
+## 11. 当前实现进展（2026-07-19）
+
+本轮先实现不依赖待校准阈值的**人工确认核心闸门**，没有擅自开启自动确认：
+
+- 已新增 `internal/decide`，人工批准仅接受 `need_decision`；人工拒绝接受 `need_info / need_decision`。其他来源状态直接冲突，不把 M3 的 `extracted` Todo 绕过打分变成 Task。
+- 已实现 `POST /api/confirmations/:todo_id/approve` 和 `/reject`。两者强制携带 `expected_version`，请求体拒绝未知字段；版本冲突、状态冲突、重复 Task 返回 409。
+- 批准时先校验并规范化非空 plan，再冻结 project / group / assigner / 源消息 / mem0 检索结果为 `background`；mem0 或源数据异常直接失败，不使用空背景 fallback。
+- Task 的 `plan / slots / background` 均为确认时快照；`action_hash = sha256(canonical(action_type, slots, plan))`。Task 创建、Todo `confirmed + version+1`、`todo_event` 与 `decision_audit` 在同一事务提交，`task.uk_task_todo` 保证一 Todo 一 Task。
+- 拒绝时不生成 Task；Todo `dismissed + version+1`、`todo_event` 和 `decision_audit` 同事务提交。
+- `decision_audit` 已进入启动迁移，并已迁移当前本地 MySQL。
+- 已覆盖严格 HTTP 契约、action hash 稳定性、真实 MySQL 事务/唯一 Task/审计/全回滚测试；集成测试只使用合成数据，不调用飞书、mem0 或模型。
+
+尚未实现：规则打分与三路由、codex 灰区深判、自动确认、确认队列/详情、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
+
+---
+
+## 12. 参考资料（2026 HITL 最佳实践）
 
 - Human-in-the-Loop Escalation Design（2026）：动作风险分级、校准数学（声称 90%≈真实 75%）、async-first、触发矩阵、EU AI Act Art.14 / NIST AI RMF / OWASP "Excessive Agency"。
 - High-Stakes HITL Patterns：action_manifest（配置而非 prompt）、结构化置信度输出（basis/uncertainty/recommended_review）、审批 UX 反模式（无上下文二元批拒、缺补信息、timeout=approval）、分箱校准。
