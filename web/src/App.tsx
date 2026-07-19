@@ -20,6 +20,7 @@ import { getTodo, listTodos } from './api'
 import Confirmations from './Confirmations'
 import Tasks from './Tasks'
 import Background from './Background'
+import { SlotDescriptions } from './slots'
 import type { ActionType, Todo, TodoQuery, TodoStatus } from './types'
 
 const { Header, Content } = Layout
@@ -279,7 +280,7 @@ function App() {
             ) : null}
             <section>
               <Text type="secondary">结构化参数</Text>
-              <pre>{JSON.stringify(selected.slots, null, 2)}</pre>
+              <SlotDescriptions slots={selected.slots} />
             </section>
           </Space>
         )}

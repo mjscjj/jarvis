@@ -3,6 +3,7 @@ import { Alert, Button, Card, Descriptions, Drawer, Flex, Input, Modal, Space, T
 import type { TableColumnsType } from 'antd'
 import { approveConfirmation, getConfirmation, listConfirmations, rejectConfirmation } from './api'
 import type { ConfirmationDetail, Todo } from './types'
+import { SlotDescriptions } from './slots'
 
 const { Paragraph, Text } = Typography
 
@@ -107,7 +108,7 @@ export default function Confirmations() {
             {detail.proposed_plan.basis?.length > 0 && <Paragraph type="secondary" style={{ marginBottom: 0 }}>理由：{detail.proposed_plan.basis.join('；')}</Paragraph>}
           </>}
         </section>}
-        <section><Text type="secondary">结构化参数</Text><pre>{JSON.stringify(detail.todo.slots, null, 2)}</pre></section>
+        <section><Text type="secondary">结构化参数</Text><SlotDescriptions slots={detail.todo.slots} /></section>
         <section><Text type="secondary">证据消息</Text>{detail.source_messages.map((message) => <blockquote key={message.message_id}><Text strong>{message.sender_name || message.sender_open_id}</Text><br />{message.content}</blockquote>)}</section>
         {detail.todo.status === 'need_decision'
           ? <Flex gap={12}><Button type="primary" onClick={openApprove}>批准并生成 Task</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>
