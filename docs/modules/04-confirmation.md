@@ -630,14 +630,14 @@ CREATE TABLE decision_audit (
 本轮先实现不依赖待校准阈值的**人工确认核心闸门**，没有擅自开启自动确认：
 
 - 已新增 `internal/decide`，人工批准仅接受 `need_decision`；人工拒绝接受 `need_info / need_decision`。其他来源状态直接冲突，不把 M3 的 `extracted` Todo 绕过打分变成 Task。
-- 已实现 `POST /api/confirmations/:todo_id/approve` 和 `/reject`。两者强制携带 `expected_version`，请求体拒绝未知字段；版本冲突、状态冲突、重复 Task 返回 409。
+- 已实现 `GET /api/confirmations` 待确认队列与 `GET /api/confirmations/:todo_id` 基础详情，只允许 `need_info / need_decision`；已实现对应 `/approve` 和 `/reject`。写接口强制携带 `expected_version`，请求体拒绝未知字段；版本冲突、状态冲突、重复 Task 返回 409。
 - 批准时先校验并规范化非空 plan，再冻结 project / group / assigner / 源消息 / mem0 检索结果为 `background`；mem0 或源数据异常直接失败，不使用空背景 fallback。
 - Task 的 `plan / slots / background` 均为确认时快照；`action_hash = sha256(canonical(action_type, slots, plan))`。Task 创建、Todo `confirmed + version+1`、`todo_event` 与 `decision_audit` 在同一事务提交，`task.uk_task_todo` 保证一 Todo 一 Task。
 - 拒绝时不生成 Task；Todo `dismissed + version+1`、`todo_event` 和 `decision_audit` 同事务提交。
 - `decision_audit` 已进入启动迁移，并已迁移当前本地 MySQL。
 - 已覆盖严格 HTTP 契约、action hash 稳定性、真实 MySQL 事务/唯一 Task/审计/全回滚测试；集成测试只使用合成数据，不调用飞书、mem0 或模型。
 
-尚未实现：规则打分与三路由、codex 灰区深判、自动确认、确认队列/详情、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
+尚未实现：规则打分与三路由、codex 灰区深判、自动确认、详情中的审计/记忆/codex 建议上下文增强、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
 
 ---
 
