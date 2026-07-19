@@ -2,8 +2,11 @@ package decide
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+
+	"jarvis/internal/domain"
 )
 
 const (
@@ -27,8 +30,8 @@ type GrayZone struct {
 }
 
 type RuleScore struct {
-	Confidence float64
-	Risk       float64
+	Confidence float64 `json:"confidence"`
+	Risk       float64 `json:"risk"`
 }
 
 type DeepJudgeResult struct {
@@ -36,7 +39,14 @@ type DeepJudgeResult struct {
 	RouteOverride string       `json:"route_override,omitempty"`
 	Reason        string       `json:"reason"`
 	FailureDetail string       `json:"failure_detail,omitempty"`
+	PromptVersion string       `json:"prompt_version,omitempty"`
 	Codex         *CodexResult `json:"codex,omitempty"`
+}
+
+type DeepJudgeInput struct {
+	Todo       *domain.Todo
+	Background json.RawMessage
+	RepoPath   string
 }
 
 type codexDecisionRunner interface {
@@ -62,32 +72,36 @@ func NewDeepJudge(codex codexDecisionRunner, grayZone GrayZone, onBudgetExceeded
 	return &DeepJudge{codex: codex, grayZone: grayZone, onBudgetExceeded: onBudgetExceeded}, nil
 }
 
-func (j *DeepJudge) Judge(ctx context.Context, score RuleScore, input CodexInput) (*DeepJudgeResult, error) {
+func (j *DeepJudge) Judge(ctx context.Context, score RuleScore, input DeepJudgeInput) (*DeepJudgeResult, error) {
 	if err := validateRuleScore(score); err != nil {
 		return nil, err
 	}
 	if !j.inGrayZone(score) {
 		return &DeepJudgeResult{Engine: DecisionEngineRule, Reason: DeepJudgeReasonOutsideGray}, nil
 	}
-	result, err := j.codex.Decide(ctx, input)
+	prompt, err := BuildCodexPrompt(CodexPromptInput{Todo: input.Todo, RuleScore: score, Background: input.Background})
+	if err != nil {
+		return nil, err
+	}
+	result, err := j.codex.Decide(ctx, CodexInput{Prompt: prompt.Text, RepoPath: input.RepoPath})
 	if err == nil {
 		if result == nil {
 			return &DeepJudgeResult{
 				Engine: DecisionEngineCodex, RouteOverride: DecisionRouteNeedDecision,
-				Reason: DeepJudgeReasonCodexFailure, FailureDetail: "codex decider returned nil result",
+				Reason: DeepJudgeReasonCodexFailure, FailureDetail: "codex decider returned nil result", PromptVersion: prompt.Version,
 			}, nil
 		}
-		return &DeepJudgeResult{Engine: DecisionEngineCodex, Reason: DeepJudgeReasonCodex, Codex: result}, nil
+		return &DeepJudgeResult{Engine: DecisionEngineCodex, Reason: DeepJudgeReasonCodex, Codex: result, PromptVersion: prompt.Version}, nil
 	}
 	if errors.Is(err, ErrCodexBudgetExceeded) {
 		if j.onBudgetExceeded == BudgetDegradeToRule {
 			return &DeepJudgeResult{
-				Engine: DecisionEngineRule, Reason: DeepJudgeReasonBudget, FailureDetail: err.Error(),
+				Engine: DecisionEngineRule, Reason: DeepJudgeReasonBudget, FailureDetail: err.Error(), PromptVersion: prompt.Version,
 			}, nil
 		}
 		return &DeepJudgeResult{
 			Engine: DecisionEngineCodex, RouteOverride: DecisionRouteNeedDecision,
-			Reason: DeepJudgeReasonBudget, FailureDetail: err.Error(),
+			Reason: DeepJudgeReasonBudget, FailureDetail: err.Error(), PromptVersion: prompt.Version,
 		}, nil
 	}
 	if errors.Is(err, context.Canceled) {
@@ -96,12 +110,12 @@ func (j *DeepJudge) Judge(ctx context.Context, score RuleScore, input CodexInput
 	if errors.Is(err, context.DeadlineExceeded) {
 		return &DeepJudgeResult{
 			Engine: DecisionEngineCodex, RouteOverride: DecisionRouteNeedDecision,
-			Reason: DeepJudgeReasonTimeout, FailureDetail: err.Error(),
+			Reason: DeepJudgeReasonTimeout, FailureDetail: err.Error(), PromptVersion: prompt.Version,
 		}, nil
 	}
 	return &DeepJudgeResult{
 		Engine: DecisionEngineCodex, RouteOverride: DecisionRouteNeedDecision,
-		Reason: DeepJudgeReasonCodexFailure, FailureDetail: err.Error(),
+		Reason: DeepJudgeReasonCodexFailure, FailureDetail: err.Error(), PromptVersion: prompt.Version,
 	}, nil
 }
 

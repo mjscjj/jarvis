@@ -2,8 +2,13 @@ package decide
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+
+	"jarvis/internal/domain"
+
+	"gorm.io/datatypes"
 )
 
 type fakeCodexDecisionRunner struct {
@@ -21,7 +26,7 @@ func TestDeepJudgeOnlyCallsCodexInsideGrayZone(t *testing.T) {
 	runner := &fakeCodexDecisionRunner{result: &CodexResult{SessionID: "fixture"}}
 	judge := newFixtureDeepJudge(t, runner, BudgetRouteNeedDecision)
 
-	outside, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.9, Risk: 0.2}, CodexInput{Prompt: "unused"})
+	outside, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.9, Risk: 0.2}, DeepJudgeInput{})
 	if err != nil {
 		t.Fatalf("outside Judge() error = %v", err)
 	}
@@ -29,7 +34,7 @@ func TestDeepJudgeOnlyCallsCodexInsideGrayZone(t *testing.T) {
 		t.Fatalf("outside result=%#v calls=%d", outside, runner.calls)
 	}
 
-	inside, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.6, Risk: 0.6}, CodexInput{Prompt: "fixture"})
+	inside, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.6, Risk: 0.6}, fixtureDeepJudgeInput())
 	if err != nil {
 		t.Fatalf("inside Judge() error = %v", err)
 	}
@@ -51,7 +56,7 @@ func TestDeepJudgeBudgetBehavior(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			runner := &fakeCodexDecisionRunner{err: ErrCodexBudgetExceeded}
 			judge := newFixtureDeepJudge(t, runner, test.behavior)
-			result, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.7, Risk: 0.4}, CodexInput{Prompt: "fixture"})
+			result, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.7, Risk: 0.4}, fixtureDeepJudgeInput())
 			if err != nil {
 				t.Fatalf("Judge() error = %v", err)
 			}
@@ -75,7 +80,7 @@ func TestDeepJudgeFailuresRouteToPerson(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			judge := newFixtureDeepJudge(t, &fakeCodexDecisionRunner{result: test.result, err: test.err}, BudgetRouteNeedDecision)
-			result, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.7, Risk: 0.4}, CodexInput{Prompt: "fixture"})
+			result, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.7, Risk: 0.4}, fixtureDeepJudgeInput())
 			if err != nil {
 				t.Fatalf("Judge() error = %v", err)
 			}
@@ -88,7 +93,7 @@ func TestDeepJudgeFailuresRouteToPerson(t *testing.T) {
 
 func TestDeepJudgePropagatesCallerCancellation(t *testing.T) {
 	judge := newFixtureDeepJudge(t, &fakeCodexDecisionRunner{err: context.Canceled}, BudgetRouteNeedDecision)
-	_, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.7, Risk: 0.4}, CodexInput{Prompt: "fixture"})
+	_, err := judge.Judge(context.Background(), RuleScore{Confidence: 0.7, Risk: 0.4}, fixtureDeepJudgeInput())
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Judge() error = %v, want context.Canceled", err)
 	}
@@ -96,8 +101,18 @@ func TestDeepJudgePropagatesCallerCancellation(t *testing.T) {
 
 func TestDeepJudgeRejectsInvalidScore(t *testing.T) {
 	judge := newFixtureDeepJudge(t, &fakeCodexDecisionRunner{}, BudgetRouteNeedDecision)
-	if _, err := judge.Judge(context.Background(), RuleScore{Confidence: 1.1, Risk: 0.4}, CodexInput{}); err == nil {
+	if _, err := judge.Judge(context.Background(), RuleScore{Confidence: 1.1, Risk: 0.4}, DeepJudgeInput{}); err == nil {
 		t.Fatal("Judge() accepted invalid score")
+	}
+}
+
+func fixtureDeepJudgeInput() DeepJudgeInput {
+	return DeepJudgeInput{
+		Todo: &domain.Todo{
+			ID: 1, Title: "Synthetic Todo", Description: "Synthetic decision context",
+			ActionType: "investigate", Slots: datatypes.JSON([]byte(`{"question":"fixture"}`)),
+		},
+		Background: json.RawMessage(`{"messages":[],"memories":[]}`),
 	}
 }
 
