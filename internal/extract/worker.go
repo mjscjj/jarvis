@@ -20,6 +20,7 @@ type WorkerOptions struct {
 	MemoryTopK      int
 	MemoryThreshold float64
 	MaxPromptChars  int
+	MaxToolRounds   int
 	Location        *time.Location
 }
 
@@ -33,17 +34,20 @@ type WorkerStats struct {
 }
 
 // Worker performs network enrichment outside transactions, then commits all
-// candidates and the watermark for one chat atomically.
+// candidates and the watermark for one chat atomically. Extraction runs as a
+// function-calling loop: the model may call retrieval tools (chat history,
+// memory) via the per-unit tool box before emitting the final result.
 type Worker struct {
-	store  pipelineStore
-	model  modelExtractor
-	memory memorySearcher
-	dedup  candidateDeduplicator
-	opts   WorkerOptions
-	now    func() time.Time
+	store   pipelineStore
+	model   toolExtractor
+	memory  memorySearcher
+	dedup   candidateDeduplicator
+	toolBox toolBoxBuilder
+	opts    WorkerOptions
+	now     func() time.Time
 }
 
-func NewWorker(store pipelineStore, model modelExtractor, memories memorySearcher, dedup candidateDeduplicator, opts WorkerOptions) (*Worker, error) {
+func NewWorker(store pipelineStore, model toolExtractor, memories memorySearcher, dedup candidateDeduplicator, toolBox toolBoxBuilder, opts WorkerOptions) (*Worker, error) {
 	if store == nil {
 		return nil, fmt.Errorf("extract worker store is nil")
 	}
@@ -55,6 +59,9 @@ func NewWorker(store pipelineStore, model modelExtractor, memories memorySearche
 	}
 	if dedup == nil {
 		return nil, fmt.Errorf("extract worker semantic deduplicator is nil")
+	}
+	if toolBox == nil {
+		return nil, fmt.Errorf("extract worker tool box builder is nil")
 	}
 	if err := validateLoadOptions(opts.Load); err != nil {
 		return nil, err
@@ -74,10 +81,13 @@ func NewWorker(store pipelineStore, model modelExtractor, memories memorySearche
 	if opts.MaxPromptChars <= 0 {
 		return nil, fmt.Errorf("extract worker max prompt chars must be positive")
 	}
+	if opts.MaxToolRounds <= 0 {
+		return nil, fmt.Errorf("extract worker max tool rounds must be positive")
+	}
 	if opts.Location == nil {
 		return nil, fmt.Errorf("extract worker location is nil")
 	}
-	return &Worker{store: store, model: model, memory: memories, dedup: dedup, opts: opts, now: time.Now}, nil
+	return &Worker{store: store, model: model, memory: memories, dedup: dedup, toolBox: toolBox, opts: opts, now: time.Now}, nil
 }
 
 func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
@@ -114,7 +124,11 @@ func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
 			if err != nil {
 				return stats, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
 			}
-			extracted, err := w.model.Extract(ctx, prompt)
+			box, err := w.toolBox.Build(batch, unit)
+			if err != nil {
+				return stats, fmt.Errorf("build extraction tool box chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+			}
+			extracted, err := w.model.ExtractWithTools(ctx, prompt, box, w.opts.MaxToolRounds)
 			if err != nil {
 				return stats, fmt.Errorf("extract todos chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
 			}

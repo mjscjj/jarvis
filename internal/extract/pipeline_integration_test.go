@@ -143,7 +143,18 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract.NewDeduplicator() error = %v", err)
 	}
-	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, extract.WorkerOptions{
+	toolBoxBuilder, err := extract.NewRegistryToolBoxBuilder(tx, memoryClient, extract.ToolBoxConfig{
+		ToolTimeout:     10 * time.Second,
+		HistoryMaxLimit: 50,
+		MemoryDefaultK:  cfg.Extract.MemoryTopK,
+		MemoryMaxK:      cfg.Extract.MemoryTopK * 2,
+		MemoryThreshold: cfg.Extract.MemoryThreshold,
+		Location:        location,
+	})
+	if err != nil {
+		t.Fatalf("extract.NewRegistryToolBoxBuilder() error = %v", err)
+	}
+	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, toolBoxBuilder, extract.WorkerOptions{
 		Load: extract.LoadOptions{
 			BatchMessages: 10, ContextMessages: cfg.Extract.ContextMessages,
 			ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
@@ -151,7 +162,7 @@ func TestPipelineLive(t *testing.T) {
 		},
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
 		MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
-		MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
+		MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: 5, Location: location,
 	})
 	if err != nil {
 		t.Fatalf("extract.NewWorker() error = %v", err)

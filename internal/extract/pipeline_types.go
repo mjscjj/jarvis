@@ -148,10 +148,6 @@ type pipelineStore interface {
 	PersistChat(context.Context, ChatBatch, []UnitExtraction, string) (PersistStats, error)
 }
 
-type modelExtractor interface {
-	Extract(context.Context, Prompt) (*ExtractionResult, error)
-}
-
 type candidateDeduplicator interface {
 	Resolve(context.Context, Candidate, *uint64) (SemanticResolution, error)
 }

@@ -2,7 +2,6 @@ package decide
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +12,7 @@ import (
 func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
 	resultJSON := `{"confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","uncertainty_factors":[],"recommended_review":false,"proposed_plan":{"summary":"inspect fixture","steps":["inspect"],"parameters":[],"basis":[]},"plan_is_clear":true}`
 	bin := writeCodexFixture(t, resultJSON, true)
-	decider, err := NewCodexDecider(CodexOptions{Bin: bin, Model: "fixture-model", Timeout: 10 * time.Second, Budget: testCodexBudget(t)})
+	decider, err := NewCodexDecider(CodexOptions{Bin: bin, Model: "fixture-model", Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf("NewCodexDecider() error = %v", err)
 	}
@@ -21,7 +20,7 @@ func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decide() error = %v", err)
 	}
-	if result.SessionID != "fixture-session" || !result.Decision.PlanIsClear || result.Decision.ConfidenceFactors[0].Score != 0.9 || result.Budget.HourUsed != 1 {
+	if result.SessionID != "fixture-session" || !result.Decision.PlanIsClear || result.Decision.ConfidenceFactors[0].Score != 0.9 {
 		t.Fatalf("result = %#v", result)
 	}
 	if result.Decision.ProposedPlan == nil || result.Decision.ProposedPlan.Steps[0] != "inspect" {
@@ -31,7 +30,7 @@ func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
 
 func TestCodexDeciderRejectsMissingSession(t *testing.T) {
 	resultJSON := `{"confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","uncertainty_factors":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`
-	decider, err := NewCodexDecider(CodexOptions{Bin: writeCodexFixture(t, resultJSON, false), Model: "fixture-model", Timeout: 10 * time.Second, Budget: testCodexBudget(t)})
+	decider, err := NewCodexDecider(CodexOptions{Bin: writeCodexFixture(t, resultJSON, false), Model: "fixture-model", Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf("NewCodexDecider() error = %v", err)
 	}
@@ -39,35 +38,6 @@ func TestCodexDeciderRejectsMissingSession(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "thread.started") {
 		t.Fatalf("Decide() error = %v, want missing thread.started", err)
 	}
-}
-
-func TestCodexDeciderStopsBeforeCommandWhenBudgetExceeded(t *testing.T) {
-	budget, err := NewCodexBudget(BudgetOptions{MaxCallsPerHour: 1, MaxCallsPerDay: 1})
-	if err != nil {
-		t.Fatalf("NewCodexBudget() error = %v", err)
-	}
-	if _, err := budget.Acquire(); err != nil {
-		t.Fatalf("prime budget: %v", err)
-	}
-	decider, err := NewCodexDecider(CodexOptions{
-		Bin: writeCodexFixture(t, `{}`, true), Model: "fixture-model", Timeout: 10 * time.Second, Budget: budget,
-	})
-	if err != nil {
-		t.Fatalf("NewCodexDecider() error = %v", err)
-	}
-	_, err = decider.Decide(context.Background(), CodexInput{Prompt: "must not execute"})
-	if !errors.Is(err, ErrCodexBudgetExceeded) {
-		t.Fatalf("Decide() error = %v, want ErrCodexBudgetExceeded", err)
-	}
-}
-
-func testCodexBudget(t *testing.T) *CodexBudget {
-	t.Helper()
-	budget, err := NewCodexBudget(BudgetOptions{MaxCallsPerHour: 10, MaxCallsPerDay: 20})
-	if err != nil {
-		t.Fatalf("NewCodexBudget() error = %v", err)
-	}
-	return budget
 }
 
 func TestDecodeCodexDecisionFailsFast(t *testing.T) {

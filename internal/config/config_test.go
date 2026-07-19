@@ -130,8 +130,6 @@ func TestValidate(t *testing.T) {
 		{name: "codex binary", mutate: func(c *Config) { c.Codex.Bin = "" }, wantErr: "codex.bin"},
 		{name: "codex model", mutate: func(c *Config) { c.Codex.Model = "" }, wantErr: "codex.model"},
 		{name: "codex timeout", mutate: func(c *Config) { c.Codex.TimeoutSeconds = 0 }, wantErr: "codex.timeout_seconds"},
-		{name: "codex hourly budget", mutate: func(c *Config) { c.Codex.MaxCallsPerHour = 0 }, wantErr: "max_calls_per_hour"},
-		{name: "codex inverted budget", mutate: func(c *Config) { c.Codex.MaxCallsPerDay = 1 }, wantErr: "不能小于"},
 	}
 
 	for _, tt := range tests {
@@ -206,6 +204,5 @@ func validExecuteConfig() ExecuteConfig {
 func validCodexConfig() CodexConfig {
 	return CodexConfig{
 		Bin: "codex", Model: "fixture-model", TimeoutSeconds: 120,
-		MaxCallsPerHour: 30, MaxCallsPerDay: 200,
 	}
 }

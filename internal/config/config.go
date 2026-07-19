@@ -126,11 +126,9 @@ type DecideConfig struct {
 
 // CodexConfig M4 决策用 codex CLI（总纲 §11.2，全部可配置、不硬编码）。
 type CodexConfig struct {
-	Bin             string `yaml:"bin"`
-	Model           string `yaml:"model"`
-	TimeoutSeconds  int    `yaml:"timeout_seconds"`
-	MaxCallsPerHour int    `yaml:"max_calls_per_hour"`
-	MaxCallsPerDay  int    `yaml:"max_calls_per_day"`
+	Bin            string `yaml:"bin"`
+	Model          string `yaml:"model"`
+	TimeoutSeconds int    `yaml:"timeout_seconds"`
 }
 
 // ExecuteConfig controls M5 agent-driven execution. Enabled turns on the
@@ -330,12 +328,6 @@ func (c *Config) validate() error {
 	}
 	if c.Codex.TimeoutSeconds <= 0 {
 		return fmt.Errorf("codex.timeout_seconds 必须大于 0")
-	}
-	if c.Codex.MaxCallsPerHour <= 0 || c.Codex.MaxCallsPerDay <= 0 {
-		return fmt.Errorf("codex.max_calls_per_hour/max_calls_per_day 必须大于 0")
-	}
-	if c.Codex.MaxCallsPerDay < c.Codex.MaxCallsPerHour {
-		return fmt.Errorf("codex.max_calls_per_day 不能小于 max_calls_per_hour")
 	}
 	if c.Execute.RepoRoot == "" {
 		return fmt.Errorf("execute.repo_root 不能为空")

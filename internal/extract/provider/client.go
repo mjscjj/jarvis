@@ -123,13 +123,59 @@ func (c *Client) completeStructured(ctx context.Context, operation, schemaName s
 			{"role": "system", "content": prompt.System},
 			{"role": "user", "content": prompt.User},
 		},
-		"response_format": map[string]any{
-			"type": "json_schema",
-			"json_schema": map[string]any{
-				"name": schemaName, "strict": true, "schema": schema,
-			},
+		"response_format": structuredResponseFormat(schemaName, schema),
+	}
+	choice, err := c.postChatCompletion(ctx, operation, requestBody)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(choice.Message.Refusal) != "" {
+		return nil, fmt.Errorf("%w: %s", ErrModelRefusal, choice.Message.Refusal)
+	}
+	if choice.FinishReason != "stop" {
+		return nil, fmt.Errorf("model %s finish_reason=%q, want stop", operation, choice.FinishReason)
+	}
+	if strings.TrimSpace(choice.Message.Content) == "" {
+		return nil, fmt.Errorf("model %s content is empty", operation)
+	}
+	return []byte(choice.Message.Content), nil
+}
+
+// chatToolCall mirrors one OpenAI-compatible tool call in an assistant message.
+type chatToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// chatChoice is the single choice we require from every completion response.
+type chatChoice struct {
+	FinishReason string `json:"finish_reason"`
+	Message      struct {
+		Content   string         `json:"content"`
+		Refusal   string         `json:"refusal"`
+		ToolCalls []chatToolCall `json:"tool_calls"`
+	} `json:"message"`
+}
+
+// structuredResponseFormat builds the strict json_schema response_format block
+// shared by the single-shot and tool-loop completions.
+func structuredResponseFormat(schemaName string, schema map[string]any) map[string]any {
+	return map[string]any{
+		"type": "json_schema",
+		"json_schema": map[string]any{
+			"name": schemaName, "strict": true, "schema": schema,
 		},
 	}
+}
+
+// postChatCompletion sends one chat completion request and returns the sole
+// choice. It owns transport, size limits, status handling and the "exactly one
+// choice" contract; callers interpret finish_reason / tool_calls / content.
+func (c *Client) postChatCompletion(ctx context.Context, operation string, requestBody map[string]any) (*chatChoice, error) {
 	encoded, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("encode model %s request: %w", operation, err)
@@ -157,13 +203,7 @@ func (c *Client) completeStructured(ctx context.Context, operation, schemaName s
 		return nil, fmt.Errorf("model %s status=%d body=%s", operation, resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	var response struct {
-		Choices []struct {
-			FinishReason string `json:"finish_reason"`
-			Message      struct {
-				Content string `json:"content"`
-				Refusal string `json:"refusal"`
-			} `json:"message"`
-		} `json:"choices"`
+		Choices []chatChoice `json:"choices"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
 		return nil, fmt.Errorf("decode model %s envelope: %w", operation, err)
@@ -171,15 +211,5 @@ func (c *Client) completeStructured(ctx context.Context, operation, schemaName s
 	if len(response.Choices) != 1 {
 		return nil, fmt.Errorf("model %s choices=%d, want 1", operation, len(response.Choices))
 	}
-	choice := response.Choices[0]
-	if strings.TrimSpace(choice.Message.Refusal) != "" {
-		return nil, fmt.Errorf("%w: %s", ErrModelRefusal, choice.Message.Refusal)
-	}
-	if choice.FinishReason != "stop" {
-		return nil, fmt.Errorf("model %s finish_reason=%q, want stop", operation, choice.FinishReason)
-	}
-	if strings.TrimSpace(choice.Message.Content) == "" {
-		return nil, fmt.Errorf("model %s content is empty", operation)
-	}
-	return []byte(choice.Message.Content), nil
+	return &response.Choices[0], nil
 }

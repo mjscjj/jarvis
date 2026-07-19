@@ -90,8 +90,6 @@ codex:
   bin: "codex"
   model: "gpt-5.5"
   timeout_seconds: 120
-  max_calls_per_hour: 30
-  max_calls_per_day: 200
 
 # M5 agent 驱动执行：codex 用 workspace-write 真实改代码，改完自动 commit 到独立分支不 push。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron（只跑本地动作）。

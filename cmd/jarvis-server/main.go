@@ -113,18 +113,10 @@ func main() {
 			// M4 codex mode: judge each Todo read-only with codex gpt-5.5 and
 			// route by disposition. Background is built from MySQL only (no mem0)
 			// to keep the decision path deterministic and offline-safe.
-			budget, err := decide.NewCodexBudget(decide.BudgetOptions{
-				MaxCallsPerHour: cfg.Codex.MaxCallsPerHour,
-				MaxCallsPerDay:  cfg.Codex.MaxCallsPerDay,
-			})
-			if err != nil {
-				hlog.Fatalf("initialize codex decision budget failed: %v", err)
-			}
 			decider, err := decide.NewCodexDecider(decide.CodexOptions{
 				Bin:     cfg.Codex.Bin,
 				Model:   cfg.Codex.Model,
 				Timeout: time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
-				Budget:  budget,
 			})
 			if err != nil {
 				hlog.Fatalf("initialize codex decider failed: %v", err)

@@ -8,7 +8,7 @@ import (
 )
 
 func TestExtractSchedulerRejectsInvalidSpec(t *testing.T) {
-	worker, err := NewWorker(&fakePipelineStore{}, &fakeModelExtractor{}, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, validWorkerOptions())
+	worker, err := NewWorker(&fakePipelineStore{}, &fakeModelExtractor{}, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, validWorkerOptions())
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}

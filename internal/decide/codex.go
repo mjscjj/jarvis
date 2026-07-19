@@ -59,7 +59,6 @@ type CodexOptions struct {
 	Bin     string
 	Model   string
 	Timeout time.Duration
-	Budget  *CodexBudget
 }
 
 type CodexInput struct {
@@ -98,14 +97,12 @@ type PlanParameter struct {
 type CodexResult struct {
 	Decision  CodexDecision `json:"decision"`
 	SessionID string        `json:"session_id"`
-	Budget    BudgetUsage   `json:"budget"`
 }
 
 type CodexDecider struct {
 	bin     string
 	model   string
 	timeout time.Duration
-	budget  *CodexBudget
 }
 
 func NewCodexDecider(opts CodexOptions) (*CodexDecider, error) {
@@ -122,10 +119,7 @@ func NewCodexDecider(opts CodexOptions) (*CodexDecider, error) {
 	if opts.Timeout <= 0 {
 		return nil, fmt.Errorf("codex decider timeout must be positive")
 	}
-	if opts.Budget == nil {
-		return nil, fmt.Errorf("codex decider budget is nil")
-	}
-	return &CodexDecider{bin: bin, model: opts.Model, timeout: opts.Timeout, budget: opts.Budget}, nil
+	return &CodexDecider{bin: bin, model: opts.Model, timeout: opts.Timeout}, nil
 }
 
 func (d *CodexDecider) Decide(ctx context.Context, input CodexInput) (*CodexResult, error) {
@@ -146,10 +140,6 @@ func (d *CodexDecider) Decide(ctx context.Context, input CodexInput) (*CodexResu
 	resultPath := filepath.Join(tempDir, "decision.json")
 	if err := os.WriteFile(schemaPath, []byte(codexDecisionSchema), 0o600); err != nil {
 		return nil, fmt.Errorf("write codex decision schema: %w", err)
-	}
-	budgetUsage, err := d.budget.Acquire()
-	if err != nil {
-		return nil, err
 	}
 
 	args := []string{
@@ -191,7 +181,7 @@ func (d *CodexDecider) Decide(ctx context.Context, input CodexInput) (*CodexResu
 	if err != nil {
 		return nil, err
 	}
-	return &CodexResult{Decision: *decision, SessionID: sessionID, Budget: budgetUsage}, nil
+	return &CodexResult{Decision: *decision, SessionID: sessionID}, nil
 }
 
 func validateRepoPath(value string) (string, error) {

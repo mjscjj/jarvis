@@ -2,11 +2,13 @@ package extract
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"jarvis/internal/extract/tools"
 	"jarvis/internal/memory"
 )
 
@@ -32,14 +34,41 @@ func (f *fakePipelineStore) PersistChat(_ context.Context, _ ChatBatch, results 
 }
 
 type fakeModelExtractor struct {
-	result  *ExtractionResult
-	err     error
-	prompts []Prompt
+	result    *ExtractionResult
+	err       error
+	prompts   []Prompt
+	maxRounds []int
+	boxes     []ToolBox
 }
 
-func (f *fakeModelExtractor) Extract(_ context.Context, prompt Prompt) (*ExtractionResult, error) {
+func (f *fakeModelExtractor) ExtractWithTools(_ context.Context, prompt Prompt, box ToolBox, maxRounds int) (*ExtractionResult, error) {
 	f.prompts = append(f.prompts, prompt)
+	f.maxRounds = append(f.maxRounds, maxRounds)
+	f.boxes = append(f.boxes, box)
 	return f.result, f.err
+}
+
+// fakeToolBox is a no-op ToolBox for worker wiring tests.
+type fakeToolBox struct{}
+
+func (fakeToolBox) Specs() []tools.Spec { return nil }
+
+func (fakeToolBox) Invoke(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
+// fakeToolBoxBuilder records the units it built a box for.
+type fakeToolBoxBuilder struct {
+	err   error
+	built int
+}
+
+func (f *fakeToolBoxBuilder) Build(ChatBatch, ConversationUnit) (ToolBox, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.built++
+	return fakeToolBox{}, nil
 }
 
 type fakeMemorySearcher struct {
@@ -80,7 +109,8 @@ func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	}}}
 	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{}}}
 	memories := &fakeMemorySearcher{}
-	worker, err := NewWorker(store, model, memories, &fakeCandidateDeduplicator{}, validWorkerOptions())
+	toolBox := &fakeToolBoxBuilder{}
+	worker, err := NewWorker(store, model, memories, &fakeCandidateDeduplicator{}, toolBox, validWorkerOptions())
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -97,6 +127,12 @@ func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	if got := memories.inputs[0].Filters["project_id"]; got != projectID {
 		t.Fatalf("memory filters = %#v", memories.inputs[0].Filters)
 	}
+	if toolBox.built != 1 || len(model.boxes) != 1 || model.boxes[0] == nil {
+		t.Fatalf("tool box wiring: built=%d boxes=%d", toolBox.built, len(model.boxes))
+	}
+	if len(model.maxRounds) != 1 || model.maxRounds[0] != validWorkerOptions().MaxToolRounds {
+		t.Fatalf("max rounds passed = %#v", model.maxRounds)
+	}
 }
 
 func TestWorkerDoesNotAdvanceWatermarkAfterModelFailure(t *testing.T) {
@@ -108,7 +144,7 @@ func TestWorkerDoesNotAdvanceWatermarkAfterModelFailure(t *testing.T) {
 		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_1", IsNew: true},
 	}}}
 	model := &fakeModelExtractor{err: errors.New("model unavailable")}
-	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, validWorkerOptions())
+	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, validWorkerOptions())
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -137,7 +173,7 @@ func TestWorkerDoesNotPersistAfterSemanticDedupFailure(t *testing.T) {
 	worker, err := NewWorker(
 		store,
 		&fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{candidate}}},
-		&fakeMemorySearcher{}, dedup, validWorkerOptions(),
+		&fakeMemorySearcher{}, dedup, &fakeToolBoxBuilder{}, validWorkerOptions(),
 	)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
@@ -154,6 +190,6 @@ func validWorkerOptions() WorkerOptions {
 	return WorkerOptions{
 		Load:            LoadOptions{BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour, OpenTodoLimit: 50},
 		PrincipalOpenID: "ou_owner", ModelName: "model", MemoryTopK: 8,
-		MemoryThreshold: 0.5, MaxPromptChars: 60_000, Location: time.UTC,
+		MemoryThreshold: 0.5, MaxPromptChars: 60_000, MaxToolRounds: 5, Location: time.UTC,
 	}
 }
