@@ -199,6 +199,7 @@ CREATE TABLE feishu_group (
   external          TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '是否外部会话',
   tenant_key        VARCHAR(64)  NULL,
   project_id        BIGINT UNSIGNED NULL COMMENT '关联项目(群多对一项目)',
+  related_group     TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '是否属于本人工作相关扫描范围',
   tier              VARCHAR(8)   NOT NULL DEFAULT 'cold' COMMENT 'hot|warm|cold 扫描分层',
   pinned            TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '强制 hot 白名单',
   include_in_memory TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '是否纳入 mem0(报警群置0)',
@@ -208,6 +209,7 @@ CREATE TABLE feishu_group (
   updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_group_chat_id (chat_id),
+  KEY idx_group_related_tier (related_group, tier, last_active_at),
   KEY idx_group_tier_active (tier, last_active_at),
   KEY idx_group_project (project_id),
   CONSTRAINT fk_group_project FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE SET NULL
@@ -215,6 +217,8 @@ CREATE TABLE feishu_group (
 ```
 
 > **表名 `feishu_group`（已定）**：避开 SQL 保留字 `group`，GORM 侧无需反引号转义。Go model struct 保留业务简称 `Group`，用 `func (Group) TableName() string { return "feishu_group" }` 固定物理表名。下文实体名一律简称 `Group`，物理表名一律 `feishu_group`。
+
+> **扫描范围（已定）**：会话发现只同步元数据，不拉取历史消息；定时扫描和单群扫描均只允许 `related_group=1`。当前配置要求原子选满 20 个本人发过言且工作相关的群，避免把全部可见会话纳入消息采集。
 
 #### Person
 

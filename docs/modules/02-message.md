@@ -67,9 +67,9 @@
 
 ### 1.4 覆盖策略（结论已定，不再论证）
 
-**user 轮询为主（全覆盖）+ bot 事件流为辅（关键群低延迟增强）。**
+**user 轮询为主（只覆盖 `related_group=1`）+ bot 事件流为辅（关键群低延迟增强）。**
 
-原因（实测约束）：`im.*` 事件仅 bot 授权、scope 为 `im:message.p2p_msg:readonly`，只能拿到 bot 所在会话/被 @ 的消息，无法覆盖用户全部群 + 单聊；全量捕获只能走 user-token 轮询。两条链路以 `message_id`（`om_` 前缀）为幂等键合流。
+原因（实测约束）：`im.*` 事件仅 bot 授权、scope 为 `im:message.p2p_msg:readonly`，只能拿到 bot 所在会话/被 @ 的消息；若要完整捕获选定相关群，必须走 user-token 轮询。两条链路以 `message_id`（`om_` 前缀）为幂等键合流。会话发现仍枚举全部可见会话，但只同步元数据，不拉消息。
 
 ---
 
@@ -141,6 +141,8 @@
 | COLD | `last_active_at ≥ 7d` | 每 6h | 沉睡会话，兜底补漏 |
 
 > 阈值（6h / 7d）与 cron 间隔为默认值，属可调参数；HOT 白名单（leader open_id、核心项目群，对应 `group.pinned`/`is_key_group`）**需与用户确认**。
+
+**扫描准入**：`ScanTier` 查询必须包含 `related_group=1`；`ScanChat` 同样拒绝非相关会话。名单由 `ReplaceRelatedGroups` 在事务内完整替换，配置 `related_group_limit=20` 要求一次选满 20 个，禁止部分名单生效。
 
 **发现流程（`DiscoverChats`，每 1h）**：全量分页枚举 `chat-list --sort active_time`，`upsert group`（name/owner/external/tenant 等元数据），并根据 `last_active_at` 重算 `tier`。发现是「元数据同步 + 分层刷新」，不拉消息，但**追加一条 `scan_type=discover` 的 scan_record**（`group_id` 为空，记录枚举了多少会话、耗时、成败）。
 
@@ -421,7 +423,7 @@ func DiscoverChats(ctx context.Context) error {
 
 // ---------- 分层扫描入口（被不同 cron 调用） ----------
 func ScanTier(ctx context.Context, tier string) {
-    for _, g := range selectGroupsByTier(tier) { // hot 额外含 pinned
+    for _, g := range selectRelatedGroupsByTier(tier) { // related_group=1；hot 额外含 pinned
         if err := ScanChat(ctx, g, scanTypeOf(tier)); err != nil {
             // fail-fast：已在 ScanChat 内写 scan_record.status=error + checkpoint.last_error
             markGroupError(g.ChatID, err)
@@ -536,7 +538,7 @@ func (b *TokenBucket) refill() {
 
 | 表 | 角色 | DDL 位置 | M2 关注点 |
 | --- | --- | --- | --- |
-| `feishu_group` | 一等实体（会话元数据 + 分层） | 总纲 §2.4 `Group` | `tier`/`pinned`/`include_in_memory`/`is_key_group`/`last_active_at`（分层与记忆开关）；`project_id` 由 M1 维护 |
+| `feishu_group` | 一等实体（会话元数据 + 分层） | 总纲 §2.4 `Group` | `related_group` 控制消息扫描范围；`tier`/`pinned`/`include_in_memory`/`is_key_group`/`last_active_at` 管理分层与记忆；`project_id` 由 M1 维护 |
 | `message` | 支撑表（消息明文，SoT） | 总纲 §2.5 + 下 §4.2 | 幂等键 `message_id`；`content`/`content_raw`；`mem0_processed`；`source` |
 | `chat_checkpoint` | 支撑表（每会话扫描游标，状态） | 总纲 §2.5 | `high_water_create_time`（首次发现即置 now_ms，不回溯）/`last_message_id`/`last_error`；`backfill_*` 保留不用 |
 | `resource` | 一等实体（附件/资源） | 总纲 §2.4 `Resource` | 沉淀写入见 §3.9；同消息幂等 `(source_message_id,file_key)` + 跨消息 `content_hash` 去重（已定） |
@@ -564,6 +566,7 @@ type Group struct {
     External        bool      `gorm:"column:external;default:0"`
     TenantKey       string    `gorm:"column:tenant_key;size:64"`
     ProjectID       *uint64   `gorm:"column:project_id"`                 // 关联项目(M1 维护)
+    RelatedGroup    bool      `gorm:"column:related_group;default:0"`    // 本人工作相关扫描范围
     Tier            string    `gorm:"column:tier;size:8;default:cold"`   // hot|warm|cold
     Pinned          bool      `gorm:"column:pinned;default:0"`           // 强制 hot 白名单
     IncludeInMemory bool      `gorm:"column:include_in_memory;default:1"`
@@ -1037,9 +1040,9 @@ func mustAdd(c *cron.Cron, spec string, fn func()) {
 **采集侧（飞书 QPS）**：
 
 - 每页 `chat-messages-list` = 1 次 API（`--no-reactions` 时不额外触发 reaction 批查）。
-- 稳态增量：设 HOT=30、WARM=200、COLD=300。HOT 每 5min 多为空扫或 1 页 → ~30 req/5min ≈ 0.1 req/s；WARM 30min 一轮 ~200 req/30min ≈ 0.11 req/s；叠加远低于保守令牌桶 `R=5/s`。
+- 稳态增量只扫描 20 个 `related_group`。极端按 20 个全为 HOT、每次各 1 页估算：~20 req/5min ≈ 0.067 req/s，远低于保守令牌桶 `R=5/s`。
 - **无首次 backfill 峰值**（已定不回溯，总纲 §11.3）：新接入会话首次发现即以当前时刻建高水位，只增量拉新消息，不存在一次性拉海量历史的负载尖峰。稳态负载即上面的增量量级。
-- `discover` 每 1h 全量分页：几百会话 / 每页 100 → 数次请求，成本可忽略。
+- `discover` 每 1h 只做元数据全量分页；当前账号实测 4,891 个可见会话 / 每页 100，约 49 次请求/小时，不触发消息拉取。
 - Go 子进程开销：每次 `exec.Command` 拉起 lark-cli 有进程启动开销（几十 ms 量级），并发信号量 + 令牌桶已把总量压住；相比 API 往返可忽略。
 
 **记忆化侧（LLM，在 sidecar 内）**：
