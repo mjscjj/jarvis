@@ -37,8 +37,13 @@ type MySQLConfig struct {
 
 // Mem0Config Python sidecar（总纲 §5）。
 type Mem0Config struct {
-	BaseURL string `yaml:"base_url"` // http://127.0.0.1:18900
-	OwnerID string `yaml:"owner_id"` // 单用户系统统一 user_id，默认 owner
+	BaseURL           string `yaml:"base_url"` // http://127.0.0.1:18900
+	OwnerID           string `yaml:"owner_id"` // 单用户系统统一 user_id，默认 owner
+	TimeoutSec        int    `yaml:"timeout_sec"`
+	BatchLimit        int    `yaml:"batch_limit"`
+	WindowGapMinutes  int    `yaml:"window_gap_minutes"`
+	WindowMaxMessages int    `yaml:"window_max_messages"`
+	Schedule          string `yaml:"schedule"`
 }
 
 // ModelConfig 高频抽取用的 OpenAI 兼容端点（M2/M3，总纲 §6）。
@@ -106,8 +111,8 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// validate 校验当前已启用模块的全部启动条件。尚未接入的 mem0/model/
-// lark-cli/codex 会在各自里程碑启用时加入对应校验。
+// validate 校验当前已启用模块的全部启动条件。model/codex 会在各自
+// 里程碑启用时加入对应校验；mem0 模型参数由独立 sidecar 启动时校验。
 func (c *Config) validate() error {
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")
@@ -126,6 +131,27 @@ func (c *Config) validate() error {
 	}
 	if c.MySQL.ConnMaxLifetime <= 0 {
 		return fmt.Errorf("mysql.conn_max_lifetime 必须大于 0")
+	}
+	if c.Mem0.BaseURL == "" {
+		return fmt.Errorf("mem0.base_url 不能为空")
+	}
+	if c.Mem0.OwnerID == "" {
+		return fmt.Errorf("mem0.owner_id 不能为空")
+	}
+	if c.Mem0.TimeoutSec <= 0 {
+		return fmt.Errorf("mem0.timeout_sec 必须大于 0")
+	}
+	if c.Mem0.BatchLimit <= 0 {
+		return fmt.Errorf("mem0.batch_limit 必须大于 0")
+	}
+	if c.Mem0.WindowGapMinutes <= 0 {
+		return fmt.Errorf("mem0.window_gap_minutes 必须大于 0")
+	}
+	if c.Mem0.WindowMaxMessages <= 0 {
+		return fmt.Errorf("mem0.window_max_messages 必须大于 0")
+	}
+	if c.Mem0.Schedule == "" {
+		return fmt.Errorf("mem0.schedule 不能为空")
 	}
 	if c.LarkCLI.Bin == "" {
 		return fmt.Errorf("lark_cli.bin 不能为空")

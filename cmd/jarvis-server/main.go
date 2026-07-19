@@ -15,6 +15,7 @@ import (
 	"jarvis/internal/capture"
 	"jarvis/internal/config"
 	"jarvis/internal/larkcli"
+	"jarvis/internal/memory"
 	"jarvis/internal/store"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -27,15 +28,16 @@ func main() {
 	discoverOnce := flag.Bool("discover-once", false, "执行一次飞书会话发现，成功后退出")
 	scanChat := flag.String("scan-chat", "", "增量扫描指定飞书 chat_id，成功后退出")
 	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
+	memorizeOnce := flag.Bool("memorize-once", false, "执行一次消息记忆化，成功后退出")
 	flag.Parse()
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != ""} {
+	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce} {
 		if selected {
 			actionCount++
 		}
 	}
 	if actionCount > 1 {
-		hlog.Fatalf("-migrate-only, -discover-once, -scan-chat and -set-related-groups are mutually exclusive")
+		hlog.Fatalf("one-shot action flags are mutually exclusive")
 	}
 
 	cfg, err := config.Load(*configPath)
@@ -88,6 +90,23 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize capture service failed: %v", err)
 	}
+	memoryClient, err := memory.NewClient(cfg.Mem0.BaseURL, time.Duration(cfg.Mem0.TimeoutSec)*time.Second)
+	if err != nil {
+		hlog.Fatalf("initialize memory client failed: %v", err)
+	}
+	memoryStore, err := memory.NewGORMStore(db)
+	if err != nil {
+		hlog.Fatalf("initialize memory store failed: %v", err)
+	}
+	memoryWorker, err := memory.NewWorker(memoryStore, memoryClient, memory.WorkerOptions{
+		BatchLimit:        cfg.Mem0.BatchLimit,
+		WindowGap:         time.Duration(cfg.Mem0.WindowGapMinutes) * time.Minute,
+		WindowMaxMessages: cfg.Mem0.WindowMaxMessages,
+		Location:          location,
+	})
+	if err != nil {
+		hlog.Fatalf("initialize memory worker failed: %v", err)
+	}
 	if *discoverOnce {
 		if err := captureService.DiscoverChats(context.Background()); err != nil {
 			hlog.Fatalf("discover chats failed: %v", err)
@@ -109,6 +128,17 @@ func main() {
 		hlog.Infof("related groups replaced")
 		return
 	}
+	if *memorizeOnce {
+		stats, err := memoryWorker.MemorizeOnce(context.Background())
+		if err != nil {
+			hlog.Fatalf("memorize messages failed: %v", err)
+		}
+		hlog.Infof(
+			"message memory completed: loaded=%d processed=%d memorized=%d skipped=%d windows=%d",
+			stats.Loaded, stats.Processed, stats.MemorizedMessages, stats.SkippedMessages, stats.Windows,
+		)
+		return
+	}
 	captureCtx, cancelCapture := context.WithCancel(context.Background())
 	defer cancelCapture()
 	scheduler, err := capture.StartScheduler(captureCtx, captureService, capture.ScheduleConfig{
@@ -120,9 +150,21 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("start capture scheduler failed: %v", err)
 	}
+	memoryScheduler, err := memory.StartScheduler(
+		captureCtx,
+		memoryWorker,
+		cfg.Mem0.Schedule,
+		log.New(os.Stderr, "memory-cron ", log.LstdFlags|log.Lmicroseconds),
+	)
+	if err != nil {
+		cancelCapture()
+		<-scheduler.Stop().Done()
+		hlog.Fatalf("start memory scheduler failed: %v", err)
+	}
 	defer func() {
 		cancelCapture()
 		<-scheduler.Stop().Done()
+		<-memoryScheduler.Stop().Done()
 	}()
 
 	h := server.New(

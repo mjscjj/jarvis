@@ -15,6 +15,17 @@ mysql:
 mem0:
   base_url: "http://127.0.0.1:18900"
   owner_id: "owner"
+  timeout_sec: 60
+  batch_limit: 400
+  window_gap_minutes: 30
+  window_max_messages: 40
+  schedule: "@every 10m"
+  qdrant_host: "127.0.0.1"
+  qdrant_port: 6333
+  collection: "jarvis_memories"
+  state_dir: "var/mem0"
+  embedding_model: "text-embedding-3-small"
+  embedding_dims: 1536
 
 # 高频抽取用 model API（M2/M3，OpenAI 兼容端点，可配置）
 model:

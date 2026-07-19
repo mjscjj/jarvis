@@ -2,6 +2,7 @@ package capture
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,18 @@ func TestNormalizeChatIDs(t *testing.T) {
 	}
 	if _, err := normalizeChatIDs([]string{"oc_one", " "}); err == nil {
 		t.Fatal("normalizeChatIDs() accepted empty chat_id")
+	}
+
+	dynamic := make([]string, 21)
+	for i := range dynamic {
+		dynamic[i] = fmt.Sprintf("oc_%02d", i)
+	}
+	got, err = normalizeChatIDs(dynamic)
+	if err != nil {
+		t.Fatalf("normalizeChatIDs() rejected dynamic list larger than 20: %v", err)
+	}
+	if len(got) != len(dynamic) {
+		t.Fatalf("normalizeChatIDs() length = %d, want %d", len(got), len(dynamic))
 	}
 }
 
