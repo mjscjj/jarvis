@@ -239,13 +239,24 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	}
 	run.Prompt = prompt
 
-	codexOut, err := e.runner.Run(ctx, prompt, policy.sandbox, repoPath)
+	codexOut, err := e.runner.Run(ctx, prompt, policy.sandbox, repoPath, true)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
 	run.CodexSessionID = &codexOut.SessionID
 	summary := codexOut.LastMessage
 	run.Summary = &summary
+
+	// codex reports its own success verdict (executionResultSchema). A run that
+	// finished the process but did not achieve the goal (e.g. "message not
+	// sent") is a failure — surface it instead of silently marking succeeded.
+	if codexOut.Result == nil {
+		return e.failRun(run, startedAt, fmt.Errorf("codex exec returned no structured result")), fmt.Errorf("codex exec returned no structured result")
+	}
+	if !codexOut.Result.Success {
+		cause := fmt.Errorf("task not completed: %s", codexOut.Result.FailureReason)
+		return e.failRun(run, startedAt, cause), cause
+	}
 
 	// For code changes, commit whatever codex did and capture the diff.
 	if repo != nil {

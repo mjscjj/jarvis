@@ -8,13 +8,13 @@ func TestActionPolicies(t *testing.T) {
 		wantSandbox  string
 		wantExternal bool
 	}{
-		{"code_change", "workspace-write", false},
-		{"investigate", "read-only", false},
-		{"summary_post", "read-only", true},
-		{"reply_message", "read-only", true},
-		{"schedule_meeting", "read-only", true},
-		{"doc_write", "read-only", true},
-		{"manual_followup", "read-only", true},
+		{"code_change", "danger-full-access", false},
+		{"investigate", "danger-full-access", false},
+		{"summary_post", "danger-full-access", true},
+		{"reply_message", "danger-full-access", true},
+		{"schedule_meeting", "danger-full-access", true},
+		{"doc_write", "danger-full-access", true},
+		{"manual_followup", "danger-full-access", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.actionType, func(t *testing.T) {

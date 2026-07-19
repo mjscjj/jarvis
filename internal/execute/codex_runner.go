@@ -19,12 +19,25 @@ const maxCodexOutputBytes = 1 << 20
 type codexRun struct {
 	SessionID   string
 	LastMessage string
+	// Result is the structured verdict codex returns per executionResultSchema.
+	// It is nil only for RunText callers that do not enforce the schema.
+	Result *codexResult
 }
 
-// CodexRunner wraps the codex CLI for M5 execution. Unlike the M4 decider (which
-// is always read-only), the runner picks the sandbox per task and never uses
-// danger-full-access or approval bypass. In `codex exec` the sandbox flag is the
-// enforcement boundary, so workspace-write cannot touch anything outside the repo.
+// codexResult is the structured final message codex must return for M5
+// execution (see executionResultSchema). It lets M5 判 done/failed on a real
+// success bool instead of the process exit code.
+type codexResult struct {
+	Success       bool   `json:"success"`
+	Summary       string `json:"summary"`
+	FailureReason string `json:"failure_reason"`
+	NeedsFollowup string `json:"needs_followup"`
+}
+
+// CodexRunner wraps the codex CLI for M5 execution. On this trusted local host
+// M5 runs danger-full-access so external tools (lark-cli/bytedcli) can reach the
+// network and macOS Keychain; the human-approval gate (actionPolicy.external)
+// is the safety boundary, not the sandbox.
 type CodexRunner struct {
 	bin     string
 	model   string
@@ -49,15 +62,19 @@ func NewCodexRunner(bin, model string, timeout time.Duration) (*CodexRunner, err
 }
 
 // Run executes codex once with the given prompt and sandbox. sandbox must be
-// "read-only" or "workspace-write". repoPath, when non-empty, is the working
-// directory codex operates in (required for workspace-write / code changes).
-func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string) (*codexRun, error) {
+// "read-only", "workspace-write" or "danger-full-access". repoPath, when
+// non-empty, is the working directory codex operates in. When enforceSchema is
+// true the final message is validated against executionResultSchema and parsed
+// into codexRun.Result (the structured success verdict for M5).
+func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string, enforceSchema bool) (*codexRun, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("codex run prompt is required")
 	}
-	if sandbox != "read-only" && sandbox != "workspace-write" {
-		return nil, fmt.Errorf("codex run sandbox must be read-only or workspace-write, got %q", sandbox)
+	switch sandbox {
+	case "read-only", "workspace-write", "danger-full-access":
+	default:
+		return nil, fmt.Errorf("codex run sandbox must be read-only, workspace-write or danger-full-access, got %q", sandbox)
 	}
 	if sandbox == "workspace-write" && strings.TrimSpace(repoPath) == "" {
 		return nil, fmt.Errorf("codex workspace-write run requires a repo path")
@@ -76,6 +93,18 @@ func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string)
 	args := []string{
 		"exec", "--ephemeral", "--sandbox", sandbox,
 		"--color", "never", "--json", "--output-last-message", resultPath, "--model", r.model,
+	}
+	if enforceSchema {
+		schemaPath := filepath.Join(tempDir, "result-schema.json")
+		if err := os.WriteFile(schemaPath, []byte(executionResultSchema), 0o600); err != nil {
+			return nil, fmt.Errorf("write codex exec result schema: %w", err)
+		}
+		args = append(args, "--output-schema", schemaPath)
+	}
+	if sandbox == "workspace-write" {
+		// workspace-write disables network by default; re-enable it so codex can
+		// call lark-cli/bytedcli. danger-full-access already has network.
+		args = append(args, "-c", "sandbox_workspace_write.network_access=true")
 	}
 	if strings.TrimSpace(repoPath) != "" {
 		args = append(args, "--cd", repoPath)
@@ -109,14 +138,46 @@ func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string)
 	if err != nil {
 		return nil, err
 	}
-	return &codexRun{SessionID: sessionID, LastMessage: string(bytes.TrimSpace(last))}, nil
+	lastMessage := string(bytes.TrimSpace(last))
+	run := &codexRun{SessionID: sessionID, LastMessage: lastMessage}
+	if enforceSchema {
+		result, err := parseExecutionResult(lastMessage)
+		if err != nil {
+			return nil, err
+		}
+		run.Result = result
+	}
+	return run, nil
+}
+
+// parseExecutionResult decodes codex's schema-constrained final message. It is
+// strict (fail-fast): a malformed or empty result is an execution failure, not
+// a silent success.
+func parseExecutionResult(lastMessage string) (*codexResult, error) {
+	trimmed := strings.TrimSpace(lastMessage)
+	if trimmed == "" {
+		return nil, fmt.Errorf("codex exec returned empty result message")
+	}
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	decoder.DisallowUnknownFields()
+	var result codexResult
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode codex exec result %q: %w", limitedText([]byte(trimmed), 512), err)
+	}
+	if strings.TrimSpace(result.Summary) == "" {
+		return nil, fmt.Errorf("codex exec result summary is blank")
+	}
+	if !result.Success && strings.TrimSpace(result.FailureReason) == "" {
+		return nil, fmt.Errorf("codex exec result success=false requires failure_reason")
+	}
+	return &result, nil
 }
 
 // RunText runs codex read-only and returns just the final message text. It is
 // used by lightweight callers (e.g. the Progress digest summarizer) that only
 // need free-form prose, not the M5 execution run bookkeeping.
 func (r *CodexRunner) RunText(ctx context.Context, prompt string) (string, error) {
-	run, err := r.Run(ctx, prompt, "read-only", "")
+	run, err := r.Run(ctx, prompt, "read-only", "", false)
 	if err != nil {
 		return "", err
 	}
