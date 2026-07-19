@@ -94,19 +94,6 @@ func (c *Client) Search(ctx context.Context, input SearchInput) (*SearchResponse
 	return &response, nil
 }
 
-func (c *Client) Health(ctx context.Context) error {
-	var response struct {
-		Status string `json:"status"`
-	}
-	if err := c.doJSON(ctx, http.MethodGet, "/health", nil, &response); err != nil {
-		return fmt.Errorf("memory health: %w", err)
-	}
-	if response.Status != "ok" {
-		return fmt.Errorf("memory health: unexpected status %q", response.Status)
-	}
-	return nil
-}
-
 func (c *Client) doJSON(ctx context.Context, method, path string, input, output any) error {
 	var body io.Reader
 	if input != nil {

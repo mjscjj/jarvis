@@ -53,21 +53,6 @@ func NewClient(baseURL, apiKey, model string, timeout time.Duration) (*Client, e
 	}, nil
 }
 
-func (c *Client) Extract(ctx context.Context, prompt extract.Prompt) (*extract.ExtractionResult, error) {
-	if strings.TrimSpace(prompt.System) == "" || strings.TrimSpace(prompt.User) == "" {
-		return nil, fmt.Errorf("model extraction system and user prompts must be non-empty")
-	}
-	payload, err := c.completeStructured(ctx, "extraction", "todo_extraction", TodoExtractionJSONSchema(), prompt)
-	if err != nil {
-		return nil, err
-	}
-	result, err := extract.DecodeExtractionResult(payload)
-	if err != nil {
-		return nil, fmt.Errorf("validate model extraction result: %w", err)
-	}
-	return result, nil
-}
-
 func (c *Client) SameAction(ctx context.Context, incoming extract.Candidate, existing extract.SemanticTodo) (bool, error) {
 	if err := extract.ValidateCandidate(&incoming); err != nil {
 		return false, fmt.Errorf("semantic adjudication incoming candidate: %w", err)

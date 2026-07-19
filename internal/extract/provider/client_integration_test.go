@@ -33,16 +33,6 @@ func TestClientLiveStructuredOutput(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	result, err := client.Extract(ctx, extract.Prompt{
-		System: "Extract work todo candidates. The user message below explicitly contains no work or action item, so return an empty candidates array.",
-		User:   "Connectivity check only. There is no task, request, commitment, or follow-up in this message.",
-	})
-	if err != nil {
-		t.Fatalf("Extract() error = %v", err)
-	}
-	if len(result.Candidates) != 0 {
-		t.Fatalf("Extract() candidates = %#v, want empty", result.Candidates)
-	}
 	candidate := extract.Candidate{
 		ActionType: "code_change", Title: "Refactor synthetic auth", Description: "Refactor the synthetic auth flow",
 		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_synthetic"},

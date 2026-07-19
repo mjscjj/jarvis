@@ -13,7 +13,10 @@ import (
 	"jarvis/internal/extract"
 )
 
-func TestClientExtractUsesStrictSchema(t *testing.T) {
+// completeStructured (shared by SameAction and ExtractWithTools) is exercised
+// end to end below: header/auth, strict json_schema, and unset temperature are
+// all asserted through SameAction, so no separate Extract test is needed.
+func TestClientCompleteStructuredSetsHeadersAndStrictSchema(t *testing.T) {
 	client, err := NewClient("https://model.test/v1", "plain-key", "model-name", time.Second)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
@@ -39,18 +42,17 @@ func TestClientExtractUsesStrictSchema(t *testing.T) {
 		if _, ok := body["temperature"]; ok {
 			t.Fatalf("request must leave provider temperature unset: %#v", body)
 		}
-		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"{\"candidates\":[]}","refusal":""}}]}`), nil
+		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"{\"same_action\":true}","refusal":""}}]}`), nil
 	})
-	result, err := client.Extract(context.Background(), extract.Prompt{System: "system", User: "user"})
-	if err != nil {
-		t.Fatalf("Extract() error = %v", err)
-	}
-	if len(result.Candidates) != 0 {
-		t.Fatalf("candidates = %#v", result.Candidates)
+	if _, err := client.SameAction(context.Background(), providerCandidate(), extract.SemanticTodo{
+		ID: 7, ActionType: "code_change", Title: "修改鉴权", Description: "修改鉴权逻辑",
+		Slots: map[string]any{"repo_ref": "jarvis", "change_summary": "修改鉴权"}, Status: "extracted",
+	}); err != nil {
+		t.Fatalf("SameAction() error = %v", err)
 	}
 }
 
-func TestClientExtractFailsOnRefusal(t *testing.T) {
+func TestClientSameActionFailsOnRefusal(t *testing.T) {
 	client, err := NewClient("https://model.test/v1", "plain-key", "model-name", time.Second)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
@@ -58,22 +60,11 @@ func TestClientExtractFailsOnRefusal(t *testing.T) {
 	client.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"","refusal":"cannot comply"}}]}`), nil
 	})
-	_, err = client.Extract(context.Background(), extract.Prompt{System: "system", User: "user"})
-	if !errors.Is(err, ErrModelRefusal) {
-		t.Fatalf("Extract() error = %v", err)
-	}
-}
-
-func TestClientExtractFailsOnInvalidCandidateJSON(t *testing.T) {
-	client, err := NewClient("https://model.test/v1", "plain-key", "model-name", time.Second)
-	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
-	}
-	client.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"{}","refusal":""}}]}`), nil
+	_, err = client.SameAction(context.Background(), providerCandidate(), extract.SemanticTodo{
+		ID: 7, ActionType: "code_change", Title: "修改鉴权", Description: "修改鉴权逻辑",
 	})
-	if _, err := client.Extract(context.Background(), extract.Prompt{System: "system", User: "user"}); err == nil {
-		t.Fatal("Extract() accepted missing candidates field")
+	if !errors.Is(err, ErrModelRefusal) {
+		t.Fatalf("SameAction() error = %v, want ErrModelRefusal", err)
 	}
 }
 
