@@ -11,6 +11,8 @@ import type {
   ProfileView,
   Project,
   ProjectInput,
+  Resource,
+  ResourceInput,
   ResolveResult,
   Task,
   TaskList,
@@ -168,4 +170,20 @@ export function getProfile(): Promise<ProfileView> {
 
 export function updateProfile(body: ProfileInput): Promise<ProfileView> {
   return request<ProfileView>('/api/profile', { method: 'PUT', body })
+}
+
+export function listResources(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Resource>> {
+  return request<Paged<Resource>>(`/api/resources?page=${page}&page_size=${pageSize}`, { signal })
+}
+
+export function createResource(body: ResourceInput): Promise<Resource> {
+  return request<Resource>('/api/resources', { method: 'POST', body })
+}
+
+export function updateResource(id: number, body: ResourceInput): Promise<Resource> {
+  return request<Resource>(`/api/resources/${id}`, { method: 'PUT', body })
+}
+
+export function deleteResource(id: number): Promise<{ id: number; deleted: boolean }> {
+  return request(`/api/resources/${id}`, { method: 'DELETE' })
 }

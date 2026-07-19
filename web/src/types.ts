@@ -288,3 +288,32 @@ export interface ProfileInput {
   leader_open_id?: string | null
   leader_name?: string | null
 }
+
+export type ResourceType = 'doc' | 'link' | 'repo' | 'note' | 'other'
+
+// Resource is a manually curated reference that can be linked to a person, a
+// project, and/or the principal ("me"). Distinct from message-derived resources.
+export interface Resource {
+  id: number
+  title: string
+  resource_type: ResourceType
+  url: string | null
+  description: string | null
+  person_id: number | null
+  person_name: string | null
+  project_id: number | null
+  project_name: string | null
+  link_principal: boolean
+  is_active: boolean
+}
+
+export interface ResourceInput {
+  title: string
+  resource_type: ResourceType
+  url?: string | null
+  description?: string | null
+  person_id?: number | null
+  project_id?: number | null
+  link_principal: boolean
+  is_active?: boolean
+}

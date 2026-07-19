@@ -22,17 +22,21 @@ import type { TableColumnsType } from 'antd'
 import {
   createPerson,
   createProject,
+  createResource,
   deletePerson,
   deleteProject,
+  deleteResource,
   getProfile,
   listGroups,
   listPersons,
   listProjects,
+  listResources,
   resolvePerson,
   updateGroupBackground,
   updatePerson,
   updateProfile,
   updateProject,
+  updateResource,
 } from './api'
 import type {
   Group,
@@ -47,6 +51,9 @@ import type {
   ProjectRole,
   ProjectStatus,
   ResolveCandidate,
+  Resource,
+  ResourceInput,
+  ResourceType,
 } from './types'
 
 const { Text } = Typography
@@ -57,6 +64,9 @@ const projectStatusLabels: Record<ProjectStatus, string> = {
 }
 const personRoleLabels: Record<PersonRole, string> = {
   leader: 'Leader', key: '关键干系人', colleague: '同事', other: '其他',
+}
+const resourceTypeLabels: Record<ResourceType, string> = {
+  doc: '文档', link: '链接', repo: '仓库', note: '笔记', other: '其他',
 }
 const personRoleColors: Record<PersonRole, string> = {
   leader: 'volcano', key: 'gold', colleague: 'blue', other: 'default',
@@ -736,6 +746,168 @@ function ProfilePanel() {
   </>
 }
 
+// --- Resources ---
+
+// resourceToInput projects a stored Resource back into the update payload so an
+// inline edit patches exactly one field without dropping the rest.
+function resourceToInput(resource: Resource): ResourceInput {
+  return {
+    title: resource.title, resource_type: resource.resource_type, url: resource.url,
+    description: resource.description, person_id: resource.person_id, project_id: resource.project_id,
+    link_principal: resource.link_principal, is_active: resource.is_active,
+  }
+}
+
+function ResourcePanel() {
+  const [items, setItems] = useState<Resource[]>([])
+  const [persons, setPersons] = useState<Person[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+  const [savingId, setSavingId] = useState<number>()
+  const [open, setOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [form] = Form.useForm<ResourceInput>()
+
+  const reload = useCallback(() => {
+    setLoading(true)
+    Promise.all([listResources(), listPersons(), listProjects()])
+      .then(([resourceResult, personResult, projectResult]) => {
+        setItems(resourceResult.items)
+        setPersons(personResult.items)
+        setProjects(projectResult.items)
+        setError(undefined)
+      })
+      .catch((cause: unknown) => setError(errorText(cause)))
+      .finally(() => setLoading(false))
+  }, [])
+  useEffect(reload, [reload])
+
+  // patchResource performs an inline single-field update straight from the list.
+  const patchResource = async (resource: Resource, patch: Partial<ResourceInput>) => {
+    setSavingId(resource.id)
+    try {
+      await updateResource(resource.id, { ...resourceToInput(resource), ...patch })
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSavingId(undefined)
+    }
+  }
+
+  const openCreate = () => {
+    form.setFieldsValue({ title: '', resource_type: 'link', url: null, description: null, person_id: null, project_id: null, link_principal: false, is_active: true })
+    setOpen(true)
+  }
+  const submit = async () => {
+    const values = await form.validateFields()
+    setSubmitting(true)
+    try {
+      await createResource(values)
+      setOpen(false)
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+  const remove = async (resource: Resource) => {
+    try { await deleteResource(resource.id); reload() } catch (cause: unknown) { setError(errorText(cause)) }
+  }
+
+  const personOptions = [{ value: 0, label: '—' }, ...persons.map((p) => ({ value: p.id, label: p.name }))]
+  const projectOptions = [{ value: 0, label: '—' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]
+
+  const columns: TableColumnsType<Resource> = [
+    {
+      title: '名称', dataIndex: 'title', render: (_, r) => (
+        <Input size="small" defaultValue={r.title} disabled={savingId === r.id}
+          onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== r.title) patchResource(r, { title: v }) }} />
+      ),
+    },
+    {
+      title: '类型', dataIndex: 'resource_type', width: 110, render: (t: ResourceType, r) => (
+        <Select size="small" value={t} style={{ width: '100%' }} disabled={savingId === r.id}
+          options={Object.entries(resourceTypeLabels).map(([value, label]) => ({ value, label }))}
+          onChange={(value) => patchResource(r, { resource_type: value as ResourceType })} />
+      ),
+    },
+    {
+      title: '链接/地址', dataIndex: 'url', render: (_, r) => (
+        <Input size="small" defaultValue={r.url ?? ''} placeholder="可选" disabled={savingId === r.id}
+          onBlur={(e) => { const v = e.target.value.trim(); if (v !== (r.url ?? '')) patchResource(r, { url: v || null }) }} />
+      ),
+    },
+    {
+      title: '关联人', dataIndex: 'person_id', width: 130, render: (_, r) => (
+        <Select size="small" value={r.person_id ?? 0} style={{ width: '100%' }} disabled={savingId === r.id}
+          options={personOptions} showSearch optionFilterProp="label"
+          onChange={(value) => patchResource(r, { person_id: value === 0 ? null : value })} />
+      ),
+    },
+    {
+      title: '关联项目', dataIndex: 'project_id', width: 150, render: (_, r) => (
+        <Select size="small" value={r.project_id ?? 0} style={{ width: '100%' }} disabled={savingId === r.id}
+          options={projectOptions} showSearch optionFilterProp="label"
+          onChange={(value) => patchResource(r, { project_id: value === 0 ? null : value })} />
+      ),
+    },
+    {
+      title: '关联我', dataIndex: 'link_principal', width: 70, align: 'center', render: (v: boolean, r) => (
+        <Switch size="small" checked={v} loading={savingId === r.id}
+          onChange={(checked) => patchResource(r, { link_principal: checked })} />
+      ),
+    },
+    {
+      title: '启用', dataIndex: 'is_active', width: 70, align: 'center', render: (v: boolean, r) => (
+        <Switch size="small" checked={v} loading={savingId === r.id}
+          onChange={(checked) => patchResource(r, { is_active: checked })} />
+      ),
+    },
+    {
+      title: '操作', width: 80, render: (_, r) => (
+        <Popconfirm title="删除该资源？" onConfirm={() => remove(r)} okText="删除" cancelText="取消">
+          <Button size="small" danger>删除</Button>
+        </Popconfirm>
+      ),
+    },
+  ]
+
+  return <>
+    <Flex justify="space-between" align="center" className="section-heading">
+      <Text type="secondary">共 {items.length} 个资源</Text>
+      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建资源</Button></Flex>
+    </Flex>
+    {error && <Alert type="error" showIcon message="资源操作失败" description={error} closable onClose={() => setError(undefined)} />}
+    <Card className="table-card" variant="borderless"><Table<Resource> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} /></Card>
+    <Modal title="新建资源" open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
+      <Form form={form} layout="vertical">
+        <Form.Item name="title" label="名称" rules={[{ required: true, message: '请输入资源名称' }]}><Input /></Form.Item>
+        <Flex gap={16}>
+          <Form.Item name="resource_type" label="类型" rules={[{ required: true }]} style={{ flex: 1 }}>
+            <Select options={Object.entries(resourceTypeLabels).map(([value, label]) => ({ value, label }))} />
+          </Form.Item>
+          <Form.Item name="link_principal" label="关联我" valuePropName="checked" style={{ width: 90 }}><Switch /></Form.Item>
+        </Flex>
+        <Form.Item name="url" label="链接/地址(可选)"><Input allowClear /></Form.Item>
+        <Flex gap={16}>
+          <Form.Item name="person_id" label="关联人(可选)" style={{ flex: 1 }}>
+            <Select allowClear showSearch optionFilterProp="label" placeholder="—"
+              options={persons.map((p) => ({ value: p.id, label: p.name }))} />
+          </Form.Item>
+          <Form.Item name="project_id" label="关联项目(可选)" style={{ flex: 1 }}>
+            <Select allowClear showSearch optionFilterProp="label" placeholder="—"
+              options={projects.map((p) => ({ value: p.id, label: p.name }))} />
+          </Form.Item>
+        </Flex>
+        <Form.Item name="description" label="说明/备注(可选)"><Input.TextArea rows={2} /></Form.Item>
+      </Form>
+    </Modal>
+  </>
+}
+
 export default function Background() {
   return (
     <Tabs
@@ -744,6 +916,7 @@ export default function Background() {
         { key: 'projects', label: '项目', children: <ProjectsPanel /> },
         { key: 'persons', label: '人物', children: <PersonsPanel /> },
         { key: 'groups', label: '会话背景', children: <GroupsPanel /> },
+        { key: 'resources', label: '资源', children: <ResourcePanel /> },
       ]}
     />
   )
