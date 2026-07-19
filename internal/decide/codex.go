@@ -59,6 +59,11 @@ type CodexOptions struct {
 	Bin     string
 	Model   string
 	Timeout time.Duration
+	// Sandbox / Network / ReasoningEffort配置 M4 决策 codex 的权限与推理档位。
+	// 设计 §2.3：M4 决策也可自查补信息，用 danger-full-access + 联网 + low 推理。
+	Sandbox         string
+	Network         bool
+	ReasoningEffort string
 }
 
 type CodexInput struct {
@@ -100,9 +105,12 @@ type CodexResult struct {
 }
 
 type CodexDecider struct {
-	bin     string
-	model   string
-	timeout time.Duration
+	bin             string
+	model           string
+	timeout         time.Duration
+	sandbox         string
+	network         bool
+	reasoningEffort string
 }
 
 func NewCodexDecider(opts CodexOptions) (*CodexDecider, error) {
@@ -119,7 +127,18 @@ func NewCodexDecider(opts CodexOptions) (*CodexDecider, error) {
 	if opts.Timeout <= 0 {
 		return nil, fmt.Errorf("codex decider timeout must be positive")
 	}
-	return &CodexDecider{bin: bin, model: opts.Model, timeout: opts.Timeout}, nil
+	switch opts.Sandbox {
+	case "read-only", "workspace-write", "danger-full-access":
+	default:
+		return nil, fmt.Errorf("codex decider sandbox %q is invalid", opts.Sandbox)
+	}
+	if strings.TrimSpace(opts.ReasoningEffort) == "" {
+		return nil, fmt.Errorf("codex decider reasoning_effort is required")
+	}
+	return &CodexDecider{
+		bin: bin, model: opts.Model, timeout: opts.Timeout,
+		sandbox: opts.Sandbox, network: opts.Network, reasoningEffort: opts.ReasoningEffort,
+	}, nil
 }
 
 func (d *CodexDecider) Decide(ctx context.Context, input CodexInput) (*CodexResult, error) {
@@ -143,8 +162,14 @@ func (d *CodexDecider) Decide(ctx context.Context, input CodexInput) (*CodexResu
 	}
 
 	args := []string{
-		"exec", "--ephemeral", "--sandbox", "read-only", "--color", "never", "--json",
+		"exec", "--ephemeral", "--sandbox", d.sandbox, "--color", "never", "--json",
 		"--output-schema", schemaPath, "--output-last-message", resultPath, "--model", d.model,
+		"-c", "model_reasoning_effort=" + d.reasoningEffort,
+	}
+	if d.network && d.sandbox == "workspace-write" {
+		// workspace-write disables network by default; re-enable it so codex can
+		// self-query lark-cli/bytedcli. danger-full-access already has network.
+		args = append(args, "-c", "sandbox_workspace_write.network_access=true")
 	}
 	if repoPath != "" {
 		args = append(args, "--cd", repoPath)

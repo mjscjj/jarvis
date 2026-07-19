@@ -2,9 +2,9 @@ package decide
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 
 	"gorm.io/datatypes"
@@ -21,13 +21,20 @@ func (f *fakeCodexDecisionRunner) Decide(_ context.Context, _ CodexInput) (*Code
 	return f.result, f.err
 }
 
-type fakeBackgroundSnapshotter struct {
-	raw json.RawMessage
-	err error
-}
-
-func (f *fakeBackgroundSnapshotter) Snapshot(context.Context, *domain.Todo) (json.RawMessage, error) {
-	return f.raw, f.err
+// testContextSnapshot builds a minimal valid frozen snapshot for a Todo so
+// requireContextSnapshot (fail-fast) is satisfied in unit tests.
+func testContextSnapshot(t *testing.T) datatypes.JSON {
+	t.Helper()
+	raw, err := contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		CapturedAt:      "2026-07-19T00:00:00Z",
+		Group:           &contextsnap.Group{ID: 1, ChatID: "oc_x"},
+		Messages:        []contextsnap.Message{{MessageID: "m1", ChatID: "oc_x", Content: "leader asked to fix"}},
+	}.Encode()
+	if err != nil {
+		t.Fatalf("build test snapshot: %v", err)
+	}
+	return datatypes.JSON(raw)
 }
 
 func clearFactors() []DecisionFactor {
@@ -109,7 +116,8 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 	todo := &domain.Todo{
 		ID: 42, Version: 3, Status: "extracted",
 		Title: "Fix deadlock", Description: "leader asked to fix the scan deadlock", ActionType: "code_change",
-		Slots: datatypes.JSON([]byte(`{"repo":"jarvis"}`)),
+		Slots:           datatypes.JSON([]byte(`{"repo":"jarvis"}`)),
+		ContextSnapshot: testContextSnapshot(t),
 	}
 	runner := &fakeCodexDecisionRunner{result: &CodexResult{
 		SessionID: "sess-1",
@@ -119,8 +127,7 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 			RecommendedReview: true,
 		},
 	}}
-	snap := &fakeBackgroundSnapshotter{raw: json.RawMessage(`{"todo_id":42}`)}
-	evaluator, err := NewCodexEvaluator(runner, snap)
+	evaluator, err := NewCodexEvaluator(runner)
 	if err != nil {
 		t.Fatalf("NewCodexEvaluator() error = %v", err)
 	}

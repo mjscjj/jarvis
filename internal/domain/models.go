@@ -105,6 +105,8 @@ type Todo struct {
 	Route              *string        `gorm:"column:route;type:varchar(16)"`
 	MissingInfo        datatypes.JSON `gorm:"column:missing_info;type:json"`
 	DedupFingerprint   string         `gorm:"column:dedup_fingerprint;type:char(64);not null;uniqueIndex:uk_todo_fingerprint"`
+	ContextSnapshot    datatypes.JSON `gorm:"column:context_snapshot;type:json"` // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），M4/M5 全链路复用
+	Resolution         datatypes.JSON `gorm:"column:resolution;type:json"`       // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
 	ExtractionModel    string         `gorm:"column:extraction_model;type:varchar(64);not null"`
 	PromptVersion      string         `gorm:"column:prompt_version;type:varchar(32);not null"`
 	Revision           int32          `gorm:"column:revision;not null;default:1"`

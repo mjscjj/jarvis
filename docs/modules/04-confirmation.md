@@ -5,7 +5,9 @@
 > 技术栈：**Go 1.26 + Hertz + GORM + codex CLI**（决策）+ robfig/cron v3（过期扫描）。**不引入 Eino/Kitex**。
 > 当前流水线定位：采集(M2) → 提取 Todo(M3) → **人工确认 + Todo→Task 转化(M4·本模块)** → 执行 Task(M5)
 
-> **当前 MVP（2026-07-19）**：先跑通 `extracted Todo → need_decision → 用户批准/拒绝 → Task`。运行时使用 `decide.mode=manual_mvp`，每轮只把 Todo 送入人工确认；**不计算 confidence/risk、不调用 codex、不自动确认**。Task 背景直接从 MySQL 读取项目、人员、群和源消息，不查询 mem0。下文的打分、灰区和 codex 深判属于后续设计，代码可保留但当前不接主流程。
+> **当前状态（2026-07-19，`decide.mode=codex`）**：运行时用 codex 只读判每个 Todo 的 disposition 并路由（观察期 auto_execute/need_review 都落 need_decision，仍走人工确认）。`decide.mode=manual_mvp` 保留为不调 codex 的备用档。
+>
+> **【2026-07 变更，见 `docs/design-context-pipeline.md`】** Task 背景不再于 M4 确认时临时从 MySQL 拼装：M3 生成 Todo 时已**固化** `context_snapshot`，M4 `Approve` 直接复用该快照写入 Task。**不兼容旧数据**——实施时清空 `todo`/`task` 等表；M4 强制要求 `context_snapshot` 非空，为空即 fail-fast 报错，**不保留临时拼接回退路径**。下文中"确认时固化 background"的描述据此调整为"复用 M3 快照"。
 
 ---
 

@@ -27,7 +27,7 @@
 | 结构化存储 | **MySQL 8**（InnoDB / utf8mb4） | 7 实体 + 消息明文，source of truth |
 | 记忆层 | **mem0**（Python）以 **sidecar** 形式，Go 通过 HTTP 调用 | 见 §5 |
 | 向量库 | **Qdrant v1.18.2**（Apple Silicon 原生二进制 + launchd，HTTP 6333 / gRPC 6334） | mem0 后端 + M3 独立 `todo_semantic`；不使用嵌入式 local mode |
-| LLM 抽取（M2/M3） | **model API**（OpenAI 兼容 / 本地 ollama / 字节网关，可配置） | 结构化输出，追求稳定与速度 |
+| LLM 抽取（M3） | **codex CLI**（`extract.engine=codex`，主）/ model API（可配置，备用） | 【2026-07 变更，见 `docs/design-context-pipeline.md`】M3 改用 codex 以便自跑 lark-cli/bytedcli/git 推算项目归属；model API 保留备用。M2 记忆化仍用 model API/embedding。 |
 | LLM 决策（M4） | **codex CLI**（`codex exec` 子进程） | 复杂确认/风险决策，见 §6 |
 | 代码执行后端（M5） | **codex CLI** / cursor-agent | `code_change` executor 后端 |
 | 前端 | React + Vite + Ant Design | 管理后台 |

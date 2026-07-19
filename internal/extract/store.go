@@ -64,6 +64,11 @@ type TodoView struct {
 	UpdatedAt          time.Time        `json:"updated_at"`
 	Group              *TodoGroupView   `json:"group"`
 	Project            *TodoProjectView `json:"project"`
+	// Resolution / ContextSnapshot are the M3-frozen project inference trace and
+	// background so the confirmation UI can show "why this project/repo" and the
+	// full context that M4/M5 replay (docs/design-context-pipeline.md §5/§6).
+	Resolution      json.RawMessage `json:"resolution"`
+	ContextSnapshot json.RawMessage `json:"context_snapshot"`
 }
 
 type TodoGroupView struct {
@@ -177,6 +182,7 @@ func todoView(todo *domain.Todo) TodoView {
 		Risk: todo.Risk, Route: todo.Route, MissingInfo: rawJSON(todo.MissingInfo),
 		Revision: todo.Revision, Version: todo.Version, FirstSeenAt: todo.FirstSeenAt,
 		LastEvidenceAt: todo.LastEvidenceAt, CreatedAt: todo.CreatedAt, UpdatedAt: todo.UpdatedAt,
+		Resolution: rawJSON(todo.Resolution), ContextSnapshot: rawJSON(todo.ContextSnapshot),
 	}
 	if todo.Group != nil {
 		view.Group = &TodoGroupView{ID: todo.Group.ID, ChatID: todo.Group.ChatID, Name: todo.Group.Name}

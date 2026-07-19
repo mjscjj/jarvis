@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 
 	"gorm.io/datatypes"
@@ -19,20 +20,27 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type Service struct {
-	db         *gorm.DB
-	background backgroundSnapshotter
-	now        func() time.Time
+// requireContextSnapshot returns the Todo's M3-frozen context_snapshot as raw
+// JSON, failing fast if it is missing or malformed. There is deliberately no
+// re-snapshot fallback: an empty snapshot is a real bug that must surface.
+func requireContextSnapshot(todo *domain.Todo) (json.RawMessage, error) {
+	raw := []byte(todo.ContextSnapshot)
+	if _, err := contextsnap.Decode(raw); err != nil {
+		return nil, fmt.Errorf("%w: todo_id=%d context_snapshot invalid: %v", ErrInvalidInput, todo.ID, err)
+	}
+	return json.RawMessage(append([]byte(nil), raw...)), nil
 }
 
-func NewService(db *gorm.DB, background backgroundSnapshotter) (*Service, error) {
+type Service struct {
+	db  *gorm.DB
+	now func() time.Time
+}
+
+func NewService(db *gorm.DB) (*Service, error) {
 	if db == nil {
 		return nil, fmt.Errorf("confirmation service db is nil")
 	}
-	if background == nil {
-		return nil, fmt.Errorf("confirmation service background snapshotter is nil")
-	}
-	return &Service{db: db, background: background, now: time.Now}, nil
+	return &Service{db: db, now: time.Now}, nil
 }
 
 func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, error) {
@@ -53,11 +61,11 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 	if initial.Status != "need_decision" {
 		return nil, transitionError(input.TodoID, initial.Status, "confirmed")
 	}
-	background, err := s.background.Snapshot(ctx, &initial)
+	// The background is the context_snapshot M3 froze onto the Todo. M4 reuses it
+	// verbatim; it must be present (fail-fast, no re-snapshot fallback — see
+	// docs/design-context-pipeline.md §2.2/§2.3).
+	background, err := requireContextSnapshot(&initial)
 	if err != nil {
-		return nil, err
-	}
-	if _, err := canonicalJSONObject(background, "background"); err != nil {
 		return nil, err
 	}
 

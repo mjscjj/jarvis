@@ -112,6 +112,17 @@ func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string)
 	return &codexRun{SessionID: sessionID, LastMessage: string(bytes.TrimSpace(last))}, nil
 }
 
+// RunText runs codex read-only and returns just the final message text. It is
+// used by lightweight callers (e.g. the Progress digest summarizer) that only
+// need free-form prose, not the M5 execution run bookkeeping.
+func (r *CodexRunner) RunText(ctx context.Context, prompt string) (string, error) {
+	run, err := r.Run(ctx, prompt, "read-only", "")
+	if err != nil {
+		return "", err
+	}
+	return run.LastMessage, nil
+}
+
 // codexSessionID extracts the thread_id from codex's JSONL stream. It uses a
 // streaming json.Decoder rather than a line scanner because a single JSONL
 // event (e.g. a command's captured output) can exceed any fixed line buffer.

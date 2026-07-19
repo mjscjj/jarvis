@@ -1,9 +1,11 @@
 import type {
   ConfirmationDetail,
+  Digest,
   Group,
   GroupBackgroundInput,
   GroupList,
   GroupQuery,
+  Overview,
   Paged,
   Person,
   PersonInput,
@@ -170,6 +172,20 @@ export function getProfile(): Promise<ProfileView> {
 
 export function updateProfile(body: ProfileInput): Promise<ProfileView> {
   return request<ProfileView>('/api/profile', { method: 'PUT', body })
+}
+
+// --- Overview & Progress ---
+
+export function getOverview(signal?: AbortSignal): Promise<Overview> {
+  return request<Overview>('/api/overview', { signal })
+}
+
+export function getDigests(days = 7, signal?: AbortSignal): Promise<Digest> {
+  return request<Digest>(`/api/digests?days=${days}`, { signal })
+}
+
+export function summarizeDigest(days = 7): Promise<{ summary: string; days: number }> {
+  return request<{ summary: string; days: number }>(`/api/digests/summarize?days=${days}`, { method: 'POST' })
 }
 
 export function listResources(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Resource>> {

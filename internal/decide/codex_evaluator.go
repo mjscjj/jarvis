@@ -30,18 +30,14 @@ var neutralRuleScore = RuleScore{Confidence: 0.5, Risk: 0.5}
 // currently land on need_decision so every Todo still passes through the
 // confirmation page; the disposition rides along in the audit for observation.
 type CodexEvaluator struct {
-	codex      codexDecisionRunner
-	background backgroundSnapshotter
+	codex codexDecisionRunner
 }
 
-func NewCodexEvaluator(codex codexDecisionRunner, background backgroundSnapshotter) (*CodexEvaluator, error) {
+func NewCodexEvaluator(codex codexDecisionRunner) (*CodexEvaluator, error) {
 	if codex == nil {
 		return nil, fmt.Errorf("codex evaluator decider is nil")
 	}
-	if background == nil {
-		return nil, fmt.Errorf("codex evaluator background snapshotter is nil")
-	}
-	return &CodexEvaluator{codex: codex, background: background}, nil
+	return &CodexEvaluator{codex: codex}, nil
 }
 
 func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*EvaluationInput, error) {
@@ -52,9 +48,11 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 		return nil, fmt.Errorf("codex evaluator Todo id=%d status=%s, want extracted", todo.ID, todo.Status)
 	}
 
-	background, err := e.background.Snapshot(ctx, todo)
+	// M4 reuses the M3-frozen context_snapshot verbatim (no re-snapshot). It must
+	// be present — fail-fast if empty (docs/design-context-pipeline.md §2.3).
+	background, err := requireContextSnapshot(todo)
 	if err != nil {
-		return nil, fmt.Errorf("snapshot background for codex evaluation todo_id=%d: %w", todo.ID, err)
+		return nil, fmt.Errorf("codex evaluation todo_id=%d: %w", todo.ID, err)
 	}
 	prompt, err := BuildCodexPrompt(CodexPromptInput{Todo: todo, RuleScore: neutralRuleScore, Background: background})
 	if err != nil {

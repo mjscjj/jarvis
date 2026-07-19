@@ -22,6 +22,7 @@ import (
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/codexengine"
 	"jarvis/internal/extract/provider"
+	"jarvis/internal/insight"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/memory"
 	"jarvis/internal/semantic"
@@ -115,18 +116,18 @@ func main() {
 			// route by disposition. Background is built from MySQL only (no mem0)
 			// to keep the decision path deterministic and offline-safe.
 			decider, err := decide.NewCodexDecider(decide.CodexOptions{
-				Bin:     cfg.Codex.Bin,
-				Model:   cfg.Codex.Model,
-				Timeout: time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
+				Bin:             cfg.Codex.Bin,
+				Model:           cfg.Codex.Model,
+				Timeout:         time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
+				Sandbox:         cfg.Decide.CodexSandbox,
+				Network:         cfg.Decide.CodexNetwork,
+				ReasoningEffort: cfg.Decide.CodexReasoningEffort,
 			})
 			if err != nil {
 				hlog.Fatalf("initialize codex decider failed: %v", err)
 			}
-			decisionSnapshotter, err := decide.NewMVPBackgroundSnapshotter(db)
-			if err != nil {
-				hlog.Fatalf("initialize codex decision background snapshotter failed: %v", err)
-			}
-			codexEvaluator, err := decide.NewCodexEvaluator(decider, decisionSnapshotter)
+			// M4 reuses the M3-frozen context_snapshot verbatim (no snapshotter).
+			codexEvaluator, err := decide.NewCodexEvaluator(decider)
 			if err != nil {
 				hlog.Fatalf("initialize codex evaluator failed: %v", err)
 			}
@@ -212,11 +213,7 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize todo store failed: %v", err)
 	}
-	backgroundSnapshotter, err := decide.NewMVPBackgroundSnapshotter(db)
-	if err != nil {
-		hlog.Fatalf("initialize confirmation background snapshotter failed: %v", err)
-	}
-	confirmationService, err := decide.NewService(db, backgroundSnapshotter)
+	confirmationService, err := decide.NewService(db)
 	if err != nil {
 		hlog.Fatalf("initialize confirmation service failed: %v", err)
 	}
@@ -261,6 +258,19 @@ func main() {
 	resourceService, err := background.NewResourceService(db)
 	if err != nil {
 		hlog.Fatalf("initialize resource service failed: %v", err)
+	}
+	overviewService, err := insight.NewOverviewService(db)
+	if err != nil {
+		hlog.Fatalf("initialize overview service failed: %v", err)
+	}
+	digestService, err := insight.NewDigestService(db, location)
+	if err != nil {
+		hlog.Fatalf("initialize digest service failed: %v", err)
+	}
+	// 进度总结按需复用 M5 的 codex runner（read-only 出纯文本）；codex 不可用时留空，接口返回 503。
+	digestSummarizer, err := insight.NewSummarizer(codexRunner)
+	if err != nil {
+		hlog.Fatalf("initialize digest summarizer failed: %v", err)
 	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
@@ -494,6 +504,7 @@ func main() {
 		Tasks: taskService, Executor: agentExecutor,
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
+		Overview: overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}

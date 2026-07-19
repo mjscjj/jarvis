@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 
 	"gorm.io/gorm"
@@ -185,25 +186,31 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	var repo *gitRepo
 	baseBranch := ""
 	if task.ActionType == "code_change" {
+		// Resolve the working directory from the M3-frozen context (repo_ref slot
+		// first, then project.repos[].local_path). repos being empty must NOT block
+		// this round (docs/design-context-pipeline.md §7): codex runs without --cd
+		// and self-locates / reports the missing repo.
 		path, err := e.resolveRepo(task)
 		if err != nil {
 			return e.failRun(run, startedAt, err), err
 		}
-		repoPath = path
-		run.RepoPath = &repoPath
-		repo = newGitRepo(repoPath, 30*time.Second)
-		if err := repo.ensureClean(ctx); err != nil {
-			return e.failRun(run, startedAt, err), err
+		if path != "" {
+			repoPath = path
+			run.RepoPath = &repoPath
+			repo = newGitRepo(repoPath, 30*time.Second)
+			if err := repo.ensureClean(ctx); err != nil {
+				return e.failRun(run, startedAt, err), err
+			}
+			baseBranch, err = repo.currentBranch(ctx)
+			if err != nil {
+				return e.failRun(run, startedAt, err), err
+			}
+			branch := fmt.Sprintf("jarvis/task-%d", task.ID)
+			if err := repo.createBranch(ctx, branch); err != nil {
+				return e.failRun(run, startedAt, err), err
+			}
+			run.Branch = &branch
 		}
-		baseBranch, err = repo.currentBranch(ctx)
-		if err != nil {
-			return e.failRun(run, startedAt, err), err
-		}
-		branch := fmt.Sprintf("jarvis/task-%d", task.ID)
-		if err := repo.createBranch(ctx, branch); err != nil {
-			return e.failRun(run, startedAt, err), err
-		}
-		run.Branch = &branch
 	}
 
 	prompt, err := buildExecutionPrompt(task, repoPath)
@@ -270,29 +277,77 @@ func (e *AgentExecutor) persistRun(ctx context.Context, run *domain.ExecutionRun
 	return e.db.WithContext(ctx).Create(run).Error
 }
 
-// resolveRepo locates the local git repo for a code_change Task. It reads the
-// repo_ref slot and joins it under the configured repo root. Fail-fast: a
-// missing slot or a non-existent directory aborts rather than guessing.
+// resolveRepo locates the local git repo for a code_change Task from the
+// M3-frozen context. Order: explicit repo_ref slot, then the snapshot's
+// project.repos[].local_path. Returns ("", nil) when no repo is available so
+// the caller runs codex without --cd (repos empty must not block — see
+// docs/design-context-pipeline.md §7). A repo_ref that points at a non-git
+// directory is still a hard error (explicit intent that is wrong must surface).
 func (e *AgentExecutor) resolveRepo(task *domain.Task) (string, error) {
+	if ref := e.repoRefFromSlots(task); ref != "" {
+		path := e.absRepoPath(ref)
+		if !isGitDir(path) {
+			return "", fmt.Errorf("code_change Task id=%d repo_ref %q is not a git repository", task.ID, path)
+		}
+		return path, nil
+	}
+	// Fall back to the frozen project repos. A malformed snapshot must surface;
+	// an absent/empty repos list is non-blocking.
+	for _, localPath := range snapshotRepoLocalPaths(task.Background) {
+		path := e.absRepoPath(localPath)
+		if isGitDir(path) {
+			return path, nil
+		}
+	}
+	return "", nil
+}
+
+func (e *AgentExecutor) repoRefFromSlots(task *domain.Task) string {
+	if len(task.Slots) == 0 {
+		return ""
+	}
 	var slots map[string]any
 	if err := json.Unmarshal(task.Slots, &slots); err != nil {
-		return "", fmt.Errorf("decode Task slots task_id=%d: %w", task.ID, err)
+		return ""
 	}
 	ref, _ := slots["repo_ref"].(string)
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return "", fmt.Errorf("code_change Task id=%d is missing repo_ref slot", task.ID)
+	return strings.TrimSpace(ref)
+}
+
+// absRepoPath honors an absolute path as-is; otherwise it joins under repoRoot.
+func (e *AgentExecutor) absRepoPath(ref string) string {
+	if filepath.IsAbs(ref) {
+		return ref
 	}
-	// Absolute repo_ref is honored as-is; otherwise join under repo root.
-	path := ref
-	if !filepath.IsAbs(ref) {
-		path = filepath.Join(e.repoRoot, ref)
-	}
+	return filepath.Join(e.repoRoot, ref)
+}
+
+func isGitDir(path string) bool {
 	info, err := os.Stat(filepath.Join(path, ".git"))
-	if err != nil || !info.IsDir() {
-		return "", fmt.Errorf("resolved repo path %q is not a git repository", path)
+	return err == nil && info.IsDir()
+}
+
+// snapshotRepoLocalPaths extracts non-empty local_path values from the frozen
+// context_snapshot's project.repos ([{name,url,local_path}]). It is lenient on
+// absent/null repos (returns nothing) but ignores structurally broken repos.
+func snapshotRepoLocalPaths(background []byte) []string {
+	snapshot, err := contextsnap.Decode(background)
+	if err != nil || snapshot.Project == nil || len(snapshot.Project.Repos) == 0 {
+		return nil
 	}
-	return path, nil
+	var repos []struct {
+		LocalPath string `json:"local_path"`
+	}
+	if err := json.Unmarshal(snapshot.Project.Repos, &repos); err != nil {
+		return nil
+	}
+	paths := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		if p := strings.TrimSpace(repo.LocalPath); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths
 }
 
 func (e *AgentExecutor) writeDiff(taskID uint64, diff string) (string, error) {

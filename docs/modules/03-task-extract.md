@@ -13,9 +13,9 @@
 | 隶属总纲 | `docs/00-overview.md`（顶层设计与跨模块契约。7 实体权威定义、`todo` 表 DDL、mem0 sidecar 契约、LLM 分工均以总纲为准，本文不重复） |
 | 技术栈 | **Go 1.26 / GORM（`gorm.io/gorm` + MySQL driver）/ robfig/cron v3（`github.com/robfig/cron/v3`）/ go-playground/validator（`github.com/go-playground/validator/v10`）** |
 | 产出物 | **`Todo`（行动线索 / 候选）**——M3 的唯一产出物。M3 **不产出 `Task`**；`Task` 是 M4 把 `Todo` 经确认后固化的明确可执行任务（见总纲 §2.3）。 |
-| LLM 用法 | M3 的高频结构化抽取用**可配置 model API**（OpenAI 兼容端点，structured output / JSON schema），Go 侧直接 HTTP 调用。**M4 的确认决策才用 codex CLI，M3 不用 codex。** |
+| LLM 用法 | **【2026-07 变更，见 `docs/design-context-pipeline.md`】** M3 主引擎改用 **codex CLI**（`extract.engine=codex`），以便提取时可自跑 lark-cli/bytedcli/git 推算项目归属与仓库地址；原**可配置 model API**（OpenAI 兼容端点，structured output / JSON schema，Go 侧 HTTP 调用）**保留为备用**（`extract.engine=model_api`）。 |
 | 本次改写 | 后端由 Python 全面改 Go（Pydantic→Go struct + validator；OpenAI Python SDK→Go HTTP；APScheduler→robfig/cron）；单一 `Task` 实体拆为 `Todo`/`Task`，M3 产出物由 `Task` 改为 **`Todo`**；引入 `Group`（来源会话）与 `Resource`（妙记/文档作方案依据）；mem0 改 Python FastAPI sidecar，Go 经 HTTP `MemoryClient` 调用。 |
-| 不引入 | Eino / Kitex（Jarvis 本地单体，抽取直连 model API，见总纲 §6）；不部署 Neo4j 等外部图库（mem0 内建实体链接，见总纲 §5）。 |
+| 不引入 | Eino / Kitex（Jarvis 本地单体，抽取走 codex 子进程或直连 model API，见总纲 §6 与 `docs/design-context-pipeline.md`）；不部署 Neo4j 等外部图库（mem0 内建实体链接，见总纲 §5）。 |
 | 语言无关、保留自原方案 | `action_type` 分类体系、提取 pipeline 10 步、prompt 工程（system/user 模板 + strict JSON schema）、两层去重（指纹 + 语义 + LLM 裁决）、leader 交办识别、闲聊 vs 行动项区分、防自激励循环——**设计不变，仅落地语言改 Go**。 |
 
 ---
@@ -309,7 +309,7 @@ func (Todo) TableName() string { return "todo" }
 ### 3.3 背景富化：Group / Project / Resource 的使用（新增）
 
 - **Group（来源会话）**：会话单元直接对应一个 `Group` 行。用 `Group.project_id` 反查项目背景（会话已关联项目时无需再靠 LLM 猜 `project_hint`）；`Group.is_key_group=1`（leader/核心项目群）的会话，抽取更谨慎、疑似线索宁可浮现不丢弃。落库时 `Todo.group_id = Group.id`。
-- **Project 背景**：优先 `Group.project_id → Project`；会话未关联项目时，LLM 输出 `project_hint`，Go 侧再按显式映射表/名称解析成 `project_id`（解析不出则留 NULL，交 M4，见开放问题 §8）。
+- **Project 背景**：优先 `Group.project_id → Project`；会话未关联项目时，LLM 输出 `project_hint`，Go 侧再按显式映射表/名称解析成 `project_id`（解析不出则留 NULL，交 M4，见开放问题 §8）。**【2026-07 增强，见 `docs/design-context-pipeline.md`】** codex 引擎下，会话未关联项目时模型可自跑 `lark-cli`/`bytedcli`/`git` 查群公告/项目库/人物关系来推算 `project_hint`；`project_hint` 由 Go 落库前解析成 `project_id`（此前该字段被忽略，现已消费）。同时 M3 落库时会**固化** `context_snapshot`（背景快照）与 `resolution`（推算轨迹）到 Todo，供 M4/M5 全链路复用。
 - **Resource（方案依据线索）**：会话中出现的妙记 / 文档 / 文件由 M2 已沉淀为 `resource` 行（仅元数据）。M3 抽取时把相关 `Resource` 注入 prompt（`resource_type`、`minute_token`/`doc_token`、`name`、以及可选的 `extracted_text`），让 LLM 能把 `summary_post` 的 `source_ref` 指向具体妙记 token，或让 `code_change` 的 `based_on` 引用某份设计文档。
   - **妙记按需拉取（已定，总纲 §11.4）**：当 M3 判断某条线索强依赖妙记内容（典型：`summary_post` "据上次会议妙记总结 todo 到人"），且该 `Resource.resource_type=minutes` 尚未解析（`extracted_text` 空）时，M3 调 **M2 的 `ResourceFetcher.EnsureMinutesText(resID)`**（M2 §3.9.1）按需拉逐字稿，拿回 `extracted_text` 注入 prompt 提升抽取质量。
   - **其它类型不解析**：图片/飞书文档/附件本期不下载不解析，M3 只能引用其 `token`/`name` 作弱依据（`extracted_text` 恒空）。此约束会限制这些类型的 `source_ref`/`based_on` 精度，属本期已知取舍。

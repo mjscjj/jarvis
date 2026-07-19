@@ -1,14 +1,57 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card, Descriptions, Drawer, Flex, Input, Modal, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Collapse, Descriptions, Drawer, Flex, Input, Modal, Space, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { approveConfirmation, getConfirmation, listConfirmations, rejectConfirmation } from './api'
-import type { ConfirmationDetail, Todo } from './types'
+import type { ConfirmationDetail, ContextSnapshot, Resolution, Todo } from './types'
 import { SlotDescriptions } from './slots'
 
 const { Paragraph, Text } = Typography
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
+}
+
+const RESOLUTION_METHOD_LABEL: Record<Resolution['method'], { text: string; color: string }> = {
+  group_bound: { text: '群绑定项目', color: 'green' },
+  project_hint: { text: '模型提示匹配', color: 'blue' },
+  codex_cli: { text: 'codex 自查推算', color: 'geekblue' },
+  unresolved: { text: '未推算出项目', color: 'default' },
+}
+
+// ResolutionCard shows "why this project/repo" so the reviewer can trust or
+// correct the M3 inference before approving.
+function ResolutionCard({ resolution }: { resolution: Resolution }) {
+  const method = RESOLUTION_METHOD_LABEL[resolution.method] ?? { text: resolution.method, color: 'default' }
+  return <section>
+    <Text type="secondary">项目 / 仓库推算</Text>
+    <Descriptions column={2} size="small" style={{ marginTop: 4 }}>
+      <Descriptions.Item label="判定方式"><Tag color={method.color}>{method.text}</Tag></Descriptions.Item>
+      <Descriptions.Item label="项目">{resolution.project_name || (resolution.project_id ? `#${resolution.project_id}` : '未推算')}</Descriptions.Item>
+      <Descriptions.Item label="仓库线索">{resolution.repos_hint || '无'}</Descriptions.Item>
+      <Descriptions.Item label="置信度">{resolution.confidence != null ? `${(resolution.confidence * 100).toFixed(0)}%` : '—'}</Descriptions.Item>
+      {resolution.basis && <Descriptions.Item label="依据" span={2}>{resolution.basis}</Descriptions.Item>}
+    </Descriptions>
+  </section>
+}
+
+// SnapshotPanel renders the M3-frozen background that M4/M5 replay unchanged.
+// It is collapsed by default (secondary reference), with the raw JSON available.
+function SnapshotPanel({ snapshot }: { snapshot: ContextSnapshot }) {
+  return <Collapse size="small" items={[{
+    key: 'snapshot',
+    label: `背景快照（M3 固化，M4/M5 复用） · ${snapshot.messages?.length ?? 0} 条证据`,
+    children: <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+      <Descriptions column={1} size="small">
+        {snapshot.principal && <Descriptions.Item label="决策人">{snapshot.principal.name}{snapshot.principal.title ? `（${snapshot.principal.title}）` : ''}{snapshot.principal.leader_name ? ` · 上级 ${snapshot.principal.leader_name}` : ''}</Descriptions.Item>}
+        {snapshot.project && <Descriptions.Item label="项目">{snapshot.project.name}{snapshot.project.description ? ` — ${snapshot.project.description}` : ''}</Descriptions.Item>}
+        {snapshot.group && <Descriptions.Item label="会话">{snapshot.group.name || snapshot.group.chat_id}{snapshot.group.description ? `（公告：${snapshot.group.description}）` : ''}</Descriptions.Item>}
+        {snapshot.assigner && <Descriptions.Item label="交办人">{snapshot.assigner.name || snapshot.assigner.open_id}{snapshot.assigner.relation ? ` · ${snapshot.assigner.relation}` : ''}</Descriptions.Item>}
+        <Descriptions.Item label="记忆命中">{snapshot.memories?.length ?? 0} 条</Descriptions.Item>
+      </Descriptions>
+      <Text type="secondary">原始 JSON</Text>
+      <pre className="snapshot-json">{JSON.stringify(snapshot, null, 2)}</pre>
+    </Space>,
+  }]} />
 }
 
 export default function Confirmations() {
@@ -108,8 +151,10 @@ export default function Confirmations() {
             {detail.proposed_plan.basis?.length > 0 && <Paragraph type="secondary" style={{ marginBottom: 0 }}>理由：{detail.proposed_plan.basis.join('；')}</Paragraph>}
           </>}
         </section>}
+        {detail.todo.resolution && <ResolutionCard resolution={detail.todo.resolution} />}
         <section><Text type="secondary">结构化参数</Text><SlotDescriptions slots={detail.todo.slots} /></section>
         <section><Text type="secondary">证据消息</Text>{detail.source_messages.map((message) => <blockquote key={message.message_id}><Text strong>{message.sender_name || message.sender_open_id}</Text><br />{message.content}</blockquote>)}</section>
+        {detail.todo.context_snapshot && <SnapshotPanel snapshot={detail.todo.context_snapshot} />}
         {detail.todo.status === 'need_decision'
           ? <Flex gap={12}><Button type="primary" onClick={openApprove}>批准并生成 Task</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>
           : <><Alert type="warning" showIcon message="该 Todo 需要补充信息；MVP 暂不提供补信息操作，可先拒绝后由新消息重新提取。" /><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></>}

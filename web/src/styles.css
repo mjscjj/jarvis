@@ -43,6 +43,7 @@ body { margin: 0; min-width: 1080px; min-height: 100vh; }
 .drawer-content { width: 100%; }
 .section-heading { min-height: 54px; margin-top: 8px; }
 .inline-json { max-height: 120px; margin: 0; padding: 8px 10px; white-space: pre-wrap; }
+.snapshot-json { max-height: 280px; }
 blockquote { margin: 10px 0 0; padding: 14px 18px; border-left: 3px solid #89a497; background: #f5f8f5; color: #30493d; }
 pre { margin: 10px 0 0; padding: 16px; overflow: auto; border-radius: 8px; background: #17241e; color: #d9e8df; font-size: 12px; line-height: 1.65; }
 

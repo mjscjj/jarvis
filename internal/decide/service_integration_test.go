@@ -10,24 +10,15 @@ import (
 	"time"
 
 	"jarvis/internal/config"
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
-	"jarvis/internal/memory"
 	"jarvis/internal/store"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
-
-type fixtureMemorySearcher struct {
-	input memory.SearchInput
-}
-
-func (f *fixtureMemorySearcher) Search(_ context.Context, input memory.SearchInput) (*memory.SearchResponse, error) {
-	f.input = input
-	return &memory.SearchResponse{Results: []map[string]any{{"memory": "synthetic project context", "score": 0.9}}}, nil
-}
 
 // TestConfirmationTransactionLive uses only synthetic rows inside an outer
 // transaction. It does not call Feishu, mem0, or a model and always rolls back.
@@ -55,12 +46,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		tx := beginRollbackTransaction(t, db)
 		todo := createConfirmationFixture(t, tx, "need_decision", time.Now().UnixNano())
 		fixtureFingerprints = append(fixtureFingerprints, todo.DedupFingerprint)
-		memories := &fixtureMemorySearcher{}
-		snapshotter, err := NewBackgroundSnapshotter(tx, memories, BackgroundOptions{MemoryTopK: 5, MemoryThreshold: 0.4})
-		if err != nil {
-			t.Fatalf("NewBackgroundSnapshotter() error = %v", err)
-		}
-		service, err := NewService(tx, snapshotter)
+		service, err := NewService(tx)
 		if err != nil {
 			t.Fatalf("NewService() error = %v", err)
 		}
@@ -77,9 +63,6 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		if len(task.ActionHash) != 64 {
 			t.Fatalf("action_hash = %q", task.ActionHash)
 		}
-		if got := memories.input.Filters["project_id"]; got != *todo.ProjectID {
-			t.Fatalf("memory project filter = %#v, want %d", got, *todo.ProjectID)
-		}
 
 		var storedTodo domain.Todo
 		if err := tx.First(&storedTodo, todo.ID).Error; err != nil {
@@ -95,17 +78,12 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		if storedTask.ActionHash != task.ActionHash {
 			t.Fatalf("stored action_hash = %q, response = %q", storedTask.ActionHash, task.ActionHash)
 		}
-		var background struct {
-			TodoID   uint64 `json:"todo_id"`
-			Messages []struct {
-				MessageID string `json:"message_id"`
-			} `json:"messages"`
-			Memories []map[string]any `json:"memories"`
+		// Task.Background is the M3-frozen context_snapshot reused verbatim by M4.
+		background, err := contextsnap.Decode(storedTask.Background)
+		if err != nil {
+			t.Fatalf("decode Task background snapshot: %v", err)
 		}
-		if err := json.Unmarshal(storedTask.Background, &background); err != nil {
-			t.Fatalf("decode Task background: %v", err)
-		}
-		if background.TodoID != todo.ID || len(background.Messages) != 1 || len(background.Memories) != 1 {
+		if len(background.Messages) != 1 || len(background.Memories) != 1 {
 			t.Fatalf("background = %#v", background)
 		}
 		assertDecisionArtifacts(t, tx, todo.ID, storedTask.ID, "confirmed")
@@ -122,9 +100,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		tx := beginRollbackTransaction(t, db)
 		todo := createConfirmationFixture(t, tx, "need_info", time.Now().UnixNano())
 		fixtureFingerprints = append(fixtureFingerprints, todo.DedupFingerprint)
-		service, err := NewService(tx, backgroundSnapshotFunc(func(context.Context, *domain.Todo) (json.RawMessage, error) {
-			return nil, fmt.Errorf("background must not be called for rejection")
-		}))
+		service, err := NewService(tx)
 		if err != nil {
 			t.Fatalf("NewService() error = %v", err)
 		}
@@ -225,11 +201,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 			t.Fatalf("confirmation proposed plan = %#v", detail.ProposedPlan)
 		}
 
-		snapshotter, err := NewMVPBackgroundSnapshotter(tx)
-		if err != nil {
-			t.Fatalf("NewMVPBackgroundSnapshotter() error = %v", err)
-		}
-		confirmationService, err := NewService(tx, snapshotter)
+		confirmationService, err := NewService(tx)
 		if err != nil {
 			t.Fatalf("NewService() error = %v", err)
 		}
@@ -242,11 +214,11 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		if task.TodoID != todo.ID || task.Status != "pending" {
 			t.Fatalf("approved Task = %#v", task)
 		}
-		var taskBackground backgroundSnapshot
-		if err := json.Unmarshal(task.Background, &taskBackground); err != nil {
-			t.Fatalf("decode MVP Task background: %v", err)
+		taskBackground, err := contextsnap.Decode(task.Background)
+		if err != nil {
+			t.Fatalf("decode MVP Task background snapshot: %v", err)
 		}
-		if len(taskBackground.Messages) != 1 || len(taskBackground.Memories) != 0 {
+		if len(taskBackground.Messages) != 1 || len(taskBackground.Memories) != 1 {
 			t.Fatalf("MVP Task background = %#v", taskBackground)
 		}
 		executionStore, err := execute.NewStore(tx)
@@ -304,12 +276,6 @@ func TestConfirmationTransactionLive(t *testing.T) {
 	}
 }
 
-type backgroundSnapshotFunc func(context.Context, *domain.Todo) (json.RawMessage, error)
-
-func (f backgroundSnapshotFunc) Snapshot(ctx context.Context, todo *domain.Todo) (json.RawMessage, error) {
-	return f(ctx, todo)
-}
-
 func beginRollbackTransaction(t *testing.T, db *gorm.DB) *gorm.DB {
 	t.Helper()
 	tx := db.Begin()
@@ -352,11 +318,26 @@ func createConfirmationFixture(t *testing.T, tx *gorm.DB, status string, suffix 
 	}
 	now := time.Now().UTC()
 	route := status
+	snapshotRaw, err := contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		CapturedAt:      now.Format(time.RFC3339),
+		Group:           &contextsnap.Group{ID: group.ID, ChatID: group.ChatID, Name: &groupName},
+		Assigner:        &contextsnap.Assigner{OpenID: assignerID, Name: &person.Name},
+		Messages: []contextsnap.Message{{
+			MessageID: messageID, ChatID: group.ChatID, SenderOpenID: assignerID,
+			SenderName: person.Name, Content: message.Content, CreateTime: message.CreateTime,
+		}},
+		Memories: []map[string]any{{"memory": "synthetic project context", "score": 0.9}},
+	}.Encode()
+	if err != nil {
+		t.Fatalf("build fixture context_snapshot: %v", err)
+	}
 	todo := domain.Todo{
 		Title: "Confirm synthetic follow-up", Description: "Synthetic integration fixture", ActionType: "reply",
 		Slots: datatypes.JSON([]byte(fmt.Sprintf(`{"chat_id":%q}`, group.ChatID))), CommitmentStrength: "explicit",
 		SourceMessageIDs: datatypes.JSON([]byte(fmt.Sprintf(`[%q]`, messageID))), SourceQuote: message.Content,
 		GroupID: &group.ID, ProjectID: &project.ID, AssignerOpenID: &assignerID, Status: status, Route: &route,
+		ContextSnapshot:  datatypes.JSON(snapshotRaw),
 		DedupFingerprint: fmt.Sprintf("%064x", suffix), ExtractionModel: "synthetic", PromptVersion: "test-v1", Revision: 1,
 		FirstSeenAt: now, LastEvidenceAt: now,
 	}

@@ -8,6 +8,7 @@ import (
 	"jarvis/internal/decide"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
+	"jarvis/internal/insight"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"gorm.io/gorm"
@@ -27,6 +28,9 @@ type Dependencies struct {
 	Resolve             *background.ResolveService
 	Profile             *background.ProfileService
 	Resources           *background.ResourceService
+	Overview            *insight.OverviewService
+	Digests             *insight.DigestService
+	DigestSummarizer    *insight.Summarizer // 可选：codex 未启用时为 nil，总结接口返回 503
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -67,6 +71,12 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Resources == nil {
 		return fmt.Errorf("api resource service dependency is nil")
 	}
+	if deps.Overview == nil {
+		return fmt.Errorf("api overview service dependency is nil")
+	}
+	if deps.Digests == nil {
+		return fmt.Errorf("api digest service dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
@@ -96,6 +106,10 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 决策主体（“我”）：单例 profile，读取 + upsert。
 	h.GET("/api/profile", GetProfile(deps.Profile))
 	h.PUT("/api/profile", UpdateProfile(deps.Profile))
+	// Overview 看板 + 进度：跨模块只读聚合，无表无 cron；总结按需调 codex。
+	h.GET("/api/overview", GetOverview(deps.Overview))
+	h.GET("/api/digests", GetDigests(deps.Digests))
+	h.POST("/api/digests/summarize", SummarizeDigest(deps.Digests, deps.DigestSummarizer))
 	// 手动维护的资源：可关联 人/项目/我，供后台管理与 M3 工具按需查询。
 	h.GET("/api/resources", ListResources(deps.Resources))
 	h.POST("/api/resources", CreateResource(deps.Resources))

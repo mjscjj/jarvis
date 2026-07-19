@@ -28,6 +28,58 @@ export interface TodoProject {
   name: string
 }
 
+// Resolution is the M3-frozen trace of how the project/repo was inferred, shown
+// so the user understands "why this project/repo".
+export interface Resolution {
+  method: 'group_bound' | 'project_hint' | 'codex_cli' | 'unresolved'
+  project_id: number | null
+  project_name: string | null
+  repos_hint: string | null
+  confidence: number | null
+  basis: string | null
+}
+
+// ContextSnapshot is the M3-frozen background that M4/M5 replay unchanged.
+export interface ContextSnapshot {
+  snapshot_version: string
+  captured_at: string
+  principal: {
+    open_id: string
+    name: string
+    department: string | null
+    title: string | null
+    leader_name: string | null
+  } | null
+  project: {
+    id: number
+    code: string | null
+    name: string
+    role: string
+    description: string | null
+    repos: unknown
+    key_decisions: unknown
+  } | null
+  group: {
+    id: number
+    chat_id: string
+    name: string | null
+    description: string | null
+  } | null
+  assigner: {
+    open_id: string
+    name: string | null
+    role: string | null
+    relation: string | null
+  } | null
+  messages: Array<{
+    message_id: string
+    sender_name: string
+    content: string
+    create_time: number
+  }>
+  memories: Array<Record<string, unknown>>
+}
+
 export interface Todo {
   id: number
   title: string
@@ -53,6 +105,8 @@ export interface Todo {
   updated_at: string
   group: TodoGroup | null
   project: TodoProject | null
+  resolution: Resolution | null
+  context_snapshot: ContextSnapshot | null
 }
 
 export interface TodoList {
@@ -287,6 +341,57 @@ export interface ProfileInput {
   preferences?: string | null
   leader_open_id?: string | null
   leader_name?: string | null
+}
+
+export interface StatusCount {
+  status: string
+  count: number
+}
+
+// Overview is the dashboard aggregation (live counts, no cache).
+export interface Overview {
+  todos: {
+    total: number
+    open: number
+    pending: number
+    leader_open: number
+    by_status: StatusCount[]
+  }
+  tasks: {
+    total: number
+    pending: number
+    done: number
+    failed: number
+    by_status: StatusCount[]
+  }
+}
+
+export interface MyDay {
+  date: string
+  todos_created: number
+  confirmed: number
+  tasks_done: number
+  tasks_failed: number
+}
+
+export interface GroupDay {
+  date: string
+  messages: number
+  todos_extracted: number
+}
+
+export interface GroupProgress {
+  group_id: number
+  chat_id: string
+  name: string
+  days: GroupDay[]
+}
+
+// Digest is the Progress tab payload: per-day timeline over `days` days.
+export interface Digest {
+  days: number
+  mine: MyDay[]
+  key_groups: GroupProgress[]
 }
 
 export type ResourceType = 'doc' | 'link' | 'repo' | 'note' | 'other'

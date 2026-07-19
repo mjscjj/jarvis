@@ -8,11 +8,21 @@ func TodoExtractionJSONSchema() map[string]any {
 	stringArrayOrNull := func() map[string]any {
 		return map[string]any{"type": []string{"array", "null"}, "items": map[string]any{"type": "string"}}
 	}
+	// lookup_sources is an enum of information CHANNELS (where to look), not the
+	// names of any group/person. Constrain it in the schema so the model can't
+	// emit free-form values that fail Go-side validation (candidate.go).
+	lookupSourcesOrNull := func() map[string]any {
+		return map[string]any{
+			"type":        []string{"array", "null"},
+			"items":       map[string]any{"type": "string", "enum": []string{"code", "web", "docs", "people"}},
+			"description": "Information channels to consult: code | web | docs | people. Not group/person names.",
+		}
+	}
 	slotProperties := map[string]any{
 		"repo_ref": stringOrNull(), "change_summary": stringOrNull(), "based_on": stringOrNull(),
 		"scope": stringOrNull(), "acceptance": stringOrNull(), "source_ref": stringOrNull(),
 		"target_chat_id": stringOrNull(), "summary_scope": stringOrNull(), "assignees": stringArrayOrNull(),
-		"question": stringOrNull(), "lookup_sources": stringArrayOrNull(), "deliverable": stringOrNull(),
+		"question": stringOrNull(), "lookup_sources": lookupSourcesOrNull(), "deliverable": stringOrNull(),
 		"meeting_title": stringOrNull(), "attendees": stringArrayOrNull(), "proposed_time": stringOrNull(),
 		"duration_minutes": map[string]any{"type": []string{"integer", "null"}},
 		"agenda":           stringOrNull(), "meeting_room": stringOrNull(), "message_body": stringOrNull(),

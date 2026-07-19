@@ -48,7 +48,7 @@ principal 的详细背景见用户消息「# 我的背景(principal)」区块，
 action_type 与必填 slot：
 - code_change：repo_ref, change_summary
 - summary_post：source_ref, target_chat_id, summary_scope
-- investigate：question, lookup_sources
+- investigate：question, lookup_sources（信息渠道枚举，仅限 code|web|docs|people，不是群名/人名）
 - schedule_meeting：meeting_title, attendees, proposed_time
 - reply_message：target_chat_id, message_body
 - doc_write：doc_title, summary_scope
