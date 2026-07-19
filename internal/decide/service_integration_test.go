@@ -47,7 +47,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 			t.Errorf("store.Close() error = %v", err)
 		}
 	})
-	fixtureFingerprints := make([]string, 0, 2)
+	fixtureFingerprints := make([]string, 0, 3)
 
 	t.Run("approve freezes Task and audit atomically", func(t *testing.T) {
 		tx := beginRollbackTransaction(t, db)
@@ -143,6 +143,53 @@ func TestConfirmationTransactionLive(t *testing.T) {
 			t.Fatalf("Task count = %d, want 0", taskCount)
 		}
 		assertDecisionArtifacts(t, tx, todo.ID, 0, "dismissed")
+	})
+
+	t.Run("evaluation routes Todo and audit atomically", func(t *testing.T) {
+		tx := beginRollbackTransaction(t, db)
+		todo := createConfirmationFixture(t, tx, "extracted", time.Now().UnixNano())
+		fixtureFingerprints = append(fixtureFingerprints, todo.DedupFingerprint)
+		store, err := NewEvaluationStore(tx)
+		if err != nil {
+			t.Fatalf("NewEvaluationStore() error = %v", err)
+		}
+		input := fixtureEvaluationInput()
+		input.TodoID = todo.ID
+		result, err := store.Apply(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Apply() error = %v", err)
+		}
+		if result.Status != RouteNeedDecision || result.Version != 1 {
+			t.Fatalf("Evaluation result = %#v", result)
+		}
+		var storedTodo domain.Todo
+		if err := tx.First(&storedTodo, todo.ID).Error; err != nil {
+			t.Fatalf("load evaluated Todo: %v", err)
+		}
+		if storedTodo.Status != RouteNeedDecision || storedTodo.Route == nil || *storedTodo.Route != RouteNeedDecision || storedTodo.Confidence == nil || *storedTodo.Confidence != input.Confidence {
+			t.Fatalf("stored evaluated Todo = %#v", storedTodo)
+		}
+		var taskCount int64
+		if err := tx.Model(&domain.Task{}).Where("todo_id = ?", todo.ID).Count(&taskCount).Error; err != nil {
+			t.Fatalf("count evaluation Tasks: %v", err)
+		}
+		if taskCount != 0 {
+			t.Fatalf("evaluation generated %d Tasks", taskCount)
+		}
+		var event domain.TodoEvent
+		if err := tx.Where("todo_id = ? AND actor = ?", todo.ID, "m4").First(&event).Error; err != nil {
+			t.Fatalf("load evaluation event: %v", err)
+		}
+		if event.ToStatus != RouteNeedDecision || event.FromStatus == nil || *event.FromStatus != "extracted" {
+			t.Fatalf("evaluation event = %#v", event)
+		}
+		var audit domain.DecisionAudit
+		if err := tx.Where("todo_id = ?", todo.ID).First(&audit).Error; err != nil {
+			t.Fatalf("load evaluation audit: %v", err)
+		}
+		if audit.DecisionEngine != DecisionEngineRule || audit.FinalStatus != RouteNeedDecision || audit.TaskID != nil {
+			t.Fatalf("evaluation audit = %#v", audit)
+		}
 	})
 
 	var remaining int64
