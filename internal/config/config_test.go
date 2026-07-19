@@ -63,6 +63,7 @@ func TestValidate(t *testing.T) {
 			WarmSchedule:     "@every 30m",
 			ColdSchedule:     "@every 6h",
 		},
+		Codex: validCodexConfig(),
 	}
 
 	tests := []struct {
@@ -114,6 +115,15 @@ func TestValidate(t *testing.T) {
 		{name: "capture warm age", mutate: func(c *Config) { c.Capture.WarmAgeHours = 6 }, wantErr: "capture.warm_age_hours"},
 		{name: "capture timezone", mutate: func(c *Config) { c.Capture.Timezone = "" }, wantErr: "capture.timezone"},
 		{name: "capture schedules", mutate: func(c *Config) { c.Capture.HotSchedule = "" }, wantErr: "schedule"},
+		{name: "codex binary", mutate: func(c *Config) { c.Codex.Bin = "" }, wantErr: "codex.bin"},
+		{name: "codex model", mutate: func(c *Config) { c.Codex.Model = "" }, wantErr: "codex.model"},
+		{name: "codex timeout", mutate: func(c *Config) { c.Codex.TimeoutSeconds = 0 }, wantErr: "codex.timeout_seconds"},
+		{name: "codex hourly budget", mutate: func(c *Config) { c.Codex.MaxCallsPerHour = 0 }, wantErr: "max_calls_per_hour"},
+		{name: "codex inverted budget", mutate: func(c *Config) { c.Codex.MaxCallsPerDay = 1 }, wantErr: "不能小于"},
+		{name: "codex budget behavior", mutate: func(c *Config) { c.Codex.OnBudgetExceeded = "auto" }, wantErr: "on_budget_exceeded"},
+		{name: "codex timeout behavior", mutate: func(c *Config) { c.Codex.OnTimeout = "degrade_to_rule" }, wantErr: "on_timeout"},
+		{name: "codex confidence gray zone", mutate: func(c *Config) { c.Codex.GrayZone.ConfHigh = 1.1 }, wantErr: "gray_zone.confidence"},
+		{name: "codex risk gray zone", mutate: func(c *Config) { c.Codex.GrayZone.RiskLow = c.Codex.GrayZone.RiskHigh }, wantErr: "gray_zone.risk"},
 	}
 
 	for _, tt := range tests {
@@ -165,6 +175,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 			Timezone: "Asia/Shanghai", DiscoverSchedule: "@every 1h", HotSchedule: "@every 5m",
 			WarmSchedule: "@every 30m", ColdSchedule: "@every 6h",
 		},
+		Codex: validCodexConfig(),
 	}
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("validate() error = %v", err)
@@ -172,5 +183,14 @@ func TestValidateExtractEnabled(t *testing.T) {
 	cfg.Model.TimeoutSec = 0
 	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "model.timeout_sec") {
 		t.Fatalf("validate() error = %v", err)
+	}
+}
+
+func validCodexConfig() CodexConfig {
+	return CodexConfig{
+		Bin: "codex", Model: "fixture-model", TimeoutSeconds: 120,
+		MaxCallsPerHour: 30, MaxCallsPerDay: 200,
+		OnBudgetExceeded: "route_need_decision", OnTimeout: "route_need_decision",
+		GrayZone: GrayZoneRange{ConfLow: 0.6, ConfHigh: 0.85, RiskLow: 0.25, RiskHigh: 0.6},
 	}
 }

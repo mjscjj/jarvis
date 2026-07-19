@@ -273,5 +273,42 @@ func (c *Config) validate() error {
 	if c.Capture.DiscoverSchedule == "" || c.Capture.HotSchedule == "" || c.Capture.WarmSchedule == "" || c.Capture.ColdSchedule == "" {
 		return fmt.Errorf("capture 的 discover/hot/warm/cold schedule 均不能为空")
 	}
+	if c.Codex.Bin == "" {
+		return fmt.Errorf("codex.bin 不能为空")
+	}
+	if c.Codex.Model == "" {
+		return fmt.Errorf("codex.model 不能为空")
+	}
+	if c.Codex.TimeoutSeconds <= 0 {
+		return fmt.Errorf("codex.timeout_seconds 必须大于 0")
+	}
+	if c.Codex.MaxCallsPerHour <= 0 || c.Codex.MaxCallsPerDay <= 0 {
+		return fmt.Errorf("codex.max_calls_per_hour/max_calls_per_day 必须大于 0")
+	}
+	if c.Codex.MaxCallsPerDay < c.Codex.MaxCallsPerHour {
+		return fmt.Errorf("codex.max_calls_per_day 不能小于 max_calls_per_hour")
+	}
+	if c.Codex.OnBudgetExceeded != "route_need_decision" && c.Codex.OnBudgetExceeded != "degrade_to_rule" {
+		return fmt.Errorf("codex.on_budget_exceeded 必须是 route_need_decision 或 degrade_to_rule")
+	}
+	if c.Codex.OnTimeout != "route_need_decision" {
+		return fmt.Errorf("codex.on_timeout 必须是 route_need_decision")
+	}
+	if err := validateGrayZone("confidence", c.Codex.GrayZone.ConfLow, c.Codex.GrayZone.ConfHigh); err != nil {
+		return err
+	}
+	if err := validateGrayZone("risk", c.Codex.GrayZone.RiskLow, c.Codex.GrayZone.RiskHigh); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateGrayZone(name string, low, high float64) error {
+	if low < 0 || low > 1 || high < 0 || high > 1 {
+		return fmt.Errorf("codex.gray_zone.%s 边界必须在 0 到 1 之间", name)
+	}
+	if low >= high {
+		return fmt.Errorf("codex.gray_zone.%s low 必须小于 high", name)
+	}
 	return nil
 }
