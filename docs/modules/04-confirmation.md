@@ -93,16 +93,38 @@ M4 确认
 
 ## 2. 决策引擎：codex CLI 做复杂决策（本次调整核心）
 
-M4 的打分决策分两档，**避免每条 Todo 都调 codex（成本/延迟）**：
+M4 的打分决策分两档，**避免每条 Todo 都调 codex（成本/延迟）**。**灰区边界、频率/成本上限、超时全部可配置**（总纲 §11.2），不硬编码。
 
 ### 2.1 两档决策
 
 | 档 | 触发 | 用什么 | 说明 |
 |---|---|---|---|
-| **规则快判** | slot 齐全度、action_type severity、发件人权重等可由规则直接算 | Go 规则引擎（无 LLM） | 高频、零成本、确定性。多数明确/明显要人工的 Todo 走这里 |
-| **codex 深判** | 规则落入灰区（中等把握、需要理解项目背景/代码才能判断风险与方案是否明确） | **codex exec -s read-only** | 结合项目背景 + mem0 记忆 + 代码库上下文，做高质量判断，并**给出建议的明确方案（plan 草案）** |
+| **规则快判** | slot 齐全度、action_type severity、发件人权重等可由规则直接算；**且规则分不落灰区** | Go 规则引擎（无 LLM） | 高频、零成本、确定性。多数明确/明显要人工的 Todo 走这里 |
+| **codex 深判** | 规则分**落入可配置灰区**（`confidence∈[conf_low,conf_high]` 且 `risk∈[risk_low,risk_high]`，中等把握、需理解项目背景/代码才能判断风险与方案是否明确） | **codex exec -s read-only** | 结合项目背景 + mem0 记忆 + 代码库上下文，做高质量判断，并**给出建议的明确方案（plan 草案）** |
 
 > 为什么决策用 codex 而非 model API：M4 要判断的是"这条线索是否值得固化成明确任务、方案是否清楚、风险多大"，这**往往需要看项目代码**（例如"按 XX 方案改鉴权"到底动哪些文件、风险多大）。codex 有代码库只读上下文能力，判断质量比纯文本 model API 高。M2/M3 的高频抽取才用 model API。
+
+### 2.1.1 灰区判定与预算闸（可配置）
+
+只有**落入灰区**的 Todo 才调 codex；灰区外（明确 auto / 明显 need_decision）走规则快判，零 codex 成本。灰区边界由配置给定：
+
+```go
+// 是否需要 codex 深判：规则分落灰区才调（阈值来自配置，见 §2.3）
+func needCodexDeepJudge(base *RuleScore, cfg CodexConfig) bool {
+    inConf := base.Confidence >= cfg.GrayZone.ConfLow && base.Confidence <= cfg.GrayZone.ConfHigh
+    inRisk := base.Risk >= cfg.GrayZone.RiskLow && base.Risk <= cfg.GrayZone.RiskHigh
+    return inConf && inRisk
+}
+```
+
+**频率/成本上限（预算闸）**：codex 调用受每小时/每天上限约束（配置 `max_calls_per_hour`/`max_calls_per_day`）。超预算时按 `on_budget_exceeded` 处置：
+
+| `on_budget_exceeded` | 行为 |
+|---|---|
+| `route_need_decision`（默认） | 直接把该灰区 Todo 路由到 `need_decision`（人工），不调 codex。**fail-safe** |
+| `degrade_to_rule` | 用规则分继续判定，并在审计里标 `codex_skipped=budget`。仅在用户显式接受降级时启用 |
+
+> 预算计数用进程内滑动窗口计数器（`internal/decide/budget.go`），超限即触发上述处置，绝不"排队等下个窗口"阻塞流水线。默认 `route_need_decision`：宁可多问人，不省成本冒风险。
 
 ### 2.2 codex 决策形态
 
@@ -118,18 +140,34 @@ type CodexDecision struct {
     PlanIsClear        bool               `json:"plan_is_clear"` // 方案是否已明确到可执行
 }
 
+// CodexDecider 持有可配置项(gray zone/预算/超时/model)，见 §2.3。
+type CodexDecider struct {
+    cfg    CodexConfig
+    budget *Budget // 滑动窗口计数器(每小时/每天上限)
+}
+
 func (d *CodexDecider) Decide(ctx context.Context, todo *Todo, bg *Background, mems []Memory) (*CodexDecision, error) {
+    // 预算闸：超上限直接返回哨兵错误，由上层按 on_budget_exceeded 处置(默认 need_decision)
+    if !d.budget.Allow() {
+        return nil, ErrCodexBudgetExceeded // 上层路由 need_decision 或按配置降级
+    }
     prompt := buildDecisionPrompt(todo, bg, mems) // 组装:Todo+项目背景+记忆+代码线索
-    // -s read-only 保证决策阶段不写盘、无副作用
-    cmd := exec.CommandContext(ctx, "codex", "exec",
-        "-C", bg.Project.RepoPath, // 有代码库上下文
-        "-s", "read-only",
-        "-m", d.model,
-        prompt,
-    )
-    out, err := runWithTimeout(cmd, d.timeout)
+
+    // 超时来自配置(cfg.TimeoutSeconds)，非硬编码
+    ctx, cancel := context.WithTimeout(ctx, time.Duration(d.cfg.TimeoutSeconds)*time.Second)
+    defer cancel()
+
+    // 有关联 repo 时带 -C 提供代码库只读上下文；无 repo 则纯文本决策(开放问题 #4)
+    args := []string{"exec", "-s", "read-only", "-m", d.cfg.Model}
+    if bg.Project != nil && bg.Project.RepoPath != "" {
+        args = append(args, "-C", bg.Project.RepoPath)
+    }
+    args = append(args, prompt)
+    cmd := exec.CommandContext(ctx, d.cfg.Bin, args...) // -s read-only 保证只读、无副作用
+    out, err := cmd.Output()
     if err != nil {
-        return nil, fmt.Errorf("codex decide failed: %w", err) // fail-fast → 上层路由 need_decision
+        // 超时/退出码非 0 → fail-fast，上层按 cfg.OnTimeout(固定 need_decision)处置
+        return nil, fmt.Errorf("codex decide failed: %w", err)
     }
     var dec CodexDecision
     if err := json.Unmarshal(extractJSON(out), &dec); err != nil {
@@ -141,9 +179,43 @@ func (d *CodexDecider) Decide(ctx context.Context, todo *Todo, bg *Background, m
 
 - codex `-s read-only`：决策阶段**只读**，绝不写盘、不改代码。
 - 要求 codex 输出结构化 JSON（confidence/risk 逐因子 + basis + uncertainty + recommended_review + **proposed_plan** + plan_is_clear）。
-- **fail-fast**：codex 退出码非 0 / 输出非法 JSON → `need_decision`（人工），绝不自动确认。
+- **fail-fast**：codex 退出码非 0 / 超时 / 输出非法 JSON → `need_decision`（人工），绝不自动确认。
+- **预算超限**：`ErrCodexBudgetExceeded` 由上层按 `on_budget_exceeded` 处置（默认 `route_need_decision`）。
 - **proposed_plan 的作用**：codex 深判时顺带产出"建议的明确方案"，供后续固化 Task 的 `plan` 字段（用户确认或自动确认时采用/编辑）。
-- 决策留痕入 `decision_audit`（含 codex 会话 id、prompt version、耗时）。
+- 决策留痕入 `decision_audit`（含 codex 会话 id、prompt version、耗时、是否因预算跳过）。
+
+### 2.3 codex 决策配置（可配置项，已定，总纲 §11.2）
+
+全部落在配置文件（如 `config.yaml` 的 `decide.codex` 段），运行时可调、不硬编码：
+
+```yaml
+decide:
+  codex:
+    bin: /usr/local/bin/codex        # codex 可执行路径(本地明文配置)
+    model: gpt-5.1-codex             # 决策用模型，可配
+    timeout_seconds: 120             # 单次决策超时
+    max_calls_per_hour: 30           # 频率上限(成本闸)
+    max_calls_per_day: 200
+    on_budget_exceeded: route_need_decision   # 或 degrade_to_rule(需显式接受降级)
+    on_timeout: route_need_decision           # 固定 fail-safe(不可配成 auto)
+    gray_zone:                        # 只有落此区间的 Todo 才调 codex 深判
+      conf_low: 0.60
+      conf_high: 0.85
+      risk_low: 0.25
+      risk_high: 0.60
+```
+
+| 配置项 | 含义 | 默认（待校准） |
+|---|---|---|
+| `gray_zone.conf_low/high` | 灰区 confidence 边界（含端点） | 0.60 / 0.85 |
+| `gray_zone.risk_low/high` | 灰区 risk 边界（含端点） | 0.25 / 0.60 |
+| `max_calls_per_hour` / `max_calls_per_day` | codex 决策频率/成本上限 | 30 / 200 |
+| `timeout_seconds` | 单次决策超时 | 120 |
+| `on_budget_exceeded` | 超预算处置：`route_need_decision`（默认）/ `degrade_to_rule` | `route_need_decision` |
+| `on_timeout` | 超时处置：固定 `route_need_decision`（不允许配成 auto，fail-safe） | `route_need_decision` |
+| `model` / `bin` | 决策模型 / codex 路径 | 本机为准 |
+
+> 灰区默认值与 §4.2 二维矩阵的分箱边界一致（confidence 中档 0.60–0.85、risk 中档 0.25–0.60）——即"矩阵里既非明确 auto 也非明确 need_decision 的中间地带"才值得花 codex 深判。三个默认值都待用户按审计数据校准（总纲 §11.5 #10）。
 
 ---
 
@@ -534,10 +606,12 @@ CREATE TABLE decision_audit (
 
 ## 10. 开放问题清单（需用户校准）
 
+> **本轮已定（机制层，总纲 §11.2）**：codex 决策的**灰区边界 / 频率 / 成本上限 / 超时 / 超预算与超时处置全部配置化**（§2.1.1 / §2.3），不硬编码。下方 #3 仅剩"默认阈值按真实数据校准"这一治理项；#4 无 repo 处理已在 §2.2 代码定（有 repo 带 `-C`、无则不带）。
+
 1. **阈值**：`AutoConfFloor / RiskAutoCeiling / InfoConfFloor / RiskGate / K`（默认 0.85/0.25/0.60/0.60/2）。
 2. **因子权重**：confidence/risk 各因子权重（§3.1/§3.2，新增 c6 方案明确度权重 0.20）。
-3. **codex 决策触发边界**：哪些 Todo 走规则快判、哪些落 codex 深判？codex 每次决策的耗时/成本是否可接受？（总纲开放问题 #3）
-4. **codex 决策的 repo 上下文**：决策 prompt 是否总带 `-C project.repo_path`？无关联 repo 的 Todo 怎么处理？
+3. **codex 灰区默认值校准**：机制已定（§2.3 配置化）；灰区默认 `conf∈[0.60,0.85] / risk∈[0.25,0.60]`、`max_calls_per_hour=30 / per_day=200`、`timeout=120s` 需按真实审计数据校准，`on_budget_exceeded` 默认 `route_need_decision`（是否允许 `degrade_to_rule` 需你确认）。
+4. **无 repo Todo 的 codex 上下文**：已定——有 `project.repo_path` 则带 `-C`，无关联 repo 则不带（纯文本决策）。遗留：无 repo 时决策质量是否够，是否需要人工补 repo 关联。
 5. **强制确认清单**：`force_confirm_list` 具体纳入哪些 action_type。
 6. **矩阵拨盘**：中-confidence + 低-risk 何时放宽为 auto。
 7. **plan 明确度门槛**：c6/`plan_is_clear` 达到什么程度才允许 auto 固化 Task（避免固化模糊方案）。

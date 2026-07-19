@@ -67,7 +67,7 @@
 - （可选）回写 mem0 的「决策 / 交办」事实（经 sidecar `POST /memories`）。
 - 更新扫描水位 `todo_extract_watermark`（M3 私有，见 §1.2）。
 
-> 依赖顺序：`todo` 表外键指向 `project` / `group`，迁移需在总纲 §9 M0.1 建表之后。若上游表未就绪，迁移**直接失败**（fail-fast），不做软外键兼容。
+> 依赖顺序：`todo` 表外键指向 `project` / `feishu_group`，迁移需在总纲 §9 M0.1 建表之后。若上游表未就绪，迁移**直接失败**（fail-fast），不做软外键兼容。
 
 ---
 
@@ -86,7 +86,7 @@
 | `commitment_strength` | M3 | `firm` / `tentative` / `mentioned` |
 | `source_message_ids` | M3 | 证据消息 `om_` id 数组（可回溯） |
 | `source_quote` | M3 | 逐字证据原文（防幻觉，可回溯） |
-| `group_id` | M3 | 外键 → `` `group`.id ``，**来源会话**（新增引用） |
+| `group_id` | M3 | 外键 → `feishu_group.id`，**来源会话**（新增引用） |
 | `project_id` | M3 | 外键 → `project.id`，经 `Group.project_id` 或 `project_hint` 解析 |
 | `assigner_open_id` | M3 | 交办人 open_id（冗余，便于 leader 判定） |
 | `is_leader_assigned` | M3 | 是否 leader 交办（高优先级信号） |
@@ -310,7 +310,10 @@ func (Todo) TableName() string { return "todo" }
 
 - **Group（来源会话）**：会话单元直接对应一个 `Group` 行。用 `Group.project_id` 反查项目背景（会话已关联项目时无需再靠 LLM 猜 `project_hint`）；`Group.is_key_group=1`（leader/核心项目群）的会话，抽取更谨慎、疑似线索宁可浮现不丢弃。落库时 `Todo.group_id = Group.id`。
 - **Project 背景**：优先 `Group.project_id → Project`；会话未关联项目时，LLM 输出 `project_hint`，Go 侧再按显式映射表/名称解析成 `project_id`（解析不出则留 NULL，交 M4，见开放问题 §8）。
-- **Resource（方案依据线索）**：会话中出现的妙记 / 文档 / 文件由 M2 已沉淀为 `resource` 行。M3 抽取时把相关 `Resource` 注入 prompt（`resource_type`、`minute_token`/`doc_token`、`name`、以及可选的 `extracted_text`），让 LLM 能把 `summary_post` 的 `source_ref` 指向具体妙记 token，或让 `code_change` 的 `based_on` 引用某份设计文档。**M3 只引用 `Resource` 标识作依据，不负责下载 / OCR**（那属 M2 且【需与用户确认】）。
+- **Resource（方案依据线索）**：会话中出现的妙记 / 文档 / 文件由 M2 已沉淀为 `resource` 行（仅元数据）。M3 抽取时把相关 `Resource` 注入 prompt（`resource_type`、`minute_token`/`doc_token`、`name`、以及可选的 `extracted_text`），让 LLM 能把 `summary_post` 的 `source_ref` 指向具体妙记 token，或让 `code_change` 的 `based_on` 引用某份设计文档。
+  - **妙记按需拉取（已定，总纲 §11.4）**：当 M3 判断某条线索强依赖妙记内容（典型：`summary_post` "据上次会议妙记总结 todo 到人"），且该 `Resource.resource_type=minutes` 尚未解析（`extracted_text` 空）时，M3 调 **M2 的 `ResourceFetcher.EnsureMinutesText(resID)`**（M2 §3.9.1）按需拉逐字稿，拿回 `extracted_text` 注入 prompt 提升抽取质量。
+  - **其它类型不解析**：图片/飞书文档/附件本期不下载不解析，M3 只能引用其 `token`/`name` 作弱依据（`extracted_text` 恒空）。此约束会限制这些类型的 `source_ref`/`based_on` 精度，属本期已知取舍。
+  - M3 不自己下载二进制、不做 OCR；一切内容获取都走 M2 的 `ResourceFetcher`（仅妙记）。
 
 ### 3.4 leader 交办识别（保留）
 
@@ -801,7 +804,7 @@ M3 回写的记忆若被下轮检索回来、又被当成新行动线索，会�
 11. **两阶段抽取（备选）**：当前单次调用 + 扁平 slot 超集。若准确率不足，是否切换为「先分类、后按类型分 schema 填 slot」的 prompt-ladder（更准但更多调用/成本）。
 12. **时区**：`current_datetime` 的时区来源（principal 本地 or 会话上下文）需固定，避免相对时间解析歧义。
 13. **中英混合**：飞书消息常中英夹杂，prompt/enum 说明是否需双语强化以稳住抽取质量。
-14. **Resource 引用深度**：M3 引用 `Resource` 作 `source_ref`/`based_on` 依据时，是否需要 `Resource.extracted_text`（OCR/妙记解析结果）？该字段依赖 M2 的下载/OCR（【需与用户确认】，总纲开放问题 #7）；未 OCR 时 M3 只能引用 token/name，可能影响 `summary_post` 质量。
+14. ~~**Resource 引用深度**~~ **已定（总纲 §11.4）**：**仅妙记按需拉取** `extracted_text`（M3 调 M2 `ResourceFetcher.EnsureMinutesText`，见 §3.3）；图片/文档/附件本期不解析，M3 只引用 token/name（弱依据）。遗留待实测：`lark-cli minutes` 取逐字稿的可行性与权限范围（总纲 §11.5）。
 
 ---
 

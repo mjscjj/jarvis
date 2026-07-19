@@ -26,16 +26,16 @@
 | 职责 | 消息采集（capture）+ Group/Resource 沉淀 + 记忆化（memorize） |
 | 上游 | 飞书（lark-cli user-token 轮询为主，bot 事件流为辅），经 Go `exec.Command` 子进程封装 |
 | 下游 | M3 Todo 提取（读 MySQL + mem0 检索接口） |
-| 存储 | MySQL（`group`/`message`/`resource`/`scan_record`/`chat_checkpoint`），Qdrant（mem0 向量 + 实体，经 sidecar） |
+| 存储 | MySQL（`feishu_group`/`message`/`resource`/`scan_record`/`chat_checkpoint`），Qdrant（mem0 向量 + 实体，经 sidecar） |
 | 关键依赖 | `lark-cli`（子进程）、`gorm.io/gorm`、`github.com/robfig/cron/v3`、mem0 sidecar（`127.0.0.1:18900`，Python FastAPI 包 `mem0`） |
 | 运行环境 | 本地 Mac 可信环境，明文存储，launchd 托管 |
 
 ### 实体边界（7 实体中 M2 负责的部分）
 
-- **Group**（一等实体，原 `jarvis_chat` 升格）：M2 完全拥有其自动发现与扫描分层字段（`tier`/`pinned`/`last_active_at`/…）；`project_id` 关联由 M1 维护。DDL 见总纲 §2.4 `` `group` ``。
+- **Group**（一等实体，原 `jarvis_chat` 升格；物理表名 `feishu_group`）：M2 完全拥有其自动发现与扫描分层字段（`tier`/`pinned`/`last_active_at`/…）；`project_id` 关联由 M1 维护。DDL 见总纲 §2.4 `feishu_group`。
 - **Message**（支撑表，非核心实体）：M2 完全拥有，明文 source of truth，写入 MySQL `message`。DDL 见总纲 §2.5 / §2.4。
-- **Resource**（一等实体，新增）：M2 在采集消息时把附件（图片/文件/音视频/妙记/文档/链接/卡片）**沉淀为独立 `resource` 行**，按 `file_key`/`minute_token`/`doc_token`/`url` 去重。是否下载 / OCR 属【需与用户确认】。DDL 见总纲 §2.4 `resource`。
-- **ScanRecord**（一等实体，新增）：M2 每次扫描（`discover`/`scan_hot`/`scan_warm`/`scan_cold`/`backfill`/`event`）**追加一条流水**，记录时间窗、条数、成败、错误、前后高水位。用于后台展示扫描历史、排障、监控某群多久没扫到新消息。DDL 见总纲 §2.4 `scan_record`。
+- **Resource**（一等实体，新增）：M2 在采集消息时把附件（图片/文件/音视频/妙记/文档/链接/卡片）**沉淀为独立 `resource` 行**（仅元数据），按 `file_key`/`minute_token`/`doc_token`/`url` 去重。**M2 不下载、不解析**（`downloaded=0`、`extracted_text=NULL`）；按需下载/解析由下游触发、且本期仅妙记（总纲 §11.4）。DDL 见总纲 §2.4 `resource`。
+- **ScanRecord**（一等实体，新增）：M2 每次扫描（`discover`/`scan_hot`/`scan_warm`/`scan_cold`/`event`）**追加一条流水**，记录时间窗、条数、成败、错误、前后高水位。用于后台展示扫描历史、排障、监控某群多久没扫到新消息。DDL 见总纲 §2.4 `scan_record`。（**无 `backfill` 类型**：已定不回溯历史，总纲 §11.3。）
 - **Person / Project**：M2 只做「原料沉淀」——把 `sender`、`mention`、会话元数据落库，并在 mem0 metadata 里带上外键；实体规范化建模由 M1 负责。
 - **Todo / Task**：M2 **不产出** Todo/Task，只产出「可被 M3 提取成 **Todo（行动线索）** 的记忆与明文」。
 
@@ -55,14 +55,14 @@
 
 ### 1.2 输出
 
-1. MySQL：`group` / `message` / `chat_checkpoint` / `resource` / `scan_record`（明文）。
+1. MySQL：`feishu_group` / `message` / `chat_checkpoint` / `resource` / `scan_record`（明文）。
 2. mem0/Qdrant：从对话窗口蒸馏出的记忆（事实/关系/项目上下文/偏好），经 mem0 sidecar 写入。
 3. 供 M3 的检索接口：Go 侧 `MemoryClient.Search(...)`（HTTP 调 sidecar）+ 直接查 MySQL。
 
 ### 1.3 非目标（Non-goals）
 
 - 不做 Todo 判定、打分、路由（M3/M4）。
-- 不做附件二进制的下载 / OCR / 解析（仅沉淀 `resource` 元数据；下载与 `extracted_text` 留待后续阶段，见开放问题）。
+- **采集期不下载任何二进制、不 OCR**（仅沉淀 `resource` 元数据）。按需下载/解析**仅妙记**、由下游触发，M2 提供 `ResourceFetcher`（§3.9.1）；图片 OCR、文档/表格/附件解析本期不做（总纲 §11.4）。
 - 不改写/删除飞书侧任何数据（M2 全程只读飞书）。
 
 ### 1.4 覆盖策略（结论已定，不再论证）
@@ -86,7 +86,7 @@
      │  会话发现 & 分层         │  bucket ┌───────────────────────┐
      │  chat-list --sort       │────────▶│   分层扫描 Capture      │
      │  active_time            │  限QPS  │  per-chat checkpoint    │
-     │  upsert group           │         │  incr / backfill        │
+     │  upsert group           │         │  纯增量(无 backfill)     │
      └───────────────────────┘         │  + Resource 沉淀         │
                                          │  + ScanRecord 流水       │
    （可选）bot 事件流                     └───────────┬───────────┘
@@ -171,12 +171,16 @@
 
 > 编辑消息重抽取属于「当前正确行为」，不是历史数据兼容；是否需要对编辑消息重抽记忆**需与用户确认**（默认：需要）。
 
-### 3.4 首次全量 backfill vs 增量
+### 3.4 不回溯历史：首次发现即建高水位（已定）
 
-- 会话首次被扫描（无 checkpoint 或 `backfill_done=0`）→ backfill：从 `backfill_since`（ms 下限）以 `order=asc` 拉到「现在」，完成后置 `backfill_done=1` 并写 HW。backfill 单独记 `scan_type=backfill` 的 scan_record。
-- 之后 → 增量（§3.2），记 `scan_type=scan_hot/scan_warm/scan_cold`。
+**决策（总纲 §11.3）：不拉任何历史消息**，只采集"系统首次发现该会话之后"的新消息。因此**没有 backfill 阶段**。
 
-> **fail-fast，不静默默认**：`backfill_since`（首次回溯多久：全部？30 天？7 天？）**必须由用户显式配置**。若未配置，首次扫描应**报错中止并提示**（返回 error，写 `scan_record.status=error`），而不是悄悄按「拉全部历史」执行（可能是海量数据）。此项列入开放问题。
+- 会话首次被 `DiscoverChats` 发现时，直接初始化 checkpoint：`high_water_create_time = 发现时刻的当前毫秒时间戳(now_ms)`、`backfill_done = 1`（无 backfill 语义，仅保留字段兼容）。此时**不拉消息**，只建游标。
+- 之后按增量（§3.2）从该高水位（含）向后扫，记 `scan_type=scan_hot/scan_warm/scan_cold`。
+- 效果：`create_time ≤ 首次发现时刻` 的历史消息永不进入本系统；不存在"首次回溯多久"的问题，也不会一次性拉海量历史。
+
+> **与原方案的差异**：原设计要求用户显式配置 `backfill_since`、否则 fail-fast 拒绝首扫。现按用户决策改为"首次发现即以当前时刻建高水位、直接进入增量"。`chat_checkpoint.backfill_since` 字段保留但不再使用（值恒为 `now_ms` 快照，仅审计参考）；`backfill` 类 `scan_record` 不再产生。
+> **边界说明**：若用户后续想改为"回溯 N 天"，只需把首次发现时的初始高水位从 `now_ms` 改为 `now_ms - N*天`（单点可配），当前默认不回溯。
 
 ### 3.5 限流 / 令牌桶控制 QPS
 
@@ -289,7 +293,10 @@ fail-fast，但采集有硬约束「不能漏消息」，两者的平衡：
 | 外链 URL | `link` | `url` |
 | `interactive` 卡片内资源 | `card` | `url`/`file_key`（按卡片内容） |
 
-**去重原则**：同一 `file_key`/`minute_token`/`doc_token`/`url` 在多条消息里重复出现（转发、引用）时只保留一行 `resource`，`source_message_id` 记首次出现的消息（跨消息去重是 Resource 升为一等实体的收益之一，见总纲 §2.4）。`downloaded=0`、`extracted_text=NULL`（下载/OCR 属【需与用户确认】，M2 只沉淀元数据）。
+**去重原则（两层，已定，总纲 §11.4 / §2.4）**：
+
+1. **同消息幂等**：唯一键 `(source_message_id, file_key)`，同一条消息重扫不重复插（飞书 `file_key` 与消息绑定）。
+2. **跨消息内容去重**：靠 `content_hash`（内容 SHA256），**下载后才有**。M2 采集期只沉淀元数据（`downloaded=0`、`content_hash=NULL`、`extracted_text=NULL`），**不下载、不解析**；同一文件跨多条消息此时会各记一行（保留证据），待下游按需下载后回填 `content_hash`、相同 hash 复用同一 `local_path`（只存一份本地文件）。
 
 **沉淀伪代码（Go 风格）**：
 
@@ -308,22 +315,72 @@ func sinkResources(tx *gorm.DB, m *Message, refs []ResourceRef) error {
             SizeBytes:       r.SizeBytes,
             SourceMessageID: m.MessageID,       // om_
             GroupID:         m.GroupID,
-            Downloaded:      false,             // M2 不下载
+            Downloaded:      false,             // M2 只沉淀元数据，不下载
         }
-        // 按去重键 upsert：命中已存在则忽略(不覆盖首次来源)，否则插入。
-        dedupKey := r.DedupColumn()             // "file_key" | "minute_token" | "doc_token" | "url"
+        // 同消息幂等：唯一键 (source_message_id, file_key)，命中已存在则忽略。
+        // 跨消息去重不在采集期做——靠下游下载后回填的 content_hash（总纲 §11.4）。
         if err := tx.Clauses(clause.OnConflict{
-            Columns:   []clause.Column{{Name: dedupKey}},
+            Columns:   []clause.Column{{Name: "source_message_id"}, {Name: "file_key"}},
             DoNothing: true,
         }).Create(&res).Error; err != nil {
-            return fmt.Errorf("sink resource %s=%s: %w", dedupKey, r.DedupValue(), err) // fail-fast
+            return fmt.Errorf("sink resource msg=%s key=%s: %w", m.MessageID, r.FileKey, err) // fail-fast
         }
     }
     return nil
 }
 ```
 
-> 去重键需要 `resource` 表对 `file_key`/`minute_token`/`doc_token`/`url` 建**唯一索引**才能用 `OnConflict` 精确去重。总纲 §2.4 现给的是普通索引；**是否将这四列（或其组合）升为唯一约束，需与用户确认**（涉及总纲 DDL 调整，M2 不擅自改总纲）。在唯一约束落地前，退化为「先查后插」（`SELECT ... WHERE file_key=?`）实现去重。
+> **去重键与 DDL（已定）**：采集期只依赖 `(source_message_id, file_key)` 唯一键做同消息幂等（总纲 §2.4 已建 `uk_resource_msg_key`）。**跨消息同一文件去重靠 `content_hash`**（内容 SHA256，下载后回填，总纲 §2.4 已建 `idx_resource_content` 普通索引）——采集期不下载、故此时不去重跨消息重复，各来源消息各记一行保留证据，待下游按需下载后按 `content_hash` 复用本地文件。不给 `file_key`/`minute_token`/`doc_token`/`url` 建唯一索引（同一文件在不同消息 key 不同，强行唯一会误合并）。
+
+### 3.9.1 按需下载 / 解析（仅妙记，已定）
+
+**决策（总纲 §11.4）**：采集期不下载任何二进制、不 OCR；**只在下游（M3/M4）需要某 `Resource` 内容时**才按需拉取，且**本期仅妙记**（`resource_type=minutes`）。图片 OCR、飞书文档/表格、附件解析本期都不做。
+
+M2 提供一个可被下游调用的 `ResourceFetcher`（放在 `internal/capture` 或独立 `internal/resource` 包），职责：拉妙记逐字稿 → 回填 `extracted_text` / `content_hash` / `downloaded` / `local_path`，并按 `content_hash` 复用本地文件。
+
+```go
+// 下游(M3/M4)按需调用：确保某 minutes Resource 的 extracted_text 已就绪。
+// 本期只处理 resource_type=minutes；其它类型直接返回(不下载、不解析)。
+func (f *ResourceFetcher) EnsureMinutesText(ctx context.Context, resID uint64) (string, error) {
+    var r Resource
+    if err := f.db.First(&r, resID).Error; err != nil {
+        return "", err
+    }
+    if r.ResourceType != "minutes" {
+        // 本期仅妙记；其它类型不解析（fail-fast：不静默假装成功）
+        return "", fmt.Errorf("resource %d type=%s 本期不支持按需解析", resID, r.ResourceType)
+    }
+    if r.Downloaded && r.ExtractedText != "" {
+        return r.ExtractedText, nil // 已就绪，直接复用
+    }
+    if r.MinuteToken == "" {
+        return "", fmt.Errorf("resource %d 缺 minute_token", resID) // fail-fast
+    }
+
+    // lark-cli 拉妙记逐字稿/产物（子进程，见 §3.6 封装）
+    var mrsp MinutesResp
+    if err := f.lark.Run(ctx, &mrsp, "minutes", "+get-transcript",
+        "--as", "user", "--minute-token", r.MinuteToken); err != nil {
+        return "", fmt.Errorf("fetch minutes %s: %w", r.MinuteToken, err) // fail-fast，不降级
+    }
+    text := mrsp.Transcript
+    hash := sha256Hex([]byte(text))
+
+    // 跨消息去重：同 content_hash 复用已有本地文件/文本
+    localPath := f.reuseOrPersist(hash, text) // 命中已存在则复用其 local_path，否则落一份
+
+    r.ExtractedText, r.ContentHash, r.Downloaded, r.LocalPath = text, hash, true, localPath
+    if err := f.db.Save(&r).Error; err != nil {
+        return "", err
+    }
+    return text, nil
+}
+```
+
+- **触发方**：M3 抽取 `summary_post` 需要妙记结论时、或 M4/M5 需要妙记作方案依据时调用（M3 文档 §3.3 会引用此接口）。
+- **lark-cli 命令**：以本机实测为准（`minutes` 下的取逐字稿/产物子命令）；权限/授权范围需实测（总纲 §11.5）。
+- **fail-fast**：拉取失败直接 error，不静默返回空文本；非妙记类型明确拒绝，不假装解析成功。
+- **去重复用**：`reuseOrPersist(hash, ...)` 命中相同 `content_hash` 时复用已有 `local_path`（只存一份），实现"同一妙记多处引用只下一次"。
 
 ### 3.10 完整扫描伪代码（Go 风格）
 
@@ -345,7 +402,11 @@ func DiscoverChats(ctx context.Context) error {
             return finishScanRecordErr(rec, err)
         }
         for _, c := range resp.Data.Chats {
-            upsertGroup(c) // name/owner/external/tenant/chat_mode...
+            isNew := upsertGroup(c) // name/owner/external/tenant/chat_mode...；返回是否首次发现
+            if isNew {
+                // 不回溯：首次发现即以当前时刻建高水位，无 backfill 阶段（总纲 §11.3）
+                initCheckpointNoBackfill(c.ChatID, nowMs())
+            }
             rec.FetchedCount++
         }
         rec.PageCount++
@@ -369,21 +430,13 @@ func ScanTier(ctx context.Context, tier string) {
     }
 }
 
-// ---------- 单会话扫描（backfill 与增量共用） ----------
+// ---------- 单会话扫描（纯增量，无 backfill） ----------
 func ScanChat(ctx context.Context, g *Group, scanType string) error {
-    ckpt := getOrInitCheckpoint(g.ChatID)
+    // 不回溯：首次发现时已由 initCheckpointNoBackfill 把高水位设为发现时刻(now_ms)。
+    // 若因异常缺失 checkpoint，这里补建（同样以当前时刻建高水位，绝不回溯历史）。
+    ckpt := getOrInitCheckpointNoBackfill(g.ChatID, nowMs())
 
-    var startMs int64
-    if !ckpt.BackfillDone {
-        if ckpt.BackfillSince == nil {
-            // fail-fast：不静默默认回溯范围
-            return fmt.Errorf("%s 未配置 backfill_since，拒绝首次扫描", g.ChatID)
-        }
-        startMs = *ckpt.BackfillSince
-        scanType = "backfill"
-    } else {
-        startMs = ckpt.HighWaterCreateTime // 含高水位
-    }
+    startMs := ckpt.HighWaterCreateTime // 含高水位，只向后拉新消息
 
     rec := beginScanRecord(scanType, g)          // started_at, window_start=startMs, high_water_before
     hw := ckpt.HighWaterCreateTime
@@ -433,9 +486,6 @@ func ScanChat(ctx context.Context, g *Group, scanType string) error {
         pageToken = resp.Data.PageToken
     }
 
-    if !ckpt.BackfillDone {
-        markBackfillDone(g.ChatID)
-    }
     return finishScanRecordOK(rec, hw, hw) // window_end/high_water_after=hw, status=ok
 }
 
@@ -486,24 +536,24 @@ func (b *TokenBucket) refill() {
 
 | 表 | 角色 | DDL 位置 | M2 关注点 |
 | --- | --- | --- | --- |
-| `` `group` `` | 一等实体（会话元数据 + 分层） | 总纲 §2.4 `Group` | `tier`/`pinned`/`include_in_memory`/`is_key_group`/`last_active_at`（分层与记忆开关）；`project_id` 由 M1 维护 |
+| `feishu_group` | 一等实体（会话元数据 + 分层） | 总纲 §2.4 `Group` | `tier`/`pinned`/`include_in_memory`/`is_key_group`/`last_active_at`（分层与记忆开关）；`project_id` 由 M1 维护 |
 | `message` | 支撑表（消息明文，SoT） | 总纲 §2.5 + 下 §4.2 | 幂等键 `message_id`；`content`/`content_raw`；`mem0_processed`；`source` |
-| `chat_checkpoint` | 支撑表（每会话扫描游标，状态） | 总纲 §2.5 | `high_water_create_time`/`backfill_done`/`backfill_since`/`last_error` |
-| `resource` | 一等实体（附件/资源） | 总纲 §2.4 `Resource` | 沉淀写入见 §3.9；去重键唯一约束【需与用户确认】 |
+| `chat_checkpoint` | 支撑表（每会话扫描游标，状态） | 总纲 §2.5 | `high_water_create_time`（首次发现即置 now_ms，不回溯）/`last_message_id`/`last_error`；`backfill_*` 保留不用 |
+| `resource` | 一等实体（附件/资源） | 总纲 §2.4 `Resource` | 沉淀写入见 §3.9；同消息幂等 `(source_message_id,file_key)` + 跨消息 `content_hash` 去重（已定） |
 | `scan_record` | 一等实体（扫描流水） | 总纲 §2.4 `ScanRecord` | 写入时机见 §3.8 |
 
 > **`message` 表补充**：总纲支撑表清单列了 `message`，其字段以采集需要为准。M2 关键字段：`message_id`(唯一键)、`chat_id`、`sender_open_id/sender_name/sender_type`、`message_type`、`content`(渲染文本)、`content_raw`(原始 JSON)、`mentions_json`、`reply_to/root_id/thread_id`、`create_time/update_time`、`source`(poll|event)、`render_ok`、`mem0_processed/mem0_processed_at`。**原 `resources_json` 字段随 Resource 升为一等实体而废弃**（附件改沉淀到 `resource` 表）——是否保留 `resources_json` 作为冗余快照【需与用户确认】。索引：`uk_message_id`、`idx_chat_create(chat_id,create_time)`、`idx_mem0(mem0_processed,create_time)`、`idx_sender`、`idx_thread`。
 
 ### 4.2 GORM model struct
 
-Go 侧用 GORM 映射；`` group `` 是 SQL 保留字，`TableName()` 显式指定（总纲开放问题 #2 倾向改表名 `feishu_group`，此处按保留字 + `TableName()` 给出，**最终表名以总纲拍板为准**）。
+Go 侧用 GORM 映射；**表名已定 `feishu_group`**（避开 SQL 保留字，总纲 §11.1），struct 保留业务简称 `Group`，`TableName()` 返回物理表名。
 
 ```go
 package model
 
 import "time"
 
-// Group 飞书群/单聊会话（一等实体，原 jarvis_chat）。
+// Group 飞书群/单聊会话（一等实体，原 jarvis_chat）；物理表名 feishu_group。
 type Group struct {
     ID              uint64    `gorm:"primaryKey;autoIncrement"`
     ChatID          string    `gorm:"column:chat_id;size:64;uniqueIndex:uk_group_chat_id"`
@@ -523,7 +573,7 @@ type Group struct {
     UpdatedAt       time.Time `gorm:"column:updated_at"`
 }
 
-func (Group) TableName() string { return "group" } // 或 "feishu_group"，以总纲为准
+func (Group) TableName() string { return "feishu_group" } // 已定表名，避开保留字
 
 // Message 消息明文（支撑表，source of truth）。
 type Message struct {
@@ -558,8 +608,8 @@ type Checkpoint struct {
     ChatID              string     `gorm:"column:chat_id;primaryKey;size:64"`
     HighWaterCreateTime int64      `gorm:"column:high_water_create_time;default:0"` // 已落库最大 create_time(ms)
     LastMessageID       string     `gorm:"column:last_message_id;size:64"`
-    BackfillDone        bool       `gorm:"column:backfill_done;default:0"`
-    BackfillSince       *int64     `gorm:"column:backfill_since"` // 首次回溯下限(ms)，必须显式配置
+    BackfillDone        bool       `gorm:"column:backfill_done;default:1"` // 已定不回溯：首次发现即置1(无 backfill 阶段)
+    BackfillSince       *int64     `gorm:"column:backfill_since"`          // 不再使用(值=首次发现时刻快照，仅审计)；如需回溯改初始高水位
     LastScanAt          *time.Time `gorm:"column:last_scan_at"`
     LastScanStatus      string     `gorm:"column:last_scan_status;size:16"` // ok|error
     LastError           string     `gorm:"column:last_error"`
@@ -572,18 +622,19 @@ func (Checkpoint) TableName() string { return "chat_checkpoint" }
 type Resource struct {
     ID              uint64    `gorm:"primaryKey;autoIncrement"`
     ResourceType    string    `gorm:"column:resource_type;size:24;index:idx_resource_type"` // image|file|audio|video|minutes|doc|link|card
-    FileKey         string    `gorm:"column:file_key;size:128"`
+    FileKey         string    `gorm:"column:file_key;size:128;uniqueIndex:uk_resource_msg_key,priority:2"`
     MinuteToken     string    `gorm:"column:minute_token;size:64"`
     DocToken        string    `gorm:"column:doc_token;size:64"`
     URL             string    `gorm:"column:url;size:1024"`
     Name            string    `gorm:"column:name;size:512"`
     MimeType        string    `gorm:"column:mime_type;size:128"`
     SizeBytes       *int64    `gorm:"column:size_bytes"`
-    SourceMessageID string    `gorm:"column:source_message_id;size:64;index:idx_resource_msg"` // om_
+    SourceMessageID string    `gorm:"column:source_message_id;size:64;uniqueIndex:uk_resource_msg_key,priority:1"` // om_
     GroupID         *uint64   `gorm:"column:group_id;index:idx_resource_group"`
-    LocalPath       string    `gorm:"column:local_path;size:1024"`
-    Downloaded      bool      `gorm:"column:downloaded;default:0"`
-    ExtractedText   string    `gorm:"column:extracted_text;type:mediumtext"` // 可选:OCR/解析后文本
+    LocalPath       string    `gorm:"column:local_path;size:1024"`             // 同 content_hash 复用一份
+    Downloaded      bool      `gorm:"column:downloaded;default:0"`             // M2 采集期恒 false
+    ContentHash     string    `gorm:"column:content_hash;size:64;index:idx_resource_content"` // 内容 SHA256，下载后回填，跨消息去重
+    ExtractedText   string    `gorm:"column:extracted_text;type:mediumtext"`  // 按需解析后文本(本期仅妙记逐字稿)
     CreatedAt       time.Time `gorm:"column:created_at"`
     UpdatedAt       time.Time `gorm:"column:updated_at"`
 }
@@ -593,7 +644,7 @@ func (Resource) TableName() string { return "resource" }
 // ScanRecord 扫描流水（一等实体，追加）。
 type ScanRecord struct {
     ID              uint64     `gorm:"primaryKey;autoIncrement"`
-    ScanType        string     `gorm:"column:scan_type;size:24;index:idx_scan_type_time,priority:1"` // discover|scan_hot|scan_warm|scan_cold|backfill|event
+    ScanType        string     `gorm:"column:scan_type;size:24;index:idx_scan_type_time,priority:1"` // discover|scan_hot|scan_warm|scan_cold|event（无 backfill）
     GroupID         *uint64    `gorm:"column:group_id;index:idx_scan_group_time,priority:1"`
     ChatID          string     `gorm:"column:chat_id;size:64"`
     WindowStart     *int64     `gorm:"column:window_start"` // ms
@@ -792,7 +843,7 @@ func MemorizeOnce(ctx context.Context, mc *MemoryClient, batchLimit int) error {
     var rows []Message
     if err := db.WithContext(ctx).
         Where("mem0_processed = 0 AND chat_id IN (?)",
-            db.Table("`group`").Select("chat_id").Where("include_in_memory = 1")).
+            db.Table("feishu_group").Select("chat_id").Where("include_in_memory = 1")).
         Order("chat_id, create_time").Limit(batchLimit).Find(&rows).Error; err != nil {
         return err
     }
@@ -987,7 +1038,7 @@ func mustAdd(c *cron.Cron, spec string, fn func()) {
 
 - 每页 `chat-messages-list` = 1 次 API（`--no-reactions` 时不额外触发 reaction 批查）。
 - 稳态增量：设 HOT=30、WARM=200、COLD=300。HOT 每 5min 多为空扫或 1 页 → ~30 req/5min ≈ 0.1 req/s；WARM 30min 一轮 ~200 req/30min ≈ 0.11 req/s；叠加远低于保守令牌桶 `R=5/s`。
-- 重头是**首次 backfill**：由 `backfill_since` 决定量级，受令牌桶限速摊到较长时间完成；backfill 期间稳态扫描照常（游标独立）。
+- **无首次 backfill 峰值**（已定不回溯，总纲 §11.3）：新接入会话首次发现即以当前时刻建高水位，只增量拉新消息，不存在一次性拉海量历史的负载尖峰。稳态负载即上面的增量量级。
 - `discover` 每 1h 全量分页：几百会话 / 每页 100 → 数次请求，成本可忽略。
 - Go 子进程开销：每次 `exec.Command` 拉起 lark-cli 有进程启动开销（几十 ms 量级），并发信号量 + 令牌桶已把总量压住；相比 API 往返可忽略。
 
@@ -1005,22 +1056,24 @@ func mustAdd(c *cron.Cron, spec string, fn func()) {
 
 ## 10. 开放问题清单（需与用户确认）
 
-> 已定项已从原清单移除：**Neo4j / 外部图库 = 否**（mem0 内建实体链接，总纲 §5）；**Python 技术栈相关**（已全改 Go）；**LLM/embedder provider** 已收敛为 model API 可配置（总纲 §1/§6，维度仍需按所选 embedder 对齐，属 sidecar 配置）。
+> **本轮已定（从待确认移除）**：
+> - **backfill 不回溯**：首次发现该会话即以当前时刻建高水位，不拉历史（§3.4，总纲 §11.3）。
+> - **Resource 下载/解析**：采集期不下载不 OCR；按需下载/解析**仅妙记**，由下游触发（§3.9.1，总纲 §11.4）。
+> - **Resource 跨消息去重**：靠 `content_hash`（内容 SHA256，下载后回填）；不给 file_key 等加唯一索引（§3.9）。
+> - **`group` 表名**：改 `feishu_group`（总纲 §11.1）。
+> - 早前已定：Neo4j/外部图库=否；Python→Go；LLM/embedder=model API 可配置。
 
-1. **backfill 深度**：首次回溯多久？全部 / 30d / 7d？未配置时按 fail-fast 拒绝首扫，不静默默认。
-2. **噪音会话白/黑名单**：哪些群属报警/机器人噪音（如 `[Critical]agency平台报警群` 等），应 `include_in_memory=0`？
-3. **关键会话白名单**：leader 的 open_id、核心项目群，需 `pinned=1` / `is_key_group=1` 强制 HOT。
-4. **飞书租户实际 QPS 限额**：用于设定令牌桶 `R`，当前保守取 5/s。
-5. **编辑消息是否重抽记忆**：默认「是」（重置 `mem0_processed`），确认是否接受由此产生的记忆累积。
-6. **Resource 下载 / OCR**：是否下载附件、是否 OCR/解析妙记文档写入 `extracted_text`？当前只沉淀元数据、`downloaded=0`（对齐总纲开放问题 #7）。
-7. **Resource 去重键唯一约束**：是否把 `resource.file_key/minute_token/doc_token/url` 升为唯一索引以支持 `OnConflict` 精确去重？涉及总纲 DDL 调整（见 §3.9）。
-8. **`message.resources_json` 去留**：附件已升 `resource` 实体，是否仍保留该冗余字段作快照？
-9. **p2p 与 external 会话是否纳入**：涉及隐私边界，是否全纳入采集与记忆。
-10. **mem0 记忆保留/清理策略**：ADD-only 会持续累积，是否需要周期性清理或保留期。
-11. **scan_record 保留期**：流水表持续增长，多久归档/清理？
-12. **合并转发深展开**：`merge_forward` 嵌套子消息是否需要递归拆解为独立行 + 沉淀内嵌 resource。
-13. **thread 旧根新回复**：纯 create_time 增量可能漏「旧根消息的新回复」，是否需为重线程群加深扫/事件流（§3.10）。
-14. **`group` 表名**：用保留字 `` `group` `` + `TableName()` 还是改 `feishu_group`（总纲开放问题 #2）。
+1. **噪音会话白/黑名单**：哪些群属报警/机器人噪音（如 `[Critical]agency平台报警群` 等），应 `include_in_memory=0`？
+2. **关键会话白名单**：leader 的 open_id、核心项目群，需 `pinned=1` / `is_key_group=1` 强制 HOT。
+3. **飞书租户实际 QPS 限额**：用于设定令牌桶 `R`，当前保守取 5/s。
+4. **编辑消息是否重抽记忆**：默认「是」（重置 `mem0_processed`），确认是否接受由此产生的记忆累积。
+5. **妙记按需拉取可行性**：`lark-cli minutes` 取逐字稿的具体子命令、权限/授权范围需实测（总纲 §11.5）。
+6. **`message.resources_json` 去留**：附件已升 `resource` 实体，是否仍保留该冗余字段作快照？
+7. **p2p 与 external 会话是否纳入**：涉及隐私边界，是否全纳入采集与记忆。
+8. **mem0 记忆保留/清理策略**：ADD-only 会持续累积，是否需要周期性清理或保留期。
+9. **scan_record 保留期**：流水表持续增长，多久归档/清理？
+10. **合并转发深展开**：`merge_forward` 嵌套子消息是否需要递归拆解为独立行 + 沉淀内嵌 resource。
+11. **thread 旧根新回复**：纯 create_time 增量可能漏「旧根消息的新回复」，是否需为重线程群加深扫/事件流（§3.10）。
 
 ---
 

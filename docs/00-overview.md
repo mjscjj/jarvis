@@ -186,10 +186,10 @@ CREATE TABLE project (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-#### Group（飞书群/会话，一等实体）
+#### Group（飞书群/会话，一等实体，表名 `feishu_group`）
 
 ```sql
-CREATE TABLE `group` (
+CREATE TABLE feishu_group (
   id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   chat_id           VARCHAR(64)  NOT NULL COMMENT '飞书 oc_ 会话ID',
   chat_mode         VARCHAR(16)  NOT NULL COMMENT 'group | p2p',
@@ -214,7 +214,7 @@ CREATE TABLE `group` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-> `group` 是 SQL 保留字，Go/GORM 侧用 `TableName() string { return "group" }` 或改表名为 `feishu_group`（见 §11 开放问题 #2）。
+> **表名 `feishu_group`（已定）**：避开 SQL 保留字 `group`，GORM 侧无需反引号转义。Go model struct 保留业务简称 `Group`，用 `func (Group) TableName() string { return "feishu_group" }` 固定物理表名。下文实体名一律简称 `Group`，物理表名一律 `feishu_group`。
 
 #### Person
 
@@ -291,7 +291,7 @@ CREATE TABLE todo (
   KEY idx_todo_project (project_id),
   KEY idx_todo_group (group_id),
   CONSTRAINT fk_todo_project FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE SET NULL,
-  CONSTRAINT fk_todo_group   FOREIGN KEY (group_id)   REFERENCES `group`(id) ON DELETE SET NULL
+  CONSTRAINT fk_todo_group   FOREIGN KEY (group_id)   REFERENCES feishu_group(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -347,21 +347,26 @@ CREATE TABLE resource (
   -- 来源与本地化
   source_message_id VARCHAR(64) NULL COMMENT '来自哪条消息 om_',
   group_id       BIGINT UNSIGNED NULL,
-  local_path     VARCHAR(1024) NULL COMMENT '若已下载,本地路径',
+  local_path     VARCHAR(1024) NULL COMMENT '若已下载,本地路径(同 content_hash 复用一份)',
   downloaded     TINYINT(1) NOT NULL DEFAULT 0,
-  extracted_text MEDIUMTEXT NULL COMMENT '可选:OCR/解析后的文本',
+  content_hash   CHAR(64) NULL COMMENT '内容 SHA256,下载后回填,跨消息去重键',
+  extracted_text MEDIUMTEXT NULL COMMENT '按需解析后的文本(本期仅妙记逐字稿)',
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_resource_msg_key (source_message_id, file_key) COMMENT '同一消息同一资源幂等',
   KEY idx_resource_type (resource_type),
   KEY idx_resource_msg (source_message_id),
-  KEY idx_resource_group (group_id)
+  KEY idx_resource_group (group_id),
+  KEY idx_resource_content (content_hash) COMMENT '跨消息按内容去重/复用本地文件'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-> **Resource 定位**：原来散在 `message.resources_json` 里的附件信息升为一等实体，好处：① 妙记/文档可被 Todo/Task 直接引用为"方案依据"；② 支持按需下载与 OCR（`downloaded`/`extracted_text`）；③ 可作为 Task 的方案依据被引用。
-> **去重键说明**：飞书 `file_key` 与消息绑定（同一文件在不同消息里 key 不同），故唯一键取 `(source_message_id, file_key)` 保证"同一消息同一资源"幂等（M2 采集重扫时不重复插）。**跨消息的同一文件去重**（同一文件多次转发）需靠内容 hash，属【需与用户确认】（开放问题 #11），不擅自实现。是否下载 / OCR 属【需与用户确认】。
+> **Resource 定位**：原来散在 `message.resources_json` 里的附件信息升为一等实体，好处：① 妙记/文档可被 Todo/Task 直接引用为"方案依据"；② 支持按需下载与解析（`downloaded`/`extracted_text`）；③ 可作为 Task 的方案依据被引用。
+> **两层去重键（已定）**：
+> - **同消息幂等**：`uk_resource_msg_key (source_message_id, file_key)`——同一条消息重扫不重复插（飞书 `file_key` 与消息绑定，同一文件在不同消息里 key 不同）。
+> - **跨消息内容去重**：`content_hash`（内容 SHA256），**下载后回填**。同一文件多次转发/引用时，DB 仍按来源消息各记一行（保留证据），但相同 `content_hash` 复用同一 `local_path`（只存一份本地文件）。未下载前 `content_hash` 为空，去重仅在下载后生效。
+> **下载 / 解析范围（已定）**：采集期只沉淀元数据、不下载；**按需下载/解析、且本期仅妙记**（`resource_type=minutes`，用 `lark-cli minutes` 拿逐字稿写入 `extracted_text`）。图片 OCR、飞书文档/表格、附件解析本期不做（见 §11.4）。
 
 #### ScanRecord（扫描记录，一等实体）
 
@@ -539,7 +544,7 @@ jarvis/
 ├── cmd/jarvis-server/main.go  # Go 主入口
 ├── internal/
 │   ├── api/          # Hertz 路由(REST)
-│   ├── domain/       # 6 实体领域模型 + service
+│   ├── domain/       # 7 实体领域模型 + service
 │   ├── pipeline/     # M2→M3→M4→M5 编排
 │   ├── capture/      # M2 采集(lark-cli 封装)
 │   ├── memory/       # mem0 sidecar client
@@ -560,7 +565,7 @@ jarvis/
 
 | 阶段 | 交付 | 依赖 |
 |---|---|---|
-| M0.1 骨架 | Go/Hertz 工程 + 6 实体 DDL/GORM + MySQL 迁移 + launchd | — |
+| M0.1 骨架 | Go/Hertz 工程 + 7 实体 DDL/GORM + MySQL 迁移 + launchd | — |
 | M0.2 飞书打通 | larkcli 封装 + 采集 message/group/resource 落库 | M0.1 |
 | M0.3 记忆 | mem0 sidecar + Qdrant + 记忆化 job | M0.2 |
 | M0.4 提取 | M3 Todo 提取(LLM API) + 后台 Todo 看板 | M0.3 |
@@ -573,24 +578,56 @@ jarvis/
 ## 10. 与全局设计原则的对齐检查
 
 - **fail-fast**：采集游标不静默前进、LLM/codex 失败不静默降级、执行失败必带 ExecError、单测断言暴露行为。
-- **不乱兼容**：全新库、无历史数据迁移；backfill 深度、噪音群、阈值等全部【需与用户确认】。
-- **不乱护栏**：M4/M5 的强制确认清单、自动 push、sandbox 放开等做成**配置项 + 需用户确认**，不硬编码。
-- **模块化**：Todo/Task 拆分、6 实体边界清晰、三子进程职责分离。
-- **优先官方**：Hertz/bytedgorm/lark-cli/mem0/codex 全用现成。
+- **不乱兼容**：全新库、无历史数据迁移；**backfill 已定不回溯**（首次发现时刻建高水位，§11.3）；噪音群、阈值等仍【需与用户确认】。
+- **不乱护栏**：M4/M5 的强制确认清单、自动 push、sandbox 放开、**codex 决策频率/成本上限/灰区边界**等做成**配置项**（§11.2），不硬编码。
+- **模块化**：Todo/Task 拆分、7 实体边界清晰、三子进程职责分离。
+- **优先官方**：Hertz/GORM/lark-cli/mem0/codex 全用现成，不引入 Eino/Kitex/bytedgorm。
 
 ---
 
 ## 11. 全局开放问题（需与用户确认，各模块另有细项）
 
-1. ~~Go 框架~~ **已定**：Hertz + GORM + codex CLI + model API，不用 Eino/bytedgorm。
-2. **`group` 表名**：用保留字 `` `group` `` 还是改 `feishu_group`？（GORM 侧建议用 `feishu_group` 避免转义麻烦）
-3. **codex 决策成本**：M4 每个 Todo 都调 codex 决策，频率与耗时是否可接受？是否只对 `need_decision` 边界情况调 codex、明确的走规则？
-4. **mem0 sidecar 端口/托管**：`127.0.0.1:18900` 是否合适？launchd 独立托管确认。
-5. **mem0 metadata 过滤能力**：Qdrant 后端复杂 AND/OR 过滤需实测；基线只依赖标量等值。
-6. **backfill 深度**：首次回溯多久（全部/30d/7d）？
-7. **Resource 下载/OCR**：是否下载附件、是否 OCR/解析妙记文档？
+### 11.1 已定项（本轮拍板，不再讨论）
+
+1. **Go 框架**：Hertz + GORM + codex CLI + model API，不用 Eino/bytedgorm。
+2. **`group` 表名**：改 `feishu_group`（避开 SQL 保留字，GORM 侧无需转义）。
+3. **backfill 首次回溯**：**不回溯历史**。起点 = **系统首次发现该会话的时刻**（每会话 checkpoint 初始高水位 = 首次发现时的当前毫秒时间戳），只采集该时刻之后的新消息。见 §11.3。
+4. **Resource 下载 / OCR / 去重**：**只做妙记**（`lark-cli minutes` 拿逐字稿/产物）；**按需下载/解析**（M3/M4 需要该资源内容时才拉取，非采集即下载）；跨消息按**内容 SHA256** 去重（同一文件多次转发只存一份本地文件）。图片 OCR、飞书文档/表格解析、附件解析**本期不做**。见 §11.4。
+5. **codex 决策频率/成本上限、灰区边界**：全部**做成配置项**（不硬编码）。见 §11.2。
+
+### 11.2 codex 决策可配置（M4）
+
+M4 的 codex 深判受一组配置控制，全部可在配置文件调整、不硬编码：
+
+| 配置项 | 含义 | 默认（建议，待校准） |
+|---|---|---|
+| `codex.gray_zone.conf_low` / `conf_high` | 灰区 confidence 边界：落在 `[low, high]` 才触发 codex 深判 | 0.60 / 0.85 |
+| `codex.gray_zone.risk_low` / `risk_high` | 灰区 risk 边界 | 0.25 / 0.60 |
+| `codex.max_calls_per_hour` | 每小时 codex 决策调用上限（成本闸） | 30 |
+| `codex.max_calls_per_day` | 每天上限 | 200 |
+| `codex.timeout_seconds` | 单次 codex 决策超时 | 120 |
+| `codex.on_budget_exceeded` | 超预算时的行为：`degrade_to_rule`（降级为规则判定并标记）/ `route_need_decision`（直接转人工，默认） | `route_need_decision` |
+| `codex.on_timeout` | 超时行为：固定 `route_need_decision`（fail-fast，绝不自动确认） | `route_need_decision` |
+
+> 明确规则：明确 / 明显要人工的 Todo 走规则快判（零成本）；**只有落入灰区的 Todo 才调 codex 深判**。超预算 / 超时一律 fail-fast 转人工，绝不自动确认。细化见 `modules/04-confirmation.md` §2。
+
+### 11.3 backfill 不回溯的落地（M2）
+
+- **不拉任何历史**。每个会话首次被 `DiscoverChats` 发现时，把 checkpoint 初始 `high_water_create_time` 置为**发现时刻的当前毫秒时间戳**（`now_ms`），`backfill_done=1`（无 backfill 阶段）。
+- 之后按增量扫描（§3）只采集 `create_time > 首次发现时刻` 的新消息。
+- 因此不存在"首次回溯多久"的问题，也不会一次性拉海量历史。原方案里"未配置 backfill_since 则 fail-fast 拒绝首扫"的逻辑改为"首次发现即以当前时刻建高水位"，见 `modules/02-message.md` §3.4。
+
+### 11.4 Resource 策略的落地（M2/M3）
+
+- **采集期（M2）**：只沉淀 `resource` 元数据行（`resource_type`/`file_key`/`minute_token`/`doc_token`/`url`/`name` 等），`downloaded=0`、`extracted_text=NULL`，**不下载任何二进制、不 OCR**。
+- **按需拉取（M3/M4）**：当下游需要某 `Resource` 的**内容**（目前仅**妙记**：`resource_type=minutes`）时，才调 `lark-cli minutes` 拿逐字稿/产物写入 `extracted_text`、置 `downloaded=1`。图片/文档/附件本期**不解析**（`extracted_text` 恒空）。
+- **跨消息去重**：`resource` 增加 `content_hash CHAR(64)`（内容 SHA256），下载后回填；同一文件多次转发/引用只保留一份本地文件（`local_path` 复用），DB 行仍按来源消息各记一行但指向同一 `content_hash`/`local_path`。未下载前 `content_hash` 为空，去重仅在下载后生效。
+
+### 11.5 仍待确认项
+
+6. **mem0 sidecar 端口/托管**：`127.0.0.1:18900` 是否合适？launchd 独立托管确认。
+7. **mem0 metadata 过滤能力**：Qdrant 后端复杂 AND/OR 过滤需实测；基线只依赖标量等值。
 8. **autonomy 默认**：整体默认 `copilot`（对外动作需确认）？
 9. **自动 git commit/push**：默认关，是否开放及约束。
-10. **各类阈值/权重/强制确认清单**：见 M4 文档细项，需校准。
-11. **Resource 跨消息去重**：唯一键 `(source_message_id, file_key)` 只保证同消息幂等；同一文件多次转发是否要按内容 hash 全局去重？默认不做。
-12. **codex 决策成本与边界**：M4 灰区 Todo 才调 codex 深判、明确的走规则快判；codex 每次决策耗时/成本上限需实测确认。
+10. **各类阈值/权重/强制确认清单**：见 M4 文档细项，需校准（codex 灰区默认值同样待校准）。
+11. **妙记逐字稿的隐私边界**：`lark-cli minutes` 能否稳定拿到目标妙记内容（权限/授权范围），以及是否所有妙记都允许拉取，需实测确认。

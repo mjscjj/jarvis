@@ -982,4 +982,4 @@ func (h *GroupHandler) SetProject(ctx context.Context, c *app.RequestContext) {
 | 7 | 删除 Project/Person 时是否**级联删除其 mem0 记忆**（应用层，经 sidecar）？ | 是，级联清理 | 一致性【需与用户确认】 |
 | 8 | mem0 `metadata` 复杂 AND/OR 过滤在 Qdrant 后端能力有限，是否需要（当前基线只用标量等值）？ | 只用标量等值 | 检索精度（对齐总纲 §11 #5）【需与用户确认】 |
 | 9 | Group↔Project 关联：解除项目关联时，是否**一并解除 `is_key_group`**、并从 mem0 撤下该群的背景陈述？ | 撤下群背景陈述；`is_key_group` 保留由用户单独决定 | 关联一致性【需与用户确认】 |
-| 10 | `group` 为 SQL 保留字，GORM 侧表名用 `` `group` `` 还是 `feishu_group`？（M1 依赖 Group 表名，需与 M2 统一） | 跟随总纲 §11 #2 结论 | 表名/转义（M1/M2 共用）【需与用户确认】 |
+| 10 | ~~`group` 表名~~ **已定：`feishu_group`**（总纲 §11.1，避开保留字）。M1 引用统一用 `feishu_group.project_id` | ✅ 已定 | 表名/转义（M1/M2 共用），已对齐 |

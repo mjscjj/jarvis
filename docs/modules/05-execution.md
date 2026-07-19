@@ -377,7 +377,7 @@ type Executor interface {
 
 对应需求："根据会议妙记总结 todo 到人、发在群里"。
 
-- **后端**：**model API**（生成总结正文，轻 LLM，走 HTTP 不用 codex）+ `lark-cli im +messages-send`（或 `+messages-reply`，`exec.Command`）。妙记来源为 `Task` 关联的 `Resource`（`minute_token`）。
+- **后端**：**model API**（生成总结正文，轻 LLM，走 HTTP 不用 codex）+ `lark-cli im +messages-send`（或 `+messages-reply`，`exec.Command`）。妙记来源为 `Task` 关联的 `Resource`（`minute_token`），**逐字稿经 M2 的 `ResourceFetcher.EnsureMinutesText`（M2 §3.9.1）按需拉取**（单一入口，复用缓存/`content_hash` 去重，本期仅妙记）。
 - **输入 slots**（示例，正文风格/@人以 `Task.plan` 固化为准）：
   ```json
   {
@@ -389,7 +389,7 @@ type Executor interface {
   }
   ```
 - **Plan**：
-  1. 只读拉取来源：妙记（`lark-cli minutes`，对应 `Resource.minute_token`）或消息（`lark-cli im +messages-mget`）。
+  1. 只读拉取来源：妙记走 **`ResourceFetcher.EnsureMinutesText(resID)`**（M2 §3.9.1，内部调 `lark-cli minutes`，带缓存与去重）；消息走 `lark-cli im +messages-mget`。
   2. **model API** 生成结构化总结（"todo → 责任人"，按 `plan` 的风格），需要 @ 人时先经 `contact` 解析 open_id。
   3. 组装命令（`--markdown`，`--as bot`，`--idempotency-key=<task_id>`）。
   4. `ActionPlan`（RiskTier=T4，ExternalEffect=true，Reversible=false）。
