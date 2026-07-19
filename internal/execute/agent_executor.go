@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"jarvis/internal/contextsnap"
@@ -88,26 +89,45 @@ type BatchStats struct {
 
 // RunPendingBatch is the cron entry point: it executes pending local-action
 // Tasks automatically and skips external-action Tasks (they need the manual
-// approve). A single Task failure does not abort the sweep — it is counted and
-// the loop continues, so one bad Task cannot block the rest.
-func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit int) (BatchStats, error) {
+// approve). Tasks in a sweep run concurrently up to `concurrency` at a time; a
+// single Task failure does not abort the sweep — it is counted and the others
+// continue, so one bad Task cannot block the rest. Each Task claims itself via
+// MarkExecuting (optimistic lock), so concurrent runs never double-execute.
+func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit, concurrency int) (BatchStats, error) {
+	if concurrency <= 0 {
+		return BatchStats{}, fmt.Errorf("execute batch concurrency must be positive, got %d", concurrency)
+	}
 	tasks, err := e.store.LoadPending(ctx, limit)
 	if err != nil {
 		return BatchStats{}, err
 	}
 	stats := BatchStats{Loaded: len(tasks)}
+	var (
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, concurrency)
+	)
 	for i := range tasks {
 		task := &tasks[i]
-		_, err := e.Execute(ctx, ExecuteInput{TaskID: task.ID, ApproveExternal: false})
-		switch {
-		case errors.Is(err, ErrExternalNeedsApproval):
-			stats.Skipped++
-		case err != nil:
-			stats.Failed++
-		default:
-			stats.Executed++
-		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(taskID uint64) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			_, err := e.Execute(ctx, ExecuteInput{TaskID: taskID, ApproveExternal: false})
+			mu.Lock()
+			switch {
+			case errors.Is(err, ErrExternalNeedsApproval):
+				stats.Skipped++
+			case err != nil:
+				stats.Failed++
+			default:
+				stats.Executed++
+			}
+			mu.Unlock()
+		}(task.ID)
 	}
+	wg.Wait()
 	return stats, nil
 }
 

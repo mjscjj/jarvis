@@ -73,7 +73,7 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var groups []domain.Group
 		if len(chatIDs) > 0 {
-			if err := tx.Select("chat_id", "chat_mode").Where("chat_id IN ?", chatIDs).Find(&groups).Error; err != nil {
+			if err := tx.Select("chat_id", "chat_mode", "external").Where("chat_id IN ?", chatIDs).Find(&groups).Error; err != nil {
 				return fmt.Errorf("load related group candidates: %w", err)
 			}
 		}
@@ -91,7 +91,14 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 			return fmt.Errorf("related groups are not discovered: %s", strings.Join(missing, ","))
 		}
 		for _, group := range groups {
-			if group.ChatMode != "group" && group.ChatMode != "topic" {
+			switch group.ChatMode {
+			case "group", "topic":
+			case "p2p":
+				// 私聊可手动加入名单，但仅限内部同事；外部私聊不监听。
+				if group.External {
+					return fmt.Errorf("related chat_id=%s is an external p2p and cannot be monitored", group.ChatID)
+				}
+			default:
 				return fmt.Errorf("related chat_id=%s has unsupported chat_mode=%q", group.ChatID, group.ChatMode)
 			}
 		}
@@ -111,6 +118,21 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 		}
 		return nil
 	})
+}
+
+// OpenInternalP2P marks every already-discovered internal p2p chat as related,
+// so existing 私聊 join monitoring in one pass. Discovery already auto-opens
+// new p2p; this covers the backlog captured before that behavior existed.
+// It never touches groups/topics and skips external p2p. Returns how many
+// chats were newly opened.
+func (s *Service) OpenInternalP2P() (int64, error) {
+	result := s.db.Model(&domain.Group{}).
+		Where("chat_mode = ? AND external = ? AND related_group = ?", "p2p", false, false).
+		Update("related_group", true)
+	if result.Error != nil {
+		return 0, fmt.Errorf("open internal p2p chats: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 func normalizeChatIDs(chatIDs []string) ([]string, error) {
@@ -187,21 +209,32 @@ func (s *Service) persistDiscoveredChats(chats []CLIChat) error {
 			if chat.ChatMode != "group" && chat.ChatMode != "p2p" && chat.ChatMode != "topic" {
 				return fmt.Errorf("chat %s has unsupported chat_mode %q", chat.ChatID, chat.ChatMode)
 			}
+			// 内部 p2p 私聊自动纳入监听：只要是内部同事的私聊（external=false），
+			// 发现时即置 related_group=1，新私聊也自动纳入，无需手动加名单。
+			// 外部私聊与普通群/话题群不在此自动开启（群仍走手动名单）。
+			autoRelated := chat.ChatMode == "p2p" && !chat.External
 			group := domain.Group{
-				ChatID:      chat.ChatID,
-				ChatMode:    chat.ChatMode,
-				Name:        nullableString(chat.Name),
-				Description: nullableString(chat.Description),
-				OwnerOpenID: nullableString(chat.OwnerID),
-				External:    chat.External,
-				TenantKey:   nullableString(chat.TenantKey),
-				Tier:        "cold",
+				ChatID:       chat.ChatID,
+				ChatMode:     chat.ChatMode,
+				Name:         nullableString(chat.Name),
+				Description:  nullableString(chat.Description),
+				OwnerOpenID:  nullableString(chat.OwnerID),
+				External:     chat.External,
+				TenantKey:    nullableString(chat.TenantKey),
+				RelatedGroup: autoRelated,
+				Tier:         "cold",
+			}
+			// 更新列：p2p 私聊连带 related_group 一起 upsert（存量私聊也会被开启）；
+			// 非 p2p 不动 related_group，避免覆盖用户对普通群的手动名单设置。
+			updateColumns := []string{
+				"chat_mode", "name", "description", "owner_open_id", "external", "tenant_key", "updated_at",
+			}
+			if chat.ChatMode == "p2p" {
+				updateColumns = append(updateColumns, "related_group")
 			}
 			if err := tx.Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "chat_id"}},
-				DoUpdates: clause.AssignmentColumns([]string{
-					"chat_mode", "name", "description", "owner_open_id", "external", "tenant_key", "updated_at",
-				}),
+				Columns:   []clause.Column{{Name: "chat_id"}},
+				DoUpdates: clause.AssignmentColumns(updateColumns),
 			}).Create(&group).Error; err != nil {
 				return fmt.Errorf("upsert group chat_id=%s: %w", chat.ChatID, err)
 			}

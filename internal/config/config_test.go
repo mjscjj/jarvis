@@ -134,6 +134,10 @@ func TestValidate(t *testing.T) {
 		{name: "codex binary", mutate: func(c *Config) { c.Codex.Bin = "" }, wantErr: "codex.bin"},
 		{name: "codex model", mutate: func(c *Config) { c.Codex.Model = "" }, wantErr: "codex.model"},
 		{name: "codex timeout", mutate: func(c *Config) { c.Codex.TimeoutSeconds = 0 }, wantErr: "codex.timeout_seconds"},
+		{name: "execute concurrency", mutate: func(c *Config) {
+			c.Execute.Enabled = true
+			c.Execute.Concurrency = 0
+		}, wantErr: "execute.concurrency"},
 	}
 
 	for _, tt := range tests {
@@ -201,7 +205,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 
 func validExecuteConfig() ExecuteConfig {
 	return ExecuteConfig{
-		Enabled: false, Schedule: "@every 5m", BatchLimit: 5,
+		Enabled: false, Schedule: "@every 5m", BatchLimit: 5, Concurrency: 3,
 		RepoRoot: "/tmp/repos", RunsDir: "/tmp/runs", TimeoutSecond: 600,
 	}
 }

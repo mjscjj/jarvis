@@ -27,8 +27,9 @@ type Config struct {
 
 // ServerConfig Hertz 监听配置。
 type ServerConfig struct {
-	Addr    string `yaml:"addr"`     // 形如 127.0.0.1:18800
-	WebRoot string `yaml:"web_root"` // React production build directory
+	Addr    string   `yaml:"addr"`      // 形如 127.0.0.1:18800
+	WebRoot string   `yaml:"web_root"`  // React production build directory
+	LogFiles []string `yaml:"log_files"` // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
 }
 
 // MySQLConfig 结构化存储（source of truth）。
@@ -158,6 +159,7 @@ type ExecuteConfig struct {
 	Enabled       bool   `yaml:"enabled"`        // 是否开自动执行 cron（本地动作）
 	Schedule      string `yaml:"schedule"`       // cron 表达式
 	BatchLimit    int    `yaml:"batch_limit"`    // 单次 sweep 最多执行的 Task 数
+	Concurrency   int    `yaml:"concurrency"`    // 单次 sweep 内并行执行的 Task 数（>=1）
 	RepoRoot      string `yaml:"repo_root"`      // code_change repo_ref 的基目录
 	RunsDir       string `yaml:"runs_dir"`       // diff/产物落盘目录
 	TimeoutSecond int    `yaml:"timeout_second"` // 单次 codex 执行超时
@@ -187,6 +189,10 @@ func (c *Config) validate() error {
 	}
 	if c.Server.WebRoot == "" {
 		return fmt.Errorf("server.web_root 不能为空")
+	}
+	if len(c.Server.LogFiles) == 0 {
+		// stdout（路由/启动）与 stderr（各 cron 运行结果、报错）默认都读，否则 cron 日志漏看。
+		c.Server.LogFiles = []string{"var/log/jarvis-server.log", "var/log/jarvis-server.error.log"}
 	}
 	if c.MySQL.DSN == "" {
 		return fmt.Errorf("mysql.dsn 不能为空")
@@ -380,6 +386,9 @@ func (c *Config) validate() error {
 		}
 		if c.Execute.BatchLimit <= 0 {
 			return fmt.Errorf("execute.batch_limit 必须大于 0")
+		}
+		if c.Execute.Concurrency <= 0 {
+			return fmt.Errorf("execute.concurrency 必须大于 0")
 		}
 	}
 	return nil

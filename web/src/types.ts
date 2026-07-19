@@ -395,6 +395,88 @@ export interface Digest {
   key_groups: GroupProgress[]
 }
 
+export interface Dependency {
+  name: string
+  status: 'ok' | 'error'
+  detail?: string
+}
+
+export interface TableCount {
+  table: string
+  count: number
+}
+
+export interface StatusCount {
+  status: string
+  count: number
+}
+
+export interface BacklogMetric {
+  key: string
+  label: string
+  value: number
+  detail?: string
+}
+
+export interface DebugStatus {
+  time: string
+  dependencies: Dependency[]
+  tables: TableCount[]
+  backlog: BacklogMetric[]
+  todo_by_status: StatusCount[]
+  task_by_status: StatusCount[]
+}
+
+export interface ModuleRun {
+  module: string
+  time: string
+  status: string
+  job: string
+  fields: Record<string, string>
+  runs: number
+  last_error: string
+  raw: string
+}
+
+export interface ScanRow {
+  id: number
+  scan_type: string
+  chat_id: string | null
+  status: string
+  fetched_count: number
+  inserted_count: number
+  error_type: string | null
+  error_message: string | null
+  started_at: string
+  duration_ms: number | null
+}
+
+export interface WatermarkRow {
+  chat_id: string
+  group_name: string
+  last_message_id: string
+  last_scanned_at: string
+  updated_at: string
+}
+
+export interface LogLine {
+  source: string
+  time: string
+  text: string
+}
+
+export interface LogTail {
+  sources: string[]
+  lines: LogLine[]
+  truncated: boolean
+  notes: string[]
+}
+
+// Debug todo/task rows are the raw Go domain structs marshaled with Go field
+// names; the panel only renders them as expandable JSON, so a loose record type
+// is enough.
+export type DebugRecord = Record<string, unknown>
+
 export type ResourceType = 'doc' | 'link' | 'repo' | 'note' | 'other'
 
 // Resource is a manually curated reference that can be linked to a person, a

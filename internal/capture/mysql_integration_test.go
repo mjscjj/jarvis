@@ -60,6 +60,14 @@ func TestCaptureMySQL(t *testing.T) {
 	if checkpoint.HighWaterCreateTime != discoveredAt.UnixMilli() || !checkpoint.BackfillDone {
 		t.Fatalf("checkpoint = %#v", checkpoint)
 	}
+	// 内部私聊发现即自动监听；外部私聊与话题群不自动开。
+	assertRelated(t, db, "oc_p2p_internal", true)
+	assertRelated(t, db, "oc_p2p_external", false)
+	assertRelated(t, db, "oc_fixture", false)
+	// 外部私聊不能被手动加入名单。
+	if err := service.ReplaceRelatedGroups([]string{"oc_p2p_external"}); err == nil || !strings.Contains(err.Error(), "external p2p") {
+		t.Fatalf("ReplaceRelatedGroups(external p2p) error = %v, want external p2p rejection", err)
+	}
 	if err := service.ScanChat(context.Background(), "oc_fixture"); err == nil || !strings.Contains(err.Error(), "is not a related group") {
 		t.Fatalf("ScanChat() before selection error = %v", err)
 	}
@@ -92,6 +100,31 @@ func TestCaptureMySQL(t *testing.T) {
 	if latest.InsertedCount != 0 {
 		t.Fatalf("second scan inserted_count = %d, want 0", latest.InsertedCount)
 	}
+
+	// 存量私聊回填：先把内部私聊关掉模拟历史数据，再用 OpenInternalP2P 一次性开启。
+	if err := db.Model(&domain.Group{}).Where("chat_id = ?", "oc_p2p_internal").Update("related_group", false).Error; err != nil {
+		t.Fatalf("reset internal p2p related flag: %v", err)
+	}
+	opened, err := service.OpenInternalP2P()
+	if err != nil {
+		t.Fatalf("OpenInternalP2P() error = %v", err)
+	}
+	if opened != 1 {
+		t.Fatalf("OpenInternalP2P() opened = %d, want 1", opened)
+	}
+	assertRelated(t, db, "oc_p2p_internal", true)
+	assertRelated(t, db, "oc_p2p_external", false)
+}
+
+func assertRelated(t *testing.T, db *gorm.DB, chatID string, want bool) {
+	t.Helper()
+	var group domain.Group
+	if err := db.Select("related_group").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
+		t.Fatalf("load group %s: %v", chatID, err)
+	}
+	if group.RelatedGroup != want {
+		t.Fatalf("group %s related_group = %t, want %t", chatID, group.RelatedGroup, want)
+	}
 }
 
 type captureFixture struct{}
@@ -102,7 +135,13 @@ func (f *captureFixture) Run(_ context.Context, out any, args ...string) error {
 	case strings.Contains(joined, "+chat-list"):
 		response := out.(*ChatListResponse)
 		response.OK = true
-		response.Data.Chats = []CLIChat{{ChatID: "oc_fixture", ChatMode: "topic", Name: "fixture"}}
+		response.Data.Chats = []CLIChat{
+			{ChatID: "oc_fixture", ChatMode: "topic", Name: "fixture"},
+			// 内部私聊：发现时应自动纳入监听。
+			{ChatID: "oc_p2p_internal", ChatMode: "p2p", Name: "内部同事"},
+			// 外部私聊：不监听，related_group 必须为 0。
+			{ChatID: "oc_p2p_external", ChatMode: "p2p", Name: "外部联系人", External: true},
+		}
 		return nil
 	case strings.Contains(joined, "+chat-messages-list"):
 		response := out.(*MessageListResponse)

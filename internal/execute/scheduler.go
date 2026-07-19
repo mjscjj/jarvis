@@ -11,7 +11,7 @@ import (
 // StartScheduler runs the auto-executor on a cron cadence. It only executes
 // local-action Tasks; external actions wait for the manual approve. The batch
 // limit bounds how many Tasks one sweep may run.
-func StartScheduler(ctx context.Context, executor *AgentExecutor, spec string, batchLimit int, logger *log.Logger) (*cron.Cron, error) {
+func StartScheduler(ctx context.Context, executor *AgentExecutor, spec string, batchLimit, concurrency int, logger *log.Logger) (*cron.Cron, error) {
 	if executor == nil {
 		return nil, fmt.Errorf("execute scheduler executor is nil")
 	}
@@ -20,6 +20,9 @@ func StartScheduler(ctx context.Context, executor *AgentExecutor, spec string, b
 	}
 	if batchLimit <= 0 {
 		return nil, fmt.Errorf("execute scheduler batch limit must be positive")
+	}
+	if concurrency <= 0 {
+		return nil, fmt.Errorf("execute scheduler concurrency must be positive")
 	}
 	if logger == nil {
 		return nil, fmt.Errorf("execute scheduler logger is nil")
@@ -30,7 +33,7 @@ func StartScheduler(ctx context.Context, executor *AgentExecutor, spec string, b
 		cron.Recover(cronLogger),
 	))
 	if _, err := scheduler.AddFunc(spec, func() {
-		stats, err := executor.RunPendingBatch(ctx, batchLimit)
+		stats, err := executor.RunPendingBatch(ctx, batchLimit, concurrency)
 		if err != nil {
 			logger.Printf("job=execute status=error error=%v", err)
 			return

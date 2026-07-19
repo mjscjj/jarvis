@@ -1,0 +1,320 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Alert, Badge, Button, Card, Collapse, Empty, Segmented, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd'
+import type { TableColumnsType } from 'antd'
+import {
+  getDebugLogs,
+  getDebugModules,
+  getDebugScans,
+  getDebugStatus,
+  getDebugTasks,
+  getDebugTodos,
+  getDebugWatermarks,
+} from './api'
+import type { DebugRecord, DebugStatus, LogTail, ModuleRun, ScanRow, StatusCount, WatermarkRow } from './types'
+
+const { Text, Paragraph } = Typography
+
+function errorText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
+// useDebugResource centralizes the load/refresh/abort/error boilerplate every
+// sub-tab shares so each tab is just its own rendering.
+function useDebugResource<T>(loader: (signal: AbortSignal) => Promise<T>, deps: unknown[] = []) {
+  const [data, setData] = useState<T>()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    loader(controller.signal)
+      .then((result) => { setData(result); setError(undefined) })
+      .catch((cause: unknown) => { if (!(cause instanceof DOMException)) setError(errorText(cause)) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, ...deps])
+
+  const refresh = useCallback(() => setTick((v) => v + 1), [])
+  return { data, loading, error, refresh }
+}
+
+// RawJSON renders any value as a collapsed JSON block that expands on click,
+// keeping the row list dense while full detail stays one click away.
+function RawJSON({ value, label }: { value: unknown; label: string }) {
+  const text = JSON.stringify(value, null, 2)
+  return (
+    <Collapse
+      ghost
+      size="small"
+      items={[{ key: 'json', label: <Text type="secondary">{label}</Text>, children: <pre className="debug-json">{text}</pre> }]}
+    />
+  )
+}
+
+function StatusPills({ title, rows }: { title: string; rows: StatusCount[] }) {
+  return (
+    <Card size="small" title={title} variant="borderless">
+      {rows.length === 0 ? (
+        <Text type="secondary">暂无数据</Text>
+      ) : (
+        <Space size={20} wrap>
+          {rows.map((r) => (
+            <Text key={r.status}>{r.status}：<Text strong>{r.count}</Text></Text>
+          ))}
+        </Space>
+      )}
+    </Card>
+  )
+}
+
+function StatusTab() {
+  const { data, loading, error, refresh } = useDebugResource<DebugStatus>((signal) => getDebugStatus(signal))
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <Space>
+        <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
+        {data && <Text type="secondary">采样时间 {data.time}</Text>}
+      </Space>
+      {error && <Alert type="error" showIcon message="状态加载失败" description={error} />}
+      <Card size="small" title="依赖健康" variant="borderless" loading={loading}>
+        <Space size={24} wrap>
+          {data?.dependencies.map((dep) => (
+            <Badge
+              key={dep.name}
+              status={dep.status === 'ok' ? 'success' : 'error'}
+              text={<span>{dep.name}{dep.status !== 'ok' && dep.detail ? <Text type="secondary"> · {dep.detail}</Text> : null}</span>}
+            />
+          ))}
+        </Space>
+      </Card>
+      <Card size="small" title="流水线积压" variant="borderless" loading={loading}>
+        <Space size={32} wrap>
+          {data?.backlog.map((m) => (
+            <Statistic
+              key={m.key}
+              title={<span>{m.label}{m.detail ? <Text type="secondary" style={{ fontSize: 11 }}> · {m.detail}</Text> : null}</span>}
+              value={m.value < 0 ? '读取失败' : m.value}
+              valueStyle={{ fontSize: 20, color: m.value > 0 ? '#d46b08' : undefined }}
+            />
+          ))}
+        </Space>
+      </Card>
+      <StatusPills title="Todo 状态分布" rows={data?.todo_by_status ?? []} />
+      <StatusPills title="Task 状态分布" rows={data?.task_by_status ?? []} />
+      <Card size="small" title="数据表计数" variant="borderless" loading={loading}>
+        <Space size={24} wrap>
+          {data?.tables.map((t) => (
+            <Text key={t.table}>{t.table}：<Text strong>{t.count < 0 ? '读取失败' : t.count}</Text></Text>
+          ))}
+        </Space>
+      </Card>
+    </Space>
+  )
+}
+
+const moduleLabels: Record<string, string> = {
+  capture: 'M1 采集',
+  memory: 'M2 记忆',
+  extract: 'M3 抽取',
+  decide: 'M4 决策',
+  execute: 'M5 执行',
+}
+
+const moduleColumns: TableColumnsType<ModuleRun> = [
+  {
+    title: '模块', dataIndex: 'module', width: 130,
+    render: (v: string) => <Text strong>{moduleLabels[v] ?? v}</Text>,
+  },
+  {
+    title: '最近状态', dataIndex: 'status', width: 100,
+    render: (v: string) => <Tag color={v === 'ok' ? 'green' : v === 'unknown' ? 'default' : 'red'}>{v}</Tag>,
+  },
+  { title: 'job', dataIndex: 'job', width: 130, render: (v: string) => v || '—' },
+  { title: '最近时间', dataIndex: 'time', width: 200, render: (v: string) => <Text className="mono">{v || '—'}</Text> },
+  { title: '窗口内次数', dataIndex: 'runs', width: 100 },
+  {
+    title: '关键字段', key: 'fields',
+    render: (_, row) => {
+      const entries = Object.entries(row.fields).filter(([k]) => k !== 'status' && k !== 'job')
+      if (entries.length === 0) return <Text type="secondary">—</Text>
+      return <Space size={12} wrap>{entries.map(([k, v]) => <Text key={k} className="mono" type="secondary">{k}={v}</Text>)}</Space>
+    },
+  },
+]
+
+function ModulesTab() {
+  const { data, loading, error, refresh } = useDebugResource<{ items: ModuleRun[] }>((signal) => getDebugModules(signal))
+  const rows = data?.items ?? []
+
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space>
+        <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
+        <Text type="secondary">各 cron 模块最近一次运行（解析自日志尾部；cron 日志在 stderr 文件里）。</Text>
+      </Space>
+      {error && <Alert type="error" showIcon message="模块运行加载失败" description={error} />}
+      {rows.some((r) => r.last_error) && (
+        <Alert
+          type="warning" showIcon message="窗口内存在失败运行"
+          description={<Space direction="vertical" size={2}>{rows.filter((r) => r.last_error).map((r) => <Text key={r.module} className="mono">{r.last_error}</Text>)}</Space>}
+        />
+      )}
+      <Table<ModuleRun>
+        rowKey="module" size="small" columns={moduleColumns} dataSource={rows} loading={loading}
+        pagination={false}
+        expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开该模块最近一条日志与全部字段" />, rowExpandable: () => true }}
+        scroll={{ x: 900 }}
+        locale={{ emptyText: <Empty description="日志窗口内暂无 cron 运行记录（进程刚启动或日志被轮转）" /> }}
+      />
+    </Space>
+  )
+}
+
+const scanColumns: TableColumnsType<ScanRow> = [
+  { title: 'ID', dataIndex: 'id', width: 70 },
+  { title: '类型', dataIndex: 'scan_type', width: 130 },
+  {
+    title: '状态', dataIndex: 'status', width: 90,
+    render: (v: string) => <Tag color={v === 'ok' ? 'green' : 'red'}>{v}</Tag>,
+  },
+  { title: '拉取', dataIndex: 'fetched_count', width: 70 },
+  { title: '入库', dataIndex: 'inserted_count', width: 70 },
+  {
+    title: '错误', key: 'error', width: 260,
+    render: (_, row) => (row.error_type ? <Text type="danger">{row.error_type}: {row.error_message}</Text> : <Text type="secondary">—</Text>),
+  },
+  { title: '开始时间', dataIndex: 'started_at', width: 180 },
+  { title: '耗时(ms)', dataIndex: 'duration_ms', width: 90, render: (v: number | null) => v ?? '—' },
+]
+
+function ScansTab() {
+  const { data, loading, error, refresh } = useDebugResource<{ items: ScanRow[] }>((signal) => getDebugScans(50, signal))
+
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Button size="small" onClick={refresh} loading={loading} style={{ alignSelf: 'flex-start' }}>刷新</Button>
+      {error && <Alert type="error" showIcon message="采集流水加载失败" description={error} />}
+      <Table<ScanRow>
+        rowKey="id" size="small" columns={scanColumns} dataSource={data?.items ?? []} loading={loading}
+        pagination={{ pageSize: 20, showSizeChanger: false }}
+        expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开完整记录 JSON" />, rowExpandable: () => true }}
+        scroll={{ x: 960 }}
+      />
+    </Space>
+  )
+}
+
+const watermarkColumns: TableColumnsType<WatermarkRow> = [
+  { title: '会话', key: 'chat', width: 280, render: (_, row) => <Space direction="vertical" size={0}><Text>{row.group_name || '(未命名)'}</Text><Text type="secondary" className="mono">{row.chat_id}</Text></Space> },
+  { title: '最后消息 ID', dataIndex: 'last_message_id', width: 260, render: (v: string) => <Text className="mono">{v}</Text> },
+  { title: '最后抽取时间', dataIndex: 'last_scanned_at', width: 180 },
+  { title: '更新时间', dataIndex: 'updated_at', width: 180 },
+]
+
+function WatermarksTab() {
+  const { data, loading, error, refresh } = useDebugResource<{ items: WatermarkRow[] }>((signal) => getDebugWatermarks(signal))
+
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space>
+        <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
+        <Text type="secondary">每个会话的 M3 抽取游标（水位）。空表说明所有消息将被重新抽取。</Text>
+      </Space>
+      {error && <Alert type="error" showIcon message="水位加载失败" description={error} />}
+      <Table<WatermarkRow>
+        rowKey="chat_id" size="small" columns={watermarkColumns} dataSource={data?.items ?? []} loading={loading}
+        pagination={false} scroll={{ x: 900 }}
+      />
+    </Space>
+  )
+}
+
+// asString safely reads a stringy field off a loose debug record for the
+// summary column, tolerating missing/typed values.
+function asString(record: DebugRecord, key: string): string {
+  const v = record[key]
+  return v == null ? '' : String(v)
+}
+
+function RecentTab({ kind }: { kind: 'todos' | 'tasks' }) {
+  const loader = kind === 'todos' ? getDebugTodos : getDebugTasks
+  const { data, loading, error, refresh } = useDebugResource<{ items: DebugRecord[] }>((signal) => loader(20, signal), [kind])
+  const rows = data?.items ?? []
+
+  const columns: TableColumnsType<DebugRecord> = useMemo(() => [
+    { title: 'ID', dataIndex: 'ID', width: 70, render: (_, row) => asString(row, 'ID') },
+    { title: '标题', dataIndex: 'Title', ellipsis: true, render: (_, row) => asString(row, 'Title') || <Text type="secondary">—</Text> },
+    {
+      title: '状态', dataIndex: 'Status', width: 120,
+      render: (_, row) => { const s = asString(row, 'Status'); return s ? <Tag>{s}</Tag> : '—' },
+    },
+    { title: 'action', dataIndex: 'ActionType', width: 130, render: (_, row) => asString(row, 'ActionType') || '—' },
+  ], [])
+
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space>
+        <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
+        <Text type="secondary">最近 20 条{kind === 'todos' ? ' Todo（含 context_snapshot / slots / resolution）' : ' Task（含 background / plan / execution_result）'}，展开看完整 JSON。</Text>
+      </Space>
+      {error && <Alert type="error" showIcon message="明细加载失败" description={error} />}
+      <Table<DebugRecord>
+        rowKey={(row) => asString(row, 'ID')} size="small" columns={columns} dataSource={rows} loading={loading}
+        pagination={{ pageSize: 10, showSizeChanger: false }}
+        expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开完整 JSON" />, rowExpandable: () => true }}
+      />
+    </Space>
+  )
+}
+
+function LogsTab() {
+  const { data, loading, error, refresh } = useDebugResource<LogTail>((signal) => getDebugLogs(600, signal))
+  const [source, setSource] = useState<string>('all')
+
+  const sources = data?.sources ?? []
+  const filtered = (data?.lines ?? []).filter((l) => source === 'all' || l.source === source)
+  const rendered = filtered.map((l) => (sources.length > 1 ? `[${l.source}] ${l.text}` : l.text)).join('\n')
+
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space wrap>
+        <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
+        <Segmented
+          size="small"
+          value={source}
+          onChange={(v) => setSource(String(v))}
+          options={[{ label: '全部', value: 'all' }, ...sources.map((s) => ({ label: s, value: s }))]}
+        />
+        {data?.truncated && <Text type="secondary">（仅尾部）</Text>}
+      </Space>
+      {error && <Alert type="error" showIcon message="日志加载失败" description={error} />}
+      {data?.notes?.map((note) => <Alert key={note} type="info" showIcon message={note} />)}
+      <pre className="debug-log">{rendered || '(窗口内无日志)'}</pre>
+    </Space>
+  )
+}
+
+export default function Debug() {
+  return (
+    <Card variant="borderless">
+      <Paragraph type="secondary" style={{ marginTop: 0 }}>
+        运行时诊断：依赖健康/积压、模块运行、采集流水、抽取水位、最近 Todo/Task 与运行日志。JSON 默认折叠，点击展开。
+      </Paragraph>
+      <Tabs
+        items={[
+          { key: 'status', label: '健康与积压', children: <StatusTab /> },
+          { key: 'modules', label: '模块运行', children: <ModulesTab /> },
+          { key: 'scans', label: '采集流水', children: <ScansTab /> },
+          { key: 'watermarks', label: '抽取水位', children: <WatermarksTab /> },
+          { key: 'todos', label: '最近 Todo', children: <RecentTab kind="todos" /> },
+          { key: 'tasks', label: '最近 Task', children: <RecentTab kind="tasks" /> },
+          { key: 'logs', label: '运行日志', children: <LogsTab /> },
+        ]}
+      />
+    </Card>
+  )
+}

@@ -31,6 +31,8 @@ type Dependencies struct {
 	Overview            *insight.OverviewService
 	Digests             *insight.DigestService
 	DigestSummarizer    *insight.Summarizer // 可选：codex 未启用时为 nil，总结接口返回 503
+	Debug               *insight.DebugService
+	Logs                *insight.LogReader
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -77,6 +79,12 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Digests == nil {
 		return fmt.Errorf("api digest service dependency is nil")
 	}
+	if deps.Debug == nil {
+		return fmt.Errorf("api debug service dependency is nil")
+	}
+	if deps.Logs == nil {
+		return fmt.Errorf("api log reader dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
@@ -111,6 +119,14 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/overview", GetOverview(deps.Overview))
 	h.GET("/api/digests", GetDigests(deps.Digests))
 	h.POST("/api/digests/summarize", SummarizeDigest(deps.Digests, deps.DigestSummarizer))
+	// 调试面板：依赖健康/表计数/积压、模块运行、采集流水、抽取水位、最近 todo/task、运行日志尾读。
+	h.GET("/api/debug/status", GetDebugStatus(deps.Debug))
+	h.GET("/api/debug/modules", GetDebugModules(deps.Debug))
+	h.GET("/api/debug/scans", GetDebugScans(deps.Debug))
+	h.GET("/api/debug/watermarks", GetDebugWatermarks(deps.Debug))
+	h.GET("/api/debug/todos", GetDebugTodos(deps.Debug))
+	h.GET("/api/debug/tasks", GetDebugTasks(deps.Debug))
+	h.GET("/api/debug/logs", GetDebugLogs(deps.Logs))
 	// 手动维护的资源：可关联 人/项目/我，供后台管理与 M3 工具按需查询。
 	h.GET("/api/resources", ListResources(deps.Resources))
 	h.POST("/api/resources", CreateResource(deps.Resources))

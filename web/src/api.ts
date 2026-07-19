@@ -1,7 +1,13 @@
 import type {
   ConfirmationDetail,
+  DebugRecord,
+  DebugStatus,
   Digest,
   Group,
+  LogTail,
+  ModuleRun,
+  ScanRow,
+  WatermarkRow,
   GroupBackgroundInput,
   GroupList,
   GroupQuery,
@@ -192,6 +198,36 @@ export function getDigests(days = 7, signal?: AbortSignal): Promise<Digest> {
 
 export function summarizeDigest(days = 7): Promise<{ summary: string; days: number }> {
   return request<{ summary: string; days: number }>(`/api/digests/summarize?days=${days}`, { method: 'POST' })
+}
+
+// --- Debug panel ---
+
+export function getDebugStatus(signal?: AbortSignal): Promise<DebugStatus> {
+  return request<DebugStatus>('/api/debug/status', { signal })
+}
+
+export function getDebugModules(signal?: AbortSignal): Promise<{ items: ModuleRun[] }> {
+  return request<{ items: ModuleRun[] }>('/api/debug/modules', { signal })
+}
+
+export function getDebugScans(limit = 50, signal?: AbortSignal): Promise<{ items: ScanRow[] }> {
+  return request<{ items: ScanRow[] }>(`/api/debug/scans?limit=${limit}`, { signal })
+}
+
+export function getDebugTodos(limit = 20, signal?: AbortSignal): Promise<{ items: DebugRecord[] }> {
+  return request<{ items: DebugRecord[] }>(`/api/debug/todos?limit=${limit}`, { signal })
+}
+
+export function getDebugTasks(limit = 20, signal?: AbortSignal): Promise<{ items: DebugRecord[] }> {
+  return request<{ items: DebugRecord[] }>(`/api/debug/tasks?limit=${limit}`, { signal })
+}
+
+export function getDebugWatermarks(signal?: AbortSignal): Promise<{ items: WatermarkRow[] }> {
+  return request<{ items: WatermarkRow[] }>('/api/debug/watermarks', { signal })
+}
+
+export function getDebugLogs(lines = 300, signal?: AbortSignal): Promise<LogTail> {
+  return request<LogTail>(`/api/debug/logs?lines=${lines}`, { signal })
 }
 
 export function listResources(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Resource>> {

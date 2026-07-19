@@ -259,6 +259,14 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize digest summarizer failed: %v", err)
 	}
+	logReader, err := insight.NewLogReader(cfg.Server.LogFiles)
+	if err != nil {
+		hlog.Fatalf("initialize log reader failed: %v", err)
+	}
+	debugService, err := insight.NewDebugService(db, cfg.Mem0.BaseURL, cfg.Mem0.QdrantHost, 0, logReader)
+	if err != nil {
+		hlog.Fatalf("initialize debug service failed: %v", err)
+	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
 	if cfg.Extract.Enabled || *extractOnce {
@@ -470,6 +478,7 @@ func main() {
 			agentExecutor,
 			cfg.Execute.Schedule,
 			cfg.Execute.BatchLimit,
+			cfg.Execute.Concurrency,
 			log.New(os.Stderr, "execute-cron ", log.LstdFlags|log.Lmicroseconds),
 		)
 		if err != nil {
@@ -500,6 +509,7 @@ func main() {
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		Overview: overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
+		Debug: debugService, Logs: logReader,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}

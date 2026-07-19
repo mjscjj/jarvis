@@ -47,6 +47,10 @@ body { margin: 0; min-width: 1080px; min-height: 100vh; }
 blockquote { margin: 10px 0 0; padding: 14px 18px; border-left: 3px solid #89a497; background: #f5f8f5; color: #30493d; }
 pre { margin: 10px 0 0; padding: 16px; overflow: auto; border-radius: 8px; background: #17241e; color: #d9e8df; font-size: 12px; line-height: 1.65; }
 
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.debug-json { margin: 0; max-height: 360px; }
+.debug-log { max-height: 520px; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+
 @media (max-width: 1180px) {
   .result-count { margin-left: 0; }
 }

@@ -39,6 +39,110 @@ func GetDigests(service *insight.DigestService) app.HandlerFunc {
 	}
 }
 
+// GetDebugStatus serves the debug panel health sub-tab.
+func GetDebugStatus(service *insight.DebugService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": service.Status(ctx)})
+	}
+}
+
+// GetDebugScans serves recent capture scan records.
+func GetDebugScans(service *insight.DebugService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		limit, err := positiveQueryInt(c.Query("limit"), 50, "limit")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40020, err)
+			return
+		}
+		rows, err := service.Scans(ctx, limit)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50020, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": rows}})
+	}
+}
+
+// GetDebugWatermarks serves per-chat extraction cursors.
+func GetDebugWatermarks(service *insight.DebugService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		rows, err := service.Watermarks(ctx)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50021, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": rows}})
+	}
+}
+
+// GetDebugModules serves per-module latest cron run parsed from logs.
+func GetDebugModules(service *insight.DebugService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		lines, err := positiveQueryInt(c.Query("lines"), 1000, "lines")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40023, err)
+			return
+		}
+		rows, err := service.Modules(lines)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50023, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": rows}})
+	}
+}
+
+// GetDebugTodos serves the newest todos as full rows for JSON inspection.
+func GetDebugTodos(service *insight.DebugService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		limit, err := positiveQueryInt(c.Query("limit"), 20, "limit")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40024, err)
+			return
+		}
+		rows, err := service.RecentTodos(ctx, limit)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50024, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": rows}})
+	}
+}
+
+// GetDebugTasks serves the newest tasks as full rows for JSON inspection.
+func GetDebugTasks(service *insight.DebugService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		limit, err := positiveQueryInt(c.Query("limit"), 20, "limit")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40025, err)
+			return
+		}
+		rows, err := service.RecentTasks(ctx, limit)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50025, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": rows}})
+	}
+}
+
+// GetDebugLogs tails the server log file.
+func GetDebugLogs(reader *insight.LogReader) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		lines, err := positiveQueryInt(c.Query("lines"), 300, "lines")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		tail, err := reader.Tail(lines)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50022, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": tail})
+	}
+}
+
 // SummarizeDigest turns the aggregated digest into prose on demand via codex.
 // Returns 503 when the summarizer is not configured (codex disabled).
 func SummarizeDigest(service *insight.DigestService, summarizer *insight.Summarizer) app.HandlerFunc {
