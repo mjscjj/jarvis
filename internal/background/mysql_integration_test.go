@@ -1,0 +1,204 @@
+package background
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"testing"
+	"time"
+
+	"jarvis/internal/config"
+	"jarvis/internal/domain"
+	"jarvis/internal/store"
+
+	"strconv"
+)
+
+// TestBackgroundCRUDMySQL exercises Project/Person CRUD and Group background
+// patching against real MySQL. It is opt-in and self-cleaning so it can run
+// repeatedly against a dedicated test database:
+//
+//	JARVIS_BACKGROUND_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/jarvis_bg_test?parseTime=true' \
+//	  go test ./internal/background -run TestBackgroundCRUDMySQL
+func TestBackgroundCRUDMySQL(t *testing.T) {
+	dsn := os.Getenv("JARVIS_BACKGROUND_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("JARVIS_BACKGROUND_TEST_MYSQL_DSN is required for background integration test")
+	}
+	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
+		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
+	})
+	if err != nil {
+		t.Fatalf("OpenMySQL() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(db); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	ctx := context.Background()
+	projects, err := NewProjectService(db)
+	if err != nil {
+		t.Fatalf("NewProjectService() error = %v", err)
+	}
+	persons, err := NewPersonService(db)
+	if err != nil {
+		t.Fatalf("NewPersonService() error = %v", err)
+	}
+	groups, err := NewGroupBackgroundService(db)
+	if err != nil {
+		t.Fatalf("NewGroupBackgroundService() error = %v", err)
+	}
+
+	suffix := time.Now().UnixNano()
+
+	t.Run("project lifecycle", func(t *testing.T) {
+		created, err := projects.Create(ctx, ProjectInput{
+			Name: "IntegrationProject", Role: "owner", Status: "active", Priority: 2,
+			Repos: json.RawMessage(`["repo-a"]`),
+		})
+		if err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		if created.ID == 0 {
+			t.Fatal("Create() returned zero ID")
+		}
+		t.Cleanup(func() { _ = projects.Delete(ctx, created.ID) })
+
+		got, err := projects.Get(ctx, created.ID)
+		if err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+		if got.Name != "IntegrationProject" || got.Priority != 2 {
+			t.Fatalf("Get() = %+v, unexpected", got)
+		}
+
+		updated, err := projects.Update(ctx, created.ID, ProjectInput{
+			Name: "IntegrationProjectV2", Role: "participant", Status: "paused", Priority: 4,
+		})
+		if err != nil {
+			t.Fatalf("Update() error = %v", err)
+		}
+		if updated.Name != "IntegrationProjectV2" || updated.Status != "paused" || updated.Priority != 4 {
+			t.Fatalf("Update() = %+v, unexpected", updated)
+		}
+		// JSON column cleared on update when omitted.
+		if len(updated.Repos) != 0 && string(updated.Repos) != "null" {
+			t.Fatalf("Update() repos = %q, want cleared", string(updated.Repos))
+		}
+
+		list, err := projects.List(ctx, ListFilter{Page: 1, PageSize: 50})
+		if err != nil {
+			t.Fatalf("List() error = %v", err)
+		}
+		if list.Total < 1 {
+			t.Fatalf("List() total = %d, want >= 1", list.Total)
+		}
+
+		if err := projects.Delete(ctx, created.ID); err != nil {
+			t.Fatalf("Delete() error = %v", err)
+		}
+		if _, err := projects.Get(ctx, created.ID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("Get() after delete error = %v, want ErrNotFound", err)
+		}
+		if err := projects.Delete(ctx, created.ID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("Delete() twice error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("person lifecycle", func(t *testing.T) {
+		openID := "ou_integration_" + itoa(suffix)
+		created, err := persons.Create(ctx, PersonInput{
+			OpenID: openID, Name: "IntegrationLeader", Role: "leader", PriorityWeight: 0.95,
+		})
+		if err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		t.Cleanup(func() { _ = persons.Delete(ctx, created.ID) })
+		if !created.IsActive {
+			t.Fatal("Create() default IsActive = false, want true")
+		}
+
+		inactive := false
+		updated, err := persons.Update(ctx, created.ID, PersonInput{
+			OpenID: openID, Name: "IntegrationLeader", Role: "key", PriorityWeight: 0.5, IsActive: &inactive,
+		})
+		if err != nil {
+			t.Fatalf("Update() error = %v", err)
+		}
+		if updated.Role != "key" || updated.IsActive {
+			t.Fatalf("Update() = %+v, unexpected", updated)
+		}
+
+		if err := persons.Delete(ctx, created.ID); err != nil {
+			t.Fatalf("Delete() error = %v", err)
+		}
+	})
+
+	t.Run("group background patch only", func(t *testing.T) {
+		// A group is created by capture; here we insert one directly to represent
+		// a discovered chat, then verify UpdateBackground touches only curated fields.
+		chatID := "oc_integration_" + itoa(suffix)
+		discoveredName := "DiscoveredChatName"
+		seed := domain.Group{
+			ChatID: chatID, ChatMode: "group", Name: &discoveredName, Tier: "cold",
+		}
+		if err := db.WithContext(ctx).Create(&seed).Error; err != nil {
+			t.Fatalf("seed group error = %v", err)
+		}
+		t.Cleanup(func() { db.Unscoped().Delete(&domain.Group{}, seed.ID) })
+
+		project, err := projects.Create(ctx, ProjectInput{
+			Name: "GroupOwnerProject", Role: "owner", Status: "active", Priority: 3,
+		})
+		if err != nil {
+			t.Fatalf("Create() owner project error = %v", err)
+		}
+		t.Cleanup(func() { _ = projects.Delete(ctx, project.ID) })
+
+		updated, err := groups.UpdateBackground(ctx, seed.ID, GroupBackgroundInput{
+			ProjectID: &project.ID, RelatedGroup: true, Pinned: true, IncludeInMemory: true, IsKeyGroup: true,
+		})
+		if err != nil {
+			t.Fatalf("UpdateBackground() error = %v", err)
+		}
+		if updated.ProjectID == nil || *updated.ProjectID != project.ID {
+			t.Fatalf("UpdateBackground() project_id = %v, want %d", updated.ProjectID, project.ID)
+		}
+		if !updated.RelatedGroup || !updated.IsKeyGroup || !updated.Pinned {
+			t.Fatalf("UpdateBackground() curated flags = %+v, unexpected", updated)
+		}
+		// Capture-owned columns must be untouched.
+		if updated.ChatID != chatID || updated.Name == nil || *updated.Name != discoveredName || updated.Tier != "cold" {
+			t.Fatalf("UpdateBackground() mutated capture columns: chat_id=%q name=%v tier=%q", updated.ChatID, updated.Name, updated.Tier)
+		}
+
+		// Non-existent group id → ErrNotFound.
+		if _, err := groups.UpdateBackground(ctx, 1<<62, GroupBackgroundInput{}); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("UpdateBackground() missing id error = %v, want ErrNotFound", err)
+		}
+		// Non-existent project_id → ErrInvalidInput.
+		bogus := uint64(1 << 62)
+		if _, err := groups.UpdateBackground(ctx, seed.ID, GroupBackgroundInput{ProjectID: &bogus}); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("UpdateBackground() bogus project_id error = %v, want ErrInvalidInput", err)
+		}
+	})
+
+	t.Run("validation errors are ErrInvalidInput", func(t *testing.T) {
+		if _, err := projects.Create(ctx, ProjectInput{Name: "", Role: "owner", Status: "active", Priority: 1}); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("Create() blank name error = %v, want ErrInvalidInput", err)
+		}
+		if _, err := persons.Create(ctx, PersonInput{OpenID: "x", Name: "y", Role: "bad", PriorityWeight: 0.5}); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("Create() bad role error = %v, want ErrInvalidInput", err)
+		}
+	})
+}
+
+func itoa(v int64) string {
+	return strconv.FormatInt(v, 10)
+}

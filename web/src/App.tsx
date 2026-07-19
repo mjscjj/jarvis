@@ -19,6 +19,7 @@ import type { TableColumnsType } from 'antd'
 import { getTodo, listTodos } from './api'
 import Confirmations from './Confirmations'
 import Tasks from './Tasks'
+import Background from './Background'
 import type { ActionType, Todo, TodoQuery, TodoStatus } from './types'
 
 const { Header, Content } = Layout
@@ -241,6 +242,7 @@ function App() {
             },
             { key: 'confirmations', label: '待确认', children: <Confirmations /> },
             { key: 'tasks', label: 'Task 执行', children: <Tasks /> },
+            { key: 'background', label: '背景设置', children: <Background /> },
           ]}
         />
       </Content>

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"jarvis/internal/api"
+	"jarvis/internal/background"
 	"jarvis/internal/capture"
 	"jarvis/internal/config"
 	"jarvis/internal/decide"
@@ -170,6 +171,18 @@ func main() {
 	taskService, err := execute.NewStore(db)
 	if err != nil {
 		hlog.Fatalf("initialize MVP Task service failed: %v", err)
+	}
+	projectService, err := background.NewProjectService(db)
+	if err != nil {
+		hlog.Fatalf("initialize project service failed: %v", err)
+	}
+	personService, err := background.NewPersonService(db)
+	if err != nil {
+		hlog.Fatalf("initialize person service failed: %v", err)
+	}
+	groupService, err := background.NewGroupBackgroundService(db)
+	if err != nil {
+		hlog.Fatalf("initialize group background service failed: %v", err)
 	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
@@ -349,7 +362,8 @@ func main() {
 	)
 	if err := api.Register(h, api.Dependencies{
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
-		Tasks: taskService,
+		Tasks:    taskService,
+		Projects: projectService, Persons: personService, Groups: groupService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}

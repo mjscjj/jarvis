@@ -4,6 +4,7 @@ package api
 import (
 	"fmt"
 
+	"jarvis/internal/background"
 	"jarvis/internal/decide"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -19,6 +20,9 @@ type Dependencies struct {
 	Confirmations       decide.ConfirmationService
 	ConfirmationDetails decide.ConfirmationDetailReader
 	Tasks               execute.TaskService
+	Projects            *background.ProjectService
+	Persons             *background.PersonService
+	Groups              *background.GroupBackgroundService
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -41,6 +45,15 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Tasks == nil {
 		return fmt.Errorf("api Task service dependency is nil")
 	}
+	if deps.Projects == nil {
+		return fmt.Errorf("api project service dependency is nil")
+	}
+	if deps.Persons == nil {
+		return fmt.Errorf("api person service dependency is nil")
+	}
+	if deps.Groups == nil {
+		return fmt.Errorf("api group service dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
@@ -50,5 +63,18 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/confirmations/:todo_id/reject", RejectConfirmation(deps.Confirmations))
 	h.GET("/api/tasks", ListTasks(deps.Tasks))
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
+	// M1 背景管理：Project/Person 全量 CRUD；Group 只可改人工背景字段（采集字段归 M2）。
+	h.GET("/api/projects", ListProjects(deps.Projects))
+	h.POST("/api/projects", CreateProject(deps.Projects))
+	h.GET("/api/projects/:project_id", GetProject(deps.Projects))
+	h.PUT("/api/projects/:project_id", UpdateProject(deps.Projects))
+	h.DELETE("/api/projects/:project_id", DeleteProject(deps.Projects))
+	h.GET("/api/persons", ListPersons(deps.Persons))
+	h.POST("/api/persons", CreatePerson(deps.Persons))
+	h.GET("/api/persons/:person_id", GetPerson(deps.Persons))
+	h.PUT("/api/persons/:person_id", UpdatePerson(deps.Persons))
+	h.DELETE("/api/persons/:person_id", DeletePerson(deps.Persons))
+	h.GET("/api/groups", ListGroups(deps.Groups))
+	h.PUT("/api/groups/:group_id", UpdateGroupBackground(deps.Groups))
 	return nil
 }

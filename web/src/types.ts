@@ -127,3 +127,105 @@ export interface TaskList {
   page: number
   page_size: number
 }
+
+export type ProjectRole = 'owner' | 'participant'
+export type ProjectStatus = 'planning' | 'active' | 'paused' | 'archived' | 'done'
+export type PersonRole = 'leader' | 'key' | 'colleague' | 'other'
+
+export interface Project {
+  id: number
+  code: string | null
+  name: string
+  role: ProjectRole
+  status: ProjectStatus
+  priority: number
+  description: string | null
+  repos: unknown
+  tech_stack: unknown
+  key_decisions: unknown
+  timeline: unknown
+  notes: string | null
+  mem0_synced_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Person {
+  id: number
+  open_id: string
+  union_id: string | null
+  feishu_user_id: string | null
+  name: string
+  en_name: string | null
+  avatar_url: string | null
+  department: string | null
+  title: string | null
+  role: PersonRole
+  priority_weight: number
+  relation: string | null
+  comm_style: string | null
+  p2p_chat_id: string | null
+  notes: string | null
+  is_active: boolean
+  mem0_synced_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Group {
+  id: number
+  chat_id: string
+  chat_mode: string
+  name: string | null
+  description: string | null
+  owner_open_id: string | null
+  external: boolean
+  tenant_key: string | null
+  project_id: number | null
+  related_group: boolean
+  tier: string
+  pinned: boolean
+  include_in_memory: boolean
+  is_key_group: boolean
+  last_active_at: number | null
+  created_at: string
+  updated_at: string
+  project: Project | null
+}
+
+export interface Paged<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ProjectInput {
+  code?: string | null
+  name: string
+  role: ProjectRole
+  status: ProjectStatus
+  priority: number
+  description?: string | null
+  notes?: string | null
+}
+
+export interface PersonInput {
+  open_id: string
+  name: string
+  role: PersonRole
+  priority_weight: number
+  department?: string | null
+  title?: string | null
+  relation?: string | null
+  notes?: string | null
+  is_active?: boolean
+}
+
+export interface GroupBackgroundInput {
+  project_id: number | null
+  related_group: boolean
+  pinned: boolean
+  include_in_memory: boolean
+  is_key_group: boolean
+}

@@ -1,4 +1,19 @@
-import type { ConfirmationDetail, Task, TaskList, TaskStatus, Todo, TodoList, TodoQuery } from './types'
+import type {
+  ConfirmationDetail,
+  Group,
+  GroupBackgroundInput,
+  Paged,
+  Person,
+  PersonInput,
+  Project,
+  ProjectInput,
+  Task,
+  TaskList,
+  TaskStatus,
+  Todo,
+  TodoList,
+  TodoQuery,
+} from './types'
 
 interface APIResponse<T> {
   code: number
@@ -8,7 +23,7 @@ interface APIResponse<T> {
 
 interface RequestOptions {
   signal?: AbortSignal
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   body?: unknown
 }
 
@@ -70,4 +85,46 @@ export function finishTask(id: number, expectedVersion: number, status: 'done' |
   return request<Task>(`/api/tasks/${id}/finish`, {
     method: 'POST', body: { expected_version: expectedVersion, status, result },
   })
+}
+
+// --- M1 background management ---
+
+export function listProjects(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Project>> {
+  return request<Paged<Project>>(`/api/projects?page=${page}&page_size=${pageSize}`, { signal })
+}
+
+export function createProject(body: ProjectInput): Promise<Project> {
+  return request<Project>('/api/projects', { method: 'POST', body })
+}
+
+export function updateProject(id: number, body: ProjectInput): Promise<Project> {
+  return request<Project>(`/api/projects/${id}`, { method: 'PUT', body })
+}
+
+export function deleteProject(id: number): Promise<{ id: number; deleted: boolean }> {
+  return request(`/api/projects/${id}`, { method: 'DELETE' })
+}
+
+export function listPersons(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Person>> {
+  return request<Paged<Person>>(`/api/persons?page=${page}&page_size=${pageSize}`, { signal })
+}
+
+export function createPerson(body: PersonInput): Promise<Person> {
+  return request<Person>('/api/persons', { method: 'POST', body })
+}
+
+export function updatePerson(id: number, body: PersonInput): Promise<Person> {
+  return request<Person>(`/api/persons/${id}`, { method: 'PUT', body })
+}
+
+export function deletePerson(id: number): Promise<{ id: number; deleted: boolean }> {
+  return request(`/api/persons/${id}`, { method: 'DELETE' })
+}
+
+export function listGroups(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Group>> {
+  return request<Paged<Group>>(`/api/groups?page=${page}&page_size=${pageSize}`, { signal })
+}
+
+export function updateGroupBackground(id: number, body: GroupBackgroundInput): Promise<Group> {
+  return request<Group>(`/api/groups/${id}`, { method: 'PUT', body })
 }
