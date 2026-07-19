@@ -14,7 +14,8 @@ type PromptOptions struct {
 	MaxChars        int
 }
 
-const systemPromptTemplate = `你是「个人 Jarvis 管家」的行动线索抽取器，服务对象是研发工程师 chujiejie.1（open_id=%s）。
+const systemPromptTemplate = `你是「个人 Jarvis 管家」的行动线索抽取器，服务对象（principal，也就是「我」）的 open_id=%s。
+principal 的详细背景见用户消息「# 我的背景(principal)」区块，请以该区块为准判断「谁是我、我负责什么、我的直属 leader 是谁」。
 你的唯一任务：从给定飞书会话中抽取 principal 需要执行、或其助手可代其执行的真实、可落地行动线索。输出必须严格符合 JSON schema；你不做最终确认。
 
 必须遵守：
@@ -75,6 +76,12 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]a
 	}
 }
 
+// salientQueryMaxMessages caps how many of the most recent extractable [new]
+// messages feed the memory-retrieval query. Concatenating the whole unit makes
+// the query long and noisy, hurting recall; the latest messages carry the
+// actionable intent, so only the last N are used.
+const salientQueryMaxMessages = 20
+
 func SalientQuery(unit ConversationUnit) (string, error) {
 	parts := make([]string, 0)
 	for _, message := range unit.Messages {
@@ -88,13 +95,18 @@ func SalientQuery(unit ConversationUnit) (string, error) {
 	if len(parts) == 0 {
 		return "", fmt.Errorf("extract conversation unit %q has no extractable new messages", unit.Key)
 	}
+	if len(parts) > salientQueryMaxMessages {
+		parts = parts[len(parts)-salientQueryMaxMessages:]
+	}
 	return strings.Join(parts, "\n"), nil
 }
 
 func renderUserPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]any, now time.Time, location *time.Location) string {
 	sections := []string{
 		"# 当前时间\n" + now.Format(time.RFC3339) + "（时区 " + location.String() + "）",
-		"# 项目背景\n" + renderProject(batch.Project),
+		"# 我的背景(principal)\n" + renderPrincipal(batch.Principal),
+		"# 当前会话所属项目（详细）\n" + renderProject(batch.Project),
+		"# 我的其他项目（精简，仅作归属参考）\n" + renderOtherProjects(batch.OtherProjects),
 		"# 来源会话（Group）\n" + fmt.Sprintf("chat_id=%s name=%q is_key_group=%t project_id=%s", batch.Group.ChatID, batch.Group.Name, batch.Group.IsKeyGroup, uint64PointerText(batch.Group.ProjectID)),
 		"# 参与者\n" + renderParticipants(unit.Participants),
 		"# 相关资源\n" + renderResources(unit.Resources),
@@ -103,6 +115,45 @@ func renderUserPrompt(batch ChatBatch, unit ConversationUnit, memories []map[str
 		"# 会话记录\n" + renderConversation(unit.Messages, location),
 	}
 	return strings.Join(sections, "\n\n")
+}
+
+func renderPrincipal(principal *PrincipalContext) string {
+	if principal == nil {
+		return "(未设置——请在后台「我」中完善决策主体背景)"
+	}
+	parts := []string{fmt.Sprintf("open_id=%s name=%q", principal.OpenID, principal.Name)}
+	if principal.Department != "" {
+		parts = append(parts, fmt.Sprintf("department=%q", principal.Department))
+	}
+	if principal.Title != "" {
+		parts = append(parts, fmt.Sprintf("title=%q", principal.Title))
+	}
+	if principal.LeaderOpenID != "" {
+		parts = append(parts, fmt.Sprintf("leader_open_id=%s leader_name=%q", principal.LeaderOpenID, principal.LeaderName))
+	}
+	line := strings.Join(parts, " ")
+	if principal.Background != "" {
+		line += "\n负责方向/背景：" + principal.Background
+	}
+	if principal.Preferences != "" {
+		line += "\n喜好/工作偏好：" + principal.Preferences
+	}
+	return line
+}
+
+func renderOtherProjects(projects []OtherProjectContext) string {
+	if len(projects) == 0 {
+		return "(none)"
+	}
+	lines := make([]string, len(projects))
+	for i, project := range projects {
+		line := fmt.Sprintf("id=%d code=%q name=%q role=%s", project.ID, project.Code, project.Name, project.Role)
+		if project.Description != "" {
+			line += fmt.Sprintf(" desc=%q", project.Description)
+		}
+		lines[i] = line
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderProject(project *ProjectContext) string {

@@ -212,6 +212,10 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize person resolve service failed: %v", err)
 	}
+	profileService, err := background.NewProfileService(db, cfg.Extract.PrincipalOpenID)
+	if err != nil {
+		hlog.Fatalf("initialize principal profile service failed: %v", err)
+	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
 	if cfg.Extract.Enabled || *extractOnce {
@@ -250,7 +254,7 @@ func main() {
 			hlog.Fatalf("ensure Todo semantic index failed: %v", err)
 		}
 		cancelEnsure()
-		pipelineStore, err := extract.NewPipelineStore(db, location, semanticIndex)
+		pipelineStore, err := extract.NewPipelineStore(db, location, semanticIndex, cfg.Extract.PrincipalOpenID)
 		if err != nil {
 			hlog.Fatalf("initialize extraction pipeline store failed: %v", err)
 		}
@@ -390,7 +394,7 @@ func main() {
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
 		Tasks:    taskService,
 		Projects: projectService, Persons: personService, Groups: groupService,
-		Resolve: resolveService,
+		Resolve: resolveService, Profile: profileService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}

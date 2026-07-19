@@ -193,6 +193,28 @@ type ScanRecord struct {
 
 func (ScanRecord) TableName() string { return "scan_record" }
 
+// PrincipalProfile is the single decision-maker ("me") whose action clues M3
+// extracts. It is a single-row table keyed by the owner's Feishu open_id; the
+// background/preferences here are fed into the extraction prompt so the model
+// knows who the principal is, what they own, and who their leader is. Kept
+// separate from Person because its semantics (self-profile, preferences, direct
+// leader) differ from a chat participant.
+type PrincipalProfile struct {
+	ID             uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	OpenID         string    `gorm:"column:open_id;type:varchar(64);not null;uniqueIndex:uk_principal_open_id"`
+	Name           string    `gorm:"column:name;type:varchar(128);not null"`
+	Department     *string   `gorm:"column:department;type:varchar(255)"`
+	Title          *string   `gorm:"column:title;type:varchar(128)"`
+	Background     *string   `gorm:"column:background;type:text"`     // 我是谁、负责什么方向
+	Preferences    *string   `gorm:"column:preferences;type:text"`    // 喜好、工作/沟通偏好
+	LeaderOpenID   *string   `gorm:"column:leader_open_id;type:varchar(64)"`
+	LeaderName     *string   `gorm:"column:leader_name;type:varchar(128)"`
+	CreatedAt      time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+}
+
+func (PrincipalProfile) TableName() string { return "principal_profile" }
+
 // CoreModels returns the canonical dependency-ordered migration list.
 func CoreModels() []any {
 	return []any{
@@ -203,5 +225,6 @@ func CoreModels() []any {
 		&Task{},
 		&Resource{},
 		&ScanRecord{},
+		&PrincipalProfile{},
 	}
 }

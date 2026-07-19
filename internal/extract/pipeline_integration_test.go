@@ -135,7 +135,7 @@ func TestPipelineLive(t *testing.T) {
 		t.Fatalf("semanticIndex.Ensure() error = %v", err)
 	}
 	cancelEnsure()
-	pipelineStore, err := extract.NewPipelineStore(tx, location, semanticIndex)
+	pipelineStore, err := extract.NewPipelineStore(tx, location, semanticIndex, "ou_test_principal")
 	if err != nil {
 		t.Fatalf("extract.NewPipelineStore() error = %v", err)
 	}
@@ -200,7 +200,7 @@ func TestPersistSemanticMatchLive(t *testing.T) {
 		t.Fatalf("create fixture group: %v", err)
 	}
 	sink := &recordingSemanticSink{}
-	pipelineStore, err := extract.NewPipelineStore(tx, time.UTC, sink)
+	pipelineStore, err := extract.NewPipelineStore(tx, time.UTC, sink, "ou_test_principal")
 	if err != nil {
 		t.Fatalf("extract.NewPipelineStore() error = %v", err)
 	}
@@ -254,7 +254,7 @@ func TestPersistSemanticFailureRollsBackLive(t *testing.T) {
 	if err := tx.Create(&group).Error; err != nil {
 		t.Fatalf("create fixture group: %v", err)
 	}
-	pipelineStore, err := extract.NewPipelineStore(tx, time.UTC, &recordingSemanticSink{err: errors.New("qdrant unavailable")})
+	pipelineStore, err := extract.NewPipelineStore(tx, time.UTC, &recordingSemanticSink{err: errors.New("qdrant unavailable")}, "ou_test_principal")
 	if err != nil {
 		t.Fatalf("extract.NewPipelineStore() error = %v", err)
 	}

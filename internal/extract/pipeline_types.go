@@ -36,6 +36,33 @@ type ProjectContext struct {
 	KeyDecisions []byte
 }
 
+// OtherProjectContext is the concise projection of a project the group is NOT
+// bound to. It gives the model a lightweight map of the principal's other work
+// (so it can attribute a clue to the right area) without the full detail of the
+// bound project.
+type OtherProjectContext struct {
+	ID          uint64
+	Code        string
+	Name        string
+	Role        string
+	Description string
+}
+
+// PrincipalContext is the decision-maker ("me") background fed to the model so
+// it knows who the principal is, what they own, and who their direct leader is —
+// which is decisive for reading a leader's soft-worded assignment as a real
+// action clue.
+type PrincipalContext struct {
+	OpenID       string
+	Name         string
+	Department   string
+	Title        string
+	Background   string
+	Preferences  string
+	LeaderOpenID string
+	LeaderName   string
+}
+
 type MessageContext struct {
 	DatabaseID   uint64
 	MessageID    string
@@ -87,11 +114,13 @@ type ConversationUnit struct {
 }
 
 type ChatBatch struct {
-	Group     GroupContext
-	Project   *ProjectContext
-	OpenTodos []OpenTodoContext
-	Units     []ConversationUnit
-	LastNew   MessageContext
+	Group         GroupContext
+	Project       *ProjectContext
+	OtherProjects []OtherProjectContext
+	Principal     *PrincipalContext
+	OpenTodos     []OpenTodoContext
+	Units         []ConversationUnit
+	LastNew       MessageContext
 }
 
 type UnitExtraction struct {

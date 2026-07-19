@@ -24,6 +24,7 @@ type Dependencies struct {
 	Persons             *background.PersonService
 	Groups              *background.GroupBackgroundService
 	Resolve             *background.ResolveService
+	Profile             *background.ProfileService
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -58,6 +59,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Resolve == nil {
 		return fmt.Errorf("api resolve service dependency is nil")
 	}
+	if deps.Profile == nil {
+		return fmt.Errorf("api profile service dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
@@ -81,5 +85,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.DELETE("/api/persons/:person_id", DeletePerson(deps.Persons))
 	h.GET("/api/groups", ListGroups(deps.Groups))
 	h.PUT("/api/groups/:group_id", UpdateGroupBackground(deps.Groups))
+	// 决策主体（“我”）：单例 profile，读取 + upsert。
+	h.GET("/api/profile", GetProfile(deps.Profile))
+	h.PUT("/api/profile", UpdateProfile(deps.Profile))
 	return nil
 }

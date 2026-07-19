@@ -264,6 +264,35 @@ func UpdateGroupBackground(svc *background.GroupBackgroundService) app.HandlerFu
 	}
 }
 
+// --- Principal profile handlers ---
+
+func GetProfile(svc *background.ProfileService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		result, err := svc.Get(ctx)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func UpdateProfile(svc *background.ProfileService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var in background.ProfileInput
+		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
+		result, err := svc.Upsert(ctx, in)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 // --- shared helpers ---
 
 func backgroundListFilter(c *app.RequestContext) (background.ListFilter, error) {

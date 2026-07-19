@@ -16,16 +16,17 @@ import (
 
 // PipelineStore owns M3's read model and transactional write boundary.
 type PipelineStore struct {
-	db       *gorm.DB
-	location *time.Location
-	semantic semanticSink
+	db              *gorm.DB
+	location        *time.Location
+	semantic        semanticSink
+	principalOpenID string
 }
 
 type semanticSink interface {
 	Upsert(context.Context, []semantic.Record) error
 }
 
-func NewPipelineStore(db *gorm.DB, location *time.Location, sink semanticSink) (*PipelineStore, error) {
+func NewPipelineStore(db *gorm.DB, location *time.Location, sink semanticSink, principalOpenID string) (*PipelineStore, error) {
 	if db == nil {
 		return nil, fmt.Errorf("extract pipeline store db is nil")
 	}
@@ -35,7 +36,10 @@ func NewPipelineStore(db *gorm.DB, location *time.Location, sink semanticSink) (
 	if sink == nil {
 		return nil, fmt.Errorf("extract pipeline semantic sink is nil")
 	}
-	return &PipelineStore{db: db, location: location, semantic: sink}, nil
+	if strings.TrimSpace(principalOpenID) == "" {
+		return nil, fmt.Errorf("extract pipeline principal open_id is empty")
+	}
+	return &PipelineStore{db: db, location: location, semantic: sink, principalOpenID: principalOpenID}, nil
 }
 
 func (s *PipelineStore) LoadPendingChats(ctx context.Context, opts LoadOptions) ([]ChatBatch, error) {
@@ -48,6 +52,17 @@ func (s *PipelineStore) LoadPendingChats(ctx context.Context, opts LoadOptions) 
 		Order("is_key_group DESC, pinned DESC, COALESCE(last_active_at, 0) DESC, id ASC").
 		Find(&groups).Error; err != nil {
 		return nil, fmt.Errorf("list related groups for extraction: %w", err)
+	}
+
+	// Principal profile and the project map are global (not per-group), so load
+	// them once and share across every batch built in this pass.
+	principal, err := s.loadPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	allProjects, err := s.loadProjectSummaries(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	remaining := opts.BatchMessages
@@ -67,10 +82,76 @@ func (s *PipelineStore) LoadPendingChats(ctx context.Context, opts LoadOptions) 
 		if err != nil {
 			return nil, fmt.Errorf("build extraction batch chat_id=%s: %w", groups[i].ChatID, err)
 		}
+		batch.Principal = principal
+		// Other projects = every project except the one this group is bound to,
+		// rendered concisely; the bound project stays in batch.Project (detailed).
+		batch.OtherProjects = otherProjectsExcluding(allProjects, batch.Group.ProjectID)
 		batches = append(batches, *batch)
 		remaining -= len(messages)
 	}
 	return batches, nil
+}
+
+// loadPrincipal returns the decision-maker profile, resolving the leader name
+// from the person table when the profile did not capture it. Returns nil when no
+// profile row has been saved yet (extraction still works, just without the self
+// background section).
+func (s *PipelineStore) loadPrincipal(ctx context.Context) (*PrincipalContext, error) {
+	var profile domain.PrincipalProfile
+	found := s.db.WithContext(ctx).Where("open_id = ?", s.principalOpenID).Limit(1).Find(&profile)
+	if found.Error != nil {
+		return nil, fmt.Errorf("load principal profile: %w", found.Error)
+	}
+	if found.RowsAffected == 0 {
+		return nil, nil
+	}
+	principal := &PrincipalContext{
+		OpenID: profile.OpenID, Name: profile.Name,
+		Department: stringValue(profile.Department), Title: stringValue(profile.Title),
+		Background: stringValue(profile.Background), Preferences: stringValue(profile.Preferences),
+		LeaderOpenID: stringValue(profile.LeaderOpenID), LeaderName: stringValue(profile.LeaderName),
+	}
+	if principal.LeaderOpenID != "" && principal.LeaderName == "" {
+		var leader domain.Person
+		leaderFound := s.db.WithContext(ctx).Where("open_id = ?", principal.LeaderOpenID).Limit(1).Find(&leader)
+		if leaderFound.Error != nil {
+			return nil, fmt.Errorf("resolve principal leader name: %w", leaderFound.Error)
+		}
+		if leaderFound.RowsAffected == 1 {
+			principal.LeaderName = leader.Name
+		}
+	}
+	return principal, nil
+}
+
+// loadProjectSummaries returns the concise view of every non-archived project,
+// used to build the "other projects" map fed to the model.
+func (s *PipelineStore) loadProjectSummaries(ctx context.Context) ([]OtherProjectContext, error) {
+	var rows []domain.Project
+	if err := s.db.WithContext(ctx).
+		Where("status <> ?", "archived").
+		Order("priority ASC, id ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("load project summaries: %w", err)
+	}
+	summaries := make([]OtherProjectContext, len(rows))
+	for i := range rows {
+		summaries[i] = OtherProjectContext{
+			ID: rows[i].ID, Code: stringValue(rows[i].Code), Name: rows[i].Name,
+			Role: rows[i].Role, Description: stringValue(rows[i].Description),
+		}
+	}
+	return summaries, nil
+}
+
+func otherProjectsExcluding(all []OtherProjectContext, boundID *uint64) []OtherProjectContext {
+	result := make([]OtherProjectContext, 0, len(all))
+	for _, project := range all {
+		if boundID != nil && project.ID == *boundID {
+			continue
+		}
+		result = append(result, project)
+	}
+	return result
 }
 
 func validateLoadOptions(opts LoadOptions) error {

@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -77,5 +78,75 @@ func TestSalientQueryRequiresExtractableNewMessage(t *testing.T) {
 	}}})
 	if err == nil {
 		t.Fatal("SalientQuery() accepted a unit without extractable new messages")
+	}
+}
+
+func TestSalientQueryCapsToLastMessages(t *testing.T) {
+	messages := make([]MessageContext, 0, 30)
+	for i := 0; i < 30; i++ {
+		messages = append(messages, MessageContext{
+			MessageID:   "om",
+			Content:     fmt.Sprintf("消息%d", i),
+			IsNew:       true,
+			Extractable: true,
+		})
+	}
+	query, err := SalientQuery(ConversationUnit{Key: "chat", Messages: messages})
+	if err != nil {
+		t.Fatalf("SalientQuery() error = %v", err)
+	}
+	lines := strings.Split(query, "\n")
+	if len(lines) != salientQueryMaxMessages {
+		t.Fatalf("SalientQuery() returned %d lines, want %d", len(lines), salientQueryMaxMessages)
+	}
+	// Must keep the latest messages (intent lives at the end), dropping oldest.
+	if strings.Contains(query, "消息0\n") || strings.Contains(query, "消息9\n") {
+		t.Fatalf("SalientQuery() kept stale early messages:\n%s", query)
+	}
+	if !strings.Contains(query, "消息29") {
+		t.Fatalf("SalientQuery() dropped the newest message:\n%s", query)
+	}
+}
+
+func TestRenderPrincipalInjectsSelfAndLeader(t *testing.T) {
+	rendered := renderPrincipal(&PrincipalContext{
+		OpenID: "ou_me", Name: "我", Department: "平台", Title: "工程师",
+		Background: "负责 Agent 基建", Preferences: "偏好直接给结论",
+		LeaderOpenID: "ou_boss", LeaderName: "严亮",
+	})
+	for _, want := range []string{`name="我"`, `leader_open_id=ou_boss leader_name="严亮"`, "负责 Agent 基建", "偏好直接给结论"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("renderPrincipal missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestRenderPrincipalNilShowsHint(t *testing.T) {
+	if got := renderPrincipal(nil); !strings.Contains(got, "未设置") {
+		t.Fatalf("renderPrincipal(nil) = %q, want a not-set hint", got)
+	}
+}
+
+func TestBuildPromptCarriesPrincipalAndProjects(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{
+		{MessageID: "om_new", Content: "看下这个数据", CreateTime: 1_700_000_001_000, IsNew: true, Extractable: true},
+	}}
+	batch := ChatBatch{
+		Group:     GroupContext{ID: 1, ChatID: "oc_1", Name: "研发群"},
+		Principal: &PrincipalContext{OpenID: "ou_me", Name: "我", LeaderName: "严亮", LeaderOpenID: "ou_boss"},
+		OtherProjects: []OtherProjectContext{
+			{ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant", Description: "codex 方案"},
+		},
+	}
+	prompt, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{
+		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
+	})
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	for _, want := range []string{"# 我的背景(principal)", "leader_name=\"严亮\"", "# 我的其他项目（精简", "name=\"Agent Runtime\""} {
+		if !strings.Contains(prompt.User, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt.User)
+		}
 	}
 }
