@@ -264,3 +264,27 @@ export interface GroupBackgroundInput {
   include_in_memory: boolean
   is_key_group: boolean
 }
+
+// ProfileView is the decision-maker ("me") background. open_id is fixed by
+// backend config; saved=false means the row has not been filled yet.
+export interface ProfileView {
+  open_id: string
+  name: string
+  department?: string | null
+  title?: string | null
+  background?: string | null
+  preferences?: string | null
+  leader_open_id?: string | null
+  leader_name?: string | null
+  saved: boolean
+}
+
+export interface ProfileInput {
+  name: string
+  department?: string | null
+  title?: string | null
+  background?: string | null
+  preferences?: string | null
+  leader_open_id?: string | null
+  leader_name?: string | null
+}

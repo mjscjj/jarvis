@@ -7,6 +7,8 @@ import type {
   Paged,
   Person,
   PersonInput,
+  ProfileInput,
+  ProfileView,
   Project,
   ProjectInput,
   ResolveResult,
@@ -142,4 +144,12 @@ export function listGroups(query: GroupQuery, signal?: AbortSignal): Promise<Gro
 
 export function updateGroupBackground(id: number, body: GroupBackgroundInput): Promise<Group> {
   return request<Group>(`/api/groups/${id}`, { method: 'PUT', body })
+}
+
+export function getProfile(): Promise<ProfileView> {
+  return request<ProfileView>('/api/profile')
+}
+
+export function updateProfile(body: ProfileInput): Promise<ProfileView> {
+  return request<ProfileView>('/api/profile', { method: 'PUT', body })
 }

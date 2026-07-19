@@ -6,7 +6,7 @@ func TestCoreModels(t *testing.T) {
 	t.Parallel()
 
 	models := CoreModels()
-	if got, want := len(models), 7; got != want {
+	if got, want := len(models), 8; got != want {
 		t.Fatalf("CoreModels() length = %d, want %d", got, want)
 	}
 
@@ -18,8 +18,9 @@ func TestCoreModels(t *testing.T) {
 		models[4].(*Task).TableName(),
 		models[5].(*Resource).TableName(),
 		models[6].(*ScanRecord).TableName(),
+		models[7].(*PrincipalProfile).TableName(),
 	}
-	want := []string{"project", "feishu_group", "person", "todo", "task", "resource", "scan_record"}
+	want := []string{"project", "feishu_group", "person", "todo", "task", "resource", "scan_record", "principal_profile"}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("CoreModels()[%d] table = %q, want %q", i, got[i], want[i])

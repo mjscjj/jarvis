@@ -1,6 +1,7 @@
 // Package domain contains the persistence models shared by all Jarvis modules.
 //
-// These seven models are the canonical Go mapping of docs/00-overview.md §2.4.
+// The core models are the canonical Go mapping of docs/00-overview.md §2.4
+// (the original seven entities plus principal_profile, the decision-maker "me").
 // MySQL is the source of truth; JSON fields intentionally remain untyped at this
 // layer so each owning module can decode them into its own validated contract.
 package domain

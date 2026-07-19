@@ -24,12 +24,14 @@ import {
   createProject,
   deletePerson,
   deleteProject,
+  getProfile,
   listGroups,
   listPersons,
   listProjects,
   resolvePerson,
   updateGroupBackground,
   updatePerson,
+  updateProfile,
   updateProject,
 } from './api'
 import type {
@@ -38,6 +40,8 @@ import type {
   Person,
   PersonInput,
   PersonRole,
+  ProfileInput,
+  ProfileView,
   Project,
   ProjectInput,
   ProjectRole,
@@ -599,10 +603,144 @@ function GroupsPanel() {
   </>
 }
 
+// --- Profile (decision-maker "me") ---
+
+function ProfilePanel() {
+  const [profile, setProfile] = useState<ProfileView | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string>()
+  const [ok, setOk] = useState(false)
+  const [form] = Form.useForm<ProfileInput>()
+
+  // Leader binding reuses the person search so leader_open_id is a real open_id.
+  const [leaderOpenID, setLeaderOpenID] = useState('')
+  const [leaderName, setLeaderName] = useState('')
+  const [leaderQuery, setLeaderQuery] = useState('')
+  const [leaderSearching, setLeaderSearching] = useState(false)
+  const [leaderCandidates, setLeaderCandidates] = useState<ResolveCandidate[] | null>(null)
+
+  const reload = useCallback(() => {
+    setLoading(true)
+    getProfile()
+      .then((result) => {
+        setProfile(result)
+        setLeaderOpenID(result.leader_open_id || '')
+        setLeaderName(result.leader_name || '')
+        form.setFieldsValue({
+          name: result.name, department: result.department, title: result.title,
+          background: result.background, preferences: result.preferences,
+        })
+        setError(undefined)
+      })
+      .catch((cause: unknown) => setError(errorText(cause)))
+      .finally(() => setLoading(false))
+  }, [form])
+  useEffect(reload, [reload])
+
+  const runLeaderSearch = async () => {
+    if (!leaderQuery.trim()) return
+    setLeaderSearching(true)
+    try {
+      const result = await resolvePerson(leaderQuery.trim())
+      setLeaderCandidates(result.candidates)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setLeaderSearching(false)
+    }
+  }
+  const pickLeader = (candidate: ResolveCandidate) => {
+    setLeaderOpenID(candidate.open_id)
+    setLeaderName(candidate.name)
+    setLeaderCandidates(null)
+    setLeaderQuery('')
+  }
+  const clearLeader = () => { setLeaderOpenID(''); setLeaderName('') }
+
+  const submit = async () => {
+    const values = await form.validateFields()
+    setSaving(true)
+    setOk(false)
+    try {
+      const saved = await updateProfile({
+        ...values,
+        leader_open_id: leaderOpenID || null,
+        leader_name: leaderName || null,
+      })
+      setProfile(saved)
+      setOk(true)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <>
+    {error && <Alert type="error" showIcon message="保存失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon message="已保存，抽取时会把「我的背景」喂给模型" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    {profile && !profile.saved && <Alert type="info" showIcon message="首次填写：决策主体（我）背景尚未设置，完善后可显著提升 leader 软措辞交办的识别" style={{ marginBottom: 12 }} />}
+    <Card variant="borderless" loading={loading} style={{ maxWidth: 720 }}>
+      <Form form={form} layout="vertical">
+        <Form.Item label="open_id（由配置固定）">
+          <Input value={profile?.open_id} disabled />
+        </Form.Item>
+        <Form.Item name="name" label="姓名（当前用户是谁）" rules={[{ required: true, message: '请填写姓名' }]}>
+          <Input placeholder="如：储节节" />
+        </Form.Item>
+        <Flex gap={12}>
+          <Form.Item name="department" label="部门" style={{ flex: 1 }}><Input placeholder="选填" /></Form.Item>
+          <Form.Item name="title" label="职位" style={{ flex: 1 }}><Input placeholder="选填" /></Form.Item>
+        </Flex>
+        <Form.Item name="background" label="背景 / 负责方向" tooltip="我是谁、负责什么方向，会作为抽取上下文喂给模型">
+          <Input.TextArea rows={3} placeholder="如：研发工程师，负责公会 Agent 基建（runtime / skill 治理 / 自建活动 AI 助手）" />
+        </Form.Item>
+        <Form.Item name="preferences" label="喜好 / 工作偏好" tooltip="沟通与工作偏好，帮助模型贴合你的习惯">
+          <Input.TextArea rows={2} placeholder="如：偏好先给结论再展开；紧急事项直接同步" />
+        </Form.Item>
+        <Form.Item label="直属 leader" tooltip="显式告诉模型「我的 leader 是谁」，对识别 leader 软措辞交办最关键">
+          {leaderOpenID ? (
+            <Flex gap={8} align="center">
+              <Tag color="gold">{leaderName || leaderOpenID}</Tag>
+              <Text type="secondary" style={{ fontSize: 12 }}>{leaderOpenID}</Text>
+              <Button size="small" onClick={clearLeader}>清除</Button>
+            </Flex>
+          ) : (
+            <Flex vertical gap={8}>
+              <Flex gap={8}>
+                <Input.Search
+                  placeholder="搜索姓名 / 邮箱绑定 leader" value={leaderQuery}
+                  onChange={(e) => setLeaderQuery(e.target.value)} onSearch={runLeaderSearch}
+                  loading={leaderSearching} enterButton="搜索" style={{ maxWidth: 360 }}
+                />
+              </Flex>
+              {leaderCandidates && (
+                <Card size="small" variant="outlined">
+                  {leaderCandidates.length === 0 ? <Text type="secondary">无匹配</Text> : leaderCandidates.map((c) => (
+                    <Flex key={c.open_id} justify="space-between" align="center" style={{ padding: '4px 0' }}>
+                      <Text>{c.name} <Text type="secondary" style={{ fontSize: 12 }}>{c.department}</Text></Text>
+                      <Button size="small" type="link" onClick={() => pickLeader(c)}>选择</Button>
+                    </Flex>
+                  ))}
+                </Card>
+              )}
+            </Flex>
+          )}
+        </Form.Item>
+        <Button type="primary" loading={saving} onClick={submit}>保存</Button>
+      </Form>
+    </Card>
+  </>
+}
+
 export default function Background() {
   return (
     <Tabs
       items={[
+        { key: 'profile', label: '我（决策主体）', children: <ProfilePanel /> },
         { key: 'projects', label: '项目', children: <ProjectsPanel /> },
         { key: 'persons', label: '人物', children: <PersonsPanel /> },
         { key: 'groups', label: '会话背景', children: <GroupsPanel /> },
