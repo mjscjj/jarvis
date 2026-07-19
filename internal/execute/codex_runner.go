@@ -28,10 +28,19 @@ type codexRun struct {
 // execution (see executionResultSchema). It lets M5 判 done/failed on a real
 // success bool instead of the process exit code.
 type codexResult struct {
-	Success       bool   `json:"success"`
-	Summary       string `json:"summary"`
-	FailureReason string `json:"failure_reason"`
-	NeedsFollowup string `json:"needs_followup"`
+	Success       bool              `json:"success"`
+	Summary       string            `json:"summary"`
+	FailureReason string            `json:"failure_reason"`
+	NeedsFollowup string            `json:"needs_followup"`
+	Enrichments   []codexEnrichment `json:"enrichments"`
+}
+
+// codexEnrichment is one piece of "多做一步" context the assistant proactively
+// prepared (a code link, a commit digest, a doc link, …).
+type codexEnrichment struct {
+	Kind   string `json:"kind"`
+	Label  string `json:"label"`
+	Detail string `json:"detail"`
 }
 
 // CodexRunner wraps the codex CLI for M5 execution. On this trusted local host

@@ -124,6 +124,12 @@ export function executeTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/execute`, { method: 'POST' })
 }
 
+// rerunTask re-executes an already-finished (done/failed) Task: it resets the
+// Task to pending and runs it again. The click approves external side effects.
+export function rerunTask(id: number): Promise<ExecuteResult> {
+  return request<ExecuteResult>(`/api/tasks/${id}/rerun`, { method: 'POST' })
+}
+
 // --- M1 background management ---
 
 export function listProjects(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Project>> {

@@ -202,6 +202,48 @@ func (s *Store) MarkExecuting(ctx context.Context, taskID uint64, expectedVersio
 	return newVersion, nil
 }
 
+// ResetForRerun transitions a finished Task (done/failed) back to pending so it
+// can be executed again, clearing the previous execution_result. It bumps the
+// version (optimistic lock) and returns the reloaded Task. A task that is not
+// finished (pending/executing) is rejected — you cannot "rerun" one that never
+// finished or is mid-flight.
+func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
+	}
+	var reloaded domain.Task
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task domain.Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		if err != nil {
+			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
+		}
+		if task.Status != "done" && task.Status != "failed" {
+			return fmt.Errorf("%w: task_id=%d from=%s to=pending (only finished Tasks can rerun)", ErrInvalidTransition, task.ID, task.Status)
+		}
+		update := tx.Model(&domain.Task{}).
+			Where("id = ? AND version = ? AND status = ?", task.ID, task.Version, task.Status).
+			Updates(map[string]any{"status": "pending", "execution_result": nil, "version": gorm.Expr("version + 1")})
+		if update.Error != nil {
+			return fmt.Errorf("reset execution Task id=%d for rerun: %w", task.ID, update.Error)
+		}
+		if update.RowsAffected != 1 {
+			return fmt.Errorf("%w: task_id=%d", ErrVersionConflict, task.ID)
+		}
+		if err := tx.First(&reloaded, taskID).Error; err != nil {
+			return fmt.Errorf("reload execution Task id=%d after reset: %w", task.ID, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &reloaded, nil
+}
+
 // LoadPending returns pending Tasks for the cron auto-executor, oldest first.
 func (s *Store) LoadPending(ctx context.Context, limit int) ([]domain.Task, error) {
 	if limit <= 0 {

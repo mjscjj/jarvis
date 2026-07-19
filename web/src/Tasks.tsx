@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Descriptions, Drawer, Flex, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { executeTask, finishTask, listTasks } from './api'
+import { executeTask, finishTask, listTasks, rerunTask } from './api'
 import type { Task, TaskStatus } from './types'
 import { SlotDescriptions } from './slots'
 
@@ -85,6 +85,25 @@ export default function Tasks() {
     }
   }
 
+  const runRerun = async (task: Task) => {
+    const ok = window.confirm(`「${task.title}」已${statusMeta[task.status].label}，确认重新执行一次？`)
+    if (!ok) return
+    if (externalActions.has(task.action_type)) {
+      const okExternal = window.confirm(`该任务是对外动作（${task.action_type}），重跑会再次真实触达外部。继续？`)
+      if (!okExternal) return
+    }
+    setExecutingId(task.id)
+    setError(undefined)
+    try {
+      await rerunTask(task.id)
+      setRefreshKey((value) => value + 1)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setExecutingId(undefined)
+    }
+  }
+
   const columns: TableColumnsType<Task> = [
     { title: '任务', dataIndex: 'title', render: (_, task) => <Space direction="vertical" size={2}><Text strong>{task.title}</Text><Text type="secondary">Todo #{task.todo_id} · {task.action_type}</Text></Space> },
     { title: '状态', dataIndex: 'status', width: 110, render: (status: TaskStatus) => <Tag color={statusMeta[status].color}>{statusMeta[status].label}</Tag> },
@@ -100,6 +119,11 @@ export default function Tasks() {
           </Space>
         }
         if (task.status === 'executing') return <Tag color="gold">codex 执行中…</Tag>
+        if (task.status === 'done' || task.status === 'failed') {
+          return <Space onClick={(e) => e.stopPropagation()}>
+            <Button size="small" loading={executingId === task.id} onClick={(e) => { e.stopPropagation(); runRerun(task) }}>重跑</Button>
+          </Space>
+        }
         return '—'
       },
     },

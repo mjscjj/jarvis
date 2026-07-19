@@ -21,12 +21,17 @@ type Snapshot struct {
 	SnapshotVersion string `json:"snapshot_version"`
 	CapturedAt      string `json:"captured_at"` // RFC3339 UTC
 
-	Principal *Principal       `json:"principal"`
-	Project   *Project         `json:"project"`
-	Group     *Group           `json:"group"`
-	Assigner  *Assigner        `json:"assigner"`
-	Messages  []Message        `json:"messages"`
-	Memories  []map[string]any `json:"memories"`
+	Principal *Principal `json:"principal"`
+	Project   *Project   `json:"project"`
+	Group     *Group     `json:"group"`
+	Assigner  *Assigner  `json:"assigner"`
+	Messages  []Message  `json:"messages"`
+	// Conversation is the surrounding chat context (several rounds around the
+	// cited Messages) so M4/M5 can read the fuller thread, not just the single
+	// evidence message. Messages stays the precise cited evidence; Conversation
+	// is broader background.
+	Conversation []Message        `json:"conversation,omitempty"`
+	Memories     []map[string]any `json:"memories"`
 	// Supplements are human clarifications added after a Todo landed in need_info.
 	// They are appended (never replaced) and replayed to M4 codex on re-evaluation
 	// so the decision maker sees the extra context the extractor lacked.

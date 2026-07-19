@@ -131,6 +131,20 @@ func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit, concurrency 
 	return stats, nil
 }
 
+// Rerun re-executes an already-finished Task (done or failed). It resets the
+// Task back to pending (clearing the old result) and runs it again through the
+// normal Execute path. The manual click counts as approval for external
+// actions, same as Execute.
+func (e *AgentExecutor) Rerun(ctx context.Context, taskID uint64) (*ExecuteResult, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
+	}
+	if _, err := e.store.ResetForRerun(ctx, taskID); err != nil {
+		return nil, err
+	}
+	return e.Execute(ctx, ExecuteInput{TaskID: taskID, ApproveExternal: true})
+}
+
 func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*ExecuteResult, error) {
 	if input.TaskID == 0 {
 		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
@@ -244,14 +258,22 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 		return e.failRun(run, startedAt, err), err
 	}
 	run.CodexSessionID = &codexOut.SessionID
-	summary := codexOut.LastMessage
-	run.Summary = &summary
 
 	// codex reports its own success verdict (executionResultSchema). A run that
 	// finished the process but did not achieve the goal (e.g. "message not
 	// sent") is a failure — surface it instead of silently marking succeeded.
 	if codexOut.Result == nil {
-		return e.failRun(run, startedAt, fmt.Errorf("codex exec returned no structured result")), fmt.Errorf("codex exec returned no structured result")
+		cause := fmt.Errorf("codex exec returned no structured result")
+		run.Summary = &codexOut.LastMessage
+		return e.failRun(run, startedAt, cause), cause
+	}
+	// Store the clean human summary on Summary and the full structured verdict
+	// (success/failure_reason/needs_followup/enrichments) on Output, so the UI
+	// shows prose, not a raw JSON blob.
+	summary := codexOut.Result.Summary
+	run.Summary = &summary
+	if structured, err := json.Marshal(codexOut.Result); err == nil {
+		run.Output = structured
 	}
 	if !codexOut.Result.Success {
 		cause := fmt.Errorf("task not completed: %s", codexOut.Result.FailureReason)
@@ -413,6 +435,19 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 	}
 	if run.CodexSessionID != nil {
 		payload["codex_session_id"] = *run.CodexSessionID
+	}
+	// Surface the assistant's structured verdict (needs_followup + the "多做一步"
+	// enrichments) so the UI can show them separately from the prose summary.
+	if len(run.Output) > 0 {
+		var structured codexResult
+		if err := json.Unmarshal(run.Output, &structured); err == nil {
+			if strings.TrimSpace(structured.NeedsFollowup) != "" {
+				payload["needs_followup"] = structured.NeedsFollowup
+			}
+			if len(structured.Enrichments) > 0 {
+				payload["enrichments"] = structured.Enrichments
+			}
+		}
 	}
 	if execErr != nil {
 		payload["error"] = execErr.Error()

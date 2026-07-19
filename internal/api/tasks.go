@@ -99,6 +99,24 @@ func ExecuteTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	}
 }
 
+// RerunTask re-executes a finished (done/failed) Task. The manual click counts
+// as approval for external-side-effect actions.
+func RerunTask(executor *execute.AgentExecutor) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		result, err := executor.Rerun(ctx, taskID)
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func writeExecutionError(c *app.RequestContext, err error) {
 	switch {
 	case errors.Is(err, execute.ErrInvalidInput):

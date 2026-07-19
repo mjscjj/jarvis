@@ -22,6 +22,7 @@ func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatc
 		Principal:       snapshotPrincipal(batch.Principal),
 		Group:           snapshotGroup(batch.Group),
 		Messages:        snapshotMessages(unit, candidate),
+		Conversation:    snapshotConversation(unit),
 		Memories:        memories,
 	}
 	if snapshot.Memories == nil {
@@ -129,6 +130,34 @@ func snapshotMessages(unit ConversationUnit, candidate Candidate) []contextsnap.
 		})
 	}
 	return messages
+}
+
+// maxConversationMessages bounds how many surrounding messages we freeze into
+// the snapshot's conversation context. Enough for several rounds of背景, small
+// enough to keep the snapshot from bloating.
+const maxConversationMessages = 40
+
+// snapshotConversation freezes the surrounding chat thread (the whole
+// conversation unit, capped) so M4/M5 read more than the single cited message.
+// It keeps the most recent messages (chronological order preserved) when the
+// unit exceeds the cap, since recent context is the most relevant.
+func snapshotConversation(unit ConversationUnit) []contextsnap.Message {
+	messages := unit.Messages
+	if len(messages) == 0 {
+		return nil
+	}
+	if len(messages) > maxConversationMessages {
+		messages = messages[len(messages)-maxConversationMessages:]
+	}
+	conversation := make([]contextsnap.Message, 0, len(messages))
+	for _, message := range messages {
+		conversation = append(conversation, contextsnap.Message{
+			MessageID: message.MessageID, ChatID: message.ChatID,
+			SenderOpenID: message.SenderOpenID, SenderName: message.SenderName,
+			Content: message.Content, CreateTime: message.CreateTime,
+		})
+	}
+	return conversation
 }
 
 func rawJSONOrNull(value []byte) json.RawMessage {
