@@ -40,9 +40,10 @@ func main() {
 	extractOnce := flag.Bool("extract-once", false, "执行一次 Todo 提取，成功后退出")
 	decideOnce := flag.Bool("decide-once", false, "执行一次 MVP 人工确认分流，成功后退出")
 	seedOnce := flag.Bool("seed", false, "一次性幂等写入初始 项目/任务/群关联 背景种子，成功后退出")
+	seedPersons := flag.Bool("seed-persons", false, "从关键群真实成员导入 Person（幂等，按 open_id 跳过已存在），成功后退出")
 	flag.Parse()
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce} {
+	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons} {
 		if selected {
 			actionCount++
 		}
@@ -132,6 +133,17 @@ func main() {
 	})
 	if err != nil {
 		hlog.Fatalf("initialize lark-cli failed: %v", err)
+	}
+	if *seedPersons {
+		stats, err := background.SeedPersonsFromKeyGroups(context.Background(), db, larkClient)
+		if err != nil {
+			hlog.Fatalf("seed persons from key groups failed: %v", err)
+		}
+		hlog.Infof(
+			"seed persons completed: groups_scanned=%d persons_seen=%d persons_added=%d persons_skipped=%d",
+			stats.GroupsScanned, stats.PersonsSeen, stats.PersonsAdded, stats.PersonsSkip,
+		)
+		return
 	}
 	location, err := time.LoadLocation(cfg.Capture.Timezone)
 	if err != nil {

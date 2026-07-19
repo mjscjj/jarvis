@@ -133,6 +133,36 @@ func (c *Client) SearchUser(ctx context.Context, query string) ([]UserCandidate,
 	return resp.Data.Users, resp.Data.HasMore, nil
 }
 
+// ChatMember is one human member of a chat as returned by
+// `im +chat-members-list`. member_id is the person's open_id; bots are returned
+// in a separate bucket and are intentionally not modeled here.
+type ChatMember struct {
+	MemberID  string `json:"member_id"`
+	Name      string `json:"name"`
+	TenantKey string `json:"tenant_key"`
+}
+
+type chatMembersResponse struct {
+	Data struct {
+		Users []ChatMember `json:"users"`
+	} `json:"data"`
+}
+
+// ListChatMembers returns the human members of a chat, auto-paginating so the
+// full roster is returned (the server caps a single page). Bots are excluded by
+// only reading the users[] bucket. fail-fast: a blank chat id is rejected and
+// any CLI failure surfaces unchanged.
+func (c *Client) ListChatMembers(ctx context.Context, chatID string) ([]ChatMember, error) {
+	if strings.TrimSpace(chatID) == "" {
+		return nil, fmt.Errorf("lark-cli chat-members-list chat_id is empty")
+	}
+	var resp chatMembersResponse
+	if err := c.Run(ctx, &resp, "im", "+chat-members-list", "--chat-id", chatID, "--member-types", "user", "--page-all", "--as", "user"); err != nil {
+		return nil, fmt.Errorf("lark-cli chat-members-list chat_id=%q: %w", chatID, err)
+	}
+	return resp.Data.Users, nil
+}
+
 // Run executes a lark-cli command and unmarshals its successful JSON envelope.
 // Callers must not pass --format; this boundary always forces JSON.
 func (c *Client) Run(ctx context.Context, out any, args ...string) error {
