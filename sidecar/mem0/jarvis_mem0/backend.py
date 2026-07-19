@@ -104,7 +104,7 @@ def build_mem0_config(settings: Settings) -> dict[str, Any]:
                 "model": settings.model_name,
                 "api_key": settings.model_api_key,
                 "openai_base_url": settings.model_base_url,
-                "temperature": 0.1,
+                "is_reasoning_model": settings.model_is_reasoning,
             },
         },
         "embedder": {

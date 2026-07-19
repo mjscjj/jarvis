@@ -12,8 +12,8 @@ Go 1.26 + Hertz + GORM + codex CLI（M4 决策 / M5 代码执行）+ model API�
 
 - M0.2 已完成：统一 `lark-cli` 子进程层、无历史回溯的增量扫描、线程回复拍平、Resource 元数据沉淀和分层 cron 调度。消息扫描只处理数据库中动态标记的 `related_group`。
 - M0.3 核心链路已实现：Go 侧 mem0 HTTP client、消息窗口化 worker、每 10 分钟记忆化任务、Python FastAPI sidecar、Qdrant v1.18.2 原生 launchd 服务与锁定依赖。
-- M0.4 基础已实现：M3 水位/审计表、Todo 候选严格校验与 OpenAI-compatible Structured Outputs client、只读 Todo API，以及 React + Ant Design 看板。
-- 本机 Qdrant 已运行；mem0 sidecar 的真实模型验收等待在 `conf/config.yaml` 填入同时支持 chat 与 embedding 的 OpenAI 兼容端点。
+- M0.4 提取 worker 已实现：相关群增量聚合、背景/记忆注入、Structured Outputs、Todo 事务落库与独立水位推进；同时提供只读 Todo API 和 React + Ant Design 看板。
+- Kimi Code K2.7（`kimi-for-coding`）已完成 Structured Output 实测；mem0 使用同一端点的 `bge_m3_embed`（1024 维），真实 add/search → Qdrant 链路已验收。
 
 ## 本地运行
 
@@ -63,7 +63,7 @@ curl http://127.0.0.1:18800/healthz
 
 ## mem0 与 Qdrant
 
-先在 `conf/config.yaml` 的 `model` 段填写明文 `base_url`、`api_key`、`model`；该端点还必须支持 `mem0.embedding_model`。随后安装两个独立服务：
+`conf/config.yaml` 当前使用 Kimi Code API：chat 模型为 `kimi-for-coding`，embedding 模型为 `bge_m3_embed`（1024 维）。密钥明文保存在本机配置中。安装两个独立服务：
 
 ```bash
 ./scripts/install-qdrant.sh
@@ -126,4 +126,4 @@ jarvis/
 └── docs/                # 方案文档
 ```
 
-下一步是完成 M0.4 提取 worker：消息聚合、背景注入、Todo 事务落库和水位推进。真实模型联调仍需先填写 `model` 配置。
+下一步是在 `extract.principal_open_id` 补齐后运行 `--extract-once` 做真实消息验收。身份 slot 不完整候选的去重策略仍待确认，当前会 fail-fast，不生成临时指纹。

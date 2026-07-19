@@ -17,6 +17,7 @@ class Settings:
     model_base_url: str
     model_api_key: str
     model_name: str
+    model_is_reasoning: bool
     embedding_model: str
     embedding_dims: int
 
@@ -47,6 +48,7 @@ class Settings:
             model_base_url=_string(model, "base_url", "model"),
             model_api_key=_string(model, "api_key", "model"),
             model_name=_string(model, "model", "model"),
+            model_is_reasoning=_bool(model, "is_reasoning_model", "model"),
             embedding_model=_string(mem0, "embedding_model", "mem0"),
             embedding_dims=_positive_int(mem0, "embedding_dims", "mem0"),
         )
@@ -70,4 +72,11 @@ def _positive_int(parent: dict[str, Any], key: str, section: str) -> int:
     value = parent.get(key)
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"config value {section}.{key} must be a positive integer")
+    return value
+
+
+def _bool(parent: dict[str, Any], key: str, section: str) -> bool:
+    value = parent.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"config value {section}.{key} must be a boolean")
     return value

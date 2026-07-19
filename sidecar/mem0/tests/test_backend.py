@@ -55,6 +55,7 @@ class BackendTest(unittest.TestCase):
                 model_base_url="https://example.test/v1",
                 model_api_key="key",
                 model_name="model",
+                model_is_reasoning=True,
                 embedding_model="embed",
                 embedding_dims=1536,
             )
@@ -65,6 +66,8 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(vector["port"], 6333)
         self.assertNotIn("path", vector)
         self.assertEqual(config["embedder"]["config"]["embedding_dims"], 1536)
+        self.assertTrue(config["llm"]["config"]["is_reasoning_model"])
+        self.assertNotIn("temperature", config["llm"]["config"])
 
 
 if __name__ == "__main__":

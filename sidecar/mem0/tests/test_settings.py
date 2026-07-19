@@ -18,6 +18,7 @@ model:
   base_url: https://example.test/v1
   api_key: plaintext-key
   model: model-name
+  is_reasoning_model: true
 """
 
 
@@ -30,6 +31,7 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(settings.owner_id, "owner")
         self.assertEqual(settings.qdrant_port, 6333)
         self.assertEqual(settings.embedding_dims, 1536)
+        self.assertTrue(settings.model_is_reasoning)
 
     def test_rejects_missing_model_key(self):
         with tempfile.TemporaryDirectory() as directory:
