@@ -84,6 +84,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/confirmations/:todo_id", GetConfirmation(deps.ConfirmationDetails))
 	h.POST("/api/confirmations/:todo_id/approve", ApproveConfirmation(deps.Confirmations))
 	h.POST("/api/confirmations/:todo_id/reject", RejectConfirmation(deps.Confirmations))
+	h.POST("/api/confirmations/:todo_id/supplement", SupplementConfirmation(deps.Confirmations))
 	h.GET("/api/tasks", ListTasks(deps.Tasks))
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
 	if deps.Executor != nil {

@@ -78,6 +78,7 @@ export interface ContextSnapshot {
     create_time: number
   }>
   memories: Array<Record<string, unknown>>
+  supplements?: Array<{ note: string; at: string }>
 }
 
 export interface Todo {

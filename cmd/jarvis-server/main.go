@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -44,9 +45,10 @@ func main() {
 	decideOnce := flag.Bool("decide-once", false, "执行一次 MVP 人工确认分流，成功后退出")
 	seedOnce := flag.Bool("seed", false, "一次性幂等写入初始 项目/任务/群关联 背景种子，成功后退出")
 	seedPersons := flag.Bool("seed-persons", false, "从关键群真实成员导入 Person（幂等，按 open_id 跳过已存在），成功后退出")
+	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
 	flag.Parse()
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons} {
+	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P} {
 		if selected {
 			actionCount++
 		}
@@ -105,35 +107,9 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize decision store failed: %v", err)
 		}
-		var evaluator interface {
-			Evaluate(context.Context, *domain.Todo) (*decide.EvaluationInput, error)
-		}
-		switch cfg.Decide.Mode {
-		case decide.ManualMVPMode:
-			evaluator = decide.ManualGateEvaluator{}
-		case "codex":
-			// M4 codex mode: judge each Todo read-only with codex gpt-5.5 and
-			// route by disposition. Background is built from MySQL only (no mem0)
-			// to keep the decision path deterministic and offline-safe.
-			decider, err := decide.NewCodexDecider(decide.CodexOptions{
-				Bin:             cfg.Codex.Bin,
-				Model:           cfg.Codex.Model,
-				Timeout:         time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
-				Sandbox:         cfg.Decide.CodexSandbox,
-				Network:         cfg.Decide.CodexNetwork,
-				ReasoningEffort: cfg.Decide.CodexReasoningEffort,
-			})
-			if err != nil {
-				hlog.Fatalf("initialize codex decider failed: %v", err)
-			}
-			// M4 reuses the M3-frozen context_snapshot verbatim (no snapshotter).
-			codexEvaluator, err := decide.NewCodexEvaluator(decider)
-			if err != nil {
-				hlog.Fatalf("initialize codex evaluator failed: %v", err)
-			}
-			evaluator = codexEvaluator
-		default:
-			hlog.Fatalf("decide.mode 必须是 %s 或 codex", decide.ManualMVPMode)
+		evaluator, err := buildDecisionEvaluator(cfg)
+		if err != nil {
+			hlog.Fatalf("initialize decision evaluator failed: %v", err)
 		}
 		decisionWorker, err = decide.NewDecisionWorker(
 			decisionSource,
@@ -213,7 +189,18 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize todo store failed: %v", err)
 	}
-	confirmationService, err := decide.NewService(db)
+	// Build an evaluator + store so the confirmation service can re-run M4
+	// asynchronously after a need_info supplement, independent of the decision
+	// cron being enabled. Mirrors the worker's evaluator selection.
+	supplementEvaluator, err := buildDecisionEvaluator(cfg)
+	if err != nil {
+		hlog.Fatalf("initialize supplement evaluator failed: %v", err)
+	}
+	supplementStore, err := decide.NewEvaluationStore(db)
+	if err != nil {
+		hlog.Fatalf("initialize supplement evaluation store failed: %v", err)
+	}
+	confirmationService, err := decide.NewService(db, supplementEvaluator, supplementStore)
 	if err != nil {
 		hlog.Fatalf("initialize confirmation service failed: %v", err)
 	}
@@ -393,6 +380,14 @@ func main() {
 		hlog.Infof("related groups replaced")
 		return
 	}
+	if *openP2P {
+		opened, err := captureService.OpenInternalP2P()
+		if err != nil {
+			hlog.Fatalf("open internal p2p chats failed: %v", err)
+		}
+		hlog.Infof("internal p2p chats opened for monitoring: %d", opened)
+		return
+	}
 	if *memorizeOnce {
 		stats, err := memoryWorker.MemorizeOnce(context.Background())
 		if err != nil {
@@ -520,4 +515,36 @@ func main() {
 	hlog.Infof("jarvis-server listening on %s", cfg.Server.Addr)
 	// Spin 阻塞运行并处理优雅退出（SIGINT/SIGTERM/SIGHUP）。
 	h.Spin()
+}
+
+// decisionEvaluator is the M4 evaluator shape shared by the decision worker and
+// the confirmation service's async re-evaluation. It matches decide's internal
+// evaluator interface structurally.
+type decisionEvaluator interface {
+	Evaluate(context.Context, *domain.Todo) (*decide.EvaluationInput, error)
+}
+
+// buildDecisionEvaluator constructs the M4 evaluator from config. codex mode
+// judges each Todo read-only with codex and reuses the M3-frozen snapshot;
+// manual_mvp routes everything to human confirmation.
+func buildDecisionEvaluator(cfg *config.Config) (decisionEvaluator, error) {
+	switch cfg.Decide.Mode {
+	case decide.ManualMVPMode:
+		return decide.ManualGateEvaluator{}, nil
+	case "codex":
+		decider, err := decide.NewCodexDecider(decide.CodexOptions{
+			Bin:             cfg.Codex.Bin,
+			Model:           cfg.Codex.Model,
+			Timeout:         time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
+			Sandbox:         cfg.Decide.CodexSandbox,
+			Network:         cfg.Decide.CodexNetwork,
+			ReasoningEffort: cfg.Decide.CodexReasoningEffort,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("initialize codex decider: %w", err)
+		}
+		return decide.NewCodexEvaluator(decider)
+	default:
+		return nil, fmt.Errorf("decide.mode 必须是 %s 或 codex", decide.ManualMVPMode)
+	}
 }

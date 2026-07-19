@@ -27,6 +27,11 @@ type rejectConfirmationRequest struct {
 	Reason          string `json:"reason"`
 }
 
+type supplementConfirmationRequest struct {
+	ExpectedVersion *int32 `json:"expected_version"`
+	Note            string `json:"note"`
+}
+
 var confirmationStatuses = map[string]struct{}{
 	"need_info": {}, "need_decision": {},
 }
@@ -121,6 +126,33 @@ func RejectConfirmation(service decide.ConfirmationService) app.HandlerFunc {
 		}
 		result, err := service.Reject(ctx, decide.RejectInput{
 			TodoID: todoID, ExpectedVersion: *request.ExpectedVersion, Reason: request.Reason, Channel: "backend",
+		})
+		if err != nil {
+			writeConfirmationError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func SupplementConfirmation(service decide.ConfirmationService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		todoID, err := confirmationTodoID(c)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40010, err)
+			return
+		}
+		var request supplementConfirmationRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40015, err)
+			return
+		}
+		if request.ExpectedVersion == nil {
+			writeAPIError(c, consts.StatusBadRequest, 40015, fmt.Errorf("expected_version is required"))
+			return
+		}
+		result, err := service.Supplement(ctx, decide.SupplementInput{
+			TodoID: todoID, ExpectedVersion: *request.ExpectedVersion, Note: request.Note, Channel: "backend",
 		})
 		if err != nil {
 			writeConfirmationError(c, err)

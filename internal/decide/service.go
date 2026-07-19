@@ -15,6 +15,7 @@ import (
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -34,13 +35,19 @@ func requireContextSnapshot(todo *domain.Todo) (json.RawMessage, error) {
 type Service struct {
 	db  *gorm.DB
 	now func() time.Time
+	// evaluator/writer re-run the M4 decision after a need_info supplement. They
+	// are optional: when nil, Supplement only re-queues the Todo (extracted) and
+	// the scheduled M4 worker picks it up. When set, Supplement kicks a re-eval
+	// asynchronously so the page can refresh into the new route without waiting.
+	evaluator todoEvaluator
+	writer    evaluationWriter
 }
 
-func NewService(db *gorm.DB) (*Service, error) {
+func NewService(db *gorm.DB, evaluator todoEvaluator, writer evaluationWriter) (*Service, error) {
 	if db == nil {
 		return nil, fmt.Errorf("confirmation service db is nil")
 	}
-	return &Service{db: db, now: time.Now}, nil
+	return &Service{db: db, now: time.Now, evaluator: evaluator, writer: writer}, nil
 }
 
 func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, error) {
@@ -172,6 +179,134 @@ func (s *Service) Reject(ctx context.Context, input RejectInput) (*RejectResult,
 		return nil, err
 	}
 	return &result, nil
+}
+
+// SupplementInput carries a human clarification for a need_info Todo.
+type SupplementInput struct {
+	TodoID          uint64
+	ExpectedVersion int32
+	Note            string
+	Channel         string
+}
+
+// SupplementResult reports the Todo state right after the supplement was stored.
+// Status is "extracted": the Todo has been re-queued for M4. Re-evaluation runs
+// asynchronously, so the caller polls the confirmation detail for the new route.
+type SupplementResult struct {
+	TodoID  uint64 `json:"todo_id"`
+	Status  string `json:"status"`
+	Version int32  `json:"version"`
+}
+
+// Supplement appends a human clarification to a need_info Todo's context_snapshot
+// and re-queues it for M4 (status back to extracted). It then kicks an async
+// re-evaluation so the decision refreshes without waiting for the cron. Writes
+// are sequential and fail-fast (no transaction, per AGENTS.md).
+func (s *Service) Supplement(ctx context.Context, input SupplementInput) (*SupplementResult, error) {
+	if err := validateCommonInput(input.TodoID, input.ExpectedVersion, input.Channel); err != nil {
+		return nil, err
+	}
+	note := strings.TrimSpace(input.Note)
+	if note == "" {
+		return nil, fmt.Errorf("%w: supplement note must be non-blank", ErrInvalidInput)
+	}
+
+	var todo domain.Todo
+	if err := s.loadTodo(ctx, input.TodoID, &todo); err != nil {
+		return nil, err
+	}
+	if todo.Version != input.ExpectedVersion {
+		return nil, versionConflict(input.TodoID, input.ExpectedVersion, todo.Version)
+	}
+	if todo.Status != "need_info" {
+		return nil, transitionError(input.TodoID, todo.Status, "extracted")
+	}
+
+	snapshot, err := contextsnap.Decode([]byte(todo.ContextSnapshot))
+	if err != nil {
+		return nil, fmt.Errorf("%w: todo_id=%d context_snapshot invalid: %v", ErrInvalidInput, todo.ID, err)
+	}
+	snapshot.Supplements = append(snapshot.Supplements, contextsnap.Supplement{
+		Note: note, At: s.now().UTC().Format(time.RFC3339),
+	})
+	snapshotRaw, err := snapshot.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode supplemented context_snapshot todo_id=%d: %w", todo.ID, err)
+	}
+
+	// Re-queue: write the enriched snapshot and move need_info -> extracted with
+	// optimistic locking. clearing route/confidence/risk so the re-eval starts clean.
+	result := s.db.WithContext(ctx).Model(&domain.Todo{}).
+		Where("id = ? AND version = ? AND status = ?", todo.ID, input.ExpectedVersion, "need_info").
+		Updates(map[string]any{
+			"context_snapshot": datatypes.JSON(snapshotRaw),
+			"status":           "extracted",
+			"route":            nil,
+			"confidence":       nil,
+			"risk":             nil,
+			"version":          gorm.Expr("version + 1"),
+		})
+	if result.Error != nil {
+		return nil, fmt.Errorf("apply supplement todo_id=%d: %w", todo.ID, result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, fmt.Errorf("%w: todo_id=%d expected_version=%d", ErrVersionConflict, todo.ID, input.ExpectedVersion)
+	}
+	newVersion := todo.Version + 1
+	if err := s.appendSupplementEvent(ctx, todo.ID, newVersion, note, input.Channel); err != nil {
+		return nil, err
+	}
+
+	s.reEvaluateAsync(todo.ID, newVersion)
+
+	return &SupplementResult{TodoID: todo.ID, Status: "extracted", Version: newVersion}, nil
+}
+
+func (s *Service) appendSupplementEvent(ctx context.Context, todoID uint64, version int32, note, channel string) error {
+	detail, err := json.Marshal(map[string]any{
+		"event_type": "supplemented", "note": note, "channel": channel, "version": version,
+	})
+	if err != nil {
+		return fmt.Errorf("encode supplement event detail todo_id=%d: %w", todoID, err)
+	}
+	from := "need_info"
+	event := domain.TodoEvent{
+		TodoID: todoID, FromStatus: &from, ToStatus: "extracted", Actor: "user", Detail: datatypes.JSON(detail),
+	}
+	if err := s.db.WithContext(ctx).Create(&event).Error; err != nil {
+		return fmt.Errorf("create supplement event todo_id=%d: %w", todoID, err)
+	}
+	return nil
+}
+
+// reEvaluateAsync re-runs M4 for one Todo in the background. It uses a fresh
+// context (the request context is done once the handler returns) and swallows
+// errors to logs: a failed async re-eval leaves the Todo in extracted, which the
+// scheduled M4 worker will retry.
+func (s *Service) reEvaluateAsync(todoID uint64, expectedVersion int32) {
+	if s.evaluator == nil || s.writer == nil {
+		return
+	}
+	go func() {
+		ctx := context.Background()
+		var todo domain.Todo
+		if err := s.db.WithContext(ctx).First(&todo, todoID).Error; err != nil {
+			hlog.Errorf("supplement re-eval load todo_id=%d: %v", todoID, err)
+			return
+		}
+		if todo.Status != "extracted" || todo.Version != expectedVersion {
+			// Something else moved the Todo; leave it to the scheduled worker.
+			return
+		}
+		evalInput, err := s.evaluator.Evaluate(ctx, &todo)
+		if err != nil {
+			hlog.Errorf("supplement re-eval evaluate todo_id=%d: %v", todoID, err)
+			return
+		}
+		if _, err := s.writer.Apply(ctx, *evalInput); err != nil {
+			hlog.Errorf("supplement re-eval apply todo_id=%d: %v", todoID, err)
+		}
+	}()
 }
 
 func (s *Service) loadTodo(ctx context.Context, todoID uint64, todo *domain.Todo) error {

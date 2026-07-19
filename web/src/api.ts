@@ -85,6 +85,12 @@ export function rejectConfirmation(id: number, expectedVersion: number, reason: 
   })
 }
 
+export function supplementConfirmation(id: number, expectedVersion: number, note: string): Promise<{ todo_id: number; status: string; version: number }> {
+  return request(`/api/confirmations/${id}/supplement`, {
+    method: 'POST', body: { expected_version: expectedVersion, note },
+  })
+}
+
 export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signal?: AbortSignal): Promise<TaskList> {
   const params = new URLSearchParams({ status: statuses.join(','), page: String(page), page_size: String(pageSize) })
   return request<TaskList>(`/api/tasks?${params.toString()}`, { signal })

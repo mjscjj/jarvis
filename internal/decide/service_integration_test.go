@@ -46,7 +46,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		tx := beginRollbackTransaction(t, db)
 		todo := createConfirmationFixture(t, tx, "need_decision", time.Now().UnixNano())
 		fixtureFingerprints = append(fixtureFingerprints, todo.DedupFingerprint)
-		service, err := NewService(tx)
+		service, err := NewService(tx, nil, nil)
 		if err != nil {
 			t.Fatalf("NewService() error = %v", err)
 		}
@@ -100,7 +100,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		tx := beginRollbackTransaction(t, db)
 		todo := createConfirmationFixture(t, tx, "need_info", time.Now().UnixNano())
 		fixtureFingerprints = append(fixtureFingerprints, todo.DedupFingerprint)
-		service, err := NewService(tx)
+		service, err := NewService(tx, nil, nil)
 		if err != nil {
 			t.Fatalf("NewService() error = %v", err)
 		}
@@ -201,7 +201,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 			t.Fatalf("confirmation proposed plan = %#v", detail.ProposedPlan)
 		}
 
-		confirmationService, err := NewService(tx)
+		confirmationService, err := NewService(tx, nil, nil)
 		if err != nil {
 			t.Fatalf("NewService() error = %v", err)
 		}

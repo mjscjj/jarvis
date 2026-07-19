@@ -55,4 +55,5 @@ type RejectResult struct {
 type ConfirmationService interface {
 	Approve(context.Context, ApproveInput) (*TaskView, error)
 	Reject(context.Context, RejectInput) (*RejectResult, error)
+	Supplement(context.Context, SupplementInput) (*SupplementResult, error)
 }

@@ -27,6 +27,16 @@ type Snapshot struct {
 	Assigner  *Assigner        `json:"assigner"`
 	Messages  []Message        `json:"messages"`
 	Memories  []map[string]any `json:"memories"`
+	// Supplements are human clarifications added after a Todo landed in need_info.
+	// They are appended (never replaced) and replayed to M4 codex on re-evaluation
+	// so the decision maker sees the extra context the extractor lacked.
+	Supplements []Supplement `json:"supplements,omitempty"`
+}
+
+// Supplement is one human clarification added to a need_info Todo.
+type Supplement struct {
+	Note string `json:"note"`
+	At   string `json:"at"` // RFC3339 UTC
 }
 
 // Principal is the decision-maker ("me"): who I am, what I own, who my leader is.

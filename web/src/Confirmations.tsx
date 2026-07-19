@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Card, Collapse, Descriptions, Drawer, Flex, Input, Modal, Space, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveConfirmation, getConfirmation, listConfirmations, rejectConfirmation } from './api'
+import { approveConfirmation, getConfirmation, listConfirmations, rejectConfirmation, supplementConfirmation } from './api'
 import type { ConfirmationDetail, ContextSnapshot, Resolution, Todo } from './types'
 import { SlotDescriptions } from './slots'
 
@@ -9,6 +9,23 @@ const { Paragraph, Text } = Typography
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
+}
+
+type ConfirmModal = 'approve' | 'reject' | 'supplement' | undefined
+function modalTitle(modal: ConfirmModal): string {
+  if (modal === 'approve') return '确认执行方案'
+  if (modal === 'supplement') return '补充信息'
+  return '填写拒绝原因'
+}
+function modalOkText(modal: ConfirmModal): string {
+  if (modal === 'approve') return '批准'
+  if (modal === 'supplement') return '提交并重新判定'
+  return '确认拒绝'
+}
+function modalPlaceholder(modal: ConfirmModal): string {
+  if (modal === 'approve') return '非空 JSON 方案'
+  if (modal === 'supplement') return '补充缺失的信息（如具体仓库、目标、范围、截止时间等），供决策器重新判定'
+  return '拒绝原因'
 }
 
 const RESOLUTION_METHOD_LABEL: Record<Resolution['method'], { text: string; color: string }> = {
@@ -48,6 +65,10 @@ function SnapshotPanel({ snapshot }: { snapshot: ContextSnapshot }) {
         {snapshot.assigner && <Descriptions.Item label="交办人">{snapshot.assigner.name || snapshot.assigner.open_id}{snapshot.assigner.relation ? ` · ${snapshot.assigner.relation}` : ''}</Descriptions.Item>}
         <Descriptions.Item label="记忆命中">{snapshot.memories?.length ?? 0} 条</Descriptions.Item>
       </Descriptions>
+      {snapshot.supplements && snapshot.supplements.length > 0 && <div>
+        <Text type="secondary">人工补充</Text>
+        {snapshot.supplements.map((s, i) => <blockquote key={i}>{s.note}<br /><Text type="secondary" style={{ fontSize: 12 }}>{new Date(s.at).toLocaleString()}</Text></blockquote>)}
+      </div>}
       <Text type="secondary">原始 JSON</Text>
       <pre className="snapshot-json">{JSON.stringify(snapshot, null, 2)}</pre>
     </Space>,
@@ -62,7 +83,7 @@ export default function Confirmations() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [detail, setDetail] = useState<ConfirmationDetail>()
   const [detailLoading, setDetailLoading] = useState(false)
-  const [modal, setModal] = useState<'approve' | 'reject'>()
+  const [modal, setModal] = useState<'approve' | 'reject' | 'supplement'>()
   const [input, setInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -100,6 +121,9 @@ export default function Confirmations() {
         const plan = JSON.parse(input) as Record<string, unknown>
         if (!plan || Array.isArray(plan) || Object.keys(plan).length === 0) throw new Error('方案必须是非空 JSON 对象')
         await approveConfirmation(detail.todo.id, detail.todo.version, plan)
+      } else if (modal === 'supplement') {
+        if (!input.trim()) throw new Error('补充说明不能为空')
+        await supplementConfirmation(detail.todo.id, detail.todo.version, input.trim())
       } else {
         if (!input.trim()) throw new Error('拒绝原因不能为空')
         await rejectConfirmation(detail.todo.id, detail.todo.version, input.trim())
@@ -157,11 +181,12 @@ export default function Confirmations() {
         {detail.todo.context_snapshot && <SnapshotPanel snapshot={detail.todo.context_snapshot} />}
         {detail.todo.status === 'need_decision'
           ? <Flex gap={12}><Button type="primary" onClick={openApprove}>批准并生成 Task</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>
-          : <><Alert type="warning" showIcon message="该 Todo 需要补充信息；MVP 暂不提供补信息操作，可先拒绝后由新消息重新提取。" /><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></>}
+          : <><Alert type="info" showIcon message="该 Todo 信息不足。补充说明后会重新交给决策器判定（异步，稍后刷新查看新结果）。" />
+            <Flex gap={12}><Button type="primary" onClick={() => { setInput(''); setModal('supplement') }}>补充信息</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex></>}
       </Space>}
     </Drawer>
-    <Modal title={modal === 'approve' ? '确认执行方案' : '填写拒绝原因'} open={Boolean(modal)} confirmLoading={submitting} onOk={submit} onCancel={() => setModal(undefined)} okText={modal === 'approve' ? '批准' : '确认拒绝'}>
-      <Input.TextArea rows={modal === 'approve' ? 12 : 4} value={input} onChange={(event) => setInput(event.target.value)} placeholder={modal === 'approve' ? '非空 JSON 方案' : '拒绝原因'} />
+    <Modal title={modalTitle(modal)} open={Boolean(modal)} confirmLoading={submitting} onOk={submit} onCancel={() => setModal(undefined)} okText={modalOkText(modal)}>
+      <Input.TextArea rows={modal === 'approve' ? 12 : 4} value={input} onChange={(event) => setInput(event.target.value)} placeholder={modalPlaceholder(modal)} />
     </Modal>
   </>
 }

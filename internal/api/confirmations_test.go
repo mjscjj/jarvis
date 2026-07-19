@@ -17,10 +17,12 @@ import (
 )
 
 type fakeConfirmationService struct {
-	approveInput decide.ApproveInput
-	rejectInput  decide.RejectInput
-	approveErr   error
-	rejectErr    error
+	approveInput    decide.ApproveInput
+	rejectInput     decide.RejectInput
+	supplementInput decide.SupplementInput
+	approveErr      error
+	rejectErr       error
+	supplementErr   error
 }
 
 type fakeConfirmationReader struct {
@@ -64,6 +66,14 @@ func (f *fakeConfirmationService) Reject(_ context.Context, input decide.RejectI
 		return nil, f.rejectErr
 	}
 	return &decide.RejectResult{TodoID: input.TodoID, Status: "dismissed", Version: input.ExpectedVersion + 1}, nil
+}
+
+func (f *fakeConfirmationService) Supplement(_ context.Context, input decide.SupplementInput) (*decide.SupplementResult, error) {
+	f.supplementInput = input
+	if f.supplementErr != nil {
+		return nil, f.supplementErr
+	}
+	return &decide.SupplementResult{TodoID: input.TodoID, Status: "extracted", Version: input.ExpectedVersion + 1}, nil
 }
 
 func TestListConfirmationsDefaultsToPendingStatuses(t *testing.T) {
