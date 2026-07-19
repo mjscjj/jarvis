@@ -35,6 +35,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
+	h.GET("/api/confirmations", ListConfirmations(deps.Todos))
+	h.GET("/api/confirmations/:todo_id", GetConfirmation(deps.Todos))
 	h.POST("/api/confirmations/:todo_id/approve", ApproveConfirmation(deps.Confirmations))
 	h.POST("/api/confirmations/:todo_id/reject", RejectConfirmation(deps.Confirmations))
 	return nil

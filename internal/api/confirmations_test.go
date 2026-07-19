@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"jarvis/internal/decide"
+	"jarvis/internal/extract"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/ut"
@@ -20,6 +21,23 @@ type fakeConfirmationService struct {
 	rejectInput  decide.RejectInput
 	approveErr   error
 	rejectErr    error
+}
+
+type fakeConfirmationReader struct {
+	filter extract.TodoListFilter
+	status string
+}
+
+func (f *fakeConfirmationReader) ListTodos(_ context.Context, filter extract.TodoListFilter) (*extract.TodoList, error) {
+	f.filter = filter
+	return &extract.TodoList{Items: []extract.TodoView{{ID: 7, Status: "need_decision"}}, Total: 1, Page: filter.Page, PageSize: filter.PageSize}, nil
+}
+
+func (f *fakeConfirmationReader) GetTodo(_ context.Context, id uint64) (*extract.TodoView, error) {
+	if id != 7 {
+		return nil, fmt.Errorf("%w: id=%d", extract.ErrTodoNotFound, id)
+	}
+	return &extract.TodoView{ID: id, Status: f.status}, nil
 }
 
 func (f *fakeConfirmationService) Approve(_ context.Context, input decide.ApproveInput) (*decide.TaskView, error) {
@@ -36,6 +54,46 @@ func (f *fakeConfirmationService) Reject(_ context.Context, input decide.RejectI
 		return nil, f.rejectErr
 	}
 	return &decide.RejectResult{TodoID: input.TodoID, Status: "dismissed", Version: input.ExpectedVersion + 1}, nil
+}
+
+func TestListConfirmationsDefaultsToPendingStatuses(t *testing.T) {
+	reader := &fakeConfirmationReader{}
+	h := server.New()
+	h.GET("/api/confirmations", ListConfirmations(reader))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/confirmations?page=2&page_size=10", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	if fmt.Sprint(reader.filter.Statuses) != "[need_info need_decision]" || reader.filter.Page != 2 || reader.filter.PageSize != 10 {
+		t.Fatalf("filter = %#v", reader.filter)
+	}
+}
+
+func TestListConfirmationsRejectsNonPendingStatus(t *testing.T) {
+	h := server.New()
+	h.GET("/api/confirmations", ListConfirmations(&fakeConfirmationReader{}))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/confirmations?status=confirmed", nil).Result()
+	if response.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+}
+
+func TestGetConfirmation(t *testing.T) {
+	h := server.New()
+	h.GET("/api/confirmations/:todo_id", GetConfirmation(&fakeConfirmationReader{status: "need_info"}))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/confirmations/7", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+}
+
+func TestGetConfirmationRejectsSettledTodo(t *testing.T) {
+	h := server.New()
+	h.GET("/api/confirmations/:todo_id", GetConfirmation(&fakeConfirmationReader{status: "confirmed"}))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/confirmations/7", nil).Result()
+	if response.StatusCode() != consts.StatusConflict {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
 }
 
 func TestApproveConfirmation(t *testing.T) {

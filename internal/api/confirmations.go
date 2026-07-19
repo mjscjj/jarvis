@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"jarvis/internal/decide"
+	"jarvis/internal/extract"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
@@ -24,6 +25,63 @@ type approveConfirmationRequest struct {
 type rejectConfirmationRequest struct {
 	ExpectedVersion *int32 `json:"expected_version"`
 	Reason          string `json:"reason"`
+}
+
+var confirmationStatuses = map[string]struct{}{
+	"need_info": {}, "need_decision": {},
+}
+
+func ListConfirmations(reader extract.TodoReader) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		filter, err := todoListFilter(c)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40014, err)
+			return
+		}
+		if len(filter.Statuses) == 0 {
+			filter.Statuses = []string{"need_info", "need_decision"}
+		}
+		for _, status := range filter.Statuses {
+			if _, ok := confirmationStatuses[status]; !ok {
+				writeAPIError(c, consts.StatusBadRequest, 40014, fmt.Errorf("confirmation status must be need_info or need_decision"))
+				return
+			}
+		}
+		if err := extract.ValidateTodoFilter(filter); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40014, err)
+			return
+		}
+		result, err := reader.ListTodos(ctx, filter)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50011, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func GetConfirmation(reader extract.TodoReader) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		todoID, err := confirmationTodoID(c)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40010, err)
+			return
+		}
+		result, err := reader.GetTodo(ctx, todoID)
+		if errors.Is(err, extract.ErrTodoNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40410, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50012, err)
+			return
+		}
+		if _, ok := confirmationStatuses[result.Status]; !ok {
+			writeAPIError(c, consts.StatusConflict, 40911, fmt.Errorf("Todo id=%d is not awaiting confirmation: status=%s", todoID, result.Status))
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
 }
 
 func ApproveConfirmation(service decide.ConfirmationService) app.HandlerFunc {
