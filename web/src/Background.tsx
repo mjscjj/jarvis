@@ -15,6 +15,7 @@ import {
   Table,
   Tag,
   Tabs,
+  Tooltip,
   Typography,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
@@ -163,6 +164,18 @@ function ProjectsPanel() {
 
 const roleDefaultWeight: Record<PersonRole, number> = { leader: 1.0, key: 0.7, colleague: 0.4, other: 0.1 }
 
+type PersonRoleFilter = 'all' | PersonRole
+
+// personToInput projects a stored Person back into the update payload so an
+// inline edit patches exactly one field without dropping the rest.
+function personToInput(person: Person): PersonInput {
+  return {
+    open_id: person.open_id, name: person.name, role: person.role, priority_weight: person.priority_weight,
+    department: person.department, title: person.title, relation: person.relation,
+    comm_style: person.comm_style, p2p_chat_id: person.p2p_chat_id, notes: person.notes, is_active: person.is_active,
+  }
+}
+
 function PersonsPanel() {
   const [items, setItems] = useState<Person[]>([])
   const [loading, setLoading] = useState(false)
@@ -170,6 +183,8 @@ function PersonsPanel() {
   const [editing, setEditing] = useState<Person | null>(null)
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [roleFilter, setRoleFilter] = useState<PersonRoleFilter>('all')
+  const [savingId, setSavingId] = useState<number>()
   const [form] = Form.useForm<PersonInput>()
   const [boundOpenID, setBoundOpenID] = useState('')
   const [query, setQuery] = useState('')
@@ -185,6 +200,21 @@ function PersonsPanel() {
       .finally(() => setLoading(false))
   }, [])
   useEffect(reload, [reload])
+
+  // patchPerson performs an inline single-field update straight from the list.
+  const patchPerson = async (person: Person, patch: Partial<PersonInput>) => {
+    setSavingId(person.id)
+    try {
+      await updatePerson(person.id, { ...personToInput(person), ...patch })
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSavingId(undefined)
+    }
+  }
+
+  const visibleItems = roleFilter === 'all' ? items : items.filter((p) => p.role === roleFilter)
 
   const resetResolve = () => { setQuery(''); setCandidates(null); setHasMore(false); setBoundOpenID('') }
   const openCreate = () => {
@@ -248,12 +278,26 @@ function PersonsPanel() {
   }
 
   const columns: TableColumnsType<Person> = [
-    { title: '姓名', dataIndex: 'name', render: (_, p) => <Text strong>{p.name}</Text> },
-    { title: '角色', dataIndex: 'role', width: 120, render: (r: PersonRole) => <Tag color={personRoleColors[r]}>{personRoleLabels[r]}</Tag> },
+    {
+      title: '姓名', dataIndex: 'name',
+      render: (_, p) => <Tooltip title={`open_id: ${p.open_id}`}><Text strong>{p.name}</Text></Tooltip>,
+    },
+    {
+      title: '角色', dataIndex: 'role', width: 140,
+      // 行内直接改角色，同时把权重联动为该角色默认值（规范：列表页优先行内编辑）。
+      render: (r: PersonRole, p) => (
+        <Select<PersonRole> size="small" variant="borderless" value={r} disabled={savingId === p.id} style={{ width: 120 }}
+          onChange={(role) => patchPerson(p, { role, priority_weight: roleDefaultWeight[role] })}
+          options={Object.entries(personRoleLabels).map(([value, label]) => ({ value, label }))} />
+      ),
+    },
     { title: '权重', dataIndex: 'priority_weight', width: 80 },
     { title: '部门/职位', width: 200, render: (_, p) => [p.department, p.title].filter(Boolean).join(' · ') || '—' },
     { title: '沟通风格', dataIndex: 'comm_style', ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '启用', dataIndex: 'is_active', width: 70, render: (v: boolean) => v ? <Tag color="green">是</Tag> : <Tag>否</Tag> },
+    {
+      title: '启用', dataIndex: 'is_active', width: 70,
+      render: (v: boolean, p) => <Switch size="small" checked={v} loading={savingId === p.id} onChange={(next) => patchPerson(p, { is_active: next })} />,
+    },
     {
       title: '操作', width: 150, render: (_, p) => (
         <Flex gap={8}>
@@ -268,7 +312,19 @@ function PersonsPanel() {
 
   return <>
     <Flex justify="space-between" align="center" className="section-heading">
-      <Text type="secondary">共 {items.length} 个人物</Text>
+      <Flex gap={12} align="center">
+        <Segmented<PersonRoleFilter>
+          value={roleFilter}
+          onChange={(value) => setRoleFilter(value)}
+          options={[
+            { value: 'all', label: '全部' },
+            { value: 'leader', label: 'Leader' },
+            { value: 'key', label: '关键干系人' },
+            { value: 'colleague', label: '同事' },
+          ]}
+        />
+        <Text type="secondary">{visibleItems.length} / {items.length} 人</Text>
+      </Flex>
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建人物</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon message="人物操作失败" description={error} closable onClose={() => setError(undefined)} />}
@@ -340,6 +396,20 @@ function formatScanTime(value: string | null): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+// formatActiveTime renders last_active_at (ms epoch of the newest message) as a
+// coarse relative label so the activity-desc ordering reads at a glance.
+function formatActiveTime(ms: number | null): string {
+  if (!ms) return '无活跃'
+  const diff = Date.now() - ms
+  if (diff < 0) return '刚刚'
+  const minute = 60_000, hour = 60 * minute, day = 24 * hour
+  if (diff < minute) return '刚刚'
+  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`
+  if (diff < day) return `${Math.floor(diff / hour)} 小时前`
+  if (diff < 30 * day) return `${Math.floor(diff / day)} 天前`
+  return new Date(ms).toLocaleDateString('zh-CN')
 }
 
 const PAGE_SIZE = 20
@@ -427,6 +497,14 @@ function GroupsPanel() {
     { title: '分层', dataIndex: 'tier', width: 70, render: (t: string) => <Tag color={tierColors[t] || 'default'}>{tierLabels[t] || t}</Tag> },
     { title: '关联项目', width: 150, render: (_, g) => g.project?.name || '—' },
     { title: '关键群', dataIndex: 'is_key_group', width: 80, render: (v: boolean) => v ? <Tag color="volcano">是</Tag> : '—' },
+    {
+      title: '最近活跃', dataIndex: 'last_active_at', width: 110,
+      render: (v: number | null) => (
+        <Tooltip title={v ? new Date(v).toLocaleString('zh-CN', { hour12: false }) : '暂无消息活跃记录'}>
+          <Text style={{ fontSize: 12 }} type={v ? undefined : 'secondary'}>{formatActiveTime(v)}</Text>
+        </Tooltip>
+      ),
+    },
     {
       title: '最近扫描', width: 170, render: (_, g) => {
         if (!g.related_group) return <Text type="secondary">—</Text>
