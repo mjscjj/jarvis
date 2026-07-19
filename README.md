@@ -13,6 +13,8 @@ Go 1.26 + Hertz + GORM + codex CLI（M4 决策 / M5 代码执行）+ model API�
 - M0.2 已完成：统一 `lark-cli` 子进程层、无历史回溯的增量扫描、线程回复拍平、Resource 元数据沉淀和分层 cron 调度。消息扫描只处理数据库中动态标记的 `related_group`。
 - M0.3 核心链路已实现：Go 侧 mem0 HTTP client、消息窗口化 worker、每 10 分钟记忆化任务、Python FastAPI sidecar、Qdrant v1.18.2 原生 launchd 服务与锁定依赖。
 - M0.4 提取 worker 已实现：相关群增量聚合、背景/记忆注入、Structured Outputs、Todo 事务落库与独立水位推进；同时提供只读 Todo API 和 React + Ant Design 看板。
+- M0.5 MVP 确认已完成：`extracted Todo → need_decision → 用户批准/拒绝`，批准后原子生成 Task；MVP 不打分、不调用 codex、不自动确认。
+- M0.6 MVP 执行闭环已完成：管理后台列出 `pending Task`，支持人工执行后回写 `done/failed + result`。确认与执行页面由同一个 Go 服务托管。
 - Kimi Code K2.7（`kimi-for-coding`）已完成 Structured Output 实测；mem0 使用同一端点的 `bge_m3_embed`（1024 维），真实 add/search → Qdrant 链路已验收。
 
 ## 本地运行
@@ -51,6 +53,8 @@ go run ./cmd/jarvis-server -config conf/config.yaml
 curl http://127.0.0.1:18800/healthz
 ```
 
+管理后台直接打开 `http://127.0.0.1:18800/`，包含 Todo、待确认和 Task 执行三个页面。
+
 ## launchd 托管
 
 安装脚本会构建 `bin/jarvis-server`、校验 plist，并注册/重启当前用户的 `com.bytedance.jarvis.server` 服务：
@@ -84,12 +88,20 @@ go run ./cmd/jarvis-server -config conf/config.yaml -memorize-once
 go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ```
 
+手工执行一次 MVP 人工确认分流；正常服务模式下由 `decide.schedule` 触发：
+
+```bash
+go run ./cmd/jarvis-server -config conf/config.yaml -decide-once
+```
+
 sidecar 依赖由 `sidecar/mem0/uv.lock` 固定；Qdrant 数据、mem0 history 和日志都落在被 Git 忽略的 `var/`。
 
 ## 测试
 
 ```bash
 go test ./...
+npm --prefix web run typecheck
+npm --prefix web run build
 ```
 
 真实 MySQL 迁移集成测试要求一个全新的空测试库：
@@ -108,9 +120,9 @@ JARVIS_TEST_PIPELINE_CONFIG=../../conf/config.yaml \
   go test ./internal/extract -run '^TestPipelineLive$' -v
 ```
 
-## Todo 看板（M0.4）
+## 管理后台（MVP）
 
-后端已提供只读接口 `GET /api/todos` 和 `GET /api/todos/{id}`。本地启动 React 看板：
+生产构建由 Go 服务从 `web/dist` 直接托管。开发前端时仍可启动 Vite 热更新：
 
 ```bash
 cd web
@@ -118,7 +130,13 @@ npm ci --registry=https://registry.npmjs.org
 npm run dev
 ```
 
-Vite 默认监听 `127.0.0.1:18801`，并把 `/api` 代理到 `jarvis-server` 的 `127.0.0.1:18800`。确认、补信息和修改 Todo 属于 M0.5，本阶段不提供写操作。
+Vite 默认监听 `127.0.0.1:18801`，并把 `/api` 代理到 `jarvis-server` 的 `127.0.0.1:18800`。
+
+当前后台提供：
+
+- Todo 查询与详情；
+- 待确认详情、批准生成 Task、拒绝 Todo；
+- Task 查询、人工完成或失败回写。
 
 ## 目录结构
 
@@ -129,7 +147,9 @@ jarvis/
 │   ├── api/             # 路由 + handler（/healthz）
 │   ├── config/          # 配置加载与校验
 │   ├── capture/         # M2 会话发现、增量扫描与调度
+│   ├── decide/          # M4 人工确认闸门
 │   ├── domain/          # 7 个核心实体 GORM model
+│   ├── execute/         # M5 人工 Task 执行闭环
 │   ├── extract/         # M3 聚合、prompt、模型抽取、Todo 事务与水位
 │   ├── larkcli/         # lark-cli 子进程、限流、并发和超时
 │   ├── memory/          # 消息窗口化与 mem0 sidecar client
@@ -142,4 +162,4 @@ jarvis/
 └── docs/                # 方案文档
 ```
 
-M3 的合成消息真实全链路已验收并回滚无残留；当前 20 个 `related_group` 在无回溯检查点之后尚无新消息。下一步是语义近邻去重，以及确认身份 slot 不完整候选的持久化指纹策略；策略确认前继续 fail-fast，不生成临时指纹。
+MVP 已覆盖采集、提取、人工确认、Task 生成与人工完成回写。高级语义去重、智能记忆、自动决策和自动外部执行均作为后续增强，不阻塞当前人工闭环。

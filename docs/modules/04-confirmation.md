@@ -649,7 +649,7 @@ CREATE TABLE decision_audit (
 - runtime worker 由 GORM source 按 leader 优先、证据时间、ID 稳定读取 Todo；强校验 ID/version 和落库结果，任一错误立即停止；cron 使用 `SkipIfStillRunning` 防止批次重叠。
 - 已覆盖严格 HTTP 契约、action hash 稳定性、真实 MySQL 事务/唯一 Task/审计/全回滚测试；真实 MySQL 合成验收已跑通 `extracted → need_decision → approve → Task`，不调用飞书、mem0 或模型。
 
-MVP 尚缺：M5 Task 执行器。后续增强项包括规则打分 + DeepJudge + Router 的生产装配、auto 专用确认路径、补信息回流、飞书卡片及 TTL 扫描；这些不阻塞当前人工流程，且在真实使用证明有价值前不启用。
+MVP 已由 M5 的人工 Task 完成回写闭环接通。后续增强项包括规则打分 + DeepJudge + Router 的生产装配、auto 专用确认路径、补信息回流、飞书卡片及 TTL 扫描；这些不阻塞当前人工流程，且在真实使用证明有价值前不启用。
 
 ---
 
