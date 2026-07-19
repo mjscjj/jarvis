@@ -1,0 +1,73 @@
+/* Design tokens for Jarvis web UI.
+ * Keep this file flat and dependency-free; it only declares CSS custom properties.
+ */
+
+:root {
+  /* Color palette: warm neutral + fresh green accent */
+  --color-bg: #fafaf9;
+  --color-bg-elevated: #ffffff;
+  --color-bg-soft: #f5f5f4;
+  --color-bg-hover: #f0f0ef;
+
+  --color-primary: #166534;
+  --color-primary-hover: #14532d;
+  --color-primary-light: #dcfce7;
+
+  --color-text: #1c1917;
+  --color-text-secondary: #78716c;
+  --color-text-tertiary: #a8a29e;
+  --color-text-inverse: #ffffff;
+
+  --color-border: #e7e5e4;
+  --color-border-strong: #d6d3d1;
+
+  --color-success: #16a34a;
+  --color-success-bg: #f0fdf4;
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+  --color-error: #dc2626;
+  --color-error-bg: #fef2f2;
+  --color-info: #2563eb;
+  --color-info-bg: #eff6ff;
+
+  --color-leader: #7c3aed;
+  --color-leader-bg: #f3f0ff;
+
+  /* Status colors (semantic) */
+  --status-pending: #2563eb;
+  --status-processing: #d97706;
+  --status-success: #16a34a;
+  --status-error: #dc2626;
+  --status-default: #78716c;
+  --status-warning: #ea580c;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08);
+
+  /* Typography */
+  --font-sans: Inter, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Layout */
+  --sider-width: 220px;
+  --chat-width: 380px;
+  --header-height: 56px;
+}

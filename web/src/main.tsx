@@ -11,12 +11,37 @@ createRoot(document.getElementById('root')!).render(
       locale={zhCN}
       theme={{
         token: {
-          colorPrimary: '#244a3a',
-          colorInfo: '#244a3a',
-          colorBgBase: '#f3f5f2',
-          colorTextBase: '#17241e',
+          colorPrimary: '#166534',
+          colorInfo: '#166534',
+          colorSuccess: '#16a34a',
+          colorWarning: '#d97706',
+          colorError: '#dc2626',
+          colorBgBase: '#fafaf9',
+          colorTextBase: '#1c1917',
+          colorBorder: '#e7e5e4',
           borderRadius: 10,
-          fontFamily: 'Inter, "PingFang SC", "Helvetica Neue", sans-serif',
+          borderRadiusLG: 14,
+          fontFamily: 'Inter, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif',
+        },
+        components: {
+          Card: {
+            colorBgContainer: '#ffffff',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05)',
+            boxShadowTertiary: '0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05)',
+          },
+          Menu: {
+            itemBg: 'transparent',
+            itemSelectedBg: '#dcfce7',
+            itemSelectedColor: '#166534',
+            itemColor: '#78716c',
+            itemHoverColor: '#166534',
+          },
+          Tag: {
+            borderRadiusSM: 6,
+          },
+          Button: {
+            borderRadius: 8,
+          },
         },
       }}
     >

@@ -1,6 +1,16 @@
-import { useState } from 'react'
-import { Button, Layout, Menu, Typography } from 'antd'
+import { useCallback, useState } from 'react'
+import { Button, Layout, Menu, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
+import {
+  DashboardOutlined,
+  CheckCircleOutlined,
+  PlayCircleOutlined,
+  SettingOutlined,
+  BarChartOutlined,
+  ToolOutlined,
+  MessageOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons'
 import Confirmations from './Confirmations'
 import Tasks from './Tasks'
 import Background from './Background'
@@ -10,25 +20,39 @@ import Debug from './Debug'
 import Todos from './Todos'
 import Chat from './Chat'
 import { PageContextProvider, usePageContext } from './pageContext'
+import { useLocalStorage } from './hooks/useLocalStorage'
 
 const { Sider, Content } = Layout
-const { Text, Title } = Typography
+const { Title, Text } = Typography
 
 const DEFAULT_KEY = 'overview'
 
-const menuItems: MenuProps['items'] = [
-  { key: 'overview', label: '总览看板' },
-  { key: 'todos', label: 'Todo 线索' },
-  { key: 'confirmations', label: '待确认' },
-  { key: 'tasks', label: 'Task 执行' },
-  { key: 'background', label: '背景设置' },
-  { key: 'progress', label: '进度' },
-  { key: 'debug', label: '调试' },
+interface MenuItem {
+  key: string
+  label: string
+  icon: React.ReactNode
+}
+
+const menuItems: MenuItem[] = [
+  { key: 'overview', label: '工作台', icon: <DashboardOutlined /> },
+  { key: 'todos', label: '待办', icon: <CheckCircleOutlined /> },
+  { key: 'confirmations', label: '待确认', icon: <CheckCircleOutlined /> },
+  { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
+  { key: 'background', label: '背景', icon: <SettingOutlined /> },
+  { key: 'progress', label: '进度', icon: <BarChartOutlined /> },
+  { key: 'debug', label: '调试', icon: <ToolOutlined /> },
 ]
+
+const menuProps: MenuProps['items'] = menuItems.map((item) => ({
+  key: item.key,
+  label: item.label,
+  icon: item.icon,
+}))
 
 function AppShell() {
   const { context, navigate } = usePageContext()
   const [refreshKey, setRefreshKey] = useState(0)
+  const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOpen', true)
 
   const pages: Record<string, React.ReactNode> = {
     overview: <Overview />,
@@ -40,17 +64,21 @@ function AppShell() {
     debug: <Debug />,
   }
 
+  const handleRefresh = useCallback(() => {
+    setRefreshKey((value) => value + 1)
+  }, [])
+
   return (
     <Layout className="app-shell">
       <Sider className="app-sider" width={220} theme="light">
         <div className="sider-brand">
-          <Text className="eyebrow">LOCAL WORK INTELLIGENCE</Text>
-          <Title level={3}>Jarvis</Title>
+          <div className="sider-tagline">Local Work Intelligence</div>
+          <Title level={4}>Jarvis</Title>
         </div>
         <Menu
           mode="inline"
           selectedKeys={[context.active_key]}
-          items={menuItems}
+          items={menuProps}
           onClick={({ key }) => navigate(key)}
           className="app-menu"
         />
@@ -59,15 +87,27 @@ function AppShell() {
         <div className="app-main">
           <Content className="app-content">
             <div className="app-toolbar">
-              <Button onClick={() => setRefreshKey((value) => value + 1)}>刷新</Button>
+              <Tooltip title="刷新当前页">
+                <Button icon={<ReloadOutlined />} onClick={handleRefresh}>刷新</Button>
+              </Tooltip>
             </div>
             {pages[context.active_key]}
           </Content>
-          <aside className="chat-dock">
+          <aside className={`chat-dock ${chatOpen ? '' : 'collapsed'}`}>
             <Chat />
           </aside>
         </div>
       </Layout>
+      <Tooltip title={chatOpen ? '收起对话' : '打开对话'}>
+        <Button
+          type="primary"
+          shape="circle"
+          size="large"
+          icon={<MessageOutlined />}
+          className="chat-toggle"
+          onClick={() => setChatOpen((open) => !open)}
+        />
+      </Tooltip>
     </Layout>
   )
 }
