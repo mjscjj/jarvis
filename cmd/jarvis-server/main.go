@@ -14,6 +14,7 @@ import (
 	"jarvis/internal/api"
 	"jarvis/internal/capture"
 	"jarvis/internal/config"
+	"jarvis/internal/decide"
 	"jarvis/internal/embedding"
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/provider"
@@ -115,6 +116,16 @@ func main() {
 	todoStore, err := extract.NewTodoStore(db)
 	if err != nil {
 		hlog.Fatalf("initialize todo store failed: %v", err)
+	}
+	backgroundSnapshotter, err := decide.NewBackgroundSnapshotter(db, memoryClient, decide.BackgroundOptions{
+		MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
+	})
+	if err != nil {
+		hlog.Fatalf("initialize confirmation background snapshotter failed: %v", err)
+	}
+	confirmationService, err := decide.NewService(db, backgroundSnapshotter)
+	if err != nil {
+		hlog.Fatalf("initialize confirmation service failed: %v", err)
 	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
@@ -274,7 +285,7 @@ func main() {
 	h := server.New(
 		server.WithHostPorts(cfg.Server.Addr),
 	)
-	if err := api.Register(h, api.Dependencies{DB: db, Todos: todoStore}); err != nil {
+	if err := api.Register(h, api.Dependencies{DB: db, Todos: todoStore, Confirmations: confirmationService}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}
 

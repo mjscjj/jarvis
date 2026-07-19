@@ -54,3 +54,14 @@ func TestExtractModels(t *testing.T) {
 		t.Errorf("TodoEvent table = %q", got)
 	}
 }
+
+func TestDecideModels(t *testing.T) {
+	t.Parallel()
+	models := DecideModels()
+	if got, want := len(models), 1; got != want {
+		t.Fatalf("DecideModels() length = %d, want %d", got, want)
+	}
+	if got := models[0].(*DecisionAudit).TableName(); got != "decision_audit" {
+		t.Errorf("DecisionAudit table = %q", got)
+	}
+}

@@ -4,6 +4,7 @@ package api
 import (
 	"fmt"
 
+	"jarvis/internal/decide"
 	"jarvis/internal/extract"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -12,8 +13,9 @@ import (
 
 // Dependencies are process-level dependencies shared by API handlers.
 type Dependencies struct {
-	DB    *gorm.DB
-	Todos extract.TodoReader
+	DB            *gorm.DB
+	Todos         extract.TodoReader
+	Confirmations decide.ConfirmationService
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -27,8 +29,13 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Todos == nil {
 		return fmt.Errorf("api todo reader dependency is nil")
 	}
+	if deps.Confirmations == nil {
+		return fmt.Errorf("api confirmation service dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
+	h.POST("/api/confirmations/:todo_id/approve", ApproveConfirmation(deps.Confirmations))
+	h.POST("/api/confirmations/:todo_id/reject", RejectConfirmation(deps.Confirmations))
 	return nil
 }

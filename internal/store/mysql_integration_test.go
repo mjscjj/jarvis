@@ -42,6 +42,7 @@ func TestMigrateMySQL(t *testing.T) {
 
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
+	models = append(models, domain.DecideModels()...)
 	for _, model := range models {
 		if db.Migrator().HasTable(model) {
 			t.Fatalf("integration database is not empty: table %T already exists", model)
@@ -63,6 +64,7 @@ func TestMigrateMySQL(t *testing.T) {
 	assertColumnType(t, db, "scan_record", "duration_ms", "int")
 	assertColumnType(t, db, "feishu_group", "related_group", "tinyint(1)")
 	assertColumnType(t, db, "todo_event", "detail", "json")
+	assertColumnType(t, db, "decision_audit", "matched_rules", "json")
 
 	for _, table := range []string{"project", "feishu_group", "person", "todo", "task", "resource"} {
 		var extra string
