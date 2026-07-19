@@ -821,5 +821,8 @@ M3 回写的记忆若被下轮检索回来、又被当成新行动线索，会�
 - `internal/domain/extract.go` 已落 `todo_extract_watermark` / `todo_event` GORM model，并纳入启动迁移。
 - `internal/extract/candidate.go` 已落封闭 action/slot 词表、缺 slot 显式降级、strict JSON 解码和 NFKC + case-fold 指纹归一。
 - `internal/extract/provider` 已落 OpenAI-compatible `POST /chat/completions` + `response_format=json_schema, strict=true` client；拒答、非 `stop`、非法 JSON/schema 均直接报错，不回退 JSON mode。
+- `internal/extract` worker 已落 related group 增量读取、chat/topic 聚合、受限回看、Person/Project/Resource/Todo 背景、mem0 检索、逐字新证据校验、完整候选的精确指纹去重，以及 Todo/Event/水位的 per-chat 事务提交；`extract.schedule` 使用非重叠 cron，`--extract-once` 支持手工验收。
+- 真实验收已覆盖 Kimi strict schema 与 `MySQL → mem0 → model → Todo/Event/watermark` 全链路；全链路测试临时隔离真实群并在外层事务回滚，不发送真实飞书消息、不残留 fixture。
 - `GET /api/todos` / `GET /api/todos/{id}` 与 `web/` 只读看板已完成；M0.5 前不提供修改/确认接口。
-- 身份 slot 缺失的候选当前允许通过领域校验，但指纹计算显式返回 `ErrFingerprintIncomplete`，避免用 `null` 形成跨 Todo 碰撞。其最终持久化身份策略仍需确认后再实现，不加临时 fallback。
+- 身份 slot 缺失的候选当前允许通过领域校验，但指纹计算显式返回 `ErrFingerprintIncomplete`，整个 chat 不写 Todo/水位，避免用 `null` 形成跨 Todo 碰撞。其最终持久化身份策略仍需确认后再实现，不加临时 fallback。
+- 尚未实现 §5 的 Qdrant 语义近邻 + LLM 裁决；当前只完成精确指纹层，不能把 M0.4 表述为全部去重完成。

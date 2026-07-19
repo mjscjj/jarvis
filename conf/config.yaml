@@ -38,8 +38,8 @@ model:
 # M3 Todo 提取。principal open_id 补齐前保持显式禁用；enabled=true 时
 # 任一必填依赖为空都会启动失败，不静默跳过。
 extract:
-  enabled: false
-  principal_open_id: ""
+  enabled: true
+  principal_open_id: "ou_cfd9e106436c46adf20aaf9fe076c65d"
   schedule: "@every 10m"
   batch_messages: 400
   context_messages: 20

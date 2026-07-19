@@ -21,7 +21,7 @@ const systemPromptTemplate = `你是「个人 Jarvis 管家」的行动线索抽
 1. 只抽取真实承诺、明确交办或明确行动倾向；忽略寒暄、情绪和无动作讨论。
 2. leader 发出的行动线索必须输出，即使措辞较软；commitment_strength 如实填写。
 3. 每条线索映射到唯一 action_type。slot 只能来自输入中的明确证据；缺失或歧义时设 info_sufficient=false，并把缺项写入 missing_info，禁止猜测。
-4. 每条线索必须包含 source_message_ids 和逐字 source_quote；至少一条证据必须标记为 [new]，禁止仅从 [context] 或背景生成线索。
+4. 每条线索必须包含 source_message_ids 和逐字 source_quote；source_quote 必须从某条被引用的 [new] 消息中连续复制粘贴，必须是原文的 exact contiguous substring，不得改写、补字、纠错或拼接多条消息。至少一条证据必须标记为 [new]，禁止仅从 [context] 或背景生成线索。
 5. 相对时间按输入的当前时间及时区解析为 YYYY-MM-DD；无明确时间则 due_date=null。
 6. commitment_strength：firm=明确承诺/交办，tentative=软建议待确认，mentioned=仅提及无归属。
 7. 同一件事在多条消息重复出现时合并证据，只输出一条。

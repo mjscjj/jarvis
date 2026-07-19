@@ -166,7 +166,7 @@ func validateCandidateEvidence(unit ConversationUnit, candidate *Candidate) erro
 		return fmt.Errorf("%w: candidate has no extractable [new] evidence", ErrInvalidCandidate)
 	}
 	if !quoteFound {
-		return fmt.Errorf("%w: source_quote is not present in cited messages", ErrInvalidCandidate)
+		return fmt.Errorf("%w: source_quote %q is not present in cited [new] messages", ErrInvalidCandidate, candidate.SourceQuote)
 	}
 	if candidate.AssignerOpenID != nil {
 		found := false

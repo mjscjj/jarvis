@@ -78,6 +78,12 @@ curl http://127.0.0.1:18900/health
 go run ./cmd/jarvis-server -config conf/config.yaml -memorize-once
 ```
 
+手工执行一次 Todo 提取；正常服务模式下由 `extract.schedule` 非重叠触发：
+
+```bash
+go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
+```
+
 sidecar 依赖由 `sidecar/mem0/uv.lock` 固定；Qdrant 数据、mem0 history 和日志都落在被 Git 忽略的 `var/`。
 
 ## 测试
@@ -91,6 +97,15 @@ go test ./...
 ```bash
 JARVIS_TEST_MYSQL_DSN='root:password@tcp(127.0.0.1:3306)/jarvis_migration_test?charset=utf8mb4&parseTime=true&loc=Local' \
   go test ./internal/store -run '^TestMigrateMySQL$' -v
+```
+
+用当前配置做真实 Structured Output 和可回滚的 M3 全链路验收：
+
+```bash
+JARVIS_TEST_MODEL_CONFIG=../../../conf/config.yaml \
+  go test ./internal/extract/provider -run '^TestClientLiveStructuredOutput$' -v
+JARVIS_TEST_PIPELINE_CONFIG=../../conf/config.yaml \
+  go test ./internal/extract -run '^TestPipelineLive$' -v
 ```
 
 ## Todo 看板（M0.4）
@@ -115,6 +130,7 @@ jarvis/
 │   ├── config/          # 配置加载与校验
 │   ├── capture/         # M2 会话发现、增量扫描与调度
 │   ├── domain/          # 7 个核心实体 GORM model
+│   ├── extract/         # M3 聚合、prompt、模型抽取、Todo 事务与水位
 │   ├── larkcli/         # lark-cli 子进程、限流、并发和超时
 │   ├── memory/          # 消息窗口化与 mem0 sidecar client
 │   └── store/           # MySQL 连接与迁移
@@ -126,4 +142,4 @@ jarvis/
 └── docs/                # 方案文档
 ```
 
-下一步是在 `extract.principal_open_id` 补齐后运行 `--extract-once` 做真实消息验收。身份 slot 不完整候选的去重策略仍待确认，当前会 fail-fast，不生成临时指纹。
+M3 的合成消息真实全链路已验收并回滚无残留；当前 20 个 `related_group` 在无回溯检查点之后尚无新消息。下一步是语义近邻去重，以及确认身份 slot 不完整候选的持久化指纹策略；策略确认前继续 fail-fast，不生成临时指纹。

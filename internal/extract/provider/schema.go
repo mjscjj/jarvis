@@ -38,11 +38,17 @@ func TodoExtractionJSONSchema() map[string]any {
 			"assigner_open_id":    stringOrNull(),
 			"project_hint":        stringOrNull(),
 			"due_date":            stringOrNull(),
-			"source_message_ids":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"source_quote":        map[string]any{"type": "string"},
-			"slots":               map[string]any{"type": "object", "additionalProperties": false, "properties": slotProperties, "required": slotNames},
-			"info_sufficient":     map[string]any{"type": "boolean"},
-			"missing_info":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"source_message_ids": map[string]any{
+				"type": "array", "items": map[string]any{"type": "string"},
+				"description": "Evidence message IDs. At least one ID must belong to a [new] message.",
+			},
+			"source_quote": map[string]any{
+				"type":        "string",
+				"description": "Exact contiguous substring copied verbatim from one cited [new] message; never paraphrase or combine messages.",
+			},
+			"slots":           map[string]any{"type": "object", "additionalProperties": false, "properties": slotProperties, "required": slotNames},
+			"info_sufficient": map[string]any{"type": "boolean"},
+			"missing_info":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		},
 		"required": []string{
 			"action_type", "title", "description", "commitment_strength", "assigner_open_id",

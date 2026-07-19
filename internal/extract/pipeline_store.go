@@ -2,7 +2,6 @@ package extract
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -84,9 +83,11 @@ func validateLoadOptions(opts LoadOptions) error {
 func (s *PipelineStore) loadNewMessages(ctx context.Context, chatID string, limit int) ([]domain.Message, error) {
 	query := s.db.WithContext(ctx).Where("chat_id = ?", chatID)
 	var watermark domain.TodoExtractWatermark
-	err := s.db.WithContext(ctx).Where("chat_id = ?", chatID).First(&watermark).Error
+	watermarkResult := s.db.WithContext(ctx).Where("chat_id = ?", chatID).Limit(1).Find(&watermark)
 	switch {
-	case err == nil:
+	case watermarkResult.Error != nil:
+		return nil, fmt.Errorf("load extract watermark chat_id=%s: %w", chatID, watermarkResult.Error)
+	case watermarkResult.RowsAffected == 1:
 		var cursor domain.Message
 		if err := s.db.WithContext(ctx).
 			Where("chat_id = ? AND message_id = ?", chatID, watermark.LastScannedMessageID).
@@ -94,11 +95,11 @@ func (s *PipelineStore) loadNewMessages(ctx context.Context, chatID string, limi
 			return nil, fmt.Errorf("resolve extract watermark chat_id=%s message_id=%s: %w", chatID, watermark.LastScannedMessageID, err)
 		}
 		query = query.Where("create_time > ? OR (create_time = ? AND id > ?)", cursor.CreateTime, cursor.CreateTime, cursor.ID)
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case watermarkResult.RowsAffected == 0:
 		// M2 itself starts at current time, so an absent M3 watermark means all
 		// locally captured messages for this explicitly related group are new.
 	default:
-		return nil, fmt.Errorf("load extract watermark chat_id=%s: %w", chatID, err)
+		return nil, fmt.Errorf("load extract watermark chat_id=%s returned rows=%d, want 0 or 1", chatID, watermarkResult.RowsAffected)
 	}
 	var messages []domain.Message
 	if err := query.Order("create_time ASC, id ASC").Limit(limit).Find(&messages).Error; err != nil {

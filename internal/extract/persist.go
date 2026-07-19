@@ -3,7 +3,6 @@ package extract
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -176,15 +175,17 @@ func (s *PipelineStore) prepareCandidate(batch ChatBatch, unit ConversationUnit,
 
 func (s *PipelineStore) persistCandidate(tx *gorm.DB, batch ChatBatch, prepared *preparedCandidate, modelName string) (bool, error) {
 	var existing domain.Todo
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("dedup_fingerprint = ?", prepared.Fingerprint).First(&existing).Error
+	result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("dedup_fingerprint = ?", prepared.Fingerprint).Limit(1).Find(&existing)
 	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		return s.createTodo(tx, batch, prepared, modelName)
-	case err != nil:
-		return false, fmt.Errorf("find todo fingerprint=%s: %w", prepared.Fingerprint, err)
-	default:
+	case result.Error != nil:
+		return false, fmt.Errorf("find todo fingerprint=%s: %w", prepared.Fingerprint, result.Error)
+	case result.RowsAffected == 1:
 		return false, s.updateTodo(tx, &existing, prepared, modelName)
+	case result.RowsAffected == 0:
+		return s.createTodo(tx, batch, prepared, modelName)
+	default:
+		return false, fmt.Errorf("find todo fingerprint=%s returned rows=%d, want 0 or 1", prepared.Fingerprint, result.RowsAffected)
 	}
 }
 
