@@ -635,9 +635,10 @@ CREATE TABLE decision_audit (
 - Task 的 `plan / slots / background` 均为确认时快照；`action_hash = sha256(canonical(action_type, slots, plan))`。Task 创建、Todo `confirmed + version+1`、`todo_event` 与 `decision_audit` 在同一事务提交，`task.uk_task_todo` 保证一 Todo 一 Task。
 - 拒绝时不生成 Task；Todo `dismissed + version+1`、`todo_event` 和 `decision_audit` 同事务提交。
 - `decision_audit` 已进入启动迁移，并已迁移当前本地 MySQL。
+- 已实现只读 Codex CLI 适配层：按本机实际命令使用 `exec --ephemeral --sandbox read-only --json --output-schema --output-last-message`；prompt 经 stdin 输入，有 repo 才传 `--cd`，无 repo 则切到隔离临时目录；严格校验 JSONL session、结构化因子/plan、分数范围与未知字段。该层尚未接入路由，因此不会自行处理真实 Todo。
 - 已覆盖严格 HTTP 契约、action hash 稳定性、真实 MySQL 事务/唯一 Task/审计/全回滚测试；集成测试只使用合成数据，不调用飞书、mem0 或模型。
 
-尚未实现：规则打分与三路由、codex 灰区深判、自动确认、详情中的审计/记忆/codex 建议上下文增强、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
+尚未实现：规则打分与三路由、Codex prompt/预算/灰区路由集成、自动确认、详情中的审计/记忆/codex 建议上下文增强、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
 
 ---
 
