@@ -39,9 +39,10 @@ func main() {
 	memorizeOnce := flag.Bool("memorize-once", false, "执行一次消息记忆化，成功后退出")
 	extractOnce := flag.Bool("extract-once", false, "执行一次 Todo 提取，成功后退出")
 	decideOnce := flag.Bool("decide-once", false, "执行一次 MVP 人工确认分流，成功后退出")
+	seedOnce := flag.Bool("seed", false, "一次性幂等写入初始 项目/任务/群关联 背景种子，成功后退出")
 	flag.Parse()
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce} {
+	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce} {
 		if selected {
 			actionCount++
 		}
@@ -73,6 +74,17 @@ func main() {
 	}
 	if *migrateOnly {
 		hlog.Infof("mysql schema migration completed")
+		return
+	}
+	if *seedOnce {
+		stats, err := background.Seed(context.Background(), db)
+		if err != nil {
+			hlog.Fatalf("seed backgrounds failed: %v", err)
+		}
+		hlog.Infof(
+			"seed completed: projects_created=%d projects_skipped=%d tasks_created=%d tasks_skipped=%d groups_linked=%d",
+			stats.ProjectsCreated, stats.ProjectsSkipped, stats.TasksCreated, stats.TasksSkipped, stats.GroupsLinked,
+		)
 		return
 	}
 
