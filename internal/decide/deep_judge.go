@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 
 	"jarvis/internal/domain"
 )
@@ -135,7 +136,7 @@ func validateGrayZone(zone GrayZone) error {
 }
 
 func validateUnitInterval(name string, low, high float64) error {
-	if low < 0 || low > 1 || high < 0 || high > 1 {
+	if !unitScore(low) || !unitScore(high) {
 		return fmt.Errorf("%s boundaries must be between 0 and 1", name)
 	}
 	if low >= high {
@@ -145,11 +146,15 @@ func validateUnitInterval(name string, low, high float64) error {
 }
 
 func validateRuleScore(score RuleScore) error {
-	if score.Confidence < 0 || score.Confidence > 1 {
+	if !unitScore(score.Confidence) {
 		return fmt.Errorf("rule confidence=%v is outside [0,1]", score.Confidence)
 	}
-	if score.Risk < 0 || score.Risk > 1 {
+	if !unitScore(score.Risk) {
 		return fmt.Errorf("rule risk=%v is outside [0,1]", score.Risk)
 	}
 	return nil
+}
+
+func unitScore(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 1
 }

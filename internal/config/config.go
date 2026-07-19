@@ -6,6 +6,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -304,7 +305,7 @@ func (c *Config) validate() error {
 }
 
 func validateGrayZone(name string, low, high float64) error {
-	if low < 0 || low > 1 || high < 0 || high > 1 {
+	if math.IsNaN(low) || math.IsInf(low, 0) || math.IsNaN(high) || math.IsInf(high, 0) || low < 0 || low > 1 || high < 0 || high > 1 {
 		return fmt.Errorf("codex.gray_zone.%s 边界必须在 0 到 1 之间", name)
 	}
 	if low >= high {

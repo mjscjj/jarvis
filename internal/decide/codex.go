@@ -315,7 +315,7 @@ func validateFactors(name string, factors []DecisionFactor) error {
 			return fmt.Errorf("codex decision %s_factors contains duplicate name %q", name, factorName)
 		}
 		seen[factorName] = struct{}{}
-		if factor.Score < 0 || factor.Score > 1 {
+		if !unitScore(factor.Score) {
 			return fmt.Errorf("codex decision %s factor %q score=%v is outside [0,1]", name, factorName, factor.Score)
 		}
 		if strings.TrimSpace(factor.Basis) == "" {

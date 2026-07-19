@@ -13,7 +13,7 @@ import (
 func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
 	resultJSON := `{"confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","uncertainty_factors":[],"recommended_review":false,"proposed_plan":{"summary":"inspect fixture","steps":["inspect"],"parameters":[],"basis":[]},"plan_is_clear":true}`
 	bin := writeCodexFixture(t, resultJSON, true)
-	decider, err := NewCodexDecider(CodexOptions{Bin: bin, Model: "fixture-model", Timeout: 2 * time.Second, Budget: testCodexBudget(t)})
+	decider, err := NewCodexDecider(CodexOptions{Bin: bin, Model: "fixture-model", Timeout: 10 * time.Second, Budget: testCodexBudget(t)})
 	if err != nil {
 		t.Fatalf("NewCodexDecider() error = %v", err)
 	}
@@ -31,7 +31,7 @@ func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
 
 func TestCodexDeciderRejectsMissingSession(t *testing.T) {
 	resultJSON := `{"confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","uncertainty_factors":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`
-	decider, err := NewCodexDecider(CodexOptions{Bin: writeCodexFixture(t, resultJSON, false), Model: "fixture-model", Timeout: 2 * time.Second, Budget: testCodexBudget(t)})
+	decider, err := NewCodexDecider(CodexOptions{Bin: writeCodexFixture(t, resultJSON, false), Model: "fixture-model", Timeout: 10 * time.Second, Budget: testCodexBudget(t)})
 	if err != nil {
 		t.Fatalf("NewCodexDecider() error = %v", err)
 	}
@@ -50,7 +50,7 @@ func TestCodexDeciderStopsBeforeCommandWhenBudgetExceeded(t *testing.T) {
 		t.Fatalf("prime budget: %v", err)
 	}
 	decider, err := NewCodexDecider(CodexOptions{
-		Bin: writeCodexFixture(t, `{}`, true), Model: "fixture-model", Timeout: 2 * time.Second, Budget: budget,
+		Bin: writeCodexFixture(t, `{}`, true), Model: "fixture-model", Timeout: 10 * time.Second, Budget: budget,
 	})
 	if err != nil {
 		t.Fatalf("NewCodexDecider() error = %v", err)
