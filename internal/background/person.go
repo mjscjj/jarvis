@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"jarvis/internal/domain"
 
@@ -69,6 +70,25 @@ func (s *PersonService) Get(ctx context.Context, id uint64) (*PersonView, error)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get person id=%d: %w", id, err)
+	}
+	view := toPersonView(&person)
+	return &view, nil
+}
+
+// GetByOpenID looks a person up by their Feishu open_id (the business key). It
+// is used by the jarvis-tools CLI so codex can resolve a participant to their
+// role/relation during extraction.
+func (s *PersonService) GetByOpenID(ctx context.Context, openID string) (*PersonView, error) {
+	if strings.TrimSpace(openID) == "" {
+		return nil, invalid(fmt.Errorf("person open_id must not be empty"))
+	}
+	var person domain.Person
+	err := s.db.WithContext(ctx).Where("open_id = ?", openID).Take(&person).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get person open_id=%s: %w", openID, err)
 	}
 	view := toPersonView(&person)
 	return &view, nil

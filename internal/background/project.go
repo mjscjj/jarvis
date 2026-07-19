@@ -87,6 +87,24 @@ func (s *ProjectService) Get(ctx context.Context, id uint64) (*ProjectView, erro
 	return &view, nil
 }
 
+// GetByCode looks a project up by its unique code. Used by jarvis-tools so codex
+// can resolve a project_hint (code) to full project detail.
+func (s *ProjectService) GetByCode(ctx context.Context, code string) (*ProjectView, error) {
+	if code == "" {
+		return nil, invalid(fmt.Errorf("project code must not be empty"))
+	}
+	var project domain.Project
+	err := s.db.WithContext(ctx).Where("code = ?", code).Take(&project).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get project code=%s: %w", code, err)
+	}
+	view := toProjectView(&project)
+	return &view, nil
+}
+
 func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput) (*ProjectView, error) {
 	if id == 0 {
 		return nil, invalid(fmt.Errorf("project id must be positive"))
@@ -131,6 +149,17 @@ func (s *ProjectService) Delete(ctx context.Context, id uint64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ListAll returns every project (no pagination), ordered by priority. It is
+// used by the jarvis-tools CLI so codex can scan the full project catalog when
+// attributing a Todo to a project.
+func (s *ProjectService) ListAll(ctx context.Context) ([]ProjectView, error) {
+	items := make([]domain.Project, 0)
+	if err := s.db.WithContext(ctx).Order("priority ASC, id DESC").Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("list all projects: %w", err)
+	}
+	return toProjectViews(items), nil
 }
 
 func (s *ProjectService) List(ctx context.Context, filter ListFilter) (*ProjectList, error) {
