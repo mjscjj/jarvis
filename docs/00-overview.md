@@ -218,7 +218,7 @@ CREATE TABLE feishu_group (
 
 > **表名 `feishu_group`（已定）**：避开 SQL 保留字 `group`，GORM 侧无需反引号转义。Go model struct 保留业务简称 `Group`，用 `func (Group) TableName() string { return "feishu_group" }` 固定物理表名。下文实体名一律简称 `Group`，物理表名一律 `feishu_group`。
 
-> **扫描范围（已定）**：会话发现只同步元数据，不拉取历史消息；定时扫描和单群扫描均只允许 `related_group=1`。当前配置要求原子选满 20 个本人发过言且工作相关的群，避免把全部可见会话纳入消息采集。
+> **扫描范围（已定）**：会话发现只同步元数据，不拉取历史消息；定时扫描和单群扫描均只允许 `related_group=1`。当前数据库先选了 20 个本人发过言且工作相关的候选群，名单是可动态增删的运行数据，不在代码或配置里写死数量。
 
 #### Person
 

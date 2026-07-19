@@ -142,7 +142,7 @@
 
 > 阈值（6h / 7d）与 cron 间隔为默认值，属可调参数；HOT 白名单（leader open_id、核心项目群，对应 `group.pinned`/`is_key_group`）**需与用户确认**。
 
-**扫描准入**：`ScanTier` 查询必须包含 `related_group=1`；`ScanChat` 同样拒绝非相关会话。名单由 `ReplaceRelatedGroups` 在事务内完整替换，配置 `related_group_limit=20` 要求一次选满 20 个，禁止部分名单生效。
+**扫描准入**：`ScanTier` 查询必须包含 `related_group=1`；`ScanChat` 同样拒绝非相关会话。名单由 `ReplaceRelatedGroups` 在事务内完整替换，数量不写死；当前 20 个只是初始候选，可按工作变化动态增删。
 
 **发现流程（`DiscoverChats`，每 1h）**：全量分页枚举 `chat-list --sort active_time`，`upsert group`（name/owner/external/tenant 等元数据），并根据 `last_active_at` 重算 `tier`。发现是「元数据同步 + 分层刷新」，不拉消息，但**追加一条 `scan_type=discover` 的 scan_record**（`group_id` 为空，记录枚举了多少会话、耗时、成败）。
 
@@ -1040,7 +1040,7 @@ func mustAdd(c *cron.Cron, spec string, fn func()) {
 **采集侧（飞书 QPS）**：
 
 - 每页 `chat-messages-list` = 1 次 API（`--no-reactions` 时不额外触发 reaction 批查）。
-- 稳态增量只扫描 20 个 `related_group`。极端按 20 个全为 HOT、每次各 1 页估算：~20 req/5min ≈ 0.067 req/s，远低于保守令牌桶 `R=5/s`。
+- 稳态增量只扫描动态选择的 `related_group`。按当前 20 个全为 HOT、每次各 1 页估算：~20 req/5min ≈ 0.067 req/s，远低于保守令牌桶 `R=5/s`；名单变化后需按实际数量重估。
 - **无首次 backfill 峰值**（已定不回溯，总纲 §11.3）：新接入会话首次发现即以当前时刻建高水位，只增量拉新消息，不存在一次性拉海量历史的负载尖峰。稳态负载即上面的增量量级。
 - `discover` 每 1h 只做元数据全量分页；当前账号实测 4,891 个可见会话 / 每页 100，约 49 次请求/小时，不触发消息拉取。
 - Go 子进程开销：每次 `exec.Command` 拉起 lark-cli 有进程启动开销（几十 ms 量级），并发信号量 + 令牌桶已把总量压住；相比 API 往返可忽略。

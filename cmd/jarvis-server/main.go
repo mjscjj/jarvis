@@ -79,12 +79,11 @@ func main() {
 		hlog.Fatalf("load capture timezone failed: %v", err)
 	}
 	captureService, err := capture.NewService(db, larkClient, capture.Options{
-		PageSize:          cfg.Capture.PageSize,
-		ScanWorkers:       cfg.Capture.ScanWorkers,
-		RelatedGroupLimit: cfg.Capture.RelatedGroupLimit,
-		HotAge:            time.Duration(cfg.Capture.HotAgeHours) * time.Hour,
-		WarmAge:           time.Duration(cfg.Capture.WarmAgeHours) * time.Hour,
-		Location:          location,
+		PageSize:    cfg.Capture.PageSize,
+		ScanWorkers: cfg.Capture.ScanWorkers,
+		HotAge:      time.Duration(cfg.Capture.HotAgeHours) * time.Hour,
+		WarmAge:     time.Duration(cfg.Capture.WarmAgeHours) * time.Hour,
+		Location:    location,
 	})
 	if err != nil {
 		hlog.Fatalf("initialize capture service failed: %v", err)

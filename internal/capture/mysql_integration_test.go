@@ -42,7 +42,7 @@ func TestCaptureMySQL(t *testing.T) {
 		t.Fatalf("LoadLocation() error = %v", err)
 	}
 	service, err := NewService(db, &captureFixture{}, Options{
-		PageSize: 50, ScanWorkers: 2, RelatedGroupLimit: 1, HotAge: 6 * time.Hour, WarmAge: 7 * 24 * time.Hour, Location: location,
+		PageSize: 50, ScanWorkers: 2, HotAge: 6 * time.Hour, WarmAge: 7 * 24 * time.Hour, Location: location,
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)

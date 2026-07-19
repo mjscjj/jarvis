@@ -24,12 +24,11 @@ type runner interface {
 
 // Options contains capture policy already decided by the technical design.
 type Options struct {
-	PageSize          int
-	ScanWorkers       int
-	RelatedGroupLimit int
-	HotAge            time.Duration
-	WarmAge           time.Duration
-	Location          *time.Location
+	PageSize    int
+	ScanWorkers int
+	HotAge      time.Duration
+	WarmAge     time.Duration
+	Location    *time.Location
 }
 
 // Service owns conversation discovery and polling state transitions.
@@ -53,9 +52,6 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 	if opts.ScanWorkers <= 0 {
 		return nil, fmt.Errorf("capture scan workers must be positive")
 	}
-	if opts.RelatedGroupLimit <= 0 {
-		return nil, fmt.Errorf("capture related group limit must be positive")
-	}
 	if opts.HotAge <= 0 || opts.WarmAge <= opts.HotAge {
 		return nil, fmt.Errorf("capture tier ages must satisfy 0 < hot < warm")
 	}
@@ -66,22 +62,20 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 }
 
 // ReplaceRelatedGroups atomically replaces the capture allowlist. Every chat
-// must already be discovered and must be a group/topic conversation. Requiring
-// the configured exact count prevents a partial selection from silently
-// broadening or shrinking the scheduler's scope.
+// must already be discovered and must be a group/topic conversation. The list
+// is runtime data, not a compiled-in or configured fixed-size allowlist.
 func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 	chatIDs, err := normalizeChatIDs(chatIDs)
 	if err != nil {
 		return err
 	}
-	if len(chatIDs) != s.opts.RelatedGroupLimit {
-		return fmt.Errorf("related group count=%d, want exactly %d", len(chatIDs), s.opts.RelatedGroupLimit)
-	}
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var groups []domain.Group
-		if err := tx.Select("chat_id", "chat_mode").Where("chat_id IN ?", chatIDs).Find(&groups).Error; err != nil {
-			return fmt.Errorf("load related group candidates: %w", err)
+		if len(chatIDs) > 0 {
+			if err := tx.Select("chat_id", "chat_mode").Where("chat_id IN ?", chatIDs).Find(&groups).Error; err != nil {
+				return fmt.Errorf("load related group candidates: %w", err)
+			}
 		}
 		if len(groups) != len(chatIDs) {
 			found := make(map[string]struct{}, len(groups))
@@ -104,6 +98,9 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 
 		if err := tx.Model(&domain.Group{}).Where("related_group = ?", true).Update("related_group", false).Error; err != nil {
 			return fmt.Errorf("clear related groups: %w", err)
+		}
+		if len(chatIDs) == 0 {
+			return nil
 		}
 		result := tx.Model(&domain.Group{}).Where("chat_id IN ?", chatIDs).Update("related_group", true)
 		if result.Error != nil {
