@@ -216,6 +216,30 @@ type PrincipalProfile struct {
 
 func (PrincipalProfile) TableName() string { return "principal_profile" }
 
+// ManagedResource is a manually maintained reference (doc/link/repo/note) that
+// the owner curates from the admin UI. Unlike Resource (which capture derives
+// automatically from messages), this table is human-owned and can be optionally
+// linked to a Person, a Project, and/or the principal ("me") so the extraction
+// tools can surface the right background material on demand.
+type ManagedResource struct {
+	ID            uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	Title         string    `gorm:"column:title;type:varchar(512);not null"`
+	ResourceType  string    `gorm:"column:resource_type;type:enum('doc','link','repo','note','other');not null;default:link;index:idx_managed_resource_type"`
+	URL           *string   `gorm:"column:url;type:varchar(1024)"`
+	Description    *string   `gorm:"column:description;type:text"`
+	PersonID       *uint64   `gorm:"column:person_id;type:bigint unsigned;index:idx_managed_resource_person"`
+	ProjectID      *uint64   `gorm:"column:project_id;type:bigint unsigned;index:idx_managed_resource_project"`
+	LinkPrincipal  bool      `gorm:"column:link_principal;type:tinyint(1);not null;default:0;index:idx_managed_resource_principal"`
+	IsActive       bool      `gorm:"column:is_active;type:tinyint(1);not null;default:1;index:idx_managed_resource_active"`
+	CreatedAt      time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+
+	Person  *Person  `gorm:"foreignKey:PersonID;constraint:OnDelete:SET NULL"`
+	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:SET NULL"`
+}
+
+func (ManagedResource) TableName() string { return "managed_resource" }
+
 // CoreModels returns the canonical dependency-ordered migration list.
 func CoreModels() []any {
 	return []any{
@@ -227,5 +251,6 @@ func CoreModels() []any {
 		&Resource{},
 		&ScanRecord{},
 		&PrincipalProfile{},
+		&ManagedResource{},
 	}
 }

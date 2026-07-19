@@ -293,7 +293,130 @@ func UpdateProfile(svc *background.ProfileService) app.HandlerFunc {
 	}
 }
 
+// --- Managed resource handlers ---
+
+func ListResources(svc *background.ResourceService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		filter, err := resourceListFilter(c)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40020, err)
+			return
+		}
+		result, err := svc.List(ctx, filter)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func CreateResource(svc *background.ResourceService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var in background.ResourceInput
+		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
+		result, err := svc.Create(ctx, in)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func GetResource(svc *background.ResourceService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "resource_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		result, err := svc.Get(ctx, id)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func UpdateResource(svc *background.ResourceService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "resource_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		var in background.ResourceInput
+		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
+		result, err := svc.Update(ctx, id, in)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func DeleteResource(svc *background.ResourceService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "resource_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		if err := svc.Delete(ctx, id); err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": id, "deleted": true}})
+	}
+}
+
 // --- shared helpers ---
+
+func resourceListFilter(c *app.RequestContext) (background.ResourceFilter, error) {
+	base, err := backgroundListFilter(c)
+	if err != nil {
+		return background.ResourceFilter{}, err
+	}
+	filter := background.ResourceFilter{ListFilter: base}
+	if raw := strings.TrimSpace(c.Query("person_id")); raw != "" {
+		id, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || id == 0 {
+			return background.ResourceFilter{}, fmt.Errorf("person_id must be a positive integer")
+		}
+		filter.PersonID = &id
+	}
+	if raw := strings.TrimSpace(c.Query("project_id")); raw != "" {
+		id, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || id == 0 {
+			return background.ResourceFilter{}, fmt.Errorf("project_id must be a positive integer")
+		}
+		filter.ProjectID = &id
+	}
+	if raw := strings.TrimSpace(c.Query("principal_only")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return background.ResourceFilter{}, fmt.Errorf("principal_only must be true or false")
+		}
+		filter.PrincipalOnly = value
+	}
+	if raw := strings.TrimSpace(c.Query("active_only")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return background.ResourceFilter{}, fmt.Errorf("active_only must be true or false")
+		}
+		filter.ActiveOnly = value
+	}
+	return filter, nil
+}
 
 func backgroundListFilter(c *app.RequestContext) (background.ListFilter, error) {
 	page, err := positiveQueryInt(c.Query("page"), 1, "page")

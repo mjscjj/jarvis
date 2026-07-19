@@ -257,6 +257,10 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize principal profile service failed: %v", err)
 	}
+	resourceService, err := background.NewResourceService(db)
+	if err != nil {
+		hlog.Fatalf("initialize resource service failed: %v", err)
+	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
 	if cfg.Extract.Enabled || *extractOnce {
@@ -466,7 +470,7 @@ func main() {
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
 		Tasks: taskService, Executor: agentExecutor,
 		Projects: projectService, Persons: personService, Groups: groupService,
-		Resolve: resolveService, Profile: profileService,
+		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}

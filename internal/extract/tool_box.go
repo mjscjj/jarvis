@@ -76,9 +76,18 @@ func (b *RegistryToolBoxBuilder) Build(batch ChatBatch, _ ConversationUnit) (Too
 	if err != nil {
 		return nil, err
 	}
-	registry, err := tools.NewRegistry(history, memoryTool)
+	resourceTool, err := tools.NewQueryResourcesTool(b.db, b.cfg.ToolTimeout, resourcesToolMaxLimit)
+	if err != nil {
+		return nil, err
+	}
+	registry, err := tools.NewRegistry(history, memoryTool, resourceTool)
 	if err != nil {
 		return nil, err
 	}
 	return registry, nil
 }
+
+// resourcesToolMaxLimit caps how many manually curated resources one
+// query_resources call may return. It is a small fixed bound because the
+// human-maintained resource set is tiny compared to chat history.
+const resourcesToolMaxLimit = 20

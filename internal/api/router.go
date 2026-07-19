@@ -26,6 +26,7 @@ type Dependencies struct {
 	Groups              *background.GroupBackgroundService
 	Resolve             *background.ResolveService
 	Profile             *background.ProfileService
+	Resources           *background.ResourceService
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -63,6 +64,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Profile == nil {
 		return fmt.Errorf("api profile service dependency is nil")
 	}
+	if deps.Resources == nil {
+		return fmt.Errorf("api resource service dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
@@ -92,5 +96,11 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 决策主体（“我”）：单例 profile，读取 + upsert。
 	h.GET("/api/profile", GetProfile(deps.Profile))
 	h.PUT("/api/profile", UpdateProfile(deps.Profile))
+	// 手动维护的资源：可关联 人/项目/我，供后台管理与 M3 工具按需查询。
+	h.GET("/api/resources", ListResources(deps.Resources))
+	h.POST("/api/resources", CreateResource(deps.Resources))
+	h.GET("/api/resources/:resource_id", GetResource(deps.Resources))
+	h.PUT("/api/resources/:resource_id", UpdateResource(deps.Resources))
+	h.DELETE("/api/resources/:resource_id", DeleteResource(deps.Resources))
 	return nil
 }
