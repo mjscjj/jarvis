@@ -150,7 +150,16 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		tx := beginRollbackTransaction(t, db)
 		todo := createConfirmationFixture(t, tx, "extracted", time.Now().UnixNano())
 		fixtureFingerprints = append(fixtureFingerprints, todo.DedupFingerprint)
-		store, err := NewEvaluationStore(tx)
+		if err := tx.Model(&domain.Todo{}).
+			Where("status = ? AND id <> ?", "extracted", todo.ID).
+			Update("status", "dismissed").Error; err != nil {
+			t.Fatalf("isolate existing extracted Todos: %v", err)
+		}
+		source, err := NewEvaluationSource(tx)
+		if err != nil {
+			t.Fatalf("NewEvaluationSource() error = %v", err)
+		}
+		evaluationStore, err := NewEvaluationStore(tx)
 		if err != nil {
 			t.Fatalf("NewEvaluationStore() error = %v", err)
 		}
@@ -160,12 +169,21 @@ func TestConfirmationTransactionLive(t *testing.T) {
 			Summary: "Inspect synthetic fixture", Steps: []string{"inspect"},
 			Parameters: []PlanParameter{{Name: "scope", Value: "fixture"}}, Basis: []string{"synthetic evidence"},
 		}
-		result, err := store.Apply(context.Background(), input)
+		worker, err := NewDecisionWorker(source, todoEvaluatorFunc(func(_ context.Context, loaded *domain.Todo) (*EvaluationInput, error) {
+			copy := input
+			copy.TodoID = loaded.ID
+			copy.ExpectedVersion = loaded.Version
+			return &copy, nil
+		}), evaluationStore, WorkerOptions{BatchLimit: 10})
 		if err != nil {
-			t.Fatalf("Apply() error = %v", err)
+			t.Fatalf("NewDecisionWorker() error = %v", err)
 		}
-		if result.Status != RouteNeedDecision || result.Version != 1 {
-			t.Fatalf("Evaluation result = %#v", result)
+		stats, err := worker.EvaluateOnce(context.Background())
+		if err != nil {
+			t.Fatalf("EvaluateOnce() error = %v", err)
+		}
+		if stats.Loaded != 1 || stats.Evaluated != 1 || stats.NeedDecision != 1 {
+			t.Fatalf("Decision worker stats = %#v", stats)
 		}
 		var storedTodo domain.Todo
 		if err := tx.First(&storedTodo, todo.ID).Error; err != nil {
@@ -230,6 +248,12 @@ func TestConfirmationTransactionLive(t *testing.T) {
 type backgroundSnapshotFunc func(context.Context, *domain.Todo) (json.RawMessage, error)
 
 func (f backgroundSnapshotFunc) Snapshot(ctx context.Context, todo *domain.Todo) (json.RawMessage, error) {
+	return f(ctx, todo)
+}
+
+type todoEvaluatorFunc func(context.Context, *domain.Todo) (*EvaluationInput, error)
+
+func (f todoEvaluatorFunc) Evaluate(ctx context.Context, todo *domain.Todo) (*EvaluationInput, error) {
 	return f(ctx, todo)
 }
 
