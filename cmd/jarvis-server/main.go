@@ -184,6 +184,10 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize group background service failed: %v", err)
 	}
+	resolveService, err := background.NewResolveService(larkClient)
+	if err != nil {
+		hlog.Fatalf("initialize person resolve service failed: %v", err)
+	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
 	if cfg.Extract.Enabled || *extractOnce {
@@ -364,6 +368,7 @@ func main() {
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
 		Tasks:    taskService,
 		Projects: projectService, Persons: personService, Groups: groupService,
+		Resolve: resolveService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}

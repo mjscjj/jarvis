@@ -23,6 +23,7 @@ type Dependencies struct {
 	Projects            *background.ProjectService
 	Persons             *background.PersonService
 	Groups              *background.GroupBackgroundService
+	Resolve             *background.ResolveService
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -54,6 +55,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Groups == nil {
 		return fmt.Errorf("api group service dependency is nil")
 	}
+	if deps.Resolve == nil {
+		return fmt.Errorf("api resolve service dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
@@ -70,6 +74,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/projects/:project_id", UpdateProject(deps.Projects))
 	h.DELETE("/api/projects/:project_id", DeleteProject(deps.Projects))
 	h.GET("/api/persons", ListPersons(deps.Persons))
+	h.POST("/api/persons/resolve", ResolvePerson(deps.Resolve))
 	h.POST("/api/persons", CreatePerson(deps.Persons))
 	h.GET("/api/persons/:person_id", GetPerson(deps.Persons))
 	h.PUT("/api/persons/:person_id", UpdatePerson(deps.Persons))

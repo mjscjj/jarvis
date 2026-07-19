@@ -97,6 +97,42 @@ func New(opts Options) (*Client, error) {
 	}, nil
 }
 
+// UserCandidate is one match returned by `contact +search-user`. Field names
+// mirror the live lark-cli JSON (verified on this machine): the display name is
+// localized_name, not name, and there is no en_name/avatar/title.
+type UserCandidate struct {
+	OpenID          string `json:"open_id"`
+	LocalizedName   string `json:"localized_name"`
+	Email           string `json:"email"`
+	EnterpriseEmail string `json:"enterprise_email"`
+	Department      string `json:"department"`
+	P2PChatID       string `json:"p2p_chat_id"`
+	IsCrossTenant   bool   `json:"is_cross_tenant"`
+	HasChatted      bool   `json:"has_chatted"`
+}
+
+type searchUserResponse struct {
+	Data struct {
+		Users   []UserCandidate `json:"users"`
+		HasMore bool            `json:"has_more"`
+	} `json:"data"`
+}
+
+// SearchUser resolves a name/email query to candidate users via
+// `contact +search-user --as user`. It returns the candidates plus the CLI's
+// has_more flag verbatim; the caller decides how to surface an ambiguous match.
+// fail-fast: an empty query is rejected and any CLI failure surfaces unchanged.
+func (c *Client) SearchUser(ctx context.Context, query string) ([]UserCandidate, bool, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, false, fmt.Errorf("lark-cli search-user query is empty")
+	}
+	var resp searchUserResponse
+	if err := c.Run(ctx, &resp, "contact", "+search-user", "--query", query, "--as", "user"); err != nil {
+		return nil, false, fmt.Errorf("lark-cli search-user query=%q: %w", query, err)
+	}
+	return resp.Data.Users, resp.Data.HasMore, nil
+}
+
 // Run executes a lark-cli command and unmarshals its successful JSON envelope.
 // Callers must not pass --format; this boundary always forces JSON.
 func (c *Client) Run(ctx context.Context, out any, args ...string) error {

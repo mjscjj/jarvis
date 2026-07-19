@@ -100,6 +100,40 @@ func TestRun(t *testing.T) {
 	}
 }
 
+func TestSearchUser(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+
+	t.Run("parses candidates and has_more", func(t *testing.T) {
+		body := `printf '%s' '{"ok":true,"data":{"users":[{"open_id":"ou_abc","localized_name":"储节节","email":"c@x.com","department":"公会","p2p_chat_id":"oc_1","is_cross_tenant":false,"has_chatted":true}],"has_more":true}}'`
+		client, err := New(Options{Bin: writeScript(t, body), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: 5 * time.Second})
+		if err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		users, hasMore, err := client.SearchUser(context.Background(), "储节节")
+		if err != nil {
+			t.Fatalf("SearchUser() error = %v", err)
+		}
+		if !hasMore {
+			t.Fatalf("SearchUser() has_more = false, want true")
+		}
+		if len(users) != 1 || users[0].OpenID != "ou_abc" || users[0].LocalizedName != "储节节" || users[0].P2PChatID != "oc_1" {
+			t.Fatalf("SearchUser() users = %+v, unexpected", users)
+		}
+	})
+
+	t.Run("rejects empty query without calling CLI", func(t *testing.T) {
+		client, err := New(Options{Bin: writeScript(t, `exit 1`), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: 5 * time.Second})
+		if err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		if _, _, err := client.SearchUser(context.Background(), "  "); err == nil || !strings.Contains(err.Error(), "query is empty") {
+			t.Fatalf("SearchUser() error = %v, want query is empty", err)
+		}
+	})
+}
+
 func TestRunRejectsCallerFormat(t *testing.T) {
 	client := &Client{}
 	err := client.Run(context.Background(), &testResponse{}, "im", "+chat-list", "--format", "pretty")

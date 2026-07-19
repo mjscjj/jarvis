@@ -133,6 +133,32 @@ func CreatePerson(svc *background.PersonService) app.HandlerFunc {
 	}
 }
 
+// ResolvePerson turns a name/email query into feishu open_id candidates via
+// lark-cli so the person form never asks the user to type a raw ou_xxx id.
+func ResolvePerson(svc *background.ResolveService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var in struct {
+			Query string `json:"query"`
+		}
+		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
+		result, err := svc.Resolve(ctx, in.Query)
+		if err != nil {
+			if errors.Is(err, background.ErrInvalidInput) {
+				writeAPIError(c, consts.StatusBadRequest, 40023, err)
+				return
+			}
+			// A resolve failure means the lark-cli upstream failed; surface it
+			// as 502 rather than masking it as a generic server error.
+			writeAPIError(c, consts.StatusBadGateway, 50210, fmt.Errorf("resolve person failed: %s", strings.TrimSpace(err.Error())))
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func GetPerson(svc *background.PersonService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		id, err := backgroundID(c, "person_id")
