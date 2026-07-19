@@ -557,7 +557,7 @@ import "time"
 type Group struct {
     ID              uint64    `gorm:"primaryKey;autoIncrement"`
     ChatID          string    `gorm:"column:chat_id;size:64;uniqueIndex:uk_group_chat_id"`
-    ChatMode        string    `gorm:"column:chat_mode;size:16"` // group | p2p
+    ChatMode        string    `gorm:"column:chat_mode;size:16"` // group | p2p | topic（当前 lark-cli 实测会返回）
     Name            string    `gorm:"column:name;size:512"`
     Description     string    `gorm:"column:description"`
     OwnerOpenID     string    `gorm:"column:owner_open_id;size:64"`
@@ -1093,3 +1093,10 @@ func mustAdd(c *cron.Cron, spec string, fn func()) {
 | model API | OpenAI 兼容端点（可配置） | sidecar 内 LLM 抽取，不经 Eino |
 
 > 已核对项：Hertz `v0.10.5`（2026-06-11 发布）与 `github.com/robfig/cron/v3` 均为真实可用版本；`chat-list` 真实返回含 `chat_id/chat_mode/name/owner_id/external/tenant_key` + `has_more/page_token`；`chat-messages-list` 底层 `GET /im/v1/messages`（`with_sender_name=true`、`sort_type=ByCreateTimeAsc`、`only_thread_root_messages=true`、reaction 批量富化，可 `--no-reactions` 关闭）；事件 `im.message.receive_v1` 为 bot 授权、`message_id`(om_) 为推荐幂等键。
+
+### 11.1 实现期实测补充（2026-07-19）
+
+- 当前 `lark-cli 1.0.72` 的 `chat_mode` 除 `group` / `p2p` 外会真实返回 `topic`；M2 将其作为话题群会话正常建模。
+- `chat-messages-list --format json` 的 `create_time` / `update_time` 是本地时区的 `YYYY-MM-DD HH:mm` 字符串，不是裸毫秒。Go 侧按配置的 `capture.timezone` fail-fast 解析后，以毫秒 `BIGINT` 落库。
+- lark-cli 业务错误可能使用 `{ "ok": false, "error": ... }` 且进程退出码仍为 0；统一子进程层同时校验退出码、JSON 合法性和 `ok` 字段。
+- 当前高层命令只返回渲染后的 `content`，不返回底层原始 content JSON，因此 `message.content_raw` 保持 NULL，不用渲染文本伪装原始 JSON。

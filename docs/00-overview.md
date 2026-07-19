@@ -192,7 +192,7 @@ CREATE TABLE project (
 CREATE TABLE feishu_group (
   id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   chat_id           VARCHAR(64)  NOT NULL COMMENT '飞书 oc_ 会话ID',
-  chat_mode         VARCHAR(16)  NOT NULL COMMENT 'group | p2p',
+  chat_mode         VARCHAR(16)  NOT NULL COMMENT 'group | p2p | topic（lark-cli 实测）',
   name              VARCHAR(512) NULL COMMENT '群名；p2p 可空',
   description       TEXT NULL,
   owner_open_id     VARCHAR(64)  NULL,

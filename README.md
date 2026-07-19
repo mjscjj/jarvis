@@ -10,7 +10,7 @@ Go 1.26 + Hertz + GORM + codex CLI（M4 决策 / M5 代码执行）+ model API�
 
 ## 当前进度
 
-已完成 M0.1：Go/Hertz 骨架、7 个核心实体 GORM model、MySQL 自动迁移、数据库就绪检查与 launchd 托管配置。
+已完成 M0.2：在 M0.1 的 Go/Hertz、7 个核心实体和 MySQL 基础上，加入统一 `lark-cli` 子进程层、`message` / `chat_checkpoint` 支撑表、会话发现、无历史回溯的增量扫描、线程回复拍平、Resource 元数据沉淀和分层 cron 调度。
 
 ## 本地运行
 
@@ -26,7 +26,19 @@ mysql -uroot -p -e 'CREATE DATABASE jarvis CHARACTER SET utf8mb4 COLLATE utf8mb4
 go run ./cmd/jarvis-server -config conf/config.yaml -migrate-only
 ```
 
-启动服务并检查 MySQL 就绪状态：
+首次初始化会话。该命令全量枚举会话，但只把 checkpoint 设为发现时刻，不拉取此前历史消息：
+
+```bash
+go run ./cmd/jarvis-server -config conf/config.yaml -discover-once
+```
+
+手动增量扫描一个已发现会话：
+
+```bash
+go run ./cmd/jarvis-server -config conf/config.yaml -scan-chat oc_xxx
+```
+
+启动服务后会注册 discover/hot/warm/cold 四类定时任务；健康检查同时验证 MySQL：
 
 ```bash
 go run ./cmd/jarvis-server -config conf/config.yaml
@@ -54,7 +66,7 @@ go test ./...
 
 ```bash
 JARVIS_TEST_MYSQL_DSN='root:password@tcp(127.0.0.1:3306)/jarvis_migration_test?charset=utf8mb4&parseTime=true&loc=Local' \
-  go test ./internal/store -run '^TestMigrateCoreMySQL$' -v
+  go test ./internal/store -run '^TestMigrateMySQL$' -v
 ```
 
 ## 目录结构
@@ -65,7 +77,9 @@ jarvis/
 ├── internal/
 │   ├── api/             # 路由 + handler（/healthz）
 │   ├── config/          # 配置加载与校验
+│   ├── capture/         # M2 会话发现、增量扫描与调度
 │   ├── domain/          # 7 个核心实体 GORM model
+│   ├── larkcli/         # lark-cli 子进程、限流、并发和超时
 │   └── store/           # MySQL 连接与迁移
 ├── conf/config.yaml     # 本地配置（本地可信环境，含明文 DSN）
 ├── deploy/              # launchd plist
@@ -73,4 +87,4 @@ jarvis/
 └── docs/                # 方案文档
 ```
 
-下一里程碑 M0.2：统一 lark-cli 子进程封装，采集 message/group/resource 并落库。
+下一里程碑 M0.3：mem0 sidecar、Qdrant 和消息记忆化 job。
