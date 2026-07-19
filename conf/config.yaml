@@ -63,16 +63,15 @@ lark_cli:
   timeout_sec: 60
 
 # M2 消息采集：首次发现从当前时刻起步，不回溯历史。
+# related 群不再按 tier 分档调度，统一 scan_schedule 采集；hot/warm_age_hours 仅用于展示 tier 标签。
 capture:
   page_size: 50
   scan_workers: 2
   hot_age_hours: 6
   warm_age_hours: 168
   timezone: "Asia/Shanghai"
-  discover_schedule: "@every 1h"
-  hot_schedule: "@every 5m"
-  warm_schedule: "@every 30m"
-  cold_schedule: "@every 6h"
+  discover_schedule: "@every 6h"
+  scan_schedule: "@every 5m"
 
 # M4 MVP：所有提取出的 Todo 都进入人工确认，不做评分、不调用 codex。
 decide:

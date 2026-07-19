@@ -9,6 +9,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Segmented,
   Select,
   Switch,
   Table,
@@ -326,23 +327,56 @@ function PersonsPanel() {
 
 // --- Groups (background patch only) ---
 
+const tierLabels: Record<string, string> = { hot: '热', warm: '温', cold: '冷' }
+const tierColors: Record<string, string> = { hot: 'red', warm: 'orange', cold: 'default' }
+const chatModeLabels: Record<string, string> = { group: '群聊', p2p: '单聊', topic: '话题' }
+const scanStatusMeta: Record<string, { color: string; label: string }> = {
+  ok: { color: 'green', label: '正常' },
+  error: { color: 'red', label: '失败' },
+}
+
+function formatScanTime(value: string | null): string {
+  if (!value) return '未扫描'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const PAGE_SIZE = 20
+
 function GroupsPanel() {
   const [items, setItems] = useState<Group[]>([])
+  const [total, setTotal] = useState(0)
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
   const [editing, setEditing] = useState<Group | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [togglingId, setTogglingId] = useState<number>()
   const [form] = Form.useForm<GroupBackgroundInput>()
+
+  const [relatedOnly, setRelatedOnly] = useState(true)
+  const [keyword, setKeyword] = useState('')
+  const [chatMode, setChatMode] = useState<string>()
+  const [tier, setTier] = useState<string>()
+  const [page, setPage] = useState(1)
 
   const reload = useCallback(() => {
     setLoading(true)
-    Promise.all([listGroups(), listProjects()])
-      .then(([groupResult, projectResult]) => { setItems(groupResult.items); setProjects(projectResult.items); setError(undefined) })
+    listGroups({ page, pageSize: PAGE_SIZE, relatedOnly, keyword: keyword.trim() || undefined, chatMode, tier })
+      .then((result) => { setItems(result.items); setTotal(result.total); setError(undefined) })
       .catch((cause: unknown) => setError(errorText(cause)))
       .finally(() => setLoading(false))
-  }, [])
+  }, [page, relatedOnly, keyword, chatMode, tier])
   useEffect(reload, [reload])
+
+  useEffect(() => {
+    listProjects()
+      .then((result) => setProjects(result.items))
+      .catch((cause: unknown) => setError(errorText(cause)))
+  }, [])
+
+  const resetToFirstPage = () => setPage(1)
 
   const openEdit = (group: Group) => {
     setEditing(group)
@@ -366,24 +400,98 @@ function GroupsPanel() {
     }
   }
 
+  // One-click monitor toggle. It patches only related_group while preserving the
+  // group's other curated fields; flipping to true triggers an immediate scan
+  // on the backend.
+  const toggleRelated = async (group: Group, next: boolean) => {
+    setTogglingId(group.id)
+    try {
+      await updateGroupBackground(group.id, {
+        project_id: group.project_id,
+        related_group: next,
+        pinned: group.pinned,
+        include_in_memory: group.include_in_memory,
+        is_key_group: group.is_key_group,
+      })
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setTogglingId(undefined)
+    }
+  }
+
   const columns: TableColumnsType<Group> = [
     { title: '会话', dataIndex: 'name', render: (_, g) => <Text strong>{g.name || g.chat_id}</Text> },
-    { title: '类型', dataIndex: 'chat_mode', width: 90 },
-    { title: '分层', dataIndex: 'tier', width: 80, render: (t: string) => <Tag>{t}</Tag> },
-    { title: '关联项目', width: 160, render: (_, g) => g.project?.name || '—' },
-    { title: '相关', dataIndex: 'related_group', width: 70, render: (v: boolean) => v ? <Tag color="green">是</Tag> : '—' },
+    { title: '类型', dataIndex: 'chat_mode', width: 80, render: (m: string) => chatModeLabels[m] || m },
+    { title: '分层', dataIndex: 'tier', width: 70, render: (t: string) => <Tag color={tierColors[t] || 'default'}>{tierLabels[t] || t}</Tag> },
+    { title: '关联项目', width: 150, render: (_, g) => g.project?.name || '—' },
     { title: '关键群', dataIndex: 'is_key_group', width: 80, render: (v: boolean) => v ? <Tag color="volcano">是</Tag> : '—' },
-    { title: '记忆', dataIndex: 'include_in_memory', width: 70, render: (v: boolean) => v ? '✓' : '—' },
-    { title: '操作', width: 100, render: (_, g) => <Button size="small" onClick={() => openEdit(g)}>编辑背景</Button> },
+    {
+      title: '最近扫描', width: 170, render: (_, g) => {
+        if (!g.related_group) return <Text type="secondary">—</Text>
+        const meta = g.last_scan_status ? scanStatusMeta[g.last_scan_status] : undefined
+        return (
+          <Flex vertical gap={2}>
+            <Text style={{ fontSize: 12 }}>{formatScanTime(g.last_scan_at)}</Text>
+            {meta && <Tag color={meta.color} style={{ marginInlineEnd: 0, width: 'fit-content' }}>{meta.label}</Tag>}
+          </Flex>
+        )
+      },
+    },
+    { title: '消息数', dataIndex: 'message_count', width: 80, render: (v: number, g) => g.related_group ? v : <Text type="secondary">—</Text> },
+    {
+      title: '操作', width: 180, fixed: 'right', render: (_, g) => (
+        <Flex gap={8}>
+          {g.related_group ? (
+            <Popconfirm title="移出监控？将停止采集该会话" onConfirm={() => toggleRelated(g, false)} okText="移出" cancelText="取消">
+              <Button size="small" danger loading={togglingId === g.id}>移出监控</Button>
+            </Popconfirm>
+          ) : (
+            <Button size="small" type="primary" loading={togglingId === g.id} onClick={() => toggleRelated(g, true)}>纳入监控</Button>
+          )}
+          <Button size="small" onClick={() => openEdit(g)}>编辑背景</Button>
+        </Flex>
+      ),
+    },
   ]
 
   return <>
-    <Flex justify="space-between" align="center" className="section-heading">
-      <Text type="secondary">共 {items.length} 个会话（由采集发现，此处仅维护人工背景）</Text>
-      <Button onClick={reload} loading={loading}>刷新</Button>
+    <Flex justify="space-between" align="center" gap={12} wrap className="section-heading">
+      <Segmented
+        value={relatedOnly ? 'related' : 'all'}
+        onChange={(value) => { setRelatedOnly(value === 'related'); resetToFirstPage() }}
+        options={[{ value: 'related', label: '已监控' }, { value: 'all', label: '全部会话' }]}
+      />
+      <Flex gap={8} wrap align="center">
+        <Input.Search
+          allowClear placeholder="搜索群名 / chat_id" style={{ width: 220 }}
+          onSearch={(value) => { setKeyword(value); resetToFirstPage() }}
+          onChange={(e) => { if (e.target.value === '') { setKeyword(''); resetToFirstPage() } }}
+        />
+        <Select
+          allowClear placeholder="类型" style={{ width: 110 }} value={chatMode}
+          onChange={(value) => { setChatMode(value); resetToFirstPage() }}
+          options={Object.entries(chatModeLabels).map(([value, label]) => ({ value, label }))}
+        />
+        <Select
+          allowClear placeholder="分层" style={{ width: 100 }} value={tier}
+          onChange={(value) => { setTier(value); resetToFirstPage() }}
+          options={Object.entries(tierLabels).map(([value, label]) => ({ value, label }))}
+        />
+        <Button onClick={reload} loading={loading}>刷新</Button>
+      </Flex>
     </Flex>
+    <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+      {relatedOnly ? `已监控 ${total} 个会话（正在按调度增量采集）` : `全部 ${total} 个会话（由采集发现，纳入监控后才会采集消息）`}
+    </Text>
     {error && <Alert type="error" showIcon message="会话背景操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<Group> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 950 }} /></Card>
+    <Card className="table-card" variant="borderless">
+      <Table<Group>
+        rowKey="id" columns={columns} dataSource={items} loading={loading} scroll={{ x: 1000 }}
+        pagination={{ current: page, pageSize: PAGE_SIZE, total, showSizeChanger: false, onChange: setPage }}
+      />
+    </Card>
     <Modal title={`编辑会话背景 · ${editing?.name || editing?.chat_id || ''}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
         <Form.Item name="project_id" label="关联项目">

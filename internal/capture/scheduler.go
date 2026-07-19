@@ -8,15 +8,15 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// ScheduleConfig contains the four M2 polling schedules.
+// ScheduleConfig contains the two M2 polling schedules. Related chats no longer
+// use per-tier cadences: discovery enumerates chats, and a single scan job
+// captures every related chat at one uniform interval.
 type ScheduleConfig struct {
 	Discover string
-	Hot      string
-	Warm     string
-	Cold     string
+	Scan     string
 }
 
-// StartScheduler registers and starts non-overlapping discovery/tier jobs.
+// StartScheduler registers and starts non-overlapping discovery/scan jobs.
 func StartScheduler(ctx context.Context, service *Service, cfg ScheduleConfig, logger *log.Logger) (*cron.Cron, error) {
 	if service == nil {
 		return nil, fmt.Errorf("capture scheduler service is nil")
@@ -35,9 +35,7 @@ func StartScheduler(ctx context.Context, service *Service, cfg ScheduleConfig, l
 		run  func(context.Context) error
 	}{
 		{name: "discover", spec: cfg.Discover, run: func(ctx context.Context) error { return service.DiscoverChats(ctx) }},
-		{name: "scan_hot", spec: cfg.Hot, run: func(ctx context.Context) error { return service.ScanTier(ctx, "hot") }},
-		{name: "scan_warm", spec: cfg.Warm, run: func(ctx context.Context) error { return service.ScanTier(ctx, "warm") }},
-		{name: "scan_cold", spec: cfg.Cold, run: func(ctx context.Context) error { return service.ScanTier(ctx, "cold") }},
+		{name: "scan_related", spec: cfg.Scan, run: func(ctx context.Context) error { return service.ScanRelated(ctx) }},
 	}
 	for _, job := range jobs {
 		job := job

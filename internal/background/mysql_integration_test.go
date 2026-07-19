@@ -50,7 +50,7 @@ func TestBackgroundCRUDMySQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPersonService() error = %v", err)
 	}
-	groups, err := NewGroupBackgroundService(db)
+	groups, err := NewGroupBackgroundService(db, nil)
 	if err != nil {
 		t.Fatalf("NewGroupBackgroundService() error = %v", err)
 	}

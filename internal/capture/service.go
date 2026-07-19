@@ -240,6 +240,42 @@ func (s *Service) recomputeTiers() error {
 	return nil
 }
 
+// ScanChatNow is the "just marked related, scan immediately" entry point. It
+// guarantees the chat has a sane scan window before delegating to ScanChat: a
+// group discovered long ago still carries its original discovery high-water, so
+// this resets a stale window to now, then does an incremental scan. It never
+// backfills history (window start = now for a fresh related group).
+func (s *Service) ScanChatNow(ctx context.Context, chatID string) error {
+	if chatID == "" {
+		return fmt.Errorf("scan chat_id is empty")
+	}
+	if err := s.ensureScanWindow(chatID); err != nil {
+		return err
+	}
+	return s.ScanChat(ctx, chatID)
+}
+
+// ensureScanWindow moves the high-water forward to now when a chat has never
+// captured a message (last_active_at is NULL). This keeps the first scan of a
+// newly related group cheap (only messages from now on) and avoids replaying
+// the discovery-time window that may lie far in the past.
+func (s *Service) ensureScanWindow(chatID string) error {
+	var group domain.Group
+	if err := s.db.Select("id", "last_active_at").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
+		return fmt.Errorf("load group chat_id=%s: %w", chatID, err)
+	}
+	if group.LastActiveAt != nil {
+		return nil
+	}
+	nowMS := s.now().UnixMilli()
+	if err := s.db.Model(&domain.Checkpoint{}).
+		Where("chat_id = ? AND high_water_create_time < ?", chatID, nowMS).
+		Update("high_water_create_time", nowMS).Error; err != nil {
+		return fmt.Errorf("initialize scan window chat_id=%s: %w", chatID, err)
+	}
+	return nil
+}
+
 // ScanChat incrementally captures one previously discovered chat.
 func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	if chatID == "" {
@@ -311,17 +347,21 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	return s.recomputeGroupTier(group.ID)
 }
 
-// ScanTier scans every chat currently assigned to one tier. Chat failures are
-// collected and returned after the other chats finish; no failed chat advances
-// past its last committed page.
-func (s *Service) ScanTier(ctx context.Context, tier string) error {
-	if tier != "hot" && tier != "warm" && tier != "cold" {
-		return fmt.Errorf("unsupported capture tier %q", tier)
-	}
+// ScanRelated scans every related chat in one pass. Tier no longer gates
+// scheduling: all related chats share the single scan cadence. Chat failures
+// are collected and returned after the other chats finish; no failed chat
+// advances past its last committed page.
+func (s *Service) ScanRelated(ctx context.Context) error {
 	var groups []domain.Group
-	if err := s.db.Select("id", "chat_id").Where("related_group = ? AND tier = ?", true, tier).Order("id ASC").Find(&groups).Error; err != nil {
-		return fmt.Errorf("list %s chats: %w", tier, err)
+	if err := s.db.Select("id", "chat_id").Where("related_group = ?", true).Order("id ASC").Find(&groups).Error; err != nil {
+		return fmt.Errorf("list related chats: %w", err)
 	}
+	return s.scanGroups(ctx, groups)
+}
+
+// scanGroups runs ScanChat over the given groups with the worker pool. Errors
+// are collected and joined; a single chat failure never aborts the others.
+func (s *Service) scanGroups(ctx context.Context, groups []domain.Group) error {
 	jobs := make(chan string)
 	errorsCh := make(chan error, len(groups)+1)
 	var workers sync.WaitGroup

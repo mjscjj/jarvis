@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"time"
 
 	"jarvis/internal/domain"
 
@@ -17,6 +19,14 @@ var backgroundColumns = []string{
 	"project_id", "related_group", "pinned", "include_in_memory", "is_key_group",
 }
 
+// RelatedScanTrigger lets a newly related group be scanned immediately instead
+// of waiting for the next scan cron cycle. It is implemented by the capture
+// service; the interface keeps background decoupled from capture at compile
+// time. A nil trigger means "no immediate scan" (the cron cycle still covers it).
+type RelatedScanTrigger interface {
+	ScanChatNow(ctx context.Context, chatID string) error
+}
+
 // GroupList is the paginated response for groups.
 type GroupList struct {
 	Items    []GroupView `json:"items"`
@@ -25,55 +35,155 @@ type GroupList struct {
 	PageSize int         `json:"page_size"`
 }
 
-// GroupFilter narrows the group list to the ones worth curating.
+// GroupFilter narrows the group list. RelatedOnly is the default view (only
+// chats actually being scanned); Keyword/ChatMode/Tier let the user find the
+// rest without loading all thousands of discovered chats at once.
 type GroupFilter struct {
 	ListFilter
 	RelatedOnly bool
+	Keyword     string
+	ChatMode    string
+	Tier        string
 }
 
 // GroupBackgroundService patches the human-curated subset of the feishu_group
 // table. It never creates or deletes a group (capture discovery owns lifecycle).
 type GroupBackgroundService struct {
-	db *gorm.DB
+	db      *gorm.DB
+	trigger RelatedScanTrigger
 }
 
-func NewGroupBackgroundService(db *gorm.DB) (*GroupBackgroundService, error) {
+// NewGroupBackgroundService wires the CRUD-only service. trigger may be nil in
+// tests or CLI paths; when set, marking a group related fires an immediate scan.
+func NewGroupBackgroundService(db *gorm.DB, trigger RelatedScanTrigger) (*GroupBackgroundService, error) {
 	if db == nil {
 		return nil, fmt.Errorf("group background service db is nil")
 	}
-	return &GroupBackgroundService{db: db}, nil
+	return &GroupBackgroundService{db: db, trigger: trigger}, nil
+}
+
+// validGroupTiers mirrors the display-only tier labels written by capture.
+var validGroupTiers = map[string]struct{}{"hot": {}, "warm": {}, "cold": {}}
+
+// validChatModes mirrors the chat_mode values capture persists.
+var validChatModes = map[string]struct{}{"group": {}, "p2p": {}, "topic": {}}
+
+func (f GroupFilter) validate() error {
+	if err := f.ListFilter.validate(); err != nil {
+		return err
+	}
+	if f.Tier != "" {
+		if _, ok := validGroupTiers[f.Tier]; !ok {
+			return fmt.Errorf("group tier %q is invalid", f.Tier)
+		}
+	}
+	if f.ChatMode != "" {
+		if _, ok := validChatModes[f.ChatMode]; !ok {
+			return fmt.Errorf("group chat_mode %q is invalid", f.ChatMode)
+		}
+	}
+	return nil
+}
+
+// applyFilters builds the shared WHERE clauses for both count and list queries.
+func (f GroupFilter) applyFilters(query *gorm.DB) *gorm.DB {
+	if f.RelatedOnly {
+		query = query.Where("related_group = ?", true)
+	}
+	if f.ChatMode != "" {
+		query = query.Where("chat_mode = ?", f.ChatMode)
+	}
+	if f.Tier != "" {
+		query = query.Where("tier = ?", f.Tier)
+	}
+	if f.Keyword != "" {
+		like := "%" + f.Keyword + "%"
+		query = query.Where("name LIKE ? OR chat_id LIKE ?", like, like)
+	}
+	return query
 }
 
 func (s *GroupBackgroundService) List(ctx context.Context, filter GroupFilter) (*GroupList, error) {
-	if err := filter.ListFilter.validate(); err != nil {
+	if err := filter.validate(); err != nil {
 		return nil, invalid(err)
 	}
-	query := s.db.WithContext(ctx).Model(&domain.Group{})
-	if filter.RelatedOnly {
-		query = query.Where("related_group = ?", true)
-	}
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := filter.applyFilters(s.db.WithContext(ctx).Model(&domain.Group{})).Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("count groups: %w", err)
 	}
 	items := make([]domain.Group, 0, filter.PageSize)
 	if total > 0 {
-		listQuery := s.db.WithContext(ctx).Preload("Project")
-		if filter.RelatedOnly {
-			listQuery = listQuery.Where("related_group = ?", true)
-		}
-		if err := listQuery.
-			Order("is_key_group DESC, pinned DESC, last_active_at DESC").
+		if err := filter.applyFilters(s.db.WithContext(ctx).Preload("Project")).
+			Order("related_group DESC, is_key_group DESC, pinned DESC, last_active_at DESC").
 			Limit(filter.PageSize).
 			Offset(filter.offset()).
 			Find(&items).Error; err != nil {
 			return nil, fmt.Errorf("list groups: %w", err)
 		}
 	}
-	return &GroupList{Items: toGroupViews(items), Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
+	views, err := s.enrichGroupViews(ctx, items)
+	if err != nil {
+		return nil, err
+	}
+	return &GroupList{Items: views, Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
+}
+
+// enrichGroupViews attaches per-chat scan state (last_scan_at/last_scan_status
+// from chat_checkpoint) and captured message counts. These are read-only
+// observability fields, fetched in two batch queries to avoid N+1.
+func (s *GroupBackgroundService) enrichGroupViews(ctx context.Context, groups []domain.Group) ([]GroupView, error) {
+	views := toGroupViews(groups)
+	if len(groups) == 0 {
+		return views, nil
+	}
+	chatIDs := make([]string, len(groups))
+	for i := range groups {
+		chatIDs[i] = groups[i].ChatID
+	}
+
+	var checkpoints []domain.Checkpoint
+	if err := s.db.WithContext(ctx).
+		Select("chat_id", "last_scan_at", "last_scan_status").
+		Where("chat_id IN ?", chatIDs).
+		Find(&checkpoints).Error; err != nil {
+		return nil, fmt.Errorf("load group scan state: %w", err)
+	}
+	scanByChat := make(map[string]domain.Checkpoint, len(checkpoints))
+	for _, cp := range checkpoints {
+		scanByChat[cp.ChatID] = cp
+	}
+
+	type countRow struct {
+		ChatID string
+		Count  int64
+	}
+	var counts []countRow
+	if err := s.db.WithContext(ctx).
+		Model(&domain.Message{}).
+		Select("chat_id, COUNT(*) AS count").
+		Where("chat_id IN ?", chatIDs).
+		Group("chat_id").
+		Scan(&counts).Error; err != nil {
+		return nil, fmt.Errorf("count group messages: %w", err)
+	}
+	countByChat := make(map[string]int64, len(counts))
+	for _, row := range counts {
+		countByChat[row.ChatID] = row.Count
+	}
+
+	for i := range views {
+		if cp, ok := scanByChat[views[i].ChatID]; ok {
+			views[i].LastScanAt = cp.LastScanAt
+			views[i].LastScanStatus = cp.LastScanStatus
+		}
+		views[i].MessageCount = countByChat[views[i].ChatID]
+	}
+	return views, nil
 }
 
 // UpdateBackground patches only the curated columns of one existing group.
+// When it flips related_group from false to true, it fires an immediate scan so
+// the newly monitored chat starts capturing without waiting for the scan cron.
 func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64, in GroupBackgroundInput) (*GroupView, error) {
 	if id == 0 {
 		return nil, invalid(fmt.Errorf("group id must be positive"))
@@ -90,6 +200,16 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 			return nil, invalid(fmt.Errorf("group project_id=%d does not exist", *in.ProjectID))
 		}
 	}
+
+	var previous domain.Group
+	err := s.db.WithContext(ctx).Select("id", "chat_id", "related_group").Where("id = ?", id).Take(&previous).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load group id=%d: %w", id, err)
+	}
+
 	updates := map[string]any{
 		"project_id":        in.ProjectID,
 		"related_group":     in.RelatedGroup,
@@ -108,7 +228,26 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 	if result.RowsAffected == 0 {
 		return nil, ErrNotFound
 	}
+
+	if s.trigger != nil && in.RelatedGroup && !previous.RelatedGroup {
+		s.triggerScan(previous.ChatID)
+	}
 	return s.get(ctx, id)
+}
+
+// triggerScan fires a best-effort immediate scan for a freshly related chat on
+// its own goroutine and context, so a slow lark-cli call never blocks the HTTP
+// response. Failures are logged only; the scan cron cycle is the safety net.
+func (s *GroupBackgroundService) triggerScan(chatID string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := s.trigger.ScanChatNow(ctx, chatID); err != nil {
+			log.Printf("background immediate scan chat_id=%s status=error error=%v", chatID, err)
+			return
+		}
+		log.Printf("background immediate scan chat_id=%s status=ok", chatID)
+	}()
 }
 
 func (s *GroupBackgroundService) get(ctx context.Context, id uint64) (*GroupView, error) {

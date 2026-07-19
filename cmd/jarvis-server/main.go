@@ -180,7 +180,7 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize person service failed: %v", err)
 	}
-	groupService, err := background.NewGroupBackgroundService(db)
+	groupService, err := background.NewGroupBackgroundService(db, captureService)
 	if err != nil {
 		hlog.Fatalf("initialize group background service failed: %v", err)
 	}
@@ -302,9 +302,7 @@ func main() {
 	defer cancelCapture()
 	scheduler, err := capture.StartScheduler(captureCtx, captureService, capture.ScheduleConfig{
 		Discover: cfg.Capture.DiscoverSchedule,
-		Hot:      cfg.Capture.HotSchedule,
-		Warm:     cfg.Capture.WarmSchedule,
-		Cold:     cfg.Capture.ColdSchedule,
+		Scan:     cfg.Capture.ScanSchedule,
 	}, log.New(os.Stderr, "capture-cron ", log.LstdFlags|log.Lmicroseconds))
 	if err != nil {
 		hlog.Fatalf("start capture scheduler failed: %v", err)

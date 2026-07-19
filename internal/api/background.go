@@ -220,7 +220,12 @@ func ListGroups(svc *background.GroupBackgroundService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40020, err)
 			return
 		}
-		filter := background.GroupFilter{ListFilter: base}
+		filter := background.GroupFilter{
+			ListFilter: base,
+			Keyword:    strings.TrimSpace(c.Query("keyword")),
+			ChatMode:   strings.TrimSpace(c.Query("chat_mode")),
+			Tier:       strings.TrimSpace(c.Query("tier")),
+		}
 		if raw := strings.TrimSpace(c.Query("related_only")); raw != "" {
 			value, err := strconv.ParseBool(raw)
 			if err != nil {

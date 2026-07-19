@@ -75,6 +75,10 @@ type GroupView struct {
 	CreatedAt       time.Time    `json:"created_at"`
 	UpdatedAt       time.Time    `json:"updated_at"`
 	Project         *ProjectView `json:"project"`
+	// Read-only observability fields populated from chat_checkpoint / message.
+	LastScanAt     *time.Time `json:"last_scan_at"`
+	LastScanStatus *string    `json:"last_scan_status"`
+	MessageCount   int64      `json:"message_count"`
 }
 
 func rawJSON(value datatypes.JSON) json.RawMessage {

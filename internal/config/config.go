@@ -94,6 +94,8 @@ type LarkCLIConfig struct {
 }
 
 // CaptureConfig controls M2 pagination, time parsing and chat tier thresholds.
+// HotAgeHours/WarmAgeHours drive only the display-only tier label; related
+// chats are scanned at one uniform ScanSchedule cadence regardless of tier.
 type CaptureConfig struct {
 	PageSize         int    `yaml:"page_size"`
 	ScanWorkers      int    `yaml:"scan_workers"`
@@ -101,9 +103,7 @@ type CaptureConfig struct {
 	WarmAgeHours     int    `yaml:"warm_age_hours"`
 	Timezone         string `yaml:"timezone"`
 	DiscoverSchedule string `yaml:"discover_schedule"`
-	HotSchedule      string `yaml:"hot_schedule"`
-	WarmSchedule     string `yaml:"warm_schedule"`
-	ColdSchedule     string `yaml:"cold_schedule"`
+	ScanSchedule     string `yaml:"scan_schedule"`
 }
 
 // DecideConfig controls the M4 MVP gate. The only enabled mode for now is
@@ -285,8 +285,8 @@ func (c *Config) validate() error {
 	if c.Capture.Timezone == "" {
 		return fmt.Errorf("capture.timezone 不能为空")
 	}
-	if c.Capture.DiscoverSchedule == "" || c.Capture.HotSchedule == "" || c.Capture.WarmSchedule == "" || c.Capture.ColdSchedule == "" {
-		return fmt.Errorf("capture 的 discover/hot/warm/cold schedule 均不能为空")
+	if c.Capture.DiscoverSchedule == "" || c.Capture.ScanSchedule == "" {
+		return fmt.Errorf("capture 的 discover/scan schedule 均不能为空")
 	}
 	if c.Decide.Enabled {
 		if c.Decide.Mode != "manual_mvp" {

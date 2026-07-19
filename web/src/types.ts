@@ -191,6 +191,18 @@ export interface Group {
   created_at: string
   updated_at: string
   project: Project | null
+  last_scan_at: string | null
+  last_scan_status: string | null
+  message_count: number
+}
+
+export interface GroupQuery {
+  page: number
+  pageSize: number
+  relatedOnly: boolean
+  keyword?: string
+  chatMode?: string
+  tier?: string
 }
 
 export interface Paged<T> {
