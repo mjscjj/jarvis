@@ -9,7 +9,7 @@ func TestValidate(t *testing.T) {
 	t.Parallel()
 
 	valid := Config{
-		Server: ServerConfig{Addr: "127.0.0.1:18800"},
+		Server: ServerConfig{Addr: "127.0.0.1:18800", WebRoot: "web/dist"},
 		MySQL: MySQLConfig{
 			DSN:             "user:pass@tcp(127.0.0.1:3306)/jarvis",
 			MaxOpenConns:    20,
@@ -74,6 +74,7 @@ func TestValidate(t *testing.T) {
 	}{
 		{name: "valid"},
 		{name: "server address", mutate: func(c *Config) { c.Server.Addr = "" }, wantErr: "server.addr"},
+		{name: "server web root", mutate: func(c *Config) { c.Server.WebRoot = "" }, wantErr: "server.web_root"},
 		{name: "mysql dsn", mutate: func(c *Config) { c.MySQL.DSN = "" }, wantErr: "mysql.dsn"},
 		{name: "open connections", mutate: func(c *Config) { c.MySQL.MaxOpenConns = 0 }, wantErr: "max_open_conns"},
 		{name: "negative idle connections", mutate: func(c *Config) { c.MySQL.MaxIdleConns = -1 }, wantErr: "max_idle_conns"},
@@ -153,7 +154,7 @@ func TestValidate(t *testing.T) {
 
 func TestValidateExtractEnabled(t *testing.T) {
 	cfg := Config{
-		Server: ServerConfig{Addr: "127.0.0.1:18800"},
+		Server: ServerConfig{Addr: "127.0.0.1:18800", WebRoot: "web/dist"},
 		MySQL: MySQLConfig{
 			DSN: "user:pass@tcp(127.0.0.1:3306)/jarvis", MaxOpenConns: 20,
 			MaxIdleConns: 5, ConnMaxLifetime: 3600,

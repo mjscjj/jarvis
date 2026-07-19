@@ -9,6 +9,8 @@ service_target="gui/$UID/$label"
 
 mkdir -p "$repo_dir/bin" "$repo_dir/var/log"
 cd "$repo_dir"
+npm --prefix "$repo_dir/web" ci --registry=https://registry.npmjs.org
+npm --prefix "$repo_dir/web" run build
 go build -o "$repo_dir/bin/jarvis-server" ./cmd/jarvis-server
 plutil -lint "$plist_path"
 

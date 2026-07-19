@@ -3,6 +3,7 @@
 
 server:
   addr: "127.0.0.1:18800"
+  web_root: "web/dist"
 
 # MySQL：本地可信环境，DSN 明文存储。请注意该文件包含明文开发库密码。
 mysql:

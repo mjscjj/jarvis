@@ -24,6 +24,7 @@ import (
 	"jarvis/internal/semantic"
 	"jarvis/internal/store"
 
+	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
@@ -352,6 +353,14 @@ func main() {
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}
+	webInfo, err := os.Stat(cfg.Server.WebRoot)
+	if err != nil {
+		hlog.Fatalf("load web build root failed: %v", err)
+	}
+	if !webInfo.IsDir() {
+		hlog.Fatalf("web build root is not a directory: %s", cfg.Server.WebRoot)
+	}
+	h.StaticFS("/", &app.FS{Root: cfg.Server.WebRoot, IndexNames: []string{"index.html"}})
 
 	hlog.Infof("jarvis-server listening on %s", cfg.Server.Addr)
 	// Spin 阻塞运行并处理优雅退出（SIGINT/SIGTERM/SIGHUP）。

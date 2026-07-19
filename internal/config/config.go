@@ -27,7 +27,8 @@ type Config struct {
 
 // ServerConfig Hertz 监听配置。
 type ServerConfig struct {
-	Addr string `yaml:"addr"` // 形如 127.0.0.1:18800
+	Addr    string `yaml:"addr"`     // 形如 127.0.0.1:18800
+	WebRoot string `yaml:"web_root"` // React production build directory
 }
 
 // MySQLConfig 结构化存储（source of truth）。
@@ -155,6 +156,9 @@ func Load(path string) (*Config, error) {
 func (c *Config) validate() error {
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")
+	}
+	if c.Server.WebRoot == "" {
+		return fmt.Errorf("server.web_root 不能为空")
 	}
 	if c.MySQL.DSN == "" {
 		return fmt.Errorf("mysql.dsn 不能为空")
