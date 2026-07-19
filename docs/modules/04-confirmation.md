@@ -1,9 +1,11 @@
-# M4 确认模块（打分 + Todo→Task 转化闸门）技术方案
+# M4 确认模块（MVP 人工闸门）技术方案
 
 > 所属项目：基于飞书的本地个人 Jarvis 管家系统（用户：字节研发工程师 chujiejie.1）
 > 隶属总纲：`docs/00-overview.md`（技术栈、7 实体、Todo/Task 拆分的权威定义在总纲）
 > 技术栈：**Go 1.26 + Hertz + GORM + codex CLI**（决策）+ robfig/cron v3（过期扫描）。**不引入 Eino/Kitex**。
-> 流水线定位：采集(M2) → 记忆化(M2) → 提取 Todo(M3) → **打分 + Todo→Task 转化(M4·本模块)** → 执行 Task(M5)
+> 当前流水线定位：采集(M2) → 提取 Todo(M3) → **人工确认 + Todo→Task 转化(M4·本模块)** → 执行 Task(M5)
+
+> **当前 MVP（2026-07-19）**：先跑通 `extracted Todo → need_decision → 用户批准/拒绝 → Task`。运行时使用 `decide.mode=manual_mvp`，每轮只把 Todo 送入人工确认；**不计算 confidence/risk、不调用 codex、不自动确认**。Task 背景直接从 MySQL 读取项目、人员、群和源消息，不查询 mem0。下文的打分、灰区和 codex 深判属于后续设计，代码可保留但当前不接主流程。
 
 ---
 
@@ -12,8 +14,10 @@
 M4 是"人在环路(Human-in-the-Loop)"的**决策闸门**，也是 **Todo → Task 的唯一转化点**：
 
 - **输入**：M3 产出的 `Todo`（行动线索/候选，可能模糊、信息不足）。
-- **做什么**：用 `confidence × risk` 打分决定这条 Todo 是**自动确认**、**需要补充信息**还是**需要用户决策**；并驱动"飞书卡片 + 管理后台"双通道让用户处置。
+- **MVP 做什么**：把 Todo 送入 `need_decision`，由管理后台确认接口让用户批准或拒绝。后续阶段才考虑 `confidence × risk` 打分与飞书卡片通道。
 - **输出**：确认通过的 Todo → **固化生成一个 `Task`**（明确、含问题背景快照 + 明确方案）交给 M5；被否的 Todo → `dismissed`。
+
+MVP 的路由固定且显式：所有 `extracted` Todo 进入 `need_decision`，由现有后台确认 API 处理。这样先验证 Todo 质量和确认体验，积累真实数据后再决定是否值得启用打分与 codex 深判。
 
 **核心立场（对齐 2026 HITL 最佳实践）**：**打分只用来决定"要不要问人"，不用来替人拍板。** 复杂决策交给带代码库上下文的 **codex CLI** 做（见 §2），任何不确定处一律**向人**。
 
@@ -631,7 +635,7 @@ CREATE TABLE decision_audit (
 
 - 已新增 `internal/decide`，人工批准仅接受 `need_decision`；人工拒绝接受 `need_info / need_decision`。其他来源状态直接冲突，不把 M3 的 `extracted` Todo 绕过打分变成 Task。
 - 已实现 `GET /api/confirmations` 待确认队列与 `GET /api/confirmations/:todo_id` 决策详情，只允许 `need_info / need_decision`；详情按源顺序返回消息、交办人、Todo 事件、decision audit 和最新 proposed plan。已实现对应 `/approve` 和 `/reject`。写接口强制携带 `expected_version`，请求体拒绝未知字段；版本冲突、状态冲突、重复 Task 返回 409。
-- 批准时先校验并规范化非空 plan，再冻结 project / group / assigner / 源消息 / mem0 检索结果为 `background`；mem0 或源数据异常直接失败，不使用空背景 fallback。
+- 批准时先校验并规范化非空 plan，再从 MySQL 冻结 project / group / assigner / 源消息为 `background`；MVP 不查询 mem0。原 mem0 背景快照实现保留但不接主流程。
 - Task 的 `plan / slots / background` 均为确认时快照；`action_hash = sha256(canonical(action_type, slots, plan))`。Task 创建、Todo `confirmed + version+1`、`todo_event` 与 `decision_audit` 在同一事务提交，`task.uk_task_todo` 保证一 Todo 一 Task。
 - 拒绝时不生成 Task；Todo `dismissed + version+1`、`todo_event` 和 `decision_audit` 同事务提交。
 - `decision_audit` 已进入启动迁移，并已迁移当前本地 MySQL。
@@ -640,11 +644,12 @@ CREATE TABLE decision_audit (
 - 已实现灰区编排组件：只有 confidence/risk 同时落入配置区间才调用 Codex；超时、非法输出、nil 结果统一保留失败详情并 override 到 `need_decision`，调用方主动取消则向上传播。Codex 配置现在在启动加载时校验预算、灰区和 fail-safe 行为。
 - 已实现 `todo-decision-v1` prompt 组装并接入灰区组件：Todo、规则分和 background 被编码为带长度的不可信 JSON 数据区，消息/记忆中的指令明确禁止作为系统指令；输入缺失在启动 Codex 前失败，prompt version 随判定结果返回供审计。
 - 已实现配置化三路由 Router，严格按 §4.1 first-match-wins 执行；阈值和 `action_manifest` 全由调用方注入，不在代码中写死。未知动作、强制确认、方案不清、信息缺口、风险门槛、review/不确定性挤出和默认转人工均有边界测试。Router 可以识别 auto 候选，但当前落库入口明确拒绝 auto。
-- 已实现评估结果原子落库：当前仅允许 `extracted → need_info / need_decision`，在同一事务更新 Todo 的 confidence/risk/route/version，并写 `todo_event + decision_audit`；不会生成 Task。真实 MySQL 合成测试覆盖该路径并全量回滚。
-- 已实现 M4 runtime worker 与 cron 调度骨架：GORM source 按 leader 优先、证据时间、ID 稳定读取 `extracted` Todo；worker 逐条调用 evaluator，强校验 Todo ID/version 和落库结果，任一错误立即停止；cron 使用 `SkipIfStillRunning` 防止批次重叠。真实 MySQL 合成验收已覆盖 source→worker→EvaluationStore 全链路。
-- 已覆盖严格 HTTP 契约、action hash 稳定性、真实 MySQL 事务/唯一 Task/审计/全回滚测试；集成测试只使用合成数据，不调用飞书、mem0 或模型。
+- 已实现评估结果原子落库：仅允许 `extracted → need_info / need_decision`，同一事务更新 Todo route/status/version 并写 `todo_event + decision_audit`；MVP 不填 confidence/risk，也不会生成 Task。
+- 已实现并启用 `manual_mvp` evaluator：所有 `extracted` Todo 固定进入 `need_decision`，不做评分、不调用 codex。配置支持开关、cron 和批量上限，主进程已接入定时运行，并提供 `--decide-once` 单次入口。
+- runtime worker 由 GORM source 按 leader 优先、证据时间、ID 稳定读取 Todo；强校验 ID/version 和落库结果，任一错误立即停止；cron 使用 `SkipIfStillRunning` 防止批次重叠。
+- 已覆盖严格 HTTP 契约、action hash 稳定性、真实 MySQL 事务/唯一 Task/审计/全回滚测试；真实 MySQL 合成验收已跑通 `extracted → need_decision → approve → Task`，不调用飞书、mem0 或模型。
 
-尚未实现：具体 evaluator（规则因子来源聚合 + DeepJudge + Router）的生产装配和主进程启用、auto 专用确认路径、评估阶段 mem0 佐证的持久化展示、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
+MVP 尚缺：M5 Task 执行器。后续增强项包括规则打分 + DeepJudge + Router 的生产装配、auto 专用确认路径、补信息回流、飞书卡片及 TTL 扫描；这些不阻塞当前人工流程，且在真实使用证明有价值前不启用。
 
 ---
 
