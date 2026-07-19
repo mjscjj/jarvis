@@ -638,9 +638,10 @@ CREATE TABLE decision_audit (
 - 已实现只读 Codex CLI 适配层：按本机实际命令使用 `exec --ephemeral --sandbox read-only --json --output-schema --output-last-message`；prompt 经 stdin 输入，有 repo 才传 `--cd`，无 repo 则切到隔离临时目录；严格校验 JSONL session、结构化因子/plan、分数范围与未知字段。该层尚未接入路由，因此不会自行处理真实 Todo。
 - 已实现进程内 Codex 双滑窗预算闸：小时/24 小时限额原子占位，并发不会突破上限；超限不启动 CLI，默认产生 `need_decision` override，只有显式配置 `degrade_to_rule` 才回规则结果。调用失败或非法输出仍计入已发起调用，时钟回退直接报错。
 - 已实现灰区编排组件：只有 confidence/risk 同时落入配置区间才调用 Codex；超时、非法输出、nil 结果统一保留失败详情并 override 到 `need_decision`，调用方主动取消则向上传播。Codex 配置现在在启动加载时校验预算、灰区和 fail-safe 行为。
+- 已实现 `todo-decision-v1` prompt 组装并接入灰区组件：Todo、规则分和 background 被编码为带长度的不可信 JSON 数据区，消息/记忆中的指令明确禁止作为系统指令；输入缺失在启动 Codex 前失败，prompt version 随判定结果返回供审计。
 - 已覆盖严格 HTTP 契约、action hash 稳定性、真实 MySQL 事务/唯一 Task/审计/全回滚测试；集成测试只使用合成数据，不调用飞书、mem0 或模型。
 
-尚未实现：规则因子打分与最终三路由、Codex prompt 上下文组装及 Todo 生命周期接线、自动确认、详情中的审计/记忆/codex 建议上下文增强、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
+尚未实现：规则因子打分与最终三路由、Codex 判定结果写回 Todo/审计的生命周期接线、自动确认、详情中的审计/记忆/codex 建议上下文增强、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
 
 ---
 
