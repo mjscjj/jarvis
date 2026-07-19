@@ -70,7 +70,7 @@ export default function Tasks() {
 
   return <>
     <Flex justify="space-between" align="end" className="section-heading">
-      <label className="filter-field"><Text type="secondary">Task 状态</Text><Select mode="multiple" value={statuses} options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} onChange={setStatuses} /></label>
+      <label className="filter-field"><Text type="secondary">Task 状态</Text><Select mode="multiple" value={statuses} options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} onChange={(values) => setStatuses(values.length ? values : ['pending'])} /></label>
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </Flex>
     {error && <Alert type="error" showIcon message="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}

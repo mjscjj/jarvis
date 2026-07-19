@@ -98,7 +98,9 @@ export default function Confirmations() {
         </Descriptions>
         <section><Text type="secondary">结构化参数</Text><pre>{JSON.stringify(detail.todo.slots, null, 2)}</pre></section>
         <section><Text type="secondary">证据消息</Text>{detail.source_messages.map((message) => <blockquote key={message.message_id}><Text strong>{message.sender_name || message.sender_open_id}</Text><br />{message.content}</blockquote>)}</section>
-        <Flex gap={12}><Button type="primary" onClick={openApprove}>批准并生成 Task</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>
+        {detail.todo.status === 'need_decision'
+          ? <Flex gap={12}><Button type="primary" onClick={openApprove}>批准并生成 Task</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>
+          : <><Alert type="warning" showIcon message="该 Todo 需要补充信息；MVP 暂不提供补信息操作，可先拒绝后由新消息重新提取。" /><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></>}
       </Space>}
     </Drawer>
     <Modal title={modal === 'approve' ? '确认执行方案' : '填写拒绝原因'} open={Boolean(modal)} confirmLoading={submitting} onOk={submit} onCancel={() => setModal(undefined)} okText={modal === 'approve' ? '批准' : '确认拒绝'}>
