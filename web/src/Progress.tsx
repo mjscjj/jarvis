@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Empty, Segmented, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Empty, Segmented, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { getDigests, summarizeDigest } from './api'
 import type { Digest, GroupProgress, MyDay } from './types'
 
-const { Text, Title, Paragraph } = Typography
+const { Text, Paragraph } = Typography
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
@@ -95,39 +95,52 @@ export default function Progress() {
         />
       )}
 
-      <Title level={5} style={{ marginTop: 16 }}>我的进展</Title>
-      <Card variant="borderless">
-        <Table<MyDay>
-          rowKey="date"
-          size="small"
-          columns={myColumns}
-          dataSource={data?.mine ?? []}
-          loading={loading}
-          pagination={false}
-        />
-      </Card>
-
-      <Title level={5} style={{ marginTop: 24 }}>重点核心群进展</Title>
-      {!loading && (data?.key_groups.length ?? 0) === 0 ? (
-        <Card variant="borderless">
-          <Empty description="暂无标记为核心群的会话（可在“背景设置 → 群”里标记 is_key_group）" />
-        </Card>
-      ) : (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          {(data?.key_groups ?? []).map((group) => (
-            <Card key={group.group_id} variant="borderless" title={group.name || group.chat_id}>
-              <Table
-                rowKey="date"
-                size="small"
-                columns={groupColumns()}
-                dataSource={group.days}
-                loading={loading}
-                pagination={false}
-              />
-            </Card>
-          ))}
-        </Space>
-      )}
+      <Tabs
+        style={{ marginTop: 16 }}
+        items={[
+          {
+            key: 'mine',
+            label: '个人进度',
+            children: (
+              <Card variant="borderless">
+                <Table<MyDay>
+                  rowKey="date"
+                  size="small"
+                  columns={myColumns}
+                  dataSource={data?.mine ?? []}
+                  loading={loading}
+                  pagination={false}
+                />
+              </Card>
+            ),
+          },
+          {
+            key: 'groups',
+            label: '群进度',
+            children:
+              !loading && (data?.key_groups.length ?? 0) === 0 ? (
+                <Card variant="borderless">
+                  <Empty description="暂无标记为核心群的会话（可在“背景设置 → 群”里标记 is_key_group）" />
+                </Card>
+              ) : (
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                  {(data?.key_groups ?? []).map((group) => (
+                    <Card key={group.group_id} variant="borderless" title={group.name || group.chat_id}>
+                      <Table
+                        rowKey="date"
+                        size="small"
+                        columns={groupColumns()}
+                        dataSource={group.days}
+                        loading={loading}
+                        pagination={false}
+                      />
+                    </Card>
+                  ))}
+                </Space>
+              ),
+          },
+        ]}
+      />
     </div>
   )
 }
