@@ -639,9 +639,11 @@ CREATE TABLE decision_audit (
 - 已实现进程内 Codex 双滑窗预算闸：小时/24 小时限额原子占位，并发不会突破上限；超限不启动 CLI，默认产生 `need_decision` override，只有显式配置 `degrade_to_rule` 才回规则结果。调用失败或非法输出仍计入已发起调用，时钟回退直接报错。
 - 已实现灰区编排组件：只有 confidence/risk 同时落入配置区间才调用 Codex；超时、非法输出、nil 结果统一保留失败详情并 override 到 `need_decision`，调用方主动取消则向上传播。Codex 配置现在在启动加载时校验预算、灰区和 fail-safe 行为。
 - 已实现 `todo-decision-v1` prompt 组装并接入灰区组件：Todo、规则分和 background 被编码为带长度的不可信 JSON 数据区，消息/记忆中的指令明确禁止作为系统指令；输入缺失在启动 Codex 前失败，prompt version 随判定结果返回供审计。
+- 已实现配置化三路由 Router，严格按 §4.1 first-match-wins 执行；阈值和 `action_manifest` 全由调用方注入，不在代码中写死。未知动作、强制确认、方案不清、信息缺口、风险门槛、review/不确定性挤出和默认转人工均有边界测试。Router 可以识别 auto 候选，但当前落库入口明确拒绝 auto。
+- 已实现评估结果原子落库：当前仅允许 `extracted → need_info / need_decision`，在同一事务更新 Todo 的 confidence/risk/route/version，并写 `todo_event + decision_audit`；不会生成 Task。真实 MySQL 合成测试覆盖该路径并全量回滚。
 - 已覆盖严格 HTTP 契约、action hash 稳定性、真实 MySQL 事务/唯一 Task/审计/全回滚测试；集成测试只使用合成数据，不调用飞书、mem0 或模型。
 
-尚未实现：规则因子打分与最终三路由、Codex 判定结果写回 Todo/审计的生命周期接线、自动确认、详情中的审计/记忆/codex 建议上下文增强、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
+尚未实现：规则因子分的来源聚合、Router 与评估存储的运行时 worker 接线、auto 专用确认路径、详情中的审计/记忆/codex 建议上下文增强、补信息回流、飞书卡片及 TTL 扫描。这些继续受 §10 的阈值、权重和 `action_manifest` 校准约束；在校准前保持人工路径，不写死策略。
 
 ---
 
