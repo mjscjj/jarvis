@@ -22,6 +22,9 @@ type WorkerOptions struct {
 	MaxPromptChars  int
 	MaxToolRounds   int
 	Location        *time.Location
+	// PromptToolGuidance is appended to the extraction prompt for the codex
+	// engine (empty for kimi). See CodexToolGuidance.
+	PromptToolGuidance string
 }
 
 type WorkerStats struct {
@@ -39,7 +42,7 @@ type WorkerStats struct {
 // memory) via the per-unit tool box before emitting the final result.
 type Worker struct {
 	store   pipelineStore
-	model   toolExtractor
+	model   ToolExtractor
 	memory  memorySearcher
 	dedup   candidateDeduplicator
 	toolBox toolBoxBuilder
@@ -47,7 +50,7 @@ type Worker struct {
 	now     func() time.Time
 }
 
-func NewWorker(store pipelineStore, model toolExtractor, memories memorySearcher, dedup candidateDeduplicator, toolBox toolBoxBuilder, opts WorkerOptions) (*Worker, error) {
+func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher, dedup candidateDeduplicator, toolBox toolBoxBuilder, opts WorkerOptions) (*Worker, error) {
 	if store == nil {
 		return nil, fmt.Errorf("extract worker store is nil")
 	}
@@ -120,6 +123,7 @@ func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
 			}
 			prompt, err := BuildPrompt(batch, unit, memories.Results, runNow, PromptOptions{
 				PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
+				ToolGuidance: w.opts.PromptToolGuidance,
 			})
 			if err != nil {
 				return stats, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)

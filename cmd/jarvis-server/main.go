@@ -20,6 +20,7 @@ import (
 	"jarvis/internal/embedding"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
+	"jarvis/internal/extract/codexengine"
 	"jarvis/internal/extract/provider"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/memory"
@@ -318,15 +319,37 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize extraction tool box builder failed: %v", err)
 		}
-		extractWorker, err = extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, toolBoxBuilder, extract.WorkerOptions{
+		// Engine selection: codex is a full agent that self-runs CLIs to infer
+		// project/repo (danger-full-access + network + low reasoning); kimi is the
+		// legacy function-calling loop kept as fallback. The deduplicator always
+		// uses modelClient (kimi) for its SameAction adjudication regardless.
+		var extractionEngine extract.ToolExtractor = modelClient
+		extractionModelName := cfg.Model.Model
+		promptToolGuidance := ""
+		if cfg.Extract.Engine == "codex" {
+			codexExtractor, err := codexengine.New(codexengine.Options{
+				Bin: cfg.Codex.Bin, Model: cfg.Codex.Model,
+				Sandbox: cfg.Extract.CodexSandbox, Network: cfg.Extract.CodexNetwork,
+				ReasoningEffort: cfg.Extract.CodexReasoningEffort,
+				Timeout:         time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
+			})
+			if err != nil {
+				hlog.Fatalf("initialize codex extraction engine failed: %v", err)
+			}
+			extractionEngine = codexExtractor
+			extractionModelName = cfg.Codex.Model
+			promptToolGuidance = extract.CodexToolGuidance
+		}
+		extractWorker, err = extract.NewWorker(pipelineStore, extractionEngine, memoryClient, deduplicator, toolBoxBuilder, extract.WorkerOptions{
 			Load: extract.LoadOptions{
 				BatchMessages: cfg.Extract.BatchMessages, ContextMessages: cfg.Extract.ContextMessages,
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
 				OpenTodoLimit: cfg.Extract.OpenTodoLimit,
 			},
-			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
+			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
 			MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: cfg.Extract.MaxToolRounds, Location: location,
+			PromptToolGuidance: promptToolGuidance,
 		})
 		if err != nil {
 			hlog.Fatalf("initialize extraction worker failed: %v", err)

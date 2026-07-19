@@ -26,6 +26,11 @@ type preparedCandidate struct {
 	LastEvidenceAt  time.Time
 	MatchedTodoID   *uint64
 	SemanticVector  []float32
+	// ProjectID is the resolved project (group-bound has priority, else matched
+	// from project_hint). It is authoritative for both the Todo column and the
+	// dedup fingerprint so the same clue dedups stably across runs.
+	ProjectID  *uint64
+	Resolution datatypes.JSON
 }
 
 func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, results []UnitExtraction, modelName string) (PersistStats, error) {
@@ -147,7 +152,15 @@ func (s *PipelineStore) prepareCandidate(batch ChatBatch, unit ConversationUnit,
 	if err := validateCandidateEvidence(unit, &candidate); err != nil {
 		return nil, err
 	}
-	fingerprint, err := Fingerprint(&candidate, batch.Group.ProjectID)
+	projectID, resolution := resolveProject(batch, candidate)
+	resolutionRaw, err := resolution.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode resolution: %w", err)
+	}
+	resolutionJSON := datatypes.JSON(resolutionRaw)
+	// The resolved project_id (not just the group-bound one) is authoritative for
+	// the fingerprint so codex-inferred attribution dedups stably across runs.
+	fingerprint, err := Fingerprint(&candidate, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -196,6 +209,7 @@ func (s *PipelineStore) prepareCandidate(batch ChatBatch, unit ConversationUnit,
 	return &preparedCandidate{
 		Candidate: candidate, Fingerprint: fingerprint, AssignerOpenID: assigner,
 		LeaderAssigned: len(leaders) > 0, DueAt: dueAt, FirstEvidenceAt: first, LastEvidenceAt: last,
+		ProjectID: projectID, Resolution: resolutionJSON,
 	}, nil
 }
 
@@ -213,7 +227,7 @@ func (s *PipelineStore) persistCandidate(tx *gorm.DB, batch ChatBatch, prepared 
 		return false, nil, fmt.Errorf("find Todo for candidate fingerprint=%s: %w", prepared.Fingerprint, result.Error)
 	case result.RowsAffected == 1:
 		if prepared.MatchedTodoID != nil {
-			if existing.ActionType != prepared.Candidate.ActionType || !sameUint64(existing.ProjectID, batch.Group.ProjectID) {
+			if existing.ActionType != prepared.Candidate.ActionType || !sameUint64(existing.ProjectID, prepared.ProjectID) {
 				return false, nil, fmt.Errorf("semantic match todo_id=%d changed domain before persistence", existing.ID)
 			}
 			if _, active := activeTodoStatuses[existing.Status]; !active {
@@ -255,11 +269,12 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 		ActionType: prepared.Candidate.ActionType, Slots: datatypes.JSON(slots),
 		CommitmentStrength: prepared.Candidate.CommitmentStrength,
 		SourceMessageIDs:   datatypes.JSON(sourceIDs), SourceQuote: prepared.Candidate.SourceQuote,
-		GroupID: &batch.Group.ID, ProjectID: copyUint64(batch.Group.ProjectID),
+		GroupID: &batch.Group.ID, ProjectID: prepared.ProjectID,
 		AssignerOpenID: prepared.AssignerOpenID, IsLeaderAssigned: prepared.LeaderAssigned,
 		DueAt: prepared.DueAt, Status: "extracted", MissingInfo: datatypes.JSON(missingInfo),
 		DedupFingerprint: prepared.Fingerprint, ExtractionModel: modelName, PromptVersion: PromptVersion,
-		Revision: 1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
+		Resolution: prepared.Resolution,
+		Revision:   1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
 	}
 	if err := tx.Create(&todo).Error; err != nil {
 		return false, nil, fmt.Errorf("create todo fingerprint=%s: %w", prepared.Fingerprint, err)

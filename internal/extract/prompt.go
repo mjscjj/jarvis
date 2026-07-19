@@ -12,7 +12,23 @@ type PromptOptions struct {
 	PrincipalOpenID string
 	Location        *time.Location
 	MaxChars        int
+	// ToolGuidance, when non-empty, appends a "你可用的工具" section telling the codex
+	// engine which shell tools it may self-run to fill in missing context. It is
+	// empty for the kimi engine (which uses Go function-calling instead).
+	ToolGuidance string
 }
+
+// CodexToolGuidance is the tool section injected for the codex engine. codex is
+// a full agent that can run shell; this tells it which tools exist and the hard
+// rule that only cited [new] messages count as evidence — tool output is only
+// for attribution/background, never a new evidence source.
+const CodexToolGuidance = `你运行在本地可信环境，可执行 shell。当背景不足以判断归属（项目/仓库/人物/群主题）时，可自行调用以下工具补充信息：
+- ` + "`jarvis-tools <子命令>`" + `：Jarvis 自带的只读决策查询工具，输出 JSON。可用子命令：list-projects（列全部项目含 repos/code/描述）、get-project --id N | --code C、get-group --chat-id ID（群公告 description/绑定项目）、get-principal（我的背景与直属 leader）、get-person --open-id ID（人物角色/关系）。先按需调用它确认项目归属。
+- ` + "`lark-cli`、`bytedcli`" + `：查飞书侧信息（群公告、成员、文档等），先用 ` + "`--help`" + ` 自行探索子命令。
+- ` + "`git`" + `：查仓库信息。
+
+重要约束：工具查到的内容只用于判断归属与背景，不得当作新证据。source_quote 与 source_message_ids 仍必须来自被引用的 [new] 会话消息。
+project_hint：若能确定线索所属项目，请把项目 code 或 name 填入 project_hint（优先用 jarvis-tools list-projects 里存在的 code）；无法确定则填 null。`
 
 const systemPromptTemplate = `你是「个人 Jarvis 管家」的行动线索抽取器，服务对象（principal，也就是「我」）的 open_id=%s。
 principal 的详细背景见用户消息「# 我的背景(principal)」区块，请以该区块为准判断「谁是我、我负责什么、我的直属 leader 是谁」。
@@ -57,6 +73,9 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]a
 	trimmed := unit
 	trimmed.Messages = append([]MessageContext(nil), unit.Messages...)
 	system := fmt.Sprintf(systemPromptTemplate, opts.PrincipalOpenID)
+	if guidance := strings.TrimSpace(opts.ToolGuidance); guidance != "" {
+		system += "\n\n可用工具与自查指引：\n" + guidance
+	}
 	filteredMemories := filterMemories(memories)
 	for i, item := range filteredMemories {
 		if _, err := json.Marshal(item); err != nil {

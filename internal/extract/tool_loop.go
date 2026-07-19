@@ -15,10 +15,11 @@ type ToolBox interface {
 	Invoke(ctx context.Context, name string, arguments json.RawMessage) (json.RawMessage, error)
 }
 
-// toolExtractor is the model transport that runs the function-calling loop. It
-// is implemented by the provider client; kept as an interface so the worker is
-// testable without a live endpoint.
-type toolExtractor interface {
+// ToolExtractor is the model transport that produces the extraction result. The
+// kimi client implements it as a function-calling loop; the codex engine
+// implements it as a single schema-constrained agent run. Kept as an interface
+// so the worker is engine-agnostic and testable without a live endpoint.
+type ToolExtractor interface {
 	ExtractWithTools(ctx context.Context, prompt Prompt, box ToolBox, maxRounds int) (*ExtractionResult, error)
 }
 
