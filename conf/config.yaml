@@ -1,0 +1,47 @@
+# Jarvis 本地配置（本地可信环境，明文存储密钥/DSN）。
+# 骨架阶段只有 server 段实际生效；其余段为后续里程碑预留，值可先留占位。
+
+server:
+  addr: "127.0.0.1:18800"
+
+# MySQL：本机已装 mysql@8.4（127.0.0.1:3306）。密码待补后填入 DSN。
+# 本轮骨架不实际连接，DSN 仅占位。
+mysql:
+  dsn: "root:CHANGE_ME@tcp(127.0.0.1:3306)/jarvis?charset=utf8mb4&parseTime=true&loc=Local"
+  max_open_conns: 20
+  max_idle_conns: 5
+  conn_max_lifetime: 3600
+
+# mem0 Python sidecar（总纲 §5）
+mem0:
+  base_url: "http://127.0.0.1:18900"
+  owner_id: "owner"
+
+# 高频抽取用 model API（M2/M3，OpenAI 兼容端点，可配置）
+model:
+  base_url: ""
+  api_key: ""
+  model: ""
+
+# lark-cli 子进程封装（总纲 §4）
+lark_cli:
+  bin: "lark-cli"
+  rate_limit: 5
+  burst: 10
+  concurrent: 2
+  timeout_sec: 60
+
+# M4 决策用 codex CLI（总纲 §11.2，全部可配置）
+codex:
+  bin: "codex"
+  model: "gpt-5.1-codex"
+  timeout_seconds: 120
+  max_calls_per_hour: 30
+  max_calls_per_day: 200
+  on_budget_exceeded: "route_need_decision" # 或 degrade_to_rule
+  on_timeout: "route_need_decision"         # 固定 fail-safe
+  gray_zone:
+    conf_low: 0.60
+    conf_high: 0.85
+    risk_low: 0.25
+    risk_high: 0.60

@@ -1,0 +1,18 @@
+# 编译产物
+/jarvis-server
+/bin/
+*.exe
+*.test
+*.out
+
+# Go
+vendor/
+
+# 本地运行时数据
+/data/
+*.log
+
+# 操作系统 / IDE
+.DS_Store
+.idea/
+.vscode/

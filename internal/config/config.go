@@ -1,0 +1,102 @@
+// Package config 负责加载 Jarvis 的本地配置。
+//
+// 本地可信环境：配置文件明文存储密钥/DSN，不加密。加载遵循 fail-fast——
+// 文件缺失或解析失败直接返回 error，绝不静默使用零值默认跑起来。
+package config
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config 是全局配置的根。各子结构对应总纲 §1 技术栈里的外部依赖。
+type Config struct {
+	Server  ServerConfig  `yaml:"server"`
+	MySQL   MySQLConfig   `yaml:"mysql"`
+	Mem0    Mem0Config    `yaml:"mem0"`
+	Model   ModelConfig   `yaml:"model"`
+	LarkCLI LarkCLIConfig `yaml:"lark_cli"`
+	Codex   CodexConfig   `yaml:"codex"`
+}
+
+// ServerConfig Hertz 监听配置。
+type ServerConfig struct {
+	Addr string `yaml:"addr"` // 形如 127.0.0.1:18800
+}
+
+// MySQLConfig 结构化存储（source of truth）。本轮骨架预留，不实际连接。
+type MySQLConfig struct {
+	DSN             string `yaml:"dsn"`               // user:pass@tcp(127.0.0.1:3306)/jarvis?charset=utf8mb4&parseTime=true&loc=Local
+	MaxOpenConns    int    `yaml:"max_open_conns"`    // 连接池上限
+	MaxIdleConns    int    `yaml:"max_idle_conns"`    // 空闲连接
+	ConnMaxLifetime int    `yaml:"conn_max_lifetime"` // 秒
+}
+
+// Mem0Config Python sidecar（总纲 §5）。
+type Mem0Config struct {
+	BaseURL string `yaml:"base_url"` // http://127.0.0.1:18900
+	OwnerID string `yaml:"owner_id"` // 单用户系统统一 user_id，默认 owner
+}
+
+// ModelConfig 高频抽取用的 OpenAI 兼容端点（M2/M3，总纲 §6）。
+type ModelConfig struct {
+	BaseURL string `yaml:"base_url"`
+	APIKey  string `yaml:"api_key"` // 本地明文
+	Model   string `yaml:"model"`
+}
+
+// LarkCLIConfig lark-cli 子进程封装（总纲 §4）。
+type LarkCLIConfig struct {
+	Bin        string  `yaml:"bin"`         // lark-cli 绝对路径
+	RateLimit  float64 `yaml:"rate_limit"`  // 令牌桶补充速率 tokens/s
+	Burst      float64 `yaml:"burst"`       // 令牌桶容量
+	Concurrent int     `yaml:"concurrent"`  // 并发子进程上限
+	TimeoutSec int     `yaml:"timeout_sec"` // 单次调用超时
+}
+
+// CodexConfig M4 决策用 codex CLI（总纲 §11.2，全部可配置、不硬编码）。
+type CodexConfig struct {
+	Bin              string        `yaml:"bin"`
+	Model            string        `yaml:"model"`
+	TimeoutSeconds   int           `yaml:"timeout_seconds"`
+	MaxCallsPerHour  int           `yaml:"max_calls_per_hour"`
+	MaxCallsPerDay   int           `yaml:"max_calls_per_day"`
+	OnBudgetExceeded string        `yaml:"on_budget_exceeded"` // route_need_decision | degrade_to_rule
+	OnTimeout        string        `yaml:"on_timeout"`         // 固定 route_need_decision(fail-safe)
+	GrayZone         GrayZoneRange `yaml:"gray_zone"`
+}
+
+// GrayZoneRange 灰区边界：落此区间的 Todo 才触发 codex 深判（总纲 §11.2）。
+type GrayZoneRange struct {
+	ConfLow  float64 `yaml:"conf_low"`
+	ConfHigh float64 `yaml:"conf_high"`
+	RiskLow  float64 `yaml:"risk_low"`
+	RiskHigh float64 `yaml:"risk_high"`
+}
+
+// Load 从指定路径读取并解析 YAML 配置。fail-fast：任何错误直接返回。
+func Load(path string) (*Config, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config %q: %w", path, err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("parse config %q: %w", path, err)
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("invalid config %q: %w", path, err)
+	}
+	return &cfg, nil
+}
+
+// validate 只校验"最小可跑"必需项。其余（MySQL/mem0/codex）在对应模块启用时再各自校验，
+// 避免骨架阶段因未配置外部依赖而无法启动。
+func (c *Config) validate() error {
+	if c.Server.Addr == "" {
+		return fmt.Errorf("server.addr 不能为空")
+	}
+	return nil
+}
