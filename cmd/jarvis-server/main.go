@@ -8,6 +8,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"jarvis/internal/api"
@@ -25,9 +26,16 @@ func main() {
 	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库迁移，成功后退出")
 	discoverOnce := flag.Bool("discover-once", false, "执行一次飞书会话发现，成功后退出")
 	scanChat := flag.String("scan-chat", "", "增量扫描指定飞书 chat_id，成功后退出")
+	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
 	flag.Parse()
-	if *discoverOnce && *scanChat != "" {
-		hlog.Fatalf("-discover-once and -scan-chat cannot be used together")
+	actionCount := 0
+	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != ""} {
+		if selected {
+			actionCount++
+		}
+	}
+	if actionCount > 1 {
+		hlog.Fatalf("-migrate-only, -discover-once, -scan-chat and -set-related-groups are mutually exclusive")
 	}
 
 	cfg, err := config.Load(*configPath)
@@ -71,11 +79,12 @@ func main() {
 		hlog.Fatalf("load capture timezone failed: %v", err)
 	}
 	captureService, err := capture.NewService(db, larkClient, capture.Options{
-		PageSize:    cfg.Capture.PageSize,
-		ScanWorkers: cfg.Capture.ScanWorkers,
-		HotAge:      time.Duration(cfg.Capture.HotAgeHours) * time.Hour,
-		WarmAge:     time.Duration(cfg.Capture.WarmAgeHours) * time.Hour,
-		Location:    location,
+		PageSize:          cfg.Capture.PageSize,
+		ScanWorkers:       cfg.Capture.ScanWorkers,
+		RelatedGroupLimit: cfg.Capture.RelatedGroupLimit,
+		HotAge:            time.Duration(cfg.Capture.HotAgeHours) * time.Hour,
+		WarmAge:           time.Duration(cfg.Capture.WarmAgeHours) * time.Hour,
+		Location:          location,
 	})
 	if err != nil {
 		hlog.Fatalf("initialize capture service failed: %v", err)
@@ -92,6 +101,13 @@ func main() {
 			hlog.Fatalf("scan chat failed: %v", err)
 		}
 		hlog.Infof("chat scan completed: %s", *scanChat)
+		return
+	}
+	if *setRelatedGroups != "" {
+		if err := captureService.ReplaceRelatedGroups(strings.Split(*setRelatedGroups, ",")); err != nil {
+			hlog.Fatalf("set related groups failed: %v", err)
+		}
+		hlog.Infof("related groups replaced")
 		return
 	}
 	captureCtx, cancelCapture := context.WithCancel(context.Background())

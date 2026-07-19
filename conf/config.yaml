@@ -34,6 +34,7 @@ lark_cli:
 capture:
   page_size: 50
   scan_workers: 2
+  related_group_limit: 20
   hot_age_hours: 6
   warm_age_hours: 168
   timezone: "Asia/Shanghai"

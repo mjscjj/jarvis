@@ -24,11 +24,12 @@ type runner interface {
 
 // Options contains capture policy already decided by the technical design.
 type Options struct {
-	PageSize    int
-	ScanWorkers int
-	HotAge      time.Duration
-	WarmAge     time.Duration
-	Location    *time.Location
+	PageSize          int
+	ScanWorkers       int
+	RelatedGroupLimit int
+	HotAge            time.Duration
+	WarmAge           time.Duration
+	Location          *time.Location
 }
 
 // Service owns conversation discovery and polling state transitions.
@@ -52,6 +53,9 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 	if opts.ScanWorkers <= 0 {
 		return nil, fmt.Errorf("capture scan workers must be positive")
 	}
+	if opts.RelatedGroupLimit <= 0 {
+		return nil, fmt.Errorf("capture related group limit must be positive")
+	}
 	if opts.HotAge <= 0 || opts.WarmAge <= opts.HotAge {
 		return nil, fmt.Errorf("capture tier ages must satisfy 0 < hot < warm")
 	}
@@ -59,6 +63,74 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 		return nil, fmt.Errorf("capture location is nil")
 	}
 	return &Service{db: db, lark: lark, opts: opts, now: time.Now}, nil
+}
+
+// ReplaceRelatedGroups atomically replaces the capture allowlist. Every chat
+// must already be discovered and must be a group/topic conversation. Requiring
+// the configured exact count prevents a partial selection from silently
+// broadening or shrinking the scheduler's scope.
+func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
+	chatIDs, err := normalizeChatIDs(chatIDs)
+	if err != nil {
+		return err
+	}
+	if len(chatIDs) != s.opts.RelatedGroupLimit {
+		return fmt.Errorf("related group count=%d, want exactly %d", len(chatIDs), s.opts.RelatedGroupLimit)
+	}
+
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var groups []domain.Group
+		if err := tx.Select("chat_id", "chat_mode").Where("chat_id IN ?", chatIDs).Find(&groups).Error; err != nil {
+			return fmt.Errorf("load related group candidates: %w", err)
+		}
+		if len(groups) != len(chatIDs) {
+			found := make(map[string]struct{}, len(groups))
+			for _, group := range groups {
+				found[group.ChatID] = struct{}{}
+			}
+			missing := make([]string, 0)
+			for _, chatID := range chatIDs {
+				if _, ok := found[chatID]; !ok {
+					missing = append(missing, chatID)
+				}
+			}
+			return fmt.Errorf("related groups are not discovered: %s", strings.Join(missing, ","))
+		}
+		for _, group := range groups {
+			if group.ChatMode != "group" && group.ChatMode != "topic" {
+				return fmt.Errorf("related chat_id=%s has unsupported chat_mode=%q", group.ChatID, group.ChatMode)
+			}
+		}
+
+		if err := tx.Model(&domain.Group{}).Where("related_group = ?", true).Update("related_group", false).Error; err != nil {
+			return fmt.Errorf("clear related groups: %w", err)
+		}
+		result := tx.Model(&domain.Group{}).Where("chat_id IN ?", chatIDs).Update("related_group", true)
+		if result.Error != nil {
+			return fmt.Errorf("set related groups: %w", result.Error)
+		}
+		if result.RowsAffected != int64(len(chatIDs)) {
+			return fmt.Errorf("set related groups affected=%d, want %d", result.RowsAffected, len(chatIDs))
+		}
+		return nil
+	})
+}
+
+func normalizeChatIDs(chatIDs []string) ([]string, error) {
+	normalized := make([]string, 0, len(chatIDs))
+	seen := make(map[string]struct{}, len(chatIDs))
+	for _, chatID := range chatIDs {
+		chatID = strings.TrimSpace(chatID)
+		if chatID == "" {
+			return nil, fmt.Errorf("related chat_id is empty")
+		}
+		if _, ok := seen[chatID]; ok {
+			return nil, fmt.Errorf("related chat_id is duplicated: %s", chatID)
+		}
+		seen[chatID] = struct{}{}
+		normalized = append(normalized, chatID)
+	}
+	return normalized, nil
 }
 
 // DiscoverChats enumerates every user-visible chat. New chats start at now and
@@ -180,6 +252,9 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	if err := s.db.Where("chat_id = ?", chatID).First(&group).Error; err != nil {
 		return fmt.Errorf("load group chat_id=%s: %w", chatID, err)
 	}
+	if !group.RelatedGroup {
+		return fmt.Errorf("chat_id=%s is not a related group", chatID)
+	}
 	var checkpoint domain.Checkpoint
 	if err := s.db.First(&checkpoint, "chat_id = ?", chatID).Error; err != nil {
 		return fmt.Errorf("load checkpoint chat_id=%s: %w", chatID, err)
@@ -247,7 +322,7 @@ func (s *Service) ScanTier(ctx context.Context, tier string) error {
 		return fmt.Errorf("unsupported capture tier %q", tier)
 	}
 	var groups []domain.Group
-	if err := s.db.Select("id", "chat_id").Where("tier = ?", tier).Order("id ASC").Find(&groups).Error; err != nil {
+	if err := s.db.Select("id", "chat_id").Where("related_group = ? AND tier = ?", true, tier).Order("id ASC").Find(&groups).Error; err != nil {
 		return fmt.Errorf("list %s chats: %w", tier, err)
 	}
 	jobs := make(chan string)

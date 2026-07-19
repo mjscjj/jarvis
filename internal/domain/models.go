@@ -44,11 +44,12 @@ type Group struct {
 	External        bool      `gorm:"column:external;type:tinyint(1);not null;default:0"`
 	TenantKey       *string   `gorm:"column:tenant_key;type:varchar(64)"`
 	ProjectID       *uint64   `gorm:"column:project_id;type:bigint unsigned;index:idx_group_project"`
-	Tier            string    `gorm:"column:tier;type:varchar(8);not null;default:cold;index:idx_group_tier_active,priority:1"`
+	RelatedGroup    bool      `gorm:"column:related_group;type:tinyint(1);not null;default:0;index:idx_group_related_tier,priority:1"`
+	Tier            string    `gorm:"column:tier;type:varchar(8);not null;default:cold;index:idx_group_tier_active,priority:1;index:idx_group_related_tier,priority:2"`
 	Pinned          bool      `gorm:"column:pinned;type:tinyint(1);not null;default:0"`
 	IncludeInMemory bool      `gorm:"column:include_in_memory;type:tinyint(1);not null;default:1"`
 	IsKeyGroup      bool      `gorm:"column:is_key_group;type:tinyint(1);not null;default:0"`
-	LastActiveAt    *int64    `gorm:"column:last_active_at;type:bigint;index:idx_group_tier_active,priority:2"`
+	LastActiveAt    *int64    `gorm:"column:last_active_at;type:bigint;index:idx_group_tier_active,priority:2;index:idx_group_related_tier,priority:3"`
 	CreatedAt       time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
 	UpdatedAt       time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 

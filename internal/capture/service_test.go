@@ -2,11 +2,28 @@ package capture
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"jarvis/internal/larkcli"
 )
+
+func TestNormalizeChatIDs(t *testing.T) {
+	got, err := normalizeChatIDs([]string{" oc_one ", "oc_two"})
+	if err != nil {
+		t.Fatalf("normalizeChatIDs() error = %v", err)
+	}
+	if strings.Join(got, ",") != "oc_one,oc_two" {
+		t.Fatalf("normalizeChatIDs() = %#v", got)
+	}
+	if _, err := normalizeChatIDs([]string{"oc_one", "oc_one"}); err == nil {
+		t.Fatal("normalizeChatIDs() accepted duplicate chat_id")
+	}
+	if _, err := normalizeChatIDs([]string{"oc_one", " "}); err == nil {
+		t.Fatal("normalizeChatIDs() accepted empty chat_id")
+	}
+}
 
 func TestParseCLITime(t *testing.T) {
 	location, err := time.LoadLocation("Asia/Shanghai")

@@ -59,15 +59,16 @@ type LarkCLIConfig struct {
 
 // CaptureConfig controls M2 pagination, time parsing and chat tier thresholds.
 type CaptureConfig struct {
-	PageSize         int    `yaml:"page_size"`
-	ScanWorkers      int    `yaml:"scan_workers"`
-	HotAgeHours      int    `yaml:"hot_age_hours"`
-	WarmAgeHours     int    `yaml:"warm_age_hours"`
-	Timezone         string `yaml:"timezone"`
-	DiscoverSchedule string `yaml:"discover_schedule"`
-	HotSchedule      string `yaml:"hot_schedule"`
-	WarmSchedule     string `yaml:"warm_schedule"`
-	ColdSchedule     string `yaml:"cold_schedule"`
+	PageSize          int    `yaml:"page_size"`
+	ScanWorkers       int    `yaml:"scan_workers"`
+	RelatedGroupLimit int    `yaml:"related_group_limit"`
+	HotAgeHours       int    `yaml:"hot_age_hours"`
+	WarmAgeHours      int    `yaml:"warm_age_hours"`
+	Timezone          string `yaml:"timezone"`
+	DiscoverSchedule  string `yaml:"discover_schedule"`
+	HotSchedule       string `yaml:"hot_schedule"`
+	WarmSchedule      string `yaml:"warm_schedule"`
+	ColdSchedule      string `yaml:"cold_schedule"`
 }
 
 // CodexConfig M4 决策用 codex CLI（总纲 §11.2，全部可配置、不硬编码）。
@@ -147,6 +148,9 @@ func (c *Config) validate() error {
 	}
 	if c.Capture.ScanWorkers <= 0 {
 		return fmt.Errorf("capture.scan_workers 必须大于 0")
+	}
+	if c.Capture.RelatedGroupLimit <= 0 {
+		return fmt.Errorf("capture.related_group_limit 必须大于 0")
 	}
 	if c.Capture.HotAgeHours <= 0 {
 		return fmt.Errorf("capture.hot_age_hours 必须大于 0")

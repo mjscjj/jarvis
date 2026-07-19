@@ -60,6 +60,7 @@ func TestMigrateMySQL(t *testing.T) {
 	assertColumnType(t, db, "task", "version", "int")
 	assertColumnType(t, db, "scan_record", "fetched_count", "int")
 	assertColumnType(t, db, "scan_record", "duration_ms", "int")
+	assertColumnType(t, db, "feishu_group", "related_group", "tinyint(1)")
 
 	for _, table := range []string{"project", "feishu_group", "person", "todo", "task", "resource"} {
 		var extra string
