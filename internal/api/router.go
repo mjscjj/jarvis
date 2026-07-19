@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"jarvis/internal/decide"
+	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -17,6 +18,7 @@ type Dependencies struct {
 	Todos               extract.TodoReader
 	Confirmations       decide.ConfirmationService
 	ConfirmationDetails decide.ConfirmationDetailReader
+	Tasks               execute.TaskService
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -36,6 +38,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.ConfirmationDetails == nil {
 		return fmt.Errorf("api confirmation detail reader dependency is nil")
 	}
+	if deps.Tasks == nil {
+		return fmt.Errorf("api Task service dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
@@ -43,5 +48,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/confirmations/:todo_id", GetConfirmation(deps.ConfirmationDetails))
 	h.POST("/api/confirmations/:todo_id/approve", ApproveConfirmation(deps.Confirmations))
 	h.POST("/api/confirmations/:todo_id/reject", RejectConfirmation(deps.Confirmations))
+	h.GET("/api/tasks", ListTasks(deps.Tasks))
+	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
 	return nil
 }

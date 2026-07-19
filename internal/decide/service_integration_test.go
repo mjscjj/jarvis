@@ -11,6 +11,7 @@ import (
 
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
+	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/memory"
 	"jarvis/internal/store"
@@ -146,7 +147,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		assertDecisionArtifacts(t, tx, todo.ID, 0, "dismissed")
 	})
 
-	t.Run("MVP routes Todo through confirmation into Task", func(t *testing.T) {
+	t.Run("MVP routes Todo through confirmation and manual Task completion", func(t *testing.T) {
 		tx := beginRollbackTransaction(t, db)
 		todo := createConfirmationFixture(t, tx, "extracted", time.Now().UnixNano())
 		fixtureFingerprints = append(fixtureFingerprints, todo.DedupFingerprint)
@@ -247,6 +248,35 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		}
 		if len(taskBackground.Messages) != 1 || len(taskBackground.Memories) != 0 {
 			t.Fatalf("MVP Task background = %#v", taskBackground)
+		}
+		executionStore, err := execute.NewStore(tx)
+		if err != nil {
+			t.Fatalf("execute.NewStore() error = %v", err)
+		}
+		pendingTasks, err := executionStore.ListTasks(context.Background(), execute.TaskFilter{
+			Statuses: []string{"pending"}, Page: 1, PageSize: 20,
+		})
+		if err != nil {
+			t.Fatalf("ListTasks() error = %v", err)
+		}
+		if pendingTasks.Total != 1 || len(pendingTasks.Items) != 1 || pendingTasks.Items[0].ID != task.ID {
+			t.Fatalf("pending Tasks = %#v", pendingTasks)
+		}
+		finishedTask, err := executionStore.Finish(context.Background(), execute.FinishInput{
+			TaskID: task.ID, ExpectedVersion: 0, Status: "done",
+			Result: json.RawMessage(`{"summary":"synthetic task completed manually"}`),
+		})
+		if err != nil {
+			t.Fatalf("Finish() error = %v", err)
+		}
+		if finishedTask.Status != "done" || finishedTask.Version != 1 {
+			t.Fatalf("finished Task = %#v", finishedTask)
+		}
+		_, err = executionStore.Finish(context.Background(), execute.FinishInput{
+			TaskID: task.ID, ExpectedVersion: 0, Status: "done", Result: json.RawMessage(`{"summary":"duplicate"}`),
+		})
+		if !errors.Is(err, execute.ErrVersionConflict) {
+			t.Fatalf("stale Finish() error = %v", err)
 		}
 		if err := tx.First(&storedTodo, todo.ID).Error; err != nil {
 			t.Fatalf("reload confirmed Todo: %v", err)

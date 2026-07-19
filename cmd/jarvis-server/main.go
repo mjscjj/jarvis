@@ -16,6 +16,7 @@ import (
 	"jarvis/internal/config"
 	"jarvis/internal/decide"
 	"jarvis/internal/embedding"
+	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/provider"
 	"jarvis/internal/larkcli"
@@ -164,6 +165,10 @@ func main() {
 	confirmationDetails, err := decide.NewConfirmationDetailStore(db, todoStore)
 	if err != nil {
 		hlog.Fatalf("initialize confirmation detail store failed: %v", err)
+	}
+	taskService, err := execute.NewStore(db)
+	if err != nil {
+		hlog.Fatalf("initialize MVP Task service failed: %v", err)
 	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
@@ -343,6 +348,7 @@ func main() {
 	)
 	if err := api.Register(h, api.Dependencies{
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
+		Tasks: taskService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}
