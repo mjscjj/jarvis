@@ -12,10 +12,13 @@ import {
   Switch,
   Table,
   Tag,
+  Tabs,
   Typography,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { getTodo, listTodos } from './api'
+import Confirmations from './Confirmations'
+import Tasks from './Tasks'
 import type { ActionType, Todo, TodoQuery, TodoStatus } from './types'
 
 const { Header, Content } = Layout
@@ -171,6 +174,13 @@ function App() {
         <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
       </Header>
       <Content className="app-content">
+        <Tabs
+          size="large"
+          items={[
+            {
+              key: 'todos',
+              label: 'Todo 线索',
+              children: <>
         <Card className="filter-card" variant="borderless">
           <Flex gap={16} align="end" wrap>
             <label className="filter-field filter-status">
@@ -227,6 +237,12 @@ function App() {
             }}
           />
         </Card>
+              </>,
+            },
+            { key: 'confirmations', label: '待确认', children: <Confirmations /> },
+            { key: 'tasks', label: 'Task 执行', children: <Tasks /> },
+          ]}
+        />
       </Content>
 
       <Drawer
