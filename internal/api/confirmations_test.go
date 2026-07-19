@@ -40,6 +40,16 @@ func (f *fakeConfirmationReader) GetTodo(_ context.Context, id uint64) (*extract
 	return &extract.TodoView{ID: id, Status: f.status}, nil
 }
 
+func (f *fakeConfirmationReader) GetConfirmation(_ context.Context, id uint64) (*decide.ConfirmationDetail, error) {
+	if id != 7 {
+		return nil, fmt.Errorf("%w: id=%d", decide.ErrTodoNotFound, id)
+	}
+	if f.status != "need_info" && f.status != "need_decision" {
+		return nil, fmt.Errorf("%w: status=%s", decide.ErrInvalidTransition, f.status)
+	}
+	return &decide.ConfirmationDetail{Todo: &extract.TodoView{ID: id, Status: f.status}}, nil
+}
+
 func (f *fakeConfirmationService) Approve(_ context.Context, input decide.ApproveInput) (*decide.TaskView, error) {
 	f.approveInput = input
 	if f.approveErr != nil {

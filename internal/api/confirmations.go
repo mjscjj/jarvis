@@ -60,24 +60,16 @@ func ListConfirmations(reader extract.TodoReader) app.HandlerFunc {
 	}
 }
 
-func GetConfirmation(reader extract.TodoReader) app.HandlerFunc {
+func GetConfirmation(reader decide.ConfirmationDetailReader) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		todoID, err := confirmationTodoID(c)
 		if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40010, err)
 			return
 		}
-		result, err := reader.GetTodo(ctx, todoID)
-		if errors.Is(err, extract.ErrTodoNotFound) {
-			writeAPIError(c, consts.StatusNotFound, 40410, err)
-			return
-		}
+		result, err := reader.GetConfirmation(ctx, todoID)
 		if err != nil {
-			writeAPIError(c, consts.StatusInternalServerError, 50012, err)
-			return
-		}
-		if _, ok := confirmationStatuses[result.Status]; !ok {
-			writeAPIError(c, consts.StatusConflict, 40911, fmt.Errorf("Todo id=%d is not awaiting confirmation: status=%s", todoID, result.Status))
+			writeConfirmationError(c, err)
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})

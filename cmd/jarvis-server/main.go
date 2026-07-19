@@ -127,6 +127,10 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize confirmation service failed: %v", err)
 	}
+	confirmationDetails, err := decide.NewConfirmationDetailStore(db, todoStore)
+	if err != nil {
+		hlog.Fatalf("initialize confirmation detail store failed: %v", err)
+	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
 	if cfg.Extract.Enabled || *extractOnce {
@@ -285,7 +289,9 @@ func main() {
 	h := server.New(
 		server.WithHostPorts(cfg.Server.Addr),
 	)
-	if err := api.Register(h, api.Dependencies{DB: db, Todos: todoStore, Confirmations: confirmationService}); err != nil {
+	if err := api.Register(h, api.Dependencies{
+		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
+	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}
 

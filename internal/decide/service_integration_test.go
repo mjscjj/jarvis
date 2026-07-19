@@ -11,6 +11,7 @@ import (
 
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
+	"jarvis/internal/extract"
 	"jarvis/internal/memory"
 	"jarvis/internal/store"
 
@@ -155,6 +156,10 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		}
 		input := fixtureEvaluationInput()
 		input.TodoID = todo.ID
+		input.ProposedPlan = &PlanDraft{
+			Summary: "Inspect synthetic fixture", Steps: []string{"inspect"},
+			Parameters: []PlanParameter{{Name: "scope", Value: "fixture"}}, Basis: []string{"synthetic evidence"},
+		}
 		result, err := store.Apply(context.Background(), input)
 		if err != nil {
 			t.Fatalf("Apply() error = %v", err)
@@ -189,6 +194,27 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		}
 		if audit.DecisionEngine != DecisionEngineRule || audit.FinalStatus != RouteNeedDecision || audit.TaskID != nil {
 			t.Fatalf("evaluation audit = %#v", audit)
+		}
+		todoReader, err := extract.NewTodoStore(tx)
+		if err != nil {
+			t.Fatalf("extract.NewTodoStore() error = %v", err)
+		}
+		detailStore, err := NewConfirmationDetailStore(tx, todoReader)
+		if err != nil {
+			t.Fatalf("NewConfirmationDetailStore() error = %v", err)
+		}
+		detail, err := detailStore.GetConfirmation(context.Background(), todo.ID)
+		if err != nil {
+			t.Fatalf("GetConfirmation() error = %v", err)
+		}
+		if detail.Todo.ID != todo.ID || len(detail.SourceMessages) != 1 || len(detail.Events) != 1 || len(detail.Audits) != 1 {
+			t.Fatalf("confirmation detail = %#v", detail)
+		}
+		if detail.Assigner == nil || detail.Assigner.Name == nil || *detail.Assigner.Name != "Synthetic assigner" {
+			t.Fatalf("confirmation assigner = %#v", detail.Assigner)
+		}
+		if detail.ProposedPlan == nil || detail.ProposedPlan.Summary != input.ProposedPlan.Summary {
+			t.Fatalf("confirmation proposed plan = %#v", detail.ProposedPlan)
 		}
 	})
 
