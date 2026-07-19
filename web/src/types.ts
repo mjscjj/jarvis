@@ -212,6 +212,12 @@ export interface Paged<T> {
   page_size: number
 }
 
+// GroupList adds broadened: the backend sets it when a keyword search escaped
+// the related-only view (searched all chats, not just monitored ones).
+export interface GroupList extends Paged<Group> {
+  broadened: boolean
+}
+
 export interface ProjectInput {
   code?: string | null
   name: string

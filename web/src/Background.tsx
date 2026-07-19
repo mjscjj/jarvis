@@ -430,11 +430,12 @@ function GroupsPanel() {
   const [chatMode, setChatMode] = useState<string>()
   const [tier, setTier] = useState<string>()
   const [page, setPage] = useState(1)
+  const [broadened, setBroadened] = useState(false)
 
   const reload = useCallback(() => {
     setLoading(true)
     listGroups({ page, pageSize: PAGE_SIZE, relatedOnly, keyword: keyword.trim() || undefined, chatMode, tier })
-      .then((result) => { setItems(result.items); setTotal(result.total); setError(undefined) })
+      .then((result) => { setItems(result.items); setTotal(result.total); setBroadened(result.broadened); setError(undefined) })
       .catch((cause: unknown) => setError(errorText(cause)))
       .finally(() => setLoading(false))
   }, [page, relatedOnly, keyword, chatMode, tier])
@@ -543,7 +544,7 @@ function GroupsPanel() {
       />
       <Flex gap={8} wrap align="center">
         <Input.Search
-          allowClear placeholder="搜索群名 / chat_id" style={{ width: 220 }}
+          allowClear placeholder="搜索群名 / 群主 / 项目 / chat_id" style={{ width: 260 }}
           onSearch={(value) => { setKeyword(value); resetToFirstPage() }}
           onChange={(e) => { if (e.target.value === '') { setKeyword(''); resetToFirstPage() } }}
         />
@@ -563,10 +564,24 @@ function GroupsPanel() {
     <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
       {relatedOnly ? `已监控 ${total} 个会话（正在按调度增量采集）` : `全部 ${total} 个会话（由采集发现，纳入监控后才会采集消息）`}
     </Text>
+    {broadened && (
+      <Alert
+        style={{ marginBottom: 8 }} type="info" showIcon
+        message={`「已监控」中没有匹配，已在全部会话中搜索「${keyword}」，命中 ${total} 个`}
+      />
+    )}
     {error && <Alert type="error" showIcon message="会话背景操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
       <Table<Group>
         rowKey="id" columns={columns} dataSource={items} loading={loading} scroll={{ x: 1000 }}
+        locale={{
+          emptyText: keyword
+            ? <Flex vertical align="center" gap={8} style={{ padding: '24px 0' }}>
+                <Text type="secondary">没有匹配「{keyword}」的会话</Text>
+                {relatedOnly && <Button size="small" onClick={() => { setRelatedOnly(false); resetToFirstPage() }}>在全部会话中搜索</Button>}
+              </Flex>
+            : undefined,
+        }}
         pagination={{ current: page, pageSize: PAGE_SIZE, total, showSizeChanger: false, onChange: setPage }}
       />
     </Card>

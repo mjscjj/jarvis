@@ -189,6 +189,74 @@ func TestBackgroundCRUDMySQL(t *testing.T) {
 		}
 	})
 
+	t.Run("group keyword search spans owner/project/description", func(t *testing.T) {
+		token := "kwsearch" + itoa(suffix)
+		ownerID := "ou_owner_" + token
+		owner, err := persons.Create(ctx, PersonInput{
+			OpenID: ownerID, Name: "OwnerPerson" + token, Role: "colleague", PriorityWeight: 0.4,
+		})
+		if err != nil {
+			t.Fatalf("Create() owner person error = %v", err)
+		}
+		t.Cleanup(func() { _ = persons.Delete(ctx, owner.ID) })
+
+		project, err := projects.Create(ctx, ProjectInput{
+			Name: "SearchProject" + token, Role: "owner", Status: "active", Priority: 3,
+		})
+		if err != nil {
+			t.Fatalf("Create() search project error = %v", err)
+		}
+		t.Cleanup(func() { _ = projects.Delete(ctx, project.ID) })
+
+		// A chat with a NULL name (like a p2p/topic chat) that must still be found
+		// via its owner, project, description and chat_id.
+		chatID := "oc_kw_" + token
+		desc := "DescNeedle" + token
+		g := domain.Group{
+			ChatID: chatID, ChatMode: "group", OwnerOpenID: &ownerID, Description: &desc,
+			ProjectID: &project.ID, RelatedGroup: false, Tier: "cold",
+		}
+		if err := db.WithContext(ctx).Create(&g).Error; err != nil {
+			t.Fatalf("seed searchable group error = %v", err)
+		}
+		t.Cleanup(func() { db.Unscoped().Delete(&domain.Group{}, g.ID) })
+
+		// Each keyword targets a different joined/own column; all must hit the
+		// same chat. RelatedOnly=true is intentional to also prove broadening.
+		cases := []struct {
+			name    string
+			keyword string
+		}{
+			{"by owner name", "OwnerPerson" + token},
+			{"by project name", "SearchProject" + token},
+			{"by description", "DescNeedle" + token},
+			{"by chat_id", chatID},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				list, err := groups.List(ctx, GroupFilter{
+					ListFilter: ListFilter{Page: 1, PageSize: 50}, RelatedOnly: true, Keyword: tc.keyword,
+				})
+				if err != nil {
+					t.Fatalf("List() error = %v", err)
+				}
+				if !list.Broadened {
+					t.Fatalf("List() Broadened = false, want true (keyword should escape related-only)")
+				}
+				found := false
+				for _, item := range list.Items {
+					if item.ChatID == chatID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("List() keyword=%q did not return chat_id=%q (total=%d)", tc.keyword, chatID, list.Total)
+				}
+			})
+		}
+	})
+
 	t.Run("validation errors are ErrInvalidInput", func(t *testing.T) {
 		if _, err := projects.Create(ctx, ProjectInput{Name: "", Role: "owner", Status: "active", Priority: 1}); !errors.Is(err, ErrInvalidInput) {
 			t.Fatalf("Create() blank name error = %v, want ErrInvalidInput", err)

@@ -2,6 +2,7 @@ import type {
   ConfirmationDetail,
   Group,
   GroupBackgroundInput,
+  GroupList,
   GroupQuery,
   Paged,
   Person,
@@ -127,7 +128,7 @@ export function deletePerson(id: number): Promise<{ id: number; deleted: boolean
   return request(`/api/persons/${id}`, { method: 'DELETE' })
 }
 
-export function listGroups(query: GroupQuery, signal?: AbortSignal): Promise<Paged<Group>> {
+export function listGroups(query: GroupQuery, signal?: AbortSignal): Promise<GroupList> {
   const params = new URLSearchParams({
     page: String(query.page),
     page_size: String(query.pageSize),
@@ -136,7 +137,7 @@ export function listGroups(query: GroupQuery, signal?: AbortSignal): Promise<Pag
   if (query.keyword) params.set('keyword', query.keyword)
   if (query.chatMode) params.set('chat_mode', query.chatMode)
   if (query.tier) params.set('tier', query.tier)
-  return request<Paged<Group>>(`/api/groups?${params.toString()}`, { signal })
+  return request<GroupList>(`/api/groups?${params.toString()}`, { signal })
 }
 
 export function updateGroupBackground(id: number, body: GroupBackgroundInput): Promise<Group> {

@@ -27,12 +27,15 @@ type RelatedScanTrigger interface {
 	ScanChatNow(ctx context.Context, chatID string) error
 }
 
-// GroupList is the paginated response for groups.
+// GroupList is the paginated response for groups. Broadened is set when a
+// keyword search forced the query out of the related-only view (so the frontend
+// can tell the user "we searched all chats, not just monitored ones").
 type GroupList struct {
-	Items    []GroupView `json:"items"`
-	Total    int64       `json:"total"`
-	Page     int         `json:"page"`
-	PageSize int         `json:"page_size"`
+	Items     []GroupView `json:"items"`
+	Total     int64       `json:"total"`
+	Page      int         `json:"page"`
+	PageSize  int         `json:"page_size"`
+	Broadened bool        `json:"broadened"`
 }
 
 // GroupFilter narrows the group list. RelatedOnly is the default view (only
@@ -85,20 +88,38 @@ func (f GroupFilter) validate() error {
 	return nil
 }
 
+// broadened reports whether a keyword search should override the related-only
+// view. With ~1500 discovered chats, a user who types a keyword almost always
+// wants to find a not-yet-monitored chat, so a keyword implicitly widens the
+// scope to all chats; without a keyword the related-only default is respected.
+func (f GroupFilter) broadened() bool {
+	return f.RelatedOnly && f.Keyword != ""
+}
+
 // applyFilters builds the shared WHERE clauses for both count and list queries.
+// Keyword search spans the group's own columns (name/chat_id/description/
+// owner_open_id) plus the joined project name and group-owner person name, so a
+// user can find a chat by "who owns it" or "which project it belongs to" — not
+// just by a name that is frequently NULL for p2p/topic chats.
 func (f GroupFilter) applyFilters(query *gorm.DB) *gorm.DB {
-	if f.RelatedOnly {
-		query = query.Where("related_group = ?", true)
+	if f.RelatedOnly && !f.broadened() {
+		query = query.Where("feishu_group.related_group = ?", true)
 	}
 	if f.ChatMode != "" {
-		query = query.Where("chat_mode = ?", f.ChatMode)
+		query = query.Where("feishu_group.chat_mode = ?", f.ChatMode)
 	}
 	if f.Tier != "" {
-		query = query.Where("tier = ?", f.Tier)
+		query = query.Where("feishu_group.tier = ?", f.Tier)
 	}
 	if f.Keyword != "" {
 		like := "%" + f.Keyword + "%"
-		query = query.Where("name LIKE ? OR chat_id LIKE ?", like, like)
+		query = query.
+			Joins("LEFT JOIN project ON project.id = feishu_group.project_id").
+			Joins("LEFT JOIN person ON person.open_id = feishu_group.owner_open_id").
+			Where(
+				"feishu_group.name LIKE ? OR feishu_group.chat_id LIKE ? OR feishu_group.description LIKE ? OR feishu_group.owner_open_id LIKE ? OR project.name LIKE ? OR person.name LIKE ?",
+				like, like, like, like, like, like,
+			)
 	}
 	return query
 }
@@ -107,14 +128,18 @@ func (s *GroupBackgroundService) List(ctx context.Context, filter GroupFilter) (
 	if err := filter.validate(); err != nil {
 		return nil, invalid(err)
 	}
+	// owner_open_id is a unique index on person, so the LEFT JOINs cannot fan a
+	// group into multiple rows; COUNT over the group primary key stays exact.
 	var total int64
-	if err := filter.applyFilters(s.db.WithContext(ctx).Model(&domain.Group{})).Count(&total).Error; err != nil {
+	if err := filter.applyFilters(s.db.WithContext(ctx).Model(&domain.Group{})).
+		Distinct("feishu_group.id").Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("count groups: %w", err)
 	}
 	items := make([]domain.Group, 0, filter.PageSize)
 	if total > 0 {
 		if err := filter.applyFilters(s.db.WithContext(ctx).Preload("Project")).
-			Order("related_group DESC, is_key_group DESC, pinned DESC, last_active_at DESC").
+			Select("feishu_group.*").
+			Order("feishu_group.related_group DESC, feishu_group.is_key_group DESC, feishu_group.pinned DESC, feishu_group.last_active_at DESC").
 			Limit(filter.PageSize).
 			Offset(filter.offset()).
 			Find(&items).Error; err != nil {
@@ -125,7 +150,10 @@ func (s *GroupBackgroundService) List(ctx context.Context, filter GroupFilter) (
 	if err != nil {
 		return nil, err
 	}
-	return &GroupList{Items: views, Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
+	return &GroupList{
+		Items: views, Total: total, Page: filter.Page,
+		PageSize: filter.PageSize, Broadened: filter.broadened(),
+	}, nil
 }
 
 // enrichGroupViews attaches per-chat scan state (last_scan_at/last_scan_status
