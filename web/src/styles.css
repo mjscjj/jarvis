@@ -32,15 +32,21 @@ body {
   left: 0;
   top: 0;
   bottom: 0;
-  width: var(--sider-width) !important;
-  max-width: var(--sider-width) !important;
-  min-width: var(--sider-width) !important;
-  flex: 0 0 var(--sider-width) !important;
   border-right: 1px solid var(--color-border);
   background: var(--color-bg-elevated) !important;
   z-index: 100;
   display: flex;
   flex-direction: column;
+  transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease, flex-basis 0.2s ease;
+}
+
+.sider-collapse-btn {
+  margin: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.sider-collapse-btn:hover {
+  color: var(--color-primary);
 }
 
 .sider-brand {
@@ -110,6 +116,7 @@ body {
 
 /* Chat dock */
 .chat-dock {
+  position: relative;
   flex: 0 0 var(--chat-width);
   width: var(--chat-width);
   align-self: stretch;
@@ -120,11 +127,38 @@ body {
   transition: width 0.25s ease, flex-basis 0.25s ease;
 }
 
+/* 拖拽中关闭宽度过渡，跟手；否则会有滞后感 */
+.chat-dock.resizing {
+  transition: none;
+}
+
 .chat-dock.collapsed {
   width: 0;
   flex: 0 0 0;
   overflow: hidden;
   border-left: none;
+}
+
+/* 拖拽手柄：贴在对话框左边缘，向左拖变宽 */
+.chat-resize-handle {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.chat-resize-handle:hover,
+.chat-dock.resizing .chat-resize-handle {
+  background: var(--color-primary);
+}
+
+.chat-dock.collapsed .chat-resize-handle {
+  display: none;
 }
 
 .chat-dock-placeholder {
