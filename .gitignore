@@ -7,11 +7,15 @@
 
 # Go
 vendor/
+.venv/
+__pycache__/
+*.pyc
 
 # 本地运行时数据
 /data/
 /var/
 *.log
+.qdrant-initialized
 
 # 操作系统 / IDE
 .DS_Store
