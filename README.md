@@ -12,6 +12,7 @@ Go 1.26 + Hertz + GORM + codex CLI（M4 决策 / M5 代码执行）+ model API�
 
 - M0.2 已完成：统一 `lark-cli` 子进程层、无历史回溯的增量扫描、线程回复拍平、Resource 元数据沉淀和分层 cron 调度。消息扫描只处理数据库中动态标记的 `related_group`。
 - M0.3 核心链路已实现：Go 侧 mem0 HTTP client、消息窗口化 worker、每 10 分钟记忆化任务、Python FastAPI sidecar、Qdrant v1.18.2 原生 launchd 服务与锁定依赖。
+- M0.4 基础已实现：M3 水位/审计表、Todo 候选严格校验与 OpenAI-compatible Structured Outputs client、只读 Todo API，以及 React + Ant Design 看板。
 - 本机 Qdrant 已运行；mem0 sidecar 的真实模型验收等待在 `conf/config.yaml` 填入同时支持 chat 与 embedding 的 OpenAI 兼容端点。
 
 ## 本地运行
@@ -92,6 +93,18 @@ JARVIS_TEST_MYSQL_DSN='root:password@tcp(127.0.0.1:3306)/jarvis_migration_test?c
   go test ./internal/store -run '^TestMigrateMySQL$' -v
 ```
 
+## Todo 看板（M0.4）
+
+后端已提供只读接口 `GET /api/todos` 和 `GET /api/todos/{id}`。本地启动 React 看板：
+
+```bash
+cd web
+npm ci --registry=https://registry.npmjs.org
+npm run dev
+```
+
+Vite 默认监听 `127.0.0.1:18801`，并把 `/api` 代理到 `jarvis-server` 的 `127.0.0.1:18800`。确认、补信息和修改 Todo 属于 M0.5，本阶段不提供写操作。
+
 ## 目录结构
 
 ```
@@ -106,10 +119,11 @@ jarvis/
 │   ├── memory/          # 消息窗口化与 mem0 sidecar client
 │   └── store/           # MySQL 连接与迁移
 ├── sidecar/mem0/        # FastAPI + mem0 Python sidecar
+├── web/                  # React + Vite + Ant Design Todo 看板
 ├── conf/config.yaml     # 本地配置（本地可信环境，含明文 DSN）
 ├── deploy/              # launchd plist
 ├── scripts/             # 安装/运维脚本
 └── docs/                # 方案文档
 ```
 
-M0.3 完成真实模型验收后，下一里程碑是 M0.4：M3 Todo 提取和后台 Todo 看板。
+下一步是完成 M0.4 提取 worker：消息聚合、背景注入、Todo 事务落库和水位推进。真实模型联调仍需先填写 `model` 配置。

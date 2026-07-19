@@ -815,3 +815,11 @@ M3 回写的记忆若被下轮检索回来、又被当成新行动线索，会�
 - 语义去重：Qdrant `score_threshold` cosine 近邻，阈值需按 embedding 模型在真实数据标定（常见 0.80–0.92），领域过滤防串味，关键路径用 LLM 复核候选对。
 - mem0（2026，经 sidecar）：`search` 实体 id 入 `filters`，Qdrant 后端**以标量等值过滤为基线**（复杂 AND/OR/比较算子需实测），显式设 `top_k`/`threshold`；`add` 异步返回 `event_id`、hash 去重、实体自动抽取、内建实体链接（不需 Neo4j）。
 - Go 落地：GORM 映射 `todo`（JSON 字段用自定义类型）；robfig/cron v3 触发 `extract` job；go-playground/validator 做结构层校验 + 应用层分型 slot 校验；model API 走标准 `net/http`（或 go-openai 库）直连，不经 Eino、不用 codex（codex 仅 M4/M5）。
+
+### 9.1 实现进度（2026-07-19）
+
+- `internal/domain/extract.go` 已落 `todo_extract_watermark` / `todo_event` GORM model，并纳入启动迁移。
+- `internal/extract/candidate.go` 已落封闭 action/slot 词表、缺 slot 显式降级、strict JSON 解码和 NFKC + case-fold 指纹归一。
+- `internal/extract/provider` 已落 OpenAI-compatible `POST /chat/completions` + `response_format=json_schema, strict=true` client；拒答、非 `stop`、非法 JSON/schema 均直接报错，不回退 JSON mode。
+- `GET /api/todos` / `GET /api/todos/{id}` 与 `web/` 只读看板已完成；M0.5 前不提供修改/确认接口。
+- 身份 slot 缺失的候选当前允许通过领域校验，但指纹计算显式返回 `ErrFingerprintIncomplete`，避免用 `null` 形成跨 Todo 碰撞。其最终持久化身份策略仍需确认后再实现，不加临时 fallback。

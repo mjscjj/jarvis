@@ -10,6 +10,9 @@ vendor/
 .venv/
 __pycache__/
 *.pyc
+/web/node_modules/
+/web/dist/
+/web/*.tsbuildinfo
 
 # 本地运行时数据
 /data/
