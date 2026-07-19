@@ -69,9 +69,21 @@ type ModelConfig struct {
 // ExtractConfig controls the M3 extraction worker. Disabled is an explicit
 // deployment state; once enabled every required dependency is validated.
 type ExtractConfig struct {
-	Enabled               bool    `yaml:"enabled"`
-	PrincipalOpenID       string  `yaml:"principal_open_id"`
-	Schedule              string  `yaml:"schedule"`
+	Enabled         bool   `yaml:"enabled"`
+	PrincipalOpenID string `yaml:"principal_open_id"`
+	Schedule        string `yaml:"schedule"`
+
+	// Engine selects the M3 extraction engine: "codex" (default, an agent that
+	// can self-run lark-cli/bytedcli/git/jarvis-tools to infer project/repos) or
+	// "model_api" (the legacy kimi function-calling loop, kept as fallback).
+	Engine string `yaml:"engine"`
+	// CodexSandbox / CodexNetwork / CodexReasoningEffort configure the codex
+	// engine. In the local trusted environment the sandbox is danger-full-access
+	// with network enabled so codex can query Feishu-side info; reasoning_effort
+	// is forced low to override the user's global xhigh and cap per-call latency.
+	CodexSandbox         string `yaml:"codex_sandbox"`
+	CodexNetwork         bool   `yaml:"codex_network"`
+	CodexReasoningEffort string `yaml:"codex_reasoning_effort"`
 	BatchMessages         int     `yaml:"batch_messages"`
 	ContextMessages       int     `yaml:"context_messages"`
 	ContextWindowMinutes  int     `yaml:"context_window_minutes"`
@@ -122,6 +134,13 @@ type DecideConfig struct {
 	Mode       string `yaml:"mode"`
 	Schedule   string `yaml:"schedule"`
 	BatchLimit int    `yaml:"batch_limit"`
+
+	// CodexSandbox / CodexNetwork / CodexReasoningEffort configure the M4 codex
+	// evaluator (mode=codex). It shares the same full-access + network + low
+	// reasoning posture as M3 so it can self-query to fill gaps during decision.
+	CodexSandbox         string `yaml:"codex_sandbox"`
+	CodexNetwork         bool   `yaml:"codex_network"`
+	CodexReasoningEffort string `yaml:"codex_reasoning_effort"`
 }
 
 // CodexConfig M4 决策用 codex CLI（总纲 §11.2，全部可配置、不硬编码）。
@@ -265,6 +284,15 @@ func (c *Config) validate() error {
 	if c.Extract.ToolMemoryMaxTopK < c.Extract.MemoryTopK {
 		return fmt.Errorf("extract.tool_memory_max_top_k 不能小于 extract.memory_top_k")
 	}
+	if c.Extract.Engine != "codex" && c.Extract.Engine != "model_api" {
+		return fmt.Errorf("extract.engine 必须是 codex 或 model_api")
+	}
+	if err := validateCodexSandbox("extract", c.Extract.CodexSandbox); err != nil {
+		return err
+	}
+	if err := validateReasoningEffort("extract", c.Extract.CodexReasoningEffort); err != nil {
+		return err
+	}
 	if c.Extract.Enabled {
 		if c.Extract.PrincipalOpenID == "" {
 			return fmt.Errorf("extract.principal_open_id 不能为空")
@@ -319,6 +347,14 @@ func (c *Config) validate() error {
 		if c.Decide.BatchLimit <= 0 {
 			return fmt.Errorf("decide.batch_limit 必须大于 0")
 		}
+		if c.Decide.Mode == "codex" {
+			if err := validateCodexSandbox("decide", c.Decide.CodexSandbox); err != nil {
+				return err
+			}
+			if err := validateReasoningEffort("decide", c.Decide.CodexReasoningEffort); err != nil {
+				return err
+			}
+		}
 	}
 	if c.Codex.Bin == "" {
 		return fmt.Errorf("codex.bin 不能为空")
@@ -347,4 +383,27 @@ func (c *Config) validate() error {
 		}
 	}
 	return nil
+}
+
+// validateCodexSandbox enforces the codex sandbox mode is one of the values
+// codex CLI accepts. danger-full-access is intentionally allowed: it is the
+// explicit local-trusted-environment posture per docs/design-context-pipeline.md.
+func validateCodexSandbox(section, value string) error {
+	switch value {
+	case "read-only", "workspace-write", "danger-full-access":
+		return nil
+	default:
+		return fmt.Errorf("%s.codex_sandbox 必须是 read-only / workspace-write / danger-full-access", section)
+	}
+}
+
+// validateReasoningEffort enforces the reasoning effort is one codex accepts.
+// Jarvis always sets this explicitly to override the user's global xhigh.
+func validateReasoningEffort(section, value string) error {
+	switch value {
+	case "minimal", "low", "medium", "high", "xhigh":
+		return nil
+	default:
+		return fmt.Errorf("%s.codex_reasoning_effort 必须是 minimal / low / medium / high / xhigh", section)
+	}
 }

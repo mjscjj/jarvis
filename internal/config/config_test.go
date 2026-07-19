@@ -34,6 +34,10 @@ func TestValidate(t *testing.T) {
 		},
 		Extract: ExtractConfig{
 			Schedule:              "@every 10m",
+			Engine:                "codex",
+			CodexSandbox:          "danger-full-access",
+			CodexNetwork:          true,
+			CodexReasoningEffort:  "low",
 			BatchMessages:         400,
 			ContextMessages:       20,
 			ContextWindowMinutes:  120,
@@ -171,6 +175,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 		},
 		Extract: ExtractConfig{
 			Enabled: true, PrincipalOpenID: "ou_owner", Schedule: "@every 10m",
+			Engine: "codex", CodexSandbox: "danger-full-access", CodexNetwork: true, CodexReasoningEffort: "low",
 			BatchMessages: 400, ContextMessages: 20, ContextWindowMinutes: 120,
 			OpenTodoLimit: 50, MemoryTopK: 8, MemoryThreshold: 0.5, MaxPromptChars: 60000,
 			SemanticCollection: "todo_semantic", SemanticThreshold: 0.85, SemanticNeighborLimit: 3,

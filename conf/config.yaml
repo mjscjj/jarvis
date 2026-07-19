@@ -43,6 +43,12 @@ extract:
   enabled: true
   principal_open_id: "ou_cfd9e106436c46adf20aaf9fe076c65d"
   schedule: "@every 10m"
+  # 提取引擎：codex（默认，agent 可自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库）
+  #           model_api（备用 kimi function-calling 循环）
+  engine: "codex"
+  codex_sandbox: "danger-full-access"   # 本地可信环境，codex 可读写整机、联网
+  codex_network: true                   # 开联网跑 lark-cli/bytedcli 查飞书侧信息
+  codex_reasoning_effort: "low"         # 覆盖用户全局 xhigh，控单次耗时
   batch_messages: 400
   context_messages: 20
   context_window_minutes: 120
@@ -81,9 +87,12 @@ capture:
 # M4 MVP：所有提取出的 Todo 都进入人工确认，不做评分、不调用 codex。
 decide:
   enabled: true
-  mode: "codex"          # codex: 用 codex gpt-5.5 只读判 auto_execute/need_review/need_info；manual_mvp: 全部走人工确认
+  mode: "codex"          # codex: 用 codex gpt-5.5 判 auto_execute/need_review/need_info；manual_mvp: 全部走人工确认
   schedule: "@every 10m"
   batch_limit: 50
+  codex_sandbox: "danger-full-access"   # M4 决策也可自查补信息（本地可信环境）
+  codex_network: true
+  codex_reasoning_effort: "low"
 
 # M4 决策用 codex CLI（总纲 §11.2，全部可配置）
 codex:
