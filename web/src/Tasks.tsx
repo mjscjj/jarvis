@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Modal, Select, Space, Spin, Table, Tag, Timeline, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { executeTask, finishTask, listTaskRuns, listTasks, rerunTask } from './api'
-import type { ExecutionRun, Task, TaskStatus } from './types'
+import type { ExecutionRun, RunEnrichment, Task, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
@@ -23,11 +23,50 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-// RunCard 展示单次执行的结构化产物：状态/耗时/时间 + code_change 的 MR/分支/commit/
-// diff，以及 codex 自述 summary 与错误详情。可点链接优先（MR）。
-function RunCard({ run }: { run: ExecutionRun }) {
+// enrichmentKindLabel 给未带 label 的 enrichment 一个可读中文标题兜底。
+function enrichmentKindLabel(kind: string): string {
+  switch (kind) {
+    case 'context': return '正文'
+    case 'doc_link': return '相关文档'
+    case 'code_link': return '相关代码'
+    case 'commit_digest': return 'Commit 摘要'
+    default: return kind || '补充'
+  }
+}
+
+// EnrichmentBlock 把 codex 的一条 enrichment 渲染成人能读的块，而不是 JSON：
+//   - doc_link/code_link：detail 里多个路径以 "；" 或换行分隔，逐条可复制
+//   - 其它（context/commit_digest/未知）：多行正文，保留换行
+function EnrichmentBlock({ item }: { item: RunEnrichment }) {
+  const label = item.label?.trim() || enrichmentKindLabel(item.kind)
+  const isLink = item.kind === 'doc_link' || item.kind === 'code_link'
+  const paths = isLink
+    ? item.detail.split(/[；;\n]+/).map((p) => p.trim()).filter(Boolean)
+    : []
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+    <div style={{ background: 'var(--color-bg-soft)', borderRadius: 8, padding: '10px 12px' }}>
+      <Text strong style={{ fontSize: 13 }}>{label}</Text>
+      {isLink ? (
+        <Space direction="vertical" size={2} style={{ width: '100%', marginTop: 6 }}>
+          {paths.map((path, index) => (
+            <Text key={index} className="mono" style={{ fontSize: 12 }} copyable>{path}</Text>
+          ))}
+        </Space>
+      ) : (
+        <Paragraph style={{ whiteSpace: 'pre-wrap', margin: '6px 0 0', fontSize: 13, lineHeight: 1.6 }}>{item.detail}</Paragraph>
+      )}
+    </div>
+  )
+}
+
+// RunCard 展示单次执行的结构化产物：状态/耗时/时间 + code_change 的 MR/分支/commit/
+// diff，codex 自述 summary、结构化 enrichments（正文/文档/commit）、待你拍板的
+// needs_followup，以及错误详情。原始 JSON 收进最底部折叠，日常不占视线。
+function RunCard({ run }: { run: ExecutionRun }) {
+  const enrichments = run.output?.enrichments ?? []
+  const followup = run.output?.needs_followup?.trim()
+  return (
+    <Space direction="vertical" size={10} style={{ width: '100%' }}>
       <Space size={12} wrap>
         <StatusBadge label={run.status} color={statusMeta[run.status === 'succeeded' ? 'done' : run.status === 'failed' ? 'failed' : 'executing']?.color ?? '#888'} />
         <Text type="secondary">#{run.id}</Text>
@@ -52,10 +91,18 @@ function RunCard({ run }: { run: ExecutionRun }) {
           {run.diff_path && <Descriptions.Item label="Diff"><Text className="mono" copyable>{run.diff_path}</Text></Descriptions.Item>}
         </Descriptions>
       )}
-      {run.summary && <Paragraph style={{ marginBottom: 0 }}>{run.summary}</Paragraph>}
+      {run.summary && <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>{run.summary}</Paragraph>}
+      {enrichments.length > 0 && (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+        </Space>
+      )}
+      {followup && (
+        <Alert type="info" showIcon message="待你拍板 / 后续" description={<Text style={{ whiteSpace: 'pre-wrap' }}>{followup}</Text>} />
+      )}
       {run.error_detail && <Alert type="error" showIcon message="执行错误" description={<Text className="mono">{run.error_detail}</Text>} />}
       {run.output && Object.keys(run.output).length > 0 && (
-        <details><summary style={{ cursor: 'pointer', color: '#888' }}>codex 原始输出</summary><pre className="inline-json">{JSON.stringify(run.output, null, 2)}</pre></details>
+        <details><summary style={{ cursor: 'pointer', color: '#888' }}>codex 原始输出（JSON）</summary><pre className="inline-json">{JSON.stringify(run.output, null, 2)}</pre></details>
       )}
     </Space>
   )

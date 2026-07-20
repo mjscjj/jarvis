@@ -214,6 +214,28 @@ export interface TaskList {
   page_size: number
 }
 
+// RunEnrichment 是 codex 主动"多做一步"准备的一条结构化产物：
+//   kind=context      正文/结论段落（如"会议一页纸"）
+//   kind=doc_link     引用的文件/文档路径
+//   kind=code_link    引用的代码位置
+//   kind=commit_digest 仓库 commit 摘要
+// 未知 kind 一律按纯文本 detail 展示，不丢信息。
+export interface RunEnrichment {
+  kind: string
+  label: string
+  detail: string
+}
+
+// RunOutput 是 execution_run.output 的强类型：codex 执行结束时输出的结构化裁决。
+// summary 已单独存在 ExecutionRun.summary，这里主要用 needs_followup 与 enrichments。
+export interface RunOutput {
+  success?: boolean
+  summary?: string
+  failure_reason?: string
+  needs_followup?: string
+  enrichments?: RunEnrichment[]
+}
+
 // ExecutionRun 是一次 M5 执行的审计记录，一个 Task 可有多条（重试）。
 export interface ExecutionRun {
   id: number
@@ -223,7 +245,7 @@ export interface ExecutionRun {
   status: string
   codex_session_id: string | null
   summary: string | null
-  output: Record<string, unknown> | null
+  output: RunOutput | null
   error_detail: string | null
   repo_path: string | null
   branch: string | null
