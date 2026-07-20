@@ -6,11 +6,17 @@ import (
 	"math"
 )
 
-// Decision routes stored on a Todo. auto (the old rule-engine route) was removed
-// with the gray-zone logic; codex decisions land on need_info or need_decision.
+// Decision routes stored on a Todo (also used verbatim as the Todo.status).
+//   - auto: Codex judged the clue ready; the system auto-creates the Task and M5
+//     executes it without human confirmation.
+//   - need_decision: needs the human to confirm on the page before a Task exists.
+//   - need_info: Codex still lacks a key fact; the human must supply it.
+//   - dropped: Codex judged the clue not worth doing; terminal, no Task.
 const (
+	RouteAuto         = "auto"
 	RouteNeedInfo     = "need_info"
 	RouteNeedDecision = "need_decision"
+	RouteDropped      = "dropped"
 )
 
 // Decision engines recorded in the audit trail.

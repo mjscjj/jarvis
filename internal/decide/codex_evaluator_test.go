@@ -49,56 +49,29 @@ func clearPlan() *PlanDraft {
 	return &PlanDraft{Summary: "do it", Steps: []string{"step"}, Basis: []string{"quote"}}
 }
 
-func TestDispositionFromDecision(t *testing.T) {
+func TestRouteForDisposition(t *testing.T) {
 	cases := []struct {
-		name     string
-		decision CodexDecision
-		want     string
+		disposition string
+		wantRoute   string
 	}{
-		{
-			name:     "unclear plan -> need_info",
-			decision: CodexDecision{PlanIsClear: false, ProposedPlan: nil},
-			want:     DispositionNeedInfo,
-		},
-		{
-			name:     "clear flag but nil plan -> need_info",
-			decision: CodexDecision{PlanIsClear: true, ProposedPlan: nil},
-			want:     DispositionNeedInfo,
-		},
-		{
-			name:     "clear plan with review flag -> need_review",
-			decision: CodexDecision{PlanIsClear: true, ProposedPlan: clearPlan(), RecommendedReview: true},
-			want:     DispositionNeedReview,
-		},
-		{
-			name:     "clear plan with clarification -> need_review",
-			decision: CodexDecision{PlanIsClear: true, ProposedPlan: clearPlan(), Clarifications: []Clarification{{Question: "owner?"}}},
-			want:     DispositionNeedReview,
-		},
-		{
-			name:     "clear plan no flags -> auto_execute",
-			decision: CodexDecision{PlanIsClear: true, ProposedPlan: clearPlan()},
-			want:     DispositionAutoExecute,
-		},
+		{DispositionReady, RouteAuto},
+		{DispositionNeedReview, RouteNeedDecision},
+		{DispositionNeedInfo, RouteNeedInfo},
+		{DispositionDrop, RouteDropped},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := dispositionFromDecision(tc.decision); got != tc.want {
-				t.Fatalf("disposition = %q, want %q", got, tc.want)
+		t.Run(tc.disposition, func(t *testing.T) {
+			got, err := routeForDisposition(tc.disposition)
+			if err != nil {
+				t.Fatalf("routeForDisposition(%q) error = %v", tc.disposition, err)
+			}
+			if got != tc.wantRoute {
+				t.Fatalf("route = %q, want %q", got, tc.wantRoute)
 			}
 		})
 	}
-}
-
-func TestRouteForDisposition(t *testing.T) {
-	if got := routeForDisposition(DispositionNeedInfo); got != RouteNeedInfo {
-		t.Fatalf("need_info route = %q, want %q", got, RouteNeedInfo)
-	}
-	if got := routeForDisposition(DispositionNeedReview); got != RouteNeedDecision {
-		t.Fatalf("need_review route = %q, want %q", got, RouteNeedDecision)
-	}
-	if got := routeForDisposition(DispositionAutoExecute); got != RouteNeedDecision {
-		t.Fatalf("auto_execute route = %q, want %q", got, RouteNeedDecision)
+	if _, err := routeForDisposition("bogus"); err == nil {
+		t.Fatalf("unknown disposition must error")
 	}
 }
 
@@ -123,6 +96,7 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 	runner := &fakeCodexDecisionRunner{result: &CodexResult{
 		SessionID: "sess-1",
 		Decision: CodexDecision{
+			Disposition:       DispositionNeedReview,
 			ConfidenceFactors: clearFactors(), RiskFactors: riskyFactors(),
 			ConfidenceBasis: "explicit", PlanIsClear: true, ProposedPlan: clearPlan(),
 			RecommendedReview: true,

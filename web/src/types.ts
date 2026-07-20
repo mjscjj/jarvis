@@ -1,10 +1,12 @@
 export type TodoStatus =
   | 'extracted'
   | 'scoring'
+  | 'auto'
   | 'need_info'
   | 'need_decision'
   | 'confirmed'
   | 'dismissed'
+  | 'dropped'
   | 'expired'
 
 export type ActionType =

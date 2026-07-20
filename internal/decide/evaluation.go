@@ -3,6 +3,7 @@ package decide
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -126,6 +127,19 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 		if err := tx.Create(&audit).Error; err != nil {
 			return fmt.Errorf("create evaluation audit todo_id=%d: %w", todo.ID, err)
 		}
+		// auto route: Codex judged the clue ready, so the system creates the Task
+		// itself (no human confirmation) and the Todo lands on "auto". M5's cron
+		// then executes it. The confirmed plan is Codex's proposed_plan; the Task
+		// background is the same M3-frozen context_snapshot M5 replays.
+		if input.Route == RouteAuto {
+			background, err := requireContextSnapshot(&todo)
+			if err != nil {
+				return err
+			}
+			if err := createAutoTask(tx, s.now().UTC(), &todo, input.ProposedPlan, background); err != nil {
+				return err
+			}
+		}
 		result = EvaluationResult{
 			TodoID: todo.ID, Status: input.Route, Version: todo.Version + 1,
 			Confidence: input.Confidence, Risk: input.Risk,
@@ -142,8 +156,13 @@ func validateEvaluationInput(input EvaluationInput) error {
 	if input.TodoID == 0 || input.ExpectedVersion < 0 {
 		return fmt.Errorf("%w: evaluation Todo ID/version is invalid", ErrInvalidInput)
 	}
-	if input.Route != RouteNeedInfo && input.Route != RouteNeedDecision {
-		return fmt.Errorf("%w: evaluation route must be need_info or need_decision", ErrInvalidInput)
+	switch input.Route {
+	case RouteAuto, RouteNeedInfo, RouteNeedDecision, RouteDropped:
+	default:
+		return fmt.Errorf("%w: evaluation route must be auto, need_info, need_decision or dropped", ErrInvalidInput)
+	}
+	if input.Route == RouteAuto && input.ProposedPlan == nil {
+		return fmt.Errorf("%w: auto route requires a proposed plan", ErrInvalidInput)
 	}
 	if strings.TrimSpace(input.RouteReason) == "" {
 		return fmt.Errorf("%w: evaluation route reason is blank", ErrInvalidInput)
@@ -195,6 +214,55 @@ func validateEvaluationInput(input EvaluationInput) error {
 		if err := validatePlanDraft(input.ProposedPlan); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
+	}
+	return nil
+}
+
+// createAutoTask creates the Task for an auto-routed Todo inside the evaluation
+// transaction. It mirrors Service.Approve's task creation but records the system
+// (m4_auto) as the confirmer instead of a human. The plan is Codex's
+// proposed_plan serialized as the confirmed plan JSON.
+func createAutoTask(tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDraft, background json.RawMessage) error {
+	if plan == nil {
+		return fmt.Errorf("%w: auto task todo_id=%d has no proposed plan", ErrInvalidInput, todo.ID)
+	}
+	planRaw, err := json.Marshal(plan)
+	if err != nil {
+		return fmt.Errorf("encode auto task plan todo_id=%d: %w", todo.ID, err)
+	}
+	planJSON, err := canonicalJSONObject(planRaw, "plan")
+	if err != nil {
+		return err
+	}
+	var existing domain.Task
+	found := tx.Where("todo_id = ?", todo.ID).Limit(1).Find(&existing)
+	if found.Error != nil {
+		return fmt.Errorf("check existing Task todo_id=%d: %w", todo.ID, found.Error)
+	}
+	if found.RowsAffected != 0 {
+		return fmt.Errorf("%w: todo_id=%d task_id=%d", ErrTaskExists, todo.ID, existing.ID)
+	}
+	actionHash, err := ActionHash(todo.ActionType, todo.Target, planJSON)
+	if err != nil {
+		return err
+	}
+	task := domain.Task{
+		TodoID: todo.ID, Title: todo.Title, ActionType: todo.ActionType,
+		Background: datatypes.JSON(append([]byte(nil), background...)),
+		Plan:       datatypes.JSON(append([]byte(nil), planJSON...)),
+		ConfirmedBy: "m4_auto", ConfirmedAt: now, ActionHash: actionHash,
+		Status: "pending", AutonomyMode: "autopilot", ProjectID: copyUint64(todo.ProjectID), Version: 0,
+	}
+	if err := tx.Create(&task).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
+		}
+		return fmt.Errorf("create auto Task todo_id=%d: %w", todo.ID, err)
+	}
+	if err := createTodoEvent(tx, todo.ID, RouteAuto, RouteAuto, map[string]any{
+		"event_type": "auto_task_created", "task_id": task.ID,
+	}); err != nil {
+		return err
 	}
 	return nil
 }

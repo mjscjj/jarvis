@@ -39,10 +39,11 @@ type ExecuteResult struct {
 	TaskID     uint64 `json:"task_id"`
 	RunID      uint64 `json:"run_id"`
 	Status     string `json:"status"`
-	Branch     string `json:"branch,omitempty"`
-	Commit     string `json:"commit,omitempty"`
-	DiffPath   string `json:"diff_path,omitempty"`
-	Summary    string `json:"summary,omitempty"`
+	Branch          string `json:"branch,omitempty"`
+	Commit          string `json:"commit,omitempty"`
+	DiffPath        string `json:"diff_path,omitempty"`
+	MergeRequestURL string `json:"merge_request_url,omitempty"`
+	Summary         string `json:"summary,omitempty"`
 	Skipped    bool   `json:"skipped,omitempty"`
 	SkipReason string `json:"skip_reason,omitempty"`
 }
@@ -87,12 +88,15 @@ type BatchStats struct {
 	Failed   int
 }
 
-// RunPendingBatch is the cron entry point: it executes pending local-action
-// Tasks automatically and skips external-action Tasks (they need the manual
-// approve). Tasks in a sweep run concurrently up to `concurrency` at a time; a
-// single Task failure does not abort the sweep — it is counted and the others
-// continue, so one bad Task cannot block the rest. Each Task claims itself via
-// MarkExecuting (optimistic lock), so concurrent runs never double-execute.
+// RunPendingBatch is the cron entry point: it executes ALL pending Tasks
+// automatically, including external-side-effect ones. Per the operator's
+// full-autonomy decision, the M4 "ready" verdict is the approval — cron passes
+// ApproveExternal=true so send-message / schedule-meeting / doc-write Tasks run
+// without a separate manual click. Tasks in a sweep run concurrently up to
+// `concurrency` at a time; a single Task failure does not abort the sweep — it
+// is counted and the others continue, so one bad Task cannot block the rest.
+// Each Task claims itself via MarkExecuting (optimistic lock), so concurrent
+// runs never double-execute.
 func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit, concurrency int) (BatchStats, error) {
 	if concurrency <= 0 {
 		return BatchStats{}, fmt.Errorf("execute batch concurrency must be positive, got %d", concurrency)
@@ -114,7 +118,7 @@ func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit, concurrency 
 		go func(taskID uint64) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			_, err := e.Execute(ctx, ExecuteInput{TaskID: taskID, ApproveExternal: false})
+			_, err := e.Execute(ctx, ExecuteInput{TaskID: taskID, ApproveExternal: true})
 			mu.Lock()
 			switch {
 			case errors.Is(err, ErrExternalNeedsApproval):
@@ -198,6 +202,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 		TaskID: task.ID, RunID: run.ID, Status: finishStatus,
 		Summary: derefString(run.Summary), Branch: derefString(run.Branch),
 		Commit: derefString(run.Commit), DiffPath: derefString(run.DiffPath),
+		MergeRequestURL: derefString(run.MergeRequestURL),
 	}
 	if execErr != nil {
 		return result, fmt.Errorf("execute Task id=%d: %w", task.ID, execErr)
@@ -301,6 +306,16 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 				return e.failRun(run, startedAt, err), err
 			}
 			run.DiffPath = &diffPath
+			// Full-autonomy: push the branch and open an MR. A push/MR failure is a
+			// real failure of a code_change Task (the change never leaves the box),
+			// so fail-fast rather than silently leaving it local.
+			pushOut, err := repo.pushBranchWithMR(ctx, *run.Branch, baseBranch)
+			if err != nil {
+				return e.failRun(run, startedAt, err), err
+			}
+			if url := extractMergeRequestURL(pushOut); url != "" {
+				run.MergeRequestURL = &url
+			}
 		}
 	}
 
@@ -411,6 +426,9 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 	if run.DiffPath != nil {
 		payload["diff_path"] = *run.DiffPath
 	}
+	if run.MergeRequestURL != nil {
+		payload["merge_request_url"] = *run.MergeRequestURL
+	}
 	if run.CodexSessionID != nil {
 		payload["codex_session_id"] = *run.CodexSessionID
 	}
@@ -438,4 +456,21 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// extractMergeRequestURL scans git remote push output for the MR/PR URL that
+// GitLab/ByteDance-style remotes print after a push. It looks for the first
+// http(s) URL on a line mentioning a merge/pull request. Returns "" when the
+// remote printed no such URL (push options ignored) — that is non-fatal.
+func extractMergeRequestURL(pushOutput string) string {
+	for _, line := range strings.Split(pushOutput, "\n") {
+		lower := strings.ToLower(line)
+		if !strings.Contains(lower, "merge request") && !strings.Contains(lower, "pull request") && !strings.Contains(lower, "/merge_requests/") {
+			continue
+		}
+		if idx := strings.Index(line, "http"); idx >= 0 {
+			return strings.TrimSpace(line[idx:])
+		}
+	}
+	return ""
 }

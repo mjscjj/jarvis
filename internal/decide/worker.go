@@ -16,8 +16,10 @@ type WorkerOptions struct {
 type WorkerStats struct {
 	Loaded       int
 	Evaluated    int
+	Auto         int
 	NeedInfo     int
 	NeedDecision int
+	Dropped      int
 }
 
 type evaluationSource interface {
@@ -122,10 +124,14 @@ func (w *DecisionWorker) EvaluateOnce(ctx context.Context) (WorkerStats, error) 
 		}
 		stats.Evaluated++
 		switch result.Status {
+		case RouteAuto:
+			stats.Auto++
 		case RouteNeedInfo:
 			stats.NeedInfo++
 		case RouteNeedDecision:
 			stats.NeedDecision++
+		case RouteDropped:
+			stats.Dropped++
 		default:
 			return stats, fmt.Errorf("persist Todo evaluation id=%d returned unsupported status=%s", todo.ID, result.Status)
 		}

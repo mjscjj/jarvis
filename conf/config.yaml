@@ -111,7 +111,7 @@ codex:
 # M5 agent 驱动执行：codex 用 workspace-write 真实改代码，改完自动 commit 到独立分支不 push。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron（只跑本地动作）。
 execute:
-  enabled: false                                   # 先手动触发，观察稳了再开自动
+  enabled: true                                    # 全自动：M4 判 ready 建的 Task 由此 cron 自动执行（含对外动作 + push/MR）
   schedule: "@every 5m"
   batch_limit: 5
   concurrency: 3                                    # 单次 sweep 内并行执行的 Task 数

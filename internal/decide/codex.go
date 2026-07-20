@@ -20,15 +20,17 @@ const (
 	codexDecisionSchema = `{
   "type":"object",
   "additionalProperties":false,
-  "required":["confidence_factors","risk_factors","confidence_basis","clarifications","recommended_review","proposed_plan","plan_is_clear"],
+  "required":["disposition","confidence_factors","risk_factors","confidence_basis","clarifications","recommended_review","proposed_plan","plan_is_clear","evidence_gathered"],
   "properties":{
+    "disposition":{"type":"string","enum":["ready","need_review","need_info","drop"]},
     "confidence_factors":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/factor"}},
     "risk_factors":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/factor"}},
     "confidence_basis":{"type":"string","minLength":1},
     "clarifications":{"type":"array","items":{"$ref":"#/$defs/clarification"}},
     "recommended_review":{"type":"boolean"},
     "proposed_plan":{"anyOf":[{"$ref":"#/$defs/plan"},{"type":"null"}]},
-    "plan_is_clear":{"type":"boolean"}
+    "plan_is_clear":{"type":"boolean"},
+    "evidence_gathered":{"type":"array","items":{"$ref":"#/$defs/evidence"}}
   },
   "$defs":{
     "factor":{
@@ -40,6 +42,11 @@ const (
       "type":"object","additionalProperties":false,
       "required":["question","hint"],
       "properties":{"question":{"type":"string","minLength":1},"hint":{"type":"string"}}
+    },
+    "evidence":{
+      "type":"object","additionalProperties":false,
+      "required":["label","detail"],
+      "properties":{"label":{"type":"string","minLength":1},"detail":{"type":"string"}}
     },
     "parameter":{
       "type":"object","additionalProperties":false,
@@ -77,6 +84,10 @@ type CodexInput struct {
 }
 
 type CodexDecision struct {
+	// Disposition is Codex's own verdict on how to handle the clue: ready /
+	// need_review / need_info / drop. It is authoritative — the route is derived
+	// from it directly, not re-inferred from plan_is_clear/recommended_review.
+	Disposition       string           `json:"disposition"`
 	ConfidenceFactors []DecisionFactor `json:"confidence_factors"`
 	RiskFactors       []DecisionFactor `json:"risk_factors"`
 	ConfidenceBasis   string           `json:"confidence_basis"`
@@ -88,6 +99,15 @@ type CodexDecision struct {
 	RecommendedReview bool            `json:"recommended_review"`
 	ProposedPlan      *PlanDraft      `json:"proposed_plan"`
 	PlanIsClear       bool            `json:"plan_is_clear"`
+	// EvidenceGathered records the facts/links Codex looked up itself while doing
+	// its homework (§0.2 auto-fill). Stored in the audit for observability.
+	EvidenceGathered []Evidence `json:"evidence_gathered"`
+}
+
+// Evidence is one fact or link Codex found by self-running tools during M4.
+type Evidence struct {
+	Label  string `json:"label"`
+	Detail string `json:"detail"`
 }
 
 // Clarification is one thing Codex asks the human to clarify or provide. Both
@@ -321,13 +341,31 @@ func decodeCodexDecision(raw []byte) (*CodexDecision, error) {
 			return nil, fmt.Errorf("codex decision clarifications[%d] question is blank", position)
 		}
 	}
-	// A Todo that is not clear enough to act (need_info) must tell the human what
-	// to clarify — otherwise "需要补充信息" is useless. Fail-fast on an empty list.
-	if !decision.PlanIsClear && len(decision.Clarifications) == 0 {
-		return nil, fmt.Errorf("codex decision plan_is_clear=false requires at least one clarification")
+	for position, evidence := range decision.EvidenceGathered {
+		if strings.TrimSpace(evidence.Label) == "" {
+			return nil, fmt.Errorf("codex decision evidence_gathered[%d] label is blank", position)
+		}
 	}
-	if decision.PlanIsClear && decision.ProposedPlan == nil {
-		return nil, fmt.Errorf("codex decision plan_is_clear requires proposed_plan")
+	switch decision.Disposition {
+	case DispositionReady, DispositionNeedReview:
+		// A clue Codex judges actionable must carry a concrete plan to execute or
+		// review. Fail-fast so "ready" without a plan cannot slip to M5.
+		if decision.ProposedPlan == nil {
+			return nil, fmt.Errorf("codex decision disposition=%s requires proposed_plan", decision.Disposition)
+		}
+	case DispositionNeedInfo:
+		// need_info means Codex tried and still lacks a key fact — it must tell the
+		// human what to supply, otherwise "需要补充信息" is useless.
+		if len(decision.Clarifications) == 0 {
+			return nil, fmt.Errorf("codex decision disposition=need_info requires at least one clarification")
+		}
+	case DispositionDrop:
+		// drop discards the clue; a plan would be contradictory.
+		if decision.ProposedPlan != nil {
+			return nil, fmt.Errorf("codex decision disposition=drop must not carry a proposed_plan")
+		}
+	default:
+		return nil, fmt.Errorf("codex decision has invalid disposition %q", decision.Disposition)
 	}
 	if decision.ProposedPlan != nil {
 		if err := validatePlanDraft(decision.ProposedPlan); err != nil {

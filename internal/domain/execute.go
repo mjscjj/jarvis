@@ -24,11 +24,13 @@ type ExecutionRun struct {
 	Summary        *string        `gorm:"column:summary;type:mediumtext"`
 	Output         datatypes.JSON `gorm:"column:output;type:json"`
 	ErrorDetail    *string        `gorm:"column:error_detail;type:mediumtext"`
-	// RepoPath/Branch/Commit/DiffPath are only set for code_change runs.
-	RepoPath   *string    `gorm:"column:repo_path;type:varchar(1024)"`
-	Branch     *string    `gorm:"column:branch;type:varchar(256)"`
-	Commit     *string    `gorm:"column:commit_sha;type:varchar(64)"`
-	DiffPath   *string    `gorm:"column:diff_path;type:varchar(1024)"`
+	// RepoPath/Branch/Commit/DiffPath/MergeRequestURL are only set for code_change runs.
+	RepoPath        *string `gorm:"column:repo_path;type:varchar(1024)"`
+	Branch          *string `gorm:"column:branch;type:varchar(256)"`
+	Commit          *string `gorm:"column:commit_sha;type:varchar(64)"`
+	DiffPath        *string `gorm:"column:diff_path;type:varchar(1024)"`
+	MergeRequestURL *string `gorm:"column:merge_request_url;type:varchar(1024)"`
+
 	StartedAt  time.Time  `gorm:"column:started_at;type:datetime;not null"`
 	FinishedAt *time.Time `gorm:"column:finished_at;type:datetime"`
 	DurationMs *int64     `gorm:"column:duration_ms;type:bigint"`

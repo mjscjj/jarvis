@@ -30,8 +30,8 @@ func StartWorkerScheduler(ctx context.Context, worker *DecisionWorker, spec stri
 			return
 		}
 		logger.Printf(
-			"job=decide status=ok loaded=%d evaluated=%d need_info=%d need_decision=%d",
-			stats.Loaded, stats.Evaluated, stats.NeedInfo, stats.NeedDecision,
+			"job=decide status=ok loaded=%d evaluated=%d auto=%d need_info=%d need_decision=%d dropped=%d",
+			stats.Loaded, stats.Evaluated, stats.Auto, stats.NeedInfo, stats.NeedDecision, stats.Dropped,
 		)
 	}); err != nil {
 		return nil, fmt.Errorf("register decision job schedule=%q: %w", spec, err)

@@ -7,15 +7,17 @@ import (
 	"jarvis/internal/domain"
 )
 
-// Disposition is Codex's suggested handling for an extracted Todo. It is the M4
-// output the human observes: auto_execute means "safe to run", need_review means
-// "plan is clear but a human should confirm", need_info means "not enough
-// information to act". The disposition is recorded in the audit; the actual
-// local-auto vs external-confirm split happens later at execution time (M5).
+// Disposition is Codex's own verdict on how to handle an extracted Todo, returned
+// verbatim in the decision schema (no longer re-inferred by us):
+//   - ready: enough context, plan is clear, safe to auto-run → route auto.
+//   - need_review: plan is clear but a human should look → route need_decision.
+//   - need_info: Codex tried tools and still lacks a key fact → route need_info.
+//   - drop: not worth doing → route dropped.
 const (
-	DispositionAutoExecute = "auto_execute"
-	DispositionNeedReview  = "need_review"
-	DispositionNeedInfo    = "need_info"
+	DispositionReady      = "ready"
+	DispositionNeedReview = "need_review"
+	DispositionNeedInfo   = "need_info"
+	DispositionDrop       = "drop"
 )
 
 // neutralRuleScore is the seed confidence/risk handed to Codex. We deliberately
@@ -67,10 +69,13 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 		return nil, fmt.Errorf("codex decision returned nil result todo_id=%d", todo.ID)
 	}
 
-	disposition := dispositionFromDecision(result.Decision)
+	disposition := result.Decision.Disposition
 	confidence := aggregateFactors(result.Decision.ConfidenceFactors)
 	risk := aggregateFactors(result.Decision.RiskFactors)
-	route := routeForDisposition(disposition)
+	route, err := routeForDisposition(disposition)
+	if err != nil {
+		return nil, fmt.Errorf("codex evaluation todo_id=%d: %w", todo.ID, err)
+	}
 
 	sessionID := result.SessionID
 	input := &EvaluationInput{
@@ -93,30 +98,24 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 	return input, nil
 }
 
-// dispositionFromDecision derives Codex's suggested handling from the existing
-// decision schema signals (no schema change): an unclear plan means we need more
-// info; a clear plan that Codex flags for review (or that carries uncertainty)
-// needs human review; a clear plan with no review flag is safe to auto-execute.
-func dispositionFromDecision(decision CodexDecision) string {
-	if !decision.PlanIsClear || decision.ProposedPlan == nil {
-		return DispositionNeedInfo
+// routeForDisposition maps Codex's own disposition to the stored route:
+//   - ready       → auto          (system auto-creates Task, M5 executes)
+//   - need_review → need_decision (human confirms on the page)
+//   - need_info   → need_info     (human supplies the missing fact)
+//   - drop        → dropped       (terminal, no Task)
+func routeForDisposition(disposition string) (string, error) {
+	switch disposition {
+	case DispositionReady:
+		return RouteAuto, nil
+	case DispositionNeedReview:
+		return RouteNeedDecision, nil
+	case DispositionNeedInfo:
+		return RouteNeedInfo, nil
+	case DispositionDrop:
+		return RouteDropped, nil
+	default:
+		return "", fmt.Errorf("unknown codex disposition %q", disposition)
 	}
-	if decision.RecommendedReview || len(decision.Clarifications) > 0 {
-		return DispositionNeedReview
-	}
-	return DispositionAutoExecute
-}
-
-// routeForDisposition maps a disposition to a stored route. need_info maps
-// straight through; auto_execute and need_review both currently route to
-// need_decision so nothing bypasses the confirmation page during the
-// observation phase. The disposition itself is preserved in RouteReason/
-// MatchedRules for later analysis of how well Codex judges.
-func routeForDisposition(disposition string) string {
-	if disposition == DispositionNeedInfo {
-		return RouteNeedInfo
-	}
-	return RouteNeedDecision
 }
 
 // aggregateFactors reduces Codex's factor list to a single [0,1] score by

@@ -92,3 +92,18 @@ func (g *gitRepo) commitAll(ctx context.Context, message string) (string, error)
 func (g *gitRepo) diffAgainst(ctx context.Context, base string) (string, error) {
 	return g.run(ctx, "diff", base+"...HEAD")
 }
+
+// pushBranch pushes the branch to origin and asks the remote to open a merge
+// request targeting base, using GitLab/ByteDance-style push options. It returns
+// the raw remote output (which usually contains the MR URL). Push options are
+// best-effort: a remote that ignores them still gets the branch pushed, and the
+// MR URL simply won't appear — callers surface whatever the remote printed.
+func (g *gitRepo) pushBranchWithMR(ctx context.Context, branch, base string) (string, error) {
+	return g.run(ctx,
+		"push", "-u",
+		"-o", "merge_request.create",
+		"-o", "merge_request.target="+base,
+		"-o", "merge_request.title=jarvis: "+branch,
+		"origin", branch,
+	)
+}
