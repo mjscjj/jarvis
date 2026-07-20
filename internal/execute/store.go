@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"time"
 
@@ -26,7 +27,7 @@ var (
 )
 
 var taskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "awaiting_approval": {}, "done": {}, "failed": {},
 }
 
 type TaskFilter struct {
@@ -43,22 +44,23 @@ type TaskList struct {
 }
 
 type TaskView struct {
-	ID              uint64          `json:"id"`
-	TodoID          uint64          `json:"todo_id"`
-	Title           string          `json:"title"`
-	ActionType      string          `json:"action_type"`
-	Background      json.RawMessage `json:"background"`
-	Plan            json.RawMessage `json:"plan"`
-	ConfirmedBy     string          `json:"confirmed_by"`
-	ConfirmedAt     time.Time       `json:"confirmed_at"`
-	ActionHash      string          `json:"action_hash"`
-	Status          string          `json:"status"`
-	ExecutionResult json.RawMessage `json:"execution_result"`
-	AutonomyMode    string          `json:"autonomy_mode"`
-	ProjectID       *uint64         `json:"project_id"`
-	Version         int32           `json:"version"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	ID                   uint64                `json:"id"`
+	TodoID               uint64                `json:"todo_id"`
+	Title                string                `json:"title"`
+	ActionType           string                `json:"action_type"`
+	Background           json.RawMessage       `json:"background"`
+	Plan                 json.RawMessage       `json:"plan"`
+	ConfirmedBy          string                `json:"confirmed_by"`
+	ConfirmedAt          time.Time             `json:"confirmed_at"`
+	ActionHash           string                `json:"action_hash"`
+	Status               string                `json:"status"`
+	ExecutionResult      json.RawMessage       `json:"execution_result"`
+	ExecutionSupplements []ExecutionSupplement `json:"execution_supplements,omitempty"`
+	AutonomyMode         string                `json:"autonomy_mode"`
+	ProjectID            *uint64               `json:"project_id"`
+	Version              int32                 `json:"version"`
+	CreatedAt            time.Time             `json:"created_at"`
+	UpdatedAt            time.Time             `json:"updated_at"`
 }
 
 type FinishInput struct {
@@ -66,6 +68,13 @@ type FinishInput struct {
 	ExpectedVersion int32
 	Status          string
 	Result          json.RawMessage
+}
+
+type SupplementInput struct {
+	TaskID          uint64
+	ExpectedVersion int32
+	Note            string
+	Channel         string
 }
 
 // RunView 是一次 ExecutionRun 审计记录的只读视图，供任务详情展示执行历史。
@@ -97,6 +106,7 @@ type RunList struct {
 type TaskService interface {
 	ListTasks(context.Context, TaskFilter) (*TaskList, error)
 	Finish(context.Context, FinishInput) (*TaskView, error)
+	Supplement(context.Context, SupplementInput) (*TaskView, error)
 	ListRuns(context.Context, uint64) (*RunList, error)
 }
 
@@ -187,6 +197,65 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 	return &view, nil
 }
 
+var supplementableTaskStatuses = map[string]struct{}{
+	"pending": {}, "executing": {}, "awaiting_approval": {}, "done": {}, "failed": {},
+}
+
+// Supplement appends a human clarification/instruction to a Task's M5-only
+// execution_supplements. It does not touch Todo.context_snapshot or Task.plan.
+func (s *Store) Supplement(ctx context.Context, input SupplementInput) (*TaskView, error) {
+	if input.TaskID == 0 || input.ExpectedVersion < 0 {
+		return nil, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
+	}
+	note := strings.TrimSpace(input.Note)
+	if note == "" {
+		return nil, fmt.Errorf("%w: supplement note must be non-blank", ErrInvalidInput)
+	}
+	channel := strings.TrimSpace(input.Channel)
+	if channel == "" {
+		channel = "backend"
+	}
+
+	var task domain.Task
+	if err := s.db.WithContext(ctx).First(&task, input.TaskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, input.TaskID)
+		}
+		return nil, fmt.Errorf("load execution Task id=%d: %w", input.TaskID, err)
+	}
+	if task.Version != input.ExpectedVersion {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, input.ExpectedVersion, task.Version)
+	}
+	if _, ok := supplementableTaskStatuses[task.Status]; !ok {
+		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot be supplemented", ErrInvalidTransition, task.ID, task.Status)
+	}
+
+	encoded, err := appendExecutionSupplement(task.ExecutionSupplements, note, channel, time.Now().UTC())
+	if err != nil {
+		return nil, fmt.Errorf("append execution_supplements task_id=%d: %w", task.ID, err)
+	}
+
+	result := s.db.WithContext(ctx).Model(&domain.Task{}).
+		Where("id = ? AND version = ? AND status = ?", task.ID, input.ExpectedVersion, task.Status).
+		Updates(map[string]any{
+			"execution_supplements": datatypes.JSON(encoded),
+			"version":               gorm.Expr("version + 1"),
+		})
+	if result.Error != nil {
+		return nil, fmt.Errorf("apply supplement task_id=%d: %w", task.ID, result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, input.ExpectedVersion)
+	}
+
+	var reloaded domain.Task
+	if err := s.db.WithContext(ctx).First(&reloaded, task.ID).Error; err != nil {
+		return nil, fmt.Errorf("reload execution Task id=%d after supplement: %w", task.ID, err)
+	}
+	view := taskView(&reloaded)
+	return &view, nil
+}
+
 // MarkExecuting transitions a Task from pending to executing under optimistic
 // lock and returns the new version. It is the guard that prevents two runners
 // from grabbing the same Task concurrently (manual button + cron).
@@ -226,6 +295,148 @@ func (s *Store) MarkExecuting(ctx context.Context, taskID uint64, expectedVersio
 		return 0, err
 	}
 	return newVersion, nil
+}
+
+// MarkAwaitingApproval parks an executing Task at awaiting_approval after the
+// propose stage decided the external write is high-risk. It stores the approved-
+// pending proposal (the plan + full artifact codex produced without touching the
+// outside world) into execution_result so the UI can render it and the later
+// apply stage can replay it. It bumps the version and returns the new version.
+func (s *Store) MarkAwaitingApproval(ctx context.Context, taskID uint64, expectedVersion int32, proposal json.RawMessage) (int32, error) {
+	if taskID == 0 || expectedVersion < 0 {
+		return 0, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
+	}
+	result, err := canonicalJSONObject(proposal)
+	if err != nil {
+		return 0, err
+	}
+	var newVersion int32
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task domain.Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		if err != nil {
+			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
+		}
+		if task.Version != expectedVersion {
+			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+		}
+		if task.Status != "executing" {
+			return fmt.Errorf("%w: task_id=%d from=%s to=awaiting_approval", ErrInvalidTransition, task.ID, task.Status)
+		}
+		update := tx.Model(&domain.Task{}).
+			Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "executing").
+			Updates(map[string]any{
+				"status": "awaiting_approval", "execution_result": datatypes.JSON(result), "version": gorm.Expr("version + 1"),
+			})
+		if update.Error != nil {
+			return fmt.Errorf("mark awaiting approval Task id=%d: %w", task.ID, update.Error)
+		}
+		if update.RowsAffected != 1 {
+			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
+		}
+		newVersion = task.Version + 1
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+// MarkExecutingFromApproval claims an awaiting_approval Task for the apply stage
+// (awaiting_approval -> executing) under optimistic lock and returns the new
+// version. It is the concurrency guard for Approve, mirroring MarkExecuting for
+// the propose stage.
+func (s *Store) MarkExecutingFromApproval(ctx context.Context, taskID uint64, expectedVersion int32) (int32, error) {
+	if taskID == 0 || expectedVersion < 0 {
+		return 0, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
+	}
+	var newVersion int32
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task domain.Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		if err != nil {
+			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
+		}
+		if task.Version != expectedVersion {
+			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+		}
+		if task.Status != "awaiting_approval" {
+			return fmt.Errorf("%w: task_id=%d from=%s to=executing", ErrInvalidTransition, task.ID, task.Status)
+		}
+		update := tx.Model(&domain.Task{}).
+			Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "awaiting_approval").
+			Updates(map[string]any{"status": "executing", "version": gorm.Expr("version + 1")})
+		if update.Error != nil {
+			return fmt.Errorf("mark executing (apply) Task id=%d: %w", task.ID, update.Error)
+		}
+		if update.RowsAffected != 1 {
+			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
+		}
+		newVersion = task.Version + 1
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+// RejectAwaitingApproval transitions an awaiting_approval Task to failed when the
+// human declines the proposed external write. It records the rejection reason in
+// execution_result (overwriting the proposal) so the UI shows why, and the Task
+// can later be rerun. It bumps the version and returns the reloaded Task.
+func (s *Store) RejectAwaitingApproval(ctx context.Context, taskID uint64, expectedVersion int32, result json.RawMessage) (*TaskView, error) {
+	if taskID == 0 || expectedVersion < 0 {
+		return nil, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
+	}
+	canonical, err := canonicalJSONObject(result)
+	if err != nil {
+		return nil, err
+	}
+	var rejected domain.Task
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task domain.Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		if err != nil {
+			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
+		}
+		if task.Version != expectedVersion {
+			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+		}
+		if task.Status != "awaiting_approval" {
+			return fmt.Errorf("%w: task_id=%d from=%s to=failed (reject)", ErrInvalidTransition, task.ID, task.Status)
+		}
+		update := tx.Model(&domain.Task{}).
+			Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "awaiting_approval").
+			Updates(map[string]any{
+				"status": "failed", "execution_result": datatypes.JSON(canonical), "version": gorm.Expr("version + 1"),
+			})
+		if update.Error != nil {
+			return fmt.Errorf("reject execution Task id=%d: %w", task.ID, update.Error)
+		}
+		if update.RowsAffected != 1 {
+			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
+		}
+		if err := tx.First(&rejected, taskID).Error; err != nil {
+			return fmt.Errorf("reload execution Task id=%d after reject: %w", task.ID, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	view := taskView(&rejected)
+	return &view, nil
 }
 
 // ResetForRerun transitions a finished Task (done/failed) back to pending so it
@@ -365,12 +576,22 @@ func canonicalJSONObject(raw []byte) (json.RawMessage, error) {
 }
 
 func taskView(task *domain.Task) TaskView {
+	supplements, err := decodeExecutionSupplements(task.ExecutionSupplements)
+	if err != nil {
+		// 写入侧 Supplement 已严格校验，正常不会存进坏数据；一旦解析失败说明库里
+		// 的 execution_supplements 被损坏。这里 taskView 无法返回 error，至少打点
+		// 暴露问题（不静默吞掉，符合 fail-fast），补充信息在本次视图中缺省为空。
+		log.Printf("taskView: decode execution_supplements task_id=%d failed: %v", task.ID, err)
+		supplements = nil
+	}
 	return TaskView{
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
 		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
 		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
-		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult), AutonomyMode: task.AutonomyMode,
-		ProjectID: task.ProjectID, Version: task.Version, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
+		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult),
+		ExecutionSupplements: supplements,
+		AutonomyMode:         task.AutonomyMode,
+		ProjectID:            task.ProjectID, Version: task.Version, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
 	}
 }
 

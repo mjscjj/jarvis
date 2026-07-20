@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Modal, Select, Space, Spin, Table, Tag, Timeline, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { executeTask, finishTask, listTaskRuns, listTasks, rerunTask } from './api'
-import type { ExecutionRun, RunEnrichment, Task, TaskStatus } from './types'
+import { approveTask, executeTask, finishTask, listTaskRuns, listTasks, rejectTask, rerunTask, supplementTask } from './api'
+import type { ExecutionRun, ProposalResult, RunEnrichment, Task, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
@@ -108,6 +108,42 @@ function RunCard({ run }: { run: ExecutionRun }) {
   )
 }
 
+// proposalOf reads the pending proposal off a Task whose execution_result was
+// written by the propose stage (stage="proposal"). Returns null otherwise.
+function proposalOf(task: Task): ProposalResult | null {
+  const result = task.execution_result as ProposalResult | null
+  if (result && result.stage === 'proposal' && result.proposal) return result
+  return null
+}
+
+// ProposalCard renders the high-risk external write awaiting approval: the action
+// description, the target object, and the COMPLETE artifact the user is approving
+// (the exact document/message that will be written out), plus any enrichments.
+function ProposalCard({ result }: { result: ProposalResult }) {
+  const { proposal } = result
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      {result.summary && <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>{result.summary}</Paragraph>}
+      <Descriptions size="small" column={1} styles={{ label: { width: 72 } }}>
+        <Descriptions.Item label="动作">{proposal.action}</Descriptions.Item>
+        <Descriptions.Item label="目标">{proposal.target}</Descriptions.Item>
+      </Descriptions>
+      <div>
+        <Text strong style={{ fontSize: 13 }}>完整产出物（批准后将真正写出/发送）</Text>
+        <Paragraph style={{ whiteSpace: 'pre-wrap', margin: '6px 0 0', fontSize: 13, lineHeight: 1.6, background: 'var(--color-bg-soft)', borderRadius: 8, padding: '10px 12px' }}>{proposal.artifact}</Paragraph>
+      </div>
+      {result.enrichments && result.enrichments.length > 0 && (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {result.enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+        </Space>
+      )}
+      {result.needs_followup?.trim() && (
+        <Alert type="info" showIcon message="待你拍板 / 后续" description={<Text style={{ whiteSpace: 'pre-wrap' }}>{result.needs_followup}</Text>} />
+      )}
+    </Space>
+  )
+}
+
 // External actions reach outside this machine and cannot be auto-run; the
 // backend still requires the click, but we warn before triggering.
 const externalActions = new Set(['summary_post', 'reply_message', 'schedule_meeting', 'doc_write', 'manual_followup'])
@@ -117,7 +153,8 @@ function errorText(cause: unknown): string {
 }
 
 export default function Tasks() {
-  const [statuses, setStatuses] = useState<TaskStatus[]>(['pending', 'executing', 'done', 'failed'])
+  const allStatuses: TaskStatus[] = ['pending', 'executing', 'awaiting_approval', 'done', 'failed']
+  const [statuses, setStatuses] = useState<TaskStatus[]>(allStatuses)
   const [items, setItems] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -128,6 +165,11 @@ export default function Tasks() {
   const [summary, setSummary] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [executingId, setExecutingId] = useState<number>()
+  const [rerunTarget, setRerunTarget] = useState<Task>()
+  const [rerunNote, setRerunNote] = useState('')
+  const [rejectTarget, setRejectTarget] = useState<Task>()
+  const [rejectReason, setRejectReason] = useState('')
+  const [rerunSubmitting, setRerunSubmitting] = useState(false)
   const [runs, setRuns] = useState<ExecutionRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runsError, setRunsError] = useState<string>()
@@ -197,22 +239,64 @@ export default function Tasks() {
     }
   }
 
-  const runRerun = async (task: Task) => {
-    const ok = window.confirm(`「${task.title}」已${statusMeta[task.status].label}，确认重新执行一次？`)
+  const runApprove = async (task: Task) => {
+    const ok = window.confirm(`批准后 codex 会真正落地这条对外写入（${task.action_type}）。确认批准并执行？`)
     if (!ok) return
-    if (externalActions.has(task.action_type)) {
-      const okExternal = window.confirm(`该任务是对外动作（${task.action_type}），重跑会再次真实触达外部。继续？`)
-      if (!okExternal) return
-    }
     setExecutingId(task.id)
     setError(undefined)
     try {
-      await rerunTask(task.id)
+      await approveTask(task.id, task.version)
+      setDetail(undefined)
       setRefreshKey((value) => value + 1)
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
       setExecutingId(undefined)
+    }
+  }
+
+  const openReject = (task: Task) => {
+    setRejectTarget(task)
+    setRejectReason('')
+  }
+
+  const submitReject = async () => {
+    if (!rejectTarget) return
+    const task = rejectTarget
+    setExecutingId(task.id)
+    setError(undefined)
+    try {
+      await rejectTask(task.id, task.version, rejectReason.trim())
+      setRejectTarget(undefined)
+      setDetail(undefined)
+      setRefreshKey((value) => value + 1)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setExecutingId(undefined)
+    }
+  }
+
+  const openRerun = (task: Task) => {
+    setRerunTarget(task)
+    setRerunNote('')
+  }
+
+  const submitRerun = async () => {
+    if (!rerunTarget) return
+    const task = rerunTarget
+    setRerunSubmitting(true)
+    setError(undefined)
+    try {
+      const note = rerunNote.trim()
+      if (note) await supplementTask(task.id, task.version, note)
+      await rerunTask(task.id)
+      setRerunTarget(undefined)
+      setRefreshKey((value) => value + 1)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setRerunSubmitting(false)
     }
   }
 
@@ -231,9 +315,15 @@ export default function Tasks() {
           </Space>
         }
         if (task.status === 'executing') return <StatusBadge label="codex 执行中…" color={statusMeta.executing.color} />
+        if (task.status === 'awaiting_approval') {
+          return <Space onClick={(e) => e.stopPropagation()}>
+            <Button type="primary" size="small" loading={executingId === task.id} onClick={(e) => { e.stopPropagation(); runApprove(task) }}>批准落地</Button>
+            <Button danger size="small" onClick={(e) => { e.stopPropagation(); openReject(task) }}>驳回</Button>
+          </Space>
+        }
         if (task.status === 'done' || task.status === 'failed') {
           return <Space onClick={(e) => e.stopPropagation()}>
-            <Button size="small" loading={executingId === task.id} onClick={(e) => { e.stopPropagation(); runRerun(task) }}>重跑</Button>
+            <Button size="small" onClick={(e) => { e.stopPropagation(); openRerun(task) }}>重跑</Button>
           </Space>
         }
         return '—'
@@ -247,7 +337,7 @@ export default function Tasks() {
     </PageHeader>
     <Card className="filter-card" variant="borderless">
       <Flex gap={16} align="end" wrap>
-        <label className="filter-field filter-status"><Text type="secondary">Task 状态</Text><Select mode="multiple" value={statuses} options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} onChange={(values) => setStatuses(values.length ? values : ['pending', 'executing', 'done', 'failed'])} /></label>
+        <label className="filter-field filter-status"><Text type="secondary">Task 状态</Text><Select mode="multiple" value={statuses} options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} onChange={(values) => setStatuses(values.length ? values : allStatuses)} /></label>
       </Flex>
     </Card>
     {error && <Alert type="error" showIcon message="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
@@ -277,13 +367,75 @@ export default function Tasks() {
             />
           )}
         </section>
+        {proposalOf(detail) && (
+          <section>
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="待你审批的对外写入方案"
+              description="codex 判断这是高风险对外写入，只产出了方案与完整产出物，尚未真正写入/发送。请审阅下方产出物，批准后才会真正落地。"
+            />
+            <ProposalCard result={proposalOf(detail)!} />
+            <Space style={{ marginTop: 12 }}>
+              <Button type="primary" loading={executingId === detail.id} onClick={() => runApprove(detail)}>批准落地</Button>
+              <Button danger onClick={() => openReject(detail)}>驳回</Button>
+            </Space>
+          </section>
+        )}
         <section><Text type="secondary">执行方案</Text><pre>{JSON.stringify(detail.plan, null, 2)}</pre></section>
-        <section><Text type="secondary">结果汇总（Task 最新快照）</Text>{detail.execution_result ? <pre>{JSON.stringify(detail.execution_result, null, 2)}</pre> : <Paragraph type="secondary" style={{ marginTop: 8 }}>尚未执行</Paragraph>}</section>
-        <section><Text type="secondary">背景</Text><pre>{JSON.stringify(detail.background, null, 2)}</pre></section>
+        {detail.execution_supplements && detail.execution_supplements.length > 0 && (
+          <section>
+            <Text type="secondary">执行阶段补充（M5）</Text>
+            <Space direction="vertical" size={8} style={{ width: '100%', marginTop: 8 }}>
+              {detail.execution_supplements.map((item, index) => (
+                <blockquote key={index} style={{ margin: 0 }}>
+                  {item.note}
+                  <br />
+                  <Text type="secondary" style={{ fontSize: 12 }}>{new Date(item.at).toLocaleString()}</Text>
+                </blockquote>
+              ))}
+            </Space>
+          </section>
+        )}
+        {!proposalOf(detail) && (
+          <section><Text type="secondary">结果汇总（Task 最新快照）</Text>{detail.execution_result ? <pre>{JSON.stringify(detail.execution_result, null, 2)}</pre> : <Paragraph type="secondary" style={{ marginTop: 8 }}>尚未执行</Paragraph>}</section>
+        )}
+        <section><Text type="secondary">背景（M4 产出）</Text><pre>{JSON.stringify(detail.background, null, 2)}</pre></section>
       </Space>}
     </Drawer>
     <Modal title={finishStatus === 'done' ? '记录完成结果' : '记录失败原因'} open={Boolean(selected)} confirmLoading={submitting} onOk={submit} onCancel={() => setSelected(undefined)} okText="提交">
       <Input.TextArea rows={5} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder={finishStatus === 'done' ? '完成了什么、产物在哪里' : '失败原因和需要的后续处理'} />
+    </Modal>
+    <Modal
+      title={rerunTarget ? `重跑「${rerunTarget.title}」` : '重跑任务'}
+      open={Boolean(rerunTarget)}
+      confirmLoading={rerunSubmitting}
+      onOk={submitRerun}
+      onCancel={() => setRerunTarget(undefined)}
+      okText="确认重跑"
+    >
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        {rerunTarget && externalActions.has(rerunTarget.action_type) && (
+          <Alert type="warning" showIcon message={`对外动作（${rerunTarget.action_type}）`} description="重跑会再次真实触达外部，请确认后再提交。" />
+        )}
+        <Text type="secondary">可选填写补充信息/指示；留空则直接重跑。填写后会持久保存，之后每次重跑都会带上。</Text>
+        <Input.TextArea rows={4} value={rerunNote} onChange={(event) => setRerunNote(event.target.value)} placeholder="例如：这次改用 xxx 文档模板；标题要包含季度；只发给 A 不要发给 B 等（可不填）" />
+      </Space>
+    </Modal>
+    <Modal
+      title={rejectTarget ? `驳回「${rejectTarget.title}」的方案` : '驳回方案'}
+      open={Boolean(rejectTarget)}
+      confirmLoading={Boolean(rejectTarget) && executingId === rejectTarget?.id}
+      onOk={submitReject}
+      onCancel={() => setRejectTarget(undefined)}
+      okText="确认驳回"
+      okButtonProps={{ danger: true }}
+    >
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <Text type="secondary">驳回后任务将标记为失败，不会真正写出任何内容。可填写驳回原因（可不填）；之后可重跑重新产出方案。</Text>
+        <Input.TextArea rows={4} value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} placeholder="例如：措辞不合适 / 目标群选错了 / 内容还需补充数据（可不填）" />
+      </Space>
     </Modal>
   </>
 }

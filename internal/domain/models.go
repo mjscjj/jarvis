@@ -137,13 +137,16 @@ type Task struct {
 	ConfirmedBy     string         `gorm:"column:confirmed_by;type:varchar(16);not null"`
 	ConfirmedAt     time.Time      `gorm:"column:confirmed_at;type:datetime;not null"`
 	ActionHash      string         `gorm:"column:action_hash;type:char(64);not null"`
-	Status          string         `gorm:"column:status;type:varchar(16);not null;default:pending;index:idx_task_status"`
+	Status          string         `gorm:"column:status;type:varchar(24);not null;default:pending;index:idx_task_status"`
 	ExecutionResult datatypes.JSON `gorm:"column:execution_result;type:json"`
-	AutonomyMode    string         `gorm:"column:autonomy_mode;type:varchar(16);not null;default:copilot"`
-	ProjectID       *uint64        `gorm:"column:project_id;type:bigint unsigned;index:idx_task_project"`
-	Version         int32          `gorm:"column:version;not null;default:0"`
-	CreatedAt       time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt       time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+	// ExecutionSupplements are M5-only human clarifications/instructions, append-only
+	// and isolated from M4's Todo.context_snapshot.supplements.
+	ExecutionSupplements datatypes.JSON `gorm:"column:execution_supplements;type:json"`
+	AutonomyMode         string         `gorm:"column:autonomy_mode;type:varchar(16);not null;default:copilot"`
+	ProjectID            *uint64        `gorm:"column:project_id;type:bigint unsigned;index:idx_task_project"`
+	Version              int32          `gorm:"column:version;not null;default:0"`
+	CreatedAt            time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt            time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 
 	Todo    *Todo    `gorm:"foreignKey:TodoID;constraint:OnDelete:RESTRICT"`
 	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:SET NULL"`

@@ -14,9 +14,10 @@ import (
 )
 
 type fakeTaskService struct {
-	filter execute.TaskFilter
-	finish execute.FinishInput
-	err    error
+	filter     execute.TaskFilter
+	finish     execute.FinishInput
+	supplement execute.SupplementInput
+	err        error
 }
 
 func (f *fakeTaskService) ListTasks(_ context.Context, filter execute.TaskFilter) (*execute.TaskList, error) {
@@ -41,6 +42,17 @@ func (f *fakeTaskService) Finish(_ context.Context, input execute.FinishInput) (
 		return nil, f.err
 	}
 	return &execute.TaskView{ID: input.TaskID, Status: input.Status, Version: input.ExpectedVersion + 1}, nil
+}
+
+func (f *fakeTaskService) Supplement(_ context.Context, input execute.SupplementInput) (*execute.TaskView, error) {
+	f.supplement = input
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &execute.TaskView{
+		ID: input.TaskID, Status: "pending", Version: input.ExpectedVersion + 1,
+		ExecutionSupplements: []execute.ExecutionSupplement{{Note: input.Note, At: "2026-07-20T00:00:00Z"}},
+	}, nil
 }
 
 func TestListTasksDefaultsToPending(t *testing.T) {
@@ -107,5 +119,19 @@ func TestFinishTaskMapsConflict(t *testing.T) {
 	response := ut.PerformRequest(h.Engine, "POST", "/api/tasks/8/finish", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusConflict {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+	}
+}
+
+func TestSupplementTask(t *testing.T) {
+	service := &fakeTaskService{}
+	h := server.New()
+	h.POST("/api/tasks/:task_id/supplement", SupplementTask(service))
+	body := []byte(`{"expected_version":1,"note":"优先用季度模板"}`)
+	response := ut.PerformRequest(h.Engine, "POST", "/api/tasks/8/supplement", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	if service.supplement.TaskID != 8 || service.supplement.ExpectedVersion != 1 || service.supplement.Note != "优先用季度模板" {
+		t.Fatalf("supplement input = %#v", service.supplement)
 	}
 }

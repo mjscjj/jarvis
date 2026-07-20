@@ -186,7 +186,27 @@ export interface ConfirmationDetail {
   audits: DecisionAuditView[] | null
 }
 
-export type TaskStatus = 'pending' | 'executing' | 'done' | 'failed'
+export type TaskStatus = 'pending' | 'executing' | 'awaiting_approval' | 'done' | 'failed'
+
+// TaskProposal is the high-risk external write codex prepared during the propose
+// stage, awaiting human approval. It is stored in execution_result while the Task
+// sits at awaiting_approval (stage="proposal").
+export interface TaskProposal {
+  action: string
+  target: string
+  artifact: string
+}
+
+// ProposalResult is the shape of execution_result while a Task is awaiting_approval.
+export interface ProposalResult {
+  stage: 'proposal'
+  action_type?: string
+  summary?: string
+  proposal: TaskProposal
+  needs_followup?: string
+  enrichments?: RunEnrichment[]
+  codex_session_id?: string
+}
 
 export interface Task {
   id: number
@@ -200,6 +220,7 @@ export interface Task {
   action_hash: string
   status: TaskStatus
   execution_result: Record<string, unknown> | null
+  execution_supplements?: Array<{ note: string; at: string; channel?: string }>
   autonomy_mode: string
   project_id: number | null
   version: number

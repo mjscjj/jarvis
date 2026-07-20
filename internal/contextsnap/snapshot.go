@@ -32,13 +32,14 @@ type Snapshot struct {
 	// is broader background.
 	Conversation []Message        `json:"conversation,omitempty"`
 	Memories     []map[string]any `json:"memories"`
-	// Supplements are human clarifications added after a Todo landed in need_info.
-	// They are appended (never replaced) and replayed to M4 codex on re-evaluation
-	// so the decision maker sees the extra context the extractor lacked.
+	// Supplements are human clarifications added after extraction (from a
+	// need_info or need_decision Todo). They are appended (never replaced) and
+	// replayed to M4 codex on re-evaluation so the decision maker sees the extra
+	// context/intent the extractor lacked.
 	Supplements []Supplement `json:"supplements,omitempty"`
 }
 
-// Supplement is one human clarification added to a need_info Todo.
+// Supplement is one human clarification added to a Todo after extraction.
 type Supplement struct {
 	Note string `json:"note"`
 	At   string `json:"at"` // RFC3339 UTC

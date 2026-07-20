@@ -33,6 +33,18 @@ func TestParseStatuses(t *testing.T) {
 	}
 }
 
+// TestAwaitingApprovalStatusAllowed guards that the new gate status is a valid
+// filter/query value everywhere Tasks are listed.
+func TestAwaitingApprovalStatusAllowed(t *testing.T) {
+	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"awaiting_approval"}, Page: 1, PageSize: 20}); err != nil {
+		t.Fatalf("awaiting_approval must be a valid filter status: %v", err)
+	}
+	statuses, err := ParseStatuses("awaiting_approval")
+	if err != nil || len(statuses) != 1 || statuses[0] != "awaiting_approval" {
+		t.Fatalf("ParseStatuses(awaiting_approval) = %v, err = %v", statuses, err)
+	}
+}
+
 func TestCanonicalJSONObject(t *testing.T) {
 	result, err := canonicalJSONObject([]byte(`{"summary":"done","count":1}`))
 	if err != nil {

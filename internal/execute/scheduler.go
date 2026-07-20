@@ -8,9 +8,10 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// StartScheduler runs the auto-executor on a cron cadence. It only executes
-// local-action Tasks; external actions wait for the manual approve. The batch
-// limit bounds how many Tasks one sweep may run.
+// StartScheduler runs the auto-executor on a cron cadence. Local actions run to
+// completion; external actions run the propose stage and, when high-risk, park
+// at awaiting_approval for a human — cron never lands a high-risk external write
+// on its own. The batch limit bounds how many Tasks one sweep may run.
 func StartScheduler(ctx context.Context, executor *AgentExecutor, spec string, batchLimit, concurrency int, logger *log.Logger) (*cron.Cron, error) {
 	if executor == nil {
 		return nil, fmt.Errorf("execute scheduler executor is nil")
@@ -39,8 +40,8 @@ func StartScheduler(ctx context.Context, executor *AgentExecutor, spec string, b
 			return
 		}
 		logger.Printf(
-			"job=execute status=ok loaded=%d executed=%d skipped=%d failed=%d",
-			stats.Loaded, stats.Executed, stats.Skipped, stats.Failed,
+			"job=execute status=ok loaded=%d executed=%d awaiting_approval=%d failed=%d",
+			stats.Loaded, stats.Executed, stats.AwaitingApproval, stats.Failed,
 		)
 	}); err != nil {
 		return nil, fmt.Errorf("register execute job schedule=%q: %w", spec, err)

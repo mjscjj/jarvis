@@ -35,6 +35,7 @@ export const todoStatusMeta: Record<TodoStatus, StatusMeta> = {
 export const taskStatusMeta: Record<TaskStatus, StatusMeta> = {
   pending: { label: '待执行', color: C.info },
   executing: { label: '执行中', color: C.processing },
+  awaiting_approval: { label: '待审批', color: C.warning },
   done: { label: '已完成', color: C.success },
   failed: { label: '失败', color: C.error },
 }

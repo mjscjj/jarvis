@@ -103,8 +103,8 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 		confirmedAt := s.now().UTC()
 		created = domain.Task{
 			TodoID: todo.ID, Title: todo.Title, ActionType: todo.ActionType,
-			Background: datatypes.JSON(append([]byte(nil), background...)),
-			Plan:       datatypes.JSON(append([]byte(nil), plan...)),
+			Background:  datatypes.JSON(append([]byte(nil), background...)),
+			Plan:        datatypes.JSON(append([]byte(nil), plan...)),
 			ConfirmedBy: "user", ConfirmedAt: confirmedAt, ActionHash: actionHash,
 			Status: "pending", AutonomyMode: "copilot", ProjectID: copyUint64(todo.ProjectID), Version: 0,
 		}
@@ -177,7 +177,8 @@ func (s *Service) Reject(ctx context.Context, input RejectInput) (*RejectResult,
 	return &result, nil
 }
 
-// SupplementInput carries a human clarification for a need_info Todo.
+// SupplementInput carries a human clarification for a Todo awaiting a decision
+// (need_info or need_decision).
 type SupplementInput struct {
 	TodoID          uint64
 	ExpectedVersion int32
@@ -194,10 +195,12 @@ type SupplementResult struct {
 	Version int32  `json:"version"`
 }
 
-// Supplement appends a human clarification to a need_info Todo's context_snapshot
-// and re-queues it for M4 (status back to extracted). It then kicks an async
-// re-evaluation so the decision refreshes without waiting for the cron. Writes
-// are sequential and fail-fast (no transaction, per AGENTS.md).
+// Supplement appends a human clarification to a Todo's context_snapshot and
+// re-queues it for M4 (status back to extracted). It accepts both need_info and
+// need_decision Todos, so the reviewer can steer the decision from either page.
+// It then kicks an async re-evaluation so the decision refreshes without waiting
+// for the cron. Writes are sequential and fail-fast (no transaction, per
+// AGENTS.md).
 func (s *Service) Supplement(ctx context.Context, input SupplementInput) (*SupplementResult, error) {
 	if err := validateCommonInput(input.TodoID, input.ExpectedVersion, input.Channel); err != nil {
 		return nil, err
@@ -214,7 +217,8 @@ func (s *Service) Supplement(ctx context.Context, input SupplementInput) (*Suppl
 	if todo.Version != input.ExpectedVersion {
 		return nil, versionConflict(input.TodoID, input.ExpectedVersion, todo.Version)
 	}
-	if todo.Status != "need_info" {
+	fromStatus := todo.Status
+	if fromStatus != "need_info" && fromStatus != "need_decision" {
 		return nil, transitionError(input.TodoID, todo.Status, "extracted")
 	}
 
@@ -230,10 +234,11 @@ func (s *Service) Supplement(ctx context.Context, input SupplementInput) (*Suppl
 		return nil, fmt.Errorf("encode supplemented context_snapshot todo_id=%d: %w", todo.ID, err)
 	}
 
-	// Re-queue: write the enriched snapshot and move need_info -> extracted with
-	// optimistic locking. clearing route/confidence/risk so the re-eval starts clean.
+	// Re-queue: write the enriched snapshot and move need_info/need_decision ->
+	// extracted with optimistic locking, clearing route/confidence/risk so the
+	// re-eval starts clean.
 	result := s.db.WithContext(ctx).Model(&domain.Todo{}).
-		Where("id = ? AND version = ? AND status = ?", todo.ID, input.ExpectedVersion, "need_info").
+		Where("id = ? AND version = ? AND status = ?", todo.ID, input.ExpectedVersion, fromStatus).
 		Updates(map[string]any{
 			"context_snapshot": datatypes.JSON(snapshotRaw),
 			"status":           "extracted",
@@ -249,7 +254,7 @@ func (s *Service) Supplement(ctx context.Context, input SupplementInput) (*Suppl
 		return nil, fmt.Errorf("%w: todo_id=%d expected_version=%d", ErrVersionConflict, todo.ID, input.ExpectedVersion)
 	}
 	newVersion := todo.Version + 1
-	if err := s.appendSupplementEvent(ctx, todo.ID, newVersion, note, input.Channel); err != nil {
+	if err := s.appendSupplementEvent(ctx, todo.ID, newVersion, fromStatus, note, input.Channel); err != nil {
 		return nil, err
 	}
 
@@ -258,14 +263,14 @@ func (s *Service) Supplement(ctx context.Context, input SupplementInput) (*Suppl
 	return &SupplementResult{TodoID: todo.ID, Status: "extracted", Version: newVersion}, nil
 }
 
-func (s *Service) appendSupplementEvent(ctx context.Context, todoID uint64, version int32, note, channel string) error {
+func (s *Service) appendSupplementEvent(ctx context.Context, todoID uint64, version int32, fromStatus, note, channel string) error {
 	detail, err := json.Marshal(map[string]any{
 		"event_type": "supplemented", "note": note, "channel": channel, "version": version,
 	})
 	if err != nil {
 		return fmt.Errorf("encode supplement event detail todo_id=%d: %w", todoID, err)
 	}
-	from := "need_info"
+	from := fromStatus
 	event := domain.TodoEvent{
 		TodoID: todoID, FromStatus: &from, ToStatus: "extracted", Actor: "user", Detail: datatypes.JSON(detail),
 	}

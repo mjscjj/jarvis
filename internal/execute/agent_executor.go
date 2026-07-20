@@ -1,10 +1,12 @@
 package execute
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,40 +20,33 @@ import (
 )
 
 var (
-	// ErrExternalNeedsApproval is returned when an external-side-effect Task is
-	// asked to run without explicit human approval. It is not a failure of the
-	// Task; it is the safety gate. Callers decide whether to surface or skip.
-	ErrExternalNeedsApproval = errors.New("external action requires human approval before execution")
-	ErrUnknownActionType     = errors.New("unknown action_type has no execution policy")
+	ErrUnknownActionType = errors.New("unknown action_type has no execution policy")
 )
 
-// ExecuteInput drives one Task execution.
+// ExecuteInput drives one Task execution (the propose stage).
 type ExecuteInput struct {
 	TaskID uint64
-	// ApproveExternal must be true to run an external-side-effect action. The
-	// manual button sets it (the click is the approval); the cron auto-executor
-	// leaves it false and skips external actions.
-	ApproveExternal bool
 }
 
-// ExecuteResult summarizes what happened, for the API/log.
+// ExecuteResult summarizes what happened, for the API/log. When Status is
+// awaiting_approval the external write was judged high-risk: codex produced a
+// proposal (no outside-world effect yet) and the Task is parked for a human to
+// approve or reject.
 type ExecuteResult struct {
-	TaskID     uint64 `json:"task_id"`
-	RunID      uint64 `json:"run_id"`
-	Status     string `json:"status"`
+	TaskID          uint64 `json:"task_id"`
+	RunID           uint64 `json:"run_id"`
+	Status          string `json:"status"`
 	Branch          string `json:"branch,omitempty"`
 	Commit          string `json:"commit,omitempty"`
 	DiffPath        string `json:"diff_path,omitempty"`
 	MergeRequestURL string `json:"merge_request_url,omitempty"`
 	Summary         string `json:"summary,omitempty"`
-	Skipped    bool   `json:"skipped,omitempty"`
-	SkipReason string `json:"skip_reason,omitempty"`
 }
 
-// AgentExecutor is the M5 core. It does not hard-code a per-action workflow:
-// it hands the Task's plan/background/slots and the repo path to codex and lets
-// codex orchestrate, using action_type only to pick the sandbox and the
-// external-approval gate.
+// AgentExecutor is the execution core. It does not hard-code a per-action
+// workflow: it hands the Task's plan/background/slots and the repo path to codex
+// and lets codex orchestrate. action_type only picks the sandbox and whether the
+// run skips the propose/approval gate (code_change) or must propose first.
 type AgentExecutor struct {
 	db       *gorm.DB
 	store    *Store
@@ -80,23 +75,28 @@ func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, repoRoot, 
 	return &AgentExecutor{db: db, store: store, runner: runner, repoRoot: repoRoot, runsDir: runsDir, now: time.Now}, nil
 }
 
-// BatchStats summarizes one auto-execution sweep.
+// BatchStats summarizes one auto-execution sweep. AwaitingApproval counts Tasks
+// that ran the propose stage and parked at awaiting_approval — the agent decided
+// it would write to the outside world and produced a proposal, but nothing
+// landed and no human has approved yet, so it is neither executed nor failed.
 type BatchStats struct {
-	Loaded   int
-	Executed int
-	Skipped  int
-	Failed   int
+	Loaded           int
+	Executed         int
+	AwaitingApproval int
+	Failed           int
 }
 
-// RunPendingBatch is the cron entry point: it executes ALL pending Tasks
-// automatically, including external-side-effect ones. Per the operator's
-// full-autonomy decision, the M4 "ready" verdict is the approval — cron passes
-// ApproveExternal=true so send-message / schedule-meeting / doc-write Tasks run
-// without a separate manual click. Tasks in a sweep run concurrently up to
-// `concurrency` at a time; a single Task failure does not abort the sweep — it
-// is counted and the others continue, so one bad Task cannot block the rest.
-// Each Task claims itself via MarkExecuting (optimistic lock), so concurrent
-// runs never double-execute.
+// RunPendingBatch is the cron entry point: it drives ALL pending Tasks through
+// their first stage automatically. code_change runs straight to completion (its
+// MR is the human review gate). Every other action_type runs the propose stage:
+// the agent decides — by its actual intended behavior — whether it will touch
+// the outside world. If it will, it produces a proposal and parks the Task at
+// awaiting_approval for a human (cron never lands that write on its own); if it
+// is only reading/querying, it finishes in place. Tasks in a sweep run
+// concurrently up to `concurrency` at a time; a single Task failure does not
+// abort the sweep — it is counted and the others continue. Each Task claims
+// itself via MarkExecuting (optimistic lock), so concurrent runs never
+// double-execute.
 func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit, concurrency int) (BatchStats, error) {
 	if concurrency <= 0 {
 		return BatchStats{}, fmt.Errorf("execute batch concurrency must be positive, got %d", concurrency)
@@ -118,13 +118,13 @@ func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit, concurrency 
 		go func(taskID uint64) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			_, err := e.Execute(ctx, ExecuteInput{TaskID: taskID, ApproveExternal: true})
+			result, err := e.Execute(ctx, ExecuteInput{TaskID: taskID})
 			mu.Lock()
 			switch {
-			case errors.Is(err, ErrExternalNeedsApproval):
-				stats.Skipped++
 			case err != nil:
 				stats.Failed++
+			case result != nil && result.Status == "awaiting_approval":
+				stats.AwaitingApproval++
 			default:
 				stats.Executed++
 			}
@@ -135,18 +135,125 @@ func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit, concurrency 
 	return stats, nil
 }
 
-// Rerun re-executes an already-finished Task (done or failed). It resets the
-// Task back to pending (clearing the old result) and runs it again through the
-// normal Execute path. The manual click counts as approval for external
-// actions, same as Execute.
-func (e *AgentExecutor) Rerun(ctx context.Context, taskID uint64) (*ExecuteResult, error) {
+// KickExecute starts Task execution in the background and returns immediately
+// after validating the Task is pending. The HTTP handler should not block on
+// codex; poll Task status or refresh the list for completion.
+func (e *AgentExecutor) KickExecute(ctx context.Context, input ExecuteInput) (*ExecuteResult, error) {
+	if input.TaskID == 0 {
+		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
+	}
+	var task domain.Task
+	if err := e.db.WithContext(ctx).First(&task, input.TaskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, input.TaskID)
+		}
+		return nil, fmt.Errorf("load Task id=%d: %w", input.TaskID, err)
+	}
+	if task.Status != "pending" {
+		return nil, fmt.Errorf("%w: task_id=%d from=%s to=executing", ErrInvalidTransition, task.ID, task.Status)
+	}
+	e.executeInBackground(input.TaskID)
+	return &ExecuteResult{TaskID: task.ID, Status: task.Status}, nil
+}
+
+// KickRerun re-executes an already-finished Task (done or failed): it resets the
+// Task to pending (clearing the old result) and kicks execution in the background,
+// returning as soon as the reset succeeds. For external actions the background
+// run re-enters the propose stage, so a rerun of a rejected external write
+// re-proposes rather than silently landing. Persisted execution_supplements are
+// replayed on every run via buildExecutionPrompt.
+func (e *AgentExecutor) KickRerun(ctx context.Context, taskID uint64) (*ExecuteResult, error) {
 	if taskID == 0 {
 		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
 	}
-	if _, err := e.store.ResetForRerun(ctx, taskID); err != nil {
+	task, err := e.store.ResetForRerun(ctx, taskID)
+	if err != nil {
 		return nil, err
 	}
-	return e.Execute(ctx, ExecuteInput{TaskID: taskID, ApproveExternal: true})
+	e.executeInBackground(taskID)
+	return &ExecuteResult{TaskID: taskID, Status: task.Status}, nil
+}
+
+func (e *AgentExecutor) executeInBackground(taskID uint64) {
+	go func() {
+		if _, err := e.Execute(context.Background(), ExecuteInput{TaskID: taskID}); err != nil {
+			log.Printf("background execute task_id=%d: %v", taskID, err)
+		}
+	}()
+}
+
+// Approve lands a proposal that a human accepted. It claims the awaiting_approval
+// Task (-> executing), rebuilds a fresh codex invocation with the approved
+// proposal embedded in the prompt (the apply stage — codex exec --ephemeral
+// cannot resume the propose session, so this is a new run that faithfully lands
+// the already-decided artifact), and finishes the Task done/failed on the real
+// external write's verdict.
+func (e *AgentExecutor) Approve(ctx context.Context, taskID uint64, expectedVersion int32) (*ExecuteResult, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
+	}
+	var task domain.Task
+	if err := e.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return nil, fmt.Errorf("load Task id=%d: %w", taskID, err)
+	}
+	if task.Version != expectedVersion {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+	}
+	if task.Status != "awaiting_approval" {
+		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot be approved", ErrInvalidTransition, task.ID, task.Status)
+	}
+	policy, ok := lookupPolicy(task.ActionType)
+	if !ok {
+		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
+	}
+	proposal, err := decodeStoredProposal(task.ExecutionResult)
+	if err != nil {
+		return nil, fmt.Errorf("read stored proposal task_id=%d: %w", task.ID, err)
+	}
+
+	execVersion, err := e.store.MarkExecutingFromApproval(ctx, task.ID, task.Version)
+	if err != nil {
+		return nil, err
+	}
+
+	run, execErr := e.runApply(ctx, &task, policy, proposal)
+	if writeErr := e.persistRun(ctx, run); writeErr != nil {
+		return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
+	}
+	return e.finishRun(ctx, &task, execVersion, run, execErr)
+}
+
+// Reject declines a proposed external write. It moves the awaiting_approval Task
+// to failed and records the rejection (optionally with a reason) in
+// execution_result so the UI shows why; the Task can later be rerun to re-propose.
+func (e *AgentExecutor) Reject(ctx context.Context, taskID uint64, expectedVersion int32, reason string) (*ExecuteResult, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
+	}
+	var task domain.Task
+	if err := e.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return nil, fmt.Errorf("load Task id=%d: %w", taskID, err)
+	}
+	if task.Version != expectedVersion {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+	}
+	if task.Status != "awaiting_approval" {
+		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot be rejected", ErrInvalidTransition, task.ID, task.Status)
+	}
+	resultJSON, err := json.Marshal(rejectionPayload(strings.TrimSpace(reason)))
+	if err != nil {
+		return nil, fmt.Errorf("encode rejection task_id=%d: %w", task.ID, err)
+	}
+	if _, err := e.store.RejectAwaitingApproval(ctx, task.ID, task.Version, resultJSON); err != nil {
+		return nil, err
+	}
+	return &ExecuteResult{TaskID: task.ID, Status: "failed", Summary: "已驳回外部写入方案"}, nil
 }
 
 func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*ExecuteResult, error) {
@@ -165,12 +272,6 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	if !ok {
 		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
 	}
-	if policy.external && !input.ApproveExternal {
-		return &ExecuteResult{
-			TaskID: task.ID, Status: task.Status, Skipped: true,
-			SkipReason: "external action requires approval",
-		}, ErrExternalNeedsApproval
-	}
 
 	// Claim the Task (pending -> executing). This is the concurrency guard.
 	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
@@ -178,12 +279,71 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 		return nil, err
 	}
 
-	run, execErr := e.runOnce(ctx, &task, policy)
+	// Only code_change runs straight through to completion (edit + commit + diff +
+	// push + open MR): the MR is a natural second review gate — nothing merges
+	// without a human. Every OTHER action_type runs the propose stage first, where
+	// the agent judges — by its actual intended behavior, not a static label —
+	// whether it will write/send/modify the outside world. If so it stops and
+	// produces a proposal for human approval; if it is only reading/querying, it
+	// finishes in place. This closes the "an investigate Task decides mid-run to
+	// send a message" gap that a pre-assigned external flag would miss.
+	if runsToCompletion(task.ActionType) {
+		run, execErr := e.runOnce(ctx, &task, policy)
+		if writeErr := e.persistRun(ctx, run); writeErr != nil {
+			return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
+		}
+		return e.finishRun(ctx, &task, execVersion, run, execErr)
+	}
+	return e.executePropose(ctx, &task, policy, execVersion)
+}
 
-	// Persist the run record and finish the Task regardless of outcome.
+// runsToCompletion reports whether an action_type skips the propose/approval gate
+// and runs straight to completion. Only code_change qualifies: its landing is a
+// pushed branch + MR, which a human must still merge, so the MR is the review
+// gate. All other action types go through propose so the agent can flag any real
+// external write for approval based on what it actually intends to do.
+func runsToCompletion(actionType string) bool {
+	return actionType == "code_change"
+}
+
+// executePropose runs the propose stage (every action except code_change) and
+// routes the outcome: if the agent declared it will write to the outside world
+// (needs_approval=true) the Task parks at awaiting_approval with the proposal
+// stored; otherwise the read-only/local work is finished in place (done/failed).
+func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, policy actionPolicy, execVersion int32) (*ExecuteResult, error) {
+	run, propose, execErr := e.runPropose(ctx, task, policy)
 	if writeErr := e.persistRun(ctx, run); writeErr != nil {
 		return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
 	}
+	if execErr != nil {
+		return e.finishRun(ctx, task, execVersion, run, execErr)
+	}
+	if propose.NeedsApproval {
+		proposalJSON, err := json.Marshal(proposalPayload(run, propose))
+		if err != nil {
+			return nil, fmt.Errorf("encode proposal task_id=%d: %w", task.ID, err)
+		}
+		if _, err := e.store.MarkAwaitingApproval(ctx, task.ID, execVersion, proposalJSON); err != nil {
+			return nil, fmt.Errorf("park Task id=%d awaiting approval: %w", task.ID, err)
+		}
+		return &ExecuteResult{
+			TaskID: task.ID, RunID: run.ID, Status: "awaiting_approval",
+			Summary: derefString(run.Summary),
+		}, nil
+	}
+	// Low-risk: codex already did the work; finish done/failed on its verdict.
+	if !propose.Success {
+		cause := fmt.Errorf("task not completed: %s", propose.FailureReason)
+		return e.finishRun(ctx, task, execVersion, run, cause)
+	}
+	return e.finishRun(ctx, task, execVersion, run, nil)
+}
+
+// finishRun persists the terminal state of a run (done on success, failed on
+// error), overwriting execution_result with the final verdict, and returns the
+// summary result. It is the shared tail for local actions, low-risk external
+// actions, and the apply stage.
+func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVersion int32, run *domain.ExecutionRun, execErr error) (*ExecuteResult, error) {
 	finishStatus := "done"
 	if execErr != nil {
 		finishStatus = "failed"
@@ -197,7 +357,6 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	}); err != nil {
 		return nil, fmt.Errorf("finish Task id=%d after execution: %w", task.ID, err)
 	}
-
 	result := &ExecuteResult{
 		TaskID: task.ID, RunID: run.ID, Status: finishStatus,
 		Summary: derefString(run.Summary), Branch: derefString(run.Branch),
@@ -258,7 +417,7 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	}
 	run.Prompt = prompt
 
-	codexOut, err := e.runner.Run(ctx, prompt, policy.sandbox, repoPath, true)
+	codexOut, err := e.runner.Run(ctx, prompt, policy.sandbox, repoPath, schemaExecution)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
@@ -317,6 +476,95 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 				run.MergeRequestURL = &url
 			}
 		}
+	}
+
+	finished := e.now().UTC()
+	run.Status = "succeeded"
+	run.FinishedAt = &finished
+	ms := finished.Sub(startedAt).Milliseconds()
+	run.DurationMs = &ms
+	return run, nil
+}
+
+// runPropose runs the propose stage. It asks codex to judge — by what it will
+// actually do — whether the run touches the outside world, and to either finish
+// read-only/local work or produce a proposal WITHOUT touching the outside world
+// (see buildProposePrompt). The propose stage never runs for code_change, so
+// there is no repo/git handling here. It always returns a populated
+// *domain.ExecutionRun; execErr is non-nil on any failure.
+func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, policy actionPolicy) (*domain.ExecutionRun, *proposeResult, error) {
+	startedAt := e.now().UTC()
+	run := &domain.ExecutionRun{
+		TaskID: task.ID, ActionType: task.ActionType, Sandbox: policy.sandbox,
+		Status: "running", StartedAt: startedAt,
+	}
+
+	prompt, err := buildProposePrompt(task)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	run.Prompt = prompt
+
+	codexOut, err := e.runner.Run(ctx, prompt, policy.sandbox, "", schemaPropose)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	run.CodexSessionID = &codexOut.SessionID
+	if codexOut.Propose == nil {
+		cause := fmt.Errorf("codex propose returned no structured result")
+		run.Summary = &codexOut.LastMessage
+		return e.failRun(run, startedAt, cause), nil, cause
+	}
+	propose := codexOut.Propose
+	summary := propose.Summary
+	run.Summary = &summary
+	if structured, err := json.Marshal(propose); err == nil {
+		run.Output = structured
+	}
+
+	finished := e.now().UTC()
+	run.Status = "succeeded"
+	run.FinishedAt = &finished
+	ms := finished.Sub(startedAt).Milliseconds()
+	run.DurationMs = &ms
+	return run, propose, nil
+}
+
+// runApply lands an approved proposal. It builds a fresh codex invocation with
+// the approved plan + artifact embedded (buildApplyPrompt) and runs it under the
+// normal executionResultSchema so the real external write reports a real success
+// verdict. Like runPropose, external actions carry no repo/git handling.
+func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy actionPolicy, proposal *codexProposal) (*domain.ExecutionRun, error) {
+	startedAt := e.now().UTC()
+	run := &domain.ExecutionRun{
+		TaskID: task.ID, ActionType: task.ActionType, Sandbox: policy.sandbox,
+		Status: "running", StartedAt: startedAt,
+	}
+
+	prompt, err := buildApplyPrompt(task, proposal)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	run.Prompt = prompt
+
+	codexOut, err := e.runner.Run(ctx, prompt, policy.sandbox, "", schemaExecution)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	run.CodexSessionID = &codexOut.SessionID
+	if codexOut.Result == nil {
+		cause := fmt.Errorf("codex exec returned no structured result")
+		run.Summary = &codexOut.LastMessage
+		return e.failRun(run, startedAt, cause), cause
+	}
+	summary := codexOut.Result.Summary
+	run.Summary = &summary
+	if structured, err := json.Marshal(codexOut.Result); err == nil {
+		run.Output = structured
+	}
+	if !codexOut.Result.Success {
+		cause := fmt.Errorf("task not completed: %s", codexOut.Result.FailureReason)
+		return e.failRun(run, startedAt, cause), cause
 	}
 
 	finished := e.now().UTC()
@@ -449,6 +697,69 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 		payload["error"] = execErr.Error()
 	}
 	return payload
+}
+
+// proposalPayload builds the execution_result stored while a Task waits at
+// awaiting_approval. stage="proposal" marks it so the UI and apply stage can
+// tell a pending proposal apart from a final run result. It carries the full
+// artifact so the human reviews exactly what will be written.
+func proposalPayload(run *domain.ExecutionRun, propose *proposeResult) map[string]any {
+	payload := map[string]any{
+		"stage":       "proposal",
+		"action_type": run.ActionType,
+		"summary":     propose.Summary,
+		"proposal": map[string]any{
+			"action":   propose.Proposal.Action,
+			"target":   propose.Proposal.Target,
+			"artifact": propose.Proposal.Artifact,
+		},
+	}
+	if strings.TrimSpace(propose.NeedsFollowup) != "" {
+		payload["needs_followup"] = propose.NeedsFollowup
+	}
+	if len(propose.Enrichments) > 0 {
+		payload["enrichments"] = propose.Enrichments
+	}
+	if run.CodexSessionID != nil {
+		payload["codex_session_id"] = *run.CodexSessionID
+	}
+	return payload
+}
+
+// rejectionPayload builds the execution_result stored when a human rejects a
+// proposal (Task -> failed). stage="rejected" distinguishes it from an execution
+// failure so the UI can show "you declined this" rather than "codex failed".
+func rejectionPayload(reason string) map[string]any {
+	payload := map[string]any{"stage": "rejected", "summary": "委托人驳回了外部写入方案"}
+	if reason != "" {
+		payload["reject_reason"] = reason
+	}
+	return payload
+}
+
+// decodeStoredProposal reads the proposal that MarkAwaitingApproval stored in
+// execution_result. It fails-fast if the stored payload is not a proposal or is
+// missing the artifact — the apply stage must have a real artifact to land.
+func decodeStoredProposal(raw []byte) (*codexProposal, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil, fmt.Errorf("execution_result is empty, no proposal to apply")
+	}
+	var stored struct {
+		Stage    string         `json:"stage"`
+		Proposal *codexProposal `json:"proposal"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return nil, fmt.Errorf("decode stored proposal: %w", err)
+	}
+	if stored.Stage != "proposal" || stored.Proposal == nil {
+		return nil, fmt.Errorf("stored execution_result is not a pending proposal (stage=%q)", stored.Stage)
+	}
+	if strings.TrimSpace(stored.Proposal.Action) == "" ||
+		strings.TrimSpace(stored.Proposal.Target) == "" ||
+		strings.TrimSpace(stored.Proposal.Artifact) == "" {
+		return nil, fmt.Errorf("stored proposal is missing action, target or artifact")
+	}
+	return stored.Proposal, nil
 }
 
 func derefString(s *string) string {

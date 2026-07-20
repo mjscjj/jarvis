@@ -122,16 +122,38 @@ export interface ExecuteResult {
   skip_reason?: string
 }
 
-// executeTask triggers agent-driven codex execution. The click approves any
-// external side effects, so the backend runs the Task immediately.
+// executeTask kicks agent-driven codex execution in the background; the API
+// returns once the Task is claimed, not when codex finishes.
 export function executeTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/execute`, { method: 'POST' })
 }
 
-// rerunTask re-executes an already-finished (done/failed) Task: it resets the
-// Task to pending and runs it again. The click approves external side effects.
+// rerunTask resets a finished Task and kicks execution in the background.
 export function rerunTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/rerun`, { method: 'POST' })
+}
+
+// approveTask lands a proposal the user accepted: the awaiting_approval Task runs
+// the apply stage (a fresh codex run carrying the approved proposal) for real.
+export function approveTask(id: number, expectedVersion: number): Promise<ExecuteResult> {
+  return request<ExecuteResult>(`/api/tasks/${id}/approve`, {
+    method: 'POST', body: { expected_version: expectedVersion },
+  })
+}
+
+// rejectTask declines a proposed external write: the Task moves to failed with an
+// optional reason; it can later be rerun to re-propose.
+export function rejectTask(id: number, expectedVersion: number, reason: string): Promise<ExecuteResult> {
+  return request<ExecuteResult>(`/api/tasks/${id}/reject`, {
+    method: 'POST', body: { expected_version: expectedVersion, reason },
+  })
+}
+
+export function supplementTask(id: number, expectedVersion: number, note: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}/supplement`, {
+    method: 'POST',
+    body: { expected_version: expectedVersion, note },
+  })
 }
 
 // listTaskRuns 拉某个 Task 的执行审计历史（ExecutionRun 列表），最新在前。

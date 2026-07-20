@@ -103,8 +103,11 @@ func FinishTask(service execute.TaskService) app.HandlerFunc {
 	}
 }
 
-// ExecuteTask triggers agent-driven execution of a confirmed Task. The manual
-// click is treated as approval for external-side-effect actions.
+// ExecuteTask triggers agent-driven execution of a confirmed Task. Local actions
+// run to completion; external-side-effect actions run the propose stage — the
+// agent judges risk and either finishes low-risk work or produces a proposal and
+// parks the Task at awaiting_approval for a human to approve (ApproveTask) or
+// reject (RejectTask). The click no longer directly lands external writes.
 func ExecuteTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
@@ -112,7 +115,71 @@ func ExecuteTask(executor *execute.AgentExecutor) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("task_id must be a positive integer"))
 			return
 		}
-		result, err := executor.Execute(ctx, execute.ExecuteInput{TaskID: taskID, ApproveExternal: true})
+		result, err := executor.KickExecute(ctx, execute.ExecuteInput{TaskID: taskID})
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+type approveTaskRequest struct {
+	ExpectedVersion *int32 `json:"expected_version"`
+}
+
+// ApproveTask lands a proposal a human accepted: the awaiting_approval Task runs
+// the apply stage (a fresh codex invocation carrying the approved proposal) and
+// finishes done/failed on the real external write's verdict.
+func ApproveTask(executor *execute.AgentExecutor) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40027, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		var request approveTaskRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40027, err)
+			return
+		}
+		if request.ExpectedVersion == nil {
+			writeAPIError(c, consts.StatusBadRequest, 40027, fmt.Errorf("expected_version is required"))
+			return
+		}
+		result, err := executor.Approve(ctx, taskID, *request.ExpectedVersion)
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+type rejectTaskRequest struct {
+	ExpectedVersion *int32 `json:"expected_version"`
+	Reason          string `json:"reason"`
+}
+
+// RejectTask declines a proposed external write: the awaiting_approval Task moves
+// to failed with the rejection reason recorded; it can later be rerun.
+func RejectTask(executor *execute.AgentExecutor) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40028, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		var request rejectTaskRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40028, err)
+			return
+		}
+		if request.ExpectedVersion == nil {
+			writeAPIError(c, consts.StatusBadRequest, 40028, fmt.Errorf("expected_version is required"))
+			return
+		}
+		result, err := executor.Reject(ctx, taskID, *request.ExpectedVersion, request.Reason)
 		if err != nil {
 			writeExecutionError(c, err)
 			return
@@ -122,7 +189,8 @@ func ExecuteTask(executor *execute.AgentExecutor) app.HandlerFunc {
 }
 
 // RerunTask re-executes a finished (done/failed) Task. The manual click counts
-// as approval for external-side-effect actions.
+// as approval for external-side-effect actions. Persisted execution_supplements
+// are included automatically on every run.
 func RerunTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
@@ -130,7 +198,41 @@ func RerunTask(executor *execute.AgentExecutor) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("task_id must be a positive integer"))
 			return
 		}
-		result, err := executor.Rerun(ctx, taskID)
+		result, err := executor.KickRerun(ctx, taskID)
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+type supplementTaskRequest struct {
+	ExpectedVersion *int32 `json:"expected_version"`
+	Note            string `json:"note"`
+}
+
+// SupplementTask appends a human clarification/instruction to a Task's M5-only
+// execution_supplements. It does not trigger execution or M4 re-evaluation.
+func SupplementTask(service execute.TaskService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40026, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		var request supplementTaskRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40026, err)
+			return
+		}
+		if request.ExpectedVersion == nil {
+			writeAPIError(c, consts.StatusBadRequest, 40026, fmt.Errorf("expected_version is required"))
+			return
+		}
+		result, err := service.Supplement(ctx, execute.SupplementInput{
+			TaskID: taskID, ExpectedVersion: *request.ExpectedVersion, Note: request.Note, Channel: "backend",
+		})
 		if err != nil {
 			writeExecutionError(c, err)
 			return
@@ -147,8 +249,6 @@ func writeExecutionError(c *app.RequestContext, err error) {
 		writeAPIError(c, consts.StatusNotFound, 40420, err)
 	case errors.Is(err, execute.ErrVersionConflict), errors.Is(err, execute.ErrInvalidTransition):
 		writeAPIError(c, consts.StatusConflict, 40920, err)
-	case errors.Is(err, execute.ErrExternalNeedsApproval):
-		writeAPIError(c, consts.StatusConflict, 40923, err)
 	case errors.Is(err, execute.ErrUnknownActionType):
 		writeAPIError(c, consts.StatusBadRequest, 40024, err)
 	default:

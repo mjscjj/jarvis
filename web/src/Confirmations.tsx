@@ -17,7 +17,7 @@ function errorText(cause: unknown): string {
 type ConfirmModal = 'approve' | 'reject' | 'supplement' | undefined
 function modalTitle(modal: ConfirmModal): string {
   if (modal === 'approve') return '确认执行方案'
-  if (modal === 'supplement') return '补充信息'
+  if (modal === 'supplement') return '补充信息 / 指示'
   return '填写拒绝原因'
 }
 function modalOkText(modal: ConfirmModal): string {
@@ -27,7 +27,7 @@ function modalOkText(modal: ConfirmModal): string {
 }
 function modalPlaceholder(modal: ConfirmModal): string {
   if (modal === 'approve') return '非空 JSON 方案'
-  if (modal === 'supplement') return '补充缺失的信息（如具体仓库、目标、范围、截止时间等），供决策器重新判定'
+  if (modal === 'supplement') return '补充信息或写下你的指示（如具体仓库、目标、范围、截止时间，或"优先按 X 方案""不要动 Z"等），供决策器重新判定'
   return '拒绝原因'
 }
 
@@ -250,8 +250,16 @@ export default function Confirmations() {
 
         {/* 行动区 */}
         {!isNeedInfo
-          ? <Flex gap={12}><Button type="primary" onClick={openApprove}>批准执行</Button><Button onClick={openApprove}>改方案再执行</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>
-          : <Flex gap={12}><Button type="primary" onClick={() => { setInput(buildSupplementTemplate(detail.clarifications)); setModal('supplement') }}>补充信息</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>}
+          ? <Flex gap={12} wrap>
+              <Button type="primary" onClick={openApprove}>批准执行</Button>
+              <Button onClick={openApprove}>改方案再执行</Button>
+              <Button onClick={() => { setInput(''); setModal('supplement') }}>补充信息 / 指示，重新决策</Button>
+              <Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button>
+            </Flex>
+          : <Flex gap={12} wrap>
+              <Button type="primary" onClick={() => { setInput(buildSupplementTemplate(detail.clarifications)); setModal('supplement') }}>补充信息</Button>
+              <Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button>
+            </Flex>}
       </Space>
       })()}
     </Drawer>
