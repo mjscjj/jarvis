@@ -1,7 +1,6 @@
 package decide
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -263,23 +262,24 @@ func validateRepoPath(value string) (string, error) {
 	return absolute, nil
 }
 
+// codexSessionID extracts the thread_id from codex/traex JSONL output. It uses a
+// streaming json.Decoder rather than a line scanner because a single JSONL event
+// (e.g. an investigate task's captured tool output) can exceed any fixed line
+// buffer; the decoder reads value-by-value and is not bound by line length.
 func codexSessionID(output []byte) (string, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	scanner.Buffer(make([]byte, 4096), maxCodexOutputBytes)
+	decoder := json.NewDecoder(bytes.NewReader(output))
 	var sessionID string
-	lineNumber := 0
-	for scanner.Scan() {
-		lineNumber++
-		line := bytes.TrimSpace(scanner.Bytes())
-		if len(line) == 0 {
-			continue
-		}
+	for {
 		var event struct {
 			Type     string `json:"type"`
 			ThreadID string `json:"thread_id"`
 		}
-		if err := json.Unmarshal(line, &event); err != nil {
-			return "", fmt.Errorf("decode codex JSONL event line=%d: %w", lineNumber, err)
+		err := decoder.Decode(&event)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("decode codex JSONL stream: %w", err)
 		}
 		if event.Type == "thread.started" {
 			if strings.TrimSpace(event.ThreadID) == "" {
@@ -287,9 +287,6 @@ func codexSessionID(output []byte) (string, error) {
 			}
 			sessionID = event.ThreadID
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("scan codex JSONL output: %w", err)
 	}
 	if sessionID == "" {
 		return "", fmt.Errorf("codex JSONL output is missing thread.started event")

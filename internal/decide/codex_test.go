@@ -2,6 +2,7 @@ package decide
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,25 @@ func TestDecodeCodexDecisionFailsFast(t *testing.T) {
 				t.Fatalf("error = %v, want substring %q", err, test.want)
 			}
 		})
+	}
+}
+
+// codexSessionID 必须能处理超长单行 JSONL：investigate 类任务 traex 会把大段工具
+// 输出塞进一条事件，之前用 bufio.Scanner+1MB 上限会报 "token too long" 死循环。
+func TestCodexSessionIDHandlesHugeLine(t *testing.T) {
+	hugeText, err := json.Marshal(strings.Repeat("x", 4<<20)) // 4MB，远超旧 1MB 上限
+	if err != nil {
+		t.Fatalf("marshal huge text: %v", err)
+	}
+	stream := `{"type":"thread.started","thread_id":"sess-huge"}` + "\n" +
+		`{"type":"item.completed","item":{"type":"command_output","text":` + string(hugeText) + `}}` + "\n" +
+		`{"type":"turn.completed"}` + "\n"
+	sessionID, err := codexSessionID([]byte(stream))
+	if err != nil {
+		t.Fatalf("codexSessionID() error = %v", err)
+	}
+	if sessionID != "sess-huge" {
+		t.Fatalf("sessionID = %q, want sess-huge", sessionID)
 	}
 }
 
