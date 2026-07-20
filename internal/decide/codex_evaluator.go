@@ -88,6 +88,7 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 		PromptVersion:          prompt.Version,
 		ThresholdConfigVersion: "codex-v1",
 		ProposedPlan:           result.Decision.ProposedPlan,
+		Clarifications:         result.Decision.Clarifications,
 	}
 	return input, nil
 }
@@ -100,7 +101,7 @@ func dispositionFromDecision(decision CodexDecision) string {
 	if !decision.PlanIsClear || decision.ProposedPlan == nil {
 		return DispositionNeedInfo
 	}
-	if decision.RecommendedReview || len(decision.UncertaintyFactors) > 0 {
+	if decision.RecommendedReview || len(decision.Clarifications) > 0 {
 		return DispositionNeedReview
 	}
 	return DispositionAutoExecute

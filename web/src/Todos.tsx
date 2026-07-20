@@ -15,7 +15,7 @@ import {
 import type { TableColumnsType } from 'antd'
 import { getTodo, listTodos } from './api'
 import { usePageContext } from './pageContext'
-import { SlotDescriptions } from './slots'
+import { TodoContextPanel } from './slots'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { actionLabels, leaderColor, todoStatusMeta as statusMeta } from './status'
@@ -131,11 +131,11 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         ),
       },
       {
-        title: '缺失信息',
-        dataIndex: 'missing_info',
+        title: '待补充',
+        dataIndex: 'open_questions',
         width: 180,
         render: (values: string[] | null) =>
-          values?.length ? values.slice(0, 2).map((value) => <Tag key={value} color="orange">{value}</Tag>) : '—',
+          values?.length ? <Tag color="orange">{values.length} 个待拍板</Tag> : '—',
       },
       {
         title: '截止 / 最近证据',
@@ -248,12 +248,9 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
               <Text type="secondary">源消息原文</Text>
               <blockquote>{selected.source_quote}</blockquote>
             </section>
-            {selected.missing_info?.length ? (
-              <Alert type="warning" message="仍需补充" description={selected.missing_info.join('、')} showIcon />
-            ) : null}
             <section>
-              <Text type="secondary">结构化参数</Text>
-              <SlotDescriptions slots={selected.slots} />
+              <Text type="secondary">背景与待补充</Text>
+              <TodoContextPanel target={selected.target} context={selected.context} openQuestions={selected.open_questions} />
             </section>
           </Space>
         )}

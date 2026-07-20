@@ -49,7 +49,6 @@ type TaskView struct {
 	ActionType      string          `json:"action_type"`
 	Background      json.RawMessage `json:"background"`
 	Plan            json.RawMessage `json:"plan"`
-	Slots           json.RawMessage `json:"slots"`
 	ConfirmedBy     string          `json:"confirmed_by"`
 	ConfirmedAt     time.Time       `json:"confirmed_at"`
 	ActionHash      string          `json:"action_hash"`
@@ -320,7 +319,7 @@ func canonicalJSONObject(raw []byte) (json.RawMessage, error) {
 func taskView(task *domain.Task) TaskView {
 	return TaskView{
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
-		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan), Slots: rawJSON(task.Slots),
+		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
 		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
 		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult), AutonomyMode: task.AutonomyMode,
 		ProjectID: task.ProjectID, Version: task.Version, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,

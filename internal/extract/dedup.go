@@ -2,7 +2,6 @@ package extract
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -18,14 +17,14 @@ func ActiveTodoStatuses() []string {
 }
 
 type SemanticTodo struct {
-	ID               uint64         `json:"id"`
-	ActionType       string         `json:"action_type"`
-	Title            string         `json:"title"`
-	Description      string         `json:"description"`
-	Slots            map[string]any `json:"slots"`
-	ProjectID        *uint64        `json:"project_id"`
-	Status           string         `json:"status"`
-	DedupFingerprint string         `json:"dedup_fingerprint"`
+	ID               uint64  `json:"id"`
+	ActionType       string  `json:"action_type"`
+	Title            string  `json:"title"`
+	Description      string  `json:"description"`
+	Target           string  `json:"target"`
+	ProjectID        *uint64 `json:"project_id"`
+	Status           string  `json:"status"`
+	DedupFingerprint string  `json:"dedup_fingerprint"`
 }
 
 type semanticEmbedder interface {
@@ -125,7 +124,7 @@ func (s *PipelineStore) LoadSemanticTodo(ctx context.Context, todoID uint64) (*S
 		ActionType       string
 		Title            string
 		Description      string
-		Slots            []byte
+		Target           string
 		ProjectID        *uint64
 		Status           string
 		DedupFingerprint string
@@ -134,16 +133,12 @@ func (s *PipelineStore) LoadSemanticTodo(ctx context.Context, todoID uint64) (*S
 	if result.Error != nil {
 		return nil, result.Error
 	}
-	slots := make(map[string]any)
-	if err := json.Unmarshal(row.Slots, &slots); err != nil {
-		return nil, fmt.Errorf("decode semantic Todo slots todo_id=%d: %w", todoID, err)
-	}
 	if strings.TrimSpace(row.DedupFingerprint) == "" {
 		return nil, fmt.Errorf("semantic Todo fingerprint is empty todo_id=%d", todoID)
 	}
 	return &SemanticTodo{
 		ID: row.ID, ActionType: row.ActionType, Title: row.Title, Description: row.Description,
-		Slots: slots, ProjectID: copyUint64(row.ProjectID), Status: row.Status,
+		Target: row.Target, ProjectID: copyUint64(row.ProjectID), Status: row.Status,
 		DedupFingerprint: row.DedupFingerprint,
 	}, nil
 }

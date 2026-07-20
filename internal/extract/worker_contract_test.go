@@ -57,15 +57,14 @@ func TestBuildPromptFiltersM3Memory(t *testing.T) {
 	}
 }
 
-func TestPrepareResultsRejectsIncompleteFingerprint(t *testing.T) {
+// A candidate with a blank target has no dedup identity and must fail fast.
+func TestPrepareResultsRejectsBlankTargetContract(t *testing.T) {
 	store := &PipelineStore{location: time.UTC}
 	batch := contractChatBatch()
 	candidate := contractStrictCandidate()
-	candidate.Slots["change_summary"] = nil
-	candidate.InfoSufficient = false
-	candidate.MissingInfo = []string{"change_summary"}
-	_, err := store.prepareResults(context.Background(), batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
-	if !errors.Is(err, ErrFingerprintIncomplete) {
+	candidate.Target = ""
+	_, _, err := store.prepareResults(context.Background(), batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
+	if !errors.Is(err, ErrInvalidCandidate) {
 		t.Fatalf("prepareResults() error = %v", err)
 	}
 }
@@ -73,7 +72,7 @@ func TestPrepareResultsRejectsIncompleteFingerprint(t *testing.T) {
 func TestPrepareResultsDerivesLeaderAssigner(t *testing.T) {
 	store := &PipelineStore{location: time.UTC}
 	batch := contractChatBatch()
-	prepared, err := store.prepareResults(context.Background(), batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(contractStrictCandidate())}}})
+	prepared, _, err := store.prepareResults(context.Background(), batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(contractStrictCandidate())}}})
 	if err != nil {
 		t.Fatalf("prepareResults() error = %v", err)
 	}
@@ -105,15 +104,10 @@ func contractChatBatch() ChatBatch {
 }
 
 func contractStrictCandidate() Candidate {
-	slots := make(map[string]any, len(allowedSlots))
-	for name := range allowedSlots {
-		slots[name] = nil
-	}
-	slots["repo_ref"] = "jarvis"
-	slots["change_summary"] = "modify auth"
 	return Candidate{
-		ActionType: "code_change", Title: "Modify auth", Description: "Implement the requested auth change",
+		ActionType: "code_change", Title: "Modify auth", Target: "jarvis auth refactor",
+		Description: "Implement the requested auth change", Context: "repo jarvis",
+		OpenQuestions:      []string{},
 		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_new"}, SourceQuote: "new request: modify auth",
-		Slots: slots, InfoSufficient: true, MissingInfo: []string{},
 	}
 }

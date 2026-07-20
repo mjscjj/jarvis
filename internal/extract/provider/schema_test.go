@@ -13,11 +13,15 @@ func TestTodoExtractionJSONSchemaIsStrict(t *testing.T) {
 	if candidate["additionalProperties"] != false {
 		t.Fatal("candidate schema allows additional properties")
 	}
-	slots := candidate["properties"].(map[string]any)["slots"].(map[string]any)
-	if slots["additionalProperties"] != false {
-		t.Fatal("slots schema allows additional properties")
+	// Every property must be required so the model boundary rejects omissions
+	// instead of Go guessing them.
+	if len(candidate["required"].([]string)) != len(candidate["properties"].(map[string]any)) {
+		t.Fatal("not every candidate property is required")
 	}
-	if len(slots["required"].([]string)) != len(slots["properties"].(map[string]any)) {
-		t.Fatal("not every slot property is required")
+	if _, ok := candidate["properties"].(map[string]any)["target"]; !ok {
+		t.Fatal("candidate schema is missing target")
+	}
+	if _, ok := candidate["properties"].(map[string]any)["open_questions"]; !ok {
+		t.Fatal("candidate schema is missing open_questions")
 	}
 }

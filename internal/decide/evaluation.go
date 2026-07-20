@@ -29,6 +29,7 @@ type EvaluationInput struct {
 	ThresholdConfigVersion string
 	FailureDetail          string
 	ProposedPlan           *PlanDraft
+	Clarifications         []Clarification
 	ManualGate             bool
 }
 
@@ -100,7 +101,8 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 			"event_type": "evaluated", "route_reason": input.RouteReason,
 			"matched_rules": input.MatchedRules, "decision_engine": input.DecisionEngine,
 			"prompt_version": input.PromptVersion, "failure_detail": input.FailureDetail,
-			"proposed_plan": input.ProposedPlan,
+			"proposed_plan":  input.ProposedPlan,
+			"clarifications": input.Clarifications,
 		}
 		if !input.ManualGate {
 			eventDetail["confidence"] = input.Confidence

@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -21,7 +20,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-const PromptVersion = "todo-extraction-v1"
+const PromptVersion = "todo-extraction-v2"
 
 var (
 	ErrInvalidExtraction     = errors.New("invalid extraction result")
@@ -29,50 +28,45 @@ var (
 	ErrFingerprintIncomplete = errors.New("todo fingerprint identity is incomplete")
 )
 
-var requiredSlots = map[string][]string{
-	"code_change":      {"repo_ref", "change_summary"},
-	"summary_post":     {"source_ref", "target_chat_id", "summary_scope"},
-	"investigate":      {"question", "lookup_sources"},
-	"schedule_meeting": {"meeting_title", "attendees", "proposed_time"},
-	"reply_message":    {"target_chat_id", "message_body"},
-	"doc_write":        {"doc_title", "summary_scope"},
-	"manual_followup":  {"followup_action"},
+// actionTypes is the closed vocabulary of clue kinds. M5 execution policy keys
+// off action_type, so it stays a small, stable classification (not per-type
+// slots). Everything else about the clue lives in the free-form target/context.
+var actionTypes = map[string]struct{}{
+	"code_change": {}, "summary_post": {}, "investigate": {}, "schedule_meeting": {},
+	"reply_message": {}, "doc_write": {}, "manual_followup": {},
 }
 
-var identitySlots = map[string][]string{
-	"code_change":      {"repo_ref", "change_summary"},
-	"summary_post":     {"source_ref", "target_chat_id"},
-	"investigate":      {"question"},
-	"schedule_meeting": {"meeting_title", "attendees"},
-	"reply_message":    {"target_chat_id", "message_body"},
-	"doc_write":        {"doc_title"},
-	"manual_followup":  {"followup_action"},
-}
-
-var allowedSlots = map[string]struct{}{
-	"repo_ref": {}, "change_summary": {}, "based_on": {}, "scope": {}, "acceptance": {},
-	"source_ref": {}, "target_chat_id": {}, "summary_scope": {}, "assignees": {},
-	"question": {}, "lookup_sources": {}, "deliverable": {}, "meeting_title": {},
-	"attendees": {}, "proposed_time": {}, "duration_minutes": {}, "agenda": {},
-	"meeting_room": {}, "message_body": {}, "doc_title": {}, "followup_action": {},
+// IsKnownActionType reports whether value is a valid action_type. Callers that
+// used to probe requiredSlots for the same purpose use this instead.
+func IsKnownActionType(value string) bool {
+	_, ok := actionTypes[value]
+	return ok
 }
 
 var structuralValidator = validator.New(validator.WithRequiredStructEnabled())
 
 // Candidate mirrors one item from the strict todo_extraction JSON schema.
+//
+// The clue's identity/details are carried by three general fields instead of a
+// per-action_type slot vocabulary:
+//   - Target: one-line subject/object of the clue, the stable dedup identity.
+//   - Context: M3-enriched background (attribution, links, related history) that
+//     the assistant gathered so downstream can act without re-digging.
+//   - OpenQuestions: only the points M3 could not settle and that genuinely need
+//     the principal to decide/supply; empty means the assistant handled it.
 type Candidate struct {
-	ActionType         string         `json:"action_type" validate:"required,oneof=code_change summary_post investigate schedule_meeting reply_message doc_write manual_followup"`
-	Title              string         `json:"title" validate:"required"`
-	Description        string         `json:"description" validate:"required"`
-	CommitmentStrength string         `json:"commitment_strength" validate:"required,oneof=firm tentative mentioned"`
-	AssignerOpenID     *string        `json:"assigner_open_id"`
-	ProjectHint        *string        `json:"project_hint"`
-	DueDate            *string        `json:"due_date"`
-	SourceMessageIDs   []string       `json:"source_message_ids" validate:"required,min=1,dive,required"`
-	SourceQuote        string         `json:"source_quote" validate:"required"`
-	Slots              map[string]any `json:"slots" validate:"required"`
-	InfoSufficient     bool           `json:"info_sufficient"`
-	MissingInfo        []string       `json:"missing_info"`
+	ActionType         string   `json:"action_type" validate:"required,oneof=code_change summary_post investigate schedule_meeting reply_message doc_write manual_followup"`
+	Title              string   `json:"title" validate:"required"`
+	Target             string   `json:"target" validate:"required"`
+	Description        string   `json:"description" validate:"required"`
+	Context            string   `json:"context"`
+	OpenQuestions      []string `json:"open_questions"`
+	CommitmentStrength string   `json:"commitment_strength" validate:"required,oneof=firm tentative mentioned"`
+	AssignerOpenID     *string  `json:"assigner_open_id"`
+	ProjectHint        *string  `json:"project_hint"`
+	DueDate            *string  `json:"due_date"`
+	SourceMessageIDs   []string `json:"source_message_ids" validate:"required,min=1,dive,required"`
+	SourceQuote        string   `json:"source_quote" validate:"required"`
 }
 
 type ExtractionResult struct {
@@ -95,9 +89,6 @@ func DecodeExtractionResult(payload []byte) (*ExtractionResult, error) {
 		return nil, fmt.Errorf("%w: candidates field is required", ErrInvalidExtraction)
 	}
 	for i := range result.Candidates {
-		if err := validateStrictSlotShape(result.Candidates[i].Slots); err != nil {
-			return nil, fmt.Errorf("%w: candidate[%d]: %v", ErrInvalidExtraction, i, err)
-		}
 		if err := ValidateCandidate(&result.Candidates[i]); err != nil {
 			return nil, fmt.Errorf("%w: candidate[%d]: %v", ErrInvalidExtraction, i, err)
 		}
@@ -105,22 +96,8 @@ func DecodeExtractionResult(payload []byte) (*ExtractionResult, error) {
 	return &result, nil
 }
 
-func validateStrictSlotShape(slots map[string]any) error {
-	missing := make([]string, 0)
-	for name := range allowedSlots {
-		if _, ok := slots[name]; !ok {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
-		sort.Strings(missing)
-		return fmt.Errorf("%w: strict slots missing: %s", ErrInvalidCandidate, strings.Join(missing, ","))
-	}
-	return nil
-}
-
-// ValidateCandidate enforces the closed action/slot vocabulary. Missing
-// action-specific slots are retained as an explicit incomplete candidate.
+// ValidateCandidate enforces the closed action vocabulary and the non-blank
+// natural-language fields. Identity now rests on target (not per-type slots).
 func ValidateCandidate(candidate *Candidate) error {
 	if candidate == nil {
 		return fmt.Errorf("%w: candidate is nil", ErrInvalidCandidate)
@@ -131,10 +108,13 @@ func ValidateCandidate(candidate *Candidate) error {
 	for _, field := range []struct {
 		name  string
 		value string
-	}{{"title", candidate.Title}, {"description", candidate.Description}, {"source_quote", candidate.SourceQuote}} {
+	}{{"title", candidate.Title}, {"target", candidate.Target}, {"description", candidate.Description}, {"source_quote", candidate.SourceQuote}} {
 		if strings.TrimSpace(field.value) == "" {
 			return fmt.Errorf("%w: %s must not be blank", ErrInvalidCandidate, field.name)
 		}
+	}
+	if _, ok := actionTypes[candidate.ActionType]; !ok {
+		return fmt.Errorf("%w: unknown action_type %q", ErrInvalidCandidate, candidate.ActionType)
 	}
 	if err := validateMessageIDs(candidate.SourceMessageIDs); err != nil {
 		return err
@@ -144,51 +124,32 @@ func ValidateCandidate(candidate *Candidate) error {
 			return fmt.Errorf("%w: due_date must use YYYY-MM-DD: %v", ErrInvalidCandidate, err)
 		}
 	}
-	for name, value := range candidate.Slots {
-		if _, ok := allowedSlots[name]; !ok {
-			return fmt.Errorf("%w: unknown slot %q", ErrInvalidCandidate, name)
-		}
-		if err := validateSlotValue(name, value); err != nil {
-			return err
+	for position, question := range candidate.OpenQuestions {
+		if strings.TrimSpace(question) == "" {
+			return fmt.Errorf("%w: open_questions[%d] must not be blank", ErrInvalidCandidate, position)
 		}
 	}
-
-	required, ok := requiredSlots[candidate.ActionType]
-	if !ok {
-		return fmt.Errorf("%w: unknown action_type %q", ErrInvalidCandidate, candidate.ActionType)
-	}
-	missing := append([]string(nil), candidate.MissingInfo...)
-	for _, name := range required {
-		if isEmptySlot(candidate.Slots[name]) {
-			missing = append(missing, name)
-		}
-	}
-	candidate.MissingInfo = normalizedStrings(missing)
-	if len(candidate.MissingInfo) > 0 {
-		candidate.InfoSufficient = false
-	}
-	if !candidate.InfoSufficient && len(candidate.MissingInfo) == 0 {
-		return fmt.Errorf("%w: info_sufficient=false requires missing_info", ErrInvalidCandidate)
-	}
+	candidate.OpenQuestions = normalizedStrings(candidate.OpenQuestions)
 	return nil
 }
 
-// Fingerprint returns the exact-dedup SHA256 defined by the M3 contract. An
-// incomplete identity is rejected instead of inventing a collision-prone key;
-// persistence policy for such candidates must be decided explicitly.
+// Fingerprint returns the exact-dedup SHA256 defined by the M3 contract. Identity
+// is (action_type, project_id, normalized target). A blank target has no stable
+// identity and is rejected; persistence policy for such a candidate is decided
+// by the caller.
 func Fingerprint(candidate *Candidate, projectID *uint64) (string, error) {
 	if err := ValidateCandidate(candidate); err != nil {
 		return "", err
 	}
-	identity, err := normalizedIdentitySlots(candidate)
-	if err != nil {
-		return "", err
+	identity := strings.TrimSpace(candidate.Target)
+	if identity == "" {
+		return "", fmt.Errorf("%w: action_type=%s target is blank", ErrFingerprintIncomplete, candidate.ActionType)
 	}
 	payload := struct {
-		ActionType    string         `json:"action_type"`
-		ProjectID     *uint64        `json:"project_id"`
-		IdentitySlots map[string]any `json:"identity_slots"`
-	}{candidate.ActionType, projectID, identity}
+		ActionType string  `json:"action_type"`
+		ProjectID  *uint64 `json:"project_id"`
+		Target     string  `json:"target"`
+	}{candidate.ActionType, projectID, normalizeText(identity)}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("encode todo fingerprint: %w", err)
@@ -197,46 +158,19 @@ func Fingerprint(candidate *Candidate, projectID *uint64) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
-// SemanticText is the stable text embedded into todo_semantic. It deliberately
-// includes both natural-language fields and normalized identity slots.
+// SemanticText is the stable text embedded into todo_semantic. It joins the
+// natural-language fields with the normalized target so semantically-equal clues
+// (same action + subject + intent) cluster together.
 func SemanticText(candidate *Candidate) (string, error) {
 	if err := ValidateCandidate(candidate); err != nil {
 		return "", err
-	}
-	identity, err := normalizedIdentitySlots(candidate)
-	if err != nil {
-		return "", err
-	}
-	encoded, err := json.Marshal(identity)
-	if err != nil {
-		return "", fmt.Errorf("encode Todo semantic identity: %w", err)
 	}
 	return strings.Join([]string{
 		candidate.ActionType,
 		strings.TrimSpace(candidate.Title),
 		strings.TrimSpace(candidate.Description),
-		string(encoded),
+		normalizeText(candidate.Target),
 	}, "｜"), nil
-}
-
-func normalizedIdentitySlots(candidate *Candidate) (map[string]any, error) {
-	names, ok := identitySlots[candidate.ActionType]
-	if !ok {
-		return nil, fmt.Errorf("%w: unknown action_type %q", ErrInvalidCandidate, candidate.ActionType)
-	}
-	identity := make(map[string]any, len(names))
-	for _, name := range names {
-		value := candidate.Slots[name]
-		if isEmptySlot(value) {
-			return nil, fmt.Errorf("%w: action_type=%s slot=%s", ErrFingerprintIncomplete, candidate.ActionType, name)
-		}
-		normalized, err := normalizeIdentityValue(name, value)
-		if err != nil {
-			return nil, err
-		}
-		identity[name] = normalized
-	}
-	return identity, nil
 }
 
 func ensureJSONEOF(decoder *json.Decoder) error {
@@ -263,78 +197,6 @@ func validateMessageIDs(ids []string) error {
 	return nil
 }
 
-func validateSlotValue(name string, value any) error {
-	if value == nil {
-		return nil
-	}
-	switch name {
-	case "assignees", "lookup_sources", "attendees":
-		items, ok := stringSlice(value)
-		if !ok {
-			return fmt.Errorf("%w: slot %s must be an array of strings", ErrInvalidCandidate, name)
-		}
-		for _, item := range items {
-			if strings.TrimSpace(item) == "" {
-				return fmt.Errorf("%w: slot %s contains blank value", ErrInvalidCandidate, name)
-			}
-		}
-		if name == "lookup_sources" {
-			for _, item := range items {
-				switch item {
-				case "code", "web", "docs", "people":
-				default:
-					return fmt.Errorf("%w: unsupported lookup source %q", ErrInvalidCandidate, item)
-				}
-			}
-		}
-	case "duration_minutes":
-		number, ok := value.(float64)
-		if !ok || number <= 0 || math.Trunc(number) != number {
-			return fmt.Errorf("%w: duration_minutes must be a positive integer", ErrInvalidCandidate)
-		}
-	default:
-		if _, ok := value.(string); !ok {
-			return fmt.Errorf("%w: slot %s must be a string or null", ErrInvalidCandidate, name)
-		}
-	}
-	return nil
-}
-
-func isEmptySlot(value any) bool {
-	if value == nil {
-		return true
-	}
-	switch typed := value.(type) {
-	case string:
-		return strings.TrimSpace(typed) == ""
-	case []string:
-		return len(typed) == 0
-	case []any:
-		return len(typed) == 0
-	default:
-		return false
-	}
-}
-
-func stringSlice(value any) ([]string, bool) {
-	switch typed := value.(type) {
-	case []string:
-		return typed, true
-	case []any:
-		result := make([]string, len(typed))
-		for i, item := range typed {
-			text, ok := item.(string)
-			if !ok {
-				return nil, false
-			}
-			result[i] = text
-		}
-		return result, true
-	default:
-		return nil, false
-	}
-}
-
 func normalizedStrings(values []string) []string {
 	set := make(map[string]struct{}, len(values))
 	for _, value := range values {
@@ -349,24 +211,6 @@ func normalizedStrings(values []string) []string {
 	}
 	sort.Strings(result)
 	return result
-}
-
-func normalizeIdentityValue(name string, value any) (any, error) {
-	if items, ok := stringSlice(value); ok {
-		normalized := make([]string, len(items))
-		for i, item := range items {
-			normalized[i] = normalizeText(item)
-		}
-		if name == "attendees" {
-			sort.Strings(normalized)
-		}
-		return normalized, nil
-	}
-	text, ok := value.(string)
-	if !ok {
-		return nil, fmt.Errorf("%w: identity slot %s has unsupported type %T", ErrInvalidCandidate, name, value)
-	}
-	return normalizeText(text), nil
 }
 
 func normalizeText(value string) string {

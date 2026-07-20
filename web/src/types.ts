@@ -86,7 +86,9 @@ export interface Todo {
   title: string
   description: string
   action_type: ActionType
-  slots: Record<string, unknown>
+  target: string
+  context: string
+  open_questions: string[] | null
   commitment_strength: 'firm' | 'tentative' | 'mentioned'
   source_message_ids: string[]
   source_quote: string
@@ -97,7 +99,6 @@ export interface Todo {
   confidence: number | null
   risk: number | null
   route: string | null
-  missing_info: string[] | null
   revision: number
   version: number
   first_seen_at: string
@@ -147,11 +148,40 @@ export interface ProposedPlan {
   basis: string[]
 }
 
+export interface Clarification {
+  question: string
+  hint?: string
+}
+
+export interface DecisionFactor {
+  name: string
+  score: number
+  basis: string
+}
+
+export interface DecisionAuditView {
+  id: number
+  ts: string
+  route: string
+  route_reason: string
+  confidence: number | null
+  confidence_factors: DecisionFactor[] | null
+  risk: number | null
+  risk_factors: DecisionFactor[] | null
+  matched_rules: string[] | null
+  decision_engine: string
+  codex_session_id: string | null
+  threshold_config_version: string
+  final_status: string
+}
+
 export interface ConfirmationDetail {
   todo: Todo
   source_messages: ConfirmationMessage[]
   assigner: ConfirmationAssigner | null
   proposed_plan: ProposedPlan | null
+  clarifications: Clarification[] | null
+  audits: DecisionAuditView[] | null
 }
 
 export type TaskStatus = 'pending' | 'executing' | 'done' | 'failed'
@@ -163,7 +193,6 @@ export interface Task {
   action_type: ActionType
   background: Record<string, unknown>
   plan: Record<string, unknown>
-  slots: Record<string, unknown>
   confirmed_by: string
   confirmed_at: string
   action_hash: string

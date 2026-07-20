@@ -71,8 +71,8 @@ func TestDispositionFromDecision(t *testing.T) {
 			want:     DispositionNeedReview,
 		},
 		{
-			name:     "clear plan with uncertainty -> need_review",
-			decision: CodexDecision{PlanIsClear: true, ProposedPlan: clearPlan(), UncertaintyFactors: []string{"unclear owner"}},
+			name:     "clear plan with clarification -> need_review",
+			decision: CodexDecision{PlanIsClear: true, ProposedPlan: clearPlan(), Clarifications: []Clarification{{Question: "owner?"}}},
 			want:     DispositionNeedReview,
 		},
 		{
@@ -116,7 +116,7 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 	todo := &domain.Todo{
 		ID: 42, Version: 3, Status: "extracted",
 		Title: "Fix deadlock", Description: "leader asked to fix the scan deadlock", ActionType: "code_change",
-		Slots:           datatypes.JSON([]byte(`{"repo":"jarvis"}`)),
+		Target: "采集死锁问题", Context: "repo jarvis", OpenQuestions: datatypes.JSON([]byte(`[]`)),
 		ContextSnapshot: testContextSnapshot(t),
 	}
 	runner := &fakeCodexDecisionRunner{result: &CodexResult{

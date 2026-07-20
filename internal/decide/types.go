@@ -36,7 +36,6 @@ type TaskView struct {
 	ActionType   string          `json:"action_type"`
 	Background   json.RawMessage `json:"background"`
 	Plan         json.RawMessage `json:"plan"`
-	Slots        json.RawMessage `json:"slots"`
 	ConfirmedBy  string          `json:"confirmed_by"`
 	ConfirmedAt  time.Time       `json:"confirmed_at"`
 	ActionHash   string          `json:"action_hash"`

@@ -34,6 +34,9 @@ type WorkerStats struct {
 	Candidates     int
 	Created        int
 	Updated        int
+	// Skipped counts info-insufficient candidates dropped for lacking a
+	// fingerprintable identity slot (see PersistStats.Skipped).
+	Skipped int
 }
 
 // Worker performs network enrichment outside transactions, then commits all
@@ -141,9 +144,6 @@ func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
 			}
 			resolved := make([]ResolvedCandidate, len(extracted.Candidates))
 			for i := range extracted.Candidates {
-				if err := validateStrictSlotShape(extracted.Candidates[i].Slots); err != nil {
-					return stats, fmt.Errorf("validate extracted candidate chat_id=%s unit=%s candidate=%d: %w", batch.Group.ChatID, unit.Key, i, err)
-				}
 				if err := ValidateCandidate(&extracted.Candidates[i]); err != nil {
 					return stats, fmt.Errorf("validate extracted candidate chat_id=%s unit=%s candidate=%d: %w", batch.Group.ChatID, unit.Key, i, err)
 				}
@@ -167,6 +167,7 @@ func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
 		stats.ChatsProcessed++
 		stats.Created += persisted.Created
 		stats.Updated += persisted.Updated
+		stats.Skipped += persisted.Skipped
 	}
 	return stats, nil
 }

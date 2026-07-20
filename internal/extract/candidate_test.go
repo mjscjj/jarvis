@@ -12,43 +12,38 @@ func TestDecodeExtractionResultRejectsUnknownField(t *testing.T) {
 	}
 }
 
-func TestValidateCandidateMarksMissingRequiredSlots(t *testing.T) {
+func TestValidateCandidateRejectsBlankTarget(t *testing.T) {
 	candidate := validCandidate()
-	candidate.Slots["change_summary"] = nil
-	candidate.InfoSufficient = true
-	if err := ValidateCandidate(&candidate); err != nil {
-		t.Fatalf("ValidateCandidate() error = %v", err)
-	}
-	if candidate.InfoSufficient || len(candidate.MissingInfo) != 1 || candidate.MissingInfo[0] != "change_summary" {
-		t.Fatalf("candidate after validation = %#v", candidate)
-	}
-	if _, err := Fingerprint(&candidate, nil); !errors.Is(err, ErrFingerprintIncomplete) {
-		t.Fatalf("Fingerprint() error = %v", err)
-	}
-}
-
-func TestValidateCandidateRejectsInvalidVocabulary(t *testing.T) {
-	candidate := validCandidate()
-	candidate.Slots["surprise"] = "value"
+	candidate.Target = "   "
 	if err := ValidateCandidate(&candidate); !errors.Is(err, ErrInvalidCandidate) {
 		t.Fatalf("ValidateCandidate() error = %v", err)
 	}
 }
 
-func TestFingerprintNormalizesTextAndAttendees(t *testing.T) {
+func TestValidateCandidateRejectsBlankOpenQuestion(t *testing.T) {
+	candidate := validCandidate()
+	candidate.OpenQuestions = []string{"具体时间?", "  "}
+	if err := ValidateCandidate(&candidate); !errors.Is(err, ErrInvalidCandidate) {
+		t.Fatalf("ValidateCandidate() error = %v", err)
+	}
+}
+
+func TestFingerprintRejectsBlankTarget(t *testing.T) {
+	candidate := validCandidate()
+	candidate.Target = ""
+	// target is a required field, so validation rejects a blank target before the
+	// fingerprint identity check would.
+	if _, err := Fingerprint(&candidate, nil); !errors.Is(err, ErrInvalidCandidate) {
+		t.Fatalf("Fingerprint() error = %v", err)
+	}
+}
+
+func TestFingerprintNormalizesTarget(t *testing.T) {
 	first := validCandidate()
 	first.ActionType = "schedule_meeting"
-	first.Slots = map[string]any{
-		"meeting_title": "  Weekly  SYNC ",
-		"attendees":     []string{"OU_B", "ou_a"},
-		"proposed_time": "tomorrow",
-	}
+	first.Target = "  Weekly  SYNC  会议 "
 	second := first
-	second.Slots = map[string]any{
-		"meeting_title": "weekly sync",
-		"attendees":     []any{"ou_a", "ou_b"},
-		"proposed_time": "next week",
-	}
+	second.Target = "weekly sync 会议"
 	projectID := uint64(7)
 	a, err := Fingerprint(&first, &projectID)
 	if err != nil {
@@ -67,14 +62,12 @@ func validCandidate() Candidate {
 	return Candidate{
 		ActionType:         "code_change",
 		Title:              "修改鉴权",
+		Target:             "jarvis 鉴权逻辑重构",
 		Description:        "按讨论修改鉴权逻辑",
+		Context:            "归属 jarvis 项目，仓库 jarvis",
+		OpenQuestions:      []string{},
 		CommitmentStrength: "firm",
 		SourceMessageIDs:   []string{"om_1"},
 		SourceQuote:        "请修改鉴权逻辑",
-		Slots: map[string]any{
-			"repo_ref":       "jarvis",
-			"change_summary": "修改鉴权",
-		},
-		InfoSufficient: true,
 	}
 }

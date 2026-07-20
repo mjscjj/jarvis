@@ -198,9 +198,9 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 		return false, nil
 	}
 	now := time.Now()
-	slots, err := seedJSON(map[string]any{"seed": true})
+	openQuestions, err := seedJSON([]string{})
 	if err != nil {
-		return false, fmt.Errorf("encode seed slots %q: %w", st.title, err)
+		return false, fmt.Errorf("encode seed open questions %q: %w", st.title, err)
 	}
 	sources, err := seedJSON([]string{})
 	if err != nil {
@@ -208,8 +208,9 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 	}
 	todo := domain.Todo{
 		Title: st.title, Description: st.detail, ActionType: st.actionType,
-		Slots: slots, CommitmentStrength: "firm",
-		SourceMessageIDs: sources, SourceQuote: "(seed)",
+		Target: st.title, Context: "(seed)", OpenQuestions: openQuestions,
+		CommitmentStrength: "firm",
+		SourceMessageIDs:   sources, SourceQuote: "(seed)",
 		ProjectID: &projectID, Status: "confirmed",
 		DedupFingerprint: fingerprint, ExtractionModel: "seed", PromptVersion: "seed",
 		FirstSeenAt: now, LastEvidenceAt: now,
@@ -229,7 +230,7 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 	}
 	task := domain.Task{
 		TodoID: todo.ID, Title: st.title, ActionType: st.actionType,
-		Background: background, Plan: plan, Slots: slots,
+		Background: background, Plan: plan,
 		ConfirmedBy: "system", ConfirmedAt: now, ActionHash: fingerprint,
 		Status: "pending", AutonomyMode: "copilot", ProjectID: &projectID,
 	}

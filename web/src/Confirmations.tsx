@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Card, Collapse, Descriptions, Drawer, Flex, Input, Modal, Space, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { approveConfirmation, getConfirmation, listConfirmations, rejectConfirmation, supplementConfirmation } from './api'
-import type { ConfirmationDetail, ContextSnapshot, Resolution, Todo } from './types'
-import { SlotDescriptions } from './slots'
+import type { Clarification, ConfirmationDetail, ContextSnapshot, DecisionAuditView, DecisionFactor, Resolution, Todo } from './types'
+import { TodoContextPanel } from './slots'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { todoStatusMeta } from './status'
@@ -76,6 +76,46 @@ function SnapshotPanel({ snapshot }: { snapshot: ContextSnapshot }) {
       <pre className="snapshot-json">{JSON.stringify(snapshot, null, 2)}</pre>
     </Space>,
   }]} />
+}
+
+// latestCodexAudit picks the newest codex decision audit (with factor detail)
+// so the workbench can show why codex scored the way it did.
+function latestCodexAudit(detail: ConfirmationDetail): DecisionAuditView | undefined {
+  const audits = (detail.audits || []).filter((a) => a.decision_engine === 'codex')
+  return audits.length ? audits[audits.length - 1] : undefined
+}
+
+// FactorList renders codex's confidence/risk factors so the reviewer sees where
+// codex is sure and where it is shaky — the basis for a human decision.
+function FactorList({ title, factors, tone }: { title: string; factors: DecisionFactor[]; tone: 'confidence' | 'risk' }) {
+  if (!factors.length) return null
+  return <div style={{ flex: 1, minWidth: 240 }}>
+    <Text type="secondary">{title}</Text>
+    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+      {factors.map((f, i) => <li key={i} style={{ marginBottom: 4 }}>
+        <Tag color={tone === 'risk' ? (f.score >= 0.6 ? 'red' : 'orange') : (f.score >= 0.6 ? 'green' : 'default')}>{(f.score * 100).toFixed(0)}%</Tag>
+        <Text strong>{f.name}</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>{f.basis}</Text>
+      </li>)}
+    </ul>
+  </div>
+}
+
+// ClarificationList shows what codex needs the human to clarify/supply. It is the
+// heart of "what do I need to do" for both need_info and need_review.
+function ClarificationList({ clarifications, ordinal }: { clarifications: Clarification[]; ordinal: boolean }) {
+  return <ol style={{ margin: '6px 0 0', paddingLeft: 20, listStyleType: ordinal ? 'decimal' : 'disc' }}>
+    {clarifications.map((item, index) => <li key={index} style={{ marginBottom: 8 }}>
+      <Text strong>{item.question}</Text>
+      {item.hint && <><br /><Text type="secondary" style={{ fontSize: 12 }}>提示：{item.hint}</Text></>}
+    </li>)}
+  </ol>
+}
+
+// buildSupplementTemplate pre-fills the supplement box with codex's questions so
+// the user answers each one instead of facing a blank textarea.
+function buildSupplementTemplate(clarifications: Clarification[] | null): string {
+  if (!clarifications || clarifications.length === 0) return ''
+  return clarifications.map((c, i) => `${i + 1}. ${c.question}\n答：`).join('\n\n')
 }
 
 export default function Confirmations() {
@@ -156,35 +196,64 @@ export default function Confirmations() {
       <Table<Todo> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(todo) => ({ onClick: () => openDetail(todo), className: 'clickable-row' })} />
     </Card>
     <Drawer title={detail?.todo.title || '确认详情'} open={Boolean(detail) || detailLoading} loading={detailLoading} width={680} onClose={() => setDetail(undefined)}>
-      {detail && <Space direction="vertical" size={20} className="drawer-content">
-        <Space><StatusBadge label={todoStatusMeta.need_decision.label} color={todoStatusMeta.need_decision.color} /><Tag>{detail.todo.action_type}</Tag></Space>
-        <Paragraph>{detail.todo.description}</Paragraph>
-        <Descriptions column={2} size="small">
-          <Descriptions.Item label="交办人">{detail.assigner?.name || detail.todo.assigner_open_id || '未知'}</Descriptions.Item>
-          <Descriptions.Item label="版本">v{detail.todo.version}</Descriptions.Item>
-          <Descriptions.Item label="项目">{detail.todo.project?.name || '未关联'}</Descriptions.Item>
-          <Descriptions.Item label="会话">{detail.todo.group?.name || detail.todo.group?.chat_id || '未知'}</Descriptions.Item>
-        </Descriptions>
-        {(detail.todo.confidence != null || detail.todo.risk != null || detail.proposed_plan) && <section>
+      {detail && (() => {
+        const isNeedInfo = detail.todo.status === 'need_info'
+        const audit = latestCodexAudit(detail)
+        const clarifications = detail.clarifications || []
+        return <Space direction="vertical" size={20} className="drawer-content">
+        <Space><StatusBadge label={todoStatusMeta[isNeedInfo ? 'need_info' : 'need_decision'].label} color={todoStatusMeta[isNeedInfo ? 'need_info' : 'need_decision'].color} /><Tag>{detail.todo.action_type}</Tag></Space>
+
+        {/* 第一段：决策问题 —— 一句话说清现在要你决定什么 */}
+        {isNeedInfo
+          ? <Alert type="warning" showIcon message="需要你补充信息，codex 才能继续"
+              description={clarifications.length > 0
+                ? <><Paragraph type="secondary" style={{ marginBottom: 4 }}>codex 需要你澄清以下几点：</Paragraph><ClarificationList clarifications={clarifications} ordinal /></>
+                : '该 Todo 信息不足，但 codex 未给出具体澄清项（重跑一次 M4 可补全）。'} />
+          : <Alert type="info" showIcon message="codex 建议如下方案，请你决策：批准执行 / 改方案 / 拒绝"
+              description={detail.proposed_plan?.summary || detail.todo.description} />}
+
+        {/* 第二段：codex 的想法 —— 它要干什么、有多大把握、担心什么 */}
+        <section>
           <Text type="secondary">codex 判断</Text>
           <Space size={12} style={{ display: 'flex', marginTop: 4 }}>
             {detail.todo.confidence != null && <Tag color="blue">信心 {(detail.todo.confidence * 100).toFixed(0)}%</Tag>}
             {detail.todo.risk != null && <Tag color={detail.todo.risk >= 0.6 ? 'red' : 'orange'}>风险 {(detail.todo.risk * 100).toFixed(0)}%</Tag>}
           </Space>
-          {detail.proposed_plan && <>
-            <Paragraph style={{ marginTop: 8, marginBottom: 4 }}><Text strong>建议方案：</Text>{detail.proposed_plan.summary}</Paragraph>
-            {detail.proposed_plan.basis?.length > 0 && <Paragraph type="secondary" style={{ marginBottom: 0 }}>理由：{detail.proposed_plan.basis.join('；')}</Paragraph>}
-          </>}
-        </section>}
+          {detail.proposed_plan && <div style={{ marginTop: 8 }}>
+            <Paragraph style={{ marginBottom: 4 }}><Text strong>它想做：</Text>{detail.proposed_plan.summary}</Paragraph>
+            {detail.proposed_plan.steps?.length > 0 && <><Text type="secondary">执行步骤</Text>
+              <ol style={{ margin: '4px 0 8px', paddingLeft: 20 }}>{detail.proposed_plan.steps.map((s, i) => <li key={i}>{s}</li>)}</ol></>}
+            {detail.proposed_plan.parameters?.length > 0 && <Descriptions column={1} size="small" bordered style={{ marginBottom: 8 }}>
+              {detail.proposed_plan.parameters.map((p, i) => <Descriptions.Item key={i} label={p.name}>{p.value}</Descriptions.Item>)}
+            </Descriptions>}
+            {detail.proposed_plan.basis?.length > 0 && <Paragraph type="secondary" style={{ marginBottom: 0 }}>依据：{detail.proposed_plan.basis.join('；')}</Paragraph>}
+          </div>}
+          {audit && (audit.confidence_factors?.length || audit.risk_factors?.length) ? <Collapse size="small" style={{ marginTop: 8 }} items={[{
+            key: 'factors', label: '信心 / 风险因子明细',
+            children: <Flex gap={16} wrap="wrap">
+              <FactorList title="信心因子" factors={audit.confidence_factors || []} tone="confidence" />
+              <FactorList title="风险因子" factors={audit.risk_factors || []} tone="risk" />
+            </Flex>,
+          }]} /> : null}
+          {/* need_review 也把待澄清点显示出来，供决策参考 */}
+          {!isNeedInfo && clarifications.length > 0 && <div style={{ marginTop: 8 }}>
+            <Text type="secondary">codex 提出的待澄清点（供你决策参考）</Text>
+            <ClarificationList clarifications={clarifications} ordinal={false} />
+          </div>}
+        </section>
+
+        {/* 第三段：证据与背景（次要，可展开） */}
         {detail.todo.resolution && <ResolutionCard resolution={detail.todo.resolution} />}
-        <section><Text type="secondary">结构化参数</Text><SlotDescriptions slots={detail.todo.slots} /></section>
+        <section><Text type="secondary">背景与待补充</Text><TodoContextPanel target={detail.todo.target} context={detail.todo.context} openQuestions={detail.todo.open_questions} /></section>
         <section><Text type="secondary">证据消息</Text>{detail.source_messages.map((message) => <blockquote key={message.message_id}><Text strong>{message.sender_name || message.sender_open_id}</Text><br />{message.content}</blockquote>)}</section>
         {detail.todo.context_snapshot && <SnapshotPanel snapshot={detail.todo.context_snapshot} />}
-        {detail.todo.status === 'need_decision'
-          ? <Flex gap={12}><Button type="primary" onClick={openApprove}>批准并生成 Task</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>
-          : <><Alert type="info" showIcon message="该 Todo 信息不足。补充说明后会重新交给决策器判定（异步，稍后刷新查看新结果）。" />
-            <Flex gap={12}><Button type="primary" onClick={() => { setInput(''); setModal('supplement') }}>补充信息</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex></>}
-      </Space>}
+
+        {/* 行动区 */}
+        {!isNeedInfo
+          ? <Flex gap={12}><Button type="primary" onClick={openApprove}>批准执行</Button><Button onClick={openApprove}>改方案再执行</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>
+          : <Flex gap={12}><Button type="primary" onClick={() => { setInput(buildSupplementTemplate(detail.clarifications)); setModal('supplement') }}>补充信息</Button><Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button></Flex>}
+      </Space>
+      })()}
     </Drawer>
     <Modal title={modalTitle(modal)} open={Boolean(modal)} confirmLoading={submitting} onOk={submit} onCancel={() => setModal(undefined)} okText={modalOkText(modal)}>
       <Input.TextArea rows={modal === 'approve' ? 12 : 4} value={input} onChange={(event) => setInput(event.target.value)} placeholder={modalPlaceholder(modal)} />

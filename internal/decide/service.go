@@ -96,11 +96,7 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 		if result.RowsAffected != 0 {
 			return fmt.Errorf("%w: todo_id=%d task_id=%d", ErrTaskExists, todo.ID, existing.ID)
 		}
-		slots, err := canonicalJSONObject(todo.Slots, "Todo slots")
-		if err != nil {
-			return err
-		}
-		actionHash, err := ActionHash(todo.ActionType, slots, plan)
+		actionHash, err := ActionHash(todo.ActionType, todo.Target, plan)
 		if err != nil {
 			return err
 		}
@@ -108,7 +104,7 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 		created = domain.Task{
 			TodoID: todo.ID, Title: todo.Title, ActionType: todo.ActionType,
 			Background: datatypes.JSON(append([]byte(nil), background...)),
-			Plan:       datatypes.JSON(append([]byte(nil), plan...)), Slots: datatypes.JSON(slots),
+			Plan:       datatypes.JSON(append([]byte(nil), plan...)),
 			ConfirmedBy: "user", ConfirmedAt: confirmedAt, ActionHash: actionHash,
 			Status: "pending", AutonomyMode: "copilot", ProjectID: copyUint64(todo.ProjectID), Version: 0,
 		}
@@ -379,13 +375,15 @@ func manualAudit(todo *domain.Todo, task *domain.Task, reason, channel string, a
 	return audit
 }
 
-func ActionHash(actionType string, slots, plan json.RawMessage) (string, error) {
+// ActionHash identifies a confirmed action by (action_type, target, plan). The
+// target is the clue's dedup identity from M3; together with the confirmed plan
+// it fingerprints "what was approved" without the old per-type slot vocabulary.
+func ActionHash(actionType, target string, plan json.RawMessage) (string, error) {
 	if strings.TrimSpace(actionType) == "" {
 		return "", fmt.Errorf("%w: action_type must be non-blank", ErrInvalidInput)
 	}
-	canonicalSlots, err := canonicalJSONObject(slots, "slots")
-	if err != nil {
-		return "", err
+	if strings.TrimSpace(target) == "" {
+		return "", fmt.Errorf("%w: target must be non-blank", ErrInvalidInput)
 	}
 	canonicalPlan, err := canonicalJSONObject(plan, "plan")
 	if err != nil {
@@ -393,9 +391,9 @@ func ActionHash(actionType string, slots, plan json.RawMessage) (string, error) 
 	}
 	payload := struct {
 		ActionType string          `json:"action_type"`
-		Slots      json.RawMessage `json:"slots"`
+		Target     string          `json:"target"`
 		Plan       json.RawMessage `json:"plan"`
-	}{ActionType: actionType, Slots: canonicalSlots, Plan: canonicalPlan}
+	}{ActionType: actionType, Target: strings.TrimSpace(target), Plan: canonicalPlan}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("encode Task action hash: %w", err)
@@ -457,7 +455,7 @@ func transitionError(todoID uint64, from, to string) error {
 func taskView(task *domain.Task) TaskView {
 	return TaskView{
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
-		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan), Slots: rawJSON(task.Slots),
+		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
 		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
 		Status: task.Status, AutonomyMode: task.AutonomyMode, ProjectID: copyUint64(task.ProjectID), Version: task.Version,
 	}

@@ -10,7 +10,7 @@ import (
 )
 
 func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
-	resultJSON := `{"confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","uncertainty_factors":[],"recommended_review":false,"proposed_plan":{"summary":"inspect fixture","steps":["inspect"],"parameters":[],"basis":[]},"plan_is_clear":true}`
+	resultJSON := `{"confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","clarifications":[],"recommended_review":false,"proposed_plan":{"summary":"inspect fixture","steps":["inspect"],"parameters":[],"basis":[]},"plan_is_clear":true}`
 	bin := writeCodexFixture(t, resultJSON, true)
 	decider, err := NewCodexDecider(CodexOptions{Bin: bin, Model: "fixture-model", Timeout: 10 * time.Second, Sandbox: "read-only", ReasoningEffort: "low"})
 	if err != nil {
@@ -29,7 +29,7 @@ func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
 }
 
 func TestCodexDeciderRejectsMissingSession(t *testing.T) {
-	resultJSON := `{"confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","uncertainty_factors":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`
+	resultJSON := `{"confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","clarifications":[{"question":"需要哪些信息?","hint":""}],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`
 	decider, err := NewCodexDecider(CodexOptions{Bin: writeCodexFixture(t, resultJSON, false), Model: "fixture-model", Timeout: 10 * time.Second, Sandbox: "read-only", ReasoningEffort: "low"})
 	if err != nil {
 		t.Fatalf("NewCodexDecider() error = %v", err)
@@ -46,9 +46,11 @@ func TestDecodeCodexDecisionFailsFast(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{name: "unknown field", raw: `{"confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","uncertainty_factors":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false,"extra":1}`, want: "unknown field"},
-		{name: "score out of range", raw: `{"confidence_factors":[{"name":"a","score":2,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","uncertainty_factors":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`, want: "outside [0,1]"},
-		{name: "clear without plan", raw: `{"confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","uncertainty_factors":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":true}`, want: "requires proposed_plan"},
+		{name: "unknown field", raw: `{"confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false,"extra":1}`, want: "unknown field"},
+		{name: "score out of range", raw: `{"confidence_factors":[{"name":"a","score":2,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`, want: "outside [0,1]"},
+		{name: "clear without plan", raw: `{"confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":true}`, want: "requires proposed_plan"},
+		{name: "need_info without clarification", raw: `{"confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`, want: "requires at least one clarification"},
+		{name: "clarification blank question", raw: `{"confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[{"question":"  ","hint":""}],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`, want: "question is blank"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

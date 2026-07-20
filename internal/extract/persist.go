@@ -44,12 +44,12 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 	if strings.TrimSpace(modelName) == "" || len(modelName) > 64 {
 		return PersistStats{}, fmt.Errorf("persist extraction model name must contain 1 to 64 bytes")
 	}
-	prepared, err := s.prepareResults(ctx, batch, results)
+	prepared, skipped, err := s.prepareResults(ctx, batch, results)
 	if err != nil {
 		return PersistStats{}, err
 	}
 
-	stats := PersistStats{}
+	stats := PersistStats{Skipped: skipped}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		records := make(map[uint64]semantic.Record, len(prepared))
 		order := make([]uint64, 0, len(prepared))
@@ -98,32 +98,35 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 	return stats, nil
 }
 
-func (s *PipelineStore) prepareResults(ctx context.Context, batch ChatBatch, results []UnitExtraction) ([]preparedCandidate, error) {
+func (s *PipelineStore) prepareResults(ctx context.Context, batch ChatBatch, results []UnitExtraction) ([]preparedCandidate, int, error) {
 	units := make(map[string]ConversationUnit, len(batch.Units))
 	for _, unit := range batch.Units {
 		if _, exists := units[unit.Key]; exists {
-			return nil, fmt.Errorf("duplicate conversation unit key %q", unit.Key)
+			return nil, 0, fmt.Errorf("duplicate conversation unit key %q", unit.Key)
 		}
 		units[unit.Key] = unit
 	}
 	seenResults := make(map[string]struct{}, len(results))
 	prepared := make([]preparedCandidate, 0)
+	skipped := 0
 	for _, result := range results {
 		unit, ok := units[result.UnitKey]
 		if !ok {
-			return nil, fmt.Errorf("extraction result references unknown unit %q", result.UnitKey)
+			return nil, 0, fmt.Errorf("extraction result references unknown unit %q", result.UnitKey)
 		}
 		if _, exists := seenResults[result.UnitKey]; exists {
-			return nil, fmt.Errorf("duplicate extraction result for unit %q", result.UnitKey)
+			return nil, 0, fmt.Errorf("duplicate extraction result for unit %q", result.UnitKey)
 		}
 		seenResults[result.UnitKey] = struct{}{}
 		for i := range result.Candidates {
 			candidate, err := s.prepareCandidate(ctx, batch, unit, result.Candidates[i].Candidate, result.Memories)
 			if err != nil {
-				return nil, fmt.Errorf("prepare candidate unit=%s index=%d: %w", unit.Key, i, err)
+				// target is a required field, so a missing dedup identity is a hard
+				// contract violation from the model, not a skip. Fail fast.
+				return nil, 0, fmt.Errorf("prepare candidate unit=%s index=%d: %w", unit.Key, i, err)
 			}
 			if len(result.Candidates[i].Semantic.Vector) == 0 {
-				return nil, fmt.Errorf("prepare candidate unit=%s index=%d: semantic vector is empty", unit.Key, i)
+				return nil, 0, fmt.Errorf("prepare candidate unit=%s index=%d: semantic vector is empty", unit.Key, i)
 			}
 			candidate.MatchedTodoID = copyUint64(result.Candidates[i].Semantic.MatchedTodoID)
 			candidate.SemanticVector = append([]float32(nil), result.Candidates[i].Semantic.Vector...)
@@ -138,15 +141,12 @@ func (s *PipelineStore) prepareResults(ctx context.Context, batch ChatBatch, res
 			}
 		}
 		sort.Strings(missing)
-		return nil, fmt.Errorf("extraction results missing units: %s", strings.Join(missing, ","))
+		return nil, 0, fmt.Errorf("extraction results missing units: %s", strings.Join(missing, ","))
 	}
-	return prepared, nil
+	return prepared, skipped, nil
 }
 
 func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, memories []map[string]any) (*preparedCandidate, error) {
-	if err := validateStrictSlotShape(candidate.Slots); err != nil {
-		return nil, err
-	}
 	if err := ValidateCandidate(&candidate); err != nil {
 		return nil, err
 	}
@@ -262,26 +262,23 @@ func (s *PipelineStore) persistCandidate(tx *gorm.DB, batch ChatBatch, prepared 
 }
 
 func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *preparedCandidate, modelName string) (bool, *domain.Todo, error) {
-	slots, err := json.Marshal(prepared.Candidate.Slots)
-	if err != nil {
-		return false, nil, fmt.Errorf("encode todo slots: %w", err)
-	}
 	sourceIDs, err := json.Marshal(prepared.Candidate.SourceMessageIDs)
 	if err != nil {
 		return false, nil, fmt.Errorf("encode todo source message IDs: %w", err)
 	}
-	missingInfo, err := json.Marshal(prepared.Candidate.MissingInfo)
+	openQuestions, err := json.Marshal(prepared.Candidate.OpenQuestions)
 	if err != nil {
-		return false, nil, fmt.Errorf("encode todo missing info: %w", err)
+		return false, nil, fmt.Errorf("encode todo open questions: %w", err)
 	}
 	todo := domain.Todo{
 		Title: prepared.Candidate.Title, Description: prepared.Candidate.Description,
-		ActionType: prepared.Candidate.ActionType, Slots: datatypes.JSON(slots),
+		ActionType: prepared.Candidate.ActionType, Target: prepared.Candidate.Target,
+		Context: prepared.Candidate.Context, OpenQuestions: datatypes.JSON(openQuestions),
 		CommitmentStrength: prepared.Candidate.CommitmentStrength,
 		SourceMessageIDs:   datatypes.JSON(sourceIDs), SourceQuote: prepared.Candidate.SourceQuote,
 		GroupID: &batch.Group.ID, ProjectID: prepared.ProjectID,
 		AssignerOpenID: prepared.AssignerOpenID, IsLeaderAssigned: prepared.LeaderAssigned,
-		DueAt: prepared.DueAt, Status: "extracted", MissingInfo: datatypes.JSON(missingInfo),
+		DueAt: prepared.DueAt, Status: "extracted",
 		DedupFingerprint: prepared.Fingerprint, ExtractionModel: modelName, PromptVersion: PromptVersion,
 		Resolution: prepared.Resolution, ContextSnapshot: prepared.ContextSnapshot,
 		Revision: 1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
@@ -301,29 +298,7 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 }
 
 func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared *preparedCandidate, modelName string) error {
-	existingSlots := make(map[string]any)
-	if err := json.Unmarshal(existing.Slots, &existingSlots); err != nil {
-		return fmt.Errorf("decode existing todo slots todo_id=%d: %w", existing.ID, err)
-	}
-	for name, value := range prepared.Candidate.Slots {
-		if !isEmptySlot(value) {
-			existingSlots[name] = value
-		}
-	}
-	mergedCandidate := prepared.Candidate
-	mergedCandidate.Slots = existingSlots
-	filteredMissing := make([]string, 0, len(mergedCandidate.MissingInfo))
-	for _, name := range mergedCandidate.MissingInfo {
-		if _, isSlot := allowedSlots[name]; isSlot && !isEmptySlot(existingSlots[name]) {
-			continue
-		}
-		filteredMissing = append(filteredMissing, name)
-	}
-	mergedCandidate.MissingInfo = filteredMissing
-	if len(filteredMissing) == 0 {
-		mergedCandidate.InfoSufficient = true
-	}
-	if err := ValidateCandidate(&mergedCandidate); err != nil {
+	if err := ValidateCandidate(&prepared.Candidate); err != nil {
 		return fmt.Errorf("validate merged todo todo_id=%d: %w", existing.ID, err)
 	}
 
@@ -332,25 +307,25 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		return fmt.Errorf("decode existing source IDs todo_id=%d: %w", existing.ID, err)
 	}
 	mergedIDs := mergeStrings(existingIDs, prepared.Candidate.SourceMessageIDs)
-	slots, err := json.Marshal(existingSlots)
-	if err != nil {
-		return fmt.Errorf("encode merged todo slots todo_id=%d: %w", existing.ID, err)
-	}
 	sourceIDs, err := json.Marshal(mergedIDs)
 	if err != nil {
 		return fmt.Errorf("encode merged source IDs todo_id=%d: %w", existing.ID, err)
 	}
-	missingInfo, err := json.Marshal(mergedCandidate.MissingInfo)
+	openQuestions, err := json.Marshal(prepared.Candidate.OpenQuestions)
 	if err != nil {
-		return fmt.Errorf("encode merged missing info todo_id=%d: %w", existing.ID, err)
+		return fmt.Errorf("encode merged open questions todo_id=%d: %w", existing.ID, err)
 	}
+	// target is the dedup identity, so it is stable across re-extractions. New
+	// evidence refreshes the natural-language fields, the assistant-gathered
+	// context, and the open_questions to the latest homework.
 	updates := map[string]any{
 		"title": prepared.Candidate.Title, "description": prepared.Candidate.Description,
-		"slots": datatypes.JSON(slots), "commitment_strength": prepared.Candidate.CommitmentStrength,
+		"target": prepared.Candidate.Target, "context": prepared.Candidate.Context,
+		"open_questions": datatypes.JSON(openQuestions), "commitment_strength": prepared.Candidate.CommitmentStrength,
 		"source_message_ids": datatypes.JSON(sourceIDs), "source_quote": prepared.Candidate.SourceQuote,
 		"is_leader_assigned": existing.IsLeaderAssigned || prepared.LeaderAssigned,
-		"missing_info":       datatypes.JSON(missingInfo), "extraction_model": modelName,
-		"prompt_version": PromptVersion, "revision": existing.Revision + 1,
+		"extraction_model":   modelName,
+		"prompt_version":     PromptVersion, "revision": existing.Revision + 1,
 		"last_evidence_at": maxTime(existing.LastEvidenceAt, prepared.LastEvidenceAt),
 		"version":          gorm.Expr("version + 1"),
 		// Refresh the frozen snapshot/resolution on new evidence so M4/M5 always

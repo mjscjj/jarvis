@@ -1,50 +1,52 @@
-import { Descriptions, Empty } from 'antd'
+import { Alert, Empty, Space, Typography } from 'antd'
 
-const SLOT_LABELS: Record<string, string> = {
-  repo_ref: '仓库',
-  change_summary: '改动摘要',
-  based_on: '依据',
-  scope: '范围',
-  acceptance: '验收标准',
-  source_ref: '来源引用',
-  target_chat_id: '目标会话',
-  summary_scope: '总结范围',
-  assignees: '负责人',
-  question: '问题',
-  lookup_sources: '查询来源',
-  deliverable: '交付物',
-  meeting_title: '会议主题',
-  attendees: '参会人',
-  proposed_time: '建议时间',
-  duration_minutes: '时长(分钟)',
-  agenda: '议程',
-  meeting_room: '会议室',
-  message_body: '消息内容',
-  doc_title: '文档标题',
-  followup_action: '跟进动作',
-}
+const { Paragraph, Text } = Typography
 
-function isEmpty(value: unknown): boolean {
-  if (value === null || value === undefined || value === '') return true
-  if (Array.isArray(value)) return value.length === 0
-  return false
-}
-
-function renderValue(value: unknown): string {
-  if (Array.isArray(value)) return value.join('、')
-  return String(value)
-}
-
-export function SlotDescriptions({ slots }: { slots: Record<string, unknown> }) {
-  const entries = Object.entries(slots ?? {}).filter(([, value]) => !isEmpty(value))
-  if (entries.length === 0) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无结构化参数" />
+// TodoContextPanel renders M3's general clue fields: the dedup target, the
+// assistant-gathered context, and any open questions that still need the
+// principal. It replaces the old per-action_type slot table.
+export function TodoContextPanel({
+  target,
+  context,
+  openQuestions,
+}: {
+  target?: string | null
+  context?: string | null
+  openQuestions?: string[] | null
+}) {
+  const hasContext = !!(context && context.trim())
+  const questions = (openQuestions ?? []).filter((q) => q && q.trim())
+  if (!target && !hasContext && questions.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无背景信息" />
+  }
   return (
-    <Descriptions column={1} size="small" bordered>
-      {entries.map(([key, value]) => (
-        <Descriptions.Item key={key} label={SLOT_LABELS[key] ?? key}>
-          {renderValue(value)}
-        </Descriptions.Item>
-      ))}
-    </Descriptions>
+    <Space direction="vertical" size="small" style={{ width: '100%' }}>
+      {target && (
+        <div>
+          <Text type="secondary">主题 / 去重身份</Text>
+          <Paragraph style={{ marginBottom: 0 }}>{target}</Paragraph>
+        </div>
+      )}
+      {hasContext && (
+        <div>
+          <Text type="secondary">已补全的背景</Text>
+          <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>{context}</Paragraph>
+        </div>
+      )}
+      {questions.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          message="仍需你拍板 / 补充"
+          description={
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {questions.map((q, i) => (
+                <li key={i}>{q}</li>
+              ))}
+            </ul>
+          }
+        />
+      )}
+    </Space>
   )
 }

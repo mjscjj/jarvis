@@ -331,21 +331,11 @@ func (e *AgentExecutor) persistRun(ctx context.Context, run *domain.ExecutionRun
 }
 
 // resolveRepo locates the local git repo for a code_change Task from the
-// M3-frozen context. Order: explicit repo_ref slot, then the snapshot's
-// project.repos[].local_path. Returns ("", nil) when no repo is available so
-// the caller runs codex without --cd (repos empty must not block — see
-// docs/design-context-pipeline.md §7). A repo_ref that points at a non-git
-// directory is still a hard error (explicit intent that is wrong must surface).
+// M3-frozen context. It reads the snapshot's project.repos[].local_path.
+// Returns ("", nil) when no repo is available so the caller runs codex without
+// --cd (repos empty must not block — see docs/design-context-pipeline.md §7).
 func (e *AgentExecutor) resolveRepo(task *domain.Task) (string, error) {
-	if ref := e.repoRefFromSlots(task); ref != "" {
-		path := e.absRepoPath(ref)
-		if !isGitDir(path) {
-			return "", fmt.Errorf("code_change Task id=%d repo_ref %q is not a git repository", task.ID, path)
-		}
-		return path, nil
-	}
-	// Fall back to the frozen project repos. A malformed snapshot must surface;
-	// an absent/empty repos list is non-blocking.
+	// A malformed snapshot must surface; an absent/empty repos list is non-blocking.
 	for _, localPath := range snapshotRepoLocalPaths(task.Background) {
 		path := e.absRepoPath(localPath)
 		if isGitDir(path) {
@@ -353,18 +343,6 @@ func (e *AgentExecutor) resolveRepo(task *domain.Task) (string, error) {
 		}
 	}
 	return "", nil
-}
-
-func (e *AgentExecutor) repoRefFromSlots(task *domain.Task) string {
-	if len(task.Slots) == 0 {
-		return ""
-	}
-	var slots map[string]any
-	if err := json.Unmarshal(task.Slots, &slots); err != nil {
-		return ""
-	}
-	ref, _ := slots["repo_ref"].(string)
-	return strings.TrimSpace(ref)
 }
 
 // absRepoPath honors an absolute path as-is; otherwise it joins under repoRoot.

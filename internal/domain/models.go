@@ -90,7 +90,9 @@ type Todo struct {
 	Title              string         `gorm:"column:title;type:varchar(512);not null"`
 	Description        string         `gorm:"column:description;type:text;not null"`
 	ActionType         string         `gorm:"column:action_type;type:varchar(32);not null"`
-	Slots              datatypes.JSON `gorm:"column:slots;type:json;not null"`
+	Target             string         `gorm:"column:target;type:varchar(512);not null"`  // 这件事作用的对象/主题，去重身份
+	Context            string         `gorm:"column:context;type:text;not null"`         // M3 主动补全的背景（归属/链接/相关历史）
+	OpenQuestions      datatypes.JSON `gorm:"column:open_questions;type:json;not null"`  // 只有必须由 principal 拍板/提供的点
 	CommitmentStrength string         `gorm:"column:commitment_strength;type:varchar(16);not null"`
 	SourceMessageIDs   datatypes.JSON `gorm:"column:source_message_ids;type:json;not null"`
 	SourceQuote        string         `gorm:"column:source_quote;type:text;not null"`
@@ -103,7 +105,6 @@ type Todo struct {
 	Confidence         *float64       `gorm:"column:confidence;type:decimal(4,3)"`
 	Risk               *float64       `gorm:"column:risk;type:decimal(4,3)"`
 	Route              *string        `gorm:"column:route;type:varchar(16)"`
-	MissingInfo        datatypes.JSON `gorm:"column:missing_info;type:json"`
 	DedupFingerprint   string         `gorm:"column:dedup_fingerprint;type:char(64);not null;uniqueIndex:uk_todo_fingerprint"`
 	ContextSnapshot    datatypes.JSON `gorm:"column:context_snapshot;type:json"` // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），M4/M5 全链路复用
 	Resolution         datatypes.JSON `gorm:"column:resolution;type:json"`       // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
@@ -131,7 +132,6 @@ type Task struct {
 	ActionType      string         `gorm:"column:action_type;type:varchar(32);not null"`
 	Background      datatypes.JSON `gorm:"column:background;type:json;not null"`
 	Plan            datatypes.JSON `gorm:"column:plan;type:json;not null"`
-	Slots           datatypes.JSON `gorm:"column:slots;type:json;not null"`
 	ConfirmedBy     string         `gorm:"column:confirmed_by;type:varchar(16);not null"`
 	ConfirmedAt     time.Time      `gorm:"column:confirmed_at;type:datetime;not null"`
 	ActionHash      string         `gorm:"column:action_hash;type:char(64);not null"`

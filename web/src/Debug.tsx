@@ -260,7 +260,7 @@ function RecentTab({ kind }: { kind: 'todos' | 'tasks' }) {
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Space>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
-        <Text type="secondary">最近 20 条{kind === 'todos' ? ' Todo（含 context_snapshot / slots / resolution）' : ' Task（含 background / plan / execution_result）'}，展开看完整 JSON。</Text>
+        <Text type="secondary">最近 20 条{kind === 'todos' ? ' Todo（含 context_snapshot / target / context / resolution）' : ' Task（含 background / plan / execution_result）'}，展开看完整 JSON。</Text>
       </Space>
       {error && <Alert type="error" showIcon message="明细加载失败" description={error} />}
       <Table<DebugRecord>

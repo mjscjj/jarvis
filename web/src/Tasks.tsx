@@ -3,7 +3,6 @@ import { Alert, Button, Card, Descriptions, Drawer, Flex, Input, Modal, Select, 
 import type { TableColumnsType } from 'antd'
 import { executeTask, finishTask, listTasks, rerunTask } from './api'
 import type { Task, TaskStatus } from './types'
-import { SlotDescriptions } from './slots'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
@@ -147,7 +146,6 @@ export default function Tasks() {
           <Descriptions.Item label="自主模式">{detail.autonomy_mode || '—'}</Descriptions.Item>
           <Descriptions.Item label="项目">{detail.project_id != null ? `#${detail.project_id}` : '未关联'}</Descriptions.Item>
         </Descriptions>
-        <section><Text type="secondary">结构化参数</Text><SlotDescriptions slots={detail.slots} /></section>
         <section><Text type="secondary">执行方案</Text><pre>{JSON.stringify(detail.plan, null, 2)}</pre></section>
         <section><Text type="secondary">执行结果</Text>{detail.execution_result ? <pre>{JSON.stringify(detail.execution_result, null, 2)}</pre> : <Paragraph type="secondary" style={{ marginTop: 8 }}>尚未执行</Paragraph>}</section>
         <section><Text type="secondary">背景</Text><pre>{JSON.stringify(detail.background, null, 2)}</pre></section>

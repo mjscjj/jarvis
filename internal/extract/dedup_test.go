@@ -156,6 +156,6 @@ func semanticTodoFixture(t *testing.T, candidate Candidate, projectID *uint64, i
 	}
 	return &SemanticTodo{
 		ID: id, ActionType: candidate.ActionType, Title: candidate.Title, Description: candidate.Description,
-		Slots: candidate.Slots, ProjectID: copyUint64(projectID), Status: "extracted", DedupFingerprint: fingerprint,
+		Target: candidate.Target, ProjectID: copyUint64(projectID), Status: "extracted", DedupFingerprint: fingerprint,
 	}
 }

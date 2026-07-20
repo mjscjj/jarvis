@@ -304,17 +304,10 @@ func semanticPersistFixture(group domain.Group, messageID, title, summary string
 		MessageID: messageID, ChatID: group.ChatID, SenderOpenID: "ou_owner", Content: title,
 		CreateTime: time.Now().UnixMilli(), IsNew: true, Extractable: true,
 	}
-	slots := map[string]any{
-		"repo_ref": "jarvis", "change_summary": summary, "based_on": nil, "scope": nil, "acceptance": nil,
-		"source_ref": nil, "target_chat_id": nil, "summary_scope": nil, "assignees": nil,
-		"question": nil, "lookup_sources": nil, "deliverable": nil, "meeting_title": nil,
-		"attendees": nil, "proposed_time": nil, "duration_minutes": nil, "agenda": nil,
-		"meeting_room": nil, "message_body": nil, "doc_title": nil, "followup_action": nil,
-	}
 	candidate := extract.Candidate{
-		ActionType: "code_change", Title: title, Description: summary, CommitmentStrength: "firm",
-		SourceMessageIDs: []string{messageID}, SourceQuote: title, Slots: slots,
-		InfoSufficient: true, MissingInfo: []string{},
+		ActionType: "code_change", Title: title, Target: title, Description: summary,
+		Context: "repo jarvis", OpenQuestions: []string{}, CommitmentStrength: "firm",
+		SourceMessageIDs: []string{messageID}, SourceQuote: title,
 	}
 	batch := extract.ChatBatch{
 		Group: extract.GroupContext{ID: group.ID, ChatID: group.ChatID},

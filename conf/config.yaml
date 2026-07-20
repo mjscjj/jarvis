@@ -29,15 +29,16 @@ mem0:
   qdrant_grpc_port: 6334
   collection: "jarvis_memories"
   state_dir: "var/mem0"
-  embedding_model: "bge_m3_embed"
+  embedding_model: "text-embedding-v3"
   embedding_dims: 1024
 
 # 高频抽取用 model API（M2/M3，OpenAI 兼容端点，可配置）
+# 阿里云百炼 DashScope OpenAI 兼容端点；mem0 的 LLM 与 embedder 共用本段。
 model:
-  base_url: "https://api.kimi.com/coding/v1"
-  api_key: "sk-kimi-SVPUeGtTe3E2Klfx9IoSRU7g2G5GCYfq9O4zldIZLtYmudxmsy8gXwTqWmJ1QcQF"
-  model: "kimi-for-coding"
-  is_reasoning_model: true
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  api_key: "sk-170fbd90ff3f4d4491657722fd6de026"
+  model: "qwen-plus"
+  is_reasoning_model: false
   timeout_sec: 60
 
 # M3 Todo 提取。enabled=true 时任一必填依赖为空都会启动失败，不静默跳过。
@@ -97,11 +98,12 @@ decide:
   codex_network: true
   codex_reasoning_effort: "low"
 
-# M4 决策用 codex CLI（总纲 §11.2，全部可配置）
+# 底层 agent CLI（本项目可切换：codex 或 traex，二者 CLI 契约一致，改 bin/model 即可切换）。
+# extract(M3)/decide(M4)/execute(M5)/chat 四处都用这里的 bin。当前切到 traex + DeepSeek-V4-Pro。
 codex:
-  bin: "codex"
-  model: "gpt-5.5"
-  timeout_seconds: 120
+  bin: "traex"
+  model: "gpt-5.4"
+  timeout_seconds: 300   # M3 抽取/M4 决策会多轮自跑 lark-cli/bytedcli 查飞书信息，放宽超时
 
 # M5 agent 驱动执行：codex 用 workspace-write 真实改代码，改完自动 commit 到独立分支不 push。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron（只跑本地动作）。
@@ -118,7 +120,7 @@ execute:
 # 复用 codex.bin；本地可信环境固定 danger-full-access + 联网，可直接读写 Jarvis MySQL、跑 CLI。
 chat:
   enabled: true
-  model: "gpt-5.5"                     # 对话模型（可与 codex.model 不同）
+  model: "gpt-5.4"                     # 对话模型（可与 codex.model 不同）
   timeout_seconds: 600                 # 单轮对话超时（可能自跑工具，放宽）
   sandbox: "danger-full-access"        # 对话场景最大权限
   reasoning_effort: "medium"           # 对话质量优先，覆盖用户全局 xhigh

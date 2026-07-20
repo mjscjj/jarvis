@@ -20,12 +20,12 @@ const (
 	codexDecisionSchema = `{
   "type":"object",
   "additionalProperties":false,
-  "required":["confidence_factors","risk_factors","confidence_basis","uncertainty_factors","recommended_review","proposed_plan","plan_is_clear"],
+  "required":["confidence_factors","risk_factors","confidence_basis","clarifications","recommended_review","proposed_plan","plan_is_clear"],
   "properties":{
     "confidence_factors":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/factor"}},
     "risk_factors":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/factor"}},
     "confidence_basis":{"type":"string","minLength":1},
-    "uncertainty_factors":{"type":"array","items":{"type":"string"}},
+    "clarifications":{"type":"array","items":{"$ref":"#/$defs/clarification"}},
     "recommended_review":{"type":"boolean"},
     "proposed_plan":{"anyOf":[{"$ref":"#/$defs/plan"},{"type":"null"}]},
     "plan_is_clear":{"type":"boolean"}
@@ -35,6 +35,11 @@ const (
       "type":"object","additionalProperties":false,
       "required":["name","score","basis"],
       "properties":{"name":{"type":"string","minLength":1},"score":{"type":"number","minimum":0,"maximum":1},"basis":{"type":"string","minLength":1}}
+    },
+    "clarification":{
+      "type":"object","additionalProperties":false,
+      "required":["question","hint"],
+      "properties":{"question":{"type":"string","minLength":1},"hint":{"type":"string"}}
     },
     "parameter":{
       "type":"object","additionalProperties":false,
@@ -72,13 +77,24 @@ type CodexInput struct {
 }
 
 type CodexDecision struct {
-	ConfidenceFactors  []DecisionFactor `json:"confidence_factors"`
-	RiskFactors        []DecisionFactor `json:"risk_factors"`
-	ConfidenceBasis    string           `json:"confidence_basis"`
-	UncertaintyFactors []string         `json:"uncertainty_factors"`
-	RecommendedReview  bool             `json:"recommended_review"`
-	ProposedPlan       *PlanDraft       `json:"proposed_plan"`
-	PlanIsClear        bool             `json:"plan_is_clear"`
+	ConfidenceFactors []DecisionFactor `json:"confidence_factors"`
+	RiskFactors       []DecisionFactor `json:"risk_factors"`
+	ConfidenceBasis   string           `json:"confidence_basis"`
+	// Clarifications are the points Codex needs the human to clarify or supply:
+	// missing info when the plan is not clear (need_info), or uncertainties it
+	// wants a human to decide on (need_review). Meaning is defined in the prompt,
+	// not the struct — keep it loose on purpose.
+	Clarifications    []Clarification `json:"clarifications"`
+	RecommendedReview bool            `json:"recommended_review"`
+	ProposedPlan      *PlanDraft      `json:"proposed_plan"`
+	PlanIsClear       bool            `json:"plan_is_clear"`
+}
+
+// Clarification is one thing Codex asks the human to clarify or provide. Both
+// fields are free text; the prompt defines what to put there.
+type Clarification struct {
+	Question string `json:"question"`       // 要澄清/需要补充的点
+	Hint     string `json:"hint,omitempty"` // 可选：给填写者的提示或示例
 }
 
 type DecisionFactor struct {
@@ -300,10 +316,15 @@ func decodeCodexDecision(raw []byte) (*CodexDecision, error) {
 	if strings.TrimSpace(decision.ConfidenceBasis) == "" {
 		return nil, fmt.Errorf("codex decision confidence_basis is blank")
 	}
-	for position, factor := range decision.UncertaintyFactors {
-		if strings.TrimSpace(factor) == "" {
-			return nil, fmt.Errorf("codex decision uncertainty_factors[%d] is blank", position)
+	for position, clarification := range decision.Clarifications {
+		if strings.TrimSpace(clarification.Question) == "" {
+			return nil, fmt.Errorf("codex decision clarifications[%d] question is blank", position)
 		}
+	}
+	// A Todo that is not clear enough to act (need_info) must tell the human what
+	// to clarify — otherwise "需要补充信息" is useless. Fail-fast on an empty list.
+	if !decision.PlanIsClear && len(decision.Clarifications) == 0 {
+		return nil, fmt.Errorf("codex decision plan_is_clear=false requires at least one clarification")
 	}
 	if decision.PlanIsClear && decision.ProposedPlan == nil {
 		return nil, fmt.Errorf("codex decision plan_is_clear requires proposed_plan")

@@ -145,6 +145,11 @@ type SemanticResolution struct {
 type PersistStats struct {
 	Created int
 	Updated int
+	// Skipped counts candidates dropped because they are info-insufficient AND
+	// their identity slot (dedup key) is empty, so no stable fingerprint exists.
+	// Skipping one such candidate must not abort the whole batch (M3 是尽力抽取，
+	// 单条线索缺关键身份就丢弃，不连累同批其它线索）。
+	Skipped int
 }
 
 type pipelineStore interface {

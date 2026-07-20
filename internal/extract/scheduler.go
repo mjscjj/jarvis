@@ -30,8 +30,8 @@ func StartScheduler(ctx context.Context, worker *Worker, spec string, logger *lo
 			return
 		}
 		logger.Printf(
-			"job=extract status=ok chats_loaded=%d chats_processed=%d units=%d candidates=%d created=%d updated=%d",
-			stats.ChatsLoaded, stats.ChatsProcessed, stats.Units, stats.Candidates, stats.Created, stats.Updated,
+			"job=extract status=ok chats_loaded=%d chats_processed=%d units=%d candidates=%d created=%d updated=%d skipped=%d",
+			stats.ChatsLoaded, stats.ChatsProcessed, stats.Units, stats.Candidates, stats.Created, stats.Updated, stats.Skipped,
 		)
 	}); err != nil {
 		return nil, fmt.Errorf("register extract job schedule=%q: %w", spec, err)

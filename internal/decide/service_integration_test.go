@@ -334,7 +334,8 @@ func createConfirmationFixture(t *testing.T, tx *gorm.DB, status string, suffix 
 	}
 	todo := domain.Todo{
 		Title: "Confirm synthetic follow-up", Description: "Synthetic integration fixture", ActionType: "reply",
-		Slots: datatypes.JSON([]byte(fmt.Sprintf(`{"chat_id":%q}`, group.ChatID))), CommitmentStrength: "explicit",
+		Target: fmt.Sprintf("reply in %s", group.ChatID), Context: "synthetic reply context",
+		OpenQuestions: datatypes.JSON([]byte(`[]`)), CommitmentStrength: "explicit",
 		SourceMessageIDs: datatypes.JSON([]byte(fmt.Sprintf(`[%q]`, messageID))), SourceQuote: message.Content,
 		GroupID: &group.ID, ProjectID: &project.ID, AssignerOpenID: &assignerID, Status: status, Route: &route,
 		ContextSnapshot:  datatypes.JSON(snapshotRaw),

@@ -44,7 +44,9 @@ type TodoView struct {
 	Title              string           `json:"title"`
 	Description        string           `json:"description"`
 	ActionType         string           `json:"action_type"`
-	Slots              json.RawMessage  `json:"slots"`
+	Target             string           `json:"target"`
+	Context            string           `json:"context"`
+	OpenQuestions      json.RawMessage  `json:"open_questions"`
 	CommitmentStrength string           `json:"commitment_strength"`
 	SourceMessageIDs   json.RawMessage  `json:"source_message_ids"`
 	SourceQuote        string           `json:"source_quote"`
@@ -55,7 +57,6 @@ type TodoView struct {
 	Confidence         *float64         `json:"confidence"`
 	Risk               *float64         `json:"risk"`
 	Route              *string          `json:"route"`
-	MissingInfo        json.RawMessage  `json:"missing_info"`
 	Revision           int32            `json:"revision"`
 	Version            int32            `json:"version"`
 	FirstSeenAt        time.Time        `json:"first_seen_at"`
@@ -164,7 +165,7 @@ func ValidateTodoFilter(filter TodoListFilter) error {
 		}
 	}
 	if filter.ActionType != "" {
-		if _, ok := requiredSlots[filter.ActionType]; !ok {
+		if !IsKnownActionType(filter.ActionType) {
 			return fmt.Errorf("%w: unsupported action_type %q", ErrInvalidTodoFilter, filter.ActionType)
 		}
 	}
@@ -174,12 +175,13 @@ func ValidateTodoFilter(filter TodoListFilter) error {
 func todoView(todo *domain.Todo) TodoView {
 	view := TodoView{
 		ID: todo.ID, Title: todo.Title, Description: todo.Description,
-		ActionType: todo.ActionType, Slots: rawJSON(todo.Slots),
+		ActionType: todo.ActionType, Target: todo.Target, Context: todo.Context,
+		OpenQuestions:      rawJSON(todo.OpenQuestions),
 		CommitmentStrength: todo.CommitmentStrength,
 		SourceMessageIDs:   rawJSON(todo.SourceMessageIDs), SourceQuote: todo.SourceQuote,
 		AssignerOpenID: todo.AssignerOpenID, IsLeaderAssigned: todo.IsLeaderAssigned,
 		DueAt: todo.DueAt, Status: todo.Status, Confidence: todo.Confidence,
-		Risk: todo.Risk, Route: todo.Route, MissingInfo: rawJSON(todo.MissingInfo),
+		Risk: todo.Risk, Route: todo.Route,
 		Revision: todo.Revision, Version: todo.Version, FirstSeenAt: todo.FirstSeenAt,
 		LastEvidenceAt: todo.LastEvidenceAt, CreatedAt: todo.CreatedAt, UpdatedAt: todo.UpdatedAt,
 		Resolution: rawJSON(todo.Resolution), ContextSnapshot: rawJSON(todo.ContextSnapshot),

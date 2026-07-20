@@ -46,7 +46,7 @@ func TestClientCompleteStructuredSetsHeadersAndStrictSchema(t *testing.T) {
 	})
 	if _, err := client.SameAction(context.Background(), providerCandidate(), extract.SemanticTodo{
 		ID: 7, ActionType: "code_change", Title: "修改鉴权", Description: "修改鉴权逻辑",
-		Slots: map[string]any{"repo_ref": "jarvis", "change_summary": "修改鉴权"}, Status: "extracted",
+		Target: "jarvis 鉴权逻辑", Status: "extracted",
 	}); err != nil {
 		t.Fatalf("SameAction() error = %v", err)
 	}
@@ -99,7 +99,7 @@ func TestClientSameActionUsesStrictBooleanSchema(t *testing.T) {
 	})
 	same, err := client.SameAction(context.Background(), providerCandidate(), extract.SemanticTodo{
 		ID: 7, ActionType: "code_change", Title: "修改鉴权", Description: "修改鉴权逻辑",
-		Slots: map[string]any{"repo_ref": "jarvis", "change_summary": "修改鉴权"}, Status: "extracted",
+		Target: "jarvis 鉴权逻辑", Status: "extracted",
 	})
 	if err != nil {
 		t.Fatalf("SameAction() error = %v", err)
@@ -127,9 +127,9 @@ func TestClientSameActionRejectsNonBooleanResult(t *testing.T) {
 
 func providerCandidate() extract.Candidate {
 	return extract.Candidate{
-		ActionType: "code_change", Title: "修改鉴权", Description: "修改鉴权逻辑",
+		ActionType: "code_change", Title: "修改鉴权", Target: "jarvis 鉴权逻辑", Description: "修改鉴权逻辑",
+		Context: "repo jarvis", OpenQuestions: []string{},
 		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"}, SourceQuote: "修改鉴权",
-		Slots: map[string]any{"repo_ref": "jarvis", "change_summary": "修改鉴权"}, InfoSufficient: true,
 	}
 }
 

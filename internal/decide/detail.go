@@ -21,6 +21,9 @@ type ConfirmationDetail struct {
 	Events         []ConfirmationEvent   `json:"events"`
 	Audits         []DecisionAuditView   `json:"audits"`
 	ProposedPlan   *PlanDraft            `json:"proposed_plan"`
+	// Clarifications are what M4 asks the human to clarify/supply (from the latest
+	// evaluated event). The need_info UI shows these so the user knows what to add.
+	Clarifications []Clarification `json:"clarifications"`
 }
 
 type ConfirmationMessage struct {
@@ -113,7 +116,7 @@ func (s *ConfirmationDetailStore) GetConfirmation(ctx context.Context, todoID ui
 	if err != nil {
 		return nil, err
 	}
-	events, proposedPlan, err := s.loadEvents(ctx, todoID)
+	events, proposedPlan, clarifications, err := s.loadEvents(ctx, todoID)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +127,7 @@ func (s *ConfirmationDetailStore) GetConfirmation(ctx context.Context, todoID ui
 	return &ConfirmationDetail{
 		Todo: todo, SourceMessages: messages, Assigner: assigner,
 		Events: events, Audits: audits, ProposedPlan: proposedPlan,
+		Clarifications: clarifications,
 	}, nil
 }
 
@@ -180,13 +184,14 @@ func (s *ConfirmationDetailStore) loadAssigner(ctx context.Context, openID *stri
 	return result, nil
 }
 
-func (s *ConfirmationDetailStore) loadEvents(ctx context.Context, todoID uint64) ([]ConfirmationEvent, *PlanDraft, error) {
+func (s *ConfirmationDetailStore) loadEvents(ctx context.Context, todoID uint64) ([]ConfirmationEvent, *PlanDraft, []Clarification, error) {
 	var rows []domain.TodoEvent
 	if err := s.db.WithContext(ctx).Where("todo_id = ?", todoID).Order("id ASC").Find(&rows).Error; err != nil {
-		return nil, nil, fmt.Errorf("load confirmation events todo_id=%d: %w", todoID, err)
+		return nil, nil, nil, fmt.Errorf("load confirmation events todo_id=%d: %w", todoID, err)
 	}
 	result := make([]ConfirmationEvent, len(rows))
 	var proposedPlan *PlanDraft
+	var clarifications []Clarification
 	for index, row := range rows {
 		result[index] = ConfirmationEvent{
 			ID: row.ID, FromStatus: copyString(row.FromStatus), ToStatus: row.ToStatus,
@@ -194,20 +199,26 @@ func (s *ConfirmationDetailStore) loadEvents(ctx context.Context, todoID uint64)
 		}
 		if len(row.Detail) != 0 {
 			var detail struct {
-				ProposedPlan *PlanDraft `json:"proposed_plan"`
+				ProposedPlan   *PlanDraft      `json:"proposed_plan"`
+				Clarifications []Clarification `json:"clarifications"`
 			}
 			if err := json.Unmarshal(row.Detail, &detail); err != nil {
-				return nil, nil, fmt.Errorf("decode confirmation event detail event_id=%d: %w", row.ID, err)
+				return nil, nil, nil, fmt.Errorf("decode confirmation event detail event_id=%d: %w", row.ID, err)
 			}
 			if detail.ProposedPlan != nil {
 				if err := validatePlanDraft(detail.ProposedPlan); err != nil {
-					return nil, nil, fmt.Errorf("invalid proposed plan event_id=%d: %w", row.ID, err)
+					return nil, nil, nil, fmt.Errorf("invalid proposed plan event_id=%d: %w", row.ID, err)
 				}
 				proposedPlan = detail.ProposedPlan
 			}
+			// Latest evaluated event wins (events are ASC), so the freshest
+			// clarifications reflect the current need_info/need_review state.
+			if len(detail.Clarifications) != 0 {
+				clarifications = detail.Clarifications
+			}
 		}
 	}
-	return result, proposedPlan, nil
+	return result, proposedPlan, clarifications, nil
 }
 
 func (s *ConfirmationDetailStore) loadAudits(ctx context.Context, todoID uint64) ([]DecisionAuditView, error) {
