@@ -127,6 +127,9 @@ type CaptureConfig struct {
 	Timezone         string `yaml:"timezone"`
 	DiscoverSchedule string `yaml:"discover_schedule"`
 	ScanSchedule     string `yaml:"scan_schedule"`
+	// AutoRelatedP2PTopN：discover 时按 active_time 自动纳入监听的内部真人私聊
+	// 上限。只开最活跃的前 N 个，僵尸老私聊与服务号私聊不开。
+	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
 }
 
 // DecideConfig controls the M4 MVP gate. The only enabled mode for now is
@@ -354,6 +357,9 @@ func (c *Config) validate() error {
 	}
 	if c.Capture.DiscoverSchedule == "" || c.Capture.ScanSchedule == "" {
 		return fmt.Errorf("capture 的 discover/scan schedule 均不能为空")
+	}
+	if c.Capture.AutoRelatedP2PTopN < 0 {
+		return fmt.Errorf("capture.auto_related_p2p_top_n 不能为负数")
 	}
 	if c.Decide.Enabled {
 		if c.Decide.Mode != "manual_mvp" && c.Decide.Mode != "codex" {

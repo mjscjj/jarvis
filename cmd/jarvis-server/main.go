@@ -128,8 +128,8 @@ func main() {
 			hlog.Fatalf("route Todos to manual confirmation failed: %v", err)
 		}
 		hlog.Infof(
-			"decision completed: loaded=%d evaluated=%d need_decision=%d need_info=%d",
-			stats.Loaded, stats.Evaluated, stats.NeedDecision, stats.NeedInfo,
+			"decision completed: loaded=%d evaluated=%d auto=%d need_decision=%d need_info=%d dropped=%d",
+			stats.Loaded, stats.Evaluated, stats.Auto, stats.NeedDecision, stats.NeedInfo, stats.Dropped,
 		)
 		return
 	}

@@ -43,6 +43,7 @@ func TestCaptureMySQL(t *testing.T) {
 	}
 	service, err := NewService(db, &captureFixture{}, Options{
 		PageSize: 50, ScanWorkers: 2, HotAge: 6 * time.Hour, WarmAge: 7 * 24 * time.Hour, Location: location,
+		AutoRelatedP2PTopN: 30,
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -60,8 +61,9 @@ func TestCaptureMySQL(t *testing.T) {
 	if checkpoint.HighWaterCreateTime != discoveredAt.UnixMilli() || !checkpoint.BackfillDone {
 		t.Fatalf("checkpoint = %#v", checkpoint)
 	}
-	// 内部私聊发现即自动监听；外部私聊与话题群不自动开。
+	// 内部真人私聊发现即自动监听；服务号私聊、外部私聊与话题群不自动开。
 	assertRelated(t, db, "oc_p2p_internal", true)
+	assertRelated(t, db, "oc_p2p_bot", false)
 	assertRelated(t, db, "oc_p2p_external", false)
 	assertRelated(t, db, "oc_fixture", false)
 	// 外部私聊不能被手动加入名单。
@@ -149,10 +151,12 @@ func (f *captureFixture) Run(_ context.Context, out any, args ...string) error {
 		response.OK = true
 		response.Data.Chats = []CLIChat{
 			{ChatID: "oc_fixture", ChatMode: "topic", Name: "fixture"},
-			// 内部私聊：发现时应自动纳入监听。
-			{ChatID: "oc_p2p_internal", ChatMode: "p2p", Name: "内部同事"},
+			// 内部真人私聊：在 TopN 预算内应被自动纳入监听。
+			{ChatID: "oc_p2p_internal", ChatMode: "p2p", Name: "内部同事", P2PTargetType: "user"},
+			// 内部服务号私聊：target_type=bot，即便 external=false 也不自动开。
+			{ChatID: "oc_p2p_bot", ChatMode: "p2p", Name: "审批助手", P2PTargetType: "bot"},
 			// 外部私聊：不监听，related_group 必须为 0。
-			{ChatID: "oc_p2p_external", ChatMode: "p2p", Name: "外部联系人", External: true},
+			{ChatID: "oc_p2p_external", ChatMode: "p2p", Name: "外部联系人", External: true, P2PTargetType: "user"},
 		}
 		return nil
 	case strings.Contains(joined, "+chat-messages-list"):

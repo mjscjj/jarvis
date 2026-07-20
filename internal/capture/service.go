@@ -29,6 +29,9 @@ type Options struct {
 	HotAge      time.Duration
 	WarmAge     time.Duration
 	Location    *time.Location
+	// AutoRelatedP2PTopN 是 discover 自动纳入监听的内部真人私聊上限（按 active_time
+	// 取最活跃的前 N 个）。0 表示不自动开任何私聊（全靠手动名单）。
+	AutoRelatedP2PTopN int
 }
 
 // Service owns conversation discovery and polling state transitions.
@@ -57,6 +60,9 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 	}
 	if opts.Location == nil {
 		return nil, fmt.Errorf("capture location is nil")
+	}
+	if opts.AutoRelatedP2PTopN < 0 {
+		return nil, fmt.Errorf("capture auto-related p2p top-n must be non-negative")
 	}
 	return &Service{db: db, lark: lark, opts: opts, now: time.Now}, nil
 }
@@ -136,7 +142,7 @@ func (s *Service) OpenInternalP2P() (int64, error) {
 
 	var chatIDs []string
 	if err := s.db.Model(&domain.Group{}).
-		Where("chat_mode = ? AND external = ? AND related_group = ?", "p2p", false, false).
+		Where("chat_mode = ? AND external = ? AND related_group = ? AND p2p_target_type = ?", "p2p", false, false, "user").
 		Pluck("chat_id", &chatIDs).Error; err != nil {
 		return 0, fmt.Errorf("list internal p2p chats to open: %w", err)
 	}
@@ -191,9 +197,14 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 		}
 	}()
 
-	// autoOpened 跨页累计"本轮已自动纳入监听的内部真人私聊"数量。chat-list 以
-	// active_time 降序返回，所以最先遇到的就是最活跃的；累计到 TopN 后不再自动开。
-	autoOpened := 0
+	// openedP2P 表示"当前已纳入监听的内部真人私聊总数"。以库里现存 related 的
+	// 内部 p2p 数为起点跨页累计，保证无论 discover 跑多少轮，被自动开启的内部
+	// 真人私聊总量都不超过 TopN（不会每轮重新叠加 TopN 个）。chat-list 以
+	// active_time 降序返回，最先遇到的最活跃，开满 TopN 后不再自动开。
+	openedP2P, err := s.countRelatedInternalP2P()
+	if err != nil {
+		return err
+	}
 	pageToken := ""
 	for {
 		var response ChatListResponse
@@ -207,7 +218,7 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 		if err = s.lark.Run(ctx, &response, args...); err != nil {
 			return fmt.Errorf("list chats page=%d: %w", record.PageCount+1, err)
 		}
-		if err = s.persistDiscoveredChats(response.Data.Chats, &autoOpened); err != nil {
+		if err = s.persistDiscoveredChats(response.Data.Chats, &openedP2P); err != nil {
 			return fmt.Errorf("persist discovered chats page=%d: %w", record.PageCount+1, err)
 		}
 		record.FetchedCount += int32(len(response.Data.Chats))
@@ -226,7 +237,36 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 	return s.finishScanOK(record, nil)
 }
 
-func (s *Service) persistDiscoveredChats(chats []CLIChat) error {
+// isAutoRelatedP2P 判定一条私聊是否是"自动纳入监听"的候选：内部(external=false)
+// 真人(p2p_target_type=user)私聊。服务号/机器人私聊(target_type=bot)即便 external
+// 为 false 也排除——跟它们聊不出 todo，只会白占 TopN 名额。
+func isAutoRelatedP2P(chat CLIChat) bool {
+	return chat.ChatMode == "p2p" && !chat.External && chat.P2PTargetType == "user"
+}
+
+// countRelatedInternalP2P returns how many internal human p2p chats are already
+// monitored. It seeds the TopN budget so re-discovery never re-adds another N.
+func (s *Service) countRelatedInternalP2P() (int, error) {
+	var count int64
+	if err := s.db.Model(&domain.Group{}).
+		Where("chat_mode = ? AND external = ? AND related_group = ? AND p2p_target_type = ?", "p2p", false, true, "user").
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count related internal p2p: %w", err)
+	}
+	return int(count), nil
+}
+
+// persistDiscoveredChats upserts one page of chat metadata. It only ever *opens*
+// monitoring for the most-active internal human p2p chats — up to a global TopN
+// budget tracked by openedP2P (current total across pages) — and never *closes*
+// any chat. Groups keep their manual allowlist, and less-active p2p keep whatever
+// related_group they already had, so a user's manual opt-in survives re-discovery
+// (update columns never include related_group; a fresh row's default carries the
+// auto-open decision). Fail-fast: unknown chat_mode aborts the page.
+func (s *Service) persistDiscoveredChats(chats []CLIChat, openedP2P *int) error {
+	if openedP2P == nil {
+		return fmt.Errorf("persistDiscoveredChats openedP2P counter is nil")
+	}
 	nowMS := s.now().UnixMilli()
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		for _, chat := range chats {
@@ -236,28 +276,24 @@ func (s *Service) persistDiscoveredChats(chats []CLIChat) error {
 			if chat.ChatMode != "group" && chat.ChatMode != "p2p" && chat.ChatMode != "topic" {
 				return fmt.Errorf("chat %s has unsupported chat_mode %q", chat.ChatID, chat.ChatMode)
 			}
-			// 内部 p2p 私聊自动纳入监听：只要是内部同事的私聊（external=false），
-			// 发现时即置 related_group=1，新私聊也自动纳入，无需手动加名单。
-			// 外部私聊与普通群/话题群不在此自动开启（群仍走手动名单）。
-			autoRelated := chat.ChatMode == "p2p" && !chat.External
+			// 是否本条应自动开启：内部真人私聊，且监听总量尚未达到 TopN。
+			openNow := isAutoRelatedP2P(chat) && *openedP2P < s.opts.AutoRelatedP2PTopN
 			group := domain.Group{
-				ChatID:       chat.ChatID,
-				ChatMode:     chat.ChatMode,
-				Name:         nullableString(chat.Name),
-				Description:  nullableString(chat.Description),
-				OwnerOpenID:  nullableString(chat.OwnerID),
-				External:     chat.External,
-				TenantKey:    nullableString(chat.TenantKey),
-				RelatedGroup: autoRelated,
-				Tier:         "cold",
+				ChatID:        chat.ChatID,
+				ChatMode:      chat.ChatMode,
+				Name:          nullableString(chat.Name),
+				Description:   nullableString(chat.Description),
+				OwnerOpenID:   nullableString(chat.OwnerID),
+				External:      chat.External,
+				TenantKey:     nullableString(chat.TenantKey),
+				P2PTargetType: nullableString(chat.P2PTargetType),
+				RelatedGroup:  false,
+				Tier:          "cold",
 			}
-			// 更新列：p2p 私聊连带 related_group 一起 upsert（存量私聊也会被开启）；
-			// 非 p2p 不动 related_group，避免覆盖用户对普通群的手动名单设置。
+			// 元数据 upsert 不含 related_group：discover 从不在这里改监听开关，
+			// 保住群的手动名单、以及用户手动开启的私聊。开启动作在下面单独做。
 			updateColumns := []string{
-				"chat_mode", "name", "description", "owner_open_id", "external", "tenant_key", "updated_at",
-			}
-			if chat.ChatMode == "p2p" {
-				updateColumns = append(updateColumns, "related_group")
+				"chat_mode", "name", "description", "owner_open_id", "external", "tenant_key", "p2p_target_type", "updated_at",
 			}
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "chat_id"}},
@@ -274,6 +310,28 @@ func (s *Service) persistDiscoveredChats(chats []CLIChat) error {
 			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&checkpoint).Error; err != nil {
 				return fmt.Errorf("initialize checkpoint chat_id=%s: %w", chat.ChatID, err)
+			}
+
+			// 自动开启：仅对 TopN 内的内部真人私聊、且当前尚未监听(related_group=0)的行，
+			// 显式置 1（新旧行都生效）。RowsAffected 即“真正新开”数，据此累计 TopN 预算，
+			// 从 0→1 才计数，已监听或手动开启的不会被重复计入或覆盖。
+			if openNow {
+				opened := tx.Model(&domain.Group{}).
+					Where("chat_id = ? AND related_group = ?", chat.ChatID, false).
+					Update("related_group", true)
+				if opened.Error != nil {
+					return fmt.Errorf("open internal p2p chat_id=%s: %w", chat.ChatID, opened.Error)
+				}
+				if opened.RowsAffected == 1 {
+					// 抬水位到 now：存量私聊的 checkpoint 停在久远的发现时刻，
+					// 若不抬，下轮 scan 会 asc 回捞历史。只抬落后于 now 的。
+					if err := tx.Model(&domain.Checkpoint{}).
+						Where("chat_id = ? AND high_water_create_time < ?", chat.ChatID, nowMS).
+						Update("high_water_create_time", nowMS).Error; err != nil {
+						return fmt.Errorf("advance scan window chat_id=%s: %w", chat.ChatID, err)
+					}
+					*openedP2P++
+				}
 			}
 		}
 		return nil

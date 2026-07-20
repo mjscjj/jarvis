@@ -87,6 +87,9 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 5m"
+  # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
+  # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
+  auto_related_p2p_top_n: 30
 
 # M4 MVP：所有提取出的 Todo 都进入人工确认，不做评分、不调用 codex。
 decide:

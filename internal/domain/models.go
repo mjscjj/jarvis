@@ -44,6 +44,7 @@ type Group struct {
 	OwnerOpenID     *string   `gorm:"column:owner_open_id;type:varchar(64)"`
 	External        bool      `gorm:"column:external;type:tinyint(1);not null;default:0"`
 	TenantKey       *string   `gorm:"column:tenant_key;type:varchar(64)"`
+	P2PTargetType   *string   `gorm:"column:p2p_target_type;type:varchar(16)"` // 私聊对端类型：user=真人，bot=服务号；群/话题为空
 	ProjectID       *uint64   `gorm:"column:project_id;type:bigint unsigned;index:idx_group_project"`
 	RelatedGroup    bool      `gorm:"column:related_group;type:tinyint(1);not null;default:0;index:idx_group_related_tier,priority:1"`
 	Tier            string    `gorm:"column:tier;type:varchar(8);not null;default:cold;index:idx_group_tier_active,priority:1;index:idx_group_related_tier,priority:2"`
