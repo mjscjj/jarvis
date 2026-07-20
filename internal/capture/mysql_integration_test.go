@@ -102,9 +102,13 @@ func TestCaptureMySQL(t *testing.T) {
 	}
 
 	// 存量私聊回填：先把内部私聊关掉模拟历史数据，再用 OpenInternalP2P 一次性开启。
+	// 其 checkpoint 水位停在发现时刻(discoveredAt)，模拟"很久以后才纳入监听"，
+	// 把 now 前移，验证打开监听后水位被抬到 now、只增量不回捞历史。
 	if err := db.Model(&domain.Group{}).Where("chat_id = ?", "oc_p2p_internal").Update("related_group", false).Error; err != nil {
 		t.Fatalf("reset internal p2p related flag: %v", err)
 	}
+	openedAt := discoveredAt.Add(30 * 24 * time.Hour)
+	service.now = func() time.Time { return openedAt }
 	opened, err := service.OpenInternalP2P()
 	if err != nil {
 		t.Fatalf("OpenInternalP2P() error = %v", err)
@@ -114,6 +118,14 @@ func TestCaptureMySQL(t *testing.T) {
 	}
 	assertRelated(t, db, "oc_p2p_internal", true)
 	assertRelated(t, db, "oc_p2p_external", false)
+	// 水位被抬到纳入监听那一刻，后续 scan 只从此增量、不回捞历史。
+	var p2pCheckpoint domain.Checkpoint
+	if err := db.First(&p2pCheckpoint, "chat_id = ?", "oc_p2p_internal").Error; err != nil {
+		t.Fatalf("load internal p2p checkpoint: %v", err)
+	}
+	if p2pCheckpoint.HighWaterCreateTime != openedAt.UnixMilli() {
+		t.Fatalf("internal p2p high water = %d, want %d (opened moment, no backfill)", p2pCheckpoint.HighWaterCreateTime, openedAt.UnixMilli())
+	}
 }
 
 func assertRelated(t *testing.T, db *gorm.DB, chatID string, want bool) {

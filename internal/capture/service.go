@@ -125,9 +125,33 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 // new p2p; this covers the backlog captured before that behavior existed.
 // It never touches groups/topics and skips external p2p. Returns how many
 // chats were newly opened.
+//
+// 存量 p2p 的 checkpoint 水位停在"当年被发现那一刻"，若不处理，下一轮
+// scan_related 会从那个久远时间点开始 asc 回捞历史。这里以"纳入监听那一刻"
+// 为起始水位：先把这批 p2p 的 high_water_create_time 抬到 now（仅抬落后于
+// now 的），再置 related_group=1。顺序如此是为了规避半成功——即使抬水位后
+// 置位失败，这批仍未 related，重跑时能再次命中并抬水位，不会漏抬。
 func (s *Service) OpenInternalP2P() (int64, error) {
-	result := s.db.Model(&domain.Group{}).
+	nowMS := s.now().UnixMilli()
+
+	var chatIDs []string
+	if err := s.db.Model(&domain.Group{}).
 		Where("chat_mode = ? AND external = ? AND related_group = ?", "p2p", false, false).
+		Pluck("chat_id", &chatIDs).Error; err != nil {
+		return 0, fmt.Errorf("list internal p2p chats to open: %w", err)
+	}
+	if len(chatIDs) == 0 {
+		return 0, nil
+	}
+
+	if err := s.db.Model(&domain.Checkpoint{}).
+		Where("chat_id IN ? AND high_water_create_time < ?", chatIDs, nowMS).
+		Update("high_water_create_time", nowMS).Error; err != nil {
+		return 0, fmt.Errorf("advance internal p2p scan window: %w", err)
+	}
+
+	result := s.db.Model(&domain.Group{}).
+		Where("chat_id IN ?", chatIDs).
 		Update("related_group", true)
 	if result.Error != nil {
 		return 0, fmt.Errorf("open internal p2p chats: %w", result.Error)
