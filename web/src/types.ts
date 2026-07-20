@@ -509,9 +509,11 @@ export interface ModuleRun {
   module: string
   time: string
   status: string
+  current_ok: boolean
   job: string
   fields: Record<string, string>
   runs: number
+  failures: number
   last_error: string
   raw: string
 }

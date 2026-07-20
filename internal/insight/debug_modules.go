@@ -11,10 +11,12 @@ type ModuleRun struct {
 	Module    string            `json:"module"`     // capture / memory / extract / decide / execute
 	Time      string            `json:"time"`       // 该模块最近一条日志的时间戳
 	Status    string            `json:"status"`     // ok / error / unknown（无 status= 字段时）
+	CurrentOK bool              `json:"current_ok"` // 最近一次运行是否 ok（判「当前是否有问题」的唯一依据）
 	Job       string            `json:"job"`        // job= 值，如 scan_hot / memorize / extract
 	Fields    map[string]string `json:"fields"`     // 该行解析出的全部 k=v
 	Runs      int               `json:"runs"`       // 日志窗口里该模块出现的行数
-	LastError string            `json:"last_error"` // 窗口里最近一条 status!=ok 的原始行
+	Failures  int               `json:"failures"`   // 窗口里该模块 status!=ok 的行数
+	LastError string            `json:"last_error"` // 窗口里最近一条 status!=ok 的原始行（历史参考，非「当前有问题」）
 	Raw       string            `json:"raw"`        // 最近一条原始日志行
 }
 
@@ -57,10 +59,12 @@ func (s *DebugService) Modules(maxLines int) ([]ModuleRun, error) {
 		// Lines arrive oldest→newest, so the last assignment wins as "latest".
 		run.Time = line.Time
 		run.Status = status
+		run.CurrentOK = status == "ok"
 		run.Job = fields["job"]
 		run.Fields = fields
 		run.Raw = line.Text
 		if status != "ok" && status != "unknown" {
+			run.Failures++
 			run.LastError = strings.TrimSpace(line.Text)
 		}
 	}

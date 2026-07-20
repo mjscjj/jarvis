@@ -141,6 +141,10 @@ const moduleColumns: TableColumnsType<ModuleRun> = [
   { title: '最近时间', dataIndex: 'time', width: 200, render: (v: string) => <Text className="mono">{v || '—'}</Text> },
   { title: '窗口内次数', dataIndex: 'runs', width: 100 },
   {
+    title: '窗口内失败', dataIndex: 'failures', width: 100,
+    render: (v: number) => (v > 0 ? <Tag color="orange">{v}</Tag> : <Text type="secondary">0</Text>),
+  },
+  {
     title: '关键字段', key: 'fields',
     render: (_, row) => {
       const entries = Object.entries(row.fields).filter(([k]) => k !== 'status' && k !== 'job')
@@ -153,6 +157,9 @@ const moduleColumns: TableColumnsType<ModuleRun> = [
 function ModulesTab() {
   const { data, loading, error, refresh } = useDebugResource<{ items: ModuleRun[] }>((signal) => getDebugModules(signal))
   const rows = data?.items ?? []
+  // 「当前有问题」= 最近一次运行就是失败；历史失败（窗口里有、但最近一次已 ok）只做降级提示，不弹红框。
+  const failingNow = rows.filter((r) => !r.current_ok && r.status !== 'unknown')
+  const healedRecently = rows.filter((r) => r.current_ok && r.failures > 0)
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -161,10 +168,16 @@ function ModulesTab() {
         <Text type="secondary">各 cron 模块最近一次运行（解析自日志尾部；cron 日志在 stderr 文件里）。</Text>
       </Space>
       {error && <Alert type="error" showIcon message="模块运行加载失败" description={error} />}
-      {rows.some((r) => r.last_error) && (
+      {failingNow.length > 0 && (
         <Alert
-          type="warning" showIcon message="窗口内存在失败运行"
-          description={<Space direction="vertical" size={2}>{rows.filter((r) => r.last_error).map((r) => <Text key={r.module} className="mono">{r.last_error}</Text>)}</Space>}
+          type="error" showIcon message="模块最近一次运行失败（需处理）"
+          description={<Space direction="vertical" size={2}>{failingNow.map((r) => <Text key={r.module} className="mono">{r.last_error || r.raw}</Text>)}</Space>}
+        />
+      )}
+      {failingNow.length === 0 && healedRecently.length > 0 && (
+        <Alert
+          type="success" showIcon message="当前全部正常（窗口内曾有失败，最近一次已恢复）"
+          description={<Space direction="vertical" size={2}>{healedRecently.map((r) => <Text key={r.module} type="secondary" className="mono">{moduleLabels[r.module] ?? r.module}：窗口内 {r.failures} 次失败，最近一次已 ok</Text>)}</Space>}
         />
       )}
       <Table<ModuleRun>
