@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"jarvis/internal/domain"
 	"jarvis/internal/larkcli"
 )
 
@@ -76,6 +77,36 @@ func TestFlattenMessages(t *testing.T) {
 	}
 	if got[2].RootID != "root" || got[2].ParentID != "reply-1" || got[2].ThreadID != "thread" {
 		t.Fatalf("nested reply linkage = root:%q parent:%q thread:%q", got[2].RootID, got[2].ParentID, got[2].ThreadID)
+	}
+}
+
+func TestToDomainMessageSystemSender(t *testing.T) {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("LoadLocation() error = %v", err)
+	}
+	svc := &Service{opts: Options{Location: location}}
+	group := &domain.Group{ID: 1, ChatID: "oc_fixture", ChatMode: "group"}
+
+	// 群系统消息（msg_type=system、无 sender，message_id 前缀仍是 om_）应落库为占位
+	// sender，而不是报错。这正是线上 "储节节 invited ... to the group" 那条的形状。
+	sys, err := svc.toDomainMessage(group, CLIMessage{
+		MessageID: "om_x100b6ae8", MessageType: "system", CreateTime: "2026-07-19 10:00",
+		Content: "储节节 invited local dev to the group.", Sender: CLISender{},
+	})
+	if err != nil {
+		t.Fatalf("system message rejected: %v", err)
+	}
+	if sys.SenderOpenID != systemSenderOpenID || sys.SenderType != systemMessageType {
+		t.Fatalf("system sender = open_id:%q type:%q", sys.SenderOpenID, sys.SenderType)
+	}
+
+	// 普通消息若 sender 为空，仍 fail-fast 暴露问题。
+	if _, err := svc.toDomainMessage(group, CLIMessage{
+		MessageID: "om_normal", MessageType: "text", CreateTime: "2026-07-19 10:00",
+		Sender: CLISender{},
+	}); err == nil {
+		t.Fatal("normal message with empty sender should fail-fast")
 	}
 }
 

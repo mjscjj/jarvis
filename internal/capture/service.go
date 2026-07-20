@@ -585,6 +585,14 @@ func (s *Service) persistMessagePage(group *domain.Group, messages []CLIMessage,
 	return inserted, currentHW, lastMessageID, err
 }
 
+// systemSenderOpenID 是飞书群系统消息（无真实发送者）的占位 sender，便于后续区分
+// 与过滤（M3 抽取可按 sender_type=system 忽略）。
+const systemSenderOpenID = "__system__"
+
+// systemMessageType 是飞书群系统消息的 msg_type，如入退群/群设置变更/撤回等通知。
+// 这类消息 sender 全空，用它判定而非 message_id 前缀（系统消息前缀同为 om_）。
+const systemMessageType = "system"
+
 func (s *Service) toDomainMessage(group *domain.Group, item CLIMessage) (*domain.Message, error) {
 	if item.MessageID == "" {
 		return nil, fmt.Errorf("chat_id=%s contains message with empty message_id", group.ChatID)
@@ -605,6 +613,21 @@ func (s *Service) toDomainMessage(group *domain.Group, item CLIMessage) (*domain
 	if item.Sender.OpenBotID != "" {
 		senderID = item.Sender.OpenBotID
 	}
+	senderType := item.Sender.SenderType
+	senderName := item.Sender.Name
+	// 飞书群系统消息（msg_type=system，如"XX invited YY to the group"、入退群/群设置
+	// 变更/撤回等自动通知）本就没有 sender，属正常现象而非 bug。用占位 sender 落库以
+	// 保留历史，避免一条系统消息拖垮整批采集。注意其 message_id 前缀仍是 om_，只能靠
+	// msg_type 判定，不能靠 message_id 前缀。
+	if senderID == "" && item.MessageType == systemMessageType {
+		senderID = systemSenderOpenID
+		if senderType == "" {
+			senderType = systemMessageType
+		}
+		if senderName == "" {
+			senderName = "系统消息"
+		}
+	}
 	if senderID == "" {
 		return nil, fmt.Errorf("message %s sender id is empty", item.MessageID)
 	}
@@ -614,8 +637,8 @@ func (s *Service) toDomainMessage(group *domain.Group, item CLIMessage) (*domain
 		GroupID:       &group.ID,
 		ChatMode:      group.ChatMode,
 		SenderOpenID:  senderID,
-		SenderName:    item.Sender.Name,
-		SenderType:    item.Sender.SenderType,
+		SenderName:    senderName,
+		SenderType:    senderType,
 		MessageType:   item.MessageType,
 		Content:       item.Content,
 		ReplyTo:       nullableString(item.ParentID),

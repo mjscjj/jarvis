@@ -236,6 +236,20 @@ export function getDebugLogs(lines = 300, signal?: AbortSignal): Promise<LogTail
   return request<LogTail>(`/api/debug/logs?lines=${lines}`, { signal })
 }
 
+// --- Debug 手动采集触发 ---
+
+export function captureDiscover(): Promise<{ action: string; ok: boolean }> {
+  return request(`/api/debug/capture/discover`, { method: 'POST' })
+}
+
+export function captureScanRelated(): Promise<{ action: string; ok: boolean }> {
+  return request(`/api/debug/capture/scan-related`, { method: 'POST' })
+}
+
+export function captureScanChat(chatId: string): Promise<{ action: string; chat_id: string; ok: boolean }> {
+  return request(`/api/debug/capture/scan-chat`, { method: 'POST', body: { chat_id: chatId } })
+}
+
 export function listResources(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Resource>> {
   return request<Paged<Resource>>(`/api/resources?page=${page}&page_size=${pageSize}`, { signal })
 }

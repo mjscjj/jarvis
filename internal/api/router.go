@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"jarvis/internal/background"
+	"jarvis/internal/capture"
 	"jarvis/internal/chat"
 	"jarvis/internal/decide"
 	"jarvis/internal/execute"
@@ -34,7 +35,8 @@ type Dependencies struct {
 	DigestSummarizer    *insight.Summarizer // 可选：codex 未启用时为 nil，总结接口返回 503
 	Debug               *insight.DebugService
 	Logs                *insight.LogReader
-	Chat                *chat.Service // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
+	Chat                *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
+	Capture             *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -130,6 +132,12 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/debug/todos", GetDebugTodos(deps.Debug))
 	h.GET("/api/debug/tasks", GetDebugTasks(deps.Debug))
 	h.GET("/api/debug/logs", GetDebugLogs(deps.Logs))
+	// 调试面板手动触发：手动跑一轮 M1 采集，无需等 cron。
+	if deps.Capture != nil {
+		h.POST("/api/debug/capture/discover", DiscoverChatsManually(deps.Capture))
+		h.POST("/api/debug/capture/scan-related", ScanRelatedManually(deps.Capture))
+		h.POST("/api/debug/capture/scan-chat", ScanChatManually(deps.Capture))
+	}
 	// 手动维护的资源：可关联 人/项目/我，供后台管理与 M3 工具按需查询。
 	h.GET("/api/resources", ListResources(deps.Resources))
 	h.POST("/api/resources", CreateResource(deps.Resources))

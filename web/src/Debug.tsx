@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Collapse, Empty, Segmented, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Collapse, Empty, Input, message, Segmented, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import {
+  captureDiscover,
+  captureScanChat,
+  captureScanRelated,
   getDebugLogs,
   getDebugModules,
   getDebugScans,
@@ -299,6 +302,91 @@ function LogsTab() {
   )
 }
 
+// TriggerTab 是手动触发面板：本地手动跑一轮 M1 采集，无需等 cron。均为同步调用，
+// 采集完成才返回，因此按钮全程 loading。
+function TriggerTab() {
+  const [running, setRunning] = useState<string>()
+  const [chatID, setChatID] = useState('')
+  const [lastResult, setLastResult] = useState<string>()
+
+  const run = useCallback(async (key: string, label: string, fn: () => Promise<unknown>) => {
+    setRunning(key)
+    setLastResult(undefined)
+    try {
+      const result = await fn()
+      message.success(`${label} 完成`)
+      setLastResult(`${label} 成功：${JSON.stringify(result)}`)
+    } catch (cause) {
+      const text = errorText(cause)
+      message.error(`${label} 失败：${text}`)
+      setLastResult(`${label} 失败：${text}`)
+    } finally {
+      setRunning(undefined)
+    }
+  }, [])
+
+  const busy = running !== undefined
+
+  return (
+    <Space direction="vertical" size={20} style={{ width: '100%' }}>
+      <Alert
+        type="info"
+        showIcon
+        message="手动触发 M1 采集，无需等 cron"
+        description="全部为同步调用：采集会话消息期间按钮持续 loading，完成后弹出结果。跑完可去「采集流水」「抽取水位」子 tab 看效果。"
+      />
+      <Card size="small" title="全量采集" variant="borderless">
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space wrap>
+            <Button
+              type="primary"
+              loading={running === 'scan-related'}
+              disabled={busy && running !== 'scan-related'}
+              onClick={() => run('scan-related', '采集所有已监听会话', captureScanRelated)}
+            >
+              采集所有已监听会话
+            </Button>
+            <Text type="secondary">对所有 related 会话跑一次增量采集（等价一次性全量 scan）。</Text>
+          </Space>
+          <Space wrap>
+            <Button
+              loading={running === 'discover'}
+              disabled={busy && running !== 'discover'}
+              onClick={() => run('discover', '会话发现', captureDiscover)}
+            >
+              会话发现
+            </Button>
+            <Text type="secondary">重新枚举可见会话并按规则纳入监听（等价 -discover-once），不回补历史。</Text>
+          </Space>
+        </Space>
+      </Card>
+      <Card size="small" title="采集单个会话" variant="borderless">
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
+            <Input
+              placeholder="输入 chat_id（如 oc_xxx）"
+              value={chatID}
+              onChange={(e) => setChatID(e.target.value)}
+              onPressEnter={() => chatID.trim() && run('scan-chat', `采集会话 ${chatID.trim()}`, () => captureScanChat(chatID.trim()))}
+              disabled={busy}
+            />
+            <Button
+              type="primary"
+              loading={running === 'scan-chat'}
+              disabled={(busy && running !== 'scan-chat') || chatID.trim() === ''}
+              onClick={() => run('scan-chat', `采集会话 ${chatID.trim()}`, () => captureScanChat(chatID.trim()))}
+            >
+              采集
+            </Button>
+          </Space.Compact>
+          <Text type="secondary">对指定 chat_id 立即增量采集（等价 -scan-chat）；首次采集从当前时间起，不回补历史。</Text>
+        </Space>
+      </Card>
+      {lastResult && <Alert type="info" showIcon message="最近一次结果" description={<Text className="mono">{lastResult}</Text>} />}
+    </Space>
+  )
+}
+
 export default function Debug() {
   return (
     <>
@@ -306,6 +394,7 @@ export default function Debug() {
       <Card variant="borderless">
       <Tabs
         items={[
+          { key: 'trigger', label: '手动触发', children: <TriggerTab /> },
           { key: 'status', label: '健康与积压', children: <StatusTab /> },
           { key: 'modules', label: '模块运行', children: <ModulesTab /> },
           { key: 'scans', label: '采集流水', children: <ScansTab /> },

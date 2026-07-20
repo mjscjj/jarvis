@@ -84,6 +84,7 @@ func BuildCodexPrompt(input CodexPromptInput) (*CodexPrompt, error) {
 3. background.supplements 是我事后手动补充的可信澄清，作为事实纳入评估；已覆盖的旧问题不必重复问。
 4. clarifications 每项：question（具体、可回答，例「会议候选时间段是？」而非笼统的「信息不足」）；hint（可选提示/示例，没有就空字符串）。
 5. 最终只输出 CLI schema 要求的 JSON，不输出 Markdown 或额外文字。
+6. 严禁自造 schema 之外的字段（如 inferred_plan、action、notes 等）。你推断出的、可执行的计划一律只填进 proposed_plan（其内部字段固定为 summary/steps/parameters/basis），不要另起字段名。多一个字段即视为非法输出。
 
 DECISION_CONTEXT_LENGTH_BYTES=` + fmt.Sprintf("%d", len(encoded)) + `
 BEGIN_DECISION_CONTEXT

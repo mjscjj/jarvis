@@ -527,7 +527,7 @@ func main() {
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		Overview: overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
-		Debug: debugService, Logs: logReader, Chat: chatService,
+		Debug: debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}
