@@ -10,6 +10,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
@@ -94,15 +95,12 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         title: '行动线索',
         dataIndex: 'title',
         key: 'title',
-        width: 360,
+        ellipsis: true,
         render: (_, todo) => (
-          <Space direction="vertical" size={3}>
-            <Space size={8} wrap>
-              {todo.is_leader_assigned && <StatusBadge label="Leader" color={leaderColor} />}
-              <Text strong>{todo.title}</Text>
-            </Space>
-            <Text type="secondary" ellipsis={{ tooltip: todo.description }} className="description-cell">
-              {todo.description}
+          <Space size={6}>
+            {todo.is_leader_assigned && <StatusBadge label="L" color={leaderColor} />}
+            <Text strong ellipsis={{ tooltip: todo.title }}>
+              {todo.title}
             </Text>
           </Space>
         ),
@@ -110,42 +108,59 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
       {
         title: '类型',
         dataIndex: 'action_type',
-        width: 130,
-        render: (value: ActionType) => <Tag>{actionLabels[value]}</Tag>,
+        width: 96,
+        render: (value: ActionType) => (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {actionLabels[value]}
+          </Text>
+        ),
       },
       {
         title: '状态',
         dataIndex: 'status',
-        width: 110,
+        width: 92,
         render: (value: TodoStatus) => <StatusBadge label={statusMeta[value].label} color={statusMeta[value].color} />,
       },
       {
         title: '项目 / 会话',
         key: 'context',
-        width: 220,
+        width: 200,
+        ellipsis: true,
         render: (_, todo) => (
-          <Space direction="vertical" size={2}>
-            <Text>{todo.project?.name || '未关联项目'}</Text>
-            <Text type="secondary">{todo.group?.name || todo.group?.chat_id || '未知会话'}</Text>
-          </Space>
+          <Tooltip title={`${todo.project?.name || '未关联项目'} · ${todo.group?.name || todo.group?.chat_id || '未知会话'}`}>
+            <Space direction="vertical" size={0}>
+              <Text ellipsis style={{ fontSize: 13 }}>
+                {todo.project?.name || '未关联项目'}
+              </Text>
+              <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+                {todo.group?.name || todo.group?.chat_id || '未知会话'}
+              </Text>
+            </Space>
+          </Tooltip>
         ),
       },
       {
-        title: '待补充',
+        title: '待拍板',
         dataIndex: 'open_questions',
-        width: 180,
+        width: 72,
+        align: 'center',
         render: (values: string[] | null) =>
-          values?.length ? <Tag color="orange">{values.length} 个待拍板</Tag> : '—',
+          values?.length ? <Tag color="orange" style={{ margin: 0 }}>{values.length}</Tag> : <Text type="secondary">—</Text>,
       },
       {
-        title: '截止 / 最近证据',
-        key: 'time',
-        width: 170,
-        render: (_, todo) => (
-          <Space direction="vertical" size={2}>
-            <Text>{formatDate(todo.due_at)}</Text>
-            <Text type="secondary">证据 {formatDate(todo.last_evidence_at)}</Text>
-          </Space>
+        title: '截止',
+        dataIndex: 'due_at',
+        width: 108,
+        render: (value: string | null) => <Text style={{ fontSize: 12 }}>{formatDate(value)}</Text>,
+      },
+      {
+        title: '最近证据',
+        dataIndex: 'last_evidence_at',
+        width: 108,
+        render: (value: string | null) => (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {formatDate(value)}
+          </Text>
         ),
       },
     ],
@@ -205,10 +220,11 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
       <Card className="table-card" variant="borderless">
         <Table<Todo>
           rowKey="id"
+          size="small"
           columns={columns}
           dataSource={items}
           loading={loading}
-          scroll={{ x: 1170 }}
+          scroll={{ x: 860 }}
           onRow={(todo) => ({ onClick: () => openTodo(todo), className: 'clickable-row' })}
           pagination={{
             current: query.page,
