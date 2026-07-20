@@ -28,8 +28,8 @@ type Config struct {
 
 // ServerConfig Hertz 监听配置。
 type ServerConfig struct {
-	Addr    string   `yaml:"addr"`      // 形如 127.0.0.1:18800
-	WebRoot string   `yaml:"web_root"`  // React production build directory
+	Addr     string   `yaml:"addr"`      // 形如 127.0.0.1:18800
+	WebRoot  string   `yaml:"web_root"`  // React production build directory
 	LogFiles []string `yaml:"log_files"` // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
 }
 
@@ -83,9 +83,9 @@ type ExtractConfig struct {
 	// engine. In the local trusted environment the sandbox is danger-full-access
 	// with network enabled so codex can query Feishu-side info; reasoning_effort
 	// is forced low to override the user's global xhigh and cap per-call latency.
-	CodexSandbox         string `yaml:"codex_sandbox"`
-	CodexNetwork         bool   `yaml:"codex_network"`
-	CodexReasoningEffort string `yaml:"codex_reasoning_effort"`
+	CodexSandbox          string  `yaml:"codex_sandbox"`
+	CodexNetwork          bool    `yaml:"codex_network"`
+	CodexReasoningEffort  string  `yaml:"codex_reasoning_effort"`
 	BatchMessages         int     `yaml:"batch_messages"`
 	ContextMessages       int     `yaml:"context_messages"`
 	ContextWindowMinutes  int     `yaml:"context_window_minutes"`
