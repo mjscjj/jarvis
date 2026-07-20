@@ -90,9 +90,9 @@ type Todo struct {
 	Title              string         `gorm:"column:title;type:varchar(512);not null"`
 	Description        string         `gorm:"column:description;type:text;not null"`
 	ActionType         string         `gorm:"column:action_type;type:varchar(32);not null"`
-	Target             string         `gorm:"column:target;type:varchar(512);not null"`  // 这件事作用的对象/主题，去重身份
-	Context            string         `gorm:"column:context;type:text;not null"`         // M3 主动补全的背景（归属/链接/相关历史）
-	OpenQuestions      datatypes.JSON `gorm:"column:open_questions;type:json;not null"`  // 只有必须由 principal 拍板/提供的点
+	Target             string         `gorm:"column:target;type:varchar(512);not null"` // 这件事作用的对象/主题，去重身份
+	Context            string         `gorm:"column:context;type:text;not null"`        // M3 主动补全的背景（归属/链接/相关历史）
+	OpenQuestions      datatypes.JSON `gorm:"column:open_questions;type:json;not null"` // 只有必须由 principal 拍板/提供的点
 	CommitmentStrength string         `gorm:"column:commitment_strength;type:varchar(16);not null"`
 	SourceMessageIDs   datatypes.JSON `gorm:"column:source_message_ids;type:json;not null"`
 	SourceQuote        string         `gorm:"column:source_quote;type:text;not null"`
@@ -106,8 +106,9 @@ type Todo struct {
 	Risk               *float64       `gorm:"column:risk;type:decimal(4,3)"`
 	Route              *string        `gorm:"column:route;type:varchar(16)"`
 	DedupFingerprint   string         `gorm:"column:dedup_fingerprint;type:char(64);not null;uniqueIndex:uk_todo_fingerprint"`
-	ContextSnapshot    datatypes.JSON `gorm:"column:context_snapshot;type:json"` // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），M4/M5 全链路复用
-	Resolution         datatypes.JSON `gorm:"column:resolution;type:json"`       // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
+	ContextSnapshot    datatypes.JSON `gorm:"column:context_snapshot;type:json"`  // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），M4/M5 全链路复用
+	ExtractionResult   datatypes.JSON `gorm:"column:extraction_result;type:json"` // M3 抽取吐出的完整结论原文（整个 Candidate），M4 整块复用，不逐字段拆
+	Resolution         datatypes.JSON `gorm:"column:resolution;type:json"`        // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
 	ExtractionModel    string         `gorm:"column:extraction_model;type:varchar(64);not null"`
 	PromptVersion      string         `gorm:"column:prompt_version;type:varchar(32);not null"`
 	Revision           int32          `gorm:"column:revision;not null;default:1"`
@@ -203,17 +204,17 @@ func (ScanRecord) TableName() string { return "scan_record" }
 // separate from Person because its semantics (self-profile, preferences, direct
 // leader) differ from a chat participant.
 type PrincipalProfile struct {
-	ID             uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	OpenID         string    `gorm:"column:open_id;type:varchar(64);not null;uniqueIndex:uk_principal_open_id"`
-	Name           string    `gorm:"column:name;type:varchar(128);not null"`
-	Department     *string   `gorm:"column:department;type:varchar(255)"`
-	Title          *string   `gorm:"column:title;type:varchar(128)"`
-	Background     *string   `gorm:"column:background;type:text"`     // 我是谁、负责什么方向
-	Preferences    *string   `gorm:"column:preferences;type:text"`    // 喜好、工作/沟通偏好
-	LeaderOpenID   *string   `gorm:"column:leader_open_id;type:varchar(64)"`
-	LeaderName     *string   `gorm:"column:leader_name;type:varchar(128)"`
-	CreatedAt      time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt      time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+	ID           uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	OpenID       string    `gorm:"column:open_id;type:varchar(64);not null;uniqueIndex:uk_principal_open_id"`
+	Name         string    `gorm:"column:name;type:varchar(128);not null"`
+	Department   *string   `gorm:"column:department;type:varchar(255)"`
+	Title        *string   `gorm:"column:title;type:varchar(128)"`
+	Background   *string   `gorm:"column:background;type:text"`  // 我是谁、负责什么方向
+	Preferences  *string   `gorm:"column:preferences;type:text"` // 喜好、工作/沟通偏好
+	LeaderOpenID *string   `gorm:"column:leader_open_id;type:varchar(64)"`
+	LeaderName   *string   `gorm:"column:leader_name;type:varchar(128)"`
+	CreatedAt    time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
 func (PrincipalProfile) TableName() string { return "principal_profile" }
@@ -228,13 +229,13 @@ type ManagedResource struct {
 	Title         string    `gorm:"column:title;type:varchar(512);not null"`
 	ResourceType  string    `gorm:"column:resource_type;type:enum('doc','link','repo','note','other');not null;default:link;index:idx_managed_resource_type"`
 	URL           *string   `gorm:"column:url;type:varchar(1024)"`
-	Description    *string   `gorm:"column:description;type:text"`
-	PersonID       *uint64   `gorm:"column:person_id;type:bigint unsigned;index:idx_managed_resource_person"`
-	ProjectID      *uint64   `gorm:"column:project_id;type:bigint unsigned;index:idx_managed_resource_project"`
-	LinkPrincipal  bool      `gorm:"column:link_principal;type:tinyint(1);not null;default:0;index:idx_managed_resource_principal"`
-	IsActive       bool      `gorm:"column:is_active;type:tinyint(1);not null;default:1;index:idx_managed_resource_active"`
-	CreatedAt      time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt      time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+	Description   *string   `gorm:"column:description;type:text"`
+	PersonID      *uint64   `gorm:"column:person_id;type:bigint unsigned;index:idx_managed_resource_person"`
+	ProjectID     *uint64   `gorm:"column:project_id;type:bigint unsigned;index:idx_managed_resource_project"`
+	LinkPrincipal bool      `gorm:"column:link_principal;type:tinyint(1);not null;default:0;index:idx_managed_resource_principal"`
+	IsActive      bool      `gorm:"column:is_active;type:tinyint(1);not null;default:1;index:idx_managed_resource_active"`
+	CreatedAt     time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 
 	Person  *Person  `gorm:"foreignKey:PersonID;constraint:OnDelete:SET NULL"`
 	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:SET NULL"`

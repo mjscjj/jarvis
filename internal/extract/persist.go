@@ -32,6 +32,9 @@ type preparedCandidate struct {
 	ProjectID       *uint64
 	Resolution      datatypes.JSON
 	ContextSnapshot datatypes.JSON
+	// ExtractionResult 是抽取吐出的完整结论原文（整个 Candidate 的 JSON），随 Todo
+	// 落库，供 M4 决策整块复用，避免 M4 逐字段拷贝抽取结构造成耦合。
+	ExtractionResult datatypes.JSON
 }
 
 func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, results []UnitExtraction, modelName string) (PersistStats, error) {
@@ -175,6 +178,12 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 	}
 	snapshotJSON := datatypes.JSON(snapshotRaw)
 
+	extractionRaw, err := json.Marshal(candidate)
+	if err != nil {
+		return nil, fmt.Errorf("encode extraction result: %w", err)
+	}
+	extractionJSON := datatypes.JSON(extractionRaw)
+
 	byID := make(map[string]MessageContext, len(unit.Messages))
 	for _, message := range unit.Messages {
 		byID[message.MessageID] = message
@@ -220,6 +229,7 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 		Candidate: candidate, Fingerprint: fingerprint, AssignerOpenID: assigner,
 		LeaderAssigned: len(leaders) > 0, DueAt: dueAt, FirstEvidenceAt: first, LastEvidenceAt: last,
 		ProjectID: projectID, Resolution: resolutionJSON, ContextSnapshot: snapshotJSON,
+		ExtractionResult: extractionJSON,
 	}, nil
 }
 
@@ -281,7 +291,8 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 		DueAt: prepared.DueAt, Status: "extracted",
 		DedupFingerprint: prepared.Fingerprint, ExtractionModel: modelName, PromptVersion: PromptVersion,
 		Resolution: prepared.Resolution, ContextSnapshot: prepared.ContextSnapshot,
-		Revision: 1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
+		ExtractionResult: prepared.ExtractionResult,
+		Revision:         1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
 	}
 	if err := tx.Create(&todo).Error; err != nil {
 		return false, nil, fmt.Errorf("create todo fingerprint=%s: %w", prepared.Fingerprint, err)
@@ -328,10 +339,11 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		"prompt_version":     PromptVersion, "revision": existing.Revision + 1,
 		"last_evidence_at": maxTime(existing.LastEvidenceAt, prepared.LastEvidenceAt),
 		"version":          gorm.Expr("version + 1"),
-		// Refresh the frozen snapshot/resolution on new evidence so M4/M5 always
-		// replay the latest background for this clue.
-		"context_snapshot": prepared.ContextSnapshot,
-		"resolution":       prepared.Resolution,
+		// Refresh the frozen snapshot/resolution/extraction on new evidence so
+		// M4/M5 always replay the latest background and extraction for this clue.
+		"context_snapshot":  prepared.ContextSnapshot,
+		"extraction_result": prepared.ExtractionResult,
+		"resolution":        prepared.Resolution,
 	}
 	if prepared.AssignerOpenID != nil {
 		updates["assigner_open_id"] = *prepared.AssignerOpenID

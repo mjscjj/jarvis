@@ -15,3 +15,13 @@ func rawJSON(value []byte) json.RawMessage {
 	}
 	return json.RawMessage(append([]byte(nil), value...))
 }
+
+// copyString returns a defensive copy of a string pointer, used when projecting
+// stored rows into API views so callers cannot mutate the source.
+func copyString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}

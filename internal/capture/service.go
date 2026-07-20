@@ -191,6 +191,9 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 		}
 	}()
 
+	// autoOpened 跨页累计"本轮已自动纳入监听的内部真人私聊"数量。chat-list 以
+	// active_time 降序返回，所以最先遇到的就是最活跃的；累计到 TopN 后不再自动开。
+	autoOpened := 0
 	pageToken := ""
 	for {
 		var response ChatListResponse
@@ -204,7 +207,7 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 		if err = s.lark.Run(ctx, &response, args...); err != nil {
 			return fmt.Errorf("list chats page=%d: %w", record.PageCount+1, err)
 		}
-		if err = s.persistDiscoveredChats(response.Data.Chats); err != nil {
+		if err = s.persistDiscoveredChats(response.Data.Chats, &autoOpened); err != nil {
 			return fmt.Errorf("persist discovered chats page=%d: %w", record.PageCount+1, err)
 		}
 		record.FetchedCount += int32(len(response.Data.Chats))

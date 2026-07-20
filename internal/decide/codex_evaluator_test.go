@@ -117,7 +117,8 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 		ID: 42, Version: 3, Status: "extracted",
 		Title: "Fix deadlock", Description: "leader asked to fix the scan deadlock", ActionType: "code_change",
 		Target: "采集死锁问题", Context: "repo jarvis", OpenQuestions: datatypes.JSON([]byte(`[]`)),
-		ContextSnapshot: testContextSnapshot(t),
+		ExtractionResult: datatypes.JSON([]byte(`{"action_type":"code_change","title":"Fix deadlock","target":"采集死锁问题","description":"leader asked to fix the scan deadlock","source_quote":"修一下采集死锁"}`)),
+		ContextSnapshot:  testContextSnapshot(t),
 	}
 	runner := &fakeCodexDecisionRunner{result: &CodexResult{
 		SessionID: "sess-1",

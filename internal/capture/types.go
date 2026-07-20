@@ -21,6 +21,9 @@ type CLIChat struct {
 	OwnerID     string `json:"owner_id"`
 	External    bool   `json:"external"`
 	TenantKey   string `json:"tenant_key"`
+	// P2PTargetType 区分私聊对端类型：user=真人，bot=服务号/机器人。
+	// 只有真人私聊才是自动纳入监听的候选；服务号私聊即便 external=false 也排除。
+	P2PTargetType string `json:"p2p_target_type"`
 }
 
 // MessageListResponse mirrors lark-cli im +chat-messages-list.
