@@ -182,48 +182,85 @@ func (e *AgentExecutor) executeInBackground(taskID uint64) {
 	}()
 }
 
-// Approve lands a proposal that a human accepted. It claims the awaiting_approval
-// Task (-> executing), rebuilds a fresh codex invocation with the approved
-// proposal embedded in the prompt (the apply stage — codex exec --ephemeral
-// cannot resume the propose session, so this is a new run that faithfully lands
-// the already-decided artifact), and finishes the Task done/failed on the real
-// external write's verdict.
+// KickApprove lands an accepted proposal in the background. It synchronously
+// validates and claims the awaiting_approval Task (-> executing, under optimistic
+// lock) so version/state conflicts surface immediately to the caller, then runs
+// the apply stage (a fresh codex invocation) in a goroutine and returns at once.
+// The apply codex call can be slow; the HTTP handler must not block on it. Poll
+// Task status or refresh the list for completion.
+func (e *AgentExecutor) KickApprove(ctx context.Context, taskID uint64, expectedVersion int32) (*ExecuteResult, error) {
+	task, policy, proposal, execVersion, err := e.claimForApproval(ctx, taskID, expectedVersion)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		if _, err := e.applyApproved(context.Background(), task, policy, proposal, execVersion); err != nil {
+			log.Printf("background approve task_id=%d: %v", task.ID, err)
+		}
+	}()
+	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
+}
+
+// Approve lands a proposal that a human accepted, synchronously. It claims the
+// awaiting_approval Task (-> executing), rebuilds a fresh codex invocation with
+// the approved proposal embedded in the prompt (the apply stage — codex exec
+// --ephemeral cannot resume the propose session, so this is a new run that
+// faithfully lands the already-decided artifact), and finishes the Task
+// done/failed on the real external write's verdict. Prefer KickApprove from HTTP
+// handlers; this stays for callers that need to block on the outcome (tests).
 func (e *AgentExecutor) Approve(ctx context.Context, taskID uint64, expectedVersion int32) (*ExecuteResult, error) {
+	task, policy, proposal, execVersion, err := e.claimForApproval(ctx, taskID, expectedVersion)
+	if err != nil {
+		return nil, err
+	}
+	return e.applyApproved(ctx, task, policy, proposal, execVersion)
+}
+
+// claimForApproval validates an awaiting_approval Task, decodes its stored
+// proposal, and atomically claims it (awaiting_approval -> executing) under
+// optimistic lock. It is the synchronous prefix shared by Approve and
+// KickApprove so version/state conflicts fail fast before any codex work starts.
+func (e *AgentExecutor) claimForApproval(ctx context.Context, taskID uint64, expectedVersion int32) (*domain.Task, actionPolicy, *codexProposal, int32, error) {
 	if taskID == 0 {
-		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
+		return nil, actionPolicy{}, nil, 0, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
 	}
 	var task domain.Task
 	if err := e.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+			return nil, actionPolicy{}, nil, 0, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
 		}
-		return nil, fmt.Errorf("load Task id=%d: %w", taskID, err)
+		return nil, actionPolicy{}, nil, 0, fmt.Errorf("load Task id=%d: %w", taskID, err)
 	}
 	if task.Version != expectedVersion {
-		return nil, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+		return nil, actionPolicy{}, nil, 0, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
 	}
 	if task.Status != "awaiting_approval" {
-		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot be approved", ErrInvalidTransition, task.ID, task.Status)
+		return nil, actionPolicy{}, nil, 0, fmt.Errorf("%w: task_id=%d status=%s cannot be approved", ErrInvalidTransition, task.ID, task.Status)
 	}
 	policy, ok := lookupPolicy(task.ActionType)
 	if !ok {
-		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
+		return nil, actionPolicy{}, nil, 0, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
 	}
 	proposal, err := decodeStoredProposal(task.ExecutionResult)
 	if err != nil {
-		return nil, fmt.Errorf("read stored proposal task_id=%d: %w", task.ID, err)
+		return nil, actionPolicy{}, nil, 0, fmt.Errorf("read stored proposal task_id=%d: %w", task.ID, err)
 	}
-
 	execVersion, err := e.store.MarkExecutingFromApproval(ctx, task.ID, task.Version)
 	if err != nil {
-		return nil, err
+		return nil, actionPolicy{}, nil, 0, err
 	}
+	return &task, policy, proposal, execVersion, nil
+}
 
-	run, execErr := e.runApply(ctx, &task, policy, proposal)
+// applyApproved runs the apply stage for an already-claimed Task and finishes it
+// done/failed on the real external write's verdict. It is the shared tail of
+// Approve (synchronous) and KickApprove (background goroutine).
+func (e *AgentExecutor) applyApproved(ctx context.Context, task *domain.Task, policy actionPolicy, proposal *codexProposal, execVersion int32) (*ExecuteResult, error) {
+	run, execErr := e.runApply(ctx, task, policy, proposal)
 	if writeErr := e.persistRun(ctx, run); writeErr != nil {
 		return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
 	}
-	return e.finishRun(ctx, &task, execVersion, run, execErr)
+	return e.finishRun(ctx, task, execVersion, run, execErr)
 }
 
 // Reject declines a proposed external write. It moves the awaiting_approval Task

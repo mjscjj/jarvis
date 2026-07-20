@@ -128,9 +128,10 @@ type approveTaskRequest struct {
 	ExpectedVersion *int32 `json:"expected_version"`
 }
 
-// ApproveTask lands a proposal a human accepted: the awaiting_approval Task runs
-// the apply stage (a fresh codex invocation carrying the approved proposal) and
-// finishes done/failed on the real external write's verdict.
+// ApproveTask lands a proposal a human accepted: the awaiting_approval Task is
+// claimed synchronously (-> executing) and the apply stage (a fresh codex
+// invocation carrying the approved proposal) runs in the background. The handler
+// returns as soon as the claim succeeds; poll Task status for the final verdict.
 func ApproveTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
@@ -147,7 +148,7 @@ func ApproveTask(executor *execute.AgentExecutor) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40027, fmt.Errorf("expected_version is required"))
 			return
 		}
-		result, err := executor.Approve(ctx, taskID, *request.ExpectedVersion)
+		result, err := executor.KickApprove(ctx, taskID, *request.ExpectedVersion)
 		if err != nil {
 			writeExecutionError(c, err)
 			return
