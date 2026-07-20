@@ -68,9 +68,36 @@ type FinishInput struct {
 	Result          json.RawMessage
 }
 
+// RunView 是一次 ExecutionRun 审计记录的只读视图，供任务详情展示执行历史。
+// Prompt 全文可能很大，这里不透出，只给结构化产物与状态/耗时。
+type RunView struct {
+	ID              uint64          `json:"id"`
+	TaskID          uint64          `json:"task_id"`
+	ActionType      string          `json:"action_type"`
+	Sandbox         string          `json:"sandbox"`
+	Status          string          `json:"status"`
+	CodexSessionID  *string         `json:"codex_session_id"`
+	Summary         *string         `json:"summary"`
+	Output          json.RawMessage `json:"output"`
+	ErrorDetail     *string         `json:"error_detail"`
+	RepoPath        *string         `json:"repo_path"`
+	Branch          *string         `json:"branch"`
+	Commit          *string         `json:"commit"`
+	DiffPath        *string         `json:"diff_path"`
+	MergeRequestURL *string         `json:"merge_request_url"`
+	StartedAt       time.Time       `json:"started_at"`
+	FinishedAt      *time.Time      `json:"finished_at"`
+	DurationMs      *int64          `json:"duration_ms"`
+}
+
+type RunList struct {
+	Items []RunView `json:"items"`
+}
+
 type TaskService interface {
 	ListTasks(context.Context, TaskFilter) (*TaskList, error)
 	Finish(context.Context, FinishInput) (*TaskView, error)
+	ListRuns(context.Context, uint64) (*RunList, error)
 }
 
 type Store struct {
@@ -243,6 +270,27 @@ func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task,
 	return &reloaded, nil
 }
 
+// ListRuns returns a Task's execution audit history, newest first. It is the
+// read path over execution_run (previously write-only) that powers the task
+// detail drawer. An unknown task_id simply yields an empty list.
+func (s *Store) ListRuns(ctx context.Context, taskID uint64) (*RunList, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
+	}
+	var rows []domain.ExecutionRun
+	if err := s.db.WithContext(ctx).
+		Where("task_id = ?", taskID).
+		Order("started_at DESC, id DESC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list execution runs task_id=%d: %w", taskID, err)
+	}
+	items := make([]RunView, len(rows))
+	for i := range rows {
+		items[i] = runView(&rows[i])
+	}
+	return &RunList{Items: items}, nil
+}
+
 // LoadPending returns pending Tasks for the cron auto-executor, oldest first.
 func (s *Store) LoadPending(ctx context.Context, limit int) ([]domain.Task, error) {
 	if limit <= 0 {
@@ -323,6 +371,17 @@ func taskView(task *domain.Task) TaskView {
 		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
 		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult), AutonomyMode: task.AutonomyMode,
 		ProjectID: task.ProjectID, Version: task.Version, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
+	}
+}
+
+func runView(run *domain.ExecutionRun) RunView {
+	return RunView{
+		ID: run.ID, TaskID: run.TaskID, ActionType: run.ActionType, Sandbox: run.Sandbox,
+		Status: run.Status, CodexSessionID: run.CodexSessionID, Summary: run.Summary,
+		Output: rawJSON(run.Output), ErrorDetail: run.ErrorDetail,
+		RepoPath: run.RepoPath, Branch: run.Branch, Commit: run.Commit,
+		DiffPath: run.DiffPath, MergeRequestURL: run.MergeRequestURL,
+		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, DurationMs: run.DurationMs,
 	}
 }
 

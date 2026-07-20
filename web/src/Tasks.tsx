@@ -1,13 +1,65 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Descriptions, Drawer, Flex, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Modal, Select, Space, Spin, Table, Tag, Timeline, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { executeTask, finishTask, listTasks, rerunTask } from './api'
-import type { Task, TaskStatus } from './types'
+import { executeTask, finishTask, listTaskRuns, listTasks, rerunTask } from './api'
+import type { ExecutionRun, Task, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
 
-const { Paragraph, Text } = Typography
+const { Link, Paragraph, Text } = Typography
+
+// runStatusColor 把 ExecutionRun 状态映射到 Timeline 圆点/标签颜色。
+function runStatusColor(status: string): string {
+  if (status === 'succeeded') return 'green'
+  if (status === 'failed') return 'red'
+  if (status === 'running') return 'blue'
+  return 'gray'
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms == null) return '—'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+// RunCard 展示单次执行的结构化产物：状态/耗时/时间 + code_change 的 MR/分支/commit/
+// diff，以及 codex 自述 summary 与错误详情。可点链接优先（MR）。
+function RunCard({ run }: { run: ExecutionRun }) {
+  return (
+    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+      <Space size={12} wrap>
+        <StatusBadge label={run.status} color={statusMeta[run.status === 'succeeded' ? 'done' : run.status === 'failed' ? 'failed' : 'executing']?.color ?? '#888'} />
+        <Text type="secondary">#{run.id}</Text>
+        <Tag>{run.action_type}</Tag>
+        <Text type="secondary">沙箱 {run.sandbox}</Text>
+        <Text type="secondary">耗时 {formatDuration(run.duration_ms)}</Text>
+      </Space>
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        {new Date(run.started_at).toLocaleString()}
+        {run.finished_at ? ` → ${new Date(run.finished_at).toLocaleTimeString()}` : '（未结束）'}
+        {run.codex_session_id ? ` · session ${run.codex_session_id.slice(0, 12)}…` : ''}
+      </Text>
+      {(run.merge_request_url || run.branch || run.commit || run.diff_path) && (
+        <Descriptions size="small" column={1} styles={{ label: { width: 90 } }}>
+          {run.merge_request_url && (
+            <Descriptions.Item label="Merge Request">
+              <Link href={run.merge_request_url} target="_blank">{run.merge_request_url}</Link>
+            </Descriptions.Item>
+          )}
+          {run.branch && <Descriptions.Item label="分支"><Text className="mono">{run.branch}</Text></Descriptions.Item>}
+          {run.commit && <Descriptions.Item label="Commit"><Text className="mono">{run.commit.slice(0, 12)}</Text></Descriptions.Item>}
+          {run.diff_path && <Descriptions.Item label="Diff"><Text className="mono" copyable>{run.diff_path}</Text></Descriptions.Item>}
+        </Descriptions>
+      )}
+      {run.summary && <Paragraph style={{ marginBottom: 0 }}>{run.summary}</Paragraph>}
+      {run.error_detail && <Alert type="error" showIcon message="执行错误" description={<Text className="mono">{run.error_detail}</Text>} />}
+      {run.output && Object.keys(run.output).length > 0 && (
+        <details><summary style={{ cursor: 'pointer', color: '#888' }}>codex 原始输出</summary><pre className="inline-json">{JSON.stringify(run.output, null, 2)}</pre></details>
+      )}
+    </Space>
+  )
+}
 
 // External actions reach outside this machine and cannot be auto-run; the
 // backend still requires the click, but we warn before triggering.
@@ -29,6 +81,9 @@ export default function Tasks() {
   const [summary, setSummary] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [executingId, setExecutingId] = useState<number>()
+  const [runs, setRuns] = useState<ExecutionRun[]>([])
+  const [runsLoading, setRunsLoading] = useState(false)
+  const [runsError, setRunsError] = useState<string>()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -41,6 +96,21 @@ export default function Tasks() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [statuses, refreshKey])
+
+  // 打开详情抽屉时拉该 Task 的执行历史。detail 关闭（undefined）时清空。
+  useEffect(() => {
+    if (!detail) { setRuns([]); setRunsError(undefined); return }
+    const controller = new AbortController()
+    setRunsLoading(true)
+    setRunsError(undefined)
+    listTaskRuns(detail.id, controller.signal)
+      .then((result) => setRuns(result.items))
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRunsError(errorText(cause))
+      })
+      .finally(() => { if (!controller.signal.aborted) setRunsLoading(false) })
+    return () => controller.abort()
+  }, [detail, refreshKey])
 
   const openFinish = (task: Task, status: 'done' | 'failed') => {
     setSelected(task)
@@ -146,8 +216,22 @@ export default function Tasks() {
           <Descriptions.Item label="自主模式">{detail.autonomy_mode || '—'}</Descriptions.Item>
           <Descriptions.Item label="项目">{detail.project_id != null ? `#${detail.project_id}` : '未关联'}</Descriptions.Item>
         </Descriptions>
+        <section>
+          <Text type="secondary">执行历史（共 {runs.length} 次）</Text>
+          {runsError && <Alert type="error" showIcon style={{ marginTop: 8 }} message="执行历史加载失败" description={runsError} />}
+          {runsLoading ? (
+            <div style={{ padding: '16px 0', textAlign: 'center' }}><Spin size="small" /></div>
+          ) : runs.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无执行记录" style={{ marginTop: 8 }} />
+          ) : (
+            <Timeline
+              style={{ marginTop: 12 }}
+              items={runs.map((run) => ({ color: runStatusColor(run.status), children: <RunCard run={run} /> }))}
+            />
+          )}
+        </section>
         <section><Text type="secondary">执行方案</Text><pre>{JSON.stringify(detail.plan, null, 2)}</pre></section>
-        <section><Text type="secondary">执行结果</Text>{detail.execution_result ? <pre>{JSON.stringify(detail.execution_result, null, 2)}</pre> : <Paragraph type="secondary" style={{ marginTop: 8 }}>尚未执行</Paragraph>}</section>
+        <section><Text type="secondary">结果汇总（Task 最新快照）</Text>{detail.execution_result ? <pre>{JSON.stringify(detail.execution_result, null, 2)}</pre> : <Paragraph type="secondary" style={{ marginTop: 8 }}>尚未执行</Paragraph>}</section>
         <section><Text type="secondary">背景</Text><pre>{JSON.stringify(detail.background, null, 2)}</pre></section>
       </Space>}
     </Drawer>

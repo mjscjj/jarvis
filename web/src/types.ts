@@ -214,6 +214,31 @@ export interface TaskList {
   page_size: number
 }
 
+// ExecutionRun 是一次 M5 执行的审计记录，一个 Task 可有多条（重试）。
+export interface ExecutionRun {
+  id: number
+  task_id: number
+  action_type: ActionType
+  sandbox: string
+  status: string
+  codex_session_id: string | null
+  summary: string | null
+  output: Record<string, unknown> | null
+  error_detail: string | null
+  repo_path: string | null
+  branch: string | null
+  commit: string | null
+  diff_path: string | null
+  merge_request_url: string | null
+  started_at: string
+  finished_at: string | null
+  duration_ms: number | null
+}
+
+export interface ExecutionRunList {
+  items: ExecutionRun[]
+}
+
 export type ProjectRole = 'owner' | 'participant'
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'archived' | 'done'
 export type PersonRole = 'leader' | 'key' | 'colleague' | 'other'

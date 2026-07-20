@@ -53,6 +53,28 @@ func ListTasks(service execute.TaskService) app.HandlerFunc {
 	}
 }
 
+// ListTaskRuns returns a Task's execution audit history (ExecutionRun list),
+// newest first, powering the task detail drawer's execution timeline.
+func ListTaskRuns(service execute.TaskService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40025, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		result, err := service.ListRuns(ctx, taskID)
+		if err != nil {
+			if errors.Is(err, execute.ErrInvalidInput) {
+				writeAPIError(c, consts.StatusBadRequest, 40025, err)
+			} else {
+				writeAPIError(c, consts.StatusInternalServerError, 50025, err)
+			}
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func FinishTask(service execute.TaskService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)

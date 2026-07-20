@@ -27,6 +27,14 @@ func (f *fakeTaskService) ListTasks(_ context.Context, filter execute.TaskFilter
 	return &execute.TaskList{Items: []execute.TaskView{{ID: 8, Status: "pending"}}, Total: 1, Page: filter.Page, PageSize: filter.PageSize}, nil
 }
 
+func (f *fakeTaskService) ListRuns(_ context.Context, taskID uint64) (*execute.RunList, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	branch := "jarvis/task-8"
+	return &execute.RunList{Items: []execute.RunView{{ID: 3, TaskID: taskID, ActionType: "code_change", Status: "succeeded", Branch: &branch}}}, nil
+}
+
 func (f *fakeTaskService) Finish(_ context.Context, input execute.FinishInput) (*execute.TaskView, error) {
 	f.finish = input
 	if f.err != nil {
@@ -42,6 +50,28 @@ func TestListTasksDefaultsToPending(t *testing.T) {
 	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks", nil).Result()
 	if response.StatusCode() != consts.StatusOK || fmt.Sprint(service.filter.Statuses) != "[pending]" {
 		t.Fatalf("status=%d filter=%#v body=%s", response.StatusCode(), service.filter, response.Body())
+	}
+}
+
+func TestListTaskRuns(t *testing.T) {
+	service := &fakeTaskService{}
+	h := server.New()
+	h.GET("/api/tasks/:task_id/runs", ListTaskRuns(service))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks/8/runs", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d, want 200", response.StatusCode())
+	}
+	if !bytes.Contains(response.Body(), []byte(`"action_type":"code_change"`)) {
+		t.Fatalf("body missing run item: %s", response.Body())
+	}
+}
+
+func TestListTaskRunsRejectsBadID(t *testing.T) {
+	h := server.New()
+	h.GET("/api/tasks/:task_id/runs", ListTaskRuns(&fakeTaskService{}))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks/0/runs", nil).Result()
+	if response.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", response.StatusCode())
 	}
 }
 

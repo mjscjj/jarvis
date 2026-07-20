@@ -25,6 +25,7 @@ import type {
   Task,
   TaskList,
   TaskStatus,
+  ExecutionRunList,
   Todo,
   TodoList,
   TodoQuery,
@@ -115,7 +116,10 @@ export interface ExecuteResult {
   branch?: string
   commit?: string
   diff_path?: string
+  merge_request_url?: string
   summary?: string
+  skipped?: boolean
+  skip_reason?: string
 }
 
 // executeTask triggers agent-driven codex execution. The click approves any
@@ -128,6 +132,11 @@ export function executeTask(id: number): Promise<ExecuteResult> {
 // Task to pending and runs it again. The click approves external side effects.
 export function rerunTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/rerun`, { method: 'POST' })
+}
+
+// listTaskRuns 拉某个 Task 的执行审计历史（ExecutionRun 列表），最新在前。
+export function listTaskRuns(id: number, signal?: AbortSignal): Promise<ExecutionRunList> {
+  return request<ExecutionRunList>(`/api/tasks/${id}/runs`, { signal })
 }
 
 // --- M1 background management ---
