@@ -95,18 +95,18 @@ capture:
 decide:
   enabled: true
   mode: "codex"          # codex: 用 codex gpt-5.5 判 auto_execute/need_review/need_info；manual_mvp: 全部走人工确认
-  schedule: "@every 10m"
+  schedule: "@every 1m"
   batch_limit: 50
   codex_sandbox: "danger-full-access"   # M4 决策也可自查补信息（本地可信环境）
   codex_network: true
-  codex_reasoning_effort: "xhigh"
+  codex_reasoning_effort: "medium"
 
 # 底层 agent CLI（本项目可切换：codex 或 traex，二者 CLI 契约一致，改 bin/model 即可切换）。
 # extract(M3)/decide(M4)/execute(M5)/chat 四处都用这里的 bin。当前切到 traex + DeepSeek-V4-Pro。
 codex:
   bin: "traex"
   model: "gpt-5.4"
-  timeout_seconds: 300   # M3 抽取/M4 决策会多轮自跑 lark-cli/bytedcli 查飞书信息，放宽超时
+  timeout_seconds: 600   # M3 抽取/M4 决策会多轮自跑 lark-cli/bytedcli 查飞书信息，放宽超时
 
 # M5 agent 驱动执行：codex 用 workspace-write 真实改代码，改完自动 commit 到独立分支不 push。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron（只跑本地动作）。
