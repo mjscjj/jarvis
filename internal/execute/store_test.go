@@ -1,8 +1,10 @@
 package execute
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestValidateTaskFilter(t *testing.T) {
@@ -63,5 +65,15 @@ func TestCanonicalJSONObject(t *testing.T) {
 func TestNewStoreRejectsNilDB(t *testing.T) {
 	if _, err := NewStore(nil); err == nil {
 		t.Fatal("NewStore(nil) succeeded")
+	}
+}
+
+func TestFailStaleExecutingRejectsInvalidInput(t *testing.T) {
+	s := &Store{}
+	if _, err := s.FailStaleExecuting(context.Background(), 0, time.Now()); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("olderThan=0 error = %v", err)
+	}
+	if _, err := s.FailStaleExecuting(context.Background(), 30*time.Minute, time.Time{}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("zero now error = %v", err)
 	}
 }

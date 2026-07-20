@@ -40,8 +40,8 @@ func StartScheduler(ctx context.Context, executor *AgentExecutor, spec string, b
 			return
 		}
 		logger.Printf(
-			"job=execute status=ok loaded=%d executed=%d awaiting_approval=%d failed=%d",
-			stats.Loaded, stats.Executed, stats.AwaitingApproval, stats.Failed,
+			"job=execute status=ok loaded=%d executed=%d awaiting_approval=%d failed=%d stale_failed=%d",
+			stats.Loaded, stats.Executed, stats.AwaitingApproval, stats.Failed, stats.StaleFailed,
 		)
 	}); err != nil {
 		return nil, fmt.Errorf("register execute job schedule=%q: %w", spec, err)

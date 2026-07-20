@@ -517,6 +517,57 @@ func (s *Store) LoadPending(ctx context.Context, limit int) ([]domain.Task, erro
 	return rows, nil
 }
 
+// FailStaleExecuting marks Tasks stuck in executing longer than olderThan as
+// failed. This recovers zombies left when the process restarts mid-run (Kick*
+// background goroutine dies but status stays executing). It also fails any
+// orphaned execution_run still marked running for those Tasks. Uses updated_at
+// as the "entered executing" clock (MarkExecuting bumps it).
+func (s *Store) FailStaleExecuting(ctx context.Context, olderThan time.Duration, now time.Time) (int, error) {
+	if olderThan <= 0 {
+		return 0, fmt.Errorf("%w: stale executing threshold must be positive", ErrInvalidInput)
+	}
+	if now.IsZero() {
+		return 0, fmt.Errorf("%w: stale executing now is required", ErrInvalidInput)
+	}
+	cutoff := now.UTC().Add(-olderThan)
+	resultJSON, err := json.Marshal(map[string]any{
+		"error": fmt.Sprintf("stale executing: stuck beyond %s (likely process restart killed background run)", olderThan.Round(time.Minute)),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("encode stale execution result: %w", err)
+	}
+
+	var ids []uint64
+	if err := s.db.WithContext(ctx).Model(&domain.Task{}).
+		Where("status = ? AND updated_at < ?", "executing", cutoff).
+		Pluck("id", &ids).Error; err != nil {
+		return 0, fmt.Errorf("list stale executing Tasks: %w", err)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	errDetail := fmt.Sprintf("stale executing: stuck beyond %s", olderThan.Round(time.Minute))
+	finishedAt := now.UTC()
+	if err := s.db.WithContext(ctx).Model(&domain.ExecutionRun{}).
+		Where("task_id IN ? AND status = ?", ids, "running").
+		Updates(map[string]any{
+			"status": "failed", "error_detail": errDetail, "finished_at": finishedAt,
+		}).Error; err != nil {
+		return 0, fmt.Errorf("fail stale execution runs: %w", err)
+	}
+
+	update := s.db.WithContext(ctx).Model(&domain.Task{}).
+		Where("id IN ? AND status = ?", ids, "executing").
+		Updates(map[string]any{
+			"status": "failed", "execution_result": datatypes.JSON(resultJSON), "version": gorm.Expr("version + 1"),
+		})
+	if update.Error != nil {
+		return 0, fmt.Errorf("fail stale executing Tasks: %w", update.Error)
+	}
+	return int(update.RowsAffected), nil
+}
+
 func ValidateTaskFilter(filter TaskFilter) error {
 	if filter.Page <= 0 || filter.PageSize <= 0 || filter.PageSize > 100 {
 		return fmt.Errorf("%w: page must be positive and page_size must be between 1 and 100", ErrInvalidInput)

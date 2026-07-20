@@ -220,7 +220,10 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize codex execution runner failed: %v", err)
 	}
-	agentExecutor, err := execute.NewAgentExecutor(db, taskService, codexRunner, cfg.Execute.RepoRoot, cfg.Execute.RunsDir)
+	agentExecutor, err := execute.NewAgentExecutor(
+		db, taskService, codexRunner, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		time.Duration(cfg.Execute.StaleExecutingMinute)*time.Minute,
+	)
 	if err != nil {
 		hlog.Fatalf("initialize agent executor failed: %v", err)
 	}

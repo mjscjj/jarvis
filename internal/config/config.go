@@ -160,13 +160,14 @@ type CodexConfig struct {
 // always available regardless. RepoRoot is the base directory a Task's
 // repo_ref slot is joined under for code changes.
 type ExecuteConfig struct {
-	Enabled       bool   `yaml:"enabled"`        // 是否开自动执行 cron（本地动作）
-	Schedule      string `yaml:"schedule"`       // cron 表达式
-	BatchLimit    int    `yaml:"batch_limit"`    // 单次 sweep 最多执行的 Task 数
-	Concurrency   int    `yaml:"concurrency"`    // 单次 sweep 内并行执行的 Task 数（>=1）
-	RepoRoot      string `yaml:"repo_root"`      // code_change repo_ref 的基目录
-	RunsDir       string `yaml:"runs_dir"`       // diff/产物落盘目录
-	TimeoutSecond int    `yaml:"timeout_second"` // 单次 codex 执行超时
+	Enabled               bool   `yaml:"enabled"`                  // 是否开自动执行 cron（本地动作）
+	Schedule              string `yaml:"schedule"`                 // cron 表达式
+	BatchLimit            int    `yaml:"batch_limit"`              // 单次 sweep 最多执行的 Task 数
+	Concurrency           int    `yaml:"concurrency"`              // 单次 sweep 内并行执行的 Task 数（>=1）
+	RepoRoot              string `yaml:"repo_root"`                // code_change repo_ref 的基目录
+	RunsDir               string `yaml:"runs_dir"`                 // diff/产物落盘目录
+	TimeoutSecond         int    `yaml:"timeout_second"`           // 单次 codex 执行超时
+	StaleExecutingMinute  int    `yaml:"stale_executing_minute"`   // executing 超过此时长仍未结束 → 标 failed（防重启僵尸）
 }
 
 // ChatConfig 控制「基于 codex CLI 的流式对话服务」（/api/chat，SSE）。
@@ -397,6 +398,13 @@ func (c *Config) validate() error {
 	}
 	if c.Execute.TimeoutSecond <= 0 {
 		return fmt.Errorf("execute.timeout_second 必须大于 0")
+	}
+	if c.Execute.StaleExecutingMinute <= 0 {
+		return fmt.Errorf("execute.stale_executing_minute 必须大于 0")
+	}
+	if c.Execute.StaleExecutingMinute*60 <= c.Execute.TimeoutSecond {
+		return fmt.Errorf("execute.stale_executing_minute（%dm）必须大于 timeout_second（%ds），否则会误杀仍在跑的任务",
+			c.Execute.StaleExecutingMinute, c.Execute.TimeoutSecond)
 	}
 	if c.Execute.Enabled {
 		if c.Execute.Schedule == "" {

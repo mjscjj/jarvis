@@ -118,6 +118,7 @@ execute:
   repo_root: "/Users/bytedance/workspace-local"    # code_change 的 repo_ref 基目录
   runs_dir: "/Users/bytedance/workspace-local/jarvis/runs"  # diff/产物落盘
   timeout_second: 600                              # codex 执行单次超时（改代码可能久）
+  stale_executing_minute: 30                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
 
 # 基于 codex CLI 的流式对话（右侧对话框，SSE /api/chat）。enabled=false 时不注册路由。
 # 复用 codex.bin；本地可信环境固定 danger-full-access + 联网，可直接读写 Jarvis MySQL、跑 CLI。

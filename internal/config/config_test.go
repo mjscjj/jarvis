@@ -139,6 +139,11 @@ func TestValidate(t *testing.T) {
 			c.Execute.Enabled = true
 			c.Execute.Concurrency = 0
 		}, wantErr: "execute.concurrency"},
+		{name: "execute stale minute", mutate: func(c *Config) { c.Execute.StaleExecutingMinute = 0 }, wantErr: "execute.stale_executing_minute"},
+		{name: "execute stale vs timeout", mutate: func(c *Config) {
+			c.Execute.TimeoutSecond = 600
+			c.Execute.StaleExecutingMinute = 5
+		}, wantErr: "execute.stale_executing_minute"},
 		{name: "chat sandbox", mutate: func(c *Config) { c.Chat.Sandbox = "sandbox-x" }, wantErr: "chat.codex_sandbox"},
 		{name: "chat reasoning effort", mutate: func(c *Config) { c.Chat.ReasoningEffort = "ultra" }, wantErr: "chat.codex_reasoning_effort"},
 		{name: "chat timeout", mutate: func(c *Config) { c.Chat.TimeoutSeconds = 0 }, wantErr: "chat.timeout_seconds"},
@@ -216,6 +221,7 @@ func validExecuteConfig() ExecuteConfig {
 	return ExecuteConfig{
 		Enabled: false, Schedule: "@every 5m", BatchLimit: 5, Concurrency: 3,
 		RepoRoot: "/tmp/repos", RunsDir: "/tmp/runs", TimeoutSecond: 600,
+		StaleExecutingMinute: 30,
 	}
 }
 
