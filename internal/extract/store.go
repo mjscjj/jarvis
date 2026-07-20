@@ -19,8 +19,8 @@ var (
 )
 
 var allowedTodoStatuses = map[string]struct{}{
-	"extracted": {}, "scoring": {}, "need_info": {}, "need_decision": {},
-	"confirmed": {}, "dismissed": {}, "expired": {},
+	"extracted": {}, "scoring": {}, "auto": {}, "need_info": {}, "need_decision": {},
+	"confirmed": {}, "dismissed": {}, "dropped": {}, "expired": {},
 }
 
 type TodoListFilter struct {
