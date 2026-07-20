@@ -98,7 +98,7 @@ func buildExecutionPrompt(task *domain.Task, repoPath string) (string, error) {
    - enrichments：你"多做一步"备好的料，每项 {kind, label, detail}。kind 如 code_link/commit_digest/doc_link/context；label 是简短标题；detail 是链接或摘要正文。没有则空数组 []。`
 
 	if repoPath != "" {
-		instructions += "\n8. 当前工作目录已切到 repo：" + repoPath + "，直接在此改动。"
+		instructions += "\n9. 当前工作目录已切到 repo：" + repoPath + "，直接在此改动。"
 	}
 
 	return instructions + "\n\nTASK_CONTEXT_LENGTH_BYTES=" + fmt.Sprintf("%d", len(encoded)) +
