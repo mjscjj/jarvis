@@ -177,6 +177,7 @@ type ExecuteConfig struct {
 	RunsDir              string `yaml:"runs_dir"`                // diff/产物落盘目录
 	Bin                  string `yaml:"bin"`                     // M5 执行用的 agent CLI（codex / traex）
 	Model                string `yaml:"model"`                   // M5 执行模型
+	ReasoningEffort      string `yaml:"reasoning_effort"`        // M5 思考级别：minimal/low/medium/high/xhigh
 	TimeoutSecond        int    `yaml:"timeout_second"`          // 单次执行超时
 	StaleExecutingMinute int    `yaml:"stale_executing_minute"`  // executing 超过此时长仍未结束 → 标 failed（防重启僵尸）
 }
@@ -415,6 +416,9 @@ func (c *Config) validate() error {
 	}
 	if c.Execute.Model == "" {
 		return fmt.Errorf("execute.model 不能为空")
+	}
+	if err := validateReasoningEffort("execute", c.Execute.ReasoningEffort); err != nil {
+		return err
 	}
 	if c.Execute.TimeoutSecond <= 0 {
 		return fmt.Errorf("execute.timeout_second 必须大于 0")

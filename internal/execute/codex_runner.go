@@ -79,12 +79,13 @@ type codexProposal struct {
 // network and macOS Keychain; the safety boundary is the propose/approval gate
 // (the agent declares needs_approval before any external write), not the sandbox.
 type CodexRunner struct {
-	bin     string
-	model   string
-	timeout time.Duration
+	bin             string
+	model           string
+	reasoningEffort string
+	timeout         time.Duration
 }
 
-func NewCodexRunner(bin, model string, timeout time.Duration) (*CodexRunner, error) {
+func NewCodexRunner(bin, model, reasoningEffort string, timeout time.Duration) (*CodexRunner, error) {
 	if strings.TrimSpace(bin) == "" {
 		return nil, fmt.Errorf("codex runner bin is required")
 	}
@@ -95,10 +96,15 @@ func NewCodexRunner(bin, model string, timeout time.Duration) (*CodexRunner, err
 	if strings.TrimSpace(model) == "" {
 		return nil, fmt.Errorf("codex runner model is required")
 	}
+	switch strings.TrimSpace(reasoningEffort) {
+	case "minimal", "low", "medium", "high", "xhigh":
+	default:
+		return nil, fmt.Errorf("codex runner reasoning_effort must be minimal/low/medium/high/xhigh, got %q", reasoningEffort)
+	}
 	if timeout <= 0 {
 		return nil, fmt.Errorf("codex runner timeout must be positive")
 	}
-	return &CodexRunner{bin: resolved, model: model, timeout: timeout}, nil
+	return &CodexRunner{bin: resolved, model: model, reasoningEffort: reasoningEffort, timeout: timeout}, nil
 }
 
 // Schema selects which structured final-message contract Run enforces:
@@ -156,7 +162,8 @@ func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string,
 	// --dangerously-bypass-approvals-and-sandbox: the sandbox stays enforced.
 	args := []string{
 		"exec", "--ephemeral", "--sandbox", sandbox,
-		"--color", "never", "--json", "--output-last-message", resultPath, "--model", r.model,
+		"--color", "never", "--json", "--output-last-message", resultPath,
+		"--model", r.model, "-c", "model_reasoning_effort=" + r.reasoningEffort,
 	}
 	schemaDef, enforceSchema := sch.definition()
 	if enforceSchema {

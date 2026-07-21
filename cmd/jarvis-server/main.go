@@ -215,7 +215,8 @@ func main() {
 		hlog.Fatalf("initialize MVP Task service failed: %v", err)
 	}
 	codexRunner, err := execute.NewCodexRunner(
-		cfg.Execute.Bin, cfg.Execute.Model, time.Duration(cfg.Execute.TimeoutSecond)*time.Second,
+		cfg.Execute.Bin, cfg.Execute.Model, cfg.Execute.ReasoningEffort,
+		time.Duration(cfg.Execute.TimeoutSecond)*time.Second,
 	)
 	if err != nil {
 		hlog.Fatalf("initialize execute runner failed: %v", err)

@@ -120,6 +120,7 @@ execute:
   runs_dir: "/Users/bytedance/workspace-local/jarvis/runs"  # diff/产物落盘
   bin: "codex"                                     # M5 用官方 Codex CLI（与 M3/M4 的 traex 分开）
   model: "gpt-5.6-sol"                             # Latest frontier（codex 无裸 gpt-5.6；luna/terra/sol 里 sol 最强）
+  reasoning_effort: "medium"                       # 覆盖用户全局 xhigh，执行质量与耗时折中
   timeout_second: 600                              # 单次执行超时（改代码可能久）
   stale_executing_minute: 30                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
 
