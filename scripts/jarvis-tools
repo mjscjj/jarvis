@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# jarvis-tools: read-only decision-query CLI for M3/M4 agents.
+# Same CLI contract as cmd/jarvis-tools, but backed by jarvis-server HTTP API
+# (curl + jq) instead of a direct MySQL connection.
+#
+# Output contract: success → compact JSON on stdout only; errors → stderr + exit 1.
+set -euo pipefail
+
+fail() {
+  echo "jarvis-tools error: $*" >&2
+  exit 1
+}
+
+command -v curl >/dev/null 2>&1 || fail "curl is required but not found in PATH"
+command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+usage() {
+  fail "usage: jarvis-tools <subcommand> [flags]
+subcommands: list-projects get-project get-group get-principal get-person"
+}
+
+# resolve_api_base CONFIG_PATH
+# Prefer JARVIS_API_BASE; else read server.addr from config; else default.
+resolve_api_base() {
+  local config_path="$1"
+  if [[ -n "${JARVIS_API_BASE:-}" ]]; then
+    echo "${JARVIS_API_BASE%/}"
+    return
+  fi
+  local resolved=""
+  if [[ -f "$config_path" ]]; then
+    resolved="$config_path"
+  elif [[ -f "${REPO_ROOT}/${config_path}" ]]; then
+    resolved="${REPO_ROOT}/${config_path}"
+  elif [[ -f "${REPO_ROOT}/conf/config.yaml" ]]; then
+    resolved="${REPO_ROOT}/conf/config.yaml"
+  fi
+  if [[ -n "$resolved" ]]; then
+    local addr
+    addr="$(grep -E '^\s*addr:\s*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
+    if [[ -z "$addr" ]]; then
+      fail "could not parse server.addr from ${resolved}"
+    fi
+    echo "http://${addr}"
+    return
+  fi
+  echo "http://127.0.0.1:18800"
+}
+
+# api_get PATH_AND_QUERY → prints response body to stdout; fails on HTTP/API error.
+api_get() {
+  local path_and_query="$1"
+  local url="${API_BASE}${path_and_query}"
+  local body http_code
+  body="$(curl -sS -w '\n%{http_code}' --max-time 30 "$url")" || fail "curl failed for ${url}"
+  http_code="$(printf '%s\n' "$body" | tail -n1)"
+  body="$(printf '%s\n' "$body" | sed '$d')"
+  local code=""
+  if printf '%s' "$body" | jq -e . >/dev/null 2>&1; then
+    code="$(printf '%s' "$body" | jq -r '.code // empty')"
+  fi
+  # Align with Go jarvis-tools mapNotFound → "not found".
+  if [[ "$http_code" == "404" || "$code" == "40420" ]]; then
+    fail "not found"
+  fi
+  if [[ "$http_code" != "200" ]]; then
+    fail "HTTP ${http_code} from ${url}: ${body}"
+  fi
+  if [[ -z "$code" ]]; then
+    fail "invalid JSON from ${url}"
+  fi
+  if [[ "$code" != "0" ]]; then
+    fail "API code=${code} from ${url}: ${body}"
+  fi
+  printf '%s' "$body"
+}
+
+# emit compact JSON (+ newline) to stdout — the ONLY successful stdout write.
+emit() {
+  printf '%s\n' "$1" | jq -c .
+}
+
+# fetch_all_items PATH_PREFIX → prints a JSON array of all items across pages.
+# PATH_PREFIX is like /api/projects or /api/persons (no query string).
+fetch_all_items() {
+  local path_prefix="$1"
+  local page=1
+  local page_size=100
+  local all='[]'
+  while true; do
+    local body items total n
+    body="$(api_get "${path_prefix}?page=${page}&page_size=${page_size}")"
+    items="$(printf '%s' "$body" | jq -c '.data.items')"
+    total="$(printf '%s' "$body" | jq -er '.data.total')"
+    n="$(printf '%s' "$items" | jq -er 'length')"
+    all="$(jq -nc --argjson a "$all" --argjson b "$items" '$a + $b')"
+    if (( page * page_size >= total )) || (( n == 0 )); then
+      break
+    fi
+    page=$((page + 1))
+  done
+  printf '%s' "$all"
+}
+
+# --- flag helpers -----------------------------------------------------------
+
+CONFIG_DEFAULT="conf/config.yaml"
+CONFIG_PATH="$CONFIG_DEFAULT"
+ID=""
+CODE=""
+CHAT_ID=""
+OPEN_ID=""
+
+reset_flags() {
+  CONFIG_PATH="$CONFIG_DEFAULT"
+  ID=""
+  CODE=""
+  CHAT_ID=""
+  OPEN_ID=""
+}
+
+# parse_kv_flag NAME VALUE — supports --name value and --name=value via caller.
+consume_flags() {
+  # remaining args in "$@"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --config)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        CONFIG_PATH="$2"
+        shift 2
+        ;;
+      --config=*)
+        CONFIG_PATH="${1#--config=}"
+        shift
+        ;;
+      --id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        ID="$2"
+        shift 2
+        ;;
+      --id=*)
+        ID="${1#--id=}"
+        shift
+        ;;
+      --code)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        CODE="$2"
+        shift 2
+        ;;
+      --code=*)
+        CODE="${1#--code=}"
+        shift
+        ;;
+      --chat-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        CHAT_ID="$2"
+        shift 2
+        ;;
+      --chat-id=*)
+        CHAT_ID="${1#--chat-id=}"
+        shift
+        ;;
+      --open-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        OPEN_ID="$2"
+        shift 2
+        ;;
+      --open-id=*)
+        OPEN_ID="${1#--open-id=}"
+        shift
+        ;;
+      -*)
+        fail "unknown flag: $1"
+        ;;
+      *)
+        fail "unexpected argument: $1"
+        ;;
+    esac
+  done
+}
+
+# --- subcommands ------------------------------------------------------------
+
+cmd_list_projects() {
+  reset_flags
+  consume_flags "$@"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local items
+  items="$(fetch_all_items /api/projects)"
+  emit "$(jq -cn --argjson projects "$items" '{projects:$projects}')"
+}
+
+cmd_get_project() {
+  reset_flags
+  consume_flags "$@"
+  local has_id=0 has_code=0
+  [[ -n "$ID" ]] && has_id=1
+  [[ -n "$CODE" ]] && has_code=1
+  if (( has_id + has_code != 1 )); then
+    fail "get-project requires exactly one of --id or --code"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  if (( has_id )); then
+    [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-project --id must be a positive integer"
+    local body
+    body="$(api_get "/api/projects/${ID}")"
+    emit "$(printf '%s' "$body" | jq -c '.data')"
+    return
+  fi
+  local items matched
+  items="$(fetch_all_items /api/projects)"
+  matched="$(printf '%s' "$items" | jq -c --arg code "$CODE" '[.[] | select(.code == $code)]')"
+  local n
+  n="$(printf '%s' "$matched" | jq -er 'length')"
+  if (( n == 0 )); then
+    fail "not found"
+  fi
+  if (( n > 1 )); then
+    fail "multiple projects matched code=${CODE}"
+  fi
+  emit "$(printf '%s' "$matched" | jq -c '.[0]')"
+}
+
+cmd_get_group() {
+  reset_flags
+  consume_flags "$@"
+  if [[ -z "$CHAT_ID" ]]; then
+    fail "get-group requires --chat-id"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  # /api/groups has no by-chat-id GET; keyword searches chat_id (and name/...).
+  # Use keyword to narrow, then exact-match on chat_id (fail-fast if missing).
+  local enc body matched n
+  enc="$(jq -rn --arg s "$CHAT_ID" '$s|@uri')"
+  body="$(api_get "/api/groups?keyword=${enc}&page=1&page_size=100")"
+  matched="$(printf '%s' "$body" | jq -c --arg cid "$CHAT_ID" '[.data.items[] | select(.chat_id == $cid)]')"
+  n="$(printf '%s' "$matched" | jq -er 'length')"
+  if (( n == 0 )); then
+    fail "not found"
+  fi
+  if (( n > 1 )); then
+    fail "multiple groups matched chat_id=${CHAT_ID}"
+  fi
+  emit "$(printf '%s' "$matched" | jq -c '.[0]')"
+}
+
+cmd_get_principal() {
+  reset_flags
+  consume_flags "$@"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local body
+  body="$(api_get /api/profile)"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_get_person() {
+  reset_flags
+  consume_flags "$@"
+  if [[ -z "$OPEN_ID" ]]; then
+    fail "get-person requires --open-id"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  # GET /api/persons/:id is DB id, not open_id — list + filter.
+  local items matched n
+  items="$(fetch_all_items /api/persons)"
+  matched="$(printf '%s' "$items" | jq -c --arg oid "$OPEN_ID" '[.[] | select(.open_id == $oid)]')"
+  n="$(printf '%s' "$matched" | jq -er 'length')"
+  if (( n == 0 )); then
+    fail "not found"
+  fi
+  if (( n > 1 )); then
+    fail "multiple persons matched open_id=${OPEN_ID}"
+  fi
+  emit "$(printf '%s' "$matched" | jq -c '.[0]')"
+}
+
+# --- main -------------------------------------------------------------------
+
+[[ $# -ge 1 ]] || usage
+SUBCOMMAND="$1"
+shift
+
+case "$SUBCOMMAND" in
+  list-projects)  cmd_list_projects "$@" ;;
+  get-project)    cmd_get_project "$@" ;;
+  get-group)      cmd_get_group "$@" ;;
+  get-principal)  cmd_get_principal "$@" ;;
+  get-person)     cmd_get_person "$@" ;;
+  *)
+    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person"
+    ;;
+esac
