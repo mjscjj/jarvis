@@ -209,7 +209,7 @@ export default function Confirmations() {
               description={clarifications.length > 0
                 ? <><Paragraph type="secondary" style={{ marginBottom: 4 }}>codex 需要你澄清以下几点：</Paragraph><ClarificationList clarifications={clarifications} ordinal /></>
                 : '该 Todo 信息不足，但 codex 未给出具体澄清项（重跑一次 M4 可补全）。'} />
-          : <Alert type="info" showIcon message="codex 建议如下方案，请你决策：批准执行 / 改方案 / 拒绝"
+          : <Alert type="info" showIcon message="codex 建议如下方案，请你决策：批准 / 补充 / 拒绝"
               description={detail.proposed_plan?.summary || detail.todo.description} />}
 
         {/* 第二段：codex 的想法 —— 它要干什么、有多大把握、担心什么 */}
@@ -251,8 +251,7 @@ export default function Confirmations() {
         {/* 行动区 */}
         {!isNeedInfo
           ? <Flex gap={12} wrap>
-              <Button type="primary" onClick={openApprove}>批准执行</Button>
-              <Button onClick={openApprove}>改方案再执行</Button>
+              <Button type="primary" onClick={openApprove}>批准</Button>
               <Button onClick={() => { setInput(''); setModal('supplement') }}>补充信息 / 指示，重新决策</Button>
               <Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button>
             </Flex>
