@@ -539,6 +539,15 @@ export interface ModuleRun {
   raw: string
 }
 
+export interface FailureEvent {
+  time: string
+  module: string
+  job: string
+  error: string
+  recovered: boolean
+  raw: string
+}
+
 export interface ScanRow {
   id: number
   scan_type: string

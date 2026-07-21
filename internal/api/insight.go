@@ -92,6 +92,29 @@ func GetDebugModules(service *insight.DebugService) app.HandlerFunc {
 	}
 }
 
+// GetDebugFailures serves the recent cron failure timeline (近 24h 报错时间线)
+// so a transient blip that already self-healed is still visible after recovery.
+func GetDebugFailures(service *insight.DebugService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		lines, err := positiveQueryInt(c.Query("lines"), 5000, "lines")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40026, err)
+			return
+		}
+		hours, err := positiveQueryInt(c.Query("hours"), 24, "hours")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40027, err)
+			return
+		}
+		events, err := service.Failures(lines, hours)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50026, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": events}})
+	}
+}
+
 // GetDebugTodos serves the newest todos as full rows for JSON inspection.
 func GetDebugTodos(service *insight.DebugService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {

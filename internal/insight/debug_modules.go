@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ModuleRun is the most recent parsed cron run for one module.
@@ -74,4 +75,120 @@ func (s *DebugService) Modules(maxLines int) ([]ModuleRun, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Module < out[j].Module })
 	return out, nil
+}
+
+// FailureEvent is one cron run that logged status=error, kept for the "近 24h
+// 报错时间线". Recovered records whether the same module logged a later ok run,
+// so a transient blip (network jitter that self-healed) is visually separable
+// from something still broken.
+type FailureEvent struct {
+	Time      string `json:"time"`      // 报错发生时间戳（日志原样）
+	Module    string `json:"module"`    // capture / memory / extract / decide / execute
+	Job       string `json:"job"`       // job= 值
+	Error     string `json:"error"`     // error= 字段（截断），拿不到就用整行
+	Recovered bool   `json:"recovered"` // 该模块之后是否又有过 ok 运行（true=已自愈）
+	Raw       string `json:"raw"`       // 原始日志行
+}
+
+// logTimeLayout matches the cron timestamp format "2006/01/02 15:04:05(.000000)".
+const logTimeLayout = "2006/01/02 15:04:05"
+
+// Failures returns every cron run that logged status=error within the last
+// sinceHours, newest first. It reads the same merged log tail as Modules (cron
+// output on stderr) — no separate error store — so it never drifts from what the
+// process actually logged. Each event is tagged Recovered if its module later
+// logged an ok run, letting the UI de-emphasise self-healed blips.
+func (s *DebugService) Failures(maxLines, sinceHours int) ([]FailureEvent, error) {
+	tail, err := s.logs.Tail(maxLines)
+	if err != nil {
+		return nil, err
+	}
+	var cutoff time.Time
+	if sinceHours > 0 {
+		cutoff = time.Now().Add(-time.Duration(sinceHours) * time.Hour)
+	}
+
+	type parsed struct {
+		when   time.Time
+		hasTS  bool
+		module string
+		event  FailureEvent
+	}
+	var events []parsed
+	// lastOKAfter[module] tracks the latest ok time seen; used after the pass to
+	// decide Recovered. We record failures in order, then resolve recovery.
+	lastOK := map[string]time.Time{}
+
+	for _, line := range tail.Lines {
+		m := cronLine.FindStringSubmatch(line.Text)
+		if m == nil {
+			continue
+		}
+		module, tsText, rest := m[1], m[2], m[3]
+		fields := map[string]string{}
+		for _, kv := range kvPair.FindAllStringSubmatch(rest, -1) {
+			fields[kv[1]] = kv[2]
+		}
+		when, tsErr := time.ParseInLocation(logTimeLayout, tsText[:len(logTimeLayout)], time.Local)
+		hasTS := tsErr == nil
+		if hasTS && sinceHours > 0 && when.Before(cutoff) {
+			continue
+		}
+		status := fields["status"]
+		if status == "ok" {
+			if hasTS {
+				lastOK[module] = when
+			}
+			continue
+		}
+		if status != "error" {
+			continue
+		}
+		// error= messages contain spaces, so the kvPair token map truncates them
+		// at the first word. Grab everything after "error=" to end of line for the
+		// timeline; fall back to the whole line if there is no error= field.
+		errText := errorMessage(rest)
+		if errText == "" {
+			errText = strings.TrimSpace(line.Text)
+		}
+		events = append(events, parsed{
+			when: when, hasTS: hasTS, module: module,
+			event: FailureEvent{
+				Time: line.Time, Module: module, Job: fields["job"],
+				Error: truncate(errText, 500), Raw: strings.TrimSpace(line.Text),
+			},
+		})
+	}
+
+	// Resolve Recovered: a failure is recovered if the module logged an ok run at
+	// a later timestamp. Without a parseable timestamp we cannot compare, so we
+	// leave Recovered=false (conservative: show it as still-relevant).
+	out := make([]FailureEvent, 0, len(events))
+	for _, p := range events {
+		if p.hasTS {
+			if okTime, ok := lastOK[p.module]; ok && okTime.After(p.when) {
+				p.event.Recovered = true
+			}
+		}
+		out = append(out, p.event)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Time > out[j].Time })
+	return out, nil
+}
+
+// errorMessage returns the full text after "error=" (which may contain spaces)
+// up to end of line, or "" if there is no error= field.
+func errorMessage(rest string) string {
+	idx := strings.Index(rest, "error=")
+	if idx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[idx+len("error="):])
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }

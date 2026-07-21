@@ -3,6 +3,7 @@ import type {
   DebugRecord,
   DebugStatus,
   Digest,
+  FailureEvent,
   Group,
   LogTail,
   ModuleRun,
@@ -245,6 +246,10 @@ export function getDebugStatus(signal?: AbortSignal): Promise<DebugStatus> {
 
 export function getDebugModules(signal?: AbortSignal): Promise<{ items: ModuleRun[] }> {
   return request<{ items: ModuleRun[] }>('/api/debug/modules', { signal })
+}
+
+export function getDebugFailures(hours = 24, signal?: AbortSignal): Promise<{ items: FailureEvent[] }> {
+  return request<{ items: FailureEvent[] }>(`/api/debug/failures?hours=${hours}`, { signal })
 }
 
 export function getDebugScans(limit = 50, signal?: AbortSignal): Promise<{ items: ScanRow[] }> {

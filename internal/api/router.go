@@ -131,6 +131,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 调试面板：依赖健康/表计数/积压、模块运行、采集流水、抽取水位、最近 todo/task、运行日志尾读。
 	h.GET("/api/debug/status", GetDebugStatus(deps.Debug))
 	h.GET("/api/debug/modules", GetDebugModules(deps.Debug))
+	h.GET("/api/debug/failures", GetDebugFailures(deps.Debug))
 	h.GET("/api/debug/scans", GetDebugScans(deps.Debug))
 	h.GET("/api/debug/watermarks", GetDebugWatermarks(deps.Debug))
 	h.GET("/api/debug/todos", GetDebugTodos(deps.Debug))

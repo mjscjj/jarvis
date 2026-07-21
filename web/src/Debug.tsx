@@ -5,6 +5,7 @@ import {
   captureDiscover,
   captureScanChat,
   captureScanRelated,
+  getDebugFailures,
   getDebugLogs,
   getDebugModules,
   getDebugScans,
@@ -14,7 +15,7 @@ import {
   getDebugWatermarks,
 } from './api'
 import PageHeader from './components/PageHeader'
-import type { DebugRecord, DebugStatus, LogTail, ModuleRun, ScanRow, StatusCount, WatermarkRow } from './types'
+import type { DebugRecord, DebugStatus, FailureEvent, LogTail, ModuleRun, ScanRow, StatusCount, WatermarkRow } from './types'
 
 const { Text, Paragraph } = Typography
 
@@ -186,6 +187,51 @@ function ModulesTab() {
         expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开该模块最近一条日志与全部字段" />, rowExpandable: () => true }}
         scroll={{ x: 900 }}
         locale={{ emptyText: <Empty description="日志窗口内暂无 cron 运行记录（进程刚启动或日志被轮转）" /> }}
+      />
+    </Space>
+  )
+}
+
+const failureColumns: TableColumnsType<FailureEvent> = [
+  { title: '时间', dataIndex: 'time', width: 200, render: (v: string) => <Text className="mono">{v || '—'}</Text> },
+  { title: '模块', dataIndex: 'module', width: 110, render: (v: string) => <Text strong>{moduleLabels[v] ?? v}</Text> },
+  { title: 'job', dataIndex: 'job', width: 130, render: (v: string) => <Text className="mono" type="secondary">{v || '—'}</Text> },
+  {
+    title: '状态', dataIndex: 'recovered', width: 100,
+    render: (recovered: boolean) =>
+      recovered ? <Tag color="green">已恢复</Tag> : <Tag color="red">仍需关注</Tag>,
+  },
+  { title: '错误', dataIndex: 'error', ellipsis: true, render: (v: string) => <Text className="mono" type="danger">{v}</Text> },
+]
+
+function FailuresTab() {
+  const { data, loading, error, refresh } = useDebugResource<{ items: FailureEvent[] }>((signal) => getDebugFailures(24, signal))
+  const rows = data?.items ?? []
+  const stillOpen = rows.filter((r) => !r.recovered)
+  const healed = rows.length - stillOpen.length
+
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space>
+        <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
+        <Text type="secondary">近 24 小时所有 cron 报错（含已自愈的），最新在前。「已恢复」= 该模块之后又跑成功过。</Text>
+      </Space>
+      {error && <Alert type="error" showIcon message="报错时间线加载失败" description={error} />}
+      {!error && rows.length === 0 && (
+        <Alert type="success" showIcon message="近 24 小时无 cron 报错" />
+      )}
+      {rows.length > 0 && (
+        <Alert
+          type={stillOpen.length > 0 ? 'warning' : 'info'} showIcon
+          message={`近 24h 共 ${rows.length} 次报错：${stillOpen.length} 次仍需关注，${healed} 次已自愈恢复`}
+        />
+      )}
+      <Table<FailureEvent>
+        rowKey={(r) => `${r.time}-${r.module}`} size="small" columns={failureColumns} dataSource={rows} loading={loading}
+        pagination={false}
+        expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开原始日志行" />, rowExpandable: () => true }}
+        scroll={{ x: 900 }}
+        locale={{ emptyText: <Empty description="近 24 小时无报错记录" /> }}
       />
     </Space>
   )
@@ -410,6 +456,7 @@ export default function Debug() {
           { key: 'trigger', label: '手动触发', children: <TriggerTab /> },
           { key: 'status', label: '健康与积压', children: <StatusTab /> },
           { key: 'modules', label: '模块运行', children: <ModulesTab /> },
+          { key: 'failures', label: '报错时间线', children: <FailuresTab /> },
           { key: 'scans', label: '采集流水', children: <ScansTab /> },
           { key: 'watermarks', label: '抽取水位', children: <WatermarksTab /> },
           { key: 'todos', label: '最近 Todo', children: <RecentTab kind="todos" /> },
