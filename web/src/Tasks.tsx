@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Input, Modal, Space, Spin, Table, Tabs, Tag, Timeline, Typography } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Modal, Select, Space, Spin, Table, Tabs, Tag, Timeline, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { approveTask, executeTask, finishTask, listTaskRuns, listTasks, rejectTask, rerunTask, supplementTask } from './api'
 import type { ExecutionRun, ProposalResult, RunEnrichment, Task, TaskStatus } from './types'
@@ -152,6 +152,26 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
+// strField 从自由 JSON（execution_result）里安全取字符串字段：取到非空 string 才返回，
+// 否则 null。展示层用，取不到就让调用方渲染占位符，不抛错。
+function strField(obj: Record<string, unknown> | null, key: string): string | null {
+  if (!obj) return null
+  const value = obj[key]
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+// CellText 把一段可能较长的可读文本按最多 3 行截断展示（详情抽屉里看全文），空则 '—'。
+function CellText({ text, danger }: { text: string | null; danger?: boolean }) {
+  if (!text) return <Text type="secondary">—</Text>
+  return (
+    <Text
+      type={danger ? 'danger' : undefined}
+      className="table-cell-clamp"
+      title={text}
+    >{text}</Text>
+  )
+}
+
 // 两个子 Tab 各自对应的 Task 状态集合：待审批只看等用户批准落地的高风险对外写入，
 // 其他看剩下所有生命周期状态。
 const tabStatuses: Record<'awaiting' | 'others', TaskStatus[]> = {
@@ -161,7 +181,13 @@ const tabStatuses: Record<'awaiting' | 'others', TaskStatus[]> = {
 
 export default function Tasks() {
   const [activeTab, setActiveTab] = useState<'awaiting' | 'others'>('awaiting')
-  const statuses = tabStatuses[activeTab]
+  // 「其他」Tab 的状态多选筛选，默认全选该 Tab 覆盖的四个状态。
+  const [othersStatuses, setOthersStatuses] = useState<TaskStatus[]>(tabStatuses.others)
+  // 实际传给 listTasks 的状态数组：待审批固定单一状态，其他用多选 state（清空回退全选）。
+  const statuses = useMemo<TaskStatus[]>(() => {
+    if (activeTab === 'awaiting') return tabStatuses.awaiting
+    return othersStatuses.length > 0 ? othersStatuses : tabStatuses.others
+  }, [activeTab, othersStatuses])
   const [items, setItems] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -194,7 +220,7 @@ export default function Tasks() {
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [activeTab, refreshKey])
+  }, [statuses, refreshKey])
 
   // 有任务在执行中时静默轮询列表，点完「执行」后状态会从执行中变为完成/失败，无需手动刷新。
   const hasExecuting = items.some((task) => task.status === 'executing')
@@ -206,7 +232,7 @@ export default function Tasks() {
         .catch(() => { /* 轮询失败不打扰，下次再试 */ })
     }, 3000)
     return () => window.clearInterval(timer)
-  }, [hasExecuting, activeTab])
+  }, [hasExecuting, statuses])
 
   // 打开详情抽屉时拉该 Task 的执行历史。detail 关闭（undefined）时清空。
   useEffect(() => {
@@ -340,13 +366,45 @@ export default function Tasks() {
     }
   }
 
-  const columns: TableColumnsType<Task> = [
-    { title: '任务', dataIndex: 'title', render: (_, task) => <Space direction="vertical" size={2}><Text strong>{task.title}</Text><Text type="secondary">Todo #{task.todo_id} · {task.action_type}</Text></Space> },
-    { title: '状态', dataIndex: 'status', width: 110, render: (status: TaskStatus) => <StatusBadge label={statusMeta[status].label} color={statusMeta[status].color} /> },
-    { title: '方案', width: 320, render: (_, task) => <pre className="inline-json">{JSON.stringify(task.plan, null, 2)}</pre> },
-    { title: '结果', width: 260, render: (_, task) => task.execution_result ? <pre className="inline-json">{JSON.stringify(task.execution_result, null, 2)}</pre> : '—' },
+  const taskColumn: TableColumnsType<Task>[number] = {
+    title: '任务',
+    dataIndex: 'title',
+    width: 280,
+    render: (_, task) => (
+      <Space direction="vertical" size={2} style={{ width: '100%' }}>
+        <Text strong className="table-cell-clamp" title={task.title}>{task.title}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>Todo #{task.todo_id} · {task.action_type}</Text>
+      </Space>
+    ),
+  }
+  const statusColumn: TableColumnsType<Task>[number] = { title: '状态', dataIndex: 'status', width: 100, render: (status: TaskStatus) => <StatusBadge label={statusMeta[status].label} color={statusMeta[status].color} /> }
+
+  // 待审批 Tab 特有列：动作（proposal.action）、待你拍板/后续（needs_followup）。
+  const awaitingCols: TableColumnsType<Task> = [
+    { title: '动作', width: 320, render: (_, task) => <CellText text={proposalOf(task)?.proposal.action ?? strField(task.execution_result, 'action')} /> },
+    { title: '待你拍板 / 后续', width: 260, render: (_, task) => <CellText text={proposalOf(task)?.needs_followup ?? strField(task.execution_result, 'needs_followup')} /> },
+  ]
+
+  // 其他 Tab 特有列：执行摘要（summary→error→尚未执行）、待你拍板/后续（needs_followup）。
+  const othersCols: TableColumnsType<Task> = [
     {
-      title: '操作', width: 220, render: (_, task) => {
+      title: '执行摘要', width: 320, render: (_, task) => {
+        const summaryText = strField(task.execution_result, 'summary')
+        if (summaryText) return <CellText text={summaryText} />
+        const errText = strField(task.execution_result, 'error')
+        if (errText) return <CellText text={errText} danger />
+        return <Text type="secondary">尚未执行</Text>
+      },
+    },
+    { title: '待你拍板 / 后续', width: 260, render: (_, task) => <CellText text={strField(task.execution_result, 'needs_followup')} /> },
+  ]
+
+  const columns: TableColumnsType<Task> = [
+    taskColumn,
+    statusColumn,
+    ...(activeTab === 'awaiting' ? awaitingCols : othersCols),
+    {
+      title: '操作', width: 200, render: (_, task) => {
         if (task.status === 'pending') {
           return <Space onClick={(e) => e.stopPropagation()}>
             <Button type="primary" size="small" loading={executingId === task.id} onClick={(e) => { e.stopPropagation(); runExecute(task) }}>执行</Button>
@@ -378,6 +436,23 @@ export default function Tasks() {
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
     {error && <Alert type="error" showIcon message="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
+    {activeTab === 'others' && (
+      <Card className="filter-card" variant="borderless">
+        <Flex gap={12} wrap>
+          <label className="filter-field filter-status">
+            <Text type="secondary">状态</Text>
+            <Select
+              mode="multiple"
+              allowClear
+              value={othersStatuses}
+              onChange={(next) => setOthersStatuses(next)}
+              options={tabStatuses.others.map((value) => ({ value, label: statusMeta[value].label }))}
+              placeholder="全部状态"
+            />
+          </label>
+        </Flex>
+      </Card>
+    )}
     <Card className="table-card" variant="borderless">
       <Tabs
         activeKey={activeTab}
@@ -392,7 +467,7 @@ export default function Tasks() {
           { key: 'others', label: '其他' },
         ]}
       />
-      <Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1050 }} onRow={(task) => ({ onClick: () => setDetail(task), className: 'clickable-row' })} />
+      <Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1160 }} tableLayout="fixed" onRow={(task) => ({ onClick: () => setDetail(task), className: 'clickable-row' })} />
     </Card>
     <Drawer title={detail?.title || 'Task 详情'} open={Boolean(detail)} width={680} onClose={() => setDetail(undefined)}>
       {detail && <Space direction="vertical" size={20} className="drawer-content">

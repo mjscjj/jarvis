@@ -274,6 +274,23 @@ body {
   background: var(--color-bg-soft) !important;
 }
 
+/* 任务列表等：单元格最多 3 行，避免摘要把整行撑得很高；悬停看 title 全文 */
+.table-cell-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  word-break: break-word;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.table-card .ant-table-tbody > tr > td {
+  vertical-align: top;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
 .drawer-content {
   width: 100%;
 }
