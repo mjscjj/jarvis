@@ -39,12 +39,24 @@ type fakeModelExtractor struct {
 	prompts   []Prompt
 	maxRounds []int
 	boxes     []ToolBox
+	// results, when non-empty, returns a distinct result per call index (clamped to
+	// the last entry once exhausted), letting a test drive validation-feedback retry
+	// where the first attempt returns a rewritten quote and a later one returns a
+	// verbatim quote. When empty the extractor falls back to result/err.
+	results []*ExtractionResult
 }
 
 func (f *fakeModelExtractor) ExtractWithTools(_ context.Context, prompt Prompt, box ToolBox, maxRounds int) (*ExtractionResult, error) {
 	f.prompts = append(f.prompts, prompt)
 	f.maxRounds = append(f.maxRounds, maxRounds)
 	f.boxes = append(f.boxes, box)
+	if len(f.results) > 0 {
+		idx := len(f.prompts) - 1
+		if idx >= len(f.results) {
+			idx = len(f.results) - 1
+		}
+		return f.results[idx], f.err
+	}
 	return f.result, f.err
 }
 
@@ -183,6 +195,106 @@ func TestWorkerDoesNotPersistAfterSemanticDedupFailure(t *testing.T) {
 	}
 	if store.persistCalls != 0 || len(dedup.inputs) != 1 {
 		t.Fatalf("persistCalls=%d dedup.inputs=%d", store.persistCalls, len(dedup.inputs))
+	}
+}
+
+// retryBatch is a single-unit batch whose [new] message content deliberately
+// interleaves fragments ("看下 ... 当前服务和架构梳理 ...") so a spliced quote fails
+// the verbatim check while a contiguous substring passes.
+func retryBatch() ChatBatch {
+	const newContent = "todo：看下自建agent loop的模型接入层和流式输出，看下feishu写入没有权限的问题，以及当前服务和架构梳理，以及多机房支持"
+	return ChatBatch{
+		Group: GroupContext{ID: 1, ChatID: "oc_1"},
+		Units: []ConversationUnit{{
+			Key: "chat",
+			Messages: []MessageContext{{
+				MessageID: "om_1", ChatID: "oc_1", Content: newContent,
+				CreateTime: 1_700_000_000_000, IsNew: true, Extractable: true,
+			}},
+			Participants: []ParticipantContext{{OpenID: "ou_owner", Name: "Me"}},
+		}},
+		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_1", IsNew: true, CreateTime: 1_700_000_000_000},
+	}
+}
+
+func retryCandidate(quote string) Candidate {
+	return Candidate{
+		ActionType: "investigate", Title: "梳理架构", Target: "当前服务和架构梳理",
+		Description: "看下当前服务和架构梳理", OpenQuestions: []string{},
+		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"}, SourceQuote: quote,
+	}
+}
+
+func TestWorkerRetriesOnQuoteMismatchThenSucceeds(t *testing.T) {
+	store := &fakePipelineStore{batches: []ChatBatch{retryBatch()}}
+	rewritten := retryCandidate("看下当前服务和架构梳理") // spliced, not contiguous in 原文
+	verbatim := retryCandidate("当前服务和架构梳理")    // contiguous substring of 原文
+	model := &fakeModelExtractor{results: []*ExtractionResult{
+		{Candidates: []Candidate{rewritten}},
+		{Candidates: []Candidate{verbatim}},
+	}}
+	opts := validWorkerOptions()
+	opts.EvidenceRetryMax = 2
+	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	stats, err := worker.ExtractOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ExtractOnce() error = %v", err)
+	}
+	if len(model.prompts) != 2 {
+		t.Fatalf("extract calls = %d, want 2", len(model.prompts))
+	}
+	if store.persistCalls != 1 || stats.Units != 1 || stats.Candidates != 1 {
+		t.Fatalf("persistCalls=%d stats=%#v", store.persistCalls, stats)
+	}
+	// The first prompt must be the plain prompt; the second must carry the feedback
+	// block with both the mismatch explanation and the cited 原文.
+	if strings.Contains(model.prompts[0].User, "上一轮抽取校验未通过") {
+		t.Fatalf("first prompt unexpectedly carried feedback: %q", model.prompts[0].User)
+	}
+	second := model.prompts[1].User
+	for _, want := range []string{"上一轮抽取校验未通过", "逐字连续复制", "看下当前服务和架构梳理", "当前服务和架构梳理，以及多机房支持"} {
+		if !strings.Contains(second, want) {
+			t.Fatalf("retry prompt missing %q; got %q", want, second)
+		}
+	}
+}
+
+func TestWorkerFailsAfterExhaustingEvidenceRetries(t *testing.T) {
+	store := &fakePipelineStore{batches: []ChatBatch{retryBatch()}}
+	rewritten := retryCandidate("看下当前服务和架构梳理")
+	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{rewritten}}}
+	opts := validWorkerOptions()
+	opts.EvidenceRetryMax = 2
+	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	_, err = worker.ExtractOnce(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "exhausted") {
+		t.Fatalf("ExtractOnce() error = %v, want exhausted evidence retries", err)
+	}
+	if len(model.prompts) != 3 { // initial + 2 retries
+		t.Fatalf("extract calls = %d, want 3", len(model.prompts))
+	}
+	if store.persistCalls != 0 {
+		t.Fatalf("persistCalls = %d, want 0", store.persistCalls)
+	}
+}
+
+func TestValidateCandidateEvidenceQuoteMismatchIncludesSourceText(t *testing.T) {
+	unit := retryBatch().Units[0]
+	candidate := retryCandidate("看下当前服务和架构梳理")
+	err := validateCandidateEvidence(unit, &candidate)
+	if err == nil || !errors.Is(err, ErrEvidenceQuoteMismatch) {
+		t.Fatalf("validateCandidateEvidence() error = %v, want ErrEvidenceQuoteMismatch", err)
+	}
+	for _, want := range []string{"om_1", "看下当前服务和架构梳理", "当前服务和架构梳理，以及多机房支持"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("evidence error missing %q; got %q", want, err.Error())
+		}
 	}
 }
 

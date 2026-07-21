@@ -215,10 +215,10 @@ func main() {
 		hlog.Fatalf("initialize MVP Task service failed: %v", err)
 	}
 	codexRunner, err := execute.NewCodexRunner(
-		cfg.Codex.Bin, cfg.Codex.Model, time.Duration(cfg.Execute.TimeoutSecond)*time.Second,
+		cfg.Execute.Bin, cfg.Execute.Model, time.Duration(cfg.Execute.TimeoutSecond)*time.Second,
 	)
 	if err != nil {
-		hlog.Fatalf("initialize codex execution runner failed: %v", err)
+		hlog.Fatalf("initialize execute runner failed: %v", err)
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
 		db, taskService, codexRunner, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
@@ -359,6 +359,7 @@ func main() {
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
 			MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: cfg.Extract.MaxToolRounds, Location: location,
+			EvidenceRetryMax:   cfg.Extract.EvidenceRetryMax,
 			PromptToolGuidance: promptToolGuidance,
 		})
 		if err != nil {

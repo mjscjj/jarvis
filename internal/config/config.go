@@ -105,6 +105,13 @@ type ExtractConfig struct {
 	ToolTimeoutSec    int `yaml:"tool_timeout_sec"`
 	HistoryToolLimit  int `yaml:"history_tool_limit"`
 	ToolMemoryMaxTopK int `yaml:"tool_memory_max_top_k"`
+
+	// EvidenceRetryMax caps how many extra extraction attempts are made per unit
+	// when a candidate's source_quote is not a verbatim substring of the cited
+	// [new] messages. On such a failure the model is fed the mismatch details plus
+	// the cited 原文 and asked to re-extract without paraphrasing/splicing. 0
+	// disables retry (extract once). Must be >= 0.
+	EvidenceRetryMax int `yaml:"evidence_retry_max"`
 }
 
 // LarkCLIConfig lark-cli 子进程封装（总纲 §4）。
@@ -148,7 +155,8 @@ type DecideConfig struct {
 	CodexReasoningEffort string `yaml:"codex_reasoning_effort"`
 }
 
-// CodexConfig M4 决策用 codex CLI（总纲 §11.2，全部可配置、不硬编码）。
+// CodexConfig 是 M3 抽取 / M4 决策（以及 chat 复用的 bin）共用的 agent CLI。
+// M5 任务执行用 ExecuteConfig.Bin/Model，可与这里不同（例如这里 traex、执行用 codex）。
 type CodexConfig struct {
 	Bin            string `yaml:"bin"`
 	Model          string `yaml:"model"`
@@ -158,16 +166,19 @@ type CodexConfig struct {
 // ExecuteConfig controls M5 agent-driven execution. Enabled turns on the
 // auto-execution cron (local actions only); manual execution via the API is
 // always available regardless. RepoRoot is the base directory a Task's
-// repo_ref slot is joined under for code changes.
+// repo_ref slot is joined under for code changes. Bin/Model 可独立于
+// codex 段（例如抽取/决策用 traex，真正执行用官方 codex + 更强模型）。
 type ExecuteConfig struct {
-	Enabled               bool   `yaml:"enabled"`                  // 是否开自动执行 cron（本地动作）
-	Schedule              string `yaml:"schedule"`                 // cron 表达式
-	BatchLimit            int    `yaml:"batch_limit"`              // 单次 sweep 最多执行的 Task 数
-	Concurrency           int    `yaml:"concurrency"`              // 单次 sweep 内并行执行的 Task 数（>=1）
-	RepoRoot              string `yaml:"repo_root"`                // code_change repo_ref 的基目录
-	RunsDir               string `yaml:"runs_dir"`                 // diff/产物落盘目录
-	TimeoutSecond         int    `yaml:"timeout_second"`           // 单次 codex 执行超时
-	StaleExecutingMinute  int    `yaml:"stale_executing_minute"`   // executing 超过此时长仍未结束 → 标 failed（防重启僵尸）
+	Enabled              bool   `yaml:"enabled"`                 // 是否开自动执行 cron（本地动作）
+	Schedule             string `yaml:"schedule"`                // cron 表达式
+	BatchLimit           int    `yaml:"batch_limit"`             // 单次 sweep 最多执行的 Task 数
+	Concurrency          int    `yaml:"concurrency"`             // 单次 sweep 内并行执行的 Task 数（>=1）
+	RepoRoot             string `yaml:"repo_root"`               // code_change repo_ref 的基目录
+	RunsDir              string `yaml:"runs_dir"`                // diff/产物落盘目录
+	Bin                  string `yaml:"bin"`                     // M5 执行用的 agent CLI（codex / traex）
+	Model                string `yaml:"model"`                   // M5 执行模型
+	TimeoutSecond        int    `yaml:"timeout_second"`          // 单次执行超时
+	StaleExecutingMinute int    `yaml:"stale_executing_minute"`  // executing 超过此时长仍未结束 → 标 failed（防重启僵尸）
 }
 
 // ChatConfig 控制「基于 codex CLI 的流式对话服务」（/api/chat，SSE）。
@@ -306,6 +317,9 @@ func (c *Config) validate() error {
 	if c.Extract.ToolMemoryMaxTopK < c.Extract.MemoryTopK {
 		return fmt.Errorf("extract.tool_memory_max_top_k 不能小于 extract.memory_top_k")
 	}
+	if c.Extract.EvidenceRetryMax < 0 {
+		return fmt.Errorf("extract.evidence_retry_max 不能为负数")
+	}
 	if c.Extract.Engine != "codex" && c.Extract.Engine != "model_api" {
 		return fmt.Errorf("extract.engine 必须是 codex 或 model_api")
 	}
@@ -395,6 +409,12 @@ func (c *Config) validate() error {
 	}
 	if c.Execute.RunsDir == "" {
 		return fmt.Errorf("execute.runs_dir 不能为空")
+	}
+	if c.Execute.Bin == "" {
+		return fmt.Errorf("execute.bin 不能为空")
+	}
+	if c.Execute.Model == "" {
+		return fmt.Errorf("execute.model 不能为空")
 	}
 	if c.Execute.TimeoutSecond <= 0 {
 		return fmt.Errorf("execute.timeout_second 必须大于 0")

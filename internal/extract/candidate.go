@@ -26,6 +26,12 @@ var (
 	ErrInvalidExtraction     = errors.New("invalid extraction result")
 	ErrInvalidCandidate      = errors.New("invalid todo candidate")
 	ErrFingerprintIncomplete = errors.New("todo fingerprint identity is incomplete")
+	// ErrEvidenceQuoteMismatch marks the self-correctable evidence failure where a
+	// candidate's source_quote is not a verbatim contiguous substring of any cited
+	// [new] message. It wraps ErrInvalidCandidate so existing errors.Is checks keep
+	// working, while letting the worker single out this case for validation-feedback
+	// retry (ask the model to re-extract without paraphrasing/splicing the quote).
+	ErrEvidenceQuoteMismatch = errors.New("source_quote not a verbatim substring of cited [new] messages")
 )
 
 // actionTypes is the closed vocabulary of clue kinds. M5 execution policy keys
