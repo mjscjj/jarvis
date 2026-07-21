@@ -170,6 +170,9 @@ export default function Tasks() {
   const [rejectTarget, setRejectTarget] = useState<Task>()
   const [rejectReason, setRejectReason] = useState('')
   const [rerunSubmitting, setRerunSubmitting] = useState(false)
+  const [approveTarget, setApproveTarget] = useState<Task>()
+  const [approveNote, setApproveNote] = useState('')
+  const [approveSubmitting, setApproveSubmitting] = useState(false)
   const [runs, setRuns] = useState<ExecutionRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runsError, setRunsError] = useState<string>()
@@ -185,6 +188,18 @@ export default function Tasks() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [statuses, refreshKey])
+
+  // 有任务在执行中时静默轮询列表，点完「执行」后状态会从执行中变为完成/失败，无需手动刷新。
+  const hasExecuting = items.some((task) => task.status === 'executing')
+  useEffect(() => {
+    if (!hasExecuting) return
+    const timer = window.setInterval(() => {
+      listTasks(statuses, 1, 100)
+        .then((result) => setItems(result.items))
+        .catch(() => { /* 轮询失败不打扰，下次再试 */ })
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [hasExecuting, statuses])
 
   // 打开详情抽屉时拉该 Task 的执行历史。detail 关闭（undefined）时清空。
   useEffect(() => {
@@ -222,6 +237,12 @@ export default function Tasks() {
     }
   }
 
+  const markLocalExecuting = (taskID: number) => {
+    setItems((prev) => prev.map((task) => (
+      task.id === taskID ? { ...task, status: 'executing' as TaskStatus } : task
+    )))
+  }
+
   const runExecute = async (task: Task) => {
     if (externalActions.has(task.action_type)) {
       const ok = window.confirm(`「${task.title}」是对外动作（${task.action_type}），执行会真实触达外部。确认由 codex 执行？`)
@@ -231,7 +252,7 @@ export default function Tasks() {
     setError(undefined)
     try {
       await executeTask(task.id)
-      setRefreshKey((value) => value + 1)
+      markLocalExecuting(task.id)
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
@@ -239,19 +260,31 @@ export default function Tasks() {
     }
   }
 
-  const runApprove = async (task: Task) => {
-    const ok = window.confirm(`批准后 codex 会真正落地这条对外写入（${task.action_type}）。确认批准并执行？`)
-    if (!ok) return
-    setExecutingId(task.id)
+  const openApprove = (task: Task) => {
+    setApproveTarget(task)
+    setApproveNote('')
+  }
+
+  const submitApprove = async () => {
+    if (!approveTarget) return
+    const task = approveTarget
+    setApproveSubmitting(true)
     setError(undefined)
     try {
-      await approveTask(task.id, task.version)
+      let version = task.version
+      const note = approveNote.trim()
+      if (note) {
+        const updated = await supplementTask(task.id, task.version, note)
+        version = updated.version
+      }
+      await approveTask(task.id, version)
+      markLocalExecuting(task.id)
+      setApproveTarget(undefined)
       setDetail(undefined)
-      setRefreshKey((value) => value + 1)
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
-      setExecutingId(undefined)
+      setApproveSubmitting(false)
     }
   }
 
@@ -291,8 +324,8 @@ export default function Tasks() {
       const note = rerunNote.trim()
       if (note) await supplementTask(task.id, task.version, note)
       await rerunTask(task.id)
+      markLocalExecuting(task.id)
       setRerunTarget(undefined)
-      setRefreshKey((value) => value + 1)
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
@@ -314,10 +347,12 @@ export default function Tasks() {
             <Button danger size="small" onClick={(e) => { e.stopPropagation(); openFinish(task, 'failed') }}>失败</Button>
           </Space>
         }
-        if (task.status === 'executing') return <StatusBadge label="codex 执行中…" color={statusMeta.executing.color} />
+        if (task.status === 'executing') {
+          return <StatusBadge label="codex 执行中…" color={statusMeta.executing.color} />
+        }
         if (task.status === 'awaiting_approval') {
           return <Space onClick={(e) => e.stopPropagation()}>
-            <Button type="primary" size="small" loading={executingId === task.id} onClick={(e) => { e.stopPropagation(); runApprove(task) }}>批准落地</Button>
+            <Button type="primary" size="small" loading={approveSubmitting && approveTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openApprove(task) }}>批准落地</Button>
             <Button danger size="small" onClick={(e) => { e.stopPropagation(); openReject(task) }}>驳回</Button>
           </Space>
         }
@@ -378,7 +413,7 @@ export default function Tasks() {
             />
             <ProposalCard result={proposalOf(detail)!} />
             <Space style={{ marginTop: 12 }}>
-              <Button type="primary" loading={executingId === detail.id} onClick={() => runApprove(detail)}>批准落地</Button>
+              <Button type="primary" loading={approveSubmitting && approveTarget?.id === detail.id} onClick={() => openApprove(detail)}>批准落地</Button>
               <Button danger onClick={() => openReject(detail)}>驳回</Button>
             </Space>
           </section>
@@ -406,6 +441,20 @@ export default function Tasks() {
     </Drawer>
     <Modal title={finishStatus === 'done' ? '记录完成结果' : '记录失败原因'} open={Boolean(selected)} confirmLoading={submitting} onOk={submit} onCancel={() => setSelected(undefined)} okText="提交">
       <Input.TextArea rows={5} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder={finishStatus === 'done' ? '完成了什么、产物在哪里' : '失败原因和需要的后续处理'} />
+    </Modal>
+    <Modal
+      title={approveTarget ? `批准落地「${approveTarget.title}」` : '批准落地'}
+      open={Boolean(approveTarget)}
+      confirmLoading={approveSubmitting}
+      onOk={submitApprove}
+      onCancel={() => setApproveTarget(undefined)}
+      okText="确认批准并落地"
+    >
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <Alert type="warning" showIcon message="对外写入将真正落地" description="批准后 codex 会按已审阅的方案真实写出/发送。可在下方追加落地时的补充指示（可不填）。" />
+        <Text type="secondary">可选填写补充信息/指示；留空则直接按已批准方案落地。填写后会持久保存到执行阶段补充，落地与之后重跑都会带上。</Text>
+        <Input.TextArea rows={4} value={approveNote} onChange={(event) => setApproveNote(event.target.value)} placeholder="例如：标题加上【紧急】；抄送给 B；文档先放草稿区不要直接发公告等（可不填）" />
+      </Space>
     </Modal>
     <Modal
       title={rerunTarget ? `重跑「${rerunTarget.title}」` : '重跑任务'}

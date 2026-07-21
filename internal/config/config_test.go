@@ -140,6 +140,8 @@ func TestValidate(t *testing.T) {
 			c.Execute.Concurrency = 0
 		}, wantErr: "execute.concurrency"},
 		{name: "execute stale minute", mutate: func(c *Config) { c.Execute.StaleExecutingMinute = 0 }, wantErr: "execute.stale_executing_minute"},
+		{name: "execute bin", mutate: func(c *Config) { c.Execute.Bin = "" }, wantErr: "execute.bin"},
+		{name: "execute model", mutate: func(c *Config) { c.Execute.Model = "" }, wantErr: "execute.model"},
 		{name: "execute stale vs timeout", mutate: func(c *Config) {
 			c.Execute.TimeoutSecond = 600
 			c.Execute.StaleExecutingMinute = 5
@@ -220,7 +222,8 @@ func TestValidateExtractEnabled(t *testing.T) {
 func validExecuteConfig() ExecuteConfig {
 	return ExecuteConfig{
 		Enabled: false, Schedule: "@every 5m", BatchLimit: 5, Concurrency: 3,
-		RepoRoot: "/tmp/repos", RunsDir: "/tmp/runs", TimeoutSecond: 600,
+		RepoRoot: "/tmp/repos", RunsDir: "/tmp/runs",
+		Bin: "codex", Model: "fixture-exec-model", TimeoutSecond: 600,
 		StaleExecutingMinute: 30,
 	}
 }

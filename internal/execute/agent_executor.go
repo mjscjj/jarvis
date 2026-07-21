@@ -150,9 +150,9 @@ func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit, concurrency 
 	return stats, nil
 }
 
-// KickExecute starts Task execution in the background and returns immediately
-// after validating the Task is pending. The HTTP handler should not block on
-// codex; poll Task status or refresh the list for completion.
+// KickExecute starts Task execution in the background. It claims the Task
+// synchronously (pending -> executing) so the API/UI immediately see executing,
+// then runs codex in a goroutine. Poll Task status for completion.
 func (e *AgentExecutor) KickExecute(ctx context.Context, input ExecuteInput) (*ExecuteResult, error) {
 	if input.TaskID == 0 {
 		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
@@ -167,16 +167,20 @@ func (e *AgentExecutor) KickExecute(ctx context.Context, input ExecuteInput) (*E
 	if task.Status != "pending" {
 		return nil, fmt.Errorf("%w: task_id=%d from=%s to=executing", ErrInvalidTransition, task.ID, task.Status)
 	}
-	e.executeInBackground(input.TaskID)
-	return &ExecuteResult{TaskID: task.ID, Status: task.Status}, nil
+	if _, ok := lookupPolicy(task.ActionType); !ok {
+		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
+	}
+	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
+	if err != nil {
+		return nil, err
+	}
+	e.executeClaimedInBackground(task.ID, execVersion)
+	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
 }
 
 // KickRerun re-executes an already-finished Task (done or failed): it resets the
-// Task to pending (clearing the old result) and kicks execution in the background,
-// returning as soon as the reset succeeds. For external actions the background
-// run re-enters the propose stage, so a rerun of a rejected external write
-// re-proposes rather than silently landing. Persisted execution_supplements are
-// replayed on every run via buildExecutionPrompt.
+// Task to pending (clearing the old result), claims it as executing, and runs in
+// the background. Returns status=executing so the UI can refresh immediately.
 func (e *AgentExecutor) KickRerun(ctx context.Context, taskID uint64) (*ExecuteResult, error) {
 	if taskID == 0 {
 		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
@@ -185,13 +189,17 @@ func (e *AgentExecutor) KickRerun(ctx context.Context, taskID uint64) (*ExecuteR
 	if err != nil {
 		return nil, err
 	}
-	e.executeInBackground(taskID)
-	return &ExecuteResult{TaskID: taskID, Status: task.Status}, nil
+	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
+	if err != nil {
+		return nil, err
+	}
+	e.executeClaimedInBackground(task.ID, execVersion)
+	return &ExecuteResult{TaskID: taskID, Status: "executing"}, nil
 }
 
-func (e *AgentExecutor) executeInBackground(taskID uint64) {
+func (e *AgentExecutor) executeClaimedInBackground(taskID uint64, execVersion int32) {
 	go func() {
-		if _, err := e.Execute(context.Background(), ExecuteInput{TaskID: taskID}); err != nil {
+		if _, err := e.executeClaimed(context.Background(), taskID, execVersion); err != nil {
 			log.Printf("background execute task_id=%d: %v", taskID, err)
 		}
 	}()
@@ -320,8 +328,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 		return nil, fmt.Errorf("load Task id=%d: %w", input.TaskID, err)
 	}
 
-	policy, ok := lookupPolicy(task.ActionType)
-	if !ok {
+	if _, ok := lookupPolicy(task.ActionType); !ok {
 		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
 	}
 
@@ -329,6 +336,23 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
 	if err != nil {
 		return nil, err
+	}
+	return e.executeClaimed(ctx, task.ID, execVersion)
+}
+
+// executeClaimed runs an already-claimed (executing) Task. Used by KickExecute /
+// KickRerun after a synchronous claim, and by Execute after MarkExecuting.
+func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execVersion int32) (*ExecuteResult, error) {
+	var task domain.Task
+	if err := e.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return nil, fmt.Errorf("load Task id=%d: %w", taskID, err)
+	}
+	policy, ok := lookupPolicy(task.ActionType)
+	if !ok {
+		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
 	}
 
 	// Only code_change runs straight through to completion (edit + commit + diff +

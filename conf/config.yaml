@@ -68,6 +68,7 @@ extract:
   tool_timeout_sec: 10        # 单次工具调用超时（秒）
   history_tool_limit: 50      # query_chat_history 单次最多返回消息数
   tool_memory_max_top_k: 20   # search_memory 允许模型请求的 top_k 上限
+  evidence_retry_max: 2       # source_quote 非逐字命中时，最多额外重抽次数（0=不重试）
 
 # lark-cli 子进程封装（总纲 §4）
 lark_cli:
@@ -101,15 +102,15 @@ decide:
   codex_network: true
   codex_reasoning_effort: "medium"
 
-# 底层 agent CLI（本项目可切换：codex 或 traex，二者 CLI 契约一致，改 bin/model 即可切换）。
-# extract(M3)/decide(M4)/execute(M5)/chat 四处都用这里的 bin。当前切到 traex + DeepSeek-V4-Pro。
+# 底层 agent CLI：供 extract(M3)/decide(M4) 以及 chat 的 bin 复用。
+# 与 execute 段独立——真正跑 Task 用 execute.bin/model。
 codex:
   bin: "traex"
   model: "gpt-5.4"
   timeout_seconds: 600   # M3 抽取/M4 决策会多轮自跑 lark-cli/bytedcli 查飞书信息，放宽超时
 
-# M5 agent 驱动执行：codex 用 workspace-write 真实改代码，改完自动 commit 到独立分支不 push。
-# 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron（只跑本地动作）。
+# M5 任务执行：独立于上面的 codex 段。这里用官方 codex + 更强模型真正落地。
+# 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron。
 execute:
   enabled: true                                    # 全自动：M4 判 ready 建的 Task 由此 cron 自动执行（含对外动作 + push/MR）
   schedule: "@every 5m"
@@ -117,7 +118,9 @@ execute:
   concurrency: 3                                    # 单次 sweep 内并行执行的 Task 数
   repo_root: "/Users/bytedance/workspace-local"    # code_change 的 repo_ref 基目录
   runs_dir: "/Users/bytedance/workspace-local/jarvis/runs"  # diff/产物落盘
-  timeout_second: 600                              # codex 执行单次超时（改代码可能久）
+  bin: "codex"                                     # M5 用官方 Codex CLI（与 M3/M4 的 traex 分开）
+  model: "gpt-5.6-sol"                             # Latest frontier（codex 无裸 gpt-5.6；luna/terra/sol 里 sol 最强）
+  timeout_second: 600                              # 单次执行超时（改代码可能久）
   stale_executing_minute: 30                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
 
 # 基于 codex CLI 的流式对话（右侧对话框，SSE /api/chat）。enabled=false 时不注册路由。
