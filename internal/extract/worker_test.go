@@ -24,13 +24,26 @@ func (f *fakePipelineStore) LoadPendingChats(context.Context, LoadOptions) ([]Ch
 	return f.batches, f.loadErr
 }
 
+func (f *fakePipelineStore) LoadPendingChat(_ context.Context, chatID string, _ LoadOptions) (*ChatBatch, error) {
+	if f.loadErr != nil {
+		return nil, f.loadErr
+	}
+	for i := range f.batches {
+		if f.batches[i].Group.ChatID == chatID {
+			batch := f.batches[i]
+			return &batch, nil
+		}
+	}
+	return nil, nil
+}
+
 func (f *fakePipelineStore) PersistChat(_ context.Context, _ ChatBatch, results []UnitExtraction, _ string) (PersistStats, error) {
 	f.persistCalls++
 	f.results = results
 	if f.persistErr != nil {
 		return PersistStats{}, f.persistErr
 	}
-	return PersistStats{Created: 2, Updated: 1}, nil
+	return PersistStats{Created: 2, Updated: 1, Todos: []TodoRef{{ID: 7, Version: 0, Status: "extracted"}}}, nil
 }
 
 type fakeModelExtractor struct {
@@ -144,6 +157,59 @@ func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	}
 	if len(model.maxRounds) != 1 || model.maxRounds[0] != validWorkerOptions().MaxToolRounds {
 		t.Fatalf("max rounds passed = %#v", model.maxRounds)
+	}
+}
+
+func TestWorkerExtractChatReturnsCommittedTodoRefs(t *testing.T) {
+	store := &fakePipelineStore{batches: []ChatBatch{{
+		Group: GroupContext{ID: 1, ChatID: "oc_realtime"},
+		Units: []ConversationUnit{{Key: "chat", Messages: []MessageContext{{
+			MessageID: "om_1", Content: "请跟进这个问题", IsNew: true, Extractable: true,
+		}}}},
+		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_realtime", IsNew: true},
+	}}}
+	worker, err := NewWorker(
+		store,
+		&fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{}}},
+		&fakeMemorySearcher{},
+		&fakeCandidateDeduplicator{},
+		&fakeToolBoxBuilder{},
+		validWorkerOptions(),
+	)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+
+	stats, todos, err := worker.ExtractChat(context.Background(), "oc_realtime")
+	if err != nil {
+		t.Fatalf("ExtractChat() error = %v", err)
+	}
+	if stats.ChatsLoaded != 1 || stats.ChatsProcessed != 1 || stats.Created != 2 || stats.Updated != 1 {
+		t.Fatalf("stats = %#v", stats)
+	}
+	if len(todos) != 1 || todos[0].ID != 7 || todos[0].Version != 0 || todos[0].Status != "extracted" {
+		t.Fatalf("todos = %#v", todos)
+	}
+}
+
+func TestWorkerExtractChatSkipsChatWithoutPendingMessages(t *testing.T) {
+	worker, err := NewWorker(
+		&fakePipelineStore{},
+		&fakeModelExtractor{},
+		&fakeMemorySearcher{},
+		&fakeCandidateDeduplicator{},
+		&fakeToolBoxBuilder{},
+		validWorkerOptions(),
+	)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	stats, todos, err := worker.ExtractChat(context.Background(), "oc_idle")
+	if err != nil {
+		t.Fatalf("ExtractChat() error = %v", err)
+	}
+	if stats != (WorkerStats{}) || len(todos) != 0 {
+		t.Fatalf("stats=%#v todos=%#v", stats, todos)
 	}
 }
 

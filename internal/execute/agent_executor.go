@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"jarvis/internal/contextsnap"
@@ -48,16 +47,15 @@ type ExecuteResult struct {
 // and lets codex orchestrate. action_type only picks the sandbox and whether the
 // run skips the propose/approval gate (code_change) or must propose first.
 type AgentExecutor struct {
-	db             *gorm.DB
-	store          *Store
-	runner         *CodexRunner
-	repoRoot       string
-	runsDir        string
-	staleExecuting time.Duration
-	now            func() time.Time
+	db       *gorm.DB
+	store    *Store
+	runner   *CodexRunner
+	repoRoot string
+	runsDir  string
+	now      func() time.Time
 }
 
-func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, repoRoot, runsDir string, staleExecuting time.Duration) (*AgentExecutor, error) {
+func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, repoRoot, runsDir string) (*AgentExecutor, error) {
 	if db == nil {
 		return nil, fmt.Errorf("agent executor db is nil")
 	}
@@ -73,81 +71,10 @@ func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, repoRoot, 
 	if strings.TrimSpace(runsDir) == "" {
 		return nil, fmt.Errorf("agent executor runs dir is required")
 	}
-	if staleExecuting <= 0 {
-		return nil, fmt.Errorf("agent executor stale executing threshold must be positive")
-	}
 	return &AgentExecutor{
 		db: db, store: store, runner: runner, repoRoot: repoRoot, runsDir: runsDir,
-		staleExecuting: staleExecuting, now: time.Now,
+		now: time.Now,
 	}, nil
-}
-
-// BatchStats summarizes one auto-execution sweep. AwaitingApproval counts Tasks
-// that ran the propose stage and parked at awaiting_approval — the agent decided
-// it would write to the outside world and produced a proposal, but nothing
-// landed and no human has approved yet, so it is neither executed nor failed.
-// StaleFailed counts Tasks that were stuck in executing beyond the stale
-// threshold and force-failed at the start of this sweep.
-type BatchStats struct {
-	Loaded           int
-	Executed         int
-	AwaitingApproval int
-	Failed           int
-	StaleFailed      int
-}
-
-// RunPendingBatch is the cron entry point: it first fails Tasks stuck in
-// executing beyond the stale threshold (restart zombies), then drives ALL
-// pending Tasks through their first stage automatically. code_change runs
-// straight to completion (its MR is the human review gate). Every other
-// action_type runs the propose stage: the agent decides — by its actual
-// intended behavior — whether it will touch the outside world. If it will, it
-// produces a proposal and parks the Task at awaiting_approval for a human
-// (cron never lands that write on its own); if it is only reading/querying, it
-// finishes in place. Tasks in a sweep run concurrently up to `concurrency` at
-// a time; a single Task failure does not abort the sweep — it is counted and
-// the others continue. Each Task claims itself via MarkExecuting (optimistic
-// lock), so concurrent runs never double-execute.
-func (e *AgentExecutor) RunPendingBatch(ctx context.Context, limit, concurrency int) (BatchStats, error) {
-	if concurrency <= 0 {
-		return BatchStats{}, fmt.Errorf("execute batch concurrency must be positive, got %d", concurrency)
-	}
-	staleFailed, err := e.store.FailStaleExecuting(ctx, e.staleExecuting, e.now())
-	if err != nil {
-		return BatchStats{}, err
-	}
-	tasks, err := e.store.LoadPending(ctx, limit)
-	if err != nil {
-		return BatchStats{}, err
-	}
-	stats := BatchStats{Loaded: len(tasks), StaleFailed: staleFailed}
-	var (
-		mu  sync.Mutex
-		wg  sync.WaitGroup
-		sem = make(chan struct{}, concurrency)
-	)
-	for i := range tasks {
-		task := &tasks[i]
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(taskID uint64) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			result, err := e.Execute(ctx, ExecuteInput{TaskID: taskID})
-			mu.Lock()
-			switch {
-			case err != nil:
-				stats.Failed++
-			case result != nil && result.Status == "awaiting_approval":
-				stats.AwaitingApproval++
-			default:
-				stats.Executed++
-			}
-			mu.Unlock()
-		}(task.ID)
-	}
-	wg.Wait()
-	return stats, nil
 }
 
 // KickExecute starts Task execution in the background. It claims the Task

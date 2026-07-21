@@ -140,3 +140,40 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 		t.Fatalf("codex called %d times, want 1", runner.calls)
 	}
 }
+
+func TestCodexEvaluatorPreservesManualGateAfterSupplement(t *testing.T) {
+	todo := &domain.Todo{
+		ID: 42, Version: 4, Status: "extracted", ManualGateRequired: true,
+		Title: "Fix deadlock", Description: "supplemented details", ActionType: "code_change",
+		Target: "采集死锁问题", Context: "repo jarvis", OpenQuestions: datatypes.JSON([]byte(`[]`)),
+		ExtractionResult: datatypes.JSON([]byte(`{"action_type":"code_change","title":"Fix deadlock","target":"采集死锁问题","description":"supplemented details","source_quote":"修一下采集死锁"}`)),
+		ContextSnapshot:  testContextSnapshot(t),
+	}
+	runner := &fakeCodexDecisionRunner{result: &CodexResult{
+		SessionID: "sess-ready",
+		Decision: CodexDecision{
+			Disposition:       DispositionReady,
+			ConfidenceFactors: clearFactors(), RiskFactors: riskyFactors(),
+			ConfidenceBasis: "now complete", PlanIsClear: true, ProposedPlan: clearPlan(),
+		},
+	}}
+	evaluator, err := NewCodexEvaluator(nil, runner)
+	if err != nil {
+		t.Fatalf("NewCodexEvaluator() error = %v", err)
+	}
+
+	input, err := evaluator.Evaluate(context.Background(), todo)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if input.Route != RouteNeedDecision || input.RouteReason != "codex_ready_manual_gate_preserved" {
+		t.Fatalf("route=%q reason=%q", input.Route, input.RouteReason)
+	}
+	found := false
+	for _, rule := range input.MatchedRules {
+		found = found || rule == "manual_gate_required"
+	}
+	if !found {
+		t.Fatalf("matched rules = %#v", input.MatchedRules)
+	}
+}

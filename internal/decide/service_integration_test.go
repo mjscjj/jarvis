@@ -155,7 +155,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		if err := tx.First(&storedTodo, todo.ID).Error; err != nil {
 			t.Fatalf("load evaluated Todo: %v", err)
 		}
-		if storedTodo.Status != RouteNeedDecision || storedTodo.Route == nil || *storedTodo.Route != RouteNeedDecision || storedTodo.Confidence != nil || storedTodo.Risk != nil {
+		if storedTodo.Status != RouteNeedDecision || storedTodo.Route == nil || *storedTodo.Route != RouteNeedDecision || storedTodo.Confidence != nil || storedTodo.Risk != nil || !storedTodo.ManualGateRequired {
 			t.Fatalf("stored evaluated Todo = %#v", storedTodo)
 		}
 		var taskCount int64

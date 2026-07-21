@@ -57,6 +57,7 @@ type TodoView struct {
 	Confidence         *float64         `json:"confidence"`
 	Risk               *float64         `json:"risk"`
 	Route              *string          `json:"route"`
+	ManualGateRequired bool             `json:"manual_gate_required"`
 	Revision           int32            `json:"revision"`
 	Version            int32            `json:"version"`
 	FirstSeenAt        time.Time        `json:"first_seen_at"`
@@ -181,7 +182,7 @@ func todoView(todo *domain.Todo) TodoView {
 		SourceMessageIDs:   rawJSON(todo.SourceMessageIDs), SourceQuote: todo.SourceQuote,
 		AssignerOpenID: todo.AssignerOpenID, IsLeaderAssigned: todo.IsLeaderAssigned,
 		DueAt: todo.DueAt, Status: todo.Status, Confidence: todo.Confidence,
-		Risk: todo.Risk, Route: todo.Route,
+		Risk: todo.Risk, Route: todo.Route, ManualGateRequired: todo.ManualGateRequired,
 		Revision: todo.Revision, Version: todo.Version, FirstSeenAt: todo.FirstSeenAt,
 		LastEvidenceAt: todo.LastEvidenceAt, CreatedAt: todo.CreatedAt, UpdatedAt: todo.UpdatedAt,
 		Resolution: rawJSON(todo.Resolution), ContextSnapshot: rawJSON(todo.ContextSnapshot),

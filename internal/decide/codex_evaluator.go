@@ -30,9 +30,9 @@ var neutralRuleScore = RuleScore{Confidence: 0.5, Risk: 0.5}
 // CodexEvaluator implements todoEvaluator by asking Codex (read-only) to judge
 // each extracted Todo. It reuses the existing CodexDecider/BuildCodexPrompt/
 // schema unchanged and maps Codex's signals to a disposition, then to the
-// stored route (need_info or need_decision). On re-evaluation after a human
-// supplement it also loads previous evaluation summaries from todo_event so the
-// prompt carries what was already asked/proposed/looked up.
+// stored route. On re-evaluation after a human supplement it also loads previous
+// evaluation summaries from todo_event. A sticky manual gate prevents a prior
+// need_decision from turning into automatic execution after supplementation.
 type CodexEvaluator struct {
 	db    *gorm.DB // optional in unit tests; nil → empty previous_evaluations
 	codex codexDecisionRunner
@@ -85,6 +85,13 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 	if err != nil {
 		return nil, fmt.Errorf("codex evaluation todo_id=%d: %w", todo.ID, err)
 	}
+	routeReason := "codex_" + disposition
+	matchedRules := []string{"codex_disposition:" + disposition}
+	if todo.ManualGateRequired && route == RouteAuto {
+		route = RouteNeedDecision
+		routeReason = "codex_ready_manual_gate_preserved"
+		matchedRules = append(matchedRules, "manual_gate_required")
+	}
 
 	sessionID := result.SessionID
 	input := &EvaluationInput{
@@ -93,10 +100,10 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 		Confidence:             confidence,
 		Risk:                   risk,
 		Route:                  route,
-		RouteReason:            "codex_" + disposition,
+		RouteReason:            routeReason,
 		ConfidenceFactors:      result.Decision.ConfidenceFactors,
 		RiskFactors:            result.Decision.RiskFactors,
-		MatchedRules:           []string{"codex_disposition:" + disposition},
+		MatchedRules:           matchedRules,
 		DecisionEngine:         DecisionEngineCodex,
 		CodexSessionID:         &sessionID,
 		PromptVersion:          prompt.Version,

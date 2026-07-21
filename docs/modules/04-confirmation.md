@@ -631,9 +631,9 @@ CREATE TABLE decision_audit (
 
 ---
 
-## 11. 当前实现进展（2026-07-19）
+## 11. 当前实现进展（2026-07-21）
 
-本轮先实现不依赖待校准阈值的**人工确认核心闸门**，没有擅自开启自动确认：
+当前同时支持 `manual_mvp` 人工闸门和 `codex` 自动分流：
 
 - 已新增 `internal/decide`，人工批准仅接受 `need_decision`；人工拒绝接受 `need_info / need_decision`。其他来源状态直接冲突，不把 M3 的 `extracted` Todo 绕过打分变成 Task。
 - 已实现 `GET /api/confirmations` 待确认队列与 `GET /api/confirmations/:todo_id` 决策详情，只允许 `need_info / need_decision`；详情按源顺序返回消息、交办人、Todo 事件、decision audit 和最新 proposed plan。已实现对应 `/approve` 和 `/reject`。写接口强制携带 `expected_version`，请求体拒绝未知字段；版本冲突、状态冲突、重复 Task 返回 409。
@@ -641,17 +641,17 @@ CREATE TABLE decision_audit (
 - Task 的 `plan / slots / background` 均为确认时快照；`action_hash = sha256(canonical(action_type, slots, plan))`。Task 创建、Todo `confirmed + version+1`、`todo_event` 与 `decision_audit` 在同一事务提交，`task.uk_task_todo` 保证一 Todo 一 Task。
 - 拒绝时不生成 Task；Todo `dismissed + version+1`、`todo_event` 和 `decision_audit` 同事务提交。
 - `decision_audit` 已进入启动迁移，并已迁移当前本地 MySQL。
-- 已实现只读 Codex CLI 适配层：按本机实际命令使用 `exec --ephemeral --sandbox read-only --json --output-schema --output-last-message`；prompt 经 stdin 输入，有 repo 才传 `--cd`，无 repo 则切到隔离临时目录；严格校验 JSONL session、结构化因子/plan、分数范围与未知字段。该层尚未接入路由，因此不会自行处理真实 Todo。
+- 已实现并接入只读 Codex CLI 适配层：按本机实际命令使用 `exec --ephemeral --sandbox read-only --json --output-schema --output-last-message`；prompt 经 stdin 输入，有 repo 才传 `--cd`，无 repo 则切到隔离临时目录；严格校验 JSONL session、结构化因子/plan、分数范围与未知字段。
 - 已实现进程内 Codex 双滑窗预算闸：小时/24 小时限额原子占位，并发不会突破上限；超限不启动 CLI，默认产生 `need_decision` override，只有显式配置 `degrade_to_rule` 才回规则结果。调用失败或非法输出仍计入已发起调用，时钟回退直接报错。
 - 已实现灰区编排组件：只有 confidence/risk 同时落入配置区间才调用 Codex；超时、非法输出、nil 结果统一保留失败详情并 override 到 `need_decision`，调用方主动取消则向上传播。Codex 配置现在在启动加载时校验预算、灰区和 fail-safe 行为。
 - 已实现 `todo-decision-v1` prompt 组装并接入灰区组件：Todo、规则分和 background 被编码为带长度的不可信 JSON 数据区，消息/记忆中的指令明确禁止作为系统指令；输入缺失在启动 Codex 前失败，prompt version 随判定结果返回供审计。
-- 已实现配置化三路由 Router，严格按 §4.1 first-match-wins 执行；阈值和 `action_manifest` 全由调用方注入，不在代码中写死。未知动作、强制确认、方案不清、信息缺口、风险门槛、review/不确定性挤出和默认转人工均有边界测试。Router 可以识别 auto 候选，但当前落库入口明确拒绝 auto。
-- 已实现评估结果原子落库：仅允许 `extracted → need_info / need_decision`，同一事务更新 Todo route/status/version 并写 `todo_event + decision_audit`；MVP 不填 confidence/risk，也不会生成 Task。
-- 已实现并启用 `manual_mvp` evaluator：所有 `extracted` Todo 固定进入 `need_decision`，不做评分、不调用 codex。配置支持开关、cron 和批量上限，主进程已接入定时运行，并提供 `--decide-once` 单次入口。
-- runtime worker 由 GORM source 按 leader 优先、证据时间、ID 稳定读取 Todo；强校验 ID/version 和落库结果，任一错误立即停止；cron 使用 `SkipIfStillRunning` 防止批次重叠。
+- 已实现配置化路由与评估落库：`auto` 会原子创建 `pending Task`，`need_info / need_decision / dropped` 只更新 Todo；所有路径写 `todo_event + decision_audit`。
+- `manual_mvp` evaluator 仍可选：所有 `extracted` Todo 固定进入 `need_decision`，不做评分、不调用 codex。
+- M3 提交 Todo 后按 ID/version 实时调用 `EvaluateTodo`；补充信息也进入同一队列。`decide.schedule` 只扫描遗漏的 `extracted` 作为补偿，`--decide-once` 保留手工验收。
+- Todo 一旦进入 `need_decision` 就设置 sticky `manual_gate_required`；用户补充信息后可重评计划，但 Codex 的 `ready` 不会绕过既有人工审核直接创建 Task。
 - 已覆盖严格 HTTP 契约、action hash 稳定性、真实 MySQL 事务/唯一 Task/审计/全回滚测试；真实 MySQL 合成验收已跑通 `extracted → need_decision → approve → Task`，不调用飞书、mem0 或模型。
 
-MVP 已由 M5 的人工 Task 完成回写闭环接通。后续增强项包括规则打分 + DeepJudge + Router 的生产装配、auto 专用确认路径、补信息回流、飞书卡片及 TTL 扫描；这些不阻塞当前人工流程，且在真实使用证明有价值前不启用。
+M4 已同时接通自动建 Task、人工批准/拒绝和补信息重评；后续增强项主要是飞书卡片与 TTL 扫描，不影响当前后台闭环。
 
 ---
 

@@ -92,6 +92,52 @@ func (s *PipelineStore) LoadPendingChats(ctx context.Context, opts LoadOptions) 
 	return batches, nil
 }
 
+// LoadPendingChat builds the same M3 batch as LoadPendingChats, scoped to the
+// chat that just committed new messages. A nil batch means the chat has no work
+// beyond its extraction watermark (for example, a duplicate wake-up).
+func (s *PipelineStore) LoadPendingChat(ctx context.Context, chatID string, opts LoadOptions) (*ChatBatch, error) {
+	if err := validateLoadOptions(opts); err != nil {
+		return nil, err
+	}
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return nil, fmt.Errorf("load pending extraction chat_id is empty")
+	}
+	var group domain.Group
+	result := s.db.WithContext(ctx).Preload("Project").Where("chat_id = ?", chatID).Limit(1).Find(&group)
+	if result.Error != nil {
+		return nil, fmt.Errorf("load extraction group chat_id=%s: %w", chatID, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, fmt.Errorf("load extraction group chat_id=%s: not found", chatID)
+	}
+	if !group.RelatedGroup {
+		return nil, fmt.Errorf("load extraction group chat_id=%s: not related", chatID)
+	}
+	messages, err := s.loadNewMessages(ctx, chatID, opts.BatchMessages)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 {
+		return nil, nil
+	}
+	batch, err := s.buildChatBatch(ctx, &group, messages, opts)
+	if err != nil {
+		return nil, fmt.Errorf("build extraction batch chat_id=%s: %w", chatID, err)
+	}
+	principal, err := s.loadPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	projects, err := s.loadProjectSummaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	batch.Principal = principal
+	batch.OtherProjects = otherProjectsExcluding(projects, batch.Group.ProjectID)
+	return batch, nil
+}
+
 // loadPrincipal returns the decision-maker profile, resolving the leader name
 // from the person table when the profile did not capture it. Returns nil when no
 // profile row has been saved yet (extraction still works, just without the self

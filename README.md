@@ -10,7 +10,7 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 
 ## 架构导航（写代码前先看这里）
 
-单体 Go 进程，一条流水线 5 个模块，全部由 cron 驱动，模块之间**不直接调用**，靠数据库标志位解耦（`related_group` / `mem0_processed` / `todo.status` / `task.status`）。
+单体 Go 进程，一条流水线 5 个模块。M2 的消息扫描仍由 cron 发起；扫描落库后由进程内协调器按持久化 ID/version 实时串行推进 `M3 → M4 → M5`。MySQL 状态仍是 source of truth，M3/M4/M5 的原 schedule 只做漏通知、崩溃恢复和存量数据补偿。
 
 ### 数据流
 
@@ -54,7 +54,8 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 | M2.5 记忆 | `internal/memory/` | 消息切窗 → mem0 抽事实 → 向量入库 | `worker.go`（窗口化编排）、`store.go`（pending 查询/标记）、`client.go`（sidecar HTTP） | mem0 sidecar → Qdrant `jarvis_memories` |
 | M3 抽取 | `internal/extract/` | 从新消息抽 Todo（默认 `engine=codex`：traex agent 自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库并冻结 `context_snapshot`；备用 `model_api` function-calling 循环）+ 语义去重 + source_quote 证据重抽 | `worker.go`（编排）、`pipeline_store.go`（加载/组批）、`prompt.go`（提示词）、`persist.go`（落库）、`dedup.go`（去重）、`codexengine/`（traex agent 引擎）、`provider/`（百炼 model API）、`tools/`（工具） | traex agent（`gpt-5.4`）/ 百炼 `qwen-plus` + Qdrant `todo_semantic` + mem0（检索） |
 | M4 决策 | `internal/decide/` | 给 Todo 定 disposition：`codex` 用 codex/traex 判 `auto_execute`/`need_review`/`need_info`（need_info 带结构化 clarifications 说明缺什么）；`manual_mvp` 全走人工确认 | `worker.go`（批处理）、`manual_gate.go` / `codex_evaluator.go`（两种评估器）、`codex.go`（调 agent CLI）、`evaluation.go`（落库）、`service.go`（Approve/Reject 建 Task）、`background.go`（快照）、`constants.go`（共享常量） | traex agent（`gpt-5.4`，read-only 判定，可自查补信息） |
-| M5 执行 | `internal/execute/` | 执行确认后的 Task：`enabled=true` 时 M4 判 ready 的 Task 由 cron 自动执行，手动执行始终可用；两阶段人工审批——code_change 有 MR review 作闸门直接跑完，其余 action_type 由 agent 在 propose 阶段判 `needs_approval`，高风险停 `awaiting_approval` 等用户批准后才 apply；批准/执行/重跑均异步（接口立即返回 executing，后台跑 codex），并发 `execute.concurrency` | `agent_executor.go`（执行主流程）、`codex_runner.go`（调官方 codex CLI）、`policy.go`（各 action_type 的 sandbox/是否需批准）、`git.go`（分支/commit/diff）、`store.go`（Task 状态机） | 官方 codex agent（`gpt-5.6-sol`，code_change 用 workspace-write）→ diff/产物落 `runs_dir` |
+| M5 执行 | `internal/execute/` | 执行确认后的 Task：`enabled=true` 时 M4 新建的 Task 立即进入执行队列，cron 只补偿扫描 `pending`；手动执行始终可用；两阶段人工审批——code_change 有 MR review 作闸门直接跑完，其余 action_type 由 agent 在 propose 阶段判 `needs_approval`，高风险停 `awaiting_approval` 等用户批准后才 apply；批准/执行/重跑均异步（接口立即返回 executing，后台跑 codex），并发 `execute.concurrency` | `agent_executor.go`（执行主流程）、`codex_runner.go`（调官方 codex CLI）、`policy.go`（各 action_type 的 sandbox/是否需批准）、`git.go`（分支/commit/diff）、`store.go`（Task 状态机） | 官方 codex agent（`gpt-5.6-sol`，code_change 用 workspace-write）→ diff/产物落 `runs_dir` |
+| 流水线协调 | `internal/pipeline/` | 接收 M2/M3/M4 状态提交后的轻量通知，按 chat/todo/task 定向推进；内存队列只加速，启动与 cron 均从 MySQL 补偿 | `coordinator.go`（串行编排与 M5 并发）、`queue.go`（按 ID/version 合并）、`scheduler.go`（补偿调度） | — |
 | 背景管理 | `internal/background/` | 后台可编辑的项目/人物/群/决策主体；种子数据 | `project.go` / `person.go` / `group.go` / `profile.go`（各实体 service）、`resolve.go`（lark-cli 按名字查 open_id）、`seed.go` / `seed_persons.go`（`-seed` / `-seed-persons`） | lark-cli（resolve/拉群成员） |
 | API | `internal/api/` | 所有 HTTP handler + 路由注册 | `router.go`（**所有路由在这里注册**）、各资源一个文件 | — |
 | 领域模型 | `internal/domain/` | 8 个核心实体的 GORM model | `models.go`（8 实体）、`capture.go`（message/checkpoint）、`extract.go` / `decide.go` / `execute.go`（各模块附属表） | — |
@@ -85,7 +86,7 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 - **加/改 action_type 的执行策略（sandbox、是否需人工批准）** → `internal/execute/policy.go`
 - **加一个 HTTP 接口** → `internal/api/`（新建 handler + 在 `router.go` 注册）
 - **加一张表 / 改字段** → `internal/domain/`（改 model，加进 `CoreModels()`）
-- **改采集频率 / cron** → `conf/config.yaml`（各模块 `schedule`）
+- **改采集频率 / 补偿 cron** → `conf/config.yaml`（各模块 `schedule`）
 - **改前端页面** → `web/src/`（各页面一个文件，见下方目录结构）
 
 ### HTTP 接口一览（全部注册在 `internal/api/router.go`）
@@ -115,18 +116,18 @@ POST /api/chat                                            # 需 chat.enabled=tru
 
 ## 调度与后台循环
 
-单体进程内跑 5 个独立 cron loop（capture 的 discover/scan 合计 6 个 schedule），模块之间**不直接调用**，全靠数据库标志位解耦。间隔与开关全部在 `conf/config.yaml`：
+M2 扫描发现新消息后立即通知 `internal/pipeline.Coordinator`。协调器先按 chat 跑 M3，拿到本次提交的 Todo ID/version 后定向跑 M4；M4 自动建 Task 或用户批准建 Task 后，再按 Task ID/version 入 M5。通知不承担持久化，进程重启可完全依靠 MySQL 状态恢复。间隔与开关仍在 `conf/config.yaml`：
 
 | Loop | 配置键 | 默认间隔 | enable 开关 | 说明 |
 |---|---|---|---|---|
 | M2 采集-发现 | `capture.discover_schedule` | `@every 6h` | 常开 | 全量枚举会话；只把 checkpoint 设为发现时刻，不回溯历史 |
 | M2 采集-扫描 | `capture.scan_schedule` | `@every 5m` | 常开 | 对 `related_group=1` 群统一增量扫描（tier 仅用于 UI 展示） |
 | M2.5 记忆 | `mem0.schedule` | `@every 10m` | 常开 | 消息切窗 → mem0 抽事实 → Qdrant `jarvis_memories` |
-| M3 抽取 | `extract.schedule` | `@every 10m` | `extract.enabled=true` 才注册常驻 cron | 从新消息抽 Todo，冻结 `context_snapshot` |
-| M4 决策 | `decide.schedule` | `@every 1m` | `decide.enabled=true` | 给 Todo 判 disposition（auto_execute/need_review/need_info） |
-| M5 执行 | `execute.schedule` | `@every 5m` | `execute.enabled=true` | 自动执行 M4 判 ready 的 Task；并发 `execute.concurrency`（默认 3） |
+| M3 抽取补偿 | `extract.schedule` | `@every 10m` | `extract.enabled=true` | 实时路径按 chat 触发；cron 扫描遗漏的新消息并推进水位 |
+| M4 决策补偿 | `decide.schedule` | `@every 1m` | `decide.enabled=true` | 实时路径按 Todo ID/version 触发；cron 扫描遗漏的 `extracted` |
+| M5 执行补偿 | `execute.schedule` | `@every 5m` | `execute.enabled=true` | 实时路径按 Task ID/version 入队；cron 恢复遗漏的 `pending` 和僵尸 `executing`，并发 `execute.concurrency`（默认 3） |
 
-各 loop 由各自 scheduler 独立驱动（`internal/*/scheduler.go`），非重叠触发；一次性 CLI flag（见上）用同一批 worker 单跑一轮后退出，便于手工验收。
+M3/M4/M5 的实时通知与补偿任务都只进入同一个协调器队列，不会由两套 scheduler 并行调用 worker。队列按实体 ID/version 合并等待中的重复通知；数据库状态与乐观锁拦截过期通知。一次性 CLI flag（见上）仍用同一批 worker 单跑一轮后退出。
 
 ## 当前进度
 
@@ -136,6 +137,7 @@ POST /api/chat                                            # 需 chat.enabled=tru
 - M0.5 确认已完成：`extracted Todo → need_decision → 用户批准/拒绝`，批准后原子生成 Task。`decide.mode` 可选 `manual_mvp`（全走人工确认）或 `codex`（用 codex/traex 判 disposition：auto_execute/need_review/need_info，need_info 带结构化 clarifications）。
 - M0.6 MVP 执行闭环已完成：管理后台列出 Task，支持人工执行后回写 `done/failed + result`。确认与执行页面由同一个 Go 服务托管。
 - 现状：M3 抽取、M4 决策已 codex 化（默认走 traex agent 自跑工具推算项目/仓库并冻结上下文快照）；M5 执行支持自动执行 + 两阶段人工审批（code_change 直接跑完，其余高风险停 `awaiting_approval` 等批准，全异步）；抽取/记忆 LLM 接入阿里云百炼 `qwen-plus`，embedding 用 `text-embedding-v3`（1024 维）。
+- M3/M4/M5 已改为状态提交后实时串行推进；三者的 schedule 只承担启动恢复和周期补偿。人工审核一旦触发会写入 sticky gate，补充信息后的 M4 重评不会把它自动放行到 M5。
 
 ## 本地运行
 
@@ -181,7 +183,7 @@ curl http://127.0.0.1:18800/healthz
 
 | 服务 Label | plist | 作用 | 日志 |
 |---|---|---|---|
-| `com.bytedance.jarvis.server` | `deploy/com.bytedance.jarvis.server.plist` | 主进程 `bin/jarvis-server`（Hertz + 5 个 cron loop + 静态前端，`127.0.0.1:18800`） | `var/log/jarvis-server.{log,error.log}` |
+| `com.bytedance.jarvis.server` | `deploy/com.bytedance.jarvis.server.plist` | 主进程 `bin/jarvis-server`（Hertz + 实时流水线 + 补偿 cron + 静态前端，`127.0.0.1:18800`） | `var/log/jarvis-server.{log,error.log}` |
 | `com.bytedance.jarvis.web` | `deploy/com.bytedance.jarvis.web.plist` | 前端 Vite dev（`npm run dev`，`127.0.0.1:18801`，仅开发热更用；生产前端由主进程从 `web/dist` 托管） | `var/log/vite.{log,error.log}` |
 | `com.bytedance.jarvis.qdrant` | `deploy/com.bytedance.jarvis.qdrant.plist` | Qdrant 向量库（`6333` HTTP / `6334` gRPC） | `var/log/jarvis-qdrant.{log,error.log}` |
 | `com.bytedance.jarvis.mem0` | `deploy/com.bytedance.jarvis.mem0.plist` | mem0 Python FastAPI sidecar（`127.0.0.1:18900`） | `var/log/jarvis-mem0.{log,error.log}` |
@@ -232,13 +234,13 @@ curl http://127.0.0.1:18900/health
 go run ./cmd/jarvis-server -config conf/config.yaml -memorize-once
 ```
 
-手工执行一次 Todo 提取；正常服务模式下由 `extract.schedule` 非重叠触发：
+手工执行一次 Todo 提取；正常服务模式下由 M2 扫描完成事件实时触发，`extract.schedule` 负责补偿：
 
 ```bash
 go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ```
 
-手工执行一次 MVP 人工确认分流；正常服务模式下由 `decide.schedule` 触发：
+手工执行一次 MVP 人工确认分流；正常服务模式下由 M3 提交事件实时触发，`decide.schedule` 负责补偿：
 
 ```bash
 go run ./cmd/jarvis-server -config conf/config.yaml -decide-once
@@ -296,7 +298,7 @@ Vite 监听 `127.0.0.1:18801`（`strictPort`），把 `/api`、`/healthz` 代理
 ```
 jarvis/
 ├── cmd/
-│   ├── jarvis-server/   # 主入口（Hertz 启动 + 5 个 cron loop + 所有 -xxx-once CLI 动作）
+│   ├── jarvis-server/   # 主入口（Hertz + 实时流水线 + 补偿 cron + 所有 -xxx-once CLI 动作）
 │   └── jarvis-tools/    # 只读决策工具入口（供模型查项目/人/群等，输出 JSON）
 ├── internal/
 │   ├── api/             # 路由 + 所有 HTTP handler（router.go 注册全部路由）
@@ -316,6 +318,7 @@ jarvis/
 │   ├── insight/         # 工作台/进度/调试面板的只读聚合
 │   ├── larkcli/         # lark-cli 子进程、限流、并发和超时
 │   ├── memory/          # 消息窗口化与 mem0 sidecar client
+│   ├── pipeline/        # M3→M4→M5 实时串行协调、去重队列与补偿 cron
 │   ├── semantic/        # Qdrant todo_semantic 索引
 │   └── store/           # MySQL 连接与迁移
 ├── sidecar/mem0/        # FastAPI + mem0 Python sidecar

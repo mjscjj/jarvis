@@ -55,6 +55,7 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 	stats := PersistStats{Skipped: skipped}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		records := make(map[uint64]semantic.Record, len(prepared))
+		todoRefs := make(map[uint64]TodoRef, len(prepared))
 		order := make([]uint64, 0, len(prepared))
 		for i := range prepared {
 			created, todo, err := s.persistCandidate(tx, batch, &prepared[i], modelName)
@@ -73,6 +74,7 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 				TodoID: todo.ID, Fingerprint: todo.DedupFingerprint, ProjectID: copyUint64(todo.ProjectID),
 				Status: todo.Status, ActionType: todo.ActionType, Vector: append([]float32(nil), prepared[i].SemanticVector...),
 			}
+			todoRefs[todo.ID] = TodoRef{ID: todo.ID, Version: todo.Version, Status: todo.Status}
 		}
 		watermark := domain.TodoExtractWatermark{
 			ChatID: batch.Group.ChatID, LastScannedMessageID: batch.LastNew.MessageID,
@@ -87,6 +89,7 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 		semanticRecords := make([]semantic.Record, 0, len(order))
 		for _, todoID := range order {
 			semanticRecords = append(semanticRecords, records[todoID])
+			stats.Todos = append(stats.Todos, todoRefs[todoID])
 		}
 		// Qdrant is called at the end of the MySQL transaction so a sync failure
 		// rolls back Todo/Event/watermark together. There is no silent outbox fallback.

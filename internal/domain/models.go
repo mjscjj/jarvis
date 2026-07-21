@@ -106,6 +106,10 @@ type Todo struct {
 	Confidence         *float64       `gorm:"column:confidence;type:decimal(4,3)"`
 	Risk               *float64       `gorm:"column:risk;type:decimal(4,3)"`
 	Route              *string        `gorm:"column:route;type:varchar(16)"`
+	// ManualGateRequired is sticky once M4 asks for human review. Re-evaluating a
+	// supplemented Todo may improve its plan, but must not turn that prior review
+	// requirement into an automatic execution path.
+	ManualGateRequired bool           `gorm:"column:manual_gate_required;type:tinyint(1);not null;default:0"`
 	DedupFingerprint   string         `gorm:"column:dedup_fingerprint;type:char(64);not null;uniqueIndex:uk_todo_fingerprint"`
 	ContextSnapshot    datatypes.JSON `gorm:"column:context_snapshot;type:json"`  // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），M4/M5 全链路复用
 	ExtractionResult   datatypes.JSON `gorm:"column:extraction_result;type:json"` // M3 抽取吐出的完整结论原文（整个 Candidate），M4 整块复用，不逐字段拆

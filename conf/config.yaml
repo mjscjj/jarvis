@@ -112,7 +112,7 @@ codex:
 # M5 任务执行：独立于上面的 codex 段。这里用官方 codex + 更强模型真正落地。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron。
 execute:
-  enabled: true                                    # 全自动：M4 判 ready 建的 Task 由此 cron 自动执行（含对外动作 + push/MR）
+  enabled: true                                    # 全自动：M4 判 ready 建 Task 后立即执行；下方 schedule 只补偿遗漏（含对外动作 + push/MR）
   schedule: "@every 5m"
   batch_limit: 5
   concurrency: 3                                    # 单次 sweep 内并行执行的 Task 数

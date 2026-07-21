@@ -19,6 +19,22 @@ func (f *fakeEvaluationSource) LoadExtracted(_ context.Context, limit int) ([]do
 	return append([]domain.Todo(nil), f.todos...), f.err
 }
 
+func (f *fakeEvaluationSource) LoadExtractedTodo(_ context.Context, todoID uint64, expectedVersion int32) (*domain.Todo, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	for i := range f.todos {
+		if f.todos[i].ID == todoID {
+			if f.todos[i].Version != expectedVersion {
+				return nil, versionConflict(todoID, expectedVersion, f.todos[i].Version)
+			}
+			todo := f.todos[i]
+			return &todo, nil
+		}
+	}
+	return nil, ErrTodoNotFound
+}
+
 type fakeTodoEvaluator struct {
 	calls []uint64
 	errAt uint64
@@ -68,6 +84,27 @@ func TestDecisionWorkerEvaluateOnce(t *testing.T) {
 	}
 	if source.limit != 20 || len(evaluator.calls) != 2 || len(writer.inputs) != 2 {
 		t.Fatalf("limit=%d calls=%v writes=%d", source.limit, evaluator.calls, len(writer.inputs))
+	}
+}
+
+func TestDecisionWorkerEvaluateTodoTargetsExactVersion(t *testing.T) {
+	source := &fakeEvaluationSource{todos: []domain.Todo{{ID: 9, Status: "extracted", Version: 4}}}
+	evaluator := &fakeTodoEvaluator{}
+	writer := &fakeEvaluationWriter{}
+	worker, err := NewDecisionWorker(source, evaluator, writer, WorkerOptions{BatchLimit: 20})
+	if err != nil {
+		t.Fatalf("NewDecisionWorker() error = %v", err)
+	}
+
+	result, err := worker.EvaluateTodo(context.Background(), 9, 4)
+	if err != nil {
+		t.Fatalf("EvaluateTodo() error = %v", err)
+	}
+	if result.TodoID != 9 || result.Version != 5 || len(evaluator.calls) != 1 || len(writer.inputs) != 1 {
+		t.Fatalf("result=%#v evaluator_calls=%v writes=%d", result, evaluator.calls, len(writer.inputs))
+	}
+	if _, err := worker.EvaluateTodo(context.Background(), 9, 3); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale EvaluateTodo() error = %v", err)
 	}
 }
 

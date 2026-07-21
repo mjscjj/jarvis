@@ -163,23 +163,23 @@ type CodexConfig struct {
 	TimeoutSeconds int    `yaml:"timeout_seconds"`
 }
 
-// ExecuteConfig controls M5 agent-driven execution. Enabled turns on the
-// auto-execution cron (local actions only); manual execution via the API is
+// ExecuteConfig controls M5 agent-driven execution. Enabled turns on real-time
+// auto-execution plus its compensation cron; manual execution via the API is
 // always available regardless. RepoRoot is the base directory a Task's
 // repo_ref slot is joined under for code changes. Bin/Model 可独立于
 // codex 段（例如抽取/决策用 traex，真正执行用官方 codex + 更强模型）。
 type ExecuteConfig struct {
-	Enabled              bool   `yaml:"enabled"`                 // 是否开自动执行 cron（本地动作）
-	Schedule             string `yaml:"schedule"`                // cron 表达式
-	BatchLimit           int    `yaml:"batch_limit"`             // 单次 sweep 最多执行的 Task 数
-	Concurrency          int    `yaml:"concurrency"`             // 单次 sweep 内并行执行的 Task 数（>=1）
-	RepoRoot             string `yaml:"repo_root"`               // code_change repo_ref 的基目录
-	RunsDir              string `yaml:"runs_dir"`                // diff/产物落盘目录
-	Bin                  string `yaml:"bin"`                     // M5 执行用的 agent CLI（codex / traex）
-	Model                string `yaml:"model"`                   // M5 执行模型
-	ReasoningEffort      string `yaml:"reasoning_effort"`        // M5 思考级别：minimal/low/medium/high/xhigh
-	TimeoutSecond        int    `yaml:"timeout_second"`          // 单次执行超时
-	StaleExecutingMinute int    `yaml:"stale_executing_minute"`  // executing 超过此时长仍未结束 → 标 failed（防重启僵尸）
+	Enabled              bool   `yaml:"enabled"`                // 是否开实时自动执行（本地动作）
+	Schedule             string `yaml:"schedule"`               // 补偿 cron 表达式
+	BatchLimit           int    `yaml:"batch_limit"`            // 单次 sweep 最多执行的 Task 数
+	Concurrency          int    `yaml:"concurrency"`            // 单次 sweep 内并行执行的 Task 数（>=1）
+	RepoRoot             string `yaml:"repo_root"`              // code_change repo_ref 的基目录
+	RunsDir              string `yaml:"runs_dir"`               // diff/产物落盘目录
+	Bin                  string `yaml:"bin"`                    // M5 执行用的 agent CLI（codex / traex）
+	Model                string `yaml:"model"`                  // M5 执行模型
+	ReasoningEffort      string `yaml:"reasoning_effort"`       // M5 思考级别：minimal/low/medium/high/xhigh
+	TimeoutSecond        int    `yaml:"timeout_second"`         // 单次执行超时
+	StaleExecutingMinute int    `yaml:"stale_executing_minute"` // executing 超过此时长仍未结束 → 标 failed（防重启僵尸）
 }
 
 // ChatConfig 控制「基于 agent CLI 的流式对话服务」（/api/chat，SSE）。

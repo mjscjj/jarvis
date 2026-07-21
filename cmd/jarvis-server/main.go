@@ -27,6 +27,7 @@ import (
 	"jarvis/internal/insight"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/memory"
+	"jarvis/internal/pipeline"
 	"jarvis/internal/semantic"
 	"jarvis/internal/store"
 
@@ -224,7 +225,6 @@ func main() {
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
 		db, taskService, codexRunner, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
-		time.Duration(cfg.Execute.StaleExecutingMinute)*time.Minute,
 	)
 	if err != nil {
 		hlog.Fatalf("initialize agent executor failed: %v", err)
@@ -426,86 +426,106 @@ func main() {
 		)
 		return
 	}
-	captureCtx, cancelCapture := context.WithCancel(context.Background())
-	defer cancelCapture()
-	scheduler, err := capture.StartScheduler(captureCtx, captureService, capture.ScheduleConfig{
+	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
+	defer cancelRuntime()
+
+	stopPipelineScheduler := func() {}
+	waitPipeline := func() {}
+	if cfg.Extract.Enabled || cfg.Decide.Enabled || cfg.Execute.Enabled {
+		var (
+			executionTaskStore *execute.Store
+			executionAgent     *execute.AgentExecutor
+		)
+		if cfg.Execute.Enabled {
+			executionTaskStore = taskService
+			executionAgent = agentExecutor
+		}
+		coordinator, err := pipeline.NewCoordinator(
+			extractWorker,
+			decisionWorker,
+			executionTaskStore,
+			executionAgent,
+			pipeline.Options{
+				ExecutionBatchLimit:  cfg.Execute.BatchLimit,
+				ExecutionConcurrency: cfg.Execute.Concurrency,
+				StaleExecuting:       time.Duration(cfg.Execute.StaleExecutingMinute) * time.Minute,
+				Logger:               log.New(os.Stderr, "pipeline ", log.LstdFlags|log.Lmicroseconds),
+			},
+		)
+		if err != nil {
+			hlog.Fatalf("initialize real-time pipeline failed: %v", err)
+		}
+		if err := coordinator.Start(runtimeCtx); err != nil {
+			hlog.Fatalf("start real-time pipeline failed: %v", err)
+		}
+		waitPipeline = coordinator.Wait
+		if cfg.Extract.Enabled {
+			if err := captureService.SetScanObserver(coordinator); err != nil {
+				cancelRuntime()
+				waitPipeline()
+				hlog.Fatalf("wire capture to real-time pipeline failed: %v", err)
+			}
+		}
+		if cfg.Decide.Enabled || cfg.Execute.Enabled {
+			if err := confirmationService.SetLifecycleNotifier(coordinator); err != nil {
+				cancelRuntime()
+				waitPipeline()
+				hlog.Fatalf("wire confirmation to real-time pipeline failed: %v", err)
+			}
+		}
+		pipelineScheduler, err := pipeline.StartScheduler(
+			runtimeCtx,
+			coordinator,
+			pipeline.ScheduleConfig{
+				Extract: cfg.Extract.Schedule,
+				Decide:  cfg.Decide.Schedule,
+				Execute: cfg.Execute.Schedule,
+			},
+			log.New(os.Stderr, "pipeline-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			cancelRuntime()
+			waitPipeline()
+			hlog.Fatalf("start pipeline compensation scheduler failed: %v", err)
+		}
+		stopPipelineScheduler = func() { <-pipelineScheduler.Stop().Done() }
+		if err := coordinator.ReconcileAll(runtimeCtx); err != nil {
+			cancelRuntime()
+			stopPipelineScheduler()
+			waitPipeline()
+			hlog.Fatalf("queue startup pipeline reconciliation failed: %v", err)
+		}
+	}
+
+	scheduler, err := capture.StartScheduler(runtimeCtx, captureService, capture.ScheduleConfig{
 		Discover: cfg.Capture.DiscoverSchedule,
 		Scan:     cfg.Capture.ScanSchedule,
 	}, log.New(os.Stderr, "capture-cron ", log.LstdFlags|log.Lmicroseconds))
 	if err != nil {
+		cancelRuntime()
+		stopPipelineScheduler()
+		waitPipeline()
 		hlog.Fatalf("start capture scheduler failed: %v", err)
 	}
 	memoryScheduler, err := memory.StartScheduler(
-		captureCtx,
+		runtimeCtx,
 		memoryWorker,
 		cfg.Mem0.Schedule,
 		log.New(os.Stderr, "memory-cron ", log.LstdFlags|log.Lmicroseconds),
 	)
 	if err != nil {
-		cancelCapture()
+		cancelRuntime()
 		<-scheduler.Stop().Done()
+		stopPipelineScheduler()
+		waitPipeline()
 		hlog.Fatalf("start memory scheduler failed: %v", err)
 	}
-	stopExtractScheduler := func() {}
-	if cfg.Extract.Enabled {
-		extractScheduler, err := extract.StartScheduler(
-			captureCtx,
-			extractWorker,
-			cfg.Extract.Schedule,
-			log.New(os.Stderr, "extract-cron ", log.LstdFlags|log.Lmicroseconds),
-		)
-		if err != nil {
-			cancelCapture()
-			<-scheduler.Stop().Done()
-			<-memoryScheduler.Stop().Done()
-			hlog.Fatalf("start extraction scheduler failed: %v", err)
-		}
-		stopExtractScheduler = func() { <-extractScheduler.Stop().Done() }
-	}
-	stopDecisionScheduler := func() {}
-	if cfg.Decide.Enabled {
-		decisionScheduler, err := decide.StartWorkerScheduler(
-			captureCtx,
-			decisionWorker,
-			cfg.Decide.Schedule,
-			log.New(os.Stderr, "decide-cron ", log.LstdFlags|log.Lmicroseconds),
-		)
-		if err != nil {
-			cancelCapture()
-			<-scheduler.Stop().Done()
-			<-memoryScheduler.Stop().Done()
-			stopExtractScheduler()
-			hlog.Fatalf("start MVP decision scheduler failed: %v", err)
-		}
-		stopDecisionScheduler = func() { <-decisionScheduler.Stop().Done() }
-	}
-	stopExecuteScheduler := func() {}
-	if cfg.Execute.Enabled {
-		executeScheduler, err := execute.StartScheduler(
-			captureCtx,
-			agentExecutor,
-			cfg.Execute.Schedule,
-			cfg.Execute.BatchLimit,
-			cfg.Execute.Concurrency,
-			log.New(os.Stderr, "execute-cron ", log.LstdFlags|log.Lmicroseconds),
-		)
-		if err != nil {
-			cancelCapture()
-			<-scheduler.Stop().Done()
-			<-memoryScheduler.Stop().Done()
-			stopExtractScheduler()
-			stopDecisionScheduler()
-			hlog.Fatalf("start execution scheduler failed: %v", err)
-		}
-		stopExecuteScheduler = func() { <-executeScheduler.Stop().Done() }
-	}
 	defer func() {
-		cancelCapture()
+		cancelRuntime()
 		<-scheduler.Stop().Done()
 		<-memoryScheduler.Stop().Done()
-		stopExtractScheduler()
-		stopDecisionScheduler()
-		stopExecuteScheduler()
+		stopPipelineScheduler()
+		waitPipeline()
 	}()
 
 	// 流式对话服务：enabled 时实例化并注入 Dependencies.Chat；disabled 时留 nil，

@@ -3,7 +3,7 @@
 > **版本说明**：本次项目重大调整后重写。隶属总纲 `docs/00-overview.md`（顶层设计与跨模块契约以总纲为准）。
 > **技术栈**：Go 1.26（后端）+ robfig/cron v3（调度）+ GORM/MySQL 8（存储），子进程 codex CLI / lark-cli / ripgrep 走 `os/exec`。**不引入 Eino/Kitex**。
 > **消费物**：M5 消费 **Task**（`status=pending` 的明确可执行任务），不消费 Todo。Task 由 M4 把 Todo 确认后固化生成（含问题背景快照 `background` + 明确方案 `plan`）。
-> **当前 MVP（2026-07-19）**：先采用人工执行闭环。`GET /api/tasks` 展示待执行 Task，用户完成实际动作后调用 `POST /api/tasks/:task_id/finish` 回写 `done/failed + result`。暂不实现 executor 注册表、自动子进程、并发队列、`execution_*` 三表、飞书通知和 mem0 回写。
+> **当前实现（2026-07-21）**：`pending Task` 由进程内流水线立即交给 AgentExecutor；`execute.schedule` 只补偿遗漏任务和恢复超时 `executing`。管理后台仍支持手工执行、审批、重跑和 `finish` 回写。
 >
 > 所属系统：基于飞书的本地个人 Jarvis 管家（字节研发工程师 chujiejie.1 本地 Mac）。
 > 模块定位：流水线 `采集(M2) → 提取Todo(M3) → 人工确认生成Task(M4) → 【人工执行并回写Task(M5)】 → 回写后台(M0)` 中的执行环节。
@@ -56,7 +56,7 @@ M4 是 `Todo → Task` 的唯一转化闸门：把 Todo 确认（用户确认或
 4. **确认边界由编排层强制**，而非散落在业务代码里：hold 的动作暂停、持久化状态、等待人工信号再恢复。
 5. **fail-fast**：失败返回受控错误，暴露给上层，不在执行层内部静默重试/降级掩盖。
 
-> 本模块是**本地个人单租户**系统，Go 单体进程内实现，不引入 Temporal/LangGraph 等重编排；用 **robfig/cron v3** 触发 + MySQL 持久化状态（`Task.status` + `execution_run`）+ 飞书交互卡片做轻量 human-in-the-loop 即可满足。是否需要更强的 durable execution 列入开放问题。
+> 本模块是**本地个人单租户**系统，Go 单体进程内实现，不引入 Temporal/LangGraph 等重编排；用进程内队列实时唤醒、**robfig/cron v3** 补偿 + MySQL 持久化状态（`Task.status` + `execution_run`）做轻量 human-in-the-loop 即可满足。是否需要更强的 durable execution 列入开放问题。
 
 ### 1.2 分层结构
 
@@ -68,7 +68,7 @@ M4 是 `Todo → Task` 的唯一转化闸门：把 Todo 确认（用户确认或
 │                                                                            │
 │  ① ExecutionScheduler  调度层                                               │
 │     - 拉取 status=pending 的 Task，入执行队列                                 │
-│     - robfig/cron v3 触发 + worker 并发控制 + 超时管理 + 幂等(run 去重)        │
+│     - M4/人工批准事件触发；cron 补偿 + worker 并发控制 + 乐观锁防重复          │
 │                                 │                                          │
 │  ② GuardLayer  护栏预检层        ▼                                          │
 │     - 执行前校验 action_hash(与当前 plan 一致)，不一致 → failed/打回          │
@@ -679,15 +679,15 @@ func (ExecutionArtifact) TableName() string { return "execution_artifact" }
 
 ---
 
-## 9. 当前 MVP 实现（2026-07-19）
+## 9. 当前实现（2026-07-21）
 
 - 新增 `internal/execute.Store`，直接使用现有 `task` 表，不新增支撑表。
 - `GET /api/tasks` 默认列出 `pending`，也可显式查询 `done/failed`；返回确认时冻结的 background/plan/slots，供人工执行。
 - `POST /api/tasks/:task_id/finish` 只允许 `pending → done/failed`，要求 `expected_version` 和非空 JSON result；状态、结果、version 在一个 MySQL 事务中更新。
 - 状态不符、版本冲突、重复完成全部 fail-fast，不重试、不降级、不覆盖第一次结果。
+- `internal/pipeline` 在 M4 自动建 Task 或用户批准后按 Task ID/version 立即入队，最多并发 `execute.concurrency` 个执行；`execute.schedule` 只扫描遗漏的 `pending` 并将超时 `executing` 标记失败。
+- AgentExecutor 已实现 codex 子进程执行、`execution_run` 留痕和两阶段审批：code_change 以 MR review 为闸门，其余有外部写入意图的动作停在 `awaiting_approval`。
 - 真实 MySQL 合成回滚验收已覆盖 `extracted Todo → need_decision → approve → pending Task → done` 完整链路，不调用飞书、mem0、模型或 codex。
-
-自动 executor、外部副作用、调度并发和详细执行留痕均为后续增强项；先通过人工闭环验证 Todo/Task 是否真的有用，再决定实现顺序。
 
 ---
 
@@ -708,7 +708,7 @@ func (ExecutionArtifact) TableName() string { return "execution_artifact" }
 11. **`code_change` 默认后端**：codex 还是 cursor-agent？固定还是按 project 配？
 12. **并发与超时默认值**：各 `action_type` 的并发上限与 `DefaultTimeout` 取值。
 13. **`summary_post` / `schedule_meeting` 身份**：发消息用 `bot` 还是 `user`？（`schedule_meeting` 的 `contact +search-user` 需 `--as user` 授权，须确认 user 身份已授权。）
-14. **是否需要 durable execution**：`awaiting_confirm` 的 TTL/escalation/断电恢复是否要更强编排（当前用 MySQL 持久化 `Task.status` + robfig/cron 轻量实现）？
+14. **是否需要 durable execution**：`awaiting_confirm` 的 TTL/escalation/断电恢复是否要更强编排（当前用 MySQL 持久化 `Task.status` + 进程内实时通知 + robfig/cron 补偿轻量实现）？
 
 ---
 

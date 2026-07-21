@@ -8,11 +8,12 @@ import (
 )
 
 var (
-	ErrTodoNotFound      = errors.New("confirmation Todo not found")
-	ErrVersionConflict   = errors.New("confirmation version conflict")
-	ErrInvalidTransition = errors.New("invalid confirmation transition")
-	ErrTaskExists        = errors.New("Task already exists for Todo")
-	ErrInvalidInput      = errors.New("invalid confirmation input")
+	ErrTodoNotFound           = errors.New("confirmation Todo not found")
+	ErrVersionConflict        = errors.New("confirmation version conflict")
+	ErrInvalidTransition      = errors.New("invalid confirmation transition")
+	ErrTaskExists             = errors.New("Task already exists for Todo")
+	ErrInvalidInput           = errors.New("invalid confirmation input")
+	ErrLifecycleStageDisabled = errors.New("lifecycle pipeline stage is disabled")
 )
 
 type ApproveInput struct {
@@ -55,4 +56,12 @@ type ConfirmationService interface {
 	Approve(context.Context, ApproveInput) (*TaskView, error)
 	Reject(context.Context, RejectInput) (*RejectResult, error)
 	Supplement(context.Context, SupplementInput) (*SupplementResult, error)
+}
+
+// LifecycleNotifier is implemented by the process-level pipeline. Notifications
+// accelerate durable state transitions; scheduled reconciliation remains the
+// recovery path if the process exits after a database commit.
+type LifecycleNotifier interface {
+	TodoReady(context.Context, uint64, int32) error
+	TaskReady(context.Context, uint64, int32) error
 }

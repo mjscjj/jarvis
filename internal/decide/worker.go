@@ -2,6 +2,7 @@ package decide
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"jarvis/internal/domain"
@@ -24,6 +25,7 @@ type WorkerStats struct {
 
 type evaluationSource interface {
 	LoadExtracted(context.Context, int) ([]domain.Todo, error)
+	LoadExtractedTodo(context.Context, uint64, int32) (*domain.Todo, error)
 }
 
 type todoEvaluator interface {
@@ -58,6 +60,26 @@ func (s *EvaluationSource) LoadExtracted(ctx context.Context, limit int) ([]doma
 		return nil, fmt.Errorf("load extracted Todos: %w", err)
 	}
 	return todos, nil
+}
+
+func (s *EvaluationSource) LoadExtractedTodo(ctx context.Context, todoID uint64, expectedVersion int32) (*domain.Todo, error) {
+	if todoID == 0 || expectedVersion < 0 {
+		return nil, fmt.Errorf("%w: evaluation Todo ID/version is invalid", ErrInvalidInput)
+	}
+	var todo domain.Todo
+	if err := s.db.WithContext(ctx).First(&todo, todoID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: todo_id=%d", ErrTodoNotFound, todoID)
+		}
+		return nil, fmt.Errorf("load extracted Todo id=%d: %w", todoID, err)
+	}
+	if todo.Version != expectedVersion {
+		return nil, versionConflict(todo.ID, expectedVersion, todo.Version)
+	}
+	if todo.Status != "extracted" {
+		return nil, transitionError(todo.ID, todo.Status, "evaluate")
+	}
+	return &todo, nil
 }
 
 type DecisionWorker struct {
@@ -102,25 +124,9 @@ func (w *DecisionWorker) EvaluateOnce(ctx context.Context) (WorkerStats, error) 
 		if todo.Status != "extracted" {
 			return stats, fmt.Errorf("evaluation source returned Todo id=%d status=%s", todo.ID, todo.Status)
 		}
-		input, err := w.evaluator.Evaluate(ctx, todo)
+		result, err := w.evaluateLoaded(ctx, todo)
 		if err != nil {
-			return stats, fmt.Errorf("evaluate Todo id=%d: %w", todo.ID, err)
-		}
-		if input == nil {
-			return stats, fmt.Errorf("evaluate Todo id=%d: nil result", todo.ID)
-		}
-		if input.TodoID != todo.ID || input.ExpectedVersion != todo.Version {
-			return stats, fmt.Errorf(
-				"evaluate Todo identity drift: loaded_id=%d loaded_version=%d result_id=%d result_version=%d",
-				todo.ID, todo.Version, input.TodoID, input.ExpectedVersion,
-			)
-		}
-		result, err := w.writer.Apply(ctx, *input)
-		if err != nil {
-			return stats, fmt.Errorf("persist Todo evaluation id=%d: %w", todo.ID, err)
-		}
-		if result == nil || result.TodoID != todo.ID || result.Status != input.Route || result.Version != todo.Version+1 {
-			return stats, fmt.Errorf("persist Todo evaluation id=%d returned inconsistent result: %#v", todo.ID, result)
+			return stats, err
 		}
 		stats.Evaluated++
 		switch result.Status {
@@ -137,4 +143,39 @@ func (w *DecisionWorker) EvaluateOnce(ctx context.Context) (WorkerStats, error) 
 		}
 	}
 	return stats, nil
+}
+
+// EvaluateTodo is the real-time M4 entry point. The caller passes the exact Todo
+// version M3 committed; stale or duplicate notifications fail before any model
+// call, while the scheduled batch path continues to reuse evaluateLoaded.
+func (w *DecisionWorker) EvaluateTodo(ctx context.Context, todoID uint64, expectedVersion int32) (*EvaluationResult, error) {
+	todo, err := w.source.LoadExtractedTodo(ctx, todoID, expectedVersion)
+	if err != nil {
+		return nil, err
+	}
+	return w.evaluateLoaded(ctx, todo)
+}
+
+func (w *DecisionWorker) evaluateLoaded(ctx context.Context, todo *domain.Todo) (*EvaluationResult, error) {
+	input, err := w.evaluator.Evaluate(ctx, todo)
+	if err != nil {
+		return nil, fmt.Errorf("evaluate Todo id=%d: %w", todo.ID, err)
+	}
+	if input == nil {
+		return nil, fmt.Errorf("evaluate Todo id=%d: nil result", todo.ID)
+	}
+	if input.TodoID != todo.ID || input.ExpectedVersion != todo.Version {
+		return nil, fmt.Errorf(
+			"evaluate Todo identity drift: loaded_id=%d loaded_version=%d result_id=%d result_version=%d",
+			todo.ID, todo.Version, input.TodoID, input.ExpectedVersion,
+		)
+	}
+	result, err := w.writer.Apply(ctx, *input)
+	if err != nil {
+		return nil, fmt.Errorf("persist Todo evaluation id=%d: %w", todo.ID, err)
+	}
+	if result == nil || result.TodoID != todo.ID || result.Status != input.Route || result.Version != todo.Version+1 {
+		return nil, fmt.Errorf("persist Todo evaluation id=%d returned inconsistent result: %#v", todo.ID, result)
+	}
+	return result, nil
 }

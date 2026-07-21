@@ -22,9 +22,9 @@ type GroupContext struct {
 	ID          uint64
 	ChatID      string
 	Name        string
-	Description  string // group announcement; a strong signal for project attribution
-	IsKeyGroup   bool
-	ProjectID    *uint64
+	Description string // group announcement; a strong signal for project attribution
+	IsKeyGroup  bool
+	ProjectID   *uint64
 }
 
 type ProjectContext struct {
@@ -145,6 +145,7 @@ type SemanticResolution struct {
 type PersistStats struct {
 	Created int
 	Updated int
+	Todos   []TodoRef
 	// Skipped counts candidates dropped because they are info-insufficient AND
 	// their identity slot (dedup key) is empty, so no stable fingerprint exists.
 	// Skipping one such candidate must not abort the whole batch (M3 是尽力抽取，
@@ -152,8 +153,18 @@ type PersistStats struct {
 	Skipped int
 }
 
+// TodoRef is the durable M3 handoff to M4. Status and version are captured after
+// persistence so the downstream optimistic-lock claim targets the exact row M3
+// committed rather than re-discovering work by timing.
+type TodoRef struct {
+	ID      uint64
+	Version int32
+	Status  string
+}
+
 type pipelineStore interface {
 	LoadPendingChats(context.Context, LoadOptions) ([]ChatBatch, error)
+	LoadPendingChat(context.Context, string, LoadOptions) (*ChatBatch, error)
 	PersistChat(context.Context, ChatBatch, []UnitExtraction, string) (PersistStats, error)
 }
 

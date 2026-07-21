@@ -36,13 +36,13 @@ type EvaluationInput struct {
 }
 
 type EvaluationResult struct {
-	TodoID     uint64  `json:"todo_id"`
-	Status     string  `json:"status"`
-	Version    int32   `json:"version"`
-	Confidence float64 `json:"confidence"`
-	Risk       float64 `json:"risk"`
-	TaskID     *uint64 `json:"task_id,omitempty"`
-	TaskVersion int32  `json:"task_version,omitempty"`
+	TodoID      uint64  `json:"todo_id"`
+	Status      string  `json:"status"`
+	Version     int32   `json:"version"`
+	Confidence  float64 `json:"confidence"`
+	Risk        float64 `json:"risk"`
+	TaskID      *uint64 `json:"task_id,omitempty"`
+	TaskVersion int32   `json:"task_version,omitempty"`
 }
 
 type EvaluationStore struct {
@@ -85,12 +85,12 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 		if todo.Status != "extracted" {
 			return transitionError(todo.ID, todo.Status, input.Route)
 		}
-			updates := map[string]any{
-				"route": input.Route, "status": input.Route, "version": gorm.Expr("version + 1"),
-			}
-			if input.Route == RouteNeedDecision {
-				updates["manual_gate_required"] = true
-			}
+		updates := map[string]any{
+			"route": input.Route, "status": input.Route, "version": gorm.Expr("version + 1"),
+		}
+		if input.Route == RouteNeedDecision {
+			updates["manual_gate_required"] = true
+		}
 		if !input.ManualGate {
 			updates["confidence"] = input.Confidence
 			updates["risk"] = input.Risk
@@ -135,28 +135,29 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 			return fmt.Errorf("create evaluation audit todo_id=%d: %w", todo.ID, err)
 		}
 		// auto route: Codex judged the clue ready, so the system creates the Task
-		// itself (no human confirmation) and the Todo lands on "auto". M5's cron
-		// then executes it. The confirmed plan is Codex's proposed_plan; the Task
-		// background is the same M3-frozen context_snapshot M5 replays.
-			var createdTask *domain.Task
-			if input.Route == RouteAuto {
-				background, err := requireContextSnapshot(&todo)
-				if err != nil {
-					return err
-				}
-				createdTask, err = createAutoTask(tx, s.now().UTC(), &todo, input.ProposedPlan, background)
-				if err != nil {
-					return err
-				}
+		// itself (no human confirmation) and the Todo lands on "auto". The pipeline
+		// immediately wakes M5; its cron remains the recovery path. The confirmed
+		// plan is Codex's proposed_plan; the Task background is the same M3-frozen
+		// context_snapshot M5 replays.
+		var createdTask *domain.Task
+		if input.Route == RouteAuto {
+			background, err := requireContextSnapshot(&todo)
+			if err != nil {
+				return err
 			}
-			result = EvaluationResult{
-				TodoID: todo.ID, Status: input.Route, Version: todo.Version + 1,
-				Confidence: input.Confidence, Risk: input.Risk,
+			createdTask, err = createAutoTask(tx, s.now().UTC(), &todo, input.ProposedPlan, background)
+			if err != nil {
+				return err
 			}
-			if createdTask != nil {
-				result.TaskID = &createdTask.ID
-				result.TaskVersion = createdTask.Version
-			}
+		}
+		result = EvaluationResult{
+			TodoID: todo.ID, Status: input.Route, Version: todo.Version + 1,
+			Confidence: input.Confidence, Risk: input.Risk,
+		}
+		if createdTask != nil {
+			result.TaskID = &createdTask.ID
+			result.TaskVersion = createdTask.Version
+		}
 		return nil
 	})
 	if err != nil {

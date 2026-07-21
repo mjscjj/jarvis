@@ -114,55 +114,94 @@ func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
 	stats := WorkerStats{ChatsLoaded: len(batches)}
 	runNow := w.now()
 	for _, batch := range batches {
-		results := make([]UnitExtraction, 0, len(batch.Units))
-		for _, unit := range batch.Units {
-			query, err := SalientQuery(unit)
-			if err != nil {
-				return stats, fmt.Errorf("prepare extraction query chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
-			}
-			filters := map[string]any{"chat_id": batch.Group.ChatID}
-			if batch.Group.ProjectID != nil {
-				filters = map[string]any{"project_id": *batch.Group.ProjectID}
-			}
-			memories, err := w.memory.Search(ctx, memory.SearchInput{
-				Query: query, Filters: filters, TopK: w.opts.MemoryTopK,
-				Threshold: w.opts.MemoryThreshold, Rerank: false,
-			})
-			if err != nil {
-				return stats, fmt.Errorf("search extraction memories chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
-			}
-			if memories == nil {
-				return stats, fmt.Errorf("search extraction memories chat_id=%s unit=%s: nil response", batch.Group.ChatID, unit.Key)
-			}
-			prompt, err := BuildPrompt(batch, unit, memories.Results, runNow, PromptOptions{
-				PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
-				ToolGuidance: w.opts.PromptToolGuidance,
-			})
-			if err != nil {
-				return stats, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
-			}
-			box, err := w.toolBox.Build(batch, unit)
-			if err != nil {
-				return stats, fmt.Errorf("build extraction tool box chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
-			}
-			resolved, candidateCount, err := w.extractUnitWithRetry(ctx, batch, unit, prompt, box)
-			if err != nil {
-				return stats, err
-			}
-			results = append(results, UnitExtraction{UnitKey: unit.Key, Candidates: resolved, Memories: FilterMemoriesForSnapshot(memories.Results)})
-			stats.Units++
-			stats.Candidates += candidateCount
-		}
-		persisted, err := w.store.PersistChat(ctx, batch, results, w.opts.ModelName)
+		batchStats, _, err := w.extractBatch(ctx, batch, runNow)
 		if err != nil {
-			return stats, fmt.Errorf("persist extracted chat chat_id=%s: %w", batch.Group.ChatID, err)
+			return stats, err
 		}
-		stats.ChatsProcessed++
-		stats.Created += persisted.Created
-		stats.Updated += persisted.Updated
-		stats.Skipped += persisted.Skipped
+		mergeWorkerStats(&stats, batchStats)
 	}
 	return stats, nil
+}
+
+// ExtractChat processes the chat that M2 just advanced, then returns the exact
+// Todo rows M3 committed. Duplicate wake-ups are cheap: a chat with no messages
+// beyond its extraction watermark returns zero stats and no Todo references.
+func (w *Worker) ExtractChat(ctx context.Context, chatID string) (WorkerStats, []TodoRef, error) {
+	batch, err := w.store.LoadPendingChat(ctx, chatID, w.opts.Load)
+	if err != nil {
+		return WorkerStats{}, nil, err
+	}
+	if batch == nil {
+		return WorkerStats{}, nil, nil
+	}
+	stats := WorkerStats{ChatsLoaded: 1}
+	batchStats, persisted, err := w.extractBatch(ctx, *batch, w.now())
+	if err != nil {
+		return stats, nil, err
+	}
+	mergeWorkerStats(&stats, batchStats)
+	return stats, append([]TodoRef(nil), persisted.Todos...), nil
+}
+
+func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.Time) (WorkerStats, PersistStats, error) {
+	stats := WorkerStats{}
+	results := make([]UnitExtraction, 0, len(batch.Units))
+	for _, unit := range batch.Units {
+		query, err := SalientQuery(unit)
+		if err != nil {
+			return stats, PersistStats{}, fmt.Errorf("prepare extraction query chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+		}
+		filters := map[string]any{"chat_id": batch.Group.ChatID}
+		if batch.Group.ProjectID != nil {
+			filters = map[string]any{"project_id": *batch.Group.ProjectID}
+		}
+		memories, err := w.memory.Search(ctx, memory.SearchInput{
+			Query: query, Filters: filters, TopK: w.opts.MemoryTopK,
+			Threshold: w.opts.MemoryThreshold, Rerank: false,
+		})
+		if err != nil {
+			return stats, PersistStats{}, fmt.Errorf("search extraction memories chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+		}
+		if memories == nil {
+			return stats, PersistStats{}, fmt.Errorf("search extraction memories chat_id=%s unit=%s: nil response", batch.Group.ChatID, unit.Key)
+		}
+		prompt, err := BuildPrompt(batch, unit, memories.Results, runNow, PromptOptions{
+			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
+			ToolGuidance: w.opts.PromptToolGuidance,
+		})
+		if err != nil {
+			return stats, PersistStats{}, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+		}
+		box, err := w.toolBox.Build(batch, unit)
+		if err != nil {
+			return stats, PersistStats{}, fmt.Errorf("build extraction tool box chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+		}
+		resolved, candidateCount, err := w.extractUnitWithRetry(ctx, batch, unit, prompt, box)
+		if err != nil {
+			return stats, PersistStats{}, err
+		}
+		results = append(results, UnitExtraction{UnitKey: unit.Key, Candidates: resolved, Memories: FilterMemoriesForSnapshot(memories.Results)})
+		stats.Units++
+		stats.Candidates += candidateCount
+	}
+	persisted, err := w.store.PersistChat(ctx, batch, results, w.opts.ModelName)
+	if err != nil {
+		return stats, PersistStats{}, fmt.Errorf("persist extracted chat chat_id=%s: %w", batch.Group.ChatID, err)
+	}
+	stats.ChatsProcessed = 1
+	stats.Created = persisted.Created
+	stats.Updated = persisted.Updated
+	stats.Skipped = persisted.Skipped
+	return stats, persisted, nil
+}
+
+func mergeWorkerStats(target *WorkerStats, source WorkerStats) {
+	target.ChatsProcessed += source.ChatsProcessed
+	target.Units += source.Units
+	target.Candidates += source.Candidates
+	target.Created += source.Created
+	target.Updated += source.Updated
+	target.Skipped += source.Skipped
 }
 
 // extractUnitWithRetry runs "ExtractWithTools + full candidate validation" as one

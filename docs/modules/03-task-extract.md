@@ -22,7 +22,7 @@
 
 ## 0. 模块边界与上下游契约
 
-流水线（cron `extract` job，每 10 min 一轮）：
+流水线（M2 扫描落库后按 chat 实时触发；cron `extract` job 每 10 min 补偿）：
 
 ```text
 采集 M2 ──► 记忆化 mem0 M2 ──► 【Todo 提取 M3】──► 打分+确认 M4 ──► 执行 M5
@@ -258,7 +258,7 @@ func (Todo) TableName() string { return "todo" }
 
 ```text
                     ┌──────────────────────────────────────────────┐
-                    │  robfig/cron v3 触发 extract job（每 10 min）  │
+                    │ M2 扫描完成事件；cron 每 10 min 补偿遗漏状态 │
                     └───────────────────────┬──────────────────────┘
                                             │
    ① 取新消息  ──────────────────────────────▼───────────────────────────
@@ -814,14 +814,14 @@ M3 回写的记忆若被下轮检索回来、又被当成新行动线索，会�
 - Action item 抽取：把 LLM 当确定性抽取器而非总结器；只抽有明确 owner 的承诺、区分 firm/tentative、设「模糊桶」（`missing_info`）、每条带逐字证据、同一承诺只记一条、相对时间转绝对日期。
 - 语义去重：Qdrant `score_threshold` cosine 近邻，阈值需按 embedding 模型在真实数据标定（常见 0.80–0.92），领域过滤防串味，关键路径用 LLM 复核候选对。
 - mem0（2026，经 sidecar）：`search` 实体 id 入 `filters`，Qdrant 后端**以标量等值过滤为基线**（复杂 AND/OR/比较算子需实测），显式设 `top_k`/`threshold`；`add` 异步返回 `event_id`、hash 去重、实体自动抽取、内建实体链接（不需 Neo4j）。
-- Go 落地：GORM 映射 `todo`（JSON 字段用自定义类型）；robfig/cron v3 触发 `extract` job；go-playground/validator 做结构层校验 + 应用层分型 slot 校验；model API 走标准 `net/http`（或 go-openai 库）直连，不经 Eino、不用 codex（codex 仅 M4/M5）。
+- Go 落地：GORM 映射 `todo`（JSON 字段用自定义类型）；进程内协调器接收 M2 提交事件并定向触发 chat 抽取，robfig/cron v3 只补偿遗漏状态；go-playground/validator 做结构层校验 + 应用层分型 slot 校验；model API 走标准 `net/http` 直连，默认也可使用 codex/traex agent 引擎。
 
 ### 9.1 实现进度（2026-07-19）
 
 - `internal/domain/extract.go` 已落 `todo_extract_watermark` / `todo_event` GORM model，并纳入启动迁移。
 - `internal/extract/candidate.go` 已落封闭 action/slot 词表、缺 slot 显式降级、strict JSON 解码和 NFKC + case-fold 指纹归一。
 - `internal/extract/provider` 已落 OpenAI-compatible `POST /chat/completions` + `response_format=json_schema, strict=true` client；拒答、非 `stop`、非法 JSON/schema 均直接报错，不回退 JSON mode。
-- `internal/extract` worker 已落 related group 增量读取、chat/topic 聚合、受限回看、Person/Project/Resource/Todo 背景、mem0 检索、逐字新证据校验、完整候选的精确指纹去重，以及 Todo/Event/水位的 per-chat 事务提交；`extract.schedule` 使用非重叠 cron，`--extract-once` 支持手工验收。
+- `internal/extract` worker 已落 related group 增量读取、chat/topic 聚合、受限回看、Person/Project/Resource/Todo 背景、mem0 检索、逐字新证据校验、完整候选的精确指纹去重，以及 Todo/Event/水位的 per-chat 事务提交；M2 提交后用 `ExtractChat` 定向实时推进，`extract.schedule` 只做补偿，`--extract-once` 支持手工验收。
 - `internal/embedding` + `internal/semantic` 已落第二层语义去重：复用 mem0 的 `bge_m3_embed`，官方 Qdrant Go client 连接 gRPC 6334，独立 `todo_semantic` 集合按 cosine 检索；集合启动时强校验 embedding 模型元数据、1024 维和距离类型，阈值/近邻数可配置。
 - 语义近邻只作为疑似候选；`internal/extract/provider` 追加 strict boolean `same_action` 裁决。裁决失败、索引陈旧、领域不一致均直接中断，不默认合并或新建。确认同项后按 Todo ID 更新既有行，原精确指纹保持不变。
 - Qdrant 同步位于 per-chat MySQL 事务末尾；同步失败会回滚 Todo/Event/watermark。无 outbox 或静默降级路径。

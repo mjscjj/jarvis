@@ -22,6 +22,23 @@ type runner interface {
 	Run(ctx context.Context, out any, args ...string) error
 }
 
+// ChatScanResult is emitted only after one chat's messages and checkpoint have
+// committed successfully. The observer uses it as an acceleration signal; the
+// database remains the recovery source if delivery fails or the process exits.
+type ChatScanResult struct {
+	ChatID        string
+	InsertedCount int32
+	MessageIDs    []string
+	HighWater     int64
+	LastMessageID *string
+}
+
+// ScanObserver receives successful scans that inserted at least one new message.
+// It intentionally lives in capture so M2 does not import the downstream pipeline.
+type ScanObserver interface {
+	ChatScanned(context.Context, ChatScanResult) error
+}
+
 // Options contains capture policy already decided by the technical design.
 type Options struct {
 	PageSize    int
@@ -36,10 +53,11 @@ type Options struct {
 
 // Service owns conversation discovery and polling state transitions.
 type Service struct {
-	db   *gorm.DB
-	lark runner
-	opts Options
-	now  func() time.Time
+	db       *gorm.DB
+	lark     runner
+	opts     Options
+	now      func() time.Time
+	observer ScanObserver
 }
 
 func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
@@ -65,6 +83,20 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 		return nil, fmt.Errorf("capture auto-related p2p top-n must be non-negative")
 	}
 	return &Service{db: db, lark: lark, opts: opts, now: time.Now}, nil
+}
+
+// SetScanObserver wires the process-level pipeline before schedulers and HTTP
+// handlers start. Replacing an active observer is rejected so runtime behavior
+// cannot change underneath an in-flight scan.
+func (s *Service) SetScanObserver(observer ScanObserver) error {
+	if observer == nil {
+		return fmt.Errorf("capture scan observer is nil")
+	}
+	if s.observer != nil {
+		return fmt.Errorf("capture scan observer is already set")
+	}
+	s.observer = observer
+	return nil
 }
 
 // ReplaceRelatedGroups atomically replaces the capture allowlist. Every chat
@@ -417,8 +449,9 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	if err != nil {
 		return err
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if err != nil && !committed {
 			if finishErr := s.finishChatError(record, &checkpoint, err); finishErr != nil {
 				err = errors.Join(err, finishErr)
 			}
@@ -428,6 +461,7 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	pageToken := ""
 	currentHW := windowStart
 	lastMessageID := checkpoint.LastMessageID
+	insertedMessageIDs := make([]string, 0)
 	for {
 		var response MessageListResponse
 		args := []string{
@@ -442,13 +476,17 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 			return fmt.Errorf("list messages chat_id=%s page=%d: %w", chatID, record.PageCount+1, err)
 		}
 		messages := flattenMessages(response.Data.Messages)
-		var inserted int32
-		inserted, currentHW, lastMessageID, err = s.persistMessagePage(&group, messages, currentHW, lastMessageID)
+		var (
+			inserted    int32
+			insertedIDs []string
+		)
+		inserted, insertedIDs, currentHW, lastMessageID, err = s.persistMessagePage(&group, messages, currentHW, lastMessageID)
 		if err != nil {
 			return fmt.Errorf("persist messages chat_id=%s page=%d: %w", chatID, record.PageCount+1, err)
 		}
 		record.FetchedCount += int32(len(messages))
 		record.InsertedCount += inserted
+		insertedMessageIDs = append(insertedMessageIDs, insertedIDs...)
 		record.PageCount++
 		if !response.Data.HasMore {
 			break
@@ -462,13 +500,25 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	if err = s.finishChatOK(record, &checkpoint, currentHW, lastMessageID); err != nil {
 		return err
 	}
-	return s.recomputeGroupTier(group.ID)
+	if err = s.recomputeGroupTier(group.ID); err != nil {
+		return err
+	}
+	committed = true
+	if record.InsertedCount == 0 || s.observer == nil {
+		return nil
+	}
+	return s.observer.ChatScanned(ctx, ChatScanResult{
+		ChatID: chatID, InsertedCount: record.InsertedCount,
+		MessageIDs: insertedMessageIDs, HighWater: currentHW,
+		LastMessageID: cloneString(lastMessageID),
+	})
 }
 
 // ScanRelated scans every related chat in one pass. Tier no longer gates
 // scheduling: all related chats share the single scan cadence. Chat failures
-// are collected and returned after the other chats finish; no failed chat
-// advances past its last committed page.
+// are collected and returned after the other chats finish. Capture failures do
+// not advance the checkpoint; an observer failure is reported only after the
+// scan committed and is recovered by the downstream compensation schedule.
 func (s *Service) ScanRelated(ctx context.Context) error {
 	var groups []domain.Group
 	if err := s.db.Select("id", "chat_id").Where("related_group = ?", true).Order("id ASC").Find(&groups).Error; err != nil {
@@ -539,8 +589,9 @@ func (s *Service) recomputeGroupTier(groupID uint64) error {
 	return nil
 }
 
-func (s *Service) persistMessagePage(group *domain.Group, messages []CLIMessage, currentHW int64, lastMessageID *string) (int32, int64, *string, error) {
+func (s *Service) persistMessagePage(group *domain.Group, messages []CLIMessage, currentHW int64, lastMessageID *string) (int32, []string, int64, *string, error) {
 	var inserted int32
+	insertedMessageIDs := make([]string, 0)
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		for _, item := range messages {
 			message, err := s.toDomainMessage(group, item)
@@ -553,6 +604,7 @@ func (s *Service) persistMessagePage(group *domain.Group, messages []CLIMessage,
 			}
 			if created {
 				inserted++
+				insertedMessageIDs = append(insertedMessageIDs, message.MessageID)
 			}
 			if err := sinkResources(tx, message, extractResourceRefs(item.Content)); err != nil {
 				return err
@@ -582,7 +634,7 @@ func (s *Service) persistMessagePage(group *domain.Group, messages []CLIMessage,
 		}
 		return nil
 	})
-	return inserted, currentHW, lastMessageID, err
+	return inserted, insertedMessageIDs, currentHW, lastMessageID, err
 }
 
 // systemSenderOpenID 是飞书群系统消息（无真实发送者）的占位 sender，便于后续区分
@@ -760,6 +812,14 @@ func nullableString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func (s *Service) beginScan(scanType string, groupID *uint64, chatID *string, windowStart *int64) (*domain.ScanRecord, error) {

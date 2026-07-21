@@ -48,6 +48,10 @@ func TestCaptureMySQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
+	observer := &recordingScanObserver{}
+	if err := service.SetScanObserver(observer); err != nil {
+		t.Fatalf("SetScanObserver() error = %v", err)
+	}
 	discoveredAt := time.Date(2026, 7, 19, 10, 0, 0, 0, location)
 	service.now = func() time.Time { return discoveredAt }
 
@@ -89,6 +93,9 @@ func TestCaptureMySQL(t *testing.T) {
 	if checkpoint.HighWaterCreateTime != wantHW || checkpoint.LastScanStatus == nil || *checkpoint.LastScanStatus != "ok" {
 		t.Fatalf("checkpoint after scan = %#v, want high water %d and ok", checkpoint, wantHW)
 	}
+	if len(observer.results) != 1 || observer.results[0].ChatID != "oc_fixture" || observer.results[0].InsertedCount != 2 || len(observer.results[0].MessageIDs) != 2 {
+		t.Fatalf("scan observer results = %#v", observer.results)
+	}
 
 	if err := service.ScanChat(context.Background(), "oc_fixture"); err != nil {
 		t.Fatalf("second ScanChat() error = %v", err)
@@ -101,6 +108,9 @@ func TestCaptureMySQL(t *testing.T) {
 	}
 	if latest.InsertedCount != 0 {
 		t.Fatalf("second scan inserted_count = %d, want 0", latest.InsertedCount)
+	}
+	if len(observer.results) != 1 {
+		t.Fatalf("duplicate scan emitted observer result: %#v", observer.results)
 	}
 
 	// 存量私聊回填：先把内部私聊关掉模拟历史数据，再用 OpenInternalP2P 一次性开启。
@@ -128,6 +138,15 @@ func TestCaptureMySQL(t *testing.T) {
 	if p2pCheckpoint.HighWaterCreateTime != openedAt.UnixMilli() {
 		t.Fatalf("internal p2p high water = %d, want %d (opened moment, no backfill)", p2pCheckpoint.HighWaterCreateTime, openedAt.UnixMilli())
 	}
+}
+
+type recordingScanObserver struct {
+	results []ChatScanResult
+}
+
+func (o *recordingScanObserver) ChatScanned(_ context.Context, result ChatScanResult) error {
+	o.results = append(o.results, result)
+	return nil
 }
 
 func assertRelated(t *testing.T, db *gorm.DB, chatID string, want bool) {

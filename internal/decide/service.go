@@ -33,8 +33,9 @@ func requireContextSnapshot(todo *domain.Todo) (json.RawMessage, error) {
 }
 
 type Service struct {
-	db  *gorm.DB
-	now func() time.Time
+	db       *gorm.DB
+	now      func() time.Time
+	notifier LifecycleNotifier
 	// evaluator/writer re-run the M4 decision after a need_info supplement. They
 	// are optional: when nil, Supplement only re-queues the Todo (extracted) and
 	// the scheduled M4 worker picks it up. When set, Supplement kicks a re-eval
@@ -48,6 +49,19 @@ func NewService(db *gorm.DB, evaluator todoEvaluator, writer evaluationWriter) (
 		return nil, fmt.Errorf("confirmation service db is nil")
 	}
 	return &Service{db: db, now: time.Now, evaluator: evaluator, writer: writer}, nil
+}
+
+// SetLifecycleNotifier wires the real-time pipeline before the server starts.
+// Replacing it at runtime is rejected to keep transition behavior deterministic.
+func (s *Service) SetLifecycleNotifier(notifier LifecycleNotifier) error {
+	if notifier == nil {
+		return fmt.Errorf("confirmation lifecycle notifier is nil")
+	}
+	if s.notifier != nil {
+		return fmt.Errorf("confirmation lifecycle notifier is already set")
+	}
+	s.notifier = notifier
+	return nil
 }
 
 func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, error) {
@@ -131,6 +145,11 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 		return nil, err
 	}
 	view := taskView(&created)
+	if s.notifier != nil {
+		if err := s.notifier.TaskReady(ctx, created.ID, created.Version); err != nil && !errors.Is(err, ErrLifecycleStageDisabled) {
+			hlog.Errorf("notify approved task ready task_id=%d version=%d: %v", created.ID, created.Version, err)
+		}
+	}
 	return &view, nil
 }
 
@@ -237,16 +256,21 @@ func (s *Service) Supplement(ctx context.Context, input SupplementInput) (*Suppl
 	// Re-queue: write the enriched snapshot and move need_info/need_decision ->
 	// extracted with optimistic locking, clearing route/confidence/risk so the
 	// re-eval starts clean.
+	updates := map[string]any{
+		"context_snapshot": datatypes.JSON(snapshotRaw),
+		"status":           "extracted",
+		"route":            nil,
+		"confidence":       nil,
+		"risk":             nil,
+		"version":          gorm.Expr("version + 1"),
+	}
+	if fromStatus == RouteNeedDecision {
+		// This also protects pre-migration rows whose new column defaulted to false.
+		updates["manual_gate_required"] = true
+	}
 	result := s.db.WithContext(ctx).Model(&domain.Todo{}).
 		Where("id = ? AND version = ? AND status = ?", todo.ID, input.ExpectedVersion, fromStatus).
-		Updates(map[string]any{
-			"context_snapshot": datatypes.JSON(snapshotRaw),
-			"status":           "extracted",
-			"route":            nil,
-			"confidence":       nil,
-			"risk":             nil,
-			"version":          gorm.Expr("version + 1"),
-		})
+		Updates(updates)
 	if result.Error != nil {
 		return nil, fmt.Errorf("apply supplement todo_id=%d: %w", todo.ID, result.Error)
 	}
@@ -285,11 +309,21 @@ func (s *Service) appendSupplementEvent(ctx context.Context, todoID uint64, vers
 // errors to logs: a failed async re-eval leaves the Todo in extracted, which the
 // scheduled M4 worker will retry.
 func (s *Service) reEvaluateAsync(todoID uint64, expectedVersion int32) {
-	if s.evaluator == nil || s.writer == nil {
-		return
-	}
 	go func() {
 		ctx := context.Background()
+		if s.notifier != nil {
+			err := s.notifier.TodoReady(ctx, todoID, expectedVersion)
+			switch {
+			case err == nil:
+				return
+			case !errors.Is(err, ErrLifecycleStageDisabled):
+				hlog.Errorf("notify supplemented todo ready todo_id=%d version=%d: %v", todoID, expectedVersion, err)
+				return
+			}
+		}
+		if s.evaluator == nil || s.writer == nil {
+			return
+		}
 		var todo domain.Todo
 		if err := s.db.WithContext(ctx).First(&todo, todoID).Error; err != nil {
 			hlog.Errorf("supplement re-eval load todo_id=%d: %v", todoID, err)
@@ -304,8 +338,23 @@ func (s *Service) reEvaluateAsync(todoID uint64, expectedVersion int32) {
 			hlog.Errorf("supplement re-eval evaluate todo_id=%d: %v", todoID, err)
 			return
 		}
-		if _, err := s.writer.Apply(ctx, *evalInput); err != nil {
+		if evalInput == nil {
+			hlog.Errorf("supplement re-eval evaluate todo_id=%d: nil result", todoID)
+			return
+		}
+		result, err := s.writer.Apply(ctx, *evalInput)
+		if err != nil {
 			hlog.Errorf("supplement re-eval apply todo_id=%d: %v", todoID, err)
+			return
+		}
+		if result == nil {
+			hlog.Errorf("supplement re-eval apply todo_id=%d: nil result", todoID)
+			return
+		}
+		if result.TaskID != nil && s.notifier != nil {
+			if err := s.notifier.TaskReady(ctx, *result.TaskID, result.TaskVersion); err != nil && !errors.Is(err, ErrLifecycleStageDisabled) {
+				hlog.Errorf("notify supplemented task ready task_id=%d version=%d: %v", *result.TaskID, result.TaskVersion, err)
+			}
 		}
 	}()
 }
