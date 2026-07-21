@@ -102,8 +102,8 @@ decide:
   codex_network: true
   codex_reasoning_effort: "medium"
 
-# 底层 agent CLI：供 extract(M3)/decide(M4) 以及 chat 的 bin 复用。
-# 与 execute 段独立——真正跑 Task 用 execute.bin/model。
+# 底层 agent CLI：供 extract(M3)/decide(M4) 使用。
+# 与 execute/chat 独立——真正跑 Task 与右侧对话用 execute.bin/model。
 codex:
   bin: "traex"
   model: "gpt-5.4"
@@ -124,11 +124,11 @@ execute:
   timeout_second: 600                              # 单次执行超时（改代码可能久）
   stale_executing_minute: 30                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
 
-# 基于 codex CLI 的流式对话（右侧对话框，SSE /api/chat）。enabled=false 时不注册路由。
-# 复用 codex.bin；本地可信环境固定 danger-full-access + 联网，可直接读写 Jarvis MySQL、跑 CLI。
+# 右侧流式对话（SSE /api/chat）。enabled=false 时不注册路由。
+# CLI 与模型与 M5 执行对齐（execute.bin/model）；本地可信环境固定 danger-full-access + 联网。
 chat:
   enabled: true
-  model: "gpt-5.4"                     # 对话模型（可与 codex.model 不同）
+  model: "gpt-5.6-sol"                 # 与 execute.model 一致
   timeout_seconds: 600                 # 单轮对话超时（可能自跑工具，放宽）
   sandbox: "danger-full-access"        # 对话场景最大权限
-  reasoning_effort: "medium"           # 对话质量优先，覆盖用户全局 xhigh
+  reasoning_effort: "medium"           # 与 execute.reasoning_effort 一致

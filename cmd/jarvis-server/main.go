@@ -509,10 +509,11 @@ func main() {
 
 	// 流式对话服务：enabled 时实例化并注入 Dependencies.Chat；disabled 时留 nil，
 	// router 据此不注册 /api/chat 路由（与 execute 的 Executor 一致）。
+	// CLI 与 M5 执行共用 execute.bin，模型/思考级别走 chat 段（配置上与 execute 对齐）。
 	var chatService *chat.Service
 	if cfg.Chat.Enabled {
 		chatService, err = chat.NewService(chat.Options{
-			Bin:             cfg.Codex.Bin,
+			Bin:             cfg.Execute.Bin,
 			Model:           cfg.Chat.Model,
 			Sandbox:         cfg.Chat.Sandbox,
 			ReasoningEffort: cfg.Chat.ReasoningEffort,
