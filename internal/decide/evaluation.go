@@ -31,6 +31,7 @@ type EvaluationInput struct {
 	FailureDetail          string
 	ProposedPlan           *PlanDraft
 	Clarifications         []Clarification
+	EvidenceGathered       []Evidence
 	ManualGate             bool
 }
 
@@ -40,6 +41,8 @@ type EvaluationResult struct {
 	Version    int32   `json:"version"`
 	Confidence float64 `json:"confidence"`
 	Risk       float64 `json:"risk"`
+	TaskID     *uint64 `json:"task_id,omitempty"`
+	TaskVersion int32  `json:"task_version,omitempty"`
 }
 
 type EvaluationStore struct {
@@ -82,9 +85,12 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 		if todo.Status != "extracted" {
 			return transitionError(todo.ID, todo.Status, input.Route)
 		}
-		updates := map[string]any{
-			"route": input.Route, "status": input.Route, "version": gorm.Expr("version + 1"),
-		}
+			updates := map[string]any{
+				"route": input.Route, "status": input.Route, "version": gorm.Expr("version + 1"),
+			}
+			if input.Route == RouteNeedDecision {
+				updates["manual_gate_required"] = true
+			}
 		if !input.ManualGate {
 			updates["confidence"] = input.Confidence
 			updates["risk"] = input.Risk
@@ -102,8 +108,9 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 			"event_type": "evaluated", "route_reason": input.RouteReason,
 			"matched_rules": input.MatchedRules, "decision_engine": input.DecisionEngine,
 			"prompt_version": input.PromptVersion, "failure_detail": input.FailureDetail,
-			"proposed_plan":  input.ProposedPlan,
-			"clarifications": input.Clarifications,
+			"proposed_plan":     input.ProposedPlan,
+			"clarifications":    input.Clarifications,
+			"evidence_gathered": input.EvidenceGathered,
 		}
 		if !input.ManualGate {
 			eventDetail["confidence"] = input.Confidence
@@ -131,19 +138,25 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 		// itself (no human confirmation) and the Todo lands on "auto". M5's cron
 		// then executes it. The confirmed plan is Codex's proposed_plan; the Task
 		// background is the same M3-frozen context_snapshot M5 replays.
-		if input.Route == RouteAuto {
-			background, err := requireContextSnapshot(&todo)
-			if err != nil {
-				return err
+			var createdTask *domain.Task
+			if input.Route == RouteAuto {
+				background, err := requireContextSnapshot(&todo)
+				if err != nil {
+					return err
+				}
+				createdTask, err = createAutoTask(tx, s.now().UTC(), &todo, input.ProposedPlan, background)
+				if err != nil {
+					return err
+				}
 			}
-			if err := createAutoTask(tx, s.now().UTC(), &todo, input.ProposedPlan, background); err != nil {
-				return err
+			result = EvaluationResult{
+				TodoID: todo.ID, Status: input.Route, Version: todo.Version + 1,
+				Confidence: input.Confidence, Risk: input.Risk,
 			}
-		}
-		result = EvaluationResult{
-			TodoID: todo.ID, Status: input.Route, Version: todo.Version + 1,
-			Confidence: input.Confidence, Risk: input.Risk,
-		}
+			if createdTask != nil {
+				result.TaskID = &createdTask.ID
+				result.TaskVersion = createdTask.Version
+			}
 		return nil
 	})
 	if err != nil {
@@ -222,49 +235,49 @@ func validateEvaluationInput(input EvaluationInput) error {
 // transaction. It mirrors Service.Approve's task creation but records the system
 // (m4_auto) as the confirmer instead of a human. The plan is Codex's
 // proposed_plan serialized as the confirmed plan JSON.
-func createAutoTask(tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDraft, background json.RawMessage) error {
+func createAutoTask(tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDraft, background json.RawMessage) (*domain.Task, error) {
 	if plan == nil {
-		return fmt.Errorf("%w: auto task todo_id=%d has no proposed plan", ErrInvalidInput, todo.ID)
+		return nil, fmt.Errorf("%w: auto task todo_id=%d has no proposed plan", ErrInvalidInput, todo.ID)
 	}
 	planRaw, err := json.Marshal(plan)
 	if err != nil {
-		return fmt.Errorf("encode auto task plan todo_id=%d: %w", todo.ID, err)
+		return nil, fmt.Errorf("encode auto task plan todo_id=%d: %w", todo.ID, err)
 	}
 	planJSON, err := canonicalJSONObject(planRaw, "plan")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var existing domain.Task
 	found := tx.Where("todo_id = ?", todo.ID).Limit(1).Find(&existing)
 	if found.Error != nil {
-		return fmt.Errorf("check existing Task todo_id=%d: %w", todo.ID, found.Error)
+		return nil, fmt.Errorf("check existing Task todo_id=%d: %w", todo.ID, found.Error)
 	}
 	if found.RowsAffected != 0 {
-		return fmt.Errorf("%w: todo_id=%d task_id=%d", ErrTaskExists, todo.ID, existing.ID)
+		return nil, fmt.Errorf("%w: todo_id=%d task_id=%d", ErrTaskExists, todo.ID, existing.ID)
 	}
 	actionHash, err := ActionHash(todo.ActionType, todo.Target, planJSON)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	task := domain.Task{
 		TodoID: todo.ID, Title: todo.Title, ActionType: todo.ActionType,
-		Background: datatypes.JSON(append([]byte(nil), background...)),
-		Plan:       datatypes.JSON(append([]byte(nil), planJSON...)),
+		Background:  datatypes.JSON(append([]byte(nil), background...)),
+		Plan:        datatypes.JSON(append([]byte(nil), planJSON...)),
 		ConfirmedBy: "m4_auto", ConfirmedAt: now, ActionHash: actionHash,
 		Status: "pending", AutonomyMode: "autopilot", ProjectID: copyUint64(todo.ProjectID), Version: 0,
 	}
 	if err := tx.Create(&task).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
+			return nil, fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
 		}
-		return fmt.Errorf("create auto Task todo_id=%d: %w", todo.ID, err)
+		return nil, fmt.Errorf("create auto Task todo_id=%d: %w", todo.ID, err)
 	}
 	if err := createTodoEvent(tx, todo.ID, RouteAuto, RouteAuto, map[string]any{
 		"event_type": "auto_task_created", "task_id": task.ID,
 	}); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return &task, nil
 }
 
 func float64Pointer(value float64) *float64 {

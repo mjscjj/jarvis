@@ -487,7 +487,11 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 		}
 	}
 
-	prompt, err := buildExecutionPrompt(task, repoPath)
+	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	prompt, err := buildExecutionPrompt(task, repoPath, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
@@ -575,7 +579,11 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 		Status: "running", StartedAt: startedAt,
 	}
 
-	prompt, err := buildProposePrompt(task)
+	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	prompt, err := buildProposePrompt(task, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -617,7 +625,11 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 		Status: "running", StartedAt: startedAt,
 	}
 
-	prompt, err := buildApplyPrompt(task, proposal)
+	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	prompt, err := buildApplyPrompt(task, proposal, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}

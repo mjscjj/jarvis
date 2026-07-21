@@ -100,9 +100,10 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 			ConfidenceFactors: clearFactors(), RiskFactors: riskyFactors(),
 			ConfidenceBasis: "explicit", PlanIsClear: true, ProposedPlan: clearPlan(),
 			RecommendedReview: true,
+			EvidenceGathered:  []Evidence{{Label: "repo", Detail: "jarvis local"}},
 		},
 	}}
-	evaluator, err := NewCodexEvaluator(runner)
+	evaluator, err := NewCodexEvaluator(nil, runner)
 	if err != nil {
 		t.Fatalf("NewCodexEvaluator() error = %v", err)
 	}
@@ -128,6 +129,9 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 	}
 	if input.ProposedPlan == nil {
 		t.Fatalf("proposed plan must ride along for confirmation")
+	}
+	if len(input.EvidenceGathered) != 1 || input.EvidenceGathered[0].Label != "repo" {
+		t.Fatalf("evidence_gathered = %#v", input.EvidenceGathered)
 	}
 	if input.Confidence != 0.9 || input.Risk != 0.4 {
 		t.Fatalf("aggregated scores conf=%v risk=%v", input.Confidence, input.Risk)

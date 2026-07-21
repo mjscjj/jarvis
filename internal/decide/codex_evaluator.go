@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"jarvis/internal/domain"
+
+	"gorm.io/gorm"
 )
 
 // Disposition is Codex's own verdict on how to handle an extracted Todo, returned
@@ -28,18 +30,19 @@ var neutralRuleScore = RuleScore{Confidence: 0.5, Risk: 0.5}
 // CodexEvaluator implements todoEvaluator by asking Codex (read-only) to judge
 // each extracted Todo. It reuses the existing CodexDecider/BuildCodexPrompt/
 // schema unchanged and maps Codex's signals to a disposition, then to the
-// stored route (need_info or need_decision). auto_execute and need_review both
-// currently land on need_decision so every Todo still passes through the
-// confirmation page; the disposition rides along in the audit for observation.
+// stored route (need_info or need_decision). On re-evaluation after a human
+// supplement it also loads previous evaluation summaries from todo_event so the
+// prompt carries what was already asked/proposed/looked up.
 type CodexEvaluator struct {
+	db    *gorm.DB // optional in unit tests; nil → empty previous_evaluations
 	codex codexDecisionRunner
 }
 
-func NewCodexEvaluator(codex codexDecisionRunner) (*CodexEvaluator, error) {
+func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner) (*CodexEvaluator, error) {
 	if codex == nil {
 		return nil, fmt.Errorf("codex evaluator decider is nil")
 	}
-	return &CodexEvaluator{codex: codex}, nil
+	return &CodexEvaluator{db: db, codex: codex}, nil
 }
 
 func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*EvaluationInput, error) {
@@ -56,7 +59,13 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 	if err != nil {
 		return nil, fmt.Errorf("codex evaluation todo_id=%d: %w", todo.ID, err)
 	}
-	prompt, err := BuildCodexPrompt(CodexPromptInput{Todo: todo, RuleScore: neutralRuleScore, Background: background})
+	prior, err := loadPriorEvaluations(ctx, e.db, todo.ID)
+	if err != nil {
+		return nil, fmt.Errorf("codex evaluation todo_id=%d: %w", todo.ID, err)
+	}
+	prompt, err := BuildCodexPrompt(CodexPromptInput{
+		Todo: todo, RuleScore: neutralRuleScore, Background: background, PriorEvaluations: prior,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("build codex decision prompt todo_id=%d: %w", todo.ID, err)
 	}
@@ -94,6 +103,7 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 		ThresholdConfigVersion: "codex-v1",
 		ProposedPlan:           result.Decision.ProposedPlan,
 		Clarifications:         result.Decision.Clarifications,
+		EvidenceGathered:       result.Decision.EvidenceGathered,
 	}
 	return input, nil
 }

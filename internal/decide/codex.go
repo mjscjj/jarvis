@@ -99,7 +99,8 @@ type CodexDecision struct {
 	ProposedPlan      *PlanDraft      `json:"proposed_plan"`
 	PlanIsClear       bool            `json:"plan_is_clear"`
 	// EvidenceGathered records the facts/links Codex looked up itself while doing
-	// its homework (§0.2 auto-fill). Stored in the audit for observability.
+	// its homework (§0.2 auto-fill). Persisted on the evaluated todo_event and
+	// replayed into previous_evaluations on the next M4 re-eval.
 	EvidenceGathered []Evidence `json:"evidence_gathered"`
 }
 
