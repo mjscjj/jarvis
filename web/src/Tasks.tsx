@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Modal, Select, Space, Spin, Table, Tag, Timeline, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Input, Modal, Space, Spin, Table, Tabs, Tag, Timeline, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { approveTask, executeTask, finishTask, listTaskRuns, listTasks, rejectTask, rerunTask, supplementTask } from './api'
 import type { ExecutionRun, ProposalResult, RunEnrichment, Task, TaskStatus } from './types'
@@ -152,9 +152,16 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
+// 两个子 Tab 各自对应的 Task 状态集合：待审批只看等用户批准落地的高风险对外写入，
+// 其他看剩下所有生命周期状态。
+const tabStatuses: Record<'awaiting' | 'others', TaskStatus[]> = {
+  awaiting: ['awaiting_approval'],
+  others: ['pending', 'executing', 'done', 'failed'],
+}
+
 export default function Tasks() {
-  const allStatuses: TaskStatus[] = ['pending', 'executing', 'awaiting_approval', 'done', 'failed']
-  const [statuses, setStatuses] = useState<TaskStatus[]>(allStatuses)
+  const [activeTab, setActiveTab] = useState<'awaiting' | 'others'>('awaiting')
+  const statuses = tabStatuses[activeTab]
   const [items, setItems] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -187,7 +194,7 @@ export default function Tasks() {
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [statuses, refreshKey])
+  }, [activeTab, refreshKey])
 
   // 有任务在执行中时静默轮询列表，点完「执行」后状态会从执行中变为完成/失败，无需手动刷新。
   const hasExecuting = items.some((task) => task.status === 'executing')
@@ -199,7 +206,7 @@ export default function Tasks() {
         .catch(() => { /* 轮询失败不打扰，下次再试 */ })
     }, 3000)
     return () => window.clearInterval(timer)
-  }, [hasExecuting, statuses])
+  }, [hasExecuting, activeTab])
 
   // 打开详情抽屉时拉该 Task 的执行历史。detail 关闭（undefined）时清空。
   useEffect(() => {
@@ -370,13 +377,23 @@ export default function Tasks() {
     <PageHeader title="任务执行" subtitle="已确认的可执行任务，点行查看方案与结果">
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
-    <Card className="filter-card" variant="borderless">
-      <Flex gap={16} align="end" wrap>
-        <label className="filter-field filter-status"><Text type="secondary">Task 状态</Text><Select mode="multiple" value={statuses} options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} onChange={(values) => setStatuses(values.length ? values : allStatuses)} /></label>
-      </Flex>
-    </Card>
     {error && <Alert type="error" showIcon message="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1050 }} onRow={(task) => ({ onClick: () => setDetail(task), className: 'clickable-row' })} /></Card>
+    <Card className="table-card" variant="borderless">
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => setActiveTab(key as 'awaiting' | 'others')}
+        items={[
+          {
+            key: 'awaiting',
+            label: activeTab === 'awaiting'
+              ? <Badge count={items.length} offset={[8, -2]} size="small">待审批</Badge>
+              : '待审批',
+          },
+          { key: 'others', label: '其他' },
+        ]}
+      />
+      <Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1050 }} onRow={(task) => ({ onClick: () => setDetail(task), className: 'clickable-row' })} />
+    </Card>
     <Drawer title={detail?.title || 'Task 详情'} open={Boolean(detail)} width={680} onClose={() => setDetail(undefined)}>
       {detail && <Space direction="vertical" size={20} className="drawer-content">
         <Space><StatusBadge label={statusMeta[detail.status].label} color={statusMeta[detail.status].color} /><Tag>{detail.action_type}</Tag></Space>
