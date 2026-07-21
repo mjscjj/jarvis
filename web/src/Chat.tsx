@@ -27,6 +27,11 @@ function parseSSEBlock(block: string): { event: string; data: string } {
   return { event, data: dataLines.join('\n') }
 }
 
+function isAbortError(cause: unknown): boolean {
+  return (cause instanceof DOMException && cause.name === 'AbortError')
+    || (cause instanceof Error && cause.name === 'AbortError')
+}
+
 export default function Chat() {
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -35,6 +40,7 @@ export default function Chat() {
   const [error, setError] = useState<string>()
   const threadId = useRef<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const el = listRef.current
@@ -43,6 +49,10 @@ export default function Chat() {
 
   const selectionLabel = context.selection ? context.selection.label : null
   const contextHint = [context.active_key || '未知页面', selectionLabel].filter(Boolean).join(' · ')
+
+  const stop = useCallback(() => {
+    abortRef.current?.abort()
+  }, [])
 
   const send = useCallback(async () => {
     const message = input.trim()
@@ -60,12 +70,15 @@ export default function Chat() {
       return next
     })
 
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
       const req: ChatRequest = { message, thread_id: threadId.current, page_context: context }
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
+        signal: controller.signal,
       })
       if (!response.ok) throw new Error(`对话请求失败：HTTP ${response.status}`)
       if (!response.body) throw new Error('对话响应无数据流（response.body 为空）')
@@ -102,6 +115,15 @@ export default function Chat() {
       }
       if (streamError) throw new Error(streamError)
     } catch (cause: unknown) {
+      if (isAbortError(cause)) {
+        // Keep any partial reply; drop only a still-empty codex bubble.
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.role === 'codex' && last.text === '') return prev.slice(0, -1)
+          return prev
+        })
+        return
+      }
       const text = errorText(cause)
       setError(text)
       // Drop the trailing empty codex bubble so a failed round leaves no blank.
@@ -111,6 +133,7 @@ export default function Chat() {
         return prev
       })
     } finally {
+      abortRef.current = null
       setSending(false)
     }
   }, [input, sending, context])
@@ -118,7 +141,7 @@ export default function Chat() {
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      void send()
+      if (!sending) void send()
     }
   }
 
@@ -147,7 +170,9 @@ export default function Chat() {
         autoSize={{ minRows: 1, maxRows: 6 }}
         placeholder="输入消息，Enter 发送，Shift+Enter 换行"
       />
-      <Button type="primary" loading={sending} disabled={!input.trim()} onClick={() => void send()}>发送</Button>
+      {sending
+        ? <Button danger onClick={stop}>停止</Button>
+        : <Button type="primary" disabled={!input.trim()} onClick={() => void send()}>发送</Button>}
     </div>
   </div>
 }

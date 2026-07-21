@@ -197,6 +197,12 @@ body {
   bottom: var(--space-4);
   z-index: 200;
   box-shadow: var(--shadow-lg);
+  transition: right 0.25s ease;
+}
+
+/* 对话框打开时，FAB 挪到 dock 左侧，避免盖住输入区的发送/停止按钮 */
+.chat-toggle.chat-open {
+  right: calc(var(--chat-width) + var(--space-4));
 }
 
 /* Cards & tables — Linear 风：细边框、无阴影 */

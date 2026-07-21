@@ -160,7 +160,7 @@ function AppShell() {
           shape="circle"
           size="large"
           icon={<MessageOutlined />}
-          className="chat-toggle"
+          className={`chat-toggle ${chatOpen ? 'chat-open' : ''}`}
           onClick={() => setChatOpen((open) => !open)}
         />
       </Tooltip>
