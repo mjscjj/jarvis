@@ -75,7 +75,7 @@
   --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* --- Layout --- */
-  --sider-width: 220px;
+  --sider-width: 140px;
   --chat-width: 380px;
   --header-height: 56px;
 }

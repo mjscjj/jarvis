@@ -29,7 +29,7 @@ const { Title } = Typography
 
 const DEFAULT_KEY = 'overview'
 
-const SIDER_WIDTH = 220
+const SIDER_WIDTH = 140
 const SIDER_COLLAPSED_WIDTH = 64
 const CHAT_MIN_WIDTH = 300
 const CHAT_MAX_WIDTH = 720
