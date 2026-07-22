@@ -38,6 +38,7 @@ import {
   updateProject,
   updateResource,
 } from './api'
+import SharedMemory from './SharedMemory'
 import type {
   Group,
   GroupBackgroundInput,
@@ -917,6 +918,7 @@ export default function Background() {
         { key: 'persons', label: '人物', children: <PersonsPanel /> },
         { key: 'groups', label: '会话背景', children: <GroupsPanel /> },
         { key: 'resources', label: '资源', children: <ResourcePanel /> },
+        { key: 'shared-memory', label: '共享记忆', children: <SharedMemory /> },
       ]}
     />
   )
