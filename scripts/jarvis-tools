@@ -326,9 +326,12 @@ cmd_get_project() {
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   if (( has_id )); then
     [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-project --id must be a positive integer"
-    local body
+    local body project events relations
     body="$(api_get "/api/projects/${ID}")"
-    emit "$(printf '%s' "$body" | jq -c '.data')"
+    project="$(printf '%s' "$body" | jq -c '.data')"
+    events="$(api_get "/api/projects/${ID}/events" | jq -c '.data.items[:50]')"
+    relations="$(api_get "/api/relation-facts?entity_type=project&entity_id=${ID}&page=1&page_size=100" | jq -c '.data.items')"
+    emit "$(jq -cn --argjson project "$project" --argjson events "$events" --argjson relations "$relations" '{project:$project,project_events:$events,relation_facts:$relations}')"
     return
   fi
   local items matched
@@ -342,7 +345,12 @@ cmd_get_project() {
   if (( n > 1 )); then
     fail "multiple projects matched code=${CODE}"
   fi
-  emit "$(printf '%s' "$matched" | jq -c '.[0]')"
+  local project project_id events relations
+  project="$(printf '%s' "$matched" | jq -c '.[0]')"
+  project_id="$(printf '%s' "$project" | jq -er '.id')"
+  events="$(api_get "/api/projects/${project_id}/events" | jq -c '.data.items[:50]')"
+  relations="$(api_get "/api/relation-facts?entity_type=project&entity_id=${project_id}&page=1&page_size=100" | jq -c '.data.items')"
+  emit "$(jq -cn --argjson project "$project" --argjson events "$events" --argjson relations "$relations" '{project:$project,project_events:$events,relation_facts:$relations}')"
 }
 
 cmd_get_group() {
@@ -395,7 +403,11 @@ cmd_get_person() {
   if (( n > 1 )); then
     fail "multiple persons matched open_id=${OPEN_ID}"
   fi
-  emit "$(printf '%s' "$matched" | jq -c '.[0]')"
+  local person person_id relations
+  person="$(printf '%s' "$matched" | jq -c '.[0]')"
+  person_id="$(printf '%s' "$person" | jq -er '.id')"
+  relations="$(api_get "/api/relation-facts?entity_type=person&entity_id=${person_id}&page=1&page_size=100" | jq -c '.data.items')"
+  emit "$(jq -cn --argjson person "$person" --argjson relations "$relations" '{person:$person,relation_facts:$relations}')"
 }
 
 cmd_get_shared_memory() {

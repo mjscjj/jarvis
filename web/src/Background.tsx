@@ -3,6 +3,9 @@ import {
   Alert,
   Button,
   Card,
+  Descriptions,
+  Drawer,
+  Empty,
   Flex,
   Form,
   Input,
@@ -11,15 +14,19 @@ import {
   Popconfirm,
   Segmented,
   Select,
+  Space,
+  Spin,
   Switch,
   Table,
   Tag,
   Tabs,
+  Timeline,
   Tooltip,
   Typography,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
 import {
+  appendProjectEvent,
   createPerson,
   createProject,
   createResource,
@@ -34,6 +41,7 @@ import {
   getSkillContent,
   listGroups,
   listPersons,
+  listProjectEvents,
   listProjects,
   listResources,
   listSkills,
@@ -51,6 +59,7 @@ import {
   updateTextStorage,
 } from './api'
 import SharedMemory from './SharedMemory'
+import EntityRelations from './components/EntityRelations'
 import type {
   AgentSkill,
   AgentSkillInput,
@@ -62,6 +71,7 @@ import type {
   ProfileInput,
   ProfileView,
   Project,
+  ProjectEvent,
   ProjectInput,
   ProjectRole,
   ProjectStatus,
@@ -111,6 +121,14 @@ function ProjectsPanel() {
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form] = Form.useForm<ProjectInput>()
+  const [detail, setDetail] = useState<Project>()
+  const [events, setEvents] = useState<ProjectEvent[]>([])
+  const [eventsLoading, setEventsLoading] = useState(false)
+  const [eventsError, setEventsError] = useState<string>()
+  const [eventOpen, setEventOpen] = useState(false)
+  const [eventDescription, setEventDescription] = useState('')
+  const [eventSubmitting, setEventSubmitting] = useState(false)
+  const [eventRefresh, setEventRefresh] = useState(0)
 
   const reload = useCallback(() => {
     setLoading(true)
@@ -120,6 +138,20 @@ function ProjectsPanel() {
       .finally(() => setLoading(false))
   }, [])
   useEffect(reload, [reload])
+
+  useEffect(() => {
+    if (!detail) { setEvents([]); setEventsError(undefined); return }
+    const controller = new AbortController()
+    setEventsLoading(true)
+    setEventsError(undefined)
+    listProjectEvents(detail.id, controller.signal)
+      .then((result) => setEvents(result.items))
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setEventsError(errorText(cause))
+      })
+      .finally(() => { if (!controller.signal.aborted) setEventsLoading(false) })
+    return () => controller.abort()
+  }, [detail, eventRefresh])
 
   const openCreate = () => {
     setEditing(null)
@@ -138,8 +170,8 @@ function ProjectsPanel() {
     const values = await form.validateFields()
     setSubmitting(true)
     try {
-      if (editing) await updateProject(editing.id, values)
-      else await createProject(values)
+      const saved = editing ? await updateProject(editing.id, values) : await createProject(values)
+      if (detail?.id === saved.id) setDetail(saved)
       setOpen(false)
       reload()
     } catch (cause: unknown) {
@@ -149,7 +181,29 @@ function ProjectsPanel() {
     }
   }
   const remove = async (project: Project) => {
-    try { await deleteProject(project.id); reload() } catch (cause: unknown) { setError(errorText(cause)) }
+    try {
+      await deleteProject(project.id)
+      if (detail?.id === project.id) setDetail(undefined)
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    }
+  }
+
+  const recordEvent = async () => {
+    if (!detail || !eventDescription.trim()) return
+    setEventSubmitting(true)
+    try {
+      await appendProjectEvent(detail.id, eventDescription.trim())
+      setEventDescription('')
+      setEventOpen(false)
+      setEventRefresh((value) => value + 1)
+      setEventsError(undefined)
+    } catch (cause: unknown) {
+      setEventsError(errorText(cause))
+    } finally {
+      setEventSubmitting(false)
+    }
   }
 
   const columns: TableColumnsType<Project> = [
@@ -161,9 +215,9 @@ function ProjectsPanel() {
     {
       title: '操作', width: 150, render: (_, p) => (
         <Flex gap={8}>
-          <Button size="small" onClick={() => openEdit(p)}>编辑</Button>
+          <Button size="small" onClick={(event) => { event.stopPropagation(); openEdit(p) }}>编辑</Button>
           <Popconfirm title="归档该项目？" onConfirm={() => remove(p)} okText="归档" cancelText="取消">
-            <Button size="small" danger>归档</Button>
+            <Button size="small" danger onClick={(event) => event.stopPropagation()}>归档</Button>
           </Popconfirm>
         </Flex>
       ),
@@ -176,7 +230,7 @@ function ProjectsPanel() {
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建项目</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon message="项目操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<Project> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} /></Card>
+    <Card className="table-card" variant="borderless"><Table<Project> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(project) => ({ onClick: () => setDetail(project), className: 'clickable-row' })} /></Card>
     <Modal title={editing ? '编辑项目' : '新建项目'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
         <Form.Item name="name" label="项目名" rules={[{ required: true, message: '请输入项目名' }]}><Input /></Form.Item>
@@ -195,6 +249,34 @@ function ProjectsPanel() {
         <Form.Item name="description" label="描述(可选)"><Input.TextArea rows={2} /></Form.Item>
         <Form.Item name="notes" label="备注(可选)"><Input.TextArea rows={2} /></Form.Item>
       </Form>
+    </Modal>
+    <Drawer title={detail?.name || '项目详情'} open={Boolean(detail)} size={720} onClose={() => setDetail(undefined)}>
+      {detail && <Space orientation="vertical" size={20} style={{ width: '100%' }}>
+        <Descriptions column={2} size="small">
+          <Descriptions.Item label="状态"><Tag>{projectStatusLabels[detail.status]}</Tag></Descriptions.Item>
+          <Descriptions.Item label="我的角色">{projectRoleLabels[detail.role]}</Descriptions.Item>
+          <Descriptions.Item label="优先级">{detail.priority}</Descriptions.Item>
+          <Descriptions.Item label="项目代号">{detail.code || '—'}</Descriptions.Item>
+          <Descriptions.Item label="项目描述" span={2}>{detail.description || '—'}</Descriptions.Item>
+          <Descriptions.Item label="备注" span={2}>{detail.notes || '—'}</Descriptions.Item>
+        </Descriptions>
+        <Card size="small" title="项目进展" variant="borderless" extra={<Button size="small" type="primary" onClick={() => setEventOpen(true)}>记录进展</Button>}>
+          {eventsError && <Alert type="error" showIcon title="项目进展加载失败" description={eventsError} style={{ marginBottom: 12 }} />}
+          {eventsLoading ? (
+            <div style={{ padding: 16, textAlign: 'center' }}><Spin size="small" /></div>
+          ) : events.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无项目进展" />
+          ) : (
+            <Timeline items={events.map((event) => ({
+              content: <div><div style={{ whiteSpace: 'pre-wrap' }}>{event.description}</div><Text type="secondary" style={{ fontSize: 12 }}>{new Date(event.occurred_at).toLocaleString()}</Text></div>,
+            }))} />
+          )}
+        </Card>
+        <EntityRelations entityType="project" entityId={detail.id} />
+      </Space>}
+    </Drawer>
+    <Modal title="记录项目进展" open={eventOpen} confirmLoading={eventSubmitting} onOk={recordEvent} onCancel={() => setEventOpen(false)} okText="记录">
+      <Input.TextArea rows={6} value={eventDescription} onChange={(event) => setEventDescription(event.target.value)} placeholder="写清楚发生了什么、当前结果和下一步。" />
     </Modal>
   </>
 }
@@ -368,7 +450,7 @@ function PersonsPanel() {
     </Flex>
     {error && <Alert type="error" showIcon message="人物操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless"><Table<Person> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 900 }} /></Card>
-    <Modal title={editing ? '编辑人物' : '新建人物'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
+    <Modal title={editing ? '编辑人物' : '新建人物'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden width={720}>
       {!editing && (
         <Card size="small" style={{ marginBottom: 16 }}>
           <Flex gap={8}>
@@ -416,6 +498,7 @@ function PersonsPanel() {
         <Form.Item name="comm_style" label="沟通风格(可选)" extra="辅助 AI 识别 leader 的隐含交办，如：结论先行、指令常以「看下」隐含表达"><Input.TextArea rows={2} /></Form.Item>
         <Form.Item name="notes" label="备注(可选)"><Input.TextArea rows={2} /></Form.Item>
       </Form>
+      {editing && <EntityRelations entityType="person" entityId={editing.id} />}
     </Modal>
   </>
 }

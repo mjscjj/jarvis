@@ -36,6 +36,10 @@ import type {
   TaskList,
   TaskStatus,
   ExecutionRunList,
+  ProjectEvent,
+  RelationEntityType,
+  RelationFactList,
+  TaskEvent,
   Todo,
   TodoList,
   TodoQuery,
@@ -183,6 +187,20 @@ export function listTaskRuns(id: number, signal?: AbortSignal): Promise<Executio
   return request<ExecutionRunList>(`/api/tasks/${id}/runs`, { signal })
 }
 
+export function listTaskEvents(id: number, signal?: AbortSignal): Promise<{ items: TaskEvent[] }> {
+  return request<{ items: TaskEvent[] }>(`/api/tasks/${id}/events`, { signal })
+}
+
+export function listEntityRelations(entityType: RelationEntityType, entityId: number, signal?: AbortSignal): Promise<RelationFactList> {
+  const params = new URLSearchParams({
+    entity_type: entityType,
+    entity_id: String(entityId),
+    page: '1',
+    page_size: '100',
+  })
+  return request<RelationFactList>(`/api/relation-facts?${params.toString()}`, { signal })
+}
+
 // --- M1 background management ---
 
 export function listProjects(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Project>> {
@@ -199,6 +217,14 @@ export function updateProject(id: number, body: ProjectInput): Promise<Project> 
 
 export function deleteProject(id: number): Promise<{ id: number; archived: boolean }> {
   return request(`/api/projects/${id}`, { method: 'DELETE' })
+}
+
+export function listProjectEvents(id: number, signal?: AbortSignal): Promise<{ items: ProjectEvent[] }> {
+  return request<{ items: ProjectEvent[] }>(`/api/projects/${id}/events`, { signal })
+}
+
+export function appendProjectEvent(id: number, description: string): Promise<ProjectEvent> {
+  return request<ProjectEvent>(`/api/projects/${id}/events`, { method: 'POST', body: { description } })
 }
 
 export function listPersons(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Person>> {

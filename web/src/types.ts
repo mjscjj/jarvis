@@ -282,6 +282,53 @@ export interface ExecutionRunList {
   items: ExecutionRun[]
 }
 
+export interface TaskEvent {
+  id: number
+  task_id: number
+  task_version: number
+  event_type: string
+  from_status: TaskStatus | null
+  to_status: TaskStatus
+  actor_type: string
+  actor_ref: string | null
+  run_id: number | null
+  detail: unknown
+  occurred_at: string
+  created_at: string
+}
+
+export interface ProjectEvent {
+  id: number
+  project_id: number
+  description: string
+  occurred_at: string
+  created_at: string
+}
+
+export type RelationEntityType = 'project' | 'person' | 'principal' | 'group' | 'todo' | 'task' | 'resource' | 'managed_resource'
+
+export interface RelationEntityRef {
+  type: RelationEntityType
+  id: number
+  label: string
+}
+
+export interface RelationFact {
+  id: number
+  entity_a: RelationEntityRef
+  entity_b: RelationEntityRef
+  description: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RelationFactList {
+  items: RelationFact[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export type ProjectRole = 'owner' | 'participant'
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'archived' | 'done'
 export type PersonRole = 'leader' | 'key' | 'colleague' | 'other'

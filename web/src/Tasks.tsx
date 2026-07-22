@@ -1,13 +1,39 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Input, Modal, Space, Spin, Table, Tabs, Tag, Timeline, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, executeTask, finishTask, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, supplementTask } from './api'
-import type { ExecutionRun, ProposalResult, RunEnrichment, Task, TaskStatus } from './types'
+import { approveTask, executeTask, finishTask, listTaskEvents, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, supplementTask } from './api'
+import type { ExecutionRun, ProposalResult, RunEnrichment, Task, TaskEvent, TaskStatus } from './types'
+import EntityRelations from './components/EntityRelations'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
 
 const { Link, Paragraph, Text } = Typography
+
+const taskEventLabels: Record<string, string> = {
+  created: '任务已创建',
+  execution_started: '开始执行',
+  approval_requested: '等待审批',
+  approval_granted: '已批准执行',
+  approval_rejected: '已驳回',
+  rerun_requested: '请求重跑',
+  reapply_started: '重新落地',
+  supplemented: '补充执行信息',
+  execution_succeeded: '执行成功',
+  execution_failed: '执行失败',
+  stale_failed: '执行超时',
+  snapshot_imported: '导入当前状态',
+}
+
+const actorLabels: Record<string, string> = { user: '用户', m4: 'M4', m5: 'M5', system: '系统', seed: '初始化', migration: '迁移' }
+
+function taskEventColor(event: TaskEvent): string {
+  if (event.to_status === 'done') return 'green'
+  if (event.to_status === 'failed') return 'red'
+  if (event.to_status === 'awaiting_approval') return 'orange'
+  if (event.to_status === 'executing') return 'blue'
+  return 'gray'
+}
 
 // runStatusColor 把 ExecutionRun 状态映射到 Timeline 圆点/标签颜色。
 function runStatusColor(status: string): string {
@@ -267,6 +293,9 @@ export default function Tasks() {
   const [runs, setRuns] = useState<ExecutionRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runsError, setRunsError] = useState<string>()
+  const [events, setEvents] = useState<TaskEvent[]>([])
+  const [eventsLoading, setEventsLoading] = useState(false)
+  const [eventsError, setEventsError] = useState<string>()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -304,6 +333,20 @@ export default function Tasks() {
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRunsError(errorText(cause))
       })
       .finally(() => { if (!controller.signal.aborted) setRunsLoading(false) })
+    return () => controller.abort()
+  }, [detail, refreshKey])
+
+  useEffect(() => {
+    if (!detail) { setEvents([]); setEventsError(undefined); return }
+    const controller = new AbortController()
+    setEventsLoading(true)
+    setEventsError(undefined)
+    listTaskEvents(detail.id, controller.signal)
+      .then((result) => setEvents(result.items))
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setEventsError(errorText(cause))
+      })
+      .finally(() => { if (!controller.signal.aborted) setEventsLoading(false) })
     return () => controller.abort()
   }, [detail, refreshKey])
 
@@ -550,8 +593,8 @@ export default function Tasks() {
       />
       <Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1160 }} tableLayout="fixed" onRow={(task) => ({ onClick: () => setDetail(task), className: 'clickable-row' })} />
     </Card>
-    <Drawer title={detail?.title || 'Task 详情'} open={Boolean(detail)} width={680} onClose={() => setDetail(undefined)}>
-      {detail && <Space direction="vertical" size={20} className="drawer-content">
+    <Drawer title={detail?.title || 'Task 详情'} open={Boolean(detail)} size={680} onClose={() => setDetail(undefined)}>
+      {detail && <Space orientation="vertical" size={20} className="drawer-content">
         <Space><StatusBadge label={statusMeta[detail.status].label} color={statusMeta[detail.status].color} /><Tag>{detail.action_type}</Tag><FailureTag task={detail} /></Space>
         {failureKindOf(detail) === 'rejected' && (
           <Alert type="warning" showIcon message="这是你驳回的方案（非执行报错）" description="任务因你驳回外部写入方案而失败，系统并未真正执行/发送任何内容。可重跑以重新产出方案。" />
@@ -577,6 +620,32 @@ export default function Tasks() {
           <Descriptions.Item label="项目">{detail.project_id != null ? `#${detail.project_id}` : '未关联'}</Descriptions.Item>
         </Descriptions>
         <section>
+          <Text type="secondary">任务进展（共 {events.length} 条）</Text>
+          {eventsError && <Alert type="error" showIcon style={{ marginTop: 8 }} title="任务进展加载失败" description={eventsError} />}
+          {eventsLoading ? (
+            <div style={{ padding: '16px 0', textAlign: 'center' }}><Spin size="small" /></div>
+          ) : events.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务进展" style={{ marginTop: 8 }} />
+          ) : (
+            <Timeline
+              style={{ marginTop: 12 }}
+              items={events.map((event) => ({
+                color: taskEventColor(event),
+                content: (
+                  <div>
+                    <Text strong>{taskEventLabels[event.event_type] || event.event_type}</Text>
+                    <div><Text type="secondary" style={{ fontSize: 12 }}>
+                      {new Date(event.occurred_at).toLocaleString()} · {actorLabels[event.actor_type] || event.actor_type} · v{event.task_version}
+                      {event.run_id ? ` · Run #${event.run_id}` : ''}
+                      {event.from_status ? ` · ${event.from_status} → ${event.to_status}` : ` · ${event.to_status}`}
+                    </Text></div>
+                  </div>
+                ),
+              }))}
+            />
+          )}
+        </section>
+        <section>
           <Text type="secondary">执行历史（共 {runs.length} 次）</Text>
           {runsError && <Alert type="error" showIcon style={{ marginTop: 8 }} message="执行历史加载失败" description={runsError} />}
           {runsLoading ? (
@@ -586,7 +655,7 @@ export default function Tasks() {
           ) : (
             <Timeline
               style={{ marginTop: 12 }}
-              items={runs.map((run) => ({ color: runStatusColor(run.status), children: <RunCard run={run} /> }))}
+              items={runs.map((run) => ({ color: runStatusColor(run.status), content: <RunCard run={run} /> }))}
             />
           )}
         </section>
@@ -625,6 +694,7 @@ export default function Tasks() {
           <section><Text type="secondary">结果汇总（Task 最新快照）</Text>{detail.execution_result ? <pre>{JSON.stringify(detail.execution_result, null, 2)}</pre> : <Paragraph type="secondary" style={{ marginTop: 8 }}>尚未执行</Paragraph>}</section>
         )}
         <section><Text type="secondary">背景（M4 产出）</Text><pre>{JSON.stringify(detail.background, null, 2)}</pre></section>
+        <EntityRelations entityType="task" entityId={detail.id} />
       </Space>}
     </Drawer>
     <Modal title={finishStatus === 'done' ? '记录完成结果' : '记录失败原因'} open={Boolean(selected)} confirmLoading={submitting} onOk={submit} onCancel={() => setSelected(undefined)} okText="提交">

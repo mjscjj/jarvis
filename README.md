@@ -77,8 +77,8 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 | `project` / `person` / `principal_profile` | background | extract/decide | 背景信息（后台可编辑） |
 | `todo` / `todo_event` / `todo_extract_watermark` | extract | decide | 抽取出的行动线索 + 事件 + 抽取游标 |
 | `task` / `task_event` / `execution_run` | decide(建)/execute | execute/insight | 可执行快照 + 业务状态历史 + Codex 执行审计 |
-| `project_event` | background/API | progress | 项目资料、状态、进度、里程碑、决策与阻塞历史 |
-| `relation_fact` | knowledge/API | knowledge | 现有实体间带来源和有效期的动态关系；确定性外键关系不重复写 |
+| `project_event` | background/API | progress | 项目的自然语言进度历史，具体含义由模型结合上下文推断 |
+| `relation_fact` | knowledge/API | knowledge | 两个现有实体之间的自然语言关联；确定性外键关系不重复写 |
 | `decision_audit` | decide | 确认页 | 决策审计 |
 | Qdrant `jarvis_memories` | mem0 sidecar | memory/extract/decide | 长期记忆向量 |
 | Qdrant `todo_semantic` | extract | extract | Todo 去重向量 |
@@ -107,7 +107,7 @@ POST /api/tasks/:id/finish|supplement
 POST /api/tasks/:id/execute|rerun|approve|reject          # 需 Executor 已启用（异步）
 GET/POST/PUT/DELETE /api/projects[/:id]
 GET/POST /api/projects/:id/events
-GET/POST /api/relation-facts   POST /api/relation-facts/:id/retract
+GET/POST /api/relation-facts   PUT/DELETE /api/relation-facts/:id
 GET/POST/PUT/DELETE /api/persons[/:id]   POST /api/persons/resolve
 GET  /api/groups           PUT /api/groups/:id
 GET/PUT /api/profile

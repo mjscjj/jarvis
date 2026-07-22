@@ -24,6 +24,8 @@ import (
 
 	"jarvis/internal/background"
 	"jarvis/internal/config"
+	"jarvis/internal/knowledge"
+	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
@@ -145,7 +147,7 @@ func runGetProject(args []string) error {
 	if err != nil {
 		return err
 	}
-	var project any
+	var project *background.ProjectView
 	if *id != 0 {
 		project, err = svc.Get(context.Background(), *id)
 	} else {
@@ -154,7 +156,32 @@ func runGetProject(args []string) error {
 	if err != nil {
 		return mapNotFound(err)
 	}
-	return emit(project)
+	eventService, err := progress.NewService(db)
+	if err != nil {
+		return err
+	}
+	events, err := eventService.ListProjectEvents(context.Background(), project.ID)
+	if err != nil {
+		return err
+	}
+	if len(events) > 50 {
+		events = events[:50]
+	}
+	factService, err := knowledge.NewService(db)
+	if err != nil {
+		return err
+	}
+	entityType := knowledge.EntityProject
+	entityID := project.ID
+	relations, err := factService.List(context.Background(), knowledge.FactFilter{
+		EntityType: &entityType, EntityID: &entityID, Page: 1, PageSize: 100,
+	})
+	if err != nil {
+		return err
+	}
+	return emit(map[string]any{
+		"project": project, "project_events": events, "relation_facts": relations.Items,
+	})
 }
 
 func runGetGroup(args []string) error {
@@ -228,7 +255,19 @@ func runGetPerson(args []string) error {
 	if err != nil {
 		return mapNotFound(err)
 	}
-	return emit(person)
+	factService, err := knowledge.NewService(db)
+	if err != nil {
+		return err
+	}
+	entityType := knowledge.EntityPerson
+	entityID := person.ID
+	relations, err := factService.List(context.Background(), knowledge.FactFilter{
+		EntityType: &entityType, EntityID: &entityID, Page: 1, PageSize: 100,
+	})
+	if err != nil {
+		return err
+	}
+	return emit(map[string]any{"person": person, "relation_facts": relations.Items})
 }
 
 func runGetSharedMemory(args []string) error {
