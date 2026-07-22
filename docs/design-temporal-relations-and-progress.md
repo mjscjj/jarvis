@@ -185,3 +185,9 @@ Qdrant payload 同样保存 `subject_type/subject_id/object_type/object_id`。My
 - 已有 `todo_event`、`decision_audit`、`execution_run` 保持不变。
 
 一次性回填脚本与在线写入逻辑分离，不保留长期兼容分支。
+
+代码提供显式的一次性命令，但不会在普通启动时自动修改存量数据：
+
+```bash
+go run ./cmd/jarvis-server -config conf/config.yaml -backfill-progress-events
+```

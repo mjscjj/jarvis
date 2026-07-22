@@ -95,7 +95,7 @@ func DeleteProject(svc *background.ProjectService) app.HandlerFunc {
 			writeBackgroundError(c, err)
 			return
 		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": id, "deleted": true}})
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": id, "archived": true}})
 	}
 }
 

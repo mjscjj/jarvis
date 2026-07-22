@@ -11,6 +11,8 @@ import (
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
+	"jarvis/internal/knowledge"
+	"jarvis/internal/progress"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/workrule"
 
@@ -34,6 +36,8 @@ type Dependencies struct {
 	Resources           *background.ResourceService
 	SharedMemory        *sharedmem.SharedMemoryService
 	WorkRules           *workrule.Service
+	RelationFacts       knowledge.FactService
+	Progress            progress.EventService
 	Overview            *insight.OverviewService
 	Digests             *insight.DigestService
 	DailyDigests        DailyDigestService      // 每日进度总结（个人 codex + 关键群 qwen）；nil 则不注册 /api/daily-digests 路由
@@ -89,6 +93,12 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.WorkRules == nil {
 		return fmt.Errorf("api work rule service dependency is nil")
 	}
+	if deps.RelationFacts == nil {
+		return fmt.Errorf("api relation fact service dependency is nil")
+	}
+	if deps.Progress == nil {
+		return fmt.Errorf("api progress service dependency is nil")
+	}
 	if deps.Overview == nil {
 		return fmt.Errorf("api overview service dependency is nil")
 	}
@@ -111,8 +121,12 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/confirmations/:todo_id/supplement", SupplementConfirmation(deps.Confirmations))
 	h.GET("/api/tasks", ListTasks(deps.Tasks))
 	h.GET("/api/tasks/:task_id/runs", ListTaskRuns(deps.Tasks))
+	h.GET("/api/tasks/:task_id/events", ListTaskEvents(deps.Progress))
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
 	h.POST("/api/tasks/:task_id/supplement", SupplementTask(deps.Tasks))
+	h.GET("/api/relation-facts", ListRelationFacts(deps.RelationFacts))
+	h.POST("/api/relation-facts", CreateRelationFact(deps.RelationFacts))
+	h.POST("/api/relation-facts/:fact_id/retract", RetractRelationFact(deps.RelationFacts))
 	if deps.Executor != nil {
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/rerun", RerunTask(deps.Executor))
@@ -126,6 +140,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/projects/:project_id", GetProject(deps.Projects))
 	h.PUT("/api/projects/:project_id", UpdateProject(deps.Projects))
 	h.DELETE("/api/projects/:project_id", DeleteProject(deps.Projects))
+	h.GET("/api/projects/:project_id/events", ListProjectEvents(deps.Progress))
+	h.POST("/api/projects/:project_id/events", AppendProjectEvent(deps.Progress))
 	h.GET("/api/persons", ListPersons(deps.Persons))
 	h.POST("/api/persons/resolve", ResolvePerson(deps.Resolve))
 	h.POST("/api/persons", CreatePerson(deps.Persons))

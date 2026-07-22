@@ -26,9 +26,11 @@ import (
 	"jarvis/internal/extract/codexengine"
 	"jarvis/internal/extract/provider"
 	"jarvis/internal/insight"
+	"jarvis/internal/knowledge"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/memory"
 	"jarvis/internal/pipeline"
+	"jarvis/internal/progress"
 	"jarvis/internal/semantic"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/store"
@@ -47,6 +49,7 @@ const dailyDigestGitAuthor = "chujiejie.1"
 func main() {
 	configPath := flag.String("config", "conf/config.yaml", "配置文件路径")
 	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库迁移，成功后退出")
+	backfillProgressEvents := flag.Bool("backfill-progress-events", false, "为无事件历史的存量 Task 写入一次当前状态快照，成功后退出")
 	discoverOnce := flag.Bool("discover-once", false, "执行一次飞书会话发现，成功后退出")
 	scanChat := flag.String("scan-chat", "", "增量扫描指定飞书 chat_id，成功后退出")
 	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
@@ -58,7 +61,7 @@ func main() {
 	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
 	flag.Parse()
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P} {
+	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P} {
 		if selected {
 			actionCount++
 		}
@@ -92,6 +95,14 @@ func main() {
 		hlog.Infof("mysql schema migration completed")
 		return
 	}
+	if *backfillProgressEvents {
+		stats, err := progress.BackfillTaskSnapshots(context.Background(), db, time.Now().UTC())
+		if err != nil {
+			hlog.Fatalf("backfill task progress snapshots failed: %v", err)
+		}
+		hlog.Infof("progress event backfill completed: tasks_scanned=%d events_created=%d", stats.TasksScanned, stats.EventsCreated)
+		return
+	}
 	if *seedOnce {
 		stats, err := background.Seed(context.Background(), db)
 		if err != nil {
@@ -113,6 +124,14 @@ func main() {
 	workRuleService, err := workrule.NewService(db)
 	if err != nil {
 		hlog.Fatalf("initialize work rule service failed: %v", err)
+	}
+	relationFactService, err := knowledge.NewService(db)
+	if err != nil {
+		hlog.Fatalf("initialize relation fact service failed: %v", err)
+	}
+	progressService, err := progress.NewService(db)
+	if err != nil {
+		hlog.Fatalf("initialize progress service failed: %v", err)
 	}
 
 	var decisionWorker *decide.DecisionWorker
@@ -621,9 +640,11 @@ func main() {
 		Tasks: taskService, Executor: agentExecutor,
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
-		SharedMemory: sharedMemoryService,
-		WorkRules:    workRuleService,
-		Overview:     overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
+		SharedMemory:  sharedMemoryService,
+		WorkRules:     workRuleService,
+		RelationFacts: relationFactService,
+		Progress:      progressService,
+		Overview:      overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		DailyDigests: dailyDigestService,
 		Worklog:      worklogService,
 		Debug:        debugService, Logs: logReader, Chat: chatService, Capture: captureService,

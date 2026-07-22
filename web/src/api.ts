@@ -190,7 +190,7 @@ export function updateProject(id: number, body: ProjectInput): Promise<Project> 
   return request<Project>(`/api/projects/${id}`, { method: 'PUT', body })
 }
 
-export function deleteProject(id: number): Promise<{ id: number; deleted: boolean }> {
+export function deleteProject(id: number): Promise<{ id: number; archived: boolean }> {
   return request(`/api/projects/${id}`, { method: 'DELETE' })
 }
 

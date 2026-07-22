@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/progress"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -68,6 +69,9 @@ type FinishInput struct {
 	ExpectedVersion int32
 	Status          string
 	Result          json.RawMessage
+	ActorType       string
+	ActorRef        *string
+	RunID           *uint64
 }
 
 type SupplementInput struct {
@@ -187,6 +191,18 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 		task.Status = input.Status
 		task.ExecutionResult = datatypes.JSON(result)
 		task.Version++
+		eventType := "execution_succeeded"
+		if input.Status == "failed" {
+			eventType = "execution_failed"
+		}
+		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+			TaskID: task.ID, TaskVersion: task.Version, EventType: eventType,
+			FromStatus: &fromStatus, ToStatus: input.Status,
+			ActorType: input.ActorType, ActorRef: input.ActorRef, RunID: input.RunID,
+			OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
 		finished = task
 		return nil
 	})
@@ -252,6 +268,13 @@ func (s *Store) Supplement(ctx context.Context, input SupplementInput) (*TaskVie
 	if err := s.db.WithContext(ctx).First(&reloaded, task.ID).Error; err != nil {
 		return nil, fmt.Errorf("reload execution Task id=%d after supplement: %w", task.ID, err)
 	}
+	if err := progress.AppendTaskEvent(s.db.WithContext(ctx), progress.TaskEventInput{
+		TaskID: reloaded.ID, TaskVersion: reloaded.Version, EventType: "supplemented",
+		FromStatus: &reloaded.Status, ToStatus: reloaded.Status, ActorType: "user",
+		Detail: map[string]any{"channel": channel}, OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		return nil, err
+	}
 	view := taskView(&reloaded)
 	return &view, nil
 }
@@ -289,6 +312,14 @@ func (s *Store) MarkExecuting(ctx context.Context, taskID uint64, expectedVersio
 			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
 		}
 		newVersion = task.Version + 1
+		fromStatus := "pending"
+		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+			TaskID: task.ID, TaskVersion: newVersion, EventType: "execution_started",
+			FromStatus: &fromStatus, ToStatus: "executing", ActorType: "m5",
+			OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -302,8 +333,8 @@ func (s *Store) MarkExecuting(ctx context.Context, taskID uint64, expectedVersio
 // pending proposal (the plan + full artifact codex produced without touching the
 // outside world) into execution_result so the UI can render it and the later
 // apply stage can replay it. It bumps the version and returns the new version.
-func (s *Store) MarkAwaitingApproval(ctx context.Context, taskID uint64, expectedVersion int32, proposal json.RawMessage) (int32, error) {
-	if taskID == 0 || expectedVersion < 0 {
+func (s *Store) MarkAwaitingApproval(ctx context.Context, taskID uint64, expectedVersion int32, runID uint64, proposal json.RawMessage) (int32, error) {
+	if taskID == 0 || expectedVersion < 0 || runID == 0 {
 		return 0, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
 	}
 	result, err := canonicalJSONObject(proposal)
@@ -338,6 +369,14 @@ func (s *Store) MarkAwaitingApproval(ctx context.Context, taskID uint64, expecte
 			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
 		}
 		newVersion = task.Version + 1
+		fromStatus := "executing"
+		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+			TaskID: task.ID, TaskVersion: newVersion, EventType: "approval_requested",
+			FromStatus: &fromStatus, ToStatus: "awaiting_approval", ActorType: "m5",
+			RunID: &runID, OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -380,6 +419,14 @@ func (s *Store) MarkExecutingFromApproval(ctx context.Context, taskID uint64, ex
 			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
 		}
 		newVersion = task.Version + 1
+		fromStatus := "awaiting_approval"
+		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+			TaskID: task.ID, TaskVersion: newVersion, EventType: "approval_granted",
+			FromStatus: &fromStatus, ToStatus: "executing", ActorType: "user",
+			OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -427,6 +474,15 @@ func (s *Store) RejectAwaitingApproval(ctx context.Context, taskID uint64, expec
 		if update.RowsAffected != 1 {
 			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
 		}
+		newVersion := task.Version + 1
+		fromStatus := "awaiting_approval"
+		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+			TaskID: task.ID, TaskVersion: newVersion, EventType: "approval_rejected",
+			FromStatus: &fromStatus, ToStatus: "failed", ActorType: "user",
+			OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
 		if err := tx.First(&rejected, taskID).Error; err != nil {
 			return fmt.Errorf("reload execution Task id=%d after reject: %w", task.ID, err)
 		}
@@ -469,6 +525,15 @@ func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task,
 		}
 		if update.RowsAffected != 1 {
 			return fmt.Errorf("%w: task_id=%d", ErrVersionConflict, task.ID)
+		}
+		newVersion := task.Version + 1
+		fromStatus := task.Status
+		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+			TaskID: task.ID, TaskVersion: newVersion, EventType: "rerun_requested",
+			FromStatus: &fromStatus, ToStatus: "pending", ActorType: "user",
+			OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			return err
 		}
 		if err := tx.First(&reloaded, taskID).Error; err != nil {
 			return fmt.Errorf("reload execution Task id=%d after reset: %w", task.ID, err)
@@ -518,6 +583,14 @@ func (s *Store) ClaimForReapply(ctx context.Context, taskID uint64, expectedVers
 			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
 		}
 		newVersion = task.Version + 1
+		fromStatus := "failed"
+		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+			TaskID: task.ID, TaskVersion: newVersion, EventType: "reapply_started",
+			FromStatus: &fromStatus, ToStatus: "executing", ActorType: "user",
+			OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -633,14 +706,19 @@ func (s *Store) FailStaleExecuting(ctx context.Context, olderThan time.Duration,
 		return 0, fmt.Errorf("encode stale execution result: %w", err)
 	}
 
-	var ids []uint64
+	var staleTasks []domain.Task
 	if err := s.db.WithContext(ctx).Model(&domain.Task{}).
+		Select("id", "version").
 		Where("status = ? AND updated_at < ?", "executing", cutoff).
-		Pluck("id", &ids).Error; err != nil {
+		Find(&staleTasks).Error; err != nil {
 		return 0, fmt.Errorf("list stale executing Tasks: %w", err)
 	}
-	if len(ids) == 0 {
+	if len(staleTasks) == 0 {
 		return 0, nil
+	}
+	ids := make([]uint64, len(staleTasks))
+	for i := range staleTasks {
+		ids[i] = staleTasks[i].ID
 	}
 
 	errDetail := fmt.Sprintf("stale executing: stuck beyond %s", olderThan.Round(time.Minute))
@@ -653,15 +731,31 @@ func (s *Store) FailStaleExecuting(ctx context.Context, olderThan time.Duration,
 		return 0, fmt.Errorf("fail stale execution runs: %w", err)
 	}
 
-	update := s.db.WithContext(ctx).Model(&domain.Task{}).
-		Where("id IN ? AND status = ?", ids, "executing").
-		Updates(map[string]any{
-			"status": "failed", "execution_result": datatypes.JSON(resultJSON), "version": gorm.Expr("version + 1"),
-		})
-	if update.Error != nil {
-		return 0, fmt.Errorf("fail stale executing Tasks: %w", update.Error)
+	failed := 0
+	fromStatus := "executing"
+	for i := range staleTasks {
+		task := &staleTasks[i]
+		update := s.db.WithContext(ctx).Model(&domain.Task{}).
+			Where("id = ? AND version = ? AND status = ?", task.ID, task.Version, "executing").
+			Updates(map[string]any{
+				"status": "failed", "execution_result": datatypes.JSON(resultJSON), "version": gorm.Expr("version + 1"),
+			})
+		if update.Error != nil {
+			return failed, fmt.Errorf("fail stale executing Task id=%d: %w", task.ID, update.Error)
+		}
+		if update.RowsAffected == 0 {
+			continue
+		}
+		if err := progress.AppendTaskEvent(s.db.WithContext(ctx), progress.TaskEventInput{
+			TaskID: task.ID, TaskVersion: task.Version + 1, EventType: "stale_failed",
+			FromStatus: &fromStatus, ToStatus: "failed", ActorType: "system",
+			Detail: map[string]any{"error": errDetail}, OccurredAt: finishedAt,
+		}); err != nil {
+			return failed, err
+		}
+		failed++
 	}
-	return int(update.RowsAffected), nil
+	return failed, nil
 }
 
 func ValidateTaskFilter(filter TaskFilter) error {

@@ -57,6 +57,8 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 | M5 执行 | `internal/execute/` | 执行确认后的 Task：`enabled=true` 时 M4 新建的 Task 立即进入执行队列，cron 只补偿扫描 `pending`；手动执行始终可用；两阶段人工审批——code_change 有 MR review 作闸门直接跑完，其余 action_type 由 agent 在 propose 阶段判 `needs_approval`，高风险停 `awaiting_approval` 等用户批准后才 apply；批准/执行/重跑均异步（接口立即返回 executing，后台跑 codex），并发 `execute.concurrency` | `agent_executor.go`（执行主流程）、`codex_runner.go`（调官方 codex CLI）、`policy.go`（各 action_type 的 sandbox/是否需批准）、`git.go`（分支/commit/diff）、`store.go`（Task 状态机） | 官方 codex agent（`gpt-5.6-sol`，code_change 用 workspace-write）→ diff/产物落 `runs_dir` |
 | 流水线协调 | `internal/pipeline/` | 接收 M2/M3/M4 状态提交后的轻量通知，按 chat/todo/task 定向推进；内存队列只加速，启动与 cron 均从 MySQL 补偿 | `coordinator.go`（串行编排与 M5 并发）、`queue.go`（按 ID/version 合并）、`scheduler.go`（补偿调度） | — |
 | 背景管理 | `internal/background/` | 后台可编辑的项目/人物/群/决策主体；种子数据 | `project.go` / `person.go` / `group.go` / `profile.go`（各实体 service）、`resolve.go`（lark-cli 按名字查 open_id）、`seed.go` / `seed_persons.go`（`-seed` / `-seed-persons`） | lark-cli（resolve/拉群成员） |
+| 关系知识 | `internal/knowledge/` | 在现有业务实体之间保存带来源、有效期和置信度的动态关系；不建通用 entity 表 | `predicates.go`（predicate 注册表）、`service.go`（校验、去重、supersede/retract） | — |
+| 进度历史 | `internal/progress/` | 保存 Task 状态机和 Project 进度事件，提供显式存量快照回填 | `service.go`（事件写入/查询）、`backfill.go`（一次性 Task 快照） | — |
 | API | `internal/api/` | 所有 HTTP handler + 路由注册 | `router.go`（**所有路由在这里注册**）、各资源一个文件 | — |
 | 领域模型 | `internal/domain/` | 8 个核心实体的 GORM model | `models.go`（8 实体）、`capture.go`（message/checkpoint）、`extract.go` / `decide.go` / `execute.go`（各模块附属表） | — |
 | 存储 | `internal/store/` | MySQL 连接与迁移 | `mysql.go` | MySQL |
@@ -72,7 +74,9 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 | `scan_record` | capture | — | 采集审计流水 |
 | `project` / `person` / `principal_profile` | background | extract/decide | 背景信息（后台可编辑） |
 | `todo` / `todo_event` / `todo_extract_watermark` | extract | decide | 抽取出的行动线索 + 事件 + 抽取游标 |
-| `task` / `execution_run` | decide(建)/execute | execute | 确认后的可执行快照 + 执行记录 |
+| `task` / `task_event` / `execution_run` | decide(建)/execute | execute/insight | 可执行快照 + 业务状态历史 + Codex 执行审计 |
+| `project_event` | background/API | progress | 项目资料、状态、进度、里程碑、决策与阻塞历史 |
+| `relation_fact` | knowledge/API | knowledge | 现有实体间带来源和有效期的动态关系；确定性外键关系不重复写 |
 | `decision_audit` | decide | 确认页 | 决策审计 |
 | Qdrant `jarvis_memories` | mem0 sidecar | memory/extract/decide | 长期记忆向量 |
 | Qdrant `todo_semantic` | extract | extract | Todo 去重向量 |
@@ -96,10 +100,12 @@ GET  /healthz
 GET  /api/todos            GET /api/todos/:id
 GET  /api/confirmations    GET /api/confirmations/:id
 POST /api/confirmations/:id/approve|reject|supplement
-GET  /api/tasks            GET /api/tasks/:id/runs
+GET  /api/tasks            GET /api/tasks/:id/runs|events
 POST /api/tasks/:id/finish|supplement
 POST /api/tasks/:id/execute|rerun|approve|reject          # 需 Executor 已启用（异步）
 GET/POST/PUT/DELETE /api/projects[/:id]
+GET/POST /api/projects/:id/events
+GET/POST /api/relation-facts   POST /api/relation-facts/:id/retract
 GET/POST/PUT/DELETE /api/persons[/:id]   POST /api/persons/resolve
 GET  /api/groups           PUT /api/groups/:id
 GET/PUT /api/profile
@@ -112,7 +118,7 @@ POST /api/chat                                            # 需 chat.enabled=tru
 
 ### 一次性 CLI 动作（互斥，跑完退出）
 
-`-migrate-only` 迁移 · `-discover-once` 发现会话 · `-scan-chat <id>` 扫单群 · `-set-related-groups <ids>` 原子替换白名单 · `-memorize-once` 记忆化 · `-extract-once` 抽 Todo · `-decide-once` 决策分流 · `-seed` 种子项目/任务/群 · `-seed-persons` 从关键群导入真实 Person · `-open-p2p` 把存量内部私聊一次性纳入监听（`related_group=1`）。
+`-migrate-only` 迁移 · `-backfill-progress-events` 为无事件历史的存量 Task 写一次当前状态快照 · `-discover-once` 发现会话 · `-scan-chat <id>` 扫单群 · `-set-related-groups <ids>` 原子替换白名单 · `-memorize-once` 记忆化 · `-extract-once` 抽 Todo · `-decide-once` 决策分流 · `-seed` 种子项目/任务/群 · `-seed-persons` 从关键群导入真实 Person · `-open-p2p` 把存量内部私聊一次性纳入监听（`related_group=1`）。
 
 ## 调度与后台循环
 

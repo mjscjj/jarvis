@@ -1,11 +1,16 @@
 package background
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/progress"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -37,14 +42,19 @@ type ProjectList struct {
 
 // ProjectService is the authoritative CRUD owner of the project table.
 type ProjectService struct {
-	db *gorm.DB
+	db     *gorm.DB
+	events *progress.Service
 }
 
 func NewProjectService(db *gorm.DB) (*ProjectService, error) {
 	if db == nil {
 		return nil, fmt.Errorf("project service db is nil")
 	}
-	return &ProjectService{db: db}, nil
+	events, err := progress.NewService(db)
+	if err != nil {
+		return nil, err
+	}
+	return &ProjectService{db: db, events: events}, nil
 }
 
 func (s *ProjectService) Create(ctx context.Context, in ProjectInput) (*ProjectView, error) {
@@ -66,6 +76,17 @@ func (s *ProjectService) Create(ctx context.Context, in ProjectInput) (*ProjectV
 	}
 	if err := s.db.WithContext(ctx).Create(&project).Error; err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
+	}
+	occurredAt := project.CreatedAt
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	}
+	toStatus := project.Status
+	if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
+		ProjectID: project.ID, EventType: "created", Title: "项目已创建",
+		ToStatus: &toStatus, ActorType: "user", OccurredAt: &occurredAt,
+	}); err != nil {
+		return nil, err
 	}
 	view := toProjectView(&project)
 	return &view, nil
@@ -94,7 +115,7 @@ func (s *ProjectService) GetByCode(ctx context.Context, code string) (*ProjectVi
 		return nil, invalid(fmt.Errorf("project code must not be empty"))
 	}
 	var project domain.Project
-	err := s.db.WithContext(ctx).Where("code = ?", code).Take(&project).Error
+	err := s.db.WithContext(ctx).Where("code = ? AND status <> ?", code, "archived").Take(&project).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
@@ -111,6 +132,18 @@ func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput)
 	}
 	if err := in.validate(); err != nil {
 		return nil, invalid(err)
+	}
+	var before domain.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", id).Take(&before).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("load project id=%d before update: %w", id, err)
+	}
+	changedFields := projectChangedFields(&before, in)
+	if len(changedFields) == 0 {
+		view := toProjectView(&before)
+		return &view, nil
 	}
 	// Explicit column list so an update never silently touches audit columns and
 	// always overwrites JSON fields to NULL when the caller omits them.
@@ -131,8 +164,34 @@ func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput)
 	if result.Error != nil {
 		return nil, fmt.Errorf("update project id=%d: %w", id, result.Error)
 	}
-	if result.RowsAffected == 0 {
-		return nil, ErrNotFound
+	if result.RowsAffected != 1 {
+		return nil, fmt.Errorf("update project id=%d affected %d rows", id, result.RowsAffected)
+	}
+	now := time.Now().UTC()
+	if before.Status != in.Status {
+		fromStatus := before.Status
+		toStatus := in.Status
+		if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
+			ProjectID: id, EventType: "status_changed",
+			Title:      fmt.Sprintf("项目状态从 %s 变更为 %s", fromStatus, toStatus),
+			FromStatus: &fromStatus, ToStatus: &toStatus,
+			ActorType: "user", OccurredAt: &now,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	profileFields := withoutField(changedFields, "status")
+	if len(profileFields) > 0 {
+		detail, err := projectEventDetail(map[string]any{"changed_fields": profileFields})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
+			ProjectID: id, EventType: "profile_updated", Title: "项目资料已更新",
+			ActorType: "user", Detail: detail, OccurredAt: &now,
+		}); err != nil {
+			return nil, err
+		}
 	}
 	return s.Get(ctx, id)
 }
@@ -141,12 +200,34 @@ func (s *ProjectService) Delete(ctx context.Context, id uint64) error {
 	if id == 0 {
 		return invalid(fmt.Errorf("project id must be positive"))
 	}
-	result := s.db.WithContext(ctx).Where("id = ?", id).Delete(&domain.Project{})
-	if result.Error != nil {
-		return fmt.Errorf("delete project id=%d: %w", id, result.Error)
+	var project domain.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", id).Take(&project).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("load project id=%d before archive: %w", id, err)
 	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
+	if project.Status == "archived" {
+		return invalid(fmt.Errorf("project id=%d is already archived", id))
+	}
+	result := s.db.WithContext(ctx).Model(&domain.Project{}).
+		Where("id = ? AND status = ?", id, project.Status).
+		Update("status", "archived")
+	if result.Error != nil {
+		return fmt.Errorf("archive project id=%d: %w", id, result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("archive project id=%d affected %d rows", id, result.RowsAffected)
+	}
+	now := time.Now().UTC()
+	fromStatus := project.Status
+	toStatus := "archived"
+	if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
+		ProjectID: id, EventType: "archived", Title: "项目已归档",
+		FromStatus: &fromStatus, ToStatus: &toStatus,
+		ActorType: "user", OccurredAt: &now,
+	}); err != nil {
+		return err
 	}
 	return nil
 }
@@ -156,7 +237,7 @@ func (s *ProjectService) Delete(ctx context.Context, id uint64) error {
 // attributing a Todo to a project.
 func (s *ProjectService) ListAll(ctx context.Context) ([]ProjectView, error) {
 	items := make([]domain.Project, 0)
-	if err := s.db.WithContext(ctx).Order("priority ASC, id DESC").Find(&items).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("status <> ?", "archived").Order("priority ASC, id DESC").Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("list all projects: %w", err)
 	}
 	return toProjectViews(items), nil
@@ -167,12 +248,13 @@ func (s *ProjectService) List(ctx context.Context, filter ListFilter) (*ProjectL
 		return nil, invalid(err)
 	}
 	var total int64
-	if err := s.db.WithContext(ctx).Model(&domain.Project{}).Count(&total).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&domain.Project{}).Where("status <> ?", "archived").Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("count projects: %w", err)
 	}
 	items := make([]domain.Project, 0, filter.PageSize)
 	if total > 0 {
 		if err := s.db.WithContext(ctx).
+			Where("status <> ?", "archived").
 			Order("priority ASC, id DESC").
 			Limit(filter.PageSize).
 			Offset(filter.offset()).
@@ -181,4 +263,60 @@ func (s *ProjectService) List(ctx context.Context, filter ListFilter) (*ProjectL
 		}
 	}
 	return &ProjectList{Items: toProjectViews(items), Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
+}
+
+func projectChangedFields(before *domain.Project, in ProjectInput) []string {
+	fields := make([]string, 0, 10)
+	if !reflect.DeepEqual(before.Code, in.Code) {
+		fields = append(fields, "code")
+	}
+	if before.Name != in.Name {
+		fields = append(fields, "name")
+	}
+	if before.Role != in.Role {
+		fields = append(fields, "role")
+	}
+	if before.Status != in.Status {
+		fields = append(fields, "status")
+	}
+	if before.Priority != in.Priority {
+		fields = append(fields, "priority")
+	}
+	if !reflect.DeepEqual(before.Description, in.Description) {
+		fields = append(fields, "description")
+	}
+	if !bytes.Equal(before.Repos, in.Repos) {
+		fields = append(fields, "repos")
+	}
+	if !bytes.Equal(before.TechStack, in.TechStack) {
+		fields = append(fields, "tech_stack")
+	}
+	if !bytes.Equal(before.KeyDecisions, in.KeyDecisions) {
+		fields = append(fields, "key_decisions")
+	}
+	if !bytes.Equal(before.Timeline, in.Timeline) {
+		fields = append(fields, "timeline")
+	}
+	if !reflect.DeepEqual(before.Notes, in.Notes) {
+		fields = append(fields, "notes")
+	}
+	return fields
+}
+
+func withoutField(fields []string, excluded string) []string {
+	result := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field != excluded {
+			result = append(result, field)
+		}
+	}
+	return result
+}
+
+func projectEventDetail(value any) (json.RawMessage, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode project event detail: %w", err)
+	}
+	return encoded, nil
 }

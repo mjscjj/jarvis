@@ -30,18 +30,18 @@ func NewDigestService(db *gorm.DB, location *time.Location) (*DigestService, err
 
 // MyDay is one day of the principal's progress.
 type MyDay struct {
-	Date          string `json:"date"` // YYYY-MM-DD in configured timezone
-	TodosCreated  int64  `json:"todos_created"`  // 当天新抽出的、leader 交办或与我相关的 Todo
-	Confirmed     int64  `json:"confirmed"`      // 当天确认（Task 生成）
-	TasksDone     int64  `json:"tasks_done"`     // 当天完成的 Task
-	TasksFailed   int64  `json:"tasks_failed"`   // 当天失败的 Task
+	Date         string `json:"date"`          // YYYY-MM-DD in configured timezone
+	TodosCreated int64  `json:"todos_created"` // 当天新抽出的、leader 交办或与我相关的 Todo
+	Confirmed    int64  `json:"confirmed"`     // 当天确认（Task 生成）
+	TasksDone    int64  `json:"tasks_done"`    // 当天完成的 Task
+	TasksFailed  int64  `json:"tasks_failed"`  // 当天失败的 Task
 }
 
 // GroupDay is one day of one key group's activity.
 type GroupDay struct {
-	Date          string `json:"date"`
-	Messages      int64  `json:"messages"`
-	TodosExtracted int64 `json:"todos_extracted"`
+	Date           string `json:"date"`
+	Messages       int64  `json:"messages"`
+	TodosExtracted int64  `json:"todos_extracted"`
 }
 
 // GroupProgress is a key group with its per-day activity over the window.
@@ -54,9 +54,9 @@ type GroupProgress struct {
 
 // Digest is the whole Progress payload over the requested day window.
 type Digest struct {
-	Days       int             `json:"days"` // 窗口天数
-	Mine       []MyDay         `json:"mine"`
-	KeyGroups  []GroupProgress `json:"key_groups"`
+	Days      int             `json:"days"` // 窗口天数
+	Mine      []MyDay         `json:"mine"`
+	KeyGroups []GroupProgress `json:"key_groups"`
 }
 
 // dayBucket is a [start,end) time range labelled by its date string.
@@ -115,20 +115,21 @@ func (s *DigestService) loadMine(ctx context.Context, buckets []dayBucket) ([]My
 			Count(&day.TodosCreated).Error; err != nil {
 			return nil, fmt.Errorf("count my todos on %s: %w", bucket.label, err)
 		}
-		// 当天确认：Task 在当天生成（confirmed_at）。
-		if err := s.db.WithContext(ctx).Model(&domain.Task{}).
-			Where("confirmed_at >= ? AND confirmed_at < ?", bucket.start, bucket.end).
+		// 当天确认：使用 Task 的 created 业务事件，不再从当前行猜历史。
+		if err := s.db.WithContext(ctx).Model(&domain.TaskEvent{}).
+			Where("event_type = ? AND occurred_at >= ? AND occurred_at < ?", "created", bucket.start, bucket.end).
 			Count(&day.Confirmed).Error; err != nil {
 			return nil, fmt.Errorf("count confirmations on %s: %w", bucket.label, err)
 		}
-		// 当天完成/失败：以 Task 更新时间近似（done/failed 是终态，更新即完成时刻）。
-		if err := s.db.WithContext(ctx).Model(&domain.Task{}).
-			Where("status = ? AND updated_at >= ? AND updated_at < ?", "done", bucket.start, bucket.end).
+		// 当天完成/失败：直接读取状态机事件时间；重跑产生的新完成也会如实计入。
+		if err := s.db.WithContext(ctx).Model(&domain.TaskEvent{}).
+			Where("event_type = ? AND occurred_at >= ? AND occurred_at < ?", "execution_succeeded", bucket.start, bucket.end).
 			Count(&day.TasksDone).Error; err != nil {
 			return nil, fmt.Errorf("count done tasks on %s: %w", bucket.label, err)
 		}
-		if err := s.db.WithContext(ctx).Model(&domain.Task{}).
-			Where("status = ? AND updated_at >= ? AND updated_at < ?", "failed", bucket.start, bucket.end).
+		if err := s.db.WithContext(ctx).Model(&domain.TaskEvent{}).
+			Where("event_type IN ? AND occurred_at >= ? AND occurred_at < ?",
+				[]string{"execution_failed", "approval_rejected", "stale_failed"}, bucket.start, bucket.end).
 			Count(&day.TasksFailed).Error; err != nil {
 			return nil, fmt.Errorf("count failed tasks on %s: %w", bucket.label, err)
 		}

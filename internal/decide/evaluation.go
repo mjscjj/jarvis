@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/progress"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -272,6 +273,12 @@ func createAutoTask(tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDra
 			return nil, fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
 		}
 		return nil, fmt.Errorf("create auto Task todo_id=%d: %w", todo.ID, err)
+	}
+	if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+		TaskID: task.ID, TaskVersion: task.Version, EventType: "created",
+		ToStatus: task.Status, ActorType: "m4", OccurredAt: now,
+	}); err != nil {
+		return nil, err
 	}
 	if err := createTodoEvent(tx, todo.ID, RouteAuto, RouteAuto, map[string]any{
 		"event_type": "auto_task_created", "task_id": task.ID,

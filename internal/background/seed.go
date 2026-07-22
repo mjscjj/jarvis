@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/progress"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -236,6 +237,12 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 	}
 	if err := tx.Create(&task).Error; err != nil {
 		return false, fmt.Errorf("create seed task %q: %w", st.title, err)
+	}
+	if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+		TaskID: task.ID, TaskVersion: task.Version, EventType: "created",
+		ToStatus: task.Status, ActorType: "seed", OccurredAt: now,
+	}); err != nil {
+		return false, err
 	}
 	return true, nil
 }

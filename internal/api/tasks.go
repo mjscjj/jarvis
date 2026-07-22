@@ -102,7 +102,7 @@ func FinishTask(service execute.TaskService) app.HandlerFunc {
 		}
 		result, err := service.Finish(ctx, execute.FinishInput{
 			TaskID: taskID, ExpectedVersion: *request.ExpectedVersion,
-			Status: status, Result: tagged,
+			Status: status, Result: tagged, ActorType: "user",
 		})
 		if err != nil {
 			writeExecutionError(c, err)

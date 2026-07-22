@@ -14,6 +14,7 @@ import (
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
+	"jarvis/internal/progress"
 
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/datatypes"
@@ -127,6 +128,13 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 				return fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
 			}
 			return fmt.Errorf("create Task todo_id=%d: %w", todo.ID, err)
+		}
+		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+			TaskID: created.ID, TaskVersion: created.Version, EventType: "created",
+			ToStatus: created.Status, ActorType: "user",
+			Detail: map[string]any{"channel": input.Channel}, OccurredAt: confirmedAt,
+		}); err != nil {
+			return err
 		}
 		if err := updateTodoStatus(tx, &todo, input.ExpectedVersion, "confirmed"); err != nil {
 			return err

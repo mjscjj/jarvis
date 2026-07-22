@@ -236,7 +236,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		}
 		finishedTask, err := executionStore.Finish(context.Background(), execute.FinishInput{
 			TaskID: task.ID, ExpectedVersion: 0, Status: "done",
-			Result: json.RawMessage(`{"summary":"synthetic task completed manually"}`),
+			Result: json.RawMessage(`{"summary":"synthetic task completed manually"}`), ActorType: "user",
 		})
 		if err != nil {
 			t.Fatalf("Finish() error = %v", err)
@@ -245,7 +245,7 @@ func TestConfirmationTransactionLive(t *testing.T) {
 			t.Fatalf("finished Task = %#v", finishedTask)
 		}
 		_, err = executionStore.Finish(context.Background(), execute.FinishInput{
-			TaskID: task.ID, ExpectedVersion: 0, Status: "done", Result: json.RawMessage(`{"summary":"duplicate"}`),
+			TaskID: task.ID, ExpectedVersion: 0, Status: "done", Result: json.RawMessage(`{"summary":"duplicate"}`), ActorType: "user",
 		})
 		if !errors.Is(err, execute.ErrVersionConflict) {
 			t.Fatalf("stale Finish() error = %v", err)

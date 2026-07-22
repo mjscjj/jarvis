@@ -381,7 +381,7 @@ func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, p
 		if err != nil {
 			return nil, fmt.Errorf("encode proposal task_id=%d: %w", task.ID, err)
 		}
-		if _, err := e.store.MarkAwaitingApproval(ctx, task.ID, execVersion, proposalJSON); err != nil {
+		if _, err := e.store.MarkAwaitingApproval(ctx, task.ID, execVersion, run.ID, proposalJSON); err != nil {
 			return nil, fmt.Errorf("park Task id=%d awaiting approval: %w", task.ID, err)
 		}
 		return &ExecuteResult{
@@ -412,6 +412,7 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 	}
 	if _, err := e.store.Finish(ctx, FinishInput{
 		TaskID: task.ID, ExpectedVersion: execVersion, Status: finishStatus, Result: resultJSON,
+		ActorType: "m5", RunID: &run.ID,
 	}); err != nil {
 		return nil, fmt.Errorf("finish Task id=%d after execution: %w", task.ID, err)
 	}

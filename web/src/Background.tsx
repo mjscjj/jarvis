@@ -149,8 +149,8 @@ function ProjectsPanel() {
       title: '操作', width: 150, render: (_, p) => (
         <Flex gap={8}>
           <Button size="small" onClick={() => openEdit(p)}>编辑</Button>
-          <Popconfirm title="删除该项目？" onConfirm={() => remove(p)} okText="删除" cancelText="取消">
-            <Button size="small" danger>删除</Button>
+          <Popconfirm title="归档该项目？" onConfirm={() => remove(p)} okText="归档" cancelText="取消">
+            <Button size="small" danger>归档</Button>
           </Popconfirm>
         </Flex>
       ),
