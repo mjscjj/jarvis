@@ -39,6 +39,31 @@ func GetDigests(service *insight.DigestService) app.HandlerFunc {
 	}
 }
 
+// GetWorklogCommits serves the Progress「项目代码」tab: my MRs across repos for a day.
+func GetWorklogCommits(service *insight.WorklogService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		result, err := service.Commits(ctx, string(c.Query("date")))
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50040, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+// GetWorklogDocuments serves the Progress「今天的文档」tab: docs I authored /
+// received on a day.
+func GetWorklogDocuments(service *insight.WorklogService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		result, err := service.Documents(ctx, string(c.Query("date")))
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50041, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 // GetDebugStatus serves the debug panel health sub-tab.
 func GetDebugStatus(service *insight.DebugService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {

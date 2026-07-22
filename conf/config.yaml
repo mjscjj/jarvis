@@ -132,3 +132,12 @@ chat:
   timeout_seconds: 600                 # 单轮对话超时（可能自跑工具，放宽）
   sandbox: "danger-full-access"        # 对话场景最大权限
   reasoning_effort: "medium"           # 与 execute.reasoning_effort 一致
+
+# 每日进度总结（Progress 页）。enabled=false 时不起 19:00 cron（手动生成接口仍可用）。
+# 个人总结用 execute 段 codex（danger-full-access + 联网）自跑 lark-cli/bytedcli/git；
+# 群总结用 model 段 qwen 单次调用归纳。
+dailydigest:
+  enabled: true
+  schedule: "0 19 * * *"     # 每晚 19:00 生成当天（截至生成时刻）
+  group_message_limit: 200   # 每个关键群每天喂进 prompt 的消息上限
+  group_concurrency: 2       # 一轮批量里群总结的并发上限（>=1）

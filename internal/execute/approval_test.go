@@ -170,7 +170,7 @@ func TestBuildProposePrompt(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(task, "", nil)
+	prompt, err := buildProposePrompt(task, "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
@@ -188,14 +188,14 @@ func TestBuildProposePromptInjectsSharedMemory(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildProposePrompt(task, "", nil)
+	empty, err := buildProposePrompt(task, "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildProposePrompt(task, "周报模板固定用飞书文档 xxx", nil)
+	prompt, err := buildProposePrompt(task, "周报模板固定用飞书文档 xxx", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
@@ -217,7 +217,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
-	prompt, err := buildApplyPrompt(task, proposal, "", nil)
+	prompt, err := buildApplyPrompt(task, proposal, "", "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
@@ -231,7 +231,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildApplyPrompt(task, nil, "", nil); err == nil {
+	if _, err := buildApplyPrompt(task, nil, "", "", nil); err == nil {
 		t.Fatalf("nil proposal must fail")
 	}
 }
@@ -249,7 +249,7 @@ func TestInvestigateGoesThroughPropose(t *testing.T) {
 		ID: 21, Title: "查证登录超时", ActionType: "investigate",
 		Plan: datatypes.JSON(`{"steps":["read logs"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(task, "", nil)
+	prompt, err := buildProposePrompt(task, "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt(investigate) error = %v", err)
 	}

@@ -27,7 +27,7 @@ import { useLocalStorage } from './hooks/useLocalStorage'
 const { Sider, Content } = Layout
 const { Title } = Typography
 
-const DEFAULT_KEY = 'overview'
+const DEFAULT_KEY = 'tasks'
 
 const SIDER_WIDTH = 140
 const SIDER_COLLAPSED_WIDTH = 64
@@ -42,10 +42,10 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
+  { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
   { key: 'overview', label: '工作台', icon: <DashboardOutlined /> },
   { key: 'todos', label: '待办', icon: <CheckCircleOutlined /> },
   { key: 'confirmations', label: '待确认', icon: <CheckCircleOutlined /> },
-  { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
   { key: 'background', label: '背景', icon: <SettingOutlined /> },
   { key: 'progress', label: '进度', icon: <BarChartOutlined /> },
   { key: 'debug', label: '调试', icon: <ToolOutlined /> },

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Modal, Select, Space, Spin, Table, Tabs, Tag, Timeline, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Input, Modal, Space, Spin, Table, Tabs, Tag, Timeline, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { approveTask, executeTask, finishTask, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, supplementTask } from './api'
 import type { ExecutionRun, ProposalResult, RunEnrichment, Task, TaskStatus } from './types'
@@ -21,6 +21,14 @@ function formatDuration(ms: number | null): string {
   if (ms == null) return '—'
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
+}
+
+// 列表状态旁的时间：月日时分，例如「7/22 21:25」。
+function formatBriefTime(value: string | null | undefined): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 // enrichmentKindLabel 给未带 label 的 enrichment 一个可读中文标题兜底。
@@ -217,22 +225,26 @@ function CellText({ text, danger }: { text: string | null; danger?: boolean }) {
   )
 }
 
-// 两个子 Tab 各自对应的 Task 状态集合：待审批只看等用户批准落地的高风险对外写入，
-// 其他看剩下所有生命周期状态。
-const tabStatuses: Record<'awaiting' | 'others', TaskStatus[]> = {
+// 四个子 Tab：审批中 / 执行成功 / 执行失败 / 其他（待执行+执行中）。
+type TaskTab = 'awaiting' | 'done' | 'failed' | 'others'
+
+const tabStatuses: Record<TaskTab, TaskStatus[]> = {
   awaiting: ['awaiting_approval'],
-  others: ['pending', 'executing', 'done', 'failed'],
+  done: ['done'],
+  failed: ['failed'],
+  others: ['pending', 'executing'],
+}
+
+const tabLabels: Record<TaskTab, string> = {
+  awaiting: '审批中',
+  done: '执行成功',
+  failed: '执行失败',
+  others: '其他',
 }
 
 export default function Tasks() {
-  const [activeTab, setActiveTab] = useState<'awaiting' | 'others'>('awaiting')
-  // 「其他」Tab 的状态多选筛选，默认全选该 Tab 覆盖的四个状态。
-  const [othersStatuses, setOthersStatuses] = useState<TaskStatus[]>(tabStatuses.others)
-  // 实际传给 listTasks 的状态数组：待审批固定单一状态，其他用多选 state（清空回退全选）。
-  const statuses = useMemo<TaskStatus[]>(() => {
-    if (activeTab === 'awaiting') return tabStatuses.awaiting
-    return othersStatuses.length > 0 ? othersStatuses : tabStatuses.others
-  }, [activeTab, othersStatuses])
+  const [activeTab, setActiveTab] = useState<TaskTab>('awaiting')
+  const statuses = useMemo<TaskStatus[]>(() => tabStatuses[activeTab], [activeTab])
   const [items, setItems] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -439,7 +451,17 @@ export default function Tasks() {
       </Space>
     ),
   }
-  const statusColumn: TableColumnsType<Task>[number] = { title: '状态', dataIndex: 'status', width: 100, render: (status: TaskStatus) => <StatusBadge label={statusMeta[status].label} color={statusMeta[status].color} /> }
+  const statusColumn: TableColumnsType<Task>[number] = {
+    title: '状态',
+    dataIndex: 'status',
+    width: 100,
+    render: (_, task) => (
+      <Space direction="vertical" size={2}>
+        <StatusBadge label={statusMeta[task.status].label} color={statusMeta[task.status].color} />
+        <Text type="secondary" style={{ fontSize: 12 }}>{formatBriefTime(task.updated_at)}</Text>
+      </Space>
+    ),
+  }
 
   // 待审批 Tab 特有列：动作（proposal.action）、待你拍板/后续（needs_followup）。
   const awaitingCols: TableColumnsType<Task> = [
@@ -447,8 +469,8 @@ export default function Tasks() {
     { title: '待你拍板 / 后续', width: 260, render: (_, task) => <CellText text={proposalOf(task)?.needs_followup ?? strField(task.execution_result, 'needs_followup')} /> },
   ]
 
-  // 其他 Tab 特有列：执行摘要（summary→error→尚未执行）、待你拍板/后续（needs_followup）。
-  const othersCols: TableColumnsType<Task> = [
+  // 非审批 Tab 共用列：执行摘要（summary→error→尚未执行）、待你拍板/后续（needs_followup）。
+  const resultCols: TableColumnsType<Task> = [
     {
       title: '执行摘要', width: 340, render: (_, task) => {
         const failure = failureKindOf(task)
@@ -478,7 +500,7 @@ export default function Tasks() {
   const columns: TableColumnsType<Task> = [
     taskColumn,
     statusColumn,
-    ...(activeTab === 'awaiting' ? awaitingCols : othersCols),
+    ...(activeTab === 'awaiting' ? awaitingCols : resultCols),
     {
       title: '操作', width: 200, render: (_, task) => {
         if (task.status === 'pending') {
@@ -515,36 +537,16 @@ export default function Tasks() {
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
     {error && <Alert type="error" showIcon message="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    {activeTab === 'others' && (
-      <Card className="filter-card" variant="borderless">
-        <Flex gap={12} wrap>
-          <label className="filter-field filter-status">
-            <Text type="secondary">状态</Text>
-            <Select
-              mode="multiple"
-              allowClear
-              value={othersStatuses}
-              onChange={(next) => setOthersStatuses(next)}
-              options={tabStatuses.others.map((value) => ({ value, label: statusMeta[value].label }))}
-              placeholder="全部状态"
-            />
-          </label>
-        </Flex>
-      </Card>
-    )}
     <Card className="table-card" variant="borderless">
       <Tabs
         activeKey={activeTab}
-        onChange={(key) => setActiveTab(key as 'awaiting' | 'others')}
-        items={[
-          {
-            key: 'awaiting',
-            label: activeTab === 'awaiting'
-              ? <Badge count={items.length} offset={[8, -2]} size="small">待审批</Badge>
-              : '待审批',
-          },
-          { key: 'others', label: '其他' },
-        ]}
+        onChange={(key) => setActiveTab(key as TaskTab)}
+        items={(Object.keys(tabLabels) as TaskTab[]).map((key) => ({
+          key,
+          label: activeTab === key
+            ? <Badge count={items.length} offset={[8, -2]} size="small" overflowCount={999}>{tabLabels[key]}</Badge>
+            : tabLabels[key],
+        }))}
       />
       <Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1160 }} tableLayout="fixed" onRow={(task) => ({ onClick: () => setDetail(task), className: 'clickable-row' })} />
     </Card>

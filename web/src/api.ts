@@ -1,8 +1,13 @@
 import type {
+  CommitWorklog,
   ConfirmationDetail,
+  DailyDigest,
+  DailyDigestKickResult,
+  DailyDigestScope,
   DebugRecord,
   DebugStatus,
   Digest,
+  DocumentWorklog,
   FailureEvent,
   Group,
   LogTail,
@@ -31,6 +36,8 @@ import type {
   Todo,
   TodoList,
   TodoQuery,
+  WorkRule,
+  WorkRuleInput,
 } from './types'
 
 interface APIResponse<T> {
@@ -255,6 +262,28 @@ export function summarizeDigest(days = 7): Promise<{ summary: string; days: numb
   return request<{ summary: string; days: number }>(`/api/digests/summarize?days=${days}`, { method: 'POST' })
 }
 
+export function getDailyDigests(date: string, signal?: AbortSignal): Promise<{ items: DailyDigest[] }> {
+  return request<{ items: DailyDigest[] }>(`/api/daily-digests?date=${encodeURIComponent(date)}`, { signal })
+}
+
+export function generateDailyDigest(scope: DailyDigestScope, scopeId: string, date: string): Promise<DailyDigestKickResult> {
+  return request<DailyDigestKickResult>('/api/daily-digests/generate', {
+    method: 'POST',
+    body: { scope, scope_id: scopeId, date },
+  })
+}
+
+// date 为空时后端默认取今天（YYYY-MM-DD，本地时区）。
+export function getCommitWorklog(date?: string, signal?: AbortSignal): Promise<CommitWorklog> {
+  const query = date ? `?date=${date}` : ''
+  return request<CommitWorklog>(`/api/worklog/commits${query}`, { signal })
+}
+
+export function getDocumentWorklog(date?: string, signal?: AbortSignal): Promise<DocumentWorklog> {
+  const query = date ? `?date=${date}` : ''
+  return request<DocumentWorklog>(`/api/worklog/documents${query}`, { signal })
+}
+
 // --- Debug panel ---
 
 export function getDebugStatus(signal?: AbortSignal): Promise<DebugStatus> {
@@ -317,4 +346,20 @@ export function updateResource(id: number, body: ResourceInput): Promise<Resourc
 
 export function deleteResource(id: number): Promise<{ id: number; deleted: boolean }> {
   return request(`/api/resources/${id}`, { method: 'DELETE' })
+}
+
+export function listWorkRules(signal?: AbortSignal): Promise<{ items: WorkRule[] }> {
+  return request<{ items: WorkRule[] }>('/api/work-rules', { signal })
+}
+
+export function createWorkRule(body: WorkRuleInput): Promise<WorkRule> {
+  return request<WorkRule>('/api/work-rules', { method: 'POST', body })
+}
+
+export function updateWorkRule(id: number, body: WorkRuleInput): Promise<WorkRule> {
+  return request<WorkRule>(`/api/work-rules/${id}`, { method: 'PUT', body })
+}
+
+export function deleteWorkRule(id: number): Promise<{ id: number; deleted: boolean }> {
+  return request(`/api/work-rules/${id}`, { method: 'DELETE' })
 }

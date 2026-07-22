@@ -12,6 +12,7 @@ cd "$repo_dir"
 npm --prefix "$repo_dir/web" ci --registry=https://registry.npmjs.org
 npm --prefix "$repo_dir/web" run build
 go build -o "$repo_dir/bin/jarvis-server" ./cmd/jarvis-server
+"$script_dir/sign-jarvis-server.sh" "$repo_dir/bin/jarvis-server"
 plutil -lint "$plist_path"
 
 if launchctl print "$service_target" >/dev/null 2>&1; then

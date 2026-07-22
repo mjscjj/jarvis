@@ -132,6 +132,10 @@ func (f fakeSharedMemoryReader) Text(context.Context) (string, error) {
 	return f.text, f.err
 }
 
+type fakeWorkRuleReader struct{}
+
+func (fakeWorkRuleReader) Block(context.Context, string) (string, error) { return "", nil }
+
 func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	projectID := uint64(9)
 	store := &fakePipelineStore{batches: []ChatBatch{{
@@ -381,5 +385,6 @@ func validWorkerOptions() WorkerOptions {
 		Load:            LoadOptions{BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour, OpenTodoLimit: 50},
 		PrincipalOpenID: "ou_owner", ModelName: "model", MemoryTopK: 8,
 		MemoryThreshold: 0.5, MaxPromptChars: 60_000, MaxToolRounds: 5, Location: time.UTC,
+		WorkRules: fakeWorkRuleReader{},
 	}
 }

@@ -23,20 +23,24 @@ import {
   createPerson,
   createProject,
   createResource,
+  createWorkRule,
   deletePerson,
   deleteProject,
   deleteResource,
+  deleteWorkRule,
   getProfile,
   listGroups,
   listPersons,
   listProjects,
   listResources,
+  listWorkRules,
   resolvePerson,
   updateGroupBackground,
   updatePerson,
   updateProfile,
   updateProject,
   updateResource,
+  updateWorkRule,
 } from './api'
 import SharedMemory from './SharedMemory'
 import type {
@@ -55,6 +59,9 @@ import type {
   Resource,
   ResourceInput,
   ResourceType,
+  WorkRule,
+  WorkRuleInput,
+  WorkRuleStage,
 } from './types'
 
 const { Text } = Typography
@@ -71,6 +78,10 @@ const resourceTypeLabels: Record<ResourceType, string> = {
 }
 const personRoleColors: Record<PersonRole, string> = {
   leader: 'volcano', key: 'gold', colleague: 'blue', other: 'default',
+}
+
+const workRuleStageLabels: Record<WorkRuleStage, string> = {
+  extract: 'M3 抽取 Todo', decide: 'M4 决策', execute: 'M5 执行',
 }
 
 function errorText(cause: unknown): string {
@@ -909,6 +920,121 @@ function ResourcePanel() {
   </>
 }
 
+// --- Work rules ---
+
+function WorkRulesPanel() {
+  const [items, setItems] = useState<WorkRule[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+  const [editing, setEditing] = useState<WorkRule | null>(null)
+  const [open, setOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [form] = Form.useForm<WorkRuleInput>()
+  const ruleType = Form.useWatch('rule_type', form)
+
+  const reload = useCallback(() => {
+    setLoading(true)
+    listWorkRules()
+      .then((result) => { setItems(result.items); setError(undefined) })
+      .catch((cause: unknown) => setError(errorText(cause)))
+      .finally(() => setLoading(false))
+  }, [])
+  useEffect(reload, [reload])
+
+  const openCreate = () => {
+    setEditing(null)
+    form.setFieldsValue({ name: '', content: '', rule_type: 'all', stages: [], priority: 100, is_enabled: true })
+    setOpen(true)
+  }
+  const openEdit = (rule: WorkRule) => {
+    setEditing(rule)
+    form.setFieldsValue({
+      name: rule.name, content: rule.content, rule_type: rule.rule_type,
+      stages: rule.stages, priority: rule.priority, is_enabled: rule.is_enabled,
+    })
+    setOpen(true)
+  }
+  const submit = async () => {
+    const values = await form.validateFields()
+    const input = { ...values, stages: values.rule_type === 'all' ? [] : values.stages }
+    setSubmitting(true)
+    try {
+      if (editing) await updateWorkRule(editing.id, input)
+      else await createWorkRule(input)
+      setOpen(false)
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+  const remove = async (rule: WorkRule) => {
+    try { await deleteWorkRule(rule.id); reload() } catch (cause: unknown) { setError(errorText(cause)) }
+  }
+  const toggle = async (rule: WorkRule, checked: boolean) => {
+    try {
+      await updateWorkRule(rule.id, {
+        name: rule.name, content: rule.content, rule_type: rule.rule_type,
+        stages: rule.stages, priority: rule.priority, is_enabled: checked,
+      })
+      reload()
+    } catch (cause: unknown) { setError(errorText(cause)) }
+  }
+
+  const columns: TableColumnsType<WorkRule> = [
+    { title: '规则', dataIndex: 'name', width: 180, render: (name: string) => <Text strong>{name}</Text> },
+    { title: '内容', dataIndex: 'content', ellipsis: true },
+    {
+      title: '生效阶段', width: 270, render: (_, rule) => rule.rule_type === 'all'
+        ? <Tag color="blue">M3 / M4 / M5 全阶段</Tag>
+        : <Flex gap={4} wrap>{rule.stages.map((stage) => <Tag key={stage}>{workRuleStageLabels[stage]}</Tag>)}</Flex>,
+    },
+    { title: '优先级', dataIndex: 'priority', width: 80 },
+    {
+      title: '启用', dataIndex: 'is_enabled', width: 70, align: 'center',
+      render: (enabled: boolean, rule) => <Switch size="small" checked={enabled} onChange={(checked) => toggle(rule, checked)} />,
+    },
+    {
+      title: '操作', width: 150, render: (_, rule) => (
+        <Flex gap={8}>
+          <Button size="small" onClick={() => openEdit(rule)}>编辑</Button>
+          <Popconfirm title="删除该工作规则？" onConfirm={() => remove(rule)} okText="删除" cancelText="取消">
+            <Button size="small" danger>删除</Button>
+          </Popconfirm>
+        </Flex>
+      ),
+    },
+  ]
+
+  return <>
+    <Flex justify="space-between" align="center" className="section-heading">
+      <Text type="secondary">共 {items.length} 条规则</Text>
+      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建规则</Button></Flex>
+    </Flex>
+    {error && <Alert type="error" showIcon title="工作规则操作失败" description={error} closable onClose={() => setError(undefined)} />}
+    <Card className="table-card" variant="borderless"><Table<WorkRule> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} /></Card>
+    <Modal title={editing ? '编辑工作规则' : '新建工作规则'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
+      <Form form={form} layout="vertical">
+        <Form.Item name="name" label="规则名称" rules={[{ required: true, message: '请输入规则名称' }]}><Input placeholder="如：飞书消息发送方式" /></Form.Item>
+        <Form.Item name="content" label="规则内容" rules={[{ required: true, message: '请输入规则内容' }]}><Input.TextArea rows={5} placeholder="用自然语言说明 Agent 应怎样工作" /></Form.Item>
+        <Flex gap={16}>
+          <Form.Item name="rule_type" label="适用类型" rules={[{ required: true }]} style={{ flex: 1 }}>
+            <Segmented block options={[{ label: '全部阶段', value: 'all' }, { label: '指定阶段', value: 'selected' }]} />
+          </Form.Item>
+          <Form.Item name="priority" label="优先级（越小越靠前）" rules={[{ required: true }]} style={{ width: 180 }}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
+        </Flex>
+        {ruleType === 'selected' && (
+          <Form.Item name="stages" label="生效阶段" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个阶段' }]}>
+            <Select mode="multiple" options={Object.entries(workRuleStageLabels).map(([value, label]) => ({ value, label }))} />
+          </Form.Item>
+        )}
+        <Form.Item name="is_enabled" label="立即启用" valuePropName="checked"><Switch /></Form.Item>
+      </Form>
+    </Modal>
+  </>
+}
+
 export default function Background() {
   return (
     <Tabs
@@ -918,6 +1044,7 @@ export default function Background() {
         { key: 'persons', label: '人物', children: <PersonsPanel /> },
         { key: 'groups', label: '会话背景', children: <GroupsPanel /> },
         { key: 'resources', label: '资源', children: <ResourcePanel /> },
+        { key: 'work-rules', label: '工作规则', children: <WorkRulesPanel /> },
         { key: 'shared-memory', label: '共享记忆', children: <SharedMemory /> },
       ]}
     />

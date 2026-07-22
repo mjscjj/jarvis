@@ -12,6 +12,7 @@ import (
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/workrule"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"gorm.io/gorm"
@@ -32,9 +33,12 @@ type Dependencies struct {
 	Profile             *background.ProfileService
 	Resources           *background.ResourceService
 	SharedMemory        *sharedmem.SharedMemoryService
+	WorkRules           *workrule.Service
 	Overview            *insight.OverviewService
 	Digests             *insight.DigestService
-	DigestSummarizer    *insight.Summarizer // 可选：codex 未启用时为 nil，总结接口返回 503
+	DailyDigests        DailyDigestService      // 每日进度总结（个人 codex + 关键群 qwen）；nil 则不注册 /api/daily-digests 路由
+	Worklog             *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
+	DigestSummarizer    *insight.Summarizer     // 可选：codex 未启用时为 nil，总结接口返回 503
 	Debug               *insight.DebugService
 	Logs                *insight.LogReader
 	Chat                *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
@@ -81,6 +85,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.SharedMemory == nil {
 		return fmt.Errorf("api shared memory service dependency is nil")
+	}
+	if deps.WorkRules == nil {
+		return fmt.Errorf("api work rule service dependency is nil")
 	}
 	if deps.Overview == nil {
 		return fmt.Errorf("api overview service dependency is nil")
@@ -133,10 +140,25 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 共享记忆：全局单例大文本，读取 + 整段覆盖保存。
 	h.GET("/api/shared-memory", GetSharedMemory(deps.SharedMemory))
 	h.PUT("/api/shared-memory", UpdateSharedMemory(deps.SharedMemory))
+	// 工作规则：可信、分阶段注入 M3/M4/M5；支持全阶段或指定一个/多个阶段。
+	h.GET("/api/work-rules", ListWorkRules(deps.WorkRules))
+	h.POST("/api/work-rules", CreateWorkRule(deps.WorkRules))
+	h.PUT("/api/work-rules/:work_rule_id", UpdateWorkRule(deps.WorkRules))
+	h.DELETE("/api/work-rules/:work_rule_id", DeleteWorkRule(deps.WorkRules))
 	// Overview 看板 + 进度：跨模块只读聚合，无表无 cron；总结按需调 codex。
 	h.GET("/api/overview", GetOverview(deps.Overview))
 	h.GET("/api/digests", GetDigests(deps.Digests))
 	h.POST("/api/digests/summarize", SummarizeDigest(deps.Digests, deps.DigestSummarizer))
+	// 每日进度总结：按日期读当天全部 scope + 异步触发单条生成/重算。
+	if deps.DailyDigests != nil {
+		h.GET("/api/daily-digests", GetDailyDigests(deps.DailyDigests))
+		h.POST("/api/daily-digests/generate", GenerateDailyDigest(deps.DailyDigests))
+	}
+	// 进度页工作日志：我今天写/收到的文档、我今天在各仓库的 MR（实时调 bytedcli）。
+	if deps.Worklog != nil {
+		h.GET("/api/worklog/commits", GetWorklogCommits(deps.Worklog))
+		h.GET("/api/worklog/documents", GetWorklogDocuments(deps.Worklog))
+	}
 	// 调试面板：依赖健康/表计数/积压、模块运行、采集流水、抽取水位、最近 todo/task、运行日志尾读。
 	h.GET("/api/debug/status", GetDebugStatus(deps.Debug))
 	h.GET("/api/debug/modules", GetDebugModules(deps.Debug))

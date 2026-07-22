@@ -185,3 +185,18 @@ func TestBuildPromptCarriesPrincipalAndProjects(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildPromptCarriesTrustedWorkRules(t *testing.T) {
+	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, ConversationUnit{
+		Key: "chat", Messages: []MessageContext{{MessageID: "m1", Content: "做一下", IsNew: true, Extractable: true}},
+	}, nil, time.Now(), PromptOptions{
+		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
+		WorkRules: "BEGIN_WORK_RULES\n- 先遵守规则\nEND_WORK_RULES",
+	})
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt.System, "BEGIN_WORK_RULES") || strings.Contains(prompt.User, "BEGIN_WORK_RULES") {
+		t.Fatalf("work rules must be in trusted system prompt only: %+v", prompt)
+	}
+}

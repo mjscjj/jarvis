@@ -31,6 +31,10 @@ func (f fakeSharedMemoryReader) Text(context.Context) (string, error) {
 	return f.text, f.err
 }
 
+type fakeWorkRuleReader struct{}
+
+func (fakeWorkRuleReader) Block(context.Context, string) (string, error) { return "", nil }
+
 // testContextSnapshot builds a minimal valid frozen snapshot for a Todo so
 // requireContextSnapshot (fail-fast) is satisfied in unit tests.
 func testContextSnapshot(t *testing.T) datatypes.JSON {
@@ -113,7 +117,7 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 			EvidenceGathered:  []Evidence{{Label: "repo", Detail: "jarvis local"}},
 		},
 	}}
-	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{})
+	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{}, fakeWorkRuleReader{})
 	if err != nil {
 		t.Fatalf("NewCodexEvaluator() error = %v", err)
 	}
@@ -167,7 +171,7 @@ func TestCodexEvaluatorPreservesManualGateAfterSupplement(t *testing.T) {
 			ConfidenceBasis: "now complete", PlanIsClear: true, ProposedPlan: clearPlan(),
 		},
 	}}
-	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{})
+	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{}, fakeWorkRuleReader{})
 	if err != nil {
 		t.Fatalf("NewCodexEvaluator() error = %v", err)
 	}

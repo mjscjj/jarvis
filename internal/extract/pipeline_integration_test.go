@@ -17,6 +17,7 @@ import (
 	"jarvis/internal/semantic"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/store"
+	"jarvis/internal/workrule"
 
 	"github.com/qdrant/go-client/qdrant"
 	"gorm.io/gorm"
@@ -159,6 +160,10 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sharedmem.NewSharedMemoryService() error = %v", err)
 	}
+	workRuleService, err := workrule.NewService(tx)
+	if err != nil {
+		t.Fatalf("workrule.NewService() error = %v", err)
+	}
 	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
 		Load: extract.LoadOptions{
 			BatchMessages: 10, ContextMessages: cfg.Extract.ContextMessages,
@@ -168,6 +173,7 @@ func TestPipelineLive(t *testing.T) {
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
 		MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
 		MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: 5, Location: location,
+		WorkRules: workRuleService,
 	})
 	if err != nil {
 		t.Fatalf("extract.NewWorker() error = %v", err)

@@ -13,17 +13,18 @@ import (
 
 // Config 是全局配置的根。各子结构对应总纲 §1 技术栈里的外部依赖。
 type Config struct {
-	Server  ServerConfig  `yaml:"server"`
-	MySQL   MySQLConfig   `yaml:"mysql"`
-	Mem0    Mem0Config    `yaml:"mem0"`
-	Model   ModelConfig   `yaml:"model"`
-	Extract ExtractConfig `yaml:"extract"`
-	LarkCLI LarkCLIConfig `yaml:"lark_cli"`
-	Capture CaptureConfig `yaml:"capture"`
-	Decide  DecideConfig  `yaml:"decide"`
-	Codex   CodexConfig   `yaml:"codex"`
-	Execute ExecuteConfig `yaml:"execute"`
-	Chat    ChatConfig    `yaml:"chat"`
+	Server      ServerConfig      `yaml:"server"`
+	MySQL       MySQLConfig       `yaml:"mysql"`
+	Mem0        Mem0Config        `yaml:"mem0"`
+	Model       ModelConfig       `yaml:"model"`
+	Extract     ExtractConfig     `yaml:"extract"`
+	LarkCLI     LarkCLIConfig     `yaml:"lark_cli"`
+	Capture     CaptureConfig     `yaml:"capture"`
+	Decide      DecideConfig      `yaml:"decide"`
+	Codex       CodexConfig       `yaml:"codex"`
+	Execute     ExecuteConfig     `yaml:"execute"`
+	Chat        ChatConfig        `yaml:"chat"`
+	DailyDigest DailyDigestConfig `yaml:"dailydigest"`
 }
 
 // ServerConfig Hertz 监听配置。
@@ -191,6 +192,16 @@ type ChatConfig struct {
 	TimeoutSeconds  int    `yaml:"timeout_seconds"`
 	Sandbox         string `yaml:"sandbox"`
 	ReasoningEffort string `yaml:"reasoning_effort"`
+}
+
+// DailyDigestConfig 控制「每日进度总结」：19:00 cron 自动生成 + 页面手动异步触发。
+// Enabled=false 时不起 scheduler（手动生成接口仍可用）。个人总结用 execute 段的
+// codex（danger-full-access + 联网）自跑工具，群总结用 model 段的 qwen 单次调用。
+type DailyDigestConfig struct {
+	Enabled           bool   `yaml:"enabled"`
+	Schedule          string `yaml:"schedule"`            // cron 表达式，默认 "0 19 * * *"（每晚 19:00）
+	GroupMessageLimit int    `yaml:"group_message_limit"` // 每群每天喂进 prompt 的消息上限，默认 200
+	GroupConcurrency  int    `yaml:"group_concurrency"`   // 一轮批量里群总结的并发上限，默认 2，>=1
 }
 
 // Load 从指定路径读取并解析 YAML 配置。fail-fast：任何错误直接返回。
@@ -452,6 +463,15 @@ func (c *Config) validate() error {
 	}
 	if c.Chat.Enabled && c.Chat.Model == "" {
 		return fmt.Errorf("chat 启用时 chat.model 不能为空")
+	}
+	if c.DailyDigest.Schedule == "" {
+		return fmt.Errorf("dailydigest.schedule 不能为空")
+	}
+	if c.DailyDigest.GroupMessageLimit <= 0 {
+		return fmt.Errorf("dailydigest.group_message_limit 必须大于 0")
+	}
+	if c.DailyDigest.GroupConcurrency < 1 {
+		return fmt.Errorf("dailydigest.group_concurrency 必须大于等于 1")
 	}
 	return nil
 }

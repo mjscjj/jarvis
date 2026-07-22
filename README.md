@@ -167,15 +167,21 @@ go run ./cmd/jarvis-server -config conf/config.yaml -scan-chat oc_xxx
 
 该会话必须已动态标记为 `related_group=1`。名单可通过 `-set-related-groups` 原子替换，数量不写死。
 
-启动服务后按 `conf/config.yaml` 里各模块 `schedule` 注册 cron（见上「调度与后台循环」）；`related_group` 群统一按 `scan_schedule` 扫描，tier 仅用于 UI 展示。后端监听 `127.0.0.1:18800`（同时用 `StaticFS` 托管 `web/dist` 静态前端），健康检查同时验证 MySQL：
+启动服务后按 `conf/config.yaml` 里各模块 `schedule` 注册 cron（见上「调度与后台循环」）；`related_group` 群统一按 `scan_schedule` 扫描，tier 仅用于 UI 展示。后端监听 `127.0.0.1:18800`（同时用 `StaticFS` 托管 `web/dist` 静态前端），健康检查同时验证 MySQL。
+
+**日常启动 / 重启主进程**（build + 稳定 codesign + launchd，不要裸 `go run` / 裸 `go build`）：
 
 ```bash
-go run ./cmd/jarvis-server -config conf/config.yaml
-# 另开终端
+# 首次安装主服务（前端 npm ci + build、编译并签名 jarvis-server、bootstrap launchd）
+./scripts/install-launchd.sh
+
+# 之后改后端代码：重编译 + 签名 + 重启
+./scripts/rebuild-server.sh
+
 curl http://127.0.0.1:18800/healthz
 ```
 
-以上 `go run` 适合本地临时起进程；生产用 macOS launchd 常驻守护（server/web/qdrant/mem0 四个服务，见下「launchd 托管」）。管理后台直接打开 `http://127.0.0.1:18800/`（页面见下「管理后台」）。
+管理后台：`http://127.0.0.1:18800/`（页面见下「管理后台」）。开发热更前端另开 `com.bytedance.jarvis.web`（`18801`），见下「launchd 托管」。
 
 ## launchd 托管
 
@@ -188,34 +194,38 @@ curl http://127.0.0.1:18800/healthz
 | `com.bytedance.jarvis.qdrant` | `deploy/com.bytedance.jarvis.qdrant.plist` | Qdrant 向量库（`6333` HTTP / `6334` gRPC） | `var/log/jarvis-qdrant.{log,error.log}` |
 | `com.bytedance.jarvis.mem0` | `deploy/com.bytedance.jarvis.mem0.plist` | mem0 Python FastAPI sidecar（`127.0.0.1:18900`） | `var/log/jarvis-mem0.{log,error.log}` |
 
-安装脚本：`scripts/install-launchd.sh`（前端 `npm ci` + build → 构建 `bin/jarvis-server` → 校验 plist → bootstrap 主服务）、`scripts/install-qdrant.sh`、`scripts/install-mem0-sidecar.sh`：
+安装（首次）：
 
 ```bash
-./scripts/install-launchd.sh        # 主进程（含前端 build）
+./scripts/install-launchd.sh        # 主进程（含前端 build + codesign）
 ./scripts/install-qdrant.sh
 ./scripts/install-mem0-sidecar.sh
 ```
 
-常用运维命令（`UID_=$(id -u)`）：
+常用运维（`UID_=$(id -u)`）：
 
 ```bash
-# 改后端代码后：重编译 + 重启主进程（标准动作）
-go build -o bin/jarvis-server ./cmd/jarvis-server
-launchctl kickstart -k gui/$UID_/com.bytedance.jarvis.server
+# 改后端：重编译 + 稳定 codesign + 重启主进程
+./scripts/rebuild-server.sh
 
 # 重启前端 / sidecar
 launchctl kickstart -k gui/$UID_/com.bytedance.jarvis.web
 launchctl kickstart -k gui/$UID_/com.bytedance.jarvis.qdrant
 launchctl kickstart -k gui/$UID_/com.bytedance.jarvis.mem0
 
-# 停 / 起
-launchctl bootout gui/$UID_/com.bytedance.jarvis.server
-launchctl bootstrap gui/$UID_ deploy/com.bytedance.jarvis.server.plist
-
-# 查状态 / 看日志（error.log 里有各 cron 运行结果）
+# 查状态 / 看日志
 launchctl print gui/$UID_/com.bytedance.jarvis.server
 tail -f var/log/jarvis-server.log var/log/jarvis-server.error.log
 ```
+
+主进程用证书 **`Jarvis Local`** + identifier **`com.bytedance.jarvis.server`** 签名，避免每次 rebuild 因 adhoc 指纹变化反复弹出「完全磁盘访问」。`install-launchd.sh` / `rebuild-server.sh` 会自动确保证书并签名。首次签好后到 **系统设置 → 隐私与安全性 → 完全磁盘访问权限** 确认勾选 `bin/jarvis-server`（旧 adhoc 条目可删掉重加一次）。
+
+| 脚本 | 作用 |
+|------|------|
+| `scripts/install-launchd.sh` | 前端 build + `go build` + codesign + bootstrap 主服务 |
+| `scripts/rebuild-server.sh` | `go build` + codesign + `kickstart` 主服务 |
+| `scripts/ensure-codesign-identity.sh` | 若无「Jarvis Local」则创建并导入登录钥匙串 |
+| `scripts/sign-jarvis-server.sh` | 对 `bin/jarvis-server` 签名 |
 
 ## mem0 与 Qdrant
 

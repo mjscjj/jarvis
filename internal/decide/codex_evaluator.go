@@ -6,6 +6,7 @@ import (
 
 	"jarvis/internal/domain"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/workrule"
 
 	"gorm.io/gorm"
 )
@@ -38,16 +39,20 @@ type CodexEvaluator struct {
 	db        *gorm.DB // optional in unit tests; nil → empty previous_evaluations
 	codex     codexDecisionRunner
 	sharedMem sharedmem.SharedMemoryReader
+	workRules workrule.Reader
 }
 
-func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner, sharedMem sharedmem.SharedMemoryReader) (*CodexEvaluator, error) {
+func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader) (*CodexEvaluator, error) {
 	if codex == nil {
 		return nil, fmt.Errorf("codex evaluator decider is nil")
 	}
 	if sharedMem == nil {
 		return nil, fmt.Errorf("codex evaluator shared memory reader is nil")
 	}
-	return &CodexEvaluator{db: db, codex: codex, sharedMem: sharedMem}, nil
+	if workRules == nil {
+		return nil, fmt.Errorf("codex evaluator work rule reader is nil")
+	}
+	return &CodexEvaluator{db: db, codex: codex, sharedMem: sharedMem, workRules: workRules}, nil
 }
 
 func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*EvaluationInput, error) {
@@ -72,9 +77,13 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 	if err != nil {
 		return nil, fmt.Errorf("codex evaluation todo_id=%d: read shared memory: %w", todo.ID, err)
 	}
+	workRules, err := e.workRules.Block(ctx, workrule.StageDecide)
+	if err != nil {
+		return nil, fmt.Errorf("codex evaluation todo_id=%d: read decide work rules: %w", todo.ID, err)
+	}
 	prompt, err := BuildCodexPrompt(CodexPromptInput{
 		Todo: todo, RuleScore: neutralRuleScore, Background: background, PriorEvaluations: prior,
-		SharedMemory: sharedMemory,
+		SharedMemory: sharedMemory, WorkRules: workRules,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build codex decision prompt todo_id=%d: %w", todo.ID, err)

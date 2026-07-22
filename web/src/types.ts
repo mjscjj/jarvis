@@ -501,6 +501,73 @@ export interface Digest {
   key_groups: GroupProgress[]
 }
 
+export type DailyDigestScope = 'person' | 'group'
+export type DailyDigestStatus = 'pending' | 'generating' | 'done' | 'failed'
+
+// DailyDigest 是某个自然日的一条内容总结；同一天 person 一条、每个关键群一条。
+export interface DailyDigest {
+  id: number
+  scope: DailyDigestScope
+  scope_id: string
+  digest_date: string
+  summary: string
+  status: DailyDigestStatus
+  source_count: number
+  engine: 'codex' | 'qwen'
+  error_detail: string | null
+  generated_at: string | null
+  updated_at: string
+}
+
+export interface DailyDigestKickResult {
+  scope: DailyDigestScope
+  scope_id: string
+  date: string
+  status: 'generating'
+}
+
+// --- 进度页「今天的文档」「项目代码」两个 Tab ---
+
+// CommitMR 是我在某仓库的一条 MR（字节 protected-branch 走 MR，以 MR 为提交粒度）。
+export interface CommitMR {
+  title: string
+  url: string
+  status: string // open | merged | closed
+  commits_count: number
+  changes_count: number
+  created_at: string
+  updated_at: string
+  merged_at: string | null
+  target_branch: string
+  check_run_summary: string
+}
+
+export interface CommitRepo {
+  repo: string // 形如 chujiejie.1/jarvis_bot
+  mrs: CommitMR[]
+}
+
+export interface CommitWorklog {
+  date: string
+  repos: CommitRepo[]
+}
+
+// WorkDoc 是一条文档：我写的（编辑时间）或我收到的（采集时间 + 来源群/人）。
+export interface WorkDoc {
+  title: string
+  url: string
+  doc_type: string
+  time: string
+  from_who?: string
+  from_chat?: string
+}
+
+export interface DocumentWorklog {
+  date: string
+  authored: WorkDoc[]
+  received: WorkDoc[]
+}
+
 export interface Dependency {
   name: string
   status: 'ok' | 'error'
@@ -621,6 +688,28 @@ export interface ResourceInput {
   project_id?: number | null
   link_principal: boolean
   is_active?: boolean
+}
+
+export type WorkRuleType = 'all' | 'selected'
+export type WorkRuleStage = 'extract' | 'decide' | 'execute'
+
+export interface WorkRule {
+  id: number
+  name: string
+  content: string
+  rule_type: WorkRuleType
+  stages: WorkRuleStage[]
+  priority: number
+  is_enabled: boolean
+}
+
+export interface WorkRuleInput {
+  name: string
+  content: string
+  rule_type: WorkRuleType
+  stages: WorkRuleStage[]
+  priority: number
+  is_enabled: boolean
 }
 
 // --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---

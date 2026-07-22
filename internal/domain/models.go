@@ -266,6 +266,44 @@ type SharedMemory struct {
 
 func (SharedMemory) TableName() string { return "shared_memory" }
 
+// WorkRule 是 principal 维护的可信工作规则。rule_type=all 时适用于 M3/M4/M5；
+// rule_type=selected 时 stages 保存 extract/decide/execute 的非空子集。规则在各阶段
+// 运行时实时读取并注入可信指令区，不混入 Todo 的不可信业务 background。
+type WorkRule struct {
+	ID        uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	Name      string         `gorm:"column:name;type:varchar(128);not null"`
+	Content   string         `gorm:"column:content;type:text;not null"`
+	RuleType  string         `gorm:"column:rule_type;type:varchar(16);not null;index:idx_work_rule_enabled_priority,priority:2"`
+	Stages    datatypes.JSON `gorm:"column:stages;type:json;not null"`
+	Priority  int            `gorm:"column:priority;type:int;not null;default:100;index:idx_work_rule_enabled_priority,priority:3"`
+	IsEnabled bool           `gorm:"column:is_enabled;type:tinyint(1);not null;default:1;index:idx_work_rule_enabled_priority,priority:1"`
+	CreatedAt time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+}
+
+func (WorkRule) TableName() string { return "work_rule" }
+
+// DailyDigest 是「每日进度总结」的落库缓存：一天一个 scope 一行，重算 upsert 覆盖
+// （不留历史版本）。scope=person 时 scope_id 是 principal open_id；scope=group 时
+// scope_id 是 feishu_group.id 的字符串。digest_date 是自然日（本地时区 00:00）。
+// 生成是异步的，status 走 pending→generating→done/failed 状态机。
+type DailyDigest struct {
+	ID          uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	Scope       string         `gorm:"column:scope;type:varchar(16);not null;uniqueIndex:uk_scope_date,priority:1"`    // person / group
+	ScopeID     string         `gorm:"column:scope_id;type:varchar(64);not null;uniqueIndex:uk_scope_date,priority:2"` // person=principal open_id；group=feishu_group.id 字符串
+	DigestDate  datatypes.Date `gorm:"column:digest_date;type:date;not null;uniqueIndex:uk_scope_date,priority:3"`     // 自然日（本地时区）
+	Summary     string         `gorm:"column:summary;type:mediumtext"`                                                 // 生成的一段中文进度总结
+	Status      string         `gorm:"column:status;type:varchar(16);not null;default:pending"`                        // pending / generating / done / failed
+	SourceCount int            `gorm:"column:source_count;type:int;not null;default:0"`                                // 纳入的活动/消息条数，便于展示与判空
+	Engine      string         `gorm:"column:engine;type:varchar(16);not null"`                                        // codex / qwen
+	ErrorDetail *string        `gorm:"column:error_detail;type:text"`                                                  // 失败原因（fail 时）
+	GeneratedAt *time.Time     `gorm:"column:generated_at;type:datetime"`                                              // 生成完成时刻（体现「截至此刻」）
+	CreatedAt   time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt   time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+}
+
+func (DailyDigest) TableName() string { return "daily_digest" }
+
 // CoreModels returns the canonical dependency-ordered migration list.
 func CoreModels() []any {
 	return []any{
@@ -279,5 +317,7 @@ func CoreModels() []any {
 		&PrincipalProfile{},
 		&ManagedResource{},
 		&SharedMemory{},
+		&WorkRule{},
+		&DailyDigest{},
 	}
 }

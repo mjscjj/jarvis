@@ -17,6 +17,7 @@ import (
 	"jarvis/internal/capture"
 	"jarvis/internal/chat"
 	"jarvis/internal/config"
+	"jarvis/internal/dailydigest"
 	"jarvis/internal/decide"
 	"jarvis/internal/domain"
 	"jarvis/internal/embedding"
@@ -31,12 +32,17 @@ import (
 	"jarvis/internal/semantic"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/store"
+	"jarvis/internal/workrule"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 )
+
+// dailyDigestGitAuthor 是个人每日总结 prompt 里引导 codex 跑 git log --author 的
+// 作者名（即「我」）。单用户本地系统，固定值即可。
+const dailyDigestGitAuthor = "chujiejie.1"
 
 func main() {
 	configPath := flag.String("config", "conf/config.yaml", "配置文件路径")
@@ -104,6 +110,10 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize shared memory service failed: %v", err)
 	}
+	workRuleService, err := workrule.NewService(db)
+	if err != nil {
+		hlog.Fatalf("initialize work rule service failed: %v", err)
+	}
 
 	var decisionWorker *decide.DecisionWorker
 	if cfg.Decide.Enabled || *decideOnce {
@@ -118,7 +128,7 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize decision store failed: %v", err)
 		}
-		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService)
+		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService)
 		if err != nil {
 			hlog.Fatalf("initialize decision evaluator failed: %v", err)
 		}
@@ -204,7 +214,7 @@ func main() {
 	// Build an evaluator + store so the confirmation service can re-run M4
 	// asynchronously after a need_info supplement, independent of the decision
 	// cron being enabled. Mirrors the worker's evaluator selection.
-	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService)
+	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService)
 	if err != nil {
 		hlog.Fatalf("initialize supplement evaluator failed: %v", err)
 	}
@@ -232,7 +242,7 @@ func main() {
 		hlog.Fatalf("initialize execute runner failed: %v", err)
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
-		db, taskService, codexRunner, sharedMemoryService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		db, taskService, codexRunner, sharedMemoryService, workRuleService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
 		hlog.Fatalf("initialize agent executor failed: %v", err)
@@ -269,10 +279,37 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize digest service failed: %v", err)
 	}
+	worklogService, err := insight.NewWorklogService(db, location)
+	if err != nil {
+		hlog.Fatalf("initialize worklog service failed: %v", err)
+	}
 	// 进度总结按需复用 M5 的 codex runner（read-only 出纯文本）；codex 不可用时留空，接口返回 503。
 	digestSummarizer, err := insight.NewSummarizer(codexRunner)
 	if err != nil {
 		hlog.Fatalf("initialize digest summarizer failed: %v", err)
+	}
+	// 每日进度总结：个人用 execute 段 codex（danger-full-access + 联网自跑工具），
+	// 群用 model 段 qwen 单次调用。qwen client 独立于 M3 抽取（后者仅 extract.enabled 时建）。
+	dailyDigestQwen, err := provider.NewClient(
+		cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.Model,
+		time.Duration(cfg.Model.TimeoutSec)*time.Second,
+	)
+	if err != nil {
+		hlog.Fatalf("initialize daily digest qwen client failed: %v", err)
+	}
+	dailyDigestService, err := dailydigest.NewService(dailydigest.Options{
+		DB:              db,
+		Location:        location,
+		PersonRunner:    codexRunner,
+		GroupRunner:     dailyDigestQwen,
+		PrincipalOpenID: cfg.Extract.PrincipalOpenID,
+		GitAuthor:       dailyDigestGitAuthor,
+		PersonSandbox:   "danger-full-access",
+		GroupMsgLimit:   cfg.DailyDigest.GroupMessageLimit,
+		GroupConcur:     cfg.DailyDigest.GroupConcurrency,
+	})
+	if err != nil {
+		hlog.Fatalf("initialize daily digest service failed: %v", err)
 	}
 	logReader, err := insight.NewLogReader(cfg.Server.LogFiles)
 	if err != nil {
@@ -371,6 +408,7 @@ func main() {
 			MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: cfg.Extract.MaxToolRounds, Location: location,
 			EvidenceRetryMax:   cfg.Extract.EvidenceRetryMax,
 			PromptToolGuidance: promptToolGuidance,
+			WorkRules:          workRuleService,
 		})
 		if err != nil {
 			hlog.Fatalf("initialize extraction worker failed: %v", err)
@@ -528,10 +566,30 @@ func main() {
 		waitPipeline()
 		hlog.Fatalf("start memory scheduler failed: %v", err)
 	}
+	// 每日进度总结 19:00 cron：enabled 时起，disabled 时手动生成接口仍可用。
+	stopDailyDigest := func() {}
+	if cfg.DailyDigest.Enabled {
+		dailyDigestScheduler, err := dailydigest.StartScheduler(
+			runtimeCtx,
+			dailyDigestService,
+			cfg.DailyDigest.Schedule,
+			log.New(os.Stderr, "daily-digest-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			cancelRuntime()
+			<-scheduler.Stop().Done()
+			<-memoryScheduler.Stop().Done()
+			stopPipelineScheduler()
+			waitPipeline()
+			hlog.Fatalf("start daily digest scheduler failed: %v", err)
+		}
+		stopDailyDigest = func() { <-dailyDigestScheduler.Stop().Done() }
+	}
 	defer func() {
 		cancelRuntime()
 		<-scheduler.Stop().Done()
 		<-memoryScheduler.Stop().Done()
+		stopDailyDigest()
 		stopPipelineScheduler()
 		waitPipeline()
 	}()
@@ -564,8 +622,11 @@ func main() {
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		SharedMemory: sharedMemoryService,
+		WorkRules:    workRuleService,
 		Overview:     overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
-		Debug: debugService, Logs: logReader, Chat: chatService, Capture: captureService,
+		DailyDigests: dailyDigestService,
+		Worklog:      worklogService,
+		Debug:        debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}
@@ -593,7 +654,7 @@ type decisionEvaluator interface {
 // buildDecisionEvaluator constructs the M4 evaluator from config. codex mode
 // judges each Todo read-only with codex and reuses the M3-frozen snapshot;
 // manual_mvp routes everything to human confirmation.
-func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem.SharedMemoryReader) (decisionEvaluator, error) {
+func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader) (decisionEvaluator, error) {
 	switch cfg.Decide.Mode {
 	case decide.ManualMVPMode:
 		return decide.ManualGateEvaluator{}, nil
@@ -609,7 +670,7 @@ func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem
 		if err != nil {
 			return nil, fmt.Errorf("initialize codex decider: %w", err)
 		}
-		return decide.NewCodexEvaluator(db, decider, sharedMem)
+		return decide.NewCodexEvaluator(db, decider, sharedMem, workRules)
 	default:
 		return nil, fmt.Errorf("decide.mode 必须是 %s 或 codex", decide.ManualMVPMode)
 	}

@@ -9,6 +9,7 @@ import (
 
 	"jarvis/internal/memory"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/workrule"
 )
 
 type memorySearcher interface {
@@ -33,6 +34,7 @@ type WorkerOptions struct {
 	// [new] messages' 原文 and asked to re-extract without paraphrasing/splicing
 	// the source_quote. 0 disables retry (extract exactly once). Must be >= 0.
 	EvidenceRetryMax int
+	WorkRules        workrule.Reader
 }
 
 type WorkerStats struct {
@@ -80,6 +82,9 @@ func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher
 	}
 	if sharedMem == nil {
 		return nil, fmt.Errorf("extract worker shared memory reader is nil")
+	}
+	if opts.WorkRules == nil {
+		return nil, fmt.Errorf("extract worker work rule reader is nil")
 	}
 	if err := validateLoadOptions(opts.Load); err != nil {
 		return nil, err
@@ -155,6 +160,10 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 	if err != nil {
 		return stats, PersistStats{}, fmt.Errorf("read shared memory chat_id=%s: %w", batch.Group.ChatID, err)
 	}
+	workRules, err := w.opts.WorkRules.Block(ctx, workrule.StageExtract)
+	if err != nil {
+		return stats, PersistStats{}, fmt.Errorf("read extract work rules chat_id=%s: %w", batch.Group.ChatID, err)
+	}
 	results := make([]UnitExtraction, 0, len(batch.Units))
 	for _, unit := range batch.Units {
 		query, err := SalientQuery(unit)
@@ -177,7 +186,7 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 		}
 		prompt, err := BuildPrompt(batch, unit, memories.Results, runNow, PromptOptions{
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
-			ToolGuidance: w.opts.PromptToolGuidance, SharedMemory: sharedMemory,
+			ToolGuidance: w.opts.PromptToolGuidance, SharedMemory: sharedMemory, WorkRules: workRules,
 		})
 		if err != nil {
 			return stats, PersistStats{}, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)

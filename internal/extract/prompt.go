@@ -21,6 +21,8 @@ type PromptOptions struct {
 	// SharedMemory 是可信共享记忆文本（见 internal/sharedmem）。非空时以 RenderBlock
 	// 渲染后追加到 system 段末尾（受信任指令区）；为空则不注入。
 	SharedMemory string
+	// WorkRules 是已按 extract 阶段过滤并渲染好的可信工作规则 block。
+	WorkRules string
 }
 
 // CodexToolGuidance is the tool section injected for the codex engine. codex is
@@ -94,6 +96,9 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]a
 		system += "\n\n可用工具与自查指引：\n" + guidance
 	}
 	if block := sharedmem.RenderBlock(opts.SharedMemory); block != "" {
+		system += "\n\n" + block
+	}
+	if block := strings.TrimSpace(opts.WorkRules); block != "" {
 		system += "\n\n" + block
 	}
 	filteredMemories := filterMemories(memories)

@@ -88,6 +88,21 @@ func TestBuildCodexPromptInjectsSharedMemory(t *testing.T) {
 	}
 }
 
+func TestBuildCodexPromptInjectsWorkRules(t *testing.T) {
+	todo := &domain.Todo{ID: 8, Title: "发消息", Description: "通知", ActionType: "reply_message", Target: "同事", ExtractionResult: extractionJSON("发消息")}
+	prompt, err := BuildCodexPrompt(CodexPromptInput{
+		Todo: todo, RuleScore: RuleScore{Confidence: 0.5, Risk: 0.5},
+		Background: json.RawMessage(`{"messages":[]}`),
+		WorkRules:  "BEGIN_WORK_RULES\n- 先创建群聊\nEND_WORK_RULES",
+	})
+	if err != nil {
+		t.Fatalf("BuildCodexPrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt.Text, "先创建群聊") || strings.Index(prompt.Text, "BEGIN_WORK_RULES") >= strings.Index(prompt.Text, "BEGIN_DECISION_CONTEXT") {
+		t.Fatalf("work rules must precede DECISION_CONTEXT:\n%s", prompt.Text)
+	}
+}
+
 func TestBuildCodexPromptCanonicalizesBlocks(t *testing.T) {
 	todo := &domain.Todo{
 		ID: 7, Title: "Fixture", Description: "Fixture", ActionType: "investigate",

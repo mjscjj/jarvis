@@ -3,6 +3,7 @@ package decide
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"jarvis/internal/domain"
 	"jarvis/internal/sharedmem"
@@ -18,6 +19,7 @@ type CodexPromptInput struct {
 	// SharedMemory 是可信共享记忆文本（见 internal/sharedmem）。非空时以 RenderBlock
 	// 渲染后放在 BEGIN_DECISION_CONTEXT 之前（受信任指令区）；为空则不注入。
 	SharedMemory string
+	WorkRules    string
 }
 
 type CodexPrompt struct {
@@ -103,6 +105,11 @@ BEGIN_DECISION_CONTEXT
 END_DECISION_CONTEXT`
 	if block := sharedmem.RenderBlock(input.SharedMemory); block != "" {
 		// 放在 BEGIN_DECISION_CONTEXT（不可信业务数据）之前，属受信任指令区。
+		text = block + "\n\n" + text
+	}
+	if block := strings.TrimSpace(input.WorkRules); block != "" {
+		// 工作规则与共享记忆一样位于可信指令区；放在最前，避免落入
+		// DECISION_CONTEXT 的不可信业务数据边界。
 		text = block + "\n\n" + text
 	}
 	return &CodexPrompt{Version: CodexPromptVersion, Text: text}, nil

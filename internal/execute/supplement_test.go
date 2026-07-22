@@ -40,7 +40,7 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 		ExecutionSupplements: datatypes.JSON(supplements),
 	}
-	prompt, err := buildExecutionPrompt(task, "", "", nil)
+	prompt, err := buildExecutionPrompt(task, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -56,14 +56,14 @@ func TestBuildExecutionPromptInjectsSharedMemory(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildExecutionPrompt(task, "", "", nil)
+	empty, err := buildExecutionPrompt(task, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildExecutionPrompt(task, "", "lark-cli 的 token 存在 ~/.lark 里", nil)
+	prompt, err := buildExecutionPrompt(task, "", "lark-cli 的 token 存在 ~/.lark 里", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -74,6 +74,25 @@ func TestBuildExecutionPromptInjectsSharedMemory(t *testing.T) {
 	}
 	if strings.Index(prompt, "BEGIN_SHARED_MEMORY") >= strings.Index(prompt, "BEGIN_TASK_CONTEXT") {
 		t.Fatalf("shared memory block must precede TASK_CONTEXT:\n%s", prompt)
+	}
+}
+
+func TestBuildExecutionPromptInjectsWorkRules(t *testing.T) {
+	task := &domain.Task{
+		ID: 9, Title: "发提醒", ActionType: "summary_post",
+		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+	}
+	prompt, err := buildExecutionPrompt(task, "", "", "BEGIN_WORK_RULES\n- 禁止直接私聊\nEND_WORK_RULES", nil)
+	if err != nil {
+		t.Fatalf("build prompt: %v", err)
+	}
+	for _, want := range []string{"BEGIN_WORK_RULES", "禁止直接私聊"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("execution prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Index(prompt, "BEGIN_WORK_RULES") >= strings.Index(prompt, "BEGIN_TASK_CONTEXT") {
+		t.Fatalf("work rule block must precede TASK_CONTEXT:\n%s", prompt)
 	}
 }
 
@@ -88,7 +107,7 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 		RunID: 3, Status: "succeeded", Summary: summary,
 		StartedAt: "2026-07-21T07:55:00Z", FinishedAt: finished.Format(time.RFC3339),
 	}}
-	prompt, err := buildExecutionPrompt(task, "", "", prior)
+	prompt, err := buildExecutionPrompt(task, "", "", "", prior)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}

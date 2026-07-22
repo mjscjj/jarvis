@@ -296,6 +296,19 @@ func (r *CodexRunner) RunText(ctx context.Context, prompt string) (string, error
 	return run.LastMessage, nil
 }
 
+// RunTextSandbox runs codex with the caller-chosen sandbox and returns just the
+// final message text. It exists for callers that must let the agent self-run
+// external CLIs (lark-cli/bytedcli/git) — e.g. the daily personal digest, which
+// collects "today I did" evidence and therefore needs danger-full-access +
+// network, unlike the read-only RunText. Sandbox is validated by Run.
+func (r *CodexRunner) RunTextSandbox(ctx context.Context, prompt, sandbox string) (string, error) {
+	run, err := r.Run(ctx, prompt, sandbox, "", schemaNone)
+	if err != nil {
+		return "", err
+	}
+	return run.LastMessage, nil
+}
+
 // codexSessionID extracts the thread_id from codex's JSONL stream. It uses a
 // streaming json.Decoder rather than a line scanner because a single JSONL
 // event (e.g. a command's captured output) can exceed any fixed line buffer.

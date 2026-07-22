@@ -69,10 +69,11 @@ func TestValidate(t *testing.T) {
 			DiscoverSchedule: "@every 6h",
 			ScanSchedule:     "@every 5m",
 		},
-		Decide:  DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
-		Codex:   validCodexConfig(),
-		Execute: validExecuteConfig(),
-		Chat:    validChatConfig(),
+		Decide:      DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
+		Codex:       validCodexConfig(),
+		Execute:     validExecuteConfig(),
+		Chat:        validChatConfig(),
+		DailyDigest: validDailyDigestConfig(),
 	}
 
 	tests := []struct {
@@ -154,6 +155,9 @@ func TestValidate(t *testing.T) {
 			c.Chat.Enabled = true
 			c.Chat.Model = ""
 		}, wantErr: "chat.model"},
+		{name: "dailydigest schedule", mutate: func(c *Config) { c.DailyDigest.Schedule = "" }, wantErr: "dailydigest.schedule"},
+		{name: "dailydigest group message limit", mutate: func(c *Config) { c.DailyDigest.GroupMessageLimit = 0 }, wantErr: "dailydigest.group_message_limit"},
+		{name: "dailydigest group concurrency", mutate: func(c *Config) { c.DailyDigest.GroupConcurrency = 0 }, wantErr: "dailydigest.group_concurrency"},
 	}
 
 	for _, tt := range tests {
@@ -206,10 +210,11 @@ func TestValidateExtractEnabled(t *testing.T) {
 			PageSize: 50, ScanWorkers: 2, HotAgeHours: 6, WarmAgeHours: 168,
 			Timezone: "Asia/Shanghai", DiscoverSchedule: "@every 6h", ScanSchedule: "@every 5m",
 		},
-		Decide:  DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
-		Codex:   validCodexConfig(),
-		Execute: validExecuteConfig(),
-		Chat:    validChatConfig(),
+		Decide:      DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
+		Codex:       validCodexConfig(),
+		Execute:     validExecuteConfig(),
+		Chat:        validChatConfig(),
+		DailyDigest: validDailyDigestConfig(),
 	}
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("validate() error = %v", err)
@@ -239,5 +244,11 @@ func validChatConfig() ChatConfig {
 	return ChatConfig{
 		Enabled: true, Model: "fixture-model", TimeoutSeconds: 600,
 		Sandbox: "danger-full-access", ReasoningEffort: "medium",
+	}
+}
+
+func validDailyDigestConfig() DailyDigestConfig {
+	return DailyDigestConfig{
+		Enabled: true, Schedule: "0 19 * * *", GroupMessageLimit: 200, GroupConcurrency: 2,
 	}
 }

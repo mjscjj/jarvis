@@ -1,0 +1,17 @@
+# Self-signed cert config for local macOS codesign of jarvis-server.
+# Used by scripts/ensure-codesign-identity.sh — not for distribution.
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_codesign
+prompt = no
+
+[req_distinguished_name]
+CN = Jarvis Local
+O = Jarvis Local
+C = CN
+
+[v3_codesign]
+basicConstraints = CA:FALSE
+keyUsage = critical, digitalSignature
+extendedKeyUsage = critical, codeSigning
+subjectKeyIdentifier = hash

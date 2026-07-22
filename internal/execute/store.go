@@ -134,7 +134,7 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 		return nil, fmt.Errorf("count execution Tasks: %w", err)
 	}
 	var rows []domain.Task
-	if err := query.Order("confirmed_at ASC, id ASC").
+	if err := query.Order("updated_at DESC, id DESC").
 		Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list execution Tasks: %w", err)
 	}
