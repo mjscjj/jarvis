@@ -137,10 +137,10 @@ chat:
 skills:
   root: ".agents/skills"
 
-# 一次性定时任务：每 5 分钟扫描到期的 pending 记录，并发调用 execute 段 Codex。
+# 周期定时任务：每分钟扫描到期的 active 记录，并发调用 execute 段 Codex。
 scheduled_task:
   enabled: true
-  schedule: "@every 5m"
+  schedule: "@every 1m"
   batch_limit: 20
   concurrency: 3
 

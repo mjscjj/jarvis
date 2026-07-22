@@ -4,7 +4,7 @@
 // via lark-cli/bytedcli/git — as small subcommands.
 //
 // Most subcommands are read-only. Controlled writes cover shared memory and
-// one-shot scheduled tasks, both explicitly exposed for agent use.
+// recurring scheduled tasks, both explicitly exposed for agent use.
 //
 // Output contract (strict): each subcommand prints compact JSON to stdout and
 // NOTHING else, so codex can parse it reliably. Any error is written to stderr
@@ -336,7 +336,7 @@ func runAppendSharedMemory(args []string) error {
 func runListScheduledTasks(args []string) error {
 	fs := flag.NewFlagSet("list-scheduled-tasks", flag.ContinueOnError)
 	configPath := fs.String("config", "conf/config.yaml", "config file path")
-	status := fs.String("status", "", "optional status: pending/running/done/failed")
+	status := fs.String("status", "", "optional status: active/running")
 	limit := fs.Int("limit", 200, "maximum rows")
 	if err := fs.Parse(args); err != nil {
 		return err

@@ -725,19 +725,26 @@ export interface TextStorageInput {
   content: string
 }
 
-export type ScheduledTaskStatus = 'pending' | 'running' | 'done' | 'failed'
+export type ScheduledTaskStatus = 'active' | 'running'
+export type ScheduledTaskLastRunStatus = 'done' | 'failed'
+export type ScheduledTaskScheduleType = 'daily' | 'interval'
 
 export interface ScheduledTask {
   id: number
   title: string
   instruction: string
   context_snapshot: Record<string, unknown>
-  scheduled_at: string
+  schedule_type: ScheduledTaskScheduleType
+  daily_time: string | null
+  interval_minutes: number | null
+  next_run_at: string
+  enabled: boolean
   status: ScheduledTaskStatus
-  result: string | null
-  error_detail: string | null
-  started_at: string | null
-  finished_at: string | null
+  last_run_status: ScheduledTaskLastRunStatus | null
+  last_result: string | null
+  last_error_detail: string | null
+  last_started_at: string | null
+  last_finished_at: string | null
   created_at: string
   updated_at: string
 }
@@ -746,7 +753,10 @@ export interface ScheduledTaskInput {
   title: string
   instruction: string
   context_snapshot: Record<string, unknown>
-  scheduled_at: string
+  schedule_type: ScheduledTaskScheduleType
+  daily_time: string | null
+  interval_minutes: number | null
+  enabled: boolean
 }
 
 export type SkillStage = WorkRuleStage

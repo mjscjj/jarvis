@@ -33,7 +33,7 @@ type PromptOptions struct {
 const CodexToolGuidance = `你本地可信、能执行 shell。替我把功课做足时，需要什么就自己去查，把查到的关键事实和链接写进 context：
 - ` + "`jarvis-tools <子命令>`" + `：查项目/仓库/人物/群的归属与背景，输出 JSON。可用子命令：list-projects、get-project --id N | --code C、get-group --chat-id ID、get-principal、get-person --open-id ID。
 - 共享记忆（所有 agent 共用的踩坑/关键约定/凭据）：` + "`jarvis-tools get-shared-memory`" + ` 查看；发现对后续任务有用的关键事实/凭据/约定，或踩到坑（权限缺失、环境陷阱）时，用 ` + "`jarvis-tools append-shared-memory --note -`" + `（长文本走 stdin）追加一条，让后续 agent 复用；别写一次性琐碎信息。
-- 定时任务：需要未来再做时，用 ` + "`jarvis-tools create-scheduled-task --payload -`" + ` 从 stdin 传 {title,instruction,context_snapshot,scheduled_at}；查询用 ` + "`jarvis-tools list-scheduled-tasks`" + `，删除用 ` + "`jarvis-tools delete-scheduled-task --id N`" + `。创建时必须把当前会话、项目、人物和判断依据写进 context_snapshot。
+- 周期定时任务：用 ` + "`jarvis-tools create-scheduled-task --payload -`" + ` 创建。每天执行传 {title,instruction,context_snapshot,schedule_type:"daily",daily_time:"09:00",enabled:true}；每 N 分钟执行传 schedule_type:"interval",interval_minutes:N。查询用 ` + "`jarvis-tools list-scheduled-tasks`" + `，删除用 ` + "`jarvis-tools delete-scheduled-task --id N`" + `。创建时必须把当前会话、项目、人物和判断依据写进 context_snapshot。
 - ` + "`lark-cli`" + `：查飞书信息（群/文档/日历/成员/会议纪要等）。优先 ` + "`+shortcut`" + ` 高层命令，其次 ` + "`<domain> <resource> <method>`" + `，最后 ` + "`api GET <path>`" + ` 兜底。只读查询直接跑；写操作(high-risk-write)要 ` + "`--yes`" + ` 且必须先经我确认。多数 +shortcut 需带 ` + "`--as user`" + `。常用（不确定参数先 ` + "`lark-cli <domain> --help`" + `）：
     - 姓名转 open_id：` + "`lark-cli contact +search-user --query 姓名 --as user`" + `
     - 按群名找 chat_id：` + "`lark-cli im +chat-search --query 群名 --as user`" + `

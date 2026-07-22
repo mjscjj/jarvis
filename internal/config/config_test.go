@@ -261,5 +261,5 @@ func validDailyDigestConfig() DailyDigestConfig {
 }
 
 func validScheduledTaskConfig() ScheduledTaskConfig {
-	return ScheduledTaskConfig{Enabled: true, Schedule: "@every 5m", BatchLimit: 20, Concurrency: 3}
+	return ScheduledTaskConfig{Enabled: true, Schedule: "@every 1m", BatchLimit: 20, Concurrency: 3}
 }

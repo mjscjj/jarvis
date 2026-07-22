@@ -335,21 +335,26 @@ type DailyDigest struct {
 
 func (DailyDigest) TableName() string { return "daily_digest" }
 
-// ScheduledTask is a one-shot instruction executed by Codex at or after
-// ScheduledAt. ContextSnapshot freezes the background available when the task
-// was created so a later run does not lose its project/person/conversation
-// context. The single local Jarvis process owns the state machine.
+// ScheduledTask is a recurring instruction executed by Codex on either a daily
+// local-time schedule or a fixed minute interval. ContextSnapshot freezes the
+// background available when the task was created. The single local Jarvis
+// process owns scheduling and execution.
 type ScheduledTask struct {
 	ID              uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
 	Title           string         `gorm:"column:title;type:varchar(512);not null"`
 	Instruction     string         `gorm:"column:instruction;type:mediumtext;not null"`
 	ContextSnapshot datatypes.JSON `gorm:"column:context_snapshot;type:json;not null"`
-	ScheduledAt     time.Time      `gorm:"column:scheduled_at;type:datetime;not null;index:idx_scheduled_task_due,priority:2"`
-	Status          string         `gorm:"column:status;type:varchar(16);not null;default:pending;index:idx_scheduled_task_due,priority:1"`
-	Result          *string        `gorm:"column:result;type:mediumtext"`
-	ErrorDetail     *string        `gorm:"column:error_detail;type:text"`
-	StartedAt       *time.Time     `gorm:"column:started_at;type:datetime"`
-	FinishedAt      *time.Time     `gorm:"column:finished_at;type:datetime"`
+	ScheduleType    string         `gorm:"column:schedule_type;type:varchar(16);not null"` // daily / interval
+	DailyTime       *string        `gorm:"column:daily_time;type:char(5)"`                 // HH:mm in server local timezone
+	IntervalMinutes *int           `gorm:"column:interval_minutes;type:int"`
+	NextRunAt       time.Time      `gorm:"column:next_run_at;type:datetime;not null;index:idx_scheduled_task_due,priority:3"`
+	Enabled         bool           `gorm:"column:enabled;type:tinyint(1);not null;index:idx_scheduled_task_due,priority:1"`
+	Status          string         `gorm:"column:status;type:varchar(16);not null;default:active;index:idx_scheduled_task_due,priority:2"` // active / running
+	LastRunStatus   *string        `gorm:"column:last_run_status;type:varchar(16)"`                                                        // done / failed
+	LastResult      *string        `gorm:"column:last_result;type:mediumtext"`
+	LastErrorDetail *string        `gorm:"column:last_error_detail;type:text"`
+	LastStartedAt   *time.Time     `gorm:"column:last_started_at;type:datetime"`
+	LastFinishedAt  *time.Time     `gorm:"column:last_finished_at;type:datetime"`
 	CreatedAt       time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
 	UpdatedAt       time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 }

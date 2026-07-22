@@ -181,7 +181,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/text-storage", CreateTextStorage(deps.TextStorage))
 	h.PUT("/api/text-storage/:text_storage_id", UpdateTextStorage(deps.TextStorage))
 	h.DELETE("/api/text-storage/:text_storage_id", DeleteTextStorage(deps.TextStorage))
-	// 一次性定时任务：独立 CRUD、手动触发；自动执行由进程内 5 分钟 scheduler 负责。
+	// 周期定时任务：独立 CRUD、手动触发；自动执行由进程内每分钟 scheduler 负责。
 	h.GET("/api/scheduled-tasks", ListScheduledTasks(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks", CreateScheduledTask(deps.ScheduledTasks))
 	h.PUT("/api/scheduled-tasks/:scheduled_task_id", UpdateScheduledTask(deps.ScheduledTasks))

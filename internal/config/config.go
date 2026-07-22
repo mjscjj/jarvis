@@ -212,7 +212,7 @@ type DailyDigestConfig struct {
 	GroupConcurrency  int    `yaml:"group_concurrency"`   // 一轮批量里群总结的并发上限，默认 2，>=1
 }
 
-// ScheduledTaskConfig controls the one-shot scheduled Codex task scanner.
+// ScheduledTaskConfig controls the recurring Codex task scanner.
 // The runner itself reuses execute.bin/model/reasoning/timeout.
 type ScheduledTaskConfig struct {
 	Enabled     bool   `yaml:"enabled"`

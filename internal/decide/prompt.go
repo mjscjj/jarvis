@@ -73,7 +73,7 @@ func BuildCodexPrompt(input CodexPromptInput) (*CodexPrompt, error) {
    上下文可能不全。判断前先想「我还缺什么」，然后主动用工具去查——查到的关键事实和链接写进 evidence_gathered（每项 {label, detail}），供审计与后续执行复用：
    - ` + "`jarvis-tools <子命令>`" + `：查 Jarvis 自有数据，输出 JSON。子命令：list-projects、get-project --id N | --code C、get-group --chat-id ID、get-principal、get-person --open-id ID。
    - 共享记忆（所有 agent 共用的踩坑/关键约定/凭据）：` + "`jarvis-tools get-shared-memory`" + ` 查看；查到对后续有用的关键事实/凭据/约定或踩到坑时，用 ` + "`jarvis-tools append-shared-memory --note -`" + ` 追加一条，别写一次性琐碎信息。
-   - 定时任务：需要把动作安排到未来时，用 ` + "`jarvis-tools create-scheduled-task --payload -`" + `（stdin JSON 含 title/instruction/context_snapshot/scheduled_at）；查询用 ` + "`jarvis-tools list-scheduled-tasks`" + `，删除用 ` + "`jarvis-tools delete-scheduled-task --id N`" + `。context_snapshot 必须携带当前线索背景。
+   - 周期定时任务：用 ` + "`jarvis-tools create-scheduled-task --payload -`" + ` 创建。每天执行传 schedule_type:"daily",daily_time:"09:00"；每 N 分钟执行传 schedule_type:"interval",interval_minutes:N；同时带 title/instruction/context_snapshot/enabled。查询用 ` + "`jarvis-tools list-scheduled-tasks`" + `，删除用 ` + "`jarvis-tools delete-scheduled-task --id N`" + `。context_snapshot 必须携带当前线索背景。
    - ` + "`lark-cli`" + `：查飞书群公告、文档、日历、会议、成员（先 ` + "`--help`" + ` 探索子命令）。
    - ` + "`bytedcli`" + `：查代码、commit、issue。
    - ` + "`git`" + `：查仓库信息。

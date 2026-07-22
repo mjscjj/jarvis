@@ -46,6 +46,9 @@ func Migrate(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("migrate schema: db is nil")
 	}
+	if err := migrateScheduledTaskV2(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
 	models = append(models, domain.DecideModels()...)
@@ -54,6 +57,27 @@ func Migrate(db *gorm.DB) error {
 	models = append(models, domain.ProgressModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+	return nil
+}
+
+// migrateScheduledTaskV2 replaces the short-lived one-shot schema. The feature
+// had not stored production data when the contract changed, so we intentionally
+// fail instead of guessing how an old scheduled_at row should recur.
+func migrateScheduledTaskV2(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&domain.ScheduledTask{}) || !migrator.HasColumn("scheduled_task", "scheduled_at") {
+		return nil
+	}
+	var count int64
+	if err := db.Table("scheduled_task").Count(&count).Error; err != nil {
+		return fmt.Errorf("count one-shot scheduled tasks: %w", err)
+	}
+	if count != 0 {
+		return fmt.Errorf("scheduled_task contains %d one-shot rows; recurring migration requires an explicit data decision", count)
+	}
+	if err := migrator.DropTable(&domain.ScheduledTask{}); err != nil {
+		return fmt.Errorf("replace empty one-shot scheduled_task table: %w", err)
 	}
 	return nil
 }
