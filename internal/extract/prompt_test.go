@@ -36,6 +36,41 @@ func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 	}
 }
 
+// 共享记忆非空时，M3 应把 BEGIN_SHARED_MEMORY block 追加到 system 段（受信任指令区）；
+// 为空时不注入。
+func TestBuildPromptInjectsSharedMemory(t *testing.T) {
+	unit := ConversationUnit{
+		Key: "chat",
+		Messages: []MessageContext{
+			{MessageID: "om_new", Content: "请修改鉴权逻辑", CreateTime: 1_700_000_001_000, IsNew: true, Extractable: true},
+		},
+	}
+	batch := ChatBatch{Group: GroupContext{ID: 1, ChatID: "oc_1", Name: "研发群"}}
+
+	empty, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{
+		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
+	})
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	if strings.Contains(empty.System, "BEGIN_SHARED_MEMORY") {
+		t.Fatalf("empty shared memory must not inject block:\n%s", empty.System)
+	}
+
+	prompt, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{
+		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
+		SharedMemory: "采集死锁的坑：别在事务里调 lark-cli",
+	})
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	for _, want := range []string{"BEGIN_SHARED_MEMORY", "采集死锁的坑：别在事务里调 lark-cli", "可信"} {
+		if !strings.Contains(prompt.System, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, prompt.System)
+		}
+	}
+}
+
 func TestBuildPromptTrimsContextBeforeFailing(t *testing.T) {
 	unit := ConversationUnit{
 		Key: "chat",

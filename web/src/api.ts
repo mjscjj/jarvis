@@ -23,6 +23,7 @@ import type {
   Resource,
   ResourceInput,
   ResolveResult,
+  SharedMemory,
   Task,
   TaskList,
   TaskStatus,
@@ -134,6 +135,12 @@ export function rerunTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/rerun`, { method: 'POST' })
 }
 
+// reapplyTask re-lands the SAME approved proposal for a Task whose apply stage
+// failed, WITHOUT going through propose/approval again (区别于 rerun 会重新审批).
+export function reapplyTask(id: number): Promise<ExecuteResult> {
+  return request<ExecuteResult>(`/api/tasks/${id}/reapply`, { method: 'POST' })
+}
+
 // approveTask lands a proposal the user accepted: the awaiting_approval Task runs
 // the apply stage (a fresh codex run carrying the approved proposal) for real.
 export function approveTask(id: number, expectedVersion: number): Promise<ExecuteResult> {
@@ -222,6 +229,16 @@ export function getProfile(): Promise<ProfileView> {
 
 export function updateProfile(body: ProfileInput): Promise<ProfileView> {
   return request<ProfileView>('/api/profile', { method: 'PUT', body })
+}
+
+// --- Shared memory ---
+
+export function getSharedMemory(signal?: AbortSignal): Promise<SharedMemory> {
+  return request<SharedMemory>('/api/shared-memory', { signal })
+}
+
+export function updateSharedMemory(content: string): Promise<SharedMemory> {
+  return request<SharedMemory>('/api/shared-memory', { method: 'PUT', body: { content } })
 }
 
 // --- Overview & Progress ---

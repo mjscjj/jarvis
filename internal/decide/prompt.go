@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/sharedmem"
 )
 
 const CodexPromptVersion = "todo-decision-v3"
@@ -14,6 +15,9 @@ type CodexPromptInput struct {
 	RuleScore        RuleScore
 	Background       json.RawMessage
 	PriorEvaluations []PriorEvaluation
+	// SharedMemory 是可信共享记忆文本（见 internal/sharedmem）。非空时以 RenderBlock
+	// 渲染后放在 BEGIN_DECISION_CONTEXT 之前（受信任指令区）；为空则不注入。
+	SharedMemory string
 }
 
 type CodexPrompt struct {
@@ -65,6 +69,7 @@ func BuildCodexPrompt(input CodexPromptInput) (*CodexPrompt, error) {
 一、先把功课补足（缺什么自己去查，别急着抛问题）
    上下文可能不全。判断前先想「我还缺什么」，然后主动用工具去查——查到的关键事实和链接写进 evidence_gathered（每项 {label, detail}），供审计与后续执行复用：
    - ` + "`jarvis-tools <子命令>`" + `：查 Jarvis 自有数据，输出 JSON。子命令：list-projects、get-project --id N | --code C、get-group --chat-id ID、get-principal、get-person --open-id ID。
+   - 共享记忆（所有 agent 共用的踩坑/关键约定/凭据）：` + "`jarvis-tools get-shared-memory`" + ` 查看；查到对后续有用的关键事实/凭据/约定或踩到坑时，用 ` + "`jarvis-tools append-shared-memory --note -`" + ` 追加一条，别写一次性琐碎信息。
    - ` + "`lark-cli`" + `：查飞书群公告、文档、日历、会议、成员（先 ` + "`--help`" + ` 探索子命令）。
    - ` + "`bytedcli`" + `：查代码、commit、issue。
    - ` + "`git`" + `：查仓库信息。
@@ -96,6 +101,10 @@ DECISION_CONTEXT_LENGTH_BYTES=` + fmt.Sprintf("%d", len(encoded)) + `
 BEGIN_DECISION_CONTEXT
 ` + string(encoded) + `
 END_DECISION_CONTEXT`
+	if block := sharedmem.RenderBlock(input.SharedMemory); block != "" {
+		// 放在 BEGIN_DECISION_CONTEXT（不可信业务数据）之前，属受信任指令区。
+		text = block + "\n\n" + text
+	}
 	return &CodexPrompt{Version: CodexPromptVersion, Text: text}, nil
 }
 

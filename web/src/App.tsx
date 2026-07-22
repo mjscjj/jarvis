@@ -7,6 +7,7 @@ import {
   PlayCircleOutlined,
   SettingOutlined,
   BarChartOutlined,
+  BulbOutlined,
   ToolOutlined,
   MessageOutlined,
   ReloadOutlined,
@@ -16,6 +17,7 @@ import {
 import Confirmations from './Confirmations'
 import Tasks from './Tasks'
 import Background from './Background'
+import SharedMemory from './SharedMemory'
 import Overview from './Overview'
 import Progress from './Progress'
 import Debug from './Debug'
@@ -47,6 +49,7 @@ const menuItems: MenuItem[] = [
   { key: 'confirmations', label: '待确认', icon: <CheckCircleOutlined /> },
   { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
   { key: 'background', label: '背景', icon: <SettingOutlined /> },
+  { key: 'shared-memory', label: '共享记忆', icon: <BulbOutlined /> },
   { key: 'progress', label: '进度', icon: <BarChartOutlined /> },
   { key: 'debug', label: '调试', icon: <ToolOutlined /> },
 ]
@@ -72,6 +75,7 @@ function AppShell() {
     confirmations: <Confirmations />,
     tasks: <Tasks />,
     background: <Background />,
+    'shared-memory': <SharedMemory />,
     progress: <Progress />,
     debug: <Debug />,
   }

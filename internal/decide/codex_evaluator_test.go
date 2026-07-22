@@ -21,6 +21,16 @@ func (f *fakeCodexDecisionRunner) Decide(_ context.Context, _ CodexInput) (*Code
 	return f.result, f.err
 }
 
+// fakeSharedMemoryReader 是共享记忆读取打桩：text 为要注入的文本，err 非空模拟读表失败。
+type fakeSharedMemoryReader struct {
+	text string
+	err  error
+}
+
+func (f fakeSharedMemoryReader) Text(context.Context) (string, error) {
+	return f.text, f.err
+}
+
 // testContextSnapshot builds a minimal valid frozen snapshot for a Todo so
 // requireContextSnapshot (fail-fast) is satisfied in unit tests.
 func testContextSnapshot(t *testing.T) datatypes.JSON {
@@ -103,7 +113,7 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 			EvidenceGathered:  []Evidence{{Label: "repo", Detail: "jarvis local"}},
 		},
 	}}
-	evaluator, err := NewCodexEvaluator(nil, runner)
+	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{})
 	if err != nil {
 		t.Fatalf("NewCodexEvaluator() error = %v", err)
 	}
@@ -157,7 +167,7 @@ func TestCodexEvaluatorPreservesManualGateAfterSupplement(t *testing.T) {
 			ConfidenceBasis: "now complete", PlanIsClear: true, ProposedPlan: clearPlan(),
 		},
 	}}
-	evaluator, err := NewCodexEvaluator(nil, runner)
+	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{})
 	if err != nil {
 		t.Fatalf("NewCodexEvaluator() error = %v", err)
 	}

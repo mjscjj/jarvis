@@ -1,11 +1,16 @@
-// Command jarvis-tools is the read-only decision-query tool set that codex
-// self-runs during M3 extraction / M4 decision (docs/design-context-pipeline.md
+// Command jarvis-tools is the decision-query tool set that codex self-runs
+// during M3 extraction / M4 decision / M5 execution (docs/design-context-pipeline.md
 // §2.1a). It exposes Jarvis's own MySQL/mem0 data — the part codex cannot reach
 // via lark-cli/bytedcli/git — as small subcommands.
 //
+// Most subcommands are read-only. The exception is the shared-memory writers
+// (set-shared-memory / append-shared-memory): a small set of controlled writes
+// that let the agent persist "共享记忆"（踩过的坑/关键约定/凭据）for later runs.
+// All other subcommands stay read-only.
+//
 // Output contract (strict): each subcommand prints compact JSON to stdout and
 // NOTHING else, so codex can parse it reliably. Any error is written to stderr
-// and the process exits non-zero (fail-fast). Every subcommand is read-only.
+// and the process exits non-zero (fail-fast).
 package main
 
 import (
@@ -14,22 +19,28 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"jarvis/internal/background"
 	"jarvis/internal/config"
+	"jarvis/internal/sharedmem"
 	"jarvis/internal/store"
 
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
 
+// sharedMemoryUpdatedBy 标记共享记忆写入来源为 agent（区别于人工在后台的编辑）。
+const sharedMemoryUpdatedBy = "agent"
+
 const connectTimeout = 10 * time.Second
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(fmt.Errorf("usage: jarvis-tools <subcommand> [flags]\nsubcommands: list-projects get-project get-group get-principal get-person"))
+		fail(fmt.Errorf("usage: jarvis-tools <subcommand> [flags]\nsubcommands: list-projects get-project get-group get-principal get-person get-shared-memory set-shared-memory append-shared-memory"))
 	}
 	subcommand := os.Args[1]
 	args := os.Args[2:]
@@ -51,12 +62,20 @@ func run(subcommand string, args []string) error {
 		return runGetPrincipal(args)
 	case "get-person":
 		return runGetPerson(args)
+	case "get-shared-memory":
+		return runGetSharedMemory(args)
+	case "set-shared-memory":
+		return runSetSharedMemory(args)
+	case "append-shared-memory":
+		return runAppendSharedMemory(args)
 	default:
-		return fmt.Errorf("unknown subcommand %q; want one of: list-projects get-project get-group get-principal get-person", subcommand)
+		return fmt.Errorf("unknown subcommand %q; want one of: list-projects get-project get-group get-principal get-person get-shared-memory set-shared-memory append-shared-memory", subcommand)
 	}
 }
 
-// openDB loads config and connects to MySQL. It never migrates or mutates data.
+// openDB loads config and connects to MySQL. It never runs migrations — schema
+// is owned by the jarvis-server main process; the tool only reads, and (for the
+// shared-memory writers) writes rows into already-migrated tables.
 func openDB(configPath string) (*config.Config, *gorm.DB, func(), error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -202,6 +221,96 @@ func runGetPerson(args []string) error {
 		return mapNotFound(err)
 	}
 	return emit(person)
+}
+
+func runGetSharedMemory(args []string) error {
+	fs := flag.NewFlagSet("get-shared-memory", flag.ContinueOnError)
+	configPath := fs.String("config", "conf/config.yaml", "config file path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	_, db, cleanup, err := openDB(*configPath)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	svc, err := sharedmem.NewSharedMemoryService(db)
+	if err != nil {
+		return err
+	}
+	view, err := svc.Get(context.Background())
+	if err != nil {
+		return err
+	}
+	return emit(view)
+}
+
+func runSetSharedMemory(args []string) error {
+	fs := flag.NewFlagSet("set-shared-memory", flag.ContinueOnError)
+	configPath := fs.String("config", "conf/config.yaml", "config file path")
+	content := fs.String("content", "-", `full text to overwrite shared memory with; "-" (default) reads from stdin`)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	text, err := readContentArg(*content)
+	if err != nil {
+		return err
+	}
+	_, db, cleanup, err := openDB(*configPath)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	svc, err := sharedmem.NewSharedMemoryService(db)
+	if err != nil {
+		return err
+	}
+	view, err := svc.Upsert(context.Background(), text, sharedMemoryUpdatedBy)
+	if err != nil {
+		return err
+	}
+	return emit(view)
+}
+
+func runAppendSharedMemory(args []string) error {
+	fs := flag.NewFlagSet("append-shared-memory", flag.ContinueOnError)
+	configPath := fs.String("config", "conf/config.yaml", "config file path")
+	note := fs.String("note", "-", `one entry to append to shared memory; "-" (default) reads from stdin`)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	text, err := readContentArg(*note)
+	if err != nil {
+		return err
+	}
+	_, db, cleanup, err := openDB(*configPath)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	svc, err := sharedmem.NewSharedMemoryService(db)
+	if err != nil {
+		return err
+	}
+	view, err := svc.Append(context.Background(), text, sharedMemoryUpdatedBy)
+	if err != nil {
+		return err
+	}
+	return emit(view)
+}
+
+// readContentArg resolves a text flag value: the literal "-" (or empty) means
+// read the whole payload from stdin, letting codex pipe long text without hitting
+// command-line length limits; any other value is used verbatim.
+func readContentArg(value string) (string, error) {
+	if value != "" && value != "-" {
+		return value, nil
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", fmt.Errorf("read content from stdin: %w", err)
+	}
+	return strings.TrimRight(string(data), "\n"), nil
 }
 
 // emit writes the value as compact JSON to stdout followed by a newline. This is

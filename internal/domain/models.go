@@ -251,6 +251,21 @@ type ManagedResource struct {
 
 func (ManagedResource) TableName() string { return "managed_resource" }
 
+// SharedMemory 是 Agent/人工长期维护的一段自由文本「共享记忆」：踩过的坑、关键
+// 约定、凭据等重要信息，作为可信背景注入到所有调用 codex/traex 的 prompt（M3/M4/
+// M5/chat）。全局单例——用固定 SingletonKey="default" 的唯一索引保证只有一行；多条
+// 信息由用户/Agent 写进同一段 Content 里，本层不拆条目。
+type SharedMemory struct {
+	ID           uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	SingletonKey string    `gorm:"column:singleton_key;type:varchar(32);uniqueIndex;not null;default:'default'"`
+	Content      string    `gorm:"column:content;type:mediumtext"`
+	UpdatedBy    string    `gorm:"column:updated_by;type:varchar(64)"` // 区分 Agent/人工更新，本步不强制填
+	CreatedAt    time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+}
+
+func (SharedMemory) TableName() string { return "shared_memory" }
+
 // CoreModels returns the canonical dependency-ordered migration list.
 func CoreModels() []any {
 	return []any{
@@ -263,5 +278,6 @@ func CoreModels() []any {
 		&ScanRecord{},
 		&PrincipalProfile{},
 		&ManagedResource{},
+		&SharedMemory{},
 	}
 }

@@ -122,6 +122,16 @@ func (f *fakeMemorySearcher) Search(_ context.Context, input memory.SearchInput)
 	return &memory.SearchResponse{Results: []map[string]any{}}, nil
 }
 
+// fakeSharedMemoryReader 是共享记忆读取的打桩：text 为要注入的文本，err 非空则模拟读表失败。
+type fakeSharedMemoryReader struct {
+	text string
+	err  error
+}
+
+func (f fakeSharedMemoryReader) Text(context.Context) (string, error) {
+	return f.text, f.err
+}
+
 func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	projectID := uint64(9)
 	store := &fakePipelineStore{batches: []ChatBatch{{
@@ -135,7 +145,7 @@ func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{}}}
 	memories := &fakeMemorySearcher{}
 	toolBox := &fakeToolBoxBuilder{}
-	worker, err := NewWorker(store, model, memories, &fakeCandidateDeduplicator{}, toolBox, validWorkerOptions())
+	worker, err := NewWorker(store, model, memories, &fakeCandidateDeduplicator{}, toolBox, fakeSharedMemoryReader{}, validWorkerOptions())
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -174,6 +184,7 @@ func TestWorkerExtractChatReturnsCommittedTodoRefs(t *testing.T) {
 		&fakeMemorySearcher{},
 		&fakeCandidateDeduplicator{},
 		&fakeToolBoxBuilder{},
+		fakeSharedMemoryReader{},
 		validWorkerOptions(),
 	)
 	if err != nil {
@@ -199,6 +210,7 @@ func TestWorkerExtractChatSkipsChatWithoutPendingMessages(t *testing.T) {
 		&fakeMemorySearcher{},
 		&fakeCandidateDeduplicator{},
 		&fakeToolBoxBuilder{},
+		fakeSharedMemoryReader{},
 		validWorkerOptions(),
 	)
 	if err != nil {
@@ -222,7 +234,7 @@ func TestWorkerDoesNotAdvanceWatermarkAfterModelFailure(t *testing.T) {
 		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_1", IsNew: true},
 	}}}
 	model := &fakeModelExtractor{err: errors.New("model unavailable")}
-	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, validWorkerOptions())
+	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, fakeSharedMemoryReader{}, validWorkerOptions())
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -251,7 +263,7 @@ func TestWorkerDoesNotPersistAfterSemanticDedupFailure(t *testing.T) {
 	worker, err := NewWorker(
 		store,
 		&fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{candidate}}},
-		&fakeMemorySearcher{}, dedup, &fakeToolBoxBuilder{}, validWorkerOptions(),
+		&fakeMemorySearcher{}, dedup, &fakeToolBoxBuilder{}, fakeSharedMemoryReader{}, validWorkerOptions(),
 	)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
@@ -301,7 +313,7 @@ func TestWorkerRetriesOnQuoteMismatchThenSucceeds(t *testing.T) {
 	}}
 	opts := validWorkerOptions()
 	opts.EvidenceRetryMax = 2
-	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, fakeSharedMemoryReader{}, opts)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -334,7 +346,7 @@ func TestWorkerFailsAfterExhaustingEvidenceRetries(t *testing.T) {
 	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{rewritten}}}
 	opts := validWorkerOptions()
 	opts.EvidenceRetryMax = 2
-	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, fakeSharedMemoryReader{}, opts)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}

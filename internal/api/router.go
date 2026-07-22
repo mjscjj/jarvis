@@ -11,6 +11,7 @@ import (
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
+	"jarvis/internal/sharedmem"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"gorm.io/gorm"
@@ -30,6 +31,7 @@ type Dependencies struct {
 	Resolve             *background.ResolveService
 	Profile             *background.ProfileService
 	Resources           *background.ResourceService
+	SharedMemory        *sharedmem.SharedMemoryService
 	Overview            *insight.OverviewService
 	Digests             *insight.DigestService
 	DigestSummarizer    *insight.Summarizer // 可选：codex 未启用时为 nil，总结接口返回 503
@@ -77,6 +79,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Resources == nil {
 		return fmt.Errorf("api resource service dependency is nil")
 	}
+	if deps.SharedMemory == nil {
+		return fmt.Errorf("api shared memory service dependency is nil")
+	}
 	if deps.Overview == nil {
 		return fmt.Errorf("api overview service dependency is nil")
 	}
@@ -104,6 +109,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Executor != nil {
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/rerun", RerunTask(deps.Executor))
+		h.POST("/api/tasks/:task_id/reapply", ReapplyTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/approve", ApproveTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/reject", RejectTask(deps.Executor))
 	}
@@ -124,6 +130,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 决策主体（“我”）：单例 profile，读取 + upsert。
 	h.GET("/api/profile", GetProfile(deps.Profile))
 	h.PUT("/api/profile", UpdateProfile(deps.Profile))
+	// 共享记忆：全局单例大文本，读取 + 整段覆盖保存。
+	h.GET("/api/shared-memory", GetSharedMemory(deps.SharedMemory))
+	h.PUT("/api/shared-memory", UpdateSharedMemory(deps.SharedMemory))
 	// Overview 看板 + 进度：跨模块只读聚合，无表无 cron；总结按需调 codex。
 	h.GET("/api/overview", GetOverview(deps.Overview))
 	h.GET("/api/digests", GetDigests(deps.Digests))

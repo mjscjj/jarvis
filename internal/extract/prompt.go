@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"jarvis/internal/sharedmem"
 )
 
 type PromptOptions struct {
@@ -16,6 +18,9 @@ type PromptOptions struct {
 	// engine which shell tools it may self-run to fill in missing context. It is
 	// empty for the kimi engine (which uses Go function-calling instead).
 	ToolGuidance string
+	// SharedMemory 是可信共享记忆文本（见 internal/sharedmem）。非空时以 RenderBlock
+	// 渲染后追加到 system 段末尾（受信任指令区）；为空则不注入。
+	SharedMemory string
 }
 
 // CodexToolGuidance is the tool section injected for the codex engine. codex is
@@ -23,6 +28,7 @@ type PromptOptions struct {
 // doing its homework (职责二) and reminds it to fold findings into context.
 const CodexToolGuidance = `你本地可信、能执行 shell。替我把功课做足时，需要什么就自己去查，把查到的关键事实和链接写进 context：
 - ` + "`jarvis-tools <子命令>`" + `：查项目/仓库/人物/群的归属与背景，输出 JSON。可用子命令：list-projects、get-project --id N | --code C、get-group --chat-id ID、get-principal、get-person --open-id ID。
+- 共享记忆（所有 agent 共用的踩坑/关键约定/凭据）：` + "`jarvis-tools get-shared-memory`" + ` 查看；发现对后续任务有用的关键事实/凭据/约定，或踩到坑（权限缺失、环境陷阱）时，用 ` + "`jarvis-tools append-shared-memory --note -`" + `（长文本走 stdin）追加一条，让后续 agent 复用；别写一次性琐碎信息。
 - ` + "`lark-cli`" + `：查飞书群公告、文档、日历、成员（先用 ` + "`--help`" + ` 探索子命令）。
 - ` + "`bytedcli`" + `：查代码、commit、issue。
 - ` + "`git`" + `：查仓库信息。
@@ -76,6 +82,9 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]a
 	system := fmt.Sprintf(systemPromptTemplate, opts.PrincipalOpenID)
 	if guidance := strings.TrimSpace(opts.ToolGuidance); guidance != "" {
 		system += "\n\n可用工具与自查指引：\n" + guidance
+	}
+	if block := sharedmem.RenderBlock(opts.SharedMemory); block != "" {
+		system += "\n\n" + block
 	}
 	filteredMemories := filterMemories(memories)
 	for i, item := range filteredMemories {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/sharedmem"
 
 	"gorm.io/gorm"
 )
@@ -34,15 +35,19 @@ var neutralRuleScore = RuleScore{Confidence: 0.5, Risk: 0.5}
 // evaluation summaries from todo_event. A sticky manual gate prevents a prior
 // need_decision from turning into automatic execution after supplementation.
 type CodexEvaluator struct {
-	db    *gorm.DB // optional in unit tests; nil → empty previous_evaluations
-	codex codexDecisionRunner
+	db        *gorm.DB // optional in unit tests; nil → empty previous_evaluations
+	codex     codexDecisionRunner
+	sharedMem sharedmem.SharedMemoryReader
 }
 
-func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner) (*CodexEvaluator, error) {
+func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner, sharedMem sharedmem.SharedMemoryReader) (*CodexEvaluator, error) {
 	if codex == nil {
 		return nil, fmt.Errorf("codex evaluator decider is nil")
 	}
-	return &CodexEvaluator{db: db, codex: codex}, nil
+	if sharedMem == nil {
+		return nil, fmt.Errorf("codex evaluator shared memory reader is nil")
+	}
+	return &CodexEvaluator{db: db, codex: codex, sharedMem: sharedMem}, nil
 }
 
 func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*EvaluationInput, error) {
@@ -63,8 +68,13 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 	if err != nil {
 		return nil, fmt.Errorf("codex evaluation todo_id=%d: %w", todo.ID, err)
 	}
+	sharedMemory, err := e.sharedMem.Text(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("codex evaluation todo_id=%d: read shared memory: %w", todo.ID, err)
+	}
 	prompt, err := BuildCodexPrompt(CodexPromptInput{
 		Todo: todo, RuleScore: neutralRuleScore, Background: background, PriorEvaluations: prior,
+		SharedMemory: sharedMemory,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build codex decision prompt todo_id=%d: %w", todo.ID, err)

@@ -1,11 +1,27 @@
 package chat
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
 
+// fakeSharedMemoryReader 是共享记忆读取打桩：text 为要注入的文本，err 非空模拟读表失败。
+type fakeSharedMemoryReader struct {
+	text string
+	err  error
+}
+
+func (f fakeSharedMemoryReader) Text(context.Context) (string, error) {
+	return f.text, f.err
+}
+
 func newTestService(t *testing.T) *Service {
+	t.Helper()
+	return newTestServiceWithSharedMemory(t, fakeSharedMemoryReader{})
+}
+
+func newTestServiceWithSharedMemory(t *testing.T, reader fakeSharedMemoryReader) *Service {
 	t.Helper()
 	svc, err := NewService(Options{
 		Bin:             "codex",
@@ -14,6 +30,7 @@ func newTestService(t *testing.T) *Service {
 		ReasoningEffort: "medium",
 		Timeout:         600 * 1e9,
 		DSN:             "root:secret@tcp(127.0.0.1:3306)/jarvis",
+		SharedMemory:    reader,
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -24,20 +41,41 @@ func newTestService(t *testing.T) *Service {
 func TestBuildPromptInjectsDSNAndContext(t *testing.T) {
 	t.Parallel()
 	svc := newTestService(t)
-	prompt := svc.buildPrompt(Request{
+	prompt, err := svc.buildPrompt(context.Background(), Request{
 		Message: "现在有几个待办？",
 		PageContext: &PageContext{
 			ActiveKey: "todos",
 			Selection: &PageSelection{Kind: "todo", ID: 12, Label: "修复登录超时"},
 		},
 	})
+	if err != nil {
+		t.Fatalf("buildPrompt() error = %v", err)
+	}
 	for _, want := range []string{
 		"root:secret@tcp(127.0.0.1:3306)/jarvis", // DSN 明文注入
 		"todos",                                  // active_key
-		"修复登录超时",                                // selection.label
-		"现在有几个待办？",                              // 用户消息
+		"修复登录超时",                                 // selection.label
+		"现在有几个待办？",                               // 用户消息
 		"安全约束",                                   // 防注入提示
 	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q\n---\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "BEGIN_SHARED_MEMORY") {
+		t.Fatalf("empty shared memory must not inject block\n%s", prompt)
+	}
+}
+
+// 首轮 prompt 注入非空共享记忆：包含 BEGIN_SHARED_MEMORY 标记、内容与「可信」字样。
+func TestBuildPromptInjectsSharedMemory(t *testing.T) {
+	t.Parallel()
+	svc := newTestServiceWithSharedMemory(t, fakeSharedMemoryReader{text: "线上库密码是 hunter2"})
+	prompt, err := svc.buildPrompt(context.Background(), Request{Message: "帮我查一下"})
+	if err != nil {
+		t.Fatalf("buildPrompt() error = %v", err)
+	}
+	for _, want := range []string{"BEGIN_SHARED_MEMORY", "线上库密码是 hunter2", "可信"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q\n---\n%s", want, prompt)
 		}

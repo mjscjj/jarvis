@@ -29,6 +29,7 @@ import (
 	"jarvis/internal/memory"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/semantic"
+	"jarvis/internal/sharedmem"
 	"jarvis/internal/store"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -97,6 +98,13 @@ func main() {
 		return
 	}
 
+	// 共享记忆（可信自由文本）装载服务：分发给 M3/M4/M5/chat 四条链路，各注入点组装
+	// prompt 时实时读表。构造失败 fail-fast。
+	sharedMemoryService, err := sharedmem.NewSharedMemoryService(db)
+	if err != nil {
+		hlog.Fatalf("initialize shared memory service failed: %v", err)
+	}
+
 	var decisionWorker *decide.DecisionWorker
 	if cfg.Decide.Enabled || *decideOnce {
 		if cfg.Decide.BatchLimit <= 0 {
@@ -110,7 +118,7 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize decision store failed: %v", err)
 		}
-		evaluator, err := buildDecisionEvaluator(cfg, db)
+		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService)
 		if err != nil {
 			hlog.Fatalf("initialize decision evaluator failed: %v", err)
 		}
@@ -196,7 +204,7 @@ func main() {
 	// Build an evaluator + store so the confirmation service can re-run M4
 	// asynchronously after a need_info supplement, independent of the decision
 	// cron being enabled. Mirrors the worker's evaluator selection.
-	supplementEvaluator, err := buildDecisionEvaluator(cfg, db)
+	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService)
 	if err != nil {
 		hlog.Fatalf("initialize supplement evaluator failed: %v", err)
 	}
@@ -224,7 +232,7 @@ func main() {
 		hlog.Fatalf("initialize execute runner failed: %v", err)
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
-		db, taskService, codexRunner, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		db, taskService, codexRunner, sharedMemoryService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
 		hlog.Fatalf("initialize agent executor failed: %v", err)
@@ -352,7 +360,7 @@ func main() {
 			extractionModelName = cfg.Codex.Model
 			promptToolGuidance = extract.CodexToolGuidance
 		}
-		extractWorker, err = extract.NewWorker(pipelineStore, extractionEngine, memoryClient, deduplicator, toolBoxBuilder, extract.WorkerOptions{
+		extractWorker, err = extract.NewWorker(pipelineStore, extractionEngine, memoryClient, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
 			Load: extract.LoadOptions{
 				BatchMessages: cfg.Extract.BatchMessages, ContextMessages: cfg.Extract.ContextMessages,
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
@@ -540,6 +548,7 @@ func main() {
 			ReasoningEffort: cfg.Chat.ReasoningEffort,
 			Timeout:         time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,
 			DSN:             cfg.MySQL.DSN,
+			SharedMemory:    sharedMemoryService,
 		})
 		if err != nil {
 			hlog.Fatalf("initialize chat service failed: %v", err)
@@ -554,7 +563,8 @@ func main() {
 		Tasks: taskService, Executor: agentExecutor,
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
-		Overview: overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
+		SharedMemory: sharedMemoryService,
+		Overview:     overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		Debug: debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
@@ -583,7 +593,7 @@ type decisionEvaluator interface {
 // buildDecisionEvaluator constructs the M4 evaluator from config. codex mode
 // judges each Todo read-only with codex and reuses the M3-frozen snapshot;
 // manual_mvp routes everything to human confirmation.
-func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB) (decisionEvaluator, error) {
+func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem.SharedMemoryReader) (decisionEvaluator, error) {
 	switch cfg.Decide.Mode {
 	case decide.ManualMVPMode:
 		return decide.ManualGateEvaluator{}, nil
@@ -599,7 +609,7 @@ func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB) (decisionEvaluator,
 		if err != nil {
 			return nil, fmt.Errorf("initialize codex decider: %w", err)
 		}
-		return decide.NewCodexEvaluator(db, decider)
+		return decide.NewCodexEvaluator(db, decider, sharedMem)
 	default:
 		return nil, fmt.Errorf("decide.mode 必须是 %s 或 codex", decide.ManualMVPMode)
 	}

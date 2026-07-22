@@ -2,6 +2,7 @@ package execute
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -104,6 +105,52 @@ func TestDecodeStoredProposalRejectsNonProposal(t *testing.T) {
 	}
 }
 
+// TestProposalFromRunOutput recovers the approved proposal from a propose run's
+// output (needs_approval=true + full proposal), and returns nil for anything not
+// approvable — the basis for "用同一已批准方案重试落地" (reapply).
+func TestProposalFromRunOutput(t *testing.T) {
+	good := []byte(`{"needs_approval":true,"success":false,"summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发周报","target":"研发群 chat_id=xyz","artifact":"本周进展：AAA"}}`)
+	got := proposalFromRunOutput(good)
+	if got == nil || got.Action != "发周报" || got.Target != "研发群 chat_id=xyz" || got.Artifact != "本周进展：AAA" {
+		t.Fatalf("proposalFromRunOutput(good) = %#v, want full proposal", got)
+	}
+	for name, raw := range map[string][]byte{
+		"low risk (no approval)": []byte(`{"needs_approval":false,"success":true,"summary":"已做完","proposal":null}`),
+		"nil proposal":           []byte(`{"needs_approval":true,"proposal":null}`),
+		"empty artifact":         []byte(`{"needs_approval":true,"proposal":{"action":"a","target":"b","artifact":""}}`),
+		"empty target":           []byte(`{"needs_approval":true,"proposal":{"action":"a","target":"","artifact":"c"}}`),
+		"final run result":       []byte(`{"success":true,"summary":"done"}`),
+		"empty":                  nil,
+		"garbage":                []byte(`not json`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := proposalFromRunOutput(raw); got != nil {
+				t.Fatalf("proposalFromRunOutput(%s) = %#v, want nil", name, got)
+			}
+		})
+	}
+}
+
+// TestRunResultPayloadTagsStage verifies a codex-driven terminal result carries
+// stage=executed (so the UI tells a real execution failure apart from a human
+// rejection / manual mark-failed), and that a failure also carries the error.
+func TestRunResultPayloadTagsStage(t *testing.T) {
+	run := &domain.ExecutionRun{ActionType: "summary_post", Sandbox: "danger-full-access", Status: "failed"}
+	ok := runResultPayload(run, nil)
+	if ok["stage"] != "executed" {
+		t.Fatalf("success payload stage = %v, want executed", ok["stage"])
+	}
+	if _, hasErr := ok["error"]; hasErr {
+		t.Fatalf("success payload must not carry error: %#v", ok)
+	}
+	failed := runResultPayload(run, errTest)
+	if failed["stage"] != "executed" || failed["error"] != errTest.Error() {
+		t.Fatalf("failed payload = %#v, want stage=executed + error", failed)
+	}
+}
+
+var errTest = errors.New("group not found")
+
 // TestRejectionPayload keeps the rejection distinguishable from a codex failure.
 func TestRejectionPayload(t *testing.T) {
 	withReason := rejectionPayload("措辞不合适")
@@ -123,7 +170,7 @@ func TestBuildProposePrompt(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(task, nil)
+	prompt, err := buildProposePrompt(task, "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
@@ -131,6 +178,34 @@ func TestBuildProposePrompt(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("propose prompt missing %q", want)
 		}
+	}
+}
+
+// 共享记忆非空时，propose prompt 应在 TASK_CONTEXT 之前包含 BEGIN_SHARED_MEMORY 标记
+// 与内容；为空时不包含。
+func TestBuildProposePromptInjectsSharedMemory(t *testing.T) {
+	task := &domain.Task{
+		ID: 11, Title: "更新周报", ActionType: "doc_write",
+		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+	}
+	empty, err := buildProposePrompt(task, "", nil)
+	if err != nil {
+		t.Fatalf("buildProposePrompt() error = %v", err)
+	}
+	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
+		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
+	}
+	prompt, err := buildProposePrompt(task, "周报模板固定用飞书文档 xxx", nil)
+	if err != nil {
+		t.Fatalf("buildProposePrompt() error = %v", err)
+	}
+	for _, want := range []string{"BEGIN_SHARED_MEMORY", "周报模板固定用飞书文档 xxx", "可信"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("propose prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Index(prompt, "BEGIN_SHARED_MEMORY") >= strings.Index(prompt, "BEGIN_TASK_CONTEXT") {
+		t.Fatalf("shared memory block must precede TASK_CONTEXT:\n%s", prompt)
 	}
 }
 
@@ -142,7 +217,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
-	prompt, err := buildApplyPrompt(task, proposal, nil)
+	prompt, err := buildApplyPrompt(task, proposal, "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
@@ -156,7 +231,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildApplyPrompt(task, nil, nil); err == nil {
+	if _, err := buildApplyPrompt(task, nil, "", nil); err == nil {
 		t.Fatalf("nil proposal must fail")
 	}
 }
@@ -174,7 +249,7 @@ func TestInvestigateGoesThroughPropose(t *testing.T) {
 		ID: 21, Title: "查证登录超时", ActionType: "investigate",
 		Plan: datatypes.JSON(`{"steps":["read logs"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(task, nil)
+	prompt, err := buildProposePrompt(task, "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt(investigate) error = %v", err)
 	}

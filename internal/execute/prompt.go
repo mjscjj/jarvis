@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/sharedmem"
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
@@ -151,11 +152,17 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 	return supplements, encoded, nil
 }
 
-// renderPrompt glues the stage instructions, the supplement directive block, and
-// the encoded TASK_CONTEXT into the final codex prompt.
-func renderPrompt(instructions string, supplements []ExecutionSupplement, encoded []byte) string {
+// renderPrompt glues the stage instructions, the shared-memory block, the
+// supplement directive block, and the encoded TASK_CONTEXT into the final codex
+// prompt. sharedMemory (可信共享记忆) is injected right after the instructions and
+// before TASK_CONTEXT（不可信业务数据），即受信任指令区；为空则不注入。
+func renderPrompt(instructions, sharedMemory string, supplements []ExecutionSupplement, encoded []byte) string {
 	directive := formatExecutionSupplementDirective(supplements)
-	return instructions + directive +
+	prompt := instructions
+	if block := sharedmem.RenderBlock(sharedMemory); block != "" {
+		prompt += "\n\n" + block
+	}
+	return prompt + directive +
 		"\n\nTASK_CONTEXT_LENGTH_BYTES=" + fmt.Sprintf("%d", len(encoded)) +
 		"\nBEGIN_TASK_CONTEXT\n" + string(encoded) + "\nEND_TASK_CONTEXT"
 }
@@ -165,7 +172,7 @@ func renderPrompt(instructions string, supplements []ExecutionSupplement, encode
 // confirmed plan, context, and repo, and tells it to carry the plan out. codex
 // orchestrates the actual work. task.execution_supplements (M5-only) are injected
 // as high-priority directives. previousRuns (if any) carry prior attempt results.
-func buildExecutionPrompt(task *domain.Task, repoPath string, previousRuns []priorRunSummary) (string, error) {
+func buildExecutionPrompt(task *domain.Task, repoPath, sharedMemory string, previousRuns []priorRunSummary) (string, error) {
 	supplements, encoded, err := buildTaskContext(task, repoPath, previousRuns)
 	if err != nil {
 		return "", err
@@ -178,7 +185,7 @@ func buildExecutionPrompt(task *domain.Task, repoPath string, previousRuns []pri
 2. 严格按 plan 执行；plan 未覆盖到的细节，用 background（含 M3 补全的上下文）补齐，不臆造事实。
 3. execution_supplements / 上方「执行阶段补充」块是我事后手动追加的可信信息/指示，须优先满足；与 plan 冲突时以此为准。
 4. previous_runs 是本 Task 此前各次执行的结果摘要（已发生的副作用、失败原因、产物）。若非空，重跑时必须先读懂它们：已成功完成的外部动作（建群、发消息、改文档等）不要重复做；在既有结果上增量推进；若上次失败，针对 failure/error 修正，不要盲目重做相同步骤。
-5. 你运行在本地可信环境（danger-full-access + 联网），可直接调用 lark-cli/bytedcli/git 等 CLI 真正完成任务（如发消息、建会议）。遇到密钥/权限问题应尝试排查解决，而不是直接放弃。
+5. 你运行在本地可信环境（danger-full-access + 联网），可直接调用 lark-cli/bytedcli/git 等 CLI 真正完成任务（如发消息、建会议）。遇到密钥/权限问题应尝试排查解决，而不是直接放弃。可先 ` + "`jarvis-tools get-shared-memory`" + ` 看所有 agent 共用的踩坑/凭据/约定；执行中踩到坑（权限缺失、环境陷阱）或得到对后续任务有用的关键事实/凭据，用 ` + "`jarvis-tools append-shared-memory --note -`" + `（长文本走 stdin）追加一条，让后续 agent 复用；别写一次性琐碎信息。
 6. 【不能完成就快速失败】若判断这条任务本质不是你（用 CLI）能亲手做完的（如需要委托人本人到场/开会/口头拍板），或反复排查仍无法推进，立即停手返回 success=false 并在 failure_reason 说明，不要空转重试到超时。
 7. 【主动多做一步】站在委托人角度，让结果"拿来即用"，把低成本可得的上下文一并备好：
    - 提醒/通知类：除了发提醒本身，尽量把对方要看的东西直接备齐——相关代码/仓库链接、今日相关提交(git log)的摘要、可直接点击的入口，一并写进发出的消息里，让对方"点一下就到"，而不是自己再去找。
@@ -196,7 +203,7 @@ func buildExecutionPrompt(task *domain.Task, repoPath string, previousRuns []pri
 		instructions += "\n10. 当前工作目录已切到 repo：" + repoPath + "，直接在此改动。"
 	}
 
-	return renderPrompt(instructions, supplements, encoded), nil
+	return renderPrompt(instructions, sharedMemory, supplements, encoded), nil
 }
 
 // buildProposePrompt assembles the propose-stage prompt. This stage runs for
@@ -205,7 +212,7 @@ func buildExecutionPrompt(task *domain.Task, repoPath string, previousRuns []pri
 // this time, and either finish read-only/local work or produce a full proposal
 // WITHOUT touching the outside world. Its final message must satisfy
 // proposeResultSchema.
-func buildProposePrompt(task *domain.Task, previousRuns []priorRunSummary) (string, error) {
+func buildProposePrompt(task *domain.Task, sharedMemory string, previousRuns []priorRunSummary) (string, error) {
 	supplements, encoded, err := buildTaskContext(task, "", previousRuns)
 	if err != nil {
 		return "", err
@@ -218,7 +225,7 @@ func buildProposePrompt(task *domain.Task, previousRuns []priorRunSummary) (stri
 2. 严格按 plan 执行；plan 未覆盖到的细节，用 background（含已补全的上下文）补齐，不臆造事实。
 3. execution_supplements / 上方「执行阶段补充」块是委托人事后手动追加的可信信息/指示，须优先满足；与 plan 冲突时以此为准。
 4. previous_runs 是本 Task 此前各次执行的结果摘要。若非空，必须先读懂：已成功完成的外部动作不要在方案里再规划一遍；在既有结果上增量推进；上次失败的原因要针对性修正。
-5. 你运行在本地可信环境（danger-full-access + 联网），可调用 lark-cli/bytedcli/git 等 CLI 查资料、备料、生成产出内容。
+5. 你运行在本地可信环境（danger-full-access + 联网），可调用 lark-cli/bytedcli/git 等 CLI 查资料、备料、生成产出内容。可先 ` + "`jarvis-tools get-shared-memory`" + ` 看所有 agent 共用的踩坑/凭据/约定；查到对后续有用的关键事实/凭据/约定或踩到坑时，用 ` + "`jarvis-tools append-shared-memory --note -`" + ` 追加一条，别写一次性琐碎信息。
 6. 【核心判断：这次会不会真正写入/发送/修改外部？】：
    - 【会碰外部】：只要你打算对外部世界产生任何写入 / 发送 / 修改（发消息、改飞书文档、建会议、提交推送代码、修改任何远端数据……），无论任务类型是什么，都必须【先停下】：产出完整方案与产出物，needs_approval=true，【绝对不要真正写入/发送/修改任何外部对象】，等委托人批准后再由后续阶段真正落地。
    - 【不碰外部】：如果这次只是只读/查询/产出本地结论（如查证、读代码、生成一段本地文本/结论），不会对外部世界造成任何写入或发送——直接把它真正做完，needs_approval=false，success 如实反映是否做成，proposal 置为 null。
@@ -237,14 +244,14 @@ func buildProposePrompt(task *domain.Task, previousRuns []priorRunSummary) (stri
    - enrichments：你"多做一步"备好的料，每项 {kind, label, detail}，没有则空数组 []。
    - proposal：needs_approval=true 时必填 {action, target, artifact}（artifact 为完整产出全文）；needs_approval=false 时置为 null。`
 
-	return renderPrompt(instructions, supplements, encoded), nil
+	return renderPrompt(instructions, sharedMemory, supplements, encoded), nil
 }
 
 // buildApplyPrompt assembles the apply-stage prompt after a human approved a
 // proposal. The approved plan + full artifact is embedded verbatim and codex is
 // told to land it faithfully for real. Its final message must satisfy
 // executionResultSchema.
-func buildApplyPrompt(task *domain.Task, proposal *codexProposal, previousRuns []priorRunSummary) (string, error) {
+func buildApplyPrompt(task *domain.Task, proposal *codexProposal, sharedMemory string, previousRuns []priorRunSummary) (string, error) {
 	if proposal == nil {
 		return "", fmt.Errorf("apply prompt Task id=%d has no approved proposal", task.ID)
 	}
@@ -279,5 +286,5 @@ func buildApplyPrompt(task *domain.Task, proposal *codexProposal, previousRuns [
 
 APPROVED_PROPOSAL=` + string(approved)
 
-	return renderPrompt(instructions, supplements, encoded), nil
+	return renderPrompt(instructions, sharedMemory, supplements, encoded), nil
 }

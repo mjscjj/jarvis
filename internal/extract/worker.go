@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"jarvis/internal/memory"
+	"jarvis/internal/sharedmem"
 )
 
 type memorySearcher interface {
@@ -51,16 +52,17 @@ type WorkerStats struct {
 // function-calling loop: the model may call retrieval tools (chat history,
 // memory) via the per-unit tool box before emitting the final result.
 type Worker struct {
-	store   pipelineStore
-	model   ToolExtractor
-	memory  memorySearcher
-	dedup   candidateDeduplicator
-	toolBox toolBoxBuilder
-	opts    WorkerOptions
-	now     func() time.Time
+	store     pipelineStore
+	model     ToolExtractor
+	memory    memorySearcher
+	dedup     candidateDeduplicator
+	toolBox   toolBoxBuilder
+	sharedMem sharedmem.SharedMemoryReader
+	opts      WorkerOptions
+	now       func() time.Time
 }
 
-func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher, dedup candidateDeduplicator, toolBox toolBoxBuilder, opts WorkerOptions) (*Worker, error) {
+func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher, dedup candidateDeduplicator, toolBox toolBoxBuilder, sharedMem sharedmem.SharedMemoryReader, opts WorkerOptions) (*Worker, error) {
 	if store == nil {
 		return nil, fmt.Errorf("extract worker store is nil")
 	}
@@ -75,6 +77,9 @@ func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher
 	}
 	if toolBox == nil {
 		return nil, fmt.Errorf("extract worker tool box builder is nil")
+	}
+	if sharedMem == nil {
+		return nil, fmt.Errorf("extract worker shared memory reader is nil")
 	}
 	if err := validateLoadOptions(opts.Load); err != nil {
 		return nil, err
@@ -103,7 +108,7 @@ func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher
 	if opts.Location == nil {
 		return nil, fmt.Errorf("extract worker location is nil")
 	}
-	return &Worker{store: store, model: model, memory: memories, dedup: dedup, toolBox: toolBox, opts: opts, now: time.Now}, nil
+	return &Worker{store: store, model: model, memory: memories, dedup: dedup, toolBox: toolBox, sharedMem: sharedMem, opts: opts, now: time.Now}, nil
 }
 
 func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
@@ -145,6 +150,11 @@ func (w *Worker) ExtractChat(ctx context.Context, chatID string) (WorkerStats, [
 
 func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.Time) (WorkerStats, PersistStats, error) {
 	stats := WorkerStats{}
+	// 实时读一次共享记忆文本，注入本 chat 各 unit 的抽取 prompt；读表出错 fail-fast。
+	sharedMemory, err := w.sharedMem.Text(ctx)
+	if err != nil {
+		return stats, PersistStats{}, fmt.Errorf("read shared memory chat_id=%s: %w", batch.Group.ChatID, err)
+	}
 	results := make([]UnitExtraction, 0, len(batch.Units))
 	for _, unit := range batch.Units {
 		query, err := SalientQuery(unit)
@@ -167,7 +177,7 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 		}
 		prompt, err := BuildPrompt(batch, unit, memories.Results, runNow, PromptOptions{
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
-			ToolGuidance: w.opts.PromptToolGuidance,
+			ToolGuidance: w.opts.PromptToolGuidance, SharedMemory: sharedMemory,
 		})
 		if err != nil {
 			return stats, PersistStats{}, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)

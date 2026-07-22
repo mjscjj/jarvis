@@ -421,6 +421,13 @@ export interface GroupBackgroundInput {
 
 // ProfileView is the decision-maker ("me") background. open_id is fixed by
 // backend config; saved=false means the row has not been filled yet.
+// SharedMemory 是全局单例的「共享记忆」大文本视图，对齐后端 sharedmem.SharedMemoryView。
+export interface SharedMemory {
+  content: string
+  updated_by: string
+  saved: boolean
+}
+
 export interface ProfileView {
   open_id: string
   name: string

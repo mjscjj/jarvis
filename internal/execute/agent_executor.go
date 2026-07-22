@@ -14,6 +14,7 @@ import (
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
+	"jarvis/internal/sharedmem"
 
 	"gorm.io/gorm"
 )
@@ -47,15 +48,16 @@ type ExecuteResult struct {
 // and lets codex orchestrate. action_type only picks the sandbox and whether the
 // run skips the propose/approval gate (code_change) or must propose first.
 type AgentExecutor struct {
-	db       *gorm.DB
-	store    *Store
-	runner   *CodexRunner
-	repoRoot string
-	runsDir  string
-	now      func() time.Time
+	db        *gorm.DB
+	store     *Store
+	runner    *CodexRunner
+	sharedMem sharedmem.SharedMemoryReader
+	repoRoot  string
+	runsDir   string
+	now       func() time.Time
 }
 
-func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, repoRoot, runsDir string) (*AgentExecutor, error) {
+func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, sharedMem sharedmem.SharedMemoryReader, repoRoot, runsDir string) (*AgentExecutor, error) {
 	if db == nil {
 		return nil, fmt.Errorf("agent executor db is nil")
 	}
@@ -65,6 +67,9 @@ func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, repoRoot, 
 	if runner == nil {
 		return nil, fmt.Errorf("agent executor codex runner is nil")
 	}
+	if sharedMem == nil {
+		return nil, fmt.Errorf("agent executor shared memory reader is nil")
+	}
 	if strings.TrimSpace(repoRoot) == "" {
 		return nil, fmt.Errorf("agent executor repo root is required")
 	}
@@ -72,7 +77,8 @@ func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, repoRoot, 
 		return nil, fmt.Errorf("agent executor runs dir is required")
 	}
 	return &AgentExecutor{
-		db: db, store: store, runner: runner, repoRoot: repoRoot, runsDir: runsDir,
+		db: db, store: store, runner: runner, sharedMem: sharedMem,
+		repoRoot: repoRoot, runsDir: runsDir,
 		now: time.Now,
 	}, nil
 }
@@ -122,6 +128,50 @@ func (e *AgentExecutor) KickRerun(ctx context.Context, taskID uint64) (*ExecuteR
 	}
 	e.executeClaimedInBackground(task.ID, execVersion)
 	return &ExecuteResult{TaskID: taskID, Status: "executing"}, nil
+}
+
+// KickReapply re-lands the SAME human-approved proposal for a Task whose apply
+// stage previously failed (failed -> executing), WITHOUT going back through
+// propose/approval. It recovers the last approved proposal from the run history,
+// claims the Task, and runs the apply stage in the background. It fails-fast if
+// no approved proposal is recoverable (the Task never went through approval — the
+// caller should use rerun instead). Poll Task status for completion.
+func (e *AgentExecutor) KickReapply(ctx context.Context, taskID uint64) (*ExecuteResult, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
+	}
+	var task domain.Task
+	if err := e.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return nil, fmt.Errorf("load Task id=%d: %w", taskID, err)
+	}
+	if task.Status != "failed" {
+		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot re-apply (only failed apply attempts)", ErrInvalidTransition, task.ID, task.Status)
+	}
+	policy, ok := lookupPolicy(task.ActionType)
+	if !ok {
+		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
+	}
+	proposal, err := e.store.LastApprovedProposal(ctx, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	if proposal == nil {
+		return nil, fmt.Errorf("%w: task_id=%d has no approved proposal to re-apply (use rerun)", ErrInvalidTransition, task.ID)
+	}
+	execVersion, err := e.store.ClaimForReapply(ctx, task.ID, task.Version)
+	if err != nil {
+		return nil, err
+	}
+	claimed := task
+	go func() {
+		if _, err := e.applyApproved(context.Background(), &claimed, policy, proposal, execVersion); err != nil {
+			log.Printf("background re-apply task_id=%d: %v", claimed.ID, err)
+		}
+	}()
+	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
 }
 
 func (e *AgentExecutor) executeClaimedInBackground(taskID uint64, execVersion int32) {
@@ -418,7 +468,11 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	prompt, err := buildExecutionPrompt(task, repoPath, previousRuns)
+	sharedMemory, err := e.sharedMem.Text(ctx)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	prompt, err := buildExecutionPrompt(task, repoPath, sharedMemory, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
@@ -510,7 +564,11 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	prompt, err := buildProposePrompt(task, previousRuns)
+	sharedMemory, err := e.sharedMem.Text(ctx)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	prompt, err := buildProposePrompt(task, sharedMemory, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -556,7 +614,11 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	prompt, err := buildApplyPrompt(task, proposal, previousRuns)
+	sharedMemory, err := e.sharedMem.Text(ctx)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	prompt, err := buildApplyPrompt(task, proposal, sharedMemory, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
@@ -672,7 +734,11 @@ func (e *AgentExecutor) writeDiff(taskID uint64, diff string) (string, error) {
 }
 
 func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
+	// stage tags where this terminal result came from so the UI can tell a real
+	// codex execution failure (stage=executed + error) apart from a human
+	// rejection (stage=rejected) or manual mark-failed (stage=manual_failed).
 	payload := map[string]any{
+		"stage":       "executed",
 		"action_type": run.ActionType,
 		"sandbox":     run.Sandbox,
 		"run_status":  run.Status,

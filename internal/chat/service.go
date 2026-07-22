@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"jarvis/internal/sharedmem"
 )
 
 // Request 是一轮对话请求。字段与前端冻结契约（web/src/types.ts 的 ChatRequest）
@@ -38,13 +40,16 @@ type Options struct {
 	Timeout         time.Duration
 	// DSN 是 Jarvis 业务库的明文 DSN，注入 prompt 让 codex 直接读写 MySQL。
 	DSN string
+	// SharedMemory 提供可信共享记忆文本，首轮系统指引末尾注入（见 internal/sharedmem）。
+	SharedMemory sharedmem.SharedMemoryReader
 }
 
 // Service 是流式对话的对外入口：持有 codex runner 与系统指引所需的 DSN，
 // 组装 prompt 后调 runner.Stream，把 thread/delta 事件透传给 handler。
 type Service struct {
-	runner *runner
-	dsn    string
+	runner    *runner
+	dsn       string
+	sharedMem sharedmem.SharedMemoryReader
 }
 
 // NewService 构造对话 Service。fail-fast：任一必填项缺失或非法直接返回 error。
@@ -52,11 +57,14 @@ func NewService(opts Options) (*Service, error) {
 	if strings.TrimSpace(opts.DSN) == "" {
 		return nil, fmt.Errorf("chat service dsn is required")
 	}
+	if opts.SharedMemory == nil {
+		return nil, fmt.Errorf("chat service shared memory reader is required")
+	}
 	r, err := newRunner(opts.Bin, opts.Model, opts.Sandbox, opts.ReasoningEffort, opts.Timeout)
 	if err != nil {
 		return nil, err
 	}
-	return &Service{runner: r, dsn: opts.DSN}, nil
+	return &Service{runner: r, dsn: opts.DSN, sharedMem: opts.SharedMemory}, nil
 }
 
 // Stream 执行一轮对话。emit 逐条收到 thread/delta 事件；正常结束返回 nil
@@ -70,24 +78,37 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 	// 避免每轮重复灌系统指引膨胀上下文。
 	prompt := message
 	if strings.TrimSpace(req.ThreadID) == "" {
-		prompt = s.buildPrompt(req)
+		// 系统指引在首轮注入，此处一并实时读共享记忆；读表出错 fail-fast 冒泡。
+		built, err := s.buildPrompt(ctx, req)
+		if err != nil {
+			return err
+		}
+		prompt = built
 	} else {
 		prompt = s.buildFollowupPrompt(req)
 	}
 	return s.runner.Stream(ctx, prompt, strings.TrimSpace(req.ThreadID), emit)
 }
 
-// buildPrompt 组装首轮 prompt：系统指引 + page_context + 用户消息。
-func (s *Service) buildPrompt(req Request) string {
+// buildPrompt 组装首轮 prompt：系统指引（末尾追加可信共享记忆）+ page_context + 用户消息。
+func (s *Service) buildPrompt(ctx context.Context, req Request) (string, error) {
+	sharedMemory, err := s.sharedMem.Text(ctx)
+	if err != nil {
+		return "", fmt.Errorf("read shared memory: %w", err)
+	}
 	var b strings.Builder
 	b.WriteString(s.systemGuidance())
+	if block := sharedmem.RenderBlock(sharedMemory); block != "" {
+		b.WriteString("\n\n")
+		b.WriteString(block)
+	}
 	if ctxBlock := s.pageContextBlock(req.PageContext); ctxBlock != "" {
 		b.WriteString("\n\n")
 		b.WriteString(ctxBlock)
 	}
 	b.WriteString("\n\n## 用户消息\n")
 	b.WriteString(strings.TrimSpace(req.Message))
-	return b.String()
+	return b.String(), nil
 }
 
 // buildFollowupPrompt 组装多轮 prompt：resume 已带会话历史，只需附最新 page_context

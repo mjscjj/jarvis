@@ -51,6 +51,43 @@ func TestBuildCodexPromptForwardsExtractionAndBackground(t *testing.T) {
 	}
 }
 
+// 共享记忆非空时，M4 prompt 应在 BEGIN_DECISION_CONTEXT 之前包含 BEGIN_SHARED_MEMORY
+// 标记与内容；为空时不包含。
+func TestBuildCodexPromptInjectsSharedMemory(t *testing.T) {
+	todo := &domain.Todo{
+		ID: 7, Title: "Inspect auth flow", Description: "Check", ActionType: "investigate",
+		Target: "auth", ExtractionResult: extractionJSON("排查鉴权"),
+	}
+	base := CodexPromptInput{
+		Todo: todo, RuleScore: RuleScore{Confidence: 0.5, Risk: 0.5},
+		Background: json.RawMessage(`{"messages":[]}`),
+	}
+
+	empty, err := BuildCodexPrompt(base)
+	if err != nil {
+		t.Fatalf("BuildCodexPrompt() error = %v", err)
+	}
+	if strings.Contains(empty.Text, "BEGIN_SHARED_MEMORY") {
+		t.Fatalf("empty shared memory must not inject block:\n%s", empty.Text)
+	}
+
+	withMem := base
+	withMem.SharedMemory = "部署脚本在 deploy/ 下，别直连生产库"
+	prompt, err := BuildCodexPrompt(withMem)
+	if err != nil {
+		t.Fatalf("BuildCodexPrompt() error = %v", err)
+	}
+	for _, want := range []string{"BEGIN_SHARED_MEMORY", "部署脚本在 deploy/ 下，别直连生产库", "可信"} {
+		if !strings.Contains(prompt.Text, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt.Text)
+		}
+	}
+	// block 必须在不可信业务数据 BEGIN_DECISION_CONTEXT 之前。
+	if strings.Index(prompt.Text, "BEGIN_SHARED_MEMORY") >= strings.Index(prompt.Text, "BEGIN_DECISION_CONTEXT") {
+		t.Fatalf("shared memory block must precede DECISION_CONTEXT:\n%s", prompt.Text)
+	}
+}
+
 func TestBuildCodexPromptCanonicalizesBlocks(t *testing.T) {
 	todo := &domain.Todo{
 		ID: 7, Title: "Fixture", Description: "Fixture", ActionType: "investigate",

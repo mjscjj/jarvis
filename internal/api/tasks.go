@@ -91,9 +91,18 @@ func FinishTask(service execute.TaskService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40021, fmt.Errorf("expected_version is required"))
 			return
 		}
+		status := strings.TrimSpace(request.Status)
+		// FinishTask is the manual button path (人工「手动完成」/「失败」). Tag the
+		// stored result with a manual stage so the UI can tell a human-marked
+		// failure apart from a real codex execution failure (stage=executed).
+		tagged, err := tagResultStage(request.Result, manualStage(status))
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
 		result, err := service.Finish(ctx, execute.FinishInput{
 			TaskID: taskID, ExpectedVersion: *request.ExpectedVersion,
-			Status: strings.TrimSpace(request.Status), Result: request.Result,
+			Status: status, Result: tagged,
 		})
 		if err != nil {
 			writeExecutionError(c, err)
@@ -208,6 +217,26 @@ func RerunTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	}
 }
 
+// ReapplyTask re-lands the same human-approved proposal for a Task whose apply
+// stage previously failed, WITHOUT going through propose/approval again. It is
+// the "用同一已批准方案重试落地" shortcut, distinct from RerunTask (which restarts
+// from propose and re-requests approval).
+func ReapplyTask(executor *execute.AgentExecutor) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40029, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		result, err := executor.KickReapply(ctx, taskID)
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 type supplementTaskRequest struct {
 	ExpectedVersion *int32 `json:"expected_version"`
 	Note            string `json:"note"`
@@ -240,6 +269,38 @@ func SupplementTask(service execute.TaskService) app.HandlerFunc {
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
 	}
+}
+
+// manualStage maps a manual finish status to the execution_result stage tag so
+// the UI distinguishes a human-marked failure from a codex execution failure.
+func manualStage(status string) string {
+	if status == "failed" {
+		return "manual_failed"
+	}
+	return "manual_done"
+}
+
+// tagResultStage injects a "stage" field into the manual finish result JSON so
+// the frontend can classify the outcome. It fails-fast on malformed JSON (the
+// store would reject it anyway) but preserves every field the caller sent; an
+// explicit caller-provided stage is not overwritten.
+func tagResultStage(raw json.RawMessage, stage string) (json.RawMessage, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return nil, fmt.Errorf("result is required")
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("result must be a JSON object: %w", err)
+	}
+	if _, ok := obj["stage"]; !ok {
+		obj["stage"] = stage
+	}
+	encoded, err := json.Marshal(obj)
+	if err != nil {
+		return nil, fmt.Errorf("encode tagged result: %w", err)
+	}
+	return encoded, nil
 }
 
 func writeExecutionError(c *app.RequestContext, err error) {

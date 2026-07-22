@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Modal, Select, Space, Spin, Table, Tabs, Tag, Timeline, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, executeTask, finishTask, listTaskRuns, listTasks, rejectTask, rerunTask, supplementTask } from './api'
+import { approveTask, executeTask, finishTask, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, supplementTask } from './api'
 import type { ExecutionRun, ProposalResult, RunEnrichment, Task, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -160,6 +160,51 @@ function strField(obj: Record<string, unknown> | null, key: string): string | nu
   return typeof value === 'string' && value.trim() ? value : null
 }
 
+// FailureKind 把一条 failed 任务按 execution_result.stage 分成四类，让「系统真实报错」
+// 和「你自己拍板的失败/驳回」区分开：
+//   codex   —— codex 真实执行/落地失败（系统的锅）
+//   manual  —— 你点「失败」按钮手动标记的
+//   rejected—— 你驳回了对外写入方案
+//   stale   —— 进程重启把执行中的任务判超时失败
+//   unknown —— 老数据没有 stage 标记，无法归类
+type FailureKind = 'codex' | 'manual' | 'rejected' | 'stale' | 'unknown'
+
+// failureKindOf 读取 execution_result.stage 归类失败来源。非 failed 任务返回 null。
+function failureKindOf(task: Task): FailureKind | null {
+  if (task.status !== 'failed') return null
+  const stage = strField(task.execution_result, 'stage')
+  switch (stage) {
+    case 'rejected': return 'rejected'
+    case 'manual_failed': return 'manual'
+    case 'stale': return 'stale'
+    case 'executed': return 'codex'
+    default: return 'unknown'
+  }
+}
+
+const failureMeta: Record<FailureKind, { label: string; color: string }> = {
+  codex: { label: '执行失败(系统)', color: 'red' },
+  manual: { label: '你标记失败', color: 'volcano' },
+  rejected: { label: '你已驳回', color: 'gold' },
+  stale: { label: '超时中断', color: 'orange' },
+  unknown: { label: '失败', color: 'red' },
+}
+
+// FailureTag 在列表/详情里给 failed 任务标注来源；非 failed 返回 null。
+function FailureTag({ task }: { task: Task }) {
+  const kind = failureKindOf(task)
+  if (!kind) return null
+  const meta = failureMeta[kind]
+  return <Tag color={meta.color}>{meta.label}</Tag>
+}
+
+// canReapply 判断一条失败任务是否可「用同一已批准方案重试落地」：只有走过审批的
+// 对外动作、且这次是 codex 落地失败（stage=executed）才提供，避免和驳回/手动失败混淆。
+// 后端会再次校验是否真有已批准方案，这里只做入口级粗筛。
+function canReapply(task: Task): boolean {
+  return task.status === 'failed' && externalActions.has(task.action_type) && failureKindOf(task) === 'codex'
+}
+
 // CellText 把一段可能较长的可读文本按最多 3 行截断展示（详情抽屉里看全文），空则 '—'。
 function CellText({ text, danger }: { text: string | null; danger?: boolean }) {
   if (!text) return <Text type="secondary">—</Text>
@@ -200,6 +245,7 @@ export default function Tasks() {
   const [executingId, setExecutingId] = useState<number>()
   const [rerunTarget, setRerunTarget] = useState<Task>()
   const [rerunNote, setRerunNote] = useState('')
+  const [reapplyingId, setReapplyingId] = useState<number>()
   const [rejectTarget, setRejectTarget] = useState<Task>()
   const [rejectReason, setRejectReason] = useState('')
   const [rerunSubmitting, setRerunSubmitting] = useState(false)
@@ -343,6 +389,22 @@ export default function Tasks() {
     }
   }
 
+  const runReapply = async (task: Task) => {
+    const ok = window.confirm(`「${task.title}」将用你此前已批准的同一方案再次真实落地（不再重新审批）。确认重试？`)
+    if (!ok) return
+    setReapplyingId(task.id)
+    setError(undefined)
+    try {
+      await reapplyTask(task.id)
+      markLocalExecuting(task.id)
+      setDetail(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setReapplyingId(undefined)
+    }
+  }
+
   const openRerun = (task: Task) => {
     setRerunTarget(task)
     setRerunNote('')
@@ -388,7 +450,21 @@ export default function Tasks() {
   // 其他 Tab 特有列：执行摘要（summary→error→尚未执行）、待你拍板/后续（needs_followup）。
   const othersCols: TableColumnsType<Task> = [
     {
-      title: '执行摘要', width: 320, render: (_, task) => {
+      title: '执行摘要', width: 340, render: (_, task) => {
+        const failure = failureKindOf(task)
+        // failed 任务：先标来源，再展示驳回原因 / 摘要 / 错误详情。
+        if (failure) {
+          const reason = strField(task.execution_result, 'reject_reason')
+          const summaryText = strField(task.execution_result, 'summary')
+          const errText = strField(task.execution_result, 'error')
+          const detail = reason ?? summaryText ?? errText
+          return (
+            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+              <FailureTag task={task} />
+              {detail ? <CellText text={detail} danger={failure === 'codex' || failure === 'stale'} /> : <Text type="secondary">—</Text>}
+            </Space>
+          )
+        }
         const summaryText = strField(task.execution_result, 'summary')
         if (summaryText) return <CellText text={summaryText} />
         const errText = strField(task.execution_result, 'error')
@@ -423,6 +499,9 @@ export default function Tasks() {
         }
         if (task.status === 'done' || task.status === 'failed') {
           return <Space onClick={(e) => e.stopPropagation()}>
+            {canReapply(task) && (
+              <Button type="primary" size="small" loading={reapplyingId === task.id} onClick={(e) => { e.stopPropagation(); runReapply(task) }}>重试落地</Button>
+            )}
             <Button size="small" onClick={(e) => { e.stopPropagation(); openRerun(task) }}>重跑</Button>
           </Space>
         }
@@ -471,7 +550,22 @@ export default function Tasks() {
     </Card>
     <Drawer title={detail?.title || 'Task 详情'} open={Boolean(detail)} width={680} onClose={() => setDetail(undefined)}>
       {detail && <Space direction="vertical" size={20} className="drawer-content">
-        <Space><StatusBadge label={statusMeta[detail.status].label} color={statusMeta[detail.status].color} /><Tag>{detail.action_type}</Tag></Space>
+        <Space><StatusBadge label={statusMeta[detail.status].label} color={statusMeta[detail.status].color} /><Tag>{detail.action_type}</Tag><FailureTag task={detail} /></Space>
+        {failureKindOf(detail) === 'rejected' && (
+          <Alert type="warning" showIcon message="这是你驳回的方案（非执行报错）" description="任务因你驳回外部写入方案而失败，系统并未真正执行/发送任何内容。可重跑以重新产出方案。" />
+        )}
+        {failureKindOf(detail) === 'manual' && (
+          <Alert type="warning" showIcon message="这是你手动标记的失败（非执行报错）" description="任务由你在后台手动点「失败」标记，非 codex 执行报错。" />
+        )}
+        {canReapply(detail) && (
+          <Alert
+            type="error"
+            showIcon
+            message="落地执行失败（系统），可用同一已批准方案重试"
+            description="这是 codex 真正落地时失败（如目标不存在/权限问题），不是你驳回。可直接重试落地——沿用你此前已批准的同一方案，不会再要你审批。"
+            action={<Button size="small" danger loading={reapplyingId === detail.id} onClick={() => runReapply(detail)}>重试落地</Button>}
+          />
+        )}
         <Descriptions column={2} size="small">
           <Descriptions.Item label="Todo">#{detail.todo_id}</Descriptions.Item>
           <Descriptions.Item label="版本">v{detail.version}</Descriptions.Item>

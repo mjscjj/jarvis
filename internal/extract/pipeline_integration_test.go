@@ -15,6 +15,7 @@ import (
 	"jarvis/internal/extract/provider"
 	"jarvis/internal/memory"
 	"jarvis/internal/semantic"
+	"jarvis/internal/sharedmem"
 	"jarvis/internal/store"
 
 	"github.com/qdrant/go-client/qdrant"
@@ -154,7 +155,11 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract.NewRegistryToolBoxBuilder() error = %v", err)
 	}
-	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, toolBoxBuilder, extract.WorkerOptions{
+	sharedMemoryService, err := sharedmem.NewSharedMemoryService(tx)
+	if err != nil {
+		t.Fatalf("sharedmem.NewSharedMemoryService() error = %v", err)
+	}
+	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
 		Load: extract.LoadOptions{
 			BatchMessages: 10, ContextMessages: cfg.Extract.ContextMessages,
 			ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,

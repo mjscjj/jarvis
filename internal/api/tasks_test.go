@@ -99,6 +99,65 @@ func TestFinishTask(t *testing.T) {
 	if service.finish.TaskID != 8 || service.finish.Status != "done" || service.finish.ExpectedVersion != 0 {
 		t.Fatalf("finish input = %#v", service.finish)
 	}
+	// Manual "手动完成" must be tagged stage=manual_done so the UI separates it
+	// from a codex-driven done (stage=executed).
+	if !bytes.Contains(service.finish.Result, []byte(`"stage":"manual_done"`)) {
+		t.Fatalf("finish result missing manual_done stage: %s", service.finish.Result)
+	}
+}
+
+// TestFinishTaskFailedTagsManualStage guards that a manual "失败" click is stored
+// as stage=manual_failed, so it is distinguishable from a real codex execution
+// failure (stage=executed) in the task backlog UI.
+func TestFinishTaskFailedTagsManualStage(t *testing.T) {
+	service := &fakeTaskService{}
+	h := server.New()
+	h.POST("/api/tasks/:task_id/finish", FinishTask(service))
+	body := []byte(`{"expected_version":0,"status":"failed","result":{"error":"我手动标记失败"}}`)
+	response := ut.PerformRequest(h.Engine, "POST", "/api/tasks/8/finish", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	if !bytes.Contains(service.finish.Result, []byte(`"stage":"manual_failed"`)) {
+		t.Fatalf("failed finish result missing manual_failed stage: %s", service.finish.Result)
+	}
+	if !bytes.Contains(service.finish.Result, []byte(`"error":"我手动标记失败"`)) {
+		t.Fatalf("failed finish result dropped the error field: %s", service.finish.Result)
+	}
+}
+
+// TestTagResultStage covers the pure stage-tagging helper: it injects stage,
+// preserves caller fields, never overwrites an explicit stage, and fails fast on
+// non-object JSON.
+func TestTagResultStage(t *testing.T) {
+	tagged, err := tagResultStage([]byte(`{"error":"boom"}`), "manual_failed")
+	if err != nil {
+		t.Fatalf("tagResultStage() error = %v", err)
+	}
+	if !bytes.Contains(tagged, []byte(`"stage":"manual_failed"`)) || !bytes.Contains(tagged, []byte(`"error":"boom"`)) {
+		t.Fatalf("tagged = %s", tagged)
+	}
+	// An explicit stage from the caller wins (not overwritten).
+	kept, err := tagResultStage([]byte(`{"stage":"custom"}`), "manual_failed")
+	if err != nil || !bytes.Contains(kept, []byte(`"stage":"custom"`)) {
+		t.Fatalf("explicit stage overwritten: %s err=%v", kept, err)
+	}
+	for name, raw := range map[string]string{"empty": "", "array": `[1,2]`, "garbage": `nope`} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := tagResultStage([]byte(raw), "manual_failed"); err == nil {
+				t.Fatalf("tagResultStage(%s) succeeded, want fail-fast", name)
+			}
+		})
+	}
+}
+
+func TestManualStage(t *testing.T) {
+	if manualStage("failed") != "manual_failed" {
+		t.Fatalf("manualStage(failed) = %q", manualStage("failed"))
+	}
+	if manualStage("done") != "manual_done" {
+		t.Fatalf("manualStage(done) = %q", manualStage("done"))
+	}
 }
 
 func TestFinishTaskRejectsUnknownField(t *testing.T) {

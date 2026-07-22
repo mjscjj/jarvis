@@ -481,6 +481,101 @@ func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task,
 	return &reloaded, nil
 }
 
+// ClaimForReapply claims a failed Task for a re-apply of its already-approved
+// proposal (failed -> executing) under optimistic lock, returning the new
+// version. Unlike rerun (which restarts propose and re-requests approval), this
+// re-lands the SAME artifact a human already approved, so it only accepts a Task
+// whose last landing attempt (apply stage) failed — the caller verifies an
+// approved proposal is recoverable before invoking this. It does not clear the
+// old execution_result until the new run finishes (finishRun overwrites it).
+func (s *Store) ClaimForReapply(ctx context.Context, taskID uint64, expectedVersion int32) (int32, error) {
+	if taskID == 0 || expectedVersion < 0 {
+		return 0, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
+	}
+	var newVersion int32
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task domain.Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		if err != nil {
+			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
+		}
+		if task.Version != expectedVersion {
+			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+		}
+		if task.Status != "failed" {
+			return fmt.Errorf("%w: task_id=%d from=%s to=executing (only failed Tasks can re-apply)", ErrInvalidTransition, task.ID, task.Status)
+		}
+		update := tx.Model(&domain.Task{}).
+			Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "failed").
+			Updates(map[string]any{"status": "executing", "version": gorm.Expr("version + 1")})
+		if update.Error != nil {
+			return fmt.Errorf("claim execution Task id=%d for re-apply: %w", task.ID, update.Error)
+		}
+		if update.RowsAffected != 1 {
+			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
+		}
+		newVersion = task.Version + 1
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+// LastApprovedProposal recovers the proposal a human approved for a Task by
+// reading its execution_run audit history: the propose-stage run stored the full
+// proposal (needs_approval=true) in output. It returns the newest such proposal
+// so a re-apply lands exactly what was approved. Returns (nil, nil) when no
+// approved proposal exists (e.g. the Task never went through approval).
+func (s *Store) LastApprovedProposal(ctx context.Context, taskID uint64) (*codexProposal, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
+	}
+	var rows []domain.ExecutionRun
+	if err := s.db.WithContext(ctx).
+		Where("task_id = ? AND status = ?", taskID, "succeeded").
+		Order("started_at DESC, id DESC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("load runs for approved proposal task_id=%d: %w", taskID, err)
+	}
+	for i := range rows {
+		if proposal := proposalFromRunOutput(rows[i].Output); proposal != nil {
+			return proposal, nil
+		}
+	}
+	return nil, nil
+}
+
+// proposalFromRunOutput extracts a complete approved proposal from a propose-stage
+// run's output (needs_approval=true + full proposal). It returns nil for any run
+// whose output is not an approvable proposal (missing/partial), so callers can
+// scan run history newest-first and take the first non-nil.
+func proposalFromRunOutput(output []byte) *codexProposal {
+	if len(output) == 0 {
+		return nil
+	}
+	var out struct {
+		NeedsApproval bool           `json:"needs_approval"`
+		Proposal      *codexProposal `json:"proposal"`
+	}
+	if err := json.Unmarshal(output, &out); err != nil {
+		return nil
+	}
+	if !out.NeedsApproval || out.Proposal == nil {
+		return nil
+	}
+	if strings.TrimSpace(out.Proposal.Action) == "" ||
+		strings.TrimSpace(out.Proposal.Target) == "" ||
+		strings.TrimSpace(out.Proposal.Artifact) == "" {
+		return nil
+	}
+	return out.Proposal
+}
+
 // ListRuns returns a Task's execution audit history, newest first. It is the
 // read path over execution_run (previously write-only) that powers the task
 // detail drawer. An unknown task_id simply yields an empty list.
@@ -531,6 +626,7 @@ func (s *Store) FailStaleExecuting(ctx context.Context, olderThan time.Duration,
 	}
 	cutoff := now.UTC().Add(-olderThan)
 	resultJSON, err := json.Marshal(map[string]any{
+		"stage": "stale",
 		"error": fmt.Sprintf("stale executing: stuck beyond %s (likely process restart killed background run)", olderThan.Round(time.Minute)),
 	})
 	if err != nil {
