@@ -80,12 +80,38 @@ func TestDailyAndIntervalNextOccurrence(t *testing.T) {
 	}
 }
 
+func TestOneTimeNextOccurrenceAndFinalStatus(t *testing.T) {
+	t.Parallel()
+	location := time.FixedZone("CST", 8*60*60)
+	now := time.Date(2026, 7, 24, 9, 30, 0, 0, location)
+	runAt := now.Add(2 * time.Hour)
+	input, nextRunAt, err := normalizeInput(Input{
+		Title: "once", Instruction: "run", ScheduleType: "once", RunAt: &runAt,
+	}, now, location)
+	if err != nil {
+		t.Fatalf("normalize once input: %v", err)
+	}
+	if input.DailyTime != nil || input.IntervalMinutes != nil || input.RunAt == nil {
+		t.Fatalf("normalized once fields = %#v", input)
+	}
+	if !nextRunAt.Equal(runAt.UTC()) || !input.RunAt.Equal(runAt.UTC()) {
+		t.Fatalf("once run_at=%v next_run_at=%v want=%v", input.RunAt, nextRunAt, runAt.UTC())
+	}
+	if got := finalTaskStatus("once"); got != "completed" {
+		t.Fatalf("once final status = %q", got)
+	}
+	if got := finalTaskStatus("daily"); got != "active" {
+		t.Fatalf("daily final status = %q", got)
+	}
+}
+
 func TestNormalizeInputRejectsInvalidSchedule(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	badTime := "9:00"
 	zero := 0
 	for _, input := range []Input{
+		{Title: "x", Instruction: "y", ScheduleType: "once"},
 		{Title: "x", Instruction: "y", ScheduleType: "daily"},
 		{Title: "x", Instruction: "y", ScheduleType: "daily", DailyTime: &badTime},
 		{Title: "x", Instruction: "y", ScheduleType: "interval", IntervalMinutes: &zero},

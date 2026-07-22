@@ -25,7 +25,7 @@ var (
 	ErrRunning      = errors.New("scheduled task is running")
 )
 
-var validStatuses = map[string]struct{}{"active": {}, "running": {}}
+var validStatuses = map[string]struct{}{"active": {}, "running": {}, "completed": {}}
 
 type Input struct {
 	Title           string          `json:"title"`
@@ -34,6 +34,7 @@ type Input struct {
 	ScheduleType    string          `json:"schedule_type"`
 	DailyTime       *string         `json:"daily_time"`
 	IntervalMinutes *int            `json:"interval_minutes"`
+	RunAt           *time.Time      `json:"run_at"`
 	Enabled         *bool           `json:"enabled"`
 }
 
@@ -45,6 +46,7 @@ type View struct {
 	ScheduleType    string          `json:"schedule_type"`
 	DailyTime       *string         `json:"daily_time"`
 	IntervalMinutes *int            `json:"interval_minutes"`
+	RunAt           *time.Time      `json:"run_at"`
 	NextRunAt       time.Time       `json:"next_run_at"`
 	Enabled         bool            `json:"enabled"`
 	Status          string          `json:"status"`
@@ -147,7 +149,7 @@ func (s *Service) Create(ctx context.Context, input Input) (*View, error) {
 		Title: normalized.Title, Instruction: normalized.Instruction,
 		ContextSnapshot: datatypes.JSON(normalized.ContextSnapshot),
 		ScheduleType:    normalized.ScheduleType, DailyTime: normalized.DailyTime,
-		IntervalMinutes: normalized.IntervalMinutes, NextRunAt: nextRunAt,
+		IntervalMinutes: normalized.IntervalMinutes, RunAt: normalized.RunAt, NextRunAt: nextRunAt,
 		Enabled: *normalized.Enabled, Status: "active",
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
@@ -170,7 +172,7 @@ func (s *Service) Update(ctx context.Context, id uint64, input Input) (*View, er
 			"title": normalized.Title, "instruction": normalized.Instruction,
 			"context_snapshot": datatypes.JSON(normalized.ContextSnapshot),
 			"schedule_type":    normalized.ScheduleType, "daily_time": normalized.DailyTime,
-			"interval_minutes": normalized.IntervalMinutes, "next_run_at": nextRunAt,
+			"interval_minutes": normalized.IntervalMinutes, "run_at": normalized.RunAt, "next_run_at": nextRunAt,
 			"enabled": *normalized.Enabled, "status": "active",
 		})
 	if result.Error != nil {
@@ -209,8 +211,8 @@ func (s *Service) Delete(ctx context.Context, id uint64) error {
 	return fmt.Errorf("delete scheduled task id=%d affected no rows", id)
 }
 
-// Trigger executes an enabled or disabled task once without changing its next
-// automatic run. A running task cannot be triggered again.
+// Trigger executes an enabled or disabled task immediately. Recurring tasks keep
+// their next automatic run; a one-time task becomes completed after this run.
 func (s *Service) Trigger(ctx context.Context, id uint64) (*View, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
@@ -220,7 +222,7 @@ func (s *Service) Trigger(ctx context.Context, id uint64) (*View, error) {
 	}
 	now := s.now().UTC()
 	result := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
-		Where("id = ? AND status = ?", id, "active").
+		Where("id = ? AND status IN ?", id, []string{"active", "completed"}).
 		Updates(map[string]any{
 			"status": "running", "last_run_status": nil, "last_error_detail": nil,
 			"last_started_at": now, "last_finished_at": nil,
@@ -250,14 +252,23 @@ func (s *Service) Trigger(ctx context.Context, id uint64) (*View, error) {
 // gone, so its in-memory Codex executions cannot still complete.
 func (s *Service) RecoverRunning(ctx context.Context) (int64, error) {
 	now := s.now().UTC()
-	result := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).Where("status = ?", "running").Updates(map[string]any{
+	recurring := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("status = ? AND schedule_type <> ?", "running", "once").Updates(map[string]any{
 		"status": "active", "last_run_status": "failed", "last_finished_at": now,
 		"last_error_detail": "recovered after Jarvis process restart",
 	})
-	if result.Error != nil {
-		return 0, fmt.Errorf("recover running scheduled tasks: %w", result.Error)
+	if recurring.Error != nil {
+		return 0, fmt.Errorf("recover running scheduled tasks: %w", recurring.Error)
 	}
-	return result.RowsAffected, nil
+	oneTime := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("status = ? AND schedule_type = ?", "running", "once").Updates(map[string]any{
+		"status": "completed", "last_run_status": "failed", "last_finished_at": now,
+		"last_error_detail": "recovered after Jarvis process restart",
+	})
+	if oneTime.Error != nil {
+		return 0, fmt.Errorf("recover running one-time scheduled tasks: %w", oneTime.Error)
+	}
+	return recurring.RowsAffected + oneTime.RowsAffected, nil
 }
 
 // RunDue claims one bounded batch and dispatches it asynchronously. The shared
@@ -288,18 +299,20 @@ func (s *Service) claimDue(ctx context.Context, now time.Time) ([]domain.Schedul
 	}
 	claimed := make([]domain.ScheduledTask, 0, len(candidates))
 	for i := range candidates {
-		nextRunAt, err := nextOccurrence(&candidates[i], now, s.location)
-		if err != nil {
-			return claimed, fmt.Errorf("scheduled task id=%d compute next run: %w", candidates[i].ID, err)
+		updates := map[string]any{
+			"status": "running", "last_run_status": nil, "last_error_detail": nil,
+			"last_started_at": s.now().UTC(), "last_finished_at": nil,
 		}
-		startedAt := s.now().UTC()
+		if candidates[i].ScheduleType != "once" {
+			nextRunAt, err := nextOccurrence(&candidates[i], now, s.location)
+			if err != nil {
+				return claimed, fmt.Errorf("scheduled task id=%d compute next run: %w", candidates[i].ID, err)
+			}
+			updates["next_run_at"] = nextRunAt
+		}
 		result := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 			Where("id = ? AND enabled = ? AND status = ? AND next_run_at = ?", candidates[i].ID, true, "active", candidates[i].NextRunAt).
-			Updates(map[string]any{
-				"status": "running", "next_run_at": nextRunAt,
-				"last_run_status": nil, "last_error_detail": nil,
-				"last_started_at": startedAt, "last_finished_at": nil,
-			})
+			Updates(updates)
 		if result.Error != nil {
 			return claimed, fmt.Errorf("claim due scheduled task id=%d: %w", candidates[i].ID, result.Error)
 		}
@@ -343,10 +356,11 @@ func (s *Service) execute(ctx context.Context, id uint64) {
 		return
 	}
 	finishedAt := s.now().UTC()
+	finalStatus := finalTaskStatus(row.ScheduleType)
 	update := s.db.WithContext(context.Background()).Model(&domain.ScheduledTask{}).
 		Where("id = ? AND status = ?", id, "running").
 		Updates(map[string]any{
-			"status": "active", "last_run_status": "done", "last_result": result,
+			"status": finalStatus, "last_run_status": "done", "last_result": result,
 			"last_error_detail": nil, "last_finished_at": finishedAt,
 		})
 	if update.Error != nil {
@@ -359,14 +373,26 @@ func (s *Service) fail(ctx context.Context, id uint64, cause error) {
 		return
 	}
 	finishedAt := s.now().UTC()
+	row, loadErr := s.load(ctx, id)
+	if loadErr != nil {
+		log.Printf("scheduled task id=%d load before failure update error=%v original_error=%v", id, loadErr, cause)
+		return
+	}
 	if err := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 		Where("id = ? AND status = ?", id, "running").
 		Updates(map[string]any{
-			"status": "active", "last_run_status": "failed",
+			"status": finalTaskStatus(row.ScheduleType), "last_run_status": "failed",
 			"last_error_detail": cause.Error(), "last_finished_at": finishedAt,
 		}).Error; err != nil {
 		log.Printf("scheduled task id=%d store failure status error=%v original_error=%v", id, err, cause)
 	}
+}
+
+func finalTaskStatus(scheduleType string) string {
+	if scheduleType == "once" {
+		return "completed"
+	}
+	return "active"
 }
 
 func (s *Service) load(ctx context.Context, id uint64) (*domain.ScheduledTask, error) {
@@ -414,13 +440,23 @@ func normalizeInput(input Input, now time.Time, location *time.Location) (Input,
 		}
 		input.DailyTime = &dailyTime
 		input.IntervalMinutes = nil
+		input.RunAt = nil
 	case "interval":
 		if input.IntervalMinutes == nil || *input.IntervalMinutes <= 0 {
 			return Input{}, time.Time{}, fmt.Errorf("%w: interval_minutes must be positive for interval schedule", ErrInvalidInput)
 		}
 		input.DailyTime = nil
+		input.RunAt = nil
+	case "once":
+		if input.RunAt == nil || input.RunAt.IsZero() {
+			return Input{}, time.Time{}, fmt.Errorf("%w: run_at is required for once schedule", ErrInvalidInput)
+		}
+		runAt := input.RunAt.UTC()
+		input.RunAt = &runAt
+		input.DailyTime = nil
+		input.IntervalMinutes = nil
 	default:
-		return Input{}, time.Time{}, fmt.Errorf("%w: schedule_type must be daily or interval", ErrInvalidInput)
+		return Input{}, time.Time{}, fmt.Errorf("%w: schedule_type must be once, daily or interval", ErrInvalidInput)
 	}
 	nextRunAt, err := nextOccurrenceFromInput(input, now, location)
 	if err != nil {
@@ -444,6 +480,11 @@ func nextOccurrenceFromInput(input Input, after time.Time, location *time.Locati
 		return candidate.UTC(), nil
 	case "interval":
 		return after.Add(time.Duration(*input.IntervalMinutes) * time.Minute).UTC(), nil
+	case "once":
+		if input.RunAt == nil || input.RunAt.IsZero() {
+			return time.Time{}, fmt.Errorf("run_at is required for once schedule")
+		}
+		return input.RunAt.UTC(), nil
 	default:
 		return time.Time{}, fmt.Errorf("unknown schedule_type %q", input.ScheduleType)
 	}
@@ -515,7 +556,7 @@ func toView(row *domain.ScheduledTask) View {
 		ID: row.ID, Title: row.Title, Instruction: row.Instruction,
 		ContextSnapshot: json.RawMessage(append([]byte(nil), row.ContextSnapshot...)),
 		ScheduleType:    row.ScheduleType, DailyTime: row.DailyTime,
-		IntervalMinutes: row.IntervalMinutes, NextRunAt: row.NextRunAt,
+		IntervalMinutes: row.IntervalMinutes, RunAt: row.RunAt, NextRunAt: row.NextRunAt,
 		Enabled: row.Enabled, Status: row.Status, LastRunStatus: row.LastRunStatus,
 		LastResult: row.LastResult, LastErrorDetail: row.LastErrorDetail,
 		LastStartedAt: row.LastStartedAt, LastFinishedAt: row.LastFinishedAt,

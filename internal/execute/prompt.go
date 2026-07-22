@@ -19,7 +19,7 @@ const maxPriorRunsInPrompt = 5
 const scheduledTaskToolGuidance = `BEGIN_SCHEDULED_TASK_TOOLS
 需要把新动作安排到未来时，可调用：
 - jarvis-tools list-scheduled-tasks [--status active]
-- jarvis-tools create-scheduled-task --payload -（周期任务；每天执行传 schedule_type:"daily",daily_time:"09:00"，每 N 分钟执行传 schedule_type:"interval",interval_minutes:N；同时带 title/instruction/context_snapshot/enabled，context_snapshot 必须携带当前 Task 的项目、人物、会话和判断依据）
+- jarvis-tools create-scheduled-task --payload -（指定时间执行一次传 schedule_type:"once",run_at:"RFC3339时间"；每天执行传 schedule_type:"daily",daily_time:"09:00"；每 N 分钟执行传 schedule_type:"interval",interval_minutes:N；同时带 title/instruction/context_snapshot/enabled，context_snapshot 必须携带当前 Task 的项目、人物、会话和判断依据）
 - jarvis-tools delete-scheduled-task --id N
 END_SCHEDULED_TASK_TOOLS`
 

@@ -336,7 +336,7 @@ func runAppendSharedMemory(args []string) error {
 func runListScheduledTasks(args []string) error {
 	fs := flag.NewFlagSet("list-scheduled-tasks", flag.ContinueOnError)
 	configPath := fs.String("config", "conf/config.yaml", "config file path")
-	status := fs.String("status", "", "optional status: active/running")
+	status := fs.String("status", "", "optional status: active/running/completed")
 	limit := fs.Int("limit", 200, "maximum rows")
 	if err := fs.Parse(args); err != nil {
 		return err

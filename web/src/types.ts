@@ -725,9 +725,9 @@ export interface TextStorageInput {
   content: string
 }
 
-export type ScheduledTaskStatus = 'active' | 'running'
+export type ScheduledTaskStatus = 'active' | 'running' | 'completed'
 export type ScheduledTaskLastRunStatus = 'done' | 'failed'
-export type ScheduledTaskScheduleType = 'daily' | 'interval'
+export type ScheduledTaskScheduleType = 'once' | 'daily' | 'interval'
 
 export interface ScheduledTask {
   id: number
@@ -737,6 +737,7 @@ export interface ScheduledTask {
   schedule_type: ScheduledTaskScheduleType
   daily_time: string | null
   interval_minutes: number | null
+  run_at: string | null
   next_run_at: string
   enabled: boolean
   status: ScheduledTaskStatus
@@ -756,6 +757,7 @@ export interface ScheduledTaskInput {
   schedule_type: ScheduledTaskScheduleType
   daily_time: string | null
   interval_minutes: number | null
+  run_at: string | null
   enabled: boolean
 }
 

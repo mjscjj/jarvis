@@ -60,6 +60,8 @@ func TestBuildPromptInjectsDSNAndContext(t *testing.T) {
 		"list-scheduled-tasks",                   // 定时任务工具
 		"create-scheduled-task",
 		"delete-scheduled-task",
+		`schedule_type:"once"`,
+		"run_at",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q\n---\n%s", want, prompt)

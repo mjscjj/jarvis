@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, TimePicker, Typography, message } from 'antd'
+import { Button, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, TimePicker, Typography, message } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
@@ -12,6 +12,7 @@ const { Paragraph, Text } = Typography
 const statusMeta: Record<ScheduledTaskStatus, { label: string; color: string }> = {
   active: { label: '等待调度', color: 'green' },
   running: { label: '执行中', color: 'blue' },
+  completed: { label: '已执行', color: 'default' },
 }
 
 interface FormValue {
@@ -21,6 +22,7 @@ interface FormValue {
   schedule_type: ScheduledTaskScheduleType
   daily_time?: Dayjs
   interval_minutes?: number
+  run_at?: Dayjs
   enabled: boolean
 }
 
@@ -44,6 +46,9 @@ function toInput(value: FormValue): ScheduledTaskInput {
   if (value.schedule_type === 'interval' && (!value.interval_minutes || value.interval_minutes <= 0)) {
     throw new Error('执行间隔必须大于 0 分钟')
   }
+  if (value.schedule_type === 'once' && !value.run_at) {
+    throw new Error('请选择执行时间')
+  }
   return {
     title: value.title.trim(),
     instruction: value.instruction.trim(),
@@ -51,11 +56,13 @@ function toInput(value: FormValue): ScheduledTaskInput {
     schedule_type: value.schedule_type,
     daily_time: value.schedule_type === 'daily' ? value.daily_time!.format('HH:mm') : null,
     interval_minutes: value.schedule_type === 'interval' ? value.interval_minutes! : null,
+    run_at: value.schedule_type === 'once' ? value.run_at!.toISOString() : null,
     enabled: value.enabled,
   }
 }
 
 function scheduleText(task: ScheduledTask): string {
+  if (task.schedule_type === 'once') return `一次：${new Date(task.run_at!).toLocaleString()}`
   if (task.schedule_type === 'daily') return `每天 ${task.daily_time}`
   return `每 ${task.interval_minutes} 分钟`
 }
@@ -102,7 +109,7 @@ export default function ScheduledTasks() {
     form.setFieldsValue({
       title: '', instruction: '', context_snapshot: '{}',
       schedule_type: 'daily', daily_time: dailyTimeValue('09:00'),
-      interval_minutes: 10, enabled: true,
+      interval_minutes: 10, run_at: dayjs().add(10, 'minute'), enabled: true,
     })
     setModalOpen(true)
   }
@@ -116,6 +123,7 @@ export default function ScheduledTasks() {
       schedule_type: task.schedule_type,
       daily_time: task.daily_time ? dailyTimeValue(task.daily_time) : undefined,
       interval_minutes: task.interval_minutes ?? undefined,
+      run_at: task.run_at ? dayjs(task.run_at) : undefined,
       enabled: task.enabled,
     })
     setModalOpen(true)
@@ -146,7 +154,9 @@ export default function ScheduledTasks() {
   const trigger = async (task: ScheduledTask) => {
     try {
       await triggerScheduledTask(task.id)
-      message.success(`已触发“${task.title}”，原定时计划不变`)
+      message.success(task.schedule_type === 'once'
+        ? `已触发“${task.title}”`
+        : `已触发“${task.title}”，原定时计划不变`)
       load()
     } catch (cause) {
       message.error(`触发失败：${errorText(cause)}`)
@@ -181,7 +191,7 @@ export default function ScheduledTasks() {
     },
     {
       title: '下次执行', dataIndex: 'next_run_at', width: 180,
-      render: (value: string, task) => task.enabled ? new Date(value).toLocaleString() : '—',
+      render: (value: string, task) => task.enabled && task.status !== 'completed' ? new Date(value).toLocaleString() : '—',
     },
     {
       title: '状态', dataIndex: 'status', width: 110,
@@ -211,7 +221,7 @@ export default function ScheduledTasks() {
 
   return (
     <div>
-      <PageHeader title="定时任务" subtitle="周期任务；支持每天指定时间或每 N 分钟执行，并发交给 Codex 完成。">
+      <PageHeader title="定时任务" subtitle="支持指定时间执行一次、每天指定时间或每 N 分钟执行，并发交给 Codex 完成。">
         <Select
           value={status}
           onChange={setStatus}
@@ -220,6 +230,7 @@ export default function ScheduledTasks() {
             { value: '', label: '全部状态' },
             { value: 'active', label: '等待调度' },
             { value: 'running', label: '执行中' },
+            { value: 'completed', label: '已执行' },
           ]}
         />
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建定时任务</Button>
@@ -244,9 +255,17 @@ export default function ScheduledTasks() {
             <Input placeholder="例如：每天检查 Agent Runtime 项目进展" />
           </Form.Item>
           <Form.Item name="schedule_type" label="执行周期" rules={[{ required: true }]}>
-            <Select options={[{ value: 'daily', label: '每天指定时间' }, { value: 'interval', label: '每隔 N 分钟' }]} />
+            <Select options={[
+              { value: 'once', label: '指定时间执行一次' },
+              { value: 'daily', label: '每天指定时间' },
+              { value: 'interval', label: '每隔 N 分钟' },
+            ]} />
           </Form.Item>
-          {scheduleType === 'daily' ? (
+          {scheduleType === 'once' ? (
+            <Form.Item name="run_at" label="执行时间" rules={[{ required: true, message: '请选择执行时间' }]}>
+              <DatePicker showTime format="YYYY-MM-DD HH:mm" style={{ width: '100%' }} />
+            </Form.Item>
+          ) : scheduleType === 'daily' ? (
             <Form.Item name="daily_time" label="每天执行时间（本机时区）" rules={[{ required: true, message: '请选择执行时间' }]}>
               <TimePicker format="HH:mm" minuteStep={1} style={{ width: '100%' }} />
             </Form.Item>

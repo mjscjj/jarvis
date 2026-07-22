@@ -335,8 +335,8 @@ type DailyDigest struct {
 
 func (DailyDigest) TableName() string { return "daily_digest" }
 
-// ScheduledTask is a recurring instruction executed by Codex on either a daily
-// local-time schedule or a fixed minute interval. ContextSnapshot freezes the
+// ScheduledTask is an instruction executed by Codex once at an absolute time
+// or repeatedly on a daily/fixed-minute schedule. ContextSnapshot freezes the
 // background available when the task was created. The single local Jarvis
 // process owns scheduling and execution.
 type ScheduledTask struct {
@@ -344,12 +344,13 @@ type ScheduledTask struct {
 	Title           string         `gorm:"column:title;type:varchar(512);not null"`
 	Instruction     string         `gorm:"column:instruction;type:mediumtext;not null"`
 	ContextSnapshot datatypes.JSON `gorm:"column:context_snapshot;type:json;not null"`
-	ScheduleType    string         `gorm:"column:schedule_type;type:varchar(16);not null"` // daily / interval
+	ScheduleType    string         `gorm:"column:schedule_type;type:varchar(16);not null"` // once / daily / interval
 	DailyTime       *string        `gorm:"column:daily_time;type:char(5)"`                 // HH:mm in server local timezone
 	IntervalMinutes *int           `gorm:"column:interval_minutes;type:int"`
+	RunAt           *time.Time     `gorm:"column:run_at;type:datetime"`
 	NextRunAt       time.Time      `gorm:"column:next_run_at;type:datetime;not null;index:idx_scheduled_task_due,priority:3"`
 	Enabled         bool           `gorm:"column:enabled;type:tinyint(1);not null;index:idx_scheduled_task_due,priority:1"`
-	Status          string         `gorm:"column:status;type:varchar(16);not null;default:active;index:idx_scheduled_task_due,priority:2"` // active / running
+	Status          string         `gorm:"column:status;type:varchar(16);not null;default:active;index:idx_scheduled_task_due,priority:2"` // active / running / completed
 	LastRunStatus   *string        `gorm:"column:last_run_status;type:varchar(16)"`                                                        // done / failed
 	LastResult      *string        `gorm:"column:last_result;type:mediumtext"`
 	LastErrorDetail *string        `gorm:"column:last_error_detail;type:text"`

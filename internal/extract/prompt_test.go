@@ -38,7 +38,7 @@ func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 
 func TestCodexToolGuidanceIncludesScheduledTasks(t *testing.T) {
 	t.Parallel()
-	for _, want := range []string{"list-scheduled-tasks", "create-scheduled-task", "delete-scheduled-task", "context_snapshot"} {
+	for _, want := range []string{"list-scheduled-tasks", "create-scheduled-task", "delete-scheduled-task", "context_snapshot", `schedule_type:"once"`, "run_at"} {
 		if !strings.Contains(CodexToolGuidance, want) {
 			t.Fatalf("CodexToolGuidance missing %q", want)
 		}
