@@ -1,4 +1,7 @@
 import type {
+  AgentSkill,
+  AgentSkillContent,
+  AgentSkillInput,
   CommitWorklog,
   ConfirmationDetail,
   DailyDigest,
@@ -362,4 +365,20 @@ export function updateWorkRule(id: number, body: WorkRuleInput): Promise<WorkRul
 
 export function deleteWorkRule(id: number): Promise<{ id: number; deleted: boolean }> {
   return request(`/api/work-rules/${id}`, { method: 'DELETE' })
+}
+
+export function listSkills(signal?: AbortSignal): Promise<{ items: AgentSkill[] }> {
+  return request<{ items: AgentSkill[] }>('/api/skills', { signal })
+}
+
+export function scanSkills(): Promise<{ items: AgentSkill[] }> {
+  return request<{ items: AgentSkill[] }>('/api/skills/scan', { method: 'POST' })
+}
+
+export function updateSkill(id: number, body: AgentSkillInput): Promise<AgentSkill> {
+  return request<AgentSkill>(`/api/skills/${id}`, { method: 'PUT', body })
+}
+
+export function getSkillContent(name: string): Promise<AgentSkillContent> {
+  return request<AgentSkillContent>(`/api/skills/${encodeURIComponent(name)}/content`)
 }

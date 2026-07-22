@@ -712,6 +712,27 @@ export interface WorkRuleInput {
   is_enabled: boolean
 }
 
+export type SkillStage = WorkRuleStage
+
+export interface AgentSkill {
+  id: number
+  name: string
+  description: string
+  file_path: string
+  stages: SkillStage[]
+  is_enabled: boolean
+}
+
+export interface AgentSkillInput {
+  stages: SkillStage[]
+  is_enabled: boolean
+}
+
+export interface AgentSkillContent {
+  name: string
+  content: string
+}
+
 // --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---
 
 // PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。

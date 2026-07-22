@@ -23,6 +23,8 @@ type PromptOptions struct {
 	SharedMemory string
 	// WorkRules 是已按 extract 阶段过滤并渲染好的可信工作规则 block。
 	WorkRules string
+	// Skills 是已按 extract 阶段过滤的简短 Skill 目录。
+	Skills string
 }
 
 // CodexToolGuidance is the tool section injected for the codex engine. codex is
@@ -99,6 +101,9 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]a
 		system += "\n\n" + block
 	}
 	if block := strings.TrimSpace(opts.WorkRules); block != "" {
+		system += "\n\n" + block
+	}
+	if block := strings.TrimSpace(opts.Skills); block != "" {
 		system += "\n\n" + block
 	}
 	filteredMemories := filterMemories(memories)

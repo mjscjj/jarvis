@@ -16,6 +16,7 @@ import (
 	"jarvis/internal/memory"
 	"jarvis/internal/semantic"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/skill"
 	"jarvis/internal/store"
 	"jarvis/internal/workrule"
 
@@ -164,6 +165,10 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workrule.NewService() error = %v", err)
 	}
+	skillService, err := skill.NewService(tx, t.TempDir())
+	if err != nil {
+		t.Fatalf("skill.NewService() error = %v", err)
+	}
 	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
 		Load: extract.LoadOptions{
 			BatchMessages: 10, ContextMessages: cfg.Extract.ContextMessages,
@@ -174,6 +179,7 @@ func TestPipelineLive(t *testing.T) {
 		MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
 		MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: 5, Location: location,
 		WorkRules: workRuleService,
+		Skills:    skillService,
 	})
 	if err != nil {
 		t.Fatalf("extract.NewWorker() error = %v", err)

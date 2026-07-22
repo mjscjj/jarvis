@@ -14,6 +14,7 @@ import (
 	"jarvis/internal/knowledge"
 	"jarvis/internal/progress"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/skill"
 	"jarvis/internal/workrule"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -36,6 +37,7 @@ type Dependencies struct {
 	Resources           *background.ResourceService
 	SharedMemory        *sharedmem.SharedMemoryService
 	WorkRules           *workrule.Service
+	Skills              *skill.Service
 	RelationFacts       knowledge.FactService
 	Progress            progress.EventService
 	Overview            *insight.OverviewService
@@ -92,6 +94,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.WorkRules == nil {
 		return fmt.Errorf("api work rule service dependency is nil")
+	}
+	if deps.Skills == nil {
+		return fmt.Errorf("api skill service dependency is nil")
 	}
 	if deps.RelationFacts == nil {
 		return fmt.Errorf("api relation fact service dependency is nil")
@@ -161,6 +166,11 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/work-rules", CreateWorkRule(deps.WorkRules))
 	h.PUT("/api/work-rules/:work_rule_id", UpdateWorkRule(deps.WorkRules))
 	h.DELETE("/api/work-rules/:work_rule_id", DeleteWorkRule(deps.WorkRules))
+	// Skills：扫描仓库 SKILL.md，后台控制启用状态和 M3/M4/M5 生效范围。
+	h.GET("/api/skills", ListSkills(deps.Skills))
+	h.POST("/api/skills/scan", ScanSkills(deps.Skills))
+	h.PUT("/api/skills/:skill_id", UpdateSkill(deps.Skills))
+	h.GET("/api/skills/:skill_name/content", GetSkillContent(deps.Skills))
 	// Overview 看板 + 进度：跨模块只读聚合，无表无 cron；总结按需调 codex。
 	h.GET("/api/overview", GetOverview(deps.Overview))
 	h.GET("/api/digests", GetDigests(deps.Digests))

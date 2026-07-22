@@ -33,6 +33,7 @@ import (
 	"jarvis/internal/progress"
 	"jarvis/internal/semantic"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/skill"
 	"jarvis/internal/store"
 	"jarvis/internal/workrule"
 
@@ -133,6 +134,13 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize progress service failed: %v", err)
 	}
+	skillService, err := skill.NewService(db, cfg.Skills.Root)
+	if err != nil {
+		hlog.Fatalf("initialize skill service failed: %v", err)
+	}
+	if _, err := skillService.Scan(context.Background()); err != nil {
+		hlog.Fatalf("scan agent skills failed: %v", err)
+	}
 
 	var decisionWorker *decide.DecisionWorker
 	if cfg.Decide.Enabled || *decideOnce {
@@ -147,7 +155,7 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize decision store failed: %v", err)
 		}
-		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService)
+		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService)
 		if err != nil {
 			hlog.Fatalf("initialize decision evaluator failed: %v", err)
 		}
@@ -233,7 +241,7 @@ func main() {
 	// Build an evaluator + store so the confirmation service can re-run M4
 	// asynchronously after a need_info supplement, independent of the decision
 	// cron being enabled. Mirrors the worker's evaluator selection.
-	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService)
+	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService)
 	if err != nil {
 		hlog.Fatalf("initialize supplement evaluator failed: %v", err)
 	}
@@ -261,7 +269,7 @@ func main() {
 		hlog.Fatalf("initialize execute runner failed: %v", err)
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
-		db, taskService, codexRunner, sharedMemoryService, workRuleService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		db, taskService, codexRunner, sharedMemoryService, workRuleService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
 		hlog.Fatalf("initialize agent executor failed: %v", err)
@@ -428,6 +436,7 @@ func main() {
 			EvidenceRetryMax:   cfg.Extract.EvidenceRetryMax,
 			PromptToolGuidance: promptToolGuidance,
 			WorkRules:          workRuleService,
+			Skills:             skillService,
 		})
 		if err != nil {
 			hlog.Fatalf("initialize extraction worker failed: %v", err)
@@ -642,6 +651,7 @@ func main() {
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		SharedMemory:  sharedMemoryService,
 		WorkRules:     workRuleService,
+		Skills:        skillService,
 		RelationFacts: relationFactService,
 		Progress:      progressService,
 		Overview:      overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
@@ -675,7 +685,7 @@ type decisionEvaluator interface {
 // buildDecisionEvaluator constructs the M4 evaluator from config. codex mode
 // judges each Todo read-only with codex and reuses the M3-frozen snapshot;
 // manual_mvp routes everything to human confirmation.
-func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader) (decisionEvaluator, error) {
+func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, skills skill.Reader) (decisionEvaluator, error) {
 	switch cfg.Decide.Mode {
 	case decide.ManualMVPMode:
 		return decide.ManualGateEvaluator{}, nil
@@ -691,7 +701,7 @@ func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem
 		if err != nil {
 			return nil, fmt.Errorf("initialize codex decider: %w", err)
 		}
-		return decide.NewCodexEvaluator(db, decider, sharedMem, workRules)
+		return decide.NewCodexEvaluator(db, decider, sharedMem, workRules, skills)
 	default:
 		return nil, fmt.Errorf("decide.mode 必须是 %s 或 codex", decide.ManualMVPMode)
 	}

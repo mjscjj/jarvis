@@ -71,6 +71,22 @@ func TestBuildPromptInjectsSharedMemory(t *testing.T) {
 	}
 }
 
+func TestBuildPromptInjectsSkills(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID: "om_new", Content: "通知同事", CreateTime: 1_700_000_001_000, IsNew: true, Extractable: true,
+	}}}
+	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(), PromptOptions{
+		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
+		Skills: "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS",
+	})
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt.System, "feishu-send-message") {
+		t.Fatalf("system prompt missing skill catalog:\n%s", prompt.System)
+	}
+}
+
 func TestBuildPromptTrimsContextBeforeFailing(t *testing.T) {
 	unit := ConversationUnit{
 		Key: "chat",

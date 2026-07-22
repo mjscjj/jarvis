@@ -1,0 +1,4 @@
+interface:
+  display_name: "飞书发消息"
+  short_description: "通过 Jarvis Bot 给个人或群聊发送飞书消息"
+  default_prompt: "Use $feishu-send-message to send a Feishu message through Jarvis Bot."

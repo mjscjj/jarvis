@@ -27,6 +27,7 @@ import (
 	"jarvis/internal/background"
 	"jarvis/internal/config"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/skill"
 	"jarvis/internal/store"
 
 	"gorm.io/gorm"
@@ -40,7 +41,7 @@ const connectTimeout = 10 * time.Second
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(fmt.Errorf("usage: jarvis-tools <subcommand> [flags]\nsubcommands: list-projects get-project get-group get-principal get-person get-shared-memory set-shared-memory append-shared-memory"))
+		fail(fmt.Errorf("usage: jarvis-tools <subcommand> [flags]\nsubcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory"))
 	}
 	subcommand := os.Args[1]
 	args := os.Args[2:]
@@ -64,12 +65,14 @@ func run(subcommand string, args []string) error {
 		return runGetPerson(args)
 	case "get-shared-memory":
 		return runGetSharedMemory(args)
+	case "get-skill":
+		return runGetSkill(args)
 	case "set-shared-memory":
 		return runSetSharedMemory(args)
 	case "append-shared-memory":
 		return runAppendSharedMemory(args)
 	default:
-		return fmt.Errorf("unknown subcommand %q; want one of: list-projects get-project get-group get-principal get-person get-shared-memory set-shared-memory append-shared-memory", subcommand)
+		return fmt.Errorf("unknown subcommand %q; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory", subcommand)
 	}
 }
 
@@ -245,6 +248,32 @@ func runGetSharedMemory(args []string) error {
 	return emit(view)
 }
 
+func runGetSkill(args []string) error {
+	fs := flag.NewFlagSet("get-skill", flag.ContinueOnError)
+	configPath := fs.String("config", "conf/config.yaml", "config file path")
+	name := fs.String("name", "", "skill name")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*name) == "" {
+		return fmt.Errorf("get-skill requires --name")
+	}
+	cfg, db, cleanup, err := openDB(*configPath)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	svc, err := skill.NewService(db, cfg.Skills.Root)
+	if err != nil {
+		return err
+	}
+	view, err := svc.Content(context.Background(), *name)
+	if err != nil {
+		return mapNotFound(err)
+	}
+	return emit(view)
+}
+
 func runSetSharedMemory(args []string) error {
 	fs := flag.NewFlagSet("set-shared-memory", flag.ContinueOnError)
 	configPath := fs.String("config", "conf/config.yaml", "config file path")
@@ -329,7 +358,7 @@ func emit(value any) error {
 // mapNotFound turns background.ErrNotFound into a clear message so codex sees a
 // deterministic "not found" instead of an opaque error.
 func mapNotFound(err error) error {
-	if errors.Is(err, background.ErrNotFound) {
+	if errors.Is(err, background.ErrNotFound) || errors.Is(err, skill.ErrNotFound) {
 		return fmt.Errorf("not found")
 	}
 	return err

@@ -103,6 +103,21 @@ func TestBuildCodexPromptInjectsWorkRules(t *testing.T) {
 	}
 }
 
+func TestBuildCodexPromptInjectsSkills(t *testing.T) {
+	todo := &domain.Todo{ID: 8, Title: "发消息", Description: "通知", ActionType: "reply_message", Target: "同事", ExtractionResult: extractionJSON("发消息")}
+	prompt, err := BuildCodexPrompt(CodexPromptInput{
+		Todo: todo, RuleScore: RuleScore{Confidence: 0.5, Risk: 0.5},
+		Background: json.RawMessage(`{"messages":[]}`),
+		Skills:     "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS",
+	})
+	if err != nil {
+		t.Fatalf("BuildCodexPrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt.Text, "feishu-send-message") || strings.Index(prompt.Text, "BEGIN_AVAILABLE_SKILLS") >= strings.Index(prompt.Text, "BEGIN_DECISION_CONTEXT") {
+		t.Fatalf("skill catalog must precede DECISION_CONTEXT:\n%s", prompt.Text)
+	}
+}
+
 func TestBuildCodexPromptCanonicalizesBlocks(t *testing.T) {
 	todo := &domain.Todo{
 		ID: 7, Title: "Fixture", Description: "Fixture", ActionType: "investigate",

@@ -283,6 +283,21 @@ type WorkRule struct {
 
 func (WorkRule) TableName() string { return "work_rule" }
 
+// AgentSkill 是仓库内 SKILL.md 的运行控制信息。Skill 正文仍以文件为唯一
+// source of truth；数据库只保存扫描出的元数据以及 M3/M4/M5 生效范围。
+type AgentSkill struct {
+	ID          uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	Name        string         `gorm:"column:name;type:varchar(128);not null;uniqueIndex:uk_agent_skill_name"`
+	Description string         `gorm:"column:description;type:text;not null"`
+	FilePath    string         `gorm:"column:file_path;type:varchar(1024);not null"`
+	Stages      datatypes.JSON `gorm:"column:stages;type:json;not null"`
+	IsEnabled   bool           `gorm:"column:is_enabled;type:tinyint(1);not null;default:1;index:idx_agent_skill_enabled"`
+	CreatedAt   time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt   time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+}
+
+func (AgentSkill) TableName() string { return "agent_skill" }
+
 // DailyDigest 是「每日进度总结」的落库缓存：一天一个 scope 一行，重算 upsert 覆盖
 // （不留历史版本）。scope=person 时 scope_id 是 principal open_id；scope=group 时
 // scope_id 是 feishu_group.id 的字符串。digest_date 是自然日（本地时区 00:00）。
@@ -318,6 +333,7 @@ func CoreModels() []any {
 		&ManagedResource{},
 		&SharedMemory{},
 		&WorkRule{},
+		&AgentSkill{},
 		&DailyDigest{},
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"jarvis/internal/domain"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/skill"
 	"jarvis/internal/workrule"
 
 	"gorm.io/gorm"
@@ -40,9 +41,10 @@ type CodexEvaluator struct {
 	codex     codexDecisionRunner
 	sharedMem sharedmem.SharedMemoryReader
 	workRules workrule.Reader
+	skills    skill.Reader
 }
 
-func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader) (*CodexEvaluator, error) {
+func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, skills skill.Reader) (*CodexEvaluator, error) {
 	if codex == nil {
 		return nil, fmt.Errorf("codex evaluator decider is nil")
 	}
@@ -52,7 +54,10 @@ func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner, sharedMem sharedm
 	if workRules == nil {
 		return nil, fmt.Errorf("codex evaluator work rule reader is nil")
 	}
-	return &CodexEvaluator{db: db, codex: codex, sharedMem: sharedMem, workRules: workRules}, nil
+	if skills == nil {
+		return nil, fmt.Errorf("codex evaluator skill reader is nil")
+	}
+	return &CodexEvaluator{db: db, codex: codex, sharedMem: sharedMem, workRules: workRules, skills: skills}, nil
 }
 
 func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*EvaluationInput, error) {
@@ -81,9 +86,13 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 	if err != nil {
 		return nil, fmt.Errorf("codex evaluation todo_id=%d: read decide work rules: %w", todo.ID, err)
 	}
+	skills, err := e.skills.Catalog(ctx, skill.StageDecide)
+	if err != nil {
+		return nil, fmt.Errorf("codex evaluation todo_id=%d: read decide skills: %w", todo.ID, err)
+	}
 	prompt, err := BuildCodexPrompt(CodexPromptInput{
 		Todo: todo, RuleScore: neutralRuleScore, Background: background, PriorEvaluations: prior,
-		SharedMemory: sharedMemory, WorkRules: workRules,
+		SharedMemory: sharedMemory, WorkRules: workRules, Skills: skills,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build codex decision prompt todo_id=%d: %w", todo.ID, err)

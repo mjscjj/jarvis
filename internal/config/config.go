@@ -24,6 +24,7 @@ type Config struct {
 	Codex       CodexConfig       `yaml:"codex"`
 	Execute     ExecuteConfig     `yaml:"execute"`
 	Chat        ChatConfig        `yaml:"chat"`
+	Skills      SkillsConfig      `yaml:"skills"`
 	DailyDigest DailyDigestConfig `yaml:"dailydigest"`
 }
 
@@ -192,6 +193,12 @@ type ChatConfig struct {
 	TimeoutSeconds  int    `yaml:"timeout_seconds"`
 	Sandbox         string `yaml:"sandbox"`
 	ReasoningEffort string `yaml:"reasoning_effort"`
+}
+
+// SkillsConfig controls the repository skill root scanned into the stage-aware
+// Skill catalog. Relative paths are resolved from the server working directory.
+type SkillsConfig struct {
+	Root string `yaml:"root"`
 }
 
 // DailyDigestConfig 控制「每日进度总结」：19:00 cron 自动生成 + 页面手动异步触发。
@@ -463,6 +470,9 @@ func (c *Config) validate() error {
 	}
 	if c.Chat.Enabled && c.Chat.Model == "" {
 		return fmt.Errorf("chat 启用时 chat.model 不能为空")
+	}
+	if c.Skills.Root == "" {
+		return fmt.Errorf("skills.root 不能为空")
 	}
 	if c.DailyDigest.Schedule == "" {
 		return fmt.Errorf("dailydigest.schedule 不能为空")

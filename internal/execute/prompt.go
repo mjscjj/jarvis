@@ -156,13 +156,16 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 // supplement directive block, and the encoded TASK_CONTEXT into the final codex
 // prompt. sharedMemory (可信共享记忆) is injected right after the instructions and
 // before TASK_CONTEXT（不可信业务数据），即受信任指令区；为空则不注入。
-func renderPrompt(instructions, sharedMemory, workRules string, supplements []ExecutionSupplement, encoded []byte) string {
+func renderPrompt(instructions, sharedMemory, workRules, skills string, supplements []ExecutionSupplement, encoded []byte) string {
 	directive := formatExecutionSupplementDirective(supplements)
 	prompt := instructions
 	if block := sharedmem.RenderBlock(sharedMemory); block != "" {
 		prompt += "\n\n" + block
 	}
 	if block := strings.TrimSpace(workRules); block != "" {
+		prompt += "\n\n" + block
+	}
+	if block := strings.TrimSpace(skills); block != "" {
 		prompt += "\n\n" + block
 	}
 	return prompt + directive +
@@ -175,7 +178,7 @@ func renderPrompt(instructions, sharedMemory, workRules string, supplements []Ex
 // confirmed plan, context, and repo, and tells it to carry the plan out. codex
 // orchestrates the actual work. task.execution_supplements (M5-only) are injected
 // as high-priority directives. previousRuns (if any) carry prior attempt results.
-func buildExecutionPrompt(task *domain.Task, repoPath, sharedMemory, workRules string, previousRuns []priorRunSummary) (string, error) {
+func buildExecutionPrompt(task *domain.Task, repoPath, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
 	supplements, encoded, err := buildTaskContext(task, repoPath, previousRuns)
 	if err != nil {
 		return "", err
@@ -206,7 +209,7 @@ func buildExecutionPrompt(task *domain.Task, repoPath, sharedMemory, workRules s
 		instructions += "\n10. 当前工作目录已切到 repo：" + repoPath + "，直接在此改动。"
 	}
 
-	return renderPrompt(instructions, sharedMemory, workRules, supplements, encoded), nil
+	return renderPrompt(instructions, sharedMemory, workRules, skills, supplements, encoded), nil
 }
 
 // buildProposePrompt assembles the propose-stage prompt. This stage runs for
@@ -215,7 +218,7 @@ func buildExecutionPrompt(task *domain.Task, repoPath, sharedMemory, workRules s
 // this time, and either finish read-only/local work or produce a full proposal
 // WITHOUT touching the outside world. Its final message must satisfy
 // proposeResultSchema.
-func buildProposePrompt(task *domain.Task, sharedMemory, workRules string, previousRuns []priorRunSummary) (string, error) {
+func buildProposePrompt(task *domain.Task, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
 	supplements, encoded, err := buildTaskContext(task, "", previousRuns)
 	if err != nil {
 		return "", err
@@ -247,14 +250,14 @@ func buildProposePrompt(task *domain.Task, sharedMemory, workRules string, previ
    - enrichments：你"多做一步"备好的料，每项 {kind, label, detail}，没有则空数组 []。
    - proposal：needs_approval=true 时必填 {action, target, artifact}（artifact 为完整产出全文）；needs_approval=false 时置为 null。`
 
-	return renderPrompt(instructions, sharedMemory, workRules, supplements, encoded), nil
+	return renderPrompt(instructions, sharedMemory, workRules, skills, supplements, encoded), nil
 }
 
 // buildApplyPrompt assembles the apply-stage prompt after a human approved a
 // proposal. The approved plan + full artifact is embedded verbatim and codex is
 // told to land it faithfully for real. Its final message must satisfy
 // executionResultSchema.
-func buildApplyPrompt(task *domain.Task, proposal *codexProposal, sharedMemory, workRules string, previousRuns []priorRunSummary) (string, error) {
+func buildApplyPrompt(task *domain.Task, proposal *codexProposal, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
 	if proposal == nil {
 		return "", fmt.Errorf("apply prompt Task id=%d has no approved proposal", task.ID)
 	}
@@ -289,5 +292,5 @@ func buildApplyPrompt(task *domain.Task, proposal *codexProposal, sharedMemory, 
 
 APPROVED_PROPOSAL=` + string(approved)
 
-	return renderPrompt(instructions, sharedMemory, workRules, supplements, encoded), nil
+	return renderPrompt(instructions, sharedMemory, workRules, skills, supplements, encoded), nil
 }

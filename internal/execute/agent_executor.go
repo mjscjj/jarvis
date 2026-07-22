@@ -15,6 +15,7 @@ import (
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/skill"
 	"jarvis/internal/workrule"
 
 	"gorm.io/gorm"
@@ -54,12 +55,13 @@ type AgentExecutor struct {
 	runner    *CodexRunner
 	sharedMem sharedmem.SharedMemoryReader
 	workRules workrule.Reader
+	skills    skill.Reader
 	repoRoot  string
 	runsDir   string
 	now       func() time.Time
 }
 
-func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, repoRoot, runsDir string) (*AgentExecutor, error) {
+func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, skills skill.Reader, repoRoot, runsDir string) (*AgentExecutor, error) {
 	if db == nil {
 		return nil, fmt.Errorf("agent executor db is nil")
 	}
@@ -75,6 +77,9 @@ func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, sharedMem 
 	if workRules == nil {
 		return nil, fmt.Errorf("agent executor work rule reader is nil")
 	}
+	if skills == nil {
+		return nil, fmt.Errorf("agent executor skill reader is nil")
+	}
 	if strings.TrimSpace(repoRoot) == "" {
 		return nil, fmt.Errorf("agent executor repo root is required")
 	}
@@ -82,7 +87,7 @@ func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, sharedMem 
 		return nil, fmt.Errorf("agent executor runs dir is required")
 	}
 	return &AgentExecutor{
-		db: db, store: store, runner: runner, sharedMem: sharedMem, workRules: workRules,
+		db: db, store: store, runner: runner, sharedMem: sharedMem, workRules: workRules, skills: skills,
 		repoRoot: repoRoot, runsDir: runsDir,
 		now: time.Now,
 	}, nil
@@ -482,7 +487,11 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	prompt, err := buildExecutionPrompt(task, repoPath, sharedMemory, workRules, previousRuns)
+	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	prompt, err := buildExecutionPrompt(task, repoPath, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
@@ -582,7 +591,11 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	prompt, err := buildProposePrompt(task, sharedMemory, workRules, previousRuns)
+	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	prompt, err := buildProposePrompt(task, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -636,7 +649,11 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	prompt, err := buildApplyPrompt(task, proposal, sharedMemory, workRules, previousRuns)
+	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	prompt, err := buildApplyPrompt(task, proposal, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}

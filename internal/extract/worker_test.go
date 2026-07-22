@@ -136,6 +136,10 @@ type fakeWorkRuleReader struct{}
 
 func (fakeWorkRuleReader) Block(context.Context, string) (string, error) { return "", nil }
 
+type fakeSkillReader struct{}
+
+func (fakeSkillReader) Catalog(context.Context, string) (string, error) { return "", nil }
+
 func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	projectID := uint64(9)
 	store := &fakePipelineStore{batches: []ChatBatch{{
@@ -386,5 +390,6 @@ func validWorkerOptions() WorkerOptions {
 		PrincipalOpenID: "ou_owner", ModelName: "model", MemoryTopK: 8,
 		MemoryThreshold: 0.5, MaxPromptChars: 60_000, MaxToolRounds: 5, Location: time.UTC,
 		WorkRules: fakeWorkRuleReader{},
+		Skills:    fakeSkillReader{},
 	}
 }

@@ -39,7 +39,7 @@ func TestUnknownActionPolicyFailsFast(t *testing.T) {
 }
 
 func TestBuildExecutionPromptRequiresValidTask(t *testing.T) {
-	if _, err := buildExecutionPrompt(nil, "", "", "", nil); err == nil {
+	if _, err := buildExecutionPrompt(nil, "", "", "", "", nil); err == nil {
 		t.Fatalf("nil Task must fail")
 	}
 }

@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 usage() {
   fail "usage: jarvis-tools <subcommand> [flags]
-subcommands: list-projects get-project get-group get-principal get-person get-shared-memory append-shared-memory"
+subcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory"
 }
 
 # resolve_api_base CONFIG_PATH
@@ -153,6 +153,7 @@ CODE=""
 CHAT_ID=""
 OPEN_ID=""
 NOTE="-"
+NAME=""
 
 reset_flags() {
   CONFIG_PATH="$CONFIG_DEFAULT"
@@ -161,6 +162,7 @@ reset_flags() {
   CHAT_ID=""
   OPEN_ID=""
   NOTE="-"
+  NAME=""
 }
 
 # parse_kv_flag NAME VALUE — supports --name value and --name=value via caller.
@@ -220,6 +222,15 @@ consume_flags() {
         ;;
       --note=*)
         NOTE="${1#--note=}"
+        shift
+        ;;
+      --name)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        NAME="$2"
+        shift 2
+        ;;
+      --name=*)
+        NAME="${1#--name=}"
         shift
         ;;
       -*)
@@ -336,6 +347,17 @@ cmd_get_shared_memory() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+cmd_get_skill() {
+  reset_flags
+  consume_flags "$@"
+  [[ -n "$NAME" ]] || fail "get-skill requires --name"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local enc body
+  enc="$(jq -rn --arg s "$NAME" '$s|@uri')"
+  body="$(api_get "/api/skills/${enc}/content")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
 # append-shared-memory: read current content, append one note (content+"\n"+note,
 # or just note when empty), PUT the whole text back. Mirrors sharedmem.Append's
 # read-join-write so the script and Go/API stay consistent. Blank note fails fast.
@@ -373,8 +395,9 @@ case "$SUBCOMMAND" in
   get-principal)  cmd_get_principal "$@" ;;
   get-person)     cmd_get_person "$@" ;;
   get-shared-memory)    cmd_get_shared_memory "$@" ;;
+  get-skill)            cmd_get_skill "$@" ;;
   append-shared-memory) cmd_append_shared_memory "$@" ;;
   *)
-    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person get-shared-memory append-shared-memory"
+    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory"
     ;;
 esac

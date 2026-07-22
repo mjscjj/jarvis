@@ -133,6 +133,10 @@ chat:
   sandbox: "danger-full-access"        # 对话场景最大权限
   reasoning_effort: "medium"           # 与 execute.reasoning_effort 一致
 
+# Agent Skills：正文位于仓库文件，后台只控制启用状态和 M3/M4/M5 生效范围。
+skills:
+  root: ".agents/skills"
+
 # 每日进度总结（Progress 页）。enabled=false 时不起 19:00 cron（手动生成接口仍可用）。
 # 个人总结用 execute 段 codex（danger-full-access + 联网）自跑 lark-cli/bytedcli/git；
 # 群总结用 model 段 qwen 单次调用归纳。

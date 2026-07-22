@@ -9,6 +9,7 @@ import (
 
 	"jarvis/internal/memory"
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/skill"
 	"jarvis/internal/workrule"
 )
 
@@ -35,6 +36,7 @@ type WorkerOptions struct {
 	// the source_quote. 0 disables retry (extract exactly once). Must be >= 0.
 	EvidenceRetryMax int
 	WorkRules        workrule.Reader
+	Skills           skill.Reader
 }
 
 type WorkerStats struct {
@@ -85,6 +87,9 @@ func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher
 	}
 	if opts.WorkRules == nil {
 		return nil, fmt.Errorf("extract worker work rule reader is nil")
+	}
+	if opts.Skills == nil {
+		return nil, fmt.Errorf("extract worker skill reader is nil")
 	}
 	if err := validateLoadOptions(opts.Load); err != nil {
 		return nil, err
@@ -164,6 +169,10 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 	if err != nil {
 		return stats, PersistStats{}, fmt.Errorf("read extract work rules chat_id=%s: %w", batch.Group.ChatID, err)
 	}
+	skills, err := w.opts.Skills.Catalog(ctx, skill.StageExtract)
+	if err != nil {
+		return stats, PersistStats{}, fmt.Errorf("read extract skills chat_id=%s: %w", batch.Group.ChatID, err)
+	}
 	results := make([]UnitExtraction, 0, len(batch.Units))
 	for _, unit := range batch.Units {
 		query, err := SalientQuery(unit)
@@ -186,7 +195,7 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 		}
 		prompt, err := BuildPrompt(batch, unit, memories.Results, runNow, PromptOptions{
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
-			ToolGuidance: w.opts.PromptToolGuidance, SharedMemory: sharedMemory, WorkRules: workRules,
+			ToolGuidance: w.opts.PromptToolGuidance, SharedMemory: sharedMemory, WorkRules: workRules, Skills: skills,
 		})
 		if err != nil {
 			return stats, PersistStats{}, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
