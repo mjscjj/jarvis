@@ -1,7 +1,6 @@
 package progress
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -37,38 +36,25 @@ func TestPrepareTaskEventRejectsUnknownType(t *testing.T) {
 	}
 }
 
-func TestPrepareProjectEventRequiresSourcePair(t *testing.T) {
+func TestPrepareProjectEventUsesNaturalLanguage(t *testing.T) {
 	t.Parallel()
-	now := time.Now()
-	sourceType := "feishu_message"
-	_, err := prepareProjectEvent(ProjectEventInput{
-		ProjectID: 1, EventType: "progress_reported", Title: "完成接口",
-		ActorType: "user", SourceType: &sourceType, OccurredAt: &now,
+	now := time.Date(2026, 7, 22, 8, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	event, err := prepareProjectEvent(ProjectEventInput{
+		ProjectID: 2, Description: "  MVP 已跑通，下一步部署测试环境。  ", OccurredAt: &now,
 	})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("error = %v, want ErrInvalidInput", err)
-	}
-}
-
-func TestPrepareProjectEventCanonicalizesDetailAndKey(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 7, 22, 8, 0, 0, 0, time.UTC)
-	input := ProjectEventInput{
-		ProjectID: 2, EventType: "milestone_reached", Title: "MVP 跑通",
-		ActorType: "user", Detail: json.RawMessage(`{ "percent": 100 }`), OccurredAt: &now,
-	}
-	first, err := prepareProjectEvent(input)
 	if err != nil {
 		t.Fatalf("prepareProjectEvent() error = %v", err)
 	}
-	second, err := prepareProjectEvent(input)
-	if err != nil {
-		t.Fatalf("prepareProjectEvent() second error = %v", err)
+	if event.Description != "MVP 已跑通，下一步部署测试环境。" || !event.OccurredAt.Equal(now.UTC()) {
+		t.Fatalf("event = %#v", event)
 	}
-	if first.EventKey == "" || first.EventKey != second.EventKey {
-		t.Fatalf("event keys = %q, %q", first.EventKey, second.EventKey)
-	}
-	if got := string(first.Detail); got != `{"percent":100}` {
-		t.Fatalf("detail = %s", got)
+}
+
+func TestPrepareProjectEventRequiresDescription(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	_, err := prepareProjectEvent(ProjectEventInput{ProjectID: 1, OccurredAt: &now})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
 	}
 }

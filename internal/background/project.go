@@ -3,10 +3,10 @@ package background
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"jarvis/internal/domain"
@@ -81,10 +81,10 @@ func (s *ProjectService) Create(ctx context.Context, in ProjectInput) (*ProjectV
 	if occurredAt.IsZero() {
 		occurredAt = time.Now().UTC()
 	}
-	toStatus := project.Status
 	if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
-		ProjectID: project.ID, EventType: "created", Title: "项目已创建",
-		ToStatus: &toStatus, ActorType: "user", OccurredAt: &occurredAt,
+		ProjectID:   project.ID,
+		Description: fmt.Sprintf("创建项目“%s”，当前状态为“%s”。", project.Name, project.Status),
+		OccurredAt:  &occurredAt,
 	}); err != nil {
 		return nil, err
 	}
@@ -169,26 +169,20 @@ func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput)
 	}
 	now := time.Now().UTC()
 	if before.Status != in.Status {
-		fromStatus := before.Status
-		toStatus := in.Status
 		if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
-			ProjectID: id, EventType: "status_changed",
-			Title:      fmt.Sprintf("项目状态从 %s 变更为 %s", fromStatus, toStatus),
-			FromStatus: &fromStatus, ToStatus: &toStatus,
-			ActorType: "user", OccurredAt: &now,
+			ProjectID:   id,
+			Description: fmt.Sprintf("项目状态从“%s”调整为“%s”。", before.Status, in.Status),
+			OccurredAt:  &now,
 		}); err != nil {
 			return nil, err
 		}
 	}
 	profileFields := withoutField(changedFields, "status")
 	if len(profileFields) > 0 {
-		detail, err := projectEventDetail(map[string]any{"changed_fields": profileFields})
-		if err != nil {
-			return nil, err
-		}
 		if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
-			ProjectID: id, EventType: "profile_updated", Title: "项目资料已更新",
-			ActorType: "user", Detail: detail, OccurredAt: &now,
+			ProjectID:   id,
+			Description: fmt.Sprintf("更新项目资料：%s。", strings.Join(profileFields, "、")),
+			OccurredAt:  &now,
 		}); err != nil {
 			return nil, err
 		}
@@ -220,12 +214,10 @@ func (s *ProjectService) Delete(ctx context.Context, id uint64) error {
 		return fmt.Errorf("archive project id=%d affected %d rows", id, result.RowsAffected)
 	}
 	now := time.Now().UTC()
-	fromStatus := project.Status
-	toStatus := "archived"
 	if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
-		ProjectID: id, EventType: "archived", Title: "项目已归档",
-		FromStatus: &fromStatus, ToStatus: &toStatus,
-		ActorType: "user", OccurredAt: &now,
+		ProjectID:   id,
+		Description: fmt.Sprintf("项目从“%s”状态归档。", project.Status),
+		OccurredAt:  &now,
 	}); err != nil {
 		return err
 	}
@@ -311,12 +303,4 @@ func withoutField(fields []string, excluded string) []string {
 		}
 	}
 	return result
-}
-
-func projectEventDetail(value any) (json.RawMessage, error) {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return nil, fmt.Errorf("encode project event detail: %w", err)
-	}
-	return encoded, nil
 }

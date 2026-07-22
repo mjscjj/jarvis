@@ -29,24 +29,14 @@ type TaskEvent struct {
 
 func (TaskEvent) TableName() string { return "task_event" }
 
-// ProjectEvent is the append-only history of project state, progress,
-// milestones, decisions and blockers. Project keeps the current state.
+// ProjectEvent is an append-only natural-language history for a project.
+// Project keeps current structured state; Description records what happened.
 type ProjectEvent struct {
-	ID         uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	ProjectID  uint64         `gorm:"column:project_id;type:bigint unsigned;not null;index:idx_project_event_time,priority:1"`
-	EventType  string         `gorm:"column:event_type;type:varchar(32);not null;index:idx_project_event_type"`
-	Title      string         `gorm:"column:title;type:varchar(512);not null"`
-	Summary    *string        `gorm:"column:summary;type:text"`
-	FromStatus *string        `gorm:"column:from_status;type:varchar(24)"`
-	ToStatus   *string        `gorm:"column:to_status;type:varchar(24)"`
-	ActorType  string         `gorm:"column:actor_type;type:varchar(16);not null"`
-	ActorRef   *string        `gorm:"column:actor_ref;type:varchar(128)"`
-	SourceType *string        `gorm:"column:source_type;type:varchar(32)"`
-	SourceID   *string        `gorm:"column:source_id;type:varchar(128)"`
-	Detail     datatypes.JSON `gorm:"column:detail;type:json"`
-	EventKey   string         `gorm:"column:event_key;type:char(64);not null;uniqueIndex:uk_project_event_key"`
-	OccurredAt time.Time      `gorm:"column:occurred_at;type:datetime;not null;index:idx_project_event_time,priority:2"`
-	CreatedAt  time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	ID          uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	ProjectID   uint64    `gorm:"column:project_id;type:bigint unsigned;not null;index:idx_project_event_time,priority:1"`
+	Description string    `gorm:"column:description;type:text;not null"`
+	OccurredAt  time.Time `gorm:"column:occurred_at;type:datetime;not null;index:idx_project_event_time,priority:2"`
+	CreatedAt   time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
 
 	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:RESTRICT"`
 }

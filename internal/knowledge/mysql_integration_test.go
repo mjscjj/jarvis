@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"testing"
-	"time"
 
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
@@ -29,70 +28,61 @@ func TestRelationFactsMySQL(t *testing.T) {
 	}
 
 	project := domain.Project{Name: "Jarvis", Role: "owner", Status: "active", Priority: 1}
-	people := []domain.Person{
-		{OpenID: "ou_owner", Name: "Owner", Role: "key", PriorityWeight: 1, IsActive: true},
-		{OpenID: "ou_leader_1", Name: "Leader 1", Role: "leader", PriorityWeight: 1, IsActive: true},
-		{OpenID: "ou_leader_2", Name: "Leader 2", Role: "leader", PriorityWeight: 1, IsActive: true},
-	}
+	person := domain.Person{OpenID: "ou_owner", Name: "Owner", Role: "key", PriorityWeight: 1, IsActive: true}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := db.Create(&people).Error; err != nil {
-		t.Fatalf("create people: %v", err)
+	if err := db.Create(&person).Error; err != nil {
+		t.Fatalf("create person: %v", err)
 	}
 	service, err := knowledge.NewService(db)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
-	from := time.Now().UTC().Add(-time.Hour)
-	first, err := service.Create(context.Background(), knowledge.CreateInput{
-		Subject:   knowledge.EntityRef{Type: knowledge.EntityPerson, ID: people[0].ID},
-		Predicate: "reports_to", Object: &knowledge.EntityRef{Type: knowledge.EntityPerson, ID: people[1].ID},
-		AssertionKind: "manual", ValidFrom: &from, SourceType: "test", SourceID: "first",
+
+	created, err := service.Create(context.Background(), knowledge.CreateInput{
+		EntityA:     knowledge.EntityRef{Type: knowledge.EntityProject, ID: project.ID},
+		EntityB:     knowledge.EntityRef{Type: knowledge.EntityPerson, ID: person.ID},
+		Description: "Owner 负责 Jarvis 项目。",
 	})
 	if err != nil {
-		t.Fatalf("create first fact: %v", err)
+		t.Fatalf("Create() error = %v", err)
 	}
-	secondFrom := from.Add(30 * time.Minute)
-	second, err := service.Create(context.Background(), knowledge.CreateInput{
-		Subject:   knowledge.EntityRef{Type: knowledge.EntityPerson, ID: people[0].ID},
-		Predicate: "reports_to", Object: &knowledge.EntityRef{Type: knowledge.EntityPerson, ID: people[2].ID},
-		AssertionKind: "manual", ValidFrom: &secondFrom, SourceType: "test", SourceID: "second",
+	if created.EntityA.Label != "Owner" || created.EntityB.Label != "Jarvis" {
+		t.Fatalf("canonical labeled entities = %#v / %#v", created.EntityA, created.EntityB)
+	}
+
+	upserted, err := service.Create(context.Background(), knowledge.CreateInput{
+		EntityA:     knowledge.EntityRef{Type: knowledge.EntityPerson, ID: person.ID},
+		EntityB:     knowledge.EntityRef{Type: knowledge.EntityProject, ID: project.ID},
+		Description: "Owner 负责 Jarvis 项目的交付。",
 	})
 	if err != nil {
-		t.Fatalf("create second fact: %v", err)
+		t.Fatalf("upsert relation: %v", err)
 	}
-	var storedFirst domain.RelationFact
-	if err := db.First(&storedFirst, first.ID).Error; err != nil {
-		t.Fatalf("load first fact: %v", err)
+	if upserted.ID != created.ID || upserted.Description != "Owner 负责 Jarvis 项目的交付。" {
+		t.Fatalf("upserted = %#v", upserted)
 	}
-	if storedFirst.Status != "superseded" || storedFirst.SupersededByID == nil || *storedFirst.SupersededByID != second.ID {
-		t.Fatalf("superseded fact = %#v", storedFirst)
-	}
-	if _, err := service.Create(context.Background(), knowledge.CreateInput{
-		Subject:   knowledge.EntityRef{Type: knowledge.EntityPerson, ID: people[0].ID},
-		Predicate: "reports_to", Object: &knowledge.EntityRef{Type: knowledge.EntityPerson, ID: people[1].ID},
-		AssertionKind: "manual", ValidFrom: &from, SourceType: "test", SourceID: "first",
-	}); err != nil {
-		t.Fatalf("retry superseded fact: %v", err)
-	}
-	subjectType := knowledge.EntityPerson
-	subjectID := people[0].ID
+
+	entityType := knowledge.EntityProject
+	entityID := project.ID
 	list, err := service.List(context.Background(), knowledge.FactFilter{
-		SubjectType: &subjectType, SubjectID: &subjectID, Predicate: "reports_to",
-		AsOf: secondFrom.Add(time.Minute), Page: 1, PageSize: 20,
+		EntityType: &entityType, EntityID: &entityID, Page: 1, PageSize: 20,
 	})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if list.Total != 1 || len(list.Items) != 1 || list.Items[0].ID != second.ID {
-		t.Fatalf("active facts = %#v", list)
+	if list.Total != 1 || len(list.Items) != 1 || list.Items[0].ID != created.ID {
+		t.Fatalf("facts = %#v", list)
 	}
-	retracted, err := service.Retract(context.Background(), knowledge.RetractInput{FactID: second.ID, By: "user", Reason: "incorrect"})
-	if err != nil {
-		t.Fatalf("Retract() error = %v", err)
+
+	updated, err := service.Update(context.Background(), knowledge.UpdateInput{
+		FactID: created.ID, Description: "Owner 与 Jarvis 项目保持协作。",
+	})
+	if err != nil || updated.Description != "Owner 与 Jarvis 项目保持协作。" {
+		t.Fatalf("Update() result=%#v error=%v", updated, err)
 	}
-	if retracted.Status != "retracted" {
-		t.Fatalf("retracted status = %q", retracted.Status)
+	if err := service.Delete(context.Background(), created.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
 	}
 }

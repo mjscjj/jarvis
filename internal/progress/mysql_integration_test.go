@@ -65,6 +65,11 @@ func TestProgressEventsMySQL(t *testing.T) {
 	if len(projectEvents) != 4 {
 		t.Fatalf("project event count = %d, want 4: %#v", len(projectEvents), projectEvents)
 	}
+	for _, event := range projectEvents {
+		if event.Description == "" {
+			t.Fatalf("project event has empty description: %#v", event)
+		}
+	}
 
 	now := time.Now().UTC()
 	todo := domain.Todo{

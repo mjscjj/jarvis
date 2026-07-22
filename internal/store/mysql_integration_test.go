@@ -68,9 +68,11 @@ func TestMigrateMySQL(t *testing.T) {
 	assertColumnType(t, db, "feishu_group", "related_group", "tinyint(1)")
 	assertColumnType(t, db, "todo_event", "detail", "json")
 	assertColumnType(t, db, "decision_audit", "matched_rules", "json")
-	assertColumnType(t, db, "relation_fact", "value_json", "json")
+	assertColumnType(t, db, "relation_fact", "description", "text")
 	assertColumnType(t, db, "task_event", "detail", "json")
-	assertColumnType(t, db, "project_event", "detail", "json")
+	assertColumnType(t, db, "project_event", "description", "text")
+	assertNoColumn(t, db, "relation_fact", "predicate")
+	assertNoColumn(t, db, "project_event", "event_type")
 
 	for _, table := range []string{"project", "feishu_group", "person", "todo", "task", "resource"} {
 		var extra string
@@ -84,6 +86,13 @@ func TestMigrateMySQL(t *testing.T) {
 		if !strings.Contains(strings.ToLower(extra), "on update current_timestamp") {
 			t.Errorf("%s.updated_at EXTRA = %q, want ON UPDATE CURRENT_TIMESTAMP", table, extra)
 		}
+	}
+}
+
+func assertNoColumn(t *testing.T, db *gorm.DB, table, column string) {
+	t.Helper()
+	if db.Migrator().HasColumn(table, column) {
+		t.Errorf("unexpected legacy column %s.%s", table, column)
 	}
 }
 

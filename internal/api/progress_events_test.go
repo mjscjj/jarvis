@@ -26,12 +26,12 @@ func (f *fakeProgressService) ListTaskEvents(_ context.Context, taskID uint64) (
 
 func (f *fakeProgressService) AppendProjectEvent(_ context.Context, input progress.ProjectEventInput) (*progress.ProjectEventView, error) {
 	f.projectInput = input
-	return &progress.ProjectEventView{ProjectID: input.ProjectID, EventType: input.EventType}, f.err
+	return &progress.ProjectEventView{ProjectID: input.ProjectID, Description: input.Description}, f.err
 }
 
 func (f *fakeProgressService) ListProjectEvents(_ context.Context, projectID uint64) ([]progress.ProjectEventView, error) {
 	f.projectID = projectID
-	return []progress.ProjectEventView{{ProjectID: projectID, EventType: "created"}}, f.err
+	return []progress.ProjectEventView{{ProjectID: projectID, Description: "项目已创建。"}}, f.err
 }
 
 func TestListTaskEvents(t *testing.T) {
@@ -48,12 +48,12 @@ func TestAppendProjectEvent(t *testing.T) {
 	svc := &fakeProgressService{}
 	h := server.New()
 	h.POST("/api/projects/:project_id/events", AppendProjectEvent(svc))
-	body := []byte(`{"event_type":"progress_reported","title":"接口完成","actor_type":"user","detail":{"percent":80}}`)
+	body := []byte(`{"description":"接口已经完成，下一步联调。"}`)
 	response := ut.PerformRequest(h.Engine, "POST", "/api/projects/3/events", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	if svc.projectInput.ProjectID != 3 || svc.projectInput.EventType != "progress_reported" {
+	if svc.projectInput.ProjectID != 3 || svc.projectInput.Description != "接口已经完成，下一步联调。" {
 		t.Fatalf("input=%#v", svc.projectInput)
 	}
 }
@@ -61,7 +61,7 @@ func TestAppendProjectEvent(t *testing.T) {
 func TestAppendProjectEventRejectsUnknownField(t *testing.T) {
 	h := server.New()
 	h.POST("/api/projects/:project_id/events", AppendProjectEvent(&fakeProgressService{}))
-	body := []byte(`{"event_type":"progress_reported","title":"接口完成","actor_type":"user","unknown":true}`)
+	body := []byte(`{"description":"接口完成。","unknown":true}`)
 	response := ut.PerformRequest(h.Engine, "POST", "/api/projects/3/events", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())

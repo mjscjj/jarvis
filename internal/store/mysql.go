@@ -49,6 +49,9 @@ func Migrate(db *gorm.DB) error {
 	if err := migrateScheduledTaskV2(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := migrateNaturalLanguageFacts(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
 	models = append(models, domain.DecideModels()...)
@@ -57,6 +60,42 @@ func Migrate(db *gorm.DB) error {
 	models = append(models, domain.ProgressModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+	return nil
+}
+
+// migrateNaturalLanguageFacts replaces the first, over-structured relation
+// and project-event schemas. Those schemas were never populated in the local
+// runtime. Refuse to guess when another database contains rows.
+func migrateNaturalLanguageFacts(db *gorm.DB) error {
+	type legacyTable struct {
+		model        any
+		name         string
+		legacyColumn string
+	}
+	tables := []legacyTable{
+		{model: &domain.RelationFact{}, name: "relation_fact", legacyColumn: "predicate"},
+		{model: &domain.ProjectEvent{}, name: "project_event", legacyColumn: "event_type"},
+	}
+	migrator := db.Migrator()
+	toReplace := make([]legacyTable, 0, len(tables))
+	for _, table := range tables {
+		if !migrator.HasTable(table.model) || !migrator.HasColumn(table.name, table.legacyColumn) {
+			continue
+		}
+		var count int64
+		if err := db.Table(table.name).Count(&count).Error; err != nil {
+			return fmt.Errorf("count legacy %s rows: %w", table.name, err)
+		}
+		if count != 0 {
+			return fmt.Errorf("%s contains %d legacy rows; natural-language migration requires an explicit data decision", table.name, count)
+		}
+		toReplace = append(toReplace, table)
+	}
+	for _, table := range toReplace {
+		if err := migrator.DropTable(table.model); err != nil {
+			return fmt.Errorf("replace empty legacy %s table: %w", table.name, err)
+		}
 	}
 	return nil
 }
