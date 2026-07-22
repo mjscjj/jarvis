@@ -29,9 +29,19 @@ type PromptOptions struct {
 const CodexToolGuidance = `你本地可信、能执行 shell。替我把功课做足时，需要什么就自己去查，把查到的关键事实和链接写进 context：
 - ` + "`jarvis-tools <子命令>`" + `：查项目/仓库/人物/群的归属与背景，输出 JSON。可用子命令：list-projects、get-project --id N | --code C、get-group --chat-id ID、get-principal、get-person --open-id ID。
 - 共享记忆（所有 agent 共用的踩坑/关键约定/凭据）：` + "`jarvis-tools get-shared-memory`" + ` 查看；发现对后续任务有用的关键事实/凭据/约定，或踩到坑（权限缺失、环境陷阱）时，用 ` + "`jarvis-tools append-shared-memory --note -`" + `（长文本走 stdin）追加一条，让后续 agent 复用；别写一次性琐碎信息。
-- ` + "`lark-cli`" + `：查飞书群公告、文档、日历、成员（先用 ` + "`--help`" + ` 探索子命令）。
-- ` + "`bytedcli`" + `：查代码、commit、issue。
-- ` + "`git`" + `：查仓库信息。
+- ` + "`lark-cli`" + `：查飞书信息（群/文档/日历/成员/会议纪要等）。优先 ` + "`+shortcut`" + ` 高层命令，其次 ` + "`<domain> <resource> <method>`" + `，最后 ` + "`api GET <path>`" + ` 兜底。只读查询直接跑；写操作(high-risk-write)要 ` + "`--yes`" + ` 且必须先经我确认。多数 +shortcut 需带 ` + "`--as user`" + `。常用（不确定参数先 ` + "`lark-cli <domain> --help`" + `）：
+    - 姓名转 open_id：` + "`lark-cli contact +search-user --query 姓名 --as user`" + `
+    - 按群名找 chat_id：` + "`lark-cli im +chat-search --query 群名 --as user`" + `
+    - 拉群/私聊消息：` + "`lark-cli im +chat-messages-list --chat-id oc_xxx --as user`" + `
+    - 群成员：` + "`lark-cli im +chat-members-list --chat-id oc_xxx --as user`" + `
+    - 读文档正文：` + "`lark-cli docs +fetch --doc <飞书文档URL或token> --as user`" + `；搜文档：` + "`lark-cli docs +search --query 关键词 --as user`" + `
+    - 日历：` + "`lark-cli calendar +agenda --as user`" + `
+    - ` + "`--jq <expr>`" + ` 过滤输出，` + "`--dry-run`" + ` 只预览不执行。
+- ` + "`bytedcli`" + `：查内部研发信息（代码/commit/MR/issue）。加 ` + "`-j`" + ` 输出纯 JSON。命令形如 ` + "`bytedcli codebase <资源> <动作>`" + `，仓库用 ` + "`-R <repo>`" + ` 指定（在仓库目录内可省略，默认取当前 git origin）。常用（不确定先 ` + "`bytedcli codebase <资源> --help`" + `）：
+    - 找仓库：` + "`bytedcli codebase repo list --query 关键词 -j`" + `；看仓库：` + "`bytedcli codebase repo get <namespace/repo> -j`" + `
+    - 看提交：` + "`bytedcli codebase commit list -R <repo> -j`" + `
+    - 搜 issue/MR：` + "`bytedcli codebase search issue --query 关键词 -j`" + ` / ` + "`bytedcli codebase search mr --query 关键词 -j`" + `
+- ` + "`git`" + `：本地仓库信息（` + "`git -C <repo> log --oneline -20`" + ` 看近期提交、` + "`git -C <repo> remote -v`" + ` 看远端）。
 project_hint：能确定线索归属的项目就把项目 code 或 name 填进去（优先用 jarvis-tools list-projects 里存在的 code），确定不了填 null。`
 
 const systemPromptTemplate = `你是 principal（open_id=%s，也就是「我」）的私人管家和参谋。

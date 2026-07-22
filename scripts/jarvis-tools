@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 usage() {
   fail "usage: jarvis-tools <subcommand> [flags]
-subcommands: list-projects get-project get-group get-principal get-person"
+subcommands: list-projects get-project get-group get-principal get-person get-shared-memory append-shared-memory"
 }
 
 # resolve_api_base CONFIG_PATH
@@ -78,6 +78,45 @@ api_get() {
   printf '%s' "$body"
 }
 
+# api_put PATH JSON_BODY → prints response body to stdout; fails on HTTP/API error.
+api_put() {
+  local path="$1"
+  local json_body="$2"
+  local url="${API_BASE}${path}"
+  local body http_code
+  body="$(curl -sS -w '\n%{http_code}' --max-time 30 -X PUT \
+    -H 'Content-Type: application/json' --data "$json_body" "$url")" || fail "curl failed for ${url}"
+  http_code="$(printf '%s\n' "$body" | tail -n1)"
+  body="$(printf '%s\n' "$body" | sed '$d')"
+  local code=""
+  if printf '%s' "$body" | jq -e . >/dev/null 2>&1; then
+    code="$(printf '%s' "$body" | jq -r '.code // empty')"
+  fi
+  if [[ "$http_code" != "200" ]]; then
+    fail "HTTP ${http_code} from ${url}: ${body}"
+  fi
+  if [[ -z "$code" ]]; then
+    fail "invalid JSON from ${url}"
+  fi
+  if [[ "$code" != "0" ]]; then
+    fail "API code=${code} from ${url}: ${body}"
+  fi
+  printf '%s' "$body"
+}
+
+# read_note_arg → resolves NOTE: "-" means read from stdin, else literal value.
+# Trims a single trailing newline (mirrors Go readContentArg TrimRight "\n").
+read_note_arg() {
+  local text
+  if [[ "$NOTE" == "-" ]]; then
+    text="$(cat)"
+  else
+    text="$NOTE"
+  fi
+  # strip trailing newlines
+  printf '%s' "${text%$'\n'}"
+}
+
 # emit compact JSON (+ newline) to stdout — the ONLY successful stdout write.
 emit() {
   printf '%s\n' "$1" | jq -c .
@@ -113,6 +152,7 @@ ID=""
 CODE=""
 CHAT_ID=""
 OPEN_ID=""
+NOTE="-"
 
 reset_flags() {
   CONFIG_PATH="$CONFIG_DEFAULT"
@@ -120,6 +160,7 @@ reset_flags() {
   CODE=""
   CHAT_ID=""
   OPEN_ID=""
+  NOTE="-"
 }
 
 # parse_kv_flag NAME VALUE — supports --name value and --name=value via caller.
@@ -170,6 +211,15 @@ consume_flags() {
         ;;
       --open-id=*)
         OPEN_ID="${1#--open-id=}"
+        shift
+        ;;
+      --note)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        NOTE="$2"
+        shift 2
+        ;;
+      --note=*)
+        NOTE="${1#--note=}"
         shift
         ;;
       -*)
@@ -277,6 +327,39 @@ cmd_get_person() {
   emit "$(printf '%s' "$matched" | jq -c '.[0]')"
 }
 
+cmd_get_shared_memory() {
+  reset_flags
+  consume_flags "$@"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local body
+  body="$(api_get /api/shared-memory)"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+# append-shared-memory: read current content, append one note (content+"\n"+note,
+# or just note when empty), PUT the whole text back. Mirrors sharedmem.Append's
+# read-join-write so the script and Go/API stay consistent. Blank note fails fast.
+cmd_append_shared_memory() {
+  reset_flags
+  consume_flags "$@"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local note
+  note="$(read_note_arg)"
+  if [[ -z "${note//[[:space:]]/}" ]]; then
+    fail "append-shared-memory note is empty"
+  fi
+  local current merged put_body body
+  current="$(api_get /api/shared-memory | jq -r '.data.content // ""')"
+  if [[ -z "${current//[[:space:]]/}" ]]; then
+    merged="$note"
+  else
+    merged="${current}"$'\n'"${note}"
+  fi
+  put_body="$(jq -cn --arg c "$merged" '{content:$c}')"
+  body="$(api_put /api/shared-memory "$put_body")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
 # --- main -------------------------------------------------------------------
 
 [[ $# -ge 1 ]] || usage
@@ -289,7 +372,9 @@ case "$SUBCOMMAND" in
   get-group)      cmd_get_group "$@" ;;
   get-principal)  cmd_get_principal "$@" ;;
   get-person)     cmd_get_person "$@" ;;
+  get-shared-memory)    cmd_get_shared_memory "$@" ;;
+  append-shared-memory) cmd_append_shared_memory "$@" ;;
   *)
-    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person"
+    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person get-shared-memory append-shared-memory"
     ;;
 esac
