@@ -36,6 +36,15 @@ func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 	}
 }
 
+func TestCodexToolGuidanceIncludesScheduledTasks(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{"list-scheduled-tasks", "create-scheduled-task", "delete-scheduled-task", "context_snapshot"} {
+		if !strings.Contains(CodexToolGuidance, want) {
+			t.Fatalf("CodexToolGuidance missing %q", want)
+		}
+	}
+}
+
 // 共享记忆非空时，M3 应把 BEGIN_SHARED_MEMORY block 追加到 system 段（受信任指令区）；
 // 为空时不注入。
 func TestBuildPromptInjectsSharedMemory(t *testing.T) {

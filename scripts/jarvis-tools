@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# jarvis-tools: read-only decision-query CLI for M3/M4 agents.
+# jarvis-tools: Jarvis query/controlled-write CLI for M3/M4/M5 agents.
 # Same CLI contract as cmd/jarvis-tools, but backed by jarvis-server HTTP API
 # (curl + jq) instead of a direct MySQL connection.
 #
@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 usage() {
   fail "usage: jarvis-tools <subcommand> [flags]
-subcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory"
+subcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory list-scheduled-tasks create-scheduled-task delete-scheduled-task"
 }
 
 # resolve_api_base CONFIG_PATH
@@ -104,6 +104,33 @@ api_put() {
   printf '%s' "$body"
 }
 
+# api_write METHOD PATH JSON_BODY → prints response body to stdout.
+api_write() {
+  local method="$1"
+  local path="$2"
+  local json_body="$3"
+  local url="${API_BASE}${path}"
+  local body http_code
+  body="$(curl -sS -w '\n%{http_code}' --max-time 30 -X "$method" \
+    -H 'Content-Type: application/json' --data "$json_body" "$url")" || fail "curl failed for ${url}"
+  http_code="$(printf '%s\n' "$body" | tail -n1)"
+  body="$(printf '%s\n' "$body" | sed '$d')"
+  local code=""
+  if printf '%s' "$body" | jq -e . >/dev/null 2>&1; then
+    code="$(printf '%s' "$body" | jq -r '.code // empty')"
+  fi
+  if [[ "$http_code" == "404" ]]; then
+    fail "not found"
+  fi
+  if [[ "$http_code" != "200" ]]; then
+    fail "HTTP ${http_code} from ${url}: ${body}"
+  fi
+  if [[ -z "$code" || "$code" != "0" ]]; then
+    fail "invalid API response from ${url}: ${body}"
+  fi
+  printf '%s' "$body"
+}
+
 # read_note_arg → resolves NOTE: "-" means read from stdin, else literal value.
 # Trims a single trailing newline (mirrors Go readContentArg TrimRight "\n").
 read_note_arg() {
@@ -154,6 +181,9 @@ CHAT_ID=""
 OPEN_ID=""
 NOTE="-"
 NAME=""
+STATUS=""
+LIMIT="200"
+PAYLOAD="-"
 
 reset_flags() {
   CONFIG_PATH="$CONFIG_DEFAULT"
@@ -163,6 +193,9 @@ reset_flags() {
   OPEN_ID=""
   NOTE="-"
   NAME=""
+  STATUS=""
+  LIMIT="200"
+  PAYLOAD="-"
 }
 
 # parse_kv_flag NAME VALUE — supports --name value and --name=value via caller.
@@ -231,6 +264,33 @@ consume_flags() {
         ;;
       --name=*)
         NAME="${1#--name=}"
+        shift
+        ;;
+      --status)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        STATUS="$2"
+        shift 2
+        ;;
+      --status=*)
+        STATUS="${1#--status=}"
+        shift
+        ;;
+      --limit)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        LIMIT="$2"
+        shift 2
+        ;;
+      --limit=*)
+        LIMIT="${1#--limit=}"
+        shift
+        ;;
+      --payload)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        PAYLOAD="$2"
+        shift 2
+        ;;
+      --payload=*)
+        PAYLOAD="${1#--payload=}"
         shift
         ;;
       -*)
@@ -382,6 +442,47 @@ cmd_append_shared_memory() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+cmd_list_scheduled_tasks() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]] || fail "list-scheduled-tasks --limit must be a positive integer"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local query="?limit=${LIMIT}"
+  if [[ -n "$STATUS" ]]; then
+    local enc
+    enc="$(jq -rn --arg s "$STATUS" '$s|@uri')"
+    query="${query}&status=${enc}"
+  fi
+  local body
+  body="$(api_get "/api/scheduled-tasks${query}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_create_scheduled_task() {
+  reset_flags
+  consume_flags "$@"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  if [[ "$PAYLOAD" == "-" ]]; then
+    payload="$(cat)"
+  else
+    payload="$PAYLOAD"
+  fi
+  printf '%s' "$payload" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "create-scheduled-task payload must be a JSON object"
+  body="$(api_write POST /api/scheduled-tasks "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_delete_scheduled_task() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "delete-scheduled-task requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local body
+  body="$(api_write DELETE "/api/scheduled-tasks/${ID}" '{}')"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
 # --- main -------------------------------------------------------------------
 
 [[ $# -ge 1 ]] || usage
@@ -397,7 +498,10 @@ case "$SUBCOMMAND" in
   get-shared-memory)    cmd_get_shared_memory "$@" ;;
   get-skill)            cmd_get_skill "$@" ;;
   append-shared-memory) cmd_append_shared_memory "$@" ;;
+  list-scheduled-tasks) cmd_list_scheduled_tasks "$@" ;;
+  create-scheduled-task) cmd_create_scheduled_task "$@" ;;
+  delete-scheduled-task) cmd_delete_scheduled_task "$@" ;;
   *)
-    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory"
+    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory list-scheduled-tasks create-scheduled-task delete-scheduled-task"
     ;;
 esac

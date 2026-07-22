@@ -121,8 +121,8 @@ execute:
   bin: "codex"                                     # M5 用官方 Codex CLI（与 M3/M4 的 traex 分开）
   model: "gpt-5.6-sol"                             # Latest frontier（codex 无裸 gpt-5.6；luna/terra/sol 里 sol 最强）
   reasoning_effort: "medium"                       # 覆盖用户全局 xhigh，执行质量与耗时折中
-  timeout_second: 600                              # 单次执行超时（改代码可能久）
-  stale_executing_minute: 30                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
+  timeout_second: 1800                             # 单次执行超时：30 分钟（长任务需要查资料并调用外部工具）
+  stale_executing_minute: 45                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
 
 # 右侧流式对话（SSE /api/chat）。enabled=false 时不注册路由。
 # CLI 与模型与 M5 执行对齐（execute.bin/model）；本地可信环境固定 danger-full-access + 联网。
@@ -136,6 +136,13 @@ chat:
 # Agent Skills：正文位于仓库文件，后台只控制启用状态和 M3/M4/M5 生效范围。
 skills:
   root: ".agents/skills"
+
+# 一次性定时任务：每 5 分钟扫描到期的 pending 记录，并发调用 execute 段 Codex。
+scheduled_task:
+  enabled: true
+  schedule: "@every 5m"
+  batch_limit: 20
+  concurrency: 3
 
 # 每日进度总结（Progress 页）。enabled=false 时不起 19:00 cron（手动生成接口仍可用）。
 # 个人总结用 execute 段 codex（danger-full-access + 联网）自跑 lark-cli/bytedcli/git；

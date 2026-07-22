@@ -24,10 +24,12 @@ import {
   createProject,
   createResource,
   createWorkRule,
+  createTextStorage,
   deletePerson,
   deleteProject,
   deleteResource,
   deleteWorkRule,
+  deleteTextStorage,
   getProfile,
   getSkillContent,
   listGroups,
@@ -36,6 +38,7 @@ import {
   listResources,
   listSkills,
   listWorkRules,
+  listTextStorage,
   resolvePerson,
   scanSkills,
   updateGroupBackground,
@@ -45,6 +48,7 @@ import {
   updateResource,
   updateSkill,
   updateWorkRule,
+  updateTextStorage,
 } from './api'
 import SharedMemory from './SharedMemory'
 import type {
@@ -69,6 +73,8 @@ import type {
   WorkRule,
   WorkRuleInput,
   WorkRuleStage,
+  TextStorage,
+  TextStorageInput,
 } from './types'
 
 const { Text } = Typography
@@ -1042,6 +1048,95 @@ function WorkRulesPanel() {
   </>
 }
 
+// --- Approval rule (stored in generic text storage) ---
+
+const approvalRuleStorageKey = 'm5_approval_rule'
+
+function ApprovalRulesPanel() {
+  const [record, setRecord] = useState<TextStorage | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string>()
+  const [ok, setOk] = useState(false)
+  const [form] = Form.useForm<TextStorageInput>()
+
+  const reload = useCallback(() => {
+    setLoading(true)
+    listTextStorage()
+      .then((result) => {
+        const found = result.items.find((item) => item.storage_key === approvalRuleStorageKey) ?? null
+        setRecord(found)
+        form.setFieldsValue({
+          storage_key: approvalRuleStorageKey,
+          name: '审批规则',
+          content: found?.content ?? '',
+        })
+        setError(undefined)
+      })
+      .catch((cause: unknown) => setError(errorText(cause)))
+      .finally(() => setLoading(false))
+  }, [form])
+  useEffect(reload, [reload])
+
+  const save = async () => {
+    const values = await form.validateFields()
+    const input: TextStorageInput = {
+      storage_key: approvalRuleStorageKey,
+      name: '审批规则',
+      content: values.content,
+    }
+    setSaving(true)
+    try {
+      const updated = record
+        ? await updateTextStorage(record.id, input)
+        : await createTextStorage(input)
+      setRecord(updated)
+      setOk(true)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const remove = async () => {
+    if (!record) return
+    try {
+      await deleteTextStorage(record.id)
+      setRecord(null)
+      form.setFieldValue('content', '')
+      setOk(false)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    }
+  }
+
+  return <>
+    {error && <Alert type="error" showIcon message="审批规则操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon message="审批规则已保存，后续 M5 批准执行会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    {!record && !loading && <Alert type="warning" showIcon message="审批规则不存在，M5 批准后的落地执行会失败；请填写并保存。" style={{ marginBottom: 12 }} />}
+    <Card loading={loading} variant="borderless">
+      <Form form={form} layout="vertical" initialValues={{ storage_key: approvalRuleStorageKey, name: '审批规则', content: '' }}>
+        <Form.Item name="content" label="M5 批准后执行规则" rules={[{ required: true, whitespace: true, message: '请输入审批规则' }]}
+          extra="这段文本会作为可信规则注入 M5 的批准后落地提示词；修改后对后续执行实时生效。">
+          <Input.TextArea rows={16} placeholder="填写批准后执行必须遵守的规则" style={{ fontFamily: 'monospace' }} />
+        </Form.Item>
+        <Flex gap={8}>
+          <Button type="primary" onClick={save} loading={saving}>{record ? '保存修改' : '创建审批规则'}</Button>
+          <Button onClick={reload} loading={loading}>刷新</Button>
+          {record && (
+            <Popconfirm title="删除审批规则？" description="删除后，M5 批准后的落地执行会直接失败。" onConfirm={remove} okText="删除" cancelText="取消">
+              <Button danger>删除</Button>
+            </Popconfirm>
+          )}
+        </Flex>
+      </Form>
+    </Card>
+  </>
+}
+
 // --- Skills ---
 
 function SkillsPanel() {
@@ -1161,7 +1256,17 @@ export default function Background() {
         { key: 'persons', label: '人物', children: <PersonsPanel /> },
         { key: 'groups', label: '会话背景', children: <GroupsPanel /> },
         { key: 'resources', label: '资源', children: <ResourcePanel /> },
+      ]}
+    />
+  )
+}
+
+export function Settings() {
+  return (
+    <Tabs
+      items={[
         { key: 'work-rules', label: '工作规则', children: <WorkRulesPanel /> },
+        { key: 'approval-rules', label: '审批规则管理', children: <ApprovalRulesPanel /> },
         { key: 'skills', label: 'Skills', children: <SkillsPanel /> },
         { key: 'shared-memory', label: '共享记忆', children: <SharedMemory /> },
       ]}

@@ -31,10 +31,12 @@ import (
 	"jarvis/internal/memory"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/progress"
+	"jarvis/internal/scheduledtask"
 	"jarvis/internal/semantic"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/store"
+	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -91,6 +93,13 @@ func main() {
 
 	if err := store.Migrate(db); err != nil {
 		hlog.Fatalf("migrate mysql failed: %v", err)
+	}
+	textStorageService, err := textstore.NewService(db)
+	if err != nil {
+		hlog.Fatalf("initialize text storage service failed: %v", err)
+	}
+	if err := textStorageService.SeedDefaults(context.Background()); err != nil {
+		hlog.Fatalf("seed text storage defaults failed: %v", err)
 	}
 	if *migrateOnly {
 		hlog.Infof("mysql schema migration completed")
@@ -269,10 +278,16 @@ func main() {
 		hlog.Fatalf("initialize execute runner failed: %v", err)
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
-		db, taskService, codexRunner, sharedMemoryService, workRuleService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		db, taskService, codexRunner, sharedMemoryService, workRuleService, textStorageService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
 		hlog.Fatalf("initialize agent executor failed: %v", err)
+	}
+	scheduledTaskService, err := scheduledtask.NewService(
+		db, codexRunner, cfg.ScheduledTask.Concurrency, cfg.ScheduledTask.BatchLimit,
+	)
+	if err != nil {
+		hlog.Fatalf("initialize scheduled task service failed: %v", err)
 	}
 	projectService, err := background.NewProjectService(db)
 	if err != nil {
@@ -613,11 +628,30 @@ func main() {
 		}
 		stopDailyDigest = func() { <-dailyDigestScheduler.Stop().Done() }
 	}
+	stopScheduledTasks := func() {}
+	recovered, err := scheduledTaskService.RecoverRunning(runtimeCtx)
+	if err != nil {
+		hlog.Fatalf("recover scheduled tasks failed: %v", err)
+	}
+	if recovered > 0 {
+		hlog.Infof("scheduled tasks recovered after restart: %d", recovered)
+	}
+	if cfg.ScheduledTask.Enabled {
+		scheduledTaskScheduler, err := scheduledtask.StartScheduler(
+			runtimeCtx, scheduledTaskService, cfg.ScheduledTask.Schedule,
+			log.New(os.Stderr, "scheduledtask-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			hlog.Fatalf("start scheduled task scheduler failed: %v", err)
+		}
+		stopScheduledTasks = func() { <-scheduledTaskScheduler.Stop().Done() }
+	}
 	defer func() {
 		cancelRuntime()
 		<-scheduler.Stop().Done()
 		<-memoryScheduler.Stop().Done()
 		stopDailyDigest()
+		stopScheduledTasks()
 		stopPipelineScheduler()
 		waitPipeline()
 	}()
@@ -649,12 +683,14 @@ func main() {
 		Tasks: taskService, Executor: agentExecutor,
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
-		SharedMemory:  sharedMemoryService,
-		WorkRules:     workRuleService,
-		Skills:        skillService,
-		RelationFacts: relationFactService,
-		Progress:      progressService,
-		Overview:      overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
+		SharedMemory:   sharedMemoryService,
+		WorkRules:      workRuleService,
+		TextStorage:    textStorageService,
+		ScheduledTasks: scheduledTaskService,
+		Skills:         skillService,
+		RelationFacts:  relationFactService,
+		Progress:       progressService,
+		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		DailyDigests: dailyDigestService,
 		Worklog:      worklogService,
 		Debug:        debugService, Logs: logReader, Chat: chatService, Capture: captureService,

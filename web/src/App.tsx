@@ -12,15 +12,18 @@ import {
   ReloadOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  DatabaseOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons'
 import Confirmations from './Confirmations'
 import Tasks from './Tasks'
-import Background from './Background'
+import Background, { Settings } from './Background'
 import Overview from './Overview'
 import Progress from './Progress'
 import Debug from './Debug'
 import Todos from './Todos'
 import Chat from './Chat'
+import ScheduledTasks from './ScheduledTasks'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 
@@ -43,10 +46,12 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
+  { key: 'scheduled-tasks', label: '定时任务', icon: <CalendarOutlined /> },
   { key: 'overview', label: '工作台', icon: <DashboardOutlined /> },
   { key: 'todos', label: '待办', icon: <CheckCircleOutlined /> },
   { key: 'confirmations', label: '待确认', icon: <CheckCircleOutlined /> },
-  { key: 'background', label: '背景', icon: <SettingOutlined /> },
+  { key: 'background', label: '背景', icon: <DatabaseOutlined /> },
+  { key: 'settings', label: '设置', icon: <SettingOutlined /> },
   { key: 'progress', label: '进度', icon: <BarChartOutlined /> },
   { key: 'debug', label: '调试', icon: <ToolOutlined /> },
 ]
@@ -71,7 +76,9 @@ function AppShell() {
     todos: <Todos refreshKey={refreshKey} />,
     confirmations: <Confirmations />,
     tasks: <Tasks />,
+    'scheduled-tasks': <ScheduledTasks />,
     background: <Background />,
+    settings: <Settings />,
     progress: <Progress />,
     debug: <Debug />,
   }

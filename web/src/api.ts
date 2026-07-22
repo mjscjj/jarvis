@@ -41,6 +41,10 @@ import type {
   TodoQuery,
   WorkRule,
   WorkRuleInput,
+  TextStorage,
+  TextStorageInput,
+  ScheduledTask,
+  ScheduledTaskInput,
 } from './types'
 
 interface APIResponse<T> {
@@ -365,6 +369,44 @@ export function updateWorkRule(id: number, body: WorkRuleInput): Promise<WorkRul
 
 export function deleteWorkRule(id: number): Promise<{ id: number; deleted: boolean }> {
   return request(`/api/work-rules/${id}`, { method: 'DELETE' })
+}
+
+export function listTextStorage(signal?: AbortSignal): Promise<{ items: TextStorage[] }> {
+  return request<{ items: TextStorage[] }>('/api/text-storage', { signal })
+}
+
+export function createTextStorage(body: TextStorageInput): Promise<TextStorage> {
+  return request<TextStorage>('/api/text-storage', { method: 'POST', body })
+}
+
+export function updateTextStorage(id: number, body: TextStorageInput): Promise<TextStorage> {
+  return request<TextStorage>(`/api/text-storage/${id}`, { method: 'PUT', body })
+}
+
+export function deleteTextStorage(id: number): Promise<{ id: number; deleted: boolean }> {
+  return request(`/api/text-storage/${id}`, { method: 'DELETE' })
+}
+
+export function listScheduledTasks(status = '', signal?: AbortSignal): Promise<{ items: ScheduledTask[] }> {
+  const params = new URLSearchParams({ limit: '200' })
+  if (status) params.set('status', status)
+  return request<{ items: ScheduledTask[] }>(`/api/scheduled-tasks?${params.toString()}`, { signal })
+}
+
+export function createScheduledTask(body: ScheduledTaskInput): Promise<ScheduledTask> {
+  return request<ScheduledTask>('/api/scheduled-tasks', { method: 'POST', body })
+}
+
+export function updateScheduledTask(id: number, body: ScheduledTaskInput): Promise<ScheduledTask> {
+  return request<ScheduledTask>(`/api/scheduled-tasks/${id}`, { method: 'PUT', body })
+}
+
+export function deleteScheduledTask(id: number): Promise<{ id: number; deleted: boolean }> {
+  return request(`/api/scheduled-tasks/${id}`, { method: 'DELETE' })
+}
+
+export function triggerScheduledTask(id: number): Promise<ScheduledTask> {
+  return request<ScheduledTask>(`/api/scheduled-tasks/${id}/trigger`, { method: 'POST' })
 }
 
 export function listSkills(signal?: AbortSignal): Promise<{ items: AgentSkill[] }> {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/textstore"
 
 	"gorm.io/datatypes"
 )
@@ -217,22 +218,41 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
-	prompt, err := buildApplyPrompt(task, proposal, "", "", "", nil)
+	prompt, err := buildApplyPrompt(task, proposal, textstore.DefaultApprovalRule, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
-	for _, want := range []string{"落地阶段", "已获委托人批准", "本周关键进展如下：AAA", "APPROVED_PROPOSAL", "研发群 chat_id=xyz"} {
+	for _, want := range []string{"落地阶段", "已获委托人批准", "BEGIN_APPROVAL_RULE", "不要再改动方案实质", "本周关键进展如下：AAA", "APPROVED_PROPOSAL", "研发群 chat_id=xyz"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("apply prompt missing %q", want)
 		}
 	}
 }
 
+func TestBuildApplyPromptUsesStoredApprovalRule(t *testing.T) {
+	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
+	proposal := &codexProposal{Action: "a", Target: "b", Artifact: "c"}
+	prompt, err := buildApplyPrompt(task, proposal, "只允许写入测试文档。", "", "", "", nil)
+	if err != nil {
+		t.Fatalf("buildApplyPrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt, "只允许写入测试文档。") {
+		t.Fatalf("apply prompt missing stored approval rule: %s", prompt)
+	}
+	if strings.Contains(prompt, "不要再改动方案实质") {
+		t.Fatalf("apply prompt must not retain the removed hard-coded approval rule: %s", prompt)
+	}
+}
+
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildApplyPrompt(task, nil, "", "", "", nil); err == nil {
+	if _, err := buildApplyPrompt(task, nil, textstore.DefaultApprovalRule, "", "", "", nil); err == nil {
 		t.Fatalf("nil proposal must fail")
+	}
+	proposal := &codexProposal{Action: "a", Target: "b", Artifact: "c"}
+	if _, err := buildApplyPrompt(task, proposal, "", "", "", "", nil); err == nil {
+		t.Fatalf("empty approval rule must fail")
 	}
 }
 

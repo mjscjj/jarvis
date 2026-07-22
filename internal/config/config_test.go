@@ -69,12 +69,13 @@ func TestValidate(t *testing.T) {
 			DiscoverSchedule: "@every 6h",
 			ScanSchedule:     "@every 5m",
 		},
-		Decide:      DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
-		Skills:      SkillsConfig{Root: ".agents/skills"},
-		Codex:       validCodexConfig(),
-		Execute:     validExecuteConfig(),
-		Chat:        validChatConfig(),
-		DailyDigest: validDailyDigestConfig(),
+		Decide:        DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
+		Skills:        SkillsConfig{Root: ".agents/skills"},
+		Codex:         validCodexConfig(),
+		Execute:       validExecuteConfig(),
+		Chat:          validChatConfig(),
+		DailyDigest:   validDailyDigestConfig(),
+		ScheduledTask: validScheduledTaskConfig(),
 	}
 
 	tests := []struct {
@@ -159,6 +160,9 @@ func TestValidate(t *testing.T) {
 		{name: "dailydigest schedule", mutate: func(c *Config) { c.DailyDigest.Schedule = "" }, wantErr: "dailydigest.schedule"},
 		{name: "dailydigest group message limit", mutate: func(c *Config) { c.DailyDigest.GroupMessageLimit = 0 }, wantErr: "dailydigest.group_message_limit"},
 		{name: "dailydigest group concurrency", mutate: func(c *Config) { c.DailyDigest.GroupConcurrency = 0 }, wantErr: "dailydigest.group_concurrency"},
+		{name: "scheduled task schedule", mutate: func(c *Config) { c.ScheduledTask.Schedule = "" }, wantErr: "scheduled_task.schedule"},
+		{name: "scheduled task batch", mutate: func(c *Config) { c.ScheduledTask.BatchLimit = 0 }, wantErr: "scheduled_task.batch_limit"},
+		{name: "scheduled task concurrency", mutate: func(c *Config) { c.ScheduledTask.Concurrency = 0 }, wantErr: "scheduled_task.concurrency"},
 	}
 
 	for _, tt := range tests {
@@ -211,12 +215,13 @@ func TestValidateExtractEnabled(t *testing.T) {
 			PageSize: 50, ScanWorkers: 2, HotAgeHours: 6, WarmAgeHours: 168,
 			Timezone: "Asia/Shanghai", DiscoverSchedule: "@every 6h", ScanSchedule: "@every 5m",
 		},
-		Decide:      DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
-		Skills:      SkillsConfig{Root: ".agents/skills"},
-		Codex:       validCodexConfig(),
-		Execute:     validExecuteConfig(),
-		Chat:        validChatConfig(),
-		DailyDigest: validDailyDigestConfig(),
+		Decide:        DecideConfig{Enabled: true, Mode: "manual_mvp", Schedule: "@every 10m", BatchLimit: 50},
+		Skills:        SkillsConfig{Root: ".agents/skills"},
+		Codex:         validCodexConfig(),
+		Execute:       validExecuteConfig(),
+		Chat:          validChatConfig(),
+		DailyDigest:   validDailyDigestConfig(),
+		ScheduledTask: validScheduledTaskConfig(),
 	}
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("validate() error = %v", err)
@@ -253,4 +258,8 @@ func validDailyDigestConfig() DailyDigestConfig {
 	return DailyDigestConfig{
 		Enabled: true, Schedule: "0 19 * * *", GroupMessageLimit: 200, GroupConcurrency: 2,
 	}
+}
+
+func validScheduledTaskConfig() ScheduledTaskConfig {
+	return ScheduledTaskConfig{Enabled: true, Schedule: "@every 5m", BatchLimit: 20, Concurrency: 3}
 }

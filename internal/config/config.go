@@ -13,19 +13,20 @@ import (
 
 // Config 是全局配置的根。各子结构对应总纲 §1 技术栈里的外部依赖。
 type Config struct {
-	Server      ServerConfig      `yaml:"server"`
-	MySQL       MySQLConfig       `yaml:"mysql"`
-	Mem0        Mem0Config        `yaml:"mem0"`
-	Model       ModelConfig       `yaml:"model"`
-	Extract     ExtractConfig     `yaml:"extract"`
-	LarkCLI     LarkCLIConfig     `yaml:"lark_cli"`
-	Capture     CaptureConfig     `yaml:"capture"`
-	Decide      DecideConfig      `yaml:"decide"`
-	Codex       CodexConfig       `yaml:"codex"`
-	Execute     ExecuteConfig     `yaml:"execute"`
-	Chat        ChatConfig        `yaml:"chat"`
-	Skills      SkillsConfig      `yaml:"skills"`
-	DailyDigest DailyDigestConfig `yaml:"dailydigest"`
+	Server        ServerConfig        `yaml:"server"`
+	MySQL         MySQLConfig         `yaml:"mysql"`
+	Mem0          Mem0Config          `yaml:"mem0"`
+	Model         ModelConfig         `yaml:"model"`
+	Extract       ExtractConfig       `yaml:"extract"`
+	LarkCLI       LarkCLIConfig       `yaml:"lark_cli"`
+	Capture       CaptureConfig       `yaml:"capture"`
+	Decide        DecideConfig        `yaml:"decide"`
+	Codex         CodexConfig         `yaml:"codex"`
+	Execute       ExecuteConfig       `yaml:"execute"`
+	Chat          ChatConfig          `yaml:"chat"`
+	Skills        SkillsConfig        `yaml:"skills"`
+	DailyDigest   DailyDigestConfig   `yaml:"dailydigest"`
+	ScheduledTask ScheduledTaskConfig `yaml:"scheduled_task"`
 }
 
 // ServerConfig Hertz 监听配置。
@@ -209,6 +210,15 @@ type DailyDigestConfig struct {
 	Schedule          string `yaml:"schedule"`            // cron 表达式，默认 "0 19 * * *"（每晚 19:00）
 	GroupMessageLimit int    `yaml:"group_message_limit"` // 每群每天喂进 prompt 的消息上限，默认 200
 	GroupConcurrency  int    `yaml:"group_concurrency"`   // 一轮批量里群总结的并发上限，默认 2，>=1
+}
+
+// ScheduledTaskConfig controls the one-shot scheduled Codex task scanner.
+// The runner itself reuses execute.bin/model/reasoning/timeout.
+type ScheduledTaskConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Schedule    string `yaml:"schedule"`
+	BatchLimit  int    `yaml:"batch_limit"`
+	Concurrency int    `yaml:"concurrency"`
 }
 
 // Load 从指定路径读取并解析 YAML 配置。fail-fast：任何错误直接返回。
@@ -482,6 +492,15 @@ func (c *Config) validate() error {
 	}
 	if c.DailyDigest.GroupConcurrency < 1 {
 		return fmt.Errorf("dailydigest.group_concurrency 必须大于等于 1")
+	}
+	if c.ScheduledTask.Schedule == "" {
+		return fmt.Errorf("scheduled_task.schedule 不能为空")
+	}
+	if c.ScheduledTask.BatchLimit <= 0 {
+		return fmt.Errorf("scheduled_task.batch_limit 必须大于 0")
+	}
+	if c.ScheduledTask.Concurrency <= 0 {
+		return fmt.Errorf("scheduled_task.concurrency 必须大于 0")
 	}
 	return nil
 }

@@ -712,6 +712,43 @@ export interface WorkRuleInput {
   is_enabled: boolean
 }
 
+export interface TextStorage {
+  id: number
+  storage_key: string
+  name: string
+  content: string
+}
+
+export interface TextStorageInput {
+  storage_key: string
+  name: string
+  content: string
+}
+
+export type ScheduledTaskStatus = 'pending' | 'running' | 'done' | 'failed'
+
+export interface ScheduledTask {
+  id: number
+  title: string
+  instruction: string
+  context_snapshot: Record<string, unknown>
+  scheduled_at: string
+  status: ScheduledTaskStatus
+  result: string | null
+  error_detail: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ScheduledTaskInput {
+  title: string
+  instruction: string
+  context_snapshot: Record<string, unknown>
+  scheduled_at: string
+}
+
 export type SkillStage = WorkRuleStage
 
 export interface AgentSkill {
@@ -738,7 +775,7 @@ export interface AgentSkillContent {
 // PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。
 // 由各页面写入 PageContext（React Context），发送对话时随请求带给后端注入 prompt。
 export interface PageContext {
-  // 当前左侧导航 key：overview/todos/confirmations/tasks/background/progress/debug
+  // 当前左侧导航 key：overview/todos/confirmations/tasks/scheduled-tasks/background/settings/progress/debug
   active_key: string
   // 当前选中项的可读摘要（如 "Todo #12 修复登录超时"）；无选中则 null
   selection: PageSelection | null

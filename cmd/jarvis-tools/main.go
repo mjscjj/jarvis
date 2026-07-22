@@ -3,10 +3,8 @@
 // §2.1a). It exposes Jarvis's own MySQL/mem0 data — the part codex cannot reach
 // via lark-cli/bytedcli/git — as small subcommands.
 //
-// Most subcommands are read-only. The exception is the shared-memory writers
-// (set-shared-memory / append-shared-memory): a small set of controlled writes
-// that let the agent persist "共享记忆"（踩过的坑/关键约定/凭据）for later runs.
-// All other subcommands stay read-only.
+// Most subcommands are read-only. Controlled writes cover shared memory and
+// one-shot scheduled tasks, both explicitly exposed for agent use.
 //
 // Output contract (strict): each subcommand prints compact JSON to stdout and
 // NOTHING else, so codex can parse it reliably. Any error is written to stderr
@@ -26,6 +24,7 @@ import (
 
 	"jarvis/internal/background"
 	"jarvis/internal/config"
+	"jarvis/internal/scheduledtask"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/store"
@@ -41,7 +40,7 @@ const connectTimeout = 10 * time.Second
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(fmt.Errorf("usage: jarvis-tools <subcommand> [flags]\nsubcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory"))
+		fail(fmt.Errorf("usage: jarvis-tools <subcommand> [flags]\nsubcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory list-scheduled-tasks create-scheduled-task delete-scheduled-task"))
 	}
 	subcommand := os.Args[1]
 	args := os.Args[2:]
@@ -71,8 +70,14 @@ func run(subcommand string, args []string) error {
 		return runSetSharedMemory(args)
 	case "append-shared-memory":
 		return runAppendSharedMemory(args)
+	case "list-scheduled-tasks":
+		return runListScheduledTasks(args)
+	case "create-scheduled-task":
+		return runCreateScheduledTask(args)
+	case "delete-scheduled-task":
+		return runDeleteScheduledTask(args)
 	default:
-		return fmt.Errorf("unknown subcommand %q; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory", subcommand)
+		return fmt.Errorf("unknown subcommand %q; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory list-scheduled-tasks create-scheduled-task delete-scheduled-task", subcommand)
 	}
 }
 
@@ -328,6 +333,101 @@ func runAppendSharedMemory(args []string) error {
 	return emit(view)
 }
 
+func runListScheduledTasks(args []string) error {
+	fs := flag.NewFlagSet("list-scheduled-tasks", flag.ContinueOnError)
+	configPath := fs.String("config", "conf/config.yaml", "config file path")
+	status := fs.String("status", "", "optional status: pending/running/done/failed")
+	limit := fs.Int("limit", 200, "maximum rows")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	_, db, cleanup, err := openDB(*configPath)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	service, err := scheduledtask.NewCRUDService(db)
+	if err != nil {
+		return err
+	}
+	items, err := service.List(context.Background(), scheduledtask.ListFilter{Status: *status, Limit: *limit})
+	if err != nil {
+		return err
+	}
+	return emit(map[string]any{"items": items})
+}
+
+func runCreateScheduledTask(args []string) error {
+	fs := flag.NewFlagSet("create-scheduled-task", flag.ContinueOnError)
+	configPath := fs.String("config", "conf/config.yaml", "config file path")
+	payload := fs.String("payload", "-", `JSON object; "-" (default) reads stdin`)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	text, err := readContentArg(*payload)
+	if err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.DisallowUnknownFields()
+	var input scheduledtask.Input
+	if err := decoder.Decode(&input); err != nil {
+		return fmt.Errorf("decode scheduled task payload: %w", err)
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		return err
+	}
+	_, db, cleanup, err := openDB(*configPath)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	service, err := scheduledtask.NewCRUDService(db)
+	if err != nil {
+		return err
+	}
+	view, err := service.Create(context.Background(), input)
+	if err != nil {
+		return err
+	}
+	return emit(view)
+}
+
+func runDeleteScheduledTask(args []string) error {
+	fs := flag.NewFlagSet("delete-scheduled-task", flag.ContinueOnError)
+	configPath := fs.String("config", "conf/config.yaml", "config file path")
+	id := fs.Uint64("id", 0, "scheduled task id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *id == 0 {
+		return fmt.Errorf("delete-scheduled-task requires --id")
+	}
+	_, db, cleanup, err := openDB(*configPath)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	service, err := scheduledtask.NewCRUDService(db)
+	if err != nil {
+		return err
+	}
+	if err := service.Delete(context.Background(), *id); err != nil {
+		return mapNotFound(err)
+	}
+	return emit(map[string]any{"id": *id, "deleted": true})
+}
+
+func ensureJSONEOF(decoder *json.Decoder) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); err == io.EOF {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("decode trailing JSON: %w", err)
+	}
+	return fmt.Errorf("scheduled task payload must contain exactly one JSON object")
+}
+
 // readContentArg resolves a text flag value: the literal "-" (or empty) means
 // read the whole payload from stdin, letting codex pipe long text without hitting
 // command-line length limits; any other value is used verbatim.
@@ -358,7 +458,7 @@ func emit(value any) error {
 // mapNotFound turns background.ErrNotFound into a clear message so codex sees a
 // deterministic "not found" instead of an opaque error.
 func mapNotFound(err error) error {
-	if errors.Is(err, background.ErrNotFound) || errors.Is(err, skill.ErrNotFound) {
+	if errors.Is(err, background.ErrNotFound) || errors.Is(err, skill.ErrNotFound) || errors.Is(err, scheduledtask.ErrNotFound) {
 		return fmt.Errorf("not found")
 	}
 	return err

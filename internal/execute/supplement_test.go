@@ -108,6 +108,11 @@ func TestBuildExecutionPromptInjectsSkills(t *testing.T) {
 	if !strings.Contains(prompt, "feishu-send-message") || strings.Index(prompt, "BEGIN_AVAILABLE_SKILLS") >= strings.Index(prompt, "BEGIN_TASK_CONTEXT") {
 		t.Fatalf("skill catalog must precede TASK_CONTEXT:\n%s", prompt)
 	}
+	for _, want := range []string{"list-scheduled-tasks", "create-scheduled-task", "delete-scheduled-task"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("execution prompt missing scheduled task tool %q:\n%s", want, prompt)
+		}
+	}
 }
 
 func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
@@ -126,7 +131,7 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 		t.Fatalf("build prompt: %v", err)
 	}
 	for _, want := range []string{
-		`"previous_runs"`, `"run_id":3`, summary, "不要重复做", "task-exec-v3",
+		`"previous_runs"`, `"run_id":3`, summary, "不要重复做", "task-exec-v4",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
