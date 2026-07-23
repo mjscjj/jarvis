@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/observability"
 	"jarvis/internal/progress"
 
+	"code.byted.org/middleware/hertz/pkg/common/hlog"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -161,7 +162,7 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 	}
 	items := make([]TaskView, len(rows))
 	for i := range rows {
-		items[i] = taskView(&rows[i])
+		items[i] = taskView(ctx, &rows[i])
 	}
 	return &TaskList{Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
 }
@@ -232,7 +233,7 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 	if err != nil {
 		return nil, err
 	}
-	view := taskView(&finished)
+	view := taskView(ctx, &finished)
 	return &view, nil
 }
 
@@ -298,7 +299,7 @@ func (s *Store) Supplement(ctx context.Context, input SupplementInput) (*TaskVie
 	}); err != nil {
 		return nil, err
 	}
-	view := taskView(&reloaded)
+	view := taskView(ctx, &reloaded)
 	return &view, nil
 }
 
@@ -768,7 +769,7 @@ func (s *Store) RejectAwaitingApproval(ctx context.Context, taskID uint64, expec
 	if err != nil {
 		return nil, err
 	}
-	view := taskView(&rejected)
+	view := taskView(ctx, &rejected)
 	return &view, nil
 }
 
@@ -1093,13 +1094,14 @@ func canonicalJSONObject(raw []byte) (json.RawMessage, error) {
 	return encoded, nil
 }
 
-func taskView(task *domain.Task) TaskView {
+func taskView(ctx context.Context, task *domain.Task) TaskView {
 	supplements, err := decodeExecutionSupplements(task.ExecutionSupplements)
 	if err != nil {
 		// 写入侧 Supplement 已严格校验，正常不会存进坏数据；一旦解析失败说明库里
 		// 的 execution_supplements 被损坏。这里 taskView 无法返回 error，至少打点
 		// 暴露问题（不静默吞掉，符合 fail-fast），补充信息在本次视图中缺省为空。
-		log.Printf("taskView: decode execution_supplements task_id=%d failed: %v", task.ID, err)
+		ctx = observability.EnsureLogID(ctx)
+		hlog.CtxErrorf(ctx, "decode execution supplements failed task_id=%d error=%+v", task.ID, err)
 		supplements = nil
 	}
 	return TaskView{

@@ -32,6 +32,7 @@ import (
 	"jarvis/internal/larkcli"
 	"jarvis/internal/meetingcapture"
 	"jarvis/internal/memory"
+	"jarvis/internal/observability"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
@@ -70,6 +71,16 @@ func main() {
 	meetingCaptureOnce := flag.Bool("meeting-capture-once", false, "执行一次已结束会议妙记采集，成功后退出")
 	flag.Parse()
 	byted.Init()
+	startupCtx := observability.EnsureLogID(context.Background())
+	fatalf := func(format string, args ...any) {
+		hlog.CtxFatalf(startupCtx, format, args...)
+	}
+	errorf := func(format string, args ...any) {
+		hlog.CtxErrorf(startupCtx, format, args...)
+	}
+	infof := func(format string, args ...any) {
+		hlog.CtxInfof(startupCtx, format, args...)
+	}
 	actionCount := 0
 	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P, *meetingCaptureOnce} {
 		if selected {
@@ -77,56 +88,56 @@ func main() {
 		}
 	}
 	if actionCount > 1 {
-		hlog.Fatalf("one-shot action flags are mutually exclusive")
+		fatalf("one-shot action flags are mutually exclusive")
 	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		// fail-fast：配置错误启动即暴露，不带缺陷跑起来
-		hlog.Fatalf("load config failed: %v", err)
+		fatalf("load config failed: %v", err)
 	}
 	configPathAbsolute, err := filepath.Abs(*configPath)
 	if err != nil {
-		hlog.Fatalf("resolve config path failed: %v", err)
+		fatalf("resolve config path failed: %v", err)
 	}
 	textFileService, err := textstore.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "prompts"))
 	if err != nil {
-		hlog.Fatalf("initialize text file service failed: %v", err)
+		fatalf("initialize text file service failed: %v", err)
 	}
 
-	connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	connectCtx, cancel := context.WithTimeout(startupCtx, 10*time.Second)
 	defer cancel()
 	db, err := store.OpenMySQL(connectCtx, cfg.MySQL)
 	if err != nil {
-		hlog.Fatalf("connect mysql failed: %v", err)
+		fatalf("connect mysql failed: %v", err)
 	}
 	defer func() {
 		if err := store.Close(db); err != nil {
-			hlog.Errorf("close mysql failed: %v", err)
+			errorf("close mysql failed: %v", err)
 		}
 	}()
 
 	if err := store.Migrate(db); err != nil {
-		hlog.Fatalf("migrate mysql failed: %v", err)
+		fatalf("migrate mysql failed: %v", err)
 	}
 	if *migrateOnly {
-		hlog.Infof("mysql schema migration completed")
+		infof("mysql schema migration completed")
 		return
 	}
 	if *backfillProgressEvents {
-		stats, err := progress.BackfillTaskSnapshots(context.Background(), db, time.Now().UTC())
+		stats, err := progress.BackfillTaskSnapshots(startupCtx, db, time.Now().UTC())
 		if err != nil {
-			hlog.Fatalf("backfill task progress snapshots failed: %v", err)
+			fatalf("backfill task progress snapshots failed: %v", err)
 		}
-		hlog.Infof("progress event backfill completed: tasks_scanned=%d events_created=%d", stats.TasksScanned, stats.EventsCreated)
+		infof("progress event backfill completed: tasks_scanned=%d events_created=%d", stats.TasksScanned, stats.EventsCreated)
 		return
 	}
 	if *seedOnce {
-		stats, err := background.Seed(context.Background(), db)
+		stats, err := background.Seed(startupCtx, db)
 		if err != nil {
-			hlog.Fatalf("seed backgrounds failed: %v", err)
+			fatalf("seed backgrounds failed: %v", err)
 		}
-		hlog.Infof(
+		infof(
 			"seed completed: projects_created=%d projects_skipped=%d tasks_created=%d tasks_skipped=%d groups_linked=%d",
 			stats.ProjectsCreated, stats.ProjectsSkipped, stats.TasksCreated, stats.TasksSkipped, stats.GroupsLinked,
 		)
@@ -137,44 +148,44 @@ func main() {
 	// prompt 时实时读表。构造失败 fail-fast。
 	sharedMemoryService, err := sharedmem.NewSharedMemoryService(db)
 	if err != nil {
-		hlog.Fatalf("initialize shared memory service failed: %v", err)
+		fatalf("initialize shared memory service failed: %v", err)
 	}
 	workRuleService, err := workrule.NewService(db)
 	if err != nil {
-		hlog.Fatalf("initialize work rule service failed: %v", err)
+		fatalf("initialize work rule service failed: %v", err)
 	}
 	relationFactService, err := knowledge.NewService(db)
 	if err != nil {
-		hlog.Fatalf("initialize relation fact service failed: %v", err)
+		fatalf("initialize relation fact service failed: %v", err)
 	}
 	progressService, err := progress.NewService(db)
 	if err != nil {
-		hlog.Fatalf("initialize progress service failed: %v", err)
+		fatalf("initialize progress service failed: %v", err)
 	}
 	skillService, err := skill.NewService(db, cfg.Skills.Root)
 	if err != nil {
-		hlog.Fatalf("initialize skill service failed: %v", err)
+		fatalf("initialize skill service failed: %v", err)
 	}
-	if _, err := skillService.Scan(context.Background()); err != nil {
-		hlog.Fatalf("scan agent skills failed: %v", err)
+	if _, err := skillService.Scan(startupCtx); err != nil {
+		fatalf("scan agent skills failed: %v", err)
 	}
 
 	var decisionWorker *decide.DecisionWorker
 	if cfg.Decide.Enabled || *decideOnce {
 		if cfg.Decide.BatchLimit <= 0 {
-			hlog.Fatalf("decision requires positive decide.batch_limit")
+			fatalf("decision requires positive decide.batch_limit")
 		}
 		decisionSource, err := decide.NewEvaluationSource(db)
 		if err != nil {
-			hlog.Fatalf("initialize decision source failed: %v", err)
+			fatalf("initialize decision source failed: %v", err)
 		}
 		decisionStore, err := decide.NewEvaluationStore(db)
 		if err != nil {
-			hlog.Fatalf("initialize decision store failed: %v", err)
+			fatalf("initialize decision store failed: %v", err)
 		}
 		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textFileService)
 		if err != nil {
-			hlog.Fatalf("initialize decision evaluator failed: %v", err)
+			fatalf("initialize decision evaluator failed: %v", err)
 		}
 		decisionWorker, err = decide.NewDecisionWorker(
 			decisionSource,
@@ -183,15 +194,15 @@ func main() {
 			decide.WorkerOptions{BatchLimit: cfg.Decide.BatchLimit},
 		)
 		if err != nil {
-			hlog.Fatalf("initialize decision worker failed: %v", err)
+			fatalf("initialize decision worker failed: %v", err)
 		}
 	}
 	if *decideOnce {
-		stats, err := decisionWorker.EvaluateOnce(context.Background())
+		stats, err := decisionWorker.EvaluateOnce(startupCtx)
 		if err != nil {
-			hlog.Fatalf("route Todos to manual confirmation failed: %v", err)
+			fatalf("route Todos to manual confirmation failed: %v", err)
 		}
-		hlog.Infof(
+		infof(
 			"decision completed: loaded=%d evaluated=%d auto=%d need_decision=%d need_info=%d dropped=%d",
 			stats.Loaded, stats.Evaluated, stats.Auto, stats.NeedDecision, stats.NeedInfo, stats.Dropped,
 		)
@@ -206,14 +217,14 @@ func main() {
 		Timeout:     time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
 	})
 	if err != nil {
-		hlog.Fatalf("initialize lark-cli failed: %v", err)
+		fatalf("initialize lark-cli failed: %v", err)
 	}
 	if *seedPersons {
-		stats, err := background.SeedPersonsFromKeyGroups(context.Background(), db, larkClient)
+		stats, err := background.SeedPersonsFromKeyGroups(startupCtx, db, larkClient)
 		if err != nil {
-			hlog.Fatalf("seed persons from key groups failed: %v", err)
+			fatalf("seed persons from key groups failed: %v", err)
 		}
-		hlog.Infof(
+		infof(
 			"seed persons completed: groups_scanned=%d persons_seen=%d persons_added=%d persons_skipped=%d",
 			stats.GroupsScanned, stats.PersonsSeen, stats.PersonsAdded, stats.PersonsSkip,
 		)
@@ -221,7 +232,7 @@ func main() {
 	}
 	location, err := time.LoadLocation(cfg.Capture.Timezone)
 	if err != nil {
-		hlog.Fatalf("load capture timezone failed: %v", err)
+		fatalf("load capture timezone failed: %v", err)
 	}
 	captureService, err := capture.NewService(db, larkClient, capture.Options{
 		PageSize:           cfg.Capture.PageSize,
@@ -232,7 +243,7 @@ func main() {
 		AutoRelatedP2PTopN: cfg.Capture.AutoRelatedP2PTopN,
 	})
 	if err != nil {
-		hlog.Fatalf("initialize capture service failed: %v", err)
+		fatalf("initialize capture service failed: %v", err)
 	}
 	meetingCaptureService, err := meetingcapture.NewService(db, larkClient, meetingcapture.Options{
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID,
@@ -242,17 +253,17 @@ func main() {
 		Location:        location,
 	})
 	if err != nil {
-		hlog.Fatalf("initialize meeting capture service failed: %v", err)
+		fatalf("initialize meeting capture service failed: %v", err)
 	}
 	if *meetingCaptureOnce {
-		stats, scanErr := meetingCaptureService.ScanOnce(context.Background())
+		stats, scanErr := meetingCaptureService.ScanOnce(startupCtx)
 		if scanErr != nil {
-			hlog.Fatalf(
+			fatalf(
 				"meeting capture failed: discovered=%d attempted=%d imported=%d waiting=%d permission_denied=%d skipped=%d error=%v",
 				stats.Discovered, stats.Attempted, stats.Imported, stats.Waiting, stats.PermissionDenied, stats.Skipped, scanErr,
 			)
 		}
-		hlog.Infof(
+		infof(
 			"meeting capture completed: discovered=%d attempted=%d imported=%d waiting=%d permission_denied=%d skipped=%d",
 			stats.Discovered, stats.Attempted, stats.Imported, stats.Waiting, stats.PermissionDenied, stats.Skipped,
 		)
@@ -260,11 +271,11 @@ func main() {
 	}
 	memoryClient, err := memory.NewClient(cfg.Mem0.BaseURL, time.Duration(cfg.Mem0.TimeoutSec)*time.Second)
 	if err != nil {
-		hlog.Fatalf("initialize memory client failed: %v", err)
+		fatalf("initialize memory client failed: %v", err)
 	}
 	memoryStore, err := memory.NewGORMStore(db)
 	if err != nil {
-		hlog.Fatalf("initialize memory store failed: %v", err)
+		fatalf("initialize memory store failed: %v", err)
 	}
 	memoryWorker, err := memory.NewWorker(memoryStore, memoryClient, memory.WorkerOptions{
 		BatchLimit:        cfg.Mem0.BatchLimit,
@@ -273,106 +284,106 @@ func main() {
 		Location:          location,
 	})
 	if err != nil {
-		hlog.Fatalf("initialize memory worker failed: %v", err)
+		fatalf("initialize memory worker failed: %v", err)
 	}
 	todoStore, err := extract.NewTodoStore(db)
 	if err != nil {
-		hlog.Fatalf("initialize todo store failed: %v", err)
+		fatalf("initialize todo store failed: %v", err)
 	}
 	// Build an evaluator + store so the confirmation service can re-run M4
 	// asynchronously after a need_info supplement, independent of the decision
 	// cron being enabled. Mirrors the worker's evaluator selection.
 	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textFileService)
 	if err != nil {
-		hlog.Fatalf("initialize supplement evaluator failed: %v", err)
+		fatalf("initialize supplement evaluator failed: %v", err)
 	}
 	supplementStore, err := decide.NewEvaluationStore(db)
 	if err != nil {
-		hlog.Fatalf("initialize supplement evaluation store failed: %v", err)
+		fatalf("initialize supplement evaluation store failed: %v", err)
 	}
 	confirmationService, err := decide.NewService(db, supplementEvaluator, supplementStore)
 	if err != nil {
-		hlog.Fatalf("initialize confirmation service failed: %v", err)
+		fatalf("initialize confirmation service failed: %v", err)
 	}
 	confirmationDetails, err := decide.NewConfirmationDetailStore(db, todoStore)
 	if err != nil {
-		hlog.Fatalf("initialize confirmation detail store failed: %v", err)
+		fatalf("initialize confirmation detail store failed: %v", err)
 	}
 	taskService, err := execute.NewStore(db)
 	if err != nil {
-		hlog.Fatalf("initialize MVP Task service failed: %v", err)
+		fatalf("initialize MVP Task service failed: %v", err)
 	}
 	contextAssembler, err := contextsnap.NewAssembler(db, cfg.Extract.PrincipalOpenID)
 	if err != nil {
-		hlog.Fatalf("initialize common context snapshot assembler failed: %v", err)
+		fatalf("initialize common context snapshot assembler failed: %v", err)
 	}
 	taskFactory, err := taskcreate.NewFactory(db, contextAssembler)
 	if err != nil {
-		hlog.Fatalf("initialize Task factory failed: %v", err)
+		fatalf("initialize Task factory failed: %v", err)
 	}
 	taskSubmitter, err := taskcreate.NewSubmitter(taskFactory)
 	if err != nil {
-		hlog.Fatalf("initialize Task submitter failed: %v", err)
+		fatalf("initialize Task submitter failed: %v", err)
 	}
 	codexRunner, err := execute.NewCodexRunner(
 		cfg.Execute.Bin, cfg.Execute.Model, cfg.Execute.ReasoningEffort,
 		time.Duration(cfg.Execute.TimeoutSecond)*time.Second,
 	)
 	if err != nil {
-		hlog.Fatalf("initialize execute runner failed: %v", err)
+		fatalf("initialize execute runner failed: %v", err)
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
 		db, taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
-		hlog.Fatalf("initialize agent executor failed: %v", err)
+		fatalf("initialize agent executor failed: %v", err)
 	}
 	scheduledTaskService, err := scheduledtask.NewService(
 		db, taskSubmitter, agentExecutor, cfg.ScheduledTask.BatchLimit,
 	)
 	if err != nil {
-		hlog.Fatalf("initialize scheduled task service failed: %v", err)
+		fatalf("initialize scheduled task service failed: %v", err)
 	}
 	projectService, err := background.NewProjectService(db)
 	if err != nil {
-		hlog.Fatalf("initialize project service failed: %v", err)
+		fatalf("initialize project service failed: %v", err)
 	}
 	personService, err := background.NewPersonService(db)
 	if err != nil {
-		hlog.Fatalf("initialize person service failed: %v", err)
+		fatalf("initialize person service failed: %v", err)
 	}
 	groupService, err := background.NewGroupBackgroundService(db, captureService)
 	if err != nil {
-		hlog.Fatalf("initialize group background service failed: %v", err)
+		fatalf("initialize group background service failed: %v", err)
 	}
 	resolveService, err := background.NewResolveService(larkClient)
 	if err != nil {
-		hlog.Fatalf("initialize person resolve service failed: %v", err)
+		fatalf("initialize person resolve service failed: %v", err)
 	}
 	profileService, err := background.NewProfileService(db, cfg.Extract.PrincipalOpenID)
 	if err != nil {
-		hlog.Fatalf("initialize principal profile service failed: %v", err)
+		fatalf("initialize principal profile service failed: %v", err)
 	}
 	resourceService, err := background.NewResourceService(db)
 	if err != nil {
-		hlog.Fatalf("initialize resource service failed: %v", err)
+		fatalf("initialize resource service failed: %v", err)
 	}
 	overviewService, err := insight.NewOverviewService(db)
 	if err != nil {
-		hlog.Fatalf("initialize overview service failed: %v", err)
+		fatalf("initialize overview service failed: %v", err)
 	}
 	digestService, err := insight.NewDigestService(db, location)
 	if err != nil {
-		hlog.Fatalf("initialize digest service failed: %v", err)
+		fatalf("initialize digest service failed: %v", err)
 	}
 	worklogService, err := insight.NewWorklogService(db, location)
 	if err != nil {
-		hlog.Fatalf("initialize worklog service failed: %v", err)
+		fatalf("initialize worklog service failed: %v", err)
 	}
 	// 进度总结按需复用 M5 的 codex runner（read-only 出纯文本）；codex 不可用时留空，接口返回 503。
 	digestSummarizer, err := insight.NewSummarizer(codexRunner)
 	if err != nil {
-		hlog.Fatalf("initialize digest summarizer failed: %v", err)
+		fatalf("initialize digest summarizer failed: %v", err)
 	}
 	// 每日进度总结：个人与关键群统一复用 execute 段的官方 codex runner，
 	// danger-full-access + 联网自跑 lark-cli/bytedcli/git，并分别注入对应 Skill。
@@ -390,15 +401,15 @@ func main() {
 		GroupConcur:     cfg.DailyDigest.GroupConcurrency,
 	})
 	if err != nil {
-		hlog.Fatalf("initialize daily digest service failed: %v", err)
+		fatalf("initialize daily digest service failed: %v", err)
 	}
 	logReader, err := insight.NewLogReader(cfg.Server.LogFiles)
 	if err != nil {
-		hlog.Fatalf("initialize log reader failed: %v", err)
+		fatalf("initialize log reader failed: %v", err)
 	}
 	debugService, err := insight.NewDebugService(db, cfg.Mem0.BaseURL, cfg.Mem0.QdrantHost, 0, logReader)
 	if err != nil {
-		hlog.Fatalf("initialize debug service failed: %v", err)
+		fatalf("initialize debug service failed: %v", err)
 	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
@@ -410,7 +421,7 @@ func main() {
 			time.Duration(cfg.Model.TimeoutSec)*time.Second,
 		)
 		if err != nil {
-			hlog.Fatalf("initialize extraction model client failed: %v", err)
+			fatalf("initialize extraction model client failed: %v", err)
 		}
 		embeddingClient, err := embedding.NewClient(
 			cfg.Model.BaseURL,
@@ -420,7 +431,7 @@ func main() {
 			time.Duration(cfg.Model.TimeoutSec)*time.Second,
 		)
 		if err != nil {
-			hlog.Fatalf("initialize Todo embedding client failed: %v", err)
+			fatalf("initialize Todo embedding client failed: %v", err)
 		}
 		semanticIndex, err = semantic.NewIndex(semantic.Options{
 			Host: cfg.Mem0.QdrantHost, Port: cfg.Mem0.QdrantGRPCPort,
@@ -430,21 +441,21 @@ func main() {
 			ActiveStatuses: extract.ActiveTodoStatuses(),
 		})
 		if err != nil {
-			hlog.Fatalf("initialize Todo semantic index failed: %v", err)
+			fatalf("initialize Todo semantic index failed: %v", err)
 		}
-		ensureCtx, cancelEnsure := context.WithTimeout(context.Background(), 10*time.Second)
+		ensureCtx, cancelEnsure := context.WithTimeout(startupCtx, 10*time.Second)
 		if err := semanticIndex.Ensure(ensureCtx); err != nil {
 			cancelEnsure()
-			hlog.Fatalf("ensure Todo semantic index failed: %v", err)
+			fatalf("ensure Todo semantic index failed: %v", err)
 		}
 		cancelEnsure()
 		pipelineStore, err := extract.NewPipelineStore(db, location, semanticIndex, cfg.Extract.PrincipalOpenID)
 		if err != nil {
-			hlog.Fatalf("initialize extraction pipeline store failed: %v", err)
+			fatalf("initialize extraction pipeline store failed: %v", err)
 		}
 		deduplicator, err := extract.NewDeduplicator(embeddingClient, semanticIndex, pipelineStore, modelClient)
 		if err != nil {
-			hlog.Fatalf("initialize Todo semantic deduplicator failed: %v", err)
+			fatalf("initialize Todo semantic deduplicator failed: %v", err)
 		}
 		toolBoxBuilder, err := extract.NewRegistryToolBoxBuilder(db, memoryClient, extract.ToolBoxConfig{
 			ToolTimeout:     time.Duration(cfg.Extract.ToolTimeoutSec) * time.Second,
@@ -455,7 +466,7 @@ func main() {
 			Location:        location,
 		})
 		if err != nil {
-			hlog.Fatalf("initialize extraction tool box builder failed: %v", err)
+			fatalf("initialize extraction tool box builder failed: %v", err)
 		}
 		// Engine selection: codex is a full agent that self-runs CLIs to infer
 		// project/repo (danger-full-access + network + low reasoning); kimi is the
@@ -472,7 +483,7 @@ func main() {
 				Timeout:         time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
 			})
 			if err != nil {
-				hlog.Fatalf("initialize codex extraction engine failed: %v", err)
+				fatalf("initialize codex extraction engine failed: %v", err)
 			}
 			extractionEngine = codexExtractor
 			extractionModelName = cfg.Codex.Model
@@ -494,62 +505,62 @@ func main() {
 			SystemPrompts:    textFileService,
 		})
 		if err != nil {
-			hlog.Fatalf("initialize extraction worker failed: %v", err)
+			fatalf("initialize extraction worker failed: %v", err)
 		}
 	}
 	if semanticIndex != nil {
 		defer func() {
 			if err := semanticIndex.Close(); err != nil {
-				hlog.Errorf("close Todo semantic index failed: %v", err)
+				errorf("close Todo semantic index failed: %v", err)
 			}
 		}()
 	}
 	if *discoverOnce {
-		if err := captureService.DiscoverChats(context.Background()); err != nil {
-			hlog.Fatalf("discover chats failed: %v", err)
+		if err := captureService.DiscoverChats(startupCtx); err != nil {
+			fatalf("discover chats failed: %v", err)
 		}
-		hlog.Infof("chat discovery completed")
+		infof("chat discovery completed")
 		return
 	}
 	if *scanChat != "" {
-		if err := captureService.ScanChat(context.Background(), *scanChat); err != nil {
-			hlog.Fatalf("scan chat failed: %v", err)
+		if err := captureService.ScanChat(startupCtx, *scanChat); err != nil {
+			fatalf("scan chat failed: %v", err)
 		}
-		hlog.Infof("chat scan completed: %s", *scanChat)
+		infof("chat scan completed: %s", *scanChat)
 		return
 	}
 	if *setRelatedGroups != "" {
 		if err := captureService.ReplaceRelatedGroups(strings.Split(*setRelatedGroups, ",")); err != nil {
-			hlog.Fatalf("set related groups failed: %v", err)
+			fatalf("set related groups failed: %v", err)
 		}
-		hlog.Infof("related groups replaced")
+		infof("related groups replaced")
 		return
 	}
 	if *openP2P {
 		opened, err := captureService.OpenInternalP2P()
 		if err != nil {
-			hlog.Fatalf("open internal p2p chats failed: %v", err)
+			fatalf("open internal p2p chats failed: %v", err)
 		}
-		hlog.Infof("internal p2p chats opened for monitoring: %d", opened)
+		infof("internal p2p chats opened for monitoring: %d", opened)
 		return
 	}
 	if *memorizeOnce {
-		stats, err := memoryWorker.MemorizeOnce(context.Background())
+		stats, err := memoryWorker.MemorizeOnce(startupCtx)
 		if err != nil {
-			hlog.Fatalf("memorize messages failed: %v", err)
+			fatalf("memorize messages failed: %v", err)
 		}
-		hlog.Infof(
+		infof(
 			"message memory completed: loaded=%d processed=%d memorized=%d skipped=%d windows=%d",
 			stats.Loaded, stats.Processed, stats.MemorizedMessages, stats.SkippedMessages, stats.Windows,
 		)
 		return
 	}
 	if *extractOnce {
-		stats, err := extractWorker.ExtractOnce(context.Background())
+		stats, err := extractWorker.ExtractOnce(startupCtx)
 		if err != nil {
-			hlog.Fatalf("extract todos failed: %v", err)
+			fatalf("extract todos failed: %v", err)
 		}
-		hlog.Infof(
+		infof(
 			"todo extraction completed: chats_loaded=%d chats_processed=%d units=%d candidates=%d created=%d updated=%d",
 			stats.ChatsLoaded, stats.ChatsProcessed, stats.Units, stats.Candidates, stats.Created, stats.Updated,
 		)
@@ -582,36 +593,36 @@ func main() {
 			},
 		)
 		if err != nil {
-			hlog.Fatalf("initialize real-time pipeline failed: %v", err)
+			fatalf("initialize real-time pipeline failed: %v", err)
 		}
 		if err := coordinator.Start(runtimeCtx); err != nil {
-			hlog.Fatalf("start real-time pipeline failed: %v", err)
+			fatalf("start real-time pipeline failed: %v", err)
 		}
 		waitPipeline = coordinator.Wait
 		if cfg.Extract.Enabled {
 			if err := captureService.SetScanObserver(coordinator); err != nil {
 				cancelRuntime()
 				waitPipeline()
-				hlog.Fatalf("wire capture to real-time pipeline failed: %v", err)
+				fatalf("wire capture to real-time pipeline failed: %v", err)
 			}
 			if err := meetingCaptureService.SetScanObserver(coordinator); err != nil {
 				cancelRuntime()
 				waitPipeline()
-				hlog.Fatalf("wire meeting capture to real-time pipeline failed: %v", err)
+				fatalf("wire meeting capture to real-time pipeline failed: %v", err)
 			}
 		}
 		if cfg.Decide.Enabled || cfg.Execute.Enabled {
 			if err := confirmationService.SetLifecycleNotifier(coordinator); err != nil {
 				cancelRuntime()
 				waitPipeline()
-				hlog.Fatalf("wire confirmation to real-time pipeline failed: %v", err)
+				fatalf("wire confirmation to real-time pipeline failed: %v", err)
 			}
 		}
 		if cfg.Execute.Enabled {
 			if err := taskSubmitter.SetNotifier(coordinator); err != nil {
 				cancelRuntime()
 				waitPipeline()
-				hlog.Fatalf("wire Task submitter to pipeline failed: %v", err)
+				fatalf("wire Task submitter to pipeline failed: %v", err)
 			}
 		}
 		pipelineScheduler, err := pipeline.StartScheduler(
@@ -627,14 +638,14 @@ func main() {
 		if err != nil {
 			cancelRuntime()
 			waitPipeline()
-			hlog.Fatalf("start pipeline compensation scheduler failed: %v", err)
+			fatalf("start pipeline compensation scheduler failed: %v", err)
 		}
 		stopPipelineScheduler = func() { <-pipelineScheduler.Stop().Done() }
 		if err := coordinator.ReconcileAll(runtimeCtx); err != nil {
 			cancelRuntime()
 			stopPipelineScheduler()
 			waitPipeline()
-			hlog.Fatalf("queue startup pipeline reconciliation failed: %v", err)
+			fatalf("queue startup pipeline reconciliation failed: %v", err)
 		}
 	}
 
@@ -646,7 +657,7 @@ func main() {
 		cancelRuntime()
 		stopPipelineScheduler()
 		waitPipeline()
-		hlog.Fatalf("start capture scheduler failed: %v", err)
+		fatalf("start capture scheduler failed: %v", err)
 	}
 	meetingScheduler, err := meetingcapture.StartScheduler(
 		runtimeCtx,
@@ -659,7 +670,7 @@ func main() {
 		<-scheduler.Stop().Done()
 		stopPipelineScheduler()
 		waitPipeline()
-		hlog.Fatalf("start meeting capture scheduler failed: %v", err)
+		fatalf("start meeting capture scheduler failed: %v", err)
 	}
 	memoryScheduler, err := memory.StartScheduler(
 		runtimeCtx,
@@ -673,7 +684,7 @@ func main() {
 		<-meetingScheduler.Stop().Done()
 		stopPipelineScheduler()
 		waitPipeline()
-		hlog.Fatalf("start memory scheduler failed: %v", err)
+		fatalf("start memory scheduler failed: %v", err)
 	}
 	// 进程重启后，旧进程留下的生成任务不可能继续，启动时显式标失败。
 	recoveredDailyDigests, err := dailyDigestService.RecoverInterrupted(runtimeCtx)
@@ -684,10 +695,10 @@ func main() {
 		<-memoryScheduler.Stop().Done()
 		stopPipelineScheduler()
 		waitPipeline()
-		hlog.Fatalf("recover interrupted daily digests failed: %v", err)
+		fatalf("recover interrupted daily digests failed: %v", err)
 	}
 	if recoveredDailyDigests > 0 {
-		hlog.Infof("daily digests recovered after restart: %d", recoveredDailyDigests)
+		infof("daily digests recovered after restart: %d", recoveredDailyDigests)
 	}
 	// 个人总结 cron：enabled 时起，disabled 时手动生成接口仍可用。
 	stopDailyDigest := func() {}
@@ -705,17 +716,17 @@ func main() {
 			<-memoryScheduler.Stop().Done()
 			stopPipelineScheduler()
 			waitPipeline()
-			hlog.Fatalf("start daily digest scheduler failed: %v", err)
+			fatalf("start daily digest scheduler failed: %v", err)
 		}
 		stopDailyDigest = func() { <-dailyDigestScheduler.Stop().Done() }
 	}
 	stopScheduledTasks := func() {}
 	recovered, err := scheduledTaskService.RecoverRunning(runtimeCtx)
 	if err != nil {
-		hlog.Fatalf("recover scheduled tasks failed: %v", err)
+		fatalf("recover scheduled tasks failed: %v", err)
 	}
 	if recovered > 0 {
-		hlog.Infof("scheduled tasks recovered after restart: %d", recovered)
+		infof("scheduled tasks recovered after restart: %d", recovered)
 	}
 	if cfg.ScheduledTask.Enabled {
 		scheduledTaskScheduler, err := scheduledtask.StartScheduler(
@@ -723,7 +734,7 @@ func main() {
 			log.New(os.Stderr, "scheduledtask-cron ", log.LstdFlags|log.Lmicroseconds),
 		)
 		if err != nil {
-			hlog.Fatalf("start scheduled task scheduler failed: %v", err)
+			fatalf("start scheduled task scheduler failed: %v", err)
 		}
 		stopScheduledTasks = func() { <-scheduledTaskScheduler.Stop().Done() }
 	}
@@ -753,7 +764,7 @@ func main() {
 			SharedMemory:    sharedMemoryService,
 		})
 		if err != nil {
-			hlog.Fatalf("initialize chat service failed: %v", err)
+			fatalf("initialize chat service failed: %v", err)
 		}
 	}
 
@@ -762,7 +773,7 @@ func main() {
 	)
 	runtimeSettingsService, err := config.NewRuntimeSettingsService(*configPath, cfg)
 	if err != nil {
-		hlog.Fatalf("initialize runtime settings service failed: %v", err)
+		fatalf("initialize runtime settings service failed: %v", err)
 	}
 	if err := api.Register(h, api.Dependencies{
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
@@ -782,18 +793,18 @@ func main() {
 		Debug:        debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 		RuntimeSettings: runtimeSettingsService,
 	}); err != nil {
-		hlog.Fatalf("register API routes failed: %v", err)
+		fatalf("register API routes failed: %v", err)
 	}
 	webInfo, err := os.Stat(cfg.Server.WebRoot)
 	if err != nil {
-		hlog.Fatalf("load web build root failed: %v", err)
+		fatalf("load web build root failed: %v", err)
 	}
 	if !webInfo.IsDir() {
-		hlog.Fatalf("web build root is not a directory: %s", cfg.Server.WebRoot)
+		fatalf("web build root is not a directory: %s", cfg.Server.WebRoot)
 	}
 	h.StaticFS("/", &app.FS{Root: cfg.Server.WebRoot, IndexNames: []string{"index.html"}})
 
-	hlog.Infof("jarvis-server listening on %s", cfg.Server.Addr)
+	infof("jarvis-server listening on %s", cfg.Server.Addr)
 	// Spin 阻塞运行并处理优雅退出（SIGINT/SIGTERM/SIGHUP）。
 	h.Spin()
 }
