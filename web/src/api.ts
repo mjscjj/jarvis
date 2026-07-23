@@ -405,16 +405,8 @@ export function listWorkRules(signal?: AbortSignal): Promise<{ items: WorkRule[]
   return request<{ items: WorkRule[] }>('/api/work-rules', { signal })
 }
 
-export function createWorkRule(body: WorkRuleInput): Promise<WorkRule> {
-  return request<WorkRule>('/api/work-rules', { method: 'POST', body })
-}
-
-export function updateWorkRule(id: number, body: WorkRuleInput): Promise<WorkRule> {
-  return request<WorkRule>(`/api/work-rules/${id}`, { method: 'PUT', body })
-}
-
-export function deleteWorkRule(id: number): Promise<{ id: number; deleted: boolean }> {
-  return request(`/api/work-rules/${id}`, { method: 'DELETE' })
+export function updateWorkRule(key: WorkRule['key'], body: WorkRuleInput): Promise<WorkRule> {
+  return request<WorkRule>(`/api/work-rules/${encodeURIComponent(key)}`, { method: 'PUT', body })
 }
 
 export function listTextFiles(signal?: AbortSignal): Promise<{ items: TextFile[] }> {
@@ -459,8 +451,8 @@ export function scanSkills(): Promise<{ items: AgentSkill[] }> {
   return request<{ items: AgentSkill[] }>('/api/skills/scan', { method: 'POST' })
 }
 
-export function updateSkill(id: number, body: AgentSkillInput): Promise<AgentSkill> {
-  return request<AgentSkill>(`/api/skills/${id}`, { method: 'PUT', body })
+export function updateSkill(name: string, body: AgentSkillInput): Promise<AgentSkill> {
+  return request<AgentSkill>(`/api/skills/${encodeURIComponent(name)}`, { method: 'PUT', body })
 }
 
 export function getSkillContent(name: string): Promise<AgentSkillContent> {

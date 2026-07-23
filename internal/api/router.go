@@ -190,11 +190,10 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 保存到本地覆盖文件，进程重启后生效。
 	h.GET("/api/runtime-settings", GetRuntimeSettings(deps.RuntimeSettings))
 	h.PUT("/api/runtime-settings", UpdateRuntimeSettings(deps.RuntimeSettings))
-	// 工作规则：可信、分阶段注入 M3/M4/M5；支持全阶段或指定一个/多个阶段。
+	// 工作规则：四个固定 Markdown 文件，运行时组合全阶段与当前阶段。
 	h.GET("/api/work-rules", ListWorkRules(deps.WorkRules))
-	h.POST("/api/work-rules", CreateWorkRule(deps.WorkRules))
-	h.PUT("/api/work-rules/:work_rule_id", UpdateWorkRule(deps.WorkRules))
-	h.DELETE("/api/work-rules/:work_rule_id", DeleteWorkRule(deps.WorkRules))
+	h.GET("/api/work-rules/:work_rule_key", GetWorkRule(deps.WorkRules))
+	h.PUT("/api/work-rules/:work_rule_key", UpdateWorkRule(deps.WorkRules))
 	// 受控 Markdown 文件：系统提示词和审批策略由后台实时维护。
 	h.GET("/api/text-files", ListTextFiles(deps.TextFiles))
 	h.GET("/api/text-files/:text_file_key", GetTextFile(deps.TextFiles))
@@ -209,7 +208,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// Skills：扫描仓库 SKILL.md，后台控制启用状态和 M3/M4/M5 生效范围。
 	h.GET("/api/skills", ListSkills(deps.Skills))
 	h.POST("/api/skills/scan", ScanSkills(deps.Skills))
-	h.PUT("/api/skills/:skill_id", UpdateSkill(deps.Skills))
+	h.PUT("/api/skills/:skill_name", UpdateSkill(deps.Skills))
 	h.GET("/api/skills/:skill_name/content", GetSkillContent(deps.Skills))
 	// Overview 看板 + 进度：跨模块只读聚合，无表无 cron；总结按需调 codex。
 	h.GET("/api/overview", GetOverview(deps.Overview))

@@ -1,10 +1,9 @@
-// Package skill scans repository SKILL.md files and exposes the enabled subset
-// to M3 extraction, M4 decision, and M5 execution.
+// Package skill scans repository SKILL.md files and reads their Jarvis runtime
+// enablement from a local YAML file.
 package skill
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,12 +11,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
-	"jarvis/internal/domain"
+	"jarvis/internal/fileconfig"
 
 	"gopkg.in/yaml.v3"
-	"gorm.io/datatypes"
-	"gorm.io/gorm"
 )
 
 const (
@@ -39,7 +37,6 @@ type Input struct {
 }
 
 type View struct {
-	ID          uint64   `json:"id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	FilePath    string   `json:"file_path"`
@@ -49,6 +46,7 @@ type View struct {
 
 type ContentView struct {
 	Name    string `json:"name"`
+	Path    string `json:"path"`
 	Content string `json:"content"`
 }
 
@@ -57,155 +55,156 @@ type Reader interface {
 }
 
 type Service struct {
-	db   *gorm.DB
-	root string
+	root       string
+	configPath string
+	mu         sync.Mutex
 }
 
-func NewService(db *gorm.DB, root string) (*Service, error) {
-	if db == nil {
-		return nil, fmt.Errorf("agent skill service db is nil")
-	}
+type configFile struct {
+	Skills []setting `yaml:"skills"`
+}
+
+type setting struct {
+	Name      string   `yaml:"name"`
+	IsEnabled bool     `yaml:"enabled"`
+	Stages    []string `yaml:"stages"`
+}
+
+type metadata struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	FilePath    string
+}
+
+func NewService(root, configPath string) (*Service, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return nil, fmt.Errorf("agent skill root is empty")
 	}
-	abs, err := filepath.Abs(root)
+	configPath = strings.TrimSpace(configPath)
+	if configPath == "" {
+		return nil, fmt.Errorf("agent skill config path is empty")
+	}
+	rootAbsolute, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve agent skill root %q: %w", root, err)
 	}
-	return &Service{db: db, root: abs}, nil
+	configAbsolute, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve agent skill config %q: %w", configPath, err)
+	}
+	service := &Service{root: rootAbsolute, configPath: configAbsolute}
+	if _, err := service.List(context.Background()); err != nil {
+		return nil, fmt.Errorf("validate agent skill files: %w", err)
+	}
+	return service, nil
 }
 
-// Scan imports SKILL.md metadata while preserving the stage and enabled controls
-// already set in the database. New skills are enabled for all three stages.
+// Scan re-reads the filesystem and validates the YAML mapping. It does not
+// create database cache rows or silently add missing configuration.
 func (s *Service) Scan(ctx context.Context) ([]View, error) {
-	entries, err := os.ReadDir(s.root)
-	if err != nil {
-		return nil, fmt.Errorf("scan agent skill root %q: %w", s.root, err)
-	}
-	seen := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		path := filepath.Join(s.root, entry.Name(), "SKILL.md")
-		raw, err := os.ReadFile(path)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("read agent skill %q: %w", path, err)
-		}
-		meta, err := parseMetadata(raw)
-		if err != nil {
-			return nil, fmt.Errorf("parse agent skill %q: %w", path, err)
-		}
-		rel, err := filepath.Rel(s.root, path)
-		if err != nil {
-			return nil, fmt.Errorf("relativize agent skill %q: %w", path, err)
-		}
-		seen = append(seen, meta.Name)
-
-		var existing domain.AgentSkill
-		result := s.db.WithContext(ctx).Where("name = ?", meta.Name).Limit(1).Find(&existing)
-		if result.Error != nil {
-			return nil, fmt.Errorf("find agent skill %q: %w", meta.Name, result.Error)
-		}
-		if result.RowsAffected == 0 {
-			stages, err := json.Marshal([]string{StageExtract, StageDecide, StageExecute})
-			if err != nil {
-				return nil, fmt.Errorf("encode default stages: %w", err)
-			}
-			row := domain.AgentSkill{Name: meta.Name, Description: meta.Description, FilePath: filepath.ToSlash(rel), Stages: stages, IsEnabled: true}
-			if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-				return nil, fmt.Errorf("create agent skill %q: %w", meta.Name, err)
-			}
-			continue
-		}
-		updates := map[string]any{"description": meta.Description, "file_path": filepath.ToSlash(rel)}
-		if err := s.db.WithContext(ctx).Model(&domain.AgentSkill{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
-			return nil, fmt.Errorf("refresh agent skill %q: %w", meta.Name, err)
-		}
-	}
-	if len(seen) == 0 {
-		if err := s.db.WithContext(ctx).Where("1 = 1").Delete(&domain.AgentSkill{}).Error; err != nil {
-			return nil, fmt.Errorf("remove stale agent skills: %w", err)
-		}
-	} else if err := s.db.WithContext(ctx).Where("name NOT IN ?", seen).Delete(&domain.AgentSkill{}).Error; err != nil {
-		return nil, fmt.Errorf("remove stale agent skills: %w", err)
-	}
 	return s.List(ctx)
 }
 
 func (s *Service) List(ctx context.Context) ([]View, error) {
-	var rows []domain.AgentSkill
-	if err := s.db.WithContext(ctx).Order("name ASC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list agent skills: %w", err)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	views := make([]View, len(rows))
-	for i := range rows {
-		view, err := toView(&rows[i])
-		if err != nil {
-			return nil, err
-		}
-		views[i] = view
-	}
-	return views, nil
-}
-
-func (s *Service) Update(ctx context.Context, id uint64, input Input) (*View, error) {
-	if id == 0 {
-		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
-	}
-	stages, encoded, err := normalizeStages(input.Stages)
+	metadataByName, err := s.scanMetadata()
 	if err != nil {
 		return nil, err
 	}
-	updates := map[string]any{"stages": datatypes.JSON(encoded)}
-	if input.IsEnabled != nil {
-		updates["is_enabled"] = *input.IsEnabled
-	}
-	result := s.db.WithContext(ctx).Model(&domain.AgentSkill{}).Where("id = ?", id).Updates(updates)
-	if result.Error != nil {
-		return nil, fmt.Errorf("update agent skill id=%d: %w", id, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return nil, ErrNotFound
-	}
-	var row domain.AgentSkill
-	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
-		return nil, fmt.Errorf("reload agent skill id=%d: %w", id, err)
-	}
-	view, err := toView(&row)
+	cfg, err := s.loadConfig()
 	if err != nil {
 		return nil, err
 	}
-	view.Stages = stages
-	return &view, nil
+	return join(metadataByName, cfg)
 }
 
-func (s *Service) Content(ctx context.Context, name string) (*ContentView, error) {
+func (s *Service) Update(ctx context.Context, name string, input Input) (*View, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	name = strings.TrimSpace(name)
 	if !skillName.MatchString(name) {
 		return nil, fmt.Errorf("%w: invalid skill name %q", ErrInvalidInput, name)
 	}
-	var row domain.AgentSkill
-	err := s.db.WithContext(ctx).Where("name = ?", name).First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get agent skill %q: %w", name, err)
-	}
-	path, err := s.resolvePath(row.FilePath)
+	stages, err := normalizeStages(input.Stages)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read agent skill %q: %w", name, err)
+	if input.IsEnabled == nil {
+		return nil, fmt.Errorf("%w: is_enabled is required", ErrInvalidInput)
 	}
-	return &ContentView{Name: row.Name, Content: string(raw)}, nil
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	metadataByName, err := s.scanMetadata()
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := join(metadataByName, cfg); err != nil {
+		return nil, err
+	}
+	found := false
+	for i := range cfg.Skills {
+		if cfg.Skills[i].Name != name {
+			continue
+		}
+		cfg.Skills[i].Stages = stages
+		cfg.Skills[i].IsEnabled = *input.IsEnabled
+		found = true
+		break
+	}
+	if !found {
+		return nil, fmt.Errorf("%w: name=%s", ErrNotFound, name)
+	}
+	sort.Slice(cfg.Skills, func(i, j int) bool { return cfg.Skills[i].Name < cfg.Skills[j].Name })
+	encoded, err := yaml.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("encode agent skill config: %w", err)
+	}
+	if err := fileconfig.WriteAtomic(s.configPath, encoded); err != nil {
+		return nil, err
+	}
+	views, err := join(metadataByName, cfg)
+	if err != nil {
+		return nil, err
+	}
+	for i := range views {
+		if views[i].Name == name {
+			return &views[i], nil
+		}
+	}
+	return nil, fmt.Errorf("%w: name=%s", ErrNotFound, name)
+}
+
+func (s *Service) Content(ctx context.Context, name string) (*ContentView, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	name = strings.TrimSpace(name)
+	if !skillName.MatchString(name) {
+		return nil, fmt.Errorf("%w: invalid skill name %q", ErrInvalidInput, name)
+	}
+	items, err := s.scanMetadata()
+	if err != nil {
+		return nil, err
+	}
+	item, ok := items[name]
+	if !ok {
+		return nil, fmt.Errorf("%w: name=%s", ErrNotFound, name)
+	}
+	path := filepath.Join(s.root, filepath.FromSlash(item.FilePath))
+	raw, err := fileconfig.Read(path)
+	if err != nil {
+		return nil, err
+	}
+	return &ContentView{Name: name, Path: path, Content: string(raw)}, nil
 }
 
 func (s *Service) Catalog(ctx context.Context, stage string) (string, error) {
@@ -229,22 +228,91 @@ func (s *Service) Catalog(ctx context.Context, stage string) (string, error) {
 	return "BEGIN_AVAILABLE_SKILLS\n当前阶段：" + stage + "\n任务匹配可用 Skill 时，先读取对应 Skill，再按其说明执行。\n" + strings.Join(lines, "\n") + "\nEND_AVAILABLE_SKILLS", nil
 }
 
-func (s *Service) resolvePath(rel string) (string, error) {
-	path := filepath.Join(s.root, filepath.FromSlash(rel))
-	clean, err := filepath.Abs(path)
+func (s *Service) scanMetadata() (map[string]metadata, error) {
+	entries, err := os.ReadDir(s.root)
 	if err != nil {
-		return "", fmt.Errorf("resolve agent skill path %q: %w", rel, err)
+		return nil, fmt.Errorf("scan agent skill root %q: %w", s.root, err)
 	}
-	inside, err := filepath.Rel(s.root, clean)
-	if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("agent skill path escapes root: %q", rel)
+	items := make(map[string]metadata)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(s.root, entry.Name(), "SKILL.md")
+		raw, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read agent skill %q: %w", path, err)
+		}
+		item, err := parseMetadata(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse agent skill %q: %w", path, err)
+		}
+		if _, exists := items[item.Name]; exists {
+			return nil, fmt.Errorf("duplicate agent skill name %q", item.Name)
+		}
+		relative, err := filepath.Rel(s.root, path)
+		if err != nil {
+			return nil, fmt.Errorf("relativize agent skill %q: %w", path, err)
+		}
+		item.FilePath = filepath.ToSlash(relative)
+		items[item.Name] = item
 	}
-	return clean, nil
+	return items, nil
 }
 
-type metadata struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
+func (s *Service) loadConfig() (configFile, error) {
+	raw, err := fileconfig.Read(s.configPath)
+	if err != nil {
+		return configFile{}, err
+	}
+	var cfg configFile
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		return configFile{}, fmt.Errorf("decode agent skill config %s: %w", s.configPath, err)
+	}
+	seen := make(map[string]struct{}, len(cfg.Skills))
+	for i := range cfg.Skills {
+		item := &cfg.Skills[i]
+		item.Name = strings.TrimSpace(item.Name)
+		if !skillName.MatchString(item.Name) {
+			return configFile{}, fmt.Errorf("%w: invalid configured skill name %q", ErrInvalidInput, item.Name)
+		}
+		if _, exists := seen[item.Name]; exists {
+			return configFile{}, fmt.Errorf("%w: duplicate configured skill %q", ErrInvalidInput, item.Name)
+		}
+		seen[item.Name] = struct{}{}
+		stages, err := normalizeStages(item.Stages)
+		if err != nil {
+			return configFile{}, fmt.Errorf("skill %s: %w", item.Name, err)
+		}
+		item.Stages = stages
+	}
+	return cfg, nil
+}
+
+func join(metadataByName map[string]metadata, cfg configFile) ([]View, error) {
+	settings := make(map[string]setting, len(cfg.Skills))
+	for _, item := range cfg.Skills {
+		settings[item.Name] = item
+		if _, ok := metadataByName[item.Name]; !ok {
+			return nil, fmt.Errorf("%w: configured skill %q has no SKILL.md", ErrInvalidInput, item.Name)
+		}
+	}
+	views := make([]View, 0, len(metadataByName))
+	for name, item := range metadataByName {
+		control, ok := settings[name]
+		if !ok {
+			return nil, fmt.Errorf("%w: skill %q is missing from skills.yaml", ErrInvalidInput, name)
+		}
+		views = append(views, View{
+			Name: name, Description: item.Description, FilePath: item.FilePath,
+			Stages: append([]string(nil), control.Stages...), IsEnabled: control.IsEnabled,
+		})
+	}
+	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
+	return views, nil
 }
 
 func parseMetadata(raw []byte) (metadata, error) {
@@ -256,26 +324,26 @@ func parseMetadata(raw []byte) (metadata, error) {
 	if end < 0 {
 		return metadata{}, fmt.Errorf("SKILL.md frontmatter is not closed")
 	}
-	var meta metadata
-	if err := yaml.Unmarshal([]byte(text[4:4+end]), &meta); err != nil {
+	var item metadata
+	if err := yaml.Unmarshal([]byte(text[4:4+end]), &item); err != nil {
 		return metadata{}, fmt.Errorf("decode frontmatter: %w", err)
 	}
-	meta.Name = strings.TrimSpace(meta.Name)
-	meta.Description = strings.TrimSpace(meta.Description)
-	if !skillName.MatchString(meta.Name) || meta.Description == "" {
+	item.Name = strings.TrimSpace(item.Name)
+	item.Description = strings.TrimSpace(item.Description)
+	if !skillName.MatchString(item.Name) || item.Description == "" {
 		return metadata{}, fmt.Errorf("frontmatter requires a valid name and non-empty description")
 	}
-	return meta, nil
+	return item, nil
 }
 
-func normalizeStages(input []string) ([]string, []byte, error) {
+func normalizeStages(input []string) ([]string, error) {
 	if len(input) == 0 {
-		return nil, nil, fmt.Errorf("%w: at least one stage is required", ErrInvalidInput)
+		return nil, fmt.Errorf("%w: at least one stage is required", ErrInvalidInput)
 	}
 	seen := map[string]struct{}{}
 	for _, stage := range input {
 		if _, ok := stageOrder[stage]; !ok {
-			return nil, nil, fmt.Errorf("%w: unknown stage %q", ErrInvalidInput, stage)
+			return nil, fmt.Errorf("%w: unknown stage %q", ErrInvalidInput, stage)
 		}
 		seen[stage] = struct{}{}
 	}
@@ -284,31 +352,7 @@ func normalizeStages(input []string) ([]string, []byte, error) {
 		stages = append(stages, stage)
 	}
 	sort.Slice(stages, func(i, j int) bool { return stageOrder[stages[i]] < stageOrder[stages[j]] })
-	encoded, err := json.Marshal(stages)
-	if err != nil {
-		return nil, nil, fmt.Errorf("encode agent skill stages: %w", err)
-	}
-	return stages, encoded, nil
-}
-
-func toView(row *domain.AgentSkill) (View, error) {
-	stages, _, err := normalizeRawStages(row.ID, row.Stages)
-	if err != nil {
-		return View{}, err
-	}
-	return View{ID: row.ID, Name: row.Name, Description: row.Description, FilePath: row.FilePath, Stages: stages, IsEnabled: row.IsEnabled}, nil
-}
-
-func normalizeRawStages(id uint64, raw []byte) ([]string, []byte, error) {
-	var stages []string
-	if err := json.Unmarshal(raw, &stages); err != nil {
-		return nil, nil, fmt.Errorf("decode agent skill id=%d stages: %w", id, err)
-	}
-	normalized, encoded, err := normalizeStages(stages)
-	if err != nil {
-		return nil, nil, fmt.Errorf("decode agent skill id=%d stages: %w", id, err)
-	}
-	return normalized, encoded, nil
+	return stages, nil
 }
 
 func contains(values []string, target string) bool {

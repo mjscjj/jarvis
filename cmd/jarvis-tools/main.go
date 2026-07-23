@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -35,9 +36,6 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
-
-// sharedMemoryUpdatedBy 标记共享记忆写入来源为 agent（区别于人工在后台的编辑）。
-const sharedMemoryUpdatedBy = "agent"
 
 const connectTimeout = 10 * time.Second
 
@@ -95,8 +93,7 @@ func run(subcommand string, args []string) error {
 }
 
 // openDB loads config and connects to MySQL. It never runs migrations — schema
-// is owned by the jarvis-server main process; the tool only reads, and (for the
-// shared-memory writers) writes rows into already-migrated tables.
+// is owned by the jarvis-server main process.
 func openDB(configPath string) (*config.Config, *gorm.DB, func(), error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -287,12 +284,11 @@ func runGetSharedMemory(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	_, db, cleanup, err := openDB(*configPath)
+	path, err := sharedmem.PathForConfig(*configPath)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
-	svc, err := sharedmem.NewSharedMemoryService(db)
+	svc, err := sharedmem.NewSharedMemoryService(path)
 	if err != nil {
 		return err
 	}
@@ -313,12 +309,11 @@ func runGetSkill(args []string) error {
 	if strings.TrimSpace(*name) == "" {
 		return fmt.Errorf("get-skill requires --name")
 	}
-	cfg, db, cleanup, err := openDB(*configPath)
+	cfg, err := config.Load(*configPath)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
-	svc, err := skill.NewService(db, cfg.Skills.Root)
+	svc, err := skill.NewService(cfg.Skills.Root, filepath.Join(filepath.Dir(*configPath), "skills.yaml"))
 	if err != nil {
 		return err
 	}
@@ -340,16 +335,15 @@ func runSetSharedMemory(args []string) error {
 	if err != nil {
 		return err
 	}
-	_, db, cleanup, err := openDB(*configPath)
+	path, err := sharedmem.PathForConfig(*configPath)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
-	svc, err := sharedmem.NewSharedMemoryService(db)
+	svc, err := sharedmem.NewSharedMemoryService(path)
 	if err != nil {
 		return err
 	}
-	view, err := svc.Upsert(context.Background(), text, sharedMemoryUpdatedBy)
+	view, err := svc.Upsert(context.Background(), text)
 	if err != nil {
 		return err
 	}
@@ -367,16 +361,15 @@ func runAppendSharedMemory(args []string) error {
 	if err != nil {
 		return err
 	}
-	_, db, cleanup, err := openDB(*configPath)
+	path, err := sharedmem.PathForConfig(*configPath)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
-	svc, err := sharedmem.NewSharedMemoryService(db)
+	svc, err := sharedmem.NewSharedMemoryService(path)
 	if err != nil {
 		return err
 	}
-	view, err := svc.Append(context.Background(), text, sharedMemoryUpdatedBy)
+	view, err := svc.Append(context.Background(), text)
 	if err != nil {
 		return err
 	}

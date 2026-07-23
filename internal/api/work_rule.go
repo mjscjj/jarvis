@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"strconv"
 
 	"jarvis/internal/workrule"
 
@@ -13,9 +12,8 @@ import (
 
 type WorkRuleService interface {
 	List(ctx context.Context) ([]workrule.View, error)
-	Create(ctx context.Context, input workrule.Input) (*workrule.View, error)
-	Update(ctx context.Context, id uint64, input workrule.Input) (*workrule.View, error)
-	Delete(ctx context.Context, id uint64) error
+	Get(ctx context.Context, key string) (*workrule.View, error)
+	Update(ctx context.Context, key string, input workrule.Input) (*workrule.View, error)
 }
 
 func ListWorkRules(service WorkRuleService) app.HandlerFunc {
@@ -29,14 +27,9 @@ func ListWorkRules(service WorkRuleService) app.HandlerFunc {
 	}
 }
 
-func CreateWorkRule(service WorkRuleService) app.HandlerFunc {
+func GetWorkRule(service WorkRuleService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		var input workrule.Input
-		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40040, err)
-			return
-		}
-		view, err := service.Create(ctx, input)
+		view, err := service.Get(ctx, c.Param("work_rule_key"))
 		if err != nil {
 			writeWorkRuleError(c, err)
 			return
@@ -47,42 +40,18 @@ func CreateWorkRule(service WorkRuleService) app.HandlerFunc {
 
 func UpdateWorkRule(service WorkRuleService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		id, err := workRuleID(c)
-		if err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40041, err)
-			return
-		}
 		var input workrule.Input
 		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40040, err)
 			return
 		}
-		view, err := service.Update(ctx, id, input)
+		view, err := service.Update(ctx, c.Param("work_rule_key"), input)
 		if err != nil {
 			writeWorkRuleError(c, err)
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
 	}
-}
-
-func DeleteWorkRule(service WorkRuleService) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		id, err := workRuleID(c)
-		if err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40041, err)
-			return
-		}
-		if err := service.Delete(ctx, id); err != nil {
-			writeWorkRuleError(c, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": id, "deleted": true}})
-	}
-}
-
-func workRuleID(c *app.RequestContext) (uint64, error) {
-	return strconv.ParseUint(c.Param("work_rule_id"), 10, 64)
 }
 
 func writeWorkRuleError(c *app.RequestContext, err error) {

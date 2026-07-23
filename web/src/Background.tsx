@@ -30,11 +30,9 @@ import {
   createPerson,
   createProject,
   createResource,
-  createWorkRule,
   deletePerson,
   deleteProject,
   deleteResource,
-  deleteWorkRule,
   getProfile,
   getSkillContent,
   listGroups,
@@ -80,7 +78,6 @@ import type {
   ResourceType,
   SkillStage,
   WorkRule,
-  WorkRuleInput,
   WorkRuleStage,
   TextFile,
   TextFileInput,
@@ -1018,115 +1015,90 @@ function ResourcePanel() {
 // --- Work rules ---
 
 function WorkRulesPanel() {
-  const [items, setItems] = useState<WorkRule[]>([])
+  const [records, setRecords] = useState<Partial<Record<WorkRule['key'], WorkRule>>>({})
+  const [drafts, setDrafts] = useState<Partial<Record<WorkRule['key'], string>>>({})
+  const [activeKey, setActiveKey] = useState<WorkRule['key']>('all')
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
-  const [editing, setEditing] = useState<WorkRule | null>(null)
-  const [open, setOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [form] = Form.useForm<WorkRuleInput>()
-  const ruleType = Form.useWatch('rule_type', form)
+  const [ok, setOk] = useState(false)
 
   const reload = useCallback(() => {
     setLoading(true)
     listWorkRules()
-      .then((result) => { setItems(result.items); setError(undefined) })
+      .then((result) => {
+        const nextRecords: Partial<Record<WorkRule['key'], WorkRule>> = {}
+        const nextDrafts: Partial<Record<WorkRule['key'], string>> = {}
+        for (const item of result.items) {
+          nextRecords[item.key] = item
+          nextDrafts[item.key] = item.content
+        }
+        setRecords(nextRecords)
+        setDrafts(nextDrafts)
+        setError(undefined)
+      })
       .catch((cause: unknown) => setError(errorText(cause)))
       .finally(() => setLoading(false))
   }, [])
   useEffect(reload, [reload])
 
-  const openCreate = () => {
-    setEditing(null)
-    form.setFieldsValue({ name: '', content: '', rule_type: 'all', stages: [], priority: 100, is_enabled: true })
-    setOpen(true)
-  }
-  const openEdit = (rule: WorkRule) => {
-    setEditing(rule)
-    form.setFieldsValue({
-      name: rule.name, content: rule.content, rule_type: rule.rule_type,
-      stages: rule.stages, priority: rule.priority, is_enabled: rule.is_enabled,
-    })
-    setOpen(true)
-  }
-  const submit = async () => {
-    const values = await form.validateFields()
-    const input = { ...values, stages: values.rule_type === 'all' ? [] : values.stages }
-    setSubmitting(true)
+  const save = async () => {
+    const content = drafts[activeKey] ?? ''
+    setSaving(true)
     try {
-      if (editing) await updateWorkRule(editing.id, input)
-      else await createWorkRule(input)
-      setOpen(false)
-      reload()
+      const updated = await updateWorkRule(activeKey, { content })
+      setRecords((current) => ({ ...current, [activeKey]: updated }))
+      setDrafts((current) => ({ ...current, [activeKey]: updated.content }))
+      setOk(true)
+      setError(undefined)
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
-      setSubmitting(false)
+      setSaving(false)
     }
   }
-  const remove = async (rule: WorkRule) => {
-    try { await deleteWorkRule(rule.id); reload() } catch (cause: unknown) { setError(errorText(cause)) }
-  }
-  const toggle = async (rule: WorkRule, checked: boolean) => {
-    try {
-      await updateWorkRule(rule.id, {
-        name: rule.name, content: rule.content, rule_type: rule.rule_type,
-        stages: rule.stages, priority: rule.priority, is_enabled: checked,
-      })
-      reload()
-    } catch (cause: unknown) { setError(errorText(cause)) }
-  }
 
-  const columns: TableColumnsType<WorkRule> = [
-    { title: '规则', dataIndex: 'name', width: 180, render: (name: string) => <Text strong>{name}</Text> },
-    { title: '内容', dataIndex: 'content', ellipsis: true },
-    {
-      title: '生效阶段', width: 270, render: (_, rule) => rule.rule_type === 'all'
-        ? <Tag color="blue">M3 / M4 / M5 全阶段</Tag>
-        : <Flex gap={4} wrap>{rule.stages.map((stage) => <Tag key={stage}>{workRuleStageLabels[stage]}</Tag>)}</Flex>,
-    },
-    { title: '优先级', dataIndex: 'priority', width: 80 },
-    {
-      title: '启用', dataIndex: 'is_enabled', width: 70, align: 'center',
-      render: (enabled: boolean, rule) => <Switch size="small" checked={enabled} onChange={(checked) => toggle(rule, checked)} />,
-    },
-    {
-      title: '操作', width: 150, render: (_, rule) => (
-        <Flex gap={8}>
-          <Button size="small" onClick={() => openEdit(rule)}>编辑</Button>
-          <Popconfirm title="删除该工作规则？" onConfirm={() => remove(rule)} okText="删除" cancelText="取消">
-            <Button size="small" danger>删除</Button>
-          </Popconfirm>
-        </Flex>
-      ),
-    },
+  const definitions: Array<{ key: WorkRule['key']; label: string; description: string }> = [
+    { key: 'all', label: '全阶段', description: '会与每个具体阶段的规则一起注入。' },
+    { key: 'extract', label: 'M3 抽取', description: '只在行动线索抽取阶段注入。' },
+    { key: 'decide', label: 'M4 决策', description: '只在行动决策阶段注入。' },
+    { key: 'execute', label: 'M5 执行', description: '只在任务执行阶段注入。' },
   ]
 
   return <>
-    <Flex justify="space-between" align="center" className="section-heading">
-      <Text type="secondary">共 {items.length} 条规则</Text>
-      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建规则</Button></Flex>
-    </Flex>
-    {error && <Alert type="error" showIcon title="工作规则操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<WorkRule> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} /></Card>
-    <Modal title={editing ? '编辑工作规则' : '新建工作规则'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
-      <Form form={form} layout="vertical">
-        <Form.Item name="name" label="规则名称" rules={[{ required: true, message: '请输入规则名称' }]}><Input placeholder="如：飞书消息发送方式" /></Form.Item>
-        <Form.Item name="content" label="规则内容" rules={[{ required: true, message: '请输入规则内容' }]}><Input.TextArea rows={5} placeholder="用自然语言说明 Agent 应怎样工作" /></Form.Item>
-        <Flex gap={16}>
-          <Form.Item name="rule_type" label="适用类型" rules={[{ required: true }]} style={{ flex: 1 }}>
-            <Segmented block options={[{ label: '全部阶段', value: 'all' }, { label: '指定阶段', value: 'selected' }]} />
-          </Form.Item>
-          <Form.Item name="priority" label="优先级（越小越靠前）" rules={[{ required: true }]} style={{ width: 180 }}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
-        </Flex>
-        {ruleType === 'selected' && (
-          <Form.Item name="stages" label="生效阶段" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个阶段' }]}>
-            <Select mode="multiple" options={Object.entries(workRuleStageLabels).map(([value, label]) => ({ value, label }))} />
-          </Form.Item>
-        )}
-        <Form.Item name="is_enabled" label="立即启用" valuePropName="checked"><Switch /></Form.Item>
-      </Form>
-    </Modal>
+    {error && <Alert type="error" showIcon message="工作规则操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon message="工作规则已保存，后续对应阶段会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    <Alert type="info" showIcon message="工作规则直接读写本地 Markdown"
+      description="文件中的顺序就是执行优先级。全阶段规则会与当前阶段规则组合注入；清空文件即表示该范围没有规则。"
+      style={{ marginBottom: 12 }} />
+    <Card loading={loading} variant="borderless">
+      <Tabs
+        tabPosition="left"
+        activeKey={activeKey}
+        onChange={(key) => { setActiveKey(key as WorkRule['key']); setOk(false); setError(undefined) }}
+        items={definitions.map((definition) => ({
+          key: definition.key,
+          label: definition.label,
+          children: (
+            <>
+              <Text strong>{records[definition.key]?.name ?? definition.label}</Text>
+              <div><Text type="secondary">{definition.description}</Text></div>
+              <div style={{ margin: '8px 0 12px' }}><Text code>{records[definition.key]?.path}</Text></div>
+              <Input.TextArea
+                value={drafts[definition.key] ?? ''}
+                onChange={(event) => setDrafts((current) => ({ ...current, [definition.key]: event.target.value }))}
+                autoSize={{ minRows: 18, maxRows: 32 }}
+                style={{ fontFamily: 'monospace' }}
+              />
+              <Flex gap={8} style={{ marginTop: 12 }}>
+                <Button type="primary" onClick={save} loading={saving}>保存修改</Button>
+                <Button onClick={reload} loading={loading}>刷新</Button>
+              </Flex>
+            </>
+          ),
+        }))}
+      />
+    </Card>
   </>
 }
 
@@ -1327,7 +1299,7 @@ function SkillsPanel() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
   const [editing, setEditing] = useState<AgentSkill | null>(null)
-  const [content, setContent] = useState<{ name: string; text: string } | null>(null)
+  const [content, setContent] = useState<{ name: string; path: string; text: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [form] = Form.useForm<AgentSkillInput>()
 
@@ -1361,7 +1333,7 @@ function SkillsPanel() {
     const values = await form.validateFields()
     setSubmitting(true)
     try {
-      await updateSkill(editing.id, values)
+      await updateSkill(editing.name, values)
       setEditing(null)
       reload()
     } catch (cause: unknown) {
@@ -1372,7 +1344,7 @@ function SkillsPanel() {
   }
   const toggle = async (item: AgentSkill, checked: boolean) => {
     try {
-      await updateSkill(item.id, { stages: item.stages, is_enabled: checked })
+      await updateSkill(item.name, { stages: item.stages, is_enabled: checked })
       reload()
     } catch (cause: unknown) {
       setError(errorText(cause))
@@ -1381,7 +1353,7 @@ function SkillsPanel() {
   const showContent = async (item: AgentSkill) => {
     try {
       const result = await getSkillContent(item.name)
-      setContent({ name: result.name, text: result.content })
+      setContent({ name: result.name, path: result.path, text: result.content })
       setError(undefined)
     } catch (cause: unknown) {
       setError(errorText(cause))
@@ -1415,7 +1387,7 @@ function SkillsPanel() {
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={sync} loading={loading}>扫描目录</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="Skills 操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<AgentSkill> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} /></Card>
+    <Card className="table-card" variant="borderless"><Table<AgentSkill> rowKey="name" columns={columns} dataSource={items} loading={loading} pagination={false} /></Card>
     <Modal title={`设置 Skill 范围 · ${editing?.name || ''}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
         <Form.Item name="stages" label="生效阶段" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个阶段' }]}>
@@ -1425,6 +1397,7 @@ function SkillsPanel() {
       </Form>
     </Modal>
     <Modal title={`Skill · ${content?.name || ''}`} open={Boolean(content)} onCancel={() => setContent(null)} footer={null} width={760}>
+      <div style={{ marginBottom: 8 }}><Text code>{content?.path}</Text></div>
       <Input.TextArea value={content?.text} readOnly autoSize={{ minRows: 12, maxRows: 24 }} style={{ fontFamily: 'monospace' }} />
     </Modal>
   </>

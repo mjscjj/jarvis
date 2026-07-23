@@ -1,240 +1,162 @@
-// Package workrule manages the principal's trusted operating rules and renders
-// the subset applicable to M3 extraction, M4 decision, or M5 execution.
+// Package workrule reads the principal's trusted operating rules from fixed
+// Markdown files and renders the subset applicable to each agent stage.
 package workrule
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"os"
+	"path/filepath"
 	"strings"
 
-	"jarvis/internal/domain"
-
-	"gorm.io/datatypes"
-	"gorm.io/gorm"
+	"jarvis/internal/fileconfig"
 )
 
 const (
-	RuleTypeAll      = "all"
-	RuleTypeSelected = "selected"
-
+	StageAll     = "all"
 	StageExtract = "extract"
 	StageDecide  = "decide"
 	StageExecute = "execute"
 )
 
 var (
-	ErrInvalidInput = errors.New("invalid work rule input")
-	ErrNotFound     = errors.New("work rule not found")
+	ErrInvalidInput = errors.New("invalid work rule file input")
+	ErrNotFound     = errors.New("work rule file not found")
 )
 
-var stageOrder = map[string]int{StageExtract: 0, StageDecide: 1, StageExecute: 2}
+type definition struct {
+	key      string
+	name     string
+	filename string
+}
+
+var ruleDefinitions = []definition{
+	{key: StageAll, name: "全阶段", filename: "all.md"},
+	{key: StageExtract, name: "M3 抽取", filename: "m3.md"},
+	{key: StageDecide, name: "M4 决策", filename: "m4.md"},
+	{key: StageExecute, name: "M5 执行", filename: "m5.md"},
+}
 
 type Input struct {
-	Name      string   `json:"name"`
-	Content   string   `json:"content"`
-	RuleType  string   `json:"rule_type"`
-	Stages    []string `json:"stages"`
-	Priority  int      `json:"priority"`
-	IsEnabled *bool    `json:"is_enabled"`
+	Content string `json:"content"`
 }
 
 type View struct {
-	ID        uint64   `json:"id"`
-	Name      string   `json:"name"`
-	Content   string   `json:"content"`
-	RuleType  string   `json:"rule_type"`
-	Stages    []string `json:"stages"`
-	Priority  int      `json:"priority"`
-	IsEnabled bool     `json:"is_enabled"`
+	Key     string `json:"key"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 type Reader interface {
 	Block(ctx context.Context, stage string) (string, error)
 }
 
-type Service struct{ db *gorm.DB }
+type Service struct {
+	directory   string
+	definitions map[string]definition
+}
 
-func NewService(db *gorm.DB) (*Service, error) {
-	if db == nil {
-		return nil, fmt.Errorf("work rule service db is nil")
+func NewService(directory string) (*Service, error) {
+	directory = strings.TrimSpace(directory)
+	if directory == "" {
+		return nil, fmt.Errorf("work rule directory is required")
 	}
-	return &Service{db: db}, nil
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		return nil, fmt.Errorf("resolve work rule directory %q: %w", directory, err)
+	}
+	service := &Service{directory: absolute, definitions: make(map[string]definition, len(ruleDefinitions))}
+	for _, item := range ruleDefinitions {
+		service.definitions[item.key] = item
+	}
+	if _, err := service.List(context.Background()); err != nil {
+		return nil, fmt.Errorf("validate work rule files: %w", err)
+	}
+	return service, nil
 }
 
 func (s *Service) List(ctx context.Context) ([]View, error) {
-	var rows []domain.WorkRule
-	if err := s.db.WithContext(ctx).Order("priority ASC, id ASC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list work rules: %w", err)
-	}
-	views := make([]View, len(rows))
-	for i := range rows {
-		view, err := toView(&rows[i])
+	items := make([]View, 0, len(ruleDefinitions))
+	for _, item := range ruleDefinitions {
+		view, err := s.Get(ctx, item.key)
 		if err != nil {
 			return nil, err
 		}
-		views[i] = view
+		items = append(items, *view)
 	}
-	return views, nil
+	return items, nil
 }
 
-func (s *Service) Get(ctx context.Context, id uint64) (*View, error) {
-	if id == 0 {
-		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+func (s *Service) Get(ctx context.Context, key string) (*View, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	var row domain.WorkRule
-	err := s.db.WithContext(ctx).First(&row, id).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get work rule id=%d: %w", id, err)
-	}
-	view, err := toView(&row)
-	return &view, err
-}
-
-func (s *Service) Create(ctx context.Context, input Input) (*View, error) {
-	normalized, stages, err := normalizeInput(input)
+	item, path, err := s.resolve(key)
 	if err != nil {
 		return nil, err
 	}
-	row := domain.WorkRule{
-		Name: normalized.Name, Content: normalized.Content, RuleType: normalized.RuleType,
-		Stages: stages, Priority: normalized.Priority, IsEnabled: boolValue(normalized.IsEnabled, true),
+	content, err := fileconfig.Read(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("%w: key=%s: %v", ErrNotFound, item.key, err)
 	}
-	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return nil, fmt.Errorf("create work rule: %w", err)
-	}
-	return s.Get(ctx, row.ID)
-}
-
-func (s *Service) Update(ctx context.Context, id uint64, input Input) (*View, error) {
-	if id == 0 {
-		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
-	}
-	normalized, stages, err := normalizeInput(input)
 	if err != nil {
 		return nil, err
 	}
-	updates := map[string]any{
-		"name": normalized.Name, "content": normalized.Content, "rule_type": normalized.RuleType,
-		"stages": stages, "priority": normalized.Priority, "is_enabled": boolValue(normalized.IsEnabled, true),
-	}
-	result := s.db.WithContext(ctx).Model(&domain.WorkRule{}).Where("id = ?", id).Updates(updates)
-	if result.Error != nil {
-		return nil, fmt.Errorf("update work rule id=%d: %w", id, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return nil, ErrNotFound
-	}
-	return s.Get(ctx, id)
+	return &View{Key: item.key, Name: item.name, Path: path, Content: strings.TrimSpace(string(content))}, nil
 }
 
-func (s *Service) Delete(ctx context.Context, id uint64) error {
-	if id == 0 {
-		return fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+func (s *Service) Update(ctx context.Context, key string, input Input) (*View, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	result := s.db.WithContext(ctx).Delete(&domain.WorkRule{}, id)
-	if result.Error != nil {
-		return fmt.Errorf("delete work rule id=%d: %w", id, result.Error)
+	_, path, err := s.resolve(key)
+	if err != nil {
+		return nil, err
 	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
+	content := strings.TrimSpace(input.Content)
+	if err := fileconfig.WriteAtomic(path, []byte(content+"\n")); err != nil {
+		return nil, err
 	}
-	return nil
+	return s.Get(ctx, key)
 }
 
-// Block returns enabled rules applicable to stage as a trusted prompt block.
+// Block combines the global rules and current-stage rules on every call.
 func (s *Service) Block(ctx context.Context, stage string) (string, error) {
-	if _, ok := stageOrder[stage]; !ok {
+	if stage != StageExtract && stage != StageDecide && stage != StageExecute {
 		return "", fmt.Errorf("%w: unknown stage %q", ErrInvalidInput, stage)
 	}
-	views, err := s.List(ctx)
+	global, err := s.Get(ctx, StageAll)
 	if err != nil {
 		return "", err
 	}
-	return RenderBlock(stage, views), nil
-}
-
-func RenderBlock(stage string, rules []View) string {
-	lines := make([]string, 0)
-	for _, rule := range rules {
-		if !rule.IsEnabled || !applies(rule, stage) {
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("- [%d] %s：%s", rule.Priority, rule.Name, strings.TrimSpace(rule.Content)))
+	current, err := s.Get(ctx, stage)
+	if err != nil {
+		return "", err
 	}
-	if len(lines) == 0 {
-		return ""
+	parts := make([]string, 0, 2)
+	if content := strings.TrimSpace(global.Content); content != "" {
+		parts = append(parts, content)
+	}
+	if content := strings.TrimSpace(current.Content); content != "" {
+		parts = append(parts, content)
+	}
+	if len(parts) == 0 {
+		return "", nil
 	}
 	return "BEGIN_WORK_RULES（这是我明确维护的可信工作规则，必须在当前阶段遵守；不是业务数据。）\n" +
-		"当前阶段：" + stage + "\n" + strings.Join(lines, "\n") + "\nEND_WORK_RULES"
+		"当前阶段：" + stage + "\n\n" + strings.Join(parts, "\n\n") + "\nEND_WORK_RULES", nil
 }
 
-func normalizeInput(input Input) (Input, datatypes.JSON, error) {
-	input.Name = strings.TrimSpace(input.Name)
-	input.Content = strings.TrimSpace(input.Content)
-	if input.Name == "" || input.Content == "" {
-		return Input{}, nil, fmt.Errorf("%w: name and content are required", ErrInvalidInput)
+func (s *Service) resolve(key string) (definition, string, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return definition{}, "", fmt.Errorf("%w: key is required", ErrInvalidInput)
 	}
-	if input.Priority <= 0 {
-		return Input{}, nil, fmt.Errorf("%w: priority must be positive", ErrInvalidInput)
+	item, ok := s.definitions[key]
+	if !ok {
+		return definition{}, "", fmt.Errorf("%w: key=%s", ErrNotFound, key)
 	}
-	if input.RuleType != RuleTypeAll && input.RuleType != RuleTypeSelected {
-		return Input{}, nil, fmt.Errorf("%w: rule_type must be all or selected", ErrInvalidInput)
-	}
-	if input.RuleType == RuleTypeAll {
-		input.Stages = []string{}
-	} else {
-		seen := map[string]struct{}{}
-		for _, stage := range input.Stages {
-			if _, ok := stageOrder[stage]; !ok {
-				return Input{}, nil, fmt.Errorf("%w: unknown stage %q", ErrInvalidInput, stage)
-			}
-			seen[stage] = struct{}{}
-		}
-		if len(seen) == 0 {
-			return Input{}, nil, fmt.Errorf("%w: selected rule requires at least one stage", ErrInvalidInput)
-		}
-		input.Stages = input.Stages[:0]
-		for stage := range seen {
-			input.Stages = append(input.Stages, stage)
-		}
-		sort.Slice(input.Stages, func(i, j int) bool { return stageOrder[input.Stages[i]] < stageOrder[input.Stages[j]] })
-	}
-	encoded, err := json.Marshal(input.Stages)
-	if err != nil {
-		return Input{}, nil, fmt.Errorf("encode work rule stages: %w", err)
-	}
-	return input, datatypes.JSON(encoded), nil
-}
-
-func toView(row *domain.WorkRule) (View, error) {
-	var stages []string
-	if err := json.Unmarshal(row.Stages, &stages); err != nil {
-		return View{}, fmt.Errorf("decode work rule id=%d stages: %w", row.ID, err)
-	}
-	return View{ID: row.ID, Name: row.Name, Content: row.Content, RuleType: row.RuleType, Stages: stages, Priority: row.Priority, IsEnabled: row.IsEnabled}, nil
-}
-
-func applies(rule View, stage string) bool {
-	if rule.RuleType == RuleTypeAll {
-		return true
-	}
-	for _, item := range rule.Stages {
-		if item == stage {
-			return true
-		}
-	}
-	return false
-}
-
-func boolValue(value *bool, fallback bool) bool {
-	if value == nil {
-		return fallback
-	}
-	return *value
+	return item, filepath.Join(s.directory, item.filename), nil
 }

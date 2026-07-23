@@ -137,7 +137,7 @@ chat:
   sandbox: "danger-full-access"        # 对话场景最大权限
   reasoning_effort: "medium"           # 与 execute.reasoning_effort 一致
 
-# Agent Skills：正文位于仓库文件，后台只控制启用状态和 M3/M4/M5 生效范围。
+# Agent Skills：正文位于仓库文件，启用状态和阶段范围位于 conf/skills.yaml。
 skills:
   root: ".agents/skills"
 

@@ -499,7 +499,8 @@ export interface GroupBackgroundInput {
 // SharedMemory 是全局单例的「共享记忆」大文本视图，对齐后端 sharedmem.SharedMemoryView。
 export interface SharedMemory {
   content: string
-  updated_by: string
+  path: string
+  modified_at: string
   saved: boolean
 }
 
@@ -777,26 +778,17 @@ export interface ResourceInput {
   is_active?: boolean
 }
 
-export type WorkRuleType = 'all' | 'selected'
 export type WorkRuleStage = 'extract' | 'decide' | 'execute'
 
 export interface WorkRule {
-  id: number
+  key: 'all' | WorkRuleStage
   name: string
+  path: string
   content: string
-  rule_type: WorkRuleType
-  stages: WorkRuleStage[]
-  priority: number
-  is_enabled: boolean
 }
 
 export interface WorkRuleInput {
-  name: string
   content: string
-  rule_type: WorkRuleType
-  stages: WorkRuleStage[]
-  priority: number
-  is_enabled: boolean
 }
 
 export interface TextFile {
@@ -857,7 +849,6 @@ export interface ScheduledTaskInput {
 export type SkillStage = WorkRuleStage
 
 export interface AgentSkill {
-  id: number
   name: string
   description: string
   file_path: string
@@ -872,6 +863,7 @@ export interface AgentSkillInput {
 
 export interface AgentSkillContent {
   name: string
+  path: string
   content: string
 }
 

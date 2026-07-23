@@ -11,17 +11,14 @@ import (
 	"code.byted.org/middleware/hertz/pkg/protocol/consts"
 )
 
-// sharedMemoryUpdatedBy 标记后台人工编辑的来源，与 Agent 自动更新区分。
-const sharedMemoryUpdatedBy = "user"
-
 // sharedMemoryReadWriter 是共享记忆 handler 依赖的最小读写接口，
 // *sharedmem.SharedMemoryService 实现它，测试可打桩。
 type sharedMemoryReadWriter interface {
 	Get(ctx context.Context) (*sharedmem.SharedMemoryView, error)
-	Upsert(ctx context.Context, content, updatedBy string) (*sharedmem.SharedMemoryView, error)
+	Upsert(ctx context.Context, content string) (*sharedmem.SharedMemoryView, error)
 }
 
-// GetSharedMemory 返回当前共享记忆视图；无行时返回空内容的可用视图（不是 404）。
+// GetSharedMemory 返回本机 Markdown 中的当前共享记忆。
 func GetSharedMemory(svc sharedMemoryReadWriter) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		view, err := svc.Get(ctx)
@@ -44,7 +41,7 @@ func UpdateSharedMemory(svc sharedMemoryReadWriter) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40070, err)
 			return
 		}
-		view, err := svc.Upsert(ctx, in.Content, sharedMemoryUpdatedBy)
+		view, err := svc.Upsert(ctx, in.Content)
 		if err != nil {
 			writeAPIError(c, consts.StatusInternalServerError, 50070, fmt.Errorf("save shared memory failed: %s", strings.TrimSpace(err.Error())))
 			return

@@ -86,7 +86,7 @@ export default function SharedMemory() {
         />
         <Space style={{ marginTop: 8 }} size="middle">
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {view?.saved ? `最后修改人：${view.updated_by || '未知'}` : '尚未保存过（当前为空的可编辑记忆）'}
+            {view?.saved ? `本地文件：${view.path} · 修改时间：${view.modified_at}` : '共享记忆文件不存在'}
           </Text>
         </Space>
       </Spin>

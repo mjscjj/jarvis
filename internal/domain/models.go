@@ -257,53 +257,6 @@ type ManagedResource struct {
 
 func (ManagedResource) TableName() string { return "managed_resource" }
 
-// SharedMemory 是 Agent/人工长期维护的一段自由文本「共享记忆」：踩过的坑、关键
-// 约定、凭据等重要信息，作为可信背景注入到所有调用 codex/traex 的 prompt（M3/M4/
-// M5/chat）。全局单例——用固定 SingletonKey="default" 的唯一索引保证只有一行；多条
-// 信息由用户/Agent 写进同一段 Content 里，本层不拆条目。
-type SharedMemory struct {
-	ID           uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	SingletonKey string    `gorm:"column:singleton_key;type:varchar(32);uniqueIndex;not null;default:'default'"`
-	Content      string    `gorm:"column:content;type:mediumtext"`
-	UpdatedBy    string    `gorm:"column:updated_by;type:varchar(64)"` // 区分 Agent/人工更新，本步不强制填
-	CreatedAt    time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
-}
-
-func (SharedMemory) TableName() string { return "shared_memory" }
-
-// WorkRule 是 principal 维护的可信工作规则。rule_type=all 时适用于 M3/M4/M5；
-// rule_type=selected 时 stages 保存 extract/decide/execute 的非空子集。规则在各阶段
-// 运行时实时读取并注入可信指令区，不混入 Todo 的不可信业务 background。
-type WorkRule struct {
-	ID        uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	Name      string         `gorm:"column:name;type:varchar(128);not null"`
-	Content   string         `gorm:"column:content;type:text;not null"`
-	RuleType  string         `gorm:"column:rule_type;type:varchar(16);not null;index:idx_work_rule_enabled_priority,priority:2"`
-	Stages    datatypes.JSON `gorm:"column:stages;type:json;not null"`
-	Priority  int            `gorm:"column:priority;type:int;not null;default:100;index:idx_work_rule_enabled_priority,priority:3"`
-	IsEnabled bool           `gorm:"column:is_enabled;type:tinyint(1);not null;default:1;index:idx_work_rule_enabled_priority,priority:1"`
-	CreatedAt time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
-}
-
-func (WorkRule) TableName() string { return "work_rule" }
-
-// AgentSkill 是仓库内 SKILL.md 的运行控制信息。Skill 正文仍以文件为唯一
-// source of truth；数据库只保存扫描出的元数据以及 M3/M4/M5 生效范围。
-type AgentSkill struct {
-	ID          uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	Name        string         `gorm:"column:name;type:varchar(128);not null;uniqueIndex:uk_agent_skill_name"`
-	Description string         `gorm:"column:description;type:text;not null"`
-	FilePath    string         `gorm:"column:file_path;type:varchar(1024);not null"`
-	Stages      datatypes.JSON `gorm:"column:stages;type:json;not null"`
-	IsEnabled   bool           `gorm:"column:is_enabled;type:tinyint(1);not null;default:1;index:idx_agent_skill_enabled"`
-	CreatedAt   time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt   time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
-}
-
-func (AgentSkill) TableName() string { return "agent_skill" }
-
 // DailyDigest 是「每日进度总结」的落库缓存：一天一个 scope 一行，重算 upsert 覆盖
 // （不留历史版本）。scope=person 时 scope_id 是 principal open_id；scope=group 时
 // scope_id 是 feishu_group.id 的字符串。digest_date 是自然日（本地时区 00:00）。
@@ -374,9 +327,6 @@ func CoreModels() []any {
 		&ScanRecord{},
 		&PrincipalProfile{},
 		&ManagedResource{},
-		&SharedMemory{},
-		&WorkRule{},
-		&AgentSkill{},
 		&DailyDigest{},
 		&ScheduledTask{},
 	}

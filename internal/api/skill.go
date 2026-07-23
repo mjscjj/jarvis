@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"strconv"
 
 	"jarvis/internal/skill"
 
@@ -14,7 +13,7 @@ import (
 type SkillService interface {
 	List(ctx context.Context) ([]skill.View, error)
 	Scan(ctx context.Context) ([]skill.View, error)
-	Update(ctx context.Context, id uint64, input skill.Input) (*skill.View, error)
+	Update(ctx context.Context, name string, input skill.Input) (*skill.View, error)
 	Content(ctx context.Context, name string) (*skill.ContentView, error)
 }
 
@@ -42,17 +41,12 @@ func ScanSkills(service SkillService) app.HandlerFunc {
 
 func UpdateSkill(service SkillService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		id, err := strconv.ParseUint(c.Param("skill_id"), 10, 64)
-		if err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40050, err)
-			return
-		}
 		var input skill.Input
 		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40051, err)
 			return
 		}
-		view, err := service.Update(ctx, id, input)
+		view, err := service.Update(ctx, c.Param("skill_name"), input)
 		if err != nil {
 			writeSkillError(c, err)
 			return

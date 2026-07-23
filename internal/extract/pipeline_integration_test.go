@@ -159,15 +159,18 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract.NewRegistryToolBoxBuilder() error = %v", err)
 	}
-	sharedMemoryService, err := sharedmem.NewSharedMemoryService(tx)
+	sharedMemoryService, err := sharedmem.NewSharedMemoryService(filepath.Join("..", "..", "data", "shared-memory.md"))
 	if err != nil {
 		t.Fatalf("sharedmem.NewSharedMemoryService() error = %v", err)
 	}
-	workRuleService, err := workrule.NewService(tx)
+	workRuleService, err := workrule.NewService(filepath.Join("..", "..", "conf", "rules"))
 	if err != nil {
 		t.Fatalf("workrule.NewService() error = %v", err)
 	}
-	skillService, err := skill.NewService(tx, t.TempDir())
+	skillService, err := skill.NewService(
+		filepath.Join("..", "..", ".agents", "skills"),
+		filepath.Join("..", "..", "conf", "skills.yaml"),
+	)
 	if err != nil {
 		t.Fatalf("skill.NewService() error = %v", err)
 	}

@@ -104,6 +104,22 @@ func main() {
 	if err != nil {
 		fatalf("initialize text file service failed: %v", err)
 	}
+	sharedMemoryPath, err := sharedmem.PathForConfig(configPathAbsolute)
+	if err != nil {
+		fatalf("resolve shared memory path failed: %v", err)
+	}
+	sharedMemoryService, err := sharedmem.NewSharedMemoryService(sharedMemoryPath)
+	if err != nil {
+		fatalf("initialize shared memory service failed: %v", err)
+	}
+	workRuleService, err := workrule.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "rules"))
+	if err != nil {
+		fatalf("initialize work rule service failed: %v", err)
+	}
+	skillService, err := skill.NewService(cfg.Skills.Root, filepath.Join(filepath.Dir(configPathAbsolute), "skills.yaml"))
+	if err != nil {
+		fatalf("initialize agent skill service failed: %v", err)
+	}
 
 	connectCtx, cancel := context.WithTimeout(startupCtx, 10*time.Second)
 	defer cancel()
@@ -144,16 +160,6 @@ func main() {
 		return
 	}
 
-	// 共享记忆（可信自由文本）装载服务：分发给 M3/M4/M5/chat 四条链路，各注入点组装
-	// prompt 时实时读表。构造失败 fail-fast。
-	sharedMemoryService, err := sharedmem.NewSharedMemoryService(db)
-	if err != nil {
-		fatalf("initialize shared memory service failed: %v", err)
-	}
-	workRuleService, err := workrule.NewService(db)
-	if err != nil {
-		fatalf("initialize work rule service failed: %v", err)
-	}
 	relationFactService, err := knowledge.NewService(db)
 	if err != nil {
 		fatalf("initialize relation fact service failed: %v", err)
@@ -161,10 +167,6 @@ func main() {
 	progressService, err := progress.NewService(db)
 	if err != nil {
 		fatalf("initialize progress service failed: %v", err)
-	}
-	skillService, err := skill.NewService(db, cfg.Skills.Root)
-	if err != nil {
-		fatalf("initialize skill service failed: %v", err)
 	}
 	if _, err := skillService.Scan(startupCtx); err != nil {
 		fatalf("scan agent skills failed: %v", err)
