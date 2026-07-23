@@ -22,29 +22,59 @@
 
 ## 2. 数据源
 
-### 2.1 个人进度（codex agent 收集）
+### 2.1 个人进度：三类来源、两路并行采集、集中汇总
 
-Jarvis 先把**已有且可靠**的数据喂进 prompt 打底，再让 agent 自跑工具补充外部数据：
+一级数据源只保留三类。文档、会议、MR、Commit 等是各 collector 的内部检查项，
+不再作为互相割裂的一级来源：
 
-**打底（Jarvis 直接查库，快而准）**：
-- 我发的消息：`message` 表 `WHERE sender_open_id = <principal> AND create_time ∈ [day)`。
-- 当天变化或仍未结束的 Todo：包含项目归属、leader 交办、截止时间和来源原话。
-- 当天变化或仍未结束的 Task：包含状态、项目归属和执行结果。
+| 一级来源 | 执行者 | 内容 |
+|---|---|---|
+| `jarvis_internal` | Go 确定性查询 | 本人消息、当天 TodoEvent、TaskEvent、ExecutionRun；ProjectEvent 仅作项目上下文 |
+| `feishu_work` | 独立 Codex collector | Jarvis 消息对应的回复/线程上下文、文档、日历发现、会议/妙记逐字稿；不重复产出本人消息 |
+| `engineering_execution` | 独立 Codex collector | Codex sessions、MR/CR、Commit、测试、部署和运行验收 |
 
-**agent 自跑工具补充（prompt 里给命令引导，agent 用 `execute` 的 danger-full-access 跑）**：
-- **我编辑的文档**：`lark-cli drive +search --mine --sort edit_time --as user`，再按 `result_meta.update_time_iso` 过滤当天、`edit_user_id` 标注是否本人。
-  - 已知能力上限：`--mine` 是「我拥有」，`edit_user_id` 是「最后编辑人」，故「我改过但归属他人 / 我改后他人又改」的文档会漏或算到他人名下。飞书无「编辑历史含我」的精确接口，接受该口径。（服务端 `my_edit_time` 过滤在本租户失效，不用。）
-- **我的日历/会议**：`lark-cli calendar +agenda --start <day> --end <day>`。
-- **我参与/组织的会议、我拥有的妙记**：`lark-cli vc +search --participant-ids <me> --start --end`、`lark-cli minutes +search --owner-ids me --start --end`。
-- **我的 MR（跨仓库）**：`bytedcli --json codebase search mr --author @me --updated-since <t> --updated-until <t>`。
-- **本地仓库 commit**：对已 clone 仓库 `git log --author=chujiejie.1 --since --until`（仅本地有的仓库）。
+主控先确定身份映射、自然日窗口、截止时间、每个来源的完整性检查和访问上限。
+Jarvis 查询完成后，飞书与工程两个 collector subagent 并行执行；两者只返回带
+稳定 ID、时间、归因、原始引用和覆盖缺口的 EvidenceCard，不写最终总结，也不做
+跨来源推断。全部 collector 到齐后，主控 synthesis agent 才做项目归属、跨源去重、
+成果判定和最终写作。
 
-Codex 必须返回严格 JSON：五段式 `summary` 加六个外部来源的
-`status/count/note`。五段固定为「核心推进、关键产出与决策、任务与承诺、
-风险与阻塞、下一步」；同一件事跨消息、Task、会议、文档、MR 时合并成一项。
-分析框架由 `.agents/skills/summarize-person-day` 维护；服务启动时 fail-fast
-加载该 Skill 及渠道参考并逐字注入个人总结 Prompt，避免后台任务与人工调用
-形成两套口径。
+Jarvis 内部事实严格按事件时间查询，不使用“`updated_at` 当天 OR 当前未结束”
+这种混合口径：
+
+- 消息：`create_time ∈ [day_start, cutoff)`，倒序取 `limit+1`，截断必须标 `partial`，
+  再反转成时间正序；
+- Todo：读取 `todo_event.created_at` 及事件发生时落下的不可变语义快照，不回读
+  Todo 当前行；历史事件若没有快照则显式标 `partial`，本期不猜测或回填旧数据；
+- Task：读取 `task_event.occurred_at`，状态以事件自身为准；
+- 执行：读取当天开始或结束的 `execution_run`，与 TaskEvent 通过 `run_id` 归并；
+- 项目：`project_event.occurred_at` 只作状态上下文，因其没有 actor，不能直接归因；
+- 历史仍开放的 Todo/Task 不计入当天事实和 `source_count`。
+
+飞书 collector 必须拉全分页。会议是个人总结的第一优先级，最终固定单列
+`会议与妙记`：先拉全本人参与的会议，再逐场解析
+`meeting_id → minute_token/note_id → transcript`；AI 摘要、
+章节和 Todo 只作导航。妙记无权限、未就绪或检索失败时保留会议事实并显式标记
+`partial/error`，不能静默变成 `empty`。
+
+工程 collector 同时调查 agent sessions、精确远端 MR/CR revision、Commit 以及
+测试/部署/运行验收。必须区分本人直接完成、本人委派 Agent 完成、协作、仅被分配
+和仅参与讨论；session 标题、Commit 或 MR 存在都不能自动升级为“完成”。
+
+分析统一使用 `Activity → Output → Observed Outcome`，不强行补齐没有证据的阶段。
+Decision、Commitment、Risk 是正交事实：proposal 不是 accepted decision，assignment
+不是 accepted commitment。最终固定六段：
+
+1. `会议与妙记`：逐场写时间、标题、时长、结论、决策和我的行动项，末尾汇总总场次与总时长；
+2. `今日结论`：最多三条最强 output/outcome；
+3. `按项目变化`：同一工作项跨来源只写一次；
+4. `决策与承诺`：仅写有接受证据的决策和承诺；
+5. `风险与阻塞`：写影响、责任人、缓解和证据缺口；
+6. `数据覆盖`：三类来源、截止时间及 partial/error/unavailable。
+
+Collector 与 synthesis 都返回严格 JSON，并由 Go 使用未知字段拒绝、尾随内容拒绝、
+枚举/必填/唯一 Evidence ID/时间窗/引用校验 fail-fast。分析框架由
+`.agents/skills/summarize-person-day` 维护，服务启动时加载同一 Skill 和数据合同。
 
 **不承诺**：我发起的审批（无跨定义按天查）；跨所有远端仓库的全量 commit（无全局按天接口）。
 
@@ -68,7 +98,7 @@ Codex 必须返回严格 JSON：五段式 `summary` 加六个外部来源的
 | `summary` | mediumtext | 生成的一段中文进度总结 |
 | `status` | varchar(16) | `pending` / `generating` / `done` / `failed`（异步生成状态） |
 | `trigger_type` | varchar(16) | `manual` / `schedule` |
-| `source_count` | int | 所有成功纳入的证据条数 |
+| `source_count` | int | 通过日期、身份和 schema 校验后交给 synthesis 的唯一 EvidenceCard 数量；开放上下文不计入 |
 | `source_coverage` | json | 每个数据源的 `status/count/note` |
 | `engine` | varchar(16) | `codex` |
 | `error_detail` | text | 失败原因（fail 时） |
@@ -116,8 +146,8 @@ Codex 必须返回严格 JSON：五段式 `summary` 加六个外部来源的
 
 本期设计已实现：
 
-- 后端已完成个人定时/手动统一生成入口、原子防重、启动补跑、重启恢复、严格结构化 Codex 输出、来源覆盖与五段式个人总结。
-- 已新增 `summarize-person-day` Skill，统一自然日边界、身份解析、渠道采集、项目归属、跨来源去重、重要性排序、下一步推导及输出规则。
+- 后端已完成个人定时/手动统一生成入口、原子防重、启动补跑、重启恢复；个人总结按三类来源执行，飞书与工程 collector 并行，主控集中归并并校验证据引用。
+- `summarize-person-day` Skill 统一自然日边界、三类来源、collector 合同、项目归属、跨来源去重、`Activity → Output → Observed Outcome` 分析及会议优先的最终六段式输出。
 - 已新增 `feishu-group-daily-summary` Skill；群总结由 Codex 拉全群消息、展开关键线程并按需读取文档、commit/MR 和其他材料。
 - 前端「进度」页已完成立即生成/重新生成/重试、生成中轮询、触发类型、证据截止时间和各来源状态展示；旧数量统计保留为辅助 Tab。
 - 配置已默认启用每日 19:00 个人总结调度；个人与群总结都使用 `danger-full-access` 官方 Codex，群总结仍只手动触发。

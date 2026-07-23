@@ -1,93 +1,220 @@
-# Evidence Channels and Analysis Methods
+# Evidence Collection and Reconciliation Contract
 
-## Channel matrix
+Use this contract for planning, collector prompts, reconciliation, verification,
+and coverage reporting.
 
-| Channel | What to collect | Strong evidence | Known limit |
-|---|---|---|---|
-| Jarvis messages | Person-authored messages in the natural-day window, conversation and bound project | Explicit status, decision, commitment, shared artifact | A message is a claim until corroborated; monitored chats may be incomplete |
-| Jarvis Todo | New or changed Todo, leader assignment, source quote, due time, project, frozen context | Assignment, explicit commitment, state transition | An old open Todo is not proof of same-day progress |
-| Jarvis Task | Same-day transitions, current state, execution result, artifact, project | `done` plus result/artifact; `failed` plus error | `updated_at` approximates transition time unless run events exist |
-| Project/group context | Bound project, project background, group purpose, relevant people | Durable ownership and attribution context | Use for classification, not as proof that work happened |
-| Feishu documents | Documents edited or updated by the person in the window; title, URL, update time, change substance | Revision/change content attributable to the person | “Owned by me” or “last edited by me” is only an approximation |
-| Calendar | Events intersecting the day, role, attendees, title | Scheduled context | Attendance does not prove contribution or outcome |
-| Meetings/Minutes | Participant/organizer role, transcript/summary, decisions, action items | Decision and action item from readable meeting artifact | Missing permission and artifact-not-ready must be reported |
-| Code reviews/MRs | Authored/reviewed MRs updated in window, state, URL, change summary | Merged/opened/reviewed state with durable URL | “Updated” may reflect another participant; distinguish authorship |
-| Git commits | Commits by mapped author in every cloned repository, time, repo, hash, subject | Durable commit by the person | Local clones are not the full remote universe; run `git -C <repo>` |
-| Approval/issue systems | Requests initiated, approved, rejected, or commented on when searchable | Durable state transition with link | Omit when no reliable cross-definition/date query exists |
+## Source Boundary
 
-## Collection method
+Collect only these three evidence domains.
 
-For every channel:
+### Jarvis internal facts
 
-1. Use stable person identifiers rather than display-name matching.
-2. Query the exact local-day window with timezone-aware timestamps.
-3. Retain raw IDs, URLs, timestamps, state, and attributable actor.
-4. Count collected evidence only after date and identity filtering.
-5. Mark:
-   - `ok`: query succeeded and one or more relevant items remain.
-   - `empty`: query succeeded and no relevant items remain.
-   - `error`: query failed or evidence could not be read; include the real error.
+Collect deterministic Jarvis facts needed to reconstruct same-day state change:
 
-Do not convert `error` into `empty`.
+- Todo and Task events created or transitioned inside the window;
+- linked TaskEvent, ExecutionRun, and ProjectEvent records;
+- frozen context snapshots, group/project bindings, and repository mappings
+  needed for attribution;
+- the current state of an item only when it was touched inside the window.
 
-## Normalization
+Do not treat an old open Todo or Task as same-day progress. Use an older record
+only when same-day evidence directly references it or when reporting an explicit
+outstanding commitment or risk. Do not use project background as proof that work
+happened.
 
-Normalize each item conceptually as:
+### Feishu work evidence
+
+Collect attributable work evidence from Feishu:
+
+- replies, thread context, and linked material around person-authored messages
+  already captured by Jarvis; do not emit the same authored message twice;
+- document revisions or substantive changes attributable to the person;
+- ended meetings involving the person, their minutes/transcripts, decisions,
+  and action items;
+- calendar records only as discovery and attendance context.
+
+Discover every ended meeting in the window. Resolve each to its available
+`minute_token` or `note_id`, then read the original transcript for every
+readable artifact. Use summaries, chapters, and AI Todo only as navigation or
+secondary evidence. Keep a discovered meeting in coverage when its artifact
+cannot be read, and record the exact permission, readiness, or lookup error.
+Never convert that error into `empty`.
+
+Emit exactly one `source_kind=meeting` EvidenceCard for every discovered
+meeting, including unreadable meetings. Use the stable `meeting_id` as its
+source identity, merge transcript/minutes into that card, and make the
+`meetings_minutes` coverage count equal the number of meeting cards.
+
+Do not treat message volume, calendar presence, meeting attendance, document
+ownership, or `last_editor` alone as personal contribution.
+
+### Engineering execution evidence
+
+Collect attributable engineering execution:
+
+- Codex or other agent sessions initiated for the person's work, including
+  resulting files, tests, commits, and explicit handoff state;
+- authored or reviewed MRs/CRs with exact revision, actor action, state, and URL;
+- commits by mapped author identity across relevant repositories;
+- test, deployment, release, and runtime acceptance evidence linked to the work.
+
+Separate work directly performed by the person from work delegated to an agent.
+Do not infer completion from a session title, commit subject, local branch, or
+MR update alone. Prefer exact remote state and observed verification results.
+
+## Collector Result
+
+Return one object with this shape. Do not wrap it in a `collector` key:
 
 ```text
-source, source_id, occurred_at, person_role, project,
-subject, action, result, status, artifact_url, raw_evidence
+domain: jarvis_internal | feishu_work | engineering_execution
+identity_filters: [...]
+window: {start, end, cutoff, timezone}
+status: complete | empty | partial | error | unavailable
+coverage:
+  - {scope, query_or_cursor, status, count, truncated, error}
+evidence: [EvidenceCard...]
+gaps: [...]
 ```
 
-Keep original evidence available even when the final report is compressed.
+For the runtime JSON contract:
 
-## Project attribution
+- `coverage` must contain exactly the scopes assigned by the caller, with no
+  extra discovery scopes;
+- `query_or_cursor` is one diagnostic string, not an array or object;
+- `raw_reference` is one compact string, not a nested object;
+- `gaps` is an array of diagnostic strings, not structured objects;
+- every field named in the caller schema uses the caller's exact scalar type.
+
+Use:
+
+- `complete`: every planned subquery succeeded and relevant evidence exists;
+- `empty`: every planned subquery succeeded and no relevant evidence exists;
+- `partial`: some planned scope is unreadable, truncated, or failed;
+- `error`: the domain could not be investigated reliably.
+- `unavailable`: the required tool, identity mapping, or environment capability
+  is absent, so the query could not be attempted.
+
+Never infer `complete` from a non-empty first page. Paginate to exhaustion or
+mark the exact truncation. Keep real tool and permission errors verbatim enough
+to diagnose.
+
+## Evidence Card
+
+Normalize each item as:
+
+```text
+evidence_id
+domain
+source_kind
+source_id
+occurred_at
+actor_identity
+actor_role
+project_binding
+subject
+activity
+output
+observed_outcome
+lifecycle_state
+artifact_url
+raw_reference
+attribution: direct | delegated | collaborative | assigned | discussed
+strength: primary | corroborating | contextual
+```
+
+Use `null` when output or observed outcome is not evidenced. Preserve the raw
+reference, stable ID, timestamp, and attributable actor after compression.
+Collectors may connect records inside their own domain but must not deduplicate
+or infer across domains.
+
+## Main-Agent Reconciliation
+
+Perform cross-domain analysis only after all collector results arrive.
+
+### Bind projects
 
 Apply this order:
 
-1. Frozen Todo/Task project context.
-2. Group-to-project binding.
-3. Repository-to-project mapping.
-4. Explicit project reference in the artifact or evidence.
-5. Evidence-backed inference.
-6. `未归属`.
+1. frozen Todo/Task project context;
+2. group-to-project or repository-to-project binding;
+3. explicit project reference in the artifact;
+4. evidence-backed inference;
+5. `未归属`.
 
-Do not classify solely from keyword similarity when a stronger binding exists.
+Do not classify solely by keyword similarity when a durable binding exists.
 
-## Deduplication
+### Merge work items
 
-Merge items when they refer to the same project and deliverable, decision, bug,
-or commitment. Useful keys include artifact URL, Task/Todo relation, MR URL,
-document token, meeting action ID, and a normalized subject.
+Merge evidence referring to the same deliverable, decision, bug, or commitment.
+Prefer stable joins such as artifact URL, MR/CR ID, Task/Todo relation, document
+token, meeting action ID, agent session, commit ancestry, or normalized subject.
 
-Within a merged item:
+For each merged work item retain:
 
-- Use the latest verified state as the result.
-- Preserve distinct contributions such as implementation and review.
-- Use messages as explanation; use durable artifacts as completion evidence.
-- Count evidence sources separately, but report the work item once.
+```text
+project
+subject
+activities[]
+outputs[]
+observed_outcomes[]
+decisions[]
+commitments[]
+risks[]
+contribution
+evidence_ids[]
+confidence
+unresolved_gaps[]
+```
 
-## Significance and phrasing
+Use messages and meetings to explain intent and decisions. Use durable artifacts
+and observed system state to prove output or outcome. Report one work item once
+while retaining all corroborating evidence.
 
-Rank work by:
+### Analyze the progression
 
-1. User/business outcome or production change.
-2. Completed deliverable or accepted decision.
-3. Material milestone in an active project.
-4. New firm assignment or commitment.
-5. Risk/blocker requiring action.
-6. Routine activity.
+Apply `Activity → Output → Observed Outcome` without forcing missing stages:
 
-Write `完成 X，已达到 Y 状态，证据 Z`, not `开会、发消息、改文档`.
+- Activity alone is not an accomplishment.
+- Output requires an attributable durable artifact or accepted conclusion.
+- Observed Outcome requires evidence of effect or final state; planned impact is
+  not an outcome.
 
-## Next-action derivation
+Record these facts orthogonally:
 
-Only derive a next action from:
+- Decision: subject, status (`proposed`, `accepted`, `superseded`), authority,
+  evidence, and resulting constraint.
+- Commitment: requester, owner, acceptance evidence, due time, current state,
+  and evidence. An assignment is not an accepted commitment.
+- Risk: affected goal, observed condition, impact, owner, mitigation, and
+  evidence. An access gap is a coverage risk, not automatically a work blocker.
 
-- An open Todo or non-terminal Task.
-- An explicit promise or due date.
-- A meeting action item assigned to the person.
-- A failed/blocked item with an explicit recovery action.
-- A review or approval that is demonstrably pending.
+Rank by observed outcome, delivered output, accepted decision, material
+milestone, explicit commitment, then risk requiring action. Drop routine
+activity unless it explains a material output, outcome, decision, or risk.
 
-Do not turn a general discussion topic into a personal next action.
+## Targeted Verification
+
+Request a verifier only when a material final claim has:
+
+- conflicting state or attribution across sources;
+- an outcome supported only by a message or summary;
+- an MR, release, deployment, or task whose final state is unclear;
+- a meeting decision or action item missing primary transcript evidence.
+
+Give the verifier one claim, the relevant stable IDs, and one expected answer.
+Require `confirmed`, `rejected`, or `unresolved`, plus primary evidence and the
+remaining gap. Do not ask the verifier to repeat broad collection or write the
+summary.
+
+## Final Checks
+
+Before reporting:
+
+1. Trace every output, outcome, decision, commitment, and risk to evidence IDs.
+2. Remove duplicated work items and unsubstantiated causal language.
+3. Preserve contribution mode: direct, delegated, collaborative, assigned, or
+   discussed.
+4. Confirm all three collector statuses and every partial/error gap are visible.
+5. Preserve a mandatory meeting-first narrative containing every discovered
+   meeting, while also merging meeting-derived decisions into project work.

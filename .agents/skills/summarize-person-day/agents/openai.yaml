@@ -1,4 +1,4 @@
 interface:
   display_name: "自然日个人总结"
-  short_description: "跨消息、任务、文档、会议和代码汇总某个人的自然日进展"
-  default_prompt: "Use $summarize-person-day to summarize one person’s work across all available sources for a natural day."
+  short_description: "计划并行调查三类证据，归并输出个人自然日成果与风险"
+  default_prompt: "Use $summarize-person-day to plan parallel evidence collection and produce an outcome-focused summary for one person on a natural day."

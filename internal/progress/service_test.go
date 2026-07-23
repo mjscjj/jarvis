@@ -39,6 +39,22 @@ func TestPrepareTaskEventAcceptsScheduledTaskActor(t *testing.T) {
 	}
 }
 
+func TestPrepareTaskEventAcceptsWaitingLifecycleTypes(t *testing.T) {
+	t.Parallel()
+	for _, eventType := range []string{"waiting_scheduled", "resumed"} {
+		eventType := eventType
+		t.Run(eventType, func(t *testing.T) {
+			_, err := prepareTaskEvent(TaskEventInput{
+				TaskID: 1, TaskVersion: 2, EventType: eventType,
+				ToStatus: "waiting", ActorType: "scheduled_task", OccurredAt: time.Now(),
+			})
+			if err != nil {
+				t.Fatalf("prepareTaskEvent(%s) error = %v", eventType, err)
+			}
+		})
+	}
+}
+
 func TestPrepareTaskEventRejectsUnknownType(t *testing.T) {
 	t.Parallel()
 	_, err := prepareTaskEvent(TaskEventInput{

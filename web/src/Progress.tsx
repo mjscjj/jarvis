@@ -49,6 +49,9 @@ const mrStatusMeta: Record<string, { color: string; label: string }> = {
 }
 
 const dailySourceLabels: Record<string, string> = {
+  jarvis_internal: 'Jarvis 内部事实',
+  feishu_work: '飞书工作证据',
+  engineering_execution: '工程执行证据',
   jarvis_messages: '消息',
   jarvis_todos: 'Todo',
   jarvis_tasks: 'Task',
@@ -350,8 +353,23 @@ export default function Progress() {
                   <Text type="secondary">数据来源：</Text>
                   {coverage.map(([source, sourceState]) => (
                     <Tooltip key={source} title={sourceState.note}>
-                      <Tag color={sourceState.status === 'error' ? 'error' : sourceState.status === 'ok' ? 'success' : 'default'}>
-                        {dailySourceLabels[source] ?? source} {sourceState.status === 'error' ? '失败' : sourceState.count}
+                      <Tag color={
+                        sourceState.status === 'error' || sourceState.status === 'unavailable'
+                          ? 'error'
+                          : sourceState.status === 'ok' || sourceState.status === 'complete'
+                            ? 'success'
+                            : sourceState.status === 'partial'
+                              ? 'warning'
+                              : 'default'
+                      }>
+                        {dailySourceLabels[source] ?? source}{' '}
+                        {sourceState.status === 'error'
+                          ? '失败'
+                          : sourceState.status === 'unavailable'
+                            ? '不可用'
+                            : sourceState.status === 'partial'
+                              ? `部分 ${sourceState.count}`
+                              : sourceState.count}
                       </Tag>
                     </Tooltip>
                   ))}

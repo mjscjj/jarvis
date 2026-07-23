@@ -295,9 +295,14 @@ func (s *Service) appendSupplementEvent(ctx context.Context, todoID uint64, vers
 	if err != nil {
 		return fmt.Errorf("encode supplement event detail todo_id=%d: %w", todoID, err)
 	}
+	snapshot, err := loadTodoEventSnapshot(s.db.WithContext(ctx), todoID)
+	if err != nil {
+		return err
+	}
 	from := fromStatus
 	event := domain.TodoEvent{
-		TodoID: todoID, FromStatus: &from, ToStatus: "extracted", Actor: "user", Detail: datatypes.JSON(detail),
+		TodoID: todoID, FromStatus: &from, ToStatus: "extracted",
+		Actor: "user", Detail: datatypes.JSON(detail), Snapshot: snapshot,
 	}
 	if err := s.db.WithContext(ctx).Create(&event).Error; err != nil {
 		return fmt.Errorf("create supplement event todo_id=%d: %w", todoID, err)
@@ -400,14 +405,31 @@ func createTodoEvent(tx *gorm.DB, todoID uint64, fromStatus, toStatus string, de
 	if err != nil {
 		return fmt.Errorf("encode M4 Todo event detail: %w", err)
 	}
+	snapshot, err := loadTodoEventSnapshot(tx, todoID)
+	if err != nil {
+		return err
+	}
 	from := fromStatus
 	event := domain.TodoEvent{
-		TodoID: todoID, FromStatus: &from, ToStatus: toStatus, Actor: "m4", Detail: datatypes.JSON(encoded),
+		TodoID: todoID, FromStatus: &from, ToStatus: toStatus,
+		Actor: "m4", Detail: datatypes.JSON(encoded), Snapshot: snapshot,
 	}
 	if err := tx.Create(&event).Error; err != nil {
 		return fmt.Errorf("create M4 Todo event todo_id=%d: %w", todoID, err)
 	}
 	return nil
+}
+
+func loadTodoEventSnapshot(db *gorm.DB, todoID uint64) (datatypes.JSON, error) {
+	var todo domain.Todo
+	if err := db.First(&todo, todoID).Error; err != nil {
+		return nil, fmt.Errorf("load todo id=%d for event snapshot: %w", todoID, err)
+	}
+	snapshot, err := domain.EncodeTodoEventSnapshot(&todo)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }
 
 func manualAudit(todo *domain.Todo, task *domain.Task, reason, channel string, at time.Time) *domain.DecisionAudit {

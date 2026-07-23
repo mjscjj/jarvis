@@ -25,6 +25,7 @@ var taskEventTypes = map[string]struct{}{
 	"approval_granted": {}, "approval_rejected": {}, "rerun_requested": {},
 	"reapply_started": {}, "supplemented": {}, "execution_succeeded": {},
 	"execution_failed": {}, "stale_failed": {}, "snapshot_imported": {},
+	"waiting_scheduled": {}, "resumed": {},
 }
 
 var actorTypes = map[string]struct{}{

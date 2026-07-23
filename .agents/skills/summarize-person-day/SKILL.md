@@ -1,72 +1,86 @@
 ---
 name: summarize-person-day
-description: Summarize everything a specified person advanced during one natural day by collecting and reconciling evidence across Jarvis messages, Todo and Task state, project context, Feishu/Lark documents, calendar, meetings and minutes, code reviews and commits. Use when asked for a personal daily summary, daily work recap, what someone did on a date, end-of-day progress, or a structured cross-channel natural-day report.
+description: Build an evidence-backed natural-day work summary for one person by planning three bounded evidence collectors, delegating Feishu and engineering collection in parallel, reconciling results, verifying material claims, and reporting outcomes, decisions, commitments, and risks. Use for personal daily summaries, daily work recaps, end-of-day progress, what someone advanced on a date, or structured cross-system day reports.
 ---
 
 # Summarize a Person's Natural Day
 
-Produce an evidence-backed account of what one person advanced during one local
-calendar day. Treat activity counts as evidence, not as the summary itself.
+Explain what changed during one local calendar day. Treat activities as evidence,
+not as accomplishments.
 
-## Inputs
+## Resolve the Scope
 
-Resolve before analysis:
+Resolve the person to stable identities, the `YYYY-MM-DD` date, timezone, and
+cutoff. Use `[local 00:00, next local 00:00)` and stop at the cutoff for today.
+Ask only when the person remains ambiguous after using read-only identity tools.
 
-- Person identity: name plus stable IDs available in each system, such as Feishu
-  `open_id`, code author identity, and email.
-- Natural day: `YYYY-MM-DD` and timezone.
-- Evidence cutoff: current time for today; `23:59:59` for a completed past day.
-- Output mode: human-readable Markdown by default, or the caller's explicit
-  machine-readable contract.
+Read [references/channel-methods.md](references/channel-methods.md) before
+planning or collecting evidence.
 
-Infer missing identifiers with available read-only tools. Ask the user only when
-the person cannot be resolved unambiguously.
+## Execute
 
-## Workflow
+1. Write an investigation plan before querying:
+   - state the identity mapping, time window, and cutoff;
+   - assign exactly three independent collector scopes: Jarvis internal facts,
+     Feishu work evidence, and engineering execution evidence;
+   - define expected evidence, completeness checks, and known access limits for
+     each collector.
+2. Run Jarvis internal collection as deterministic database/tool queries. Launch
+   the Feishu and engineering collector subagents in parallel. Give each
+   subagent only its scope, identity filters, time window, cutoff, and the
+   collector contract from the reference. Require raw IDs, timestamps, links,
+   coverage, and gaps. Do not let collectors write the personal summary or
+   infer across scopes.
+3. Require all three collectors to finish with an explicit coverage status.
+   Fail visibly if the two external subagents cannot be launched; do not
+   silently replace planned delegation with an unreported execution path.
+4. Reconcile all collector results in the main agent:
+   - bind evidence to projects using durable context;
+   - merge evidence about the same deliverable, decision, or commitment;
+   - distinguish direct work, agent-delegated work, collaboration, assignment,
+     and discussion;
+   - analyze each work item as `Activity → Output → Observed Outcome`;
+   - record Decision, Commitment, and Risk as orthogonal facts.
+5. Verify material claims against primary collector evidence. Mark conflicts,
+   weak attribution, unclear final state, and missing primary evidence as
+   unresolved. When the execution environment supports dynamic delegation,
+   optionally launch a narrow verifier subagent for one material unresolved
+   claim and retain its supporting evidence.
+6. Produce the final summary from reconciled work items, not from source-by-
+   source narratives or activity counts. Attach cutoff, coverage, and unresolved
+   gaps.
 
-1. Define the half-open window `[local 00:00, next local 00:00)` and cutoff.
-2. Read [references/channel-methods.md](references/channel-methods.md).
-3. Collect every available channel independently. Record each channel as
-   `ok`, `empty`, or `error`; preserve real error details.
-4. Normalize evidence into: timestamp, source, project, subject, action,
-   result/state change, artifact/link, owner/assigner, and raw evidence.
-5. Resolve project from the frozen Todo/Task context or bound group first.
-   Infer only when evidence supports it; otherwise label it unassigned.
-6. Merge evidence about the same deliverable or decision. Prefer the strongest
-   result evidence: deployed/merged/completed > produced/reviewed > discussed >
-   mentioned. Keep corroborating sources without repeating the work item.
-7. Separate events that happened that day from older open work. Use older open
-   Todo/Task only for commitments, risks, or next actions; never claim it was
-   advanced that day without dated evidence.
-8. Build the report in this order:
-   - `核心推进`: concrete progress grouped by project.
-   - `关键产出与决策`: artifacts, links, decisions, releases, reviews.
-   - `任务与承诺`: completed items, new assignments, explicit commitments,
-     and materially advanced ongoing work.
-   - `风险与阻塞`: failures, waiting conditions, access gaps, conflicting
-     evidence, and overdue commitments.
-   - `下一步`: only explicit unfinished tasks, commitments, meeting actions,
-     or follow-ups supported by evidence.
-9. Attach source coverage and the evidence cutoff. Never hide partial coverage.
+## Analyze
 
-## Quality Rules
+- `Activity`: what the person or their delegated agent did. Use as supporting
+  evidence only.
+- `Output`: a durable artifact, accepted conclusion, review, fix, or delivered
+  change attributable to the person.
+- `Observed Outcome`: a verified effect or state change, such as merged,
+  deployed, accepted, validated, unblocked, or confirmed by a user or system.
 
-- Say what changed and where it reached, not merely what tools the person used.
-- Preserve the distinction between work performed by the person, work assigned
-  to the person, and work discussed around the person.
-- Do not infer completion from a message saying work will be done.
-- Do not infer personal contribution from meeting attendance alone.
-- Do not count a document as edited by the person when the API only proves
-  ownership or last editor; state the observed scope.
-- If sources disagree, prefer durable artifacts and state the conflict.
-- Never invent an outcome, deadline, blocker, or next action.
-- If no progress evidence exists, say so and still report source coverage.
+Never invent an outcome when only activity or output is observed. Keep:
 
-## Output
+- Decision with `proposed`, `accepted`, or `superseded` status and authority.
+- Commitment with requester, owner, acceptance evidence, due time, and state.
+- Risk with affected goal, impact, owner, and observed mitigation.
 
-For interactive use, output the five sections as concise Chinese bullet points,
-followed by `数据截至` and `来源覆盖`.
+## Report
 
-When the caller provides a schema, return exactly that schema. Keep the five
-section headings inside the summary and expose per-source `status`, `count`, and
-`note`. Do not add code fences or surrounding explanation.
+For interactive use, write concise Chinese sections:
+
+1. `会议与妙记`: list every discovered meeting first, with time range, title,
+   duration, transcript-backed conclusions or decisions, and action items
+   assigned to the person. Keep unreadable meetings and state the exact access
+   gap. End with total meeting count and duration.
+2. `今日结论`: at most three strongest outputs or observed outcomes.
+3. `按项目变化`: merged work items, each following
+   `Activity → Output → Observed Outcome`; omit routine activity.
+4. `决策与承诺`: only evidence-backed decisions and accepted commitments.
+5. `风险与阻塞`: impact, owner, mitigation, and evidence gaps.
+6. `数据覆盖`: cutoff and status of all three collectors and their subqueries.
+
+Meeting evidence is first-class work evidence for this user. Keep the mandatory
+meeting-first section even when the same decisions are merged into project work.
+When the caller supplies a schema, return exactly that schema and preserve the
+same analysis semantics.

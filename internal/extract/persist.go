@@ -304,7 +304,14 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 	if err != nil {
 		return false, nil, err
 	}
-	event := domain.TodoEvent{TodoID: todo.ID, ToStatus: "extracted", Actor: "m3", Detail: detail}
+	snapshot, err := domain.EncodeTodoEventSnapshot(&todo)
+	if err != nil {
+		return false, nil, err
+	}
+	event := domain.TodoEvent{
+		TodoID: todo.ID, ToStatus: "extracted", Actor: "m3",
+		Detail: detail, Snapshot: snapshot,
+	}
 	if err := tx.Create(&event).Error; err != nil {
 		return false, nil, fmt.Errorf("create todo event todo_id=%d: %w", todo.ID, err)
 	}
@@ -366,8 +373,17 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		return err
 	}
 	status := existing.Status
+	var updated domain.Todo
+	if err := tx.First(&updated, existing.ID).Error; err != nil {
+		return fmt.Errorf("reload updated todo id=%d for event snapshot: %w", existing.ID, err)
+	}
+	snapshot, err := domain.EncodeTodoEventSnapshot(&updated)
+	if err != nil {
+		return err
+	}
 	event := domain.TodoEvent{
-		TodoID: existing.ID, FromStatus: &status, ToStatus: existing.Status, Actor: "m3", Detail: detail,
+		TodoID: existing.ID, FromStatus: &status, ToStatus: existing.Status,
+		Actor: "m3", Detail: detail, Snapshot: snapshot,
 	}
 	if err := tx.Create(&event).Error; err != nil {
 		return fmt.Errorf("create todo update event todo_id=%d: %w", existing.ID, err)

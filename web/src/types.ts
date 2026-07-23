@@ -567,7 +567,7 @@ export type DailyDigestStatus = 'pending' | 'generating' | 'done' | 'failed'
 export type DailyDigestTrigger = 'manual' | 'schedule'
 
 export interface DailyDigestSourceCoverage {
-  status: 'ok' | 'empty' | 'error'
+  status: 'ok' | 'complete' | 'partial' | 'empty' | 'error' | 'unavailable'
   count: number
   note?: string
 }

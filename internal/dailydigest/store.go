@@ -51,7 +51,7 @@ var (
 
 // SourceCoverageItem 让“查到了什么/哪路失败了”成为可观察数据，而不是藏在模型内部。
 type SourceCoverageItem struct {
-	Status string `json:"status"` // ok / empty / error
+	Status string `json:"status"` // group: ok/empty/error; person: complete/partial/empty/error/unavailable
 	Count  int    `json:"count"`
 	Note   string `json:"note,omitempty"`
 }
