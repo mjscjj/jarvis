@@ -33,6 +33,12 @@ type codexRun struct {
 type runInvocation struct {
 	SessionID string
 	TaskID    uint64
+	Output    *codexOutputCapture
+}
+
+type codexOutputCapture struct {
+	StdoutPath string
+	StderrPath string
 }
 
 // codexResult is the structured final message codex must return for M5
@@ -156,14 +162,22 @@ func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string,
 // RunTask starts a persisted Codex session for one Task. The Task ID is exposed
 // to controlled Jarvis tools so the agent can park itself with yield-until.
 func (r *CodexRunner) RunTask(ctx context.Context, prompt, sandbox, repoPath string, sch schema, taskID uint64) (*codexRun, error) {
+	return r.RunTaskWithOutput(ctx, prompt, sandbox, repoPath, sch, taskID, nil)
+}
+
+func (r *CodexRunner) RunTaskWithOutput(ctx context.Context, prompt, sandbox, repoPath string, sch schema, taskID uint64, output *codexOutputCapture) (*codexRun, error) {
 	if taskID == 0 {
 		return nil, fmt.Errorf("codex task run requires a positive task ID")
 	}
-	return r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{TaskID: taskID})
+	return r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{TaskID: taskID, Output: output})
 }
 
 // ResumeTask starts another turn in an existing persisted Codex session.
 func (r *CodexRunner) ResumeTask(ctx context.Context, sessionID, prompt, sandbox, repoPath string, sch schema, taskID uint64) (*codexRun, error) {
+	return r.ResumeTaskWithOutput(ctx, sessionID, prompt, sandbox, repoPath, sch, taskID, nil)
+}
+
+func (r *CodexRunner) ResumeTaskWithOutput(ctx context.Context, sessionID, prompt, sandbox, repoPath string, sch schema, taskID uint64, output *codexOutputCapture) (*codexRun, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return nil, fmt.Errorf("codex resume session ID is required")
@@ -171,7 +185,7 @@ func (r *CodexRunner) ResumeTask(ctx context.Context, sessionID, prompt, sandbox
 	if taskID == 0 {
 		return nil, fmt.Errorf("codex resume requires a positive task ID")
 	}
-	return r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{SessionID: sessionID, TaskID: taskID})
+	return r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{SessionID: sessionID, TaskID: taskID, Output: output})
 }
 
 func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string, sch schema, invocation runInvocation) (*codexRun, error) {
@@ -253,8 +267,25 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	}
 	command.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
+	stdoutWriter := io.Writer(&stdout)
+	stderrWriter := io.Writer(&stderr)
+	var stdoutFile, stderrFile *os.File
+	if invocation.Output != nil {
+		stdoutFile, err = os.OpenFile(invocation.Output.StdoutPath, os.O_WRONLY|os.O_APPEND, 0)
+		if err != nil {
+			return nil, fmt.Errorf("open codex stdout capture %q: %w", invocation.Output.StdoutPath, err)
+		}
+		defer stdoutFile.Close()
+		stderrFile, err = os.OpenFile(invocation.Output.StderrPath, os.O_WRONLY|os.O_APPEND, 0)
+		if err != nil {
+			return nil, fmt.Errorf("open codex stderr capture %q: %w", invocation.Output.StderrPath, err)
+		}
+		defer stderrFile.Close()
+		stdoutWriter = io.MultiWriter(&stdout, stdoutFile)
+		stderrWriter = io.MultiWriter(&stderr, stderrFile)
+	}
+	command.Stdout = stdoutWriter
+	command.Stderr = stderrWriter
 	if err := command.Run(); err != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("codex exec timed out after %s", r.timeout)
@@ -306,7 +337,7 @@ func parseExecutionResult(lastMessage string) (*codexResult, error) {
 	if strings.TrimSpace(result.Summary) == "" {
 		return nil, fmt.Errorf("codex exec result summary is blank")
 	}
-	if err := validateOutcome(result.Outcome, result.FailureReason, result.Waiting); err != nil {
+	if err := validateOutcome(result.Outcome, result.FailureReason, result.NeedsFollowup, result.Waiting); err != nil {
 		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
 	return &result, nil
@@ -342,13 +373,13 @@ func parseProposeResult(lastMessage string) (*proposeResult, error) {
 			strings.TrimSpace(result.Proposal.Artifact) == "" {
 			return nil, fmt.Errorf("codex propose result proposal must have non-empty action, target and artifact")
 		}
-	} else if err := validateOutcome(result.Outcome, result.FailureReason, result.Waiting); err != nil {
+	} else if err := validateOutcome(result.Outcome, result.FailureReason, result.NeedsFollowup, result.Waiting); err != nil {
 		return nil, fmt.Errorf("codex propose result: %w", err)
 	}
 	return &result, nil
 }
 
-func validateOutcome(outcome, failureReason string, waiting *codexWaiting) error {
+func validateOutcome(outcome, failureReason, needsFollowup string, waiting *codexWaiting) error {
 	switch strings.TrimSpace(outcome) {
 	case "completed":
 		if waiting != nil {
@@ -359,6 +390,9 @@ func validateOutcome(outcome, failureReason string, waiting *codexWaiting) error
 			return fmt.Errorf("outcome=waiting requires scheduled_task_id, wake_at and reason")
 		}
 	case "needs_human":
+		if strings.TrimSpace(needsFollowup) == "" {
+			return fmt.Errorf("outcome=needs_human requires needs_followup")
+		}
 		if waiting != nil {
 			return fmt.Errorf("outcome=needs_human requires waiting=null")
 		}

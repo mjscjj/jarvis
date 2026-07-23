@@ -52,20 +52,24 @@ func NewService(db *gorm.DB) (*Service, error) {
 	return &Service{db: db}, nil
 }
 
-// SeedDefaults inserts built-in records only when their key has never existed.
+// SeedDefaults inserts each built-in record only when its key has never existed.
 // A soft-deleted record counts as existing, so an explicit deletion survives restart.
+// Existing content is never overwritten: text_storage is the runtime source of truth
+// after the initial seed.
 func (s *Service) SeedDefaults(ctx context.Context) error {
-	var count int64
-	if err := s.db.WithContext(ctx).Unscoped().Model(&domain.TextStorage{}).
-		Where("storage_key = ?", ApprovalRuleKey).Count(&count).Error; err != nil {
-		return fmt.Errorf("check default approval rule: %w", err)
-	}
-	if count > 0 {
-		return nil
-	}
-	row := domain.TextStorage{StorageKey: ApprovalRuleKey, Name: "审批规则", Content: DefaultApprovalRule}
-	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return fmt.Errorf("seed default approval rule: %w", err)
+	for _, record := range defaultRecords() {
+		var count int64
+		if err := s.db.WithContext(ctx).Unscoped().Model(&domain.TextStorage{}).
+			Where("storage_key = ?", record.key).Count(&count).Error; err != nil {
+			return fmt.Errorf("check default text storage key=%s: %w", record.key, err)
+		}
+		if count > 0 {
+			continue
+		}
+		row := domain.TextStorage{StorageKey: record.key, Name: record.name, Content: record.content}
+		if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+			return fmt.Errorf("seed default text storage key=%s: %w", record.key, err)
+		}
 	}
 	return nil
 }

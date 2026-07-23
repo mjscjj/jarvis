@@ -155,9 +155,11 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/relation-facts/:fact_id", UpdateRelationFact(deps.RelationFacts))
 	h.DELETE("/api/relation-facts/:fact_id", DeleteRelationFact(deps.RelationFacts))
 	if deps.Executor != nil {
+		h.GET("/api/tasks/:task_id/output", GetTaskRunOutput(deps.Executor))
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/rerun", RerunTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/reapply", ReapplyTask(deps.Executor))
+		h.POST("/api/tasks/:task_id/resume", ResumeTaskAfterHuman(deps.Executor))
 		h.POST("/api/tasks/:task_id/approve", ApproveTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/reject", RejectTask(deps.Executor))
 	}

@@ -1,6 +1,10 @@
 package execute
 
-import "testing"
+import (
+	"testing"
+
+	"jarvis/internal/textstore"
+)
 
 func TestActionPolicies(t *testing.T) {
 	cases := []struct {
@@ -39,7 +43,7 @@ func TestUnknownActionPolicyFailsFast(t *testing.T) {
 }
 
 func TestBuildExecutionPromptRequiresValidTask(t *testing.T) {
-	if _, err := buildExecutionPrompt(nil, "", "", "", "", nil); err == nil {
+	if _, err := buildExecutionPrompt(textstore.DefaultSystemPromptExecute, nil, "", textstore.DefaultSystemPromptScheduledTools, "", "", "", nil); err == nil {
 		t.Fatalf("nil Task must fail")
 	}
 }

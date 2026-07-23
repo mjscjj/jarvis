@@ -75,6 +75,33 @@ func ListTaskRuns(service execute.TaskService) app.HandlerFunc {
 	}
 }
 
+// GetTaskRunOutput returns the latest Codex invocation's complete prompt,
+// stdout JSONL stream and stderr. The files are written while Codex is running,
+// so polling this endpoint provides a simple live view without a second event
+// transport.
+func GetTaskRunOutput(service execute.TaskRunOutputReader) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40026, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		result, err := service.LatestTaskRunOutput(ctx, taskID)
+		if err != nil {
+			switch {
+			case errors.Is(err, execute.ErrInvalidInput):
+				writeAPIError(c, consts.StatusBadRequest, 40026, err)
+			case errors.Is(err, execute.ErrTaskNotFound):
+				writeAPIError(c, consts.StatusNotFound, 40426, err)
+			default:
+				writeAPIError(c, consts.StatusInternalServerError, 50026, err)
+			}
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func FinishTask(service execute.TaskService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
@@ -229,6 +256,39 @@ func ReapplyTask(executor *execute.AgentExecutor) app.HandlerFunc {
 			return
 		}
 		result, err := executor.KickReapply(ctx, taskID)
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+type resumeTaskRequest struct {
+	ExpectedVersion *int32 `json:"expected_version"`
+	Response        string `json:"response"`
+}
+
+// ResumeTaskAfterHuman continues the exact Codex session that asked for human
+// input. It is deliberately distinct from rerun/reapply: no Task plan or
+// approved artifact is regenerated.
+func ResumeTaskAfterHuman(executor *execute.AgentExecutor) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40030, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		var request resumeTaskRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40030, err)
+			return
+		}
+		if request.ExpectedVersion == nil {
+			writeAPIError(c, consts.StatusBadRequest, 40030, fmt.Errorf("expected_version is required"))
+			return
+		}
+		result, err := executor.KickResumeAfterHuman(ctx, taskID, *request.ExpectedVersion, request.Response)
 		if err != nil {
 			writeExecutionError(c, err)
 			return

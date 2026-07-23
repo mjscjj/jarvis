@@ -1,23 +1,29 @@
-# Codex Session 挂起与定时续跑
+# Codex Session 挂起与恢复
 
 ## 1. 结论
 
-Jarvis 的长期任务不靠一个 Codex 进程持续 `sleep`，也不把任务摘要交给另一个 Agent。Agent 暂时无法继续时，创建一次性定时触发并结束当前 Turn；到期后使用 `codex exec resume <session_id>` 恢复原 Codex Session。
+Jarvis 的长期任务不靠一个 Codex 进程持续 `sleep`，也不把任务摘要交给另一个 Agent。Agent 因未来条件或人工输入暂时无法继续时，结束当前 Turn；条件满足后使用 `codex exec resume <session_id>` 恢复原 Codex Session。
 
 ```text
 Task #123
   ├─ ExecutionRun #1 ─ Codex Session A ─ yield-until ─ waiting
   ├─ ScheduledTask ─ 到期只负责唤醒
   └─ ExecutionRun #2 ─ Codex Session A ─ 继续执行
+
+Task #54
+  ├─ ExecutionRun #135 ─ Codex Session B ─ needs_human
+  ├─ 用户回复 ─ 只提供本轮所需确认或信息
+  └─ ExecutionRun #136 ─ Codex Session B ─ 从停点继续
 ```
 
-`ExecutionRun` 表示一次进程级执行，Codex Session 表示跨 Run 的连续上下文。一个 Task 可以有多次 Run，但主动等待前后的 `codex_session_id` 必须相同。
+`ExecutionRun` 表示一次进程级执行，Codex Session 表示跨 Run 的连续上下文。一个 Task 可以有多次 Run，但等待或请求人工前后的 `codex_session_id` 必须相同。
 
 ## 2. 边界
 
 - `Task` 保存用户真正要完成的目标。
 - `ExecutionRun` 保存一次 Codex Turn 的输入、Session ID、结果和耗时。
 - `ScheduledTask` 只保存未来触发，不重新解释或复制业务任务。
+- `needs_human` 只保存人工请求和源 Run；用户回复不创建新 Task、不重新 propose/apply。
 - Codex Session 保存完整对话和工具调用历史。
 - 文件、外部系统状态和数据库仍是事实来源；Session 不等于冻结操作系统进程。
 
@@ -109,6 +115,7 @@ pending → executing → done
                     → failed
                     → awaiting_approval
                     → waiting → executing
+                    → needs_human → executing
 ```
 
 ExecutionRun：
@@ -116,6 +123,7 @@ ExecutionRun：
 ```text
 running → succeeded
         → waiting
+        → needs_human
         → failed
 ```
 
@@ -125,16 +133,28 @@ Agent 结果：
 |---|---|
 | `completed` | 目标已经真实完成并验证 |
 | `waiting` | 已成功创建未来唤醒 |
-| `needs_human` | 必须等待人工批准或补充 |
+| `needs_human` | 必须等待动作时确认、人工操作或补充信息；保存 Session 后暂停 |
 | `failed` | 当前目标确定失败 |
 
-`outcome=waiting` 必须携带有效的 `scheduled_task_id/wake_at/reason`。只有 Codex 进程正常退出但没有完成目标时，不能把非空文本当成完成。
+`outcome=waiting` 必须携带有效的 `scheduled_task_id/wake_at/reason`。`outcome=needs_human` 必须携带明确、唯一的 `needs_followup`。只有 Codex 进程正常退出但没有完成目标时，不能把非空文本当成完成。
+
+### 6.1 人工回复恢复
+
+1. M5 保存 `ExecutionRun(status=needs_human, codex_session_id=...)`。
+2. Task 保存 `source_run_id`，从 `executing` 进入 `needs_human`。
+3. 用户在 Task 页提交回应，`POST /api/tasks/:id/resume` 以 Task version 抢占。
+4. Jarvis 校验源 Run 属于当前 Task、状态仍为 `needs_human` 且 Session ID 非空。
+5. Task 进入 `executing`，用户回应追加到 `execution_supplements`。
+6. M5 调用 `codex exec resume <session_id>`，提示模型从停点继续且不得重复既有外部写入。
+
+`resume` 与 `rerun/reapply` 是三种不同语义：`resume` 延续原 Session；`reapply` 仅重新落地同一已批准方案；`rerun` 才从 Task 入口重新执行。
 
 ## 7. 幂等与失败
 
 - 一个源 ExecutionRun 最多绑定一个续接 ScheduledTask，数据库唯一约束使用 `source_run_id`。
 - ScheduledTask 重复扫描由 `active → running` 的条件更新拦截。
 - Task 重复恢复由 `waiting → executing` 的版本条件拦截。
+- 人工回复重复提交由 `needs_human → executing` 的 version 条件拦截。
 - Jarvis 在等待期间重启：`active` ScheduledTask 仍由 MySQL 恢复。
 - 到期时 Session 缺失：本轮触发失败并明确记录，不新建 Session。
 - 同一 Task 同时只允许一个未完成的续接计划。

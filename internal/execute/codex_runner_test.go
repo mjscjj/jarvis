@@ -26,6 +26,7 @@ done
 [ -n "$output" ]
 printf '%s' '{"outcome":"completed","summary":"done","failure_reason":"","needs_followup":"","enrichments":[],"waiting":null}' > "$output"
 printf '%s\n' '{"type":"thread.started","thread_id":"session-42"}'
+printf '%s\n' 'diagnostic stderr' >&2
 `
 	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake codex: %v", err)
@@ -37,7 +38,17 @@ printf '%s\n' '{"type":"thread.started","thread_id":"session-42"}'
 	if err != nil {
 		t.Fatalf("NewCodexRunner() error = %v", err)
 	}
-	first, err := runner.RunTask(t.Context(), "start", "danger-full-access", "", schemaExecution, 123)
+	stdoutPath := filepath.Join(dir, "stdout.jsonl")
+	stderrPath := filepath.Join(dir, "stderr.log")
+	for _, path := range []string{stdoutPath, stderrPath} {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatalf("initialize output capture %s: %v", path, err)
+		}
+	}
+	first, err := runner.RunTaskWithOutput(
+		t.Context(), "start", "danger-full-access", "", schemaExecution, 123,
+		&codexOutputCapture{StdoutPath: stdoutPath, StderrPath: stderrPath},
+	)
 	if err != nil {
 		t.Fatalf("RunTask() error = %v", err)
 	}
@@ -50,6 +61,12 @@ printf '%s\n' '{"type":"thread.started","thread_id":"session-42"}'
 	}
 	if got := readTestFile(t, envPath); got != "123" {
 		t.Fatalf("JARVIS_TASK_ID = %q, want 123", got)
+	}
+	if got := readTestFile(t, stdoutPath); !strings.Contains(got, `"type":"thread.started"`) {
+		t.Fatalf("captured stdout missing thread event: %s", got)
+	}
+	if got := readTestFile(t, stderrPath); !strings.Contains(got, "diagnostic stderr") {
+		t.Fatalf("captured stderr missing diagnostic: %s", got)
 	}
 
 	resumed, err := runner.ResumeTask(t.Context(), "session-42", "continue", "danger-full-access", "", schemaExecution, 123)

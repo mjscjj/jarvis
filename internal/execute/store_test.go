@@ -3,8 +3,15 @@ package execute
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"jarvis/internal/domain"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestValidateTaskFilter(t *testing.T) {
@@ -50,6 +57,145 @@ func TestAwaitingApprovalStatusAllowed(t *testing.T) {
 func TestWaitingStatusAllowed(t *testing.T) {
 	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"waiting"}, Page: 1, PageSize: 20}); err != nil {
 		t.Fatalf("waiting must be a valid filter status: %v", err)
+	}
+}
+
+func TestNeedsHumanStatusAllowed(t *testing.T) {
+	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"needs_human"}, Page: 1, PageSize: 20}); err != nil {
+		t.Fatalf("needs_human must be a valid filter status: %v", err)
+	}
+	statuses, err := ParseStatuses("needs_human")
+	if err != nil || len(statuses) != 1 || statuses[0] != "needs_human" {
+		t.Fatalf("ParseStatuses(needs_human) = %v, err = %v", statuses, err)
+	}
+}
+
+func TestNeedsHumanSourceRunID(t *testing.T) {
+	got, err := needsHumanSourceRunID([]byte(`{"outcome":"needs_human","source_run_id":135}`))
+	if err != nil || got != 135 {
+		t.Fatalf("needsHumanSourceRunID() = %d, err = %v", got, err)
+	}
+	for name, raw := range map[string][]byte{
+		"empty":       nil,
+		"wrong state": []byte(`{"outcome":"failed","source_run_id":135}`),
+		"missing run": []byte(`{"outcome":"needs_human"}`),
+		"malformed":   []byte(`{`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := needsHumanSourceRunID(raw); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("needsHumanSourceRunID(%q) error = %v", raw, err)
+			}
+		})
+	}
+}
+
+func TestNeedsHumanPauseAndResumePersistsSameSession(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE task (
+			id INTEGER PRIMARY KEY,
+			status TEXT NOT NULL,
+			execution_result TEXT,
+			execution_supplements TEXT,
+			version INTEGER NOT NULL,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE execution_run (
+			id INTEGER PRIMARY KEY,
+			task_id INTEGER NOT NULL,
+			status TEXT NOT NULL,
+			codex_session_id TEXT
+		)`,
+		`CREATE TABLE task_event (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id INTEGER NOT NULL,
+			task_version INTEGER NOT NULL,
+			event_type TEXT NOT NULL,
+			from_status TEXT,
+			to_status TEXT NOT NULL,
+			actor_type TEXT NOT NULL,
+			actor_ref TEXT,
+			run_id INTEGER,
+			detail TEXT,
+			occurred_at DATETIME NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(task_id, task_version)
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+
+	const (
+		taskID      = uint64(54)
+		runID       = uint64(135)
+		taskVersion = int32(5)
+	)
+	if err := db.Exec(
+		"INSERT INTO task(id, status, version) VALUES (?, ?, ?)",
+		taskID, "executing", taskVersion,
+	).Error; err != nil {
+		t.Fatalf("create Task: %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO execution_run(id, task_id, status, codex_session_id) VALUES (?, ?, ?, ?)",
+		runID, taskID, "needs_human", "session-original",
+	).Error; err != nil {
+		t.Fatalf("create execution run: %v", err)
+	}
+	result := []byte(fmt.Sprintf(
+		`{"outcome":"needs_human","source_run_id":%d,"summary":"授权页已打开","needs_followup":"请确认授权"}`,
+		runID,
+	))
+	if _, err := store.MarkNeedsHuman(t.Context(), taskID, taskVersion, runID, result); err != nil {
+		t.Fatalf("MarkNeedsHuman() error = %v", err)
+	}
+
+	var parked domain.Task
+	if err := db.First(&parked, taskID).Error; err != nil {
+		t.Fatalf("load parked Task: %v", err)
+	}
+	if parked.Status != "needs_human" || parked.Version != 6 {
+		t.Fatalf("parked Task status/version = %s/%d", parked.Status, parked.Version)
+	}
+
+	claim, err := store.ClaimNeedsHuman(t.Context(), taskID, parked.Version, "已确认授权，请继续", "web")
+	if err != nil {
+		t.Fatalf("ClaimNeedsHuman() error = %v", err)
+	}
+	if claim.SourceRunID != runID || claim.Version != 7 || claim.Response != "已确认授权，请继续" {
+		t.Fatalf("claim = %#v", claim)
+	}
+	var resumed domain.Task
+	if err := db.First(&resumed, taskID).Error; err != nil {
+		t.Fatalf("load resumed Task: %v", err)
+	}
+	if resumed.Status != "executing" || resumed.Version != 7 {
+		t.Fatalf("resumed Task status/version = %s/%d", resumed.Status, resumed.Version)
+	}
+	if !strings.Contains(string(resumed.ExecutionSupplements), "已确认授权，请继续") {
+		t.Fatalf("execution supplements = %s", resumed.ExecutionSupplements)
+	}
+	var events []domain.TaskEvent
+	if err := db.Where("task_id = ?", taskID).Order("task_version").Find(&events).Error; err != nil {
+		t.Fatalf("load events: %v", err)
+	}
+	if len(events) != 2 ||
+		events[0].EventType != "human_input_requested" ||
+		events[1].EventType != "human_response_received" ||
+		events[1].RunID == nil || *events[1].RunID != runID {
+		t.Fatalf("events = %#v", events)
 	}
 }
 

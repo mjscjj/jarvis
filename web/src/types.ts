@@ -187,7 +187,7 @@ export interface ConfirmationDetail {
   audits: DecisionAuditView[] | null
 }
 
-export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'awaiting_approval' | 'done' | 'failed'
+export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'needs_human' | 'awaiting_approval' | 'done' | 'failed'
 
 // TaskProposal is the high-risk external write codex prepared during the propose
 // stage, awaiting human approval. It is stored in execution_result while the Task
@@ -294,6 +294,19 @@ export interface ExecutionRun {
 
 export interface ExecutionRunList {
   items: ExecutionRun[]
+}
+
+export interface TaskRunOutput {
+  task_id: number
+  task_status: TaskStatus
+  available: boolean
+  running: boolean
+  run_key?: string
+  stage?: 'execute' | 'propose' | 'apply'
+  prompt?: string
+  stdout?: string
+  stderr?: string
+  updated_at?: string
 }
 
 export interface TaskEvent {

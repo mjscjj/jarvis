@@ -105,7 +105,7 @@ func (s *DebugService) backlog(ctx context.Context) []BacklogMetric {
 			return db.Model(&domain.Todo{}).Where("is_leader_assigned = ? AND status IN ?", true, openTodoStatuses)
 		}},
 		{key: "task_pending", label: "待执行 Task", where: func(db *gorm.DB) *gorm.DB {
-			return db.Model(&domain.Task{}).Where("status IN ?", []string{"pending", "executing", "waiting"})
+			return db.Model(&domain.Task{}).Where("status IN ?", []string{"pending", "executing", "waiting", "needs_human"})
 		}},
 	}
 	out := make([]BacklogMetric, 0, len(metrics))

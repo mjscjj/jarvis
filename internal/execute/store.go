@@ -28,7 +28,7 @@ var (
 )
 
 var taskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "waiting": {}, "awaiting_approval": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {},
 }
 
 type TaskFilter struct {
@@ -85,6 +85,13 @@ type SupplementInput struct {
 	ExpectedVersion int32
 	Note            string
 	Channel         string
+}
+
+type HumanResumeClaim struct {
+	TaskID      uint64
+	SourceRunID uint64
+	Version     int32
+	Response    string
 }
 
 // RunView 是一次 ExecutionRun 审计记录的只读视图，供任务详情展示执行历史。
@@ -225,7 +232,7 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 }
 
 var supplementableTaskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "waiting": {}, "awaiting_approval": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {},
 }
 
 // Supplement appends a human clarification/instruction to a Task's M5-only
@@ -453,6 +460,47 @@ func (s *Store) MarkWaiting(ctx context.Context, taskID uint64, expectedVersion 
 	return newVersion, nil
 }
 
+// MarkNeedsHuman parks an executing Task without turning it into a failure.
+// The exact run and Codex session are persisted so a later user response can
+// resume the same execution conversation instead of starting the Task over.
+func (s *Store) MarkNeedsHuman(ctx context.Context, taskID uint64, expectedVersion int32, runID uint64, result json.RawMessage) (int32, error) {
+	if taskID == 0 || expectedVersion < 0 || runID == 0 {
+		return 0, fmt.Errorf("%w: needs_human Task/run identity is invalid", ErrInvalidInput)
+	}
+	canonical, err := canonicalJSONObject(result)
+	if err != nil {
+		return 0, err
+	}
+	var run domain.ExecutionRun
+	if err := s.db.WithContext(ctx).First(&run, runID).Error; err != nil {
+		return 0, fmt.Errorf("load needs_human execution run id=%d: %w", runID, err)
+	}
+	if run.TaskID != taskID || run.Status != "needs_human" || run.CodexSessionID == nil || strings.TrimSpace(*run.CodexSessionID) == "" {
+		return 0, fmt.Errorf("%w: run_id=%d is not a resumable needs_human run for task_id=%d", ErrInvalidInput, runID, taskID)
+	}
+	update := s.db.WithContext(ctx).Model(&domain.Task{}).
+		Where("id = ? AND version = ? AND status = ?", taskID, expectedVersion, "executing").
+		Updates(map[string]any{
+			"status": "needs_human", "execution_result": datatypes.JSON(canonical), "version": gorm.Expr("version + 1"),
+		})
+	if update.Error != nil {
+		return 0, fmt.Errorf("mark needs_human Task id=%d: %w", taskID, update.Error)
+	}
+	if update.RowsAffected != 1 {
+		return 0, fmt.Errorf("%w: task_id=%d expected=%d from=executing to=needs_human", ErrVersionConflict, taskID, expectedVersion)
+	}
+	newVersion := expectedVersion + 1
+	fromStatus := "executing"
+	if err := progress.AppendTaskEvent(s.db.WithContext(ctx), progress.TaskEventInput{
+		TaskID: taskID, TaskVersion: newVersion, EventType: "human_input_requested",
+		FromStatus: &fromStatus, ToStatus: "needs_human", ActorType: "m5", RunID: &runID,
+		OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		return 0, err
+	}
+	return newVersion, nil
+}
+
 func closeUnboundContinuations(db *gorm.DB, taskID uint64, reason string) error {
 	now := time.Now().UTC()
 	result := db.Model(&domain.ScheduledTask{}).
@@ -522,6 +570,91 @@ func (s *Store) ClaimWaiting(ctx context.Context, taskID, sourceRunID uint64) (i
 		return 0, err
 	}
 	return newVersion, nil
+}
+
+// ClaimNeedsHuman appends the user's response and claims a parked Task for
+// continuation. It binds the continuation to the exact needs_human run so stale
+// UI clicks cannot resume an older Codex session.
+func (s *Store) ClaimNeedsHuman(ctx context.Context, taskID uint64, expectedVersion int32, response, channel string) (*HumanResumeClaim, error) {
+	if taskID == 0 || expectedVersion < 0 {
+		return nil, fmt.Errorf("%w: needs_human Task ID/version is invalid", ErrInvalidInput)
+	}
+	response = strings.TrimSpace(response)
+	if response == "" {
+		return nil, fmt.Errorf("%w: human response must be non-blank", ErrInvalidInput)
+	}
+	channel = strings.TrimSpace(channel)
+	if channel == "" {
+		channel = "backend"
+	}
+	var task domain.Task
+	if err := s.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return nil, fmt.Errorf("load needs_human Task id=%d: %w", taskID, err)
+	}
+	if task.Version != expectedVersion {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+	}
+	if task.Status != "needs_human" {
+		return nil, fmt.Errorf("%w: task_id=%d from=%s to=executing", ErrInvalidTransition, task.ID, task.Status)
+	}
+	sourceRunID, err := needsHumanSourceRunID(task.ExecutionResult)
+	if err != nil {
+		return nil, fmt.Errorf("read needs_human source run task_id=%d: %w", task.ID, err)
+	}
+	var run domain.ExecutionRun
+	if err := s.db.WithContext(ctx).First(&run, sourceRunID).Error; err != nil {
+		return nil, fmt.Errorf("load needs_human source run id=%d: %w", sourceRunID, err)
+	}
+	if run.TaskID != task.ID || run.Status != "needs_human" || run.CodexSessionID == nil || strings.TrimSpace(*run.CodexSessionID) == "" {
+		return nil, fmt.Errorf("%w: source_run_id=%d is not resumable for task_id=%d", ErrInvalidInput, sourceRunID, task.ID)
+	}
+	encoded, err := appendExecutionSupplement(task.ExecutionSupplements, response, channel, time.Now().UTC())
+	if err != nil {
+		return nil, fmt.Errorf("append human response task_id=%d: %w", task.ID, err)
+	}
+	update := s.db.WithContext(ctx).Model(&domain.Task{}).
+		Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "needs_human").
+		Updates(map[string]any{
+			"status": "executing", "execution_supplements": datatypes.JSON(encoded), "version": gorm.Expr("version + 1"),
+		})
+	if update.Error != nil {
+		return nil, fmt.Errorf("claim needs_human Task id=%d: %w", task.ID, update.Error)
+	}
+	if update.RowsAffected != 1 {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d from=needs_human to=executing", ErrVersionConflict, task.ID, expectedVersion)
+	}
+	newVersion := expectedVersion + 1
+	fromStatus := "needs_human"
+	if err := progress.AppendTaskEvent(s.db.WithContext(ctx), progress.TaskEventInput{
+		TaskID: task.ID, TaskVersion: newVersion, EventType: "human_response_received",
+		FromStatus: &fromStatus, ToStatus: "executing", ActorType: "user", RunID: &sourceRunID,
+		Detail: map[string]any{"channel": channel}, OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		return nil, err
+	}
+	return &HumanResumeClaim{
+		TaskID: task.ID, SourceRunID: sourceRunID, Version: newVersion, Response: response,
+	}, nil
+}
+
+func needsHumanSourceRunID(raw []byte) (uint64, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return 0, fmt.Errorf("%w: needs_human execution_result is empty", ErrInvalidInput)
+	}
+	var stored struct {
+		Outcome     string `json:"outcome"`
+		SourceRunID uint64 `json:"source_run_id"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return 0, fmt.Errorf("%w: decode needs_human execution_result: %v", ErrInvalidInput, err)
+	}
+	if stored.Outcome != "needs_human" || stored.SourceRunID == 0 {
+		return 0, fmt.Errorf("%w: execution_result is not a resumable needs_human result", ErrInvalidInput)
+	}
+	return stored.SourceRunID, nil
 }
 
 // MarkExecutingFromApproval claims an awaiting_approval Task for the apply stage

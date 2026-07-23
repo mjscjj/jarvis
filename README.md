@@ -119,7 +119,8 @@ GET  /api/confirmations    GET /api/confirmations/:id
 POST /api/confirmations/:id/approve|reject|supplement
 GET  /api/tasks            GET /api/tasks/:id/runs|events
 POST /api/tasks/:id/finish|supplement
-POST /api/tasks/:id/execute|rerun|approve|reject          # 需 Executor 已启用（异步）
+POST /api/tasks/:id/execute|rerun|reapply|approve|reject  # 需 Executor 已启用（异步）
+POST /api/tasks/:id/resume                               # 回复 needs_human 并恢复原 Codex Session
 GET/POST/PUT/DELETE /api/projects[/:id]
 GET/POST /api/projects/:id/events
 GET/POST /api/relation-facts   PUT/DELETE /api/relation-facts/:id
@@ -160,7 +161,7 @@ M3/M4/M5 的实时通知与补偿任务都只进入同一个协调器队列，�
 - M0.4 提取 worker 已实现：相关群增量聚合、背景/记忆注入、Structured Outputs、Todo 事务落库与独立水位推进；同时提供只读 Todo API 和 React + Ant Design 看板。
 - M0.5 确认已完成：`extracted Todo → need_decision → 用户批准/拒绝`，批准后原子生成 Task。`decide.mode` 可选 `manual_mvp`（全走人工确认）或 `codex`（用 codex/traex 判 disposition：auto_execute/need_review/need_info，need_info 带结构化 clarifications）。
 - M0.6 MVP 执行闭环已完成：管理后台列出 Task，支持人工执行后回写 `done/failed + result`。确认与执行页面由同一个 Go 服务托管。
-- 现状：M3 抽取、M4 决策已 codex 化（默认走 traex agent 自跑工具推算项目/仓库并冻结上下文快照）；M5 执行支持自动执行 + 两阶段人工审批（code_change 直接跑完，其余高风险停 `awaiting_approval` 等批准，全异步）；抽取/记忆 LLM 接入阿里云百炼 `qwen-plus`，embedding 用 `text-embedding-v3`（1024 维）。
+- 现状：M3 抽取、M4 决策已 codex 化（默认走 traex agent 自跑工具推算项目/仓库并冻结上下文快照）；M5 执行支持自动执行、两阶段人工审批，以及 `needs_human` 挂起/回复后恢复原 Codex Session（不是重跑 Task）；抽取/记忆 LLM 接入阿里云百炼 `qwen-plus`，embedding 用 `text-embedding-v3`（1024 维）。
 - M3/M4/M5 已改为状态提交后实时串行推进；三者的 schedule 只承担启动恢复和周期补偿。人工审核一旦触发会写入 sticky gate，补充信息后的 M4 重评不会把它自动放行到 M5。
 
 ## 本地运行

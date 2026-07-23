@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Input, Modal, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, executeTask, finishTask, listTaskEvents, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, supplementTask } from './api'
+import { approveTask, executeTask, finishTask, listTaskEvents, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Task, TaskEvent, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -52,10 +52,10 @@ function CellText({ text, danger }: { text: string | null; danger?: boolean }) {
   )
 }
 
-// 四个子 Tab：审批中 / 执行成功 / 执行失败 / 其他（待执行+执行中）。
-type TaskTab = 'awaiting' | 'done' | 'failed' | 'others'
+type TaskTab = 'human' | 'awaiting' | 'done' | 'failed' | 'others'
 
 const tabStatuses: Record<TaskTab, TaskStatus[]> = {
+  human: ['needs_human'],
   awaiting: ['awaiting_approval'],
   done: ['done'],
   failed: ['failed'],
@@ -63,6 +63,7 @@ const tabStatuses: Record<TaskTab, TaskStatus[]> = {
 }
 
 const tabLabels: Record<TaskTab, string> = {
+  human: '待我处理',
   awaiting: '审批中',
   done: '执行成功',
   failed: '执行失败',
@@ -92,6 +93,9 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [approveTarget, setApproveTarget] = useState<Task>()
   const [approveNote, setApproveNote] = useState('')
   const [approveSubmitting, setApproveSubmitting] = useState(false)
+  const [resumeTarget, setResumeTarget] = useState<Task>()
+  const [resumeResponse, setResumeResponse] = useState('')
+  const [resumeSubmitting, setResumeSubmitting] = useState(false)
   const [runs, setRuns] = useState<ExecutionRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runsError, setRunsError] = useState<string>()
@@ -250,6 +254,28 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     setRejectReason('')
   }
 
+  const openResume = (task: Task) => {
+    setResumeTarget(task)
+    setResumeResponse('')
+  }
+
+  const submitResume = async () => {
+    if (!resumeTarget || !resumeResponse.trim()) return
+    const task = resumeTarget
+    setResumeSubmitting(true)
+    setError(undefined)
+    try {
+      await resumeTask(task.id, task.version, resumeResponse.trim())
+      markLocalExecuting(task.id)
+      setResumeTarget(undefined)
+      setDetail(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setResumeSubmitting(false)
+    }
+  }
+
   const submitReject = async () => {
     if (!rejectTarget) return
     const task = rejectTarget
@@ -384,6 +410,9 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         if (task.status === 'waiting') {
           return <StatusBadge label="等待定时唤醒" color={statusMeta.waiting.color} />
         }
+        if (task.status === 'needs_human') {
+          return <Button type="primary" size="small" loading={resumeSubmitting && resumeTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openResume(task) }}>回复并继续</Button>
+        }
         if (task.status === 'awaiting_approval') {
           return <Space onClick={(e) => e.stopPropagation()}>
             <Button type="primary" size="small" loading={approveSubmitting && approveTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openApprove(task) }}>批准落地</Button>
@@ -432,15 +461,37 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       executing={detail ? executingId === detail.id : false}
       reapplying={detail ? reapplyingId === detail.id : false}
       approveSubmitting={detail ? approveSubmitting && approveTarget?.id === detail.id : false}
+      resumeSubmitting={detail ? resumeSubmitting && resumeTarget?.id === detail.id : false}
       onClose={closeDetail}
       onExecute={runExecute}
       onApprove={openApprove}
       onReject={openReject}
       onRerun={openRerun}
       onReapply={runReapply}
+      onResume={openResume}
     />
     <Modal zIndex={taskActionModalZIndex} title={finishStatus === 'done' ? '记录完成结果' : '记录失败原因'} open={Boolean(selected)} confirmLoading={submitting} onOk={submit} onCancel={() => setSelected(undefined)} okText="提交">
       <Input.TextArea rows={5} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder={finishStatus === 'done' ? '完成了什么、产物在哪里' : '失败原因和需要的后续处理'} />
+    </Modal>
+    <Modal
+      zIndex={taskActionModalZIndex}
+      title={resumeTarget ? `回复并继续「${resumeTarget.title}」` : '回复并继续'}
+      open={Boolean(resumeTarget)}
+      confirmLoading={resumeSubmitting}
+      onOk={submitResume}
+      onCancel={() => setResumeTarget(undefined)}
+      okText="提交并恢复原 Session"
+    >
+      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+        <Alert
+          type="warning"
+          showIcon
+          title="Codex 正在等待你的回应"
+          description={resumeTarget ? strField(resumeTarget.execution_result, 'needs_followup') || '请确认或补充所需信息。' : undefined}
+        />
+        <Text type="secondary">提交后会继续原 Codex Session，不会重跑任务，也不会重新生成已批准产物。</Text>
+        <Input.TextArea rows={4} value={resumeResponse} onChange={(event) => setResumeResponse(event.target.value)} placeholder="确认操作，或补充 Agent 请求的信息" />
+      </Space>
     </Modal>
     <Modal
       zIndex={taskActionModalZIndex}

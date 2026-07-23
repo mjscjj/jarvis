@@ -20,6 +20,20 @@ type fakeTaskService struct {
 	err        error
 }
 
+type fakeTaskRunOutputReader struct {
+	taskID uint64
+	result *execute.TaskRunOutput
+	err    error
+}
+
+func (f *fakeTaskRunOutputReader) LatestTaskRunOutput(_ context.Context, taskID uint64) (*execute.TaskRunOutput, error) {
+	f.taskID = taskID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.result, nil
+}
+
 func (f *fakeTaskService) ListTasks(_ context.Context, filter execute.TaskFilter) (*execute.TaskList, error) {
 	f.filter = filter
 	if f.err != nil {
@@ -84,6 +98,38 @@ func TestListTaskRunsRejectsBadID(t *testing.T) {
 	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks/0/runs", nil).Result()
 	if response.StatusCode() != consts.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", response.StatusCode())
+	}
+}
+
+func TestGetTaskRunOutput(t *testing.T) {
+	service := &fakeTaskRunOutputReader{result: &execute.TaskRunOutput{
+		TaskID: 8, TaskStatus: "executing", Available: true, Running: true,
+		RunKey: "run-123-propose", Stage: "propose", Prompt: "TASK INPUT",
+		Stdout: `{"type":"thread.started"}`, Stderr: "warning",
+	}}
+	h := server.New()
+	h.GET("/api/tasks/:task_id/output", GetTaskRunOutput(service))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks/8/output", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", response.StatusCode(), response.Body())
+	}
+	for _, want := range []string{`"task_id":8`, `"running":true`, `"prompt":"TASK INPUT"`, `"stdout":"{\"type\":\"thread.started\"}"`} {
+		if !bytes.Contains(response.Body(), []byte(want)) {
+			t.Fatalf("body missing %s: %s", want, response.Body())
+		}
+	}
+	if service.taskID != 8 {
+		t.Fatalf("task ID = %d, want 8", service.taskID)
+	}
+}
+
+func TestGetTaskRunOutputMapsMissingTask(t *testing.T) {
+	service := &fakeTaskRunOutputReader{err: fmt.Errorf("%w: synthetic", execute.ErrTaskNotFound)}
+	h := server.New()
+	h.GET("/api/tasks/:task_id/output", GetTaskRunOutput(service))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks/8/output", nil).Result()
+	if response.StatusCode() != consts.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", response.StatusCode(), response.Body())
 	}
 }
 

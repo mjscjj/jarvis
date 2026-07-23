@@ -55,6 +55,31 @@ func TestPrepareTaskEventAcceptsWaitingLifecycleTypes(t *testing.T) {
 	}
 }
 
+func TestPrepareTaskEventAcceptsHumanPauseLifecycleTypes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		eventType string
+		from      string
+		to        string
+		actor     string
+	}{
+		{eventType: "human_input_requested", from: "executing", to: "needs_human", actor: "m5"},
+		{eventType: "human_response_received", from: "needs_human", to: "executing", actor: "user"},
+	}
+	for _, item := range cases {
+		item := item
+		t.Run(item.eventType, func(t *testing.T) {
+			_, err := prepareTaskEvent(TaskEventInput{
+				TaskID: 1, TaskVersion: 2, EventType: item.eventType,
+				FromStatus: &item.from, ToStatus: item.to, ActorType: item.actor, OccurredAt: time.Now(),
+			})
+			if err != nil {
+				t.Fatalf("prepareTaskEvent(%s) error = %v", item.eventType, err)
+			}
+		})
+	}
+}
+
 func TestPrepareTaskEventRejectsUnknownType(t *testing.T) {
 	t.Parallel()
 	_, err := prepareTaskEvent(TaskEventInput{

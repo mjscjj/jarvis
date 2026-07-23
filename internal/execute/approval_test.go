@@ -86,6 +86,22 @@ func TestParseExecutionResultRejectsUnscheduledWaiting(t *testing.T) {
 	}
 }
 
+func TestParseExecutionResultNeedsHuman(t *testing.T) {
+	msg := `{"outcome":"needs_human","summary":"授权页已打开","failure_reason":"","needs_followup":"请确认是否点击授权","enrichments":[],"waiting":null}`
+	result, err := parseExecutionResult(msg)
+	if err != nil {
+		t.Fatalf("parseExecutionResult() error = %v", err)
+	}
+	if result.Outcome != "needs_human" || result.NeedsFollowup != "请确认是否点击授权" {
+		t.Fatalf("result = %#v", result)
+	}
+
+	blankFollowup := `{"outcome":"needs_human","summary":"需要人工","failure_reason":"","needs_followup":"","enrichments":[],"waiting":null}`
+	if _, err := parseExecutionResult(blankFollowup); err == nil {
+		t.Fatal("outcome=needs_human without needs_followup must fail")
+	}
+}
+
 // TestProposalPayloadRoundTrip checks the awaiting_approval execution_result we
 // store can be decoded back into the artifact the apply stage needs.
 func TestProposalPayloadRoundTrip(t *testing.T) {
@@ -155,10 +171,13 @@ func TestProposalFromRunOutput(t *testing.T) {
 // stage=executed (so the UI tells a real execution failure apart from a human
 // rejection / manual mark-failed), and that a failure also carries the error.
 func TestRunResultPayloadTagsStage(t *testing.T) {
-	run := &domain.ExecutionRun{ActionType: "summary_post", Sandbox: "danger-full-access", Status: "failed"}
+	run := &domain.ExecutionRun{ID: 135, ActionType: "summary_post", Sandbox: "danger-full-access", Status: "failed"}
 	ok := runResultPayload(run, nil)
 	if ok["stage"] != "executed" {
 		t.Fatalf("success payload stage = %v, want executed", ok["stage"])
+	}
+	if ok["source_run_id"] != uint64(135) {
+		t.Fatalf("success payload source_run_id = %v, want 135", ok["source_run_id"])
 	}
 	if _, hasErr := ok["error"]; hasErr {
 		t.Fatalf("success payload must not carry error: %#v", ok)
@@ -170,6 +189,23 @@ func TestRunResultPayloadTagsStage(t *testing.T) {
 }
 
 var errTest = errors.New("group not found")
+
+func TestBuildHumanResumePrompt(t *testing.T) {
+	prompt, err := buildHumanResumePrompt(textstore.DefaultSystemPromptResumeHuman, "我已确认授权，请继续", "")
+	if err != nil {
+		t.Fatalf("buildHumanResumePrompt() error = %v", err)
+	}
+	for _, want := range []string{
+		"我已确认授权，请继续",
+		"同一个 Task、同一个 Codex Session",
+		"不是重跑",
+		"不要重复已经完成的外部写入",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("human resume prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
 
 // TestRejectionPayload keeps the rejection distinguishable from a codex failure.
 func TestRejectionPayload(t *testing.T) {
@@ -190,7 +226,7 @@ func TestBuildProposePrompt(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(task, "", "", "", nil)
+	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptPropose, task, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
@@ -208,14 +244,14 @@ func TestBuildProposePromptInjectsSharedMemory(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildProposePrompt(task, "", "", "", nil)
+	empty, err := buildProposePrompt(textstore.DefaultSystemPromptPropose, task, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildProposePrompt(task, "周报模板固定用飞书文档 xxx", "", "", nil)
+	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptPropose, task, textstore.DefaultSystemPromptScheduledTools, "周报模板固定用飞书文档 xxx", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
@@ -237,7 +273,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
-	prompt, err := buildApplyPrompt(task, proposal, textstore.DefaultApprovalRule, "", "", "", nil)
+	prompt, err := buildApplyPrompt(textstore.DefaultSystemPromptApply, task, proposal, textstore.DefaultApprovalRule, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
@@ -251,7 +287,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 func TestBuildApplyPromptUsesStoredApprovalRule(t *testing.T) {
 	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
 	proposal := &codexProposal{Action: "a", Target: "b", Artifact: "c"}
-	prompt, err := buildApplyPrompt(task, proposal, "只允许写入测试文档。", "", "", "", nil)
+	prompt, err := buildApplyPrompt(textstore.DefaultSystemPromptApply, task, proposal, "只允许写入测试文档。", textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
@@ -266,11 +302,11 @@ func TestBuildApplyPromptUsesStoredApprovalRule(t *testing.T) {
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildApplyPrompt(task, nil, textstore.DefaultApprovalRule, "", "", "", nil); err == nil {
+	if _, err := buildApplyPrompt(textstore.DefaultSystemPromptApply, task, nil, textstore.DefaultApprovalRule, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil); err == nil {
 		t.Fatalf("nil proposal must fail")
 	}
 	proposal := &codexProposal{Action: "a", Target: "b", Artifact: "c"}
-	if _, err := buildApplyPrompt(task, proposal, "", "", "", "", nil); err == nil {
+	if _, err := buildApplyPrompt(textstore.DefaultSystemPromptApply, task, proposal, "", textstore.DefaultSystemPromptScheduledTools, "", "", "", nil); err == nil {
 		t.Fatalf("empty approval rule must fail")
 	}
 }
@@ -288,7 +324,7 @@ func TestInvestigateGoesThroughPropose(t *testing.T) {
 		ID: 21, Title: "查证登录超时", ActionType: "investigate",
 		Plan: datatypes.JSON(`{"steps":["read logs"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(task, "", "", "", nil)
+	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptPropose, task, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt(investigate) error = %v", err)
 	}

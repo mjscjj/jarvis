@@ -1221,6 +1221,157 @@ function ApprovalRulesPanel() {
   </>
 }
 
+// --- M5 system prompts (stored in generic text storage) ---
+
+const systemPromptDefinitions = [
+  {
+    key: 'm5_system_prompt_execute',
+    name: '直接执行',
+    storageName: 'M5 直接执行提示词',
+    description: '用于 code_change 和 direct 模式的新 Session。',
+  },
+  {
+    key: 'm5_system_prompt_propose',
+    name: '方案阶段',
+    storageName: 'M5 方案阶段提示词',
+    description: '用于非代码任务的新 Session，判断只读执行还是进入外部写入审批。',
+  },
+  {
+    key: 'm5_system_prompt_apply',
+    name: '落地阶段',
+    storageName: 'M5 落地阶段提示词',
+    description: '用于审批通过后的新 Session；审批规则和已批准产物由系统动态追加。',
+  },
+  {
+    key: 'm5_system_prompt_resume_waiting',
+    name: '等待恢复',
+    storageName: 'M5 等待恢复提示词',
+    description: '定时等待到期后，恢复原 Codex Session 时追加。',
+  },
+  {
+    key: 'm5_system_prompt_resume_human',
+    name: '人工恢复',
+    storageName: 'M5 人工恢复提示词',
+    description: '收到人工回应后，恢复原 Codex Session 时追加。',
+  },
+  {
+    key: 'm5_system_prompt_scheduled_tools',
+    name: '定时续跑工具',
+    storageName: 'M5 定时续跑工具说明',
+    description: '注入 M5 新 Session，说明 yield-until 与独立定时任务的边界。',
+  },
+] as const
+
+type SystemPromptKey = typeof systemPromptDefinitions[number]['key']
+
+function SystemPromptsPanel() {
+  const [records, setRecords] = useState<Partial<Record<SystemPromptKey, TextStorage>>>({})
+  const [drafts, setDrafts] = useState<Partial<Record<SystemPromptKey, string>>>({})
+  const [activeKey, setActiveKey] = useState<SystemPromptKey>(systemPromptDefinitions[0].key)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string>()
+  const [ok, setOk] = useState(false)
+
+  const reload = useCallback(() => {
+    setLoading(true)
+    listTextStorage()
+      .then((result) => {
+        const nextRecords: Partial<Record<SystemPromptKey, TextStorage>> = {}
+        const nextDrafts: Partial<Record<SystemPromptKey, string>> = {}
+        for (const definition of systemPromptDefinitions) {
+          const found = result.items.find((item) => item.storage_key === definition.key)
+          if (found) {
+            nextRecords[definition.key] = found
+            nextDrafts[definition.key] = found.content
+          } else {
+            nextDrafts[definition.key] = ''
+          }
+        }
+        setRecords(nextRecords)
+        setDrafts(nextDrafts)
+        setError(undefined)
+      })
+      .catch((cause: unknown) => setError(errorText(cause)))
+      .finally(() => setLoading(false))
+  }, [])
+  useEffect(reload, [reload])
+
+  const definition = systemPromptDefinitions.find((item) => item.key === activeKey)!
+  const record = records[activeKey]
+  const content = drafts[activeKey] ?? ''
+
+  const save = async () => {
+    if (!content.trim()) {
+      setError(`${definition.name}提示词不能为空`)
+      return
+    }
+    const input: TextStorageInput = {
+      storage_key: definition.key,
+      name: definition.storageName,
+      content,
+    }
+    setSaving(true)
+    try {
+      const updated = record
+        ? await updateTextStorage(record.id, input)
+        : await createTextStorage(input)
+      setRecords((current) => ({ ...current, [activeKey]: updated }))
+      setDrafts((current) => ({ ...current, [activeKey]: updated.content }))
+      setOk(true)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <>
+    {error && <Alert type="error" showIcon message="系统提示词操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon message={`${definition.name}提示词已保存，后续对应执行实时读取`} closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    <Alert
+      type="info"
+      showIcon
+      message="这些内容复用通用 text_storage，不单独建表"
+      description="新执行会实时读取对应提示词；等待恢复和人工恢复会继续原 Codex Session，并追加这里维护的恢复提示词。任务上下文、审批产物和 JSON 输出协议仍由代码动态组装。"
+      style={{ marginBottom: 12 }}
+    />
+    <Card loading={loading} variant="borderless">
+      <Tabs
+        tabPosition="left"
+        activeKey={activeKey}
+        onChange={(key) => { setActiveKey(key as SystemPromptKey); setOk(false); setError(undefined) }}
+        items={systemPromptDefinitions.map((item) => ({
+          key: item.key,
+          label: item.name,
+          children: (
+            <>
+              {!records[item.key] && (
+                <Alert type="warning" showIcon message={`${item.name}提示词不存在，对应 M5 执行会 fail-fast；请填写并保存。`} style={{ marginBottom: 12 }} />
+              )}
+              <Text strong>{item.storageName}</Text>
+              <div><Text type="secondary">{item.description}</Text></div>
+              <div style={{ margin: '8px 0 12px' }}><Text code>{item.key}</Text></div>
+              <Input.TextArea
+                value={drafts[item.key] ?? ''}
+                onChange={(event) => setDrafts((current) => ({ ...current, [item.key]: event.target.value }))}
+                autoSize={{ minRows: 16, maxRows: 30 }}
+                placeholder={`填写${item.name}系统提示词`}
+                style={{ fontFamily: 'monospace' }}
+              />
+              <Flex gap={8} style={{ marginTop: 12 }}>
+                <Button type="primary" onClick={save} loading={saving}>{records[item.key] ? '保存修改' : '创建提示词'}</Button>
+                <Button onClick={reload} loading={loading}>刷新</Button>
+              </Flex>
+            </>
+          ),
+        }))}
+      />
+    </Card>
+  </>
+}
+
 // --- Skills ---
 
 function SkillsPanel() {
@@ -1351,6 +1502,7 @@ export function Settings() {
       items={[
         { key: 'runtime-settings', label: '运行配置', children: <RuntimeSettings /> },
         { key: 'work-rules', label: '工作规则', children: <WorkRulesPanel /> },
+        { key: 'system-prompts', label: '系统提示词', children: <SystemPromptsPanel /> },
         { key: 'approval-rules', label: '审批规则管理', children: <ApprovalRulesPanel /> },
         { key: 'skills', label: 'Skills', children: <SkillsPanel /> },
         { key: 'shared-memory', label: '共享记忆', children: <SharedMemory /> },

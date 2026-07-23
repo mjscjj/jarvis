@@ -36,6 +36,7 @@ import type {
   TaskList,
   TaskStatus,
   ExecutionRunList,
+  TaskRunOutput,
   ProjectEvent,
   RelationEntityType,
   RelationFactList,
@@ -161,6 +162,13 @@ export function reapplyTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/reapply`, { method: 'POST' })
 }
 
+// resumeTask continues the exact Codex session that parked at needs_human.
+export function resumeTask(id: number, expectedVersion: number, response: string): Promise<ExecuteResult> {
+  return request<ExecuteResult>(`/api/tasks/${id}/resume`, {
+    method: 'POST', body: { expected_version: expectedVersion, response },
+  })
+}
+
 // approveTask lands a proposal the user accepted: the awaiting_approval Task runs
 // the apply stage (a fresh codex run carrying the approved proposal) for real.
 export function approveTask(id: number, expectedVersion: number): Promise<ExecuteResult> {
@@ -187,6 +195,10 @@ export function supplementTask(id: number, expectedVersion: number, note: string
 // listTaskRuns 拉某个 Task 的执行审计历史（ExecutionRun 列表），最新在前。
 export function listTaskRuns(id: number, signal?: AbortSignal): Promise<ExecutionRunList> {
   return request<ExecutionRunList>(`/api/tasks/${id}/runs`, { signal })
+}
+
+export function getTaskRunOutput(id: number, signal?: AbortSignal): Promise<TaskRunOutput> {
+  return request<TaskRunOutput>(`/api/tasks/${id}/output`, { signal })
 }
 
 export function listTaskEvents(id: number, signal?: AbortSignal): Promise<{ items: TaskEvent[] }> {

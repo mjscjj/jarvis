@@ -18,7 +18,7 @@ type ExecutionRun struct {
 	// Sandbox is the codex sandbox level actually used: read-only for
 	// investigate, workspace-write for code_change.
 	Sandbox string `gorm:"column:sandbox;type:varchar(24);not null"`
-	// Status: running -> succeeded | waiting | failed.
+	// Status: running -> succeeded | waiting | needs_human | failed.
 	Status         string         `gorm:"column:status;type:varchar(16);not null;index:idx_run_status"`
 	Prompt         string         `gorm:"column:prompt;type:mediumtext;not null"`
 	CodexSessionID *string        `gorm:"column:codex_session_id;type:varchar(128)"`

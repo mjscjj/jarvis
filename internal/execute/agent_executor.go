@@ -222,19 +222,58 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 	if reason == "" {
 		return fmt.Errorf("%w: resume reason is required", ErrInvalidInput)
 	}
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptResumeWaitingKey)
+	if err != nil {
+		return fmt.Errorf("load M5 waiting resume system prompt: %w", err)
+	}
+	workRules, err := e.workRules.Block(ctx, workrule.StageExecute)
+	if err != nil {
+		return fmt.Errorf("load M5 work rules for waiting resume: %w", err)
+	}
+	prompt, err := buildScheduledResumePrompt(systemPrompt, reason, workRules)
+	if err != nil {
+		return err
+	}
 	execVersion, err := e.store.ClaimWaiting(ctx, taskID, sourceRunID)
 	if err != nil {
 		return err
 	}
 	go func() {
-		if _, err := e.resumeClaimed(context.Background(), taskID, sourceRunID, reason, execVersion); err != nil {
+		if _, err := e.resumeClaimed(context.Background(), taskID, sourceRunID, prompt, execVersion); err != nil {
 			log.Printf("background resume task_id=%d source_run_id=%d: %v", taskID, sourceRunID, err)
 		}
 	}()
 	return nil
 }
 
-func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID uint64, reason string, execVersion int32) (*ExecuteResult, error) {
+// KickResumeAfterHuman continues the exact Codex session that requested human
+// input. It does not rerun the Task or rebuild the approved proposal.
+func (e *AgentExecutor) KickResumeAfterHuman(ctx context.Context, taskID uint64, expectedVersion int32, response string) (*ExecuteResult, error) {
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptResumeHumanKey)
+	if err != nil {
+		return nil, fmt.Errorf("load M5 human resume system prompt: %w", err)
+	}
+	workRules, err := e.workRules.Block(ctx, workrule.StageExecute)
+	if err != nil {
+		return nil, fmt.Errorf("load M5 work rules for human resume: %w", err)
+	}
+	prompt, err := buildHumanResumePrompt(systemPrompt, response, workRules)
+	if err != nil {
+		return nil, err
+	}
+	claim, err := e.store.ClaimNeedsHuman(ctx, taskID, expectedVersion, response, "backend")
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		if _, err := e.resumeClaimed(context.Background(), claim.TaskID, claim.SourceRunID, prompt, claim.Version); err != nil {
+			log.Printf("background human resume task_id=%d source_run_id=%d: %v", claim.TaskID, claim.SourceRunID, err)
+		}
+	}()
+	return &ExecuteResult{TaskID: claim.TaskID, Status: "executing"}, nil
+}
+
+func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID uint64, prompt string, execVersion int32) (*ExecuteResult, error) {
 	var task domain.Task
 	if err := e.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
 		return nil, fmt.Errorf("load resumed Task id=%d: %w", taskID, err)
@@ -258,7 +297,6 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 	if stage == "propose" {
 		sch = schemaPropose
 	}
-	prompt := buildResumePrompt(reason)
 	startedAt := e.now().UTC()
 	run := &domain.ExecutionRun{
 		TaskID: task.ID, ActionType: task.ActionType, Stage: stage, Sandbox: policy.sandbox,
@@ -302,7 +340,15 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 			return e.finishRun(ctx, &task, execVersion, run, execErr)
 		}
 	}
-	codexOut, execErr := e.runner.ResumeTask(ctx, *source.CodexSessionID, prompt, policy.sandbox, repoPath, sch, task.ID)
+	outputCapture, err := e.prepareTaskRunOutput(task.ID, stage, startedAt, prompt)
+	if err != nil {
+		e.failRun(run, startedAt, err)
+		if writeErr := e.persistRun(ctx, run); writeErr != nil {
+			return nil, fmt.Errorf("persist failed resumed run task_id=%d: %w", task.ID, writeErr)
+		}
+		return e.finishRun(ctx, &task, execVersion, run, err)
+	}
+	codexOut, execErr := e.runner.ResumeTaskWithOutput(ctx, *source.CodexSessionID, prompt, policy.sandbox, repoPath, sch, task.ID, outputCapture)
 	if execErr != nil {
 		e.failRun(run, startedAt, execErr)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
@@ -322,7 +368,9 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 			run.Status = "succeeded"
 			if result.Outcome == "waiting" {
 				e.finishWaitingRun(run, startedAt)
-			} else if result.Outcome == "failed" || (result.Outcome == "needs_human" && !result.NeedsApproval) {
+			} else if result.Outcome == "needs_human" && !result.NeedsApproval {
+				e.finishNeedsHumanRun(run, startedAt)
+			} else if result.Outcome == "failed" {
 				execErr = fmt.Errorf("task not completed: %s", result.FailureReason)
 				e.failRun(run, startedAt, execErr)
 			} else {
@@ -356,6 +404,8 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 			run.Output, _ = json.Marshal(result)
 			if result.Outcome == "waiting" {
 				e.finishWaitingRun(run, startedAt)
+			} else if result.Outcome == "needs_human" {
+				e.finishNeedsHumanRun(run, startedAt)
 			} else if result.Outcome == "completed" {
 				if repo != nil {
 					execErr = e.finalizeCodeChange(ctx, &task, run, repo, baseBranch)
@@ -377,15 +427,30 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 	return e.finishRun(ctx, &task, execVersion, run, execErr)
 }
 
-func buildResumePrompt(reason string) string {
-	return fmt.Sprintf(`你之前主动预约的等待现在已经到期。
+func buildScheduledResumePrompt(systemPrompt, reason, workRules string) (string, error) {
+	systemPrompt = strings.TrimSpace(systemPrompt)
+	reason = strings.TrimSpace(reason)
+	if systemPrompt == "" || reason == "" {
+		return "", fmt.Errorf("waiting resume system prompt and reason are required")
+	}
+	prompt := systemPrompt
+	if block := strings.TrimSpace(workRules); block != "" {
+		prompt += "\n\n" + block
+	}
+	return fmt.Sprintf("%s\n\n等待原因：%s\n当前时间：%s", prompt, reason, time.Now().UTC().Format(time.RFC3339)), nil
+}
 
-等待原因：%s
-当前时间：%s
-
-请继续完成原任务。先重新查询外部世界的最新状态，不要假设等待条件已经满足。
-如果仍需等待，可以再次调用 jarvis-tools yield-until。
-只有目标真实完成并经过验证后，才能返回 outcome=completed。`, reason, time.Now().UTC().Format(time.RFC3339))
+func buildHumanResumePrompt(systemPrompt, response, workRules string) (string, error) {
+	systemPrompt = strings.TrimSpace(systemPrompt)
+	response = strings.TrimSpace(response)
+	if systemPrompt == "" || response == "" {
+		return "", fmt.Errorf("human resume system prompt and response are required")
+	}
+	prompt := systemPrompt
+	if block := strings.TrimSpace(workRules); block != "" {
+		prompt += "\n\n" + block
+	}
+	return fmt.Sprintf("%s\n\n委托人回应：%s\n当前时间：%s", prompt, response, time.Now().UTC().Format(time.RFC3339)), nil
 }
 
 func (e *AgentExecutor) finishSuccessfulRun(run *domain.ExecutionRun, startedAt time.Time) {
@@ -399,6 +464,14 @@ func (e *AgentExecutor) finishSuccessfulRun(run *domain.ExecutionRun, startedAt 
 func (e *AgentExecutor) finishWaitingRun(run *domain.ExecutionRun, startedAt time.Time) {
 	finished := e.now().UTC()
 	run.Status = "waiting"
+	run.FinishedAt = &finished
+	ms := finished.Sub(startedAt).Milliseconds()
+	run.DurationMs = &ms
+}
+
+func (e *AgentExecutor) finishNeedsHumanRun(run *domain.ExecutionRun, startedAt time.Time) {
+	finished := e.now().UTC()
+	run.Status = "needs_human"
 	run.FinishedAt = &finished
 	ms := finished.Sub(startedAt).Milliseconds()
 	run.DurationMs = &ms
@@ -618,6 +691,9 @@ func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, p
 	if propose.Outcome == "waiting" {
 		return e.finishRun(ctx, task, execVersion, run, nil)
 	}
+	if propose.Outcome == "needs_human" && !propose.NeedsApproval {
+		return e.finishRun(ctx, task, execVersion, run, nil)
+	}
 	if propose.NeedsApproval {
 		proposalJSON, err := json.Marshal(proposalPayload(run, propose))
 		if err != nil {
@@ -658,6 +734,18 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 		}
 		return &ExecuteResult{
 			TaskID: task.ID, RunID: run.ID, Status: "waiting", Summary: derefString(run.Summary),
+		}, nil
+	}
+	if execErr == nil && run.Status == "needs_human" {
+		resultJSON, err := json.Marshal(runResultPayload(run, nil))
+		if err != nil {
+			return nil, fmt.Errorf("encode needs_human result task_id=%d: %w", task.ID, err)
+		}
+		if _, err := e.store.MarkNeedsHuman(ctx, task.ID, execVersion, run.ID, resultJSON); err != nil {
+			return nil, fmt.Errorf("park Task id=%d needs_human: %w", task.ID, err)
+		}
+		return &ExecuteResult{
+			TaskID: task.ID, RunID: run.ID, Status: "needs_human", Summary: derefString(run.Summary),
 		}, nil
 	}
 	finishStatus := "done"
@@ -745,13 +833,27 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	prompt, err := buildExecutionPrompt(task, repoPath, sharedMemory, workRules, skills, previousRuns)
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptExecuteKey)
+	if err != nil {
+		cause := fmt.Errorf("load M5 execution system prompt: %w", err)
+		return e.failRun(run, startedAt, cause), cause
+	}
+	scheduledTools, err := e.textStore.Content(ctx, textstore.SystemPromptScheduledToolsKey)
+	if err != nil {
+		cause := fmt.Errorf("load M5 scheduled tools system prompt: %w", err)
+		return e.failRun(run, startedAt, cause), cause
+	}
+	prompt, err := buildExecutionPrompt(systemPrompt, task, repoPath, scheduledTools, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
 	run.Prompt = prompt
 
-	codexOut, err := e.runner.RunTask(ctx, prompt, policy.sandbox, repoPath, schemaExecution, task.ID)
+	outputCapture, err := e.prepareTaskRunOutput(task.ID, run.Stage, startedAt, prompt)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, repoPath, schemaExecution, task.ID, outputCapture)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
@@ -779,6 +881,10 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 		run.FinishedAt = &finished
 		ms := finished.Sub(startedAt).Milliseconds()
 		run.DurationMs = &ms
+		return run, nil
+	}
+	if codexOut.Result.Outcome == "needs_human" {
+		e.finishNeedsHumanRun(run, startedAt)
 		return run, nil
 	}
 	if codexOut.Result.Outcome != "completed" {
@@ -866,13 +972,27 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	prompt, err := buildProposePrompt(task, sharedMemory, workRules, skills, previousRuns)
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptProposeKey)
+	if err != nil {
+		cause := fmt.Errorf("load M5 propose system prompt: %w", err)
+		return e.failRun(run, startedAt, cause), nil, cause
+	}
+	scheduledTools, err := e.textStore.Content(ctx, textstore.SystemPromptScheduledToolsKey)
+	if err != nil {
+		cause := fmt.Errorf("load M5 scheduled tools system prompt: %w", err)
+		return e.failRun(run, startedAt, cause), nil, cause
+	}
+	prompt, err := buildProposePrompt(systemPrompt, task, scheduledTools, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
 	run.Prompt = prompt
 
-	codexOut, err := e.runner.RunTask(ctx, prompt, policy.sandbox, "", schemaPropose, task.ID)
+	outputCapture, err := e.prepareTaskRunOutput(task.ID, run.Stage, startedAt, prompt)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, "", schemaPropose, task.ID, outputCapture)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -893,6 +1013,8 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 	run.Status = "succeeded"
 	if propose.Outcome == "waiting" {
 		run.Status = "waiting"
+	} else if propose.Outcome == "needs_human" && !propose.NeedsApproval {
+		run.Status = "needs_human"
 	}
 	run.FinishedAt = &finished
 	ms := finished.Sub(startedAt).Milliseconds()
@@ -928,17 +1050,31 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 		cause := fmt.Errorf("load M5 approval rule: %w", err)
 		return e.failRun(run, startedAt, cause), cause
 	}
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptApplyKey)
+	if err != nil {
+		cause := fmt.Errorf("load M5 apply system prompt: %w", err)
+		return e.failRun(run, startedAt, cause), cause
+	}
+	scheduledTools, err := e.textStore.Content(ctx, textstore.SystemPromptScheduledToolsKey)
+	if err != nil {
+		cause := fmt.Errorf("load M5 scheduled tools system prompt: %w", err)
+		return e.failRun(run, startedAt, cause), cause
+	}
 	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	prompt, err := buildApplyPrompt(task, proposal, approvalRule, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, approvalRule, scheduledTools, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
 	run.Prompt = prompt
 
-	codexOut, err := e.runner.RunTask(ctx, prompt, policy.sandbox, "", schemaExecution, task.ID)
+	outputCapture, err := e.prepareTaskRunOutput(task.ID, run.Stage, startedAt, prompt)
+	if err != nil {
+		return e.failRun(run, startedAt, err), err
+	}
+	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, "", schemaExecution, task.ID, outputCapture)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
@@ -959,6 +1095,10 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 		run.FinishedAt = &finished
 		ms := finished.Sub(startedAt).Milliseconds()
 		run.DurationMs = &ms
+		return run, nil
+	}
+	if codexOut.Result.Outcome == "needs_human" {
+		e.finishNeedsHumanRun(run, startedAt)
 		return run, nil
 	}
 	if codexOut.Result.Outcome != "completed" {
@@ -1076,10 +1216,11 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 	// codex execution failure (stage=executed + error) apart from a human
 	// rejection (stage=rejected) or manual mark-failed (stage=manual_failed).
 	payload := map[string]any{
-		"stage":       "executed",
-		"action_type": run.ActionType,
-		"sandbox":     run.Sandbox,
-		"run_status":  run.Status,
+		"stage":         "executed",
+		"action_type":   run.ActionType,
+		"sandbox":       run.Sandbox,
+		"run_status":    run.Status,
+		"source_run_id": run.ID,
 	}
 	if run.Summary != nil {
 		payload["summary"] = *run.Summary

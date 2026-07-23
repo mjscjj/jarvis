@@ -87,7 +87,7 @@ func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {
 	for _, item := range taskCounts {
 		overview.Tasks.Total += item.Count
 		switch item.Status {
-		case "pending", "executing", "waiting":
+		case "pending", "executing", "waiting", "needs_human":
 			overview.Tasks.Pending += item.Count
 		case "done":
 			overview.Tasks.Done += item.Count
