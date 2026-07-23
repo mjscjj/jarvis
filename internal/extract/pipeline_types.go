@@ -32,9 +32,14 @@ type ProjectContext struct {
 	Code         string
 	Name         string
 	Role         string
+	Status       string
+	Priority     uint8
 	Description  string
 	Repos        []byte
+	TechStack    []byte
 	KeyDecisions []byte
+	Timeline     []byte
+	Notes        string
 }
 
 // OtherProjectContext is the concise projection of a project the group is NOT
@@ -46,6 +51,8 @@ type OtherProjectContext struct {
 	Code        string
 	Name        string
 	Role        string
+	Status      string
+	Priority    uint8
 	Description string
 }
 
@@ -85,6 +92,7 @@ type ParticipantContext struct {
 	OpenID    string
 	Name      string
 	Role      string
+	Title     string
 	IsLeader  bool
 	Relation  string
 	CommStyle string

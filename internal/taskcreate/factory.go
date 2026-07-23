@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/progress"
 
@@ -54,21 +55,36 @@ type Input struct {
 }
 
 type Factory struct {
-	db  *gorm.DB
-	now func() time.Time
+	db        *gorm.DB
+	assembler *contextsnap.Assembler
+	now       func() time.Time
 }
 
-func NewFactory(db *gorm.DB) (*Factory, error) {
+func NewFactory(db *gorm.DB, assemblers ...*contextsnap.Assembler) (*Factory, error) {
 	if db == nil {
 		return nil, fmt.Errorf("Task factory db is nil")
 	}
-	return &Factory{db: db, now: time.Now}, nil
+	if len(assemblers) > 1 {
+		return nil, fmt.Errorf("Task factory accepts at most one context snapshot assembler")
+	}
+	var assembler *contextsnap.Assembler
+	if len(assemblers) == 1 {
+		if assemblers[0] == nil {
+			return nil, fmt.Errorf("Task factory context snapshot assembler is nil")
+		}
+		assembler = assemblers[0]
+	}
+	return &Factory{db: db, assembler: assembler, now: time.Now}, nil
 }
 
 func (f *Factory) Create(ctx context.Context, input Input) (*domain.Task, error) {
+	prepared, err := f.assembleBackground(ctx, input)
+	if err != nil {
+		return nil, err
+	}
 	var task *domain.Task
-	err := f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		created, err := f.CreateWithDB(ctx, tx, input)
+	err = f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		created, err := f.CreateWithDB(ctx, tx, prepared)
 		if err != nil {
 			return err
 		}
@@ -76,6 +92,34 @@ func (f *Factory) Create(ctx context.Context, input Input) (*domain.Task, error)
 		return nil
 	})
 	return task, err
+}
+
+func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, error) {
+	if input.SourceType == SourceTodo {
+		return input, nil
+	}
+	if input.SourceType != SourceManual && input.SourceType != SourceScheduledTask {
+		return input, nil
+	}
+	if f.assembler == nil {
+		return Input{}, fmt.Errorf("assemble %s Task background: context snapshot assembler is not configured", input.SourceType)
+	}
+	background, err := f.assembler.Assemble(ctx, contextsnap.AssembleOptions{
+		ProjectID: input.ProjectID, RequestContext: input.Background,
+	})
+	if err != nil {
+		return Input{}, fmt.Errorf("assemble %s Task background: %w", input.SourceType, err)
+	}
+	snapshot, err := contextsnap.Decode(background)
+	if err != nil {
+		return Input{}, fmt.Errorf("validate assembled %s Task background: %w", input.SourceType, err)
+	}
+	input.Background = background
+	if snapshot.Project != nil {
+		projectID := snapshot.Project.ID
+		input.ProjectID = &projectID
+	}
+	return input, nil
 }
 
 // CreateWithDB lets callers with an existing transaction keep Task creation and

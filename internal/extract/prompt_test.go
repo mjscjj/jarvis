@@ -2,12 +2,12 @@ package extract
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
-	"jarvis/internal/textstore"
 	"jarvis/internal/toolcatalog"
 )
 
@@ -49,8 +49,13 @@ func TestToolCatalogIsSeparateFromSystemPrompt(t *testing.T) {
 	if !strings.Contains(catalog, "jarvis-tools") {
 		t.Fatalf("tool catalog missing jarvis-tools: %s", catalog)
 	}
-	if strings.Contains(textstore.DefaultSystemPromptM3, "jarvis-tools") || strings.Contains(textstore.DefaultSystemPromptM3, "lark-cli") {
-		t.Fatalf("M3 system prompt must not contain tool instructions: %s", textstore.DefaultSystemPromptM3)
+	raw, err := os.ReadFile("../../conf/prompts/m3-system-prompt.md")
+	if err != nil {
+		t.Fatalf("read M3 system prompt: %v", err)
+	}
+	systemPrompt := string(raw)
+	if strings.Contains(systemPrompt, "jarvis-tools") || strings.Contains(systemPrompt, "lark-cli") {
+		t.Fatalf("M3 system prompt must not contain tool instructions: %s", systemPrompt)
 	}
 }
 
@@ -198,7 +203,11 @@ func TestSalientQueryCapsLongMeetingEvidenceForMemorySearch(t *testing.T) {
 }
 
 func TestExtractionPromptLeavesMeetingCaptureResultDecisionToAgent(t *testing.T) {
-	system := textstore.DefaultSystemPromptM3
+	raw, err := os.ReadFile("../../conf/prompts/m3-system-prompt.md")
+	if err != nil {
+		t.Fatalf("read M3 system prompt: %v", err)
+	}
+	system := string(raw)
 	for _, want := range []string{
 		"meeting 来源",
 		"只提取明确落到 principal 身上的交办",

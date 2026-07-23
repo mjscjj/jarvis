@@ -1147,12 +1147,17 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 		cause := fmt.Errorf("load M5 propose system prompt: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
+	approvalPolicy, err := e.textStore.Content(ctx, textstore.ApprovalPolicyKey)
+	if err != nil {
+		cause := fmt.Errorf("load M5 approval policy: %w", err)
+		return e.failRun(run, startedAt, cause), nil, cause
+	}
 	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
 	if err != nil {
 		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	prompt, err := buildProposePrompt(systemPrompt, task, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildProposePrompt(systemPrompt, approvalPolicy, task, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1215,11 +1220,6 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	approvalRule, err := e.textStore.Content(ctx, textstore.ApprovalRuleKey)
-	if err != nil {
-		cause := fmt.Errorf("load M5 approval rule: %w", err)
-		return e.failRun(run, startedAt, cause), cause
-	}
 	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
 	if err != nil {
 		cause := fmt.Errorf("load M5 apply system prompt: %w", err)
@@ -1234,7 +1234,7 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, approvalRule, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}

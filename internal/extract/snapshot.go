@@ -15,7 +15,7 @@ import (
 // loaded ChatBatch/unit data; the only DB read is the full project detail when
 // the project was resolved from a hint (the bound project detail is already in
 // the batch). M4/M5 replay this exact snapshot without re-querying.
-func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, projectID *uint64, memories []map[string]any) (contextsnap.Snapshot, error) {
+func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, projectID *uint64, assignerOpenID *string, memories []map[string]any) (contextsnap.Snapshot, error) {
 	snapshot := contextsnap.Snapshot{
 		SnapshotVersion: contextsnap.SnapshotVersion,
 		CapturedAt:      s.now().UTC().Format(time.RFC3339),
@@ -23,6 +23,10 @@ func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatc
 		Group:           snapshotGroup(batch.Group),
 		Messages:        snapshotMessages(unit, candidate),
 		Conversation:    snapshotConversation(unit),
+		Participants:    snapshotParticipants(unit.Participants),
+		Resources:       snapshotResources(unit.Resources),
+		OpenTodos:       snapshotOpenTodos(batch.OpenTodos),
+		OtherProjects:   snapshotOtherProjects(batch.OtherProjects),
 		Memories:        memories,
 	}
 	if snapshot.Memories == nil {
@@ -35,8 +39,8 @@ func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatc
 	}
 	snapshot.Project = project
 
-	if candidate.AssignerOpenID != nil {
-		snapshot.Assigner = snapshotAssigner(*candidate.AssignerOpenID, unit.Participants)
+	if assignerOpenID != nil {
+		snapshot.Assigner = snapshotAssigner(*assignerOpenID, unit.Participants)
 	}
 	return snapshot, nil
 }
@@ -67,6 +71,8 @@ func snapshotGroup(group GroupContext) *contextsnap.Group {
 		ChatID:      group.ChatID,
 		Name:        nonEmptyPtr(group.Name),
 		Description: nonEmptyPtr(group.Description),
+		IsKeyGroup:  group.IsKeyGroup,
+		ProjectID:   copyUint64(group.ProjectID),
 	}
 }
 
@@ -79,9 +85,12 @@ func (s *PipelineStore) snapshotProject(ctx context.Context, batch ChatBatch, pr
 		p := batch.Project
 		return &contextsnap.Project{
 			ID: p.ID, Code: nonEmptyPtr(p.Code), Name: p.Name, Role: p.Role,
-			Description:  nonEmptyPtr(p.Description),
+			Status: p.Status, Priority: p.Priority, Description: nonEmptyPtr(p.Description),
 			Repos:        rawJSONOrNull(p.Repos),
+			TechStack:    rawJSONOrNull(p.TechStack),
 			KeyDecisions: rawJSONOrNull(p.KeyDecisions),
+			Timeline:     rawJSONOrNull(p.Timeline),
+			Notes:        nonEmptyPtr(p.Notes),
 		}, nil
 	}
 	// Hint-resolved project: read full detail once so repos/description are frozen.
@@ -91,9 +100,12 @@ func (s *PipelineStore) snapshotProject(ctx context.Context, batch ChatBatch, pr
 	}
 	return &contextsnap.Project{
 		ID: row.ID, Code: row.Code, Name: row.Name, Role: row.Role,
-		Description:  row.Description,
+		Status: row.Status, Priority: row.Priority, Description: row.Description,
 		Repos:        rawJSONOrNull(row.Repos),
+		TechStack:    rawJSONOrNull(row.TechStack),
 		KeyDecisions: rawJSONOrNull(row.KeyDecisions),
+		Timeline:     rawJSONOrNull(row.Timeline),
+		Notes:        row.Notes,
 	}, nil
 }
 
@@ -103,11 +115,61 @@ func snapshotAssigner(openID string, participants []ParticipantContext) *context
 		if participant.OpenID == openID {
 			assigner.Name = nonEmptyPtr(participant.Name)
 			assigner.Role = nonEmptyPtr(participant.Role)
+			assigner.Title = nonEmptyPtr(participant.Title)
 			assigner.Relation = nonEmptyPtr(participant.Relation)
 			break
 		}
 	}
 	return assigner
+}
+
+func snapshotParticipants(participants []ParticipantContext) []contextsnap.Participant {
+	result := make([]contextsnap.Participant, len(participants))
+	for i := range participants {
+		result[i] = contextsnap.Participant{
+			OpenID: participants[i].OpenID, Name: nonEmptyPtr(participants[i].Name),
+			Role: nonEmptyPtr(participants[i].Role), Title: nonEmptyPtr(participants[i].Title),
+			IsLeader: participants[i].IsLeader, Relation: nonEmptyPtr(participants[i].Relation),
+			CommStyle: nonEmptyPtr(participants[i].CommStyle),
+		}
+	}
+	return result
+}
+
+func snapshotResources(resources []ResourceContext) []contextsnap.Resource {
+	result := make([]contextsnap.Resource, len(resources))
+	for i := range resources {
+		result[i] = contextsnap.Resource{
+			ID: resources[i].ID, ResourceType: resources[i].ResourceType,
+			FileKey: nonEmptyPtr(resources[i].FileKey), MinuteToken: nonEmptyPtr(resources[i].MinuteToken),
+			DocToken: nonEmptyPtr(resources[i].DocToken), URL: nonEmptyPtr(resources[i].URL),
+			Name: nonEmptyPtr(resources[i].Name), ExtractedText: nonEmptyPtr(resources[i].ExtractedText),
+		}
+	}
+	return result
+}
+
+func snapshotOpenTodos(todos []OpenTodoContext) []contextsnap.OpenTodo {
+	result := make([]contextsnap.OpenTodo, len(todos))
+	for i := range todos {
+		result[i] = contextsnap.OpenTodo{
+			ID: todos[i].ID, ActionType: todos[i].ActionType,
+			Title: todos[i].Title, Status: todos[i].Status,
+		}
+	}
+	return result
+}
+
+func snapshotOtherProjects(projects []OtherProjectContext) []contextsnap.ProjectBrief {
+	result := make([]contextsnap.ProjectBrief, len(projects))
+	for i := range projects {
+		result[i] = contextsnap.ProjectBrief{
+			ID: projects[i].ID, Code: nonEmptyPtr(projects[i].Code), Name: projects[i].Name,
+			Role: projects[i].Role, Status: projects[i].Status, Priority: projects[i].Priority,
+			Description: nonEmptyPtr(projects[i].Description),
+		}
+	}
+	return result
 }
 
 // snapshotMessages returns the candidate's cited source evidence messages, in

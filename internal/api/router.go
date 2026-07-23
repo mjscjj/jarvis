@@ -42,7 +42,7 @@ type Dependencies struct {
 	Resources           *background.ResourceService
 	SharedMemory        *sharedmem.SharedMemoryService
 	WorkRules           *workrule.Service
-	TextStorage         *textstore.Service
+	TextFiles           *textstore.Service
 	ScheduledTasks      *scheduledtask.Service
 	Skills              *skill.Service
 	RelationFacts       knowledge.FactService
@@ -106,8 +106,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.WorkRules == nil {
 		return fmt.Errorf("api work rule service dependency is nil")
 	}
-	if deps.TextStorage == nil {
-		return fmt.Errorf("api text storage service dependency is nil")
+	if deps.TextFiles == nil {
+		return fmt.Errorf("api text file service dependency is nil")
 	}
 	if deps.ScheduledTasks == nil {
 		return fmt.Errorf("api scheduled task service dependency is nil")
@@ -195,11 +195,10 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/work-rules", CreateWorkRule(deps.WorkRules))
 	h.PUT("/api/work-rules/:work_rule_id", UpdateWorkRule(deps.WorkRules))
 	h.DELETE("/api/work-rules/:work_rule_id", DeleteWorkRule(deps.WorkRules))
-	// 通用纯文本存储：审批规则等运行时提示词由后台实时维护。
-	h.GET("/api/text-storage", ListTextStorage(deps.TextStorage))
-	h.POST("/api/text-storage", CreateTextStorage(deps.TextStorage))
-	h.PUT("/api/text-storage/:text_storage_id", UpdateTextStorage(deps.TextStorage))
-	h.DELETE("/api/text-storage/:text_storage_id", DeleteTextStorage(deps.TextStorage))
+	// 受控 Markdown 文件：系统提示词和审批策略由后台实时维护。
+	h.GET("/api/text-files", ListTextFiles(deps.TextFiles))
+	h.GET("/api/text-files/:text_file_key", GetTextFile(deps.TextFiles))
+	h.PUT("/api/text-files/:text_file_key", UpdateTextFile(deps.TextFiles))
 	// 周期定时任务：独立 CRUD、手动触发；自动执行由进程内每分钟 scheduler 负责。
 	h.GET("/api/scheduled-tasks", ListScheduledTasks(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks", CreateScheduledTask(deps.ScheduledTasks))

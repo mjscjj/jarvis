@@ -73,23 +73,23 @@ Jarvis 为模型提供一批**只读决策工具**（`cmd/jarvis-tools`，输出
 
 发现模型确实无法稳定处理某个问题后，再增加字段或约束。不要为想象中的问题提前设计复杂系统，也不要为错误抽象增加兼容层或 fallback。
 
-## 3. 简单文本配置统一复用 `text_storage`
+## 3. 简单文本配置统一使用本地 Markdown
 
-系统提示词、模板、说明、规则正文等“通过一个稳定 key 读写一段文本”的简单存储，统一复用通用表 `text_storage`，**不要为每类文本重复建业务表**。
+系统提示词、模板、说明、策略正文等“通过一个稳定 key 读写一段文本”的简单配置，统一放在配置文件同级的 `prompts/` 目录。文件是唯一真源，**不要写入数据库，也不要在代码里复制正文作为 fallback**。
 
-- **数据模型**：`internal/domain/models.go` 的 `TextStorage`，核心字段是唯一 `storage_key`、展示名 `name`、正文 `content`；正文不限定格式。
-- **服务入口**：后端使用 `internal/textstore.Service`。运行时依赖 `textstore.Reader`，通过 `Content(ctx, storageKey)` 按 key 读取；缺失或空内容直接报错，不在调用方硬编码 fallback。
-- **默认值**：在 `internal/textstore/defaults.go` 注册内置 key、名称和默认正文，由 `SeedDefaults` 启动时逐项补齐。只在该 key 从未存在时创建，绝不覆盖用户已修改内容；软删除也视为用户明确删除，不在重启时偷偷恢复。
-- **管理接口**：管理端复用 `/api/text-storage` 的 list/create/update/delete，不再为某个简单文本配置增加专用 CRUD。
-- **Prompt 分层**：`text_storage` 中的系统提示词只描述 Agent 的角色、目标和稳定行为。工具名称、参数与使用说明由工具层（当前为 `internal/toolcatalog` 和 Skills）维护；阶段标识、上下文、审批产物和 JSON Schema 由运行时代码动态组装。不要把工具手册或动态控制面复制进系统提示词。
-- **什么时候才新建表**：只有数据确实需要多个独立结构化字段、关联关系、索引查询、独立生命周期或硬状态约束时才建专表；仅仅为了区分文本用途，使用不同 `storage_key` 即可。
+- **文件注册**：在 `internal/textstore/defaults.go` 注册固定 key、展示名和文件名。只允许访问注册文件，不接受任意路径。
+- **服务入口**：后端使用 `internal/textstore.Service`。运行时依赖 `textstore.Reader`，通过 `Content(ctx, key)` 实时读取；文件缺失或正文为空直接报错。
+- **管理接口**：管理端复用 `/api/text-files` 的 list/get/update。系统依赖文件不允许从后台创建或删除。
+- **Prompt 分层**：文件中的系统提示词只描述 Agent 的角色、目标和稳定行为。工具说明由 `internal/toolcatalog` 和 Skills 维护；阶段标识、上下文、审批产物和 JSON Schema 由运行时代码动态组装。
+- **什么时候才建表**：只有数据确实需要结构化字段、关联关系、索引查询、独立生命周期或硬状态约束时才建表。
 
 新增简单文本配置的标准步骤：
 
-1. 在 `internal/textstore/defaults.go` 定义稳定 key 和默认正文，并加入 `defaultRecords()`。
-2. 业务运行时通过注入的 `textstore.Reader.Content` 读取，不直接依赖数据库，也不加静默 fallback。
-3. 如需后台编辑，前端直接调用通用 `text-storage` API，并固定该业务的 `storage_key`。
-4. 测试至少覆盖默认值首次创建、已有内容不被覆盖、缺失/空正文 fail-fast。
+1. 在 `internal/textstore/defaults.go` 注册稳定 key、展示名和文件名。
+2. 在 `conf/prompts/` 提交对应 Markdown 正文。
+3. 业务运行时通过注入的 `textstore.Reader.Content` 读取，不加静默 fallback。
+4. 如需后台编辑，前端直接调用通用 `text-files` API，并固定该业务 key。
+5. 测试至少覆盖读写、未知 key 拒绝、缺失/空正文 fail-fast。
 
 ## 4. 其它既有约定
 
