@@ -54,6 +54,9 @@ func Migrate(db *gorm.DB) error {
 	if err := migrateNaturalLanguageFacts(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := dropLegacyTextStorage(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
 	models = append(models, domain.DecideModels()...)
@@ -65,6 +68,19 @@ func Migrate(db *gorm.DB) error {
 	}
 	if err := backfillTaskRuntimeMVP(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+	return nil
+}
+
+// dropLegacyTextStorage removes the retired database-backed prompt store.
+// Runtime prompts and approval policy are validated from local Markdown files
+// before database migration starts, so there is no database fallback to keep.
+func dropLegacyTextStorage(db *gorm.DB) error {
+	if !db.Migrator().HasTable("text_storage") {
+		return nil
+	}
+	if err := db.Migrator().DropTable("text_storage"); err != nil {
+		return fmt.Errorf("drop retired text_storage table: %w", err)
 	}
 	return nil
 }

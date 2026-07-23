@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 )
 
@@ -20,7 +21,19 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 				MessageID: "om_1", SenderOpenID: "ou_leader", Content: "请修改鉴权逻辑",
 				CreateTime: 1_700_000_000_000, IsNew: true, IsLeader: true, Extractable: true,
 			}},
-			Participants: []ParticipantContext{{OpenID: "ou_leader", Role: "leader", IsLeader: true}},
+			Participants: []ParticipantContext{{
+				OpenID: "ou_leader", Name: "Leader", Role: "leader", Title: "负责人",
+				IsLeader: true, Relation: "直属领导", CommStyle: "常用简短交办",
+			}},
+			Resources: []ResourceContext{{
+				ID: 7, ResourceType: "doc", DocToken: "doc_1", Name: "设计文档",
+				ExtractedText: "鉴权改造方案",
+			}},
+		}},
+		OpenTodos: []OpenTodoContext{{ID: 8, ActionType: "code_change", Title: "旧鉴权任务", Status: "need_info"}},
+		OtherProjects: []OtherProjectContext{{
+			ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant",
+			Status: "active", Priority: 2, Description: "运行时项目",
 		}},
 	}
 	prepared, skipped, err := store.prepareResults(context.Background(), batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
@@ -35,6 +48,16 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 	}
 	if prepared[0].Fingerprint == "" || prepared[0].FirstEvidenceAt.IsZero() || prepared[0].LastEvidenceAt.IsZero() {
 		t.Fatalf("prepared identity/evidence timestamps = %#v", prepared[0])
+	}
+	snapshot, err := contextsnap.Decode(prepared[0].ContextSnapshot)
+	if err != nil {
+		t.Fatalf("decode prepared context snapshot: %v", err)
+	}
+	if snapshot.Assigner == nil || snapshot.Assigner.OpenID != "ou_leader" || snapshot.Assigner.Title == nil || *snapshot.Assigner.Title != "负责人" {
+		t.Fatalf("snapshot assigner = %#v", snapshot.Assigner)
+	}
+	if len(snapshot.Participants) != 1 || len(snapshot.Resources) != 1 || len(snapshot.OpenTodos) != 1 || len(snapshot.OtherProjects) != 1 {
+		t.Fatalf("snapshot did not freeze full M3 context: %#v", snapshot)
 	}
 }
 

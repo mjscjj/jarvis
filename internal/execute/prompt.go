@@ -98,11 +98,8 @@ const executionResultSchema = `{
 }`
 
 // proposeResultSchema is the JSON schema codex MUST return for the propose
-// stage of a non-code action. The agent first identifies whether any mutation is
-// required:
-//   - pure read-only work -> it finishes and returns needs_approval=false.
-//   - any local or external mutation -> it performs no mutation and returns
-//     needs_approval=true plus a fully-formed proposal for human approval.
+// stage of a non-code action. The injected approval policy decides whether the
+// planned work can finish immediately or must return a proposal first.
 const proposeResultSchema = `{
   "type":"object",
   "additionalProperties":false,

@@ -85,6 +85,14 @@ func main() {
 		// fail-fast：配置错误启动即暴露，不带缺陷跑起来
 		hlog.Fatalf("load config failed: %v", err)
 	}
+	configPathAbsolute, err := filepath.Abs(*configPath)
+	if err != nil {
+		hlog.Fatalf("resolve config path failed: %v", err)
+	}
+	textFileService, err := textstore.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "prompts"))
+	if err != nil {
+		hlog.Fatalf("initialize text file service failed: %v", err)
+	}
 
 	connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -100,14 +108,6 @@ func main() {
 
 	if err := store.Migrate(db); err != nil {
 		hlog.Fatalf("migrate mysql failed: %v", err)
-	}
-	configPathAbsolute, err := filepath.Abs(*configPath)
-	if err != nil {
-		hlog.Fatalf("resolve config path failed: %v", err)
-	}
-	textFileService, err := textstore.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "prompts"))
-	if err != nil {
-		hlog.Fatalf("initialize text file service failed: %v", err)
 	}
 	if *migrateOnly {
 		hlog.Infof("mysql schema migration completed")

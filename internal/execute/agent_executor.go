@@ -800,8 +800,8 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 	// Only code_change runs straight through to completion (edit + commit + diff +
 	// push + open MR): the MR is a natural second review gate — nothing merges
 	// without a human. Every OTHER action_type runs the propose stage first,
-	// regardless of execution_mode. Only pure reads may finish there; any local
-	// file mutation or outside-world side effect must stop for human approval.
+	// regardless of execution_mode. The file-backed approval policy decides
+	// whether the proposed plan may execute or must stop for human approval.
 	if runsToCompletion(&task) {
 		run, execErr := e.runOnce(ctx, &task, policy)
 		execErr = e.normalizeInterrupted(ctx, run, execErr)
@@ -816,7 +816,7 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 // runsToCompletion reports whether a Task skips the propose/approval gate. Only
 // code_change qualifies because its pushed branch + MR is the review gate.
 // execution_mode=direct is retained as persisted metadata but grants no approval
-// bypass: all non-code tasks must propose before any mutation.
+// bypass: all non-code tasks must pass through propose and its approval policy.
 func runsToCompletion(task *domain.Task) bool {
 	return task != nil && task.ActionType == "code_change"
 }
@@ -841,9 +841,9 @@ func validateTaskIntegrity(task *domain.Task) error {
 }
 
 // executePropose runs the propose stage (every action except code_change) and
-// routes the outcome: if the agent intends any mutation (including local files)
-// it parks at awaiting_approval with the proposal stored; otherwise pure read-only
-// work is finished in place (done/failed).
+// routes the outcome: if the approval policy requires review, it parks at
+// awaiting_approval with the proposal stored; otherwise the agent may finish
+// the work in place.
 func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, policy actionPolicy, execVersion int32) (*ExecuteResult, error) {
 	run, propose, execErr := e.runPropose(ctx, task, policy)
 	execErr = e.normalizeInterrupted(ctx, run, execErr)

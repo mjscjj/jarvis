@@ -267,6 +267,24 @@ func TestBuildPromptCarriesPrincipalAndProjects(t *testing.T) {
 	}
 }
 
+func TestBuildPromptCarriesGroupAnnouncement(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID: "om_new", Content: "看下这个", CreateTime: 1_700_000_001_000,
+		IsNew: true, Extractable: true,
+	}}}
+	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{
+		ID: 1, ChatID: "oc_1", Name: "Agent Runtime", Description: "本群负责 runtime 项目，代码仓库为 llm_agent_core。",
+	}}, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{
+		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
+	})
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt.User, "群公告：本群负责 runtime 项目，代码仓库为 llm_agent_core。") {
+		t.Fatalf("prompt missing group announcement:\n%s", prompt.User)
+	}
+}
+
 func TestBuildPromptCarriesTrustedWorkRules(t *testing.T) {
 	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, ConversationUnit{
 		Key: "chat", Messages: []MessageContext{{MessageID: "m1", Content: "做一下", IsNew: true, Extractable: true}},

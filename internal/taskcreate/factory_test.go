@@ -2,7 +2,14 @@ package taskcreate
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
+
+	"jarvis/internal/contextsnap"
+	"jarvis/internal/domain"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestNormalizeInputDefaultsTodoSourceID(t *testing.T) {
@@ -86,5 +93,62 @@ func TestActionHashCanonicalAndSensitive(t *testing.T) {
 	}
 	if changed == first {
 		t.Fatal("target change did not change action hash")
+	}
+}
+
+func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&domain.PrincipalProfile{}, &domain.Project{}, &domain.ManagedResource{}, &domain.ProjectEvent{},
+	); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+	project := domain.Project{Name: "Jarvis", Role: "owner", Status: "active", Priority: 1}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := db.Create(&domain.PrincipalProfile{OpenID: "ou_me", Name: "我"}).Error; err != nil {
+		t.Fatalf("create principal: %v", err)
+	}
+	assembler, err := contextsnap.NewAssembler(db, "ou_me")
+	if err != nil {
+		t.Fatalf("NewAssembler() error = %v", err)
+	}
+	factory, err := NewFactory(db, assembler)
+	if err != nil {
+		t.Fatalf("NewFactory() error = %v", err)
+	}
+
+	manual, err := factory.assembleBackground(t.Context(), Input{
+		SourceType: SourceManual, ProjectID: &project.ID,
+		Background: json.RawMessage(`{"note":"手工任务背景"}`),
+	})
+	if err != nil {
+		t.Fatalf("assemble manual background: %v", err)
+	}
+	manualSnapshot, err := contextsnap.Decode(manual.Background)
+	if err != nil {
+		t.Fatalf("decode manual background: %v", err)
+	}
+	if manualSnapshot.Principal == nil || manualSnapshot.Project == nil || string(manualSnapshot.RequestContext) != `{"note":"手工任务背景"}` {
+		t.Fatalf("manual snapshot = %#v", manualSnapshot)
+	}
+
+	scheduled, err := factory.assembleBackground(t.Context(), Input{
+		SourceType: SourceScheduledTask,
+		Background: json.RawMessage(fmt.Sprintf(`{"project":{"id":%d},"note":"定时任务背景"}`, project.ID)),
+	})
+	if err != nil {
+		t.Fatalf("assemble scheduled background: %v", err)
+	}
+	scheduledSnapshot, err := contextsnap.Decode(scheduled.Background)
+	if err != nil {
+		t.Fatalf("decode scheduled background: %v", err)
+	}
+	if scheduled.ProjectID == nil || *scheduled.ProjectID != project.ID || scheduledSnapshot.Project == nil {
+		t.Fatalf("scheduled input/snapshot = %#v / %#v", scheduled, scheduledSnapshot)
 	}
 }

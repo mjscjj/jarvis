@@ -4,8 +4,8 @@ package execute
 //
 // Boundary (decided with the user):
 //   - code_change runs automatically and uses its MR as the review gate.
-//   - Every other action first runs propose. Pure reads may finish; any local or
-//     external mutation requires human approval.
+//   - Every other action first runs propose. The file-backed approval policy
+//     decides whether its planned actions require human approval.
 //   - Sandbox remains danger-full-access because read-side investigation may
 //     need lark-cli/bytedcli network and Keychain access. The propose/apply state
 //     machine is the approval boundary.
@@ -14,7 +14,7 @@ type actionPolicy struct {
 }
 
 // actionPolicies is the allowlist of executable action types and their sandbox.
-// Mutation approval is intent-based in propose, not a static action label.
+// Approval is intent-based in propose, not a static action label.
 var actionPolicies = map[string]actionPolicy{
 	"code_change":      {sandbox: "danger-full-access"},
 	"investigate":      {sandbox: "danger-full-access"},
