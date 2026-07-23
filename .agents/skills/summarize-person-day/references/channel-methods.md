@@ -84,6 +84,10 @@ For the runtime JSON contract:
   for schema compatibility and are never trusted as the execution plan;
 - the top-level `status` is derived by the main controller from per-scope
   coverage and is not trusted from the collector echo;
+- for the unambiguous success states, the main controller canonicalizes
+  zero-count coverage to `empty` and positive-count coverage to `complete`;
+  `partial`, `error`, and `unavailable` remain collector-owned and require their
+  diagnostic error;
 - `coverage` must contain exactly the scopes assigned by the caller, with no
   extra discovery scopes;
 - `query_or_cursor` is one diagnostic string, not an array or object;

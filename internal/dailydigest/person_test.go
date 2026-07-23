@@ -127,7 +127,7 @@ func TestRunCollectorInjectsMainControllerFields(t *testing.T) {
 		"window":{"start":"","end":"","cutoff":"","timezone":""},
 		"status":"not-derived-yet",
 		"coverage":[
-			{"scope":"messages_threads","query_or_cursor":"q1","status":"empty","count":0,"truncated":false},
+			{"scope":"messages_threads","query_or_cursor":"q1","status":"complete","count":0,"truncated":false},
 			{"scope":"documents","query_or_cursor":"q2","status":"empty","count":0,"truncated":false},
 			{"scope":"meetings_minutes","query_or_cursor":"q3","status":"empty","count":0,"truncated":false}
 		],
@@ -165,6 +165,9 @@ func TestRunCollectorInjectsMainControllerFields(t *testing.T) {
 	}
 	if output.Status != "empty" {
 		t.Fatalf("derived status = %q, want empty", output.Status)
+	}
+	if output.Coverage[0].Status != "empty" {
+		t.Fatalf("zero-count coverage status = %q, want empty", output.Coverage[0].Status)
 	}
 }
 

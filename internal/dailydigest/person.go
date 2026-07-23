@@ -365,6 +365,16 @@ func applyPersonCollectorControl(
 	output.Domain = domain
 	output.IdentityFilters = append([]string(nil), expectation.AllowedDirectIdentities...)
 	output.Window = expectation.Window
+	for i := range output.Coverage {
+		switch output.Coverage[i].Status {
+		case "complete", "empty":
+			if output.Coverage[i].Count == 0 {
+				output.Coverage[i].Status = "empty"
+			} else {
+				output.Coverage[i].Status = "complete"
+			}
+		}
+	}
 	return nil
 }
 
