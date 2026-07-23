@@ -1,0 +1,4 @@
+interface:
+  display_name: "飞书群当天总结"
+  short_description: "深入调查群消息及关联材料，生成有结论、可追溯的自然日总结"
+  default_prompt: "Use $feishu-group-daily-summary to investigate and summarize a Feishu group for a natural day."
