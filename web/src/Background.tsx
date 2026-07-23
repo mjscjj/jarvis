@@ -59,6 +59,7 @@ import {
   updateTextStorage,
 } from './api'
 import SharedMemory from './SharedMemory'
+import RuntimeSettings from './RuntimeSettings'
 import EntityRelations from './components/EntityRelations'
 import type {
   AgentSkill,
@@ -1348,6 +1349,7 @@ export function Settings() {
   return (
     <Tabs
       items={[
+        { key: 'runtime-settings', label: '运行配置', children: <RuntimeSettings /> },
         { key: 'work-rules', label: '工作规则', children: <WorkRulesPanel /> },
         { key: 'approval-rules', label: '审批规则管理', children: <ApprovalRulesPanel /> },
         { key: 'skills', label: 'Skills', children: <SkillsPanel /> },

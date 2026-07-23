@@ -1093,3 +1093,152 @@ pre {
   font-family: var(--font-sans);
   font-size: 13.5px;
 }
+
+/* Runtime settings: stage-oriented and dense enough for debugging. */
+.runtime-settings-header {
+  margin-bottom: 10px;
+}
+
+.runtime-settings-header h4 {
+  margin: 0 0 2px !important;
+}
+
+.runtime-settings > .ant-alert {
+  margin-bottom: 8px;
+  padding-block: 7px;
+}
+
+.runtime-settings-flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.runtime-step {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+}
+
+.runtime-step.is-disabled {
+  background: var(--color-bg-soft);
+  opacity: 0.72;
+}
+
+.runtime-step .ant-tag {
+  margin: 0;
+  padding-inline: 5px;
+  font-size: 10px;
+  line-height: 17px;
+}
+
+.runtime-step-stage {
+  color: var(--color-primary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.runtime-step-title,
+.runtime-step-primary,
+.runtime-step-secondary {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-step-title {
+  margin-top: 3px;
+  font-size: 13px;
+}
+
+.runtime-step-primary {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.runtime-step-secondary {
+  margin-top: 1px;
+  font-size: 10px;
+}
+
+.runtime-settings-meta {
+  min-height: 28px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.runtime-settings .ant-collapse-header {
+  min-height: 43px;
+  padding: 6px 12px !important;
+  font-weight: 600;
+}
+
+.runtime-settings .ant-collapse-content-box {
+  padding: 8px 12px 2px !important;
+}
+
+.runtime-settings-panel-label > span,
+.runtime-settings-panel-label > .ant-typography {
+  display: block;
+}
+
+.runtime-settings-panel-label > .ant-typography {
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.runtime-settings .ant-form-item {
+  margin-bottom: 8px;
+}
+
+.runtime-settings .ant-form-item-label {
+  padding-bottom: 2px;
+}
+
+.runtime-settings .ant-form-item-extra,
+.runtime-settings .ant-form-item-explain {
+  min-height: 0;
+  font-size: 11px;
+}
+
+.runtime-settings-help {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  cursor: help;
+}
+
+.runtime-settings-section + .runtime-settings-section {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--color-border);
+}
+
+.runtime-settings-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.runtime-settings-section-heading > .ant-typography:first-child {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.runtime-settings-section-heading > .ant-typography:last-child {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-settings-inline-note {
+  margin: 6px 0 8px;
+  padding-block: 6px;
+}

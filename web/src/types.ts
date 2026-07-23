@@ -863,6 +863,96 @@ export interface AgentSkillContent {
   content: string
 }
 
+export type AgentCLI = 'codex' | 'traex'
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+
+export interface RuntimeSettings {
+  analysis_cli: AgentCLI
+  analysis_model: string
+  analysis_timeout_seconds: number
+  model_api_model: string
+  model_api_timeout_seconds: number
+
+  extract_enabled: boolean
+  extract_engine: 'codex' | 'model_api'
+  extract_schedule: string
+  extract_batch_messages: number
+  extract_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
+  extract_network_enabled: boolean
+  extract_reasoning_effort: ReasoningEffort
+  extract_context_messages: number
+  extract_context_window_minutes: number
+  extract_open_todo_limit: number
+  extract_memory_top_k: number
+  extract_memory_threshold: number
+  extract_max_prompt_chars: number
+  extract_semantic_threshold: number
+  extract_semantic_neighbor_limit: number
+  extract_max_tool_rounds: number
+  extract_tool_timeout_seconds: number
+  extract_history_tool_limit: number
+  extract_tool_memory_max_top_k: number
+  extract_evidence_retry_max: number
+
+  decide_enabled: boolean
+  decide_mode: 'codex' | 'manual_mvp'
+  decide_schedule: string
+  decide_batch_limit: number
+  decide_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
+  decide_network_enabled: boolean
+  decide_reasoning_effort: ReasoningEffort
+
+  execute_auto_enabled: boolean
+  execute_cli: AgentCLI
+  execute_model: string
+  execute_reasoning_effort: ReasoningEffort
+  execute_schedule: string
+  execute_batch_limit: number
+  execute_timeout_seconds: number
+  execute_stale_minutes: number
+  execute_concurrency: number
+
+  chat_enabled: boolean
+  chat_model: string
+  chat_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
+  chat_reasoning_effort: ReasoningEffort
+  chat_timeout_seconds: number
+
+  capture_page_size: number
+  capture_scan_workers: number
+  capture_discover_schedule: string
+  capture_scan_schedule: string
+  capture_auto_related_p2p_top_n: number
+  capture_meeting_scan_schedule: string
+  capture_meeting_lookback_days: number
+  capture_meeting_max_content_chars: number
+
+  memory_timeout_seconds: number
+  memory_batch_limit: number
+  memory_window_gap_minutes: number
+  memory_window_max_messages: number
+  memory_schedule: string
+
+  lark_rate_limit: number
+  lark_burst: number
+  lark_concurrency: number
+  lark_timeout_seconds: number
+
+  scheduled_task_enabled: boolean
+  scheduled_task_schedule: string
+  scheduled_task_batch_limit: number
+  daily_digest_enabled: boolean
+  daily_digest_schedule: string
+  daily_digest_message_limit: number
+  daily_digest_concurrency: number
+}
+
+export interface RuntimeSettingsView {
+  settings: RuntimeSettings
+  restart_required: boolean
+  override_path: string
+}
+
 // --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---
 
 // PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。

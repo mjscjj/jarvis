@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 )
 
@@ -237,6 +238,15 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config %q: %w", path, err)
+	}
+	overridePath := RuntimeOverridePath(path)
+	overrideRaw, err := os.ReadFile(overridePath)
+	if err == nil {
+		if err := yaml.Unmarshal(overrideRaw, &cfg); err != nil {
+			return nil, fmt.Errorf("parse runtime config override %q: %w", overridePath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read runtime config override %q: %w", overridePath, err)
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid config %q: %w", path, err)
@@ -524,6 +534,25 @@ func (c *Config) validate() error {
 	}
 	if c.ScheduledTask.Enabled && !c.Execute.Enabled {
 		return fmt.Errorf("scheduled_task 启用时 execute.enabled 必须为 true")
+	}
+	schedules := []struct {
+		name string
+		spec string
+	}{
+		{name: "mem0.schedule", spec: c.Mem0.Schedule},
+		{name: "extract.schedule", spec: c.Extract.Schedule},
+		{name: "capture.discover_schedule", spec: c.Capture.DiscoverSchedule},
+		{name: "capture.scan_schedule", spec: c.Capture.ScanSchedule},
+		{name: "capture.meeting_scan_schedule", spec: c.Capture.MeetingScanSchedule},
+		{name: "decide.schedule", spec: c.Decide.Schedule},
+		{name: "execute.schedule", spec: c.Execute.Schedule},
+		{name: "dailydigest.schedule", spec: c.DailyDigest.Schedule},
+		{name: "scheduled_task.schedule", spec: c.ScheduledTask.Schedule},
+	}
+	for _, schedule := range schedules {
+		if _, err := cron.ParseStandard(schedule.spec); err != nil {
+			return fmt.Errorf("%s=%q 不是有效 cron/@every 表达式: %w", schedule.name, schedule.spec, err)
+		}
 	}
 	return nil
 }

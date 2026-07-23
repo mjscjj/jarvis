@@ -751,6 +751,10 @@ func main() {
 	h := server.New(
 		server.WithHostPorts(cfg.Server.Addr),
 	)
+	runtimeSettingsService, err := config.NewRuntimeSettingsService(*configPath, cfg)
+	if err != nil {
+		hlog.Fatalf("initialize runtime settings service failed: %v", err)
+	}
 	if err := api.Register(h, api.Dependencies{
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
@@ -767,6 +771,7 @@ func main() {
 		DailyDigests: dailyDigestService,
 		Worklog:      worklogService,
 		Debug:        debugService, Logs: logReader, Chat: chatService, Capture: captureService,
+		RuntimeSettings: runtimeSettingsService,
 	}); err != nil {
 		hlog.Fatalf("register API routes failed: %v", err)
 	}

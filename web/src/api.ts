@@ -49,6 +49,8 @@ import type {
   TextStorageInput,
   ScheduledTask,
   ScheduledTaskInput,
+  RuntimeSettings,
+  RuntimeSettingsView,
 } from './types'
 
 interface APIResponse<T> {
@@ -449,4 +451,12 @@ export function updateSkill(id: number, body: AgentSkillInput): Promise<AgentSki
 
 export function getSkillContent(name: string): Promise<AgentSkillContent> {
   return request<AgentSkillContent>(`/api/skills/${encodeURIComponent(name)}/content`)
+}
+
+export function getRuntimeSettings(signal?: AbortSignal): Promise<RuntimeSettingsView> {
+  return request<RuntimeSettingsView>('/api/runtime-settings', { signal })
+}
+
+export function updateRuntimeSettings(body: RuntimeSettings): Promise<RuntimeSettingsView> {
+  return request<RuntimeSettingsView>('/api/runtime-settings', { method: 'PUT', body })
 }

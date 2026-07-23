@@ -19,6 +19,7 @@ __pycache__/
 /var/
 *.log
 .qdrant-initialized
+/conf/config.runtime.yaml
 
 # 操作系统 / IDE
 .DS_Store

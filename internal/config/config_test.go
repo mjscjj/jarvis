@@ -172,6 +172,9 @@ func TestValidate(t *testing.T) {
 			c.ScheduledTask.Enabled = true
 			c.Execute.Enabled = false
 		}, wantErr: "execute.enabled"},
+		{name: "invalid runtime schedule", mutate: func(c *Config) {
+			c.Capture.ScanSchedule = "not-a-schedule"
+		}, wantErr: "capture.scan_schedule"},
 	}
 
 	for _, tt := range tests {

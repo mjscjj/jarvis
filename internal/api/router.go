@@ -7,6 +7,7 @@ import (
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
 	"jarvis/internal/chat"
+	"jarvis/internal/config"
 	"jarvis/internal/decide"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -55,6 +56,7 @@ type Dependencies struct {
 	Logs                *insight.LogReader
 	Chat                *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
 	Capture             *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
+	RuntimeSettings     *config.RuntimeSettingsService
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -131,6 +133,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Logs == nil {
 		return fmt.Errorf("api log reader dependency is nil")
 	}
+	if deps.RuntimeSettings == nil {
+		return fmt.Errorf("api runtime settings dependency is nil")
+	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
@@ -178,6 +183,10 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 共享记忆：全局单例大文本，读取 + 整段覆盖保存。
 	h.GET("/api/shared-memory", GetSharedMemory(deps.SharedMemory))
 	h.PUT("/api/shared-memory", UpdateSharedMemory(deps.SharedMemory))
+	// 运行配置：只开放调试常用的 Agent CLI、模型、超时、并发和模块开关。
+	// 保存到本地覆盖文件，进程重启后生效。
+	h.GET("/api/runtime-settings", GetRuntimeSettings(deps.RuntimeSettings))
+	h.PUT("/api/runtime-settings", UpdateRuntimeSettings(deps.RuntimeSettings))
 	// 工作规则：可信、分阶段注入 M3/M4/M5；支持全阶段或指定一个/多个阶段。
 	h.GET("/api/work-rules", ListWorkRules(deps.WorkRules))
 	h.POST("/api/work-rules", CreateWorkRule(deps.WorkRules))
