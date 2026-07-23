@@ -102,9 +102,8 @@ func (c *Client) SameAction(ctx context.Context, incoming extract.Candidate, exi
 }
 
 // Complete 是一次不带 response_format 的普通 chat completion：给定 system/user
-// 提示词，返回 assistant 的纯文本。供「关键群每日总结」这类只要一段自由文本、
-// 不需要结构化 JSON 的调用使用。fail-fast：拒答/非 stop 结束/空内容都直接报错，
-// 不静默返回空串。
+// 提示词，返回 assistant 的纯文本。fail-fast：拒答/非 stop 结束/空内容都直接
+// 报错，不静默返回空串。
 func (c *Client) Complete(ctx context.Context, system, user string) (string, error) {
 	if strings.TrimSpace(system) == "" {
 		return "", fmt.Errorf("model complete system prompt is empty")

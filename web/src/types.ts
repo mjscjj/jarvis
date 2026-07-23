@@ -564,6 +564,13 @@ export interface Digest {
 
 export type DailyDigestScope = 'person' | 'group'
 export type DailyDigestStatus = 'pending' | 'generating' | 'done' | 'failed'
+export type DailyDigestTrigger = 'manual' | 'schedule'
+
+export interface DailyDigestSourceCoverage {
+  status: 'ok' | 'empty' | 'error'
+  count: number
+  note?: string
+}
 
 // DailyDigest 是某个自然日的一条内容总结；同一天 person 一条、每个关键群一条。
 export interface DailyDigest {
@@ -573,9 +580,13 @@ export interface DailyDigest {
   digest_date: string
   summary: string
   status: DailyDigestStatus
+  trigger_type: DailyDigestTrigger
   source_count: number
-  engine: 'codex' | 'qwen'
+  source_coverage: Record<string, DailyDigestSourceCoverage>
+  engine: 'codex'
   error_detail: string | null
+  started_at: string | null
+  cutoff_at: string | null
   generated_at: string | null
   updated_at: string
 }
@@ -585,6 +596,7 @@ export interface DailyDigestKickResult {
   scope_id: string
   date: string
   status: 'generating'
+  trigger_type: 'manual'
 }
 
 // --- 进度页「今天的文档」「项目代码」两个 Tab ---

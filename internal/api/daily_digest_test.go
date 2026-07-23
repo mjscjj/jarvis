@@ -43,7 +43,7 @@ func (f *fakeDailyDigestService) KickGenerateOne(_ context.Context, scope, scope
 func TestGetDailyDigestsReturnsItems(t *testing.T) {
 	service := &fakeDailyDigestService{listResult: []dailydigest.DigestView{
 		{ID: 1, Scope: "person", ScopeID: "ou_x", DigestDate: "2026-07-22", Status: "done", Engine: "codex"},
-		{ID: 2, Scope: "group", ScopeID: "9", DigestDate: "2026-07-22", Status: "done", Engine: "qwen"},
+		{ID: 2, Scope: "group", ScopeID: "9", DigestDate: "2026-07-22", Status: "done", Engine: "codex"},
 	}}
 	h := server.New()
 	h.GET("/api/daily-digests", GetDailyDigests(service))
@@ -120,6 +120,17 @@ func TestGenerateDailyDigestMapsInvalidInput(t *testing.T) {
 	body := []byte(`{"scope":"group","scope_id":"9"}`)
 	response := ut.PerformRequest(h.Engine, "POST", "/api/daily-digests/generate", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+}
+
+func TestGenerateDailyDigestMapsAlreadyGeneratingToConflict(t *testing.T) {
+	service := &fakeDailyDigestService{kickErr: fmt.Errorf("%w: person digest", dailydigest.ErrAlreadyGenerating)}
+	h := server.New()
+	h.POST("/api/daily-digests/generate", GenerateDailyDigest(service))
+	body := []byte(`{"scope":"person","scope_id":"ou_me","date":"2026-07-22"}`)
+	response := ut.PerformRequest(h.Engine, "POST", "/api/daily-digests/generate", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusConflict {
 		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
 	}
 }

@@ -62,6 +62,10 @@ func GenerateDailyDigest(service DailyDigestService) app.HandlerFunc {
 				writeAPIError(c, consts.StatusBadRequest, 40032, err)
 				return
 			}
+			if errors.Is(err, dailydigest.ErrAlreadyGenerating) {
+				writeAPIError(c, consts.StatusConflict, 40930, err)
+				return
+			}
 			writeAPIError(c, consts.StatusInternalServerError, 50031, err)
 			return
 		}

@@ -325,18 +325,22 @@ func (AgentSkill) TableName() string { return "agent_skill" }
 // scope_id 是 feishu_group.id 的字符串。digest_date 是自然日（本地时区 00:00）。
 // 生成是异步的，status 走 pending→generating→done/failed 状态机。
 type DailyDigest struct {
-	ID          uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	Scope       string         `gorm:"column:scope;type:varchar(16);not null;uniqueIndex:uk_scope_date,priority:1"`    // person / group
-	ScopeID     string         `gorm:"column:scope_id;type:varchar(64);not null;uniqueIndex:uk_scope_date,priority:2"` // person=principal open_id；group=feishu_group.id 字符串
-	DigestDate  datatypes.Date `gorm:"column:digest_date;type:date;not null;uniqueIndex:uk_scope_date,priority:3"`     // 自然日（本地时区）
-	Summary     string         `gorm:"column:summary;type:mediumtext"`                                                 // 生成的一段中文进度总结
-	Status      string         `gorm:"column:status;type:varchar(16);not null;default:pending"`                        // pending / generating / done / failed
-	SourceCount int            `gorm:"column:source_count;type:int;not null;default:0"`                                // 纳入的活动/消息条数，便于展示与判空
-	Engine      string         `gorm:"column:engine;type:varchar(16);not null"`                                        // codex / qwen
-	ErrorDetail *string        `gorm:"column:error_detail;type:text"`                                                  // 失败原因（fail 时）
-	GeneratedAt *time.Time     `gorm:"column:generated_at;type:datetime"`                                              // 生成完成时刻（体现「截至此刻」）
-	CreatedAt   time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt   time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+	ID             uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	Scope          string         `gorm:"column:scope;type:varchar(16);not null;uniqueIndex:uk_scope_date,priority:1"`    // person / group
+	ScopeID        string         `gorm:"column:scope_id;type:varchar(64);not null;uniqueIndex:uk_scope_date,priority:2"` // person=principal open_id；group=feishu_group.id 字符串
+	DigestDate     datatypes.Date `gorm:"column:digest_date;type:date;not null;uniqueIndex:uk_scope_date,priority:3"`     // 自然日（本地时区）
+	Summary        string         `gorm:"column:summary;type:mediumtext"`                                                 // 生成的一段中文进度总结
+	Status         string         `gorm:"column:status;type:varchar(16);not null;default:pending"`                        // pending / generating / done / failed
+	TriggerType    string         `gorm:"column:trigger_type;type:varchar(16);not null;default:manual"`                   // manual / schedule
+	SourceCount    int            `gorm:"column:source_count;type:int;not null;default:0"`                                // 所有成功纳入的证据条数
+	SourceCoverage datatypes.JSON `gorm:"column:source_coverage;type:json"`                                               // 各数据源 status/count/note
+	Engine         string         `gorm:"column:engine;type:varchar(16);not null"`                                        // codex
+	ErrorDetail    *string        `gorm:"column:error_detail;type:text"`                                                  // 失败原因（fail 时）
+	StartedAt      *time.Time     `gorm:"column:started_at;type:datetime"`                                                // 本轮开始生成时刻
+	CutoffAt       *time.Time     `gorm:"column:cutoff_at;type:datetime"`                                                 // 本轮证据截止时刻
+	GeneratedAt    *time.Time     `gorm:"column:generated_at;type:datetime"`                                              // 生成完成时刻
+	CreatedAt      time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt      time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
 func (DailyDigest) TableName() string { return "daily_digest" }

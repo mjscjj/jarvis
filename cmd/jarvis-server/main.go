@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -365,23 +366,18 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize digest summarizer failed: %v", err)
 	}
-	// 每日进度总结：个人用 execute 段 codex（danger-full-access + 联网自跑工具），
-	// 群用 model 段 qwen 单次调用。qwen client 独立于 M3 抽取（后者仅 extract.enabled 时建）。
-	dailyDigestQwen, err := provider.NewClient(
-		cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.Model,
-		time.Duration(cfg.Model.TimeoutSec)*time.Second,
-	)
-	if err != nil {
-		hlog.Fatalf("initialize daily digest qwen client failed: %v", err)
-	}
+	// 每日进度总结：个人与关键群统一复用 execute 段的官方 codex runner，
+	// danger-full-access + 联网自跑 lark-cli/bytedcli/git，并分别注入对应 Skill。
 	dailyDigestService, err := dailydigest.NewService(dailydigest.Options{
 		DB:              db,
 		Location:        location,
-		PersonRunner:    codexRunner,
-		GroupRunner:     dailyDigestQwen,
+		Runner:          codexRunner,
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID,
 		GitAuthor:       dailyDigestGitAuthor,
-		PersonSandbox:   "danger-full-access",
+		RepoRoot:        cfg.Execute.RepoRoot,
+		PersonSkillDir:  filepath.Join(cfg.Skills.Root, "summarize-person-day"),
+		GroupSkillDir:   filepath.Join(cfg.Skills.Root, "feishu-group-daily-summary"),
+		SummarySandbox:  "danger-full-access",
 		GroupMsgLimit:   cfg.DailyDigest.GroupMessageLimit,
 		GroupConcur:     cfg.DailyDigest.GroupConcurrency,
 	})
@@ -670,7 +666,21 @@ func main() {
 		waitPipeline()
 		hlog.Fatalf("start memory scheduler failed: %v", err)
 	}
-	// 每日进度总结 19:00 cron：enabled 时起，disabled 时手动生成接口仍可用。
+	// 进程重启后，旧进程留下的生成任务不可能继续，启动时显式标失败。
+	recoveredDailyDigests, err := dailyDigestService.RecoverInterrupted(runtimeCtx)
+	if err != nil {
+		cancelRuntime()
+		<-scheduler.Stop().Done()
+		<-meetingScheduler.Stop().Done()
+		<-memoryScheduler.Stop().Done()
+		stopPipelineScheduler()
+		waitPipeline()
+		hlog.Fatalf("recover interrupted daily digests failed: %v", err)
+	}
+	if recoveredDailyDigests > 0 {
+		hlog.Infof("daily digests recovered after restart: %d", recoveredDailyDigests)
+	}
+	// 个人总结 cron：enabled 时起，disabled 时手动生成接口仍可用。
 	stopDailyDigest := func() {}
 	if cfg.DailyDigest.Enabled {
 		dailyDigestScheduler, err := dailydigest.StartScheduler(

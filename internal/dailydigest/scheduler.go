@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/robfig/cron/v3"
 )
 
-// StartScheduler 按配置的 cron 表达式（默认每晚 19:00）跑一次当天全量生成：个人
-// 1 条 + 每个关键群各 1 条。照 internal/memory/scheduler.go：SkipIfStillRunning
-// 防重入 + Recover 防 panic 打挂 cron。返回的 *cron.Cron 由调用方负责 Stop。
+// StartScheduler 按配置的 cron 表达式只生成个人总结。群总结保留手动入口，不再
+// 与个人 Codex 串行耦合。启动时间晚于当天计划点且当天尚无结果时会补跑一次；
+// 数据库 ClaimGeneration 负责和手动触发去重。
 func StartScheduler(ctx context.Context, service *Service, spec string, logger *log.Logger) (*cron.Cron, error) {
 	if service == nil {
 		return nil, fmt.Errorf("daily digest scheduler service is nil")
@@ -21,21 +22,49 @@ func StartScheduler(ctx context.Context, service *Service, spec string, logger *
 	if logger == nil {
 		return nil, fmt.Errorf("daily digest scheduler logger is nil")
 	}
+	schedule, err := cron.ParseStandard(spec)
+	if err != nil {
+		return nil, fmt.Errorf("parse daily digest schedule %q: %w", spec, err)
+	}
 	cronLogger := cron.PrintfLogger(logger)
-	scheduler := cron.New(cron.WithChain(
+	scheduler := cron.New(cron.WithLocation(service.location), cron.WithChain(
 		cron.SkipIfStillRunning(cronLogger),
 		cron.Recover(cronLogger),
 	))
 	if _, err := scheduler.AddFunc(spec, func() {
-		date := service.today()
-		if err := service.GenerateForDate(ctx, date); err != nil {
-			logger.Printf("job=daily_digest status=error date=%s error=%v", date, err)
-			return
-		}
-		logger.Printf("job=daily_digest status=ok date=%s", date)
+		runScheduledPersonalDigest(ctx, service, logger, "cron")
 	}); err != nil {
 		return nil, fmt.Errorf("register daily digest job schedule=%q: %w", spec, err)
 	}
 	scheduler.Start()
+	if catchUpDue(schedule, service.now().In(service.location), service.location) {
+		go runScheduledPersonalDigest(ctx, service, logger, "startup_catch_up")
+	}
 	return scheduler, nil
+}
+
+func runScheduledPersonalDigest(ctx context.Context, service *Service, logger *log.Logger, reason string) {
+	date := service.today()
+	generated, err := service.GeneratePersonalScheduled(ctx, date)
+	if err != nil {
+		logger.Printf("job=personal_daily_digest trigger=%s status=error date=%s error=%v", reason, date, err)
+		return
+	}
+	if !generated {
+		logger.Printf("job=personal_daily_digest trigger=%s status=skipped date=%s reason=already_done_or_generating", reason, date)
+		return
+	}
+	logger.Printf("job=personal_daily_digest trigger=%s status=ok date=%s", reason, date)
+}
+
+func catchUpDue(schedule cron.Schedule, now time.Time, location *time.Location) bool {
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	todayRun := schedule.Next(dayStart.Add(-time.Nanosecond)).In(location)
+	return sameLocalDate(todayRun, dayStart) && !todayRun.After(now)
+}
+
+func sameLocalDate(left, right time.Time) bool {
+	leftYear, leftMonth, leftDay := left.Date()
+	rightYear, rightMonth, rightDay := right.Date()
+	return leftYear == rightYear && leftMonth == rightMonth && leftDay == rightDay
 }
