@@ -54,8 +54,8 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 | M2.5 记忆 | `internal/memory/` | 消息切窗 → mem0 抽事实 → 向量入库 | `worker.go`（窗口化编排）、`store.go`（pending 查询/标记）、`client.go`（sidecar HTTP） | mem0 sidecar → Qdrant `jarvis_memories` |
 | M3 抽取 | `internal/extract/` | 从新消息抽 Todo（默认 `engine=codex`：traex agent 自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库并冻结 `context_snapshot`；备用 `model_api` function-calling 循环）+ 语义去重 + source_quote 证据重抽 | `worker.go`（编排）、`pipeline_store.go`（加载/组批）、`prompt.go`（提示词）、`persist.go`（落库）、`dedup.go`（去重）、`codexengine/`（traex agent 引擎）、`provider/`（百炼 model API）、`tools/`（工具） | traex agent（`gpt-5.4`）/ 百炼 `qwen-plus` + Qdrant `todo_semantic` + mem0（检索） |
 | M4 决策 | `internal/decide/` | 给 Todo 定 disposition：`codex` 用 codex/traex 判 `auto_execute`/`need_review`/`need_info`（need_info 带结构化 clarifications 说明缺什么）；`manual_mvp` 全走人工确认 | `worker.go`（批处理）、`manual_gate.go` / `codex_evaluator.go`（两种评估器）、`codex.go`（调 agent CLI）、`evaluation.go`（落库）、`service.go`（Approve/Reject 建 Task）、`background.go`（快照）、`constants.go`（共享常量） | traex agent（`gpt-5.4`，read-only 判定，可自查补信息） |
-| M5 执行 | `internal/execute/` | 执行确认后的 Task：`enabled=true` 时 M4 新建的 Task 立即进入执行队列，cron 只补偿扫描 `pending`；手动执行始终可用；两阶段人工审批——code_change 有 MR review 作闸门直接跑完，其余 action_type 由 agent 在 propose 阶段判 `needs_approval`，高风险停 `awaiting_approval` 等用户批准后才 apply；批准/执行/重跑均异步（接口立即返回 executing，后台跑 codex），并发 `execute.concurrency` | `agent_executor.go`（执行主流程）、`codex_runner.go`（调官方 codex CLI）、`policy.go`（各 action_type 的 sandbox/是否需批准）、`git.go`（分支/commit/diff）、`store.go`（Task 状态机） | 官方 codex agent（`gpt-5.6-sol`，code_change 用 workspace-write）→ diff/产物落 `runs_dir` |
-| 定时任务 | `internal/scheduledtask/` | 时间触发器：支持指定时间执行一次、每天指定时间或每 N 分钟触发；每次只创建独立 Task 并交给 M5，实际结果统一记录在 Task/ExecutionRun | `service.go`（计划/抢占/Task 物化）、`scheduler.go`（扫描 cron） | MySQL `scheduled_task` + M5 |
+| M5 执行 | `internal/execute/` | 执行确认后的 Task：支持 `completed/waiting/needs_human/failed` 结果；长等待时持久化 Codex Session，当前 Turn 退出，到期后 `codex exec resume` 续跑；高风险外部写入仍停在 `awaiting_approval` | `agent_executor.go`（执行/挂起/恢复）、`codex_runner.go`（Codex Session）、`store.go`（Task 状态机） | 官方 codex agent（`gpt-5.6-sol`） |
+| 定时任务 | `internal/scheduledtask/` | 时间触发器：独立计划到期物化新 Task；`yield-until` 创建的续接计划只恢复原 Task 和原 Codex Session | `service.go`（计划/抢占/Task 物化/Session 恢复）、`scheduler.go`（扫描 cron） | MySQL `scheduled_task` + M5 |
 | 流水线协调 | `internal/pipeline/` | 接收 M2/M3/M4 状态提交后的轻量通知，按 chat/todo/task 定向推进；内存队列只加速，启动与 cron 均从 MySQL 补偿 | `coordinator.go`（串行编排与 M5 并发）、`queue.go`（按 ID/version 合并）、`scheduler.go`（补偿调度） | — |
 | 背景管理 | `internal/background/` | 后台可编辑的项目/人物/群/决策主体；种子数据 | `project.go` / `person.go` / `group.go` / `profile.go`（各实体 service）、`resolve.go`（lark-cli 按名字查 open_id）、`seed.go` / `seed_persons.go`（`-seed` / `-seed-persons`） | lark-cli（resolve/拉群成员） |
 | 关系知识 | `internal/knowledge/` | 在现有业务实体之间保存带来源、有效期和置信度的动态关系；不建通用 entity 表 | `predicates.go`（predicate 注册表）、`service.go`（校验、去重、supersede/retract） | — |
@@ -73,7 +73,7 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 | `message` | capture | memory/extract | 原始消息，含 `mem0_processed` 标志 |
 | `resource` | capture | extract | 消息里的文件/文档/妙记引用（只记引用不下载） |
 | `scan_record` | capture | — | 采集审计流水 |
-| `scheduled_task` | scheduledtask | scheduledtask | 一次性/周期计划、下次执行时间、冻结上下文和最近一次 Codex 结果 |
+| `scheduled_task` | scheduledtask | scheduledtask | 一次性/周期触发、下次执行时间，以及 Task/Codex Session 的未来唤醒 |
 | `project` / `person` / `principal_profile` | background | extract/decide | 背景信息（后台可编辑） |
 | `todo` / `todo_event` / `todo_extract_watermark` | extract | decide | 抽取出的行动线索 + 事件 + 抽取游标 |
 | `task` / `task_event` / `execution_run` | decide(建)/execute | execute/insight | 可执行快照 + 业务状态历史 + Codex 执行审计 |
@@ -134,7 +134,7 @@ M2 扫描发现新消息后立即通知 `internal/pipeline.Coordinator`。协调
 | M3 抽取补偿 | `extract.schedule` | `@every 10m` | `extract.enabled=true` | 实时路径按 chat 触发；cron 扫描遗漏的新消息并推进水位 |
 | M4 决策补偿 | `decide.schedule` | `@every 1m` | `decide.enabled=true` | 实时路径按 Todo ID/version 触发；cron 扫描遗漏的 `extracted` |
 | M5 执行补偿 | `execute.schedule` | `@every 5m` | `execute.enabled=true` | 实时路径按 Task ID/version 入队；cron 恢复遗漏的 `pending` 和僵尸 `executing`，并发 `execute.concurrency`（默认 3） |
-| 定时任务 | `scheduled_task.schedule` | `@every 1m` | `scheduled_task.enabled=true` | 扫描已到期且启用的 `active` 周期任务，推进下次时间，为本次 occurrence 创建 Task 并通知 M5 |
+| 定时任务 | `scheduled_task.schedule` | `@every 1m` | `scheduled_task.enabled=true` | 扫描已到期且启用的 `active` 计划：普通计划物化新 Task，续跑计划恢复原 Task 的 Codex Session |
 
 M3/M4/M5 的实时通知与补偿任务都只进入同一个协调器队列，不会由两套 scheduler 并行调用 worker。队列按实体 ID/version 合并等待中的重复通知；数据库状态与乐观锁拦截过期通知。一次性 CLI flag（见上）仍用同一批 worker 单跑一轮后退出。
 

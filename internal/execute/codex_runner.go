@@ -30,15 +30,27 @@ type codexRun struct {
 	Propose *proposeResult
 }
 
+type runInvocation struct {
+	SessionID string
+	TaskID    uint64
+}
+
 // codexResult is the structured final message codex must return for M5
 // execution (see executionResultSchema). It lets M5 判 done/failed on a real
 // success bool instead of the process exit code.
 type codexResult struct {
-	Success       bool              `json:"success"`
+	Outcome       string            `json:"outcome"`
 	Summary       string            `json:"summary"`
 	FailureReason string            `json:"failure_reason"`
 	NeedsFollowup string            `json:"needs_followup"`
 	Enrichments   []codexEnrichment `json:"enrichments"`
+	Waiting       *codexWaiting     `json:"waiting"`
+}
+
+type codexWaiting struct {
+	ScheduledTaskID uint64 `json:"scheduled_task_id"`
+	WakeAt          string `json:"wake_at"`
+	Reason          string `json:"reason"`
 }
 
 // codexEnrichment is one piece of "多做一步" context the assistant proactively
@@ -57,12 +69,13 @@ type codexEnrichment struct {
 // human approval before the apply stage lands it.
 type proposeResult struct {
 	NeedsApproval bool              `json:"needs_approval"`
-	Success       bool              `json:"success"`
+	Outcome       string            `json:"outcome"`
 	Summary       string            `json:"summary"`
 	FailureReason string            `json:"failure_reason"`
 	NeedsFollowup string            `json:"needs_followup"`
 	Enrichments   []codexEnrichment `json:"enrichments"`
 	Proposal      *codexProposal    `json:"proposal"`
+	Waiting       *codexWaiting     `json:"waiting"`
 }
 
 // codexProposal is the concrete external write the agent wants a human to
@@ -137,6 +150,31 @@ func (s schema) definition() (string, bool) {
 // non-empty, is the working directory codex operates in. The schema argument
 // selects which structured final-message contract the run enforces and parses.
 func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string, sch schema) (*codexRun, error) {
+	return r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{})
+}
+
+// RunTask starts a persisted Codex session for one Task. The Task ID is exposed
+// to controlled Jarvis tools so the agent can park itself with yield-until.
+func (r *CodexRunner) RunTask(ctx context.Context, prompt, sandbox, repoPath string, sch schema, taskID uint64) (*codexRun, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("codex task run requires a positive task ID")
+	}
+	return r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{TaskID: taskID})
+}
+
+// ResumeTask starts another turn in an existing persisted Codex session.
+func (r *CodexRunner) ResumeTask(ctx context.Context, sessionID, prompt, sandbox, repoPath string, sch schema, taskID uint64) (*codexRun, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil, fmt.Errorf("codex resume session ID is required")
+	}
+	if taskID == 0 {
+		return nil, fmt.Errorf("codex resume requires a positive task ID")
+	}
+	return r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{SessionID: sessionID, TaskID: taskID})
+}
+
+func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string, sch schema, invocation runInvocation) (*codexRun, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("codex run prompt is required")
@@ -160,10 +198,21 @@ func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string,
 	// codex exec is non-interactive; --sandbox is the sole gate (no
 	// --ask-for-approval, which only exists in interactive mode). We never pass
 	// --dangerously-bypass-approvals-and-sandbox: the sandbox stays enforced.
-	args := []string{
-		"exec", "--ephemeral", "--sandbox", sandbox,
-		"--color", "never", "--json", "--output-last-message", resultPath,
-		"--model", r.model, "-c", "model_reasoning_effort=" + r.reasoningEffort,
+	var args []string
+	if invocation.SessionID == "" {
+		args = []string{
+			"exec", "--sandbox", sandbox,
+			"--color", "never", "--json", "--output-last-message", resultPath,
+			"--model", r.model, "-c", "model_reasoning_effort=" + r.reasoningEffort,
+		}
+	} else {
+		args = []string{
+			"exec", "resume", invocation.SessionID, "--json",
+			"--output-last-message", resultPath,
+			"--model", r.model,
+			"-c", "model_reasoning_effort=" + r.reasoningEffort,
+			"-c", fmt.Sprintf("sandbox_mode=%q", sandbox),
+		}
 	}
 	schemaDef, enforceSchema := sch.definition()
 	if enforceSchema {
@@ -178,7 +227,7 @@ func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string,
 		// call lark-cli/bytedcli. danger-full-access already has network.
 		args = append(args, "-c", "sandbox_workspace_write.network_access=true")
 	}
-	if strings.TrimSpace(repoPath) != "" {
+	if strings.TrimSpace(repoPath) != "" && invocation.SessionID == "" {
 		args = append(args, "--cd", repoPath)
 	} else {
 		args = append(args, "--skip-git-repo-check")
@@ -188,8 +237,13 @@ func (r *CodexRunner) Run(ctx context.Context, prompt, sandbox, repoPath string,
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	command := exec.CommandContext(runCtx, r.bin, args...)
-	if strings.TrimSpace(repoPath) == "" {
+	if strings.TrimSpace(repoPath) == "" && invocation.TaskID == 0 {
 		command.Dir = tempDir
+	} else if strings.TrimSpace(repoPath) != "" {
+		command.Dir = repoPath
+	}
+	if invocation.TaskID != 0 {
+		command.Env = append(os.Environ(), fmt.Sprintf("JARVIS_TASK_ID=%d", invocation.TaskID))
 	}
 	command.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
@@ -246,8 +300,8 @@ func parseExecutionResult(lastMessage string) (*codexResult, error) {
 	if strings.TrimSpace(result.Summary) == "" {
 		return nil, fmt.Errorf("codex exec result summary is blank")
 	}
-	if !result.Success && strings.TrimSpace(result.FailureReason) == "" {
-		return nil, fmt.Errorf("codex exec result success=false requires failure_reason")
+	if err := validateOutcome(result.Outcome, result.FailureReason, result.Waiting); err != nil {
+		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
 	return &result, nil
 }
@@ -271,6 +325,9 @@ func parseProposeResult(lastMessage string) (*proposeResult, error) {
 		return nil, fmt.Errorf("codex propose result summary is blank")
 	}
 	if result.NeedsApproval {
+		if result.Outcome != "needs_human" {
+			return nil, fmt.Errorf("codex propose needs_approval=true requires outcome=needs_human")
+		}
 		if result.Proposal == nil {
 			return nil, fmt.Errorf("codex propose result needs_approval=true requires a proposal")
 		}
@@ -279,10 +336,37 @@ func parseProposeResult(lastMessage string) (*proposeResult, error) {
 			strings.TrimSpace(result.Proposal.Artifact) == "" {
 			return nil, fmt.Errorf("codex propose result proposal must have non-empty action, target and artifact")
 		}
-	} else if !result.Success && strings.TrimSpace(result.FailureReason) == "" {
-		return nil, fmt.Errorf("codex propose result success=false requires failure_reason")
+	} else if err := validateOutcome(result.Outcome, result.FailureReason, result.Waiting); err != nil {
+		return nil, fmt.Errorf("codex propose result: %w", err)
 	}
 	return &result, nil
+}
+
+func validateOutcome(outcome, failureReason string, waiting *codexWaiting) error {
+	switch strings.TrimSpace(outcome) {
+	case "completed":
+		if waiting != nil {
+			return fmt.Errorf("outcome=completed requires waiting=null")
+		}
+	case "waiting":
+		if waiting == nil || waiting.ScheduledTaskID == 0 || strings.TrimSpace(waiting.WakeAt) == "" || strings.TrimSpace(waiting.Reason) == "" {
+			return fmt.Errorf("outcome=waiting requires scheduled_task_id, wake_at and reason")
+		}
+	case "needs_human":
+		if waiting != nil {
+			return fmt.Errorf("outcome=needs_human requires waiting=null")
+		}
+	case "failed":
+		if strings.TrimSpace(failureReason) == "" {
+			return fmt.Errorf("outcome=failed requires failure_reason")
+		}
+		if waiting != nil {
+			return fmt.Errorf("outcome=failed requires waiting=null")
+		}
+	default:
+		return fmt.Errorf("unknown outcome %q", outcome)
+	}
+	return nil
 }
 
 // RunText runs codex read-only and returns just the final message text. It is

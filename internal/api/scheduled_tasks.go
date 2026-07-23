@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"jarvis/internal/scheduledtask"
 
@@ -15,9 +16,36 @@ import (
 type ScheduledTaskService interface {
 	List(context.Context, scheduledtask.ListFilter) ([]scheduledtask.View, error)
 	Create(context.Context, scheduledtask.Input) (*scheduledtask.View, error)
+	CreateYield(context.Context, scheduledtask.YieldInput) (*scheduledtask.View, error)
 	Update(context.Context, uint64, scheduledtask.Input) (*scheduledtask.View, error)
 	Delete(context.Context, uint64) error
 	Trigger(context.Context, uint64) (*scheduledtask.View, error)
+}
+
+type yieldUntilRequest struct {
+	TaskID uint64    `json:"task_id"`
+	RunAt  time.Time `json:"run_at"`
+	Reason string    `json:"reason"`
+}
+
+func YieldUntil(service ScheduledTaskService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var request yieldUntilRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40061, err)
+			return
+		}
+		view, err := service.CreateYield(ctx, scheduledtask.YieldInput{
+			TaskID: request.TaskID, RunAt: request.RunAt, Reason: request.Reason,
+		})
+		if err != nil {
+			writeScheduledTaskError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{
+			"scheduled_task_id": view.ID, "wake_at": view.NextRunAt, "reason": request.Reason,
+		}})
+	}
 }
 
 func ListScheduledTasks(service ScheduledTaskService) app.HandlerFunc {

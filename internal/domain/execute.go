@@ -14,18 +14,22 @@ type ExecutionRun struct {
 	ID         uint64 `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
 	TaskID     uint64 `gorm:"column:task_id;type:bigint unsigned;not null;index:idx_run_task"`
 	ActionType string `gorm:"column:action_type;type:varchar(32);not null"`
+	Stage      string `gorm:"column:stage;type:varchar(16);not null;default:execute"`
 	// Sandbox is the codex sandbox level actually used: read-only for
 	// investigate, workspace-write for code_change.
 	Sandbox string `gorm:"column:sandbox;type:varchar(24);not null"`
-	// Status: running -> succeeded | failed.
+	// Status: running -> succeeded | waiting | failed.
 	Status         string         `gorm:"column:status;type:varchar(16);not null;index:idx_run_status"`
 	Prompt         string         `gorm:"column:prompt;type:mediumtext;not null"`
 	CodexSessionID *string        `gorm:"column:codex_session_id;type:varchar(128)"`
 	Summary        *string        `gorm:"column:summary;type:mediumtext"`
 	Output         datatypes.JSON `gorm:"column:output;type:json"`
 	ErrorDetail    *string        `gorm:"column:error_detail;type:mediumtext"`
-	// RepoPath/Branch/Commit/DiffPath/MergeRequestURL are only set for code_change runs.
+	// RepoPath/BaseBranch/Branch/Commit/DiffPath/MergeRequestURL are only set for
+	// code_change runs. BaseBranch and Branch are persisted before a wait so the
+	// resumed session can finish the same Git delivery path.
 	RepoPath        *string `gorm:"column:repo_path;type:varchar(1024)"`
+	BaseBranch      *string `gorm:"column:base_branch;type:varchar(256)"`
 	Branch          *string `gorm:"column:branch;type:varchar(256)"`
 	Commit          *string `gorm:"column:commit_sha;type:varchar(64)"`
 	DiffPath        *string `gorm:"column:diff_path;type:varchar(1024)"`

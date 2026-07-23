@@ -24,9 +24,14 @@ var (
 	ErrRunning      = errors.New("scheduled task is running")
 )
 
-var validStatuses = map[string]struct{}{"active": {}, "running": {}, "completed": {}}
+var validStatuses = map[string]struct{}{"binding": {}, "active": {}, "running": {}, "completed": {}}
 
 type Input struct {
+	DispatchKind    string          `json:"dispatch_kind"`
+	SubjectType     *string         `json:"subject_type"`
+	SubjectID       *uint64         `json:"subject_id"`
+	SourceRunID     *uint64         `json:"source_run_id"`
+	DispatchPayload json.RawMessage `json:"dispatch_payload"`
 	Title           string          `json:"title"`
 	ActionType      string          `json:"action_type"`
 	Instruction     string          `json:"instruction"`
@@ -36,10 +41,16 @@ type Input struct {
 	IntervalMinutes *int            `json:"interval_minutes"`
 	RunAt           *time.Time      `json:"run_at"`
 	Enabled         *bool           `json:"enabled"`
+	initialStatus   string
 }
 
 type View struct {
 	ID              uint64          `json:"id"`
+	DispatchKind    string          `json:"dispatch_kind"`
+	SubjectType     *string         `json:"subject_type"`
+	SubjectID       *uint64         `json:"subject_id"`
+	SourceRunID     *uint64         `json:"source_run_id"`
+	DispatchPayload json.RawMessage `json:"dispatch_payload"`
 	Title           string          `json:"title"`
 	ActionType      string          `json:"action_type"`
 	Instruction     string          `json:"instruction"`
@@ -70,9 +81,20 @@ type TaskSubmitter interface {
 	Submit(context.Context, taskcreate.Input) (*domain.Task, error)
 }
 
+type TaskResumer interface {
+	ResumeTask(context.Context, uint64, uint64, string) error
+}
+
+type YieldInput struct {
+	TaskID uint64
+	RunAt  time.Time
+	Reason string
+}
+
 type Service struct {
 	db         *gorm.DB
 	submitter  TaskSubmitter
+	resumer    TaskResumer
 	batchLimit int
 	now        func() time.Time
 	location   *time.Location
@@ -87,7 +109,7 @@ func NewCRUDService(db *gorm.DB) (*Service, error) {
 	return &Service{db: db, now: time.Now, location: time.Local}, nil
 }
 
-func NewService(db *gorm.DB, submitter TaskSubmitter, batchLimit int) (*Service, error) {
+func NewService(db *gorm.DB, submitter TaskSubmitter, resumer TaskResumer, batchLimit int) (*Service, error) {
 	service, err := NewCRUDService(db)
 	if err != nil {
 		return nil, err
@@ -95,10 +117,14 @@ func NewService(db *gorm.DB, submitter TaskSubmitter, batchLimit int) (*Service,
 	if submitter == nil {
 		return nil, fmt.Errorf("scheduled task Task submitter is nil")
 	}
+	if resumer == nil {
+		return nil, fmt.Errorf("scheduled task Task resumer is nil")
+	}
 	if batchLimit <= 0 {
 		return nil, fmt.Errorf("scheduled task batch limit must be positive")
 	}
 	service.submitter = submitter
+	service.resumer = resumer
 	service.batchLimit = batchLimit
 	return service, nil
 }
@@ -140,11 +166,14 @@ func (s *Service) Create(ctx context.Context, input Input) (*View, error) {
 		return nil, err
 	}
 	row := domain.ScheduledTask{
-		Title: normalized.Title, ActionType: normalized.ActionType, Instruction: normalized.Instruction,
+		DispatchKind: normalized.DispatchKind, SubjectType: normalized.SubjectType,
+		SubjectID: normalized.SubjectID, SourceRunID: normalized.SourceRunID,
+		DispatchPayload: datatypes.JSON(normalized.DispatchPayload),
+		Title:           normalized.Title, ActionType: normalized.ActionType, Instruction: normalized.Instruction,
 		ContextSnapshot: datatypes.JSON(normalized.ContextSnapshot),
 		ScheduleType:    normalized.ScheduleType, DailyTime: normalized.DailyTime,
 		IntervalMinutes: normalized.IntervalMinutes, RunAt: normalized.RunAt, NextRunAt: nextRunAt,
-		Enabled: *normalized.Enabled, Status: "active",
+		Enabled: *normalized.Enabled, Status: normalized.initialStatus,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, fmt.Errorf("create scheduled task: %w", err)
@@ -152,9 +181,61 @@ func (s *Service) Create(ctx context.Context, input Input) (*View, error) {
 	return s.Get(ctx, row.ID)
 }
 
+func (s *Service) CreateYield(ctx context.Context, input YieldInput) (*View, error) {
+	input.Reason = strings.TrimSpace(input.Reason)
+	if input.TaskID == 0 || input.RunAt.IsZero() || input.Reason == "" {
+		return nil, fmt.Errorf("%w: yield requires task_id, run_at and reason", ErrInvalidInput)
+	}
+	now := s.now().UTC()
+	runAt := input.RunAt.UTC()
+	if !runAt.After(now) {
+		return nil, fmt.Errorf("%w: yield run_at must be in the future", ErrInvalidInput)
+	}
+	var task domain.Task
+	if err := s.db.WithContext(ctx).First(&task, input.TaskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrNotFound, input.TaskID)
+		}
+		return nil, fmt.Errorf("load yielding Task id=%d: %w", input.TaskID, err)
+	}
+	if task.Status != "executing" {
+		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot yield", ErrInvalidInput, task.ID, task.Status)
+	}
+	var existing int64
+	if err := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("dispatch_kind = ? AND subject_type = ? AND subject_id = ? AND status IN ?",
+			"resume_task", "task", task.ID, []string{"binding", "active"}).
+		Count(&existing).Error; err != nil {
+		return nil, fmt.Errorf("check existing yield for task_id=%d: %w", task.ID, err)
+	}
+	if existing != 0 {
+		return nil, fmt.Errorf("%w: task_id=%d already has a pending continuation schedule", ErrInvalidInput, task.ID)
+	}
+	subjectType := "task"
+	enabled := true
+	payload, err := json.Marshal(map[string]any{"reason": input.Reason})
+	if err != nil {
+		return nil, fmt.Errorf("encode yield payload: %w", err)
+	}
+	return s.Create(ctx, Input{
+		DispatchKind: "resume_task", SubjectType: &subjectType, SubjectID: &input.TaskID,
+		DispatchPayload: payload,
+		Title:           fmt.Sprintf("继续 Task #%d：%s", task.ID, task.Title), ActionType: task.ActionType,
+		Instruction: input.Reason, ContextSnapshot: json.RawMessage(task.Background),
+		ScheduleType: "once", RunAt: &runAt, Enabled: &enabled, initialStatus: "binding",
+	})
+}
+
 func (s *Service) Update(ctx context.Context, id uint64, input Input) (*View, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+	}
+	existing, err := s.load(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing.DispatchKind == "resume_task" {
+		return nil, fmt.Errorf("%w: continuation schedule id=%d is owned by its waiting Task and cannot be edited", ErrInvalidInput, id)
 	}
 	normalized, nextRunAt, err := normalizeInput(input, s.now(), s.location)
 	if err != nil {
@@ -249,6 +330,14 @@ func (s *Service) Trigger(ctx context.Context, id uint64) (*View, error) {
 // did not finish materializing its Task and must become claimable again.
 func (s *Service) RecoverRunning(ctx context.Context) (int64, error) {
 	now := s.now().UTC()
+	binding := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("status = ?", "binding").Updates(map[string]any{
+		"status": "completed", "last_run_status": "failed", "last_finished_at": now,
+		"last_error_detail": "yield binding interrupted by Jarvis process restart",
+	})
+	if binding.Error != nil {
+		return 0, fmt.Errorf("recover binding scheduled tasks: %w", binding.Error)
+	}
 	recurring := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 		Where("status = ? AND schedule_type <> ?", "running", "once").Updates(map[string]any{
 		"status": "active", "last_run_status": "failed", "last_finished_at": now,
@@ -265,7 +354,7 @@ func (s *Service) RecoverRunning(ctx context.Context) (int64, error) {
 	if oneTime.Error != nil {
 		return 0, fmt.Errorf("recover running one-time scheduled tasks: %w", oneTime.Error)
 	}
-	return recurring.RowsAffected + oneTime.RowsAffected, nil
+	return binding.RowsAffected + recurring.RowsAffected + oneTime.RowsAffected, nil
 }
 
 // RunDue claims one bounded batch and materializes each occurrence as a Task.
@@ -326,6 +415,14 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 	if row == nil || row.ID == 0 {
 		return fmt.Errorf("scheduled task dispatch row is invalid")
 	}
+	if row.DispatchKind == "resume_task" {
+		return s.dispatchResume(ctx, row)
+	}
+	if row.DispatchKind != "create_task" {
+		err := fmt.Errorf("scheduled task id=%d has unknown dispatch_kind=%q", row.ID, row.DispatchKind)
+		s.fail(context.Background(), row.ID, err)
+		return err
+	}
 	input, err := taskInput(row, occurrenceKey)
 	if err != nil {
 		s.fail(context.Background(), row.ID, err)
@@ -352,6 +449,49 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 	if update.Error != nil {
 		s.fail(context.Background(), row.ID, fmt.Errorf("store scheduled task trigger result: %w", update.Error))
 		return update.Error
+	}
+	return nil
+}
+
+func (s *Service) dispatchResume(ctx context.Context, row *domain.ScheduledTask) error {
+	if s.resumer == nil {
+		err := fmt.Errorf("scheduled task Task resumer is not configured")
+		s.fail(context.Background(), row.ID, err)
+		return err
+	}
+	if row.SubjectType == nil || *row.SubjectType != "task" || row.SubjectID == nil || *row.SubjectID == 0 || row.SourceRunID == nil || *row.SourceRunID == 0 {
+		err := fmt.Errorf("resume scheduled task id=%d is not bound to a Task and source run", row.ID)
+		s.fail(context.Background(), row.ID, err)
+		return err
+	}
+	var payload struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(row.DispatchPayload, &payload); err != nil {
+		cause := fmt.Errorf("decode resume scheduled task id=%d payload: %w", row.ID, err)
+		s.fail(context.Background(), row.ID, cause)
+		return cause
+	}
+	payload.Reason = strings.TrimSpace(payload.Reason)
+	if payload.Reason == "" {
+		err := fmt.Errorf("resume scheduled task id=%d reason is blank", row.ID)
+		s.fail(context.Background(), row.ID, err)
+		return err
+	}
+	if err := s.resumer.ResumeTask(ctx, *row.SubjectID, *row.SourceRunID, payload.Reason); err != nil {
+		s.fail(context.Background(), row.ID, err)
+		return err
+	}
+	finishedAt := s.now().UTC()
+	result := fmt.Sprintf("已恢复 Task #%d 的 Codex Session", *row.SubjectID)
+	update := s.db.WithContext(context.Background()).Model(&domain.ScheduledTask{}).
+		Where("id = ? AND status = ?", row.ID, "running").
+		Updates(map[string]any{
+			"status": "completed", "last_run_status": "done", "last_result": result,
+			"last_error_detail": nil, "last_finished_at": finishedAt,
+		})
+	if update.Error != nil {
+		return fmt.Errorf("store resume scheduled task result: %w", update.Error)
 	}
 	return nil
 }
@@ -423,12 +563,40 @@ func (s *Service) load(ctx context.Context, id uint64) (*domain.ScheduledTask, e
 }
 
 func normalizeInput(input Input, now time.Time, location *time.Location) (Input, time.Time, error) {
+	input.DispatchKind = strings.TrimSpace(input.DispatchKind)
 	input.Title = strings.TrimSpace(input.Title)
 	input.ActionType = strings.TrimSpace(input.ActionType)
 	input.Instruction = strings.TrimSpace(input.Instruction)
 	input.ScheduleType = strings.TrimSpace(input.ScheduleType)
 	if input.ActionType == "" {
 		input.ActionType = "agent_task"
+	}
+	if input.DispatchKind == "" {
+		input.DispatchKind = "create_task"
+	}
+	if input.initialStatus == "" {
+		input.initialStatus = "active"
+	}
+	if input.initialStatus != "active" && input.initialStatus != "binding" {
+		return Input{}, time.Time{}, fmt.Errorf("%w: initial scheduled task status is invalid", ErrInvalidInput)
+	}
+	switch input.DispatchKind {
+	case "create_task":
+		if input.SubjectType != nil || input.SubjectID != nil || input.SourceRunID != nil {
+			return Input{}, time.Time{}, fmt.Errorf("%w: create_task cannot bind a continuation subject", ErrInvalidInput)
+		}
+	case "resume_task":
+		if input.SubjectType == nil || strings.TrimSpace(*input.SubjectType) != "task" || input.SubjectID == nil || *input.SubjectID == 0 {
+			return Input{}, time.Time{}, fmt.Errorf("%w: resume_task requires subject_type=task and subject_id", ErrInvalidInput)
+		}
+		if input.initialStatus != "binding" {
+			return Input{}, time.Time{}, fmt.Errorf("%w: resume_task must be created through yield-until", ErrInvalidInput)
+		}
+		if input.ScheduleType != "once" {
+			return Input{}, time.Time{}, fmt.Errorf("%w: resume_task must use a once schedule", ErrInvalidInput)
+		}
+	default:
+		return Input{}, time.Time{}, fmt.Errorf("%w: dispatch_kind must be create_task or resume_task", ErrInvalidInput)
 	}
 	if input.Title == "" || input.Instruction == "" {
 		return Input{}, time.Time{}, fmt.Errorf("%w: title and instruction are required", ErrInvalidInput)
@@ -441,6 +609,11 @@ func normalizeInput(input Input, now time.Time, location *time.Location) (Input,
 		return Input{}, time.Time{}, fmt.Errorf("%w: context_snapshot: %v", ErrInvalidInput, err)
 	}
 	input.ContextSnapshot = contextJSON
+	dispatchPayload, err := canonicalObject(input.DispatchPayload)
+	if err != nil {
+		return Input{}, time.Time{}, fmt.Errorf("%w: dispatch_payload: %v", ErrInvalidInput, err)
+	}
+	input.DispatchPayload = dispatchPayload
 	if input.Enabled == nil {
 		enabled := true
 		input.Enabled = &enabled
@@ -569,7 +742,10 @@ func canonicalObject(raw json.RawMessage) (json.RawMessage, error) {
 
 func toView(row *domain.ScheduledTask) View {
 	return View{
-		ID: row.ID, Title: row.Title, ActionType: row.ActionType, Instruction: row.Instruction,
+		ID: row.ID, DispatchKind: row.DispatchKind, SubjectType: row.SubjectType,
+		SubjectID: row.SubjectID, SourceRunID: row.SourceRunID,
+		DispatchPayload: json.RawMessage(append([]byte(nil), row.DispatchPayload...)),
+		Title:           row.Title, ActionType: row.ActionType, Instruction: row.Instruction,
 		ContextSnapshot: json.RawMessage(append([]byte(nil), row.ContextSnapshot...)),
 		ScheduleType:    row.ScheduleType, DailyTime: row.DailyTime,
 		IntervalMinutes: row.IntervalMinutes, RunAt: row.RunAt, NextRunAt: row.NextRunAt,

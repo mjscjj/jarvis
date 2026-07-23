@@ -36,14 +36,14 @@ type StatusCount struct {
 type Overview struct {
 	Todos struct {
 		Total      int64         `json:"total"`
-		Open       int64         `json:"open"`       // extracted/scoring/need_info/need_decision
-		Pending    int64         `json:"pending"`    // need_info/need_decision (等我处理)
+		Open       int64         `json:"open"`        // extracted/scoring/need_info/need_decision
+		Pending    int64         `json:"pending"`     // need_info/need_decision (等我处理)
 		LeaderOpen int64         `json:"leader_open"` // leader 交办且未闭环
 		ByStatus   []StatusCount `json:"by_status"`
 	} `json:"todos"`
 	Tasks struct {
 		Total    int64         `json:"total"`
-		Pending  int64         `json:"pending"`  // pending/executing
+		Pending  int64         `json:"pending"` // pending/executing
 		Done     int64         `json:"done"`
 		Failed   int64         `json:"failed"`
 		ByStatus []StatusCount `json:"by_status"`
@@ -87,7 +87,7 @@ func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {
 	for _, item := range taskCounts {
 		overview.Tasks.Total += item.Count
 		switch item.Status {
-		case "pending", "executing":
+		case "pending", "executing", "waiting":
 			overview.Tasks.Pending += item.Count
 		case "done":
 			overview.Tasks.Done += item.Count

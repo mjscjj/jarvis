@@ -319,7 +319,7 @@ func main() {
 		hlog.Fatalf("initialize agent executor failed: %v", err)
 	}
 	scheduledTaskService, err := scheduledtask.NewService(
-		db, taskSubmitter, cfg.ScheduledTask.BatchLimit,
+		db, taskSubmitter, agentExecutor, cfg.ScheduledTask.BatchLimit,
 	)
 	if err != nil {
 		hlog.Fatalf("initialize scheduled task service failed: %v", err)

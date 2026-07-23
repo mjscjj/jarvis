@@ -346,6 +346,11 @@ func (DailyDigest) TableName() string { return "daily_digest" }
 // background available when the schedule was created.
 type ScheduledTask struct {
 	ID              uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	DispatchKind    string         `gorm:"column:dispatch_kind;type:varchar(24);not null;default:create_task;index:idx_scheduled_task_dispatch"`
+	SubjectType     *string        `gorm:"column:subject_type;type:varchar(24)"`
+	SubjectID       *uint64        `gorm:"column:subject_id;type:bigint unsigned;index:idx_scheduled_task_subject"`
+	SourceRunID     *uint64        `gorm:"column:source_run_id;type:bigint unsigned;uniqueIndex:uk_scheduled_task_source_run"`
+	DispatchPayload datatypes.JSON `gorm:"column:dispatch_payload;type:json"`
 	Title           string         `gorm:"column:title;type:varchar(512);not null"`
 	ActionType      string         `gorm:"column:action_type;type:varchar(32);not null;default:agent_task"`
 	Instruction     string         `gorm:"column:instruction;type:mediumtext;not null"`
@@ -356,7 +361,7 @@ type ScheduledTask struct {
 	RunAt           *time.Time     `gorm:"column:run_at;type:datetime"`
 	NextRunAt       time.Time      `gorm:"column:next_run_at;type:datetime;not null;index:idx_scheduled_task_due,priority:3"`
 	Enabled         bool           `gorm:"column:enabled;type:tinyint(1);not null;index:idx_scheduled_task_due,priority:1"`
-	Status          string         `gorm:"column:status;type:varchar(16);not null;default:active;index:idx_scheduled_task_due,priority:2"` // active / running / completed
+	Status          string         `gorm:"column:status;type:varchar(16);not null;default:active;index:idx_scheduled_task_due,priority:2"` // binding / active / running / completed
 	LastRunStatus   *string        `gorm:"column:last_run_status;type:varchar(16)"`                                                        // done / failed
 	LastTaskID      *uint64        `gorm:"column:last_task_id;type:bigint unsigned;index:idx_scheduled_task_last_task"`
 	LastResult      *string        `gorm:"column:last_result;type:mediumtext"`

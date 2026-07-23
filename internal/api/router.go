@@ -191,6 +191,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 周期定时任务：独立 CRUD、手动触发；自动执行由进程内每分钟 scheduler 负责。
 	h.GET("/api/scheduled-tasks", ListScheduledTasks(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks", CreateScheduledTask(deps.ScheduledTasks))
+	h.POST("/api/scheduled-tasks/yield", YieldUntil(deps.ScheduledTasks))
 	h.PUT("/api/scheduled-tasks/:scheduled_task_id", UpdateScheduledTask(deps.ScheduledTasks))
 	h.DELETE("/api/scheduled-tasks/:scheduled_task_id", DeleteScheduledTask(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks/:scheduled_task_id/trigger", TriggerScheduledTask(deps.ScheduledTasks))

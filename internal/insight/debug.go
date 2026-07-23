@@ -65,12 +65,12 @@ type BacklogMetric struct {
 
 // DebugStatus is the health sub-tab payload.
 type DebugStatus struct {
-	Time         string        `json:"time"`
-	Dependencies []Dependency  `json:"dependencies"`
-	Tables       []TableCount  `json:"tables"`
+	Time         string          `json:"time"`
+	Dependencies []Dependency    `json:"dependencies"`
+	Tables       []TableCount    `json:"tables"`
 	Backlog      []BacklogMetric `json:"backlog"`
-	TodoByStatus []StatusCount `json:"todo_by_status"`
-	TaskByStatus []StatusCount `json:"task_by_status"`
+	TodoByStatus []StatusCount   `json:"todo_by_status"`
+	TaskByStatus []StatusCount   `json:"task_by_status"`
 }
 
 func (s *DebugService) Status(ctx context.Context) *DebugStatus {
@@ -105,7 +105,7 @@ func (s *DebugService) backlog(ctx context.Context) []BacklogMetric {
 			return db.Model(&domain.Todo{}).Where("is_leader_assigned = ? AND status IN ?", true, openTodoStatuses)
 		}},
 		{key: "task_pending", label: "待执行 Task", where: func(db *gorm.DB) *gorm.DB {
-			return db.Model(&domain.Task{}).Where("status IN ?", []string{"pending", "executing"})
+			return db.Model(&domain.Task{}).Where("status IN ?", []string{"pending", "executing", "waiting"})
 		}},
 	}
 	out := make([]BacklogMetric, 0, len(metrics))

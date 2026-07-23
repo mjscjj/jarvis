@@ -32,7 +32,7 @@ var actorTypes = map[string]struct{}{
 }
 
 var taskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "awaiting_approval": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "waiting": {}, "awaiting_approval": {}, "done": {}, "failed": {},
 }
 
 type TaskEventInput struct {

@@ -131,7 +131,7 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 		t.Fatalf("build prompt: %v", err)
 	}
 	for _, want := range []string{
-		`"previous_runs"`, `"run_id":3`, summary, "不要重复做", "task-exec-v4",
+		`"previous_runs"`, `"run_id":3`, summary, "不要重复做", ExecutionPromptVersion,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)

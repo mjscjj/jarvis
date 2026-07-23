@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 usage() {
   fail "usage: jarvis-tools <subcommand> [flags]
-subcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory list-scheduled-tasks create-scheduled-task delete-scheduled-task"
+subcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory list-scheduled-tasks create-scheduled-task yield-until delete-scheduled-task"
 }
 
 # resolve_api_base CONFIG_PATH
@@ -184,6 +184,8 @@ NAME=""
 STATUS=""
 LIMIT="200"
 PAYLOAD="-"
+AT=""
+REASON="-"
 
 reset_flags() {
   CONFIG_PATH="$CONFIG_DEFAULT"
@@ -196,6 +198,8 @@ reset_flags() {
   STATUS=""
   LIMIT="200"
   PAYLOAD="-"
+  AT=""
+  REASON="-"
 }
 
 # parse_kv_flag NAME VALUE — supports --name value and --name=value via caller.
@@ -291,6 +295,24 @@ consume_flags() {
         ;;
       --payload=*)
         PAYLOAD="${1#--payload=}"
+        shift
+        ;;
+      --at)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        AT="$2"
+        shift 2
+        ;;
+      --at=*)
+        AT="${1#--at=}"
+        shift
+        ;;
+      --reason)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        REASON="$2"
+        shift 2
+        ;;
+      --reason=*)
+        REASON="${1#--reason=}"
         shift
         ;;
       -*)
@@ -485,6 +507,26 @@ cmd_create_scheduled_task() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+cmd_yield_until() {
+  reset_flags
+  consume_flags "$@"
+  [[ "${JARVIS_TASK_ID:-}" =~ ^[1-9][0-9]*$ ]] || fail "yield-until requires JARVIS_TASK_ID from the Task runner"
+  [[ -n "$AT" ]] || fail "yield-until requires --at"
+  local reason
+  if [[ "$REASON" == "-" ]]; then
+    reason="$(cat)"
+  else
+    reason="$REASON"
+  fi
+  [[ -n "${reason//[[:space:]]/}" ]] || fail "yield-until reason is empty"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  payload="$(jq -cn --argjson task_id "$JARVIS_TASK_ID" --arg run_at "$AT" --arg reason "$reason" \
+    '{task_id:$task_id,run_at:$run_at,reason:$reason}')"
+  body="$(api_write POST /api/scheduled-tasks/yield "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
 cmd_delete_scheduled_task() {
   reset_flags
   consume_flags "$@"
@@ -512,8 +554,9 @@ case "$SUBCOMMAND" in
   append-shared-memory) cmd_append_shared_memory "$@" ;;
   list-scheduled-tasks) cmd_list_scheduled_tasks "$@" ;;
   create-scheduled-task) cmd_create_scheduled_task "$@" ;;
+  yield-until)          cmd_yield_until "$@" ;;
   delete-scheduled-task) cmd_delete_scheduled_task "$@" ;;
   *)
-    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory list-scheduled-tasks create-scheduled-task delete-scheduled-task"
+    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory list-scheduled-tasks create-scheduled-task yield-until delete-scheduled-task"
     ;;
 esac

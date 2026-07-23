@@ -16,7 +16,7 @@ import (
 // TestParseProposeResultHighRisk accepts a high-risk verdict that carries a full
 // proposal (action + target + artifact).
 func TestParseProposeResultHighRisk(t *testing.T) {
-	msg := `{"needs_approval":true,"success":false,"summary":"高风险：将更新飞书文档","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"更新周报文档","target":"周报 doc token=abc","artifact":"# 周报\n本周完成了 X。"}}`
+	msg := `{"needs_approval":true,"outcome":"needs_human","summary":"高风险：将更新飞书文档","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"更新周报文档","target":"周报 doc token=abc","artifact":"# 周报\n本周完成了 X。"},"waiting":null}`
 	result, err := parseProposeResult(msg)
 	if err != nil {
 		t.Fatalf("parseProposeResult() error = %v", err)
@@ -31,11 +31,11 @@ func TestParseProposeResultHighRisk(t *testing.T) {
 // and must be an execution failure, not a silent stop.
 func TestParseProposeResultRejectsMissingProposal(t *testing.T) {
 	cases := map[string]string{
-		"nil proposal":   `{"needs_approval":true,"success":false,"summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null}`,
-		"empty artifact": `{"needs_approval":true,"success":false,"summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"群 X","artifact":""}}`,
-		"empty target":   `{"needs_approval":true,"success":false,"summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"","artifact":"你好"}}`,
-		"blank summary":  `{"needs_approval":true,"success":false,"summary":"","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"}}`,
-		"unknown field":  `{"needs_approval":true,"success":false,"summary":"x","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"},"extra":1}`,
+		"nil proposal":   `{"needs_approval":true,"outcome":"needs_human","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`,
+		"empty artifact": `{"needs_approval":true,"outcome":"needs_human","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"群 X","artifact":""},"waiting":null}`,
+		"empty target":   `{"needs_approval":true,"outcome":"needs_human","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"","artifact":"你好"},"waiting":null}`,
+		"blank summary":  `{"needs_approval":true,"outcome":"needs_human","summary":"","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"},"waiting":null}`,
+		"unknown field":  `{"needs_approval":true,"outcome":"needs_human","summary":"x","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"},"waiting":null,"extra":1}`,
 	}
 	for name, msg := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -49,12 +49,12 @@ func TestParseProposeResultRejectsMissingProposal(t *testing.T) {
 // TestParseProposeResultLowRisk accepts a low-risk verdict where the agent
 // already finished the work (needs_approval=false, no proposal required).
 func TestParseProposeResultLowRisk(t *testing.T) {
-	msg := `{"needs_approval":false,"success":true,"summary":"已给自己发提醒","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null}`
+	msg := `{"needs_approval":false,"outcome":"completed","summary":"已给自己发提醒","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`
 	result, err := parseProposeResult(msg)
 	if err != nil {
 		t.Fatalf("parseProposeResult() error = %v", err)
 	}
-	if result.NeedsApproval || !result.Success {
+	if result.NeedsApproval || result.Outcome != "completed" {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -62,9 +62,27 @@ func TestParseProposeResultLowRisk(t *testing.T) {
 // TestParseProposeResultLowRiskFailureNeedsReason keeps the existing fail-fast:
 // a failed low-risk verdict must explain why.
 func TestParseProposeResultLowRiskFailureNeedsReason(t *testing.T) {
-	msg := `{"needs_approval":false,"success":false,"summary":"没做成","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null}`
+	msg := `{"needs_approval":false,"outcome":"failed","summary":"没做成","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`
 	if _, err := parseProposeResult(msg); err == nil {
-		t.Fatalf("success=false without failure_reason must fail")
+		t.Fatalf("outcome=failed without failure_reason must fail")
+	}
+}
+
+func TestParseExecutionResultWaiting(t *testing.T) {
+	msg := `{"outcome":"waiting","summary":"会议仍在进行","failure_reason":"","needs_followup":"","enrichments":[],"waiting":{"scheduled_task_id":42,"wake_at":"2026-07-23T16:30:00+08:00","reason":"稍后检查妙记"}}`
+	result, err := parseExecutionResult(msg)
+	if err != nil {
+		t.Fatalf("parseExecutionResult() error = %v", err)
+	}
+	if result.Outcome != "waiting" || result.Waiting == nil || result.Waiting.ScheduledTaskID != 42 {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestParseExecutionResultRejectsUnscheduledWaiting(t *testing.T) {
+	msg := `{"outcome":"waiting","summary":"稍后再看","failure_reason":"","needs_followup":"","enrichments":[],"waiting":null}`
+	if _, err := parseExecutionResult(msg); err == nil {
+		t.Fatal("outcome=waiting without a scheduled task must fail")
 	}
 }
 
@@ -111,17 +129,17 @@ func TestDecodeStoredProposalRejectsNonProposal(t *testing.T) {
 // output (needs_approval=true + full proposal), and returns nil for anything not
 // approvable — the basis for "用同一已批准方案重试落地" (reapply).
 func TestProposalFromRunOutput(t *testing.T) {
-	good := []byte(`{"needs_approval":true,"success":false,"summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发周报","target":"研发群 chat_id=xyz","artifact":"本周进展：AAA"}}`)
+	good := []byte(`{"needs_approval":true,"outcome":"needs_human","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发周报","target":"研发群 chat_id=xyz","artifact":"本周进展：AAA"},"waiting":null}`)
 	got := proposalFromRunOutput(good)
 	if got == nil || got.Action != "发周报" || got.Target != "研发群 chat_id=xyz" || got.Artifact != "本周进展：AAA" {
 		t.Fatalf("proposalFromRunOutput(good) = %#v, want full proposal", got)
 	}
 	for name, raw := range map[string][]byte{
-		"low risk (no approval)": []byte(`{"needs_approval":false,"success":true,"summary":"已做完","proposal":null}`),
+		"low risk (no approval)": []byte(`{"needs_approval":false,"outcome":"completed","summary":"已做完","proposal":null}`),
 		"nil proposal":           []byte(`{"needs_approval":true,"proposal":null}`),
 		"empty artifact":         []byte(`{"needs_approval":true,"proposal":{"action":"a","target":"b","artifact":""}}`),
 		"empty target":           []byte(`{"needs_approval":true,"proposal":{"action":"a","target":"","artifact":"c"}}`),
-		"final run result":       []byte(`{"success":true,"summary":"done"}`),
+		"final run result":       []byte(`{"outcome":"completed","summary":"done"}`),
 		"empty":                  nil,
 		"garbage":                []byte(`not json`),
 	} {
@@ -309,19 +327,19 @@ func TestValidateTaskIntegrityRejectsDrift(t *testing.T) {
 
 // TestProposeRoutingLowRiskVsHighRisk documents the two propose outcomes that the
 // executor routes on: a read-only investigate finishes in place (needs_approval
-// =false, success=true), while any intended external write parks for approval
+// =false, outcome=completed), while any intended external write parks for approval
 // (needs_approval=true with a full proposal).
 func TestProposeRoutingLowRiskVsHighRisk(t *testing.T) {
-	lowRisk := `{"needs_approval":false,"success":true,"summary":"已读日志得出结论","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null}`
+	lowRisk := `{"needs_approval":false,"outcome":"completed","summary":"已读日志得出结论","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`
 	low, err := parseProposeResult(lowRisk)
 	if err != nil {
 		t.Fatalf("low-risk parse error = %v", err)
 	}
-	if low.NeedsApproval || !low.Success {
+	if low.NeedsApproval || low.Outcome != "completed" {
 		t.Fatalf("low-risk investigate should finish in place: %#v", low)
 	}
 
-	highRisk := `{"needs_approval":true,"success":false,"summary":"查证中需要发消息给对方","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"向对方发确认消息","target":"张三 open_id=ou_x","artifact":"你好，关于登录超时想确认一下……"}}`
+	highRisk := `{"needs_approval":true,"outcome":"needs_human","summary":"查证中需要发消息给对方","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"向对方发确认消息","target":"张三 open_id=ou_x","artifact":"你好，关于登录超时想确认一下……"},"waiting":null}`
 	high, err := parseProposeResult(highRisk)
 	if err != nil {
 		t.Fatalf("high-risk parse error = %v", err)

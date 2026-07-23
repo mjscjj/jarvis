@@ -101,7 +101,7 @@ erDiagram
     TASK {
         bigint id PK
         bigint todo_id FK
-        varchar status "pending|executing|done|failed"
+        varchar status "pending|executing|waiting|awaiting_approval|done|failed"
         json   plan "明确方案(用户确认过)"
         json   background "问题背景快照"
     }
@@ -115,7 +115,7 @@ erDiagram
 | **Group** | 飞书群/单聊会话（原 `jarvis_chat` 升为一等实体） | M2（建模）/M1（关联项目） | 自动发现 + 手动标注 |
 | **Person** | 重点人员（leader/关键人/同事），leader 最高优先级 | M1 | 手动维护 |
 | **Todo** | 从消息提取的**行动线索/候选**（可能模糊、信息不足） | M3 产出，M4 流转 | 短：extracted→confirmed/dismissed |
-| **Task** | Todo 确认后固化的**明确可执行任务**（含背景+明确方案） | M4 生成，M5 执行 | 长：pending→executing→done/failed |
+| **Task** | Todo 确认后固化的**明确可执行任务**（含背景+明确方案） | M4 生成，M5 执行 | 长：pending→executing→waiting（定时恢复）/awaiting_approval/done/failed |
 | **Resource** | 消息/任务涉及的资源（图片/文件/妙记/文档/链接） | M2 沉淀，M3/M5 引用 | 随消息 |
 | **ScanRecord** | 每次扫描的执行流水（群/时间窗/条数/结果/错误） | M2 写入 | 每次扫描一条，可保留期清理 |
 
@@ -143,7 +143,8 @@ erDiagram
 │  - todo_id 外键指向来源 Todo                    │
 │  - background：问题背景快照（关联 project/消息） │
 │  - plan：明确方案（用户确认过 或 自动确认的明确方案）│
-│  - 生命周期：pending → executing → done/failed  │
+│  - 生命周期：pending → executing ↔ waiting → done/failed │
+│                         └→ awaiting_approval             │
 └───────────────┬─────────────────────────────┘
                 │ M5 执行
                 ▼
@@ -319,7 +320,7 @@ CREATE TABLE task (
 
   -- 执行生命周期(独立于 Todo)
   status             VARCHAR(16) NOT NULL DEFAULT 'pending'
-                     COMMENT 'pending|executing|done|failed|cancelled',
+                     COMMENT 'pending|executing|waiting|awaiting_approval|done|failed|cancelled',
   execution_result   JSON NULL COMMENT '{summary, artifacts, error}',
   autonomy_mode      VARCHAR(16) NOT NULL DEFAULT 'copilot',
   project_id         BIGINT UNSIGNED NULL,

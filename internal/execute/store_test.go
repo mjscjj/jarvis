@@ -47,6 +47,12 @@ func TestAwaitingApprovalStatusAllowed(t *testing.T) {
 	}
 }
 
+func TestWaitingStatusAllowed(t *testing.T) {
+	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"waiting"}, Page: 1, PageSize: 20}); err != nil {
+		t.Fatalf("waiting must be a valid filter status: %v", err)
+	}
+}
+
 func TestCanonicalJSONObject(t *testing.T) {
 	result, err := canonicalJSONObject([]byte(`{"summary":"done","count":1}`))
 	if err != nil {

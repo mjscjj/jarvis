@@ -28,7 +28,7 @@ var (
 )
 
 var taskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "awaiting_approval": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "waiting": {}, "awaiting_approval": {}, "done": {}, "failed": {},
 }
 
 type TaskFilter struct {
@@ -93,6 +93,7 @@ type RunView struct {
 	ID              uint64          `json:"id"`
 	TaskID          uint64          `json:"task_id"`
 	ActionType      string          `json:"action_type"`
+	Stage           string          `json:"stage"`
 	Sandbox         string          `json:"sandbox"`
 	Status          string          `json:"status"`
 	CodexSessionID  *string         `json:"codex_session_id"`
@@ -100,6 +101,7 @@ type RunView struct {
 	Output          json.RawMessage `json:"output"`
 	ErrorDetail     *string         `json:"error_detail"`
 	RepoPath        *string         `json:"repo_path"`
+	BaseBranch      *string         `json:"base_branch"`
 	Branch          *string         `json:"branch"`
 	Commit          *string         `json:"commit"`
 	DiffPath        *string         `json:"diff_path"`
@@ -194,6 +196,9 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 		if update.RowsAffected != 1 {
 			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, input.ExpectedVersion)
 		}
+		if err := closeUnboundContinuations(tx, task.ID, "agent finished without a matching waiting outcome"); err != nil {
+			return err
+		}
 		task.Status = input.Status
 		task.ExecutionResult = datatypes.JSON(result)
 		task.Version++
@@ -220,7 +225,7 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 }
 
 var supplementableTaskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "awaiting_approval": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "waiting": {}, "awaiting_approval": {}, "done": {}, "failed": {},
 }
 
 // Supplement appends a human clarification/instruction to a Task's M5-only
@@ -317,6 +322,9 @@ func (s *Store) MarkExecuting(ctx context.Context, taskID uint64, expectedVersio
 		if update.RowsAffected != 1 {
 			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
 		}
+		if err := closeUnboundContinuations(tx, task.ID, "agent requested approval without a matching waiting outcome"); err != nil {
+			return err
+		}
 		newVersion = task.Version + 1
 		fromStatus := "pending"
 		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
@@ -386,6 +394,131 @@ func (s *Store) MarkAwaitingApproval(ctx context.Context, taskID uint64, expecte
 		return nil
 	})
 	if err != nil {
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+// MarkWaiting parks an executing Task after the agent successfully created a
+// resume_task schedule. The schedule is bound to the exact run whose Codex
+// session must be resumed.
+func (s *Store) MarkWaiting(ctx context.Context, taskID uint64, expectedVersion int32, runID, scheduledTaskID uint64, result json.RawMessage) (int32, error) {
+	if taskID == 0 || expectedVersion < 0 || runID == 0 || scheduledTaskID == 0 {
+		return 0, fmt.Errorf("%w: waiting Task/run/schedule identity is invalid", ErrInvalidInput)
+	}
+	canonical, err := canonicalJSONObject(result)
+	if err != nil {
+		return 0, err
+	}
+	var run domain.ExecutionRun
+	if err := s.db.WithContext(ctx).First(&run, runID).Error; err != nil {
+		return 0, fmt.Errorf("load waiting execution run id=%d: %w", runID, err)
+	}
+	if run.TaskID != taskID || run.Status != "waiting" || run.CodexSessionID == nil || strings.TrimSpace(*run.CodexSessionID) == "" {
+		return 0, fmt.Errorf("%w: run_id=%d is not a resumable waiting run for task_id=%d", ErrInvalidInput, runID, taskID)
+	}
+	bind := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("id = ? AND dispatch_kind = ? AND subject_type = ? AND subject_id = ? AND source_run_id IS NULL AND status = ?",
+			scheduledTaskID, "resume_task", "task", taskID, "binding").
+		Updates(map[string]any{"source_run_id": runID, "status": "active"})
+	if bind.Error != nil {
+		return 0, fmt.Errorf("bind scheduled task id=%d to run id=%d: %w", scheduledTaskID, runID, bind.Error)
+	}
+	if bind.RowsAffected != 1 {
+		return 0, fmt.Errorf("%w: scheduled_task_id=%d is not an unbound resume for task_id=%d", ErrInvalidTransition, scheduledTaskID, taskID)
+	}
+	if err := closeOtherUnboundContinuations(s.db.WithContext(ctx), taskID, scheduledTaskID); err != nil {
+		return 0, err
+	}
+	update := s.db.WithContext(ctx).Model(&domain.Task{}).
+		Where("id = ? AND version = ? AND status = ?", taskID, expectedVersion, "executing").
+		Updates(map[string]any{
+			"status": "waiting", "execution_result": datatypes.JSON(canonical), "version": gorm.Expr("version + 1"),
+		})
+	if update.Error != nil {
+		return 0, fmt.Errorf("mark waiting Task id=%d: %w", taskID, update.Error)
+	}
+	if update.RowsAffected != 1 {
+		return 0, fmt.Errorf("%w: task_id=%d expected=%d from=executing to=waiting", ErrVersionConflict, taskID, expectedVersion)
+	}
+	newVersion := expectedVersion + 1
+	fromStatus := "executing"
+	if err := progress.AppendTaskEvent(s.db.WithContext(ctx), progress.TaskEventInput{
+		TaskID: taskID, TaskVersion: newVersion, EventType: "waiting_scheduled",
+		FromStatus: &fromStatus, ToStatus: "waiting", ActorType: "m5", RunID: &runID,
+		Detail: map[string]any{"scheduled_task_id": scheduledTaskID}, OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+func closeUnboundContinuations(db *gorm.DB, taskID uint64, reason string) error {
+	now := time.Now().UTC()
+	result := db.Model(&domain.ScheduledTask{}).
+		Where("dispatch_kind = ? AND subject_type = ? AND subject_id = ? AND source_run_id IS NULL AND status = ?",
+			"resume_task", "task", taskID, "binding").
+		Updates(map[string]any{
+			"status": "completed", "last_run_status": "failed",
+			"last_error_detail": reason, "last_finished_at": now,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("close unbound continuation schedules for task_id=%d: %w", taskID, result.Error)
+	}
+	return nil
+}
+
+func closeOtherUnboundContinuations(db *gorm.DB, taskID, selectedID uint64) error {
+	now := time.Now().UTC()
+	result := db.Model(&domain.ScheduledTask{}).
+		Where("id <> ? AND dispatch_kind = ? AND subject_type = ? AND subject_id = ? AND source_run_id IS NULL AND status = ?",
+			selectedID, "resume_task", "task", taskID, "binding").
+		Updates(map[string]any{
+			"status": "completed", "last_run_status": "failed",
+			"last_error_detail": "superseded by the continuation selected in the agent result", "last_finished_at": now,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("close extra continuation schedules for task_id=%d: %w", taskID, result.Error)
+	}
+	return nil
+}
+
+// ClaimWaiting resumes one parked Task. The exact source run guards the
+// transition so a stale or duplicate scheduled trigger cannot start it twice.
+func (s *Store) ClaimWaiting(ctx context.Context, taskID, sourceRunID uint64) (int32, error) {
+	if taskID == 0 || sourceRunID == 0 {
+		return 0, fmt.Errorf("%w: waiting Task/source run identity is invalid", ErrInvalidInput)
+	}
+	var task domain.Task
+	if err := s.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return 0, fmt.Errorf("load waiting Task id=%d: %w", taskID, err)
+	}
+	var run domain.ExecutionRun
+	if err := s.db.WithContext(ctx).First(&run, sourceRunID).Error; err != nil {
+		return 0, fmt.Errorf("load source run id=%d: %w", sourceRunID, err)
+	}
+	if run.TaskID != taskID || run.Status != "waiting" || run.CodexSessionID == nil || strings.TrimSpace(*run.CodexSessionID) == "" {
+		return 0, fmt.Errorf("%w: source_run_id=%d is not resumable for task_id=%d", ErrInvalidInput, sourceRunID, taskID)
+	}
+	update := s.db.WithContext(ctx).Model(&domain.Task{}).
+		Where("id = ? AND version = ? AND status = ?", task.ID, task.Version, "waiting").
+		Updates(map[string]any{"status": "executing", "version": gorm.Expr("version + 1")})
+	if update.Error != nil {
+		return 0, fmt.Errorf("claim waiting Task id=%d: %w", taskID, update.Error)
+	}
+	if update.RowsAffected != 1 {
+		return 0, fmt.Errorf("%w: task_id=%d from=%s to=executing", ErrInvalidTransition, taskID, task.Status)
+	}
+	newVersion := task.Version + 1
+	fromStatus := "waiting"
+	if err := progress.AppendTaskEvent(s.db.WithContext(ctx), progress.TaskEventInput{
+		TaskID: taskID, TaskVersion: newVersion, EventType: "resumed",
+		FromStatus: &fromStatus, ToStatus: "executing", ActorType: "scheduled_task", RunID: &sourceRunID,
+		OccurredAt: time.Now().UTC(),
+	}); err != nil {
 		return 0, err
 	}
 	return newVersion, nil
@@ -847,10 +980,10 @@ func taskView(task *domain.Task) TaskView {
 
 func runView(run *domain.ExecutionRun) RunView {
 	return RunView{
-		ID: run.ID, TaskID: run.TaskID, ActionType: run.ActionType, Sandbox: run.Sandbox,
+		ID: run.ID, TaskID: run.TaskID, ActionType: run.ActionType, Stage: run.Stage, Sandbox: run.Sandbox,
 		Status: run.Status, CodexSessionID: run.CodexSessionID, Summary: run.Summary,
 		Output: rawJSON(run.Output), ErrorDetail: run.ErrorDetail,
-		RepoPath: run.RepoPath, Branch: run.Branch, Commit: run.Commit,
+		RepoPath: run.RepoPath, BaseBranch: run.BaseBranch, Branch: run.Branch, Commit: run.Commit,
 		DiffPath: run.DiffPath, MergeRequestURL: run.MergeRequestURL,
 		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, DurationMs: run.DurationMs,
 	}

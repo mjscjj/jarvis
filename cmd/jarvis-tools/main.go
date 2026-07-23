@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,7 +43,7 @@ const connectTimeout = 10 * time.Second
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(fmt.Errorf("usage: jarvis-tools <subcommand> [flags]\nsubcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory list-scheduled-tasks create-scheduled-task delete-scheduled-task"))
+		fail(fmt.Errorf("usage: jarvis-tools <subcommand> [flags]\nsubcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory list-scheduled-tasks create-scheduled-task yield-until delete-scheduled-task"))
 	}
 	subcommand := os.Args[1]
 	args := os.Args[2:]
@@ -76,10 +77,12 @@ func run(subcommand string, args []string) error {
 		return runListScheduledTasks(args)
 	case "create-scheduled-task":
 		return runCreateScheduledTask(args)
+	case "yield-until":
+		return runYieldUntil(args)
 	case "delete-scheduled-task":
 		return runDeleteScheduledTask(args)
 	default:
-		return fmt.Errorf("unknown subcommand %q; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory list-scheduled-tasks create-scheduled-task delete-scheduled-task", subcommand)
+		return fmt.Errorf("unknown subcommand %q; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory list-scheduled-tasks create-scheduled-task yield-until delete-scheduled-task", subcommand)
 	}
 }
 
@@ -430,6 +433,46 @@ func runCreateScheduledTask(args []string) error {
 		return err
 	}
 	return emit(view)
+}
+
+func runYieldUntil(args []string) error {
+	fs := flag.NewFlagSet("yield-until", flag.ContinueOnError)
+	configPath := fs.String("config", "conf/config.yaml", "config file path")
+	at := fs.String("at", "", "RFC3339 wake time")
+	reasonArg := fs.String("reason", "-", `reason text; "-" reads stdin`)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	taskID, err := strconv.ParseUint(strings.TrimSpace(os.Getenv("JARVIS_TASK_ID")), 10, 64)
+	if err != nil || taskID == 0 {
+		return fmt.Errorf("yield-until requires JARVIS_TASK_ID from the Task runner")
+	}
+	runAt, err := time.Parse(time.RFC3339, strings.TrimSpace(*at))
+	if err != nil {
+		return fmt.Errorf("yield-until --at must be RFC3339: %w", err)
+	}
+	reason, err := readContentArg(*reasonArg)
+	if err != nil {
+		return err
+	}
+	_, db, cleanup, err := openDB(*configPath)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	service, err := scheduledtask.NewCRUDService(db)
+	if err != nil {
+		return err
+	}
+	view, err := service.CreateYield(context.Background(), scheduledtask.YieldInput{
+		TaskID: taskID, RunAt: runAt, Reason: reason,
+	})
+	if err != nil {
+		return err
+	}
+	return emit(map[string]any{
+		"scheduled_task_id": view.ID, "wake_at": view.NextRunAt, "reason": strings.TrimSpace(reason),
+	})
 }
 
 func runDeleteScheduledTask(args []string) error {

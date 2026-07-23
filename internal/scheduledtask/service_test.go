@@ -137,6 +137,31 @@ func TestNormalizeInputDefaultsAgentTaskActionType(t *testing.T) {
 	}
 }
 
+func TestNormalizeResumeTaskOnlyAcceptsYieldBinding(t *testing.T) {
+	t.Parallel()
+	runAt := time.Now().Add(time.Hour)
+	subjectType := "task"
+	subjectID := uint64(9)
+	_, _, err := normalizeInput(Input{
+		DispatchKind: "resume_task", SubjectType: &subjectType, SubjectID: &subjectID,
+		Title: "继续任务", Instruction: "重新检查", ScheduleType: "once", RunAt: &runAt,
+	}, time.Now(), time.Local)
+	if err == nil {
+		t.Fatal("public resume_task creation must be rejected")
+	}
+	input, _, err := normalizeInput(Input{
+		DispatchKind: "resume_task", SubjectType: &subjectType, SubjectID: &subjectID,
+		Title: "继续任务", Instruction: "重新检查", ScheduleType: "once", RunAt: &runAt,
+		initialStatus: "binding",
+	}, time.Now(), time.Local)
+	if err != nil {
+		t.Fatalf("yield-bound resume_task rejected: %v", err)
+	}
+	if input.DispatchKind != "resume_task" || input.initialStatus != "binding" {
+		t.Fatalf("normalized resume input = %#v", input)
+	}
+}
+
 func TestTaskInputUsesDirectM5Entry(t *testing.T) {
 	t.Parallel()
 	row := &domain.ScheduledTask{
