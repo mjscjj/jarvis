@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/observability"
 
+	"code.byted.org/middleware/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 )
 
@@ -259,7 +260,7 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 	}
 
 	if s.trigger != nil && in.RelatedGroup && !previous.RelatedGroup {
-		s.triggerScan(previous.ChatID)
+		s.triggerScan(ctx, previous.ChatID)
 	}
 	return s.get(ctx, id)
 }
@@ -267,15 +268,16 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 // triggerScan fires a best-effort immediate scan for a freshly related chat on
 // its own goroutine and context, so a slow lark-cli call never blocks the HTTP
 // response. Failures are logged only; the scan cron cycle is the safety net.
-func (s *GroupBackgroundService) triggerScan(chatID string) {
+func (s *GroupBackgroundService) triggerScan(parent context.Context, chatID string) {
+	detached := observability.Detached(parent)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(detached, 2*time.Minute)
 		defer cancel()
 		if err := s.trigger.ScanChatNow(ctx, chatID); err != nil {
-			log.Printf("background immediate scan chat_id=%s status=error error=%v", chatID, err)
+			hlog.CtxErrorf(ctx, "background immediate scan chat_id=%s status=error error=%+v", chatID, err)
 			return
 		}
-		log.Printf("background immediate scan chat_id=%s status=ok", chatID)
+		hlog.CtxInfof(ctx, "background immediate scan chat_id=%s status=ok", chatID)
 	}()
 }
 

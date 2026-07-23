@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +14,7 @@ import (
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
+	"jarvis/internal/observability"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/taskcreate"
@@ -22,6 +22,7 @@ import (
 	"jarvis/internal/toolcatalog"
 	"jarvis/internal/workrule"
 
+	"code.byted.org/middleware/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 )
 
@@ -145,7 +146,7 @@ func (e *AgentExecutor) runInBackground(taskID uint64, runCtx context.Context, a
 	go func() {
 		defer e.endExecution(taskID, active)
 		if err := run(runCtx); err != nil {
-			log.Printf("background execution task_id=%d: %v", taskID, err)
+			hlog.CtxErrorf(runCtx, "background execution failed task_id=%d error=%+v", taskID, err)
 		}
 	}()
 }
@@ -230,7 +231,7 @@ func (e *AgentExecutor) KickExecute(ctx context.Context, input ExecuteInput) (*E
 	if _, ok := lookupPolicy(task.ActionType); !ok {
 		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
 	}
-	runCtx, active, err := e.beginExecution(context.Background(), task.ID)
+	runCtx, active, err := e.beginExecution(observability.Detached(ctx), task.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +268,7 @@ func (e *AgentExecutor) KickRerun(ctx context.Context, taskID uint64) (*ExecuteR
 	if err != nil {
 		return nil, err
 	}
-	runCtx, active, err := e.beginExecution(context.Background(), task.ID)
+	runCtx, active, err := e.beginExecution(observability.Detached(ctx), task.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +312,7 @@ func (e *AgentExecutor) KickReapply(ctx context.Context, taskID uint64) (*Execut
 	if proposal == nil {
 		return nil, fmt.Errorf("%w: task_id=%d has no approved proposal to re-apply (use rerun)", ErrInvalidTransition, task.ID)
 	}
-	runCtx, active, err := e.beginExecution(context.Background(), task.ID)
+	runCtx, active, err := e.beginExecution(observability.Detached(ctx), task.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +360,7 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 	if err != nil {
 		return err
 	}
-	runCtx, active, err := e.beginExecution(context.Background(), taskID)
+	runCtx, active, err := e.beginExecution(observability.Detached(ctx), taskID)
 	if err != nil {
 		return err
 	}
@@ -394,7 +395,7 @@ func (e *AgentExecutor) KickResumeAfterHuman(ctx context.Context, taskID uint64,
 	if err != nil {
 		return nil, err
 	}
-	runCtx, active, err := e.beginExecution(context.Background(), taskID)
+	runCtx, active, err := e.beginExecution(observability.Detached(ctx), taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +509,10 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		} else {
 			result := codexOut.Propose
 			run.Summary = &result.Summary
-			run.Output, _ = json.Marshal(result)
+			run.Output, err = json.Marshal(result)
+			if err != nil {
+				return nil, fmt.Errorf("encode resumed propose result task_id=%d: %w", task.ID, err)
+			}
 			run.Status = "succeeded"
 			if result.Outcome == "waiting" {
 				e.finishWaitingRun(run, startedAt)
@@ -545,7 +549,10 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		} else {
 			result := codexOut.Result
 			run.Summary = &result.Summary
-			run.Output, _ = json.Marshal(result)
+			run.Output, err = json.Marshal(result)
+			if err != nil {
+				return nil, fmt.Errorf("encode resumed execution result task_id=%d: %w", task.ID, err)
+			}
 			if result.Outcome == "waiting" {
 				e.finishWaitingRun(run, startedAt)
 			} else if result.Outcome == "needs_human" {
@@ -634,7 +641,7 @@ func (e *AgentExecutor) finishNeedsHumanRun(run *domain.ExecutionRun, startedAt 
 // The apply codex call can be slow; the HTTP handler must not block on it. Poll
 // Task status or refresh the list for completion.
 func (e *AgentExecutor) KickApprove(ctx context.Context, taskID uint64, expectedVersion int32) (*ExecuteResult, error) {
-	runCtx, active, err := e.beginExecution(context.Background(), taskID)
+	runCtx, active, err := e.beginExecution(observability.Detached(ctx), taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -1140,12 +1147,17 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 		cause := fmt.Errorf("load M5 propose system prompt: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
+	approvalPolicy, err := e.textStore.Content(ctx, textstore.ApprovalPolicyKey)
+	if err != nil {
+		cause := fmt.Errorf("load M5 approval policy: %w", err)
+		return e.failRun(run, startedAt, cause), nil, cause
+	}
 	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
 	if err != nil {
 		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	prompt, err := buildProposePrompt(systemPrompt, task, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildProposePrompt(systemPrompt, approvalPolicy, task, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1208,11 +1220,6 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	approvalRule, err := e.textStore.Content(ctx, textstore.ApprovalRuleKey)
-	if err != nil {
-		cause := fmt.Errorf("load M5 approval rule: %w", err)
-		return e.failRun(run, startedAt, cause), cause
-	}
 	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
 	if err != nil {
 		cause := fmt.Errorf("load M5 apply system prompt: %w", err)
@@ -1227,7 +1234,7 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, approvalRule, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}

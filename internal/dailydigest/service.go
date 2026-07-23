@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"jarvis/internal/observability"
+
 	"gorm.io/gorm"
 )
 
@@ -325,9 +327,10 @@ func (s *Service) KickGenerateOne(ctx context.Context, scope, scopeID, date stri
 		return nil, err
 	}
 
+	detached := observability.Detached(ctx)
 	go func() {
-		if err := s.runClaimed(context.Background(), scope, scopeID, date, target); err != nil {
-			s.logger.Printf("background digest scope=%s scope_id=%s date=%s error=%v", scope, scopeID, date, err)
+		if err := s.runClaimed(detached, scope, scopeID, date, target); err != nil {
+			s.logger.Printf("logid=%s background digest scope=%s scope_id=%s date=%s error=%+v", observability.LogID(detached), scope, scopeID, date, err)
 		}
 	}()
 	return &KickResult{

@@ -14,6 +14,7 @@ import (
 	"jarvis/internal/domain"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
+	"jarvis/internal/observability"
 )
 
 type fakeExtractor struct {
@@ -69,16 +70,52 @@ func (*fakeExecutionStore) FailStaleExecuting(context.Context, time.Duration, ti
 }
 
 type fakeTaskExecutor struct {
-	calls chan execute.ExecuteInput
-	err   error
+	calls  chan execute.ExecuteInput
+	logIDs chan string
+	err    error
 }
 
-func (f *fakeTaskExecutor) Execute(_ context.Context, input execute.ExecuteInput) (*execute.ExecuteResult, error) {
+func (f *fakeTaskExecutor) Execute(ctx context.Context, input execute.ExecuteInput) (*execute.ExecuteResult, error) {
 	f.calls <- input
+	if f.logIDs != nil {
+		f.logIDs <- observability.LogID(ctx)
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
 	return &execute.ExecuteResult{TaskID: input.TaskID, Status: "done"}, nil
+}
+
+func TestCoordinatorPreservesLogIDIntoM5(t *testing.T) {
+	executor := &fakeTaskExecutor{
+		calls:  make(chan execute.ExecuteInput, 1),
+		logIDs: make(chan string, 1),
+	}
+	coordinator, err := newCoordinator(nil, nil, &fakeExecutionStore{}, executor, pipelineTestOptions())
+	if err != nil {
+		t.Fatalf("newCoordinator() error = %v", err)
+	}
+	runtimeCtx, cancel := context.WithCancel(context.Background())
+	if err := coordinator.Start(runtimeCtx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer func() {
+		cancel()
+		coordinator.Wait()
+	}()
+
+	const requestLogID = "02-request-chain"
+	if err := coordinator.TaskReady(observability.WithLogID(context.Background(), requestLogID), 61, 0); err != nil {
+		t.Fatalf("TaskReady() error = %v", err)
+	}
+	select {
+	case got := <-executor.logIDs:
+		if got != requestLogID {
+			t.Fatalf("M5 LogID = %q, want %q", got, requestLogID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("M5 was not triggered")
+	}
 }
 
 func pipelineTestOptions() Options {

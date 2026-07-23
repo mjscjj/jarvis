@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"testing"
 
 	"jarvis/internal/extract"
 
-	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/cloudwego/hertz/pkg/common/ut"
-	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	hertzconsts "code.byted.org/middleware/hertz/byted/consts"
+	hertzctx "code.byted.org/middleware/hertz/byted/middlewares/server/ctx"
+	"code.byted.org/middleware/hertz/pkg/app/server"
+	"code.byted.org/middleware/hertz/pkg/common/ut"
+	"code.byted.org/middleware/hertz/pkg/protocol/consts"
 )
 
 type fakeTodoReader struct {
@@ -58,10 +61,42 @@ func TestListTodos(t *testing.T) {
 
 func TestListTodosRejectsInvalidQuery(t *testing.T) {
 	h := server.New()
+	h.Use(hertzctx.Ctx(true))
 	h.GET("/api/todos", ListTodos(&fakeTodoReader{}))
 	response := ut.PerformRequest(h.Engine, "GET", "/api/todos?leader_only=maybe", nil).Result()
 	if response.StatusCode() != consts.StatusBadRequest {
 		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	logID := string(response.Header.Peek(hertzconsts.TT_LOGID_HEADER_KEY))
+	if !regexp.MustCompile(`^02[0-9a-f]{51}$`).MatchString(logID) {
+		t.Fatalf("response LogID = %q, want standard ByteDance LogID", logID)
+	}
+	var payload struct {
+		LogID string `json:"logid"`
+	}
+	if err := json.Unmarshal(response.Body(), &payload); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if payload.LogID != logID {
+		t.Fatalf("body LogID = %q, header LogID = %q", payload.LogID, logID)
+	}
+}
+
+func TestHertzReusesInboundLogID(t *testing.T) {
+	h := server.New()
+	h.Use(hertzctx.Ctx(true))
+	h.GET("/api/todos", ListTodos(&fakeTodoReader{}))
+
+	const inbound = "02-inbound-test-logid"
+	response := ut.PerformRequest(
+		h.Engine,
+		"GET",
+		"/api/todos?leader_only=maybe",
+		nil,
+		ut.Header{Key: hertzconsts.TT_LOGID_HEADER_FALLBACK_KEY, Value: inbound},
+	).Result()
+	if got := string(response.Header.Peek(hertzconsts.TT_LOGID_HEADER_KEY)); got != inbound {
+		t.Fatalf("response LogID = %q, want %q", got, inbound)
 	}
 }
 

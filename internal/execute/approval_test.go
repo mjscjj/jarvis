@@ -9,7 +9,6 @@ import (
 
 	"jarvis/internal/domain"
 	"jarvis/internal/taskcreate"
-	"jarvis/internal/textstore"
 
 	"gorm.io/datatypes"
 )
@@ -200,7 +199,7 @@ func TestRunResultPayloadTagsStage(t *testing.T) {
 var errTest = errors.New("group not found")
 
 func TestBuildHumanResumePrompt(t *testing.T) {
-	prompt, err := buildHumanResumePrompt(textstore.DefaultSystemPromptM5, "我已确认授权，请继续", "", testToolCatalog)
+	prompt, err := buildHumanResumePrompt("test M5 system prompt", "我已确认授权，请继续", "", testToolCatalog)
 	if err != nil {
 		t.Fatalf("buildHumanResumePrompt() error = %v", err)
 	}
@@ -228,18 +227,17 @@ func TestRejectionPayload(t *testing.T) {
 	}
 }
 
-// TestBuildProposePrompt verifies the propose prompt allows only pure reads and
-// requires approval before local or external mutations.
+// TestBuildProposePrompt verifies the propose prompt injects the editable policy.
 func TestBuildProposePrompt(t *testing.T) {
 	task := &domain.Task{
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptM5, task, testToolCatalog, "", "", "", nil)
+	prompt, err := buildProposePrompt("test M5 system prompt", "修改文件需要审批。", task, testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
-	for _, want := range []string{"phase=propose", "只有纯只读", "包括本地文件", "proposal", "BEGIN_TASK_CONTEXT"} {
+	for _, want := range []string{"phase=propose", "BEGIN_APPROVAL_POLICY", "修改文件需要审批。", "proposal", "BEGIN_TASK_CONTEXT"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("propose prompt missing %q", want)
 		}
@@ -253,14 +251,14 @@ func TestBuildProposePromptInjectsSharedMemory(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildProposePrompt(textstore.DefaultSystemPromptM5, task, testToolCatalog, "", "", "", nil)
+	empty, err := buildProposePrompt("test M5 system prompt", "只读不审批。", task, testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptM5, task, testToolCatalog, "周报模板固定用飞书文档 xxx", "", "", nil)
+	prompt, err := buildProposePrompt("test M5 system prompt", "只读不审批。", task, testToolCatalog, "周报模板固定用飞书文档 xxx", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
@@ -282,41 +280,29 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
-	prompt, err := buildApplyPrompt(textstore.DefaultSystemPromptM5, task, proposal, textstore.DefaultApprovalRule, testToolCatalog, "", "", "", nil)
+	prompt, err := buildApplyPrompt("test M5 system prompt", task, proposal, testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
-	for _, want := range []string{"phase=apply", "已获批准", "BEGIN_APPROVAL_RULE", "不要再改动方案实质", "本周关键进展如下：AAA", "APPROVED_PROPOSAL", "研发群 chat_id=xyz"} {
+	for _, want := range []string{"phase=apply", "已获批准", "不重新拟稿", "不得重复执行", "本周关键进展如下：AAA", "APPROVED_PROPOSAL", "研发群 chat_id=xyz"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("apply prompt missing %q", want)
 		}
 	}
 }
 
-func TestBuildApplyPromptUsesStoredApprovalRule(t *testing.T) {
+func TestBuildProposePromptRequiresApprovalPolicy(t *testing.T) {
 	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	proposal := &codexProposal{Action: "a", Target: "b", Artifact: "c"}
-	prompt, err := buildApplyPrompt(textstore.DefaultSystemPromptM5, task, proposal, "只允许写入测试文档。", testToolCatalog, "", "", "", nil)
-	if err != nil {
-		t.Fatalf("buildApplyPrompt() error = %v", err)
-	}
-	if !strings.Contains(prompt, "只允许写入测试文档。") {
-		t.Fatalf("apply prompt missing stored approval rule: %s", prompt)
-	}
-	if strings.Contains(prompt, "不要再改动方案实质") {
-		t.Fatalf("apply prompt must not retain the removed hard-coded approval rule: %s", prompt)
+	if _, err := buildProposePrompt("test M5 system prompt", "", task, testToolCatalog, "", "", "", nil); err == nil {
+		t.Fatal("empty approval policy must fail")
 	}
 }
 
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildApplyPrompt(textstore.DefaultSystemPromptM5, task, nil, textstore.DefaultApprovalRule, testToolCatalog, "", "", "", nil); err == nil {
+	if _, err := buildApplyPrompt("test M5 system prompt", task, nil, testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatalf("nil proposal must fail")
-	}
-	proposal := &codexProposal{Action: "a", Target: "b", Artifact: "c"}
-	if _, err := buildApplyPrompt(textstore.DefaultSystemPromptM5, task, proposal, "", testToolCatalog, "", "", "", nil); err == nil {
-		t.Fatalf("empty approval rule must fail")
 	}
 }
 
@@ -333,11 +319,11 @@ func TestInvestigateGoesThroughPropose(t *testing.T) {
 		ID: 21, Title: "查证登录超时", ActionType: "investigate",
 		Plan: datatypes.JSON(`{"steps":["read logs"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptM5, task, testToolCatalog, "", "", "", nil)
+	prompt, err := buildProposePrompt("test M5 system prompt", "所有写操作需要审批。", task, testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt(investigate) error = %v", err)
 	}
-	for _, want := range []string{"phase=propose", "只有纯只读", "包括本地文件", "proposal"} {
+	for _, want := range []string{"phase=propose", "APPROVAL_POLICY", "所有写操作需要审批。", "proposal"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("investigate propose prompt missing %q", want)
 		}

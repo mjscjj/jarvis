@@ -12,9 +12,10 @@ import (
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
+	"jarvis/internal/observability"
 	"jarvis/internal/taskcreate"
 
-	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"code.byted.org/middleware/hertz/pkg/common/hlog"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -148,7 +149,7 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 	view := taskView(&created)
 	if s.notifier != nil {
 		if err := s.notifier.TaskReady(ctx, created.ID, created.Version); err != nil && !errors.Is(err, ErrLifecycleStageDisabled) {
-			hlog.Errorf("notify approved task ready task_id=%d version=%d: %v", created.ID, created.Version, err)
+			hlog.CtxErrorf(ctx, "notify approved task ready failed task_id=%d version=%d error=%+v", created.ID, created.Version, err)
 		}
 	}
 	return &view, nil
@@ -283,7 +284,7 @@ func (s *Service) Supplement(ctx context.Context, input SupplementInput) (*Suppl
 		return nil, err
 	}
 
-	s.reEvaluateAsync(todo.ID, newVersion)
+	s.reEvaluateAsync(ctx, todo.ID, newVersion)
 
 	return &SupplementResult{TodoID: todo.ID, Status: "extracted", Version: newVersion}, nil
 }
@@ -314,16 +315,17 @@ func (s *Service) appendSupplementEvent(ctx context.Context, todoID uint64, vers
 // context (the request context is done once the handler returns) and swallows
 // errors to logs: a failed async re-eval leaves the Todo in extracted, which the
 // scheduled M4 worker will retry.
-func (s *Service) reEvaluateAsync(todoID uint64, expectedVersion int32) {
+func (s *Service) reEvaluateAsync(parent context.Context, todoID uint64, expectedVersion int32) {
+	detached := observability.Detached(parent)
 	go func() {
-		ctx := context.Background()
+		ctx := detached
 		if s.notifier != nil {
 			err := s.notifier.TodoReady(ctx, todoID, expectedVersion)
 			switch {
 			case err == nil:
 				return
 			case !errors.Is(err, ErrLifecycleStageDisabled):
-				hlog.Errorf("notify supplemented todo ready todo_id=%d version=%d: %v", todoID, expectedVersion, err)
+				hlog.CtxErrorf(ctx, "notify supplemented todo ready failed todo_id=%d version=%d error=%+v", todoID, expectedVersion, err)
 				return
 			}
 		}
@@ -332,7 +334,7 @@ func (s *Service) reEvaluateAsync(todoID uint64, expectedVersion int32) {
 		}
 		var todo domain.Todo
 		if err := s.db.WithContext(ctx).First(&todo, todoID).Error; err != nil {
-			hlog.Errorf("supplement re-eval load todo_id=%d: %v", todoID, err)
+			hlog.CtxErrorf(ctx, "supplement re-eval load failed todo_id=%d error=%+v", todoID, err)
 			return
 		}
 		if todo.Status != "extracted" || todo.Version != expectedVersion {
@@ -341,25 +343,25 @@ func (s *Service) reEvaluateAsync(todoID uint64, expectedVersion int32) {
 		}
 		evalInput, err := s.evaluator.Evaluate(ctx, &todo)
 		if err != nil {
-			hlog.Errorf("supplement re-eval evaluate todo_id=%d: %v", todoID, err)
+			hlog.CtxErrorf(ctx, "supplement re-eval evaluate failed todo_id=%d error=%+v", todoID, err)
 			return
 		}
 		if evalInput == nil {
-			hlog.Errorf("supplement re-eval evaluate todo_id=%d: nil result", todoID)
+			hlog.CtxErrorf(ctx, "supplement re-eval evaluate failed todo_id=%d error=nil_result", todoID)
 			return
 		}
 		result, err := s.writer.Apply(ctx, *evalInput)
 		if err != nil {
-			hlog.Errorf("supplement re-eval apply todo_id=%d: %v", todoID, err)
+			hlog.CtxErrorf(ctx, "supplement re-eval apply failed todo_id=%d error=%+v", todoID, err)
 			return
 		}
 		if result == nil {
-			hlog.Errorf("supplement re-eval apply todo_id=%d: nil result", todoID)
+			hlog.CtxErrorf(ctx, "supplement re-eval apply failed todo_id=%d error=nil_result", todoID)
 			return
 		}
 		if result.TaskID != nil && s.notifier != nil {
 			if err := s.notifier.TaskReady(ctx, *result.TaskID, result.TaskVersion); err != nil && !errors.Is(err, ErrLifecycleStageDisabled) {
-				hlog.Errorf("notify supplemented task ready task_id=%d version=%d: %v", *result.TaskID, result.TaskVersion, err)
+				hlog.CtxErrorf(ctx, "notify supplemented task ready failed task_id=%d version=%d error=%+v", *result.TaskID, result.TaskVersion, err)
 			}
 		}
 	}()

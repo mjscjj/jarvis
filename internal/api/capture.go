@@ -7,8 +7,8 @@ import (
 
 	"jarvis/internal/capture"
 
-	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"code.byted.org/middleware/hertz/pkg/app"
+	"code.byted.org/middleware/hertz/pkg/protocol/consts"
 )
 
 // 调试面板"手动触发"：直接复用 M1 capture service 的采集入口，供本地手动跑一轮

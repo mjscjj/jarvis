@@ -7,8 +7,8 @@ import (
 
 	"jarvis/internal/sharedmem"
 
-	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"code.byted.org/middleware/hertz/pkg/app"
+	"code.byted.org/middleware/hertz/pkg/protocol/consts"
 )
 
 // sharedMemoryUpdatedBy 标记后台人工编辑的来源，与 Agent 自动更新区分。

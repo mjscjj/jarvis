@@ -19,6 +19,7 @@ import (
 	"jarvis/internal/domain"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
+	"jarvis/internal/observability"
 )
 
 const queueCapacity = 1024
@@ -52,18 +53,21 @@ type Options struct {
 type chatWork struct {
 	ChatID string
 	Marker string
+	LogID  string
 	All    bool
 }
 
 type todoWork struct {
 	TodoID  uint64
 	Version int32
+	LogID   string
 	All     bool
 }
 
 type taskWork struct {
 	TaskID  uint64
 	Version int32
+	LogID   string
 }
 
 // Coordinator owns every automatic M3/M4/M5 invocation, so real-time wake-ups
@@ -197,7 +201,8 @@ func (c *Coordinator) ChatScanned(ctx context.Context, result capture.ChatScanRe
 	if result.LastMessageID != nil && strings.TrimSpace(*result.LastMessageID) != "" {
 		marker += ":" + *result.LastMessageID
 	}
-	return c.chats.enqueue(ctx, chatWork{ChatID: result.ChatID, Marker: marker})
+	ctx = observability.EnsureLogID(ctx)
+	return c.chats.enqueue(ctx, chatWork{ChatID: result.ChatID, Marker: marker, LogID: observability.LogID(ctx)})
 }
 
 // TodoReady and TaskReady implement decide.LifecycleNotifier.
@@ -208,7 +213,8 @@ func (c *Coordinator) TodoReady(ctx context.Context, todoID uint64, version int3
 	if todoID == 0 || version < 0 {
 		return fmt.Errorf("pipeline Todo ID/version is invalid")
 	}
-	return c.todos.enqueue(ctx, todoWork{TodoID: todoID, Version: version})
+	ctx = observability.EnsureLogID(ctx)
+	return c.todos.enqueue(ctx, todoWork{TodoID: todoID, Version: version, LogID: observability.LogID(ctx)})
 }
 
 func (c *Coordinator) TaskReady(ctx context.Context, taskID uint64, version int32) error {
@@ -218,21 +224,24 @@ func (c *Coordinator) TaskReady(ctx context.Context, taskID uint64, version int3
 	if taskID == 0 || version < 0 {
 		return fmt.Errorf("pipeline Task ID/version is invalid")
 	}
-	return c.tasks.enqueue(ctx, taskWork{TaskID: taskID, Version: version})
+	ctx = observability.EnsureLogID(ctx)
+	return c.tasks.enqueue(ctx, taskWork{TaskID: taskID, Version: version, LogID: observability.LogID(ctx)})
 }
 
 func (c *Coordinator) ReconcileExtract(ctx context.Context) error {
 	if c.extractor == nil {
 		return nil
 	}
-	return c.chats.enqueue(ctx, chatWork{All: true})
+	ctx = observability.EnsureLogID(ctx)
+	return c.chats.enqueue(ctx, chatWork{All: true, LogID: observability.LogID(ctx)})
 }
 
 func (c *Coordinator) ReconcileDecide(ctx context.Context) error {
 	if c.decider == nil {
 		return nil
 	}
-	return c.todos.enqueue(ctx, todoWork{All: true})
+	ctx = observability.EnsureLogID(ctx)
+	return c.todos.enqueue(ctx, todoWork{All: true, LogID: observability.LogID(ctx)})
 }
 
 func (c *Coordinator) ReconcileExecute(ctx context.Context) error {
@@ -244,7 +253,7 @@ func (c *Coordinator) ReconcileExecute(ctx context.Context) error {
 		return err
 	}
 	if failed > 0 {
-		c.opts.Logger.Printf("stage=m5 trigger=reconcile stale_failed=%d", failed)
+		c.logf(ctx, "stage=m5 trigger=reconcile stale_failed=%d", failed)
 	}
 	return c.enqueuePendingTasks(ctx)
 }
@@ -273,33 +282,34 @@ func (c *Coordinator) runChats(ctx context.Context) {
 }
 
 func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
+	ctx = observability.WithLogID(ctx, work.LogID)
 	if work.All {
 		for {
 			stats, err := c.extractor.ExtractOnce(ctx)
 			if err != nil {
-				c.opts.Logger.Printf("stage=m3 trigger=reconcile status=error error=%v", err)
+				c.logf(ctx, "stage=m3 trigger=reconcile status=error error=%+v", err)
 				return
 			}
 			if stats.ChatsLoaded == 0 {
 				break
 			}
-			c.opts.Logger.Printf("stage=m3 trigger=reconcile status=ok chats=%d created=%d updated=%d", stats.ChatsProcessed, stats.Created, stats.Updated)
+			c.logf(ctx, "stage=m3 trigger=reconcile status=ok chats=%d created=%d updated=%d", stats.ChatsProcessed, stats.Created, stats.Updated)
 		}
 		if err := c.ReconcileDecide(ctx); err != nil {
-			c.opts.Logger.Printf("stage=m3 trigger=reconcile notify=m4 status=error error=%v", err)
+			c.logf(ctx, "stage=m3 trigger=reconcile notify=m4 status=error error=%+v", err)
 		}
 		return
 	}
 	for {
 		stats, todos, err := c.extractor.ExtractChat(ctx, work.ChatID)
 		if err != nil {
-			c.opts.Logger.Printf("stage=m3 trigger=realtime chat_id=%s status=error error=%v", work.ChatID, err)
+			c.logf(ctx, "stage=m3 trigger=realtime chat_id=%s status=error error=%+v", work.ChatID, err)
 			return
 		}
 		if stats.ChatsLoaded == 0 {
 			return
 		}
-		c.opts.Logger.Printf("stage=m3 trigger=realtime chat_id=%s status=ok created=%d updated=%d", work.ChatID, stats.Created, stats.Updated)
+		c.logf(ctx, "stage=m3 trigger=realtime chat_id=%s status=ok created=%d updated=%d", work.ChatID, stats.Created, stats.Updated)
 		if c.decider == nil {
 			continue
 		}
@@ -308,7 +318,7 @@ func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 				continue
 			}
 			if err := c.TodoReady(ctx, todo.ID, todo.Version); err != nil {
-				c.opts.Logger.Printf("stage=m3 trigger=realtime notify=m4 todo_id=%d status=error error=%v", todo.ID, err)
+				c.logf(ctx, "stage=m3 trigger=realtime notify=m4 todo_id=%d status=error error=%+v", todo.ID, err)
 			}
 		}
 	}
@@ -328,20 +338,21 @@ func (c *Coordinator) runTodos(ctx context.Context) {
 }
 
 func (c *Coordinator) processTodo(ctx context.Context, work todoWork) {
+	ctx = observability.WithLogID(ctx, work.LogID)
 	if work.All {
 		for {
 			stats, err := c.decider.EvaluateOnce(ctx)
 			if err != nil {
-				c.opts.Logger.Printf("stage=m4 trigger=reconcile status=error error=%v", err)
+				c.logf(ctx, "stage=m4 trigger=reconcile status=error error=%+v", err)
 				return
 			}
 			if stats.Loaded == 0 {
 				break
 			}
-			c.opts.Logger.Printf("stage=m4 trigger=reconcile status=ok evaluated=%d auto=%d need_info=%d need_decision=%d dropped=%d", stats.Evaluated, stats.Auto, stats.NeedInfo, stats.NeedDecision, stats.Dropped)
+			c.logf(ctx, "stage=m4 trigger=reconcile status=ok evaluated=%d auto=%d need_info=%d need_decision=%d dropped=%d", stats.Evaluated, stats.Auto, stats.NeedInfo, stats.NeedDecision, stats.Dropped)
 			if stats.Auto > 0 {
 				if err := c.ReconcileExecute(ctx); err != nil {
-					c.opts.Logger.Printf("stage=m4 trigger=reconcile notify=m5 status=error error=%v", err)
+					c.logf(ctx, "stage=m4 trigger=reconcile notify=m5 status=error error=%+v", err)
 				}
 			}
 		}
@@ -350,16 +361,16 @@ func (c *Coordinator) processTodo(ctx context.Context, work todoWork) {
 	result, err := c.decider.EvaluateTodo(ctx, work.TodoID, work.Version)
 	if err != nil {
 		if errors.Is(err, decide.ErrVersionConflict) || errors.Is(err, decide.ErrInvalidTransition) || errors.Is(err, decide.ErrTodoNotFound) {
-			c.opts.Logger.Printf("stage=m4 trigger=realtime todo_id=%d version=%d status=stale", work.TodoID, work.Version)
+			c.logf(ctx, "stage=m4 trigger=realtime todo_id=%d version=%d status=stale", work.TodoID, work.Version)
 			return
 		}
-		c.opts.Logger.Printf("stage=m4 trigger=realtime todo_id=%d version=%d status=error error=%v", work.TodoID, work.Version, err)
+		c.logf(ctx, "stage=m4 trigger=realtime todo_id=%d version=%d status=error error=%+v", work.TodoID, work.Version, err)
 		return
 	}
-	c.opts.Logger.Printf("stage=m4 trigger=realtime todo_id=%d status=ok route=%s", result.TodoID, result.Status)
+	c.logf(ctx, "stage=m4 trigger=realtime todo_id=%d status=ok route=%s", result.TodoID, result.Status)
 	if result.TaskID != nil && c.executor != nil {
 		if err := c.TaskReady(ctx, *result.TaskID, result.TaskVersion); err != nil {
-			c.opts.Logger.Printf("stage=m4 trigger=realtime notify=m5 task_id=%d status=error error=%v", *result.TaskID, err)
+			c.logf(ctx, "stage=m4 trigger=realtime notify=m5 task_id=%d status=error error=%+v", *result.TaskID, err)
 		}
 	}
 }
@@ -372,20 +383,26 @@ func (c *Coordinator) runTasks(ctx context.Context) {
 			return
 		case work := <-c.tasks.items:
 			c.tasks.received(work)
-			result, err := c.executor.Execute(ctx, execute.ExecuteInput{TaskID: work.TaskID})
+			workCtx := observability.WithLogID(ctx, work.LogID)
+			result, err := c.executor.Execute(workCtx, execute.ExecuteInput{TaskID: work.TaskID})
 			if err != nil {
 				if errors.Is(err, execute.ErrVersionConflict) || errors.Is(err, execute.ErrInvalidTransition) || errors.Is(err, execute.ErrTaskNotFound) {
-					c.opts.Logger.Printf("stage=m5 trigger=queue task_id=%d version=%d status=stale", work.TaskID, work.Version)
+					c.logf(workCtx, "stage=m5 trigger=queue task_id=%d version=%d status=stale", work.TaskID, work.Version)
 				} else {
-					c.opts.Logger.Printf("stage=m5 trigger=queue task_id=%d version=%d status=error error=%v", work.TaskID, work.Version, err)
+					c.logf(workCtx, "stage=m5 trigger=queue task_id=%d version=%d status=error error=%+v", work.TaskID, work.Version, err)
 				}
 			} else if result == nil {
-				c.opts.Logger.Printf("stage=m5 trigger=queue task_id=%d version=%d status=error error=nil_result", work.TaskID, work.Version)
+				c.logf(workCtx, "stage=m5 trigger=queue task_id=%d version=%d status=error error=nil_result", work.TaskID, work.Version)
 			} else {
-				c.opts.Logger.Printf("stage=m5 trigger=queue task_id=%d status=ok result=%s", work.TaskID, result.Status)
+				c.logf(workCtx, "stage=m5 trigger=queue task_id=%d status=ok result=%s", work.TaskID, result.Status)
 			}
 		}
 	}
+}
+
+func (c *Coordinator) logf(ctx context.Context, format string, args ...any) {
+	ctx = observability.EnsureLogID(ctx)
+	c.opts.Logger.Printf("logid=%s "+format, append([]any{observability.LogID(ctx)}, args...)...)
 }
 
 func (c *Coordinator) enqueuePendingTasks(ctx context.Context) error {

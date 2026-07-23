@@ -146,7 +146,7 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 			if err != nil {
 				return err
 			}
-			createdTask, err = createAutoTask(tx, s.now().UTC(), &todo, input.ProposedPlan, background)
+			createdTask, err = createAutoTask(ctx, tx, s.now().UTC(), &todo, input.ProposedPlan, background)
 			if err != nil {
 				return err
 			}
@@ -237,7 +237,7 @@ func validateEvaluationInput(input EvaluationInput) error {
 // transaction. It mirrors Service.Approve's task creation but records the system
 // (m4_auto) as the confirmer instead of a human. The plan is Codex's
 // proposed_plan serialized as the confirmed plan JSON.
-func createAutoTask(tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDraft, background json.RawMessage) (*domain.Task, error) {
+func createAutoTask(ctx context.Context, tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDraft, background json.RawMessage) (*domain.Task, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("%w: auto task todo_id=%d has no proposed plan", ErrInvalidInput, todo.ID)
 	}
@@ -262,7 +262,7 @@ func createAutoTask(tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDra
 		return nil, err
 	}
 	todoID := todo.ID
-	task, err := factory.CreateWithDB(context.Background(), tx, taskcreate.Input{
+	task, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
 		TodoID: &todoID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
 		Background: background, Plan: planJSON, ConfirmedBy: "m4_auto", ConfirmedAt: &now,
 		ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todoID,

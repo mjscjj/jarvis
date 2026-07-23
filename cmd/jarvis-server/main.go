@@ -18,6 +18,7 @@ import (
 	"jarvis/internal/capture"
 	"jarvis/internal/chat"
 	"jarvis/internal/config"
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/dailydigest"
 	"jarvis/internal/decide"
 	"jarvis/internal/domain"
@@ -42,9 +43,10 @@ import (
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
 
-	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"code.byted.org/middleware/hertz/byted"
+	"code.byted.org/middleware/hertz/pkg/app"
+	"code.byted.org/middleware/hertz/pkg/app/server"
+	"code.byted.org/middleware/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 )
 
@@ -67,6 +69,7 @@ func main() {
 	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
 	meetingCaptureOnce := flag.Bool("meeting-capture-once", false, "执行一次已结束会议妙记采集，成功后退出")
 	flag.Parse()
+	byted.Init()
 	actionCount := 0
 	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P, *meetingCaptureOnce} {
 		if selected {
@@ -98,12 +101,13 @@ func main() {
 	if err := store.Migrate(db); err != nil {
 		hlog.Fatalf("migrate mysql failed: %v", err)
 	}
-	textStorageService, err := textstore.NewService(db)
+	configPathAbsolute, err := filepath.Abs(*configPath)
 	if err != nil {
-		hlog.Fatalf("initialize text storage service failed: %v", err)
+		hlog.Fatalf("resolve config path failed: %v", err)
 	}
-	if err := textStorageService.SeedDefaults(context.Background()); err != nil {
-		hlog.Fatalf("seed text storage defaults failed: %v", err)
+	textFileService, err := textstore.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "prompts"))
+	if err != nil {
+		hlog.Fatalf("initialize text file service failed: %v", err)
 	}
 	if *migrateOnly {
 		hlog.Infof("mysql schema migration completed")
@@ -168,7 +172,7 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize decision store failed: %v", err)
 		}
-		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textStorageService)
+		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textFileService)
 		if err != nil {
 			hlog.Fatalf("initialize decision evaluator failed: %v", err)
 		}
@@ -278,7 +282,7 @@ func main() {
 	// Build an evaluator + store so the confirmation service can re-run M4
 	// asynchronously after a need_info supplement, independent of the decision
 	// cron being enabled. Mirrors the worker's evaluator selection.
-	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textStorageService)
+	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textFileService)
 	if err != nil {
 		hlog.Fatalf("initialize supplement evaluator failed: %v", err)
 	}
@@ -298,7 +302,11 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize MVP Task service failed: %v", err)
 	}
-	taskFactory, err := taskcreate.NewFactory(db)
+	contextAssembler, err := contextsnap.NewAssembler(db, cfg.Extract.PrincipalOpenID)
+	if err != nil {
+		hlog.Fatalf("initialize common context snapshot assembler failed: %v", err)
+	}
+	taskFactory, err := taskcreate.NewFactory(db, contextAssembler)
 	if err != nil {
 		hlog.Fatalf("initialize Task factory failed: %v", err)
 	}
@@ -314,7 +322,7 @@ func main() {
 		hlog.Fatalf("initialize execute runner failed: %v", err)
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
-		db, taskService, codexRunner, sharedMemoryService, workRuleService, textStorageService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		db, taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
 		hlog.Fatalf("initialize agent executor failed: %v", err)
@@ -483,7 +491,7 @@ func main() {
 			AgentToolCatalog: agentToolCatalog,
 			WorkRules:        workRuleService,
 			Skills:           skillService,
-			SystemPrompts:    textStorageService,
+			SystemPrompts:    textFileService,
 		})
 		if err != nil {
 			hlog.Fatalf("initialize extraction worker failed: %v", err)
@@ -749,7 +757,7 @@ func main() {
 		}
 	}
 
-	h := server.New(
+	h := byted.Default(
 		server.WithHostPorts(cfg.Server.Addr),
 	)
 	runtimeSettingsService, err := config.NewRuntimeSettingsService(*configPath, cfg)
@@ -763,7 +771,7 @@ func main() {
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		SharedMemory:   sharedMemoryService,
 		WorkRules:      workRuleService,
-		TextStorage:    textStorageService,
+		TextFiles:      textFileService,
 		ScheduledTasks: scheduledTaskService,
 		Skills:         skillService,
 		RelationFacts:  relationFactService,

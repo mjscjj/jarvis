@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"jarvis/internal/observability"
+
 	"github.com/robfig/cron/v3"
 )
 
@@ -25,14 +27,15 @@ func StartScheduler(ctx context.Context, worker *Worker, spec string, logger *lo
 		cron.Recover(cronLogger),
 	))
 	if _, err := scheduler.AddFunc(spec, func() {
-		stats, err := worker.MemorizeOnce(ctx)
+		jobCtx := observability.EnsureLogID(ctx)
+		stats, err := worker.MemorizeOnce(jobCtx)
 		if err != nil {
-			logger.Printf("job=memorize status=error error=%v", err)
+			logger.Printf("logid=%s job=memorize status=error error=%+v", observability.LogID(jobCtx), err)
 			return
 		}
 		logger.Printf(
-			"job=memorize status=ok loaded=%d processed=%d memorized=%d skipped=%d windows=%d",
-			stats.Loaded, stats.Processed, stats.MemorizedMessages, stats.SkippedMessages, stats.Windows,
+			"logid=%s job=memorize status=ok loaded=%d processed=%d memorized=%d skipped=%d windows=%d",
+			observability.LogID(jobCtx), stats.Loaded, stats.Processed, stats.MemorizedMessages, stats.SkippedMessages, stats.Windows,
 		)
 	}); err != nil {
 		return nil, fmt.Errorf("register memory job schedule=%q: %w", spec, err)

@@ -6,6 +6,8 @@ import (
 	"log"
 	"time"
 
+	"jarvis/internal/observability"
+
 	"github.com/robfig/cron/v3"
 )
 
@@ -32,13 +34,13 @@ func StartScheduler(ctx context.Context, service *Service, spec string, logger *
 		cron.Recover(cronLogger),
 	))
 	if _, err := scheduler.AddFunc(spec, func() {
-		runScheduledPersonalDigest(ctx, service, logger, "cron")
+		runScheduledPersonalDigest(observability.EnsureLogID(ctx), service, logger, "cron")
 	}); err != nil {
 		return nil, fmt.Errorf("register daily digest job schedule=%q: %w", spec, err)
 	}
 	scheduler.Start()
 	if catchUpDue(schedule, service.now().In(service.location), service.location) {
-		go runScheduledPersonalDigest(ctx, service, logger, "startup_catch_up")
+		go runScheduledPersonalDigest(observability.EnsureLogID(ctx), service, logger, "startup_catch_up")
 	}
 	return scheduler, nil
 }
@@ -47,14 +49,14 @@ func runScheduledPersonalDigest(ctx context.Context, service *Service, logger *l
 	date := service.today()
 	generated, err := service.GeneratePersonalScheduled(ctx, date)
 	if err != nil {
-		logger.Printf("job=personal_daily_digest trigger=%s status=error date=%s error=%v", reason, date, err)
+		logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=error date=%s error=%+v", observability.LogID(ctx), reason, date, err)
 		return
 	}
 	if !generated {
-		logger.Printf("job=personal_daily_digest trigger=%s status=skipped date=%s reason=already_done_or_generating", reason, date)
+		logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=skipped date=%s reason=already_done_or_generating", observability.LogID(ctx), reason, date)
 		return
 	}
-	logger.Printf("job=personal_daily_digest trigger=%s status=ok date=%s", reason, date)
+	logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=ok date=%s", observability.LogID(ctx), reason, date)
 }
 
 func catchUpDue(schedule cron.Schedule, now time.Time, location *time.Location) bool {

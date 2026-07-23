@@ -7,13 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/observability"
 	"jarvis/internal/taskcreate"
 
+	"code.byted.org/middleware/hertz/pkg/common/hlog"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -320,7 +321,7 @@ func (s *Service) Trigger(ctx context.Context, id uint64) (*View, error) {
 		return nil, err
 	}
 	occurrenceKey := "manual:" + now.Format(time.RFC3339Nano)
-	if err := s.dispatch(context.Background(), row, occurrenceKey); err != nil {
+	if err := s.dispatch(observability.Detached(ctx), row, occurrenceKey); err != nil {
 		return nil, err
 	}
 	return s.Get(ctx, id)
@@ -412,6 +413,7 @@ func (s *Service) claimDue(ctx context.Context, now time.Time) ([]domain.Schedul
 }
 
 func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occurrenceKey string) error {
+	ctx = observability.Detached(ctx)
 	if row == nil || row.ID == 0 {
 		return fmt.Errorf("scheduled task dispatch row is invalid")
 	}
@@ -420,34 +422,36 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 	}
 	if row.DispatchKind != "create_task" {
 		err := fmt.Errorf("scheduled task id=%d has unknown dispatch_kind=%q", row.ID, row.DispatchKind)
-		s.fail(context.Background(), row.ID, err)
+		s.fail(ctx, row.ID, err)
 		return err
 	}
 	input, err := taskInput(row, occurrenceKey)
 	if err != nil {
-		s.fail(context.Background(), row.ID, err)
+		s.fail(ctx, row.ID, err)
 		return err
 	}
 	task, err := s.submitter.Submit(ctx, input)
 	if err != nil {
 		if task != nil {
-			_ = s.db.WithContext(context.Background()).Model(&domain.ScheduledTask{}).
-				Where("id = ?", row.ID).Update("last_task_id", task.ID).Error
+			if updateErr := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+				Where("id = ?", row.ID).Update("last_task_id", task.ID).Error; updateErr != nil {
+				hlog.CtxErrorf(ctx, "scheduled task partial submission audit failed id=%d task_id=%d update_error=%+v original_error=%+v", row.ID, task.ID, updateErr, err)
+			}
 		}
-		s.fail(context.Background(), row.ID, err)
+		s.fail(ctx, row.ID, err)
 		return err
 	}
 	finishedAt := s.now().UTC()
 	finalStatus := finalTaskStatus(row.ScheduleType)
 	result := fmt.Sprintf("已创建并提交 Task #%d；实际执行结果以该 Task 为准", task.ID)
-	update := s.db.WithContext(context.Background()).Model(&domain.ScheduledTask{}).
+	update := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 		Where("id = ? AND status = ?", row.ID, "running").
 		Updates(map[string]any{
 			"status": finalStatus, "last_run_status": "done", "last_result": result,
 			"last_task_id": task.ID, "last_error_detail": nil, "last_finished_at": finishedAt,
 		})
 	if update.Error != nil {
-		s.fail(context.Background(), row.ID, fmt.Errorf("store scheduled task trigger result: %w", update.Error))
+		s.fail(ctx, row.ID, fmt.Errorf("store scheduled task trigger result: %w", update.Error))
 		return update.Error
 	}
 	return nil
@@ -456,12 +460,12 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 func (s *Service) dispatchResume(ctx context.Context, row *domain.ScheduledTask) error {
 	if s.resumer == nil {
 		err := fmt.Errorf("scheduled task Task resumer is not configured")
-		s.fail(context.Background(), row.ID, err)
+		s.fail(ctx, row.ID, err)
 		return err
 	}
 	if row.SubjectType == nil || *row.SubjectType != "task" || row.SubjectID == nil || *row.SubjectID == 0 || row.SourceRunID == nil || *row.SourceRunID == 0 {
 		err := fmt.Errorf("resume scheduled task id=%d is not bound to a Task and source run", row.ID)
-		s.fail(context.Background(), row.ID, err)
+		s.fail(ctx, row.ID, err)
 		return err
 	}
 	var payload struct {
@@ -469,22 +473,22 @@ func (s *Service) dispatchResume(ctx context.Context, row *domain.ScheduledTask)
 	}
 	if err := json.Unmarshal(row.DispatchPayload, &payload); err != nil {
 		cause := fmt.Errorf("decode resume scheduled task id=%d payload: %w", row.ID, err)
-		s.fail(context.Background(), row.ID, cause)
+		s.fail(ctx, row.ID, cause)
 		return cause
 	}
 	payload.Reason = strings.TrimSpace(payload.Reason)
 	if payload.Reason == "" {
 		err := fmt.Errorf("resume scheduled task id=%d reason is blank", row.ID)
-		s.fail(context.Background(), row.ID, err)
+		s.fail(ctx, row.ID, err)
 		return err
 	}
 	if err := s.resumer.ResumeTask(ctx, *row.SubjectID, *row.SourceRunID, payload.Reason); err != nil {
-		s.fail(context.Background(), row.ID, err)
+		s.fail(ctx, row.ID, err)
 		return err
 	}
 	finishedAt := s.now().UTC()
 	result := fmt.Sprintf("已恢复 Task #%d 的 Codex Session", *row.SubjectID)
-	update := s.db.WithContext(context.Background()).Model(&domain.ScheduledTask{}).
+	update := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 		Where("id = ? AND status = ?", row.ID, "running").
 		Updates(map[string]any{
 			"status": "completed", "last_run_status": "done", "last_result": result,
@@ -526,7 +530,7 @@ func (s *Service) fail(ctx context.Context, id uint64, cause error) {
 	finishedAt := s.now().UTC()
 	row, loadErr := s.load(ctx, id)
 	if loadErr != nil {
-		log.Printf("scheduled task id=%d load before failure update error=%v original_error=%v", id, loadErr, cause)
+		hlog.CtxErrorf(ctx, "scheduled task failure persistence failed id=%d load_error=%+v original_error=%+v", id, loadErr, cause)
 		return
 	}
 	if err := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
@@ -535,7 +539,7 @@ func (s *Service) fail(ctx context.Context, id uint64, cause error) {
 			"status": finalTaskStatus(row.ScheduleType), "last_run_status": "failed",
 			"last_error_detail": cause.Error(), "last_finished_at": finishedAt,
 		}).Error; err != nil {
-		log.Printf("scheduled task id=%d store failure status error=%v original_error=%v", id, err, cause)
+		hlog.CtxErrorf(ctx, "scheduled task failure persistence failed id=%d store_error=%+v original_error=%+v", id, err, cause)
 	}
 }
 

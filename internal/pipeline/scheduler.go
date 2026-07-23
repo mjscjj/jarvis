@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"jarvis/internal/observability"
+
 	"github.com/robfig/cron/v3"
 )
 
@@ -44,11 +46,12 @@ func StartScheduler(ctx context.Context, coordinator *Coordinator, cfg ScheduleC
 			return nil, fmt.Errorf("pipeline schedule %s is empty", job.name)
 		}
 		if _, err := scheduler.AddFunc(job.spec, func() {
-			if err := job.run(ctx); err != nil {
-				logger.Printf("job=%s status=error error=%v", job.name, err)
+			jobCtx := observability.EnsureLogID(ctx)
+			if err := job.run(jobCtx); err != nil {
+				logger.Printf("logid=%s job=%s status=error error=%+v", observability.LogID(jobCtx), job.name, err)
 				return
 			}
-			logger.Printf("job=%s status=queued", job.name)
+			logger.Printf("logid=%s job=%s status=queued", observability.LogID(jobCtx), job.name)
 		}); err != nil {
 			return nil, fmt.Errorf("register pipeline job %s schedule=%q: %w", job.name, job.spec, err)
 		}
