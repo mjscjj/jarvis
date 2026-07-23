@@ -101,10 +101,32 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(
-		&domain.PrincipalProfile{}, &domain.Project{}, &domain.ManagedResource{}, &domain.ProjectEvent{},
-	); err != nil {
-		t.Fatalf("migrate sqlite: %v", err)
+	for _, statement := range []string{
+		`CREATE TABLE principal_profile (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, open_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+			department TEXT, title TEXT, background TEXT, preferences TEXT,
+			leader_open_id TEXT, leader_name TEXT, created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE project (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, name TEXT NOT NULL, role TEXT NOT NULL,
+			status TEXT NOT NULL, priority INTEGER NOT NULL, description TEXT, repos JSON,
+			tech_stack JSON, key_decisions JSON, timeline JSON, notes TEXT,
+			mem0_synced_at DATETIME, created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE managed_resource (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, resource_type TEXT NOT NULL,
+			url TEXT, description TEXT, person_id INTEGER, project_id INTEGER,
+			link_principal INTEGER NOT NULL, is_active INTEGER NOT NULL,
+			created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE project_event (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL,
+			description TEXT NOT NULL, occurred_at DATETIME NOT NULL, created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create sqlite table: %v", err)
+		}
 	}
 	project := domain.Project{Name: "Jarvis", Role: "owner", Status: "active", Priority: 1}
 	if err := db.Create(&project).Error; err != nil {

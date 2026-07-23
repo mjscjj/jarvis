@@ -26,7 +26,7 @@ func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatc
 		Participants:    snapshotParticipants(unit.Participants),
 		Resources:       snapshotResources(unit.Resources),
 		OpenTodos:       snapshotOpenTodos(batch.OpenTodos),
-		OtherProjects:   snapshotOtherProjects(batch.OtherProjects),
+		OtherProjects:   snapshotOtherProjects(batch.OtherProjects, projectID),
 		Memories:        memories,
 	}
 	if snapshot.Memories == nil {
@@ -160,14 +160,17 @@ func snapshotOpenTodos(todos []OpenTodoContext) []contextsnap.OpenTodo {
 	return result
 }
 
-func snapshotOtherProjects(projects []OtherProjectContext) []contextsnap.ProjectBrief {
-	result := make([]contextsnap.ProjectBrief, len(projects))
+func snapshotOtherProjects(projects []OtherProjectContext, selectedID *uint64) []contextsnap.ProjectBrief {
+	result := make([]contextsnap.ProjectBrief, 0, len(projects))
 	for i := range projects {
-		result[i] = contextsnap.ProjectBrief{
+		if selectedID != nil && projects[i].ID == *selectedID {
+			continue
+		}
+		result = append(result, contextsnap.ProjectBrief{
 			ID: projects[i].ID, Code: nonEmptyPtr(projects[i].Code), Name: projects[i].Name,
 			Role: projects[i].Role, Status: projects[i].Status, Priority: projects[i].Priority,
 			Description: nonEmptyPtr(projects[i].Description),
-		}
+		})
 	}
 	return result
 }
