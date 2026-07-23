@@ -65,4 +65,4 @@ Jarvis 为模型提供一批**只读决策工具**（`cmd/jarvis-tools`，输出
 - 代码风格 fail-fast：暴露问题而非掩盖，尤其单测；不乱加兜底 fallback。
 - 展示列表优先行内编辑，见 `[.cursor/rules/list-inline-edit.mdc](.cursor/rules/list-inline-edit.mdc)`。
 - 写组件/代码前优先复用已有官方包和仓库内已有实现。
-
+- 构建或重启主服务必须执行 `./scripts/rebuild-server.sh`；禁止裸 `go build` 覆盖 `bin/jarvis-server` 后直接 `launchctl kickstart`，否则会破坏 macOS TCC 稳定签名。

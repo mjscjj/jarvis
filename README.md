@@ -227,7 +227,7 @@ launchctl print gui/$UID_/com.bytedance.jarvis.server
 tail -f var/log/jarvis-server.log var/log/jarvis-server.error.log
 ```
 
-主进程用证书 **`Jarvis Local`** + identifier **`com.bytedance.jarvis.server`** 签名，避免每次 rebuild 因 adhoc 指纹变化反复弹出「完全磁盘访问」。`install-launchd.sh` / `rebuild-server.sh` 会自动确保证书并签名。首次签好后到 **系统设置 → 隐私与安全性 → 完全磁盘访问权限** 确认勾选 `bin/jarvis-server`（旧 adhoc 条目可删掉重加一次）。
+主进程用证书 **`Jarvis Local`** + identifier **`com.bytedance.jarvis.server`** 签名，避免每次 rebuild 因 adhoc 指纹变化反复弹出「完全磁盘访问」。`install-launchd.sh` / `rebuild-server.sh` 会先构建并签名临时文件，验证通过后才原子替换正式二进制；launchd 入口也会复验签名，未签名或签名身份错误时拒绝启动。首次签好后到 **系统设置 → 隐私与安全性 → 完全磁盘访问权限** 确认勾选 `bin/jarvis-server`（旧 adhoc 条目可删掉重加一次）。
 
 | 脚本 | 作用 |
 |------|------|
@@ -235,6 +235,8 @@ tail -f var/log/jarvis-server.log var/log/jarvis-server.error.log
 | `scripts/rebuild-server.sh` | `go build` + codesign + `kickstart` 主服务 |
 | `scripts/ensure-codesign-identity.sh` | 若无「Jarvis Local」则创建并导入登录钥匙串 |
 | `scripts/sign-jarvis-server.sh` | 对 `bin/jarvis-server` 签名 |
+| `scripts/verify-server-signature.sh` | 校验固定 identifier 与签名证书，错误时 fail-fast |
+| `scripts/run-signed-server.sh` | launchd 启动入口，拒绝运行未稳定签名的主进程 |
 
 ## mem0 与 Qdrant
 

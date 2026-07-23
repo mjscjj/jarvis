@@ -8,13 +8,17 @@ repo_dir=${script_dir:h}
 label=com.bytedance.jarvis.server
 service_target="gui/$UID/$label"
 bin=$repo_dir/bin/jarvis-server
+next_bin=$repo_dir/bin/jarvis-server.next
 
 mkdir -p "$repo_dir/bin" "$repo_dir/var/log"
 cd "$repo_dir"
+trap 'rm -f "$next_bin"' EXIT
 
-echo "building $bin"
-go build -o "$bin" ./cmd/jarvis-server
-"$script_dir/sign-jarvis-server.sh" "$bin"
+echo "building $next_bin"
+go build -o "$next_bin" ./cmd/jarvis-server
+"$script_dir/sign-jarvis-server.sh" "$next_bin"
+"$script_dir/verify-server-signature.sh" "$next_bin"
+mv "$next_bin" "$bin"
 
 if launchctl print "$service_target" >/dev/null 2>&1; then
   echo "restarting $service_target"
