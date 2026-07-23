@@ -171,6 +171,22 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 	if err != nil {
 		return nil, err
 	}
+	snapshot, err := s.buildContextSnapshot(ctx, batch, unit, candidate, projectID, memories)
+	if err != nil {
+		return nil, err
+	}
+	snapshotRaw, err := snapshot.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode context snapshot: %w", err)
+	}
+	snapshotJSON := datatypes.JSON(snapshotRaw)
+
+	extractionRaw, err := json.Marshal(candidate)
+	if err != nil {
+		return nil, fmt.Errorf("encode extraction result: %w", err)
+	}
+	extractionJSON := datatypes.JSON(extractionRaw)
+
 	byID := make(map[string]MessageContext, len(unit.Messages))
 	for _, message := range unit.Messages {
 		byID[message.MessageID] = message
@@ -204,22 +220,6 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 			return nil, fmt.Errorf("%w: assigner_open_id %q does not match cited leader source", ErrInvalidCandidate, *assigner)
 		}
 	}
-	snapshot, err := s.buildContextSnapshot(ctx, batch, unit, candidate, projectID, assigner, memories)
-	if err != nil {
-		return nil, err
-	}
-	snapshotRaw, err := snapshot.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode context snapshot: %w", err)
-	}
-	snapshotJSON := datatypes.JSON(snapshotRaw)
-
-	extractionRaw, err := json.Marshal(candidate)
-	if err != nil {
-		return nil, fmt.Errorf("encode extraction result: %w", err)
-	}
-	extractionJSON := datatypes.JSON(extractionRaw)
-
 	var dueAt *time.Time
 	if candidate.DueDate != nil {
 		parsed, err := time.ParseInLocation(time.DateOnly, *candidate.DueDate, s.location)

@@ -46,8 +46,8 @@ import type {
   TodoQuery,
   WorkRule,
   WorkRuleInput,
-  TextFile,
-  TextFileInput,
+  TextStorage,
+  TextStorageInput,
   ScheduledTask,
   ScheduledTaskInput,
   RuntimeSettings,
@@ -417,16 +417,20 @@ export function deleteWorkRule(id: number): Promise<{ id: number; deleted: boole
   return request(`/api/work-rules/${id}`, { method: 'DELETE' })
 }
 
-export function listTextFiles(signal?: AbortSignal): Promise<{ items: TextFile[] }> {
-  return request<{ items: TextFile[] }>('/api/text-files', { signal })
+export function listTextStorage(signal?: AbortSignal): Promise<{ items: TextStorage[] }> {
+  return request<{ items: TextStorage[] }>('/api/text-storage', { signal })
 }
 
-export function getTextFile(key: string, signal?: AbortSignal): Promise<TextFile> {
-  return request<TextFile>(`/api/text-files/${encodeURIComponent(key)}`, { signal })
+export function createTextStorage(body: TextStorageInput): Promise<TextStorage> {
+  return request<TextStorage>('/api/text-storage', { method: 'POST', body })
 }
 
-export function updateTextFile(key: string, body: TextFileInput): Promise<TextFile> {
-  return request<TextFile>(`/api/text-files/${encodeURIComponent(key)}`, { method: 'PUT', body })
+export function updateTextStorage(id: number, body: TextStorageInput): Promise<TextStorage> {
+  return request<TextStorage>(`/api/text-storage/${id}`, { method: 'PUT', body })
+}
+
+export function deleteTextStorage(id: number): Promise<{ id: number; deleted: boolean }> {
+  return request(`/api/text-storage/${id}`, { method: 'DELETE' })
 }
 
 export function listScheduledTasks(status = '', signal?: AbortSignal): Promise<{ items: ScheduledTask[] }> {

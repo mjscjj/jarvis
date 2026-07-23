@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 // Project is the long-lived background for a project the owner participates in.
@@ -289,6 +290,21 @@ type WorkRule struct {
 
 func (WorkRule) TableName() string { return "work_rule" }
 
+// TextStorage 是通用的纯文本内容存储。业务通过唯一 storage_key 定位一段
+// 可在线维护的文本；Content 使用 mediumtext，不对正文格式作任何约束。
+// DeletedAt 让删除可恢复同一个唯一键，同时避免服务重启后悄悄重建已删除内容。
+type TextStorage struct {
+	ID         uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	StorageKey string         `gorm:"column:storage_key;type:varchar(128);not null;uniqueIndex:uk_text_storage_key"`
+	Name       string         `gorm:"column:name;type:varchar(128);not null"`
+	Content    string         `gorm:"column:content;type:mediumtext;not null"`
+	CreatedAt  time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt  time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+	DeletedAt  gorm.DeletedAt `gorm:"column:deleted_at;type:datetime;index:idx_text_storage_deleted"`
+}
+
+func (TextStorage) TableName() string { return "text_storage" }
+
 // AgentSkill 是仓库内 SKILL.md 的运行控制信息。Skill 正文仍以文件为唯一
 // source of truth；数据库只保存扫描出的元数据以及 M3/M4/M5 生效范围。
 type AgentSkill struct {
@@ -376,6 +392,7 @@ func CoreModels() []any {
 		&ManagedResource{},
 		&SharedMemory{},
 		&WorkRule{},
+		&TextStorage{},
 		&AgentSkill{},
 		&DailyDigest{},
 		&ScheduledTask{},

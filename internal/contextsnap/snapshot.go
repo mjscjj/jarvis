@@ -26,28 +26,12 @@ type Snapshot struct {
 	Group     *Group     `json:"group"`
 	Assigner  *Assigner  `json:"assigner"`
 	Messages  []Message  `json:"messages"`
-	// Participants/resources/open_todos/other_projects are part of the exact
-	// context M3 used to make the extraction decision. They must be frozen too;
-	// otherwise M4/M5 only receive whichever fragments the model happened to
-	// paraphrase into Candidate.Context.
-	Participants  []Participant  `json:"participants,omitempty"`
-	Resources     []Resource     `json:"resources,omitempty"`
-	OpenTodos     []OpenTodo     `json:"open_todos,omitempty"`
-	OtherProjects []ProjectBrief `json:"other_projects,omitempty"`
 	// Conversation is the surrounding chat context (several rounds around the
 	// cited Messages) so M4/M5 can read the fuller thread, not just the single
 	// evidence message. Messages stays the precise cited evidence; Conversation
 	// is broader background.
 	Conversation []Message        `json:"conversation,omitempty"`
 	Memories     []map[string]any `json:"memories"`
-	// ManagedResources and ProjectEvents are loaded by the common context
-	// assembler for manual/scheduled tasks. M3 can leave them empty because its
-	// own captured resources are frozen in Resources above.
-	ManagedResources []ManagedResource `json:"managed_resources,omitempty"`
-	ProjectEvents    []ProjectEvent    `json:"project_events,omitempty"`
-	// RequestContext preserves caller-supplied manual/scheduled background
-	// without allowing it to replace the authoritative common snapshot.
-	RequestContext json.RawMessage `json:"request_context,omitempty"`
 	// Supplements are human clarifications added after extraction (from a
 	// need_info or need_decision Todo). They are appended (never replaced) and
 	// replayed to M4 codex on re-evaluation so the decision maker sees the extra
@@ -80,14 +64,9 @@ type Project struct {
 	Code         *string         `json:"code"`
 	Name         string          `json:"name"`
 	Role         string          `json:"role"`
-	Status       string          `json:"status,omitempty"`
-	Priority     uint8           `json:"priority,omitempty"`
 	Description  *string         `json:"description"`
 	Repos        json.RawMessage `json:"repos"`
-	TechStack    json.RawMessage `json:"tech_stack,omitempty"`
 	KeyDecisions json.RawMessage `json:"key_decisions"`
-	Timeline     json.RawMessage `json:"timeline,omitempty"`
-	Notes        *string         `json:"notes,omitempty"`
 }
 
 // Group is the originating Feishu conversation, including its announcement
@@ -97,8 +76,6 @@ type Group struct {
 	ChatID      string  `json:"chat_id"`
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
-	IsKeyGroup  bool    `json:"is_key_group"`
-	ProjectID   *uint64 `json:"project_id"`
 }
 
 // Assigner is who handed the Todo over (leader/colleague), with the relation to
@@ -109,63 +86,6 @@ type Assigner struct {
 	Role     *string `json:"role"`
 	Title    *string `json:"title"`
 	Relation *string `json:"relation"`
-}
-
-// Participant freezes the people information M3 used to interpret tone,
-// authority and implicit assignments.
-type Participant struct {
-	OpenID    string  `json:"open_id"`
-	Name      *string `json:"name,omitempty"`
-	Role      *string `json:"role,omitempty"`
-	Title     *string `json:"title,omitempty"`
-	IsLeader  bool    `json:"is_leader"`
-	Relation  *string `json:"relation,omitempty"`
-	CommStyle *string `json:"comm_style,omitempty"`
-}
-
-// Resource is a captured attachment/document referenced by the conversation.
-type Resource struct {
-	ID            uint64  `json:"id"`
-	ResourceType  string  `json:"resource_type"`
-	FileKey       *string `json:"file_key,omitempty"`
-	MinuteToken   *string `json:"minute_token,omitempty"`
-	DocToken      *string `json:"doc_token,omitempty"`
-	URL           *string `json:"url,omitempty"`
-	Name          *string `json:"name,omitempty"`
-	ExtractedText *string `json:"extracted_text,omitempty"`
-}
-
-type OpenTodo struct {
-	ID         uint64 `json:"id"`
-	ActionType string `json:"action_type"`
-	Title      string `json:"title"`
-	Status     string `json:"status"`
-}
-
-type ProjectBrief struct {
-	ID          uint64  `json:"id"`
-	Code        *string `json:"code,omitempty"`
-	Name        string  `json:"name"`
-	Role        string  `json:"role"`
-	Status      string  `json:"status,omitempty"`
-	Priority    uint8   `json:"priority,omitempty"`
-	Description *string `json:"description,omitempty"`
-}
-
-type ManagedResource struct {
-	ID            uint64  `json:"id"`
-	Title         string  `json:"title"`
-	ResourceType  string  `json:"resource_type"`
-	URL           *string `json:"url,omitempty"`
-	Description   *string `json:"description,omitempty"`
-	ProjectID     *uint64 `json:"project_id,omitempty"`
-	LinkPrincipal bool    `json:"link_principal"`
-}
-
-type ProjectEvent struct {
-	ID          uint64 `json:"id"`
-	Description string `json:"description"`
-	OccurredAt  string `json:"occurred_at"`
 }
 
 // Message is one piece of source evidence, copied verbatim at capture time.

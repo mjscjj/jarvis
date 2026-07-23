@@ -2,6 +2,8 @@ package execute
 
 import (
 	"testing"
+
+	"jarvis/internal/textstore"
 )
 
 func TestActionPolicies(t *testing.T) {
@@ -38,7 +40,7 @@ func TestUnknownActionPolicyFailsFast(t *testing.T) {
 }
 
 func TestBuildExecutionPromptRequiresValidTask(t *testing.T) {
-	if _, err := buildExecutionPrompt("test M5 system prompt", nil, "", testToolCatalog, "", "", "", nil); err == nil {
+	if _, err := buildExecutionPrompt(textstore.DefaultSystemPromptM5, nil, "", testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatalf("nil Task must fail")
 	}
 }

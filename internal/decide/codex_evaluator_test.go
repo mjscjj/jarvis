@@ -2,12 +2,11 @@ package decide
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
+	"jarvis/internal/textstore"
 
 	"gorm.io/datatypes"
 )
@@ -44,8 +43,7 @@ func (fakeSkillReader) Catalog(context.Context, string) (string, error) { return
 type fakeSystemPromptReader struct{}
 
 func (fakeSystemPromptReader) Content(context.Context, string) (string, error) {
-	content, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "m4-system-prompt.md"))
-	return string(content), err
+	return textstore.DefaultSystemPromptM4, nil
 }
 
 // testContextSnapshot builds a minimal valid frozen snapshot for a Todo so

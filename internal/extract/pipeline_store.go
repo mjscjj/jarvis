@@ -183,8 +183,7 @@ func (s *PipelineStore) loadProjectSummaries(ctx context.Context) ([]OtherProjec
 	for i := range rows {
 		summaries[i] = OtherProjectContext{
 			ID: rows[i].ID, Code: stringValue(rows[i].Code), Name: rows[i].Name,
-			Role: rows[i].Role, Status: rows[i].Status, Priority: rows[i].Priority,
-			Description: stringValue(rows[i].Description),
+			Role: rows[i].Role, Description: stringValue(rows[i].Description),
 		}
 	}
 	return summaries, nil
@@ -376,7 +375,6 @@ func (s *PipelineStore) enrichParticipants(ctx context.Context, messages []Messa
 		if ok {
 			participant.Name = person.Name
 			participant.Role = person.Role
-			participant.Title = stringValue(person.Title)
 			participant.IsLeader = person.Role == "leader"
 			participant.Relation = stringValue(person.Relation)
 			participant.CommStyle = stringValue(person.CommStyle)
@@ -482,10 +480,8 @@ func conversationKey(message MessageContext) string {
 func projectContext(project *domain.Project) *ProjectContext {
 	return &ProjectContext{
 		ID: project.ID, Code: stringValue(project.Code), Name: project.Name, Role: project.Role,
-		Status: project.Status, Priority: project.Priority, Description: stringValue(project.Description),
-		Repos: append([]byte(nil), project.Repos...), TechStack: append([]byte(nil), project.TechStack...),
-		KeyDecisions: append([]byte(nil), project.KeyDecisions...), Timeline: append([]byte(nil), project.Timeline...),
-		Notes: stringValue(project.Notes),
+		Description: stringValue(project.Description), Repos: append([]byte(nil), project.Repos...),
+		KeyDecisions: append([]byte(nil), project.KeyDecisions...),
 	}
 }
 

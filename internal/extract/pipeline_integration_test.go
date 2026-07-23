@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -171,9 +170,12 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("skill.NewService() error = %v", err)
 	}
-	textFileService, err := textstore.NewService(filepath.Join("..", "..", "conf", "prompts"))
+	textStorageService, err := textstore.NewService(tx)
 	if err != nil {
 		t.Fatalf("textstore.NewService() error = %v", err)
+	}
+	if err := textStorageService.SeedDefaults(t.Context()); err != nil {
+		t.Fatalf("textstore.SeedDefaults() error = %v", err)
 	}
 	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
 		Load: extract.LoadOptions{
@@ -186,7 +188,7 @@ func TestPipelineLive(t *testing.T) {
 		MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 		WorkRules:     workRuleService,
 		Skills:        skillService,
-		SystemPrompts: textFileService,
+		SystemPrompts: textStorageService,
 	})
 	if err != nil {
 		t.Fatalf("extract.NewWorker() error = %v", err)

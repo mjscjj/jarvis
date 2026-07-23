@@ -31,10 +31,12 @@ import {
   createProject,
   createResource,
   createWorkRule,
+  createTextStorage,
   deletePerson,
   deleteProject,
   deleteResource,
   deleteWorkRule,
+  deleteTextStorage,
   getProfile,
   getSkillContent,
   listGroups,
@@ -44,7 +46,7 @@ import {
   listResources,
   listSkills,
   listWorkRules,
-  listTextFiles,
+  listTextStorage,
   resolvePerson,
   scanSkills,
   updateGroupBackground,
@@ -54,7 +56,7 @@ import {
   updateResource,
   updateSkill,
   updateWorkRule,
-  updateTextFile,
+  updateTextStorage,
 } from './api'
 import SharedMemory from './SharedMemory'
 import RuntimeSettings from './RuntimeSettings'
@@ -82,8 +84,8 @@ import type {
   WorkRule,
   WorkRuleInput,
   WorkRuleStage,
-  TextFile,
-  TextFileInput,
+  TextStorage,
+  TextStorageInput,
 } from './types'
 
 const { Text } = Typography
@@ -1130,25 +1132,29 @@ function WorkRulesPanel() {
   </>
 }
 
-// --- M5 approval policy (stored in a local Markdown file) ---
+// --- Approval rule (stored in generic text storage) ---
 
-const approvalPolicyKey = 'm5_approval_policy'
+const approvalRuleStorageKey = 'm5_approval_rule'
 
 function ApprovalRulesPanel() {
-  const [record, setRecord] = useState<TextFile | null>(null)
+  const [record, setRecord] = useState<TextStorage | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
   const [ok, setOk] = useState(false)
-  const [form] = Form.useForm<TextFileInput>()
+  const [form] = Form.useForm<TextStorageInput>()
 
   const reload = useCallback(() => {
     setLoading(true)
-    listTextFiles()
+    listTextStorage()
       .then((result) => {
-        const found = result.items.find((item) => item.key === approvalPolicyKey) ?? null
+        const found = result.items.find((item) => item.storage_key === approvalRuleStorageKey) ?? null
         setRecord(found)
-        form.setFieldsValue({ content: found?.content ?? '' })
+        form.setFieldsValue({
+          storage_key: approvalRuleStorageKey,
+          name: '审批规则',
+          content: found?.content ?? '',
+        })
         setError(undefined)
       })
       .catch((cause: unknown) => setError(errorText(cause)))
@@ -1158,9 +1164,16 @@ function ApprovalRulesPanel() {
 
   const save = async () => {
     const values = await form.validateFields()
+    const input: TextStorageInput = {
+      storage_key: approvalRuleStorageKey,
+      name: '审批规则',
+      content: values.content,
+    }
     setSaving(true)
     try {
-      const updated = await updateTextFile(approvalPolicyKey, { content: values.content })
+      const updated = record
+        ? await updateTextStorage(record.id, input)
+        : await createTextStorage(input)
       setRecord(updated)
       setOk(true)
       setError(undefined)
@@ -1171,45 +1184,62 @@ function ApprovalRulesPanel() {
     }
   }
 
+  const remove = async () => {
+    if (!record) return
+    try {
+      await deleteTextStorage(record.id)
+      setRecord(null)
+      form.setFieldValue('content', '')
+      setOk(false)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    }
+  }
+
   return <>
-    {error && <Alert type="error" showIcon message="审批策略操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon message="审批策略已保存，后续非代码 M5 任务会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
-    {!record && !loading && <Alert type="error" showIcon message="审批策略文件缺失，服务配置不完整。" style={{ marginBottom: 12 }} />}
+    {error && <Alert type="error" showIcon message="审批规则操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon message="审批规则已保存，后续 M5 批准执行会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    {!record && !loading && <Alert type="warning" showIcon message="审批规则不存在，M5 批准后的落地执行会失败；请填写并保存。" style={{ marginBottom: 12 }} />}
     <Card loading={loading} variant="borderless">
-      <Form form={form} layout="vertical" initialValues={{ content: '' }}>
-        <Form.Item name="content" label="M5 审批判定策略" rules={[{ required: true, whitespace: true, message: '请输入审批策略' }]}
-          extra="控制非代码任务在 propose 阶段什么需要审批、什么可以直接执行。代码修改仍走分支、提交和 MR 流程。">
-          <Input.TextArea rows={18} placeholder="填写审批判定策略" style={{ fontFamily: 'monospace' }} />
+      <Form form={form} layout="vertical" initialValues={{ storage_key: approvalRuleStorageKey, name: '审批规则', content: '' }}>
+        <Form.Item name="content" label="M5 批准后执行规则" rules={[{ required: true, whitespace: true, message: '请输入审批规则' }]}
+          extra="这段文本会作为可信规则注入 M5 的批准后落地提示词；修改后对后续执行实时生效。">
+          <Input.TextArea rows={16} placeholder="填写批准后执行必须遵守的规则" style={{ fontFamily: 'monospace' }} />
         </Form.Item>
-        {record && <div style={{ margin: '-8px 0 12px' }}><Text type="secondary">本地文件：</Text><Text code>{record.path}</Text></div>}
         <Flex gap={8}>
-          <Button type="primary" onClick={save} loading={saving} disabled={!record}>保存修改</Button>
+          <Button type="primary" onClick={save} loading={saving}>{record ? '保存修改' : '创建审批规则'}</Button>
           <Button onClick={reload} loading={loading}>刷新</Button>
+          {record && (
+            <Popconfirm title="删除审批规则？" description="删除后，M5 批准后的落地执行会直接失败。" onConfirm={remove} okText="删除" cancelText="取消">
+              <Button danger>删除</Button>
+            </Popconfirm>
+          )}
         </Flex>
       </Form>
     </Card>
   </>
 }
 
-// --- M3/M4/M5 system prompts (stored in local Markdown files) ---
+// --- M3/M4/M5 system prompts (stored in generic text storage) ---
 
 const systemPromptDefinitions = [
   {
     key: 'm3_system_prompt',
     name: 'M3 抽取',
-    fileName: 'M3 系统提示词',
+    storageName: 'M3 系统提示词',
     description: '定义行动线索抽取者的角色、判断原则和输出要求。',
   },
   {
     key: 'm4_system_prompt',
     name: 'M4 决策',
-    fileName: 'M4 系统提示词',
+    storageName: 'M4 系统提示词',
     description: '定义行动决策者的角色、处置原则和阶段安全边界。',
   },
   {
     key: 'm5_system_prompt',
     name: 'M5 执行',
-    fileName: 'M5 系统提示词',
+    storageName: 'M5 系统提示词',
     description: 'direct、propose、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。',
   },
 ] as const
@@ -1217,7 +1247,7 @@ const systemPromptDefinitions = [
 type SystemPromptKey = typeof systemPromptDefinitions[number]['key']
 
 function SystemPromptsPanel() {
-  const [records, setRecords] = useState<Partial<Record<SystemPromptKey, TextFile>>>({})
+  const [records, setRecords] = useState<Partial<Record<SystemPromptKey, TextStorage>>>({})
   const [drafts, setDrafts] = useState<Partial<Record<SystemPromptKey, string>>>({})
   const [activeKey, setActiveKey] = useState<SystemPromptKey>(systemPromptDefinitions[0].key)
   const [loading, setLoading] = useState(false)
@@ -1227,12 +1257,12 @@ function SystemPromptsPanel() {
 
   const reload = useCallback(() => {
     setLoading(true)
-    listTextFiles()
+    listTextStorage()
       .then((result) => {
-        const nextRecords: Partial<Record<SystemPromptKey, TextFile>> = {}
+        const nextRecords: Partial<Record<SystemPromptKey, TextStorage>> = {}
         const nextDrafts: Partial<Record<SystemPromptKey, string>> = {}
         for (const definition of systemPromptDefinitions) {
-          const found = result.items.find((item) => item.key === definition.key)
+          const found = result.items.find((item) => item.storage_key === definition.key)
           if (found) {
             nextRecords[definition.key] = found
             nextDrafts[definition.key] = found.content
@@ -1258,9 +1288,16 @@ function SystemPromptsPanel() {
       setError(`${definition.name}提示词不能为空`)
       return
     }
+    const input: TextStorageInput = {
+      storage_key: definition.key,
+      name: definition.storageName,
+      content,
+    }
     setSaving(true)
     try {
-      const updated = await updateTextFile(definition.key, { content })
+      const updated = record
+        ? await updateTextStorage(record.id, input)
+        : await createTextStorage(input)
       setRecords((current) => ({ ...current, [activeKey]: updated }))
       setDrafts((current) => ({ ...current, [activeKey]: updated.content }))
       setOk(true)
@@ -1278,8 +1315,8 @@ function SystemPromptsPanel() {
     <Alert
       type="info"
       showIcon
-      message="这些内容直接读写本地 Markdown 文件"
-      description="M3、M4、M5 会实时读取对应文件。工具说明由工具层维护，Skills 由 Skills 页维护；当前阶段、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
+      message="这些内容复用通用 text_storage，不单独建表"
+      description="M3、M4、M5 会实时读取对应系统提示词。工具说明由工具层维护，Skills 由 Skills 页维护；当前阶段、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
       style={{ marginBottom: 12 }}
     />
     <Card loading={loading} variant="borderless">
@@ -1295,12 +1332,9 @@ function SystemPromptsPanel() {
               {!records[item.key] && (
                 <Alert type="warning" showIcon message={`${item.name}提示词不存在，对应阶段会 fail-fast；请填写并保存。`} style={{ marginBottom: 12 }} />
               )}
-              <Text strong>{item.fileName}</Text>
+              <Text strong>{item.storageName}</Text>
               <div><Text type="secondary">{item.description}</Text></div>
-              <div style={{ margin: '8px 0 12px' }}>
-                <Text code>{item.key}</Text>
-                {records[item.key] && <><Text type="secondary"> · </Text><Text code>{records[item.key]?.path}</Text></>}
-              </div>
+              <div style={{ margin: '8px 0 12px' }}><Text code>{item.key}</Text></div>
               <Input.TextArea
                 value={drafts[item.key] ?? ''}
                 onChange={(event) => setDrafts((current) => ({ ...current, [item.key]: event.target.value }))}
@@ -1309,7 +1343,7 @@ function SystemPromptsPanel() {
                 style={{ fontFamily: 'monospace' }}
               />
               <Flex gap={8} style={{ marginTop: 12 }}>
-                <Button type="primary" onClick={save} loading={saving} disabled={!records[item.key]}>保存修改</Button>
+                <Button type="primary" onClick={save} loading={saving}>{records[item.key] ? '保存修改' : '创建提示词'}</Button>
                 <Button onClick={reload} loading={loading}>刷新</Button>
               </Flex>
             </>

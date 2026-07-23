@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/textstore"
 
 	"gorm.io/datatypes"
 )
@@ -42,7 +43,7 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 		ExecutionSupplements: datatypes.JSON(supplements),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", task, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(textstore.DefaultSystemPromptM5, task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -58,14 +59,14 @@ func TestBuildExecutionPromptInjectsSharedMemory(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildExecutionPrompt("test M5 system prompt", task, "", testToolCatalog, "", "", "", nil)
+	empty, err := buildExecutionPrompt(textstore.DefaultSystemPromptM5, task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", task, "", testToolCatalog, "lark-cli 的 token 存在 ~/.lark 里", "", "", nil)
+	prompt, err := buildExecutionPrompt(textstore.DefaultSystemPromptM5, task, "", testToolCatalog, "lark-cli 的 token 存在 ~/.lark 里", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestBuildExecutionPromptInjectsWorkRules(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", task, "", testToolCatalog, "", "BEGIN_WORK_RULES\n- 禁止直接私聊\nEND_WORK_RULES", "", nil)
+	prompt, err := buildExecutionPrompt(textstore.DefaultSystemPromptM5, task, "", testToolCatalog, "", "BEGIN_WORK_RULES\n- 禁止直接私聊\nEND_WORK_RULES", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -103,7 +104,7 @@ func TestBuildExecutionPromptInjectsSkills(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", task, "", testToolCatalog, "", "", "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS", nil)
+	prompt, err := buildExecutionPrompt(textstore.DefaultSystemPromptM5, task, "", testToolCatalog, "", "", "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -128,12 +129,12 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 		RunID: 3, Status: "succeeded", Summary: summary,
 		StartedAt: "2026-07-21T07:55:00Z", FinishedAt: finished.Format(time.RFC3339),
 	}}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", task, "", testToolCatalog, "", "", "", prior)
+	prompt, err := buildExecutionPrompt(textstore.DefaultSystemPromptM5, task, "", testToolCatalog, "", "", "", prior)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
 	for _, want := range []string{
-		`"previous_runs"`, `"run_id":3`, summary, ExecutionPromptVersion,
+		`"previous_runs"`, `"run_id":3`, summary, "不重复发送", ExecutionPromptVersion,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)

@@ -799,14 +799,16 @@ export interface WorkRuleInput {
   is_enabled: boolean
 }
 
-export interface TextFile {
-  key: string
+export interface TextStorage {
+  id: number
+  storage_key: string
   name: string
-  path: string
   content: string
 }
 
-export interface TextFileInput {
+export interface TextStorageInput {
+  storage_key: string
+  name: string
   content: string
 }
 

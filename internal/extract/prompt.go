@@ -119,7 +119,7 @@ func renderUserPrompt(batch ChatBatch, unit ConversationUnit, memories []map[str
 		"# 我的背景(principal)\n" + renderPrincipal(batch.Principal),
 		"# 当前会话所属项目（详细）\n" + renderProject(batch.Project),
 		"# 我的其他项目（精简，仅作归属参考）\n" + renderOtherProjects(batch.OtherProjects),
-		"# 来源会话（Group）\n" + renderGroup(batch.Group),
+		"# 来源会话（Group）\n" + fmt.Sprintf("chat_id=%s name=%q is_key_group=%t project_id=%s", batch.Group.ChatID, batch.Group.Name, batch.Group.IsKeyGroup, uint64PointerText(batch.Group.ProjectID)),
 		"# 参与者\n" + renderParticipants(unit.Participants),
 		"# 相关资源\n" + renderResources(unit.Resources),
 		"# 相关记忆（仅作背景）\n" + renderMemories(memories),
@@ -159,7 +159,7 @@ func renderOtherProjects(projects []OtherProjectContext) string {
 	}
 	lines := make([]string, len(projects))
 	for i, project := range projects {
-		line := fmt.Sprintf("id=%d code=%q name=%q role=%s status=%s priority=%d", project.ID, project.Code, project.Name, project.Role, project.Status, project.Priority)
+		line := fmt.Sprintf("id=%d code=%q name=%q role=%s", project.ID, project.Code, project.Name, project.Role)
 		if project.Description != "" {
 			line += fmt.Sprintf(" desc=%q", project.Description)
 		}
@@ -172,18 +172,8 @@ func renderProject(project *ProjectContext) string {
 	if project == nil {
 		return "(none)"
 	}
-	return fmt.Sprintf("id=%d code=%q name=%q role=%s status=%s priority=%d description=%q repos=%s tech_stack=%s key_decisions=%s timeline=%s notes=%q",
-		project.ID, project.Code, project.Name, project.Role, project.Status, project.Priority,
-		project.Description, jsonOrNull(project.Repos), jsonOrNull(project.TechStack),
-		jsonOrNull(project.KeyDecisions), jsonOrNull(project.Timeline), project.Notes)
-}
-
-func renderGroup(group GroupContext) string {
-	line := fmt.Sprintf("chat_id=%s name=%q is_key_group=%t project_id=%s", group.ChatID, group.Name, group.IsKeyGroup, uint64PointerText(group.ProjectID))
-	if strings.TrimSpace(group.Description) != "" {
-		line += "\n群公告：" + group.Description
-	}
-	return line
+	return fmt.Sprintf("id=%d code=%q name=%q role=%s description=%q repos=%s key_decisions=%s",
+		project.ID, project.Code, project.Name, project.Role, project.Description, jsonOrNull(project.Repos), jsonOrNull(project.KeyDecisions))
 }
 
 func renderParticipants(participants []ParticipantContext) string {
@@ -195,9 +185,6 @@ func renderParticipants(participants []ParticipantContext) string {
 		line := fmt.Sprintf("open_id=%s name=%q role=%s is_leader=%t", participant.OpenID, participant.Name, participant.Role, participant.IsLeader)
 		if participant.Relation != "" {
 			line += fmt.Sprintf(" relation=%q", participant.Relation)
-		}
-		if participant.Title != "" {
-			line += fmt.Sprintf(" title=%q", participant.Title)
 		}
 		if participant.CommStyle != "" {
 			line += fmt.Sprintf(" comm_style=%q", participant.CommStyle)
