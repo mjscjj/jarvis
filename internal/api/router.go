@@ -49,7 +49,7 @@ type Dependencies struct {
 	Progress            progress.EventService
 	Overview            *insight.OverviewService
 	Digests             *insight.DigestService
-	DailyDigests        DailyDigestService      // 每日进度总结（个人 codex + 关键群 qwen）；nil 则不注册 /api/daily-digests 路由
+	DailyDigests        DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
 	Worklog             *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
 	DigestSummarizer    *insight.Summarizer     // 可选：codex 未启用时为 nil，总结接口返回 503
 	Debug               *insight.DebugService
@@ -157,6 +157,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Executor != nil {
 		h.GET("/api/tasks/:task_id/output", GetTaskRunOutput(deps.Executor))
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
+		h.POST("/api/tasks/:task_id/interrupt", InterruptTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/rerun", RerunTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/reapply", ReapplyTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/resume", ResumeTaskAfterHuman(deps.Executor))

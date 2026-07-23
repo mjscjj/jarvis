@@ -23,7 +23,7 @@ phase=direct
 END_M5_PHASE`
 	m5PhasePropose = `BEGIN_M5_PHASE
 phase=propose
-先判断这次实际动作是否会写入、发送或修改外部对象。只读或本地任务可以直接完成；任何外部副作用都不得执行，必须返回完整 proposal 等待批准。
+本阶段规则优先：只有纯只读查询和分析可以直接完成。任何写入、发送、创建、删除或修改都不得执行——包括本地文件、代码仓库、数据库、消息、文档、会议及其他外部对象；必须返回 needs_approval=true、outcome=needs_human 和完整 proposal 等待批准。
 END_M5_PHASE`
 	m5PhaseApply = `BEGIN_M5_PHASE
 phase=apply
@@ -94,12 +94,11 @@ const executionResultSchema = `{
 }`
 
 // proposeResultSchema is the JSON schema codex MUST return for the propose
-// stage of an external-side-effect action. The agent first judges risk:
-//   - low risk  -> it finishes the work itself and returns needs_approval=false
-//     with the normal success verdict.
-//   - high-risk external write -> it does NOT touch the outside world; it returns
-//     needs_approval=true plus a fully-formed proposal (what it will do, the
-//     target object, and the complete artifact) for a human to approve.
+// stage of a non-code action. The agent first identifies whether any mutation is
+// required:
+//   - pure read-only work -> it finishes and returns needs_approval=false.
+//   - any local or external mutation -> it performs no mutation and returns
+//     needs_approval=true plus a fully-formed proposal for human approval.
 const proposeResultSchema = `{
   "type":"object",
   "additionalProperties":false,

@@ -49,6 +49,7 @@ const taskEventLabels: Record<string, string> = {
   supplemented: '我的补充',
   execution_succeeded: '执行成功',
   execution_failed: '执行失败',
+  execution_interrupted: '执行已打断',
   stale_failed: '执行超时',
   snapshot_imported: '导入当前状态',
 }
@@ -74,6 +75,7 @@ interface TaskDetailModalProps {
   reapplying: boolean
   approveSubmitting: boolean
   resumeSubmitting: boolean
+  interrupting: boolean
   onClose: () => void
   onExecute: (task: Task) => void
   onApprove: (task: Task) => void
@@ -81,6 +83,7 @@ interface TaskDetailModalProps {
   onRerun: (task: Task) => void
   onReapply: (task: Task) => void
   onResume: (task: Task) => void
+  onInterrupt: (task: Task) => void
 }
 
 type HistoryItem =
@@ -633,6 +636,41 @@ function RunDetails({ run, latest }: { run: ExecutionRun; latest: boolean }) {
   )
 }
 
+function PromptPanel({
+  runs,
+  loading,
+  error,
+}: {
+  runs: ExecutionRun[]
+  loading: boolean
+  error?: string
+}) {
+  if (loading) return <div className="task-detail-loading"><Spin /></div>
+  if (error) return <Alert type="error" showIcon title="原始提示词加载失败" description={error} />
+  if (runs.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务执行提示词" />
+  }
+  return (
+    <Tabs
+      defaultActiveKey={String(runs[0].id)}
+      items={runs.map((run) => ({
+        key: String(run.id),
+        label: `Run #${run.id}`,
+        children: (
+          <div>
+            <Space wrap className="task-output-meta">
+              <Tag>{run.stage}</Tag>
+              <Tag>{run.status}</Tag>
+              <Text type="secondary">开始于 {formatTime(run.started_at)}</Text>
+            </Space>
+            <pre className="task-live-output">{run.prompt || '该次执行未保存提示词。'}</pre>
+          </div>
+        ),
+      }))}
+    />
+  )
+}
+
 function ProposalContent({ task }: { task: Task }) {
   const result = proposalOf(task)
   if (!result) return null
@@ -700,7 +738,7 @@ function ResultContent({ task }: { task: Task }) {
       <div className="task-section-kicker">{task.status === 'done' ? '执行结果' : '失败结论'}</div>
       {task.status === 'failed' && (
         <Alert
-          type={failureKindOf(task) === 'rejected' || failureKindOf(task) === 'manual' ? 'warning' : 'error'}
+          type={failureKindOf(task) === 'rejected' || failureKindOf(task) === 'manual' || failureKindOf(task) === 'interrupted' ? 'warning' : 'error'}
           showIcon
           title={failureMeta[failureKindOf(task) || 'unknown'].label}
           description={rejectReason || error || summary || '任务没有记录失败详情。'}
@@ -753,7 +791,7 @@ function taskStateCopy(task: Task): { current: string; next: string } {
   if (task.status === 'executing') {
     return {
       current: 'Codex 正在执行任务。',
-      next: '当前无需操作。执行完成后，状态和结果会写入任务历史。',
+      next: '可以等待执行完成；如需停止，可使用“打断执行”。',
     }
   }
   if (task.status === 'waiting') {
@@ -1103,6 +1141,7 @@ export default function TaskDetailModal({
   reapplying,
   approveSubmitting,
   resumeSubmitting,
+  interrupting,
   onClose,
   onExecute,
   onApprove,
@@ -1110,6 +1149,7 @@ export default function TaskDetailModal({
   onRerun,
   onReapply,
   onResume,
+  onInterrupt,
 }: TaskDetailModalProps) {
   const [activeTab, setActiveTab] = useState('history')
   const [outputOpen, setOutputOpen] = useState(false)
@@ -1151,7 +1191,10 @@ export default function TaskDetailModal({
     if (task.status === 'needs_human') {
       return <Button type="primary" loading={resumeSubmitting} onClick={() => onResume(task)}>回复并继续</Button>
     }
-    return <StatusBadge label="Codex 执行中…" color={statusMeta.executing.color} />
+    return <>
+      <StatusBadge label="Codex 执行中…" color={statusMeta.executing.color} />
+      <Button danger loading={interrupting} onClick={() => onInterrupt(task)}>打断执行</Button>
+    </>
   })()
 
   return (
@@ -1236,6 +1279,11 @@ export default function TaskDetailModal({
                     runsError={runsError}
                   />
                 ),
+              },
+              {
+                key: 'prompt',
+                label: '原始提示词',
+                children: <PromptPanel runs={runs} loading={runsLoading} error={runsError} />,
               },
               { key: 'plan', label: '执行方案', children: <PlanPanel task={task} /> },
               { key: 'context', label: '上下文依据', children: <ContextPanel task={task} /> },

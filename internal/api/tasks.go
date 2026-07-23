@@ -160,6 +160,38 @@ func ExecuteTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	}
 }
 
+type interruptTaskRequest struct {
+	ExpectedVersion *int32 `json:"expected_version"`
+}
+
+// InterruptTask cancels the live Codex process for an executing Task. The
+// executor waits for the regular run audit and Task failure result to be saved
+// before this handler returns.
+func InterruptTask(executor *execute.AgentExecutor) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40031, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		var request interruptTaskRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40031, err)
+			return
+		}
+		if request.ExpectedVersion == nil {
+			writeAPIError(c, consts.StatusBadRequest, 40031, fmt.Errorf("expected_version is required"))
+			return
+		}
+		result, err := executor.Interrupt(ctx, taskID, *request.ExpectedVersion)
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 type approveTaskRequest struct {
 	ExpectedVersion *int32 `json:"expected_version"`
 }

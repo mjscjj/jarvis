@@ -103,11 +103,9 @@ type ExtractConfig struct {
 	SemanticThreshold     float64 `yaml:"semantic_threshold"`
 	SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
 
-	// M3 function-calling tool loop. MaxToolRounds hard-caps model tool calls
-	// per unit (fail-fast when exceeded); ToolTimeoutSec bounds one tool call;
+	// M3 function-calling tool loop. ToolTimeoutSec bounds one tool call;
 	// HistoryToolLimit caps rows returned by query_chat_history; ToolMemoryMaxTopK
 	// caps top_k the model may request from search_memory.
-	MaxToolRounds     int `yaml:"max_tool_rounds"`
 	ToolTimeoutSec    int `yaml:"tool_timeout_sec"`
 	HistoryToolLimit  int `yaml:"history_tool_limit"`
 	ToolMemoryMaxTopK int `yaml:"tool_memory_max_top_k"`
@@ -350,9 +348,6 @@ func (c *Config) validate() error {
 	}
 	if c.Extract.SemanticNeighborLimit <= 0 {
 		return fmt.Errorf("extract.semantic_neighbor_limit 必须大于 0")
-	}
-	if c.Extract.MaxToolRounds <= 0 {
-		return fmt.Errorf("extract.max_tool_rounds 必须大于 0")
 	}
 	if c.Extract.ToolTimeoutSec <= 0 {
 		return fmt.Errorf("extract.tool_timeout_sec 必须大于 0")

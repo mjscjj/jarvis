@@ -1,6 +1,8 @@
 package execute
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,6 +94,50 @@ printf '%s\n' 'diagnostic stderr' >&2
 	}
 	if got := readTestFile(t, envPath); got != "" {
 		t.Fatalf("one-shot RunText JARVIS_TASK_ID = %q, want empty", got)
+	}
+}
+
+func TestCodexRunnerInterruptKillsRunningProcess(t *testing.T) {
+	dir := t.TempDir()
+	startedPath := filepath.Join(dir, "started")
+	binPath := filepath.Join(dir, "fake-codex")
+	script := `#!/bin/sh
+set -eu
+touch "$FAKE_CODEX_STARTED"
+sleep 30
+`
+	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codex: %v", err)
+	}
+	t.Setenv("FAKE_CODEX_STARTED", startedPath)
+	runner, err := NewCodexRunner(binPath, "test-model", "medium", time.Minute)
+	if err != nil {
+		t.Fatalf("NewCodexRunner() error = %v", err)
+	}
+	ctx, cancel := context.WithCancelCause(t.Context())
+	result := make(chan error, 1)
+	go func() {
+		_, err := runner.RunTask(ctx, "start", "danger-full-access", "", schemaExecution, 123)
+		result <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(startedPath); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fake codex did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel(ErrExecutionInterrupted)
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrExecutionInterrupted) {
+			t.Fatalf("RunTask() error = %v, want ErrExecutionInterrupted", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("RunTask() did not stop after interrupt")
 	}
 }
 

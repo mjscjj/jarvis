@@ -250,9 +250,6 @@ func copyUint64(value *uint64) *uint64 {
 	return &copied
 }
 
-func autonomyMode(executionMode string) string {
-	if executionMode == ExecutionModeDirect {
-		return "autopilot"
-	}
+func autonomyMode(_ string) string {
 	return "copilot"
 }

@@ -53,11 +53,10 @@ func (f *fakePipelineStore) PersistChat(_ context.Context, _ ChatBatch, results 
 }
 
 type fakeModelExtractor struct {
-	result    *ExtractionResult
-	err       error
-	prompts   []Prompt
-	maxRounds []int
-	boxes     []ToolBox
+	result  *ExtractionResult
+	err     error
+	prompts []Prompt
+	boxes   []ToolBox
 	// results, when non-empty, returns a distinct result per call index (clamped to
 	// the last entry once exhausted), letting a test drive validation-feedback retry
 	// where the first attempt returns a rewritten quote and a later one returns a
@@ -65,9 +64,8 @@ type fakeModelExtractor struct {
 	results []*ExtractionResult
 }
 
-func (f *fakeModelExtractor) ExtractWithTools(_ context.Context, prompt Prompt, box ToolBox, maxRounds int) (*ExtractionResult, error) {
+func (f *fakeModelExtractor) ExtractWithTools(_ context.Context, prompt Prompt, box ToolBox) (*ExtractionResult, error) {
 	f.prompts = append(f.prompts, prompt)
-	f.maxRounds = append(f.maxRounds, maxRounds)
 	f.boxes = append(f.boxes, box)
 	if len(f.results) > 0 {
 		idx := len(f.prompts) - 1
@@ -178,9 +176,6 @@ func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	}
 	if toolBox.built != 1 || len(model.boxes) != 1 || model.boxes[0] == nil {
 		t.Fatalf("tool box wiring: built=%d boxes=%d", toolBox.built, len(model.boxes))
-	}
-	if len(model.maxRounds) != 1 || model.maxRounds[0] != validWorkerOptions().MaxToolRounds {
-		t.Fatalf("max rounds passed = %#v", model.maxRounds)
 	}
 }
 
@@ -429,7 +424,7 @@ func validWorkerOptions() WorkerOptions {
 	return WorkerOptions{
 		Load:            LoadOptions{BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour, OpenTodoLimit: 50},
 		PrincipalOpenID: "ou_owner", ModelName: "model", MemoryTopK: 8,
-		MemoryThreshold: 0.5, MaxPromptChars: 60_000, MaxToolRounds: 5, Location: time.UTC,
+		MemoryThreshold: 0.5, MaxPromptChars: 60_000, Location: time.UTC,
 		WorkRules:     fakeWorkRuleReader{},
 		Skills:        fakeSkillReader{},
 		SystemPrompts: fakeSystemPromptReader{},

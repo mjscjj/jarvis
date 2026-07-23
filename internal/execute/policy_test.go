@@ -8,17 +8,17 @@ import (
 
 func TestActionPolicies(t *testing.T) {
 	cases := []struct {
-		actionType   string
-		wantSandbox  string
-		wantExternal bool
+		actionType  string
+		wantSandbox string
 	}{
-		{"code_change", "danger-full-access", false},
-		{"investigate", "danger-full-access", false},
-		{"summary_post", "danger-full-access", true},
-		{"reply_message", "danger-full-access", true},
-		{"schedule_meeting", "danger-full-access", true},
-		{"doc_write", "danger-full-access", true},
-		{"manual_followup", "danger-full-access", true},
+		{"code_change", "danger-full-access"},
+		{"investigate", "danger-full-access"},
+		{"agent_task", "danger-full-access"},
+		{"summary_post", "danger-full-access"},
+		{"reply_message", "danger-full-access"},
+		{"schedule_meeting", "danger-full-access"},
+		{"doc_write", "danger-full-access"},
+		{"manual_followup", "danger-full-access"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.actionType, func(t *testing.T) {
@@ -28,9 +28,6 @@ func TestActionPolicies(t *testing.T) {
 			}
 			if p.sandbox != tc.wantSandbox {
 				t.Fatalf("sandbox = %q, want %q", p.sandbox, tc.wantSandbox)
-			}
-			if p.external != tc.wantExternal {
-				t.Fatalf("external = %v, want %v", p.external, tc.wantExternal)
 			}
 		})
 	}

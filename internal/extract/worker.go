@@ -26,7 +26,6 @@ type WorkerOptions struct {
 	MemoryTopK      int
 	MemoryThreshold float64
 	MaxPromptChars  int
-	MaxToolRounds   int
 	Location        *time.Location
 	// AgentToolCatalog controls whether shell-tool descriptions are injected.
 	// It is true for the Codex engine and false for schema-driven model_api.
@@ -114,9 +113,6 @@ func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher
 	}
 	if opts.MaxPromptChars <= 0 {
 		return nil, fmt.Errorf("extract worker max prompt chars must be positive")
-	}
-	if opts.MaxToolRounds <= 0 {
-		return nil, fmt.Errorf("extract worker max tool rounds must be positive")
 	}
 	if opts.EvidenceRetryMax < 0 {
 		return nil, fmt.Errorf("extract worker evidence retry max must be non-negative")
@@ -263,7 +259,7 @@ func mergeWorkerStats(target *WorkerStats, source WorkerStats) {
 func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit ConversationUnit, prompt Prompt, box ToolBox) ([]ResolvedCandidate, int, error) {
 	current := prompt
 	for attempt := 0; ; attempt++ {
-		extracted, err := w.model.ExtractWithTools(ctx, current, box, w.opts.MaxToolRounds)
+		extracted, err := w.model.ExtractWithTools(ctx, current, box)
 		if err != nil {
 			return nil, 0, fmt.Errorf("extract todos chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
 		}

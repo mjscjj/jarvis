@@ -56,7 +56,6 @@ extract:
   semantic_collection: "todo_semantic"
   semantic_threshold: 0.85
   semantic_neighbor_limit: 3
-  max_tool_rounds: 5
   tool_timeout_sec: 10
   history_tool_limit: 50
   tool_memory_max_top_k: 20

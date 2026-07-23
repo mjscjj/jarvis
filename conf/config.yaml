@@ -64,7 +64,6 @@ extract:
   semantic_threshold: 0.85
   semantic_neighbor_limit: 3
   # M3 function-calling 工具循环
-  max_tool_rounds: 5          # 单 unit 最多工具调用轮数，超出 fail-fast
   tool_timeout_sec: 10        # 单次工具调用超时（秒）
   history_tool_limit: 50      # query_chat_history 单次最多返回消息数
   tool_memory_max_top_k: 20   # search_memory 允许模型请求的 top_k 上限

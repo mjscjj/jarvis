@@ -151,6 +151,12 @@ export function executeTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/execute`, { method: 'POST' })
 }
 
+export function interruptTask(id: number, expectedVersion: number): Promise<ExecuteResult> {
+  return request<ExecuteResult>(`/api/tasks/${id}/interrupt`, {
+    method: 'POST', body: { expected_version: expectedVersion },
+  })
+}
+
 // rerunTask resets a finished Task and kicks execution in the background.
 export function rerunTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/rerun`, { method: 'POST' })

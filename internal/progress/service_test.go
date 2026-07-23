@@ -80,6 +80,18 @@ func TestPrepareTaskEventAcceptsHumanPauseLifecycleTypes(t *testing.T) {
 	}
 }
 
+func TestPrepareTaskEventAcceptsExecutionInterrupted(t *testing.T) {
+	t.Parallel()
+	from := "executing"
+	_, err := prepareTaskEvent(TaskEventInput{
+		TaskID: 1, TaskVersion: 3, EventType: "execution_interrupted",
+		FromStatus: &from, ToStatus: "failed", ActorType: "m5", OccurredAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("prepareTaskEvent(execution_interrupted) error = %v", err)
+	}
+}
+
 func TestPrepareTaskEventRejectsUnknownType(t *testing.T) {
 	t.Parallel()
 	_, err := prepareTaskEvent(TaskEventInput{

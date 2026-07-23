@@ -50,6 +50,12 @@ func TestNormalizeInputAcceptsEmptyBackgroundObject(t *testing.T) {
 	}
 }
 
+func TestDirectModeDoesNotGrantAutopilot(t *testing.T) {
+	if got := autonomyMode(ExecutionModeDirect); got != "copilot" {
+		t.Fatalf("autonomyMode(direct) = %q, want copilot", got)
+	}
+}
+
 func TestNormalizeInputRejectsEmptyPlanObject(t *testing.T) {
 	_, err := normalizeInput(Input{
 		Title: "空计划任务", ActionType: "agent_task", Target: "输出结论",

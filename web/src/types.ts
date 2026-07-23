@@ -277,6 +277,7 @@ export interface ExecutionRun {
   stage: 'execute' | 'propose' | 'apply'
   sandbox: string
   status: string
+  prompt: string
   codex_session_id: string | null
   summary: string | null
   output: RunOutput | null
@@ -901,7 +902,6 @@ export interface RuntimeSettings {
   extract_max_prompt_chars: number
   extract_semantic_threshold: number
   extract_semantic_neighbor_limit: number
-  extract_max_tool_rounds: number
   extract_tool_timeout_seconds: number
   extract_history_tool_limit: number
   extract_tool_memory_max_top_k: number

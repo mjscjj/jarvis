@@ -228,8 +228,8 @@ func TestRejectionPayload(t *testing.T) {
 	}
 }
 
-// TestBuildProposePromptExternal verifies the propose prompt tells the agent to
-// judge risk and NOT touch the outside world for high-risk writes.
+// TestBuildProposePrompt verifies the propose prompt allows only pure reads and
+// requires approval before local or external mutations.
 func TestBuildProposePrompt(t *testing.T) {
 	task := &domain.Task{
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
@@ -239,7 +239,7 @@ func TestBuildProposePrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
-	for _, want := range []string{"phase=propose", "任何外部副作用都不得执行", "proposal", "BEGIN_TASK_CONTEXT"} {
+	for _, want := range []string{"phase=propose", "只有纯只读", "包括本地文件", "proposal", "BEGIN_TASK_CONTEXT"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("propose prompt missing %q", want)
 		}
@@ -337,17 +337,24 @@ func TestInvestigateGoesThroughPropose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildProposePrompt(investigate) error = %v", err)
 	}
-	for _, want := range []string{"phase=propose", "实际动作是否会写入", "proposal", "只读或本地任务"} {
+	for _, want := range []string{"phase=propose", "只有纯只读", "包括本地文件", "proposal"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("investigate propose prompt missing %q", want)
 		}
 	}
 }
 
-func TestDirectTaskRunsToCompletion(t *testing.T) {
+func TestDirectTaskStillGoesThroughApproval(t *testing.T) {
 	task := &domain.Task{ActionType: "agent_task", ExecutionMode: taskcreate.ExecutionModeDirect}
+	if runsToCompletion(task) {
+		t.Fatal("direct agent_task must not skip propose/approval")
+	}
+}
+
+func TestCodeChangeStillUsesMRReviewGate(t *testing.T) {
+	task := &domain.Task{ActionType: "code_change", ExecutionMode: taskcreate.ExecutionModeStandard}
 	if !runsToCompletion(task) {
-		t.Fatal("direct agent_task must skip propose and run to completion")
+		t.Fatal("code_change must keep its direct execution + MR review path")
 	}
 }
 
@@ -370,24 +377,23 @@ func TestValidateTaskIntegrityRejectsDrift(t *testing.T) {
 	}
 }
 
-// TestProposeRoutingLowRiskVsHighRisk documents the two propose outcomes that the
-// executor routes on: a read-only investigate finishes in place (needs_approval
-// =false, outcome=completed), while any intended external write parks for approval
-// (needs_approval=true with a full proposal).
-func TestProposeRoutingLowRiskVsHighRisk(t *testing.T) {
-	lowRisk := `{"needs_approval":false,"outcome":"completed","summary":"已读日志得出结论","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`
-	low, err := parseProposeResult(lowRisk)
+// TestProposeRoutingReadOnlyVsMutation documents the two propose outcomes: a
+// read-only investigation finishes in place, while any intended mutation parks
+// with a complete proposal.
+func TestProposeRoutingReadOnlyVsMutation(t *testing.T) {
+	readOnly := `{"needs_approval":false,"outcome":"completed","summary":"已读日志得出结论","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`
+	low, err := parseProposeResult(readOnly)
 	if err != nil {
-		t.Fatalf("low-risk parse error = %v", err)
+		t.Fatalf("read-only parse error = %v", err)
 	}
 	if low.NeedsApproval || low.Outcome != "completed" {
-		t.Fatalf("low-risk investigate should finish in place: %#v", low)
+		t.Fatalf("read-only investigate should finish in place: %#v", low)
 	}
 
-	highRisk := `{"needs_approval":true,"outcome":"needs_human","summary":"查证中需要发消息给对方","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"向对方发确认消息","target":"张三 open_id=ou_x","artifact":"你好，关于登录超时想确认一下……"},"waiting":null}`
-	high, err := parseProposeResult(highRisk)
+	mutation := `{"needs_approval":true,"outcome":"needs_human","summary":"查证中需要发消息给对方","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"向对方发确认消息","target":"张三 open_id=ou_x","artifact":"你好，关于登录超时想确认一下……"},"waiting":null}`
+	high, err := parseProposeResult(mutation)
 	if err != nil {
-		t.Fatalf("high-risk parse error = %v", err)
+		t.Fatalf("mutation parse error = %v", err)
 	}
 	if !high.NeedsApproval || high.Proposal == nil || high.Proposal.Artifact == "" {
 		t.Fatalf("high-risk investigate should park with a full proposal: %#v", high)

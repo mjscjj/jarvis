@@ -47,7 +47,10 @@ func (f *fakeTaskService) ListRuns(_ context.Context, taskID uint64) (*execute.R
 		return nil, f.err
 	}
 	branch := "jarvis/task-8"
-	return &execute.RunList{Items: []execute.RunView{{ID: 3, TaskID: taskID, ActionType: "code_change", Status: "succeeded", Branch: &branch}}}, nil
+	return &execute.RunList{Items: []execute.RunView{{
+		ID: 3, TaskID: taskID, ActionType: "code_change", Status: "succeeded",
+		Prompt: "FULL\nPROMPT", Branch: &branch,
+	}}}, nil
 }
 
 func (f *fakeTaskService) Finish(_ context.Context, input execute.FinishInput) (*execute.TaskView, error) {
@@ -87,8 +90,10 @@ func TestListTaskRuns(t *testing.T) {
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status = %d, want 200", response.StatusCode())
 	}
-	if !bytes.Contains(response.Body(), []byte(`"action_type":"code_change"`)) {
-		t.Fatalf("body missing run item: %s", response.Body())
+	for _, want := range []string{`"action_type":"code_change"`, `"prompt":"FULL\nPROMPT"`} {
+		if !bytes.Contains(response.Body(), []byte(want)) {
+			t.Fatalf("body missing %s: %s", want, response.Body())
+		}
 	}
 }
 

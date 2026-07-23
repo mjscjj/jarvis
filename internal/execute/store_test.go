@@ -42,6 +42,14 @@ func TestParseStatuses(t *testing.T) {
 	}
 }
 
+func TestRunViewIncludesFullPrompt(t *testing.T) {
+	prompt := strings.Repeat("完整原始提示词\n", 10_000)
+	view := runView(&domain.ExecutionRun{ID: 1, Prompt: prompt})
+	if view.Prompt != prompt {
+		t.Fatalf("prompt length = %d, want %d", len(view.Prompt), len(prompt))
+	}
+}
+
 // TestAwaitingApprovalStatusAllowed guards that the new gate status is a valid
 // filter/query value everywhere Tasks are listed.
 func TestAwaitingApprovalStatusAllowed(t *testing.T) {

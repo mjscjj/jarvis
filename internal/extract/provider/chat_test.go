@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -69,7 +70,7 @@ func TestExtractWithToolsRunsToolThenReturnsFinal(t *testing.T) {
 	})
 
 	box := &stubToolBox{result: json.RawMessage(`{"count":0,"messages":[]}`)}
-	result, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "s", User: "u"}, box, 5)
+	result, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "s", User: "u"}, box)
 	if err != nil {
 		t.Fatalf("ExtractWithTools() error = %v", err)
 	}
@@ -81,18 +82,25 @@ func TestExtractWithToolsRunsToolThenReturnsFinal(t *testing.T) {
 	}
 }
 
-func TestExtractWithToolsFailsWhenExceedingMaxRounds(t *testing.T) {
+func TestExtractWithToolsHasNoToolCallCountLimit(t *testing.T) {
 	client, err := NewClient("https://model.test/v1", "plain-key", "model-name", time.Second)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
-	// Always ask for a tool call, never finishing.
+	round := 0
 	client.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"tool_calls","message":{"content":"","tool_calls":[{"id":"call_x","type":"function","function":{"name":"query_chat_history","arguments":"{}"}}]}}]}`), nil
+		round++
+		if round <= 8 {
+			return jsonResponse(http.StatusOK, fmt.Sprintf(`{"choices":[{"finish_reason":"tool_calls","message":{"content":"","tool_calls":[{"id":"call_%d","type":"function","function":{"name":"query_chat_history","arguments":"{}"}}]}}]}`, round)), nil
+		}
+		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"content":"{\"candidates\":[]}","refusal":""}}]}`), nil
 	})
 	box := &stubToolBox{result: json.RawMessage(`{"ok":true}`)}
-	if _, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "s", User: "u"}, box, 2); err == nil {
-		t.Fatal("ExtractWithTools() accepted infinite tool loop")
+	if _, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "s", User: "u"}, box); err != nil {
+		t.Fatalf("ExtractWithTools() stopped after repeated tool calls: %v", err)
+	}
+	if len(box.invoked) != 8 {
+		t.Fatalf("tool calls = %d, want 8", len(box.invoked))
 	}
 }
 
@@ -105,7 +113,7 @@ func TestExtractWithToolsPropagatesToolError(t *testing.T) {
 		return jsonResponse(http.StatusOK, `{"choices":[{"finish_reason":"tool_calls","message":{"content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"query_chat_history","arguments":"{}"}}]}}]}`), nil
 	})
 	box := &stubToolBox{err: context.DeadlineExceeded}
-	if _, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "s", User: "u"}, box, 5); err == nil {
+	if _, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "s", User: "u"}, box); err == nil {
 		t.Fatal("ExtractWithTools() swallowed tool error")
 	}
 }
@@ -116,13 +124,10 @@ func TestExtractWithToolsValidatesArgs(t *testing.T) {
 		t.Fatalf("NewClient() error = %v", err)
 	}
 	box := &stubToolBox{result: json.RawMessage(`{}`)}
-	if _, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "", User: "u"}, box, 5); err == nil {
+	if _, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "", User: "u"}, box); err == nil {
 		t.Fatal("ExtractWithTools() accepted blank system prompt")
 	}
-	if _, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "s", User: "u"}, nil, 5); err == nil {
+	if _, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "s", User: "u"}, nil); err == nil {
 		t.Fatal("ExtractWithTools() accepted nil tool box")
-	}
-	if _, err := client.ExtractWithTools(context.Background(), extract.Prompt{System: "s", User: "u"}, box, 0); err == nil {
-		t.Fatal("ExtractWithTools() accepted non-positive max rounds")
 	}
 }

@@ -3,7 +3,8 @@
 # Same CLI contract as cmd/jarvis-tools, but backed by jarvis-server HTTP API
 # (curl + jq) instead of a direct MySQL connection.
 #
-# Output contract: success → compact JSON on stdout only; errors → stderr + exit 1.
+# Output contract: data commands → compact JSON on stdout only; help → text on
+# stdout; errors → stderr + exit 1.
 set -euo pipefail
 
 fail() {
@@ -17,9 +18,49 @@ command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-usage() {
-  fail "usage: jarvis-tools <subcommand> [flags]
-subcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory list-scheduled-tasks create-scheduled-task yield-until delete-scheduled-task"
+print_usage() {
+  cat <<'EOF'
+usage: jarvis-tools <subcommand> [flags]
+
+subcommands:
+  list-projects
+  get-project
+  get-group
+  get-principal
+  get-person
+  get-shared-memory
+  get-skill
+  append-shared-memory
+  list-scheduled-tasks
+  create-scheduled-task
+  yield-until
+  delete-scheduled-task
+
+Run "jarvis-tools <subcommand> --help" for command-specific flags.
+EOF
+}
+
+usage_error() {
+  print_usage >&2
+  exit 1
+}
+
+print_subcommand_help() {
+  case "$1" in
+    list-projects)          echo "usage: jarvis-tools list-projects [--config PATH]" ;;
+    get-project)            echo "usage: jarvis-tools get-project (--id ID | --code CODE) [--config PATH]" ;;
+    get-group)              echo "usage: jarvis-tools get-group --chat-id CHAT_ID [--config PATH]" ;;
+    get-principal)          echo "usage: jarvis-tools get-principal [--config PATH]" ;;
+    get-person)             echo "usage: jarvis-tools get-person --open-id OPEN_ID [--config PATH]" ;;
+    get-shared-memory)      echo "usage: jarvis-tools get-shared-memory [--config PATH]" ;;
+    get-skill)              echo "usage: jarvis-tools get-skill --name NAME [--config PATH]" ;;
+    append-shared-memory)   echo 'usage: jarvis-tools append-shared-memory [--note TEXT|-] [--config PATH]' ;;
+    list-scheduled-tasks)   echo "usage: jarvis-tools list-scheduled-tasks [--status STATUS] [--limit N] [--config PATH]" ;;
+    create-scheduled-task)  echo 'usage: jarvis-tools create-scheduled-task [--payload JSON|-] [--config PATH]' ;;
+    yield-until)            echo 'usage: jarvis-tools yield-until --at RFC3339 [--reason TEXT|-] [--config PATH]' ;;
+    delete-scheduled-task)  echo "usage: jarvis-tools delete-scheduled-task --id ID [--config PATH]" ;;
+    *) return 1 ;;
+  esac
 }
 
 # resolve_api_base CONFIG_PATH
@@ -539,9 +580,20 @@ cmd_delete_scheduled_task() {
 
 # --- main -------------------------------------------------------------------
 
-[[ $# -ge 1 ]] || usage
+[[ $# -ge 1 ]] || usage_error
 SUBCOMMAND="$1"
 shift
+
+if [[ "$SUBCOMMAND" == "--help" || "$SUBCOMMAND" == "-h" ]]; then
+  print_usage
+  exit 0
+fi
+if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]; then
+  if ! print_subcommand_help "$SUBCOMMAND"; then
+    fail "unknown subcommand \"${SUBCOMMAND}\""
+  fi
+  exit 0
+fi
 
 case "$SUBCOMMAND" in
   list-projects)  cmd_list_projects "$@" ;;

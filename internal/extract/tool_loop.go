@@ -20,7 +20,7 @@ type ToolBox interface {
 // implements it as a single schema-constrained agent run. Kept as an interface
 // so the worker is engine-agnostic and testable without a live endpoint.
 type ToolExtractor interface {
-	ExtractWithTools(ctx context.Context, prompt Prompt, box ToolBox, maxRounds int) (*ExtractionResult, error)
+	ExtractWithTools(ctx context.Context, prompt Prompt, box ToolBox) (*ExtractionResult, error)
 }
 
 // toolBoxBuilder builds the tool box for one conversation unit. It exists so the

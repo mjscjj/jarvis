@@ -1,6 +1,6 @@
 import type { ProposalResult, Task } from '../types'
 
-export type FailureKind = 'codex' | 'manual' | 'rejected' | 'stale' | 'unknown'
+export type FailureKind = 'codex' | 'manual' | 'rejected' | 'interrupted' | 'stale' | 'unknown'
 
 export const externalActions = new Set([
   'summary_post',
@@ -28,6 +28,7 @@ export function failureKindOf(task: Task): FailureKind | null {
   switch (stage) {
     case 'rejected': return 'rejected'
     case 'manual_failed': return 'manual'
+    case 'interrupted': return 'interrupted'
     case 'stale': return 'stale'
     case 'executed': return 'codex'
     default: return 'unknown'
@@ -38,6 +39,7 @@ export const failureMeta: Record<FailureKind, { label: string; color: string }> 
   codex: { label: '执行失败（系统）', color: 'red' },
   manual: { label: '你标记失败', color: 'volcano' },
   rejected: { label: '你已驳回', color: 'gold' },
+  interrupted: { label: '你已打断', color: 'orange' },
   stale: { label: '超时中断', color: 'orange' },
   unknown: { label: '失败', color: 'red' },
 }

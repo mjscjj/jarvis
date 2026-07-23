@@ -162,7 +162,7 @@ func TestNormalizeResumeTaskOnlyAcceptsYieldBinding(t *testing.T) {
 	}
 }
 
-func TestTaskInputUsesDirectM5Entry(t *testing.T) {
+func TestTaskInputUsesStandardM5ApprovalEntry(t *testing.T) {
 	t.Parallel()
 	row := &domain.ScheduledTask{
 		ID: 9, Title: "入会跟进", ActionType: "agent_task",
@@ -176,7 +176,7 @@ func TestTaskInputUsesDirectM5Entry(t *testing.T) {
 	if input.SourceType != taskcreate.SourceScheduledTask || input.SourceID == nil || *input.SourceID != row.ID {
 		t.Fatalf("source = %s/%v", input.SourceType, input.SourceID)
 	}
-	if input.ExecutionMode != taskcreate.ExecutionModeDirect || input.OccurrenceKey == nil {
+	if input.ExecutionMode != taskcreate.ExecutionModeStandard || input.OccurrenceKey == nil {
 		t.Fatalf("execution_mode=%q occurrence=%v", input.ExecutionMode, input.OccurrenceKey)
 	}
 	if string(input.Plan) != `{"instruction":"加入指定会议并完成记录"}` {

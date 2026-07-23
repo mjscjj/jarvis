@@ -32,7 +32,7 @@ func CreateTask(submitter *taskcreate.Submitter) app.HandlerFunc {
 		}
 		mode := strings.TrimSpace(request.ExecutionMode)
 		if mode == "" {
-			mode = taskcreate.ExecutionModeDirect
+			mode = taskcreate.ExecutionModeStandard
 		}
 		task, err := submitter.Submit(ctx, taskcreate.Input{
 			Title: request.Title, ActionType: request.ActionType, Target: request.Target,

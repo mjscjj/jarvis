@@ -60,10 +60,10 @@ ScheduledTask 到点 ────┘                              │
 | `source_type` | `todo/scheduled_task/manual` |
 | `source_id` | 来源记录 ID |
 | `occurrence_key` | 一次触发的唯一标识 |
-| `execution_mode` | `standard/direct` |
-| `approval_ref` | 已批准方案的来源标识 |
+| `execution_mode` | `standard/direct`；两者都不能绕过副作用审批 |
+| `approval_ref` | 已批准方案的来源标识；当前不作为免审批凭据 |
 
-`standard` 保持现有行为：`code_change` 直接执行，其他类型先 propose。`direct` 表示方案已明确授权，M5 跳过 propose，直接按执行结果 Schema 运行。
+`standard` 和历史 `direct` 都使用相同安全边界：`code_change` 直接执行并以 MR 作为审核门，其他类型先 propose。只有纯只读任务可在 propose 阶段完成；本地文件或外部对象的任何修改都必须等待批准。
 
 定时任务使用 `(source_type, source_id, occurrence_key)` 唯一键防止同一轮重复创建 Task。
 
@@ -116,7 +116,7 @@ M4 和自动决策继续控制自己的 Todo 状态、DecisionAudit 和事务，
 
 1. 按现有乐观条件抢占 ScheduledTask。
 2. 以原 `next_run_at` 生成 `occurrence_key`。
-3. 调用 Factory 创建 `execution_mode=direct` 的 Task。
+3. 调用 Factory 创建 `execution_mode=standard` 的 Task。
 4. 调用 `Pipeline.TaskReady(task_id, version)`。
 5. 保存 `last_task_id` 和触发结果。
 
@@ -141,7 +141,7 @@ POST /api/tasks
   "target": "Agent Runtime 项目",
   "background": {"snapshot_version": "v1"},
   "plan": {"instruction": "检查最新状态并输出结论"},
-  "execution_mode": "direct",
+  "execution_mode": "standard",
   "project_id": 1
 }
 ```
@@ -150,14 +150,14 @@ POST /api/tasks
 
 ## 8. M5 改动
 
-M5 只增加一个明确分支：
+M5 使用统一审批分支：
 
 ```text
-execution_mode=direct
-  → runOnce
+action_type=code_change
+  → runOnce，以 MR 作为审核门
 
-execution_mode=standard
-  → 保持现有 code_change/propose_apply 行为
+其他 action_type（不区分 standard/direct）
+  → propose；纯只读可完成，任何修改进入 approve/apply
 ```
 
 执行前重算 `action_hash`，不一致时 fail-fast。新增 `agent_task` 作为通用 Agent 任务类型；它使用现有 `danger-full-access` Agent Engine，不增加专用工作流。
@@ -178,7 +178,7 @@ M5 使用结构化 `outcome=completed/waiting/needs_human/failed` 判定。`wait
 
 1. M4 创建的 Task 行为不变。
 2. `POST /api/tasks` 创建后进入 M5。
-3. `direct` 任务跳过 propose。
+3. `direct` 非代码任务同样进入 propose，不能绕过副作用审批。
 4. ScheduledTask 到点只创建一条 Task，同一 occurrence 不重复创建。
 5. ScheduledTask 的 `last_task_id` 可定位真实 Task 结果。
 6. Codex 返回 `outcome=failed` 时 Task 进入 `failed`；返回 `outcome=waiting` 时 Task 持久化等待并可恢复原 Session。

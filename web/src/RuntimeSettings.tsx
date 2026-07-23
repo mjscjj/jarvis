@@ -326,7 +326,6 @@ export default function RuntimeSettings() {
             <NumberField name="extract_evidence_retry_max" label="证据补抽次数" min={0} max={10} help="来源原文无法逐字匹配时，允许重新提取的次数。" />
           </Section>
           <Section title="Model API 工具循环" description="仅在提取引擎为 Model API 时控制循环；Agent CLI 不受这些参数限制。">
-            <NumberField name="extract_max_tool_rounds" label="最大工具轮次" min={1} max={50} />
             <NumberField name="extract_tool_timeout_seconds" label="单个工具超时（秒）" min={1} max={600} />
             <NumberField name="extract_history_tool_limit" label="历史消息返回上限" min={1} max={1000} />
             <SettingCol>

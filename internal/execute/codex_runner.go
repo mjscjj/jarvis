@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -68,11 +70,10 @@ type codexEnrichment struct {
 }
 
 // proposeResult is the structured final message codex must return for the
-// propose stage of an external-side-effect action (see proposeResultSchema).
-// When NeedsApproval is false the agent already finished the low-risk work and
-// Success carries the normal verdict. When NeedsApproval is true the agent did
-// NOT touch the outside world; Proposal holds the plan + full artifact awaiting
-// human approval before the apply stage lands it.
+// propose stage of a non-code action (see proposeResultSchema). When
+// NeedsApproval is false the agent already finished pure read-only work. When it
+// is true the agent performed no mutation; Proposal holds the plan + full
+// artifact awaiting human approval before apply lands it.
 type proposeResult struct {
 	NeedsApproval bool              `json:"needs_approval"`
 	Outcome       string            `json:"outcome"`
@@ -84,9 +85,9 @@ type proposeResult struct {
 	Waiting       *codexWaiting     `json:"waiting"`
 }
 
-// codexProposal is the concrete external write the agent wants a human to
-// approve: what it will do, which object it targets, and the complete artifact
-// (the changed document in full, the exact message to send, the diff plan, …).
+// codexProposal is the concrete mutation the agent wants a human to approve:
+// what it will do, which object it targets, and the complete artifact (file
+// content, changed document, exact message, meeting request, …).
 type codexProposal struct {
 	Action   string `json:"action"`
 	Target   string `json:"target"`
@@ -96,7 +97,8 @@ type codexProposal struct {
 // CodexRunner wraps the codex CLI for execution. On this trusted local host runs
 // use danger-full-access so external tools (lark-cli/bytedcli) can reach the
 // network and macOS Keychain; the safety boundary is the propose/approval gate
-// (the agent declares needs_approval before any external write), not the sandbox.
+// (the agent declares needs_approval before any local or external mutation), not
+// the sandbox.
 type CodexRunner struct {
 	bin             string
 	model           string
@@ -131,7 +133,7 @@ func NewCodexRunner(bin, model, reasoningEffort string, timeout time.Duration) (
 //   - schemaExecution: executionResultSchema; parsed into codexRun.Result (the
 //     apply / low-risk landing verdict).
 //   - schemaPropose: proposeResultSchema; parsed into codexRun.Propose (the
-//     external-write risk judgement + proposal).
+//     mutation judgement + proposal).
 type schema int
 
 const (
@@ -257,6 +259,17 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	command := exec.CommandContext(runCtx, r.bin, args...)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Cancel = func() error {
+		if command.Process == nil {
+			return os.ErrProcessDone
+		}
+		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
 	if strings.TrimSpace(repoPath) == "" && invocation.TaskID == 0 {
 		command.Dir = tempDir
 	} else if strings.TrimSpace(repoPath) != "" {
@@ -287,6 +300,9 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	command.Stdout = stdoutWriter
 	command.Stderr = stderrWriter
 	if err := command.Run(); err != nil {
+		if errors.Is(context.Cause(runCtx), ErrExecutionInterrupted) {
+			return nil, ErrExecutionInterrupted
+		}
 		if runCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("codex exec timed out after %s", r.timeout)
 		}

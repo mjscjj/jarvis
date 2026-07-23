@@ -42,7 +42,6 @@ type RuntimeSettings struct {
 	ExtractMaxPromptChars        int     `json:"extract_max_prompt_chars"`
 	ExtractSemanticThreshold     float64 `json:"extract_semantic_threshold"`
 	ExtractSemanticNeighborLimit int     `json:"extract_semantic_neighbor_limit"`
-	ExtractMaxToolRounds         int     `json:"extract_max_tool_rounds"`
 	ExtractToolTimeoutSeconds    int     `json:"extract_tool_timeout_seconds"`
 	ExtractHistoryToolLimit      int     `json:"extract_history_tool_limit"`
 	ExtractToolMemoryMaxTopK     int     `json:"extract_tool_memory_max_top_k"`
@@ -198,7 +197,6 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExtractMaxPromptChars:         cfg.Extract.MaxPromptChars,
 		ExtractSemanticThreshold:      cfg.Extract.SemanticThreshold,
 		ExtractSemanticNeighborLimit:  cfg.Extract.SemanticNeighborLimit,
-		ExtractMaxToolRounds:          cfg.Extract.MaxToolRounds,
 		ExtractToolTimeoutSeconds:     cfg.Extract.ToolTimeoutSec,
 		ExtractHistoryToolLimit:       cfg.Extract.HistoryToolLimit,
 		ExtractToolMemoryMaxTopK:      cfg.Extract.ToolMemoryMaxTopK,
@@ -272,7 +270,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	cfg.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	cfg.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit
-	cfg.Extract.MaxToolRounds = input.ExtractMaxToolRounds
 	cfg.Extract.ToolTimeoutSec = input.ExtractToolTimeoutSeconds
 	cfg.Extract.HistoryToolLimit = input.ExtractHistoryToolLimit
 	cfg.Extract.ToolMemoryMaxTopK = input.ExtractToolMemoryMaxTopK
@@ -341,7 +338,6 @@ type runtimeOverride struct {
 		MaxPromptChars        int     `yaml:"max_prompt_chars"`
 		SemanticThreshold     float64 `yaml:"semantic_threshold"`
 		SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
-		MaxToolRounds         int     `yaml:"max_tool_rounds"`
 		ToolTimeoutSec        int     `yaml:"tool_timeout_sec"`
 		HistoryToolLimit      int     `yaml:"history_tool_limit"`
 		ToolMemoryMaxTopK     int     `yaml:"tool_memory_max_top_k"`
@@ -436,7 +432,6 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	override.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	override.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit
-	override.Extract.MaxToolRounds = input.ExtractMaxToolRounds
 	override.Extract.ToolTimeoutSec = input.ExtractToolTimeoutSeconds
 	override.Extract.HistoryToolLimit = input.ExtractHistoryToolLimit
 	override.Extract.ToolMemoryMaxTopK = input.ExtractToolMemoryMaxTopK

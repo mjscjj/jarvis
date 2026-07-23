@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"jarvis/internal/contextsnap"
@@ -25,7 +26,8 @@ import (
 )
 
 var (
-	ErrUnknownActionType = errors.New("unknown action_type has no execution policy")
+	ErrUnknownActionType    = errors.New("unknown action_type has no execution policy")
+	ErrExecutionInterrupted = errors.New("execution interrupted by user")
 )
 
 // ExecuteInput drives one Task execution (the propose stage).
@@ -34,9 +36,8 @@ type ExecuteInput struct {
 }
 
 // ExecuteResult summarizes what happened, for the API/log. When Status is
-// awaiting_approval the external write was judged high-risk: codex produced a
-// proposal (no outside-world effect yet) and the Task is parked for a human to
-// approve or reject.
+// awaiting_approval, codex identified a required mutation and produced a
+// proposal without performing it; the Task is parked for human approval.
 type ExecuteResult struct {
 	TaskID          uint64 `json:"task_id"`
 	RunID           uint64 `json:"run_id"`
@@ -63,6 +64,13 @@ type AgentExecutor struct {
 	repoRoot  string
 	runsDir   string
 	now       func() time.Time
+	activeMu  sync.Mutex
+	active    map[uint64]*activeExecution
+}
+
+type activeExecution struct {
+	cancel context.CancelCauseFunc
+	done   chan struct{}
 }
 
 func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, textStore textstore.Reader, skills skill.Reader, repoRoot, runsDir string) (*AgentExecutor, error) {
@@ -96,8 +104,107 @@ func NewAgentExecutor(db *gorm.DB, store *Store, runner *CodexRunner, sharedMem 
 	return &AgentExecutor{
 		db: db, store: store, runner: runner, sharedMem: sharedMem, workRules: workRules, textStore: textStore, skills: skills,
 		repoRoot: repoRoot, runsDir: runsDir,
-		now: time.Now,
+		now: time.Now, active: make(map[uint64]*activeExecution),
 	}, nil
+}
+
+func (e *AgentExecutor) beginExecution(parent context.Context, taskID uint64) (context.Context, *activeExecution, error) {
+	if taskID == 0 {
+		return nil, nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
+	}
+	runCtx, cancel := context.WithCancelCause(parent)
+	active := &activeExecution{cancel: cancel, done: make(chan struct{})}
+	e.activeMu.Lock()
+	defer e.activeMu.Unlock()
+	if e.active == nil {
+		e.active = make(map[uint64]*activeExecution)
+	}
+	if _, exists := e.active[taskID]; exists {
+		cancel(nil)
+		return nil, nil, fmt.Errorf("%w: task_id=%d already has an active process", ErrInvalidTransition, taskID)
+	}
+	e.active[taskID] = active
+	return runCtx, active, nil
+}
+
+func (e *AgentExecutor) endExecution(taskID uint64, active *activeExecution) {
+	e.activeMu.Lock()
+	if e.active[taskID] == active {
+		delete(e.active, taskID)
+		close(active.done)
+	}
+	e.activeMu.Unlock()
+}
+
+func (e *AgentExecutor) abandonExecution(taskID uint64, active *activeExecution) {
+	active.cancel(nil)
+	e.endExecution(taskID, active)
+}
+
+func (e *AgentExecutor) runInBackground(taskID uint64, runCtx context.Context, active *activeExecution, run func(context.Context) error) {
+	go func() {
+		defer e.endExecution(taskID, active)
+		if err := run(runCtx); err != nil {
+			log.Printf("background execution task_id=%d: %v", taskID, err)
+		}
+	}()
+}
+
+// Interrupt stops the live Codex process for one executing Task and waits until
+// its normal audit/finalization path records a terminal interrupted result.
+// External effects completed before the interrupt are not rolled back.
+func (e *AgentExecutor) Interrupt(ctx context.Context, taskID uint64, expectedVersion int32) (*ExecuteResult, error) {
+	if taskID == 0 || expectedVersion < 0 {
+		return nil, fmt.Errorf("%w: task_id/version is invalid", ErrInvalidInput)
+	}
+	var task domain.Task
+	if err := e.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return nil, fmt.Errorf("load Task id=%d before interrupt: %w", taskID, err)
+	}
+	if task.Version != expectedVersion {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+	}
+	if task.Status != "executing" {
+		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot be interrupted", ErrInvalidTransition, task.ID, task.Status)
+	}
+
+	e.activeMu.Lock()
+	active := e.active[taskID]
+	e.activeMu.Unlock()
+	if active == nil {
+		result, err := json.Marshal(map[string]any{
+			"stage": "interrupted",
+			"error": "未找到仍在运行的 Codex 进程，任务已标记为打断（服务可能在执行期间重启）",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("encode inactive interrupt result task_id=%d: %w", taskID, err)
+		}
+		if _, err := e.store.Finish(ctx, FinishInput{
+			TaskID: taskID, ExpectedVersion: expectedVersion, Status: "failed", Result: result,
+			ActorType: "user", EventType: "execution_interrupted",
+		}); err != nil {
+			return nil, fmt.Errorf("finish inactive interrupted Task id=%d: %w", taskID, err)
+		}
+		return &ExecuteResult{TaskID: taskID, Status: "failed", Summary: "执行已由用户打断（未发现活跃进程）"}, nil
+	}
+	active.cancel(ErrExecutionInterrupted)
+	select {
+	case <-active.done:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("wait for task_id=%d interrupt finalization: %w", taskID, ctx.Err())
+	}
+
+	var finished domain.Task
+	if err := e.db.WithContext(ctx).First(&finished, taskID).Error; err != nil {
+		return nil, fmt.Errorf("reload Task id=%d after interrupt: %w", taskID, err)
+	}
+	if finished.Status != "failed" || !resultHasStage(finished.ExecutionResult, "interrupted") {
+		return nil, fmt.Errorf("%w: task_id=%d completed as status=%s before interrupt took effect", ErrInvalidTransition, taskID, finished.Status)
+	}
+	return &ExecuteResult{TaskID: taskID, Status: "failed", Summary: "执行已由用户打断"}, nil
 }
 
 // KickExecute starts Task execution in the background. It claims the Task
@@ -123,11 +230,16 @@ func (e *AgentExecutor) KickExecute(ctx context.Context, input ExecuteInput) (*E
 	if _, ok := lookupPolicy(task.ActionType); !ok {
 		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
 	}
-	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
+	runCtx, active, err := e.beginExecution(context.Background(), task.ID)
 	if err != nil {
 		return nil, err
 	}
-	e.executeClaimedInBackground(task.ID, execVersion)
+	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
+	if err != nil {
+		e.abandonExecution(task.ID, active)
+		return nil, err
+	}
+	e.executeClaimedInBackground(runCtx, active, task.ID, execVersion)
 	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
 }
 
@@ -155,11 +267,16 @@ func (e *AgentExecutor) KickRerun(ctx context.Context, taskID uint64) (*ExecuteR
 	if err != nil {
 		return nil, err
 	}
-	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
+	runCtx, active, err := e.beginExecution(context.Background(), task.ID)
 	if err != nil {
 		return nil, err
 	}
-	e.executeClaimedInBackground(task.ID, execVersion)
+	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
+	if err != nil {
+		e.abandonExecution(task.ID, active)
+		return nil, err
+	}
+	e.executeClaimedInBackground(runCtx, active, task.ID, execVersion)
 	return &ExecuteResult{TaskID: taskID, Status: "executing"}, nil
 }
 
@@ -194,25 +311,28 @@ func (e *AgentExecutor) KickReapply(ctx context.Context, taskID uint64) (*Execut
 	if proposal == nil {
 		return nil, fmt.Errorf("%w: task_id=%d has no approved proposal to re-apply (use rerun)", ErrInvalidTransition, task.ID)
 	}
-	execVersion, err := e.store.ClaimForReapply(ctx, task.ID, task.Version)
+	runCtx, active, err := e.beginExecution(context.Background(), task.ID)
 	if err != nil {
 		return nil, err
 	}
+	execVersion, err := e.store.ClaimForReapply(ctx, task.ID, task.Version)
+	if err != nil {
+		e.abandonExecution(task.ID, active)
+		return nil, err
+	}
 	claimed := task
-	go func() {
-		if _, err := e.applyApproved(context.Background(), &claimed, policy, proposal, execVersion); err != nil {
-			log.Printf("background re-apply task_id=%d: %v", claimed.ID, err)
-		}
-	}()
+	e.runInBackground(task.ID, runCtx, active, func(runCtx context.Context) error {
+		_, err := e.applyApproved(runCtx, &claimed, policy, proposal, execVersion)
+		return err
+	})
 	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
 }
 
-func (e *AgentExecutor) executeClaimedInBackground(taskID uint64, execVersion int32) {
-	go func() {
-		if _, err := e.executeClaimed(context.Background(), taskID, execVersion); err != nil {
-			log.Printf("background execute task_id=%d: %v", taskID, err)
-		}
-	}()
+func (e *AgentExecutor) executeClaimedInBackground(runCtx context.Context, active *activeExecution, taskID uint64, execVersion int32) {
+	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) error {
+		_, err := e.executeClaimed(runCtx, taskID, execVersion)
+		return err
+	})
 }
 
 // ResumeTask is called by a one-time resume_task schedule. It claims the parked
@@ -239,15 +359,19 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 	if err != nil {
 		return err
 	}
-	execVersion, err := e.store.ClaimWaiting(ctx, taskID, sourceRunID)
+	runCtx, active, err := e.beginExecution(context.Background(), taskID)
 	if err != nil {
 		return err
 	}
-	go func() {
-		if _, err := e.resumeClaimed(context.Background(), taskID, sourceRunID, prompt, execVersion); err != nil {
-			log.Printf("background resume task_id=%d source_run_id=%d: %v", taskID, sourceRunID, err)
-		}
-	}()
+	execVersion, err := e.store.ClaimWaiting(ctx, taskID, sourceRunID)
+	if err != nil {
+		e.abandonExecution(taskID, active)
+		return err
+	}
+	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) error {
+		_, err := e.resumeClaimed(runCtx, taskID, sourceRunID, prompt, execVersion)
+		return err
+	})
 	return nil
 }
 
@@ -270,25 +394,29 @@ func (e *AgentExecutor) KickResumeAfterHuman(ctx context.Context, taskID uint64,
 	if err != nil {
 		return nil, err
 	}
-	claim, err := e.store.ClaimNeedsHuman(ctx, taskID, expectedVersion, response, "backend")
+	runCtx, active, err := e.beginExecution(context.Background(), taskID)
 	if err != nil {
 		return nil, err
 	}
-	go func() {
-		if _, err := e.resumeClaimed(context.Background(), claim.TaskID, claim.SourceRunID, prompt, claim.Version); err != nil {
-			log.Printf("background human resume task_id=%d source_run_id=%d: %v", claim.TaskID, claim.SourceRunID, err)
-		}
-	}()
+	claim, err := e.store.ClaimNeedsHuman(ctx, taskID, expectedVersion, response, "backend")
+	if err != nil {
+		e.abandonExecution(taskID, active)
+		return nil, err
+	}
+	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) error {
+		_, err := e.resumeClaimed(runCtx, claim.TaskID, claim.SourceRunID, prompt, claim.Version)
+		return err
+	})
 	return &ExecuteResult{TaskID: claim.TaskID, Status: "executing"}, nil
 }
 
 func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID uint64, prompt string, execVersion int32) (*ExecuteResult, error) {
 	var task domain.Task
-	if err := e.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+	if err := e.db.WithContext(context.WithoutCancel(ctx)).First(&task, taskID).Error; err != nil {
 		return nil, fmt.Errorf("load resumed Task id=%d: %w", taskID, err)
 	}
 	var source domain.ExecutionRun
-	if err := e.db.WithContext(ctx).First(&source, sourceRunID).Error; err != nil {
+	if err := e.db.WithContext(context.WithoutCancel(ctx)).First(&source, sourceRunID).Error; err != nil {
 		return nil, fmt.Errorf("load resumed source run id=%d: %w", sourceRunID, err)
 	}
 	if source.TaskID != task.ID || source.CodexSessionID == nil || strings.TrimSpace(*source.CodexSessionID) == "" {
@@ -310,6 +438,13 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 	run := &domain.ExecutionRun{
 		TaskID: task.ID, ActionType: task.ActionType, Stage: stage, Sandbox: policy.sandbox,
 		Status: "running", Prompt: prompt, StartedAt: startedAt,
+	}
+	if errors.Is(context.Cause(ctx), ErrExecutionInterrupted) {
+		e.failRun(run, startedAt, ErrExecutionInterrupted)
+		if writeErr := e.persistRun(ctx, run); writeErr != nil {
+			return nil, fmt.Errorf("persist interrupted resumed run task_id=%d: %w", task.ID, writeErr)
+		}
+		return e.finishRun(ctx, &task, execVersion, run, ErrExecutionInterrupted)
 	}
 	repoPath := ""
 	if source.RepoPath != nil {
@@ -499,15 +634,19 @@ func (e *AgentExecutor) finishNeedsHumanRun(run *domain.ExecutionRun, startedAt 
 // The apply codex call can be slow; the HTTP handler must not block on it. Poll
 // Task status or refresh the list for completion.
 func (e *AgentExecutor) KickApprove(ctx context.Context, taskID uint64, expectedVersion int32) (*ExecuteResult, error) {
-	task, policy, proposal, execVersion, err := e.claimForApproval(ctx, taskID, expectedVersion)
+	runCtx, active, err := e.beginExecution(context.Background(), taskID)
 	if err != nil {
 		return nil, err
 	}
-	go func() {
-		if _, err := e.applyApproved(context.Background(), task, policy, proposal, execVersion); err != nil {
-			log.Printf("background approve task_id=%d: %v", task.ID, err)
-		}
-	}()
+	task, policy, proposal, execVersion, err := e.claimForApproval(ctx, taskID, expectedVersion)
+	if err != nil {
+		e.abandonExecution(taskID, active)
+		return nil, err
+	}
+	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) error {
+		_, err := e.applyApproved(runCtx, task, policy, proposal, execVersion)
+		return err
+	})
 	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
 }
 
@@ -567,6 +706,7 @@ func (e *AgentExecutor) claimForApproval(ctx context.Context, taskID uint64, exp
 // Approve (synchronous) and KickApprove (background goroutine).
 func (e *AgentExecutor) applyApproved(ctx context.Context, task *domain.Task, policy actionPolicy, proposal *codexProposal, execVersion int32) (*ExecuteResult, error) {
 	run, execErr := e.runApply(ctx, task, policy, proposal)
+	execErr = e.normalizeInterrupted(ctx, run, execErr)
 	if writeErr := e.persistRun(ctx, run); writeErr != nil {
 		return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
 	}
@@ -621,20 +761,25 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	if err := validateTaskIntegrity(&task); err != nil {
 		return nil, err
 	}
+	runCtx, active, err := e.beginExecution(ctx, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer e.endExecution(task.ID, active)
 
 	// Claim the Task (pending -> executing). This is the concurrency guard.
 	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
 	if err != nil {
 		return nil, err
 	}
-	return e.executeClaimed(ctx, task.ID, execVersion)
+	return e.executeClaimed(runCtx, task.ID, execVersion)
 }
 
 // executeClaimed runs an already-claimed (executing) Task. Used by KickExecute /
 // KickRerun after a synchronous claim, and by Execute after MarkExecuting.
 func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execVersion int32) (*ExecuteResult, error) {
 	var task domain.Task
-	if err := e.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+	if err := e.db.WithContext(context.WithoutCancel(ctx)).First(&task, taskID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
 		}
@@ -647,14 +792,12 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 
 	// Only code_change runs straight through to completion (edit + commit + diff +
 	// push + open MR): the MR is a natural second review gate — nothing merges
-	// without a human. Every OTHER action_type runs the propose stage first, where
-	// the agent judges — by its actual intended behavior, not a static label —
-	// whether it will write/send/modify the outside world. If so it stops and
-	// produces a proposal for human approval; if it is only reading/querying, it
-	// finishes in place. This closes the "an investigate Task decides mid-run to
-	// send a message" gap that a pre-assigned external flag would miss.
+	// without a human. Every OTHER action_type runs the propose stage first,
+	// regardless of execution_mode. Only pure reads may finish there; any local
+	// file mutation or outside-world side effect must stop for human approval.
 	if runsToCompletion(&task) {
 		run, execErr := e.runOnce(ctx, &task, policy)
+		execErr = e.normalizeInterrupted(ctx, run, execErr)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
 			return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
 		}
@@ -663,13 +806,12 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 	return e.executePropose(ctx, &task, policy, execVersion)
 }
 
-// runsToCompletion reports whether an action_type skips the propose/approval gate
-// and runs straight to completion. Only code_change qualifies: its landing is a
-// pushed branch + MR, which a human must still merge, so the MR is the review
-// gate. All other action types go through propose so the agent can flag any real
-// external write for approval based on what it actually intends to do.
+// runsToCompletion reports whether a Task skips the propose/approval gate. Only
+// code_change qualifies because its pushed branch + MR is the review gate.
+// execution_mode=direct is retained as persisted metadata but grants no approval
+// bypass: all non-code tasks must propose before any mutation.
 func runsToCompletion(task *domain.Task) bool {
-	return task != nil && (task.ExecutionMode == taskcreate.ExecutionModeDirect || task.ActionType == "code_change")
+	return task != nil && task.ActionType == "code_change"
 }
 
 func validateTaskIntegrity(task *domain.Task) error {
@@ -692,11 +834,12 @@ func validateTaskIntegrity(task *domain.Task) error {
 }
 
 // executePropose runs the propose stage (every action except code_change) and
-// routes the outcome: if the agent declared it will write to the outside world
-// (needs_approval=true) the Task parks at awaiting_approval with the proposal
-// stored; otherwise the read-only/local work is finished in place (done/failed).
+// routes the outcome: if the agent intends any mutation (including local files)
+// it parks at awaiting_approval with the proposal stored; otherwise pure read-only
+// work is finished in place (done/failed).
 func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, policy actionPolicy, execVersion int32) (*ExecuteResult, error) {
 	run, propose, execErr := e.runPropose(ctx, task, policy)
+	execErr = e.normalizeInterrupted(ctx, run, execErr)
 	if writeErr := e.persistRun(ctx, run); writeErr != nil {
 		return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
 	}
@@ -722,7 +865,7 @@ func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, p
 			Summary: derefString(run.Summary),
 		}, nil
 	}
-	// Low-risk: codex already did the work; finish done/failed on its verdict.
+	// Pure read-only: codex already did the work; finish on its verdict.
 	if propose.Outcome != "completed" {
 		cause := fmt.Errorf("task not completed: %s", propose.FailureReason)
 		return e.finishRun(ctx, task, execVersion, run, cause)
@@ -732,9 +875,10 @@ func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, p
 
 // finishRun persists the terminal state of a run (done on success, failed on
 // error), overwriting execution_result with the final verdict, and returns the
-// summary result. It is the shared tail for local actions, low-risk external
-// actions, and the apply stage.
+// summary result. It is the shared tail for code changes, pure read-only work,
+// and the apply stage.
 func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVersion int32, run *domain.ExecutionRun, execErr error) (*ExecuteResult, error) {
+	ctx = context.WithoutCancel(ctx)
 	if execErr == nil && run.Status == "waiting" {
 		waiting, err := waitingFromRun(run)
 		if err != nil {
@@ -771,9 +915,13 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 	if err != nil {
 		return nil, fmt.Errorf("encode execution result task_id=%d: %w", task.ID, err)
 	}
+	eventType := ""
+	if errors.Is(execErr, ErrExecutionInterrupted) {
+		eventType = "execution_interrupted"
+	}
 	if _, err := e.store.Finish(ctx, FinishInput{
 		TaskID: task.ID, ExpectedVersion: execVersion, Status: finishStatus, Result: resultJSON,
-		ActorType: "m5", RunID: &run.ID,
+		ActorType: "m5", RunID: &run.ID, EventType: eventType,
 	}); err != nil {
 		return nil, fmt.Errorf("finish Task id=%d after execution: %w", task.ID, err)
 	}
@@ -1143,8 +1291,18 @@ func (e *AgentExecutor) failRun(run *domain.ExecutionRun, startedAt time.Time, c
 	return run
 }
 
+func (e *AgentExecutor) normalizeInterrupted(ctx context.Context, run *domain.ExecutionRun, execErr error) error {
+	if !errors.Is(context.Cause(ctx), ErrExecutionInterrupted) {
+		return execErr
+	}
+	if run != nil {
+		e.failRun(run, run.StartedAt, ErrExecutionInterrupted)
+	}
+	return ErrExecutionInterrupted
+}
+
 func (e *AgentExecutor) persistRun(ctx context.Context, run *domain.ExecutionRun) error {
-	return e.db.WithContext(ctx).Create(run).Error
+	return e.db.WithContext(context.WithoutCancel(ctx)).Create(run).Error
 }
 
 func waitingFromRun(run *domain.ExecutionRun) (*codexWaiting, error) {
@@ -1230,8 +1388,12 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 	// stage tags where this terminal result came from so the UI can tell a real
 	// codex execution failure (stage=executed + error) apart from a human
 	// rejection (stage=rejected) or manual mark-failed (stage=manual_failed).
+	stage := "executed"
+	if errors.Is(execErr, ErrExecutionInterrupted) {
+		stage = "interrupted"
+	}
 	payload := map[string]any{
-		"stage":         "executed",
+		"stage":         stage,
 		"action_type":   run.ActionType,
 		"sandbox":       run.Sandbox,
 		"run_status":    run.Status,
@@ -1276,6 +1438,13 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 		payload["error"] = execErr.Error()
 	}
 	return payload
+}
+
+func resultHasStage(raw []byte, stage string) bool {
+	var payload struct {
+		Stage string `json:"stage"`
+	}
+	return json.Unmarshal(raw, &payload) == nil && payload.Stage == stage
 }
 
 // proposalPayload builds the execution_result stored while a Task waits at

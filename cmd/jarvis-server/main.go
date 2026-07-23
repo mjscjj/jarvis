@@ -478,7 +478,7 @@ func main() {
 			},
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
 			MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
-			MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: cfg.Extract.MaxToolRounds, Location: location,
+			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 			EvidenceRetryMax: cfg.Extract.EvidenceRetryMax,
 			AgentToolCatalog: agentToolCatalog,
 			WorkRules:        workRuleService,

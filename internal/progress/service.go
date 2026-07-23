@@ -24,7 +24,7 @@ var taskEventTypes = map[string]struct{}{
 	"created": {}, "execution_started": {}, "approval_requested": {},
 	"approval_granted": {}, "approval_rejected": {}, "rerun_requested": {},
 	"reapply_started": {}, "supplemented": {}, "execution_succeeded": {},
-	"execution_failed": {}, "stale_failed": {}, "snapshot_imported": {},
+	"execution_failed": {}, "execution_interrupted": {}, "stale_failed": {}, "snapshot_imported": {},
 	"waiting_scheduled": {}, "resumed": {}, "human_input_requested": {},
 	"human_response_received": {},
 }

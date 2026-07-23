@@ -6,9 +6,9 @@
 // Most subcommands are read-only. Controlled writes cover shared memory and
 // recurring scheduled tasks, both explicitly exposed for agent use.
 //
-// Output contract (strict): each subcommand prints compact JSON to stdout and
-// NOTHING else, so codex can parse it reliably. Any error is written to stderr
-// and the process exits non-zero (fail-fast).
+// Output contract (strict): data subcommands print compact JSON to stdout and
+// NOTHING else, so codex can parse it reliably. Help is plain text; any error is
+// written to stderr and the process exits non-zero (fail-fast).
 package main
 
 import (
@@ -47,8 +47,16 @@ func main() {
 	}
 	subcommand := os.Args[1]
 	args := os.Args[2:]
+	if subcommand == "-h" || subcommand == "--help" {
+		fmt.Println("usage: jarvis-tools <subcommand> [flags]")
+		fmt.Println("subcommands: list-projects get-project get-group get-principal get-person get-shared-memory get-skill set-shared-memory append-shared-memory list-scheduled-tasks create-scheduled-task yield-until delete-scheduled-task")
+		return
+	}
 
 	if err := run(subcommand, args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
 		fail(err)
 	}
 }

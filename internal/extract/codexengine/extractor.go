@@ -79,11 +79,11 @@ func New(opts Options) (*Extractor, error) {
 	}, nil
 }
 
-// ExtractWithTools satisfies the worker's model transport. box and maxRounds are
-// ignored (codex self-runs its own tools). It sends system+user as one prompt
-// and decodes codex's schema-constrained JSON via the same strict decoder the
-// kimi path uses, so downstream validation is identical across engines.
-func (e *Extractor) ExtractWithTools(ctx context.Context, prompt extract.Prompt, _ extract.ToolBox, _ int) (*extract.ExtractionResult, error) {
+// ExtractWithTools satisfies the worker's model transport. box is ignored
+// (codex self-runs its own tools). It sends system+user as one prompt and
+// decodes codex's schema-constrained JSON via the same strict decoder the kimi
+// path uses, so downstream validation is identical across engines.
+func (e *Extractor) ExtractWithTools(ctx context.Context, prompt extract.Prompt, _ extract.ToolBox) (*extract.ExtractionResult, error) {
 	combined := strings.TrimSpace(prompt.System + "\n\n" + prompt.User)
 	if combined == "" {
 		return nil, fmt.Errorf("codex extraction prompt is empty")

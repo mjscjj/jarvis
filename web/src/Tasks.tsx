@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Input, Modal, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, executeTask, finishTask, listTaskEvents, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
+import { approveTask, executeTask, finishTask, interruptTask, listTaskEvents, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Task, TaskEvent, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -84,6 +84,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [summary, setSummary] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [executingId, setExecutingId] = useState<number>()
+  const [interruptingId, setInterruptingId] = useState<number>()
   const [rerunTarget, setRerunTarget] = useState<Task>()
   const [rerunNote, setRerunNote] = useState('')
   const [reapplyingId, setReapplyingId] = useState<number>()
@@ -218,6 +219,23 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       setError(errorText(cause))
     } finally {
       setExecutingId(undefined)
+    }
+  }
+
+  const runInterrupt = async (task: Task) => {
+    const ok = window.confirm(`确认打断「${task.title}」？\n\n这会立即停止当前 Codex 进程并把任务记为“已打断”。已经完成的外部操作不会自动回滚。`)
+    if (!ok) return
+    setInterruptingId(task.id)
+    setError(undefined)
+    try {
+      await interruptTask(task.id, task.version)
+      setDetail(undefined)
+      setRefreshKey((value) => value + 1)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+      setRefreshKey((value) => value + 1)
+    } finally {
+      setInterruptingId(undefined)
     }
   }
 
@@ -405,7 +423,10 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
           </Space>
         }
         if (task.status === 'executing') {
-          return <StatusBadge label="codex 执行中…" color={statusMeta.executing.color} />
+          return <Space onClick={(e) => e.stopPropagation()}>
+            <StatusBadge label="codex 执行中…" color={statusMeta.executing.color} />
+            <Button danger size="small" loading={interruptingId === task.id} onClick={(e) => { e.stopPropagation(); runInterrupt(task) }}>打断</Button>
+          </Space>
         }
         if (task.status === 'waiting') {
           return <StatusBadge label="等待定时唤醒" color={statusMeta.waiting.color} />
@@ -462,6 +483,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       reapplying={detail ? reapplyingId === detail.id : false}
       approveSubmitting={detail ? approveSubmitting && approveTarget?.id === detail.id : false}
       resumeSubmitting={detail ? resumeSubmitting && resumeTarget?.id === detail.id : false}
+      interrupting={detail ? interruptingId === detail.id : false}
       onClose={closeDetail}
       onExecute={runExecute}
       onApprove={openApprove}
@@ -469,6 +491,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       onRerun={openRerun}
       onReapply={runReapply}
       onResume={openResume}
+      onInterrupt={runInterrupt}
     />
     <Modal zIndex={taskActionModalZIndex} title={finishStatus === 'done' ? '记录完成结果' : '记录失败原因'} open={Boolean(selected)} confirmLoading={submitting} onOk={submit} onCancel={() => setSelected(undefined)} okText="提交">
       <Input.TextArea rows={5} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder={finishStatus === 'done' ? '完成了什么、产物在哪里' : '失败原因和需要的后续处理'} />

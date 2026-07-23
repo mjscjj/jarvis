@@ -185,7 +185,7 @@ func TestPipelineLive(t *testing.T) {
 		},
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
 		MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
-		MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: 5, Location: location,
+		MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 		WorkRules:     workRuleService,
 		Skills:        skillService,
 		SystemPrompts: textStorageService,

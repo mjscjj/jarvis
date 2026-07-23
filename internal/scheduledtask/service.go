@@ -508,15 +508,14 @@ func taskInput(row *domain.ScheduledTask, occurrenceKey string) (taskcreate.Inpu
 	if err != nil {
 		return taskcreate.Input{}, fmt.Errorf("encode scheduled Task plan: %w", err)
 	}
-	approvalRef := fmt.Sprintf("scheduled_task:%d", row.ID)
 	return taskcreate.Input{
 		Title: row.Title, ActionType: row.ActionType, Target: row.Title,
 		Background: json.RawMessage(row.ContextSnapshot), Plan: plan,
 		ConfirmedBy: "scheduled_task", SourceType: taskcreate.SourceScheduledTask,
 		SourceID: &row.ID, OccurrenceKey: &occurrenceKey,
-		ExecutionMode: taskcreate.ExecutionModeDirect, ApprovalRef: &approvalRef,
-		ActorType:   "scheduled_task",
-		EventDetail: map[string]any{"scheduled_task_id": row.ID, "occurrence_key": occurrenceKey},
+		ExecutionMode: taskcreate.ExecutionModeStandard,
+		ActorType:     "scheduled_task",
+		EventDetail:   map[string]any{"scheduled_task_id": row.ID, "occurrence_key": occurrenceKey},
 	}, nil
 }
 

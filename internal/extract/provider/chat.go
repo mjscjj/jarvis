@@ -11,22 +11,19 @@ import (
 
 // ExtractWithTools runs M3 extraction as a function-calling loop: the model may
 // call retrieval tools (chat history, memory) before emitting the final strict
-// JSON. It fails fast — an unknown tool, a tool error, a refusal, or exceeding
-// maxRounds all surface as errors rather than a degraded result.
+// JSON. It fails fast — an unknown tool, a tool error, or a refusal surfaces as
+// an error rather than a degraded result. The caller's context is the loop's
+// termination boundary; there is no tool-call count cap.
 //
 // Every round requests the strict extraction schema as response_format, so the
 // first round without tool calls returns the final structured result directly.
-func (c *Client) ExtractWithTools(ctx context.Context, prompt extract.Prompt, box extract.ToolBox, maxRounds int) (*extract.ExtractionResult, error) {
+func (c *Client) ExtractWithTools(ctx context.Context, prompt extract.Prompt, box extract.ToolBox) (*extract.ExtractionResult, error) {
 	if strings.TrimSpace(prompt.System) == "" || strings.TrimSpace(prompt.User) == "" {
 		return nil, fmt.Errorf("model extraction system and user prompts must be non-empty")
 	}
 	if box == nil {
 		return nil, fmt.Errorf("model extraction tool box is nil")
 	}
-	if maxRounds <= 0 {
-		return nil, fmt.Errorf("model extraction max rounds must be positive")
-	}
-
 	messages := []map[string]any{
 		{"role": "system", "content": prompt.System},
 		{"role": "user", "content": prompt.User},
@@ -34,7 +31,7 @@ func (c *Client) ExtractWithTools(ctx context.Context, prompt extract.Prompt, bo
 	specs := box.Specs()
 	responseFormat := structuredResponseFormat("todo_extraction", TodoExtractionJSONSchema())
 
-	for round := 0; round < maxRounds; round++ {
+	for {
 		requestBody := map[string]any{
 			"model":           c.model,
 			"messages":        messages,
@@ -71,7 +68,6 @@ func (c *Client) ExtractWithTools(ctx context.Context, prompt extract.Prompt, bo
 		}
 		return result, nil
 	}
-	return nil, fmt.Errorf("model extraction exceeded max tool rounds=%d without a final answer", maxRounds)
 }
 
 // appendToolResults records the assistant tool-call turn, runs each requested
