@@ -384,6 +384,41 @@ func TestValidateCandidateEvidenceQuoteMismatchIncludesSourceText(t *testing.T) 
 	}
 }
 
+func TestValidateCandidateEvidenceAllowsMeetingAssignerOutsideSyntheticSender(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID: "meeting:1", Source: "meeting", Content: "张三负责补齐测试",
+		IsNew: true, Extractable: true,
+	}}}
+	assigner := "ou_zhangsan"
+	candidate := Candidate{
+		ActionType: "investigate", Title: "补齐测试", Target: "测试",
+		Description: "补齐测试", OpenQuestions: []string{},
+		CommitmentStrength: "firm", AssignerOpenID: &assigner,
+		SourceMessageIDs: []string{"meeting:1"}, SourceQuote: "张三负责补齐测试",
+	}
+	if err := validateCandidateEvidence(unit, &candidate); err != nil {
+		t.Fatalf("validateCandidateEvidence() error = %v", err)
+	}
+}
+
+func TestValidateCandidateEvidenceRejectsChatAssignerOutsideParticipants(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID: "om_1", Source: "poll", Content: "张三负责补齐测试",
+		IsNew: true, Extractable: true,
+	}}}
+	assigner := "ou_zhangsan"
+	candidate := Candidate{
+		ActionType: "investigate", Title: "补齐测试", Target: "测试",
+		Description: "补齐测试", OpenQuestions: []string{},
+		CommitmentStrength: "firm", AssignerOpenID: &assigner,
+		SourceMessageIDs: []string{"om_1"}, SourceQuote: "张三负责补齐测试",
+	}
+	err := validateCandidateEvidence(unit, &candidate)
+	if err == nil || !strings.Contains(err.Error(), "outside conversation participants") {
+		t.Fatalf("validateCandidateEvidence() error = %v", err)
+	}
+}
+
 func validWorkerOptions() WorkerOptions {
 	return WorkerOptions{
 		Load:            LoadOptions{BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour, OpenTodoLimit: 50},

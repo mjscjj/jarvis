@@ -354,11 +354,23 @@ func validateCandidateEvidence(unit ConversationUnit, candidate *Candidate) erro
 				break
 			}
 		}
-		if !found {
+		if !found && !citesOnlyMeetingEvidence(byID, candidate.SourceMessageIDs) {
 			return fmt.Errorf("%w: assigner_open_id %q is outside conversation participants", ErrInvalidCandidate, *candidate.AssignerOpenID)
 		}
 	}
 	return nil
+}
+
+func citesOnlyMeetingEvidence(messages map[string]MessageContext, sourceMessageIDs []string) bool {
+	if len(sourceMessageIDs) == 0 {
+		return false
+	}
+	for _, messageID := range sourceMessageIDs {
+		if strings.TrimSpace(messages[messageID].Source) != "meeting" {
+			return false
+		}
+	}
+	return true
 }
 
 func containsNormalized(content, quote string) bool {

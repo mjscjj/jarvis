@@ -155,6 +155,7 @@ erDiagram
 - **一个 Todo 最多生成一个 Task**（1:0..1）。Todo 被 `dismissed` 则永不产生 Task。
 - **Task 一旦生成，方案即冻结**（`plan` 是确认时刻的快照）。若后续讨论变了，是**新 Todo → 新 Task**，旧 Task 走正常生命周期（不追溯篡改已确认方案）。
 - **背景与方案是 Task 的一等字段**，不是引用：`background`（问题背景）和 `plan`（明确方案）在确认时刻**快照固化**进 Task，保证执行时方案明确、可复现，不受源数据后续变化影响。
+- M2 只记录外部事实和采集结果；采集失败也是证据，不是 M2 的行动决策。M2 不创建 Todo，也不申请权限、联系人员或执行其他外部动作。
 - M3 只写 Todo；M4 是 Todo→Task 的**唯一转化闸门**；M5 只读 Task。三者职责不交叉。
 
 ### 2.4 各实体 MySQL DDL
@@ -430,7 +431,8 @@ CREATE TABLE scan_record (
                          └───────────────────┬──────────────────────────┘
                                             │
   M2 采集 ──────────────────────────────────▼──────────────────────────
-    lark-cli --as user 分层轮询全量消息 → message(明文) + group + resource
+    lark-cli --as user 采集群消息、会议与妙记产物
+    → message(明文) + group + resource + 中立采集结果
     扫描提交新消息后通知进程内 Coordinator，按 chat 定向唤醒 M3
                                             │
   M2 记忆化 ─────────────────────────────────▼──────────────────────────
@@ -438,21 +440,45 @@ CREATE TABLE scan_record (
                                             │
   M3 提取 Todo ──────────────────────────────▼──────────────────────────
     新消息 + 背景(Project/Person/Group) + mem0 记忆
-    → LLM API 结构化抽取 → Todo(线索,可能信息不足) → 按 Todo ID/version 唤醒 M4
+    → agent/LLM 结构化抽取 → 创建/合并/忽略 Todo → 按 Todo ID/version 唤醒 M4
                                             │
   M4 打分 + 确认(Todo→Task 闸门) ─────────────▼──────────────────────────
     confidence×risk 打分(codex exec 做复杂决策)
-    ├─ auto: 明确且低风险 → 自动确认 → 生成 Task
+    ├─ auto: 明确且低风险 → 自动确认 → 生成 Task（不等于授权外部写入）
     ├─ need_info: 缺信息 → 飞书卡片/后台问用户 → 回流补齐
     └─ need_decision: 需决策 → 用户确认(可带修改) → 生成 Task
     确认 = 固化 background + plan 快照 → 插入 task → 按 Task ID/version 唤醒 M5
                                             │
   M5 执行 Task ──────────────────────────────▼──────────────────────────
-    按 action_type 路由 executor:
+    按 action_type 路由 executor；非 code_change 先形成可审阅方案:
     code_change(codex exec) / summary_post(lark-cli) /
     investigate(rg+codex+web) / schedule_meeting(lark-cli calendar)
+    申请权限、发消息等业务外部写操作 → awaiting_approval → 用户明确批准后执行
     → execution_result 回写 → task.status=done/failed → M0
 ```
+
+### 3.1 采集事实与行动决策的职责边界
+
+| 模块 | 输入与产出 | 边界 |
+|---|---|---|
+| **M2 采集** | 读取外部系统，落原始内容和客观采集结果，如 `success`、`permission_denied`、`temporarily_unavailable` | 只负责“发生了什么”。可以安排采集重试，但不决定“接下来做什么” |
+| **M3 Todo** | 读取采集证据和完整上下文，创建、合并或忽略 Todo | 负责判断是否值得行动、采取什么动作、找谁处理；允许产出零个 Todo |
+| **M4 决策** | 把 Todo 路由为补信息、人工决策或自动建 Task | `auto` 只代表自动流转到 Task，不授予任何外部写权限 |
+| **M5 执行** | 执行 Task 并记录结果；非 `code_change` Task 先提案 | 只读动作可直接完成；申请权限、发消息、修改飞书等业务外部写操作必须先进入 `awaiting_approval` |
+
+以妙记无权限为例：
+
+```text
+M2：记录会议信息 + minute_token + permission_denied + 原始错误，并继续独立重试
+  ↓
+M3：结合主持人、参会人和项目上下文，决定是否创建或合并 Todo
+  ↓
+M4：将 Todo 固化为 Task；auto 仅表示无需人工确认 Todo
+  ↓
+M5：先给出申请权限或联系主持人的方案，明确批准后才执行外部写操作
+```
+
+因此，**采集重试和 Todo 判断是两条独立责任**：重试间隔只影响下一次采集，不得阻止本次失败证据进入 M3，也不得替 M3 提前决定行动。
 
 ---
 
@@ -532,7 +558,7 @@ mem0 是 Python 库、无 Go SDK。采用 **sidecar 进程**隔离：
 |---|---|---|---|
 | M0 | （本总纲 + 前端） | 管理后台 + 编排 + cron | — |
 | M1 | `modules/01-background.md` | Project/Person/Group 背景 + mem0 注入 | 产出背景 |
-| M2 | `modules/02-message.md` | 消息采集 + Group/Resource 沉淀 + 记忆化 | 产出 message/group/resource/记忆 |
+| M2 | `modules/02-message.md` | 群消息、会议与妙记采集 + Group/Resource 沉淀 + 记忆化 | 产出原始内容、中立采集结果、group/resource/记忆 |
 | M3 | `modules/03-task-extract.md` | 提取 **Todo** | 消费消息+背景+记忆 → 产出 Todo |
 | M4 | `modules/04-confirmation.md` | 打分 + **Todo→Task 转化闸门**（codex 决策） | 消费 Todo → 产出 Task |
 | M5 | `modules/05-execution.md` | 执行 **Task** | 消费 Task → 执行结果 |

@@ -58,7 +58,7 @@ const systemPromptTemplate = `你是 principal（open_id=%s，也就是「我」
 一、替我发现值得处理的事
    从对话里识别出我需要亲自做、或你可以替我推进的行动线索——别人明确交办给我的、我自己承诺要做的、或明显在等我表态推进的事。leader 发出的即使措辞较软也要拎出来。闲聊、情绪、与我无关的讨论就跳过。拿不准的宁可少拎，别硬凑；没有值得处理的事就返回 candidates=[]。
    每条事都要能追溯到对话里的具体原话：source_quote 从某条 [new] 消息里逐字连续复制（原文的 exact contiguous substring，不要改写、补字或拼接多条），source_message_ids 指向它，这样我一眼就知道这事从哪来的。
-   特殊来源：当 [new] 消息标记 source=meeting 时，它是系统在会议结束后导入的妙记证据，不是真人刚发的新消息。只从其中明确的交办、承诺、负责人待办里提取；不要因为“开过这个会”本身生成参会/回顾 Todo，也不要把没有落到 principal 身上的他人待办硬算给 principal。source_quote 仍必须逐字来自这条系统证据。
+   特殊来源：当 [new] 消息标记 source=meeting 时，它是系统在会议结束后导入的证据，不是真人刚发的新消息。普通妙记证据只从其中明确的交办、承诺、负责人待办里提取；不要因为“开过这个会”本身生成参会/回顾 Todo，也不要把没有落到 principal 身上的他人待办硬算给 principal。内容以「[会议妙记采集结果]」开头时，它只是采集模块记录的客观结果；你要结合错误、会议背景和可用工具自行判断是否存在值得 principal 处理的行动、应找谁、该怎么推进，允许返回 candidates=[]，禁止把采集模块的状态机械映射成固定 Todo。如果你基于某条采集结果生成候选，source_message_ids 必须引用触发判断的那条 [new]「会议妙记采集结果」，不能改引旧会议消息或其他 context。source_quote 仍必须逐字来自这条系统证据。
 
 二、替我把功课做足（这是你最有价值的地方）
    把一件事摆到我面前之前，先站在我的角度想：我要推进它，需要先知道什么？然后主动去把这些背景查清楚、想明白，写进 context：
@@ -132,6 +132,7 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]a
 // the query long and noisy, hurting recall; the latest messages carry the
 // actionable intent, so only the last N are used.
 const salientQueryMaxMessages = 20
+const salientQueryMaxChars = 6000
 
 func SalientQuery(unit ConversationUnit) (string, error) {
 	parts := make([]string, 0)
@@ -149,7 +150,17 @@ func SalientQuery(unit ConversationUnit) (string, error) {
 	if len(parts) > salientQueryMaxMessages {
 		parts = parts[len(parts)-salientQueryMaxMessages:]
 	}
-	return strings.Join(parts, "\n"), nil
+	query := strings.Join(parts, "\n")
+	runes := []rune(query)
+	if len(runes) <= salientQueryMaxChars {
+		return query, nil
+	}
+	const marker = "\n...[记忆检索查询已截断]...\n"
+	markerRunes := []rune(marker)
+	available := salientQueryMaxChars - len(markerRunes)
+	head := available / 2
+	tail := available - head
+	return string(runes[:head]) + marker + string(runes[len(runes)-tail:]), nil
 }
 
 func renderUserPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]any, now time.Time, location *time.Location) string {

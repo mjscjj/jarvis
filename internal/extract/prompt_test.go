@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
@@ -165,6 +166,47 @@ func TestSalientQueryCapsToLastMessages(t *testing.T) {
 	}
 	if !strings.Contains(query, "消息29") {
 		t.Fatalf("SalientQuery() dropped the newest message:\n%s", query)
+	}
+}
+
+func TestSalientQueryCapsLongMeetingEvidenceForMemorySearch(t *testing.T) {
+	query, err := SalientQuery(ConversationUnit{Key: "meeting", Messages: []MessageContext{{
+		MessageID:   "meeting:1",
+		Content:     "开头行动项\n" + strings.Repeat("会议逐字稿", 2000) + "\n结尾行动项",
+		IsNew:       true,
+		Extractable: true,
+	}}})
+	if err != nil {
+		t.Fatalf("SalientQuery() error = %v", err)
+	}
+	if got := utf8.RuneCountInString(query); got != salientQueryMaxChars {
+		t.Fatalf("SalientQuery() runes = %d, want %d", got, salientQueryMaxChars)
+	}
+	for _, want := range []string{"开头行动项", "记忆检索查询已截断", "结尾行动项"} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("SalientQuery() missing %q", want)
+		}
+	}
+}
+
+func TestExtractionPromptLeavesMeetingCaptureResultDecisionToAgent(t *testing.T) {
+	system := fmt.Sprintf(systemPromptTemplate, "ou_owner")
+	for _, want := range []string{
+		"[会议妙记采集结果]",
+		"自行判断",
+		"允许返回 candidates=[]",
+		"禁止把采集模块的状态机械映射成固定 Todo",
+		"source_message_ids 必须引用触发判断的那条 [new]",
+		"不能改引旧会议消息或其他 context",
+	} {
+		if !strings.Contains(system, want) {
+			t.Fatalf("system prompt missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"必须为 principal 提取一条 manual_followup", "决定是否申请对应妙记的查看权限"} {
+		if strings.Contains(system, forbidden) {
+			t.Fatalf("system prompt contains hard-coded decision %q", forbidden)
+		}
 	}
 }
 

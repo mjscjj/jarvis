@@ -46,11 +46,26 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
                      对外写入 + diff/产物落 runs_dir
 ```
 
+### 核心职责边界
+
+| 模块 | 负责 | 不负责 |
+|---|---|---|
+| M2 采集 | 读取外部事实，记录成功、无权限、暂不可用等采集结果；按自己的可靠性策略重试 | 不判断要不要做事，不创建 Todo，不申请权限，不联系主持人 |
+| M3 Todo | 结合采集证据与项目、人物、会话上下文，决定创建、合并或忽略 Todo，并明确建议动作 | 不执行外部写操作 |
+| M4 决策 | 判断 Todo 是否应固化为 Task，以及缺信息还是需人工决策 | `auto_execute` 只表示自动建 Task，不代表授权外部写入 |
+| M5 执行 | 非 `code_change` Task 先形成可审阅方案；申请权限、发消息等业务外部写操作经明确批准后执行 | 不反过来替采集模块改写事实 |
+
+三条硬规则：
+
+- **错误是证据，不是决策。** 例如妙记无权限，M2 只记录会议、妙记 token 和原始错误；由 M3 决定是否生成“申请权限”“联系主持人”或其他 Todo。
+- **重试与行动判断相互独立。** M2 可以按可靠性策略继续重试，但不能因为下次重试尚未到点而阻止本次证据进入 Todo 流水线。
+- **自动流转不等于外部授权。** M4 自动建 Task 后，申请权限、发消息、修改飞书等业务外部写操作仍须在 M5 等待明确批准。
+
 ### 模块职责与关键文件
 
 | 模块 | 目录 | 干什么 | 核心文件 | LLM/外部依赖 |
 |---|---|---|---|---|
-| M2 采集 | `internal/capture/` | 发现会话、增量扫描 `related_group` 群的消息 | `service.go`（发现/扫描主逻辑）、`scheduler.go`（cron）、`resources.go`（资源引用提取） | lark-cli（`im +chat-list`、`im +chat-messages-list`） |
+| M2 采集 | `internal/capture/`、`internal/meetingcapture/` | 采集群消息、会议与妙记产物，把原始内容和中立采集结果写成下游证据 | `capture/service.go`（会话发现/扫描）、`meetingcapture/service.go`（会议产物采集）、各自 `scheduler.go` | lark-cli（IM / VC / Minutes 只读接口） |
 | M2.5 记忆 | `internal/memory/` | 消息切窗 → mem0 抽事实 → 向量入库 | `worker.go`（窗口化编排）、`store.go`（pending 查询/标记）、`client.go`（sidecar HTTP） | mem0 sidecar → Qdrant `jarvis_memories` |
 | M3 抽取 | `internal/extract/` | 从新消息抽 Todo（默认 `engine=codex`：traex agent 自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库并冻结 `context_snapshot`；备用 `model_api` function-calling 循环）+ 语义去重 + source_quote 证据重抽 | `worker.go`（编排）、`pipeline_store.go`（加载/组批）、`prompt.go`（提示词）、`persist.go`（落库）、`dedup.go`（去重）、`codexengine/`（traex agent 引擎）、`provider/`（百炼 model API）、`tools/`（工具） | traex agent（`gpt-5.4`）/ 百炼 `qwen-plus` + Qdrant `todo_semantic` + mem0（检索） |
 | M4 决策 | `internal/decide/` | 给 Todo 定 disposition：`codex` 用 codex/traex 判 `auto_execute`/`need_review`/`need_info`（need_info 带结构化 clarifications 说明缺什么）；`manual_mvp` 全走人工确认 | `worker.go`（批处理）、`manual_gate.go` / `codex_evaluator.go`（两种评估器）、`codex.go`（调 agent CLI）、`evaluation.go`（落库）、`service.go`（Approve/Reject 建 Task）、`background.go`（快照）、`constants.go`（共享常量） | traex agent（`gpt-5.4`，read-only 判定，可自查补信息） |

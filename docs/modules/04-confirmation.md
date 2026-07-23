@@ -53,6 +53,7 @@ M3 产出 Todo(线索)
 - **Task 的 `background` 和 `plan` 是确认时刻的快照**：把"问题背景（关联 project / 关键消息 / 相关记忆 / 交办人）"和"明确方案（用户确认过的，或自动确认的明确方案）"冻结进 Task。执行时方案明确、可复现，不受源数据后续变化影响。
 - **确认前不存在 Task**：Todo 在 `extracted→need_info/need_decision→confirmed` 之间流转，只有 `confirmed` 那一刻才 INSERT task。`dismissed` 的 Todo 永不产生 Task。
 - **方案变了 = 新 Todo → 新 Task**：M4 不篡改已生成 Task 的 plan。若讨论推进导致方案变化，由 M3 产出新 Todo、M4 重新走一遍。
+- **自动确认只负责生成 Task**：`auto_execute` 不代表已经授权申请权限、发消息或修改飞书；这些业务外部写操作仍由 M5 在执行前请求明确批准。
 
 ### 0.2 上下游接口
 

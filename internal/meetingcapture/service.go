@@ -24,10 +24,11 @@ import (
 )
 
 const (
-	meetingChatMode     = "meeting"
-	meetingSenderOpenID = "__meeting_minutes__"
-	meetingSenderName   = "会议妙记"
-	meetingMessageType  = "meeting_minutes"
+	meetingChatMode      = "meeting"
+	meetingSenderOpenID  = "__meeting_minutes__"
+	meetingSenderName    = "会议妙记"
+	meetingMessageType   = "meeting_minutes"
+	captureResultMsgType = "meeting_capture_result"
 
 	statusDiscovered        = "discovered"
 	statusWaitingMinutes    = "waiting_minutes"
@@ -38,7 +39,7 @@ const (
 	waitingRetryDelay       = 10 * time.Minute
 	emptyArtifactRetryDelay = 30 * time.Minute
 	failedRetryDelay        = 30 * time.Minute
-	permissionRetryDelay    = 6 * time.Hour
+	permissionRetryDelay    = 10 * time.Minute
 )
 
 type runner interface {
@@ -356,7 +357,7 @@ func (s *Service) processMeeting(ctx context.Context, state *domain.MeetingInges
 	minute, err := minutesItem(todoResponse, runErr, detail.MinuteToken)
 	if err != nil {
 		if isPermissionError(err) {
-			return statusPermissionDenied, s.fail(state, statusPermissionDenied, err, now.Add(permissionRetryDelay))
+			return statusPermissionDenied, s.handlePermissionDenied(ctx, state, item, detail, err, now)
 		}
 		return statusFailed, s.fail(state, statusFailed, err, now.Add(failedRetryDelay))
 	}
@@ -371,7 +372,7 @@ func (s *Service) processMeeting(ctx context.Context, state *domain.MeetingInges
 		transcriptMinute, transcriptErr := minutesItem(transcriptResponse, runErr, detail.MinuteToken)
 		if transcriptErr != nil {
 			if isPermissionError(transcriptErr) {
-				return statusPermissionDenied, s.fail(state, statusPermissionDenied, transcriptErr, now.Add(permissionRetryDelay))
+				return statusPermissionDenied, s.handlePermissionDenied(ctx, state, item, detail, transcriptErr, now)
 			}
 			return statusFailed, s.fail(state, statusFailed, transcriptErr, now.Add(failedRetryDelay))
 		}
@@ -433,6 +434,62 @@ func (s *Service) processMeeting(ctx context.Context, state *domain.MeetingInges
 		}
 	}
 	return statusImported, nil
+}
+
+func (s *Service) handlePermissionDenied(
+	ctx context.Context,
+	state *domain.MeetingIngest,
+	item searchItem,
+	detail meetingDetail,
+	cause error,
+	now time.Time,
+) error {
+	permissionErr := s.fail(state, statusPermissionDenied, cause, now.Add(permissionRetryDelay))
+	evidenceErr := s.emitPermissionCaptureResult(ctx, state, item, detail, cause, now)
+	return errors.Join(permissionErr, evidenceErr)
+}
+
+func (s *Service) emitPermissionCaptureResult(
+	ctx context.Context,
+	state *domain.MeetingIngest,
+	item searchItem,
+	detail meetingDetail,
+	cause error,
+	now time.Time,
+) error {
+	content, err := buildPermissionCaptureResult(detail, item.Metadata.AppLink, cause)
+	if err != nil {
+		return err
+	}
+	group, err := s.ensureMeetingGroup(now)
+	if err != nil {
+		return err
+	}
+	messageID := meetingCaptureResultMessageID(state.MeetingID)
+	message := domain.Message{
+		MessageID: messageID, ChatID: group.ChatID, GroupID: &group.ID,
+		ChatMode: meetingChatMode, SenderOpenID: meetingSenderOpenID, SenderName: meetingSenderName,
+		SenderType: "system", MessageType: captureResultMsgType, Content: content,
+		CreateTime: now.UnixMilli(), Source: "meeting", RenderOK: true,
+	}
+	create := s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "message_id"}},
+		DoNothing: true,
+	}).Create(&message)
+	if create.Error != nil {
+		return fmt.Errorf("persist meeting permission evidence message_id=%s: %w", messageID, create.Error)
+	}
+	state.SourceMessageID = &messageID
+	if err := s.db.Model(state).Update("source_message_id", messageID).Error; err != nil {
+		return fmt.Errorf("link meeting permission evidence meeting_id=%s: %w", state.MeetingID, err)
+	}
+	if create.RowsAffected == 0 || s.observer == nil {
+		return nil
+	}
+	return s.observer.ChatScanned(ctx, capture.ChatScanResult{
+		ChatID: group.ChatID, InsertedCount: 1, MessageIDs: []string{messageID},
+		HighWater: message.CreateTime, LastMessageID: &messageID,
+	})
 }
 
 func minutesItem(response minutesResponse, runErr error, minuteToken string) (minuteDetail, error) {
@@ -586,6 +643,36 @@ func buildEvidence(detail meetingDetail, appLink string, minute minuteDetail, tr
 	return header + "\n" + truncateMiddle(strings.TrimSpace(transcript), remaining), nil
 }
 
+func buildPermissionCaptureResult(detail meetingDetail, appLink string, cause error) (string, error) {
+	meetingID := strings.TrimSpace(detail.MeetingID)
+	minuteToken := strings.TrimSpace(detail.MinuteToken)
+	if meetingID == "" {
+		return "", fmt.Errorf("build meeting capture result: meeting_id is empty")
+	}
+	if minuteToken == "" {
+		return "", fmt.Errorf("build meeting capture result meeting_id=%s: minute_token is empty", meetingID)
+	}
+	if cause == nil || strings.TrimSpace(cause.Error()) == "" {
+		return "", fmt.Errorf("build meeting capture result meeting_id=%s: cause is empty", meetingID)
+	}
+	topic := strings.TrimSpace(detail.Topic)
+	if topic == "" {
+		topic = meetingID
+	}
+	return strings.Join([]string{
+		"[会议妙记采集结果]",
+		"会议主题：" + topic,
+		"会议 ID：" + meetingID,
+		"会议时间：" + strings.TrimSpace(detail.StartTime) + " ~ " + strings.TrimSpace(detail.EndTime),
+		"会议链接：" + strings.TrimSpace(appLink),
+		"妙记 Token：" + minuteToken,
+		"采集阶段：读取妙记 Todo/逐字稿产物",
+		"采集结果：permission_denied",
+		"错误原文：" + strings.TrimSpace(cause.Error()),
+		"已执行动作：无；采集模块未申请权限，也未决定后续处理方式。",
+	}, "\n"), nil
+}
+
 func truncateMiddle(value string, maxRunes int) string {
 	if maxRunes <= 0 {
 		return ""
@@ -628,6 +715,10 @@ func meetingChatID(principalOpenID string) string {
 
 func meetingMessageID(meetingID string) string {
 	return "vc_meeting_" + strings.TrimSpace(meetingID)
+}
+
+func meetingCaptureResultMessageID(meetingID string) string {
+	return "vc_meeting_capture_" + strings.TrimSpace(meetingID)
 }
 
 func isPermissionError(err error) bool {

@@ -34,6 +34,40 @@ func TestBuildEvidenceIncludesArtifactsAndCapsContent(t *testing.T) {
 	}
 }
 
+func TestBuildPermissionCaptureResultContainsFactsWithoutDecision(t *testing.T) {
+	detail := meetingDetail{
+		MeetingID: "7665545620547210872", Topic: "Bax工具方案review",
+		StartTime: "2026-07-23 11:00", EndTime: "2026-07-23 12:27",
+		MinuteToken: "obsgy64ntofeq3l77291lvjo",
+	}
+	got, err := buildPermissionCaptureResult(
+		detail,
+		"https://example.test/meeting",
+		errors.New("No read permission for minute obsgy64ntofeq3l77291lvjo"),
+	)
+	if err != nil {
+		t.Fatalf("buildPermissionCaptureResult() error = %v", err)
+	}
+	for _, want := range []string{
+		"[会议妙记采集结果]",
+		"采集结果：permission_denied",
+		"错误原文：No read permission for minute obsgy64ntofeq3l77291lvjo",
+		"采集模块未申请权限，也未决定后续处理方式",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("buildPermissionCaptureResult() missing %q: %s", want, got)
+		}
+	}
+	for _, forbidden := range []string{"需要 principal 处理", "请决定是否申请", "批准后可执行"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("buildPermissionCaptureResult() contains decision %q: %s", forbidden, got)
+		}
+	}
+	if got := meetingCaptureResultMessageID(detail.MeetingID); got != "vc_meeting_capture_7665545620547210872" {
+		t.Fatalf("meetingCaptureResultMessageID() = %q", got)
+	}
+}
+
 func TestSearchMeetingsPaginatesAndDeduplicates(t *testing.T) {
 	location := time.FixedZone("UTC+8", 8*60*60)
 	fake := &searchFixture{}
@@ -80,6 +114,12 @@ func TestMeetingHelpersFailFast(t *testing.T) {
 	}
 	if isPermissionError(errors.New("rate limited")) {
 		t.Fatal("isPermissionError() misclassified rate limit")
+	}
+}
+
+func TestPermissionDeniedRetriesWithinMeetingScanWindow(t *testing.T) {
+	if permissionRetryDelay != 10*time.Minute {
+		t.Fatalf("permissionRetryDelay = %s, want 10m", permissionRetryDelay)
 	}
 }
 

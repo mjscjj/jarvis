@@ -28,6 +28,8 @@ M4 是 `Todo → Task` 的唯一转化闸门：把 Todo 确认（用户确认或
 - 关联 `Resource`（按需）：如 `summary_post` 读妙记 `Resource`、`code_change` 的 repo 来自 `Project.repos`。
 
 > **M5 与 M4 的判断边界（重要）**：M5 拿到的 Task 已经方案明确（`plan` 是 M4 确认时固化的明确方案），M5 **不再做"内容层面该不该做"的判断**（M4 已确认）。M5 只做**"执行层面对外/高危动作的最终放行"**。M5 按 `plan` 执行，执行前先做 `action_hash` 漂移校验（见 §5.0）。
+>
+> 其中，申请妙记权限、联系主持人、发送消息或修改飞书数据都属于业务外部写操作。非 `code_change` Task 先完成只读提案；实际写入前持久化为 `awaiting_approval`，只有收到用户明确批准后才执行。
 
 ### 0.2 下游契约（M5 → Task / M0 / mem0 / 用户）
 
