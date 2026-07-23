@@ -46,14 +46,20 @@ type TaskList struct {
 
 type TaskView struct {
 	ID                   uint64                `json:"id"`
-	TodoID               uint64                `json:"todo_id"`
+	TodoID               *uint64               `json:"todo_id"`
 	Title                string                `json:"title"`
 	ActionType           string                `json:"action_type"`
+	Target               string                `json:"target"`
 	Background           json.RawMessage       `json:"background"`
 	Plan                 json.RawMessage       `json:"plan"`
 	ConfirmedBy          string                `json:"confirmed_by"`
 	ConfirmedAt          time.Time             `json:"confirmed_at"`
 	ActionHash           string                `json:"action_hash"`
+	SourceType           string                `json:"source_type"`
+	SourceID             *uint64               `json:"source_id"`
+	OccurrenceKey        *string               `json:"occurrence_key"`
+	ExecutionMode        string                `json:"execution_mode"`
+	ApprovalRef          *string               `json:"approval_ref"`
 	Status               string                `json:"status"`
 	ExecutionResult      json.RawMessage       `json:"execution_result"`
 	ExecutionSupplements []ExecutionSupplement `json:"execution_supplements,omitempty"`
@@ -827,8 +833,11 @@ func taskView(task *domain.Task) TaskView {
 	}
 	return TaskView{
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
+		Target:     task.Target,
 		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
 		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
+		SourceType: task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
+		ExecutionMode: task.ExecutionMode, ApprovalRef: task.ApprovalRef,
 		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult),
 		ExecutionSupplements: supplements,
 		AutonomyMode:         task.AutonomyMode,

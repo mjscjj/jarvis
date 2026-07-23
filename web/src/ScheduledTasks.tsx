@@ -11,8 +11,8 @@ const { Paragraph, Text } = Typography
 
 const statusMeta: Record<ScheduledTaskStatus, { label: string; color: string }> = {
   active: { label: '等待调度', color: 'green' },
-  running: { label: '执行中', color: 'blue' },
-  completed: { label: '已执行', color: 'default' },
+  running: { label: '触发中', color: 'blue' },
+  completed: { label: '已触发', color: 'default' },
 }
 
 interface FormValue {
@@ -51,6 +51,7 @@ function toInput(value: FormValue): ScheduledTaskInput {
   }
   return {
     title: value.title.trim(),
+    action_type: 'agent_task',
     instruction: value.instruction.trim(),
     context_snapshot: context as Record<string, unknown>,
     schedule_type: value.schedule_type,
@@ -198,11 +199,13 @@ export default function ScheduledTasks() {
       render: (value: ScheduledTaskStatus) => <Tag color={statusMeta[value].color}>{statusMeta[value].label}</Tag>,
     },
     {
-      title: '最近结果', width: 320,
+      title: '最近触发', width: 320,
       render: (_, task) => task.last_error_detail ? (
         <Paragraph type="danger" ellipsis={{ rows: 3, expandable: true }} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{task.last_error_detail}</Paragraph>
       ) : (
-        <Paragraph ellipsis={{ rows: 3, expandable: true }} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{task.last_result || '尚未执行'}</Paragraph>
+        <Paragraph ellipsis={{ rows: 3, expandable: true }} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+          {task.last_task_id ? `Task #${task.last_task_id} · ${task.last_result || '已提交 M5'}` : '尚未触发'}
+        </Paragraph>
       ),
     },
     {
@@ -221,7 +224,7 @@ export default function ScheduledTasks() {
 
   return (
     <div>
-      <PageHeader title="定时任务" subtitle="支持指定时间执行一次、每天指定时间或每 N 分钟执行，并发交给 Codex 完成。">
+      <PageHeader title="定时任务" subtitle="到点只创建 Task；任务由统一的 M5 执行入口完成。">
         <Select
           value={status}
           onChange={setStatus}
@@ -229,8 +232,8 @@ export default function ScheduledTasks() {
           options={[
             { value: '', label: '全部状态' },
             { value: 'active', label: '等待调度' },
-            { value: 'running', label: '执行中' },
-            { value: 'completed', label: '已执行' },
+            { value: 'running', label: '触发中' },
+            { value: 'completed', label: '已触发' },
           ]}
         />
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建定时任务</Button>
@@ -277,13 +280,13 @@ export default function ScheduledTasks() {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <Form.Item name="instruction" label="执行指令" rules={[{ required: true, whitespace: true, message: '请输入执行指令' }]}>
-            <Input.TextArea autoSize={{ minRows: 5, maxRows: 12 }} placeholder="每次到时间后希望 Codex 真正完成什么" />
+          <Form.Item name="instruction" label="任务指令" rules={[{ required: true, whitespace: true, message: '请输入任务指令' }]}>
+            <Input.TextArea autoSize={{ minRows: 5, maxRows: 12 }} placeholder="每次到点后交给统一任务执行入口完成什么" />
           </Form.Item>
           <Form.Item
             name="context_snapshot"
             label="上下文背景（JSON）"
-            extra="创建时冻结，每次执行都完整交给 Codex。可放项目、人物、会话、链接和历史判断。"
+            extra="创建时冻结，每次触发都完整交给 M5。可放项目、人物、会话、链接和历史判断。"
             rules={[{ required: true, whitespace: true, message: '请输入 JSON 对象，至少填写 {}' }]}
           >
             <Input.TextArea autoSize={{ minRows: 8, maxRows: 18 }} className="mono" />

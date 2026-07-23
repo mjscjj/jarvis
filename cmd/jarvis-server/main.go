@@ -37,6 +37,7 @@ import (
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/store"
+	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
 
@@ -296,6 +297,14 @@ func main() {
 	if err != nil {
 		hlog.Fatalf("initialize MVP Task service failed: %v", err)
 	}
+	taskFactory, err := taskcreate.NewFactory(db)
+	if err != nil {
+		hlog.Fatalf("initialize Task factory failed: %v", err)
+	}
+	taskSubmitter, err := taskcreate.NewSubmitter(taskFactory)
+	if err != nil {
+		hlog.Fatalf("initialize Task submitter failed: %v", err)
+	}
 	codexRunner, err := execute.NewCodexRunner(
 		cfg.Execute.Bin, cfg.Execute.Model, cfg.Execute.ReasoningEffort,
 		time.Duration(cfg.Execute.TimeoutSecond)*time.Second,
@@ -310,7 +319,7 @@ func main() {
 		hlog.Fatalf("initialize agent executor failed: %v", err)
 	}
 	scheduledTaskService, err := scheduledtask.NewService(
-		db, codexRunner, cfg.ScheduledTask.Concurrency, cfg.ScheduledTask.BatchLimit,
+		db, taskSubmitter, cfg.ScheduledTask.BatchLimit,
 	)
 	if err != nil {
 		hlog.Fatalf("initialize scheduled task service failed: %v", err)
@@ -593,6 +602,13 @@ func main() {
 				hlog.Fatalf("wire confirmation to real-time pipeline failed: %v", err)
 			}
 		}
+		if cfg.Execute.Enabled {
+			if err := taskSubmitter.SetNotifier(coordinator); err != nil {
+				cancelRuntime()
+				waitPipeline()
+				hlog.Fatalf("wire Task submitter to pipeline failed: %v", err)
+			}
+		}
 		pipelineScheduler, err := pipeline.StartScheduler(
 			runtimeCtx,
 			coordinator,
@@ -727,7 +743,7 @@ func main() {
 	)
 	if err := api.Register(h, api.Dependencies{
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
-		Tasks: taskService, Executor: agentExecutor,
+		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		SharedMemory:   sharedMemoryService,

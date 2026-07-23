@@ -142,12 +142,11 @@ chat:
 skills:
   root: ".agents/skills"
 
-# 周期定时任务：每分钟扫描到期的 active 记录，并发调用 execute 段 Codex。
+# 周期定时任务：每分钟扫描到期记录，创建 Task 并交给 M5 执行。
 scheduled_task:
   enabled: true
   schedule: "@every 1m"
   batch_limit: 20
-  concurrency: 3
 
 # 每日进度总结（Progress 页）。enabled=false 时不起 19:00 cron（手动生成接口仍可用）。
 # 个人总结用 execute 段 codex（danger-full-access + 联网）自跑 lark-cli/bytedcli/git；

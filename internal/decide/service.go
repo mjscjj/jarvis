@@ -3,8 +3,6 @@ package decide
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +12,7 @@ import (
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
-	"jarvis/internal/progress"
+	"jarvis/internal/taskcreate"
 
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/datatypes"
@@ -111,31 +109,26 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 		if result.RowsAffected != 0 {
 			return fmt.Errorf("%w: todo_id=%d task_id=%d", ErrTaskExists, todo.ID, existing.ID)
 		}
-		actionHash, err := ActionHash(todo.ActionType, todo.Target, plan)
+		confirmedAt := s.now().UTC()
+		factory, err := taskcreate.NewFactory(tx)
 		if err != nil {
 			return err
 		}
-		confirmedAt := s.now().UTC()
-		created = domain.Task{
-			TodoID: todo.ID, Title: todo.Title, ActionType: todo.ActionType,
-			Background:  datatypes.JSON(append([]byte(nil), background...)),
-			Plan:        datatypes.JSON(append([]byte(nil), plan...)),
-			ConfirmedBy: "user", ConfirmedAt: confirmedAt, ActionHash: actionHash,
-			Status: "pending", AutonomyMode: "copilot", ProjectID: copyUint64(todo.ProjectID), Version: 0,
+		todoID := todo.ID
+		createdTask, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
+			TodoID: &todoID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
+			Background: background, Plan: plan, ConfirmedBy: "user", ConfirmedAt: &confirmedAt,
+			ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todoID,
+			ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "user",
+			EventDetail: map[string]any{"channel": input.Channel},
+		})
+		if errors.Is(err, taskcreate.ErrExists) {
+			return fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
 		}
-		if err := tx.Create(&created).Error; err != nil {
-			if errors.Is(err, gorm.ErrDuplicatedKey) {
-				return fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
-			}
-			return fmt.Errorf("create Task todo_id=%d: %w", todo.ID, err)
-		}
-		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
-			TaskID: created.ID, TaskVersion: created.Version, EventType: "created",
-			ToStatus: created.Status, ActorType: "user",
-			Detail: map[string]any{"channel": input.Channel}, OccurredAt: confirmedAt,
-		}); err != nil {
+		if err != nil {
 			return err
 		}
+		created = *createdTask
 		if err := updateTodoStatus(tx, &todo, input.ExpectedVersion, "confirmed"); err != nil {
 			return err
 		}
@@ -441,27 +434,11 @@ func manualAudit(todo *domain.Todo, task *domain.Task, reason, channel string, a
 // target is the clue's dedup identity from M3; together with the confirmed plan
 // it fingerprints "what was approved" without the old per-type slot vocabulary.
 func ActionHash(actionType, target string, plan json.RawMessage) (string, error) {
-	if strings.TrimSpace(actionType) == "" {
-		return "", fmt.Errorf("%w: action_type must be non-blank", ErrInvalidInput)
+	hash, err := taskcreate.ActionHash(actionType, target, plan)
+	if errors.Is(err, taskcreate.ErrInvalidInput) {
+		return "", fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
-	if strings.TrimSpace(target) == "" {
-		return "", fmt.Errorf("%w: target must be non-blank", ErrInvalidInput)
-	}
-	canonicalPlan, err := canonicalJSONObject(plan, "plan")
-	if err != nil {
-		return "", err
-	}
-	payload := struct {
-		ActionType string          `json:"action_type"`
-		Target     string          `json:"target"`
-		Plan       json.RawMessage `json:"plan"`
-	}{ActionType: actionType, Target: strings.TrimSpace(target), Plan: canonicalPlan}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("encode Task action hash: %w", err)
-	}
-	hash := sha256.Sum256(encoded)
-	return hex.EncodeToString(hash[:]), nil
+	return hash, err
 }
 
 func canonicalJSONObject(raw []byte, name string) (json.RawMessage, error) {
@@ -516,11 +493,19 @@ func transitionError(todoID uint64, from, to string) error {
 
 func taskView(task *domain.Task) TaskView {
 	return TaskView{
-		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
+		ID: task.ID, TodoID: derefUint64(task.TodoID), Title: task.Title, ActionType: task.ActionType, Target: task.Target,
 		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
 		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
+		SourceType: task.SourceType, SourceID: copyUint64(task.SourceID), ExecutionMode: task.ExecutionMode,
 		Status: task.Status, AutonomyMode: task.AutonomyMode, ProjectID: copyUint64(task.ProjectID), Version: task.Version,
 	}
+}
+
+func derefUint64(value *uint64) uint64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func copyUint64(value *uint64) *uint64 {

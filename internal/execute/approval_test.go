@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
 
 	"gorm.io/datatypes"
@@ -262,7 +263,7 @@ func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 // to judge — by intent — whether it will touch the outside world. This closes the
 // "an investigate Task decides mid-run to send a message" gap.
 func TestInvestigateGoesThroughPropose(t *testing.T) {
-	if runsToCompletion("investigate") {
+	if runsToCompletion(&domain.Task{ActionType: "investigate", ExecutionMode: taskcreate.ExecutionModeStandard}) {
 		t.Fatalf("investigate must go through propose, not run to completion")
 	}
 	task := &domain.Task{
@@ -277,6 +278,32 @@ func TestInvestigateGoesThroughPropose(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("investigate propose prompt missing %q", want)
 		}
+	}
+}
+
+func TestDirectTaskRunsToCompletion(t *testing.T) {
+	task := &domain.Task{ActionType: "agent_task", ExecutionMode: taskcreate.ExecutionModeDirect}
+	if !runsToCompletion(task) {
+		t.Fatal("direct agent_task must skip propose and run to completion")
+	}
+}
+
+func TestValidateTaskIntegrityRejectsDrift(t *testing.T) {
+	plan := json.RawMessage(`{"instruction":"加入会议"}`)
+	hash, err := taskcreate.ActionHash("agent_task", "会议", plan)
+	if err != nil {
+		t.Fatalf("ActionHash() error = %v", err)
+	}
+	task := &domain.Task{
+		ID: 1, ActionType: "agent_task", Target: "会议", Plan: datatypes.JSON(plan),
+		ActionHash: hash, ExecutionMode: taskcreate.ExecutionModeDirect,
+	}
+	if err := validateTaskIntegrity(task); err != nil {
+		t.Fatalf("validateTaskIntegrity() error = %v", err)
+	}
+	task.Target = "被篡改的会议"
+	if err := validateTaskIntegrity(task); err == nil {
+		t.Fatal("validateTaskIntegrity() accepted action drift")
 	}
 }
 

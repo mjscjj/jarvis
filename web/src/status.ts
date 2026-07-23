@@ -41,6 +41,7 @@ export const taskStatusMeta: Record<TaskStatus, StatusMeta> = {
 }
 
 export const actionLabels: Record<ActionType, string> = {
+  agent_task: '通用任务',
   code_change: '代码修改',
   summary_post: '总结并发群',
   investigate: '查证澄清',

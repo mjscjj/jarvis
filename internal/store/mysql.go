@@ -3,11 +3,13 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
+	"jarvis/internal/taskcreate"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -60,6 +62,60 @@ func Migrate(db *gorm.DB) error {
 	models = append(models, domain.ProgressModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+	if err := backfillTaskRuntimeMVP(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
+	return nil
+}
+
+// backfillTaskRuntimeMVP derives the new Task source fields from the exact Todo
+// relation already stored on historical rows. It does not infer missing business
+// context. New non-Todo Tasks are already complete when the Factory creates them.
+func backfillTaskRuntimeMVP(db *gorm.DB) error {
+	var tasks []domain.Task
+	if err := db.Find(&tasks).Error; err != nil {
+		return fmt.Errorf("load Tasks for runtime backfill: %w", err)
+	}
+	for i := range tasks {
+		task := &tasks[i]
+		updates := map[string]any{}
+		if task.TodoID != nil {
+			var todo domain.Todo
+			if err := db.First(&todo, *task.TodoID).Error; err != nil {
+				return fmt.Errorf("load Todo id=%d for Task id=%d runtime backfill: %w", *task.TodoID, task.ID, err)
+			}
+			if task.Target == "" {
+				task.Target = todo.Target
+				updates["target"] = todo.Target
+			}
+			if task.SourceType == "" || task.SourceType == "todo" {
+				updates["source_type"] = "todo"
+			}
+			if task.SourceID == nil {
+				updates["source_id"] = *task.TodoID
+			}
+		}
+		if task.ExecutionMode == "" {
+			task.ExecutionMode = "standard"
+			updates["execution_mode"] = "standard"
+		}
+		if task.Target == "" {
+			return fmt.Errorf("Task id=%d has no target and no Todo target to backfill", task.ID)
+		}
+		hash, err := taskcreate.ActionHash(task.ActionType, task.Target, json.RawMessage(task.Plan))
+		if err != nil {
+			return fmt.Errorf("recompute Task id=%d action hash: %w", task.ID, err)
+		}
+		if hash != task.ActionHash {
+			updates["action_hash"] = hash
+		}
+		if len(updates) == 0 {
+			continue
+		}
+		if err := db.Model(&domain.Task{}).Where("id = ?", task.ID).Updates(updates).Error; err != nil {
+			return fmt.Errorf("backfill Task id=%d runtime fields: %w", task.ID, err)
+		}
 	}
 	return nil
 }

@@ -168,7 +168,10 @@ func TestValidate(t *testing.T) {
 		{name: "dailydigest group concurrency", mutate: func(c *Config) { c.DailyDigest.GroupConcurrency = 0 }, wantErr: "dailydigest.group_concurrency"},
 		{name: "scheduled task schedule", mutate: func(c *Config) { c.ScheduledTask.Schedule = "" }, wantErr: "scheduled_task.schedule"},
 		{name: "scheduled task batch", mutate: func(c *Config) { c.ScheduledTask.BatchLimit = 0 }, wantErr: "scheduled_task.batch_limit"},
-		{name: "scheduled task concurrency", mutate: func(c *Config) { c.ScheduledTask.Concurrency = 0 }, wantErr: "scheduled_task.concurrency"},
+		{name: "scheduled task requires execute", mutate: func(c *Config) {
+			c.ScheduledTask.Enabled = true
+			c.Execute.Enabled = false
+		}, wantErr: "execute.enabled"},
 	}
 
 	for _, tt := range tests {
@@ -269,5 +272,5 @@ func validDailyDigestConfig() DailyDigestConfig {
 }
 
 func validScheduledTaskConfig() ScheduledTaskConfig {
-	return ScheduledTaskConfig{Enabled: true, Schedule: "@every 1m", BatchLimit: 20, Concurrency: 3}
+	return ScheduledTaskConfig{Enabled: false, Schedule: "@every 1m", BatchLimit: 20}
 }

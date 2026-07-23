@@ -10,6 +10,7 @@ export type TodoStatus =
   | 'expired'
 
 export type ActionType =
+  | 'agent_task'
   | 'code_change'
   | 'summary_post'
   | 'investigate'
@@ -210,9 +211,10 @@ export interface ProposalResult {
 
 export interface Task {
   id: number
-  todo_id: number
+  todo_id: number | null
   title: string
   action_type: ActionType
+  target: string
   background: Record<string, unknown>
   plan: Record<string, unknown>
   confirmed_by: string
@@ -223,6 +225,11 @@ export interface Task {
   execution_supplements?: Array<{ note: string; at: string; channel?: string }>
   autonomy_mode: string
   project_id: number | null
+  source_type: 'todo' | 'scheduled_task' | 'manual'
+  source_id: number | null
+  occurrence_key: string | null
+  execution_mode: 'standard' | 'direct'
+  approval_ref: string | null
   version: number
   created_at: string
   updated_at: string
@@ -779,6 +786,7 @@ export type ScheduledTaskScheduleType = 'once' | 'daily' | 'interval'
 export interface ScheduledTask {
   id: number
   title: string
+  action_type: 'agent_task'
   instruction: string
   context_snapshot: Record<string, unknown>
   schedule_type: ScheduledTaskScheduleType
@@ -789,6 +797,7 @@ export interface ScheduledTask {
   enabled: boolean
   status: ScheduledTaskStatus
   last_run_status: ScheduledTaskLastRunStatus | null
+  last_task_id: number | null
   last_result: string | null
   last_error_detail: string | null
   last_started_at: string | null
@@ -799,6 +808,7 @@ export interface ScheduledTask {
 
 export interface ScheduledTaskInput {
   title: string
+  action_type: 'agent_task'
   instruction: string
   context_snapshot: Record<string, unknown>
   schedule_type: ScheduledTaskScheduleType

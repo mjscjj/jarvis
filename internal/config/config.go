@@ -223,10 +223,9 @@ type DailyDigestConfig struct {
 // ScheduledTaskConfig controls the recurring Codex task scanner.
 // The runner itself reuses execute.bin/model/reasoning/timeout.
 type ScheduledTaskConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Schedule    string `yaml:"schedule"`
-	BatchLimit  int    `yaml:"batch_limit"`
-	Concurrency int    `yaml:"concurrency"`
+	Enabled    bool   `yaml:"enabled"`
+	Schedule   string `yaml:"schedule"`
+	BatchLimit int    `yaml:"batch_limit"`
 }
 
 // Load 从指定路径读取并解析 YAML 配置。fail-fast：任何错误直接返回。
@@ -523,8 +522,8 @@ func (c *Config) validate() error {
 	if c.ScheduledTask.BatchLimit <= 0 {
 		return fmt.Errorf("scheduled_task.batch_limit 必须大于 0")
 	}
-	if c.ScheduledTask.Concurrency <= 0 {
-		return fmt.Errorf("scheduled_task.concurrency 必须大于 0")
+	if c.ScheduledTask.Enabled && !c.Execute.Enabled {
+		return fmt.Errorf("scheduled_task 启用时 execute.enabled 必须为 true")
 	}
 	return nil
 }

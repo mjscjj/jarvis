@@ -1,4 +1,4 @@
-// Package scheduledtask implements recurring Codex tasks backed by MySQL.
+// Package scheduledtask implements durable time triggers backed by MySQL.
 package scheduledtask
 
 import (
@@ -12,12 +12,11 @@ import (
 	"time"
 
 	"jarvis/internal/domain"
+	"jarvis/internal/taskcreate"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
-
-const executionSandbox = "danger-full-access"
 
 var (
 	ErrInvalidInput = errors.New("invalid scheduled task input")
@@ -29,6 +28,7 @@ var validStatuses = map[string]struct{}{"active": {}, "running": {}, "completed"
 
 type Input struct {
 	Title           string          `json:"title"`
+	ActionType      string          `json:"action_type"`
 	Instruction     string          `json:"instruction"`
 	ContextSnapshot json.RawMessage `json:"context_snapshot"`
 	ScheduleType    string          `json:"schedule_type"`
@@ -41,6 +41,7 @@ type Input struct {
 type View struct {
 	ID              uint64          `json:"id"`
 	Title           string          `json:"title"`
+	ActionType      string          `json:"action_type"`
 	Instruction     string          `json:"instruction"`
 	ContextSnapshot json.RawMessage `json:"context_snapshot"`
 	ScheduleType    string          `json:"schedule_type"`
@@ -51,6 +52,7 @@ type View struct {
 	Enabled         bool            `json:"enabled"`
 	Status          string          `json:"status"`
 	LastRunStatus   *string         `json:"last_run_status"`
+	LastTaskID      *uint64         `json:"last_task_id"`
 	LastResult      *string         `json:"last_result"`
 	LastErrorDetail *string         `json:"last_error_detail"`
 	LastStartedAt   *time.Time      `json:"last_started_at"`
@@ -64,19 +66,16 @@ type ListFilter struct {
 	Limit  int
 }
 
-// Runner is the free-text Codex surface shared with chat-like callers.
-type Runner interface {
-	RunTextSandbox(context.Context, string, string) (string, error)
+type TaskSubmitter interface {
+	Submit(context.Context, taskcreate.Input) (*domain.Task, error)
 }
 
 type Service struct {
-	db          *gorm.DB
-	runner      Runner
-	concurrency int
-	batchLimit  int
-	slots       chan struct{}
-	now         func() time.Time
-	location    *time.Location
+	db         *gorm.DB
+	submitter  TaskSubmitter
+	batchLimit int
+	now        func() time.Time
+	location   *time.Location
 }
 
 // NewCRUDService constructs the storage-only surface used by jarvis-tools.
@@ -88,24 +87,19 @@ func NewCRUDService(db *gorm.DB) (*Service, error) {
 	return &Service{db: db, now: time.Now, location: time.Local}, nil
 }
 
-func NewService(db *gorm.DB, runner Runner, concurrency, batchLimit int) (*Service, error) {
+func NewService(db *gorm.DB, submitter TaskSubmitter, batchLimit int) (*Service, error) {
 	service, err := NewCRUDService(db)
 	if err != nil {
 		return nil, err
 	}
-	if runner == nil {
-		return nil, fmt.Errorf("scheduled task runner is nil")
-	}
-	if concurrency <= 0 {
-		return nil, fmt.Errorf("scheduled task concurrency must be positive")
+	if submitter == nil {
+		return nil, fmt.Errorf("scheduled task Task submitter is nil")
 	}
 	if batchLimit <= 0 {
 		return nil, fmt.Errorf("scheduled task batch limit must be positive")
 	}
-	service.runner = runner
-	service.concurrency = concurrency
+	service.submitter = submitter
 	service.batchLimit = batchLimit
-	service.slots = make(chan struct{}, concurrency)
 	return service, nil
 }
 
@@ -146,7 +140,7 @@ func (s *Service) Create(ctx context.Context, input Input) (*View, error) {
 		return nil, err
 	}
 	row := domain.ScheduledTask{
-		Title: normalized.Title, Instruction: normalized.Instruction,
+		Title: normalized.Title, ActionType: normalized.ActionType, Instruction: normalized.Instruction,
 		ContextSnapshot: datatypes.JSON(normalized.ContextSnapshot),
 		ScheduleType:    normalized.ScheduleType, DailyTime: normalized.DailyTime,
 		IntervalMinutes: normalized.IntervalMinutes, RunAt: normalized.RunAt, NextRunAt: nextRunAt,
@@ -169,7 +163,7 @@ func (s *Service) Update(ctx context.Context, id uint64, input Input) (*View, er
 	result := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 		Where("id = ? AND status <> ?", id, "running").
 		Updates(map[string]any{
-			"title": normalized.Title, "instruction": normalized.Instruction,
+			"title": normalized.Title, "action_type": normalized.ActionType, "instruction": normalized.Instruction,
 			"context_snapshot": datatypes.JSON(normalized.ContextSnapshot),
 			"schedule_type":    normalized.ScheduleType, "daily_time": normalized.DailyTime,
 			"interval_minutes": normalized.IntervalMinutes, "run_at": normalized.RunAt, "next_run_at": nextRunAt,
@@ -211,14 +205,14 @@ func (s *Service) Delete(ctx context.Context, id uint64) error {
 	return fmt.Errorf("delete scheduled task id=%d affected no rows", id)
 }
 
-// Trigger executes an enabled or disabled task immediately. Recurring tasks keep
-// their next automatic run; a one-time task becomes completed after this run.
+// Trigger materializes and dispatches a Task immediately. Recurring schedules
+// keep their next automatic occurrence; a one-time schedule becomes completed.
 func (s *Service) Trigger(ctx context.Context, id uint64) (*View, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
 	}
-	if s.runner == nil || s.slots == nil {
-		return nil, fmt.Errorf("scheduled task execution service is not configured")
+	if s.submitter == nil {
+		return nil, fmt.Errorf("scheduled task Task submitter is not configured")
 	}
 	now := s.now().UTC()
 	result := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
@@ -240,16 +234,19 @@ func (s *Service) Trigger(ctx context.Context, id uint64) (*View, error) {
 		}
 		return nil, fmt.Errorf("claim scheduled task id=%d affected no rows", id)
 	}
-	view, err := s.Get(ctx, id)
+	row, err := s.load(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	go s.execute(context.Background(), id)
-	return view, nil
+	occurrenceKey := "manual:" + now.Format(time.RFC3339Nano)
+	if err := s.dispatch(context.Background(), row, occurrenceKey); err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, id)
 }
 
-// RecoverRunning is called once at process startup. The prior local process is
-// gone, so its in-memory Codex executions cannot still complete.
+// RecoverRunning is called once at process startup. A schedule left in running
+// did not finish materializing its Task and must become claimable again.
 func (s *Service) RecoverRunning(ctx context.Context) (int64, error) {
 	now := s.now().UTC()
 	recurring := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
@@ -271,23 +268,25 @@ func (s *Service) RecoverRunning(ctx context.Context) (int64, error) {
 	return recurring.RowsAffected + oneTime.RowsAffected, nil
 }
 
-// RunDue claims one bounded batch and dispatches it asynchronously. The shared
-// slots channel limits execution globally, while returning after dispatch lets
-// the next scanner round pick up other tasks even if one Codex run is long.
-// Each claimed task advances its next automatic occurrence before execution;
-// a failed run therefore never disables the recurring schedule.
+// RunDue claims one bounded batch and materializes each occurrence as a Task.
+// M5 owns execution concurrency and recovery after the Task is durable.
 func (s *Service) RunDue(ctx context.Context) (int, error) {
-	if s.runner == nil || s.concurrency <= 0 || s.batchLimit <= 0 {
-		return 0, fmt.Errorf("scheduled task execution service is not configured")
+	if s.submitter == nil || s.batchLimit <= 0 {
+		return 0, fmt.Errorf("scheduled task Task submitter is not configured")
 	}
 	claimed, err := s.claimDue(ctx, s.now().UTC())
 	if err != nil || len(claimed) == 0 {
 		return len(claimed), err
 	}
-	for _, row := range claimed {
-		go s.execute(ctx, row.ID)
+	var firstErr error
+	for i := range claimed {
+		if err := s.dispatch(ctx, &claimed[i], claimed[i].NextRunAt.UTC().Format(time.RFC3339Nano)); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
 	}
-	return len(claimed), nil
+	return len(claimed), firstErr
 }
 
 func (s *Service) claimDue(ctx context.Context, now time.Time) ([]domain.ScheduledTask, error) {
@@ -323,49 +322,62 @@ func (s *Service) claimDue(ctx context.Context, now time.Time) ([]domain.Schedul
 	return claimed, nil
 }
 
-func (s *Service) execute(ctx context.Context, id uint64) {
-	if s.slots == nil {
-		s.fail(context.Background(), id, fmt.Errorf("scheduled task execution slots are not configured"))
-		return
+func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occurrenceKey string) error {
+	if row == nil || row.ID == 0 {
+		return fmt.Errorf("scheduled task dispatch row is invalid")
 	}
-	select {
-	case s.slots <- struct{}{}:
-		defer func() { <-s.slots }()
-	case <-ctx.Done():
-		s.fail(context.Background(), id, ctx.Err())
-		return
-	}
-	row, err := s.load(ctx, id)
+	input, err := taskInput(row, occurrenceKey)
 	if err != nil {
-		s.fail(context.Background(), id, err)
-		return
+		s.fail(context.Background(), row.ID, err)
+		return err
 	}
-	prompt, err := buildPrompt(row)
+	task, err := s.submitter.Submit(ctx, input)
 	if err != nil {
-		s.fail(context.Background(), id, err)
-		return
-	}
-	result, err := s.runner.RunTextSandbox(ctx, prompt, executionSandbox)
-	if err != nil {
-		s.fail(context.Background(), id, err)
-		return
-	}
-	result = strings.TrimSpace(result)
-	if result == "" {
-		s.fail(context.Background(), id, fmt.Errorf("Codex returned empty result"))
-		return
+		if task != nil {
+			_ = s.db.WithContext(context.Background()).Model(&domain.ScheduledTask{}).
+				Where("id = ?", row.ID).Update("last_task_id", task.ID).Error
+		}
+		s.fail(context.Background(), row.ID, err)
+		return err
 	}
 	finishedAt := s.now().UTC()
 	finalStatus := finalTaskStatus(row.ScheduleType)
+	result := fmt.Sprintf("已创建并提交 Task #%d；实际执行结果以该 Task 为准", task.ID)
 	update := s.db.WithContext(context.Background()).Model(&domain.ScheduledTask{}).
-		Where("id = ? AND status = ?", id, "running").
+		Where("id = ? AND status = ?", row.ID, "running").
 		Updates(map[string]any{
 			"status": finalStatus, "last_run_status": "done", "last_result": result,
-			"last_error_detail": nil, "last_finished_at": finishedAt,
+			"last_task_id": task.ID, "last_error_detail": nil, "last_finished_at": finishedAt,
 		})
 	if update.Error != nil {
-		s.fail(context.Background(), id, fmt.Errorf("store scheduled task result: %w", update.Error))
+		s.fail(context.Background(), row.ID, fmt.Errorf("store scheduled task trigger result: %w", update.Error))
+		return update.Error
 	}
+	return nil
+}
+
+func taskInput(row *domain.ScheduledTask, occurrenceKey string) (taskcreate.Input, error) {
+	if row == nil || row.ID == 0 {
+		return taskcreate.Input{}, fmt.Errorf("scheduled task row is invalid")
+	}
+	occurrenceKey = strings.TrimSpace(occurrenceKey)
+	if occurrenceKey == "" {
+		return taskcreate.Input{}, fmt.Errorf("scheduled task occurrence key is empty")
+	}
+	plan, err := json.Marshal(map[string]any{"instruction": row.Instruction})
+	if err != nil {
+		return taskcreate.Input{}, fmt.Errorf("encode scheduled Task plan: %w", err)
+	}
+	approvalRef := fmt.Sprintf("scheduled_task:%d", row.ID)
+	return taskcreate.Input{
+		Title: row.Title, ActionType: row.ActionType, Target: row.Title,
+		Background: json.RawMessage(row.ContextSnapshot), Plan: plan,
+		ConfirmedBy: "scheduled_task", SourceType: taskcreate.SourceScheduledTask,
+		SourceID: &row.ID, OccurrenceKey: &occurrenceKey,
+		ExecutionMode: taskcreate.ExecutionModeDirect, ApprovalRef: &approvalRef,
+		ActorType:   "scheduled_task",
+		EventDetail: map[string]any{"scheduled_task_id": row.ID, "occurrence_key": occurrenceKey},
+	}, nil
 }
 
 func (s *Service) fail(ctx context.Context, id uint64, cause error) {
@@ -412,8 +424,12 @@ func (s *Service) load(ctx context.Context, id uint64) (*domain.ScheduledTask, e
 
 func normalizeInput(input Input, now time.Time, location *time.Location) (Input, time.Time, error) {
 	input.Title = strings.TrimSpace(input.Title)
+	input.ActionType = strings.TrimSpace(input.ActionType)
 	input.Instruction = strings.TrimSpace(input.Instruction)
 	input.ScheduleType = strings.TrimSpace(input.ScheduleType)
+	if input.ActionType == "" {
+		input.ActionType = "agent_task"
+	}
 	if input.Title == "" || input.Instruction == "" {
 		return Input{}, time.Time{}, fmt.Errorf("%w: title and instruction are required", ErrInvalidInput)
 	}
@@ -553,11 +569,11 @@ func canonicalObject(raw json.RawMessage) (json.RawMessage, error) {
 
 func toView(row *domain.ScheduledTask) View {
 	return View{
-		ID: row.ID, Title: row.Title, Instruction: row.Instruction,
+		ID: row.ID, Title: row.Title, ActionType: row.ActionType, Instruction: row.Instruction,
 		ContextSnapshot: json.RawMessage(append([]byte(nil), row.ContextSnapshot...)),
 		ScheduleType:    row.ScheduleType, DailyTime: row.DailyTime,
 		IntervalMinutes: row.IntervalMinutes, RunAt: row.RunAt, NextRunAt: row.NextRunAt,
-		Enabled: row.Enabled, Status: row.Status, LastRunStatus: row.LastRunStatus,
+		Enabled: row.Enabled, Status: row.Status, LastRunStatus: row.LastRunStatus, LastTaskID: row.LastTaskID,
 		LastResult: row.LastResult, LastErrorDetail: row.LastErrorDetail,
 		LastStartedAt: row.LastStartedAt, LastFinishedAt: row.LastFinishedAt,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,

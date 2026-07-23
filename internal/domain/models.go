@@ -134,14 +134,20 @@ func (Todo) TableName() string { return "todo" }
 // Task is the immutable-at-confirmation executable snapshot materialized by M4.
 type Task struct {
 	ID              uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	TodoID          uint64         `gorm:"column:todo_id;type:bigint unsigned;not null;uniqueIndex:uk_task_todo"`
+	TodoID          *uint64        `gorm:"column:todo_id;type:bigint unsigned;uniqueIndex:uk_task_todo"`
 	Title           string         `gorm:"column:title;type:varchar(512);not null"`
 	ActionType      string         `gorm:"column:action_type;type:varchar(32);not null"`
+	Target          string         `gorm:"column:target;type:varchar(512);not null;default:''"`
 	Background      datatypes.JSON `gorm:"column:background;type:json;not null"`
 	Plan            datatypes.JSON `gorm:"column:plan;type:json;not null"`
 	ConfirmedBy     string         `gorm:"column:confirmed_by;type:varchar(16);not null"`
 	ConfirmedAt     time.Time      `gorm:"column:confirmed_at;type:datetime;not null"`
 	ActionHash      string         `gorm:"column:action_hash;type:char(64);not null"`
+	SourceType      string         `gorm:"column:source_type;type:varchar(24);not null;default:todo;uniqueIndex:uk_task_source_occurrence,priority:1"`
+	SourceID        *uint64        `gorm:"column:source_id;type:bigint unsigned;uniqueIndex:uk_task_source_occurrence,priority:2"`
+	OccurrenceKey   *string        `gorm:"column:occurrence_key;type:varchar(128);uniqueIndex:uk_task_source_occurrence,priority:3"`
+	ExecutionMode   string         `gorm:"column:execution_mode;type:varchar(16);not null;default:standard"`
+	ApprovalRef     *string        `gorm:"column:approval_ref;type:varchar(255)"`
 	Status          string         `gorm:"column:status;type:varchar(24);not null;default:pending;index:idx_task_status"`
 	ExecutionResult datatypes.JSON `gorm:"column:execution_result;type:json"`
 	// ExecutionSupplements are M5-only human clarifications/instructions, append-only
@@ -335,13 +341,13 @@ type DailyDigest struct {
 
 func (DailyDigest) TableName() string { return "daily_digest" }
 
-// ScheduledTask is an instruction executed by Codex once at an absolute time
-// or repeatedly on a daily/fixed-minute schedule. ContextSnapshot freezes the
-// background available when the task was created. The single local Jarvis
-// process owns scheduling and execution.
+// ScheduledTask is a durable time trigger. Each occurrence materializes a Task
+// for M5; it never executes the instruction itself. ContextSnapshot freezes the
+// background available when the schedule was created.
 type ScheduledTask struct {
 	ID              uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
 	Title           string         `gorm:"column:title;type:varchar(512);not null"`
+	ActionType      string         `gorm:"column:action_type;type:varchar(32);not null;default:agent_task"`
 	Instruction     string         `gorm:"column:instruction;type:mediumtext;not null"`
 	ContextSnapshot datatypes.JSON `gorm:"column:context_snapshot;type:json;not null"`
 	ScheduleType    string         `gorm:"column:schedule_type;type:varchar(16);not null"` // once / daily / interval
@@ -352,6 +358,7 @@ type ScheduledTask struct {
 	Enabled         bool           `gorm:"column:enabled;type:tinyint(1);not null;index:idx_scheduled_task_due,priority:1"`
 	Status          string         `gorm:"column:status;type:varchar(16);not null;default:active;index:idx_scheduled_task_due,priority:2"` // active / running / completed
 	LastRunStatus   *string        `gorm:"column:last_run_status;type:varchar(16)"`                                                        // done / failed
+	LastTaskID      *uint64        `gorm:"column:last_task_id;type:bigint unsigned;index:idx_scheduled_task_last_task"`
 	LastResult      *string        `gorm:"column:last_result;type:mediumtext"`
 	LastErrorDetail *string        `gorm:"column:last_error_detail;type:text"`
 	LastStartedAt   *time.Time     `gorm:"column:last_started_at;type:datetime"`

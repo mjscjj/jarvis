@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"jarvis/internal/domain"
-	"jarvis/internal/progress"
+	"jarvis/internal/taskcreate"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -257,27 +257,21 @@ func createAutoTask(tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDra
 	if found.RowsAffected != 0 {
 		return nil, fmt.Errorf("%w: todo_id=%d task_id=%d", ErrTaskExists, todo.ID, existing.ID)
 	}
-	actionHash, err := ActionHash(todo.ActionType, todo.Target, planJSON)
+	factory, err := taskcreate.NewFactory(tx)
 	if err != nil {
 		return nil, err
 	}
-	task := domain.Task{
-		TodoID: todo.ID, Title: todo.Title, ActionType: todo.ActionType,
-		Background:  datatypes.JSON(append([]byte(nil), background...)),
-		Plan:        datatypes.JSON(append([]byte(nil), planJSON...)),
-		ConfirmedBy: "m4_auto", ConfirmedAt: now, ActionHash: actionHash,
-		Status: "pending", AutonomyMode: "autopilot", ProjectID: copyUint64(todo.ProjectID), Version: 0,
+	todoID := todo.ID
+	task, err := factory.CreateWithDB(context.Background(), tx, taskcreate.Input{
+		TodoID: &todoID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
+		Background: background, Plan: planJSON, ConfirmedBy: "m4_auto", ConfirmedAt: &now,
+		ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todoID,
+		ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "m4",
+	})
+	if errors.Is(err, taskcreate.ErrExists) {
+		return nil, fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
 	}
-	if err := tx.Create(&task).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return nil, fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
-		}
-		return nil, fmt.Errorf("create auto Task todo_id=%d: %w", todo.ID, err)
-	}
-	if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
-		TaskID: task.ID, TaskVersion: task.Version, EventType: "created",
-		ToStatus: task.Status, ActorType: "m4", OccurredAt: now,
-	}); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	if err := createTodoEvent(tx, todo.ID, RouteAuto, RouteAuto, map[string]any{
@@ -285,7 +279,7 @@ func createAutoTask(tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDra
 	}); err != nil {
 		return nil, err
 	}
-	return &task, nil
+	return task, nil
 }
 
 func float64Pointer(value float64) *float64 {

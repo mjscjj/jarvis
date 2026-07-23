@@ -83,7 +83,7 @@ func TestProgressEventsMySQL(t *testing.T) {
 		t.Fatalf("create Todo: %v", err)
 	}
 	task := domain.Task{
-		TodoID: todo.ID, Title: todo.Title, ActionType: todo.ActionType,
+		TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType,
 		Background: datatypes.JSON(`{}`), Plan: datatypes.JSON(`{"steps":["test"]}`),
 		ConfirmedBy: "user", ConfirmedAt: now, ActionHash: strings.Repeat("b", 64),
 		Status: "pending", AutonomyMode: "copilot",

@@ -16,6 +16,7 @@ import (
 	"jarvis/internal/domain"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
+	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
 
@@ -115,6 +116,9 @@ func (e *AgentExecutor) KickExecute(ctx context.Context, input ExecuteInput) (*E
 	if task.Status != "pending" {
 		return nil, fmt.Errorf("%w: task_id=%d from=%s to=executing", ErrInvalidTransition, task.ID, task.Status)
 	}
+	if err := validateTaskIntegrity(&task); err != nil {
+		return nil, err
+	}
 	if _, ok := lookupPolicy(task.ActionType); !ok {
 		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
 	}
@@ -132,6 +136,19 @@ func (e *AgentExecutor) KickExecute(ctx context.Context, input ExecuteInput) (*E
 func (e *AgentExecutor) KickRerun(ctx context.Context, taskID uint64) (*ExecuteResult, error) {
 	if taskID == 0 {
 		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
+	}
+	var current domain.Task
+	if err := e.db.WithContext(ctx).First(&current, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return nil, fmt.Errorf("load Task id=%d before rerun: %w", taskID, err)
+	}
+	if err := validateTaskIntegrity(&current); err != nil {
+		return nil, err
+	}
+	if _, ok := lookupPolicy(current.ActionType); !ok {
+		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, current.ID, current.ActionType)
 	}
 	task, err := e.store.ResetForRerun(ctx, taskID)
 	if err != nil {
@@ -323,6 +340,9 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	if _, ok := lookupPolicy(task.ActionType); !ok {
 		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
 	}
+	if err := validateTaskIntegrity(&task); err != nil {
+		return nil, err
+	}
 
 	// Claim the Task (pending -> executing). This is the concurrency guard.
 	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
@@ -355,7 +375,7 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 	// produces a proposal for human approval; if it is only reading/querying, it
 	// finishes in place. This closes the "an investigate Task decides mid-run to
 	// send a message" gap that a pre-assigned external flag would miss.
-	if runsToCompletion(task.ActionType) {
+	if runsToCompletion(&task) {
 		run, execErr := e.runOnce(ctx, &task, policy)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
 			return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
@@ -370,8 +390,27 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 // pushed branch + MR, which a human must still merge, so the MR is the review
 // gate. All other action types go through propose so the agent can flag any real
 // external write for approval based on what it actually intends to do.
-func runsToCompletion(actionType string) bool {
-	return actionType == "code_change"
+func runsToCompletion(task *domain.Task) bool {
+	return task != nil && (task.ExecutionMode == taskcreate.ExecutionModeDirect || task.ActionType == "code_change")
+}
+
+func validateTaskIntegrity(task *domain.Task) error {
+	if task == nil || task.ID == 0 {
+		return fmt.Errorf("%w: Task is invalid", ErrInvalidInput)
+	}
+	switch task.ExecutionMode {
+	case taskcreate.ExecutionModeStandard, taskcreate.ExecutionModeDirect:
+	default:
+		return fmt.Errorf("%w: task_id=%d unknown execution_mode=%q", ErrInvalidInput, task.ID, task.ExecutionMode)
+	}
+	hash, err := taskcreate.ActionHash(task.ActionType, task.Target, json.RawMessage(task.Plan))
+	if err != nil {
+		return fmt.Errorf("%w: task_id=%d action integrity: %v", ErrInvalidInput, task.ID, err)
+	}
+	if hash != task.ActionHash {
+		return fmt.Errorf("%w: task_id=%d action_hash mismatch", ErrInvalidInput, task.ID)
+	}
+	return nil
 }
 
 // executePropose runs the propose stage (every action except code_change) and

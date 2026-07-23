@@ -27,6 +27,7 @@ var actionPolicies = map[string]actionPolicy{
 	// Local, auto-executable.
 	"code_change": {sandbox: "danger-full-access", external: false},
 	"investigate": {sandbox: "danger-full-access", external: false},
+	"agent_task":  {sandbox: "danger-full-access", external: true},
 
 	// External side effects — codex may draft, but execution needs approval.
 	"summary_post":     {sandbox: "danger-full-access", external: true},

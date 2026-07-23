@@ -16,6 +16,7 @@ import (
 	"jarvis/internal/scheduledtask"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
+	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
 
@@ -30,6 +31,7 @@ type Dependencies struct {
 	Confirmations       decide.ConfirmationService
 	ConfirmationDetails decide.ConfirmationDetailReader
 	Tasks               execute.TaskService
+	TaskSubmitter       *taskcreate.Submitter
 	Executor            *execute.AgentExecutor
 	Projects            *background.ProjectService
 	Persons             *background.PersonService
@@ -74,6 +76,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.Tasks == nil {
 		return fmt.Errorf("api Task service dependency is nil")
+	}
+	if deps.TaskSubmitter == nil {
+		return fmt.Errorf("api Task submitter dependency is nil")
 	}
 	if deps.Projects == nil {
 		return fmt.Errorf("api project service dependency is nil")
@@ -135,6 +140,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/confirmations/:todo_id/reject", RejectConfirmation(deps.Confirmations))
 	h.POST("/api/confirmations/:todo_id/supplement", SupplementConfirmation(deps.Confirmations))
 	h.GET("/api/tasks", ListTasks(deps.Tasks))
+	h.POST("/api/tasks", CreateTask(deps.TaskSubmitter))
 	h.GET("/api/tasks/:task_id/runs", ListTaskRuns(deps.Tasks))
 	h.GET("/api/tasks/:task_id/events", ListTaskEvents(deps.Progress))
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))

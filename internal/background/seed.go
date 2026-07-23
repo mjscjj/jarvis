@@ -10,6 +10,7 @@ import (
 
 	"jarvis/internal/domain"
 	"jarvis/internal/progress"
+	"jarvis/internal/taskcreate"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -75,16 +76,16 @@ var seedProjects = []seedProject{
 
 var seedTasks = []seedTask{
 	{projectCode: "agent-runtime", actionType: "investigate", title: "推进 codex runtime 方案 review",
-		detail: "整理对下 runtime 的 codex 方案要点，组织技术评审并沉淀结论。",
+		detail:    "整理对下 runtime 的 codex 方案要点，组织技术评审并沉淀结论。",
 		planSteps: []string{"梳理 codex runtime 现状与目标", "组织方案 review", "记录评审结论与后续项"}},
 	{projectCode: "agency-agent-infra", actionType: "investigate", title: "梳理 Agent 自进化命题方向",
-		detail: "对齐 Agent 自进化的内部方向，输出可评审的路径草案。",
+		detail:    "对齐 Agent 自进化的内部方向，输出可评审的路径草案。",
 		planSteps: []string{"收集自进化命题输入", "输出方向草案", "内部 review 对齐"}},
 	{projectCode: "skill-governance", actionType: "manual_followup", title: "推进 skills 白名单用户开放",
-		detail: "支持 skills 白名单用户可用，明确开放范围与后台配置。",
+		detail:    "支持 skills 白名单用户可用，明确开放范围与后台配置。",
 		planSteps: []string{"确认白名单范围", "后台开放配置", "验证可用性"}},
 	{projectCode: "backstage-ai-bot", actionType: "manual_followup", title: "跟进自建活动 AI Bot 外部权限安全问题",
-		detail: "自建活动 AI Bot 外部权限开启涉及安全问题，需推动讨论并给出方案。",
+		detail:    "自建活动 AI Bot 外部权限开启涉及安全问题，需推动讨论并给出方案。",
 		planSteps: []string{"梳理外部权限风险点", "组织安全讨论", "输出权限开启方案"}},
 }
 
@@ -229,10 +230,16 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("encode seed plan %q: %w", st.title, err)
 	}
+	todoID := todo.ID
+	actionHash, err := taskcreate.ActionHash(st.actionType, st.title, json.RawMessage(plan))
+	if err != nil {
+		return false, fmt.Errorf("hash seed task %q: %w", st.title, err)
+	}
 	task := domain.Task{
-		TodoID: todo.ID, Title: st.title, ActionType: st.actionType,
+		TodoID: &todoID, Title: st.title, ActionType: st.actionType, Target: st.title,
 		Background: background, Plan: plan,
-		ConfirmedBy: "system", ConfirmedAt: now, ActionHash: fingerprint,
+		ConfirmedBy: "system", ConfirmedAt: now, ActionHash: actionHash,
+		SourceType: taskcreate.SourceTodo, SourceID: &todoID, ExecutionMode: taskcreate.ExecutionModeStandard,
 		Status: "pending", AutonomyMode: "copilot", ProjectID: &projectID,
 	}
 	if err := tx.Create(&task).Error; err != nil {

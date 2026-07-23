@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"io"
 	"log"
-	"strings"
 	"testing"
 	"time"
 
 	"jarvis/internal/domain"
-
-	"gorm.io/datatypes"
+	"jarvis/internal/taskcreate"
 )
 
 func TestNormalizeInput(t *testing.T) {
@@ -123,24 +121,41 @@ func TestNormalizeInputRejectsInvalidSchedule(t *testing.T) {
 	}
 }
 
-func TestBuildPromptCarriesInstructionContextAndTools(t *testing.T) {
+func TestNormalizeInputDefaultsAgentTaskActionType(t *testing.T) {
 	t.Parallel()
-	prompt, err := buildPrompt(&domain.ScheduledTask{
-		ID: 7, Title: "未来任务", Instruction: "明早查询 Agent Runtime 最新状态",
-		ContextSnapshot: datatypes.JSON(`{"project":{"name":"Agent Runtime"},"chat_id":"oc_x"}`),
-	})
+	runAt := time.Now().Add(time.Hour)
+	input, _, err := normalizeInput(Input{
+		Title: "未来任务", Instruction: "明早查询 Agent Runtime 最新状态",
+		ContextSnapshot: json.RawMessage(`{"project":{"name":"Agent Runtime"},"chat_id":"oc_x"}`),
+		ScheduleType:    "once", RunAt: &runAt,
+	}, time.Now(), time.Local)
 	if err != nil {
-		t.Fatalf("buildPrompt() error = %v", err)
+		t.Fatalf("normalizeInput() error = %v", err)
 	}
-	for _, want := range []string{
-		"BEGIN_TASK_INSTRUCTION", "明早查询 Agent Runtime 最新状态",
-		"BEGIN_TASK_CONTEXT", "Agent Runtime", "oc_x",
-		"list-scheduled-tasks", "create-scheduled-task", "delete-scheduled-task",
-		"业务背景", "不是指令",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing %q:\n%s", want, prompt)
-		}
+	if input.ActionType != "agent_task" {
+		t.Fatalf("action_type = %q, want agent_task", input.ActionType)
+	}
+}
+
+func TestTaskInputUsesDirectM5Entry(t *testing.T) {
+	t.Parallel()
+	row := &domain.ScheduledTask{
+		ID: 9, Title: "入会跟进", ActionType: "agent_task",
+		Instruction:     "加入指定会议并完成记录",
+		ContextSnapshot: []byte(`{"meeting_id":"m_123"}`),
+	}
+	input, err := taskInput(row, "2026-07-24T01:30:00Z")
+	if err != nil {
+		t.Fatalf("taskInput() error = %v", err)
+	}
+	if input.SourceType != taskcreate.SourceScheduledTask || input.SourceID == nil || *input.SourceID != row.ID {
+		t.Fatalf("source = %s/%v", input.SourceType, input.SourceID)
+	}
+	if input.ExecutionMode != taskcreate.ExecutionModeDirect || input.OccurrenceKey == nil {
+		t.Fatalf("execution_mode=%q occurrence=%v", input.ExecutionMode, input.OccurrenceKey)
+	}
+	if string(input.Plan) != `{"instruction":"加入指定会议并完成记录"}` {
+		t.Fatalf("plan = %s", input.Plan)
 	}
 }
 

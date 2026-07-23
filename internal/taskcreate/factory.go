@@ -1,0 +1,258 @@
+// Package taskcreate owns the source-agnostic creation of executable Tasks.
+package taskcreate
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"jarvis/internal/domain"
+	"jarvis/internal/progress"
+
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+
+const (
+	ExecutionModeStandard = "standard"
+	ExecutionModeDirect   = "direct"
+
+	SourceTodo          = "todo"
+	SourceScheduledTask = "scheduled_task"
+	SourceManual        = "manual"
+)
+
+var (
+	ErrInvalidInput = errors.New("invalid Task creation input")
+	ErrExists       = errors.New("Task already exists for source occurrence")
+)
+
+type Input struct {
+	TodoID        *uint64
+	Title         string
+	ActionType    string
+	Target        string
+	Background    json.RawMessage
+	Plan          json.RawMessage
+	ConfirmedBy   string
+	ConfirmedAt   *time.Time
+	ProjectID     *uint64
+	SourceType    string
+	SourceID      *uint64
+	OccurrenceKey *string
+	ExecutionMode string
+	ApprovalRef   *string
+	ActorType     string
+	EventDetail   map[string]any
+}
+
+type Factory struct {
+	db  *gorm.DB
+	now func() time.Time
+}
+
+func NewFactory(db *gorm.DB) (*Factory, error) {
+	if db == nil {
+		return nil, fmt.Errorf("Task factory db is nil")
+	}
+	return &Factory{db: db, now: time.Now}, nil
+}
+
+func (f *Factory) Create(ctx context.Context, input Input) (*domain.Task, error) {
+	var task *domain.Task
+	err := f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		created, err := f.CreateWithDB(ctx, tx, input)
+		if err != nil {
+			return err
+		}
+		task = created
+		return nil
+	})
+	return task, err
+}
+
+// CreateWithDB lets callers with an existing transaction keep Task creation and
+// their own state transition in the same commit.
+func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*domain.Task, error) {
+	if db == nil {
+		return nil, fmt.Errorf("Task factory write db is nil")
+	}
+	normalized, err := normalizeInput(input)
+	if err != nil {
+		return nil, err
+	}
+	hash, err := ActionHash(normalized.ActionType, normalized.Target, normalized.Plan)
+	if err != nil {
+		return nil, err
+	}
+	if normalized.SourceID != nil && normalized.OccurrenceKey != nil {
+		var existing domain.Task
+		found := db.WithContext(ctx).
+			Where("source_type = ? AND source_id = ? AND occurrence_key = ?", normalized.SourceType, *normalized.SourceID, *normalized.OccurrenceKey).
+			Limit(1).Find(&existing)
+		if found.Error != nil {
+			return nil, fmt.Errorf("check existing Task source=%s/%d occurrence=%s: %w",
+				normalized.SourceType, *normalized.SourceID, *normalized.OccurrenceKey, found.Error)
+		}
+		if found.RowsAffected != 0 {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrExists, existing.ID)
+		}
+	}
+	now := f.now().UTC()
+	if normalized.ConfirmedAt != nil {
+		now = normalized.ConfirmedAt.UTC()
+	}
+	row := domain.Task{
+		TodoID: normalized.TodoID, Title: normalized.Title, ActionType: normalized.ActionType,
+		Target: normalized.Target, Background: datatypes.JSON(normalized.Background), Plan: datatypes.JSON(normalized.Plan),
+		ConfirmedBy: normalized.ConfirmedBy, ConfirmedAt: now, ActionHash: hash,
+		SourceType: normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
+		ExecutionMode: normalized.ExecutionMode, ApprovalRef: normalized.ApprovalRef,
+		Status: "pending", AutonomyMode: autonomyMode(normalized.ExecutionMode),
+		ProjectID: normalized.ProjectID, Version: 0,
+	}
+	if err := db.WithContext(ctx).Create(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, fmt.Errorf("%w: source=%s", ErrExists, normalized.SourceType)
+		}
+		return nil, fmt.Errorf("create Task source=%s: %w", normalized.SourceType, err)
+	}
+	actorType := strings.TrimSpace(normalized.ActorType)
+	if actorType == "" {
+		actorType = normalized.SourceType
+	}
+	if err := progress.AppendTaskEvent(db.WithContext(ctx), progress.TaskEventInput{
+		TaskID: row.ID, TaskVersion: row.Version, EventType: "created",
+		ToStatus: row.Status, ActorType: actorType, Detail: normalized.EventDetail,
+		OccurredAt: now,
+	}); err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func normalizeInput(input Input) (Input, error) {
+	input.Title = strings.TrimSpace(input.Title)
+	input.ActionType = strings.TrimSpace(input.ActionType)
+	input.Target = strings.TrimSpace(input.Target)
+	input.ConfirmedBy = strings.TrimSpace(input.ConfirmedBy)
+	input.SourceType = strings.TrimSpace(input.SourceType)
+	input.ExecutionMode = strings.TrimSpace(input.ExecutionMode)
+	if input.Title == "" || input.ActionType == "" || input.Target == "" || input.ConfirmedBy == "" {
+		return Input{}, fmt.Errorf("%w: title, action_type, target and confirmed_by are required", ErrInvalidInput)
+	}
+	switch input.SourceType {
+	case SourceTodo, SourceScheduledTask, SourceManual:
+	default:
+		return Input{}, fmt.Errorf("%w: source_type must be todo, scheduled_task or manual", ErrInvalidInput)
+	}
+	switch input.ExecutionMode {
+	case ExecutionModeStandard, ExecutionModeDirect:
+	default:
+		return Input{}, fmt.Errorf("%w: execution_mode must be standard or direct", ErrInvalidInput)
+	}
+	if input.SourceType == SourceTodo {
+		if input.TodoID == nil || *input.TodoID == 0 {
+			return Input{}, fmt.Errorf("%w: todo source requires todo_id", ErrInvalidInput)
+		}
+		if input.SourceID == nil {
+			input.SourceID = copyUint64(input.TodoID)
+		}
+	}
+	if input.SourceType == SourceScheduledTask {
+		if input.SourceID == nil || *input.SourceID == 0 || input.OccurrenceKey == nil || strings.TrimSpace(*input.OccurrenceKey) == "" {
+			return Input{}, fmt.Errorf("%w: scheduled_task source requires source_id and occurrence_key", ErrInvalidInput)
+		}
+	}
+	if input.SourceID != nil && *input.SourceID == 0 {
+		return Input{}, fmt.Errorf("%w: source_id must be positive", ErrInvalidInput)
+	}
+	input.Background = mustJSONObject(input.Background, true)
+	if input.Background == nil {
+		return Input{}, fmt.Errorf("%w: background must be a JSON object", ErrInvalidInput)
+	}
+	input.Plan = mustJSONObject(input.Plan, false)
+	if input.Plan == nil {
+		return Input{}, fmt.Errorf("%w: plan must be a non-empty JSON object", ErrInvalidInput)
+	}
+	input.OccurrenceKey = trimString(input.OccurrenceKey)
+	input.ApprovalRef = trimString(input.ApprovalRef)
+	return input, nil
+}
+
+// ActionHash fingerprints the exact approved action.
+func ActionHash(actionType, target string, plan json.RawMessage) (string, error) {
+	actionType = strings.TrimSpace(actionType)
+	target = strings.TrimSpace(target)
+	if actionType == "" || target == "" {
+		return "", fmt.Errorf("%w: action_type and target are required", ErrInvalidInput)
+	}
+	canonical := mustJSONObject(plan, false)
+	if canonical == nil {
+		return "", fmt.Errorf("%w: plan must be a non-empty JSON object", ErrInvalidInput)
+	}
+	payload, err := json.Marshal(struct {
+		ActionType string          `json:"action_type"`
+		Target     string          `json:"target"`
+		Plan       json.RawMessage `json:"plan"`
+	}{ActionType: actionType, Target: target, Plan: canonical})
+	if err != nil {
+		return "", fmt.Errorf("encode Task action hash: %w", err)
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func mustJSONObject(raw []byte, allowEmpty bool) json.RawMessage {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var object map[string]any
+	if err := decoder.Decode(&object); err != nil || object == nil || (!allowEmpty && len(object) == 0) {
+		return nil
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil
+	}
+	encoded, err := json.Marshal(object)
+	if err != nil {
+		return nil
+	}
+	return encoded
+}
+
+func trimString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func copyUint64(value *uint64) *uint64 {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+
+func autonomyMode(executionMode string) string {
+	if executionMode == ExecutionModeDirect {
+		return "autopilot"
+	}
+	return "copilot"
+}
