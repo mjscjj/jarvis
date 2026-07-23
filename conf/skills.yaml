@@ -1,15 +1,15 @@
 skills:
-  - name: feishu-group-daily-summary
-    enabled: true
-    stages:
-      - execute
-  - name: feishu-send-message
-    enabled: true
-    stages:
-      - extract
-      - decide
-      - execute
-  - name: summarize-person-day
-    enabled: true
-    stages:
-      - execute
+    - name: feishu-group-daily-summary
+      enabled: true
+      stages:
+        - execute
+    - name: feishu-send-message
+      enabled: true
+      stages:
+        - extract
+        - decide
+        - execute
+    - name: summarize-person-day
+      enabled: true
+      stages:
+        - execute
