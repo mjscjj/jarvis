@@ -10,6 +10,7 @@ import type { ScheduledTask, ScheduledTaskInput, ScheduledTaskScheduleType, Sche
 const { Paragraph, Text } = Typography
 
 const statusMeta: Record<ScheduledTaskStatus, { label: string; color: string }> = {
+  binding: { label: '正在绑定会话', color: 'orange' },
   active: { label: '等待调度', color: 'green' },
   running: { label: '触发中', color: 'blue' },
   completed: { label: '已触发', color: 'default' },
@@ -179,7 +180,11 @@ export default function ScheduledTasks() {
       title: '任务', dataIndex: 'title', width: 240,
       render: (value: string, task) => (
         <div>
-          <Space size={6}><Text strong>{value}</Text>{!task.enabled && <Tag>已停用</Tag>}</Space>
+          <Space size={6}>
+            <Text strong>{value}</Text>
+            {task.dispatch_kind === 'resume_task' && <Tag color="purple">任务续跑</Tag>}
+            {!task.enabled && <Tag>已停用</Tag>}
+          </Space>
           <Paragraph type="secondary" ellipsis={{ rows: 2, expandable: true }} style={{ margin: '4px 0 0', fontSize: 12, whiteSpace: 'pre-wrap' }}>
             {task.instruction}
           </Paragraph>
@@ -213,7 +218,12 @@ export default function ScheduledTasks() {
       render: (_, task) => (
         <Space size={4}>
           <Button size="small" icon={<ThunderboltOutlined />} disabled={task.status === 'running'} onClick={() => trigger(task)}>手动触发</Button>
-          <Button size="small" icon={<EditOutlined />} disabled={task.status === 'running'} onClick={() => openEdit(task)} />
+          <Button
+            size="small"
+            icon={<EditOutlined />}
+            disabled={task.status === 'running' || task.dispatch_kind === 'resume_task'}
+            onClick={() => openEdit(task)}
+          />
           <Popconfirm title="删除这条定时任务？" okText="删除" cancelText="取消" onConfirm={() => remove(task)}>
             <Button size="small" danger icon={<DeleteOutlined />} disabled={task.status === 'running'} />
           </Popconfirm>

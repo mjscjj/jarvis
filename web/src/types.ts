@@ -187,7 +187,7 @@ export interface ConfirmationDetail {
   audits: DecisionAuditView[] | null
 }
 
-export type TaskStatus = 'pending' | 'executing' | 'awaiting_approval' | 'done' | 'failed'
+export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'awaiting_approval' | 'done' | 'failed'
 
 // TaskProposal is the high-risk external write codex prepared during the propose
 // stage, awaiting human approval. It is stored in execution_result while the Task
@@ -257,11 +257,16 @@ export interface RunEnrichment {
 // RunOutput 是 execution_run.output 的强类型：codex 执行结束时输出的结构化裁决。
 // summary 已单独存在 ExecutionRun.summary，这里主要用 needs_followup 与 enrichments。
 export interface RunOutput {
-  success?: boolean
+  outcome?: 'completed' | 'waiting' | 'needs_human' | 'failed'
   summary?: string
   failure_reason?: string
   needs_followup?: string
   enrichments?: RunEnrichment[]
+  waiting?: {
+    scheduled_task_id: number
+    wake_at: string
+    reason: string
+  } | null
 }
 
 // ExecutionRun 是一次 M5 执行的审计记录，一个 Task 可有多条（重试）。
@@ -269,6 +274,7 @@ export interface ExecutionRun {
   id: number
   task_id: number
   action_type: ActionType
+  stage: 'execute' | 'propose' | 'apply'
   sandbox: string
   status: string
   codex_session_id: string | null
@@ -276,6 +282,7 @@ export interface ExecutionRun {
   output: RunOutput | null
   error_detail: string | null
   repo_path: string | null
+  base_branch: string | null
   branch: string | null
   commit: string | null
   diff_path: string | null
@@ -779,12 +786,17 @@ export interface TextStorageInput {
   content: string
 }
 
-export type ScheduledTaskStatus = 'active' | 'running' | 'completed'
+export type ScheduledTaskStatus = 'binding' | 'active' | 'running' | 'completed'
 export type ScheduledTaskLastRunStatus = 'done' | 'failed'
 export type ScheduledTaskScheduleType = 'once' | 'daily' | 'interval'
 
 export interface ScheduledTask {
   id: number
+  dispatch_kind: 'create_task' | 'resume_task'
+  subject_type: string | null
+  subject_id: number | null
+  source_run_id: number | null
+  dispatch_payload: Record<string, unknown> | null
   title: string
   action_type: 'agent_task'
   instruction: string

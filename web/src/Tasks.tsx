@@ -1,53 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Input, Modal, Space, Spin, Table, Tabs, Tag, Timeline, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Input, Modal, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { approveTask, executeTask, finishTask, listTaskEvents, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, supplementTask } from './api'
-import type { ExecutionRun, ProposalResult, RunEnrichment, Task, TaskEvent, TaskStatus } from './types'
-import EntityRelations from './components/EntityRelations'
+import type { ExecutionRun, Task, TaskEvent, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
+import { usePageContext } from './pageContext'
+import TaskDetailModal from './tasks/TaskDetailModal'
+import {
+  canReapply,
+  externalActions,
+  failureKindOf,
+  failureMeta,
+  proposalOf,
+  strField,
+} from './tasks/taskPresentation'
 
-const { Link, Paragraph, Text } = Typography
-
-const taskEventLabels: Record<string, string> = {
-  created: '任务已创建',
-  execution_started: '开始执行',
-  approval_requested: '等待审批',
-  approval_granted: '已批准执行',
-  approval_rejected: '已驳回',
-  rerun_requested: '请求重跑',
-  reapply_started: '重新落地',
-  supplemented: '补充执行信息',
-  execution_succeeded: '执行成功',
-  execution_failed: '执行失败',
-  stale_failed: '执行超时',
-  snapshot_imported: '导入当前状态',
-}
-
-const actorLabels: Record<string, string> = { user: '用户', m4: 'M4', m5: 'M5', system: '系统', seed: '初始化', migration: '迁移' }
-
-function taskEventColor(event: TaskEvent): string {
-  if (event.to_status === 'done') return 'green'
-  if (event.to_status === 'failed') return 'red'
-  if (event.to_status === 'awaiting_approval') return 'orange'
-  if (event.to_status === 'executing') return 'blue'
-  return 'gray'
-}
-
-// runStatusColor 把 ExecutionRun 状态映射到 Timeline 圆点/标签颜色。
-function runStatusColor(status: string): string {
-  if (status === 'succeeded') return 'green'
-  if (status === 'failed') return 'red'
-  if (status === 'running') return 'blue'
-  return 'gray'
-}
-
-function formatDuration(ms: number | null): string {
-  if (ms == null) return '—'
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
+const { Text } = Typography
+const taskActionModalZIndex = 1100
 
 // 列表状态旁的时间：月日时分，例如「7/22 21:25」。
 function formatBriefTime(value: string | null | undefined): string {
@@ -57,171 +28,8 @@ function formatBriefTime(value: string | null | undefined): string {
   return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
-// enrichmentKindLabel 给未带 label 的 enrichment 一个可读中文标题兜底。
-function enrichmentKindLabel(kind: string): string {
-  switch (kind) {
-    case 'context': return '正文'
-    case 'doc_link': return '相关文档'
-    case 'code_link': return '相关代码'
-    case 'commit_digest': return 'Commit 摘要'
-    default: return kind || '补充'
-  }
-}
-
-// EnrichmentBlock 把 codex 的一条 enrichment 渲染成人能读的块，而不是 JSON：
-//   - doc_link/code_link：detail 里多个路径以 "；" 或换行分隔，逐条可复制
-//   - 其它（context/commit_digest/未知）：多行正文，保留换行
-function EnrichmentBlock({ item }: { item: RunEnrichment }) {
-  const label = item.label?.trim() || enrichmentKindLabel(item.kind)
-  const isLink = item.kind === 'doc_link' || item.kind === 'code_link'
-  const paths = isLink
-    ? item.detail.split(/[；;\n]+/).map((p) => p.trim()).filter(Boolean)
-    : []
-  return (
-    <div style={{ background: 'var(--color-bg-soft)', borderRadius: 8, padding: '10px 12px' }}>
-      <Text strong style={{ fontSize: 13 }}>{label}</Text>
-      {isLink ? (
-        <Space direction="vertical" size={2} style={{ width: '100%', marginTop: 6 }}>
-          {paths.map((path, index) => (
-            <Text key={index} className="mono" style={{ fontSize: 12 }} copyable>{path}</Text>
-          ))}
-        </Space>
-      ) : (
-        <Paragraph style={{ whiteSpace: 'pre-wrap', margin: '6px 0 0', fontSize: 13, lineHeight: 1.6 }}>{item.detail}</Paragraph>
-      )}
-    </div>
-  )
-}
-
-// RunCard 展示单次执行的结构化产物：状态/耗时/时间 + code_change 的 MR/分支/commit/
-// diff，codex 自述 summary、结构化 enrichments（正文/文档/commit）、待你拍板的
-// needs_followup，以及错误详情。原始 JSON 收进最底部折叠，日常不占视线。
-function RunCard({ run }: { run: ExecutionRun }) {
-  const enrichments = run.output?.enrichments ?? []
-  const followup = run.output?.needs_followup?.trim()
-  return (
-    <Space direction="vertical" size={10} style={{ width: '100%' }}>
-      <Space size={12} wrap>
-        <StatusBadge label={run.status} color={statusMeta[run.status === 'succeeded' ? 'done' : run.status === 'failed' ? 'failed' : 'executing']?.color ?? '#888'} />
-        <Text type="secondary">#{run.id}</Text>
-        <Tag>{run.action_type}</Tag>
-        <Text type="secondary">沙箱 {run.sandbox}</Text>
-        <Text type="secondary">耗时 {formatDuration(run.duration_ms)}</Text>
-      </Space>
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        {new Date(run.started_at).toLocaleString()}
-        {run.finished_at ? ` → ${new Date(run.finished_at).toLocaleTimeString()}` : '（未结束）'}
-        {run.codex_session_id ? ` · session ${run.codex_session_id.slice(0, 12)}…` : ''}
-      </Text>
-      {(run.merge_request_url || run.branch || run.commit || run.diff_path) && (
-        <Descriptions size="small" column={1} styles={{ label: { width: 90 } }}>
-          {run.merge_request_url && (
-            <Descriptions.Item label="Merge Request">
-              <Link href={run.merge_request_url} target="_blank">{run.merge_request_url}</Link>
-            </Descriptions.Item>
-          )}
-          {run.branch && <Descriptions.Item label="分支"><Text className="mono">{run.branch}</Text></Descriptions.Item>}
-          {run.commit && <Descriptions.Item label="Commit"><Text className="mono">{run.commit.slice(0, 12)}</Text></Descriptions.Item>}
-          {run.diff_path && <Descriptions.Item label="Diff"><Text className="mono" copyable>{run.diff_path}</Text></Descriptions.Item>}
-        </Descriptions>
-      )}
-      {run.summary && <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>{run.summary}</Paragraph>}
-      {enrichments.length > 0 && (
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
-        </Space>
-      )}
-      {followup && (
-        <Alert type="info" showIcon message="待你拍板 / 后续" description={<Text style={{ whiteSpace: 'pre-wrap' }}>{followup}</Text>} />
-      )}
-      {run.error_detail && <Alert type="error" showIcon message="执行错误" description={<Text className="mono">{run.error_detail}</Text>} />}
-      {run.output && Object.keys(run.output).length > 0 && (
-        <details><summary style={{ cursor: 'pointer', color: '#888' }}>codex 原始输出（JSON）</summary><pre className="inline-json">{JSON.stringify(run.output, null, 2)}</pre></details>
-      )}
-    </Space>
-  )
-}
-
-// proposalOf reads the pending proposal off a Task whose execution_result was
-// written by the propose stage (stage="proposal"). Returns null otherwise.
-function proposalOf(task: Task): ProposalResult | null {
-  const result = task.execution_result as ProposalResult | null
-  if (result && result.stage === 'proposal' && result.proposal) return result
-  return null
-}
-
-// ProposalCard renders the high-risk external write awaiting approval: the action
-// description, the target object, and the COMPLETE artifact the user is approving
-// (the exact document/message that will be written out), plus any enrichments.
-function ProposalCard({ result }: { result: ProposalResult }) {
-  const { proposal } = result
-  return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      {result.summary && <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>{result.summary}</Paragraph>}
-      <Descriptions size="small" column={1} styles={{ label: { width: 72 } }}>
-        <Descriptions.Item label="动作">{proposal.action}</Descriptions.Item>
-        <Descriptions.Item label="目标">{proposal.target}</Descriptions.Item>
-      </Descriptions>
-      <div>
-        <Text strong style={{ fontSize: 13 }}>完整产出物（批准后将真正写出/发送）</Text>
-        <Paragraph style={{ whiteSpace: 'pre-wrap', margin: '6px 0 0', fontSize: 13, lineHeight: 1.6, background: 'var(--color-bg-soft)', borderRadius: 8, padding: '10px 12px' }}>{proposal.artifact}</Paragraph>
-      </div>
-      {result.enrichments && result.enrichments.length > 0 && (
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          {result.enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
-        </Space>
-      )}
-      {result.needs_followup?.trim() && (
-        <Alert type="info" showIcon message="待你拍板 / 后续" description={<Text style={{ whiteSpace: 'pre-wrap' }}>{result.needs_followup}</Text>} />
-      )}
-    </Space>
-  )
-}
-
-// External actions reach outside this machine and cannot be auto-run; the
-// backend still requires the click, but we warn before triggering.
-const externalActions = new Set(['summary_post', 'reply_message', 'schedule_meeting', 'doc_write', 'manual_followup'])
-
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
-}
-
-// strField 从自由 JSON（execution_result）里安全取字符串字段：取到非空 string 才返回，
-// 否则 null。展示层用，取不到就让调用方渲染占位符，不抛错。
-function strField(obj: Record<string, unknown> | null, key: string): string | null {
-  if (!obj) return null
-  const value = obj[key]
-  return typeof value === 'string' && value.trim() ? value : null
-}
-
-// FailureKind 把一条 failed 任务按 execution_result.stage 分成四类，让「系统真实报错」
-// 和「你自己拍板的失败/驳回」区分开：
-//   codex   —— codex 真实执行/落地失败（系统的锅）
-//   manual  —— 你点「失败」按钮手动标记的
-//   rejected—— 你驳回了对外写入方案
-//   stale   —— 进程重启把执行中的任务判超时失败
-//   unknown —— 老数据没有 stage 标记，无法归类
-type FailureKind = 'codex' | 'manual' | 'rejected' | 'stale' | 'unknown'
-
-// failureKindOf 读取 execution_result.stage 归类失败来源。非 failed 任务返回 null。
-function failureKindOf(task: Task): FailureKind | null {
-  if (task.status !== 'failed') return null
-  const stage = strField(task.execution_result, 'stage')
-  switch (stage) {
-    case 'rejected': return 'rejected'
-    case 'manual_failed': return 'manual'
-    case 'stale': return 'stale'
-    case 'executed': return 'codex'
-    default: return 'unknown'
-  }
-}
-
-const failureMeta: Record<FailureKind, { label: string; color: string }> = {
-  codex: { label: '执行失败(系统)', color: 'red' },
-  manual: { label: '你标记失败', color: 'volcano' },
-  rejected: { label: '你已驳回', color: 'gold' },
-  stale: { label: '超时中断', color: 'orange' },
-  unknown: { label: '失败', color: 'red' },
 }
 
 // FailureTag 在列表/详情里给 failed 任务标注来源；非 failed 返回 null。
@@ -230,13 +38,6 @@ function FailureTag({ task }: { task: Task }) {
   if (!kind) return null
   const meta = failureMeta[kind]
   return <Tag color={meta.color}>{meta.label}</Tag>
-}
-
-// canReapply 判断一条失败任务是否可「用同一已批准方案重试落地」：只有走过审批的
-// 对外动作、且这次是 codex 落地失败（stage=executed）才提供，避免和驳回/手动失败混淆。
-// 后端会再次校验是否真有已批准方案，这里只做入口级粗筛。
-function canReapply(task: Task): boolean {
-  return task.status === 'failed' && externalActions.has(task.action_type) && failureKindOf(task) === 'codex'
 }
 
 // CellText 把一段可能较长的可读文本按最多 3 行截断展示（详情抽屉里看全文），空则 '—'。
@@ -258,7 +59,7 @@ const tabStatuses: Record<TaskTab, TaskStatus[]> = {
   awaiting: ['awaiting_approval'],
   done: ['done'],
   failed: ['failed'],
-  others: ['pending', 'executing'],
+  others: ['pending', 'executing', 'waiting'],
 }
 
 const tabLabels: Record<TaskTab, string> = {
@@ -268,7 +69,8 @@ const tabLabels: Record<TaskTab, string> = {
   others: '其他',
 }
 
-export default function Tasks() {
+export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
+  const { setSelection } = usePageContext()
   const [activeTab, setActiveTab] = useState<TaskTab>('awaiting')
   const statuses = useMemo<TaskStatus[]>(() => tabStatuses[activeTab], [activeTab])
   const [items, setItems] = useState<Task[]>([])
@@ -296,6 +98,20 @@ export default function Tasks() {
   const [events, setEvents] = useState<TaskEvent[]>([])
   const [eventsLoading, setEventsLoading] = useState(false)
   const [eventsError, setEventsError] = useState<string>()
+
+  useEffect(() => {
+    if (!detail) {
+      setSelection(null)
+      return
+    }
+    setSelection({
+      kind: 'task',
+      id: detail.id,
+      label: `Task #${detail.id} ${detail.title}`,
+    })
+  }, [detail, setSelection])
+
+  useEffect(() => () => setSelection(null), [setSelection])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -335,6 +151,13 @@ export default function Tasks() {
       .finally(() => { if (!controller.signal.aborted) setRunsLoading(false) })
     return () => controller.abort()
   }, [detail, refreshKey])
+
+  const openDetail = (task: Task) => {
+    onDetailOpen?.()
+    setDetail(task)
+  }
+
+  const closeDetail = () => setDetail(undefined)
 
   useEffect(() => {
     if (!detail) { setEvents([]); setEventsError(undefined); return }
@@ -488,9 +311,11 @@ export default function Tasks() {
     dataIndex: 'title',
     width: 280,
     render: (_, task) => (
-      <Space direction="vertical" size={2} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={2} style={{ width: '100%' }}>
         <Text strong className="table-cell-clamp" title={task.title}>{task.title}</Text>
-        <Text type="secondary" style={{ fontSize: 12 }}>Todo #{task.todo_id} · {task.action_type}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {task.todo_id != null ? `Todo #${task.todo_id}` : `${task.source_type} #${task.source_id ?? '—'}`} · {task.action_type}
+        </Text>
       </Space>
     ),
   }
@@ -499,7 +324,7 @@ export default function Tasks() {
     dataIndex: 'status',
     width: 100,
     render: (_, task) => (
-      <Space direction="vertical" size={2}>
+      <Space orientation="vertical" size={2}>
         <StatusBadge label={statusMeta[task.status].label} color={statusMeta[task.status].color} />
         <Text type="secondary" style={{ fontSize: 12 }}>{formatBriefTime(task.updated_at)}</Text>
       </Space>
@@ -524,7 +349,7 @@ export default function Tasks() {
           const errText = strField(task.execution_result, 'error')
           const detail = reason ?? summaryText ?? errText
           return (
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
               <FailureTag task={task} />
               {detail ? <CellText text={detail} danger={failure === 'codex' || failure === 'stale'} /> : <Text type="secondary">—</Text>}
             </Space>
@@ -556,6 +381,9 @@ export default function Tasks() {
         if (task.status === 'executing') {
           return <StatusBadge label="codex 执行中…" color={statusMeta.executing.color} />
         }
+        if (task.status === 'waiting') {
+          return <StatusBadge label="等待定时唤醒" color={statusMeta.waiting.color} />
+        }
         if (task.status === 'awaiting_approval') {
           return <Space onClick={(e) => e.stopPropagation()}>
             <Button type="primary" size="small" loading={approveSubmitting && approveTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openApprove(task) }}>批准落地</Button>
@@ -579,7 +407,7 @@ export default function Tasks() {
     <PageHeader title="任务执行" subtitle="已确认的可执行任务，点行查看方案与结果">
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
-    {error && <Alert type="error" showIcon message="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
+    {error && <Alert type="error" showIcon title="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
       <Tabs
         activeKey={activeTab}
@@ -591,116 +419,31 @@ export default function Tasks() {
             : tabLabels[key],
         }))}
       />
-      <Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1160 }} tableLayout="fixed" onRow={(task) => ({ onClick: () => setDetail(task), className: 'clickable-row' })} />
+      <Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1160 }} tableLayout="fixed" onRow={(task) => ({ onClick: () => openDetail(task), className: 'clickable-row' })} />
     </Card>
-    <Drawer title={detail?.title || 'Task 详情'} open={Boolean(detail)} size={680} onClose={() => setDetail(undefined)}>
-      {detail && <Space orientation="vertical" size={20} className="drawer-content">
-        <Space><StatusBadge label={statusMeta[detail.status].label} color={statusMeta[detail.status].color} /><Tag>{detail.action_type}</Tag><FailureTag task={detail} /></Space>
-        {failureKindOf(detail) === 'rejected' && (
-          <Alert type="warning" showIcon message="这是你驳回的方案（非执行报错）" description="任务因你驳回外部写入方案而失败，系统并未真正执行/发送任何内容。可重跑以重新产出方案。" />
-        )}
-        {failureKindOf(detail) === 'manual' && (
-          <Alert type="warning" showIcon message="这是你手动标记的失败（非执行报错）" description="任务由你在后台手动点「失败」标记，非 codex 执行报错。" />
-        )}
-        {canReapply(detail) && (
-          <Alert
-            type="error"
-            showIcon
-            message="落地执行失败（系统），可用同一已批准方案重试"
-            description="这是 codex 真正落地时失败（如目标不存在/权限问题），不是你驳回。可直接重试落地——沿用你此前已批准的同一方案，不会再要你审批。"
-            action={<Button size="small" danger loading={reapplyingId === detail.id} onClick={() => runReapply(detail)}>重试落地</Button>}
-          />
-        )}
-        <Descriptions column={2} size="small">
-          <Descriptions.Item label="Todo">#{detail.todo_id}</Descriptions.Item>
-          <Descriptions.Item label="版本">v{detail.version}</Descriptions.Item>
-          <Descriptions.Item label="确认人">{detail.confirmed_by || '—'}</Descriptions.Item>
-          <Descriptions.Item label="确认时间">{detail.confirmed_at ? new Date(detail.confirmed_at).toLocaleString() : '—'}</Descriptions.Item>
-          <Descriptions.Item label="自主模式">{detail.autonomy_mode || '—'}</Descriptions.Item>
-          <Descriptions.Item label="项目">{detail.project_id != null ? `#${detail.project_id}` : '未关联'}</Descriptions.Item>
-        </Descriptions>
-        <section>
-          <Text type="secondary">任务进展（共 {events.length} 条）</Text>
-          {eventsError && <Alert type="error" showIcon style={{ marginTop: 8 }} title="任务进展加载失败" description={eventsError} />}
-          {eventsLoading ? (
-            <div style={{ padding: '16px 0', textAlign: 'center' }}><Spin size="small" /></div>
-          ) : events.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务进展" style={{ marginTop: 8 }} />
-          ) : (
-            <Timeline
-              style={{ marginTop: 12 }}
-              items={events.map((event) => ({
-                color: taskEventColor(event),
-                content: (
-                  <div>
-                    <Text strong>{taskEventLabels[event.event_type] || event.event_type}</Text>
-                    <div><Text type="secondary" style={{ fontSize: 12 }}>
-                      {new Date(event.occurred_at).toLocaleString()} · {actorLabels[event.actor_type] || event.actor_type} · v{event.task_version}
-                      {event.run_id ? ` · Run #${event.run_id}` : ''}
-                      {event.from_status ? ` · ${event.from_status} → ${event.to_status}` : ` · ${event.to_status}`}
-                    </Text></div>
-                  </div>
-                ),
-              }))}
-            />
-          )}
-        </section>
-        <section>
-          <Text type="secondary">执行历史（共 {runs.length} 次）</Text>
-          {runsError && <Alert type="error" showIcon style={{ marginTop: 8 }} message="执行历史加载失败" description={runsError} />}
-          {runsLoading ? (
-            <div style={{ padding: '16px 0', textAlign: 'center' }}><Spin size="small" /></div>
-          ) : runs.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无执行记录" style={{ marginTop: 8 }} />
-          ) : (
-            <Timeline
-              style={{ marginTop: 12 }}
-              items={runs.map((run) => ({ color: runStatusColor(run.status), content: <RunCard run={run} /> }))}
-            />
-          )}
-        </section>
-        {proposalOf(detail) && (
-          <section>
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 12 }}
-              message="待你审批的对外写入方案"
-              description="codex 判断这是高风险对外写入，只产出了方案与完整产出物，尚未真正写入/发送。请审阅下方产出物，批准后才会真正落地。"
-            />
-            <ProposalCard result={proposalOf(detail)!} />
-            <Space style={{ marginTop: 12 }}>
-              <Button type="primary" loading={approveSubmitting && approveTarget?.id === detail.id} onClick={() => openApprove(detail)}>批准落地</Button>
-              <Button danger onClick={() => openReject(detail)}>驳回</Button>
-            </Space>
-          </section>
-        )}
-        <section><Text type="secondary">执行方案</Text><pre>{JSON.stringify(detail.plan, null, 2)}</pre></section>
-        {detail.execution_supplements && detail.execution_supplements.length > 0 && (
-          <section>
-            <Text type="secondary">执行阶段补充（M5）</Text>
-            <Space direction="vertical" size={8} style={{ width: '100%', marginTop: 8 }}>
-              {detail.execution_supplements.map((item, index) => (
-                <blockquote key={index} style={{ margin: 0 }}>
-                  {item.note}
-                  <br />
-                  <Text type="secondary" style={{ fontSize: 12 }}>{new Date(item.at).toLocaleString()}</Text>
-                </blockquote>
-              ))}
-            </Space>
-          </section>
-        )}
-        {!proposalOf(detail) && (
-          <section><Text type="secondary">结果汇总（Task 最新快照）</Text>{detail.execution_result ? <pre>{JSON.stringify(detail.execution_result, null, 2)}</pre> : <Paragraph type="secondary" style={{ marginTop: 8 }}>尚未执行</Paragraph>}</section>
-        )}
-        <section><Text type="secondary">背景（M4 产出）</Text><pre>{JSON.stringify(detail.background, null, 2)}</pre></section>
-        <EntityRelations entityType="task" entityId={detail.id} />
-      </Space>}
-    </Drawer>
-    <Modal title={finishStatus === 'done' ? '记录完成结果' : '记录失败原因'} open={Boolean(selected)} confirmLoading={submitting} onOk={submit} onCancel={() => setSelected(undefined)} okText="提交">
+    <TaskDetailModal
+      task={detail}
+      runs={runs}
+      events={events}
+      runsLoading={runsLoading}
+      eventsLoading={eventsLoading}
+      runsError={runsError}
+      eventsError={eventsError}
+      executing={detail ? executingId === detail.id : false}
+      reapplying={detail ? reapplyingId === detail.id : false}
+      approveSubmitting={detail ? approveSubmitting && approveTarget?.id === detail.id : false}
+      onClose={closeDetail}
+      onExecute={runExecute}
+      onApprove={openApprove}
+      onReject={openReject}
+      onRerun={openRerun}
+      onReapply={runReapply}
+    />
+    <Modal zIndex={taskActionModalZIndex} title={finishStatus === 'done' ? '记录完成结果' : '记录失败原因'} open={Boolean(selected)} confirmLoading={submitting} onOk={submit} onCancel={() => setSelected(undefined)} okText="提交">
       <Input.TextArea rows={5} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder={finishStatus === 'done' ? '完成了什么、产物在哪里' : '失败原因和需要的后续处理'} />
     </Modal>
     <Modal
+      zIndex={taskActionModalZIndex}
       title={approveTarget ? `批准落地「${approveTarget.title}」` : '批准落地'}
       open={Boolean(approveTarget)}
       confirmLoading={approveSubmitting}
@@ -708,13 +451,14 @@ export default function Tasks() {
       onCancel={() => setApproveTarget(undefined)}
       okText="确认批准并落地"
     >
-      <Space direction="vertical" size={8} style={{ width: '100%' }}>
-        <Alert type="warning" showIcon message="对外写入将真正落地" description="批准后 codex 会按已审阅的方案真实写出/发送。可在下方追加落地时的补充指示（可不填）。" />
+      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+        <Alert type="warning" showIcon title="对外写入将真正落地" description="批准后 codex 会按已审阅的方案真实写出/发送。可在下方追加落地时的补充指示（可不填）。" />
         <Text type="secondary">可选填写补充信息/指示；留空则直接按已批准方案落地。填写后会持久保存到执行阶段补充，落地与之后重跑都会带上。</Text>
         <Input.TextArea rows={4} value={approveNote} onChange={(event) => setApproveNote(event.target.value)} placeholder="例如：标题加上【紧急】；抄送给 B；文档先放草稿区不要直接发公告等（可不填）" />
       </Space>
     </Modal>
     <Modal
+      zIndex={taskActionModalZIndex}
       title={rerunTarget ? `重跑「${rerunTarget.title}」` : '重跑任务'}
       open={Boolean(rerunTarget)}
       confirmLoading={rerunSubmitting}
@@ -722,15 +466,16 @@ export default function Tasks() {
       onCancel={() => setRerunTarget(undefined)}
       okText="确认重跑"
     >
-      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
         {rerunTarget && externalActions.has(rerunTarget.action_type) && (
-          <Alert type="warning" showIcon message={`对外动作（${rerunTarget.action_type}）`} description="重跑会再次真实触达外部，请确认后再提交。" />
+          <Alert type="warning" showIcon title={`对外动作（${rerunTarget.action_type}）`} description="重跑会再次真实触达外部，请确认后再提交。" />
         )}
         <Text type="secondary">可选填写补充信息/指示；留空则直接重跑。填写后会持久保存，之后每次重跑都会带上。</Text>
         <Input.TextArea rows={4} value={rerunNote} onChange={(event) => setRerunNote(event.target.value)} placeholder="例如：这次改用 xxx 文档模板；标题要包含季度；只发给 A 不要发给 B 等（可不填）" />
       </Space>
     </Modal>
     <Modal
+      zIndex={taskActionModalZIndex}
       title={rejectTarget ? `驳回「${rejectTarget.title}」的方案` : '驳回方案'}
       open={Boolean(rejectTarget)}
       confirmLoading={Boolean(rejectTarget) && executingId === rejectTarget?.id}
@@ -739,7 +484,7 @@ export default function Tasks() {
       okText="确认驳回"
       okButtonProps={{ danger: true }}
     >
-      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
         <Text type="secondary">驳回后任务将标记为失败，不会真正写出任何内容。可填写驳回原因（可不填）；之后可重跑重新产出方案。</Text>
         <Input.TextArea rows={4} value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} placeholder="例如：措辞不合适 / 目标群选错了 / 内容还需补充数据（可不填）" />
       </Space>

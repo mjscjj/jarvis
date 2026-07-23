@@ -1,0 +1,789 @@
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Alert,
+  Button,
+  Descriptions,
+  Empty,
+  Modal,
+  Space,
+  Spin,
+  Tabs,
+  Tag,
+  Typography,
+} from 'antd'
+import {
+  CheckCircleOutlined,
+  CloseOutlined,
+  CommentOutlined,
+  ExclamationCircleOutlined,
+  HistoryOutlined,
+} from '@ant-design/icons'
+import type { ExecutionRun, RunEnrichment, Task, TaskEvent } from '../types'
+import EntityRelations from '../components/EntityRelations'
+import StatusBadge from '../components/StatusBadge'
+import { actionLabels, taskStatusMeta as statusMeta } from '../status'
+import {
+  canReapply,
+  failureKindOf,
+  failureMeta,
+  proposalOf,
+  strField,
+} from './taskPresentation'
+
+const { Link, Paragraph, Text, Title } = Typography
+
+const taskEventLabels: Record<string, string> = {
+  created: '任务已创建',
+  execution_started: '开始执行',
+  approval_requested: '等待审批',
+  approval_granted: '已批准执行',
+  approval_rejected: '已驳回',
+  rerun_requested: '请求重跑',
+  reapply_started: '重新落地',
+  supplemented: '我的补充',
+  execution_succeeded: '执行成功',
+  execution_failed: '执行失败',
+  stale_failed: '执行超时',
+  snapshot_imported: '导入当前状态',
+}
+
+const actorLabels: Record<string, string> = {
+  user: '我',
+  m4: 'M4',
+  m5: 'M5',
+  system: '系统',
+  seed: '初始化',
+  migration: '迁移',
+}
+
+interface TaskDetailModalProps {
+  task?: Task
+  runs: ExecutionRun[]
+  events: TaskEvent[]
+  runsLoading: boolean
+  eventsLoading: boolean
+  runsError?: string
+  eventsError?: string
+  executing: boolean
+  reapplying: boolean
+  approveSubmitting: boolean
+  onClose: () => void
+  onExecute: (task: Task) => void
+  onApprove: (task: Task) => void
+  onReject: (task: Task) => void
+  onRerun: (task: Task) => void
+  onReapply: (task: Task) => void
+}
+
+type HistoryItem =
+  | { key: string; at: string; kind: 'event'; event: TaskEvent; run?: ExecutionRun }
+  | { key: string; at: string; kind: 'supplement'; note: string; scope: string }
+  | { key: string; at: string; kind: 'run'; run: ExecutionRun }
+
+function formatDuration(ms: number | null): string {
+  if (ms == null) return '—'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+function formatShortTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function runStatusColor(status: string): string {
+  if (status === 'succeeded') return 'var(--color-success)'
+  if (status === 'failed') return 'var(--color-error)'
+  if (status === 'waiting') return 'var(--color-warning)'
+  if (status === 'running') return 'var(--color-info)'
+  return 'var(--color-text-tertiary)'
+}
+
+function taskEventColor(event: TaskEvent): string {
+  if (event.actor_type === 'user' || event.event_type === 'supplemented') return 'var(--color-warning)'
+  if (event.to_status === 'done') return 'var(--color-success)'
+  if (event.to_status === 'failed') return 'var(--color-error)'
+  if (event.to_status === 'awaiting_approval') return 'var(--color-warning)'
+  if (event.to_status === 'waiting') return 'var(--color-warning)'
+  if (event.to_status === 'executing') return 'var(--color-info)'
+  return 'var(--color-text-tertiary)'
+}
+
+function enrichmentKindLabel(kind: string): string {
+  switch (kind) {
+    case 'context': return '正文'
+    case 'doc_link': return '相关文档'
+    case 'code_link': return '相关代码'
+    case 'commit_digest': return 'Commit 摘要'
+    default: return kind || '补充'
+  }
+}
+
+function EnrichmentBlock({ item }: { item: RunEnrichment }) {
+  const label = item.label?.trim() || enrichmentKindLabel(item.kind)
+  const isLink = item.kind === 'doc_link'
+    || item.kind === 'code_link'
+    || item.kind === 'link'
+    || /^https?:\/\//.test(item.detail.trim())
+  const paths = isLink
+    ? item.detail.split(/[；;\n]+/).map((path) => path.trim()).filter(Boolean)
+    : []
+  return (
+    <div className="task-enrichment">
+      <Text strong>{label}</Text>
+      {isLink ? (
+        <Space orientation="vertical" size={2} className="task-enrichment-links">
+          {paths.map((path, index) => /^https?:\/\//.test(path)
+            ? <Link key={index} href={path} target="_blank">{path}</Link>
+            : <Text key={index} className="mono" copyable>{path}</Text>)}
+        </Space>
+      ) : (
+        <Paragraph className="task-enrichment-detail">{item.detail}</Paragraph>
+      )}
+    </div>
+  )
+}
+
+function RunDetails({ run, latest }: { run: ExecutionRun; latest: boolean }) {
+  const enrichments = run.output?.enrichments ?? []
+  const followup = run.output?.needs_followup?.trim()
+  return (
+    <details className="task-run-details" open={latest}>
+      <summary>
+        <span className="task-run-summary-main">
+          <span className="task-history-dot" style={{ background: runStatusColor(run.status) }} />
+          Run #{run.id} · {run.status}
+        </span>
+        <Text type="secondary">{formatDuration(run.duration_ms)}</Text>
+      </summary>
+      <div className="task-run-body">
+        <Space size={8} wrap>
+          <Tag>{actionLabels[run.action_type] || run.action_type}</Tag>
+          <Text type="secondary">沙箱 {run.sandbox}</Text>
+          {run.codex_session_id && <Text type="secondary">session {run.codex_session_id.slice(0, 12)}…</Text>}
+        </Space>
+        {run.summary && <Paragraph className="task-readable-text">{run.summary}</Paragraph>}
+        {(run.merge_request_url || run.branch || run.commit || run.diff_path) && (
+          <Descriptions size="small" column={1} className="task-run-artifacts">
+            {run.merge_request_url && (
+              <Descriptions.Item label="Merge Request">
+                <Link href={run.merge_request_url} target="_blank">{run.merge_request_url}</Link>
+              </Descriptions.Item>
+            )}
+            {run.branch && <Descriptions.Item label="分支"><Text className="mono">{run.branch}</Text></Descriptions.Item>}
+            {run.commit && <Descriptions.Item label="Commit"><Text className="mono">{run.commit.slice(0, 12)}</Text></Descriptions.Item>}
+            {run.diff_path && <Descriptions.Item label="Diff"><Text className="mono" copyable>{run.diff_path}</Text></Descriptions.Item>}
+          </Descriptions>
+        )}
+        {enrichments.length > 0 && (
+          <div className="task-enrichment-list">
+            {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+          </div>
+        )}
+        {followup && <Alert type="info" showIcon title="待你拍板 / 后续" description={followup} />}
+        {run.error_detail && <Alert type="error" showIcon title="执行错误" description={<Text className="mono">{run.error_detail}</Text>} />}
+        {run.output && Object.keys(run.output).length > 0 && (
+          <details className="task-raw-details">
+            <summary>Codex 原始输出</summary>
+            <pre className="inline-json">{JSON.stringify(run.output, null, 2)}</pre>
+          </details>
+        )}
+      </div>
+    </details>
+  )
+}
+
+function ProposalContent({ task }: { task: Task }) {
+  const result = proposalOf(task)
+  if (!result) return null
+  const { proposal } = result
+  return (
+    <div className="task-primary-card task-proposal-card">
+      <div className="task-section-kicker">待审批产物</div>
+      {result.summary && <Paragraph className="task-readable-text task-primary-summary">{result.summary}</Paragraph>}
+      <div className="task-proposal-target">
+        <div><Text type="secondary">将执行</Text><Paragraph>{proposal.action}</Paragraph></div>
+        <div><Text type="secondary">操作目标</Text><Paragraph>{proposal.target}</Paragraph></div>
+      </div>
+      <div className="task-artifact">
+        <div className="task-artifact-title">完整产出物</div>
+        <div className="task-artifact-body">{proposal.artifact}</div>
+      </div>
+      {result.enrichments && result.enrichments.length > 0 && (
+        <div className="task-enrichment-list">
+          {result.enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+        </div>
+      )}
+      {result.needs_followup?.trim() && (
+        <Alert type="info" showIcon title="批准后的动作" description={result.needs_followup} />
+      )}
+    </div>
+  )
+}
+
+function ResultContent({ task }: { task: Task }) {
+  const result = task.execution_result
+  const summary = strField(result, 'summary')
+  const error = strField(result, 'error')
+  const rejectReason = strField(result, 'reject_reason')
+  const followup = strField(result, 'needs_followup')
+  const enrichments = Array.isArray(result?.enrichments)
+    ? result.enrichments.filter((item): item is RunEnrichment => Boolean(item && typeof item === 'object'))
+    : []
+  const planSummary = typeof task.plan.summary === 'string' ? task.plan.summary : null
+
+  if (task.status === 'pending' || task.status === 'executing' || task.status === 'waiting') {
+    const waiting = task.status === 'waiting'
+      && task.execution_result?.waiting
+      && typeof task.execution_result.waiting === 'object'
+      ? task.execution_result.waiting as Record<string, unknown>
+      : null
+    return (
+      <div className="task-primary-card">
+        <div className="task-section-kicker">
+          {task.status === 'pending' ? '任务目标' : task.status === 'waiting' ? '等待唤醒' : '正在执行'}
+        </div>
+        <Paragraph className="task-readable-text task-primary-summary">
+          {task.status === 'waiting'
+            ? `${String(waiting?.reason || summary || '正在等待外部条件')} · ${String(waiting?.wake_at || '唤醒时间待定')}`
+            : planSummary || '任务已确认，执行器将按任务方案和上下文完成工作。'}
+        </Paragraph>
+      </div>
+    )
+  }
+
+  return (
+    <div className="task-primary-card">
+      <div className="task-section-kicker">{task.status === 'done' ? '执行结果' : '失败结论'}</div>
+      {task.status === 'failed' && (
+        <Alert
+          type={failureKindOf(task) === 'rejected' || failureKindOf(task) === 'manual' ? 'warning' : 'error'}
+          showIcon
+          title={failureMeta[failureKindOf(task) || 'unknown'].label}
+          description={rejectReason || error || summary || '任务没有记录失败详情。'}
+        />
+      )}
+      {task.status === 'done' && (
+        <Paragraph className="task-readable-text task-primary-summary">{summary || '任务已完成。'}</Paragraph>
+      )}
+      {enrichments.length > 0 && (
+        <div className="task-enrichment-list">
+          {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+        </div>
+      )}
+      {followup && <Alert type="info" showIcon title="后续事项" description={followup} />}
+    </div>
+  )
+}
+
+function taskStateCopy(task: Task): { current: string; next: string } {
+  const result = task.execution_result
+  const summary = strField(result, 'summary')
+  const followup = strField(result, 'needs_followup')
+  const error = strField(result, 'error')
+  const rejectReason = strField(result, 'reject_reason')
+  if (task.status === 'awaiting_approval') {
+    return {
+      current: summary || '已生成完整产出物，尚未执行外部写入。',
+      next: followup || '请审阅产出物。批准后，Codex 将执行写入并验证结果。',
+    }
+  }
+  if (task.status === 'done') {
+    return {
+      current: summary || '任务已完成。',
+      next: followup || '当前任务不需要继续操作。',
+    }
+  }
+  if (task.status === 'failed') {
+    const kind = failureKindOf(task)
+    return {
+      current: rejectReason || error || summary || '任务执行失败。',
+      next: kind === 'rejected'
+        ? '可重跑任务，重新生成审批方案。'
+        : kind === 'manual'
+          ? '这是你手动标记的失败；需要时可以重跑任务。'
+          : canReapply(task)
+            ? '可以沿用已批准方案重试落地，或重跑并重新生成方案。'
+            : '检查失败原因后重跑任务。',
+    }
+  }
+  if (task.status === 'executing') {
+    return {
+      current: 'Codex 正在执行任务。',
+      next: '当前无需操作。执行完成后，状态和结果会写入任务历史。',
+    }
+  }
+  if (task.status === 'waiting') {
+    const waiting = result?.waiting && typeof result.waiting === 'object'
+      ? result.waiting as Record<string, unknown>
+      : null
+    return {
+      current: summary || String(waiting?.reason || '任务正在等待外部条件。'),
+      next: waiting?.wake_at
+        ? `将在 ${String(waiting.wake_at)} 自动恢复同一个 Codex Session。`
+        : '已预约自动恢复同一个 Codex Session。',
+    }
+  }
+  return {
+    current: '任务已确认，正在等待执行。',
+    next: '开始执行后，Codex 将使用完整任务上下文完成工作。',
+  }
+}
+
+function ProgressStrip({
+  events,
+  onSelect,
+}: {
+  events: TaskEvent[]
+  onSelect: (event: TaskEvent) => void
+}) {
+  const ordered = useMemo(
+    () => [...events].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime()),
+    [events],
+  )
+  const visible = ordered.slice(0, 5)
+  return (
+    <section className="task-progress-strip">
+      <div className="task-progress-header">
+        <Text strong>任务进展（共 {events.length} 条）</Text>
+        {ordered.length > visible.length && (
+          <Button type="link" size="small" onClick={() => onSelect(ordered[0])}>
+            查看全部
+          </Button>
+        )}
+      </div>
+      {visible.length === 0 ? (
+        <Text type="secondary">暂无任务进展</Text>
+      ) : (
+        <div className="task-progress-items">
+          {visible.map((event, index) => (
+            <button key={event.id} className="task-progress-item" onClick={() => onSelect(event)}>
+              <span className="task-progress-node">
+                <span className="task-progress-dot" style={{ background: taskEventColor(event) }} />
+                {index < visible.length - 1 && <span className="task-progress-line" />}
+              </span>
+              <span className="task-progress-copy">
+                <strong>{taskEventLabels[event.event_type] || event.event_type}</strong>
+                <small>{formatShortTime(event.occurred_at)} · {actorLabels[event.actor_type] || event.actor_type}</small>
+              </span>
+            </button>
+          ))}
+          {ordered.length > visible.length && (
+            <div className="task-progress-more">+{ordered.length - visible.length}</div>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function supplementScope(noteAt: string, events: TaskEvent[]): string {
+  const timestamp = new Date(noteAt).getTime()
+  const related = events.find((event) => {
+    if (event.event_type !== 'approval_granted' && event.event_type !== 'rerun_requested') return false
+    return Math.abs(new Date(event.occurred_at).getTime() - timestamp) <= 5000
+  })
+  if (related?.event_type === 'approval_granted') return '审批批注'
+  if (related?.event_type === 'rerun_requested') return '重跑指示'
+  return '任务级补充'
+}
+
+function buildHistory(task: Task, events: TaskEvent[], runs: ExecutionRun[]): HistoryItem[] {
+  const runByID = new Map(runs.map((run) => [run.id, run]))
+  const referencedRuns = new Set<number>()
+  const items: HistoryItem[] = []
+
+  for (const event of events) {
+    if (event.event_type === 'supplemented') continue
+    const run = event.run_id ? runByID.get(event.run_id) : undefined
+    if (run) referencedRuns.add(run.id)
+    items.push({ key: `event-${event.id}`, at: event.occurred_at, kind: 'event', event, run })
+  }
+  for (const [index, supplement] of (task.execution_supplements ?? []).entries()) {
+    items.push({
+      key: `supplement-${index}-${supplement.at}`,
+      at: supplement.at,
+      kind: 'supplement',
+      note: supplement.note,
+      scope: supplementScope(supplement.at, events),
+    })
+  }
+  for (const run of runs) {
+    if (!referencedRuns.has(run.id)) {
+      items.push({ key: `run-${run.id}`, at: run.started_at, kind: 'run', run })
+    }
+  }
+  return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+}
+
+function TaskHistory({
+  task,
+  events,
+  runs,
+  loading,
+  eventsError,
+  runsError,
+}: {
+  task: Task
+  events: TaskEvent[]
+  runs: ExecutionRun[]
+  loading: boolean
+  eventsError?: string
+  runsError?: string
+}) {
+  const history = useMemo(() => buildHistory(task, events, runs), [task, events, runs])
+  const latestRunID = runs[0]?.id
+  if (loading) return <div className="task-detail-loading"><Spin /></div>
+  return (
+    <div className="task-history">
+      {eventsError && <Alert type="error" showIcon title="任务进展加载失败" description={eventsError} />}
+      {runsError && <Alert type="error" showIcon title="执行历史加载失败" description={runsError} />}
+      {history.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务历史" />
+      ) : history.map((item) => {
+        if (item.kind === 'supplement') {
+          return (
+            <article key={item.key} id={`task-history-${item.key}`} className="task-history-item task-history-user-note">
+              <div className="task-history-marker"><CommentOutlined /></div>
+              <div className="task-history-content">
+                <div className="task-history-heading">
+                  <Space size={8}><Text strong>我的{item.scope}</Text><Tag color="gold">{item.scope}</Tag></Space>
+                  <Text type="secondary">{formatTime(item.at)}</Text>
+                </div>
+                <blockquote>{item.note}</blockquote>
+              </div>
+            </article>
+          )
+        }
+        if (item.kind === 'run') {
+          return (
+            <article key={item.key} id={`task-history-${item.key}`} className="task-history-item">
+              <div className="task-history-marker"><HistoryOutlined /></div>
+              <div className="task-history-content">
+                <div className="task-history-heading">
+                  <Text strong>执行记录</Text>
+                  <Text type="secondary">{formatTime(item.at)}</Text>
+                </div>
+                <RunDetails run={item.run} latest={item.run.id === latestRunID} />
+              </div>
+            </article>
+          )
+        }
+        const { event, run } = item
+        const userEvent = event.actor_type === 'user'
+        return (
+          <article
+            key={item.key}
+            id={`task-history-event-${event.id}`}
+            className={`task-history-item ${userEvent ? 'task-history-user-event' : ''}`}
+          >
+            <div className="task-history-marker" style={{ color: taskEventColor(event) }}>
+              {event.to_status === 'failed' ? <ExclamationCircleOutlined /> : <CheckCircleOutlined />}
+            </div>
+            <div className="task-history-content">
+              <div className="task-history-heading">
+                <Space size={8}>
+                  <Text strong>{taskEventLabels[event.event_type] || event.event_type}</Text>
+                  {userEvent && <Tag color="gold">我的操作</Tag>}
+                </Space>
+                <Text type="secondary">{formatTime(event.occurred_at)}</Text>
+              </div>
+              <Text type="secondary">
+                {actorLabels[event.actor_type] || event.actor_type} · v{event.task_version}
+                {event.from_status ? ` · ${event.from_status} → ${event.to_status}` : ` · ${event.to_status}`}
+              </Text>
+              {run && <RunDetails run={run} latest={run.id === latestRunID} />}
+            </div>
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+function objectField(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const field = value[key]
+  return field && typeof field === 'object' && !Array.isArray(field)
+    ? field as Record<string, unknown>
+    : null
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function TaskMeta({ task }: { task: Task }) {
+  const group = objectField(task.background, 'group')
+  const project = objectField(task.background, 'project')
+  const assigner = objectField(task.background, 'assigner')
+  return (
+    <aside className="task-meta-card">
+      <div className="task-section-kicker">任务信息</div>
+      <Descriptions size="small" column={1} colon={false}>
+        <Descriptions.Item label="交办人">{stringValue(assigner?.name) || '—'}</Descriptions.Item>
+        <Descriptions.Item label="来源会话">{stringValue(group?.name) || '—'}</Descriptions.Item>
+        <Descriptions.Item label="所属项目">{stringValue(project?.name) || (task.project_id != null ? `#${task.project_id}` : '未关联')}</Descriptions.Item>
+        <Descriptions.Item label="来源">{task.source_type}{task.source_id != null ? ` #${task.source_id}` : ''}</Descriptions.Item>
+        <Descriptions.Item label="Todo">{task.todo_id != null ? `#${task.todo_id}` : '—'}</Descriptions.Item>
+        <Descriptions.Item label="Task">#{task.id}</Descriptions.Item>
+        <Descriptions.Item label="确认人">{task.confirmed_by || '—'}</Descriptions.Item>
+        <Descriptions.Item label="确认时间">{task.confirmed_at ? formatTime(task.confirmed_at) : '—'}</Descriptions.Item>
+        <Descriptions.Item label="自主模式">{task.autonomy_mode || '—'}</Descriptions.Item>
+        <Descriptions.Item label="版本">v{task.version}</Descriptions.Item>
+      </Descriptions>
+    </aside>
+  )
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+}
+
+function PlanPanel({ task }: { task: Task }) {
+  const summary = stringValue(task.plan.summary)
+  const steps = stringArray(task.plan.steps)
+  const basis = stringArray(task.plan.basis)
+  const parameters = Array.isArray(task.plan.parameters)
+    ? task.plan.parameters.filter((item): item is { name: string; value: string } => (
+      Boolean(item)
+      && typeof item === 'object'
+      && typeof (item as Record<string, unknown>).name === 'string'
+      && typeof (item as Record<string, unknown>).value === 'string'
+    ))
+    : []
+  return (
+    <div className="task-readable-panel">
+      {summary && <section><Title level={5}>方案摘要</Title><Paragraph>{summary}</Paragraph></section>}
+      {steps.length > 0 && (
+        <section>
+          <Title level={5}>执行步骤</Title>
+          <ol>{steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
+        </section>
+      )}
+      {parameters.length > 0 && (
+        <section>
+          <Title level={5}>执行参数</Title>
+          <Descriptions size="small" column={1}>
+            {parameters.map((item, index) => <Descriptions.Item key={index} label={item.name}>{item.value}</Descriptions.Item>)}
+          </Descriptions>
+        </section>
+      )}
+      {basis.length > 0 && (
+        <section>
+          <Title level={5}>判断依据</Title>
+          <ul>{basis.map((item, index) => <li key={index}>{item}</li>)}</ul>
+        </section>
+      )}
+      {!summary && steps.length === 0 && parameters.length === 0 && basis.length === 0 && (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="任务方案没有可读字段" />
+      )}
+    </div>
+  )
+}
+
+function ContextPanel({ task }: { task: Task }) {
+  const conversationValue = task.background.conversation
+  const messagesValue = task.background.messages
+  const conversation = Array.isArray(conversationValue)
+    ? conversationValue
+    : Array.isArray(messagesValue) ? messagesValue : []
+  const memories = Array.isArray(task.background.memories) ? task.background.memories : []
+  return (
+    <div className="task-readable-panel">
+      <section>
+        <Title level={5}>原始会话</Title>
+        {conversation.length === 0 ? (
+          <Text type="secondary">没有记录原始会话。</Text>
+        ) : (
+          <div className="task-conversation">
+            {conversation.map((item, index) => {
+              const record = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+              return (
+                <div key={index} className="task-conversation-item">
+                  <div>
+                    <Text strong>{stringValue(record.sender_name) || '未知发送人'}</Text>
+                    {typeof record.create_time === 'number' && (
+                      <Text type="secondary">{new Date(record.create_time * 1000).toLocaleString()}</Text>
+                    )}
+                  </div>
+                  <Paragraph>{stringValue(record.content) || '—'}</Paragraph>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+      {memories.length > 0 && (
+        <section>
+          <Title level={5}>相关记忆</Title>
+          <div className="task-memory-list">
+            {memories.map((item, index) => {
+              const record = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+              return <Paragraph key={index}>{stringValue(record.memory) || '—'}</Paragraph>
+            })}
+          </div>
+        </section>
+      )}
+      <EntityRelations entityType="task" entityId={task.id} />
+    </div>
+  )
+}
+
+function TechnicalPanel({ task, runs, events }: { task: Task; runs: ExecutionRun[]; events: TaskEvent[] }) {
+  return (
+    <div className="task-technical-panel">
+      <details><summary>执行方案原始数据</summary><pre>{JSON.stringify(task.plan, null, 2)}</pre></details>
+      <details><summary>任务结果原始数据</summary><pre>{JSON.stringify(task.execution_result, null, 2)}</pre></details>
+      <details><summary>背景快照原始数据</summary><pre>{JSON.stringify(task.background, null, 2)}</pre></details>
+      <details><summary>Run 原始数据</summary><pre>{JSON.stringify(runs, null, 2)}</pre></details>
+      <details><summary>事件原始数据</summary><pre>{JSON.stringify(events, null, 2)}</pre></details>
+    </div>
+  )
+}
+
+export default function TaskDetailModal({
+  task,
+  runs,
+  events,
+  runsLoading,
+  eventsLoading,
+  runsError,
+  eventsError,
+  executing,
+  reapplying,
+  approveSubmitting,
+  onClose,
+  onExecute,
+  onApprove,
+  onReject,
+  onRerun,
+  onReapply,
+}: TaskDetailModalProps) {
+  const [activeTab, setActiveTab] = useState('history')
+  useEffect(() => setActiveTab('history'), [task?.id])
+  if (!task) return null
+
+  const stateCopy = taskStateCopy(task)
+  const failure = failureKindOf(task)
+  const jumpToHistory = (event: TaskEvent) => {
+    setActiveTab('history')
+    window.setTimeout(() => {
+      document.getElementById(`task-history-event-${event.id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      })
+    }, 0)
+  }
+
+  const actions = (() => {
+    if (task.status === 'pending') {
+      return <Button type="primary" loading={executing} onClick={() => onExecute(task)}>开始执行</Button>
+    }
+    if (task.status === 'awaiting_approval') {
+      return <>
+        <Button type="primary" loading={approveSubmitting} onClick={() => onApprove(task)}>批准落地</Button>
+        <Button danger onClick={() => onReject(task)}>驳回</Button>
+      </>
+    }
+    if (task.status === 'done' || task.status === 'failed') {
+      return <>
+        {canReapply(task) && <Button type="primary" loading={reapplying} onClick={() => onReapply(task)}>重试落地</Button>}
+        <Button onClick={() => onRerun(task)}>重跑</Button>
+      </>
+    }
+    if (task.status === 'waiting') {
+      return <StatusBadge label="等待定时唤醒" color={statusMeta.waiting.color} />
+    }
+    return <StatusBadge label="Codex 执行中…" color={statusMeta.executing.color} />
+  })()
+
+  return (
+    <Modal
+      open
+      footer={null}
+      closable={false}
+      centered
+      width={1180}
+      mask={{ closable: true }}
+      onCancel={onClose}
+      className="task-detail-modal"
+      destroyOnHidden
+    >
+      <div className="task-detail-shell">
+        <header className="task-detail-header">
+          <div className="task-detail-title">
+            <Space size={10} wrap>
+              <StatusBadge label={statusMeta[task.status].label} color={statusMeta[task.status].color} />
+              {failure && <Tag color={failureMeta[failure].color}>{failureMeta[failure].label}</Tag>}
+              <Title level={3}>{task.title}</Title>
+            </Space>
+            <Text type="secondary">
+              {stringValue(objectField(task.background, 'project')?.name) || '未关联项目'}
+              {' · '}{actionLabels[task.action_type] || task.action_type}
+              {' · '}Task #{task.id}
+              {' · '}更新于 {formatTime(task.updated_at)}
+            </Text>
+          </div>
+          <Button type="text" icon={<CloseOutlined />} aria-label="关闭" onClick={onClose} />
+        </header>
+
+        <div className="task-detail-scroll">
+          <section className={`task-state-card task-state-${task.status}`}>
+            <div className="task-state-copy">
+              <div className="task-section-kicker">当前状态</div>
+              <Paragraph className="task-current-state">{stateCopy.current}</Paragraph>
+              <Text type="secondary"><strong>下一步：</strong>{stateCopy.next}</Text>
+            </div>
+            <Space className="task-state-actions" wrap>{actions}</Space>
+          </section>
+
+          {eventsLoading ? (
+            <section className="task-progress-strip"><Spin size="small" /></section>
+          ) : eventsError ? (
+            <Alert type="error" showIcon title="任务进展加载失败" description={eventsError} />
+          ) : (
+            <ProgressStrip events={events} onSelect={jumpToHistory} />
+          )}
+
+          <div className="task-detail-main-grid">
+            <main>{proposalOf(task) ? <ProposalContent task={task} /> : <ResultContent task={task} />}</main>
+            <TaskMeta task={task} />
+          </div>
+
+          <Tabs
+            className="task-detail-tabs"
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            items={[
+              {
+                key: 'history',
+                label: '任务历史',
+                children: (
+                  <TaskHistory
+                    task={task}
+                    events={events}
+                    runs={runs}
+                    loading={eventsLoading || runsLoading}
+                    eventsError={eventsError}
+                    runsError={runsError}
+                  />
+                ),
+              },
+              { key: 'plan', label: '执行方案', children: <PlanPanel task={task} /> },
+              { key: 'context', label: '上下文依据', children: <ContextPanel task={task} /> },
+              { key: 'technical', label: '技术数据', children: <TechnicalPanel task={task} runs={runs} events={events} /> },
+            ]}
+          />
+        </div>
+      </div>
+    </Modal>
+  )
+}

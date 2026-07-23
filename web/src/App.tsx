@@ -75,7 +75,7 @@ function AppShell() {
     overview: <Overview />,
     todos: <Todos refreshKey={refreshKey} />,
     confirmations: <Confirmations />,
-    tasks: <Tasks />,
+    tasks: <Tasks onDetailOpen={() => setChatOpen(false)} />,
     'scheduled-tasks': <ScheduledTasks />,
     background: <Background />,
     settings: <Settings />,
