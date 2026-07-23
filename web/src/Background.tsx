@@ -1221,44 +1221,26 @@ function ApprovalRulesPanel() {
   </>
 }
 
-// --- M5 system prompts (stored in generic text storage) ---
+// --- M3/M4/M5 system prompts (stored in generic text storage) ---
 
 const systemPromptDefinitions = [
   {
-    key: 'm5_system_prompt_execute',
-    name: '直接执行',
-    storageName: 'M5 直接执行提示词',
-    description: '用于 code_change 和 direct 模式的新 Session。',
+    key: 'm3_system_prompt',
+    name: 'M3 抽取',
+    storageName: 'M3 系统提示词',
+    description: '定义行动线索抽取者的角色、判断原则和输出要求。',
   },
   {
-    key: 'm5_system_prompt_propose',
-    name: '方案阶段',
-    storageName: 'M5 方案阶段提示词',
-    description: '用于非代码任务的新 Session，判断只读执行还是进入外部写入审批。',
+    key: 'm4_system_prompt',
+    name: 'M4 决策',
+    storageName: 'M4 系统提示词',
+    description: '定义行动决策者的角色、处置原则和阶段安全边界。',
   },
   {
-    key: 'm5_system_prompt_apply',
-    name: '落地阶段',
-    storageName: 'M5 落地阶段提示词',
-    description: '用于审批通过后的新 Session；审批规则和已批准产物由系统动态追加。',
-  },
-  {
-    key: 'm5_system_prompt_resume_waiting',
-    name: '等待恢复',
-    storageName: 'M5 等待恢复提示词',
-    description: '定时等待到期后，恢复原 Codex Session 时追加。',
-  },
-  {
-    key: 'm5_system_prompt_resume_human',
-    name: '人工恢复',
-    storageName: 'M5 人工恢复提示词',
-    description: '收到人工回应后，恢复原 Codex Session 时追加。',
-  },
-  {
-    key: 'm5_system_prompt_scheduled_tools',
-    name: '定时续跑工具',
-    storageName: 'M5 定时续跑工具说明',
-    description: '注入 M5 新 Session，说明 yield-until 与独立定时任务的边界。',
+    key: 'm5_system_prompt',
+    name: 'M5 执行',
+    storageName: 'M5 系统提示词',
+    description: 'direct、propose、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。',
   },
 ] as const
 
@@ -1334,7 +1316,7 @@ function SystemPromptsPanel() {
       type="info"
       showIcon
       message="这些内容复用通用 text_storage，不单独建表"
-      description="新执行会实时读取对应提示词；等待恢复和人工恢复会继续原 Codex Session，并追加这里维护的恢复提示词。任务上下文、审批产物和 JSON 输出协议仍由代码动态组装。"
+      description="M3、M4、M5 会实时读取对应系统提示词。工具说明由工具层维护，Skills 由 Skills 页维护；当前阶段、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
       style={{ marginBottom: 12 }}
     />
     <Card loading={loading} variant="borderless">
@@ -1348,7 +1330,7 @@ function SystemPromptsPanel() {
           children: (
             <>
               {!records[item.key] && (
-                <Alert type="warning" showIcon message={`${item.name}提示词不存在，对应 M5 执行会 fail-fast；请填写并保存。`} style={{ marginBottom: 12 }} />
+                <Alert type="warning" showIcon message={`${item.name}提示词不存在，对应阶段会 fail-fast；请填写并保存。`} style={{ marginBottom: 12 }} />
               )}
               <Text strong>{item.storageName}</Text>
               <div><Text type="secondary">{item.description}</Text></div>

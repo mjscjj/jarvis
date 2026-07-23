@@ -10,6 +10,8 @@ import (
 	"jarvis/internal/memory"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
+	"jarvis/internal/textstore"
+	"jarvis/internal/toolcatalog"
 	"jarvis/internal/workrule"
 )
 
@@ -26,9 +28,9 @@ type WorkerOptions struct {
 	MaxPromptChars  int
 	MaxToolRounds   int
 	Location        *time.Location
-	// PromptToolGuidance is appended to the extraction prompt for the codex
-	// engine (empty for kimi). See CodexToolGuidance.
-	PromptToolGuidance string
+	// AgentToolCatalog controls whether shell-tool descriptions are injected.
+	// It is true for the Codex engine and false for schema-driven model_api.
+	AgentToolCatalog bool
 	// EvidenceRetryMax caps how many *extra* extraction attempts are made when a
 	// unit's candidates fail the verbatim-quote evidence check. On such a failure
 	// the model is fed a Chinese explanation of what it got wrong plus the cited
@@ -37,6 +39,7 @@ type WorkerOptions struct {
 	EvidenceRetryMax int
 	WorkRules        workrule.Reader
 	Skills           skill.Reader
+	SystemPrompts    textstore.Reader
 }
 
 type WorkerStats struct {
@@ -90,6 +93,9 @@ func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher
 	}
 	if opts.Skills == nil {
 		return nil, fmt.Errorf("extract worker skill reader is nil")
+	}
+	if opts.SystemPrompts == nil {
+		return nil, fmt.Errorf("extract worker system prompt reader is nil")
 	}
 	if err := validateLoadOptions(opts.Load); err != nil {
 		return nil, err
@@ -173,6 +179,17 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 	if err != nil {
 		return stats, PersistStats{}, fmt.Errorf("read extract skills chat_id=%s: %w", batch.Group.ChatID, err)
 	}
+	systemPrompt, err := w.opts.SystemPrompts.Content(ctx, textstore.SystemPromptM3Key)
+	if err != nil {
+		return stats, PersistStats{}, fmt.Errorf("read M3 system prompt chat_id=%s: %w", batch.Group.ChatID, err)
+	}
+	toolCatalog := ""
+	if w.opts.AgentToolCatalog {
+		toolCatalog, err = toolcatalog.Block(toolcatalog.StageExtract)
+		if err != nil {
+			return stats, PersistStats{}, fmt.Errorf("read extract tool catalog chat_id=%s: %w", batch.Group.ChatID, err)
+		}
+	}
 	results := make([]UnitExtraction, 0, len(batch.Units))
 	for _, unit := range batch.Units {
 		query, err := SalientQuery(unit)
@@ -195,7 +212,8 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 		}
 		prompt, err := BuildPrompt(batch, unit, memories.Results, runNow, PromptOptions{
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
-			ToolGuidance: w.opts.PromptToolGuidance, SharedMemory: sharedMemory, WorkRules: workRules, Skills: skills,
+			SystemPrompt: systemPrompt, ToolCatalog: toolCatalog,
+			SharedMemory: sharedMemory, WorkRules: workRules, Skills: skills,
 		})
 		if err != nil {
 			return stats, PersistStats{}, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)

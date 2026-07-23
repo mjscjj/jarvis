@@ -3,6 +3,7 @@ package execute
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -186,20 +187,28 @@ func TestRunResultPayloadTagsStage(t *testing.T) {
 	if failed["stage"] != "executed" || failed["error"] != errTest.Error() {
 		t.Fatalf("failed payload = %#v, want stage=executed + error", failed)
 	}
+	interrupted := runResultPayload(run, fmt.Errorf("stop requested: %w", ErrExecutionInterrupted))
+	if interrupted["stage"] != "interrupted" || interrupted["error"] == nil {
+		t.Fatalf("interrupted payload = %#v, want stage=interrupted + error", interrupted)
+	}
+	encoded, err := json.Marshal(interrupted)
+	if err != nil || !resultHasStage(encoded, "interrupted") {
+		t.Fatalf("resultHasStage(interrupted) = false, payload=%s err=%v", encoded, err)
+	}
 }
 
 var errTest = errors.New("group not found")
 
 func TestBuildHumanResumePrompt(t *testing.T) {
-	prompt, err := buildHumanResumePrompt(textstore.DefaultSystemPromptResumeHuman, "我已确认授权，请继续", "")
+	prompt, err := buildHumanResumePrompt(textstore.DefaultSystemPromptM5, "我已确认授权，请继续", "", testToolCatalog)
 	if err != nil {
 		t.Fatalf("buildHumanResumePrompt() error = %v", err)
 	}
 	for _, want := range []string{
 		"我已确认授权，请继续",
-		"同一个 Task、同一个 Codex Session",
-		"不是重跑",
-		"不要重复已经完成的外部写入",
+		"phase=resume_human",
+		"同一个 Task、同一个 Session",
+		"不重跑、不重复副作用",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("human resume prompt missing %q:\n%s", want, prompt)
@@ -226,11 +235,11 @@ func TestBuildProposePrompt(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptPropose, task, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
+	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptM5, task, testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
-	for _, want := range []string{"方案阶段", "绝对不要真正写入", "needs_approval", "proposal", "BEGIN_TASK_CONTEXT"} {
+	for _, want := range []string{"phase=propose", "任何外部副作用都不得执行", "proposal", "BEGIN_TASK_CONTEXT"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("propose prompt missing %q", want)
 		}
@@ -244,14 +253,14 @@ func TestBuildProposePromptInjectsSharedMemory(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildProposePrompt(textstore.DefaultSystemPromptPropose, task, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
+	empty, err := buildProposePrompt(textstore.DefaultSystemPromptM5, task, testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptPropose, task, textstore.DefaultSystemPromptScheduledTools, "周报模板固定用飞书文档 xxx", "", "", nil)
+	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptM5, task, testToolCatalog, "周报模板固定用飞书文档 xxx", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
@@ -273,11 +282,11 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
-	prompt, err := buildApplyPrompt(textstore.DefaultSystemPromptApply, task, proposal, textstore.DefaultApprovalRule, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
+	prompt, err := buildApplyPrompt(textstore.DefaultSystemPromptM5, task, proposal, textstore.DefaultApprovalRule, testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
-	for _, want := range []string{"落地阶段", "已获委托人批准", "BEGIN_APPROVAL_RULE", "不要再改动方案实质", "本周关键进展如下：AAA", "APPROVED_PROPOSAL", "研发群 chat_id=xyz"} {
+	for _, want := range []string{"phase=apply", "已获批准", "BEGIN_APPROVAL_RULE", "不要再改动方案实质", "本周关键进展如下：AAA", "APPROVED_PROPOSAL", "研发群 chat_id=xyz"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("apply prompt missing %q", want)
 		}
@@ -287,7 +296,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 func TestBuildApplyPromptUsesStoredApprovalRule(t *testing.T) {
 	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
 	proposal := &codexProposal{Action: "a", Target: "b", Artifact: "c"}
-	prompt, err := buildApplyPrompt(textstore.DefaultSystemPromptApply, task, proposal, "只允许写入测试文档。", textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
+	prompt, err := buildApplyPrompt(textstore.DefaultSystemPromptM5, task, proposal, "只允许写入测试文档。", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
@@ -302,11 +311,11 @@ func TestBuildApplyPromptUsesStoredApprovalRule(t *testing.T) {
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildApplyPrompt(textstore.DefaultSystemPromptApply, task, nil, textstore.DefaultApprovalRule, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil); err == nil {
+	if _, err := buildApplyPrompt(textstore.DefaultSystemPromptM5, task, nil, textstore.DefaultApprovalRule, testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatalf("nil proposal must fail")
 	}
 	proposal := &codexProposal{Action: "a", Target: "b", Artifact: "c"}
-	if _, err := buildApplyPrompt(textstore.DefaultSystemPromptApply, task, proposal, "", textstore.DefaultSystemPromptScheduledTools, "", "", "", nil); err == nil {
+	if _, err := buildApplyPrompt(textstore.DefaultSystemPromptM5, task, proposal, "", testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatalf("empty approval rule must fail")
 	}
 }
@@ -324,11 +333,11 @@ func TestInvestigateGoesThroughPropose(t *testing.T) {
 		ID: 21, Title: "查证登录超时", ActionType: "investigate",
 		Plan: datatypes.JSON(`{"steps":["read logs"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptPropose, task, textstore.DefaultSystemPromptScheduledTools, "", "", "", nil)
+	prompt, err := buildProposePrompt(textstore.DefaultSystemPromptM5, task, testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildProposePrompt(investigate) error = %v", err)
 	}
-	for _, want := range []string{"方案阶段", "会不会真正碰到外部世界", "needs_approval", "只读/查询/产出本地结论"} {
+	for _, want := range []string{"phase=propose", "实际动作是否会写入", "proposal", "只读或本地任务"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("investigate propose prompt missing %q", want)
 		}

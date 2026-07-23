@@ -6,6 +6,7 @@ import (
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
+	"jarvis/internal/textstore"
 
 	"gorm.io/datatypes"
 )
@@ -38,6 +39,12 @@ func (fakeWorkRuleReader) Block(context.Context, string) (string, error) { retur
 type fakeSkillReader struct{}
 
 func (fakeSkillReader) Catalog(context.Context, string) (string, error) { return "", nil }
+
+type fakeSystemPromptReader struct{}
+
+func (fakeSystemPromptReader) Content(context.Context, string) (string, error) {
+	return textstore.DefaultSystemPromptM4, nil
+}
 
 // testContextSnapshot builds a minimal valid frozen snapshot for a Todo so
 // requireContextSnapshot (fail-fast) is satisfied in unit tests.
@@ -121,7 +128,7 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 			EvidenceGathered:  []Evidence{{Label: "repo", Detail: "jarvis local"}},
 		},
 	}}
-	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{}, fakeWorkRuleReader{}, fakeSkillReader{})
+	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{}, fakeWorkRuleReader{}, fakeSkillReader{}, fakeSystemPromptReader{})
 	if err != nil {
 		t.Fatalf("NewCodexEvaluator() error = %v", err)
 	}
@@ -175,7 +182,7 @@ func TestCodexEvaluatorPreservesManualGateAfterSupplement(t *testing.T) {
 			ConfidenceBasis: "now complete", PlanIsClear: true, ProposedPlan: clearPlan(),
 		},
 	}}
-	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{}, fakeWorkRuleReader{}, fakeSkillReader{})
+	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{}, fakeWorkRuleReader{}, fakeSkillReader{}, fakeSystemPromptReader{})
 	if err != nil {
 		t.Fatalf("NewCodexEvaluator() error = %v", err)
 	}

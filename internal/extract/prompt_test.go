@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"jarvis/internal/textstore"
+	"jarvis/internal/toolcatalog"
 )
 
 func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
@@ -37,12 +40,17 @@ func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 	}
 }
 
-func TestCodexToolGuidanceIncludesScheduledTasks(t *testing.T) {
+func TestToolCatalogIsSeparateFromSystemPrompt(t *testing.T) {
 	t.Parallel()
-	for _, want := range []string{"list-scheduled-tasks", "create-scheduled-task", "delete-scheduled-task", "context_snapshot", `schedule_type:"once"`, "run_at"} {
-		if !strings.Contains(CodexToolGuidance, want) {
-			t.Fatalf("CodexToolGuidance missing %q", want)
-		}
+	catalog, err := toolcatalog.Block(toolcatalog.StageExtract)
+	if err != nil {
+		t.Fatalf("toolcatalog.Block() error = %v", err)
+	}
+	if !strings.Contains(catalog, "jarvis-tools") {
+		t.Fatalf("tool catalog missing jarvis-tools: %s", catalog)
+	}
+	if strings.Contains(textstore.DefaultSystemPromptM3, "jarvis-tools") || strings.Contains(textstore.DefaultSystemPromptM3, "lark-cli") {
+		t.Fatalf("M3 system prompt must not contain tool instructions: %s", textstore.DefaultSystemPromptM3)
 	}
 }
 
@@ -190,14 +198,11 @@ func TestSalientQueryCapsLongMeetingEvidenceForMemorySearch(t *testing.T) {
 }
 
 func TestExtractionPromptLeavesMeetingCaptureResultDecisionToAgent(t *testing.T) {
-	system := fmt.Sprintf(systemPromptTemplate, "ou_owner")
+	system := textstore.DefaultSystemPromptM3
 	for _, want := range []string{
-		"[会议妙记采集结果]",
-		"自行判断",
-		"允许返回 candidates=[]",
-		"禁止把采集模块的状态机械映射成固定 Todo",
-		"source_message_ids 必须引用触发判断的那条 [new]",
-		"不能改引旧会议消息或其他 context",
+		"meeting 来源",
+		"只提取明确落到 principal 身上的交办",
+		"不因“开过会”本身生成 Todo",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q", want)

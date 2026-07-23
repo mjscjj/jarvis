@@ -57,11 +57,8 @@ func TestBuildPromptInjectsDSNAndContext(t *testing.T) {
 		"修复登录超时",                                 // selection.label
 		"现在有几个待办？",                               // 用户消息
 		"安全约束",                                   // 防注入提示
-		"list-scheduled-tasks",                   // 定时任务工具
-		"create-scheduled-task",
-		"delete-scheduled-task",
-		`schedule_type:"once"`,
-		"run_at",
+		"BEGIN_AVAILABLE_TOOLS",                  // 工具说明由工具层独立注入
+		"jarvis-tools",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q\n---\n%s", want, prompt)

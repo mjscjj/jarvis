@@ -20,6 +20,12 @@ type fakePipelineStore struct {
 	results      []UnitExtraction
 }
 
+type fakeSystemPromptReader struct{}
+
+func (fakeSystemPromptReader) Content(context.Context, string) (string, error) {
+	return "fixture M3 system prompt", nil
+}
+
 func (f *fakePipelineStore) LoadPendingChats(context.Context, LoadOptions) ([]ChatBatch, error) {
 	return f.batches, f.loadErr
 }
@@ -424,7 +430,8 @@ func validWorkerOptions() WorkerOptions {
 		Load:            LoadOptions{BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour, OpenTodoLimit: 50},
 		PrincipalOpenID: "ou_owner", ModelName: "model", MemoryTopK: 8,
 		MemoryThreshold: 0.5, MaxPromptChars: 60_000, MaxToolRounds: 5, Location: time.UTC,
-		WorkRules: fakeWorkRuleReader{},
-		Skills:    fakeSkillReader{},
+		WorkRules:     fakeWorkRuleReader{},
+		Skills:        fakeSkillReader{},
+		SystemPrompts: fakeSystemPromptReader{},
 	}
 }

@@ -2,6 +2,7 @@ package textstore
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"jarvis/internal/domain"
@@ -9,6 +10,20 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestSystemPromptDefaultsDoNotEmbedToolManuals(t *testing.T) {
+	for key, content := range map[string]string{
+		SystemPromptM3Key: DefaultSystemPromptM3,
+		SystemPromptM4Key: DefaultSystemPromptM4,
+		SystemPromptM5Key: DefaultSystemPromptM5,
+	} {
+		for _, toolName := range []string{"jarvis-tools", "lark-cli", "bytedcli"} {
+			if strings.Contains(content, toolName) {
+				t.Fatalf("%s must not embed tool manual %q", key, toolName)
+			}
+		}
+	}
+}
 
 func TestNormalizeInputPreservesArbitraryText(t *testing.T) {
 	input, err := normalizeInput(Input{
@@ -62,16 +77,16 @@ func TestSeedDefaultsCreatesEveryBuiltInRecord(t *testing.T) {
 func TestSeedDefaultsPreservesExistingAndDeletedRecords(t *testing.T) {
 	service, db := newTestService(t)
 	custom := domain.TextStorage{
-		StorageKey: SystemPromptExecuteKey,
-		Name:       "自定义直接执行提示词",
+		StorageKey: SystemPromptM5Key,
+		Name:       "自定义 M5 系统提示词",
 		Content:    "用户已经改过",
 	}
 	if err := db.Create(&custom).Error; err != nil {
 		t.Fatalf("create custom record: %v", err)
 	}
 	deleted := domain.TextStorage{
-		StorageKey: SystemPromptResumeHumanKey,
-		Name:       "已删除的人工恢复提示词",
+		StorageKey: SystemPromptM4Key,
+		Name:       "已删除的 M4 系统提示词",
 		Content:    "不要自动恢复",
 	}
 	if err := db.Create(&deleted).Error; err != nil {
@@ -84,7 +99,7 @@ func TestSeedDefaultsPreservesExistingAndDeletedRecords(t *testing.T) {
 	if err := service.SeedDefaults(t.Context()); err != nil {
 		t.Fatalf("SeedDefaults() error = %v", err)
 	}
-	content, err := service.Content(t.Context(), SystemPromptExecuteKey)
+	content, err := service.Content(t.Context(), SystemPromptM5Key)
 	if err != nil {
 		t.Fatalf("Content(custom) error = %v", err)
 	}
@@ -93,14 +108,35 @@ func TestSeedDefaultsPreservesExistingAndDeletedRecords(t *testing.T) {
 	}
 	var count int64
 	if err := db.Unscoped().Model(&domain.TextStorage{}).
-		Where("storage_key = ?", SystemPromptResumeHumanKey).Count(&count).Error; err != nil {
+		Where("storage_key = ?", SystemPromptM4Key).Count(&count).Error; err != nil {
 		t.Fatalf("count deleted record: %v", err)
 	}
 	if count != 1 {
 		t.Fatalf("deleted key row count = %d, want 1", count)
 	}
-	if _, err := service.Content(t.Context(), SystemPromptResumeHumanKey); err == nil {
+	if _, err := service.Content(t.Context(), SystemPromptM4Key); err == nil {
 		t.Fatal("soft-deleted built-in record must remain unavailable")
+	}
+}
+
+func TestSeedDefaultsRetiresLegacySystemPrompts(t *testing.T) {
+	service, db := newTestService(t)
+	legacy := domain.TextStorage{StorageKey: legacySystemPromptKeys[0], Name: "旧 M5", Content: "旧内容"}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatalf("create legacy prompt: %v", err)
+	}
+	if err := service.SeedDefaults(t.Context()); err != nil {
+		t.Fatalf("SeedDefaults() error = %v", err)
+	}
+	if _, err := service.Content(t.Context(), legacy.StorageKey); err == nil {
+		t.Fatal("legacy system prompt must be retired")
+	}
+	var count int64
+	if err := db.Unscoped().Model(&domain.TextStorage{}).Where("storage_key = ?", legacy.StorageKey).Count(&count).Error; err != nil {
+		t.Fatalf("count retired legacy prompt: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("retired legacy row count = %d, want 1", count)
 	}
 }
 

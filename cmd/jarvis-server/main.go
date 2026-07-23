@@ -168,7 +168,7 @@ func main() {
 		if err != nil {
 			hlog.Fatalf("initialize decision store failed: %v", err)
 		}
-		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService)
+		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textStorageService)
 		if err != nil {
 			hlog.Fatalf("initialize decision evaluator failed: %v", err)
 		}
@@ -278,7 +278,7 @@ func main() {
 	// Build an evaluator + store so the confirmation service can re-run M4
 	// asynchronously after a need_info supplement, independent of the decision
 	// cron being enabled. Mirrors the worker's evaluator selection.
-	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService)
+	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textStorageService)
 	if err != nil {
 		hlog.Fatalf("initialize supplement evaluator failed: %v", err)
 	}
@@ -455,7 +455,7 @@ func main() {
 		// uses modelClient (kimi) for its SameAction adjudication regardless.
 		var extractionEngine extract.ToolExtractor = modelClient
 		extractionModelName := cfg.Model.Model
-		promptToolGuidance := ""
+		agentToolCatalog := false
 		if cfg.Extract.Engine == "codex" {
 			codexExtractor, err := codexengine.New(codexengine.Options{
 				Bin: cfg.Codex.Bin, Model: cfg.Codex.Model,
@@ -468,7 +468,7 @@ func main() {
 			}
 			extractionEngine = codexExtractor
 			extractionModelName = cfg.Codex.Model
-			promptToolGuidance = extract.CodexToolGuidance
+			agentToolCatalog = true
 		}
 		extractWorker, err = extract.NewWorker(pipelineStore, extractionEngine, memoryClient, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
 			Load: extract.LoadOptions{
@@ -479,10 +479,11 @@ func main() {
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
 			MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, MaxToolRounds: cfg.Extract.MaxToolRounds, Location: location,
-			EvidenceRetryMax:   cfg.Extract.EvidenceRetryMax,
-			PromptToolGuidance: promptToolGuidance,
-			WorkRules:          workRuleService,
-			Skills:             skillService,
+			EvidenceRetryMax: cfg.Extract.EvidenceRetryMax,
+			AgentToolCatalog: agentToolCatalog,
+			WorkRules:        workRuleService,
+			Skills:           skillService,
+			SystemPrompts:    textStorageService,
 		})
 		if err != nil {
 			hlog.Fatalf("initialize extraction worker failed: %v", err)
@@ -799,7 +800,7 @@ type decisionEvaluator interface {
 // buildDecisionEvaluator constructs the M4 evaluator from config. codex mode
 // judges each Todo read-only with codex and reuses the M3-frozen snapshot;
 // manual_mvp routes everything to human confirmation.
-func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, skills skill.Reader) (decisionEvaluator, error) {
+func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, skills skill.Reader, prompts textstore.Reader) (decisionEvaluator, error) {
 	switch cfg.Decide.Mode {
 	case decide.ManualMVPMode:
 		return decide.ManualGateEvaluator{}, nil
@@ -815,7 +816,7 @@ func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem
 		if err != nil {
 			return nil, fmt.Errorf("initialize codex decider: %w", err)
 		}
-		return decide.NewCodexEvaluator(db, decider, sharedMem, workRules, skills)
+		return decide.NewCodexEvaluator(db, decider, sharedMem, workRules, skills, prompts)
 	default:
 		return nil, fmt.Errorf("decide.mode 必须是 %s 或 codex", decide.ManualMVPMode)
 	}

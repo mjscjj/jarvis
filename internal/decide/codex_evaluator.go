@@ -7,6 +7,8 @@ import (
 	"jarvis/internal/domain"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
+	"jarvis/internal/textstore"
+	"jarvis/internal/toolcatalog"
 	"jarvis/internal/workrule"
 
 	"gorm.io/gorm"
@@ -42,9 +44,10 @@ type CodexEvaluator struct {
 	sharedMem sharedmem.SharedMemoryReader
 	workRules workrule.Reader
 	skills    skill.Reader
+	prompts   textstore.Reader
 }
 
-func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, skills skill.Reader) (*CodexEvaluator, error) {
+func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, skills skill.Reader, prompts textstore.Reader) (*CodexEvaluator, error) {
 	if codex == nil {
 		return nil, fmt.Errorf("codex evaluator decider is nil")
 	}
@@ -57,7 +60,10 @@ func NewCodexEvaluator(db *gorm.DB, codex codexDecisionRunner, sharedMem sharedm
 	if skills == nil {
 		return nil, fmt.Errorf("codex evaluator skill reader is nil")
 	}
-	return &CodexEvaluator{db: db, codex: codex, sharedMem: sharedMem, workRules: workRules, skills: skills}, nil
+	if prompts == nil {
+		return nil, fmt.Errorf("codex evaluator system prompt reader is nil")
+	}
+	return &CodexEvaluator{db: db, codex: codex, sharedMem: sharedMem, workRules: workRules, skills: skills, prompts: prompts}, nil
 }
 
 func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*EvaluationInput, error) {
@@ -90,8 +96,17 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 	if err != nil {
 		return nil, fmt.Errorf("codex evaluation todo_id=%d: read decide skills: %w", todo.ID, err)
 	}
+	systemPrompt, err := e.prompts.Content(ctx, textstore.SystemPromptM4Key)
+	if err != nil {
+		return nil, fmt.Errorf("codex evaluation todo_id=%d: read M4 system prompt: %w", todo.ID, err)
+	}
+	toolCatalog, err := toolcatalog.Block(toolcatalog.StageDecide)
+	if err != nil {
+		return nil, fmt.Errorf("codex evaluation todo_id=%d: read decide tool catalog: %w", todo.ID, err)
+	}
 	prompt, err := BuildCodexPrompt(CodexPromptInput{
 		Todo: todo, RuleScore: neutralRuleScore, Background: background, PriorEvaluations: prior,
+		SystemPrompt: systemPrompt, ToolCatalog: toolCatalog,
 		SharedMemory: sharedMemory, WorkRules: workRules, Skills: skills,
 	})
 	if err != nil {

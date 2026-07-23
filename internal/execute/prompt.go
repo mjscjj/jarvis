@@ -16,6 +16,29 @@ const ExecutionPromptVersion = "task-exec-v5"
 // next M5 prompt. Newest runs are kept; older ones are dropped to bound size.
 const maxPriorRunsInPrompt = 5
 
+const (
+	m5PhaseDirect = `BEGIN_M5_PHASE
+phase=direct
+这条任务已经确认。现在直接执行并验证结果。
+END_M5_PHASE`
+	m5PhasePropose = `BEGIN_M5_PHASE
+phase=propose
+先判断这次实际动作是否会写入、发送或修改外部对象。只读或本地任务可以直接完成；任何外部副作用都不得执行，必须返回完整 proposal 等待批准。
+END_M5_PHASE`
+	m5PhaseApply = `BEGIN_M5_PHASE
+phase=apply
+下方 APPROVED_PROPOSAL 已获批准。忠实落地，不重新拟稿或改变目标。
+END_M5_PHASE`
+	m5PhaseResumeWaiting = `BEGIN_M5_PHASE
+phase=resume_waiting
+这是同一个 Task、同一个 Session 的继续执行。等待时间已经到达；先查询最新状态，再从暂停点继续。
+END_M5_PHASE`
+	m5PhaseResumeHuman = `BEGIN_M5_PHASE
+phase=resume_human
+这是同一个 Task、同一个 Session 的继续执行。使用委托人的最新回应从暂停点继续，不重跑、不重复副作用。
+END_M5_PHASE`
+)
+
 // priorRunSummary is a compact view of one earlier execution_run. It is fed into
 // re-run prompts so the agent knows what already happened (side effects, failures,
 // artifacts) instead of starting from a blank slate.
@@ -175,7 +198,7 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 // supplement directive block, and the encoded TASK_CONTEXT into the final codex
 // prompt. sharedMemory (可信共享记忆) is injected right after the instructions and
 // before TASK_CONTEXT（不可信业务数据），即受信任指令区；为空则不注入。
-func renderPrompt(instructions, scheduledTools, sharedMemory, workRules, skills string, supplements []ExecutionSupplement, encoded []byte) string {
+func renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills string, supplements []ExecutionSupplement, encoded []byte) string {
 	directive := formatExecutionSupplementDirective(supplements)
 	prompt := strings.TrimSpace(instructions)
 	if block := sharedmem.RenderBlock(sharedMemory); block != "" {
@@ -187,7 +210,7 @@ func renderPrompt(instructions, scheduledTools, sharedMemory, workRules, skills 
 	if block := strings.TrimSpace(skills); block != "" {
 		prompt += "\n\n" + block
 	}
-	if block := strings.TrimSpace(scheduledTools); block != "" {
+	if block := strings.TrimSpace(toolCatalog); block != "" {
 		prompt += "\n\n" + block
 	}
 	return prompt + directive +
@@ -200,7 +223,7 @@ func renderPrompt(instructions, scheduledTools, sharedMemory, workRules, skills 
 // confirmed plan, context, and repo, and tells it to carry the plan out. codex
 // orchestrates the actual work. task.execution_supplements (M5-only) are injected
 // as high-priority directives. previousRuns (if any) carry prior attempt results.
-func buildExecutionPrompt(systemPrompt string, task *domain.Task, repoPath, scheduledTools, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
+func buildExecutionPrompt(systemPrompt string, task *domain.Task, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	if systemPrompt == "" {
 		return "", fmt.Errorf("execution system prompt is required")
@@ -210,11 +233,12 @@ func buildExecutionPrompt(systemPrompt string, task *domain.Task, repoPath, sche
 		return "", err
 	}
 
+	instructions := systemPrompt + "\n\n" + m5PhaseDirect
 	if repoPath != "" {
-		systemPrompt += "\n\n当前工作目录已切到 repo：" + repoPath + "，直接在此改动。"
+		instructions += "\n\n当前工作目录已切到 repo：" + repoPath + "，直接在此改动。"
 	}
 
-	return renderPrompt(systemPrompt, scheduledTools, sharedMemory, workRules, skills, supplements, encoded), nil
+	return renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills, supplements, encoded), nil
 }
 
 // buildProposePrompt assembles the propose-stage prompt. This stage runs for
@@ -223,7 +247,7 @@ func buildExecutionPrompt(systemPrompt string, task *domain.Task, repoPath, sche
 // this time, and either finish read-only/local work or produce a full proposal
 // WITHOUT touching the outside world. Its final message must satisfy
 // proposeResultSchema.
-func buildProposePrompt(systemPrompt string, task *domain.Task, scheduledTools, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
+func buildProposePrompt(systemPrompt string, task *domain.Task, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	if systemPrompt == "" {
 		return "", fmt.Errorf("propose system prompt is required")
@@ -233,14 +257,14 @@ func buildProposePrompt(systemPrompt string, task *domain.Task, scheduledTools, 
 		return "", err
 	}
 
-	return renderPrompt(systemPrompt, scheduledTools, sharedMemory, workRules, skills, supplements, encoded), nil
+	return renderPrompt(systemPrompt+"\n\n"+m5PhasePropose, toolCatalog, sharedMemory, workRules, skills, supplements, encoded), nil
 }
 
 // buildApplyPrompt assembles the apply-stage prompt after a human approved a
 // proposal. The approved plan + full artifact is embedded verbatim and codex is
 // told to land it faithfully for real. Its final message must satisfy
 // executionResultSchema.
-func buildApplyPrompt(systemPrompt string, task *domain.Task, proposal *codexProposal, approvalRule, scheduledTools, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
+func buildApplyPrompt(systemPrompt string, task *domain.Task, proposal *codexProposal, approvalRule, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	if systemPrompt == "" {
 		return "", fmt.Errorf("apply system prompt is required")
@@ -265,7 +289,7 @@ func buildApplyPrompt(systemPrompt string, task *domain.Task, proposal *codexPro
 		return "", fmt.Errorf("encode approved proposal task_id=%d: %w", task.ID, err)
 	}
 
-	instructions := systemPrompt + `
+	instructions := systemPrompt + "\n\n" + m5PhaseApply + `
 
 BEGIN_APPROVAL_RULE（这是委托人在后台明确维护的可信审批规则，必须遵守。）
 ` + approvalRule + `
@@ -273,5 +297,5 @@ END_APPROVAL_RULE
 
 APPROVED_PROPOSAL=` + string(approved)
 
-	return renderPrompt(instructions, scheduledTools, sharedMemory, workRules, skills, supplements, encoded), nil
+	return renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills, supplements, encoded), nil
 }

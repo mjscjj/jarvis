@@ -18,6 +18,7 @@ import (
 	"jarvis/internal/skill"
 	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
+	"jarvis/internal/toolcatalog"
 	"jarvis/internal/workrule"
 
 	"gorm.io/gorm"
@@ -222,7 +223,7 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 	if reason == "" {
 		return fmt.Errorf("%w: resume reason is required", ErrInvalidInput)
 	}
-	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptResumeWaitingKey)
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
 	if err != nil {
 		return fmt.Errorf("load M5 waiting resume system prompt: %w", err)
 	}
@@ -230,7 +231,11 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 	if err != nil {
 		return fmt.Errorf("load M5 work rules for waiting resume: %w", err)
 	}
-	prompt, err := buildScheduledResumePrompt(systemPrompt, reason, workRules)
+	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
+	if err != nil {
+		return fmt.Errorf("load M5 waiting resume tool catalog: %w", err)
+	}
+	prompt, err := buildScheduledResumePrompt(systemPrompt, reason, workRules, toolCatalog)
 	if err != nil {
 		return err
 	}
@@ -249,7 +254,7 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 // KickResumeAfterHuman continues the exact Codex session that requested human
 // input. It does not rerun the Task or rebuild the approved proposal.
 func (e *AgentExecutor) KickResumeAfterHuman(ctx context.Context, taskID uint64, expectedVersion int32, response string) (*ExecuteResult, error) {
-	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptResumeHumanKey)
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
 	if err != nil {
 		return nil, fmt.Errorf("load M5 human resume system prompt: %w", err)
 	}
@@ -257,7 +262,11 @@ func (e *AgentExecutor) KickResumeAfterHuman(ctx context.Context, taskID uint64,
 	if err != nil {
 		return nil, fmt.Errorf("load M5 work rules for human resume: %w", err)
 	}
-	prompt, err := buildHumanResumePrompt(systemPrompt, response, workRules)
+	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
+	if err != nil {
+		return nil, fmt.Errorf("load M5 human resume tool catalog: %w", err)
+	}
+	prompt, err := buildHumanResumePrompt(systemPrompt, response, workRules, toolCatalog)
 	if err != nil {
 		return nil, err
 	}
@@ -427,27 +436,33 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 	return e.finishRun(ctx, &task, execVersion, run, execErr)
 }
 
-func buildScheduledResumePrompt(systemPrompt, reason, workRules string) (string, error) {
+func buildScheduledResumePrompt(systemPrompt, reason, workRules, toolCatalog string) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	reason = strings.TrimSpace(reason)
 	if systemPrompt == "" || reason == "" {
 		return "", fmt.Errorf("waiting resume system prompt and reason are required")
 	}
-	prompt := systemPrompt
+	prompt := systemPrompt + "\n\n" + m5PhaseResumeWaiting
 	if block := strings.TrimSpace(workRules); block != "" {
+		prompt += "\n\n" + block
+	}
+	if block := strings.TrimSpace(toolCatalog); block != "" {
 		prompt += "\n\n" + block
 	}
 	return fmt.Sprintf("%s\n\n等待原因：%s\n当前时间：%s", prompt, reason, time.Now().UTC().Format(time.RFC3339)), nil
 }
 
-func buildHumanResumePrompt(systemPrompt, response, workRules string) (string, error) {
+func buildHumanResumePrompt(systemPrompt, response, workRules, toolCatalog string) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	response = strings.TrimSpace(response)
 	if systemPrompt == "" || response == "" {
 		return "", fmt.Errorf("human resume system prompt and response are required")
 	}
-	prompt := systemPrompt
+	prompt := systemPrompt + "\n\n" + m5PhaseResumeHuman
 	if block := strings.TrimSpace(workRules); block != "" {
+		prompt += "\n\n" + block
+	}
+	if block := strings.TrimSpace(toolCatalog); block != "" {
 		prompt += "\n\n" + block
 	}
 	return fmt.Sprintf("%s\n\n委托人回应：%s\n当前时间：%s", prompt, response, time.Now().UTC().Format(time.RFC3339)), nil
@@ -833,17 +848,17 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptExecuteKey)
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
 	if err != nil {
 		cause := fmt.Errorf("load M5 execution system prompt: %w", err)
 		return e.failRun(run, startedAt, cause), cause
 	}
-	scheduledTools, err := e.textStore.Content(ctx, textstore.SystemPromptScheduledToolsKey)
+	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
 	if err != nil {
-		cause := fmt.Errorf("load M5 scheduled tools system prompt: %w", err)
+		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), cause
 	}
-	prompt, err := buildExecutionPrompt(systemPrompt, task, repoPath, scheduledTools, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildExecutionPrompt(systemPrompt, task, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
@@ -972,17 +987,17 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptProposeKey)
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
 	if err != nil {
 		cause := fmt.Errorf("load M5 propose system prompt: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	scheduledTools, err := e.textStore.Content(ctx, textstore.SystemPromptScheduledToolsKey)
+	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
 	if err != nil {
-		cause := fmt.Errorf("load M5 scheduled tools system prompt: %w", err)
+		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	prompt, err := buildProposePrompt(systemPrompt, task, scheduledTools, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildProposePrompt(systemPrompt, task, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1050,21 +1065,21 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 		cause := fmt.Errorf("load M5 approval rule: %w", err)
 		return e.failRun(run, startedAt, cause), cause
 	}
-	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptApplyKey)
+	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
 	if err != nil {
 		cause := fmt.Errorf("load M5 apply system prompt: %w", err)
 		return e.failRun(run, startedAt, cause), cause
 	}
-	scheduledTools, err := e.textStore.Content(ctx, textstore.SystemPromptScheduledToolsKey)
+	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
 	if err != nil {
-		cause := fmt.Errorf("load M5 scheduled tools system prompt: %w", err)
+		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), cause
 	}
 	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
-	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, approvalRule, scheduledTools, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, approvalRule, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), err
 	}
