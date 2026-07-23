@@ -315,13 +315,57 @@ func (g *personGenerator) runCollector(
 	if err != nil {
 		return nil, fmt.Errorf("decode output: %w", err)
 	}
-	if err := validatePersonCollectorOutput(output, domain, personCollectorExpectation{
+	expectation := personCollectorExpectation{
 		Window: expectedWindow, RequiredIdentity: requiredIdentity,
 		AllowedDirectIdentities: allowedDirectIdentities,
-	}); err != nil {
+	}
+	if err := applyPersonCollectorControl(output, domain, expectation); err != nil {
+		return nil, fmt.Errorf("apply collector control: %w", err)
+	}
+	if err := validatePersonCollectorOutput(output, domain, expectation); err != nil {
 		return nil, fmt.Errorf("validate output: %w", err)
 	}
 	return output, nil
+}
+
+// applyPersonCollectorControl replaces model-echoed orchestration fields with the
+// immutable plan owned by the main controller. Evidence attribution remains
+// collector-owned and is validated separately against AllowedDirectIdentities.
+func applyPersonCollectorControl(
+	output *personCollectorOutput,
+	domain string,
+	expectation personCollectorExpectation,
+) error {
+	if output == nil {
+		return fmt.Errorf("output is nil")
+	}
+	if strings.TrimSpace(domain) == "" {
+		return fmt.Errorf("domain is blank")
+	}
+	if strings.TrimSpace(expectation.RequiredIdentity) == "" {
+		return fmt.Errorf("required identity is blank")
+	}
+	if !containsString(expectation.AllowedDirectIdentities, expectation.RequiredIdentity) {
+		return fmt.Errorf(
+			"allowed direct identities missing required identity %q",
+			expectation.RequiredIdentity,
+		)
+	}
+	seenIdentities := make(map[string]struct{}, len(expectation.AllowedDirectIdentities))
+	for _, identity := range expectation.AllowedDirectIdentities {
+		if strings.TrimSpace(identity) == "" {
+			return fmt.Errorf("allowed direct identity is blank")
+		}
+		if _, exists := seenIdentities[identity]; exists {
+			return fmt.Errorf("duplicate allowed direct identity %q", identity)
+		}
+		seenIdentities[identity] = struct{}{}
+	}
+
+	output.Domain = domain
+	output.IdentityFilters = append([]string(nil), expectation.AllowedDirectIdentities...)
+	output.Window = expectation.Window
+	return nil
 }
 
 func collectorCoverageItem(output *personCollectorOutput) SourceCoverageItem {
@@ -388,9 +432,6 @@ func validatePersonCollectorOutput(
 	}
 	if output.Domain != expectedDomain {
 		return fmt.Errorf("domain=%q, want %q", output.Domain, expectedDomain)
-	}
-	if !validCollectorStatus(output.Status) {
-		return fmt.Errorf("invalid reported status %q", output.Status)
 	}
 	windowStart, err := time.Parse(time.RFC3339, output.Window.Start)
 	if err != nil {

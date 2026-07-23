@@ -1,6 +1,7 @@
 package dailydigest
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,14 @@ import (
 
 	"jarvis/internal/domain"
 )
+
+type staticPersonSummaryRunner struct {
+	output string
+}
+
+func (r staticPersonSummaryRunner) RunTextSandbox(context.Context, string, string) (string, error) {
+	return r.output, nil
+}
 
 func TestCapRunes(t *testing.T) {
 	t.Parallel()
@@ -107,6 +116,102 @@ func TestDecodeAndValidatePersonCollectorOutput(t *testing.T) {
 	}
 	if output.Status != "partial" {
 		t.Fatalf("derived status = %q, want partial", output.Status)
+	}
+}
+
+func TestRunCollectorInjectsMainControllerFields(t *testing.T) {
+	t.Parallel()
+	raw := `{
+		"domain":"wrong_model_echo",
+		"identity_filters":["me"],
+		"window":{"start":"","end":"","cutoff":"","timezone":""},
+		"status":"not-derived-yet",
+		"coverage":[
+			{"scope":"messages_threads","query_or_cursor":"q1","status":"empty","count":0,"truncated":false},
+			{"scope":"documents","query_or_cursor":"q2","status":"empty","count":0,"truncated":false},
+			{"scope":"meetings_minutes","query_or_cursor":"q3","status":"empty","count":0,"truncated":false}
+		],
+		"evidence":[],
+		"gaps":[]
+	}`
+	expectedWindow := personCollectorWindow{
+		Start: "2026-07-23T00:00:00+08:00", End: "2026-07-23T18:00:00+08:00",
+		Cutoff: "2026-07-23T18:00:00+08:00", Timezone: "Asia/Shanghai",
+	}
+	g := &personGenerator{
+		runner:  staticPersonSummaryRunner{output: raw},
+		sandbox: "danger-full-access",
+	}
+	output, err := g.runCollector(
+		context.Background(),
+		"feishu_work",
+		"ou_cfd9e106436c46adf20aaf9fe076c65d",
+		[]string{"ou_cfd9e106436c46adf20aaf9fe076c65d"},
+		"prompt",
+		expectedWindow,
+	)
+	if err != nil {
+		t.Fatalf("run collector: %v", err)
+	}
+	if output.Domain != "feishu_work" {
+		t.Fatalf("domain = %q", output.Domain)
+	}
+	if output.Window != expectedWindow {
+		t.Fatalf("window = %#v, want %#v", output.Window, expectedWindow)
+	}
+	if len(output.IdentityFilters) != 1 ||
+		output.IdentityFilters[0] != "ou_cfd9e106436c46adf20aaf9fe076c65d" {
+		t.Fatalf("identity filters = %#v", output.IdentityFilters)
+	}
+	if output.Status != "empty" {
+		t.Fatalf("derived status = %q, want empty", output.Status)
+	}
+}
+
+func TestRunCollectorStillRejectsDirectEvidenceFromAnotherIdentity(t *testing.T) {
+	t.Parallel()
+	raw := `{
+		"domain":"feishu_work",
+		"identity_filters":["me"],
+		"window":{"start":"","end":"","cutoff":"","timezone":""},
+		"status":"complete",
+		"coverage":[
+			{"scope":"messages_threads","query_or_cursor":"q1","status":"complete","count":1,"truncated":false},
+			{"scope":"documents","query_or_cursor":"q2","status":"empty","count":0,"truncated":false},
+			{"scope":"meetings_minutes","query_or_cursor":"q3","status":"empty","count":0,"truncated":false}
+		],
+		"evidence":[{
+			"evidence_id":"feishu:message:om_other",
+			"domain":"feishu_work",
+			"source_kind":"message",
+			"source_id":"om_other",
+			"occurred_at":"2026-07-23T10:00:00+08:00",
+			"actor_identity":"ou_someone_else",
+			"subject":"非目标用户消息",
+			"activity":"回复",
+			"attribution":"direct",
+			"strength":"primary"
+		}],
+		"gaps":[]
+	}`
+	expectedWindow := personCollectorWindow{
+		Start: "2026-07-23T00:00:00+08:00", End: "2026-07-23T18:00:00+08:00",
+		Cutoff: "2026-07-23T18:00:00+08:00", Timezone: "Asia/Shanghai",
+	}
+	g := &personGenerator{
+		runner:  staticPersonSummaryRunner{output: raw},
+		sandbox: "danger-full-access",
+	}
+	_, err := g.runCollector(
+		context.Background(),
+		"feishu_work",
+		"ou_me",
+		[]string{"ou_me"},
+		"prompt",
+		expectedWindow,
+	)
+	if err == nil || !strings.Contains(err.Error(), "outside the target identity mapping") {
+		t.Fatalf("run collector error = %v", err)
 	}
 }
 

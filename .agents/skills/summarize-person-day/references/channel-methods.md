@@ -79,12 +79,22 @@ gaps: [...]
 
 For the runtime JSON contract:
 
+- `domain`, `identity_filters`, and `window` are immutable control-plane values
+  owned and injected by the main controller; collector echoes are accepted only
+  for schema compatibility and are never trusted as the execution plan;
+- the top-level `status` is derived by the main controller from per-scope
+  coverage and is not trusted from the collector echo;
 - `coverage` must contain exactly the scopes assigned by the caller, with no
   extra discovery scopes;
 - `query_or_cursor` is one diagnostic string, not an array or object;
 - `raw_reference` is one compact string, not a nested object;
 - `gaps` is an array of diagnostic strings, not structured objects;
 - every field named in the caller schema uses the caller's exact scalar type.
+
+Collector-owned evidence remains strict. In particular, every
+`attribution=direct` card must carry an `actor_identity` present in the
+controller's identity mapping; the controller must reject mismatches rather
+than rewriting or weakening attribution.
 
 Use:
 
