@@ -65,6 +65,17 @@ printf '%s\n' '{"type":"thread.started","thread_id":"session-42"}'
 			t.Fatalf("resume args missing %q:\n%s", want, args)
 		}
 	}
+
+	if _, err := runner.RunText(t.Context(), "summarize"); err != nil {
+		t.Fatalf("RunText() error = %v", err)
+	}
+	args = readTestFile(t, argsPath)
+	if !strings.Contains(args, "--ephemeral") {
+		t.Fatalf("one-shot RunText args do not contain --ephemeral:\n%s", args)
+	}
+	if got := readTestFile(t, envPath); got != "" {
+		t.Fatalf("one-shot RunText JARVIS_TASK_ID = %q, want empty", got)
+	}
 }
 
 func readTestFile(t *testing.T, path string) string {

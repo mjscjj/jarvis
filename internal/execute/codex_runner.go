@@ -205,6 +205,12 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 			"--color", "never", "--json", "--output-last-message", resultPath,
 			"--model", r.model, "-c", "model_reasoning_effort=" + r.reasoningEffort,
 		}
+		if invocation.TaskID == 0 {
+			// Only M5 Task runs need a durable session for yield/resume. Free-form
+			// summarizers and insight generators are one-shot calls and must not
+			// accumulate resumable Codex sessions on disk.
+			args = append(args, "--ephemeral")
+		}
 	} else {
 		args = []string{
 			"exec", "resume", invocation.SessionID, "--json",
