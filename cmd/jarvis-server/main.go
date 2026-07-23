@@ -28,6 +28,7 @@ import (
 	"jarvis/internal/insight"
 	"jarvis/internal/knowledge"
 	"jarvis/internal/larkcli"
+	"jarvis/internal/meetingcapture"
 	"jarvis/internal/memory"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/progress"
@@ -62,9 +63,10 @@ func main() {
 	seedOnce := flag.Bool("seed", false, "一次性幂等写入初始 项目/任务/群关联 背景种子，成功后退出")
 	seedPersons := flag.Bool("seed-persons", false, "从关键群真实成员导入 Person（幂等，按 open_id 跳过已存在），成功后退出")
 	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
+	meetingCaptureOnce := flag.Bool("meeting-capture-once", false, "执行一次已结束会议妙记采集，成功后退出")
 	flag.Parse()
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P} {
+	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P, *meetingCaptureOnce} {
 		if selected {
 			actionCount++
 		}
@@ -225,6 +227,30 @@ func main() {
 	})
 	if err != nil {
 		hlog.Fatalf("initialize capture service failed: %v", err)
+	}
+	meetingCaptureService, err := meetingcapture.NewService(db, larkClient, meetingcapture.Options{
+		PrincipalOpenID: cfg.Extract.PrincipalOpenID,
+		LookbackDays:    cfg.Capture.MeetingLookbackDays,
+		ArtifactDir:     cfg.Capture.MeetingArtifactDir,
+		MaxContentChars: cfg.Capture.MeetingMaxContentChars,
+		Location:        location,
+	})
+	if err != nil {
+		hlog.Fatalf("initialize meeting capture service failed: %v", err)
+	}
+	if *meetingCaptureOnce {
+		stats, scanErr := meetingCaptureService.ScanOnce(context.Background())
+		if scanErr != nil {
+			hlog.Fatalf(
+				"meeting capture failed: discovered=%d attempted=%d imported=%d waiting=%d permission_denied=%d skipped=%d error=%v",
+				stats.Discovered, stats.Attempted, stats.Imported, stats.Waiting, stats.PermissionDenied, stats.Skipped, scanErr,
+			)
+		}
+		hlog.Infof(
+			"meeting capture completed: discovered=%d attempted=%d imported=%d waiting=%d permission_denied=%d skipped=%d",
+			stats.Discovered, stats.Attempted, stats.Imported, stats.Waiting, stats.PermissionDenied, stats.Skipped,
+		)
+		return
 	}
 	memoryClient, err := memory.NewClient(cfg.Mem0.BaseURL, time.Duration(cfg.Mem0.TimeoutSec)*time.Second)
 	if err != nil {
@@ -554,6 +580,11 @@ func main() {
 				waitPipeline()
 				hlog.Fatalf("wire capture to real-time pipeline failed: %v", err)
 			}
+			if err := meetingCaptureService.SetScanObserver(coordinator); err != nil {
+				cancelRuntime()
+				waitPipeline()
+				hlog.Fatalf("wire meeting capture to real-time pipeline failed: %v", err)
+			}
 		}
 		if cfg.Decide.Enabled || cfg.Execute.Enabled {
 			if err := confirmationService.SetLifecycleNotifier(coordinator); err != nil {
@@ -596,6 +627,19 @@ func main() {
 		waitPipeline()
 		hlog.Fatalf("start capture scheduler failed: %v", err)
 	}
+	meetingScheduler, err := meetingcapture.StartScheduler(
+		runtimeCtx,
+		meetingCaptureService,
+		cfg.Capture.MeetingScanSchedule,
+		log.New(os.Stderr, "meeting-capture-cron ", log.LstdFlags|log.Lmicroseconds),
+	)
+	if err != nil {
+		cancelRuntime()
+		<-scheduler.Stop().Done()
+		stopPipelineScheduler()
+		waitPipeline()
+		hlog.Fatalf("start meeting capture scheduler failed: %v", err)
+	}
 	memoryScheduler, err := memory.StartScheduler(
 		runtimeCtx,
 		memoryWorker,
@@ -605,6 +649,7 @@ func main() {
 	if err != nil {
 		cancelRuntime()
 		<-scheduler.Stop().Done()
+		<-meetingScheduler.Stop().Done()
 		stopPipelineScheduler()
 		waitPipeline()
 		hlog.Fatalf("start memory scheduler failed: %v", err)
@@ -621,6 +666,7 @@ func main() {
 		if err != nil {
 			cancelRuntime()
 			<-scheduler.Stop().Done()
+			<-meetingScheduler.Stop().Done()
 			<-memoryScheduler.Stop().Done()
 			stopPipelineScheduler()
 			waitPipeline()
@@ -649,6 +695,7 @@ func main() {
 	defer func() {
 		cancelRuntime()
 		<-scheduler.Stop().Done()
+		<-meetingScheduler.Stop().Done()
 		<-memoryScheduler.Stop().Done()
 		stopDailyDigest()
 		stopScheduledTasks()

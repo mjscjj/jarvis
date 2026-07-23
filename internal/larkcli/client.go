@@ -197,6 +197,12 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
+		// A few batch read shortcuts emit a useful structured response on
+		// stdout and still exit non-zero when every item failed. Preserve that
+		// payload for callers while keeping the process failure visible.
+		if stdout.Len() > 0 {
+			_ = json.Unmarshal(stdout.Bytes(), out)
+		}
 		exitCode := -1
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

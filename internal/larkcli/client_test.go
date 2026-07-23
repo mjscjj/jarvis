@@ -63,6 +63,13 @@ func TestRun(t *testing.T) {
 			wantCmdErr: true,
 		},
 		{
+			name:          "non-zero exit preserves structured stdout",
+			script:        `printf '%s' '{"ok":false,"data":{"item_error":"No read permission"}}'; printf '%s' 'batch failed' >&2; exit 1`,
+			wantErr:       "batch failed",
+			wantItemError: "No read permission",
+			wantCmdErr:    true,
+		},
+		{
 			name:       "timeout",
 			script:     `sleep 1`,
 			timeout:    20 * time.Millisecond,
