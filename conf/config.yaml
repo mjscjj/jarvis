@@ -91,6 +91,11 @@ capture:
   # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
+  # 已结束会议妙记接入：今天内结束的会议每 5 分钟检查一次；产物未就绪会持久化重试。
+  meeting_scan_schedule: "@every 5m"
+  meeting_lookback_days: 1
+  meeting_artifact_dir: "var/meeting-minutes"
+  meeting_max_content_chars: 20000
 
 # M4 MVP：所有提取出的 Todo 都进入人工确认，不做评分、不调用 codex。
 decide:

@@ -71,6 +71,7 @@ type MessageContext struct {
 	SenderOpenID string
 	SenderName   string
 	SenderType   string
+	Source       string
 	Content      string
 	RootID       string
 	ThreadID     string

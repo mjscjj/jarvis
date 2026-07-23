@@ -442,7 +442,7 @@ func messageContext(message *domain.Message, isNew bool) MessageContext {
 	return MessageContext{
 		DatabaseID: message.ID, MessageID: message.MessageID, ChatID: message.ChatID,
 		SenderOpenID: message.SenderOpenID, SenderName: message.SenderName, SenderType: message.SenderType,
-		Content: message.Content, RootID: stringValue(message.RootID), ThreadID: stringValue(message.ThreadID),
+		Source: message.Source, Content: message.Content, RootID: stringValue(message.RootID), ThreadID: stringValue(message.ThreadID),
 		CreateTime: message.CreateTime, IsNew: isNew, Extractable: extractableMessage(message),
 	}
 }

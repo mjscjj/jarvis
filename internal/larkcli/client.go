@@ -219,14 +219,18 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		return fmt.Errorf("decode lark-cli envelope for %q: %w", commandArgs, err)
 	}
+	// Decode the typed payload before checking ok. Some read shortcuts return
+	// ok=false with per-item errors in data (for example Minutes permission
+	// denial) and no top-level error. Callers need that item-level payload to
+	// classify and persist a retry state.
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("decode lark-cli response for %q: %w", commandArgs, err)
+	}
 	if !meta.OK {
 		if meta.Error == nil {
 			return fmt.Errorf("lark-cli %q returned ok=false without error", commandArgs)
 		}
 		return meta.Error
-	}
-	if err := json.Unmarshal(raw, out); err != nil {
-		return fmt.Errorf("decode lark-cli response for %q: %w", commandArgs, err)
 	}
 	return nil
 }

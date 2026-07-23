@@ -521,7 +521,9 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 // scan committed and is recovered by the downstream compensation schedule.
 func (s *Service) ScanRelated(ctx context.Context) error {
 	var groups []domain.Group
-	if err := s.db.Select("id", "chat_id").Where("related_group = ?", true).Order("id ASC").Find(&groups).Error; err != nil {
+	if err := s.db.Select("id", "chat_id").
+		Where("related_group = ? AND chat_mode IN ?", true, []string{"group", "topic", "p2p"}).
+		Order("id ASC").Find(&groups).Error; err != nil {
 		return fmt.Errorf("list related chats: %w", err)
 	}
 	return s.scanGroups(ctx, groups)

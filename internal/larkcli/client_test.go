@@ -14,7 +14,8 @@ import (
 type testResponse struct {
 	OK   bool `json:"ok"`
 	Data struct {
-		Value string `json:"value"`
+		Value     string `json:"value"`
+		ItemError string `json:"item_error"`
 	} `json:"data"`
 }
 
@@ -24,13 +25,14 @@ func TestRun(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		script     string
-		timeout    time.Duration
-		wantValue  string
-		wantErr    string
-		wantAPIErr bool
-		wantCmdErr bool
+		name          string
+		script        string
+		timeout       time.Duration
+		wantValue     string
+		wantItemError string
+		wantErr       string
+		wantAPIErr    bool
+		wantCmdErr    bool
 	}{
 		{
 			name:      "success",
@@ -42,6 +44,12 @@ func TestRun(t *testing.T) {
 			script:     `printf '%s' '{"ok":false,"error":{"type":"api","subtype":"rate_limited","message":"slow down"}}'`,
 			wantErr:    "slow down",
 			wantAPIErr: true,
+		},
+		{
+			name:          "partial data with zero exit",
+			script:        `printf '%s' '{"ok":false,"data":{"item_error":"No read permission"}}'`,
+			wantErr:       "ok=false without error",
+			wantItemError: "No read permission",
 		},
 		{
 			name:    "invalid json",
@@ -76,6 +84,9 @@ func TestRun(t *testing.T) {
 			}
 			var got testResponse
 			err = client.Run(context.Background(), &got, "im", "+chat-list")
+			if got.Data.ItemError != tt.wantItemError {
+				t.Fatalf("Run() item_error = %q, want %q", got.Data.ItemError, tt.wantItemError)
+			}
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("Run() error = %v", err)
