@@ -24,8 +24,10 @@ import type { ActionType, Todo, TodoQuery, TodoStatus } from './types'
 
 const { Text, Paragraph } = Typography
 
+const allTodoStatuses = Object.keys(statusMeta) as TodoStatus[]
+
 const initialQuery: TodoQuery = {
-  statuses: ['extracted', 'need_info', 'need_decision'],
+  statuses: allTodoStatuses,
   leaderOnly: false,
   page: 1,
   pageSize: 20,

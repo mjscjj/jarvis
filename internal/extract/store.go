@@ -126,7 +126,7 @@ func (s *TodoStore) ListTodos(ctx context.Context, filter TodoListFilter) (*Todo
 	var todos []domain.Todo
 	offset := (filter.Page - 1) * filter.PageSize
 	if err := query.Preload("Group").Preload("Project").
-		Order("is_leader_assigned DESC, last_evidence_at DESC, id DESC").
+		Order("last_evidence_at DESC, id DESC").
 		Offset(offset).Limit(filter.PageSize).Find(&todos).Error; err != nil {
 		return nil, fmt.Errorf("list todos: %w", err)
 	}
