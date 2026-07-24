@@ -270,21 +270,40 @@ func (s *Service) Delete(ctx context.Context, id uint64) error {
 	if id == 0 {
 		return fmt.Errorf("%w: id must be positive", ErrInvalidInput)
 	}
-	result := s.db.WithContext(ctx).Where("id = ? AND status <> ?", id, "running").Delete(&domain.ScheduledTask{})
+	row, err := s.load(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := validateDeletable(row); err != nil {
+		return err
+	}
+	result := s.db.WithContext(ctx).
+		Where("id = ? AND status <> ? AND dispatch_kind <> ?", id, "running", "resume_task").
+		Delete(&domain.ScheduledTask{})
 	if result.Error != nil {
 		return fmt.Errorf("delete scheduled task id=%d: %w", id, result.Error)
 	}
 	if result.RowsAffected != 0 {
 		return nil
 	}
-	row, err := s.load(ctx, id)
+	row, err = s.load(ctx, id)
 	if err != nil {
 		return err
+	}
+	if err := validateDeletable(row); err != nil {
+		return err
+	}
+	return fmt.Errorf("delete scheduled task id=%d affected no rows", id)
+}
+
+func validateDeletable(row *domain.ScheduledTask) error {
+	if row.DispatchKind == "resume_task" {
+		return fmt.Errorf("%w: continuation schedule id=%d is owned by its waiting Task and cannot be deleted", ErrInvalidInput, row.ID)
 	}
 	if row.Status == "running" {
 		return ErrRunning
 	}
-	return fmt.Errorf("delete scheduled task id=%d affected no rows", id)
+	return nil
 }
 
 // Trigger materializes and dispatches a Task immediately. Recurring schedules

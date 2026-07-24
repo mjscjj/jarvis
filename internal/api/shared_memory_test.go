@@ -16,6 +16,7 @@ import (
 type fakeSharedMemoryService struct {
 	view          *sharedmem.SharedMemoryView
 	upsertContent string
+	appendNote    string
 }
 
 func (f *fakeSharedMemoryService) Get(_ context.Context) (*sharedmem.SharedMemoryView, error) {
@@ -25,6 +26,11 @@ func (f *fakeSharedMemoryService) Get(_ context.Context) (*sharedmem.SharedMemor
 func (f *fakeSharedMemoryService) Upsert(_ context.Context, content string) (*sharedmem.SharedMemoryView, error) {
 	f.upsertContent = content
 	return &sharedmem.SharedMemoryView{Content: content, Path: "/tmp/shared-memory.md", Saved: true}, nil
+}
+
+func (f *fakeSharedMemoryService) Append(_ context.Context, note string) (*sharedmem.SharedMemoryView, error) {
+	f.appendNote = note
+	return &sharedmem.SharedMemoryView{Content: note, Path: "/tmp/shared-memory.md", Saved: true}, nil
 }
 
 func TestGetSharedMemory(t *testing.T) {
@@ -84,5 +90,48 @@ func TestUpdateSharedMemoryRejectsInvalidBody(t *testing.T) {
 		if response.StatusCode() != consts.StatusBadRequest {
 			t.Fatalf("body=%s status=%d resp=%s", body, response.StatusCode(), response.Body())
 		}
+	}
+}
+
+func TestAppendSharedMemoryAppendsOneNote(t *testing.T) {
+	svc := &fakeSharedMemoryService{}
+	h := server.New()
+	h.POST("/api/shared-memory/append", AppendSharedMemory(svc))
+	body := []byte(`{"note":"new fact"}`)
+	response := ut.PerformRequest(h.Engine, "POST", "/api/shared-memory/append", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	if svc.appendNote != "new fact" {
+		t.Fatalf("append note=%q", svc.appendNote)
+	}
+}
+
+func TestAppendSharedMemoryRejectsInvalidBody(t *testing.T) {
+	svc := &fakeSharedMemoryService{}
+	h := server.New()
+	h.POST("/api/shared-memory/append", AppendSharedMemory(svc))
+	for _, body := range [][]byte{
+		[]byte(`{"note":"x","extra":true}`),
+		[]byte(`{"note":`),
+	} {
+		response := ut.PerformRequest(h.Engine, "POST", "/api/shared-memory/append", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+		if response.StatusCode() != consts.StatusBadRequest {
+			t.Fatalf("body=%s status=%d resp=%s", body, response.StatusCode(), response.Body())
+		}
+	}
+}
+
+func TestAppendSharedMemoryRejectsBlankNote(t *testing.T) {
+	svc := &fakeSharedMemoryService{}
+	h := server.New()
+	h.POST("/api/shared-memory/append", AppendSharedMemory(svc))
+	body := []byte(`{"note":"  "}`)
+	response := ut.PerformRequest(h.Engine, "POST", "/api/shared-memory/append", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("status=%d resp=%s", response.StatusCode(), response.Body())
+	}
+	if svc.appendNote != "" {
+		t.Fatalf("append unexpectedly called with %q", svc.appendNote)
 	}
 }

@@ -132,10 +132,10 @@ flowchart TB
 
 **决策（用户拍板）：我们自己的能力（查记忆/历史消息/项目/人物/群）一律做成 CLI 子命令，交给 codex 按需自跑**——不预塞提示词、不做 MCP、不做 Go 工具循环。
 
-- **新建独立二进制** `cmd/jarvis-tools`（与 `jarvis-server` 分离，职责单一：给 codex 调）。
+- **独立 CLI** `scripts/jarvis-tools`（经 `jarvis-server` HTTP API 访问数据，职责单一：给 agent 调）。
 - **输出契约（严格）**：每个子命令把结果以**紧凑 JSON 打到 stdout**，错误信息打到 stderr 并以非零退出码结束（fail-fast）。stdout **只有 JSON**，不掺日志——codex 才能稳定解析。
-- **只读**：全部子命令只读 MySQL / mem0，不写库、不改状态。
-- **复用现有实现**：底层直接复用现有 store/memory 代码，CLI 只是薄入口（不重写查询逻辑）。
+- **分阶段使用**：M3/M4 只调用查询子命令；受控写子命令仅供 M5 执行阶段或用户直接要求时调用。
+- **复用现有实现**：CLI 经 `jarvis-server` HTTP API 复用现有 service，不直连数据库、不另写一套查询逻辑。
 
 子命令集（参数与 JSON 字段实现时定稿）。**本轮先做核心 5 个（打通项目推算所必需）**，`search-memory`/`query-messages` 用户已定**用到再补**：
 
@@ -218,7 +218,7 @@ decide:
 
 1. **文档**（本文）+ 修订 `00`/`03`/`04` 被推翻的旧约定（见 §8）。→ 用户过目
 2. 模块 B：Todo 加 `context_snapshot`/`resolution` 字段 + GORM 迁移。
-3. `jarvis-tools` **CLI**（§2.1a）：新建 `cmd/jarvis-tools`，实现只读子命令集，stdout 纯 JSON。这是 codex 自查的前置基础设施。
+3. `jarvis-tools` **CLI**（§2.1a）：维护 `scripts/jarvis-tools` 单一入口，查询命令 stdout 纯 JSON；受控写命令只供执行阶段按需调用。这是 agent 自查的前置基础设施。
 4. 模块 A：codex 提取器（复用 M5 codex_runner 范式）+ `extract.engine` 切换 + 提示词工具指引 + `project_hint→project_id` 解析。
 5. M3 落库时生成并写入 `context_snapshot`/`resolution`。
 6. 模块 C：M4 改读快照（`context_snapshot` 为空即 fail-fast 报错，不兼容旧数据）。
@@ -287,4 +287,3 @@ Resolution      datatypes.JSON `gorm:"column:resolution;type:json"`       // 项
 
 
 > 这些修订仅调整"引擎与上下文固化时机"，不改变 Todo/Task 拆分、7 实体、fail-fast 等核心契约。
-

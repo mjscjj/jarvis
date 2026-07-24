@@ -345,8 +345,7 @@ Vite 监听 `127.0.0.1:18801`（`strictPort`），把 `/api`、`/healthz` 代理
 ```
 jarvis/
 ├── cmd/
-│   ├── jarvis-server/   # 主入口（Hertz + 实时流水线 + 补偿 cron + 所有 -xxx-once CLI 动作）
-│   └── jarvis-tools/    # 只读决策工具入口（供模型查项目/人/群等，输出 JSON）
+│   └── jarvis-server/   # 主入口（Hertz + 实时流水线 + 补偿 cron + 所有 -xxx-once CLI 动作）
 ├── internal/
 │   ├── api/             # 路由 + 所有 HTTP handler（router.go 注册全部路由）
 │   ├── background/      # 项目/人物/群/决策主体/资源的后台 service + 种子数据
@@ -372,7 +371,7 @@ jarvis/
 ├── web/                  # React + Vite + Ant Design 管理后台
 ├── conf/config.yaml     # 本地配置（本地可信环境，含明文 DSN）
 ├── deploy/              # launchd plist
-├── scripts/             # 安装/运维脚本
+├── scripts/             # jarvis-tools Agent 工具入口 + 安装/运维脚本
 └── docs/                # 方案文档（00-overview + modules/01~05）
 ```
 

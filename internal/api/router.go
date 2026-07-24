@@ -186,6 +186,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 共享记忆：全局单例大文本，读取 + 整段覆盖保存。
 	h.GET("/api/shared-memory", GetSharedMemory(deps.SharedMemory))
 	h.PUT("/api/shared-memory", UpdateSharedMemory(deps.SharedMemory))
+	h.POST("/api/shared-memory/append", AppendSharedMemory(deps.SharedMemory))
 	// 运行配置：只开放调试常用的 Agent CLI、模型、超时、并发和模块开关。
 	// 保存到本地覆盖文件，进程重启后生效。
 	h.GET("/api/runtime-settings", GetRuntimeSettings(deps.RuntimeSettings))

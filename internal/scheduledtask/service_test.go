@@ -2,6 +2,7 @@ package scheduledtask
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"testing"
@@ -159,6 +160,14 @@ func TestNormalizeResumeTaskOnlyAcceptsYieldBinding(t *testing.T) {
 	}
 	if input.DispatchKind != "resume_task" || input.initialStatus != "binding" {
 		t.Fatalf("normalized resume input = %#v", input)
+	}
+}
+
+func TestValidateDeletableRejectsTaskContinuation(t *testing.T) {
+	t.Parallel()
+	err := validateDeletable(&domain.ScheduledTask{ID: 12, DispatchKind: "resume_task", Status: "active"})
+	if err == nil || !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("validateDeletable() error = %v, want ErrInvalidInput", err)
 	}
 }
 

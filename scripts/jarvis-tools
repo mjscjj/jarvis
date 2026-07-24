@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# jarvis-tools: Jarvis query/controlled-write CLI for M3/M4/M5 agents.
-# Same CLI contract as cmd/jarvis-tools, but backed by jarvis-server HTTP API
-# (curl + jq) instead of a direct MySQL connection.
+# jarvis-tools: canonical Jarvis query/controlled-write CLI for agents.
+# All data access goes through jarvis-server HTTP API (curl + jq).
 #
 # Output contract: data commands → compact JSON on stdout only; help → text on
 # stdout; errors → stderr + exit 1.
@@ -23,18 +22,20 @@ print_usage() {
 usage: jarvis-tools <subcommand> [flags]
 
 subcommands:
-  list-projects
-  get-project
-  get-group
-  get-principal
-  get-person
-  get-shared-memory
-  get-skill
-  append-shared-memory
-  list-scheduled-tasks
-  create-scheduled-task
-  yield-until
-  delete-scheduled-task
+  list-projects          List projects
+  get-project            Get one project and its recent context
+  get-group              Get one Feishu group by chat_id
+  get-principal          Get the assistant owner's profile
+  list-persons           List important people, optionally by role
+  get-person             Get one person by Feishu open_id
+  query-resources        Query managed docs, links, repos and notes
+  get-shared-memory      Read shared memory
+  get-skill              Read one locally managed Skill
+  append-shared-memory   Append one entry to shared memory
+  list-scheduled-tasks   List time-triggered tasks
+  create-scheduled-task  Create a time trigger for a new task
+  yield-until            Pause the current task until a future time
+  delete-scheduled-task  Delete a standalone time trigger
 
 Run "jarvis-tools <subcommand> --help" for command-specific flags.
 EOF
@@ -47,24 +48,91 @@ usage_error() {
 
 print_subcommand_help() {
   case "$1" in
-    list-projects)          echo "usage: jarvis-tools list-projects [--config PATH]" ;;
-    get-project)            echo "usage: jarvis-tools get-project (--id ID | --code CODE) [--config PATH]" ;;
-    get-group)              echo "usage: jarvis-tools get-group --chat-id CHAT_ID [--config PATH]" ;;
-    get-principal)          echo "usage: jarvis-tools get-principal [--config PATH]" ;;
-    get-person)             echo "usage: jarvis-tools get-person --open-id OPEN_ID [--config PATH]" ;;
-    get-shared-memory)      echo "usage: jarvis-tools get-shared-memory [--config PATH]" ;;
-    get-skill)              echo "usage: jarvis-tools get-skill --name NAME [--config PATH]" ;;
-    append-shared-memory)   echo 'usage: jarvis-tools append-shared-memory [--note TEXT|-] [--config PATH]' ;;
-    list-scheduled-tasks)   echo "usage: jarvis-tools list-scheduled-tasks [--status STATUS] [--limit N] [--config PATH]" ;;
-    create-scheduled-task)  echo 'usage: jarvis-tools create-scheduled-task [--payload JSON|-] [--config PATH]' ;;
-    yield-until)            echo 'usage: jarvis-tools yield-until --at RFC3339 [--reason TEXT|-] [--config PATH]' ;;
-    delete-scheduled-task)  echo "usage: jarvis-tools delete-scheduled-task --id ID [--config PATH]" ;;
+    list-projects) cat <<'EOF'
+usage: jarvis-tools list-projects [--config PATH]
+List all projects and their current background.
+EOF
+      ;;
+    get-project) cat <<'EOF'
+usage: jarvis-tools get-project (--id ID | --code CODE) [--config PATH]
+Get one project together with recent progress events and relation facts.
+EOF
+      ;;
+    get-group) cat <<'EOF'
+usage: jarvis-tools get-group --chat-id CHAT_ID [--config PATH]
+Get the Jarvis group binding and background for an exact Feishu chat_id.
+EOF
+      ;;
+    get-principal) cat <<'EOF'
+usage: jarvis-tools get-principal [--config PATH]
+Get the profile of the person Jarvis assists.
+EOF
+      ;;
+    list-persons) cat <<'EOF'
+usage: jarvis-tools list-persons [--role leader|key|colleague|other] [--config PATH]
+List important people known to Jarvis, optionally filtered by role.
+EOF
+      ;;
+    get-person) cat <<'EOF'
+usage: jarvis-tools get-person --open-id OPEN_ID [--config PATH]
+Get one person and relation facts by exact Feishu open_id.
+EOF
+      ;;
+    query-resources) cat <<'EOF'
+usage: jarvis-tools query-resources [--project-id ID] [--person-open-id OPEN_ID] [--principal-only] [--keyword TEXT] [--limit N] [--config PATH]
+Query active managed resources such as project repos, documents, links and notes.
+EOF
+      ;;
+    get-shared-memory) cat <<'EOF'
+usage: jarvis-tools get-shared-memory [--config PATH]
+Read the complete shared memory Markdown.
+EOF
+      ;;
+    get-skill) cat <<'EOF'
+usage: jarvis-tools get-skill --name NAME [--config PATH]
+Read the complete content of one locally managed Skill.
+EOF
+      ;;
+    append-shared-memory) cat <<'EOF'
+usage: jarvis-tools append-shared-memory [--note TEXT|-] [--config PATH]
+Atomically append one non-empty entry. Use --note - or omit it to read stdin.
+EOF
+      ;;
+    list-scheduled-tasks) cat <<'EOF'
+usage: jarvis-tools list-scheduled-tasks [--status binding|active|running|completed] [--limit N] [--config PATH]
+List current time triggers. binding entries are owned by waiting Tasks.
+EOF
+      ;;
+    create-scheduled-task) cat <<'EOF'
+usage: jarvis-tools create-scheduled-task [--payload JSON|-] [--config PATH]
+Create a trigger for an independent new task. The payload must contain title,
+instruction, context_snapshot, schedule_type and its matching schedule field.
+
+once example:
+  {"title":"明早检查进展","instruction":"查询项目最新进展","context_snapshot":{},"schedule_type":"once","run_at":"2026-07-25T09:00:00+08:00"}
+daily example:
+  {"title":"每日汇总","instruction":"汇总今日进展","context_snapshot":{},"schedule_type":"daily","daily_time":"18:00"}
+interval example:
+  {"title":"轮询状态","instruction":"检查任务是否完成","context_snapshot":{},"schedule_type":"interval","interval_minutes":60}
+EOF
+      ;;
+    yield-until) cat <<'EOF'
+usage: jarvis-tools yield-until --at RFC3339 [--reason TEXT|-] [--config PATH]
+Pause the current executing Task and arrange its continuation. JARVIS_TASK_ID
+must be provided by the Task runner.
+EOF
+      ;;
+    delete-scheduled-task) cat <<'EOF'
+usage: jarvis-tools delete-scheduled-task --id ID [--config PATH]
+Delete a standalone trigger. A continuation owned by a waiting Task cannot be deleted.
+EOF
+      ;;
     *) return 1 ;;
   esac
 }
 
 # resolve_api_base CONFIG_PATH
-# Prefer JARVIS_API_BASE; else read server.addr from config; else default.
+# Prefer JARVIS_API_BASE; otherwise require and read server.addr from config.
 resolve_api_base() {
   local config_path="$1"
   if [[ -n "${JARVIS_API_BASE:-}" ]]; then
@@ -74,21 +142,18 @@ resolve_api_base() {
   local resolved=""
   if [[ -f "$config_path" ]]; then
     resolved="$config_path"
-  elif [[ -f "${REPO_ROOT}/${config_path}" ]]; then
+  elif [[ "$config_path" != /* && -f "${REPO_ROOT}/${config_path}" ]]; then
     resolved="${REPO_ROOT}/${config_path}"
-  elif [[ -f "${REPO_ROOT}/conf/config.yaml" ]]; then
-    resolved="${REPO_ROOT}/conf/config.yaml"
   fi
-  if [[ -n "$resolved" ]]; then
-    local addr
-    addr="$(grep -E '^\s*addr:\s*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
-    if [[ -z "$addr" ]]; then
-      fail "could not parse server.addr from ${resolved}"
-    fi
-    echo "http://${addr}"
-    return
+  if [[ -z "$resolved" ]]; then
+    fail "config file not found: ${config_path}"
   fi
-  echo "http://127.0.0.1:18800"
+  local addr
+  addr="$(grep -E '^\s*addr:\s*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
+  if [[ -z "$addr" ]]; then
+    fail "could not parse server.addr from ${resolved}"
+  fi
+  echo "http://${addr}"
 }
 
 # api_get PATH_AND_QUERY → prints response body to stdout; fails on HTTP/API error.
@@ -106,32 +171,6 @@ api_get() {
   # Align with Go jarvis-tools mapNotFound → "not found".
   if [[ "$http_code" == "404" || "$code" == "40420" ]]; then
     fail "not found"
-  fi
-  if [[ "$http_code" != "200" ]]; then
-    fail "HTTP ${http_code} from ${url}: ${body}"
-  fi
-  if [[ -z "$code" ]]; then
-    fail "invalid JSON from ${url}"
-  fi
-  if [[ "$code" != "0" ]]; then
-    fail "API code=${code} from ${url}: ${body}"
-  fi
-  printf '%s' "$body"
-}
-
-# api_put PATH JSON_BODY → prints response body to stdout; fails on HTTP/API error.
-api_put() {
-  local path="$1"
-  local json_body="$2"
-  local url="${API_BASE}${path}"
-  local body http_code
-  body="$(curl -sS -w '\n%{http_code}' --max-time 30 -X PUT \
-    -H 'Content-Type: application/json' --data "$json_body" "$url")" || fail "curl failed for ${url}"
-  http_code="$(printf '%s\n' "$body" | tail -n1)"
-  body="$(printf '%s\n' "$body" | sed '$d')"
-  local code=""
-  if printf '%s' "$body" | jq -e . >/dev/null 2>&1; then
-    code="$(printf '%s' "$body" | jq -r '.code // empty')"
   fi
   if [[ "$http_code" != "200" ]]; then
     fail "HTTP ${http_code} from ${url}: ${body}"
@@ -220,6 +259,11 @@ ID=""
 CODE=""
 CHAT_ID=""
 OPEN_ID=""
+ROLE=""
+PROJECT_ID=""
+PERSON_OPEN_ID=""
+PRINCIPAL_ONLY="false"
+KEYWORD=""
 NOTE="-"
 NAME=""
 STATUS=""
@@ -234,6 +278,11 @@ reset_flags() {
   CODE=""
   CHAT_ID=""
   OPEN_ID=""
+  ROLE=""
+  PROJECT_ID=""
+  PERSON_OPEN_ID=""
+  PRINCIPAL_ONLY="false"
+  KEYWORD=""
   NOTE="-"
   NAME=""
   STATUS=""
@@ -291,6 +340,46 @@ consume_flags() {
         ;;
       --open-id=*)
         OPEN_ID="${1#--open-id=}"
+        shift
+        ;;
+      --role)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        ROLE="$2"
+        shift 2
+        ;;
+      --role=*)
+        ROLE="${1#--role=}"
+        shift
+        ;;
+      --project-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        PROJECT_ID="$2"
+        shift 2
+        ;;
+      --project-id=*)
+        PROJECT_ID="${1#--project-id=}"
+        shift
+        ;;
+      --person-open-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        PERSON_OPEN_ID="$2"
+        shift 2
+        ;;
+      --person-open-id=*)
+        PERSON_OPEN_ID="${1#--person-open-id=}"
+        shift
+        ;;
+      --principal-only)
+        PRINCIPAL_ONLY="true"
+        shift
+        ;;
+      --keyword)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        KEYWORD="$2"
+        shift 2
+        ;;
+      --keyword=*)
+        KEYWORD="${1#--keyword=}"
         shift
         ;;
       --note)
@@ -448,6 +537,21 @@ cmd_get_principal() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+cmd_list_persons() {
+  reset_flags
+  consume_flags "$@"
+  if [[ -n "$ROLE" && ! "$ROLE" =~ ^(leader|key|colleague|other)$ ]]; then
+    fail "list-persons --role must be leader, key, colleague or other"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local items
+  items="$(fetch_all_items /api/persons)"
+  if [[ -n "$ROLE" ]]; then
+    items="$(printf '%s' "$items" | jq -c --arg role "$ROLE" '[.[] | select(.role == $role)]')"
+  fi
+  emit "$(jq -cn --argjson persons "$items" '{persons:$persons}')"
+}
+
 cmd_get_person() {
   reset_flags
   consume_flags "$@"
@@ -473,6 +577,48 @@ cmd_get_person() {
   emit "$(jq -cn --argjson person "$person" --argjson relations "$relations" '{person:$person,relation_facts:$relations}')"
 }
 
+cmd_query_resources() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]] || fail "query-resources --limit must be a positive integer"
+  if [[ -n "$PROJECT_ID" && ! "$PROJECT_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "query-resources --project-id must be a positive integer"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+
+  local person_id=""
+  if [[ -n "$PERSON_OPEN_ID" ]]; then
+    local persons matched n
+    persons="$(fetch_all_items /api/persons)"
+    matched="$(printf '%s' "$persons" | jq -c --arg oid "$PERSON_OPEN_ID" '[.[] | select(.open_id == $oid)]')"
+    n="$(printf '%s' "$matched" | jq -er 'length')"
+    (( n == 1 )) || fail "query-resources expected exactly one person for open_id=${PERSON_OPEN_ID}, got ${n}"
+    person_id="$(printf '%s' "$matched" | jq -er '.[0].id')"
+  fi
+
+  local items filtered
+  items="$(fetch_all_items /api/resources)"
+  filtered="$(printf '%s' "$items" | jq -c \
+    --arg project_id "$PROJECT_ID" \
+    --arg person_id "$person_id" \
+    --arg principal_only "$PRINCIPAL_ONLY" \
+    --arg keyword "$KEYWORD" \
+    --argjson limit "$LIMIT" '
+      [.[]
+       | select(.is_active == true)
+       | select($project_id == "" or (.project_id | tostring) == $project_id)
+       | select($person_id == "" or (.person_id | tostring) == $person_id)
+       | select($principal_only != "true" or .link_principal == true)
+       | select(
+           $keyword == ""
+           or (([
+             .title, .resource_type, .url, .description, .person_name, .project_name
+           ] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase))
+         )
+      ][: $limit]')"
+  emit "$(jq -cn --argjson resources "$filtered" '{count:($resources|length),resources:$resources}')"
+}
+
 cmd_get_shared_memory() {
   reset_flags
   consume_flags "$@"
@@ -493,9 +639,8 @@ cmd_get_skill() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
-# append-shared-memory: read current content, append one note (content+"\n"+note,
-# or just note when empty), PUT the whole text back. Mirrors sharedmem.Append's
-# read-join-write so the script and Go/API stay consistent. Blank note fails fast.
+# append-shared-memory uses one server-side append operation so concurrent agents
+# cannot overwrite each other's entries.
 cmd_append_shared_memory() {
   reset_flags
   consume_flags "$@"
@@ -505,15 +650,9 @@ cmd_append_shared_memory() {
   if [[ -z "${note//[[:space:]]/}" ]]; then
     fail "append-shared-memory note is empty"
   fi
-  local current merged put_body body
-  current="$(api_get /api/shared-memory | jq -r '.data.content // ""')"
-  if [[ -z "${current//[[:space:]]/}" ]]; then
-    merged="$note"
-  else
-    merged="${current}"$'\n'"${note}"
-  fi
-  put_body="$(jq -cn --arg c "$merged" '{content:$c}')"
-  body="$(api_put /api/shared-memory "$put_body")"
+  local payload body
+  payload="$(jq -cn --arg note "$note" '{note:$note}')"
+  body="$(api_write POST /api/shared-memory/append "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
@@ -600,7 +739,9 @@ case "$SUBCOMMAND" in
   get-project)    cmd_get_project "$@" ;;
   get-group)      cmd_get_group "$@" ;;
   get-principal)  cmd_get_principal "$@" ;;
+  list-persons)   cmd_list_persons "$@" ;;
   get-person)     cmd_get_person "$@" ;;
+  query-resources)      cmd_query_resources "$@" ;;
   get-shared-memory)    cmd_get_shared_memory "$@" ;;
   get-skill)            cmd_get_skill "$@" ;;
   append-shared-memory) cmd_append_shared_memory "$@" ;;
@@ -609,6 +750,6 @@ case "$SUBCOMMAND" in
   yield-until)          cmd_yield_until "$@" ;;
   delete-scheduled-task) cmd_delete_scheduled_task "$@" ;;
   *)
-    fail "unknown subcommand \"${SUBCOMMAND}\"; want one of: list-projects get-project get-group get-principal get-person get-shared-memory get-skill append-shared-memory list-scheduled-tasks create-scheduled-task yield-until delete-scheduled-task"
+    fail "unknown subcommand \"${SUBCOMMAND}\"; run jarvis-tools --help"
     ;;
 esac

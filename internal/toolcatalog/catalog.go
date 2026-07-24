@@ -31,11 +31,15 @@ func Block(stage string) (string, error) {
 		return "", fmt.Errorf("unknown tool catalog stage %q", stage)
 	}
 
+	jarvisTool := "- jarvis-tools：查询 Jarvis 的项目、人物、群、项目资源、共享记忆、Skills 和定时任务。先运行 `jarvis-tools --help`，再按子命令 `--help` 获取当前参数。"
+	if stage == StageExecute || stage == StageChat {
+		jarvisTool = "- jarvis-tools：查询 Jarvis 上下文，并按任务需要追加共享记忆、管理独立定时触发或暂停当前 Task。先运行 `jarvis-tools --help`，再按子命令 `--help` 获取当前参数。"
+	}
 	lines := []string{
 		"BEGIN_AVAILABLE_TOOLS（工具能力说明由工具层维护，不属于系统角色提示词。）",
 		"当前阶段：" + stage,
 		"使用目的：" + purpose,
-		"- jarvis-tools：查询 Jarvis 的项目、人物、群、共享记忆和定时任务；追加共享记忆；暂停/恢复当前 Task。先运行 `jarvis-tools --help`，再按子命令 `--help` 获取当前参数。",
+		jarvisTool,
 		"- lark-cli：查询或操作飞书。先运行 `lark-cli --help` 或对应 domain 的 `--help`；匹配到飞书 Skill 时先读取 Skill。",
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。先运行 `bytedcli --help` 或对应子命令 `--help`。",
 		"- git：查询和操作本地代码仓库。",
