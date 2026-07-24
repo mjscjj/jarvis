@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card, Collapse, Descriptions, Drawer, Flex, Input, Modal, Space, Table, Tag, Typography } from 'antd'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, Button, Card, Collapse, Descriptions, Input, Modal, Space, Spin, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
+import { CloseOutlined } from '@ant-design/icons'
 import { approveConfirmation, getConfirmation, listConfirmations, rejectConfirmation, supplementConfirmation } from './api'
 import type { ConfirmationDetail, ContextSnapshot, Resolution, Todo } from './types'
 import { TodoContextPanel } from './slots'
@@ -87,8 +88,44 @@ function semanticSummary(value: unknown): string {
 }
 
 function SemanticValue({ value }: { value: unknown }) {
-  if (typeof value === 'string') return <Paragraph style={{ marginBottom: 0 }}>{value}</Paragraph>
-  return <pre className="snapshot-json">{JSON.stringify(value, null, 2)}</pre>
+  if (value === null || value === undefined) return <Text type="secondary">未提供</Text>
+  if (typeof value === 'string') return <Paragraph className="confirmation-readable-text">{value}</Paragraph>
+  if (typeof value !== 'object') return <Text>{String(value)}</Text>
+  if (Array.isArray(value)) {
+    return <ol className="confirmation-semantic-list">
+      {value.map((item, index) => <li key={index}><SemanticValue value={item} /></li>)}
+    </ol>
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+  const summary = entries.find(([key, item]) => key === 'summary' && typeof item === 'string')
+  const heading = entries.find(([key, item]) => (key === 'label' || key === 'goal') && typeof item === 'string')
+  const rest = entries.filter(([key]) => key !== 'summary' && key !== 'kind' && key !== heading?.[0])
+  return <div className="confirmation-semantic-object">
+    {heading && <div className="confirmation-semantic-heading">{heading[1] as string}</div>}
+    {summary && <Paragraph className="confirmation-semantic-summary">{summary[1] as string}</Paragraph>}
+    {rest.map(([key, item]) => <section key={key} className="confirmation-semantic-field">
+      <Text strong>{semanticKeyLabel(key)}</Text>
+      <SemanticValue value={item} />
+    </section>)}
+  </div>
+}
+
+const SEMANTIC_KEY_LABELS: Record<string, string> = {
+  steps: '执行步骤',
+  actions: '具体动作',
+  goal: '目标',
+  blocks: '判断内容',
+  label: '主题',
+  content: '内容',
+  evidence: '证据',
+  risks: '风险',
+  risk: '风险',
+  review_points: '需要确认',
+}
+
+function semanticKeyLabel(key: string): string {
+  return SEMANTIC_KEY_LABELS[key] || key.replaceAll('_', ' ')
 }
 
 function isNonEmptyJSONValue(value: unknown): boolean {
@@ -99,7 +136,7 @@ function isNonEmptyJSONValue(value: unknown): boolean {
   return true
 }
 
-export default function Confirmations() {
+export default function Confirmations({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [items, setItems] = useState<Todo[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -110,6 +147,9 @@ export default function Confirmations() {
   const [modal, setModal] = useState<'approve' | 'reject' | 'supplement'>()
   const [input, setInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const detailRequestRef = useRef<AbortController | undefined>(undefined)
+
+  useEffect(() => () => detailRequestRef.current?.abort(), [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -123,13 +163,29 @@ export default function Confirmations() {
     return () => controller.abort()
   }, [refreshKey])
 
-  const openDetail = useCallback((todo: Todo) => {
+  const openDetail = (todo: Todo) => {
+    onDetailOpen?.()
+    detailRequestRef.current?.abort()
+    const controller = new AbortController()
+    detailRequestRef.current = controller
+    setDetail(undefined)
     setDetailLoading(true)
-    getConfirmation(todo.id)
+    getConfirmation(todo.id, controller.signal)
       .then(setDetail)
-      .catch((cause: unknown) => setError(errorText(cause)))
-      .finally(() => setDetailLoading(false))
-  }, [])
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
+      })
+      .finally(() => {
+        if (detailRequestRef.current === controller) setDetailLoading(false)
+      })
+  }
+
+  const closeDetail = () => {
+    detailRequestRef.current?.abort()
+    detailRequestRef.current = undefined
+    setDetail(undefined)
+    setDetailLoading(false)
+  }
 
   const openApprove = () => {
     if (!detail) return
@@ -176,47 +232,112 @@ export default function Confirmations() {
     <Card className="table-card" variant="borderless">
       <Table<Todo> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(todo) => ({ onClick: () => openDetail(todo), className: 'clickable-row' })} />
     </Card>
-    <Drawer title={detail?.todo.title || '确认详情'} open={Boolean(detail) || detailLoading} loading={detailLoading} width={680} onClose={() => setDetail(undefined)}>
-      {detail && (() => {
+    <Modal
+      open={Boolean(detail) || detailLoading}
+      footer={null}
+      closable={false}
+      centered
+      width={1120}
+      mask={{ closable: true }}
+      onCancel={closeDetail}
+      className="confirmation-detail-modal"
+      destroyOnHidden
+    >
+      <div className="confirmation-detail-shell">
+      {detailLoading && !detail
+        ? <div className="confirmation-detail-loading"><Spin size="large" /></div>
+        : detail && (() => {
         const isNeedInfo = detail.todo.status === 'need_info'
-        return <Space direction="vertical" size={20} className="drawer-content">
-        <Space><StatusBadge label={todoStatusMeta[isNeedInfo ? 'need_info' : 'need_decision'].label} color={todoStatusMeta[isNeedInfo ? 'need_info' : 'need_decision'].color} /><Tag>{detail.todo.action_type}</Tag></Space>
+        const decisionSummary = semanticSummary(detail.decision_payload)
+          || semanticSummary(detail.plan)
+          || detail.todo.description
+        return <>
+          <header className="confirmation-detail-header">
+            <div className="confirmation-detail-title">
+              <Space size={8} wrap>
+                <StatusBadge label={todoStatusMeta[isNeedInfo ? 'need_info' : 'need_decision'].label} color={todoStatusMeta[isNeedInfo ? 'need_info' : 'need_decision'].color} />
+                <Tag>{detail.todo.action_type}</Tag>
+                <Text type="secondary">Todo #{detail.todo.id}</Text>
+              </Space>
+              <Typography.Title level={3}>{detail.todo.title}</Typography.Title>
+              <Text type="secondary">{detail.todo.project?.name || '未关联项目'} · {detail.todo.group?.name || detail.todo.group?.chat_id || '未知来源'}</Text>
+            </div>
+            <Button type="text" icon={<CloseOutlined />} aria-label="关闭" onClick={closeDetail} />
+          </header>
 
-        {/* 第一段：决策问题 —— 一句话说清现在要你决定什么 */}
-        {isNeedInfo
-          ? <Alert type="warning" showIcon message="需要你补充信息，codex 才能继续"
-              description={<SemanticValue value={detail.decision_payload} />} />
-          : <Alert type="info" showIcon message="codex 建议如下方案，请你决策：批准 / 补充 / 拒绝"
-              description={semanticSummary(detail.plan) || detail.todo.description} />}
+          <div className="confirmation-detail-scroll">
+            <Alert
+              className="confirmation-decision-alert"
+              type={isNeedInfo ? 'warning' : 'info'}
+              showIcon
+              message={isNeedInfo ? '需要你补充信息，Codex 才能继续' : '现在需要你拍板'}
+              description={decisionSummary}
+            />
 
-        {/* 第二段：完整展示 M4 的开放方案与判断语义，不在前端复制模型 DTO。 */}
-        <section>
-          <Text type="secondary">codex 判断</Text>
-          {detail.plan != null && <div style={{ marginTop: 8 }}><Text strong>执行方案</Text><SemanticValue value={detail.plan} /></div>}
-          {detail.decision_payload != null && <div style={{ marginTop: 8 }}><Text strong>判断、证据与风险</Text><SemanticValue value={detail.decision_payload} /></div>}
-        </section>
+            <Tabs
+              defaultActiveKey="decision"
+              items={[
+                {
+                  key: 'decision',
+                  label: '方案与判断',
+                  children: <div className="confirmation-decision-grid">
+                    <section className="confirmation-section-card">
+                      <div className="confirmation-section-title">拟执行方案</div>
+                      {detail.plan != null
+                        ? <SemanticValue value={detail.plan} />
+                        : <Text type="secondary">Codex 尚未形成可执行方案。</Text>}
+                    </section>
+                    <section className="confirmation-section-card">
+                      <div className="confirmation-section-title">为什么需要确认</div>
+                      {detail.decision_payload != null
+                        ? <SemanticValue value={detail.decision_payload} />
+                        : <Text type="secondary">没有额外判断说明。</Text>}
+                    </section>
+                  </div>,
+                },
+                {
+                  key: 'context',
+                  label: '背景与证据',
+                  children: <div className="confirmation-context-stack">
+                    {detail.todo.resolution && <section className="confirmation-section-card"><ResolutionCard resolution={detail.todo.resolution} /></section>}
+                    <section className="confirmation-section-card">
+                      <div className="confirmation-section-title">任务背景与待补充</div>
+                      <TodoContextPanel target={detail.todo.target} context={detail.todo.context} openQuestions={detail.todo.open_questions} />
+                    </section>
+                    <section className="confirmation-section-card">
+                      <div className="confirmation-section-title">证据消息</div>
+                      {detail.source_messages.map((message) => <blockquote key={message.message_id}><Text strong>{message.sender_name || message.sender_open_id}</Text><br />{message.content}</blockquote>)}
+                    </section>
+                    {detail.todo.context_snapshot && <SnapshotPanel snapshot={detail.todo.context_snapshot} />}
+                  </div>,
+                },
+                {
+                  key: 'raw',
+                  label: '原始数据',
+                  children: <div className="confirmation-raw-grid">
+                    <section><Text strong>方案 JSON</Text><pre className="confirmation-raw-json">{JSON.stringify(detail.plan, null, 2)}</pre></section>
+                    <section><Text strong>判断 JSON</Text><pre className="confirmation-raw-json">{JSON.stringify(detail.decision_payload, null, 2)}</pre></section>
+                  </div>,
+                },
+              ]}
+            />
+          </div>
 
-        {/* 第三段：证据与背景（次要，可展开） */}
-        {detail.todo.resolution && <ResolutionCard resolution={detail.todo.resolution} />}
-        <section><Text type="secondary">背景与待补充</Text><TodoContextPanel target={detail.todo.target} context={detail.todo.context} openQuestions={detail.todo.open_questions} /></section>
-        <section><Text type="secondary">证据消息</Text>{detail.source_messages.map((message) => <blockquote key={message.message_id}><Text strong>{message.sender_name || message.sender_open_id}</Text><br />{message.content}</blockquote>)}</section>
-        {detail.todo.context_snapshot && <SnapshotPanel snapshot={detail.todo.context_snapshot} />}
-
-        {/* 行动区 */}
-        {!isNeedInfo
-          ? <Flex gap={12} wrap>
-              <Button type="primary" onClick={openApprove}>批准</Button>
-              <Button onClick={() => { setInput(''); setModal('supplement') }}>补充信息 / 指示，重新决策</Button>
+          <footer className="confirmation-detail-footer">
+            <Text type="secondary">
+              {isNeedInfo ? '补充后会回到 Codex 重新判定，不会直接执行。' : '批准后会固化为 Task，再进入执行链路。'}
+            </Text>
+            <Space wrap>
+              {!isNeedInfo && <Button type="primary" onClick={openApprove}>批准方案</Button>}
+              <Button onClick={() => { setInput(''); setModal('supplement') }}>{isNeedInfo ? '补充信息' : '补充 / 修改后重判'}</Button>
               <Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button>
-            </Flex>
-          : <Flex gap={12} wrap>
-              <Button type="primary" onClick={() => { setInput(''); setModal('supplement') }}>补充信息</Button>
-              <Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button>
-            </Flex>}
-      </Space>
+            </Space>
+          </footer>
+        </>
       })()}
-    </Drawer>
-    <Modal title={modalTitle(modal)} open={Boolean(modal)} confirmLoading={submitting} onOk={submit} onCancel={() => setModal(undefined)} okText={modalOkText(modal)}>
+      </div>
+    </Modal>
+    <Modal zIndex={1100} title={modalTitle(modal)} open={Boolean(modal)} confirmLoading={submitting} onOk={submit} onCancel={() => setModal(undefined)} okText={modalOkText(modal)}>
       <Input.TextArea rows={modal === 'approve' ? 12 : 4} value={input} onChange={(event) => setInput(event.target.value)} placeholder={modalPlaceholder(modal)} />
     </Modal>
   </>

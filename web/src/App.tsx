@@ -82,7 +82,7 @@ function AppShell() {
   const pages: Record<string, React.ReactNode> = {
     overview: <Overview />,
     todos: <Todos refreshKey={refreshKey} />,
-    confirmations: <Confirmations />,
+    confirmations: <Confirmations onDetailOpen={() => setChatOpen(false)} />,
     tasks: <Tasks onDetailOpen={() => setChatOpen(false)} />,
     'scheduled-tasks': <ScheduledTasks />,
     background: <Background />,

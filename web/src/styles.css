@@ -291,10 +291,6 @@ body {
   padding-bottom: 12px;
 }
 
-.drawer-content {
-  width: 100%;
-}
-
 /* Task detail modal */
 .task-detail-modal {
   max-width: calc(100vw - 48px);
@@ -316,6 +312,217 @@ body {
   flex: 1;
   min-height: 0;
   height: 100%;
+}
+
+/* Confirmation detail modal: this is a decision surface, so the decision
+ * actions stay visible while the supporting evidence scrolls independently. */
+.confirmation-detail-modal {
+  max-width: calc(100vw - 48px);
+  padding-bottom: 0;
+}
+
+.confirmation-detail-modal .ant-modal-container {
+  display: flex;
+  flex-direction: column;
+  height: min(880px, calc(100dvh - 48px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+
+.confirmation-detail-modal .ant-modal-body {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.confirmation-detail-shell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+.confirmation-detail-loading {
+  display: grid;
+  flex: 1;
+  place-items: center;
+}
+
+.confirmation-detail-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 18px var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+}
+
+.confirmation-detail-title {
+  min-width: 0;
+}
+
+.confirmation-detail-title h3.ant-typography {
+  margin: 8px 0 2px;
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.confirmation-detail-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-5) var(--space-6) var(--space-8);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.confirmation-decision-alert {
+  margin-bottom: var(--space-4);
+}
+
+.confirmation-decision-alert .ant-alert-description {
+  max-width: 920px;
+  white-space: pre-wrap;
+}
+
+.confirmation-decision-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.confirmation-section-card {
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elevated);
+}
+
+.confirmation-section-title {
+  margin-bottom: var(--space-3);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.confirmation-readable-text.ant-typography,
+.confirmation-semantic-summary.ant-typography {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.confirmation-semantic-summary.ant-typography {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+  font-weight: 500;
+}
+
+.confirmation-semantic-object {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.confirmation-semantic-heading {
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.confirmation-semantic-field {
+  min-width: 0;
+}
+
+.confirmation-semantic-field > .ant-typography:first-child {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.confirmation-semantic-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: 26px;
+}
+
+.confirmation-semantic-list > li {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+}
+
+.confirmation-semantic-list .confirmation-semantic-list > li {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+}
+
+.confirmation-context-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.confirmation-raw-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.confirmation-raw-json {
+  max-height: 520px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.confirmation-detail-footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 14px var(--space-6);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+}
+
+@media (max-width: 980px) {
+  .confirmation-detail-modal {
+    max-width: calc(100vw - 24px);
+  }
+
+  .confirmation-detail-modal .ant-modal-container {
+    height: calc(100dvh - 24px);
+  }
+
+  .confirmation-detail-scroll {
+    padding: var(--space-4);
+  }
+
+  .confirmation-decision-grid,
+  .confirmation-raw-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .confirmation-detail-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .task-detail-shell {
