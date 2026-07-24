@@ -63,11 +63,14 @@ type codexWaiting struct {
 
 // codexEnrichment is one open semantic block the assistant proactively prepared
 // (a code link, a commit digest, a doc link, a risk note, ...). kind/label stay
-// structured for lightweight UI routing; content is intentionally loose JSON.
+// structured for lightweight UI routing; content is a free-form string (the
+// agent may embed JSON text there if it needs structure). content stays a
+// string because codex enforces the schema via OpenAI Structured Outputs, whose
+// strict validator rejects property nodes without a concrete "type".
 type codexEnrichment struct {
-	Kind    string          `json:"kind"`
-	Label   string          `json:"label"`
-	Content json.RawMessage `json:"content"`
+	Kind    string `json:"kind"`
+	Label   string `json:"label"`
+	Content string `json:"content"`
 }
 
 // proposeResult is the structured final message codex must return for the
@@ -354,6 +357,7 @@ func parseExecutionResult(lastMessage string) (*codexResult, error) {
 	if strings.TrimSpace(result.Summary) == "" {
 		return nil, fmt.Errorf("codex exec result summary is blank")
 	}
+	result.Enrichments = dropStrippedCodexMemoryCitations(result.Enrichments)
 	if err := validateEnrichments(result.Enrichments); err != nil {
 		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
@@ -381,6 +385,7 @@ func parseProposeResult(lastMessage string) (*proposeResult, error) {
 	if strings.TrimSpace(result.Summary) == "" {
 		return nil, fmt.Errorf("codex propose result summary is blank")
 	}
+	result.Enrichments = dropStrippedCodexMemoryCitations(result.Enrichments)
 	if err := validateEnrichments(result.Enrichments); err != nil {
 		return nil, fmt.Errorf("codex propose result: %w", err)
 	}
@@ -402,6 +407,26 @@ func parseProposeResult(lastMessage string) (*proposeResult, error) {
 	return &result, nil
 }
 
+// dropStrippedCodexMemoryCitations removes enrichments that are only Codex
+// memory-citation placeholders left blank after Codex strips
+// <oai-mem-citation> from --output-last-message. Other blank enrichments are
+// left untouched so validateEnrichments still fail-fast on real contract breaks.
+func dropStrippedCodexMemoryCitations(items []codexEnrichment) []codexEnrichment {
+	if len(items) == 0 {
+		return items
+	}
+	kept := items[:0]
+	for _, item := range items {
+		if strings.TrimSpace(item.Kind) == "memory_citation" &&
+			strings.TrimSpace(item.Label) == "Memory sources" &&
+			strings.TrimSpace(item.Content) == "" {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	return kept
+}
+
 func validateEnrichments(items []codexEnrichment) error {
 	for position, item := range items {
 		if strings.TrimSpace(item.Kind) == "" {
@@ -410,12 +435,8 @@ func validateEnrichments(items []codexEnrichment) error {
 		if strings.TrimSpace(item.Label) == "" {
 			return fmt.Errorf("enrichments[%d] label is blank", position)
 		}
-		content := bytes.TrimSpace(item.Content)
-		if len(content) == 0 {
-			return fmt.Errorf("enrichments[%d] content is missing", position)
-		}
-		if bytes.Equal(content, []byte("null")) {
-			return fmt.Errorf("enrichments[%d] content is null", position)
+		if strings.TrimSpace(item.Content) == "" {
+			return fmt.Errorf("enrichments[%d] content is blank", position)
 		}
 	}
 	return nil

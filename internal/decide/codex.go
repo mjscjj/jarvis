@@ -22,8 +22,8 @@ const (
   "required":["disposition","plan","payload"],
   "properties":{
     "disposition":{"type":"string","enum":["ready","need_review","need_info","drop"]},
-    "plan":{},
-    "payload":{}
+    "plan":{"type":"string","minLength":1},
+    "payload":{"type":"string","minLength":1}
   }
 }`
 )

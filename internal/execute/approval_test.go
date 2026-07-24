@@ -102,8 +102,8 @@ func TestParseExecutionResultNeedsHuman(t *testing.T) {
 	}
 }
 
-func TestParseExecutionResultAcceptsOpenEnrichmentContent(t *testing.T) {
-	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":{"path":"internal/execute/prompt.go","note":"开放 content"}},{"kind":"risk","label":"风险","content":["需要同步前端"]}],"waiting":null}`
+func TestParseExecutionResultAcceptsStringEnrichmentContent(t *testing.T) {
+	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":"internal/execute/prompt.go"},{"kind":"risk","label":"风险","content":"需要同步前端"}],"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
 		t.Fatalf("parseExecutionResult() error = %v", err)
@@ -111,8 +111,24 @@ func TestParseExecutionResultAcceptsOpenEnrichmentContent(t *testing.T) {
 	if len(result.Enrichments) != 2 {
 		t.Fatalf("enrichments len = %d, want 2", len(result.Enrichments))
 	}
-	if got := string(result.Enrichments[0].Content); got != `{"path":"internal/execute/prompt.go","note":"开放 content"}` {
-		t.Fatalf("content = %s", got)
+	if got := result.Enrichments[0].Content; got != "internal/execute/prompt.go" {
+		t.Fatalf("content = %q", got)
+	}
+}
+
+// TestParseExecutionResultRejectsNonStringEnrichmentContent locks the contract:
+// content is a string (codex's OpenAI Structured Outputs schema rejects a
+// typeless open node). A JSON object/array for content must fail to decode.
+func TestParseExecutionResultRejectsNonStringEnrichmentContent(t *testing.T) {
+	for name, msg := range map[string]string{
+		"object content": `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":{"path":"x"}}],"waiting":null}`,
+		"array content":  `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"risk","label":"风险","content":["需要同步前端"]}],"waiting":null}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseExecutionResult(msg); err == nil {
+				t.Fatalf("parseExecutionResult(%s) succeeded, want fail-fast", name)
+			}
+		})
 	}
 }
 
@@ -120,6 +136,32 @@ func TestParseExecutionResultRejectsLegacyEnrichmentDetail(t *testing.T) {
 	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","detail":"internal/execute/prompt.go"}],"waiting":null}`
 	if _, err := parseExecutionResult(msg); err == nil {
 		t.Fatal("legacy detail enrichment must fail; content is the only accepted semantic payload")
+	}
+}
+
+func TestParseExecutionResultDropsStrippedCodexMemoryCitation(t *testing.T) {
+	// Codex memories instruct the model to append <oai-mem-citation> as the last
+	// content of the final reply. With --output-schema the whole reply must be
+	// JSON, so the model parks the block in enrichments[].content; Codex then
+	// strips it from --output-last-message, leaving content="". Drop only that
+	// known placeholder so the real task enrichments survive.
+	msg := `{"outcome":"needs_human","summary":"已完成最小修复，推送需提权","failure_reason":"","needs_followup":"请提升仓库推送权限后恢复","enrichments":[{"kind":"evidence","label":"权限核验","content":"accessLevel=reporter"},{"kind":"memory_citation","label":"Memory sources","content":""}],"waiting":null}`
+	result, err := parseExecutionResult(msg)
+	if err != nil {
+		t.Fatalf("parseExecutionResult() error = %v", err)
+	}
+	if len(result.Enrichments) != 1 {
+		t.Fatalf("enrichments len = %d, want 1 after dropping stripped memory_citation", len(result.Enrichments))
+	}
+	if got := result.Enrichments[0]; got.Kind != "evidence" || got.Content != "accessLevel=reporter" {
+		t.Fatalf("remaining enrichment = %+v", got)
+	}
+}
+
+func TestParseExecutionResultStillRejectsBlankNonMemoryEnrichment(t *testing.T) {
+	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"evidence","label":"证据","content":""}],"waiting":null}`
+	if _, err := parseExecutionResult(msg); err == nil {
+		t.Fatal("blank non-memory enrichment content must still fail-fast")
 	}
 }
 
@@ -139,8 +181,8 @@ func TestParseExecutionResultRejectsIncompleteEnrichment(t *testing.T) {
 	}
 }
 
-func TestParseProposeResultAcceptsOpenEnrichmentContent(t *testing.T) {
-	msg := `{"needs_approval":true,"outcome":"needs_human","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":{"doc_token":"doc_x","sections":["进展","风险"]}}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"waiting":null}`
+func TestParseProposeResultDropsStrippedCodexMemoryCitation(t *testing.T) {
+	msg := `{"needs_approval":true,"outcome":"needs_human","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":"doc_token=doc_x"},{"kind":"memory_citation","label":"Memory sources","content":""}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"waiting":null}`
 	result, err := parseProposeResult(msg)
 	if err != nil {
 		t.Fatalf("parseProposeResult() error = %v", err)
@@ -148,8 +190,22 @@ func TestParseProposeResultAcceptsOpenEnrichmentContent(t *testing.T) {
 	if len(result.Enrichments) != 1 {
 		t.Fatalf("enrichments len = %d, want 1", len(result.Enrichments))
 	}
-	if got := string(result.Enrichments[0].Content); got != `{"doc_token":"doc_x","sections":["进展","风险"]}` {
-		t.Fatalf("content = %s", got)
+	if got := result.Enrichments[0].Content; got != "doc_token=doc_x" {
+		t.Fatalf("content = %q", got)
+	}
+}
+
+func TestParseProposeResultAcceptsStringEnrichmentContent(t *testing.T) {
+	msg := `{"needs_approval":true,"outcome":"needs_human","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":"doc_token=doc_x; 章节: 进展/风险"}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"waiting":null}`
+	result, err := parseProposeResult(msg)
+	if err != nil {
+		t.Fatalf("parseProposeResult() error = %v", err)
+	}
+	if len(result.Enrichments) != 1 {
+		t.Fatalf("enrichments len = %d, want 1", len(result.Enrichments))
+	}
+	if got := result.Enrichments[0].Content; got != "doc_token=doc_x; 章节: 进展/风险" {
+		t.Fatalf("content = %q", got)
 	}
 }
 

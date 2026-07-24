@@ -80,7 +80,7 @@ const executionResultSchema = `{
         "properties":{
           "kind":{"type":"string","minLength":1},
           "label":{"type":"string","minLength":1},
-          "content":{}
+          "content":{"type":"string","minLength":1}
         }
       }
     },
@@ -119,7 +119,7 @@ const proposeResultSchema = `{
         "properties":{
           "kind":{"type":"string","minLength":1},
           "label":{"type":"string","minLength":1},
-          "content":{}
+          "content":{"type":"string","minLength":1}
         }
       }
     },
