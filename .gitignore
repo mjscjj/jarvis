@@ -17,8 +17,14 @@ __pycache__/
 # 本地运行时数据
 /data/
 /var/
+/runs/
+/tmp/
+/minutes/
 *.log
 .qdrant-initialized
+.jarvis-task-*
+lark-auth-*.png
+tmp-*.png
 /conf/config.runtime.yaml
 
 # 操作系统 / IDE
