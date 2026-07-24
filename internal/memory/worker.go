@@ -9,7 +9,13 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
+
+// Keep each mem0 request comfortably below text-embedding-v3's 8192-token
+// single-input limit. A byte bound is conservative for UTF-8 text and avoids
+// coupling this worker to a model-specific tokenizer.
+const maxMemoryTranscriptBytes = 6000
 
 type memoryAdder interface {
 	Add(context.Context, AddInput) error
@@ -71,15 +77,22 @@ func (w *Worker) MemorizeOnce(ctx context.Context) (Stats, error) {
 		for _, window := range splitWindows(group, w.opts.WindowGap, w.opts.WindowMaxMessages) {
 			meaningful := filterMeaningful(window)
 			if len(meaningful) > 0 {
-				input := AddInput{
-					Transcript: renderTranscript(meaningful, w.opts.Location),
-					Metadata:   windowMetadata(meaningful),
-					Infer:      true,
+				metadata := windowMetadata(meaningful)
+				chunks := splitTranscript(renderTranscript(meaningful, w.opts.Location), maxMemoryTranscriptBytes)
+				for index, chunk := range chunks {
+					input := AddInput{
+						Transcript: chunk,
+						Metadata:   chunkMetadata(metadata, index, len(chunks)),
+						Infer:      true,
+					}
+					if err := w.memory.Add(ctx, input); err != nil {
+						return stats, fmt.Errorf(
+							"memorize chat_id=%s window_id=%s chunk=%d/%d: %w",
+							group[0].ChatID, input.Metadata["window_id"], index+1, len(chunks), err,
+						)
+					}
+					stats.Windows++
 				}
-				if err := w.memory.Add(ctx, input); err != nil {
-					return stats, fmt.Errorf("memorize chat_id=%s window_id=%s: %w", group[0].ChatID, input.Metadata["window_id"], err)
-				}
-				stats.Windows++
 				stats.MemorizedMessages += len(meaningful)
 			}
 
@@ -169,6 +182,42 @@ func renderTranscript(messages []PendingMessage, location *time.Location) string
 		lines = append(lines, fmt.Sprintf("%s %s: %s", at, message.SenderName, content))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func splitTranscript(transcript string, maxBytes int) []string {
+	if maxBytes <= 0 {
+		panic("memory transcript max bytes must be positive")
+	}
+	if len(transcript) <= maxBytes {
+		return []string{transcript}
+	}
+	chunks := make([]string, 0, (len(transcript)+maxBytes-1)/maxBytes)
+	for start := 0; start < len(transcript); {
+		end := min(start+maxBytes, len(transcript))
+		for end < len(transcript) && !utf8.RuneStart(transcript[end]) {
+			end--
+		}
+		cut := end
+		if newline := strings.LastIndexByte(transcript[start:end], '\n'); newline >= maxBytes/2 {
+			cut = start + newline + 1
+		}
+		chunks = append(chunks, transcript[start:cut])
+		start = cut
+	}
+	return chunks
+}
+
+func chunkMetadata(base map[string]any, index, count int) map[string]any {
+	if count <= 1 {
+		return base
+	}
+	metadata := make(map[string]any, len(base)+2)
+	for key, value := range base {
+		metadata[key] = value
+	}
+	metadata["chunk_index"] = index + 1
+	metadata["chunk_count"] = count
+	return metadata
 }
 
 func windowMetadata(messages []PendingMessage) map[string]any {

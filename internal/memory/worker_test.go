@@ -25,10 +25,13 @@ func (s *fakeStore) MarkProcessed(_ context.Context, ids []uint64, _ time.Time) 
 type fakeAdder struct {
 	inputs []AddInput
 	err    error
+	failAt int
+	calls  int
 }
 
 func (a *fakeAdder) Add(_ context.Context, input AddInput) error {
-	if a.err != nil {
+	a.calls++
+	if a.err != nil && (a.failAt == 0 || a.calls == a.failAt) {
 		return a.err
 	}
 	a.inputs = append(a.inputs, input)
@@ -102,5 +105,67 @@ func TestWorkerMarksNoiseWithoutCallingSidecar(t *testing.T) {
 	}
 	if len(adder.inputs) != 0 || stats.SkippedMessages != 4 || len(store.marked) != 1 || len(store.marked[0]) != 4 {
 		t.Fatalf("inputs=%#v stats=%#v marked=%#v", adder.inputs, stats, store.marked)
+	}
+}
+
+func TestWorkerSplitsLongTranscriptBeforeCallingSidecar(t *testing.T) {
+	content := strings.Repeat("会议内容", 3000)
+	store := &fakeStore{pending: []PendingMessage{{
+		ID: 1, MessageID: "meeting_1", ChatID: "meeting:owner", ChatName: "我的会议妙记",
+		SenderName: "会议妙记", SenderType: "system", Content: content, CreateTime: 1, RenderOK: true,
+	}}}
+	adder := &fakeAdder{}
+	worker, err := NewWorker(store, adder, WorkerOptions{
+		BatchLimit: 10, WindowGap: time.Minute, WindowMaxMessages: 40, Location: time.UTC,
+	})
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+
+	stats, err := worker.MemorizeOnce(context.Background())
+	if err != nil {
+		t.Fatalf("MemorizeOnce() error = %v", err)
+	}
+	if len(adder.inputs) <= 1 || stats.Windows != len(adder.inputs) {
+		t.Fatalf("inputs=%d stats=%#v", len(adder.inputs), stats)
+	}
+	var rebuilt strings.Builder
+	for index, input := range adder.inputs {
+		if len(input.Transcript) > maxMemoryTranscriptBytes {
+			t.Fatalf("chunk %d bytes=%d", index+1, len(input.Transcript))
+		}
+		if input.Metadata["chunk_index"] != index+1 || input.Metadata["chunk_count"] != len(adder.inputs) {
+			t.Fatalf("chunk %d metadata=%#v", index+1, input.Metadata)
+		}
+		rebuilt.WriteString(input.Transcript)
+	}
+	want := renderTranscript(store.pending, time.UTC)
+	if rebuilt.String() != want {
+		t.Fatal("split transcript did not preserve the original content")
+	}
+	if len(store.marked) != 1 || len(store.marked[0]) != 1 || store.marked[0][0] != 1 {
+		t.Fatalf("marked=%#v", store.marked)
+	}
+}
+
+func TestWorkerDoesNotMarkLongTranscriptWhenLaterChunkFails(t *testing.T) {
+	store := &fakeStore{pending: []PendingMessage{{
+		ID: 1, MessageID: "meeting_1", ChatID: "meeting:owner", SenderName: "会议妙记",
+		SenderType: "system", Content: strings.Repeat("长内容", 3000), CreateTime: 1, RenderOK: true,
+	}}}
+	adder := &fakeAdder{err: errors.New("second chunk failed"), failAt: 2}
+	worker, err := NewWorker(store, adder, WorkerOptions{
+		BatchLimit: 10, WindowGap: time.Minute, WindowMaxMessages: 40, Location: time.UTC,
+	})
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+
+	stats, err := worker.MemorizeOnce(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "chunk=2/") {
+		t.Fatalf("MemorizeOnce() error = %v", err)
+	}
+	if stats.Windows != 1 || len(store.marked) != 0 {
+		t.Fatalf("stats=%#v marked=%#v", stats, store.marked)
 	}
 }
