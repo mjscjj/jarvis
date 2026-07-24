@@ -52,6 +52,7 @@ type codexResult struct {
 	FailureReason string            `json:"failure_reason"`
 	NeedsFollowup string            `json:"needs_followup"`
 	Enrichments   []codexEnrichment `json:"enrichments"`
+	Effects       []codexEffect     `json:"effects"`
 	Waiting       *codexWaiting     `json:"waiting"`
 }
 
@@ -73,6 +74,80 @@ type codexEnrichment struct {
 	Content string `json:"content"`
 }
 
+// codexEffect is one real-world side effect the agent declares it produced (a
+// feishu message it sent, a doc it created, a meeting it scheduled, an MR it
+// opened, a permission it requested, ...). It is display-only and deliberately
+// OPEN: Kind is a free-form string (agents may invent new kinds), and any extra
+// fields the agent emits beyond the known ones are preserved verbatim in Extra.
+// It never fails on unknown fields — unlike the strict top-level result schema —
+// because effects are a "declared for display" payload, not a validated
+// contract. Jarvis does not verify these against lark-cli/git receipts.
+type codexEffect struct {
+	Kind    string
+	Title   string
+	URL     string
+	Target  string
+	Preview string
+	// Extra holds every field the agent emitted that is not one of the known
+	// keys above, so new/unexpected fields are passed through, not dropped.
+	Extra map[string]json.RawMessage
+}
+
+// UnmarshalJSON decodes one effect leniently: it pulls the known keys and stashes
+// everything else in Extra. It tolerates any JSON type for the known string keys
+// (coercing non-strings to their raw JSON text) and never errors on unknown
+// fields, so the open effects payload cannot break parsing of the whole result.
+func (e *codexEffect) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("decode effect object: %w", err)
+	}
+	take := func(key string) (string, bool) {
+		v, ok := raw[key]
+		if !ok {
+			return "", false
+		}
+		delete(raw, key)
+		var str string
+		if err := json.Unmarshal(v, &str); err == nil {
+			return str, true
+		}
+		return strings.TrimSpace(string(v)), true
+	}
+	e.Kind, _ = take("kind")
+	e.Title, _ = take("title")
+	e.URL, _ = take("url")
+	e.Target, _ = take("target")
+	e.Preview, _ = take("preview")
+	if len(raw) > 0 {
+		e.Extra = raw
+	}
+	return nil
+}
+
+// MarshalJSON re-emits the effect as one flat object, merging the known keys
+// (only when non-empty) with the passthrough Extra fields, so the stored JSON
+// keeps every field the agent declared and is ready for the UI to render.
+func (e codexEffect) MarshalJSON() ([]byte, error) {
+	out := make(map[string]json.RawMessage, len(e.Extra)+5)
+	for k, v := range e.Extra {
+		out[k] = v
+	}
+	set := func(key, val string) {
+		if strings.TrimSpace(val) == "" {
+			return
+		}
+		encoded, _ := json.Marshal(val)
+		out[key] = encoded
+	}
+	set("kind", e.Kind)
+	set("title", e.Title)
+	set("url", e.URL)
+	set("target", e.Target)
+	set("preview", e.Preview)
+	return json.Marshal(out)
+}
+
 // proposeResult is the structured final message codex must return for the
 // propose stage of a non-code action (see proposeResultSchema). When
 // NeedsApproval is false the agent already finished pure read-only work. When it
@@ -85,6 +160,7 @@ type proposeResult struct {
 	FailureReason string            `json:"failure_reason"`
 	NeedsFollowup string            `json:"needs_followup"`
 	Enrichments   []codexEnrichment `json:"enrichments"`
+	Effects       []codexEffect     `json:"effects"`
 	Proposal      *codexProposal    `json:"proposal"`
 	Waiting       *codexWaiting     `json:"waiting"`
 }
@@ -361,6 +437,7 @@ func parseExecutionResult(lastMessage string) (*codexResult, error) {
 	if err := validateEnrichments(result.Enrichments); err != nil {
 		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
+	result.Effects = normalizeEffects(result.Effects)
 	if err := validateOutcome(result.Outcome, result.FailureReason, result.NeedsFollowup, result.Waiting); err != nil {
 		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
@@ -389,6 +466,7 @@ func parseProposeResult(lastMessage string) (*proposeResult, error) {
 	if err := validateEnrichments(result.Enrichments); err != nil {
 		return nil, fmt.Errorf("codex propose result: %w", err)
 	}
+	result.Effects = normalizeEffects(result.Effects)
 	if result.NeedsApproval {
 		if result.Outcome != "needs_human" {
 			return nil, fmt.Errorf("codex propose needs_approval=true requires outcome=needs_human")
@@ -424,6 +502,34 @@ func dropStrippedCodexMemoryCitations(items []codexEnrichment) []codexEnrichment
 			continue
 		}
 		kept = append(kept, item)
+	}
+	return kept
+}
+
+// normalizeEffects drops only effects that carry no information at all (no kind
+// and no fields). It deliberately does NOT validate kind against a whitelist or
+// require any specific field: effects are an open, display-only payload, so an
+// unknown kind or an effect that only carries extra passthrough fields is kept
+// and shown as-is. This is intentionally the opposite of the fail-fast policy
+// used for the strict result contract above.
+func normalizeEffects(items []codexEffect) []codexEffect {
+	if len(items) == 0 {
+		return nil
+	}
+	kept := items[:0]
+	for _, item := range items {
+		if strings.TrimSpace(item.Kind) == "" &&
+			strings.TrimSpace(item.Title) == "" &&
+			strings.TrimSpace(item.URL) == "" &&
+			strings.TrimSpace(item.Target) == "" &&
+			strings.TrimSpace(item.Preview) == "" &&
+			len(item.Extra) == 0 {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if len(kept) == 0 {
+		return nil
 	}
 	return kept
 }

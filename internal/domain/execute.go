@@ -24,6 +24,14 @@ type ExecutionRun struct {
 	CodexSessionID *string        `gorm:"column:codex_session_id;type:varchar(128)"`
 	Summary        *string        `gorm:"column:summary;type:mediumtext"`
 	Output         datatypes.JSON `gorm:"column:output;type:json"`
+	// Effects is the agent's self-declared list of real-world side effects this
+	// run produced (feishu message sent, doc created, meeting scheduled, MR
+	// opened, permission requested, ...). It is a display-only, OPEN payload:
+	// each element is a loose object with a free-form kind plus any extra fields
+	// the agent chooses. Jarvis trusts these declarations verbatim and does NOT
+	// verify them against lark-cli/git receipts. Unknown kinds and unknown fields
+	// are stored and rendered as-is, never rejected.
+	Effects        datatypes.JSON `gorm:"column:effects;type:json"`
 	ErrorDetail    *string        `gorm:"column:error_detail;type:mediumtext"`
 	// RepoPath/BaseBranch/Branch/Commit/DiffPath/MergeRequestURL are only set for
 	// code_change runs. BaseBranch and Branch are persisted before a wait so the

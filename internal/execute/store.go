@@ -110,6 +110,7 @@ type RunView struct {
 	CodexSessionID  *string         `json:"codex_session_id"`
 	Summary         *string         `json:"summary"`
 	Output          json.RawMessage `json:"output"`
+	Effects         json.RawMessage `json:"effects"`
 	ErrorDetail     *string         `json:"error_detail"`
 	RepoPath        *string         `json:"repo_path"`
 	BaseBranch      *string         `json:"base_branch"`
@@ -1124,7 +1125,7 @@ func runView(run *domain.ExecutionRun) RunView {
 	return RunView{
 		ID: run.ID, TaskID: run.TaskID, ActionType: run.ActionType, Stage: run.Stage, Sandbox: run.Sandbox,
 		Status: run.Status, Prompt: run.Prompt, CodexSessionID: run.CodexSessionID, Summary: run.Summary,
-		Output: rawJSON(run.Output), ErrorDetail: run.ErrorDetail,
+		Output: rawJSON(run.Output), Effects: rawJSON(run.Effects), ErrorDetail: run.ErrorDetail,
 		RepoPath: run.RepoPath, BaseBranch: run.BaseBranch, Branch: run.Branch, Commit: run.Commit,
 		DiffPath: run.DiffPath, MergeRequestURL: run.MergeRequestURL,
 		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, DurationMs: run.DurationMs,

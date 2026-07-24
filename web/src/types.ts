@@ -236,6 +236,20 @@ export interface RunEnrichment {
   content: unknown
 }
 
+// Effect 是 agent 申报的一条"对外真实影响"（发了飞书消息、建了文档、约了会、
+// 提了 MR、申请了权限……）。这是一个**开放、只展示不核验**的载荷：kind 是自由
+// 字符串，agent 可以自造新类型；除下面几个已知字段外的任何额外字段都会被原样
+// 保留并友好展示，未知 kind / 未知字段绝不丢弃、绝不报错。因此类型上用宽松的
+// 索引签名兜底，已知字段只是可选的“建议字段”。
+export interface Effect {
+  kind: string
+  title?: string
+  url?: string
+  target?: string
+  preview?: string
+  [key: string]: unknown
+}
+
 // RunOutput 是 execution_run.output 的强类型：codex 执行结束时输出的结构化裁决。
 // summary 已单独存在 ExecutionRun.summary，这里主要用 needs_followup 与 enrichments。
 export interface RunOutput {
@@ -244,6 +258,7 @@ export interface RunOutput {
   failure_reason?: string
   needs_followup?: string
   enrichments?: RunEnrichment[]
+  effects?: Effect[]
   waiting?: {
     scheduled_task_id: number
     wake_at: string
@@ -263,6 +278,7 @@ export interface ExecutionRun {
   codex_session_id: string | null
   summary: string | null
   output: RunOutput | null
+  effects: Effect[] | null
   error_detail: string | null
   repo_path: string | null
   base_branch: string | null

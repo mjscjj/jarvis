@@ -1045,6 +1045,7 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	if structured, err := json.Marshal(codexOut.Result); err == nil {
 		run.Output = structured
 	}
+	assignDeclaredEffects(run, codexOut.Result.Effects)
 	if codexOut.Result.Outcome == "waiting" {
 		finished := e.now().UTC()
 		run.Status = "waiting"
@@ -1183,6 +1184,7 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 	if structured, err := json.Marshal(propose); err == nil {
 		run.Output = structured
 	}
+	assignDeclaredEffects(run, propose.Effects)
 
 	finished := e.now().UTC()
 	run.Status = "succeeded"
@@ -1259,6 +1261,7 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 	if structured, err := json.Marshal(codexOut.Result); err == nil {
 		run.Output = structured
 	}
+	assignDeclaredEffects(run, codexOut.Result.Effects)
 	if codexOut.Result.Outcome == "waiting" {
 		finished := e.now().UTC()
 		run.Status = "waiting"
@@ -1391,6 +1394,48 @@ func (e *AgentExecutor) writeDiff(taskID uint64, diff string) (string, error) {
 	return path, nil
 }
 
+// runEffects returns the run's external-effect list for display: the agent's
+// declared effects (stored verbatim, open payload) plus, for code_change runs, a
+// synthesized merge_request effect built from the structured Git fields so the MR
+// shows up in the same "对外产出" surface as feishu/doc/meeting effects. Each
+// effect is a loose map so unknown kinds and extra fields survive untouched.
+func runEffects(run *domain.ExecutionRun) []map[string]any {
+	var effects []map[string]any
+	if len(run.Effects) > 0 {
+		var declared []map[string]any
+		if err := json.Unmarshal(run.Effects, &declared); err == nil {
+			effects = append(effects, declared...)
+		}
+	}
+	if run.MergeRequestURL != nil && strings.TrimSpace(*run.MergeRequestURL) != "" {
+		mr := map[string]any{"kind": "merge_request", "title": "Merge Request", "url": *run.MergeRequestURL}
+		if run.Branch != nil && strings.TrimSpace(*run.Branch) != "" {
+			mr["target"] = *run.Branch
+		}
+		if run.Commit != nil && strings.TrimSpace(*run.Commit) != "" {
+			mr["commit"] = *run.Commit
+		}
+		effects = append(effects, mr)
+	}
+	return effects
+}
+
+// assignDeclaredEffects stores the agent's self-declared side effects on the run
+// verbatim. Effects are display-only and trusted as reported; they are marshaled
+// straight to JSON with no verification. A marshal error leaves Effects unset
+// rather than failing the run — losing the display payload must never turn a
+// real, completed side effect into a failed Task.
+func assignDeclaredEffects(run *domain.ExecutionRun, effects []codexEffect) {
+	if len(effects) == 0 {
+		return
+	}
+	encoded, err := json.Marshal(effects)
+	if err != nil {
+		return
+	}
+	run.Effects = encoded
+}
+
 func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 	// stage tags where this terminal result came from so the UI can tell a real
 	// codex execution failure (stage=executed + error) apart from a human
@@ -1420,6 +1465,9 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 	}
 	if run.MergeRequestURL != nil {
 		payload["merge_request_url"] = *run.MergeRequestURL
+	}
+	if effects := runEffects(run); len(effects) > 0 {
+		payload["effects"] = effects
 	}
 	if run.CodexSessionID != nil {
 		payload["codex_session_id"] = *run.CodexSessionID

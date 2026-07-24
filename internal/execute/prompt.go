@@ -65,7 +65,7 @@ type priorRunSummary struct {
 const executionResultSchema = `{
   "type":"object",
   "additionalProperties":false,
-  "required":["outcome","summary","failure_reason","needs_followup","enrichments","waiting"],
+  "required":["outcome","summary","failure_reason","needs_followup","enrichments","effects","waiting"],
   "properties":{
     "outcome":{"type":"string","enum":["completed","waiting","needs_human","failed"]},
     "summary":{"type":"string","minLength":1},
@@ -81,6 +81,22 @@ const executionResultSchema = `{
           "kind":{"type":"string","minLength":1},
           "label":{"type":"string","minLength":1},
           "content":{"type":"string","minLength":1}
+        }
+      }
+    },
+    "effects":{
+      "type":"array",
+      "description":"Real-world side effects you actually produced (message sent, doc created, meeting scheduled, MR opened, permission requested, ...). Declare one entry per external write. kind is a free-form label you may invent; extra fields are allowed and preserved. Display-only, not verified.",
+      "items":{
+        "type":"object",
+        "additionalProperties":true,
+        "required":["kind"],
+        "properties":{
+          "kind":{"type":"string","minLength":1},
+          "title":{"type":"string"},
+          "url":{"type":"string"},
+          "target":{"type":"string"},
+          "preview":{"type":"string"}
         }
       }
     },
@@ -103,7 +119,7 @@ const executionResultSchema = `{
 const proposeResultSchema = `{
   "type":"object",
   "additionalProperties":false,
-  "required":["needs_approval","outcome","summary","failure_reason","needs_followup","enrichments","proposal","waiting"],
+  "required":["needs_approval","outcome","summary","failure_reason","needs_followup","enrichments","effects","proposal","waiting"],
   "properties":{
     "needs_approval":{"type":"boolean"},
     "outcome":{"type":"string","enum":["completed","waiting","needs_human","failed"]},
@@ -131,6 +147,22 @@ const proposeResultSchema = `{
         "action":{"type":"string"},
         "target":{"type":"string"},
         "artifact":{"type":"string"}
+      }
+    },
+    "effects":{
+      "type":"array",
+      "description":"Real-world side effects you actually produced (message sent, doc created, meeting scheduled, MR opened, permission requested, ...). Declare one entry per external write. kind is a free-form label you may invent; extra fields are allowed and preserved. Display-only, not verified.",
+      "items":{
+        "type":"object",
+        "additionalProperties":true,
+        "required":["kind"],
+        "properties":{
+          "kind":{"type":"string","minLength":1},
+          "title":{"type":"string"},
+          "url":{"type":"string"},
+          "target":{"type":"string"},
+          "preview":{"type":"string"}
+        }
       }
     },
     "waiting":{
