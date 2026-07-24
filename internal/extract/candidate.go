@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -34,19 +35,34 @@ var (
 	ErrEvidenceQuoteMismatch = errors.New("source_quote not a verbatim substring of cited [new] messages")
 )
 
-// actionTypes is the closed vocabulary of clue kinds. M5 execution policy keys
-// off action_type, so it stays a small, stable classification (not per-type
-// slots). Everything else about the clue lives in the free-form target/context.
-var actionTypes = map[string]struct{}{
+// commonActionTypes lists the well-known clue kinds we surface to the model as
+// guidance. action_type is an OPEN set: the model may emit any snake_case
+// identifier (e.g. a novel intent, or "other") and downstream must accept it.
+// M5 execution policy only special-cases code_change; every other type—known or
+// novel—runs through the propose/approval gate, so the set stays advisory, not
+// a closed enum.
+var commonActionTypes = map[string]struct{}{
 	"code_change": {}, "summary_post": {}, "investigate": {}, "schedule_meeting": {},
-	"reply_message": {}, "doc_write": {}, "manual_followup": {},
+	"reply_message": {}, "doc_write": {}, "notify_principal": {}, "manual_followup": {}, "other": {},
 }
 
-// IsKnownActionType reports whether value is a valid action_type. Callers that
-// used to probe requiredSlots for the same purpose use this instead.
+// actionTypeIdentifier constrains an action_type to a lowercase snake_case
+// token. This is a structural guard (stable key for dedup/routing), not a
+// closed vocabulary—any well-formed identifier is accepted.
+var actionTypeIdentifier = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// IsKnownActionType reports whether value is one of the well-known common types.
+// It no longer gates extraction (action_type is open); it is used where a
+// caller wants to distinguish common types from novel ones.
 func IsKnownActionType(value string) bool {
-	_, ok := actionTypes[value]
+	_, ok := commonActionTypes[value]
 	return ok
+}
+
+// IsValidActionType reports whether value is an acceptable action_type: any
+// non-blank lowercase snake_case identifier.
+func IsValidActionType(value string) bool {
+	return actionTypeIdentifier.MatchString(strings.TrimSpace(value))
 }
 
 var structuralValidator = validator.New(validator.WithRequiredStructEnabled())
@@ -61,7 +77,7 @@ var structuralValidator = validator.New(validator.WithRequiredStructEnabled())
 //   - OpenQuestions: only the points M3 could not settle and that genuinely need
 //     the principal to decide/supply; empty means the assistant handled it.
 type Candidate struct {
-	ActionType         string   `json:"action_type" validate:"required,oneof=code_change summary_post investigate schedule_meeting reply_message doc_write manual_followup"`
+	ActionType         string   `json:"action_type" validate:"required"`
 	Title              string   `json:"title" validate:"required"`
 	Target             string   `json:"target" validate:"required"`
 	Description        string   `json:"description" validate:"required"`
@@ -119,8 +135,8 @@ func ValidateCandidate(candidate *Candidate) error {
 			return fmt.Errorf("%w: %s must not be blank", ErrInvalidCandidate, field.name)
 		}
 	}
-	if _, ok := actionTypes[candidate.ActionType]; !ok {
-		return fmt.Errorf("%w: unknown action_type %q", ErrInvalidCandidate, candidate.ActionType)
+	if !IsValidActionType(candidate.ActionType) {
+		return fmt.Errorf("%w: action_type %q must be a lowercase snake_case identifier", ErrInvalidCandidate, candidate.ActionType)
 	}
 	if err := validateMessageIDs(candidate.SourceMessageIDs); err != nil {
 		return err

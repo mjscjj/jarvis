@@ -13,8 +13,9 @@ func TodoExtractionJSONSchema() map[string]any {
 		"additionalProperties": false,
 		"properties": map[string]any{
 			"action_type": map[string]any{
-				"type": "string",
-				"enum": []string{"code_change", "summary_post", "investigate", "schedule_meeting", "reply_message", "doc_write", "manual_followup"},
+				"type":        "string",
+				"pattern":     "^[a-z][a-z0-9_]*$",
+				"description": "线索的动作类型，小写蛇形标识符。优先用常见类型：code_change/summary_post/investigate/schedule_meeting/reply_message/doc_write/notify_principal/manual_followup；确实不属于任何一类时用 other 或自拟一个贴切的标识符，不要为凑类型扭曲本意。纯粹值得我知道、无需动作的信息用 notify_principal。",
 			},
 			"title": map[string]any{"type": "string", "description": "一句话说清这件事，用于展示。"},
 			"target": map[string]any{

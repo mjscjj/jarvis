@@ -166,8 +166,8 @@ func ValidateTodoFilter(filter TodoListFilter) error {
 		}
 	}
 	if filter.ActionType != "" {
-		if !IsKnownActionType(filter.ActionType) {
-			return fmt.Errorf("%w: unsupported action_type %q", ErrInvalidTodoFilter, filter.ActionType)
+		if !IsValidActionType(filter.ActionType) {
+			return fmt.Errorf("%w: invalid action_type %q", ErrInvalidTodoFilter, filter.ActionType)
 		}
 	}
 	return nil

@@ -7,6 +7,29 @@ description: 使用 lark-cli 通过 Jarvis Bot 给个人或群聊发送飞书消
 
 消息使用 Jarvis Bot 发送。企业不支持 send as user。
 
+## 给我（principal）发消息 / 主动 ping
+
+当任务是 `notify_principal`，或需要把有用信息主动告知我本人时，直接给我发一条清晰、有结论的飞书消息。
+
+先拿到我的身份（open_id、与 Jarvis Bot 的私聊 chat_id）：
+
+```bash
+jarvis-tools get-principal
+```
+
+如果返回里已有与 Jarvis Bot 的私聊 chat_id，直接用它发送：
+
+```bash
+lark-cli im +messages-send \
+  --chat-id "<principal 与 bot 的 chat_id>" \
+  --markdown "<消息内容>" \
+  --as bot
+```
+
+没有现成私聊时，按下面「给个人发消息」用我的 open_id 创建 Jarvis 私有群后再发。
+
+写给我的消息要点：说清是什么、为什么值得我知道、我可能要做什么；只发真正有用的，不制造噪音。
+
 ## 给个人发消息
 
 先解析对方的 open_id：
