@@ -53,6 +53,7 @@ type TaskView struct {
 	Target               string                `json:"target"`
 	Background           json.RawMessage       `json:"background"`
 	Plan                 json.RawMessage       `json:"plan"`
+	DecisionPayload      json.RawMessage       `json:"decision_payload"`
 	ConfirmedBy          string                `json:"confirmed_by"`
 	ConfirmedAt          time.Time             `json:"confirmed_at"`
 	ActionHash           string                `json:"action_hash"`
@@ -1108,7 +1109,8 @@ func taskView(ctx context.Context, task *domain.Task) TaskView {
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
 		Target:     task.Target,
 		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
-		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
+		DecisionPayload: rawJSON(task.DecisionPayload),
+		ConfirmedBy:     task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
 		SourceType: task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
 		ExecutionMode: task.ExecutionMode, ApprovalRef: task.ApprovalRef,
 		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult),

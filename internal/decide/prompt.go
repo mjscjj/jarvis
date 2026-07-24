@@ -9,7 +9,7 @@ import (
 	"jarvis/internal/sharedmem"
 )
 
-const CodexPromptVersion = "todo-decision-v4"
+const CodexPromptVersion = "todo-decision-v5-loose"
 
 type CodexPromptInput struct {
 	Todo             *domain.Todo

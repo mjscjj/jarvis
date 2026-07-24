@@ -11,7 +11,7 @@
 | key | 文件 | 用途 |
 | --- | --- | --- |
 | `m3_system_prompt` | `conf/prompts/m3-system-prompt.md` | M3 抽取系统提示词 |
-| `m4_system_prompt` | `conf/prompts/m4-system-prompt.md` | M4 决策系统提示词 |
+| `m4_system_prompt_v2` | `conf/prompts/m4-system-prompt.md` | M4 决策系统提示词（宽松语义契约） |
 | `m5_system_prompt` | `conf/prompts/m5-system-prompt.md` | M5 通用系统提示词 |
 | `m5_approval_policy` | `conf/prompts/m5-approval-policy.md` | 非代码 M5 propose 阶段的审批判定策略 |
 

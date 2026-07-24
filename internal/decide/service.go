@@ -68,7 +68,7 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 	if err := validateCommonInput(input.TodoID, input.ExpectedVersion, input.Channel); err != nil {
 		return nil, err
 	}
-	plan, err := canonicalJSONObject(input.Plan, "plan")
+	plan, err := canonicalJSONValue(input.Plan, "plan", false)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +111,10 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 			return fmt.Errorf("%w: todo_id=%d task_id=%d", ErrTaskExists, todo.ID, existing.ID)
 		}
 		confirmedAt := s.now().UTC()
+		decisionPayload, err := loadLatestDecisionPayload(tx, todo.ID)
+		if err != nil {
+			return err
+		}
 		factory, err := taskcreate.NewFactory(tx)
 		if err != nil {
 			return err
@@ -118,7 +122,8 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 		todoID := todo.ID
 		createdTask, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
 			TodoID: &todoID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
-			Background: background, Plan: plan, ConfirmedBy: "user", ConfirmedAt: &confirmedAt,
+			Background: background, Plan: plan, DecisionPayload: decisionPayload,
+			ConfirmedBy: "user", ConfirmedAt: &confirmedAt,
 			ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todoID,
 			ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "user",
 			EventDetail: map[string]any{"channel": input.Channel},
@@ -434,6 +439,37 @@ func loadTodoEventSnapshot(db *gorm.DB, todoID uint64) (datatypes.JSON, error) {
 	return snapshot, nil
 }
 
+func loadLatestDecisionPayload(db *gorm.DB, todoID uint64) (json.RawMessage, error) {
+	var rows []domain.TodoEvent
+	if err := db.Where("todo_id = ?", todoID).Order("id DESC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("load latest decision payload todo_id=%d: %w", todoID, err)
+	}
+	for _, row := range rows {
+		if len(row.Detail) == 0 {
+			continue
+		}
+		var detail struct {
+			EventType string          `json:"event_type"`
+			Payload   json.RawMessage `json:"payload"`
+		}
+		if err := json.Unmarshal(row.Detail, &detail); err != nil {
+			return nil, fmt.Errorf("decode decision event detail event_id=%d: %w", row.ID, err)
+		}
+		if detail.EventType != "evaluated" {
+			continue
+		}
+		if len(detail.Payload) == 0 || bytes.Equal(bytes.TrimSpace(detail.Payload), []byte("null")) {
+			return nil, nil
+		}
+		payload, err := canonicalJSONValue(detail.Payload, "decision payload", false)
+		if err != nil {
+			return nil, fmt.Errorf("invalid decision payload event_id=%d: %w", row.ID, err)
+		}
+		return payload, nil
+	}
+	return nil, nil
+}
+
 func manualAudit(todo *domain.Todo, task *domain.Task, reason, channel string, at time.Time) *domain.DecisionAudit {
 	route := todo.Status
 	if todo.Route != nil && strings.TrimSpace(*todo.Route) != "" {
@@ -492,6 +528,52 @@ func canonicalJSONObject(raw []byte, name string) (json.RawMessage, error) {
 	return json.RawMessage(encoded), nil
 }
 
+// canonicalJSONValue validates and canonicalizes one open semantic JSON value.
+// It intentionally does not prescribe object fields. When allowEmpty is false,
+// null, blank strings, empty arrays and empty objects are rejected.
+func canonicalJSONValue(raw []byte, name string, allowEmpty bool) (json.RawMessage, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil, fmt.Errorf("%w: %s is required", ErrInvalidInput, name)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, fmt.Errorf("%w: decode %s: %v", ErrInvalidInput, name, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("%w: %s contains multiple JSON values", ErrInvalidInput, name)
+		}
+		return nil, fmt.Errorf("%w: decode trailing %s: %v", ErrInvalidInput, name, err)
+	}
+	if value == nil {
+		return nil, fmt.Errorf("%w: %s must not be null", ErrInvalidInput, name)
+	}
+	if !allowEmpty {
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) == "" {
+				return nil, fmt.Errorf("%w: %s must not be blank", ErrInvalidInput, name)
+			}
+		case []any:
+			if len(typed) == 0 {
+				return nil, fmt.Errorf("%w: %s must not be an empty array", ErrInvalidInput, name)
+			}
+		case map[string]any:
+			if len(typed) == 0 {
+				return nil, fmt.Errorf("%w: %s must not be an empty object", ErrInvalidInput, name)
+			}
+		}
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode canonical %s: %w", name, err)
+	}
+	return json.RawMessage(encoded), nil
+}
+
 func validateCommonInput(todoID uint64, expectedVersion int32, channel string) error {
 	if todoID == 0 {
 		return fmt.Errorf("%w: todo_id must be positive", ErrInvalidInput)
@@ -518,7 +600,7 @@ func transitionError(todoID uint64, from, to string) error {
 func taskView(task *domain.Task) TaskView {
 	return TaskView{
 		ID: task.ID, TodoID: derefUint64(task.TodoID), Title: task.Title, ActionType: task.ActionType, Target: task.Target,
-		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
+		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan), DecisionPayload: rawJSON(task.DecisionPayload),
 		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
 		SourceType: task.SourceType, SourceID: copyUint64(task.SourceID), ExecutionMode: task.ExecutionMode,
 		Status: task.Status, AutonomyMode: task.AutonomyMode, ProjectID: copyUint64(task.ProjectID), Version: task.Version,

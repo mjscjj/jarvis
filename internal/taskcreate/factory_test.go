@@ -75,6 +75,55 @@ func TestNormalizeInputRejectsEmptyPlanObject(t *testing.T) {
 	}
 }
 
+func TestNormalizeInputAcceptsOpenPlanJSON(t *testing.T) {
+	for name, plan := range map[string]string{
+		"string":  `"直接调查并给出结论"`,
+		"array":   `["调查","验证","汇报"]`,
+		"number":  `3`,
+		"boolean": `true`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			input, err := normalizeInput(Input{
+				Title: "开放计划", ActionType: "agent_task", Target: "输出结论",
+				Background:      json.RawMessage(`{}`),
+				Plan:            json.RawMessage(plan),
+				DecisionPayload: json.RawMessage(`{"unknown":{"nested":[1,true]}}`),
+				ConfirmedBy:     "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
+			})
+			if err != nil {
+				t.Fatalf("normalizeInput() error = %v", err)
+			}
+			if string(input.Plan) != plan {
+				t.Fatalf("plan = %s, want %s", input.Plan, plan)
+			}
+			if string(input.DecisionPayload) != `{"unknown":{"nested":[1,true]}}` {
+				t.Fatalf("decision_payload = %s", input.DecisionPayload)
+			}
+		})
+	}
+}
+
+func TestNormalizeInputRejectsEmptyOpenPlanJSON(t *testing.T) {
+	for name, plan := range map[string]string{
+		"null":         `null`,
+		"blank string": `"  "`,
+		"empty array":  `[]`,
+		"empty object": `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := normalizeInput(Input{
+				Title: "空计划", ActionType: "agent_task", Target: "输出结论",
+				Background:  json.RawMessage(`{}`),
+				Plan:        json.RawMessage(plan),
+				ConfirmedBy: "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
+			})
+			if err == nil {
+				t.Fatalf("normalizeInput() accepted plan %s", plan)
+			}
+		})
+	}
+}
+
 func TestActionHashCanonicalAndSensitive(t *testing.T) {
 	first, err := ActionHash("agent_task", "会议", json.RawMessage(`{"b":2,"a":1}`))
 	if err != nil {
@@ -93,6 +142,10 @@ func TestActionHashCanonicalAndSensitive(t *testing.T) {
 	}
 	if changed == first {
 		t.Fatal("target change did not change action hash")
+	}
+	stringPlan, err := ActionHash("agent_task", "会议", json.RawMessage(`"直接调查"`))
+	if err != nil || stringPlan == "" {
+		t.Fatalf("ActionHash() open string plan hash=%q error=%v", stringPlan, err)
 	}
 }
 

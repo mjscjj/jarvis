@@ -1173,7 +1173,7 @@ const systemPromptDefinitions = [
     description: '定义行动线索抽取者的角色、判断原则和输出要求。',
   },
   {
-    key: 'm4_system_prompt',
+    key: 'm4_system_prompt_v2',
     name: 'M4 决策',
     fileName: 'M4 系统提示词',
     description: '定义行动决策者的角色、处置原则和阶段安全边界。',

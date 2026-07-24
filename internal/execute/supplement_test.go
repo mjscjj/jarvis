@@ -40,6 +40,7 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 	task := &domain.Task{
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		DecisionPayload:      datatypes.JSON(`{"summary":"需要保留的决策依据","future_field":{"free":true}}`),
 		ExecutionSupplements: datatypes.JSON(supplements),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", task, "", testToolCatalog, "", "", "", nil)
@@ -48,6 +49,11 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "执行阶段补充") || !strings.Contains(prompt, "标题要包含季度") {
 		t.Fatalf("prompt missing supplements: %s", prompt)
+	}
+	for _, want := range []string{`"decision_payload"`, `"需要保留的决策依据"`, `"future_field"`} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing M4 decision payload %q: %s", want, prompt)
+		}
 	}
 }
 

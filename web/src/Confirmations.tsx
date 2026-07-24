@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Card, Collapse, Descriptions, Drawer, Flex, Input, Modal, Space, Table, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { approveConfirmation, getConfirmation, listConfirmations, rejectConfirmation, supplementConfirmation } from './api'
-import type { Clarification, ConfirmationDetail, ContextSnapshot, DecisionAuditView, DecisionFactor, Resolution, Todo } from './types'
+import type { ConfirmationDetail, ContextSnapshot, Resolution, Todo } from './types'
 import { TodoContextPanel } from './slots'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -26,7 +26,7 @@ function modalOkText(modal: ConfirmModal): string {
   return '确认拒绝'
 }
 function modalPlaceholder(modal: ConfirmModal): string {
-  if (modal === 'approve') return '非空 JSON 方案'
+  if (modal === 'approve') return '非空 JSON 方案，可以是字符串、对象或数组'
   if (modal === 'supplement') return '补充信息或写下你的指示（如具体仓库、目标、范围、截止时间，或"优先按 X 方案""不要动 Z"等），供决策器重新判定'
   return '拒绝原因'
 }
@@ -78,44 +78,25 @@ function SnapshotPanel({ snapshot }: { snapshot: ContextSnapshot }) {
   }]} />
 }
 
-// latestCodexAudit picks the newest codex decision audit (with factor detail)
-// so the workbench can show why codex scored the way it did.
-function latestCodexAudit(detail: ConfirmationDetail): DecisionAuditView | undefined {
-  const audits = (detail.audits || []).filter((a) => a.decision_engine === 'codex')
-  return audits.length ? audits[audits.length - 1] : undefined
+function semanticSummary(value: unknown): string {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const summary = (value as Record<string, unknown>).summary
+    if (typeof summary === 'string') return summary
+  }
+  return typeof value === 'string' ? value : ''
 }
 
-// FactorList renders codex's confidence/risk factors so the reviewer sees where
-// codex is sure and where it is shaky — the basis for a human decision.
-function FactorList({ title, factors, tone }: { title: string; factors: DecisionFactor[]; tone: 'confidence' | 'risk' }) {
-  if (!factors.length) return null
-  return <div style={{ flex: 1, minWidth: 240 }}>
-    <Text type="secondary">{title}</Text>
-    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-      {factors.map((f, i) => <li key={i} style={{ marginBottom: 4 }}>
-        <Tag color={tone === 'risk' ? (f.score >= 0.6 ? 'red' : 'orange') : (f.score >= 0.6 ? 'green' : 'default')}>{(f.score * 100).toFixed(0)}%</Tag>
-        <Text strong>{f.name}</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>{f.basis}</Text>
-      </li>)}
-    </ul>
-  </div>
+function SemanticValue({ value }: { value: unknown }) {
+  if (typeof value === 'string') return <Paragraph style={{ marginBottom: 0 }}>{value}</Paragraph>
+  return <pre className="snapshot-json">{JSON.stringify(value, null, 2)}</pre>
 }
 
-// ClarificationList shows what codex needs the human to clarify/supply. It is the
-// heart of "what do I need to do" for both need_info and need_review.
-function ClarificationList({ clarifications, ordinal }: { clarifications: Clarification[]; ordinal: boolean }) {
-  return <ol style={{ margin: '6px 0 0', paddingLeft: 20, listStyleType: ordinal ? 'decimal' : 'disc' }}>
-    {clarifications.map((item, index) => <li key={index} style={{ marginBottom: 8 }}>
-      <Text strong>{item.question}</Text>
-      {item.hint && <><br /><Text type="secondary" style={{ fontSize: 12 }}>提示：{item.hint}</Text></>}
-    </li>)}
-  </ol>
-}
-
-// buildSupplementTemplate pre-fills the supplement box with codex's questions so
-// the user answers each one instead of facing a blank textarea.
-function buildSupplementTemplate(clarifications: Clarification[] | null): string {
-  if (!clarifications || clarifications.length === 0) return ''
-  return clarifications.map((c, i) => `${i + 1}. ${c.question}\n答：`).join('\n\n')
+function isNonEmptyJSONValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
 }
 
 export default function Confirmations() {
@@ -152,7 +133,7 @@ export default function Confirmations() {
 
   const openApprove = () => {
     if (!detail) return
-    setInput(JSON.stringify(detail.proposed_plan || { summary: detail.todo.description, steps: [detail.todo.title] }, null, 2))
+    setInput(JSON.stringify(detail.plan ?? detail.todo.description, null, 2))
     setModal('approve')
   }
 
@@ -161,8 +142,8 @@ export default function Confirmations() {
     setSubmitting(true)
     try {
       if (modal === 'approve') {
-        const plan = JSON.parse(input) as Record<string, unknown>
-        if (!plan || Array.isArray(plan) || Object.keys(plan).length === 0) throw new Error('方案必须是非空 JSON 对象')
+        const plan: unknown = JSON.parse(input)
+        if (!isNonEmptyJSONValue(plan)) throw new Error('方案必须是非空、非 null 的 JSON 值')
         await approveConfirmation(detail.todo.id, detail.todo.version, plan)
       } else if (modal === 'supplement') {
         if (!input.trim()) throw new Error('补充说明不能为空')
@@ -198,48 +179,21 @@ export default function Confirmations() {
     <Drawer title={detail?.todo.title || '确认详情'} open={Boolean(detail) || detailLoading} loading={detailLoading} width={680} onClose={() => setDetail(undefined)}>
       {detail && (() => {
         const isNeedInfo = detail.todo.status === 'need_info'
-        const audit = latestCodexAudit(detail)
-        const clarifications = detail.clarifications || []
         return <Space direction="vertical" size={20} className="drawer-content">
         <Space><StatusBadge label={todoStatusMeta[isNeedInfo ? 'need_info' : 'need_decision'].label} color={todoStatusMeta[isNeedInfo ? 'need_info' : 'need_decision'].color} /><Tag>{detail.todo.action_type}</Tag></Space>
 
         {/* 第一段：决策问题 —— 一句话说清现在要你决定什么 */}
         {isNeedInfo
           ? <Alert type="warning" showIcon message="需要你补充信息，codex 才能继续"
-              description={clarifications.length > 0
-                ? <><Paragraph type="secondary" style={{ marginBottom: 4 }}>codex 需要你澄清以下几点：</Paragraph><ClarificationList clarifications={clarifications} ordinal /></>
-                : '该 Todo 信息不足，但 codex 未给出具体澄清项（重跑一次 M4 可补全）。'} />
+              description={<SemanticValue value={detail.decision_payload} />} />
           : <Alert type="info" showIcon message="codex 建议如下方案，请你决策：批准 / 补充 / 拒绝"
-              description={detail.proposed_plan?.summary || detail.todo.description} />}
+              description={semanticSummary(detail.plan) || detail.todo.description} />}
 
-        {/* 第二段：codex 的想法 —— 它要干什么、有多大把握、担心什么 */}
+        {/* 第二段：完整展示 M4 的开放方案与判断语义，不在前端复制模型 DTO。 */}
         <section>
           <Text type="secondary">codex 判断</Text>
-          <Space size={12} style={{ display: 'flex', marginTop: 4 }}>
-            {detail.todo.confidence != null && <Tag color="blue">信心 {(detail.todo.confidence * 100).toFixed(0)}%</Tag>}
-            {detail.todo.risk != null && <Tag color={detail.todo.risk >= 0.6 ? 'red' : 'orange'}>风险 {(detail.todo.risk * 100).toFixed(0)}%</Tag>}
-          </Space>
-          {detail.proposed_plan && <div style={{ marginTop: 8 }}>
-            <Paragraph style={{ marginBottom: 4 }}><Text strong>它想做：</Text>{detail.proposed_plan.summary}</Paragraph>
-            {detail.proposed_plan.steps?.length > 0 && <><Text type="secondary">执行步骤</Text>
-              <ol style={{ margin: '4px 0 8px', paddingLeft: 20 }}>{detail.proposed_plan.steps.map((s, i) => <li key={i}>{s}</li>)}</ol></>}
-            {detail.proposed_plan.parameters?.length > 0 && <Descriptions column={1} size="small" bordered style={{ marginBottom: 8 }}>
-              {detail.proposed_plan.parameters.map((p, i) => <Descriptions.Item key={i} label={p.name}>{p.value}</Descriptions.Item>)}
-            </Descriptions>}
-            {detail.proposed_plan.basis?.length > 0 && <Paragraph type="secondary" style={{ marginBottom: 0 }}>依据：{detail.proposed_plan.basis.join('；')}</Paragraph>}
-          </div>}
-          {audit && (audit.confidence_factors?.length || audit.risk_factors?.length) ? <Collapse size="small" style={{ marginTop: 8 }} items={[{
-            key: 'factors', label: '信心 / 风险因子明细',
-            children: <Flex gap={16} wrap="wrap">
-              <FactorList title="信心因子" factors={audit.confidence_factors || []} tone="confidence" />
-              <FactorList title="风险因子" factors={audit.risk_factors || []} tone="risk" />
-            </Flex>,
-          }]} /> : null}
-          {/* need_review 也把待澄清点显示出来，供决策参考 */}
-          {!isNeedInfo && clarifications.length > 0 && <div style={{ marginTop: 8 }}>
-            <Text type="secondary">codex 提出的待澄清点（供你决策参考）</Text>
-            <ClarificationList clarifications={clarifications} ordinal={false} />
-          </div>}
+          {detail.plan != null && <div style={{ marginTop: 8 }}><Text strong>执行方案</Text><SemanticValue value={detail.plan} /></div>}
+          {detail.decision_payload != null && <div style={{ marginTop: 8 }}><Text strong>判断、证据与风险</Text><SemanticValue value={detail.decision_payload} /></div>}
         </section>
 
         {/* 第三段：证据与背景（次要，可展开） */}
@@ -256,7 +210,7 @@ export default function Confirmations() {
               <Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button>
             </Flex>
           : <Flex gap={12} wrap>
-              <Button type="primary" onClick={() => { setInput(buildSupplementTemplate(detail.clarifications)); setModal('supplement') }}>补充信息</Button>
+              <Button type="primary" onClick={() => { setInput(''); setModal('supplement') }}>补充信息</Button>
               <Button danger onClick={() => { setInput(''); setModal('reject') }}>拒绝</Button>
             </Flex>}
       </Space>

@@ -142,6 +142,21 @@ function printableValue(value: unknown): string {
   }
 }
 
+function enrichmentItems(value: unknown): RunEnrichment[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    const record = asRecord(item)
+    if (!record || typeof record.kind !== 'string' || typeof record.label !== 'string' || !('content' in record)) {
+      return []
+    }
+    return [{
+      kind: record.kind,
+      label: record.label,
+      content: record.content,
+    }]
+  })
+}
+
 function parseCodexOutput(stdout: string): ParsedCodexOutput {
   const entries: CodexOutputEntry[] = []
   const byID = new Map<string, CodexOutputEntry>()
@@ -298,9 +313,7 @@ function AgentMessageOutput({ text }: { text: string }) {
     }
   })()
   const summary = parsed ? printableValue(parsed.summary) : text
-  const enrichments = parsed && Array.isArray(parsed.enrichments)
-    ? parsed.enrichments.map(asRecord).filter((item): item is Record<string, unknown> => item !== null)
-    : []
+  const enrichments = parsed ? enrichmentItems(parsed.enrichments) : []
 
   return (
     <div className="task-output-agent-message">
@@ -308,12 +321,9 @@ function AgentMessageOutput({ text }: { text: string }) {
       {enrichments.length > 0 && (
         <details className="task-output-details">
           <summary>补充信息（{enrichments.length}）</summary>
-          <div className="task-output-enrichments">
+          <div className="task-enrichment-list">
             {enrichments.map((item, index) => (
-              <div key={`${printableValue(item.label)}-${index}`}>
-                <Text strong>{printableValue(item.label) || printableValue(item.kind) || '补充'}</Text>
-                <Text type="secondary">{printableValue(item.detail)}</Text>
-              </div>
+              <EnrichmentBlock key={`${item.label}-${index}`} item={item} />
             ))}
           </div>
         </details>
@@ -562,27 +572,38 @@ function enrichmentKindLabel(kind: string): string {
   }
 }
 
+function EnrichmentContent({ content, kind }: { content: unknown; kind: string }) {
+  if (content === null) {
+    return <pre className="task-enrichment-json">null</pre>
+  }
+  if (typeof content !== 'string') {
+    return <pre className="task-enrichment-json">{printableValue(content)}</pre>
+  }
+
+  const isLink = kind === 'doc_link'
+    || kind === 'code_link'
+    || kind === 'link'
+    || /^https?:\/\//.test(content.trim())
+  if (!isLink) {
+    return <Paragraph className="task-enrichment-detail">{content}</Paragraph>
+  }
+
+  const paths = content.split(/[；;\n]+/).map((path) => path.trim()).filter(Boolean)
+  return (
+    <Space orientation="vertical" size={2} className="task-enrichment-links">
+      {paths.map((path, index) => /^https?:\/\//.test(path)
+        ? <Link key={index} href={path} target="_blank" rel="noreferrer">{path}</Link>
+        : <Text key={index} className="mono" copyable>{path}</Text>)}
+    </Space>
+  )
+}
+
 function EnrichmentBlock({ item }: { item: RunEnrichment }) {
   const label = item.label?.trim() || enrichmentKindLabel(item.kind)
-  const isLink = item.kind === 'doc_link'
-    || item.kind === 'code_link'
-    || item.kind === 'link'
-    || /^https?:\/\//.test(item.detail.trim())
-  const paths = isLink
-    ? item.detail.split(/[；;\n]+/).map((path) => path.trim()).filter(Boolean)
-    : []
   return (
     <div className="task-enrichment">
       <Text strong>{label}</Text>
-      {isLink ? (
-        <Space orientation="vertical" size={2} className="task-enrichment-links">
-          {paths.map((path, index) => /^https?:\/\//.test(path)
-            ? <Link key={index} href={path} target="_blank">{path}</Link>
-            : <Text key={index} className="mono" copyable>{path}</Text>)}
-        </Space>
-      ) : (
-        <Paragraph className="task-enrichment-detail">{item.detail}</Paragraph>
-      )}
+      <EnrichmentContent content={item.content} kind={item.kind} />
     </div>
   )
 }
@@ -705,10 +726,11 @@ function ResultContent({ task }: { task: Task }) {
   const error = strField(result, 'error')
   const rejectReason = strField(result, 'reject_reason')
   const followup = strField(result, 'needs_followup')
-  const enrichments = Array.isArray(result?.enrichments)
-    ? result.enrichments.filter((item): item is RunEnrichment => Boolean(item && typeof item === 'object'))
-    : []
-  const planSummary = typeof task.plan.summary === 'string' ? task.plan.summary : null
+  const enrichments = enrichmentItems(result?.enrichments)
+  const planRecord = asRecord(task.plan)
+  const planSummary = typeof planRecord?.summary === 'string'
+    ? planRecord.summary
+    : typeof task.plan === 'string' ? task.plan : null
 
   if (task.status === 'pending' || task.status === 'executing' || task.status === 'waiting' || task.status === 'needs_human') {
     const waiting = task.status === 'waiting'
@@ -1028,11 +1050,12 @@ function stringArray(value: unknown): string[] {
 }
 
 function PlanPanel({ task }: { task: Task }) {
-  const summary = stringValue(task.plan.summary)
-  const steps = stringArray(task.plan.steps)
-  const basis = stringArray(task.plan.basis)
-  const parameters = Array.isArray(task.plan.parameters)
-    ? task.plan.parameters.filter((item): item is { name: string; value: string } => (
+  const plan = asRecord(task.plan)
+  const summary = stringValue(plan?.summary)
+  const steps = stringArray(plan?.steps)
+  const basis = stringArray(plan?.basis)
+  const parameters = Array.isArray(plan?.parameters)
+    ? plan.parameters.filter((item): item is { name: string; value: string } => (
       Boolean(item)
       && typeof item === 'object'
       && typeof (item as Record<string, unknown>).name === 'string'
@@ -1063,7 +1086,17 @@ function PlanPanel({ task }: { task: Task }) {
         </section>
       )}
       {!summary && steps.length === 0 && parameters.length === 0 && basis.length === 0 && (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="任务方案没有可读字段" />
+        typeof task.plan === 'string'
+          ? <Paragraph>{task.plan}</Paragraph>
+          : <pre className="task-enrichment-json">{printableValue(task.plan)}</pre>
+      )}
+      {task.decision_payload != null && (
+        <section>
+          <Title level={5}>决策上下文</Title>
+          {typeof task.decision_payload === 'string'
+            ? <Paragraph>{task.decision_payload}</Paragraph>
+            : <pre className="task-enrichment-json">{printableValue(task.decision_payload)}</pre>}
+        </section>
       )}
     </div>
   )
@@ -1121,6 +1154,7 @@ function TechnicalPanel({ task, runs, events }: { task: Task; runs: ExecutionRun
   return (
     <div className="task-technical-panel">
       <details><summary>执行方案原始数据</summary><pre>{JSON.stringify(task.plan, null, 2)}</pre></details>
+      <details><summary>决策语义原始数据</summary><pre>{JSON.stringify(task.decision_payload, null, 2)}</pre></details>
       <details><summary>任务结果原始数据</summary><pre>{JSON.stringify(task.execution_result, null, 2)}</pre></details>
       <details><summary>背景快照原始数据</summary><pre>{JSON.stringify(task.background, null, 2)}</pre></details>
       <details><summary>Run 原始数据</summary><pre>{JSON.stringify(runs, null, 2)}</pre></details>

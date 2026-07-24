@@ -139,6 +139,7 @@ type Task struct {
 	Target          string         `gorm:"column:target;type:varchar(512);not null;default:''"`
 	Background      datatypes.JSON `gorm:"column:background;type:json;not null"`
 	Plan            datatypes.JSON `gorm:"column:plan;type:json;not null"`
+	DecisionPayload datatypes.JSON `gorm:"column:decision_payload;type:json"`
 	ConfirmedBy     string         `gorm:"column:confirmed_by;type:varchar(16);not null"`
 	ConfirmedAt     time.Time      `gorm:"column:confirmed_at;type:datetime;not null"`
 	ActionHash      string         `gorm:"column:action_hash;type:char(64);not null"`

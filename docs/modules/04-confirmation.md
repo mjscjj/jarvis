@@ -1,5 +1,7 @@
 # M4 确认模块（MVP 人工闸门）技术方案
 
+> **契约更新（2026-07-24）**：本文保留 M4 的历史背景、状态机和人工确认设计；其中固定的 factor / clarification / `PlanDraft` 模型输出结构已经废弃。当前代码以 `docs/design-loose-semantic-contract.md` 为准，只固定 `disposition + plan + payload` 外壳，plan/payload 内部保持宽松。不要按本文旧 DTO 新增兼容层。
+
 > 所属项目：基于飞书的本地个人 Jarvis 管家系统（用户：字节研发工程师 chujiejie.1）
 > 隶属总纲：`docs/00-overview.md`（技术栈、7 实体、Todo/Task 拆分的权威定义在总纲）
 > 技术栈：**Go 1.26 + Hertz + GORM + codex CLI**（决策）+ robfig/cron v3（过期扫描）。**不引入 Eino/Kitex**。

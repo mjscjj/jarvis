@@ -144,33 +144,13 @@ export interface ConfirmationAssigner {
   title: string | null
 }
 
-export interface ProposedPlan {
-  summary: string
-  steps: string[]
-  parameters: Array<{ name: string; value: string }>
-  basis: string[]
-}
-
-export interface Clarification {
-  question: string
-  hint?: string
-}
-
-export interface DecisionFactor {
-  name: string
-  score: number
-  basis: string
-}
-
 export interface DecisionAuditView {
   id: number
   ts: string
   route: string
   route_reason: string
   confidence: number | null
-  confidence_factors: DecisionFactor[] | null
   risk: number | null
-  risk_factors: DecisionFactor[] | null
   matched_rules: string[] | null
   decision_engine: string
   codex_session_id: string | null
@@ -182,8 +162,8 @@ export interface ConfirmationDetail {
   todo: Todo
   source_messages: ConfirmationMessage[]
   assigner: ConfirmationAssigner | null
-  proposed_plan: ProposedPlan | null
-  clarifications: Clarification[] | null
+  plan: unknown
+  decision_payload: unknown
   audits: DecisionAuditView[] | null
 }
 
@@ -216,7 +196,8 @@ export interface Task {
   action_type: ActionType
   target: string
   background: Record<string, unknown>
-  plan: Record<string, unknown>
+  plan: unknown
+  decision_payload: unknown
   confirmed_by: string
   confirmed_at: string
   action_hash: string
@@ -242,16 +223,17 @@ export interface TaskList {
   page_size: number
 }
 
-// RunEnrichment 是 codex 主动"多做一步"准备的一条结构化产物：
+// RunEnrichment 是 codex 主动"多做一步"准备的一条开放语义块：
 //   kind=context      正文/结论段落（如"会议一页纸"）
 //   kind=doc_link     引用的文件/文档路径
 //   kind=code_link    引用的代码位置
 //   kind=commit_digest 仓库 commit 摘要
-// 未知 kind 一律按纯文本 detail 展示，不丢信息。
+// kind/label 只服务轻量展示；content 可以是任意 JSON。未知 kind 使用通用
+// JSON/Text renderer 展示，不能丢信息。
 export interface RunEnrichment {
   kind: string
   label: string
-  detail: string
+  content: unknown
 }
 
 // RunOutput 是 execution_run.output 的强类型：codex 执行结束时输出的结构化裁决。

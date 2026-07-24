@@ -1,6 +1,7 @@
 package decide
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,9 +31,8 @@ type EvaluationInput struct {
 	PromptVersion          string
 	ThresholdConfigVersion string
 	FailureDetail          string
-	ProposedPlan           *PlanDraft
-	Clarifications         []Clarification
-	EvidenceGathered       []Evidence
+	Plan                   json.RawMessage
+	DecisionPayload        json.RawMessage
 	ManualGate             bool
 }
 
@@ -92,7 +92,7 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 		if input.Route == RouteNeedDecision {
 			updates["manual_gate_required"] = true
 		}
-		if !input.ManualGate {
+		if input.DecisionEngine == DecisionEngineRule {
 			updates["confidence"] = input.Confidence
 			updates["risk"] = input.Risk
 		}
@@ -109,11 +109,10 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 			"event_type": "evaluated", "route_reason": input.RouteReason,
 			"matched_rules": input.MatchedRules, "decision_engine": input.DecisionEngine,
 			"prompt_version": input.PromptVersion, "failure_detail": input.FailureDetail,
-			"proposed_plan":     input.ProposedPlan,
-			"clarifications":    input.Clarifications,
-			"evidence_gathered": input.EvidenceGathered,
+			"plan":    input.Plan,
+			"payload": input.DecisionPayload,
 		}
-		if !input.ManualGate {
+		if input.DecisionEngine == DecisionEngineRule {
 			eventDetail["confidence"] = input.Confidence
 			eventDetail["risk"] = input.Risk
 			eventDetail["confidence_factors"] = input.ConfidenceFactors
@@ -128,7 +127,7 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 			DecisionEngine: input.DecisionEngine, CodexSessionID: copyString(input.CodexSessionID),
 			ThresholdConfigVersion: input.ThresholdConfigVersion, Channel: "auto", FinalStatus: input.Route,
 		}
-		if !input.ManualGate {
+		if input.DecisionEngine == DecisionEngineRule {
 			audit.ConfidenceEff = float64Pointer(input.Confidence)
 			audit.RiskEff = float64Pointer(input.Risk)
 		}
@@ -138,7 +137,7 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 		// auto route: Codex judged the clue ready, so the system creates the Task
 		// itself (no human confirmation) and the Todo lands on "auto". The pipeline
 		// immediately wakes M5; its cron remains the recovery path. The confirmed
-		// plan is Codex's proposed_plan; the Task background is the same M3-frozen
+		// plan is Codex's open plan value; the Task background is the same M3-frozen
 		// context_snapshot M5 replays.
 		var createdTask *domain.Task
 		if input.Route == RouteAuto {
@@ -146,7 +145,7 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 			if err != nil {
 				return err
 			}
-			createdTask, err = createAutoTask(ctx, tx, s.now().UTC(), &todo, input.ProposedPlan, background)
+			createdTask, err = createAutoTask(ctx, tx, s.now().UTC(), &todo, input.Plan, input.DecisionPayload, background)
 			if err != nil {
 				return err
 			}
@@ -176,8 +175,8 @@ func validateEvaluationInput(input EvaluationInput) error {
 	default:
 		return fmt.Errorf("%w: evaluation route must be auto, need_info, need_decision or dropped", ErrInvalidInput)
 	}
-	if input.Route == RouteAuto && input.ProposedPlan == nil {
-		return fmt.Errorf("%w: auto route requires a proposed plan", ErrInvalidInput)
+	if input.Route == RouteAuto && len(bytes.TrimSpace(input.Plan)) == 0 {
+		return fmt.Errorf("%w: auto route requires a plan", ErrInvalidInput)
 	}
 	if strings.TrimSpace(input.RouteReason) == "" {
 		return fmt.Errorf("%w: evaluation route reason is blank", ErrInvalidInput)
@@ -186,18 +185,20 @@ func validateEvaluationInput(input EvaluationInput) error {
 		if input.Route != RouteNeedDecision || input.DecisionEngine != DecisionEngineManual {
 			return fmt.Errorf("%w: manual gate must route to need_decision with manual engine", ErrInvalidInput)
 		}
-		if len(input.ConfidenceFactors) != 0 || len(input.RiskFactors) != 0 || input.ProposedPlan != nil || input.CodexSessionID != nil || input.PromptVersion != "" {
+		if len(input.ConfidenceFactors) != 0 || len(input.RiskFactors) != 0 || len(input.Plan) != 0 || len(input.DecisionPayload) != 0 || input.CodexSessionID != nil || input.PromptVersion != "" {
 			return fmt.Errorf("%w: manual gate must not contain scoring or Codex data", ErrInvalidInput)
 		}
 	} else {
-		if err := validateRuleScore(RuleScore{Confidence: input.Confidence, Risk: input.Risk}); err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
-		}
-		if err := validateFactors("confidence", input.ConfidenceFactors); err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
-		}
-		if err := validateFactors("risk", input.RiskFactors); err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		if input.DecisionEngine == DecisionEngineRule {
+			if err := validateRuleScore(RuleScore{Confidence: input.Confidence, Risk: input.Risk}); err != nil {
+				return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			}
+			if err := validateFactors("confidence", input.ConfidenceFactors); err != nil {
+				return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			}
+			if err := validateFactors("risk", input.RiskFactors); err != nil {
+				return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			}
 		}
 	}
 	if len(input.MatchedRules) == 0 {
@@ -224,10 +225,15 @@ func validateEvaluationInput(input EvaluationInput) error {
 		if (input.CodexSessionID == nil || strings.TrimSpace(*input.CodexSessionID) == "") && strings.TrimSpace(input.FailureDetail) == "" {
 			return fmt.Errorf("%w: Codex evaluation requires session ID or failure detail", ErrInvalidInput)
 		}
+		payload, err := canonicalJSONValue(input.DecisionPayload, "decision payload", false)
+		if err != nil {
+			return err
+		}
+		input.DecisionPayload = payload
 	}
-	if input.ProposedPlan != nil {
-		if err := validatePlanDraft(input.ProposedPlan); err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	if len(bytes.TrimSpace(input.Plan)) != 0 {
+		if _, err := canonicalJSONValue(input.Plan, "plan", false); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -236,16 +242,12 @@ func validateEvaluationInput(input EvaluationInput) error {
 // createAutoTask creates the Task for an auto-routed Todo inside the evaluation
 // transaction. It mirrors Service.Approve's task creation but records the system
 // (m4_auto) as the confirmer instead of a human. The plan is Codex's
-// proposed_plan serialized as the confirmed plan JSON.
-func createAutoTask(ctx context.Context, tx *gorm.DB, now time.Time, todo *domain.Todo, plan *PlanDraft, background json.RawMessage) (*domain.Task, error) {
-	if plan == nil {
+// open plan value serialized as the confirmed plan JSON.
+func createAutoTask(ctx context.Context, tx *gorm.DB, now time.Time, todo *domain.Todo, plan, decisionPayload, background json.RawMessage) (*domain.Task, error) {
+	if len(bytes.TrimSpace(plan)) == 0 {
 		return nil, fmt.Errorf("%w: auto task todo_id=%d has no proposed plan", ErrInvalidInput, todo.ID)
 	}
-	planRaw, err := json.Marshal(plan)
-	if err != nil {
-		return nil, fmt.Errorf("encode auto task plan todo_id=%d: %w", todo.ID, err)
-	}
-	planJSON, err := canonicalJSONObject(planRaw, "plan")
+	planJSON, err := canonicalJSONValue(plan, "plan", false)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +266,8 @@ func createAutoTask(ctx context.Context, tx *gorm.DB, now time.Time, todo *domai
 	todoID := todo.ID
 	task, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
 		TodoID: &todoID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
-		Background: background, Plan: planJSON, ConfirmedBy: "m4_auto", ConfirmedAt: &now,
+		Background: background, Plan: planJSON, DecisionPayload: decisionPayload,
+		ConfirmedBy: "m4_auto", ConfirmedAt: &now,
 		ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todoID,
 		ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "m4",
 	})

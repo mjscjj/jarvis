@@ -10,7 +10,7 @@ import (
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
-const ExecutionPromptVersion = "task-exec-v5"
+const ExecutionPromptVersion = "task-exec-v6-loose"
 
 // maxPriorRunsInPrompt caps how many previous execution_run rows ride into the
 // next M5 prompt. Newest runs are kept; older ones are dropped to bound size.
@@ -76,11 +76,11 @@ const executionResultSchema = `{
       "items":{
         "type":"object",
         "additionalProperties":false,
-        "required":["kind","label","detail"],
+        "required":["kind","label","content"],
         "properties":{
           "kind":{"type":"string","minLength":1},
           "label":{"type":"string","minLength":1},
-          "detail":{"type":"string"}
+          "content":{}
         }
       }
     },
@@ -115,11 +115,11 @@ const proposeResultSchema = `{
       "items":{
         "type":"object",
         "additionalProperties":false,
-        "required":["kind","label","detail"],
+        "required":["kind","label","content"],
         "properties":{
           "kind":{"type":"string","minLength":1},
           "label":{"type":"string","minLength":1},
-          "detail":{"type":"string"}
+          "content":{}
         }
       }
     },
@@ -155,11 +155,12 @@ type executionPromptPayload struct {
 }
 
 type executionTask struct {
-	ID         uint64          `json:"id"`
-	Title      string          `json:"title"`
-	ActionType string          `json:"action_type"`
-	Plan       json.RawMessage `json:"plan"`
-	Background json.RawMessage `json:"background"`
+	ID              uint64          `json:"id"`
+	Title           string          `json:"title"`
+	ActionType      string          `json:"action_type"`
+	Plan            json.RawMessage `json:"plan"`
+	DecisionPayload json.RawMessage `json:"decision_payload,omitempty"`
+	Background      json.RawMessage `json:"background"`
 }
 
 // buildTaskContext assembles the shared TASK_CONTEXT block (confirmed plan,
@@ -184,7 +185,8 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 		PreviousRuns:         previousRuns,
 		Task: executionTask{
 			ID: task.ID, Title: task.Title, ActionType: task.ActionType,
-			Plan: rawJSON(task.Plan), Background: rawJSON(task.Background),
+			Plan: rawJSON(task.Plan), DecisionPayload: rawJSON(task.DecisionPayload),
+			Background: rawJSON(task.Background),
 		},
 	}
 	encoded, err := json.Marshal(payload)

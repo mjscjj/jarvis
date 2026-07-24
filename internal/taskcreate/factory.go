@@ -36,22 +36,23 @@ var (
 )
 
 type Input struct {
-	TodoID        *uint64
-	Title         string
-	ActionType    string
-	Target        string
-	Background    json.RawMessage
-	Plan          json.RawMessage
-	ConfirmedBy   string
-	ConfirmedAt   *time.Time
-	ProjectID     *uint64
-	SourceType    string
-	SourceID      *uint64
-	OccurrenceKey *string
-	ExecutionMode string
-	ApprovalRef   *string
-	ActorType     string
-	EventDetail   map[string]any
+	TodoID          *uint64
+	Title           string
+	ActionType      string
+	Target          string
+	Background      json.RawMessage
+	Plan            json.RawMessage
+	DecisionPayload json.RawMessage
+	ConfirmedBy     string
+	ConfirmedAt     *time.Time
+	ProjectID       *uint64
+	SourceType      string
+	SourceID        *uint64
+	OccurrenceKey   *string
+	ExecutionMode   string
+	ApprovalRef     *string
+	ActorType       string
+	EventDetail     map[string]any
 }
 
 type Factory struct {
@@ -156,7 +157,8 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 	row := domain.Task{
 		TodoID: normalized.TodoID, Title: normalized.Title, ActionType: normalized.ActionType,
 		Target: normalized.Target, Background: datatypes.JSON(normalized.Background), Plan: datatypes.JSON(normalized.Plan),
-		ConfirmedBy: normalized.ConfirmedBy, ConfirmedAt: now, ActionHash: hash,
+		DecisionPayload: datatypes.JSON(normalized.DecisionPayload),
+		ConfirmedBy:     normalized.ConfirmedBy, ConfirmedAt: now, ActionHash: hash,
 		SourceType: normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
 		ExecutionMode: normalized.ExecutionMode, ApprovalRef: normalized.ApprovalRef,
 		Status: "pending", AutonomyMode: autonomyMode(normalized.ExecutionMode),
@@ -222,9 +224,15 @@ func normalizeInput(input Input) (Input, error) {
 	if input.Background == nil {
 		return Input{}, fmt.Errorf("%w: background must be a JSON object", ErrInvalidInput)
 	}
-	input.Plan = mustJSONObject(input.Plan, false)
+	input.Plan = mustJSONValue(input.Plan, false)
 	if input.Plan == nil {
-		return Input{}, fmt.Errorf("%w: plan must be a non-empty JSON object", ErrInvalidInput)
+		return Input{}, fmt.Errorf("%w: plan must be a non-empty JSON value", ErrInvalidInput)
+	}
+	if len(bytes.TrimSpace(input.DecisionPayload)) != 0 {
+		input.DecisionPayload = mustJSONValue(input.DecisionPayload, true)
+		if input.DecisionPayload == nil {
+			return Input{}, fmt.Errorf("%w: decision_payload must be a non-null JSON value", ErrInvalidInput)
+		}
 	}
 	input.OccurrenceKey = trimString(input.OccurrenceKey)
 	input.ApprovalRef = trimString(input.ApprovalRef)
@@ -238,9 +246,9 @@ func ActionHash(actionType, target string, plan json.RawMessage) (string, error)
 	if actionType == "" || target == "" {
 		return "", fmt.Errorf("%w: action_type and target are required", ErrInvalidInput)
 	}
-	canonical := mustJSONObject(plan, false)
+	canonical := mustJSONValue(plan, false)
 	if canonical == nil {
-		return "", fmt.Errorf("%w: plan must be a non-empty JSON object", ErrInvalidInput)
+		return "", fmt.Errorf("%w: plan must be a non-empty JSON value", ErrInvalidInput)
 	}
 	payload, err := json.Marshal(struct {
 		ActionType string          `json:"action_type"`
@@ -269,6 +277,43 @@ func mustJSONObject(raw []byte, allowEmpty bool) json.RawMessage {
 		return nil
 	}
 	encoded, err := json.Marshal(object)
+	if err != nil {
+		return nil
+	}
+	return encoded
+}
+
+func mustJSONValue(raw []byte, allowEmpty bool) json.RawMessage {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil || value == nil {
+		return nil
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil
+	}
+	if !allowEmpty {
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) == "" {
+				return nil
+			}
+		case []any:
+			if len(typed) == 0 {
+				return nil
+			}
+		case map[string]any:
+			if len(typed) == 0 {
+				return nil
+			}
+		}
+	}
+	encoded, err := json.Marshal(value)
 	if err != nil {
 		return nil
 	}

@@ -2,7 +2,7 @@ package textstore
 
 const (
 	SystemPromptM3Key = "m3_system_prompt"
-	SystemPromptM4Key = "m4_system_prompt"
+	SystemPromptM4Key = "m4_system_prompt_v2"
 	SystemPromptM5Key = "m5_system_prompt"
 	ApprovalPolicyKey = "m5_approval_policy"
 )

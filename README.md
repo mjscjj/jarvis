@@ -29,7 +29,7 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
              ┌───────────────────────────┬──────────┴────────────┐
              ▼                            ▼                        ▼
       auto_execute                  need_review               need_info
-     （直接建 Task）          （todo=need_decision，用户 Approve）  （带 clarifications 要用户补信息）
+     （直接建 Task）          （todo=need_decision，用户 Approve）  （payload 说明需补信息）
              │                            │
              └──────────────┬─────────────┘
                             ▼
@@ -68,7 +68,7 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 | M2 采集 | `internal/capture/`、`internal/meetingcapture/` | 采集群消息、会议与妙记产物，把原始内容和中立采集结果写成下游证据 | `capture/service.go`（会话发现/扫描）、`meetingcapture/service.go`（会议产物采集）、各自 `scheduler.go` | lark-cli（IM / VC / Minutes 只读接口） |
 | M2.5 记忆 | `internal/memory/` | 消息切窗 → mem0 抽事实 → 向量入库 | `worker.go`（窗口化编排）、`store.go`（pending 查询/标记）、`client.go`（sidecar HTTP） | mem0 sidecar → Qdrant `jarvis_memories` |
 | M3 抽取 | `internal/extract/` | 从新消息抽 Todo（默认 `engine=codex`：traex agent 自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库并冻结 `context_snapshot`；备用 `model_api` function-calling 循环）+ 语义去重 + source_quote 证据重抽 | `worker.go`（编排）、`pipeline_store.go`（加载/组批）、`prompt.go`（提示词）、`persist.go`（落库）、`dedup.go`（去重）、`codexengine/`（traex agent 引擎）、`provider/`（百炼 model API）、`tools/`（工具） | traex agent（`gpt-5.4`）/ 百炼 `qwen-plus` + Qdrant `todo_semantic` + mem0（检索） |
-| M4 决策 | `internal/decide/` | 给 Todo 定 disposition：`codex` 用 codex/traex 判 `auto_execute`/`need_review`/`need_info`（need_info 带结构化 clarifications 说明缺什么）；`manual_mvp` 全走人工确认 | `worker.go`（批处理）、`manual_gate.go` / `codex_evaluator.go`（两种评估器）、`codex.go`（调 agent CLI）、`evaluation.go`（落库）、`service.go`（Approve/Reject 建 Task）、`background.go`（快照）、`constants.go`（共享常量） | traex agent（`gpt-5.4`，read-only 判定，可自查补信息） |
+| M4 决策 | `internal/decide/` | 给 Todo 定 disposition：`codex` 用 codex/traex 输出最小外壳 `disposition + plan + payload`，plan/payload 内部保持宽松；创建 Task 时原样固化 `decision_payload` 供 M5 使用；`manual_mvp` 全走人工确认 | `worker.go`（批处理）、`manual_gate.go` / `codex_evaluator.go`（两种评估器）、`codex.go`（调 agent CLI）、`evaluation.go`（落库）、`service.go`（Approve/Reject 建 Task）、`background.go`（快照）、`constants.go`（共享常量） | traex agent（`gpt-5.4`，read-only 判定，可自查补信息） |
 | M5 执行 | `internal/execute/` | 执行确认后的 Task：支持 `completed/waiting/needs_human/failed` 结果；长等待时持久化 Codex Session，当前 Turn 退出，到期后 `codex exec resume` 续跑；高风险外部写入仍停在 `awaiting_approval` | `agent_executor.go`（执行/挂起/恢复）、`codex_runner.go`（Codex Session）、`store.go`（Task 状态机） | 官方 codex agent（`gpt-5.6-sol`） |
 | 定时任务 | `internal/scheduledtask/` | 时间触发器：独立计划到期物化新 Task；`yield-until` 创建的续接计划只恢复原 Task 和原 Codex Session | `service.go`（计划/抢占/Task 物化/Session 恢复）、`scheduler.go`（扫描 cron） | MySQL `scheduled_task` + M5 |
 | 流水线协调 | `internal/pipeline/` | 接收 M2/M3/M4 状态提交后的轻量通知，按 chat/todo/task 定向推进；内存队列只加速，启动与 cron 均从 MySQL 补偿 | `coordinator.go`（串行编排与 M5 并发）、`queue.go`（按 ID/version 合并）、`scheduler.go`（补偿调度） | — |
@@ -159,7 +159,7 @@ M3/M4/M5 的实时通知与补偿任务都只进入同一个协调器队列，�
 - M0.2 已完成：统一 `lark-cli` 子进程层、无历史回溯的增量扫描、线程回复拍平、Resource 元数据沉淀和分层 cron 调度。消息扫描只处理数据库中动态标记的 `related_group`。
 - M0.3 核心链路已实现：Go 侧 mem0 HTTP client、消息窗口化 worker、每 10 分钟记忆化任务、Python FastAPI sidecar、Qdrant v1.18.2 原生 launchd 服务与锁定依赖。
 - M0.4 提取 worker 已实现：相关群增量聚合、背景/记忆注入、Structured Outputs、Todo 事务落库与独立水位推进；同时提供只读 Todo API 和 React + Ant Design 看板。
-- M0.5 确认已完成：`extracted Todo → need_decision → 用户批准/拒绝`，批准后原子生成 Task。`decide.mode` 可选 `manual_mvp`（全走人工确认）或 `codex`（用 codex/traex 判 disposition：auto_execute/need_review/need_info，need_info 带结构化 clarifications）。
+- M0.5 确认已完成：`extracted Todo → need_decision → 用户批准/拒绝`，批准后原子生成 Task。`decide.mode` 可选 `manual_mvp`（全走人工确认）或 `codex`（用 codex/traex 判 disposition，并把方案、澄清点、证据和风险保存在宽松 plan/payload 中）。
 - M0.6 MVP 执行闭环已完成：管理后台列出 Task，支持人工执行后回写 `done/failed + result`。确认与执行页面由同一个 Go 服务托管。
 - 现状：M3 抽取、M4 决策已 codex 化（默认走 traex agent 自跑工具推算项目/仓库并冻结上下文快照）；M5 执行支持自动执行、两阶段人工审批，以及 `needs_human` 挂起/回复后恢复原 Codex Session（不是重跑 Task）；抽取/记忆 LLM 接入阿里云百炼 `qwen-plus`，embedding 用 `text-embedding-v3`（1024 维）。
 - M3/M4/M5 已改为状态提交后实时串行推进；三者的 schedule 只承担启动恢复和周期补偿。人工审核一旦触发会写入 sticky gate，补充信息后的 M4 重评不会把它自动放行到 M5。

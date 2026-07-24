@@ -31,23 +31,24 @@ type RejectInput struct {
 }
 
 type TaskView struct {
-	ID            uint64          `json:"id"`
-	TodoID        uint64          `json:"todo_id"`
-	Title         string          `json:"title"`
-	ActionType    string          `json:"action_type"`
-	Target        string          `json:"target"`
-	Background    json.RawMessage `json:"background"`
-	Plan          json.RawMessage `json:"plan"`
-	ConfirmedBy   string          `json:"confirmed_by"`
-	ConfirmedAt   time.Time       `json:"confirmed_at"`
-	ActionHash    string          `json:"action_hash"`
-	SourceType    string          `json:"source_type"`
-	SourceID      *uint64         `json:"source_id"`
-	ExecutionMode string          `json:"execution_mode"`
-	Status        string          `json:"status"`
-	AutonomyMode  string          `json:"autonomy_mode"`
-	ProjectID     *uint64         `json:"project_id"`
-	Version       int32           `json:"version"`
+	ID              uint64          `json:"id"`
+	TodoID          uint64          `json:"todo_id"`
+	Title           string          `json:"title"`
+	ActionType      string          `json:"action_type"`
+	Target          string          `json:"target"`
+	Background      json.RawMessage `json:"background"`
+	Plan            json.RawMessage `json:"plan"`
+	DecisionPayload json.RawMessage `json:"decision_payload"`
+	ConfirmedBy     string          `json:"confirmed_by"`
+	ConfirmedAt     time.Time       `json:"confirmed_at"`
+	ActionHash      string          `json:"action_hash"`
+	SourceType      string          `json:"source_type"`
+	SourceID        *uint64         `json:"source_id"`
+	ExecutionMode   string          `json:"execution_mode"`
+	Status          string          `json:"status"`
+	AutonomyMode    string          `json:"autonomy_mode"`
+	ProjectID       *uint64         `json:"project_id"`
+	Version         int32           `json:"version"`
 }
 
 type RejectResult struct {

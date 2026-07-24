@@ -103,7 +103,7 @@ export function getConfirmation(id: number, signal?: AbortSignal): Promise<Confi
   return request<ConfirmationDetail>(`/api/confirmations/${id}`, { signal })
 }
 
-export function approveConfirmation(id: number, expectedVersion: number, plan: Record<string, unknown>): Promise<Task> {
+export function approveConfirmation(id: number, expectedVersion: number, plan: unknown): Promise<Task> {
   return request<Task>(`/api/confirmations/${id}/approve`, {
     method: 'POST', body: { expected_version: expectedVersion, plan },
   })

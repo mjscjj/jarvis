@@ -102,6 +102,57 @@ func TestParseExecutionResultNeedsHuman(t *testing.T) {
 	}
 }
 
+func TestParseExecutionResultAcceptsOpenEnrichmentContent(t *testing.T) {
+	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":{"path":"internal/execute/prompt.go","note":"开放 content"}},{"kind":"risk","label":"风险","content":["需要同步前端"]}],"waiting":null}`
+	result, err := parseExecutionResult(msg)
+	if err != nil {
+		t.Fatalf("parseExecutionResult() error = %v", err)
+	}
+	if len(result.Enrichments) != 2 {
+		t.Fatalf("enrichments len = %d, want 2", len(result.Enrichments))
+	}
+	if got := string(result.Enrichments[0].Content); got != `{"path":"internal/execute/prompt.go","note":"开放 content"}` {
+		t.Fatalf("content = %s", got)
+	}
+}
+
+func TestParseExecutionResultRejectsLegacyEnrichmentDetail(t *testing.T) {
+	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","detail":"internal/execute/prompt.go"}],"waiting":null}`
+	if _, err := parseExecutionResult(msg); err == nil {
+		t.Fatal("legacy detail enrichment must fail; content is the only accepted semantic payload")
+	}
+}
+
+func TestParseExecutionResultRejectsIncompleteEnrichment(t *testing.T) {
+	cases := map[string]string{
+		"blank kind":      `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"","label":"核心修改","content":"x"}],"waiting":null}`,
+		"blank label":     `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"","content":"x"}],"waiting":null}`,
+		"missing content": `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改"}],"waiting":null}`,
+		"null content":    `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":null}],"waiting":null}`,
+	}
+	for name, msg := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseExecutionResult(msg); err == nil {
+				t.Fatalf("parseExecutionResult(%s) succeeded, want fail-fast", name)
+			}
+		})
+	}
+}
+
+func TestParseProposeResultAcceptsOpenEnrichmentContent(t *testing.T) {
+	msg := `{"needs_approval":true,"outcome":"needs_human","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":{"doc_token":"doc_x","sections":["进展","风险"]}}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"waiting":null}`
+	result, err := parseProposeResult(msg)
+	if err != nil {
+		t.Fatalf("parseProposeResult() error = %v", err)
+	}
+	if len(result.Enrichments) != 1 {
+		t.Fatalf("enrichments len = %d, want 1", len(result.Enrichments))
+	}
+	if got := string(result.Enrichments[0].Content); got != `{"doc_token":"doc_x","sections":["进展","风险"]}` {
+		t.Fatalf("content = %s", got)
+	}
+}
+
 // TestProposalPayloadRoundTrip checks the awaiting_approval execution_result we
 // store can be decoded back into the artifact the apply stage needs.
 func TestProposalPayloadRoundTrip(t *testing.T) {

@@ -199,8 +199,8 @@ func TestConfirmationTransactionLive(t *testing.T) {
 		if detail.Assigner == nil || detail.Assigner.Name == nil || *detail.Assigner.Name != "Synthetic assigner" {
 			t.Fatalf("confirmation assigner = %#v", detail.Assigner)
 		}
-		if detail.ProposedPlan != nil {
-			t.Fatalf("confirmation proposed plan = %#v", detail.ProposedPlan)
+		if len(detail.Plan) != 0 {
+			t.Fatalf("confirmation plan = %s", detail.Plan)
 		}
 
 		confirmationService, err := NewService(tx, nil, nil)

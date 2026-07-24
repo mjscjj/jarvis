@@ -27,9 +27,8 @@ const (
 	DispositionDrop       = "drop"
 )
 
-// neutralRuleScore is the seed confidence/risk handed to Codex. We deliberately
-// do not implement a rule scorer (complexity redline): Codex re-scores from the
-// evidence and returns real confidence_factors/risk_factors, which we aggregate.
+// neutralRuleScore is retained in the input context as historical rule evidence.
+// It is not treated as a model-authored score or persisted as a decision result.
 var neutralRuleScore = RuleScore{Confidence: 0.5, Risk: 0.5}
 
 // CodexEvaluator implements todoEvaluator by asking Codex (read-only) to judge
@@ -122,8 +121,6 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 	}
 
 	disposition := result.Decision.Disposition
-	confidence := aggregateFactors(result.Decision.ConfidenceFactors)
-	risk := aggregateFactors(result.Decision.RiskFactors)
 	route, err := routeForDisposition(disposition)
 	if err != nil {
 		return nil, fmt.Errorf("codex evaluation todo_id=%d: %w", todo.ID, err)
@@ -140,20 +137,15 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 	input := &EvaluationInput{
 		TodoID:                 todo.ID,
 		ExpectedVersion:        todo.Version,
-		Confidence:             confidence,
-		Risk:                   risk,
 		Route:                  route,
 		RouteReason:            routeReason,
-		ConfidenceFactors:      result.Decision.ConfidenceFactors,
-		RiskFactors:            result.Decision.RiskFactors,
 		MatchedRules:           matchedRules,
 		DecisionEngine:         DecisionEngineCodex,
 		CodexSessionID:         &sessionID,
 		PromptVersion:          prompt.Version,
-		ThresholdConfigVersion: "codex-v1",
-		ProposedPlan:           result.Decision.ProposedPlan,
-		Clarifications:         result.Decision.Clarifications,
-		EvidenceGathered:       result.Decision.EvidenceGathered,
+		ThresholdConfigVersion: "codex-loose-v1",
+		Plan:                   result.Decision.Plan,
+		DecisionPayload:        result.Decision.Payload,
 	}
 	return input, nil
 }
@@ -176,19 +168,4 @@ func routeForDisposition(disposition string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown codex disposition %q", disposition)
 	}
-}
-
-// aggregateFactors reduces Codex's factor list to a single [0,1] score by
-// averaging. Codex already validated each factor score is in range; an empty
-// list is impossible here because the schema requires minItems=1, but we guard
-// anyway and return the neutral 0.5 rather than divide by zero.
-func aggregateFactors(factors []DecisionFactor) float64 {
-	if len(factors) == 0 {
-		return 0.5
-	}
-	var sum float64
-	for _, factor := range factors {
-		sum += factor.Score
-	}
-	return sum / float64(len(factors))
 }

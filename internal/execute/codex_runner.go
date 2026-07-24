@@ -61,12 +61,13 @@ type codexWaiting struct {
 	Reason          string `json:"reason"`
 }
 
-// codexEnrichment is one piece of "多做一步" context the assistant proactively
-// prepared (a code link, a commit digest, a doc link, …).
+// codexEnrichment is one open semantic block the assistant proactively prepared
+// (a code link, a commit digest, a doc link, a risk note, ...). kind/label stay
+// structured for lightweight UI routing; content is intentionally loose JSON.
 type codexEnrichment struct {
-	Kind   string `json:"kind"`
-	Label  string `json:"label"`
-	Detail string `json:"detail"`
+	Kind    string          `json:"kind"`
+	Label   string          `json:"label"`
+	Content json.RawMessage `json:"content"`
 }
 
 // proposeResult is the structured final message codex must return for the
@@ -353,6 +354,9 @@ func parseExecutionResult(lastMessage string) (*codexResult, error) {
 	if strings.TrimSpace(result.Summary) == "" {
 		return nil, fmt.Errorf("codex exec result summary is blank")
 	}
+	if err := validateEnrichments(result.Enrichments); err != nil {
+		return nil, fmt.Errorf("codex exec result: %w", err)
+	}
 	if err := validateOutcome(result.Outcome, result.FailureReason, result.NeedsFollowup, result.Waiting); err != nil {
 		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
@@ -377,6 +381,9 @@ func parseProposeResult(lastMessage string) (*proposeResult, error) {
 	if strings.TrimSpace(result.Summary) == "" {
 		return nil, fmt.Errorf("codex propose result summary is blank")
 	}
+	if err := validateEnrichments(result.Enrichments); err != nil {
+		return nil, fmt.Errorf("codex propose result: %w", err)
+	}
 	if result.NeedsApproval {
 		if result.Outcome != "needs_human" {
 			return nil, fmt.Errorf("codex propose needs_approval=true requires outcome=needs_human")
@@ -393,6 +400,25 @@ func parseProposeResult(lastMessage string) (*proposeResult, error) {
 		return nil, fmt.Errorf("codex propose result: %w", err)
 	}
 	return &result, nil
+}
+
+func validateEnrichments(items []codexEnrichment) error {
+	for position, item := range items {
+		if strings.TrimSpace(item.Kind) == "" {
+			return fmt.Errorf("enrichments[%d] kind is blank", position)
+		}
+		if strings.TrimSpace(item.Label) == "" {
+			return fmt.Errorf("enrichments[%d] label is blank", position)
+		}
+		content := bytes.TrimSpace(item.Content)
+		if len(content) == 0 {
+			return fmt.Errorf("enrichments[%d] content is missing", position)
+		}
+		if bytes.Equal(content, []byte("null")) {
+			return fmt.Errorf("enrichments[%d] content is null", position)
+		}
+	}
+	return nil
 }
 
 func validateOutcome(outcome, failureReason, needsFollowup string, waiting *codexWaiting) error {

@@ -19,49 +19,11 @@ const (
 	codexDecisionSchema = `{
   "type":"object",
   "additionalProperties":false,
-  "required":["disposition","confidence_factors","risk_factors","confidence_basis","clarifications","recommended_review","proposed_plan","plan_is_clear","evidence_gathered"],
+  "required":["disposition","plan","payload"],
   "properties":{
     "disposition":{"type":"string","enum":["ready","need_review","need_info","drop"]},
-    "confidence_factors":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/factor"}},
-    "risk_factors":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/factor"}},
-    "confidence_basis":{"type":"string","minLength":1},
-    "clarifications":{"type":"array","items":{"$ref":"#/$defs/clarification"}},
-    "recommended_review":{"type":"boolean"},
-    "proposed_plan":{"anyOf":[{"$ref":"#/$defs/plan"},{"type":"null"}]},
-    "plan_is_clear":{"type":"boolean"},
-    "evidence_gathered":{"type":"array","items":{"$ref":"#/$defs/evidence"}}
-  },
-  "$defs":{
-    "factor":{
-      "type":"object","additionalProperties":false,
-      "required":["name","score","basis"],
-      "properties":{"name":{"type":"string","minLength":1},"score":{"type":"number","minimum":0,"maximum":1},"basis":{"type":"string","minLength":1}}
-    },
-    "clarification":{
-      "type":"object","additionalProperties":false,
-      "required":["question","hint"],
-      "properties":{"question":{"type":"string","minLength":1},"hint":{"type":"string"}}
-    },
-    "evidence":{
-      "type":"object","additionalProperties":false,
-      "required":["label","detail"],
-      "properties":{"label":{"type":"string","minLength":1},"detail":{"type":"string"}}
-    },
-    "parameter":{
-      "type":"object","additionalProperties":false,
-      "required":["name","value"],
-      "properties":{"name":{"type":"string","minLength":1},"value":{"type":"string"}}
-    },
-    "plan":{
-      "type":"object","additionalProperties":false,
-      "required":["summary","steps","parameters","basis"],
-      "properties":{
-        "summary":{"type":"string","minLength":1},
-        "steps":{"type":"array","minItems":1,"items":{"type":"string","minLength":1}},
-        "parameters":{"type":"array","items":{"$ref":"#/$defs/parameter"}},
-        "basis":{"type":"array","items":{"type":"string","minLength":1}}
-      }
-    }
+    "plan":{},
+    "payload":{}
   }
 }`
 )
@@ -85,54 +47,20 @@ type CodexInput struct {
 type CodexDecision struct {
 	// Disposition is Codex's own verdict on how to handle the clue: ready /
 	// need_review / need_info / drop. It is authoritative — the route is derived
-	// from it directly, not re-inferred from plan_is_clear/recommended_review.
-	Disposition       string           `json:"disposition"`
-	ConfidenceFactors []DecisionFactor `json:"confidence_factors"`
-	RiskFactors       []DecisionFactor `json:"risk_factors"`
-	ConfidenceBasis   string           `json:"confidence_basis"`
-	// Clarifications are the points Codex needs the human to clarify or supply:
-	// missing info when the plan is not clear (need_info), or uncertainties it
-	// wants a human to decide on (need_review). Meaning is defined in the prompt,
-	// not the struct — keep it loose on purpose.
-	Clarifications    []Clarification `json:"clarifications"`
-	RecommendedReview bool            `json:"recommended_review"`
-	ProposedPlan      *PlanDraft      `json:"proposed_plan"`
-	PlanIsClear       bool            `json:"plan_is_clear"`
-	// EvidenceGathered records the facts/links Codex looked up itself while doing
-	// its homework (§0.2 auto-fill). Persisted on the evaluated todo_event and
-	// replayed into previous_evaluations on the next M4 re-eval.
-	EvidenceGathered []Evidence `json:"evidence_gathered"`
-}
-
-// Evidence is one fact or link Codex found by self-running tools during M4.
-type Evidence struct {
-	Label  string `json:"label"`
-	Detail string `json:"detail"`
-}
-
-// Clarification is one thing Codex asks the human to clarify or provide. Both
-// fields are free text; the prompt defines what to put there.
-type Clarification struct {
-	Question string `json:"question"`       // 要澄清/需要补充的点
-	Hint     string `json:"hint,omitempty"` // 可选：给填写者的提示或示例
+	// from it directly, not re-inferred from semantic payload fields.
+	Disposition string `json:"disposition"`
+	// Plan is the complete execution intent. M4 does not prescribe its semantic
+	// shape; ready/need_review only require a non-null JSON value.
+	Plan json.RawMessage `json:"plan"`
+	// Payload carries reasoning, evidence, risks, clarification requests and any
+	// future model-authored semantics without widening this Go contract.
+	Payload json.RawMessage `json:"payload"`
 }
 
 type DecisionFactor struct {
 	Name  string  `json:"name"`
 	Score float64 `json:"score"`
 	Basis string  `json:"basis"`
-}
-
-type PlanDraft struct {
-	Summary    string          `json:"summary"`
-	Steps      []string        `json:"steps"`
-	Parameters []PlanParameter `json:"parameters"`
-	Basis      []string        `json:"basis"`
-}
-
-type PlanParameter struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
 }
 
 type CodexResult struct {
@@ -325,50 +253,40 @@ func decodeCodexDecision(raw []byte) (*CodexDecision, error) {
 		}
 		return nil, fmt.Errorf("decode trailing codex decision result: %w", err)
 	}
-	if err := validateFactors("confidence", decision.ConfidenceFactors); err != nil {
+	payload, err := canonicalJSONValue(decision.Payload, "codex decision payload", false)
+	if err != nil {
 		return nil, err
 	}
-	if err := validateFactors("risk", decision.RiskFactors); err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(decision.ConfidenceBasis) == "" {
-		return nil, fmt.Errorf("codex decision confidence_basis is blank")
-	}
-	for position, clarification := range decision.Clarifications {
-		if strings.TrimSpace(clarification.Question) == "" {
-			return nil, fmt.Errorf("codex decision clarifications[%d] question is blank", position)
-		}
-	}
-	for position, evidence := range decision.EvidenceGathered {
-		if strings.TrimSpace(evidence.Label) == "" {
-			return nil, fmt.Errorf("codex decision evidence_gathered[%d] label is blank", position)
-		}
-	}
+	decision.Payload = payload
 	switch decision.Disposition {
 	case DispositionReady, DispositionNeedReview:
-		// A clue Codex judges actionable must carry a concrete plan to execute or
-		// review. Fail-fast so "ready" without a plan cannot slip to M5.
-		if decision.ProposedPlan == nil {
-			return nil, fmt.Errorf("codex decision disposition=%s requires proposed_plan", decision.Disposition)
+		plan, err := canonicalJSONValue(decision.Plan, "codex decision plan", false)
+		if err != nil {
+			return nil, fmt.Errorf("codex decision disposition=%s requires plan: %w", decision.Disposition, err)
 		}
+		decision.Plan = plan
 	case DispositionNeedInfo:
-		// need_info means Codex tried and still lacks a key fact — it must tell the
-		// human what to supply, otherwise "需要补充信息" is useless.
-		if len(decision.Clarifications) == 0 {
-			return nil, fmt.Errorf("codex decision disposition=need_info requires at least one clarification")
+		if bytes.Equal(bytes.TrimSpace(decision.Plan), []byte("null")) {
+			decision.Plan = nil
+		} else if len(bytes.TrimSpace(decision.Plan)) != 0 {
+			plan, err := canonicalJSONValue(decision.Plan, "codex decision plan", false)
+			if err != nil {
+				return nil, err
+			}
+			decision.Plan = plan
 		}
 	case DispositionDrop:
-		// drop discards the clue; a plan would be contradictory.
-		if decision.ProposedPlan != nil {
-			return nil, fmt.Errorf("codex decision disposition=drop must not carry a proposed_plan")
+		if bytes.Equal(bytes.TrimSpace(decision.Plan), []byte("null")) {
+			decision.Plan = nil
+		} else if len(bytes.TrimSpace(decision.Plan)) != 0 {
+			plan, err := canonicalJSONValue(decision.Plan, "codex decision plan", false)
+			if err != nil {
+				return nil, err
+			}
+			decision.Plan = plan
 		}
 	default:
 		return nil, fmt.Errorf("codex decision has invalid disposition %q", decision.Disposition)
-	}
-	if decision.ProposedPlan != nil {
-		if err := validatePlanDraft(decision.ProposedPlan); err != nil {
-			return nil, err
-		}
 	}
 	return &decision, nil
 }
@@ -392,37 +310,6 @@ func validateFactors(name string, factors []DecisionFactor) error {
 		}
 		if strings.TrimSpace(factor.Basis) == "" {
 			return fmt.Errorf("codex decision %s factor %q basis is blank", name, factorName)
-		}
-	}
-	return nil
-}
-
-func validatePlanDraft(plan *PlanDraft) error {
-	if strings.TrimSpace(plan.Summary) == "" {
-		return fmt.Errorf("codex proposed_plan summary is blank")
-	}
-	if len(plan.Steps) == 0 {
-		return fmt.Errorf("codex proposed_plan steps is empty")
-	}
-	for position, step := range plan.Steps {
-		if strings.TrimSpace(step) == "" {
-			return fmt.Errorf("codex proposed_plan steps[%d] is blank", position)
-		}
-	}
-	seen := make(map[string]struct{}, len(plan.Parameters))
-	for position, parameter := range plan.Parameters {
-		name := strings.TrimSpace(parameter.Name)
-		if name == "" {
-			return fmt.Errorf("codex proposed_plan parameters[%d] has blank name", position)
-		}
-		if _, exists := seen[name]; exists {
-			return fmt.Errorf("codex proposed_plan contains duplicate parameter %q", name)
-		}
-		seen[name] = struct{}{}
-	}
-	for position, basis := range plan.Basis {
-		if strings.TrimSpace(basis) == "" {
-			return fmt.Errorf("codex proposed_plan basis[%d] is blank", position)
 		}
 	}
 	return nil

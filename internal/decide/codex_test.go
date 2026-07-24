@@ -13,7 +13,7 @@ import (
 const codexFixtureTimeout = 30 * time.Second
 
 func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
-	resultJSON := `{"disposition":"ready","confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","clarifications":[],"recommended_review":false,"proposed_plan":{"summary":"inspect fixture","steps":["inspect"],"parameters":[],"basis":[]},"plan_is_clear":true,"evidence_gathered":[]}`
+	resultJSON := `{"disposition":"ready","plan":{"summary":"inspect fixture","steps":["inspect"],"future_field":{"free":true}},"payload":{"summary":"ready","blocks":[{"kind":"evidence","label":"fixture","content":{"score":"not a fixed DTO"}}]}}`
 	bin := writeCodexFixture(t, resultJSON, true)
 	decider, err := NewCodexDecider(CodexOptions{Bin: bin, Model: "fixture-model", Timeout: codexFixtureTimeout, Sandbox: "read-only", ReasoningEffort: "low"})
 	if err != nil {
@@ -23,16 +23,19 @@ func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decide() error = %v", err)
 	}
-	if result.SessionID != "fixture-session" || !result.Decision.PlanIsClear || result.Decision.ConfidenceFactors[0].Score != 0.9 {
+	if result.SessionID != "fixture-session" {
 		t.Fatalf("result = %#v", result)
 	}
-	if result.Decision.ProposedPlan == nil || result.Decision.ProposedPlan.Steps[0] != "inspect" {
-		t.Fatalf("proposed_plan = %#v", result.Decision.ProposedPlan)
+	if got := string(result.Decision.Plan); !strings.Contains(got, `"future_field"`) {
+		t.Fatalf("open plan lost fields: %s", got)
+	}
+	if got := string(result.Decision.Payload); !strings.Contains(got, `"score":"not a fixed DTO"`) {
+		t.Fatalf("open payload lost fields: %s", got)
 	}
 }
 
 func TestCodexDeciderRejectsMissingSession(t *testing.T) {
-	resultJSON := `{"disposition":"need_info","confidence_factors":[{"name":"slots","score":0.9,"basis":"complete"}],"risk_factors":[{"name":"irreversible","score":0.2,"basis":"read only"}],"confidence_basis":"synthetic evidence","clarifications":[{"question":"需要哪些信息?","hint":""}],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false,"evidence_gathered":[]}`
+	resultJSON := `{"disposition":"need_info","plan":null,"payload":{"summary":"需要补充","blocks":[{"kind":"clarification","label":"缺失信息","content":"需要哪些信息？"}]}}`
 	decider, err := NewCodexDecider(CodexOptions{Bin: writeCodexFixture(t, resultJSON, false), Model: "fixture-model", Timeout: codexFixtureTimeout, Sandbox: "read-only", ReasoningEffort: "low"})
 	if err != nil {
 		t.Fatalf("NewCodexDecider() error = %v", err)
@@ -49,18 +52,37 @@ func TestDecodeCodexDecisionFailsFast(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{name: "unknown field", raw: `{"confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false,"extra":1}`, want: "unknown field"},
-		{name: "score out of range", raw: `{"confidence_factors":[{"name":"a","score":2,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`, want: "outside [0,1]"},
-		{name: "ready without plan", raw: `{"disposition":"ready","confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":true,"evidence_gathered":[]}`, want: "requires proposed_plan"},
-		{name: "need_info without clarification", raw: `{"disposition":"need_info","confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false,"evidence_gathered":[]}`, want: "requires at least one clarification"},
-		{name: "invalid disposition", raw: `{"disposition":"bogus","confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false,"evidence_gathered":[]}`, want: "invalid disposition"},
-		{name: "clarification blank question", raw: `{"confidence_factors":[{"name":"a","score":1,"basis":"x"}],"risk_factors":[{"name":"b","score":1,"basis":"x"}],"confidence_basis":"x","clarifications":[{"question":"  ","hint":""}],"recommended_review":false,"proposed_plan":null,"plan_is_clear":false}`, want: "question is blank"},
+		{name: "unknown shell field", raw: `{"disposition":"need_info","plan":null,"payload":{"summary":"x"},"extra":1}`, want: "unknown field"},
+		{name: "ready without plan", raw: `{"disposition":"ready","plan":null,"payload":{"summary":"x"}}`, want: "requires plan"},
+		{name: "ready with empty plan", raw: `{"disposition":"ready","plan":{},"payload":{"summary":"x"}}`, want: "empty object"},
+		{name: "missing payload", raw: `{"disposition":"need_info","plan":null}`, want: "payload is required"},
+		{name: "null payload", raw: `{"disposition":"need_info","plan":null,"payload":null}`, want: "must not be null"},
+		{name: "invalid disposition", raw: `{"disposition":"bogus","plan":null,"payload":{"summary":"x"}}`, want: "invalid disposition"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := decodeCodexDecision([]byte(test.raw))
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestDecodeCodexDecisionAcceptsOpenPlanAndPayload(t *testing.T) {
+	tests := map[string]string{
+		"string plan": `{"disposition":"ready","plan":"调查、验证并汇报","payload":{"unknown":{"nested":[1,true]}}}`,
+		"array plan":  `{"disposition":"need_review","plan":["调查",{"verify":true}],"payload":["风险待确认",{"kind":"future_kind"}]}`,
+		"need info":   `{"disposition":"need_info","plan":null,"payload":"请补充目标仓库"}`,
+	}
+	for name, raw := range tests {
+		t.Run(name, func(t *testing.T) {
+			decision, err := decodeCodexDecision([]byte(raw))
+			if err != nil {
+				t.Fatalf("decodeCodexDecision() error = %v", err)
+			}
+			if len(decision.Payload) == 0 {
+				t.Fatal("payload was lost")
 			}
 		})
 	}

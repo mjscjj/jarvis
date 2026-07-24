@@ -20,12 +20,11 @@ const maxPriorEvalsInPrompt = 5
 // proposed, and looked up — instead of starting from a blank slate after a
 // human supplement.
 type PriorEvaluation struct {
-	At               string          `json:"at"`
-	Route            string          `json:"route"`
-	RouteReason      string          `json:"route_reason,omitempty"`
-	Clarifications   []Clarification `json:"clarifications,omitempty"`
-	ProposedPlan     *PlanDraft      `json:"proposed_plan,omitempty"`
-	EvidenceGathered []Evidence      `json:"evidence_gathered,omitempty"`
+	At      string          `json:"at"`
+	Route   string          `json:"route"`
+	Reason  string          `json:"route_reason,omitempty"`
+	Plan    json.RawMessage `json:"plan,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
 // loadPriorEvaluations reads evaluated todo_event rows for a Todo and returns
@@ -48,11 +47,10 @@ func loadPriorEvaluations(ctx context.Context, db *gorm.DB, todoID uint64) ([]Pr
 			continue
 		}
 		var detail struct {
-			EventType        string          `json:"event_type"`
-			RouteReason      string          `json:"route_reason"`
-			ProposedPlan     *PlanDraft      `json:"proposed_plan"`
-			Clarifications   []Clarification `json:"clarifications"`
-			EvidenceGathered []Evidence      `json:"evidence_gathered"`
+			EventType string          `json:"event_type"`
+			Reason    string          `json:"route_reason"`
+			Plan      json.RawMessage `json:"plan"`
+			Payload   json.RawMessage `json:"payload"`
 		}
 		if err := json.Unmarshal(row.Detail, &detail); err != nil {
 			return nil, fmt.Errorf("decode prior evaluation event_id=%d: %w", row.ID, err)
@@ -61,12 +59,11 @@ func loadPriorEvaluations(ctx context.Context, db *gorm.DB, todoID uint64) ([]Pr
 			continue
 		}
 		out = append(out, PriorEvaluation{
-			At:               row.CreatedAt.UTC().Format(time.RFC3339),
-			Route:            row.ToStatus,
-			RouteReason:      detail.RouteReason,
-			Clarifications:   detail.Clarifications,
-			ProposedPlan:     detail.ProposedPlan,
-			EvidenceGathered: detail.EvidenceGathered,
+			At:      row.CreatedAt.UTC().Format(time.RFC3339),
+			Route:   row.ToStatus,
+			Reason:  detail.Reason,
+			Plan:    detail.Plan,
+			Payload: detail.Payload,
 		})
 	}
 	if len(out) > maxPriorEvalsInPrompt {

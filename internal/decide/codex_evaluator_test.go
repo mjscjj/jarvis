@@ -2,8 +2,10 @@ package decide
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"jarvis/internal/contextsnap"
@@ -64,16 +66,8 @@ func testContextSnapshot(t *testing.T) datatypes.JSON {
 	return datatypes.JSON(raw)
 }
 
-func clearFactors() []DecisionFactor {
-	return []DecisionFactor{{Name: "clarity", Score: 0.9, Basis: "explicit ask"}}
-}
-
-func riskyFactors() []DecisionFactor {
-	return []DecisionFactor{{Name: "reach", Score: 0.4, Basis: "internal only"}}
-}
-
-func clearPlan() *PlanDraft {
-	return &PlanDraft{Summary: "do it", Steps: []string{"step"}, Basis: []string{"quote"}}
+func clearPlan() json.RawMessage {
+	return json.RawMessage(`{"summary":"do it","steps":["step"],"future":{"free":true}}`)
 }
 
 func TestRouteForDisposition(t *testing.T) {
@@ -102,16 +96,6 @@ func TestRouteForDisposition(t *testing.T) {
 	}
 }
 
-func TestAggregateFactors(t *testing.T) {
-	factors := []DecisionFactor{{Name: "a", Score: 0.2}, {Name: "b", Score: 0.8}}
-	if got := aggregateFactors(factors); got != 0.5 {
-		t.Fatalf("aggregate = %v, want 0.5", got)
-	}
-	if got := aggregateFactors(nil); got != 0.5 {
-		t.Fatalf("empty aggregate = %v, want neutral 0.5", got)
-	}
-}
-
 func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 	todo := &domain.Todo{
 		ID: 42, Version: 3, Status: "extracted",
@@ -123,11 +107,9 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 	runner := &fakeCodexDecisionRunner{result: &CodexResult{
 		SessionID: "sess-1",
 		Decision: CodexDecision{
-			Disposition:       DispositionNeedReview,
-			ConfidenceFactors: clearFactors(), RiskFactors: riskyFactors(),
-			ConfidenceBasis: "explicit", PlanIsClear: true, ProposedPlan: clearPlan(),
-			RecommendedReview: true,
-			EvidenceGathered:  []Evidence{{Label: "repo", Detail: "jarvis local"}},
+			Disposition: DispositionNeedReview,
+			Plan:        clearPlan(),
+			Payload:     json.RawMessage(`{"summary":"review","blocks":[{"kind":"evidence","label":"repo","content":"jarvis local"}]}`),
 		},
 	}}
 	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{}, fakeWorkRuleReader{}, fakeSkillReader{}, fakeSystemPromptReader{})
@@ -154,14 +136,14 @@ func TestCodexEvaluatorMapsDecisionToEvaluationInput(t *testing.T) {
 	if input.CodexSessionID == nil || *input.CodexSessionID != "sess-1" {
 		t.Fatalf("session id = %v", input.CodexSessionID)
 	}
-	if input.ProposedPlan == nil {
-		t.Fatalf("proposed plan must ride along for confirmation")
+	if len(input.Plan) == 0 {
+		t.Fatalf("plan must ride along for confirmation")
 	}
-	if len(input.EvidenceGathered) != 1 || input.EvidenceGathered[0].Label != "repo" {
-		t.Fatalf("evidence_gathered = %#v", input.EvidenceGathered)
+	if got := string(input.DecisionPayload); !strings.Contains(got, `"jarvis local"`) {
+		t.Fatalf("decision payload = %s", got)
 	}
-	if input.Confidence != 0.9 || input.Risk != 0.4 {
-		t.Fatalf("aggregated scores conf=%v risk=%v", input.Confidence, input.Risk)
+	if len(input.ConfidenceFactors) != 0 || len(input.RiskFactors) != 0 {
+		t.Fatalf("model semantics leaked into fixed factors: %#v %#v", input.ConfidenceFactors, input.RiskFactors)
 	}
 	if runner.calls != 1 {
 		t.Fatalf("codex called %d times, want 1", runner.calls)
@@ -179,9 +161,9 @@ func TestCodexEvaluatorPreservesManualGateAfterSupplement(t *testing.T) {
 	runner := &fakeCodexDecisionRunner{result: &CodexResult{
 		SessionID: "sess-ready",
 		Decision: CodexDecision{
-			Disposition:       DispositionReady,
-			ConfidenceFactors: clearFactors(), RiskFactors: riskyFactors(),
-			ConfidenceBasis: "now complete", PlanIsClear: true, ProposedPlan: clearPlan(),
+			Disposition: DispositionReady,
+			Plan:        clearPlan(),
+			Payload:     json.RawMessage(`{"summary":"now complete"}`),
 		},
 	}}
 	evaluator, err := NewCodexEvaluator(nil, runner, fakeSharedMemoryReader{}, fakeWorkRuleReader{}, fakeSkillReader{}, fakeSystemPromptReader{})

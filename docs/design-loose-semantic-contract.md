@@ -1,0 +1,250 @@
+# 宽松语义结构与阶段解耦方案
+
+Jarvis 的 M3/M4/M5 不应共享一套庞大的模型语义 DTO。程序只固定硬消费字段，模型语义用自然语言或宽松 JSON 原样传递。这样上游新增一段判断、证据或结果时，下游能直接带给模型，不需要同步改 Go struct、JSON Schema、前端类型和历史数据。
+
+当前落地状态（2026-07-24）：实施顺序第 1、2 项已完成；M3、ContextDocument、`repo_path` 和事件快照收缩尚未实施。
+
+## 目标
+
+1. 阶段之间只共享 ID、状态、版本、关联关系、幂等键、调度、审批、执行参数等硬控制字段。
+2. 模型生成或消费的目标、背景、计划、原因、证据、风险、过程和结果，统一放在宽松 `payload`。
+3. 保留 `kind + label`。它是语义块的轻量约定，不是封闭类型系统。
+4. 每次观察得到的上下文按 revision 冻结。下游可以追加新信息，但不要重建或改写已经作为决策依据的上游语义。
+
+## 开放语义块约定
+
+阶段之间不共享一个必须同步升级的公共大 DTO。需要表达多段语义时，各阶段可以采用下面这个小约定：
+
+```json
+{
+  "summary": "给人和模型快速读的一段总结",
+  "blocks": [
+    {
+      "kind": "risk",
+      "label": "外部发送风险",
+      "content": {
+        "level": "medium",
+        "basis": "需要真实发送飞书消息"
+      }
+    }
+  ]
+}
+```
+
+- `kind` 是自由字符串，用于 UI 或提示词做轻量分组。可以有推荐值，但不做全局封闭枚举。
+- `label` 是给人看的短标题，应稳定保留。
+- `content` 是任意非 `null` JSON。可以是字符串、对象、数组、数字或布尔值。
+- 未知 `kind` 必须原样展示或传递，不能丢弃。
+- 阶段可以直接使用一段自然语言或宽松 JSON；没有多块内容时，不要求为了形式统一而包装成 `blocks`。
+- 每个阶段只解释自己硬消费的字段。即使碰巧都使用 `kind + label + content`，也不导出一套跨阶段 Go DTO。
+
+推荐 `kind`：
+
+- `context`：背景、结论、说明。
+- `evidence`：证据、链接、消息、文件。
+- `risk`：风险与注意事项。
+- `clarification`：需要人补充或拍板的问题。
+- `plan`：执行方案片段。
+- `doc_link` / `code_link` / `commit_digest`：执行产物和引用。
+
+## M3 抽取
+
+硬字段：
+
+- `action_type`：执行策略和分流需要。
+- `title`：列表展示需要。
+- `target`：去重和 action hash 需要。
+- `source_message_ids` / `source_quote`：证据完整性需要。
+
+宽松语义：
+
+- `description`
+- `context`
+- `open_questions`
+- `commitment_strength`
+- `project_hint`
+- `due_date`
+- 其他推断依据
+
+`assigner_open_id` 如果来自飞书消息发送者，是来源证据，应随原始消息保留；如果只是模型推断出的“实际交办人”，则放进宽松语义，不覆盖来源身份。
+
+目标输出：
+
+```json
+{
+  "candidates": [
+    {
+      "action_type": "code_change",
+      "title": "修复工具执行报错",
+      "target": "jarvis tool 执行报错",
+      "evidence": {
+        "message_ids": ["om_xxx"],
+        "quote": "修复工具的执行报错"
+      },
+      "payload": {
+        "summary": "用户要求修复 jarvis tool 执行失败，并去掉工具次数上限。",
+        "blocks": []
+      }
+    }
+  ]
+}
+```
+
+在 M3 仍使用严格 Structured Output 的阶段，`payload` 先定义为一段完整 JSON 文本，由 Jarvis 校验它是合法 JSON 后原样保存；不要为 payload 内部结构建立严格 schema。等运行时确认支持真正开放的 schema 后，再直接输出 JSON 值。
+
+## ContextDocument
+
+当前 `context_snapshot` 不应长期维持为大公共 DTO。目标是收缩为 ContextDocument：
+
+```json
+{
+  "snapshot_version": "v2",
+  "captured_at": "2026-07-24T10:00:00Z",
+  "summary": "这条任务来自 Jarvis 项目群，涉及本地仓库 /Users/bytedance/workspace-local/jarvis。",
+  "blocks": [
+    {"kind": "principal", "label": "我", "content": {}},
+    {"kind": "project", "label": "Jarvis", "content": {}},
+    {"kind": "conversation", "label": "相关消息", "content": []},
+    {"kind": "memory", "label": "相关记忆", "content": []}
+  ]
+}
+```
+
+冻结与修订原则：
+
+- 一次 M3 observation 产生一个不可变 ContextDocument，并记录 revision / observation id。
+- Todo 可以继续接收新证据，但新增证据写入 append-only supplement/event，不修改旧 ContextDocument。
+- 每次重新决策明确引用它实际使用的 observation 与 supplements，结果写入 append-only decision event（当前复用 `TodoEvent.detail`）。
+- Task 创建时冻结此次决策使用的 ContextDocument、supplements 和 Decision Event；M5 只消费 Task 自带背景，不回查并重建 Todo 当前状态。
+- M4/M5 默认把这些语义整体传给模型，不解析内部业务字段。
+
+## M4 决策
+
+硬字段：
+
+- `disposition`: `ready | need_review | need_info | drop`
+- `plan`: 宽松 JSON 或自然语言。`ready` 和 `need_review` 时必须存在且非空，但不限定必须是对象。
+- `payload`: 宽松 JSON。
+
+目标输出：
+
+```json
+{
+  "disposition": "need_review",
+  "plan": {
+    "summary": "修改 M5 enrichment 为开放 content，并更新前端渲染。"
+  },
+  "payload": {
+    "summary": "可执行，但涉及模型输出契约变更，建议人工确认。",
+    "blocks": [
+      {"kind": "risk", "label": "契约变更", "content": "需要同步后端 schema、解析和前端展示。"}
+    ]
+  }
+}
+```
+
+`confidence_factors`、`risk_factors`、`clarifications`、`evidence_gathered` 不再作为跨阶段固定 DTO。需要展示时放进 `payload.blocks`。
+
+### M4 到 Task 的可靠交接
+
+当前实现已经在 `EvaluationStore.Apply` 的同一个既有事务中完成 Todo version CAS、append-only `TodoEvent`、`DecisionAudit` 和自动 Task 创建；Task 还有 `todo_id` 唯一键。事务失败会整体回滚，因此当前没有“Todo 已变成 auto，但 Task 漏建”的中间窗口，不需要再增加 DecisionEvent 表和 TaskMaterializer 抽象。
+
+保留下面几个边界即可：
+
+1. M4 的完整 `plan + payload` 写入本次 append-only `TodoEvent.detail`，不能只保留可变 Todo 上的投影值。
+2. Todo version CAS 防止旧决策覆盖补充信息后的新 revision。
+3. Task 创建继续受 `todo_id` 唯一键约束；重复创建直接 fail-fast。
+4. `need_review` 继续使用 sticky `manual_gate_required`。补充上下文只能触发新的 decision revision，不能静默绕过人工门禁。
+5. 不为“可能将来拆进程”预建 materializer/reconciler。如果以后确实要移除现有事务或跨进程物化，再单独设计可恢复协议并先确认复杂度。
+
+## M5 执行
+
+硬字段：
+
+- `outcome`: `completed | waiting | needs_human | failed`
+- `waiting`: 只有等待唤醒时使用，必须严格。
+- `proposal`: 只有外部写入审批时使用，`action/target/artifact` 必须严格。
+
+`awaiting_approval` 是 Task 状态，不是 Codex `outcome`；它由 propose 阶段的 `needs_approval=true` 和合法 proposal 推导。
+
+宽松字段：
+
+- `summary`
+- `failure_reason`
+- `needs_followup`
+- `enrichments`
+- 执行证据、链接、产物、风险、补充说明
+
+第一步落地先保持现有外壳，只把 `enrichments` 改为开放语义块：
+
+```json
+{
+  "outcome": "completed",
+  "summary": "已完成修改并通过测试。",
+  "failure_reason": "",
+  "needs_followup": "",
+  "enrichments": [
+    {
+      "kind": "code_link",
+      "label": "核心修改",
+      "content": {
+        "path": "internal/execute/prompt.go",
+        "note": "enrichment content 支持任意 JSON"
+      }
+    }
+  ],
+  "waiting": null
+}
+```
+
+## 存储边界
+
+Todo 保留：
+
+- `id/title/action_type/target`
+- `group_id/project_id`
+- `status/manual_gate_required`
+- `dedup_fingerprint/version/timestamps`
+- `source evidence`
+- `payload/context_snapshot/extraction_result` 宽松 JSON
+
+Task 保留：
+
+- `id/todo_id/title/action_type/target`
+- `source_type/source_id/occurrence_key`
+- `status/version`
+- `action_hash`
+- `project_id`
+- `execution_mode/approval_ref`
+- `background/plan/decision_payload/execution_result` 宽松 JSON
+
+`decision_payload` 在 Task 创建时从本次 M4 decision event 原样固化，并随 M5 `TASK_CONTEXT` 传递。它不能靠 M5 回查 Todo 当前事件重建。
+
+后续应给 Task 增加 `repo_path` 这类执行硬投影，让 M5 不再解析 `context_snapshot.project.repos`。
+
+TodoEvent / TaskEvent：
+
+- 事件只记录状态变化、actor、时间和宽松 detail。
+- 状态事件不重复复制完整 context snapshot。
+- Observation、Decision、Proposal 等模型产物必须落在不可变 artifact/event 中并保存该次完整 payload；当前 M4 复用 append-only `TodoEvent.detail`，不额外建表。
+- 工具调用 trace 单独保存为运行观测数据，不混入语义 payload；需要给后续模型时，以 `evidence` block 投影必要结论和引用。
+
+## 实施顺序
+
+1. M5 `enrichments`: `detail string` 改为 `content` 任意非 `null` JSON，前端通用渲染未知内容。
+2. M4 输出改为 `disposition + plan + payload`，把 factor/evidence/clarification 放进阶段自己的宽松 payload；复用现有 Todo CAS、TodoEvent 和 Task 唯一键。
+3. M3 Candidate 改为硬字段 + payload；严格 Structured Output 阶段先用 JSON 文本承载开放 payload。
+4. ContextSnapshot v2 改为按 observation/revision 冻结的 ContextDocument，supplements 只追加。
+5. Task 增加 `repo_path`，移除 M5 对 `contextsnap` 的依赖。
+6. 清理普通 TodoEvent 的完整 snapshot 复制，保留不可变模型 artifact。历史数据是否迁移另行确认。
+
+## 验收点
+
+- 未知 `kind` 能从 M5 输出落库并在前端展示。
+- `content` 为字符串、对象、数组时都能展示。
+- 未知 `kind` 和 payload 新增字段不会导致解析失败。
+- 只有硬控制字段失败才 fail-fast；语义字段新增不需要改 Go struct。
+- M5 不因为新增 enrichment 字段而拒绝模型输出。
+- 同一个 Todo 只能创建一个 Task；任一步失败不会留下 Todo 已 auto 但 Task 不存在的提交状态。
+- 有新 supplement 时旧决策不会覆盖新 Todo revision，也不会绕过人工门禁。
+- 后续 M3/M4 改造时，新增 payload block 不要求 Task 或 M5 同步改类型。

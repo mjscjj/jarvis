@@ -15,15 +15,13 @@ import (
 )
 
 type ConfirmationDetail struct {
-	Todo           *extract.TodoView     `json:"todo"`
-	SourceMessages []ConfirmationMessage `json:"source_messages"`
-	Assigner       *ConfirmationAssigner `json:"assigner"`
-	Events         []ConfirmationEvent   `json:"events"`
-	Audits         []DecisionAuditView   `json:"audits"`
-	ProposedPlan   *PlanDraft            `json:"proposed_plan"`
-	// Clarifications are what M4 asks the human to clarify/supply (from the latest
-	// evaluated event). The need_info UI shows these so the user knows what to add.
-	Clarifications []Clarification `json:"clarifications"`
+	Todo            *extract.TodoView     `json:"todo"`
+	SourceMessages  []ConfirmationMessage `json:"source_messages"`
+	Assigner        *ConfirmationAssigner `json:"assigner"`
+	Events          []ConfirmationEvent   `json:"events"`
+	Audits          []DecisionAuditView   `json:"audits"`
+	Plan            json.RawMessage       `json:"plan"`
+	DecisionPayload json.RawMessage       `json:"decision_payload"`
 }
 
 type ConfirmationMessage struct {
@@ -64,9 +62,7 @@ type DecisionAuditView struct {
 	Route                  string          `json:"route"`
 	RouteReason            string          `json:"route_reason"`
 	Confidence             *float64        `json:"confidence"`
-	ConfidenceFactors      json.RawMessage `json:"confidence_factors"`
 	Risk                   *float64        `json:"risk"`
-	RiskFactors            json.RawMessage `json:"risk_factors"`
 	MatchedRules           json.RawMessage `json:"matched_rules"`
 	DecisionEngine         string          `json:"decision_engine"`
 	CodexSessionID         *string         `json:"codex_session_id"`
@@ -116,7 +112,7 @@ func (s *ConfirmationDetailStore) GetConfirmation(ctx context.Context, todoID ui
 	if err != nil {
 		return nil, err
 	}
-	events, proposedPlan, clarifications, err := s.loadEvents(ctx, todoID)
+	events, plan, decisionPayload, err := s.loadEvents(ctx, todoID)
 	if err != nil {
 		return nil, err
 	}
@@ -126,8 +122,8 @@ func (s *ConfirmationDetailStore) GetConfirmation(ctx context.Context, todoID ui
 	}
 	return &ConfirmationDetail{
 		Todo: todo, SourceMessages: messages, Assigner: assigner,
-		Events: events, Audits: audits, ProposedPlan: proposedPlan,
-		Clarifications: clarifications,
+		Events: events, Audits: audits, Plan: plan,
+		DecisionPayload: decisionPayload,
 	}, nil
 }
 
@@ -184,14 +180,14 @@ func (s *ConfirmationDetailStore) loadAssigner(ctx context.Context, openID *stri
 	return result, nil
 }
 
-func (s *ConfirmationDetailStore) loadEvents(ctx context.Context, todoID uint64) ([]ConfirmationEvent, *PlanDraft, []Clarification, error) {
+func (s *ConfirmationDetailStore) loadEvents(ctx context.Context, todoID uint64) ([]ConfirmationEvent, json.RawMessage, json.RawMessage, error) {
 	var rows []domain.TodoEvent
 	if err := s.db.WithContext(ctx).Where("todo_id = ?", todoID).Order("id ASC").Find(&rows).Error; err != nil {
 		return nil, nil, nil, fmt.Errorf("load confirmation events todo_id=%d: %w", todoID, err)
 	}
 	result := make([]ConfirmationEvent, len(rows))
-	var proposedPlan *PlanDraft
-	var clarifications []Clarification
+	var plan json.RawMessage
+	var decisionPayload json.RawMessage
 	for index, row := range rows {
 		result[index] = ConfirmationEvent{
 			ID: row.ID, FromStatus: copyString(row.FromStatus), ToStatus: row.ToStatus,
@@ -199,26 +195,36 @@ func (s *ConfirmationDetailStore) loadEvents(ctx context.Context, todoID uint64)
 		}
 		if len(row.Detail) != 0 {
 			var detail struct {
-				ProposedPlan   *PlanDraft      `json:"proposed_plan"`
-				Clarifications []Clarification `json:"clarifications"`
+				EventType string          `json:"event_type"`
+				Plan      json.RawMessage `json:"plan"`
+				Payload   json.RawMessage `json:"payload"`
 			}
 			if err := json.Unmarshal(row.Detail, &detail); err != nil {
 				return nil, nil, nil, fmt.Errorf("decode confirmation event detail event_id=%d: %w", row.ID, err)
 			}
-			if detail.ProposedPlan != nil {
-				if err := validatePlanDraft(detail.ProposedPlan); err != nil {
-					return nil, nil, nil, fmt.Errorf("invalid proposed plan event_id=%d: %w", row.ID, err)
+			if detail.EventType == "evaluated" {
+				// Latest evaluated event wins as a whole. A null plan explicitly
+				// clears an older actionable plan after re-evaluation.
+				plan = nil
+				decisionPayload = nil
+				if len(detail.Plan) != 0 && string(detail.Plan) != "null" {
+					canonical, err := canonicalJSONValue(detail.Plan, "confirmation plan", false)
+					if err != nil {
+						return nil, nil, nil, fmt.Errorf("invalid plan event_id=%d: %w", row.ID, err)
+					}
+					plan = canonical
 				}
-				proposedPlan = detail.ProposedPlan
-			}
-			// Latest evaluated event wins (events are ASC), so the freshest
-			// clarifications reflect the current need_info/need_review state.
-			if len(detail.Clarifications) != 0 {
-				clarifications = detail.Clarifications
+				if len(detail.Payload) != 0 && string(detail.Payload) != "null" {
+					canonical, err := canonicalJSONValue(detail.Payload, "confirmation decision payload", false)
+					if err != nil {
+						return nil, nil, nil, fmt.Errorf("invalid decision payload event_id=%d: %w", row.ID, err)
+					}
+					decisionPayload = canonical
+				}
 			}
 		}
 	}
-	return result, proposedPlan, clarifications, nil
+	return result, plan, decisionPayload, nil
 }
 
 func (s *ConfirmationDetailStore) loadAudits(ctx context.Context, todoID uint64) ([]DecisionAuditView, error) {
@@ -230,8 +236,8 @@ func (s *ConfirmationDetailStore) loadAudits(ctx context.Context, todoID uint64)
 	for index, row := range rows {
 		result[index] = DecisionAuditView{
 			ID: row.ID, TS: row.TS, Route: row.Route, RouteReason: row.RouteReason,
-			Confidence: float64Copy(row.ConfidenceEff), ConfidenceFactors: rawJSON(row.ConfidenceFactors),
-			Risk: float64Copy(row.RiskEff), RiskFactors: rawJSON(row.RiskFactors), MatchedRules: rawJSON(row.MatchedRules),
+			Confidence: float64Copy(row.ConfidenceEff), Risk: float64Copy(row.RiskEff),
+			MatchedRules:   rawJSON(row.MatchedRules),
 			DecisionEngine: row.DecisionEngine, CodexSessionID: copyString(row.CodexSessionID),
 			ThresholdConfigVersion: row.ThresholdConfigVersion, FinalStatus: row.FinalStatus,
 		}
