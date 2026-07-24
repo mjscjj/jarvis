@@ -255,8 +255,9 @@ func renderConversation(messages []MessageContext, location *time.Location) stri
 		}
 		content := strings.ReplaceAll(strings.TrimSpace(message.Content), "\r\n", "\n")
 		content = strings.ReplaceAll(content, "\n", "\n    ")
-		lines[i] = fmt.Sprintf("[%s] msg_id=%s source=%s time=%s sender_open_id=%s is_leader=%t sender_name=%q: %s",
-			kind, message.MessageID, message.Source, time.UnixMilli(message.CreateTime).In(location).Format(time.RFC3339),
+		lines[i] = fmt.Sprintf("[%s] msg_id=%s source=%s message_type=%s time=%s sender_open_id=%s is_leader=%t sender_name=%q: %s",
+			kind, message.MessageID, message.Source, message.MessageType,
+			time.UnixMilli(message.CreateTime).In(location).Format(time.RFC3339),
 			message.SenderOpenID, message.IsLeader, message.SenderName, content)
 	}
 	return strings.Join(lines, "\n")

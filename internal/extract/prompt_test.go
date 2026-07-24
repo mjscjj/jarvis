@@ -202,25 +202,49 @@ func TestSalientQueryCapsLongMeetingEvidenceForMemorySearch(t *testing.T) {
 	}
 }
 
-func TestExtractionPromptLeavesMeetingCaptureResultDecisionToAgent(t *testing.T) {
+func TestBuildPromptCarriesMeetingCaptureResultType(t *testing.T) {
+	unit := ConversationUnit{Key: "meeting", Messages: []MessageContext{{
+		MessageID:   "meeting-capture-result:meeting-1",
+		MessageType: "meeting_capture_result",
+		Content:     "采集结果：permission_denied\nminute_token=minute-1",
+		CreateTime:  1_700_000_001_000,
+		IsNew:       true,
+		Extractable: true,
+	}}}
+	prompt, err := BuildPrompt(
+		ChatBatch{Group: GroupContext{ChatID: "meeting:ou_me"}},
+		unit,
+		nil,
+		time.Unix(1_700_000_100, 0),
+		PromptOptions{PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000},
+	)
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt.User, "message_type=meeting_capture_result") {
+		t.Fatalf("prompt missing message_type:\n%s", prompt.User)
+	}
+}
+
+func TestExtractionPromptRequiresPermissionFollowupForBlockedMeetingCapture(t *testing.T) {
 	raw, err := os.ReadFile("../../conf/prompts/m3-system-prompt.md")
 	if err != nil {
 		t.Fatalf("read M3 system prompt: %v", err)
 	}
 	system := string(raw)
 	for _, want := range []string{
-		"meeting 来源",
-		"只提取明确落到 principal 身上的交办",
-		"不因“开过会”本身生成 Todo",
+		"meeting_minutes",
+		"meeting_capture_result",
+		"permission_denied",
+		"manual_followup",
+		"minutes +apply-permission",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q", want)
 		}
 	}
-	for _, forbidden := range []string{"必须为 principal 提取一条 manual_followup", "决定是否申请对应妙记的查看权限"} {
-		if strings.Contains(system, forbidden) {
-			t.Fatalf("system prompt contains hard-coded decision %q", forbidden)
-		}
+	if strings.Contains(system, "自动申请权限") {
+		t.Fatalf("system prompt must not approve or execute the external write")
 	}
 }
 

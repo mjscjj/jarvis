@@ -79,6 +79,7 @@ type MessageContext struct {
 	SenderName   string
 	SenderType   string
 	Source       string
+	MessageType  string
 	Content      string
 	RootID       string
 	ThreadID     string

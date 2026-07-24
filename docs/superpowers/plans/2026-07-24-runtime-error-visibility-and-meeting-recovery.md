@@ -93,7 +93,7 @@ message_type=<value>
 
 - `meeting_minutes` 继续只从会议正文提取 principal 的明确交办。
 - `meeting_capture_result + permission_denied` 本身是可执行线索。
-- 必须生成一条 `manual_followup`，目标明确到 meeting、minute_token、`view` 权限和 `lark-cli minutes +apply-permission`。
+- 必须生成一条 `manual_followup`，目标明确到 meeting、minute_token、`view` 权限和 `minutes +apply-permission`；具体 CLI 工具说明继续由运行时 ToolCatalog 注入。
 - 标题与去重身份稳定，不要求会议正文。
 - 不自动申请权限，只生成 Todo 进入现有审批链路。
 
