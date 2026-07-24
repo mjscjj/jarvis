@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-// ModuleRun is the most recent parsed cron run for one module.
+// ModuleRun is the most recent parsed runtime event for one module.
 type ModuleRun struct {
 	Module    string            `json:"module"`     // capture / memory / extract / decide / execute
 	Time      string            `json:"time"`       // 该模块最近一条日志的时间戳
 	Status    string            `json:"status"`     // ok / error / unknown（无 status= 字段时）
-	CurrentOK bool              `json:"current_ok"` // 最近一次运行是否 ok（判「当前是否有问题」的唯一依据）
+	CurrentOK bool              `json:"current_ok"` // 最近一次运行是否没有报错
 	Job       string            `json:"job"`        // job= 值，如 scan_hot / memorize / extract
 	Fields    map[string]string `json:"fields"`     // 该行解析出的全部 k=v
 	Runs      int               `json:"runs"`       // 日志窗口里该模块出现的行数
@@ -22,15 +22,13 @@ type ModuleRun struct {
 }
 
 // cronLine matches "<module>-cron 2026/07/19 23:22:38.998088 <rest...>".
-var cronLine = regexp.MustCompile(`^([a-z]+)-cron\s+(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(.*)$`)
+var cronLine = regexp.MustCompile(`^([a-z][a-z-]*)-cron\s+(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(.*)$`)
 
 // kvPair matches key=value tokens (value has no spaces, matching how the cron
 // loggers format their structured lines).
 var kvPair = regexp.MustCompile(`(\w+)=(\S+)`)
 
-// Modules parses the merged log tail into a per-module latest-run table. It
-// reads the same log files as the log sub-tab (cron output is on stderr), so it
-// stays truthful to whatever the process actually logged — no separate writer.
+// Modules parses the merged log tail into a per-module latest-run table.
 func (s *DebugService) Modules(maxLines int) ([]ModuleRun, error) {
 	tail, err := s.logs.Tail(maxLines)
 	if err != nil {
@@ -38,35 +36,29 @@ func (s *DebugService) Modules(maxLines int) ([]ModuleRun, error) {
 	}
 	byModule := map[string]*ModuleRun{}
 	for _, line := range tail.Lines {
-		m := cronLine.FindStringSubmatch(line.Text)
-		if m == nil {
+		event, ok := parseRuntimeEvent(line)
+		if !ok {
 			continue
 		}
-		module, rest := m[1], m[3]
-		fields := map[string]string{}
-		for _, kv := range kvPair.FindAllStringSubmatch(rest, -1) {
-			fields[kv[1]] = kv[2]
-		}
-		status := fields["status"]
+		status := event.Status
 		if status == "" {
 			status = "unknown"
 		}
-		run := byModule[module]
+		run := byModule[event.Module]
 		if run == nil {
-			run = &ModuleRun{Module: module, Fields: map[string]string{}}
-			byModule[module] = run
+			run = &ModuleRun{Module: event.Module, Fields: map[string]string{}}
+			byModule[event.Module] = run
 		}
 		run.Runs++
-		// Lines arrive oldest→newest, so the last assignment wins as "latest".
-		run.Time = line.Time
+		run.Time = event.Time
 		run.Status = status
-		run.CurrentOK = status == "ok"
-		run.Job = fields["job"]
-		run.Fields = fields
-		run.Raw = line.Text
-		if status != "ok" && status != "unknown" {
+		run.CurrentOK = status != "error"
+		run.Job = event.Job
+		run.Fields = event.Fields
+		run.Raw = event.Raw
+		if status == "error" {
 			run.Failures++
-			run.LastError = strings.TrimSpace(line.Text)
+			run.LastError = event.Raw
 		}
 	}
 	out := make([]ModuleRun, 0, len(byModule))
@@ -77,27 +69,23 @@ func (s *DebugService) Modules(maxLines int) ([]ModuleRun, error) {
 	return out, nil
 }
 
-// FailureEvent is one cron run that logged status=error, kept for the "近 24h
-// 报错时间线". Recovered records whether the same module logged a later ok run,
-// so a transient blip (network jitter that self-healed) is visually separable
-// from something still broken.
+// FailureEvent is one scoped runtime failure kept for the recent timeline.
 type FailureEvent struct {
-	Time      string `json:"time"`      // 报错发生时间戳（日志原样）
-	Module    string `json:"module"`    // capture / memory / extract / decide / execute
-	Job       string `json:"job"`       // job= 值
-	Error     string `json:"error"`     // error= 字段（截断），拿不到就用整行
-	Recovered bool   `json:"recovered"` // 该模块之后是否又有过 ok 运行（true=已自愈）
-	Raw       string `json:"raw"`       // 原始日志行
+	Time      string `json:"time"`
+	Module    string `json:"module"`
+	Stage     string `json:"stage"`
+	Job       string `json:"job"`
+	Trigger   string `json:"trigger"`
+	ScopeType string `json:"scope_type"`
+	ScopeID   string `json:"scope_id"`
+	LogID     string `json:"logid"`
+	Error     string `json:"error"`
+	Count     int    `json:"count"`
+	Recovered bool   `json:"recovered"`
+	Raw       string `json:"raw"`
 }
 
-// logTimeLayout matches the cron timestamp format "2006/01/02 15:04:05(.000000)".
-const logTimeLayout = "2006/01/02 15:04:05"
-
-// Failures returns every cron run that logged status=error within the last
-// sinceHours, newest first. It reads the same merged log tail as Modules (cron
-// output on stderr) — no separate error store — so it never drifts from what the
-// process actually logged. Each event is tagged Recovered if its module later
-// logged an ok run, letting the UI de-emphasise self-healed blips.
+// Failures returns scoped cron and pipeline failures, newest first.
 func (s *DebugService) Failures(maxLines, sinceHours int) ([]FailureEvent, error) {
 	tail, err := s.logs.Tail(maxLines)
 	if err != nil {
@@ -109,64 +97,69 @@ func (s *DebugService) Failures(maxLines, sinceHours int) ([]FailureEvent, error
 	}
 
 	type parsed struct {
-		when   time.Time
-		hasTS  bool
-		module string
-		event  FailureEvent
+		when     time.Time
+		hasTS    bool
+		scopeKey string
+		event    FailureEvent
+	}
+	type activeFailure struct {
+		identity string
+		index    int
 	}
 	var events []parsed
-	// lastOKAfter[module] tracks the latest ok time seen; used after the pass to
-	// decide Recovered. We record failures in order, then resolve recovery.
+	activeByScope := map[string]activeFailure{}
 	lastOK := map[string]time.Time{}
 
 	for _, line := range tail.Lines {
-		m := cronLine.FindStringSubmatch(line.Text)
-		if m == nil {
+		runtime, ok := parseRuntimeEvent(line)
+		if !ok {
 			continue
 		}
-		module, tsText, rest := m[1], m[2], m[3]
-		fields := map[string]string{}
-		for _, kv := range kvPair.FindAllStringSubmatch(rest, -1) {
-			fields[kv[1]] = kv[2]
-		}
-		when, tsErr := time.ParseInLocation(logTimeLayout, tsText[:len(logTimeLayout)], time.Local)
-		hasTS := tsErr == nil
-		if hasTS && sinceHours > 0 && when.Before(cutoff) {
+		if runtime.HasTime && sinceHours > 0 && runtime.When.Before(cutoff) {
 			continue
 		}
-		status := fields["status"]
-		if status == "ok" {
-			if hasTS {
-				lastOK[module] = when
+		if runtime.Status == "ok" {
+			if runtime.HasTime {
+				lastOK[runtime.ScopeKey] = runtime.When
 			}
+			delete(activeByScope, runtime.ScopeKey)
 			continue
 		}
-		if status != "error" {
+		if runtime.Status != "error" {
 			continue
 		}
-		// error= messages contain spaces, so the kvPair token map truncates them
-		// at the first word. Grab everything after "error=" to end of line for the
-		// timeline; fall back to the whole line if there is no error= field.
-		errText := errorMessage(rest)
+		errText := runtime.Error
 		if errText == "" {
-			errText = strings.TrimSpace(line.Text)
+			errText = runtime.Raw
 		}
+		summary := normalizedErrorSummary(errText)
+		identity := runtime.ScopeKey + "\x00" + summary
+		if active, exists := activeByScope[runtime.ScopeKey]; exists && active.identity == identity {
+			events[active.index].when = runtime.When
+			events[active.index].hasTS = runtime.HasTime
+			events[active.index].event.Time = runtime.Time
+			events[active.index].event.LogID = runtime.LogID
+			events[active.index].event.Raw = runtime.Raw
+			events[active.index].event.Count++
+			continue
+		}
+		activeByScope[runtime.ScopeKey] = activeFailure{identity: identity, index: len(events)}
 		events = append(events, parsed{
-			when: when, hasTS: hasTS, module: module,
+			when: runtime.When, hasTS: runtime.HasTime, scopeKey: runtime.ScopeKey,
 			event: FailureEvent{
-				Time: line.Time, Module: module, Job: fields["job"],
-				Error: truncate(errText, 500), Raw: strings.TrimSpace(line.Text),
+				Time: runtime.Time, Module: runtime.Module, Stage: runtime.Stage,
+				Job: runtime.Job, Trigger: runtime.Trigger,
+				ScopeType: runtime.ScopeType, ScopeID: runtime.ScopeID,
+				LogID: runtime.LogID, Error: truncate(summary, 500),
+				Count: 1, Raw: runtime.Raw,
 			},
 		})
 	}
 
-	// Resolve Recovered: a failure is recovered if the module logged an ok run at
-	// a later timestamp. Without a parseable timestamp we cannot compare, so we
-	// leave Recovered=false (conservative: show it as still-relevant).
 	out := make([]FailureEvent, 0, len(events))
 	for _, p := range events {
 		if p.hasTS {
-			if okTime, ok := lastOK[p.module]; ok && okTime.After(p.when) {
+			if okTime, ok := lastOK[p.scopeKey]; ok && okTime.After(p.when) {
 				p.event.Recovered = true
 			}
 		}
