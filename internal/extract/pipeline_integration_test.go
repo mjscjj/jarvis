@@ -1,3 +1,5 @@
+//go:build integration
+
 package extract_test
 
 import (
@@ -33,7 +35,7 @@ import (
 func TestPipelineLive(t *testing.T) {
 	configPath := os.Getenv("JARVIS_TEST_PIPELINE_CONFIG")
 	if configPath == "" {
-		t.Skip("JARVIS_TEST_PIPELINE_CONFIG is required for live pipeline test")
+		t.Fatal("JARVIS_TEST_PIPELINE_CONFIG is required for live pipeline test")
 	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -350,7 +352,7 @@ func openPipelineTestDB(t *testing.T) (*config.Config, *gorm.DB) {
 	t.Helper()
 	configPath := os.Getenv("JARVIS_TEST_PIPELINE_CONFIG")
 	if configPath == "" {
-		t.Skip("JARVIS_TEST_PIPELINE_CONFIG is required for live pipeline test")
+		t.Fatal("JARVIS_TEST_PIPELINE_CONFIG is required for live pipeline test")
 	}
 	cfg, err := config.Load(configPath)
 	if err != nil {

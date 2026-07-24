@@ -1,3 +1,5 @@
+//go:build integration
+
 package decide
 
 import (
@@ -25,7 +27,7 @@ import (
 func TestConfirmationTransactionLive(t *testing.T) {
 	configPath := os.Getenv("JARVIS_TEST_DECIDE_CONFIG")
 	if configPath == "" {
-		t.Skip("JARVIS_TEST_DECIDE_CONFIG is required for confirmation integration test")
+		t.Fatal("JARVIS_TEST_DECIDE_CONFIG is required for confirmation integration test")
 	}
 	cfg, err := config.Load(configPath)
 	if err != nil {

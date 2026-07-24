@@ -15,7 +15,10 @@ import (
 )
 
 func TestValidateTaskFilter(t *testing.T) {
-	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"pending", "executing", "done"}, Page: 1, PageSize: 20}); err != nil {
+	if err := ValidateTaskFilter(TaskFilter{
+		Statuses: []string{"pending", "executing", "waiting", "needs_human", "awaiting_approval", "done", "failed"},
+		Page:     1, PageSize: 20,
+	}); err != nil {
 		t.Fatalf("ValidateTaskFilter() error = %v", err)
 	}
 	for _, filter := range []TaskFilter{
@@ -30,12 +33,18 @@ func TestValidateTaskFilter(t *testing.T) {
 }
 
 func TestParseStatuses(t *testing.T) {
-	statuses, err := ParseStatuses("pending,done,pending")
+	statuses, err := ParseStatuses("pending,waiting,needs_human,awaiting_approval,done,pending")
 	if err != nil {
 		t.Fatalf("ParseStatuses() error = %v", err)
 	}
-	if len(statuses) != 2 || statuses[0] != "pending" || statuses[1] != "done" {
+	want := []string{"pending", "waiting", "needs_human", "awaiting_approval", "done"}
+	if len(statuses) != len(want) {
 		t.Fatalf("statuses = %v", statuses)
+	}
+	for i := range want {
+		if statuses[i] != want[i] {
+			t.Fatalf("statuses[%d] = %q, want %q", i, statuses[i], want[i])
+		}
 	}
 	if _, err := ParseStatuses("pending,unknown"); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("ParseStatuses() error = %v", err)
@@ -47,34 +56,6 @@ func TestRunViewIncludesFullPrompt(t *testing.T) {
 	view := runView(&domain.ExecutionRun{ID: 1, Prompt: prompt})
 	if view.Prompt != prompt {
 		t.Fatalf("prompt length = %d, want %d", len(view.Prompt), len(prompt))
-	}
-}
-
-// TestAwaitingApprovalStatusAllowed guards that the new gate status is a valid
-// filter/query value everywhere Tasks are listed.
-func TestAwaitingApprovalStatusAllowed(t *testing.T) {
-	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"awaiting_approval"}, Page: 1, PageSize: 20}); err != nil {
-		t.Fatalf("awaiting_approval must be a valid filter status: %v", err)
-	}
-	statuses, err := ParseStatuses("awaiting_approval")
-	if err != nil || len(statuses) != 1 || statuses[0] != "awaiting_approval" {
-		t.Fatalf("ParseStatuses(awaiting_approval) = %v, err = %v", statuses, err)
-	}
-}
-
-func TestWaitingStatusAllowed(t *testing.T) {
-	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"waiting"}, Page: 1, PageSize: 20}); err != nil {
-		t.Fatalf("waiting must be a valid filter status: %v", err)
-	}
-}
-
-func TestNeedsHumanStatusAllowed(t *testing.T) {
-	if err := ValidateTaskFilter(TaskFilter{Statuses: []string{"needs_human"}, Page: 1, PageSize: 20}); err != nil {
-		t.Fatalf("needs_human must be a valid filter status: %v", err)
-	}
-	statuses, err := ParseStatuses("needs_human")
-	if err != nil || len(statuses) != 1 || statuses[0] != "needs_human" {
-		t.Fatalf("ParseStatuses(needs_human) = %v, err = %v", statuses, err)
 	}
 }
 

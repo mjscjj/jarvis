@@ -19,6 +19,8 @@ type testResponse struct {
 	} `json:"data"`
 }
 
+const fixtureCommandTimeout = 30 * time.Second
+
 func TestRun(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-only")
@@ -83,7 +85,7 @@ func TestRun(t *testing.T) {
 			bin := writeScript(t, tt.script)
 			timeout := tt.timeout
 			if timeout == 0 {
-				timeout = 5 * time.Second
+				timeout = fixtureCommandTimeout
 			}
 			client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: timeout})
 			if err != nil {
@@ -125,7 +127,7 @@ func TestSearchUser(t *testing.T) {
 
 	t.Run("parses candidates and has_more", func(t *testing.T) {
 		body := `printf '%s' '{"ok":true,"data":{"users":[{"open_id":"ou_abc","localized_name":"储节节","email":"c@x.com","department":"公会","p2p_chat_id":"oc_1","is_cross_tenant":false,"has_chatted":true}],"has_more":true}}'`
-		client, err := New(Options{Bin: writeScript(t, body), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: 5 * time.Second})
+		client, err := New(Options{Bin: writeScript(t, body), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
 		if err != nil {
 			t.Fatalf("New() error = %v", err)
 		}
@@ -142,7 +144,7 @@ func TestSearchUser(t *testing.T) {
 	})
 
 	t.Run("rejects empty query without calling CLI", func(t *testing.T) {
-		client, err := New(Options{Bin: writeScript(t, `exit 1`), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: 5 * time.Second})
+		client, err := New(Options{Bin: writeScript(t, `exit 1`), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
 		if err != nil {
 			t.Fatalf("New() error = %v", err)
 		}

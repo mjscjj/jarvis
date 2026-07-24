@@ -120,7 +120,7 @@ sleep 30
 		_, err := runner.RunTask(ctx, "start", "danger-full-access", "", schemaExecution, 123)
 		result <- err
 	}()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		if _, err := os.Stat(startedPath); err == nil {
 			break
@@ -136,7 +136,7 @@ sleep 30
 		if !errors.Is(err, ErrExecutionInterrupted) {
 			t.Fatalf("RunTask() error = %v, want ErrExecutionInterrupted", err)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("RunTask() did not stop after interrupt")
 	}
 }

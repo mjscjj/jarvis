@@ -1,3 +1,5 @@
+//go:build integration
+
 package progress_test
 
 import (
@@ -21,7 +23,7 @@ import (
 func TestProgressEventsMySQL(t *testing.T) {
 	dsn := os.Getenv("JARVIS_PROGRESS_TEST_MYSQL_DSN")
 	if dsn == "" {
-		t.Skip("JARVIS_PROGRESS_TEST_MYSQL_DSN is required")
+		t.Fatal("JARVIS_PROGRESS_TEST_MYSQL_DSN is required")
 	}
 	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
 		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,

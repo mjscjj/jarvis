@@ -1,3 +1,5 @@
+//go:build integration
+
 package capture
 
 import (
@@ -20,7 +22,7 @@ import (
 func TestCaptureMySQL(t *testing.T) {
 	dsn := os.Getenv("JARVIS_CAPTURE_TEST_MYSQL_DSN")
 	if dsn == "" {
-		t.Skip("JARVIS_CAPTURE_TEST_MYSQL_DSN is required for capture integration test")
+		t.Fatal("JARVIS_CAPTURE_TEST_MYSQL_DSN is required for capture integration test")
 	}
 	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
 		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,

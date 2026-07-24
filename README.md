@@ -293,20 +293,30 @@ npm --prefix web run typecheck
 npm --prefix web run build
 ```
 
+默认测试只包含可在本机稳定、无外部依赖运行的单元/组件测试。依赖真实
+MySQL、模型或完整配置的用例统一使用 `integration` 构建标签；显式启用后缺少
+所需环境变量会直接失败，不再用 `t.Skip` 产生“看似通过、实际没跑”的结果。
+
 真实 MySQL 迁移集成测试要求一个全新的空测试库：
 
 ```bash
 JARVIS_TEST_MYSQL_DSN='root:password@tcp(127.0.0.1:3306)/jarvis_migration_test?charset=utf8mb4&parseTime=true&loc=Local' \
-  go test ./internal/store -run '^TestMigrateMySQL$' -v
+  go test -tags=integration ./internal/store -run '^TestMigrateMySQL$' -v
 ```
 
 用当前配置做真实 Structured Output 和可回滚的 M3 全链路验收：
 
 ```bash
 JARVIS_TEST_MODEL_CONFIG=../../../conf/config.yaml \
-  go test ./internal/extract/provider -run '^TestClientLiveStructuredOutput$' -v
+  go test -tags=integration ./internal/extract/provider -run '^TestClientLiveStructuredOutput$' -v
 JARVIS_TEST_PIPELINE_CONFIG=../../conf/config.yaml \
-  go test ./internal/extract -run '^TestPipelineLive$' -v
+  go test -tags=integration ./internal/extract -run '^TestPipelineLive$' -v
+```
+
+配置齐全时可一次运行全部集成测试：
+
+```bash
+go test -tags=integration ./...
 ```
 
 ## 管理后台（MVP）

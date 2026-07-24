@@ -1,74 +1,59 @@
 package domain
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
-func TestCoreModels(t *testing.T) {
+func TestMigrationModelRegistries(t *testing.T) {
 	t.Parallel()
 
-	models := CoreModels()
-	if got, want := len(models), 11; got != want {
-		t.Fatalf("CoreModels() length = %d, want %d", got, want)
+	tests := []struct {
+		name       string
+		models     []any
+		want       []any
+		tableNames []string
+	}{
+		{
+			"core", CoreModels(),
+			[]any{&Project{}, &Group{}, &Person{}, &Todo{}, &Task{}, &Resource{}, &ScanRecord{}, &PrincipalProfile{}, &ManagedResource{}, &DailyDigest{}, &ScheduledTask{}},
+			[]string{"project", "feishu_group", "person", "todo", "task", "resource", "scan_record", "principal_profile", "managed_resource", "daily_digest", "scheduled_task"},
+		},
+		{"capture", CaptureModels(), []any{&Message{}, &Checkpoint{}, &MeetingIngest{}}, []string{"message", "chat_checkpoint", "meeting_ingest"}},
+		{"extract", ExtractModels(), []any{&TodoExtractWatermark{}, &TodoEvent{}}, []string{"todo_extract_watermark", "todo_event"}},
+		{"decide", DecideModels(), []any{&DecisionAudit{}}, []string{"decision_audit"}},
+		{"knowledge", KnowledgeModels(), []any{&RelationFact{}}, []string{"relation_fact"}},
+		{"progress", ProgressModels(), []any{&TaskEvent{}, &ProjectEvent{}}, []string{"task_event", "project_event"}},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if !reflect.DeepEqual(reflectTypes(test.models), reflectTypes(test.want)) {
+				t.Fatalf("registered model types = %v, want %v", reflectTypes(test.models), reflectTypes(test.want))
+			}
+			if !reflect.DeepEqual(modelTableNames(t, test.models), test.tableNames) {
+				t.Fatalf("registered table names = %v, want %v", modelTableNames(t, test.models), test.tableNames)
+			}
+		})
+	}
+}
 
-	got := []string{
-		models[0].(*Project).TableName(),
-		models[1].(*Group).TableName(),
-		models[2].(*Person).TableName(),
-		models[3].(*Todo).TableName(),
-		models[4].(*Task).TableName(),
-		models[5].(*Resource).TableName(),
-		models[6].(*ScanRecord).TableName(),
-		models[7].(*PrincipalProfile).TableName(),
-		models[8].(*ManagedResource).TableName(),
-		models[9].(*DailyDigest).TableName(),
-		models[10].(*ScheduledTask).TableName(),
+func reflectTypes(models []any) []reflect.Type {
+	types := make([]reflect.Type, len(models))
+	for i := range models {
+		types[i] = reflect.TypeOf(models[i])
 	}
-	want := []string{"project", "feishu_group", "person", "todo", "task", "resource", "scan_record", "principal_profile", "managed_resource", "daily_digest", "scheduled_task"}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("CoreModels()[%d] table = %q, want %q", i, got[i], want[i])
+	return types
+}
+
+func modelTableNames(t *testing.T, models []any) []string {
+	t.Helper()
+	names := make([]string, len(models))
+	for i := range models {
+		model, ok := models[i].(interface{ TableName() string })
+		if !ok {
+			t.Fatalf("registered model %T does not expose TableName", models[i])
 		}
+		names[i] = model.TableName()
 	}
-}
-
-func TestCaptureModels(t *testing.T) {
-	t.Parallel()
-	models := CaptureModels()
-	if got, want := len(models), 3; got != want {
-		t.Fatalf("CaptureModels() length = %d, want %d", got, want)
-	}
-	if got := models[0].(*Message).TableName(); got != "message" {
-		t.Errorf("Message table = %q", got)
-	}
-	if got := models[1].(*Checkpoint).TableName(); got != "chat_checkpoint" {
-		t.Errorf("Checkpoint table = %q", got)
-	}
-	if got := models[2].(*MeetingIngest).TableName(); got != "meeting_ingest" {
-		t.Errorf("MeetingIngest table = %q", got)
-	}
-}
-
-func TestExtractModels(t *testing.T) {
-	t.Parallel()
-	models := ExtractModels()
-	if got, want := len(models), 2; got != want {
-		t.Fatalf("ExtractModels() length = %d, want %d", got, want)
-	}
-	if got := models[0].(*TodoExtractWatermark).TableName(); got != "todo_extract_watermark" {
-		t.Errorf("TodoExtractWatermark table = %q", got)
-	}
-	if got := models[1].(*TodoEvent).TableName(); got != "todo_event" {
-		t.Errorf("TodoEvent table = %q", got)
-	}
-}
-
-func TestDecideModels(t *testing.T) {
-	t.Parallel()
-	models := DecideModels()
-	if got, want := len(models), 1; got != want {
-		t.Fatalf("DecideModels() length = %d, want %d", got, want)
-	}
-	if got := models[0].(*DecisionAudit).TableName(); got != "decision_audit" {
-		t.Errorf("DecisionAudit table = %q", got)
-	}
+	return names
 }

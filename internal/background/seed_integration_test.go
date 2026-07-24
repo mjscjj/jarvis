@@ -1,3 +1,7 @@
+//go:build integration
+
+// This file exercises seed flows against a real MySQL database.
+
 package background
 
 import (
@@ -31,7 +35,7 @@ func (s *stubMemberLister) ListChatMembers(_ context.Context, chatID string) ([]
 func TestSeedIdempotentMySQL(t *testing.T) {
 	dsn := os.Getenv("JARVIS_BACKGROUND_TEST_MYSQL_DSN")
 	if dsn == "" {
-		t.Skip("JARVIS_BACKGROUND_TEST_MYSQL_DSN is required for seed integration test")
+		t.Fatal("JARVIS_BACKGROUND_TEST_MYSQL_DSN is required for seed integration test")
 	}
 	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
 		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
@@ -74,7 +78,7 @@ func TestSeedIdempotentMySQL(t *testing.T) {
 func TestSeedPersonsFromKeyGroupsMySQL(t *testing.T) {
 	dsn := os.Getenv("JARVIS_BACKGROUND_TEST_MYSQL_DSN")
 	if dsn == "" {
-		t.Skip("JARVIS_BACKGROUND_TEST_MYSQL_DSN is required for seed-persons integration test")
+		t.Fatal("JARVIS_BACKGROUND_TEST_MYSQL_DSN is required for seed-persons integration test")
 	}
 	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
 		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,

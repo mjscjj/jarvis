@@ -1,3 +1,5 @@
+//go:build integration
+
 package provider
 
 import (
@@ -24,7 +26,7 @@ func TestClientLiveStructuredOutput(t *testing.T) {
 		model = cfg.Model.Model
 	}
 	if baseURL == "" || apiKey == "" || model == "" {
-		t.Skip("set JARVIS_TEST_MODEL_CONFIG or all JARVIS_TEST_MODEL_* variables")
+		t.Fatal("set JARVIS_TEST_MODEL_CONFIG or all JARVIS_TEST_MODEL_* variables")
 	}
 
 	client, err := NewClient(baseURL, apiKey, model, 90*time.Second)

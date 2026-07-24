@@ -1,3 +1,5 @@
+//go:build integration
+
 package store
 
 import (
@@ -20,7 +22,7 @@ import (
 func TestMigrateMySQL(t *testing.T) {
 	dsn := os.Getenv("JARVIS_TEST_MYSQL_DSN")
 	if dsn == "" {
-		t.Skip("JARVIS_TEST_MYSQL_DSN is required for MySQL integration test")
+		t.Fatal("JARVIS_TEST_MYSQL_DSN is required for MySQL integration test")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
