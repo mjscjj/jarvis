@@ -1509,3 +1509,37 @@ pre {
   margin: 6px 0 8px;
   padding-block: 6px;
 }
+
+/* System task configuration and log-backed execution history. */
+.system-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.system-tasks-header h4 {
+  margin: 0 0 var(--space-1);
+}
+
+.system-task-loading {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+}
+
+.system-tasks-file {
+  overflow-wrap: anywhere;
+}
+
+.system-task-raw-log {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}

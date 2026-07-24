@@ -191,6 +191,26 @@ func GetDebugLogs(reader *insight.LogReader) app.HandlerFunc {
 	}
 }
 
+// GetSystemTaskRuns returns recent executions for one configured scheduler job.
+// Records are parsed from the existing process logs; no audit table is created.
+func GetSystemTaskRuns(reader *insight.LogReader) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		limit, err := positiveQueryInt(c.Query("limit"), 100, "limit")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40028, err)
+			return
+		}
+		runs, tail, err := reader.SystemTaskRuns(string(c.Query("job")), limit)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40029, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{
+			"items": runs, "sources": tail.Sources, "truncated": tail.Truncated, "notes": tail.Notes,
+		}})
+	}
+}
+
 // SummarizeDigest turns the aggregated digest into prose on demand via codex.
 // Returns 503 when the summarizer is not configured (codex disabled).
 func SummarizeDigest(service *insight.DigestService, summarizer *insight.Summarizer) app.HandlerFunc {

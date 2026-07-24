@@ -56,6 +56,7 @@ import {
 } from './api'
 import SharedMemory from './SharedMemory'
 import RuntimeSettings from './RuntimeSettings'
+import SystemTasks from './SystemTasks'
 import EntityRelations from './components/EntityRelations'
 import type {
   AgentSkill,
@@ -1422,6 +1423,7 @@ export function Settings() {
     <Tabs
       items={[
         { key: 'runtime-settings', label: '运行配置', children: <RuntimeSettings /> },
+        { key: 'system-tasks', label: '系统任务', children: <SystemTasks /> },
         { key: 'work-rules', label: '工作规则', children: <WorkRulesPanel /> },
         { key: 'system-prompts', label: '系统提示词', children: <SystemPromptsPanel /> },
         { key: 'approval-rules', label: '审批规则管理', children: <ApprovalRulesPanel /> },

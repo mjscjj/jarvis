@@ -23,6 +23,8 @@ const maxTailBytes = 256 * 1024
 // tsPattern matches the leading timestamp `2006/01/02 15:04:05.000000`, allowing
 // an optional cron prefix word (e.g. "capture-cron ") in front of it.
 var tsPattern = regexp.MustCompile(`(?:^|\s)(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)`)
+var cronJobLine = regexp.MustCompile(`^([a-z][a-z-]*)-cron\s+\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\s+(.*)$`)
+var jobNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 func NewLogReader(paths []string) (*LogReader, error) {
 	cleaned := make([]string, 0, len(paths))
@@ -50,6 +52,19 @@ type LogTail struct {
 	Lines     []LogLine `json:"lines"`     // 已按时间归并的行（旧→新）
 	Truncated bool      `json:"truncated"` // 任一文件超过尾读上限时为 true
 	Notes     []string  `json:"notes"`     // 缺失文件等提示
+}
+
+// SystemTaskRun is one scheduler execution parsed directly from the process
+// logs. System-task history intentionally has no database table: the launchd
+// stdout/stderr files remain the only source of truth.
+type SystemTaskRun struct {
+	Time   string            `json:"time"`
+	Source string            `json:"source"`
+	Module string            `json:"module"`
+	Job    string            `json:"job"`
+	Status string            `json:"status"`
+	Fields map[string]string `json:"fields"`
+	Raw    string            `json:"raw"`
 }
 
 // parsedLine carries the sort key alongside the rendered line.
@@ -119,6 +134,46 @@ func (r *LogReader) Tail(lines int) (*LogTail, error) {
 	}
 	result.Lines = out
 	return result, nil
+}
+
+// SystemTaskRuns returns the latest log-backed executions for one exact job,
+// newest first. It reads a bounded log tail, so log rotation naturally defines
+// the retention period.
+func (r *LogReader) SystemTaskRuns(job string, limit int) ([]SystemTaskRun, *LogTail, error) {
+	job = strings.TrimSpace(job)
+	if !jobNamePattern.MatchString(job) {
+		return nil, nil, fmt.Errorf("system task job must match %s", jobNamePattern.String())
+	}
+	if limit <= 0 || limit > 500 {
+		return nil, nil, fmt.Errorf("system task run limit must be between 1 and 500")
+	}
+	tail, err := r.Tail(5000)
+	if err != nil {
+		return nil, nil, err
+	}
+	runs := make([]SystemTaskRun, 0, limit)
+	for i := len(tail.Lines) - 1; i >= 0 && len(runs) < limit; i-- {
+		line := tail.Lines[i]
+		match := cronJobLine.FindStringSubmatch(line.Text)
+		if match == nil {
+			continue
+		}
+		fields := map[string]string{}
+		for _, pair := range kvPair.FindAllStringSubmatch(match[2], -1) {
+			fields[pair[1]] = pair[2]
+		}
+		if fields["job"] != job {
+			continue
+		}
+		if fullError := errorMessage(match[2]); fullError != "" {
+			fields["error"] = fullError
+		}
+		runs = append(runs, SystemTaskRun{
+			Time: line.Time, Source: line.Source, Module: match[1], Job: job,
+			Status: fields["status"], Fields: fields, Raw: line.Text,
+		})
+	}
+	return runs, tail, nil
 }
 
 // readTail returns the last maxTailBytes of a file as lines (dropping a leading

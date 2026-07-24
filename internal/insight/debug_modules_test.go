@@ -104,3 +104,53 @@ func TestFailuresTimelineTagsRecovery(t *testing.T) {
 		t.Fatalf("decide Error = %q, want 'token too long' (取 error= 字段)", events[1].Error)
 	}
 }
+
+func TestSystemTaskRunsFiltersExactJobAndSupportsHyphenatedModule(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "jarvis-server.error.log")
+	content := "" +
+		"meeting-capture-cron 2026/07/24 16:32:16.899462 logid=meeting job=meeting_minutes status=ok discovered=1 imported=0\n" +
+		"pipeline-cron 2026/07/24 16:33:16.002420 logid=decide job=decide_reconcile status=queued\n" +
+		"meeting-capture-cron 2026/07/24 16:37:17.114470 logid=meeting2 job=meeting_minutes status=error error=permission denied for minute\n"
+	if err := os.WriteFile(logPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write temp log: %v", err)
+	}
+	reader, err := NewLogReader([]string{logPath})
+	if err != nil {
+		t.Fatalf("NewLogReader() error = %v", err)
+	}
+
+	runs, tail, err := reader.SystemTaskRuns("meeting_minutes", 10)
+	if err != nil {
+		t.Fatalf("SystemTaskRuns() error = %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("SystemTaskRuns() len = %d, want 2", len(runs))
+	}
+	if runs[0].Module != "meeting-capture" || runs[0].Status != "error" {
+		t.Fatalf("latest run = %#v", runs[0])
+	}
+	if runs[0].Fields["error"] != "permission denied for minute" {
+		t.Fatalf("full error = %q", runs[0].Fields["error"])
+	}
+	if runs[1].Status != "ok" {
+		t.Fatalf("older run = %#v", runs[1])
+	}
+	if tail == nil || len(tail.Sources) != 1 {
+		t.Fatalf("tail metadata = %#v", tail)
+	}
+}
+
+func TestSystemTaskRunsRejectsUnknownJobSyntax(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "jarvis-server.error.log")
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatalf("write temp log: %v", err)
+	}
+	reader, err := NewLogReader([]string{logPath})
+	if err != nil {
+		t.Fatalf("NewLogReader() error = %v", err)
+	}
+	if _, _, err := reader.SystemTaskRuns("../server", 10); err == nil {
+		t.Fatal("SystemTaskRuns() accepted invalid job")
+	}
+}

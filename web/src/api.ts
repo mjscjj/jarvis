@@ -52,6 +52,7 @@ import type {
   ScheduledTaskInput,
   RuntimeSettings,
   RuntimeSettingsView,
+  SystemTaskRunList,
 } from './types'
 
 interface APIResponse<T> {
@@ -369,6 +370,11 @@ export function getDebugWatermarks(signal?: AbortSignal): Promise<{ items: Water
 
 export function getDebugLogs(lines = 300, signal?: AbortSignal): Promise<LogTail> {
   return request<LogTail>(`/api/debug/logs?lines=${lines}`, { signal })
+}
+
+export function getSystemTaskRuns(job: string, limit = 100, signal?: AbortSignal): Promise<SystemTaskRunList> {
+  const params = new URLSearchParams({ job, limit: String(limit) })
+  return request<SystemTaskRunList>(`/api/system-tasks/runs?${params.toString()}`, { signal })
 }
 
 // --- Debug 手动采集触发 ---

@@ -234,6 +234,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/debug/todos", GetDebugTodos(deps.Debug))
 	h.GET("/api/debug/tasks", GetDebugTasks(deps.Debug))
 	h.GET("/api/debug/logs", GetDebugLogs(deps.Logs))
+	h.GET("/api/system-tasks/runs", GetSystemTaskRuns(deps.Logs))
 	// 调试面板手动触发：手动跑一轮 M1 采集，无需等 cron。
 	if deps.Capture != nil {
 		h.POST("/api/debug/capture/discover", DiscoverChatsManually(deps.Capture))

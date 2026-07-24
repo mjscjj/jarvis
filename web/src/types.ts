@@ -726,6 +726,23 @@ export interface LogTail {
   notes: string[]
 }
 
+export interface SystemTaskRun {
+  time: string
+  source: string
+  module: string
+  job: string
+  status: string
+  fields: Record<string, string>
+  raw: string
+}
+
+export interface SystemTaskRunList {
+  items: SystemTaskRun[]
+  sources: string[]
+  truncated: boolean
+  notes: string[]
+}
+
 // Debug todo/task rows are the raw Go domain structs marshaled with Go field
 // names; the panel only renders them as expandable JSON, so a loose record type
 // is enough.
