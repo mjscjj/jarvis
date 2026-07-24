@@ -158,6 +158,24 @@ func TestParseExecutionResultDropsStrippedCodexMemoryCitation(t *testing.T) {
 	}
 }
 
+func TestParseExecutionResultDropsBlankMemoryCitationRegardlessOfLabel(t *testing.T) {
+	// Task #78 regression: Codex sometimes labels the stripped citation placeholder
+	// "Memory citation" instead of "Memory sources". Any blank memory_citation is
+	// the same Codex strip artifact and must be dropped; other blank enrichments
+	// still fail-fast.
+	msg := `{"outcome":"needs_human","summary":"已推送 MR","failure_reason":"","needs_followup":"请 Approve MR","enrichments":[{"kind":"merge_request","label":"MR !5","content":"https://example.com/mr/5"},{"kind":"memory_citation","label":"Memory citation","content":""}],"waiting":null}`
+	result, err := parseExecutionResult(msg)
+	if err != nil {
+		t.Fatalf("parseExecutionResult() error = %v", err)
+	}
+	if len(result.Enrichments) != 1 {
+		t.Fatalf("enrichments len = %d, want 1 after dropping blank memory_citation", len(result.Enrichments))
+	}
+	if got := result.Enrichments[0]; got.Kind != "merge_request" || got.Content != "https://example.com/mr/5" {
+		t.Fatalf("remaining enrichment = %+v", got)
+	}
+}
+
 func TestParseExecutionResultStillRejectsBlankNonMemoryEnrichment(t *testing.T) {
 	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"evidence","label":"证据","content":""}],"waiting":null}`
 	if _, err := parseExecutionResult(msg); err == nil {

@@ -409,8 +409,10 @@ func parseProposeResult(lastMessage string) (*proposeResult, error) {
 
 // dropStrippedCodexMemoryCitations removes enrichments that are only Codex
 // memory-citation placeholders left blank after Codex strips
-// <oai-mem-citation> from --output-last-message. Other blank enrichments are
-// left untouched so validateEnrichments still fail-fast on real contract breaks.
+// <oai-mem-citation> from --output-last-message. Label text varies ("Memory
+// sources", "Memory citation", …); any blank memory_citation is that strip
+// artifact. Other blank enrichments are left untouched so validateEnrichments
+// still fail-fast on real contract breaks.
 func dropStrippedCodexMemoryCitations(items []codexEnrichment) []codexEnrichment {
 	if len(items) == 0 {
 		return items
@@ -418,7 +420,6 @@ func dropStrippedCodexMemoryCitations(items []codexEnrichment) []codexEnrichment
 	kept := items[:0]
 	for _, item := range items {
 		if strings.TrimSpace(item.Kind) == "memory_citation" &&
-			strings.TrimSpace(item.Label) == "Memory sources" &&
 			strings.TrimSpace(item.Content) == "" {
 			continue
 		}
