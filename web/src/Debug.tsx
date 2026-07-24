@@ -186,7 +186,7 @@ function ModulesTab() {
         pagination={false}
         expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开该模块最近一条日志与全部字段" />, rowExpandable: () => true }}
         scroll={{ x: 900 }}
-        locale={{ emptyText: <Empty description="日志窗口内暂无 cron 运行记录（进程刚启动或日志被轮转）" /> }}
+        locale={{ emptyText: <Empty description="日志窗口内暂无模块运行记录（进程刚启动或日志被轮转）" /> }}
       />
     </Space>
   )
@@ -194,8 +194,26 @@ function ModulesTab() {
 
 const failureColumns: TableColumnsType<FailureEvent> = [
   { title: '时间', dataIndex: 'time', width: 200, render: (v: string) => <Text className="mono">{v || '—'}</Text> },
-  { title: '模块', dataIndex: 'module', width: 110, render: (v: string) => <Text strong>{moduleLabels[v] ?? v}</Text> },
-  { title: 'job', dataIndex: 'job', width: 130, render: (v: string) => <Text className="mono" type="secondary">{v || '—'}</Text> },
+  {
+    title: '阶段/模块', key: 'module', width: 130,
+    render: (_, row) => <Text strong>{row.stage ? row.stage.toUpperCase() : (moduleLabels[row.module] ?? row.module)}</Text>,
+  },
+  {
+    title: '作用范围', key: 'scope', width: 220,
+    render: (_, row) => <Text className="mono">{row.scope_type}={row.scope_id}</Text>,
+  },
+  {
+    title: '触发', key: 'trigger', width: 150,
+    render: (_, row) => <Text className="mono" type="secondary">{row.job || row.trigger || '—'}</Text>,
+  },
+  {
+    title: 'logid', dataIndex: 'logid', width: 230,
+    render: (v: string) => v ? <Text className="mono" copyable ellipsis>{v}</Text> : <Text type="secondary">—</Text>,
+  },
+  {
+    title: '次数', dataIndex: 'count', width: 75,
+    render: (v: number) => v > 1 ? <Tag color="orange">{v}</Tag> : v,
+  },
   {
     title: '状态', dataIndex: 'recovered', width: 100,
     render: (recovered: boolean) =>
@@ -208,30 +226,32 @@ function FailuresTab() {
   const { data, loading, error, refresh } = useDebugResource<{ items: FailureEvent[] }>((signal) => getDebugFailures(24, signal))
   const rows = data?.items ?? []
   const stillOpen = rows.filter((r) => !r.recovered)
-  const healed = rows.length - stillOpen.length
+  const occurrences = rows.reduce((total, row) => total + row.count, 0)
+  const openOccurrences = stillOpen.reduce((total, row) => total + row.count, 0)
+  const healedOccurrences = occurrences - openOccurrences
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Space>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
-        <Text type="secondary">近 24 小时所有 cron 报错（含已自愈的），最新在前。「已恢复」= 该模块之后又跑成功过。</Text>
+        <Text type="secondary">近 24 小时 cron 与 M3/M4/M5 运行错误，按 chat、Todo、Task 或 job 判断同范围恢复。</Text>
       </Space>
       {error && <Alert type="error" showIcon message="报错时间线加载失败" description={error} />}
       {!error && rows.length === 0 && (
-        <Alert type="success" showIcon message="近 24 小时无 cron 报错" />
+        <Alert type="success" showIcon message="近 24 小时无运行错误" />
       )}
       {rows.length > 0 && (
         <Alert
           type={stillOpen.length > 0 ? 'warning' : 'info'} showIcon
-          message={`近 24h 共 ${rows.length} 次报错：${stillOpen.length} 次仍需关注，${healed} 次已自愈恢复`}
+          message={`近 24h 共 ${occurrences} 次报错：${openOccurrences} 次仍需关注，${healedOccurrences} 次已恢复`}
         />
       )}
       <Table<FailureEvent>
-        rowKey={(r) => `${r.time}-${r.module}`} size="small" columns={failureColumns} dataSource={rows} loading={loading}
+        rowKey={(r) => r.logid || `${r.time}-${r.module}-${r.scope_id}-${r.error}`} size="small" columns={failureColumns} dataSource={rows} loading={loading}
         pagination={false}
         expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开原始日志行" />, rowExpandable: () => true }}
-        scroll={{ x: 900 }}
-        locale={{ emptyText: <Empty description="近 24 小时无报错记录" /> }}
+        scroll={{ x: 1350 }}
+        locale={{ emptyText: <Empty description="近 24 小时无运行错误" /> }}
       />
     </Space>
   )
@@ -449,9 +469,10 @@ function TriggerTab() {
 export default function Debug() {
   return (
     <>
-      <PageHeader title="调试" subtitle="运行时诊断：依赖健康/积压、模块运行、采集流水、抽取水位、最近 Todo/Task 与运行日志" />
+      <PageHeader title="运行状态" subtitle="运行错误、依赖健康/积压、模块运行、采集流水、抽取水位、最近 Todo/Task 与日志" />
       <Card variant="borderless">
       <Tabs
+        defaultActiveKey="failures"
         items={[
           { key: 'trigger', label: '手动触发', children: <TriggerTab /> },
           { key: 'status', label: '健康与积压', children: <StatusTab /> },

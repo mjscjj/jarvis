@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Layout, Menu, Tooltip, Typography } from 'antd'
+import { Badge, Button, Layout, Menu, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   DashboardOutlined,
@@ -26,6 +26,7 @@ import Chat from './Chat'
 import ScheduledTasks from './ScheduledTasks'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
+import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -53,23 +54,30 @@ const menuItems: MenuItem[] = [
   { key: 'background', label: '背景', icon: <DatabaseOutlined /> },
   { key: 'settings', label: '设置', icon: <SettingOutlined /> },
   { key: 'progress', label: '进度', icon: <BarChartOutlined /> },
-  { key: 'debug', label: '调试', icon: <ToolOutlined /> },
+  { key: 'debug', label: '运行状态', icon: <ToolOutlined /> },
 ]
-
-const menuProps: MenuProps['items'] = menuItems.map((item) => ({
-  key: item.key,
-  label: item.label,
-  icon: item.icon,
-}))
 
 function AppShell() {
   const { context, navigate } = usePageContext()
+  const runtimeFailures = useRuntimeFailureCount()
   const [refreshKey, setRefreshKey] = useState(0)
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOpen', true)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const [chatWidth, setChatWidth] = useLocalStorage('jarvis.chatWidth', CHAT_DEFAULT_WIDTH)
   const [resizing, setResizing] = useState(false)
   const resizingRef = useRef(false)
+  const menuProps: MenuProps['items'] = menuItems.map((item) => {
+    if (item.key !== 'debug') {
+      return { key: item.key, label: item.label, icon: item.icon }
+    }
+    let icon = item.icon
+    if (runtimeFailures.count && runtimeFailures.count > 0) {
+      icon = <Badge count={runtimeFailures.count} overflowCount={99} size="small" offset={[6, -4]}>{icon}</Badge>
+    } else if (runtimeFailures.error) {
+      icon = <Tooltip title={`运行错误读取失败：${runtimeFailures.error}`}><Badge status="error" dot>{icon}</Badge></Tooltip>
+    }
+    return { key: item.key, label: item.label, icon }
+  })
 
   const pages: Record<string, React.ReactNode> = {
     overview: <Overview />,

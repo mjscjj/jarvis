@@ -686,8 +686,14 @@ export interface ModuleRun {
 export interface FailureEvent {
   time: string
   module: string
+  stage: string
   job: string
+  trigger: string
+  scope_type: string
+  scope_id: string
+  logid: string
   error: string
+  count: number
   recovered: boolean
   raw: string
 }

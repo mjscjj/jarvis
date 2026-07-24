@@ -100,7 +100,7 @@ func GetDebugWatermarks(service *insight.DebugService) app.HandlerFunc {
 	}
 }
 
-// GetDebugModules serves per-module latest cron run parsed from logs.
+// GetDebugModules serves the latest cron and realtime pipeline runs by module.
 func GetDebugModules(service *insight.DebugService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		lines, err := positiveQueryInt(c.Query("lines"), 1000, "lines")
@@ -117,8 +117,7 @@ func GetDebugModules(service *insight.DebugService) app.HandlerFunc {
 	}
 }
 
-// GetDebugFailures serves the recent cron failure timeline (近 24h 报错时间线)
-// so a transient blip that already self-healed is still visible after recovery.
+// GetDebugFailures serves the recent scoped runtime failure timeline.
 func GetDebugFailures(service *insight.DebugService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		lines, err := positiveQueryInt(c.Query("lines"), 5000, "lines")
