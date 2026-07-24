@@ -56,7 +56,7 @@ extract:
   batch_messages: 400
   context_messages: 20
   context_window_minutes: 120
-  open_todo_limit: 50
+  open_todo_limit: 20
   memory_top_k: 8
   memory_threshold: 0.5
   max_prompt_chars: 60000
@@ -65,7 +65,7 @@ extract:
   semantic_neighbor_limit: 3
   # M3 function-calling 工具循环
   tool_timeout_sec: 10        # 单次工具调用超时（秒）
-  history_tool_limit: 50      # query_chat_history 单次最多返回消息数
+  history_tool_limit: 20      # query_chat_history 单次最多返回消息数
   tool_memory_max_top_k: 20   # search_memory 允许模型请求的 top_k 上限
   evidence_retry_max: 2       # source_quote 非逐字命中时，最多额外重抽次数（0=不重试）
 
