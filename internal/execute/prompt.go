@@ -86,17 +86,18 @@ const executionResultSchema = `{
     },
     "effects":{
       "type":"array",
-      "description":"Real-world side effects you actually produced (message sent, doc created, meeting scheduled, MR opened, permission requested, ...). Declare one entry per external write. kind is a free-form label you may invent; extra fields are allowed and preserved. Display-only, not verified.",
+      "description":"Real-world side effects you actually produced (message sent, doc created, meeting scheduled, MR opened, permission requested, ...). Declare one entry per external write. kind is a free-form label you may invent. All item fields are required by Structured Outputs; unused title/url/target/preview/extra must be empty strings. Put extra metadata in extra as JSON text. Display-only, not verified.",
       "items":{
         "type":"object",
-        "additionalProperties":true,
-        "required":["kind"],
+        "additionalProperties":false,
+        "required":["kind","title","url","target","preview","extra"],
         "properties":{
           "kind":{"type":"string","minLength":1},
           "title":{"type":"string"},
           "url":{"type":"string"},
           "target":{"type":"string"},
-          "preview":{"type":"string"}
+          "preview":{"type":"string"},
+          "extra":{"type":"string","description":"Free-form metadata as JSON text (e.g. {\"message_id\":\"om_…\",\"chat_name\":\"…\"}); use empty string when none. Do not invent top-level fields."}
         }
       }
     },
@@ -151,17 +152,18 @@ const proposeResultSchema = `{
     },
     "effects":{
       "type":"array",
-      "description":"Real-world side effects you actually produced (message sent, doc created, meeting scheduled, MR opened, permission requested, ...). Declare one entry per external write. kind is a free-form label you may invent; extra fields are allowed and preserved. Display-only, not verified.",
+      "description":"Real-world side effects you actually produced (message sent, doc created, meeting scheduled, MR opened, permission requested, ...). Declare one entry per external write. kind is a free-form label you may invent. All item fields are required by Structured Outputs; unused title/url/target/preview/extra must be empty strings. Put extra metadata in extra as JSON text. Display-only, not verified.",
       "items":{
         "type":"object",
-        "additionalProperties":true,
-        "required":["kind"],
+        "additionalProperties":false,
+        "required":["kind","title","url","target","preview","extra"],
         "properties":{
           "kind":{"type":"string","minLength":1},
           "title":{"type":"string"},
           "url":{"type":"string"},
           "target":{"type":"string"},
-          "preview":{"type":"string"}
+          "preview":{"type":"string"},
+          "extra":{"type":"string","description":"Free-form metadata as JSON text (e.g. {\"message_id\":\"om_…\",\"chat_name\":\"…\"}); use empty string when none. Do not invent top-level fields."}
         }
       }
     },

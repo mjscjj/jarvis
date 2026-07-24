@@ -76,27 +76,30 @@ type codexEnrichment struct {
 
 // codexEffect is one real-world side effect the agent declares it produced (a
 // feishu message it sent, a doc it created, a meeting it scheduled, an MR it
-// opened, a permission it requested, ...). It is display-only and deliberately
-// OPEN: Kind is a free-form string (agents may invent new kinds), and any extra
-// fields the agent emits beyond the known ones are preserved verbatim in Extra.
-// It never fails on unknown fields — unlike the strict top-level result schema —
-// because effects are a "declared for display" payload, not a validated
-// contract. Jarvis does not verify these against lark-cli/git receipts.
+// opened, a permission it requested, ...). It is display-only. Kind is free-form
+// (agents may invent new kinds). OpenAI Structured Outputs force
+// additionalProperties=false on the schema item, so any metadata beyond the
+// known keys must travel in the optional "extra" JSON-text field; the parser
+// still accepts leftover top-level keys (hand/legacy payloads) into Extra.
+// Jarvis does not verify these against lark-cli/git receipts.
 type codexEffect struct {
 	Kind    string
 	Title   string
 	URL     string
 	Target  string
 	Preview string
-	// Extra holds every field the agent emitted that is not one of the known
-	// keys above, so new/unexpected fields are passed through, not dropped.
+	// Extra holds metadata beyond the known keys: either expanded from the
+	// schema "extra" JSON-text field, or leftover top-level keys from lenient
+	// / legacy payloads. Flattened again on MarshalJSON for the UI.
 	Extra map[string]json.RawMessage
 }
 
-// UnmarshalJSON decodes one effect leniently: it pulls the known keys and stashes
-// everything else in Extra. It tolerates any JSON type for the known string keys
-// (coercing non-strings to their raw JSON text) and never errors on unknown
-// fields, so the open effects payload cannot break parsing of the whole result.
+// UnmarshalJSON decodes one effect leniently: it pulls the known keys (including
+// optional "extra" JSON text) and stashes leftover top-level fields in Extra.
+// When "extra" is a JSON object string, its keys are merged into Extra for UI
+// display; otherwise the raw string is kept under Extra["extra"]. Unknown
+// top-level fields never fail parsing — only the Structured Outputs schema
+// rejects them at generation time.
 func (e *codexEffect) UnmarshalJSON(data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -119,15 +122,32 @@ func (e *codexEffect) UnmarshalJSON(data []byte) error {
 	e.URL, _ = take("url")
 	e.Target, _ = take("target")
 	e.Preview, _ = take("preview")
+	extra, hasExtra := take("extra")
+	e.Extra = nil
+	if hasExtra && strings.TrimSpace(extra) != "" {
+		var nested map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(extra), &nested); err == nil {
+			e.Extra = nested
+		} else {
+			encoded, _ := json.Marshal(extra)
+			e.Extra = map[string]json.RawMessage{"extra": encoded}
+		}
+	}
 	if len(raw) > 0 {
-		e.Extra = raw
+		if e.Extra == nil {
+			e.Extra = raw
+		} else {
+			for k, v := range raw {
+				e.Extra[k] = v
+			}
+		}
 	}
 	return nil
 }
 
-// MarshalJSON re-emits the effect as one flat object, merging the known keys
-// (only when non-empty) with the passthrough Extra fields, so the stored JSON
-// keeps every field the agent declared and is ready for the UI to render.
+// MarshalJSON re-emits the effect as one flat object for UI display: known keys
+// plus Extra fields expanded at the top level. Extra is preferred over an
+// opaque "extra" blob so Task detail can render message_id/doc_token/… rows.
 func (e codexEffect) MarshalJSON() ([]byte, error) {
 	out := make(map[string]json.RawMessage, len(e.Extra)+5)
 	for k, v := range e.Extra {
