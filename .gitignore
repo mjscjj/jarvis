@@ -13,6 +13,7 @@ __pycache__/
 /web/node_modules/
 /web/dist/
 /web/*.tsbuildinfo
+/.worktrees/
 
 # 本地运行时数据
 /data/
