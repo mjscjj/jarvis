@@ -74,6 +74,22 @@ func TestFailuresOnlySameScopeCanRecover(t *testing.T) {
 	}
 }
 
+func TestPipelineScopeIgnoresKVTokensInsideErrorText(t *testing.T) {
+	svc := newRuntimeDebugService(t,
+		"pipeline 2026/07/24 10:42:53.469073 logid=log-m4 stage=m4 trigger=realtime todo_id=89 version=0 status=error error=evaluate Todo id=89: codex decision failed todo_id=89: codex decision command failed: signal: killed:\n")
+
+	events, err := svc.Failures(1000, 0)
+	if err != nil {
+		t.Fatalf("Failures() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("Failures() len = %d, want 1: %+v", len(events), events)
+	}
+	if events[0].ScopeID != "89" {
+		t.Fatalf("M4 ScopeID = %q, want structured prefix todo_id=89", events[0].ScopeID)
+	}
+}
+
 func TestFailuresMergesRepeatedSameScopeAndSummary(t *testing.T) {
 	svc := newRuntimeDebugService(t, ""+
 		"pipeline 2026/07/24 15:42:01.000000 logid=log-first stage=m5 trigger=queue task_id=78 status=error error=execute Task id=78: enrichments[2] content is blank\n"+

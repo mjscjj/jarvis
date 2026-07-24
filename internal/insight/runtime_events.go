@@ -69,6 +69,11 @@ func parseRuntimeEvent(line LogLine) (runtimeEvent, bool) {
 }
 
 func parseRuntimeFields(rest string) map[string]string {
+	if index := strings.Index(rest, " error="); index >= 0 {
+		rest = rest[:index]
+	} else if strings.HasPrefix(rest, "error=") {
+		rest = ""
+	}
 	fields := map[string]string{}
 	for _, pair := range kvPair.FindAllStringSubmatch(rest, -1) {
 		fields[pair[1]] = pair[2]
