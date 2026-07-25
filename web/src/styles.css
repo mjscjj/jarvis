@@ -1388,6 +1388,237 @@ body {
   margin-bottom: var(--space-3);
 }
 
+/* Overview：首屏优先展示行动、今天和运行态，细节通过下钻查看。 */
+.overview-compact .section-heading {
+  min-height: 42px;
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.overview-updated-at {
+  min-width: 34px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.overview-alert {
+  margin: 8px 0;
+}
+
+.overview-status-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  overflow: hidden;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.overview-key-metric {
+  min-width: 0;
+  padding: 12px 14px;
+  appearance: none;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.overview-key-metric:last-child {
+  border-right: 0;
+}
+
+.overview-key-metric:hover {
+  background: var(--color-bg-soft);
+}
+
+.overview-key-label,
+.overview-key-detail {
+  display: block;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-key-value {
+  display: block;
+  margin: 2px 0;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.overview-key-metric-warning .overview-key-value {
+  color: var(--status-warning);
+}
+
+.overview-key-metric-error .overview-key-value {
+  color: var(--status-error);
+}
+
+.overview-key-metric-success .overview-key-value {
+  color: var(--status-success);
+}
+
+.overview-main-grid {
+  margin-top: 12px;
+}
+
+.overview-panel {
+  height: 100%;
+  border-radius: var(--radius-lg) !important;
+}
+
+.overview-panel.ant-card-small > .ant-card-head {
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.overview-panel.ant-card-small > .ant-card-body {
+  padding: 12px 14px;
+}
+
+.overview-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+.overview-mini-stat {
+  min-width: 0;
+  padding-right: 8px;
+  border-right: 1px solid var(--color-border);
+}
+
+.overview-mini-stat:last-child {
+  border-right: 0;
+}
+
+.overview-mini-stat .ant-typography {
+  display: block;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-mini-value {
+  display: block;
+  margin-top: 2px;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.overview-mini-value-success {
+  color: var(--status-success);
+}
+
+.overview-mini-value-error {
+  color: var(--status-error);
+}
+
+.overview-summary-list,
+.overview-agent-list {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.overview-summary-row,
+.overview-agent-row {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.overview-summary-row .ant-tag,
+.overview-agent-row .ant-tag {
+  margin-inline-end: 0;
+}
+
+.overview-runtime-stats {
+  grid-template-columns: repeat(4, minmax(70px, 1fr));
+}
+
+.overview-agent-row {
+  min-height: 29px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.overview-agent-row:last-of-type {
+  border-bottom: 0;
+}
+
+.overview-agent-more {
+  display: block;
+  height: 24px;
+  margin: 2px 0 0 auto;
+  padding-inline: 0;
+}
+
+.overview-inline-alert {
+  margin-bottom: 8px;
+}
+
+.overview-queue-panel {
+  height: auto;
+  margin-top: 12px;
+}
+
+.overview-queue-row {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.42fr) minmax(240px, 0.58fr);
+  align-items: center;
+  gap: 16px;
+  min-height: 38px;
+}
+
+.overview-queue-row + .overview-queue-row {
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.overview-queue-heading .ant-btn {
+  height: 24px;
+  padding-inline: 0;
+  font-weight: 600;
+}
+
+.overview-queue-bar {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .overview-status-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .overview-key-metric:nth-child(2) {
+    border-right: 0;
+  }
+
+  .overview-key-metric:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .overview-queue-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 4px 0 8px;
+  }
+}
+
 .inline-json {
   max-height: 120px;
   margin: 0;

@@ -1,21 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Col, Empty, Row, Space, Statistic, Table, Tag, Typography } from 'antd'
-import type { TableColumnsType } from 'antd'
-import {
-  ApiOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  FireOutlined,
-  ReloadOutlined,
-  RobotOutlined,
-  WarningOutlined,
-} from '@ant-design/icons'
+import { Alert, Badge, Button, Card, Col, Row, Space, Tag, Typography } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { agentModeLabels, agentSourceMeta } from './agentProcesses'
 import { getDailyDigests, getDebugAgentProcesses, getDebugFailures, getDigests, getOverview } from './api'
-import MetricCard from './components/MetricCard'
 import PageHeader from './components/PageHeader'
-import EmptyState from './components/EmptyState'
 import StatusStackBar from './components/StatusStackBar'
 import { usePageContext } from './pageContext'
 import { taskStatusMeta, todoStatusMeta } from './status'
@@ -29,13 +18,40 @@ import type {
   StatusCount,
 } from './types'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 
 const digestStatusMeta: Record<DailyDigest['status'], { color: string; label: string }> = {
   pending: { color: 'default', label: '待生成' },
   generating: { color: 'processing', label: '生成中' },
   done: { color: 'success', label: '已生成' },
   failed: { color: 'error', label: '失败' },
+}
+
+interface CompactMetricProps {
+  label: string
+  value: number | string
+  detail: string
+  tone?: 'default' | 'warning' | 'error' | 'success'
+  onClick: () => void
+}
+
+function CompactMetric({ label, value, detail, tone = 'default', onClick }: CompactMetricProps) {
+  return (
+    <button type="button" className={`overview-key-metric overview-key-metric-${tone}`} onClick={onClick}>
+      <span className="overview-key-label">{label}</span>
+      <span className="overview-key-value">{value}</span>
+      <span className="overview-key-detail">{detail}</span>
+    </button>
+  )
+}
+
+function MiniStat({ label, value, tone }: { label: string; value: number | string; tone?: 'error' | 'success' }) {
+  return (
+    <div className="overview-mini-stat">
+      <Text type="secondary">{label}</Text>
+      <span className={tone ? `overview-mini-value overview-mini-value-${tone}` : 'overview-mini-value'}>{value}</span>
+    </div>
+  )
 }
 
 function errorText(cause: unknown): string {
@@ -58,46 +74,9 @@ function timeOfDay(value: string | null | undefined): string {
   return parsed.isValid() ? parsed.format('HH:mm') : value
 }
 
-function shortText(value: string, maxLength = 180): string {
+function shortText(value: string, maxLength = 120): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value
 }
-
-const agentColumns: TableColumnsType<AgentProcess> = [
-  {
-    title: '类型',
-    dataIndex: 'kind',
-    width: 90,
-    render: (value: AgentProcess['kind']) => (
-      <Tag color={value === 'codex' ? 'blue' : 'purple'}>
-        {value === 'codex' ? 'Codex' : 'Trae'}
-      </Tag>
-    ),
-  },
-  {
-    title: '实例',
-    dataIndex: 'mode',
-    width: 120,
-    render: (value: AgentProcess['mode']) => agentModeLabels[value],
-  },
-  {
-    title: '来源',
-    dataIndex: 'source',
-    width: 120,
-    render: (value: AgentProcess['source']) => <Tag color={agentSourceMeta[value].color}>{agentSourceMeta[value].label}</Tag>,
-  },
-  {
-    title: 'PID',
-    dataIndex: 'pid',
-    width: 90,
-    render: (value: number) => <Text className="mono">{value}</Text>,
-  },
-  {
-    title: '已运行',
-    dataIndex: 'elapsed',
-    width: 110,
-    render: (value: string) => <Text className="mono">{value}</Text>,
-  },
-]
 
 export default function Overview() {
   const { navigate } = usePageContext()
@@ -200,7 +179,7 @@ export default function Overview() {
   const unresolvedFailureCount = unresolvedFailures.reduce((sum, item) => sum + Math.max(item.count, 1), 0)
   const today = digest?.mine.find((item) => item.date === todayDate) ?? digest?.mine[0]
   const todayGroupMessages = digest?.key_groups.reduce(
-    (sum, group) => sum + (group.days.find((item) => item.date === todayDate)?.messages ?? group.days[0]?.messages ?? 0),
+    (sum, group) => sum + (group.days.find((item) => item.date === todayDate)?.messages ?? 0),
     0,
   ) ?? 0
   const personDigest = dailyItems.find((item) => item.scope === 'person')
@@ -211,230 +190,202 @@ export default function Overview() {
   const visibleAgents = useMemo(
     () => [...(agents?.items ?? [])]
       .filter((item) => !item.nested || item.mode === 'exec' || item.mode === 'cli')
-      .sort((left, right) => Number(right.jarvis_owned) - Number(left.jarvis_owned)
-        || Number(right.mode === 'exec') - Number(left.mode === 'exec')
+      .sort((left, right) => Number(right.mode === 'exec' || right.mode === 'cli')
+        - Number(left.mode === 'exec' || left.mode === 'cli')
+        || Number(right.jarvis_owned) - Number(left.jarvis_owned)
         || left.kind.localeCompare(right.kind))
-      .slice(0, 8),
+      .slice(0, 5),
     [agents],
   )
+  const hiddenAgentCount = Math.max(0, (agents?.items.length ?? 0) - visibleAgents.length)
+  const hasRuntimeProblem = unresolvedFailureCount > 0 || Boolean(agentError)
 
   return (
-    <div className="overview">
-      <PageHeader title="Overview" subtitle="当前运行、待处理事项、今日进展与系统风险">
-        <Button icon={<ReloadOutlined />} loading={loading || agentLoading} onClick={() => setRefreshVersion((value) => value + 1)}>
-          刷新
-        </Button>
+    <div className="overview overview-compact">
+      <PageHeader title="Overview" subtitle={`今天 · ${dayjs().format('MM-DD')}`}>
+        <Space size={12}>
+          <Badge status={hasRuntimeProblem ? 'error' : 'success'} text={hasRuntimeProblem ? '有异常' : '运行正常'} />
+          <Text type="secondary" className="overview-updated-at">{timeOfDay(agents?.sampled_at)}</Text>
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            loading={loading || agentLoading}
+            onClick={() => setRefreshVersion((value) => value + 1)}
+          >
+            刷新
+          </Button>
+        </Space>
       </PageHeader>
 
       {error && (
         <Alert
           type="error"
           showIcon
-          message="部分概览数据加载失败"
+          message="部分数据加载失败"
           description={<span style={{ whiteSpace: 'pre-line' }}>{error}</span>}
           closable
           onClose={() => setError(undefined)}
-          style={{ marginTop: 16 }}
+          className="overview-alert"
         />
       )}
+
+      <div className="overview-status-strip" aria-busy={loading && data === undefined}>
+        <CompactMetric
+          label="待我处理"
+          value={data ? needsAttention : '—'}
+          detail={`Todo ${data?.todos.pending ?? 0} · Task ${taskNeedsHuman}`}
+          tone={needsAttention > 0 ? 'warning' : 'success'}
+          onClick={() => navigate(data?.todos.pending ? 'confirmations' : 'tasks')}
+        />
+        <CompactMetric
+          label="Leader 未闭环"
+          value={data?.todos.leader_open ?? (data ? 0 : '—')}
+          detail="仍在推进的交办"
+          tone={(data?.todos.leader_open ?? 0) > 0 ? 'error' : 'default'}
+          onClick={() => navigate('todos')}
+        />
+        <CompactMetric
+          label="Task 执行中"
+          value={data ? taskExecuting : '—'}
+          detail={`${taskWaiting} 个等待唤醒`}
+          onClick={() => navigate('tasks')}
+        />
+        <CompactMetric
+          label="运行异常"
+          value={loading && failures.length === 0 ? '—' : unresolvedFailureCount}
+          detail="最近 24 小时"
+          tone={unresolvedFailureCount > 0 ? 'error' : 'success'}
+          onClick={() => navigate('debug')}
+        />
+      </div>
 
       {unresolvedFailureCount > 0 && (
         <Alert
           type="warning"
           showIcon
-          message={`近 24 小时有 ${unresolvedFailureCount} 个未恢复错误`}
-          description={unresolvedFailures[0]?.error ? shortText(unresolvedFailures[0].error) : '请查看运行状态了解详情。'}
-          action={<Button size="small" onClick={() => navigate('debug')}>查看错误</Button>}
-          style={{ marginTop: 16 }}
+          message={`${unresolvedFailureCount} 个未恢复错误 · ${shortText(unresolvedFailures[0]?.error || '查看运行状态了解详情')}`}
+          action={<Button type="link" size="small" onClick={() => navigate('debug')}>查看</Button>}
+          className="overview-alert"
         />
       )}
 
-      <Title level={5} style={{ marginTop: 24, fontWeight: 600 }}>
-        <FireOutlined style={{ marginRight: 8, color: 'var(--color-primary)' }} />
-        需要处理
-      </Title>
-      <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
-        <Col xs={24} sm={12} lg={6}>
-          <MetricCard
-            title="待我处理"
-            value={needsAttention}
-            hint={`Todo ${data?.todos.pending ?? 0} · Task ${taskNeedsHuman}`}
-            loading={loading && data === undefined}
-            icon={<ClockCircleOutlined />}
-            valueStyle={{ color: 'var(--status-warning)' }}
-            onClick={() => navigate(data?.todos.pending ? 'confirmations' : 'tasks')}
-          />
+      <Row gutter={[12, 12]} className="overview-main-grid">
+        <Col xs={24} xl={14}>
+          <Card
+            size="small"
+            title="今天"
+            extra={<Button type="link" size="small" onClick={() => navigate('progress')}>进度与总结</Button>}
+            className="overview-panel"
+            loading={loading && digest === undefined}
+          >
+            <div className="overview-mini-grid">
+              <MiniStat label="新增 Todo" value={today?.todos_created ?? 0} />
+              <MiniStat label="确认任务" value={today?.confirmed ?? 0} />
+              <MiniStat label="完成 Task" value={today?.tasks_done ?? 0} tone="success" />
+              <MiniStat label="失败 Task" value={today?.tasks_failed ?? 0} tone={(today?.tasks_failed ?? 0) > 0 ? 'error' : undefined} />
+              <MiniStat label="群消息" value={todayGroupMessages} />
+            </div>
+
+            <div className="overview-summary-list">
+              <div className="overview-summary-row">
+                <Space size={8} wrap>
+                  <Text strong>个人总结</Text>
+                  {personDigest ? (
+                    <Tag color={digestStatusMeta[personDigest.status].color}>{digestStatusMeta[personDigest.status].label}</Tag>
+                  ) : (
+                    <Tag>未生成</Tag>
+                  )}
+                </Space>
+                <Text type="secondary">
+                  {personDigest
+                    ? `${timeOfDay(personDigest.generated_at)} · ${personDigest.source_count} 条证据`
+                    : '今天尚未生成'}
+                </Text>
+              </div>
+              <div className="overview-summary-row">
+                <Text strong>群总结</Text>
+                <Text type="secondary">
+                  {groupDigests.length > 0 ? `${finishedGroupDigests}/${groupDigests.length} 已生成` : '暂无群总结'}
+                </Text>
+              </div>
+            </div>
+          </Card>
         </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <MetricCard
-            title="Leader 交办未闭环"
-            value={data?.todos.leader_open ?? 0}
-            hint="仍在推进的 Leader 事项"
-            loading={loading && data === undefined}
-            icon={<FireOutlined />}
-            valueStyle={{ color: 'var(--status-error)' }}
-            onClick={() => navigate('todos')}
-          />
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <MetricCard
-            title="Task 执行中"
-            value={taskExecuting}
-            hint={`${taskWaiting} 个等待唤醒`}
-            loading={loading && data === undefined}
-            icon={<RobotOutlined />}
-            valueStyle={{ color: 'var(--status-info)' }}
-            onClick={() => navigate('tasks')}
-          />
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <MetricCard
-            title="未恢复错误"
-            value={unresolvedFailureCount}
-            hint="最近 24 小时"
-            loading={loading}
-            icon={<WarningOutlined />}
-            valueStyle={{ color: unresolvedFailureCount > 0 ? 'var(--status-error)' : 'var(--status-success)' }}
-            onClick={() => navigate('debug')}
-          />
+
+        <Col xs={24} xl={10}>
+          <Card
+            size="small"
+            title="Agent 运行"
+            extra={<Button type="link" size="small" onClick={() => navigate('debug')}>详情</Button>}
+            className="overview-panel"
+            loading={agentLoading && agents === undefined}
+          >
+            {agentError && <Alert type="error" showIcon message="Agent 运行态加载失败" description={agentError} className="overview-inline-alert" />}
+            <div className="overview-mini-grid overview-runtime-stats">
+              <MiniStat label="Codex 服务" value={agents?.summary.codex_services ?? 0} />
+              <MiniStat label="执行任务" value={activeTaskAgents} tone={activeTaskAgents > 0 ? 'success' : undefined} />
+              <MiniStat label="Trae 桌面端" value={agents?.summary.trae_desktop ?? 0} />
+              <MiniStat label="Jarvis 启动" value={jarvisAgents} />
+            </div>
+
+            <div className="overview-agent-list">
+              {visibleAgents.length === 0 ? (
+                <Text type="secondary">当前没有 Codex 或 Trae 运行时</Text>
+              ) : visibleAgents.map((item: AgentProcess) => (
+                <div className="overview-agent-row" key={`${item.kind}-${item.pid}`}>
+                  <Space size={6}>
+                    <Tag color={agentSourceMeta[item.source].color}>{agentSourceMeta[item.source].label}</Tag>
+                    <Text>{item.kind === 'codex' ? 'Codex' : 'Trae'} · {agentModeLabels[item.mode]}</Text>
+                    {(item.mode === 'exec' || item.mode === 'cli') && <Badge status="processing" />}
+                  </Space>
+                  <Text type="secondary" className="mono">{item.elapsed}</Text>
+                </div>
+              ))}
+              {hiddenAgentCount > 0 && (
+                <Button type="link" size="small" className="overview-agent-more" onClick={() => navigate('debug')}>
+                  另有 {hiddenAgentCount} 个派生进程
+                </Button>
+              )}
+            </div>
+          </Card>
         </Col>
       </Row>
 
       <Card
-        variant="borderless"
-        title={(
-          <Space>
-            <ApiOutlined />
-            <span>正在运行</span>
-          </Space>
-        )}
-        extra={(
-          <Space>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              后台服务不等于正在执行任务 · 每 3 秒刷新 · {timeOfDay(agents?.sampled_at)}
-            </Text>
-            <Button type="link" size="small" onClick={() => navigate('debug')}>详细运行状态</Button>
-          </Space>
-        )}
-        style={{ marginTop: 20, borderRadius: 14, border: '1px solid var(--color-border)' }}
+        size="small"
+        title="全局队列"
+        className="overview-panel overview-queue-panel"
+        loading={loading && data === undefined}
       >
-        {agentError && <Alert type="error" showIcon message="Agent 运行态加载失败" description={agentError} style={{ marginBottom: 16 }} />}
-        <Row gutter={[16, 16]}>
-          <Col xs={12} md={6}><Statistic title="Codex 后台服务" value={agents?.summary.codex_services ?? 0} loading={agentLoading && agents === undefined} /></Col>
-          <Col xs={12} md={6}><Statistic title="正在执行任务" value={activeTaskAgents} loading={agentLoading && agents === undefined} /></Col>
-          <Col xs={12} md={6}><Statistic title="Trae 桌面端" value={agents?.summary.trae_desktop ?? 0} loading={agentLoading && agents === undefined} /></Col>
-          <Col xs={12} md={6}><Statistic title="Jarvis 启动" value={jarvisAgents} loading={agentLoading && agents === undefined} /></Col>
-        </Row>
-        <Table<AgentProcess>
-          rowKey={(row) => `${row.kind}-${row.pid}`}
-          size="small"
-          columns={agentColumns}
-          dataSource={visibleAgents}
-          loading={agentLoading && agents === undefined}
-          pagination={false}
-          style={{ marginTop: 20 }}
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有 Codex 或 Trae 实例" /> }}
-        />
-        {(agents?.items.length ?? 0) > visibleAgents.length && (
-          <div style={{ marginTop: 8, textAlign: 'right' }}>
-            <Button type="link" size="small" onClick={() => navigate('debug')}>
-              另有 {(agents?.items.length ?? 0) - visibleAgents.length} 个派生进程
-            </Button>
-          </div>
-        )}
-      </Card>
-
-      <Row gutter={[16, 16]} style={{ marginTop: 20 }}>
-        <Col xs={24} xl={14}>
-          <Card
-            variant="borderless"
-            title="今天"
-            extra={<Button type="link" size="small" onClick={() => navigate('progress')}>查看进度</Button>}
-            style={{ height: '100%', borderRadius: 14, border: '1px solid var(--color-border)' }}
-            loading={loading && digest === undefined}
-          >
-            <Row gutter={[16, 20]}>
-              <Col xs={12} md={6}><Statistic title="新增 Todo" value={today?.todos_created ?? 0} /></Col>
-              <Col xs={12} md={6}><Statistic title="确认任务" value={today?.confirmed ?? 0} /></Col>
-              <Col xs={12} md={6}><Statistic title="完成 Task" value={today?.tasks_done ?? 0} /></Col>
-              <Col xs={12} md={6}><Statistic title="关键群消息" value={todayGroupMessages} /></Col>
-            </Row>
-          </Card>
-        </Col>
-        <Col xs={24} xl={10}>
-          <Card
-            variant="borderless"
-            title="今日总结"
-            extra={<Button type="link" size="small" onClick={() => navigate('progress')}>打开总结</Button>}
-            style={{ height: '100%', borderRadius: 14, border: '1px solid var(--color-border)' }}
-            loading={loading && dailyItems.length === 0}
-          >
-            <Space direction="vertical" size={14} style={{ width: '100%' }}>
-              <Space wrap>
-                <Text>个人总结</Text>
-                {personDigest ? (
-                  <Tag color={digestStatusMeta[personDigest.status].color}>{digestStatusMeta[personDigest.status].label}</Tag>
-                ) : (
-                  <Tag>尚未生成</Tag>
-                )}
-                {personDigest?.generated_at && <Text type="secondary">{timeOfDay(personDigest.generated_at)}</Text>}
-              </Space>
-              <Space wrap>
-                <Text>群总结</Text>
-                {groupDigests.length > 0 ? (
-                  <Tag color={finishedGroupDigests === groupDigests.length ? 'success' : 'default'}>
-                    {finishedGroupDigests} / {groupDigests.length} 已生成
-                  </Tag>
-                ) : (
-                  <Tag>暂无群总结</Tag>
-                )}
-              </Space>
-              <Text type="secondary">
-                {personDigest
-                  ? `个人总结已汇总 ${personDigest.source_count} 条证据。`
-                  : '今天还没有个人总结。'}
-              </Text>
+        <div className="overview-queue-row">
+          <div className="overview-queue-heading">
+            <Space size={8} wrap>
+              <Button type="link" size="small" onClick={() => navigate('todos')}>Todo</Button>
+              <Tag color={(data?.todos.open ?? 0) > 0 ? 'warning' : 'default'}>{data?.todos.open ?? 0} 未闭环</Tag>
+              <Text type="secondary">共 {data?.todos.total ?? 0}</Text>
             </Space>
-          </Card>
-        </Col>
-      </Row>
-
-      <Title level={5} style={{ marginTop: 24, fontWeight: 600 }}>
-        <CheckCircleOutlined style={{ marginRight: 8, color: 'var(--color-primary)' }} />
-        全局队列
-      </Title>
-      <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
-        <Col xs={24} xl={12}>
-          <Card
-            variant="borderless"
-            title={`Todo · ${data?.todos.open ?? 0} 个未闭环`}
-            extra={<Button type="link" size="small" onClick={() => navigate('todos')}>查看 Todo</Button>}
-            style={{ height: '100%', borderRadius: 14, border: '1px solid var(--color-border)' }}
-            loading={loading && data === undefined}
-          >
-            {todoTotal > 0 ? (
-              <StatusStackBar items={data?.todos.by_status ?? []} meta={todoStatusMeta} />
-            ) : (
-              <EmptyState description="暂无 Todo" hint="系统抽取到行动线索后会显示在这里" />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} xl={12}>
-          <Card
-            variant="borderless"
-            title={`Task · ${data?.tasks.pending ?? 0} 个待执行或执行中`}
-            extra={<Button type="link" size="small" onClick={() => navigate('tasks')}>查看 Task</Button>}
-            style={{ height: '100%', borderRadius: 14, border: '1px solid var(--color-border)' }}
-            loading={loading && data === undefined}
-          >
-            {taskTotal > 0 ? (
-              <StatusStackBar items={data?.tasks.by_status ?? []} meta={taskStatusMeta} />
-            ) : (
-              <EmptyState description="暂无 Task" hint="确认 Todo 后会生成可执行任务" />
-            )}
-          </Card>
-        </Col>
-      </Row>
+          </div>
+          <div className="overview-queue-bar">
+            {todoTotal > 0
+              ? <StatusStackBar items={data?.todos.by_status ?? []} meta={todoStatusMeta} height={8} showLegend={false} />
+              : <Text type="secondary">暂无 Todo</Text>}
+          </div>
+        </div>
+        <div className="overview-queue-row">
+          <div className="overview-queue-heading">
+            <Space size={8} wrap>
+              <Button type="link" size="small" onClick={() => navigate('tasks')}>Task</Button>
+              <Tag color={(data?.tasks.pending ?? 0) > 0 ? 'processing' : 'default'}>{data?.tasks.pending ?? 0} 进行中</Tag>
+              <Text type="secondary">{data?.tasks.done ?? 0} 完成 · {data?.tasks.failed ?? 0} 失败</Text>
+            </Space>
+          </div>
+          <div className="overview-queue-bar">
+            {taskTotal > 0
+              ? <StatusStackBar items={data?.tasks.by_status ?? []} meta={taskStatusMeta} height={8} showLegend={false} />
+              : <Text type="secondary">暂无 Task</Text>}
+          </div>
+        </div>
+      </Card>
     </div>
   )
 }

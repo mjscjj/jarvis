@@ -5,6 +5,7 @@ interface StatusStackBarProps {
   items: StatusCount[]
   meta: Record<string, { label: string; color: string }>
   height?: number
+  showLegend?: boolean
 }
 
 const ANT_COLOR_MAP: Record<string, string> = {
@@ -23,7 +24,7 @@ function resolveColor(antColor: string): string {
   return ANT_COLOR_MAP[antColor] ?? antColor
 }
 
-export default function StatusStackBar({ items, meta, height = 12 }: StatusStackBarProps) {
+export default function StatusStackBar({ items, meta, height = 12, showLegend = true }: StatusStackBarProps) {
   const total = items.reduce((sum, item) => sum + item.count, 0)
   if (total === 0) return null
 
@@ -60,23 +61,25 @@ export default function StatusStackBar({ items, meta, height = 12 }: StatusStack
           </Tooltip>
         ))}
       </div>
-      <Space size={16} wrap style={{ marginTop: 8 }}>
-        {segments.map((seg) => (
-          <div key={seg.status} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: seg.color,
-              }}
-            />
-            <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-              {seg.label} {Math.round(seg.percent)}%
-            </span>
-          </div>
-        ))}
-      </Space>
+      {showLegend && (
+        <Space size={16} wrap style={{ marginTop: 8 }}>
+          {segments.map((seg) => (
+            <div key={seg.status} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: seg.color,
+                }}
+              />
+              <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                {seg.label} {Math.round(seg.percent)}%
+              </span>
+            </div>
+          ))}
+        </Space>
+      )}
     </div>
   )
 }
