@@ -20,7 +20,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { key: 'overview', label: '工作台', icon: <LayoutDashboard size={18} /> },
+  { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} /> },
   { key: 'todos', label: '待办', icon: <CheckSquare size={18} /> },
   { key: 'tasks', label: '任务', icon: <PlayCircle size={18} /> },
   { key: 'background', label: '背景', icon: <Settings size={18} /> },

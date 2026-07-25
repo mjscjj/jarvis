@@ -14,11 +14,13 @@ func TestCodexRunnerPersistsAndResumesTaskSession(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")
 	envPath := filepath.Join(dir, "task-id.txt")
+	cwdPath := filepath.Join(dir, "cwd.txt")
 	binPath := filepath.Join(dir, "fake-codex")
 	script := `#!/bin/sh
 set -eu
 printf '%s\n' "$@" > "$FAKE_CODEX_ARGS"
 printf '%s' "${JARVIS_TASK_ID:-}" > "$FAKE_CODEX_TASK_ID"
+pwd > "$FAKE_CODEX_CWD"
 output=""
 previous=""
 for arg in "$@"; do
@@ -35,6 +37,7 @@ printf '%s\n' 'diagnostic stderr' >&2
 	}
 	t.Setenv("FAKE_CODEX_ARGS", argsPath)
 	t.Setenv("FAKE_CODEX_TASK_ID", envPath)
+	t.Setenv("FAKE_CODEX_CWD", cwdPath)
 
 	runner, err := NewCodexRunner(binPath, "test-model", "medium", time.Minute)
 	if err != nil {
@@ -94,6 +97,22 @@ printf '%s\n' 'diagnostic stderr' >&2
 	}
 	if got := readTestFile(t, envPath); got != "" {
 		t.Fatalf("one-shot RunText JARVIS_TASK_ID = %q, want empty", got)
+	}
+
+	if _, err := runner.RunTextSandboxAt(
+		t.Context(),
+		"build daily panorama",
+		"danger-full-access",
+		dir,
+	); err != nil {
+		t.Fatalf("RunTextSandboxAt() error = %v", err)
+	}
+	args = readTestFile(t, argsPath)
+	if !strings.Contains(args, "--cd\n"+dir+"\n") {
+		t.Fatalf("workspace-rooted text run args missing --cd %q:\n%s", dir, args)
+	}
+	if got := strings.TrimSpace(readTestFile(t, cwdPath)); got != dir {
+		t.Fatalf("workspace-rooted text run cwd = %q, want %q", got, dir)
 	}
 }
 

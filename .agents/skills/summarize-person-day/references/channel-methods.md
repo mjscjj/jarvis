@@ -1,234 +1,206 @@
-# Evidence Collection and Reconciliation Contract
+# One-Pass Evidence Collection and Reconciliation
 
-Use this contract for planning, collector prompts, reconciliation, verification,
-and coverage reporting.
-
-## Source Boundary
-
-Collect only these three evidence domains.
+## Source Lanes
 
 ### Jarvis internal facts
 
-Collect deterministic Jarvis facts needed to reconstruct same-day state change:
+The caller writes deterministic same-day evidence before the Agent starts:
 
-- Todo and Task events created or transitioned inside the window;
-- linked TaskEvent, ExecutionRun, and ProjectEvent records;
-- frozen context snapshots, group/project bindings, and repository mappings
-  needed for attribution;
-- the current state of an item only when it was touched inside the window.
+- authored messages already ingested by Jarvis;
+- Todo and Task lifecycle events;
+- linked ExecutionRuns and Agent session IDs;
+- project, group, and repository bindings;
+- relevant ProjectEvents as context only.
 
-Do not treat an old open Todo or Task as same-day progress. Use an older record
-only when same-day evidence directly references it or when reporting an explicit
-outstanding commitment or risk. Do not use project background as proof that work
-happened.
+Treat this as the compact seed and relationship layer. Old open work without a
+same-day event is not same-day progress.
 
 ### Feishu work evidence
 
-Collect attributable work evidence from Feishu:
+Use lark-cli with the current user identity when personal visibility is needed.
+Collect one bounded same-day inventory plus seed-linked detail:
 
-- replies, thread context, and linked material around person-authored messages
-  already captured by Jarvis; do not emit the same authored message twice;
-- document revisions or substantive changes attributable to the person;
-- ended meetings involving the person, their minutes/transcripts, decisions,
-  and action items;
-- calendar records only as discovery and attendance context.
+- authored messages and explicit mentions needed for daily counts;
+- all same-day meetings involving the principal, then the best available
+  Minutes, Note, transcript, decisions, plans, and action items for each;
+- same-day documents created or substantively edited by the principal;
+- thread context for meaningful inbound and outbound communication;
+- directly referenced tasks, approvals, people, or mail.
 
-Discover every ended meeting in the window. Resolve each to its available
-`minute_token` or `note_id`, then read the original transcript for every
-readable artifact. Use summaries, chapters, and AI Todo only as navigation or
-secondary evidence. Keep a discovered meeting in coverage when its artifact
-cannot be read, and record the exact permission, readiness, or lookup error.
-Never convert that error into `empty`.
-
-Emit exactly one `source_kind=meeting` EvidenceCard for every discovered
-meeting, including unreadable meetings. Use the stable `meeting_id` as its
-source identity, merge transcript/minutes into that card, and make the
-`meetings_minutes` coverage count equal the number of meeting cards.
-
-Do not treat message volume, calendar presence, meeting attendance, document
-ownership, or `last_editor` alone as personal contribution.
+Do not scan every Drive item, task list, OKR, approval definition, mail folder,
+or lark-cli domain. Do not bulk-export or recompute Base/Sheets datasets for a
+daily report; retain the published same-day result and its source link unless
+the user explicitly asked for the underlying analysis. Attendance, last editor,
+ownership, and message volume alone do not prove contribution.
 
 ### Engineering execution evidence
 
-Collect attributable engineering execution:
+Start from linked Task, Run, Session, repository, commit, and MR/CR identifiers.
+Collect:
 
-- Codex or other agent sessions initiated for the person's work, including
-  resulting files, tests, commits, and explicit handoff state;
-- authored or reviewed MRs/CRs with exact revision, actor action, state, and URL;
-- commits by mapped author identity across relevant repositories;
-- test, deployment, release, and runtime acceptance evidence linked to the work.
+- authored commits and MR/CR/review activity needed for daily counts;
+- actual output and terminal state for linked Agent sessions;
+- exact relevant Git changes and remote MR/CR state;
+- tests, deployment, release, configuration, or runtime results directly tied
+  to those changes;
+- one bounded author/date repository discovery only when the seed has no useful
+  engineering binding.
 
-Separate work directly performed by the person from work delegated to an agent.
-Do not infer completion from a session title, commit subject, local branch, or
-MR update alone. Prefer exact remote state and observed verification results.
+Do not read every Codex transcript, scan every cloned repository, or query every
+bytedcli engineering domain. When Jarvis already has a Run result, read the
+session's final output/effects and directly linked test evidence instead of
+replaying the full transcript. Separate direct work, delegated Agent work,
+collaboration, assignment, and discussion.
 
-## Collector Result
+## Parallel Assignment
 
-Return one object with this shape. Do not wrap it in a `collector` key:
+Start one Feishu worker and one engineering worker concurrently. These are the
+only subagents in the run.
 
-```text
-domain: jarvis_internal | feishu_work | engineering_execution
-identity_filters: [...]
-window: {start, end, cutoff, timezone}
-status: complete | empty | partial | error | unavailable
-coverage:
-  - {scope, query_or_cursor, status, count, truncated, error}
-evidence: [EvidenceCard...]
-gaps: [...]
+Give each worker:
+
+- the principal identity filters;
+- natural-day window and cutoff;
+- relevant seed IDs and durable bindings;
+- its source boundary;
+- one exclusive output file;
+- the evidence format below;
+- a target of about two minutes.
+
+A worker must not spawn another agent. It may make several read-only tool calls
+inside its lane, but it must stop after this collection pass and record any
+unresolved or inaccessible material as a gap.
+
+## Evidence Markdown Contract
+
+Use a small, loose envelope:
+
+```markdown
+# <lane> evidence — YYYY-MM-DD
+
+## Scope
+- Principal:
+- Window:
+- Cutoff:
+- Query plan:
+
+## Coverage
+- <scope>: complete | empty | partial | error | unavailable
+  - Query/cursor:
+  - Count:
+  - Truncated:
+  - Error:
+
+## Daily counts
+- <metric>: <exact N | at least N | unknown>
+  - Scope:
+  - Deduplication key:
+  - Note:
+
+## Evidence
+
+### <stable evidence ID> — <short subject>
+- Source kind:
+- Source ID:
+- Occurred at:
+- Actor:
+- Project binding:
+- Relation to principal:
+- Artifact URL or local reference:
+- Observed facts:
+- Raw excerpt or diagnostic reference:
+
+## Gaps
+- <exact access, pagination, attribution, or state gap>
 ```
 
-For the runtime JSON contract:
+Do not require a semantic field that the source cannot support. Use `unknown`
+instead of inventing a value. Evidence IDs must be unique within the day and
+readable, for example:
 
-- `domain`, `identity_filters`, and `window` are immutable control-plane values
-  owned and injected by the main controller; collector echoes are accepted only
-  for schema compatibility and are never trusted as the execution plan;
-- the top-level `status` is derived by the main controller from per-scope
-  coverage and is not trusted from the collector echo;
-- for the unambiguous success states, the main controller canonicalizes
-  zero-count coverage to `empty` and positive-count coverage to `complete`;
-  `partial`, `error`, and `unavailable` remain collector-owned and require their
-  diagnostic error;
-- `coverage` must contain exactly the scopes assigned by the caller, with no
-  extra discovery scopes;
-- `query_or_cursor` is one diagnostic string, not an array or object;
-- `raw_reference` is one compact string, not a nested object;
-- `gaps` is an array of diagnostic strings, not structured objects;
-- every field named in the caller schema uses the caller's exact scalar type.
+- `JARVIS-task-84`
+- `FEISHU-meeting-<meeting-id>`
+- `ENG-mr-<repo>-<iid>-<revision>`
 
-Collector-owned evidence remains strict. In particular, every
-`attribution=direct` card must carry an `actor_identity` present in the
-controller's identity mapping; the controller must reject mismatches rather
-than rewriting or weakening attribution.
+For the Feishu lane, include counts for:
 
-Use:
+- principal-authored messages;
+- explicit @mention messages and unique human senders;
+- direct-message counterpart counts when discoverable;
+- meetings and total duration;
+- documents created and substantively edited.
 
-- `complete`: every planned subquery succeeded and relevant evidence exists;
-- `empty`: every planned subquery succeeded and no relevant evidence exists;
-- `partial`: some planned scope is unreadable, truncated, or failed;
-- `error`: the domain could not be investigated reliably.
-- `unavailable`: the required tool, identity mapping, or environment capability
-  is absent, so the query could not be attempted.
+For the engineering lane, include counts for:
 
-Never infer `complete` from a non-empty first page. Paginate to exhaustion or
-mark the exact truncation. Keep real tool and permission errors verbatim enough
-to diagnose.
+- authored commits, with repository scope;
+- MR/CR created, updated, reviewed, and merged;
+- delegated Agent runs by terminal state;
+- tests, deployments, and releases.
 
-## Evidence Card
+Use an exact number only when the recorded query covers the whole intended
+scope. A seed-only or repository-bounded result is a lower bound. Do not write
+zero after a failed or unavailable query.
 
-Normalize each item as:
+## Reconcile Once
 
-```text
-evidence_id
-domain
-source_kind
-source_id
-occurred_at
-actor_identity
-actor_role
-project_binding
-subject
-activity
-output
-observed_outcome
-lifecycle_state
-artifact_url
-raw_reference
-attribution: direct | delegated | collaborative | assigned | discussed
-strength: primary | corroborating | contextual
-```
+After both workers finish, the main agent reads the three current evidence
+files and proceeds directly to the report.
 
-Use `null` when output or observed outcome is not evidenced. Preserve the raw
-reference, stable ID, timestamp, and attributable actor after compression.
-Collectors may connect records inside their own domain but must not deduplicate
-or infer across domains.
-
-## Main-Agent Reconciliation
-
-Perform cross-domain analysis only after all collector results arrive.
-
-### Bind projects
-
-Apply this order:
+Bind a project in this order:
 
 1. frozen Todo/Task project context;
-2. group-to-project or repository-to-project binding;
+2. group/project or repository/project binding;
 3. explicit project reference in the artifact;
 4. evidence-backed inference;
 5. `未归属`.
 
-Do not classify solely by keyword similarity when a durable binding exists.
+Merge evidence referring to the same deliverable, decision, incident,
+commitment, or risk. Prefer stable Task/Run/Session, meeting, document, MR/CR,
+commit, deployment, and artifact identifiers over keyword similarity.
 
-### Merge work items
+For each material work item retain:
 
-Merge evidence referring to the same deliverable, decision, bug, or commitment.
-Prefer stable joins such as artifact URL, MR/CR ID, Task/Todo relation, document
-token, meeting action ID, agent session, commit ancestry, or normalized subject.
+- what changed;
+- relation to the principal;
+- activities, durable outputs, and observed outcomes;
+- involved projects, people, events, and artifacts;
+- decisions, commitments, risks, and current state;
+- evidence IDs and explicit gaps.
 
-For each merged work item retain:
+For every meeting retain its title, time, participants, conclusions, decisions,
+plans, Todo with owners, unresolved questions, and principal impact.
 
-```text
-project
-subject
-activities[]
-outputs[]
-observed_outcomes[]
-decisions[]
-commitments[]
-risks[]
-contribution
-evidence_ids[]
-confidence
-unresolved_gaps[]
-```
+For communication, group related messages into a person-topic record. Retain
+who initiated the meaningful exchange, both sides' material statements, the
+current conclusion, and pending discussion or Todo. Do not emit one evidence
+item per routine chat message.
 
-Use messages and meetings to explain intent and decisions. Use durable artifacts
-and observed system state to prove output or outcome. Report one work item once
-while retaining all corroborating evidence.
+When collected sources conflict, report the conflict or use cautious wording;
+do not start another research stage.
 
-### Analyze the progression
+## Context and Time Discipline
 
-Apply `Activity → Output → Observed Outcome` without forcing missing stages:
+- Keep `00-context.md` as a small run index, not a transcript.
+- Pass collectors seed IDs and short excerpts, not every raw file.
+- Read each current evidence file once for synthesis.
+- Do not reload the whole Skill package into each worker; give it only its lane
+  method and relevant capability section.
+- Prefer stable URLs and local paths over copying large documents.
+- Treat two minutes per collector and three to five minutes total as the normal
+  target. The outer runtime timeout is only a runaway cap.
 
-- Activity alone is not an accomplishment.
-- Output requires an attributable durable artifact or accepted conclusion.
-- Observed Outcome requires evidence of effect or final state; planned impact is
-  not an outcome.
+## Completion
 
-Record these facts orthogonally:
+Before writing `99-report.md`:
 
-- Decision: subject, status (`proposed`, `accepted`, `superseded`), authority,
-  evidence, and resulting constraint.
-- Commitment: requester, owner, acceptance evidence, due time, current state,
-  and evidence. An assignment is not an accepted commitment.
-- Risk: affected goal, observed condition, impact, owner, mitigation, and
-  evidence. An access gap is a coverage risk, not automatically a work blocker.
+1. ensure the three lanes have explicit coverage;
+2. ensure daily counts carry scope and exact/lower-bound/unknown semantics;
+3. ensure every discovered meeting has one evidence record;
+4. merge repeated message threads, lifecycle events, and duplicate narratives;
+5. preserve contribution mode and uncertainty;
+6. expose partial sources, access errors, pagination limits, and unresolved
+   states;
+7. distinguish finished results, topics requiring human discussion, and
+   confirmed executable next steps.
 
-Rank by observed outcome, delivered output, accepted decision, material
-milestone, explicit commitment, then risk requiring action. Drop routine
-activity unless it explains a material output, outcome, decision, or risk.
-
-## Targeted Verification
-
-Request a verifier only when a material final claim has:
-
-- conflicting state or attribution across sources;
-- an outcome supported only by a message or summary;
-- an MR, release, deployment, or task whose final state is unclear;
-- a meeting decision or action item missing primary transcript evidence.
-
-Give the verifier one claim, the relevant stable IDs, and one expected answer.
-Require `confirmed`, `rejected`, or `unresolved`, plus primary evidence and the
-remaining gap. Do not ask the verifier to repeat broad collection or write the
-summary.
-
-## Final Checks
-
-Before reporting:
-
-1. Trace every output, outcome, decision, commitment, and risk to evidence IDs.
-2. Remove duplicated work items and unsubstantiated causal language.
-3. Preserve contribution mode: direct, delegated, collaborative, assigned, or
-   discussed.
-4. Confirm all three collector statuses and every partial/error gap are visible.
-5. Preserve a mandatory meeting-first narrative containing every discovered
-   meeting, while also merging meeting-derived decisions into project work.
+Write the report directly. Do not create extra analysis-stage files or workers.

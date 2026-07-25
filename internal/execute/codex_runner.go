@@ -623,6 +623,26 @@ func (r *CodexRunner) RunTextSandbox(ctx context.Context, prompt, sandbox string
 	return run.LastMessage, nil
 }
 
+// RunTextSandboxAt is the workspace-rooted counterpart of RunTextSandbox.
+// Long-running agents such as the personal daily panorama need a stable
+// repository working directory so project Skills, references, and persisted
+// Markdown artifacts resolve to the real Jarvis workspace instead of the
+// runner's ephemeral temporary directory.
+func (r *CodexRunner) RunTextSandboxAt(
+	ctx context.Context,
+	prompt, sandbox, workspaceRoot string,
+) (string, error) {
+	workspaceRoot = strings.TrimSpace(workspaceRoot)
+	if workspaceRoot == "" {
+		return "", fmt.Errorf("codex workspace-rooted text run requires a workspace root")
+	}
+	run, err := r.Run(ctx, prompt, sandbox, workspaceRoot, schemaNone)
+	if err != nil {
+		return "", err
+	}
+	return run.LastMessage, nil
+}
+
 // codexSessionID extracts the thread_id from codex's JSONL stream. It uses a
 // streaming json.Decoder rather than a line scanner because a single JSONL
 // event (e.g. a command's captured output) can exceed any fixed line buffer.

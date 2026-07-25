@@ -2,13 +2,12 @@ import type {
   AgentSkill,
   AgentSkillContent,
   AgentSkillInput,
+  AgentProcessSnapshot,
   CommitWorklog,
   ConfirmationDetail,
   DailyDigest,
   DailyDigestKickResult,
   DailyDigestScope,
-  DebugRecord,
-  DebugStatus,
   Digest,
   DocumentWorklog,
   FailureEvent,
@@ -340,12 +339,12 @@ export function getDocumentWorklog(date?: string, signal?: AbortSignal): Promise
 
 // --- Debug panel ---
 
-export function getDebugStatus(signal?: AbortSignal): Promise<DebugStatus> {
-  return request<DebugStatus>('/api/debug/status', { signal })
-}
-
 export function getDebugModules(signal?: AbortSignal): Promise<{ items: ModuleRun[] }> {
   return request<{ items: ModuleRun[] }>('/api/debug/modules', { signal })
+}
+
+export function getDebugAgentProcesses(signal?: AbortSignal): Promise<AgentProcessSnapshot> {
+  return request<AgentProcessSnapshot>('/api/debug/agent-processes', { signal })
 }
 
 export function getDebugFailures(hours = 24, signal?: AbortSignal): Promise<{ items: FailureEvent[] }> {
@@ -354,14 +353,6 @@ export function getDebugFailures(hours = 24, signal?: AbortSignal): Promise<{ it
 
 export function getDebugScans(limit = 50, signal?: AbortSignal): Promise<{ items: ScanRow[] }> {
   return request<{ items: ScanRow[] }>(`/api/debug/scans?limit=${limit}`, { signal })
-}
-
-export function getDebugTodos(limit = 20, signal?: AbortSignal): Promise<{ items: DebugRecord[] }> {
-  return request<{ items: DebugRecord[] }>(`/api/debug/todos?limit=${limit}`, { signal })
-}
-
-export function getDebugTasks(limit = 20, signal?: AbortSignal): Promise<{ items: DebugRecord[] }> {
-  return request<{ items: DebugRecord[] }>(`/api/debug/tasks?limit=${limit}`, { signal })
 }
 
 export function getDebugWatermarks(signal?: AbortSignal): Promise<{ items: WatermarkRow[] }> {

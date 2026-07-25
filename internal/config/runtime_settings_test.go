@@ -112,6 +112,7 @@ skills:
 dailydigest:
   enabled: true
   schedule: "0 19 * * *"
+  timeout_seconds: 600
   group_message_limit: 200
   group_concurrency: 2
 scheduled_task:

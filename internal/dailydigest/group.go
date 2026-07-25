@@ -41,6 +41,14 @@ type groupGenerateResult struct {
 	CutoffAt    time.Time
 }
 
+func coverageItem(count int, note string) SourceCoverageItem {
+	status := "ok"
+	if count == 0 {
+		status = "empty"
+	}
+	return SourceCoverageItem{Status: status, Count: count, Note: note}
+}
+
 // Generate 从 Jarvis 库取当天群消息打底，再让 codex 按群总结 Skill 自跑
 // lark-cli/bytedcli/git 补全线程、文档、commit/MR 等材料。即使库内 0 条消息也
 // 必须运行 codex，不能把“未采集到”误判成“今日无讨论”。

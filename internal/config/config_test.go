@@ -162,6 +162,7 @@ func TestValidate(t *testing.T) {
 			c.Chat.Model = ""
 		}, wantErr: "chat.model"},
 		{name: "dailydigest schedule", mutate: func(c *Config) { c.DailyDigest.Schedule = "" }, wantErr: "dailydigest.schedule"},
+		{name: "dailydigest timeout", mutate: func(c *Config) { c.DailyDigest.TimeoutSeconds = 299 }, wantErr: "dailydigest.timeout_seconds"},
 		{name: "dailydigest group message limit", mutate: func(c *Config) { c.DailyDigest.GroupMessageLimit = 0 }, wantErr: "dailydigest.group_message_limit"},
 		{name: "dailydigest group concurrency", mutate: func(c *Config) { c.DailyDigest.GroupConcurrency = 0 }, wantErr: "dailydigest.group_concurrency"},
 		{name: "scheduled task schedule", mutate: func(c *Config) { c.ScheduledTask.Schedule = "" }, wantErr: "scheduled_task.schedule"},
@@ -268,7 +269,8 @@ func validChatConfig() ChatConfig {
 
 func validDailyDigestConfig() DailyDigestConfig {
 	return DailyDigestConfig{
-		Enabled: true, Schedule: "0 19 * * *", GroupMessageLimit: 200, GroupConcurrency: 2,
+		Enabled: true, Schedule: "0 19 * * *", TimeoutSeconds: 600,
+		GroupMessageLimit: 200, GroupConcurrency: 2,
 	}
 }
 

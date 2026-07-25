@@ -108,3 +108,29 @@ func TestRecoverInterruptedGeneration(t *testing.T) {
 		t.Fatalf("view after recovery = %#v", view)
 	}
 }
+
+func TestScheduledClaimDoesNotRetryFailedAttempt(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	const date = "2026-07-25"
+
+	if err := store.ClaimGeneration(ctx, ScopePerson, "ou_me", date, TriggerSchedule, false); err != nil {
+		t.Fatalf("first schedule claim: %v", err)
+	}
+	if err := store.SetFailed(ctx, ScopePerson, "ou_me", date, "collector stopped"); err != nil {
+		t.Fatalf("set failed: %v", err)
+	}
+	if err := store.ClaimGeneration(ctx, ScopePerson, "ou_me", date, TriggerSchedule, false); !errors.Is(err, ErrAlreadyAttempted) {
+		t.Fatalf("schedule retry after failed = %v, want ErrAlreadyAttempted", err)
+	}
+	view, err := store.GetByScopeDate(ctx, ScopePerson, "ou_me", date)
+	if err != nil {
+		t.Fatalf("get failed digest: %v", err)
+	}
+	if view.Status != StatusFailed || view.ErrorDetail == nil || *view.ErrorDetail != "collector stopped" {
+		t.Fatalf("automatic retry mutated failed digest: %#v", view)
+	}
+	if err := store.ClaimGeneration(ctx, ScopePerson, "ou_me", date, TriggerManual, true); err != nil {
+		t.Fatalf("manual retry after failed: %v", err)
+	}
+}

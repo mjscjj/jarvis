@@ -657,38 +657,6 @@ export interface DocumentWorklog {
   received: WorkDoc[]
 }
 
-export interface Dependency {
-  name: string
-  status: 'ok' | 'error'
-  detail?: string
-}
-
-export interface TableCount {
-  table: string
-  count: number
-}
-
-export interface StatusCount {
-  status: string
-  count: number
-}
-
-export interface BacklogMetric {
-  key: string
-  label: string
-  value: number
-  detail?: string
-}
-
-export interface DebugStatus {
-  time: string
-  dependencies: Dependency[]
-  tables: TableCount[]
-  backlog: BacklogMetric[]
-  todo_by_status: StatusCount[]
-  task_by_status: StatusCount[]
-}
-
 export interface ModuleRun {
   module: string
   time: string
@@ -700,6 +668,33 @@ export interface ModuleRun {
   failures: number
   last_error: string
   raw: string
+}
+
+export interface AgentProcess {
+  kind: 'codex' | 'trae'
+  mode: 'exec' | 'app-server' | 'cli' | 'desktop'
+  source: 'jarvis' | 'cc-connect' | 'paseo' | 'chatgpt' | 'trae' | 'other'
+  pid: number
+  ppid: number
+  pgid: number
+  root_pid: number
+  nested: boolean
+  elapsed: string
+  jarvis_owned: boolean
+  command: string
+}
+
+export interface AgentProcessSnapshot {
+  sampled_at: string
+  summary: {
+    codex_services: number
+    codex_executing: number
+    trae_desktop: number
+    trae_cli: number
+    jarvis_codex: number
+    jarvis_trae: number
+  }
+  items: AgentProcess[]
 }
 
 export interface FailureEvent {
@@ -767,11 +762,6 @@ export interface SystemTaskRunList {
   truncated: boolean
   notes: string[]
 }
-
-// Debug todo/task rows are the raw Go domain structs marshaled with Go field
-// names; the panel only renders them as expandable JSON, so a loose record type
-// is enough.
-export type DebugRecord = Record<string, unknown>
 
 export type ResourceType = 'doc' | 'link' | 'repo' | 'note' | 'other'
 

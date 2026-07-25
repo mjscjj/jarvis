@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +24,7 @@ type Options struct {
 	PrincipalOpenID string        // person scope 的 scope_id
 	GitAuthor       string        // 供个人 prompt 引导 git log
 	RepoRoot        string        // 已 clone 仓库的根目录
+	WorkspaceRoot   string        // Jarvis 仓库根目录；按日 Markdown 的持久化根
 	PersonSkillDir  string        // summarize-person-day Skill 目录
 	GroupSkillDir   string        // feishu-group-daily-summary Skill 目录
 	SummarySandbox  string        // 两类总结的 codex sandbox（danger-full-access）
@@ -61,7 +64,23 @@ func NewService(opts Options) (*Service, error) {
 	if strings.TrimSpace(opts.RepoRoot) == "" {
 		return nil, fmt.Errorf("daily digest service repo root is required")
 	}
-	skillText, err := loadPersonSummarySkill(opts.PersonSkillDir)
+	workspaceRoot, err := filepath.Abs(strings.TrimSpace(opts.WorkspaceRoot))
+	if err != nil {
+		return nil, fmt.Errorf("resolve daily digest workspace root: %w", err)
+	}
+	if strings.TrimSpace(opts.WorkspaceRoot) == "" {
+		return nil, fmt.Errorf("daily digest service workspace root is required")
+	}
+	if stat, err := os.Stat(workspaceRoot); err != nil {
+		return nil, fmt.Errorf("stat daily digest workspace root %q: %w", workspaceRoot, err)
+	} else if !stat.IsDir() {
+		return nil, fmt.Errorf("daily digest workspace root %q is not a directory", workspaceRoot)
+	}
+	personSkillDir, err := filepath.Abs(strings.TrimSpace(opts.PersonSkillDir))
+	if err != nil {
+		return nil, fmt.Errorf("resolve personal summary skill directory: %w", err)
+	}
+	skillText, err := loadPersonSummarySkill(personSkillDir)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +112,8 @@ func NewService(opts Options) (*Service, error) {
 			principalOpenID: opts.PrincipalOpenID,
 			gitAuthor:       opts.GitAuthor,
 			repoRoot:        opts.RepoRoot,
+			workspaceRoot:   workspaceRoot,
+			skillDir:        personSkillDir,
 			skillText:       skillText,
 			sandbox:         opts.SummarySandbox,
 		},
@@ -239,8 +260,8 @@ func (s *Service) runClaimedGroup(ctx context.Context, group keyGroup, date stri
 	)
 }
 
-// GeneratePersonalScheduled 是个人总结唯一的 cron 入口。已有 done 或 generating 时
-// 正常跳过，不覆盖手动结果。
+// GeneratePersonalScheduled 是个人总结唯一的 cron 入口。当天已有任何自动/手动
+// 尝试都正常跳过；失败后只允许用户显式手动重试。
 func (s *Service) GeneratePersonalScheduled(ctx context.Context, date string) (bool, error) {
 	if strings.TrimSpace(date) == "" {
 		date = s.today()
@@ -249,7 +270,9 @@ func (s *Service) GeneratePersonalScheduled(ctx context.Context, date string) (b
 		return false, err
 	}
 	err := s.store.ClaimGeneration(ctx, ScopePerson, s.principalOpenID, date, TriggerSchedule, false)
-	if errors.Is(err, ErrAlreadyDone) || errors.Is(err, ErrAlreadyGenerating) {
+	if errors.Is(err, ErrAlreadyDone) ||
+		errors.Is(err, ErrAlreadyGenerating) ||
+		errors.Is(err, ErrAlreadyAttempted) {
 		return false, nil
 	}
 	if err != nil {
@@ -286,7 +309,9 @@ func (s *Service) GenerateForDate(ctx context.Context, date string) error {
 			defer wg.Done()
 			defer func() { <-sem }()
 			err := s.store.ClaimGeneration(ctx, ScopeGroup, group.ScopeID, date, TriggerSchedule, false)
-			if errors.Is(err, ErrAlreadyDone) || errors.Is(err, ErrAlreadyGenerating) {
+			if errors.Is(err, ErrAlreadyDone) ||
+				errors.Is(err, ErrAlreadyGenerating) ||
+				errors.Is(err, ErrAlreadyAttempted) {
 				return
 			}
 			if err == nil {

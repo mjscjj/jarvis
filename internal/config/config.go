@@ -210,11 +210,12 @@ type SkillsConfig struct {
 }
 
 // DailyDigestConfig 控制「每日进度总结」：19:00 cron 自动生成 + 页面手动异步触发。
-// Enabled=false 时不起 scheduler（手动生成接口仍可用）。个人总结用 execute 段的
-// codex（danger-full-access + 联网）自跑工具，群总结用 model 段的 qwen 单次调用。
+// Enabled=false 时不起 scheduler（手动生成接口仍可用）。个人全景使用一轮并行
+// 外部取证，独立超时只负责终止失控运行。
 type DailyDigestConfig struct {
 	Enabled           bool   `yaml:"enabled"`
 	Schedule          string `yaml:"schedule"`            // cron 表达式，默认 "0 19 * * *"（每晚 19:00）
+	TimeoutSeconds    int    `yaml:"timeout_seconds"`     // 单次 Codex 总编排硬上限，默认 600
 	GroupMessageLimit int    `yaml:"group_message_limit"` // 每群每天喂进 prompt 的消息上限，默认 200
 	GroupConcurrency  int    `yaml:"group_concurrency"`   // 一轮批量里群总结的并发上限，默认 2，>=1
 }
@@ -514,6 +515,9 @@ func (c *Config) validate() error {
 	}
 	if c.DailyDigest.Schedule == "" {
 		return fmt.Errorf("dailydigest.schedule 不能为空")
+	}
+	if c.DailyDigest.TimeoutSeconds < 300 {
+		return fmt.Errorf("dailydigest.timeout_seconds 必须大于等于 300")
 	}
 	if c.DailyDigest.GroupMessageLimit <= 0 {
 		return fmt.Errorf("dailydigest.group_message_limit 必须大于 0")

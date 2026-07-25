@@ -26,6 +26,13 @@ func (f *fakeSummaryRunner) RunTextSandbox(_ context.Context, prompt, sandbox st
 	return f.output, f.err
 }
 
+func (f *fakeSummaryRunner) RunTextSandboxAt(
+	ctx context.Context,
+	prompt, sandbox, _ string,
+) (string, error) {
+	return f.RunTextSandbox(ctx, prompt, sandbox)
+}
+
 func TestGroupGenerateUsesCodexSkillAndReportsCoverage(t *testing.T) {
 	t.Parallel()
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})

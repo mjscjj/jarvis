@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, DatePicker, Empty, Segmented, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import dayjs from 'dayjs'
@@ -6,12 +6,33 @@ import type { Dayjs } from 'dayjs'
 import { generateDailyDigest, getCommitWorklog, getDailyDigests, getDigests, getDocumentWorklog, getProfile } from './api'
 import PageHeader from './components/PageHeader'
 import EmptyState from './components/EmptyState'
+import MarkdownReport from './components/MarkdownReport'
 import type { CommitMR, CommitWorklog, DailyDigest, DailyDigestScope, Digest, DocumentWorklog, GroupProgress, MyDay, ProfileView, WorkDoc } from './types'
 
-const { Text, Paragraph, Link } = Typography
+const { Text, Link } = Typography
+
+const DAILY_DIGEST_POLL_MS = 5000
+const DAILY_DIGEST_RETRY_MS = 10000
+const DAILY_DIGEST_DATE_TAB_COUNT = 7
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
+}
+
+function dailyDigestDates(selected: Dayjs): Dayjs[] {
+  const selectedDay = selected.startOf('day')
+  const recent = Array.from(
+    { length: DAILY_DIGEST_DATE_TAB_COUNT },
+    (_, index) => dayjs().startOf('day').subtract(index, 'day'),
+  )
+  return recent.some((date) => date.isSame(selectedDay, 'day'))
+    ? recent
+    : [selectedDay, ...recent]
+}
+
+function dailyDigestDateLabel(date: Dayjs): string {
+  if (date.isSame(dayjs(), 'day')) return `今天 ${date.format('MM-DD')}`
+  return date.isSame(dayjs(), 'year') ? date.format('MM-DD') : date.format('YYYY-MM-DD')
 }
 
 // A day row shows a dash when nothing happened so quiet days read as quiet.
@@ -227,8 +248,11 @@ export default function Progress() {
   const [profile, setProfile] = useState<ProfileView>()
   const [dailyLoading, setDailyLoading] = useState(false)
   const [dailyError, setDailyError] = useState<string>()
+  const [dailyScopeTab, setDailyScopeTab] = useState<'person' | 'groups'>('person')
   const [generating, setGenerating] = useState<Set<string>>(new Set())
   const [dailyRefresh, setDailyRefresh] = useState(0)
+  const loadedDailyDateRef = useRef<string | undefined>(undefined)
+  const generatingDatesRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const controller = new AbortController()
@@ -243,12 +267,20 @@ export default function Progress() {
   }, [days])
 
   const selectedDate = dailyDate.format('YYYY-MM-DD')
+  const activeDailyDateRef = useRef(selectedDate)
+  activeDailyDateRef.current = selectedDate
 
   useEffect(() => {
     const controller = new AbortController()
     let timer: number | undefined
-    const load = async () => {
-      setDailyLoading(true)
+    const scheduleLoad = (delay: number) => {
+      timer = window.setTimeout(() => void load(false), delay)
+    }
+    const load = async (initial: boolean) => {
+      if (initial) {
+        setDailyLoading(true)
+        setDailyItems([])
+      }
       try {
         const [digests, currentProfile] = await Promise.all([
           getDailyDigests(selectedDate, controller.signal),
@@ -259,14 +291,27 @@ export default function Progress() {
         setProfile(currentProfile)
         setDailyError(undefined)
         const stillGenerating = digests.items.some((item) => item.status === 'generating')
-        if (stillGenerating) timer = window.setTimeout(load, 2500)
+        if (stillGenerating) {
+          generatingDatesRef.current.add(selectedDate)
+          scheduleLoad(DAILY_DIGEST_POLL_MS)
+        } else {
+          generatingDatesRef.current.delete(selectedDate)
+        }
       } catch (cause) {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setDailyError(errorText(cause))
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
+          const retrying = generatingDatesRef.current.has(selectedDate)
+          const detail = errorText(cause)
+          setDailyError(retrying ? `${detail}；生成仍在进行，将在约 10 秒后重试` : detail)
+          if (retrying) scheduleLoad(DAILY_DIGEST_RETRY_MS)
+        }
       } finally {
-        if (!controller.signal.aborted) setDailyLoading(false)
+        if (!controller.signal.aborted && initial) {
+          loadedDailyDateRef.current = selectedDate
+          setDailyLoading(false)
+        }
       }
     }
-    void load()
+    void load(loadedDailyDateRef.current !== selectedDate)
     return () => {
       controller.abort()
       if (timer !== undefined) window.clearTimeout(timer)
@@ -277,11 +322,14 @@ export default function Progress() {
     dailyItems.find((item) => item.scope === scope && item.scope_id === scopeId)
 
   const generate = async (scope: DailyDigestScope, scopeId: string) => {
-    const key = `${scope}:${scopeId}`
+    const requestDate = selectedDate
+    const key = `${requestDate}:${scope}:${scopeId}`
     setGenerating((current) => new Set(current).add(key))
     setDailyError(undefined)
     try {
-      await generateDailyDigest(scope, scopeId, selectedDate)
+      await generateDailyDigest(scope, scopeId, requestDate)
+      generatingDatesRef.current.add(requestDate)
+      if (activeDailyDateRef.current !== requestDate) return
       setDailyItems((current) => {
         const existing = current.find((item) => item.scope === scope && item.scope_id === scopeId)
         if (existing) {
@@ -295,17 +343,17 @@ export default function Progress() {
           } : item)
         }
         return [...current, {
-          id: 0, scope, scope_id: scopeId, digest_date: selectedDate, summary: '', status: 'generating',
+          id: 0, scope, scope_id: scopeId, digest_date: requestDate, summary: '', status: 'generating',
           trigger_type: 'manual', source_count: 0, source_coverage: {},
           engine: 'codex', error_detail: null,
           started_at: new Date().toISOString(), cutoff_at: null,
           generated_at: null, updated_at: new Date().toISOString(),
         }]
       })
-      // 触发 effect 立即读取；发现 generating 后由 effect 每 2.5 秒持续轮询。
+      // 触发 effect 立即读取；发现 generating 后由 effect 约每 5 秒持续轮询。
       setDailyRefresh((value) => value + 1)
     } catch (cause) {
-      setDailyError(errorText(cause))
+      if (activeDailyDateRef.current === requestDate) setDailyError(errorText(cause))
     } finally {
       setGenerating((current) => {
         const next = new Set(current)
@@ -317,7 +365,7 @@ export default function Progress() {
 
   const digestCard = (title: string, scope: DailyDigestScope, scopeId: string) => {
     const item = digestFor(scope, scopeId)
-    const isGenerating = item?.status === 'generating' || generating.has(`${scope}:${scopeId}`)
+    const isGenerating = item?.status === 'generating' || generating.has(`${selectedDate}:${scope}:${scopeId}`)
     const status = item?.status
     const statusTag = status === 'done'
       ? <Tag color="success">已生成</Tag>
@@ -332,7 +380,7 @@ export default function Progress() {
     const coverage = Object.entries(item?.source_coverage ?? {})
     return (
       <Card
-        key={`${scope}:${scopeId}`}
+        key={`${selectedDate}:${scope}:${scopeId}`}
         variant="borderless"
         title={<Space>{title}{statusTag}</Space>}
         extra={<Button type={scope === 'person' ? 'primary' : 'default'} size="small" loading={isGenerating} disabled={isGenerating} onClick={() => generate(scope, scopeId)}>{buttonLabel}</Button>}
@@ -341,7 +389,7 @@ export default function Progress() {
           <Alert type="error" showIcon message="生成失败" description={item?.error_detail || '未记录错误详情'} />
         ) : item?.summary ? (
           <>
-            <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 12 }}>{item.summary}</Paragraph>
+            <MarkdownReport className="daily-digest-markdown" content={item.summary} />
             <Space direction="vertical" size={6}>
               <Text type="secondary">
                 {item.generated_at ? `生成于 ${dayjs(item.generated_at).format('YYYY-MM-DD HH:mm')}` : '尚未生成'}
@@ -386,6 +434,52 @@ export default function Progress() {
     )
   }
 
+  const dailyDateItems = dailyDigestDates(dailyDate).map((date) => {
+    const dateKey = date.format('YYYY-MM-DD')
+    return {
+      key: dateKey,
+      label: dailyDigestDateLabel(date),
+      children: dateKey === selectedDate ? (
+        <>
+          {dailyError && <Alert type="error" showIcon message="每日总结加载失败" description={dailyError} />}
+          <Spin spinning={dailyLoading}>
+            <Tabs
+              activeKey={dailyScopeTab}
+              onChange={(key) => setDailyScopeTab(key as 'person' | 'groups')}
+              items={[
+                {
+                  key: 'person',
+                  label: '个人总结',
+                  children: (
+                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                      {profile
+                        ? digestCard('个人总结', 'person', profile.open_id)
+                        : <Card variant="borderless"><Spin size="small" /></Card>}
+                    </Space>
+                  ),
+                },
+                {
+                  key: 'groups',
+                  label: `群总结（${data?.key_groups.length ?? 0}）`,
+                  children: (
+                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                      {(data?.key_groups ?? []).map((group) => digestCard(group.name || group.chat_id, 'group', String(group.group_id)))}
+                      {!loading && (data?.key_groups.length ?? 0) === 0 && (
+                        <Card variant="borderless">
+                          <EmptyState description="暂无标记为核心群的会话" hint="可在「背景 → 会话背景」里标记 is_key_group" />
+                        </Card>
+                      )}
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          </Spin>
+        </>
+      ) : null,
+    }
+  })
+
   return (
     <div className="progress">
       <PageHeader title="进度" subtitle="按自然日查看我的推进与关键群进展" />
@@ -400,24 +494,23 @@ export default function Progress() {
             label: '每日总结',
             children: (
               <>
-                <DayPicker value={dailyDate} onChange={setDailyDate} />
-                <Alert
-                  type="info"
-                  showIcon
-                  style={{ marginTop: 12 }}
-                  message="个人总结每天 19:00 自动生成"
-                  description="如需立即生成或刷新历史日期，请选择日期后点击「我的个人总结」卡片右上角的手动按钮；重新生成会覆盖该日期的最新结果。"
+                <Tabs
+                  activeKey={selectedDate}
+                  onChange={(date) => setDailyDate(dayjs(date))}
+                  tabBarExtraContent={(
+                    <Space size={8}>
+                      <Text type="secondary">其他日期</Text>
+                      <DatePicker
+                        size="small"
+                        value={dailyDate}
+                        onChange={(date) => setDailyDate(date ?? dayjs())}
+                        allowClear={false}
+                        disabledDate={(date) => date.isAfter(dayjs(), 'day')}
+                      />
+                    </Space>
+                  )}
+                  items={dailyDateItems}
                 />
-                {dailyError && <Alert type="error" showIcon style={{ marginTop: 12 }} message="每日总结加载失败" description={dailyError} />}
-                <Spin spinning={dailyLoading}>
-                  <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 12 }}>
-                    {profile && digestCard('我的个人总结', 'person', profile.open_id)}
-                    {(data?.key_groups ?? []).map((group) => digestCard(group.name || group.chat_id, 'group', String(group.group_id)))}
-                    {!loading && (data?.key_groups.length ?? 0) === 0 && (
-                      <Card variant="borderless"><EmptyState description="暂无标记为核心群的会话" hint="可在「背景 → 会话背景」里标记 is_key_group" /></Card>
-                    )}
-                  </Space>
-                </Spin>
               </>
             ),
           },

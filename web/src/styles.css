@@ -1861,3 +1861,84 @@ pre {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+/* Progress daily digest Markdown. Keep all report typography scoped so other
+ * model output and Ant Design cards retain their existing presentation. */
+.daily-digest-markdown {
+  max-width: 980px;
+  margin-bottom: var(--space-4);
+  color: var(--color-text);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.daily-digest-markdown > :first-child {
+  margin-top: 0;
+}
+
+.daily-digest-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.daily-digest-markdown h1 {
+  margin: 0 0 var(--space-5);
+  font-size: 24px;
+  line-height: 1.35;
+}
+
+.daily-digest-markdown h2 {
+  margin: var(--space-6) 0 var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.daily-digest-markdown h3,
+.daily-digest-markdown h4 {
+  margin: var(--space-4) 0 var(--space-2);
+  line-height: 1.45;
+}
+
+.daily-digest-markdown p,
+.daily-digest-markdown ul,
+.daily-digest-markdown ol,
+.daily-digest-markdown blockquote,
+.daily-digest-markdown pre,
+.daily-digest-markdown table {
+  margin: 0 0 var(--space-3);
+}
+
+.daily-digest-markdown ul,
+.daily-digest-markdown ol {
+  padding-left: var(--space-6);
+}
+
+.daily-digest-markdown li + li {
+  margin-top: var(--space-1);
+}
+
+.daily-digest-markdown a {
+  overflow-wrap: anywhere;
+}
+
+.daily-digest-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+.daily-digest-markdown th,
+.daily-digest-markdown td {
+  min-width: 120px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.daily-digest-markdown th {
+  background: var(--color-bg-soft);
+  font-weight: 600;
+}

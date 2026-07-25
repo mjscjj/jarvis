@@ -31,7 +31,7 @@ import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
 const { Sider, Content } = Layout
 const { Title } = Typography
 
-const DEFAULT_KEY = 'tasks'
+const DEFAULT_KEY = 'overview'
 
 const SIDER_WIDTH = 140
 const SIDER_COLLAPSED_WIDTH = 64
@@ -48,7 +48,7 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
   { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
   { key: 'scheduled-tasks', label: '定时任务', icon: <CalendarOutlined /> },
-  { key: 'overview', label: '工作台', icon: <DashboardOutlined /> },
+  { key: 'overview', label: 'Overview', icon: <DashboardOutlined /> },
   { key: 'todos', label: '待办', icon: <CheckCircleOutlined /> },
   { key: 'confirmations', label: '待确认', icon: <CheckCircleOutlined /> },
   { key: 'background', label: '背景', icon: <DatabaseOutlined /> },

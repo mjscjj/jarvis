@@ -13,3 +13,7 @@ skills:
       enabled: true
       stages:
         - execute
+    - name: summarize-person-week
+      enabled: true
+      stages:
+        - execute

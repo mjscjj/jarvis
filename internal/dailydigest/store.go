@@ -47,6 +47,7 @@ var (
 	ErrNotFound          = errors.New("daily digest not found")
 	ErrAlreadyGenerating = errors.New("daily digest is already generating")
 	ErrAlreadyDone       = errors.New("daily digest is already done")
+	ErrAlreadyAttempted  = errors.New("daily digest already has an automatic attempt")
 )
 
 // SourceCoverageItem 让“查到了什么/哪路失败了”成为可观察数据，而不是藏在模型内部。
@@ -159,7 +160,8 @@ func (s *Store) ListByDate(ctx context.Context, date string) ([]DigestView, erro
 }
 
 // ClaimGeneration 原子抢占某 scope 某天的生成权。手动触发可重算 done/failed；
-// 定时触发不覆盖 done。两者都不能抢占 generating，避免手动与 cron 重复运行。
+// 定时触发只创建当天第一次尝试，已有 failed/pending 也不自动重跑。两者都不能
+// 抢占 generating，避免手动与 cron 重复运行。
 func (s *Store) ClaimGeneration(ctx context.Context, scope, scopeID, date, trigger string, force bool) error {
 	if err := validateScope(scope, scopeID); err != nil {
 		return err
@@ -192,12 +194,33 @@ func (s *Store) ClaimGeneration(ctx context.Context, scope, scopeID, date, trigg
 		return nil
 	}
 
+	var current domain.DailyDigest
+	if err := s.db.WithContext(ctx).
+		Where("scope = ? AND scope_id = ? AND digest_date = ?", scope, scopeID, day).
+		First(&current).Error; err != nil {
+		return fmt.Errorf("inspect existing daily digest claim scope=%s scope_id=%s date=%s: %w", scope, scopeID, date, err)
+	}
+	if !force {
+		switch current.Status {
+		case StatusGenerating:
+			return fmt.Errorf("%w: scope=%s scope_id=%s date=%s", ErrAlreadyGenerating, scope, scopeID, date)
+		case StatusDone:
+			return fmt.Errorf("%w: scope=%s scope_id=%s date=%s", ErrAlreadyDone, scope, scopeID, date)
+		default:
+			return fmt.Errorf(
+				"%w: scope=%s scope_id=%s date=%s status=%s",
+				ErrAlreadyAttempted,
+				scope,
+				scopeID,
+				date,
+				current.Status,
+			)
+		}
+	}
+
 	query := s.db.WithContext(ctx).Model(&domain.DailyDigest{}).
 		Where("scope = ? AND scope_id = ? AND digest_date = ?", scope, scopeID, day).
 		Where("status <> ?", StatusGenerating)
-	if !force {
-		query = query.Where("status <> ?", StatusDone)
-	}
 	result := query.Updates(map[string]any{
 		"status":          StatusGenerating,
 		"trigger_type":    trigger,
@@ -214,7 +237,6 @@ func (s *Store) ClaimGeneration(ctx context.Context, scope, scopeID, date, trigg
 		return nil
 	}
 
-	var current domain.DailyDigest
 	if err := s.db.WithContext(ctx).
 		Where("scope = ? AND scope_id = ? AND digest_date = ?", scope, scopeID, day).
 		First(&current).Error; err != nil {

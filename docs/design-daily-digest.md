@@ -22,22 +22,28 @@
 
 ## 2. 数据源
 
-### 2.1 个人进度：三类来源、两路并行采集、集中汇总
+### 2.1 个人进度：一个 Skill 主控、一次并行取证、直接成稿
 
 一级数据源只保留三类。文档、会议、MR、Commit 等是各 collector 的内部检查项，
 不再作为互相割裂的一级来源：
 
 | 一级来源 | 执行者 | 内容 |
 |---|---|---|
-| `jarvis_internal` | Go 确定性查询 | 本人消息、当天 TodoEvent、TaskEvent、ExecutionRun；ProjectEvent 仅作项目上下文 |
-| `feishu_work` | 独立 Codex collector | Jarvis 消息对应的回复/线程上下文、文档、日历发现、会议/妙记逐字稿；不重复产出本人消息 |
-| `engineering_execution` | 独立 Codex collector | Codex sessions、MR/CR、Commit、测试、部署和运行验收 |
+| `jarvis_internal` | Go 确定性查询 | 本人消息、当天 TodoEvent、TaskEvent、ExecutionRun；ProjectEvent 仅作项目上下文，并先写入当日证据文件 |
+| `feishu_work` | Skill 主控派生的独立 subagent | 消息/线程、文档、日历、会议、妙记、任务、OKR 等；以 `lark-cli` 能力地图为导航 |
+| `engineering_execution` | Skill 主控派生的独立 subagent | Codex sessions、仓库、MR/CR、Commit、测试、部署和运行验收；以 `bytedcli`、Git 和本地代码能力为导航 |
 
-主控先确定身份映射、自然日窗口、截止时间、每个来源的完整性检查和访问上限。
-Jarvis 查询完成后，飞书与工程两个 collector subagent 并行执行；两者只返回带
-稳定 ID、时间、归因、原始引用和覆盖缺口的 EvidenceCard，不写最终总结，也不做
-跨来源推断。全部 collector 到齐后，主控 synthesis agent 才做项目归属、跨源去重、
-成果判定和最终写作。
+Go 只负责硬边界：确定身份、自然日窗口、截止时间、运行 ID，写入 Jarvis
+确定性证据并启动一次顶层 Codex。顶层 Codex 在真实 workspace 中只注入轻量
+`.agents/skills/summarize-person-day/SKILL.md`，其他参考按 lane 读取：
+
+1. 只并行启动一个飞书 collector 和一个工程 collector；
+2. collector 不允许继续派生 agent，每条 lane 只做一次 seed-driven 调查；
+3. 两条 lane 完成后，顶层 Agent 一次读取本轮三份证据，直接归并并写
+   `99-report.md`；
+4. 不设二次调查、独立审阅、分章节写手或中间分析文件；冲突和缺口直接进入报告的
+   数据覆盖区；
+5. 所有外部系统默认只读；原始证据追加保存，重算不覆盖旧证据。
 
 Jarvis 内部事实严格按事件时间查询，不使用“`updated_at` 当天 OR 当前未结束”
 这种混合口径：
@@ -45,36 +51,51 @@ Jarvis 内部事实严格按事件时间查询，不使用“`updated_at` 当天
 - 消息：`create_time ∈ [day_start, cutoff)`，倒序取 `limit+1`，截断必须标 `partial`，
   再反转成时间正序；
 - Todo：读取 `todo_event.created_at` 及事件发生时落下的不可变语义快照，不回读
-  Todo 当前行；历史事件若没有快照则显式标 `partial`，本期不猜测或回填旧数据；
-- Task：读取 `task_event.occurred_at`，状态以事件自身为准；
-- 执行：读取当天开始或结束的 `execution_run`，与 TaskEvent 通过 `run_id` 归并；
+  Todo 当前行；同一 Todo 的多条状态事件聚合成一条生命周期证据，快照只保留一次；
+- Task：读取 `task_event.occurred_at`，状态以事件自身为准；同一 Task 的状态事件聚合
+  成一条生命周期证据；
+- 执行：读取当天开始或结束的 `execution_run`，同一 Task 的多次 Run 聚合为一次执行
+  时间线，保留各 Run ID 和最终结果；
 - 项目：`project_event.occurred_at` 只作状态上下文，因其没有 actor，不能直接归因；
 - 历史仍开放的 Todo/Task 不计入当天事实和 `source_count`。
 
-飞书 collector 必须拉全分页。会议是个人总结的第一优先级，最终固定单列
-`会议与妙记`：先拉全本人参与的会议，再逐场解析
-`meeting_id → minute_token/note_id → transcript`；AI 摘要、
-章节和 Todo 只作导航。妙记无权限、未就绪或检索失败时保留会议事实并显式标记
-`partial/error`，不能静默变成 `empty`。
+飞书取证先做一轮有界的当日清点：本人发出消息数、显式 @ 本人的消息数与去重人数、
+本人涉及的会议数与时长、本人新建或实质编辑的文档数；再以 Jarvis Seed 为入口补齐
+关键消息线程、会议和直接引用的文档、任务与人员。会议按
+`meeting_id → minute_token/note_id → transcript` 读取最佳可用材料；不默认扫描整个
+Drive、任务、OKR、审批或邮箱，也不为日报批量导出或复算 Base/Sheets 数据。无权限、
+未就绪或检索失败显式标记 `partial/error`。没有覆盖完整当日的统计只能写成“至少 N”
+或“未知”，不能伪装成精确值。
 
-工程 collector 同时调查 agent sessions、精确远端 MR/CR revision、Commit 以及
-测试/部署/运行验收。必须区分本人直接完成、本人委派 Agent 完成、协作、仅被分配
-和仅参与讨论；session 标题、Commit 或 MR 存在都不能自动升级为“完成”。
+工程取证统计当前可达范围内的本人 Commit、MR/CR、Review、Agent Run、测试、部署与
+发布，再从 Seed 中的 Task、Run、Session、仓库、Commit 和 MR/CR 标识出发，只读取
+直接相关的实际产物、远端状态、测试、部署或运行结果；不默认遍历全部 Codex
+transcript、全部本地仓库或 bytedcli 能力域。已有 Run 结果时只读取最终输出/effects
+与直接关联测试，不回放整段 session。必须区分本人直接完成、本人委派 Agent 完成、
+协作、仅被分配和仅参与讨论。仓库范围不完整时，Commit 与 MR/CR 统计必须标成下界。
 
-分析统一使用 `Activity → Output → Observed Outcome`，不强行补齐没有证据的阶段。
-Decision、Commitment、Risk 是正交事实：proposal 不是 accepted decision，assignment
-不是 accepted commitment。最终固定六段：
+最终日报先回答“今天到底发生了什么”，再做判断。九个一级区块是：
 
-1. `会议与妙记`：逐场写时间、标题、时长、结论、决策和我的行动项，末尾汇总总场次与总时长；
-2. `今日结论`：最多三条最强 output/outcome；
-3. `按项目变化`：同一工作项跨来源只写一次；
-4. `决策与承诺`：仅写有接受证据的决策和承诺；
-5. `风险与阻塞`：写影响、责任人、缓解和证据缺口；
-6. `数据覆盖`：三类来源、截止时间及 partial/error/unavailable。
+1. `今日数据`
+2. `今天的会议`
+3. `消息与协作`
+4. `项目与工作进展`
+5. `已完成事项`
+6. `待讨论事项`
+7. `后续计划`
+8. `关联、洞察与其他发现`
+9. `数据说明`
 
-Collector 与 synthesis 都返回严格 JSON，并由 Go 使用未知字段拒绝、尾随内容拒绝、
-枚举/必填/唯一 Evidence ID/时间窗/引用校验 fail-fast。分析框架由
-`.agents/skills/summarize-person-day` 维护，服务启动时加载同一 Skill 和数据合同。
+`今日数据` 用紧凑表格列消息、@、会议、文档、Commit、MR/CR、Agent Run 等可得统计；
+`今天的会议` 逐场写讨论、结论、计划、Todo 和未定问题；`消息与协作` 按“谁找了我 /
+我找了谁”及人员话题归并，不抄聊天流水；后续分别提炼已完成结果、需要人参与判断的
+讨论项、可直接执行的后续计划和开放式发现。
+主文使用真实人名、项目名、数字和当前状态，不在每句话后堆证据 ID。证据索引与覆盖
+缺口集中放在 `数据说明`。
+
+Go 不要求 collector/synthesis 严格 JSON DTO，只校验机器必须消费的最小投影：报告
+日期、九个一级标题顺序、当次运行 ID、三类来源覆盖状态和证据数量。完整语义始终保留
+在 Markdown 中。
 
 **不承诺**：我发起的审批（无跨定义按天查）；跨所有远端仓库的全量 commit（无全局按天接口）。
 
@@ -87,7 +108,20 @@ Collector 与 synthesis 都返回严格 JSON，并由 Go 使用未知字段拒�
 
 ## 3. 存储
 
-新表 `daily_digest`，一天一 scope 一行，重算 upsert 覆盖（不留历史版本）。
+个人日报以本地 Markdown 为事实真源，按天存放：
+
+```text
+data/personal-daily/YYYY-MM-DD/
+├── 00-context.md
+├── 10-evidence-jarvis.md
+├── 20-evidence-feishu*.md
+├── 30-evidence-engineering*.md
+└── 99-report.md
+```
+
+`99-report.md` 是该自然日的当前正式稿；原始证据按波次追加，手动重算使用新的
+`refresh` 文件，不覆盖旧证据。`daily_digest` 表继续承担现有 API/UI 的状态与缓存投影：
+一天一 scope 一行，重算 upsert 覆盖摘要缓存，但不删除 Markdown 证据底账。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -95,11 +129,11 @@ Collector 与 synthesis 都返回严格 JSON，并由 Go 使用未知字段拒�
 | `scope` | varchar(16) | `person` / `group` |
 | `scope_id` | varchar(64) | person=principal open_id；group=`feishu_group.id` 的字符串 |
 | `digest_date` | date | 自然日（本地时区） |
-| `summary` | mediumtext | 生成的一段中文进度总结 |
+| `summary` | mediumtext | `99-report.md` 的展示缓存，供现有 API/UI 直接读取 |
 | `status` | varchar(16) | `pending` / `generating` / `done` / `failed`（异步生成状态） |
 | `trigger_type` | varchar(16) | `manual` / `schedule` |
-| `source_count` | int | 通过日期、身份和 schema 校验后交给 synthesis 的唯一 EvidenceCard 数量；开放上下文不计入 |
-| `source_coverage` | json | 每个数据源的 `status/count/note` |
+| `source_count` | int | 当日目录中有效证据条目的最小投影计数 |
+| `source_coverage` | json | 从当日目录投影的三类来源 `status/count/note` |
 | `engine` | varchar(16) | `codex` |
 | `error_detail` | text | 失败原因（fail 时） |
 | `started_at` | datetime | 本轮生成开始时刻 |
@@ -112,9 +146,13 @@ Collector 与 synthesis 都返回严格 JSON，并由 Go 使用未知字段拒�
 
 ## 4. 触发与并发
 
-- **自动**：`internal/dailydigest` 的 cron scheduler 每晚 **19:00** 只生成个人总结。服务在当天计划点之后启动且当天没有结果时补跑一次；当天已有手动结果则跳过。
-- **手动**：前端按钮触发单条（某 scope 某天）生成/重算，**异步**（同 M5 任务执行模式）：API 立即置 `generating` 返回，后台跑 codex，前端轮询状态。
+- **自动**：`internal/dailydigest` 的 cron scheduler 每晚 **19:00** 只生成个人总结。服务在
+  当天计划点之后启动且当天从未尝试时补跑一次；当天已有 done、failed 或 generating
+  记录都跳过，失败后只接受页面手动重试，避免每次重启重复消耗。
+- **手动**：前端按钮触发单条（某 scope 某天）生成/重算，**异步**（同 M5 任务执行模式）：API 立即置 `generating` 返回，后台跑 Codex，前端安静轮询状态。
 - **并发**：数据库条件更新原子抢占 `(scope, scope_id, digest_date)`。手动允许覆盖 `done/failed`，定时不覆盖 `done`，任何入口都不允许抢占 `generating`。服务启动时把旧进程遗留的 `generating` 标为失败。
+- **超时**：个人日报使用独立 runner，正常目标 3–5 分钟，默认 600 秒硬上限；配置
+  小于 300 秒直接拒绝启动。外层超时只负责终止失控运行。
 
 ## 5. 改动范围
 
@@ -122,18 +160,18 @@ Collector 与 synthesis 都返回严格 JSON，并由 Go 使用未知字段拒�
 1. `internal/domain/models.go`：加 `DailyDigest` model + `CoreModels()` 注册。
 2. 新包 `internal/dailydigest/`：
    - `store.go`：`daily_digest` 读写（get by scope+date、upsert、置状态）。
-   - `person.go`：个人总结——查库打底（我的消息+Task）+ 构建 codex prompt（含 lark-cli/bytedcli/git 命令引导）+ 调 codex runner + 落库。
+   - `person.go`：个人总结——查库打底并写入当日 Jarvis 证据 + 在真实 workspace 启动顶层 Skill agent + 校验当次 Markdown 产物 + 投影入库。
    - `group.go`：关键群总结——查库打底 + 加载群总结 Skill + codex 自跑工具调查 + 严格 JSON 解码 + 落库。
    - `service.go`：编排（生成单条 / 批量生成当天 / 读取），异步 kick。
    - `scheduler.go`：19:00 cron（照 `memory/scheduler.go`）。
 3. `internal/api/`：`GET /api/daily-digests?date=`（读当天全部 scope）、`POST /api/daily-digests/generate`（按 scope+date 异步生成/重算）；`router.go` 注册 + deps 注入。
-4. `cmd/jarvis-server/main.go`：构造 dailydigest service（个人/群共用 execute codex runner，注入两个 Skill 目录、principal_open_id、is_key_group 群查询）+ 起 19:00 scheduler + 接进 API deps。
-5. `conf/config.yaml` + `internal/config`：加 dailydigest 配置段（schedule 默认 `0 19 * * *`、每群打底消息上限、群并发度、enable 开关）。
+4. `cmd/jarvis-server/main.go`：构造 dailydigest service（每日总结使用独立的宽松超时 runner，不与 M5 任务争用超时配置；注入 workspace、两个 Skill 目录、principal_open_id、is_key_group 群查询）+ 起 19:00 scheduler + 接进 API deps。
+5. `conf/config.yaml` + `internal/config`：加 dailydigest 配置段（schedule 默认 `0 19 * * *`、`timeout_seconds` 默认 600、每群打底消息上限、群并发度、enable 开关）。
 
 **前端（React/TS）**：
 6. `web/src/types.ts`：加 `DailyDigest` 类型。
 7. `web/src/api.ts`：加 `getDailyDigests(date)` / `generateDailyDigest(scope, scopeId, date)`。
-8. `web/src/Progress.tsx`：改造成「按日期选择 + 我的进度卡片 + 各关键群卡片」，每卡片显示 summary / 生成时间 / 状态，缺失或想刷新时有「生成 / 重算」按钮（异步 + 轮询）。保留或移除旧的数字表由实现时定（倾向保留为辅助小结）。
+8. `web/src/Progress.tsx`：每日总结使用两层 Tab：第一层按日期切换，第二层切换个人总结与群总结；个人报告按安全 Markdown 渲染，生成期间静默轮询。旧数量统计保留为辅助 Tab。
 
 ## 6. 待观察 / 后续增强
 
@@ -142,14 +180,19 @@ Collector 与 synthesis 都返回严格 JSON，并由 Go 使用未知字段拒�
 - 文档编辑口径的能力上限（见 2.1）。
 - 19:00 之后的当天活动不计入自动生成，靠手动重算补。
 
-## 7. 实现状态（2026-07-23）
+## 7. 实现状态（2026-07-25）
 
 本期设计已实现：
 
-- 后端已完成个人定时/手动统一生成入口、原子防重、启动补跑、重启恢复；个人总结按三类来源执行，飞书与工程 collector 并行，主控集中归并并校验证据引用。
-- `summarize-person-day` Skill 统一自然日边界、三类来源、collector 合同、项目归属、跨来源去重、`Activity → Output → Observed Outcome` 分析及会议优先的最终六段式输出。
+- 后端已完成个人定时/手动统一生成入口、原子防重、启动补跑、重启恢复；个人总结改为一个顶层 Skill agent 驱动，Go 只保留日期、身份、运行新鲜度、覆盖状态等硬边界。
+- `summarize-person-day` Skill 已打包自然日边界、三类来源、`lark-cli`/`bytedcli`
+  能力地图、两条一次性并行取证、当日数据统计、逐场会议、双向消息协作、项目进展与
+  开放式洞察。
+- 个人日报已按 `data/personal-daily/YYYY-MM-DD/` 持久化紧凑上下文、三类证据和正式稿；
+  数据库只作 API/UI 状态与摘要缓存。
 - 已新增 `feishu-group-daily-summary` Skill；群总结由 Codex 拉全群消息、展开关键线程并按需读取文档、commit/MR 和其他材料。
-- 前端「进度」页已完成立即生成/重新生成/重试、生成中轮询、触发类型、证据截止时间和各来源状态展示；旧数量统计保留为辅助 Tab。
-- 配置已默认启用每日 19:00 个人总结调度；个人与群总结都使用 `danger-full-access` 官方 Codex，群总结仍只手动触发。
+- 前端「进度」页已完成安全 Markdown 展示、立即生成/重新生成/重试、后台静默轮询、触发类型、证据截止时间和各来源状态展示；旧数量统计保留为辅助 Tab。
+- 配置已默认启用每日 19:00 个人总结调度；日报 runner 的硬上限为 600 秒，个人与群
+  总结都使用 `danger-full-access` 官方 Codex，群总结仍只手动触发。
 
-验收：`go test ./...`、`npm run build` 通过；本机 launchd 前后端重启后，`/healthz`、`/api/daily-digests` 与 Progress 页面真实加载通过。实际生成会调用 Codex 并写入当天摘要；个人可手动或由 19:00 cron 触发，群总结只从页面手动触发。
+验收要求：`go test ./...`、`npm run typecheck`、`npm test`、`npm run build`、Skill 官方校验与脚本语法检查全部通过；本机必须通过 `./scripts/rebuild-server.sh` 重建并重启，再真实验证 `/healthz`、`/api/daily-digests`、Progress 页面和一次个人 Markdown 生成链路。

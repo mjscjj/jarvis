@@ -64,13 +64,6 @@ func GetWorklogDocuments(service *insight.WorklogService) app.HandlerFunc {
 	}
 }
 
-// GetDebugStatus serves the debug panel health sub-tab.
-func GetDebugStatus(service *insight.DebugService) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": service.Status(ctx)})
-	}
-}
-
 // GetDebugScans serves recent capture scan records.
 func GetDebugScans(service *insight.DebugService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
@@ -117,6 +110,18 @@ func GetDebugModules(service *insight.DebugService) app.HandlerFunc {
 	}
 }
 
+// GetDebugAgentProcesses serves the current logical Codex and Trae instances.
+func GetDebugAgentProcesses(service *insight.DebugService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		snapshot, err := service.AgentProcesses(ctx)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50030, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": snapshot})
+	}
+}
+
 // GetDebugFailures serves the recent scoped runtime failure timeline.
 func GetDebugFailures(service *insight.DebugService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
@@ -136,40 +141,6 @@ func GetDebugFailures(service *insight.DebugService) app.HandlerFunc {
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": events}})
-	}
-}
-
-// GetDebugTodos serves the newest todos as full rows for JSON inspection.
-func GetDebugTodos(service *insight.DebugService) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		limit, err := positiveQueryInt(c.Query("limit"), 20, "limit")
-		if err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40024, err)
-			return
-		}
-		rows, err := service.RecentTodos(ctx, limit)
-		if err != nil {
-			writeAPIError(c, consts.StatusInternalServerError, 50024, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": rows}})
-	}
-}
-
-// GetDebugTasks serves the newest tasks as full rows for JSON inspection.
-func GetDebugTasks(service *insight.DebugService) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		limit, err := positiveQueryInt(c.Query("limit"), 20, "limit")
-		if err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40025, err)
-			return
-		}
-		rows, err := service.RecentTasks(ctx, limit)
-		if err != nil {
-			writeAPIError(c, consts.StatusInternalServerError, 50025, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": rows}})
 	}
 }
 

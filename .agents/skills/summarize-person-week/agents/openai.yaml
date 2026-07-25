@@ -1,0 +1,4 @@
+interface:
+  display_name: "我的本周全景"
+  short_description: "并行收集和补查证据，按周保存并生成以我为中心的全景周报"
+  default_prompt: "Use $summarize-person-week to investigate, persist, and write my evidence-backed weekly panorama."

@@ -334,6 +334,13 @@ func main() {
 	if err != nil {
 		fatalf("initialize execute runner failed: %v", err)
 	}
+	dailyDigestRunner, err := execute.NewCodexRunner(
+		cfg.Execute.Bin, cfg.Execute.Model, cfg.Execute.ReasoningEffort,
+		time.Duration(cfg.DailyDigest.TimeoutSeconds)*time.Second,
+	)
+	if err != nil {
+		fatalf("initialize daily digest runner failed: %v", err)
+	}
 	agentExecutor, err := execute.NewAgentExecutor(
 		db, taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
@@ -392,10 +399,11 @@ func main() {
 	dailyDigestService, err := dailydigest.NewService(dailydigest.Options{
 		DB:              db,
 		Location:        location,
-		Runner:          codexRunner,
+		Runner:          dailyDigestRunner,
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID,
 		GitAuthor:       dailyDigestGitAuthor,
 		RepoRoot:        cfg.Execute.RepoRoot,
+		WorkspaceRoot:   filepath.Dir(filepath.Dir(configPathAbsolute)),
 		PersonSkillDir:  filepath.Join(cfg.Skills.Root, "summarize-person-day"),
 		GroupSkillDir:   filepath.Join(cfg.Skills.Root, "feishu-group-daily-summary"),
 		SummarySandbox:  "danger-full-access",
@@ -409,7 +417,7 @@ func main() {
 	if err != nil {
 		fatalf("initialize log reader failed: %v", err)
 	}
-	debugService, err := insight.NewDebugService(db, cfg.Mem0.BaseURL, cfg.Mem0.QdrantHost, 0, logReader)
+	debugService, err := insight.NewDebugService(db, logReader)
 	if err != nil {
 		fatalf("initialize debug service failed: %v", err)
 	}

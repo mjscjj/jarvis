@@ -12,8 +12,8 @@ import (
 )
 
 // StartScheduler 按配置的 cron 表达式只生成个人总结。群总结保留手动入口，不再
-// 与个人 Codex 串行耦合。启动时间晚于当天计划点且当天尚无结果时会补跑一次；
-// 数据库 ClaimGeneration 负责和手动触发去重。
+// 与个人 Codex 串行耦合。启动时间晚于当天计划点且当天从未尝试时会补跑一次；
+// 已有失败记录不会因重启反复自动消耗，需用户手动重试。
 func StartScheduler(ctx context.Context, service *Service, spec string, logger *log.Logger) (*cron.Cron, error) {
 	if service == nil {
 		return nil, fmt.Errorf("daily digest scheduler service is nil")
@@ -53,7 +53,7 @@ func runScheduledPersonalDigest(ctx context.Context, service *Service, logger *l
 		return
 	}
 	if !generated {
-		logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=skipped date=%s reason=already_done_or_generating", observability.LogID(ctx), reason, date)
+		logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=skipped date=%s reason=already_attempted", observability.LogID(ctx), reason, date)
 		return
 	}
 	logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=ok date=%s", observability.LogID(ctx), reason, date)

@@ -225,14 +225,12 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		h.GET("/api/worklog/commits", GetWorklogCommits(deps.Worklog))
 		h.GET("/api/worklog/documents", GetWorklogDocuments(deps.Worklog))
 	}
-	// 调试面板：依赖健康/表计数/积压、模块运行、采集流水、抽取水位、最近 todo/task、运行日志尾读。
-	h.GET("/api/debug/status", GetDebugStatus(deps.Debug))
+	// 调试面板：模块与采集运行、实时 Agent、抽取水位、运行日志尾读。
 	h.GET("/api/debug/modules", GetDebugModules(deps.Debug))
+	h.GET("/api/debug/agent-processes", GetDebugAgentProcesses(deps.Debug))
 	h.GET("/api/debug/failures", GetDebugFailures(deps.Debug))
 	h.GET("/api/debug/scans", GetDebugScans(deps.Debug))
 	h.GET("/api/debug/watermarks", GetDebugWatermarks(deps.Debug))
-	h.GET("/api/debug/todos", GetDebugTodos(deps.Debug))
-	h.GET("/api/debug/tasks", GetDebugTasks(deps.Debug))
 	h.GET("/api/debug/logs", GetDebugLogs(deps.Logs))
 	h.GET("/api/system-tasks/runs", GetSystemTaskRuns(deps.Logs))
 	// 调试面板手动触发：手动跑一轮 M1 采集，无需等 cron。

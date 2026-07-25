@@ -1,4 +1,4 @@
 interface:
-  display_name: "自然日个人总结"
-  short_description: "计划并行调查三类证据，归并输出个人自然日成果与风险"
-  default_prompt: "Use $summarize-person-day to plan parallel evidence collection and produce an outcome-focused summary for one person on a natural day."
+  display_name: "我的日报"
+  short_description: "统计日报数据，总结会议消息、完成事项、待讨论问题和后续计划"
+  default_prompt: "使用 $summarize-person-day 生成包含数据、会议、消息、已完成事项、待讨论事项和后续计划的中文日报。"

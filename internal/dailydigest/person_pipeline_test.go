@@ -3,8 +3,9 @@ package dailydigest
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -12,103 +13,51 @@ import (
 	"gorm.io/gorm"
 )
 
-type pipelineSummaryRunner struct {
-	mu      sync.Mutex
-	started chan string
-	release chan struct{}
-	calls   []string
+type workspacePersonRunner struct {
+	t             *testing.T
+	calls         int
+	prompt        string
+	sandbox       string
+	workspaceRoot string
 }
 
-func (r *pipelineSummaryRunner) RunTextSandbox(_ context.Context, prompt, _ string) (string, error) {
-	stage := ""
-	switch {
-	case strings.Contains(prompt, "synthesis agent"):
-		stage = "synthesis"
-	case strings.Contains(prompt, "- domain: feishu_work"):
-		stage = "feishu"
-	case strings.Contains(prompt, "- domain: engineering_execution"):
-		stage = "engineering"
-	default:
-		return "", fmt.Errorf("unknown prompt stage")
-	}
-	r.mu.Lock()
-	r.calls = append(r.calls, stage)
-	r.mu.Unlock()
-	if stage != "synthesis" {
-		r.started <- stage
-		<-r.release
-	}
-	switch stage {
-	case "feishu":
-		return collectorFixture(
-			"feishu_work",
-			[]string{"messages_threads", "documents", "meetings_minutes"},
-			"feishu:meeting:m1",
-		), nil
-	case "engineering":
-		return collectorFixture(
-			"engineering_execution",
-			[]string{"agent_sessions", "mrs_reviews", "commits_delivery"},
-			"engineering:mr:1",
-		), nil
-	default:
-		return `{
-			"summary":"【会议与妙记】\n- 10:00 评审会：确定统一链路\n【今日结论】\n- 交付统一链路\n【按项目变化】\n- Jarvis：Activity → Output → Observed Outcome\n【决策与承诺】\n- 无明确记录\n【风险与阻塞】\n- 无明确记录\n【数据覆盖】\n- 三类来源均已返回",
-			"work_item_count":1,
-			"evidence_ids":["feishu:meeting:m1","engineering:mr:1"],
-			"meetings":[{"evidence_id":"feishu:meeting:m1","summary":"10:00 评审会：确定统一链路"}]
-		}`, nil
-	}
+func (r *workspacePersonRunner) RunTextSandbox(
+	_ context.Context,
+	_, _ string,
+) (string, error) {
+	return "", fmt.Errorf("person panorama must use a workspace-rooted run")
 }
 
-func collectorFixture(domain string, scopes []string, evidenceID string) string {
-	counts := []int{1, 0, 0}
-	sourceKind := "artifact"
-	if domain == "feishu_work" {
-		counts = []int{0, 0, 1}
-		sourceKind = "meeting"
+func (r *workspacePersonRunner) RunTextSandboxAt(
+	_ context.Context,
+	prompt, sandbox, workspaceRoot string,
+) (string, error) {
+	r.calls++
+	r.prompt = prompt
+	r.sandbox = sandbox
+	r.workspaceRoot = workspaceRoot
+	runID := promptLineValue(prompt, "- Run ID: ")
+	if runID == "" {
+		return "", fmt.Errorf("prompt missing run ID")
 	}
-	return fmt.Sprintf(`{
-		"domain":%q,
-		"identity_filters":["ou_me","me@example.com"],
-		"window":{"start":"2026-07-23T00:00:00+08:00","end":"2026-07-23T18:00:00+08:00","cutoff":"2026-07-23T18:00:00+08:00","timezone":"Asia/Shanghai"},
-		"status":"complete",
-		"coverage":[
-			{"scope":%q,"query_or_cursor":"q1","status":%q,"count":%d,"truncated":false},
-			{"scope":%q,"query_or_cursor":"q2","status":"empty","count":0,"truncated":false},
-			{"scope":%q,"query_or_cursor":"q3","status":%q,"count":%d,"truncated":false}
-		],
-		"evidence":[{
-			"evidence_id":%q,
-			"domain":%q,
-			"source_kind":%q,
-			"source_id":"1",
-			"occurred_at":"2026-07-23T10:00:00+08:00",
-			"actor_identity":"ou_me",
-			"subject":"统一链路",
-			"output":"产物",
-			"observed_outcome":"已验证",
-			"attribution":"direct",
-			"strength":"primary"
-		}],
-		"gaps":[]
-	}`,
-		domain,
-		scopes[0], statusForCount(counts[0]), counts[0],
-		scopes[1],
-		scopes[2], statusForCount(counts[2]), counts[2],
-		evidenceID, domain, sourceKind,
-	)
+	dayDir := filepath.Join(workspaceRoot, "data", "personal-daily", "2026-07-23")
+	writeTestFile(r.t, filepath.Join(dayDir, "00-context.md"), `# Daily context — 2026-07-23
+
+## Run log
+- Run ID: `+runID+`
+
+## Coverage
+- Jarvis: empty
+- Feishu: complete
+- Engineering: complete
+`)
+	writeTestFile(r.t, filepath.Join(dayDir, "20-evidence-feishu.md"), evidenceFixture("FEISHU-meeting-m1"))
+	writeTestFile(r.t, filepath.Join(dayDir, "30-evidence-engineering.md"), evidenceFixture("ENG-mr-1"))
+	writeTestFile(r.t, filepath.Join(dayDir, "99-report.md"), validPersonReport("2026-07-23"))
+	return "完成：" + filepath.Join(dayDir, "99-report.md"), nil
 }
 
-func statusForCount(count int) string {
-	if count == 0 {
-		return "empty"
-	}
-	return "complete"
-}
-
-func TestPersonGenerateRunsCollectorsInParallelThenSynthesizes(t *testing.T) {
+func TestPersonGenerateRunsOneWorkspaceRootedSkillAndReadsCanonicalMarkdown(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -136,53 +85,49 @@ func TestPersonGenerateRunsCollectorsInParallelThenSynthesizes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse date: %v", err)
 	}
-	runner := &pipelineSummaryRunner{
-		started: make(chan string, 2),
-		release: make(chan struct{}),
+	skillDir, err := filepath.Abs("../../.agents/skills/summarize-person-day")
+	if err != nil {
+		t.Fatalf("resolve skill dir: %v", err)
 	}
+	workspaceRoot := t.TempDir()
+	runner := &workspacePersonRunner{t: t}
 	generator := &personGenerator{
 		db: db, runner: runner, location: location,
 		principalOpenID: "ou_me", gitAuthor: "me@example.com",
-		repoRoot: "/workspace", skillText: "SKILL", sandbox: "danger-full-access",
+		repoRoot: "/workspace", workspaceRoot: workspaceRoot,
+		skillDir: skillDir, skillText: "LEAN SKILL ENTRY",
+		sandbox: "danger-full-access",
 	}
-	type generateResult struct {
-		result *personGenerateResult
-		err    error
-	}
-	done := make(chan generateResult, 1)
-	go func() {
-		result, generateErr := generator.Generate(
-			context.Background(), "2026-07-23", start, start.AddDate(0, 0, 1), start.Add(18*time.Hour),
-		)
-		done <- generateResult{result: result, err: generateErr}
-	}()
 
-	seen := map[string]bool{}
-	for len(seen) < 2 {
-		select {
-		case stage := <-runner.started:
-			seen[stage] = true
-		case <-time.After(2 * time.Second):
-			t.Fatalf("collectors did not start concurrently; seen=%v", seen)
+	result, err := generator.Generate(
+		context.Background(),
+		"2026-07-23",
+		start,
+		start.AddDate(0, 0, 1),
+		start.Add(18*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("workspace runner calls = %d, want 1", runner.calls)
+	}
+	if runner.workspaceRoot != workspaceRoot || runner.sandbox != "danger-full-access" {
+		t.Fatalf("runner workspace=%q sandbox=%q", runner.workspaceRoot, runner.sandbox)
+	}
+	for _, expected := range []string{"LEAN SKILL ENTRY", "只启动两个并行 subagent", "# 我的日报 · YYYY-MM-DD", "99-report.md"} {
+		if !strings.Contains(runner.prompt, expected) {
+			t.Fatalf("prompt missing %q:\n%s", expected, runner.prompt)
 		}
 	}
-	close(runner.release)
-	generated := <-done
-	if generated.err != nil {
-		t.Fatalf("generate: %v", generated.err)
+	if result.SourceCount != 2 {
+		t.Fatalf("source count = %d, want 2", result.SourceCount)
 	}
-	if generated.result.SourceCount != 2 {
-		t.Fatalf("source_count=%d, want 2 evidence cards", generated.result.SourceCount)
+	if result.Summary != validPersonReport("2026-07-23") {
+		t.Fatalf("summary = %q", result.Summary)
 	}
-	for _, source := range []string{"jarvis_internal", "feishu_work", "engineering_execution"} {
-		if _, ok := generated.result.Coverage[source]; !ok {
-			t.Fatalf("coverage missing %q: %#v", source, generated.result.Coverage)
-		}
-	}
-	runner.mu.Lock()
-	defer runner.mu.Unlock()
-	if len(runner.calls) != 3 || runner.calls[2] != "synthesis" {
-		t.Fatalf("runner calls=%v, want two collectors then synthesis", runner.calls)
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "data", "personal-daily", "2026-07-23", "10-evidence-jarvis.md")); err != nil {
+		t.Fatalf("Jarvis evidence missing: %v", err)
 	}
 }
 
@@ -286,4 +231,13 @@ func TestLoadBaselineUsesDayEventsAndIgnoresHistoricalOpenRows(t *testing.T) {
 		baseline.ExecutionRuns[0].Summary != "当天完成" {
 		t.Fatalf("cross-day completion not attributed to finish time: %#v", baseline.ExecutionRuns[0])
 	}
+}
+
+func promptLineValue(prompt, prefix string) string {
+	for _, line := range strings.Split(prompt, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		}
+	}
+	return ""
 }
