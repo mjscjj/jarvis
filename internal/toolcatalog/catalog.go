@@ -43,8 +43,8 @@ func Block(stage string) (string, error) {
 		"使用目的：" + purpose,
 		usage,
 		jarvisTool,
-		"- lark-cli：查询或操作飞书。先运行 `lark-cli --help` 或对应 domain 的 `--help`；匹配到飞书 Skill 时先读取 Skill。",
-		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。先运行 `bytedcli --help` 或对应子命令 `--help`。",
+		"- lark-cli：查询或操作飞书。先看工作规则里的能力地图选定域，再 `lark-cli skills read <域名>` 查用法、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
+		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。命令清单 `bytedcli --json --all-help`，单命令参数 `bytedcli --json <子命令路径> --help`。",
 		"- git：查询和操作本地代码仓库。",
 	}
 	if stage == StageExecute {

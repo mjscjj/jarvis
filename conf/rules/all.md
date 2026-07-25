@@ -14,3 +14,25 @@
 ## 会后妙记与 Todo 整理
 
 会议结束后，用 lark-cli 拉取对应飞书妙记，分析并整理会议 Todo，然后把整理结果发到对应群里；能自行查询的会议信息不要向我重复询问。
+
+## 业务背景
+
+- 服务对象：海外 i18n 控制面（overseas i18n control plane）
+- 关键服务域名：<待填：控制面/网关/后台地址>
+- 术语与关键系统：<待填>
+
+## 能力地图与工具用法（不确定怎么用先看这里，别盲目逐层 --help）
+
+**飞书侧（lark-cli / bytedcli lark，23 个域）**
+
+- 沟通：im　文档：docs / wiki / drive / sheets / base（多维表格）/ slides
+- 日程会议：calendar（日程/会议室）、vc（历史会议/纪要）、minutes（妙记）
+- 组织：contact（按名/ID 解析 open_id）、task（待办）、approval、okr、mail
+- 查某个域怎么用：先 `lark-cli skills list`（JSON 索引），再 `lark-cli skills read <域名>`（如 lark-im）
+- 查单个 API 参数：`lark-cli schema <service.resource.method>`
+
+**研发侧（bytedcli）**
+
+- codebase：repo / commit / mr（list/get/diff/review/create）/ issue / search mr / user-statistics
+- insearch：内网知识检索
+- 全量命令：`bytedcli --json --all-help`；单命令参数：`bytedcli --json <子命令路径> --help`
