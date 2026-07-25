@@ -362,7 +362,16 @@ func TestBuildProposePrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildProposePrompt() error = %v", err)
 	}
-	for _, want := range []string{"phase=propose", "BEGIN_APPROVAL_POLICY", "修改文件需要审批。", "proposal", "BEGIN_TASK_CONTEXT"} {
+	for _, want := range []string{
+		"phase=propose",
+		"先完成安全的只读调查",
+		"独立确定真实目标、范围和下一步具体动作",
+		"只对下一步受控副作用判断是否需要审批",
+		"BEGIN_APPROVAL_POLICY",
+		"修改文件需要审批。",
+		"proposal",
+		"BEGIN_TASK_CONTEXT",
+	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("propose prompt missing %q", want)
 		}

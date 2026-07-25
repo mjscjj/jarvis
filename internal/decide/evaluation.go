@@ -241,8 +241,8 @@ func validateEvaluationInput(input EvaluationInput) error {
 
 // createAutoTask creates the Task for an auto-routed Todo inside the evaluation
 // transaction. It mirrors Service.Approve's task creation but records the system
-// (m4_auto) as the confirmer instead of a human. The plan is Codex's
-// open plan value serialized as the confirmed plan JSON.
+// (m4_auto) as the confirmer instead of a human. The plan column retains M4's
+// open, low-confidence direction; M5 receives it explicitly as m4_direction.
 func createAutoTask(ctx context.Context, tx *gorm.DB, now time.Time, todo *domain.Todo, plan, decisionPayload, background json.RawMessage) (*domain.Task, error) {
 	if len(bytes.TrimSpace(plan)) == 0 {
 		return nil, fmt.Errorf("%w: auto task todo_id=%d has no proposed plan", ErrInvalidInput, todo.ID)

@@ -18,11 +18,13 @@ const (
 // Block returns the trusted tool catalog for one agent stage.
 func Block(stage string) (string, error) {
 	var purpose string
+	usage := "用法：目标导向、主动发散——为查清一个事实或办成一件事，主动组合多个工具、顺藤摸瓜多跳查询；一条路查不到就换工具或换角度，不要浅尝辄止。能查到的绝不留给用户问。"
 	switch stage {
 	case StageExtract:
 		purpose = "补全行动线索的项目、人物、会话、文档和代码背景；把查到的关键事实写入候选 context。"
 	case StageDecide:
-		purpose = "补全决策证据和可执行计划；只做查询和备料，不执行 M5 才应发生的外部动作。"
+		purpose = "只判断线索是否值得交给 M5；不形成可执行计划，不执行外部动作。"
+		usage = "用法：默认不调用工具。只有一次低成本查询就可能改变 ready / drop 的价值判断时才查询；不要多跳调查，不要为了补齐目标、边界或执行方案而查询，这些由 M5 完成。"
 	case StageExecute:
 		purpose = "完成任务、核验结果；需要等待时暂停当前 Task，避免创建重复任务。"
 	case StageChat:
@@ -39,7 +41,7 @@ func Block(stage string) (string, error) {
 		"BEGIN_AVAILABLE_TOOLS（工具能力说明由工具层维护，不属于系统角色提示词。）",
 		"当前阶段：" + stage,
 		"使用目的：" + purpose,
-		"用法：目标导向、主动发散——为查清一个事实或办成一件事，主动组合多个工具、顺藤摸瓜多跳查询；一条路查不到就换工具或换角度，不要浅尝辄止。能查到的绝不留给用户问。",
+		usage,
 		jarvisTool,
 		"- lark-cli：查询或操作飞书。先运行 `lark-cli --help` 或对应 domain 的 `--help`；匹配到飞书 Skill 时先读取 Skill。",
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。先运行 `bytedcli --help` 或对应子命令 `--help`。",

@@ -36,6 +36,24 @@ func TestExecuteStageExposesTaskControls(t *testing.T) {
 	}
 }
 
+func TestDecideStageLimitsToolsToValueGate(t *testing.T) {
+	t.Parallel()
+	block, err := Block(StageDecide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"只判断线索是否值得交给 M5", "默认不调用工具", "不要多跳调查", "这些由 M5 完成"} {
+		if !strings.Contains(block, required) {
+			t.Fatalf("decide block missing %q:\n%s", required, block)
+		}
+	}
+	for _, obsolete := range []string{"补全决策证据和可执行计划", "主动组合多个工具、顺藤摸瓜多跳查询"} {
+		if strings.Contains(block, obsolete) {
+			t.Fatalf("decide block contains obsolete deep-planning instruction %q:\n%s", obsolete, block)
+		}
+	}
+}
+
 func TestUnknownStageFails(t *testing.T) {
 	t.Parallel()
 	if _, err := Block("unknown"); err == nil {

@@ -16,9 +16,9 @@ import (
 
 // Disposition is Codex's own verdict on how to handle an extracted Todo, returned
 // verbatim in the decision schema (no longer re-inferred by us):
-//   - ready: enough context, plan is clear, safe to auto-run → route auto.
-//   - need_review: plan is clear but a human should look → route need_decision.
-//   - need_info: Codex tried tools and still lacks a key fact → route need_info.
+//   - ready: potentially worth M5 investigating/executing → route auto.
+//   - need_review: deciding whether to start itself needs a human choice → route need_decision.
+//   - need_info: even the value gate needs principal-only information → route need_info.
 //   - drop: not worth doing → route dropped.
 const (
 	DispositionReady      = "ready"

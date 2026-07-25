@@ -53,7 +53,7 @@ func formatExecutionSupplementDirective(items []ExecutionSupplement) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\n【执行阶段补充的信息/指示（委托人手动追加，须优先满足；与 plan 冲突时以此为准）】")
+	b.WriteString("\n\n【执行阶段补充的信息/指示（委托人手动追加，须优先满足；可以修正或替换 m4_direction）】")
 	for i, item := range items {
 		note := strings.TrimSpace(item.Note)
 		if note == "" {

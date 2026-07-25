@@ -1,6 +1,8 @@
 package execute
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +52,7 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 	if !strings.Contains(prompt, "执行阶段补充") || !strings.Contains(prompt, "标题要包含季度") {
 		t.Fatalf("prompt missing supplements: %s", prompt)
 	}
-	for _, want := range []string{`"decision_payload"`, `"需要保留的决策依据"`, `"future_field"`} {
+	for _, want := range []string{`"m4_decision_context"`, `"需要保留的决策依据"`, `"future_field"`} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing M4 decision payload %q: %s", want, prompt)
 		}
@@ -143,6 +145,59 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
+	task := &domain.Task{
+		ID: 12, Title: "评测截图", ActionType: "notify_principal",
+		Plan:            datatypes.JSON(`{"direction":"判断对项目的影响"}`),
+		DecisionPayload: datatypes.JSON(`{"value":"可能影响 runtime 选择"}`),
+		Background:      datatypes.JSON(`{"snapshot_version":"v1"}`),
+	}
+	prompt, err := buildExecutionPrompt("test M5 system prompt", task, "", testToolCatalog, "", "", "", nil)
+	if err != nil {
+		t.Fatalf("build prompt: %v", err)
+	}
+	for _, want := range []string{
+		`"title_hint":"评测截图"`,
+		`"action_type_hint":"notify_principal"`,
+		`"m4_direction":{"direction":"判断对项目的影响"}`,
+		`"m4_decision_context":{"value":"可能影响 runtime 选择"}`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("execution prompt missing hint field %q:\n%s", want, prompt)
+		}
+	}
+	for _, obsolete := range []string{`"action_type":`, `"plan":`, `"decision_payload":`} {
+		if strings.Contains(prompt, obsolete) {
+			t.Fatalf("execution prompt still exposes upstream semantics as authoritative field %q:\n%s", obsolete, prompt)
+		}
+	}
+}
+
+func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "m5-system-prompt.md"))
+	if err != nil {
+		t.Fatalf("read repository M5 prompt: %v", err)
+	}
+	prompt := string(content)
+	for _, want := range []string{
+		"M5 是真正理解任务、调查事实、确定目标、选择动作、执行并验证结果的阶段",
+		"`title_hint`、`action_type_hint` 和 `m4_direction`",
+		"可以基于证据修改、替换或放弃这些建议",
+		"根据调查持续重规划",
+		"`action_type_hint` 不限制实际动作",
+		"本身不代表任务完成",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("M5 prompt missing autonomy contract %q:\n%s", want, prompt)
+		}
+	}
+	for _, obsolete := range []string{"严格执行 plan 的目标", "decision_payload 是 M4 原样传来的判断"} {
+		if strings.Contains(prompt, obsolete) {
+			t.Fatalf("M5 prompt still contains obsolete upstream constraint %q:\n%s", obsolete, prompt)
 		}
 	}
 }

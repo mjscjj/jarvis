@@ -491,8 +491,8 @@ func manualAudit(todo *domain.Todo, task *domain.Task, reason, channel string, a
 }
 
 // ActionHash identifies a confirmed action by (action_type, target, plan). The
-// target is the clue's dedup identity from M3; together with the confirmed plan
-// it fingerprints "what was approved" without the old per-type slot vocabulary.
+// target is the clue's dedup identity from M3; together with M4's stored
+// direction it fingerprints the handoff without the old per-type slot vocabulary.
 func ActionHash(actionType, target string, plan json.RawMessage) (string, error) {
 	hash, err := taskcreate.ActionHash(actionType, target, plan)
 	if errors.Is(err, taskcreate.ErrInvalidInput) {
