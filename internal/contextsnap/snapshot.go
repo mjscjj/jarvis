@@ -90,15 +90,16 @@ type Project struct {
 	Notes        *string         `json:"notes,omitempty"`
 }
 
-// Group is the originating Feishu conversation, including its announcement
-// (description) which is often the strongest signal for project attribution.
+// Group is the originating Feishu conversation. Description is the captured
+// announcement, while BackgroundNote is human-curated task interpretation.
 type Group struct {
-	ID          uint64  `json:"id"`
-	ChatID      string  `json:"chat_id"`
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	IsKeyGroup  bool    `json:"is_key_group"`
-	ProjectID   *uint64 `json:"project_id"`
+	ID             uint64  `json:"id"`
+	ChatID         string  `json:"chat_id"`
+	Name           *string `json:"name"`
+	Description    *string `json:"description"`
+	BackgroundNote *string `json:"background_note"`
+	IsKeyGroup     bool    `json:"is_key_group"`
+	ProjectID      *uint64 `json:"project_id"`
 }
 
 // Assigner is who handed the Todo over (leader/colleague), with the relation to

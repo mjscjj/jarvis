@@ -183,6 +183,9 @@ func renderGroup(group GroupContext) string {
 	if strings.TrimSpace(group.Description) != "" {
 		line += "\n群公告：" + group.Description
 	}
+	if strings.TrimSpace(group.BackgroundNote) != "" {
+		line += "\n人工背景：" + group.BackgroundNote
+	}
 	return line
 }
 

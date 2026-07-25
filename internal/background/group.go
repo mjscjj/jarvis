@@ -18,7 +18,7 @@ import (
 // write. Everything else (chat_id, name, description, tier, last_active_at, ...)
 // is owned by capture (M2) and must never be touched here.
 var backgroundColumns = []string{
-	"project_id", "related_group", "pinned", "include_in_memory", "is_key_group",
+	"background_note", "project_id", "related_group", "pinned", "include_in_memory", "is_key_group",
 }
 
 // RelatedScanTrigger lets a newly related group be scanned immediately instead
@@ -241,6 +241,7 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 	}
 
 	updates := map[string]any{
+		"background_note":   in.BackgroundNote,
 		"project_id":        in.ProjectID,
 		"related_group":     in.RelatedGroup,
 		"pinned":            in.Pinned,

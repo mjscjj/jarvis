@@ -19,12 +19,13 @@ type LoadOptions struct {
 }
 
 type GroupContext struct {
-	ID          uint64
-	ChatID      string
-	Name        string
-	Description string // group announcement; a strong signal for project attribution
-	IsKeyGroup  bool
-	ProjectID   *uint64
+	ID             uint64
+	ChatID         string
+	Name           string
+	Description    string // group announcement; a strong signal for project attribution
+	BackgroundNote string // human-curated context that complements the group announcement
+	IsKeyGroup     bool
+	ProjectID      *uint64
 }
 
 type ProjectContext struct {

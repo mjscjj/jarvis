@@ -158,3 +158,24 @@ func TestGroupGenerateStillRunsCodexWhenJarvisHasNoMessages(t *testing.T) {
 		t.Fatalf("zero-message prompt missing lark fallback:\n%s", runner.prompt)
 	}
 }
+
+func TestValidateGroupRunnerOutputNormalizesSuccessStatus(t *testing.T) {
+	t.Parallel()
+	output := &groupRunnerOutput{
+		Summary: "当天已完成群消息查询。",
+		Sources: SourceCoverage{
+			"lark_group_messages": {Status: "success", Count: 2},
+			"lark_documents":      {Status: "empty", Count: 0},
+			"code_commits":        {Status: "empty", Count: 0},
+			"code_mrs":            {Status: "empty", Count: 0},
+			"other_materials":     {Status: "empty", Count: 0},
+		},
+	}
+
+	if err := validateGroupRunnerOutput(output); err != nil {
+		t.Fatalf("validate group output: %v", err)
+	}
+	if got := output.Sources["lark_group_messages"].Status; got != "ok" {
+		t.Fatalf("normalized lark group message status = %q, want ok", got)
+	}
+}

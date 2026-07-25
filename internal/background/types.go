@@ -125,8 +125,9 @@ func (in *PersonInput) validate() error {
 }
 
 // GroupBackgroundInput is the human-curated subset of Group. It deliberately
-// omits every discovery column owned by capture (chat_id/name/tier/...).
+// omits every discovery column owned by capture (chat_id/name/description/tier/...).
 type GroupBackgroundInput struct {
+	BackgroundNote  *string `json:"background_note"`
 	ProjectID       *uint64 `json:"project_id"`
 	RelatedGroup    bool    `json:"related_group"`
 	Pinned          bool    `json:"pinned"`

@@ -67,12 +67,13 @@ func snapshotPrincipal(principal *PrincipalContext) *contextsnap.Principal {
 
 func snapshotGroup(group GroupContext) *contextsnap.Group {
 	return &contextsnap.Group{
-		ID:          group.ID,
-		ChatID:      group.ChatID,
-		Name:        nonEmptyPtr(group.Name),
-		Description: nonEmptyPtr(group.Description),
-		IsKeyGroup:  group.IsKeyGroup,
-		ProjectID:   copyUint64(group.ProjectID),
+		ID:             group.ID,
+		ChatID:         group.ChatID,
+		Name:           nonEmptyPtr(group.Name),
+		Description:    nonEmptyPtr(group.Description),
+		BackgroundNote: nonEmptyPtr(group.BackgroundNote),
+		IsKeyGroup:     group.IsKeyGroup,
+		ProjectID:      copyUint64(group.ProjectID),
 	}
 }
 

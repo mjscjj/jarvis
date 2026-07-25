@@ -163,8 +163,10 @@ func TestBackgroundCRUDMySQL(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = projects.Delete(ctx, project.ID) })
 
+		backgroundNote := "人工维护的会话背景"
 		updated, err := groups.UpdateBackground(ctx, seed.ID, GroupBackgroundInput{
-			ProjectID: &project.ID, RelatedGroup: true, Pinned: true, IncludeInMemory: true, IsKeyGroup: true,
+			BackgroundNote: &backgroundNote,
+			ProjectID:      &project.ID, RelatedGroup: true, Pinned: true, IncludeInMemory: true, IsKeyGroup: true,
 		})
 		if err != nil {
 			t.Fatalf("UpdateBackground() error = %v", err)
@@ -174,6 +176,9 @@ func TestBackgroundCRUDMySQL(t *testing.T) {
 		}
 		if !updated.RelatedGroup || !updated.IsKeyGroup || !updated.Pinned {
 			t.Fatalf("UpdateBackground() curated flags = %+v, unexpected", updated)
+		}
+		if updated.BackgroundNote == nil || *updated.BackgroundNote != "人工维护的会话背景" {
+			t.Fatalf("UpdateBackground() background_note = %v, want curated value", updated.BackgroundNote)
 		}
 		// Capture-owned columns must be untouched.
 		if updated.ChatID != chatID || updated.Name == nil || *updated.Name != discoveredName || updated.Tier != "cold" {

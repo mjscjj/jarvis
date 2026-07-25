@@ -41,6 +41,7 @@ type Group struct {
 	ChatMode        string    `gorm:"column:chat_mode;type:varchar(16);not null"` // group | p2p | topic
 	Name            *string   `gorm:"column:name;type:varchar(512)"`
 	Description     *string   `gorm:"column:description;type:text"`
+	BackgroundNote  *string   `gorm:"column:background_note;type:text"` // Human-curated context; capture owns Description.
 	OwnerOpenID     *string   `gorm:"column:owner_open_id;type:varchar(64)"`
 	External        bool      `gorm:"column:external;type:tinyint(1);not null;default:0"`
 	TenantKey       *string   `gorm:"column:tenant_key;type:varchar(64)"`

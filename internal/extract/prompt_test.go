@@ -297,7 +297,9 @@ func TestBuildPromptCarriesGroupAnnouncement(t *testing.T) {
 		IsNew: true, Extractable: true,
 	}}}
 	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{
-		ID: 1, ChatID: "oc_1", Name: "Agent Runtime", Description: "本群负责 runtime 项目，代码仓库为 llm_agent_core。",
+		ID: 1, ChatID: "oc_1", Name: "Agent Runtime",
+		Description:    "本群负责 runtime 项目，代码仓库为 llm_agent_core。",
+		BackgroundNote: "优先检查 llm_agent_core，涉及旧实现再查 openclaw。",
 	}}, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
 	})
@@ -306,6 +308,9 @@ func TestBuildPromptCarriesGroupAnnouncement(t *testing.T) {
 	}
 	if !strings.Contains(prompt.User, "群公告：本群负责 runtime 项目，代码仓库为 llm_agent_core。") {
 		t.Fatalf("prompt missing group announcement:\n%s", prompt.User)
+	}
+	if !strings.Contains(prompt.User, "人工背景：优先检查 llm_agent_core，涉及旧实现再查 openclaw。") {
+		t.Fatalf("prompt missing group background note:\n%s", prompt.User)
 	}
 }
 

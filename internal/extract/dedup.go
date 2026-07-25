@@ -8,12 +8,15 @@ import (
 	"jarvis/internal/semantic"
 )
 
+// activeTodoStatuses are Todo statuses that still represent a live clue for
+// semantic dedup. "auto" is included because M4 auto-routes ready clues into
+// Tasks without human confirmation; the Todo remains the same action identity.
 var activeTodoStatuses = map[string]struct{}{
-	"extracted": {}, "scoring": {}, "need_info": {}, "need_decision": {}, "confirmed": {},
+	"extracted": {}, "scoring": {}, "auto": {}, "need_info": {}, "need_decision": {}, "confirmed": {},
 }
 
 func ActiveTodoStatuses() []string {
-	return []string{"extracted", "scoring", "need_info", "need_decision", "confirmed"}
+	return []string{"extracted", "scoring", "auto", "need_info", "need_decision", "confirmed"}
 }
 
 type SemanticTodo struct {

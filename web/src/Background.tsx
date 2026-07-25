@@ -571,7 +571,7 @@ function GroupsPanel() {
   const openEdit = (group: Group) => {
     setEditing(group)
     form.setFieldsValue({
-      project_id: group.project_id, related_group: group.related_group, pinned: group.pinned,
+      background_note: group.background_note, project_id: group.project_id, related_group: group.related_group, pinned: group.pinned,
       include_in_memory: group.include_in_memory, is_key_group: group.is_key_group,
     })
   }
@@ -597,7 +597,7 @@ function GroupsPanel() {
     setTogglingId(group.id)
     try {
       await updateGroupBackground(group.id, {
-        project_id: group.project_id,
+        background_note: group.background_note, project_id: group.project_id,
         related_group: next,
         pinned: group.pinned,
         include_in_memory: group.include_in_memory,
@@ -706,6 +706,16 @@ function GroupsPanel() {
     </Card>
     <Modal title={`编辑会话背景 · ${editing?.name || editing?.chat_id || ''}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
+        <Form.Item
+          name="background_note"
+          label="人工背景"
+          tooltip="只由你维护，会和群公告一起进入后续 Todo 的上下文快照。"
+        >
+          <Input.TextArea
+            rows={5}
+            placeholder="说明本会话讨论什么、哪些人/模块是重点、任务应如何定位代码和识别高信号。"
+          />
+        </Form.Item>
         <Form.Item name="project_id" label="关联项目">
           <Select allowClear placeholder="不关联" options={projects.map((p) => ({ value: p.id, label: p.name }))} />
         </Form.Item>

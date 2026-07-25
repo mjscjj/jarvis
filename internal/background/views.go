@@ -62,6 +62,7 @@ type GroupView struct {
 	ChatMode        string       `json:"chat_mode"`
 	Name            *string      `json:"name"`
 	Description     *string      `json:"description"`
+	BackgroundNote  *string      `json:"background_note"`
 	OwnerOpenID     *string      `json:"owner_open_id"`
 	External        bool         `json:"external"`
 	TenantKey       *string      `json:"tenant_key"`
@@ -128,7 +129,7 @@ func toPersonViews(items []domain.Person) []PersonView {
 func toGroupView(g *domain.Group) GroupView {
 	view := GroupView{
 		ID: g.ID, ChatID: g.ChatID, ChatMode: g.ChatMode, Name: g.Name,
-		Description: g.Description, OwnerOpenID: g.OwnerOpenID, External: g.External,
+		Description: g.Description, BackgroundNote: g.BackgroundNote, OwnerOpenID: g.OwnerOpenID, External: g.External,
 		TenantKey: g.TenantKey, ProjectID: g.ProjectID, RelatedGroup: g.RelatedGroup,
 		Tier: g.Tier, Pinned: g.Pinned, IncludeInMemory: g.IncludeInMemory,
 		IsKeyGroup: g.IsKeyGroup, LastActiveAt: g.LastActiveAt,

@@ -141,6 +141,12 @@ func validateGroupRunnerOutput(output *groupRunnerOutput) error {
 		if !ok {
 			return fmt.Errorf("sources missing %q", source)
 		}
+		// Codex occasionally emits the conventional "success" synonym despite
+		// the group digest protocol using "ok" for a successful non-empty source.
+		if item.Status == "success" {
+			item.Status = "ok"
+			output.Sources[source] = item
+		}
 		if item.Status != "ok" && item.Status != "empty" && item.Status != "error" {
 			return fmt.Errorf("source %q has invalid status %q", source, item.Status)
 		}

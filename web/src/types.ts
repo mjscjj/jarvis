@@ -67,6 +67,7 @@ export interface ContextSnapshot {
     chat_id: string
     name: string | null
     description: string | null
+    background_note: string | null
   } | null
   assigner: {
     open_id: string
@@ -405,6 +406,7 @@ export interface Group {
   chat_mode: string
   name: string | null
   description: string | null
+  background_note: string | null
   owner_open_id: string | null
   external: boolean
   tenant_key: string | null
@@ -485,6 +487,7 @@ export interface ResolveResult {
 }
 
 export interface GroupBackgroundInput {
+  background_note?: string | null
   project_id: number | null
   related_group: boolean
   pinned: boolean

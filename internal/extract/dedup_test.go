@@ -148,6 +148,42 @@ func TestDeduplicatorSkipsLLMForExactFingerprint(t *testing.T) {
 	}
 }
 
+func TestDeduplicatorTreatsAutoStatusAsActive(t *testing.T) {
+	candidate := validCandidate()
+	fingerprint, err := Fingerprint(&candidate, nil)
+	if err != nil {
+		t.Fatalf("Fingerprint() error = %v", err)
+	}
+	existing := semanticTodoFixture(t, candidate, nil, 111)
+	existing.Status = "auto"
+	existing.DedupFingerprint = fingerprint
+	dedup, err := NewDeduplicator(
+		&fakeSemanticEmbedder{vector: []float32{1}},
+		&fakeSemanticSearcher{matches: []semantic.Match{{TodoID: existing.ID, Fingerprint: fingerprint}}},
+		&fakeSemanticTodoLoader{todos: map[uint64]*SemanticTodo{existing.ID: existing}},
+		&fakeSemanticAdjudicator{},
+	)
+	if err != nil {
+		t.Fatalf("NewDeduplicator() error = %v", err)
+	}
+	resolution, err := dedup.Resolve(context.Background(), candidate, nil)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolution.MatchedTodoID == nil || *resolution.MatchedTodoID != existing.ID {
+		t.Fatalf("resolution = %#v", resolution)
+	}
+}
+
+func TestActiveTodoStatusesIncludesAuto(t *testing.T) {
+	for _, status := range ActiveTodoStatuses() {
+		if status == "auto" {
+			return
+		}
+	}
+	t.Fatalf("ActiveTodoStatuses() = %v, want to include auto", ActiveTodoStatuses())
+}
+
 func semanticTodoFixture(t *testing.T, candidate Candidate, projectID *uint64, id uint64) *SemanticTodo {
 	t.Helper()
 	fingerprint, err := Fingerprint(&candidate, projectID)
