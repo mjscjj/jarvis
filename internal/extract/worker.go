@@ -187,7 +187,8 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 		}
 	}
 	results := make([]UnitExtraction, 0, len(batch.Units))
-	for _, unit := range batch.Units {
+	for index := range batch.Units {
+		unit := batch.Units[index]
 		query, err := SalientQuery(unit)
 		if err != nil {
 			return stats, PersistStats{}, fmt.Errorf("prepare extraction query chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
@@ -218,7 +219,9 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 		if err != nil {
 			return stats, PersistStats{}, fmt.Errorf("build extraction tool box chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
 		}
-		resolved, candidateCount, err := w.extractUnitWithRetry(ctx, batch, unit, prompt, box)
+		// PersistChat re-reads the unit out of batch.Units by key, so hydrated
+		// evidence has to land there and not in a local copy.
+		resolved, candidateCount, err := w.extractUnitWithRetry(ctx, batch, &batch.Units[index], prompt, box)
 		if err != nil {
 			return stats, PersistStats{}, err
 		}
@@ -246,17 +249,16 @@ func mergeWorkerStats(target *WorkerStats, source WorkerStats) {
 	target.Skipped += source.Skipped
 }
 
-// extractUnitWithRetry runs "ExtractWithTools + full candidate validation" as one
-// retryable unit. When validation fails only because a source_quote is not a
-// verbatim substring of the cited [new] messages (ErrEvidenceQuoteMismatch), it
-// does not abort the round: it appends a Chinese explanation of the mistake plus
-// the cited [new] 原文 to the user prompt and asks the model to re-extract the
-// whole unit, up to opts.EvidenceRetryMax extra attempts. Any other validation
-// failure (structural/schema, out-of-unit source id, missing [new] evidence,
-// dedup error) is not self-correctable and aborts fail-fast immediately. Retries
-// also stop once attempts are exhausted, propagating the last error (which
-// carries the cited 原文 for diagnosis).
-func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit ConversationUnit, prompt Prompt, box ToolBox) ([]ResolvedCandidate, int, error) {
+// extractUnitWithRetry runs "hydrate cited evidence + ExtractWithTools + full
+// candidate validation" as one retryable unit. Evidence failures the model can
+// fix by itself — a paraphrased source_quote, an invented source_message_id, a
+// candidate grounded in no [new] message — do not abort the round: a Chinese
+// explanation of the mistake plus the cited [new] 原文 is appended to the user
+// prompt and the whole unit is re-extracted, up to opts.EvidenceRetryMax extra
+// attempts. Any other failure (structural/schema, dedup error) aborts fail-fast
+// immediately. Retries also stop once attempts are exhausted, propagating the
+// last error (which carries the cited 原文 for diagnosis).
+func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit *ConversationUnit, prompt Prompt, box ToolBox) ([]ResolvedCandidate, int, error) {
 	current := prompt
 	for attempt := 0; ; attempt++ {
 		extracted, err := w.model.ExtractWithTools(ctx, current, box)
@@ -266,14 +268,17 @@ func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit
 		if extracted == nil {
 			return nil, 0, fmt.Errorf("extract todos chat_id=%s unit=%s: nil result", batch.Group.ChatID, unit.Key)
 		}
-		resolved, evidenceErrs, err := w.validateExtraction(ctx, batch, unit, extracted)
+		if err := w.hydrateCitedMessages(ctx, batch, unit, extracted); err != nil {
+			return nil, 0, err
+		}
+		resolved, evidenceErrs, err := w.validateExtraction(ctx, batch, *unit, extracted)
 		if err != nil {
 			return nil, 0, err
 		}
 		if len(evidenceErrs) == 0 {
 			return resolved, len(extracted.Candidates), nil
 		}
-		// Evidence/quote mismatch: self-correctable. Retry with feedback if budget
+		// Self-correctable evidence failure. Retry with feedback if budget
 		// remains; otherwise fail-fast with the aggregated errors (原文 included).
 		if attempt >= w.opts.EvidenceRetryMax {
 			return nil, 0, fmt.Errorf("validate extracted evidence chat_id=%s unit=%s: exhausted %d evidence retries: %s",
@@ -281,6 +286,68 @@ func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit
 		}
 		current = Prompt{System: prompt.System, User: prompt.User + "\n\n" + buildEvidenceFeedback(evidenceErrs)}
 	}
+}
+
+// hydrateCitedMessages pulls cited evidence that is missing from the unit but
+// really exists in the chat into the unit's message set. The model reads the
+// whole chat with its own tools, so it legitimately cites bot replies, messages
+// from a sibling topic, and messages that landed after the batch was loaded —
+// none of which the unit slice contains. Evidence timestamps, leader
+// attribution and the context snapshot all read cited messages back out of the
+// unit, so those messages have to be present there, not merely tolerated.
+func (w *Worker) hydrateCitedMessages(ctx context.Context, batch ChatBatch, unit *ConversationUnit, extracted *ExtractionResult) error {
+	present := make(map[string]struct{}, len(unit.Messages))
+	for _, message := range unit.Messages {
+		present[message.MessageID] = struct{}{}
+	}
+	missing := make([]string, 0)
+	for i := range extracted.Candidates {
+		for _, messageID := range extracted.Candidates[i].SourceMessageIDs {
+			if _, ok := present[messageID]; ok {
+				continue
+			}
+			present[messageID] = struct{}{}
+			missing = append(missing, messageID)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	found, err := w.store.LoadChatMessages(ctx, batch.Group.ChatID, missing)
+	if err != nil {
+		return fmt.Errorf("hydrate cited evidence chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	unit.Messages = mergeChronological(unit.Messages, found)
+	return nil
+}
+
+// mergeChronological merges two chronologically ordered message slices into one,
+// preserving the (create_time, database id) order that snapshotConversation
+// relies on when it keeps the tail of a unit.
+func mergeChronological(base, extra []MessageContext) []MessageContext {
+	merged := make([]MessageContext, 0, len(base)+len(extra))
+	first, second := 0, 0
+	for first < len(base) && second < len(extra) {
+		if messageBefore(extra[second], base[first]) {
+			merged = append(merged, extra[second])
+			second++
+			continue
+		}
+		merged = append(merged, base[first])
+		first++
+	}
+	merged = append(merged, base[first:]...)
+	return append(merged, extra[second:]...)
+}
+
+func messageBefore(first, second MessageContext) bool {
+	if first.CreateTime != second.CreateTime {
+		return first.CreateTime < second.CreateTime
+	}
+	return first.DatabaseID < second.DatabaseID
 }
 
 // validateExtraction validates every candidate in one extraction result. It
@@ -295,7 +362,7 @@ func (w *Worker) validateExtraction(ctx context.Context, batch ChatBatch, unit C
 			return nil, nil, fmt.Errorf("validate extracted candidate chat_id=%s unit=%s candidate=%d: %w", batch.Group.ChatID, unit.Key, i, err)
 		}
 		if err := validateCandidateEvidence(unit, &extracted.Candidates[i]); err != nil {
-			if errors.Is(err, ErrEvidenceQuoteMismatch) {
+			if selfCorrectableEvidence(err) {
 				evidenceErrs = append(evidenceErrs, fmt.Sprintf("第%d条线索：%s", i+1, err.Error()))
 				continue
 			}
@@ -322,21 +389,34 @@ func (w *Worker) validateExtraction(ctx context.Context, batch ChatBatch, unit C
 	return resolved, nil, nil
 }
 
-// buildEvidenceFeedback renders the Chinese retry feedback appended after the user
-// prompt: it explains that some source_quote values could not be found verbatim in
-// the cited [new] messages (likely paraphrased/padded/spliced across messages) and
-// instructs the model to re-extract with source_quote copied verbatim from a single
-// [new] message. evidenceErrs already carry each offending quote and the cited 原文.
+// selfCorrectableEvidence reports whether an evidence failure is one the model
+// can fix when told what it got wrong, rather than a bug that must abort the
+// chat: a rewritten quote, an invented message id, or a clue grounded in no
+// [new] message.
+func selfCorrectableEvidence(err error) bool {
+	return errors.Is(err, ErrEvidenceQuoteMismatch) ||
+		errors.Is(err, ErrEvidenceUnknownMessage) ||
+		errors.Is(err, ErrEvidenceNoNewSource)
+}
+
+// buildEvidenceFeedback renders the Chinese retry feedback appended after the
+// user prompt. evidenceErrs already carry the per-candidate detail (offending
+// quote, invented id, cited 原文); this adds the rules the model has to satisfy
+// on the next attempt.
 func buildEvidenceFeedback(evidenceErrs []string) string {
 	var b strings.Builder
 	b.WriteString("【上一轮抽取校验未通过，请修正后重新抽取】\n")
-	b.WriteString("你上一轮抽取的线索里，下面这些 source_quote 在你引用的 [new] 消息原文里找不到——很可能是你改写、补字，或把不连续的片段、多条消息拼接成了引用：\n")
+	b.WriteString("你上一轮抽取的线索里，下面这些证据引用没通过校验：\n")
 	for _, msg := range evidenceErrs {
 		b.WriteString("- ")
 		b.WriteString(msg)
 		b.WriteString("\n")
 	}
-	b.WriteString("\n请重新抽取本段会话。硬性要求：每条线索的 source_quote 必须从某一条 [new] 消息里逐字连续复制（exact contiguous substring），不得改写、补字、删字，也不得跨片段或跨消息拼接；如果一句话在原文里被打断，就只截取其中真正连续的一段作为 quote，并让 source_message_ids 指向它所在的那条消息。请重新输出完整的 candidates（JSON），不要输出解释。")
+	b.WriteString("\n请重新抽取本段会话，硬性要求：\n")
+	b.WriteString("1. source_message_ids 里的每个 id 都必须是这个群里真实存在的消息 id，逐字复制自 [new] 消息、上下文消息或工具返回的原始结果，不得凭印象拼造或改写。引用同群里本段会话之外的消息（机器人回复、其它话题、刚到的新消息）是允许的。\n")
+	b.WriteString("2. 每条线索至少要引用一条本轮的 [new] 消息作为证据；只靠历史消息支撑的线索本轮不要输出。\n")
+	b.WriteString("3. source_quote 必须从某一条 [new] 消息里逐字连续复制（exact contiguous substring），不得改写、补字、删字，也不得跨片段或跨消息拼接；如果一句话在原文里被打断，就只截取其中真正连续的一段作为 quote，并让 source_message_ids 指向它所在的那条消息。\n")
+	b.WriteString("\n请重新输出完整的 candidates（JSON），不要输出解释。")
 	return b.String()
 }
 
@@ -350,7 +430,9 @@ func validateCandidateEvidence(unit ConversationUnit, candidate *Candidate) erro
 	for _, messageID := range candidate.SourceMessageIDs {
 		message, ok := byID[messageID]
 		if !ok {
-			return fmt.Errorf("%w: source_message_id %q is outside conversation unit", ErrInvalidCandidate, messageID)
+			// Cited evidence that exists anywhere in the chat was already
+			// hydrated into the unit, so a miss here means the id is invented.
+			return fmt.Errorf("%w: source_message_id %q", ErrEvidenceUnknownMessage, messageID)
 		}
 		if message.IsNew && message.Extractable {
 			hasNew = true
@@ -360,7 +442,7 @@ func validateCandidateEvidence(unit ConversationUnit, candidate *Candidate) erro
 		}
 	}
 	if !hasNew {
-		return fmt.Errorf("%w: candidate has no extractable [new] evidence", ErrInvalidCandidate)
+		return fmt.Errorf("%w: cited messages are %s", ErrEvidenceNoNewSource, citedMessagesText(unit, candidate.SourceMessageIDs))
 	}
 	if !quoteFound {
 		return fmt.Errorf("%w: source_quote %q is not present in cited [new] messages; cited [new] messages: %s",
@@ -407,6 +489,35 @@ func citedNewMessagesText(unit ConversationUnit, sourceMessageIDs []string) stri
 		return "(无被引用的 [new] 消息)"
 	}
 	return strings.Join(lines, "\n")
+}
+
+// citedMessagesText renders every cited message the unit knows about, tagging
+// whether it is [new] or older context, so a "no [new] evidence" failure shows
+// what the candidate was actually grounded in.
+func citedMessagesText(unit ConversationUnit, sourceMessageIDs []string) string {
+	byID := make(map[string]MessageContext, len(unit.Messages))
+	for _, message := range unit.Messages {
+		byID[message.MessageID] = message
+	}
+	lines := make([]string, 0, len(sourceMessageIDs))
+	for _, messageID := range sourceMessageIDs {
+		message, ok := byID[messageID]
+		if !ok {
+			continue
+		}
+		tag := "context"
+		if message.IsNew {
+			tag = "new"
+		}
+		if !message.Extractable {
+			tag += ",not-extractable"
+		}
+		lines = append(lines, fmt.Sprintf("message_id=%s(%s) 原文=%q", messageID, tag, truncateRunes(message.Content, evidenceMessageContentMax)))
+	}
+	if len(lines) == 0 {
+		return "(无)"
+	}
+	return strings.Join(lines, "; ")
 }
 
 func truncateRunes(value string, max int) string {

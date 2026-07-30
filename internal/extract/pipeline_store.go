@@ -322,6 +322,31 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 	return batch, nil
 }
 
+// LoadChatMessages returns the subset of the given message IDs that really
+// exist in this chat, ordered chronologically and marked as context (not [new]).
+// The extraction worker uses it to hydrate a unit with evidence the model cited
+// after finding it with its own tools — bot replies, sibling topics, messages
+// that landed after the batch was loaded — none of which the unit slice holds.
+func (s *PipelineStore) LoadChatMessages(ctx context.Context, chatID string, messageIDs []string) ([]MessageContext, error) {
+	if len(messageIDs) == 0 {
+		return nil, nil
+	}
+	var rows []domain.Message
+	if err := s.db.WithContext(ctx).
+		Where("chat_id = ? AND message_id IN ?", chatID, messageIDs).
+		Order("create_time ASC, id ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("load cited chat messages chat_id=%s: %w", chatID, err)
+	}
+	result := make([]MessageContext, len(rows))
+	for i := range rows {
+		result[i] = messageContext(&rows[i], false)
+	}
+	if _, err := s.enrichParticipants(ctx, result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (s *PipelineStore) loadContextMessages(ctx context.Context, chatID, key string, first MessageContext, opts LoadOptions) ([]MessageContext, error) {
 	if opts.ContextMessages == 0 {
 		return nil, nil

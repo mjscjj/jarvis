@@ -176,6 +176,7 @@ type TodoRef struct {
 type pipelineStore interface {
 	LoadPendingChats(context.Context, LoadOptions) ([]ChatBatch, error)
 	LoadPendingChat(context.Context, string, LoadOptions) (*ChatBatch, error)
+	LoadChatMessages(context.Context, string, []string) ([]MessageContext, error)
 	PersistChat(context.Context, ChatBatch, []UnitExtraction, string) (PersistStats, error)
 }
 

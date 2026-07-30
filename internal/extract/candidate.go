@@ -29,10 +29,19 @@ var (
 	ErrFingerprintIncomplete = errors.New("todo fingerprint identity is incomplete")
 	// ErrEvidenceQuoteMismatch marks the self-correctable evidence failure where a
 	// candidate's source_quote is not a verbatim contiguous substring of any cited
-	// [new] message. It wraps ErrInvalidCandidate so existing errors.Is checks keep
-	// working, while letting the worker single out this case for validation-feedback
-	// retry (ask the model to re-extract without paraphrasing/splicing the quote).
+	// [new] message, so the worker can single it out for validation-feedback retry
+	// (ask the model to re-extract without paraphrasing/splicing the quote).
 	ErrEvidenceQuoteMismatch = errors.New("source_quote not a verbatim substring of cited [new] messages")
+	// ErrEvidenceUnknownMessage marks the self-correctable evidence failure where
+	// a candidate cites a source_message_id that does not exist in the chat at
+	// all, i.e. the model invented the id. Evidence the model legitimately found
+	// with its own tools is hydrated into the unit before validation, so a miss
+	// here really means the id is not real.
+	ErrEvidenceUnknownMessage = errors.New("source_message_id does not exist in this chat")
+	// ErrEvidenceNoNewSource marks the self-correctable evidence failure where a
+	// candidate cites only older context and no extractable [new] message, so the
+	// clue is not actually grounded in what this round is extracting.
+	ErrEvidenceNoNewSource = errors.New("candidate has no extractable [new] evidence")
 )
 
 // commonActionTypes lists the well-known clue kinds we surface to the model as

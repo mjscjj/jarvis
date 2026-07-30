@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,12 @@ type fakePipelineStore struct {
 	persistErr   error
 	persistCalls int
 	results      []UnitExtraction
+	// persistedBatch is the batch PersistChat received, so a test can assert on
+	// the unit state (including hydrated evidence) persistence actually reads.
+	persistedBatch ChatBatch
+	// chatMessages is the chat's full message history keyed by message_id, used
+	// to answer LoadChatMessages when the model cites evidence outside the unit.
+	chatMessages map[string]MessageContext
 }
 
 type fakeSystemPromptReader struct{}
@@ -43,9 +50,22 @@ func (f *fakePipelineStore) LoadPendingChat(_ context.Context, chatID string, _ 
 	return nil, nil
 }
 
-func (f *fakePipelineStore) PersistChat(_ context.Context, _ ChatBatch, results []UnitExtraction, _ string) (PersistStats, error) {
+func (f *fakePipelineStore) LoadChatMessages(_ context.Context, _ string, messageIDs []string) ([]MessageContext, error) {
+	found := make([]MessageContext, 0, len(messageIDs))
+	for _, messageID := range messageIDs {
+		if message, ok := f.chatMessages[messageID]; ok {
+			message.IsNew = false
+			found = append(found, message)
+		}
+	}
+	sort.Slice(found, func(i, j int) bool { return messageBefore(found[i], found[j]) })
+	return found, nil
+}
+
+func (f *fakePipelineStore) PersistChat(_ context.Context, batch ChatBatch, results []UnitExtraction, _ string) (PersistStats, error) {
 	f.persistCalls++
 	f.results = results
+	f.persistedBatch = batch
 	if f.persistErr != nil {
 		return PersistStats{}, f.persistErr
 	}
@@ -412,6 +432,79 @@ func TestWorkerFailsAfterExhaustingEvidenceRetries(t *testing.T) {
 	}
 	if store.persistCalls != 0 {
 		t.Fatalf("persistCalls = %d, want 0", store.persistCalls)
+	}
+}
+
+// 模型带着工具读整个群，引用本 unit 之外但群里真实存在的消息（机器人回复、
+// 兄弟话题、批次加载后才到的消息）是正常的。这类引用必须补进 unit，否则落库时
+// 取不到消息，first_evidence_at 会退化成 1970，快照也会丢掉这条证据。
+func TestWorkerHydratesCitedMessageFromOutsideUnit(t *testing.T) {
+	const botReply = "已安排袁昕钰跟进该问题"
+	batch := retryBatch()
+	store := &fakePipelineStore{
+		batches: []ChatBatch{batch},
+		chatMessages: map[string]MessageContext{"om_bot": {
+			DatabaseID: 42, MessageID: "om_bot", ChatID: "oc_1", SenderType: "bot",
+			SenderName: "Pulse", Content: botReply, CreateTime: 1_700_000_300_000,
+		}},
+	}
+	candidate := retryCandidate("当前服务和架构梳理")
+	candidate.SourceMessageIDs = []string{"om_1", "om_bot"}
+	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{candidate}}}
+	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, fakeSharedMemoryReader{}, validWorkerOptions())
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	if _, err := worker.ExtractOnce(context.Background()); err != nil {
+		t.Fatalf("ExtractOnce() error = %v", err)
+	}
+	if len(model.prompts) != 1 {
+		t.Fatalf("extract calls = %d, want 1 (no retry needed)", len(model.prompts))
+	}
+	if store.persistCalls != 1 {
+		t.Fatalf("persistCalls = %d, want 1", store.persistCalls)
+	}
+	// PersistChat 按 key 从 batch.Units 重新取 unit，补进去的消息必须在那里，
+	// 并且落在正确的时间顺序上（快照按尾部截断）。
+	persisted := store.persistedBatch.Units[0].Messages
+	if len(persisted) != 2 || persisted[0].MessageID != "om_1" || persisted[1].MessageID != "om_bot" {
+		t.Fatalf("hydrated unit messages = %#v", persisted)
+	}
+	if persisted[1].IsNew {
+		t.Fatalf("hydrated message must be context, not [new]: %#v", persisted[1])
+	}
+}
+
+// 引用了群里根本不存在的 message_id（模型编的），走和 quote 对不上一样的反馈重试，
+// 不再整批 fail-fast。
+func TestWorkerRetriesOnInventedMessageIDThenSucceeds(t *testing.T) {
+	store := &fakePipelineStore{batches: []ChatBatch{retryBatch()}}
+	invented := retryCandidate("当前服务和架构梳理")
+	invented.SourceMessageIDs = []string{"om_does_not_exist"}
+	model := &fakeModelExtractor{results: []*ExtractionResult{
+		{Candidates: []Candidate{invented}},
+		{Candidates: []Candidate{retryCandidate("当前服务和架构梳理")}},
+	}}
+	opts := validWorkerOptions()
+	opts.EvidenceRetryMax = 2
+	worker, err := NewWorker(store, model, &fakeMemorySearcher{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, fakeSharedMemoryReader{}, opts)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	if _, err := worker.ExtractOnce(context.Background()); err != nil {
+		t.Fatalf("ExtractOnce() error = %v", err)
+	}
+	if len(model.prompts) != 2 {
+		t.Fatalf("extract calls = %d, want 2", len(model.prompts))
+	}
+	if store.persistCalls != 1 {
+		t.Fatalf("persistCalls = %d, want 1", store.persistCalls)
+	}
+	second := model.prompts[1].User
+	for _, want := range []string{"上一轮抽取校验未通过", "om_does_not_exist", "真实存在的消息 id"} {
+		if !strings.Contains(second, want) {
+			t.Fatalf("retry prompt missing %q; got %q", want, second)
+		}
 	}
 }
 

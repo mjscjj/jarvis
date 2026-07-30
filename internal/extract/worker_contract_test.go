@@ -13,8 +13,12 @@ func TestValidateCandidateEvidenceRejectsContextOnlySource(t *testing.T) {
 	candidate := contractStrictCandidate()
 	candidate.SourceMessageIDs = []string{"om_context"}
 	candidate.SourceQuote = "earlier context"
-	if err := validateCandidateEvidence(unit, &candidate); !errors.Is(err, ErrInvalidCandidate) {
-		t.Fatalf("validateCandidateEvidence() error = %v", err)
+	err := validateCandidateEvidence(unit, &candidate)
+	if !errors.Is(err, ErrEvidenceNoNewSource) {
+		t.Fatalf("validateCandidateEvidence() error = %v, want ErrEvidenceNoNewSource", err)
+	}
+	if !selfCorrectableEvidence(err) {
+		t.Fatalf("context-only source should be self-correctable, got %v", err)
 	}
 }
 
