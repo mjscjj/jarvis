@@ -37,7 +37,8 @@ func TestClientLiveStructuredOutput(t *testing.T) {
 	defer cancel()
 	candidate := extract.Candidate{
 		ActionType: "code_change", Title: "Refactor synthetic auth", Target: "synthetic/repo auth flow",
-		Description: "Refactor the synthetic auth flow", Context: "repo synthetic/repo",
+		DesiredOutcome: "The synthetic auth flow is refactored and merged",
+		Description:    "Refactor the synthetic auth flow", Context: "repo synthetic/repo",
 		OpenQuestions:      []string{},
 		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_synthetic"},
 		SourceQuote: "Refactor synthetic auth",

@@ -202,17 +202,17 @@ func TestSalientQueryCapsLongMeetingEvidenceForMemorySearch(t *testing.T) {
 	}
 }
 
-func TestBuildPromptCarriesMeetingCaptureResultType(t *testing.T) {
-	unit := ConversationUnit{Key: "meeting", Messages: []MessageContext{{
-		MessageID:   "meeting-capture-result:meeting-1",
-		MessageType: "meeting_capture_result",
-		Content:     "采集结果：permission_denied\nminute_token=minute-1",
+func TestBuildPromptCarriesMessageType(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID:   "om_1",
+		MessageType: "post",
+		Content:     "周会结论：下周三前完成灰度",
 		CreateTime:  1_700_000_001_000,
 		IsNew:       true,
 		Extractable: true,
 	}}}
 	prompt, err := BuildPrompt(
-		ChatBatch{Group: GroupContext{ChatID: "meeting:ou_me"}},
+		ChatBatch{Group: GroupContext{ChatID: "oc_1"}},
 		unit,
 		nil,
 		time.Unix(1_700_000_100, 0),
@@ -221,30 +221,30 @@ func TestBuildPromptCarriesMeetingCaptureResultType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPrompt() error = %v", err)
 	}
-	if !strings.Contains(prompt.User, "message_type=meeting_capture_result") {
+	if !strings.Contains(prompt.User, "message_type=post") {
 		t.Fatalf("prompt missing message_type:\n%s", prompt.User)
 	}
 }
 
-func TestExtractionPromptRequiresPermissionFollowupForBlockedMeetingCapture(t *testing.T) {
+// TestExtractionPromptKeepsBlockedGoalIntact pins the anti-goal-drift contract:
+// when a clue is blocked, desired_outcome must stay the real end state and the
+// blocker must be recorded as context rather than promoted to the clue's
+// identity. See docs/design-long-horizon-agent-goal-control.md.
+func TestExtractionPromptKeepsBlockedGoalIntact(t *testing.T) {
 	raw, err := os.ReadFile("../../conf/prompts/m3-system-prompt.md")
 	if err != nil {
 		t.Fatalf("read M3 system prompt: %v", err)
 	}
 	system := string(raw)
 	for _, want := range []string{
-		"meeting_minutes",
-		"meeting_capture_result",
-		"permission_denied",
-		"manual_followup",
-		"minutes +apply-permission",
+		"desired_outcome 是完成判据",
+		"desired_outcome 一律写清除障碍之后要拿到的最终结果",
+		"不要退化成中间步骤",
+		"semantics 是自由表达区",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q", want)
 		}
-	}
-	if strings.Contains(system, "自动申请权限") {
-		t.Fatalf("system prompt must not approve or execute the external write")
 	}
 }
 

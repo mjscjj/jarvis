@@ -122,7 +122,8 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*TaskView, e
 		todoID := todo.ID
 		createdTask, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
 			TodoID: &todoID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
-			Background: background, Plan: plan, DecisionPayload: decisionPayload,
+			Background: background, SourceClue: json.RawMessage(todo.ExtractionResult),
+			Plan: plan, DecisionPayload: decisionPayload,
 			ConfirmedBy: "user", ConfirmedAt: &confirmedAt,
 			ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todoID,
 			ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "user",

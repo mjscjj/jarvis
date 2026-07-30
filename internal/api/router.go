@@ -238,6 +238,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		h.POST("/api/debug/capture/discover", DiscoverChatsManually(deps.Capture))
 		h.POST("/api/debug/capture/scan-related", ScanRelatedManually(deps.Capture))
 		h.POST("/api/debug/capture/scan-chat", ScanChatManually(deps.Capture))
+		// 通用线索投递：任何 agent 把一条观察到的事实交给 M2，M2 原样存证并唤醒 M3。
+		h.POST("/api/clues", AppendClue(deps.Capture))
 	}
 	// 手动维护的资源：可关联 人/项目/我，供后台管理与 M3 工具按需查询。
 	h.GET("/api/resources", ListResources(deps.Resources))

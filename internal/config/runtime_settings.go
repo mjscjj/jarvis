@@ -76,9 +76,6 @@ type RuntimeSettings struct {
 	CaptureDiscoverSchedule       string `json:"capture_discover_schedule"`
 	CaptureScanSchedule           string `json:"capture_scan_schedule"`
 	CaptureAutoRelatedP2PTopN     int    `json:"capture_auto_related_p2p_top_n"`
-	CaptureMeetingScanSchedule    string `json:"capture_meeting_scan_schedule"`
-	CaptureMeetingLookbackDays    int    `json:"capture_meeting_lookback_days"`
-	CaptureMeetingMaxContentChars int    `json:"capture_meeting_max_content_chars"`
 
 	MemoryTimeoutSeconds    int    `json:"memory_timeout_seconds"`
 	MemoryBatchLimit        int    `json:"memory_batch_limit"`
@@ -227,9 +224,6 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		CaptureDiscoverSchedule:       cfg.Capture.DiscoverSchedule,
 		CaptureScanSchedule:           cfg.Capture.ScanSchedule,
 		CaptureAutoRelatedP2PTopN:     cfg.Capture.AutoRelatedP2PTopN,
-		CaptureMeetingScanSchedule:    cfg.Capture.MeetingScanSchedule,
-		CaptureMeetingLookbackDays:    cfg.Capture.MeetingLookbackDays,
-		CaptureMeetingMaxContentChars: cfg.Capture.MeetingMaxContentChars,
 		MemoryTimeoutSeconds:          cfg.Mem0.TimeoutSec,
 		MemoryBatchLimit:              cfg.Mem0.BatchLimit,
 		MemoryWindowGapMinutes:        cfg.Mem0.WindowGapMinutes,
@@ -300,9 +294,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	cfg.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
 	cfg.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
-	cfg.Capture.MeetingScanSchedule = strings.TrimSpace(input.CaptureMeetingScanSchedule)
-	cfg.Capture.MeetingLookbackDays = input.CaptureMeetingLookbackDays
-	cfg.Capture.MeetingMaxContentChars = input.CaptureMeetingMaxContentChars
 	cfg.Mem0.TimeoutSec = input.MemoryTimeoutSeconds
 	cfg.Mem0.BatchLimit = input.MemoryBatchLimit
 	cfg.Mem0.WindowGapMinutes = input.MemoryWindowGapMinutes
@@ -385,9 +376,6 @@ type runtimeOverride struct {
 		DiscoverSchedule       string `yaml:"discover_schedule"`
 		ScanSchedule           string `yaml:"scan_schedule"`
 		AutoRelatedP2PTopN     int    `yaml:"auto_related_p2p_top_n"`
-		MeetingScanSchedule    string `yaml:"meeting_scan_schedule"`
-		MeetingLookbackDays    int    `yaml:"meeting_lookback_days"`
-		MeetingMaxContentChars int    `yaml:"meeting_max_content_chars"`
 	} `yaml:"capture"`
 	Mem0 struct {
 		TimeoutSec        int    `yaml:"timeout_sec"`
@@ -467,9 +455,6 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	override.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
 	override.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
-	override.Capture.MeetingScanSchedule = strings.TrimSpace(input.CaptureMeetingScanSchedule)
-	override.Capture.MeetingLookbackDays = input.CaptureMeetingLookbackDays
-	override.Capture.MeetingMaxContentChars = input.CaptureMeetingMaxContentChars
 	override.Mem0.TimeoutSec = input.MemoryTimeoutSeconds
 	override.Mem0.BatchLimit = input.MemoryBatchLimit
 	override.Mem0.WindowGapMinutes = input.MemoryWindowGapMinutes

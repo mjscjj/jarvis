@@ -266,7 +266,8 @@ func createAutoTask(ctx context.Context, tx *gorm.DB, now time.Time, todo *domai
 	todoID := todo.ID
 	task, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
 		TodoID: &todoID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
-		Background: background, Plan: planJSON, DecisionPayload: decisionPayload,
+		Background: background, SourceClue: json.RawMessage(todo.ExtractionResult),
+		Plan: planJSON, DecisionPayload: decisionPayload,
 		ConfirmedBy: "m4_auto", ConfirmedAt: &now,
 		ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todoID,
 		ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "m4",

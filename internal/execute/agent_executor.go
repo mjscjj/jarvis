@@ -508,10 +508,8 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 			e.failRun(run, startedAt, execErr)
 		} else {
 			result := codexOut.Propose
-			run.Summary = &result.Summary
-			run.Output, err = json.Marshal(result)
-			if err != nil {
-				return nil, fmt.Errorf("encode resumed propose result task_id=%d: %w", task.ID, err)
+			if err := recordAgentVerdict(run, result.Summary, result, result.Effects); err != nil {
+				return nil, fmt.Errorf("record resumed propose verdict task_id=%d: %w", task.ID, err)
 			}
 			run.Status = "succeeded"
 			if result.Outcome == "waiting" {
@@ -548,10 +546,8 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 			e.failRun(run, startedAt, execErr)
 		} else {
 			result := codexOut.Result
-			run.Summary = &result.Summary
-			run.Output, err = json.Marshal(result)
-			if err != nil {
-				return nil, fmt.Errorf("encode resumed execution result task_id=%d: %w", task.ID, err)
+			if err := recordAgentVerdict(run, result.Summary, result, result.Effects); err != nil {
+				return nil, fmt.Errorf("record resumed execution verdict task_id=%d: %w", task.ID, err)
 			}
 			if result.Outcome == "waiting" {
 				e.finishWaitingRun(run, startedAt)
@@ -802,7 +798,15 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 	// without a human. Every OTHER action_type runs the propose stage first,
 	// regardless of execution_mode. The file-backed approval policy decides
 	// whether the proposed plan may execute or must stop for human approval.
-	if runsToCompletion(&task) {
+	repoPath := ""
+	if task.ActionType == "code_change" {
+		resolved, err := e.resolveRepo(&task)
+		if err != nil {
+			return nil, err
+		}
+		repoPath = resolved
+	}
+	if runsToCompletion(&task, repoPath) {
 		run, execErr := e.runOnce(ctx, &task, policy)
 		execErr = e.normalizeInterrupted(ctx, run, execErr)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
@@ -814,11 +818,14 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 }
 
 // runsToCompletion reports whether a Task skips the propose/approval gate. Only
-// code_change qualifies because its pushed branch + MR is the review gate.
+// code_change backed by a resolvable local repo qualifies, because the bypass is
+// paid for by the pushed branch + MR being the review gate. A code_change Task
+// whose repo cannot be resolved never produces that MR, so it would run with no
+// gate at all — it keeps propose and its approval policy like every other action.
 // execution_mode=direct is retained as persisted metadata but grants no approval
 // bypass: all non-code tasks must pass through propose and its approval policy.
-func runsToCompletion(task *domain.Task) bool {
-	return task != nil && task.ActionType == "code_change"
+func runsToCompletion(task *domain.Task, repoPath string) bool {
+	return task != nil && task.ActionType == "code_change" && strings.TrimSpace(repoPath) != ""
 }
 
 func validateTaskIntegrity(task *domain.Task) error {
@@ -1040,12 +1047,9 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	// Store the clean human summary on Summary and the full structured verdict
 	// (success/failure_reason/needs_followup/enrichments) on Output, so the UI
 	// shows prose, not a raw JSON blob.
-	summary := codexOut.Result.Summary
-	run.Summary = &summary
-	if structured, err := json.Marshal(codexOut.Result); err == nil {
-		run.Output = structured
+	if err := recordAgentVerdict(run, codexOut.Result.Summary, codexOut.Result, codexOut.Result.Effects); err != nil {
+		return e.failRun(run, startedAt, err), err
 	}
-	assignDeclaredEffects(run, codexOut.Result.Effects)
 	if codexOut.Result.Outcome == "waiting" {
 		finished := e.now().UTC()
 		run.Status = "waiting"
@@ -1179,12 +1183,9 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
 	propose := codexOut.Propose
-	summary := propose.Summary
-	run.Summary = &summary
-	if structured, err := json.Marshal(propose); err == nil {
-		run.Output = structured
+	if err := recordAgentVerdict(run, propose.Summary, propose, propose.Effects); err != nil {
+		return e.failRun(run, startedAt, err), nil, err
 	}
-	assignDeclaredEffects(run, propose.Effects)
 
 	finished := e.now().UTC()
 	run.Status = "succeeded"
@@ -1256,12 +1257,9 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 		run.Summary = &codexOut.LastMessage
 		return e.failRun(run, startedAt, cause), cause
 	}
-	summary := codexOut.Result.Summary
-	run.Summary = &summary
-	if structured, err := json.Marshal(codexOut.Result); err == nil {
-		run.Output = structured
+	if err := recordAgentVerdict(run, codexOut.Result.Summary, codexOut.Result, codexOut.Result.Effects); err != nil {
+		return e.failRun(run, startedAt, err), err
 	}
-	assignDeclaredEffects(run, codexOut.Result.Effects)
 	if codexOut.Result.Outcome == "waiting" {
 		finished := e.now().UTC()
 		run.Status = "waiting"
@@ -1418,6 +1416,25 @@ func runEffects(run *domain.ExecutionRun) []map[string]any {
 		effects = append(effects, mr)
 	}
 	return effects
+}
+
+// recordAgentVerdict stores one agent verdict on the run: the human-readable
+// summary, the full structured verdict as Output, and the agent's declared
+// external effects. The three always travel together — a resumed run that stored
+// Output but silently dropped Effects is how Task #82's repeated Feishu pings
+// ended up with no recorded side effect to dedupe against.
+func recordAgentVerdict(run *domain.ExecutionRun, summary string, verdict any, effects []codexEffect) error {
+	if run == nil || verdict == nil {
+		return fmt.Errorf("record agent verdict: run and verdict are required")
+	}
+	run.Summary = &summary
+	structured, err := json.Marshal(verdict)
+	if err != nil {
+		return fmt.Errorf("encode agent verdict: %w", err)
+	}
+	run.Output = structured
+	assignDeclaredEffects(run, effects)
+	return nil
 }
 
 // assignDeclaredEffects stores the agent's self-declared side effects on the run

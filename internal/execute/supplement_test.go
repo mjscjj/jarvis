@@ -151,7 +151,7 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 
 func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 	task := &domain.Task{
-		ID: 12, Title: "评测截图", ActionType: "notify_principal",
+		ID: 12, Title: "评测截图", ActionType: "notify_principal", Target: "评测截图影响面",
 		Plan:            datatypes.JSON(`{"direction":"判断对项目的影响"}`),
 		DecisionPayload: datatypes.JSON(`{"value":"可能影响 runtime 选择"}`),
 		Background:      datatypes.JSON(`{"snapshot_version":"v1"}`),
@@ -163,6 +163,7 @@ func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 	for _, want := range []string{
 		`"title_hint":"评测截图"`,
 		`"action_type_hint":"notify_principal"`,
+		`"target_hint":"评测截图影响面"`,
 		`"m4_direction":{"direction":"判断对项目的影响"}`,
 		`"m4_decision_context":{"value":"可能影响 runtime 选择"}`,
 	} {
@@ -175,6 +176,36 @@ func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 			t.Fatalf("execution prompt still exposes upstream semantics as authoritative field %q:\n%s", obsolete, prompt)
 		}
 	}
+	if strings.Contains(prompt, `"m3_clue"`) {
+		t.Fatalf("execution prompt emitted m3_clue for a Task without a source clue:\n%s", prompt)
+	}
+}
+
+// TestBuildExecutionPromptForwardsM3ClueVerbatim pins the anti-goal-drift path:
+// M5 must see M3's original clue (notably desired_outcome) rather than only
+// M4's condensed direction, so a blocker raised downstream cannot silently
+// become the task. See docs/design-long-horizon-agent-goal-control.md.
+func TestBuildExecutionPromptForwardsM3ClueVerbatim(t *testing.T) {
+	clue := `{"action_type":"manual_followup","desired_outcome":"产出这场会的结论并生成落到我身上的待办","semantics":"当前妙记无 view 权限，需先申请"}`
+	task := &domain.Task{
+		ID: 13, Title: "公会基建 Agent 日会会后处理", ActionType: "manual_followup",
+		Target:     "公会基建Agent 日会（meeting_id=7667030332496007223）",
+		SourceClue: datatypes.JSON(clue),
+		Plan:       datatypes.JSON(`{"direction":"先申请妙记 view 权限"}`),
+		Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+	}
+	prompt, err := buildExecutionPrompt("test M5 system prompt", task, "", testToolCatalog, "", "", "", nil)
+	if err != nil {
+		t.Fatalf("build prompt: %v", err)
+	}
+	for _, want := range []string{
+		`"m3_clue":` + clue,
+		`"target_hint":"公会基建Agent 日会（meeting_id=7667030332496007223）"`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("execution prompt missing %q:\n%s", want, prompt)
+		}
+	}
 }
 
 func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
@@ -185,11 +216,15 @@ func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
 	prompt := string(content)
 	for _, want := range []string{
 		"M5 是真正理解任务、调查事实、确定目标、选择动作、执行并验证结果的阶段",
-		"`title_hint`、`action_type_hint` 和 `m4_direction`",
+		"`title_hint`、`action_type_hint`、`target_hint` 和 `m4_direction`",
 		"可以基于证据修改、替换或放弃这些建议",
 		"根据调查持续重规划",
 		"`action_type_hint` 不限制实际动作",
 		"本身不代表任务完成",
+		// A cleared blocker must never read as a finished goal; see
+		// docs/design-long-horizon-agent-goal-control.md.
+		"解除阻塞不是完成",
+		"以 `m3_clue.desired_outcome` 为准",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("M5 prompt missing autonomy contract %q:\n%s", want, prompt)

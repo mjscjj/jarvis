@@ -53,30 +53,21 @@ type Checkpoint struct {
 
 func (Checkpoint) TableName() string { return "chat_checkpoint" }
 
-// MeetingIngest is the durable state machine for importing an ended Feishu
-// meeting's Minutes artifacts into the ordinary M3 evidence stream.
-type MeetingIngest struct {
-	ID              uint64     `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	MeetingID       string     `gorm:"column:meeting_id;type:varchar(64);not null;uniqueIndex:uk_meeting_ingest_id"`
-	MeetingNo       *string    `gorm:"column:meeting_no;type:varchar(32)"`
-	Topic           *string    `gorm:"column:topic;type:varchar(512)"`
-	AppLink         *string    `gorm:"column:app_link;type:varchar(1024)"`
-	StartedAt       *time.Time `gorm:"column:started_at;type:datetime"`
-	EndedAt         *time.Time `gorm:"column:ended_at;type:datetime"`
-	MinuteToken     *string    `gorm:"column:minute_token;type:varchar(64);index:idx_meeting_ingest_minute"`
-	Status          string     `gorm:"column:status;type:varchar(24);not null;default:discovered;index:idx_meeting_ingest_retry,priority:1"`
-	AttemptCount    int32      `gorm:"column:attempt_count;type:int;not null;default:0"`
-	LastAttemptAt   *time.Time `gorm:"column:last_attempt_at;type:datetime"`
-	NextRetryAt     *time.Time `gorm:"column:next_retry_at;type:datetime;index:idx_meeting_ingest_retry,priority:2"`
-	LastError       *string    `gorm:"column:last_error;type:text"`
-	SourceMessageID *string    `gorm:"column:source_message_id;type:varchar(64)"`
-	CreatedAt       time.Time  `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt       time.Time  `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+// PrincipalActivityCheckpoint is the durable cursor for discovering group
+// chats where the principal has spoken. It is separate from chat_checkpoint:
+// this cursor tracks one cross-chat search, while chat_checkpoint tracks
+// per-conversation message capture.
+type PrincipalActivityCheckpoint struct {
+	PrincipalOpenID string    `gorm:"column:principal_open_id;type:varchar(64);primaryKey"`
+	LastSearchAt    int64     `gorm:"column:last_search_at;type:bigint;not null"`
+	UpdatedAt       time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
-func (MeetingIngest) TableName() string { return "meeting_ingest" }
+func (PrincipalActivityCheckpoint) TableName() string {
+	return "principal_activity_checkpoint"
+}
 
 // CaptureModels returns M2-owned support tables in migration order.
 func CaptureModels() []any {
-	return []any{&Message{}, &Checkpoint{}, &MeetingIngest{}}
+	return []any{&Message{}, &Checkpoint{}, &PrincipalActivityCheckpoint{}}
 }

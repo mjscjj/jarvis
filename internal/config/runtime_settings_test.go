@@ -73,10 +73,6 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 5m"
-  meeting_scan_schedule: "@every 5m"
-  meeting_lookback_days: 1
-  meeting_artifact_dir: "var/meeting-minutes"
-  meeting_max_content_chars: 20000
 decide:
   enabled: true
   mode: "codex"

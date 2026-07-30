@@ -32,6 +32,7 @@ subcommands:
   get-shared-memory      Read shared memory
   get-skill              Read one locally managed Skill
   append-shared-memory   Append one entry to shared memory
+  append-clue            Hand M2 one observed fact as evidence for M3
   list-scheduled-tasks   List time-triggered tasks
   create-scheduled-task  Create a time trigger for a new task
   yield-until            Pause the current task until a future time
@@ -96,6 +97,31 @@ EOF
     append-shared-memory) cat <<'EOF'
 usage: jarvis-tools append-shared-memory [--note TEXT|-] [--config PATH]
 Atomically append one non-empty entry. Use --note - or omit it to read stdin.
+EOF
+      ;;
+    append-clue) cat <<'EOF'
+usage: jarvis-tools append-clue --source SOURCE --external-id ID --title TEXT
+                               [--content TEXT|-] [--occurred-at RFC3339] [--config PATH]
+
+Deliver one observed fact into the evidence stream so M3 can judge it. Report
+only what you actually saw; do not classify it, rate it, or chase follow-up
+material — working out what the fact means is M3's job.
+
+  --source       lowercase snake_case producer id, e.g. feishu_meeting. Picks
+                 the clue channel; a new source creates its channel on first use.
+  --external-id  producer-side id used for idempotency. Redelivering the same
+                 (source, external-id) returns inserted=false and changes nothing.
+  --title        one line stating the fact, e.g. "会议结束：公会基建Agent 日会".
+  --content      the raw detail. Use --content - or omit it to read stdin.
+  --occurred-at  when the fact happened (defaults to now).
+
+example:
+  jarvis-tools append-clue --source feishu_meeting --external-id 7667030332496007223 \
+    --title '会议结束：公会基建Agent 日会' --occurred-at 2026-07-27T14:01:00+08:00 --content - <<'TXT'
+  会议 ID：7667030332496007223
+  时间：2026-07-27 11:45 ~ 14:01
+  参会人：...
+  TXT
 EOF
       ;;
     list-scheduled-tasks) cat <<'EOF'
@@ -271,6 +297,11 @@ LIMIT="200"
 PAYLOAD="-"
 AT=""
 REASON="-"
+SOURCE=""
+EXTERNAL_ID=""
+TITLE=""
+CONTENT="-"
+OCCURRED_AT=""
 
 reset_flags() {
   CONFIG_PATH="$CONFIG_DEFAULT"
@@ -290,6 +321,11 @@ reset_flags() {
   PAYLOAD="-"
   AT=""
   REASON="-"
+  SOURCE=""
+  EXTERNAL_ID=""
+  TITLE=""
+  CONTENT="-"
+  OCCURRED_AT=""
 }
 
 # parse_kv_flag NAME VALUE — supports --name value and --name=value via caller.
@@ -443,6 +479,51 @@ consume_flags() {
         ;;
       --reason=*)
         REASON="${1#--reason=}"
+        shift
+        ;;
+      --source)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        SOURCE="$2"
+        shift 2
+        ;;
+      --source=*)
+        SOURCE="${1#--source=}"
+        shift
+        ;;
+      --external-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        EXTERNAL_ID="$2"
+        shift 2
+        ;;
+      --external-id=*)
+        EXTERNAL_ID="${1#--external-id=}"
+        shift
+        ;;
+      --title)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        TITLE="$2"
+        shift 2
+        ;;
+      --title=*)
+        TITLE="${1#--title=}"
+        shift
+        ;;
+      --content)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        CONTENT="$2"
+        shift 2
+        ;;
+      --content=*)
+        CONTENT="${1#--content=}"
+        shift
+        ;;
+      --occurred-at)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        OCCURRED_AT="$2"
+        shift 2
+        ;;
+      --occurred-at=*)
+        OCCURRED_AT="${1#--occurred-at=}"
         shift
         ;;
       -*)
@@ -656,6 +737,34 @@ cmd_append_shared_memory() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+# append-clue hands M2 a raw observed fact. The server owns idempotency, so a
+# producer can safely redeliver the same (source, external-id) on every run.
+cmd_append_clue() {
+  reset_flags
+  consume_flags "$@"
+  [[ -n "$SOURCE" ]] || fail "append-clue requires --source"
+  [[ -n "$EXTERNAL_ID" ]] || fail "append-clue requires --external-id"
+  [[ -n "$TITLE" ]] || fail "append-clue requires --title"
+  local content
+  if [[ "$CONTENT" == "-" ]]; then
+    content="$(cat)"
+  else
+    content="$CONTENT"
+  fi
+  content="${content%$'\n'}"
+  local occurred_at="$OCCURRED_AT"
+  if [[ -z "$occurred_at" ]]; then
+    occurred_at="$(date +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  payload="$(jq -cn --arg source "$SOURCE" --arg external_id "$EXTERNAL_ID" \
+    --arg title "$TITLE" --arg content "$content" --arg occurred_at "$occurred_at" \
+    '{source:$source,external_id:$external_id,title:$title,content:$content,occurred_at:$occurred_at}')"
+  body="$(api_write POST /api/clues "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
 cmd_list_scheduled_tasks() {
   reset_flags
   consume_flags "$@"
@@ -745,6 +854,7 @@ case "$SUBCOMMAND" in
   get-shared-memory)    cmd_get_shared_memory "$@" ;;
   get-skill)            cmd_get_skill "$@" ;;
   append-shared-memory) cmd_append_shared_memory "$@" ;;
+  append-clue)          cmd_append_clue "$@" ;;
   list-scheduled-tasks) cmd_list_scheduled_tasks "$@" ;;
   create-scheduled-task) cmd_create_scheduled_task "$@" ;;
   yield-until)          cmd_yield_until "$@" ;;

@@ -307,7 +307,8 @@ func retryBatch() ChatBatch {
 func retryCandidate(quote string) Candidate {
 	return Candidate{
 		ActionType: "investigate", Title: "梳理架构", Target: "当前服务和架构梳理",
-		Description: "看下当前服务和架构梳理", OpenQuestions: []string{},
+		DesiredOutcome: "产出一份当前服务与架构的梳理结论",
+		Description:    "看下当前服务和架构梳理", OpenQuestions: []string{},
 		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"}, SourceQuote: quote,
 	}
 }
@@ -385,23 +386,6 @@ func TestValidateCandidateEvidenceQuoteMismatchIncludesSourceText(t *testing.T) 
 	}
 }
 
-func TestValidateCandidateEvidenceAllowsMeetingAssignerOutsideSyntheticSender(t *testing.T) {
-	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
-		MessageID: "meeting:1", Source: "meeting", Content: "张三负责补齐测试",
-		IsNew: true, Extractable: true,
-	}}}
-	assigner := "ou_zhangsan"
-	candidate := Candidate{
-		ActionType: "investigate", Title: "补齐测试", Target: "测试",
-		Description: "补齐测试", OpenQuestions: []string{},
-		CommitmentStrength: "firm", AssignerOpenID: &assigner,
-		SourceMessageIDs: []string{"meeting:1"}, SourceQuote: "张三负责补齐测试",
-	}
-	if err := validateCandidateEvidence(unit, &candidate); err != nil {
-		t.Fatalf("validateCandidateEvidence() error = %v", err)
-	}
-}
-
 func TestValidateCandidateEvidenceRejectsChatAssignerOutsideParticipants(t *testing.T) {
 	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
 		MessageID: "om_1", Source: "poll", Content: "张三负责补齐测试",
@@ -410,7 +394,7 @@ func TestValidateCandidateEvidenceRejectsChatAssignerOutsideParticipants(t *test
 	assigner := "ou_zhangsan"
 	candidate := Candidate{
 		ActionType: "investigate", Title: "补齐测试", Target: "测试",
-		Description: "补齐测试", OpenQuestions: []string{},
+		DesiredOutcome: "缺失的测试补齐并通过", Description: "补齐测试", OpenQuestions: []string{},
 		CommitmentStrength: "firm", AssignerOpenID: &assigner,
 		SourceMessageIDs: []string{"om_1"}, SourceQuote: "张三负责补齐测试",
 	}

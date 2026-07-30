@@ -41,11 +41,14 @@ type ScanObserver interface {
 
 // Options contains capture policy already decided by the technical design.
 type Options struct {
-	PageSize    int
-	ScanWorkers int
-	HotAge      time.Duration
-	WarmAge     time.Duration
-	Location    *time.Location
+	PageSize               int
+	ScanWorkers            int
+	HotAge                 time.Duration
+	WarmAge                time.Duration
+	Location               *time.Location
+	PrincipalOpenID        string
+	PrincipalSearchOverlap time.Duration
+	ActivationContext      time.Duration
 	// AutoRelatedP2PTopN 是 discover 自动纳入监听的内部真人私聊上限（按 active_time
 	// 取最活跃的前 N 个）。0 表示不自动开任何私聊（全靠手动名单）。
 	AutoRelatedP2PTopN int
@@ -78,6 +81,15 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 	}
 	if opts.Location == nil {
 		return nil, fmt.Errorf("capture location is nil")
+	}
+	if strings.TrimSpace(opts.PrincipalOpenID) == "" {
+		return nil, fmt.Errorf("capture principal open_id is empty")
+	}
+	if opts.PrincipalSearchOverlap <= 0 {
+		return nil, fmt.Errorf("capture principal search overlap must be positive")
+	}
+	if opts.ActivationContext <= 0 {
+		return nil, fmt.Errorf("capture activation context must be positive")
 	}
 	if opts.AutoRelatedP2PTopN < 0 {
 		return nil, fmt.Errorf("capture auto-related p2p top-n must be non-negative")

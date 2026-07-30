@@ -334,7 +334,8 @@ func semanticPersistFixture(group domain.Group, messageID, title, summary string
 		CreateTime: time.Now().UnixMilli(), IsNew: true, Extractable: true,
 	}
 	candidate := extract.Candidate{
-		ActionType: "code_change", Title: title, Target: title, Description: summary,
+		ActionType: "code_change", Title: title, Target: title,
+		DesiredOutcome: summary, Description: summary,
 		Context: "repo jarvis", OpenQuestions: []string{}, CommitmentStrength: "firm",
 		SourceMessageIDs: []string{messageID}, SourceQuote: title,
 	}

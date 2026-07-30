@@ -415,7 +415,7 @@ export default function RuntimeSettings() {
     },
     {
       key: 'capture-memory',
-      label: <PanelLabel title="采集与长期记忆" description="飞书消息、会议内容和 mem0" />,
+      label: <PanelLabel title="采集与长期记忆" description="飞书消息和 mem0" />,
       children: (
         <>
           <Section title="消息采集" description="发现可处理的会话，并增量扫描飞书消息。">
@@ -424,29 +424,6 @@ export default function RuntimeSettings() {
             <NumberField name="capture_page_size" label="飞书单页消息数" min={1} max={50} />
             <NumberField name="capture_scan_workers" label="并发扫描会话数" min={1} max={32} />
             <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按近期活跃度自动纳入采集的私聊数量；0 表示关闭。" />
-          </Section>
-          <Section title="会议采集" description="扫描已结束会议，并把纪要或逐字稿写入消息证据。">
-            <TextField name="capture_meeting_scan_schedule" label="扫描周期" placeholder="@every 5m" />
-            <NumberField name="capture_meeting_lookback_days" label="回看天数" min={1} max={30} />
-            <SettingCol>
-              <Form.Item
-                name="capture_meeting_max_content_chars"
-                label={<FieldLabel label="单场会议字符上限" help="截断超长会议内容，且必须小于 M3 Prompt 字符上限。" />}
-                dependencies={['extract_max_prompt_chars']}
-                rules={[
-                  { required: true },
-                  ({ getFieldValue }) => ({
-                    validator(_, value: number) {
-                      return value < Number(getFieldValue('extract_max_prompt_chars') || 0)
-                        ? Promise.resolve()
-                        : Promise.reject(new Error('必须小于 M3 Prompt 字符上限'))
-                    },
-                  }),
-                ]}
-              >
-                <InputNumber min={1000} max={500000} step={1000} style={{ width: '100%' }} />
-              </Form.Item>
-            </SettingCol>
           </Section>
           <Section title="mem0 长期记忆" description="把新消息切成会话窗口，提取可长期复用的工作事实。">
             <TextField name="memory_schedule" label="记忆提取周期" placeholder="@every 10m" />

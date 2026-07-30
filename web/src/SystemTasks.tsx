@@ -26,7 +26,6 @@ const { Text, Title } = Typography
 type ScheduleField =
   | 'capture_discover_schedule'
   | 'capture_scan_schedule'
-  | 'capture_meeting_scan_schedule'
   | 'extract_schedule'
   | 'decide_schedule'
   | 'execute_schedule'
@@ -70,15 +69,6 @@ const systemTasks: SystemTaskDefinition[] = [
     job: 'scan_related',
     scheduleField: 'capture_scan_schedule',
     parameters: (s) => `${s.capture_scan_workers} 并发 · 单页 ${s.capture_page_size} 条`,
-  },
-  {
-    key: 'meeting-minutes',
-    name: '会议妙记扫描',
-    category: '飞书采集',
-    description: '扫描已结束会议并导入妙记或逐字稿；新增证据会唤醒 M3。',
-    job: 'meeting_minutes',
-    scheduleField: 'capture_meeting_scan_schedule',
-    parameters: (s) => `回看 ${s.capture_meeting_lookback_days} 天`,
   },
   {
     key: 'extract-reconcile',

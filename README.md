@@ -57,15 +57,21 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 
 三条硬规则：
 
-- **错误是证据，不是决策。** 例如妙记无权限，M2 只记录会议、妙记 token 和原始错误；由 M3 决定是否生成“申请权限”“联系主持人”或其他 Todo。
-- **重试与行动判断相互独立。** M2 可以按可靠性策略继续重试，但不能因为下次重试尚未到点而阻止本次证据进入 Todo 流水线。
+- **错误是证据，不是决策。** 采集失败时，M2 只把原始错误原样写成证据；是否生成“申请权限”“联系对方”或其他 Todo，由 M3 结合上下文判断。
+- **流水线通用，来源差异靠提示词。** M2→M5 只有一套协议，不为某个来源（会议、邮件、日程……）在 Go 里开专用链路。详见 `AGENTS.md` §0.5。
 - **自动流转不等于外部授权。** M4 自动建 Task 后，申请权限、发消息、修改飞书等业务外部写操作仍须在 M5 等待明确批准。
+
+#### 线索投递：新来源接入 M2 的唯一入口
+
+飞书 IM 之外的来源不写 Go 采集模块，走通用线索投递：一个定时任务驱动 agent 按 Skill 去外部世界取事实，再用 `jarvis-tools append-clue`（即 `POST /api/clues`）把事实原样交回 M2。M2 只做三件机械动作——存进 `message`、按 `(source, external_id)` 幂等、唤醒 M3；解读线索是 M3 的活。
+
+每个 `source` 自动获得一个线索频道（`chat_mode=clue` 的伪会话，如 `clue:feishu_meeting`），首次投递时创建。落地示例见 `.agents/skills/feishu-meeting-clue/`：定时任务只报「哪场会开完了」，妙记有没有、录没录、生成好没有，由 M3 拿到线索后自己查（判断要点写在 `conf/rules/m3.md`）。
 
 ### 模块职责与关键文件
 
 | 模块 | 目录 | 干什么 | 核心文件 | LLM/外部依赖 |
 |---|---|---|---|---|
-| M2 采集 | `internal/capture/`、`internal/meetingcapture/` | 采集群消息、会议与妙记产物，把原始内容和中立采集结果写成下游证据 | `capture/service.go`（会话发现/扫描）、`meetingcapture/service.go`（会议产物采集）、各自 `scheduler.go` | lark-cli（IM / VC / Minutes 只读接口） |
+| M2 采集 | `internal/capture/` | 采集群聊和内部单聊消息，把原始内容和中立采集结果写成下游证据；另开放通用线索投递入口，让任意 agent 把外部事实交回流水线 | `capture/service.go`（会话发现/扫描）、`scheduler.go`、`clue.go`（线索投递） | lark-cli（IM 只读接口） |
 | M2.5 记忆 | `internal/memory/` | 消息切窗 → mem0 抽事实 → 向量入库 | `worker.go`（窗口化编排）、`store.go`（pending 查询/标记）、`client.go`（sidecar HTTP） | mem0 sidecar → Qdrant `jarvis_memories` |
 | M3 抽取 | `internal/extract/` | 从新消息抽 Todo（默认 `engine=codex`：traex agent 自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库并冻结 `context_snapshot`；备用 `model_api` function-calling 循环）+ 语义去重 + source_quote 证据重抽 | `worker.go`（编排）、`pipeline_store.go`（加载/组批）、`prompt.go`（提示词）、`persist.go`（落库）、`dedup.go`（去重）、`codexengine/`（traex agent 引擎）、`provider/`（百炼 model API）、`tools/`（工具） | traex agent（`gpt-5.4`）/ 百炼 `qwen-plus` + Qdrant `todo_semantic` + mem0（检索） |
 | M4 决策 | `internal/decide/` | 给 Todo 定 disposition：`codex` 用 codex/traex 输出最小外壳 `disposition + plan + payload`，plan/payload 内部保持宽松；创建 Task 时原样固化 `decision_payload` 供 M5 使用；`manual_mvp` 全走人工确认 | `worker.go`（批处理）、`manual_gate.go` / `codex_evaluator.go`（两种评估器）、`codex.go`（调 agent CLI）、`evaluation.go`（落库）、`service.go`（Approve/Reject 建 Task）、`background.go`（快照）、`constants.go`（共享常量） | traex agent（`gpt-5.4`，read-only 判定，可自查补信息） |
@@ -210,7 +216,7 @@ curl http://127.0.0.1:18800/healthz
 
 ## launchd 托管
 
-生产环境用 macOS launchd 常驻守护 4 个服务（`deploy/` 下 plist，均 `RunAtLoad` + `KeepAlive`）：
+生产环境用 macOS launchd 常驻守护 4 个服务（`deploy/` 下 plist，均 `RunAtLoad` + `KeepAlive`）。launchd 只在登录时扫描 `~/Library/LaunchAgents`，所以安装脚本会把 plist 软链过去，再从软链 bootstrap，开机/重新登录后自动后台拉起：
 
 | 服务 Label | plist | 作用 | 日志 |
 |---|---|---|---|
@@ -247,7 +253,7 @@ tail -f var/log/jarvis-server.log var/log/jarvis-server.error.log
 
 | 脚本 | 作用 |
 |------|------|
-| `scripts/install-launchd.sh` | 前端 build + `go build` + codesign + bootstrap 主服务 |
+| `scripts/install-launchd.sh` | 前端 build + `go build` + codesign + 软链 `~/Library/LaunchAgents` + bootstrap 主服务（开机自启） |
 | `scripts/rebuild-server.sh` | `go build` + codesign + `kickstart` 主服务 |
 | `scripts/ensure-codesign-identity.sh` | 若无「Jarvis Local」则创建并导入登录钥匙串 |
 | `scripts/sign-jarvis-server.sh` | 对 `bin/jarvis-server` 签名 |

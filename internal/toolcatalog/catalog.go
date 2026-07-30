@@ -35,7 +35,7 @@ func Block(stage string) (string, error) {
 
 	jarvisTool := "- jarvis-tools：查询 Jarvis 的项目、人物、群、项目资源、共享记忆、Skills 和定时任务。先运行 `jarvis-tools --help`，再按子命令 `--help` 获取当前参数。"
 	if stage == StageExecute || stage == StageChat {
-		jarvisTool = "- jarvis-tools：查询 Jarvis 上下文，并按任务需要追加共享记忆、管理独立定时触发或暂停当前 Task。先运行 `jarvis-tools --help`，再按子命令 `--help` 获取当前参数。"
+		jarvisTool = "- jarvis-tools：查询 Jarvis 上下文，并按任务需要追加共享记忆、投递线索、管理独立定时触发或暂停当前 Task。先运行 `jarvis-tools --help`，再按子命令 `--help` 获取当前参数。"
 	}
 	lines := []string{
 		"BEGIN_AVAILABLE_TOOLS（工具能力说明由工具层维护，不属于系统角色提示词。）",
@@ -50,6 +50,7 @@ func Block(stage string) (string, error) {
 	if stage == StageExecute {
 		lines = append(lines,
 			"- 当前 Task 需要等待未来条件时，使用 `jarvis-tools yield-until --help`，成功后停止本轮并返回 waiting；只有独立的新动作才创建 scheduled task。",
+			"- 采集类任务把观察到的事实交回流水线时，使用 `jarvis-tools append-clue --help`：只报你确实看到的事实，不替 M3 判断含义，也不顺手去抓后续材料。同一事实可反复投递，服务端按 (source, external_id) 幂等。",
 		)
 	}
 	lines = append(lines, "END_AVAILABLE_TOOLS")

@@ -3,6 +3,10 @@ skills:
       enabled: true
       stages:
         - execute
+    - name: feishu-meeting-clue
+      enabled: true
+      stages:
+        - execute
     - name: feishu-send-message
       enabled: true
       stages:

@@ -7,8 +7,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
@@ -141,12 +139,6 @@ type CaptureConfig struct {
 	// AutoRelatedP2PTopN：discover 时按 active_time 自动纳入监听的内部真人私聊
 	// 上限。只开最活跃的前 N 个，僵尸老私聊与服务号私聊不开。
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
-	// MeetingScanSchedule polls ended meetings independently from chat polling.
-	// LookbackDays includes today, so 1 means "today only".
-	MeetingScanSchedule    string `yaml:"meeting_scan_schedule"`
-	MeetingLookbackDays    int    `yaml:"meeting_lookback_days"`
-	MeetingArtifactDir     string `yaml:"meeting_artifact_dir"`
-	MeetingMaxContentChars int    `yaml:"meeting_max_content_chars"`
 }
 
 // DecideConfig controls the M4 MVP gate. The only enabled mode for now is
@@ -418,22 +410,6 @@ func (c *Config) validate() error {
 	if c.Capture.AutoRelatedP2PTopN < 0 {
 		return fmt.Errorf("capture.auto_related_p2p_top_n 不能为负数")
 	}
-	if c.Capture.MeetingScanSchedule == "" {
-		return fmt.Errorf("capture.meeting_scan_schedule 不能为空")
-	}
-	if c.Capture.MeetingLookbackDays <= 0 || c.Capture.MeetingLookbackDays > 30 {
-		return fmt.Errorf("capture.meeting_lookback_days 必须在 1 到 30 之间")
-	}
-	if c.Capture.MeetingArtifactDir == "" {
-		return fmt.Errorf("capture.meeting_artifact_dir 不能为空")
-	}
-	cleanArtifactDir := filepath.Clean(c.Capture.MeetingArtifactDir)
-	if filepath.IsAbs(cleanArtifactDir) || cleanArtifactDir == ".." || strings.HasPrefix(cleanArtifactDir, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("capture.meeting_artifact_dir 必须是工作目录内的相对路径")
-	}
-	if c.Capture.MeetingMaxContentChars <= 0 || c.Capture.MeetingMaxContentChars >= c.Extract.MaxPromptChars {
-		return fmt.Errorf("capture.meeting_max_content_chars 必须大于 0 且小于 extract.max_prompt_chars")
-	}
 	if c.Decide.Enabled {
 		if c.Decide.Mode != "manual_mvp" && c.Decide.Mode != "codex" {
 			return fmt.Errorf("decide.mode 必须是 manual_mvp 或 codex")
@@ -542,7 +518,6 @@ func (c *Config) validate() error {
 		{name: "extract.schedule", spec: c.Extract.Schedule},
 		{name: "capture.discover_schedule", spec: c.Capture.DiscoverSchedule},
 		{name: "capture.scan_schedule", spec: c.Capture.ScanSchedule},
-		{name: "capture.meeting_scan_schedule", spec: c.Capture.MeetingScanSchedule},
 		{name: "decide.schedule", spec: c.Decide.Schedule},
 		{name: "execute.schedule", spec: c.Execute.Schedule},
 		{name: "dailydigest.schedule", spec: c.DailyDigest.Schedule},

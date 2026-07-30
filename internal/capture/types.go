@@ -37,6 +37,30 @@ type MessageListResponse struct {
 	} `json:"data"`
 }
 
+// MessageSearchResponse mirrors lark-cli im +messages-search. The shortcut
+// handles server pagination itself when called with --page-all.
+type MessageSearchResponse struct {
+	OK   bool `json:"ok"`
+	Data struct {
+		Messages  []SearchedMessage `json:"messages"`
+		HasMore   bool              `json:"has_more"`
+		PageToken string            `json:"page_token"`
+		Total     int               `json:"total"`
+	} `json:"data"`
+}
+
+// SearchedMessage contains only the fields required to identify a group where
+// the principal spoke and to bound that group's first capture window.
+type SearchedMessage struct {
+	ChatID     string    `json:"chat_id"`
+	ChatName   string    `json:"chat_name"`
+	ChatType   string    `json:"chat_type"`
+	CreateTime string    `json:"create_time"`
+	MessageID  string    `json:"message_id"`
+	Deleted    bool      `json:"deleted"`
+	Sender     CLISender `json:"sender"`
+}
+
 // CLIMessage is the rendered message shape returned by lark-cli 1.0.72.
 type CLIMessage struct {
 	ChatID        string       `json:"chat_id"`

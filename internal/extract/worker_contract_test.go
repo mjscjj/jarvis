@@ -106,7 +106,8 @@ func contractChatBatch() ChatBatch {
 func contractStrictCandidate() Candidate {
 	return Candidate{
 		ActionType: "code_change", Title: "Modify auth", Target: "jarvis auth refactor",
-		Description: "Implement the requested auth change", Context: "repo jarvis",
+		DesiredOutcome: "The requested auth change is implemented and merged",
+		Description:    "Implement the requested auth change", Context: "repo jarvis",
 		OpenQuestions:      []string{},
 		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_new"}, SourceQuote: "new request: modify auth",
 	}

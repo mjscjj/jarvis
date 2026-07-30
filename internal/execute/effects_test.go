@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"jarvis/internal/domain"
 )
 
 // TestParseEffectsOpenPayload locks in lenient parsing: known fields are pulled
@@ -97,6 +99,44 @@ func TestEffectsSchemaForbidsAdditionalProperties(t *testing.T) {
 		if _, ok := itemProps["extra"]; !ok {
 			t.Fatalf("%s effects.items missing extra string field", name)
 		}
+	}
+}
+
+// TestRecordAgentVerdictKeepsEffectsWithOutput locks summary, structured output
+// and declared effects together on one run. The resume path used to store the
+// first two and drop the third, so a re-woken Task had no recorded Feishu send to
+// dedupe against and pinged the group again (Task #82).
+func TestRecordAgentVerdictKeepsEffectsWithOutput(t *testing.T) {
+	verdict, err := parseExecutionResult(`{
+	  "outcome":"waiting","summary":"已在群里发布收口结论","failure_reason":"","needs_followup":"",
+	  "enrichments":[],
+	  "effects":[{"kind":"feishu_message","title":"收口结论","extra":"{\"message_id\":\"om_123\"}"}],
+	  "waiting":{"wake_at":"2026-07-27T17:15:00+08:00","reason":"等证据","scheduled_task_id":11}
+	}`)
+	if err != nil {
+		t.Fatalf("parseExecutionResult() error = %v", err)
+	}
+	run := &domain.ExecutionRun{TaskID: 82, ActionType: "agent_task", Stage: "execute"}
+	if err := recordAgentVerdict(run, verdict.Summary, verdict, verdict.Effects); err != nil {
+		t.Fatalf("recordAgentVerdict() error = %v", err)
+	}
+	if run.Summary == nil || *run.Summary != "已在群里发布收口结论" {
+		t.Fatalf("summary not recorded: %v", run.Summary)
+	}
+	if !strings.Contains(string(run.Output), "om_123") {
+		t.Fatalf("structured output not recorded: %s", run.Output)
+	}
+	if !strings.Contains(string(run.Effects), "feishu_message") {
+		t.Fatalf("declared effects not recorded: %s", run.Effects)
+	}
+}
+
+func TestRecordAgentVerdictRejectsMissingInput(t *testing.T) {
+	if err := recordAgentVerdict(nil, "s", &codexResult{}, nil); err == nil {
+		t.Fatal("nil run must fail")
+	}
+	if err := recordAgentVerdict(&domain.ExecutionRun{}, "s", nil, nil); err == nil {
+		t.Fatal("nil verdict must fail")
 	}
 }
 

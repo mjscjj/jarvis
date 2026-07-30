@@ -133,12 +133,16 @@ func (Todo) TableName() string { return "todo" }
 
 // Task is the immutable-at-confirmation executable snapshot materialized by M4.
 type Task struct {
-	ID              uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	TodoID          *uint64        `gorm:"column:todo_id;type:bigint unsigned;uniqueIndex:uk_task_todo"`
-	Title           string         `gorm:"column:title;type:varchar(512);not null"`
-	ActionType      string         `gorm:"column:action_type;type:varchar(32);not null"`
-	Target          string         `gorm:"column:target;type:varchar(512);not null;default:''"`
-	Background      datatypes.JSON `gorm:"column:background;type:json;not null"`
+	ID         uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	TodoID     *uint64        `gorm:"column:todo_id;type:bigint unsigned;uniqueIndex:uk_task_todo"`
+	Title      string         `gorm:"column:title;type:varchar(512);not null"`
+	ActionType string         `gorm:"column:action_type;type:varchar(32);not null"`
+	Target     string         `gorm:"column:target;type:varchar(512);not null;default:''"`
+	Background datatypes.JSON `gorm:"column:background;type:json;not null"`
+	// SourceClue is M3's complete extraction result, frozen at materialization so
+	// M5 reads the original clue rather than M4's condensed direction. Nullable:
+	// scheduled_task and manual Tasks have no M3 clue.
+	SourceClue      datatypes.JSON `gorm:"column:source_clue;type:json"`
 	Plan            datatypes.JSON `gorm:"column:plan;type:json;not null"`
 	DecisionPayload datatypes.JSON `gorm:"column:decision_payload;type:json"`
 	ConfirmedBy     string         `gorm:"column:confirmed_by;type:varchar(16);not null"`

@@ -446,7 +446,7 @@ func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 // to judge — by intent — whether it will touch the outside world. This closes the
 // "an investigate Task decides mid-run to send a message" gap.
 func TestInvestigateGoesThroughPropose(t *testing.T) {
-	if runsToCompletion(&domain.Task{ActionType: "investigate", ExecutionMode: taskcreate.ExecutionModeStandard}) {
+	if runsToCompletion(&domain.Task{ActionType: "investigate", ExecutionMode: taskcreate.ExecutionModeStandard}, "") {
 		t.Fatalf("investigate must go through propose, not run to completion")
 	}
 	task := &domain.Task{
@@ -466,15 +466,27 @@ func TestInvestigateGoesThroughPropose(t *testing.T) {
 
 func TestDirectTaskStillGoesThroughApproval(t *testing.T) {
 	task := &domain.Task{ActionType: "agent_task", ExecutionMode: taskcreate.ExecutionModeDirect}
-	if runsToCompletion(task) {
+	if runsToCompletion(task, "/Users/me/repo") {
 		t.Fatal("direct agent_task must not skip propose/approval")
 	}
 }
 
 func TestCodeChangeStillUsesMRReviewGate(t *testing.T) {
 	task := &domain.Task{ActionType: "code_change", ExecutionMode: taskcreate.ExecutionModeStandard}
-	if !runsToCompletion(task) {
-		t.Fatal("code_change must keep its direct execution + MR review path")
+	if !runsToCompletion(task, "/Users/me/repo") {
+		t.Fatal("code_change with a resolved repo must keep its direct execution + MR review path")
+	}
+}
+
+// TestCodeChangeWithoutRepoGoesThroughPropose closes the hole that let Task #82
+// (a coordination task misclassified as code_change, with no repo in its frozen
+// context) send Feishu messages with neither an MR nor an approval gate.
+func TestCodeChangeWithoutRepoGoesThroughPropose(t *testing.T) {
+	task := &domain.Task{ActionType: "code_change", ExecutionMode: taskcreate.ExecutionModeStandard}
+	for _, repoPath := range []string{"", "   "} {
+		if runsToCompletion(task, repoPath) {
+			t.Fatalf("code_change with repoPath=%q has no MR gate and must go through propose", repoPath)
+		}
 	}
 }
 

@@ -19,7 +19,11 @@ func TestMigrationModelRegistries(t *testing.T) {
 			[]any{&Project{}, &Group{}, &Person{}, &Todo{}, &Task{}, &Resource{}, &ScanRecord{}, &PrincipalProfile{}, &ManagedResource{}, &DailyDigest{}, &ScheduledTask{}},
 			[]string{"project", "feishu_group", "person", "todo", "task", "resource", "scan_record", "principal_profile", "managed_resource", "daily_digest", "scheduled_task"},
 		},
-		{"capture", CaptureModels(), []any{&Message{}, &Checkpoint{}, &MeetingIngest{}}, []string{"message", "chat_checkpoint", "meeting_ingest"}},
+		{
+			"capture", CaptureModels(),
+			[]any{&Message{}, &Checkpoint{}, &PrincipalActivityCheckpoint{}},
+			[]string{"message", "chat_checkpoint", "principal_activity_checkpoint"},
+		},
 		{"extract", ExtractModels(), []any{&TodoExtractWatermark{}, &TodoEvent{}}, []string{"todo_extract_watermark", "todo_event"}},
 		{"decide", DecideModels(), []any{&DecisionAudit{}}, []string{"decision_audit"}},
 		{"knowledge", KnowledgeModels(), []any{&RelationFact{}}, []string{"relation_fact"}},

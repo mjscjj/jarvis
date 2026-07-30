@@ -41,6 +41,7 @@ type Input struct {
 	ActionType      string
 	Target          string
 	Background      json.RawMessage
+	SourceClue      json.RawMessage
 	Plan            json.RawMessage
 	DecisionPayload json.RawMessage
 	ConfirmedBy     string
@@ -157,6 +158,7 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 	row := domain.Task{
 		TodoID: normalized.TodoID, Title: normalized.Title, ActionType: normalized.ActionType,
 		Target: normalized.Target, Background: datatypes.JSON(normalized.Background), Plan: datatypes.JSON(normalized.Plan),
+		SourceClue:      datatypes.JSON(normalized.SourceClue),
 		DecisionPayload: datatypes.JSON(normalized.DecisionPayload),
 		ConfirmedBy:     normalized.ConfirmedBy, ConfirmedAt: now, ActionHash: hash,
 		SourceType: normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
@@ -227,6 +229,12 @@ func normalizeInput(input Input) (Input, error) {
 	input.Plan = mustJSONValue(input.Plan, false)
 	if input.Plan == nil {
 		return Input{}, fmt.Errorf("%w: plan must be a non-empty JSON value", ErrInvalidInput)
+	}
+	if len(bytes.TrimSpace(input.SourceClue)) != 0 {
+		input.SourceClue = mustJSONValue(input.SourceClue, true)
+		if input.SourceClue == nil {
+			return Input{}, fmt.Errorf("%w: source_clue must be a non-null JSON value", ErrInvalidInput)
+		}
 	}
 	if len(bytes.TrimSpace(input.DecisionPayload)) != 0 {
 		input.DecisionPayload = mustJSONValue(input.DecisionPayload, true)

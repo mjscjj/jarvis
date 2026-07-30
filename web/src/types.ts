@@ -940,10 +940,6 @@ export interface RuntimeSettings {
   capture_discover_schedule: string
   capture_scan_schedule: string
   capture_auto_related_p2p_top_n: number
-  capture_meeting_scan_schedule: string
-  capture_meeting_lookback_days: number
-  capture_meeting_max_content_chars: number
-
   memory_timeout_seconds: number
   memory_batch_limit: number
   memory_window_gap_minutes: number

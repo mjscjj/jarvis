@@ -37,7 +37,9 @@ func StartScheduler(ctx context.Context, service *Service, cfg ScheduleConfig, l
 		run  func(context.Context) error
 	}{
 		{name: "discover", spec: cfg.Discover, run: func(ctx context.Context) error { return service.DiscoverChats(ctx) }},
-		{name: "scan_related", spec: cfg.Scan, run: func(ctx context.Context) error { return service.ScanRelated(ctx) }},
+		{name: "scan_related", spec: cfg.Scan, run: func(ctx context.Context) error {
+			return service.ScanPrincipalActivityAndRelated(ctx)
+		}},
 	}
 	for _, job := range jobs {
 		job := job

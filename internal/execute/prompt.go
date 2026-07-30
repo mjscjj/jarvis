@@ -1,6 +1,7 @@
 package execute
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,7 +11,7 @@ import (
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
-const ExecutionPromptVersion = "task-exec-v7-m5-owns-goal"
+const ExecutionPromptVersion = "task-exec-v8-m3-clue-verbatim"
 
 // maxPriorRunsInPrompt caps how many previous execution_run rows ride into the
 // next M5 prompt. Newest runs are kept; older ones are dropped to bound size.
@@ -189,9 +190,14 @@ type executionPromptPayload struct {
 }
 
 type executionTask struct {
-	ID                uint64          `json:"id"`
-	TitleHint         string          `json:"title_hint"`
-	ActionTypeHint    string          `json:"action_type_hint"`
+	ID             uint64 `json:"id"`
+	TitleHint      string `json:"title_hint"`
+	ActionTypeHint string `json:"action_type_hint"`
+	TargetHint     string `json:"target_hint"`
+	// M3Clue is M3's complete extraction result forwarded verbatim. M5 reads the
+	// original clue (including its desired_outcome) instead of only M4's summary,
+	// so a blocker raised downstream cannot silently replace the real goal.
+	M3Clue            json.RawMessage `json:"m3_clue,omitempty"`
 	M4Direction       json.RawMessage `json:"m4_direction"`
 	M4DecisionContext json.RawMessage `json:"m4_decision_context,omitempty"`
 	Background        json.RawMessage `json:"background"`
@@ -213,16 +219,22 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 	if err != nil {
 		return nil, nil, fmt.Errorf("execution prompt Task id=%d execution_supplements invalid: %w", task.ID, err)
 	}
+	promptTask := executionTask{
+		ID: task.ID, TitleHint: task.Title, ActionTypeHint: task.ActionType, TargetHint: task.Target,
+		M4Direction: rawJSON(task.Plan), M4DecisionContext: rawJSON(task.DecisionPayload),
+		Background: rawJSON(task.Background),
+	}
+	// scheduled_task and manual Tasks have no M3 clue; omit the key entirely
+	// rather than feeding the model a null it has to interpret.
+	if len(bytes.TrimSpace(task.SourceClue)) != 0 {
+		promptTask.M3Clue = rawJSON(task.SourceClue)
+	}
 	payload := executionPromptPayload{
 		PromptVersion:        ExecutionPromptVersion,
 		RepoPath:             repoPath,
 		ExecutionSupplements: supplements,
 		PreviousRuns:         previousRuns,
-		Task: executionTask{
-			ID: task.ID, TitleHint: task.Title, ActionTypeHint: task.ActionType,
-			M4Direction: rawJSON(task.Plan), M4DecisionContext: rawJSON(task.DecisionPayload),
-			Background: rawJSON(task.Background),
-		},
+		Task:                 promptTask,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {

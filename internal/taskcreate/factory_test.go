@@ -28,6 +28,40 @@ func TestNormalizeInputDefaultsTodoSourceID(t *testing.T) {
 	}
 }
 
+// TestNormalizeInputKeepsSourceClueVerbatim pins that M3's original clue rides
+// into the Task untouched: M5 reads it to recover the real goal when M4's
+// direction only covers an intermediate step.
+func TestNormalizeInputKeepsSourceClueVerbatim(t *testing.T) {
+	todoID := uint64(42)
+	clue := `{"desired_outcome":"产出会议结论与我的待办","semantics":"当前妙记无 view 权限"}`
+	input, err := normalizeInput(Input{
+		TodoID: &todoID, Title: "会后处理", ActionType: "manual_followup", Target: "公会基建Agent 日会",
+		Background:  json.RawMessage(`{"snapshot_version":"v1"}`),
+		SourceClue:  json.RawMessage(clue),
+		Plan:        json.RawMessage(`{"instruction":"先申请权限"}`),
+		ConfirmedBy: "user", SourceType: SourceTodo, ExecutionMode: ExecutionModeStandard,
+	})
+	if err != nil {
+		t.Fatalf("normalizeInput() error = %v", err)
+	}
+	if string(input.SourceClue) != clue {
+		t.Fatalf("source_clue = %s, want %s", input.SourceClue, clue)
+	}
+}
+
+func TestNormalizeInputRejectsNullSourceClue(t *testing.T) {
+	_, err := normalizeInput(Input{
+		Title: "任务", ActionType: "agent_task", Target: "输出结论",
+		Background:  json.RawMessage(`{}`),
+		SourceClue:  json.RawMessage(`null`),
+		Plan:        json.RawMessage(`{"instruction":"输出结论"}`),
+		ConfirmedBy: "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
+	})
+	if err == nil {
+		t.Fatal("normalizeInput() accepted a null source_clue")
+	}
+}
+
 func TestNormalizeInputRequiresScheduledOccurrence(t *testing.T) {
 	sourceID := uint64(5)
 	_, err := normalizeInput(Input{

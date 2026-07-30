@@ -9,6 +9,10 @@ server_bin=$repo_dir/bin/jarvis-server
 export PSM=${PSM:-tikcast.agency.jarvis}
 export HERTZ_CONF_DIR=${HERTZ_CONF_DIR:-"$repo_dir/conf"}
 export HERTZ_LOG_DIR=${HERTZ_LOG_DIR:-"$repo_dir/var/log"}
+# Keep Jarvis-launched Go builds responsive on this 14-core workstation:
+# at most two packages compile concurrently, with two Go scheduler threads each.
+export GOMAXPROCS=2
+export GOFLAGS=-p=2
 
 if ! "$script_dir/verify-server-signature.sh" "$server_bin"; then
   echo "refusing to start jarvis-server with an unstable code-signing identity" >&2

@@ -8,6 +8,8 @@ archive_sha256=859f487e316ae1bda3b5d7c1e129a0a7344424d992503c188979ca6ac1b47253
 download_url="https://github.com/qdrant/qdrant/releases/download/v$version/qdrant-aarch64-apple-darwin.tar.gz"
 label=com.bytedance.jarvis.qdrant
 plist_path="$repo_dir/deploy/$label.plist"
+agents_dir="$HOME/Library/LaunchAgents"
+agent_link="$agents_dir/$label.plist"
 service_target="gui/$UID/$label"
 temporary_dir=$(mktemp -d /private/tmp/jarvis-qdrant.XXXXXX)
 
@@ -28,10 +30,14 @@ mkdir -p "$repo_dir/bin" "$repo_dir/var/log" "$repo_dir/var/qdrant/storage" "$re
 install -m 0755 "$temporary_dir/qdrant" "$repo_dir/bin/qdrant"
 plutil -lint "$plist_path"
 
+# launchd 只在登录时扫描 ~/Library/LaunchAgents，软链过去才能开机/重新登录后自动拉起。
+mkdir -p "$agents_dir"
+ln -sfn "$plist_path" "$agent_link"
+
 if launchctl print "$service_target" >/dev/null 2>&1; then
   launchctl bootout "$service_target"
 fi
-launchctl bootstrap "gui/$UID" "$plist_path"
+launchctl bootstrap "gui/$UID" "$agent_link"
 
 for attempt in {1..30}; do
   if curl -fsS http://127.0.0.1:6333/healthz >/dev/null; then
