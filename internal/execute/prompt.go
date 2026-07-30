@@ -181,6 +181,32 @@ const proposeResultSchema = `{
   }
 }`
 
+// appendSchemaContract states the final-message contract inside the prompt. It
+// is used when the CLI cannot enforce it with --output-schema (traecli on
+// `exec resume`), so the model still knows the exact shape it must return.
+func appendSchemaContract(prompt, schemaDef string) string {
+	return prompt + `
+
+BEGIN_FINAL_MESSAGE_CONTRACT（本轮不能由 CLI 强制返回格式，必须你自己遵守）
+你的最后一条消息必须是且只是一个 JSON 对象，且严格符合下面的 JSON Schema：
+不要包裹 markdown 代码围栏，不要在 JSON 前后添加任何解释文字，不要输出多个 JSON 值，
+不要出现 Schema 之外的字段。
+` + schemaDef + `
+END_FINAL_MESSAGE_CONTRACT`
+}
+
+// schemaRewritePrompt hands a contract violation back to the same session so it
+// re-emits a valid final message. The work of the previous turn already
+// happened (and may have produced real side effects), so it must not be redone.
+func schemaRewritePrompt(err error) string {
+	return `你上一条最终消息不符合要求的返回格式，校验报错如下：
+
+` + err.Error() + `
+
+不要重做上一轮已经完成的工作，也不要重复任何已经产生的外部写入。
+只需按下面的格式，把上一轮的真实结果重新输出一次最终消息。`
+}
+
 type executionPromptPayload struct {
 	PromptVersion        string                `json:"prompt_version"`
 	Task                 executionTask         `json:"task"`

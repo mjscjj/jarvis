@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,10 @@ func TestCodexRunnerPersistsAndResumesTaskSession(t *testing.T) {
 	binPath := filepath.Join(dir, "fake-codex")
 	script := `#!/bin/sh
 set -eu
+if [ "${1:-}" = "exec" ] && [ "${2:-}" = "resume" ] && [ "${3:-}" = "--help" ]; then
+  printf '%s\n' '      --output-schema <FILE>'
+  exit 0
+fi
 printf '%s\n' "$@" > "$FAKE_CODEX_ARGS"
 printf '%s' "${JARVIS_TASK_ID:-}" > "$FAKE_CODEX_TASK_ID"
 pwd > "$FAKE_CODEX_CWD"
@@ -82,7 +87,7 @@ printf '%s\n' 'diagnostic stderr' >&2
 		t.Fatalf("resumed session ID = %q", resumed.SessionID)
 	}
 	args = readTestFile(t, argsPath)
-	for _, want := range []string{"exec\nresume\nsession-42\n", "sandbox_mode=\"danger-full-access\""} {
+	for _, want := range []string{"exec\nresume\nsession-42\n", "sandbox_mode=\"danger-full-access\"", "--output-schema\n"} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("resume args missing %q:\n%s", want, args)
 		}
@@ -122,6 +127,10 @@ func TestCodexRunnerInterruptKillsRunningProcess(t *testing.T) {
 	binPath := filepath.Join(dir, "fake-codex")
 	script := `#!/bin/sh
 set -eu
+if [ "${1:-}" = "exec" ] && [ "${2:-}" = "resume" ] && [ "${3:-}" = "--help" ]; then
+  printf '%s\n' '      --output-schema <FILE>'
+  exit 0
+fi
 touch "$FAKE_CODEX_STARTED"
 sleep 30
 `
@@ -157,6 +166,104 @@ sleep 30
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("RunTask() did not stop after interrupt")
+	}
+}
+
+// writeSchemalessResumeCLI fakes a traecli-style agent CLI: `exec resume` does
+// not advertise --output-schema, and the final message it writes is chosen per
+// invocation by the caller-supplied shell case body.
+func writeSchemalessResumeCLI(t *testing.T, dir, lastMessageCases string) string {
+	t.Helper()
+	binPath := filepath.Join(dir, "fake-traex")
+	script := `#!/bin/sh
+set -eu
+if [ "${1:-}" = "exec" ] && [ "${2:-}" = "resume" ] && [ "${3:-}" = "--help" ]; then
+  printf '%s\n' '  -o, --output-last-message <FILE>'
+  exit 0
+fi
+printf '%s\n' "$@" >> "$FAKE_ARGS"
+cat >> "$FAKE_PROMPT"
+output=""
+previous=""
+for arg in "$@"; do
+  if [ "$previous" = "--output-last-message" ]; then output="$arg"; fi
+  previous="$arg"
+done
+[ -n "$output" ]
+count=$(cat "$FAKE_COUNT" 2>/dev/null || echo 0)
+count=$((count + 1))
+printf '%s' "$count" > "$FAKE_COUNT"
+case "$count" in
+` + lastMessageCases + `
+esac
+printf '%s\n' '{"type":"thread.started","thread_id":"session-7"}'
+`
+	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake traex: %v", err)
+	}
+	t.Setenv("FAKE_ARGS", filepath.Join(dir, "args.txt"))
+	t.Setenv("FAKE_PROMPT", filepath.Join(dir, "prompt.txt"))
+	t.Setenv("FAKE_COUNT", filepath.Join(dir, "count.txt"))
+	return binPath
+}
+
+const validExecutionResult = `{"outcome":"completed","summary":"done","failure_reason":"","needs_followup":"","enrichments":[],"effects":[],"waiting":null}`
+
+func TestCodexRunnerResumeRewritesInvalidResultWhenSchemaFlagUnsupported(t *testing.T) {
+	dir := t.TempDir()
+	binPath := writeSchemalessResumeCLI(t, dir, `  1) printf '%s' 'sure, here you go: {"outcome":"completed"}' > "$output" ;;
+  *) printf '%s' '`+validExecutionResult+`' > "$output" ;;`)
+
+	runner, err := NewCodexRunner(binPath, "test-model", "medium", time.Minute)
+	if err != nil {
+		t.Fatalf("NewCodexRunner() error = %v", err)
+	}
+	if runner.resumeOutputSchema {
+		t.Fatal("probe reported --output-schema support for a CLI that does not advertise it")
+	}
+
+	resumed, err := runner.ResumeTask(
+		t.Context(), "session-7", "continue", "danger-full-access", "", schemaExecution, 123,
+	)
+	if err != nil {
+		t.Fatalf("ResumeTask() error = %v", err)
+	}
+	if resumed.Result == nil || resumed.Result.Outcome != "completed" {
+		t.Fatalf("resumed result = %+v, want outcome=completed", resumed.Result)
+	}
+	if got := readTestFile(t, filepath.Join(dir, "count.txt")); got != "2" {
+		t.Fatalf("invocation count = %q, want 2 (one bad turn plus one rewrite)", got)
+	}
+	args := readTestFile(t, filepath.Join(dir, "args.txt"))
+	if strings.Contains(args, "--output-schema") {
+		t.Fatalf("resume passed --output-schema to a CLI that rejects it:\n%s", args)
+	}
+	prompt := readTestFile(t, filepath.Join(dir, "prompt.txt"))
+	if strings.Count(prompt, "BEGIN_FINAL_MESSAGE_CONTRACT") != 2 {
+		t.Fatalf("both turns must carry the inline contract:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "不符合要求的返回格式") {
+		t.Fatalf("rewrite turn does not report the violation:\n%s", prompt)
+	}
+}
+
+func TestCodexRunnerResumeFailsAfterRewriteBudgetExhausted(t *testing.T) {
+	dir := t.TempDir()
+	binPath := writeSchemalessResumeCLI(t, dir, `  *) printf '%s' 'still not JSON' > "$output" ;;`)
+
+	runner, err := NewCodexRunner(binPath, "test-model", "medium", time.Minute)
+	if err != nil {
+		t.Fatalf("NewCodexRunner() error = %v", err)
+	}
+	_, err = runner.ResumeTask(
+		t.Context(), "session-7", "continue", "danger-full-access", "", schemaExecution, 123,
+	)
+	if !errors.Is(err, ErrSchemaViolation) {
+		t.Fatalf("ResumeTask() error = %v, want ErrSchemaViolation", err)
+	}
+	want := strconv.Itoa(maxResumeSchemaRewrites + 1)
+	if got := readTestFile(t, filepath.Join(dir, "count.txt")); got != want {
+		t.Fatalf("invocation count = %q, want %s", got, want)
 	}
 }
 

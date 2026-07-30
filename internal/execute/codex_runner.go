@@ -17,6 +17,20 @@ import (
 
 const maxCodexOutputBytes = 1 << 20
 
+// resumeProbeTimeout bounds the one-off `exec resume --help` capability probe
+// run when a CodexRunner is constructed.
+const resumeProbeTimeout = 20 * time.Second
+
+// maxResumeSchemaRewrites is how many times a resume turn may be handed back to
+// the same session after it returned a final message that broke the contract.
+// It only applies to CLIs that cannot enforce --output-schema on resume.
+const maxResumeSchemaRewrites = 2
+
+// ErrSchemaViolation marks a final message that did not satisfy the required
+// result contract. Resume turns that cannot pass --output-schema use it to tell
+// a contract break apart from a process failure and ask for a rewrite.
+var ErrSchemaViolation = errors.New("agent final message violates the required schema")
+
 // codexRun is the raw outcome of one codex CLI invocation. At most one of
 // Result / Propose is populated, chosen by the schema the caller enforced;
 // both are nil for RunText callers that enforce no schema.
@@ -204,6 +218,11 @@ type CodexRunner struct {
 	model           string
 	reasoningEffort string
 	timeout         time.Duration
+	// resumeOutputSchema records whether this CLI accepts --output-schema on
+	// `exec resume`. Official codex does; traecli only accepts it on a fresh
+	// `exec`. When false, resume turns carry the contract in the prompt and are
+	// validated locally instead.
+	resumeOutputSchema bool
 }
 
 func NewCodexRunner(bin, model, reasoningEffort string, timeout time.Duration) (*CodexRunner, error) {
@@ -225,7 +244,30 @@ func NewCodexRunner(bin, model, reasoningEffort string, timeout time.Duration) (
 	if timeout <= 0 {
 		return nil, fmt.Errorf("codex runner timeout must be positive")
 	}
-	return &CodexRunner{bin: resolved, model: model, reasoningEffort: reasoningEffort, timeout: timeout}, nil
+	resumeOutputSchema, err := resumeAcceptsOutputSchema(resolved)
+	if err != nil {
+		return nil, err
+	}
+	return &CodexRunner{
+		bin: resolved, model: model, reasoningEffort: reasoningEffort, timeout: timeout,
+		resumeOutputSchema: resumeOutputSchema,
+	}, nil
+}
+
+// resumeAcceptsOutputSchema asks the CLI itself whether `exec resume` takes
+// --output-schema, rather than branching on the binary name. Official codex
+// accepts it; traecli rejects it with "unexpected argument", which would abort
+// every yield-until continuation and needs_human reply.
+func resumeAcceptsOutputSchema(bin string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), resumeProbeTimeout)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, bin, "exec", "resume", "--help").CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf(
+			"probe %q exec resume --help: %w: %s", bin, err, limitedText(output, 2048),
+		)
+	}
+	return bytes.Contains(output, []byte("--output-schema")), nil
 }
 
 // Schema selects which structured final-message contract Run enforces:
@@ -287,7 +329,24 @@ func (r *CodexRunner) ResumeTaskWithOutput(ctx context.Context, sessionID, promp
 	if taskID == 0 {
 		return nil, fmt.Errorf("codex resume requires a positive task ID")
 	}
-	return r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{SessionID: sessionID, TaskID: taskID, Output: output})
+	invocation := runInvocation{SessionID: sessionID, TaskID: taskID, Output: output}
+	if _, enforceSchema := sch.definition(); !enforceSchema || r.resumeOutputSchema {
+		return r.run(ctx, prompt, sandbox, repoPath, sch, invocation)
+	}
+	// Without --output-schema the CLI can end the turn with a malformed final
+	// message. Hand the violation back to the same session for a rewrite instead
+	// of failing the Task on the first bad turn; the work itself is already done
+	// and re-running it would repeat real side effects.
+	for attempt := 0; ; attempt++ {
+		run, err := r.run(ctx, prompt, sandbox, repoPath, sch, invocation)
+		if err == nil {
+			return run, nil
+		}
+		if !errors.Is(err, ErrSchemaViolation) || attempt >= maxResumeSchemaRewrites {
+			return nil, err
+		}
+		prompt = schemaRewritePrompt(err)
+	}
 }
 
 func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string, sch schema, invocation runInvocation) (*codexRun, error) {
@@ -302,6 +361,14 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	}
 	if sandbox == "workspace-write" && strings.TrimSpace(repoPath) == "" {
 		return nil, fmt.Errorf("codex workspace-write run requires a repo path")
+	}
+	// When the CLI cannot enforce the contract with --output-schema (traecli on
+	// `exec resume`), the schema travels in the prompt and the parser below is
+	// the only gate.
+	schemaDef, enforceSchema := sch.definition()
+	inlineSchema := enforceSchema && invocation.SessionID != "" && !r.resumeOutputSchema
+	if inlineSchema {
+		prompt = appendSchemaContract(prompt, schemaDef)
 	}
 
 	tempDir, err := os.MkdirTemp("", "jarvis-codex-exec-")
@@ -336,8 +403,7 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 			"-c", fmt.Sprintf("sandbox_mode=%q", sandbox),
 		}
 	}
-	schemaDef, enforceSchema := sch.definition()
-	if enforceSchema {
+	if enforceSchema && !inlineSchema {
 		schemaPath := filepath.Join(tempDir, "result-schema.json")
 		if err := os.WriteFile(schemaPath, []byte(schemaDef), 0o600); err != nil {
 			return nil, fmt.Errorf("write codex exec result schema: %w", err)
@@ -423,13 +489,13 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	case schemaExecution:
 		result, err := parseExecutionResult(lastMessage)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrSchemaViolation, err)
 		}
 		run.Result = result
 	case schemaPropose:
 		propose, err := parseProposeResult(lastMessage)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrSchemaViolation, err)
 		}
 		run.Propose = propose
 	}
