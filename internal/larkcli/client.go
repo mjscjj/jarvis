@@ -163,6 +163,26 @@ func (c *Client) ListChatMembers(ctx context.Context, chatID string) ([]ChatMemb
 	return resp.Data.Users, nil
 }
 
+// RecallMessage recalls (deletes) one Feishu message via
+// `im messages delete --as bot`. Identity is fixed to bot because Jarvis always
+// sends as the bot, and only the sender can recall its own message.
+//
+// Recall is a lark-cli high-risk-write, so --yes must carry a human decision:
+// the caller is the "撤回" button a human clicked on a specific message, which
+// is that confirmation. fail-fast: a blank id is rejected and any CLI failure
+// (already recalled, bot no longer in the chat, ...) surfaces unchanged.
+func (c *Client) RecallMessage(ctx context.Context, messageID string) error {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return fmt.Errorf("lark-cli messages delete message_id is empty")
+	}
+	var resp struct{}
+	if err := c.Run(ctx, &resp, "im", "messages", "delete", "--message-id", messageID, "--as", "bot", "--yes"); err != nil {
+		return fmt.Errorf("lark-cli messages delete message_id=%q: %w", messageID, err)
+	}
+	return nil
+}
+
 // Run executes a lark-cli command and unmarshals its successful JSON envelope.
 // Callers must not pass --format; this boundary always forces JSON.
 func (c *Client) Run(ctx context.Context, out any, args ...string) error {

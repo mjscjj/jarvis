@@ -106,12 +106,14 @@ type fakeMemorySearcher struct {
 }
 
 type fakeCandidateDeduplicator struct {
-	inputs []Candidate
-	err    error
+	inputs   []Candidate
+	projects []*uint64
+	err      error
 }
 
-func (f *fakeCandidateDeduplicator) Resolve(_ context.Context, candidate Candidate, _ *uint64) (SemanticResolution, error) {
+func (f *fakeCandidateDeduplicator) Resolve(_ context.Context, candidate Candidate, projectID *uint64) (SemanticResolution, error) {
 	f.inputs = append(f.inputs, candidate)
+	f.projects = append(f.projects, projectID)
 	if f.err != nil {
 		return SemanticResolution{}, f.err
 	}
@@ -285,6 +287,47 @@ func TestWorkerDoesNotPersistAfterSemanticDedupFailure(t *testing.T) {
 	}
 }
 
+// TestWorkerDedupsWithinResolvedProjectScope pins the project scope used for
+// semantic dedup to the one persistence derives. The group is unbound, so a
+// candidate whose project_hint matches a known project must be searched inside
+// that project's partition — searching the group binding (nil) instead would
+// match a project-less Todo that persistence then rejects as a domain change.
+func TestWorkerDedupsWithinResolvedProjectScope(t *testing.T) {
+	candidate := strictCandidate()
+	hint := "jarvis"
+	candidate.ProjectHint = &hint
+	store := &fakePipelineStore{batches: []ChatBatch{{
+		Group:         GroupContext{ID: 1, ChatID: "oc_1"}, // unbound
+		OtherProjects: []OtherProjectContext{{ID: 42, Code: "jarvis", Name: "Jarvis"}},
+		Units: []ConversationUnit{{
+			Key: "chat",
+			Messages: []MessageContext{{
+				MessageID: "om_1", ChatID: "oc_1", Content: candidate.SourceQuote,
+				CreateTime: 1_700_000_000_000, IsNew: true, Extractable: true,
+			}},
+		}},
+		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_1", IsNew: true, CreateTime: 1_700_000_000_000},
+	}}}
+	dedup := &fakeCandidateDeduplicator{}
+	worker, err := NewWorker(
+		store,
+		&fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{candidate}}},
+		&fakeMemorySearcher{}, dedup, &fakeToolBoxBuilder{}, fakeSharedMemoryReader{}, validWorkerOptions(),
+	)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	if _, err := worker.ExtractOnce(context.Background()); err != nil {
+		t.Fatalf("ExtractOnce() error = %v", err)
+	}
+	if len(dedup.projects) != 1 {
+		t.Fatalf("dedup.projects=%d, want 1", len(dedup.projects))
+	}
+	if dedup.projects[0] == nil || *dedup.projects[0] != 42 {
+		t.Fatalf("dedup project scope = %v, want 42", dedup.projects[0])
+	}
+}
+
 // retryBatch is a single-unit batch whose [new] message content deliberately
 // interleaves fragments ("看下 ... 当前服务和架构梳理 ...") so a spliced quote fails
 // the verbatim check while a contiguous substring passes.
@@ -386,21 +429,23 @@ func TestValidateCandidateEvidenceQuoteMismatchIncludesSourceText(t *testing.T) 
 	}
 }
 
-func TestValidateCandidateEvidenceRejectsChatAssignerOutsideParticipants(t *testing.T) {
+// 交办人常常不在本段会话里发言：线索通道只有一个合成发送者，会议和文档里
+// 出现的人也是模型自己用工具查出来的。这类 assigner 必须放行，否则线索永远
+// 抽不出来。真正的证据一致性由 prepareCandidate 的 leader 来源校验负责。
+func TestValidateCandidateEvidenceAcceptsAssignerWhoDidNotSpeak(t *testing.T) {
 	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
-		MessageID: "om_1", Source: "poll", Content: "张三负责补齐测试",
-		IsNew: true, Extractable: true,
-	}}}
+		MessageID: "clue:feishu_meeting:m1", Source: "clue", SenderOpenID: "__clue__",
+		Content: "会议《周会》已结束\n张三负责补齐测试", IsNew: true, Extractable: true,
+	}}, Participants: []ParticipantContext{{OpenID: "__clue__", Name: "feishu_meeting"}}}
 	assigner := "ou_zhangsan"
 	candidate := Candidate{
 		ActionType: "investigate", Title: "补齐测试", Target: "测试",
 		DesiredOutcome: "缺失的测试补齐并通过", Description: "补齐测试", OpenQuestions: []string{},
 		CommitmentStrength: "firm", AssignerOpenID: &assigner,
-		SourceMessageIDs: []string{"om_1"}, SourceQuote: "张三负责补齐测试",
+		SourceMessageIDs: []string{"clue:feishu_meeting:m1"}, SourceQuote: "张三负责补齐测试",
 	}
-	err := validateCandidateEvidence(unit, &candidate)
-	if err == nil || !strings.Contains(err.Error(), "outside conversation participants") {
-		t.Fatalf("validateCandidateEvidence() error = %v", err)
+	if err := validateCandidateEvidence(unit, &candidate); err != nil {
+		t.Fatalf("validateCandidateEvidence() error = %v, want nil", err)
 	}
 }
 

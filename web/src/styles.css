@@ -1548,7 +1548,7 @@ body {
 }
 
 .overview-runtime-stats {
-  grid-template-columns: repeat(4, minmax(70px, 1fr));
+  grid-template-columns: repeat(3, minmax(70px, 1fr));
 }
 
 .overview-agent-row {
@@ -2027,6 +2027,23 @@ pre {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* 撤回按钮 / 已撤回标记贴在卡片头部右侧 */
+.task-effect-head > .ant-btn,
+.task-effect-head > .ant-tag:not(.task-effect-kind) {
+  margin-inline-start: auto;
+  margin-inline-end: 0;
+  flex-shrink: 0;
+}
+
+/* 已撤回的产出整体降调，避免和仍然生效的产出混淆 */
+.task-effect-recalled {
+  opacity: 0.62;
+}
+
+.task-effect-recalled .task-effect-title.ant-typography {
+  text-decoration: line-through;
 }
 
 .task-effect-title.ant-typography {

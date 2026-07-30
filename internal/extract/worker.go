@@ -253,9 +253,9 @@ func mergeWorkerStats(target *WorkerStats, source WorkerStats) {
 // the cited [new] 原文 to the user prompt and asks the model to re-extract the
 // whole unit, up to opts.EvidenceRetryMax extra attempts. Any other validation
 // failure (structural/schema, out-of-unit source id, missing [new] evidence,
-// out-of-unit assigner, dedup error) is not self-correctable and aborts fail-fast
-// immediately. Retries also stop once attempts are exhausted, propagating the last
-// error (which carries the cited 原文 for diagnosis).
+// dedup error) is not self-correctable and aborts fail-fast immediately. Retries
+// also stop once attempts are exhausted, propagating the last error (which
+// carries the cited 原文 for diagnosis).
 func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit ConversationUnit, prompt Prompt, box ToolBox) ([]ResolvedCandidate, int, error) {
 	current := prompt
 	for attempt := 0; ; attempt++ {
@@ -307,7 +307,13 @@ func (w *Worker) validateExtraction(ctx context.Context, batch ChatBatch, unit C
 	}
 	resolved := make([]ResolvedCandidate, len(extracted.Candidates))
 	for i := range extracted.Candidates {
-		resolution, err := w.dedup.Resolve(ctx, extracted.Candidates[i], batch.Group.ProjectID)
+		// The semantic index is partitioned by the Todo's own project_id, which
+		// persistence derives with resolveProject (group binding first, then
+		// project_hint). Searching with the raw group binding would look in the
+		// wrong partition whenever the group is unbound but the hint resolves,
+		// and persistence would then reject the match as a domain change.
+		projectID, _ := resolveProject(batch, extracted.Candidates[i])
+		resolution, err := w.dedup.Resolve(ctx, extracted.Candidates[i], projectID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("deduplicate extracted candidate chat_id=%s unit=%s candidate=%d: %w", batch.Group.ChatID, unit.Key, i, err)
 		}
@@ -360,18 +366,14 @@ func validateCandidateEvidence(unit ConversationUnit, candidate *Candidate) erro
 		return fmt.Errorf("%w: source_quote %q is not present in cited [new] messages; cited [new] messages: %s",
 			ErrEvidenceQuoteMismatch, candidate.SourceQuote, citedNewMessagesText(unit, candidate.SourceMessageIDs))
 	}
-	if candidate.AssignerOpenID != nil {
-		found := false
-		for _, participant := range unit.Participants {
-			if participant.OpenID == *candidate.AssignerOpenID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("%w: assigner_open_id %q is outside conversation participants", ErrInvalidCandidate, *candidate.AssignerOpenID)
-		}
-	}
+	// assigner_open_id is deliberately not checked against unit.Participants.
+	// Participants are just the distinct senders of the unit's messages, so the
+	// check never held for evidence where the assigner does not speak in the
+	// unit itself — a clue channel carries a single synthetic sender, and a
+	// meeting or document names people the model resolved with its own tools.
+	// The evidence-based guard that does matter lives in prepareCandidate: when
+	// the cited messages include leader senders, the assigner must be one of
+	// them.
 	return nil
 }
 

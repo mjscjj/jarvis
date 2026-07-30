@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Collapse, Empty, Input, message, Segmented, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import {
@@ -260,6 +260,11 @@ const agentColumns: TableColumnsType<AgentProcess> = [
 
 function AgentProcessesTab() {
   const { data, loading, error, refresh } = useDebugResource<AgentProcessSnapshot>((signal) => getDebugAgentProcesses(signal))
+  // 常驻 app-server 只说明运行时活着，不代表有任务在跑，这里不展示。
+  const agentRows = useMemo(
+    () => (data?.items ?? []).filter((item) => item.mode !== 'app-server'),
+    [data],
+  )
 
   useEffect(() => {
     const timer = window.setInterval(refresh, 3000)
@@ -274,24 +279,17 @@ function AgentProcessesTab() {
       </Space>
       {error && <Alert type="error" showIcon message="实时 Agent 加载失败" description={error} />}
       <Space size={32} wrap>
-        <Statistic title="Codex 后台服务" value={data?.summary.codex_services ?? 0} />
         <Statistic title="Codex 正在执行" value={data?.summary.codex_executing ?? 0} />
         <Statistic title="Trae 桌面端" value={data?.summary.trae_desktop ?? 0} />
         <Statistic title="Trae CLI 任务" value={data?.summary.trae_cli ?? 0} />
         <Statistic title="Jarvis Codex" value={data?.summary.jarvis_codex ?? 0} />
         <Statistic title="Jarvis Trae" value={data?.summary.jarvis_trae ?? 0} />
       </Space>
-      <Alert
-        type="info"
-        showIcon
-        message="后台服务与执行任务分开计数"
-        description="同一父链里的派生 App Server 合并为一个后台服务。表格保留派生进程，便于排查；后台服务存活不代表模型正在执行任务。"
-      />
       <Table<AgentProcess>
         rowKey={(row) => `${row.kind}-${row.pid}`}
         size="small"
         columns={agentColumns}
-        dataSource={data?.items ?? []}
+        dataSource={agentRows}
         loading={loading && data === undefined}
         pagination={false}
         expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开进程信息" />, rowExpandable: () => true }}

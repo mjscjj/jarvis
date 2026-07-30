@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Input, Modal, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, executeTask, finishTask, interruptTask, listTaskEvents, listTaskRuns, listTasks, reapplyTask, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
+import { approveTask, executeTask, finishTask, interruptTask, listTaskEvents, listTaskRuns, listTasks, reapplyTask, recallEffectMessage, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Task, TaskEvent, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -97,6 +97,8 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [resumeTarget, setResumeTarget] = useState<Task>()
   const [resumeResponse, setResumeResponse] = useState('')
   const [resumeSubmitting, setResumeSubmitting] = useState(false)
+  const [recallingMessageID, setRecallingMessageID] = useState<string>()
+  const [recallError, setRecallError] = useState<string>()
   const [runs, setRuns] = useState<ExecutionRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runsError, setRunsError] = useState<string>()
@@ -159,10 +161,14 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
 
   const openDetail = (task: Task) => {
     onDetailOpen?.()
+    setRecallError(undefined)
     setDetail(task)
   }
 
-  const closeDetail = () => setDetail(undefined)
+  const closeDetail = () => {
+    setRecallError(undefined)
+    setDetail(undefined)
+  }
 
   useEffect(() => {
     if (!detail) { setEvents([]); setEventsError(undefined); return }
@@ -236,6 +242,25 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       setRefreshKey((value) => value + 1)
     } finally {
       setInterruptingId(undefined)
+    }
+  }
+
+  // 撤回任务已发出的某条飞书消息：真实调用飞书撤回，成功后后端把「已撤回」标记写回
+  // 该 effect，这里用返回的任务刷新详情，并重拉执行历史让 run 里的同一条也更新。
+  const runRecallMessage = async (task: Task, messageID: string) => {
+    const ok = window.confirm(`确认撤回这条飞书消息（${messageID}）？\n\n对方会看到「消息已撤回」，撤回后无法恢复。`)
+    if (!ok) return
+    setRecallingMessageID(messageID)
+    setRecallError(undefined)
+    try {
+      const updated = await recallEffectMessage(task.id, messageID)
+      setDetail(updated)
+      setItems((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+      setRefreshKey((value) => value + 1)
+    } catch (cause: unknown) {
+      setRecallError(errorText(cause))
+    } finally {
+      setRecallingMessageID(undefined)
     }
   }
 
@@ -484,6 +509,9 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       approveSubmitting={detail ? approveSubmitting && approveTarget?.id === detail.id : false}
       resumeSubmitting={detail ? resumeSubmitting && resumeTarget?.id === detail.id : false}
       interrupting={detail ? interruptingId === detail.id : false}
+      recallingMessageID={recallingMessageID}
+      recallError={recallError}
+      onRecallMessage={runRecallMessage}
       onClose={closeDetail}
       onExecute={runExecute}
       onApprove={openApprove}

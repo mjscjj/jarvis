@@ -70,8 +70,13 @@ func main() {
 	flag.Parse()
 	byted.Init()
 	startupCtx := observability.EnsureLogID(context.Background())
+	// hlog.CtxFatalf only forwards to the logger; the byted logger records the
+	// message and returns instead of exiting. Without the explicit exit main
+	// keeps running past a failed dependency and dies later on a nil pointer,
+	// hiding the real reason behind a SIGSEGV.
 	fatalf := func(format string, args ...any) {
 		hlog.CtxFatalf(startupCtx, format, args...)
+		os.Exit(1)
 	}
 	errorf := func(format string, args ...any) {
 		hlog.CtxErrorf(startupCtx, format, args...)
@@ -303,6 +308,10 @@ func main() {
 	taskSubmitter, err := taskcreate.NewSubmitter(taskFactory)
 	if err != nil {
 		fatalf("initialize Task submitter failed: %v", err)
+	}
+	messageRecaller, err := execute.NewMessageRecaller(db, larkClient)
+	if err != nil {
+		fatalf("initialize feishu message recaller failed: %v", err)
 	}
 	codexRunner, err := execute.NewCodexRunner(
 		cfg.Execute.Bin, cfg.Execute.Model, cfg.Execute.ReasoningEffort,
@@ -743,6 +752,7 @@ func main() {
 	if err := api.Register(h, api.Dependencies{
 		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
+		MessageRecaller: messageRecaller,
 		Projects: projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		SharedMemory:   sharedMemoryService,

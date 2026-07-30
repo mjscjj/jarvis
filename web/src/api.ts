@@ -191,6 +191,14 @@ export function rejectTask(id: number, expectedVersion: number, reason: string):
   })
 }
 
+// recallEffectMessage 撤回该任务「对外产出」里的一条飞书消息（真实调 lark-cli，
+// 不可恢复），并把「已撤回」标记写回对应 effect；返回更新后的任务。
+export function recallEffectMessage(id: number, messageID: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}/effects/recall-message`, {
+    method: 'POST', body: { message_id: messageID },
+  })
+}
+
 export function supplementTask(id: number, expectedVersion: number, note: string): Promise<Task> {
   return request<Task>(`/api/tasks/${id}/supplement`, {
     method: 'POST',

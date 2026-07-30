@@ -28,6 +28,7 @@ import {
   PullRequestOutlined,
   SafetyOutlined,
   ToolOutlined,
+  UndoOutlined,
 } from '@ant-design/icons'
 import type { Effect, ExecutionRun, RunEnrichment, Task, TaskEvent, TaskRunOutput } from '../types'
 import { getTaskRunOutput } from '../api'
@@ -59,6 +60,7 @@ const taskEventLabels: Record<string, string> = {
   execution_succeeded: '执行成功',
   execution_failed: '执行失败',
   execution_interrupted: '执行已打断',
+  feishu_message_recalled: '撤回飞书消息',
   stale_failed: '执行超时',
   snapshot_imported: '导入当前状态',
 }
@@ -70,6 +72,14 @@ const actorLabels: Record<string, string> = {
   system: '系统',
   seed: '初始化',
   migration: '迁移',
+}
+
+// EffectRecall 把「撤回一条已发出的飞书消息」这个动作交给 effect 卡片：pending 是
+// 正在撤回的 message_id（用于按钮 loading），run 触发撤回。真正的确认弹窗、接口调用
+// 和错误展示都在页面层，卡片只负责发起。
+interface EffectRecall {
+  pending?: string
+  run: (messageID: string) => void
 }
 
 interface TaskDetailModalProps {
@@ -85,6 +95,9 @@ interface TaskDetailModalProps {
   approveSubmitting: boolean
   resumeSubmitting: boolean
   interrupting: boolean
+  recallingMessageID?: string
+  recallError?: string
+  onRecallMessage: (task: Task, messageID: string) => void
   onClose: () => void
   onExecute: (task: Task) => void
   onApprove: (task: Task) => void
@@ -620,7 +633,7 @@ function EnrichmentBlock({ item }: { item: RunEnrichment }) {
 // KNOWN_EFFECT_FIELDS are the fields the "对外产出" card renders in dedicated
 // slots. Every OTHER field on an effect is unknown/pass-through and is listed
 // verbatim as key:value — the card never drops information it did not expect.
-const KNOWN_EFFECT_FIELDS = new Set(['kind', 'title', 'url', 'target', 'preview'])
+const KNOWN_EFFECT_FIELDS = new Set(['kind', 'title', 'url', 'target', 'preview', 'recalled_at'])
 
 // effectItems parses execution_result.effects (or run.effects) into a loose
 // Effect[]. It only requires that each entry be an object; a missing/blank kind
@@ -695,11 +708,21 @@ function EffectExtraFields({ effect }: { effect: Effect }) {
   )
 }
 
+// recallableMessageID returns the Feishu message id the agent declared on this
+// effect, which is the only handle a recall can use. Effects without one (docs,
+// meetings, MRs, or a message the agent never reported an id for) are not
+// recallable.
+function recallableMessageID(effect: Effect): string {
+  const id = typeof effect.message_id === 'string' ? effect.message_id.trim() : ''
+  return id.startsWith('om_') ? id : ''
+}
+
 // EffectCard renders one declared side effect. Known kinds get a themed icon +
 // label; unknown kinds get the generic fallback card. url becomes a clickable
 // link (new tab), preview is shown as a quoted block, and any extra fields are
-// listed via EffectExtraFields — nothing the agent declared is dropped.
-function EffectCard({ effect }: { effect: Effect }) {
+// listed via EffectExtraFields — nothing the agent declared is dropped. A sent
+// Feishu message additionally gets a 撤回 button, or the 已撤回 mark once recalled.
+function EffectCard({ effect, recall }: { effect: Effect; recall: EffectRecall }) {
   const meta = effectKindMeta(effect.kind)
   const url = typeof effect.url === 'string' ? effect.url.trim() : ''
   const target = typeof effect.target === 'string' ? effect.target.trim() : ''
@@ -707,14 +730,29 @@ function EffectCard({ effect }: { effect: Effect }) {
   const title = typeof effect.title === 'string' && effect.title.trim()
     ? effect.title.trim()
     : meta.label
+  const messageID = recallableMessageID(effect)
+  const recalledAt = typeof effect.recalled_at === 'string' ? effect.recalled_at.trim() : ''
   return (
-    <div className="task-effect-card">
+    <div className={`task-effect-card${recalledAt ? ' task-effect-recalled' : ''}`}>
       <div className="task-effect-head">
         <span className="task-effect-icon">{meta.icon}</span>
         <div className="task-effect-headings">
           <Text strong className="task-effect-title">{title}</Text>
           <Tag className="task-effect-kind">{meta.label}</Tag>
         </div>
+        {recalledAt ? (
+          <Tag icon={<UndoOutlined />}>已撤回 · {formatTime(recalledAt)}</Tag>
+        ) : messageID ? (
+          <Button
+            size="small"
+            danger
+            icon={<UndoOutlined />}
+            loading={recall.pending === messageID}
+            onClick={() => recall.run(messageID)}
+          >
+            撤回
+          </Button>
+        ) : null}
       </div>
       {target && (
         <div className="task-effect-target">
@@ -736,19 +774,19 @@ function EffectCard({ effect }: { effect: Effect }) {
 
 // EffectsCard is the "对外产出" surface: one card per declared side effect.
 // It renders nothing when there are no effects (老任务无 effects 就不显示该卡片).
-function EffectsCard({ effects }: { effects: Effect[] }) {
+function EffectsCard({ effects, recall }: { effects: Effect[]; recall: EffectRecall }) {
   if (effects.length === 0) return null
   return (
     <div className="task-primary-card task-effects-card">
       <div className="task-section-kicker">对外产出（{effects.length}）</div>
       <div className="task-effect-list">
-        {effects.map((effect, index) => <EffectCard key={index} effect={effect} />)}
+        {effects.map((effect, index) => <EffectCard key={index} effect={effect} recall={recall} />)}
       </div>
     </div>
   )
 }
 
-function RunDetails({ run, latest }: { run: ExecutionRun; latest: boolean }) {
+function RunDetails({ run, latest, recall }: { run: ExecutionRun; latest: boolean; recall: EffectRecall }) {
   const enrichments = run.output?.enrichments ?? []
   const runEffects = effectItems(run.effects ?? run.output?.effects)
   const followup = run.output?.needs_followup?.trim()
@@ -787,7 +825,7 @@ function RunDetails({ run, latest }: { run: ExecutionRun; latest: boolean }) {
         )}
         {runEffects.length > 0 && (
           <div className="task-effect-list task-run-effect-list">
-            {runEffects.map((effect, index) => <EffectCard key={index} effect={effect} />)}
+            {runEffects.map((effect, index) => <EffectCard key={index} effect={effect} recall={recall} />)}
           </div>
         )}
         {followup && <Alert type="info" showIcon title="待你拍板 / 后续" description={followup} />}
@@ -1078,6 +1116,7 @@ function TaskHistory({
   loading,
   eventsError,
   runsError,
+  recall,
 }: {
   task: Task
   events: TaskEvent[]
@@ -1085,6 +1124,7 @@ function TaskHistory({
   loading: boolean
   eventsError?: string
   runsError?: string
+  recall: EffectRecall
 }) {
   const history = useMemo(() => buildHistory(task, events, runs), [task, events, runs])
   const latestRunID = runs[0]?.id
@@ -1119,7 +1159,7 @@ function TaskHistory({
                   <Text strong>执行记录</Text>
                   <Text type="secondary">{formatTime(item.at)}</Text>
                 </div>
-                <RunDetails run={item.run} latest={item.run.id === latestRunID} />
+                <RunDetails run={item.run} latest={item.run.id === latestRunID} recall={recall} />
               </div>
             </article>
           )
@@ -1147,7 +1187,7 @@ function TaskHistory({
                 {actorLabels[event.actor_type] || event.actor_type} · v{event.task_version}
                 {event.from_status ? ` · ${event.from_status} → ${event.to_status}` : ` · ${event.to_status}`}
               </Text>
-              {run && <RunDetails run={run} latest={run.id === latestRunID} />}
+              {run && <RunDetails run={run} latest={run.id === latestRunID} recall={recall} />}
             </div>
           </article>
         )
@@ -1322,6 +1362,9 @@ export default function TaskDetailModal({
   approveSubmitting,
   resumeSubmitting,
   interrupting,
+  recallingMessageID,
+  recallError,
+  onRecallMessage,
   onClose,
   onExecute,
   onApprove,
@@ -1339,6 +1382,10 @@ export default function TaskDetailModal({
 
   const stateCopy = taskStateCopy(task)
   const failure = failureKindOf(task)
+  const recall: EffectRecall = {
+    pending: recallingMessageID,
+    run: (messageID: string) => onRecallMessage(task, messageID),
+  }
   const jumpToHistory = (event: TaskEvent) => {
     setActiveTab('history')
     window.setTimeout(() => {
@@ -1428,6 +1475,8 @@ export default function TaskDetailModal({
             </Space>
           </section>
 
+          {recallError && <Alert type="error" showIcon title="撤回飞书消息失败" description={recallError} />}
+
           {eventsLoading ? (
             <section className="task-progress-strip"><Spin size="small" /></section>
           ) : eventsError ? (
@@ -1439,7 +1488,7 @@ export default function TaskDetailModal({
           <div className="task-detail-main-grid">
             <main>
               {proposalOf(task) ? <ProposalContent task={task} /> : <ResultContent task={task} />}
-              <EffectsCard effects={effectItems(task.execution_result?.effects)} />
+              <EffectsCard effects={effectItems(task.execution_result?.effects)} recall={recall} />
             </main>
             <TaskMeta task={task} />
           </div>
@@ -1460,6 +1509,7 @@ export default function TaskDetailModal({
                     loading={eventsLoading || runsLoading}
                     eventsError={eventsError}
                     runsError={runsError}
+                    recall={recall}
                   />
                 ),
               },

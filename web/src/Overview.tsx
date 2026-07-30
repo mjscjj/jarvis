@@ -187,17 +187,22 @@ export default function Overview() {
   const finishedGroupDigests = groupDigests.filter((item) => item.status === 'done').length
   const activeTaskAgents = (agents?.summary.codex_executing ?? 0) + (agents?.summary.trae_cli ?? 0)
   const jarvisAgents = (agents?.summary.jarvis_codex ?? 0) + (agents?.summary.jarvis_trae ?? 0)
+  // 常驻 app-server 只说明运行时活着，不代表有任务在跑，这里不展示。
+  const agentPool = useMemo(
+    () => (agents?.items ?? []).filter((item) => item.mode !== 'app-server'),
+    [agents],
+  )
   const visibleAgents = useMemo(
-    () => [...(agents?.items ?? [])]
+    () => [...agentPool]
       .filter((item) => !item.nested || item.mode === 'exec' || item.mode === 'cli')
       .sort((left, right) => Number(right.mode === 'exec' || right.mode === 'cli')
         - Number(left.mode === 'exec' || left.mode === 'cli')
         || Number(right.jarvis_owned) - Number(left.jarvis_owned)
         || left.kind.localeCompare(right.kind))
       .slice(0, 5),
-    [agents],
+    [agentPool],
   )
-  const hiddenAgentCount = Math.max(0, (agents?.items.length ?? 0) - visibleAgents.length)
+  const hiddenAgentCount = Math.max(0, agentPool.length - visibleAgents.length)
   const hasRuntimeProblem = unresolvedFailureCount > 0 || Boolean(agentError)
 
   return (
@@ -322,7 +327,6 @@ export default function Overview() {
           >
             {agentError && <Alert type="error" showIcon message="Agent 运行态加载失败" description={agentError} className="overview-inline-alert" />}
             <div className="overview-mini-grid overview-runtime-stats">
-              <MiniStat label="Codex 服务" value={agents?.summary.codex_services ?? 0} />
               <MiniStat label="执行任务" value={activeTaskAgents} tone={activeTaskAgents > 0 ? 'success' : undefined} />
               <MiniStat label="Trae 桌面端" value={agents?.summary.trae_desktop ?? 0} />
               <MiniStat label="Jarvis 启动" value={jarvisAgents} />

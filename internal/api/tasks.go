@@ -363,6 +363,36 @@ func SupplementTask(service execute.TaskService) app.HandlerFunc {
 	}
 }
 
+type recallEffectMessageRequest struct {
+	MessageID string `json:"message_id"`
+}
+
+// RecallEffectMessage recalls one Feishu message this Task declared in its
+// effects and marks that effect as recalled. The click itself is the human
+// confirmation for a high-risk, irreversible external write, so no
+// expected_version is required; the reloaded Task (with a bumped version) is
+// returned so the caller can refresh the drawer it was clicked from.
+func RecallEffectMessage(recaller *execute.MessageRecaller) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40031, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		var request recallEffectMessageRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40031, err)
+			return
+		}
+		result, err := recaller.Recall(ctx, taskID, request.MessageID)
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 // manualStage maps a manual finish status to the execution_result stage tag so
 // the UI distinguishes a human-marked failure from a codex execution failure.
 func manualStage(status string) string {
@@ -401,6 +431,10 @@ func writeExecutionError(c *app.RequestContext, err error) {
 		writeAPIError(c, consts.StatusBadRequest, 40022, err)
 	case errors.Is(err, execute.ErrTaskNotFound):
 		writeAPIError(c, consts.StatusNotFound, 40420, err)
+	case errors.Is(err, execute.ErrRecallTargetNotFound):
+		writeAPIError(c, consts.StatusNotFound, 40421, err)
+	case errors.Is(err, execute.ErrMessageAlreadyRecalled):
+		writeAPIError(c, consts.StatusConflict, 40921, err)
 	case errors.Is(err, execute.ErrVersionConflict), errors.Is(err, execute.ErrInvalidTransition):
 		writeAPIError(c, consts.StatusConflict, 40920, err)
 	case errors.Is(err, execute.ErrUnknownActionType):
