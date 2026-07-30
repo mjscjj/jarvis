@@ -22,7 +22,7 @@ func TestPrincipalActivityOpensGroupAndCapturesTriggerMessage(t *testing.T) {
 	now := time.Date(2026, 7, 27, 16, 20, 0, 0, location)
 	messageTime := time.Date(2026, 7, 27, 16, 15, 0, 0, location)
 	db := newCaptureTestDB(t)
-	createDiscoveredGroup(t, db, "oc_principal_group", false, now.Add(-24*time.Hour))
+	createDiscoveredGroup(t, db, "oc_principal_group", "group", false, now.Add(-24*time.Hour))
 
 	runner := &principalActivityFixture{
 		principalOpenID: "ou_principal",
@@ -103,12 +103,48 @@ func TestPrincipalActivityOpensGroupAndCapturesTriggerMessage(t *testing.T) {
 	}
 }
 
+func TestPrincipalActivityOpensTopicGroup(t *testing.T) {
+	location := mustShanghai(t)
+	now := time.Date(2026, 7, 27, 16, 20, 0, 0, location)
+	messageTime := time.Date(2026, 7, 27, 16, 15, 0, 0, location)
+	db := newCaptureTestDB(t)
+	createDiscoveredGroup(t, db, "oc_topic_group", "topic", false, now.Add(-24*time.Hour))
+
+	runner := &principalActivityFixture{
+		principalOpenID: "ou_principal",
+		searchMessages: []SearchedMessage{{
+			ChatID:     "oc_topic_group",
+			ChatName:   "topic group",
+			ChatType:   "topic",
+			CreateTime: messageTime.Format(cliTimeLayout),
+			MessageID:  "om_topic_trigger",
+			Sender:     CLISender{ID: "ou_principal", Name: "principal", SenderType: "user"},
+		}},
+		chatMessages: map[string][]CLIMessage{"oc_topic_group": nil},
+	}
+	service := newPrincipalActivityService(t, db, runner, location)
+	service.now = func() time.Time { return now }
+
+	if err := service.SyncPrincipalActivityGroups(context.Background()); err != nil {
+		t.Fatalf("SyncPrincipalActivityGroups() error = %v", err)
+	}
+
+	assertActivityRelated(t, db, "oc_topic_group", true)
+	var activityCheckpoint domain.PrincipalActivityCheckpoint
+	if err := db.First(&activityCheckpoint, "principal_open_id = ?", "ou_principal").Error; err != nil {
+		t.Fatalf("load principal activity checkpoint: %v", err)
+	}
+	if activityCheckpoint.LastSearchAt != now.UnixMilli() {
+		t.Fatalf("principal activity checkpoint = %d, want %d", activityCheckpoint.LastSearchAt, now.UnixMilli())
+	}
+}
+
 func TestPrincipalActivityFailureDoesNotStopExistingRelatedScan(t *testing.T) {
 	location := mustShanghai(t)
 	now := time.Date(2026, 7, 27, 16, 20, 0, 0, location)
 	messageTime := now.Add(-time.Minute)
 	db := newCaptureTestDB(t)
-	createDiscoveredGroup(t, db, "oc_existing", true, now.Add(-24*time.Hour))
+	createDiscoveredGroup(t, db, "oc_existing", "group", true, now.Add(-24*time.Hour))
 
 	runner := &principalActivityFixture{
 		principalOpenID: "ou_principal",
@@ -148,7 +184,7 @@ func TestPrincipalActivityRejectsUnexpectedSenderWithoutAdvancingCursor(t *testi
 	location := mustShanghai(t)
 	now := time.Date(2026, 7, 27, 16, 20, 0, 0, location)
 	db := newCaptureTestDB(t)
-	createDiscoveredGroup(t, db, "oc_wrong_sender", false, now.Add(-24*time.Hour))
+	createDiscoveredGroup(t, db, "oc_wrong_sender", "group", false, now.Add(-24*time.Hour))
 
 	runner := &principalActivityFixture{
 		principalOpenID: "ou_principal",
@@ -232,12 +268,13 @@ func createDiscoveredGroup(
 	t *testing.T,
 	db *gorm.DB,
 	chatID string,
+	chatMode string,
 	related bool,
 	discoveredAt time.Time,
 ) {
 	t.Helper()
 	group := activityTestGroup{
-		ChatID: chatID, ChatMode: "group", RelatedGroup: related, Tier: "cold",
+		ChatID: chatID, ChatMode: chatMode, RelatedGroup: related, Tier: "cold",
 	}
 	if err := db.Create(&group).Error; err != nil {
 		t.Fatalf("create group %s: %v", chatID, err)

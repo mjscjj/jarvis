@@ -126,7 +126,9 @@ func (s *Service) principalGroupActivities(messages []SearchedMessage) ([]princi
 		if chatID == "" {
 			return nil, fmt.Errorf("principal activity message %q has empty chat_id", message.MessageID)
 		}
-		if message.ChatType != "group" {
+		// Feishu search only accepts --chat-type group|p2p, but reports topic
+		// groups back as chat_type=topic. Both are group chats we want to open.
+		if message.ChatType != "group" && message.ChatType != "topic" {
 			return nil, fmt.Errorf(
 				"principal activity message %q chat_id=%s has unexpected chat_type=%q",
 				message.MessageID,
