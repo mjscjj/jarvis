@@ -27,32 +27,30 @@ type ProjectView struct {
 	KeyDecisions json.RawMessage `json:"key_decisions"`
 	Timeline     json.RawMessage `json:"timeline"`
 	Notes        *string         `json:"notes"`
-	Mem0SyncedAt *time.Time      `json:"mem0_synced_at"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
 // PersonView is the API representation of a Person.
 type PersonView struct {
-	ID             uint64     `json:"id"`
-	OpenID         string     `json:"open_id"`
-	UnionID        *string    `json:"union_id"`
-	FeishuUserID   *string    `json:"feishu_user_id"`
-	Name           string     `json:"name"`
-	EnName         *string    `json:"en_name"`
-	AvatarURL      *string    `json:"avatar_url"`
-	Department     *string    `json:"department"`
-	Title          *string    `json:"title"`
-	Role           string     `json:"role"`
-	PriorityWeight float64    `json:"priority_weight"`
-	Relation       *string    `json:"relation"`
-	CommStyle      *string    `json:"comm_style"`
-	P2PChatID      *string    `json:"p2p_chat_id"`
-	Notes          *string    `json:"notes"`
-	IsActive       bool       `json:"is_active"`
-	Mem0SyncedAt   *time.Time `json:"mem0_synced_at"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID             uint64    `json:"id"`
+	OpenID         string    `json:"open_id"`
+	UnionID        *string   `json:"union_id"`
+	FeishuUserID   *string   `json:"feishu_user_id"`
+	Name           string    `json:"name"`
+	EnName         *string   `json:"en_name"`
+	AvatarURL      *string   `json:"avatar_url"`
+	Department     *string   `json:"department"`
+	Title          *string   `json:"title"`
+	Role           string    `json:"role"`
+	PriorityWeight float64   `json:"priority_weight"`
+	Relation       *string   `json:"relation"`
+	CommStyle      *string   `json:"comm_style"`
+	P2PChatID      *string   `json:"p2p_chat_id"`
+	Notes          *string   `json:"notes"`
+	IsActive       bool      `json:"is_active"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // GroupView is the API representation of a Group, including its resolved project.
@@ -95,7 +93,7 @@ func toProjectView(p *domain.Project) ProjectView {
 		Priority: p.Priority, Description: p.Description,
 		Repos: rawJSON(p.Repos), TechStack: rawJSON(p.TechStack),
 		KeyDecisions: rawJSON(p.KeyDecisions), Timeline: rawJSON(p.Timeline),
-		Notes: p.Notes, Mem0SyncedAt: p.Mem0SyncedAt,
+		Notes:     p.Notes,
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
 }
@@ -114,7 +112,7 @@ func toPersonView(p *domain.Person) PersonView {
 		Name: p.Name, EnName: p.EnName, AvatarURL: p.AvatarURL, Department: p.Department,
 		Title: p.Title, Role: p.Role, PriorityWeight: p.PriorityWeight, Relation: p.Relation,
 		CommStyle: p.CommStyle, P2PChatID: p.P2PChatID, Notes: p.Notes, IsActive: p.IsActive,
-		Mem0SyncedAt: p.Mem0SyncedAt, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
 }
 

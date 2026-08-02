@@ -31,7 +31,7 @@ var taskEventTypes = map[string]struct{}{
 }
 
 var actorTypes = map[string]struct{}{
-	"user": {}, "m4": {}, "m5": {}, "scheduled_task": {}, "system": {}, "seed": {}, "migration": {},
+	"user": {}, "m5": {}, "scheduled_task": {}, "system": {}, "seed": {}, "migration": {},
 }
 
 var taskStatuses = map[string]struct{}{

@@ -15,7 +15,7 @@ import (
 // loaded ChatBatch/unit data; the only DB read is the full project detail when
 // the project was resolved from a hint (the bound project detail is already in
 // the batch). M5 replay this exact snapshot without re-querying.
-func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, projectID *uint64, assignerOpenID *string, memories []map[string]any) (contextsnap.Snapshot, error) {
+func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, projectID *uint64, assignerOpenID *string, facts []contextsnap.Fact) (contextsnap.Snapshot, error) {
 	snapshot := contextsnap.Snapshot{
 		SnapshotVersion: contextsnap.SnapshotVersion,
 		CapturedAt:      s.now().UTC().Format(time.RFC3339),
@@ -27,10 +27,7 @@ func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatc
 		Resources:       snapshotResources(unit.Resources),
 		OpenTodos:       snapshotOpenTodos(batch.OpenTodos),
 		OtherProjects:   snapshotOtherProjects(batch.OtherProjects, projectID),
-		Memories:        memories,
-	}
-	if snapshot.Memories == nil {
-		snapshot.Memories = make([]map[string]any, 0)
+		Facts:           facts,
 	}
 
 	project, err := s.snapshotProject(ctx, batch, projectID)

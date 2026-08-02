@@ -3,6 +3,7 @@ package extract
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -175,13 +176,11 @@ func TestDeduplicatorTreatsAutoStatusAsActive(t *testing.T) {
 	}
 }
 
-func TestActiveTodoStatusesIncludesAuto(t *testing.T) {
-	for _, status := range ActiveTodoStatuses() {
-		if status == "auto" {
-			return
-		}
+func TestActiveTodoStatusesOnlyContainsCurrentLifecycle(t *testing.T) {
+	want := []string{"extracted", "auto", "observing"}
+	if got := ActiveTodoStatuses(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ActiveTodoStatuses() = %v, want %v", got, want)
 	}
-	t.Fatalf("ActiveTodoStatuses() = %v, want to include auto", ActiveTodoStatuses())
 }
 
 func semanticTodoFixture(t *testing.T, candidate Candidate, projectID *uint64, id uint64) *SemanticTodo {

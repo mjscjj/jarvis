@@ -37,30 +37,6 @@ func TestBuildPromptDropsContextBeforeNewEvidence(t *testing.T) {
 	}
 }
 
-func TestBuildPromptRejectsUnencodableMemory(t *testing.T) {
-	batch := contractChatBatch()
-	_, err := BuildPrompt(batch, batch.Units[0], []map[string]any{{"bad": func() {}}}, time.Now(), PromptOptions{
-		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 60000,
-	})
-	if err == nil || !strings.Contains(err.Error(), "encode extraction memory") {
-		t.Fatalf("BuildPrompt() error = %v", err)
-	}
-}
-
-func TestBuildPromptFiltersM3Memory(t *testing.T) {
-	batch := contractChatBatch()
-	prompt, err := BuildPrompt(batch, batch.Units[0], []map[string]any{
-		{"memory": "self-loop", "metadata": map[string]any{"source": "m3"}},
-		{"memory": "background", "metadata": map[string]any{"source": "decision"}},
-	}, time.Now(), PromptOptions{PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 60000})
-	if err != nil {
-		t.Fatalf("BuildPrompt() error = %v", err)
-	}
-	if strings.Contains(prompt.User, "self-loop") || !strings.Contains(prompt.User, "background") {
-		t.Fatalf("prompt = %q", prompt.User)
-	}
-}
-
 // A candidate with a blank target has no dedup identity and must fail fast.
 func TestPrepareResultsRejectsBlankTargetContract(t *testing.T) {
 	store := &PipelineStore{location: time.UTC}

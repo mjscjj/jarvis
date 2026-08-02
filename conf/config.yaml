@@ -15,34 +15,32 @@ mysql:
   max_idle_conns: 5
   conn_max_lifetime: 3600
 
-# mem0 Python sidecar（总纲 §5）
-mem0:
-  base_url: "http://127.0.0.1:18900"
-  owner_id: "owner"
-  timeout_sec: 60
-  batch_limit: 400
-  window_gap_minutes: 30
-  window_max_messages: 40
-  schedule: "@every 10m"
-  qdrant_host: "127.0.0.1"
-  qdrant_port: 6333
-  qdrant_grpc_port: 6334
-  collection: "jarvis_memories"
-  state_dir: "var/mem0"
-  embedding_model: "text-embedding-v3"
-  embedding_dims: 1024
-
 # 高频抽取用 model API（M2/M3，OpenAI 兼容端点，可配置）
-# 阿里云百炼 DashScope OpenAI 兼容端点；mem0 的 LLM 与 embedder 共用本段。
+# 阿里云百炼 DashScope OpenAI 兼容端点；embedding 供 Todo 语义去重使用。
 model:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   api_key: "sk-170fbd90ff3f4d4491657722fd6de026"
   model: "qwen-plus"
   is_reasoning_model: false
   timeout_sec: 60
+  embedding_model: "text-embedding-v3"
+  embedding_dims: 1024
+
+# 离线事实引擎：把流水线已经产出的原料（先接 message，之后接 todo / task）
+# 蒸馏成长期事实，写进 fact 表。跑在关键路径之外，一轮失败不影响采集和执行。
+# 抽取量大、单条价值低，所以用便宜快的 DeepSeek-V4-Flash，不与判断/执行共用模型。
+factengine:
+  enabled: true
+  schedule: "@every 15m"
+  bin: "traex"
+  model: "DeepSeek-V4-Flash"
+  sandbox: "danger-full-access"   # 本地可信环境；抽取时可自跑 jarvis-tools 查已有事实避免重复
+  timeout_sec: 300
+  batch_limit: 200               # 单轮消费的原料行数上限
+  window_gap_minutes: 30         # 超过此间隔视为另一段对话
+  window_max_messages: 40        # 单个对话窗口的消息上限
 
 # M3 Todo 提取。enabled=true 时任一必填依赖为空都会启动失败，不静默跳过。
-# 语义去重复用 mem0 embedding 模型，Qdrant 集合独立于 jarvis_memories。
 extract:
   enabled: true
   principal_open_id: "ou_cfd9e106436c46adf20aaf9fe076c65d"
@@ -57,16 +55,16 @@ extract:
   context_messages: 20
   context_window_minutes: 120
   open_todo_limit: 20
-  memory_top_k: 8
-  memory_threshold: 0.5
+  fact_limit: 30                 # 单轮注入提示词的既有事实条数上限（离线事实引擎产出）
   max_prompt_chars: 60000
   semantic_collection: "todo_semantic"
   semantic_threshold: 0.85
   semantic_neighbor_limit: 3
+  qdrant_host: "127.0.0.1"
+  qdrant_grpc_port: 6334
   # M3 function-calling 工具循环
   tool_timeout_sec: 10        # 单次工具调用超时（秒）
   history_tool_limit: 20      # query_chat_history 单次最多返回消息数
-  tool_memory_max_top_k: 20   # search_memory 允许模型请求的 top_k 上限
   evidence_retry_max: 2       # source_quote 非逐字命中时，最多额外重抽次数（0=不重试）
 
 # lark-cli 子进程封装（总纲 §4）

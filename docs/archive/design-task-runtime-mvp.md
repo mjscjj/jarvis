@@ -1,5 +1,7 @@
 # 定时编排统一进入 Task 执行：MVP 方案
 
+> 历史设计：本文记录 2026-07-23 定时任务统一进入 Task/M5 的实施方案。功能已落地，模块命名保留当时状态；当前架构以 `README.md`、`docs/00-overview.md` 和 `docs/modules/` 为准。
+
 ## 1. 结论
 
 Jarvis 保留 `ScheduledTask` 作为时间触发器，把实际工作统一交给 Task/M5。定时任务到点后创建一条独立 Task，并通过现有 Pipeline 唤醒 M5；它不再自己拼 Prompt、调用 Codex 或判断执行成败。

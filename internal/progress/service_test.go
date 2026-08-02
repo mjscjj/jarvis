@@ -103,6 +103,17 @@ func TestPrepareTaskEventRejectsUnknownType(t *testing.T) {
 	}
 }
 
+func TestPrepareTaskEventRejectsRetiredM4Actor(t *testing.T) {
+	t.Parallel()
+	_, err := prepareTaskEvent(TaskEventInput{
+		TaskID: 1, TaskVersion: 0, EventType: "created",
+		ToStatus: "pending", ActorType: "m4", OccurredAt: time.Now(),
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
 func TestPrepareFactUsesNaturalLanguage(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 22, 8, 0, 0, 0, time.FixedZone("CST", 8*60*60))

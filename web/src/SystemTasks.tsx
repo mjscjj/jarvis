@@ -29,7 +29,7 @@ type ScheduleField =
   | 'extract_schedule'
   | 'decide_schedule'
   | 'execute_schedule'
-  | 'memory_schedule'
+  | 'fact_engine_schedule'
   | 'scheduled_task_schedule'
   | 'daily_digest_schedule'
 
@@ -37,6 +37,7 @@ type EnabledField =
   | 'extract_enabled'
   | 'decide_enabled'
   | 'execute_auto_enabled'
+  | 'fact_engine_enabled'
   | 'scheduled_task_enabled'
   | 'daily_digest_enabled'
 
@@ -82,9 +83,9 @@ const systemTasks: SystemTaskDefinition[] = [
   },
   {
     key: 'decide-reconcile',
-    name: 'M4 Todo 补偿决策',
+    name: 'M5 Todo 补偿判断',
     category: 'Agent 流水线',
-    description: '补偿领取待判断 Todo，进入自动放行、确认、补充或忽略。',
+    description: '补偿领取待判断 Todo，由 M5 判断进入执行、继续观察或忽略。',
     job: 'decide_reconcile',
     scheduleField: 'decide_schedule',
     enabledField: 'decide_enabled',
@@ -101,13 +102,14 @@ const systemTasks: SystemTaskDefinition[] = [
     parameters: (s) => `每批 ${s.execute_batch_limit} 个 · ${s.execute_concurrency} 并发`,
   },
   {
-    key: 'memorize',
-    name: '长期记忆提取',
-    category: '记忆',
-    description: '把新消息切成窗口，交给 mem0 提取可长期复用的工作事实。',
-    job: 'memorize',
-    scheduleField: 'memory_schedule',
-    parameters: (s) => `每批最多 ${s.memory_batch_limit} 条消息`,
+    key: 'extract-facts',
+    name: '长期事实提取',
+    category: '事实引擎',
+    description: '在主流水线之外把消息切成窗口，提取可长期复用的工作事实。',
+    job: 'extract_facts',
+    scheduleField: 'fact_engine_schedule',
+    enabledField: 'fact_engine_enabled',
+    parameters: (s) => `${s.fact_engine_model} · 每批最多 ${s.fact_engine_batch_limit} 条消息`,
   },
   {
     key: 'scheduled-tasks',

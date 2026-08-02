@@ -1,5 +1,7 @@
 # M3 Todo 提取模块技术方案
 
+> **⚠️ 记忆层已退役（2026-08）**：本文写于 mem0 sidecar 时代，文中所有 mem0 / `jarvis_memories` / 记忆化相关设计都**不再成立**。事实沉淀已改为离线事实引擎：`internal/factengine` 按水位消费原料、用 traex + `DeepSeek-V4-Flash` 蒸馏成 `fact` 表，M3/M5 只读不写。权威描述见 [`docs/00-overview.md` §5](../00-overview.md)。本文其余部分仍作历史设计参考。
+
 > 所属系统：基于飞书的本地个人 Jarvis 管家（Principal = 字节研发工程师 `chujiejie.1`）
 > 模块定位：流水线第 3 环，把「新捕获消息（明文）+ 项目/人员/会话背景 + mem0 记忆 + Resource 线索」转成「真实、可落地的行动线索」——即 **`Todo`**（候选，非最终任务）。
 > 设计原则：本地可信明文存储 · fail-fast 暴露问题 · 不加兼容/fallback · 模块化 · 优先官方包与已有实现。

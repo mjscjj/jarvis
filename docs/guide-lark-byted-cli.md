@@ -4,7 +4,7 @@ Jarvis 在本地可信环境里，通过子进程调用两类 CLI 补全飞书�
 
 | CLI | 用途 | Jarvis 里谁在用 |
 |-----|------|----------------|
-| **`lark-cli`** | 飞书/Lark 原生能力：消息、文档、日历、通讯录、任务、妙记等 | M1 采集、M3/M4/M5 agent、背景页 resolve |
+| **`lark-cli`** | 飞书/Lark 原生能力：消息、文档、日历、通讯录、任务、妙记等 | M2 采集、M3/M5 agent、背景页 resolve |
 | **`bytedcli lark`** | 与 `lark-cli` **同一套能力**，经 ByteD CLI 统一入口包装 | 进度页工作日志、agent 侧飞书查询（与 lark-cli 等价，命令形态略有不同） |
 | **`bytedcli codebase`** | 字节 Codebase：跨仓 MR、commit、仓库、Issue 等 | 进度页「项目代码」、每日总结里的 MR 收集 |
 
@@ -41,7 +41,7 @@ Jarvis 在本地可信环境里，通过子进程调用两类 CLI 补全飞书�
 
 **命令形态对照（同一能力两种写法）：**
 
-| 能力 | lark-cli（Jarvis M1 常用） | bytedcli lark（包装层） |
+| 能力 | lark-cli（Jarvis Go 后端常用） | bytedcli lark（包装层） |
 |------|---------------------------|-------------------------|
 | 拉群消息 | `lark-cli im +chat-messages-list --chat-id oc_xxx --as user` | `bytedcli lark im message list --chat-id oc_xxx --as user` |
 | 搜人 | `lark-cli contact +search-user --query "张三" --as user` | `bytedcli lark contact search-user --query "张三" --as user` |
@@ -66,8 +66,8 @@ lark-cli login           # OAuth 设备流授权用户
 lark-cli auth status     # 看当前 user/bot 授权状态
 ```
 
-- **`--as user`**：以「我」的身份操作（读我的消息、建我的日程、搜我的人脉）。M1 采集、resolve、日历建会都用 user。
-- **`--as bot`**：以应用机器人身份（发交互卡片、收 bot 事件流）。M4 确认卡片、M5 对外发群消息常用 bot。
+- **`--as user`**：以「我」的身份操作（读我的消息、建我的日程、搜我的人脉）。M2 采集、resolve、日历建会都用 user。
+- **`--as bot`**：以应用机器人身份（发交互卡片、收 bot 事件流）。M5 审批通知、对外发群消息常用 bot。
 - **高风险写操作**（发消息、建会、改文档等）属于 `high-risk-write`，需加 **`--yes`** 才会真执行；先用 **`--dry-run`** 预览。
 - 机器可读输出：加 **`--format json`**（lark-cli）或外层用 **`bytedcli --json lark …`**。
 
@@ -97,14 +97,14 @@ bytedcli --json auth status
 ### 1.4 Jarvis 里的调用约定
 
 - Go 后端：`exec.CommandContext` 调 CLI，**fail-fast**——非 0 退出、超时、JSON 解析失败、`ok:false` 直接返回 error，不静默兜底。
-- 限流：M1 `internal/larkcli` 有令牌桶 + 并发信号量（默认 2–3 个同时在跑的 lark-cli）。
+- 限流：M2 `internal/larkcli` 有令牌桶 + 并发信号量（默认 2–3 个同时在跑的 lark-cli）。
 - 子进程可能返回 `{ "ok": false }` 但退出码仍为 0；封装层要**同时校验退出码和 `ok` 字段**。
 
 ---
 
 ## 2. lark-cli：Jarvis 各模块怎么用
 
-### 2.1 M1 消息采集（`internal/capture/`）
+### 2.1 M2 消息采集（`internal/capture/`）
 
 **发现会话：**
 
@@ -122,7 +122,7 @@ lark-cli im +chat-messages-list --as user --chat-id oc_xxx \
 
 - 时间范围 `--start/--end`、分页 `--page-token`、排序 `--order asc|desc`。
 - 去重键：**`message_id`**（`om_` 前缀），不是 `event_id`。
-- 系统消息：`msg_type=system` 时 sender 为空，M1 用占位 `__system__` 落库。
+- 系统消息：`msg_type=system` 时 sender 为空，M2 用占位 `__system__` 落库。
 
 **（可选）Bot 事件流低延迟：**
 
@@ -254,7 +254,7 @@ bytedcli lark sheets read --url <spreadsheet-url> --range "Sheet1!A1:D10"
 |------|------|--------|------|
 | **我创建的（owner=我）** | 文档所有者是我 | `--filter '{"owner_ids":["@me"]}'` | **服务端 filter 生效**。别人后来编辑，owner 仍是我，会出现在这里 |
 | **我编辑的（最后编辑人=我）** | 最后一次保存是我 | 宽搜召回后，**本地**过滤 `edit_user_id == 我的 open_id` | **`edit_user_ids` 服务端 filter 实测无效**（会退化成普通搜索）。必须本地比对 |
-| **我收到的** | 别人发我的文档链接 | 查 Jarvis 库 `resource`（M1 采集），不调飞书 | `doc_token` 非空 + 当天 `created_at` |
+| **我收到的** | 别人发我的文档链接 | 查 Jarvis 库 `resource`（M2 采集），不调飞书 | `doc_token` 非空 + 当天 `created_at` |
 
 **owner ≠ 我写的。** 反例（实测）：
 
@@ -428,7 +428,7 @@ bytedcli **没有**「我某天在所有远端仓库的 commit 列表」全局�
 
 ---
 
-## 6. agent 侧：M3/M4/M5 怎么引导模型用 CLI
+## 6. agent 侧：M3/M5 怎么引导模型用 CLI
 
 Jarvis 的 codex/traex agent 跑在 `danger-full-access` + 联网环境，prompt 里只给**简短指引**，让模型自己 `--help` 探索，不维护冗长命令清单：
 
@@ -465,9 +465,9 @@ M3 抽取引擎默认 **codex（traex）** 就是为「自跑 lark-cli/bytedcli/
 
 | 功能 | 代码 | 用的 CLI |
 |------|------|----------|
-| M1 采集 | `internal/capture/`、`internal/larkcli/` | `lark-cli im …` |
+| M2 采集 | `internal/capture/`、`internal/larkcli/` | `lark-cli im …` |
 | 背景 resolve | `internal/background/resolve.go` | `lark-cli contact …` |
-| M3/M4/M5 agent | `internal/extract/codexengine/`、`internal/decide/`、`internal/execute/` | agent 自跑 lark-cli / bytedcli / git |
+| M3/M5 agent | `internal/extract/codexengine/`、`internal/execute/` | agent 自跑 lark-cli / bytedcli / git |
 | 进度·项目代码 | `internal/insight/worklog.go` → `GET /api/worklog/commits` | `bytedcli codebase search mr` |
 | 进度·文档 | `internal/insight/worklog.go` → `GET /api/worklog/documents` | `bytedcli lark docs search` + 库 `resource` |
 | 每日总结（设计） | `docs/design-daily-digest.md` | agent 自跑 §2.4 + §5.1 + git |

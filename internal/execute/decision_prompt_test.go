@@ -48,7 +48,7 @@ func TestBuildCodexPromptForwardsExtractionAndBackground(t *testing.T) {
 			t.Fatalf("prompt missing %q:\n%s", required, prompt.Text)
 		}
 	}
-	// M4 no longer lifts M3 fields to top-level payload keys; they only live
+	// M5 judgment no longer lifts M3 fields to top-level payload keys; they only live
 	// inside the forwarded extraction block.
 	if strings.Contains(prompt.Text, `"todo":{`) {
 		t.Fatalf("prompt must not carry a field-level todo block:\n%s", prompt.Text)
@@ -58,7 +58,7 @@ func TestBuildCodexPromptForwardsExtractionAndBackground(t *testing.T) {
 	}
 }
 
-// 共享记忆非空时，M4 prompt 应在 BEGIN_DECISION_CONTEXT 之前包含 BEGIN_SHARED_MEMORY
+// 共享记忆非空时，M5 判断 prompt 应在 BEGIN_DECISION_CONTEXT 之前包含 BEGIN_SHARED_MEMORY
 // 标记与内容；为空时不包含。
 func TestBuildCodexPromptInjectsSharedMemory(t *testing.T) {
 	todo := &domain.Todo{
@@ -183,7 +183,7 @@ func TestRepositoryDecisionPromptIsOnlyAValueGate(t *testing.T) {
 		"只负责一道价值闸门",
 		"不是任务规划者，也不是执行者",
 		"默认不做深度调查、不穷尽工具",
-		"优先选择 ready",
+		"三条出路是平级选择，没有默认倾向",
 		"执行环节可以结合证据修改、替换或放弃",
 		"不要把 `notify_principal` 或 M3 的 `action_type` 当成既定执行方式",
 	} {
@@ -193,11 +193,12 @@ func TestRepositoryDecisionPromptIsOnlyAValueGate(t *testing.T) {
 	}
 	for _, obsolete := range []string{
 		"先穷尽工具自查",
+		"优先选择 ready",
 		"完整表达可直接交给 M5 的执行意图",
 		"action=notify_principal",
 	} {
 		if strings.Contains(content, obsolete) {
-			t.Fatalf("M4 prompt still contains obsolete planning contract %q:\n%s", obsolete, content)
+			t.Fatalf("M5 judgment prompt still contains obsolete planning contract %q:\n%s", obsolete, content)
 		}
 	}
 }

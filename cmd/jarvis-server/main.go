@@ -26,10 +26,10 @@ import (
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/codexengine"
 	"jarvis/internal/extract/provider"
+	"jarvis/internal/factengine"
 	"jarvis/internal/insight"
 	"jarvis/internal/knowledge"
 	"jarvis/internal/larkcli"
-	"jarvis/internal/memory"
 	"jarvis/internal/observability"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/progress"
@@ -60,9 +60,9 @@ func main() {
 	discoverOnce := flag.Bool("discover-once", false, "执行一次飞书会话发现，成功后退出")
 	scanChat := flag.String("scan-chat", "", "增量扫描指定飞书 chat_id，成功后退出")
 	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
-	memorizeOnce := flag.Bool("memorize-once", false, "执行一次消息记忆化，成功后退出")
+	extractFactsOnce := flag.Bool("extract-facts-once", false, "执行一次离线事实抽取，成功后退出")
 	extractOnce := flag.Bool("extract-once", false, "执行一次 Todo 提取，成功后退出")
-	decideOnce := flag.Bool("decide-once", false, "执行一次 MVP 人工确认分流，成功后退出")
+	decideOnce := flag.Bool("decide-once", false, "执行一轮 M5 Todo 判断，成功后退出")
 	seedOnce := flag.Bool("seed", false, "一次性幂等写入初始 项目/任务/群关联 背景种子，成功后退出")
 	seedPersons := flag.Bool("seed-persons", false, "从关键群真实成员导入 Person（幂等，按 open_id 跳过已存在），成功后退出")
 	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
@@ -84,7 +84,7 @@ func main() {
 		hlog.CtxInfof(startupCtx, format, args...)
 	}
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *memorizeOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P} {
+	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *extractFactsOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P} {
 		if selected {
 			actionCount++
 		}
@@ -177,7 +177,7 @@ func main() {
 	var decisionWorker *execute.DecisionWorker
 	if cfg.Decide.Enabled || *decideOnce {
 		if cfg.Decide.BatchLimit <= 0 {
-			fatalf("decision requires positive execute.batch_limit")
+			fatalf("M5 judgment requires positive decide.batch_limit")
 		}
 		decisionSource, err := execute.NewEvaluationSource(db)
 		if err != nil {
@@ -252,22 +252,30 @@ func main() {
 	if err != nil {
 		fatalf("initialize capture service failed: %v", err)
 	}
-	memoryClient, err := memory.NewClient(cfg.Mem0.BaseURL, time.Duration(cfg.Mem0.TimeoutSec)*time.Second)
+	factEngineStore, err := factengine.NewGORMStore(db)
 	if err != nil {
-		fatalf("initialize memory client failed: %v", err)
+		fatalf("initialize fact engine store failed: %v", err)
 	}
-	memoryStore, err := memory.NewGORMStore(db)
-	if err != nil {
-		fatalf("initialize memory store failed: %v", err)
-	}
-	memoryWorker, err := memory.NewWorker(memoryStore, memoryClient, memory.WorkerOptions{
-		BatchLimit:        cfg.Mem0.BatchLimit,
-		WindowGap:         time.Duration(cfg.Mem0.WindowGapMinutes) * time.Minute,
-		WindowMaxMessages: cfg.Mem0.WindowMaxMessages,
-		Location:          location,
+	factExtractor, err := factengine.NewExtractor(factengine.ExtractorOptions{
+		Bin:     cfg.FactEngine.Bin,
+		Model:   cfg.FactEngine.Model,
+		Sandbox: cfg.FactEngine.Sandbox,
+		Timeout: time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
 	})
 	if err != nil {
-		fatalf("initialize memory worker failed: %v", err)
+		fatalf("initialize fact engine extractor failed: %v", err)
+	}
+	factEngineWorker, err := factengine.NewWorker(factEngineStore, factExtractor, progressService, factengine.WorkerOptions{
+		BatchLimit: cfg.FactEngine.BatchLimit,
+		Window: factengine.WindowOptions{
+			Gap:         time.Duration(cfg.FactEngine.WindowGapMinutes) * time.Minute,
+			MaxMessages: cfg.FactEngine.WindowMaxMessages,
+			Location:    location,
+		},
+		Prompts: textFileService,
+	})
+	if err != nil {
+		fatalf("initialize fact engine worker failed: %v", err)
 	}
 	todoStore, err := extract.NewTodoStore(db)
 	if err != nil {
@@ -402,17 +410,17 @@ func main() {
 		embeddingClient, err := embedding.NewClient(
 			cfg.Model.BaseURL,
 			cfg.Model.APIKey,
-			cfg.Mem0.EmbeddingModel,
-			cfg.Mem0.EmbeddingDims,
+			cfg.Model.EmbeddingModel,
+			cfg.Model.EmbeddingDims,
 			time.Duration(cfg.Model.TimeoutSec)*time.Second,
 		)
 		if err != nil {
 			fatalf("initialize Todo embedding client failed: %v", err)
 		}
 		semanticIndex, err = semantic.NewIndex(semantic.Options{
-			Host: cfg.Mem0.QdrantHost, Port: cfg.Mem0.QdrantGRPCPort,
-			Collection: cfg.Extract.SemanticCollection, EmbeddingModel: cfg.Mem0.EmbeddingModel,
-			Dimensions:     cfg.Mem0.EmbeddingDims,
+			Host: cfg.Extract.QdrantHost, Port: cfg.Extract.QdrantGRPCPort,
+			Collection: cfg.Extract.SemanticCollection, EmbeddingModel: cfg.Model.EmbeddingModel,
+			Dimensions:     cfg.Model.EmbeddingDims,
 			ScoreThreshold: cfg.Extract.SemanticThreshold, NeighborLimit: cfg.Extract.SemanticNeighborLimit,
 			ActiveStatuses: extract.ActiveTodoStatuses(),
 		})
@@ -433,12 +441,9 @@ func main() {
 		if err != nil {
 			fatalf("initialize Todo semantic deduplicator failed: %v", err)
 		}
-		toolBoxBuilder, err := extract.NewRegistryToolBoxBuilder(db, memoryClient, extract.ToolBoxConfig{
+		toolBoxBuilder, err := extract.NewRegistryToolBoxBuilder(db, extract.ToolBoxConfig{
 			ToolTimeout:     time.Duration(cfg.Extract.ToolTimeoutSec) * time.Second,
 			HistoryMaxLimit: cfg.Extract.HistoryToolLimit,
-			MemoryDefaultK:  cfg.Extract.MemoryTopK,
-			MemoryMaxK:      cfg.Extract.ToolMemoryMaxTopK,
-			MemoryThreshold: cfg.Extract.MemoryThreshold,
 			Location:        location,
 		})
 		if err != nil {
@@ -465,14 +470,14 @@ func main() {
 			extractionModelName = cfg.Codex.Model
 			agentToolCatalog = true
 		}
-		extractWorker, err = extract.NewWorker(pipelineStore, extractionEngine, memoryClient, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
+		extractWorker, err = extract.NewWorker(pipelineStore, extractionEngine, progressService, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
 			Load: extract.LoadOptions{
 				BatchMessages: cfg.Extract.BatchMessages, ContextMessages: cfg.Extract.ContextMessages,
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
 				OpenTodoLimit: cfg.Extract.OpenTodoLimit,
 			},
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
-			MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
+			FactLimit:      cfg.Extract.FactLimit,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 			EvidenceRetryMax: cfg.Extract.EvidenceRetryMax,
 			AgentToolCatalog: agentToolCatalog,
@@ -520,14 +525,14 @@ func main() {
 		infof("internal p2p chats opened for monitoring: %d", opened)
 		return
 	}
-	if *memorizeOnce {
-		stats, err := memoryWorker.MemorizeOnce(startupCtx)
+	if *extractFactsOnce {
+		stats, err := factEngineWorker.ExtractOnce(startupCtx)
 		if err != nil {
-			fatalf("memorize messages failed: %v", err)
+			fatalf("extract facts failed: %v", err)
 		}
 		infof(
-			"message memory completed: loaded=%d processed=%d memorized=%d skipped=%d windows=%d",
-			stats.Loaded, stats.Processed, stats.MemorizedMessages, stats.SkippedMessages, stats.Windows,
+			"offline fact extraction completed: units=%d facts=%d rejected=%d last_id=%d",
+			stats.Units, stats.Facts, stats.Rejected, stats.LastID,
 		)
 		return
 	}
@@ -623,25 +628,11 @@ func main() {
 		waitPipeline()
 		fatalf("start capture scheduler failed: %v", err)
 	}
-	memoryScheduler, err := memory.StartScheduler(
-		runtimeCtx,
-		memoryWorker,
-		cfg.Mem0.Schedule,
-		log.New(os.Stderr, "memory-cron ", log.LstdFlags|log.Lmicroseconds),
-	)
-	if err != nil {
-		cancelRuntime()
-		<-scheduler.Stop().Done()
-		stopPipelineScheduler()
-		waitPipeline()
-		fatalf("start memory scheduler failed: %v", err)
-	}
 	// 进程重启后，旧进程留下的生成任务不可能继续，启动时显式标失败。
 	recoveredDailyDigests, err := dailyDigestService.RecoverInterrupted(runtimeCtx)
 	if err != nil {
 		cancelRuntime()
 		<-scheduler.Stop().Done()
-		<-memoryScheduler.Stop().Done()
 		stopPipelineScheduler()
 		waitPipeline()
 		fatalf("recover interrupted daily digests failed: %v", err)
@@ -661,7 +652,6 @@ func main() {
 		if err != nil {
 			cancelRuntime()
 			<-scheduler.Stop().Done()
-			<-memoryScheduler.Stop().Done()
 			stopPipelineScheduler()
 			waitPipeline()
 			fatalf("start daily digest scheduler failed: %v", err)
@@ -686,12 +676,24 @@ func main() {
 		}
 		stopScheduledTasks = func() { <-scheduledTaskScheduler.Stop().Done() }
 	}
+	// 离线事实抽取 cron：跑在关键路径之外，disabled 时 -extract-facts-once 仍可手动跑一轮。
+	stopFactEngine := func() {}
+	if cfg.FactEngine.Enabled {
+		factEngineScheduler, err := factengine.StartScheduler(
+			runtimeCtx, factEngineWorker, cfg.FactEngine.Schedule,
+			log.New(os.Stderr, "factengine-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			fatalf("start fact engine scheduler failed: %v", err)
+		}
+		stopFactEngine = func() { <-factEngineScheduler.Stop().Done() }
+	}
 	defer func() {
 		cancelRuntime()
 		<-scheduler.Stop().Done()
-		<-memoryScheduler.Stop().Done()
 		stopDailyDigest()
 		stopScheduledTasks()
+		stopFactEngine()
 		stopPipelineScheduler()
 		waitPipeline()
 	}()

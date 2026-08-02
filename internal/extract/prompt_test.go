@@ -1,13 +1,12 @@
 package extract
 
 import (
-	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/toolcatalog"
 )
 
@@ -20,23 +19,19 @@ func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 		},
 	}
 	batch := ChatBatch{Group: GroupContext{ID: 1, ChatID: "oc_1", Name: "研发群"}}
-	memories := []map[string]any{
-		{"memory": "must be filtered", "metadata": map[string]any{"source": "m3"}},
-		{"memory": "stable project fact", "metadata": map[string]any{"source": "m2"}},
+	facts := []contextsnap.Fact{
+		{ID: 7, SubjectType: "project", SubjectID: 3, Description: "鉴权改造由张三负责", OccurredAt: "2026-07-30T10:00:00Z"},
 	}
-	prompt, err := BuildPrompt(batch, unit, memories, time.Unix(1_700_000_100, 0), PromptOptions{
+	prompt, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{
 		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {
 		t.Fatalf("BuildPrompt() error = %v", err)
 	}
-	for _, want := range []string{"[context] msg_id=om_context", "[new] msg_id=om_new", "stable project fact"} {
+	for _, want := range []string{"[context] msg_id=om_context", "[new] msg_id=om_new", "鉴权改造由张三负责", "已沉淀的事实"} {
 		if !strings.Contains(prompt.User, want) {
 			t.Fatalf("prompt user missing %q:\n%s", want, prompt.User)
 		}
-	}
-	if strings.Contains(prompt.User, "must be filtered") {
-		t.Fatalf("prompt includes M3 feedback memory:\n%s", prompt.User)
 	}
 }
 
@@ -143,62 +138,6 @@ func TestRenderParticipantsInjectsCommStyle(t *testing.T) {
 	// A participant without comm_style must not emit an empty comm_style token.
 	if strings.Contains(rendered, `name="同事" role=colleague is_leader=false comm_style`) {
 		t.Fatalf("renderParticipants emitted empty comm_style for peer:\n%s", rendered)
-	}
-}
-
-func TestSalientQueryRequiresExtractableNewMessage(t *testing.T) {
-	_, err := SalientQuery(ConversationUnit{Key: "chat", Messages: []MessageContext{{
-		MessageID: "om_context", Content: "only context", IsNew: false, Extractable: true,
-	}}})
-	if err == nil {
-		t.Fatal("SalientQuery() accepted a unit without extractable new messages")
-	}
-}
-
-func TestSalientQueryCapsToLastMessages(t *testing.T) {
-	messages := make([]MessageContext, 0, 30)
-	for i := 0; i < 30; i++ {
-		messages = append(messages, MessageContext{
-			MessageID:   "om",
-			Content:     fmt.Sprintf("消息%d", i),
-			IsNew:       true,
-			Extractable: true,
-		})
-	}
-	query, err := SalientQuery(ConversationUnit{Key: "chat", Messages: messages})
-	if err != nil {
-		t.Fatalf("SalientQuery() error = %v", err)
-	}
-	lines := strings.Split(query, "\n")
-	if len(lines) != salientQueryMaxMessages {
-		t.Fatalf("SalientQuery() returned %d lines, want %d", len(lines), salientQueryMaxMessages)
-	}
-	// Must keep the latest messages (intent lives at the end), dropping oldest.
-	if strings.Contains(query, "消息0\n") || strings.Contains(query, "消息9\n") {
-		t.Fatalf("SalientQuery() kept stale early messages:\n%s", query)
-	}
-	if !strings.Contains(query, "消息29") {
-		t.Fatalf("SalientQuery() dropped the newest message:\n%s", query)
-	}
-}
-
-func TestSalientQueryCapsLongMeetingEvidenceForMemorySearch(t *testing.T) {
-	query, err := SalientQuery(ConversationUnit{Key: "meeting", Messages: []MessageContext{{
-		MessageID:   "meeting:1",
-		Content:     "开头行动项\n" + strings.Repeat("会议逐字稿", 2000) + "\n结尾行动项",
-		IsNew:       true,
-		Extractable: true,
-	}}})
-	if err != nil {
-		t.Fatalf("SalientQuery() error = %v", err)
-	}
-	if got := utf8.RuneCountInString(query); got != salientQueryMaxChars {
-		t.Fatalf("SalientQuery() runes = %d, want %d", got, salientQueryMaxChars)
-	}
-	for _, want := range []string{"开头行动项", "记忆检索查询已截断", "结尾行动项"} {
-		if !strings.Contains(query, want) {
-			t.Fatalf("SalientQuery() missing %q", want)
-		}
 	}
 }
 

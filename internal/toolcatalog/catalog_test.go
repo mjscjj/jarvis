@@ -42,7 +42,7 @@ func TestDecideStageLimitsToolsToValueGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"只判断线索是否值得交给 M5", "默认不调用工具", "不要多跳调查", "这些由 M5 完成"} {
+	for _, required := range []string{"进入 M5 执行环节", "默认不调用工具", "不要多跳调查", "由 M5 执行环节完成"} {
 		if !strings.Contains(block, required) {
 			t.Fatalf("decide block missing %q:\n%s", required, block)
 		}

@@ -16,8 +16,8 @@ import (
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
 	MySQL         MySQLConfig         `yaml:"mysql"`
-	Mem0          Mem0Config          `yaml:"mem0"`
 	Model         ModelConfig         `yaml:"model"`
+	FactEngine    FactEngineConfig    `yaml:"factengine"`
 	Extract       ExtractConfig       `yaml:"extract"`
 	LarkCLI       LarkCLIConfig       `yaml:"lark_cli"`
 	Capture       CaptureConfig       `yaml:"capture"`
@@ -45,24 +45,6 @@ type MySQLConfig struct {
 	ConnMaxLifetime int    `yaml:"conn_max_lifetime"` // 秒
 }
 
-// Mem0Config Python sidecar（总纲 §5）。
-type Mem0Config struct {
-	BaseURL           string `yaml:"base_url"` // http://127.0.0.1:18900
-	OwnerID           string `yaml:"owner_id"` // 单用户系统统一 user_id，默认 owner
-	TimeoutSec        int    `yaml:"timeout_sec"`
-	BatchLimit        int    `yaml:"batch_limit"`
-	WindowGapMinutes  int    `yaml:"window_gap_minutes"`
-	WindowMaxMessages int    `yaml:"window_max_messages"`
-	Schedule          string `yaml:"schedule"`
-	QdrantHost        string `yaml:"qdrant_host"`
-	QdrantPort        int    `yaml:"qdrant_port"`      // Python client 使用的 HTTP 端口
-	QdrantGRPCPort    int    `yaml:"qdrant_grpc_port"` // Go official client 使用的 gRPC 端口
-	Collection        string `yaml:"collection"`
-	StateDir          string `yaml:"state_dir"`
-	EmbeddingModel    string `yaml:"embedding_model"`
-	EmbeddingDims     int    `yaml:"embedding_dims"`
-}
-
 // ModelConfig 高频抽取用的 OpenAI 兼容端点（M2/M3，总纲 §6）。
 type ModelConfig struct {
 	BaseURL          string `yaml:"base_url"`
@@ -70,6 +52,36 @@ type ModelConfig struct {
 	Model            string `yaml:"model"`
 	IsReasoningModel bool   `yaml:"is_reasoning_model"`
 	TimeoutSec       int    `yaml:"timeout_sec"`
+
+	// EmbeddingModel/EmbeddingDims serve Todo semantic dedup, which shares this
+	// endpoint's base URL and key.
+	EmbeddingModel string `yaml:"embedding_model"`
+	EmbeddingDims  int    `yaml:"embedding_dims"`
+}
+
+// FactEngineConfig controls the offline fact engine: a cron-driven agent that
+// reads material the pipeline already produced (messages today; Todos and Task
+// runs next) and distills long-lived facts out of it. It runs off the M2→M3→M5
+// critical path, so a slow or failing round never blocks capture or execution.
+//
+// Bin/Model are independent of the codex and execute sections: distillation is
+// high-volume and low-stakes, so it runs on a cheap fast model while judgment
+// and execution keep theirs.
+type FactEngineConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Schedule string `yaml:"schedule"`
+
+	Bin        string `yaml:"bin"`
+	Model      string `yaml:"model"`
+	Sandbox    string `yaml:"sandbox"`
+	TimeoutSec int    `yaml:"timeout_sec"`
+
+	// BatchLimit caps how many source rows one round consumes. WindowGapMinutes
+	// and WindowMaxMessages cut a chat's messages into conversation windows, one
+	// extraction call each: a window is the unit a fact is distilled from.
+	BatchLimit        int `yaml:"batch_limit"`
+	WindowGapMinutes  int `yaml:"window_gap_minutes"`
+	WindowMaxMessages int `yaml:"window_max_messages"`
 }
 
 // ExtractConfig controls the M3 extraction worker. Disabled is an explicit
@@ -94,19 +106,23 @@ type ExtractConfig struct {
 	ContextMessages       int     `yaml:"context_messages"`
 	ContextWindowMinutes  int     `yaml:"context_window_minutes"`
 	OpenTodoLimit         int     `yaml:"open_todo_limit"`
-	MemoryTopK            int     `yaml:"memory_top_k"`
-	MemoryThreshold       float64 `yaml:"memory_threshold"`
 	MaxPromptChars        int     `yaml:"max_prompt_chars"`
 	SemanticCollection    string  `yaml:"semantic_collection"`
 	SemanticThreshold     float64 `yaml:"semantic_threshold"`
 	SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
 
+	// FactLimit caps how many of a subject's newest facts (from the offline fact
+	// engine) are injected into one extraction prompt.
+	FactLimit int `yaml:"fact_limit"`
+
+	// QdrantHost/QdrantGRPCPort locate the vector store backing SemanticCollection.
+	QdrantHost     string `yaml:"qdrant_host"`
+	QdrantGRPCPort int    `yaml:"qdrant_grpc_port"`
+
 	// M3 function-calling tool loop. ToolTimeoutSec bounds one tool call;
-	// HistoryToolLimit caps rows returned by query_chat_history; ToolMemoryMaxTopK
-	// caps top_k the model may request from search_memory.
-	ToolTimeoutSec    int `yaml:"tool_timeout_sec"`
-	HistoryToolLimit  int `yaml:"history_tool_limit"`
-	ToolMemoryMaxTopK int `yaml:"tool_memory_max_top_k"`
+	// HistoryToolLimit caps rows returned by query_chat_history.
+	ToolTimeoutSec   int `yaml:"tool_timeout_sec"`
+	HistoryToolLimit int `yaml:"history_tool_limit"`
 
 	// EvidenceRetryMax caps how many extra extraction attempts are made per unit
 	// when a candidate's source_quote is not a verbatim substring of the cited
@@ -245,7 +261,7 @@ func Load(path string) (*Config, error) {
 }
 
 // validate 校验当前已启用模块的全部启动条件。model/codex 会在各自
-// 里程碑启用时加入对应校验；mem0 模型参数由独立 sidecar 启动时校验。
+// 里程碑启用时加入对应校验。
 func (c *Config) validate() error {
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")
@@ -272,41 +288,8 @@ func (c *Config) validate() error {
 	if c.MySQL.ConnMaxLifetime <= 0 {
 		return fmt.Errorf("mysql.conn_max_lifetime 必须大于 0")
 	}
-	if c.Mem0.BaseURL == "" {
-		return fmt.Errorf("mem0.base_url 不能为空")
-	}
-	if c.Mem0.OwnerID == "" {
-		return fmt.Errorf("mem0.owner_id 不能为空")
-	}
-	if c.Mem0.TimeoutSec <= 0 {
-		return fmt.Errorf("mem0.timeout_sec 必须大于 0")
-	}
-	if c.Mem0.BatchLimit <= 0 {
-		return fmt.Errorf("mem0.batch_limit 必须大于 0")
-	}
-	if c.Mem0.WindowGapMinutes <= 0 {
-		return fmt.Errorf("mem0.window_gap_minutes 必须大于 0")
-	}
-	if c.Mem0.WindowMaxMessages <= 0 {
-		return fmt.Errorf("mem0.window_max_messages 必须大于 0")
-	}
-	if c.Mem0.Schedule == "" {
-		return fmt.Errorf("mem0.schedule 不能为空")
-	}
-	if c.Mem0.QdrantHost == "" {
-		return fmt.Errorf("mem0.qdrant_host 不能为空")
-	}
-	if c.Mem0.QdrantPort <= 0 || c.Mem0.QdrantPort > 65535 {
-		return fmt.Errorf("mem0.qdrant_port 必须在 1 到 65535 之间")
-	}
-	if c.Mem0.QdrantGRPCPort <= 0 || c.Mem0.QdrantGRPCPort > 65535 {
-		return fmt.Errorf("mem0.qdrant_grpc_port 必须在 1 到 65535 之间")
-	}
-	if c.Mem0.Collection == "" || c.Mem0.StateDir == "" {
-		return fmt.Errorf("mem0.collection/state_dir 均不能为空")
-	}
-	if c.Mem0.EmbeddingModel == "" || c.Mem0.EmbeddingDims <= 0 {
-		return fmt.Errorf("mem0.embedding_model 不能为空且 embedding_dims 必须大于 0")
+	if err := c.validateFactEngine(); err != nil {
+		return err
 	}
 	if c.Extract.Schedule == "" {
 		return fmt.Errorf("extract.schedule 不能为空")
@@ -323,17 +306,20 @@ func (c *Config) validate() error {
 	if c.Extract.OpenTodoLimit <= 0 {
 		return fmt.Errorf("extract.open_todo_limit 必须大于 0")
 	}
-	if c.Extract.MemoryTopK <= 0 {
-		return fmt.Errorf("extract.memory_top_k 必须大于 0")
-	}
-	if c.Extract.MemoryThreshold < 0 || c.Extract.MemoryThreshold > 1 {
-		return fmt.Errorf("extract.memory_threshold 必须在 0 到 1 之间")
+	if c.Extract.FactLimit <= 0 {
+		return fmt.Errorf("extract.fact_limit 必须大于 0")
 	}
 	if c.Extract.MaxPromptChars <= 0 {
 		return fmt.Errorf("extract.max_prompt_chars 必须大于 0")
 	}
 	if c.Extract.SemanticCollection == "" {
 		return fmt.Errorf("extract.semantic_collection 不能为空")
+	}
+	if c.Extract.QdrantHost == "" {
+		return fmt.Errorf("extract.qdrant_host 不能为空")
+	}
+	if c.Extract.QdrantGRPCPort <= 0 || c.Extract.QdrantGRPCPort > 65535 {
+		return fmt.Errorf("extract.qdrant_grpc_port 必须在 1 到 65535 之间")
 	}
 	if c.Extract.SemanticThreshold <= 0 || c.Extract.SemanticThreshold > 1 {
 		return fmt.Errorf("extract.semantic_threshold 必须在 0（不含）到 1 之间")
@@ -347,16 +333,13 @@ func (c *Config) validate() error {
 	if c.Extract.HistoryToolLimit <= 0 {
 		return fmt.Errorf("extract.history_tool_limit 必须大于 0")
 	}
-	if c.Extract.ToolMemoryMaxTopK < c.Extract.MemoryTopK {
-		return fmt.Errorf("extract.tool_memory_max_top_k 不能小于 extract.memory_top_k")
-	}
 	if c.Extract.EvidenceRetryMax < 0 {
 		return fmt.Errorf("extract.evidence_retry_max 不能为负数")
 	}
 	if c.Extract.Engine != "codex" && c.Extract.Engine != "model_api" {
 		return fmt.Errorf("extract.engine 必须是 codex 或 model_api")
 	}
-	if err := validateCodexSandbox("extract", c.Extract.CodexSandbox); err != nil {
+	if err := validateCodexSandbox("extract.codex_sandbox", c.Extract.CodexSandbox); err != nil {
 		return err
 	}
 	if err := validateReasoningEffort("extract", c.Extract.CodexReasoningEffort); err != nil {
@@ -371,6 +354,9 @@ func (c *Config) validate() error {
 		}
 		if c.Model.TimeoutSec <= 0 {
 			return fmt.Errorf("extract 启用时 model.timeout_sec 必须大于 0")
+		}
+		if c.Model.EmbeddingModel == "" || c.Model.EmbeddingDims <= 0 {
+			return fmt.Errorf("extract 启用时 model.embedding_model 不能为空且 embedding_dims 必须大于 0")
 		}
 	}
 	if c.LarkCLI.Bin == "" {
@@ -409,6 +395,9 @@ func (c *Config) validate() error {
 	if c.Capture.AutoRelatedP2PTopN < 0 {
 		return fmt.Errorf("capture.auto_related_p2p_top_n 不能为负数")
 	}
+	if c.Decide.Enabled != c.Execute.Enabled {
+		return fmt.Errorf("M5 判断与执行必须同时启用或停用：decide.enabled=%t execute.enabled=%t", c.Decide.Enabled, c.Execute.Enabled)
+	}
 	if c.Decide.Enabled {
 		if c.Decide.Schedule == "" {
 			return fmt.Errorf("decide.schedule 不能为空")
@@ -416,7 +405,7 @@ func (c *Config) validate() error {
 		if c.Decide.BatchLimit <= 0 {
 			return fmt.Errorf("decide.batch_limit 必须大于 0")
 		}
-		if err := validateCodexSandbox("decide", c.Decide.CodexSandbox); err != nil {
+		if err := validateCodexSandbox("decide.codex_sandbox", c.Decide.CodexSandbox); err != nil {
 			return err
 		}
 		if err := validateReasoningEffort("decide", c.Decide.CodexReasoningEffort); err != nil {
@@ -468,7 +457,7 @@ func (c *Config) validate() error {
 			return fmt.Errorf("execute.concurrency 必须大于 0")
 		}
 	}
-	if err := validateCodexSandbox("chat", c.Chat.Sandbox); err != nil {
+	if err := validateCodexSandbox("chat.sandbox", c.Chat.Sandbox); err != nil {
 		return err
 	}
 	if err := validateReasoningEffort("chat", c.Chat.ReasoningEffort); err != nil {
@@ -508,7 +497,7 @@ func (c *Config) validate() error {
 		name string
 		spec string
 	}{
-		{name: "mem0.schedule", spec: c.Mem0.Schedule},
+		{name: "factengine.schedule", spec: c.FactEngine.Schedule},
 		{name: "extract.schedule", spec: c.Extract.Schedule},
 		{name: "capture.discover_schedule", spec: c.Capture.DiscoverSchedule},
 		{name: "capture.scan_schedule", spec: c.Capture.ScanSchedule},
@@ -525,15 +514,48 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// validateFactEngine validates the offline fact engine. Everything is required
+// regardless of Enabled: the one-shot CLI action runs the engine with a disabled
+// cron, so half-configured values must fail at load rather than at first use.
+func (c *Config) validateFactEngine() error {
+	if c.FactEngine.Schedule == "" {
+		return fmt.Errorf("factengine.schedule 不能为空")
+	}
+	if c.FactEngine.Bin == "" {
+		return fmt.Errorf("factengine.bin 不能为空")
+	}
+	if c.FactEngine.Model == "" {
+		return fmt.Errorf("factengine.model 不能为空")
+	}
+	if err := validateCodexSandbox("factengine.sandbox", c.FactEngine.Sandbox); err != nil {
+		return err
+	}
+	if c.FactEngine.TimeoutSec <= 0 {
+		return fmt.Errorf("factengine.timeout_sec 必须大于 0")
+	}
+	if c.FactEngine.BatchLimit <= 0 {
+		return fmt.Errorf("factengine.batch_limit 必须大于 0")
+	}
+	if c.FactEngine.WindowGapMinutes <= 0 {
+		return fmt.Errorf("factengine.window_gap_minutes 必须大于 0")
+	}
+	if c.FactEngine.WindowMaxMessages <= 0 {
+		return fmt.Errorf("factengine.window_max_messages 必须大于 0")
+	}
+	return nil
+}
+
 // validateCodexSandbox enforces the codex sandbox mode is one of the values
 // codex CLI accepts. danger-full-access is intentionally allowed: it is the
 // explicit local-trusted-environment posture per docs/design-context-pipeline.md.
-func validateCodexSandbox(section, value string) error {
+// key is the full config key so the error points at the line to edit — sections
+// do not agree on the field name (codex_sandbox vs sandbox).
+func validateCodexSandbox(key, value string) error {
 	switch value {
 	case "read-only", "workspace-write", "danger-full-access":
 		return nil
 	default:
-		return fmt.Errorf("%s.codex_sandbox 必须是 read-only / workspace-write / danger-full-access", section)
+		return fmt.Errorf("%s 必须是 read-only / workspace-write / danger-full-access", key)
 	}
 }
 

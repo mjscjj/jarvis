@@ -6,7 +6,7 @@ import (
 )
 
 func TestValidateTodoFilter(t *testing.T) {
-	valid := TodoListFilter{Statuses: []string{"extracted", "need_info"}, ActionType: "investigate", Page: 1, PageSize: 20}
+	valid := TodoListFilter{Statuses: []string{"extracted", "observing"}, ActionType: "investigate", Page: 1, PageSize: 20}
 	if err := ValidateTodoFilter(valid); err != nil {
 		t.Fatalf("ValidateTodoFilter() error = %v", err)
 	}
@@ -23,14 +23,14 @@ func TestValidateTodoFilter(t *testing.T) {
 }
 
 func TestParseStatuses(t *testing.T) {
-	got, err := ParseStatuses(" extracted,need_info,extracted ")
+	got, err := ParseStatuses(" extracted,observing,extracted ")
 	if err != nil {
 		t.Fatalf("ParseStatuses() error = %v", err)
 	}
-	if len(got) != 2 || got[0] != "extracted" || got[1] != "need_info" {
+	if len(got) != 2 || got[0] != "extracted" || got[1] != "observing" {
 		t.Fatalf("ParseStatuses() = %#v", got)
 	}
-	if _, err := ParseStatuses("extracted,,need_info"); err == nil {
+	if _, err := ParseStatuses("extracted,,observing"); err == nil {
 		t.Fatal("ParseStatuses() accepted empty status segment")
 	}
 }

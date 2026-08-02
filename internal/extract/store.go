@@ -20,8 +20,7 @@ var (
 )
 
 var allowedTodoStatuses = map[string]struct{}{
-	"extracted": {}, "scoring": {}, "auto": {}, "need_info": {}, "need_decision": {},
-	"confirmed": {}, "dismissed": {}, "dropped": {}, "expired": {}, "observing": {},
+	"extracted": {}, "auto": {}, "dropped": {}, "observing": {},
 }
 
 // m3OwnedTodoStatuses are the states re-extraction may still move a clue

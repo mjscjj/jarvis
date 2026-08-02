@@ -16,7 +16,7 @@ import (
 	"jarvis/internal/embedding"
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/provider"
-	"jarvis/internal/memory"
+	"jarvis/internal/progress"
 	"jarvis/internal/semantic"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
@@ -28,7 +28,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestPipelineLive exercises MySQL -> mem0 -> model -> Todo persistence inside
+// TestPipelineLive exercises MySQL -> facts -> model -> Todo persistence inside
 // an outer transaction that is always rolled back. Existing related groups are
 // hidden only inside that transaction, so no real Feishu message is sent to the
 // model and no fixture remains in the production database.
@@ -94,25 +94,21 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("provider.NewClient() error = %v", err)
 	}
-	memoryClient, err := memory.NewClient(cfg.Mem0.BaseURL, time.Duration(cfg.Mem0.TimeoutSec)*time.Second)
-	if err != nil {
-		t.Fatalf("memory.NewClient() error = %v", err)
-	}
 	location, err := time.LoadLocation(cfg.Capture.Timezone)
 	if err != nil {
 		t.Fatalf("time.LoadLocation() error = %v", err)
 	}
 	embeddingClient, err := embedding.NewClient(
-		cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Mem0.EmbeddingModel,
-		cfg.Mem0.EmbeddingDims, time.Duration(cfg.Model.TimeoutSec)*time.Second,
+		cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.EmbeddingModel,
+		cfg.Model.EmbeddingDims, time.Duration(cfg.Model.TimeoutSec)*time.Second,
 	)
 	if err != nil {
 		t.Fatalf("embedding.NewClient() error = %v", err)
 	}
 	semanticCollection := fmt.Sprintf("todo_semantic_pipeline_test_%d", suffix)
 	semanticIndex, err := semantic.NewIndex(semantic.Options{
-		Host: cfg.Mem0.QdrantHost, Port: cfg.Mem0.QdrantGRPCPort, Collection: semanticCollection,
-		EmbeddingModel: cfg.Mem0.EmbeddingModel, Dimensions: cfg.Mem0.EmbeddingDims, ScoreThreshold: cfg.Extract.SemanticThreshold,
+		Host: cfg.Extract.QdrantHost, Port: cfg.Extract.QdrantGRPCPort, Collection: semanticCollection,
+		EmbeddingModel: cfg.Model.EmbeddingModel, Dimensions: cfg.Model.EmbeddingDims, ScoreThreshold: cfg.Extract.SemanticThreshold,
 		NeighborLimit: cfg.Extract.SemanticNeighborLimit, ActiveStatuses: extract.ActiveTodoStatuses(),
 	})
 	if err != nil {
@@ -123,7 +119,7 @@ func TestPipelineLive(t *testing.T) {
 			t.Errorf("semanticIndex.Close() error = %v", err)
 		}
 		cleanupClient, err := qdrant.NewClient(&qdrant.Config{
-			Host: cfg.Mem0.QdrantHost, Port: cfg.Mem0.QdrantGRPCPort, PoolSize: 1, SkipCompatibilityCheck: true,
+			Host: cfg.Extract.QdrantHost, Port: cfg.Extract.QdrantGRPCPort, PoolSize: 1, SkipCompatibilityCheck: true,
 		})
 		if err != nil {
 			t.Errorf("create Qdrant cleanup client: %v", err)
@@ -150,12 +146,9 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract.NewDeduplicator() error = %v", err)
 	}
-	toolBoxBuilder, err := extract.NewRegistryToolBoxBuilder(tx, memoryClient, extract.ToolBoxConfig{
+	toolBoxBuilder, err := extract.NewRegistryToolBoxBuilder(tx, extract.ToolBoxConfig{
 		ToolTimeout:     10 * time.Second,
 		HistoryMaxLimit: 50,
-		MemoryDefaultK:  cfg.Extract.MemoryTopK,
-		MemoryMaxK:      cfg.Extract.MemoryTopK * 2,
-		MemoryThreshold: cfg.Extract.MemoryThreshold,
 		Location:        location,
 	})
 	if err != nil {
@@ -180,14 +173,18 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("textstore.NewService() error = %v", err)
 	}
-	worker, err := extract.NewWorker(pipelineStore, modelClient, memoryClient, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
+	progressService, err := progress.NewService(tx)
+	if err != nil {
+		t.Fatalf("progress.NewService() error = %v", err)
+	}
+	worker, err := extract.NewWorker(pipelineStore, modelClient, progressService, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
 		Load: extract.LoadOptions{
 			BatchMessages: 10, ContextMessages: cfg.Extract.ContextMessages,
 			ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
 			OpenTodoLimit: cfg.Extract.OpenTodoLimit,
 		},
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
-		MemoryTopK: cfg.Extract.MemoryTopK, MemoryThreshold: cfg.Extract.MemoryThreshold,
+		FactLimit:      cfg.Extract.FactLimit,
 		MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 		WorkRules:     workRuleService,
 		Skills:        skillService,

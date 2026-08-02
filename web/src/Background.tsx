@@ -101,7 +101,7 @@ const personRoleColors: Record<PersonRole, string> = {
 }
 
 const workRuleStageLabels: Record<WorkRuleStage, string> = {
-  extract: 'M3 抽取 Todo', decide: 'M4 决策', execute: 'M5 执行',
+  extract: 'M3 抽取 Todo', decide: 'M5 判断', execute: 'M5 执行',
 }
 
 function errorText(cause: unknown): string {
@@ -1072,7 +1072,7 @@ function WorkRulesPanel() {
   const definitions: Array<{ key: WorkRule['key']; label: string; description: string }> = [
     { key: 'all', label: '全阶段', description: '会与每个具体阶段的规则一起注入。' },
     { key: 'extract', label: 'M3 抽取', description: '只在行动线索抽取阶段注入。' },
-    { key: 'decide', label: 'M4 决策', description: '只在行动决策阶段注入。' },
+    { key: 'decide', label: 'M5 判断', description: '只在 M5 的行动判断环节注入。' },
     { key: 'execute', label: 'M5 执行', description: '只在任务执行阶段注入。' },
   ]
 
@@ -1156,12 +1156,12 @@ function ApprovalRulesPanel() {
 
   return <>
     {error && <Alert type="error" showIcon message="审批策略操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon message="审批策略已保存，后续非代码 M5 任务会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon message="审批策略已保存，后续 M5 任务会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
     {!record && !loading && <Alert type="error" showIcon message="审批策略文件缺失，服务配置不完整。" style={{ marginBottom: 12 }} />}
     <Card loading={loading} variant="borderless">
       <Form form={form} layout="vertical" initialValues={{ content: '' }}>
         <Form.Item name="content" label="M5 审批判定策略" rules={[{ required: true, whitespace: true, message: '请输入审批策略' }]}
-          extra="控制非代码任务在 propose 阶段什么需要审批、什么可以直接执行。代码修改仍走分支、提交和 MR 流程。">
+          extra="供 M5 在执行过程中判断哪些具体动作需要先请示、哪些可以直接完成。">
           <Input.TextArea rows={18} placeholder="填写审批判定策略" style={{ fontFamily: 'monospace' }} />
         </Form.Item>
         {record && <div style={{ margin: '-8px 0 12px' }}><Text type="secondary">本地文件：</Text><Text code>{record.path}</Text></div>}
@@ -1174,7 +1174,7 @@ function ApprovalRulesPanel() {
   </>
 }
 
-// --- M3/M4/M5 system prompts (stored in local Markdown files) ---
+// --- M3/M5 system prompts (stored in local Markdown files) ---
 
 const systemPromptDefinitions = [
   {
@@ -1185,9 +1185,9 @@ const systemPromptDefinitions = [
   },
   {
     key: 'm5_decision_system_prompt',
-    name: 'M4 决策',
-    fileName: 'M4 系统提示词',
-    description: '定义行动决策者的角色、处置原则和阶段安全边界。',
+    name: 'M5 判断',
+    fileName: 'M5 判断系统提示词',
+    description: '定义 M5 行动判断环节的角色、处置原则和阶段安全边界。',
   },
   {
     key: 'm5_system_prompt',
@@ -1262,7 +1262,7 @@ function SystemPromptsPanel() {
       type="info"
       showIcon
       message="这些内容直接读写本地 Markdown 文件"
-      description="M3、M4、M5 会实时读取对应文件。工具说明由工具层维护，Skills 由 Skills 页维护；当前阶段、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
+      description="M3 与 M5 会实时读取对应文件。工具说明由工具层维护，Skills 由 Skills 页维护；当前环节、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
       style={{ marginBottom: 12 }}
     />
     <Card loading={loading} variant="borderless">

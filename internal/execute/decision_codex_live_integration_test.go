@@ -13,7 +13,7 @@ import (
 	"jarvis/internal/domain"
 )
 
-// TestCodexDeciderLiveDecision runs one real M4 decision through the configured
+// TestCodexDeciderLiveDecision runs one real M5 judgment through the configured
 // agent CLI and model, using the production system prompt. It is the only check
 // that the configured model actually honours the disposition/plan/payload
 // contract; the unit tests all stub the CLI out.
@@ -79,7 +79,7 @@ func TestCodexDeciderLiveDecision(t *testing.T) {
 		t.Fatalf("Decide() error = %v", err)
 	}
 	switch result.Decision.Disposition {
-	case DispositionReady, DispositionNeedReview, DispositionNeedInfo, DispositionDrop:
+	case DispositionReady, DispositionObserve, DispositionDrop:
 	default:
 		t.Fatalf("Decide() disposition = %q, not a valid disposition", result.Decision.Disposition)
 	}

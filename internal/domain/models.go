@@ -26,7 +26,6 @@ type Project struct {
 	KeyDecisions datatypes.JSON `gorm:"column:key_decisions;type:json"`
 	Timeline     datatypes.JSON `gorm:"column:timeline;type:json"`
 	Notes        *string        `gorm:"column:notes;type:text"`
-	Mem0SyncedAt *time.Time     `gorm:"column:mem0_synced_at;type:datetime"`
 	CreatedAt    time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
 	UpdatedAt    time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 }
@@ -63,25 +62,24 @@ func (Group) TableName() string { return "feishu_group" }
 
 // Person is a manually maintained important person, keyed by Feishu open_id.
 type Person struct {
-	ID             uint64     `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	OpenID         string     `gorm:"column:open_id;type:varchar(64);not null;uniqueIndex:uk_person_open_id"`
-	UnionID        *string    `gorm:"column:union_id;type:varchar(64)"`
-	FeishuUserID   *string    `gorm:"column:feishu_user_id;type:varchar(64)"`
-	Name           string     `gorm:"column:name;type:varchar(128);not null"`
-	EnName         *string    `gorm:"column:en_name;type:varchar(128)"`
-	AvatarURL      *string    `gorm:"column:avatar_url;type:varchar(512)"`
-	Department     *string    `gorm:"column:department;type:varchar(255)"`
-	Title          *string    `gorm:"column:title;type:varchar(128)"`
-	Role           string     `gorm:"column:role;type:enum('leader','key','colleague','other');not null;index:idx_person_role"`
-	PriorityWeight float64    `gorm:"column:priority_weight;type:decimal(3,2);not null;check:ck_person_priority_weight,priority_weight between 0 and 1"`
-	Relation       *string    `gorm:"column:relation;type:varchar(255)"`
-	CommStyle      *string    `gorm:"column:comm_style;type:text"`
-	P2PChatID      *string    `gorm:"column:p2p_chat_id;type:varchar(64)"`
-	Notes          *string    `gorm:"column:notes;type:text"`
-	IsActive       bool       `gorm:"column:is_active;type:tinyint(1);not null;default:1"`
-	Mem0SyncedAt   *time.Time `gorm:"column:mem0_synced_at;type:datetime"`
-	CreatedAt      time.Time  `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt      time.Time  `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+	ID             uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	OpenID         string    `gorm:"column:open_id;type:varchar(64);not null;uniqueIndex:uk_person_open_id"`
+	UnionID        *string   `gorm:"column:union_id;type:varchar(64)"`
+	FeishuUserID   *string   `gorm:"column:feishu_user_id;type:varchar(64)"`
+	Name           string    `gorm:"column:name;type:varchar(128);not null"`
+	EnName         *string   `gorm:"column:en_name;type:varchar(128)"`
+	AvatarURL      *string   `gorm:"column:avatar_url;type:varchar(512)"`
+	Department     *string   `gorm:"column:department;type:varchar(255)"`
+	Title          *string   `gorm:"column:title;type:varchar(128)"`
+	Role           string    `gorm:"column:role;type:enum('leader','key','colleague','other');not null;index:idx_person_role"`
+	PriorityWeight float64   `gorm:"column:priority_weight;type:decimal(3,2);not null;check:ck_person_priority_weight,priority_weight between 0 and 1"`
+	Relation       *string   `gorm:"column:relation;type:varchar(255)"`
+	CommStyle      *string   `gorm:"column:comm_style;type:text"`
+	P2PChatID      *string   `gorm:"column:p2p_chat_id;type:varchar(64)"`
+	Notes          *string   `gorm:"column:notes;type:text"`
+	IsActive       bool      `gorm:"column:is_active;type:tinyint(1);not null;default:1"`
+	CreatedAt      time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
 func (Person) TableName() string { return "person" }

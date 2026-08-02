@@ -18,26 +18,23 @@ mysql:
   max_open_conns: 20
   max_idle_conns: 5
   conn_max_lifetime: 3600
-mem0:
-  base_url: "http://127.0.0.1:18900"
-  owner_id: "owner"
-  timeout_sec: 60
-  batch_limit: 400
+factengine:
+  enabled: true
+  schedule: "@every 15m"
+  bin: "traex"
+  model: "fixture-fact-model"
+  sandbox: "danger-full-access"
+  timeout_sec: 300
+  batch_limit: 200
   window_gap_minutes: 30
   window_max_messages: 40
-  schedule: "@every 10m"
-  qdrant_host: "127.0.0.1"
-  qdrant_port: 6333
-  qdrant_grpc_port: 6334
-  collection: "jarvis_memories"
-  state_dir: "var/mem0"
-  embedding_model: "embed-model"
-  embedding_dims: 1024
 model:
   base_url: "https://model.test/v1"
   api_key: "plain-key"
   model: "model"
   timeout_sec: 60
+  embedding_model: "embed-model"
+  embedding_dims: 1024
 extract:
   enabled: true
   principal_open_id: "ou_owner"
@@ -50,15 +47,15 @@ extract:
   context_messages: 20
   context_window_minutes: 120
   open_todo_limit: 50
-  memory_top_k: 8
-  memory_threshold: 0.5
+  fact_limit: 30
   max_prompt_chars: 60000
   semantic_collection: "todo_semantic"
   semantic_threshold: 0.85
   semantic_neighbor_limit: 3
   tool_timeout_sec: 10
   history_tool_limit: 50
-  tool_memory_max_top_k: 20
+  qdrant_host: "127.0.0.1"
+  qdrant_grpc_port: 6334
 lark_cli:
   bin: "lark-cli"
   rate_limit: 5
@@ -146,7 +143,7 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	input.ExecuteConcurrency = 4
 	input.ExtractSchedule = "@every 2m"
 	input.CaptureScanWorkers = 6
-	input.MemoryWindowMaxMessages = 80
+	input.FactEngineWindowMaxMessages = 80
 	input.LarkRateLimit = 7.5
 	input.DailyDigestConcurrency = 4
 	updated, err := service.Update(context.Background(), input)
@@ -161,7 +158,7 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	}
 	if updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" ||
-		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.MemoryWindowMaxMessages != 80 ||
+		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineWindowMaxMessages != 80 ||
 		updated.Settings.LarkRateLimit != 7.5 || updated.Settings.DailyDigestConcurrency != 4 {
 		t.Fatalf("updated settings = %#v", updated.Settings)
 	}
@@ -182,7 +179,7 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	}
 	if reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" ||
-		reloaded.Capture.ScanWorkers != 6 || reloaded.Mem0.WindowMaxMessages != 80 ||
+		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {
 		t.Fatalf("reloaded config = %#v", reloaded)
 	}

@@ -1,12 +1,12 @@
 package extract
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/sharedmem"
 )
 
@@ -28,7 +28,7 @@ type PromptOptions struct {
 	Skills string
 }
 
-func BuildPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]any, now time.Time, opts PromptOptions) (Prompt, error) {
+func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fact, now time.Time, opts PromptOptions) (Prompt, error) {
 	if strings.TrimSpace(opts.PrincipalOpenID) == "" {
 		return Prompt{}, fmt.Errorf("extract principal open_id is empty")
 	}
@@ -58,14 +58,8 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]a
 	if block := strings.TrimSpace(opts.Skills); block != "" {
 		system += "\n\n" + block
 	}
-	filteredMemories := filterMemories(memories)
-	for i, item := range filteredMemories {
-		if _, err := json.Marshal(item); err != nil {
-			return Prompt{}, fmt.Errorf("encode extraction memory index=%d: %w", i, err)
-		}
-	}
 	for {
-		user := renderUserPrompt(batch, trimmed, filteredMemories, now.In(opts.Location), opts.Location)
+		user := renderUserPrompt(batch, trimmed, facts, now.In(opts.Location), opts.Location)
 		if utf8.RuneCountInString(system)+utf8.RuneCountInString(user) <= opts.MaxChars {
 			return Prompt{System: system, User: user}, nil
 		}
@@ -77,43 +71,7 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]a
 	}
 }
 
-// salientQueryMaxMessages caps how many of the most recent extractable [new]
-// messages feed the memory-retrieval query. Concatenating the whole unit makes
-// the query long and noisy, hurting recall; the latest messages carry the
-// actionable intent, so only the last N are used.
-const salientQueryMaxMessages = 20
-const salientQueryMaxChars = 6000
-
-func SalientQuery(unit ConversationUnit) (string, error) {
-	parts := make([]string, 0)
-	for _, message := range unit.Messages {
-		if message.IsNew && message.Extractable {
-			content := strings.TrimSpace(message.Content)
-			if content != "" {
-				parts = append(parts, content)
-			}
-		}
-	}
-	if len(parts) == 0 {
-		return "", fmt.Errorf("extract conversation unit %q has no extractable new messages", unit.Key)
-	}
-	if len(parts) > salientQueryMaxMessages {
-		parts = parts[len(parts)-salientQueryMaxMessages:]
-	}
-	query := strings.Join(parts, "\n")
-	runes := []rune(query)
-	if len(runes) <= salientQueryMaxChars {
-		return query, nil
-	}
-	const marker = "\n...[记忆检索查询已截断]...\n"
-	markerRunes := []rune(marker)
-	available := salientQueryMaxChars - len(markerRunes)
-	head := available / 2
-	tail := available - head
-	return string(runes[:head]) + marker + string(runes[len(runes)-tail:]), nil
-}
-
-func renderUserPrompt(batch ChatBatch, unit ConversationUnit, memories []map[string]any, now time.Time, location *time.Location) string {
+func renderUserPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fact, now time.Time, location *time.Location) string {
 	sections := []string{
 		"# 当前时间\n" + now.Format(time.RFC3339) + "（时区 " + location.String() + "）",
 		"# 我的背景(principal)\n" + renderPrincipal(batch.Principal),
@@ -122,7 +80,7 @@ func renderUserPrompt(batch ChatBatch, unit ConversationUnit, memories []map[str
 		"# 来源会话（Group）\n" + renderGroup(batch.Group),
 		"# 参与者\n" + renderParticipants(unit.Participants),
 		"# 相关资源\n" + renderResources(unit.Resources),
-		"# 相关记忆（仅作背景）\n" + renderMemories(memories),
+		"# 已沉淀的事实（仅作背景）\n" + renderFacts(facts),
 		"# 已存在的未闭环 Todo（仅作背景）\n" + renderOpenTodos(batch.OpenTodos),
 		"# 会话记录\n" + renderConversation(unit.Messages, location),
 	}
@@ -222,18 +180,16 @@ func renderResources(resources []ResourceContext) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderMemories(memories []map[string]any) string {
-	if len(memories) == 0 {
+// renderFacts shows what the offline fact engine has already established about
+// this conversation's group and project, newest first.
+func renderFacts(facts []contextsnap.Fact) string {
+	if len(facts) == 0 {
 		return "(none)"
 	}
-	lines := make([]string, 0, len(memories))
-	for _, item := range memories {
-		encoded, err := json.Marshal(item)
-		if err != nil {
-			lines = append(lines, fmt.Sprintf("(invalid memory: %v)", err))
-			continue
-		}
-		lines = append(lines, string(encoded))
+	lines := make([]string, 0, len(facts))
+	for _, fact := range facts {
+		lines = append(lines, fmt.Sprintf("[%s] %s/%d: %s",
+			fact.OccurredAt, fact.SubjectType, fact.SubjectID, fact.Description))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -264,24 +220,6 @@ func renderConversation(messages []MessageContext, location *time.Location) stri
 			message.SenderOpenID, message.IsLeader, message.SenderName, content)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func filterMemories(memories []map[string]any) []map[string]any {
-	return FilterMemoriesForSnapshot(memories)
-}
-
-// FilterMemoriesForSnapshot drops M3's own memories (metadata.source == "m3") so
-// neither the prompt nor the frozen context_snapshot self-reinforces.
-func FilterMemoriesForSnapshot(memories []map[string]any) []map[string]any {
-	result := make([]map[string]any, 0, len(memories))
-	for _, item := range memories {
-		metadata, _ := item["metadata"].(map[string]any)
-		if source, _ := metadata["source"].(string); source == "m3" {
-			continue
-		}
-		result = append(result, item)
-	}
-	return result
 }
 
 func firstContextIndex(messages []MessageContext) int {

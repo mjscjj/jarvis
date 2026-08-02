@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"jarvis/internal/memory"
+	"jarvis/internal/contextsnap"
+	"jarvis/internal/progress"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/textstore"
@@ -15,18 +16,23 @@ import (
 	"jarvis/internal/workrule"
 )
 
-type memorySearcher interface {
-	Search(context.Context, memory.SearchInput) (*memory.SearchResponse, error)
+// factReader is progress.Service. M3 reads the facts the offline engine has
+// already distilled instead of retrieving raw conversation memories: a fact is
+// a settled conclusion bound to a subject, which is what deciding "is this clue
+// new" actually needs.
+type factReader interface {
+	ListFacts(context.Context, progress.FactFilter) ([]progress.FactView, error)
 }
 
 type WorkerOptions struct {
 	Load            LoadOptions
 	PrincipalOpenID string
 	ModelName       string
-	MemoryTopK      int
-	MemoryThreshold float64
-	MaxPromptChars  int
-	Location        *time.Location
+	// FactLimit caps how many of a subject's newest facts are injected per
+	// extraction prompt.
+	FactLimit      int
+	MaxPromptChars int
+	Location       *time.Location
 	// AgentToolCatalog controls whether shell-tool descriptions are injected.
 	// It is true for the Codex engine and false for schema-driven model_api.
 	AgentToolCatalog bool
@@ -60,7 +66,7 @@ type WorkerStats struct {
 type Worker struct {
 	store     pipelineStore
 	model     ToolExtractor
-	memory    memorySearcher
+	facts     factReader
 	dedup     candidateDeduplicator
 	toolBox   toolBoxBuilder
 	sharedMem sharedmem.SharedMemoryReader
@@ -68,15 +74,15 @@ type Worker struct {
 	now       func() time.Time
 }
 
-func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher, dedup candidateDeduplicator, toolBox toolBoxBuilder, sharedMem sharedmem.SharedMemoryReader, opts WorkerOptions) (*Worker, error) {
+func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup candidateDeduplicator, toolBox toolBoxBuilder, sharedMem sharedmem.SharedMemoryReader, opts WorkerOptions) (*Worker, error) {
 	if store == nil {
 		return nil, fmt.Errorf("extract worker store is nil")
 	}
 	if model == nil {
 		return nil, fmt.Errorf("extract worker model is nil")
 	}
-	if memories == nil {
-		return nil, fmt.Errorf("extract worker memory client is nil")
+	if facts == nil {
+		return nil, fmt.Errorf("extract worker fact reader is nil")
 	}
 	if dedup == nil {
 		return nil, fmt.Errorf("extract worker semantic deduplicator is nil")
@@ -105,11 +111,8 @@ func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher
 	if strings.TrimSpace(opts.ModelName) == "" {
 		return nil, fmt.Errorf("extract worker model name is empty")
 	}
-	if opts.MemoryTopK <= 0 {
-		return nil, fmt.Errorf("extract worker memory top_k must be positive")
-	}
-	if opts.MemoryThreshold < 0 || opts.MemoryThreshold > 1 {
-		return nil, fmt.Errorf("extract worker memory threshold must be between 0 and 1")
+	if opts.FactLimit <= 0 {
+		return nil, fmt.Errorf("extract worker fact limit must be positive")
 	}
 	if opts.MaxPromptChars <= 0 {
 		return nil, fmt.Errorf("extract worker max prompt chars must be positive")
@@ -120,7 +123,7 @@ func NewWorker(store pipelineStore, model ToolExtractor, memories memorySearcher
 	if opts.Location == nil {
 		return nil, fmt.Errorf("extract worker location is nil")
 	}
-	return &Worker{store: store, model: model, memory: memories, dedup: dedup, toolBox: toolBox, sharedMem: sharedMem, opts: opts, now: time.Now}, nil
+	return &Worker{store: store, model: model, facts: facts, dedup: dedup, toolBox: toolBox, sharedMem: sharedMem, opts: opts, now: time.Now}, nil
 }
 
 func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
@@ -186,28 +189,16 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 			return stats, PersistStats{}, fmt.Errorf("read extract tool catalog chat_id=%s: %w", batch.Group.ChatID, err)
 		}
 	}
+	// Facts are bound to the group and its project, not to one unit, so they are
+	// read once per chat rather than once per unit.
+	facts, err := w.loadFacts(ctx, batch)
+	if err != nil {
+		return stats, PersistStats{}, err
+	}
 	results := make([]UnitExtraction, 0, len(batch.Units))
 	for index := range batch.Units {
 		unit := batch.Units[index]
-		query, err := SalientQuery(unit)
-		if err != nil {
-			return stats, PersistStats{}, fmt.Errorf("prepare extraction query chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
-		}
-		filters := map[string]any{"chat_id": batch.Group.ChatID}
-		if batch.Group.ProjectID != nil {
-			filters = map[string]any{"project_id": *batch.Group.ProjectID}
-		}
-		memories, err := w.memory.Search(ctx, memory.SearchInput{
-			Query: query, Filters: filters, TopK: w.opts.MemoryTopK,
-			Threshold: w.opts.MemoryThreshold, Rerank: false,
-		})
-		if err != nil {
-			return stats, PersistStats{}, fmt.Errorf("search extraction memories chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
-		}
-		if memories == nil {
-			return stats, PersistStats{}, fmt.Errorf("search extraction memories chat_id=%s unit=%s: nil response", batch.Group.ChatID, unit.Key)
-		}
-		prompt, err := BuildPrompt(batch, unit, memories.Results, runNow, PromptOptions{
+		prompt, err := BuildPrompt(batch, unit, facts, runNow, PromptOptions{
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
 			SystemPrompt: systemPrompt, ToolCatalog: toolCatalog,
 			SharedMemory: sharedMemory, WorkRules: workRules, Skills: skills,
@@ -226,8 +217,7 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 			return stats, PersistStats{}, err
 		}
 		results = append(results, UnitExtraction{
-			UnitKey: unit.Key, Candidates: resolved,
-			Memories: FilterMemoriesForSnapshot(memories.Results),
+			UnitKey: unit.Key, Candidates: resolved, Facts: facts,
 		})
 		stats.Units++
 		stats.Candidates += candidateCount
@@ -241,6 +231,42 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 	stats.Updated = persisted.Updated
 	stats.Skipped = persisted.Skipped
 	return stats, persisted, nil
+}
+
+// loadFacts collects what is already known about this conversation: the group's
+// own facts plus its project's. Both subjects matter — a group fact is what this
+// room settled, a project fact is what the work itself stands at.
+func (w *Worker) loadFacts(ctx context.Context, batch ChatBatch) ([]contextsnap.Fact, error) {
+	subjects := []struct {
+		subjectType string
+		subjectID   uint64
+	}{{subjectType: "group", subjectID: batch.Group.ID}}
+	if batch.Group.ProjectID != nil {
+		subjects = append(subjects, struct {
+			subjectType string
+			subjectID   uint64
+		}{subjectType: "project", subjectID: *batch.Group.ProjectID})
+	}
+	facts := make([]contextsnap.Fact, 0, w.opts.FactLimit)
+	for _, subject := range subjects {
+		if subject.subjectID == 0 {
+			continue
+		}
+		found, err := w.facts.ListFacts(ctx, progress.FactFilter{
+			SubjectType: subject.subjectType, SubjectID: subject.subjectID, Limit: w.opts.FactLimit,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("read extraction facts chat_id=%s subject=%s/%d: %w",
+				batch.Group.ChatID, subject.subjectType, subject.subjectID, err)
+		}
+		for _, fact := range found {
+			facts = append(facts, contextsnap.Fact{
+				ID: fact.ID, SubjectType: fact.SubjectType, SubjectID: fact.SubjectID,
+				Description: fact.Description, OccurredAt: fact.OccurredAt.UTC().Format(time.RFC3339),
+			})
+		}
+	}
+	return facts, nil
 }
 
 func mergeWorkerStats(target *WorkerStats, source WorkerStats) {

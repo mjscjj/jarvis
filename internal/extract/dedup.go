@@ -15,12 +15,11 @@ import (
 // re-seeing it must update its evidence, not mint a second copy, and fresh
 // evidence can pull it back to "extracted" for a real decision.
 var activeTodoStatuses = map[string]struct{}{
-	"extracted": {}, "scoring": {}, "auto": {}, "need_info": {}, "need_decision": {}, "confirmed": {},
-	"observing": {},
+	"extracted": {}, "auto": {}, "observing": {},
 }
 
 func ActiveTodoStatuses() []string {
-	return []string{"extracted", "scoring", "auto", "need_info", "need_decision", "confirmed", "observing"}
+	return []string{"extracted", "auto", "observing"}
 }
 
 type SemanticTodo struct {

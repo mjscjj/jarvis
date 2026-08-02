@@ -213,7 +213,7 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 		Target: st.title, Context: "(seed)", OpenQuestions: openQuestions,
 		CommitmentStrength: "firm",
 		SourceMessageIDs:   sources, SourceQuote: "(seed)",
-		ProjectID: &projectID, Status: "confirmed",
+		ProjectID: &projectID, Status: "auto",
 		DedupFingerprint: fingerprint,
 		FirstSeenAt:      now, LastEvidenceAt: now,
 	}

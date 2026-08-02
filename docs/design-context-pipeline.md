@@ -73,7 +73,7 @@ flowchart LR
 ### 0.3 关键技术约束
 
 - `project_id` 是 M3 **去重指纹**的组成部分（`internal/extract/candidate.go:188`），且语义去重按 `project_id` 过滤（`internal/extract/dedup.go:74`）。→ 这是"推算必须放 M3、project_id 尽早定死"的根本理由：若 M3 落库时 project_id 空、下游再改，同一条线索下次提取会因指纹变化而**重复创建 Todo**。
-- M3 现用 kimi/model API，其工具循环 `ExtractWithTools`（`internal/extract/tool_loop.go:22`）是**应用层 function-calling**，模型只能调 Go 注册的工具（`query_chat_history`/`search_memory`），**不能自跑 shell**。→ 要"让模型自跑 lark-cli/bytedcli"，引擎必须换成能执行命令的 codex。
+- M3 现用 kimi/model API，其工具循环 `ExtractWithTools`（`internal/extract/tool_loop.go:22`）是**应用层 function-calling**，模型只能调 Go 注册的工具（`query_chat_history`/`query_resources`），**不能自跑 shell**。→ 要"让模型自跑 lark-cli/bytedcli"，引擎必须换成能执行命令的 codex。
 - **已实测**：codex 0.144.1 在 `--sandbox workspace-write -c sandbox_workspace_write.network_access=true` 下成功执行 `lark-cli contact whoami` 并返回真实 JSON（非编造）。macOS 沙箱网络在本机可用。
 
 ---
@@ -147,7 +147,6 @@ flowchart TB
 | `jarvis-tools get-group --chat-id <id>`                                  | ✅   | 查群详情（群公告 `description`/绑定项目） | MySQL `feishu_group`      |
 | `jarvis-tools get-principal`                                             | ✅   | 查 principal 自身背景与直属 leader   | MySQL `principal_profile` |
 | `jarvis-tools get-person --open-id <id>`                                 | ✅   | 查人物（角色/是否 leader/关系）         | MySQL `person`            |
-| `jarvis-tools search-memory --query <q> [--top-k N]`                     | 后补  | 检索 mem0 长期记忆                 | mem0 sidecar              |
 | `jarvis-tools query-messages --chat-id <id> [--keyword <k>] [--limit N]` | 后补  | 查本地历史消息                      | MySQL `message`           |
 
 

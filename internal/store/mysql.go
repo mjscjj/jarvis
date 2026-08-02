@@ -67,6 +67,7 @@ func Migrate(db *gorm.DB) error {
 	models = append(models, domain.ExecuteModels()...)
 	models = append(models, domain.KnowledgeModels()...)
 	models = append(models, domain.ProgressModels()...)
+	models = append(models, domain.FactEngineModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}

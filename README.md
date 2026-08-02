@@ -6,7 +6,7 @@
 
 ## 技术栈
 
-Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M5 判断的 agent CLI，模型 `gpt-5.5`）+ `traex`（M5 执行 / 右侧对话的 agent CLI，模型 `gpt-5.6-sol`）+ 阿里云百炼 DashScope（`qwen-plus` 抽取/记忆 LLM、`text-embedding-v3` 1024 维 embedding）+ mem0（Python FastAPI sidecar）+ Qdrant + lark-cli。
+Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M5 判断的 agent CLI，模型 `gpt-5.5`）+ `traex`（M5 执行 / 右侧对话的 agent CLI，模型 `gpt-5.6-sol`）+ 阿里云百炼 DashScope（`qwen-plus` 抽取 LLM、`text-embedding-v3` 1024 维 embedding）+ `traex`（离线事实抽取，模型 `DeepSeek-V4-Flash`）+ Qdrant + lark-cli。
 
 ## 架构导航（写代码前先看这里）
 
@@ -23,10 +23,10 @@ M5 内部分两步：**判断环节**（read-only，给 Todo 定 disposition，�
                                      │
                        ┌─────────────┴──────────────┐
                        ▼                             ▼
-                [M2.5 memory]                  [M3 extract]
-                mem0 sidecar                   codex/traex agent 工具循环（默认 engine=codex）
+                [离线事实引擎]                  [M3 extract]
+                traex/DeepSeek 蒸馏事实        codex/traex agent 工具循环（默认 engine=codex）
                        │                             │  （自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库，冻结 context_snapshot）
-                Qdrant jarvis_memories        todo 表 + Qdrant todo_semantic
+                  fact 表 ────背景────────────▶ todo 表 + Qdrant todo_semantic
                                                      │
                                     ┌────────────────┴────────────────┐
                                     │  M5 判断环节（read-only）        │
@@ -77,8 +77,8 @@ M5 内部分两步：**判断环节**（read-only，给 Todo 定 disposition，�
 | 模块 | 目录 | 干什么 | 核心文件 | LLM/外部依赖 |
 |---|---|---|---|---|
 | M2 采集 | `internal/capture/` | 采集群聊和内部单聊消息，把原始内容和中立采集结果写成下游证据；另开放通用线索投递入口，让任意 agent 把外部事实交回流水线 | `capture/service.go`（会话发现/扫描）、`scheduler.go`、`clue.go`（线索投递） | lark-cli（IM 只读接口） |
-| M2.5 记忆 | `internal/memory/` | 消息切窗 → mem0 抽事实 → 向量入库 | `worker.go`（窗口化编排）、`store.go`（pending 查询/标记）、`client.go`（sidecar HTTP） | mem0 sidecar → Qdrant `jarvis_memories` |
-| M3 抽取 | `internal/extract/` | 从新消息抽 Todo（默认 `engine=codex`：traex agent 自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库并冻结 `context_snapshot`；备用 `model_api` function-calling 循环）+ 语义去重 + source_quote 证据重抽 | `worker.go`（编排）、`pipeline_store.go`（加载/组批）、`prompt.go`（提示词）、`persist.go`（落库）、`dedup.go`（去重）、`codexengine/`（traex agent 引擎）、`provider/`（百炼 model API）、`tools/`（工具） | traex agent（`gpt-5.5`）/ 百炼 `qwen-plus` + Qdrant `todo_semantic` + mem0（检索） |
+| 离线事实引擎 | `internal/factengine/` | 跑在关键路径之外，把流水线已有原料（先接 `message`）切窗后交给便宜快的模型蒸馏成长期事实，写进 `fact` 表；按 source 维护水位，一轮失败不影响采集和执行 | `worker.go`（编排 + 水位）、`store.go`（原料投影/切窗/主体解析）、`extractor.go`（traex 调用与解码）、`scheduler.go`（cron） | traex agent（`DeepSeek-V4-Flash`） |
+| M3 抽取 | `internal/extract/` | 从新消息抽 Todo（默认 `engine=codex`：traex agent 自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库并冻结 `context_snapshot`；备用 `model_api` function-calling 循环）+ 语义去重 + source_quote 证据重抽 | `worker.go`（编排）、`pipeline_store.go`（加载/组批）、`prompt.go`（提示词）、`persist.go`（落库）、`dedup.go`（去重）、`codexengine/`（traex agent 引擎）、`provider/`（百炼 model API）、`tools/`（工具） | traex agent（`gpt-5.5`）/ 百炼 `qwen-plus` + Qdrant `todo_semantic` + `fact` 表（背景注入） |
 | M5 判断环节 | `internal/execute/decision_*.go` | 给 Todo 定 disposition：codex/traex 输出最小外壳 `disposition + plan + payload`，plan/payload 内部保持宽松；判 ready 时建 Task 并原样固化 `decision_payload` 供执行环节使用，判 drop 时终结线索 | `decision_worker.go`（批处理）、`decision_evaluator.go`（评估器）、`decision_codex.go`（调 agent CLI）、`decision_apply.go`（落库建 Task）、`decision_helpers.go`（锁 Todo、写事件） | traex agent（`gpt-5.5`，read-only 判定，可自查补信息） |
 | M5 执行 | `internal/execute/` | 执行确认后的 Task：支持 `completed/waiting/needs_human/failed` 结果；长等待时持久化 Codex Session，当前 Turn 退出，到期后 `exec resume` 续跑（CLI 不支持 resume 传 `--output-schema` 时，格式契约写进 prompt 并在本地校验，不合格打回重写）；高风险外部写入仍停在 `awaiting_approval` | `agent_executor.go`（执行/挂起/恢复）、`codex_runner.go`（Codex Session）、`store.go`（Task 状态机） | traex agent（`gpt-5.6-sol`） |
 | 定时任务 | `internal/scheduledtask/` | 时间触发器：独立计划到期物化新 Task；`yield-until` 创建的续接计划只恢复原 Task 和原 Codex Session | `service.go`（计划/抢占/Task 物化/Session 恢复）、`scheduler.go`（扫描 cron） | MySQL `scheduled_task` + M5 |
@@ -96,17 +96,17 @@ M5 内部分两步：**判断环节**（read-only，给 Todo 定 disposition，�
 |---|---|---|---|
 | `feishu_group` | capture | 全部 | 会话目录 + `related_group` 白名单 + tier（tier 仅 UI 展示） |
 | `chat_checkpoint` | capture | capture | 增量扫描高水位 |
-| `message` | capture | memory/extract | 原始消息，含 `mem0_processed` 标志 |
+| `message` | capture | factengine/extract | 原始消息 |
 | `resource` | capture | extract | 消息里的文件/文档/妙记引用（只记引用不下载） |
 | `scan_record` | capture | — | 采集审计流水 |
 | `scheduled_task` | scheduledtask | scheduledtask | 一次性/周期触发、下次执行时间，以及 Task/Codex Session 的未来唤醒 |
 | `project` / `person` / `principal_profile` | background | extract/decide | 背景信息（后台可编辑） |
 | `todo` / `todo_event` / `todo_extract_watermark` | extract | decide | 抽取出的行动线索 + 事件 + 抽取游标 |
 | `task` / `task_event` / `execution_run` | decide(建)/execute | execute/insight | 可执行快照 + 业务状态历史 + Codex 执行审计 |
-| `fact` | m3/m5/background/API | progress/contextsnap/dailydigest | 一条条自然语言事实，按 `(subject_type, subject_id)` 绑到项目/群/人等主体上；`subject_type` 不枚举，具体含义由模型结合上下文推断 |
+| `fact` | factengine/background/API | extract/contextsnap/dailydigest | 一条条自然语言事实，按 `(subject_type, subject_id)` 绑到项目/群/人等主体上；`subject_type` 不枚举，具体含义由模型结合上下文推断 |
+| `fact_source_cursor` | factengine | factengine | 每个原料来源的抽取水位，崩溃后从上次提交处重放 |
 | `relation_fact` | knowledge/API | knowledge | 两个现有实体之间的自然语言关联；确定性外键关系不重复写 |
 | `decision_audit` | decide | 确认页 | 决策审计 |
-| Qdrant `jarvis_memories` | mem0 sidecar | memory/extract/decide | 长期记忆向量 |
 | Qdrant `todo_semantic` | extract | extract | Todo 去重向量 |
 
 ### 常见「我要改 X 该动哪」
@@ -126,9 +126,8 @@ M5 内部分两步：**判断环节**（read-only，给 Todo 定 disposition，�
 ```
 GET  /healthz
 GET  /api/todos            GET /api/todos/:id
-GET  /api/confirmations    GET /api/confirmations/:id
-POST /api/confirmations/:id/approve|reject|supplement
 GET  /api/tasks            GET /api/tasks/:id/runs|events
+POST /api/tasks
 POST /api/tasks/:id/finish|supplement
 POST /api/tasks/:id/execute|rerun|reapply|approve|reject  # 需 Executor 已启用（异步）
 POST /api/tasks/:id/resume                               # 回复 needs_human 并恢复原 Codex Session
@@ -147,7 +146,7 @@ POST /api/chat                                            # 需 chat.enabled=tru
 
 ### 一次性 CLI 动作（互斥，跑完退出）
 
-`-migrate-only` 迁移 · `-backfill-progress-events` 为无事件历史的存量 Task 写一次当前状态快照 · `-discover-once` 发现会话 · `-scan-chat <id>` 扫单群 · `-set-related-groups <ids>` 原子替换白名单 · `-memorize-once` 记忆化 · `-extract-once` 抽 Todo · `-decide-once` 决策分流 · `-seed` 种子项目/任务/群 · `-seed-persons` 从关键群导入真实 Person · `-open-p2p` 把存量内部私聊一次性纳入监听（`related_group=1`）。
+`-migrate-only` 迁移 · `-backfill-progress-events` 为无事件历史的存量 Task 写一次当前状态快照 · `-discover-once` 发现会话 · `-scan-chat <id>` 扫单群 · `-set-related-groups <ids>` 原子替换白名单 · `-extract-facts-once` 离线抽事实 · `-extract-once` 抽 Todo · `-decide-once` 决策分流 · `-seed` 种子项目/任务/群 · `-seed-persons` 从关键群导入真实 Person · `-open-p2p` 把存量内部私聊一次性纳入监听（`related_group=1`）。
 
 ## 调度与后台循环
 
@@ -157,7 +156,7 @@ M2 扫描发现新消息后立即通知 `internal/pipeline.Coordinator`。协调
 |---|---|---|---|---|
 | M2 采集-发现 | `capture.discover_schedule` | `@every 6h` | 常开 | 全量枚举会话；只把 checkpoint 设为发现时刻，不回溯历史 |
 | M2 采集-扫描 | `capture.scan_schedule` | `@every 5m` | 常开 | 对 `related_group=1` 群统一增量扫描（tier 仅用于 UI 展示） |
-| M2.5 记忆 | `mem0.schedule` | `@every 10m` | 常开 | 消息切窗 → mem0 抽事实 → Qdrant `jarvis_memories` |
+| 离线事实 | `factengine.schedule` | `@every 15m` | 常开 | 消息切窗 → traex/DeepSeek 蒸馏 → `fact` 表 |
 | M3 抽取补偿 | `extract.schedule` | `@every 10m` | `extract.enabled=true` | 实时路径按 chat 触发；cron 扫描遗漏的新消息并推进水位 |
 | M5 判断补偿 | `decide.schedule` | `@every 1m` | `decide.enabled=true` | 实时路径按 Todo ID/version 触发；cron 扫描遗漏的 `extracted` |
 | M5 执行补偿 | `execute.schedule` | `@every 5m` | `execute.enabled=true` | 实时路径按 Task ID/version 入队；cron 恢复遗漏的 `pending` 和僵尸 `executing`，并发 `execute.concurrency`（默认 3） |
@@ -168,7 +167,7 @@ M3/M5 的实时通知与补偿任务都只进入同一个协调器队列，不�
 ## 当前进度
 
 - M0.2 已完成：统一 `lark-cli` 子进程层、无历史回溯的增量扫描、线程回复拍平、Resource 元数据沉淀和分层 cron 调度。消息扫描只处理数据库中动态标记的 `related_group`。
-- M0.3 核心链路已实现：Go 侧 mem0 HTTP client、消息窗口化 worker、每 10 分钟记忆化任务、Python FastAPI sidecar、Qdrant v1.18.2 原生 launchd 服务与锁定依赖。
+- 事实沉淀已改为离线引擎：`internal/factengine` 每 15 分钟按水位消费 `message`，切窗后交 `traex`/`DeepSeek-V4-Flash` 蒸馏成 `fact`，M3 抽取时按群和项目注入作背景。mem0 与 `jarvis_memories` 已退役。
 - M0.4 提取 worker 已实现：相关群增量聚合、背景/记忆注入、Structured Outputs、Todo 事务落库与独立水位推进；同时提供只读 Todo API 和 React + Ant Design 看板。
 - M0.5 判断环节已完成：`extracted Todo → codex/traex 判 disposition → ready 建 Task 或 drop 终结`，并把方案、澄清点、证据和风险保存在宽松 plan/payload 中。
 - M0.6 MVP 执行闭环已完成：管理后台列出 Task，支持人工执行后回写 `done/failed + result`。
@@ -221,21 +220,19 @@ curl http://127.0.0.1:18800/healthz
 
 ## launchd 托管
 
-生产环境用 macOS launchd 常驻守护 4 个服务（`deploy/` 下 plist，均 `RunAtLoad` + `KeepAlive`）。launchd 只在登录时扫描 `~/Library/LaunchAgents`，所以安装脚本会把 plist 软链过去，再从软链 bootstrap，开机/重新登录后自动后台拉起：
+生产环境用 macOS launchd 常驻守护 3 个服务（`deploy/` 下 plist，均 `RunAtLoad` + `KeepAlive`）。launchd 只在登录时扫描 `~/Library/LaunchAgents`，所以安装脚本会把 plist 软链过去，再从软链 bootstrap，开机/重新登录后自动后台拉起：
 
 | 服务 Label | plist | 作用 | 日志 |
 |---|---|---|---|
 | `com.bytedance.jarvis.server` | `deploy/com.bytedance.jarvis.server.plist` | 主进程 `bin/jarvis-server`（Hertz + 实时流水线 + 补偿 cron + 静态前端，`127.0.0.1:18800`） | `var/log/jarvis-server.{log,error.log}` |
 | `com.bytedance.jarvis.web` | `deploy/com.bytedance.jarvis.web.plist` | 前端 Vite dev（`npm run dev`，`127.0.0.1:18801`，仅开发热更用；生产前端由主进程从 `web/dist` 托管） | `var/log/vite.{log,error.log}` |
 | `com.bytedance.jarvis.qdrant` | `deploy/com.bytedance.jarvis.qdrant.plist` | Qdrant 向量库（`6333` HTTP / `6334` gRPC） | `var/log/jarvis-qdrant.{log,error.log}` |
-| `com.bytedance.jarvis.mem0` | `deploy/com.bytedance.jarvis.mem0.plist` | mem0 Python FastAPI sidecar（`127.0.0.1:18900`） | `var/log/jarvis-mem0.{log,error.log}` |
 
 安装（首次）：
 
 ```bash
 ./scripts/install-launchd.sh        # 主进程（含前端 build + codesign）
 ./scripts/install-qdrant.sh
-./scripts/install-mem0-sidecar.sh
 ```
 
 常用运维（`UID_=$(id -u)`）：
@@ -244,10 +241,9 @@ curl http://127.0.0.1:18800/healthz
 # 改后端：重编译 + 稳定 codesign + 重启主进程
 ./scripts/rebuild-server.sh
 
-# 重启前端 / sidecar
+# 重启前端 / 向量库
 launchctl kickstart -k gui/$UID_/com.bytedance.jarvis.web
 launchctl kickstart -k gui/$UID_/com.bytedance.jarvis.qdrant
-launchctl kickstart -k gui/$UID_/com.bytedance.jarvis.mem0
 
 # 查状态 / 看日志
 launchctl print gui/$UID_/com.bytedance.jarvis.server
@@ -265,21 +261,19 @@ tail -f var/log/jarvis-server.log var/log/jarvis-server.error.log
 | `scripts/verify-server-signature.sh` | 校验固定 identifier 与签名证书，错误时 fail-fast |
 | `scripts/run-signed-server.sh` | launchd 启动入口，拒绝运行未稳定签名的主进程 |
 
-## mem0 与 Qdrant
+## 模型与 Qdrant
 
-`conf/config.yaml` 当前使用阿里云百炼 DashScope（OpenAI 兼容端点）：LLM 为 `qwen-plus`，embedding 为 `text-embedding-v3`（1024 维），mem0 的 LLM 与 embedder 共用 `model` 段。密钥明文保存在本机配置中。安装两个独立服务：
+`conf/config.yaml` 当前使用阿里云百炼 DashScope（OpenAI 兼容端点）：LLM 为 `qwen-plus`，embedding 为 `text-embedding-v3`（1024 维），embedding 供 Todo 语义去重使用。离线事实抽取不共用这个端点，走 `traex` 的 `DeepSeek-V4-Flash`。密钥明文保存在本机配置中。Qdrant 单独装成服务：
 
 ```bash
 ./scripts/install-qdrant.sh
-./scripts/install-mem0-sidecar.sh
 curl http://127.0.0.1:6333/healthz
-curl http://127.0.0.1:18900/health
 ```
 
-手工执行一次记忆化：
+手工执行一轮离线事实抽取；正常服务模式下由 `factengine.schedule` 定时驱动：
 
 ```bash
-go run ./cmd/jarvis-server -config conf/config.yaml -memorize-once
+go run ./cmd/jarvis-server -config conf/config.yaml -extract-facts-once
 ```
 
 手工执行一次 Todo 提取；正常服务模式下由 M2 扫描完成事件实时触发，`extract.schedule` 负责补偿：
@@ -294,7 +288,7 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 go run ./cmd/jarvis-server -config conf/config.yaml -decide-once
 ```
 
-sidecar 依赖由 `sidecar/mem0/uv.lock` 固定；Qdrant 数据、mem0 history 和日志都落在被 Git 忽略的 `var/`。
+Qdrant 数据和日志落在被 Git 忽略的 `var/`。
 
 ## 测试
 
@@ -373,11 +367,10 @@ jarvis/
 │   │   └── tools/       # function-calling 工具（查历史 / 查记忆 / 查资源）
 │   ├── insight/         # 工作台/进度/调试面板的只读聚合
 │   ├── larkcli/         # lark-cli 子进程、限流、并发和超时
-│   ├── memory/          # 消息窗口化与 mem0 sidecar client
+│   ├── factengine/      # 离线事实引擎：切窗、蒸馏、水位
 │   ├── pipeline/        # M3→M5 实时协调、去重队列与补偿 cron
 │   ├── semantic/        # Qdrant todo_semantic 索引
 │   └── store/           # MySQL 连接与迁移
-├── sidecar/mem0/        # FastAPI + mem0 Python sidecar
 ├── web/                  # React + Vite + Ant Design 管理后台
 ├── conf/config.yaml     # 本地配置（本地可信环境，含明文 DSN）
 ├── deploy/              # launchd plist

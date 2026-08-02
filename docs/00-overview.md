@@ -11,7 +11,7 @@
 2. **fail-fast**：暴露问题，不静默降级、不掩盖，尤其单测。
 3. **不乱兼容历史数据 / 不乱加 fallback**：涉及历史数据处理、降级、护栏的地方，一律标注 **【需与用户确认】**，不擅自实现。
 4. **模块化 + 高维视角**：先按模块和边界拆清楚，从更高维度判断合理性，再进实现细节。
-5. **优先用官方能力**：飞书用 `lark-cli`；记忆用开源 `mem0`；Go 侧用字节已有基建（bytedgorm 等）；不自造轮子。
+5. **优先用官方能力**：飞书用 `lark-cli`；Go 侧用字节已有基建（bytedgorm 等）；不自造轮子。
 6. **复杂度红线（MVP 优先，先简单）**：本系统是**单用户、几十个群、低频触发**的个人助手，规模很小。**任何为"大规模 / 高并发 / 智能记忆"提前引入的重型设施，价值未被验证前一律不做**——能用一条 SQL / 一次 LLM 调用 / 一个内存结构解决的，就不要上向量库、独立进程、多级调度。具体"简单做 / 暂缓上"的清单见 §12，属**硬约束**，各模块不得擅自加重。
 
 ---
@@ -23,11 +23,11 @@
 | 后端语言 | **Go 1.26** | 本机 `go1.26.4` |
 | Web 框架 | **Hertz**（CloudWeGo，`v0.10.5`） | 管理后台 REST API + 内部接口 |
 | ORM | **GORM**（`gorm.io/gorm` + MySQL driver） | MySQL 访问；不引入 bytedgorm，保持本地纯净 |
-| 定时调度 | **robfig/cron v3** | 分层扫描、记忆化、过期扫描（替代原 APScheduler） |
+| 定时调度 | **robfig/cron v3** | 分层扫描、离线事实抽取、过期扫描（替代原 APScheduler） |
 | 结构化存储 | **MySQL 8**（InnoDB / utf8mb4） | 7 实体 + 消息明文，source of truth |
-| 记忆层 | **mem0**（Python）以 **sidecar** 形式，Go 通过 HTTP 调用 | 见 §5 |
-| 向量库 | **Qdrant v1.18.2**（Apple Silicon 原生二进制 + launchd，HTTP 6333 / gRPC 6334） | mem0 后端 + M3 独立 `todo_semantic`；不使用嵌入式 local mode |
-| LLM 抽取（M3） | **codex CLI**（`extract.engine=codex`，主）/ model API（可配置，备用） | 【2026-07 变更，见 `docs/design-context-pipeline.md`】M3 改用 codex 以便自跑 lark-cli/bytedcli/git 推算项目归属；model API 保留备用。M2 记忆化仍用 model API/embedding。 |
+| 事实层 | **离线事实引擎**（Go，`internal/factengine`）+ `fact` 表 | 见 §5 |
+| 向量库 | **Qdrant v1.18.2**（Apple Silicon 原生二进制 + launchd，HTTP 6333 / gRPC 6334） | 只服务 M3 的 `todo_semantic` 去重；不使用嵌入式 local mode |
+| LLM 抽取（M3） | **codex CLI**（`extract.engine=codex`，主）/ model API（可配置，备用） | 【2026-07 变更，见 `docs/design-context-pipeline.md`】M3 改用 codex 以便自跑 lark-cli/bytedcli/git 推算项目归属；model API 保留备用。离线事实抽取用 traex/DeepSeek-V4-Flash，embedding 只用于 Todo 去重。 |
 | LLM 判断（M5 判断环节） | **codex CLI**（`codex exec` 子进程） | 判断线索值不值得做，见 §6 |
 | 代码执行后端（M5） | **codex CLI** / cursor-agent | `code_change` executor 后端 |
 | 前端 | React + Vite + Ant Design | 管理后台 |
@@ -47,20 +47,20 @@
 │  jarvis-server (Go / Hertz)  —— 单体进程，launchd 托管           │
 │  ┌────────────┬────────────┬────────────┬───────────────────┐ │
 │  │ REST API   │ cron 调度  │ 流水线编排  │ 领域服务(7 实体)    │ │
-│  │ (M0/各模块) │(scan/mem)  │(M2→M3→M5)   │                   │ │
+│  │ (M0/各模块) │(scan/fact) │(M2→M3→M5)   │                   │ │
 │  └────────────┴────────────┴────────────┴───────────────────┘ │
 └──┬──────────┬───────────┬──────────┬──────────┬───────────────┘
-   │ 子进程    │ HTTP       │ 子进程    │ HTTP      │ TCP
+   │ 子进程    │ 子进程     │ 子进程    │ HTTP      │ TCP
 ┌──▼──────┐ ┌─▼─────────┐ ┌▼────────┐ ┌▼────────┐ ┌▼────────┐
-│lark-cli │ │mem0 sidecar│ │codex CLI│ │model API│ │ MySQL 8 │
-│user+bot │ │(Python)    │ │决策/代码│ │(抽取,可 │ │ (明文)  │
-│飞书读写 │ │ ↕ Qdrant   │ │执行     │ │ 配置)   │ └─────────┘
+│lark-cli │ │traex(事实)│ │codex CLI│ │model API│ │ MySQL 8 │
+│user+bot │ │离线蒸馏   │ │决策/代码│ │(抽取,可 │ │ (明文)  │
+│飞书读写 │ │→ fact 表  │ │执行     │ │ 配置)   │ └─────────┘
 └─────────┘ └────────────┘ └─────────┘ └─────────┘
 ```
 
 外部依赖：
 - **lark-cli**：`--as user` 读全量消息、`--as bot` 收发消息 / 事件 / 交互卡片。
-- **mem0 sidecar**：Python FastAPI 薄服务包 mem0，暴露 `/memories`、`/memories/search` 等；内部连 Qdrant。
+- **traex（离线事实抽取）**：非交互子进程，用便宜快的 `DeepSeek-V4-Flash` 把原料蒸馏成 `fact`，见 §5。
 - **codex CLI**：`codex exec` 非交互子进程，用于 M5 判断环节与 M5 代码执行。
 - **model API**：可配置 OpenAI 兼容端点，供 M2/M3 高频抽取（Go 直接 HTTP 调用，不经 Eino）。
 
@@ -179,7 +179,6 @@ CREATE TABLE project (
   key_decisions  JSON NULL COMMENT '[{date,title,detail}]',
   timeline       JSON NULL,
   notes          TEXT NULL,
-  mem0_synced_at DATETIME NULL,
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -205,7 +204,7 @@ CREATE TABLE feishu_group (
   related_group     TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '是否属于本人工作相关扫描范围',
   tier              VARCHAR(8)   NOT NULL DEFAULT 'cold' COMMENT 'hot|warm|cold 扫描分层',
   pinned            TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '强制 hot 白名单',
-  include_in_memory TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '是否纳入 mem0(报警群置0)',
+  include_in_memory TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '是否纳入事实沉淀(报警群置0)',
   is_key_group      TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '关键群(leader/核心项目)',
   last_active_at    BIGINT       NULL COMMENT '最新消息 create_time(ms)',
   created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -243,7 +242,6 @@ CREATE TABLE person (
   p2p_chat_id      VARCHAR(64)  NULL COMMENT '单聊 chat_id，供确认/通知',
   notes            TEXT NULL,
   is_active        TINYINT(1)   NOT NULL DEFAULT 1,
-  mem0_synced_at   DATETIME NULL,
   created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -430,11 +428,11 @@ CREATE TABLE scan_record (
     → message(明文) + group + resource + 中立采集结果
     扫描提交新消息后通知进程内 Coordinator，按 chat 定向唤醒 M3
                                             │
-  M2 记忆化 ─────────────────────────────────▼──────────────────────────
-    未处理消息按会话窗口化 → HTTP → mem0 sidecar → Qdrant
+  离线事实引擎（不在关键路径上）─────────────▼──────────────────────────
+    按水位取未消费消息 → 切窗 → traex/DeepSeek 蒸馏 → fact 表
                                             │
   M3 提取 Todo ──────────────────────────────▼──────────────────────────
-    新消息 + 背景(Project/Person/Group) + mem0 记忆
+    新消息 + 背景(Project/Person/Group) + 群与项目的已沉淀事实
     → agent/LLM 结构化抽取 → 创建/合并/忽略 Todo → 按 Todo ID/version 唤醒 M5
                                             │
   M5 判断环节(Todo→Task 闸门, read-only) ─────▼──────────────────────────
@@ -492,48 +490,48 @@ M5 执行环节：调查清楚后再决定要不要请示 principal，需要就�
 
 ---
 
-## 5. mem0 sidecar 方案（Go ↔ Python）
+## 5. 离线事实引擎（事实怎么沉淀下来）
 
-mem0 是 Python 库、无 Go SDK。采用 **sidecar 进程**隔离：
+事实沉淀不挂在关键路径上：它是一条独立的离线流水线，消费流水线**已经产出的原料**，蒸馏成长期可读的自然语言事实。
 
 ```
-┌────────────────────┐   HTTP/JSON     ┌──────────────────────────┐
-│ jarvis-server (Go) │ ───────────────▶│ mem0-sidecar (Python)     │
-│  MemoryClient      │                 │  FastAPI + mem0.Memory    │
-│  (Go http client)  │◀─────────────── │  POST /memories /memories/search │
-└────────────────────┘                 │  ↕ Qdrant (localhost:6333) │
-                                        └──────────────────────────┘
+message（原料，先接这一种）
+   │  按 fact_source_cursor 的水位取未消费行
+   ▼
+切窗（同一会话、间隔不超过 window_gap_minutes、条数不超过 window_max_messages）
+   │
+   ▼
+traex + DeepSeek-V4-Flash：一窗一次调用，输出若干条事实
+   │  只允许绑到本窗提供的主体（群 / 项目 / 说话人）上
+   ▼
+fact 表（自然语言描述 + subject_type/subject_id + occurred_at）
+   │
+   ▼
+M3 抽取时按群和它所属项目注入作背景；日报和 contextsnap 同样直接读
 ```
 
-- **sidecar 接口**（Python FastAPI 薄封装，直接透传 mem0）：
-  - `POST /memories` → `mem0.add(messages, user_id, metadata, infer)`
-  - `POST /memories/search` → `mem0.search(query, user_id, filters, top_k, threshold)`
-  - `DELETE /memories/{id}` / `POST /memories/delete_all`
-  - `GET /health`
-- **托管**：sidecar 由 launchd 独立托管（与 jarvis-server 平级），端口固定 `127.0.0.1:18900`（本地）。
-- **fail-fast**：Go 侧调用失败直接报错，不降级；sidecar 起不来 / Qdrant 不通 → 记忆化 job 失败告警，不影响消息采集（采集与记忆化解耦）。
-- **mem0 版本要点**（2026 实测）：v2 SDK / V3 pipeline，ADD-only 单趟抽取、内建实体链接（**不再需要 Neo4j 等外部图库**）、混合检索。这条统一了各模块此前的分歧：**全系统不部署任何外部图数据库**。
+- **模型**：抽取量大、单条价值低，所以用便宜快的 `DeepSeek-V4-Flash`，不与判断（`gpt-5.5`）或执行（`gpt-5.6-sol`）共用模型。
+- **水位**：`fact_source_cursor` 一行一个 source，只记 `last_id`。一轮中途挂掉就从上次提交处重放，不整表重扫也不跳批。首次启动时水位直接落在当前最大 message id 上，避免意外全量回灌历史。
+- **不在关键路径上**：一轮失败只是这一轮没沉淀，不影响采集、抽取和执行。
+- **agent 不再手工记事实**：M3/M5 的提示词里没有"记一条事实"这件事，它们只读。要不要记、记什么、绑到谁身上，全由离线引擎的模型判断（正文见 `conf/prompts/fact-extract-system-prompt.md`）。
+- **接新原料 = 加一个 source**：往 `fact_source_cursor` 加一行、给它写一个原料投影，不新增表也不改协议。
 
-### 5.1 记忆统一约定（消除模块间分歧）
+### 5.1 事实的形状
 
 | 约定 | 值 | 说明 |
 |---|---|---|
-| `user_id` | 配置常量 `OWNER_ID`（默认 `"owner"`） | 单用户系统，全系统统一，各模块不得各用各的 |
-| scope | 只用 `user_id`，不用 `agent_id/run_id/app_id` | 避免 null-scope AND 求交返回空的坑 |
-| 维度过滤 | 全放 `metadata` **标量等值** | Qdrant 后端对复杂操作符支持有限，**以标量等值为基线**；复杂 AND/OR 过滤需实测确认后才用（开放问题 #5） |
-| 背景注入(M1) | `infer=False` 逐条明文 | 权威背景不让 LLM 改写，确定可测 |
-| 消息蒸馏(M2) | `infer=True` 窗口化 | 让 LLM 抽取事实 |
-| `metadata.source` | `background` / `message` / `decision` | 区分来源，检索可过滤 |
-
----
+| 描述 | 完整自然语言句子 | 不依赖当前上下文的指代，读它的人手上没有原始会话 |
+| 主体 | `(subject_type, subject_id)` | `subject_type` 不枚举；只能绑到抽取时明确提供给模型的主体上，防止模型编 ID |
+| 时间 | `occurred_at` | 事情发生的时间，不是写入时间 |
+| 取代关系 | `superseded_by_id` | 新事实推翻旧事实时指过去，旧事实不删 |
 
 ## 6. LLM 分工：抽取用 API，判断与执行用 codex（本次调整）
 
 | 环节 | 用什么 | 为什么 |
 |---|---|---|
-| M2 记忆抽取 | model API（可配置） | 高频、要快、结构化输出稳定 |
+| 离线事实抽取 | traex + `DeepSeek-V4-Flash` | 量大、单条价值低，要便宜快；跑在关键路径之外 |
 | M3 提取 Todo | model API（structured output / JSON schema） | 高频、要稳定的结构化抽取 |
-| **M5 判断环节** | **codex exec 子进程（read-only）** | 复杂推理：结合项目背景+记忆+代码，判断这条线索值不值得做。codex 有代码库上下文能力，判断质量高 |
+| **M5 判断环节** | **codex exec 子进程（read-only）** | 复杂推理：结合项目背景+已沉淀事实+代码，判断这条线索值不值得做。codex 有代码库上下文能力，判断质量高 |
 | M5 code_change | codex exec 子进程 | 真正改代码 |
 | M5 investigate | rg + codex exec `-s read-only` + web | 代码检索+调研 |
 
@@ -552,7 +550,7 @@ mem0 是 Python 库、无 Go SDK。采用 **sidecar 进程**隔离：
 | 模块 | 文档 | 职责 | 产出/消费 |
 |---|---|---|---|
 | M0 | （本总纲 + 前端） | 管理后台 + 编排 + cron | — |
-| M1 | `modules/01-background.md` | Project/Person/Group 背景 + mem0 注入 | 产出背景 |
+| M1 | `modules/01-background.md` | Project/Person/Group 背景 | 产出背景 |
 | M2 | `modules/02-message.md` | 群消息、会议与妙记采集 + Group/Resource 沉淀 + 记忆化 | 产出原始内容、中立采集结果、group/resource/记忆 |
 | M3 | `modules/03-task-extract.md` | 提取 **Todo** | 消费消息+背景+记忆 → 产出 Todo |
 | M5 判断环节 | `modules/04-decision.md` | **Todo→Task 转化闸门**（codex read-only 判断） | 消费 Todo → 产出 Task |
@@ -573,13 +571,12 @@ jarvis/
 │   ├── domain/       # 7 实体领域模型 + service
 │   ├── pipeline/     # M2→M3→M5 编排
 │   ├── capture/      # M2 采集(lark-cli 封装)
-│   ├── memory/       # mem0 sidecar client
+│   ├── factengine/   # 离线事实引擎（切窗/蒸馏/水位）
 │   ├── extract/      # M3 Todo 提取(LLM API)
 │   ├── execute/      # M5：decision_*.go 判断环节(codex read-only) + executor 注册表
 │   ├── larkcli/      # lark-cli 子进程统一封装
 │   ├── codex/        # codex exec 子进程封装
 │   └── store/        # GORM/bytedgorm + DDL 迁移
-├── sidecar/mem0/     # Python mem0 sidecar (FastAPI)
 ├── web/              # React 管理后台
 └── deploy/           # launchd plist 等
 ```
@@ -592,7 +589,7 @@ jarvis/
 |---|---|---|
 | M0.1 骨架 | Go/Hertz 工程 + 7 实体 DDL/GORM + MySQL 迁移 + launchd | — |
 | M0.2 飞书打通 | larkcli 封装 + 采集 message/group/resource 落库 | M0.1 |
-| M0.3 记忆 | mem0 sidecar + Qdrant + 记忆化 job | M0.2 |
+| M0.3 事实 | 离线事实引擎 + `fact` 表 | M0.2 |
 | M0.4 提取 | M3 Todo 提取(LLM API) + 后台 Todo 看板 | M0.3 |
 | M0.5 判断 | M5 判断环节 codex 判断 + Todo→Task 固化 | M0.4 |
 | M0.6 执行 | M5 executor(先 investigate/summary_post) + 回写 | M0.5 |
@@ -606,8 +603,8 @@ jarvis/
 - **不乱兼容**：全新库、无历史数据迁移；**backfill 已定不回溯**（首次发现时刻建高水位，§11.3）；噪音群等仍【需与用户确认】。
 - **不乱护栏**：自动 push、sandbox 放开、**codex 判断频率/成本上限**等做成**配置项**（§11.2），不硬编码；要不要请示 principal 由模型判断，只写在 `conf/prompts/m5-approval-policy.md`，代码不枚举、不拦截。
 - **模块化**：Todo/Task 拆分、7 实体边界清晰、三子进程职责分离。
-- **优先官方**：Hertz/GORM/lark-cli/mem0/codex 全用现成，不引入 Eino/Kitex/bytedgorm。
-- **复杂度红线**：MVP 优先、先简单；语义去重/mem0 等**重设施在价值验证前暂缓**，简单做清单见 §12（硬约束）。**注意**：本机实测 user 身份可见 **≥1500 个会话** 且飞书网关有限流，因此**采集分层 + 退避重试并非过度，而是必要**——关键简化手段是先用 `related_group` 把监控范围圈到几十个相关会话（§12.1 第 3 条）。现有已实现的重设施标记为「应简化/暂缓」，**移除与否【需与用户确认】**。
+- **优先官方**：Hertz/GORM/lark-cli/codex 全用现成，不引入 Eino/Kitex/bytedgorm。
+- **复杂度红线**：MVP 优先、先简单；语义去重等**重设施在价值验证前暂缓**，简单做清单见 §12（硬约束）。**注意**：本机实测 user 身份可见 **≥1500 个会话** 且飞书网关有限流，因此**采集分层 + 退避重试并非过度，而是必要**——关键简化手段是先用 `related_group` 把监控范围圈到几十个相关会话（§12.1 第 3 条）。现有已实现的重设施标记为「应简化/暂缓」，**移除与否【需与用户确认】**。
 
 ---
 
@@ -650,8 +647,8 @@ jarvis/
 
 ### 11.5 仍需与用户确认项
 
-6. **mem0 sidecar 端口/托管**：`127.0.0.1:18900` 是否合适？launchd 独立托管确认。
-7. **mem0 metadata 过滤能力**：Qdrant 后端复杂 AND/OR 过滤需实测；基线只依赖标量等值。
+6. **事实沉淀的节奏与质量**：`factengine.schedule` 每 15 分钟一轮是否合适，蒸馏出的事实是否真的值得几周后回看，需据实跑校准。
+7. **事实的合并与取代**：目前只有 `superseded_by_id` 这一个载体，重复事实靠提示词约束；是否需要一轮离线归并（EverOS 的 reflection）待实跑后再定。
 8. **执行期请示尺度**：`conf/prompts/m5-approval-policy.md` 里"什么该先问 principal"的表述是否合适，需据实跑校准。
 9. **自动 git commit/push**：默认关，是否开放及约束。
 10. **妙记逐字稿的隐私边界**：`lark-cli minutes` 能否稳定拿到目标妙记内容（权限/授权范围），以及是否所有妙记都允许拉取，需实测确认。
@@ -667,7 +664,7 @@ jarvis/
 | # | 领域 | ❌ 不要（过度） | ✅ MVP 简单做法 | 何时才允许升级 |
 |---|---|---|---|---|
 | 1 | **Todo 去重** | embedding + 向量库检索 + LLM 二次裁决（`SameAction`）三层 | 仅 `dedup_fingerprint` 精确 hash 去重；抽取时把「当前开放 Todo 列表」塞进 prompt，让 LLM 自己不重复提 | 实际出现大量「同义不同表述」的重复 Todo，且人工划除成本明显上升时，再引入语义去重 |
-| 2 | **记忆层 mem0 + Qdrant + Python sidecar** | 为「智能记忆」提前跑独立 Python 进程 + 向量库 + 记忆化 job | 抽取所需上下文 = **手工维护的项目/人物背景（M1）+ MySQL 里最近 N 条消息**，直接查库拼 prompt | 验证「跨时间事实沉淀」确实提升了抽取/决策质量后，再启用 mem0 |
+| 2 | ~~记忆层 mem0 + Qdrant + Python sidecar~~（已退役） | 曾为「智能记忆」跑独立 Python 进程 + 向量库 + 记忆化 job | 换成 `internal/factengine`：纯 Go、无 sidecar、无记忆向量库，直接把事实写进 MySQL 的 `fact` 表 | 已落地，见 §5 |
 | 3 | **消息采集范围与调度** | 无差别**全量扫所有会话**（本机 user 身份实测 **≥1500 个会话**：约 955 群 / 451 单聊 / 94 话题群，且飞书网关存在 HTTP 444 限流） | **先用 `related_group` 把监控范围圈到几十个真正相关的群/单聊，只扫这些**；在此小范围内 hot/warm/cold 分层 + 退避重试是**合理且必要**的（规模大 + 限流） | 相关群本身也多到扛不住时，再细化分层/并发 |
 | 4 | **Todo 表冗余字段** | `revision` / `ttl_at` / 乐观锁 `version` 等为「完备」而非「当前需要」的字段（单用户 cron 串行用不上并发控制） | 保留业务必要字段即可；乐观锁/TTL 等**留着但不投入逻辑**，不为其写额外机制 | 出现真正并发写、或需要 Todo 自动过期时再启用 |
 | 5 | **LLM 通道** | 为「编排/多 agent」引入 Eino/Kitex 等框架 | 只有两种：高频抽取直连 model API（HTTP）；复杂决策/执行走 codex CLI 子进程（已定，见 §6） | 无（不引入编排框架是长期约束） |
@@ -691,7 +688,7 @@ jarvis/
 
 三问里但凡有「否 / 不确定」，就**先不做**，标注 **【需与用户确认】** 再议。
 
-> **对现有代码的处置**：目前仓库中 `internal/semantic`、`internal/embedding`、Todo 语义去重、mem0 sidecar 已有实现且测试通过。本节将其**标记为「MVP 阶段应简化/暂缓」**，但**是否移除现有实现属删除操作，【需与用户确认】后再动**，本方案不擅自宣布删除。
+> **对现有代码的处置**：mem0 sidecar 与 `jarvis_memories` 集合已按用户决定退役，由 §5 的离线事实引擎取代。`internal/semantic`、`internal/embedding` 仍在，只服务 Todo 语义去重。
 > **例外**：`capture` 分层（hot/warm/cold）**不在暂缓之列**——本机实测 ≥1500 个会话 + 网关限流，分层是合理设计；真正要先做的是用 `related_group` 圈定小监控范围（capture 已有 `ReplaceRelatedGroups` 支持）。
 
 ## 13. 已知技术债（待处理，勿遗忘）

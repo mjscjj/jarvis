@@ -124,7 +124,7 @@ func pipelineTestOptions() Options {
 	}
 }
 
-func TestCoordinatorDrivesRealtimeM3M4M5(t *testing.T) {
+func TestCoordinatorDrivesRealtimeM3M5(t *testing.T) {
 	taskID := uint64(31)
 	extractor := &fakeExtractor{todos: []extract.TodoRef{{ID: 21, Version: 3, Status: "extracted"}}}
 	decider := &fakeDecider{
@@ -155,10 +155,10 @@ func TestCoordinatorDrivesRealtimeM3M4M5(t *testing.T) {
 	select {
 	case work := <-decider.calls:
 		if work.TodoID != 21 || work.Version != 3 {
-			t.Fatalf("M4 work = %#v", work)
+			t.Fatalf("M5 judgment work = %#v", work)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("M4 was not triggered")
+		t.Fatal("M5 judgment was not triggered")
 	}
 	select {
 	case input := <-executor.calls:

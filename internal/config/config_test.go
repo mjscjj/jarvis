@@ -16,22 +16,6 @@ func TestValidate(t *testing.T) {
 			MaxIdleConns:    5,
 			ConnMaxLifetime: 3600,
 		},
-		Mem0: Mem0Config{
-			BaseURL:           "http://127.0.0.1:18900",
-			OwnerID:           "owner",
-			TimeoutSec:        60,
-			BatchLimit:        400,
-			WindowGapMinutes:  30,
-			WindowMaxMessages: 40,
-			Schedule:          "@every 10m",
-			QdrantHost:        "127.0.0.1",
-			QdrantPort:        6333,
-			QdrantGRPCPort:    6334,
-			Collection:        "jarvis_memories",
-			StateDir:          "var/mem0",
-			EmbeddingModel:    "embed-model",
-			EmbeddingDims:     1024,
-		},
 		Extract: ExtractConfig{
 			Schedule:              "@every 10m",
 			Engine:                "codex",
@@ -42,15 +26,15 @@ func TestValidate(t *testing.T) {
 			ContextMessages:       20,
 			ContextWindowMinutes:  120,
 			OpenTodoLimit:         50,
-			MemoryTopK:            8,
-			MemoryThreshold:       0.5,
+			FactLimit:             30,
 			MaxPromptChars:        60000,
 			SemanticCollection:    "todo_semantic",
 			SemanticThreshold:     0.85,
 			SemanticNeighborLimit: 3,
 			ToolTimeoutSec:        10,
 			HistoryToolLimit:      50,
-			ToolMemoryMaxTopK:     20,
+			QdrantHost:            "127.0.0.1",
+			QdrantGRPCPort:        6334,
 		},
 		LarkCLI: LarkCLIConfig{
 			Bin:        "lark-cli",
@@ -60,7 +44,7 @@ func TestValidate(t *testing.T) {
 			TimeoutSec: 60,
 		},
 		Capture: CaptureConfig{
-			PageSize:            50,
+			PageSize:         50,
 			ScanWorkers:      2,
 			HotAgeHours:      6,
 			WarmAgeHours:     168,
@@ -69,6 +53,7 @@ func TestValidate(t *testing.T) {
 			ScanSchedule:     "@every 5m",
 		},
 		Decide:        validDecideConfig(),
+		FactEngine:    validFactEngineConfig(),
 		Skills:        SkillsConfig{Root: ".agents/skills"},
 		Codex:         validCodexConfig(),
 		Execute:       validExecuteConfig(),
@@ -90,35 +75,30 @@ func TestValidate(t *testing.T) {
 		{name: "negative idle connections", mutate: func(c *Config) { c.MySQL.MaxIdleConns = -1 }, wantErr: "max_idle_conns"},
 		{name: "idle exceeds open", mutate: func(c *Config) { c.MySQL.MaxIdleConns = 21 }, wantErr: "不能大于"},
 		{name: "connection lifetime", mutate: func(c *Config) { c.MySQL.ConnMaxLifetime = 0 }, wantErr: "conn_max_lifetime"},
-		{name: "mem0 base URL", mutate: func(c *Config) { c.Mem0.BaseURL = "" }, wantErr: "mem0.base_url"},
-		{name: "mem0 owner", mutate: func(c *Config) { c.Mem0.OwnerID = "" }, wantErr: "mem0.owner_id"},
-		{name: "mem0 timeout", mutate: func(c *Config) { c.Mem0.TimeoutSec = 0 }, wantErr: "mem0.timeout_sec"},
-		{name: "mem0 batch", mutate: func(c *Config) { c.Mem0.BatchLimit = 0 }, wantErr: "mem0.batch_limit"},
-		{name: "mem0 window gap", mutate: func(c *Config) { c.Mem0.WindowGapMinutes = 0 }, wantErr: "mem0.window_gap_minutes"},
-		{name: "mem0 window max", mutate: func(c *Config) { c.Mem0.WindowMaxMessages = 0 }, wantErr: "mem0.window_max_messages"},
-		{name: "mem0 schedule", mutate: func(c *Config) { c.Mem0.Schedule = "" }, wantErr: "mem0.schedule"},
-		{name: "mem0 qdrant host", mutate: func(c *Config) { c.Mem0.QdrantHost = "" }, wantErr: "mem0.qdrant_host"},
-		{name: "mem0 qdrant grpc port", mutate: func(c *Config) { c.Mem0.QdrantGRPCPort = 0 }, wantErr: "mem0.qdrant_grpc_port"},
-		{name: "mem0 embedding model", mutate: func(c *Config) { c.Mem0.EmbeddingModel = "" }, wantErr: "embedding_model"},
 		{name: "extract schedule", mutate: func(c *Config) { c.Extract.Schedule = "" }, wantErr: "extract.schedule"},
 		{name: "extract batch", mutate: func(c *Config) { c.Extract.BatchMessages = 0 }, wantErr: "extract.batch_messages"},
 		{name: "extract context count", mutate: func(c *Config) { c.Extract.ContextMessages = -1 }, wantErr: "extract.context_messages"},
 		{name: "extract context window", mutate: func(c *Config) { c.Extract.ContextWindowMinutes = 0 }, wantErr: "extract.context_window_minutes"},
 		{name: "extract todo limit", mutate: func(c *Config) { c.Extract.OpenTodoLimit = 0 }, wantErr: "extract.open_todo_limit"},
-		{name: "extract memory top k", mutate: func(c *Config) { c.Extract.MemoryTopK = 0 }, wantErr: "extract.memory_top_k"},
-		{name: "extract memory threshold", mutate: func(c *Config) { c.Extract.MemoryThreshold = 1.1 }, wantErr: "extract.memory_threshold"},
+		{name: "extract fact limit", mutate: func(c *Config) { c.Extract.FactLimit = 0 }, wantErr: "extract.fact_limit"},
 		{name: "extract prompt limit", mutate: func(c *Config) { c.Extract.MaxPromptChars = 0 }, wantErr: "extract.max_prompt_chars"},
 		{name: "extract semantic collection", mutate: func(c *Config) { c.Extract.SemanticCollection = "" }, wantErr: "semantic_collection"},
 		{name: "extract semantic threshold", mutate: func(c *Config) { c.Extract.SemanticThreshold = 0 }, wantErr: "semantic_threshold"},
 		{name: "extract semantic neighbor limit", mutate: func(c *Config) { c.Extract.SemanticNeighborLimit = 0 }, wantErr: "semantic_neighbor_limit"},
 		{name: "extract tool timeout", mutate: func(c *Config) { c.Extract.ToolTimeoutSec = 0 }, wantErr: "tool_timeout_sec"},
 		{name: "extract history tool limit", mutate: func(c *Config) { c.Extract.HistoryToolLimit = 0 }, wantErr: "history_tool_limit"},
-		{name: "extract tool memory max top k", mutate: func(c *Config) { c.Extract.ToolMemoryMaxTopK = 1 }, wantErr: "tool_memory_max_top_k"},
+		{name: "extract qdrant host", mutate: func(c *Config) { c.Extract.QdrantHost = "" }, wantErr: "extract.qdrant_host"},
+		{name: "extract qdrant grpc port", mutate: func(c *Config) { c.Extract.QdrantGRPCPort = 0 }, wantErr: "extract.qdrant_grpc_port"},
 		{name: "extract principal", mutate: func(c *Config) { c.Extract.Enabled = true }, wantErr: "principal_open_id"},
 		{name: "extract model", mutate: func(c *Config) {
 			c.Extract.Enabled = true
 			c.Extract.PrincipalOpenID = "ou_owner"
 		}, wantErr: "model.base_url"},
+		{name: "extract embedding model", mutate: func(c *Config) {
+			c.Extract.Enabled = true
+			c.Extract.PrincipalOpenID = "ou_owner"
+			c.Model = ModelConfig{BaseURL: "http://127.0.0.1:1", APIKey: "k", Model: "m", TimeoutSec: 60}
+		}, wantErr: "model.embedding_model"},
 		{name: "lark binary", mutate: func(c *Config) { c.LarkCLI.Bin = "" }, wantErr: "lark_cli.bin"},
 		{name: "lark rate", mutate: func(c *Config) { c.LarkCLI.RateLimit = 0 }, wantErr: "lark_cli.rate_limit"},
 		{name: "lark burst", mutate: func(c *Config) { c.LarkCLI.Burst = 0 }, wantErr: "lark_cli.burst"},
@@ -130,6 +110,8 @@ func TestValidate(t *testing.T) {
 		{name: "capture warm age", mutate: func(c *Config) { c.Capture.WarmAgeHours = 6 }, wantErr: "capture.warm_age_hours"},
 		{name: "capture timezone", mutate: func(c *Config) { c.Capture.Timezone = "" }, wantErr: "capture.timezone"},
 		{name: "capture schedules", mutate: func(c *Config) { c.Capture.ScanSchedule = "" }, wantErr: "schedule"},
+		{name: "M5 judgment requires execution", mutate: func(c *Config) { c.Execute.Enabled = false }, wantErr: "M5 判断与执行"},
+		{name: "M5 execution requires judgment", mutate: func(c *Config) { c.Decide.Enabled = false }, wantErr: "M5 判断与执行"},
 		{name: "decide schedule", mutate: func(c *Config) { c.Decide.Schedule = "" }, wantErr: "decide.schedule"},
 		{name: "decide batch", mutate: func(c *Config) { c.Decide.BatchLimit = 0 }, wantErr: "decide.batch_limit"},
 		{name: "decide sandbox", mutate: func(c *Config) { c.Decide.CodexSandbox = "yolo" }, wantErr: "decide"},
@@ -149,13 +131,21 @@ func TestValidate(t *testing.T) {
 			c.Execute.TimeoutSecond = 600
 			c.Execute.StaleExecutingMinute = 5
 		}, wantErr: "execute.stale_executing_minute"},
-		{name: "chat sandbox", mutate: func(c *Config) { c.Chat.Sandbox = "sandbox-x" }, wantErr: "chat.codex_sandbox"},
+		{name: "chat sandbox", mutate: func(c *Config) { c.Chat.Sandbox = "sandbox-x" }, wantErr: "chat.sandbox"},
 		{name: "chat reasoning effort", mutate: func(c *Config) { c.Chat.ReasoningEffort = "ultra" }, wantErr: "chat.codex_reasoning_effort"},
 		{name: "chat timeout", mutate: func(c *Config) { c.Chat.TimeoutSeconds = 0 }, wantErr: "chat.timeout_seconds"},
 		{name: "chat model when enabled", mutate: func(c *Config) {
 			c.Chat.Enabled = true
 			c.Chat.Model = ""
 		}, wantErr: "chat.model"},
+		{name: "factengine schedule", mutate: func(c *Config) { c.FactEngine.Schedule = "" }, wantErr: "factengine.schedule"},
+		{name: "factengine bin", mutate: func(c *Config) { c.FactEngine.Bin = "" }, wantErr: "factengine.bin"},
+		{name: "factengine model", mutate: func(c *Config) { c.FactEngine.Model = "" }, wantErr: "factengine.model"},
+		{name: "factengine sandbox", mutate: func(c *Config) { c.FactEngine.Sandbox = "yolo" }, wantErr: "factengine.sandbox"},
+		{name: "factengine timeout", mutate: func(c *Config) { c.FactEngine.TimeoutSec = 0 }, wantErr: "factengine.timeout_sec"},
+		{name: "factengine batch", mutate: func(c *Config) { c.FactEngine.BatchLimit = 0 }, wantErr: "factengine.batch_limit"},
+		{name: "factengine window gap", mutate: func(c *Config) { c.FactEngine.WindowGapMinutes = 0 }, wantErr: "factengine.window_gap_minutes"},
+		{name: "factengine window max", mutate: func(c *Config) { c.FactEngine.WindowMaxMessages = 0 }, wantErr: "factengine.window_max_messages"},
 		{name: "dailydigest schedule", mutate: func(c *Config) { c.DailyDigest.Schedule = "" }, wantErr: "dailydigest.schedule"},
 		{name: "dailydigest timeout", mutate: func(c *Config) { c.DailyDigest.TimeoutSeconds = 299 }, wantErr: "dailydigest.timeout_seconds"},
 		{name: "dailydigest group message limit", mutate: func(c *Config) { c.DailyDigest.GroupMessageLimit = 0 }, wantErr: "dailydigest.group_message_limit"},
@@ -199,22 +189,17 @@ func TestValidateExtractEnabled(t *testing.T) {
 			DSN: "user:pass@tcp(127.0.0.1:3306)/jarvis", MaxOpenConns: 20,
 			MaxIdleConns: 5, ConnMaxLifetime: 3600,
 		},
-		Mem0: Mem0Config{
-			BaseURL: "http://127.0.0.1:18900", OwnerID: "owner", TimeoutSec: 60,
-			BatchLimit: 400, WindowGapMinutes: 30, WindowMaxMessages: 40, Schedule: "@every 10m",
-			QdrantHost: "127.0.0.1", QdrantPort: 6333, QdrantGRPCPort: 6334,
-			Collection: "jarvis_memories", StateDir: "var/mem0", EmbeddingModel: "embed-model", EmbeddingDims: 1024,
-		},
 		Model: ModelConfig{
 			BaseURL: "https://model.test/v1", APIKey: "plain-key", Model: "model", TimeoutSec: 60,
+			EmbeddingModel: "embed-model", EmbeddingDims: 1024,
 		},
 		Extract: ExtractConfig{
 			Enabled: true, PrincipalOpenID: "ou_owner", Schedule: "@every 10m",
 			Engine: "codex", CodexSandbox: "danger-full-access", CodexNetwork: true, CodexReasoningEffort: "low",
 			BatchMessages: 400, ContextMessages: 20, ContextWindowMinutes: 120,
-			OpenTodoLimit: 50, MemoryTopK: 8, MemoryThreshold: 0.5, MaxPromptChars: 60000,
+			OpenTodoLimit: 50, FactLimit: 30, MaxPromptChars: 60000,
 			SemanticCollection: "todo_semantic", SemanticThreshold: 0.85, SemanticNeighborLimit: 3,
-			ToolTimeoutSec: 10, HistoryToolLimit: 50, ToolMemoryMaxTopK: 20,
+			ToolTimeoutSec: 10, HistoryToolLimit: 50, QdrantHost: "127.0.0.1", QdrantGRPCPort: 6334,
 		},
 		LarkCLI: LarkCLIConfig{Bin: "lark-cli", RateLimit: 5, Burst: 10, Concurrent: 2, TimeoutSec: 60},
 		Capture: CaptureConfig{
@@ -222,6 +207,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 			Timezone: "Asia/Shanghai", DiscoverSchedule: "@every 6h", ScanSchedule: "@every 5m",
 		},
 		Decide:        validDecideConfig(),
+		FactEngine:    validFactEngineConfig(),
 		Skills:        SkillsConfig{Root: ".agents/skills"},
 		Codex:         validCodexConfig(),
 		Execute:       validExecuteConfig(),
@@ -240,7 +226,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 
 func validExecuteConfig() ExecuteConfig {
 	return ExecuteConfig{
-		Enabled: false, Schedule: "@every 5m", BatchLimit: 5, Concurrency: 3,
+		Enabled: true, Schedule: "@every 5m", BatchLimit: 5, Concurrency: 3,
 		RepoRoot: "/tmp/repos", RunsDir: "/tmp/runs",
 		Bin: "codex", Model: "fixture-exec-model", ReasoningEffort: "medium", TimeoutSecond: 600,
 		StaleExecutingMinute: 30,
@@ -276,4 +262,12 @@ func validDailyDigestConfig() DailyDigestConfig {
 
 func validScheduledTaskConfig() ScheduledTaskConfig {
 	return ScheduledTaskConfig{Enabled: false, Schedule: "@every 1m", BatchLimit: 20}
+}
+
+func validFactEngineConfig() FactEngineConfig {
+	return FactEngineConfig{
+		Enabled: true, Schedule: "@every 15m",
+		Bin: "traex", Model: "fixture-fact-model", Sandbox: "danger-full-access", TimeoutSec: 300,
+		BatchLimit: 200, WindowGapMinutes: 30, WindowMaxMessages: 40,
+	}
 }

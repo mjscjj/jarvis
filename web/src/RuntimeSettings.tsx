@@ -258,9 +258,7 @@ export default function RuntimeSettings() {
   const m3Runtime = liveSettings.extract_engine === 'model_api'
     ? `Model API · ${liveSettings.model_api_model}`
     : `${liveSettings.analysis_cli} · ${liveSettings.analysis_model}`
-  const m4Runtime = liveSettings.decide_mode === 'manual_mvp'
-    ? '人工确认'
-    : `${liveSettings.analysis_cli} · ${liveSettings.analysis_model}`
+  const m5DecisionRuntime = `${liveSettings.analysis_cli} · ${liveSettings.analysis_model}`
 
   const panels = [
     {
@@ -270,17 +268,16 @@ export default function RuntimeSettings() {
         <>
           <Section title="阶段开关" description="控制后台自动运行；保存后需重启主服务。">
             <SwitchField name="extract_enabled" label="M3 自动提取" help="从新消息中识别行动线索并生成 Todo。" />
-            <SwitchField name="decide_enabled" label="M4 自动决策" help="评估 Todo，决定自动放行、人工确认、补充信息或忽略。" />
-            <SwitchField name="execute_auto_enabled" label="M5 自动执行" extra="关闭后仍可手动执行" help="自动领取并执行已确认的 Task。" />
+			<SwitchField name="decide_enabled" label="M5 自动运行" help="同时启停 Todo 判断和 Task 执行；关闭后仍可手动执行 Task。" />
             <SwitchField name="chat_enabled" label="右侧对话" help="启用页面右侧的 Jarvis 对话入口。" />
           </Section>
-          <Section title="M3 / M4 共用 Agent" description="M3 选择 Agent CLI 时与 M4 共用这组 CLI、模型和超时。">
-            <SelectField name="analysis_cli" label="分析 CLI" options={cliOptions} help="M3 Agent 提取和 M4 决策启动的命令行执行器。" />
+          <Section title="M3 / M5 判断共用 Agent" description="M3 选择 Agent CLI 时与 M5 判断环节共用这组 CLI、模型和超时。">
+            <SelectField name="analysis_cli" label="分析 CLI" options={cliOptions} help="M3 提取和 M5 判断环节启动的命令行执行器。" />
             <TextField name="analysis_model" label="分析模型" help="传给分析 CLI 的模型名。" />
-            <NumberField name="analysis_timeout_seconds" label="单次分析超时（秒）" min={30} max={3600} step={30} help="M3、M4 每次 Agent 调用的最长运行时间。" />
+            <NumberField name="analysis_timeout_seconds" label="单次分析超时（秒）" min={30} max={3600} step={30} help="M3 提取和 M5 判断每次 Agent 调用的最长运行时间。" />
           </Section>
           <Section title="Model API" description="当前用于 Todo 相似去重；M3 切到 Model API 后也用于线索提取。">
-            <TextField name="model_api_model" label="去重 / 备用提取模型" help="当前是 qwen-plus。不会替代 M4、M5 或对话模型。" />
+            <TextField name="model_api_model" label="去重 / 备用提取模型" help="当前是 qwen-plus。不会替代 M5 判断、执行或对话模型。" />
             <NumberField name="model_api_timeout_seconds" label="API 请求超时（秒）" min={10} max={600} step={10} help="Model API 和文本向量 API 的 HTTP 请求超时。" />
           </Section>
           <Section title="M5 执行器" description="M5 使用独立 CLI；右侧对话复用该 CLI，但可另选模型。">
@@ -312,12 +309,11 @@ export default function RuntimeSettings() {
             <TextField name="extract_schedule" label="补偿扫描周期" placeholder="@every 10m" help="事件触发遗漏时，按此周期扫描待提取消息。" />
             <NumberField name="extract_batch_messages" label="每批消息上限" min={1} max={5000} />
           </Section>
-          <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo 和长期记忆。">
+          <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo 和长期事实。">
             <NumberField name="extract_context_messages" label="每个会话前文条数" min={0} max={500} />
             <NumberField name="extract_context_window_minutes" label="前文时间窗（分钟）" min={1} max={10080} />
             <NumberField name="extract_open_todo_limit" label="开放 Todo 上限" min={1} max={1000} help="随 Prompt 提供的未关闭 Todo 数量，用于避免重复创建。" />
-            <NumberField name="extract_memory_top_k" label="长期记忆条数" min={1} max={100} />
-            <NumberField name="extract_memory_threshold" label="长期记忆最低分" min={0} max={1} step={0.05} precision={2} help="分数低于该值的 mem0 检索结果不会进入上下文。" />
+            <NumberField name="extract_fact_limit" label="长期事实条数" min={1} max={100} help="最多注入与当前主体相关的近期事实数量。" />
             <NumberField name="extract_max_prompt_chars" label="Prompt 字符上限" min={1000} max={1000000} step={1000} />
           </Section>
           <Section title="语义去重" description="先查相似 Todo；非精确命中时再由 Model API 判断是否同一行动。">
@@ -328,46 +324,18 @@ export default function RuntimeSettings() {
           <Section title="Model API 工具循环" description="仅在提取引擎为 Model API 时控制循环；Agent CLI 不受这些参数限制。">
             <NumberField name="extract_tool_timeout_seconds" label="单个工具超时（秒）" min={1} max={600} />
             <NumberField name="extract_history_tool_limit" label="历史消息返回上限" min={1} max={1000} />
-            <SettingCol>
-              <Form.Item
-                name="extract_tool_memory_max_top_k"
-                label={<FieldLabel label="记忆工具最大条数" help="模型调用 search_memory 时允许请求的最大结果数。" />}
-                dependencies={['extract_memory_top_k']}
-                rules={[
-                  { required: true },
-                  ({ getFieldValue }) => ({
-                    validator(_, value: number) {
-                      return value >= Number(getFieldValue('extract_memory_top_k') || 0)
-                        ? Promise.resolve()
-                        : Promise.reject(new Error('不能小于长期记忆条数'))
-                    },
-                  }),
-                ]}
-              >
-                <InputNumber min={1} max={500} style={{ width: '100%' }} />
-              </Form.Item>
-            </SettingCol>
           </Section>
         </>
       ),
     },
     {
       key: 'decide',
-      label: <PanelLabel title="M4 · Todo 决策" description="Todo → 放行、确认、补充信息或忽略" />,
+      label: <PanelLabel title="M5 · Todo 判断" description="判断 Todo 是否值得进入任务执行" />,
       children: (
-        <Section title="决策运行" description="M4 使用“常用设置”中的分析 CLI、模型和超时。">
-          <SelectField
-            name="decide_mode"
-            label="决策模式"
-            options={[
-              { value: 'codex', label: 'Agent 自动判断' },
-              { value: 'manual_mvp', label: '全部进入人工确认' },
-            ]}
-            help="人工确认模式不调用分析 Agent，所有 Todo 都交给用户判断。"
-          />
+        <Section title="判断运行" description="这是 M5 的前置判断环节，使用“常用设置”中的分析 CLI、模型和超时。">
           <SelectField name="decide_reasoning_effort" label="推理档位" options={reasoningOptions} />
           <SelectField name="decide_sandbox" label="文件权限" options={sandboxOptions} />
-          <SwitchField name="decide_network_enabled" label="允许联网" help="允许 M4 Agent 用工具补查项目、人物、飞书和代码信息。" />
+          <SwitchField name="decide_network_enabled" label="允许联网" help="允许 M5 在判断时用工具补查项目、人物、飞书和代码信息。" />
           <TextField name="decide_schedule" label="补偿扫描周期" placeholder="@every 1m" />
           <NumberField name="decide_batch_limit" label="每批 Todo 上限" min={1} max={1000} />
         </Section>
@@ -414,8 +382,8 @@ export default function RuntimeSettings() {
       ),
     },
     {
-      key: 'capture-memory',
-      label: <PanelLabel title="采集与长期记忆" description="飞书消息和 mem0" />,
+      key: 'capture-facts',
+      label: <PanelLabel title="采集与长期事实" description="飞书消息和离线事实引擎" />,
       children: (
         <>
           <Section title="消息采集" description="发现可处理的会话，并增量扫描飞书消息。">
@@ -425,20 +393,15 @@ export default function RuntimeSettings() {
             <NumberField name="capture_scan_workers" label="并发扫描会话数" min={1} max={32} />
             <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按近期活跃度自动纳入采集的私聊数量；0 表示关闭。" />
           </Section>
-          <Section title="mem0 长期记忆" description="把新消息切成会话窗口，提取可长期复用的工作事实。">
-            <TextField name="memory_schedule" label="记忆提取周期" placeholder="@every 10m" />
-            <NumberField name="memory_timeout_seconds" label="侧车请求超时（秒）" min={1} max={600} />
-            <NumberField name="memory_batch_limit" label="每批消息上限" min={1} max={5000} />
-            <NumberField name="memory_window_gap_minutes" label="新窗口间隔（分钟）" min={1} max={1440} help="同一会话相邻消息超过该间隔时拆成两个记忆窗口。" />
-            <NumberField name="memory_window_max_messages" label="每个窗口消息上限" min={1} max={1000} />
+          <Section title="离线事实引擎" description="在主流水线之外把消息切成会话窗口，提取可长期复用的工作事实。">
+            <SwitchField name="fact_engine_enabled" label="自动提取事实" />
+            <TextField name="fact_engine_schedule" label="事实提取周期" placeholder="@every 15m" />
+            <TextField name="fact_engine_model" label="事实提取模型" />
+            <NumberField name="fact_engine_timeout_seconds" label="单轮超时（秒）" min={1} max={3600} />
+            <NumberField name="fact_engine_batch_limit" label="每批消息上限" min={1} max={5000} />
+            <NumberField name="fact_engine_window_gap_minutes" label="新窗口间隔（分钟）" min={1} max={1440} help="同一会话相邻消息超过该间隔时拆成两个事实窗口。" />
+            <NumberField name="fact_engine_window_max_messages" label="每个窗口消息上限" min={1} max={1000} />
           </Section>
-          <Alert
-            className="runtime-settings-inline-note"
-            type="info"
-            showIcon
-            title="mem0 模型暂不由本页控制"
-            description="mem0 侧车仍从 conf/config.yaml 读取模型和向量配置；本页的 Model API 模型只控制主服务。"
-          />
         </>
       ),
     },
@@ -521,10 +484,10 @@ export default function RuntimeSettings() {
           secondary={`${liveSettings.extract_schedule} · 最多 ${liveSettings.extract_batch_messages} 条`}
         />
         <RuntimeStep
-          stage="M4"
-          title="Todo 决策"
+          stage="M5"
+          title="Todo 判断"
           enabled={liveSettings.decide_enabled}
-          primary={m4Runtime}
+          primary={m5DecisionRuntime}
           secondary={`${liveSettings.decide_schedule} · 最多 ${liveSettings.decide_batch_limit} 条`}
         />
         <RuntimeStep
@@ -542,11 +505,11 @@ export default function RuntimeSettings() {
           secondary={`${liveSettings.chat_reasoning_effort} · ${liveSettings.chat_timeout_seconds}s 超时`}
         />
         <RuntimeStep
-          stage="MEMORY"
-          title="长期记忆"
-          enabled
-          primary="mem0 侧车"
-          secondary={`${liveSettings.memory_schedule} · 最多 ${liveSettings.memory_batch_limit} 条`}
+          stage="FACT"
+          title="长期事实"
+          enabled={liveSettings.fact_engine_enabled}
+          primary={liveSettings.fact_engine_model}
+          secondary={`${liveSettings.fact_engine_schedule} · 最多 ${liveSettings.fact_engine_batch_limit} 条`}
         />
       </div>
 
@@ -560,7 +523,12 @@ export default function RuntimeSettings() {
         layout="vertical"
         requiredMark={false}
         size="small"
-        onValuesChange={() => setLiveSettings(form.getFieldsValue(true) as RuntimeSettingsInput)}
+        onValuesChange={(changed) => {
+          if (Object.prototype.hasOwnProperty.call(changed, 'decide_enabled')) {
+            form.setFieldValue('execute_auto_enabled', changed.decide_enabled)
+          }
+          setLiveSettings(form.getFieldsValue(true) as RuntimeSettingsInput)
+        }}
       >
         <Collapse size="small" defaultActiveKey={['common']} items={panels} />
       </Form>

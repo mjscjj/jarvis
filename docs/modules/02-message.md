@@ -1,5 +1,7 @@
 # M2 消息识别模块（采集 + 记忆化）技术方案
 
+> **⚠️ 记忆层已退役（2026-08）**：本文写于 mem0 sidecar 时代，文中所有 mem0 / `jarvis_memories` / 记忆化相关设计都**不再成立**。事实沉淀已改为离线事实引擎：`internal/factengine` 按水位消费原料、用 traex + `DeepSeek-V4-Flash` 蒸馏成 `fact` 表，M3/M5 只读不写。权威描述见 [`docs/00-overview.md` §5](../00-overview.md)。本文其余部分仍作历史设计参考。
+
 > 模块定位：Jarvis 流水线的第一段。负责把「飞书全量消息」可靠地落到本地 MySQL（明文，source of truth），沉淀 `Group` / `Resource` 两个一等实体与 `ScanRecord` 扫描流水，并把有价值的对话蒸馏进 mem0 记忆层（Qdrant 后端，经 Python sidecar），为下游 M3（**Todo 提取**）提供可检索的结构化事实与语义记忆。
 >
 > 设计原则：本地可信明文存储 / fail-fast 暴露问题 / 不乱加 fallback 与旧数据兼容 / 模块化 / 优先官方包与已验证能力。

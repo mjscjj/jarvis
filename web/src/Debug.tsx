@@ -62,7 +62,7 @@ const moduleLabels: Record<string, string> = {
   capture: 'M1 采集',
   memory: 'M2 记忆',
   extract: 'M3 抽取',
-  decide: 'M4 决策',
+  decide: 'M5 判断',
   execute: 'M5 执行',
 }
 
@@ -171,7 +171,7 @@ function FailuresTab() {
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Space>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
-        <Text type="secondary">近 24 小时 cron 与 M3/M4/M5 运行错误，按 chat、Todo、Task 或 job 判断同范围恢复。</Text>
+        <Text type="secondary">近 24 小时 cron 与 M3/M5 运行错误，按 chat、Todo、Task 或 job 判断同范围恢复。</Text>
       </Space>
       {error && <Alert type="error" showIcon message="报错时间线加载失败" description={error} />}
       {!error && rows.length === 0 && (

@@ -1,5 +1,7 @@
 # M1 背景信息模块 · 详细技术方案
 
+> **⚠️ 记忆层已退役（2026-08）**：本文写于 mem0 sidecar 时代，文中所有 mem0 / `jarvis_memories` / 记忆化相关设计都**不再成立**。事实沉淀已改为离线事实引擎：`internal/factengine` 按水位消费原料、用 traex + `DeepSeek-V4-Flash` 蒸馏成 `fact` 表，M3/M5 只读不写。权威描述见 [`docs/00-overview.md` §5](../00-overview.md)。本文其余部分仍作历史设计参考。
+
 > **版本说明**：本模块隶属总纲 [`docs/00-overview.md`](../00-overview.md)，遵循其全局技术栈与实体定义。技术栈 **Go 1.26 / Hertz（CloudWeGo v0.10.5）/ GORM（`gorm.io/gorm` + MySQL driver，不引入 bytedgorm）**；定时任务 robfig/cron v3；记忆层 **mem0（Python）以 sidecar 形式，Go 侧通过 HTTP 调用**（不引入 Eino/Kitex）。本次技术方案由 Python 栈整体迁移到 Go 栈，实体从 4 个扩展为 7 个（见总纲 §2），M1 负责其中 Project / Person 的建模与 CRUD，并新增「Group↔Project 关联维护」职责。
 
 > 模块定位：飞书私人 AI 管家系统的「背景知识底座」。让研发工程师（owner: `chujiejie.1`）**手动设计并持续完善**自己的项目背景（Project）与重点人员背景（Person），把这些背景以可检索形式注入 mem0（经 sidecar），供下游 **Todo 提取（M3）/ M5 判断环节** 使用，并维护飞书群（Group）与项目的归属关联。**leader 交办的行动线索是全系统的最高优先级信号，其建模从本模块起源。**

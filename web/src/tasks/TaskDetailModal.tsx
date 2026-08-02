@@ -67,6 +67,7 @@ const taskEventLabels: Record<string, string> = {
 
 const actorLabels: Record<string, string> = {
   user: '我',
+  // 已落库的旧事件仍应显示当时的真实 actor；M4 合并后不再产生新 m4 事件。
   m4: 'M4',
   m5: 'M5',
   system: '系统',

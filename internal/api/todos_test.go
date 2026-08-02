@@ -37,7 +37,7 @@ func TestListTodos(t *testing.T) {
 	h := server.New()
 	h.GET("/api/todos", ListTodos(reader))
 
-	recorder := ut.PerformRequest(h.Engine, "GET", "/api/todos?status=extracted,need_info&leader_only=true&page=2&page_size=10", nil)
+	recorder := ut.PerformRequest(h.Engine, "GET", "/api/todos?status=extracted,observing&leader_only=true&page=2&page_size=10", nil)
 	response := recorder.Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())

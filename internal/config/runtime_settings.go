@@ -37,14 +37,12 @@ type RuntimeSettings struct {
 	ExtractContextMessages       int     `json:"extract_context_messages"`
 	ExtractContextWindowMinutes  int     `json:"extract_context_window_minutes"`
 	ExtractOpenTodoLimit         int     `json:"extract_open_todo_limit"`
-	ExtractMemoryTopK            int     `json:"extract_memory_top_k"`
-	ExtractMemoryThreshold       float64 `json:"extract_memory_threshold"`
+	ExtractFactLimit             int     `json:"extract_fact_limit"`
 	ExtractMaxPromptChars        int     `json:"extract_max_prompt_chars"`
 	ExtractSemanticThreshold     float64 `json:"extract_semantic_threshold"`
 	ExtractSemanticNeighborLimit int     `json:"extract_semantic_neighbor_limit"`
 	ExtractToolTimeoutSeconds    int     `json:"extract_tool_timeout_seconds"`
 	ExtractHistoryToolLimit      int     `json:"extract_history_tool_limit"`
-	ExtractToolMemoryMaxTopK     int     `json:"extract_tool_memory_max_top_k"`
 	ExtractEvidenceRetryMax      int     `json:"extract_evidence_retry_max"`
 
 	DecideEnabled         bool   `json:"decide_enabled"`
@@ -70,17 +68,19 @@ type RuntimeSettings struct {
 	ChatReasoningEffort string `json:"chat_reasoning_effort"`
 	ChatTimeoutSeconds  int    `json:"chat_timeout_seconds"`
 
-	CapturePageSize               int    `json:"capture_page_size"`
-	CaptureScanWorkers            int    `json:"capture_scan_workers"`
-	CaptureDiscoverSchedule       string `json:"capture_discover_schedule"`
-	CaptureScanSchedule           string `json:"capture_scan_schedule"`
-	CaptureAutoRelatedP2PTopN     int    `json:"capture_auto_related_p2p_top_n"`
+	CapturePageSize           int    `json:"capture_page_size"`
+	CaptureScanWorkers        int    `json:"capture_scan_workers"`
+	CaptureDiscoverSchedule   string `json:"capture_discover_schedule"`
+	CaptureScanSchedule       string `json:"capture_scan_schedule"`
+	CaptureAutoRelatedP2PTopN int    `json:"capture_auto_related_p2p_top_n"`
 
-	MemoryTimeoutSeconds    int    `json:"memory_timeout_seconds"`
-	MemoryBatchLimit        int    `json:"memory_batch_limit"`
-	MemoryWindowGapMinutes  int    `json:"memory_window_gap_minutes"`
-	MemoryWindowMaxMessages int    `json:"memory_window_max_messages"`
-	MemorySchedule          string `json:"memory_schedule"`
+	FactEngineEnabled           bool   `json:"fact_engine_enabled"`
+	FactEngineSchedule          string `json:"fact_engine_schedule"`
+	FactEngineModel             string `json:"fact_engine_model"`
+	FactEngineTimeoutSeconds    int    `json:"fact_engine_timeout_seconds"`
+	FactEngineBatchLimit        int    `json:"fact_engine_batch_limit"`
+	FactEngineWindowGapMinutes  int    `json:"fact_engine_window_gap_minutes"`
+	FactEngineWindowMaxMessages int    `json:"fact_engine_window_max_messages"`
 
 	LarkRateLimit      float64 `json:"lark_rate_limit"`
 	LarkBurst          int     `json:"lark_burst"`
@@ -173,71 +173,71 @@ func (s *RuntimeSettingsService) getLocked() (*RuntimeSettingsView, error) {
 
 func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 	return RuntimeSettings{
-		AnalysisCLI:                   cfg.Codex.Bin,
-		AnalysisModel:                 cfg.Codex.Model,
-		AnalysisTimeoutSeconds:        cfg.Codex.TimeoutSeconds,
-		ModelAPIModel:                 cfg.Model.Model,
-		ModelAPITimeoutSeconds:        cfg.Model.TimeoutSec,
-		ExtractEnabled:                cfg.Extract.Enabled,
-		ExtractEngine:                 cfg.Extract.Engine,
-		ExtractSchedule:               cfg.Extract.Schedule,
-		ExtractBatchMessages:          cfg.Extract.BatchMessages,
-		ExtractSandbox:                cfg.Extract.CodexSandbox,
-		ExtractNetworkEnabled:         cfg.Extract.CodexNetwork,
-		ExtractReasoningEffort:        cfg.Extract.CodexReasoningEffort,
-		ExtractContextMessages:        cfg.Extract.ContextMessages,
-		ExtractContextWindowMinutes:   cfg.Extract.ContextWindowMinutes,
-		ExtractOpenTodoLimit:          cfg.Extract.OpenTodoLimit,
-		ExtractMemoryTopK:             cfg.Extract.MemoryTopK,
-		ExtractMemoryThreshold:        cfg.Extract.MemoryThreshold,
-		ExtractMaxPromptChars:         cfg.Extract.MaxPromptChars,
-		ExtractSemanticThreshold:      cfg.Extract.SemanticThreshold,
-		ExtractSemanticNeighborLimit:  cfg.Extract.SemanticNeighborLimit,
-		ExtractToolTimeoutSeconds:     cfg.Extract.ToolTimeoutSec,
-		ExtractHistoryToolLimit:       cfg.Extract.HistoryToolLimit,
-		ExtractToolMemoryMaxTopK:      cfg.Extract.ToolMemoryMaxTopK,
-		ExtractEvidenceRetryMax:       cfg.Extract.EvidenceRetryMax,
-		DecideEnabled:                 cfg.Decide.Enabled,
-		DecideSchedule:                cfg.Decide.Schedule,
-		DecideBatchLimit:              cfg.Decide.BatchLimit,
-		DecideSandbox:                 cfg.Decide.CodexSandbox,
-		DecideNetworkEnabled:          cfg.Decide.CodexNetwork,
-		DecideReasoningEffort:         cfg.Decide.CodexReasoningEffort,
-		ExecuteAutoEnabled:            cfg.Execute.Enabled,
-		ExecuteCLI:                    cfg.Execute.Bin,
-		ExecuteModel:                  cfg.Execute.Model,
-		ExecuteReasoningEffort:        cfg.Execute.ReasoningEffort,
-		ExecuteSchedule:               cfg.Execute.Schedule,
-		ExecuteBatchLimit:             cfg.Execute.BatchLimit,
-		ExecuteTimeoutSeconds:         cfg.Execute.TimeoutSecond,
-		ExecuteStaleMinutes:           cfg.Execute.StaleExecutingMinute,
-		ExecuteConcurrency:            cfg.Execute.Concurrency,
-		ChatEnabled:                   cfg.Chat.Enabled,
-		ChatModel:                     cfg.Chat.Model,
-		ChatSandbox:                   cfg.Chat.Sandbox,
-		ChatReasoningEffort:           cfg.Chat.ReasoningEffort,
-		ChatTimeoutSeconds:            cfg.Chat.TimeoutSeconds,
-		CapturePageSize:               cfg.Capture.PageSize,
-		CaptureScanWorkers:            cfg.Capture.ScanWorkers,
-		CaptureDiscoverSchedule:       cfg.Capture.DiscoverSchedule,
-		CaptureScanSchedule:           cfg.Capture.ScanSchedule,
-		CaptureAutoRelatedP2PTopN:     cfg.Capture.AutoRelatedP2PTopN,
-		MemoryTimeoutSeconds:          cfg.Mem0.TimeoutSec,
-		MemoryBatchLimit:              cfg.Mem0.BatchLimit,
-		MemoryWindowGapMinutes:        cfg.Mem0.WindowGapMinutes,
-		MemoryWindowMaxMessages:       cfg.Mem0.WindowMaxMessages,
-		MemorySchedule:                cfg.Mem0.Schedule,
-		LarkRateLimit:                 cfg.LarkCLI.RateLimit,
-		LarkBurst:                     cfg.LarkCLI.Burst,
-		LarkConcurrency:               cfg.LarkCLI.Concurrent,
-		LarkTimeoutSeconds:            cfg.LarkCLI.TimeoutSec,
-		ScheduledTaskEnabled:          cfg.ScheduledTask.Enabled,
-		ScheduledTaskSchedule:         cfg.ScheduledTask.Schedule,
-		ScheduledTaskBatchLimit:       cfg.ScheduledTask.BatchLimit,
-		DailyDigestEnabled:            cfg.DailyDigest.Enabled,
-		DailyDigestSchedule:           cfg.DailyDigest.Schedule,
-		DailyDigestMessageLimit:       cfg.DailyDigest.GroupMessageLimit,
-		DailyDigestConcurrency:        cfg.DailyDigest.GroupConcurrency,
+		AnalysisCLI:                  cfg.Codex.Bin,
+		AnalysisModel:                cfg.Codex.Model,
+		AnalysisTimeoutSeconds:       cfg.Codex.TimeoutSeconds,
+		ModelAPIModel:                cfg.Model.Model,
+		ModelAPITimeoutSeconds:       cfg.Model.TimeoutSec,
+		ExtractEnabled:               cfg.Extract.Enabled,
+		ExtractEngine:                cfg.Extract.Engine,
+		ExtractSchedule:              cfg.Extract.Schedule,
+		ExtractBatchMessages:         cfg.Extract.BatchMessages,
+		ExtractSandbox:               cfg.Extract.CodexSandbox,
+		ExtractNetworkEnabled:        cfg.Extract.CodexNetwork,
+		ExtractReasoningEffort:       cfg.Extract.CodexReasoningEffort,
+		ExtractContextMessages:       cfg.Extract.ContextMessages,
+		ExtractContextWindowMinutes:  cfg.Extract.ContextWindowMinutes,
+		ExtractOpenTodoLimit:         cfg.Extract.OpenTodoLimit,
+		ExtractFactLimit:             cfg.Extract.FactLimit,
+		ExtractMaxPromptChars:        cfg.Extract.MaxPromptChars,
+		ExtractSemanticThreshold:     cfg.Extract.SemanticThreshold,
+		ExtractSemanticNeighborLimit: cfg.Extract.SemanticNeighborLimit,
+		ExtractToolTimeoutSeconds:    cfg.Extract.ToolTimeoutSec,
+		ExtractHistoryToolLimit:      cfg.Extract.HistoryToolLimit,
+		ExtractEvidenceRetryMax:      cfg.Extract.EvidenceRetryMax,
+		DecideEnabled:                cfg.Decide.Enabled,
+		DecideSchedule:               cfg.Decide.Schedule,
+		DecideBatchLimit:             cfg.Decide.BatchLimit,
+		DecideSandbox:                cfg.Decide.CodexSandbox,
+		DecideNetworkEnabled:         cfg.Decide.CodexNetwork,
+		DecideReasoningEffort:        cfg.Decide.CodexReasoningEffort,
+		ExecuteAutoEnabled:           cfg.Execute.Enabled,
+		ExecuteCLI:                   cfg.Execute.Bin,
+		ExecuteModel:                 cfg.Execute.Model,
+		ExecuteReasoningEffort:       cfg.Execute.ReasoningEffort,
+		ExecuteSchedule:              cfg.Execute.Schedule,
+		ExecuteBatchLimit:            cfg.Execute.BatchLimit,
+		ExecuteTimeoutSeconds:        cfg.Execute.TimeoutSecond,
+		ExecuteStaleMinutes:          cfg.Execute.StaleExecutingMinute,
+		ExecuteConcurrency:           cfg.Execute.Concurrency,
+		ChatEnabled:                  cfg.Chat.Enabled,
+		ChatModel:                    cfg.Chat.Model,
+		ChatSandbox:                  cfg.Chat.Sandbox,
+		ChatReasoningEffort:          cfg.Chat.ReasoningEffort,
+		ChatTimeoutSeconds:           cfg.Chat.TimeoutSeconds,
+		CapturePageSize:              cfg.Capture.PageSize,
+		CaptureScanWorkers:           cfg.Capture.ScanWorkers,
+		CaptureDiscoverSchedule:      cfg.Capture.DiscoverSchedule,
+		CaptureScanSchedule:          cfg.Capture.ScanSchedule,
+		CaptureAutoRelatedP2PTopN:    cfg.Capture.AutoRelatedP2PTopN,
+		FactEngineEnabled:            cfg.FactEngine.Enabled,
+		FactEngineSchedule:           cfg.FactEngine.Schedule,
+		FactEngineModel:              cfg.FactEngine.Model,
+		FactEngineTimeoutSeconds:     cfg.FactEngine.TimeoutSec,
+		FactEngineBatchLimit:         cfg.FactEngine.BatchLimit,
+		FactEngineWindowGapMinutes:   cfg.FactEngine.WindowGapMinutes,
+		FactEngineWindowMaxMessages:  cfg.FactEngine.WindowMaxMessages,
+		LarkRateLimit:                cfg.LarkCLI.RateLimit,
+		LarkBurst:                    cfg.LarkCLI.Burst,
+		LarkConcurrency:              cfg.LarkCLI.Concurrent,
+		LarkTimeoutSeconds:           cfg.LarkCLI.TimeoutSec,
+		ScheduledTaskEnabled:         cfg.ScheduledTask.Enabled,
+		ScheduledTaskSchedule:        cfg.ScheduledTask.Schedule,
+		ScheduledTaskBatchLimit:      cfg.ScheduledTask.BatchLimit,
+		DailyDigestEnabled:           cfg.DailyDigest.Enabled,
+		DailyDigestSchedule:          cfg.DailyDigest.Schedule,
+		DailyDigestMessageLimit:      cfg.DailyDigest.GroupMessageLimit,
+		DailyDigestConcurrency:       cfg.DailyDigest.GroupConcurrency,
 	}
 }
 
@@ -257,14 +257,12 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Extract.ContextMessages = input.ExtractContextMessages
 	cfg.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
 	cfg.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
-	cfg.Extract.MemoryTopK = input.ExtractMemoryTopK
-	cfg.Extract.MemoryThreshold = input.ExtractMemoryThreshold
+	cfg.Extract.FactLimit = input.ExtractFactLimit
 	cfg.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	cfg.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	cfg.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit
 	cfg.Extract.ToolTimeoutSec = input.ExtractToolTimeoutSeconds
 	cfg.Extract.HistoryToolLimit = input.ExtractHistoryToolLimit
-	cfg.Extract.ToolMemoryMaxTopK = input.ExtractToolMemoryMaxTopK
 	cfg.Extract.EvidenceRetryMax = input.ExtractEvidenceRetryMax
 	cfg.Decide.Enabled = input.DecideEnabled
 	cfg.Decide.Schedule = strings.TrimSpace(input.DecideSchedule)
@@ -291,11 +289,13 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	cfg.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
 	cfg.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
-	cfg.Mem0.TimeoutSec = input.MemoryTimeoutSeconds
-	cfg.Mem0.BatchLimit = input.MemoryBatchLimit
-	cfg.Mem0.WindowGapMinutes = input.MemoryWindowGapMinutes
-	cfg.Mem0.WindowMaxMessages = input.MemoryWindowMaxMessages
-	cfg.Mem0.Schedule = strings.TrimSpace(input.MemorySchedule)
+	cfg.FactEngine.Enabled = input.FactEngineEnabled
+	cfg.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
+	cfg.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
+	cfg.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
+	cfg.FactEngine.BatchLimit = input.FactEngineBatchLimit
+	cfg.FactEngine.WindowGapMinutes = input.FactEngineWindowGapMinutes
+	cfg.FactEngine.WindowMaxMessages = input.FactEngineWindowMaxMessages
 	cfg.LarkCLI.RateLimit = input.LarkRateLimit
 	cfg.LarkCLI.Burst = input.LarkBurst
 	cfg.LarkCLI.Concurrent = input.LarkConcurrency
@@ -321,14 +321,12 @@ type runtimeOverride struct {
 		ContextMessages       int     `yaml:"context_messages"`
 		ContextWindowMinutes  int     `yaml:"context_window_minutes"`
 		OpenTodoLimit         int     `yaml:"open_todo_limit"`
-		MemoryTopK            int     `yaml:"memory_top_k"`
-		MemoryThreshold       float64 `yaml:"memory_threshold"`
+		FactLimit             int     `yaml:"fact_limit"`
 		MaxPromptChars        int     `yaml:"max_prompt_chars"`
 		SemanticThreshold     float64 `yaml:"semantic_threshold"`
 		SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
 		ToolTimeoutSec        int     `yaml:"tool_timeout_sec"`
 		HistoryToolLimit      int     `yaml:"history_tool_limit"`
-		ToolMemoryMaxTopK     int     `yaml:"tool_memory_max_top_k"`
 		EvidenceRetryMax      int     `yaml:"evidence_retry_max"`
 	} `yaml:"extract"`
 	Decide struct {
@@ -367,19 +365,21 @@ type runtimeOverride struct {
 		TimeoutSeconds  int    `yaml:"timeout_seconds"`
 	} `yaml:"chat"`
 	Capture struct {
-		PageSize               int    `yaml:"page_size"`
-		ScanWorkers            int    `yaml:"scan_workers"`
-		DiscoverSchedule       string `yaml:"discover_schedule"`
-		ScanSchedule           string `yaml:"scan_schedule"`
-		AutoRelatedP2PTopN     int    `yaml:"auto_related_p2p_top_n"`
+		PageSize           int    `yaml:"page_size"`
+		ScanWorkers        int    `yaml:"scan_workers"`
+		DiscoverSchedule   string `yaml:"discover_schedule"`
+		ScanSchedule       string `yaml:"scan_schedule"`
+		AutoRelatedP2PTopN int    `yaml:"auto_related_p2p_top_n"`
 	} `yaml:"capture"`
-	Mem0 struct {
+	FactEngine struct {
+		Enabled           bool   `yaml:"enabled"`
+		Schedule          string `yaml:"schedule"`
+		Model             string `yaml:"model"`
 		TimeoutSec        int    `yaml:"timeout_sec"`
 		BatchLimit        int    `yaml:"batch_limit"`
 		WindowGapMinutes  int    `yaml:"window_gap_minutes"`
 		WindowMaxMessages int    `yaml:"window_max_messages"`
-		Schedule          string `yaml:"schedule"`
-	} `yaml:"mem0"`
+	} `yaml:"factengine"`
 	LarkCLI struct {
 		RateLimit  float64 `yaml:"rate_limit"`
 		Burst      int     `yaml:"burst"`
@@ -411,14 +411,12 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Extract.ContextMessages = input.ExtractContextMessages
 	override.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
 	override.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
-	override.Extract.MemoryTopK = input.ExtractMemoryTopK
-	override.Extract.MemoryThreshold = input.ExtractMemoryThreshold
+	override.Extract.FactLimit = input.ExtractFactLimit
 	override.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	override.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	override.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit
 	override.Extract.ToolTimeoutSec = input.ExtractToolTimeoutSeconds
 	override.Extract.HistoryToolLimit = input.ExtractHistoryToolLimit
-	override.Extract.ToolMemoryMaxTopK = input.ExtractToolMemoryMaxTopK
 	override.Extract.EvidenceRetryMax = input.ExtractEvidenceRetryMax
 	override.Decide.Enabled = input.DecideEnabled
 	override.Decide.Schedule = strings.TrimSpace(input.DecideSchedule)
@@ -450,11 +448,13 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	override.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
 	override.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
-	override.Mem0.TimeoutSec = input.MemoryTimeoutSeconds
-	override.Mem0.BatchLimit = input.MemoryBatchLimit
-	override.Mem0.WindowGapMinutes = input.MemoryWindowGapMinutes
-	override.Mem0.WindowMaxMessages = input.MemoryWindowMaxMessages
-	override.Mem0.Schedule = strings.TrimSpace(input.MemorySchedule)
+	override.FactEngine.Enabled = input.FactEngineEnabled
+	override.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
+	override.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
+	override.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
+	override.FactEngine.BatchLimit = input.FactEngineBatchLimit
+	override.FactEngine.WindowGapMinutes = input.FactEngineWindowGapMinutes
+	override.FactEngine.WindowMaxMessages = input.FactEngineWindowMaxMessages
 	override.LarkCLI.RateLimit = input.LarkRateLimit
 	override.LarkCLI.Burst = input.LarkBurst
 	override.LarkCLI.Concurrent = input.LarkConcurrency

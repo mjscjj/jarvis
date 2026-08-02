@@ -127,7 +127,7 @@ func TestM3OwnedTodoStatuses(t *testing.T) {
 			t.Fatalf("m3OwnedTodoStatuses[%q] = false, want true", status)
 		}
 	}
-	for _, status := range []string{"auto", "scoring", "need_info", "need_decision", "confirmed", "dismissed", "dropped", "expired"} {
+	for _, status := range []string{"auto", "dropped"} {
 		if m3OwnedTodoStatuses[status] {
 			t.Fatalf("m3OwnedTodoStatuses[%q] = true, want false", status)
 		}

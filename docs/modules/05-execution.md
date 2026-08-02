@@ -1,5 +1,7 @@
 # M5 任务执行模块 技术方案
 
+> **⚠️ 记忆层已退役（2026-08）**：本文写于 mem0 sidecar 时代，文中所有 mem0 / `jarvis_memories` / 记忆化相关设计都**不再成立**。事实沉淀已改为离线事实引擎：`internal/factengine` 按水位消费原料、用 traex + `DeepSeek-V4-Flash` 蒸馏成 `fact` 表，M3/M5 只读不写。权威描述见 [`docs/00-overview.md` §5](../00-overview.md)。本文其余部分仍作历史设计参考。
+
 > **版本说明**：本次项目重大调整后重写。隶属总纲 `docs/00-overview.md`（顶层设计与跨模块契约以总纲为准）。
 > **技术栈**：Go 1.26（后端）+ robfig/cron v3（调度）+ GORM/MySQL 8（存储），子进程 codex CLI / lark-cli / ripgrep 走 `os/exec`。**不引入 Eino/Kitex**。
 > **本文讲的是 M5 的执行环节**。M5 内部分两步：判断环节（read-only 给 Todo 定 disposition，见 `modules/04-decision.md`）和执行环节（工具全开真正落地，本文）。两步共用一个工作队列和一个 worker 池，不是两个流水线阶段。

@@ -36,7 +36,7 @@ type StatusCount struct {
 type Overview struct {
 	Todos struct {
 		Total      int64         `json:"total"`
-		Open       int64         `json:"open"`        // extracted/scoring（等判断）
+		Open       int64         `json:"open"`        // extracted（等判断）
 		LeaderOpen int64         `json:"leader_open"` // leader 交办且未闭环
 		ByStatus   []StatusCount `json:"by_status"`
 	} `json:"todos"`
@@ -58,7 +58,7 @@ type Overview struct {
 // observing belongs to none of these counts — it has been judged, and counting
 // it as open would put clues nobody is working on back in the overview's
 // backlog.
-var openTodoStatuses = []string{"extracted", "scoring"}
+var openTodoStatuses = []string{"extracted"}
 
 func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {
 	overview := &Overview{}

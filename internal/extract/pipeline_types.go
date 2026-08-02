@@ -3,6 +3,8 @@ package extract
 import (
 	"context"
 	"time"
+
+	"jarvis/internal/contextsnap"
 )
 
 // Prompt is the provider-independent input to the structured-output model.
@@ -138,9 +140,9 @@ type ChatBatch struct {
 type UnitExtraction struct {
 	UnitKey    string
 	Candidates []ResolvedCandidate
-	// Memories are the per-unit retrieved memories (filtered) frozen into each
-	// Todo's context_snapshot so M5 replay the same background.
-	Memories []map[string]any
+	// Facts are the already-distilled facts about this chat's group and project,
+	// frozen into each Todo's context_snapshot so M5 replay the same background.
+	Facts []contextsnap.Fact
 }
 
 type ResolvedCandidate struct {

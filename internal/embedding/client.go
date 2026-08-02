@@ -1,5 +1,5 @@
 // Package embedding implements the OpenAI-compatible embedding transport used
-// by mem0 and Todo semantic deduplication.
+// by Todo semantic deduplication.
 package embedding
 
 import (

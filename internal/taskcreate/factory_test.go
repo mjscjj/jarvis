@@ -29,7 +29,7 @@ func TestNormalizeInputDefaultsTodoSourceID(t *testing.T) {
 }
 
 // TestNormalizeInputKeepsSourceClueVerbatim pins that M3's original clue rides
-// into the Task untouched: M5 reads it to recover the real goal when M4's
+// into the Task untouched: M5 reads it to recover the real goal when its judgment
 // direction only covers an intermediate step.
 func TestNormalizeInputKeepsSourceClueVerbatim(t *testing.T) {
 	todoID := uint64(42)

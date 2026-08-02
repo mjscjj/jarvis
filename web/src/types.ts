@@ -340,7 +340,6 @@ export interface Project {
   key_decisions: unknown
   timeline: unknown
   notes: string | null
-  mem0_synced_at: string | null
   created_at: string
   updated_at: string
 }
@@ -362,7 +361,6 @@ export interface Person {
   p2p_chat_id: string | null
   notes: string | null
   is_active: boolean
-  mem0_synced_at: string | null
   created_at: string
   updated_at: string
 }
@@ -868,18 +866,15 @@ export interface RuntimeSettings {
   extract_context_messages: number
   extract_context_window_minutes: number
   extract_open_todo_limit: number
-  extract_memory_top_k: number
-  extract_memory_threshold: number
+  extract_fact_limit: number
   extract_max_prompt_chars: number
   extract_semantic_threshold: number
   extract_semantic_neighbor_limit: number
   extract_tool_timeout_seconds: number
   extract_history_tool_limit: number
-  extract_tool_memory_max_top_k: number
   extract_evidence_retry_max: number
 
   decide_enabled: boolean
-  decide_mode: 'codex' | 'manual_mvp'
   decide_schedule: string
   decide_batch_limit: number
   decide_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
@@ -907,11 +902,14 @@ export interface RuntimeSettings {
   capture_discover_schedule: string
   capture_scan_schedule: string
   capture_auto_related_p2p_top_n: number
-  memory_timeout_seconds: number
-  memory_batch_limit: number
-  memory_window_gap_minutes: number
-  memory_window_max_messages: number
-  memory_schedule: string
+
+  fact_engine_enabled: boolean
+  fact_engine_schedule: string
+  fact_engine_model: string
+  fact_engine_timeout_seconds: number
+  fact_engine_batch_limit: number
+  fact_engine_window_gap_minutes: number
+  fact_engine_window_max_messages: number
 
   lark_rate_limit: number
   lark_burst: number

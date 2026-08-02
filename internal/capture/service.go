@@ -698,23 +698,22 @@ func (s *Service) toDomainMessage(group *domain.Group, item CLIMessage) (*domain
 		return nil, fmt.Errorf("message %s sender id is empty", item.MessageID)
 	}
 	return &domain.Message{
-		MessageID:     item.MessageID,
-		ChatID:        group.ChatID,
-		GroupID:       &group.ID,
-		ChatMode:      group.ChatMode,
-		SenderOpenID:  senderID,
-		SenderName:    senderName,
-		SenderType:    senderType,
-		MessageType:   item.MessageType,
-		Content:       item.Content,
-		ReplyTo:       nullableString(item.ParentID),
-		RootID:        nullableString(item.RootID),
-		ThreadID:      nullableString(item.ThreadID),
-		CreateTime:    createTime,
-		UpdateTime:    updateTime,
-		Source:        "poll",
-		RenderOK:      knownMessageType(item.MessageType),
-		Mem0Processed: false,
+		MessageID:    item.MessageID,
+		ChatID:       group.ChatID,
+		GroupID:      &group.ID,
+		ChatMode:     group.ChatMode,
+		SenderOpenID: senderID,
+		SenderName:   senderName,
+		SenderType:   senderType,
+		MessageType:  item.MessageType,
+		Content:      item.Content,
+		ReplyTo:      nullableString(item.ParentID),
+		RootID:       nullableString(item.RootID),
+		ThreadID:     nullableString(item.ThreadID),
+		CreateTime:   createTime,
+		UpdateTime:   updateTime,
+		Source:       "poll",
+		RenderOK:     knownMessageType(item.MessageType),
 	}, nil
 }
 
@@ -734,16 +733,14 @@ func upsertMessage(tx *gorm.DB, incoming *domain.Message) (bool, error) {
 		return false, nil
 	}
 	updates := map[string]any{
-		"content":           incoming.Content,
-		"content_raw":       incoming.ContentRaw,
-		"message_type":      incoming.MessageType,
-		"sender_open_id":    incoming.SenderOpenID,
-		"sender_name":       incoming.SenderName,
-		"sender_type":       incoming.SenderType,
-		"update_time":       incoming.UpdateTime,
-		"render_ok":         incoming.RenderOK,
-		"mem0_processed":    false,
-		"mem0_processed_at": nil,
+		"content":        incoming.Content,
+		"content_raw":    incoming.ContentRaw,
+		"message_type":   incoming.MessageType,
+		"sender_open_id": incoming.SenderOpenID,
+		"sender_name":    incoming.SenderName,
+		"sender_type":    incoming.SenderType,
+		"update_time":    incoming.UpdateTime,
+		"render_ok":      incoming.RenderOK,
 	}
 	if err := tx.Model(&existing).Updates(updates).Error; err != nil {
 		return false, fmt.Errorf("update edited message %s: %w", incoming.MessageID, err)

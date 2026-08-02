@@ -454,7 +454,7 @@ func (s *PipelineStore) loadResources(ctx context.Context, groupID uint64, messa
 func (s *PipelineStore) loadOpenTodos(ctx context.Context, groupID uint64, limit int) ([]OpenTodoContext, error) {
 	var rows []domain.Todo
 	if err := s.db.WithContext(ctx).
-		Where("group_id = ? AND status IN ?", groupID, []string{"extracted", "scoring", "need_info", "need_decision", "observing"}).
+		Where("group_id = ? AND status IN ?", groupID, []string{"extracted", "observing"}).
 		Order("last_evidence_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load open todos group_id=%d: %w", groupID, err)
 	}

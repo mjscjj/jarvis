@@ -23,8 +23,8 @@ func Block(stage string) (string, error) {
 	case StageExtract:
 		purpose = "补全行动线索的项目、人物、会话、文档和代码背景；把查到的关键事实写入候选 context。"
 	case StageDecide:
-		purpose = "只判断线索是否值得交给 M5；不形成可执行计划，不执行外部动作。"
-		usage = "用法：默认不调用工具。只有一次低成本查询就可能改变 ready / drop 的价值判断时才查询；不要多跳调查，不要为了补齐目标、边界或执行方案而查询，这些由 M5 完成。"
+		purpose = "只判断线索是否值得进入 M5 执行环节；不形成可执行计划，不执行外部动作。"
+		usage = "用法：默认不调用工具。只有一次低成本查询就可能改变 ready / drop 的价值判断时才查询；不要多跳调查，不要为了补齐目标、边界或执行方案而查询，这些由 M5 执行环节完成。"
 	case StageExecute:
 		purpose = "完成任务、核验结果；需要等待时暂停当前 Task，避免创建重复任务。"
 	case StageChat:
@@ -47,12 +47,12 @@ func Block(stage string) (string, error) {
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。命令清单 `bytedcli --json --all-help`，单命令参数 `bytedcli --json <子命令路径> --help`。",
 		"- git：查询和操作本地代码仓库。",
 	}
-	// Facts are available wherever the agent may learn something worth keeping.
-	// StageDecide is excluded on purpose: it is a cheap value judgment that does
-	// not investigate, so it has nothing of its own to record.
+	// Facts are read-only here: the offline fact engine distills and writes them,
+	// so a stage that investigates only needs to look them up. StageDecide is
+	// excluded on purpose — it is a cheap value judgment that does not investigate.
 	if stage == StageExtract || stage == StageExecute || stage == StageChat {
 		lines = append(lines,
-			"- 查一个项目、群或人身上已经发生过什么时，使用 `jarvis-tools list-facts --help`；确实学到了值得明天回看的事实（定下来的决定和口径、真正的交付、卡住的原因、方向变化、别人承诺负责的事）时，使用 `jarvis-tools append-fact --help` 就地记一条，绑到它真正属于的项目/群/人身上。事实不是执行日志：不要给每条命令都记一条，也不要攒到最后补。",
+			"- 查一个项目、群或人身上已经发生过什么时，使用 `jarvis-tools list-facts --help`。事实由离线事实引擎自己从原始材料里蒸馏，你不需要手工记。",
 		)
 	}
 	if stage == StageExecute {
