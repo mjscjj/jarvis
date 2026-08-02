@@ -1230,7 +1230,7 @@ function ApprovalRulesPanel() {
   </>
 }
 
-// --- M3/M5 system prompts (stored in local Markdown files) ---
+// --- Agent system prompts (stored in local Markdown files) ---
 
 const systemPromptDefinitions = [
   {
@@ -1244,6 +1244,12 @@ const systemPromptDefinitions = [
     name: 'M5 执行',
     fileName: 'M5 系统提示词',
     description: 'execute、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。',
+  },
+  {
+    key: 'proactive_system_prompt',
+    name: '主动巡视',
+    fileName: '主动巡视系统提示词',
+    description: '定义每小时主动巡视的时间范围、世界模型维护、Task 创建及停止边界。',
   },
 ] as const
 
@@ -1312,7 +1318,7 @@ function SystemPromptsPanel() {
       type="info"
       showIcon
       message="这些内容直接读写本地 Markdown 文件"
-      description="M3 与 M5 会实时读取对应文件。工具说明由工具层维护，Skills 由 Skills 页维护；当前环节、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
+      description="M3、M5 与主动巡视会实时读取对应文件。工具说明由工具层维护，Skills 由 Skills 页维护；当前环节、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
       style={{ marginBottom: 12 }}
     />
     <Card loading={loading} variant="borderless">
