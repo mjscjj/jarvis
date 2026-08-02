@@ -785,7 +785,7 @@ function GroupsPanel() {
   </>
 }
 
-// --- Profile (decision-maker "me") ---
+// --- Profile (principal "me") ---
 
 function ProfilePanel() {
   const [profile, setProfile] = useState<ProfileView | null>(null)
@@ -864,7 +864,7 @@ function ProfilePanel() {
   return <>
     {error && <Alert type="error" showIcon message="保存失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
     {ok && <Alert type="success" showIcon message="已保存，抽取时会把「我的背景」喂给模型" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
-    {profile && !profile.saved && <Alert type="info" showIcon message="首次填写：决策主体（我）背景尚未设置，完善后可显著提升 leader 软措辞交办的识别" style={{ marginBottom: 12 }} />}
+    {profile && !profile.saved && <Alert type="info" showIcon message="首次填写：Principal（我）背景尚未设置，完善后可显著提升 leader 软措辞交办的识别" style={{ marginBottom: 12 }} />}
     <Card variant="borderless" loading={loading} style={{ maxWidth: 720 }}>
       <Form form={form} layout="vertical">
         <Form.Item label="open_id（由配置固定）">
@@ -1243,7 +1243,7 @@ const systemPromptDefinitions = [
     key: 'm5_system_prompt',
     name: 'M5 执行',
     fileName: 'M5 系统提示词',
-    description: 'direct、propose、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。',
+    description: 'execute、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。',
   },
 ] as const
 
@@ -1468,7 +1468,7 @@ export default function Background() {
   return (
     <Tabs
       items={[
-        { key: 'profile', label: '我（决策主体）', children: <ProfilePanel /> },
+        { key: 'profile', label: '我（Principal）', children: <ProfilePanel /> },
         { key: 'projects', label: '项目', children: <ProjectsPanel /> },
         { key: 'persons', label: '人物', children: <PersonsPanel /> },
         { key: 'groups', label: '会话背景', children: <GroupsPanel /> },

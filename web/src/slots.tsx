@@ -3,8 +3,8 @@ import { Alert, Empty, Space, Typography } from 'antd'
 const { Paragraph, Text } = Typography
 
 // TodoContextPanel renders M3's general clue fields: the dedup target, the
-// assistant-gathered context, and any open questions that still need the
-// principal. It replaces the old per-action_type slot table.
+// assistant-gathered context, and uncertainties M5 should handle while running
+// the Task. It replaces the old per-action_type slot table.
 export function TodoContextPanel({
   target,
   context,
@@ -37,7 +37,7 @@ export function TodoContextPanel({
         <Alert
           type="warning"
           showIcon
-          message="仍需你拍板 / 补充"
+          message="执行时待查证 / 补全"
           description={
             <ul style={{ margin: 0, paddingLeft: 18 }}>
               {questions.map((q, i) => (

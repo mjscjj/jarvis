@@ -1,15 +1,9 @@
-// A clue is judged into auto (a Task exists), observing (worth keeping in view,
-// but nobody has to act) or dropped. It is never parked waiting for the
-// principal: that question rides along to M5 on the Task.
+// M3 writes extracted/observing clues. The task materializer moves extracted to
+// materialized after creating its Task.
 export type TodoStatus =
   | 'extracted'
   | 'observing'
-  | 'scoring'
-  | 'auto'
-  | 'confirmed'
-  | 'dismissed'
-  | 'dropped'
-  | 'expired'
+  | 'materialized'
 
 export type ActionType =
   | 'agent_task'
@@ -134,9 +128,9 @@ export interface TodoQuery {
 // wrong. The originating clue goes back to observing with it.
 export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'needs_human' | 'awaiting_approval' | 'done' | 'failed' | 'observing'
 
-// TaskProposal is the high-risk external write codex prepared during the propose
-// stage, awaiting human approval. It is stored in execution_result while the Task
-// sits at awaiting_approval (stage="proposal").
+// TaskProposal is the controlled side effect Codex prepared during execution,
+// awaiting human approval. It is stored in execution_result while the Task sits
+// at awaiting_approval (stage="proposal").
 export interface TaskProposal {
   action: string
   target: string
@@ -162,8 +156,6 @@ export interface Task {
   target: string
   background: Record<string, unknown>
   plan: unknown | null
-  confirmed_by: string
-  confirmed_at: string
   status: TaskStatus
   execution_result: Record<string, unknown> | null
   // Where the matter itself now stands, spanning every run. Distinct from a run's
@@ -238,6 +230,8 @@ export interface ExecutionRun {
   id: number
   task_id: number
   action_type: ActionType
+  // propose remains readable for historical runs created before execute became
+  // the single initial stage.
   stage: 'execute' | 'propose' | 'apply'
   sandbox: string
   status: string
@@ -263,6 +257,7 @@ export interface TaskRunOutput {
   available: boolean
   running: boolean
   run_key?: string
+  // propose is a historical run value; new initial runs use execute.
   stage?: 'execute' | 'propose' | 'apply'
   prompt?: string
   stdout?: string
@@ -462,7 +457,7 @@ export interface GroupBackgroundInput {
   is_key_group: boolean
 }
 
-// ProfileView is the decision-maker ("me") background. open_id is fixed by
+// ProfileView is the principal ("me") background. open_id is fixed by
 // backend config; saved=false means the row has not been filled yet.
 // SharedMemory 是全局单例的「共享记忆」大文本视图，对齐后端 sharedmem.SharedMemoryView。
 export interface SharedMemory {
@@ -520,7 +515,7 @@ export interface Overview {
 export interface MyDay {
   date: string
   todos_created: number
-  confirmed: number
+  tasks_created: number
   tasks_done: number
   tasks_failed: number
 }
@@ -934,7 +929,7 @@ export interface RuntimeSettingsView {
 // PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。
 // 由各页面写入 PageContext（React Context），发送对话时随请求带给后端注入 prompt。
 export interface PageContext {
-  // 当前左侧导航 key：overview/todos/confirmations/tasks/scheduled-tasks/background/settings/progress/debug
+  // 当前左侧导航 key：overview/todos/tasks/scheduled-tasks/background/settings/progress/debug
   active_key: string
   // 当前选中项的可读摘要（如 "Todo #12 修复登录超时"）；无选中则 null
   selection: PageSelection | null

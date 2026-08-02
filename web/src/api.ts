@@ -95,7 +95,7 @@ export function getTodo(id: number, signal?: AbortSignal): Promise<Todo> {
   return request<Todo>(`/api/todos/${id}`, { signal })
 }
 
-// 只在 observing 和 extracted 之间搬动：把线索按下不表，或交回决策重新判断。
+// 只在 observing 和 extracted 之间搬动：把线索按下不表，或重新交给 Task 固化与执行流水线。
 export function setTodoStatus(id: number, status: TodoStatus, reason: string): Promise<Todo> {
   return request<Todo>(`/api/todos/${id}/status`, {
     method: 'PATCH',
@@ -141,7 +141,7 @@ export function rerunTask(id: number): Promise<ExecuteResult> {
 }
 
 // reapplyTask re-lands the SAME approved proposal for a Task whose apply stage
-// failed, WITHOUT going through propose/approval again (区别于 rerun 会重新审批).
+// failed, WITHOUT restarting execution/approval (区别于 rerun 可能重新审批).
 export function reapplyTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/reapply`, { method: 'POST' })
 }
@@ -162,7 +162,7 @@ export function approveTask(id: number, expectedVersion: number): Promise<Execut
 }
 
 // rejectTask declines a proposed external write: the Task moves to failed with an
-// optional reason; it can later be rerun to re-propose.
+// optional reason; it can later be rerun to investigate again and form a new proposal.
 export function rejectTask(id: number, expectedVersion: number, reason: string): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/reject`, {
     method: 'POST', body: { expected_version: expectedVersion, reason },

@@ -21,14 +21,9 @@ const C = {
 } as const
 
 export const todoStatusMeta: Record<TodoStatus, StatusMeta> = {
-  extracted: { label: '待评估', color: C.info },
+  extracted: { label: '待生成任务', color: C.info },
   observing: { label: '观察中', color: C.default },
-  scoring: { label: '评估中', color: C.processing },
-  auto: { label: '自动执行', color: C.success },
-  confirmed: { label: '已确认', color: C.success },
-  dismissed: { label: '已忽略', color: C.default },
-  dropped: { label: '已丢弃', color: C.default },
-  expired: { label: '已过期', color: C.error },
+  materialized: { label: '已生成任务', color: C.success },
 }
 
 export const taskStatusMeta: Record<TaskStatus, StatusMeta> = {

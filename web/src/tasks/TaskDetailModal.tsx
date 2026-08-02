@@ -1011,7 +1011,7 @@ function taskStateCopy(task: Task): { current: string; next: string } {
     }
   }
   return {
-    current: '任务已确认，正在等待执行。',
+    current: '任务已创建，正在等待执行。',
     next: '开始执行后，Codex 将使用完整任务上下文完成工作。',
   }
 }
@@ -1214,8 +1214,6 @@ function TaskMeta({ task }: { task: Task }) {
         <Descriptions.Item label="来源">{task.source_type}{task.source_id != null ? ` #${task.source_id}` : ''}</Descriptions.Item>
         <Descriptions.Item label="Todo">{task.todo_id != null ? `#${task.todo_id}` : '—'}</Descriptions.Item>
         <Descriptions.Item label="Task">#{task.id}</Descriptions.Item>
-        <Descriptions.Item label="确认人">{task.confirmed_by || '—'}</Descriptions.Item>
-        <Descriptions.Item label="确认时间">{task.confirmed_at ? formatTime(task.confirmed_at) : '—'}</Descriptions.Item>
         <Descriptions.Item label="版本">v{task.version}</Descriptions.Item>
       </Descriptions>
     </aside>
@@ -1259,7 +1257,7 @@ function PlanPanel({ task }: { task: Task }) {
       )}
       {basis.length > 0 && (
         <section>
-          <Title level={5}>判断依据</Title>
+          <Title level={5}>执行依据</Title>
           <ul>{basis.map((item, index) => <li key={index}>{item}</li>)}</ul>
         </section>
       )}

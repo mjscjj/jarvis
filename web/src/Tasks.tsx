@@ -58,7 +58,7 @@ const tabStatuses: Record<TaskTab, TaskStatus[]> = {
   human: ['needs_human'],
   awaiting: ['awaiting_approval'],
   done: ['done'],
-  // What M5 investigated and then decided nobody had to act on. Worth its own
+  // What M5 investigated and then found nobody had to act on. Worth its own
   // tab: it is the only place to see how much the pipeline is filtering out.
   observing: ['observing'],
   failed: ['failed'],
@@ -483,7 +483,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   ]
 
   return <>
-    <PageHeader title="任务执行" subtitle="已确认的可执行任务，点行查看方案与结果">
+    <PageHeader title="任务执行" subtitle="已生成的可执行任务，点行查看方案与结果">
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
     {error && <Alert type="error" showIcon title="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}

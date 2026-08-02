@@ -287,7 +287,7 @@ export default function Overview() {
           >
             <div className="overview-mini-grid">
               <MiniStat label="新增 Todo" value={today?.todos_created ?? 0} />
-              <MiniStat label="确认任务" value={today?.confirmed ?? 0} />
+              <MiniStat label="生成 Task" value={today?.tasks_created ?? 0} />
               <MiniStat label="完成 Task" value={today?.tasks_done ?? 0} tone="success" />
               <MiniStat label="失败 Task" value={today?.tasks_failed ?? 0} tone={(today?.tasks_failed ?? 0) > 0 ? 'error' : undefined} />
               <MiniStat label="群消息" value={todayGroupMessages} />

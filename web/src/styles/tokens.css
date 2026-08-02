@@ -43,10 +43,10 @@
 
   /* --- Status colors (semantic, 低饱和统一入口) --- */
   --status-default: #6b7280;   /* 灰 */
-  --status-info: #3b6fd4;      /* 蓝：待处理/待评估 */
-  --status-processing: #b45309;/* 琥珀：进行中/评估中 */
-  --status-warning: #c2620b;   /* 橙：待补/待决策 */
-  --status-success: #16a34a;   /* 绿：已确认/完成 */
+  --status-info: #3b6fd4;      /* 蓝：待处理/待生成任务 */
+  --status-processing: #b45309;/* 琥珀：进行中 */
+  --status-warning: #c2620b;   /* 橙：待补/待审批 */
+  --status-success: #16a34a;   /* 绿：已生成任务/完成 */
   --status-error: #dc2626;     /* 红：失败/过期 */
 
   /* --- Spacing --- */

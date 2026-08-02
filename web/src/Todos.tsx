@@ -27,7 +27,7 @@ const { Text, Paragraph } = Typography
 const allTodoStatuses = Object.keys(statusMeta) as TodoStatus[]
 
 // 待办列表里可以手工互换的两个状态：都表示「眼下没人在动手」，区别只是
-// 这条线索要不要再交回决策判断一次。其余状态归决策和执行环节写。
+// 这条线索要不要重新进入 Task 固化与执行流水线。其余状态由流水线写入。
 const settableStatuses: TodoStatus[] = ['extracted', 'observing']
 
 const initialQuery: TodoQuery = {
@@ -138,8 +138,8 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         title: '状态',
         dataIndex: 'status',
         width: 108,
-        // 只有「没人在动手」的两个状态可以就地互换：按下不表，或交回决策重新判断。
-        // 其余状态由决策和执行环节写入，列表里只读。
+        // 只有「没人在动手」的两个状态可以就地互换：按下不表，或重新生成 Task。
+        // 其余状态由 Task 固化与执行流水线写入，列表里只读。
         render: (value: TodoStatus, todo) =>
           settableStatuses.includes(value) ? (
             <Select
@@ -176,7 +176,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         ),
       },
       {
-        title: '待拍板',
+        title: '线索疑点',
         dataIndex: 'open_questions',
         width: 72,
         align: 'center',

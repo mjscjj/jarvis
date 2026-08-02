@@ -43,7 +43,7 @@ function num(value: number) {
 const myColumns: TableColumnsType<MyDay> = [
   { title: '日期', dataIndex: 'date', width: 120 },
   { title: '新增交办 Todo', dataIndex: 'todos_created', width: 130, render: num },
-  { title: '确认生成任务', dataIndex: 'confirmed', width: 130, render: num },
+  { title: '生成任务', dataIndex: 'tasks_created', width: 130, render: num },
   { title: '完成任务', dataIndex: 'tasks_done', width: 110, render: num },
   { title: '失败', dataIndex: 'tasks_failed', width: 90, render: (v: number) => (v > 0 ? <Tag color="red">{v}</Tag> : <Text type="secondary">—</Text>) },
 ]
