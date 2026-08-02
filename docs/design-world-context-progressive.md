@@ -78,7 +78,7 @@ ExcludeSourceKind *string
 - `list-todos [--date YYYY-MM-DD] [--status S] [--limit N]`
 - `get-todo --id N` —— 带上 `description` / `context` / `open_questions` / `resolution`，这些是上下文里被省略的部分。
 - `list-tasks [--date YYYY-MM-DD] [--status S] [--limit N]`
-- `get-task --id N` —— 合并四样东西：task 详情（含 `plan` / `summary` / `background`）、最近若干 run 摘要与 effects、task_event 时间线、以及 `subject_type=task` 且 `subject_id` 等于该 task 的 facts。
+- `get-task --id N` —— 合并四样东西：task 详情（含 `source_payload` / `summary` / `background`）、最近若干 run 摘要与 effects、task_event 时间线、以及 `subject_type=task` 且 `subject_id` 等于该 task 的 facts。
 
 `--date` 的解析照抄 `list-facts` 的实现（`scripts/jarvis-tools:908` 附近）：校验 `YYYY-MM-DD`，在本地时区算出 `from` 与次日 `until`，失败 fail-fast。
 

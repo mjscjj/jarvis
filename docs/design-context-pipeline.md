@@ -176,7 +176,7 @@ flowchart TB
 ### 2.3 模块 C：机械固化消费快照
 
 - `status=extracted` 的 Todo 直接读取 `Todo.context_snapshot` 并固化为 Task，不调用模型。
-- Task 不人为生成 `plan`；M3 的完整 clue 随 Task 交给 M5 执行，由它调查后决定是否继续、观察或询问 principal。
+- Task 不人为生成中间 `plan`；M3 的完整 extraction result 作为 `source_payload` 交给 M5 执行，由它调查后决定是否继续、观察或询问 principal。
 
 
 

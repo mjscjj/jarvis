@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"jarvis/internal/domain"
-	"jarvis/internal/taskcreate"
 
 	"jarvis/internal/datatypes"
 )
@@ -382,7 +381,7 @@ func TestRejectionPayload(t *testing.T) {
 func TestBuildExecutionPrompt(t *testing.T) {
 	task := &domain.Task{
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
-		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
@@ -409,7 +408,7 @@ func TestBuildExecutionPrompt(t *testing.T) {
 func TestBuildExecutionPromptIncludesSharedMemory(t *testing.T) {
 	task := &domain.Task{
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
-		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	empty, err := buildExecutionPrompt("test M5 system prompt", "只读不审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
@@ -437,7 +436,7 @@ func TestBuildExecutionPromptIncludesSharedMemory(t *testing.T) {
 func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 	task := &domain.Task{
 		ID: 12, Title: "发周报", ActionType: "summary_post",
-		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
 	prompt, err := buildApplyPrompt("test M5 system prompt", task, proposal, "", testToolCatalog, "", "", "", nil)
@@ -452,7 +451,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 }
 
 func TestBuildExecutionPromptRequiresApprovalPolicy(t *testing.T) {
-	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
+	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", SourcePayload: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
 	if _, err := buildExecutionPrompt("test M5 system prompt", "", task, "", testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatal("empty approval policy must fail")
 	}
@@ -460,36 +459,9 @@ func TestBuildExecutionPromptRequiresApprovalPolicy(t *testing.T) {
 
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
-	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
+	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", SourcePayload: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
 	if _, err := buildApplyPrompt("test M5 system prompt", task, nil, "", testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatalf("nil proposal must fail")
-	}
-}
-
-// TestValidateTaskIntegrityChecksExecutionModeOnly pins the surviving integrity
-// check. plan and background are revisable by M5 while it
-// executes (AGENTS.md §4), so no field-drift detection may be reintroduced here.
-func TestValidateTaskIntegrityChecksExecutionModeOnly(t *testing.T) {
-	task := &domain.Task{
-		ID: 1, ActionType: "agent_task", Target: "会议",
-		Plan:          datatypes.JSON(`{"instruction":"加入会议"}`),
-		ExecutionMode: taskcreate.ExecutionModeDirect,
-	}
-	if err := validateTaskIntegrity(task); err != nil {
-		t.Fatalf("validateTaskIntegrity() error = %v", err)
-	}
-
-	revised := *task
-	revised.Plan = datatypes.JSON(`{"instruction":"改为先申请权限再加入会议"}`)
-	revised.Target = "另一个会议"
-	if err := validateTaskIntegrity(&revised); err != nil {
-		t.Fatalf("validateTaskIntegrity() rejected a revised plan/target: %v", err)
-	}
-
-	unknownMode := *task
-	unknownMode.ExecutionMode = "turbo"
-	if err := validateTaskIntegrity(&unknownMode); err == nil {
-		t.Fatal("validateTaskIntegrity() accepted an unknown execution_mode")
 	}
 }
 

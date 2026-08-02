@@ -7,7 +7,7 @@
 
 Jarvis 的 M3 与 M5 执行不应共享一套庞大的模型语义 DTO。程序只固定硬消费字段，模型语义用自然语言或宽松 JSON 原样传递。这样上游新增一段判断、证据或结果时，下游能直接带给模型，不需要同步改 Go struct、JSON Schema、前端类型和历史数据。
 
-当前落地状态（2026-08-02）：M3 Candidate 已是机器消费小外壳 + 文本 payload，原始 extraction result 会整体传给 Task；Todo 来源的 `Task.plan` 可空，M5 执行直接根据 M3 clue 与冻结上下文判断。Task 创建时把 `context_snapshot.project.repos` 一次性投影为执行硬字段 `repo_path`，M5 不再解析 ContextSnapshot。但 execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。以 current 模块文档和代码为准。
+当前落地状态（2026-08-03）：M3 Candidate 已是机器消费小外壳 + 文本 payload，Task 用一个宽松 `source_payload` 保存任意来源的完整原始语义；Todo 来源直接固化原始 extraction result，M5 结合它与冻结上下文判断。Task 创建时把 `context_snapshot.project.repos` 一次性投影为执行硬字段 `repo_path`，M5 不再解析 ContextSnapshot。但 execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。以 current 模块文档和代码为准。
 
 ## 目标
 
@@ -115,7 +115,7 @@ M3 的 `payload` 当前定义为非空文本，自然语言或 JSON 文本均可
 - 一次 M3 observation 产生一个不可变 ContextDocument，并记录 revision / observation id。
 - Todo 可以继续接收新证据，但新增证据写入 append-only supplement/event，不修改旧 ContextDocument。
 - 每次重新抽取明确引用它实际使用的 observation 与 supplements。
-- Task 创建时冻结 M3 使用的 ContextDocument 与完整 clue；M5 只消费 Task 自带背景，不回查并重建 Todo 当前状态。
+- Task 创建时冻结 M3 使用的 ContextDocument，并把完整 extraction result 写入 `source_payload`；M5 只消费 Task 自带背景，不回查并重建 Todo 当前状态。
 - M5 执行默认把这些语义整体传给模型，不解析内部业务字段。
 
 ## Todo 到 Task 固化
@@ -125,8 +125,8 @@ M3 的 `payload` 当前定义为非空文本，自然语言或 JSON 文本均可
 - `status=extracted` 的 Todo 通过 version CAS 更新为 `materialized`。
 - 同一事务写入 append-only `TodoEvent` 并调用 Task Factory。
 - Task 继续受 `todo_id` 唯一键约束；同一旧通知重复到达时返回已有 Task。
-- `context_snapshot` 和 `extraction_result` 原样固化到 Task。
-- Todo 来源不生成 `plan`；`Task.plan` 保持 `NULL`，交给 M5 执行自行判断。
+- `context_snapshot` 原样固化为 `background`，`extraction_result` 原样固化为 `source_payload`。
+- 不生成中间 `plan` 或来源专用字段，交给 M5 执行自行判断。
 
 ## M5 执行
 
@@ -177,7 +177,7 @@ Todo 保留：
 - `status`
 - `dedup_fingerprint/version/timestamps`
 - `source evidence`
-- `payload/context_snapshot/extraction_result` 宽松 JSON
+- `source_payload/background/execution_result` 宽松 JSON
 
 Task 保留：
 
@@ -186,10 +186,9 @@ Task 保留：
 - `status/version`
 - `project_id`
 - `repo_path`
-- `execution_mode/approval_ref`
-- `background/plan/source_clue/execution_result` 宽松 JSON
+- `background/source_payload/execution_result` 宽松 JSON
 
-Todo 来源的 `plan` 可空；已有行的非空 `plan` 原样保留。执行提示词使用 `source_clue` 中的完整 M3 线索，不人为生成占位计划。
+所有来源统一提供非 `null` 的 `source_payload`；执行提示词完整透传，不假设内部固定字段，也不人为生成占位计划。
 
 `repo_path` 是 Task 创建时从快照得到的一次性硬投影；运行时只校验该目录是否为 Git working copy，不反解析 background。
 

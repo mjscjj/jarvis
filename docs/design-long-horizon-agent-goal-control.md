@@ -97,7 +97,7 @@ apply 提示词所说的“真正落地成功才填 completed”，在它自己�
 
 ### 2.3 一个额外的信息缺口
 
-当前 `Task` 数据模型有 `Target`，但 [M5 的 `executionTask`](../internal/execute/prompt.go)只向执行模型传递了 `id/title/action_type/plan/background`，没有传递 `target`。即使 `target` 本身还不够表达根目标，这也说明“Task 在数据库里拥有什么”和“模型每轮真正看到了什么”还没有统一契约。
+当前 [M5 的 `executionTask`](../internal/execute/prompt.go)已经把 `title/action_type/target` 作为 hint，并完整传递 `source_payload/background`。来源证据与可变执行判断已经分开；本方案后续只需讨论长周期目标状态，不应再引入第二套来源计划字段。
 
 ## 3. 必须先区分的八个概念
 
@@ -407,7 +407,7 @@ pending / executing / waiting / awaiting_approval / done / failed
 
 具体子目标、阻塞、计划和证据放在版本化 JSON 中，符合 Jarvis “只固定控制面，不固定语义内容”的原则。
 
-ScheduledTask 或手工创建的 `Task.plan` 可以继续保存来源携带的初始执行方案，作为审计基线；Todo 来源的 Task 不人为生成计划。运行过程中因新事实产生的剩余计划放进 `goal_state`，不要把计划演进包装成已经过用户确认。
+ScheduledTask、手工、主动和 Todo 来源都只把原始语义放进 `Task.source_payload` 作为审计基线，不再保存来源专用计划。运行过程中因新事实产生的剩余计划放进 `goal_state`，不要把计划演进包装成已经过用户确认。
 
 ### 7.3 Event Log：只追加事实
 

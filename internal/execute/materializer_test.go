@@ -14,7 +14,7 @@ import (
 	"jarvis/internal/datatypes"
 )
 
-func TestMaterializeTodoCreatesTaskWithoutPlan(t *testing.T) {
+func TestMaterializeTodoCarriesExtractionAsSourcePayload(t *testing.T) {
 	db := newMaterializerTestDB(t)
 	insertMaterializerTodo(t, db, 7, 3)
 	materializer, err := NewMaterializer(db)
@@ -33,8 +33,8 @@ func TestMaterializeTodoCreatesTaskWithoutPlan(t *testing.T) {
 	if err := db.First(&task, result.TaskID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if task.TodoID == nil || *task.TodoID != 7 || len(task.Plan) != 0 || string(task.SourceClue) != `{"desired_outcome":"完成目标"}` || task.RepoPath == nil || *task.RepoPath != "jarvis" {
-		t.Fatalf("task = %#v plan=%q source_clue=%s", task, task.Plan, task.SourceClue)
+	if task.TodoID == nil || *task.TodoID != 7 || string(task.SourcePayload) != `{"desired_outcome":"完成目标"}` || task.RepoPath == nil || *task.RepoPath != "jarvis" {
+		t.Fatalf("task = %#v source_payload=%s", task, task.SourcePayload)
 	}
 	var todo domain.Todo
 	if err := db.First(&todo, 7).Error; err != nil {
@@ -130,8 +130,8 @@ func newMaterializerTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE task (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, todo_id INTEGER UNIQUE, title TEXT NOT NULL,
 			action_type TEXT NOT NULL, target TEXT NOT NULL, background TEXT NOT NULL,
-			source_clue TEXT, plan TEXT, source_type TEXT NOT NULL, source_id INTEGER,
-			occurrence_key TEXT, execution_mode TEXT NOT NULL, status TEXT NOT NULL,
+			source_payload TEXT NOT NULL, source_type TEXT NOT NULL, source_id INTEGER,
+			occurrence_key TEXT, status TEXT NOT NULL,
 			execution_result TEXT, summary TEXT, last_progress_at DATETIME, execution_supplements TEXT,
 			project_id INTEGER, repo_path TEXT, version INTEGER NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

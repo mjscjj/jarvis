@@ -499,8 +499,6 @@ func writeExecutionError(c *app.RequestContext, err error) {
 		writeAPIError(c, consts.StatusNotFound, 40420, err)
 	case errors.Is(err, execute.ErrVersionConflict), errors.Is(err, execute.ErrInvalidTransition):
 		writeAPIError(c, consts.StatusConflict, 40920, err)
-	case errors.Is(err, execute.ErrUnknownActionType):
-		writeAPIError(c, consts.StatusBadRequest, 40024, err)
 	default:
 		writeAPIError(c, consts.StatusInternalServerError, 50021, fmt.Errorf("execute Task failed: %s", strings.TrimSpace(err.Error())))
 	}

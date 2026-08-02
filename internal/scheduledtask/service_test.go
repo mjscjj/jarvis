@@ -185,11 +185,11 @@ func TestTaskInputUsesStandardM5ApprovalEntry(t *testing.T) {
 	if input.SourceType != taskcreate.SourceScheduledTask || input.SourceID == nil || *input.SourceID != row.ID {
 		t.Fatalf("source = %s/%v", input.SourceType, input.SourceID)
 	}
-	if input.ExecutionMode != taskcreate.ExecutionModeStandard || input.OccurrenceKey == nil {
-		t.Fatalf("execution_mode=%q occurrence=%v", input.ExecutionMode, input.OccurrenceKey)
+	if input.OccurrenceKey == nil {
+		t.Fatal("occurrence_key is nil")
 	}
-	if string(input.Plan) != `{"instruction":"加入指定会议并完成记录"}` {
-		t.Fatalf("plan = %s", input.Plan)
+	if string(input.SourcePayload) != `{"instruction":"加入指定会议并完成记录"}` {
+		t.Fatalf("source_payload = %s", input.SourcePayload)
 	}
 }
 

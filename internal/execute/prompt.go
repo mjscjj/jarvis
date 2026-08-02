@@ -11,7 +11,7 @@ import (
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
-const ExecutionPromptVersion = "task-exec-v8-m3-clue-verbatim"
+const ExecutionPromptVersion = "task-exec-v9-source-payload"
 
 // maxPriorRunsInPrompt caps how many previous execution_run rows ride into the
 // next M5 prompt. Newest runs are kept; older ones are dropped to bound size.
@@ -167,11 +167,10 @@ type executionTask struct {
 	TitleHint      string `json:"title_hint"`
 	ActionTypeHint string `json:"action_type_hint"`
 	TargetHint     string `json:"target_hint"`
-	// M3Clue is M3's complete extraction result forwarded verbatim. M5 reads the
-	// original clue (including its desired_outcome), so a blocker raised
-	// downstream cannot silently replace the real goal.
-	M3Clue     json.RawMessage `json:"m3_clue,omitempty"`
-	Background json.RawMessage `json:"background"`
+	// SourcePayload is the source-owned semantic input forwarded verbatim for
+	// every Task source. M5 treats it as evidence, not an execution contract.
+	SourcePayload json.RawMessage `json:"source_payload"`
+	Background    json.RawMessage `json:"background"`
 }
 
 // buildTaskContext assembles the shared TASK_CONTEXT block. M3 output is a clue,
@@ -185,18 +184,16 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 	if strings.TrimSpace(task.Title) == "" || strings.TrimSpace(task.ActionType) == "" {
 		return nil, nil, fmt.Errorf("execution prompt Task id=%d missing title or action_type", task.ID)
 	}
+	if len(bytes.TrimSpace(task.SourcePayload)) == 0 {
+		return nil, nil, fmt.Errorf("execution prompt Task id=%d missing source_payload", task.ID)
+	}
 	supplements, err := decodeExecutionSupplements(task.ExecutionSupplements)
 	if err != nil {
 		return nil, nil, fmt.Errorf("execution prompt Task id=%d execution_supplements invalid: %w", task.ID, err)
 	}
 	promptTask := executionTask{
 		ID: task.ID, TitleHint: task.Title, ActionTypeHint: task.ActionType, TargetHint: task.Target,
-		Background: rawJSON(task.Background),
-	}
-	// scheduled_task and manual Tasks have no M3 clue; omit the key entirely
-	// rather than feeding the model a null it has to interpret.
-	if len(bytes.TrimSpace(task.SourceClue)) != 0 {
-		promptTask.M3Clue = rawJSON(task.SourceClue)
+		SourcePayload: rawJSON(task.SourcePayload), Background: rawJSON(task.Background),
 	}
 	payload := executionPromptPayload{
 		PromptVersion:        ExecutionPromptVersion,
@@ -267,18 +264,17 @@ END_APPROVAL_POLICY`
 	return renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills, supplements, encoded), nil
 }
 
-// repoInstruction tells codex where the resolved working copy is and that it is
-// already on a throwaway branch, so an edit cannot land on whatever the human
-// had checked out.
+// repoInstruction only tells codex where the resolved working copy is. Delivery
+// behavior belongs to the concrete Task and work rules, not this generic prompt.
 func repoInstruction(repoPath string) string {
 	if strings.TrimSpace(repoPath) == "" {
 		return ""
 	}
-	return "\n\n当前工作目录已切到 repo：" + repoPath + "。需要改代码时自行建分支、提交、推送并开 MR，并在 effects 里申报。"
+	return "\n\n当前工作目录已切到 repo：" + repoPath + "。"
 }
 
 // buildApplyPrompt assembles the apply-stage prompt after a human approved a
-// proposal. The approved plan + full artifact is embedded verbatim and codex is
+// proposal. The approved action + full artifact is embedded verbatim and codex is
 // told to land it faithfully for real. Its final message must satisfy
 // executionResultSchema.
 func buildApplyPrompt(systemPrompt string, task *domain.Task, proposal *codexProposal, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {

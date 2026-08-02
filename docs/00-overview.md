@@ -100,7 +100,7 @@ M3 可以产出：
 
 `extracted` Todo 一律通过无模型的固化步骤创建一个 `pending` Task，并把 Todo 置为 `materialized`。固化继续使用 Todo ID/version 乐观锁、`task.todo_id` 唯一键和同一事务；重复通知返回同一个 Task，陈旧版本 fail-fast。Task 只记录自己的来源与创建时间，不把这一机械步骤包装成判断或确认闸门。
 
-Todo 来源 Task 的 `plan` 为空；执行 Agent 直接读取完整 `source_clue` 和冻结 `background`，不人为制造中间计划或判断上下文。
+Task 只用一个宽松 `source_payload` 保存来源交来的完整原始语义；Todo 来源直接固化完整 `extraction_result`，定时、手工和主动来源保存各自原始指令。执行 Agent 同时读取冻结 `background`，不人为制造中间计划或判断上下文。
 
 ### 3.4 M5 执行：调查、动作与恢复
 

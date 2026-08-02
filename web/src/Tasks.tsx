@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Input, Modal, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, executeTask, finishTask, interruptTask, listTaskEvents, listTaskRuns, listTasks, reapplyTask, recallEffectMessage, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
+import { approveTask, executeTask, finishTask, interruptTask, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Task, TaskEvent, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -9,8 +9,6 @@ import { taskStatusMeta as statusMeta } from './status'
 import { usePageContext } from './pageContext'
 import TaskDetailModal from './tasks/TaskDetailModal'
 import {
-  canReapply,
-  externalActions,
   failureKindOf,
   failureMeta,
   proposalOf,
@@ -91,7 +89,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [interruptingId, setInterruptingId] = useState<number>()
   const [rerunTarget, setRerunTarget] = useState<Task>()
   const [rerunNote, setRerunNote] = useState('')
-  const [reapplyingId, setReapplyingId] = useState<number>()
   const [rejectTarget, setRejectTarget] = useState<Task>()
   const [rejectReason, setRejectReason] = useState('')
   const [rerunSubmitting, setRerunSubmitting] = useState(false)
@@ -216,10 +213,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   }
 
   const runExecute = async (task: Task) => {
-    if (externalActions.has(task.action_type)) {
-      const ok = window.confirm(`「${task.title}」是对外动作（${task.action_type}），执行会真实触达外部。确认由 codex 执行？`)
-      if (!ok) return
-    }
     setExecutingId(task.id)
     setError(undefined)
     try {
@@ -340,22 +333,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     }
   }
 
-  const runReapply = async (task: Task) => {
-    const ok = window.confirm(`「${task.title}」将用你此前已批准的同一方案再次真实落地（不再重新审批）。确认重试？`)
-    if (!ok) return
-    setReapplyingId(task.id)
-    setError(undefined)
-    try {
-      await reapplyTask(task.id)
-      markLocalExecuting(task.id)
-      setDetail(undefined)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setReapplyingId(undefined)
-    }
-  }
-
   const openRerun = (task: Task) => {
     setRerunTarget(task)
     setRerunNote('')
@@ -471,9 +448,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         }
         if (task.status === 'done' || task.status === 'failed') {
           return <Space onClick={(e) => e.stopPropagation()}>
-            {canReapply(task) && (
-              <Button type="primary" size="small" loading={reapplyingId === task.id} onClick={(e) => { e.stopPropagation(); runReapply(task) }}>重试落地</Button>
-            )}
             <Button size="small" onClick={(e) => { e.stopPropagation(); openRerun(task) }}>重跑</Button>
           </Space>
         }
@@ -509,7 +483,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       runsError={runsError}
       eventsError={eventsError}
       executing={detail ? executingId === detail.id : false}
-      reapplying={detail ? reapplyingId === detail.id : false}
       approveSubmitting={detail ? approveSubmitting && approveTarget?.id === detail.id : false}
       resumeSubmitting={detail ? resumeSubmitting && resumeTarget?.id === detail.id : false}
       interrupting={detail ? interruptingId === detail.id : false}
@@ -521,7 +494,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       onApprove={openApprove}
       onReject={openReject}
       onRerun={openRerun}
-      onReapply={runReapply}
       onResume={openResume}
       onInterrupt={runInterrupt}
     />
@@ -573,9 +545,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       okText="确认重跑"
     >
       <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-        {rerunTarget && externalActions.has(rerunTarget.action_type) && (
-          <Alert type="warning" showIcon title={`对外动作（${rerunTarget.action_type}）`} description="重跑会再次真实触达外部，请确认后再提交。" />
-        )}
         <Text type="secondary">可选填写补充信息/指示；留空则直接重跑。填写后会持久保存，之后每次重跑都会带上。</Text>
         <Input.TextArea rows={4} value={rerunNote} onChange={(event) => setRerunNote(event.target.value)} placeholder="例如：这次改用 xxx 文档模板；标题要包含季度；只发给 A 不要发给 B 等（可不填）" />
       </Space>

@@ -133,15 +133,13 @@ type Task struct {
 	ActionType string         `gorm:"column:action_type;not null"`
 	Target     string         `gorm:"column:target;not null;default:''"`
 	Background datatypes.JSON `gorm:"column:background;not null"`
-	// SourceClue is M3's complete extraction result, frozen at materialization so
-	// M5 reads the original M3 clue. Nullable: scheduled_task and manual Tasks
-	// have no M3 clue.
-	SourceClue      datatypes.JSON `gorm:"column:source_clue"`
-	Plan            datatypes.JSON `gorm:"column:plan"`
+	// SourcePayload is the source-owned semantic input frozen at Task creation.
+	// Todo, scheduled, manual and proactive Tasks all use this same loose JSON
+	// carrier; M5 treats it as evidence, not as an immutable execution plan.
+	SourcePayload   datatypes.JSON `gorm:"column:source_payload"`
 	SourceType      string         `gorm:"column:source_type;not null;default:todo;uniqueIndex:uk_task_source_occurrence,priority:1"`
 	SourceID        *uint64        `gorm:"column:source_id;uniqueIndex:uk_task_source_occurrence,priority:2"`
 	OccurrenceKey   *string        `gorm:"column:occurrence_key;uniqueIndex:uk_task_source_occurrence,priority:3"`
-	ExecutionMode   string         `gorm:"column:execution_mode;not null;default:standard"`
 	Status          string         `gorm:"column:status;not null;default:pending;index:idx_task_status"`
 	ExecutionResult datatypes.JSON `gorm:"column:execution_result"`
 	// Summary is where the matter itself now stands, written by M5 at the end of a

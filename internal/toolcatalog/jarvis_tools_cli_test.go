@@ -38,7 +38,7 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 		case "/api/todos":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":1,"title":"todo","description":"large","context_snapshot":{"large":true},"status":"extracted"}]}}`)
 		case "/api/tasks":
-			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":2,"title":"task","background":"large","plan":{"large":true},"execution_result":"large","status":"done"}]}}`)
+			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":2,"title":"task","background":"large","source_payload":{"large":true},"execution_result":"large","status":"done"}]}}`)
 		case "/api/scheduled-tasks":
 			fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":3,"title":"timer","instruction":"large","dispatch_payload":{"large":true},"context_snapshot":{"large":true},"status":"active"}]}}`)
 		default:
@@ -52,7 +52,7 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 		forbidden []string
 	}{
 		{"list-todos", []string{"description", "context_snapshot"}},
-		{"list-tasks", []string{"background", "plan", "execution_result"}},
+		{"list-tasks", []string{"background", "source_payload", "execution_result"}},
 		{"list-scheduled-tasks", []string{"instruction", "dispatch_payload", "context_snapshot"}},
 	}
 	for _, check := range checks {
@@ -235,8 +235,11 @@ func TestJarvisToolsCreateTaskIsProactiveOnlyAndForcesStrongTaskContract(t *test
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload["source_type"] != "proactive" || payload["execution_mode"] != "standard" {
+		if payload["source_type"] != "proactive" {
 			t.Fatalf("payload = %#v", payload)
+		}
+		if _, exists := payload["execution_mode"]; exists {
+			t.Fatalf("payload still contains execution_mode: %#v", payload)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"code":0,"data":{"id":19,"source_type":"proactive","status":"pending"}}`)

@@ -142,12 +142,6 @@ export function rerunTask(id: number): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/rerun`, { method: 'POST' })
 }
 
-// reapplyTask re-lands the SAME approved proposal for a Task whose apply stage
-// failed, WITHOUT restarting execution/approval (区别于 rerun 可能重新审批).
-export function reapplyTask(id: number): Promise<ExecuteResult> {
-  return request<ExecuteResult>(`/api/tasks/${id}/reapply`, { method: 'POST' })
-}
-
 // resumeTask continues the exact Codex session that parked at needs_human.
 export function resumeTask(id: number, expectedVersion: number, response: string): Promise<ExecuteResult> {
   return request<ExecuteResult>(`/api/tasks/${id}/resume`, {

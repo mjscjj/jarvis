@@ -66,11 +66,11 @@ func newObservingTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE task (
 			id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT NOT NULL DEFAULT '',
 			action_type TEXT NOT NULL DEFAULT '', target TEXT NOT NULL DEFAULT '',
-			background TEXT NOT NULL DEFAULT '{}', plan TEXT NOT NULL DEFAULT '{}',
+			background TEXT NOT NULL DEFAULT '{}', source_payload TEXT NOT NULL DEFAULT '{}',
 			source_type TEXT NOT NULL DEFAULT 'manual', source_id INTEGER, occurrence_key TEXT,
-			execution_mode TEXT NOT NULL DEFAULT 'standard', status TEXT NOT NULL,
+			status TEXT NOT NULL,
 			execution_result TEXT, execution_supplements TEXT,
-			source_clue TEXT, summary TEXT, last_progress_at DATETIME,
+			summary TEXT, last_progress_at DATETIME,
 			project_id INTEGER, version INTEGER NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -107,10 +107,10 @@ func insertObservingFixture(t *testing.T, db *gorm.DB, todoStatus string) {
 		t.Fatalf("insert Todo: %v", err)
 	}
 	if err := db.Exec(
-		`INSERT INTO task(id, todo_id, title, action_type, background, plan,
-			status, version, target, source_type, execution_mode)
+		`INSERT INTO task(id, todo_id, title, action_type, background, source_payload,
+			status, version, target, source_type)
 		 VALUES (11, 7, '同步口径', 'notify_principal', '{}', '{}',
-			'executing', 2, '评测口径', 'todo', 'standard')`,
+			'executing', 2, '评测口径', 'todo')`,
 	).Error; err != nil {
 		t.Fatalf("insert Task: %v", err)
 	}
@@ -190,10 +190,10 @@ func TestFinishObservingRejectsUnexpectedClueStatus(t *testing.T) {
 func TestFinishObservingWithoutClue(t *testing.T) {
 	db := newObservingTestDB(t)
 	if err := db.Exec(
-		`INSERT INTO task(id, todo_id, title, action_type, background, plan,
-			status, version, target, source_type, execution_mode)
+		`INSERT INTO task(id, todo_id, title, action_type, background, source_payload,
+			status, version, target, source_type)
 		 VALUES (12, NULL, '定时巡检', 'investigate', '{}', '{}',
-			'executing', 0, '巡检', 'scheduled_task', 'standard')`,
+			'executing', 0, '巡检', 'scheduled_task')`,
 	).Error; err != nil {
 		t.Fatalf("insert Task: %v", err)
 	}

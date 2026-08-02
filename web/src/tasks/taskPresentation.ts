@@ -2,14 +2,6 @@ import type { ProposalResult, Task } from '../types'
 
 export type FailureKind = 'codex' | 'manual' | 'rejected' | 'interrupted' | 'stale' | 'unknown'
 
-export const externalActions = new Set([
-  'summary_post',
-  'reply_message',
-  'schedule_meeting',
-  'doc_write',
-  'manual_followup',
-])
-
 export function proposalOf(task: Task): ProposalResult | null {
   const result = task.execution_result as ProposalResult | null
   if (result && result.stage === 'proposal' && result.proposal) return result
@@ -42,10 +34,4 @@ export const failureMeta: Record<FailureKind, { label: string; color: string }> 
   interrupted: { label: '你已打断', color: 'orange' },
   stale: { label: '超时中断', color: 'orange' },
   unknown: { label: '失败', color: 'red' },
-}
-
-export function canReapply(task: Task): boolean {
-  return task.status === 'failed'
-    && externalActions.has(task.action_type)
-    && failureKindOf(task) === 'codex'
 }

@@ -226,15 +226,15 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("encode seed background %q: %w", st.title, err)
 	}
-	plan, err := seedJSON(map[string]any{"steps": st.planSteps})
+	sourcePayload, err := seedJSON(map[string]any{"description": st.detail, "steps": st.planSteps})
 	if err != nil {
-		return false, fmt.Errorf("encode seed plan %q: %w", st.title, err)
+		return false, fmt.Errorf("encode seed source payload %q: %w", st.title, err)
 	}
 	todoID := todo.ID
 	task := domain.Task{
 		TodoID: &todoID, Title: st.title, ActionType: st.actionType, Target: st.title,
-		Background: background, Plan: plan,
-		SourceType: taskcreate.SourceTodo, SourceID: &todoID, ExecutionMode: taskcreate.ExecutionModeStandard,
+		Background: background, SourcePayload: sourcePayload,
+		SourceType: taskcreate.SourceTodo, SourceID: &todoID,
 		Status: "pending", ProjectID: &projectID,
 	}
 	if err := tx.Create(&task).Error; err != nil {

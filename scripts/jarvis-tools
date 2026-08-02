@@ -292,8 +292,8 @@ usage: jarvis-tools create-task [--payload JSON|-] [--config PATH]
 
 Create one ordinary Task and hand it to the strong M5 executor. This command is
 only available when JARVIS_AGENT_STAGE=proactive. The payload uses the existing
-POST /api/tasks contract: title, action_type, target, background, optional plan
-and project_id. source_type=proactive and execution_mode=standard are enforced.
+POST /api/tasks contract: title, action_type, target, background, source_payload
+and optional project_id. source_type=proactive is enforced.
 EOF
       ;;
     append-clue) cat <<'EOF'
@@ -1584,7 +1584,7 @@ cmd_list_tasks() {
   body="$(api_get "/api/tasks${query}")"
   emit "$(printf '%s' "$body" | jq -c '.data | {
     total,page,page_size,
-    items:[.items[] | {id,todo_id,title,action_type,target,status,summary,project_id,source_type,source_id,execution_mode,created_at,last_progress_at,version,updated_at}]
+    items:[.items[] | {id,todo_id,title,action_type,target,status,summary,project_id,source_type,source_id,created_at,last_progress_at,version,updated_at}]
   }')"
 }
 
@@ -1650,7 +1650,7 @@ cmd_create_task() {
     payload="$PAYLOAD"
   fi
   printf '%s' "$payload" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "create-task payload must be a JSON object"
-  payload="$(printf '%s' "$payload" | jq -c '. + {source_type:"proactive",execution_mode:"standard"}')"
+  payload="$(printf '%s' "$payload" | jq -c '. + {source_type:"proactive"}')"
   body="$(api_write POST /api/tasks "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }

@@ -36,7 +36,6 @@ import EntityRelations from '../components/EntityRelations'
 import StatusBadge from '../components/StatusBadge'
 import { actionLabels, taskStatusMeta as statusMeta } from '../status'
 import {
-  canReapply,
   failureKindOf,
   failureMeta,
   proposalOf,
@@ -91,7 +90,6 @@ interface TaskDetailModalProps {
   runsError?: string
   eventsError?: string
   executing: boolean
-  reapplying: boolean
   approveSubmitting: boolean
   resumeSubmitting: boolean
   interrupting: boolean
@@ -103,7 +101,6 @@ interface TaskDetailModalProps {
   onApprove: (task: Task) => void
   onReject: (task: Task) => void
   onRerun: (task: Task) => void
-  onReapply: (task: Task) => void
   onResume: (task: Task) => void
   onInterrupt: (task: Task) => void
 }
@@ -904,10 +901,6 @@ function ResultContent({ task }: { task: Task }) {
   const rejectReason = strField(result, 'reject_reason')
   const followup = strField(result, 'needs_followup')
   const enrichments = enrichmentItems(result?.enrichments)
-  const planRecord = asRecord(task.plan)
-  const planSummary = typeof planRecord?.summary === 'string'
-    ? planRecord.summary
-    : typeof task.plan === 'string' ? task.plan : null
 
   if (task.status === 'pending' || task.status === 'executing' || task.status === 'waiting' || task.status === 'needs_human') {
     const waiting = task.status === 'waiting'
@@ -925,7 +918,7 @@ function ResultContent({ task }: { task: Task }) {
             ? `${String(waiting?.reason || summary || '正在等待外部条件')} · ${String(waiting?.wake_at || '唤醒时间待定')}`
             : task.status === 'needs_human'
               ? summary || 'Codex 已暂停当前 Session，等待你的回应。'
-              : planSummary || '任务已进入执行，执行器将根据 M3 线索和上下文自行判断并完成工作。'}
+              : task.target || task.title}
         </Paragraph>
         {task.status === 'needs_human' && followup && <Alert type="warning" showIcon title="需要你回应" description={followup} />}
       </div>
@@ -982,9 +975,7 @@ function taskStateCopy(task: Task): { current: string; next: string } {
         ? '可重跑任务，重新生成审批方案。'
         : kind === 'manual'
           ? '这是你手动标记的失败；需要时可以重跑任务。'
-          : canReapply(task)
-            ? '可以沿用已批准方案重试落地，或重跑并重新生成方案。'
-            : '检查失败原因后重跑任务。',
+          : '检查失败原因后重跑任务。',
     }
   }
   if (task.status === 'executing') {
@@ -1220,54 +1211,13 @@ function TaskMeta({ task }: { task: Task }) {
   )
 }
 
-function stringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string')
-}
-
-function PlanPanel({ task }: { task: Task }) {
-  const plan = asRecord(task.plan)
-  const summary = stringValue(plan?.summary)
-  const steps = stringArray(plan?.steps)
-  const basis = stringArray(plan?.basis)
-  const parameters = Array.isArray(plan?.parameters)
-    ? plan.parameters.filter((item): item is { name: string; value: string } => (
-      Boolean(item)
-      && typeof item === 'object'
-      && typeof (item as Record<string, unknown>).name === 'string'
-      && typeof (item as Record<string, unknown>).value === 'string'
-    ))
-    : []
+function SourcePayloadPanel({ task }: { task: Task }) {
   return (
     <div className="task-readable-panel">
-      {summary && <section><Title level={5}>方案摘要</Title><Paragraph>{summary}</Paragraph></section>}
-      {steps.length > 0 && (
-        <section>
-          <Title level={5}>执行步骤</Title>
-          <ol>{steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
-        </section>
-      )}
-      {parameters.length > 0 && (
-        <section>
-          <Title level={5}>执行参数</Title>
-          <Descriptions size="small" column={1}>
-            {parameters.map((item, index) => <Descriptions.Item key={index} label={item.name}>{item.value}</Descriptions.Item>)}
-          </Descriptions>
-        </section>
-      )}
-      {basis.length > 0 && (
-        <section>
-          <Title level={5}>执行依据</Title>
-          <ul>{basis.map((item, index) => <li key={index}>{item}</li>)}</ul>
-        </section>
-      )}
-      {!summary && steps.length === 0 && parameters.length === 0 && basis.length === 0 && (
-        task.plan == null
-          ? <Text type="secondary">无上游执行方案；M5 根据 M3 线索和上下文自行判断。</Text>
-          : typeof task.plan === 'string'
-          ? <Paragraph>{task.plan}</Paragraph>
-          : <pre className="task-enrichment-json">{printableValue(task.plan)}</pre>
-      )}
+      <Text type="secondary">来源系统交给 M5 的完整原始语义，不预设固定结构。</Text>
+      {typeof task.source_payload === 'string'
+        ? <Paragraph>{task.source_payload}</Paragraph>
+        : <pre className="task-enrichment-json">{printableValue(task.source_payload)}</pre>}
     </div>
   )
 }
@@ -1323,7 +1273,7 @@ function ContextPanel({ task }: { task: Task }) {
 function TechnicalPanel({ task, runs, events }: { task: Task; runs: ExecutionRun[]; events: TaskEvent[] }) {
   return (
     <div className="task-technical-panel">
-      <details><summary>执行方案原始数据</summary><pre>{JSON.stringify(task.plan, null, 2)}</pre></details>
+      <details><summary>来源语义原始数据</summary><pre>{JSON.stringify(task.source_payload, null, 2)}</pre></details>
       <details><summary>任务结果原始数据</summary><pre>{JSON.stringify(task.execution_result, null, 2)}</pre></details>
       <details><summary>背景快照原始数据</summary><pre>{JSON.stringify(task.background, null, 2)}</pre></details>
       <details><summary>Run 原始数据</summary><pre>{JSON.stringify(runs, null, 2)}</pre></details>
@@ -1341,7 +1291,6 @@ export default function TaskDetailModal({
   runsError,
   eventsError,
   executing,
-  reapplying,
   approveSubmitting,
   resumeSubmitting,
   interrupting,
@@ -1353,7 +1302,6 @@ export default function TaskDetailModal({
   onApprove,
   onReject,
   onRerun,
-  onReapply,
   onResume,
   onInterrupt,
 }: TaskDetailModalProps) {
@@ -1390,10 +1338,7 @@ export default function TaskDetailModal({
       </>
     }
     if (task.status === 'done' || task.status === 'failed') {
-      return <>
-        {canReapply(task) && <Button type="primary" loading={reapplying} onClick={() => onReapply(task)}>重试落地</Button>}
-        <Button onClick={() => onRerun(task)}>重跑</Button>
-      </>
+      return <Button onClick={() => onRerun(task)}>重跑</Button>
     }
     if (task.status === 'waiting') {
       return <StatusBadge label="等待定时唤醒" color={statusMeta.waiting.color} />
@@ -1501,7 +1446,7 @@ export default function TaskDetailModal({
                 label: '原始提示词',
                 children: <PromptPanel runs={runs} loading={runsLoading} error={runsError} />,
               },
-              { key: 'plan', label: '执行方案', children: <PlanPanel task={task} /> },
+              { key: 'source', label: '来源语义', children: <SourcePayloadPanel task={task} /> },
               { key: 'context', label: '上下文依据', children: <ContextPanel task={task} /> },
               { key: 'technical', label: '技术数据', children: <TechnicalPanel task={task} runs={runs} events={events} /> },
             ]}

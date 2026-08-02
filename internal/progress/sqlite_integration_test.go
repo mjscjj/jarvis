@@ -87,7 +87,7 @@ func TestProgressEventsSQLite(t *testing.T) {
 	}
 	task := domain.Task{
 		TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType,
-		Background: datatypes.JSON(`{}`), Plan: datatypes.JSON(`{"steps":["test"]}`),
+		Background: datatypes.JSON(`{}`), SourcePayload: datatypes.JSON(`{"steps":["test"]}`),
 		Status: "pending"}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create Task: %v", err)

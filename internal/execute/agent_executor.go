@@ -16,7 +16,6 @@ import (
 	"jarvis/internal/observability"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
-	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
 	"jarvis/internal/toolcatalog"
 	"jarvis/internal/workrule"
@@ -25,9 +24,10 @@ import (
 )
 
 var (
-	ErrUnknownActionType    = errors.New("unknown action_type has no execution policy")
 	ErrExecutionInterrupted = errors.New("execution interrupted by user")
 )
+
+const executionSandbox = "danger-full-access"
 
 // ExecuteInput drives one Task execution.
 type ExecuteInput struct {
@@ -45,8 +45,8 @@ type ExecuteResult struct {
 }
 
 // AgentExecutor is the execution core. It does not hard-code a per-action
-// workflow: it hands the Task's plan/background and any resolved repo path to
-// codex and lets codex orchestrate. action_type only picks the sandbox.
+// workflow: it hands the Task's source payload/background and any resolved repo
+// path to codex and lets codex orchestrate.
 // Whether a side effect needs human approval, and how code is delivered, are
 // the model's judgment — declared via needs_approval/proposal and effects.
 type AgentExecutor struct {
@@ -210,12 +210,6 @@ func (e *AgentExecutor) KickExecute(ctx context.Context, input ExecuteInput) (*E
 	if task.Status != "pending" {
 		return nil, fmt.Errorf("%w: task_id=%d from=%s to=executing", ErrInvalidTransition, task.ID, task.Status)
 	}
-	if err := validateTaskIntegrity(task); err != nil {
-		return nil, err
-	}
-	if _, ok := lookupPolicy(task.ActionType); !ok {
-		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
-	}
 	runCtx, active, err := e.beginExecution(observability.Detached(ctx), task.ID)
 	if err != nil {
 		return nil, err
@@ -235,16 +229,6 @@ func (e *AgentExecutor) KickExecute(ctx context.Context, input ExecuteInput) (*E
 func (e *AgentExecutor) KickRerun(ctx context.Context, taskID uint64) (*ExecuteResult, error) {
 	if taskID == 0 {
 		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
-	}
-	current, err := e.store.LoadTask(ctx, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("load Task before rerun: %w", err)
-	}
-	if err := validateTaskIntegrity(current); err != nil {
-		return nil, err
-	}
-	if _, ok := lookupPolicy(current.ActionType); !ok {
-		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, current.ID, current.ActionType)
 	}
 	task, err := e.store.ResetForRerun(ctx, taskID)
 	if err != nil {
@@ -281,10 +265,6 @@ func (e *AgentExecutor) KickReapply(ctx context.Context, taskID uint64) (*Execut
 	if task.Status != "failed" {
 		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot re-apply (only failed apply attempts)", ErrInvalidTransition, task.ID, task.Status)
 	}
-	policy, ok := lookupPolicy(task.ActionType)
-	if !ok {
-		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
-	}
 	proposal, err := e.store.LastApprovedProposal(ctx, task.ID)
 	if err != nil {
 		return nil, err
@@ -302,7 +282,7 @@ func (e *AgentExecutor) KickReapply(ctx context.Context, taskID uint64) (*Execut
 		return nil, err
 	}
 	e.runInBackground(task.ID, runCtx, active, func(runCtx context.Context) error {
-		_, err := e.applyApproved(runCtx, task, policy, proposal, execVersion)
+		_, err := e.applyApproved(runCtx, task, proposal, execVersion)
 		return err
 	})
 	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
@@ -410,17 +390,13 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 	if source.TaskID != task.ID || source.CodexSessionID == nil || strings.TrimSpace(*source.CodexSessionID) == "" {
 		return nil, fmt.Errorf("%w: source_run_id=%d has no persisted Codex session for task_id=%d", ErrInvalidInput, sourceRunID, taskID)
 	}
-	policy, ok := lookupPolicy(task.ActionType)
-	if !ok {
-		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
-	}
 	stage := source.Stage
 	if stage == "" {
 		stage = "execute"
 	}
 	startedAt := e.now().UTC()
 	run := &domain.ExecutionRun{
-		TaskID: task.ID, ActionType: task.ActionType, Stage: stage, Sandbox: policy.sandbox,
+		TaskID: task.ID, ActionType: task.ActionType, Stage: stage, Sandbox: executionSandbox,
 		Status: "running", Prompt: prompt, StartedAt: startedAt,
 	}
 	if errors.Is(context.Cause(ctx), ErrExecutionInterrupted) {
@@ -443,7 +419,7 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		}
 		return e.finishRun(ctx, task, execVersion, run, err)
 	}
-	codexOut, execErr := e.runner.ResumeTaskWithOutput(ctx, *source.CodexSessionID, prompt, policy.sandbox, repoPath, schemaExecution, task.ID, outputCapture)
+	codexOut, execErr := e.runner.ResumeTaskWithOutput(ctx, *source.CodexSessionID, prompt, executionSandbox, repoPath, schemaExecution, task.ID, outputCapture)
 	if execErr != nil {
 		e.failRun(run, startedAt, execErr)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
@@ -598,13 +574,13 @@ func (e *AgentExecutor) KickApprove(ctx context.Context, taskID uint64, expected
 	if err != nil {
 		return nil, err
 	}
-	task, policy, proposal, execVersion, err := e.claimForApproval(ctx, taskID, expectedVersion)
+	task, proposal, execVersion, err := e.claimForApproval(ctx, taskID, expectedVersion)
 	if err != nil {
 		e.abandonExecution(taskID, active)
 		return nil, err
 	}
 	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) error {
-		_, err := e.applyApproved(runCtx, task, policy, proposal, execVersion)
+		_, err := e.applyApproved(runCtx, task, proposal, execVersion)
 		return err
 	})
 	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
@@ -618,51 +594,47 @@ func (e *AgentExecutor) KickApprove(ctx context.Context, taskID uint64, expected
 // done/failed on the real external write's verdict. Prefer KickApprove from HTTP
 // handlers; this stays for callers that need to block on the outcome (tests).
 func (e *AgentExecutor) Approve(ctx context.Context, taskID uint64, expectedVersion int32) (*ExecuteResult, error) {
-	task, policy, proposal, execVersion, err := e.claimForApproval(ctx, taskID, expectedVersion)
+	task, proposal, execVersion, err := e.claimForApproval(ctx, taskID, expectedVersion)
 	if err != nil {
 		return nil, err
 	}
-	return e.applyApproved(ctx, task, policy, proposal, execVersion)
+	return e.applyApproved(ctx, task, proposal, execVersion)
 }
 
 // claimForApproval validates an awaiting_approval Task, decodes its stored
 // proposal, and atomically claims it (awaiting_approval -> executing) under
 // optimistic lock. It is the synchronous prefix shared by Approve and
 // KickApprove so version/state conflicts fail fast before any codex work starts.
-func (e *AgentExecutor) claimForApproval(ctx context.Context, taskID uint64, expectedVersion int32) (*domain.Task, actionPolicy, *codexProposal, int32, error) {
+func (e *AgentExecutor) claimForApproval(ctx context.Context, taskID uint64, expectedVersion int32) (*domain.Task, *codexProposal, int32, error) {
 	if taskID == 0 {
-		return nil, actionPolicy{}, nil, 0, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
+		return nil, nil, 0, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)
 	}
 	task, err := e.store.LoadTask(ctx, taskID)
 	if err != nil {
-		return nil, actionPolicy{}, nil, 0, err
+		return nil, nil, 0, err
 	}
 	if task.Version != expectedVersion {
-		return nil, actionPolicy{}, nil, 0, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
+		return nil, nil, 0, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
 	}
 	if task.Status != "awaiting_approval" {
-		return nil, actionPolicy{}, nil, 0, fmt.Errorf("%w: task_id=%d status=%s cannot be approved", ErrInvalidTransition, task.ID, task.Status)
-	}
-	policy, ok := lookupPolicy(task.ActionType)
-	if !ok {
-		return nil, actionPolicy{}, nil, 0, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
+		return nil, nil, 0, fmt.Errorf("%w: task_id=%d status=%s cannot be approved", ErrInvalidTransition, task.ID, task.Status)
 	}
 	proposal, err := decodeStoredProposal(task.ExecutionResult)
 	if err != nil {
-		return nil, actionPolicy{}, nil, 0, fmt.Errorf("read stored proposal task_id=%d: %w", task.ID, err)
+		return nil, nil, 0, fmt.Errorf("read stored proposal task_id=%d: %w", task.ID, err)
 	}
 	execVersion, err := e.store.MarkExecutingFromApproval(ctx, task.ID, task.Version)
 	if err != nil {
-		return nil, actionPolicy{}, nil, 0, err
+		return nil, nil, 0, err
 	}
-	return task, policy, proposal, execVersion, nil
+	return task, proposal, execVersion, nil
 }
 
 // applyApproved runs the apply stage for an already-claimed Task and finishes it
 // done/failed on the real external write's verdict. It is the shared tail of
 // Approve (synchronous) and KickApprove (background goroutine).
-func (e *AgentExecutor) applyApproved(ctx context.Context, task *domain.Task, policy actionPolicy, proposal *codexProposal, execVersion int32) (*ExecuteResult, error) {
-	run, result, execErr := e.runApply(ctx, task, policy, proposal)
+func (e *AgentExecutor) applyApproved(ctx context.Context, task *domain.Task, proposal *codexProposal, execVersion int32) (*ExecuteResult, error) {
+	run, result, execErr := e.runApply(ctx, task, proposal)
 	return e.routeRun(ctx, task, execVersion, run, result, execErr)
 }
 
@@ -703,12 +675,6 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 		return nil, err
 	}
 
-	if _, ok := lookupPolicy(task.ActionType); !ok {
-		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
-	}
-	if err := validateTaskIntegrity(task); err != nil {
-		return nil, err
-	}
 	runCtx, active, err := e.beginExecution(ctx, task.ID)
 	if err != nil {
 		return nil, err
@@ -730,34 +696,15 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 	if err != nil {
 		return nil, err
 	}
-	policy, ok := lookupPolicy(task.ActionType)
-	if !ok {
-		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
-	}
-
 	// Every action_type takes the same path. Whether the side effect this run is
 	// about to cause needs human review, and how any code change is delivered,
 	// are the agent's judgment under the file-backed approval policy.
-	// execution_mode=direct is retained as persisted metadata but grants no
-	// approval bypass.
-	return e.executeRun(ctx, task, policy, execVersion)
-}
-
-func validateTaskIntegrity(task *domain.Task) error {
-	if task == nil || task.ID == 0 {
-		return fmt.Errorf("%w: Task is invalid", ErrInvalidInput)
-	}
-	switch task.ExecutionMode {
-	case taskcreate.ExecutionModeStandard, taskcreate.ExecutionModeDirect:
-	default:
-		return fmt.Errorf("%w: task_id=%d unknown execution_mode=%q", ErrInvalidInput, task.ID, task.ExecutionMode)
-	}
-	return nil
+	return e.executeRun(ctx, task, execVersion)
 }
 
 // executeRun runs a Task's first pass and routes the outcome.
-func (e *AgentExecutor) executeRun(ctx context.Context, task *domain.Task, policy actionPolicy, execVersion int32) (*ExecuteResult, error) {
-	run, result, execErr := e.runOnce(ctx, task, policy)
+func (e *AgentExecutor) executeRun(ctx context.Context, task *domain.Task, execVersion int32) (*ExecuteResult, error) {
+	run, result, execErr := e.runOnce(ctx, task)
 	return e.routeRun(ctx, task, execVersion, run, result, execErr)
 }
 
@@ -887,14 +834,14 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 
 // runOnce builds the prompt and runs codex. Every action_type takes this path:
 // the agent investigates, judges approval, and either finishes the work or
-// returns a proposal. Code delivery (branch/commit/MR) is the agent's job and
-// shows up in effects, not in dedicated columns. Always returns a populated
-// *domain.ExecutionRun; execErr is non-nil on any failure so the caller can
-// mark the Task failed while still recording what was attempted.
-func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy actionPolicy) (*domain.ExecutionRun, *codexResult, error) {
+// returns a proposal. Any real side effects show up in effects, not dedicated
+// action-type columns. Always returns a populated *domain.ExecutionRun; execErr
+// is non-nil on any failure so the caller can mark the Task failed while still
+// recording what was attempted.
+func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain.ExecutionRun, *codexResult, error) {
 	startedAt := e.now().UTC()
 	run := &domain.ExecutionRun{
-		TaskID: task.ID, ActionType: task.ActionType, Stage: "execute", Sandbox: policy.sandbox,
+		TaskID: task.ID, ActionType: task.ActionType, Stage: "execute", Sandbox: executionSandbox,
 		Status: "running", StartedAt: startedAt,
 	}
 
@@ -947,7 +894,7 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, repoPath, schemaExecution, task.ID, outputCapture)
+	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, executionSandbox, repoPath, schemaExecution, task.ID, outputCapture)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -986,13 +933,13 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 }
 
 // runApply lands an approved proposal. It builds a fresh codex invocation with
-// the approved plan + artifact embedded (buildApplyPrompt) and runs it under the
+// the approved proposal + artifact embedded (buildApplyPrompt) and runs it under the
 // normal executionResultSchema so the real external write reports a real success
 // verdict.
-func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy actionPolicy, proposal *codexProposal) (*domain.ExecutionRun, *codexResult, error) {
+func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposal *codexProposal) (*domain.ExecutionRun, *codexResult, error) {
 	startedAt := e.now().UTC()
 	run := &domain.ExecutionRun{
-		TaskID: task.ID, ActionType: task.ActionType, Stage: "apply", Sandbox: policy.sandbox,
+		TaskID: task.ID, ActionType: task.ActionType, Stage: "apply", Sandbox: executionSandbox,
 		Status: "running", StartedAt: startedAt,
 	}
 
@@ -1039,7 +986,7 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy 
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, repoPath, schemaExecution, task.ID, outputCapture)
+	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, executionSandbox, repoPath, schemaExecution, task.ID, outputCapture)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1147,8 +1094,7 @@ func isGitDir(path string) bool {
 
 // runEffects returns the run's external-effect list for display: the agent's
 // declared effects stored verbatim. Each effect is a loose map so unknown kinds
-// and extra fields survive untouched — including merge_request entries the agent
-// declared itself after opening an MR.
+// and extra fields survive untouched.
 func runEffects(run *domain.ExecutionRun) []map[string]any {
 	if len(run.Effects) == 0 {
 		return nil

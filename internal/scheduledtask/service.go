@@ -527,18 +527,17 @@ func taskInput(row *domain.ScheduledTask, occurrenceKey string) (taskcreate.Inpu
 	if occurrenceKey == "" {
 		return taskcreate.Input{}, fmt.Errorf("scheduled task occurrence key is empty")
 	}
-	plan, err := json.Marshal(map[string]any{"instruction": row.Instruction})
+	sourcePayload, err := json.Marshal(map[string]any{"instruction": row.Instruction})
 	if err != nil {
-		return taskcreate.Input{}, fmt.Errorf("encode scheduled Task plan: %w", err)
+		return taskcreate.Input{}, fmt.Errorf("encode scheduled Task source payload: %w", err)
 	}
 	return taskcreate.Input{
 		Title: row.Title, ActionType: row.ActionType, Target: row.Title,
-		Background: json.RawMessage(row.ContextSnapshot), Plan: plan,
+		Background: json.RawMessage(row.ContextSnapshot), SourcePayload: sourcePayload,
 		SourceType: taskcreate.SourceScheduledTask,
 		SourceID:   &row.ID, OccurrenceKey: &occurrenceKey,
-		ExecutionMode: taskcreate.ExecutionModeStandard,
-		ActorType:     "scheduled_task",
-		EventDetail:   map[string]any{"scheduled_task_id": row.ID, "occurrence_key": occurrenceKey},
+		ActorType:   "scheduled_task",
+		EventDetail: map[string]any{"scheduled_task_id": row.ID, "occurrence_key": occurrenceKey},
 	}, nil
 }
 

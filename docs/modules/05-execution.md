@@ -15,13 +15,11 @@ Task 可来自：
 - `scheduled_task`：到期物化；
 - `manual`：通过 API 创建。
 
-`execution_mode=direct` 只是持久化元数据，不绕过审批。
-
-执行 prompt 包含：完整 `source_clue`、冻结 `background`、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。Todo 来源的 `plan` 为空且不注入 prompt；ScheduledTask/手工 Task 可继续保存自己的可选计划。Task 创建时已经把仓库工作目录投影到 `repo_path`，M5 直接消费该硬参数，不反解析 background。
+执行 prompt 包含：完整 `source_payload`、冻结 `background`、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。所有来源统一使用宽松 `source_payload`，Go 和前端都不把它解释成固定计划结构。Task 创建时已经把仓库工作目录投影到 `repo_path`，M5 直接消费该硬参数，不反解析 background。
 
 执行进程可以自行派生只读的子 agent 去做素材密集的调查，只把带出处的结论收回主上下文；派生规则写在 `m5-system-prompt.md`，Go 侧不感知也不调度。审批判断、终态裁决、`effects` 申报、`progress_summary` 和 `yield-until` 不下放——可恢复的 Session 属于主进程。
 
-上游语义是 clue，不是最终契约。当前代码尚无通用接口更新 `background/plan`；能更新的是 supplements、状态、结果和 Task summary。目标设计中的“可变且留痕”仍是实现缺口。
+上游的 `source_payload` 和 `background` 是冻结证据，不是最终执行契约。M5 可根据调查调整目标与动作，变化通过 supplements、运行记录、状态、结果和 Task summary 留痕，不回写来源证据。
 
 ## 2. 执行 phases
 

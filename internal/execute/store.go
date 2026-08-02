@@ -55,11 +55,10 @@ type TaskView struct {
 	ActionType           string                `json:"action_type"`
 	Target               string                `json:"target"`
 	Background           json.RawMessage       `json:"background"`
-	Plan                 json.RawMessage       `json:"plan"`
+	SourcePayload        json.RawMessage       `json:"source_payload"`
 	SourceType           string                `json:"source_type"`
 	SourceID             *uint64               `json:"source_id"`
 	OccurrenceKey        *string               `json:"occurrence_key"`
-	ExecutionMode        string                `json:"execution_mode"`
 	Status               string                `json:"status"`
 	ExecutionResult      json.RawMessage       `json:"execution_result"`
 	Summary              *string               `json:"summary"`
@@ -347,7 +346,8 @@ var supplementableTaskStatuses = map[string]struct{}{
 }
 
 // Supplement appends a human clarification/instruction to a Task's M5-only
-// execution_supplements. It does not touch Todo.context_snapshot or Task.plan.
+// execution_supplements. It does not touch Todo.context_snapshot or the Task's
+// frozen source_payload/background evidence.
 func (s *Store) Supplement(ctx context.Context, input SupplementInput) (*TaskView, error) {
 	if input.TaskID == 0 || input.ExpectedVersion < 0 {
 		return nil, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
@@ -1255,11 +1255,11 @@ func taskView(ctx context.Context, task *domain.Task) TaskView {
 	}
 	return TaskView{
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
-		Target:     task.Target,
-		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
-		SourceType: task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
-		ExecutionMode: task.ExecutionMode,
-		Status:        task.Status, ExecutionResult: rawJSON(task.ExecutionResult),
+		Target:        task.Target,
+		Background:    rawJSON(task.Background),
+		SourcePayload: rawJSON(task.SourcePayload),
+		SourceType:    task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
+		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult),
 		Summary: task.Summary, LastProgressAt: task.LastProgressAt,
 		ExecutionSupplements: supplements,
 		ProjectID:            task.ProjectID, RepoPath: task.RepoPath,

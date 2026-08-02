@@ -52,9 +52,9 @@ func TestInterruptInactiveExecutionMarksTaskFailed(t *testing.T) {
 		`CREATE TABLE task (
 			id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT NOT NULL DEFAULT '',
 			action_type TEXT NOT NULL DEFAULT '', target TEXT NOT NULL DEFAULT '',
-			background TEXT NOT NULL DEFAULT '{}', plan TEXT NOT NULL DEFAULT '{}',
+			background TEXT NOT NULL DEFAULT '{}', source_payload TEXT NOT NULL DEFAULT '{}',
 			source_type TEXT NOT NULL DEFAULT 'manual',
-			source_id INTEGER, occurrence_key TEXT, execution_mode TEXT NOT NULL DEFAULT 'standard',
+			source_id INTEGER, occurrence_key TEXT,
 			status TEXT NOT NULL, execution_result TEXT, execution_supplements TEXT,
 			project_id INTEGER, version INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

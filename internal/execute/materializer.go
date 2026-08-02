@@ -109,10 +109,10 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		}
 		task, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
 			TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
-			Background: background, SourceClue: json.RawMessage(todo.ExtractionResult),
+			Background: background, SourcePayload: json.RawMessage(todo.ExtractionResult),
 			ProjectID: copyUint64(todo.ProjectID), RepoPath: repoPath,
 			SourceType: taskcreate.SourceTodo, SourceID: &todo.ID,
-			ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "system",
+			ActorType: "system",
 		})
 		if errors.Is(err, taskcreate.ErrExists) {
 			return fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)

@@ -5,15 +5,7 @@ export type TodoStatus =
   | 'observing'
   | 'materialized'
 
-export type ActionType =
-  | 'agent_task'
-  | 'code_change'
-  | 'summary_post'
-  | 'investigate'
-  | 'schedule_meeting'
-  | 'reply_message'
-  | 'doc_write'
-  | 'manual_followup'
+export type ActionType = string
 
 export interface TodoGroup {
   id: number
@@ -156,7 +148,7 @@ export interface Task {
   action_type: ActionType
   target: string
   background: Record<string, unknown>
-  plan: unknown | null
+  source_payload: unknown
   status: TaskStatus
   execution_result: Record<string, unknown> | null
   // Where the matter itself now stands, spanning every run. Distinct from a run's
@@ -170,7 +162,6 @@ export interface Task {
   source_type: 'todo' | 'scheduled_task' | 'manual' | 'proactive'
   source_id: number | null
   occurrence_key: string | null
-  execution_mode: 'standard' | 'direct'
   version: number
   created_at: string
   updated_at: string

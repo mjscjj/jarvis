@@ -20,9 +20,6 @@ import (
 )
 
 const (
-	ExecutionModeStandard = "standard"
-	ExecutionModeDirect   = "direct"
-
 	SourceTodo          = "todo"
 	SourceScheduledTask = "scheduled_task"
 	SourceManual        = "manual"
@@ -40,14 +37,12 @@ type Input struct {
 	ActionType    string
 	Target        string
 	Background    json.RawMessage
-	SourceClue    json.RawMessage
-	Plan          json.RawMessage
+	SourcePayload json.RawMessage
 	ProjectID     *uint64
 	RepoPath      *string
 	SourceType    string
 	SourceID      *uint64
 	OccurrenceKey *string
-	ExecutionMode string
 	ActorType     string
 	EventDetail   map[string]any
 }
@@ -159,10 +154,10 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 	now := f.now().UTC()
 	row := domain.Task{
 		TodoID: normalized.TodoID, Title: normalized.Title, ActionType: normalized.ActionType,
-		Target: normalized.Target, Background: datatypes.JSON(normalized.Background), Plan: datatypes.JSON(normalized.Plan),
-		SourceClue: datatypes.JSON(normalized.SourceClue),
-		SourceType: normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
-		ExecutionMode: normalized.ExecutionMode, Status: "pending",
+		Target: normalized.Target, Background: datatypes.JSON(normalized.Background),
+		SourcePayload: datatypes.JSON(normalized.SourcePayload),
+		SourceType:    normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
+		Status:    "pending",
 		ProjectID: normalized.ProjectID, RepoPath: normalized.RepoPath,
 		Version: 0, CreatedAt: now, UpdatedAt: now,
 	}
@@ -191,7 +186,6 @@ func normalizeInput(input Input) (Input, error) {
 	input.ActionType = strings.TrimSpace(input.ActionType)
 	input.Target = strings.TrimSpace(input.Target)
 	input.SourceType = strings.TrimSpace(input.SourceType)
-	input.ExecutionMode = strings.TrimSpace(input.ExecutionMode)
 	input.RepoPath = trimString(input.RepoPath)
 	if input.Title == "" || input.ActionType == "" || input.Target == "" {
 		return Input{}, fmt.Errorf("%w: title, action_type and target are required", ErrInvalidInput)
@@ -200,11 +194,6 @@ func normalizeInput(input Input) (Input, error) {
 	case SourceTodo, SourceScheduledTask, SourceManual, SourceProactive:
 	default:
 		return Input{}, fmt.Errorf("%w: source_type must be todo, scheduled_task, manual or proactive", ErrInvalidInput)
-	}
-	switch input.ExecutionMode {
-	case ExecutionModeStandard, ExecutionModeDirect:
-	default:
-		return Input{}, fmt.Errorf("%w: execution_mode must be standard or direct", ErrInvalidInput)
 	}
 	if input.SourceType == SourceTodo {
 		if input.TodoID == nil || *input.TodoID == 0 {
@@ -226,17 +215,9 @@ func normalizeInput(input Input) (Input, error) {
 	if input.Background == nil {
 		return Input{}, fmt.Errorf("%w: background must be a JSON object", ErrInvalidInput)
 	}
-	if len(bytes.TrimSpace(input.Plan)) != 0 {
-		input.Plan = mustJSONValue(input.Plan, false)
-		if input.Plan == nil {
-			return Input{}, fmt.Errorf("%w: plan must be a non-empty JSON value", ErrInvalidInput)
-		}
-	}
-	if len(bytes.TrimSpace(input.SourceClue)) != 0 {
-		input.SourceClue = mustJSONValue(input.SourceClue, true)
-		if input.SourceClue == nil {
-			return Input{}, fmt.Errorf("%w: source_clue must be a non-null JSON value", ErrInvalidInput)
-		}
+	input.SourcePayload = mustJSONValue(input.SourcePayload, true)
+	if input.SourcePayload == nil {
+		return Input{}, fmt.Errorf("%w: source_payload must be a non-null JSON value", ErrInvalidInput)
 	}
 	input.OccurrenceKey = trimString(input.OccurrenceKey)
 	return input, nil

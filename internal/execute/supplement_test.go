@@ -41,7 +41,7 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 	}
 	task := &domain.Task{
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
-		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 		ExecutionSupplements: datatypes.JSON(supplements),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
@@ -63,7 +63,7 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 func TestBuildExecutionPromptInjectsSharedMemory(t *testing.T) {
 	task := &domain.Task{
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
-		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	empty, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestBuildExecutionPromptInjectsSharedMemory(t *testing.T) {
 func TestBuildExecutionPromptInjectsWorkRules(t *testing.T) {
 	task := &domain.Task{
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
-		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "BEGIN_WORK_RULES\n- 禁止直接私聊\nEND_WORK_RULES", "", nil)
 	if err != nil {
@@ -108,7 +108,7 @@ func TestBuildExecutionPromptInjectsWorkRules(t *testing.T) {
 func TestBuildExecutionPromptInjectsSkills(t *testing.T) {
 	task := &domain.Task{
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
-		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS", nil)
 	if err != nil {
@@ -127,7 +127,7 @@ func TestBuildExecutionPromptInjectsSkills(t *testing.T) {
 func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 	task := &domain.Task{
 		ID: 10, Title: "告诉唐建科 PSM", ActionType: "investigate",
-		Plan: datatypes.JSON(`{"steps":["reply"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: datatypes.JSON(`{"steps":["reply"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	finished := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	summary := "已建群并解释 PSM 是 Product-Service-Module"
@@ -151,7 +151,7 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 	task := &domain.Task{
 		ID: 12, Title: "评测截图", ActionType: "notify_principal", Target: "评测截图影响面",
-		Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		Background: datatypes.JSON(`{"snapshot_version":"v1"}`), SourcePayload: datatypes.JSON(`{"request":"评测截图"}`),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
@@ -171,28 +171,24 @@ func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 			t.Fatalf("execution prompt still exposes upstream semantics as authoritative field %q:\n%s", obsolete, prompt)
 		}
 	}
-	if strings.Contains(prompt, `"m3_clue"`) {
-		t.Fatalf("execution prompt emitted m3_clue for a Task without a source clue:\n%s", prompt)
-	}
 }
 
-// TestBuildExecutionPromptForwardsM3ClueVerbatim pins the anti-goal-drift path:
-// M5 must see M3's original clue (notably desired_outcome) rather than only
-// a blocker raised downstream cannot silently become the task.
-func TestBuildExecutionPromptForwardsM3ClueVerbatim(t *testing.T) {
+// TestBuildExecutionPromptForwardsSourcePayloadVerbatim pins the unified
+// anti-goal-drift path for every Task source.
+func TestBuildExecutionPromptForwardsSourcePayloadVerbatim(t *testing.T) {
 	clue := `{"action_type":"manual_followup","desired_outcome":"产出这场会的结论并生成落到我身上的待办","semantics":"当前妙记无 view 权限，需先申请"}`
 	task := &domain.Task{
 		ID: 13, Title: "公会基建 Agent 日会会后处理", ActionType: "manual_followup",
-		Target:     "公会基建Agent 日会（meeting_id=7667030332496007223）",
-		SourceClue: datatypes.JSON(clue),
-		Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		Target:        "公会基建Agent 日会（meeting_id=7667030332496007223）",
+		SourcePayload: datatypes.JSON(clue),
+		Background:    datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
 	for _, want := range []string{
-		`"m3_clue":` + clue,
+		`"source_payload":` + clue,
 		`"target_hint":"公会基建Agent 日会（meeting_id=7667030332496007223）"`,
 	} {
 		if !strings.Contains(prompt, want) {
@@ -217,8 +213,8 @@ func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
 		// A cleared blocker must never read as a finished goal; see
 		// docs/design-long-horizon-agent-goal-control.md.
 		"解除阻塞不是完成",
-		"不得假设 payload 内存在固定 JSON 字段",
-		"以 payload 表达的真实最终结果为准",
+		"不得假设其中存在固定 JSON 字段",
+		"以 source_payload 表达的真实最终结果为准",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("M5 prompt missing autonomy contract %q:\n%s", want, prompt)
