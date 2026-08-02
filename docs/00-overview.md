@@ -24,7 +24,7 @@ Jarvis 是单用户、本地、低频运行的主动式任务数字分身。它�
 ```mermaid
 flowchart LR
     UI["React 管理后台"] --> API["jarvis-server\nGo / Hertz"]
-    API --> MYSQL[("MySQL")]
+    API --> SQLITE[("SQLite")]
     API --> QDRANT[("Qdrant\nTodo 去重")]
     API --> LARK["lark-cli"]
     API --> AGENT["traex Agent CLI"]
@@ -32,7 +32,7 @@ flowchart LR
 ```
 
 - `jarvis-server` 是主进程：HTTP、静态前端、M2/M3/M5、实时协调和补偿 cron 都在同一进程。
-- MySQL 是结构化状态真源。
+- SQLite 是结构化状态真源，服务使用单连接串行化数据库操作。
 - Qdrant 当前只服务 Todo 语义去重，不是长期事实真源。
 - `traex` 运行 M3 默认引擎、M5 执行、对话、离线事实抽取和主动巡视；各阶段的模型和超时独立读取有效配置。
 - `lark-cli` 负责飞书读写；`bytedcli`、`git` 和 `jarvis-tools` 由 Agent 按需调用。
@@ -146,7 +146,7 @@ Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示�
 
 主动巡视不新增世界状态表：它读取上述现有载体并通过既有 CRUD 工具维护内部认知；跨轮记忆来自这些持久状态，而不是续跑无限对话 Session。
 
-`internal/domain/*.go` 和 `internal/store/mysql.go` 是字段与迁移真源。不要在文档复制完整 DDL。
+`internal/domain/*.go` 和 `internal/store/sqlite.go` 是字段与迁移真源。不要在文档复制完整 DDL。
 
 离线 factengine 消费 `message`、`todo`、`task` 并写 `fact`，三种来源共用同一套 `SourceUnit → Agent → Fact` 协议和独立游标。Message 按会话和大小切出有界批次，批次内每一条已采集消息原样交给 Agent；Todo/Task 跟随 append-only 的 lifecycle event，按自然日和数量切出有界窗口，把窗口内每个事件原文和当前完整实体快照一起交给 Agent，Task 事件有关联 ExecutionRun 时也整块携带。Go 不预先过滤材料、不解释事件类型，也不把已知实体当输出白名单。首次接入 Todo/Task 会从事件 0 开始消费已有材料；Message 保留从当前时刻起步的历史边界。
 

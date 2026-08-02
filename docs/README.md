@@ -17,7 +17,7 @@
 
 | 主题 | Source of truth |
 |---|---|
-| 数据模型与迁移 | `internal/domain/*.go`, `internal/store/mysql.go` |
+| 数据模型与迁移 | `internal/domain/*.go`, `internal/store/sqlite.go` |
 | HTTP 路由 | `internal/api/router.go` |
 | 基线与运行时配置 | `conf/config.yaml`, `conf/config.runtime.yaml` |
 | 页面入口 | `web/src/App.tsx` |

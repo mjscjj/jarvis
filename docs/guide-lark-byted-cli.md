@@ -160,7 +160,7 @@ M3/M5 可以直接调用 lark-cli/bytedcli 查证上下文。工具目录只描�
 
 ### jarvis-tools
 
-`scripts/jarvis-tools` 不是 Lark CLI，也不直连 MySQL。它用 `curl + jq` 调在线 jarvis-server，供 Agent 查询 projects/persons/groups/todos/tasks/facts/scheduled tasks 等，或调用 `append-clue`、`yield-until`。服务不在线时会失败。
+`scripts/jarvis-tools` 不是 Lark CLI，也不直连数据库。它用 `curl + jq` 调在线 jarvis-server，供 Agent 查询 projects/persons/groups/todos/tasks/facts/scheduled tasks 等，或调用 `append-clue`、`yield-until`。服务不在线时会失败。
 
 ## 6. 常见故障
 

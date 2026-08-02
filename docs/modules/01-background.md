@@ -5,7 +5,7 @@
 > Last verified: 2026-08-02 @ `89fa24b`
 > Code source: `internal/background/`, `internal/domain/models.go`, `internal/domain/knowledge.go`
 
-M1 维护 principal 的稳定工作背景，供 M3/M5 和日报读取。MySQL 是真源；不向向量库同步背景，也没有 memory sidecar。
+M1 维护 principal 的稳定工作背景，供 M3/M5 和日报读取。SQLite 是真源；不向向量库同步背景，也没有 memory sidecar。
 
 ## 1. 边界
 

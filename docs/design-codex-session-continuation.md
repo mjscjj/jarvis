@@ -162,7 +162,7 @@ Agent 结果：
 - ScheduledTask 重复扫描由 `active → running` 的条件更新拦截。
 - Task 重复恢复由 `waiting → executing` 的版本条件拦截。
 - 人工回复重复提交由 `needs_human → executing` 的 version 条件拦截。
-- Jarvis 在等待期间重启：`active` ScheduledTask 仍由 MySQL 恢复。
+- Jarvis 在等待期间重启：`active` ScheduledTask 仍由 SQLite 恢复。
 - 到期时 Session 缺失：本轮触发失败并明确记录，不新建 Session。
 - 同一 Task 同时只允许一个未完成的续接计划。
 - Agent 调用工具后没有返回合法 `waiting` 结果：ScheduledTask 不会误触发；Task 进入完成、失败或审批状态时，该 `binding` 计划会被明确关闭并记录原因。若进程在绑定前退出，启动恢复也会将它标记失败。

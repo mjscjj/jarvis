@@ -5,7 +5,7 @@
 > Last verified: 2026-08-02 @ `89fa24b`
 > Code source: `internal/capture/`, `internal/domain/capture.go`
 
-M2 把外部事实可靠写入 MySQL，并按 chat 唤醒 M3。它不分类、不下结论、不决定重试策略。
+M2 把外部事实可靠写入 SQLite，并按 chat 唤醒 M3。它不分类、不下结论、不决定重试策略。
 
 ## 1. 当前入口
 

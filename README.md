@@ -70,7 +70,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 |---|---|
 | 项目目标 | `goal.md` |
 | Agent 行为和开发约束 | `AGENTS.md`, `conf/prompts/`, `conf/rules/`, `.agents/skills/` |
-| 数据模型与迁移 | `internal/domain/*.go`, `internal/store/mysql.go` |
+| 数据模型与迁移 | `internal/domain/*.go`, `internal/store/sqlite.go` |
 | HTTP 路由 | `internal/api/router.go` |
 | 基线配置 | `conf/config.yaml` |
 | 本机运行时覆盖 | `conf/config.runtime.yaml` |
@@ -88,18 +88,12 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 - 改严格输出协议/状态路由：`internal/execute/prompt.go`、`internal/execute/store.go`
 - 改工具说明：`internal/toolcatalog/` 或对应 Skill，不把工具手册复制进系统提示词
 - 加 HTTP 接口：`internal/api/`，并在 `internal/api/router.go` 注册
-- 改表或字段：`internal/domain/` 与 `internal/store/mysql.go`
+- 改表或字段：`internal/domain/` 与 `internal/store/sqlite.go`
 - 改前端页面：`web/src/`
 
 ## 本地运行
 
-要求 Go 1.26.4、Node/npm、MySQL 8、`traex`、`lark-cli` 和 Qdrant。`conf/config.yaml` 使用本机明文 DSN/密钥；请注意仓库配置可能包含真实凭证。
-
-首次创建数据库：
-
-```bash
-mysql -uroot -p -e 'CREATE DATABASE jarvis CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci'
-```
+要求 Go 1.26.4、Node/npm、`traex`、`lark-cli` 和 Qdrant。`conf/config.yaml` 使用本机明文密钥；请注意仓库配置可能包含真实凭证。SQLite 文件及父目录会在启动时自动创建，无需单独安装或建库。
 
 只执行迁移或一次性动作：
 
@@ -156,7 +150,7 @@ npm --prefix web run build
 git diff --check
 ```
 
-依赖真实 MySQL、模型或完整配置的测试使用 `integration` tag；缺少依赖时应 fail-fast，不用 `t.Skip` 伪装通过。
+依赖真实模型、Agent CLI 或完整配置的测试使用 `integration` tag；缺少依赖时应 fail-fast，不用 `t.Skip` 伪装通过。
 
 ## HTTP 与 Agent 工具
 

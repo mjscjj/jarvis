@@ -12,7 +12,7 @@ Jarvis 已用 `project`、`person`、`feishu_group`、`todo`、`task`、`resourc
 2. `task_event`：Task 的结构化状态变化。
 3. `fact`：任意主体（项目、群、人……）的自然语言事实流。
 
-不创建通用 `entity` 或 `entity_alias` 表，不复制已有实体，也不引入独立知识图谱数据库。MySQL 仍是唯一真相来源。
+不创建通用 `entity` 或 `entity_alias` 表，不复制已有实体，也不引入独立知识图谱数据库。SQLite 仍是唯一真相来源。
 
 ## 2. 设计原则
 
@@ -58,7 +58,7 @@ project person principal group todo task resource managed_resource
 - 实体对按 `type:id` 排序后存储，因此 A-B 和 B-A 是同一条记录。
 - 一个实体对只保留一条事实；重复写入会更新 `description`。
 - 删除使用物理删除，不维护撤回、失效或 supersede 状态。
-- MySQL 无法给多态实体引用建立普通外键，写入服务负责存在性校验。
+- 多态实体引用无法用一个普通外键表达，写入服务负责存在性校验。
 
 以下确定性关系继续使用已有字段：
 
@@ -169,14 +169,8 @@ POST   /api/facts
 
 `jarvis-tools get-project` 同时返回项目资料、最近 50 条项目事实和项目关系；`get-person` 同时返回人物资料和人物关系，供模型直接推断上下文。
 
-## 8. 迁移和历史数据
+## 8. Schema 与历史数据
 
-旧版 `relation_fact` 结构字段过多，本次不保留兼容逻辑：
+SQLite 只按当前领域模型建表，不携带旧数据库的版本迁移链，也不在运行时维护双栈兼容。历史数据如需保留，在切换服务前执行一次离线导入并核对表级行数；应用启动后只读取 SQLite。
 
-- 如果旧表为空，迁移会删除旧表并按新模型重建。
-- 如果旧表存在数据，启动会 fail-fast，要求先明确历史数据处理方式，不自动猜测转换。
-- `task_event` 结构不变，已有 Task 历史继续保留。
-
-`project_event` 被 `fact` 取代时主体列从 `project_id` 变成 `(subject_type, subject_id)`，没有逐列迁移路径。已确认放弃本机存量数据，迁移无条件删表重建（`dropLegacyProjectEvent`）——这是显式决定，不同于上面几处按行数守卫的迁移。
-
-未来需要图查询时，可以从已有外键和 `relation_fact` 投影到图数据库，节点 ID 使用 `type:id`；投影是可重建索引，不改变 MySQL 的真相来源地位。
+未来需要图查询时，可以从已有外键和 `relation_fact` 投影到图数据库，节点 ID 使用 `type:id`；投影是可重建索引，不改变 SQLite 的真相来源地位。

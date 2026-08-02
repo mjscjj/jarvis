@@ -147,12 +147,12 @@ flowchart TB
 
 | 子命令                                                                      | 本轮  | 作用                           | 数据源                       |
 | ------------------------------------------------------------------------ | --- | ---------------------------- | ------------------------- |
-| `jarvis-tools list-projects`                                             | ✅   | 列全部项目（含 `repos`/`code`/描述）   | MySQL `project`           |
-| `jarvis-tools get-project --id <n> | --code <c>`                         | ✅   | 查某项目详情                       | MySQL `project`           |
-| `jarvis-tools get-group --chat-id <id>`                                  | ✅   | 查群详情（群公告 `description`/绑定项目） | MySQL `feishu_group`      |
-| `jarvis-tools get-principal`                                             | ✅   | 查 principal 自身背景与直属 leader   | MySQL `principal_profile` |
-| `jarvis-tools get-person --open-id <id>`                                 | ✅   | 查人物（角色/是否 leader/关系）         | MySQL `person`            |
-| `jarvis-tools query-messages --chat-id <id> [--keyword <k>] [--limit N]` | 后补  | 查本地历史消息                      | MySQL `message`           |
+| `jarvis-tools list-projects`                                             | ✅   | 列全部项目（含 `repos`/`code`/描述）   | SQLite `project`           |
+| `jarvis-tools get-project --id <n> | --code <c>`                         | ✅   | 查某项目详情                       | SQLite `project`           |
+| `jarvis-tools get-group --chat-id <id>`                                  | ✅   | 查群详情（群公告 `description`/绑定项目） | SQLite `feishu_group`      |
+| `jarvis-tools get-principal`                                             | ✅   | 查 principal 自身背景与直属 leader   | SQLite `principal_profile` |
+| `jarvis-tools get-person --open-id <id>`                                 | ✅   | 查人物（角色/是否 leader/关系）         | SQLite `person`            |
+| `jarvis-tools query-messages --chat-id <id> [--keyword <k>] [--limit N]` | 后补  | 查本地历史消息                      | SQLite `message`           |
 
 
 > 外部 `lark-cli`/`bytedcli`/`git` **不封装**，codex 直接跑（它们本就是外部可执行文件）。`jarvis-tools` 只补"我们自己的库/记忆"这部分 codex 摸不到的数据。
@@ -284,7 +284,7 @@ Resolution      datatypes.JSON `gorm:"column:resolution;type:json"`       // 项
 | `docs/00-overview.md` §1 表                  | LLM 抽取(M2/M3) 用 model API          | M3 主引擎改 **codex**，model API 保留备用                                    |
 | `docs/modules/03-task-extract.md` L16       | "只有下游判断才用 codex，M3 不用"          | M3 默认用 codex；kimi 备用                                                |
 | `docs/modules/03-task-extract.md` §0.3 / 落库 | `Todo.project_id` 从群绑定继承           | M3 用 codex 推算（群绑定仍最高优先级）                                            |
-| Todo→Task 固化               | Task 背景在建 Task 时从 MySQL 临时读 | 背景在 **M3 就固化进 Todo**，固化器直接复用；`context_snapshot` 为空即 fail-fast，不保留回退分支 |
+| Todo→Task 固化               | Task 背景在建 Task 时从 SQLite 临时读 | 背景在 **M3 就固化进 Todo**，固化器直接复用；`context_snapshot` 为空即 fail-fast，不保留回退分支 |
 
 
 > 这些修订仅调整"引擎与上下文固化时机"，不改变 Todo/Task 拆分、7 实体、fail-fast 等核心契约。
