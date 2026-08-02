@@ -151,7 +151,7 @@ func (e *Extractor) run(ctx context.Context, unit SourceUnit, prompt string) ([]
 		if runCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("fact extraction unit=%s timed out after %s", unit.Key, e.timeout)
 		}
-		return nil, fmt.Errorf("fact extraction unit=%s failed: %w: %s", unit.Key, err, limitedText(stderr.Bytes(), 4096))
+		return nil, fmt.Errorf("fact extraction unit=%s prompt_chars=%d failed: %w: %s", unit.Key, len(prompt), err, limitedTail(stderr.Bytes(), 4096))
 	}
 	return readLimitedFile(resultPath, maxExtractorOutputBytes)
 }
@@ -238,4 +238,15 @@ func limitedText(b []byte, limit int) string {
 		return string(b)
 	}
 	return string(b[:limit]) + "...(truncated)"
+}
+
+// Agent CLIs print the whole prompt before their actual failure. Error paths
+// need the tail, otherwise a context-limit/provider error is hidden behind the
+// first few kilobytes of echoed input.
+func limitedTail(b []byte, limit int) string {
+	b = bytes.TrimSpace(b)
+	if len(b) <= limit {
+		return string(b)
+	}
+	return "...(truncated)" + string(b[len(b)-limit:])
 }

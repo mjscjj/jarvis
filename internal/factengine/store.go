@@ -21,6 +21,11 @@ const (
 	SourceMessage = "message"
 	SourceTodo    = "todo"
 	SourceTask    = "task"
+
+	// Complete Todo/Task snapshots can be much larger than chat messages. Keep
+	// every byte, but split before a combined unit grows beyond a reliably small
+	// agent prompt. A single oversized item is still passed through whole.
+	maxStructuredMaterialChars = 50_000
 )
 
 // MaterialSource is one mechanical projection into the shared SourceUnit
@@ -243,13 +248,19 @@ func (s *GORMStore) TodoUnits(ctx context.Context, cursor uint64, limit int, opt
 		}
 		event := row
 		event.Todo = nil
-		materials = append(materials, todoMaterial{Event: event, CurrentTodo: row.Todo})
+		material := todoMaterial{Event: event, CurrentTodo: row.Todo}
+		size, err := jsonMaterialSize(material)
+		if err != nil {
+			return nil, 0, fmt.Errorf("measure todo event id=%d: %w", row.ID, err)
+		}
+		material.encodedSize = size
+		materials = append(materials, material)
 	}
 	units := make([]SourceUnit, 0, len(materials))
 	for start := 0; start < len(materials); {
-		end := materialWindowEnd(start, len(materials), opts.MaxMessages, opts.Location, func(i int) time.Time {
-			return materials[i].Event.CreatedAt
-		})
+		end := structuredMaterialWindowEnd(start, len(materials), opts.MaxMessages, opts.Location,
+			func(i int) time.Time { return materials[i].Event.CreatedAt },
+			func(i int) int { return materials[i].encodedSize })
 		window := materials[start:end]
 		body, err := renderJSONMaterial(window)
 		if err != nil {
@@ -292,13 +303,19 @@ func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opt
 		if row.RunID != nil && row.Run == nil {
 			return nil, 0, fmt.Errorf("task event id=%d references missing execution run id=%d", row.ID, *row.RunID)
 		}
-		materials = append(materials, taskMaterial{Event: event, CurrentTask: row.Task, ExecutionRun: row.Run})
+		material := taskMaterial{Event: event, CurrentTask: row.Task, ExecutionRun: row.Run}
+		size, err := jsonMaterialSize(material)
+		if err != nil {
+			return nil, 0, fmt.Errorf("measure task event id=%d: %w", row.ID, err)
+		}
+		material.encodedSize = size
+		materials = append(materials, material)
 	}
 	units := make([]SourceUnit, 0, len(materials))
 	for start := 0; start < len(materials); {
-		end := materialWindowEnd(start, len(materials), opts.MaxMessages, opts.Location, func(i int) time.Time {
-			return materials[i].Event.OccurredAt
-		})
+		end := structuredMaterialWindowEnd(start, len(materials), opts.MaxMessages, opts.Location,
+			func(i int) time.Time { return materials[i].Event.OccurredAt },
+			func(i int) int { return materials[i].encodedSize })
 		window := materials[start:end]
 		body, err := renderJSONMaterial(window)
 		if err != nil {
@@ -318,12 +335,14 @@ func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opt
 type todoMaterial struct {
 	Event       domain.TodoEvent `json:"event"`
 	CurrentTodo *domain.Todo     `json:"current_todo"`
+	encodedSize int
 }
 
 type taskMaterial struct {
 	Event        domain.TaskEvent     `json:"event"`
 	CurrentTask  *domain.Task         `json:"current_task"`
 	ExecutionRun *domain.ExecutionRun `json:"execution_run,omitempty"`
+	encodedSize  int
 }
 
 func renderJSONMaterial(value any) (string, error) {
@@ -332,6 +351,14 @@ func renderJSONMaterial(value any) (string, error) {
 		return "", err
 	}
 	return string(encoded), nil
+}
+
+func jsonMaterialSize(value any) (int, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return 0, err
+	}
+	return len(encoded), nil
 }
 
 func todoSubjects(todo *domain.Todo) []Subject {
@@ -393,6 +420,21 @@ func materialWindowEnd(start, total, maxItems int, location *time.Location, occu
 	day := occurredAt(start).In(location).Format("2006-01-02")
 	end := start + 1
 	for end < total && end-start < maxItems && occurredAt(end).In(location).Format("2006-01-02") == day {
+		end++
+	}
+	return end
+}
+
+func structuredMaterialWindowEnd(start, total, maxItems int, location *time.Location, occurredAt func(int) time.Time, encodedSize func(int) int) int {
+	day := occurredAt(start).In(location).Format("2006-01-02")
+	end := start
+	size := 2 // JSON array brackets.
+	for end < total && end-start < maxItems && occurredAt(end).In(location).Format("2006-01-02") == day {
+		nextSize := encodedSize(end)
+		if end > start && size+1+nextSize > maxStructuredMaterialChars {
+			break
+		}
+		size += nextSize + 1
 		end++
 	}
 	return end
