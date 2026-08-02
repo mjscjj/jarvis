@@ -20,9 +20,12 @@ type LogReader struct {
 
 const maxTailBytes = 256 * 1024
 
-// tsPattern matches the leading timestamp `2006/01/02 15:04:05.000000`, allowing
-// an optional cron prefix word (e.g. "capture-cron ") in front of it.
-var tsPattern = regexp.MustCompile(`(?:^|\s)(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)`)
+// The process has two timestamp formats: our cron/pipeline loggers use slashes,
+// while Hertz uses dashes and a comma before milliseconds. Both may have a
+// module/level prefix (and Hertz may add ANSI color bytes), so search anywhere
+// in the line instead of requiring the timestamp at byte zero.
+var slashTS = regexp.MustCompile(`(?:^|\s)(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)`)
+var hertzTS = regexp.MustCompile(`(?:^|\s)(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})`)
 var cronJobLine = regexp.MustCompile(`^([a-z][a-z-]*)-cron\s+\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\s+(.*)$`)
 var jobNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
@@ -84,8 +87,10 @@ func (r *LogReader) Tail(lines int) (*LogTail, error) {
 	result := &LogTail{Sources: []string{}, Lines: []LogLine{}, Notes: []string{}}
 
 	var parsed []parsedLine
-	var lastTS time.Time // 用最近一次成功解析的时间戳给无时间戳的续行兜底排序
 	for fileIx, path := range r.paths {
+		// 续行只能继承同一文件里的时间。跨 stdout/stderr 继承会把一个文件
+		// 开头的无时间戳 SDK 日志错误地挂到另一个文件的最后事件上。
+		var lastTS time.Time
 		base := filepath.Base(path)
 		result.Sources = append(result.Sources, base)
 
@@ -216,20 +221,20 @@ func readTail(path string) ([]string, bool, error) {
 // parseLineTime extracts the log line timestamp, accepting an optional cron
 // prefix word before it.
 func parseLineTime(text string) (time.Time, bool) {
-	m := tsPattern.FindStringSubmatch(text)
-	if m == nil {
-		return time.Time{}, false
+	if m := slashTS.FindStringSubmatch(text); m != nil {
+		layout := "2006/01/02 15:04:05"
+		value := m[1]
+		if strings.Contains(value, ".") {
+			layout = "2006/01/02 15:04:05.000000"
+		}
+		ts, err := time.ParseInLocation(layout, value, time.Local)
+		return ts, err == nil
 	}
-	layout := "2006/01/02 15:04:05"
-	value := m[1]
-	if strings.Contains(value, ".") {
-		layout = "2006/01/02 15:04:05.000000"
+	if m := hertzTS.FindStringSubmatch(text); m != nil {
+		ts, err := time.ParseInLocation("2006-01-02 15:04:05,000", m[1], time.Local)
+		return ts, err == nil
 	}
-	ts, err := time.ParseInLocation(layout, value, time.Local)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return ts, true
+	return time.Time{}, false
 }
 
 func tsOrFallback(ts time.Time, ok bool, fallback time.Time) time.Time {

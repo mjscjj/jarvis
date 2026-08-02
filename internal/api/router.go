@@ -263,5 +263,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Chat != nil {
 		h.POST("/api/chat", Chat(deps.Chat))
 	}
+	// 精确 API 路由优先于这个兜底。必须在进程注册根 StaticFS 之前拦住
+	// 未知 /api/*，否则 Hertz 会把它当作 web/dist 下的静态文件并返回
+	// 非 JSON 404，调用方拿不到 logid，服务端也会打印误导性的文件错误。
+	h.Any("/api/*path", apiNotFound())
 	return nil
 }
