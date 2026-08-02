@@ -15,18 +15,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// AssembleOptions describes the source-specific facts that are combined with
-// Jarvis' authoritative principal/project background for a manual or scheduled
-// Task. RequestContext is preserved as data; it never replaces common context.
+// AssembleOptions identifies the scope combined with Jarvis' authoritative
+// background. RequestContext is preserved as data; it never replaces common
+// context. ChatID and GroupID are consumed only by AssembleConversation.
 type AssembleOptions struct {
 	ProjectID      *uint64
 	ChatID         string
+	GroupID        *uint64
 	RequestContext json.RawMessage
 }
 
-// Assembler builds the canonical background for Task sources that do not pass
-// through M3. M3 has richer conversation-local data and builds the same wire
-// shape directly from its already loaded batch.
+// Assembler builds one canonical background shape. Assemble serves ordinary
+// Task creation; AssembleConversation adds live scope for CC Connect, backend
+// chat and ScheduledTask wake-ups without duplicating lookup logic.
 type Assembler struct {
 	db              *gorm.DB
 	principalOpenID string
@@ -45,17 +46,34 @@ func NewAssembler(db *gorm.DB, principalOpenID string) (*Assembler, error) {
 }
 
 func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json.RawMessage, error) {
-	requestContext, hintedProjectID, hintedChatID, err := normalizeRequestContext(options.RequestContext)
+	return a.assemble(ctx, options, false)
+}
+
+// AssembleConversation adds live conversation scope and current work to the
+// common background. It is intentionally reserved for interactive entrypoints
+// and ScheduledTask wake-ups; ordinary Task execution keeps its frozen context.
+func (a *Assembler) AssembleConversation(ctx context.Context, options AssembleOptions) (json.RawMessage, error) {
+	return a.assemble(ctx, options, true)
+}
+
+func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, includeLiveContext bool) (json.RawMessage, error) {
+	requestContext, requestObject, hintedProjectID, err := normalizeRequestContext(options.RequestContext)
 	if err != nil {
 		return nil, err
 	}
-	chatID := strings.TrimSpace(options.ChatID)
-	if chatID == "" {
-		chatID = hintedChatID
-	}
-	group, err := a.loadGroup(ctx, chatID)
-	if err != nil {
-		return nil, err
+	var group *Group
+	if includeLiveContext {
+		chatID := strings.TrimSpace(options.ChatID)
+		if chatID == "" {
+			chatID, err = chatHint(requestObject)
+			if err != nil {
+				return nil, err
+			}
+		}
+		group, err = a.loadGroup(ctx, chatID, options.GroupID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	projectID := options.ProjectID
 	if projectID == nil {
@@ -88,13 +106,17 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 	if err != nil {
 		return nil, err
 	}
-	openTodos, err := a.loadOpenTodos(ctx, projectID, group)
-	if err != nil {
-		return nil, err
-	}
-	recentTasks, err := a.loadRecentTasks(ctx, projectID, group)
-	if err != nil {
-		return nil, err
+	var openTodos []OpenTodo
+	var recentTasks []RecentTask
+	if includeLiveContext {
+		openTodos, err = a.loadOpenTodos(ctx, projectID, group)
+		if err != nil {
+			return nil, err
+		}
+		recentTasks, err = a.loadRecentTasks(ctx, projectID, group)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	snapshot := Snapshot{
@@ -118,17 +140,31 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 	return raw, nil
 }
 
-func (a *Assembler) loadGroup(ctx context.Context, chatID string) (*Group, error) {
-	if chatID == "" {
+func (a *Assembler) loadGroup(ctx context.Context, chatID string, groupID *uint64) (*Group, error) {
+	if chatID != "" && groupID != nil {
+		return nil, fmt.Errorf("assemble context snapshot: chat_id and group_id cannot both be set")
+	}
+	if groupID != nil && *groupID == 0 {
+		return nil, fmt.Errorf("assemble context snapshot: group_id must be positive")
+	}
+	if chatID == "" && groupID == nil {
 		return nil, nil
 	}
 	var row domain.Group
-	err := a.db.WithContext(ctx).Where("chat_id = ?", chatID).Take(&row).Error
+	query := a.db.WithContext(ctx)
+	identity := fmt.Sprintf("chat_id=%s", chatID)
+	if groupID != nil {
+		query = query.Where("id = ?", *groupID)
+		identity = fmt.Sprintf("group_id=%d", *groupID)
+	} else {
+		query = query.Where("chat_id = ?", chatID)
+	}
+	err := query.Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("assemble context snapshot: chat_id=%s is not configured", chatID)
+		return nil, fmt.Errorf("assemble context snapshot: %s is not configured", identity)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("assemble context snapshot: load chat_id=%s: %w", chatID, err)
+		return nil, fmt.Errorf("assemble context snapshot: load %s: %w", identity, err)
 	}
 	return &Group{
 		ID: row.ID, ChatID: row.ChatID, Name: copyString(row.Name),
@@ -324,33 +360,29 @@ func projectFromDomain(row *domain.Project) *Project {
 	}
 }
 
-func normalizeRequestContext(raw json.RawMessage) (json.RawMessage, *uint64, string, error) {
+func normalizeRequestContext(raw json.RawMessage) (json.RawMessage, map[string]any, *uint64, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil, nil, "", nil
+		return nil, nil, nil, nil
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var object map[string]any
 	if err := decoder.Decode(&object); err != nil || object == nil {
-		return nil, nil, "", fmt.Errorf("assemble context snapshot: request context must be a JSON object")
+		return nil, nil, nil, fmt.Errorf("assemble context snapshot: request context must be a JSON object")
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return nil, nil, "", fmt.Errorf("assemble context snapshot: request context has trailing data")
+		return nil, nil, nil, fmt.Errorf("assemble context snapshot: request context has trailing data")
 	}
 	encoded, err := json.Marshal(object)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("assemble context snapshot: encode request context: %w", err)
+		return nil, nil, nil, fmt.Errorf("assemble context snapshot: encode request context: %w", err)
 	}
 	projectID, err := projectHint(object)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, nil, err
 	}
-	chatID, err := chatHint(object)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	return encoded, projectID, chatID, nil
+	return encoded, object, projectID, nil
 }
 
 func projectHint(object map[string]any) (*uint64, error) {

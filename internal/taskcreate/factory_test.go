@@ -233,7 +233,7 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 
 	manual, err := factory.assembleBackground(t.Context(), Input{
 		SourceType: SourceManual, ProjectID: &project.ID,
-		Background: json.RawMessage(`{"note":"手工任务背景"}`),
+		Background: json.RawMessage(`{"chat_id":"oc_scheduled","note":"手工任务背景"}`),
 	})
 	if err != nil {
 		t.Fatalf("assemble manual background: %v", err)
@@ -242,7 +242,7 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 	if err != nil {
 		t.Fatalf("decode manual background: %v", err)
 	}
-	if manualSnapshot.Principal == nil || manualSnapshot.Project == nil || string(manualSnapshot.RequestContext) != `{"note":"手工任务背景"}` {
+	if manualSnapshot.Principal == nil || manualSnapshot.Project == nil || manualSnapshot.Group != nil || string(manualSnapshot.RequestContext) != `{"chat_id":"oc_scheduled","note":"手工任务背景"}` {
 		t.Fatalf("manual snapshot = %#v", manualSnapshot)
 	}
 

@@ -16,7 +16,7 @@ type contextAssemblerStub struct {
 	options contextsnap.AssembleOptions
 }
 
-func (s *contextAssemblerStub) Assemble(_ context.Context, options contextsnap.AssembleOptions) (json.RawMessage, error) {
+func (s *contextAssemblerStub) AssembleConversation(_ context.Context, options contextsnap.AssembleOptions) (json.RawMessage, error) {
 	s.options = options
 	return json.RawMessage(`{"snapshot_version":"v1","principal":{"name":"我"}}`), nil
 }

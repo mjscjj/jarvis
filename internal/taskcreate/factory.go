@@ -101,9 +101,16 @@ func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, e
 	if f.assembler == nil {
 		return Input{}, fmt.Errorf("assemble %s Task background: context snapshot assembler is not configured", input.SourceType)
 	}
-	background, err := f.assembler.Assemble(ctx, contextsnap.AssembleOptions{
+	options := contextsnap.AssembleOptions{
 		ProjectID: input.ProjectID, RequestContext: input.Background,
-	})
+	}
+	var background json.RawMessage
+	var err error
+	if input.SourceType == SourceScheduledTask {
+		background, err = f.assembler.AssembleConversation(ctx, options)
+	} else {
+		background, err = f.assembler.Assemble(ctx, options)
+	}
 	if err != nil {
 		return Input{}, fmt.Errorf("assemble %s Task background: %w", input.SourceType, err)
 	}

@@ -147,7 +147,7 @@ func TestAssemblerResolvesChatBackgroundAndCurrentWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAssembler() error = %v", err)
 	}
-	raw, err := assembler.Assemble(t.Context(), AssembleOptions{
+	raw, err := assembler.AssembleConversation(t.Context(), AssembleOptions{
 		RequestContext: json.RawMessage(`{"chat_id":"oc_runtime","message_id":"om_1"}`),
 	})
 	if err != nil {
@@ -183,7 +183,7 @@ func TestAssemblerRejectsUnknownChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAssembler() error = %v", err)
 	}
-	if _, err := assembler.Assemble(t.Context(), AssembleOptions{ChatID: "oc_missing"}); err == nil {
+	if _, err := assembler.AssembleConversation(t.Context(), AssembleOptions{ChatID: "oc_missing"}); err == nil {
 		t.Fatal("Assemble() error = nil, want unknown chat failure")
 	}
 }

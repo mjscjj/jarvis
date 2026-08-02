@@ -714,13 +714,14 @@ func main() {
 	var chatService *chat.Service
 	if cfg.Chat.Enabled {
 		chatService, err = chat.NewService(chat.Options{
-			Bin:             cfg.Execute.Bin,
-			Model:           cfg.Chat.Model,
-			Sandbox:         cfg.Chat.Sandbox,
-			ReasoningEffort: cfg.Chat.ReasoningEffort,
-			Timeout:         time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,
-			DSN:             cfg.MySQL.DSN,
-			SharedMemory:    sharedMemoryService,
+			Bin:              cfg.Execute.Bin,
+			Model:            cfg.Chat.Model,
+			Sandbox:          cfg.Chat.Sandbox,
+			ReasoningEffort:  cfg.Chat.ReasoningEffort,
+			Timeout:          time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,
+			DSN:              cfg.MySQL.DSN,
+			SharedMemory:     sharedMemoryService,
+			ContextAssembler: contextAssembler,
 		})
 		if err != nil {
 			fatalf("initialize chat service failed: %v", err)

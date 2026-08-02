@@ -11,7 +11,7 @@ import (
 )
 
 type ContextAssembler interface {
-	Assemble(context.Context, contextsnap.AssembleOptions) (json.RawMessage, error)
+	AssembleConversation(context.Context, contextsnap.AssembleOptions) (json.RawMessage, error)
 }
 
 type assembleContextRequest struct {
@@ -30,7 +30,7 @@ func AssembleContext(assembler ContextAssembler) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40080, err)
 			return
 		}
-		snapshot, err := assembler.Assemble(ctx, contextsnap.AssembleOptions{
+		snapshot, err := assembler.AssembleConversation(ctx, contextsnap.AssembleOptions{
 			ChatID: request.ChatID, ProjectID: request.ProjectID, RequestContext: request.RequestContext,
 		})
 		if err != nil {
