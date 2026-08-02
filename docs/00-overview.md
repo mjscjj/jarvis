@@ -137,7 +137,7 @@ Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示�
 
 `internal/domain/*.go` 和 `internal/store/mysql.go` 是字段与迁移真源。不要在文档复制完整 DDL。
 
-离线 factengine 当前只消费 `message` 并写 `fact`。Todo/Task/ExecutionRun 尚未接入自动事实蒸馏；执行结果通过 Task summary、runs、events、effects 保留。
+离线 factengine 当前只消费 `message` 并写 `fact`。它按会话和大小切出有界批次，把会话、参与人、已知关联等宽松背景与批次内每一条已采集消息原样交给 Agent；Go 不预先过滤 bot/system/渲染失败消息，也不把已知实体当输出白名单。Todo/Task/ExecutionRun 尚未接入自动事实蒸馏；执行结果通过 Task summary、runs、events、effects 保留。
 
 RelationFact 表示两个既有实体之间的自然语言关系和有效期；它没有 predicate/source/confidence/supersede 状态机。
 

@@ -3,7 +3,6 @@ package factengine
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"jarvis/internal/progress"
@@ -37,10 +36,9 @@ type WorkerOptions struct {
 }
 
 type Stats struct {
-	Units    int
-	Facts    int
-	LastID   uint64
-	Rejected int
+	Units  int
+	Facts  int
+	LastID uint64
 	// Seeded reports that this round only planted the source's starting
 	// watermark and read no material.
 	Seeded bool
@@ -116,12 +114,11 @@ func (w *Worker) ExtractOnce(ctx context.Context) (Stats, error) {
 			return stats, err
 		}
 		stats.Units++
-		stored, rejected, err := w.storeFacts(ctx, unit, extracted)
+		stored, err := w.storeFacts(ctx, unit, extracted)
 		if err != nil {
 			return stats, err
 		}
 		stats.Facts += stored
-		stats.Rejected += rejected
 	}
 	// Material that produced no facts still moves the watermark: "nothing here"
 	// is a real answer, and re-reading it would cost the same tokens forever.
@@ -149,23 +146,15 @@ func (w *Worker) seedCursor(ctx context.Context) (Stats, error) {
 	return Stats{LastID: maxID, Seeded: true}, nil
 }
 
-// storeFacts writes one unit's facts. A fact bound to a subject the model was
-// not offered is dropped with a count rather than failing the round: the subject
-// list is in the prompt, and one bad binding should not park every other fact in
-// the batch. Any other storage failure is a real fault and aborts.
-func (w *Worker) storeFacts(ctx context.Context, unit SourceUnit, facts []ExtractedFact) (int, int, error) {
-	offered := make(map[string]struct{}, len(unit.Subjects))
-	for _, subject := range unit.Subjects {
-		offered[subjectKey(subject.Type, subject.ID)] = struct{}{}
-	}
+// storeFacts writes one unit's facts. SourceUnit.Subjects is context rather than
+// an allowlist: the agent may resolve another real subject with tools, and the
+// progress service validates the entity types it knows. Storage errors abort the
+// round instead of being hidden behind a source-specific fallback.
+func (w *Worker) storeFacts(ctx context.Context, unit SourceUnit, facts []ExtractedFact) (int, error) {
 	source := unit.Source
 	occurredAt := unit.OccurredAt
-	stored, rejected := 0, 0
+	stored := 0
 	for _, fact := range facts {
-		if _, ok := offered[subjectKey(fact.SubjectType, fact.SubjectID)]; !ok {
-			rejected++
-			continue
-		}
 		if _, err := w.facts.AppendFact(ctx, progress.FactInput{
 			SubjectType: fact.SubjectType,
 			SubjectID:   fact.SubjectID,
@@ -173,18 +162,12 @@ func (w *Worker) storeFacts(ctx context.Context, unit SourceUnit, facts []Extrac
 			OccurredAt:  &occurredAt,
 			SourceKind:  &source,
 		}); err != nil {
-			return stored, rejected, fmt.Errorf("store fact from unit=%s subject=%s/%d: %w",
+			return stored, fmt.Errorf("store fact from unit=%s subject=%s/%d: %w",
 				unit.Key, fact.SubjectType, fact.SubjectID, err)
 		}
 		stored++
 	}
-	return stored, rejected, nil
-}
-
-// subjectKey matches the offered subjects case-insensitively, the same way the
-// fact table stores subject_type (lowercased on insert).
-func subjectKey(subjectType string, id uint64) string {
-	return fmt.Sprintf("%s/%d", strings.ToLower(strings.TrimSpace(subjectType)), id)
+	return stored, nil
 }
 
 func latestOccurredAt(units []SourceUnit) time.Time {

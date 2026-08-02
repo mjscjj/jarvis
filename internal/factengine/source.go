@@ -40,11 +40,18 @@ type SourceUnit struct {
 	// the day the engine got around to reading it.
 	OccurredAt time.Time
 
+	// Context is a loose, source-owned description of the world around the
+	// material. The fact engine passes it through verbatim: a new source may add
+	// whatever background helps the agent understand the material without
+	// expanding a shared DTO or teaching the worker source-specific fields.
+	Context string
+
 	Body string
 
-	// Subjects are the entities this material may be about, with the real
-	// database ids the model must choose from. Referential integrity is the
-	// program's job; which subject a fact belongs to is the model's.
+	// Subjects are known entities surfaced by the source as useful context. They
+	// are hints, not an allowlist: the agent may resolve a better subject from the
+	// context or with tools. The persistence layer owns the hard integrity check
+	// for subject types it knows.
 	Subjects []Subject
 }
 
@@ -63,18 +70,27 @@ func (u SourceUnit) Prompt() (string, error) {
 	if strings.TrimSpace(u.Body) == "" {
 		return "", fmt.Errorf("source unit %s/%s has an empty body", u.Source, u.Key)
 	}
-	if len(u.Subjects) == 0 {
-		return "", fmt.Errorf("source unit %s/%s has no available subjects", u.Source, u.Key)
-	}
-	subjects, err := json.MarshalIndent(u.Subjects, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("encode subjects for source unit %s/%s: %w", u.Source, u.Key, err)
-	}
 	var b strings.Builder
 	b.WriteString("MATERIAL_SOURCE: ")
 	b.WriteString(u.Source)
-	b.WriteString("\n\nAVAILABLE_SUBJECTS（subject_id 只能从这里取）:\n")
-	b.Write(subjects)
+	b.WriteString("\nMATERIAL_KEY: ")
+	b.WriteString(u.Key)
+	if !u.OccurredAt.IsZero() {
+		b.WriteString("\nMATERIAL_OCCURRED_AT: ")
+		b.WriteString(u.OccurredAt.Format(time.RFC3339))
+	}
+	if strings.TrimSpace(u.Context) != "" {
+		b.WriteString("\n\nCONTEXT（宽松背景，只帮助理解，不是输出模板）:\n")
+		b.WriteString(strings.TrimSpace(u.Context))
+	}
+	if len(u.Subjects) > 0 {
+		subjects, err := json.MarshalIndent(u.Subjects, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("encode subjects for source unit %s/%s: %w", u.Source, u.Key, err)
+		}
+		b.WriteString("\n\nKNOWN_ENTITIES（已知实体提示，不是白名单）:\n")
+		b.Write(subjects)
+	}
 	b.WriteString("\n\nMATERIAL:\n")
 	b.WriteString(u.Body)
 	return b.String(), nil

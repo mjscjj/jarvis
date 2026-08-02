@@ -497,8 +497,8 @@ func main() {
 			fatalf("extract facts failed: %v", err)
 		}
 		infof(
-			"offline fact extraction completed: units=%d facts=%d rejected=%d last_id=%d",
-			stats.Units, stats.Facts, stats.Rejected, stats.LastID,
+			"offline fact extraction completed: units=%d facts=%d last_id=%d",
+			stats.Units, stats.Facts, stats.LastID,
 		)
 		return
 	}

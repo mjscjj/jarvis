@@ -54,17 +54,18 @@ func TestGroupByChatOrdersEachChatByConversationTime(t *testing.T) {
 	}
 }
 
-func TestFilterMeaningfulDropsWhatCannotCarryAFact(t *testing.T) {
+func TestBuildUnitKeepsEveryCapturedMessage(t *testing.T) {
+	base := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
 	rows := []messageRow{
-		{ID: 1, Content: "方案定了走 B", SenderType: "user", RenderOK: true},
-		{ID: 2, Content: "构建成功", SenderType: "bot", RenderOK: true},
-		{ID: 3, Content: "看不懂的原始内容", SenderType: "user", RenderOK: false},
-		{ID: 4, Content: "👍👍", SenderType: "user", RenderOK: true},
-		{ID: 5, Content: "   ", SenderType: "user", RenderOK: true},
+		{ID: 1, MessageID: "om_user", ChatID: "chat-a", ChatName: "上下文群", ChatMode: "group", GroupID: 3, Content: "方案定了走 B", SenderType: "user", SenderName: "张三", CreateTime: minutes(base, 0), RenderOK: true},
+		{ID: 2, MessageID: "om_bot", ChatID: "chat-a", ChatName: "上下文群", ChatMode: "group", GroupID: 3, Content: "构建成功", SenderType: "bot", SenderName: "机器人", CreateTime: minutes(base, 1), RenderOK: true},
+		{ID: 3, MessageID: "om_raw", ChatID: "chat-a", ChatName: "上下文群", ChatMode: "group", GroupID: 3, Content: "看不懂的原始内容", SenderType: "user", SenderName: "李四", CreateTime: minutes(base, 2), RenderOK: false},
 	}
-	kept := filterMeaningful(rows)
-	if len(kept) != 1 || kept[0].ID != 1 {
-		t.Fatalf("kept = %+v, want only id 1", kept)
+	unit := buildUnit(rows, nil, time.UTC)
+	for _, want := range []string{"om_user", "om_bot", "om_raw", "sender_type=bot", "render_ok=false"} {
+		if !strings.Contains(unit.Body, want) {
+			t.Fatalf("body missing %q:\n%s", want, unit.Body)
+		}
 	}
 }
 
@@ -73,14 +74,14 @@ func TestBuildUnitOffersProjectGroupAndPersonSubjects(t *testing.T) {
 	projectID := uint64(7)
 	projectName := "Jarvis"
 	rows := []messageRow{
-		{ID: 10, ChatID: "chat-a", ChatName: "研发群", GroupID: 3, ProjectID: &projectID,
+		{ID: 10, MessageID: "om_10", ChatID: "chat-a", ChatName: "研发群", ChatMode: "group", GroupID: 3, ProjectID: &projectID,
 			ProjectName: &projectName, SenderOpenID: "ou_1", SenderName: "张三",
 			Content: "方案定了走 B", CreateTime: minutes(base, 0), RenderOK: true},
-		{ID: 11, ChatID: "chat-a", ChatName: "研发群", GroupID: 3, ProjectID: &projectID,
+		{ID: 11, MessageID: "om_11", ChatID: "chat-a", ChatName: "研发群", ChatMode: "group", GroupID: 3, ProjectID: &projectID,
 			ProjectName: &projectName, SenderOpenID: "ou_2", SenderName: "李四",
 			Content: "我明天上线", CreateTime: minutes(base, 2), RenderOK: true},
 		// Same person speaking twice must not appear twice in the subject list.
-		{ID: 12, ChatID: "chat-a", ChatName: "研发群", GroupID: 3, ProjectID: &projectID,
+		{ID: 12, MessageID: "om_12", ChatID: "chat-a", ChatName: "研发群", ChatMode: "group", GroupID: 3, ProjectID: &projectID,
 			ProjectName: &projectName, SenderOpenID: "ou_1", SenderName: "张三",
 			Content: "好", CreateTime: minutes(base, 3), RenderOK: true},
 	}
@@ -97,9 +98,9 @@ func TestBuildUnitOffersProjectGroupAndPersonSubjects(t *testing.T) {
 		t.Fatalf("unit occurred_at = %v", unit.OccurredAt)
 	}
 	want := []Subject{
-		{Type: "project", ID: 7, Name: "Jarvis"},
 		{Type: "group", ID: 3, Name: "研发群"},
 		{Type: "person", ID: 21, Name: "张三"},
+		{Type: "project", ID: 7, Name: "Jarvis"},
 	}
 	if len(unit.Subjects) != len(want) {
 		t.Fatalf("subjects = %+v, want %+v", unit.Subjects, want)
@@ -109,9 +110,10 @@ func TestBuildUnitOffersProjectGroupAndPersonSubjects(t *testing.T) {
 			t.Fatalf("subject %d = %+v, want %+v", i, unit.Subjects[i], want[i])
 		}
 	}
-	for _, fragment := range []string{"张三: 方案定了走 B", "李四: 我明天上线", "2026-08-01 09:00"} {
-		if !strings.Contains(unit.Body, fragment) {
-			t.Fatalf("body missing %q:\n%s", fragment, unit.Body)
+	for _, fragment := range []string{"sender_name=\"张三\"", "方案定了走 B", "我明天上线", "2026-08-01T09:00:00Z", "known_association: project/7"} {
+		text := unit.Body + "\n" + unit.Context
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("unit missing %q:\n%s", fragment, text)
 		}
 	}
 }

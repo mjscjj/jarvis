@@ -36,8 +36,8 @@ func StartScheduler(ctx context.Context, worker *Worker, spec string, logger *lo
 			return
 		}
 		logger.Printf(
-			"logid=%s job=extract_facts status=ok units=%d facts=%d rejected=%d last_id=%d",
-			observability.LogID(jobCtx), stats.Units, stats.Facts, stats.Rejected, stats.LastID,
+			"logid=%s job=extract_facts status=ok units=%d facts=%d last_id=%d",
+			observability.LogID(jobCtx), stats.Units, stats.Facts, stats.LastID,
 		)
 	}); err != nil {
 		return nil, fmt.Errorf("register fact engine job schedule=%q: %w", spec, err)

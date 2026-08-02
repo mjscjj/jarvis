@@ -109,29 +109,31 @@ func TestDecodeFactsRejectsEmptyAndUnparseableResponses(t *testing.T) {
 
 func TestSourceUnitPromptCarriesSubjectsAndBody(t *testing.T) {
 	unit := SourceUnit{
-		Source: SourceMessage, Key: "chat-a:1-2", Body: "10:00 张三: 我们定了用方案 B",
+		Source: SourceMessage, Key: "chat-a:1-2", Context: "conversation: chat-a", Body: "10:00 张三: 我们定了用方案 B",
 		Subjects: []Subject{{Type: "project", ID: 7, Name: "Jarvis"}},
 	}
 	prompt, err := unit.Prompt()
 	if err != nil {
 		t.Fatalf("Prompt() error = %v", err)
 	}
-	for _, want := range []string{"MATERIAL_SOURCE: message", `"subject_type": "project"`, `"subject_id": 7`, "方案 B"} {
+	for _, want := range []string{"MATERIAL_SOURCE: message", "MATERIAL_KEY: chat-a:1-2", "CONTEXT", "conversation: chat-a", "KNOWN_ENTITIES", `"subject_type": "project"`, `"subject_id": 7`, "方案 B"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
 }
 
-// Without a subject the model has nothing valid to bind a fact to, so building
-// the prompt at all would waste a call.
-func TestSourceUnitPromptRejectsEmptyBodyOrSubjects(t *testing.T) {
+func TestSourceUnitPromptRejectsOnlyEmptyBody(t *testing.T) {
 	if _, err := (SourceUnit{Source: SourceMessage, Key: "k", Body: "  ",
 		Subjects: []Subject{{Type: "group", ID: 1}}}).Prompt(); err == nil {
 		t.Fatal("Prompt() error = nil, want empty-body rejection")
 	}
-	if _, err := (SourceUnit{Source: SourceMessage, Key: "k", Body: "x"}).Prompt(); err == nil {
-		t.Fatal("Prompt() error = nil, want missing-subjects rejection")
+	prompt, err := (SourceUnit{Source: SourceMessage, Key: "k", Body: "x"}).Prompt()
+	if err != nil {
+		t.Fatalf("Prompt() without known subjects error = %v", err)
+	}
+	if strings.Contains(prompt, "KNOWN_ENTITIES") || !strings.Contains(prompt, "MATERIAL:\nx") {
+		t.Fatalf("prompt without known subjects = %q", prompt)
 	}
 }
 

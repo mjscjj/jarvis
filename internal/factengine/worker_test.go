@@ -115,7 +115,7 @@ func TestExtractOnceStoresFactsAndAdvancesCursor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractOnce() error = %v", err)
 	}
-	if stats.Units != 1 || stats.Facts != 1 || stats.Rejected != 0 || stats.LastID != 5 {
+	if stats.Units != 1 || stats.Facts != 1 || stats.LastID != 5 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	if len(facts.stored) != 1 {
@@ -175,10 +175,10 @@ func TestExtractOnceSkipsEmptyBatch(t *testing.T) {
 	}
 }
 
-// A subject the model was never offered is a hallucinated id. Dropping just that
-// fact keeps the rest of the batch moving; failing the round would park every
-// other fact behind one bad binding.
-func TestExtractOnceRejectsUnofferedSubject(t *testing.T) {
+// Subjects surfaced by a source are context, not a protocol allowlist. An agent
+// may resolve another subject with tools; the real progress service validates
+// known entity types when it stores the fact.
+func TestExtractOnceAcceptsSubjectOutsideSourceContext(t *testing.T) {
 	store := &fakeStore{cursorSeeded: true, units: []SourceUnit{testUnit("chat-a:1-5", 5, time.Now().UTC())}, maxID: 5}
 	extractor := &fakeExtractor{byUnit: map[string][]ExtractedFact{
 		"chat-a:1-5": {
@@ -192,10 +192,10 @@ func TestExtractOnceRejectsUnofferedSubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractOnce() error = %v", err)
 	}
-	if stats.Facts != 1 || stats.Rejected != 1 {
-		t.Fatalf("stats = %+v, want 1 stored and 1 rejected", stats)
+	if stats.Facts != 2 {
+		t.Fatalf("stats = %+v, want both model-selected subjects stored", stats)
 	}
-	if len(facts.stored) != 1 || facts.stored[0].SubjectID != 3 {
+	if len(facts.stored) != 2 || facts.stored[0].SubjectID != 999 || facts.stored[1].SubjectID != 3 {
 		t.Fatalf("stored = %+v", facts.stored)
 	}
 }
@@ -213,7 +213,7 @@ func TestExtractOnceMatchesSubjectTypeCaseInsensitively(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractOnce() error = %v", err)
 	}
-	if stats.Facts != 1 || stats.Rejected != 0 {
+	if stats.Facts != 1 {
 		t.Fatalf("stats = %+v", stats)
 	}
 }

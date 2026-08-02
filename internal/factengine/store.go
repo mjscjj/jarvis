@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	"jarvis/internal/domain"
 
@@ -111,15 +110,21 @@ func (s *GORMStore) AdvanceCursor(ctx context.Context, source string, lastID uin
 // plus the subjects it could produce a fact about.
 type messageRow struct {
 	ID           uint64
+	MessageID    string
 	ChatID       string
 	ChatName     string
+	ChatMode     string
 	GroupID      uint64
 	ProjectID    *uint64
 	ProjectName  *string
 	SenderOpenID string
 	SenderName   string
 	SenderType   string
+	MessageType  string
 	Content      string
+	ReplyTo      *string
+	RootID       *string
+	ThreadID     *string
 	CreateTime   int64
 	RenderOK     bool
 }
@@ -138,9 +143,11 @@ func (s *GORMStore) MessageUnits(ctx context.Context, cursor uint64, limit int, 
 	var rows []messageRow
 	err := s.db.WithContext(ctx).
 		Table("message AS m").
-		Select(`m.id, m.chat_id, COALESCE(g.name, '') AS chat_name, g.id AS group_id,
+		Select(`m.id, m.message_id, m.chat_id, COALESCE(g.name, '') AS chat_name,
+			m.chat_mode, g.id AS group_id,
 			g.project_id, p.name AS project_name, m.sender_open_id, m.sender_name,
-			m.sender_type, m.content, m.create_time, m.render_ok`).
+			m.sender_type, m.message_type, m.content, m.reply_to, m.root_id,
+			m.thread_id, m.create_time, m.render_ok`).
 		Joins("JOIN feishu_group AS g ON g.chat_id = m.chat_id").
 		Joins("LEFT JOIN project AS p ON p.id = g.project_id").
 		Where("m.id > ? AND g.related_group = ? AND g.include_in_memory = ?", cursor, true, true).
@@ -166,11 +173,10 @@ func (s *GORMStore) MessageUnits(ctx context.Context, cursor uint64, limit int, 
 	units := make([]SourceUnit, 0)
 	for _, chat := range groupByChat(rows) {
 		for _, window := range splitWindows(chat, opts.Gap, opts.MaxMessages) {
-			meaningful := filterMeaningful(window)
-			if len(meaningful) == 0 {
-				continue
-			}
-			units = append(units, buildUnit(meaningful, persons, opts.Location))
+			// Every captured row reaches the agent. Bot/system messages, reactions,
+			// cards and imperfect renderings are evidence too; deciding that they do
+			// not contain a durable fact is model work, not a Go filter.
+			units = append(units, buildUnit(window, persons, opts.Location))
 		}
 	}
 	return units, maxID, nil
@@ -210,13 +216,6 @@ func buildUnit(window []messageRow, persons map[string]Subject, location *time.L
 	first := window[0]
 	last := window[len(window)-1]
 	subjects := make([]Subject, 0, 3)
-	if first.ProjectID != nil {
-		name := ""
-		if first.ProjectName != nil {
-			name = *first.ProjectName
-		}
-		subjects = append(subjects, Subject{Type: "project", ID: *first.ProjectID, Name: name})
-	}
 	subjects = append(subjects, Subject{Type: "group", ID: first.GroupID, Name: first.ChatName})
 	seen := make(map[uint64]struct{}, len(window))
 	for _, row := range window {
@@ -230,12 +229,22 @@ func buildUnit(window []messageRow, persons map[string]Subject, location *time.L
 		seen[person.ID] = struct{}{}
 		subjects = append(subjects, person)
 	}
+	if first.ProjectID != nil {
+		name := ""
+		if first.ProjectName != nil {
+			name = *first.ProjectName
+		}
+		// A project binding is one piece of context, not the organizing axis of
+		// the extraction protocol.
+		subjects = append(subjects, Subject{Type: "project", ID: *first.ProjectID, Name: name})
+	}
 	return SourceUnit{
 		Source:     SourceMessage,
 		Key:        fmt.Sprintf("%s:%d-%d", first.ChatID, first.ID, last.ID),
 		LastID:     last.ID,
 		OccurredAt: time.UnixMilli(last.CreateTime),
-		Body:       renderTranscript(window, location),
+		Context:    renderMessageContext(window, persons, location),
+		Body:       renderMessages(window, location),
 		Subjects:   subjects,
 	}
 }
@@ -282,44 +291,52 @@ func splitWindows(rows []messageRow, gap time.Duration, maxMessages int) [][]mes
 	return append(windows, rows[start:])
 }
 
-// filterMeaningful drops what cannot carry a fact: unrendered messages, bot
-// noise, and content with no letters or digits at all. Everything else goes to
-// the model — deciding that a human sentence is worthless is its job, not a
-// filter's.
-func filterMeaningful(rows []messageRow) []messageRow {
-	result := make([]messageRow, 0, len(rows))
+func renderMessageContext(rows []messageRow, persons map[string]Subject, location *time.Location) string {
+	first := rows[0]
+	last := rows[len(rows)-1]
+	lines := []string{
+		fmt.Sprintf("conversation: chat_id=%s name=%q mode=%s", first.ChatID, first.ChatName, first.ChatMode),
+		fmt.Sprintf("window: %s .. %s", time.UnixMilli(first.CreateTime).In(location).Format(time.RFC3339), time.UnixMilli(last.CreateTime).In(location).Format(time.RFC3339)),
+	}
+	if first.ProjectID != nil {
+		name := ""
+		if first.ProjectName != nil {
+			name = *first.ProjectName
+		}
+		lines = append(lines, fmt.Sprintf("known_association: project/%d name=%q", *first.ProjectID, name))
+	}
+	seen := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
-		if !row.RenderOK {
+		if _, ok := seen[row.SenderOpenID]; ok {
 			continue
 		}
-		senderType := strings.ToLower(strings.TrimSpace(row.SenderType))
-		if senderType == "bot" || senderType == "app" {
-			continue
+		seen[row.SenderOpenID] = struct{}{}
+		personID := "unresolved"
+		if person, ok := persons[row.SenderOpenID]; ok {
+			personID = fmt.Sprintf("%d", person.ID)
 		}
-		if !hasWords(row.Content) {
-			continue
-		}
-		result = append(result, row)
+		lines = append(lines, fmt.Sprintf("participant: open_id=%s person_id=%s name=%q sender_type=%s", row.SenderOpenID, personID, row.SenderName, row.SenderType))
 	}
-	return result
+	return strings.Join(lines, "\n")
 }
 
-func hasWords(content string) bool {
-	for _, r := range strings.TrimSpace(content) {
-		if unicode.IsLetter(r) || unicode.IsNumber(r) {
-			return true
-		}
-	}
-	return false
-}
-
-func renderTranscript(rows []messageRow, location *time.Location) string {
-	lines := make([]string, 0, len(rows))
+func renderMessages(rows []messageRow, location *time.Location) string {
+	blocks := make([]string, 0, len(rows))
 	for _, row := range rows {
 		content := strings.ReplaceAll(strings.TrimSpace(row.Content), "\r\n", "\n")
 		content = strings.ReplaceAll(content, "\n", "\n    ")
-		at := time.UnixMilli(row.CreateTime).In(location).Format("2006-01-02 15:04")
-		lines = append(lines, fmt.Sprintf("%s %s: %s", at, row.SenderName, content))
+		at := time.UnixMilli(row.CreateTime).In(location).Format(time.RFC3339)
+		meta := fmt.Sprintf("message_id=%s time=%s sender_open_id=%s sender_name=%q sender_type=%s message_type=%s render_ok=%t",
+			row.MessageID, at, row.SenderOpenID, row.SenderName, row.SenderType, row.MessageType, row.RenderOK)
+		for _, ref := range []struct {
+			name  string
+			value *string
+		}{{"reply_to", row.ReplyTo}, {"root_id", row.RootID}, {"thread_id", row.ThreadID}} {
+			if ref.value != nil && strings.TrimSpace(*ref.value) != "" {
+				meta += " " + ref.name + "=" + *ref.value
+			}
+		}
+		blocks = append(blocks, meta+"\n    "+content)
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(blocks, "\n\n")
 }
