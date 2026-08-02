@@ -19,6 +19,8 @@ Task 可来自：
 
 执行 prompt 包含：完整 `source_clue`、判断方向 `plan`、判断上下文 `decision_payload`、冻结 `background`、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。
 
+执行进程可以自行派生只读的子 agent 去做素材密集的调查，只把带出处的结论收回主上下文；派生规则写在 `m5-system-prompt.md`，Go 侧不感知也不调度。审批判断、终态裁决、`effects` 申报、`progress_summary` 和 `yield-until` 不下放——可恢复的 Session 属于主进程。
+
 上游语义是 clue/direction，不是最终契约。当前代码尚无通用接口更新 `background/plan/decision_payload`；能更新的是 supplements、状态、结果和 Task summary。目标设计中的“可变且留痕”仍是实现缺口。
 
 ## 2. 执行 phases
