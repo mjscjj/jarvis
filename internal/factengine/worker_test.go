@@ -12,14 +12,16 @@ import (
 )
 
 type fakeStore struct {
-	cursor       uint64
-	cursorSeeded bool
-	maxMessageID uint64
-	units        []SourceUnit
-	maxID        uint64
-	listErr      error
-	advanced     []uint64
-	advancedTime []time.Time
+	cursor          uint64
+	cursorSeeded    bool
+	maxMessageID    uint64
+	units           []SourceUnit
+	maxID           uint64
+	listErr         error
+	advanced        []uint64
+	advancedSources []string
+	advancedTime    []time.Time
+	sources         []MaterialSource
 }
 
 func (f *fakeStore) Cursor(context.Context, string) (uint64, bool, error) {
@@ -28,8 +30,9 @@ func (f *fakeStore) Cursor(context.Context, string) (uint64, bool, error) {
 
 func (f *fakeStore) MaxMessageID(context.Context) (uint64, error) { return f.maxMessageID, nil }
 
-func (f *fakeStore) AdvanceCursor(_ context.Context, _ string, lastID uint64, occurredAt time.Time) error {
+func (f *fakeStore) AdvanceCursor(_ context.Context, source string, lastID uint64, occurredAt time.Time) error {
 	f.advanced = append(f.advanced, lastID)
+	f.advancedSources = append(f.advancedSources, source)
 	f.advancedTime = append(f.advancedTime, occurredAt)
 	return nil
 }
@@ -39,6 +42,16 @@ func (f *fakeStore) MessageUnits(context.Context, uint64, int, WindowOptions) ([
 		return nil, 0, f.listErr
 	}
 	return f.units, f.maxID, nil
+}
+
+func (f *fakeStore) Sources() []MaterialSource {
+	if f.sources != nil {
+		return f.sources
+	}
+	return []MaterialSource{{
+		Name: SourceMessage, StartAtPresent: true,
+		MaxID: f.MaxMessageID, Units: f.MessageUnits,
+	}}
 }
 
 type fakeExtractor struct {
@@ -115,7 +128,7 @@ func TestExtractOnceStoresFactsAndAdvancesCursor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractOnce() error = %v", err)
 	}
-	if stats.Units != 1 || stats.Facts != 1 || stats.LastID != 5 {
+	if stats.Units != 1 || stats.Facts != 1 || len(stats.Sources) != 1 || stats.Sources[0].LastID != 5 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	if len(facts.stored) != 1 {
@@ -135,6 +148,40 @@ func TestExtractOnceStoresFactsAndAdvancesCursor(t *testing.T) {
 	}
 	if len(store.advanced) != 1 || store.advanced[0] != 5 {
 		t.Fatalf("advanced cursor = %v, want [5]", store.advanced)
+	}
+}
+
+func TestExtractOnceRunsTodoAndTaskThroughSameProtocolFromHistory(t *testing.T) {
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	todoUnit := SourceUnit{Source: SourceTodo, Key: "todo_event:8", LastID: 8, OccurredAt: now, Body: `{"todo":"完整原文"}`}
+	taskUnit := SourceUnit{Source: SourceTask, Key: "task_event:13", LastID: 13, OccurredAt: now, Body: `{"task":"完整原文"}`}
+	store := &fakeStore{}
+	store.sources = []MaterialSource{
+		{Name: SourceTodo, MaxID: func(context.Context) (uint64, error) { return 8, nil }, Units: func(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error) {
+			return []SourceUnit{todoUnit}, 8, nil
+		}},
+		{Name: SourceTask, MaxID: func(context.Context) (uint64, error) { return 13, nil }, Units: func(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error) {
+			return []SourceUnit{taskUnit}, 13, nil
+		}},
+	}
+	extractor := &fakeExtractor{byUnit: map[string][]ExtractedFact{
+		todoUnit.Key: {{SubjectType: SourceTodo, SubjectID: 4, Description: "Todo 已明确完整目标"}},
+		taskUnit.Key: {{SubjectType: SourceTask, SubjectID: 6, Description: "Task 已经执行完成"}},
+	}}
+	facts := &fakeAppender{}
+
+	stats, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ExtractOnce() error = %v", err)
+	}
+	if stats.Units != 2 || stats.Facts != 2 || len(stats.Sources) != 2 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if fmt.Sprint(store.advancedSources) != fmt.Sprint([]string{SourceTodo, SourceTask}) || fmt.Sprint(store.advanced) != fmt.Sprint([]uint64{8, 13}) {
+		t.Fatalf("advanced sources=%v ids=%v", store.advancedSources, store.advanced)
+	}
+	if facts.stored[0].SourceKind == nil || *facts.stored[0].SourceKind != SourceTodo || facts.stored[1].SourceKind == nil || *facts.stored[1].SourceKind != SourceTask {
+		t.Fatalf("stored source kinds = %+v", facts.stored)
 	}
 }
 
@@ -167,8 +214,8 @@ func TestExtractOnceSkipsEmptyBatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractOnce() error = %v", err)
 	}
-	if stats != (Stats{}) {
-		t.Fatalf("stats = %+v, want zero", stats)
+	if stats.Units != 0 || stats.Facts != 0 || len(stats.Sources) != 1 || stats.Sources[0].Source != SourceMessage {
+		t.Fatalf("stats = %+v, want one idle message source", stats)
 	}
 	if len(extractor.calls) != 0 || len(store.advanced) != 0 {
 		t.Fatalf("calls = %v advanced = %v", extractor.calls, store.advanced)
@@ -293,7 +340,7 @@ func TestExtractOnceSeedsCursorAtPresentOnFirstRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractOnce() error = %v", err)
 	}
-	if !stats.Seeded || stats.LastID != 8421 || stats.Units != 0 {
+	if len(stats.Sources) != 1 || !stats.Sources[0].Seeded || stats.Sources[0].LastID != 8421 || stats.Units != 0 {
 		t.Fatalf("stats = %+v, want a seed-only round at 8421", stats)
 	}
 	if len(extractor.calls) != 0 {
@@ -312,8 +359,8 @@ func TestExtractOnceLeavesCursorUnseededWhenNoMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractOnce() error = %v", err)
 	}
-	if stats != (Stats{}) {
-		t.Fatalf("stats = %+v, want zero", stats)
+	if stats.Units != 0 || stats.Facts != 0 || len(stats.Sources) != 1 || stats.Sources[0].Source != SourceMessage {
+		t.Fatalf("stats = %+v, want one idle message source", stats)
 	}
 	if len(store.advanced) != 0 {
 		t.Fatalf("advanced cursor = %v, want none", store.advanced)

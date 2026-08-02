@@ -9,8 +9,8 @@ import (
 // that dies halfway replays from the last committed watermark instead of
 // rescanning the whole table or silently skipping a batch.
 //
-// Source is a free string ("message" today; "todo" and "task" as further sources
-// come online). One row per source keeps the sources independent: adding one is
+// Source is a free string ("message", "todo" and "task" today). One row per
+// source keeps the sources independent: adding one is
 // an insert, and one source falling behind never holds the others back.
 type FactSourceCursor struct {
 	Source string `gorm:"column:source;type:varchar(32);primaryKey"`

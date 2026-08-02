@@ -2,6 +2,7 @@ package factengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,9 +12,8 @@ import (
 
 type sourceStore interface {
 	Cursor(context.Context, string) (uint64, bool, error)
-	MaxMessageID(context.Context) (uint64, error)
 	AdvanceCursor(context.Context, string, uint64, time.Time) error
-	MessageUnits(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error)
+	Sources() []MaterialSource
 }
 
 type factExtractor interface {
@@ -36,11 +36,19 @@ type WorkerOptions struct {
 }
 
 type Stats struct {
+	Units   int
+	Facts   int
+	Sources []SourceStats
+}
+
+// SourceStats keeps the independent progress of one material source visible in
+// logs. A stalled Todo source must not make a successful Message round look as
+// though it never happened.
+type SourceStats struct {
+	Source string
 	Units  int
 	Facts  int
 	LastID uint64
-	// Seeded reports that this round only planted the source's starting
-	// watermark and read no material.
 	Seeded bool
 }
 
@@ -48,6 +56,7 @@ type Stats struct {
 // distil each unit, store the facts, then move the watermark.
 type Worker struct {
 	store     sourceStore
+	sources   []MaterialSource
 	extractor factExtractor
 	facts     factAppender
 	opts      WorkerOptions
@@ -72,44 +81,82 @@ func NewWorker(store sourceStore, extractor factExtractor, facts factAppender, o
 	if opts.Prompts == nil {
 		return nil, fmt.Errorf("fact engine prompt reader is nil")
 	}
-	return &Worker{store: store, extractor: extractor, facts: facts, opts: opts}, nil
+	sources := store.Sources()
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("fact engine has no material sources")
+	}
+	seen := make(map[string]struct{}, len(sources))
+	for _, source := range sources {
+		if source.Name == "" || source.MaxID == nil || source.Units == nil {
+			return nil, fmt.Errorf("fact engine material source is incomplete: %+v", source)
+		}
+		if _, duplicate := seen[source.Name]; duplicate {
+			return nil, fmt.Errorf("fact engine material source %q is duplicated", source.Name)
+		}
+		seen[source.Name] = struct{}{}
+	}
+	return &Worker{store: store, sources: sources, extractor: extractor, facts: facts, opts: opts}, nil
 }
 
-// ExtractOnce distils one batch of messages.
+// ExtractOnce distils one batch from every registered material source.
 //
-// The watermark moves once, after every unit in the batch succeeded, because a
-// batch spans several chats whose ids interleave: committing per unit would
-// leave a lower-id window of another chat stranded below the watermark. So a
-// failed round advances nothing and the whole batch is retried, which can write
-// a fact twice when the failure came after some units had already stored theirs.
-// That is the accepted trade: a duplicate fact is something the consolidation
-// step can merge, a lost one is gone.
-// A source that has never run starts at the present. Reading from id 0 would
-// re-distil every message ever captured, which is a deliberate backfill decision
-// (lower the cursor row by hand), not the default behaviour of turning the engine
-// on.
+// Each source owns an independent watermark. Within one source, the watermark
+// moves only after every unit in its batch succeeded. Sources run sequentially,
+// so a later source failing does not roll back progress already committed by an
+// earlier one.
 func (w *Worker) ExtractOnce(ctx context.Context) (Stats, error) {
-	cursor, seeded, err := w.store.Cursor(ctx, SourceMessage)
-	if err != nil {
-		return Stats{}, err
+	stats := Stats{}
+	var systemPrompt string
+	var sourceErrors []error
+	for _, source := range w.sources {
+		sourceStats, err := w.extractSource(ctx, source, &systemPrompt)
+		stats.Units += sourceStats.Units
+		stats.Facts += sourceStats.Facts
+		stats.Sources = append(stats.Sources, sourceStats)
+		if err != nil {
+			sourceErrors = append(sourceErrors, fmt.Errorf("source=%s: %w", source.Name, err))
+			continue
+		}
 	}
-	if !seeded {
-		return w.seedCursor(ctx)
-	}
-	units, maxID, err := w.store.MessageUnits(ctx, cursor, w.opts.BatchLimit, w.opts.Window)
+	return stats, errors.Join(sourceErrors...)
+}
+
+func (w *Worker) extractSource(ctx context.Context, source MaterialSource, systemPrompt *string) (SourceStats, error) {
+	stats := SourceStats{Source: source.Name}
+	cursor, exists, err := w.store.Cursor(ctx, source.Name)
 	if err != nil {
-		return Stats{}, err
+		return stats, err
+	}
+	if !exists && source.StartAtPresent {
+		maxID, err := source.MaxID(ctx)
+		if err != nil {
+			return stats, err
+		}
+		if maxID == 0 {
+			return stats, nil
+		}
+		if err := w.store.AdvanceCursor(ctx, source.Name, maxID, time.Time{}); err != nil {
+			return stats, err
+		}
+		stats.LastID = maxID
+		stats.Seeded = true
+		return stats, nil
+	}
+	units, maxID, err := source.Units(ctx, cursor, w.opts.BatchLimit, w.opts.Window)
+	if err != nil {
+		return stats, err
 	}
 	if maxID == 0 {
-		return Stats{}, nil
+		return stats, nil
 	}
-	systemPrompt, err := w.opts.Prompts.Content(ctx, textstore.SystemPromptFactExtractKey)
-	if err != nil {
-		return Stats{}, fmt.Errorf("read fact extraction system prompt: %w", err)
+	if *systemPrompt == "" {
+		*systemPrompt, err = w.opts.Prompts.Content(ctx, textstore.SystemPromptFactExtractKey)
+		if err != nil {
+			return stats, fmt.Errorf("read fact extraction system prompt: %w", err)
+		}
 	}
-	stats := Stats{}
 	for _, unit := range units {
-		extracted, err := w.extractor.Extract(ctx, systemPrompt, unit)
+		extracted, err := w.extractor.Extract(ctx, *systemPrompt, unit)
 		if err != nil {
 			return stats, err
 		}
@@ -122,28 +169,11 @@ func (w *Worker) ExtractOnce(ctx context.Context) (Stats, error) {
 	}
 	// Material that produced no facts still moves the watermark: "nothing here"
 	// is a real answer, and re-reading it would cost the same tokens forever.
-	if err := w.store.AdvanceCursor(ctx, SourceMessage, maxID, latestOccurredAt(units)); err != nil {
+	if err := w.store.AdvanceCursor(ctx, source.Name, maxID, latestOccurredAt(units)); err != nil {
 		return stats, err
 	}
 	stats.LastID = maxID
 	return stats, nil
-}
-
-// seedCursor plants the starting watermark at the newest captured message. An
-// empty message table plants nothing, so the next round tries again rather than
-// pinning the source at zero.
-func (w *Worker) seedCursor(ctx context.Context) (Stats, error) {
-	maxID, err := w.store.MaxMessageID(ctx)
-	if err != nil {
-		return Stats{}, err
-	}
-	if maxID == 0 {
-		return Stats{}, nil
-	}
-	if err := w.store.AdvanceCursor(ctx, SourceMessage, maxID, time.Time{}); err != nil {
-		return Stats{}, err
-	}
-	return Stats{LastID: maxID, Seeded: true}, nil
 }
 
 // storeFacts writes one unit's facts. SourceUnit.Subjects is context rather than

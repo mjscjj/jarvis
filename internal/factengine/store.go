@@ -2,6 +2,7 @@ package factengine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,10 +14,24 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// SourceMessage names the message source in fact.source_kind and in the cursor
-// table. Sources are strings rather than an enum: a new one is a row, not a
-// schema change.
-const SourceMessage = "message"
+// Source names are rows in fact_source_cursor, not schema enums. Todo and Task
+// advance on their append-only event streams so later state changes are seen;
+// each event carries the complete current entity snapshot to the agent.
+const (
+	SourceMessage = "message"
+	SourceTodo    = "todo"
+	SourceTask    = "task"
+)
+
+// MaterialSource is one mechanical projection into the shared SourceUnit
+// protocol. Adding a source means registering another projection here; the
+// worker, prompt, extractor and fact persistence path remain unchanged.
+type MaterialSource struct {
+	Name           string
+	StartAtPresent bool
+	MaxID          func(context.Context) (uint64, error)
+	Units          func(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error)
+}
 
 // WindowOptions cuts a chat's messages into conversation windows. One window is
 // one extraction call, so these bound both the prompt size and the cost of a
@@ -53,6 +68,18 @@ func NewGORMStore(db *gorm.DB) (*GORMStore, error) {
 	return &GORMStore{db: db}, nil
 }
 
+// Sources is the complete input surface of the offline fact engine. Message
+// preserves its existing no-history startup behavior. Todo and Task intentionally
+// start at event id zero on first enablement so the newly connected sources feed
+// all existing lifecycle material through once.
+func (s *GORMStore) Sources() []MaterialSource {
+	return []MaterialSource{
+		{Name: SourceMessage, StartAtPresent: true, MaxID: s.MaxMessageID, Units: s.MessageUnits},
+		{Name: SourceTodo, MaxID: s.MaxTodoEventID, Units: s.TodoUnits},
+		{Name: SourceTask, MaxID: s.MaxTaskEventID, Units: s.TaskUnits},
+	}
+}
+
 // Cursor returns the source's watermark. The second result is false when the
 // source has never run, which the caller must not treat as "start from zero" —
 // see Worker.ExtractOnce.
@@ -71,10 +98,21 @@ func (s *GORMStore) Cursor(ctx context.Context, source string) (uint64, bool, er
 // MaxMessageID is where a first run starts: at the present, not at the oldest
 // message ever captured.
 func (s *GORMStore) MaxMessageID(ctx context.Context) (uint64, error) {
+	return s.maxID(ctx, &domain.Message{}, SourceMessage)
+}
+
+func (s *GORMStore) MaxTodoEventID(ctx context.Context) (uint64, error) {
+	return s.maxID(ctx, &domain.TodoEvent{}, SourceTodo)
+}
+
+func (s *GORMStore) MaxTaskEventID(ctx context.Context) (uint64, error) {
+	return s.maxID(ctx, &domain.TaskEvent{}, SourceTask)
+}
+
+func (s *GORMStore) maxID(ctx context.Context, model any, source string) (uint64, error) {
 	var maxID *uint64
-	if err := s.db.WithContext(ctx).Model(&domain.Message{}).
-		Select("MAX(id)").Scan(&maxID).Error; err != nil {
-		return 0, fmt.Errorf("load max message id for fact extraction: %w", err)
+	if err := s.db.WithContext(ctx).Model(model).Select("MAX(id)").Scan(&maxID).Error; err != nil {
+		return 0, fmt.Errorf("load max %s id for fact extraction: %w", source, err)
 	}
 	if maxID == nil {
 		return 0, nil
@@ -180,6 +218,198 @@ func (s *GORMStore) MessageUnits(ctx context.Context, cursor uint64, limit int, 
 		}
 	}
 	return units, maxID, nil
+}
+
+// TodoUnits follows todo_event rather than todo.id. Re-extraction mutates a Todo
+// in place, so scanning only the main table once would miss every later change.
+// The immutable event and the complete current row are both passed through.
+func (s *GORMStore) TodoUnits(ctx context.Context, cursor uint64, limit int, opts WindowOptions) ([]SourceUnit, uint64, error) {
+	if limit <= 0 {
+		return nil, 0, fmt.Errorf("fact engine todo limit must be positive")
+	}
+	if err := opts.validate(); err != nil {
+		return nil, 0, err
+	}
+	var rows []domain.TodoEvent
+	if err := s.db.WithContext(ctx).Preload("Todo").Where("id > ?", cursor).
+		Order("id ASC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, 0, fmt.Errorf("list todo events for fact extraction cursor=%d: %w", cursor, err)
+	}
+	materials := make([]todoMaterial, 0, len(rows))
+	for i := range rows {
+		row := rows[i]
+		if row.Todo == nil {
+			return nil, 0, fmt.Errorf("todo event id=%d references missing todo id=%d", row.ID, row.TodoID)
+		}
+		event := row
+		event.Todo = nil
+		materials = append(materials, todoMaterial{Event: event, CurrentTodo: row.Todo})
+	}
+	units := make([]SourceUnit, 0, len(materials))
+	for start := 0; start < len(materials); {
+		end := materialWindowEnd(start, len(materials), opts.MaxMessages, opts.Location, func(i int) time.Time {
+			return materials[i].Event.CreatedAt
+		})
+		window := materials[start:end]
+		body, err := renderJSONMaterial(window)
+		if err != nil {
+			return nil, 0, fmt.Errorf("render todo events id=%d-%d: %w", window[0].Event.ID, window[len(window)-1].Event.ID, err)
+		}
+		units = append(units, SourceUnit{
+			Source: SourceTodo, Key: fmt.Sprintf("todo_events:%d-%d", window[0].Event.ID, window[len(window)-1].Event.ID),
+			LastID: window[len(window)-1].Event.ID, OccurredAt: window[len(window)-1].Event.CreatedAt,
+			Context: fmt.Sprintf("material_kind=todo_lifecycle_events\ncount=%d\nwindow=%s .. %s", len(window), window[0].Event.CreatedAt.In(opts.Location).Format(time.RFC3339), window[len(window)-1].Event.CreatedAt.In(opts.Location).Format(time.RFC3339)),
+			Body:    body, Subjects: todoMaterialSubjects(window),
+		})
+		start = end
+	}
+	return units, lastTodoEventID(rows), nil
+}
+
+// TaskUnits does the same for task_event and also includes the linked execution
+// run when the event has one. No event type is filtered or interpreted in Go.
+func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opts WindowOptions) ([]SourceUnit, uint64, error) {
+	if limit <= 0 {
+		return nil, 0, fmt.Errorf("fact engine task limit must be positive")
+	}
+	if err := opts.validate(); err != nil {
+		return nil, 0, err
+	}
+	var rows []domain.TaskEvent
+	if err := s.db.WithContext(ctx).Preload("Task").Preload("Run").Where("id > ?", cursor).
+		Order("id ASC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, 0, fmt.Errorf("list task events for fact extraction cursor=%d: %w", cursor, err)
+	}
+	materials := make([]taskMaterial, 0, len(rows))
+	for i := range rows {
+		row := rows[i]
+		if row.Task == nil {
+			return nil, 0, fmt.Errorf("task event id=%d references missing task id=%d", row.ID, row.TaskID)
+		}
+		event := row
+		event.Task = nil
+		event.Run = nil
+		if row.RunID != nil && row.Run == nil {
+			return nil, 0, fmt.Errorf("task event id=%d references missing execution run id=%d", row.ID, *row.RunID)
+		}
+		materials = append(materials, taskMaterial{Event: event, CurrentTask: row.Task, ExecutionRun: row.Run})
+	}
+	units := make([]SourceUnit, 0, len(materials))
+	for start := 0; start < len(materials); {
+		end := materialWindowEnd(start, len(materials), opts.MaxMessages, opts.Location, func(i int) time.Time {
+			return materials[i].Event.OccurredAt
+		})
+		window := materials[start:end]
+		body, err := renderJSONMaterial(window)
+		if err != nil {
+			return nil, 0, fmt.Errorf("render task events id=%d-%d: %w", window[0].Event.ID, window[len(window)-1].Event.ID, err)
+		}
+		units = append(units, SourceUnit{
+			Source: SourceTask, Key: fmt.Sprintf("task_events:%d-%d", window[0].Event.ID, window[len(window)-1].Event.ID),
+			LastID: window[len(window)-1].Event.ID, OccurredAt: window[len(window)-1].Event.OccurredAt,
+			Context: fmt.Sprintf("material_kind=task_lifecycle_events\ncount=%d\nwindow=%s .. %s", len(window), window[0].Event.OccurredAt.In(opts.Location).Format(time.RFC3339), window[len(window)-1].Event.OccurredAt.In(opts.Location).Format(time.RFC3339)),
+			Body:    body, Subjects: taskMaterialSubjects(window),
+		})
+		start = end
+	}
+	return units, lastTaskEventID(rows), nil
+}
+
+type todoMaterial struct {
+	Event       domain.TodoEvent `json:"event"`
+	CurrentTodo *domain.Todo     `json:"current_todo"`
+}
+
+type taskMaterial struct {
+	Event        domain.TaskEvent     `json:"event"`
+	CurrentTask  *domain.Task         `json:"current_task"`
+	ExecutionRun *domain.ExecutionRun `json:"execution_run,omitempty"`
+}
+
+func renderJSONMaterial(value any) (string, error) {
+	encoded, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func todoSubjects(todo *domain.Todo) []Subject {
+	// Todo is input material, but facts are not currently read back by Todo id.
+	// Offer only subjects the rest of the system can actually retrieve; the full
+	// Todo id and body remain in CONTEXT/MATERIAL for the agent.
+	var subjects []Subject
+	if todo.GroupID != nil {
+		subjects = append(subjects, Subject{Type: "group", ID: *todo.GroupID})
+	}
+	if todo.ProjectID != nil {
+		subjects = append(subjects, Subject{Type: "project", ID: *todo.ProjectID})
+	}
+	return subjects
+}
+
+func todoMaterialSubjects(materials []todoMaterial) []Subject {
+	var subjects []Subject
+	seen := make(map[string]struct{})
+	for _, material := range materials {
+		subjects = appendUniqueSubjects(subjects, seen, todoSubjects(material.CurrentTodo)...)
+	}
+	return subjects
+}
+
+func taskSubjects(task *domain.Task) []Subject {
+	subjects := []Subject{{Type: SourceTask, ID: task.ID, Name: task.Title}}
+	if task.ProjectID != nil {
+		subjects = append(subjects, Subject{Type: "project", ID: *task.ProjectID})
+	}
+	return subjects
+}
+
+func taskMaterialSubjects(materials []taskMaterial) []Subject {
+	var subjects []Subject
+	seen := make(map[string]struct{})
+	for _, material := range materials {
+		subjects = appendUniqueSubjects(subjects, seen, taskSubjects(material.CurrentTask)...)
+	}
+	return subjects
+}
+
+func appendUniqueSubjects(dst []Subject, seen map[string]struct{}, candidates ...Subject) []Subject {
+	for _, candidate := range candidates {
+		key := fmt.Sprintf("%s/%d", candidate.Type, candidate.ID)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		dst = append(dst, candidate)
+	}
+	return dst
+}
+
+// materialWindowEnd batches raw lifecycle events without interpreting them.
+// A unit never crosses a local natural day, so facts still land on the day their
+// material happened; MaxMessages keeps one prompt bounded.
+func materialWindowEnd(start, total, maxItems int, location *time.Location, occurredAt func(int) time.Time) int {
+	day := occurredAt(start).In(location).Format("2006-01-02")
+	end := start + 1
+	for end < total && end-start < maxItems && occurredAt(end).In(location).Format("2006-01-02") == day {
+		end++
+	}
+	return end
+}
+
+func lastTodoEventID(rows []domain.TodoEvent) uint64 {
+	if len(rows) == 0 {
+		return 0
+	}
+	return rows[len(rows)-1].ID
+}
+
+func lastTaskEventID(rows []domain.TaskEvent) uint64 {
+	if len(rows) == 0 {
+		return 0
+	}
+	return rows[len(rows)-1].ID
 }
 
 // personSubjects resolves the senders that are tracked people, so a fact about

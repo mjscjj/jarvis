@@ -52,8 +52,11 @@ flowchart TD
     F --> M3
     M3 --> OBS0["Todo observing"]
     M3 --> EXT0["Todo extracted"]
+    M3 --> FACT
     EXT0 --> AUTO["机械固化\nTodo auto + Task pending"]
     AUTO --> EXEC["M5 执行 Agent"]
+    AUTO --> FACT
+    EXEC --> FACT
     EXEC --> DONE["done"]
     EXEC --> OBS2["observing"]
     EXEC --> WAIT["waiting / needs_human / awaiting_approval"]
@@ -137,7 +140,7 @@ Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示�
 
 `internal/domain/*.go` 和 `internal/store/mysql.go` 是字段与迁移真源。不要在文档复制完整 DDL。
 
-离线 factengine 当前只消费 `message` 并写 `fact`。它按会话和大小切出有界批次，把会话、参与人、已知关联等宽松背景与批次内每一条已采集消息原样交给 Agent；Go 不预先过滤 bot/system/渲染失败消息，也不把已知实体当输出白名单。Todo/Task/ExecutionRun 尚未接入自动事实蒸馏；执行结果通过 Task summary、runs、events、effects 保留。
+离线 factengine 消费 `message`、`todo`、`task` 并写 `fact`，三种来源共用同一套 `SourceUnit → Agent → Fact` 协议和独立游标。Message 按会话和大小切出有界批次，批次内每一条已采集消息原样交给 Agent；Todo/Task 跟随 append-only 的 lifecycle event，按自然日和数量切出有界窗口，把窗口内每个事件原文和当前完整实体快照一起交给 Agent，Task 事件有关联 ExecutionRun 时也整块携带。Go 不预先过滤材料、不解释事件类型，也不把已知实体当输出白名单。首次接入 Todo/Task 会从事件 0 开始消费已有材料；Message 保留从当前时刻起步的历史边界。
 
 RelationFact 表示两个既有实体之间的自然语言关系和有效期；它没有 predicate/source/confidence/supersede 状态机。
 
@@ -189,7 +192,7 @@ pending -> executing -> done | observing | failed
 
 - 尚无独立 Goal Store / Supervisor / Verifier；长任务控制仍是提案。
 - `context_snapshot` 是冻结证据，不是版本化 live world state。
-- factengine 只消费 message，未自动吸收 Task/ExecutionRun。
+- factengine 已消费 message、Todo 和 Task lifecycle event；其它原料来源尚需按同一投影协议接入。
 - effects 是 Agent 声明，不是外部系统 receipt 的独立验证。
 - Task 的背景和可选计划缺通用更新 API/tool 与审计写入。
 - 编辑既有消息目前不会重新唤醒 M3。

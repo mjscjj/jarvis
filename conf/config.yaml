@@ -26,7 +26,7 @@ model:
   embedding_model: "text-embedding-v3"
   embedding_dims: 1024
 
-# 离线事实引擎：把流水线已经产出的原料（先接 message，之后接 todo / task）
+# 离线事实引擎：把流水线已经产出的 message / todo / task 原料
 # 蒸馏成长期事实，写进 fact 表。跑在关键路径之外，一轮失败不影响采集和执行。
 # 抽取量大、单条价值低，所以用便宜快的 DeepSeek-V4-Flash，不与 M5 执行共用模型。
 factengine:
@@ -87,7 +87,7 @@ capture:
   warm_age_hours: 168
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
-  scan_schedule: "@every 5m"
+  scan_schedule: "@every 2m"
   # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
