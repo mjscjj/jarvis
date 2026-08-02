@@ -2,13 +2,20 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"jarvis/internal/insight"
 
 	"code.byted.org/middleware/hertz/pkg/app"
 	"code.byted.org/middleware/hertz/pkg/protocol/consts"
 )
+
+type ProactiveRunReader interface {
+	ProactiveRuns(context.Context, int) ([]insight.ProactiveRunRow, error)
+	ProactiveRun(context.Context, uint64) (*insight.ProactiveRunDetail, error)
+}
 
 // GetOverview serves the Overview dashboard: live todo/task status counts.
 func GetOverview(service *insight.OverviewService) app.HandlerFunc {
@@ -141,6 +148,42 @@ func GetDebugFailures(service *insight.DebugService) app.HandlerFunc {
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": events}})
+	}
+}
+
+func GetDebugProactiveRuns(service ProactiveRunReader) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		limit, err := positiveQueryInt(c.Query("limit"), 50, "limit")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40031, err)
+			return
+		}
+		rows, err := service.ProactiveRuns(ctx, limit)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50031, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": rows}})
+	}
+}
+
+func GetDebugProactiveRun(service ProactiveRunReader) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := strconv.ParseUint(c.Param("run_id"), 10, 64)
+		if err != nil || id == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("run_id must be a positive integer"))
+			return
+		}
+		run, err := service.ProactiveRun(ctx, id)
+		if err != nil {
+			if errors.Is(err, insight.ErrProactiveRunNotFound) {
+				writeAPIError(c, consts.StatusNotFound, 40432, err)
+			} else {
+				writeAPIError(c, consts.StatusInternalServerError, 50032, err)
+			}
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": run})
 	}
 }
 

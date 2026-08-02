@@ -247,6 +247,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/debug/modules", GetDebugModules(deps.Debug))
 	h.GET("/api/debug/agent-processes", GetDebugAgentProcesses(deps.Debug))
 	h.GET("/api/debug/failures", GetDebugFailures(deps.Debug))
+	h.GET("/api/debug/proactive-runs", GetDebugProactiveRuns(deps.Debug))
+	h.GET("/api/debug/proactive-runs/:run_id", GetDebugProactiveRun(deps.Debug))
 	h.GET("/api/debug/scans", GetDebugScans(deps.Debug))
 	h.GET("/api/debug/watermarks", GetDebugWatermarks(deps.Debug))
 	h.GET("/api/debug/logs", GetDebugLogs(deps.Logs))

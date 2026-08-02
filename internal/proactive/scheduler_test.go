@@ -20,7 +20,7 @@ type blockingWorker struct {
 	release chan struct{}
 }
 
-func (w *blockingWorker) RunOnce(context.Context) (string, error) {
+func (w *blockingWorker) Run(context.Context, string) (string, error) {
 	w.calls.Add(1)
 	select {
 	case w.started <- struct{}{}:
@@ -30,7 +30,7 @@ func (w *blockingWorker) RunOnce(context.Context) (string, error) {
 	return "NOTHING", nil
 }
 
-func (w *countingWorker) RunOnce(context.Context) (string, error) {
+func (w *countingWorker) Run(context.Context, string) (string, error) {
 	w.calls.Add(1)
 	select {
 	case w.called <- struct{}{}:

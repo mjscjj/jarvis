@@ -14,7 +14,7 @@ import (
 )
 
 type RunOnce interface {
-	RunOnce(context.Context) (string, error)
+	Run(context.Context, string) (string, error)
 }
 
 type Scheduler struct {
@@ -56,7 +56,7 @@ func StartScheduler(ctx context.Context, worker RunOnce, spec string, startupDel
 		cron.Recover(cronLogger),
 	).Then(cron.FuncJob(func() {
 		jobCtx := observability.EnsureLogID(runCtx)
-		result, err := worker.RunOnce(jobCtx)
+		result, err := worker.Run(jobCtx, TriggerSchedule)
 		if err != nil {
 			logger.Printf("logid=%s job=proactive_heartbeat status=error error=%+v", observability.LogID(jobCtx), err)
 			return

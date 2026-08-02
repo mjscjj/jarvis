@@ -296,14 +296,21 @@ func main() {
 	if err != nil {
 		fatalf("initialize proactive runner failed: %v", err)
 	}
+	proactiveStore, err := proactive.NewStore(db)
+	if err != nil {
+		fatalf("initialize proactive run store failed: %v", err)
+	}
 	proactiveWorker, err := proactive.NewWorker(proactive.Options{
 		Runner:        proactiveRunner,
+		Recorder:      proactiveStore,
 		Prompts:       textFileService,
 		SharedMemory:  sharedMemoryService,
 		WorkRules:     workRuleService,
 		Sandbox:       cfg.Proactive.Sandbox,
 		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
 		Location:      location,
+		Engine:        cfg.Proactive.Bin,
+		Model:         cfg.Proactive.Model,
 	})
 	if err != nil {
 		fatalf("initialize proactive worker failed: %v", err)
