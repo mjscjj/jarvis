@@ -30,7 +30,7 @@ M3 状态只有：
 
 ## 2. Candidate 契约
 
-当前 Candidate 是 M3 阶段的严格输出协议，包含 title、description、action_type、target、context、open_questions、commitment、source message/quote、assigner/project hints、`desired_outcome`、`semantics` 和 status 等内容。
+Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`title`、`target`、`project_hint`、source message/quote，以及一段不解析的 `payload`。最终结果、当前状态、阻塞、背景、待决问题、交办人、期限、承诺强度和推断都由模型在 payload 中自然表达，Go 不再逐字段投影。
 
 `action_type` 是开放的 snake_case 字符串；代码不维护封闭业务枚举。完整协议以 `internal/extract/candidate.go` 和 `internal/extract/provider/schema.go` 为准。
 
@@ -44,7 +44,7 @@ M3 状态只有：
 2. 否则用 `project_hint` 对 code/name 精确匹配；
 3. 仍无法确定则记录 unresolved resolution trace，模型可继续用工具调查。
 
-冻结快照包含 principal、group、project、assigner、引用消息、会话上下文、参与人、资源、open Todos、其他项目和 Facts。`extraction_result` 保留完整 Candidate，`resolution` 保留项目/仓库推算轨迹。
+冻结快照包含 principal、group、project、由证据发送者机械推导的 assigner、引用消息、会话上下文、参与人、资源、open Todos、其他项目和 Facts。`extraction_result` 保留完整 Candidate，`resolution` 保留项目/仓库推算轨迹。
 
 当前快照不包含 shared memory，也未冻结 ManagedResource；它们可能进入运行时 prompt，但不能笼统写成快照已包含所有背景。
 

@@ -22,7 +22,6 @@ type preparedCandidate struct {
 	Fingerprint     string
 	AssignerOpenID  *string
 	LeaderAssigned  bool
-	DueAt           *time.Time
 	FirstEvidenceAt time.Time
 	LastEvidenceAt  time.Time
 	MatchedTodoID   *uint64
@@ -192,17 +191,10 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 			leaders[message.SenderOpenID] = struct{}{}
 		}
 	}
-	assigner := copyString(candidate.AssignerOpenID)
-	if len(leaders) > 0 {
-		if assigner == nil {
-			if len(leaders) != 1 {
-				return nil, fmt.Errorf("%w: multiple leader sources require assigner_open_id", ErrInvalidCandidate)
-			}
-			for openID := range leaders {
-				assigner = &openID
-			}
-		} else if _, ok := leaders[*assigner]; !ok {
-			return nil, fmt.Errorf("%w: assigner_open_id %q does not match cited leader source", ErrInvalidCandidate, *assigner)
+	var assigner *string
+	if len(leaders) == 1 {
+		for openID := range leaders {
+			assigner = &openID
 		}
 	}
 	snapshot, err := s.buildContextSnapshot(ctx, batch, unit, candidate, projectID, assigner, facts)
@@ -221,17 +213,9 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 	}
 	extractionJSON := datatypes.JSON(extractionRaw)
 
-	var dueAt *time.Time
-	if candidate.DueDate != nil {
-		parsed, err := time.ParseInLocation(time.DateOnly, *candidate.DueDate, s.location)
-		if err != nil {
-			return nil, fmt.Errorf("parse todo due date: %w", err)
-		}
-		dueAt = &parsed
-	}
 	return &preparedCandidate{
 		Candidate: candidate, Fingerprint: fingerprint, AssignerOpenID: assigner,
-		LeaderAssigned: len(leaders) > 0, DueAt: dueAt, FirstEvidenceAt: first, LastEvidenceAt: last,
+		LeaderAssigned: len(leaders) > 0, FirstEvidenceAt: first, LastEvidenceAt: last,
 		ProjectID: projectID, Resolution: resolutionJSON, ContextSnapshot: snapshotJSON,
 		ExtractionResult: extractionJSON,
 	}, nil
@@ -280,19 +264,14 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 	if err != nil {
 		return false, nil, fmt.Errorf("encode todo source message IDs: %w", err)
 	}
-	openQuestions, err := json.Marshal(prepared.Candidate.OpenQuestions)
-	if err != nil {
-		return false, nil, fmt.Errorf("encode todo open questions: %w", err)
-	}
 	todo := domain.Todo{
-		Title: prepared.Candidate.Title, Description: prepared.Candidate.Description,
+		Title: prepared.Candidate.Title, Description: prepared.Candidate.Payload,
 		ActionType: prepared.Candidate.ActionType, Target: prepared.Candidate.Target,
-		Context: prepared.Candidate.Context, OpenQuestions: datatypes.JSON(openQuestions),
-		CommitmentStrength: prepared.Candidate.CommitmentStrength,
-		SourceMessageIDs:   datatypes.JSON(sourceIDs), SourceQuote: prepared.Candidate.SourceQuote,
+		Context: "", OpenQuestions: datatypes.JSON(`[]`), CommitmentStrength: "",
+		SourceMessageIDs: datatypes.JSON(sourceIDs), SourceQuote: prepared.Candidate.SourceQuote,
 		GroupID: &batch.Group.ID, ProjectID: prepared.ProjectID,
 		AssignerOpenID: prepared.AssignerOpenID, IsLeaderAssigned: prepared.LeaderAssigned,
-		DueAt: prepared.DueAt, Status: prepared.Candidate.Status,
+		Status:           prepared.Candidate.Status,
 		DedupFingerprint: prepared.Fingerprint,
 		Resolution:       prepared.Resolution, ContextSnapshot: prepared.ContextSnapshot,
 		ExtractionResult: prepared.ExtractionResult,
@@ -333,17 +312,12 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 	if err != nil {
 		return fmt.Errorf("encode merged source IDs todo_id=%d: %w", existing.ID, err)
 	}
-	openQuestions, err := json.Marshal(prepared.Candidate.OpenQuestions)
-	if err != nil {
-		return fmt.Errorf("encode merged open questions todo_id=%d: %w", existing.ID, err)
-	}
-	// target is the dedup identity, so it is stable across re-extractions. New
-	// evidence refreshes the natural-language fields, the assistant-gathered
-	// context, and the open_questions to the latest homework.
+	// target is the dedup identity, so it is stable across re-extractions. The
+	// latest opaque payload replaces the previous semantic body verbatim.
 	updates := map[string]any{
-		"title": prepared.Candidate.Title, "description": prepared.Candidate.Description,
-		"target": prepared.Candidate.Target, "context": prepared.Candidate.Context,
-		"open_questions": datatypes.JSON(openQuestions), "commitment_strength": prepared.Candidate.CommitmentStrength,
+		"title": prepared.Candidate.Title, "description": prepared.Candidate.Payload,
+		"target": prepared.Candidate.Target, "context": "",
+		"open_questions": datatypes.JSON(`[]`), "commitment_strength": "",
 		"source_message_ids": datatypes.JSON(sourceIDs), "source_quote": prepared.Candidate.SourceQuote,
 		"is_leader_assigned": existing.IsLeaderAssigned || prepared.LeaderAssigned,
 		"revision":           existing.Revision + 1,
@@ -357,9 +331,6 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 	}
 	if prepared.AssignerOpenID != nil {
 		updates["assigner_open_id"] = *prepared.AssignerOpenID
-	}
-	if prepared.DueAt != nil {
-		updates["due_at"] = *prepared.DueAt
 	}
 	// The latest extraction wins on status, so new evidence can promote an
 	// observing clue into materialization or demote one that turned out to need
@@ -431,12 +402,4 @@ func maxTime(first, second time.Time) time.Time {
 		return second
 	}
 	return first
-}
-
-func copyString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
 }

@@ -166,7 +166,7 @@ func TestBuildPromptCarriesMessageType(t *testing.T) {
 }
 
 // TestExtractionPromptKeepsBlockedGoalIntact pins the anti-goal-drift contract:
-// when a clue is blocked, desired_outcome must stay the real end state and the
+// when a clue is blocked, payload must retain the real end state and the
 // blocker must be recorded as context rather than promoted to the clue's
 // identity. See docs/design-long-horizon-agent-goal-control.md.
 func TestExtractionPromptKeepsBlockedGoalIntact(t *testing.T) {
@@ -176,10 +176,10 @@ func TestExtractionPromptKeepsBlockedGoalIntact(t *testing.T) {
 	}
 	system := string(raw)
 	for _, want := range []string{
-		"desired_outcome 是完成判据",
-		"desired_outcome 一律写清除障碍之后要拿到的最终结果",
-		"不要退化成中间步骤",
-		"semantics 是自由表达区",
+		"payload 是完整、开放的语义正文",
+		"仍要写清障碍解除后真正要拿到的最终结果",
+		"不能冒充完成目标",
+		"程序不解析，会原样带给 M5",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q", want)

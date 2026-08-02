@@ -36,15 +36,12 @@ func TestClientLiveStructuredOutput(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	candidate := extract.Candidate{
-		ActionType: "code_change", Title: "Refactor synthetic auth", Target: "synthetic/repo auth flow",
-		DesiredOutcome: "The synthetic auth flow is refactored and merged",
-		Description:    "Refactor the synthetic auth flow", Context: "repo synthetic/repo",
-		OpenQuestions:      []string{},
-		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_synthetic"},
+		ActionType: "code_change", Status: "extracted", Title: "Refactor synthetic auth", Target: "synthetic/repo auth flow",
+		Payload: "Refactor the synthetic auth flow in repo synthetic/repo and merge it.", SourceMessageIDs: []string{"om_synthetic"},
 		SourceQuote: "Refactor synthetic auth",
 	}
 	same, err := client.SameAction(ctx, candidate, extract.SemanticTodo{
-		ID: 1, ActionType: candidate.ActionType, Title: candidate.Title, Description: candidate.Description,
+		ID: 1, ActionType: candidate.ActionType, Title: candidate.Title, Description: candidate.Payload,
 		Target: candidate.Target, Status: "extracted", DedupFingerprint: "synthetic",
 	})
 	if err != nil {

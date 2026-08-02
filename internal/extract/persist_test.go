@@ -106,9 +106,7 @@ func nilMessage(senderType, content string, renderOK bool) *domain.Message {
 func strictCandidate() Candidate {
 	return Candidate{
 		ActionType: "code_change", Status: "extracted", Title: "修改鉴权", Target: "jarvis 鉴权逻辑重构",
-		DesiredOutcome: "鉴权逻辑按讨论改完并合入",
-		Description:    "按讨论修改鉴权逻辑", Context: "归属 jarvis 项目，仓库 jarvis",
-		OpenQuestions: []string{}, CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"},
+		Payload: "按讨论修改鉴权逻辑并合入；归属 jarvis 项目，仓库 jarvis。", SourceMessageIDs: []string{"om_1"},
 		SourceQuote: "请修改鉴权逻辑",
 	}
 }

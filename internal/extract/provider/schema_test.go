@@ -21,7 +21,10 @@ func TestTodoExtractionJSONSchemaIsStrict(t *testing.T) {
 	if _, ok := candidate["properties"].(map[string]any)["target"]; !ok {
 		t.Fatal("candidate schema is missing target")
 	}
-	if _, ok := candidate["properties"].(map[string]any)["open_questions"]; !ok {
-		t.Fatal("candidate schema is missing open_questions")
+	if _, ok := candidate["properties"].(map[string]any)["payload"]; !ok {
+		t.Fatal("candidate schema is missing payload")
+	}
+	if _, ok := candidate["properties"].(map[string]any)["open_questions"]; ok {
+		t.Fatal("candidate schema still exposes semantic projection open_questions")
 	}
 }

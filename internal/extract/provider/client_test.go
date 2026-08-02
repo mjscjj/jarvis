@@ -185,9 +185,8 @@ func TestClientCompleteFailsOnRefusal(t *testing.T) {
 func providerCandidate() extract.Candidate {
 	return extract.Candidate{
 		ActionType: "code_change", Status: "extracted", Title: "修改鉴权", Target: "jarvis 鉴权逻辑",
-		DesiredOutcome: "鉴权逻辑改完并合入", Description: "修改鉴权逻辑",
-		Context: "repo jarvis", OpenQuestions: []string{},
-		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"}, SourceQuote: "修改鉴权",
+		Payload:          "修改鉴权逻辑，完成并合入；repo jarvis。",
+		SourceMessageIDs: []string{"om_1"}, SourceQuote: "修改鉴权",
 	}
 }
 

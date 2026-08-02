@@ -190,7 +190,7 @@ func semanticTodoFixture(t *testing.T, candidate Candidate, projectID *uint64, i
 		t.Fatalf("Fingerprint() error = %v", err)
 	}
 	return &SemanticTodo{
-		ID: id, ActionType: candidate.ActionType, Title: candidate.Title, Description: candidate.Description,
+		ID: id, ActionType: candidate.ActionType, Title: candidate.Title, Description: candidate.Payload,
 		Target: candidate.Target, ProjectID: copyUint64(projectID), Status: "extracted", DedupFingerprint: fingerprint,
 	}
 }

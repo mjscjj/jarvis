@@ -12,11 +12,8 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"sort"
 	"strings"
-	"time"
 
-	"github.com/go-playground/validator/v10"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
@@ -72,49 +69,23 @@ func IsValidActionType(value string) bool {
 	return actionTypeIdentifier.MatchString(strings.TrimSpace(value))
 }
 
-var structuralValidator = validator.New(validator.WithRequiredStructEnabled())
-
-// Candidate mirrors one item from the strict todo_extraction JSON schema.
-//
-// The clue's identity/details are carried by three general fields instead of a
-// per-action_type slot vocabulary:
-//   - Target: one-line subject/object of the clue, the stable dedup identity.
-//   - Context: M3-enriched background (attribution, links, related history) that
-//     the assistant gathered so downstream can act without re-digging.
-//   - OpenQuestions: only the points M3 could not settle and that genuinely need
-//     the principal to decide/supply; empty means the assistant handled it.
-//
-// Identity (Target) and completion (DesiredOutcome) are deliberately separate.
-// A clue whose evidence is a blocker still names the real end state it serves,
-// so clearing the blocker downstream never reads as finishing the clue.
+// Candidate is the small machine-consumed envelope between M3 and downstream.
+// All model semantics live in Payload and are carried verbatim; Go only consumes
+// the fields needed for routing, deduplication, project resolution and evidence.
 type Candidate struct {
-	ActionType string `json:"action_type" validate:"required"`
+	ActionType string `json:"action_type"`
 	// Status is the only control value M3 writes directly, and it is projected
 	// verbatim onto Todo.status. It is deliberately limited to the two states M3
 	// is entitled to pick between: extracted (needs an action, so it becomes a
 	// Task) and observing (worth remembering, nobody acts on it). M3 must never
 	// be able to reach downstream statuses directly.
-	Status string `json:"status" validate:"required,oneof=extracted observing"`
-	Title  string `json:"title" validate:"required"`
-	Target string `json:"target" validate:"required"`
-	// DesiredOutcome states what must be true in the real world before this clue
-	// is finished. M5 receives it verbatim and checks completion against it.
-	DesiredOutcome     string   `json:"desired_outcome" validate:"required"`
-	Description        string   `json:"description" validate:"required"`
-	Context            string   `json:"context"`
-	OpenQuestions      []string `json:"open_questions"`
-	CommitmentStrength string   `json:"commitment_strength" validate:"required,oneof=firm tentative mentioned"`
-	AssignerOpenID     *string  `json:"assigner_open_id"`
-	ProjectHint        *string  `json:"project_hint"`
-	DueDate            *string  `json:"due_date"`
-	SourceMessageIDs   []string `json:"source_message_ids" validate:"required,min=1,dive,required"`
-	SourceQuote        string   `json:"source_quote" validate:"required"`
-	// Semantics is an open pocket (natural language or JSON text) for anything
-	// the model needs to carry that has no dedicated field: current blockers,
-	// inference chain, candidate paths, follow-ups. Go never parses it; it rides
-	// verbatim into extraction_result and on to M5 execution. Adding a new kind
-	// of reasoning here must not require widening this struct.
-	Semantics string `json:"semantics"`
+	Status           string   `json:"status"`
+	Title            string   `json:"title"`
+	Target           string   `json:"target"`
+	ProjectHint      *string  `json:"project_hint"`
+	SourceMessageIDs []string `json:"source_message_ids"`
+	SourceQuote      string   `json:"source_quote"`
+	Payload          string   `json:"payload"`
 }
 
 type ExtractionResult struct {
@@ -144,40 +115,33 @@ func DecodeExtractionResult(payload []byte) (*ExtractionResult, error) {
 	return &result, nil
 }
 
-// ValidateCandidate enforces the closed action vocabulary and the non-blank
-// natural-language fields. Identity now rests on target (not per-type slots).
+// ValidateCandidate validates only the machine-consumed envelope. Payload is
+// intentionally opaque: it may be natural language or JSON text and is never
+// parsed, normalized or projected into another DTO.
 func ValidateCandidate(candidate *Candidate) error {
 	if candidate == nil {
 		return fmt.Errorf("%w: candidate is nil", ErrInvalidCandidate)
 	}
-	if err := structuralValidator.Struct(candidate); err != nil {
-		return fmt.Errorf("%w: structural validation: %v", ErrInvalidCandidate, err)
-	}
 	for _, field := range []struct {
 		name  string
 		value string
-	}{{"title", candidate.Title}, {"target", candidate.Target}, {"desired_outcome", candidate.DesiredOutcome}, {"description", candidate.Description}, {"source_quote", candidate.SourceQuote}} {
+	}{{"status", candidate.Status}, {"title", candidate.Title}, {"target", candidate.Target}, {"source_quote", candidate.SourceQuote}, {"payload", candidate.Payload}} {
 		if strings.TrimSpace(field.value) == "" {
 			return fmt.Errorf("%w: %s must not be blank", ErrInvalidCandidate, field.name)
 		}
 	}
+	if candidate.Status != "extracted" && candidate.Status != "observing" {
+		return fmt.Errorf("%w: status %q must be extracted or observing", ErrInvalidCandidate, candidate.Status)
+	}
 	if !IsValidActionType(candidate.ActionType) {
 		return fmt.Errorf("%w: action_type %q must be a lowercase snake_case identifier", ErrInvalidCandidate, candidate.ActionType)
+	}
+	if len(candidate.SourceMessageIDs) == 0 {
+		return fmt.Errorf("%w: source_message_ids must not be empty", ErrInvalidCandidate)
 	}
 	if err := validateMessageIDs(candidate.SourceMessageIDs); err != nil {
 		return err
 	}
-	if candidate.DueDate != nil {
-		if _, err := time.Parse(time.DateOnly, *candidate.DueDate); err != nil {
-			return fmt.Errorf("%w: due_date must use YYYY-MM-DD: %v", ErrInvalidCandidate, err)
-		}
-	}
-	for position, question := range candidate.OpenQuestions {
-		if strings.TrimSpace(question) == "" {
-			return fmt.Errorf("%w: open_questions[%d] must not be blank", ErrInvalidCandidate, position)
-		}
-	}
-	candidate.OpenQuestions = normalizedStrings(candidate.OpenQuestions)
 	return nil
 }
 
@@ -216,7 +180,7 @@ func SemanticText(candidate *Candidate) (string, error) {
 	return strings.Join([]string{
 		candidate.ActionType,
 		strings.TrimSpace(candidate.Title),
-		strings.TrimSpace(candidate.Description),
+		strings.TrimSpace(candidate.Payload),
 		normalizeText(candidate.Target),
 	}, "｜"), nil
 }
@@ -243,22 +207,6 @@ func validateMessageIDs(ids []string) error {
 		seen[id] = struct{}{}
 	}
 	return nil
-}
-
-func normalizedStrings(values []string) []string {
-	set := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			set[value] = struct{}{}
-		}
-	}
-	result := make([]string, 0, len(set))
-	for value := range set {
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
 }
 
 func normalizeText(value string) string {

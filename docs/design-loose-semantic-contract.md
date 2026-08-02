@@ -1,13 +1,13 @@
 # 宽松语义结构与阶段解耦方案
 
-> Status: proposal / partial implementation
+> Status: partially implemented
 > Authority: non-normative
 > Last verified: 2026-08-02 @ `89fa24b`
-> Warning: M3 Candidate、execution enrichment 和部分 Structured Output 仍是严格结构；本文示例不是当前全链路协议。
+> Warning: M3 Candidate 已收缩为严格小外壳 + 不解析的 payload；ContextSnapshot v1、execution enrichment 和部分 Structured Output 仍是严格结构。本文的 ContextDocument 示例不是当前协议。
 
 Jarvis 的 M3 与 M5 执行不应共享一套庞大的模型语义 DTO。程序只固定硬消费字段，模型语义用自然语言或宽松 JSON 原样传递。这样上游新增一段判断、证据或结果时，下游能直接带给模型，不需要同步改 Go struct、JSON Schema、前端类型和历史数据。
 
-当前落地状态（2026-08-02）：M3 原始 extraction result 会整体传给 Task；Todo 来源的 `Task.plan` 可空，M5 执行直接根据 M3 clue 与冻结上下文判断。但 M3 Candidate、execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。`repo_path` 记录在 ExecutionRun，不在 Task。以 current 模块文档和代码为准。
+当前落地状态（2026-08-02）：M3 Candidate 已是机器消费小外壳 + 文本 payload，原始 extraction result 会整体传给 Task；Todo 来源的 `Task.plan` 可空，M5 执行直接根据 M3 clue 与冻结上下文判断。但 execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。`repo_path` 记录在 ExecutionRun，不在 Task。以 current 模块文档和代码为准。
 
 ## 目标
 
@@ -56,22 +56,20 @@ Jarvis 的 M3 与 M5 执行不应共享一套庞大的模型语义 DTO。程序�
 
 硬字段：
 
-- `action_type`：执行策略和分流需要。
+- `action_type`：开放的动作标签，并参与去重身份。
 - `title`：列表展示需要。
 - `target`：去重和 action hash 需要。
 - `source_message_ids` / `source_quote`：证据完整性需要。
+- `status`：决定是否机械物化为 Task。
+- `project_hint`：仅用于项目 code/name 精确解析，无法确定时为 null。
 
 宽松语义：
 
-- `description`
-- `context`
-- `open_questions`
-- `commitment_strength`
-- `project_hint`
-- `due_date`
-- 其他推断依据
+- 最终结果、当前状态与阻塞；
+- 背景、链接、待决问题；
+- 交办人、期限、承诺强度和其他推断依据。
 
-`assigner_open_id` 如果来自飞书消息发送者，是来源证据，应随原始消息保留；如果只是模型推断出的“实际交办人”，则放进宽松语义，不覆盖来源身份。
+代码只会从引用消息的真实发送者机械推导 assigner；模型推断出的“实际交办人”放进 payload，不覆盖来源身份。
 
 目标输出：
 
@@ -80,22 +78,19 @@ Jarvis 的 M3 与 M5 执行不应共享一套庞大的模型语义 DTO。程序�
   "candidates": [
     {
       "action_type": "code_change",
+      "status": "extracted",
       "title": "修复工具执行报错",
       "target": "jarvis tool 执行报错",
-      "evidence": {
-        "message_ids": ["om_xxx"],
-        "quote": "修复工具的执行报错"
-      },
-      "payload": {
-        "summary": "用户要求修复 jarvis tool 执行失败，并去掉工具次数上限。",
-        "blocks": []
-      }
+      "project_hint": "jarvis",
+      "source_message_ids": ["om_xxx"],
+      "source_quote": "修复工具的执行报错",
+      "payload": "用户要求修复 jarvis tool 执行失败，并去掉工具次数上限；完成后相关测试通过。"
     }
   ]
 }
 ```
 
-在 M3 仍使用严格 Structured Output 的阶段，`payload` 先定义为一段完整 JSON 文本，由 Jarvis 校验它是合法 JSON 后原样保存；不要为 payload 内部结构建立严格 schema。等运行时确认支持真正开放的 schema 后，再直接输出 JSON 值。
+M3 的 `payload` 当前定义为非空文本，自然语言或 JSON 文本均可；Jarvis 不校验内部 JSON，也不为 payload 建 schema，原样保存并传给 M5。
 
 ## ContextDocument
 

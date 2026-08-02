@@ -389,9 +389,7 @@ func retryBatch() ChatBatch {
 func retryCandidate(quote string) Candidate {
 	return Candidate{
 		ActionType: "investigate", Status: "extracted", Title: "梳理架构", Target: "当前服务和架构梳理",
-		DesiredOutcome: "产出一份当前服务与架构的梳理结论",
-		Description:    "看下当前服务和架构梳理", OpenQuestions: []string{},
-		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"}, SourceQuote: quote,
+		Payload: "产出一份当前服务与架构的梳理结论。", SourceMessageIDs: []string{"om_1"}, SourceQuote: quote,
 	}
 }
 
@@ -541,19 +539,15 @@ func TestValidateCandidateEvidenceQuoteMismatchIncludesSourceText(t *testing.T) 
 	}
 }
 
-// 交办人常常不在本段会话里发言：线索通道只有一个合成发送者，会议和文档里
-// 出现的人也是模型自己用工具查出来的。这类 assigner 必须放行，否则线索永远
-// 抽不出来。真正的证据一致性由 prepareCandidate 的 leader 来源校验负责。
-func TestValidateCandidateEvidenceAcceptsAssignerWhoDidNotSpeak(t *testing.T) {
+// 交办人等语义可以直接写入 payload；证据校验只检查机器消费的消息 ID 和原文。
+func TestValidateCandidateEvidenceIgnoresOpaquePayload(t *testing.T) {
 	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
 		MessageID: "clue:feishu_meeting:m1", Source: "clue", SenderOpenID: "__clue__",
 		Content: "会议《周会》已结束\n张三负责补齐测试", IsNew: true, Extractable: true,
 	}}, Participants: []ParticipantContext{{OpenID: "__clue__", Name: "feishu_meeting"}}}
-	assigner := "ou_zhangsan"
 	candidate := Candidate{
 		ActionType: "investigate", Status: "extracted", Title: "补齐测试", Target: "测试",
-		DesiredOutcome: "缺失的测试补齐并通过", Description: "补齐测试", OpenQuestions: []string{},
-		CommitmentStrength: "firm", AssignerOpenID: &assigner,
+		Payload:          "张三（ou_zhangsan）负责补齐测试并确保通过。",
 		SourceMessageIDs: []string{"clue:feishu_meeting:m1"}, SourceQuote: "张三负责补齐测试",
 	}
 	if err := validateCandidateEvidence(unit, &candidate); err != nil {

@@ -530,14 +530,6 @@ func validateCandidateEvidence(unit ConversationUnit, candidate *Candidate) erro
 	if err := validateEvidence(unit, candidate.SourceMessageIDs, candidate.SourceQuote); err != nil {
 		return err
 	}
-	// assigner_open_id is deliberately not checked against unit.Participants.
-	// Participants are just the distinct senders of the unit's messages, so the
-	// check never held for evidence where the assigner does not speak in the
-	// unit itself — a clue channel carries a single synthetic sender, and a
-	// meeting or document names people the model resolved with its own tools.
-	// The evidence-based guard that does matter lives in prepareCandidate: when
-	// the cited messages include leader senders, the assigner must be one of
-	// them.
 	return nil
 }
 
