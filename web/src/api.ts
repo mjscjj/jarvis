@@ -35,7 +35,7 @@ import type {
   TaskStatus,
   ExecutionRunList,
   TaskRunOutput,
-  ProjectEvent,
+  Fact,
   RelationEntityType,
   RelationFactList,
   TaskEvent,
@@ -225,12 +225,15 @@ export function deleteProject(id: number): Promise<{ id: number; archived: boole
   return request(`/api/projects/${id}`, { method: 'DELETE' })
 }
 
-export function listProjectEvents(id: number, signal?: AbortSignal): Promise<{ items: ProjectEvent[] }> {
-  return request<{ items: ProjectEvent[] }>(`/api/projects/${id}/events`, { signal })
+export function listProjectFacts(id: number, signal?: AbortSignal): Promise<{ items: Fact[] }> {
+  return request<{ items: Fact[] }>(`/api/facts?subject_type=project&subject_id=${id}&limit=200`, { signal })
 }
 
-export function appendProjectEvent(id: number, description: string): Promise<ProjectEvent> {
-  return request<ProjectEvent>(`/api/projects/${id}/events`, { method: 'POST', body: { description } })
+export function appendProjectFact(id: number, description: string): Promise<Fact> {
+  return request<Fact>('/api/facts', {
+    method: 'POST',
+    body: { subject_type: 'project', subject_id: id, description },
+  })
 }
 
 export function listPersons(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Person>> {

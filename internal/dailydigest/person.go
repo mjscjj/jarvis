@@ -63,7 +63,7 @@ type personBaseline struct {
 	TodoEvents      []baselineTodoEvent
 	TaskEvents      []baselineTaskEvent
 	ExecutionRuns   []baselineExecutionRun
-	ProjectEvents   []baselineProjectEvent
+	Facts           []baselineFact
 	TruncatedScopes []string
 	IntegrityGaps   []string
 }
@@ -127,12 +127,18 @@ type baselineExecutionRun struct {
 	CodexSessionID  string
 }
 
-type baselineProjectEvent struct {
-	EventID     uint64
-	ProjectID   uint64
+type baselineFact struct {
+	FactID      uint64
+	SubjectType string
+	SubjectID   uint64
 	OccurredAt  string
-	Project     string
+	Subject     string
 	Description string
+}
+
+type factSubjectKey struct {
+	Type string
+	ID   uint64
 }
 
 type personGenerateResult struct {
@@ -298,7 +304,7 @@ func (g *personGenerator) renderJarvisEvidence(
 	g.writeBaselineCoverage(&b, baseline, "todo_events", len(baseline.TodoEvents), baseline.IntegrityGaps)
 	g.writeBaselineCoverage(&b, baseline, "task_events", len(baseline.TaskEvents), nil)
 	g.writeBaselineCoverage(&b, baseline, "execution_runs", len(baseline.ExecutionRuns), nil)
-	g.writeBaselineCoverage(&b, baseline, "project_events", len(baseline.ProjectEvents), nil)
+	g.writeBaselineCoverage(&b, baseline, "facts", len(baseline.Facts), nil)
 
 	b.WriteString("\n## Evidence\n")
 	for _, item := range baseline.Messages {
@@ -317,12 +323,18 @@ func (g *personGenerator) renderJarvisEvidence(
 	g.writeExecutionRunEvidence(&b, baseline.ExecutionRuns)
 
 	b.WriteString("\n## Context\n")
-	for _, item := range baseline.ProjectEvents {
-		g.writeEvidence(&b, fmt.Sprintf("JARVIS-project-event-%d", item.EventID), firstNonBlank(item.Project, fmt.Sprintf("Project#%d", item.ProjectID)), [][2]string{
-			{"Source kind", "project_event"},
-			{"Source ID", fmt.Sprint(item.EventID)},
+	for _, item := range baseline.Facts {
+		subject := firstNonBlank(item.Subject, fmt.Sprintf("%s#%d", item.SubjectType, item.SubjectID))
+		projectBinding := ""
+		if item.SubjectType == "project" {
+			projectBinding = item.Subject
+		}
+		g.writeEvidence(&b, fmt.Sprintf("JARVIS-fact-%d", item.FactID), subject, [][2]string{
+			{"Source kind", "fact"},
+			{"Source ID", fmt.Sprint(item.FactID)},
 			{"Occurred at", item.OccurredAt},
-			{"Project binding", item.Project},
+			{"Subject", subject},
+			{"Project binding", projectBinding},
 			{"Relation to principal", "context only; actor unknown"},
 			{"Observed facts", item.Description},
 		})
@@ -1020,30 +1032,32 @@ func (g *personGenerator) loadBaseline(
 		baseline.ExecutionRuns = append(baseline.ExecutionRuns, item)
 	}
 
-	var projectEvents []domain.ProjectEvent
+	// Facts of every subject type count as evidence: the day's group and person
+	// facts matter to a personal digest as much as the project ones do.
+	var facts []domain.Fact
 	if err := g.db.WithContext(ctx).
-		Preload("Project").
 		Where("occurred_at >= ? AND occurred_at < ?", dayStart, windowEnd).
 		Order("occurred_at ASC, id ASC").
 		Limit(personInternalLimit + 1).
-		Find(&projectEvents).Error; err != nil {
-		return nil, fmt.Errorf("load personal digest project events: %w", err)
+		Find(&facts).Error; err != nil {
+		return nil, fmt.Errorf("load personal digest facts: %w", err)
 	}
-	if len(projectEvents) > personInternalLimit {
-		projectEvents = projectEvents[:personInternalLimit]
-		baseline.TruncatedScopes = append(baseline.TruncatedScopes, "project_events")
+	if len(facts) > personInternalLimit {
+		facts = facts[:personInternalLimit]
+		baseline.TruncatedScopes = append(baseline.TruncatedScopes, "facts")
 	}
-	for _, event := range projectEvents {
-		project := ""
-		if event.Project != nil {
-			project = event.Project.Name
-		}
-		baseline.ProjectEvents = append(baseline.ProjectEvents, baselineProjectEvent{
-			EventID:     event.ID,
-			ProjectID:   event.ProjectID,
-			OccurredAt:  formatTime(g.location, event.OccurredAt),
-			Project:     project,
-			Description: capRunes(event.Description, 500),
+	subjectNames, err := g.loadFactSubjectNames(ctx, facts)
+	if err != nil {
+		return nil, err
+	}
+	for _, fact := range facts {
+		baseline.Facts = append(baseline.Facts, baselineFact{
+			FactID:      fact.ID,
+			SubjectType: fact.SubjectType,
+			SubjectID:   fact.SubjectID,
+			OccurredAt:  formatTime(g.location, fact.OccurredAt),
+			Subject:     subjectNames[factSubjectKey{fact.SubjectType, fact.SubjectID}],
+			Description: capRunes(fact.Description, 500),
 		})
 	}
 	return baseline, nil
@@ -1139,7 +1153,6 @@ func loadPersonSummarySkill(skillDir string) (string, error) {
 	return skillText, nil
 }
 
-
 func runEffectsLoose(raw []byte) []map[string]any {
 	if len(raw) == 0 {
 		return nil
@@ -1149,4 +1162,41 @@ func runEffectsLoose(raw []byte) []map[string]any {
 		return nil
 	}
 	return effects
+}
+
+// loadFactSubjectNames resolves display names for fact subjects, one query per
+// nameable type. Fact has no ORM association to preload: the subject is
+// polymorphic by design, so names are looked up rather than joined. Subject
+// types this does not recognize simply stay unnamed and render as type#id.
+func (g *personGenerator) loadFactSubjectNames(ctx context.Context, facts []domain.Fact) (map[factSubjectKey]string, error) {
+	names := make(map[factSubjectKey]string)
+	ids := map[string][]uint64{}
+	for _, fact := range facts {
+		ids[fact.SubjectType] = append(ids[fact.SubjectType], fact.SubjectID)
+	}
+	for subjectType, subjectIDs := range ids {
+		var rows []struct {
+			ID   uint64
+			Name string
+		}
+		var table string
+		switch subjectType {
+		case "project":
+			table = "project"
+		case "group":
+			table = "feishu_group"
+		case "person":
+			table = "person"
+		default:
+			continue
+		}
+		if err := g.db.WithContext(ctx).Table(table).
+			Select("id, name").Where("id IN ?", subjectIDs).Scan(&rows).Error; err != nil {
+			return nil, fmt.Errorf("load fact subject names type=%s: %w", subjectType, err)
+		}
+		for _, row := range rows {
+			names[factSubjectKey{subjectType, row.ID}] = row.Name
+		}
+	}
+	return names, nil
 }

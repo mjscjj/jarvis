@@ -6,7 +6,7 @@ Jarvis 已用 `project`、`person`、`feishu_group`、`todo`、`task`、`resourc
 
 1. `relation_fact`：两个现有实体之间的关联。
 2. `task_event`：Task 的结构化状态变化。
-3. `project_event`：Project 的自然语言进度历史。
+3. `fact`：任意主体（项目、群、人……）的自然语言事实流。
 
 不创建通用 `entity` 或 `entity_alias` 表，不复制已有实体，也不引入独立知识图谱数据库。MySQL 仍是唯一真相来源。
 
@@ -15,7 +15,7 @@ Jarvis 已用 `project`、`person`、`feishu_group`、`todo`、`task`、`resourc
 - 实体身份结构化，语义尽量自然语言化。
 - 模型负责从描述和上下文中推断“具体是什么关系、属于哪类进展”。
 - 已有外键能表达的关系继续读原字段，不重复写 `relation_fact`。
-- Task 有明确状态机，继续用结构化事件；Project 的进度类型不稳定，使用通用描述。
+- Task 有明确状态机，继续用结构化事件；事实的类型不稳定，使用通用描述。
 - 早期 MVP 不增加 predicate、置信度、来源、有效期、状态、详情 JSON 等字段。
 
 ## 3. RelationFact
@@ -81,19 +81,28 @@ approval_rejected rerun_requested reapply_started supplemented
 execution_succeeded execution_failed stale_failed snapshot_imported
 ```
 
-## 5. ProjectEvent
+## 5. Fact
 
 ### 5.1 字段
 
 ```text
 id
-project_id
+subject_type
+subject_id
 description
 occurred_at
+source_kind
+source_id
 created_at
 ```
 
-`project` 表继续保存当前状态；`project_event` 只追加发生过的事情。描述不区分固定事件类型，例如：
+实体表继续保存当前状态；`fact` 只追加发生过的事情。
+
+`subject_type` 故意不是枚举：`project`、`group`、`person`、`task` 是目前会被读回的类型，但模型判断一条事实属于别的东西时可以自己写值，不会被拒绝。只有能对上表的类型才校验主体存在性，认不出的类型照样入库——宁可存一条无法命名主体的事实，也不为一个没人要求的枚举丢掉观察。
+
+没有单独的日期列。按自然日筛选用 `occurred_at` 的半开区间，由调用方决定时区；存一个本地日期反而会在时区配置变化时静默算错。
+
+描述不区分固定事件类型，例如：
 
 ```text
 完成第一版关系事实接口，下一步接入后台项目详情页。
@@ -101,7 +110,9 @@ created_at
 飞书开放平台权限仍未审批，当前阻塞消息回放验收。
 ```
 
-项目创建、资料更新、状态调整和归档会自动追加简短描述；模型或用户也可通过 API 直接记录任意自然语言进展。
+项目创建、资料更新、状态调整和归档会自动追加简短描述。M3 抽取时、M5 执行时也各自把学到的事实旁路写进来；写什么、绑到哪个主体由模型判断，规则写在提示词和工具说明里，不在 Go 里分流。
+
+事实之上按天汇总的一层复用已有的 `daily_digest`（scope=person/group），不另建总结表。
 
 ## 6. API
 
@@ -113,8 +124,8 @@ DELETE /api/relation-facts/:fact_id
 
 GET    /api/tasks/:task_id/events
 
-GET    /api/projects/:project_id/events
-POST   /api/projects/:project_id/events
+GET    /api/facts?subject_type=project&subject_id=1&from=&until=&limit=
+POST   /api/facts
 ```
 
 创建关系请求：
@@ -127,13 +138,17 @@ POST   /api/projects/:project_id/events
 }
 ```
 
-记录项目进展请求：
+记录事实请求：
 
 ```json
 {
+  "subject_type": "project",
+  "subject_id": 3,
   "description": "完成关系事实接口，下一步接入后台展示。"
 }
 ```
+
+读取时 `from` / `until` 是 RFC3339 的半开区间；要一个自然日就由调用方传当天和次日的本地零点。
 
 所有写接口严格解码 JSON，未知字段直接返回 400。
 
@@ -143,17 +158,18 @@ POST   /api/projects/:project_id/events
 
 - 人物详情：展示与该 Person 关联的 `relation_fact`。
 - 任务详情：展示 `task_event` 时间线和与该 Task 关联的 `relation_fact`。
-- 背景 → 项目详情：展示项目资料、`project_event` 时间线、与该 Project 关联的 `relation_fact`，并允许输入一段自然语言记录进展。
+- 背景 → 项目详情：展示项目资料、该项目的 `fact` 时间线、与该 Project 关联的 `relation_fact`，并允许输入一段自然语言记录事实。
 
-`jarvis-tools get-project` 同时返回项目资料、最近 50 条项目事件和项目关系；`get-person` 同时返回人物资料和人物关系，供模型直接推断上下文。
+`jarvis-tools get-project` 同时返回项目资料、最近 50 条项目事实和项目关系；`get-person` 同时返回人物资料和人物关系，供模型直接推断上下文。
 
 ## 8. 迁移和历史数据
 
-旧版 `relation_fact` 和 `project_event` 结构字段过多，本次不保留兼容逻辑：
+旧版 `relation_fact` 结构字段过多，本次不保留兼容逻辑：
 
 - 如果旧表为空，迁移会删除旧表并按新模型重建。
 - 如果旧表存在数据，启动会 fail-fast，要求先明确历史数据处理方式，不自动猜测转换。
-- 当前本机旧表已确认为空，可以直接重建。
 - `task_event` 结构不变，已有 Task 历史继续保留。
+
+`project_event` 被 `fact` 取代时主体列从 `project_id` 变成 `(subject_type, subject_id)`，没有逐列迁移路径。已确认放弃本机存量数据，迁移无条件删表重建（`dropLegacyProjectEvent`）——这是显式决定，不同于上面几处按行数守卫的迁移。
 
 未来需要图查询时，可以从已有外键和 `relation_fact` 投影到图数据库，节点 ID 使用 `type:id`；投影是可重建索引，不改变 MySQL 的真相来源地位。

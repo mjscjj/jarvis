@@ -60,16 +60,21 @@ func TestProgressEventsMySQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
-	projectEvents, err := eventService.ListProjectEvents(context.Background(), project.ID)
+	facts, err := eventService.ListFacts(context.Background(), progress.FactFilter{
+		SubjectType: "project", SubjectID: project.ID,
+	})
 	if err != nil {
-		t.Fatalf("ListProjectEvents() error = %v", err)
+		t.Fatalf("ListFacts() error = %v", err)
 	}
-	if len(projectEvents) != 4 {
-		t.Fatalf("project event count = %d, want 4: %#v", len(projectEvents), projectEvents)
+	if len(facts) != 4 {
+		t.Fatalf("fact count = %d, want 4: %#v", len(facts), facts)
 	}
-	for _, event := range projectEvents {
-		if event.Description == "" {
-			t.Fatalf("project event has empty description: %#v", event)
+	for _, fact := range facts {
+		if fact.Description == "" {
+			t.Fatalf("fact has empty description: %#v", fact)
+		}
+		if fact.SubjectType != "project" || fact.SubjectID != project.ID {
+			t.Fatalf("fact subject = %#v", fact)
 		}
 	}
 

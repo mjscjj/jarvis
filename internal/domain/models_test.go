@@ -27,7 +27,7 @@ func TestMigrationModelRegistries(t *testing.T) {
 		{"extract", ExtractModels(), []any{&TodoExtractWatermark{}, &TodoEvent{}}, []string{"todo_extract_watermark", "todo_event"}},
 		{"decide", DecideModels(), []any{&DecisionAudit{}}, []string{"decision_audit"}},
 		{"knowledge", KnowledgeModels(), []any{&RelationFact{}}, []string{"relation_fact"}},
-		{"progress", ProgressModels(), []any{&TaskEvent{}, &ProjectEvent{}}, []string{"task_event", "project_event"}},
+		{"progress", ProgressModels(), []any{&TaskEvent{}, &Fact{}}, []string{"task_event", "fact"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

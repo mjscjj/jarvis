@@ -71,7 +71,11 @@ func TestPersonGenerateRunsOneWorkspaceRootedSkillAndReadsCanonicalMarkdown(t *t
 			status TEXT, action_type TEXT, summary TEXT, error_detail TEXT,
 			commit_sha TEXT, merge_request_url TEXT, codex_session_id TEXT
 		)`,
-		`CREATE TABLE project_event (id INTEGER PRIMARY KEY, occurred_at DATETIME)`,
+		`CREATE TABLE fact (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, subject_type TEXT NOT NULL, subject_id INTEGER NOT NULL,
+			description TEXT NOT NULL, occurred_at DATETIME NOT NULL,
+			source_kind TEXT, source_id INTEGER, created_at DATETIME
+		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("create table: %v", err)
@@ -157,7 +161,11 @@ func TestLoadBaselineUsesDayEventsAndIgnoresHistoricalOpenRows(t *testing.T) {
 			status TEXT, action_type TEXT, summary TEXT, error_detail TEXT,
 			commit_sha TEXT, merge_request_url TEXT, codex_session_id TEXT
 		)`,
-		`CREATE TABLE project_event (id INTEGER PRIMARY KEY, occurred_at DATETIME)`,
+		`CREATE TABLE fact (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, subject_type TEXT NOT NULL, subject_id INTEGER NOT NULL,
+			description TEXT NOT NULL, occurred_at DATETIME NOT NULL,
+			source_kind TEXT, source_id INTEGER, created_at DATETIME
+		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("create table: %v", err)

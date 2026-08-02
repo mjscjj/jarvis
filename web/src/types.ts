@@ -283,11 +283,14 @@ export interface TaskEvent {
   created_at: string
 }
 
-export interface ProjectEvent {
+export interface Fact {
   id: number
-  project_id: number
+  subject_type: string
+  subject_id: number
   description: string
   occurred_at: string
+  source_kind: string | null
+  source_id: number | null
   created_at: string
 }
 

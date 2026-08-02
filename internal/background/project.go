@@ -40,6 +40,9 @@ type ProjectList struct {
 	PageSize int           `json:"page_size"`
 }
 
+// factSourceBackground tags facts this service writes from project CRUD.
+var factSourceBackground = "background"
+
 // ProjectService is the authoritative CRUD owner of the project table.
 type ProjectService struct {
 	db     *gorm.DB
@@ -81,10 +84,12 @@ func (s *ProjectService) Create(ctx context.Context, in ProjectInput) (*ProjectV
 	if occurredAt.IsZero() {
 		occurredAt = time.Now().UTC()
 	}
-	if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
-		ProjectID:   project.ID,
+	if _, err := s.events.AppendFact(ctx, progress.FactInput{
+		SubjectType: "project",
+		SubjectID:   project.ID,
 		Description: fmt.Sprintf("创建项目“%s”，当前状态为“%s”。", project.Name, project.Status),
 		OccurredAt:  &occurredAt,
+		SourceKind:  &factSourceBackground,
 	}); err != nil {
 		return nil, err
 	}
@@ -169,20 +174,24 @@ func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput)
 	}
 	now := time.Now().UTC()
 	if before.Status != in.Status {
-		if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
-			ProjectID:   id,
+		if _, err := s.events.AppendFact(ctx, progress.FactInput{
+			SubjectType: "project",
+			SubjectID:   id,
 			Description: fmt.Sprintf("项目状态从“%s”调整为“%s”。", before.Status, in.Status),
 			OccurredAt:  &now,
+			SourceKind:  &factSourceBackground,
 		}); err != nil {
 			return nil, err
 		}
 	}
 	profileFields := withoutField(changedFields, "status")
 	if len(profileFields) > 0 {
-		if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
-			ProjectID:   id,
+		if _, err := s.events.AppendFact(ctx, progress.FactInput{
+			SubjectType: "project",
+			SubjectID:   id,
 			Description: fmt.Sprintf("更新项目资料：%s。", strings.Join(profileFields, "、")),
 			OccurredAt:  &now,
+			SourceKind:  &factSourceBackground,
 		}); err != nil {
 			return nil, err
 		}
@@ -214,10 +223,12 @@ func (s *ProjectService) Delete(ctx context.Context, id uint64) error {
 		return fmt.Errorf("archive project id=%d affected %d rows", id, result.RowsAffected)
 	}
 	now := time.Now().UTC()
-	if _, err := s.events.AppendProjectEvent(ctx, progress.ProjectEventInput{
-		ProjectID:   id,
+	if _, err := s.events.AppendFact(ctx, progress.FactInput{
+		SubjectType: "project",
+		SubjectID:   id,
 		Description: fmt.Sprintf("项目从“%s”状态归档。", project.Status),
 		OccurredAt:  &now,
+		SourceKind:  &factSourceBackground,
 	}); err != nil {
 		return err
 	}

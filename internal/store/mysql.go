@@ -52,10 +52,13 @@ func Migrate(db *gorm.DB) error {
 	if err := migrateNaturalLanguageFacts(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
-	if err := dropActionHash(db); err != nil {
-	if err := dropExecutionRunGitColumns(db); err != nil {
-		return fmt.Errorf("drop execution_run git columns: %w", err)
+	if err := dropLegacyProjectEvent(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := dropActionHash(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
+	if err := dropExecutionRunGitColumns(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
@@ -216,7 +219,6 @@ func migrateNaturalLanguageFacts(db *gorm.DB) error {
 	}
 	tables := []legacyTable{
 		{model: &domain.RelationFact{}, name: "relation_fact", legacyColumn: "predicate"},
-		{model: &domain.ProjectEvent{}, name: "project_event", legacyColumn: "event_type"},
 	}
 	migrator := db.Migrator()
 	toReplace := make([]legacyTable, 0, len(tables))
@@ -237,6 +239,22 @@ func migrateNaturalLanguageFacts(db *gorm.DB) error {
 		if err := migrator.DropTable(table.model); err != nil {
 			return fmt.Errorf("replace empty legacy %s table: %w", table.name, err)
 		}
+	}
+	return nil
+}
+
+// dropLegacyProjectEvent removes project_event, which the fact table replaces.
+// Facts generalize the subject from a project to any (subject_type, subject_id),
+// so no column-wise migration exists: the operator chose to discard the local
+// rows rather than backfill them. Deliberately unconditional, unlike the
+// count-guarded migrations above.
+func dropLegacyProjectEvent(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable("project_event") {
+		return nil
+	}
+	if err := migrator.DropTable("project_event"); err != nil {
+		return fmt.Errorf("drop legacy project_event table: %w", err)
 	}
 	return nil
 }

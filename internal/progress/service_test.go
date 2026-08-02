@@ -103,25 +103,50 @@ func TestPrepareTaskEventRejectsUnknownType(t *testing.T) {
 	}
 }
 
-func TestPrepareProjectEventUsesNaturalLanguage(t *testing.T) {
+func TestPrepareFactUsesNaturalLanguage(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 22, 8, 0, 0, 0, time.FixedZone("CST", 8*60*60))
-	event, err := prepareProjectEvent(ProjectEventInput{
-		ProjectID: 2, Description: "  MVP 已跑通，下一步部署测试环境。  ", OccurredAt: &now,
+	fact, err := prepareFact(FactInput{
+		SubjectType: " Project ", SubjectID: 2,
+		Description: "  MVP 已跑通，下一步部署测试环境。  ", OccurredAt: &now,
 	})
 	if err != nil {
-		t.Fatalf("prepareProjectEvent() error = %v", err)
+		t.Fatalf("prepareFact() error = %v", err)
 	}
-	if event.Description != "MVP 已跑通，下一步部署测试环境。" || !event.OccurredAt.Equal(now.UTC()) {
-		t.Fatalf("event = %#v", event)
+	if fact.Description != "MVP 已跑通，下一步部署测试环境。" || !fact.OccurredAt.Equal(now.UTC()) {
+		t.Fatalf("fact = %#v", fact)
+	}
+	if fact.SubjectType != "project" {
+		t.Fatalf("SubjectType = %q, want normalized to project", fact.SubjectType)
 	}
 }
 
-func TestPrepareProjectEventRequiresDescription(t *testing.T) {
+func TestPrepareFactRequiresDescriptionAndSubject(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
-	_, err := prepareProjectEvent(ProjectEventInput{ProjectID: 1, OccurredAt: &now})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	if _, err := prepareFact(FactInput{SubjectType: "project", SubjectID: 1, OccurredAt: &now}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("missing description error = %v, want ErrInvalidInput", err)
+	}
+	if _, err := prepareFact(FactInput{SubjectID: 1, Description: "x", OccurredAt: &now}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("missing subject_type error = %v, want ErrInvalidInput", err)
+	}
+}
+
+// TestPrepareFactKeepsUnknownSubjectType pins the decision that SubjectType is
+// not an enum: a type the system has no table for is still stored.
+func TestPrepareFactKeepsUnknownSubjectType(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	fact, err := prepareFact(FactInput{
+		SubjectType: "meeting", SubjectID: 9, Description: "评审会决定砍掉旁路", OccurredAt: &now,
+	})
+	if err != nil {
+		t.Fatalf("prepareFact() with unknown subject type error = %v, want stored", err)
+	}
+	if fact.SubjectType != "meeting" {
+		t.Fatalf("SubjectType = %q, want meeting", fact.SubjectType)
+	}
+	if _, ok := factSubjectModel("meeting"); ok {
+		t.Fatal("factSubjectModel(meeting) = ok, want no parent table")
 	}
 }

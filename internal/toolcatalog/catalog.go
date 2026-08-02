@@ -47,6 +47,14 @@ func Block(stage string) (string, error) {
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。命令清单 `bytedcli --json --all-help`，单命令参数 `bytedcli --json <子命令路径> --help`。",
 		"- git：查询和操作本地代码仓库。",
 	}
+	// Facts are available wherever the agent may learn something worth keeping.
+	// StageDecide is excluded on purpose: it is a cheap value judgment that does
+	// not investigate, so it has nothing of its own to record.
+	if stage == StageExtract || stage == StageExecute || stage == StageChat {
+		lines = append(lines,
+			"- 查一个项目、群或人身上已经发生过什么时，使用 `jarvis-tools list-facts --help`；确实学到了值得明天回看的事实（定下来的决定和口径、真正的交付、卡住的原因、方向变化、别人承诺负责的事）时，使用 `jarvis-tools append-fact --help` 就地记一条，绑到它真正属于的项目/群/人身上。事实不是执行日志：不要给每条命令都记一条，也不要攒到最后补。",
+		)
+	}
 	if stage == StageExecute {
 		lines = append(lines,
 			"- 当前 Task 需要等待未来条件时，使用 `jarvis-tools yield-until --help`，成功后停止本轮并返回 waiting；只有独立的新动作才创建 scheduled task。",

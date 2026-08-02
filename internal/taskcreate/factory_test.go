@@ -175,9 +175,10 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 			link_principal INTEGER NOT NULL, is_active INTEGER NOT NULL,
 			created_at DATETIME, updated_at DATETIME
 		)`,
-		`CREATE TABLE project_event (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL,
-			description TEXT NOT NULL, occurred_at DATETIME NOT NULL, created_at DATETIME
+		`CREATE TABLE fact (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, subject_type TEXT NOT NULL, subject_id INTEGER NOT NULL,
+			description TEXT NOT NULL, occurred_at DATETIME NOT NULL,
+			source_kind TEXT, source_id INTEGER, created_at DATETIME
 		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {

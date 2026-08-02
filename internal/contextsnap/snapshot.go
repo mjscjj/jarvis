@@ -40,11 +40,11 @@ type Snapshot struct {
 	// is broader background.
 	Conversation []Message        `json:"conversation,omitempty"`
 	Memories     []map[string]any `json:"memories"`
-	// ManagedResources and ProjectEvents are loaded by the common context
+	// ManagedResources and Facts are loaded by the common context
 	// assembler for manual/scheduled tasks. M3 can leave them empty because its
 	// own captured resources are frozen in Resources above.
 	ManagedResources []ManagedResource `json:"managed_resources,omitempty"`
-	ProjectEvents    []ProjectEvent    `json:"project_events,omitempty"`
+	Facts            []Fact            `json:"facts,omitempty"`
 	// RequestContext preserves caller-supplied manual/scheduled background
 	// without allowing it to replace the authoritative common snapshot.
 	RequestContext json.RawMessage `json:"request_context,omitempty"`
@@ -163,8 +163,12 @@ type ManagedResource struct {
 	LinkPrincipal bool    `json:"link_principal"`
 }
 
-type ProjectEvent struct {
+// Fact is one recorded observation about a subject, carried into the snapshot so
+// the model sees what has already happened without querying for it.
+type Fact struct {
 	ID          uint64 `json:"id"`
+	SubjectType string `json:"subject_type"`
+	SubjectID   uint64 `json:"subject_id"`
 	Description string `json:"description"`
 	OccurredAt  string `json:"occurred_at"`
 }

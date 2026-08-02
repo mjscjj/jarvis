@@ -103,7 +103,7 @@ M5 内部分两步：**判断环节**（read-only，给 Todo 定 disposition，�
 | `project` / `person` / `principal_profile` | background | extract/decide | 背景信息（后台可编辑） |
 | `todo` / `todo_event` / `todo_extract_watermark` | extract | decide | 抽取出的行动线索 + 事件 + 抽取游标 |
 | `task` / `task_event` / `execution_run` | decide(建)/execute | execute/insight | 可执行快照 + 业务状态历史 + Codex 执行审计 |
-| `project_event` | background/API | progress | 项目的自然语言进度历史，具体含义由模型结合上下文推断 |
+| `fact` | m3/m5/background/API | progress/contextsnap/dailydigest | 一条条自然语言事实，按 `(subject_type, subject_id)` 绑到项目/群/人等主体上；`subject_type` 不枚举，具体含义由模型结合上下文推断 |
 | `relation_fact` | knowledge/API | knowledge | 两个现有实体之间的自然语言关联；确定性外键关系不重复写 |
 | `decision_audit` | decide | 确认页 | 决策审计 |
 | Qdrant `jarvis_memories` | mem0 sidecar | memory/extract/decide | 长期记忆向量 |

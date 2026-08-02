@@ -472,8 +472,6 @@ func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 // to judge — by intent — whether it will touch the outside world. This closes the
 // "an investigate Task decides mid-run to send a message" gap.
 
-
-
 // TestCodeChangeWithoutRepoGoesThroughPropose closes the hole that let Task #82
 // (a coordination task misclassified as code_change, with no repo in its frozen
 // context) send Feishu messages with neither an MR nor an approval gate.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"jarvis/internal/progress"
 
@@ -28,14 +29,43 @@ func ListTaskEvents(service progress.EventService) app.HandlerFunc {
 	}
 }
 
-func ListProjectEvents(service progress.EventService) app.HandlerFunc {
+// ListFacts reads one subject's facts. The window is passed as explicit RFC3339
+// bounds rather than a calendar date so this handler needs no timezone: whoever
+// asks for "today" already knows which timezone they mean.
+func ListFacts(service progress.EventService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		projectID, err := strconv.ParseUint(c.Param("project_id"), 10, 64)
-		if err != nil || projectID == 0 {
-			writeAPIError(c, consts.StatusBadRequest, 40064, fmt.Errorf("project_id must be a positive integer"))
+		filter := progress.FactFilter{SubjectType: string(c.Query("subject_type"))}
+		subjectID, err := strconv.ParseUint(string(c.Query("subject_id")), 10, 64)
+		if err != nil || subjectID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40064, fmt.Errorf("subject_id must be a positive integer"))
 			return
 		}
-		result, err := service.ListProjectEvents(ctx, projectID)
+		filter.SubjectID = subjectID
+		if raw := string(c.Query("from")); raw != "" {
+			from, err := time.Parse(time.RFC3339, raw)
+			if err != nil {
+				writeAPIError(c, consts.StatusBadRequest, 40064, fmt.Errorf("from must be RFC3339: %w", err))
+				return
+			}
+			filter.From = &from
+		}
+		if raw := string(c.Query("until")); raw != "" {
+			until, err := time.Parse(time.RFC3339, raw)
+			if err != nil {
+				writeAPIError(c, consts.StatusBadRequest, 40064, fmt.Errorf("until must be RFC3339: %w", err))
+				return
+			}
+			filter.Until = &until
+		}
+		if raw := string(c.Query("limit")); raw != "" {
+			limit, err := strconv.Atoi(raw)
+			if err != nil || limit <= 0 {
+				writeAPIError(c, consts.StatusBadRequest, 40064, fmt.Errorf("limit must be a positive integer"))
+				return
+			}
+			filter.Limit = limit
+		}
+		result, err := service.ListFacts(ctx, filter)
 		if err != nil {
 			writeProgressError(c, err)
 			return
@@ -44,20 +74,14 @@ func ListProjectEvents(service progress.EventService) app.HandlerFunc {
 	}
 }
 
-func AppendProjectEvent(service progress.EventService) app.HandlerFunc {
+func AppendFact(service progress.EventService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		projectID, err := strconv.ParseUint(c.Param("project_id"), 10, 64)
-		if err != nil || projectID == 0 {
-			writeAPIError(c, consts.StatusBadRequest, 40064, fmt.Errorf("project_id must be a positive integer"))
-			return
-		}
-		var input progress.ProjectEventInput
+		var input progress.FactInput
 		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40064, err)
 			return
 		}
-		input.ProjectID = projectID
-		result, err := service.AppendProjectEvent(ctx, input)
+		result, err := service.AppendFact(ctx, input)
 		if err != nil {
 			writeProgressError(c, err)
 			return

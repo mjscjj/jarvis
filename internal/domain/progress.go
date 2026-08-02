@@ -29,18 +29,45 @@ type TaskEvent struct {
 
 func (TaskEvent) TableName() string { return "task_event" }
 
-// ProjectEvent is an append-only natural-language history for a project.
-// Project keeps current structured state; Description records what happened.
-type ProjectEvent struct {
-	ID          uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	ProjectID   uint64    `gorm:"column:project_id;type:bigint unsigned;not null;index:idx_project_event_time,priority:1"`
-	Description string    `gorm:"column:description;type:text;not null"`
-	OccurredAt  time.Time `gorm:"column:occurred_at;type:datetime;not null;index:idx_project_event_time,priority:2"`
-	CreatedAt   time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+// Fact is one append-only natural-language observation about some subject:
+// what happened, when, and who noticed. Entity tables keep current structured
+// state; Fact records the stream of things that happened to them.
+//
+// Facts are written as a side channel from wherever the system learns
+// something — M3 while extracting, M5 while executing, background CRUD — and
+// are read back two ways: as recent history for a subject (context snapshots)
+// and as the evidence behind a day's digest.
+type Fact struct {
+	ID uint64 `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
 
-	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:RESTRICT"`
+	// SubjectType is deliberately not an enum. "project", "group" and "person"
+	// are the types the system currently reads back, but a model that decides a
+	// fact belongs to something else may write its own value rather than
+	// discard the observation. Unknown types are stored, not rejected.
+	SubjectType string `gorm:"column:subject_type;type:varchar(32);not null;index:idx_fact_subject_time,priority:1"`
+	SubjectID   uint64 `gorm:"column:subject_id;type:bigint unsigned;not null;index:idx_fact_subject_time,priority:2"`
+
+	// Description is the whole fact, in prose. There is no structured payload
+	// beside it on purpose: the previous schema here carried an event_type enum
+	// and had to be torn out. See migrateNaturalLanguageFacts.
+	Description string `gorm:"column:description;type:text;not null"`
+
+	// OccurredAt is when the fact happened, not when it was recorded, so a
+	// backfilled fact lands on the right day. Callers select a natural day as a
+	// half-open range over this column; there is no separate date column
+	// because a stored local date would silently go wrong if the configured
+	// timezone ever changed.
+	OccurredAt time.Time `gorm:"column:occurred_at;type:datetime;not null;index:idx_fact_subject_time,priority:3"`
+
+	// SourceKind and SourceID trace a fact back to what produced it (m3, m5,
+	// task, run, background). Both optional: a fact is still useful when its
+	// origin is a human poking the API.
+	SourceKind *string `gorm:"column:source_kind;type:varchar(32)"`
+	SourceID   *uint64 `gorm:"column:source_id;type:bigint unsigned"`
+
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
 }
 
-func (ProjectEvent) TableName() string { return "project_event" }
+func (Fact) TableName() string { return "fact" }
 
-func ProgressModels() []any { return []any{&TaskEvent{}, &ProjectEvent{}} }
+func ProgressModels() []any { return []any{&TaskEvent{}, &Fact{}} }

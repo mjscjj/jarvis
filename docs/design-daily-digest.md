@@ -29,7 +29,7 @@
 
 | 一级来源 | 执行者 | 内容 |
 |---|---|---|
-| `jarvis_internal` | Go 确定性查询 | 本人消息、当天 TodoEvent、TaskEvent、ExecutionRun；ProjectEvent 仅作项目上下文，并先写入当日证据文件 |
+| `jarvis_internal` | Go 确定性查询 | 本人消息、当天 TodoEvent、TaskEvent、ExecutionRun；当天的 Fact 作为主体上下文，并先写入当日证据文件 |
 | `feishu_work` | Skill 主控派生的独立 subagent | 消息/线程、文档、日历、会议、妙记、任务、OKR 等；以 `lark-cli` 能力地图为导航 |
 | `engineering_execution` | Skill 主控派生的独立 subagent | Codex sessions、仓库、MR/CR、Commit、测试、部署和运行验收；以 `bytedcli`、Git 和本地代码能力为导航 |
 
@@ -56,7 +56,7 @@ Jarvis 内部事实严格按事件时间查询，不使用“`updated_at` 当天
   成一条生命周期证据；
 - 执行：读取当天开始或结束的 `execution_run`，同一 Task 的多次 Run 聚合为一次执行
   时间线，保留各 Run ID 和最终结果；
-- 项目：`project_event.occurred_at` 只作状态上下文，因其没有 actor，不能直接归因；
+- 事实：`fact.occurred_at` 只作状态上下文，因其没有 actor，不能直接归因；
 - 历史仍开放的 Todo/Task 不计入当天事实和 `source_count`。
 
 飞书取证先做一轮有界的当日清点：本人发出消息数、显式 @ 本人的消息数与去重人数、

@@ -45,13 +45,13 @@ END_M5_PHASE`
 // re-run prompts so the agent knows what already happened (side effects, failures,
 // artifacts) instead of starting from a blank slate.
 type priorRunSummary struct {
-	RunID           uint64          `json:"run_id"`
-	Status          string          `json:"status"`
-	Summary         string          `json:"summary,omitempty"`
-	ErrorDetail     string          `json:"error_detail,omitempty"`
-	Output          json.RawMessage `json:"output,omitempty"`
-	StartedAt       string          `json:"started_at"`
-	FinishedAt      string          `json:"finished_at,omitempty"`
+	RunID       uint64          `json:"run_id"`
+	Status      string          `json:"status"`
+	Summary     string          `json:"summary,omitempty"`
+	ErrorDetail string          `json:"error_detail,omitempty"`
+	Output      json.RawMessage `json:"output,omitempty"`
+	StartedAt   string          `json:"started_at"`
+	FinishedAt  string          `json:"finished_at,omitempty"`
 }
 
 // executionResultSchema is the JSON schema codex MUST return as its final

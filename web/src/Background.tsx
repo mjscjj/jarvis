@@ -26,7 +26,7 @@ import {
 } from 'antd'
 import type { TableColumnsType } from 'antd'
 import {
-  appendProjectEvent,
+  appendProjectFact,
   createPerson,
   createProject,
   createResource,
@@ -37,7 +37,7 @@ import {
   getSkillContent,
   listGroups,
   listPersons,
-  listProjectEvents,
+  listProjectFacts,
   listProjects,
   listResources,
   listSkills,
@@ -69,7 +69,7 @@ import type {
   ProfileInput,
   ProfileView,
   Project,
-  ProjectEvent,
+  Fact,
   ProjectInput,
   ProjectRole,
   ProjectStatus,
@@ -119,7 +119,7 @@ function ProjectsPanel() {
   const [submitting, setSubmitting] = useState(false)
   const [form] = Form.useForm<ProjectInput>()
   const [detail, setDetail] = useState<Project>()
-  const [events, setEvents] = useState<ProjectEvent[]>([])
+  const [events, setEvents] = useState<Fact[]>([])
   const [eventsLoading, setEventsLoading] = useState(false)
   const [eventsError, setEventsError] = useState<string>()
   const [eventOpen, setEventOpen] = useState(false)
@@ -141,7 +141,7 @@ function ProjectsPanel() {
     const controller = new AbortController()
     setEventsLoading(true)
     setEventsError(undefined)
-    listProjectEvents(detail.id, controller.signal)
+    listProjectFacts(detail.id, controller.signal)
       .then((result) => setEvents(result.items))
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) setEventsError(errorText(cause))
@@ -191,7 +191,7 @@ function ProjectsPanel() {
     if (!detail || !eventDescription.trim()) return
     setEventSubmitting(true)
     try {
-      await appendProjectEvent(detail.id, eventDescription.trim())
+      await appendProjectFact(detail.id, eventDescription.trim())
       setEventDescription('')
       setEventOpen(false)
       setEventRefresh((value) => value + 1)

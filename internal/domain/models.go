@@ -108,9 +108,9 @@ type Todo struct {
 	// question travels with the Task and M5 raises it.
 	Status           string         `gorm:"column:status;type:varchar(24);not null;default:extracted;index:idx_todo_status;index:idx_todo_leader_status,priority:2"`
 	DedupFingerprint string         `gorm:"column:dedup_fingerprint;type:char(64);not null;uniqueIndex:uk_todo_fingerprint"`
-	ContextSnapshot    datatypes.JSON `gorm:"column:context_snapshot;type:json"`  // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），判断/执行环节全链路复用
-	ExtractionResult   datatypes.JSON `gorm:"column:extraction_result;type:json"` // M3 抽取吐出的完整结论原文（整个 Candidate），判断环节整块复用，不逐字段拆
-	Resolution         datatypes.JSON `gorm:"column:resolution;type:json"`        // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
+	ContextSnapshot  datatypes.JSON `gorm:"column:context_snapshot;type:json"`  // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），判断/执行环节全链路复用
+	ExtractionResult datatypes.JSON `gorm:"column:extraction_result;type:json"` // M3 抽取吐出的完整结论原文（整个 Candidate），判断环节整块复用，不逐字段拆
+	Resolution       datatypes.JSON `gorm:"column:resolution;type:json"`        // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
 	// Revision counts how many times this clue was re-extracted; Version is the
 	// optimistic lock. They are different things and must not be merged.
 	Revision       int32     `gorm:"column:revision;not null;default:1"`

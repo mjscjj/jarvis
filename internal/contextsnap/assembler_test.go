@@ -39,10 +39,11 @@ func TestAssemblerLoadsCommonContextAndPreservesRequestContext(t *testing.T) {
 		t.Fatalf("create managed resource: %v", err)
 	}
 	eventAt := time.Date(2026, 7, 24, 1, 2, 3, 0, time.UTC)
-	if err := db.Create(&domain.ProjectEvent{
-		ProjectID: project.ID, Description: "完成上下文链路", OccurredAt: eventAt,
+	if err := db.Create(&domain.Fact{
+		SubjectType: "project", SubjectID: project.ID,
+		Description: "完成上下文链路", OccurredAt: eventAt,
 	}).Error; err != nil {
-		t.Fatalf("create project event: %v", err)
+		t.Fatalf("create fact: %v", err)
 	}
 
 	assembler, err := NewAssembler(db, "ou_me")
@@ -68,8 +69,11 @@ func TestAssemblerLoadsCommonContextAndPreservesRequestContext(t *testing.T) {
 	if len(snapshot.OtherProjects) != 1 || snapshot.OtherProjects[0].ID != other.ID {
 		t.Fatalf("other_projects = %#v", snapshot.OtherProjects)
 	}
-	if len(snapshot.ManagedResources) != 1 || len(snapshot.ProjectEvents) != 1 {
-		t.Fatalf("resources/events = %#v / %#v", snapshot.ManagedResources, snapshot.ProjectEvents)
+	if len(snapshot.ManagedResources) != 1 || len(snapshot.Facts) != 1 {
+		t.Fatalf("resources/facts = %#v / %#v", snapshot.ManagedResources, snapshot.Facts)
+	}
+	if snapshot.Facts[0].SubjectType != "project" || snapshot.Facts[0].SubjectID != project.ID {
+		t.Fatalf("fact subject = %#v", snapshot.Facts[0])
 	}
 	if string(snapshot.RequestContext) != `{"instruction_context":"只改后端"}` {
 		t.Fatalf("request_context = %s", snapshot.RequestContext)
@@ -133,9 +137,10 @@ func createAssemblerTables(t *testing.T, db *gorm.DB) {
 			link_principal INTEGER NOT NULL, is_active INTEGER NOT NULL,
 			created_at DATETIME, updated_at DATETIME
 		)`,
-		`CREATE TABLE project_event (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL,
-			description TEXT NOT NULL, occurred_at DATETIME NOT NULL, created_at DATETIME
+		`CREATE TABLE fact (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, subject_type TEXT NOT NULL, subject_id INTEGER NOT NULL,
+			description TEXT NOT NULL, occurred_at DATETIME NOT NULL,
+			source_kind TEXT, source_id INTEGER, created_at DATETIME
 		)`,
 	}
 	for _, statement := range statements {

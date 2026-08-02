@@ -72,7 +72,7 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 	if err != nil {
 		return nil, err
 	}
-	projectEvents, err := a.loadProjectEvents(ctx, projectID)
+	facts, err := a.loadProjectFacts(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 		Project:          project,
 		OtherProjects:    otherProjects,
 		ManagedResources: managedResources,
-		ProjectEvents:    projectEvents,
+		Facts:            facts,
 		Memories:         make([]map[string]any, 0),
 		RequestContext:   requestContext,
 	}
@@ -169,20 +169,28 @@ func (a *Assembler) loadManagedResources(ctx context.Context, projectID *uint64)
 	return result, nil
 }
 
-func (a *Assembler) loadProjectEvents(ctx context.Context, projectID *uint64) ([]ProjectEvent, error) {
+// snapshotFactLimit caps how much history rides along in every snapshot. The
+// snapshot is copied onto every Todo and Task, so an unbounded project history
+// would grow the payload of all downstream work forever. Older facts stay in
+// the table and remain queryable by tool.
+const snapshotFactLimit = 50
+
+func (a *Assembler) loadProjectFacts(ctx context.Context, projectID *uint64) ([]Fact, error) {
 	if projectID == nil {
 		return nil, nil
 	}
-	var rows []domain.ProjectEvent
-	if err := a.db.WithContext(ctx).Where("project_id = ?", *projectID).
-		Order("occurred_at DESC, id DESC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("assemble context snapshot: load project events project_id=%d: %w", *projectID, err)
+	var rows []domain.Fact
+	if err := a.db.WithContext(ctx).
+		Where("subject_type = ? AND subject_id = ?", "project", *projectID).
+		Order("occurred_at DESC, id DESC").Limit(snapshotFactLimit).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("assemble context snapshot: load project facts project_id=%d: %w", *projectID, err)
 	}
-	result := make([]ProjectEvent, len(rows))
+	result := make([]Fact, len(rows))
 	for i := range rows {
-		result[i] = ProjectEvent{
-			ID: rows[i].ID, Description: rows[i].Description,
-			OccurredAt: rows[i].OccurredAt.UTC().Format(time.RFC3339),
+		result[i] = Fact{
+			ID: rows[i].ID, SubjectType: rows[i].SubjectType, SubjectID: rows[i].SubjectID,
+			Description: rows[i].Description,
+			OccurredAt:  rows[i].OccurredAt.UTC().Format(time.RFC3339),
 		}
 	}
 	return result, nil

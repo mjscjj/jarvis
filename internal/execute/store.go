@@ -99,22 +99,22 @@ type HumanResumeClaim struct {
 // RunView 是一次 ExecutionRun 审计记录的只读视图，供任务详情展示执行历史。
 // Prompt 原样返回，便于在任务详情中核对模型收到的完整输入。
 type RunView struct {
-	ID              uint64          `json:"id"`
-	TaskID          uint64          `json:"task_id"`
-	ActionType      string          `json:"action_type"`
-	Stage           string          `json:"stage"`
-	Sandbox         string          `json:"sandbox"`
-	Status          string          `json:"status"`
-	Prompt          string          `json:"prompt"`
-	CodexSessionID  *string         `json:"codex_session_id"`
-	Summary         *string         `json:"summary"`
-	Output          json.RawMessage `json:"output"`
-	Effects         json.RawMessage `json:"effects"`
-	ErrorDetail     *string         `json:"error_detail"`
-	RepoPath *string `json:"repo_path"`
-	StartedAt       time.Time       `json:"started_at"`
-	FinishedAt      *time.Time      `json:"finished_at"`
-	DurationMs      *int64          `json:"duration_ms"`
+	ID             uint64          `json:"id"`
+	TaskID         uint64          `json:"task_id"`
+	ActionType     string          `json:"action_type"`
+	Stage          string          `json:"stage"`
+	Sandbox        string          `json:"sandbox"`
+	Status         string          `json:"status"`
+	Prompt         string          `json:"prompt"`
+	CodexSessionID *string         `json:"codex_session_id"`
+	Summary        *string         `json:"summary"`
+	Output         json.RawMessage `json:"output"`
+	Effects        json.RawMessage `json:"effects"`
+	ErrorDetail    *string         `json:"error_detail"`
+	RepoPath       *string         `json:"repo_path"`
+	StartedAt      time.Time       `json:"started_at"`
+	FinishedAt     *time.Time      `json:"finished_at"`
+	DurationMs     *int64          `json:"duration_ms"`
 }
 
 type RunList struct {
@@ -1158,7 +1158,7 @@ func runView(run *domain.ExecutionRun) RunView {
 		ID: run.ID, TaskID: run.TaskID, ActionType: run.ActionType, Stage: run.Stage, Sandbox: run.Sandbox,
 		Status: run.Status, Prompt: run.Prompt, CodexSessionID: run.CodexSessionID, Summary: run.Summary,
 		Output: rawJSON(run.Output), Effects: rawJSON(run.Effects), ErrorDetail: run.ErrorDetail,
-		RepoPath: run.RepoPath,
+		RepoPath:  run.RepoPath,
 		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, DurationMs: run.DurationMs,
 	}
 }

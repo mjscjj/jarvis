@@ -26,7 +26,7 @@ var taskEventTypes = map[string]struct{}{
 	"reapply_started": {}, "supplemented": {}, "execution_succeeded": {},
 	"execution_failed": {}, "execution_interrupted": {}, "stale_failed": {}, "snapshot_imported": {},
 	"feishu_message_recalled": {},
-	"waiting_scheduled": {}, "resumed": {}, "human_input_requested": {},
+	"waiting_scheduled":       {}, "resumed": {}, "human_input_requested": {},
 	"human_response_received": {},
 }
 
@@ -51,10 +51,25 @@ type TaskEventInput struct {
 	OccurredAt  time.Time
 }
 
-type ProjectEventInput struct {
-	ProjectID   uint64     `json:"-"`
+// FactInput appends one fact. SubjectType is free-form; see domain.Fact.
+type FactInput struct {
+	SubjectType string     `json:"subject_type"`
+	SubjectID   uint64     `json:"subject_id"`
 	Description string     `json:"description"`
 	OccurredAt  *time.Time `json:"occurred_at"`
+	SourceKind  *string    `json:"source_kind"`
+	SourceID    *uint64    `json:"source_id"`
+}
+
+// FactFilter selects facts for one subject, optionally narrowed to a half-open
+// time window. Callers own the timezone: to read a natural day, pass that day's
+// local midnight and the next one. Limit caps the newest-first result.
+type FactFilter struct {
+	SubjectType string
+	SubjectID   uint64
+	From        *time.Time
+	Until       *time.Time
+	Limit       int
 }
 
 type TaskEventView struct {
@@ -72,18 +87,21 @@ type TaskEventView struct {
 	CreatedAt   time.Time       `json:"created_at"`
 }
 
-type ProjectEventView struct {
+type FactView struct {
 	ID          uint64    `json:"id"`
-	ProjectID   uint64    `json:"project_id"`
+	SubjectType string    `json:"subject_type"`
+	SubjectID   uint64    `json:"subject_id"`
 	Description string    `json:"description"`
 	OccurredAt  time.Time `json:"occurred_at"`
+	SourceKind  *string   `json:"source_kind"`
+	SourceID    *uint64   `json:"source_id"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
 type EventService interface {
 	ListTaskEvents(context.Context, uint64) ([]TaskEventView, error)
-	AppendProjectEvent(context.Context, ProjectEventInput) (*ProjectEventView, error)
-	ListProjectEvents(context.Context, uint64) ([]ProjectEventView, error)
+	AppendFact(context.Context, FactInput) (*FactView, error)
+	ListFacts(context.Context, FactFilter) ([]FactView, error)
 }
 
 type Service struct {
@@ -133,43 +151,58 @@ func (s *Service) ListTaskEvents(ctx context.Context, taskID uint64) ([]TaskEven
 	return views, nil
 }
 
-func (s *Service) AppendProjectEvent(ctx context.Context, input ProjectEventInput) (*ProjectEventView, error) {
+// AppendFact stores one fact. Subjects whose type the system knows are checked
+// for existence so a typo cannot orphan a fact; an unrecognized SubjectType is
+// stored as-is, because refusing it would throw away an observation in exchange
+// for an enum nobody asked for.
+func (s *Service) AppendFact(ctx context.Context, input FactInput) (*FactView, error) {
 	if input.OccurredAt == nil {
 		now := s.now().UTC()
 		input.OccurredAt = &now
 	}
-	event, err := prepareProjectEvent(input)
+	fact, err := prepareFact(input)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireParent(s.db.WithContext(ctx), &domain.Project{}, input.ProjectID); err != nil {
-		return nil, err
+	db := s.db.WithContext(ctx)
+	if parent, ok := factSubjectModel(fact.SubjectType); ok {
+		if err := requireParent(db, parent, fact.SubjectID); err != nil {
+			return nil, err
+		}
 	}
-	if err := s.db.WithContext(ctx).Create(event).Error; err != nil {
-		return nil, fmt.Errorf("append project event project_id=%d: %w", input.ProjectID, err)
+	if err := db.Create(fact).Error; err != nil {
+		return nil, fmt.Errorf("append fact subject=%s/%d: %w", fact.SubjectType, fact.SubjectID, err)
 	}
-	if err := s.db.WithContext(ctx).First(event, event.ID).Error; err != nil {
-		return nil, fmt.Errorf("reload project event id=%d: %w", event.ID, err)
+	if err := db.First(fact, fact.ID).Error; err != nil {
+		return nil, fmt.Errorf("reload fact id=%d: %w", fact.ID, err)
 	}
-	view := projectEventView(event)
+	view := factView(fact)
 	return &view, nil
 }
 
-func (s *Service) ListProjectEvents(ctx context.Context, projectID uint64) ([]ProjectEventView, error) {
-	if projectID == 0 {
-		return nil, fmt.Errorf("%w: project_id must be positive", ErrInvalidInput)
+// ListFacts returns one subject's facts newest first.
+func (s *Service) ListFacts(ctx context.Context, filter FactFilter) ([]FactView, error) {
+	subjectType := strings.TrimSpace(strings.ToLower(filter.SubjectType))
+	if subjectType == "" || filter.SubjectID == 0 {
+		return nil, fmt.Errorf("%w: subject_type and positive subject_id are required", ErrInvalidInput)
 	}
-	if err := requireParent(s.db.WithContext(ctx), &domain.Project{}, projectID); err != nil {
-		return nil, err
+	query := s.db.WithContext(ctx).Where("subject_type = ? AND subject_id = ?", subjectType, filter.SubjectID)
+	if filter.From != nil {
+		query = query.Where("occurred_at >= ?", filter.From.UTC())
 	}
-	var rows []domain.ProjectEvent
-	if err := s.db.WithContext(ctx).Where("project_id = ?", projectID).
-		Order("occurred_at DESC, id DESC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list project events project_id=%d: %w", projectID, err)
+	if filter.Until != nil {
+		query = query.Where("occurred_at < ?", filter.Until.UTC())
 	}
-	views := make([]ProjectEventView, len(rows))
+	if filter.Limit > 0 {
+		query = query.Limit(filter.Limit)
+	}
+	var rows []domain.Fact
+	if err := query.Order("occurred_at DESC, id DESC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list facts subject=%s/%d: %w", subjectType, filter.SubjectID, err)
+	}
+	views := make([]FactView, len(rows))
 	for i := range rows {
-		views[i] = projectEventView(&rows[i])
+		views[i] = factView(&rows[i])
 	}
 	return views, nil
 }
@@ -209,15 +242,36 @@ func prepareTaskEvent(input TaskEventInput) (*domain.TaskEvent, error) {
 	}, nil
 }
 
-func prepareProjectEvent(input ProjectEventInput) (*domain.ProjectEvent, error) {
+func prepareFact(input FactInput) (*domain.Fact, error) {
 	input.Description = strings.TrimSpace(input.Description)
-	if input.ProjectID == 0 || input.Description == "" || input.OccurredAt == nil || input.OccurredAt.IsZero() {
-		return nil, fmt.Errorf("%w: project_id, description and occurred_at are required", ErrInvalidInput)
+	input.SubjectType = strings.TrimSpace(strings.ToLower(input.SubjectType))
+	input.SourceKind = normalizedOptional(input.SourceKind)
+	if input.SubjectType == "" || input.SubjectID == 0 || input.Description == "" ||
+		input.OccurredAt == nil || input.OccurredAt.IsZero() {
+		return nil, fmt.Errorf("%w: subject_type, subject_id, description and occurred_at are required", ErrInvalidInput)
 	}
-	return &domain.ProjectEvent{
-		ProjectID: input.ProjectID, Description: input.Description,
-		OccurredAt: input.OccurredAt.UTC(),
+	return &domain.Fact{
+		SubjectType: input.SubjectType, SubjectID: input.SubjectID,
+		Description: input.Description, OccurredAt: input.OccurredAt.UTC(),
+		SourceKind: input.SourceKind, SourceID: input.SourceID,
 	}, nil
+}
+
+// factSubjectModel maps the subject types the system reads back to their tables.
+// A miss is not an error; see AppendFact.
+func factSubjectModel(subjectType string) (any, bool) {
+	switch subjectType {
+	case "project":
+		return &domain.Project{}, true
+	case "group":
+		return &domain.Group{}, true
+	case "person":
+		return &domain.Person{}, true
+	case "task":
+		return &domain.Task{}, true
+	default:
+		return nil, false
+	}
 }
 
 func requireParent(db *gorm.DB, model any, id uint64) error {
@@ -251,10 +305,11 @@ func taskEventView(event *domain.TaskEvent) TaskEventView {
 	}
 }
 
-func projectEventView(event *domain.ProjectEvent) ProjectEventView {
-	return ProjectEventView{
-		ID: event.ID, ProjectID: event.ProjectID, Description: event.Description,
-		OccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt,
+func factView(fact *domain.Fact) FactView {
+	return FactView{
+		ID: fact.ID, SubjectType: fact.SubjectType, SubjectID: fact.SubjectID,
+		Description: fact.Description, OccurredAt: fact.OccurredAt,
+		SourceKind: fact.SourceKind, SourceID: fact.SourceID, CreatedAt: fact.CreatedAt,
 	}
 }
 
