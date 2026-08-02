@@ -29,8 +29,8 @@ const (
 )
 
 // MaterialSource is one mechanical projection into the shared SourceUnit
-// protocol. Adding a source means registering another projection here; the
-// worker, prompt, extractor and fact persistence path remain unchanged.
+// protocol. The composition root registers projections explicitly; the worker,
+// prompt, extractor and fact persistence path remain unchanged.
 type MaterialSource struct {
 	Name               string
 	StartAtPresent     bool
@@ -72,18 +72,6 @@ func NewGORMStore(db *gorm.DB) (*GORMStore, error) {
 		return nil, fmt.Errorf("fact engine store db is nil")
 	}
 	return &GORMStore{db: db}, nil
-}
-
-// Sources is the complete input surface of the offline fact engine. Message
-// preserves its existing no-history startup behavior. Todo and Task intentionally
-// start at event id zero on first enablement so the newly connected sources feed
-// all existing lifecycle material through once.
-func (s *GORMStore) Sources() []MaterialSource {
-	return []MaterialSource{
-		{Name: SourceMessage, StartAtPresent: true, MaxID: s.MaxMessageID, Units: s.MessageUnits},
-		{Name: SourceTodo, CheckpointEachUnit: true, MaxID: s.MaxTodoEventID, Units: s.TodoUnits},
-		{Name: SourceTask, CheckpointEachUnit: true, MaxID: s.MaxTaskEventID, Units: s.TaskUnits},
-	}
 }
 
 // Cursor returns the source's watermark. The second result is false when the

@@ -10,10 +10,9 @@ import (
 	"jarvis/internal/textstore"
 )
 
-type sourceStore interface {
+type cursorStore interface {
 	Cursor(context.Context, string) (uint64, bool, error)
 	AdvanceCursor(context.Context, string, uint64, time.Time) error
-	Sources() []MaterialSource
 }
 
 type factExtractor interface {
@@ -55,14 +54,14 @@ type SourceStats struct {
 // Worker runs one offline extraction round: read material above the watermark,
 // distil each unit, store the facts, then move the watermark.
 type Worker struct {
-	store     sourceStore
+	store     cursorStore
 	sources   []MaterialSource
 	extractor factExtractor
 	facts     factAppender
 	opts      WorkerOptions
 }
 
-func NewWorker(store sourceStore, extractor factExtractor, facts factAppender, opts WorkerOptions) (*Worker, error) {
+func NewWorker(store cursorStore, sources []MaterialSource, extractor factExtractor, facts factAppender, opts WorkerOptions) (*Worker, error) {
 	if store == nil {
 		return nil, fmt.Errorf("fact engine store is nil")
 	}
@@ -81,7 +80,6 @@ func NewWorker(store sourceStore, extractor factExtractor, facts factAppender, o
 	if opts.Prompts == nil {
 		return nil, fmt.Errorf("fact engine prompt reader is nil")
 	}
-	sources := store.Sources()
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("fact engine has no material sources")
 	}
@@ -95,7 +93,7 @@ func NewWorker(store sourceStore, extractor factExtractor, facts factAppender, o
 		}
 		seen[source.Name] = struct{}{}
 	}
-	return &Worker{store: store, sources: sources, extractor: extractor, facts: facts, opts: opts}, nil
+	return &Worker{store: store, sources: append([]MaterialSource(nil), sources...), extractor: extractor, facts: facts, opts: opts}, nil
 }
 
 // ExtractOnce distils one batch from every registered material source.

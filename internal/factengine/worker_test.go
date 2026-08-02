@@ -44,7 +44,7 @@ func (f *fakeStore) MessageUnits(context.Context, uint64, int, WindowOptions) ([
 	return f.units, f.maxID, nil
 }
 
-func (f *fakeStore) Sources() []MaterialSource {
+func (f *fakeStore) materialSources() []MaterialSource {
 	if f.sources != nil {
 		return f.sources
 	}
@@ -103,9 +103,9 @@ func testUnit(key string, lastID uint64, occurredAt time.Time) SourceUnit {
 	}
 }
 
-func newTestWorker(t *testing.T, store sourceStore, extractor factExtractor, facts factAppender) *Worker {
+func newTestWorker(t *testing.T, store *fakeStore, extractor factExtractor, facts factAppender) *Worker {
 	t.Helper()
-	worker, err := NewWorker(store, extractor, facts, WorkerOptions{
+	worker, err := NewWorker(store, store.materialSources(), extractor, facts, WorkerOptions{
 		BatchLimit: 100,
 		Window:     WindowOptions{Gap: 30 * time.Minute, MaxMessages: 40, Location: time.UTC},
 		Prompts:    fakePrompts{content: "记事实"},
@@ -321,7 +321,7 @@ func TestNewWorkerRejectsIncompleteOptions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := valid
 			tt.mutate(&opts)
-			if _, err := NewWorker(store, extractor, facts, opts); err == nil ||
+			if _, err := NewWorker(store, store.materialSources(), extractor, facts, opts); err == nil ||
 				!strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("NewWorker() error = %v, want containing %q", err, tt.wantErr)
 			}

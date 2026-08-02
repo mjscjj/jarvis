@@ -227,7 +227,12 @@ func main() {
 	if err != nil {
 		fatalf("initialize fact engine extractor failed: %v", err)
 	}
-	factEngineWorker, err := factengine.NewWorker(factEngineStore, factExtractor, progressService, factengine.WorkerOptions{
+	factSources := []factengine.MaterialSource{
+		{Name: factengine.SourceMessage, StartAtPresent: true, MaxID: factEngineStore.MaxMessageID, Units: factEngineStore.MessageUnits},
+		{Name: factengine.SourceTodo, CheckpointEachUnit: true, MaxID: factEngineStore.MaxTodoEventID, Units: factEngineStore.TodoUnits},
+		{Name: factengine.SourceTask, CheckpointEachUnit: true, MaxID: factEngineStore.MaxTaskEventID, Units: factEngineStore.TaskUnits},
+	}
+	factEngineWorker, err := factengine.NewWorker(factEngineStore, factSources, factExtractor, progressService, factengine.WorkerOptions{
 		BatchLimit: cfg.FactEngine.BatchLimit,
 		Window: factengine.WindowOptions{
 			Gap:         time.Duration(cfg.FactEngine.WindowGapMinutes) * time.Minute,
