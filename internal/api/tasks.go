@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/effectops"
 	"jarvis/internal/execute"
 
 	"code.byted.org/middleware/hertz/pkg/app"
@@ -414,7 +415,7 @@ type recallEffectMessageRequest struct {
 // confirmation for a high-risk, irreversible external write, so no
 // expected_version is required; the reloaded Task (with a bumped version) is
 // returned so the caller can refresh the drawer it was clicked from.
-func RecallEffectMessage(recaller *execute.MessageRecaller) app.HandlerFunc {
+func RecallEffectMessage(recaller *effectops.MessageRecaller, tasks execute.TaskService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
 		if err != nil || taskID == 0 {
@@ -426,12 +427,32 @@ func RecallEffectMessage(recaller *execute.MessageRecaller) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40031, err)
 			return
 		}
-		result, err := recaller.Recall(ctx, taskID, request.MessageID)
+		err = recaller.Recall(ctx, taskID, request.MessageID)
+		if err != nil {
+			writeEffectOperationError(c, err)
+			return
+		}
+		result, err := tasks.GetTask(ctx, taskID)
 		if err != nil {
 			writeExecutionError(c, err)
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func writeEffectOperationError(c *app.RequestContext, err error) {
+	switch {
+	case errors.Is(err, effectops.ErrInvalidInput):
+		writeAPIError(c, consts.StatusBadRequest, 40022, err)
+	case errors.Is(err, effectops.ErrTaskNotFound):
+		writeAPIError(c, consts.StatusNotFound, 40420, err)
+	case errors.Is(err, effectops.ErrRecallTargetNotFound):
+		writeAPIError(c, consts.StatusNotFound, 40421, err)
+	case errors.Is(err, effectops.ErrMessageAlreadyRecalled), errors.Is(err, effectops.ErrVersionConflict):
+		writeAPIError(c, consts.StatusConflict, 40921, err)
+	default:
+		writeAPIError(c, consts.StatusInternalServerError, 50021, fmt.Errorf("effect operation failed: %s", strings.TrimSpace(err.Error())))
 	}
 }
 
@@ -476,10 +497,6 @@ func writeExecutionError(c *app.RequestContext, err error) {
 		writeAPIError(c, consts.StatusBadRequest, 40022, err)
 	case errors.Is(err, execute.ErrTaskNotFound):
 		writeAPIError(c, consts.StatusNotFound, 40420, err)
-	case errors.Is(err, execute.ErrRecallTargetNotFound):
-		writeAPIError(c, consts.StatusNotFound, 40421, err)
-	case errors.Is(err, execute.ErrMessageAlreadyRecalled):
-		writeAPIError(c, consts.StatusConflict, 40921, err)
 	case errors.Is(err, execute.ErrVersionConflict), errors.Is(err, execute.ErrInvalidTransition):
 		writeAPIError(c, consts.StatusConflict, 40920, err)
 	case errors.Is(err, execute.ErrUnknownActionType):

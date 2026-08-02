@@ -1,4 +1,7 @@
-package execute
+// Package effectops owns user-triggered operations on external effects that an
+// execution run already declared. It is intentionally separate from the M5
+// execution lifecycle.
+package effectops
 
 import (
 	"bytes"
@@ -17,6 +20,9 @@ import (
 )
 
 var (
+	ErrInvalidInput    = errors.New("invalid effect operation input")
+	ErrTaskNotFound    = errors.New("effect operation Task not found")
+	ErrVersionConflict = errors.New("effect operation version conflict")
 	// ErrRecallTargetNotFound means the message id was never declared as an
 	// effect of this Task, so Jarvis refuses to recall it.
 	ErrRecallTargetNotFound = errors.New("recall target message is not an effect of this Task")
@@ -54,45 +60,45 @@ func NewMessageRecaller(db *gorm.DB, lark MessageRecallClient) (*MessageRecaller
 	return &MessageRecaller{db: db, lark: lark, now: time.Now}, nil
 }
 
-// Recall recalls messageID and returns the reloaded Task.
+// Recall recalls messageID and persists the audit mark.
 //
 // The message must be declared as an effect of this Task: that declaration is
 // the only proof Jarvis sent it, and requiring it keeps this endpoint from
 // deleting arbitrary Feishu messages. Recalling is irreversible, so it happens
 // after the scan and before any write; if persisting the mark then fails the
 // error surfaces as-is (no rollback, no retry — the message is already gone).
-func (r *MessageRecaller) Recall(ctx context.Context, taskID uint64, messageID string) (*TaskView, error) {
+func (r *MessageRecaller) Recall(ctx context.Context, taskID uint64, messageID string) error {
 	if taskID == 0 {
-		return nil, fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
+		return fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
 	}
 	messageID = strings.TrimSpace(messageID)
 	if !strings.HasPrefix(messageID, "om_") {
-		return nil, fmt.Errorf("%w: message_id must be a Feishu message id (om_...)", ErrInvalidInput)
+		return fmt.Errorf("%w: message_id must be a Feishu message id (om_...)", ErrInvalidInput)
 	}
 
 	var task domain.Task
 	if err := r.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
 		}
-		return nil, fmt.Errorf("load Task id=%d for recall: %w", taskID, err)
+		return fmt.Errorf("load Task id=%d for recall: %w", taskID, err)
 	}
 	var runs []domain.ExecutionRun
 	if err := r.db.WithContext(ctx).Where("task_id = ?", taskID).Order("id").Find(&runs).Error; err != nil {
-		return nil, fmt.Errorf("load runs of Task id=%d for recall: %w", taskID, err)
+		return fmt.Errorf("load runs of Task id=%d for recall: %w", taskID, err)
 	}
 
 	recalledAt := r.now().UTC().Format(time.RFC3339)
 	taskScan, err := markRecalledInExecutionResult(task.ExecutionResult, messageID, recalledAt)
 	if err != nil {
-		return nil, fmt.Errorf("scan execution_result effects task_id=%d: %w", taskID, err)
+		return fmt.Errorf("scan execution_result effects task_id=%d: %w", taskID, err)
 	}
 	matched, alreadyRecalled := taskScan.matched, taskScan.alreadyRecalled
 	runPatches := make(map[uint64][]byte)
 	for i := range runs {
 		scan, err := markRecalledInEffects(runs[i].Effects, messageID, recalledAt)
 		if err != nil {
-			return nil, fmt.Errorf("scan run effects run_id=%d: %w", runs[i].ID, err)
+			return fmt.Errorf("scan run effects run_id=%d: %w", runs[i].ID, err)
 		}
 		matched += scan.matched
 		alreadyRecalled += scan.alreadyRecalled
@@ -101,14 +107,14 @@ func (r *MessageRecaller) Recall(ctx context.Context, taskID uint64, messageID s
 		}
 	}
 	if matched == 0 {
-		return nil, fmt.Errorf("%w: task_id=%d message_id=%s", ErrRecallTargetNotFound, taskID, messageID)
+		return fmt.Errorf("%w: task_id=%d message_id=%s", ErrRecallTargetNotFound, taskID, messageID)
 	}
 	if alreadyRecalled > 0 {
-		return nil, fmt.Errorf("%w: task_id=%d message_id=%s", ErrMessageAlreadyRecalled, taskID, messageID)
+		return fmt.Errorf("%w: task_id=%d message_id=%s", ErrMessageAlreadyRecalled, taskID, messageID)
 	}
 
 	if err := r.lark.RecallMessage(ctx, messageID); err != nil {
-		return nil, fmt.Errorf("recall feishu message task_id=%d message_id=%s: %w", taskID, messageID, err)
+		return fmt.Errorf("recall feishu message task_id=%d message_id=%s: %w", taskID, messageID, err)
 	}
 
 	for runID, patched := range runPatches {
@@ -116,10 +122,10 @@ func (r *MessageRecaller) Recall(ctx context.Context, taskID uint64, messageID s
 			Where("id = ? AND task_id = ?", runID, taskID).
 			Update("effects", datatypes.JSON(patched))
 		if update.Error != nil {
-			return nil, fmt.Errorf("mark recalled effect run_id=%d: %w", runID, update.Error)
+			return fmt.Errorf("mark recalled effect run_id=%d: %w", runID, update.Error)
 		}
 		if update.RowsAffected != 1 {
-			return nil, fmt.Errorf("mark recalled effect run_id=%d: run is gone", runID)
+			return fmt.Errorf("mark recalled effect run_id=%d: run is gone", runID)
 		}
 	}
 
@@ -134,10 +140,10 @@ func (r *MessageRecaller) Recall(ctx context.Context, taskID uint64, messageID s
 	update := r.db.WithContext(ctx).Model(&domain.Task{}).
 		Where("id = ? AND version = ?", task.ID, task.Version).Updates(updates)
 	if update.Error != nil {
-		return nil, fmt.Errorf("mark recalled effect task_id=%d: %w", task.ID, update.Error)
+		return fmt.Errorf("mark recalled effect task_id=%d: %w", task.ID, update.Error)
 	}
 	if update.RowsAffected != 1 {
-		return nil, fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, task.Version)
+		return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, task.Version)
 	}
 	if err := progress.AppendTaskEvent(r.db.WithContext(ctx), progress.TaskEventInput{
 		TaskID: task.ID, TaskVersion: task.Version + 1, EventType: "feishu_message_recalled",
@@ -145,15 +151,9 @@ func (r *MessageRecaller) Recall(ctx context.Context, taskID uint64, messageID s
 		Detail:     map[string]any{"message_id": messageID, "effects_marked": matched},
 		OccurredAt: r.now().UTC(),
 	}); err != nil {
-		return nil, err
+		return err
 	}
-
-	var reloaded domain.Task
-	if err := r.db.WithContext(ctx).First(&reloaded, task.ID).Error; err != nil {
-		return nil, fmt.Errorf("reload Task id=%d after recall: %w", task.ID, err)
-	}
-	view := taskView(ctx, &reloaded)
-	return &view, nil
+	return nil
 }
 
 // effectScan is the outcome of looking for one message id in one effect payload:

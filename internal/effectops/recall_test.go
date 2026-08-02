@@ -1,4 +1,4 @@
-package execute
+package effectops
 
 import (
 	"context"
@@ -110,17 +110,13 @@ func TestRecallMarksBothCopiesAndAppendsEvent(t *testing.T) {
 	lark := &fakeRecallClient{}
 	recaller := newRecaller(t, db, lark)
 
-	view, err := recaller.Recall(t.Context(), 1, "om_a")
+	err := recaller.Recall(t.Context(), 1, "om_a")
 	if err != nil {
 		t.Fatalf("Recall() error = %v", err)
 	}
 	if len(lark.calls) != 1 || lark.calls[0] != "om_a" {
 		t.Fatalf("lark recall calls = %v", lark.calls)
 	}
-	if view.Version != 4 {
-		t.Fatalf("returned version = %d, want 4", view.Version)
-	}
-
 	var task domain.Task
 	if err := db.First(&task, 1).Error; err != nil {
 		t.Fatalf("load Task: %v", err)
@@ -179,7 +175,7 @@ func TestRecallMarksRunOnlyDeclaration(t *testing.T) {
 	lark := &fakeRecallClient{}
 	recaller := newRecaller(t, db, lark)
 
-	if _, err := recaller.Recall(t.Context(), 1, "om_old"); err != nil {
+	if err := recaller.Recall(t.Context(), 1, "om_old"); err != nil {
 		t.Fatalf("Recall() error = %v", err)
 	}
 	var run domain.ExecutionRun
@@ -207,7 +203,7 @@ func TestRecallRejectsMessageThisTaskNeverSent(t *testing.T) {
 	lark := &fakeRecallClient{}
 	recaller := newRecaller(t, db, lark)
 
-	_, err := recaller.Recall(t.Context(), 1, "om_somebody_else")
+	err := recaller.Recall(t.Context(), 1, "om_somebody_else")
 	if !errors.Is(err, ErrRecallTargetNotFound) {
 		t.Fatalf("Recall() error = %v, want ErrRecallTargetNotFound", err)
 	}
@@ -225,7 +221,7 @@ func TestRecallRejectsSecondRecall(t *testing.T) {
 	lark := &fakeRecallClient{}
 	recaller := newRecaller(t, db, lark)
 
-	_, err := recaller.Recall(t.Context(), 1, "om_a")
+	err := recaller.Recall(t.Context(), 1, "om_a")
 	if !errors.Is(err, ErrMessageAlreadyRecalled) {
 		t.Fatalf("Recall() error = %v, want ErrMessageAlreadyRecalled", err)
 	}
@@ -245,7 +241,7 @@ func TestRecallKeepsEffectsWhenLarkFails(t *testing.T) {
 	lark := &fakeRecallClient{err: errors.New("lark-cli api error: message not found")}
 	recaller := newRecaller(t, db, lark)
 
-	if _, err := recaller.Recall(t.Context(), 1, "om_a"); err == nil {
+	if err := recaller.Recall(t.Context(), 1, "om_a"); err == nil {
 		t.Fatal("Recall() succeeded while lark-cli failed")
 	}
 	var task domain.Task
@@ -266,11 +262,11 @@ func TestRecallKeepsEffectsWhenLarkFails(t *testing.T) {
 
 func TestRecallRejectsInvalidInput(t *testing.T) {
 	recaller := &MessageRecaller{}
-	if _, err := recaller.Recall(context.Background(), 0, "om_a"); !errors.Is(err, ErrInvalidInput) {
+	if err := recaller.Recall(context.Background(), 0, "om_a"); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("task_id=0 error = %v", err)
 	}
 	for _, messageID := range []string{"", "  ", "cli_123", "om"} {
-		if _, err := recaller.Recall(context.Background(), 1, messageID); !errors.Is(err, ErrInvalidInput) {
+		if err := recaller.Recall(context.Background(), 1, messageID); !errors.Is(err, ErrInvalidInput) {
 			t.Fatalf("message_id=%q error = %v", messageID, err)
 		}
 	}

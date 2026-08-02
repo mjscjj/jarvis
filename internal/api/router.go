@@ -9,6 +9,7 @@ import (
 	"jarvis/internal/capture"
 	"jarvis/internal/chat"
 	"jarvis/internal/config"
+	"jarvis/internal/effectops"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
@@ -34,7 +35,7 @@ type Dependencies struct {
 	Tasks            execute.TaskService
 	TaskSubmitter    *taskcreate.Submitter
 	Executor         *execute.AgentExecutor
-	MessageRecaller  *execute.MessageRecaller // 撤回任务已发出的飞书消息
+	MessageRecaller  *effectops.MessageRecaller // 撤回任务已发出的飞书消息
 	Projects         *background.ProjectService
 	Persons          *background.PersonService
 	Groups           *background.GroupBackgroundService
@@ -158,7 +159,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
 	h.POST("/api/tasks/:task_id/supplement", SupplementTask(deps.Tasks))
 	// 撤回任务「对外产出」里的某条飞书消息（走 lark-cli，按钮点击即高危确认）。
-	h.POST("/api/tasks/:task_id/effects/recall-message", RecallEffectMessage(deps.MessageRecaller))
+	h.POST("/api/tasks/:task_id/effects/recall-message", RecallEffectMessage(deps.MessageRecaller, deps.Tasks))
 	h.GET("/api/relation-facts", ListRelationFacts(deps.RelationFacts))
 	h.POST("/api/relation-facts", CreateRelationFact(deps.RelationFacts))
 	h.PUT("/api/relation-facts/:fact_id", UpdateRelationFact(deps.RelationFacts))

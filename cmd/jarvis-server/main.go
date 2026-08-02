@@ -19,6 +19,7 @@ import (
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/dailydigest"
+	"jarvis/internal/effectops"
 	"jarvis/internal/embedding"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -268,7 +269,7 @@ func main() {
 	if err != nil {
 		fatalf("initialize Task submitter failed: %v", err)
 	}
-	messageRecaller, err := execute.NewMessageRecaller(db, larkClient)
+	messageRecaller, err := effectops.NewMessageRecaller(db, larkClient)
 	if err != nil {
 		fatalf("initialize feishu message recaller failed: %v", err)
 	}

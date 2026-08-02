@@ -3,7 +3,7 @@
 > Status: current
 > Authority: normative module guide
 > Last verified: 2026-08-02 @ `89fa24b`
-> Code source: `internal/execute/`, `internal/taskcreate/`, `internal/scheduledtask/`
+> Code source: `internal/execute/`, `internal/taskcreate/`, `internal/scheduledtask/`, `internal/effectops/`
 
 执行环节接管 `pending` Task：调查真实状态、确定目标和动作、判断具体副作用是否要审批，并把事项推进到真实结果、等待或明确阻塞。
 
@@ -77,7 +77,7 @@ factengine 从 `message`、TodoEvent 和 TaskEvent 三类材料蒸馏 Fact；来
 
 ## 7. 接口与运维
 
-Task 相关接口包括：runs、events、output、execute、interrupt、rerun、reapply、resume、approve、reject、finish、supplement 和 message recall。完整分组见 [HTTP API](../reference/http-api.md)。
+Task 执行接口包括：runs、events、output、execute、interrupt、rerun、reapply、resume、approve、reject、finish 和 supplement。已产生外部效果上的用户操作独立放在 `internal/effectops`；当前包括 message recall。完整分组见 [HTTP API](../reference/http-api.md)。
 
 实时推进由 `pipeline.Coordinator` 触发；`execute.schedule` 恢复漏通知和过期 `executing`。配置在 `execute.*`，运行时 overlay 保存后需重启。
 
