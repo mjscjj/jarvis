@@ -268,6 +268,7 @@ export default function RuntimeSettings() {
           <Section title="阶段开关" description="控制后台自动运行；保存后需重启主服务。">
             <SwitchField name="extract_enabled" label="M3 自动提取" help="从新消息中识别行动线索并生成 Todo。" />
             <SwitchField name="execute_auto_enabled" label="M5 自动执行" help="自动固化 extracted Todo 并执行 Task；关闭后仍可手动执行 Task。" />
+            <SwitchField name="proactive_enabled" label="主动巡视" help="启动两分钟后先巡视一次，之后按周期整理世界模型并发现可做之事。" />
             <SwitchField name="chat_enabled" label="右侧对话" help="启用页面右侧的 Jarvis 对话入口。" />
           </Section>
           <Section title="M3 Agent" description="M3 选择 Agent CLI 时使用这组 CLI、模型和超时。">
@@ -283,6 +284,15 @@ export default function RuntimeSettings() {
             <SelectField name="execute_cli" label="执行 CLI" options={cliOptions} help="M5 执行任务及右侧对话使用的命令行执行器。" />
             <TextField name="execute_model" label="M5 执行模型" />
             <SelectField name="execute_reasoning_effort" label="M5 推理档位" options={reasoningOptions} />
+          </Section>
+          <Section title="主动巡视 Agent" description="低成本 Agent 可更新内部世界模型；任何外部动作只能创建 Task 交给强 M5。">
+            <SelectField name="proactive_cli" label="巡视 CLI" options={cliOptions} />
+            <TextField name="proactive_model" label="巡视模型" />
+            <SelectField name="proactive_reasoning_effort" label="推理档位" options={reasoningOptions} />
+            <SelectField name="proactive_sandbox" label="文件权限" options={sandboxOptions} help="权限用于调查；对外写入仍受主动巡视提示词边界约束。" />
+            <TextField name="proactive_schedule" label="巡视周期" placeholder="@every 1h" />
+            <NumberField name="proactive_startup_delay_seconds" label="启动后首次运行（秒）" min={1} max={3600} />
+            <NumberField name="proactive_timeout_seconds" label="单轮超时（秒）" min={30} max={3600} step={30} />
           </Section>
         </>
       ),
@@ -471,6 +481,13 @@ export default function RuntimeSettings() {
           enabled={liveSettings.extract_enabled}
           primary={m3Runtime}
           secondary={`${liveSettings.extract_schedule} · 最多 ${liveSettings.extract_batch_messages} 条`}
+        />
+        <RuntimeStep
+          stage="PULSE"
+          title="主动巡视"
+          enabled={liveSettings.proactive_enabled}
+          primary={`${liveSettings.proactive_cli} · ${liveSettings.proactive_model}`}
+          secondary={`${liveSettings.proactive_schedule} · 启动后 ${liveSettings.proactive_startup_delay_seconds}s`}
         />
         <RuntimeStep
           stage="M5"
