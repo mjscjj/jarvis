@@ -1,5 +1,9 @@
 # 实体关系与进度历史存储方案
 
+> Status: current
+> Authority: normative design
+> Last verified: 2026-08-02 @ `89fa24b`
+
 ## 1. 目标
 
 Jarvis 已用 `project`、`person`、`feishu_group`、`todo`、`task`、`resource` 等业务表保存实体。本方案只补充三类信息：
@@ -16,7 +20,7 @@ Jarvis 已用 `project`、`person`、`feishu_group`、`todo`、`task`、`resourc
 - 模型负责从描述和上下文中推断“具体是什么关系、属于哪类进展”。
 - 已有外键能表达的关系继续读原字段，不重复写 `relation_fact`。
 - Task 有明确状态机，继续用结构化事件；事实的类型不稳定，使用通用描述。
-- 早期 MVP 不增加 predicate、置信度、来源、有效期、状态、详情 JSON 等字段。
+- 早期 MVP 不增加 predicate、置信度、来源、状态或详情 JSON；当前已加入 `valid_from/valid_until` 表达关系有效期。
 
 ## 3. RelationFact
 
@@ -29,6 +33,8 @@ entity_a_id
 entity_b_type
 entity_b_id
 description
+valid_from
+valid_until
 created_at
 updated_at
 ```
@@ -79,6 +85,7 @@ Task 每次版本变化追加一条事件，保留事件类型、前后状态、
 created execution_started approval_requested approval_granted
 approval_rejected rerun_requested reapply_started supplemented
 execution_succeeded execution_failed stale_failed snapshot_imported
+execution_observing
 ```
 
 ## 5. Fact
@@ -110,9 +117,9 @@ created_at
 飞书开放平台权限仍未审批，当前阻塞消息回放验收。
 ```
 
-项目创建、资料更新、状态调整和归档会自动追加简短描述。M3 抽取时、M5 执行时也各自把学到的事实旁路写进来；写什么、绑到哪个主体由模型判断，规则写在提示词和工具说明里，不在 Go 里分流。
+项目创建、资料更新、状态调整和归档会追加简短描述；Fact 也可通过 API 写入。离线 factengine 当前从 message 蒸馏 Fact。M3 和 M5 不会自动把每次抽取/执行旁路写成 Fact。
 
-事实之上按天汇总的一层复用已有的 `daily_digest`（scope=person/group），不另建总结表。
+`daily_digest` 是面向人的个人/群日报，不是通用 Fact rollup，也不替代 Fact 的时间查询。
 
 ## 6. API
 

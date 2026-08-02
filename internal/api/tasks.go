@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"jarvis/internal/execute"
 
@@ -40,11 +41,52 @@ func ListTasks(service execute.TaskService) app.HandlerFunc {
 		if len(statuses) == 0 {
 			statuses = []string{"pending"}
 		}
-		result, err := service.ListTasks(ctx, execute.TaskFilter{Statuses: statuses, Page: page, PageSize: pageSize})
+		filter := execute.TaskFilter{Statuses: statuses, Page: page, PageSize: pageSize}
+		if raw := strings.TrimSpace(c.Query("from")); raw != "" {
+			from, err := time.Parse(time.RFC3339, raw)
+			if err != nil {
+				writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("from must be RFC3339: %w", err))
+				return
+			}
+			filter.From = &from
+		}
+		if raw := strings.TrimSpace(c.Query("until")); raw != "" {
+			until, err := time.Parse(time.RFC3339, raw)
+			if err != nil {
+				writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("until must be RFC3339: %w", err))
+				return
+			}
+			filter.Until = &until
+		}
+		result, err := service.ListTasks(ctx, filter)
 		if err != nil {
 			if errors.Is(err, execute.ErrInvalidInput) {
 				writeAPIError(c, consts.StatusBadRequest, 40020, err)
 			} else {
+				writeAPIError(c, consts.StatusInternalServerError, 50020, err)
+			}
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+// GetTask returns one Task's detail view.
+func GetTask(service execute.TaskService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		result, err := service.GetTask(ctx, taskID)
+		if err != nil {
+			switch {
+			case errors.Is(err, execute.ErrInvalidInput):
+				writeAPIError(c, consts.StatusBadRequest, 40020, err)
+			case errors.Is(err, execute.ErrTaskNotFound):
+				writeAPIError(c, consts.StatusNotFound, 40420, err)
+			default:
 				writeAPIError(c, consts.StatusInternalServerError, 50020, err)
 			}
 			return

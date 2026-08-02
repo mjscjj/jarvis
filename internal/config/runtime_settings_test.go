@@ -21,6 +21,7 @@ mysql:
 factengine:
   enabled: true
   schedule: "@every 15m"
+  rollup_schedule: "0 2 * * *"
   bin: "traex"
   model: "fixture-fact-model"
   sandbox: "danger-full-access"
@@ -47,7 +48,9 @@ extract:
   context_messages: 20
   context_window_minutes: 120
   open_todo_limit: 50
-  fact_limit: 30
+  fact_limit: 10
+  key_person_limit: 5
+  recent_task_limit: 10
   max_prompt_chars: 60000
   semantic_collection: "todo_semantic"
   semantic_threshold: 0.85

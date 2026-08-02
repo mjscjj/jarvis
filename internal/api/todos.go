@@ -9,6 +9,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"jarvis/internal/extract"
 	"jarvis/internal/observability"
@@ -125,6 +126,20 @@ func todoListFilter(c *app.RequestContext) (extract.TodoListFilter, error) {
 			return extract.TodoListFilter{}, fmt.Errorf("leader_only must be true or false")
 		}
 		filter.LeaderOnly = &value
+	}
+	if raw := strings.TrimSpace(c.Query("from")); raw != "" {
+		from, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return extract.TodoListFilter{}, fmt.Errorf("from must be RFC3339: %w", err)
+		}
+		filter.From = &from
+	}
+	if raw := strings.TrimSpace(c.Query("until")); raw != "" {
+		until, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return extract.TodoListFilter{}, fmt.Errorf("until must be RFC3339: %w", err)
+		}
+		filter.Until = &until
 	}
 	return filter, nil
 }

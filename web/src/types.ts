@@ -870,6 +870,8 @@ export interface RuntimeSettings {
   extract_context_window_minutes: number
   extract_open_todo_limit: number
   extract_fact_limit: number
+  extract_key_person_limit: number
+  extract_recent_task_limit: number
   extract_max_prompt_chars: number
   extract_semantic_threshold: number
   extract_semantic_neighbor_limit: number
@@ -908,6 +910,7 @@ export interface RuntimeSettings {
 
   fact_engine_enabled: boolean
   fact_engine_schedule: string
+  fact_engine_rollup_schedule: string
   fact_engine_model: string
   fact_engine_timeout_seconds: number
   fact_engine_batch_limit: number

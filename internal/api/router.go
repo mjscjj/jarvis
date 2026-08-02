@@ -4,6 +4,8 @@ package api
 import (
 	"fmt"
 
+	"time"
+
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
 	"jarvis/internal/chat"
@@ -51,6 +53,8 @@ type Dependencies struct {
 	DailyDigests     DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
 	Worklog          *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
 	DigestSummarizer *insight.Summarizer     // 可选：codex 未启用时为 nil，总结接口返回 503
+	FactRollups      FactRollupGenerator     // 事实日压缩手动触发；nil 则接口返回 503
+	FactRollupLoc    *time.Location          // 手动触发时解析 YYYY-MM-DD 的时区
 	Debug            *insight.DebugService
 	Logs             *insight.LogReader
 	Chat             *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
@@ -141,6 +145,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PATCH("/api/todos/:todo_id/status", SetTodoStatus(deps.TodoStatus))
 	h.GET("/api/tasks", ListTasks(deps.Tasks))
 	h.POST("/api/tasks", CreateTask(deps.TaskSubmitter))
+	h.GET("/api/tasks/:task_id", GetTask(deps.Tasks))
 	h.GET("/api/tasks/:task_id/runs", ListTaskRuns(deps.Tasks))
 	h.GET("/api/tasks/:task_id/events", ListTaskEvents(deps.Progress))
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
@@ -169,6 +174,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.DELETE("/api/projects/:project_id", DeleteProject(deps.Projects))
 	h.GET("/api/facts", ListFacts(deps.Progress))
 	h.POST("/api/facts", AppendFact(deps.Progress))
+	h.POST("/api/fact-rollups/generate", GenerateFactRollups(deps.FactRollups, deps.FactRollupLoc))
 	h.GET("/api/persons", ListPersons(deps.Persons))
 	h.POST("/api/persons/resolve", ResolvePerson(deps.Resolve))
 	h.POST("/api/persons", CreatePerson(deps.Persons))

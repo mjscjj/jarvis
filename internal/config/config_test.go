@@ -26,7 +26,9 @@ func TestValidate(t *testing.T) {
 			ContextMessages:       20,
 			ContextWindowMinutes:  120,
 			OpenTodoLimit:         50,
-			FactLimit:             30,
+			FactLimit:             10,
+			KeyPersonLimit:        5,
+			RecentTaskLimit:       10,
 			MaxPromptChars:        60000,
 			SemanticCollection:    "todo_semantic",
 			SemanticThreshold:     0.85,
@@ -81,6 +83,8 @@ func TestValidate(t *testing.T) {
 		{name: "extract context window", mutate: func(c *Config) { c.Extract.ContextWindowMinutes = 0 }, wantErr: "extract.context_window_minutes"},
 		{name: "extract todo limit", mutate: func(c *Config) { c.Extract.OpenTodoLimit = 0 }, wantErr: "extract.open_todo_limit"},
 		{name: "extract fact limit", mutate: func(c *Config) { c.Extract.FactLimit = 0 }, wantErr: "extract.fact_limit"},
+		{name: "extract key person limit", mutate: func(c *Config) { c.Extract.KeyPersonLimit = 0 }, wantErr: "extract.key_person_limit"},
+		{name: "extract recent task limit", mutate: func(c *Config) { c.Extract.RecentTaskLimit = 0 }, wantErr: "extract.recent_task_limit"},
 		{name: "extract prompt limit", mutate: func(c *Config) { c.Extract.MaxPromptChars = 0 }, wantErr: "extract.max_prompt_chars"},
 		{name: "extract semantic collection", mutate: func(c *Config) { c.Extract.SemanticCollection = "" }, wantErr: "semantic_collection"},
 		{name: "extract semantic threshold", mutate: func(c *Config) { c.Extract.SemanticThreshold = 0 }, wantErr: "semantic_threshold"},
@@ -197,7 +201,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 			Enabled: true, PrincipalOpenID: "ou_owner", Schedule: "@every 10m",
 			Engine: "codex", CodexSandbox: "danger-full-access", CodexNetwork: true, CodexReasoningEffort: "low",
 			BatchMessages: 400, ContextMessages: 20, ContextWindowMinutes: 120,
-			OpenTodoLimit: 50, FactLimit: 30, MaxPromptChars: 60000,
+			OpenTodoLimit: 50, FactLimit: 10, KeyPersonLimit: 5, RecentTaskLimit: 10, MaxPromptChars: 60000,
 			SemanticCollection: "todo_semantic", SemanticThreshold: 0.85, SemanticNeighborLimit: 3,
 			ToolTimeoutSec: 10, HistoryToolLimit: 50, QdrantHost: "127.0.0.1", QdrantGRPCPort: 6334,
 		},
@@ -266,7 +270,7 @@ func validScheduledTaskConfig() ScheduledTaskConfig {
 
 func validFactEngineConfig() FactEngineConfig {
 	return FactEngineConfig{
-		Enabled: true, Schedule: "@every 15m",
+		Enabled: true, Schedule: "@every 15m", RollupSchedule: "0 2 * * *",
 		Bin: "traex", Model: "fixture-fact-model", Sandbox: "danger-full-access", TimeoutSec: 300,
 		BatchLimit: 200, WindowGapMinutes: 30, WindowMaxMessages: 40,
 	}

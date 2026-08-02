@@ -114,7 +114,7 @@ type Todo struct {
 	Revision       int32     `gorm:"column:revision;not null;default:1"`
 	Version        int32     `gorm:"column:version;not null;default:0"`
 	FirstSeenAt    time.Time `gorm:"column:first_seen_at;type:datetime;not null"`
-	LastEvidenceAt time.Time `gorm:"column:last_evidence_at;type:datetime;not null"`
+	LastEvidenceAt time.Time `gorm:"column:last_evidence_at;type:datetime;not null;index:idx_todo_last_evidence"`
 	CreatedAt      time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
 	UpdatedAt      time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 

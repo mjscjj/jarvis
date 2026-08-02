@@ -1,5 +1,9 @@
 # 定时编排统一进入 Task 执行：MVP 方案
 
+> Status: implemented-history
+> Authority: non-normative archive
+> Last verified: 2026-08-02 @ `89fa24b`
+
 > 历史设计：本文记录 2026-07-23 定时任务统一进入 Task/M5 的实施方案。功能已落地，模块命名保留当时状态；当前架构以 `README.md`、`docs/00-overview.md` 和 `docs/modules/` 为准。
 
 ## 1. 结论
@@ -164,7 +168,7 @@ action_type=code_change
 
 执行前重算 `action_hash`，不一致时 fail-fast。新增 `agent_task` 作为通用 Agent 任务类型；它使用现有 `danger-full-access` Agent Engine，不增加专用工作流。
 
-M5 使用结构化 `outcome=completed/waiting/needs_human/failed` 判定。`waiting` 通过同一 Codex Session 的定时续跑继续，详见 [`design-codex-session-continuation.md`](design-codex-session-continuation.md)。针对会议 ID、消息 ID、文档 revision 等确定性回执的强校验另立需求，本次不建设通用 Verifier 框架。
+M5 使用结构化 outcome 判定。`waiting` 通过同一 Codex Session 的定时续跑继续，详见 [`design-codex-session-continuation.md`](../design-codex-session-continuation.md)。针对会议 ID、消息 ID、文档 revision 等确定性回执的强校验另立需求，本次不建设通用 Verifier 框架。
 
 ## 9. 迁移
 

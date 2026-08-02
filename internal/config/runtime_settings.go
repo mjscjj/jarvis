@@ -38,6 +38,8 @@ type RuntimeSettings struct {
 	ExtractContextWindowMinutes  int     `json:"extract_context_window_minutes"`
 	ExtractOpenTodoLimit         int     `json:"extract_open_todo_limit"`
 	ExtractFactLimit             int     `json:"extract_fact_limit"`
+	ExtractKeyPersonLimit        int     `json:"extract_key_person_limit"`
+	ExtractRecentTaskLimit       int     `json:"extract_recent_task_limit"`
 	ExtractMaxPromptChars        int     `json:"extract_max_prompt_chars"`
 	ExtractSemanticThreshold     float64 `json:"extract_semantic_threshold"`
 	ExtractSemanticNeighborLimit int     `json:"extract_semantic_neighbor_limit"`
@@ -76,6 +78,7 @@ type RuntimeSettings struct {
 
 	FactEngineEnabled           bool   `json:"fact_engine_enabled"`
 	FactEngineSchedule          string `json:"fact_engine_schedule"`
+	FactEngineRollupSchedule    string `json:"fact_engine_rollup_schedule"`
 	FactEngineModel             string `json:"fact_engine_model"`
 	FactEngineTimeoutSeconds    int    `json:"fact_engine_timeout_seconds"`
 	FactEngineBatchLimit        int    `json:"fact_engine_batch_limit"`
@@ -189,6 +192,8 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExtractContextWindowMinutes:  cfg.Extract.ContextWindowMinutes,
 		ExtractOpenTodoLimit:         cfg.Extract.OpenTodoLimit,
 		ExtractFactLimit:             cfg.Extract.FactLimit,
+		ExtractKeyPersonLimit:        cfg.Extract.KeyPersonLimit,
+		ExtractRecentTaskLimit:       cfg.Extract.RecentTaskLimit,
 		ExtractMaxPromptChars:        cfg.Extract.MaxPromptChars,
 		ExtractSemanticThreshold:     cfg.Extract.SemanticThreshold,
 		ExtractSemanticNeighborLimit: cfg.Extract.SemanticNeighborLimit,
@@ -222,6 +227,7 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		CaptureAutoRelatedP2PTopN:    cfg.Capture.AutoRelatedP2PTopN,
 		FactEngineEnabled:            cfg.FactEngine.Enabled,
 		FactEngineSchedule:           cfg.FactEngine.Schedule,
+		FactEngineRollupSchedule:     cfg.FactEngine.RollupSchedule,
 		FactEngineModel:              cfg.FactEngine.Model,
 		FactEngineTimeoutSeconds:     cfg.FactEngine.TimeoutSec,
 		FactEngineBatchLimit:         cfg.FactEngine.BatchLimit,
@@ -258,6 +264,8 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
 	cfg.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
 	cfg.Extract.FactLimit = input.ExtractFactLimit
+	cfg.Extract.KeyPersonLimit = input.ExtractKeyPersonLimit
+	cfg.Extract.RecentTaskLimit = input.ExtractRecentTaskLimit
 	cfg.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	cfg.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	cfg.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit
@@ -291,6 +299,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	cfg.FactEngine.Enabled = input.FactEngineEnabled
 	cfg.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
+	cfg.FactEngine.RollupSchedule = strings.TrimSpace(input.FactEngineRollupSchedule)
 	cfg.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
 	cfg.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
 	cfg.FactEngine.BatchLimit = input.FactEngineBatchLimit
@@ -322,6 +331,8 @@ type runtimeOverride struct {
 		ContextWindowMinutes  int     `yaml:"context_window_minutes"`
 		OpenTodoLimit         int     `yaml:"open_todo_limit"`
 		FactLimit             int     `yaml:"fact_limit"`
+		KeyPersonLimit        int     `yaml:"key_person_limit"`
+		RecentTaskLimit       int     `yaml:"recent_task_limit"`
 		MaxPromptChars        int     `yaml:"max_prompt_chars"`
 		SemanticThreshold     float64 `yaml:"semantic_threshold"`
 		SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
@@ -374,6 +385,7 @@ type runtimeOverride struct {
 	FactEngine struct {
 		Enabled           bool   `yaml:"enabled"`
 		Schedule          string `yaml:"schedule"`
+		RollupSchedule    string `yaml:"rollup_schedule"`
 		Model             string `yaml:"model"`
 		TimeoutSec        int    `yaml:"timeout_sec"`
 		BatchLimit        int    `yaml:"batch_limit"`
@@ -412,6 +424,8 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
 	override.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
 	override.Extract.FactLimit = input.ExtractFactLimit
+	override.Extract.KeyPersonLimit = input.ExtractKeyPersonLimit
+	override.Extract.RecentTaskLimit = input.ExtractRecentTaskLimit
 	override.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	override.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	override.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit
@@ -450,6 +464,7 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	override.FactEngine.Enabled = input.FactEngineEnabled
 	override.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
+	override.FactEngine.RollupSchedule = strings.TrimSpace(input.FactEngineRollupSchedule)
 	override.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
 	override.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
 	override.FactEngine.BatchLimit = input.FactEngineBatchLimit

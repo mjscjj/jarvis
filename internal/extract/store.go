@@ -34,8 +34,12 @@ type TodoListFilter struct {
 	ActionType string
 	ProjectID  *uint64
 	LeaderOnly *bool
-	Page       int
-	PageSize   int
+	// From / Until narrow by last_evidence_at as a half-open RFC3339 window.
+	// Callers own the timezone (same contract as FactFilter).
+	From     *time.Time
+	Until    *time.Time
+	Page     int
+	PageSize int
 }
 
 type TodoList struct {
@@ -123,6 +127,12 @@ func (s *TodoStore) ListTodos(ctx context.Context, filter TodoListFilter) (*Todo
 	}
 	if filter.LeaderOnly != nil {
 		query = query.Where("is_leader_assigned = ?", *filter.LeaderOnly)
+	}
+	if filter.From != nil {
+		query = query.Where("last_evidence_at >= ?", filter.From.UTC())
+	}
+	if filter.Until != nil {
+		query = query.Where("last_evidence_at < ?", filter.Until.UTC())
 	}
 
 	var total int64

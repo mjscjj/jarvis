@@ -1,5 +1,10 @@
 # 运行错误可见性与会议权限恢复设计
 
+> Status: implemented-history / partially obsolete
+> Authority: non-normative implementation record
+> Last verified: 2026-08-02 @ `89fa24b`
+> Warning: 运行错误可见性已经实施；`meeting_ingest`、M4 和会议专用权限链路已退役。当前会议通过 Skill + `/api/clues` 接入通用 M2→M3→M5 流水线。
+
 日期：2026-07-24
 
 ## 1. 目标

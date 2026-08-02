@@ -42,6 +42,13 @@ func (f *fakeTaskService) ListTasks(_ context.Context, filter execute.TaskFilter
 	return &execute.TaskList{Items: []execute.TaskView{{ID: 8, Status: "pending"}}, Total: 1, Page: filter.Page, PageSize: filter.PageSize}, nil
 }
 
+func (f *fakeTaskService) GetTask(_ context.Context, taskID uint64) (*execute.TaskView, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &execute.TaskView{ID: taskID, Status: "pending"}, nil
+}
+
 func (f *fakeTaskService) ListRuns(_ context.Context, taskID uint64) (*execute.RunList, error) {
 	if f.err != nil {
 		return nil, f.err

@@ -18,6 +18,7 @@ type LoadOptions struct {
 	ContextMessages int
 	ContextWindow   time.Duration
 	OpenTodoLimit   int
+	RecentTaskLimit int
 }
 
 type GroupContext struct {
@@ -100,6 +101,9 @@ type ParticipantContext struct {
 	IsLeader  bool
 	Relation  string
 	CommStyle string
+	// PersonID is the person-table id when this open_id is enrolled; nil means
+	// the speaker is unknown to the roster and cannot contribute person facts.
+	PersonID *uint64
 }
 
 type ResourceContext struct {
@@ -118,6 +122,10 @@ type OpenTodoContext struct {
 	ActionType string
 	Title      string
 	Status     string
+	// AssignerOpenID / AssignerPersonID are not rendered in the prompt; they
+	// feed key-person fact loading (交办人 ∪ leaders ∪ speakers).
+	AssignerOpenID   *string
+	AssignerPersonID *uint64
 }
 
 type ConversationUnit struct {
@@ -127,12 +135,23 @@ type ConversationUnit struct {
 	Resources    []ResourceContext
 }
 
+// RecentTaskContext is the thin progress projection pushed into the M3 prompt.
+// Detail lives behind get-task; here we only show what moved recently.
+type RecentTaskContext struct {
+	ID             uint64
+	Title          string
+	Status         string
+	Summary        string
+	LastProgressAt string // RFC3339; empty when unknown
+}
+
 type ChatBatch struct {
 	Group         GroupContext
 	Project       *ProjectContext
 	OtherProjects []OtherProjectContext
 	Principal     *PrincipalContext
 	OpenTodos     []OpenTodoContext
+	RecentTasks   []RecentTaskContext
 	Units         []ConversationUnit
 	LastNew       MessageContext
 }

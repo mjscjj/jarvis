@@ -26,6 +26,7 @@ func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatc
 		Participants:    snapshotParticipants(unit.Participants),
 		Resources:       snapshotResources(unit.Resources),
 		OpenTodos:       snapshotOpenTodos(batch.OpenTodos),
+		RecentTasks:     snapshotRecentTasks(batch.RecentTasks),
 		OtherProjects:   snapshotOtherProjects(batch.OtherProjects, projectID),
 		Facts:           facts,
 	}
@@ -153,6 +154,17 @@ func snapshotOpenTodos(todos []OpenTodoContext) []contextsnap.OpenTodo {
 		result[i] = contextsnap.OpenTodo{
 			ID: todos[i].ID, ActionType: todos[i].ActionType,
 			Title: todos[i].Title, Status: todos[i].Status,
+		}
+	}
+	return result
+}
+
+func snapshotRecentTasks(tasks []RecentTaskContext) []contextsnap.RecentTask {
+	result := make([]contextsnap.RecentTask, len(tasks))
+	for i := range tasks {
+		result[i] = contextsnap.RecentTask{
+			ID: tasks[i].ID, Title: tasks[i].Title, Status: tasks[i].Status,
+			Summary: tasks[i].Summary, LastProgressAt: tasks[i].LastProgressAt,
 		}
 	}
 	return result

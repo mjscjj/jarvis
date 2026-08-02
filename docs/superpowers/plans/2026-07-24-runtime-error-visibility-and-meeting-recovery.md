@@ -1,5 +1,10 @@
 # Runtime Error Visibility and Meeting Recovery Implementation Plan
 
+> Status: implemented-history / partially obsolete
+> Authority: non-normative implementation plan
+> Last verified: 2026-08-02 @ `89fa24b`
+> Warning: 不要重新执行本计划。运行错误部分已落地；会议专用模型和 M4 路径已被通用 clue 流水线替代。
+
 > **For Codex:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 让会议妙记无权限时稳定生成唯一的权限申请 Todo，并让 M3/M4/M5 与 cron 的未恢复运行错误在“运行状态”页面和侧边栏 Badge 中可见。

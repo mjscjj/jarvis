@@ -1,8 +1,12 @@
 # 每日进度总结（Daily Digest）设计
 
+> Status: current
+> Authority: normative design
+> Last verified: 2026-08-02 @ `89fa24b`
+
 把「进度」页从现在的**任务数量播报**（按天 Count Todo/Task/消息，再把数字翻译成一段话）升级为**内容层面的每日进度总结**：对「我」个人和「关键群」各自，按自然日生成一段可读的进度摘要。
 
-完整背景见 `[README.md](../README.md)` 与 `[docs/00-overview.md](00-overview.md)`。本文只覆盖每日总结这一功能。
+完整背景见 [README.md](../README.md) 与 [docs/00-overview.md](00-overview.md)。本文只覆盖每日总结这一功能。
 
 ## 0. 目标与范围
 

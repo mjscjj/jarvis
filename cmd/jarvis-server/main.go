@@ -277,6 +277,10 @@ func main() {
 	if err != nil {
 		fatalf("initialize fact engine worker failed: %v", err)
 	}
+	factRollupWorker, err := factengine.NewRollupWorker(db, factExtractor, progressService, textFileService, location)
+	if err != nil {
+		fatalf("initialize fact rollup worker failed: %v", err)
+	}
 	todoStore, err := extract.NewTodoStore(db)
 	if err != nil {
 		fatalf("initialize todo store failed: %v", err)
@@ -474,10 +478,10 @@ func main() {
 			Load: extract.LoadOptions{
 				BatchMessages: cfg.Extract.BatchMessages, ContextMessages: cfg.Extract.ContextMessages,
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
-				OpenTodoLimit: cfg.Extract.OpenTodoLimit,
+				OpenTodoLimit: cfg.Extract.OpenTodoLimit, RecentTaskLimit: cfg.Extract.RecentTaskLimit,
 			},
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
-			FactLimit:      cfg.Extract.FactLimit,
+			FactLimit: cfg.Extract.FactLimit, KeyPersonLimit: cfg.Extract.KeyPersonLimit,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 			EvidenceRetryMax: cfg.Extract.EvidenceRetryMax,
 			AgentToolCatalog: agentToolCatalog,
@@ -678,6 +682,7 @@ func main() {
 	}
 	// 离线事实抽取 cron：跑在关键路径之外，disabled 时 -extract-facts-once 仍可手动跑一轮。
 	stopFactEngine := func() {}
+	stopFactRollup := func() {}
 	if cfg.FactEngine.Enabled {
 		factEngineScheduler, err := factengine.StartScheduler(
 			runtimeCtx, factEngineWorker, cfg.FactEngine.Schedule,
@@ -687,6 +692,14 @@ func main() {
 			fatalf("start fact engine scheduler failed: %v", err)
 		}
 		stopFactEngine = func() { <-factEngineScheduler.Stop().Done() }
+		factRollupScheduler, err := factengine.StartRollupScheduler(
+			runtimeCtx, factRollupWorker, cfg.FactEngine.RollupSchedule,
+			log.New(os.Stderr, "factrollup-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			fatalf("start fact rollup scheduler failed: %v", err)
+		}
+		stopFactRollup = func() { <-factRollupScheduler.Stop().Done() }
 	}
 	defer func() {
 		cancelRuntime()
@@ -694,6 +707,7 @@ func main() {
 		stopDailyDigest()
 		stopScheduledTasks()
 		stopFactEngine()
+		stopFactRollup()
 		stopPipelineScheduler()
 		waitPipeline()
 	}()
@@ -738,9 +752,11 @@ func main() {
 		RelationFacts:  relationFactService,
 		Progress:       progressService,
 		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
-		DailyDigests: dailyDigestService,
-		Worklog:      worklogService,
-		Debug:        debugService, Logs: logReader, Chat: chatService, Capture: captureService,
+		DailyDigests:  dailyDigestService,
+		Worklog:       worklogService,
+		FactRollups:   factRollupWorker,
+		FactRollupLoc: location,
+		Debug:         debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 		RuntimeSettings: runtimeSettingsService,
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)

@@ -70,6 +70,10 @@ type ModelConfig struct {
 type FactEngineConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	Schedule string `yaml:"schedule"`
+	// RollupSchedule is the daily compression cron. It runs independently of
+	// Schedule (which drives detail extraction) and writes source_kind=rollup
+	// facts for the previous local day.
+	RollupSchedule string `yaml:"rollup_schedule"`
 
 	Bin        string `yaml:"bin"`
 	Model      string `yaml:"model"`
@@ -111,9 +115,15 @@ type ExtractConfig struct {
 	SemanticThreshold     float64 `yaml:"semantic_threshold"`
 	SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
 
-	// FactLimit caps how many of a subject's newest facts (from the offline fact
-	// engine) are injected into one extraction prompt.
+	// FactLimit caps how many of a subject's *today* detail facts (excluding
+	// rollups) are injected into one extraction prompt. Each subject also gets
+	// at most one previous-day rollup on top of this.
 	FactLimit int `yaml:"fact_limit"`
+	// KeyPersonLimit caps how many person subjects (assigner ∪ leaders ∪
+	// speakers) contribute facts to one extraction prompt.
+	KeyPersonLimit int `yaml:"key_person_limit"`
+	// RecentTaskLimit caps how many recently progressed tasks are injected.
+	RecentTaskLimit int `yaml:"recent_task_limit"`
 
 	// QdrantHost/QdrantGRPCPort locate the vector store backing SemanticCollection.
 	QdrantHost     string `yaml:"qdrant_host"`
@@ -309,6 +319,12 @@ func (c *Config) validate() error {
 	if c.Extract.FactLimit <= 0 {
 		return fmt.Errorf("extract.fact_limit 必须大于 0")
 	}
+	if c.Extract.KeyPersonLimit <= 0 {
+		return fmt.Errorf("extract.key_person_limit 必须大于 0")
+	}
+	if c.Extract.RecentTaskLimit <= 0 {
+		return fmt.Errorf("extract.recent_task_limit 必须大于 0")
+	}
 	if c.Extract.MaxPromptChars <= 0 {
 		return fmt.Errorf("extract.max_prompt_chars 必须大于 0")
 	}
@@ -498,6 +514,7 @@ func (c *Config) validate() error {
 		spec string
 	}{
 		{name: "factengine.schedule", spec: c.FactEngine.Schedule},
+		{name: "factengine.rollup_schedule", spec: c.FactEngine.RollupSchedule},
 		{name: "extract.schedule", spec: c.Extract.Schedule},
 		{name: "capture.discover_schedule", spec: c.Capture.DiscoverSchedule},
 		{name: "capture.scan_schedule", spec: c.Capture.ScanSchedule},
@@ -520,6 +537,9 @@ func (c *Config) validate() error {
 func (c *Config) validateFactEngine() error {
 	if c.FactEngine.Schedule == "" {
 		return fmt.Errorf("factengine.schedule 不能为空")
+	}
+	if c.FactEngine.RollupSchedule == "" {
+		return fmt.Errorf("factengine.rollup_schedule 不能为空")
 	}
 	if c.FactEngine.Bin == "" {
 		return fmt.Errorf("factengine.bin 不能为空")

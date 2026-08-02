@@ -30,6 +30,7 @@ type ScheduleField =
   | 'decide_schedule'
   | 'execute_schedule'
   | 'fact_engine_schedule'
+  | 'fact_engine_rollup_schedule'
   | 'scheduled_task_schedule'
   | 'daily_digest_schedule'
 
@@ -110,6 +111,16 @@ const systemTasks: SystemTaskDefinition[] = [
     scheduleField: 'fact_engine_schedule',
     enabledField: 'fact_engine_enabled',
     parameters: (s) => `${s.fact_engine_model} · 每批最多 ${s.fact_engine_batch_limit} 条消息`,
+  },
+  {
+    key: 'rollup-facts',
+    name: '事实日压缩',
+    category: '事实引擎',
+    description: '把前一个自然日每个主体的明细事实压成一条摘要，供 M3 提示词使用。',
+    job: 'fact_rollup',
+    scheduleField: 'fact_engine_rollup_schedule',
+    enabledField: 'fact_engine_enabled',
+    parameters: (s) => `模型 ${s.fact_engine_model}`,
   },
   {
     key: 'scheduled-tasks',

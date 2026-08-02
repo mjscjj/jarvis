@@ -47,12 +47,15 @@ func Block(stage string) (string, error) {
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。命令清单 `bytedcli --json --all-help`，单命令参数 `bytedcli --json <子命令路径> --help`。",
 		"- git：查询和操作本地代码仓库。",
 	}
-	// Facts are read-only here: the offline fact engine distills and writes them,
-	// so a stage that investigates only needs to look them up. StageDecide is
-	// excluded on purpose — it is a cheap value judgment that does not investigate.
+	// Facts / todos / tasks are read-only here: the offline fact engine and the
+	// pipeline write them, so a stage that investigates only needs to look them
+	// up. StageDecide is excluded on purpose — it is a cheap value judgment that
+	// does not investigate.
 	if stage == StageExtract || stage == StageExecute || stage == StageChat {
 		lines = append(lines,
 			"- 查一个项目、群或人身上已经发生过什么时，使用 `jarvis-tools list-facts --help`。事实由离线事实引擎自己从原始材料里蒸馏，你不需要手工记。",
+			"- 查线索清单或一条线索被省略的细节时，使用 `jarvis-tools list-todos --help` / `jarvis-tools get-todo --help`。",
+			"- 查任务进展清单或一条任务的计划、执行记录与任务事实时，使用 `jarvis-tools list-tasks --help` / `jarvis-tools get-task --help`。",
 		)
 	}
 	if stage == StageExecute {

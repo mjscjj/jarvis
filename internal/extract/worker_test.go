@@ -194,11 +194,26 @@ func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	if store.persistCalls != 1 || len(store.results) != 1 || len(model.prompts) != 1 {
 		t.Fatalf("calls: persist=%d results=%d prompts=%d", store.persistCalls, len(store.results), len(model.prompts))
 	}
-	// Facts are read once per subject (this group plus its project), not once per unit.
-	if len(facts.filters) != 2 ||
-		facts.filters[0].SubjectType != "group" || facts.filters[0].SubjectID != 1 ||
-		facts.filters[1].SubjectType != "project" || facts.filters[1].SubjectID != projectID {
-		t.Fatalf("fact filters = %#v", facts.filters)
+	// Facts are read twice per subject (today detail + yesterday rollup), for the
+	// group and its project — not once per unit.
+	if len(facts.filters) != 4 {
+		t.Fatalf("fact filters count = %d, want 4: %#v", len(facts.filters), facts.filters)
+	}
+	if facts.filters[0].SubjectType != "group" || facts.filters[0].SubjectID != 1 ||
+		facts.filters[0].ExcludeSourceKind == nil || *facts.filters[0].ExcludeSourceKind != progress.FactSourceRollup {
+		t.Fatalf("today group filter = %#v", facts.filters[0])
+	}
+	if facts.filters[1].SubjectType != "group" || facts.filters[1].SourceKind == nil ||
+		*facts.filters[1].SourceKind != progress.FactSourceRollup || facts.filters[1].Limit != 1 {
+		t.Fatalf("yesterday group rollup filter = %#v", facts.filters[1])
+	}
+	if facts.filters[2].SubjectType != "project" || facts.filters[2].SubjectID != projectID ||
+		facts.filters[2].ExcludeSourceKind == nil {
+		t.Fatalf("today project filter = %#v", facts.filters[2])
+	}
+	if facts.filters[3].SubjectType != "project" || facts.filters[3].SourceKind == nil ||
+		*facts.filters[3].SourceKind != progress.FactSourceRollup {
+		t.Fatalf("yesterday project rollup filter = %#v", facts.filters[3])
 	}
 	if toolBox.built != 1 || len(model.boxes) != 1 || model.boxes[0] == nil {
 		t.Fatalf("tool box wiring: built=%d boxes=%d", toolBox.built, len(model.boxes))
@@ -548,8 +563,11 @@ func TestValidateCandidateEvidenceAcceptsAssignerWhoDidNotSpeak(t *testing.T) {
 
 func validWorkerOptions() WorkerOptions {
 	return WorkerOptions{
-		Load:            LoadOptions{BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour, OpenTodoLimit: 50},
-		PrincipalOpenID: "ou_owner", ModelName: "model", FactLimit: 30,
+		Load: LoadOptions{
+			BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour,
+			OpenTodoLimit: 50, RecentTaskLimit: 10,
+		},
+		PrincipalOpenID: "ou_owner", ModelName: "model", FactLimit: 10, KeyPersonLimit: 5,
 		MaxPromptChars: 60_000, Location: time.UTC,
 		WorkRules:     fakeWorkRuleReader{},
 		Skills:        fakeSkillReader{},

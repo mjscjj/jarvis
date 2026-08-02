@@ -214,6 +214,9 @@ func validateLoadOptions(opts LoadOptions) error {
 	if opts.OpenTodoLimit <= 0 {
 		return fmt.Errorf("extract open todo limit must be positive")
 	}
+	if opts.RecentTaskLimit <= 0 {
+		return fmt.Errorf("extract recent task limit must be positive")
+	}
 	return nil
 }
 
@@ -285,6 +288,15 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 	if err != nil {
 		return nil, err
 	}
+	groupContext := GroupContext{
+		ID: group.ID, ChatID: group.ChatID, Name: stringValue(group.Name),
+		Description: stringValue(group.Description), BackgroundNote: stringValue(group.BackgroundNote),
+		IsKeyGroup: group.IsKeyGroup, ProjectID: copyUint64(group.ProjectID),
+	}
+	recentTasks, err := s.loadRecentTasks(ctx, groupContext, opts.RecentTaskLimit)
+	if err != nil {
+		return nil, err
+	}
 	units := make([]ConversationUnit, 0, len(keys))
 	for _, key := range keys {
 		current := grouped[key]
@@ -307,14 +319,11 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 	}
 
 	batch := &ChatBatch{
-		Group: GroupContext{
-			ID: group.ID, ChatID: group.ChatID, Name: stringValue(group.Name),
-			Description: stringValue(group.Description), BackgroundNote: stringValue(group.BackgroundNote),
-			IsKeyGroup: group.IsKeyGroup, ProjectID: copyUint64(group.ProjectID),
-		},
-		OpenTodos: openTodos,
-		Units:     units,
-		LastNew:   newMessages[len(newMessages)-1],
+		Group:       groupContext,
+		OpenTodos:   openTodos,
+		RecentTasks: recentTasks,
+		Units:       units,
+		LastNew:     newMessages[len(newMessages)-1],
 	}
 	if group.Project != nil {
 		batch.Project = projectContext(group.Project)
@@ -399,6 +408,8 @@ func (s *PipelineStore) enrichParticipants(ctx context.Context, messages []Messa
 		person, ok := byID[openID]
 		participant := ParticipantContext{OpenID: openID, Role: "unknown"}
 		if ok {
+			personID := person.ID
+			participant.PersonID = &personID
 			participant.Name = person.Name
 			participant.Role = person.Role
 			participant.Title = stringValue(person.Title)
@@ -458,9 +469,86 @@ func (s *PipelineStore) loadOpenTodos(ctx context.Context, groupID uint64, limit
 		Order("last_evidence_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load open todos group_id=%d: %w", groupID, err)
 	}
+	assignerOpenIDs := make([]string, 0)
+	seenAssigner := make(map[string]struct{})
+	for _, row := range rows {
+		if row.AssignerOpenID == nil || strings.TrimSpace(*row.AssignerOpenID) == "" {
+			continue
+		}
+		openID := strings.TrimSpace(*row.AssignerOpenID)
+		if _, ok := seenAssigner[openID]; ok {
+			continue
+		}
+		seenAssigner[openID] = struct{}{}
+		assignerOpenIDs = append(assignerOpenIDs, openID)
+	}
+	personByOpenID := map[string]uint64{}
+	if len(assignerOpenIDs) > 0 {
+		var people []domain.Person
+		if err := s.db.WithContext(ctx).Select("id", "open_id").
+			Where("open_id IN ? AND is_active = ?", assignerOpenIDs, true).Find(&people).Error; err != nil {
+			return nil, fmt.Errorf("load open todo assigners group_id=%d: %w", groupID, err)
+		}
+		for _, person := range people {
+			personByOpenID[person.OpenID] = person.ID
+		}
+	}
 	result := make([]OpenTodoContext, len(rows))
 	for i := range rows {
-		result[i] = OpenTodoContext{ID: rows[i].ID, ActionType: rows[i].ActionType, Title: rows[i].Title, Status: rows[i].Status}
+		item := OpenTodoContext{ID: rows[i].ID, ActionType: rows[i].ActionType, Title: rows[i].Title, Status: rows[i].Status}
+		if rows[i].AssignerOpenID != nil {
+			openID := strings.TrimSpace(*rows[i].AssignerOpenID)
+			if openID != "" {
+				item.AssignerOpenID = &openID
+				if personID, ok := personByOpenID[openID]; ok {
+					item.AssignerPersonID = &personID
+				}
+			}
+		}
+		result[i] = item
+	}
+	return result, nil
+}
+
+// loadRecentTasks returns tasks that recently progressed and belong to this
+// conversation via their source todo (same group or same project). Tasks without
+// a todo (scheduled/manual) are excluded on purpose.
+func (s *PipelineStore) loadRecentTasks(ctx context.Context, group GroupContext, limit int) ([]RecentTaskContext, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("recent task limit must be positive")
+	}
+	query := s.db.WithContext(ctx).Table("task AS t").
+		Joins("JOIN todo AS td ON td.id = t.todo_id").
+		Where("t.todo_id IS NOT NULL")
+	switch {
+	case group.ProjectID != nil:
+		query = query.Where("td.group_id = ? OR td.project_id = ?", group.ID, *group.ProjectID)
+	default:
+		query = query.Where("td.group_id = ?", group.ID)
+	}
+	type row struct {
+		ID             uint64
+		Title          string
+		Status         string
+		Summary        *string
+		LastProgressAt *time.Time
+	}
+	var rows []row
+	if err := query.Select("t.id, t.title, t.status, t.summary, t.last_progress_at").
+		Order("COALESCE(t.last_progress_at, t.confirmed_at) DESC, t.id DESC").
+		Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("load recent tasks group_id=%d: %w", group.ID, err)
+	}
+	result := make([]RecentTaskContext, len(rows))
+	for i := range rows {
+		item := RecentTaskContext{ID: rows[i].ID, Title: rows[i].Title, Status: rows[i].Status}
+		if rows[i].Summary != nil {
+			item.Summary = *rows[i].Summary
+		}
+		if rows[i].LastProgressAt != nil {
+			item.LastProgressAt = rows[i].LastProgressAt.UTC().Format(time.RFC3339)
+		}
+		result[i] = item
 	}
 	return result, nil
 }

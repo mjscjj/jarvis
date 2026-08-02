@@ -1,5 +1,9 @@
 # 后台配置文件化设计
 
+> Status: current
+> Authority: normative design
+> Last verified: 2026-08-02 @ `89fa24b`
+
 ## 目标
 
 把后台配置从数据库迁到本地文件。运行时代码和管理后台读写同一份文件，文件是唯一真源，不保留数据库或代码常量兜底。
@@ -14,8 +18,9 @@
 | `m5_decision_system_prompt` | `conf/prompts/m5-decision-system-prompt.md` | M5 判断环节系统提示词（宽松语义契约） |
 | `m5_system_prompt` | `conf/prompts/m5-system-prompt.md` | M5 执行环节系统提示词 |
 | `m5_approval_policy` | `conf/prompts/m5-approval-policy.md` | 执行期"要不要先请示 principal"的判定策略 |
+| `fact_extract_system_prompt` | `conf/prompts/fact-extract-system-prompt.md` | 离线事实抽取系统提示词 |
 
-审批策略只回答“本次计划是否需要先审批”。批准后的 proposal 必须原样落地、不得重复副作用等协议属于执行状态机的硬约束，保留在代码中，不能由后台关闭。`code_change` 继续使用现有分支、提交和 MR 流程，不经过该策略。
+审批策略只回答“下一项具体副作用是否需要先审批”，包括代码修改。批准后的 proposal 必须原样落地、不得重复副作用等协议属于执行状态机的硬约束，保留在代码中，不能由后台关闭。
 
 ## 通用能力
 

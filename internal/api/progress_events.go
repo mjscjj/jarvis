@@ -65,6 +65,12 @@ func ListFacts(service progress.EventService) app.HandlerFunc {
 			}
 			filter.Limit = limit
 		}
+		if raw := string(c.Query("source_kind")); raw != "" {
+			filter.SourceKind = &raw
+		}
+		if raw := string(c.Query("exclude_source_kind")); raw != "" {
+			filter.ExcludeSourceKind = &raw
+		}
 		result, err := service.ListFacts(ctx, filter)
 		if err != nil {
 			writeProgressError(c, err)

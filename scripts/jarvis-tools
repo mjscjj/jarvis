@@ -35,6 +35,10 @@ subcommands:
   append-clue            Hand M2 one observed fact as evidence for M3
   append-fact            Record one fact about a project, group, person or other subject
   list-facts             Read a subject's recorded facts, optionally for one day
+  list-todos             List action clues, optionally for one day
+  get-todo               Get one clue with the details omitted from summaries
+  list-tasks             List tasks, optionally for one day
+  get-task               Get one task with runs, events and task facts
   list-scheduled-tasks   List time-triggered tasks
   create-scheduled-task  Create a time trigger for a new task
   set-todo-status        Park a clue as observing, or hand it back for decision
@@ -140,6 +144,41 @@ local time; --limit defaults to 200.
 
 example:
   jarvis-tools list-facts --subject-type group --subject-id 12 --date 2026-08-02
+EOF
+      ;;
+    list-todos) cat <<'EOF'
+usage: jarvis-tools list-todos [--date YYYY-MM-DD] [--status S] [--limit N] [--config PATH]
+
+List action clues newest-evidence first. --date narrows by last_evidence_at to
+one natural day in local time. --limit defaults to 50 (mapped to page_size).
+
+example:
+  jarvis-tools list-todos --date 2026-08-02 --status extracted
+EOF
+      ;;
+    get-todo) cat <<'EOF'
+usage: jarvis-tools get-todo --id ID [--config PATH]
+
+Get one clue including description, context, open_questions and resolution —
+the fields omitted from the summary list in prompts.
+EOF
+      ;;
+    list-tasks) cat <<'EOF'
+usage: jarvis-tools list-tasks [--date YYYY-MM-DD] [--status S] [--limit N] [--config PATH]
+
+List tasks. --date narrows by COALESCE(last_progress_at, confirmed_at) to one
+natural day in local time. --limit defaults to 50. Without --status the API
+defaults to pending.
+
+example:
+  jarvis-tools list-tasks --date 2026-08-02 --status done,executing
+EOF
+      ;;
+    get-task) cat <<'EOF'
+usage: jarvis-tools get-task --id ID [--config PATH]
+
+Get one task together with recent runs (and effects), the task_event timeline,
+and facts bound to subject_type=task for this id.
 EOF
       ;;
     append-clue) cat <<'EOF'
@@ -905,6 +944,21 @@ cmd_append_fact() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+# local_day_bounds DATE CMD — resolve YYYY-MM-DD to RFC3339 half-open [from, until)
+# in the local timezone. Fail-fast with the calling command name on bad input.
+local_day_bounds() {
+  local date="$1" cmd="$2"
+  [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail "${cmd} --date must be YYYY-MM-DD"
+  local from until
+  from="$(date -j -f '%Y-%m-%d %H:%M:%S' "$date 00:00:00" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
+    fail "${cmd} could not parse --date $date"
+  until="$(date -j -v+1d -f '%Y-%m-%d %H:%M:%S' "$date 00:00:00" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
+    fail "${cmd} could not advance --date $date"
+  from="$(printf '%s' "$from" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
+  until="$(printf '%s' "$until" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
+  printf '%s %s' "$from" "$until"
+}
+
 # list-facts reads one subject's recorded facts, newest first. --date narrows to
 # one natural day in local time; the API takes explicit bounds so the day is
 # resolved here rather than assumed by the server.
@@ -919,19 +973,79 @@ cmd_list_facts() {
   enc_type="$(jq -rn --arg s "$SUBJECT_TYPE" '$s|@uri')"
   query="?subject_type=${enc_type}&subject_id=${SUBJECT_ID}&limit=${LIMIT}"
   if [[ -n "$DATE" ]]; then
-    [[ "$DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail "list-facts --date must be YYYY-MM-DD"
     local from until
-    from="$(date -j -f '%Y-%m-%d %H:%M:%S' "$DATE 00:00:00" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
-      fail "list-facts could not parse --date $DATE"
-    until="$(date -j -v+1d -f '%Y-%m-%d %H:%M:%S' "$DATE 00:00:00" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
-      fail "list-facts could not advance --date $DATE"
-    from="$(printf '%s' "$from" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
-    until="$(printf '%s' "$until" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
+    read -r from until <<<"$(local_day_bounds "$DATE" list-facts)"
     query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
   fi
   local body
   body="$(api_get "/api/facts${query}")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_list_todos() {
+  reset_flags
+  LIMIT="50"
+  consume_flags "$@"
+  [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]] || fail "list-todos --limit must be a positive integer"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local query="?page=1&page_size=${LIMIT}"
+  if [[ -n "$STATUS" ]]; then
+    query="${query}&status=$(jq -rn --arg s "$STATUS" '$s|@uri')"
+  fi
+  if [[ -n "$DATE" ]]; then
+    local from until
+    read -r from until <<<"$(local_day_bounds "$DATE" list-todos)"
+    query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
+  fi
+  local body
+  body="$(api_get "/api/todos${query}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_get_todo() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-todo requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local body
+  body="$(api_get "/api/todos/${ID}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_list_tasks() {
+  reset_flags
+  LIMIT="50"
+  consume_flags "$@"
+  [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]] || fail "list-tasks --limit must be a positive integer"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local query="?page=1&page_size=${LIMIT}"
+  if [[ -n "$STATUS" ]]; then
+    query="${query}&status=$(jq -rn --arg s "$STATUS" '$s|@uri')"
+  fi
+  if [[ -n "$DATE" ]]; then
+    local from until
+    read -r from until <<<"$(local_day_bounds "$DATE" list-tasks)"
+    query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
+  fi
+  local body
+  body="$(api_get "/api/tasks${query}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+# get-task merges task detail, recent runs, the event timeline and task-scoped
+# facts into one JSON object — the pieces a summary line omits.
+cmd_get_task() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-task requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local task runs events facts
+  task="$(api_get "/api/tasks/${ID}" | jq -c '.data')"
+  runs="$(api_get "/api/tasks/${ID}/runs" | jq -c '.data.items')"
+  events="$(api_get "/api/tasks/${ID}/events" | jq -c '.data.items')"
+  facts="$(api_get "/api/facts?subject_type=task&subject_id=${ID}&limit=50" | jq -c '.data.items')"
+  emit "$(jq -cn --argjson task "$task" --argjson runs "$runs" --argjson events "$events" --argjson facts "$facts" \
+    '{task:$task,runs:$runs,events:$events,facts:$facts}')"
 }
 
 cmd_list_scheduled_tasks() {
@@ -1051,6 +1165,10 @@ case "$SUBCOMMAND" in
   append-clue)          cmd_append_clue "$@" ;;
   append-fact)          cmd_append_fact "$@" ;;
   list-facts)           cmd_list_facts "$@" ;;
+  list-todos)           cmd_list_todos "$@" ;;
+  get-todo)             cmd_get_todo "$@" ;;
+  list-tasks)           cmd_list_tasks "$@" ;;
+  get-task)             cmd_get_task "$@" ;;
   list-scheduled-tasks) cmd_list_scheduled_tasks "$@" ;;
   create-scheduled-task) cmd_create_scheduled_task "$@" ;;
   set-todo-status)      cmd_set_todo_status "$@" ;;

@@ -1,5 +1,11 @@
 # 长任务 Agent 如何不丢失最初目标
 
+> Status: proposal / partial implementation
+> Authority: non-normative
+> Last verified: 2026-08-02 @ `89fa24b`
+> Implemented: M3 clue verbatim forwarding, Task summary, waiting/human Session resume
+> Not implemented: Goal Store, Goal State, Supervisor, independent Verifier
+
 > 从“申请妙记权限成功”被误判为“会议结论已经产出”，推导 Jarvis 的 Goal Control Plane
 
 - **状态**：设计草案
@@ -65,7 +71,7 @@ Task 被标记 done
 
 [M3 抽取提示词](../internal/extract/prompt.go)把 `target` 定义为“对象/主题，作为去重标识”，而不是“最终要达到的结果”。这对于 Todo 去重是合理的，但后续 [Task Factory](../internal/taskcreate/factory.go)又直接把 `Todo.target` 复制成 `Task.target`，相当于让一个身份字段兼任执行目标。
 
-会议采集模块本身做得更谨慎：[permission denied 证据](../internal/meetingcapture/service.go)明确写着“采集模块未申请权限，也未决定后续处理方式”。但是这条采集失败证据进入普通 M3 后，模型仍可以把“处理权限”抽成新的 Todo。此时系统缺少一个已经存在的“会后结论与 Todo”根目标来承接这个 blocker，于是 blocker 很容易反客为主。
+当时的会议采集实现会把 permission denied 作为中立证据，不申请权限也不决定后续动作；该专用模块后来已删除，当前会议通过 Skill 和通用 `/api/clues` 入口进入 M2。但是这类失败证据进入普通 M3 后，模型仍可能把“处理权限”抽成新的 Todo。系统缺少持久根目标承接 blocker 时，局部动作仍可能反客为主。
 
 ### 2.2 第二次稀释：审批阶段把 Effect 完成解释为 Goal 完成
 

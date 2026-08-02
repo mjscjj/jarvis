@@ -1,8 +1,13 @@
 # 宽松语义结构与阶段解耦方案
 
+> Status: proposal / partial implementation
+> Authority: non-normative
+> Last verified: 2026-08-02 @ `89fa24b`
+> Warning: M3 Candidate、execution enrichment 和部分 Structured Output 仍是严格结构；本文示例不是当前全链路协议。
+
 Jarvis 的 M3 与 M5（判断环节 + 执行环节）不应共享一套庞大的模型语义 DTO。程序只固定硬消费字段，模型语义用自然语言或宽松 JSON 原样传递。这样上游新增一段判断、证据或结果时，下游能直接带给模型，不需要同步改 Go struct、JSON Schema、前端类型和历史数据。
 
-当前落地状态（2026-07-24）：实施顺序第 1、2 项已完成；M3、ContextDocument、`repo_path` 和事件快照收缩尚未实施。
+当前落地状态（2026-08-02）：M5 判断的 plan/payload 已按宽松 JSON 方向实现，M3 原始 extraction result 也会整体传给 Task；但 M3 Candidate、execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。`repo_path` 记录在 ExecutionRun，不在 Task。以 current 模块文档和代码为准。
 
 ## 目标
 
@@ -122,7 +127,7 @@ Jarvis 的 M3 与 M5（判断环节 + 执行环节）不应共享一套庞大的
 
 硬字段：
 
-- `disposition`: `ready | drop`
+- `disposition`: `ready | observe | drop`
 - `plan`: 宽松 JSON 或自然语言。`ready` 时必须存在且非空，但不限定必须是对象。
 - `payload`: 宽松 JSON。
 

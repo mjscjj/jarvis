@@ -1,5 +1,9 @@
 # Codex Session 挂起与恢复
 
+> Status: current
+> Authority: normative design
+> Last verified: 2026-08-02 @ `89fa24b`
+
 ## 1. 结论
 
 Jarvis 的长期任务不靠一个 Codex 进程持续 `sleep`，也不把任务摘要交给另一个 Agent。Agent 因未来条件或人工输入暂时无法继续时，结束当前 Turn；条件满足后使用 `codex exec resume <session_id>` 恢复原 Codex Session。
@@ -112,6 +116,7 @@ Task：
 
 ```text
 pending → executing → done
+                    → observing
                     → failed
                     → awaiting_approval
                     → waiting → executing
@@ -122,6 +127,7 @@ ExecutionRun：
 
 ```text
 running → succeeded
+        → observing
         → waiting
         → needs_human
         → failed
@@ -132,6 +138,7 @@ Agent 结果：
 | `outcome` | 含义 |
 |---|---|
 | `completed` | 目标已经真实完成并验证 |
+| `observing` | 调查后确认事项真实，但当前不需要任何人行动 |
 | `waiting` | 已成功创建未来唤醒 |
 | `needs_human` | 必须等待动作时确认、人工操作或补充信息；保存 Session 后暂停 |
 | `failed` | 当前目标确定失败 |
@@ -159,7 +166,7 @@ Agent 结果：
 - 到期时 Session 缺失：本轮触发失败并明确记录，不新建 Session。
 - 同一 Task 同时只允许一个未完成的续接计划。
 - Agent 调用工具后没有返回合法 `waiting` 结果：ScheduledTask 不会误触发；Task 进入完成、失败或审批状态时，该 `binding` 计划会被明确关闭并记录原因。若进程在绑定前退出，启动恢复也会将它标记失败。
-- `code_change` 等待前会持久化 base branch 和工作 branch；恢复时若仓库已被切到其他分支则直接失败，仍在原分支则继续完成 commit、diff、push/MR。
+- Git 状态不由 Jarvis 的专用列或编排器恢复；Agent 续跑时必须从 Session 与真实工作区重新核对，已成功发生的副作用不得重复。
 - 外部条件仍不满足：同一 Session 可以再次调用 `yield-until`。
 - Agent 判断目标不再可做：返回 `failed` 或 `needs_human`，不无限重试。
 

@@ -1,106 +1,63 @@
 # M1 背景信息模块
 
-> 隶属总纲 [`docs/00-overview.md`](../00-overview.md)。技术栈与实体权威定义以总纲为准。
->
-> 模块定位：手工维护的背景知识底座——`Project` / `Person` / `principal_profile`，以及 Group↔Project 归属。下游 M3/M5 读这些背景做判断；长期事实不在这里写，由离线事实引擎沉淀到 `fact` 表（见总纲 §5）。
+> Status: current
+> Authority: normative module guide
+> Last verified: 2026-08-02 @ `89fa24b`
+> Code source: `internal/background/`, `internal/domain/models.go`, `internal/domain/knowledge.go`
 
----
+M1 维护 principal 的稳定工作背景，供 M3/M5 和日报读取。MySQL 是真源；不向向量库同步背景，也没有 memory sidecar。
 
-## 0. 边界
+## 1. 边界
 
-| 属于 M1 | 不属于 M1 |
+| M1 负责 | M1 不负责 |
 |---|---|
-| Project / Person / principal_profile 建模与 CRUD | 消息采集（M2）、Todo 提取（M3）、判断与执行（M5） |
-| Group↔Project 关联（`feishu_group.project_id`） | Group 发现、扫描分层、消息落库（M2） |
-| 用 lark-cli 把姓名解析成 open_id | 飞书消息读写的完整封装（M2/M5） |
-| 后台「背景配置页」的交互契约 | 事实蒸馏（`internal/factengine`） |
+| PrincipalProfile、Project、Person、ManagedResource CRUD | 消息采集、Todo 抽取、M5 判断/执行 |
+| Group 的人工背景与 Project 归属 | Group 发现、活跃度和消息落库 |
+| lark-cli 姓名解析 | 完整飞书读写封装 |
+| 后台背景配置页 | 离线事实蒸馏 |
 
-原则：本地可信明文；fail-fast；MySQL 是 source of truth；不往向量库投背景、不经 sidecar。
-
----
-
-## 1. 实体关系
+## 2. 当前关系
 
 ```mermaid
 erDiagram
-    PROJECT ||--o{ PROJECT_MEMBER : has
-    PERSON  ||--o{ PROJECT_MEMBER : joins
-    PROJECT ||--o{ GROUP : "project_id 由 M1 维护"
-    PROJECT {
-        bigint id PK
-        varchar name
-        string role "owner|participant 等自由文本"
-        string status
-        json repos
-        json tech_stack
-        text notes
-    }
-    PERSON {
-        bigint id PK
-        varchar open_id UK
-        string role "leader|key|colleague|other 等"
-        decimal priority_weight
-        text comm_style
-    }
-    GROUP {
-        bigint id PK
-        varchar chat_id UK
-        bigint project_id FK
-        tinyint related_group
-        tinyint is_key_group
-    }
+    PROJECT ||--o{ GROUP : "project_id"
+    PROJECT ||--o{ MANAGED_RESOURCE : "project_id"
+    PERSON ||--o{ MANAGED_RESOURCE : "person_id"
+    PRINCIPAL_PROFILE ||--o{ MANAGED_RESOURCE : "link_principal"
+    PROJECT ||--o{ TODO : "project_id"
+    PROJECT ||--o{ TASK : "project_id"
 ```
 
-- Project ↔ Person 多对多，走 `project_member`。
-- Project ↔ Group 一对多：一个群至多挂一个项目。
-- Person 的全局 `role` / `priority_weight` 与项目内 `project_member.relation` 正交。
+当前没有 `project_member` 模型或表。动态实体关系使用自然语言 `RelationFact` 表达；一个 Group 至多直接绑定一个 Project。
 
-代码：`internal/domain/models.go`，服务在 `internal/background/`。
+## 3. 关键模型
 
----
+- Project：`code`、`name`、`role(owner|participant)`、`status(planning|active|paused|archived|done)`、`priority`、`repos`、`description`、`tech_stack`、`key_decisions`、`timeline`、`notes`
+- Person：Feishu ID、姓名、`role(leader|key|colleague|other)`、权重、关系、沟通风格、P2P chat、启用状态
+- PrincipalProfile：本人身份、职责、偏好和 leader
+- Group：采集维护会话身份与活跃信息；M1 维护 `project_id` 和 `background_note`。`include_in_memory` 当前只存储/展示，没有 memory sidecar 运行效果
+- ManagedResource：人工维护的文档、链接、仓库或备注，可关联 Person、Project 和 principal
 
-## 2. 关键字段（以代码为准）
+字段和 allowlist 以 Go model/service 为准，不在本文复制 DDL。
 
-权威 DDL 与 GORM model 以仓库为准，这里只列下游真正消费的字段：
+## 4. Fact 与 RelationFact
 
-**Project**：`name`、`role`、`status`、`repos`（本地路径列表，随任务交给执行者）、`description` / `notes`、`tech_stack` / `key_decisions`（宽松 JSON，模型读）。
+- Project 创建、修改、归档会写自然语言 Fact；Fact 也可通过 API 写入。
+- 离线 factengine 当前从 message 蒸馏 Fact。
+- RelationFact 保存两个既有实体之间的自然语言关系与有效期。
+- M1 不负责从会话批量蒸馏事实。
 
-**Person**：`open_id`（绑定键）、`name`、`role`、`priority_weight`、`comm_style`（辅助识别隐含交办）、`p2p_chat_id`、`notes`、`is_active`。
+## 5. API 与运维
 
-**principal_profile**：本人身份、leader、偏好等，供 M3/M5 提示词注入「我是谁」。
-
-已删除（勿再写回）：`mem0_synced_at`。背景不再注入任何记忆 sidecar。
-
----
-
-## 3. 与事实层的关系
-
-| 东西 | 谁写 | 谁读 | 用途 |
-|---|---|---|---|
-| Project / Person | 后台 / seed | M3、M5、日报 | 结构化背景 |
-| `fact` | 离线事实引擎（主）/ API（辅） | M3、contextsnap、日报 | 「已经这样了」的自然语言结论 |
-| `relation_fact` | knowledge / API | knowledge | 实体间动态关系 |
-
-M1 不负责蒸馏事实。模型要查「这个项目/人身上发生过什么」时用 `jarvis-tools list-facts`，不要指望后台点一次「同步记忆」。
-
----
-
-## 4. API 与运维
-
-路由注册在 `internal/api/router.go`，handler 在 `internal/api/`。
-
-常用 one-shot：
+Projects、Persons、Groups、Profile、Managed resources、Facts 和 RelationFacts 的路由见 [HTTP API](../reference/http-api.md)。`DELETE /api/projects/:id` 实际是软归档。
 
 ```bash
 ./bin/jarvis-server -config conf/config.yaml -seed
 ./bin/jarvis-server -config conf/config.yaml -seed-persons
 ```
 
-姓名 → open_id：`internal/background/resolve.go`（lark-cli contact）。
+## 6. 已知边界
 
----
-
-## 5. 开放问题
-
-1. Project `repos` 多仓库时，执行环节如何选默认路径——目前靠上下文与模型推断。
-2. Person 是否需要「离职/停用」自动从关键群成员同步——当前靠 `is_active` 手工维护。
+- 多仓库 Project 由模型结合 Task 上下文选择 repo。
+- Person 停用依赖人工维护。
+- Project 与 Person 目前没有结构化成员关系表。

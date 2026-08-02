@@ -20,8 +20,8 @@ type ExecutionRun struct {
 	TaskID     uint64 `gorm:"column:task_id;type:bigint unsigned;not null;index:idx_run_task"`
 	ActionType string `gorm:"column:action_type;type:varchar(32);not null"`
 	Stage      string `gorm:"column:stage;type:varchar(16);not null;default:execute"`
-	// Sandbox is the codex sandbox level actually used: read-only for
-	// investigate, workspace-write for code_change.
+	// Sandbox is the Agent sandbox level actually used for this run. It is
+	// recorded for audit and is not derived from action_type.
 	Sandbox string `gorm:"column:sandbox;type:varchar(24);not null"`
 	// Status: running -> succeeded | waiting | needs_human | failed.
 	Status         string         `gorm:"column:status;type:varchar(16);not null;index:idx_run_status"`

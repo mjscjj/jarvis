@@ -1,5 +1,10 @@
 # 世界建模进上下文：按天、限量、渐进式加载
 
+> Status: implementation-in-progress
+> Authority: non-normative proposal
+> Last verified baseline: 2026-08-02 @ `89fa24b`
+> Warning: 本轮审计时共享工作区存在未提交实现；只有合入并验证的代码才能升级为 current。
+
 本文是一份待实施方案。它规定世界建模数据（fact / task / todo）以什么形状进入提示词，以及模型如何从摘要下钻到细节。所有设计决定已由 principal 拍板，实施时不要重新讨论方向。
 
 ## 1. 现状与问题

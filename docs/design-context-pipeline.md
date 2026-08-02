@@ -1,13 +1,18 @@
 # 关键设计：上下文链路重设计（M3/M5 全链路上下文传递）
 
+> Status: implemented-history
+> Authority: non-normative implementation record
+> Last verified: 2026-08-02 @ `89fa24b`
+> Current behavior: `docs/00-overview.md`, `docs/modules/03-task-extract.md`, `docs/modules/04-decision.md`, `docs/modules/05-execution.md`
+
 > 所属系统：基于飞书的本地个人 Jarvis 管家（Principal = 字节研发工程师 `chujiejie.1`，本地 Mac 可信环境）
-> 隶属总纲：`docs/00-overview.md`（技术栈、7 实体、Todo/Task 拆分、LLM 分工的权威定义在总纲）
+> 隶属总纲：`docs/00-overview.md`。本文保留当时的设计与实施顺序，不再作为当前字段、模型版本或工具说明的权威来源。
 > 本文定位：一份**跨 M3 与 M5（判断环节 + 执行环节）** 的专项设计，解决"上下文在链路上逐级丢失、项目/仓库推算缺失"的问题。落地后会**修订** `03-task-extract.md` / `04-decision.md` 的部分既有约定（见 §8）。
 > 设计原则：本地可信明文 · fail-fast · 不擅自处理历史数据 · 模块化 · 优先已有实现与官方 CLI · 复杂度红线。
 
 ---
 
-原始提示词，保留：  
+原始提示词，保留：
 所以这里M3生成todo的时候，
 
 输入是当前已有的上下文，

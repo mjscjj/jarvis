@@ -1,108 +1,82 @@
 # M3 Todo 提取模块
 
-> 隶属总纲 [`docs/00-overview.md`](../00-overview.md)。上下文组装见 [`docs/design-context-pipeline.md`](../design-context-pipeline.md)。
->
-> 模块定位：把新消息 + 项目/人物/会话背景 + **已沉淀事实** 转成行动线索 `Todo`。默认引擎是 traex agent（可自跑工具推算项目与仓库），备用 `model_api`。M3 **只写 Todo**，不写 Task，也不手工记事实。
+> Status: current
+> Authority: normative module guide
+> Last verified: 2026-08-02 @ `89fa24b`
+> Code source: `internal/extract/`, `internal/contextsnap/`
 
----
+M3 把新证据和工作背景转成 Todo。它只创建/更新 Todo，不创建 Task、不执行外部写操作、不手工写长期 Fact。
 
-## 0. 流水线位置
+## 1. 输入与输出
 
-```text
-M2 采集 ──唤醒──▶ 【M3 提取 Todo】──▶ M5 判断环节 ──▶ M5 执行环节
-                     │
-                     └─ 读 fact 表（群 + 项目）作背景
-旁路：factengine 持续把 message 蒸馏进 fact（M3 不写 fact）
-```
+读取：
 
-M2 扫描落库后由 `pipeline.Coordinator` 按 chat 实时推进；`extract.schedule` 只做补偿。
+- 本轮新 message、受限会话上下文和工具补查消息；
+- Group、Project、Person、PrincipalProfile、Resource；
+- 既有 open Todos 和按群/项目加载的 Facts；
+- shared memory、rules、Skills 与工具目录。
 
----
+写入：
 
-## 1. 职责
+- `todo`、`todo_event`、`todo_extract_watermark`；
+- Qdrant `todo_semantic` 去重向量。
 
-**做什么**
+M3 状态只有：
 
-1. 按会话/话题聚合上下文，识别真实可落地的线索，写成 `Todo`。
-2. 给每条线索定 `status`：`extracted`（要我做）或 `observing`（值得知道但不需动手）。
-3. 去重：精确指纹 + Qdrant `todo_semantic` 语义近邻 +（必要时）LLM 裁决。
-4. 冻结 `context_snapshot`（一次组装、全程传递，下游不重建）。
-5. `source_quote` 必须逐字来自 `[new]` 消息；失败则按 `evidence_retry_max` 重抽。
+- `extracted`：存在需要 M5 价值判断的动作线索；
+- `observing`：值得知道，但当前无需任何人行动。
 
-**不做什么**
+重提取可以在 `extracted ↔ observing` 间调整，不随意重新打开已经 `auto` 或 `dropped` 的 Todo。
 
-| 事项 | 归属 |
+## 2. Candidate 契约
+
+当前 Candidate 是 M3 阶段的严格输出协议，包含 title、description、action_type、target、context、open_questions、commitment、source message/quote、assigner/project hints、`desired_outcome`、`semantics` 和 status 等内容。
+
+`action_type` 是开放的 snake_case 字符串；代码不维护封闭业务枚举。完整协议以 `internal/extract/candidate.go` 和 `internal/extract/provider/schema.go` 为准。
+
+至少一条 evidence 必须来自本轮 `[new]` message。模型可以用工具引用同一 chat 中批次外的消息，worker 会补载并校验；`source_quote` 必须逐字命中证据，否则按配置重抽，耗尽后 fail-fast。
+
+## 3. 项目解析与上下文快照
+
+项目归属顺序：
+
+1. Group 已绑定 Project 时直接使用；
+2. 否则用 `project_hint` 对 code/name 精确匹配；
+3. 仍无法确定则记录 unresolved resolution trace，模型可继续用工具调查。
+
+冻结快照包含 principal、group、project、assigner、引用消息、会话上下文、参与人、资源、open Todos、其他项目和 Facts。`extraction_result` 保留完整 Candidate，`resolution` 保留项目/仓库推算轨迹。
+
+当前快照不包含 shared memory，也未冻结 ManagedResource；它们可能进入运行时 prompt，但不能笼统写成快照已包含所有背景。
+
+## 4. 去重与落库
+
+去重依次使用：
+
+- 精确 fingerprint；
+- Qdrant 语义近邻；
+- 必要时模型裁决。
+
+Todo、事件、水位和去重向量在同一落库流程中协调；关键步骤失败时整轮报错，不留下“数据库成功但语义索引缺失”的伪成功。
+
+## 5. 引擎与配置
+
+| 配置 | 当前语义 |
 |---|---|
-| 采集与线索投递 | M2 |
-| 值不值得做、`auto`/`dropped` | M5 判断环节 |
-| Todo→Task 固化 | M5 判断环节 |
-| 蒸馏 / 写入长期事实 | 离线事实引擎 |
-| 对外写操作 | M5 执行环节 |
+| `extract.engine=codex` | 默认，traex Agent 自跑 lark-cli/bytedcli/git/jarvis-tools |
+| `extract.engine=model_api` | 备用 OpenAI-compatible function-calling 引擎 |
+| `extract.fact_limit` | 默认注入的已有 Fact 上限 |
+| `extract.semantic_*` | Qdrant Todo 去重配置 |
 
-提示词（`conf/prompts/m3-system-prompt.md`）明确：已沉淀事实只作背景，不要手工 `append-fact`，也不要把事实本身再抽成新线索。
+稳定行为正文在 `conf/prompts/m3-system-prompt.md`；运行时组装在 `internal/extract/prompt.go`；工具说明来自 `internal/toolcatalog`。
 
----
-
-## 2. 输入 / 输出
-
-**读**
-
-- `message`：本轮新消息 + 受限回看上下文
-- `feishu_group` / `project` / `person` / `principal_profile` / `resource`
-- `fact`：按群 ID、项目 ID 各取最新 `extract.fact_limit` 条（`progress.Service.ListFacts`）
-- 共享记忆、工作规则、Skill 目录、工具说明（动态注入）
-
-**写**
-
-- `todo` / `todo_event`
-- `todo_extract_watermark`
-- Qdrant `todo_semantic` 向量（去重用）
-
-不再调用任何记忆 sidecar，不再提供 `search_memory` 工具。工具箱只保留历史消息、资源等检索（见 `internal/extract/tool_box.go`）。
-
----
-
-## 3. 引擎与配置
-
-| 项 | 说明 |
-|---|---|
-| `extract.engine=codex`（默认） | traex agent，可自跑 lark-cli / bytedcli / git / jarvis-tools |
-| `extract.engine=model_api` | 百炼等 OpenAI 兼容端点 + function-calling |
-| embedding | `model.embedding_model` / `embedding_dims`，只服务 Todo 去重 |
-| Qdrant | `extract.qdrant_host` / `qdrant_grpc_port`，集合 `extract.semantic_collection` |
-| 事实注入 | `extract.fact_limit` |
-
-提示词正文：`conf/prompts/m3-system-prompt.md`（textstore key）。工具说明：`internal/toolcatalog`。
-
----
-
-## 4. 关键实现
-
-| 文件 | 作用 |
-|---|---|
-| `internal/extract/worker.go` | 编排；批级 `loadFacts` |
-| `pipeline_store.go` | 加载批次、水位 |
-| `prompt.go` | 组装 system/user；`renderFacts` |
-| `persist.go` / `snapshot.go` | 落库与冻结快照 |
-| `dedup.go` + `internal/semantic` | 语义去重 |
-| `codexengine/` / `provider/` | 两套引擎 |
+M2 新消息实时唤醒 M3；`extract.schedule` 只做持久化补偿。
 
 ```bash
 ./bin/jarvis-server -config conf/config.yaml -extract-once
 ```
 
----
+## 6. 当前限制
 
-## 5. 与事实层的契约
-
-1. M3 **只读** `fact`，不写。
-2. 事实按主体绑定，不是按「和本条消息相似」检索；缺的用工具查，不靠 mem0 式向量召回。
-3. observing 线索留在 Todo 视野里；「已经定了的结论」挂在实体上的那份由 factengine 写。
-
----
-
-## 6. 开放问题
-
-1. `fact_limit` 与提示词长度的平衡——实跑校准。
-2. 语义去重阈值与近邻数是否仍合适。
-3. 线索投递来源（会议等）的抽取质量靠提示词与 Skill，不在 Go 里开分支。
+- ResourceContext 没有通用本地正文/路径能力，附件读取仍依赖 Agent 通过外部 token/url 查询。
+- 快照是审计证据，不是 live world state。
+- `fact_limit`、语义阈值和近邻数需要按真实运行数据持续校准。

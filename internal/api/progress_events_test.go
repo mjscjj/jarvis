@@ -115,3 +115,37 @@ func TestListFactsRejectsMissingSubject(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
 }
+
+func TestListFactsParsesSourceKindFilters(t *testing.T) {
+	svc := &fakeProgressService{}
+	h := server.New()
+	h.GET("/api/facts", ListFacts(svc))
+	url := "/api/facts?subject_type=group&subject_id=4&source_kind=rollup&exclude_source_kind=m3"
+	response := ut.PerformRequest(h.Engine, "GET", url, nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	if svc.factFilter.SourceKind == nil || *svc.factFilter.SourceKind != "rollup" {
+		t.Fatalf("SourceKind = %#v", svc.factFilter.SourceKind)
+	}
+	if svc.factFilter.ExcludeSourceKind == nil || *svc.factFilter.ExcludeSourceKind != "m3" {
+		t.Fatalf("ExcludeSourceKind = %#v", svc.factFilter.ExcludeSourceKind)
+	}
+}
+
+// Keep source_kind parsing covered even when only one side is set.
+func TestListFactsParsesExcludeSourceKindAlone(t *testing.T) {
+	svc := &fakeProgressService{}
+	h := server.New()
+	h.GET("/api/facts", ListFacts(svc))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/facts?subject_type=group&subject_id=4&exclude_source_kind=rollup", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	if svc.factFilter.SourceKind != nil {
+		t.Fatalf("SourceKind should be nil: %#v", svc.factFilter.SourceKind)
+	}
+	if svc.factFilter.ExcludeSourceKind == nil || *svc.factFilter.ExcludeSourceKind != "rollup" {
+		t.Fatalf("ExcludeSourceKind = %#v", svc.factFilter.ExcludeSourceKind)
+	}
+}

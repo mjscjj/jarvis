@@ -1,5 +1,10 @@
 # 类人类决策系统 · 概念设计（Human-like Decision System）
 
+> Status: research / conceptual proposal
+> Authority: non-normative
+> Last verified against project: 2026-08-02 @ `89fa24b`
+> Warning: 本文不代表 Jarvis 当前实现或已经批准的目标架构。
+
 > 定位：一份**与具体实现/部署无关**的通用概念框架，描述一种「区别于 ReAct、更像人类主动决策」的 agent 决策范式。本文只讲概念模型、模块边界、数据流与红线，不绑定语言/进程/存储选型（落地形态属后续讨论）。
 >
 > 与本仓库其它文档的关系：
@@ -297,4 +302,4 @@ ReAct（`survey §1.1`，`Thought→Action→Observation` 循环）是几乎所�
 ## 9. 参考
 
 - 姊妹调研：`docs/research/agent-decision-survey.md`（三正交轴、HITL 最佳实践、编码 agent 自主度、治理护栏、完整来源索引）。本文所有"打分可靠性、按后果分级、控制/数据平面分离、fail-closed、审计留痕"等通用结论均以该文为准，不重复引用原始出处。
-- Jarvis 相关（仅作"同类问题的具体实例"参照，非本文依赖）：`docs/00-overview.md`（7 实体建模思路）、`docs/modules/03-task-extract.md §6.3`（防自激励循环）、`docs/modules/04-confirmation.md`（HITL 确认闸门的一个具体实现）。
+- Jarvis 相关只作为历史实例参照。当前架构见 `docs/00-overview.md` 和 `docs/modules/04-decision.md`；旧的 `04-confirmation.md` 已随 M4 人工确认流退役。

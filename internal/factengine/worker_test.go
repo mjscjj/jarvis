@@ -71,6 +71,10 @@ func (f *fakeAppender) AppendFact(_ context.Context, input progress.FactInput) (
 	return &progress.FactView{ID: uint64(len(f.stored))}, nil
 }
 
+func (f *fakeAppender) ListFacts(context.Context, progress.FactFilter) ([]progress.FactView, error) {
+	return nil, nil
+}
+
 type fakePrompts struct{ content string }
 
 func (f fakePrompts) Content(context.Context, string) (string, error) { return f.content, nil }

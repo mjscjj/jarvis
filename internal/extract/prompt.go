@@ -28,6 +28,21 @@ type PromptOptions struct {
 	Skills string
 }
 
+// worldFloor is the minimum number of items kept for each world-data class when
+// the prompt is over budget. World data is trimmed first because it can be
+// re-fetched with tools; conversation messages are the primary evidence.
+const worldFloor = 3
+
+// promptWorld holds the mutable world-data slices that BuildPrompt may shrink
+// before it starts dropping conversation context messages.
+type promptWorld struct {
+	PersonFacts   []contextsnap.Fact
+	GroupFacts    []contextsnap.Fact
+	OtherProjects []OtherProjectContext
+	RecentTasks   []RecentTaskContext
+	OpenTodos     []OpenTodoContext
+}
+
 func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fact, now time.Time, opts PromptOptions) (Prompt, error) {
 	if strings.TrimSpace(opts.PrincipalOpenID) == "" {
 		return Prompt{}, fmt.Errorf("extract principal open_id is empty")
@@ -44,6 +59,7 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fac
 
 	trimmed := unit
 	trimmed.Messages = append([]MessageContext(nil), unit.Messages...)
+	world := splitPromptWorld(batch, facts)
 	system := strings.TrimSpace(opts.SystemPrompt)
 	system += "\n\nPRINCIPAL_OPEN_ID=" + opts.PrincipalOpenID
 	if catalog := strings.TrimSpace(opts.ToolCatalog); catalog != "" {
@@ -59,9 +75,12 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fac
 		system += "\n\n" + block
 	}
 	for {
-		user := renderUserPrompt(batch, trimmed, facts, now.In(opts.Location), opts.Location)
+		user := renderUserPrompt(batch, trimmed, world, now.In(opts.Location), opts.Location)
 		if utf8.RuneCountInString(system)+utf8.RuneCountInString(user) <= opts.MaxChars {
 			return Prompt{System: system, User: user}, nil
+		}
+		if shrinkPromptWorld(&world) {
+			continue
 		}
 		index := firstContextIndex(trimmed.Messages)
 		if index < 0 {
@@ -71,17 +90,60 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fac
 	}
 }
 
-func renderUserPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fact, now time.Time, location *time.Location) string {
+func splitPromptWorld(batch ChatBatch, facts []contextsnap.Fact) promptWorld {
+	world := promptWorld{
+		OtherProjects: append([]OtherProjectContext(nil), batch.OtherProjects...),
+		RecentTasks:   append([]RecentTaskContext(nil), batch.RecentTasks...),
+		OpenTodos:     append([]OpenTodoContext(nil), batch.OpenTodos...),
+	}
+	for _, fact := range facts {
+		if fact.SubjectType == "person" {
+			world.PersonFacts = append(world.PersonFacts, fact)
+			continue
+		}
+		world.GroupFacts = append(world.GroupFacts, fact)
+	}
+	return world
+}
+
+// shrinkPromptWorld tightens world data one class at a time down to worldFloor.
+// Order: person facts → other_projects → recent_tasks → open_todos →
+// group/project facts. Returns false when every class is already at its floor.
+func shrinkPromptWorld(world *promptWorld) bool {
+	switch {
+	case len(world.PersonFacts) > worldFloor:
+		world.PersonFacts = world.PersonFacts[:len(world.PersonFacts)-1]
+		return true
+	case len(world.OtherProjects) > worldFloor:
+		world.OtherProjects = world.OtherProjects[:len(world.OtherProjects)-1]
+		return true
+	case len(world.RecentTasks) > worldFloor:
+		world.RecentTasks = world.RecentTasks[:len(world.RecentTasks)-1]
+		return true
+	case len(world.OpenTodos) > worldFloor:
+		world.OpenTodos = world.OpenTodos[:len(world.OpenTodos)-1]
+		return true
+	case len(world.GroupFacts) > worldFloor:
+		world.GroupFacts = world.GroupFacts[:len(world.GroupFacts)-1]
+		return true
+	default:
+		return false
+	}
+}
+
+func renderUserPrompt(batch ChatBatch, unit ConversationUnit, world promptWorld, now time.Time, location *time.Location) string {
+	facts := append(append([]contextsnap.Fact(nil), world.GroupFacts...), world.PersonFacts...)
 	sections := []string{
 		"# 当前时间\n" + now.Format(time.RFC3339) + "（时区 " + location.String() + "）",
 		"# 我的背景(principal)\n" + renderPrincipal(batch.Principal),
 		"# 当前会话所属项目（详细）\n" + renderProject(batch.Project),
-		"# 我的其他项目（精简，仅作归属参考）\n" + renderOtherProjects(batch.OtherProjects),
+		"# 我的其他项目（精简，仅作归属参考）\n" + renderOtherProjects(world.OtherProjects),
 		"# 来源会话（Group）\n" + renderGroup(batch.Group),
 		"# 参与者\n" + renderParticipants(unit.Participants),
 		"# 相关资源\n" + renderResources(unit.Resources),
 		"# 已沉淀的事实（仅作背景）\n" + renderFacts(facts),
-		"# 已存在的未闭环 Todo（仅作背景）\n" + renderOpenTodos(batch.OpenTodos),
+		"# 最近有进展的任务（仅作背景）\n" + renderRecentTasks(world.RecentTasks),
+		"# 已存在的未闭环 Todo（仅作背景）\n" + renderOpenTodos(world.OpenTodos),
 		"# 会话记录\n" + renderConversation(unit.Messages, location),
 	}
 	return strings.Join(sections, "\n\n")
@@ -181,7 +243,7 @@ func renderResources(resources []ResourceContext) string {
 }
 
 // renderFacts shows what the offline fact engine has already established about
-// this conversation's group and project, newest first.
+// this conversation's group, project and key persons.
 func renderFacts(facts []contextsnap.Fact) string {
 	if len(facts) == 0 {
 		return "(none)"
@@ -190,6 +252,26 @@ func renderFacts(facts []contextsnap.Fact) string {
 	for _, fact := range facts {
 		lines = append(lines, fmt.Sprintf("[%s] %s/%d: %s",
 			fact.OccurredAt, fact.SubjectType, fact.SubjectID, fact.Description))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderRecentTasks(tasks []RecentTaskContext) string {
+	if len(tasks) == 0 {
+		return "(none)"
+	}
+	lines := make([]string, len(tasks))
+	for i, task := range tasks {
+		summary := task.Summary
+		if summary == "" {
+			summary = "(no summary)"
+		}
+		progressAt := task.LastProgressAt
+		if progressAt == "" {
+			progressAt = "(unknown)"
+		}
+		lines[i] = fmt.Sprintf("task_id=%d title=%q status=%s summary=%q last_progress_at=%s",
+			task.ID, task.Title, task.Status, summary, progressAt)
 	}
 	return strings.Join(lines, "\n")
 }

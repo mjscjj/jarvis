@@ -34,6 +34,10 @@ var taskStatuses = map[string]struct{}{
 
 type TaskFilter struct {
 	Statuses []string
+	// From / Until narrow by COALESCE(last_progress_at, confirmed_at) as a
+	// half-open RFC3339 window. Callers own the timezone.
+	From     *time.Time
+	Until    *time.Time
 	Page     int
 	PageSize int
 }
@@ -123,6 +127,7 @@ type RunList struct {
 
 type TaskService interface {
 	ListTasks(context.Context, TaskFilter) (*TaskList, error)
+	GetTask(context.Context, uint64) (*TaskView, error)
 	Finish(context.Context, FinishInput) (*TaskView, error)
 	Supplement(context.Context, SupplementInput) (*TaskView, error)
 	ListRuns(context.Context, uint64) (*RunList, error)
@@ -147,6 +152,12 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 	if len(filter.Statuses) > 0 {
 		query = query.Where("status IN ?", filter.Statuses)
 	}
+	if filter.From != nil {
+		query = query.Where("COALESCE(last_progress_at, confirmed_at) >= ?", filter.From.UTC())
+	}
+	if filter.Until != nil {
+		query = query.Where("COALESCE(last_progress_at, confirmed_at) < ?", filter.Until.UTC())
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("count execution Tasks: %w", err)
@@ -161,6 +172,23 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 		items[i] = taskView(ctx, &rows[i])
 	}
 	return &TaskList{Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
+}
+
+// GetTask returns one Task by id.
+func (s *Store) GetTask(ctx context.Context, taskID uint64) (*TaskView, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
+	}
+	var row domain.Task
+	err := s.db.WithContext(ctx).First(&row, taskID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get Task id=%d: %w", taskID, err)
+	}
+	view := taskView(ctx, &row)
+	return &view, nil
 }
 
 func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error) {

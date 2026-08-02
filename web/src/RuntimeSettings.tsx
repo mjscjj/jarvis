@@ -309,11 +309,13 @@ export default function RuntimeSettings() {
             <TextField name="extract_schedule" label="补偿扫描周期" placeholder="@every 10m" help="事件触发遗漏时，按此周期扫描待提取消息。" />
             <NumberField name="extract_batch_messages" label="每批消息上限" min={1} max={5000} />
           </Section>
-          <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo 和长期事实。">
+          <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo、今天的事实明细、关键人事实和最近有进展的任务。">
             <NumberField name="extract_context_messages" label="每个会话前文条数" min={0} max={500} />
             <NumberField name="extract_context_window_minutes" label="前文时间窗（分钟）" min={1} max={10080} />
             <NumberField name="extract_open_todo_limit" label="开放 Todo 上限" min={1} max={1000} help="随 Prompt 提供的未关闭 Todo 数量，用于避免重复创建。" />
-            <NumberField name="extract_fact_limit" label="长期事实条数" min={1} max={100} help="最多注入与当前主体相关的近期事实数量。" />
+            <NumberField name="extract_fact_limit" label="每主体今天事实上限" min={1} max={100} help="每个主体（群/项目/人）今天注入的明细事实条数；前一天另加一条日压缩摘要。" />
+            <NumberField name="extract_key_person_limit" label="关键人事实人数上限" min={1} max={50} help="交办人、leader 与本轮发言者取并集后，最多取多少人注入人物事实。" />
+            <NumberField name="extract_recent_task_limit" label="最近有进展任务上限" min={1} max={100} help="注入近期有进展的任务摘要条数。" />
             <NumberField name="extract_max_prompt_chars" label="Prompt 字符上限" min={1000} max={1000000} step={1000} />
           </Section>
           <Section title="语义去重" description="先查相似 Todo；非精确命中时再由 Model API 判断是否同一行动。">
@@ -393,9 +395,10 @@ export default function RuntimeSettings() {
             <NumberField name="capture_scan_workers" label="并发扫描会话数" min={1} max={32} />
             <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按近期活跃度自动纳入采集的私聊数量；0 表示关闭。" />
           </Section>
-          <Section title="离线事实引擎" description="在主流水线之外把消息切成会话窗口，提取可长期复用的工作事实。">
+          <Section title="离线事实引擎" description="在主流水线之外把消息切成会话窗口，提取可长期复用的工作事实；并按天把前一天的明细压成一条摘要。">
             <SwitchField name="fact_engine_enabled" label="自动提取事实" />
             <TextField name="fact_engine_schedule" label="事实提取周期" placeholder="@every 15m" />
+            <TextField name="fact_engine_rollup_schedule" label="日压缩周期" placeholder="0 2 * * *" help="每天把前一个自然日每个主体的明细事实压成一条摘要，供 M3 提示词使用。" />
             <TextField name="fact_engine_model" label="事实提取模型" />
             <NumberField name="fact_engine_timeout_seconds" label="单轮超时（秒）" min={1} max={3600} />
             <NumberField name="fact_engine_batch_limit" label="每批消息上限" min={1} max={5000} />

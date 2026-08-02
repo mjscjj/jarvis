@@ -1,6 +1,11 @@
 # 「用 Agent 做决策」开源与前沿调研报告
 
-> 定位：一份**系统性、可追溯**的调研——从学术范式、主流 agent 框架、编码类 agent、到 HITL 治理与安全护栏，梳理「用 agent 做决策」这个领域整体上有哪些思想、大家都怎么做，最后对照本项目 M4（Todo→Task 确认闸门，`docs/modules/04-confirmation.md`）指出可借鉴点与可改进点。
+> Status: research snapshot
+> Authority: non-normative
+> Last verified against project: 2026-08-02 @ `89fa24b`
+> Warning: §6 的 Jarvis M4 / 人工确认 / confidence-risk 对照基于已退役架构，不代表当前 M5。通用研究部分仍可参考。
+
+> 定位：一份**系统性、可追溯**的历史调研。末尾项目对照使用的是当时的 M4 确认闸门，当前实现请看 `docs/modules/04-decision.md`。
 > 调研时间：2026-07-19。来源以 2025/2026 最新资料为主，逐条附 arXiv 编号 / 官方文档 / GitHub 链接。
 > 阅读顺序建议：先看 §0 认知地图 → §5 通用设计思想归纳 → §6 对照 Jarvis M4。§1~§4 是可追溯的细节支撑，按需查阅。
 
@@ -33,7 +38,7 @@
 
 ## 1. 学术 / 前沿的决策范式
 
-> 详见 [调研学术 agent 决策范式](5214d29b-3605-4ff4-97ae-710fc1aa2015)。每条给「核心思想 / 机制 / 优缺点 / 代表论文」。
+> 详见历史调研任务 `5214d29b-3605-4ff4-97ae-710fc1aa2015`。每条给「核心思想 / 机制 / 优缺点 / 代表论文」。
 
 ### 1.1 推理拓扑类（轴 A）
 
@@ -92,7 +97,7 @@
 
 ## 2. 主流开源 agent 框架的决策与审批机制
 
-> 详见 [调研 agent 框架审批机制](5ba30a41-8300-4bfc-bd8c-0929a4533196)。核心问题：这些框架把"是否需要人工"建模成什么？
+> 详见历史调研任务 `5ba30a41-8300-4bfc-bd8c-0929a4533196`。核心问题：这些框架把"是否需要人工"建模成什么？
 
 ### 2.1 四大流派
 
@@ -131,7 +136,7 @@
 
 ## 3. 编码类 agent 的自主度控制（对本项目最贴——我们用 codex CLI 决策）
 
-> 详见 [调研编码 agent 自主度](f07db0e9-b626-4f71-8ce4-9d4f8c4fbd47)。核心问题：编码 agent 怎么决定"要不要执行某个动作（改代码/跑命令/提交）"？
+> 详见历史调研任务 `f07db0e9-b626-4f71-8ce4-9d4f8c4fbd47`。核心问题：编码 agent 怎么决定"要不要执行某个动作（改代码/跑命令/提交）"？
 
 ### 3.1 四种正交控制手段
 
@@ -188,7 +193,7 @@ Codex 的核心哲学：**用两个独立正交的旋钮定义自主度**。
 
 ## 4. HITL 治理 + 安全护栏的工程实践与行业标准
 
-> 详见 [调研 HITL 治理与护栏](93b9b1c6-e563-4bcc-a79e-43d6947ba4c8)。核心命题一句话：**"要不要人介入"必须由工作流/策略层根据"动作是什么(不可逆性+blast radius)"决定，绝不能交给 agent 运行时自己协商；授权决策在下游做"完全仲裁"，不可信输入永远不能改变授权结果。**
+> 详见历史调研任务 `93b9b1c6-e563-4bcc-a79e-43d6947ba4c8`。这一段反映当时的 HITL 治理结论，不代表当前 Jarvis 的模型审批政策。
 
 ### 4.1 HITL 设计模式与反模式
 
@@ -292,7 +297,7 @@ Codex 的核心哲学：**用两个独立正交的旋钮定义自主度**。
 
 ## 6. 对照 Jarvis M4：可借鉴点与可改进点
 
-> 基准：`docs/modules/04-confirmation.md`（当前 MVP：`extracted Todo → need_decision → 用户批准/拒绝 → Task`；后续设计含 confidence×risk 打分、灰区 codex 深判、action_manifest、审计）。
+> 历史基准：已删除的 `docs/modules/04-confirmation.md`（当时的 `extracted Todo → need_decision → 用户批准/拒绝 → Task`）。本节不再是当前架构评价。
 
 ### 6.1 我们已经踩在正确道路上的（与业界最佳实践一致）
 
@@ -372,4 +377,4 @@ M4 的骨架（HITL 闸门 + 只读 codex 决策 + 配置层强制确认 + fail 
 
 **HITL 治理护栏**：OWASP Top10 for LLM 2025 v2.0（LLM01/LLM06）· CaMeL arXiv:2503.18813 · Simon Willison 防注入设计模式（2025-06）· AWS Well-Architected Agentic AI Lens AGENTSEC04 · EU AI Act Art.14（ai-act-service-desk.ec.europa.eu）· NIST AI RMF + CSA Agentic Profile · ISO/IEC 42001 Annex A · IETF SCITT draft-ietf-scitt-architecture · ConfTuner arXiv:2508.18847
 
-> 四路调研的完整原文可追溯至子代理：[学术范式](5214d29b-3605-4ff4-97ae-710fc1aa2015)、[框架审批](5ba30a41-8300-4bfc-bd8c-0929a4533196)、[编码 agent](f07db0e9-b626-4f71-8ce4-9d4f8c4fbd47)、[HITL 治理](93b9b1c6-e563-4bcc-a79e-43d6947ba4c8)。
+> 四路调研的历史任务 ID：学术范式 `5214d29b-3605-4ff4-97ae-710fc1aa2015`、框架审批 `5ba30a41-8300-4bfc-bd8c-0929a4533196`、编码 Agent `f07db0e9-b626-4f71-8ce4-9d4f8c4fbd47`、HITL 治理 `93b9b1c6-e563-4bcc-a79e-43d6947ba4c8`。

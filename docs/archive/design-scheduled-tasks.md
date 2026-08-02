@@ -1,6 +1,10 @@
 # 简单定时任务方案
 
-> 历史方案：本文记录最初“定时任务直接调用 Codex”的实现。当前独立计划以 [`design-task-runtime-mvp.md`](design-task-runtime-mvp.md) 为准；同一个 Task 的挂起续跑见 [`design-codex-session-continuation.md`](design-codex-session-continuation.md)。
+> Status: obsolete / superseded
+> Authority: non-normative archive
+> Last verified: 2026-08-02 @ `89fa24b`
+
+> 历史方案：本文记录最初“定时任务直接调用 Codex”的实现。后续实施记录见 [`design-task-runtime-mvp.md`](design-task-runtime-mvp.md)；当前行为以总纲和模块文档为准。同一个 Task 的挂起续跑见 [`design-codex-session-continuation.md`](../design-codex-session-continuation.md)。
 
 ## 1. 目标与边界
 

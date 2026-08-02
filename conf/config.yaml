@@ -1,5 +1,5 @@
-# Jarvis 本地配置（本地可信环境，明文存储密钥/DSN）。
-# 骨架阶段只有 server 段实际生效；其余段为后续里程碑预留，值可先留占位。
+# Jarvis 本地基线配置（本地可信环境，明文存储密钥/DSN）。
+# 主要配置段均已投入运行并在启动时校验；同目录 config.runtime.yaml 会覆盖本文件，保存后需重启生效。
 
 server:
   addr: "127.0.0.1:18800"
@@ -15,8 +15,8 @@ mysql:
   max_idle_conns: 5
   conn_max_lifetime: 3600
 
-# 高频抽取用 model API（M2/M3，OpenAI 兼容端点，可配置）
-# 阿里云百炼 DashScope OpenAI 兼容端点；embedding 供 Todo 语义去重使用。
+# M3 备用 model_api 引擎和 Todo 去重 embedding（OpenAI 兼容端点，可配置）。
+# 默认 M3 引擎是下面 extract.engine=codex；M2 不调用模型。
 model:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   api_key: "sk-170fbd90ff3f4d4491657722fd6de026"
@@ -32,6 +32,7 @@ model:
 factengine:
   enabled: true
   schedule: "@every 15m"
+  rollup_schedule: "0 2 * * *"   # 每天本地 02:00 压缩前一自然日的明细事实
   bin: "traex"
   model: "DeepSeek-V4-Flash"
   sandbox: "danger-full-access"   # 本地可信环境；抽取时可自跑 jarvis-tools 查已有事实避免重复
@@ -55,7 +56,9 @@ extract:
   context_messages: 20
   context_window_minutes: 120
   open_todo_limit: 20
-  fact_limit: 30                 # 单轮注入提示词的既有事实条数上限（离线事实引擎产出）
+  fact_limit: 10                 # 每主体今天的明细事实上限（排除 rollup；另加前一天 1 条 rollup）
+  key_person_limit: 5            # 推送 person 主体事实时，关键人并集上限
+  recent_task_limit: 10          # 推送最近有进展的任务条数上限
   max_prompt_chars: 60000
   semantic_collection: "todo_semantic"
   semantic_threshold: 0.85
@@ -88,8 +91,7 @@ capture:
   # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
-  # 已结束会议妙记接入：今天内结束的会议每 5 分钟检查一次；产物未就绪会持久化重试。
-# M5 判断环节：给 Todo 定 disposition（ready 建 Task 进执行环节，drop 终结），
+# M5 判断环节：给 Todo 定 disposition（ready 建 Task、observe 保留观察、drop 终结），
 # 这里没有人工闸门——要 principal 拍板的事由执行环节带着调查结果去问。
 decide:
   enabled: true

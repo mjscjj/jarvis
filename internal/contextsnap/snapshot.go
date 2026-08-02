@@ -33,6 +33,7 @@ type Snapshot struct {
 	Participants  []Participant  `json:"participants,omitempty"`
 	Resources     []Resource     `json:"resources,omitempty"`
 	OpenTodos     []OpenTodo     `json:"open_todos,omitempty"`
+	RecentTasks   []RecentTask   `json:"recent_tasks,omitempty"`
 	OtherProjects []ProjectBrief `json:"other_projects,omitempty"`
 	// Conversation is the surrounding chat context (several rounds around the
 	// cited Messages) so M5 can read the fuller thread, not just the single
@@ -141,6 +142,17 @@ type OpenTodo struct {
 	ActionType string `json:"action_type"`
 	Title      string `json:"title"`
 	Status     string `json:"status"`
+}
+
+// RecentTask freezes the thin progress projection M3 pushed into the prompt so
+// M5 sees the same task summaries even though it does not reassemble a live
+// world slice.
+type RecentTask struct {
+	ID             uint64 `json:"id"`
+	Title          string `json:"title"`
+	Status         string `json:"status"`
+	Summary        string `json:"summary,omitempty"`
+	LastProgressAt string `json:"last_progress_at,omitempty"`
 }
 
 type ProjectBrief struct {

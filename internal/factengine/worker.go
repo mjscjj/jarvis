@@ -23,9 +23,11 @@ type factExtractor interface {
 
 // factAppender is progress.Service. Going through it rather than inserting rows
 // directly is what keeps a hallucinated subject_id out of the table: it verifies
-// the subject exists for the types the system reads back.
+// the subject exists for the types the system reads back. ListFacts is shared by
+// the daily rollup so compression reads the same filtered view the prompt does.
 type factAppender interface {
 	AppendFact(context.Context, progress.FactInput) (*progress.FactView, error)
+	ListFacts(context.Context, progress.FactFilter) ([]progress.FactView, error)
 }
 
 type WorkerOptions struct {
