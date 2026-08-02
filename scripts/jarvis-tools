@@ -67,6 +67,7 @@ subcommands:
   get-todo               Get one clue with the details omitted from summaries
   list-tasks             List tasks, optionally for one day
   get-task               Get one task with bounded execution history
+  create-task            Create a normal Task for strong M5 (proactive agent only)
   list-scheduled-tasks   List time-triggered tasks
   get-scheduled-task     Get one time-triggered task
   create-scheduled-task  Create a time trigger for a new task
@@ -284,6 +285,15 @@ usage: jarvis-tools get-task --id ID [--run-limit N] [--event-limit N]
 Get one task with bounded recent run summaries, effects, events and task facts.
 Defaults: 3 runs and 20 events. Full run output and prompts are excluded unless
 explicitly requested.
+EOF
+      ;;
+    create-task) cat <<'EOF'
+usage: jarvis-tools create-task [--payload JSON|-] [--config PATH]
+
+Create one ordinary Task and hand it to the strong M5 executor. This command is
+only available when JARVIS_AGENT_STAGE=proactive. The payload uses the existing
+POST /api/tasks contract: title, action_type, target, background, optional plan
+and project_id. source_type=proactive and execution_mode=standard are enforced.
 EOF
       ;;
     append-clue) cat <<'EOF'
@@ -622,7 +632,7 @@ require_command_flag() {
   case "$cmd" in
     list-projects) allowed+=" --keyword --limit" ;;
     get-project) allowed+=" --id --code" ;;
-    create-project | update-principal | create-person | create-resource | create-relation) allowed+=" --payload" ;;
+    create-project | update-principal | create-person | create-resource | create-relation | create-task) allowed+=" --payload" ;;
     update-project | update-group | update-person | update-resource | update-relation) allowed+=" --id --payload" ;;
     archive-project | delete-person | delete-resource | delete-relation) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
@@ -1450,6 +1460,8 @@ cmd_append_fact() {
   if [[ -z "$source_kind" && "${JARVIS_TASK_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
     source_kind="task"
     source_id="$JARVIS_TASK_ID"
+  elif [[ -z "$source_kind" && "${JARVIS_AGENT_STAGE:-}" == "proactive" ]]; then
+    source_kind="proactive"
   elif [[ -n "$SOURCE_ID" ]]; then
     [[ -n "$source_kind" ]] || fail "append-fact --source-id requires --source"
     [[ "$SOURCE_ID" =~ ^[1-9][0-9]*$ ]] || fail "append-fact --source-id must be a positive integer"
@@ -1626,6 +1638,23 @@ cmd_get_scheduled_task() {
   emit "$(api_get "/api/scheduled-tasks/${ID}" | jq -c '.data')"
 }
 
+cmd_create_task() {
+  reset_flags
+  consume_flags "$@"
+  [[ "${JARVIS_AGENT_STAGE:-}" == "proactive" ]] || fail "create-task is only available to the proactive Agent"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  if [[ "$PAYLOAD" == "-" ]]; then
+    payload="$(cat)"
+  else
+    payload="$PAYLOAD"
+  fi
+  printf '%s' "$payload" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "create-task payload must be a JSON object"
+  payload="$(printf '%s' "$payload" | jq -c '. + {source_type:"proactive",execution_mode:"standard"}')"
+  body="$(api_write POST /api/tasks "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
 cmd_create_scheduled_task() {
   reset_flags
   consume_flags "$@"
@@ -1784,6 +1813,7 @@ case "$SUBCOMMAND" in
   get-todo)             cmd_get_todo "$@" ;;
   list-tasks)           cmd_list_tasks "$@" ;;
   get-task)             cmd_get_task "$@" ;;
+  create-task)          cmd_create_task "$@" ;;
   list-scheduled-tasks) cmd_list_scheduled_tasks "$@" ;;
   get-scheduled-task)   cmd_get_scheduled_task "$@" ;;
   create-scheduled-task) cmd_create_scheduled_task "$@" ;;

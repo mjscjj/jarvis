@@ -19,6 +19,7 @@ type Config struct {
 	MySQL         MySQLConfig         `yaml:"mysql"`
 	Model         ModelConfig         `yaml:"model"`
 	FactEngine    FactEngineConfig    `yaml:"factengine"`
+	Proactive     ProactiveConfig     `yaml:"proactive"`
 	Extract       ExtractConfig       `yaml:"extract"`
 	LarkCLI       LarkCLIConfig       `yaml:"lark_cli"`
 	Capture       CaptureConfig       `yaml:"capture"`
@@ -86,6 +87,20 @@ type FactEngineConfig struct {
 	BatchLimit        int `yaml:"batch_limit"`
 	WindowGapMinutes  int `yaml:"window_gap_minutes"`
 	WindowMaxMessages int `yaml:"window_max_messages"`
+}
+
+// ProactiveConfig controls the cheap periodic agent that reviews Jarvis's
+// current world model. It may update internal world-model records directly,
+// but hands every external action to the strong M5 by creating a normal Task.
+type ProactiveConfig struct {
+	Enabled             bool   `yaml:"enabled"`
+	Schedule            string `yaml:"schedule"`
+	StartupDelaySeconds int    `yaml:"startup_delay_seconds"`
+	Bin                 string `yaml:"bin"`
+	Model               string `yaml:"model"`
+	Sandbox             string `yaml:"sandbox"`
+	ReasoningEffort     string `yaml:"reasoning_effort"`
+	TimeoutSeconds      int    `yaml:"timeout_seconds"`
 }
 
 // ExtractConfig controls the M3 extraction worker. Disabled is an explicit
@@ -295,6 +310,9 @@ func (c *Config) validate() error {
 	if err := c.validateFactEngine(); err != nil {
 		return err
 	}
+	if err := c.validateProactive(); err != nil {
+		return err
+	}
 	if c.Extract.Schedule == "" {
 		return fmt.Errorf("extract.schedule 不能为空")
 	}
@@ -495,6 +513,7 @@ func (c *Config) validate() error {
 	}{
 		{name: "factengine.schedule", spec: c.FactEngine.Schedule},
 		{name: "factengine.rollup_schedule", spec: c.FactEngine.RollupSchedule},
+		{name: "proactive.schedule", spec: c.Proactive.Schedule},
 		{name: "extract.schedule", spec: c.Extract.Schedule},
 		{name: "capture.discover_schedule", spec: c.Capture.DiscoverSchedule},
 		{name: "capture.scan_schedule", spec: c.Capture.ScanSchedule},
@@ -506,6 +525,33 @@ func (c *Config) validate() error {
 		if _, err := cron.ParseStandard(schedule.spec); err != nil {
 			return fmt.Errorf("%s=%q 不是有效 cron/@every 表达式: %w", schedule.name, schedule.spec, err)
 		}
+	}
+	return nil
+}
+
+// validateProactive validates every field even when the cron is disabled,
+// because -proactive-once remains available as an explicit one-shot action.
+func (c *Config) validateProactive() error {
+	if c.Proactive.Schedule == "" {
+		return fmt.Errorf("proactive.schedule 不能为空")
+	}
+	if c.Proactive.StartupDelaySeconds <= 0 {
+		return fmt.Errorf("proactive.startup_delay_seconds 必须大于 0")
+	}
+	if c.Proactive.Bin == "" {
+		return fmt.Errorf("proactive.bin 不能为空")
+	}
+	if c.Proactive.Model == "" {
+		return fmt.Errorf("proactive.model 不能为空")
+	}
+	if err := validateCodexSandbox("proactive.sandbox", c.Proactive.Sandbox); err != nil {
+		return err
+	}
+	if err := validateReasoningEffort("proactive", c.Proactive.ReasoningEffort); err != nil {
+		return err
+	}
+	if c.Proactive.TimeoutSeconds <= 0 {
+		return fmt.Errorf("proactive.timeout_seconds 必须大于 0")
 	}
 	return nil
 }

@@ -31,6 +31,7 @@ import (
 	"jarvis/internal/larkcli"
 	"jarvis/internal/observability"
 	"jarvis/internal/pipeline"
+	"jarvis/internal/proactive"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
 	"jarvis/internal/semantic"
@@ -60,6 +61,7 @@ func main() {
 	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
 	extractFactsOnce := flag.Bool("extract-facts-once", false, "执行一次离线事实抽取，成功后退出")
 	extractOnce := flag.Bool("extract-once", false, "执行一次 Todo 提取，成功后退出")
+	proactiveOnce := flag.Bool("proactive-once", false, "立即执行一次主动巡视，成功后退出；写操作通过当前运行中的 Jarvis API 完成")
 	seedOnce := flag.Bool("seed", false, "一次性幂等写入初始 项目/任务/群关联 背景种子，成功后退出")
 	seedPersons := flag.Bool("seed-persons", false, "从关键群真实成员导入 Person（幂等，按 open_id 跳过已存在），成功后退出")
 	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
@@ -81,7 +83,7 @@ func main() {
 		hlog.CtxInfof(startupCtx, format, args...)
 	}
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *extractFactsOnce, *extractOnce, *seedOnce, *seedPersons, *openP2P} {
+	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *extractFactsOnce, *extractOnce, *proactiveOnce, *seedOnce, *seedPersons, *openP2P} {
 		if selected {
 			actionCount++
 		}
@@ -286,6 +288,25 @@ func main() {
 	)
 	if err != nil {
 		fatalf("initialize daily digest runner failed: %v", err)
+	}
+	proactiveRunner, err := execute.NewCodexRunner(
+		cfg.Proactive.Bin, cfg.Proactive.Model, cfg.Proactive.ReasoningEffort,
+		time.Duration(cfg.Proactive.TimeoutSeconds)*time.Second,
+	)
+	if err != nil {
+		fatalf("initialize proactive runner failed: %v", err)
+	}
+	proactiveWorker, err := proactive.NewWorker(proactive.Options{
+		Runner:        proactiveRunner,
+		Prompts:       textFileService,
+		SharedMemory:  sharedMemoryService,
+		WorkRules:     workRuleService,
+		Sandbox:       cfg.Proactive.Sandbox,
+		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		Location:      location,
+	})
+	if err != nil {
+		fatalf("initialize proactive worker failed: %v", err)
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
 		taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
@@ -519,6 +540,14 @@ func main() {
 		)
 		return
 	}
+	if *proactiveOnce {
+		result, err := proactiveWorker.RunOnce(startupCtx)
+		if err != nil {
+			fatalf("proactive review failed: %v", err)
+		}
+		infof("proactive review completed: %s", result)
+		return
+	}
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	defer cancelRuntime()
 
@@ -690,6 +719,20 @@ func main() {
 			}
 		}()
 	}
+	stopProactive := func() {}
+	if cfg.Proactive.Enabled {
+		proactiveScheduler, err := proactive.StartScheduler(
+			runtimeCtx,
+			proactiveWorker,
+			cfg.Proactive.Schedule,
+			time.Duration(cfg.Proactive.StartupDelaySeconds)*time.Second,
+			log.New(os.Stderr, "proactive-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			fatalf("start proactive scheduler failed: %v", err)
+		}
+		stopProactive = proactiveScheduler.Stop
+	}
 	defer func() {
 		cancelRuntime()
 		if messageEventConsumer != nil {
@@ -704,6 +747,7 @@ func main() {
 		stopScheduledTasks()
 		stopFactEngine()
 		stopFactRollup()
+		stopProactive()
 		stopPipelineScheduler()
 		waitPipeline()
 	}()

@@ -129,6 +129,20 @@ printf '%s\n' 'diagnostic stderr' >&2
 	if got := strings.TrimSpace(readTestFile(t, cwdPath)); got != wantCWD {
 		t.Fatalf("workspace-rooted text run cwd = %q, want %q", got, wantCWD)
 	}
+
+	if _, err := runner.RunTextSandboxAtStage(
+		t.Context(), "review world", "danger-full-access", dir, "proactive",
+	); err != nil {
+		t.Fatalf("RunTextSandboxAtStage() error = %v", err)
+	}
+	if got := readTestFile(t, stagePath); got != "proactive" {
+		t.Fatalf("stage-aware JARVIS_AGENT_STAGE = %q, want proactive", got)
+	}
+	if _, err := runner.RunTextSandboxAtStage(
+		t.Context(), "review world", "danger-full-access", dir, "../bad",
+	); err == nil {
+		t.Fatal("RunTextSandboxAtStage accepted an invalid stage")
+	}
 }
 
 func TestCodexRunnerInterruptKillsRunningProcess(t *testing.T) {

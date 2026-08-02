@@ -55,6 +55,7 @@ func TestValidate(t *testing.T) {
 			ScanSchedule:     "@every 5m",
 		},
 		FactEngine:    validFactEngineConfig(),
+		Proactive:     validProactiveConfig(),
 		Skills:        SkillsConfig{Root: ".agents/skills"},
 		Codex:         validCodexConfig(),
 		Execute:       validExecuteConfig(),
@@ -144,6 +145,13 @@ func TestValidate(t *testing.T) {
 		{name: "factengine batch", mutate: func(c *Config) { c.FactEngine.BatchLimit = 0 }, wantErr: "factengine.batch_limit"},
 		{name: "factengine window gap", mutate: func(c *Config) { c.FactEngine.WindowGapMinutes = 0 }, wantErr: "factengine.window_gap_minutes"},
 		{name: "factengine window max", mutate: func(c *Config) { c.FactEngine.WindowMaxMessages = 0 }, wantErr: "factengine.window_max_messages"},
+		{name: "proactive schedule", mutate: func(c *Config) { c.Proactive.Schedule = "" }, wantErr: "proactive.schedule"},
+		{name: "proactive startup delay", mutate: func(c *Config) { c.Proactive.StartupDelaySeconds = 0 }, wantErr: "proactive.startup_delay_seconds"},
+		{name: "proactive bin", mutate: func(c *Config) { c.Proactive.Bin = "" }, wantErr: "proactive.bin"},
+		{name: "proactive model", mutate: func(c *Config) { c.Proactive.Model = "" }, wantErr: "proactive.model"},
+		{name: "proactive sandbox", mutate: func(c *Config) { c.Proactive.Sandbox = "yolo" }, wantErr: "proactive.sandbox"},
+		{name: "proactive reasoning", mutate: func(c *Config) { c.Proactive.ReasoningEffort = "ultra" }, wantErr: "proactive.codex_reasoning_effort"},
+		{name: "proactive timeout", mutate: func(c *Config) { c.Proactive.TimeoutSeconds = 0 }, wantErr: "proactive.timeout_seconds"},
 		{name: "dailydigest schedule", mutate: func(c *Config) { c.DailyDigest.Schedule = "" }, wantErr: "dailydigest.schedule"},
 		{name: "dailydigest timeout", mutate: func(c *Config) { c.DailyDigest.TimeoutSeconds = 299 }, wantErr: "dailydigest.timeout_seconds"},
 		{name: "dailydigest group message limit", mutate: func(c *Config) { c.DailyDigest.GroupMessageLimit = 0 }, wantErr: "dailydigest.group_message_limit"},
@@ -205,6 +213,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 			Timezone: "Asia/Shanghai", DiscoverSchedule: "@every 6h", ScanSchedule: "@every 5m",
 		},
 		FactEngine:    validFactEngineConfig(),
+		Proactive:     validProactiveConfig(),
 		Skills:        SkillsConfig{Root: ".agents/skills"},
 		Codex:         validCodexConfig(),
 		Execute:       validExecuteConfig(),
@@ -259,5 +268,13 @@ func validFactEngineConfig() FactEngineConfig {
 		Enabled: true, Schedule: "@every 15m", RollupSchedule: "0 2 * * *",
 		Bin: "traex", Model: "fixture-fact-model", Sandbox: "danger-full-access", TimeoutSec: 300,
 		BatchLimit: 200, WindowGapMinutes: 30, WindowMaxMessages: 40,
+	}
+}
+
+func validProactiveConfig() ProactiveConfig {
+	return ProactiveConfig{
+		Enabled: true, Schedule: "@every 1h", StartupDelaySeconds: 120,
+		Bin: "traex", Model: "DeepSeek-V4-Pro", Sandbox: "danger-full-access",
+		ReasoningEffort: "medium", TimeoutSeconds: 900,
 	}
 }

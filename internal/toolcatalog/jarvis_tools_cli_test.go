@@ -226,6 +226,32 @@ func TestJarvisToolsTodoActorComesFromAgentStage(t *testing.T) {
 	}
 }
 
+func TestJarvisToolsCreateTaskIsProactiveOnlyAndForcesStrongTaskContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/tasks" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["source_type"] != "proactive" || payload["execution_mode"] != "standard" {
+			t.Fatalf("payload = %#v", payload)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"id":19,"source_type":"proactive","status":"pending"}}`)
+	}))
+	defer server.Close()
+	payload := `{"title":"推进阻塞","action_type":"agent_task","target":"完成目标","background":{"why_now":"条件已满足"}}`
+	out, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=proactive"}, "create-task", "--payload", payload)
+	if err != nil || !strings.Contains(out, `"id":19`) {
+		t.Fatalf("output = %s, error = %v", out, err)
+	}
+	if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=execute"}, "create-task", "--payload", payload); err == nil {
+		t.Fatal("create-task succeeded outside proactive stage")
+	}
+}
+
 func runJarvisTools(t *testing.T, apiBase string, extraEnv []string, args ...string) (string, error) {
 	t.Helper()
 	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "jarvis-tools"))
