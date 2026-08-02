@@ -127,7 +127,7 @@ Jarvis 的 M3 与 M5 执行不应共享一套庞大的模型语义 DTO。程序�
 
 固化步骤不调用模型，也不生成新的语义内容，只保证机器边界：
 
-- `status=extracted` 的 Todo 通过 version CAS 更新为 `auto`。
+- `status=extracted` 的 Todo 通过 version CAS 更新为 `materialized`。
 - 同一事务写入 append-only `TodoEvent` 并调用 Task Factory。
 - Task 继续受 `todo_id` 唯一键约束；同一旧通知重复到达时返回已有 Task。
 - `context_snapshot` 和 `extraction_result` 原样固化到 Task。
@@ -137,11 +137,11 @@ Jarvis 的 M3 与 M5 执行不应共享一套庞大的模型语义 DTO。程序�
 
 硬字段：
 
-- `outcome`: `completed | waiting | needs_human | failed`
+- `outcome`: `completed | observing | waiting | needs_human | failed`
 - `waiting`: 只有等待唤醒时使用，必须严格。
 - `proposal`: 只有外部写入审批时使用，`action/target/artifact` 必须严格。
 
-`awaiting_approval` 是 Task 状态，不是 Codex `outcome`；它由 propose 阶段的 `needs_approval=true` 和合法 proposal 推导。
+`awaiting_approval` 是 Task 状态，不是 Codex `outcome`；它由执行结果中的 `needs_approval=true` 和合法 proposal 推导。
 
 宽松字段：
 
@@ -219,6 +219,6 @@ TodoEvent / TaskEvent：
 - 未知 `kind` 和 payload 新增字段不会导致解析失败。
 - 只有硬控制字段失败才 fail-fast；语义字段新增不需要改 Go struct。
 - M5 不因为新增 enrichment 字段而拒绝模型输出。
-- 同一个 Todo 只能创建一个 Task；任一步失败不会留下 Todo 已 auto 但 Task 不存在的提交状态。
+- 同一个 Todo 只能创建一个 Task；任一步失败不会留下 Todo 已 materialized 但 Task 不存在的提交状态。
 - 有新 supplement 时旧物化通知不会覆盖新 Todo revision。
 - 后续 M3 改造时，新增 payload block 不要求 Task 或执行环节同步改类型。

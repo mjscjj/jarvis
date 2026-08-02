@@ -26,7 +26,7 @@ M3 状态只有：
 - `extracted`：存在需要 M5 执行 Agent 调查和判断的动作线索；
 - `observing`：值得知道，但当前无需任何人行动。
 
-重提取可以在 `extracted ↔ observing` 间调整，不随意重新打开已经 `auto` 的 Todo。
+重提取可以在 `extracted ↔ observing` 间调整，不随意重新打开已经 `materialized` 的 Todo。
 
 ## 2. Candidate 契约
 

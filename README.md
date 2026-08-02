@@ -18,7 +18,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
                                                             ├─ observing：保留观察，不创建 Task
                                                             └─ extracted
                                                                  │
-                                                    机械固化：Todo=auto + Task
+                                               机械固化：Todo=materialized + Task
                                                                  │
                                                                M5 执行 Agent
                                                          ├─ completed -> Task=done

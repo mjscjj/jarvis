@@ -53,9 +53,9 @@ flowchart TD
     M3 --> OBS0["Todo observing"]
     M3 --> EXT0["Todo extracted"]
     M3 --> FACT
-    EXT0 --> AUTO["机械固化\nTodo auto + Task pending"]
-    AUTO --> EXEC["M5 执行 Agent"]
-    AUTO --> FACT
+    EXT0 --> MATERIALIZED["机械固化\nTodo materialized + Task pending"]
+    MATERIALIZED --> EXEC["M5 执行 Agent"]
+    MATERIALIZED --> FACT
     EXEC --> FACT
     EXEC --> DONE["done"]
     EXEC --> OBS2["observing"]
@@ -94,7 +94,7 @@ M3 可以产出：
 
 ### 3.3 Todo 固化
 
-`extracted` Todo 一律通过无模型的固化步骤创建一个 `pending` Task，并把 Todo 置为 `auto`。固化继续使用 Todo ID/version 乐观锁、`task.todo_id` 唯一键和同一事务；重复通知返回同一个 Task，陈旧版本 fail-fast。
+`extracted` Todo 一律通过无模型的固化步骤创建一个 `pending` Task，并把 Todo 置为 `materialized`。固化继续使用 Todo ID/version 乐观锁、`task.todo_id` 唯一键和同一事务；重复通知返回同一个 Task，陈旧版本 fail-fast。Task 只记录自己的来源与创建时间，不把这一机械步骤包装成判断或确认闸门。
 
 Todo 来源 Task 的 `plan` 为空；执行 Agent 直接读取完整 `source_clue` 和冻结 `background`，不人为制造中间计划或判断上下文。
 
@@ -161,10 +161,10 @@ RelationFact 表示两个既有实体之间的自然语言关系和有效期；�
 ### Todo
 
 ```text
-M3 -> extracted -> materialize -> auto -> Task -> M5 execution
+M3 -> extracted -> materialize -> materialized -> Task -> M5 execution
  └-> observing                              └-> observing（可同步来源 Todo）
 
-fresh evidence 可使 observing 回到 extracted；auto 不由 M3 随意重开。
+fresh evidence 可使 observing 回到 extracted；materialized 不由 M3 随意重开。
 ```
 
 ### Task

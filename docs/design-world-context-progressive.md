@@ -12,7 +12,7 @@
 调查结论（代码事实，均已核实）：
 
 - M3 抽取阶段是唯一"推"世界数据的地方，`renderUserPrompt`（`internal/extract/prompt.go:74`）把 principal / project / group / participants / resources / facts / open_todos 渲染成 Markdown 段落。
-- M5 判断与执行阶段读的是 M3 冻结的 `Todo.ContextSnapshot`，整块塞进 `BEGIN_DECISION_CONTEXT` / `BEGIN_TASK_CONTEXT` 的 `background` 字段，没有独立的世界段落。
+- M5 执行读的是 M3 冻结的 `Todo.ContextSnapshot`，整块塞进 `BEGIN_TASK_CONTEXT` 的 `background` 字段，没有独立的世界段落。
 - `fact` 只装载 group 和 project 两个主体（`internal/extract/worker.go:239`），离线事实引擎产出的 person 主体事实没有任何读取点。
 - `task` 完全没进过任何提示词。`Task.Summary` / `Task.LastProgressAt` 是只写字段，全仓库无读取点。
 - `todo` 进上下文的是"未闭环"清单，按 status 过滤而不按时间，一条三周前的和今天的混排。
@@ -68,7 +68,7 @@ ExcludeSourceKind *string
 ### 4.1 API
 
 - `GET /api/todos`（`internal/api/todos.go`）增加 `from` / `until` 两个 RFC3339 query 参数，锚定 `last_evidence_at`，半开区间。沿用 fact 的做法：不加 date 列、不在服务端猜时区，自然日由调用方在本地时区算好再传。
-- `GET /api/tasks`（`internal/api/tasks.go` + `internal/execute/store.go` 的 `TaskFilter`）同样增加 `from` / `until`，锚定 `COALESCE(last_progress_at, confirmed_at)`。
+- `GET /api/tasks`（`internal/api/tasks.go` + `internal/execute/store.go` 的 `TaskFilter`）同样增加 `from` / `until`，锚定 `COALESCE(last_progress_at, created_at)`。
 - 新增 `GET /api/tasks/:task_id` 返回单个 `TaskView`。现在只有 `/runs` 和 `/events`，缺主体详情。
 
 ### 4.2 `scripts/jarvis-tools` 新增四个只读命令
@@ -132,7 +132,7 @@ cron spec 加进配置，命名与现有事实引擎的调度配置项对齐。�
 
 ### 6.3 新增 task 段落
 
-新增 `loadRecentTasks`：取最近有进展的 task，按 `COALESCE(last_progress_at, confirmed_at) DESC` 排序，限量（新增配置项，默认 10）。范围限定为与当前会话相关的 task——通过 `todo_id` 关联到 `todo`，取 `todo.group_id` 等于当前群或 `todo.project_id` 等于当前项目的；没有 todo 的 task（scheduled_task / manual）不纳入。
+新增 `loadRecentTasks`：取最近有进展的 task，按 `COALESCE(last_progress_at, created_at) DESC` 排序，限量（新增配置项，默认 10）。范围限定为与当前会话相关的 task——通过 `todo_id` 关联到 `todo`，取 `todo.group_id` 等于当前群或 `todo.project_id` 等于当前项目的；没有 todo 的 task（scheduled_task / manual）不纳入。
 
 每条只渲染 `task_id` / `title` / `status` / `summary` / `last_progress_at`。这让上一轮加的两个只写字段真正活起来。
 

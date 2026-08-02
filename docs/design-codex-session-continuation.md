@@ -27,7 +27,7 @@ Task #54
 - `Task` 保存用户真正要完成的目标。
 - `ExecutionRun` 保存一次 Codex Turn 的输入、Session ID、结果和耗时。
 - `ScheduledTask` 只保存未来触发，不重新解释或复制业务任务。
-- `needs_human` 只保存人工请求和源 Run；用户回复不创建新 Task、不重新 propose/apply。
+- `needs_human` 只保存人工请求和源 Run；用户回复不创建新 Task、不重新走首次执行或审批。
 - Codex Session 保存完整对话和工具调用历史。
 - 文件、外部系统状态和数据库仍是事实来源；Session 不等于冻结操作系统进程。
 

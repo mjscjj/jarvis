@@ -75,9 +75,9 @@ Task 被标记 done
 
 ### 2.2 第二次稀释：审批阶段把 Effect 完成解释为 Goal 完成
 
-[M5 propose/apply 提示词](../internal/execute/prompt.go)把外部写入拆成两阶段，这个安全方向是对的：
+[M5 execution/apply 提示词](../internal/execute/prompt.go)允许执行 Agent 在具体副作用前暂停审批，这个安全方向是对的：
 
-- propose：准备要执行的外部动作，等待人工批准；
+- execution：调查、选择动作；需要审批时只准备 proposal 并暂停；
 - apply：忠实落地已批准的动作。
 
 问题在于，批准对象只是“提交妙记查看权限申请”这个局部 Effect，而 apply 的结果仍使用通用的：
@@ -407,7 +407,7 @@ pending / executing / waiting / awaiting_approval / done / failed
 
 具体子目标、阻塞、计划和证据放在版本化 JSON 中，符合 Jarvis “只固定控制面，不固定语义内容”的原则。
 
-现有 `Task.plan` 可以继续保存确认时的初始执行方案，作为审计基线；运行过程中因新事实产生的剩余计划放进 `goal_state`。这样“计划允许演进”不会变成“悄悄改写用户确认过的初始方案”。
+ScheduledTask 或手工创建的 `Task.plan` 可以继续保存来源携带的初始执行方案，作为审计基线；Todo 来源的 Task 不人为生成计划。运行过程中因新事实产生的剩余计划放进 `goal_state`，不要把计划演进包装成已经过用户确认。
 
 ### 7.3 Event Log：只追加事实
 
@@ -1157,7 +1157,7 @@ Jarvis Goal Control Plane
 
 1. M5 的 `TASK_CONTEXT` 显式携带 `Task.target`。
 2. apply 结果改成 `step_outcome/effect_outcome`，不再直接产生 Task `done`。
-3. apply 成功后重新进入 propose/supervisor 阶段。
+3. apply 成功后重新进入 execution/supervisor 阶段。
 4. 在 Task 完成前增加最小 Goal Check：M3 `desired_outcome` 的交付项是否有证据。
 5. 针对 BAX 流程增加回归测试：权限申请成功后 Task 必须保持未完成。
 

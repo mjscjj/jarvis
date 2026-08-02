@@ -11,7 +11,7 @@ M1 维护 principal 的稳定工作背景，供 M3/M5 和日报读取。MySQL �
 
 | M1 负责 | M1 不负责 |
 |---|---|
-| PrincipalProfile、Project、Person、ManagedResource CRUD | 消息采集、Todo 抽取、M5 判断/执行 |
+| PrincipalProfile、Project、Person、ManagedResource CRUD | 消息采集、Todo 抽取、M5 执行 |
 | Group 的人工背景与 Project 归属 | Group 发现、活跃度和消息落库 |
 | lark-cli 姓名解析 | 完整飞书读写封装 |
 | 后台背景配置页 | 离线事实蒸馏 |
