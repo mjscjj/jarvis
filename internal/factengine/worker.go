@@ -149,6 +149,9 @@ func (w *Worker) extractSource(ctx context.Context, source MaterialSource, syste
 	if maxID == 0 {
 		return stats, nil
 	}
+	if len(units) == 0 {
+		return stats, fmt.Errorf("source returned max_id=%d with no material units", maxID)
+	}
 	if *systemPrompt == "" {
 		*systemPrompt, err = w.opts.Prompts.Content(ctx, textstore.SystemPromptFactExtractKey)
 		if err != nil {
@@ -166,13 +169,21 @@ func (w *Worker) extractSource(ctx context.Context, source MaterialSource, syste
 			return stats, err
 		}
 		stats.Facts += stored
+		if source.CheckpointEachUnit {
+			if err := w.store.AdvanceCursor(ctx, source.Name, unit.LastID, unit.OccurredAt); err != nil {
+				return stats, err
+			}
+			stats.LastID = unit.LastID
+		}
 	}
 	// Material that produced no facts still moves the watermark: "nothing here"
 	// is a real answer, and re-reading it would cost the same tokens forever.
-	if err := w.store.AdvanceCursor(ctx, source.Name, maxID, latestOccurredAt(units)); err != nil {
-		return stats, err
+	if !source.CheckpointEachUnit {
+		if err := w.store.AdvanceCursor(ctx, source.Name, maxID, latestOccurredAt(units)); err != nil {
+			return stats, err
+		}
+		stats.LastID = maxID
 	}
-	stats.LastID = maxID
 	return stats, nil
 }
 

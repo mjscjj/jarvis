@@ -32,10 +32,11 @@ const (
 // protocol. Adding a source means registering another projection here; the
 // worker, prompt, extractor and fact persistence path remain unchanged.
 type MaterialSource struct {
-	Name           string
-	StartAtPresent bool
-	MaxID          func(context.Context) (uint64, error)
-	Units          func(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error)
+	Name               string
+	StartAtPresent     bool
+	CheckpointEachUnit bool
+	MaxID              func(context.Context) (uint64, error)
+	Units              func(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error)
 }
 
 // WindowOptions cuts a chat's messages into conversation windows. One window is
@@ -80,8 +81,8 @@ func NewGORMStore(db *gorm.DB) (*GORMStore, error) {
 func (s *GORMStore) Sources() []MaterialSource {
 	return []MaterialSource{
 		{Name: SourceMessage, StartAtPresent: true, MaxID: s.MaxMessageID, Units: s.MessageUnits},
-		{Name: SourceTodo, MaxID: s.MaxTodoEventID, Units: s.TodoUnits},
-		{Name: SourceTask, MaxID: s.MaxTaskEventID, Units: s.TaskUnits},
+		{Name: SourceTodo, CheckpointEachUnit: true, MaxID: s.MaxTodoEventID, Units: s.TodoUnits},
+		{Name: SourceTask, CheckpointEachUnit: true, MaxID: s.MaxTaskEventID, Units: s.TaskUnits},
 	}
 }
 
