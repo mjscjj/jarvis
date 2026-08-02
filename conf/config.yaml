@@ -1,4 +1,4 @@
-# Jarvis 本地基线配置（本地可信环境，明文存储密钥/DSN）。
+# Jarvis 本地基线配置（本地可信环境，明文存储密钥）。
 # 主要配置段均已投入运行并在启动时校验；同目录 config.runtime.yaml 会覆盖本文件，保存后需重启生效。
 
 server:
@@ -8,12 +8,9 @@ server:
     - "var/log/jarvis-server.log"
     - "var/log/jarvis-server.error.log"
 
-# MySQL：本地可信环境，DSN 明文存储。请注意该文件包含明文开发库密码。
-mysql:
-  dsn: "root:your_mysql_password_here@tcp(127.0.0.1:3306)/jarvis?charset=utf8mb4&parseTime=true&loc=Local"
-  max_open_conns: 20
-  max_idle_conns: 5
-  conn_max_lifetime: 3600
+# SQLite：单机业务真源。服务只开一个连接，所有写入在进程内串行执行。
+sqlite:
+  path: "var/jarvis.db"
 
 # M3 备用 model_api 引擎和 Todo 去重 embedding（OpenAI 兼容端点，可配置）。
 # 默认 M3 引擎是下面 extract.engine=codex；M2 不调用模型。

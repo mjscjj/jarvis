@@ -1,6 +1,6 @@
 // Package config 负责加载 Jarvis 的本地配置。
 //
-// 本地可信环境：配置文件明文存储密钥/DSN，不加密。加载遵循 fail-fast——
+// 本地可信环境：配置文件明文存储密钥，不加密。加载遵循 fail-fast——
 // 文件缺失或解析失败直接返回 error，绝不静默使用零值默认跑起来。
 package config
 
@@ -16,7 +16,7 @@ import (
 // Config 是全局配置的根。各子结构对应总纲 §1 技术栈里的外部依赖。
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
-	MySQL         MySQLConfig         `yaml:"mysql"`
+	SQLite        SQLiteConfig        `yaml:"sqlite"`
 	Model         ModelConfig         `yaml:"model"`
 	FactEngine    FactEngineConfig    `yaml:"factengine"`
 	Proactive     ProactiveConfig     `yaml:"proactive"`
@@ -38,12 +38,9 @@ type ServerConfig struct {
 	LogFiles []string `yaml:"log_files"` // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
 }
 
-// MySQLConfig 结构化存储（source of truth）。
-type MySQLConfig struct {
-	DSN             string `yaml:"dsn"`               // user:pass@tcp(127.0.0.1:3306)/jarvis?charset=utf8mb4&parseTime=true&loc=Local
-	MaxOpenConns    int    `yaml:"max_open_conns"`    // 连接池上限
-	MaxIdleConns    int    `yaml:"max_idle_conns"`    // 空闲连接
-	ConnMaxLifetime int    `yaml:"conn_max_lifetime"` // 秒
+// SQLiteConfig is the single local business source of truth.
+type SQLiteConfig struct {
+	Path string `yaml:"path"`
 }
 
 // ModelConfig 高频抽取用的 OpenAI 兼容端点（M2/M3，总纲 §6）。
@@ -292,20 +289,8 @@ func (c *Config) validate() error {
 		// stdout（路由/启动）与 stderr（各 cron 运行结果、报错）默认都读，否则 cron 日志漏看。
 		c.Server.LogFiles = []string{"var/log/jarvis-server.log", "var/log/jarvis-server.error.log"}
 	}
-	if c.MySQL.DSN == "" {
-		return fmt.Errorf("mysql.dsn 不能为空")
-	}
-	if c.MySQL.MaxOpenConns <= 0 {
-		return fmt.Errorf("mysql.max_open_conns 必须大于 0")
-	}
-	if c.MySQL.MaxIdleConns < 0 {
-		return fmt.Errorf("mysql.max_idle_conns 不能小于 0")
-	}
-	if c.MySQL.MaxIdleConns > c.MySQL.MaxOpenConns {
-		return fmt.Errorf("mysql.max_idle_conns 不能大于 mysql.max_open_conns")
-	}
-	if c.MySQL.ConnMaxLifetime <= 0 {
-		return fmt.Errorf("mysql.conn_max_lifetime 必须大于 0")
+	if c.SQLite.Path == "" {
+		return fmt.Errorf("sqlite.path 不能为空")
 	}
 	if err := c.validateFactEngine(); err != nil {
 		return err

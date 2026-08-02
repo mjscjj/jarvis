@@ -3,7 +3,7 @@ package domain
 import (
 	"time"
 
-	"gorm.io/datatypes"
+	"jarvis/internal/datatypes"
 )
 
 // ExecutionRun is M5's append-only record of one codex execution attempt for a
@@ -16,19 +16,19 @@ import (
 // branch/commit/MR columns: how code gets delivered is the agent's judgment, not
 // a shape this table imposes.
 type ExecutionRun struct {
-	ID         uint64 `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	TaskID     uint64 `gorm:"column:task_id;type:bigint unsigned;not null;index:idx_run_task"`
-	ActionType string `gorm:"column:action_type;type:varchar(32);not null"`
-	Stage      string `gorm:"column:stage;type:varchar(16);not null;default:execute"`
+	ID         uint64 `gorm:"column:id;primaryKey;autoIncrement"`
+	TaskID     uint64 `gorm:"column:task_id;not null;index:idx_run_task"`
+	ActionType string `gorm:"column:action_type;not null"`
+	Stage      string `gorm:"column:stage;not null;default:execute"`
 	// Sandbox is the Agent sandbox level actually used for this run. It is
 	// recorded for audit and is not derived from action_type.
-	Sandbox string `gorm:"column:sandbox;type:varchar(24);not null"`
+	Sandbox string `gorm:"column:sandbox;not null"`
 	// Status: running -> succeeded | waiting | needs_human | failed.
-	Status         string         `gorm:"column:status;type:varchar(16);not null;index:idx_run_status"`
-	Prompt         string         `gorm:"column:prompt;type:mediumtext;not null"`
-	CodexSessionID *string        `gorm:"column:codex_session_id;type:varchar(128)"`
-	Summary        *string        `gorm:"column:summary;type:mediumtext"`
-	Output         datatypes.JSON `gorm:"column:output;type:json"`
+	Status         string         `gorm:"column:status;not null;index:idx_run_status"`
+	Prompt         string         `gorm:"column:prompt;not null"`
+	CodexSessionID *string        `gorm:"column:codex_session_id"`
+	Summary        *string        `gorm:"column:summary"`
+	Output         datatypes.JSON `gorm:"column:output"`
 	// Effects is the agent's self-declared list of real-world side effects this
 	// run produced (feishu message sent, doc created, meeting scheduled, MR
 	// opened, permission requested, ...). It is a display-only, OPEN payload:
@@ -36,16 +36,16 @@ type ExecutionRun struct {
 	// the agent chooses. Jarvis trusts these declarations verbatim and does NOT
 	// verify them against lark-cli/git receipts. Unknown kinds and unknown fields
 	// are stored and rendered as-is, never rejected.
-	Effects     datatypes.JSON `gorm:"column:effects;type:json"`
-	ErrorDetail *string        `gorm:"column:error_detail;type:mediumtext"`
+	Effects     datatypes.JSON `gorm:"column:effects"`
+	ErrorDetail *string        `gorm:"column:error_detail"`
 	// RepoPath is the working copy this run was pointed at, when one resolved. It
 	// records where the agent worked, not how it delivered.
-	RepoPath *string `gorm:"column:repo_path;type:varchar(1024)"`
+	RepoPath *string `gorm:"column:repo_path"`
 
-	StartedAt  time.Time  `gorm:"column:started_at;type:datetime;not null"`
-	FinishedAt *time.Time `gorm:"column:finished_at;type:datetime"`
-	DurationMs *int64     `gorm:"column:duration_ms;type:bigint"`
-	CreatedAt  time.Time  `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	StartedAt  time.Time  `gorm:"column:started_at;not null"`
+	FinishedAt *time.Time `gorm:"column:finished_at"`
+	DurationMs *int64     `gorm:"column:duration_ms"`
+	CreatedAt  time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
 
 	Task *Task `gorm:"foreignKey:TaskID;constraint:OnDelete:RESTRICT"`
 }

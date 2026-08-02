@@ -1,5 +1,5 @@
 // Package semantic owns the dedicated Qdrant collection used for Todo
-// semantic deduplication. MySQL remains the source of truth.
+// semantic deduplication. SQLite remains the source of truth.
 package semantic
 
 import (

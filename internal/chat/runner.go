@@ -2,7 +2,7 @@
 //
 // 与 internal/execute 的一次性 codex 封装不同，本包用 StdoutPipe + json.Decoder
 // 边读 codex 的 JSONL 事件边通过回调吐出，支撑 /api/chat 的 SSE 流式对话。
-// 本地可信环境：codex 跑 danger-full-access + 联网，能直接读写 Jarvis MySQL、
+// 本地可信环境：codex 跑 danger-full-access + 联网，能调用 jarvis-tools、
 // 调用 jarvis-tools/lark-cli/git。fail-fast：非零退出、超时、JSON 解析失败都
 // 转成 error 事件并返回 error，绝不静默吞。
 package chat

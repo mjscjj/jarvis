@@ -14,11 +14,8 @@ const runtimeSettingsTestYAML = `
 server:
   addr: "127.0.0.1:18800"
   web_root: "web/dist"
-mysql:
-  dsn: "user:pass@tcp(127.0.0.1:3306)/jarvis"
-  max_open_conns: 20
-  max_idle_conns: 5
-  conn_max_lifetime: 3600
+sqlite:
+  path: "var/jarvis.db"
 factengine:
   enabled: true
   schedule: "@every 15m"

@@ -11,10 +11,10 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"jarvis/internal/datatypes"
 )
 
 func TestPrincipalActivityOpensGroupAndCapturesTriggerMessage(t *testing.T) {

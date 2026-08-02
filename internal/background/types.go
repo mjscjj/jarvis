@@ -12,9 +12,8 @@ import (
 	"strings"
 )
 
-// projectRoles / projectStatuses / personRoles mirror the enums declared in the
-// canonical DDL (docs/00-overview.md §2.4). Keeping them here lets us fail fast
-// on bad input before it ever reaches MySQL.
+// projectRoles / projectStatuses / personRoles are the application-level values.
+// Keeping them here lets us fail fast on bad input before it reaches SQLite.
 var projectRoles = map[string]struct{}{"owner": {}, "participant": {}}
 
 var projectStatuses = map[string]struct{}{

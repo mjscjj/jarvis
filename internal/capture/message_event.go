@@ -10,9 +10,9 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"jarvis/internal/datatypes"
 )
 
 const messageEventType = "im.message.receive_v1"

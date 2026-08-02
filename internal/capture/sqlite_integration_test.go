@@ -4,7 +4,7 @@ package capture
 
 import (
 	"context"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,19 +16,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestCaptureMySQL validates discovery, no-backfill checkpoint initialization,
-// thread flattening and idempotent message/resource persistence against MySQL.
-// It requires a dedicated empty database in JARVIS_CAPTURE_TEST_MYSQL_DSN.
-func TestCaptureMySQL(t *testing.T) {
-	dsn := os.Getenv("JARVIS_CAPTURE_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Fatal("JARVIS_CAPTURE_TEST_MYSQL_DSN is required for capture integration test")
-	}
-	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
-		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
+// TestCaptureSQLite validates discovery, no-backfill checkpoint initialization,
+// thread flattening and idempotent message/resource persistence against SQLite.
+func TestCaptureSQLite(t *testing.T) {
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
 	})
 	if err != nil {
-		t.Fatalf("OpenMySQL() error = %v", err)
+		t.Fatalf("OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(db); err != nil {

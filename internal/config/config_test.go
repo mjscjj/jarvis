@@ -10,12 +10,7 @@ func TestValidate(t *testing.T) {
 
 	valid := Config{
 		Server: ServerConfig{Addr: "127.0.0.1:18800", WebRoot: "web/dist"},
-		MySQL: MySQLConfig{
-			DSN:             "user:pass@tcp(127.0.0.1:3306)/jarvis",
-			MaxOpenConns:    20,
-			MaxIdleConns:    5,
-			ConnMaxLifetime: 3600,
-		},
+		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
 		Extract: ExtractConfig{
 			Schedule:              "@every 10m",
 			Engine:                "codex",
@@ -72,11 +67,7 @@ func TestValidate(t *testing.T) {
 		{name: "valid"},
 		{name: "server address", mutate: func(c *Config) { c.Server.Addr = "" }, wantErr: "server.addr"},
 		{name: "server web root", mutate: func(c *Config) { c.Server.WebRoot = "" }, wantErr: "server.web_root"},
-		{name: "mysql dsn", mutate: func(c *Config) { c.MySQL.DSN = "" }, wantErr: "mysql.dsn"},
-		{name: "open connections", mutate: func(c *Config) { c.MySQL.MaxOpenConns = 0 }, wantErr: "max_open_conns"},
-		{name: "negative idle connections", mutate: func(c *Config) { c.MySQL.MaxIdleConns = -1 }, wantErr: "max_idle_conns"},
-		{name: "idle exceeds open", mutate: func(c *Config) { c.MySQL.MaxIdleConns = 21 }, wantErr: "不能大于"},
-		{name: "connection lifetime", mutate: func(c *Config) { c.MySQL.ConnMaxLifetime = 0 }, wantErr: "conn_max_lifetime"},
+		{name: "sqlite path", mutate: func(c *Config) { c.SQLite.Path = "" }, wantErr: "sqlite.path"},
 		{name: "extract schedule", mutate: func(c *Config) { c.Extract.Schedule = "" }, wantErr: "extract.schedule"},
 		{name: "extract batch", mutate: func(c *Config) { c.Extract.BatchMessages = 0 }, wantErr: "extract.batch_messages"},
 		{name: "extract context count", mutate: func(c *Config) { c.Extract.ContextMessages = -1 }, wantErr: "extract.context_messages"},
@@ -191,10 +182,7 @@ func TestValidate(t *testing.T) {
 func TestValidateExtractEnabled(t *testing.T) {
 	cfg := Config{
 		Server: ServerConfig{Addr: "127.0.0.1:18800", WebRoot: "web/dist"},
-		MySQL: MySQLConfig{
-			DSN: "user:pass@tcp(127.0.0.1:3306)/jarvis", MaxOpenConns: 20,
-			MaxIdleConns: 5, ConnMaxLifetime: 3600,
-		},
+		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
 		Model: ModelConfig{
 			BaseURL: "https://model.test/v1", APIKey: "plain-key", Model: "model", TimeoutSec: 60,
 			EmbeddingModel: "embed-model", EmbeddingDims: 1024,

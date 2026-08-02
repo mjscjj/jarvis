@@ -50,7 +50,6 @@ func newTestServiceWithDependencies(t *testing.T, reader fakeSharedMemoryReader,
 		Sandbox:          "danger-full-access",
 		ReasoningEffort:  "medium",
 		Timeout:          600 * 1e9,
-		DSN:              "root:secret@tcp(127.0.0.1:3306)/jarvis",
 		SharedMemory:     reader,
 		ContextAssembler: assembler,
 	})
@@ -60,7 +59,7 @@ func newTestServiceWithDependencies(t *testing.T, reader fakeSharedMemoryReader,
 	return svc
 }
 
-func TestBuildPromptInjectsDSNAndContext(t *testing.T) {
+func TestBuildPromptInjectsToolsAndContext(t *testing.T) {
 	t.Parallel()
 	svc := newTestService(t)
 	prompt, err := svc.buildPrompt(context.Background(), Request{
@@ -74,12 +73,11 @@ func TestBuildPromptInjectsDSNAndContext(t *testing.T) {
 		t.Fatalf("buildPrompt() error = %v", err)
 	}
 	for _, want := range []string{
-		"root:secret@tcp(127.0.0.1:3306)/jarvis", // DSN 明文注入
-		"todos",                                  // active_key
-		"修复登录超时",                                 // selection.label
-		"现在有几个待办？",                               // 用户消息
-		"安全约束",                                   // 防注入提示
-		"BEGIN_AVAILABLE_TOOLS",                  // 工具说明由工具层独立注入
+		"todos",                 // active_key
+		"修复登录超时",                // selection.label
+		"现在有几个待办？",              // 用户消息
+		"安全约束",                  // 防注入提示
+		"BEGIN_AVAILABLE_TOOLS", // 工具说明由工具层独立注入
 		"jarvis-tools",
 		"BEGIN_JARVIS_CONTEXT",
 		`"open_id":"ou_me"`,
@@ -108,7 +106,7 @@ func TestBuildPromptInjectsSharedMemory(t *testing.T) {
 	}
 }
 
-// 多轮 followup 不再灌系统指引/DSN（resume 已带历史），只带 page_context + 消息。
+// 多轮 followup 不再灌系统指引（resume 已带历史），只带 page_context + 消息。
 func TestBuildFollowupPromptOmitsSystemGuidance(t *testing.T) {
 	t.Parallel()
 	svc := newTestService(t)
@@ -119,9 +117,6 @@ func TestBuildFollowupPromptOmitsSystemGuidance(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("buildFollowupPrompt() error = %v", err)
-	}
-	if strings.Contains(prompt, "root:secret") {
-		t.Fatalf("followup prompt should not re-inject DSN\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "那第一个呢？") {
 		t.Fatalf("followup prompt missing user message\n%s", prompt)

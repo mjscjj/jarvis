@@ -4,7 +4,7 @@ package capture
 
 import (
 	"context"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,19 +14,15 @@ import (
 	"jarvis/internal/store"
 )
 
-// TestAppendClueMySQL pins the delivery contract against MySQL: the channel is
+// TestAppendClueSQLite pins the delivery contract against SQLite: the channel is
 // created on first use and lands inside M3's scan range, the clue is stored as
 // an extractable message, and redelivery is a no-op that does not re-wake M3.
-func TestAppendClueMySQL(t *testing.T) {
-	dsn := os.Getenv("JARVIS_CAPTURE_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Fatal("JARVIS_CAPTURE_TEST_MYSQL_DSN is required for capture integration test")
-	}
-	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
-		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
+func TestAppendClueSQLite(t *testing.T) {
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
 	})
 	if err != nil {
-		t.Fatalf("OpenMySQL() error = %v", err)
+		t.Fatalf("OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(db); err != nil {

@@ -12,8 +12,8 @@ import (
 	"jarvis/internal/progress"
 	"jarvis/internal/taskcreate"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"jarvis/internal/datatypes"
 )
 
 // SeedStats reports what the one-shot initial seed created versus skipped, so a

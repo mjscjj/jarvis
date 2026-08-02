@@ -13,16 +13,16 @@ import (
 // source keeps the sources independent: adding one is
 // an insert, and one source falling behind never holds the others back.
 type FactSourceCursor struct {
-	Source string `gorm:"column:source;type:varchar(32);primaryKey"`
+	Source string `gorm:"column:source;primaryKey"`
 
-	LastID uint64 `gorm:"column:last_id;type:bigint unsigned;not null;default:0"`
+	LastID uint64 `gorm:"column:last_id;not null;default:0"`
 
 	// LastOccurredAt is when the newest consumed material happened. It is
 	// diagnostic only — LastID alone drives the scan — and answers "how far
 	// behind is this source right now" without a join.
-	LastOccurredAt *time.Time `gorm:"column:last_occurred_at;type:datetime"`
+	LastOccurredAt *time.Time `gorm:"column:last_occurred_at"`
 
-	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
 func (FactSourceCursor) TableName() string { return "fact_source_cursor" }

@@ -15,8 +15,8 @@ import (
 	"jarvis/internal/domain"
 	"jarvis/internal/progress"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"jarvis/internal/datatypes"
 )
 
 const (

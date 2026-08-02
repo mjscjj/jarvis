@@ -9,7 +9,7 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
+	"jarvis/internal/datatypes"
 )
 
 const testToolCatalog = "BEGIN_AVAILABLE_TOOLS\n- fixture-tool\nEND_AVAILABLE_TOOLS"

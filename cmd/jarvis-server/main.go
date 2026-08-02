@@ -1,6 +1,6 @@
 // Command jarvis-server 是 Jarvis 的单体主进程（总纲 §1.1）。
 //
-// 当前启动链路：加载配置 → 连接 MySQL → 迁移核心表 → 起 Hertz。
+// 当前启动链路：加载配置 → 连接 SQLite → 迁移核心表 → 起 Hertz。
 package main
 
 import (
@@ -124,21 +124,21 @@ func main() {
 
 	connectCtx, cancel := context.WithTimeout(startupCtx, 10*time.Second)
 	defer cancel()
-	db, err := store.OpenMySQL(connectCtx, cfg.MySQL)
+	db, err := store.OpenSQLite(connectCtx, cfg.SQLite)
 	if err != nil {
-		fatalf("connect mysql failed: %v", err)
+		fatalf("connect sqlite failed: %v", err)
 	}
 	defer func() {
 		if err := store.Close(db); err != nil {
-			errorf("close mysql failed: %v", err)
+			errorf("close sqlite failed: %v", err)
 		}
 	}()
 
 	if err := store.Migrate(db); err != nil {
-		fatalf("migrate mysql failed: %v", err)
+		fatalf("migrate sqlite failed: %v", err)
 	}
 	if *migrateOnly {
-		infof("mysql schema migration completed")
+		infof("sqlite schema migration completed")
 		return
 	}
 	if *backfillProgressEvents {
@@ -770,7 +770,6 @@ func main() {
 			Sandbox:          cfg.Chat.Sandbox,
 			ReasoningEffort:  cfg.Chat.ReasoningEffort,
 			Timeout:          time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,
-			DSN:              cfg.MySQL.DSN,
 			SharedMemory:     sharedMemoryService,
 			ContextAssembler: contextAssembler,
 		})

@@ -1,4 +1,4 @@
-// Package scheduledtask implements durable time triggers backed by MySQL.
+// Package scheduledtask implements durable time triggers backed by SQLite.
 package scheduledtask
 
 import (
@@ -15,8 +15,8 @@ import (
 	"jarvis/internal/taskcreate"
 
 	"code.byted.org/middleware/hertz/pkg/common/hlog"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"jarvis/internal/datatypes"
 )
 
 var (

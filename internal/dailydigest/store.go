@@ -13,9 +13,9 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"jarvis/internal/datatypes"
 )
 
 // scope 取值。person 全局一条（scope_id=principal open_id）；group 每个关键群一条

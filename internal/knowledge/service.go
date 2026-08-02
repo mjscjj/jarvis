@@ -136,9 +136,11 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*FactView, err
 			}).Error; err != nil {
 				return nil, fmt.Errorf("update relation fact pair id=%d: %w", fact.ID, err)
 			}
-			if err := s.db.WithContext(ctx).First(&fact, fact.ID).Error; err != nil {
+			var reloaded domain.RelationFact
+			if err := s.db.WithContext(ctx).First(&reloaded, fact.ID).Error; err != nil {
 				return nil, fmt.Errorf("reload relation fact id=%d: %w", fact.ID, err)
 			}
+			fact = reloaded
 		}
 		return s.factView(ctx, &fact)
 	}
@@ -222,9 +224,11 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (*FactView, err
 		}).Error; err != nil {
 			return nil, fmt.Errorf("update relation fact id=%d: %w", fact.ID, err)
 		}
-		if err := s.db.WithContext(ctx).First(&fact, fact.ID).Error; err != nil {
+		var reloaded domain.RelationFact
+		if err := s.db.WithContext(ctx).First(&reloaded, fact.ID).Error; err != nil {
 			return nil, fmt.Errorf("reload relation fact id=%d: %w", fact.ID, err)
 		}
+		fact = reloaded
 	}
 	return s.factView(ctx, &fact)
 }

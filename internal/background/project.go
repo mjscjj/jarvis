@@ -12,8 +12,8 @@ import (
 	"jarvis/internal/domain"
 	"jarvis/internal/progress"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"jarvis/internal/datatypes"
 )
 
 // ErrNotFound is returned when a background row does not exist. Callers map it

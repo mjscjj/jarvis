@@ -7,7 +7,7 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
+	"jarvis/internal/datatypes"
 )
 
 func TestProjectChangedFields(t *testing.T) {

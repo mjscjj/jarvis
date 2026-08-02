@@ -1,12 +1,12 @@
 //go:build integration
 
-// This file exercises seed flows against a real MySQL database.
+// This file exercises seed flows against an isolated SQLite database.
 
 package background
 
 import (
 	"context"
-	"os"
+	"path/filepath"
 	"testing"
 
 	"jarvis/internal/config"
@@ -25,23 +25,14 @@ func (s *stubMemberLister) ListChatMembers(_ context.Context, chatID string) ([]
 	return s.byChat[chatID], nil
 }
 
-// TestSeedIdempotentMySQL verifies the one-shot seed creates the inferred
-// project/task backgrounds once and creates nothing on a re-run. It is opt-in
-// against a dedicated test database (the real group links are skipped there
-// because the seed group names only exist in the owner's live DB):
-//
-//	JARVIS_BACKGROUND_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/jarvis_bg_test?parseTime=true' \
-//	  go test ./internal/background -run TestSeedIdempotentMySQL
-func TestSeedIdempotentMySQL(t *testing.T) {
-	dsn := os.Getenv("JARVIS_BACKGROUND_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Fatal("JARVIS_BACKGROUND_TEST_MYSQL_DSN is required for seed integration test")
-	}
-	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
-		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
+// TestSeedIdempotentSQLite verifies the one-shot seed creates the inferred
+// project/task backgrounds once and creates nothing on a re-run.
+func TestSeedIdempotentSQLite(t *testing.T) {
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
 	})
 	if err != nil {
-		t.Fatalf("OpenMySQL() error = %v", err)
+		t.Fatalf("OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close(db) })
 	if err := store.Migrate(db); err != nil {
@@ -72,19 +63,14 @@ func TestSeedIdempotentMySQL(t *testing.T) {
 	}
 }
 
-// TestSeedPersonsFromKeyGroupsMySQL verifies the group-member import dedups
+// TestSeedPersonsFromKeyGroupsSQLite verifies the group-member import dedups
 // across groups, skips already-present persons (by open_id), and is idempotent.
-// Opt-in against a dedicated test database (same env var as above).
-func TestSeedPersonsFromKeyGroupsMySQL(t *testing.T) {
-	dsn := os.Getenv("JARVIS_BACKGROUND_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Fatal("JARVIS_BACKGROUND_TEST_MYSQL_DSN is required for seed-persons integration test")
-	}
-	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
-		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
+func TestSeedPersonsFromKeyGroupsSQLite(t *testing.T) {
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
 	})
 	if err != nil {
-		t.Fatalf("OpenMySQL() error = %v", err)
+		t.Fatalf("OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close(db) })
 	if err := store.Migrate(db); err != nil {

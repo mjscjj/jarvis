@@ -9,9 +9,9 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"jarvis/internal/datatypes"
 )
 
 func TestMaterializeTodoCreatesTaskWithoutPlan(t *testing.T) {

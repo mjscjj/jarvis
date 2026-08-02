@@ -21,7 +21,7 @@ var legacyTodoStatusMappings = []struct {
 }
 
 // migrateLegacyTodoStatuses keeps Qdrant's denormalized Todo status payload in
-// lockstep with the MySQL lifecycle migration. MySQL remains the source of
+// lockstep with the durable Todo lifecycle. SQLite remains the source of
 // truth; this only renames the two retired payload values without touching any
 // vectors or other payload fields.
 //

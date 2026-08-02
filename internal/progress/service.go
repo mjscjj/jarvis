@@ -11,8 +11,8 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"jarvis/internal/datatypes"
 )
 
 var (

@@ -42,8 +42,7 @@ func newObservingTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	// Hand-written DDL rather than AutoMigrate: the domain models carry MySQL
-	// enum columns and foreign keys into project, which sqlite cannot create.
+	// Hand-written DDL keeps this test limited to the columns it exercises.
 	for _, statement := range []string{
 		`CREATE TABLE todo (
 			id INTEGER PRIMARY KEY, title TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',

@@ -12,9 +12,9 @@ import (
 	"jarvis/internal/domain"
 	"jarvis/internal/semantic"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"jarvis/internal/datatypes"
 )
 
 type preparedCandidate struct {
@@ -91,7 +91,7 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 			semanticRecords = append(semanticRecords, records[todoID])
 			stats.Todos = append(stats.Todos, todoRefs[todoID])
 		}
-		// Qdrant is called at the end of the MySQL transaction so a sync failure
+		// Qdrant is called at the end of the database transaction so a sync failure
 		// rolls back Todo/Event/watermark together. There is no silent outbox fallback.
 		if err := s.semantic.Upsert(ctx, semanticRecords); err != nil {
 			return fmt.Errorf("sync Todo semantic index: %w", err)
@@ -223,7 +223,7 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 
 func (s *PipelineStore) persistCandidate(tx *gorm.DB, batch ChatBatch, prepared *preparedCandidate, modelName string) (bool, *domain.Todo, error) {
 	var existing domain.Todo
-	query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
+	query := tx
 	if prepared.MatchedTodoID != nil {
 		query = query.Where("id = ?", *prepared.MatchedTodoID)
 	} else {

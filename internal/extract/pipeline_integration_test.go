@@ -28,10 +28,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestPipelineLive exercises MySQL -> facts -> model -> Todo persistence inside
-// an outer transaction that is always rolled back. Existing related groups are
-// hidden only inside that transaction, so no real Feishu message is sent to the
-// model and no fixture remains in the production database.
+// TestPipelineLive exercises SQLite -> facts -> model -> Todo persistence inside
+// an outer transaction that is always rolled back.
 func TestPipelineLive(t *testing.T) {
 	configPath := os.Getenv("JARVIS_TEST_PIPELINE_CONFIG")
 	if configPath == "" {
@@ -41,15 +39,20 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.Load() error = %v", err)
 	}
-	db, err := store.OpenMySQL(context.Background(), cfg.MySQL)
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
+	})
 	if err != nil {
-		t.Fatalf("store.OpenMySQL() error = %v", err)
+		t.Fatalf("store.OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(db); err != nil {
 			t.Errorf("store.Close() error = %v", err)
 		}
 	})
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("store.Migrate() error = %v", err)
+	}
 
 	tx := db.Begin()
 	if tx.Error != nil {
@@ -61,10 +64,6 @@ func TestPipelineLive(t *testing.T) {
 			_ = tx.Rollback().Error
 		}
 	})
-	if err := tx.Model(&domain.Group{}).Where("related_group = ?", true).Update("related_group", false).Error; err != nil {
-		t.Fatalf("isolate existing related groups: %v", err)
-	}
-
 	suffix := time.Now().UnixNano()
 	chatID := fmt.Sprintf("oc_pipeline_fixture_%d", suffix)
 	messageID := fmt.Sprintf("om_pipeline_fixture_%d", suffix)
@@ -355,14 +354,19 @@ func openPipelineTestDB(t *testing.T) (*config.Config, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("config.Load() error = %v", err)
 	}
-	db, err := store.OpenMySQL(context.Background(), cfg.MySQL)
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
+	})
 	if err != nil {
-		t.Fatalf("store.OpenMySQL() error = %v", err)
+		t.Fatalf("store.OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(db); err != nil {
 			t.Errorf("store.Close() error = %v", err)
 		}
 	})
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("store.Migrate() error = %v", err)
+	}
 	return cfg, db
 }

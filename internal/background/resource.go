@@ -11,8 +11,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// managedResourceTypes mirrors the enum in the DDL so bad input fails fast
-// before it reaches MySQL.
+// managedResourceTypes defines the application-level values so bad input fails
+// fast before it reaches SQLite.
 var managedResourceTypes = map[string]struct{}{
 	"doc": {}, "link": {}, "repo": {}, "note": {}, "other": {},
 }

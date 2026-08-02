@@ -4,7 +4,7 @@ package knowledge_test
 
 import (
 	"context"
-	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,16 +14,12 @@ import (
 	"jarvis/internal/store"
 )
 
-func TestRelationFactsMySQL(t *testing.T) {
-	dsn := os.Getenv("JARVIS_KNOWLEDGE_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Fatal("JARVIS_KNOWLEDGE_TEST_MYSQL_DSN is required")
-	}
-	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
-		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
+func TestRelationFactsSQLite(t *testing.T) {
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
 	})
 	if err != nil {
-		t.Fatalf("OpenMySQL() error = %v", err)
+		t.Fatalf("OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close(db) })
 	if err := store.Migrate(db); err != nil {

@@ -10,7 +10,7 @@ import (
 	"jarvis/internal/domain"
 	"jarvis/internal/taskcreate"
 
-	"gorm.io/datatypes"
+	"jarvis/internal/datatypes"
 )
 
 // TestParseApprovalRequiredResult accepts a high-risk verdict that carries a full

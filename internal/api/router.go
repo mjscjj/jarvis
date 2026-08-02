@@ -71,7 +71,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		return fmt.Errorf("api hertz server is nil")
 	}
 	if deps.DB == nil {
-		return fmt.Errorf("api mysql dependency is nil")
+		return fmt.Errorf("api database dependency is nil")
 	}
 	if deps.TodoStatus == nil {
 		return fmt.Errorf("api todo status writer dependency is nil")

@@ -61,7 +61,7 @@ func (o WindowOptions) validate() error {
 	return nil
 }
 
-// GORMStore reads material out of the same MySQL source of truth the pipeline
+// GORMStore reads material out of the same SQLite source of truth the pipeline
 // writes, and keeps each source's watermark there too.
 type GORMStore struct {
 	db *gorm.DB

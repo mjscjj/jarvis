@@ -5,7 +5,7 @@ package progress_test
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,19 +17,15 @@ import (
 	"jarvis/internal/progress"
 	"jarvis/internal/store"
 
-	"gorm.io/datatypes"
+	"jarvis/internal/datatypes"
 )
 
-func TestProgressEventsMySQL(t *testing.T) {
-	dsn := os.Getenv("JARVIS_PROGRESS_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Fatal("JARVIS_PROGRESS_TEST_MYSQL_DSN is required")
-	}
-	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
-		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
+func TestProgressEventsSQLite(t *testing.T) {
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
 	})
 	if err != nil {
-		t.Fatalf("OpenMySQL() error = %v", err)
+		t.Fatalf("OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close(db) })
 	if err := store.Migrate(db); err != nil {

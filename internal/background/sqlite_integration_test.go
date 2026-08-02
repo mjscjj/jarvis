@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,22 +17,14 @@ import (
 	"strconv"
 )
 
-// TestBackgroundCRUDMySQL exercises Project/Person CRUD and Group background
-// patching against real MySQL. It is opt-in and self-cleaning so it can run
-// repeatedly against a dedicated test database:
-//
-//	JARVIS_BACKGROUND_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/jarvis_bg_test?parseTime=true' \
-//	  go test ./internal/background -run TestBackgroundCRUDMySQL
-func TestBackgroundCRUDMySQL(t *testing.T) {
-	dsn := os.Getenv("JARVIS_BACKGROUND_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Fatal("JARVIS_BACKGROUND_TEST_MYSQL_DSN is required for background integration test")
-	}
-	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
-		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
+// TestBackgroundCRUDSQLite exercises Project/Person CRUD and Group background
+// patching against an isolated SQLite database.
+func TestBackgroundCRUDSQLite(t *testing.T) {
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
 	})
 	if err != nil {
-		t.Fatalf("OpenMySQL() error = %v", err)
+		t.Fatalf("OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(db); err != nil {
@@ -105,11 +97,12 @@ func TestBackgroundCRUDMySQL(t *testing.T) {
 		if err := projects.Delete(ctx, created.ID); err != nil {
 			t.Fatalf("Delete() error = %v", err)
 		}
-		if _, err := projects.Get(ctx, created.ID); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("Get() after delete error = %v, want ErrNotFound", err)
+		archived, err := projects.Get(ctx, created.ID)
+		if err != nil || archived.Status != "archived" {
+			t.Fatalf("Get() after archive = %#v, error = %v", archived, err)
 		}
-		if err := projects.Delete(ctx, created.ID); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("Delete() twice error = %v, want ErrNotFound", err)
+		if err := projects.Delete(ctx, created.ID); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("Delete() twice error = %v, want ErrInvalidInput", err)
 		}
 	})
 

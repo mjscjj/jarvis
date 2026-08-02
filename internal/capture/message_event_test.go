@@ -9,9 +9,9 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"jarvis/internal/datatypes"
 )
 
 func TestAppendMessageEventPersistsAndNotifiesRelatedChat(t *testing.T) {
@@ -179,9 +179,8 @@ func (o *messageEventObserver) ChatScanned(_ context.Context, result ChatScanRes
 	return nil
 }
 
-// SQLite cannot parse the MySQL enum declarations on the production models.
-// These table-only mirrors keep the same columns and indexes without carrying
-// associations or dialect-specific DDL into this focused persistence test.
+// These table-only mirrors keep the focused persistence test independent of
+// unrelated production models and associations.
 type eventTestGroup struct {
 	ID              uint64 `gorm:"primaryKey;autoIncrement"`
 	ChatID          string `gorm:"uniqueIndex"`

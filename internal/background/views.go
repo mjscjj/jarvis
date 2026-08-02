@@ -6,7 +6,7 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
+	"jarvis/internal/datatypes"
 )
 
 // The API contract is snake_case (see web/src/types.ts). The domain models only

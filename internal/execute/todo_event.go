@@ -6,8 +6,8 @@ import (
 
 	"jarvis/internal/domain"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"jarvis/internal/datatypes"
 )
 
 func createTodoEvent(db *gorm.DB, todoID uint64, fromStatus, toStatus, actor string, detail map[string]any) error {

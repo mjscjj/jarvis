@@ -16,9 +16,8 @@ import (
 	"jarvis/internal/progress"
 
 	"code.byted.org/middleware/hertz/pkg/common/hlog"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"jarvis/internal/datatypes"
 )
 
 var (
@@ -241,7 +240,7 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 	var finished domain.Task
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task domain.Task
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, input.TaskID).Error
+		err := tx.First(&task, input.TaskID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, input.TaskID)
 		}
@@ -419,7 +418,7 @@ func (s *Store) MarkExecuting(ctx context.Context, taskID uint64, expectedVersio
 	var newVersion int32
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task domain.Task
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		err := tx.First(&task, taskID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
 		}
@@ -477,7 +476,7 @@ func (s *Store) MarkAwaitingApproval(ctx context.Context, taskID uint64, expecte
 	var newVersion int32
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task domain.Task
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		err := tx.First(&task, taskID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
 		}
@@ -628,7 +627,7 @@ func parkClueAsObserving(db *gorm.DB, task *domain.Task) error {
 		return nil
 	}
 	var todo domain.Todo
-	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).First(&todo, *task.TodoID).Error; err != nil {
+	if err := db.First(&todo, *task.TodoID).Error; err != nil {
 		return fmt.Errorf("lock clue id=%d for observing task_id=%d: %w", *task.TodoID, task.ID, err)
 	}
 	// A re-run of an already-parked Task lands here a second time.
@@ -821,7 +820,7 @@ func (s *Store) MarkExecutingFromApproval(ctx context.Context, taskID uint64, ex
 	var newVersion int32
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task domain.Task
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		err := tx.First(&task, taskID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
 		}
@@ -875,7 +874,7 @@ func (s *Store) RejectAwaitingApproval(ctx context.Context, taskID uint64, expec
 	var rejected domain.Task
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task domain.Task
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		err := tx.First(&task, taskID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
 		}
@@ -932,7 +931,7 @@ func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task,
 	var reloaded domain.Task
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task domain.Task
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		err := tx.First(&task, taskID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
 		}
@@ -988,7 +987,7 @@ func (s *Store) ClaimForReapply(ctx context.Context, taskID uint64, expectedVers
 	var newVersion int32
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task domain.Task
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		err := tx.First(&task, taskID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
 		}

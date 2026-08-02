@@ -11,7 +11,7 @@ import (
 // worker receives the item, so another notification during a long-running model
 // call schedules one follow-up pass instead of being lost.
 //
-// It is intentionally in-memory: MySQL state and the reconciliation schedules
+// It is intentionally in-memory: SQLite state and the reconciliation schedules
 // recover any notification lost with the process.
 type keyedQueue[T any] struct {
 	items chan T

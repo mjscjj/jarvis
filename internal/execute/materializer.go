@@ -11,7 +11,6 @@ import (
 	"jarvis/internal/taskcreate"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type MaterializationResult struct {
@@ -144,7 +143,7 @@ func requireContextSnapshot(todo *domain.Todo) (json.RawMessage, *string, error)
 }
 
 func lockTodo(tx *gorm.DB, todoID uint64, todo *domain.Todo) error {
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(todo, todoID).Error
+	err := tx.First(todo, todoID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("%w: todo_id=%d", ErrTodoNotFound, todoID)
 	}

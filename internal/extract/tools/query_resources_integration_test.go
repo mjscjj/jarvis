@@ -5,7 +5,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -26,16 +26,12 @@ func newResourcesTool(t *testing.T, db *gorm.DB, maxLimit int) *QueryResourcesTo
 	return tool
 }
 
-func TestQueryResourcesMySQL(t *testing.T) {
-	dsn := os.Getenv("JARVIS_TOOLS_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Fatal("JARVIS_TOOLS_TEST_MYSQL_DSN is required for query_resources integration test")
-	}
-	db, err := store.OpenMySQL(context.Background(), config.MySQLConfig{
-		DSN: dsn, MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: 60,
+func TestQueryResourcesSQLite(t *testing.T) {
+	db, err := store.OpenSQLite(context.Background(), config.SQLiteConfig{
+		Path: filepath.Join(t.TempDir(), "jarvis.db"),
 	})
 	if err != nil {
-		t.Fatalf("OpenMySQL() error = %v", err)
+		t.Fatalf("OpenSQLite() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close(db) })
 	if err := store.Migrate(db); err != nil {
@@ -62,6 +58,9 @@ func TestQueryResourcesMySQL(t *testing.T) {
 	}
 	if err := tx.Create(&seed).Error; err != nil {
 		t.Fatalf("seed resources: %v", err)
+	}
+	if err := tx.Model(&seed[3]).Update("is_active", false).Error; err != nil {
+		t.Fatalf("disable fixture resource: %v", err)
 	}
 	tool := newResourcesTool(t, tx, 20)
 

@@ -1,5 +1,5 @@
 // Package pipeline accelerates the durable M2 -> M3 -> M5 state machine.
-// Notifications only wake downstream work; MySQL watermarks, statuses, and
+// Notifications only wake downstream work; SQLite watermarks, statuses, and
 // optimistic versions remain the source of truth and scheduled reconciliation
 // repairs any wake-up lost during a crash.
 package pipeline
