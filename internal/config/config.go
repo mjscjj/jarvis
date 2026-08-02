@@ -162,6 +162,10 @@ type CaptureConfig struct {
 	Timezone         string `yaml:"timezone"`
 	DiscoverSchedule string `yaml:"discover_schedule"`
 	ScanSchedule     string `yaml:"scan_schedule"`
+	// EventEnabled makes jarvis-server the sole long-connection owner for the
+	// configured Feishu app. EventProfile is the lark-cli profile/app id.
+	EventEnabled bool   `yaml:"event_enabled"`
+	EventProfile string `yaml:"event_profile"`
 	// AutoRelatedP2PTopN：discover 时按 active_time 自动纳入监听的内部真人私聊
 	// 上限。只开最活跃的前 N 个，僵尸老私聊与服务号私聊不开。
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
@@ -397,6 +401,9 @@ func (c *Config) validate() error {
 	}
 	if c.Capture.DiscoverSchedule == "" || c.Capture.ScanSchedule == "" {
 		return fmt.Errorf("capture 的 discover/scan schedule 均不能为空")
+	}
+	if c.Capture.EventEnabled && c.Capture.EventProfile == "" {
+		return fmt.Errorf("capture.event_enabled=true 时 event_profile 不能为空")
 	}
 	if c.Capture.AutoRelatedP2PTopN < 0 {
 		return fmt.Errorf("capture.auto_related_p2p_top_n 不能为负数")

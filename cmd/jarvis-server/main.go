@@ -668,8 +668,37 @@ func main() {
 		}
 		stopFactRollup = func() { <-factRollupScheduler.Stop().Done() }
 	}
+	var messageEventConsumer *capture.MessageEventConsumer
+	if cfg.Capture.EventEnabled {
+		messageEventConsumer, err = capture.StartMessageEventConsumer(
+			runtimeCtx,
+			captureService,
+			capture.MessageEventConsumerOptions{
+				Bin:          cfg.LarkCLI.Bin,
+				Profile:      cfg.Capture.EventProfile,
+				ReadyTimeout: time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+			},
+			log.New(os.Stderr, "feishu-event-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			fatalf("start Feishu message event consumer failed: %v", err)
+		}
+		go func() {
+			<-messageEventConsumer.Done()
+			if err := messageEventConsumer.Err(); err != nil && runtimeCtx.Err() == nil {
+				fatalf("Feishu message event consumer stopped: %v", err)
+			}
+		}()
+	}
 	defer func() {
 		cancelRuntime()
+		if messageEventConsumer != nil {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := messageEventConsumer.Stop(stopCtx); err != nil {
+				errorf("stop Feishu message event consumer failed: %v", err)
+			}
+		}
 		<-scheduler.Stop().Done()
 		stopDailyDigest()
 		stopScheduledTasks()

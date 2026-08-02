@@ -12,7 +12,8 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 ## 当前链路
 
 ```text
-飞书 IM 轮询 ───────────────┐
+飞书 IM 事件 ───────────────┐
+飞书 IM 轮询补偿 ───────────┤
                            ├─> M2 capture ─> message ─> M3 extract
 外部 Skill / 定时任务 ─> /api/clues ────────┘             │
                                                             ├─ observing：保留观察，不创建 Task
@@ -38,7 +39,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | 模块 | 当前职责 | 代码入口 |
 |---|---|---|
 | M1 背景 | principal、项目、人物、会话背景、人工资源 | `internal/background/` |
-| M2 采集 | 会话发现、增量轮询、principal activity、通用 clue 落库 | `internal/capture/` |
+| M2 采集 | 飞书消息事件、会话发现、增量轮询补偿、principal activity、通用 clue 落库 | `internal/capture/` |
 | M3 提取 | 证据校验、Todo 抽取/合并、上下文快照、语义去重 | `internal/extract/` |
 | Todo 固化 | extracted Todo 按 ID/version 幂等创建 Task，不调用模型 | `internal/execute/materializer.go` |
 | M5 执行 | 调查、执行、审批、等待/续跑、人工回复、结果留痕 | `internal/execute/` |

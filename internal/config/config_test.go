@@ -113,6 +113,7 @@ func TestValidate(t *testing.T) {
 		{name: "capture warm age", mutate: func(c *Config) { c.Capture.WarmAgeHours = 6 }, wantErr: "capture.warm_age_hours"},
 		{name: "capture timezone", mutate: func(c *Config) { c.Capture.Timezone = "" }, wantErr: "capture.timezone"},
 		{name: "capture schedules", mutate: func(c *Config) { c.Capture.ScanSchedule = "" }, wantErr: "schedule"},
+		{name: "capture event profile", mutate: func(c *Config) { c.Capture.EventEnabled = true }, wantErr: "event_profile"},
 		{name: "codex binary", mutate: func(c *Config) { c.Codex.Bin = "" }, wantErr: "codex.bin"},
 		{name: "codex model", mutate: func(c *Config) { c.Codex.Model = "" }, wantErr: "codex.model"},
 		{name: "codex timeout", mutate: func(c *Config) { c.Codex.TimeoutSeconds = 0 }, wantErr: "codex.timeout_seconds"},

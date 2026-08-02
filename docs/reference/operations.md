@@ -80,6 +80,14 @@ conf/config.yaml
 
 `config.runtime.yaml` 由后台运行配置写入且被 Git 忽略。保存后需要重启；不要把其中数值写进 current 文档当成所有机器的默认值。
 
+`capture.event_enabled=true` 时，`jarvis-server` 是 `capture.event_profile` 对应飞书应用的唯一事件连接拥有者。不要再把同一个 app 配进 cc-connect/OpenClaw；否则启动会因远端已有连接而 fail-fast。连接成功会在 stderr 日志出现：
+
+```text
+feishu-event-cron ... job=consume status=ok state=ready
+```
+
+消息事件落库日志包含 `message_id/chat_id/inserted/related`；连接进程意外退出会记录 `status=error` 并让主服务退出，由 launchd 重启，而 2 分钟消息扫描继续承担恢复补偿。
+
 ## 故障恢复
 
 若主服务已注册但 API 不可达：
