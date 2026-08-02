@@ -1,9 +1,9 @@
 # 主动巡视 Agent（Proactive Heartbeat）方案
 
-> Status: proposal
+> Status: implemented-history
 > Authority: non-normative
-> Last verified: 2026-08-02 @ `d36bba7`
-> Not implemented: 本文描述目标方案，不代表当前代码已经具备这些能力。
+> Last verified: 2026-08-02 @ `feature/proactive-heartbeat-agent`
+> Current behavior: 稳定边界已并入 [`00-overview.md`](00-overview.md)，本文保留实施动机和验收设计。
 
 ## 1. 一句话结论
 
@@ -151,11 +151,12 @@ MVP 不新增 Goal Tree、Concern、评分维度或完成状态机。Agent 先�
 proactive:
   enabled: true
   schedule: "@every 1h"
+  startup_delay_seconds: 120
   bin: "traex"
   model: "DeepSeek-V4-Pro"
+  sandbox: "danger-full-access"
   reasoning_effort: "medium"
   timeout_seconds: 900
-  workspace_root: "/Users/bytedance/workspace-local/jarvis"
 ```
 
 选择理由：
@@ -247,7 +248,7 @@ Prompt 只约束角色与行为，不复制工具手册。工具能力继续由 
 ```text
 internal/proactive/worker.go             一轮 Agent 调用与结果检查
 internal/proactive/scheduler.go          cron 唤醒，SkipIfStillRunning
-internal/proactive/prompt.go             组装时间、工具、规则、共享记忆
+internal/proactive/worker.go             同时组装时间、工具、规则、共享记忆
 conf/prompts/proactive-system-prompt.md  唯一 Prompt 真源
 internal/textstore/defaults.go           注册 Prompt key
 internal/config/                         独立模型与调度配置、runtime settings

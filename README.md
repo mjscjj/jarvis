@@ -2,6 +2,8 @@
 
 Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞书消息和外部线索中保留原始证据，抽取 Todo，并由执行 Agent 判断是否值得推进、调用工具完成工作、处理等待与审批并留下结果。
 
+系统另有独立的低成本主动巡视 Agent：启动 2 分钟后首次运行，之后默认每小时整理内部世界模型、看护未闭环工作；任何需要改变外部世界的动作都只创建 Task，交给强 M5 执行。
+
 先读：
 
 1. [项目目标](goal.md)
@@ -44,6 +46,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | Todo 固化 | extracted Todo 按 ID/version 幂等创建 Task，不调用模型 | `internal/execute/materializer.go` |
 | M5 执行 | 调查、执行、审批、等待/续跑、人工回复、结果留痕 | `internal/execute/` |
 | 事实引擎 | 在关键路径外从 `message`、Todo、Task 通用蒸馏长期事实 | `internal/factengine/` |
+| 主动巡视 | 周期整理内部世界模型、看护未闭环工作、为外部行动创建普通 Task | `internal/proactive/` |
 | 定时任务 | 周期/单次 Task，以及等待 Session 的未来唤醒 | `internal/scheduledtask/`, `internal/taskcreate/` |
 | 实时协调 | 按持久化 ID/version 推进 M3→M5，cron 负责补偿 | `internal/pipeline/` |
 | 背景事实 | 自然语言 Fact、实体间自然语言 RelationFact | `internal/progress/`, `internal/knowledge/` |
@@ -55,6 +58,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 - M2 只记录事实。错误原文也是事实，错误语义和下一步交给模型判断。
 - 新来源通过 `source + Skill/定时任务 + POST /api/clues` 接入，不在 Go 中新增来源专用流水线。
 - M3 冻结 `context_snapshot`，Todo→Task→执行复用同一份；下游可补证据，但不重建一份“看起来等价”的背景。
+- 主动巡视可写 Jarvis 内部世界模型，但不得直接产生外部副作用；外部行动统一创建 `source_type=proactive` 的 Task 交给 M5。
 
 各模块的当前实现详见 [`docs/modules/`](docs/README.md#当前实现)。
 
@@ -79,6 +83,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 - 改 M3 抽取口径：`conf/prompts/m3-system-prompt.md`；改上下文组装：`internal/extract/prompt.go`、`internal/extract/snapshot.go`
 - 改 M5 执行行为：`conf/prompts/m5-system-prompt.md`、`conf/rules/m5.md`
+- 改主动巡视行为：`conf/prompts/proactive-system-prompt.md`；改调度与调用：`internal/proactive/`
 - 改审批尺度：`conf/prompts/m5-approval-policy.md`
 - 改严格输出协议/状态路由：`internal/execute/prompt.go`、`internal/execute/store.go`
 - 改工具说明：`internal/toolcatalog/` 或对应 Skill，不把工具手册复制进系统提示词

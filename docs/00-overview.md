@@ -34,7 +34,7 @@ flowchart LR
 - `jarvis-server` 是主进程：HTTP、静态前端、M2/M3/M5、实时协调和补偿 cron 都在同一进程。
 - MySQL 是结构化状态真源。
 - Qdrant 当前只服务 Todo 语义去重，不是长期事实真源。
-- `traex` 运行 M3 默认引擎、M5 执行、对话和离线事实抽取；具体模型和超时读有效配置。
+- `traex` 运行 M3 默认引擎、M5 执行、对话、离线事实抽取和主动巡视；各阶段的模型和超时独立读取有效配置。
 - `lark-cli` 负责飞书读写；`bytedcli`、`git` 和 `jarvis-tools` 由 Agent 按需调用。
 - 生产前端由 18800 托管 `web/dist`；18801 是独立 Vite 开发服务。
 
@@ -63,6 +63,9 @@ flowchart TD
     EXEC --> WAIT["waiting / needs_human / awaiting_approval"]
     EXEC --> FAIL["failed"]
     WAIT --> EXEC
+    CRON["启动延迟 + 每小时 cron"] --> PROACTIVE["主动巡视 Agent"]
+    PROACTIVE -->|"内部建模"| WORLD["Person / Project / Group / Fact / Relation"]
+    PROACTIVE -->|"外部行动"| PTASK["Task pending"] --> EXEC
 ```
 
 ### 3.1 M2：机械采集
@@ -101,7 +104,7 @@ Todo 来源 Task 的 `plan` 为空；执行 Agent 直接读取完整 `source_clu
 
 ### 3.4 M5 执行：调查、动作与恢复
 
-Task 可以来自 Todo、手工 API 或 ScheduledTask。执行 Agent 读取完整 M3 clue、冻结背景、人工 supplements 和最近运行记录，把上游内容视为线索，不视为不可修改的最终计划。
+Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执行 Agent 读取完整来源证据、冻结背景、人工 supplements 和最近运行记录，把上游内容视为线索，不视为不可修改的最终计划。
 
 执行 outcome 与状态映射：
 
@@ -129,6 +132,8 @@ Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示�
 
 队列按实体 ID/version 合并等待通知，数据库状态和乐观锁拒绝陈旧执行。
 
+`internal/proactive` 使用独立低成本模型。主进程启动后先等待配置的启动延迟（基线 120 秒），运行第一轮，再按独立 cron 周期运行；同一时刻最多一轮。它可以通过既有工具维护 Jarvis 内部世界模型，但任何外部行动必须创建 `source_type=proactive` 的普通 Task，由同一个 Task Submitter 唤醒强 M5。巡视失败会明确记录，不切换模型，也不阻塞 M2→M3→M5 主链路。
+
 ## 5. 世界状态与长期事实
 
 当前世界状态分为：
@@ -138,6 +143,8 @@ Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示�
 - 行动链路：Todo、Task、TodoEvent、TaskEvent、ExecutionRun；
 - 长期事实：Fact、RelationFact；
 - 时间触发和总结：ScheduledTask、DailyDigest。
+
+主动巡视不新增世界状态表：它读取上述现有载体并通过既有 CRUD 工具维护内部认知；跨轮记忆来自这些持久状态，而不是续跑无限对话 Session。
 
 `internal/domain/*.go` 和 `internal/store/mysql.go` 是字段与迁移真源。不要在文档复制完整 DDL。
 

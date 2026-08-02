@@ -39,6 +39,7 @@
 |---|---|---|
 | [Codex Session 挂起与恢复](design-codex-session-continuation.md) | current，需按代码持续核对 | `waiting` / `needs_human` 的同 Session 续跑 |
 | [每日进度总结](design-daily-digest.md) | current | 个人/群日报及 Skill 取证 |
+| [主动巡视 Agent](design-proactive-heartbeat-agent.md) | implemented-history | 实现动机与验收设计；当前边界见总纲 |
 | [文件化文本配置](design-file-backed-text-config.md) | current | prompts、rules 与后台编辑边界 |
 | [实体关系与进度历史](design-temporal-relations-and-progress.md) | current，部分段落待继续校准 | RelationFact、TaskEvent、Fact |
 | [HTTP API](reference/http-api.md) | current | 路由分组；`router.go` 仍为真源 |
@@ -52,7 +53,6 @@
 | 文档 | 状态 | 已实现 / 未实现边界 |
 |---|---|---|
 | [长任务 Goal Control](design-long-horizon-agent-goal-control.md) | proposal / partial | 目标线索保真已改善；Goal Store、Supervisor、独立 Verifier 未实现 |
-| [主动巡视 Agent](design-proactive-heartbeat-agent.md) | proposal | 定时使用低成本 Agent 维护世界模型、看护未闭环事项，并为强 M5 创建 Task；尚未实现 |
 | [宽松语义契约](design-loose-semantic-contract.md) | proposal / partial | M3 Candidate、enrichment 等仍有严格结构；Todo→Task 已改为无模型固化 |
 | [世界上下文渐进加载](design-world-context-progressive.md) | implementation-in-progress | 本轮审计时 HEAD 未完整落地；不得提前标 completed |
 
