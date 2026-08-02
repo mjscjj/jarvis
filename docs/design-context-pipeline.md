@@ -183,7 +183,7 @@ flowchart TB
 ### 2.4 模块 D：执行环节拿完整上下文（打通链路末端）
 
 - 执行环节提示词（`internal/execute/prompt.go`）已带 `task.background`；因 background 现含 `project.repos`，codex 执行时即可拿到仓库地址。
-- `internal/execute/agent_executor.go` 增补：从 `project.repos[].local_path` 解析代码仓库工作目录（供 `code_change` 类任务 `--cd`）。
+- Task 创建时从 `project.repos[].local_path` 投影 `task.repo_path`；`internal/execute/agent_executor.go` 只消费这个硬执行参数，不解析 `context_snapshot`。
 - repos 为空时**本轮不阻塞**（用户决策）：codex 在 workspace-write/full-access 下自行想办法（可跑 git/lark-cli 定位），或如实报告"缺仓库地址、需补充"。
 
 

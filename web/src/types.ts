@@ -32,6 +32,7 @@ export interface TodoProject {
 export interface Resolution {
   method: 'group_bound' | 'project_hint' | 'codex_cli' | 'unresolved'
   project_id: number | null
+  repo_path: string | null
   project_name: string | null
   repos_hint: string | null
   confidence: number | null

@@ -80,7 +80,7 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		if todo.Status != "extracted" {
 			return transitionError(todo.ID, todo.Status, "materialized")
 		}
-		background, err := requireContextSnapshot(&todo)
+		background, repoPath, err := requireContextSnapshot(&todo)
 		if err != nil {
 			return err
 		}
@@ -111,7 +111,8 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		task, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
 			TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
 			Background: background, SourceClue: json.RawMessage(todo.ExtractionResult),
-			ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todo.ID,
+			ProjectID: copyUint64(todo.ProjectID), RepoPath: repoPath,
+			SourceType: taskcreate.SourceTodo, SourceID: &todo.ID,
 			ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "system",
 		})
 		if errors.Is(err, taskcreate.ErrExists) {
@@ -129,12 +130,17 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 	return &result, nil
 }
 
-func requireContextSnapshot(todo *domain.Todo) (json.RawMessage, error) {
+func requireContextSnapshot(todo *domain.Todo) (json.RawMessage, *string, error) {
 	raw := []byte(todo.ContextSnapshot)
-	if _, err := contextsnap.Decode(raw); err != nil {
-		return nil, fmt.Errorf("%w: todo_id=%d context_snapshot invalid: %v", ErrInvalidInput, todo.ID, err)
+	snapshot, err := contextsnap.Decode(raw)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: todo_id=%d context_snapshot invalid: %v", ErrInvalidInput, todo.ID, err)
 	}
-	return json.RawMessage(append([]byte(nil), raw...)), nil
+	repoPath, err := snapshot.RepoPath()
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: todo_id=%d context_snapshot repo path invalid: %v", ErrInvalidInput, todo.ID, err)
+	}
+	return json.RawMessage(append([]byte(nil), raw...)), repoPath, nil
 }
 
 func lockTodo(tx *gorm.DB, todoID uint64, todo *domain.Todo) error {

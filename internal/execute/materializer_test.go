@@ -33,7 +33,7 @@ func TestMaterializeTodoCreatesTaskWithoutPlan(t *testing.T) {
 	if err := db.First(&task, result.TaskID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if task.TodoID == nil || *task.TodoID != 7 || len(task.Plan) != 0 || string(task.SourceClue) != `{"desired_outcome":"完成目标"}` {
+	if task.TodoID == nil || *task.TodoID != 7 || len(task.Plan) != 0 || string(task.SourceClue) != `{"desired_outcome":"完成目标"}` || task.RepoPath == nil || *task.RepoPath != "jarvis" {
 		t.Fatalf("task = %#v plan=%q source_clue=%s", task, task.Plan, task.SourceClue)
 	}
 	var todo domain.Todo
@@ -133,7 +133,7 @@ func newMaterializerTestDB(t *testing.T) *gorm.DB {
 			source_clue TEXT, plan TEXT, source_type TEXT NOT NULL, source_id INTEGER,
 			occurrence_key TEXT, execution_mode TEXT NOT NULL, status TEXT NOT NULL,
 			execution_result TEXT, summary TEXT, last_progress_at DATETIME, execution_supplements TEXT,
-			project_id INTEGER, version INTEGER NOT NULL,
+			project_id INTEGER, repo_path TEXT, version INTEGER NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE task_event (
@@ -159,7 +159,7 @@ func insertMaterializerTodo(t *testing.T, db *gorm.DB, id uint64, version int32)
 		Status: "extracted", DedupFingerprint: fmt.Sprintf("fp-%d", id),
 		OpenQuestions:    datatypes.JSON(`[]`),
 		SourceMessageIDs: datatypes.JSON(`[]`),
-		ContextSnapshot:  datatypes.JSON(`{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z","principal":{"open_id":"ou_owner","name":"Owner"},"messages":[],"memories":[],"facts":[],"recent_tasks":[],"open_todos":[]}`),
+		ContextSnapshot:  datatypes.JSON(`{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z","principal":{"open_id":"ou_owner","name":"Owner"},"project":{"id":1,"name":"Jarvis","role":"owner","repos":[{"local_path":"jarvis"}]},"messages":[],"memories":[],"facts":[],"recent_tasks":[],"open_todos":[]}`),
 		ExtractionResult: datatypes.JSON(`{"desired_outcome":"完成目标"}`),
 		Revision:         1, Version: version, FirstSeenAt: now, LastEvidenceAt: now,
 	}

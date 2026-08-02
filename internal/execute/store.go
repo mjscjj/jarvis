@@ -67,6 +67,7 @@ type TaskView struct {
 	LastProgressAt       *time.Time            `json:"last_progress_at"`
 	ExecutionSupplements []ExecutionSupplement `json:"execution_supplements,omitempty"`
 	ProjectID            *uint64               `json:"project_id"`
+	RepoPath             *string               `json:"repo_path"`
 	Version              int32                 `json:"version"`
 	CreatedAt            time.Time             `json:"created_at"`
 	UpdatedAt            time.Time             `json:"updated_at"`
@@ -1262,7 +1263,8 @@ func taskView(ctx context.Context, task *domain.Task) TaskView {
 		Status:        task.Status, ExecutionResult: rawJSON(task.ExecutionResult),
 		Summary: task.Summary, LastProgressAt: task.LastProgressAt,
 		ExecutionSupplements: supplements,
-		ProjectID:            task.ProjectID, Version: task.Version, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
+		ProjectID:            task.ProjectID, RepoPath: task.RepoPath,
+		Version: task.Version, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
 	}
 }
 

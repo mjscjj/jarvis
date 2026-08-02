@@ -42,6 +42,7 @@ type Input struct {
 	SourceClue    json.RawMessage
 	Plan          json.RawMessage
 	ProjectID     *uint64
+	RepoPath      *string
 	SourceType    string
 	SourceID      *uint64
 	OccurrenceKey *string
@@ -115,6 +116,10 @@ func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, e
 		projectID := snapshot.Project.ID
 		input.ProjectID = &projectID
 	}
+	input.RepoPath, err = snapshot.RepoPath()
+	if err != nil {
+		return Input{}, fmt.Errorf("project assembled %s Task repo path: %w", input.SourceType, err)
+	}
 	return input, nil
 }
 
@@ -148,7 +153,8 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 		SourceClue: datatypes.JSON(normalized.SourceClue),
 		SourceType: normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
 		ExecutionMode: normalized.ExecutionMode, Status: "pending",
-		ProjectID: normalized.ProjectID, Version: 0, CreatedAt: now, UpdatedAt: now,
+		ProjectID: normalized.ProjectID, RepoPath: normalized.RepoPath,
+		Version: 0, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.WithContext(ctx).Create(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
@@ -176,6 +182,7 @@ func normalizeInput(input Input) (Input, error) {
 	input.Target = strings.TrimSpace(input.Target)
 	input.SourceType = strings.TrimSpace(input.SourceType)
 	input.ExecutionMode = strings.TrimSpace(input.ExecutionMode)
+	input.RepoPath = trimString(input.RepoPath)
 	if input.Title == "" || input.ActionType == "" || input.Target == "" {
 		return Input{}, fmt.Errorf("%w: title, action_type and target are required", ErrInvalidInput)
 	}

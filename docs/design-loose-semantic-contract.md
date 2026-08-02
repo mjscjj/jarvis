@@ -7,7 +7,7 @@
 
 Jarvis 的 M3 与 M5 执行不应共享一套庞大的模型语义 DTO。程序只固定硬消费字段，模型语义用自然语言或宽松 JSON 原样传递。这样上游新增一段判断、证据或结果时，下游能直接带给模型，不需要同步改 Go struct、JSON Schema、前端类型和历史数据。
 
-当前落地状态（2026-08-02）：M3 Candidate 已是机器消费小外壳 + 文本 payload，原始 extraction result 会整体传给 Task；Todo 来源的 `Task.plan` 可空，M5 执行直接根据 M3 clue 与冻结上下文判断。但 execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。`repo_path` 记录在 ExecutionRun，不在 Task。以 current 模块文档和代码为准。
+当前落地状态（2026-08-02）：M3 Candidate 已是机器消费小外壳 + 文本 payload，原始 extraction result 会整体传给 Task；Todo 来源的 `Task.plan` 可空，M5 执行直接根据 M3 clue 与冻结上下文判断。Task 创建时把 `context_snapshot.project.repos` 一次性投影为执行硬字段 `repo_path`，M5 不再解析 ContextSnapshot。但 execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。以 current 模块文档和代码为准。
 
 ## 目标
 
@@ -185,12 +185,13 @@ Task 保留：
 - `source_type/source_id/occurrence_key`
 - `status/version`
 - `project_id`
+- `repo_path`
 - `execution_mode/approval_ref`
 - `background/plan/source_clue/execution_result` 宽松 JSON
 
 Todo 来源的 `plan` 可空；已有行的非空 `plan` 原样保留。执行提示词使用 `source_clue` 中的完整 M3 线索，不人为生成占位计划。
 
-后续应给 Task 增加 `repo_path` 这类执行硬投影，让 M5 不再解析 `context_snapshot.project.repos`。
+`repo_path` 是 Task 创建时从快照得到的一次性硬投影；运行时只校验该目录是否为 Git working copy，不反解析 background。
 
 TodoEvent / TaskEvent：
 
@@ -204,7 +205,7 @@ TodoEvent / TaskEvent：
 1. M5 `enrichments`: `detail string` 改为 `content` 任意非 `null` JSON，前端通用渲染未知内容。
 2. M3 Candidate 改为硬字段 + payload；严格 Structured Output 阶段先用 JSON 文本承载开放 payload。
 3. ContextSnapshot v2 改为按 observation/revision 冻结的 ContextDocument，supplements 只追加。
-4. Task 增加 `repo_path`，移除 M5 对 `contextsnap` 的依赖。
+4. ~~Task 增加 `repo_path`，移除 M5 对 `contextsnap` 的依赖。~~ 已完成。
 5. 清理普通 TodoEvent 的完整 snapshot 复制，保留不可变模型 artifact。历史数据是否迁移另行确认。
 
 ## 验收点

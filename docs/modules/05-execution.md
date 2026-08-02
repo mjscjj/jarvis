@@ -17,7 +17,7 @@ Task 可来自：
 
 `execution_mode=direct` 只是持久化元数据，不绕过审批。
 
-执行 prompt 包含：完整 `source_clue`、冻结 `background`、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。Todo 来源的 `plan` 为空且不注入 prompt；ScheduledTask/手工 Task 可继续保存自己的可选计划。
+执行 prompt 包含：完整 `source_clue`、冻结 `background`、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。Todo 来源的 `plan` 为空且不注入 prompt；ScheduledTask/手工 Task 可继续保存自己的可选计划。Task 创建时已经把仓库工作目录投影到 `repo_path`，M5 直接消费该硬参数，不反解析 background。
 
 执行进程可以自行派生只读的子 agent 去做素材密集的调查，只把带出处的结论收回主上下文；派生规则写在 `m5-system-prompt.md`，Go 侧不感知也不调度。审批判断、终态裁决、`effects` 申报、`progress_summary` 和 `yield-until` 不下放——可恢复的 Session 属于主进程。
 
@@ -73,7 +73,7 @@ pending -> executing
 - effects 使用严格外壳 `kind/title/url/target/preview/extra`，其中 `kind` 开放；未知 kind 保留。它是 Agent 声明，不是独立 verifier 的 receipt。
 - 代码分支、commit、push、MR 等交付结果写进 effects，不再有专用 Git 列或 Go 编排。
 
-factengine 当前只从 `message` 蒸馏 Fact，不会自动把 Task summary/ExecutionRun 变成长期 Fact。
+factengine 从 `message`、TodoEvent 和 TaskEvent 三类材料蒸馏 Fact；来源清单由服务启动层显式装配，Worker 不依赖 GORM Store 提供注册表。ExecutionRun 本身仍不作为独立来源。
 
 ## 7. 接口与运维
 
@@ -88,4 +88,4 @@ Task 相关接口包括：runs、events、output、execute、interrupt、rerun�
 - 没有独立 Verifier；`done` 仍主要来自同一执行 Agent 的 completion claim。
 - effects 未对外部系统 receipt 做独立核验。
 - Task 背景和可选计划缺更新 API/tool 与事件留痕。
-- Task/ExecutionRun 尚未接入 factengine 自动沉淀。
+- ExecutionRun 尚未作为独立 factengine 来源。

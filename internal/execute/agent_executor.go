@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/observability"
 	"jarvis/internal/sharedmem"
@@ -1120,16 +1119,15 @@ func waitingFromRun(run *domain.ExecutionRun) (*codexWaiting, error) {
 	return output.Waiting, nil
 }
 
-// resolveRepo locates a local git working copy from the frozen context, if any.
-// It reads the snapshot's project.repos[].local_path. Returns ("", nil) when no
-// repo is available so the caller runs codex without --cd.
+// resolveRepo validates the hard execution projection captured on Task creation.
+// Background remains opaque to M5.
 func (e *AgentExecutor) resolveRepo(task *domain.Task) (string, error) {
-	// A malformed snapshot must surface; an absent/empty repos list is non-blocking.
-	for _, localPath := range snapshotRepoLocalPaths(task.Background) {
-		path := e.absRepoPath(localPath)
-		if isGitDir(path) {
-			return path, nil
-		}
+	if task.RepoPath == nil || strings.TrimSpace(*task.RepoPath) == "" {
+		return "", nil
+	}
+	path := e.absRepoPath(*task.RepoPath)
+	if isGitDir(path) {
+		return path, nil
 	}
 	return "", nil
 }
@@ -1145,29 +1143,6 @@ func (e *AgentExecutor) absRepoPath(ref string) string {
 func isGitDir(path string) bool {
 	info, err := os.Stat(filepath.Join(path, ".git"))
 	return err == nil && info.IsDir()
-}
-
-// snapshotRepoLocalPaths extracts non-empty local_path values from the frozen
-// context_snapshot's project.repos ([{name,url,local_path}]). It is lenient on
-// absent/null repos (returns nothing) but ignores structurally broken repos.
-func snapshotRepoLocalPaths(background []byte) []string {
-	snapshot, err := contextsnap.Decode(background)
-	if err != nil || snapshot.Project == nil || len(snapshot.Project.Repos) == 0 {
-		return nil
-	}
-	var repos []struct {
-		LocalPath string `json:"local_path"`
-	}
-	if err := json.Unmarshal(snapshot.Project.Repos, &repos); err != nil {
-		return nil
-	}
-	paths := make([]string, 0, len(repos))
-	for _, repo := range repos {
-		if p := strings.TrimSpace(repo.LocalPath); p != "" {
-			paths = append(paths, p)
-		}
-	}
-	return paths
 }
 
 // runEffects returns the run's external-effect list for display: the agent's

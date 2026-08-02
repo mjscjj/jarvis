@@ -228,3 +228,24 @@ func Decode(raw []byte) (*Snapshot, error) {
 	}
 	return &snapshot, nil
 }
+
+// RepoPath projects the one execution parameter the runtime needs from the
+// otherwise opaque project repository metadata. The projection happens when a
+// Task is created; M5 never decodes ContextSnapshot to recover it later.
+func (s *Snapshot) RepoPath() (*string, error) {
+	if s == nil || s.Project == nil || len(s.Project.Repos) == 0 || string(s.Project.Repos) == "null" {
+		return nil, nil
+	}
+	var repos []struct {
+		LocalPath string `json:"local_path"`
+	}
+	if err := json.Unmarshal(s.Project.Repos, &repos); err != nil {
+		return nil, fmt.Errorf("decode project repos for repo path: %w", err)
+	}
+	for _, repo := range repos {
+		if path := strings.TrimSpace(repo.LocalPath); path != "" {
+			return &path, nil
+		}
+	}
+	return nil, nil
+}

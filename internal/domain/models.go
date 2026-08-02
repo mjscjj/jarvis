@@ -156,9 +156,12 @@ type Task struct {
 	// and isolated from Todo.context_snapshot.supplements.
 	ExecutionSupplements datatypes.JSON `gorm:"column:execution_supplements;type:json"`
 	ProjectID            *uint64        `gorm:"column:project_id;type:bigint unsigned;index:idx_task_project"`
-	Version              int32          `gorm:"column:version;not null;default:0"`
-	CreatedAt            time.Time      `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt            time.Time      `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
+	// RepoPath is the hard execution projection captured when the Task is
+	// created. M5 must not decode Background to rediscover it.
+	RepoPath  *string   `gorm:"column:repo_path;type:varchar(1024)"`
+	Version   int32     `gorm:"column:version;not null;default:0"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 
 	Todo    *Todo    `gorm:"foreignKey:TodoID;constraint:OnDelete:RESTRICT"`
 	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:SET NULL"`
