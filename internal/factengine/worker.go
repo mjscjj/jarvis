@@ -100,10 +100,10 @@ func NewWorker(store sourceStore, extractor factExtractor, facts factAppender, o
 
 // ExtractOnce distils one batch from every registered material source.
 //
-// Each source owns an independent watermark. Within one source, the watermark
-// moves only after every unit in its batch succeeded. Sources run sequentially,
-// so a later source failing does not roll back progress already committed by an
-// earlier one.
+// Each source owns an independent watermark. Sources whose units preserve id
+// order checkpoint every successful unit; interleaved sources such as Message
+// checkpoint only after the whole batch. Sources run sequentially, and errors
+// are aggregated so one broken source does not starve the others.
 func (w *Worker) ExtractOnce(ctx context.Context) (Stats, error) {
 	stats := Stats{}
 	var systemPrompt string
