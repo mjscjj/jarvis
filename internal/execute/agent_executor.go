@@ -488,6 +488,8 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		e.finishSuccessfulRun(run, startedAt)
 	} else if result.Outcome == "needs_human" {
 		e.finishNeedsHumanRun(run, startedAt)
+	} else if result.Outcome == "observing" {
+		e.finishObservingRun(run, startedAt)
 	} else if result.Outcome == "completed" {
 		e.finishSuccessfulRun(run, startedAt)
 	} else {
@@ -587,6 +589,17 @@ func (e *AgentExecutor) finishWaitingRun(run *domain.ExecutionRun, startedAt tim
 func (e *AgentExecutor) finishNeedsHumanRun(run *domain.ExecutionRun, startedAt time.Time) {
 	finished := e.now().UTC()
 	run.Status = "needs_human"
+	run.FinishedAt = &finished
+	ms := finished.Sub(startedAt).Milliseconds()
+	run.DurationMs = &ms
+}
+
+// finishObservingRun records a run that investigated properly and concluded
+// nobody needs to act. The run did its job, so this is not a failure; it just
+// did not have to change anything, so it is not a completion either.
+func (e *AgentExecutor) finishObservingRun(run *domain.ExecutionRun, startedAt time.Time) {
+	finished := e.now().UTC()
+	run.Status = "observing"
 	run.FinishedAt = &finished
 	ms := finished.Sub(startedAt).Milliseconds()
 	run.DurationMs = &ms
@@ -874,6 +887,8 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 	finishStatus := "done"
 	if execErr != nil {
 		finishStatus = "failed"
+	} else if run.Status == "observing" {
+		finishStatus = "observing"
 	}
 	resultJSON, err := json.Marshal(runResultPayload(run, execErr))
 	if err != nil {
@@ -985,6 +1000,10 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy a
 	}
 	if result.Outcome == "needs_human" {
 		e.finishNeedsHumanRun(run, startedAt)
+		return run, result, nil
+	}
+	if result.Outcome == "observing" {
+		e.finishObservingRun(run, startedAt)
 		return run, result, nil
 	}
 	if result.Outcome != "completed" {

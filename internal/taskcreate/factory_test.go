@@ -167,7 +167,7 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 			id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, name TEXT NOT NULL, role TEXT NOT NULL,
 			status TEXT NOT NULL, priority INTEGER NOT NULL, description TEXT, repos JSON,
 			tech_stack JSON, key_decisions JSON, timeline JSON, notes TEXT,
-			mem0_synced_at DATETIME, created_at DATETIME, updated_at DATETIME
+			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE managed_resource (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, resource_type TEXT NOT NULL,

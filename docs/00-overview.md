@@ -551,8 +551,9 @@ M3 抽取时按群和它所属项目注入作背景；日报和 contextsnap 同�
 |---|---|---|---|
 | M0 | （本总纲 + 前端） | 管理后台 + 编排 + cron | — |
 | M1 | `modules/01-background.md` | Project/Person/Group 背景 | 产出背景 |
-| M2 | `modules/02-message.md` | 群消息、会议与妙记采集 + Group/Resource 沉淀 + 记忆化 | 产出原始内容、中立采集结果、group/resource/记忆 |
-| M3 | `modules/03-task-extract.md` | 提取 **Todo** | 消费消息+背景+记忆 → 产出 Todo |
+| M2 | `modules/02-message.md` | 群消息与线索采集 + Group/Resource 沉淀 | 产出原始内容、中立采集结果、group/resource |
+| 离线事实 | 总纲 §5 + `internal/factengine` | 原料蒸馏为 `fact` | 消费 message → 产出 fact（M3/M5 只读） |
+| M3 | `modules/03-task-extract.md` | 提取 **Todo** | 消费消息+背景+已沉淀事实 → 产出 Todo |
 | M5 判断环节 | `modules/04-decision.md` | **Todo→Task 转化闸门**（codex read-only 判断） | 消费 Todo → 产出 Task |
 | M5 执行环节 | `modules/05-execution.md` | 执行 **Task** | 消费 Task → 执行结果 |
 

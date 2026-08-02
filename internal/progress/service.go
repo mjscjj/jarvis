@@ -24,7 +24,8 @@ var taskEventTypes = map[string]struct{}{
 	"created": {}, "execution_started": {}, "approval_requested": {},
 	"approval_granted": {}, "approval_rejected": {}, "rerun_requested": {},
 	"reapply_started": {}, "supplemented": {}, "execution_succeeded": {},
-	"execution_failed": {}, "execution_interrupted": {}, "stale_failed": {}, "snapshot_imported": {},
+	"execution_failed": {}, "execution_observing": {}, "execution_interrupted": {},
+	"stale_failed": {}, "snapshot_imported": {},
 	"feishu_message_recalled": {},
 	"waiting_scheduled":       {}, "resumed": {}, "human_input_requested": {},
 	"human_response_received": {},
@@ -35,7 +36,7 @@ var actorTypes = map[string]struct{}{
 }
 
 var taskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {}, "observing": {},
 }
 
 type TaskEventInput struct {

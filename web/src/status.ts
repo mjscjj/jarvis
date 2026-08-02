@@ -39,6 +39,7 @@ export const taskStatusMeta: Record<TaskStatus, StatusMeta> = {
   awaiting_approval: { label: '待审批', color: C.warning },
   done: { label: '已完成', color: C.success },
   failed: { label: '失败', color: C.error },
+  observing: { label: '无需动手', color: C.default },
 }
 
 export const actionLabels: Record<ActionType, string> = {

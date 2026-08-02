@@ -59,6 +59,7 @@ const taskEventLabels: Record<string, string> = {
   supplemented: '我的补充',
   execution_succeeded: '执行成功',
   execution_failed: '执行失败',
+  execution_observing: '查完，无需动手',
   execution_interrupted: '执行已打断',
   feishu_message_recalled: '撤回飞书消息',
   stale_failed: '执行超时',

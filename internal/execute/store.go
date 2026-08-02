@@ -29,7 +29,7 @@ var (
 )
 
 var taskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {}, "observing": {},
 }
 
 type TaskFilter struct {
@@ -167,8 +167,8 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 	if input.TaskID == 0 || input.ExpectedVersion < 0 {
 		return nil, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
 	}
-	if input.Status != "done" && input.Status != "failed" {
-		return nil, fmt.Errorf("%w: status must be done or failed", ErrInvalidInput)
+	if input.Status != "done" && input.Status != "failed" && input.Status != "observing" {
+		return nil, fmt.Errorf("%w: status must be done, failed or observing", ErrInvalidInput)
 	}
 	result, err := canonicalJSONObject(input.Result)
 	if err != nil {
@@ -205,12 +205,20 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 		if err := closeUnboundContinuations(tx, task.ID, "agent finished without a matching waiting outcome"); err != nil {
 			return err
 		}
+		if input.Status == "observing" {
+			if err := parkClueAsObserving(tx, &task); err != nil {
+				return err
+			}
+		}
 		task.Status = input.Status
 		task.ExecutionResult = datatypes.JSON(result)
 		task.Version++
 		eventType := "execution_succeeded"
-		if input.Status == "failed" {
+		switch input.Status {
+		case "failed":
 			eventType = "execution_failed"
+		case "observing":
+			eventType = "execution_observing"
 		}
 		if input.EventType != "" {
 			eventType = input.EventType
@@ -272,7 +280,7 @@ func (s *Store) RecordProgress(ctx context.Context, taskID uint64, summary strin
 }
 
 var supplementableTaskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {},
+	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {}, "observing": {},
 }
 
 // Supplement appends a human clarification/instruction to a Task's M5-only
@@ -539,6 +547,48 @@ func (s *Store) MarkNeedsHuman(ctx context.Context, taskID uint64, expectedVersi
 		return 0, err
 	}
 	return newVersion, nil
+}
+
+// parkClueAsObserving moves the originating clue back to observing when the
+// execution step concluded nobody needs to act.
+//
+// The judgment step decides on M3's frozen snapshot; execution decides after
+// actually investigating, so it is the one that can find out the matter is real
+// but asks nothing of anyone. Leaving the clue on "auto" would keep claiming a
+// Task is driving it. observing is a live status for dedup, so re-seeing the
+// same matter updates this clue instead of minting a second one, and fresh
+// evidence can pull it back to extracted for a real decision.
+//
+// A Task without a Todo (a scheduled run, say) has no clue to park.
+func parkClueAsObserving(db *gorm.DB, task *domain.Task) error {
+	if task.TodoID == nil {
+		return nil
+	}
+	var todo domain.Todo
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).First(&todo, *task.TodoID).Error; err != nil {
+		return fmt.Errorf("lock clue id=%d for observing task_id=%d: %w", *task.TodoID, task.ID, err)
+	}
+	// A re-run of an already-parked Task lands here a second time.
+	if todo.Status == "observing" {
+		return nil
+	}
+	if todo.Status != "auto" {
+		return fmt.Errorf("%w: todo_id=%d from=%s to=observing", ErrInvalidTransition, todo.ID, todo.Status)
+	}
+	update := db.Model(&domain.Todo{}).
+		Where("id = ? AND status = ?", todo.ID, "auto").
+		Updates(map[string]any{"status": "observing", "version": gorm.Expr("version + 1")})
+	if update.Error != nil {
+		return fmt.Errorf("park clue id=%d as observing: %w", todo.ID, update.Error)
+	}
+	if update.RowsAffected != 1 {
+		return fmt.Errorf("%w: todo_id=%d from=auto to=observing", ErrVersionConflict, todo.ID)
+	}
+	return createTodoEvent(db, todo.ID, "auto", "observing", map[string]any{
+		"event_type": "parked_observing",
+		"reason":     "execution investigated and found nothing anyone needs to act on",
+		"task_id":    task.ID,
+	})
 }
 
 func closeUnboundContinuations(db *gorm.DB, taskID uint64, reason string) error {
@@ -826,7 +876,10 @@ func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task,
 		if err != nil {
 			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
 		}
-		if task.Status != "done" && task.Status != "failed" {
+		// observing reruns like any other terminal state: "nobody needs to act"
+		// was a verdict on the evidence at the time, and new evidence can overturn
+		// it. The clue stays observing until the rerun decides otherwise.
+		if task.Status != "done" && task.Status != "failed" && task.Status != "observing" {
 			return fmt.Errorf("%w: task_id=%d from=%s to=pending (only finished Tasks can rerun)", ErrInvalidTransition, task.ID, task.Status)
 		}
 		update := tx.Model(&domain.Task{}).

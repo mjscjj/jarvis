@@ -592,6 +592,10 @@ func validateOutcome(outcome, failureReason, needsFollowup string, waiting *code
 		if waiting != nil {
 			return fmt.Errorf("outcome=completed requires waiting=null")
 		}
+	case "observing":
+		if waiting != nil {
+			return fmt.Errorf("outcome=observing requires waiting=null")
+		}
 	case "waiting":
 		if waiting == nil || waiting.ScheduledTaskID == 0 || strings.TrimSpace(waiting.WakeAt) == "" || strings.TrimSpace(waiting.Reason) == "" {
 			return fmt.Errorf("outcome=waiting requires scheduled_task_id, wake_at and reason")

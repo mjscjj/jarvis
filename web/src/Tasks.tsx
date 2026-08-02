@@ -52,12 +52,15 @@ function CellText({ text, danger }: { text: string | null; danger?: boolean }) {
   )
 }
 
-type TaskTab = 'human' | 'awaiting' | 'done' | 'failed' | 'others'
+type TaskTab = 'human' | 'awaiting' | 'done' | 'observing' | 'failed' | 'others'
 
 const tabStatuses: Record<TaskTab, TaskStatus[]> = {
   human: ['needs_human'],
   awaiting: ['awaiting_approval'],
   done: ['done'],
+  // What M5 investigated and then decided nobody had to act on. Worth its own
+  // tab: it is the only place to see how much the pipeline is filtering out.
+  observing: ['observing'],
   failed: ['failed'],
   others: ['pending', 'executing', 'waiting'],
 }
@@ -66,6 +69,7 @@ const tabLabels: Record<TaskTab, string> = {
   human: '待我处理',
   awaiting: '审批中',
   done: '执行成功',
+  observing: '无需动手',
   failed: '执行失败',
   others: '其他',
 }

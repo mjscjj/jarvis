@@ -396,8 +396,11 @@ func RecallEffectMessage(recaller *execute.MessageRecaller) app.HandlerFunc {
 // manualStage maps a manual finish status to the execution_result stage tag so
 // the UI distinguishes a human-marked failure from a codex execution failure.
 func manualStage(status string) string {
-	if status == "failed" {
+	switch status {
+	case "failed":
 		return "manual_failed"
+	case "observing":
+		return "manual_observing"
 	}
 	return "manual_done"
 }

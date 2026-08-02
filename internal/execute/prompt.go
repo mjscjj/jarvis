@@ -56,17 +56,22 @@ type priorRunSummary struct {
 
 // executionResultSchema is the JSON schema codex MUST return as its final
 // message, in every stage. It distinguishes completion from a durable wait,
-// human input, and failure instead of inferring completion from the process exit
-// code, and it always carries the approval verdict: whether a side effect needs
-// review is the model's judgment about what it is about to do, not a property of
-// the Task's declared action_type.
+// human input, failure, and "nobody needs to act" instead of inferring
+// completion from the process exit code, and it always carries the approval
+// verdict: whether a side effect needs review is the model's judgment about what
+// it is about to do, not a property of the Task's declared action_type.
+//
+// outcome=observing exists because the judgment step decides on a frozen
+// snapshot while execution decides after investigating. When investigation shows
+// the matter is real but asks nothing of anyone, forcing that into completed
+// (nothing was done) or failed (nothing went wrong) destroys the distinction.
 const executionResultSchema = `{
   "type":"object",
   "additionalProperties":false,
   "required":["needs_approval","outcome","summary","progress_summary","failure_reason","needs_followup","enrichments","effects","proposal","waiting"],
   "properties":{
     "needs_approval":{"type":"boolean","description":"True when the next controlled side effect requires human approval under APPROVAL_POLICY. Return it with a complete proposal and without performing that side effect."},
-    "outcome":{"type":"string","enum":["completed","waiting","needs_human","failed"]},
+    "outcome":{"type":"string","enum":["completed","observing","waiting","needs_human","failed"]},
     "summary":{"type":"string","minLength":1},
     "progress_summary":{"type":"string","description":"Where this whole matter now stands, in a few sentences, written for someone reading it cold weeks later: what is settled, what is still open, what happens next. This spans all runs of the Task, unlike summary which covers only this run. Rewrite it in full each time. Leave it an empty string only when this run changed nothing about where the matter stands."},
     "failure_reason":{"type":"string"},

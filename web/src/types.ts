@@ -129,7 +129,10 @@ export interface TodoQuery {
   pageSize: number
 }
 
-export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'needs_human' | 'awaiting_approval' | 'done' | 'failed'
+// observing is terminal like done/failed: M5 investigated and found the matter
+// real but asking nothing of anyone, so it changed nothing and nothing went
+// wrong. The originating clue goes back to observing with it.
+export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'needs_human' | 'awaiting_approval' | 'done' | 'failed' | 'observing'
 
 // TaskProposal is the high-risk external write codex prepared during the propose
 // stage, awaiting human approval. It is stored in execution_result while the Task
@@ -218,7 +221,7 @@ export interface Effect {
 // RunOutput 是 execution_run.output 的强类型：codex 执行结束时输出的结构化裁决。
 // summary 已单独存在 ExecutionRun.summary，这里主要用 needs_followup 与 enrichments。
 export interface RunOutput {
-  outcome?: 'completed' | 'waiting' | 'needs_human' | 'failed'
+  outcome?: 'completed' | 'observing' | 'waiting' | 'needs_human' | 'failed'
   summary?: string
   failure_reason?: string
   needs_followup?: string
