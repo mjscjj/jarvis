@@ -30,6 +30,7 @@ type ScheduleField =
   | 'execute_schedule'
   | 'fact_engine_schedule'
   | 'fact_engine_rollup_schedule'
+  | 'proactive_schedule'
   | 'scheduled_task_schedule'
   | 'daily_digest_schedule'
 
@@ -37,6 +38,7 @@ type EnabledField =
   | 'extract_enabled'
   | 'execute_auto_enabled'
   | 'fact_engine_enabled'
+  | 'proactive_enabled'
   | 'scheduled_task_enabled'
   | 'daily_digest_enabled'
 
@@ -109,6 +111,16 @@ const systemTasks: SystemTaskDefinition[] = [
     scheduleField: 'fact_engine_rollup_schedule',
     enabledField: 'fact_engine_enabled',
     parameters: (s) => `模型 ${s.fact_engine_model}`,
+  },
+  {
+    key: 'proactive-heartbeat',
+    name: '主动巡视 Agent',
+    category: '主动 Agent',
+    description: '整理世界模型、复盘未完成工作，并把外部行动生成 Task 交给强 M5。',
+    job: 'proactive_heartbeat',
+    scheduleField: 'proactive_schedule',
+    enabledField: 'proactive_enabled',
+    parameters: (s) => `${s.proactive_cli} · ${s.proactive_model} · 启动后 ${s.proactive_startup_delay_seconds}s`,
   },
   {
     key: 'scheduled-tasks',

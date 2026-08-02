@@ -102,6 +102,18 @@ codex:
   model: "DeepSeek-V4-Flash"
   timeout_seconds: 600   # M3 抽取会多轮自跑 lark-cli/bytedcli/git/jarvis-tools 补全背景，放宽超时
 
+# 主动巡视 Agent：启动 2 分钟后先跑一次，之后每小时复盘世界模型和未完成工作。
+# 可直接更新 Jarvis 内部世界模型；任何外部动作必须创建 Task，交给下面的强 M5 执行。
+proactive:
+  enabled: true
+  schedule: "@every 1h"
+  startup_delay_seconds: 120
+  bin: "traex"
+  model: "DeepSeek-V4-Pro"
+  sandbox: "danger-full-access"
+  reasoning_effort: "medium"
+  timeout_seconds: 900
+
 # M5 任务执行：独立于上面的 codex 段。这里用更强模型真正落地。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron。
 execute:

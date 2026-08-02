@@ -28,6 +28,7 @@ func TestMigrationModelRegistries(t *testing.T) {
 		{"knowledge", KnowledgeModels(), []any{&RelationFact{}}, []string{"relation_fact"}},
 		{"progress", ProgressModels(), []any{&TaskEvent{}, &Fact{}}, []string{"task_event", "fact"}},
 		{"factengine", FactEngineModels(), []any{&FactSourceCursor{}}, []string{"fact_source_cursor"}},
+		{"proactive", ProactiveModels(), []any{&ProactiveRun{}}, []string{"proactive_run"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -30,3 +30,15 @@ func TestUnknownStageFails(t *testing.T) {
 		t.Fatal("Block(unknown) unexpectedly succeeded")
 	}
 }
+
+func TestProactiveStageRequiresTaskHandoffForExternalWork(t *testing.T) {
+	block, err := Block(StageProactive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"create-task", "不得直接执行外部动作", "内部世界模型", "不得修改 Todo/Task 状态"} {
+		if !strings.Contains(block, required) {
+			t.Fatalf("proactive block missing %q:\n%s", required, block)
+		}
+	}
+}

@@ -167,7 +167,7 @@ export interface Task {
   last_progress_at: string | null
   execution_supplements?: Array<{ note: string; at: string; channel?: string }>
   project_id: number | null
-  source_type: 'todo' | 'scheduled_task' | 'manual'
+  source_type: 'todo' | 'scheduled_task' | 'manual' | 'proactive'
   source_id: number | null
   occurrence_key: string | null
   execution_mode: 'standard' | 'direct'
@@ -726,6 +726,23 @@ export interface SystemTaskRunList {
   notes: string[]
 }
 
+export interface ProactiveRun {
+  id: number
+  trigger_type: 'schedule' | 'manual'
+  engine: string
+  model: string
+  status: 'running' | 'succeeded' | 'failed'
+  error_detail: string | null
+  started_at: string
+  finished_at: string | null
+  duration_ms: number | null
+}
+
+export interface ProactiveRunDetail extends ProactiveRun {
+  input: string
+  output: string | null
+}
+
 export type ResourceType = 'doc' | 'link' | 'repo' | 'note' | 'other'
 
 // Resource is a manually curated reference that can be linked to a person, a
@@ -904,6 +921,14 @@ export interface RuntimeSettings {
   fact_engine_batch_limit: number
   fact_engine_window_gap_minutes: number
   fact_engine_window_max_messages: number
+  proactive_enabled: boolean
+  proactive_schedule: string
+  proactive_startup_delay_seconds: number
+  proactive_cli: string
+  proactive_model: string
+  proactive_sandbox: string
+  proactive_reasoning_effort: string
+  proactive_timeout_seconds: number
 
   lark_rate_limit: number
   lark_burst: number

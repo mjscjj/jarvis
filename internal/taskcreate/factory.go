@@ -26,6 +26,7 @@ const (
 	SourceTodo          = "todo"
 	SourceScheduledTask = "scheduled_task"
 	SourceManual        = "manual"
+	SourceProactive     = "proactive"
 )
 
 var (
@@ -95,7 +96,9 @@ func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, e
 	if input.SourceType == SourceTodo {
 		return input, nil
 	}
-	if input.SourceType != SourceManual && input.SourceType != SourceScheduledTask {
+	switch input.SourceType {
+	case SourceManual, SourceScheduledTask, SourceProactive:
+	default:
 		return input, nil
 	}
 	if f.assembler == nil {
@@ -194,9 +197,9 @@ func normalizeInput(input Input) (Input, error) {
 		return Input{}, fmt.Errorf("%w: title, action_type and target are required", ErrInvalidInput)
 	}
 	switch input.SourceType {
-	case SourceTodo, SourceScheduledTask, SourceManual:
+	case SourceTodo, SourceScheduledTask, SourceManual, SourceProactive:
 	default:
-		return Input{}, fmt.Errorf("%w: source_type must be todo, scheduled_task or manual", ErrInvalidInput)
+		return Input{}, fmt.Errorf("%w: source_type must be todo, scheduled_task, manual or proactive", ErrInvalidInput)
 	}
 	switch input.ExecutionMode {
 	case ExecutionModeStandard, ExecutionModeDirect:

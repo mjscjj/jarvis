@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	StageExtract = "extract"
-	StageExecute = "execute"
-	StageChat    = "chat"
+	StageExtract   = "extract"
+	StageExecute   = "execute"
+	StageChat      = "chat"
+	StageProactive = "proactive"
 )
 
 // Block returns the trusted tool catalog for one agent stage.
@@ -24,6 +25,8 @@ func Block(stage string) (string, error) {
 		purpose = "完成任务、核验结果；需要等待时暂停当前 Task，避免创建重复任务。"
 	case StageChat:
 		purpose = "按用户请求查询或操作本机与外部系统。"
+	case StageProactive:
+		purpose = "定时审视全局，维护 Jarvis 内部世界模型，并把值得推进的外部工作创建成普通 Task 交给强 M5。"
 	default:
 		return "", fmt.Errorf("unknown tool catalog stage %q", stage)
 	}
@@ -34,7 +37,7 @@ func Block(stage string) (string, error) {
 		"使用目的：" + purpose,
 		"原则一，简单优先：按具体意图使用具体命令，不搭通用 API 转发层，不为了猜测中的未来场景增加抽象、兼容或 fallback。",
 		"原则二，渐进式加载：先 list/query 看紧凑摘要，再用 get 读取命中的完整对象；大段 prompt、run output、资源正文只在确有需要时显式加载。",
-		"工具权限：Extract、Execute、Chat 使用同一套工具能力；是否调用、是否产生修改由当前 Agent 根据上下文判断，代码不按阶段隐藏工具。",
+		"各阶段使用同一套工具能力，代码不按阶段隐藏工具；具体写入边界由当前阶段的系统提示词决定。",
 		"用法：目标导向、主动发散——为查清一个事实或办成一件事，主动组合多个工具、顺藤摸瓜多跳查询；一条路查不到就换工具或换角度。能查到的不要留给用户问。",
 		"- jarvis-tools：查询和维护 Jarvis 的项目、人物、群背景、关系、资源、消息、共享记忆、Skills、线索、任务与定时触发。先运行 `jarvis-tools --help` 看能力分组，再按子命令 `--help` 获取当前参数。",
 		"- 查主体历史用 `list-facts`，查主体关系用 `list-relations`；需要维护世界模型时使用对应 create/update/delete 子命令。",
@@ -45,6 +48,12 @@ func Block(stage string) (string, error) {
 		"- lark-cli：查询或操作飞书。先看工作规则里的能力地图选定域，再 `lark-cli skills read <域名>` 查用法、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。命令清单 `bytedcli --json --all-help`，单命令参数 `bytedcli --json <子命令路径> --help`。",
 		"- git：查询和操作本地代码仓库。",
+	}
+	if stage == StageProactive {
+		lines = append(lines,
+			"- 主动巡视发现需要对外推进的工作时，必须使用 `jarvis-tools create-task --payload ...` 创建普通 Task；不得直接执行外部动作。",
+			"- 主动巡视可以直接维护 Jarvis 内部世界模型，但不得修改 Todo/Task 状态来绕过 M5。",
+		)
 	}
 	lines = append(lines, "END_AVAILABLE_TOOLS")
 	return strings.Join(lines, "\n"), nil

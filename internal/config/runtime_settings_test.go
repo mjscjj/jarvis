@@ -30,6 +30,15 @@ factengine:
   batch_limit: 200
   window_gap_minutes: 30
   window_max_messages: 40
+proactive:
+  enabled: true
+  schedule: "@every 1h"
+  startup_delay_seconds: 120
+  bin: "traex"
+  model: "DeepSeek-V4-Pro"
+  sandbox: "danger-full-access"
+  reasoning_effort: "medium"
+  timeout_seconds: 900
 model:
   base_url: "https://model.test/v1"
   api_key: "plain-key"
@@ -140,6 +149,8 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	input.ExtractSchedule = "@every 2m"
 	input.CaptureScanWorkers = 6
 	input.FactEngineWindowMaxMessages = 80
+	input.ProactiveSchedule = "@every 2h"
+	input.ProactiveStartupDelaySeconds = 180
 	input.LarkRateLimit = 7.5
 	input.DailyDigestConcurrency = 4
 	updated, err := service.Update(context.Background(), input)
@@ -155,6 +166,7 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	if updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" ||
 		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineWindowMaxMessages != 80 ||
+		updated.Settings.ProactiveSchedule != "@every 2h" || updated.Settings.ProactiveStartupDelaySeconds != 180 ||
 		updated.Settings.LarkRateLimit != 7.5 || updated.Settings.DailyDigestConcurrency != 4 {
 		t.Fatalf("updated settings = %#v", updated.Settings)
 	}
@@ -176,6 +188,7 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	if reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" ||
 		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.WindowMaxMessages != 80 ||
+		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {
 		t.Fatalf("reloaded config = %#v", reloaded)
 	}

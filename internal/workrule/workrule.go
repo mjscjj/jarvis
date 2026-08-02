@@ -17,6 +17,10 @@ const (
 	StageAll     = "all"
 	StageExtract = "extract"
 	StageExecute = "execute"
+	// StageProactive reuses only the principal's global rules. Its stable role
+	// and strict no-external-effects boundary live in its registered system
+	// prompt rather than a duplicated rules file.
+	StageProactive = "proactive"
 )
 
 var (
@@ -122,14 +126,10 @@ func (s *Service) Update(ctx context.Context, key string, input Input) (*View, e
 
 // Block combines the global rules and current-stage rules on every call.
 func (s *Service) Block(ctx context.Context, stage string) (string, error) {
-	if stage != StageExtract && stage != StageExecute {
+	if stage != StageExtract && stage != StageExecute && stage != StageProactive {
 		return "", fmt.Errorf("%w: unknown stage %q", ErrInvalidInput, stage)
 	}
 	global, err := s.Get(ctx, StageAll)
-	if err != nil {
-		return "", err
-	}
-	current, err := s.Get(ctx, stage)
 	if err != nil {
 		return "", err
 	}
@@ -137,8 +137,14 @@ func (s *Service) Block(ctx context.Context, stage string) (string, error) {
 	if content := strings.TrimSpace(global.Content); content != "" {
 		parts = append(parts, content)
 	}
-	if content := strings.TrimSpace(current.Content); content != "" {
-		parts = append(parts, content)
+	if stage != StageProactive {
+		current, err := s.Get(ctx, stage)
+		if err != nil {
+			return "", err
+		}
+		if content := strings.TrimSpace(current.Content); content != "" {
+			parts = append(parts, content)
+		}
 	}
 	if len(parts) == 0 {
 		return "", nil

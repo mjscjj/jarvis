@@ -78,6 +78,15 @@ type RuntimeSettings struct {
 	FactEngineWindowGapMinutes  int    `json:"fact_engine_window_gap_minutes"`
 	FactEngineWindowMaxMessages int    `json:"fact_engine_window_max_messages"`
 
+	ProactiveEnabled             bool   `json:"proactive_enabled"`
+	ProactiveSchedule            string `json:"proactive_schedule"`
+	ProactiveStartupDelaySeconds int    `json:"proactive_startup_delay_seconds"`
+	ProactiveCLI                 string `json:"proactive_cli"`
+	ProactiveModel               string `json:"proactive_model"`
+	ProactiveSandbox             string `json:"proactive_sandbox"`
+	ProactiveReasoningEffort     string `json:"proactive_reasoning_effort"`
+	ProactiveTimeoutSeconds      int    `json:"proactive_timeout_seconds"`
+
 	LarkRateLimit      float64 `json:"lark_rate_limit"`
 	LarkBurst          int     `json:"lark_burst"`
 	LarkConcurrency    int     `json:"lark_concurrency"`
@@ -220,6 +229,14 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		FactEngineBatchLimit:         cfg.FactEngine.BatchLimit,
 		FactEngineWindowGapMinutes:   cfg.FactEngine.WindowGapMinutes,
 		FactEngineWindowMaxMessages:  cfg.FactEngine.WindowMaxMessages,
+		ProactiveEnabled:             cfg.Proactive.Enabled,
+		ProactiveSchedule:            cfg.Proactive.Schedule,
+		ProactiveStartupDelaySeconds: cfg.Proactive.StartupDelaySeconds,
+		ProactiveCLI:                 cfg.Proactive.Bin,
+		ProactiveModel:               cfg.Proactive.Model,
+		ProactiveSandbox:             cfg.Proactive.Sandbox,
+		ProactiveReasoningEffort:     cfg.Proactive.ReasoningEffort,
+		ProactiveTimeoutSeconds:      cfg.Proactive.TimeoutSeconds,
 		LarkRateLimit:                cfg.LarkCLI.RateLimit,
 		LarkBurst:                    cfg.LarkCLI.Burst,
 		LarkConcurrency:              cfg.LarkCLI.Concurrent,
@@ -286,6 +303,14 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.FactEngine.BatchLimit = input.FactEngineBatchLimit
 	cfg.FactEngine.WindowGapMinutes = input.FactEngineWindowGapMinutes
 	cfg.FactEngine.WindowMaxMessages = input.FactEngineWindowMaxMessages
+	cfg.Proactive.Enabled = input.ProactiveEnabled
+	cfg.Proactive.Schedule = strings.TrimSpace(input.ProactiveSchedule)
+	cfg.Proactive.StartupDelaySeconds = input.ProactiveStartupDelaySeconds
+	cfg.Proactive.Bin = strings.TrimSpace(input.ProactiveCLI)
+	cfg.Proactive.Model = strings.TrimSpace(input.ProactiveModel)
+	cfg.Proactive.Sandbox = strings.TrimSpace(input.ProactiveSandbox)
+	cfg.Proactive.ReasoningEffort = strings.TrimSpace(input.ProactiveReasoningEffort)
+	cfg.Proactive.TimeoutSeconds = input.ProactiveTimeoutSeconds
 	cfg.LarkCLI.RateLimit = input.LarkRateLimit
 	cfg.LarkCLI.Burst = input.LarkBurst
 	cfg.LarkCLI.Concurrent = input.LarkConcurrency
@@ -365,6 +390,16 @@ type runtimeOverride struct {
 		WindowGapMinutes  int    `yaml:"window_gap_minutes"`
 		WindowMaxMessages int    `yaml:"window_max_messages"`
 	} `yaml:"factengine"`
+	Proactive struct {
+		Enabled             bool   `yaml:"enabled"`
+		Schedule            string `yaml:"schedule"`
+		StartupDelaySeconds int    `yaml:"startup_delay_seconds"`
+		Bin                 string `yaml:"bin"`
+		Model               string `yaml:"model"`
+		Sandbox             string `yaml:"sandbox"`
+		ReasoningEffort     string `yaml:"reasoning_effort"`
+		TimeoutSeconds      int    `yaml:"timeout_seconds"`
+	} `yaml:"proactive"`
 	LarkCLI struct {
 		RateLimit  float64 `yaml:"rate_limit"`
 		Burst      int     `yaml:"burst"`
@@ -437,6 +472,14 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.FactEngine.BatchLimit = input.FactEngineBatchLimit
 	override.FactEngine.WindowGapMinutes = input.FactEngineWindowGapMinutes
 	override.FactEngine.WindowMaxMessages = input.FactEngineWindowMaxMessages
+	override.Proactive.Enabled = input.ProactiveEnabled
+	override.Proactive.Schedule = strings.TrimSpace(input.ProactiveSchedule)
+	override.Proactive.StartupDelaySeconds = input.ProactiveStartupDelaySeconds
+	override.Proactive.Bin = strings.TrimSpace(input.ProactiveCLI)
+	override.Proactive.Model = strings.TrimSpace(input.ProactiveModel)
+	override.Proactive.Sandbox = strings.TrimSpace(input.ProactiveSandbox)
+	override.Proactive.ReasoningEffort = strings.TrimSpace(input.ProactiveReasoningEffort)
+	override.Proactive.TimeoutSeconds = input.ProactiveTimeoutSeconds
 	override.LarkCLI.RateLimit = input.LarkRateLimit
 	override.LarkCLI.Burst = input.LarkBurst
 	override.LarkCLI.Concurrent = input.LarkConcurrency

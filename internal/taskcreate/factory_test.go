@@ -163,7 +163,7 @@ func TestNormalizeInputRejectsEmptyOpenPlanJSON(t *testing.T) {
 	}
 }
 
-func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T) {
+func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -259,5 +259,20 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 	}
 	if scheduled.ProjectID == nil || *scheduled.ProjectID != project.ID || scheduledSnapshot.Project == nil || scheduledSnapshot.Group == nil || scheduledSnapshot.Group.ChatID != "oc_scheduled" {
 		t.Fatalf("scheduled input/snapshot = %#v / %#v", scheduled, scheduledSnapshot)
+	}
+
+	proactive, err := factory.assembleBackground(t.Context(), Input{
+		SourceType: SourceProactive, ProjectID: &project.ID,
+		Background: json.RawMessage(`{"why_now":"发现真实阻塞"}`),
+	})
+	if err != nil {
+		t.Fatalf("assemble proactive background: %v", err)
+	}
+	proactiveSnapshot, err := contextsnap.Decode(proactive.Background)
+	if err != nil {
+		t.Fatalf("decode proactive background: %v", err)
+	}
+	if proactiveSnapshot.Principal == nil || proactiveSnapshot.Project == nil || string(proactiveSnapshot.RequestContext) != `{"why_now":"发现真实阻塞"}` {
+		t.Fatalf("proactive snapshot = %#v", proactiveSnapshot)
 	}
 }

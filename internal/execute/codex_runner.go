@@ -43,9 +43,10 @@ type codexRun struct {
 }
 
 type runInvocation struct {
-	SessionID string
-	TaskID    uint64
-	Output    *codexOutputCapture
+	SessionID  string
+	TaskID     uint64
+	Output     *codexOutputCapture
+	AgentStage string
 }
 
 type codexOutputCapture struct {
@@ -409,7 +410,14 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	command := exec.CommandContext(runCtx, r.bin, args...)
-	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=execute")
+	agentStage := strings.TrimSpace(invocation.AgentStage)
+	if agentStage == "" {
+		agentStage = "execute"
+	}
+	if !validAgentStage(agentStage) {
+		return nil, fmt.Errorf("codex run agent stage is invalid: %q", agentStage)
+	}
+	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE="+agentStage)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Cancel = func() error {
 		if command.Process == nil {
@@ -663,6 +671,40 @@ func (r *CodexRunner) RunTextSandboxAt(
 		return "", err
 	}
 	return run.LastMessage, nil
+}
+
+// RunTextSandboxAtStage is the stage-aware one-shot runner used by autonomous
+// system agents. The stage is exported to jarvis-tools for provenance and
+// capability boundaries; it does not change the CLI sandbox.
+func (r *CodexRunner) RunTextSandboxAtStage(
+	ctx context.Context,
+	prompt, sandbox, workspaceRoot, agentStage string,
+) (string, error) {
+	workspaceRoot = strings.TrimSpace(workspaceRoot)
+	if workspaceRoot == "" {
+		return "", fmt.Errorf("codex workspace-rooted text run requires a workspace root")
+	}
+	run, err := r.run(ctx, prompt, sandbox, workspaceRoot, schemaNone, runInvocation{AgentStage: agentStage})
+	if err != nil {
+		return "", err
+	}
+	return run.LastMessage, nil
+}
+
+func validAgentStage(stage string) bool {
+	if stage == "" {
+		return false
+	}
+	for i, r := range stage {
+		if r >= 'a' && r <= 'z' {
+			continue
+		}
+		if i > 0 && (r == '_' || (r >= '0' && r <= '9')) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // codexSessionID extracts the thread_id from codex's JSONL stream. It uses a
