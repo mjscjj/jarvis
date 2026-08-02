@@ -478,7 +478,7 @@ M3 抽取引擎默认 **codex（traex）** 就是为「自跑 lark-cli/bytedcli/
 
 | 文档 | 原内容 | 与本文关系 |
 |------|--------|------------|
-| [`guide-bytedcli-larkcli.md`](guide-bytedcli-larkcli.md) | 进度页 worklog 实测命令 | **已合并** → 本文 §4–§5 |
+| `guide-bytedcli-larkcli.md`（已删除） | 进度页 worklog 实测命令 | **已合并** → 本文 §4–§5 |
 | [`design-daily-digest.md`](design-daily-digest.md) §2.1 | 个人进度数据源（文档/日历/MR/git） | **已合并** → 本文 §2.4、§4.4、§5 |
 | [`modules/01-background.md`](modules/01-background.md) §5.1 | contact 搜人 | **已合并** → 本文 §2.2 |
 | [`modules/02-message.md`](modules/02-message.md) §1.1 | im 采集命令 | **已合并** → 本文 §2.1 |

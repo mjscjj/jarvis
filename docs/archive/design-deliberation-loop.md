@@ -1,6 +1,6 @@
 # 审议式决策 Agent（Deliberation Loop）技术方案
 
-> 定位：jarvis 仓库内一个自包含的研究原型，独立 `go.mod`（module `deliberation`），暂不接入 Jarvis 流水线。
+> 归档：本文是一份**未落地**的研究原型方案，仓库里从未存在对应的 `deliberation` module 与代码。保留作为设计思路参考，不代表当前实现。
 > 目标：实现一种区别于 ReAct 的 agent 决策机制——agent 同时持有多个关注事项，每一拍自主决定「此刻推进哪一件、以及是否行动」，并输出可解释的决策轨迹。
 > 语言：Go 1.26。LLM 调用抽象为接口，原型用 mock 实现，可替换为真实模型。
 

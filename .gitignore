@@ -22,6 +22,11 @@ __pycache__/
 /tmp/
 /minutes/
 /lark-im-resources/
+
+# agent 在仓库根产生的临时工作目录
+/.tmp/
+/.tmp-*/
+/.codex-tmp/
 *.log
 .qdrant-initialized
 .jarvis-task-*

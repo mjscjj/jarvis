@@ -378,7 +378,7 @@ jarvis/
 ├── conf/config.yaml     # 本地配置（本地可信环境，含明文 DSN）
 ├── deploy/              # launchd plist
 ├── scripts/             # jarvis-tools Agent 工具入口 + 安装/运维脚本
-└── docs/                # 方案文档（00-overview + modules/01~05）
+└── docs/                # 方案文档（00-overview + modules/01~05，archive/ 存已废弃方案）
 ```
 
 当前已覆盖采集、记忆、codex 化的 M3 抽取 / M4 决策、人工确认、Task 生成，以及 M5 的自动执行 + 两阶段人工审批闭环（含对外写入与 push/MR）。人工确认与手动执行始终可用，作为自动链路的兜底。
