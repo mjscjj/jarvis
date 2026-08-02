@@ -23,9 +23,8 @@ func resolveProject(batch ChatBatch, candidate Candidate) (*uint64, contextsnap.
 	return resolveProjectByHint(batch, candidate.ProjectHint)
 }
 
-// resolveProjectByHint is the attribution shared by todo candidates and
-// observations: a group binding wins outright, otherwise the model's hint is
-// matched against known projects.
+// resolveProjectByHint attributes a candidate to a project: a group binding
+// wins outright, otherwise the model's hint is matched against known projects.
 func resolveProjectByHint(batch ChatBatch, projectHint *string) (*uint64, contextsnap.Resolution) {
 	if batch.Group.ProjectID != nil {
 		name := boundProjectName(batch)

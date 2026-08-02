@@ -51,6 +51,7 @@ func Block(stage string) (string, error) {
 		lines = append(lines,
 			"- 当前 Task 需要等待未来条件时，使用 `jarvis-tools yield-until --help`，成功后停止本轮并返回 waiting；只有独立的新动作才创建 scheduled task。",
 			"- 采集类任务把观察到的事实交回流水线时，使用 `jarvis-tools append-clue --help`：只报你确实看到的事实，不替 M3 判断含义，也不顺手去抓后续材料。同一事实可反复投递，服务端按 (source, external_id) 幂等。",
+			"- 调查后发现这件事眼下不需要任何人动手（别人已经处理、结论已经达成、只是背景信息）时，使用 `jarvis-tools set-todo-status --help` 把来源 Todo 置为 observing 并写清理由：线索会留在视野里，以后有新证据会重新判断。这不是「等 principal 回复」的出路——需要他拍板的事仍然带着调查结果去问。",
 		)
 	}
 	lines = append(lines, "END_AVAILABLE_TOOLS")

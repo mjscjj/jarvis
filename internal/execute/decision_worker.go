@@ -18,6 +18,7 @@ type WorkerStats struct {
 	Loaded    int
 	Evaluated int
 	Auto      int
+	Observing int
 	Dropped   int
 }
 
@@ -130,6 +131,8 @@ func (w *DecisionWorker) EvaluateOnce(ctx context.Context) (WorkerStats, error) 
 		switch result.Status {
 		case RouteAuto:
 			stats.Auto++
+		case RouteObserving:
+			stats.Observing++
 		case RouteDropped:
 			stats.Dropped++
 		default:

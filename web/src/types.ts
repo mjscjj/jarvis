@@ -1,7 +1,9 @@
-// A clue is judged into auto (a Task exists) or dropped. It is never parked
-// waiting for the principal: that question rides along to M5 on the Task.
+// A clue is judged into auto (a Task exists), observing (worth keeping in view,
+// but nobody has to act) or dropped. It is never parked waiting for the
+// principal: that question rides along to M5 on the Task.
 export type TodoStatus =
   | 'extracted'
+  | 'observing'
   | 'scoring'
   | 'auto'
   | 'confirmed'
@@ -162,6 +164,12 @@ export interface Task {
   confirmed_at: string
   status: TaskStatus
   execution_result: Record<string, unknown> | null
+  // Where the matter itself now stands, spanning every run. Distinct from a run's
+  // own summary, which covers only that attempt.
+  summary: string | null
+  // Moves only when summary actually changes, so a Task that keeps resuming
+  // without moving does not look alive.
+  last_progress_at: string | null
   execution_supplements?: Array<{ note: string; at: string; channel?: string }>
   project_id: number | null
   source_type: 'todo' | 'scheduled_task' | 'manual'
@@ -238,11 +246,6 @@ export interface ExecutionRun {
   effects: Effect[] | null
   error_detail: string | null
   repo_path: string | null
-  base_branch: string | null
-  branch: string | null
-  commit: string | null
-  diff_path: string | null
-  merge_request_url: string | null
   started_at: string
   finished_at: string | null
   duration_ms: number | null
@@ -316,40 +319,6 @@ export interface RelationFactList {
   page_size: number
 }
 
-/** m3 从消息里看到的，m5 执行时发现的 */
-export type ObservationProducer = 'm3' | 'm5'
-
-/** 值得记住、但不需要我做任何事的事实。不会变成待办，也不会被执行。 */
-export interface Observation {
-  id: number
-  producer: ObservationProducer
-  subject: string
-  content: string
-  project_id: number | null
-  project_name: string | null
-  group_id: number | null
-  group_name: string | null
-  source_run_id: number | null
-  source_message_ids: string[] | null
-  source_quote: string
-  observed_at: string
-  created_at: string
-}
-
-export interface ObservationList {
-  items: Observation[]
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface ObservationQuery {
-  producer?: ObservationProducer
-  projectId?: number
-  keyword?: string
-  page: number
-  pageSize: number
-}
 
 export type ProjectRole = 'owner' | 'participant'
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'archived' | 'done'

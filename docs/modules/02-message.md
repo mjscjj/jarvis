@@ -63,7 +63,7 @@
 
 ### 1.3 非目标（Non-goals）
 
-- 不做 Todo 判定、打分、路由（M3/M4）。
+- 不做 Todo 判定与路由（M3 / M5 判断环节）。
 - 不根据采集错误决定后续动作；错误进入 M3 后，由 M3 结合上下文决定创建、合并或忽略 Todo。
 - **采集期不下载任何二进制、不 OCR**（仅沉淀 `resource` 元数据）。按需下载/解析**仅妙记**、由下游触发，M2 提供 `ResourceFetcher`（§3.9.1）；图片 OCR、文档/表格/附件解析本期不做（总纲 §11.4）。
 - 不改写/删除飞书侧任何数据（M2 全程只读飞书）。
@@ -339,12 +339,12 @@ func sinkResources(tx *gorm.DB, m *Message, refs []ResourceRef) error {
 
 ### 3.9.1 按需下载 / 解析（仅妙记，已定）
 
-**决策（总纲 §11.4）**：采集期不下载任何二进制、不 OCR；**只在下游（M3/M4）需要某 `Resource` 内容时**才按需拉取，且**本期仅妙记**（`resource_type=minutes`）。图片 OCR、飞书文档/表格、附件解析本期都不做。
+**决策（总纲 §11.4）**：采集期不下载任何二进制、不 OCR；**只在下游（M3/M5）需要某 `Resource` 内容时**才按需拉取，且**本期仅妙记**（`resource_type=minutes`）。图片 OCR、飞书文档/表格、附件解析本期都不做。
 
 M2 提供一个可被下游调用的 `ResourceFetcher`（放在 `internal/capture` 或独立 `internal/resource` 包），职责：拉妙记逐字稿 → 回填 `extracted_text` / `content_hash` / `downloaded` / `local_path`，并按 `content_hash` 复用本地文件。
 
 ```go
-// 下游(M3/M4)按需调用：确保某 minutes Resource 的 extracted_text 已就绪。
+// 下游(M3/M5)按需调用：确保某 minutes Resource 的 extracted_text 已就绪。
 // 本期只处理 resource_type=minutes；其它类型直接返回(不下载、不解析)。
 func (f *ResourceFetcher) EnsureMinutesText(ctx context.Context, resID uint64) (string, error) {
     var r Resource
@@ -382,7 +382,7 @@ func (f *ResourceFetcher) EnsureMinutesText(ctx context.Context, resID uint64) (
 }
 ```
 
-- **触发方**：M3 抽取 `summary_post` 需要妙记结论时、或 M4/M5 需要妙记作方案依据时调用（M3 文档 §3.3 会引用此接口）。
+- **触发方**：M3 抽取 `summary_post` 需要妙记结论时、或 M5 判断/执行环节需要妙记作方案依据时调用（M3 文档 §3.3 会引用此接口）。
 - **lark-cli 命令**：以本机实测为准（`minutes` 下的取逐字稿/产物子命令）；权限/授权范围需实测（总纲 §11.5）。
 - **fail-fast**：拉取失败直接 error，不静默返回空文本；非妙记类型明确拒绝，不假装解析成功。
 - **去重复用**：`reuseOrPersist(hash, ...)` 命中相同 `content_hash` 时复用已有 `local_path`（只存一份），实现"同一妙记多处引用只下一次"。
@@ -897,7 +897,7 @@ func MemorizeOnce(ctx context.Context, mc *MemoryClient, batchLimit int) error {
 | scope | 只用 `user_id`，不用 `agent_id/run_id/app_id` | 避免 null-scope AND 求交返回空的坑 |
 | 维度过滤 | 全放 `metadata` **标量等值** | Qdrant 后端对复杂操作符支持有限，**以标量等值为基线**；复杂 AND/OR 过滤需实测确认后才用（总纲开放问题 #5） |
 | 消息蒸馏（M2） | `infer=True` 窗口化 | 让 sidecar 内 LLM 抽取事实 |
-| `metadata.source` | `message`（M2）/ `background`（M1）/ `decision`（M4） | 区分来源，检索可过滤 |
+| `metadata.source` | `message`（M2）/ `background`（M1）/ `decision`（M5） | 区分来源，检索可过滤 |
 
 > **命名对齐说明**：原 M2 文档把 `user_id` 写作 `"chujiejie"`，与总纲 `OWNER_ID`（默认 `"owner"`）不一致。本次统一改为 `OWNER_ID`（默认 `"owner"`）；最终字面值（`"owner"` vs 真实 open_id）见总纲开放问题 #7【需与用户确认】。
 
@@ -1062,7 +1062,7 @@ func mustAdd(c *cron.Cron, spec string, fn func()) {
 
 ## 10. 开放问题清单（需与用户确认）
 
-> **本轮已定（从待确认移除）**：
+> **本轮已定（不再列为开放问题）**：
 > - **backfill 不回溯**：首次发现该会话即以当前时刻建高水位，不拉历史（§3.4，总纲 §11.3）。
 > - **Resource 下载/解析**：采集期不下载不 OCR；按需下载/解析**仅妙记**，由下游触发（§3.9.1，总纲 §11.4）。
 > - **Resource 跨消息去重**：靠 `content_hash`（内容 SHA256，下载后回填）；不给 file_key 等加唯一索引（§3.9）。

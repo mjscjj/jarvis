@@ -4,7 +4,7 @@
 
 - **状态**：设计草案
 - **日期**：2026-07-23
-- **适用范围**：Jarvis M3 线索抽取、M4 决策与 Task 物化、M5 长任务执行、审批、等待与恢复
+- **适用范围**：Jarvis M3 线索抽取、M5 判断环节与 Task 物化、M5 长任务执行、审批、等待与恢复
 
 **核心结论**：长任务不能把对话历史当作任务状态。应把根目标、当前进度、真实事件和完成证据放在模型外，由 Supervisor 驱动子目标，由独立 Verifier 决定是否关单。
 
@@ -1160,7 +1160,7 @@ Jarvis Goal Control Plane
 ### Phase 1：固化 Goal Contract
 
 1. 不再把 `Todo.target` 直接当作完整业务目标。
-2. M4 的 Proposed Plan 增加 `objective/success_criteria/non_goals`。
+2. 判断环节产出的 plan 增加 `objective/success_criteria/non_goals`。
 3. Task 物化时冻结 `goal_contract` 和 `goal_version`。
 4. 会议结束时先建立“会后产物处理”根目标；权限错误作为 Observation/Blocker 进入该目标。
 5. 对旧 Task 不做语义猜测式回填；是否迁移历史数据另行确认。

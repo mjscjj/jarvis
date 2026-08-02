@@ -137,9 +137,9 @@ func validateEvaluationInput(input EvaluationInput) error {
 		return fmt.Errorf("%w: evaluation Todo ID/version is invalid", ErrInvalidInput)
 	}
 	switch input.Route {
-	case RouteAuto, RouteDropped:
+	case RouteAuto, RouteObserving, RouteDropped:
 	default:
-		return fmt.Errorf("%w: evaluation route must be auto or dropped", ErrInvalidInput)
+		return fmt.Errorf("%w: evaluation route must be auto, observing or dropped", ErrInvalidInput)
 	}
 	if input.Route == RouteAuto && len(bytes.TrimSpace(input.Plan)) == 0 {
 		return fmt.Errorf("%w: auto route requires a plan", ErrInvalidInput)

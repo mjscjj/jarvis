@@ -10,6 +10,7 @@ import (
 
 	"jarvis/internal/domain"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -20,8 +21,14 @@ var (
 
 var allowedTodoStatuses = map[string]struct{}{
 	"extracted": {}, "scoring": {}, "auto": {}, "need_info": {}, "need_decision": {},
-	"confirmed": {}, "dismissed": {}, "dropped": {}, "expired": {},
+	"confirmed": {}, "dismissed": {}, "dropped": {}, "expired": {}, "observing": {},
 }
+
+// m3OwnedTodoStatuses are the states re-extraction may still move a clue
+// between. They are exactly the two values M3 can emit: a clue that has not yet
+// been judged, and one judged as not needing anybody. Every other status was
+// set downstream (decision, execution, the principal), so M3 leaves it alone.
+var m3OwnedTodoStatuses = map[string]bool{"extracted": true, "observing": true}
 
 type TodoListFilter struct {
 	Statuses   []string
@@ -86,6 +93,10 @@ type TodoReader interface {
 	GetTodo(context.Context, uint64) (*TodoView, error)
 }
 
+type TodoStatusWriter interface {
+	SetTodoStatus(context.Context, TodoStatusInput) (*TodoView, error)
+}
+
 type TodoStore struct {
 	db *gorm.DB
 }
@@ -144,6 +155,85 @@ func (s *TodoStore) GetTodo(ctx context.Context, id uint64) (*TodoView, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get todo id=%d: %w", id, err)
+	}
+	view := todoView(&todo)
+	return &view, nil
+}
+
+// TodoStatusInput moves one clue between the two states that mean "nobody is
+// acting on this right now". The principal uses it from the Todo list, and M5
+// uses it through jarvis-tools when execution reveals there is nothing to do
+// after all.
+type TodoStatusInput struct {
+	TodoID uint64
+	Status string
+	Actor  string
+	Reason string
+}
+
+// observableTodoStatuses are the states this entry point may set. Everything
+// else is owned by the stage that produces it — the decision step writes auto
+// and dropped, execution and the principal write the rest — so re-pointing a
+// clue by hand is limited to parking it (observing) or handing it back for a
+// fresh decision (extracted).
+var observableTodoStatuses = map[string]bool{"observing": true, "extracted": true}
+
+// SetTodoStatus parks a clue as observing or hands it back to the decision
+// queue. A clue that already finished (dropped/dismissed/expired) stays
+// finished: reviving it would put stale work back in front of the principal.
+func (s *TodoStore) SetTodoStatus(ctx context.Context, input TodoStatusInput) (*TodoView, error) {
+	if input.TodoID == 0 {
+		return nil, fmt.Errorf("todo id must be positive")
+	}
+	if !observableTodoStatuses[input.Status] {
+		return nil, fmt.Errorf("todo status %q cannot be set here, want observing or extracted", input.Status)
+	}
+	if strings.TrimSpace(input.Actor) == "" {
+		return nil, fmt.Errorf("todo status change requires an actor")
+	}
+	if strings.TrimSpace(input.Reason) == "" {
+		return nil, fmt.Errorf("todo status change requires a reason")
+	}
+	var todo domain.Todo
+	err := s.db.WithContext(ctx).First(&todo, input.TodoID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("%w: id=%d", ErrTodoNotFound, input.TodoID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load todo id=%d: %w", input.TodoID, err)
+	}
+	if _, live := activeTodoStatuses[todo.Status]; !live {
+		return nil, fmt.Errorf("todo id=%d is %s and cannot be re-opened", todo.ID, todo.Status)
+	}
+	from := todo.Status
+	if from != input.Status {
+		update := s.db.WithContext(ctx).Model(&domain.Todo{}).
+			Where("id = ? AND version = ?", todo.ID, todo.Version).
+			Updates(map[string]any{"status": input.Status, "version": gorm.Expr("version + 1")})
+		if update.Error != nil {
+			return nil, fmt.Errorf("set todo id=%d status: %w", todo.ID, update.Error)
+		}
+		if update.RowsAffected != 1 {
+			return nil, fmt.Errorf("set todo id=%d status: concurrent update, retry", todo.ID)
+		}
+		if err := s.db.WithContext(ctx).First(&todo, input.TodoID).Error; err != nil {
+			return nil, fmt.Errorf("reload todo id=%d: %w", input.TodoID, err)
+		}
+	}
+	detail, err := json.Marshal(map[string]any{"event_type": "status_set", "reason": input.Reason})
+	if err != nil {
+		return nil, fmt.Errorf("encode todo status event detail: %w", err)
+	}
+	snapshot, err := domain.EncodeTodoEventSnapshot(&todo)
+	if err != nil {
+		return nil, err
+	}
+	event := domain.TodoEvent{
+		TodoID: todo.ID, FromStatus: &from, ToStatus: input.Status,
+		Actor: input.Actor, Detail: datatypes.JSON(detail), Snapshot: snapshot,
+	}
+	if err := s.db.WithContext(ctx).Create(&event).Error; err != nil {
+		return nil, fmt.Errorf("create todo status event todo_id=%d: %w", todo.ID, err)
 	}
 	view := todoView(&todo)
 	return &view, nil

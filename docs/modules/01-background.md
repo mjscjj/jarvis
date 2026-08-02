@@ -2,7 +2,7 @@
 
 > **版本说明**：本模块隶属总纲 [`docs/00-overview.md`](../00-overview.md)，遵循其全局技术栈与实体定义。技术栈 **Go 1.26 / Hertz（CloudWeGo v0.10.5）/ GORM（`gorm.io/gorm` + MySQL driver，不引入 bytedgorm）**；定时任务 robfig/cron v3；记忆层 **mem0（Python）以 sidecar 形式，Go 侧通过 HTTP 调用**（不引入 Eino/Kitex）。本次技术方案由 Python 栈整体迁移到 Go 栈，实体从 4 个扩展为 7 个（见总纲 §2），M1 负责其中 Project / Person 的建模与 CRUD，并新增「Group↔Project 关联维护」职责。
 
-> 模块定位：飞书私人 AI 管家系统的「背景知识底座」。让研发工程师（owner: `chujiejie.1`）**手动设计并持续完善**自己的项目背景（Project）与重点人员背景（Person），把这些背景以可检索形式注入 mem0（经 sidecar），供下游 **Todo 提取（M3）/ 打分确认（M4）** 使用，并维护飞书群（Group）与项目的归属关联。**leader 交办的行动线索是全系统的最高优先级信号，其建模从本模块起源。**
+> 模块定位：飞书私人 AI 管家系统的「背景知识底座」。让研发工程师（owner: `chujiejie.1`）**手动设计并持续完善**自己的项目背景（Project）与重点人员背景（Person），把这些背景以可检索形式注入 mem0（经 sidecar），供下游 **Todo 提取（M3）/ M5 判断环节** 使用，并维护飞书群（Group）与项目的归属关联。**leader 交办的行动线索是全系统的最高优先级信号，其建模从本模块起源。**
 
 ---
 
@@ -18,7 +18,7 @@
 
 | 属于 M1 | 不属于 M1（由其他模块负责） |
 |---|---|
-| Project / Person 实体建模、DDL、GORM model、CRUD API | 消息采集（M2）、Todo 提取（M3）、打分确认（M4）、执行（M5） |
+| Project / Person 实体建模、DDL、GORM model、CRUD API | 消息采集（M2）、Todo 提取（M3）、判断与执行（M5） |
 | **Group↔Project 关联维护**（把飞书群标注归属到某项目） | Group 实体建模/发现/扫描分层（M2 拥有，见总纲 §2） |
 | open_id ↔ 姓名 的解析与绑定 | 飞书消息读写的 lark-cli 封装（M2/M5） |
 | 背景注入 mem0（写侧，经 sidecar）+ 提供检索接口（供 M3 调用） | mem0 sidecar 进程 / Qdrant 部署（M0 基础设施，见总纲 §5） |
@@ -38,9 +38,9 @@ erDiagram
     PERSON  ||--o{ PROJECT_MEMBER : joins
     PROJECT ||--o{ GROUP   : "关联(群多对一项目, M1 维护)"
     PERSON  ||--o{ MESSAGE : "sends (open_id, 外部)"
-    PROJECT ||--o{ TODO    : "belongs (外部, M3/M4)"
-    PERSON  ||--o{ TODO    : "assigner (外部, M3/M4)"
-    PROJECT ||--o{ TASK    : "belongs (外部, M4/M5)"
+    PROJECT ||--o{ TODO    : "belongs (外部, M3/M5)"
+    PERSON  ||--o{ TODO    : "assigner (外部, M3/M5)"
+    PROJECT ||--o{ TASK    : "belongs (外部, M5)"
 
     PROJECT {
         bigint id PK
@@ -86,7 +86,7 @@ erDiagram
 | `name` | VARCHAR(255) | 项目名称 | 是 | 必填 |
 | `role` | ENUM(`owner`,`participant`) | 我在项目中的角色（负责 / 参与） | 是 | **owner 项目权重更高**，下游可利用 |
 | `status` | ENUM(`planning`,`active`,`paused`,`archived`,`done`) | 项目状态 | 是 | 默认 `active` |
-| `priority` | TINYINT 1–5 | 项目重要度 | 是 | 供 M4 打分的项目侧权重 |
+| `priority` | TINYINT 1–5 | 项目重要度 | 是 | 供 M5 判断环节参考的项目侧权重 |
 | `description` | TEXT | 项目背景/目标（自由文本） | 是（核心） | 用户"不断完善"的主战场 |
 | `repos` | JSON | 仓库列表 `[{"name","url","local_path"}]` | 是 | 关键决策/代码定位用 |
 | `tech_stack` | JSON | 技术栈 `["Go","Hertz","GORM"]` | 是 | 辅助 Todo 提取判断相关性 |
@@ -308,25 +308,16 @@ func resolveWeight(role string, explicit *float64) (float64, error) {
 }
 ```
 
-> 默认值在应用层落库时写入（用户可改）；具体数值与下游打分公式需与 M4 owner 对齐 —— 开放问题 #5【需与用户确认】。
+> 默认值在应用层落库时写入（用户可改）；具体数值需据实跑校准 —— 开放问题 #4【需与用户确认】。
 
-**下游利用（本模块提供数据，M3/M4 消费）**：
+**下游利用（本模块提供数据，M3 与 M5 判断环节消费）**：
 
 1. **M3 Todo 提取**：当一条消息的 `sender_open_id` 命中 `role='leader'` 的 Person，提取 Todo 的 prompt 注入强信号：
    > "以下消息来自你的直属 leader（最高优先级）。leader 的交办默认视为可执行**行动线索（Todo）**，需重点识别**显性与隐性**的行动项。其沟通风格：{comm_style}。"
 
-   `comm_style` 帮助模型理解"隐含指令"（例如 leader 习惯用"看下这个"表达"排期处理"）。注意：M3 产出的是 **Todo（线索/候选，可能模糊）**，是否固化为 **Task（明确可执行任务）** 由 M4 决定（见总纲 §2.3 Todo/Task 拆分）。
+   `comm_style` 帮助模型理解"隐含指令"（例如 leader 习惯用"看下这个"表达"排期处理"）。注意：M3 产出的是 **Todo（线索/候选，可能模糊）**，是否固化为 **Task（可执行任务）** 由 M5 判断环节决定（见总纲 §2.3 Todo/Task 拆分）。
 
-2. **M4 打分确认**：`priority_weight` 作为发件人维度的一项直接入打分公式，例如：
-
-```text
-priority_score = w_action * actionability
-               + w_sender * sender_priority_weight   # ← 本模块提供，leader=1.0
-               + w_project * (project.priority / 5)
-               + w_deadline * deadline_urgency
-```
-
-   leader 交办因 `sender_priority_weight=1.0` 天然拿到高分 → 更易触发"自动确认生成 Task"或"高优先级请用户确认"。（权重系数 `w_*` 与阈值属 M4，需对齐。）
+2. **M5 判断环节**：`priority_weight` 与 `project.priority` 随背景快照一起进 prompt，作为"这条线索值不值得做"的判断依据之一。**不入任何打分公式**——早期的 `confidence × risk` 打分已随规则引擎退役，现在由模型自己权衡：leader 交办、高优先级项目天然更容易被判为值得做，但结论由模型结合具体内容给出，不由权重算出来。
 
 ---
 
@@ -960,10 +951,10 @@ func (h *GroupHandler) SetProject(ctx context.Context, c *app.RequestContext) {
 | **M0 后台/编排** | 消费 §7 API 渲染背景配置页；承载 lark-cli 鉴权 profile（`--as user/bot`）、mem0 sidecar（`127.0.0.1:18900`）/ Qdrant 依赖、cron 调度 |
 | **M2 采集** | **Group 主体建模归 M2**；M2 产出 `sender_open_id` 与 Group 记录，M1 提供 `GetByOpenID` 反查、"未知发件人"清单、以及维护 `group.project_id` 关联 |
 | **M3 提取** | 调 `BackgroundContextService.BuildContext()` 取 person 结构化背景 + mem0 语义召回（含 Group→Project 归属），用于提取 **Todo（行动线索）** |
-| **M4 打分确认** | 消费 `person.priority_weight`、`project.priority` 做 **Todo→Task** 打分/确认；权重系数/阈值需与 M4 对齐 |
-| **M5 执行** | 消费 `person.p2p_chat_id` 做 **Task** 确认/回执发送 |
+| **M5 判断环节** | 消费 `person.priority_weight`、`project.priority` 作为 **Todo→Task** 判断的背景依据（不入打分公式） |
+| **M5 执行环节** | 消费 `person.p2p_chat_id` 做 **Task** 请示/回执发送 |
 
-> 实体归属速查（总纲 §2）：`Project`/`Person` 由 **M1** 拥有；`Group`/`Resource`/`ScanRecord` 由 **M2** 拥有（M1 仅维护 Group↔Project 关联）；`Todo` 由 **M3** 产出、**M4** 流转；`Task` 由 **M4** 生成、**M5** 执行。
+> 实体归属速查（总纲 §2）：`Project`/`Person` 由 **M1** 拥有；`Group`/`Resource`/`ScanRecord` 由 **M2** 拥有（M1 仅维护 Group↔Project 关联）；`Todo` 由 **M3** 产出、**M5 判断环节** 流转；`Task` 由 **M5 判断环节** 生成、**M5 执行环节** 执行。
 
 ---
 
@@ -976,7 +967,7 @@ func (h *GroupHandler) SetProject(ctx context.Context, c *app.RequestContext) {
 | 1 | 是否需要 Project/Person 变更**版本表/审计日志/回滚 UI**？ | v1 只靠 `updated_at` + mem0 history，不建版本表 | 历史数据留存策略【需与用户确认】 |
 | 2 | mem0 注入用 `infer=False`（逐条明文，推荐）还是 `infer=True`（LLM 拆解）？ | `infer=False` | 召回质量 vs 确定性【需与用户确认】 |
 | 3 | **未知发件人**（open_id 不在 person 表）：自动建 `role=other/weight=0.1` 占位，还是仅进"待认领"列表？ | 仅进待认领，不自动建 | 数据整洁 vs 便利【需与用户确认】 |
-| 4 | leader/key/colleague/other 的**默认 priority_weight 数值** 与 M4 打分/确认公式中的权重系数/自动确认阈值 | 1.0/0.7/0.4/0.1 | 需与 M4 owner 对齐【需与用户确认】 |
+| 4 | leader/key/colleague/other 的**默认 priority_weight 数值**（只作为模型判断的背景信号，无打分公式） | 1.0/0.7/0.4/0.1 | 需据实跑校准【需与用户确认】 |
 | 5 | `key_decisions`/`timeline` 用 **JSON 列(v1)** 还是升级为**可查询子表**（带时间/审计）？ | JSON 列 | 建模复杂度【需与用户确认】 |
 | 6 | Person 通讯录缓存（name/dept/avatar）**刷新触发方式/频率**（手动 vs 定时 cron）？ | 手动刷新 | 数据新鲜度【需与用户确认】 |
 | 7 | 删除 Project/Person 时是否**级联删除其 mem0 记忆**（应用层，经 sidecar）？ | 是，级联清理 | 一致性【需与用户确认】 |

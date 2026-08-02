@@ -1,8 +1,8 @@
-# 关键设计：上下文链路重设计（M3/M4/M5 全链路上下文传递）
+# 关键设计：上下文链路重设计（M3/M5 全链路上下文传递）
 
 > 所属系统：基于飞书的本地个人 Jarvis 管家（Principal = 字节研发工程师 `chujiejie.1`，本地 Mac 可信环境）
 > 隶属总纲：`docs/00-overview.md`（技术栈、7 实体、Todo/Task 拆分、LLM 分工的权威定义在总纲）
-> 本文定位：一份**跨 M3/M4/M5** 的专项设计，解决"上下文在链路上逐级丢失、项目/仓库推算缺失"的问题。落地后会**修订** `03-task-extract.md` / `04-confirmation.md` 的部分既有约定（见 §8）。
+> 本文定位：一份**跨 M3 与 M5（判断环节 + 执行环节）** 的专项设计，解决"上下文在链路上逐级丢失、项目/仓库推算缺失"的问题。落地后会**修订** `03-task-extract.md` / `04-decision.md` 的部分既有约定（见 §8）。
 > 设计原则：本地可信明文 · fail-fast · 不擅自处理历史数据 · 模块化 · 优先已有实现与官方 CLI · 复杂度红线。
 
 ---
@@ -18,7 +18,7 @@
 
 3、现在M3 推算是怎么推算的
 
-4、need_info，这个todo决策重点来了，可以根据上下文用工具，一、进一步尝试自动补充信息，二、如果实在拿不到上下文，可以要求用户补充上下文的todo，三、可以直接产出todo，四、什么都不错，决策任选一个
+4、信息不足时，这个todo判断重点来了，可以根据上下文用工具，一、进一步尝试自动补充信息，二、如果实在拿不到上下文，可以把要问的问题带着走，三、可以直接产出todo，四、什么都不做，判断任选一个
 
 结合我之前的目标：你说的不对，我想要达到的效果是，比如 我的leader让我去读下agent runtime项目 agent loop代码，或者我说我回去读下 agent runtime项目 agent loop代码，这些上下文都在，一起进提示词，生成todo，todo也附带着上下文，然后再生成task，这个时候，要根据todo的上下文（谁提出的，群消息， 项目背景， 群公告等） ，想办法推算出，是哪个项目，项目地址是哪个（推算，或者是从绑定项目的代码资源里面找），然后，就是这个task是带上下的，明确的，任务，再一起交给执行者，就是这个链路，上下文都是传递的，可以有压缩总结，但是上下文都在
 
@@ -30,9 +30,9 @@
 | 项        | 内容                                                                                                                                                                              |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 提出背景     | 用户目标：leader 交办或本人提出"读 agent runtime 项目 agent loop 代码"这类任务时，系统要把"谁说的、哪个群、项目背景、群公告"等上下文一路带下去，并**推算出是哪个项目、仓库地址是什么**，最终交给执行者一个"上下文完整、目标明确"的 Task。                                   |
-| 核心变更     | ① M3 提取引擎默认改用 **codex**（现有 kimi/model API 链路保留为备用）；② codex 提取时可**自跑 lark-cli/bytedcli/git** 查项目/人物/群公告；③ Todo 生成时就**固化一份背景快照**并**推算 project_id**；④ 全链路复用同一份快照，M4/M5 不再各自临时拼上下文。 |
-| codex 权限 | M3/M4 的 codex 调用使用 `--sandbox danger-full-access` + 联网（本地可信环境，用户已认可）。统一加 `-c model_reasoning_effort=low` 覆盖用户全局 `xhigh`，控制单次耗时。                                                 |
-| 历史数据     | **不兼容旧数据**：实施时直接清空 `todo`/`task` 及派生表（用户已确认可删）。M4 强制要求 `context_snapshot` 非空，为空即 fail-fast 报错，**不保留回退/临时拼接分支**。                                                                 |
+| 核心变更     | ① M3 提取引擎默认改用 **codex**（现有 kimi/model API 链路保留为备用）；② codex 提取时可**自跑 lark-cli/bytedcli/git** 查项目/人物/群公告；③ Todo 生成时就**固化一份背景快照**并**推算 project_id**；④ 全链路复用同一份快照，M5 判断/执行环节不再各自临时拼上下文。 |
+| codex 权限 | M3 与 M5 判断环节的 codex 调用使用 `--sandbox danger-full-access` + 联网（本地可信环境，用户已认可）。统一加 `-c model_reasoning_effort=low` 覆盖用户全局 `xhigh`，控制单次耗时。                                                 |
+| 历史数据     | **不兼容旧数据**：实施时直接清空 `todo`/`task` 及派生表（用户已确认可删）。判断环节强制要求 `context_snapshot` 非空，为空即 fail-fast 报错，**不保留回退/临时拼接分支**。                                                                 |
 | repos 数据 | 本轮**先不填** `Project.repos`，只打通"推算 + 上下文传递"链路。repos 为空时 M5 不阻塞，codex 自行想办法。                                                                                                       |
 | 不做       | 不为 M3 封装一批 Go 决策工具（lark-cli/bytedcli 命令太多）；不给 codex 维护命令清单（提示词只给简短指引，让它自己 `--help` 探索）。                                                                                         |
 
@@ -50,8 +50,8 @@
 ```mermaid
 flowchart LR
     M2["M2 采集"] --> M3["M3 提取(kimi/model API)<br/>生成 Todo"]
-    M3 --> M4["M4 决策(codex 只读)<br/>Todo→Task"]
-    M4 --> M5["M5 执行(codex)<br/>真干活"]
+    M3 --> D5["M5 判断环节(codex 只读)<br/>Todo→Task"]
+    D5 --> M5["M5 执行环节(codex)<br/>真干活"]
 ```
 
 
@@ -64,7 +64,7 @@ flowchart LR
 | 断点               | 现状                                                           | 证据                                                                   |
 | ---------------- | ------------------------------------------------------------ | -------------------------------------------------------------------- |
 | **1. 项目推算缺失**    | `Todo.project_id` 只从群绑定项目继承；模型输出的 `project_hint` 被完全忽略（无消费点） | `internal/extract/persist.go:258`、`internal/extract/candidate.go:69` |
-| **2. 上下文不固化**    | Todo 无背景快照字段；背景在 M4 `Approve` 时才临时 Snapshot 并冻结进 Task        | `internal/decide/service.go:56` `internal/decide/service.go:95`      |
+| **2. 上下文不固化**    | Todo 无背景快照字段；背景在判断环节建 Task 时才临时 Snapshot 并冻结进 Task        | 判断环节落库路径（现 `internal/execute/decision_apply.go`）      |
 | **3. repos 数据空** | 项目库有 `Agent Runtime` 等，但 `repos` 全 NULL；即便关联上也拿不到仓库地址        | project 表 `repos` 字段实测全空                                             |
 
 
@@ -72,7 +72,7 @@ flowchart LR
 
 ### 0.3 关键技术约束
 
-- `project_id` 是 M3 **去重指纹**的组成部分（`internal/extract/candidate.go:188`），且语义去重按 `project_id` 过滤（`internal/extract/dedup.go:74`）。→ 这是"推算必须放 M3、project_id 尽早定死"的根本理由：若 M3 落库时 project_id 空、M4 再改，同一条线索下次提取会因指纹变化而**重复创建 Todo**。
+- `project_id` 是 M3 **去重指纹**的组成部分（`internal/extract/candidate.go:188`），且语义去重按 `project_id` 过滤（`internal/extract/dedup.go:74`）。→ 这是"推算必须放 M3、project_id 尽早定死"的根本理由：若 M3 落库时 project_id 空、下游再改，同一条线索下次提取会因指纹变化而**重复创建 Todo**。
 - M3 现用 kimi/model API，其工具循环 `ExtractWithTools`（`internal/extract/tool_loop.go:22`）是**应用层 function-calling**，模型只能调 Go 注册的工具（`query_chat_history`/`search_memory`），**不能自跑 shell**。→ 要"让模型自跑 lark-cli/bytedcli"，引擎必须换成能执行命令的 codex。
 - **已实测**：codex 0.144.1 在 `--sandbox workspace-write -c sandbox_workspace_write.network_access=true` 下成功执行 `lark-cli contact whoami` 并返回真实 JSON（非编造）。macOS 沙箱网络在本机可用。
 
@@ -92,14 +92,14 @@ flowchart TB
         D --> F["产出 Todo + project_id<br/>+ context_snapshot(背景快照)<br/>+ resolution(推算轨迹)"]
         E --> F
     end
-    F --> G["M4 决策(codex)<br/>直接读 Todo 快照, 出 plan"]
-    G --> H["你确认 → Task<br/>快照 + plan + 推算结果一起固化"]
-    H --> I["M5 执行(codex)<br/>拿完整上下文 + 仓库地址干活"]
+    F --> G["M5 判断环节(codex 只读)<br/>直接读 Todo 快照, 出 disposition + plan"]
+    G --> H["ready → Task<br/>快照 + plan + 推算结果一起固化"]
+    H --> I["M5 执行环节(codex)<br/>拿完整上下文 + 仓库地址干活"]
 ```
 
 
 
-核心思想：**上下文只在 M3 组装/推算一次，固化进 Todo，之后 M4/M5 全程复用同一份**——这既保证"上下文都在、可传递、可压缩"，又避免各环节重复查库、结果漂移。
+核心思想：**上下文只在 M3 组装/推算一次，固化进 Todo，之后 M5 判断/执行环节全程复用同一份**——这既保证"上下文都在、可传递、可压缩"，又避免各环节重复查库、结果漂移。
 
 ---
 
@@ -134,7 +134,7 @@ flowchart TB
 
 - **独立 CLI** `scripts/jarvis-tools`（经 `jarvis-server` HTTP API 访问数据，职责单一：给 agent 调）。
 - **输出契约（严格）**：每个子命令把结果以**紧凑 JSON 打到 stdout**，错误信息打到 stderr 并以非零退出码结束（fail-fast）。stdout **只有 JSON**，不掺日志——codex 才能稳定解析。
-- **分阶段使用**：M3/M4 只调用查询子命令；受控写子命令仅供 M5 执行阶段或用户直接要求时调用。
+- **分阶段使用**：M3 与 M5 判断环节只调用查询子命令；受控写子命令仅供 M5 执行环节或用户直接要求时调用。
 - **复用现有实现**：CLI 经 `jarvis-server` HTTP API 复用现有 service，不直连数据库、不另写一套查询逻辑。
 
 子命令集（参数与 JSON 字段实现时定稿）。**本轮先做核心 5 个（打通项目推算所必需）**，`search-memory`/`query-messages` 用户已定**用到再补**：
@@ -152,7 +152,7 @@ flowchart TB
 
 
 > 外部 `lark-cli`/`bytedcli`/`git` **不封装**，codex 直接跑（它们本就是外部可执行文件）。`jarvis-tools` 只补"我们自己的库/记忆"这部分 codex 摸不到的数据。
-> M4 决策阶段的 codex 同样可用这套 `jarvis-tools`（共享一套工具，不重复造）。
+> M5 判断环节的 codex 同样可用这套 `jarvis-tools`（共享一套工具，不重复造）。
 
 
 
@@ -160,25 +160,25 @@ flowchart TB
 
 给 `Todo` 增加两个 JSON 字段（`internal/domain/models.go`）：
 
-- `**context_snapshot**`（生成 Todo 时固化）：`{principal, group(含公告/description), project(含 repos), assigner, messages, memories}`。结构直接复用现有 `internal/decide/background.go` 的 `backgroundSnapshot`，把它**从 M4 提前到 M3 落库时生成**。
+- `**context_snapshot**`（生成 Todo 时固化）：`{principal, group(含公告/description), project(含 repos), assigner, messages, memories}`。结构直接复用原有的 `backgroundSnapshot`（现 `internal/execute/decision_background.go`），把它**从判断环节提前到 M3 落库时生成**。
 - `**resolution**`（项目推算轨迹）：`{method: group_bound | codex_cli | unresolved, project_id, repos_hint, confidence, basis}`——让用户和执行者都能看到"为什么判成这个项目/仓库"。
 
-M4 `Approve` 生成 Task 时，**直接复用 Todo 的** `context_snapshot`（不再重新 Snapshot），保证全链路同一份上下文。
+判断环节建 Task 时，**直接复用 Todo 的** `context_snapshot`（不再重新 Snapshot），保证全链路同一份上下文。
 
-> **历史数据（fail-fast，不兼容）**：新链路**不兼容**旧 Todo。实施本改动时**直接清空** `todo`/`task`/`todo_event`/`decision_audit`/`todo_semantic` 等派生数据（用户已确认可删）。M4 `Approve` 强制要求 `context_snapshot` 非空，为空即报错暴露问题——**不保留任何回退/临时拼接分支**（避免掩盖问题，符合总纲 §0.2/§0.3）。
-
-
-
-### 2.3 模块 C：M4 决策消费快照（简化）
-
-- `CodexEvaluator`（`internal/decide/codex_evaluator.go`）改为直接读 `Todo.context_snapshot`，不再自己调 `background.Snapshot`。
-- need_info 语义放开（对齐用户第 4 点）：codex 可判 `auto_execute | need_review | need_info`；need_info 时在 `missing_info`/plan 里说明"缺什么、是否已尝试自动补、是否需要问用户"。M4 codex 调用同样使用 `danger-full-access` + 联网 + low 推理（决策阶段也可自查补信息）。
+> **历史数据（fail-fast，不兼容）**：新链路**不兼容**旧 Todo。实施本改动时**直接清空** `todo`/`task`/`todo_event`/`decision_audit`/`todo_semantic` 等派生数据（用户已确认可删）。判断环节建 Task 时强制要求 `context_snapshot` 非空，为空即报错暴露问题——**不保留任何回退/临时拼接分支**（避免掩盖问题，符合总纲 §0.2/§0.3）。
 
 
 
-### 2.4 模块 D：M5 执行拿完整上下文（打通链路末端）
+### 2.3 模块 C：判断环节消费快照（简化）
 
-- M5 执行提示词（`internal/execute/prompt.go`）已带 `task.background`；因 background 现含 `project.repos`，codex 执行时即可拿到仓库地址。
+- `CodexEvaluator`（`internal/execute/decision_evaluator.go`）改为直接读 `Todo.context_snapshot`，不再自己调 `background.Snapshot`。
+- 信息不足时不挂起线索：codex 只判 `ready | drop`；缺什么、是否已尝试自动补、是否需要问 principal，都写进 `plan`/`payload` 跟着 Task 走，由执行环节调查完再决定要不要问。判断环节的 codex 调用同样使用 `danger-full-access` + 联网（判断时也可自查补信息）。
+
+
+
+### 2.4 模块 D：执行环节拿完整上下文（打通链路末端）
+
+- 执行环节提示词（`internal/execute/prompt.go`）已带 `task.background`；因 background 现含 `project.repos`，codex 执行时即可拿到仓库地址。
 - `internal/execute/agent_executor.go` 增补：从 `project.repos[].local_path` 解析代码仓库工作目录（供 `code_change` 类任务 `--cd`）。
 - repos 为空时**本轮不阻塞**（用户决策）：codex 在 workspace-write/full-access 下自行想办法（可跑 git/lark-cli 定位），或如实报告"缺仓库地址、需补充"。
 
@@ -186,7 +186,7 @@ M4 `Approve` 生成 Task 时，**直接复用 Todo 的** `context_snapshot`（�
 
 ### 2.5 模块 E：前端展示（对人友好）
 
-- 待确认页 / Todo 详情：展示 `resolution`（推算出的项目 + 仓库 + 理由）和精简后的 `context_snapshot`。
+- 待办页 / Todo 详情：展示 `resolution`（推算出的项目 + 仓库 + 理由）和精简后的 `context_snapshot`。
 - 复用上一轮已加的 `web/src/slots.tsx`（只展示非空字段）的思路，避免铺裸 JSON。
 
 ---
@@ -205,7 +205,7 @@ extract:
   codex_reasoning_effort: "low"         # 新增：覆盖全局 xhigh，控耗时
 
 decide:
-  # M4 codex 同样切到 full-access + 联网 + low 推理（复用 codex 段或新增字段）
+  # M5 判断环节的 codex 同样切到 full-access + 联网（复用 codex 段或新增字段）
 ```
 
 > 用户全局 `~/.codex/config.toml` 设的是 `model_reasoning_effort = "xhigh"`，Jarvis 每次调用必须显式 `-c model_reasoning_effort=low` 覆盖，否则继承 xhigh 会更慢。
@@ -221,8 +221,8 @@ decide:
 3. `jarvis-tools` **CLI**（§2.1a）：维护 `scripts/jarvis-tools` 单一入口，查询命令 stdout 纯 JSON；受控写命令只供执行阶段按需调用。这是 agent 自查的前置基础设施。
 4. 模块 A：codex 提取器（复用 M5 codex_runner 范式）+ `extract.engine` 切换 + 提示词工具指引 + `project_hint→project_id` 解析。
 5. M3 落库时生成并写入 `context_snapshot`/`resolution`。
-6. 模块 C：M4 改读快照（`context_snapshot` 为空即 fail-fast 报错，不兼容旧数据）。
-7. 模块 D：M5 仓库路径解析。
+6. 模块 C：判断环节改读快照（`context_snapshot` 为空即 fail-fast 报错，不兼容旧数据）。
+7. 模块 D：执行环节仓库路径解析。
 8. 模块 E：前端展示。
 9. 清空旧 `todo`/`task` 派生数据 + 全量验证 + 端到端用测试消息（"读 agent runtime agent loop 代码"）跑通。
 
@@ -233,7 +233,7 @@ decide:
 ## 5. 性能与安全
 
 - **耗时**：codex 联网自查比 kimi 慢（实测查一次 lark-cli 约 31s）。用 `model_reasoning_effort=low` 压低单次耗时；M3 是 10min 一轮批处理、延迟不敏感，可接受。不额外限制"仅未绑定项目才联网查"——保持逻辑简单（复杂度红线）。
-- **安全**：`danger-full-access` 意味着 codex 提取/决策时能读写整机、能联网。**本地可信环境**下用户已认可（总纲 §0.1）。这是本方案的显式前提，非疏漏。
+- **安全**：`danger-full-access` 意味着 codex 提取/判断时能读写整机、能联网。**本地可信环境**下用户已认可（总纲 §0.1）。这是本方案的显式前提，非疏漏。
 
 ---
 
@@ -241,7 +241,7 @@ decide:
 
 ## 6. 与总纲/复杂度红线的关系
 
-- 总纲 §1 原写"LLM 抽取(M2/M3) 用 model API / LLM 决策(M4) 用 codex"。本方案将 **M3 主引擎改为 codex**（model API 保留备用），属于对总纲 LLM 分工的调整，需同步更新总纲 §1 表述（见 §8）。
+- 总纲 §1 原写"LLM 抽取(M2/M3) 用 model API / LLM 判断用 codex"。本方案将 **M3 主引擎改为 codex**（model API 保留备用），属于对总纲 LLM 分工的调整，需同步更新总纲 §1 表述（见 §8）。
 - 复杂度红线：本方案**不新增重型设施**（不加向量库、不加独立进程、不加多级调度）；核心是"引擎切换 + 一个快照字段 + 一次 project 解析"，用已有的 codex 子进程能力承载"自查"，符合"能用一次 LLM 调用解决就不上重设施"。
 
 ---
@@ -281,9 +281,9 @@ Resolution      datatypes.JSON `gorm:"column:resolution;type:json"`       // 项
 | 文档位置                                        | 旧约定                                | 改为                                                                  |
 | ------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------- |
 | `docs/00-overview.md` §1 表                  | LLM 抽取(M2/M3) 用 model API          | M3 主引擎改 **codex**，model API 保留备用                                    |
-| `docs/modules/03-task-extract.md` L16       | "M4 才用 codex，M3 不用 codex"          | M3 默认用 codex；kimi 备用                                                |
+| `docs/modules/03-task-extract.md` L16       | "只有下游判断才用 codex，M3 不用"          | M3 默认用 codex；kimi 备用                                                |
 | `docs/modules/03-task-extract.md` §0.3 / 落库 | `Todo.project_id` 从群绑定继承           | M3 用 codex 推算（群绑定仍最高优先级）                                            |
-| `docs/modules/04-confirmation.md` L8        | MVP 不调 codex、Task 背景确认时从 MySQL 临时读 | 背景在 **M3 就固化进 Todo**，M4 复用；`context_snapshot` 为空即 fail-fast，不保留回退分支 |
+| `docs/modules/04-decision.md`               | Task 背景在建 Task 时从 MySQL 临时读 | 背景在 **M3 就固化进 Todo**，判断环节复用；`context_snapshot` 为空即 fail-fast，不保留回退分支 |
 
 
 > 这些修订仅调整"引擎与上下文固化时机"，不改变 Todo/Task 拆分、7 实体、fail-fast 等核心契约。

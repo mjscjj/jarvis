@@ -92,7 +92,7 @@ func TestFingerprintIgnoresDesiredOutcomeAndSemantics(t *testing.T) {
 func TestDecodeExtractionResultKeepsSemanticsVerbatim(t *testing.T) {
 	// semantics is declared as a string in the provider schema, so the model
 	// sends JSON as text; decoding must hand it back untouched.
-	payload := `{"candidates":[{"action_type":"manual_followup","title":"会后处理","target":"公会基建Agent 日会",` +
+	payload := `{"candidates":[{"action_type":"manual_followup","status":"extracted","title":"会后处理","target":"公会基建Agent 日会",` +
 		`"desired_outcome":"产出结论并生成我的待办","description":"当前卡在妙记无权限","context":"",` +
 		`"open_questions":[],"commitment_strength":"firm","assigner_open_id":null,"project_hint":null,` +
 		`"due_date":null,"source_message_ids":["vc_meeting_1"],"source_quote":"采集结果：permission_denied",` +
@@ -116,6 +116,7 @@ func TestDecodeExtractionResultKeepsSemanticsVerbatim(t *testing.T) {
 func validCandidate() Candidate {
 	return Candidate{
 		ActionType:         "code_change",
+		Status:             "extracted",
 		Title:              "修改鉴权",
 		Target:             "jarvis 鉴权逻辑重构",
 		DesiredOutcome:     "鉴权逻辑按讨论改完并合入主干",

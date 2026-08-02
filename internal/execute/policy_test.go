@@ -52,7 +52,7 @@ func TestBlankActionTypeFailsFast(t *testing.T) {
 }
 
 func TestBuildExecutionPromptRequiresValidTask(t *testing.T) {
-	if _, err := buildExecutionPrompt("test M5 system prompt", nil, "", testToolCatalog, "", "", "", nil); err == nil {
+	if _, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", nil, "", testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatalf("nil Task must fail")
 	}
 }

@@ -31,7 +31,6 @@ import (
 	"jarvis/internal/larkcli"
 	"jarvis/internal/memory"
 	"jarvis/internal/observability"
-	"jarvis/internal/observe"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
@@ -167,10 +166,6 @@ func main() {
 	if err != nil {
 		fatalf("initialize relation fact service failed: %v", err)
 	}
-	observationService, err := observe.NewService(db)
-	if err != nil {
-		fatalf("initialize observation service failed: %v", err)
-	}
 	progressService, err := progress.NewService(db)
 	if err != nil {
 		fatalf("initialize progress service failed: %v", err)
@@ -212,8 +207,8 @@ func main() {
 			fatalf("route Todos to manual confirmation failed: %v", err)
 		}
 		infof(
-			"decision completed: loaded=%d evaluated=%d auto=%d dropped=%d",
-			stats.Loaded, stats.Evaluated, stats.Auto, stats.Dropped,
+			"decision completed: loaded=%d evaluated=%d auto=%d observing=%d dropped=%d",
+			stats.Loaded, stats.Evaluated, stats.Auto, stats.Observing, stats.Dropped,
 		)
 		return
 	}
@@ -728,7 +723,7 @@ func main() {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
 	if err := api.Register(h, api.Dependencies{
-		DB: db, Todos: todoStore,
+		DB: db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,
 		Projects:        projectService, Persons: personService, Groups: groupService,
@@ -739,7 +734,6 @@ func main() {
 		ScheduledTasks: scheduledTaskService,
 		Skills:         skillService,
 		RelationFacts:  relationFactService,
-		Observations:   observationService,
 		Progress:       progressService,
 		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		DailyDigests: dailyDigestService,

@@ -105,7 +105,7 @@ func nilMessage(senderType, content string, renderOK bool) *domain.Message {
 
 func strictCandidate() Candidate {
 	return Candidate{
-		ActionType: "code_change", Title: "修改鉴权", Target: "jarvis 鉴权逻辑重构",
+		ActionType: "code_change", Status: "extracted", Title: "修改鉴权", Target: "jarvis 鉴权逻辑重构",
 		DesiredOutcome: "鉴权逻辑按讨论改完并合入",
 		Description:    "按讨论修改鉴权逻辑", Context: "归属 jarvis 项目，仓库 jarvis",
 		OpenQuestions: []string{}, CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"},
@@ -115,4 +115,26 @@ func strictCandidate() Candidate {
 
 func resolvedCandidate(candidate Candidate) ResolvedCandidate {
 	return ResolvedCandidate{Candidate: candidate, Semantic: SemanticResolution{Vector: []float32{1}}}
+}
+
+// TestM3OwnedTodoStatuses pins which states re-extraction may still move a clue
+// between. M3 owns the two it can emit; anything a downstream stage set must
+// survive re-extraction, or an already-routed clue would be pulled back into
+// the decision queue and mint a duplicate Task.
+func TestM3OwnedTodoStatuses(t *testing.T) {
+	for _, status := range []string{"extracted", "observing"} {
+		if !m3OwnedTodoStatuses[status] {
+			t.Fatalf("m3OwnedTodoStatuses[%q] = false, want true", status)
+		}
+	}
+	for _, status := range []string{"auto", "scoring", "need_info", "need_decision", "confirmed", "dismissed", "dropped", "expired"} {
+		if m3OwnedTodoStatuses[status] {
+			t.Fatalf("m3OwnedTodoStatuses[%q] = true, want false", status)
+		}
+	}
+	for status := range m3OwnedTodoStatuses {
+		if _, ok := allowedTodoStatuses[status]; !ok {
+			t.Fatalf("m3-owned status %q is not an allowed Todo status", status)
+		}
+	}
 }

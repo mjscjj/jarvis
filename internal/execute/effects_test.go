@@ -74,7 +74,7 @@ func TestParseEffectsExtraJSONString(t *testing.T) {
 // TestEffectsSchemaForbidsAdditionalProperties guards against reintroducing
 // additionalProperties:true on effects items — Codex Structured Outputs reject it.
 func TestEffectsSchemaForbidsAdditionalProperties(t *testing.T) {
-	for name, schema := range map[string]string{"execution": executionResultSchema, "propose": proposeResultSchema} {
+	for name, schema := range map[string]string{"execution": executionResultSchema} {
 		var root map[string]any
 		if err := json.Unmarshal([]byte(schema), &root); err != nil {
 			t.Fatalf("%s schema JSON: %v", name, err)

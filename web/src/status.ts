@@ -22,6 +22,7 @@ const C = {
 
 export const todoStatusMeta: Record<TodoStatus, StatusMeta> = {
   extracted: { label: '待评估', color: C.info },
+  observing: { label: '观察中', color: C.default },
   scoring: { label: '评估中', color: C.processing },
   auto: { label: '自动执行', color: C.success },
   confirmed: { label: '已确认', color: C.success },

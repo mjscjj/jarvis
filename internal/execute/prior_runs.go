@@ -54,15 +54,6 @@ func runViewToPriorSummary(run RunView) priorRunSummary {
 	if len(run.Output) > 0 && string(run.Output) != "null" {
 		summary.Output = json.RawMessage(run.Output)
 	}
-	if run.Branch != nil {
-		summary.Branch = strings.TrimSpace(*run.Branch)
-	}
-	if run.Commit != nil {
-		summary.Commit = strings.TrimSpace(*run.Commit)
-	}
-	if run.MergeRequestURL != nil {
-		summary.MergeRequestURL = strings.TrimSpace(*run.MergeRequestURL)
-	}
 	if run.FinishedAt != nil {
 		summary.FinishedAt = run.FinishedAt.UTC().Format(time.RFC3339)
 	}

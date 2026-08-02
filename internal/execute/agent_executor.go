@@ -40,20 +40,17 @@ type ExecuteInput struct {
 // awaiting_approval, codex identified a required mutation and produced a
 // proposal without performing it; the Task is parked for human approval.
 type ExecuteResult struct {
-	TaskID          uint64 `json:"task_id"`
-	RunID           uint64 `json:"run_id"`
-	Status          string `json:"status"`
-	Branch          string `json:"branch,omitempty"`
-	Commit          string `json:"commit,omitempty"`
-	DiffPath        string `json:"diff_path,omitempty"`
-	MergeRequestURL string `json:"merge_request_url,omitempty"`
-	Summary         string `json:"summary,omitempty"`
+	TaskID  uint64 `json:"task_id"`
+	RunID   uint64 `json:"run_id"`
+	Status  string `json:"status"`
+	Summary string `json:"summary,omitempty"`
 }
 
 // AgentExecutor is the execution core. It does not hard-code a per-action
-// workflow: it hands the Task's plan/background/slots and the repo path to codex
-// and lets codex orchestrate. action_type only picks the sandbox and whether the
-// run skips the propose/approval gate (code_change) or must propose first.
+// workflow: it hands the Task's plan/background and any resolved repo path to
+// codex and lets codex orchestrate. action_type only picks the sandbox.
+// Whether a side effect needs human approval, and how code is delivered, are
+// the model's judgment — declared via needs_approval/proposal and effects.
 type AgentExecutor struct {
 	db        *gorm.DB
 	store     *Store
@@ -356,7 +353,11 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 	if err != nil {
 		return fmt.Errorf("load M5 waiting resume tool catalog: %w", err)
 	}
-	prompt, err := buildScheduledResumePrompt(systemPrompt, reason, workRules, toolCatalog)
+	approvalPolicy, err := e.textStore.Content(ctx, textstore.ApprovalPolicyKey)
+	if err != nil {
+		return fmt.Errorf("load M5 approval policy for waiting resume: %w", err)
+	}
+	prompt, err := buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog)
 	if err != nil {
 		return err
 	}
@@ -391,7 +392,11 @@ func (e *AgentExecutor) KickResumeAfterHuman(ctx context.Context, taskID uint64,
 	if err != nil {
 		return nil, fmt.Errorf("load M5 human resume tool catalog: %w", err)
 	}
-	prompt, err := buildHumanResumePrompt(systemPrompt, response, workRules, toolCatalog)
+	approvalPolicy, err := e.textStore.Content(ctx, textstore.ApprovalPolicyKey)
+	if err != nil {
+		return nil, fmt.Errorf("load M5 approval policy for human resume: %w", err)
+	}
+	prompt, err := buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog)
 	if err != nil {
 		return nil, err
 	}
@@ -431,10 +436,6 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 	if stage == "" {
 		stage = "execute"
 	}
-	sch := schemaExecution
-	if stage == "propose" {
-		sch = schemaPropose
-	}
 	startedAt := e.now().UTC()
 	run := &domain.ExecutionRun{
 		TaskID: task.ID, ActionType: task.ActionType, Stage: stage, Sandbox: policy.sandbox,
@@ -452,39 +453,6 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		repoPath = strings.TrimSpace(*source.RepoPath)
 		run.RepoPath = &repoPath
 	}
-	run.BaseBranch = source.BaseBranch
-	run.Branch = source.Branch
-	var repo *gitRepo
-	baseBranch := ""
-	if task.ActionType == "code_change" && repoPath != "" {
-		if source.BaseBranch == nil || strings.TrimSpace(*source.BaseBranch) == "" ||
-			source.Branch == nil || strings.TrimSpace(*source.Branch) == "" {
-			execErr := fmt.Errorf("%w: waiting code_change run id=%d is missing persisted Git branches", ErrInvalidInput, source.ID)
-			e.failRun(run, startedAt, execErr)
-			if writeErr := e.persistRun(ctx, run); writeErr != nil {
-				return nil, fmt.Errorf("persist failed resumed run task_id=%d: %w", task.ID, writeErr)
-			}
-			return e.finishRun(ctx, &task, execVersion, run, execErr)
-		}
-		baseBranch = strings.TrimSpace(*source.BaseBranch)
-		repo = newGitRepo(repoPath, 30*time.Second)
-		currentBranch, err := repo.currentBranch(ctx)
-		if err != nil {
-			e.failRun(run, startedAt, err)
-			if writeErr := e.persistRun(ctx, run); writeErr != nil {
-				return nil, fmt.Errorf("persist failed resumed run task_id=%d: %w", task.ID, writeErr)
-			}
-			return e.finishRun(ctx, &task, execVersion, run, err)
-		}
-		if currentBranch != strings.TrimSpace(*source.Branch) {
-			execErr := fmt.Errorf("resume code_change task_id=%d: repo branch changed while waiting: expected=%s actual=%s", task.ID, *source.Branch, currentBranch)
-			e.failRun(run, startedAt, execErr)
-			if writeErr := e.persistRun(ctx, run); writeErr != nil {
-				return nil, fmt.Errorf("persist failed resumed run task_id=%d: %w", task.ID, writeErr)
-			}
-			return e.finishRun(ctx, &task, execVersion, run, execErr)
-		}
-	}
 	outputCapture, err := e.prepareTaskRunOutput(task.ID, stage, startedAt, prompt)
 	if err != nil {
 		e.failRun(run, startedAt, err)
@@ -493,7 +461,7 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		}
 		return e.finishRun(ctx, &task, execVersion, run, err)
 	}
-	codexOut, execErr := e.runner.ResumeTaskWithOutput(ctx, *source.CodexSessionID, prompt, policy.sandbox, repoPath, sch, task.ID, outputCapture)
+	codexOut, execErr := e.runner.ResumeTaskWithOutput(ctx, *source.CodexSessionID, prompt, policy.sandbox, repoPath, schemaExecution, task.ID, outputCapture)
 	if execErr != nil {
 		e.failRun(run, startedAt, execErr)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
@@ -502,108 +470,102 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		return e.finishRun(ctx, &task, execVersion, run, execErr)
 	}
 	run.CodexSessionID = &codexOut.SessionID
-	if stage == "propose" {
-		if codexOut.Propose == nil {
-			execErr = fmt.Errorf("resumed codex propose returned no structured result")
-			e.failRun(run, startedAt, execErr)
-		} else {
-			result := codexOut.Propose
-			if err := recordAgentVerdict(run, result.Summary, result, result.Effects); err != nil {
-				return nil, fmt.Errorf("record resumed propose verdict task_id=%d: %w", task.ID, err)
-			}
-			run.Status = "succeeded"
-			if result.Outcome == "waiting" {
-				e.finishWaitingRun(run, startedAt)
-			} else if result.Outcome == "needs_human" && !result.NeedsApproval {
-				e.finishNeedsHumanRun(run, startedAt)
-			} else if result.Outcome == "failed" {
-				execErr = fmt.Errorf("task not completed: %s", result.FailureReason)
-				e.failRun(run, startedAt, execErr)
-			} else {
-				e.finishSuccessfulRun(run, startedAt)
-			}
-			if writeErr := e.persistRun(ctx, run); writeErr != nil {
-				return nil, fmt.Errorf("persist resumed propose run task_id=%d: %w", task.ID, writeErr)
-			}
-			if execErr != nil || result.Outcome == "waiting" {
-				return e.finishRun(ctx, &task, execVersion, run, execErr)
-			}
-			if result.NeedsApproval {
-				proposalJSON, err := json.Marshal(proposalPayload(run, result))
-				if err != nil {
-					return nil, fmt.Errorf("encode resumed proposal task_id=%d: %w", task.ID, err)
-				}
-				if _, err := e.store.MarkAwaitingApproval(ctx, task.ID, execVersion, run.ID, proposalJSON); err != nil {
-					return nil, err
-				}
-				return &ExecuteResult{TaskID: task.ID, RunID: run.ID, Status: "awaiting_approval", Summary: result.Summary}, nil
-			}
-			return e.finishRun(ctx, &task, execVersion, run, nil)
+	if codexOut.Result == nil {
+		execErr = fmt.Errorf("resumed codex exec returned no structured result")
+		e.failRun(run, startedAt, execErr)
+		if writeErr := e.persistRun(ctx, run); writeErr != nil {
+			return nil, fmt.Errorf("persist resumed run task_id=%d: %w", task.ID, writeErr)
 		}
+		return e.finishRun(ctx, &task, execVersion, run, execErr)
+	}
+	result := codexOut.Result
+	if err := recordAgentVerdict(run, result.Summary, result, result.Effects); err != nil {
+		return nil, fmt.Errorf("record resumed execution verdict task_id=%d: %w", task.ID, err)
+	}
+	if result.Outcome == "waiting" {
+		e.finishWaitingRun(run, startedAt)
+	} else if result.NeedsApproval {
+		e.finishSuccessfulRun(run, startedAt)
+	} else if result.Outcome == "needs_human" {
+		e.finishNeedsHumanRun(run, startedAt)
+	} else if result.Outcome == "completed" {
+		e.finishSuccessfulRun(run, startedAt)
 	} else {
-		if codexOut.Result == nil {
-			execErr = fmt.Errorf("resumed codex exec returned no structured result")
-			e.failRun(run, startedAt, execErr)
-		} else {
-			result := codexOut.Result
-			if err := recordAgentVerdict(run, result.Summary, result, result.Effects); err != nil {
-				return nil, fmt.Errorf("record resumed execution verdict task_id=%d: %w", task.ID, err)
-			}
-			if result.Outcome == "waiting" {
-				e.finishWaitingRun(run, startedAt)
-			} else if result.Outcome == "needs_human" {
-				e.finishNeedsHumanRun(run, startedAt)
-			} else if result.Outcome == "completed" {
-				if repo != nil {
-					execErr = e.finalizeCodeChange(ctx, &task, run, repo, baseBranch)
-				}
-				if execErr != nil {
-					e.failRun(run, startedAt, execErr)
-				} else {
-					e.finishSuccessfulRun(run, startedAt)
-				}
-			} else {
-				execErr = fmt.Errorf("task not completed: %s", result.FailureReason)
-				e.failRun(run, startedAt, execErr)
-			}
-		}
+		execErr = fmt.Errorf("task not completed: %s", result.FailureReason)
+		e.failRun(run, startedAt, execErr)
 	}
 	if writeErr := e.persistRun(ctx, run); writeErr != nil {
 		return nil, fmt.Errorf("persist resumed run task_id=%d: %w", task.ID, writeErr)
 	}
-	return e.finishRun(ctx, &task, execVersion, run, execErr)
+	if execErr != nil {
+		return e.finishRun(ctx, &task, execVersion, run, execErr)
+	}
+	if result.NeedsApproval {
+		proposalJSON, err := json.Marshal(proposalPayload(run, result))
+		if err != nil {
+			return nil, fmt.Errorf("encode resumed proposal task_id=%d: %w", task.ID, err)
+		}
+		e.recordRunProgress(ctx, &task, run)
+		if _, err := e.store.MarkAwaitingApproval(ctx, task.ID, execVersion, run.ID, proposalJSON); err != nil {
+			return nil, err
+		}
+		return &ExecuteResult{TaskID: task.ID, RunID: run.ID, Status: "awaiting_approval", Summary: result.Summary}, nil
+	}
+	return e.finishRun(ctx, &task, execVersion, run, nil)
 }
 
-func buildScheduledResumePrompt(systemPrompt, reason, workRules, toolCatalog string) (string, error) {
+// buildScheduledResumePrompt builds the prompt for a woken-up waiting Task. It
+// carries the approval policy because a resumed session runs under the same
+// result contract as a first pass: it may well decide the next step needs
+// approval, and it cannot make that call without the policy text.
+func buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog string) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	reason = strings.TrimSpace(reason)
 	if systemPrompt == "" || reason == "" {
 		return "", fmt.Errorf("waiting resume system prompt and reason are required")
 	}
-	prompt := systemPrompt + "\n\n" + m5PhaseResumeWaiting
-	if block := strings.TrimSpace(workRules); block != "" {
-		prompt += "\n\n" + block
-	}
-	if block := strings.TrimSpace(toolCatalog); block != "" {
-		prompt += "\n\n" + block
+	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeWaiting, workRules, toolCatalog)
+	if err != nil {
+		return "", err
 	}
 	return fmt.Sprintf("%s\n\n等待原因：%s\n当前时间：%s", prompt, reason, time.Now().UTC().Format(time.RFC3339)), nil
 }
 
-func buildHumanResumePrompt(systemPrompt, response, workRules, toolCatalog string) (string, error) {
+// buildHumanResumePrompt builds the prompt that continues a session after the
+// principal answered. It carries the approval policy for the same reason as the
+// waiting resume above.
+func buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog string) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	response = strings.TrimSpace(response)
 	if systemPrompt == "" || response == "" {
 		return "", fmt.Errorf("human resume system prompt and response are required")
 	}
-	prompt := systemPrompt + "\n\n" + m5PhaseResumeHuman
+	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeHuman, workRules, toolCatalog)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s\n\n委托人回应：%s\n当前时间：%s", prompt, response, time.Now().UTC().Format(time.RFC3339)), nil
+}
+
+// renderResumeInstructions assembles the shared resume preamble: phase, approval
+// policy, work rules and tool catalog.
+func renderResumeInstructions(systemPrompt, approvalPolicy, phase, workRules, toolCatalog string) (string, error) {
+	approvalPolicy = strings.TrimSpace(approvalPolicy)
+	if approvalPolicy == "" {
+		return "", fmt.Errorf("resume approval policy is required")
+	}
+	prompt := systemPrompt + "\n\n" + phase + `
+
+BEGIN_APPROVAL_POLICY（这是委托人在后台维护的可信审批判定策略。）
+` + approvalPolicy + `
+END_APPROVAL_POLICY`
 	if block := strings.TrimSpace(workRules); block != "" {
 		prompt += "\n\n" + block
 	}
 	if block := strings.TrimSpace(toolCatalog); block != "" {
 		prompt += "\n\n" + block
 	}
-	return fmt.Sprintf("%s\n\n委托人回应：%s\n当前时间：%s", prompt, response, time.Now().UTC().Format(time.RFC3339)), nil
+	return prompt, nil
 }
 
 func (e *AgentExecutor) finishSuccessfulRun(run *domain.ExecutionRun, startedAt time.Time) {
@@ -708,12 +670,8 @@ func (e *AgentExecutor) claimForApproval(ctx context.Context, taskID uint64, exp
 // done/failed on the real external write's verdict. It is the shared tail of
 // Approve (synchronous) and KickApprove (background goroutine).
 func (e *AgentExecutor) applyApproved(ctx context.Context, task *domain.Task, policy actionPolicy, proposal *codexProposal, execVersion int32) (*ExecuteResult, error) {
-	run, execErr := e.runApply(ctx, task, policy, proposal)
-	execErr = e.normalizeInterrupted(ctx, run, execErr)
-	if writeErr := e.persistRun(ctx, run); writeErr != nil {
-		return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
-	}
-	return e.finishRun(ctx, task, execVersion, run, execErr)
+	run, result, execErr := e.runApply(ctx, task, policy, proposal)
+	return e.routeRun(ctx, task, execVersion, run, result, execErr)
 }
 
 // Reject declines a proposed external write. It moves the awaiting_approval Task
@@ -793,39 +751,12 @@ func (e *AgentExecutor) executeClaimed(ctx context.Context, taskID uint64, execV
 		return nil, fmt.Errorf("%w: task_id=%d action_type=%s", ErrUnknownActionType, task.ID, task.ActionType)
 	}
 
-	// Only code_change runs straight through to completion (edit + commit + diff +
-	// push + open MR): the MR is a natural second review gate — nothing merges
-	// without a human. Every OTHER action_type runs the propose stage first,
-	// regardless of execution_mode. The file-backed approval policy decides
-	// whether the proposed plan may execute or must stop for human approval.
-	repoPath := ""
-	if task.ActionType == "code_change" {
-		resolved, err := e.resolveRepo(&task)
-		if err != nil {
-			return nil, err
-		}
-		repoPath = resolved
-	}
-	if runsToCompletion(&task, repoPath) {
-		run, execErr := e.runOnce(ctx, &task, policy)
-		execErr = e.normalizeInterrupted(ctx, run, execErr)
-		if writeErr := e.persistRun(ctx, run); writeErr != nil {
-			return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
-		}
-		return e.finishRun(ctx, &task, execVersion, run, execErr)
-	}
-	return e.executePropose(ctx, &task, policy, execVersion)
-}
-
-// runsToCompletion reports whether a Task skips the propose/approval gate. Only
-// code_change backed by a resolvable local repo qualifies, because the bypass is
-// paid for by the pushed branch + MR being the review gate. A code_change Task
-// whose repo cannot be resolved never produces that MR, so it would run with no
-// gate at all — it keeps propose and its approval policy like every other action.
-// execution_mode=direct is retained as persisted metadata but grants no approval
-// bypass: all non-code tasks must pass through propose and its approval policy.
-func runsToCompletion(task *domain.Task, repoPath string) bool {
-	return task != nil && task.ActionType == "code_change" && strings.TrimSpace(repoPath) != ""
+	// Every action_type takes the same path. Whether the side effect this run is
+	// about to cause needs human review, and how any code change is delivered,
+	// are the agent's judgment under the file-backed approval policy.
+	// execution_mode=direct is retained as persisted metadata but grants no
+	// approval bypass.
+	return e.executeRun(ctx, &task, policy, execVersion)
 }
 
 func validateTaskIntegrity(task *domain.Task) error {
@@ -840,12 +771,21 @@ func validateTaskIntegrity(task *domain.Task) error {
 	return nil
 }
 
-// executePropose runs the propose stage (every action except code_change) and
-// routes the outcome: if the approval policy requires review, it parks at
-// awaiting_approval with the proposal stored; otherwise the agent may finish
-// the work in place.
-func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, policy actionPolicy, execVersion int32) (*ExecuteResult, error) {
-	run, propose, execErr := e.runPropose(ctx, task, policy)
+// executeRun runs a Task's first pass and routes the outcome.
+func (e *AgentExecutor) executeRun(ctx context.Context, task *domain.Task, policy actionPolicy, execVersion int32) (*ExecuteResult, error) {
+	run, result, execErr := e.runOnce(ctx, task, policy)
+	return e.routeRun(ctx, task, execVersion, run, result, execErr)
+}
+
+// routeRun persists a finished run and sends the Task where the agent's verdict
+// says it should go: parked at awaiting_approval when the agent stopped to ask,
+// otherwise on to its terminal state.
+//
+// Every stage shares this tail, including apply. An approved proposal can turn
+// up a *second* side effect that the policy also gates, and that request has to
+// be able to stop the Task again — otherwise the agent's proposal is silently
+// dropped and the approve button has nothing to act on.
+func (e *AgentExecutor) routeRun(ctx context.Context, task *domain.Task, execVersion int32, run *domain.ExecutionRun, result *codexResult, execErr error) (*ExecuteResult, error) {
 	execErr = e.normalizeInterrupted(ctx, run, execErr)
 	if writeErr := e.persistRun(ctx, run); writeErr != nil {
 		return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
@@ -853,17 +793,14 @@ func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, p
 	if execErr != nil {
 		return e.finishRun(ctx, task, execVersion, run, execErr)
 	}
-	if propose.Outcome == "waiting" {
-		return e.finishRun(ctx, task, execVersion, run, nil)
-	}
-	if propose.Outcome == "needs_human" && !propose.NeedsApproval {
-		return e.finishRun(ctx, task, execVersion, run, nil)
-	}
-	if propose.NeedsApproval {
-		proposalJSON, err := json.Marshal(proposalPayload(run, propose))
+	if result != nil && result.NeedsApproval {
+		proposalJSON, err := json.Marshal(proposalPayload(run, result))
 		if err != nil {
 			return nil, fmt.Errorf("encode proposal task_id=%d: %w", task.ID, err)
 		}
+		// Parking for approval does not pass through finishRun, but the
+		// investigation that produced the proposal is real progress.
+		e.recordRunProgress(ctx, task, run)
 		if _, err := e.store.MarkAwaitingApproval(ctx, task.ID, execVersion, run.ID, proposalJSON); err != nil {
 			return nil, fmt.Errorf("park Task id=%d awaiting approval: %w", task.ID, err)
 		}
@@ -872,12 +809,31 @@ func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, p
 			Summary: derefString(run.Summary),
 		}, nil
 	}
-	// Pure read-only: codex already did the work; finish on its verdict.
-	if propose.Outcome != "completed" {
-		cause := fmt.Errorf("task not completed: %s", propose.FailureReason)
-		return e.finishRun(ctx, task, execVersion, run, cause)
-	}
 	return e.finishRun(ctx, task, execVersion, run, nil)
+}
+
+// recordRunProgress stores where the matter now stands, as this run described
+// it. A run that parked in waiting or failed outright still moved the matter
+// forward, so this is recorded for every terminal state, not just success.
+//
+// Like observations, this is bookkeeping alongside the real result: the
+// execution already happened and its outcome must still be recorded, so a
+// failure to store the summary is logged rather than propagated.
+func (e *AgentExecutor) recordRunProgress(ctx context.Context, task *domain.Task, run *domain.ExecutionRun) {
+	if task == nil || run == nil || len(run.Output) == 0 {
+		return
+	}
+	var structured struct {
+		ProgressSummary string `json:"progress_summary"`
+	}
+	if err := json.Unmarshal(run.Output, &structured); err != nil {
+		// The run's own result is already stored; a shape we cannot read here
+		// must not turn a finished execution into a failure.
+		return
+	}
+	if err := e.store.RecordProgress(ctx, task.ID, structured.ProgressSummary, e.now()); err != nil {
+		hlog.CtxErrorf(ctx, "m5 progress save failed task_id=%d run_id=%d error=%+v", task.ID, run.ID, err)
+	}
 }
 
 // finishRun persists the terminal state of a run (done on success, failed on
@@ -886,7 +842,7 @@ func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, p
 // and the apply stage.
 func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVersion int32, run *domain.ExecutionRun, execErr error) (*ExecuteResult, error) {
 	ctx = context.WithoutCancel(ctx)
-	e.recordRunObservations(ctx, task, run)
+	e.recordRunProgress(ctx, task, run)
 	if execErr == nil && run.Status == "waiting" {
 		waiting, err := waitingFromRun(run)
 		if err != nil {
@@ -935,9 +891,7 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 	}
 	result := &ExecuteResult{
 		TaskID: task.ID, RunID: run.ID, Status: finishStatus,
-		Summary: derefString(run.Summary), Branch: derefString(run.Branch),
-		Commit: derefString(run.Commit), DiffPath: derefString(run.DiffPath),
-		MergeRequestURL: derefString(run.MergeRequestURL),
+		Summary: derefString(run.Summary),
 	}
 	if execErr != nil {
 		return result, fmt.Errorf("execute Task id=%d: %w", task.ID, execErr)
@@ -945,205 +899,46 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 	return result, nil
 }
 
-// runOnce builds the prompt, runs codex in the right sandbox, and (for code
-// changes) creates a branch + commit + diff. It always returns a populated
+// runOnce builds the prompt and runs codex. Every action_type takes this path:
+// the agent investigates, judges approval, and either finishes the work or
+// returns a proposal. Code delivery (branch/commit/MR) is the agent's job and
+// shows up in effects, not in dedicated columns. Always returns a populated
 // *domain.ExecutionRun; execErr is non-nil on any failure so the caller can
 // mark the Task failed while still recording what was attempted.
-func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy actionPolicy) (*domain.ExecutionRun, error) {
+func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task, policy actionPolicy) (*domain.ExecutionRun, *codexResult, error) {
 	startedAt := e.now().UTC()
 	run := &domain.ExecutionRun{
 		TaskID: task.ID, ActionType: task.ActionType, Stage: "execute", Sandbox: policy.sandbox,
 		Status: "running", StartedAt: startedAt,
 	}
 
-	var repoPath string
-	var repo *gitRepo
-	baseBranch := ""
-	if task.ActionType == "code_change" {
-		// Resolve the working directory from the M3-frozen context (repo_ref slot
-		// first, then project.repos[].local_path). repos being empty must NOT block
-		// this round (docs/design-context-pipeline.md §7): codex runs without --cd
-		// and self-locates / reports the missing repo.
-		path, err := e.resolveRepo(task)
-		if err != nil {
-			return e.failRun(run, startedAt, err), err
-		}
-		if path != "" {
-			repoPath = path
-			run.RepoPath = &repoPath
-			repo = newGitRepo(repoPath, 30*time.Second)
-			if err := repo.ensureClean(ctx); err != nil {
-				return e.failRun(run, startedAt, err), err
-			}
-			baseBranch, err = repo.currentBranch(ctx)
-			if err != nil {
-				return e.failRun(run, startedAt, err), err
-			}
-			run.BaseBranch = &baseBranch
-			branch := fmt.Sprintf("jarvis/task-%d", task.ID)
-			if err := repo.createBranch(ctx, branch); err != nil {
-				return e.failRun(run, startedAt, err), err
-			}
-			run.Branch = &branch
-		}
+	repoPath, err := e.resolveRepo(task)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	if repoPath != "" {
+		run.RepoPath = &repoPath
 	}
 
 	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
 	sharedMemory, err := e.sharedMem.Text(ctx)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
 	workRules, err := e.workRules.Block(ctx, workrule.StageExecute)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
 	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
 	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
 	if err != nil {
 		cause := fmt.Errorf("load M5 execution system prompt: %w", err)
-		return e.failRun(run, startedAt, cause), cause
-	}
-	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
-	if err != nil {
-		cause := fmt.Errorf("load M5 tool catalog: %w", err)
-		return e.failRun(run, startedAt, cause), cause
-	}
-	prompt, err := buildExecutionPrompt(systemPrompt, task, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
-	if err != nil {
-		return e.failRun(run, startedAt, err), err
-	}
-	run.Prompt = prompt
-
-	outputCapture, err := e.prepareTaskRunOutput(task.ID, run.Stage, startedAt, prompt)
-	if err != nil {
-		return e.failRun(run, startedAt, err), err
-	}
-	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, repoPath, schemaExecution, task.ID, outputCapture)
-	if err != nil {
-		return e.failRun(run, startedAt, err), err
-	}
-	run.CodexSessionID = &codexOut.SessionID
-
-	// codex reports its own success verdict (executionResultSchema). A run that
-	// finished the process but did not achieve the goal (e.g. "message not
-	// sent") is a failure — surface it instead of silently marking succeeded.
-	if codexOut.Result == nil {
-		cause := fmt.Errorf("codex exec returned no structured result")
-		run.Summary = &codexOut.LastMessage
-		return e.failRun(run, startedAt, cause), cause
-	}
-	// Store the clean human summary on Summary and the full structured verdict
-	// (success/failure_reason/needs_followup/enrichments) on Output, so the UI
-	// shows prose, not a raw JSON blob.
-	if err := recordAgentVerdict(run, codexOut.Result.Summary, codexOut.Result, codexOut.Result.Effects); err != nil {
-		return e.failRun(run, startedAt, err), err
-	}
-	if codexOut.Result.Outcome == "waiting" {
-		finished := e.now().UTC()
-		run.Status = "waiting"
-		run.FinishedAt = &finished
-		ms := finished.Sub(startedAt).Milliseconds()
-		run.DurationMs = &ms
-		return run, nil
-	}
-	if codexOut.Result.Outcome == "needs_human" {
-		e.finishNeedsHumanRun(run, startedAt)
-		return run, nil
-	}
-	if codexOut.Result.Outcome != "completed" {
-		cause := fmt.Errorf("task not completed: %s", codexOut.Result.FailureReason)
-		return e.failRun(run, startedAt, cause), cause
-	}
-
-	if repo != nil {
-		if err := e.finalizeCodeChange(ctx, task, run, repo, baseBranch); err != nil {
-			return e.failRun(run, startedAt, err), err
-		}
-	}
-
-	finished := e.now().UTC()
-	run.Status = "succeeded"
-	run.FinishedAt = &finished
-	ms := finished.Sub(startedAt).Milliseconds()
-	run.DurationMs = &ms
-	return run, nil
-}
-
-func (e *AgentExecutor) finalizeCodeChange(ctx context.Context, task *domain.Task, run *domain.ExecutionRun, repo *gitRepo, baseBranch string) error {
-	if task == nil || run == nil || repo == nil || run.Branch == nil || strings.TrimSpace(*run.Branch) == "" || strings.TrimSpace(baseBranch) == "" {
-		return fmt.Errorf("%w: incomplete Git delivery state for code_change", ErrInvalidInput)
-	}
-	changed, err := repo.hasChanges(ctx)
-	if err != nil {
-		return err
-	}
-	if !changed {
-		return nil
-	}
-	commit, err := repo.commitAll(ctx, fmt.Sprintf("jarvis: task %d — %s", task.ID, task.Title))
-	if err != nil {
-		return err
-	}
-	run.Commit = &commit
-	diff, err := repo.diffAgainst(ctx, baseBranch)
-	if err != nil {
-		return err
-	}
-	diffPath, err := e.writeDiff(task.ID, diff)
-	if err != nil {
-		return err
-	}
-	run.DiffPath = &diffPath
-	// Full-autonomy: push the branch and open an MR. A push/MR failure is a
-	// real failure of a code_change Task (the change never leaves the box).
-	pushOut, err := repo.pushBranchWithMR(ctx, *run.Branch, baseBranch)
-	if err != nil {
-		return err
-	}
-	if url := extractMergeRequestURL(pushOut); url != "" {
-		run.MergeRequestURL = &url
-	}
-	return nil
-}
-
-// runPropose runs the propose stage. It asks codex to judge — by what it will
-// actually do — whether the run touches the outside world, and to either finish
-// read-only/local work or produce a proposal WITHOUT touching the outside world
-// (see buildProposePrompt). The propose stage never runs for code_change, so
-// there is no repo/git handling here. It always returns a populated
-// *domain.ExecutionRun; execErr is non-nil on any failure.
-func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, policy actionPolicy) (*domain.ExecutionRun, *proposeResult, error) {
-	startedAt := e.now().UTC()
-	run := &domain.ExecutionRun{
-		TaskID: task.ID, ActionType: task.ActionType, Stage: "propose", Sandbox: policy.sandbox,
-		Status: "running", StartedAt: startedAt,
-	}
-
-	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID)
-	if err != nil {
-		return e.failRun(run, startedAt, err), nil, err
-	}
-	sharedMemory, err := e.sharedMem.Text(ctx)
-	if err != nil {
-		return e.failRun(run, startedAt, err), nil, err
-	}
-	workRules, err := e.workRules.Block(ctx, workrule.StageExecute)
-	if err != nil {
-		return e.failRun(run, startedAt, err), nil, err
-	}
-	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
-	if err != nil {
-		return e.failRun(run, startedAt, err), nil, err
-	}
-	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
-	if err != nil {
-		cause := fmt.Errorf("load M5 propose system prompt: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
 	approvalPolicy, err := e.textStore.Content(ctx, textstore.ApprovalPolicyKey)
@@ -1156,7 +951,7 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	prompt, err := buildProposePrompt(systemPrompt, approvalPolicy, task, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildExecutionPrompt(systemPrompt, approvalPolicy, task, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1166,117 +961,128 @@ func (e *AgentExecutor) runPropose(ctx context.Context, task *domain.Task, polic
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, "", schemaPropose, task.ID, outputCapture)
+	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, repoPath, schemaExecution, task.ID, outputCapture)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
 	run.CodexSessionID = &codexOut.SessionID
-	if codexOut.Propose == nil {
-		cause := fmt.Errorf("codex propose returned no structured result")
+	if codexOut.Result == nil {
+		cause := fmt.Errorf("codex exec returned no structured result")
 		run.Summary = &codexOut.LastMessage
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	propose := codexOut.Propose
-	if err := recordAgentVerdict(run, propose.Summary, propose, propose.Effects); err != nil {
+	result := codexOut.Result
+	if err := recordAgentVerdict(run, result.Summary, result, result.Effects); err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-
-	finished := e.now().UTC()
-	run.Status = "succeeded"
-	if propose.Outcome == "waiting" {
-		run.Status = "waiting"
-	} else if propose.Outcome == "needs_human" && !propose.NeedsApproval {
-		run.Status = "needs_human"
+	if result.Outcome == "waiting" {
+		e.finishWaitingRun(run, startedAt)
+		return run, result, nil
 	}
-	run.FinishedAt = &finished
-	ms := finished.Sub(startedAt).Milliseconds()
-	run.DurationMs = &ms
-	return run, propose, nil
+	if result.NeedsApproval {
+		e.finishSuccessfulRun(run, startedAt)
+		return run, result, nil
+	}
+	if result.Outcome == "needs_human" {
+		e.finishNeedsHumanRun(run, startedAt)
+		return run, result, nil
+	}
+	if result.Outcome != "completed" {
+		cause := fmt.Errorf("task not completed: %s", result.FailureReason)
+		return e.failRun(run, startedAt, cause), nil, cause
+	}
+	e.finishSuccessfulRun(run, startedAt)
+	return run, result, nil
 }
 
 // runApply lands an approved proposal. It builds a fresh codex invocation with
 // the approved plan + artifact embedded (buildApplyPrompt) and runs it under the
 // normal executionResultSchema so the real external write reports a real success
-// verdict. Like runPropose, external actions carry no repo/git handling.
-func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy actionPolicy, proposal *codexProposal) (*domain.ExecutionRun, error) {
+// verdict.
+func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, policy actionPolicy, proposal *codexProposal) (*domain.ExecutionRun, *codexResult, error) {
 	startedAt := e.now().UTC()
 	run := &domain.ExecutionRun{
 		TaskID: task.ID, ActionType: task.ActionType, Stage: "apply", Sandbox: policy.sandbox,
 		Status: "running", StartedAt: startedAt,
 	}
 
+	repoPath, err := e.resolveRepo(task)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	if repoPath != "" {
+		run.RepoPath = &repoPath
+	}
 	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
 	sharedMemory, err := e.sharedMem.Text(ctx)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
 	workRules, err := e.workRules.Block(ctx, workrule.StageExecute)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
 	systemPrompt, err := e.textStore.Content(ctx, textstore.SystemPromptM5Key)
 	if err != nil {
 		cause := fmt.Errorf("load M5 apply system prompt: %w", err)
-		return e.failRun(run, startedAt, cause), cause
+		return e.failRun(run, startedAt, cause), nil, cause
 	}
 	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
 	if err != nil {
 		cause := fmt.Errorf("load M5 tool catalog: %w", err)
-		return e.failRun(run, startedAt, cause), cause
+		return e.failRun(run, startedAt, cause), nil, cause
 	}
 	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
-	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
 	run.Prompt = prompt
 
 	outputCapture, err := e.prepareTaskRunOutput(task.ID, run.Stage, startedAt, prompt)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
-	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, "", schemaExecution, task.ID, outputCapture)
+	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, policy.sandbox, repoPath, schemaExecution, task.ID, outputCapture)
 	if err != nil {
-		return e.failRun(run, startedAt, err), err
+		return e.failRun(run, startedAt, err), nil, err
 	}
 	run.CodexSessionID = &codexOut.SessionID
 	if codexOut.Result == nil {
 		cause := fmt.Errorf("codex exec returned no structured result")
 		run.Summary = &codexOut.LastMessage
-		return e.failRun(run, startedAt, cause), cause
+		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	if err := recordAgentVerdict(run, codexOut.Result.Summary, codexOut.Result, codexOut.Result.Effects); err != nil {
-		return e.failRun(run, startedAt, err), err
+	result := codexOut.Result
+	if err := recordAgentVerdict(run, result.Summary, result, result.Effects); err != nil {
+		return e.failRun(run, startedAt, err), nil, err
 	}
-	if codexOut.Result.Outcome == "waiting" {
-		finished := e.now().UTC()
-		run.Status = "waiting"
-		run.FinishedAt = &finished
-		ms := finished.Sub(startedAt).Milliseconds()
-		run.DurationMs = &ms
-		return run, nil
+	if result.Outcome == "waiting" {
+		e.finishWaitingRun(run, startedAt)
+		return run, result, nil
 	}
-	if codexOut.Result.Outcome == "needs_human" {
+	// Landing an approved proposal can surface a further gated side effect. The
+	// run itself succeeded in that case; routeRun parks the Task for the new ask.
+	if result.NeedsApproval {
+		e.finishSuccessfulRun(run, startedAt)
+		return run, result, nil
+	}
+	if result.Outcome == "needs_human" {
 		e.finishNeedsHumanRun(run, startedAt)
-		return run, nil
+		return run, result, nil
 	}
-	if codexOut.Result.Outcome != "completed" {
-		cause := fmt.Errorf("task not completed: %s", codexOut.Result.FailureReason)
-		return e.failRun(run, startedAt, cause), cause
+	if result.Outcome != "completed" {
+		cause := fmt.Errorf("task not completed: %s", result.FailureReason)
+		return e.failRun(run, startedAt, cause), nil, cause
 	}
-
-	finished := e.now().UTC()
-	run.Status = "succeeded"
-	run.FinishedAt = &finished
-	ms := finished.Sub(startedAt).Milliseconds()
-	run.DurationMs = &ms
-	return run, nil
+	e.finishSuccessfulRun(run, startedAt)
+	return run, result, nil
 }
 
 func (e *AgentExecutor) failRun(run *domain.ExecutionRun, startedAt time.Time, cause error) *domain.ExecutionRun {
@@ -1323,10 +1129,9 @@ func waitingFromRun(run *domain.ExecutionRun) (*codexWaiting, error) {
 	return output.Waiting, nil
 }
 
-// resolveRepo locates the local git repo for a code_change Task from the
-// M3-frozen context. It reads the snapshot's project.repos[].local_path.
-// Returns ("", nil) when no repo is available so the caller runs codex without
-// --cd (repos empty must not block — see docs/design-context-pipeline.md §7).
+// resolveRepo locates a local git working copy from the frozen context, if any.
+// It reads the snapshot's project.repos[].local_path. Returns ("", nil) when no
+// repo is available so the caller runs codex without --cd.
 func (e *AgentExecutor) resolveRepo(task *domain.Task) (string, error) {
 	// A malformed snapshot must surface; an absent/empty repos list is non-blocking.
 	for _, localPath := range snapshotRepoLocalPaths(task.Background) {
@@ -1374,40 +1179,17 @@ func snapshotRepoLocalPaths(background []byte) []string {
 	return paths
 }
 
-func (e *AgentExecutor) writeDiff(taskID uint64, diff string) (string, error) {
-	dir := filepath.Join(e.runsDir, fmt.Sprintf("task-%d", taskID))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create runs dir %q: %w", dir, err)
-	}
-	path := filepath.Join(dir, fmt.Sprintf("change-%d.diff", e.now().UTC().UnixNano()))
-	if err := os.WriteFile(path, []byte(diff), 0o644); err != nil {
-		return "", fmt.Errorf("write diff %q: %w", path, err)
-	}
-	return path, nil
-}
-
 // runEffects returns the run's external-effect list for display: the agent's
-// declared effects (stored verbatim, open payload) plus, for code_change runs, a
-// synthesized merge_request effect built from the structured Git fields so the MR
-// shows up in the same "对外产出" surface as feishu/doc/meeting effects. Each
-// effect is a loose map so unknown kinds and extra fields survive untouched.
+// declared effects stored verbatim. Each effect is a loose map so unknown kinds
+// and extra fields survive untouched — including merge_request entries the agent
+// declared itself after opening an MR.
 func runEffects(run *domain.ExecutionRun) []map[string]any {
-	var effects []map[string]any
-	if len(run.Effects) > 0 {
-		var declared []map[string]any
-		if err := json.Unmarshal(run.Effects, &declared); err == nil {
-			effects = append(effects, declared...)
-		}
+	if len(run.Effects) == 0 {
+		return nil
 	}
-	if run.MergeRequestURL != nil && strings.TrimSpace(*run.MergeRequestURL) != "" {
-		mr := map[string]any{"kind": "merge_request", "title": "Merge Request", "url": *run.MergeRequestURL}
-		if run.Branch != nil && strings.TrimSpace(*run.Branch) != "" {
-			mr["target"] = *run.Branch
-		}
-		if run.Commit != nil && strings.TrimSpace(*run.Commit) != "" {
-			mr["commit"] = *run.Commit
-		}
-		effects = append(effects, mr)
+	var effects []map[string]any
+	if err := json.Unmarshal(run.Effects, &effects); err != nil {
+		return nil
 	}
 	return effects
 }
@@ -1465,18 +1247,6 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 	if run.Summary != nil {
 		payload["summary"] = *run.Summary
 	}
-	if run.Branch != nil {
-		payload["branch"] = *run.Branch
-	}
-	if run.Commit != nil {
-		payload["commit"] = *run.Commit
-	}
-	if run.DiffPath != nil {
-		payload["diff_path"] = *run.DiffPath
-	}
-	if run.MergeRequestURL != nil {
-		payload["merge_request_url"] = *run.MergeRequestURL
-	}
 	if effects := runEffects(run); len(effects) > 0 {
 		payload["effects"] = effects
 	}
@@ -1517,22 +1287,22 @@ func resultHasStage(raw []byte, stage string) bool {
 // awaiting_approval. stage="proposal" marks it so the UI and apply stage can
 // tell a pending proposal apart from a final run result. It carries the full
 // artifact so the human reviews exactly what will be written.
-func proposalPayload(run *domain.ExecutionRun, propose *proposeResult) map[string]any {
+func proposalPayload(run *domain.ExecutionRun, result *codexResult) map[string]any {
 	payload := map[string]any{
 		"stage":       "proposal",
 		"action_type": run.ActionType,
-		"summary":     propose.Summary,
+		"summary":     result.Summary,
 		"proposal": map[string]any{
-			"action":   propose.Proposal.Action,
-			"target":   propose.Proposal.Target,
-			"artifact": propose.Proposal.Artifact,
+			"action":   result.Proposal.Action,
+			"target":   result.Proposal.Target,
+			"artifact": result.Proposal.Artifact,
 		},
 	}
-	if strings.TrimSpace(propose.NeedsFollowup) != "" {
-		payload["needs_followup"] = propose.NeedsFollowup
+	if strings.TrimSpace(result.NeedsFollowup) != "" {
+		payload["needs_followup"] = result.NeedsFollowup
 	}
-	if len(propose.Enrichments) > 0 {
-		payload["enrichments"] = propose.Enrichments
+	if len(result.Enrichments) > 0 {
+		payload["enrichments"] = result.Enrichments
 	}
 	if run.CodexSessionID != nil {
 		payload["codex_session_id"] = *run.CodexSessionID
@@ -1581,21 +1351,4 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-// extractMergeRequestURL scans git remote push output for the MR/PR URL that
-// GitLab/ByteDance-style remotes print after a push. It looks for the first
-// http(s) URL on a line mentioning a merge/pull request. Returns "" when the
-// remote printed no such URL (push options ignored) — that is non-fatal.
-func extractMergeRequestURL(pushOutput string) string {
-	for _, line := range strings.Split(pushOutput, "\n") {
-		lower := strings.ToLower(line)
-		if !strings.Contains(lower, "merge request") && !strings.Contains(lower, "pull request") && !strings.Contains(lower, "/merge_requests/") {
-			continue
-		}
-		if idx := strings.Index(line, "http"); idx >= 0 {
-			return strings.TrimSpace(line[idx:])
-		}
-	}
-	return ""
 }

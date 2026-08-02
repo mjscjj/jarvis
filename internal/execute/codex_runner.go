@@ -31,19 +31,15 @@ const maxResumeSchemaRewrites = 2
 // a contract break apart from a process failure and ask for a rewrite.
 var ErrSchemaViolation = errors.New("agent final message violates the required schema")
 
-// codexRun is the raw outcome of one codex CLI invocation. At most one of
-// Result / Propose is populated, chosen by the schema the caller enforced;
-// both are nil for RunText callers that enforce no schema.
+// codexRun is the raw outcome of one codex CLI invocation. Result is nil for
+// RunText callers that enforce no schema.
 type codexRun struct {
 	SessionID   string
 	LastMessage string
-	// Result is the structured verdict codex returns per executionResultSchema
-	// (the apply / low-risk path). It is nil unless that schema was enforced.
+	// Result is the structured verdict codex returns per executionResultSchema,
+	// which every task-executing stage shares. It is nil unless that schema was
+	// enforced.
 	Result *codexResult
-	// Propose is the risk-judgement verdict codex returns per proposeResultSchema
-	// (the propose stage of an external-side-effect action). It is nil unless
-	// that schema was enforced.
-	Propose *proposeResult
 }
 
 type runInvocation struct {
@@ -61,13 +57,23 @@ type codexOutputCapture struct {
 // execution (see executionResultSchema). It lets M5 判 done/failed on a real
 // success bool instead of the process exit code.
 type codexResult struct {
-	Outcome       string            `json:"outcome"`
-	Summary       string            `json:"summary"`
-	FailureReason string            `json:"failure_reason"`
-	NeedsFollowup string            `json:"needs_followup"`
-	Enrichments   []codexEnrichment `json:"enrichments"`
-	Effects       []codexEffect     `json:"effects"`
-	Waiting       *codexWaiting     `json:"waiting"`
+	// NeedsApproval is the agent's own verdict, under the injected approval
+	// policy, on the side effect it is about to cause. When true it performed no
+	// mutation and Proposal holds the plan + full artifact awaiting review; when
+	// false it was free to finish the work in place.
+	NeedsApproval bool           `json:"needs_approval"`
+	Proposal      *codexProposal `json:"proposal"`
+	Outcome       string         `json:"outcome"`
+	Summary       string         `json:"summary"`
+	// ProgressSummary is where the whole matter stands, spanning every run of the
+	// Task, whereas Summary covers only this run. Empty means "this run moved
+	// nothing", and the stored Task.Summary is left as it was.
+	ProgressSummary string            `json:"progress_summary"`
+	FailureReason   string            `json:"failure_reason"`
+	NeedsFollowup   string            `json:"needs_followup"`
+	Enrichments     []codexEnrichment `json:"enrichments"`
+	Effects         []codexEffect     `json:"effects"`
+	Waiting         *codexWaiting     `json:"waiting"`
 }
 
 type codexWaiting struct {
@@ -182,23 +188,6 @@ func (e codexEffect) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
-// proposeResult is the structured final message codex must return for the
-// propose stage of a non-code action (see proposeResultSchema). When
-// NeedsApproval is false the agent already finished pure read-only work. When it
-// is true the agent performed no mutation; Proposal holds the plan + full
-// artifact awaiting human approval before apply lands it.
-type proposeResult struct {
-	NeedsApproval bool              `json:"needs_approval"`
-	Outcome       string            `json:"outcome"`
-	Summary       string            `json:"summary"`
-	FailureReason string            `json:"failure_reason"`
-	NeedsFollowup string            `json:"needs_followup"`
-	Enrichments   []codexEnrichment `json:"enrichments"`
-	Effects       []codexEffect     `json:"effects"`
-	Proposal      *codexProposal    `json:"proposal"`
-	Waiting       *codexWaiting     `json:"waiting"`
-}
-
 // codexProposal is the concrete mutation the agent wants a human to approve:
 // what it will do, which object it targets, and the complete artifact (file
 // content, changed document, exact message, meeting request, …).
@@ -271,25 +260,20 @@ func resumeAcceptsOutputSchema(bin string) (bool, error) {
 }
 
 // Schema selects which structured final-message contract Run enforces:
-//   - schemaNone: no schema; codexRun.Result and .Propose stay nil (RunText).
-//   - schemaExecution: executionResultSchema; parsed into codexRun.Result (the
-//     apply / low-risk landing verdict).
-//   - schemaPropose: proposeResultSchema; parsed into codexRun.Propose (the
-//     mutation judgement + proposal).
+//   - schemaNone: no schema; codexRun.Result stays nil (RunText).
+//   - schemaExecution: executionResultSchema; parsed into codexRun.Result. Every
+//     task-executing stage shares it, including the approval verdict.
 type schema int
 
 const (
 	schemaNone schema = iota
 	schemaExecution
-	schemaPropose
 )
 
 func (s schema) definition() (string, bool) {
 	switch s {
 	case schemaExecution:
 		return executionResultSchema, true
-	case schemaPropose:
-		return proposeResultSchema, true
 	default:
 		return "", false
 	}
@@ -492,19 +476,15 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 			return nil, fmt.Errorf("%w: %w", ErrSchemaViolation, err)
 		}
 		run.Result = result
-	case schemaPropose:
-		propose, err := parseProposeResult(lastMessage)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrSchemaViolation, err)
-		}
-		run.Propose = propose
 	}
 	return run, nil
 }
 
-// parseExecutionResult decodes codex's schema-constrained final message. It is
-// strict (fail-fast): a malformed or empty result is an execution failure, not
-// a silent success.
+// parseExecutionResult decodes codex's schema-constrained final message, for
+// every stage. It is strict (fail-fast): a malformed or empty result is an
+// execution failure, not a silent success, and needs_approval=true MUST carry a
+// non-empty proposal (action + target + artifact) — a "please approve" verdict
+// with no artifact is useless and is treated as a failure, not a silent stop.
 func parseExecutionResult(lastMessage string) (*codexResult, error) {
 	trimmed := strings.TrimSpace(lastMessage)
 	if trimmed == "" {
@@ -524,49 +504,20 @@ func parseExecutionResult(lastMessage string) (*codexResult, error) {
 		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
 	result.Effects = normalizeEffects(result.Effects)
-	if err := validateOutcome(result.Outcome, result.FailureReason, result.NeedsFollowup, result.Waiting); err != nil {
-		return nil, fmt.Errorf("codex exec result: %w", err)
-	}
-	return &result, nil
-}
-
-// parseProposeResult decodes codex's propose-stage final message. It is strict
-// (fail-fast): needs_approval=true MUST carry a non-empty proposal (action +
-// target + artifact) — a "please approve" verdict with no artifact is useless
-// and is treated as an execution failure, not a silent stop.
-func parseProposeResult(lastMessage string) (*proposeResult, error) {
-	trimmed := strings.TrimSpace(lastMessage)
-	if trimmed == "" {
-		return nil, fmt.Errorf("codex propose returned empty result message")
-	}
-	decoder := json.NewDecoder(strings.NewReader(trimmed))
-	decoder.DisallowUnknownFields()
-	var result proposeResult
-	if err := decoder.Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode codex propose result %q: %w", limitedText([]byte(trimmed), 512), err)
-	}
-	if strings.TrimSpace(result.Summary) == "" {
-		return nil, fmt.Errorf("codex propose result summary is blank")
-	}
-	result.Enrichments = dropStrippedCodexMemoryCitations(result.Enrichments)
-	if err := validateEnrichments(result.Enrichments); err != nil {
-		return nil, fmt.Errorf("codex propose result: %w", err)
-	}
-	result.Effects = normalizeEffects(result.Effects)
 	if result.NeedsApproval {
 		if result.Outcome != "needs_human" {
-			return nil, fmt.Errorf("codex propose needs_approval=true requires outcome=needs_human")
+			return nil, fmt.Errorf("codex exec needs_approval=true requires outcome=needs_human")
 		}
 		if result.Proposal == nil {
-			return nil, fmt.Errorf("codex propose result needs_approval=true requires a proposal")
+			return nil, fmt.Errorf("codex exec result needs_approval=true requires a proposal")
 		}
 		if strings.TrimSpace(result.Proposal.Action) == "" ||
 			strings.TrimSpace(result.Proposal.Target) == "" ||
 			strings.TrimSpace(result.Proposal.Artifact) == "" {
-			return nil, fmt.Errorf("codex propose result proposal must have non-empty action, target and artifact")
+			return nil, fmt.Errorf("codex exec result proposal must have non-empty action, target and artifact")
 		}
 	} else if err := validateOutcome(result.Outcome, result.FailureReason, result.NeedsFollowup, result.Waiting); err != nil {
-		return nil, fmt.Errorf("codex propose result: %w", err)
+		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
 	return &result, nil
 }

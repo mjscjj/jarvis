@@ -138,9 +138,6 @@ type ChatBatch struct {
 type UnitExtraction struct {
 	UnitKey    string
 	Candidates []ResolvedCandidate
-	// Observations are the facts worth keeping that ask nothing of the principal.
-	// They are stored and stop there: no dedup index, no routing, no Task.
-	Observations []ObservationCandidate
 	// Memories are the per-unit retrieved memories (filtered) frozen into each
 	// Todo's context_snapshot so M5 replay the same background.
 	Memories []map[string]any
@@ -160,9 +157,6 @@ type PersistStats struct {
 	Created int
 	Updated int
 	Todos   []TodoRef
-	// ObservationsCreated counts newly stored observations; re-extracting the
-	// same fact is idempotent and does not count.
-	ObservationsCreated int
 	// Skipped counts candidates dropped because they are info-insufficient AND
 	// their identity slot (dedup key) is empty, so no stable fingerprint exists.
 	// Skipping one such candidate must not abort the whole batch (M3 是尽力抽取，

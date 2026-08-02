@@ -12,7 +12,6 @@ import (
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
 	"jarvis/internal/knowledge"
-	"jarvis/internal/observe"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
 	"jarvis/internal/sharedmem"
@@ -27,36 +26,36 @@ import (
 
 // Dependencies are process-level dependencies shared by API handlers.
 type Dependencies struct {
-	DB                  *gorm.DB
-	Todos               extract.TodoReader
-	Tasks               execute.TaskService
-	TaskSubmitter       *taskcreate.Submitter
-	Executor            *execute.AgentExecutor
-	MessageRecaller     *execute.MessageRecaller // 撤回任务已发出的飞书消息
-	Projects            *background.ProjectService
-	Persons             *background.PersonService
-	Groups              *background.GroupBackgroundService
-	Resolve             *background.ResolveService
-	Profile             *background.ProfileService
-	Resources           *background.ResourceService
-	SharedMemory        *sharedmem.SharedMemoryService
-	WorkRules           *workrule.Service
-	TextFiles           *textstore.Service
-	ScheduledTasks      *scheduledtask.Service
-	Skills              *skill.Service
-	RelationFacts       knowledge.FactService
-	Observations        observe.Service
-	Progress            progress.EventService
-	Overview            *insight.OverviewService
-	Digests             *insight.DigestService
-	DailyDigests        DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
-	Worklog             *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
-	DigestSummarizer    *insight.Summarizer     // 可选：codex 未启用时为 nil，总结接口返回 503
-	Debug               *insight.DebugService
-	Logs                *insight.LogReader
-	Chat                *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
-	Capture             *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
-	RuntimeSettings     *config.RuntimeSettingsService
+	DB               *gorm.DB
+	Todos            extract.TodoReader
+	TodoStatus       extract.TodoStatusWriter
+	Tasks            execute.TaskService
+	TaskSubmitter    *taskcreate.Submitter
+	Executor         *execute.AgentExecutor
+	MessageRecaller  *execute.MessageRecaller // 撤回任务已发出的飞书消息
+	Projects         *background.ProjectService
+	Persons          *background.PersonService
+	Groups           *background.GroupBackgroundService
+	Resolve          *background.ResolveService
+	Profile          *background.ProfileService
+	Resources        *background.ResourceService
+	SharedMemory     *sharedmem.SharedMemoryService
+	WorkRules        *workrule.Service
+	TextFiles        *textstore.Service
+	ScheduledTasks   *scheduledtask.Service
+	Skills           *skill.Service
+	RelationFacts    knowledge.FactService
+	Progress         progress.EventService
+	Overview         *insight.OverviewService
+	Digests          *insight.DigestService
+	DailyDigests     DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
+	Worklog          *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
+	DigestSummarizer *insight.Summarizer     // 可选：codex 未启用时为 nil，总结接口返回 503
+	Debug            *insight.DebugService
+	Logs             *insight.LogReader
+	Chat             *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
+	Capture          *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
+	RuntimeSettings  *config.RuntimeSettingsService
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -66,6 +65,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.DB == nil {
 		return fmt.Errorf("api mysql dependency is nil")
+	}
+	if deps.TodoStatus == nil {
+		return fmt.Errorf("api todo status writer dependency is nil")
 	}
 	if deps.Todos == nil {
 		return fmt.Errorf("api todo reader dependency is nil")
@@ -115,9 +117,6 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.RelationFacts == nil {
 		return fmt.Errorf("api relation fact service dependency is nil")
 	}
-	if deps.Observations == nil {
-		return fmt.Errorf("api observation service dependency is nil")
-	}
 	if deps.Progress == nil {
 		return fmt.Errorf("api progress service dependency is nil")
 	}
@@ -139,6 +138,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
+	h.PATCH("/api/todos/:todo_id/status", SetTodoStatus(deps.TodoStatus))
 	h.GET("/api/tasks", ListTasks(deps.Tasks))
 	h.POST("/api/tasks", CreateTask(deps.TaskSubmitter))
 	h.GET("/api/tasks/:task_id/runs", ListTaskRuns(deps.Tasks))
@@ -151,8 +151,6 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/relation-facts", CreateRelationFact(deps.RelationFacts))
 	h.PUT("/api/relation-facts/:fact_id", UpdateRelationFact(deps.RelationFacts))
 	h.DELETE("/api/relation-facts/:fact_id", DeleteRelationFact(deps.RelationFacts))
-	h.GET("/api/observations", ListObservations(deps.Observations))
-	h.DELETE("/api/observations/:observation_id", DeleteObservation(deps.Observations))
 	if deps.Executor != nil {
 		h.GET("/api/tasks/:task_id/output", GetTaskRunOutput(deps.Executor))
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))

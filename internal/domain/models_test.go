@@ -24,7 +24,7 @@ func TestMigrationModelRegistries(t *testing.T) {
 			[]any{&Message{}, &Checkpoint{}, &PrincipalActivityCheckpoint{}},
 			[]string{"message", "chat_checkpoint", "principal_activity_checkpoint"},
 		},
-		{"extract", ExtractModels(), []any{&TodoExtractWatermark{}, &TodoEvent{}, &Observation{}}, []string{"todo_extract_watermark", "todo_event", "observation"}},
+		{"extract", ExtractModels(), []any{&TodoExtractWatermark{}, &TodoEvent{}}, []string{"todo_extract_watermark", "todo_event"}},
 		{"decide", DecideModels(), []any{&DecisionAudit{}}, []string{"decision_audit"}},
 		{"knowledge", KnowledgeModels(), []any{&RelationFact{}}, []string{"relation_fact"}},
 		{"progress", ProgressModels(), []any{&TaskEvent{}, &ProjectEvent{}}, []string{"task_event", "project_event"}},

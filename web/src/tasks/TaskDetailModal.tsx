@@ -804,20 +804,13 @@ function RunDetails({ run, latest, recall }: { run: ExecutionRun; latest: boolea
           <Tag>{actionLabels[run.action_type] || run.action_type}</Tag>
           <Text type="secondary">沙箱 {run.sandbox}</Text>
           {run.codex_session_id && <Text type="secondary">session {run.codex_session_id.slice(0, 12)}…</Text>}
+          {run.repo_path && (
+            <Text type="secondary" className="mono">
+              {run.repo_path}
+            </Text>
+          )}
         </Space>
         {run.summary && <Paragraph className="task-readable-text">{run.summary}</Paragraph>}
-        {(run.merge_request_url || run.branch || run.commit || run.diff_path) && (
-          <Descriptions size="small" column={1} className="task-run-artifacts">
-            {run.merge_request_url && (
-              <Descriptions.Item label="Merge Request">
-                <Link href={run.merge_request_url} target="_blank">{run.merge_request_url}</Link>
-              </Descriptions.Item>
-            )}
-            {run.branch && <Descriptions.Item label="分支"><Text className="mono">{run.branch}</Text></Descriptions.Item>}
-            {run.commit && <Descriptions.Item label="Commit"><Text className="mono">{run.commit.slice(0, 12)}</Text></Descriptions.Item>}
-            {run.diff_path && <Descriptions.Item label="Diff"><Text className="mono" copyable>{run.diff_path}</Text></Descriptions.Item>}
-          </Descriptions>
-        )}
         {enrichments.length > 0 && (
           <div className="task-enrichment-list">
             {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}

@@ -89,8 +89,14 @@ var structuralValidator = validator.New(validator.WithRequiredStructEnabled())
 // so clearing the blocker downstream never reads as finishing the clue.
 type Candidate struct {
 	ActionType string `json:"action_type" validate:"required"`
-	Title      string `json:"title" validate:"required"`
-	Target     string `json:"target" validate:"required"`
+	// Status is the only control value M3 writes directly, and it is projected
+	// verbatim onto Todo.status. It is deliberately limited to the two states M3
+	// is entitled to pick between: extracted (needs an action, so the decision
+	// step judges it) and observing (worth remembering, nobody acts on it). M3
+	// must never be able to reach auto/dropped/confirmed and skip the decision.
+	Status string `json:"status" validate:"required,oneof=extracted observing"`
+	Title  string `json:"title" validate:"required"`
+	Target string `json:"target" validate:"required"`
 	// DesiredOutcome states what must be true in the real world before this clue
 	// is finished. M5 receives it verbatim and checks completion against it.
 	DesiredOutcome     string   `json:"desired_outcome" validate:"required"`
@@ -113,10 +119,6 @@ type Candidate struct {
 
 type ExtractionResult struct {
 	Candidates []Candidate `json:"candidates"`
-	// Observations are the things worth remembering that ask nothing of the
-	// principal. An empty list is a normal outcome (this batch was all noise or
-	// all work), so unlike Candidates a missing key is tolerated.
-	Observations []ObservationCandidate `json:"observations"`
 }
 
 // DecodeExtractionResult rejects unknown fields and trailing JSON before
@@ -137,11 +139,6 @@ func DecodeExtractionResult(payload []byte) (*ExtractionResult, error) {
 	for i := range result.Candidates {
 		if err := ValidateCandidate(&result.Candidates[i]); err != nil {
 			return nil, fmt.Errorf("%w: candidate[%d]: %v", ErrInvalidExtraction, i, err)
-		}
-	}
-	for i := range result.Observations {
-		if err := ValidateObservation(&result.Observations[i]); err != nil {
-			return nil, fmt.Errorf("%w: observation[%d]: %v", ErrInvalidExtraction, i, err)
 		}
 	}
 	return &result, nil

@@ -16,10 +16,10 @@ import (
 // TestParseProposeResultHighRisk accepts a high-risk verdict that carries a full
 // proposal (action + target + artifact).
 func TestParseProposeResultHighRisk(t *testing.T) {
-	msg := `{"needs_approval":true,"outcome":"needs_human","summary":"高风险：将更新飞书文档","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"更新周报文档","target":"周报 doc token=abc","artifact":"# 周报\n本周完成了 X。"},"waiting":null}`
-	result, err := parseProposeResult(msg)
+	msg := `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"高风险：将更新飞书文档","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"更新周报文档","target":"周报 doc token=abc","artifact":"# 周报\n本周完成了 X。"},"effects":[],"waiting":null}`
+	result, err := parseExecutionResult(msg)
 	if err != nil {
-		t.Fatalf("parseProposeResult() error = %v", err)
+		t.Fatalf("parseExecutionResult() error = %v", err)
 	}
 	if !result.NeedsApproval || result.Proposal == nil || result.Proposal.Artifact == "" {
 		t.Fatalf("result = %#v", result)
@@ -31,16 +31,16 @@ func TestParseProposeResultHighRisk(t *testing.T) {
 // and must be an execution failure, not a silent stop.
 func TestParseProposeResultRejectsMissingProposal(t *testing.T) {
 	cases := map[string]string{
-		"nil proposal":   `{"needs_approval":true,"outcome":"needs_human","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`,
-		"empty artifact": `{"needs_approval":true,"outcome":"needs_human","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"群 X","artifact":""},"waiting":null}`,
-		"empty target":   `{"needs_approval":true,"outcome":"needs_human","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"","artifact":"你好"},"waiting":null}`,
-		"blank summary":  `{"needs_approval":true,"outcome":"needs_human","summary":"","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"},"waiting":null}`,
-		"unknown field":  `{"needs_approval":true,"outcome":"needs_human","summary":"x","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"},"waiting":null,"extra":1}`,
+		"nil proposal":   `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null}`,
+		"empty artifact": `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"群 X","artifact":""},"effects":[],"waiting":null}`,
+		"empty target":   `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"","artifact":"你好"},"effects":[],"waiting":null}`,
+		"blank summary":  `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"},"effects":[],"waiting":null}`,
+		"unknown field":  `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"x","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"},"effects":[],"waiting":null,"extra":1}`,
 	}
 	for name, msg := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := parseProposeResult(msg); err == nil {
-				t.Fatalf("parseProposeResult(%s) succeeded, want fail-fast", name)
+			if _, err := parseExecutionResult(msg); err == nil {
+				t.Fatalf("parseExecutionResult(%s) succeeded, want fail-fast", name)
 			}
 		})
 	}
@@ -49,10 +49,10 @@ func TestParseProposeResultRejectsMissingProposal(t *testing.T) {
 // TestParseProposeResultLowRisk accepts a low-risk verdict where the agent
 // already finished the work (needs_approval=false, no proposal required).
 func TestParseProposeResultLowRisk(t *testing.T) {
-	msg := `{"needs_approval":false,"outcome":"completed","summary":"已给自己发提醒","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`
-	result, err := parseProposeResult(msg)
+	msg := `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已给自己发提醒","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null}`
+	result, err := parseExecutionResult(msg)
 	if err != nil {
-		t.Fatalf("parseProposeResult() error = %v", err)
+		t.Fatalf("parseExecutionResult() error = %v", err)
 	}
 	if result.NeedsApproval || result.Outcome != "completed" {
 		t.Fatalf("result = %#v", result)
@@ -62,14 +62,14 @@ func TestParseProposeResultLowRisk(t *testing.T) {
 // TestParseProposeResultLowRiskFailureNeedsReason keeps the existing fail-fast:
 // a failed low-risk verdict must explain why.
 func TestParseProposeResultLowRiskFailureNeedsReason(t *testing.T) {
-	msg := `{"needs_approval":false,"outcome":"failed","summary":"没做成","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`
-	if _, err := parseProposeResult(msg); err == nil {
+	msg := `{"needs_approval":false,"outcome":"failed","progress_summary":"","summary":"没做成","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null}`
+	if _, err := parseExecutionResult(msg); err == nil {
 		t.Fatalf("outcome=failed without failure_reason must fail")
 	}
 }
 
 func TestParseExecutionResultWaiting(t *testing.T) {
-	msg := `{"outcome":"waiting","summary":"会议仍在进行","failure_reason":"","needs_followup":"","enrichments":[],"waiting":{"scheduled_task_id":42,"wake_at":"2026-07-23T16:30:00+08:00","reason":"稍后检查妙记"}}`
+	msg := `{"needs_approval":false,"outcome":"waiting","progress_summary":"","summary":"会议仍在进行","failure_reason":"","needs_followup":"","enrichments":[],"effects":[],"proposal":null,"waiting":{"scheduled_task_id":42,"wake_at":"2026-07-23T16:30:00+08:00","reason":"稍后检查妙记"}}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
 		t.Fatalf("parseExecutionResult() error = %v", err)
@@ -80,14 +80,14 @@ func TestParseExecutionResultWaiting(t *testing.T) {
 }
 
 func TestParseExecutionResultRejectsUnscheduledWaiting(t *testing.T) {
-	msg := `{"outcome":"waiting","summary":"稍后再看","failure_reason":"","needs_followup":"","enrichments":[],"waiting":null}`
+	msg := `{"needs_approval":false,"outcome":"waiting","progress_summary":"","summary":"稍后再看","failure_reason":"","needs_followup":"","enrichments":[],"effects":[],"proposal":null,"waiting":null}`
 	if _, err := parseExecutionResult(msg); err == nil {
 		t.Fatal("outcome=waiting without a scheduled task must fail")
 	}
 }
 
 func TestParseExecutionResultNeedsHuman(t *testing.T) {
-	msg := `{"outcome":"needs_human","summary":"授权页已打开","failure_reason":"","needs_followup":"请确认是否点击授权","enrichments":[],"waiting":null}`
+	msg := `{"needs_approval":false,"outcome":"needs_human","progress_summary":"","summary":"授权页已打开","failure_reason":"","needs_followup":"请确认是否点击授权","enrichments":[],"effects":[],"proposal":null,"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
 		t.Fatalf("parseExecutionResult() error = %v", err)
@@ -96,14 +96,14 @@ func TestParseExecutionResultNeedsHuman(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 
-	blankFollowup := `{"outcome":"needs_human","summary":"需要人工","failure_reason":"","needs_followup":"","enrichments":[],"waiting":null}`
+	blankFollowup := `{"needs_approval":false,"outcome":"needs_human","progress_summary":"","summary":"需要人工","failure_reason":"","needs_followup":"","enrichments":[],"effects":[],"proposal":null,"waiting":null}`
 	if _, err := parseExecutionResult(blankFollowup); err == nil {
 		t.Fatal("outcome=needs_human without needs_followup must fail")
 	}
 }
 
 func TestParseExecutionResultAcceptsStringEnrichmentContent(t *testing.T) {
-	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":"internal/execute/prompt.go"},{"kind":"risk","label":"风险","content":"需要同步前端"}],"waiting":null}`
+	msg := `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":"internal/execute/prompt.go"},{"kind":"risk","label":"风险","content":"需要同步前端"}],"effects":[],"proposal":null,"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
 		t.Fatalf("parseExecutionResult() error = %v", err)
@@ -121,8 +121,8 @@ func TestParseExecutionResultAcceptsStringEnrichmentContent(t *testing.T) {
 // typeless open node). A JSON object/array for content must fail to decode.
 func TestParseExecutionResultRejectsNonStringEnrichmentContent(t *testing.T) {
 	for name, msg := range map[string]string{
-		"object content": `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":{"path":"x"}}],"waiting":null}`,
-		"array content":  `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"risk","label":"风险","content":["需要同步前端"]}],"waiting":null}`,
+		"object content": `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":{"path":"x"}}],"effects":[],"proposal":null,"waiting":null}`,
+		"array content":  `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"risk","label":"风险","content":["需要同步前端"]}],"effects":[],"proposal":null,"waiting":null}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := parseExecutionResult(msg); err == nil {
@@ -133,7 +133,7 @@ func TestParseExecutionResultRejectsNonStringEnrichmentContent(t *testing.T) {
 }
 
 func TestParseExecutionResultRejectsLegacyEnrichmentDetail(t *testing.T) {
-	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","detail":"internal/execute/prompt.go"}],"waiting":null}`
+	msg := `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","detail":"internal/execute/prompt.go"}],"effects":[],"proposal":null,"waiting":null}`
 	if _, err := parseExecutionResult(msg); err == nil {
 		t.Fatal("legacy detail enrichment must fail; content is the only accepted semantic payload")
 	}
@@ -145,7 +145,7 @@ func TestParseExecutionResultDropsStrippedCodexMemoryCitation(t *testing.T) {
 	// JSON, so the model parks the block in enrichments[].content; Codex then
 	// strips it from --output-last-message, leaving content="". Drop only that
 	// known placeholder so the real task enrichments survive.
-	msg := `{"outcome":"needs_human","summary":"已完成最小修复，推送需提权","failure_reason":"","needs_followup":"请提升仓库推送权限后恢复","enrichments":[{"kind":"evidence","label":"权限核验","content":"accessLevel=reporter"},{"kind":"memory_citation","label":"Memory sources","content":""}],"waiting":null}`
+	msg := `{"needs_approval":false,"outcome":"needs_human","progress_summary":"","summary":"已完成最小修复，推送需提权","failure_reason":"","needs_followup":"请提升仓库推送权限后恢复","enrichments":[{"kind":"evidence","label":"权限核验","content":"accessLevel=reporter"},{"kind":"memory_citation","label":"Memory sources","content":""}],"effects":[],"proposal":null,"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
 		t.Fatalf("parseExecutionResult() error = %v", err)
@@ -163,7 +163,7 @@ func TestParseExecutionResultDropsBlankMemoryCitationRegardlessOfLabel(t *testin
 	// "Memory citation" instead of "Memory sources". Any blank memory_citation is
 	// the same Codex strip artifact and must be dropped; other blank enrichments
 	// still fail-fast.
-	msg := `{"outcome":"needs_human","summary":"已推送 MR","failure_reason":"","needs_followup":"请 Approve MR","enrichments":[{"kind":"merge_request","label":"MR !5","content":"https://example.com/mr/5"},{"kind":"memory_citation","label":"Memory citation","content":""}],"waiting":null}`
+	msg := `{"needs_approval":false,"outcome":"needs_human","progress_summary":"","summary":"已推送 MR","failure_reason":"","needs_followup":"请 Approve MR","enrichments":[{"kind":"merge_request","label":"MR !5","content":"https://example.com/mr/5"},{"kind":"memory_citation","label":"Memory citation","content":""}],"effects":[],"proposal":null,"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
 		t.Fatalf("parseExecutionResult() error = %v", err)
@@ -177,7 +177,7 @@ func TestParseExecutionResultDropsBlankMemoryCitationRegardlessOfLabel(t *testin
 }
 
 func TestParseExecutionResultStillRejectsBlankNonMemoryEnrichment(t *testing.T) {
-	msg := `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"evidence","label":"证据","content":""}],"waiting":null}`
+	msg := `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"evidence","label":"证据","content":""}],"effects":[],"proposal":null,"waiting":null}`
 	if _, err := parseExecutionResult(msg); err == nil {
 		t.Fatal("blank non-memory enrichment content must still fail-fast")
 	}
@@ -185,10 +185,10 @@ func TestParseExecutionResultStillRejectsBlankNonMemoryEnrichment(t *testing.T) 
 
 func TestParseExecutionResultRejectsIncompleteEnrichment(t *testing.T) {
 	cases := map[string]string{
-		"blank kind":      `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"","label":"核心修改","content":"x"}],"waiting":null}`,
-		"blank label":     `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"","content":"x"}],"waiting":null}`,
-		"missing content": `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改"}],"waiting":null}`,
-		"null content":    `{"outcome":"completed","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":null}],"waiting":null}`,
+		"blank kind":      `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"","label":"核心修改","content":"x"}],"effects":[],"proposal":null,"waiting":null}`,
+		"blank label":     `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"","content":"x"}],"effects":[],"proposal":null,"waiting":null}`,
+		"missing content": `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改"}],"effects":[],"proposal":null,"waiting":null}`,
+		"null content":    `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已完成","failure_reason":"","needs_followup":"","enrichments":[{"kind":"code_link","label":"核心修改","content":null}],"effects":[],"proposal":null,"waiting":null}`,
 	}
 	for name, msg := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -200,10 +200,10 @@ func TestParseExecutionResultRejectsIncompleteEnrichment(t *testing.T) {
 }
 
 func TestParseProposeResultDropsStrippedCodexMemoryCitation(t *testing.T) {
-	msg := `{"needs_approval":true,"outcome":"needs_human","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":"doc_token=doc_x"},{"kind":"memory_citation","label":"Memory sources","content":""}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"waiting":null}`
-	result, err := parseProposeResult(msg)
+	msg := `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":"doc_token=doc_x"},{"kind":"memory_citation","label":"Memory sources","content":""}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"effects":[],"waiting":null}`
+	result, err := parseExecutionResult(msg)
 	if err != nil {
-		t.Fatalf("parseProposeResult() error = %v", err)
+		t.Fatalf("parseExecutionResult() error = %v", err)
 	}
 	if len(result.Enrichments) != 1 {
 		t.Fatalf("enrichments len = %d, want 1", len(result.Enrichments))
@@ -214,10 +214,10 @@ func TestParseProposeResultDropsStrippedCodexMemoryCitation(t *testing.T) {
 }
 
 func TestParseProposeResultAcceptsStringEnrichmentContent(t *testing.T) {
-	msg := `{"needs_approval":true,"outcome":"needs_human","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":"doc_token=doc_x; 章节: 进展/风险"}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"waiting":null}`
-	result, err := parseProposeResult(msg)
+	msg := `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":"doc_token=doc_x; 章节: 进展/风险"}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"effects":[],"waiting":null}`
+	result, err := parseExecutionResult(msg)
 	if err != nil {
-		t.Fatalf("parseProposeResult() error = %v", err)
+		t.Fatalf("parseExecutionResult() error = %v", err)
 	}
 	if len(result.Enrichments) != 1 {
 		t.Fatalf("enrichments len = %d, want 1", len(result.Enrichments))
@@ -232,7 +232,7 @@ func TestParseProposeResultAcceptsStringEnrichmentContent(t *testing.T) {
 func TestProposalPayloadRoundTrip(t *testing.T) {
 	session := "thread-123"
 	run := &domain.ExecutionRun{ActionType: "doc_write", CodexSessionID: &session}
-	propose := &proposeResult{
+	propose := &codexResult{
 		NeedsApproval: true,
 		Summary:       "将更新文档",
 		Proposal:      &codexProposal{Action: "更新文档", Target: "doc abc", Artifact: "全文内容"},
@@ -270,17 +270,17 @@ func TestDecodeStoredProposalRejectsNonProposal(t *testing.T) {
 // output (needs_approval=true + full proposal), and returns nil for anything not
 // approvable — the basis for "用同一已批准方案重试落地" (reapply).
 func TestProposalFromRunOutput(t *testing.T) {
-	good := []byte(`{"needs_approval":true,"outcome":"needs_human","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发周报","target":"研发群 chat_id=xyz","artifact":"本周进展：AAA"},"waiting":null}`)
+	good := []byte(`{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发周报","target":"研发群 chat_id=xyz","artifact":"本周进展：AAA"},"effects":[],"waiting":null}`)
 	got := proposalFromRunOutput(good)
 	if got == nil || got.Action != "发周报" || got.Target != "研发群 chat_id=xyz" || got.Artifact != "本周进展：AAA" {
 		t.Fatalf("proposalFromRunOutput(good) = %#v, want full proposal", got)
 	}
 	for name, raw := range map[string][]byte{
-		"low risk (no approval)": []byte(`{"needs_approval":false,"outcome":"completed","summary":"已做完","proposal":null}`),
+		"low risk (no approval)": []byte(`{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已做完","proposal":null,"effects":[]}`),
 		"nil proposal":           []byte(`{"needs_approval":true,"proposal":null}`),
 		"empty artifact":         []byte(`{"needs_approval":true,"proposal":{"action":"a","target":"b","artifact":""}}`),
 		"empty target":           []byte(`{"needs_approval":true,"proposal":{"action":"a","target":"","artifact":"c"}}`),
-		"final run result":       []byte(`{"outcome":"completed","summary":"done"}`),
+		"final run result":       []byte(`{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"done","effects":[],"proposal":null}`),
 		"empty":                  nil,
 		"garbage":                []byte(`not json`),
 	} {
@@ -323,8 +323,32 @@ func TestRunResultPayloadTagsStage(t *testing.T) {
 
 var errTest = errors.New("group not found")
 
+// TestResumePromptsRequireApprovalPolicy pins the fix for resumed sessions being
+// asked to judge approval without the policy to judge against. Both resume
+// paths must refuse to build rather than run blind.
+func TestResumePromptsRequireApprovalPolicy(t *testing.T) {
+	if _, err := buildHumanResumePrompt("sys", "  ", "回应", "", testToolCatalog); err == nil {
+		t.Fatal("buildHumanResumePrompt() with blank approval policy = nil error, want error")
+	}
+	if _, err := buildScheduledResumePrompt("sys", "", "等 CI", "", testToolCatalog); err == nil {
+		t.Fatal("buildScheduledResumePrompt() with blank approval policy = nil error, want error")
+	}
+}
+
+func TestBuildScheduledResumePromptCarriesApprovalPolicy(t *testing.T) {
+	prompt, err := buildScheduledResumePrompt("sys", "test approval policy", "等 CI 跑完", "", testToolCatalog)
+	if err != nil {
+		t.Fatalf("buildScheduledResumePrompt() error = %v", err)
+	}
+	for _, want := range []string{"phase=resume_waiting", "等 CI 跑完", "BEGIN_APPROVAL_POLICY", "test approval policy"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("scheduled resume prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestBuildHumanResumePrompt(t *testing.T) {
-	prompt, err := buildHumanResumePrompt("test M5 system prompt", "我已确认授权，请继续", "", testToolCatalog)
+	prompt, err := buildHumanResumePrompt("test M5 system prompt", "test approval policy", "我已确认授权，请继续", "", testToolCatalog)
 	if err != nil {
 		t.Fatalf("buildHumanResumePrompt() error = %v", err)
 	}
@@ -333,6 +357,8 @@ func TestBuildHumanResumePrompt(t *testing.T) {
 		"phase=resume_human",
 		"同一个 Task、同一个 Session",
 		"不重跑、不重复副作用",
+		"BEGIN_APPROVAL_POLICY",
+		"test approval policy",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("human resume prompt missing %q:\n%s", want, prompt)
@@ -352,53 +378,53 @@ func TestRejectionPayload(t *testing.T) {
 	}
 }
 
-// TestBuildProposePrompt verifies the propose prompt injects the editable policy.
-func TestBuildProposePrompt(t *testing.T) {
+// TestBuildExecutionPrompt verifies the propose prompt injects the editable policy.
+func TestBuildExecutionPrompt(t *testing.T) {
 	task := &domain.Task{
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildProposePrompt("test M5 system prompt", "修改文件需要审批。", task, testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
-		t.Fatalf("buildProposePrompt() error = %v", err)
+		t.Fatalf("buildExecutionPrompt() error = %v", err)
 	}
 	for _, want := range []string{
-		"phase=propose",
+		"phase=execute",
 		"先完成安全的只读调查",
 		"独立确定真实目标、范围和下一步具体动作",
-		"只对下一步受控副作用判断是否需要审批",
+		"对下一步受控副作用自己判断是否需要审批",
 		"BEGIN_APPROVAL_POLICY",
 		"修改文件需要审批。",
 		"proposal",
 		"BEGIN_TASK_CONTEXT",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("propose prompt missing %q", want)
+			t.Fatalf("execution prompt missing %q", want)
 		}
 	}
 }
 
 // 共享记忆非空时，propose prompt 应在 TASK_CONTEXT 之前包含 BEGIN_SHARED_MEMORY 标记
 // 与内容；为空时不包含。
-func TestBuildProposePromptInjectsSharedMemory(t *testing.T) {
+func TestBuildExecutionPromptIncludesSharedMemory(t *testing.T) {
 	task := &domain.Task{
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		Plan: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildProposePrompt("test M5 system prompt", "只读不审批。", task, testToolCatalog, "", "", "", nil)
+	empty, err := buildExecutionPrompt("test M5 system prompt", "只读不审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
-		t.Fatalf("buildProposePrompt() error = %v", err)
+		t.Fatalf("buildExecutionPrompt() error = %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildProposePrompt("test M5 system prompt", "只读不审批。", task, testToolCatalog, "周报模板固定用飞书文档 xxx", "", "", nil)
+	prompt, err := buildExecutionPrompt("test M5 system prompt", "只读不审批。", task, "", testToolCatalog, "周报模板固定用飞书文档 xxx", "", "", nil)
 	if err != nil {
-		t.Fatalf("buildProposePrompt() error = %v", err)
+		t.Fatalf("buildExecutionPrompt() error = %v", err)
 	}
 	for _, want := range []string{"BEGIN_SHARED_MEMORY", "周报模板固定用飞书文档 xxx", "可信"} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("propose prompt missing %q:\n%s", want, prompt)
+			t.Fatalf("execution prompt missing %q:\n%s", want, prompt)
 		}
 	}
 	if strings.Index(prompt, "BEGIN_SHARED_MEMORY") >= strings.Index(prompt, "BEGIN_TASK_CONTEXT") {
@@ -414,7 +440,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
-	prompt, err := buildApplyPrompt("test M5 system prompt", task, proposal, testToolCatalog, "", "", "", nil)
+	prompt, err := buildApplyPrompt("test M5 system prompt", task, proposal, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
@@ -425,9 +451,9 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 	}
 }
 
-func TestBuildProposePromptRequiresApprovalPolicy(t *testing.T) {
+func TestBuildExecutionPromptRequiresApprovalPolicy(t *testing.T) {
 	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildProposePrompt("test M5 system prompt", "", task, testToolCatalog, "", "", "", nil); err == nil {
+	if _, err := buildExecutionPrompt("test M5 system prompt", "", task, "", testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatal("empty approval policy must fail")
 	}
 }
@@ -435,7 +461,7 @@ func TestBuildProposePromptRequiresApprovalPolicy(t *testing.T) {
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", Plan: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildApplyPrompt("test M5 system prompt", task, nil, testToolCatalog, "", "", "", nil); err == nil {
+	if _, err := buildApplyPrompt("test M5 system prompt", task, nil, "", testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatalf("nil proposal must fail")
 	}
 }
@@ -445,50 +471,12 @@ func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 // it goes through the propose stage, and its propose prompt still asks the agent
 // to judge — by intent — whether it will touch the outside world. This closes the
 // "an investigate Task decides mid-run to send a message" gap.
-func TestInvestigateGoesThroughPropose(t *testing.T) {
-	if runsToCompletion(&domain.Task{ActionType: "investigate", ExecutionMode: taskcreate.ExecutionModeStandard}, "") {
-		t.Fatalf("investigate must go through propose, not run to completion")
-	}
-	task := &domain.Task{
-		ID: 21, Title: "查证登录超时", ActionType: "investigate",
-		Plan: datatypes.JSON(`{"steps":["read logs"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
-	}
-	prompt, err := buildProposePrompt("test M5 system prompt", "所有写操作需要审批。", task, testToolCatalog, "", "", "", nil)
-	if err != nil {
-		t.Fatalf("buildProposePrompt(investigate) error = %v", err)
-	}
-	for _, want := range []string{"phase=propose", "APPROVAL_POLICY", "所有写操作需要审批。", "proposal"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("investigate propose prompt missing %q", want)
-		}
-	}
-}
 
-func TestDirectTaskStillGoesThroughApproval(t *testing.T) {
-	task := &domain.Task{ActionType: "agent_task", ExecutionMode: taskcreate.ExecutionModeDirect}
-	if runsToCompletion(task, "/Users/me/repo") {
-		t.Fatal("direct agent_task must not skip propose/approval")
-	}
-}
 
-func TestCodeChangeStillUsesMRReviewGate(t *testing.T) {
-	task := &domain.Task{ActionType: "code_change", ExecutionMode: taskcreate.ExecutionModeStandard}
-	if !runsToCompletion(task, "/Users/me/repo") {
-		t.Fatal("code_change with a resolved repo must keep its direct execution + MR review path")
-	}
-}
 
 // TestCodeChangeWithoutRepoGoesThroughPropose closes the hole that let Task #82
 // (a coordination task misclassified as code_change, with no repo in its frozen
 // context) send Feishu messages with neither an MR nor an approval gate.
-func TestCodeChangeWithoutRepoGoesThroughPropose(t *testing.T) {
-	task := &domain.Task{ActionType: "code_change", ExecutionMode: taskcreate.ExecutionModeStandard}
-	for _, repoPath := range []string{"", "   "} {
-		if runsToCompletion(task, repoPath) {
-			t.Fatalf("code_change with repoPath=%q has no MR gate and must go through propose", repoPath)
-		}
-	}
-}
 
 // TestValidateTaskIntegrityChecksExecutionModeOnly pins the surviving integrity
 // check. plan / background / decision_payload are revisable by M5 while it
@@ -521,8 +509,8 @@ func TestValidateTaskIntegrityChecksExecutionModeOnly(t *testing.T) {
 // read-only investigation finishes in place, while any intended mutation parks
 // with a complete proposal.
 func TestProposeRoutingReadOnlyVsMutation(t *testing.T) {
-	readOnly := `{"needs_approval":false,"outcome":"completed","summary":"已读日志得出结论","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"waiting":null}`
-	low, err := parseProposeResult(readOnly)
+	readOnly := `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已读日志得出结论","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null}`
+	low, err := parseExecutionResult(readOnly)
 	if err != nil {
 		t.Fatalf("read-only parse error = %v", err)
 	}
@@ -530,8 +518,8 @@ func TestProposeRoutingReadOnlyVsMutation(t *testing.T) {
 		t.Fatalf("read-only investigate should finish in place: %#v", low)
 	}
 
-	mutation := `{"needs_approval":true,"outcome":"needs_human","summary":"查证中需要发消息给对方","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"向对方发确认消息","target":"张三 open_id=ou_x","artifact":"你好，关于登录超时想确认一下……"},"waiting":null}`
-	high, err := parseProposeResult(mutation)
+	mutation := `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"查证中需要发消息给对方","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"向对方发确认消息","target":"张三 open_id=ou_x","artifact":"你好，关于登录超时想确认一下……"},"effects":[],"waiting":null}`
+	high, err := parseExecutionResult(mutation)
 	if err != nil {
 		t.Fatalf("mutation parse error = %v", err)
 	}

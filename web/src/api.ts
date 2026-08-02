@@ -36,14 +36,13 @@ import type {
   ExecutionRunList,
   TaskRunOutput,
   ProjectEvent,
-  ObservationList,
-  ObservationQuery,
   RelationEntityType,
   RelationFactList,
   TaskEvent,
   Todo,
   TodoList,
   TodoQuery,
+  TodoStatus,
   WorkRule,
   WorkRuleInput,
   TextFile,
@@ -63,7 +62,7 @@ interface APIResponse<T> {
 
 interface RequestOptions {
   signal?: AbortSignal
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
 }
 
@@ -96,6 +95,14 @@ export function getTodo(id: number, signal?: AbortSignal): Promise<Todo> {
   return request<Todo>(`/api/todos/${id}`, { signal })
 }
 
+// 只在 observing 和 extracted 之间搬动：把线索按下不表，或交回决策重新判断。
+export function setTodoStatus(id: number, status: TodoStatus, reason: string): Promise<Todo> {
+  return request<Todo>(`/api/todos/${id}/status`, {
+    method: 'PATCH',
+    body: { status, actor: 'principal', reason },
+  })
+}
+
 export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signal?: AbortSignal): Promise<TaskList> {
   const params = new URLSearchParams({ status: statuses.join(','), page: String(page), page_size: String(pageSize) })
   return request<TaskList>(`/api/tasks?${params.toString()}`, { signal })
@@ -111,10 +118,6 @@ export interface ExecuteResult {
   task_id: number
   run_id: number
   status: string
-  branch?: string
-  commit?: string
-  diff_path?: string
-  merge_request_url?: string
   summary?: string
   skipped?: boolean
   skip_reason?: string
@@ -202,18 +205,6 @@ export function listEntityRelations(entityType: RelationEntityType, entityId: nu
     page_size: '100',
   })
   return request<RelationFactList>(`/api/relation-facts?${params.toString()}`, { signal })
-}
-
-export function listObservations(query: ObservationQuery, signal?: AbortSignal): Promise<ObservationList> {
-  const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) })
-  if (query.producer) params.set('producer', query.producer)
-  if (query.projectId) params.set('project_id', String(query.projectId))
-  if (query.keyword) params.set('keyword', query.keyword)
-  return request<ObservationList>(`/api/observations?${params.toString()}`, { signal })
-}
-
-export function deleteObservation(id: number): Promise<{ id: number; deleted: boolean }> {
-  return request(`/api/observations/${id}`, { method: 'DELETE' })
 }
 
 // --- M1 background management ---

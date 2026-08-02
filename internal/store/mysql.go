@@ -53,6 +53,9 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
 	if err := dropActionHash(db); err != nil {
+	if err := dropExecutionRunGitColumns(db); err != nil {
+		return fmt.Errorf("drop execution_run git columns: %w", err)
+	}
 		return fmt.Errorf("migrate schema: %w", err)
 	}
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
@@ -156,6 +159,26 @@ func dropRetiredColumns(db *gorm.DB) error {
 			if err := migrator.DropColumn(entry.model, column); err != nil {
 				return fmt.Errorf("drop retired column %s.%s: %w", entry.table, column, err)
 			}
+		}
+	}
+	return nil
+}
+
+// dropExecutionRunGitColumns removes the abandoned Git-delivery columns from
+// execution_run. Branch/commit/MR now live in Effects as agent-declared facts.
+// Raw ALTER is deliberate: these fields no longer exist on ExecutionRun, so a
+// model-based drop would resolve an unknown name rather than a column.
+func dropExecutionRunGitColumns(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable("execution_run") {
+		return nil
+	}
+	for _, col := range []string{"base_branch", "branch", "commit_sha", "diff_path", "merge_request_url"} {
+		if !migrator.HasColumn("execution_run", col) {
+			continue
+		}
+		if err := db.Exec("ALTER TABLE `execution_run` DROP COLUMN `" + col + "`").Error; err != nil {
+			return fmt.Errorf("drop execution_run.%s: %w", col, err)
 		}
 	}
 	return nil

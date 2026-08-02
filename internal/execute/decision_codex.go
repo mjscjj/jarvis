@@ -20,7 +20,7 @@ const (
   "additionalProperties":false,
   "required":["disposition","plan","payload"],
   "properties":{
-    "disposition":{"type":"string","enum":["ready","drop"]},
+    "disposition":{"type":"string","enum":["ready","observe","drop"]},
     "plan":{"type":"string","minLength":1},
     "payload":{"type":"string","minLength":1}
   }
@@ -45,8 +45,8 @@ type CodexInput struct {
 
 type CodexDecision struct {
 	// Disposition is Codex's own verdict on whether the clue is worth pursuing:
-	// ready / drop. It is authoritative — the route is derived from it directly,
-	// not re-inferred from semantic payload fields.
+	// ready / observe / drop. It is authoritative — the route is derived from it
+	// directly, not re-inferred from semantic payload fields.
 	Disposition string `json:"disposition"`
 	// Plan is the complete execution intent. The decision step does not prescribe
 	// its semantic shape; ready only requires a non-null JSON value.
@@ -210,7 +210,7 @@ func decodeCodexDecision(raw []byte) (*CodexDecision, error) {
 			return nil, fmt.Errorf("codex decision disposition=%s requires plan: %w", decision.Disposition, err)
 		}
 		decision.Plan = plan
-	case DispositionDrop:
+	case DispositionObserve, DispositionDrop:
 		if bytes.Equal(bytes.TrimSpace(decision.Plan), []byte("null")) {
 			decision.Plan = nil
 		} else if len(bytes.TrimSpace(decision.Plan)) != 0 {

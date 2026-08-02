@@ -76,6 +76,7 @@ func TestRouteForDisposition(t *testing.T) {
 		wantRoute   string
 	}{
 		{DispositionReady, RouteAuto},
+		{DispositionObserve, RouteObserving},
 		{DispositionDrop, RouteDropped},
 	}
 	for _, tc := range cases {

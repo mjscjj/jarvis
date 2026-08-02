@@ -62,6 +62,8 @@ type TaskView struct {
 	ExecutionMode        string                `json:"execution_mode"`
 	Status               string                `json:"status"`
 	ExecutionResult      json.RawMessage       `json:"execution_result"`
+	Summary              *string               `json:"summary"`
+	LastProgressAt       *time.Time            `json:"last_progress_at"`
 	ExecutionSupplements []ExecutionSupplement `json:"execution_supplements,omitempty"`
 	ProjectID            *uint64               `json:"project_id"`
 	Version              int32                 `json:"version"`
@@ -109,12 +111,7 @@ type RunView struct {
 	Output          json.RawMessage `json:"output"`
 	Effects         json.RawMessage `json:"effects"`
 	ErrorDetail     *string         `json:"error_detail"`
-	RepoPath        *string         `json:"repo_path"`
-	BaseBranch      *string         `json:"base_branch"`
-	Branch          *string         `json:"branch"`
-	Commit          *string         `json:"commit"`
-	DiffPath        *string         `json:"diff_path"`
-	MergeRequestURL *string         `json:"merge_request_url"`
+	RepoPath *string `json:"repo_path"`
 	StartedAt       time.Time       `json:"started_at"`
 	FinishedAt      *time.Time      `json:"finished_at"`
 	DurationMs      *int64          `json:"duration_ms"`
@@ -234,6 +231,44 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 	}
 	view := taskView(ctx, &finished)
 	return &view, nil
+}
+
+// RecordProgress stores where the matter now stands, as M5 described it at the
+// end of a run.
+//
+// It sits outside the status-transition methods and deliberately does not bump
+// version: version is the optimistic-lock token those transitions race on, so
+// bumping it for a summary would make progress writes collide with a concurrent
+// claim. Progress is an observation about the work, not a state change to it.
+//
+// last_progress_at moves only when the summary actually changes. A Task that
+// keeps resuming and re-reporting the same standing is not making progress, and
+// treating it as such would hide exactly the stalled work this field exists to
+// surface. A blank summary is therefore a no-op, not an erasure.
+func (s *Store) RecordProgress(ctx context.Context, taskID uint64, summary string, now time.Time) error {
+	if taskID == 0 {
+		return fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
+	}
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return nil
+	}
+	var task domain.Task
+	if err := s.db.WithContext(ctx).Select("id", "summary").First(&task, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return fmt.Errorf("load execution Task id=%d for progress: %w", taskID, err)
+	}
+	if task.Summary != nil && strings.TrimSpace(*task.Summary) == summary {
+		return nil
+	}
+	at := now.UTC()
+	if err := s.db.WithContext(ctx).Model(&domain.Task{}).Where("id = ?", taskID).
+		Updates(map[string]any{"summary": summary, "last_progress_at": at}).Error; err != nil {
+		return fmt.Errorf("record progress task_id=%d: %w", taskID, err)
+	}
+	return nil
 }
 
 var supplementableTaskStatuses = map[string]struct{}{
@@ -1112,6 +1147,7 @@ func taskView(ctx context.Context, task *domain.Task) TaskView {
 		SourceType: task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
 		ExecutionMode: task.ExecutionMode,
 		Status:        task.Status, ExecutionResult: rawJSON(task.ExecutionResult),
+		Summary: task.Summary, LastProgressAt: task.LastProgressAt,
 		ExecutionSupplements: supplements,
 		ProjectID:            task.ProjectID, Version: task.Version, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
 	}
@@ -1122,8 +1158,7 @@ func runView(run *domain.ExecutionRun) RunView {
 		ID: run.ID, TaskID: run.TaskID, ActionType: run.ActionType, Stage: run.Stage, Sandbox: run.Sandbox,
 		Status: run.Status, Prompt: run.Prompt, CodexSessionID: run.CodexSessionID, Summary: run.Summary,
 		Output: rawJSON(run.Output), Effects: rawJSON(run.Effects), ErrorDetail: run.ErrorDetail,
-		RepoPath: run.RepoPath, BaseBranch: run.BaseBranch, Branch: run.Branch, Commit: run.Commit,
-		DiffPath: run.DiffPath, MergeRequestURL: run.MergeRequestURL,
+		RepoPath: run.RepoPath,
 		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, DurationMs: run.DurationMs,
 	}
 }

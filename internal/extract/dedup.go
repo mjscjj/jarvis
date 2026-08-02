@@ -11,12 +11,16 @@ import (
 // activeTodoStatuses are Todo statuses that still represent a live clue for
 // semantic dedup. "auto" is included because the decision step auto-routes ready clues into
 // Tasks without human confirmation; the Todo remains the same action identity.
+// "observing" is included because a clue nobody acts on is still a live clue:
+// re-seeing it must update its evidence, not mint a second copy, and fresh
+// evidence can pull it back to "extracted" for a real decision.
 var activeTodoStatuses = map[string]struct{}{
 	"extracted": {}, "scoring": {}, "auto": {}, "need_info": {}, "need_decision": {}, "confirmed": {},
+	"observing": {},
 }
 
 func ActiveTodoStatuses() []string {
-	return []string{"extracted", "scoring", "auto", "need_info", "need_decision", "confirmed"}
+	return []string{"extracted", "scoring", "auto", "need_info", "need_decision", "confirmed", "observing"}
 }
 
 type SemanticTodo struct {

@@ -14,7 +14,7 @@ import {
   Typography,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { getTodo, listTodos } from './api'
+import { getTodo, listTodos, setTodoStatus } from './api'
 import { usePageContext } from './pageContext'
 import { TodoContextPanel } from './slots'
 import PageHeader from './components/PageHeader'
@@ -25,6 +25,10 @@ import type { ActionType, Todo, TodoQuery, TodoStatus } from './types'
 const { Text, Paragraph } = Typography
 
 const allTodoStatuses = Object.keys(statusMeta) as TodoStatus[]
+
+// 待办列表里可以手工互换的两个状态：都表示「眼下没人在动手」，区别只是
+// 这条线索要不要再交回决策判断一次。其余状态归决策和执行环节写。
+const settableStatuses: TodoStatus[] = ['extracted', 'observing']
 
 const initialQuery: TodoQuery = {
   statuses: allTodoStatuses,
@@ -53,6 +57,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
   const [error, setError] = useState<string>()
   const [selected, setSelected] = useState<Todo>()
   const [drawerLoading, setDrawerLoading] = useState(false)
+  const [savingStatusID, setSavingStatusID] = useState<number>()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -91,6 +96,18 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
     setSelection(null)
   }, [setSelection])
 
+  const changeStatus = useCallback((todo: Todo, next: TodoStatus) => {
+    setSavingStatusID(todo.id)
+    setError(undefined)
+    setTodoStatus(todo.id, next, '在待办列表手工调整')
+      .then((updated) => {
+        setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+        setSelected((current) => (current?.id === updated.id ? updated : current))
+      })
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setSavingStatusID(undefined))
+  }, [])
+
   const columns = useMemo<TableColumnsType<Todo>>(
     () => [
       {
@@ -120,8 +137,25 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
       {
         title: '状态',
         dataIndex: 'status',
-        width: 92,
-        render: (value: TodoStatus) => <StatusBadge label={statusMeta[value].label} color={statusMeta[value].color} />,
+        width: 108,
+        // 只有「没人在动手」的两个状态可以就地互换：按下不表，或交回决策重新判断。
+        // 其余状态由决策和执行环节写入，列表里只读。
+        render: (value: TodoStatus, todo) =>
+          settableStatuses.includes(value) ? (
+            <Select
+              size="small"
+              variant="borderless"
+              style={{ width: '100%' }}
+              value={value}
+              loading={savingStatusID === todo.id}
+              disabled={savingStatusID !== undefined}
+              options={settableStatuses.map((status) => ({ value: status, label: statusMeta[status].label }))}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(next) => changeStatus(todo, next)}
+            />
+          ) : (
+            <StatusBadge label={statusMeta[value].label} color={statusMeta[value].color} />
+          ),
       },
       {
         title: '项目 / 会话',
@@ -166,7 +200,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         ),
       },
     ],
-    [],
+    [changeStatus, savingStatusID],
   )
 
   return (

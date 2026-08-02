@@ -368,7 +368,7 @@ func (c *Coordinator) reconcileDecisions(ctx context.Context) {
 		if stats.Loaded == 0 {
 			return
 		}
-		c.logf(ctx, "stage=m5 step=decide trigger=reconcile status=ok evaluated=%d auto=%d dropped=%d", stats.Evaluated, stats.Auto, stats.Dropped)
+		c.logf(ctx, "stage=m5 step=decide trigger=reconcile status=ok evaluated=%d auto=%d observing=%d dropped=%d", stats.Evaluated, stats.Auto, stats.Observing, stats.Dropped)
 		if stats.Auto > 0 {
 			if err := c.ReconcileExecute(ctx); err != nil {
 				c.logf(ctx, "stage=m5 step=decide trigger=reconcile notify=execute status=error error=%+v", err)

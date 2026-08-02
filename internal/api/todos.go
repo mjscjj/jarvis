@@ -58,6 +58,41 @@ func GetTodo(reader extract.TodoReader) app.HandlerFunc {
 	}
 }
 
+type setTodoStatusRequest struct {
+	Status string `json:"status"`
+	Actor  string `json:"actor"`
+	Reason string `json:"reason"`
+}
+
+// SetTodoStatus is shared by the Todo list (the principal parking or reviving a
+// clue) and by M5 through jarvis-tools, so the caller names itself in actor.
+func SetTodoStatus(writer extract.TodoStatusWriter) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := strconv.ParseUint(c.Param("todo_id"), 10, 64)
+		if err != nil || id == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40002, fmt.Errorf("todo_id must be a positive integer"))
+			return
+		}
+		var req setTodoStatusRequest
+		if err := decodeStrictJSON(c.Request.Body(), &req); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40003, err)
+			return
+		}
+		result, err := writer.SetTodoStatus(ctx, extract.TodoStatusInput{
+			TodoID: id, Status: req.Status, Actor: req.Actor, Reason: req.Reason,
+		})
+		if errors.Is(err, extract.ErrTodoNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40401, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40004, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func todoListFilter(c *app.RequestContext) (extract.TodoListFilter, error) {
 	page, err := positiveQueryInt(c.Query("page"), 1, "page")
 	if err != nil {

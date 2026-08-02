@@ -1,7 +1,7 @@
 # Jarvis · 基于飞书的本地个人 AI 管家 · 技术方案总纲
 
 > 本文是全系统的**顶层设计与跨模块契约**。各模块细化文档见 `docs/modules/01~05`。
-> 定位：字节研发工程师 `chujiejie.1` 在本地 Mac 可信环境运行的私人 AI 管家——自动从飞书消息识别 leader 交办 / 项目讨论，提取行动线索，经确认固化为明确任务并执行。
+> 定位：字节研发工程师 `chujiejie.1` 在本地 Mac 可信环境运行的私人 AI 管家——自动从飞书消息识别 leader 交办 / 项目讨论，提取行动线索，判断值不值得做后固化为明确任务并执行。
 
 ---
 
@@ -28,7 +28,7 @@
 | 记忆层 | **mem0**（Python）以 **sidecar** 形式，Go 通过 HTTP 调用 | 见 §5 |
 | 向量库 | **Qdrant v1.18.2**（Apple Silicon 原生二进制 + launchd，HTTP 6333 / gRPC 6334） | mem0 后端 + M3 独立 `todo_semantic`；不使用嵌入式 local mode |
 | LLM 抽取（M3） | **codex CLI**（`extract.engine=codex`，主）/ model API（可配置，备用） | 【2026-07 变更，见 `docs/design-context-pipeline.md`】M3 改用 codex 以便自跑 lark-cli/bytedcli/git 推算项目归属；model API 保留备用。M2 记忆化仍用 model API/embedding。 |
-| LLM 决策（M4） | **codex CLI**（`codex exec` 子进程） | 复杂确认/风险决策，见 §6 |
+| LLM 判断（M5 判断环节） | **codex CLI**（`codex exec` 子进程） | 判断线索值不值得做，见 §6 |
 | 代码执行后端（M5） | **codex CLI** / cursor-agent | `code_change` executor 后端 |
 | 前端 | React + Vite + Ant Design | 管理后台 |
 | 进程托管 | macOS **launchd** | 常驻，参考本机 `llm-agent-core` 做法 |
@@ -47,7 +47,7 @@
 │  jarvis-server (Go / Hertz)  —— 单体进程，launchd 托管           │
 │  ┌────────────┬────────────┬────────────┬───────────────────┐ │
 │  │ REST API   │ cron 调度  │ 流水线编排  │ 领域服务(7 实体)    │ │
-│  │ (M0/各模块) │(scan/mem)  │(M2→M3→M4→M5)│                   │ │
+│  │ (M0/各模块) │(scan/mem)  │(M2→M3→M5)   │                   │ │
 │  └────────────┴────────────┴────────────┴───────────────────┘ │
 └──┬──────────┬───────────┬──────────┬──────────┬───────────────┘
    │ 子进程    │ HTTP       │ 子进程    │ HTTP      │ TCP
@@ -61,7 +61,7 @@
 外部依赖：
 - **lark-cli**：`--as user` 读全量消息、`--as bot` 收发消息 / 事件 / 交互卡片。
 - **mem0 sidecar**：Python FastAPI 薄服务包 mem0，暴露 `/memories`、`/memories/search` 等；内部连 Qdrant。
-- **codex CLI**：`codex exec` 非交互子进程，用于 M4 决策与 M5 代码执行。
+- **codex CLI**：`codex exec` 非交互子进程，用于 M5 判断环节与 M5 代码执行。
 - **model API**：可配置 OpenAI 兼容端点，供 M2/M3 高频抽取（Go 直接 HTTP 调用，不经 Eino）。
 
 ---
@@ -87,22 +87,22 @@ erDiagram
     MESSAGE ||--o{ TODO          : "evidence(线索来源)"
     PERSON  ||--o{ TODO          : "assigner(交办人)"
     PROJECT ||--o{ TODO          : belongs
-    TODO    ||--o| TASK          : "确认后固化(1:0..1)"
+    TODO    ||--o| TASK          : "判断为 ready 后固化(1:0..1)"
     PROJECT ||--o{ TASK          : belongs
     RESOURCE ||--o{ TASK         : "referenced(方案依据)"
 
     TODO {
         bigint id PK
         varchar action_type
-        varchar status "extracted|need_info|need_decision|confirmed|dismissed|expired"
-        decimal confidence
-        decimal risk
+        varchar status "extracted|auto|dropped|expired"
+        varchar target
+        text    context
     }
     TASK {
         bigint id PK
         bigint todo_id FK
-        varchar status "pending|executing|waiting|awaiting_approval|done|failed"
-        json   plan "明确方案(用户确认过)"
+        varchar status "pending|executing|waiting|awaiting_approval|needs_human|done|failed"
+        json   plan "明确方案"
         json   background "问题背景快照"
     }
 ```
@@ -114,8 +114,8 @@ erDiagram
 | **Project** | 我负责/参与的项目背景 | M1 | 手动维护，长期 |
 | **Group** | 飞书群/单聊会话（原 `jarvis_chat` 升为一等实体） | M2（建模）/M1（关联项目） | 自动发现 + 手动标注 |
 | **Person** | 重点人员（leader/关键人/同事），leader 最高优先级 | M1 | 手动维护 |
-| **Todo** | 从消息提取的**行动线索/候选**（可能模糊、信息不足） | M3 产出，M4 流转 | 短：extracted→confirmed/dismissed |
-| **Task** | Todo 确认后固化的**明确可执行任务**（含背景+明确方案） | M4 生成，M5 执行 | 长：pending→executing→waiting（定时恢复）/awaiting_approval/done/failed |
+| **Todo** | 从消息提取的**行动线索/候选**（可能模糊、信息不足） | M3 产出，M5 判断环节流转 | 短：extracted→auto/dropped |
+| **Task** | 线索判断为值得做后固化的**明确可执行任务**（含背景+明确方案） | M5 判断环节生成，M5 执行环节执行 | 长：pending→executing→waiting（定时恢复）/awaiting_approval/needs_human/done/failed |
 | **Resource** | 消息/任务涉及的资源（图片/文件/妙记/文档/链接） | M2 沉淀，M3/M5 引用 | 随消息 |
 | **ScanRecord** | 每次扫描的执行流水（群/时间窗/条数/结果/错误） | M2 写入 | 每次扫描一条，可保留期清理 |
 
@@ -129,34 +129,34 @@ erDiagram
   ▼
 ┌─────────────────────────────────────────────┐
 │ Todo（线索/候选）                              │
-│  - action_type + slots（可能不全）             │
+│  - action_type + target + context（可能不全）   │
 │  - 可能 info 不足、可能是 tentative 软建议      │
-│  - 生命周期：extracted → (M4打分)              │
-│      → need_info / need_decision              │
-│      → confirmed（确认）| dismissed（丢弃）      │
+│  - 生命周期：extracted → (M5 判断环节)          │
+│      → auto（值得做，已建 Task）                │
+│      | dropped（不值得做，终结）                 │
 └───────────────┬─────────────────────────────┘
-                │ M4：用户确认 or 自动确认
-                │ （补齐信息、明确方案、关联背景）
+                │ M5 判断环节：ready 则建 Task
+                │ （固化背景快照、判断方向、原始线索）
                 ▼
 ┌─────────────────────────────────────────────┐
 │ Task（明确可执行任务）                          │
 │  - todo_id 外键指向来源 Todo                    │
 │  - background：问题背景快照（关联 project/消息） │
-│  - plan：明确方案（用户确认过 或 自动确认的明确方案）│
+│  - plan：明确方案                               │
 │  - 生命周期：pending → executing ↔ waiting → done/failed │
-│                         └→ awaiting_approval             │
+│                         └→ awaiting_approval / needs_human │
 └───────────────┬─────────────────────────────┘
-                │ M5 执行
+                │ M5 执行环节
                 ▼
            执行结果回写 M0
 ```
 
 **关键契约**：
-- **一个 Todo 最多生成一个 Task**（1:0..1）。Todo 被 `dismissed` 则永不产生 Task。
-- **Task 一旦生成，方案即冻结**（`plan` 是确认时刻的快照）。若后续讨论变了，是**新 Todo → 新 Task**，旧 Task 走正常生命周期（不追溯篡改已确认方案）。
-- **背景与方案是 Task 的一等字段**，不是引用：`background`（问题背景）和 `plan`（明确方案）在确认时刻**快照固化**进 Task，保证执行时方案明确、可复现，不受源数据后续变化影响。
+- **一个 Todo 最多生成一个 Task**（1:0..1）。Todo 被 `dropped` 则永不产生 Task。
+- **线索永远不停下来等人**。判断环节只有 `ready`（建 Task）和 `drop`（终结）两种出路，没有"挂起等用户补信息/拍板"这一档。该问的问题带着完整调查结果跟着 Task 一起走到执行环节再问。
+- **背景是 Task 的一等字段**，不是引用：`background`（问题背景）在固化时刻**快照固化**进 Task，保证执行时上下文完整、可复现，不受源数据后续变化影响。`plan` / `background` / `decision_payload` 是模型语义，执行期发现情况变了可由 M5 直接修改并 bump `version` + 写 `task_event`。
 - M2 只记录外部事实和采集结果；采集失败也是证据，不是 M2 的行动决策。M2 不创建 Todo，也不申请权限、联系人员或执行其他外部动作。
-- M3 只写 Todo；M4 是 Todo→Task 的**唯一转化闸门**；M5 只读 Task。三者职责不交叉。
+- M3 只写 Todo；M5 判断环节是 Todo→Task 的**唯一转化闸门**；M5 执行环节只读 Task 并回写执行结果。职责不交叉。
 
 ### 2.4 各实体 MySQL DDL
 
@@ -272,20 +272,16 @@ CREATE TABLE todo (
   is_leader_assigned  TINYINT(1)  NOT NULL DEFAULT 0,
   due_at              DATETIME NULL,
 
-  -- M4 打分与路由
+  -- 判断环节路由（值与 status 同名：auto 已建 Task / dropped 终结）
   status              VARCHAR(24) NOT NULL DEFAULT 'extracted'
-                      COMMENT 'extracted|scoring|need_info|need_decision|confirmed|dismissed|expired',
-  confidence          DECIMAL(4,3) NULL COMMENT 'M4 置信度',
-  risk                DECIMAL(4,3) NULL COMMENT 'M4 风险',
-  route               VARCHAR(16) NULL COMMENT 'auto|need_info|need_decision',
-  missing_info        JSON NULL COMMENT 'info 不足时缺什么',
+                      COMMENT 'extracted|auto|dropped|expired',
 
   -- 去重与追溯
   dedup_fingerprint   CHAR(64) NOT NULL,
   extraction_model    VARCHAR(64) NOT NULL,
   prompt_version      VARCHAR(32) NOT NULL,
   revision            INT NOT NULL DEFAULT 1,
-  ttl_at              DATETIME NULL COMMENT '待确认过期时间',
+  ttl_at              DATETIME NULL COMMENT '线索过期时间',
   version             INT NOT NULL DEFAULT 0 COMMENT '乐观锁',
   first_seen_at       DATETIME NOT NULL,
   last_evidence_at    DATETIME NOT NULL,
@@ -311,17 +307,16 @@ CREATE TABLE task (
   title              VARCHAR(512) NOT NULL,
   action_type        VARCHAR(32)  NOT NULL,
 
-  -- Task 的一等字段：确认时刻快照固化，保证方案明确、可复现
+  -- Task 的一等字段：固化时刻快照，保证执行时上下文完整、可复现
   background         JSON NOT NULL COMMENT '问题背景快照:{project, 关键消息, 相关记忆, 交办人}',
-  plan               JSON NOT NULL COMMENT '明确方案(用户确认过或自动确认):{steps, params, 依据}',
+  plan               JSON NOT NULL COMMENT '明确方案:{steps, params, 依据}',
   slots              JSON NOT NULL COMMENT '执行所需结构化参数(已补齐)',
-  confirmed_by       VARCHAR(16)  NOT NULL COMMENT 'user | system(auto)',
+  confirmed_by       VARCHAR(16)  NOT NULL COMMENT '固化来源: system(判断环节) | user(后台手建)',
   confirmed_at       DATETIME NOT NULL,
-  action_hash        CHAR(64) NOT NULL COMMENT '方案指纹,执行前漂移校验',
 
   -- 执行生命周期(独立于 Todo)
-  status             VARCHAR(16) NOT NULL DEFAULT 'pending'
-                     COMMENT 'pending|executing|waiting|awaiting_approval|done|failed|cancelled',
+  status             VARCHAR(24) NOT NULL DEFAULT 'pending'
+                     COMMENT 'pending|executing|waiting|awaiting_approval|needs_human|done|failed',
   execution_result   JSON NULL COMMENT '{summary, artifacts, error}',
   autonomy_mode      VARCHAR(16) NOT NULL DEFAULT 'copilot',
   project_id         BIGINT UNSIGNED NULL,
@@ -416,8 +411,8 @@ CREATE TABLE scan_record (
 | `message` | 飞书消息明文（source of truth） | M2 |
 | `chat_checkpoint` | 每会话扫描高水位游标（状态，断点续扫） | M2 |
 | `project_member` | Project↔Person 多对多 | M1 |
-| `todo_event` / `task_event` | 状态迁移审计 | M3/M4/M5 |
-| `decision_audit` | M4 打分/路由/确认留痕（append-only） | M4 |
+| `todo_event` / `task_event` | 状态迁移审计 | M3/M5 |
+| `decision_audit` | 判断环节路由与结论留痕（append-only） | M5 |
 | `execution_run` / `execution_step` / `execution_artifact` | M5 执行留痕 | M5 |
 
 ---
@@ -427,7 +422,7 @@ CREATE TABLE scan_record (
 ```
                          ┌────────────── cron (robfig) ────────────────┐
                          │ discover/scan 发起 M2；memorize 独立运行      │
-                         │ extract/decide/execute schedule 仅补偿遗漏   │
+                         │ extract/execute schedule 仅补偿遗漏          │
                          └───────────────────┬──────────────────────────┘
                                             │
   M2 采集 ──────────────────────────────────▼──────────────────────────
@@ -440,20 +435,20 @@ CREATE TABLE scan_record (
                                             │
   M3 提取 Todo ──────────────────────────────▼──────────────────────────
     新消息 + 背景(Project/Person/Group) + mem0 记忆
-    → agent/LLM 结构化抽取 → 创建/合并/忽略 Todo → 按 Todo ID/version 唤醒 M4
+    → agent/LLM 结构化抽取 → 创建/合并/忽略 Todo → 按 Todo ID/version 唤醒 M5
                                             │
-  M4 打分 + 确认(Todo→Task 闸门) ─────────────▼──────────────────────────
-    confidence×risk 打分(codex exec 做复杂决策)
-    ├─ auto: 明确且低风险 → 自动确认 → 生成 Task（不等于授权外部写入）
-    ├─ need_info: 缺信息 → 飞书卡片/后台问用户 → 回流补齐
-    └─ need_decision: 需决策 → 用户确认(可带修改) → 生成 Task
-    确认 = 固化 background + plan 快照 → 插入 task → 按 Task ID/version 唤醒 M5
+  M5 判断环节(Todo→Task 闸门, read-only) ─────▼──────────────────────────
+    codex/traex agent 读线索 + 背景快照，给出 disposition:
+    ├─ ready: 值得做 → Todo=auto → 固化 background/plan/decision_payload 建 Task
+    └─ drop : 不值得做 → Todo=dropped，终结，不建 Task
+    线索不停下来等人；要问的问题写进 Task，随 Task 走到执行环节
                                             │
-  M5 执行 Task ──────────────────────────────▼──────────────────────────
-    按 action_type 路由 executor；非 code_change 先形成可审阅方案:
+  M5 执行环节(Task) ─────────────────────────▼──────────────────────────
+    工具全开的 agent 执行；与判断环节共用同一工作队列和 worker 池
     code_change(codex exec) / summary_post(lark-cli) /
     investigate(rg+codex+web) / schedule_meeting(lark-cli calendar)
-    申请权限、发消息等业务外部写操作 → awaiting_approval → 用户明确批准后执行
+    调查后判断需要 principal 批准高风险副作用 → awaiting_approval
+    调查后判断只有 principal 能回答某个问题 → needs_human
     → execution_result 回写 → task.status=done/failed → M0
 ```
 
@@ -463,8 +458,8 @@ CREATE TABLE scan_record (
 |---|---|---|
 | **M2 采集** | 读取外部系统，落原始内容和客观采集结果，如 `success`、`permission_denied`、`temporarily_unavailable` | 只负责“发生了什么”。可以安排采集重试，但不决定“接下来做什么” |
 | **M3 Todo** | 读取采集证据和完整上下文，创建、合并或忽略 Todo | 负责判断是否值得行动、采取什么动作、找谁处理；允许产出零个 Todo |
-| **M4 决策** | 把 Todo 路由为补信息、人工决策或自动建 Task | `auto` 只代表自动流转到 Task，不授予任何外部写权限 |
-| **M5 执行** | 执行 Task 并记录结果；非 `code_change` Task 先提案 | 只读动作可直接完成；申请权限、发消息、修改飞书等业务外部写操作必须先进入 `awaiting_approval` |
+| **M5 判断环节** | read-only 判断线索值不值得做：`ready` 建 Task / `drop` 终结 | `auto` 只代表自动流转到 Task，不授予任何外部写权限；不挂起线索等人 |
+| **M5 执行环节** | 执行 Task 并记录结果 | 由模型结合上下文判断哪些动作需要先请示 principal，需要时停在 `awaiting_approval` / `needs_human` |
 
 以妙记无权限为例：
 
@@ -473,9 +468,9 @@ M2：记录会议信息 + minute_token + permission_denied + 原始错误，并�
   ↓
 M3：结合主持人、参会人和项目上下文，决定是否创建或合并 Todo
   ↓
-M4：将 Todo 固化为 Task；auto 仅表示无需人工确认 Todo
+M5 判断环节：判断这条线索值不值得做，值得就固化为 Task
   ↓
-M5：先给出申请权限或联系主持人的方案，明确批准后才执行外部写操作
+M5 执行环节：调查清楚后再决定要不要请示 principal，需要就停在 awaiting_approval
 ```
 
 因此，**采集重试和 Todo 判断是两条独立责任**：重试间隔只影响下一次采集，不得阻止本次失败证据进入 M3，也不得替 M3 提前决定行动。
@@ -532,23 +527,23 @@ mem0 是 Python 库、无 Go SDK。采用 **sidecar 进程**隔离：
 
 ---
 
-## 6. LLM 分工：抽取用 API，决策用 codex（本次调整）
+## 6. LLM 分工：抽取用 API，判断与执行用 codex（本次调整）
 
 | 环节 | 用什么 | 为什么 |
 |---|---|---|
 | M2 记忆抽取 | model API（可配置） | 高频、要快、结构化输出稳定 |
 | M3 提取 Todo | model API（structured output / JSON schema） | 高频、要稳定的结构化抽取 |
-| **M4 确认决策** | **codex exec 子进程** | 复杂推理：结合项目背景+记忆+代码，判断风险/是否需要人工/如何明确方案。codex 有代码库上下文能力，决策质量高 |
+| **M5 判断环节** | **codex exec 子进程（read-only）** | 复杂推理：结合项目背景+记忆+代码，判断这条线索值不值得做。codex 有代码库上下文能力，判断质量高 |
 | M5 code_change | codex exec 子进程 | 真正改代码 |
 | M5 investigate | rg + codex exec `-s read-only` + web | 代码检索+调研 |
 
-**M4 用 codex 做决策的形态**：
-- Go 侧把 Todo + 背景 + 记忆 + 相关代码线索组装成 prompt，调 `codex exec -s read-only "<决策 prompt>"`，要求输出结构化 JSON（confidence/risk/路由/建议的明确方案）。
-- codex `-s read-only` 保证决策阶段**不写盘、无副作用**。
-- fail-fast：codex 退出码非 0 / 输出非法 JSON → 路由到 `need_decision`（人工），绝不自动确认。
-- 决策留痕入 `decision_audit`（含 codex 会话 id、prompt version）。
+**判断环节用 codex 的形态**：
+- Go 侧把 Todo + 背景快照 + 记忆 + 相关代码线索组装成 prompt，调 `codex exec -s read-only "<判断 prompt>"`，要求输出结构化 JSON（disposition + 理由 + 交给执行环节的方向）。
+- codex `-s read-only` 保证判断环节**不写盘、无副作用**。
+- fail-fast：codex 退出码非 0 / 输出非法 JSON → 本轮判断失败、Todo 留在 `extracted` 等下轮重判，绝不猜一个 disposition 落库。
+- 判断留痕入 `decision_audit`（含 codex 会话 id、prompt version）。
 
-> 这样分工的好处：M4 是"是否固化成 Task + 方案是否明确"的关键闸门，用带代码上下文的 codex 决策最合适；M2/M3 是高频流水线，用轻量 LLM API 保证吞吐与结构稳定。
+> 这样分工的好处：判断环节是"要不要固化成 Task"的关键闸门，用带代码上下文的 codex 最合适；M2/M3 是高频流水线，用轻量 LLM API 保证吞吐与结构稳定。
 
 ---
 
@@ -560,8 +555,8 @@ mem0 是 Python 库、无 Go SDK。采用 **sidecar 进程**隔离：
 | M1 | `modules/01-background.md` | Project/Person/Group 背景 + mem0 注入 | 产出背景 |
 | M2 | `modules/02-message.md` | 群消息、会议与妙记采集 + Group/Resource 沉淀 + 记忆化 | 产出原始内容、中立采集结果、group/resource/记忆 |
 | M3 | `modules/03-task-extract.md` | 提取 **Todo** | 消费消息+背景+记忆 → 产出 Todo |
-| M4 | `modules/04-confirmation.md` | 打分 + **Todo→Task 转化闸门**（codex 决策） | 消费 Todo → 产出 Task |
-| M5 | `modules/05-execution.md` | 执行 **Task** | 消费 Task → 执行结果 |
+| M5 判断环节 | `modules/04-decision.md` | **Todo→Task 转化闸门**（codex read-only 判断） | 消费 Todo → 产出 Task |
+| M5 执行环节 | `modules/05-execution.md` | 执行 **Task** | 消费 Task → 执行结果 |
 
 ---
 
@@ -571,17 +566,16 @@ mem0 是 Python 库、无 Go SDK。采用 **sidecar 进程**隔离：
 jarvis/
 ├── docs/                      # 本方案
 │   ├── 00-overview.md
-│   └── modules/01~05.md
+│   └── modules/01~05.md      # 04 = M5 判断环节，05 = M5 执行环节
 ├── cmd/jarvis-server/main.go  # Go 主入口
 ├── internal/
 │   ├── api/          # Hertz 路由(REST)
 │   ├── domain/       # 7 实体领域模型 + service
-│   ├── pipeline/     # M2→M3→M4→M5 编排
+│   ├── pipeline/     # M2→M3→M5 编排
 │   ├── capture/      # M2 采集(lark-cli 封装)
 │   ├── memory/       # mem0 sidecar client
 │   ├── extract/      # M3 Todo 提取(LLM API)
-│   ├── decide/       # M4 打分+确认(codex)
-│   ├── execute/      # M5 executor 注册表
+│   ├── execute/      # M5：decision_*.go 判断环节(codex read-only) + executor 注册表
 │   ├── larkcli/      # lark-cli 子进程统一封装
 │   ├── codex/        # codex exec 子进程封装
 │   └── store/        # GORM/bytedgorm + DDL 迁移
@@ -600,7 +594,7 @@ jarvis/
 | M0.2 飞书打通 | larkcli 封装 + 采集 message/group/resource 落库 | M0.1 |
 | M0.3 记忆 | mem0 sidecar + Qdrant + 记忆化 job | M0.2 |
 | M0.4 提取 | M3 Todo 提取(LLM API) + 后台 Todo 看板 | M0.3 |
-| M0.5 确认 | M4 codex 决策 + Todo→Task + 飞书卡片确认 | M0.4 |
+| M0.5 判断 | M5 判断环节 codex 判断 + Todo→Task 固化 | M0.4 |
 | M0.6 执行 | M5 executor(先 investigate/summary_post) + 回写 | M0.5 |
 | M0.7 代码执行 | code_change(codex) + schedule_meeting | M0.6 |
 
@@ -609,8 +603,8 @@ jarvis/
 ## 10. 与全局设计原则的对齐检查
 
 - **fail-fast**：采集游标不静默前进、LLM/codex 失败不静默降级、执行失败必带 ExecError、单测断言暴露行为。
-- **不乱兼容**：全新库、无历史数据迁移；**backfill 已定不回溯**（首次发现时刻建高水位，§11.3）；噪音群、阈值等仍【需与用户确认】。
-- **不乱护栏**：M4/M5 的强制确认清单、自动 push、sandbox 放开、**codex 决策频率/成本上限/灰区边界**等做成**配置项**（§11.2），不硬编码。
+- **不乱兼容**：全新库、无历史数据迁移；**backfill 已定不回溯**（首次发现时刻建高水位，§11.3）；噪音群等仍【需与用户确认】。
+- **不乱护栏**：自动 push、sandbox 放开、**codex 判断频率/成本上限**等做成**配置项**（§11.2），不硬编码；要不要请示 principal 由模型判断，只写在 `conf/prompts/m5-approval-policy.md`，代码不枚举、不拦截。
 - **模块化**：Todo/Task 拆分、7 实体边界清晰、三子进程职责分离。
 - **优先官方**：Hertz/GORM/lark-cli/mem0/codex 全用现成，不引入 Eino/Kitex/bytedgorm。
 - **复杂度红线**：MVP 优先、先简单；语义去重/mem0 等**重设施在价值验证前暂缓**，简单做清单见 §12（硬约束）。**注意**：本机实测 user 身份可见 **≥1500 个会话** 且飞书网关有限流，因此**采集分层 + 退避重试并非过度，而是必要**——关键简化手段是先用 `related_group` 把监控范围圈到几十个相关会话（§12.1 第 3 条）。现有已实现的重设施标记为「应简化/暂缓」，**移除与否【需与用户确认】**。
@@ -624,24 +618,23 @@ jarvis/
 1. **Go 框架**：Hertz + GORM + codex CLI + model API，不用 Eino/bytedgorm。
 2. **`group` 表名**：改 `feishu_group`（避开 SQL 保留字，GORM 侧无需转义）。
 3. **backfill 首次回溯**：**不回溯历史**。起点 = **系统首次发现该会话的时刻**（每会话 checkpoint 初始高水位 = 首次发现时的当前毫秒时间戳），只采集该时刻之后的新消息。见 §11.3。
-4. **Resource 下载 / OCR / 去重**：**只做妙记**（`lark-cli minutes` 拿逐字稿/产物）；**按需下载/解析**（M3/M4 需要该资源内容时才拉取，非采集即下载）；跨消息按**内容 SHA256** 去重（同一文件多次转发只存一份本地文件）。图片 OCR、飞书文档/表格解析、附件解析**本期不做**。见 §11.4。
-5. **codex 决策频率/成本上限、灰区边界**：全部**做成配置项**（不硬编码）。见 §11.2。
+4. **Resource 下载 / OCR / 去重**：**只做妙记**（`lark-cli minutes` 拿逐字稿/产物）；**按需下载/解析**（M3/M5 需要该资源内容时才拉取，非采集即下载）；跨消息按**内容 SHA256** 去重（同一文件多次转发只存一份本地文件）。图片 OCR、飞书文档/表格解析、附件解析**本期不做**。见 §11.4。
+5. **codex 判断的调度节奏、批量与沙箱**：全部**做成配置项**（不硬编码）。见 §11.2。
 
-### 11.2 codex 决策可配置（M4）
+### 11.2 codex 判断可配置（M5 判断环节）
 
-M4 的 codex 深判受一组配置控制，全部可在配置文件调整、不硬编码：
+判断环节受一组配置控制，全部可在配置文件调整、不硬编码：
 
-| 配置项 | 含义 | 默认（建议，待校准） |
+| 配置项 | 含义 | 当前值 |
 |---|---|---|
-| `codex.gray_zone.conf_low` / `conf_high` | 灰区 confidence 边界：落在 `[low, high]` 才触发 codex 深判 | 0.60 / 0.85 |
-| `codex.gray_zone.risk_low` / `risk_high` | 灰区 risk 边界 | 0.25 / 0.60 |
-| `codex.max_calls_per_hour` | 每小时 codex 决策调用上限（成本闸） | 30 |
-| `codex.max_calls_per_day` | 每天上限 | 200 |
-| `codex.timeout_seconds` | 单次 codex 决策超时 | 120 |
-| `codex.on_budget_exceeded` | 超预算时的行为：`degrade_to_rule`（降级为规则判定并标记）/ `route_need_decision`（直接转人工，默认） | `route_need_decision` |
-| `codex.on_timeout` | 超时行为：固定 `route_need_decision`（fail-fast，绝不自动确认） | `route_need_decision` |
+| `decide.enabled` | 是否开自动判断 cron | `true` |
+| `decide.schedule` | 补偿扫描节奏（正常由 M3 定向唤醒） | `@every 1m` |
+| `decide.batch_limit` | 单轮最多判断多少条 Todo | 50 |
+| `decide.codex_sandbox` / `codex_network` | 判断环节的 sandbox 与联网（本地可信环境允许自查补信息） | `danger-full-access` / `true` |
+| `decide.codex_reasoning_effort` | 判断的推理档位 | `medium` |
+| `codex.bin` / `codex.model` / `codex.timeout_seconds` | 判断环节复用的底层 agent CLI（与 M3 抽取同一段，与 `execute.*` 独立） | `traex` / `gpt-5.5` / 600 |
 
-> 明确规则：明确 / 明显要人工的 Todo 走规则快判（零成本）；**只有落入灰区的 Todo 才调 codex 深判**。超预算 / 超时一律 fail-fast 转人工，绝不自动确认。细化见 `modules/04-confirmation.md` §2。
+> 判断环节没有阈值、没有灰区、没有规则快判：每条 `extracted` 的 Todo 都交给 agent 自己读上下文定 disposition。调用失败或输出非法一律 fail-fast，Todo 留在 `extracted` 等下轮重判。细化见 `modules/04-decision.md` §2。
 
 ### 11.3 backfill 不回溯的落地（M2）
 
@@ -649,20 +642,19 @@ M4 的 codex 深判受一组配置控制，全部可在配置文件调整、不�
 - 之后按增量扫描（§3）只采集 `create_time > 首次发现时刻` 的新消息。
 - 因此不存在"首次回溯多久"的问题，也不会一次性拉海量历史。原方案里"未配置 backfill_since 则 fail-fast 拒绝首扫"的逻辑改为"首次发现即以当前时刻建高水位"，见 `modules/02-message.md` §3.4。
 
-### 11.4 Resource 策略的落地（M2/M3）
+### 11.4 Resource 策略的落地（M2/M3/M5）
 
 - **采集期（M2）**：只沉淀 `resource` 元数据行（`resource_type`/`file_key`/`minute_token`/`doc_token`/`url`/`name` 等），`downloaded=0`、`extracted_text=NULL`，**不下载任何二进制、不 OCR**。
-- **按需拉取（M3/M4）**：当下游需要某 `Resource` 的**内容**（目前仅**妙记**：`resource_type=minutes`）时，才调 `lark-cli minutes` 拿逐字稿/产物写入 `extracted_text`、置 `downloaded=1`。图片/文档/附件本期**不解析**（`extracted_text` 恒空）。
+- **按需拉取（M3/M5）**：当下游需要某 `Resource` 的**内容**（目前仅**妙记**：`resource_type=minutes`）时，才调 `lark-cli minutes` 拿逐字稿/产物写入 `extracted_text`、置 `downloaded=1`。图片/文档/附件本期**不解析**（`extracted_text` 恒空）。
 - **跨消息去重**：`resource` 增加 `content_hash CHAR(64)`（内容 SHA256），下载后回填；同一文件多次转发/引用只保留一份本地文件（`local_path` 复用），DB 行仍按来源消息各记一行但指向同一 `content_hash`/`local_path`。未下载前 `content_hash` 为空，去重仅在下载后生效。
 
-### 11.5 仍待确认项
+### 11.5 仍需与用户确认项
 
 6. **mem0 sidecar 端口/托管**：`127.0.0.1:18900` 是否合适？launchd 独立托管确认。
 7. **mem0 metadata 过滤能力**：Qdrant 后端复杂 AND/OR 过滤需实测；基线只依赖标量等值。
-8. **autonomy 默认**：整体默认 `copilot`（对外动作需确认）？
+8. **执行期请示尺度**：`conf/prompts/m5-approval-policy.md` 里"什么该先问 principal"的表述是否合适，需据实跑校准。
 9. **自动 git commit/push**：默认关，是否开放及约束。
-10. **各类阈值/权重/强制确认清单**：见 M4 文档细项，需校准（codex 灰区默认值同样待校准）。
-11. **妙记逐字稿的隐私边界**：`lark-cli minutes` 能否稳定拿到目标妙记内容（权限/授权范围），以及是否所有妙记都允许拉取，需实测确认。
+10. **妙记逐字稿的隐私边界**：`lark-cli minutes` 能否稳定拿到目标妙记内容（权限/授权范围），以及是否所有妙记都允许拉取，需实测确认。
 
 ---
 
@@ -685,8 +677,8 @@ M4 的 codex 深判受一组配置控制，全部可在配置文件调整、不�
 以下不算过度，是任务本身要的，**不要为了「简单」而砍**：
 
 - **7 张核心实体表**：Project/Person/Group/Todo/Task/Resource/ScanRecord 都是领域必需，DDL 保持现状。
-- **Todo / Task 拆分**：线索与「已确认可执行任务」生命周期分离，是核心设计（§2.3）。
-- **codex + model API 双通道**：M4 用带代码上下文的 codex 决策，是用户明确要求。
+- **Todo / Task 拆分**：线索与「已固化可执行任务」生命周期分离，是核心设计（§2.3）。
+- **codex + model API 双通道**：M5 判断环节用带代码上下文的 codex，是用户明确要求。
 - **fail-fast 的完整错误处理与单测覆盖**：这是质量要求，不是复杂度负担。
 
 ### 12.3 加任何「重」东西前的自检（三问）
@@ -706,6 +698,6 @@ M4 的 codex 深判受一组配置控制，全部可在配置文件调整、不�
 
 - **GORM AutoMigrate 对非空表加 NOT NULL 列会静默漏列**（2026-07-21 发现）。
   - 现象：`store.Migrate` 每次启动无条件跑（`main.go:81`），`-migrate-only` 也打印 `mysql schema migration completed`，但给**已有数据的表**新增 `NOT NULL` 列时，AutoMigrate 会**跳过该列却照样返回成功**——日志全绿，无任何报错，极难察觉。
-  - 实例：`todo.manual_gate_required`（model 于 `f86e87f` 加入，字段定义 `not null;default:0`）。`todo` 表已有 20 行数据，AutoMigrate 始终没建这列；手动 `ALTER TABLE ... ADD COLUMN` 一次成功。已于 2026-07-21 手动补列修复。
-  - 影响：列缺失时，凡走 `need_decision` 路由的 Todo 在 `UPDATE ... SET manual_gate_required=true`（`evaluation.go` / `service.go`）会 `Unknown column`，整条 M4 决策事务回滚。此列还被 `codex_evaluator.go` 读作 sticky 人工闸门（安全护栏）。
+  - 实例（2026-07-21，该列后来随线索层人工闸门一起被删除，问题本身仍在）：给已有 20 行数据的 `todo` 表加一个 `not null;default:0` 的新列，AutoMigrate 始终没建这列；手动 `ALTER TABLE ... ADD COLUMN` 一次成功。
+  - 影响：列缺失时，凡 `UPDATE` 写到该列的写入都会 `Unknown column` 报错，整段流程失败——而迁移日志全绿，排查方向完全被误导。
   - 根治方向（**【需与用户确认】** 后再做）：迁移后加一道 model↔DB 列对账，缺列即 fail-fast，不允许「静默成功」。与「§ 可观测性：报错你不知道」是同源问题（这里连报错都没有）。

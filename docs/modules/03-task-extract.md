@@ -12,7 +12,7 @@
 | --- | --- |
 | 隶属总纲 | `docs/00-overview.md`（顶层设计与跨模块契约。7 实体权威定义、`todo` 表 DDL、mem0 sidecar 契约、LLM 分工均以总纲为准，本文不重复） |
 | 技术栈 | **Go 1.26 / GORM（`gorm.io/gorm` + MySQL driver）/ robfig/cron v3（`github.com/robfig/cron/v3`）/ go-playground/validator（`github.com/go-playground/validator/v10`）** |
-| 产出物 | **`Todo`（行动线索 / 候选）**——M3 的唯一产出物。M3 **不产出 `Task`**；`Task` 是 M4 把 `Todo` 经确认后固化的明确可执行任务（见总纲 §2.3）。 |
+| 产出物 | **`Todo`（行动线索 / 候选）**——M3 的唯一产出物。M3 **不产出 `Task`**；`Task` 是 M5 判断环节把 `Todo` 判为值得做后固化的可执行任务（见总纲 §2.3）。 |
 | LLM 用法 | **【2026-07 变更，见 `docs/design-context-pipeline.md`】** M3 主引擎改用 **codex CLI**（`extract.engine=codex`），以便提取时可自跑 lark-cli/bytedcli/git 推算项目归属与仓库地址；原**可配置 model API**（OpenAI 兼容端点，structured output / JSON schema，Go 侧 HTTP 调用）**保留为备用**（`extract.engine=model_api`）。 |
 | 本次改写 | 后端由 Python 全面改 Go（Pydantic→Go struct + validator；OpenAI Python SDK→Go HTTP；APScheduler→robfig/cron）；单一 `Task` 实体拆为 `Todo`/`Task`，M3 产出物由 `Task` 改为 **`Todo`**；引入 `Group`（来源会话）与 `Resource`（妙记/文档作方案依据）；mem0 改 Python FastAPI sidecar，Go 经 HTTP `MemoryClient` 调用。 |
 | 不引入 | Eino / Kitex（Jarvis 本地单体，抽取走 codex 子进程或直连 model API，见总纲 §6 与 `docs/design-context-pipeline.md`）；不部署 Neo4j 等外部图库（mem0 内建实体链接，见总纲 §5）。 |
@@ -25,7 +25,7 @@
 流水线（M2 扫描落库后按 chat 实时触发；cron `extract` job 每 10 min 补偿）：
 
 ```text
-采集 M2 ──► 记忆化 mem0 M2 ──► 【Todo 提取 M3】──► 打分+确认 M4 ──► 执行 M5
+采集 M2 ──► 记忆化 mem0 M2 ──► 【Todo 提取 M3】──► M5 判断环节 ──► M5 执行环节
    message/group/resource        产出 Todo        Todo→Task 闸门     执行 Task
 ```
 
@@ -43,12 +43,12 @@
 | 事项 | 归属 |
 | --- | --- |
 | 消息采集、消息落库、`Group`/`Resource`/`ScanRecord` 沉淀、消息级 mem0 记忆化 | M2 |
-| 置信度 / 风险打分、路由决策、`need_info`/`need_decision`/`confirmed`/`dismissed` 状态流转 | M4 |
-| **`Todo` → `Task` 固化**（补齐信息、快照 background + plan、生成 `task` 行） | **M4**（唯一转化闸门） |
-| 真正执行（改代码 / 发群 / 约会 / 查证） | M5（消费 `Task`） |
+| 判断"值不值得做"、`auto`/`dropped` 状态流转 | M5 判断环节 |
+| **`Todo` → `Task` 固化**（复用背景快照、写判断方向、生成 `task` 行） | **M5 判断环节**（唯一转化闸门） |
+| 真正执行（改代码 / 发群 / 约会 / 查证） | M5 执行环节（消费 `Task`） |
 | `Project` / `Person` / `Group` / `Message` / `Resource` 实体建模与写入 | M1/M2（M3 只读引用，外键指向） |
 
-> **关键边界（对齐总纲 §2.3）**：M3 **只写 `Todo`**，且 M3 产出的 `Todo` 状态**只有 `extracted`**（带 `missing_info` 标记信息是否足）。`scoring`/`need_info`/`need_decision`/`confirmed`/`dismissed`/`expired` 均由 M4 流转，M3 越权置这些态是设计红线。`Task` 由 M4 生成，M3 完全不碰。
+> **关键边界（对齐总纲 §2.3）**：M3 **只写 `Todo`**，且 M3 产出的 `Todo` 状态**只有 `extracted`**（带 `open_questions` 标记只有 principal 能拍板/提供的点）。`auto`/`dropped`/`expired` 均由 M5 判断环节流转，M3 越权置这些态是设计红线。`Task` 由判断环节生成，M3 完全不碰。
 
 ### 0.3 输入 / 输出契约
 
@@ -97,14 +97,14 @@
 | `prompt_version` | M3 | Prompt 模板版本（可回溯/复现） |
 | `revision` | M3 | 更新次数（每次讨论推进 +1） |
 | `first_seen_at` / `last_evidence_at` | M3 | 最早 / 最新证据消息时间 |
-| `status` | **M3 只写 `extracted`** | 其余态（`scoring`/`need_info`/`need_decision`/`confirmed`/`dismissed`/`expired`）由 M4 流转 |
-| `confidence` / `risk` / `route` | **M4** | M3 不写（总纲 `todo` 表已含这些 M4 占位字段） |
-| `ttl_at` | **M4** | 待确认过期时间，M3 不写 |
-| `version` | M3/M4 | 乐观锁（并发更新用，见 §5.4） |
+| `context_snapshot` / `resolution` | M3 | 背景快照与项目/仓库推算轨迹，下游全链路复用（见 `docs/design-context-pipeline.md`） |
+| `status` | **M3 只写 `extracted`** | 其余态（`auto`/`dropped`/`expired`）由 M5 判断环节流转 |
+| `ttl_at` | **M5 判断环节** | 线索过期时间，M3 不写 |
+| `version` | M3 / M5 判断环节 | 乐观锁（并发更新用，见 §5.4） |
 
 > 设计取舍（保留）：`action_type` 用 `VARCHAR` + 应用层枚举而非 MySQL `ENUM`，因为要求「可抽象扩展」，`ENUM` 增删值需改表、迁移僵硬。校验放 Go 应用层并 fail-fast（未知类型直接返回 error，不静默落库）。
 >
-> 与原方案字段差异：原 `task` 表的 `owner_open_id`（执行责任人，默认 principal）、`confidence_score`/`risk_level`/`routing_decision`（M4 占位）、`execution_plan`/`execution_result`（M5 占位）、`embedding_synced` 在拆分后**不再属于 `Todo`**——执行相关字段随 `Task`（M4/M5 拥有）；打分字段总纲 `todo` 用 `confidence`/`risk`/`route`（M4 写）；向量同步标记改为 §5.2 的 Qdrant 同步逻辑（不落 `todo` 表列）。
+> 与原方案字段差异：原 `task` 表的 `owner_open_id`（执行责任人，默认 principal）、`execution_plan`/`execution_result`（执行环节占位）、`embedding_synced` 在拆分后**不再属于 `Todo`**——执行相关字段随 `Task`（M5 拥有）；早期的 `confidence_score`/`risk_level`/`routing_decision` 打分字段随规则引擎一起退役，不再存在；向量同步标记改为 §5.2 的 Qdrant 同步逻辑（不落 `todo` 表列）。
 
 ### 1.2 扫描水位表（M3 私有状态，保证 10min 扫描幂等）
 
@@ -128,7 +128,7 @@ CREATE TABLE `todo_extract_watermark` (
 
 ### 1.3 状态审计表 `todo_event`（总纲 §2.5 支撑表）
 
-状态机跨 M3/M4，`todo_event` 记录每次状态迁移，便于排障与复盘。**M3 只写自己产生的迁移**（`NULL → extracted`，及更新时的证据追加事件）：
+状态机跨 M3 与 M5 判断环节，`todo_event` 记录每次状态迁移，便于排障与复盘。**M3 只写自己产生的迁移**（`NULL → extracted`，及更新时的证据追加事件）：
 
 ```sql
 CREATE TABLE `todo_event` (
@@ -136,7 +136,7 @@ CREATE TABLE `todo_event` (
   `todo_id`     BIGINT UNSIGNED NOT NULL,
   `from_status` VARCHAR(32)     NULL,
   `to_status`   VARCHAR(32)     NOT NULL,
-  `actor`       VARCHAR(16)     NOT NULL,   -- m3 / m4 / user
+  `actor`       VARCHAR(16)     NOT NULL,   -- m3 / m5 / user
   `detail`      JSON            NULL,        -- 如证据追加、revision、missing_info 变化
   `created_at`  TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -172,7 +172,7 @@ type Todo struct {
     IsLeaderAssigned   bool        `gorm:"column:is_leader_assigned"`
     DueAt              *time.Time  `gorm:"column:due_at"`
 
-    // M3 只写 extracted；其余状态与 confidence/risk/route/ttl_at 归 M4。
+    // M3 只写 extracted；auto/dropped/expired 与 ttl_at 归 M5 判断环节。
     Status       string      `gorm:"column:status;default:extracted"`
     MissingInfo  StringSlice `gorm:"column:missing_info;type:json"` // 信息不足标记(非独立状态)
 
@@ -296,8 +296,8 @@ func (Todo) TableName() string { return "todo" }
       写/更新 todo 行（status 恒 extracted，信息不足记 missing_info）；
       写 todo_event；有节制回写 mem0（HTTP sidecar）；推进 watermark；同步 Qdrant 向量
                                             │
-   ⑩ 交接 M4  ──────────────────────────────▼───────────────────────────
-      status=extracted 的 Todo 交 M4 打分 + Todo→Task 确认闸门
+   ⑩ 交接 M5 判断环节  ─────────────────────▼───────────────────────────
+      status=extracted 的 Todo 交判断环节判值不值得做 + Todo→Task 闸门
 ```
 
 ### 3.2 会话/话题聚合细节
@@ -309,7 +309,7 @@ func (Todo) TableName() string { return "todo" }
 ### 3.3 背景富化：Group / Project / Resource 的使用（新增）
 
 - **Group（来源会话）**：会话单元直接对应一个 `Group` 行。用 `Group.project_id` 反查项目背景（会话已关联项目时无需再靠 LLM 猜 `project_hint`）；`Group.is_key_group=1`（leader/核心项目群）的会话，抽取更谨慎、疑似线索宁可浮现不丢弃。落库时 `Todo.group_id = Group.id`。
-- **Project 背景**：优先 `Group.project_id → Project`；会话未关联项目时，LLM 输出 `project_hint`，Go 侧再按显式映射表/名称解析成 `project_id`（解析不出则留 NULL，交 M4，见开放问题 §8）。**【2026-07 增强，见 `docs/design-context-pipeline.md`】** codex 引擎下，会话未关联项目时模型可自跑 `lark-cli`/`bytedcli`/`git` 查群公告/项目库/人物关系来推算 `project_hint`；`project_hint` 由 Go 落库前解析成 `project_id`（此前该字段被忽略，现已消费）。同时 M3 落库时会**固化** `context_snapshot`（背景快照）与 `resolution`（推算轨迹）到 Todo，供 M4/M5 全链路复用。
+- **Project 背景**：优先 `Group.project_id → Project`；会话未关联项目时，LLM 输出 `project_hint`，Go 侧再按显式映射表/名称解析成 `project_id`（解析不出则留 NULL，交判断环节，见开放问题 §8）。**【2026-07 增强，见 `docs/design-context-pipeline.md`】** codex 引擎下，会话未关联项目时模型可自跑 `lark-cli`/`bytedcli`/`git` 查群公告/项目库/人物关系来推算 `project_hint`；`project_hint` 由 Go 落库前解析成 `project_id`（此前该字段被忽略，现已消费）。同时 M3 落库时会**固化** `context_snapshot`（背景快照）与 `resolution`（推算轨迹）到 Todo，供 M5 判断环节与执行环节全链路复用。
 - **Resource（方案依据线索）**：会话中出现的妙记 / 文档 / 文件由 M2 已沉淀为 `resource` 行（仅元数据）。M3 抽取时把相关 `Resource` 注入 prompt（`resource_type`、`minute_token`/`doc_token`、`name`、以及可选的 `extracted_text`），让 LLM 能把 `summary_post` 的 `source_ref` 指向具体妙记 token，或让 `code_change` 的 `based_on` 引用某份设计文档。
   - **妙记按需拉取（已定，总纲 §11.4）**：当 M3 判断某条线索强依赖妙记内容（典型：`summary_post` "据上次会议妙记总结 todo 到人"），且该 `Resource.resource_type=minutes` 尚未解析（`extracted_text` 空）时，M3 调 **M2 的 `ResourceFetcher.EnsureMinutesText(resID)`**（M2 §3.9.1）按需拉逐字稿，拿回 `extracted_text` 注入 prompt 提升抽取质量。
   - **其它类型不解析**：图片/飞书文档/附件本期不下载不解析，M3 只能引用其 `token`/`name` 作弱依据（`extracted_text` 恒空）。此约束会限制这些类型的 `source_ref`/`based_on` 精度，属本期已知取舍。
@@ -320,19 +320,19 @@ func (Todo) TableName() string { return "todo" }
 1. 预取 `Person WHERE role='leader'` 的 `open_id` 集合。
 2. 会话单元内，`sender_open_id ∈ leader 集合` 的消息，标注为 leader 发言；prompt 中显式告知「以下消息来自 leader（open_id=…），其交办为高优先级」。
 3. 命中后产出的 `Todo`：`is_leader_assigned=1`、`assigner_open_id=leader open_id`。
-4. **兜底原则**：leader 来源的疑似行动线索，即使 `commitment_strength=tentative`，也**至少产出（带 `missing_info` 标注信息不足）**交 M4/用户确认，绝不静默丢弃（重点不能漏）。
+4. **兜底原则**：leader 来源的疑似行动线索，即使 `commitment_strength=tentative`，也**至少产出（带 `missing_info` 标注信息不足）**交判断环节判定，绝不静默丢弃（重点不能漏）。
 
 ### 3.5 闲聊 vs 真实行动线索 的区分（写进 prompt 约束）
 
 | 判据 | 处理 |
 | --- | --- |
 | 社交寒暄 / 纯情绪 / 无动作讨论 | 丢弃，不产出 |
-| 软建议（"要不要…""也许可以…"，`commitment_strength=tentative`） | 非 leader：产出 `Todo` 但标 `missing_info`（needs-confirm，交 M4）；leader：同 §3.4 兜底 |
+| 软建议（"要不要…""也许可以…"，`commitment_strength=tentative`） | 非 leader：产出 `Todo` 但标 `missing_info`（交判断环节判值不值得做）；leader：同 §3.4 兜底 |
 | 明确承诺/交办（"我来做…""你去把…""@某人 负责…"，`firm`） | 产出候选 `Todo` |
 | 已明确、但必填 slot 缺失/歧义 | 产出 `Todo` 但 `info_sufficient=false` → 记 `missing_info` |
 | 具体、可落地、slot 齐全 | 产出 `Todo`（`missing_info` 为空） |
 
-> 借鉴会议纪要抽取成熟做法：把 LLM 当**确定性抽取器**而非「总结器」；软陈述进「模糊桶」（`missing_info` 标记）交 M4/人工判断，而不是硬塞成明确任务；每条 `Todo` 必带**逐字证据**可回溯。所有「是否真任务 / 是否确认」的判定归 M4，M3 只负责把线索**如实浮现**。
+> 借鉴会议纪要抽取成熟做法：把 LLM 当**确定性抽取器**而非「总结器」；软陈述进「模糊桶」（`missing_info` 标记）交判断环节判断，而不是硬塞成明确任务；每条 `Todo` 必带**逐字证据**可回溯。所有「是否真任务 / 值不值得做」的判定归 M5 判断环节，M3 只负责把线索**如实浮现**。
 
 ---
 
@@ -354,7 +354,7 @@ func (Todo) TableName() string { return "todo" }
    - 必填 slot 缺失或有歧义时：info_sufficient=false，并在 missing_info 里列出缺了什么，绝不猜测填充。
 4. 每条线索必须给出 source_message_ids（证据消息 id）与 source_quote（逐字原文片段，可回溯）。
 5. 相对时间（如「下周五」「月底」）必须用 current_datetime={{current_datetime}}（时区 {{tz}}）解析成绝对 ISO-8601 日期；无明确时间则留 null。
-6. commitment_strength：firm=明确承诺/交办；tentative=软建议待确认；mentioned=仅提及无归属。
+6. commitment_strength：firm=明确承诺/交办；tentative=软建议、尚未拍板；mentioned=仅提及无归属。
 7. 同一件事在多条消息重复出现，只输出一条（合并证据），不要重复。
 8. 若整段会话无任何可落地行动线索，candidates 返回空数组。
 9. 可引用背景中的 Resource（妙记/文档）作为 source_ref / based_on 的依据，但只能引用输入中明确给出的 Resource 标识。
@@ -586,7 +586,7 @@ func Extract(ctx context.Context, cli ModelClient, req ChatRequest) (*Extraction
 }
 ```
 
-> **fail-fast 落点**：① provider 返回 `refusal` → 返回 error；② JSON 解析 / schema 校验失败 → 返回 error（不吞、不 fallback 到正则解析）；③ 未知 `action_type` → 返回 error；④ 必填 slot 缺失 → 不 error 但**明确降级 `info_sufficient=false`** 并记 `missing_info`（落库 `Todo.missing_info`），交 M4/用户，而非静默猜测。单测须对以上四类各写用例，断言「暴露 error / 降级」行为，**禁止 mock 掉真实校验**来让测试变绿。
+> **fail-fast 落点**：① provider 返回 `refusal` → 返回 error；② JSON 解析 / schema 校验失败 → 返回 error（不吞、不 fallback 到正则解析）；③ 未知 `action_type` → 返回 error；④ 必填 slot 缺失 → 不 error 但**明确降级 `info_sufficient=false`** 并记 `missing_info`（落库 `Todo.missing_info`），交判断环节，而非静默猜测。单测须对以上四类各写用例，断言「暴露 error / 降级」行为，**禁止 mock 掉真实校验**来让测试变绿。
 >
 > **版本锁定**：mem0 sidecar 契约、model API schema、prompt 版本均**锁定**；跨版本接口变化直接 fail（不做跨版本 fallback，如需兼容【需与用户确认】）。`prompt_version` / `extraction_model` 落库以支持复现。
 
@@ -615,7 +615,7 @@ func Extract(ctx context.Context, cli ModelClient, req ChatRequest) (*Extraction
 
 ### 5.3 LLM 裁决（消除向量误报）
 
-语义命中 ≥ 阈值只算「疑似重复」。发一次**小型判定调用**（model API，strict 布尔输出）确认「是否同一行动线索」，再决定合并——向量相似不等于语义等价，关键路径用 LLM 复核候选对（成熟做法）。裁决同样 fail-fast：调用失败返回 error，不默认合并或默认新建。**注意此裁决仍用 model API，不用 codex（codex 只在 M4）。**
+语义命中 ≥ 阈值只算「疑似重复」。发一次**小型判定调用**（model API，strict 布尔输出）确认「是否同一行动线索」，再决定合并——向量相似不等于语义等价，关键路径用 LLM 复核候选对（成熟做法）。裁决同样 fail-fast：调用失败返回 error，不默认合并或默认新建。**注意此裁决仍用 model API，不用 codex。**
 
 ### 5.4 更新与推进逻辑
 
@@ -623,12 +623,12 @@ func Extract(ctx context.Context, cli ModelClient, req ChatRequest) (*Extraction
 
 | 讨论进展 | 更新动作 |
 | --- | --- |
-| 补齐了原缺失 slot（如定了参会人/时间/方案） | 填 `slots`；若必填齐全，清空 `missing_info`（状态仍是 `extracted`，是否可执行交 M4 判） |
+| 补齐了原缺失 slot（如定了参会人/时间/方案） | 填 `slots`；若必填齐全，清空 `missing_info`（状态仍是 `extracted`，值不值得做交判断环节判） |
 | 新增讨论/证据 | 追加 `source_message_ids`、刷新 `source_quote`、`last_evidence_at`、`revision+1` |
-| 明确「已完成/取消」 | **不由 M3 置终态**；记信号入 `todo_event.detail` 交 M4 判定（避免 M3 越权） |
-| 方案/目标发生实质变化，已非同一件事 | 视为新 `Todo` 新建，旧 `Todo` 记 `superseded` 信号入 `todo_event` 交 M4 |
+| 明确「已完成/取消」 | **不由 M3 置终态**；记信号入 `todo_event.detail` 交判断环节判定（避免 M3 越权） |
+| 方案/目标发生实质变化，已非同一件事 | 视为新 `Todo` 新建，旧 `Todo` 记 `superseded` 信号入 `todo_event` 交判断环节 |
 
-> 边界：M3 只负责「抽取 + 去重 + 更新事实」，**不做状态终结裁决**（`confirmed`/`dismissed`/`expired` 归 M4；执行态归 M5 的 `Task`）。M3 产出的 `Todo` 始终停在 `extracted`。每次更新写 `todo_event`。
+> 边界：M3 只负责「抽取 + 去重 + 更新事实」，**不做状态终结裁决**（`auto`/`dropped`/`expired` 归 M5 判断环节；执行态归 M5 执行环节的 `Task`）。M3 产出的 `Todo` 始终停在 `extracted`。每次更新写 `todo_event`。
 
 ---
 
@@ -739,36 +739,38 @@ M3 回写的记忆若被下轮检索回来、又被当成新行动线索，会�
 
 ## 7. 状态机与错误处理
 
-### 7.1 Todo 状态机（跨 M3/M4，M3 只产出 `extracted`）
+### 7.1 Todo 状态机（跨 M3 与 M5 判断环节，M3 只产出 `extracted`）
 
-对齐总纲 `todo.status` 枚举 `extracted | scoring | need_info | need_decision | confirmed | dismissed | expired`：
+对齐总纲 `todo.status` 枚举 `extracted | auto | dropped | expired`：
 
 ```text
         ┌──────── M3 产出（唯一状态）────────┐
         │                                    │
     [extracted]  （missing_info 为空=slot 齐全；非空=信息不足，仍是 extracted）
         │
-        └───────────► M4 打分 ──────────────┐
-                          │                  │
-             ┌────────────┼──────────┬───────┴────────┐
-             ▼            ▼          ▼                ▼
-        [scoring]   [need_info]  [need_decision]  [dismissed]
-                          │          │                
-                          ▼          ▼   （用户/自动确认）
-                     补信息回流   → [confirmed] ──► 生成 Task（M4 固化 background+plan）
-                                                        │
-                                                        ▼  M5 执行 Task
-                                              task.status: pending→executing→done/failed
-        （超时未确认 → [expired]，M4 管理）
+        └───────────► M5 判断环节（read-only）
+                          │
+             ┌────────────┴────────────┐
+             ▼                         ▼
+      disposition=ready          disposition=drop
+             │                         │
+             ▼                         ▼
+     [auto] ──► 生成 Task        [dropped]（终态，无 Task）
+       （复用 M3 的 context_snapshot 作 background）
+             │
+             ▼  M5 执行环节
+   task.status: pending→executing→done/failed
+                       └→ awaiting_approval / needs_human（唯一的人工闸门）
 
  去重旁路（M3）：命中已有 → 更新已有行；重复插入靠 uk_todo_fingerprint 兜底
- 取代旁路（M3）：实质变化 → 新建 + 旧行记 superseded 信号入 todo_event 交 M4
+ 取代旁路（M3）：实质变化 → 新建 + 旧行记 superseded 信号入 todo_event 交判断环节
 ```
 
-- **M3 写入的合法状态**：**仅 `extracted`**。信息不足体现在 `missing_info` 字段，**不是**独立状态（总纲无 `insufficient_info` 态；语义上的「信息不足」由 M4 依 `missing_info` 决定走 `need_info`）。
-- `scoring` / `need_info` / `need_decision` / `confirmed` / `dismissed` / `expired` 均归 **M4**；`Task` 的 `pending`/`executing`/`done`/`failed` 归 **M5**。M3 越权置这些态是设计红线。
+- **M3 写入的合法状态**：**仅 `extracted`**。信息不足体现在 `missing_info` 字段，**不是**独立状态（总纲无 `insufficient_info` 态）。
+- `auto` / `dropped` / `expired` 均归 **M5 判断环节**；`Task` 的 `pending`/`executing`/`done`/`failed` 归 **M5 执行环节**。M3 越权置这些态是设计红线。
+- **线索不会因为信息不足而停下来等人**：需要 principal 拍板或提供事实的点写进 `open_questions`，跟着 Task 走到执行环节，由执行环节调查完再决定要不要真去问。
 
-> 与原方案差异：原文档 M3 产出 `extracted` / `insufficient_info` / `duplicate` 三态。对齐总纲后：`insufficient_info` → 用 `extracted` + `missing_info` 标记表达；`duplicate` → 不落独立态（命中即更新已有行或被唯一键拦下）；语义「信息不足/重复」的后续处置全部上移 M4。
+> 与原方案差异：原文档 M3 产出 `extracted` / `insufficient_info` / `duplicate` 三态。对齐总纲后：`insufficient_info` → 用 `extracted` + `missing_info` 标记表达；`duplicate` → 不落独立态（命中即更新已有行或被唯一键拦下）；语义「信息不足/重复」的后续处置全部上移 M5 判断环节。
 
 ### 7.2 错误处理与 fail-fast 汇总
 
@@ -777,7 +779,7 @@ M3 回写的记忆若被下轮检索回来、又被当成新行动线索，会�
 | model API 拒答（refusal） | 返回 error 暴露，记录该会话单元，不产出臆测 `Todo` |
 | JSON 解析/schema 校验失败 | 返回 error；**不** fallback 到正则/手搓解析 |
 | 未知 `action_type` | validator/EnforceRequiredSlots 返回 error，不落库 |
-| 必填 slot 缺失/歧义 | 降级 `info_sufficient=false` + 记 `missing_info`（落 `Todo.missing_info`），交 M4；不猜测填充 |
+| 必填 slot 缺失/歧义 | 降级 `info_sufficient=false` + 记 `missing_info`（落 `Todo.missing_info`），交判断环节；不猜测填充 |
 | 相对时间无法解析 | `due_at` 留 NULL；`schedule_meeting` 记 `proposed_time` 缺失 → `missing_info` |
 | leader 交办但措辞软 | 至少产出（带 `missing_info` 标注），绝不丢弃 |
 | 语义去重 LLM 裁决失败 | 返回 error，不默认合并也不默认新建 |
@@ -789,12 +791,12 @@ M3 回写的记忆若被下轮检索回来、又被当成新行动线索，会�
 
 ## 8. 开放问题清单（需与用户确认）
 
-> 已定项（不再列）：后端语言（**Go，已定**）、是否部署 Neo4j（**否，mem0 内建实体链接**）、Web 框架/ORM/调度（总纲 §1 已定）、LLM 分工（M3 用 model API、M4 用 codex，已定）。
+> 已定项（不再列）：后端语言（**Go，已定**）、是否部署 Neo4j（**否，mem0 内建实体链接**）、Web 框架/ORM/调度（总纲 §1 已定）、LLM 分工（M3 用 model API 或 codex、判断环节用 codex，已定）。
 
-1. **`Todo` → `Task` 契约细化**：M3 产出 `extracted` 的 `Todo` 后，M4 依 `missing_info` 判 `need_info`、依打分判 `confirmed` 并固化 `Task`。M3 需要向 M4 显式传哪些**信息回流锚点**（如 `source_message_ids`、`group_id`、引用的 `Resource` token），以便 M4 补齐信息 / 快照 background？M4 补信息后是否回喂 M3 重抽取（M4 文档 §0.1 提到「重新提取请求」），回喂接口的入参口径需与 M4 对齐。
-2. **`missing_info` 语义与 `need_info` 的映射**：M3 只标 `missing_info`，M4 据此决定 `need_info`。`missing_info` 的粒度（缺哪个 slot / 缺 leader 确认 / 缺时间）需与 M4 打分因子（M4 §2.1 `c1` slot 完整度）对齐口径。
+1. **`Todo` → `Task` 契约细化**：M3 产出 `extracted` 的 `Todo` 后，判断环节判 `ready`/`drop` 并在 `ready` 时固化 `Task`。M3 需要显式传哪些**追溯锚点**（如 `source_message_ids`、`group_id`、引用的 `Resource` token），才能让判断环节和执行环节都能回到原始证据？
+2. **`missing_info` 与 `open_questions` 的分工**：`missing_info` 记"抽取时缺什么"，`open_questions` 记"只有 principal 能拍板/提供的点"。两者粒度与去重口径需与判断环节的 prompt 对齐，避免同一件事记两处。
 3. **`manual_followup` 边界**：是否保留该类型？如何防它成「垃圾桶」稀释「可落地」？建议加硬约束（必须具体可验证）并人工抽检。
-4. **chat → project 映射**：优先用 `Group.project_id`（M1 维护，准）；会话未关联项目时靠 LLM `project_hint` 推断再解析（省事、可能错）。未关联又推断不出时 `project_id` 留 NULL 交 M4，是否可接受？
+4. **chat → project 映射**：优先用 `Group.project_id`（M1 维护，准）；会话未关联项目时靠 LLM `project_hint` 推断再解析（省事、可能错）。未关联又推断不出时 `project_id` 留 NULL 交判断环节，是否可接受？
 5. **语义去重阈值标定**：`todo_semantic` 的 embedding 模型与 `score_threshold` 需在真实飞书数据上标定；上线前需一批标注样本。
 6. **跨会话/跨群 `Todo` 聚合**：同一件事横跨多个群/话题（如私聊交办 + 群里跟进）如何聚合为一个 `Todo`？当前按会话单元切分可能拆散（`group_id` 只能挂一个来源会话）。
 7. **长会话切片合并**：超 token 预算时按时间切片，多片抽取结果的合并规则（尤其跨片的同一 `Todo`）需定义。

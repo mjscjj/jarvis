@@ -218,3 +218,84 @@ func TestFailStaleExecutingRejectsInvalidInput(t *testing.T) {
 		t.Fatalf("zero now error = %v", err)
 	}
 }
+
+// TestRecordProgressMovesTimestampOnlyOnChange pins the reason last_progress_at
+// exists: a Task that keeps resuming and re-reporting the same standing must not
+// look alive, or the field cannot be used to find stalled work.
+func TestRecordProgressMovesTimestampOnlyOnChange(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE task (
+		id INTEGER PRIMARY KEY,
+		status TEXT NOT NULL,
+		summary TEXT,
+		last_progress_at DATETIME,
+		version INTEGER NOT NULL,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create test table: %v", err)
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	const taskID = uint64(7)
+	if err := db.Exec("INSERT INTO task(id, status, version) VALUES (?, ?, ?)", taskID, "executing", 3).Error; err != nil {
+		t.Fatalf("create Task: %v", err)
+	}
+	load := func() domain.Task {
+		var task domain.Task
+		if err := db.First(&task, taskID).Error; err != nil {
+			t.Fatalf("load Task: %v", err)
+		}
+		return task
+	}
+
+	first := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
+	if err := store.RecordProgress(context.Background(), taskID, "  等对方回权限  ", first); err != nil {
+		t.Fatalf("RecordProgress() error = %v", err)
+	}
+	task := load()
+	if task.Summary == nil || *task.Summary != "等对方回权限" {
+		t.Fatalf("summary = %v, want trimmed text", task.Summary)
+	}
+	if task.LastProgressAt == nil || !task.LastProgressAt.Equal(first) {
+		t.Fatalf("last_progress_at = %v, want %v", task.LastProgressAt, first)
+	}
+	if task.Version != 3 {
+		t.Fatalf("version = %d, want it untouched: progress must not consume the optimistic lock", task.Version)
+	}
+
+	// Same standing re-reported (whitespace aside): a resume that moved nothing.
+	if err := store.RecordProgress(context.Background(), taskID, "等对方回权限\n", first.Add(time.Hour)); err != nil {
+		t.Fatalf("RecordProgress() unchanged error = %v", err)
+	}
+	if got := load(); got.LastProgressAt == nil || !got.LastProgressAt.Equal(first) {
+		t.Fatalf("last_progress_at = %v, want it to stay at %v for an unchanged summary", got.LastProgressAt, first)
+	}
+
+	// Blank means "this run moved nothing"; it must not erase what is stored.
+	if err := store.RecordProgress(context.Background(), taskID, "   ", first.Add(2*time.Hour)); err != nil {
+		t.Fatalf("RecordProgress() blank error = %v", err)
+	}
+	task = load()
+	if task.Summary == nil || *task.Summary != "等对方回权限" {
+		t.Fatalf("summary = %v, want a blank summary to be a no-op, not an erasure", task.Summary)
+	}
+	if task.LastProgressAt == nil || !task.LastProgressAt.Equal(first) {
+		t.Fatalf("last_progress_at = %v, want it unchanged by a blank summary", task.LastProgressAt)
+	}
+
+	third := first.Add(3 * time.Hour)
+	if err := store.RecordProgress(context.Background(), taskID, "权限已下来，开始改代码", third); err != nil {
+		t.Fatalf("RecordProgress() changed error = %v", err)
+	}
+	if got := load(); got.LastProgressAt == nil || !got.LastProgressAt.Equal(third) {
+		t.Fatalf("last_progress_at = %v, want %v after real movement", got.LastProgressAt, third)
+	}
+}

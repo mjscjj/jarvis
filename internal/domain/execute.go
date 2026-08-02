@@ -7,9 +7,14 @@ import (
 )
 
 // ExecutionRun is M5's append-only record of one codex execution attempt for a
-// Task. It captures what codex was asked to do, how long it took, whether it
-// succeeded, and where any code change landed (branch/commit/diff). One Task can
-// have multiple runs (retries), so this is not unique on task_id.
+// Task. It captures what codex was asked to do, how long it took, and whether it
+// succeeded. One Task can have multiple runs (retries), so this is not unique on
+// task_id.
+//
+// What the run produced in the outside world — including where a code change
+// landed — lives in Effects, declared by the agent itself. There are no
+// branch/commit/MR columns: how code gets delivered is the agent's judgment, not
+// a shape this table imposes.
 type ExecutionRun struct {
 	ID         uint64 `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
 	TaskID     uint64 `gorm:"column:task_id;type:bigint unsigned;not null;index:idx_run_task"`
@@ -31,17 +36,11 @@ type ExecutionRun struct {
 	// the agent chooses. Jarvis trusts these declarations verbatim and does NOT
 	// verify them against lark-cli/git receipts. Unknown kinds and unknown fields
 	// are stored and rendered as-is, never rejected.
-	Effects        datatypes.JSON `gorm:"column:effects;type:json"`
-	ErrorDetail    *string        `gorm:"column:error_detail;type:mediumtext"`
-	// RepoPath/BaseBranch/Branch/Commit/DiffPath/MergeRequestURL are only set for
-	// code_change runs. BaseBranch and Branch are persisted before a wait so the
-	// resumed session can finish the same Git delivery path.
-	RepoPath        *string `gorm:"column:repo_path;type:varchar(1024)"`
-	BaseBranch      *string `gorm:"column:base_branch;type:varchar(256)"`
-	Branch          *string `gorm:"column:branch;type:varchar(256)"`
-	Commit          *string `gorm:"column:commit_sha;type:varchar(64)"`
-	DiffPath        *string `gorm:"column:diff_path;type:varchar(1024)"`
-	MergeRequestURL *string `gorm:"column:merge_request_url;type:varchar(1024)"`
+	Effects     datatypes.JSON `gorm:"column:effects;type:json"`
+	ErrorDetail *string        `gorm:"column:error_detail;type:mediumtext"`
+	// RepoPath is the working copy this run was pointed at, when one resolved. It
+	// records where the agent worked, not how it delivered.
+	RepoPath *string `gorm:"column:repo_path;type:varchar(1024)"`
 
 	StartedAt  time.Time  `gorm:"column:started_at;type:datetime;not null"`
 	FinishedAt *time.Time `gorm:"column:finished_at;type:datetime"`

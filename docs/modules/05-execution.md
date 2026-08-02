@@ -2,34 +2,36 @@
 
 > **版本说明**：本次项目重大调整后重写。隶属总纲 `docs/00-overview.md`（顶层设计与跨模块契约以总纲为准）。
 > **技术栈**：Go 1.26（后端）+ robfig/cron v3（调度）+ GORM/MySQL 8（存储），子进程 codex CLI / lark-cli / ripgrep 走 `os/exec`。**不引入 Eino/Kitex**。
-> **消费物**：M5 消费 **Task**（`status=pending` 的明确可执行任务），不消费 Todo。Task 由 M4 把 Todo 确认后固化生成（含问题背景快照 `background` + 明确方案 `plan`）。
+> **本文讲的是 M5 的执行环节**。M5 内部分两步：判断环节（read-only 给 Todo 定 disposition，见 `modules/04-decision.md`）和执行环节（工具全开真正落地，本文）。两步共用一个工作队列和一个 worker 池，不是两个流水线阶段。
+> **消费物**：执行环节消费 **Task**（`status=pending`），不消费 Todo。Task 由判断环节判定 `ready` 后固化生成（含问题背景快照 `background` + 判断方向 `plan`）。
 > **当前实现（2026-07-21）**：`pending Task` 由进程内流水线立即交给 AgentExecutor；`execute.schedule` 只补偿遗漏任务和恢复超时 `executing`。管理后台仍支持手工执行、审批、重跑和 `finish` 回写。
 >
 > 所属系统：基于飞书的本地个人 Jarvis 管家（字节研发工程师 chujiejie.1 本地 Mac）。
-> 模块定位：流水线 `采集(M2) → 提取Todo(M3) → 人工确认生成Task(M4) → 【人工执行并回写Task(M5)】 → 回写后台(M0)` 中的执行环节。
+> 模块定位：流水线 `采集(M2) → 提取Todo(M3) → 判断生成Task(M5 判断环节) → 【执行并回写Task(M5 执行环节)】 → 回写后台(M0)` 中的执行环节。
 > 设计原则（全程遵守）：①本地可信明文存储；②fail-fast 暴露问题、不静默降级；③不乱兼容旧数据/逻辑；④模块化；⑤优先官方包与已有实现。
 
 ---
 
 ## 0. 模块定位与边界
 
-### 0.1 上游契约（M4 → M5）
+### 0.1 上游契约（判断环节 → 执行环节）
 
-M4 是 `Todo → Task` 的唯一转化闸门：把 Todo 确认（用户确认或自动确认）后**生成 `Task`（`status=pending`）**。M5 只消费 `status=pending` 的 Task，每个 Task 已是"方案明确、含问题背景快照"的可执行任务，关键字段（权威定义见总纲 `docs/00-overview.md` §2.4 Task 表）：
+判断环节是 `Todo → Task` 的唯一转化闸门：判定 `ready` 后**生成 `Task`（`status=pending`）**。执行环节只消费 `status=pending` 的 Task，每个 Task 已带完整背景与判断方向，关键字段（权威定义见总纲 `docs/00-overview.md` §2.4 Task 表）：
 
 - `action_type`：动作类型（决定路由到哪个 executor）。
-- `background`：**问题背景快照（JSON）**——确认时刻固化的 `{project, 关键消息, 相关记忆, 交办人}`，保证执行时可复现、不受源数据后续变化影响。
-- `plan`：**明确方案（JSON，用户确认过）**——M4 确认时刻固化的 `{steps, params, 依据}`。**M5 按 `plan` 执行**。
-- `slots`：执行所需结构化参数（M3/M4 已补齐，M5 只做校验与执行，不再做语义提取）。
-- `action_hash`：**方案指纹**——执行前做漂移校验，防止 M4 确认后 `plan` 被篡改。
-- `confirmed_by` / `confirmed_at`：确认来源（`user | system(auto)`）与时刻。
+- `background`：**问题背景快照（JSON）**——M3 冻结的 `context_snapshot`，含 `{project, 关键消息, 相关记忆, 交办人}`，保证执行时上下文完整、可复现。
+- `plan`：**判断环节给出的执行方向（JSON）**。它是"当时最好的理解"，不是冻结契约——执行中发现情况变了，执行环节可以直接改并 bump `version` + 写 `task_event`。
+- `decision_payload`：判断环节的理由、证据、风险，以及留给 principal 的问题（执行环节调查完再决定要不要真去问）。
+- `source_clue`：M3 抽取结论原文，保证执行环节读到的是原始线索而不只是压缩后的方向。
+- `slots`：执行所需结构化参数（上游已补齐，执行环节只做校验与执行，不再做语义提取）。
+- `confirmed_by` / `confirmed_at`：固化来源（`m5_decision` = 判断环节自己，`user` = 后台手建）与时刻。
 - `autonomy_mode`：本 Task 的自治模式（`autopilot | copilot | draft`）。
 - `project_id`：关联项目（可含本地 repo 路径，来自 `Project.repos`）。
 - 关联 `Resource`（按需）：如 `summary_post` 读妙记 `Resource`、`code_change` 的 repo 来自 `Project.repos`。
 
-> **M5 与 M4 的判断边界（重要）**：M5 拿到的 Task 已经方案明确（`plan` 是 M4 确认时固化的明确方案），M5 **不再做"内容层面该不该做"的判断**（M4 已确认）。M5 只做**"执行层面对外/高危动作的最终放行"**。M5 按 `plan` 执行，执行前先做 `action_hash` 漂移校验（见 §5.0）。
+> **两个环节的边界（重要）**：判断环节已经回答了"这件事值不值得做"，执行环节不再重开这个议题。但执行环节**持有对任务内容的修改权**：执行中发现情况变了，直接改 `background` / `plan` / `decision_payload`，bump `version` 并写一条 `task_event` 记下改了什么、为什么改，不必退回上游重走一遍。
 >
-> 其中，申请妙记权限、联系主持人、发送消息或修改飞书数据都属于业务外部写操作。非 `code_change` Task 先完成只读提案；实际写入前持久化为 `awaiting_approval`，只有收到用户明确批准后才执行。
+> **要不要请示 principal，由模型结合上下文判断**，判断依据只写在 `conf/prompts/m5-approval-policy.md`——代码不按 `action_type` 分流、不做哈希比对、不把审批做成固定流程阶段。风险在动作的具体内容里，不在类型名里。代码只提供三样载体：可以停下来的状态（`awaiting_approval` 需批准副作用 / `needs_human` 需回答问题）、一对批准/驳回入口、以及事件流和 `effects` 记录。
 
 ### 0.2 下游契约（M5 → Task / M0 / mem0 / 用户）
 
@@ -40,8 +42,8 @@ M4 是 `Todo → Task` 的唯一转化闸门：把 Todo 确认（用户确认或
 
 ### 0.3 明确不属于 M5 的职责
 
-- 不做行动项抽取 / 打分 / 路由 / `Todo→Task` 转化（M3/M4）；M5 不碰 Todo。
-- 不做"该不该做这件事"的业务判断（M4 已确认并固化进 `plan`）；M5 只判断"这个对外/高危动作是否需要最终放行确认"。
+- 不做行动项抽取（M3）、不做 `Todo→Task` 转化（判断环节）；执行环节不碰 Todo。
+- 不重开"这件事值不值得做"（判断环节已判 `ready`）；执行环节判断的是"这个动作要不要先请示 principal"。
 - 不做数据采集与记忆化（M2）。
 
 ---
@@ -52,7 +54,7 @@ M4 是 `Todo → Task` 的唯一转化闸门：把 Todo 确认（用户确认或
 
 综合 2026 年 agent 工具执行的主流范式（Tool Execution Layer / AI Agent Runtime Policy / OWASP AISVS C09 High-Impact Action Approval / Plan-Validate-Execute）：
 
-1. **执行层是一道确定性控制关卡**：Task 不直接调工具，先经过统一的「校验（含 action_hash 漂移校验）→ 授权/护栏 → 执行 → 结果归一化」管线。
+1. **执行层是一道确定性控制关卡**：Task 不直接调工具，先经过统一的「校验 → 授权/护栏 → 执行 → 结果归一化」管线。
 2. **风险分层 + 默认拒绝对外/破坏性动作**：只读默认放行，写/对外/不可逆动作要显式放行。
 3. **幂等键**：对外副作用动作用 idempotency key 防重复执行（lark-cli 原生支持）。
 4. **确认边界由编排层强制**，而非散落在业务代码里：hold 的动作暂停、持久化状态、等待人工信号再恢复。
@@ -63,17 +65,16 @@ M4 是 `Todo → Task` 的唯一转化闸门：把 Todo 确认（用户确认或
 ### 1.2 分层结构
 
 ```
-                    M4 生成的 Task (status=pending)
+                 判断环节生成的 Task (status=pending)
                                  │
 ┌────────────────────────────────▼─────────────────────────────────────────┐
 │                          M5 执行引擎 Execution Engine (Go)                    │
 │                                                                            │
 │  ① ExecutionScheduler  调度层                                               │
 │     - 拉取 status=pending 的 Task，入执行队列                                 │
-│     - M4/人工批准事件触发；cron 补偿 + worker 并发控制 + 乐观锁防重复          │
+│     - 判断环节建 Task / 人工批准事件触发；cron 补偿 + 并发控制 + 乐观锁防重复   │
 │                                 │                                          │
 │  ② GuardLayer  护栏预检层        ▼                                          │
-│     - 执行前校验 action_hash(与当前 plan 一致)，不一致 → failed/打回          │
 │     - 依据 risk_tier × autonomy_mode × 配置决策矩阵 → allow / hold / deny    │
 │     - hold → 生成确认请求(飞书卡片/后台)，Task 置 awaiting_confirm            │
 │     - deny → 直接 failed(原因透出)                                          │
@@ -176,7 +177,7 @@ const (
 // ExecutionContext 一次执行的全部外部依赖与配置，由引擎注入，Executor 只读使用。
 type ExecutionContext struct {
 	RunID        string             // 本次执行 id
-	Task         *Task              // M4 生成的 pending Task（含 plan/background/slots/action_hash）
+	Task         *Task              // 判断环节生成的 pending Task（含 plan/background/slots/decision_payload）
 	WorkspaceDir string             // 本次执行的隔离产物目录 runs/<task_id>/<run_id>/
 	AutonomyMode string             // autopilot | copilot | draft（取自 Task.autonomy_mode）
 	LLMClient    LLMClient          // 可配置 model API 客户端（summary_post 等轻 LLM 用）
@@ -231,7 +232,7 @@ type StepRecord struct {
 
 // ExecError fail-fast 的错误载体：失败时必填，禁止为空。实现 error 接口。
 type ExecError struct {
-	ErrorType     string `json:"error_type"` // e.g. ActionHashMismatch / SlotValidationError / SubprocessNonZeroExit / Timeout / OpenIdResolveFailed
+	ErrorType     string `json:"error_type"` // e.g. SlotValidationError / SubprocessNonZeroExit / Timeout / OpenIdResolveFailed
 	Message       string `json:"message"`
 	FailedCommand string `json:"failed_command,omitempty"`
 	ExitCode      *int   `json:"exit_code,omitempty"`
@@ -272,7 +273,7 @@ type ExecutorMeta struct {
 	Reversible     bool
 }
 
-// Executor 统一执行接口。M5 按 Task.plan 执行；不做内容层判断（M4 已确认）。
+// Executor 统一执行接口。执行环节以 Task.plan 为起点，不重开"值不值得做"。
 type Executor interface {
 	// Descriptor 返回静态元信息（action_type/risk_tier/mode/超时/对外副作用/可逆）。
 	Descriptor() ExecutorMeta
@@ -298,7 +299,7 @@ type Executor interface {
 | action_type | Executor（Go struct） | 后端 | 同步/异步 | risk_tier | 对外副作用 | 可逆 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `code_change` | `CodeChangeExecutor` | **codex exec**（默认，改代码）/ cursor-agent | 异步 | T4→T5 | 否（默认只出 diff/分支） | 是（不自动提交/推送） | 提交/推送为高危项，默认关，需用户确认 |
-| `summary_post` | `SummaryPostExecutor` | **model API**（生成总结正文）+ `lark-cli im +messages-send/+messages-reply` | 同步 | T4 | 是（发群） | 否 | 按 `plan` 发送（M4 已确认内容）；轻 LLM 走 model API 不用 codex；发送幂等键防重 |
+| `summary_post` | `SummaryPostExecutor` | **model API**（生成总结正文）+ `lark-cli im +messages-send/+messages-reply` | 同步 | T4 | 是（发群） | 否 | 按 `plan` 发送；轻 LLM 走 model API 不用 codex；发送幂等键防重 |
 | `investigate` | `InvestigateExecutor` | ripgrep + `codex exec -s read-only` + web search | 异步 | T0→T1 | 否 | 是 | 只读检索，一般可 autopilot |
 | `schedule_meeting` | `ScheduleMeetingExecutor` | `lark-cli contact` + `lark-cli calendar` | 同步 | T4 | 是（建日程/邀请） | 部分（可删） | 需先解析参会人 open_id |
 | `reply_message` | `ReplyMessageExecutor` | model API + `lark-cli im +messages-reply` | 同步 | T4 | 是 | 否 | 回复指定 message |
@@ -306,7 +307,7 @@ type Executor interface {
 | `doc_update` | `DocUpdateExecutor` | `lark-cli docs/base/sheets/markdown` | 同步/异步 | T3→T4 | 是 | 是 | 更新云文档/多维表格 |
 | `notify_self` | `NotifySelfExecutor` | `lark-cli im +messages-send`（本人 p2p） | 同步 | T2 | 是（仅本人） | 否 | 低危，用于结果通知 |
 
-> **LLM 分工提示**（对齐总纲 §6）：`code_change` / `investigate` 用 **codex CLI**（前者 `codex exec` 改代码，后者 `codex exec -s read-only` 只读调研）；`summary_post` / `reply_message` 里"生成正文"这类轻 LLM 用 **model API**（HTTP）即可，不必 codex。注意与 M4 区分：M4 的 codex 是做**决策**（是否固化成 Task / 方案是否明确），M5 的 codex 是**执行代码**——两者都用 codex CLI 但目的不同。
+> **LLM 分工提示**（对齐总纲 §6）：`code_change` / `investigate` 用 **codex CLI**（前者 `codex exec` 改代码，后者 `codex exec -s read-only` 只读调研）；`summary_post` / `reply_message` 里"生成正文"这类轻 LLM 用 **model API**（HTTP）即可，不必 codex。注意与判断环节区分：判断环节的 codex 是 read-only 判"值不值得做"，执行环节的 codex 是**真正落地**——两者都用 codex CLI 但目的与权限不同。
 
 > **可扩展 Executor 清单**（同一 `Executor` 接口，注册即用，引擎零改动）：
 > `run_script`（跑本地脚本，T5，需白名单+确认）、`file_op`（本地文件整理，T2）、`web_action`（受控网页操作，T4/T5）、`update_task`（更新飞书任务状态，T3）、`minutes_action`（妙记产物加工，T1）。
@@ -335,7 +336,7 @@ type Executor interface {
   ```
 - **Plan**：
   1. 从关联 `Project.repos` 或 slots 定位 `repo_path`；校验目录存在且是 git 仓库；校验工作树干净（脏工作树 → fail-fast，不擅自 stash）。
-  2. 依据 `Task.plan`（M4 确认的明确方案）组装 codex prompt（方案 + 约束 + "只改代码不提交"）。**M5 不重新判断该不该改**，按 plan 执行。
+  2. 依据 `Task.plan`（判断环节给出的执行方向）组装 codex prompt（方案 + 约束 + "只改代码不提交"）。发现方向与实际情况不符时可以修正 plan 并留痕，但不重开"值不值得做"。
   3. 决定隔离方式：**在目标 repo 新建独立分支 `jarvis/<task_id>` 或 git worktree**，避免污染当前工作树。
   4. 产出 `ActionPlan`（RiskTier=T4，ExternalEffect=false，Reversible=true）。
 - **Run**（等价命令行 + Go `exec.CommandContext` 示意）：
@@ -495,30 +496,9 @@ type Executor interface {
 
 > 遵守"不乱加护栏"：**不硬编码一堆防御逻辑**，而是用「风险分层 × autonomy 模式 × 配置化决策矩阵」统一驱动，并尽量复用后端 CLI 的原生 `--dry-run` / `--yes`。强护栏项一律做成**配置项 + 需用户确认**，默认值保守但可调。
 
-### 5.0 前置：`action_hash` 漂移校验（执行前第一道闸）
+### 5.0 前置：`plan` 是可变的，不做指纹比对
 
-M5 拿到 `pending` Task 后、进入护栏决策**之前**，先做 `action_hash` 漂移校验，防止 M4 确认后 `plan` 被篡改：
-
-1. 用与 M4 确认时**同一套规范化算法**重算当前 `plan`（可含 `background` 关键字段）的指纹 `recomputed`（如 canonical-JSON + SHA-256）。
-2. 与 `Task.action_hash` 比对：
-   - **一致** → 放行，进入 §5.1 护栏决策。
-   - **不一致** → 判为漂移，**不执行**：`Task.status=failed` + `ExecError{ErrorType: "ActionHashMismatch"}`（附期望/实际指纹），打回由用户复核（是否重新确认生成新 Task）。**不静默按新 plan 执行、不自动修复**。
-
-```go
-// 执行前漂移校验：不一致即 fail-fast，绝不按被改动的 plan 执行。
-func verifyActionHash(t *Task) error {
-	recomputed := hashPlan(t.Plan, t.Background) // 与 M4 确认时同一规范化算法
-	if recomputed != t.ActionHash {
-		return &ExecError{
-			ErrorType: "ActionHashMismatch",
-			Message:   fmt.Sprintf("plan 漂移：expected=%s actual=%s", t.ActionHash, recomputed),
-		}
-	}
-	return nil
-}
-```
-
-> 与 §5.4 的确认指纹区分：`action_hash` 防的是 **M4→M5 之间 `plan` 被改**（存储层篡改/并发写）；§5.4 的 `approval_token` 防的是 **plan 与 execute 之间参数被改**（hold 确认链路）。两道校验目的不同，都保留。
+执行前**不做 `plan` 指纹校验**：`plan` / `background` / `decision_payload` 是模型语义，执行环节本就持有修改权，"内容变了"不是异常而是正常工作方式。要不要请示 principal 由模型判断，不由字段变更检测触发（AGENTS.md §4）。变更的可追溯性靠 `version` + `task_event` 保证：每次修改 bump 版本并记一条事件，写明改了什么、为什么改。
 
 ### 5.1 决策模型（allow / hold / deny）
 
@@ -562,13 +542,11 @@ func verifyActionHash(t *Task) error {
 - hold 的动作 → 通过飞书交互卡片（发给本人）或管理后台按钮呈现 `ActionPlan.Summary` + 关键 `Steps`，用户点"确认/取消"。
 - 确认后携带 `approval_token` 回到引擎，引擎校验 token 与 `ActionPlan` 指纹一致后才执行，**防止 plan 与 execute 之间参数被篡改**（研究里的 HMAC-locked payload 的轻量版；是否需要完整 HMAC 见开放问题）。
 - 确认有 TTL：超时未确认 → Task 保持 `awaiting_confirm`（不自动执行、不自动取消），透出给用户。
-- 与 §5.0 的 `action_hash` 互补：`action_hash` 是**入口**校验（防 M4→M5 存储篡改），`approval_token` 是 hold **出口**校验（防确认→执行篡改）。
 
 ### 5.5 明确"不加什么"（fail-fast 边界）
 
 - 不做全局自动重试来掩盖失败；不做静默 fallback（换模型/换动作/发降级内容）；不做异常吞没。
 - 执行失败 = `Task.status=failed` + 完整 `ExecError`，交由用户决策，不自作主张。
-- `action_hash` 漂移 = `failed`（`ActionHashMismatch`），**绝不按被改动的 plan 执行、不自动修复**。
 - 自动 `git commit`/`push` 默认关（【需与用户确认】），M5 不擅自设计任何自动 push。
 
 ---
@@ -675,7 +653,7 @@ func (ExecutionArtifact) TableName() string { return "execution_artifact" }
 ## 8. 与记忆（mem0）
 
 - **选择性回写**（默认策略，建议值）：
-  - **回写摘要**：结论型结果进 mem0 作为后续上下文——`investigate` 结论、`code_change` 的方案与分支、`schedule_meeting` 结果、`summary_post` 的 todo 分配。关联 `project` / `person` / `task`，让后续 M3/M4/M5 能利用"这个项目上次改了什么""这个人负责哪些 todo"。
+  - **回写摘要**：结论型结果进 mem0 作为后续上下文——`investigate` 结论、`code_change` 的方案与分支、`schedule_meeting` 结果、`summary_post` 的 todo 分配。关联 `project` / `person` / `task`，让后续 M3/M5 能利用"这个项目上次改了什么""这个人负责哪些 todo"。
   - **不回写原始大产物**：完整 diff / 日志只留本地 + 后台，mem0 存摘要 + 引用，避免污染记忆。
 - **失败边界（需确认）**：执行本身成功、但 mem0 回写失败时，**建议**保持 Task=`done`，另记 `memory_write_error` 告警透出（记忆回写是增强、不是主链路）。此边界与"fail-fast"的取舍列入开放问题，由用户拍板。
 
@@ -684,12 +662,12 @@ func (ExecutionArtifact) TableName() string { return "execution_artifact" }
 ## 9. 当前实现（2026-07-21）
 
 - 新增 `internal/execute.Store`，直接使用现有 `task` 表，不新增支撑表。
-- `GET /api/tasks` 默认列出 `pending`，也可显式查询 `done/failed`；返回确认时冻结的 background/plan/slots，供人工执行。
+- `GET /api/tasks` 默认列出 `pending`，也可显式查询 `done/failed`；返回 background/plan/slots，供人工执行。
 - `POST /api/tasks/:task_id/finish` 只允许 `pending → done/failed`，要求 `expected_version` 和非空 JSON result；状态、结果、version 在一个 MySQL 事务中更新。
 - 状态不符、版本冲突、重复完成全部 fail-fast，不重试、不降级、不覆盖第一次结果。
-- `internal/pipeline` 在 M4 自动建 Task 或用户批准后按 Task ID/version 立即入队，最多并发 `execute.concurrency` 个执行；`execute.schedule` 只扫描遗漏的 `pending` 并将超时 `executing` 标记失败。
-- AgentExecutor 已实现 codex 子进程执行、`execution_run` 留痕和两阶段审批：code_change 以 MR review 为闸门，其余有外部写入意图的动作停在 `awaiting_approval`。
-- 真实 MySQL 合成回滚验收已覆盖 `extracted Todo → need_decision → approve → pending Task → done` 完整链路，不调用飞书、mem0、模型或 codex。
+- `internal/pipeline` 在判断环节建出 Task 后按 Task ID/version 立即入队，最多并发 `execute.concurrency` 个执行；`execute.schedule` 只扫描遗漏的 `pending` 并将超时 `executing` 标记失败。判断与执行共用同一队列与 worker 池。
+- AgentExecutor 已实现 codex 子进程执行、`execution_run` 留痕，以及可停下来的两个状态：需 principal 批准副作用停 `awaiting_approval`，需 principal 回答问题停 `needs_human`，由模型自己决定何时停。
+- 真实 MySQL 合成回滚验收已覆盖 `extracted Todo → auto → pending Task → done` 完整链路，不调用飞书、mem0、模型或 codex。
 
 ---
 
@@ -703,14 +681,13 @@ func (ExecutionArtifact) TableName() string { return "execution_artifact" }
 4. **强制确认清单粒度**：发群 / 约会议 / 建任务是否一律本人最终确认？是否允许对"仅本人/特定测试群"降为 autopilot？
 5. **autonomy_mode 默认值**：整体默认 `copilot`（对外动作需确认）还是更激进的 `autopilot`？
 6. **确认载体**：飞书交互卡片 vs 管理后台按钮，主用哪个？确认 TTL 设多久？
-7. **防篡改强度**：`action_hash`（§5.0 入口漂移校验）与 `approval_token`（§5.4 hold 出口校验）用轻量指纹（canonical-JSON + SHA-256）够，还是要上完整 HMAC 签名？规范化算法需与 M4 生成 `action_hash` 时对齐（同一实现）。
-8. **`action_hash` 漂移处理**：校验不一致时，除判 `failed` 外，是否需要自动回流 M4 重确认生成新 Task，还是仅打回等用户手动处理？
-9. **回写契约**：Task 与 `execution_*` 三表同库直写（GORM）。`execution_*` 表归 M5 还是 M0 owns？M0/前端只读 `Task.execution_result`+`status` 是否足够？
-10. **mem0 回写范围与失败处理**：哪些结果进长期记忆？回写失败是否维持 `done`+告警（建议）还是判 `failed`？
-11. **`code_change` 默认后端**：codex 还是 cursor-agent？固定还是按 project 配？
-12. **并发与超时默认值**：各 `action_type` 的并发上限与 `DefaultTimeout` 取值。
-13. **`summary_post` / `schedule_meeting` 身份**：发消息用 `bot` 还是 `user`？（`schedule_meeting` 的 `contact +search-user` 需 `--as user` 授权，须确认 user 身份已授权。）
-14. **是否需要 durable execution**：`awaiting_confirm` 的 TTL/escalation/断电恢复是否要更强编排（当前用 MySQL 持久化 `Task.status` + 进程内实时通知 + robfig/cron 补偿轻量实现）？
+7. **防篡改强度**：hold 链路的 `approval_token`（§5.4 出口校验）用轻量指纹（canonical-JSON + SHA-256）够，还是要上完整 HMAC 签名？
+8. **回写契约**：Task 与 `execution_*` 三表同库直写（GORM）。`execution_*` 表归 M5 还是 M0 owns？M0/前端只读 `Task.execution_result`+`status` 是否足够？
+9. **mem0 回写范围与失败处理**：哪些结果进长期记忆？回写失败是否维持 `done`+告警（建议）还是判 `failed`？
+10. **`code_change` 默认后端**：codex 还是 cursor-agent？固定还是按 project 配？
+11. **并发与超时默认值**：各 `action_type` 的并发上限与 `DefaultTimeout` 取值。
+12. **`summary_post` / `schedule_meeting` 身份**：发消息用 `bot` 还是 `user`？（`schedule_meeting` 的 `contact +search-user` 需 `--as user` 授权，须确认 user 身份已授权。）
+13. **是否需要 durable execution**：`awaiting_confirm` 的 TTL/escalation/断电恢复是否要更强编排（当前用 MySQL 持久化 `Task.status` + 进程内实时通知 + robfig/cron 补偿轻量实现）？
 
 ---
 

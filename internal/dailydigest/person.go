@@ -992,11 +992,17 @@ func (g *personGenerator) loadBaseline(
 			if run.ErrorDetail != nil {
 				item.ErrorDetail = capRunes(*run.ErrorDetail, 300)
 			}
-			if run.Commit != nil {
-				item.Commit = *run.Commit
-			}
-			if run.MergeRequestURL != nil {
-				item.MergeRequestURL = *run.MergeRequestURL
+			for _, effect := range runEffectsLoose(run.Effects) {
+				kind, _ := effect["kind"].(string)
+				if kind != "merge_request" {
+					continue
+				}
+				if url, _ := effect["url"].(string); strings.TrimSpace(url) != "" {
+					item.MergeRequestURL = strings.TrimSpace(url)
+				}
+				if commit, _ := effect["commit"].(string); strings.TrimSpace(commit) != "" {
+					item.Commit = strings.TrimSpace(commit)
+				}
 			}
 		} else {
 			item.Status = "running_at_cutoff"
@@ -1131,4 +1137,16 @@ func loadPersonSummarySkill(skillDir string) (string, error) {
 		return "", fmt.Errorf("personal summary initializer %q must be an executable file", scriptPath)
 	}
 	return skillText, nil
+}
+
+
+func runEffectsLoose(raw []byte) []map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var effects []map[string]any
+	if err := json.Unmarshal(raw, &effects); err != nil {
+		return nil
+	}
+	return effects
 }

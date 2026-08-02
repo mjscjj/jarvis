@@ -126,7 +126,8 @@ type Todo struct {
 
 func (Todo) TableName() string { return "todo" }
 
-// Task is the immutable-at-confirmation executable snapshot materialized by the decision step.
+// Task is the executable snapshot materialized by the decision step. M5 may revise
+// its content during execution; see AGENTS.md §4.
 type Task struct {
 	ID         uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
 	TodoID     *uint64        `gorm:"column:todo_id;type:bigint unsigned;uniqueIndex:uk_task_todo"`
@@ -148,6 +149,14 @@ type Task struct {
 	ExecutionMode   string         `gorm:"column:execution_mode;type:varchar(16);not null;default:standard"`
 	Status          string         `gorm:"column:status;type:varchar(24);not null;default:pending;index:idx_task_status"`
 	ExecutionResult datatypes.JSON `gorm:"column:execution_result;type:json"`
+	// Summary is where the matter itself now stands, written by M5 at the end of a
+	// run. It is not the same as ExecutionRun.Summary ("what this run did"): a Task
+	// spans several runs, and this field answers "how far has this thing got".
+	Summary *string `gorm:"column:summary;type:text"`
+	// LastProgressAt moves only when Summary actually changes, so a Task that keeps
+	// resuming into waiting does not look alive. This is what makes stalled work
+	// findable in one query, which UpdatedAt cannot do (any column write bumps it).
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;type:datetime;index:idx_task_last_progress"`
 	// ExecutionSupplements are M5-only human clarifications/instructions, append-only
 	// and isolated from the decision step's Todo.context_snapshot.supplements.
 	ExecutionSupplements datatypes.JSON `gorm:"column:execution_supplements;type:json"`

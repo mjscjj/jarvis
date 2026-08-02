@@ -369,7 +369,7 @@ func retryBatch() ChatBatch {
 
 func retryCandidate(quote string) Candidate {
 	return Candidate{
-		ActionType: "investigate", Title: "梳理架构", Target: "当前服务和架构梳理",
+		ActionType: "investigate", Status: "extracted", Title: "梳理架构", Target: "当前服务和架构梳理",
 		DesiredOutcome: "产出一份当前服务与架构的梳理结论",
 		Description:    "看下当前服务和架构梳理", OpenQuestions: []string{},
 		CommitmentStrength: "firm", SourceMessageIDs: []string{"om_1"}, SourceQuote: quote,
@@ -532,7 +532,7 @@ func TestValidateCandidateEvidenceAcceptsAssignerWhoDidNotSpeak(t *testing.T) {
 	}}, Participants: []ParticipantContext{{OpenID: "__clue__", Name: "feishu_meeting"}}}
 	assigner := "ou_zhangsan"
 	candidate := Candidate{
-		ActionType: "investigate", Title: "补齐测试", Target: "测试",
+		ActionType: "investigate", Status: "extracted", Title: "补齐测试", Target: "测试",
 		DesiredOutcome: "缺失的测试补齐并通过", Description: "补齐测试", OpenQuestions: []string{},
 		CommitmentStrength: "firm", AssignerOpenID: &assigner,
 		SourceMessageIDs: []string{"clue:feishu_meeting:m1"}, SourceQuote: "张三负责补齐测试",

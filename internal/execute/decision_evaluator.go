@@ -17,14 +17,17 @@ import (
 // Disposition is Codex's own verdict on an extracted Todo, returned verbatim in
 // the decision schema (no longer re-inferred by us):
 //   - ready: worth M5 investigating/executing → route auto.
+//   - observe: worth keeping in view, but nobody has to act → route observing.
 //   - drop: not worth doing → route dropped.
 //
 // A clue that needs the principal to choose or to supply a missing fact is still
 // ready: the question travels with the Task in the decision payload, and M5
-// raises it once it has done its own homework.
+// raises it once it has done its own homework. observe is not a way to defer
+// that question — it is for clues where acting is genuinely nobody's job.
 const (
-	DispositionReady = "ready"
-	DispositionDrop  = "drop"
+	DispositionReady   = "ready"
+	DispositionObserve = "observe"
+	DispositionDrop    = "drop"
 )
 
 // CodexEvaluator implements todoEvaluator by asking Codex (read-only) to judge
@@ -140,12 +143,15 @@ func (e *CodexEvaluator) Evaluate(ctx context.Context, todo *domain.Todo) (*Eval
 }
 
 // routeForDisposition maps Codex's own disposition to the stored route:
-//   - ready → auto    (system creates the Task, M5 takes over)
-//   - drop  → dropped (terminal, no Task)
+//   - ready   → auto      (system creates the Task, M5 takes over)
+//   - observe → observing (no Task, but the clue stays in view)
+//   - drop    → dropped   (terminal, no Task)
 func routeForDisposition(disposition string) (string, error) {
 	switch disposition {
 	case DispositionReady:
 		return RouteAuto, nil
+	case DispositionObserve:
+		return RouteObserving, nil
 	case DispositionDrop:
 		return RouteDropped, nil
 	default:

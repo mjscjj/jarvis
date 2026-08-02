@@ -17,6 +17,15 @@ func TestValidateEvaluationInputAcceptsCodexRoutes(t *testing.T) {
 	if err := validateEvaluationInput(dropped); err != nil {
 		t.Fatalf("dropped route rejected: %v", err)
 	}
+	// observing keeps the clue in view without a Task, so like dropped it needs
+	// no plan. Only auto does, because only auto materializes work.
+	observing := fixtureCodexEvaluationInput()
+	observing.Route = RouteObserving
+	observing.RouteReason = "codex_" + DispositionObserve
+	observing.Plan = nil
+	if err := validateEvaluationInput(observing); err != nil {
+		t.Fatalf("observing route rejected: %v", err)
+	}
 }
 
 func TestValidateEvaluationInputRejectsViolations(t *testing.T) {

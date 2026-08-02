@@ -46,10 +46,9 @@ func (f *fakeTaskService) ListRuns(_ context.Context, taskID uint64) (*execute.R
 	if f.err != nil {
 		return nil, f.err
 	}
-	branch := "jarvis/task-8"
 	return &execute.RunList{Items: []execute.RunView{{
 		ID: 3, TaskID: taskID, ActionType: "code_change", Status: "succeeded",
-		Prompt: "FULL\nPROMPT", Branch: &branch,
+		Prompt: "FULL\nPROMPT",
 	}}}, nil
 }
 

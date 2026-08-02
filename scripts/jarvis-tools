@@ -35,6 +35,7 @@ subcommands:
   append-clue            Hand M2 one observed fact as evidence for M3
   list-scheduled-tasks   List time-triggered tasks
   create-scheduled-task  Create a time trigger for a new task
+  set-todo-status        Park a clue as observing, or hand it back for decision
   yield-until            Pause the current task until a future time
   delete-scheduled-task  Delete a standalone time trigger
 
@@ -140,6 +141,22 @@ daily example:
   {"title":"每日汇总","instruction":"汇总今日进展","context_snapshot":{},"schedule_type":"daily","daily_time":"18:00"}
 interval example:
   {"title":"轮询状态","instruction":"检查任务是否完成","context_snapshot":{},"schedule_type":"interval","interval_minutes":60}
+EOF
+      ;;
+    set-todo-status) cat <<'EOF'
+usage: jarvis-tools set-todo-status --id TODO_ID --status observing|extracted --reason TEXT|- [--config PATH]
+
+Move one clue between the two states that mean nobody is acting on it.
+
+  observing  Nothing to do right now, but keep the clue in view. No Task is
+             created; later evidence can bring it back for a fresh decision.
+  extracted  Hand the clue back to the decision step to be judged again.
+
+A clue that already finished (dropped/dismissed/expired) cannot be revived.
+Pass "-" to --reason to read the reason from stdin.
+
+  jarvis-tools set-todo-status --id 412 --status observing \
+    --reason "对方已经自己处理完了，这里不需要我动手，先留着看"
 EOF
       ;;
     yield-until) cat <<'EOF'
@@ -796,6 +813,31 @@ cmd_create_scheduled_task() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+# set-todo-status parks a clue or hands it back to the decision step. The server
+# owns which transitions are legal; this only names the caller and the reason.
+cmd_set_todo_status() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "set-todo-status requires positive --id"
+  case "$STATUS" in
+    observing|extracted) ;;
+    *) fail "set-todo-status --status must be observing or extracted" ;;
+  esac
+  local reason
+  if [[ "$REASON" == "-" ]]; then
+    reason="$(cat)"
+  else
+    reason="$REASON"
+  fi
+  [[ -n "${reason//[[:space:]]/}" ]] || fail "set-todo-status reason is empty"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  payload="$(jq -cn --arg status "$STATUS" --arg reason "$reason" \
+    '{status:$status,actor:"m5",reason:$reason}')"
+  body="$(api_write PATCH "/api/todos/${ID}/status" "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
 cmd_yield_until() {
   reset_flags
   consume_flags "$@"
@@ -857,6 +899,7 @@ case "$SUBCOMMAND" in
   append-clue)          cmd_append_clue "$@" ;;
   list-scheduled-tasks) cmd_list_scheduled_tasks "$@" ;;
   create-scheduled-task) cmd_create_scheduled_task "$@" ;;
+  set-todo-status)      cmd_set_todo_status "$@" ;;
   yield-until)          cmd_yield_until "$@" ;;
   delete-scheduled-task) cmd_delete_scheduled_task "$@" ;;
   *)

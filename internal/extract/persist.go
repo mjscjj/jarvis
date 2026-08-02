@@ -51,10 +51,6 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 	if err != nil {
 		return PersistStats{}, err
 	}
-	observations, err := s.prepareObservations(batch, results)
-	if err != nil {
-		return PersistStats{}, err
-	}
 
 	stats := PersistStats{Skipped: skipped}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -80,11 +76,6 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 			}
 			todoRefs[todo.ID] = TodoRef{ID: todo.ID, Version: todo.Version, Status: todo.Status}
 		}
-		created, err := persistObservations(tx, observations)
-		if err != nil {
-			return err
-		}
-		stats.ObservationsCreated = created
 		watermark := domain.TodoExtractWatermark{
 			ChatID: batch.Group.ChatID, LastScannedMessageID: batch.LastNew.MessageID,
 			LastScannedAt: time.UnixMilli(batch.LastNew.CreateTime).In(s.location),
@@ -159,92 +150,6 @@ func (s *PipelineStore) prepareResults(ctx context.Context, batch ChatBatch, res
 		return nil, 0, fmt.Errorf("extraction results missing units: %s", strings.Join(missing, ","))
 	}
 	return prepared, skipped, nil
-}
-
-// prepareObservations validates and resolves every observation in the batch.
-// It reuses the candidate evidence rules, so a fabricated citation fails the
-// whole batch exactly like a fabricated todo would.
-func (s *PipelineStore) prepareObservations(batch ChatBatch, results []UnitExtraction) ([]domain.Observation, error) {
-	units := make(map[string]ConversationUnit, len(batch.Units))
-	for _, unit := range batch.Units {
-		units[unit.Key] = unit
-	}
-	rows := make([]domain.Observation, 0)
-	for _, result := range results {
-		unit, ok := units[result.UnitKey]
-		if !ok {
-			return nil, fmt.Errorf("extraction result references unknown unit %q", result.UnitKey)
-		}
-		for i := range result.Observations {
-			observation := result.Observations[i]
-			if err := ValidateObservation(&observation); err != nil {
-				return nil, fmt.Errorf("prepare observation unit=%s index=%d: %w", unit.Key, i, err)
-			}
-			if err := validateEvidence(unit, observation.SourceMessageIDs, observation.SourceQuote); err != nil {
-				return nil, fmt.Errorf("prepare observation unit=%s index=%d: %w", unit.Key, i, err)
-			}
-			projectID, _ := resolveProjectByHint(batch, observation.ProjectHint)
-			dedupKey, err := ObservationDedupKey(&observation, projectID)
-			if err != nil {
-				return nil, fmt.Errorf("prepare observation unit=%s index=%d: %w", unit.Key, i, err)
-			}
-			messageIDs, err := json.Marshal(observation.SourceMessageIDs)
-			if err != nil {
-				return nil, fmt.Errorf("encode observation source_message_ids unit=%s index=%d: %w", unit.Key, i, err)
-			}
-			rows = append(rows, domain.Observation{
-				Producer:         domain.ObservationProducerM3,
-				Subject:          strings.TrimSpace(observation.Subject),
-				Content:          strings.TrimSpace(observation.Content),
-				ProjectID:        projectID,
-				GroupID:          copyUint64(&batch.Group.ID),
-				SourceMessageIDs: datatypes.JSON(messageIDs),
-				SourceQuote:      observation.SourceQuote,
-				DedupKey:         dedupKey,
-				ObservedAt:       observedAt(unit, observation.SourceMessageIDs, s.location),
-			})
-		}
-	}
-	return rows, nil
-}
-
-// persistObservations stores observations idempotently. Re-extracting the same
-// fact is expected (the same message can be scanned again), so a duplicate key
-// is a no-op rather than an error.
-func persistObservations(tx *gorm.DB, rows []domain.Observation) (int, error) {
-	created := 0
-	for i := range rows {
-		result := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "dedup_key"}},
-			DoNothing: true,
-		}).Create(&rows[i])
-		if result.Error != nil {
-			return 0, fmt.Errorf("persist observation subject=%q: %w", rows[i].Subject, result.Error)
-		}
-		created += int(result.RowsAffected)
-	}
-	return created, nil
-}
-
-// observedAt is the newest cited message time: an observation describes the
-// state of the world as of the latest evidence backing it.
-func observedAt(unit ConversationUnit, sourceMessageIDs []string, location *time.Location) time.Time {
-	byID := make(map[string]MessageContext, len(unit.Messages))
-	for _, message := range unit.Messages {
-		byID[message.MessageID] = message
-	}
-	latest := time.Time{}
-	for _, messageID := range sourceMessageIDs {
-		message, ok := byID[messageID]
-		if !ok {
-			continue
-		}
-		at := time.UnixMilli(message.CreateTime).In(location)
-		if latest.IsZero() || at.After(latest) {
-			latest = at
-		}
-	}
-	return latest
 }
 
 func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, memories []map[string]any) (*preparedCandidate, error) {
@@ -386,7 +291,7 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 		SourceMessageIDs:   datatypes.JSON(sourceIDs), SourceQuote: prepared.Candidate.SourceQuote,
 		GroupID: &batch.Group.ID, ProjectID: prepared.ProjectID,
 		AssignerOpenID: prepared.AssignerOpenID, IsLeaderAssigned: prepared.LeaderAssigned,
-		DueAt: prepared.DueAt, Status: "extracted",
+		DueAt: prepared.DueAt, Status: prepared.Candidate.Status,
 		DedupFingerprint: prepared.Fingerprint,
 		Resolution:       prepared.Resolution, ContextSnapshot: prepared.ContextSnapshot,
 		ExtractionResult: prepared.ExtractionResult,
@@ -404,7 +309,7 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 		return false, nil, err
 	}
 	event := domain.TodoEvent{
-		TodoID: todo.ID, ToStatus: "extracted", Actor: "m3",
+		TodoID: todo.ID, ToStatus: todo.Status, Actor: "m3",
 		Detail: detail, Snapshot: snapshot,
 	}
 	if err := tx.Create(&event).Error; err != nil {
@@ -455,6 +360,17 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 	if prepared.DueAt != nil {
 		updates["due_at"] = *prepared.DueAt
 	}
+	// The latest extraction wins on status, so new evidence can promote an
+	// observing clue into the decision queue or demote one that turned out to
+	// need nobody. This only applies while the clue still sits in a state M3
+	// owns: once it has been judged (auto/dropped) or moved on, re-extraction
+	// must not reset it — resetting an auto Todo would have the decision worker
+	// claim it again and mint a duplicate Task.
+	nextStatus := existing.Status
+	if m3OwnedTodoStatuses[existing.Status] && prepared.Candidate.Status != existing.Status {
+		nextStatus = prepared.Candidate.Status
+		updates["status"] = nextStatus
+	}
 	result := tx.Model(&domain.Todo{}).Where("id = ? AND version = ?", existing.ID, existing.Version).Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("update todo id=%d: %w", existing.ID, result.Error)
@@ -476,7 +392,7 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		return err
 	}
 	event := domain.TodoEvent{
-		TodoID: existing.ID, FromStatus: &status, ToStatus: existing.Status,
+		TodoID: existing.ID, FromStatus: &status, ToStatus: nextStatus,
 		Actor: "m3", Detail: detail, Snapshot: snapshot,
 	}
 	if err := tx.Create(&event).Error; err != nil {

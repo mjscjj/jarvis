@@ -53,8 +53,11 @@ type Overview struct {
 }
 
 // openTodoStatuses are the not-yet-judged Todo states. A Todo never waits on the
-// user: once judged it is either auto (a Task exists) or dropped, and anything
-// that needs the user is raised by M5 on that Task.
+// user: once judged it is auto (a Task exists), observing (nobody has to act) or
+// dropped, and anything that needs the user is raised by M5 on that Task.
+// observing belongs to none of these counts — it has been judged, and counting
+// it as open would put clues nobody is working on back in the overview's
+// backlog.
 var openTodoStatuses = []string{"extracted", "scoring"}
 
 func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {

@@ -91,11 +91,10 @@ capture:
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
   # 已结束会议妙记接入：今天内结束的会议每 5 分钟检查一次；产物未就绪会持久化重试。
-# M5 判断环节：给 Todo 定 disposition，决定是否进入执行环节。
-# manual_mvp 模式下所有提取出的 Todo 都进入人工确认，不调用 codex。
+# M5 判断环节：给 Todo 定 disposition（ready 建 Task 进执行环节，drop 终结），
+# 这里没有人工闸门——要 principal 拍板的事由执行环节带着调查结果去问。
 decide:
   enabled: true
-  mode: "codex"          # codex: 用 codex gpt-5.5 判 ready/need_review/need_info/drop；manual_mvp: 全部走人工确认
   schedule: "@every 1m"
   batch_limit: 50
   codex_sandbox: "danger-full-access"   # 判断环节也可自查补信息（本地可信环境）
@@ -118,7 +117,7 @@ execute:
   concurrency: 1                                    # 单次 sweep 内只执行一个 Task，避免多个 Codex/编译任务叠加占满 CPU
   repo_root: "/Users/bytedance/workspace-local"    # code_change 的 repo_ref 基目录
   runs_dir: "/Users/bytedance/workspace-local/jarvis/runs"  # diff/产物落盘
-  bin: "traex"                                     # 与 M3/M4 同一个 CLI，但模型/超时独立（右侧对话与日报也复用本 bin）
+  bin: "traex"                                     # 与 M3/判断环节同一个 CLI，但模型/超时独立（右侧对话与日报也复用本 bin）
   model: "gpt-5.6-sol"                             # Latest frontier（无裸 gpt-5.6；luna/terra/sol 里 sol 最强）
   reasoning_effort: "medium"                       # 覆盖用户全局 xhigh，执行质量与耗时折中
   timeout_second: 1800                             # 单次执行超时：30 分钟（长任务需要查资料并调用外部工具）

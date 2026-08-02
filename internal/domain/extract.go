@@ -19,58 +19,6 @@ type TodoExtractWatermark struct {
 
 func (TodoExtractWatermark) TableName() string { return "todo_extract_watermark" }
 
-// Observation is something worth remembering that asks nothing of the
-// principal: a decision reached in a group, a fact someone stated, work another
-// person owns, a constraint discovered while executing.
-//
-// It exists because a Todo was previously the only way anything could enter the
-// pipeline, so "worth knowing" was forced to become "worth doing" (an
-// action_type=notify_principal Todo) and then flowed through decision and
-// execution as if it were work. Observations are terminal by design: they are
-// stored, surfaced in digests and project context, and never routed, never
-// materialized into a Task.
-type Observation struct {
-	ID uint64 `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
-	// Producer is the stage that saw it: m3 (from messages) or m5 (from
-	// executing). Kept because the two have different evidence shapes.
-	Producer string `gorm:"column:producer;type:varchar(16);not null;index:idx_observation_producer"`
-	// Subject is free text naming what this is about, used as the retrieval
-	// anchor. The model writes it; Go never parses it.
-	Subject string `gorm:"column:subject;type:varchar(512);not null"`
-	Content string `gorm:"column:content;type:text;not null"`
-
-	ProjectID *uint64 `gorm:"column:project_id;type:bigint unsigned;index:idx_observation_project"`
-	GroupID   *uint64 `gorm:"column:group_id;type:bigint unsigned;index:idx_observation_group"`
-	// SourceRunID links an execution-time observation back to the run that found
-	// it; nil for M3 observations.
-	SourceRunID *uint64 `gorm:"column:source_run_id;type:bigint unsigned;index:idx_observation_run"`
-
-	SourceMessageIDs datatypes.JSON `gorm:"column:source_message_ids;type:json"`
-	SourceQuote      string         `gorm:"column:source_quote;type:text"`
-	// Payload keeps whatever else the producer attached (M5 enrichment kind and
-	// label, for instance) without widening this struct per producer.
-	Payload datatypes.JSON `gorm:"column:payload;type:json"`
-
-	// DedupKey makes re-extraction idempotent. One message can yield several
-	// distinct observations, so the key hashes the content too, not just origin.
-	DedupKey string `gorm:"column:dedup_key;type:char(64);not null;uniqueIndex:uk_observation_dedup"`
-
-	// ObservedAt is when the fact happened; CreatedAt is when it landed. A
-	// backfilled observation has an old ObservedAt and a fresh CreatedAt, so
-	// incremental readers must page on CreatedAt/ID.
-	ObservedAt time.Time `gorm:"column:observed_at;type:datetime;not null;index:idx_observation_observed"`
-	CreatedAt  time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
-}
-
-func (Observation) TableName() string { return "observation" }
-
-// Producers of an observation. M3 sees messages; M5 sees the real world while
-// executing a Task.
-const (
-	ObservationProducerM3 = "m3"
-	ObservationProducerM5 = "m5"
-)
-
 // TodoEvent is the append-only audit stream shared by M3 and later lifecycle
 // owners. M3 writes actor=m3 and never moves a Todo beyond extracted.
 type TodoEvent struct {
@@ -125,5 +73,5 @@ func EncodeTodoEventSnapshot(todo *Todo) (datatypes.JSON, error) {
 
 // ExtractModels returns M3-owned support tables in dependency order.
 func ExtractModels() []any {
-	return []any{&TodoExtractWatermark{}, &TodoEvent{}, &Observation{}}
+	return []any{&TodoExtractWatermark{}, &TodoEvent{}}
 }

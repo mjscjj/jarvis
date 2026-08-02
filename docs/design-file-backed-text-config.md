@@ -11,9 +11,9 @@
 | key | 文件 | 用途 |
 | --- | --- | --- |
 | `m3_system_prompt` | `conf/prompts/m3-system-prompt.md` | M3 抽取系统提示词 |
-| `m4_system_prompt_v2` | `conf/prompts/m4-system-prompt.md` | M4 决策系统提示词（宽松语义契约） |
-| `m5_system_prompt` | `conf/prompts/m5-system-prompt.md` | M5 通用系统提示词 |
-| `m5_approval_policy` | `conf/prompts/m5-approval-policy.md` | 非代码 M5 propose 阶段的审批判定策略 |
+| `m5_decision_system_prompt` | `conf/prompts/m5-decision-system-prompt.md` | M5 判断环节系统提示词（宽松语义契约） |
+| `m5_system_prompt` | `conf/prompts/m5-system-prompt.md` | M5 执行环节系统提示词 |
+| `m5_approval_policy` | `conf/prompts/m5-approval-policy.md` | 执行期"要不要先请示 principal"的判定策略 |
 
 审批策略只回答“本次计划是否需要先审批”。批准后的 proposal 必须原样落地、不得重复副作用等协议属于执行状态机的硬约束，保留在代码中，不能由后台关闭。`code_change` 继续使用现有分支、提交和 MR 流程，不经过该策略。
 
@@ -35,8 +35,8 @@
 
 ## 运行与迁移
 
-1. 先把当前有效的 M3/M4/M5 内容写入 Markdown，并新增审批策略文件。
-2. M3/M4/M5 和后台全部切换到文件服务。
+1. 先把当前有效的 M3、M5 判断/执行环节内容写入 Markdown，并新增审批策略文件。
+2. M3、M5 各环节和后台全部切换到文件服务。
 3. 删除 `TextStorage` 数据模型、种子逻辑和旧 CRUD。
 4. 新版本启动并验证文件读写后，删除 `text_storage` 表。
 
@@ -46,7 +46,7 @@
 
 配置页不再把配置正文或扫描缓存写入数据库：
 
-- 工作规则：`conf/rules/all.md` 与 `m3.md`、`m4.md`、`m5.md`。运行时组合全阶段文件和当前阶段文件。
+- 工作规则：`conf/rules/all.md` 与 `m3.md`、`decide.md`、`m5.md`。运行时组合全阶段文件和当前阶段文件。
 - Skills：正文继续来自 `.agents/skills/*/SKILL.md`，启用状态和阶段范围来自 `conf/skills.yaml`。
 - 共享记忆：`data/shared-memory.md`，该目录被 Git 忽略，允许保存本机凭据和长期记忆。
 - 运行配置：继续使用现有 `conf/config.runtime.yaml`。
