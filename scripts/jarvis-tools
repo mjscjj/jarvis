@@ -41,7 +41,7 @@ subcommands:
   get-task               Get one task with runs, events and task facts
   list-scheduled-tasks   List time-triggered tasks
   create-scheduled-task  Create a time trigger for a new task
-  set-todo-status        Park a clue as observing, or hand it back for decision
+  set-todo-status        Park a clue, or hand it back for execution
   yield-until            Pause the current task until a future time
   delete-scheduled-task  Delete a standalone time trigger
 
@@ -166,7 +166,7 @@ EOF
     list-tasks) cat <<'EOF'
 usage: jarvis-tools list-tasks [--date YYYY-MM-DD] [--status S] [--limit N] [--config PATH]
 
-List tasks. --date narrows by COALESCE(last_progress_at, confirmed_at) to one
+List tasks. --date narrows by COALESCE(last_progress_at, created_at) to one
 natural day in local time. --limit defaults to 50. Without --status the API
 defaults to pending.
 
@@ -233,7 +233,8 @@ Move one clue between the two states that mean nobody is acting on it.
              created; later evidence can bring it back for execution.
   extracted  Hand the clue back for direct Task materialization and execution.
 
-A clue that already finished (dropped/dismissed/expired) cannot be revived.
+Only observing and extracted are accepted target statuses; every other target
+status is rejected by the server.
 Pass "-" to --reason to read the reason from stdin.
 
   jarvis-tools set-todo-status --id 412 --status observing \
