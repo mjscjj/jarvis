@@ -35,6 +35,7 @@ subcommands:
   archive-project        Archive a project
   list-groups            Search Feishu groups
   get-group              Get one Feishu group by chat_id
+  get-context            Assemble current principal/project/chat work context
   update-group           Replace one group's curated background
   get-principal          Get the assistant owner's profile
   update-principal       Replace the assistant owner's profile
@@ -108,6 +109,13 @@ EOF
     get-group) cat <<'EOF'
 usage: jarvis-tools get-group --chat-id CHAT_ID [--config PATH]
 Get the Jarvis group binding and background for an exact Feishu chat_id.
+EOF
+      ;;
+    get-context) cat <<'EOF'
+usage: jarvis-tools get-context [--chat-id CHAT_ID] [--project-id ID] [--config PATH]
+Assemble the canonical current context. An explicit project wins; otherwise a
+chat resolves through its Jarvis group binding. With neither flag, returns the
+principal-level global context.
 EOF
       ;;
     update-group) payload_id_help "update-group" "Replace one group's curated background fields only." ;;
@@ -619,6 +627,7 @@ require_command_flag() {
     archive-project | delete-person | delete-resource | delete-relation) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
     get-group) allowed+=" --chat-id" ;;
+    get-context) allowed+=" --chat-id --project-id" ;;
     get-principal | get-shared-memory) ;;
     list-persons) allowed+=" --role --keyword --limit" ;;
     get-person) allowed+=" --open-id" ;;
@@ -1132,6 +1141,22 @@ cmd_get_group() {
     fail "multiple groups matched chat_id=${CHAT_ID}"
   fi
   emit "$(printf '%s' "$matched" | jq -c '.[0]')"
+}
+
+cmd_get_context() {
+  reset_flags
+  consume_flags "$@"
+  if [[ -n "$PROJECT_ID" && ! "$PROJECT_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "get-context --project-id must be a positive integer"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  payload="$(jq -nc --arg chat_id "$CHAT_ID" --arg project_id "$PROJECT_ID" '{
+    chat_id: $chat_id,
+    project_id: (if $project_id == "" then null else ($project_id | tonumber) end)
+  }')"
+  body="$(api_write POST /api/context "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
 cmd_get_principal() {
@@ -1727,6 +1752,7 @@ case "$SUBCOMMAND" in
   archive-project) cmd_delete_by_id archive-project /api/projects "$@" ;;
   list-groups)    cmd_list_groups "$@" ;;
   get-group)      cmd_get_group "$@" ;;
+  get-context)    cmd_get_context "$@" ;;
   update-group)   cmd_payload_by_id update-group PUT /api/groups "$@" ;;
   get-principal)  cmd_get_principal "$@" ;;
   update-principal) cmd_payload_create update-principal PUT /api/profile "$@" ;;

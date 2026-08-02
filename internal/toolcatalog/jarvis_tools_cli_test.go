@@ -117,6 +117,31 @@ func TestJarvisToolsGetScheduledTaskUsesExactEndpoint(t *testing.T) {
 	}
 }
 
+func TestJarvisToolsGetContextPassesChatAndProjectScope(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/context" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var payload struct {
+			ChatID    string  `json:"chat_id"`
+			ProjectID *uint64 `json:"project_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.ChatID != "oc_runtime" || payload.ProjectID == nil || *payload.ProjectID != 45 {
+			t.Fatalf("payload = %#v", payload)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"snapshot_version":"v1","project":{"id":45}}}`)
+	}))
+	defer server.Close()
+	out, err := runJarvisTools(t, server.URL, nil, "get-context", "--chat-id", "oc_runtime", "--project-id", "45")
+	if err != nil || !strings.Contains(out, `"snapshot_version":"v1"`) {
+		t.Fatalf("output = %s, error = %v", out, err)
+	}
+}
+
 func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 	tests := []struct {
 		command string

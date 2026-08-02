@@ -191,6 +191,21 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 			description TEXT NOT NULL, occurred_at DATETIME NOT NULL,
 			source_kind TEXT, source_id INTEGER, created_at DATETIME
 		)`,
+		`CREATE TABLE feishu_group (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL UNIQUE,
+			name TEXT, description TEXT, background_note TEXT, project_id INTEGER,
+			is_key_group INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE todo (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
+			action_type TEXT NOT NULL, status TEXT NOT NULL, group_id INTEGER,
+			project_id INTEGER, last_evidence_at DATETIME
+		)`,
+		`CREATE TABLE task (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, todo_id INTEGER, title TEXT NOT NULL,
+			status TEXT NOT NULL, summary TEXT, project_id INTEGER,
+			last_progress_at DATETIME, created_at DATETIME
+		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("create sqlite table: %v", err)
@@ -199,6 +214,10 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 	project := domain.Project{Name: "Jarvis", Role: "owner", Status: "active", Priority: 1}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO feishu_group(id, chat_id, name, project_id, is_key_group)
+		VALUES (7, 'oc_scheduled', 'Jarvis 群', ?, 1)`, project.ID).Error; err != nil {
+		t.Fatalf("create group: %v", err)
 	}
 	if err := db.Create(&domain.PrincipalProfile{OpenID: "ou_me", Name: "我"}).Error; err != nil {
 		t.Fatalf("create principal: %v", err)
@@ -229,7 +248,7 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 
 	scheduled, err := factory.assembleBackground(t.Context(), Input{
 		SourceType: SourceScheduledTask,
-		Background: json.RawMessage(fmt.Sprintf(`{"project":{"id":%d},"note":"定时任务背景"}`, project.ID)),
+		Background: json.RawMessage(`{"chat_id":"oc_scheduled","note":"定时任务背景"}`),
 	})
 	if err != nil {
 		t.Fatalf("assemble scheduled background: %v", err)
@@ -238,7 +257,7 @@ func TestFactoryAssemblesCommonContextForManualAndScheduledSources(t *testing.T)
 	if err != nil {
 		t.Fatalf("decode scheduled background: %v", err)
 	}
-	if scheduled.ProjectID == nil || *scheduled.ProjectID != project.ID || scheduledSnapshot.Project == nil {
+	if scheduled.ProjectID == nil || *scheduled.ProjectID != project.ID || scheduledSnapshot.Project == nil || scheduledSnapshot.Group == nil || scheduledSnapshot.Group.ChatID != "oc_scheduled" {
 		t.Fatalf("scheduled input/snapshot = %#v / %#v", scheduled, scheduledSnapshot)
 	}
 }

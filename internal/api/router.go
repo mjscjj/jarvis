@@ -9,6 +9,7 @@ import (
 	"jarvis/internal/capture"
 	"jarvis/internal/chat"
 	"jarvis/internal/config"
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/effectops"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -61,6 +62,7 @@ type Dependencies struct {
 	Chat             *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
 	Capture          *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
 	RuntimeSettings  *config.RuntimeSettingsService
+	ContextAssembler *contextsnap.Assembler
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -140,6 +142,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.RuntimeSettings == nil {
 		return fmt.Errorf("api runtime settings dependency is nil")
 	}
+	if deps.ContextAssembler == nil {
+		return fmt.Errorf("api context assembler dependency is nil")
+	}
 	toolQueries, err := toolquery.NewService(deps.DB)
 	if err != nil {
 		return fmt.Errorf("create tool query service: %w", err)
@@ -148,6 +153,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/messages", ListToolMessages(toolQueries))
 	h.GET("/api/captured-resources", ListCapturedResources(toolQueries))
 	h.GET("/api/captured-resources/:resource_id", GetCapturedResource(toolQueries))
+	h.POST("/api/context", AssembleContext(deps.ContextAssembler))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
 	h.PATCH("/api/todos/:todo_id/status", SetTodoStatus(deps.TodoStatus))

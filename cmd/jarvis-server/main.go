@@ -724,7 +724,8 @@ func main() {
 		FactRollups:   factRollupWorker,
 		FactRollupLoc: location,
 		Debug:         debugService, Logs: logReader, Chat: chatService, Capture: captureService,
-		RuntimeSettings: runtimeSettingsService,
+		RuntimeSettings:  runtimeSettingsService,
+		ContextAssembler: contextAssembler,
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)
 	}

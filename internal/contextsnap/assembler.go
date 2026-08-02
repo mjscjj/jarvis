@@ -20,6 +20,7 @@ import (
 // Task. RequestContext is preserved as data; it never replaces common context.
 type AssembleOptions struct {
 	ProjectID      *uint64
+	ChatID         string
 	RequestContext json.RawMessage
 }
 
@@ -44,13 +45,24 @@ func NewAssembler(db *gorm.DB, principalOpenID string) (*Assembler, error) {
 }
 
 func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json.RawMessage, error) {
-	requestContext, hintedProjectID, err := normalizeRequestContext(options.RequestContext)
+	requestContext, hintedProjectID, hintedChatID, err := normalizeRequestContext(options.RequestContext)
+	if err != nil {
+		return nil, err
+	}
+	chatID := strings.TrimSpace(options.ChatID)
+	if chatID == "" {
+		chatID = hintedChatID
+	}
+	group, err := a.loadGroup(ctx, chatID)
 	if err != nil {
 		return nil, err
 	}
 	projectID := options.ProjectID
 	if projectID == nil {
 		projectID = hintedProjectID
+	}
+	if projectID == nil && group != nil {
+		projectID = group.ProjectID
 	}
 	if projectID != nil && *projectID == 0 {
 		return nil, fmt.Errorf("assemble context snapshot: project_id must be positive")
@@ -72,7 +84,15 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 	if err != nil {
 		return nil, err
 	}
-	facts, err := a.loadProjectFacts(ctx, projectID)
+	facts, err := a.loadFacts(ctx, projectID, group)
+	if err != nil {
+		return nil, err
+	}
+	openTodos, err := a.loadOpenTodos(ctx, projectID, group)
+	if err != nil {
+		return nil, err
+	}
+	recentTasks, err := a.loadRecentTasks(ctx, projectID, group)
 	if err != nil {
 		return nil, err
 	}
@@ -82,9 +102,12 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 		CapturedAt:       a.now().UTC().Format(time.RFC3339),
 		Principal:        principal,
 		Project:          project,
+		Group:            group,
 		OtherProjects:    otherProjects,
 		ManagedResources: managedResources,
 		Facts:            facts,
+		OpenTodos:        openTodos,
+		RecentTasks:      recentTasks,
 		Memories:         make([]map[string]any, 0),
 		RequestContext:   requestContext,
 	}
@@ -93,6 +116,25 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 		return nil, fmt.Errorf("assemble context snapshot: %w", err)
 	}
 	return raw, nil
+}
+
+func (a *Assembler) loadGroup(ctx context.Context, chatID string) (*Group, error) {
+	if chatID == "" {
+		return nil, nil
+	}
+	var row domain.Group
+	err := a.db.WithContext(ctx).Where("chat_id = ?", chatID).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("assemble context snapshot: chat_id=%s is not configured", chatID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("assemble context snapshot: load chat_id=%s: %w", chatID, err)
+	}
+	return &Group{
+		ID: row.ID, ChatID: row.ChatID, Name: copyString(row.Name),
+		Description: copyString(row.Description), BackgroundNote: copyString(row.BackgroundNote),
+		IsKeyGroup: row.IsKeyGroup, ProjectID: copyUint64(row.ProjectID),
+	}, nil
 }
 
 func (a *Assembler) loadPrincipal(ctx context.Context) (*Principal, error) {
@@ -175,15 +217,23 @@ func (a *Assembler) loadManagedResources(ctx context.Context, projectID *uint64)
 // the table and remain queryable by tool.
 const snapshotFactLimit = 50
 
-func (a *Assembler) loadProjectFacts(ctx context.Context, projectID *uint64) ([]Fact, error) {
-	if projectID == nil {
+func (a *Assembler) loadFacts(ctx context.Context, projectID *uint64, group *Group) ([]Fact, error) {
+	if projectID == nil && group == nil {
 		return nil, nil
 	}
+	query := a.db.WithContext(ctx).Model(&domain.Fact{})
+	switch {
+	case projectID != nil && group != nil:
+		query = query.Where("(subject_type = ? AND subject_id = ?) OR (subject_type = ? AND subject_id = ?)",
+			"project", *projectID, "group", group.ID)
+	case projectID != nil:
+		query = query.Where("subject_type = ? AND subject_id = ?", "project", *projectID)
+	default:
+		query = query.Where("subject_type = ? AND subject_id = ?", "group", group.ID)
+	}
 	var rows []domain.Fact
-	if err := a.db.WithContext(ctx).
-		Where("subject_type = ? AND subject_id = ?", "project", *projectID).
-		Order("occurred_at DESC, id DESC").Limit(snapshotFactLimit).Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("assemble context snapshot: load project facts project_id=%d: %w", *projectID, err)
+	if err := query.Order("occurred_at DESC, id DESC").Limit(snapshotFactLimit).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("assemble context snapshot: load scoped facts: %w", err)
 	}
 	result := make([]Fact, len(rows))
 	for i := range rows {
@@ -191,6 +241,71 @@ func (a *Assembler) loadProjectFacts(ctx context.Context, projectID *uint64) ([]
 			ID: rows[i].ID, SubjectType: rows[i].SubjectType, SubjectID: rows[i].SubjectID,
 			Description: rows[i].Description,
 			OccurredAt:  rows[i].OccurredAt.UTC().Format(time.RFC3339),
+		}
+	}
+	return result, nil
+}
+
+const (
+	snapshotOpenTodoLimit   = 20
+	snapshotRecentTaskLimit = 10
+)
+
+func (a *Assembler) loadOpenTodos(ctx context.Context, projectID *uint64, group *Group) ([]OpenTodo, error) {
+	query := a.db.WithContext(ctx).Model(&domain.Todo{}).
+		Where("status IN ?", []string{"extracted", "observing"})
+	switch {
+	case projectID != nil && group != nil:
+		query = query.Where("group_id = ? OR project_id = ?", group.ID, *projectID)
+	case projectID != nil:
+		query = query.Where("project_id = ?", *projectID)
+	case group != nil:
+		query = query.Where("group_id = ?", group.ID)
+	}
+	var rows []domain.Todo
+	if err := query.Order("last_evidence_at DESC, id DESC").Limit(snapshotOpenTodoLimit).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("assemble context snapshot: load open todos: %w", err)
+	}
+	result := make([]OpenTodo, len(rows))
+	for i := range rows {
+		result[i] = OpenTodo{ID: rows[i].ID, ActionType: rows[i].ActionType, Title: rows[i].Title, Status: rows[i].Status}
+	}
+	return result, nil
+}
+
+func (a *Assembler) loadRecentTasks(ctx context.Context, projectID *uint64, group *Group) ([]RecentTask, error) {
+	query := a.db.WithContext(ctx).Table("task AS t").
+		Joins("LEFT JOIN todo AS td ON td.id = t.todo_id").
+		Where("t.status IN ?", []string{"pending", "executing", "waiting", "needs_human", "awaiting_approval"})
+	switch {
+	case projectID != nil && group != nil:
+		query = query.Where("t.project_id = ? OR td.group_id = ?", *projectID, group.ID)
+	case projectID != nil:
+		query = query.Where("t.project_id = ?", *projectID)
+	case group != nil:
+		query = query.Where("td.group_id = ?", group.ID)
+	}
+	type taskRow struct {
+		ID             uint64
+		Title          string
+		Status         string
+		Summary        *string
+		LastProgressAt *time.Time
+	}
+	var rows []taskRow
+	if err := query.Select("t.id, t.title, t.status, t.summary, t.last_progress_at").
+		Order("COALESCE(t.last_progress_at, t.created_at) DESC, t.id DESC").
+		Limit(snapshotRecentTaskLimit).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("assemble context snapshot: load recent tasks: %w", err)
+	}
+	result := make([]RecentTask, len(rows))
+	for i := range rows {
+		result[i] = RecentTask{ID: rows[i].ID, Title: rows[i].Title, Status: rows[i].Status}
+		if rows[i].Summary != nil {
+			result[i].Summary = *rows[i].Summary
+		}
+		if rows[i].LastProgressAt != nil {
+			result[i].LastProgressAt = rows[i].LastProgressAt.UTC().Format(time.RFC3339)
 		}
 	}
 	return result, nil
@@ -209,29 +324,33 @@ func projectFromDomain(row *domain.Project) *Project {
 	}
 }
 
-func normalizeRequestContext(raw json.RawMessage) (json.RawMessage, *uint64, error) {
+func normalizeRequestContext(raw json.RawMessage) (json.RawMessage, *uint64, string, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil, nil, nil
+		return nil, nil, "", nil
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var object map[string]any
 	if err := decoder.Decode(&object); err != nil || object == nil {
-		return nil, nil, fmt.Errorf("assemble context snapshot: request context must be a JSON object")
+		return nil, nil, "", fmt.Errorf("assemble context snapshot: request context must be a JSON object")
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return nil, nil, fmt.Errorf("assemble context snapshot: request context has trailing data")
+		return nil, nil, "", fmt.Errorf("assemble context snapshot: request context has trailing data")
 	}
 	encoded, err := json.Marshal(object)
 	if err != nil {
-		return nil, nil, fmt.Errorf("assemble context snapshot: encode request context: %w", err)
+		return nil, nil, "", fmt.Errorf("assemble context snapshot: encode request context: %w", err)
 	}
 	projectID, err := projectHint(object)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
-	return encoded, projectID, nil
+	chatID, err := chatHint(object)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return encoded, projectID, chatID, nil
 }
 
 func projectHint(object map[string]any) (*uint64, error) {
@@ -254,6 +373,23 @@ func projectHint(object map[string]any) (*uint64, error) {
 	}
 	result := uint64(id)
 	return &result, nil
+}
+
+func chatHint(object map[string]any) (string, error) {
+	value, ok := object["chat_id"]
+	if !ok {
+		if group, groupOK := object["group"].(map[string]any); groupOK {
+			value, ok = group["chat_id"]
+		}
+	}
+	if !ok {
+		return "", nil
+	}
+	chatID, ok := value.(string)
+	if !ok || strings.TrimSpace(chatID) == "" {
+		return "", fmt.Errorf("assemble context snapshot: request context chat_id must be a non-empty string")
+	}
+	return strings.TrimSpace(chatID), nil
 }
 
 func rawJSONOrNull(raw []byte) json.RawMessage {
