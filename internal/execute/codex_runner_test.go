@@ -15,6 +15,7 @@ func TestCodexRunnerPersistsAndResumesTaskSession(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")
 	envPath := filepath.Join(dir, "task-id.txt")
+	stagePath := filepath.Join(dir, "stage.txt")
 	cwdPath := filepath.Join(dir, "cwd.txt")
 	binPath := filepath.Join(dir, "fake-codex")
 	script := `#!/bin/sh
@@ -25,6 +26,7 @@ if [ "${1:-}" = "exec" ] && [ "${2:-}" = "resume" ] && [ "${3:-}" = "--help" ]; 
 fi
 printf '%s\n' "$@" > "$FAKE_CODEX_ARGS"
 printf '%s' "${JARVIS_TASK_ID:-}" > "$FAKE_CODEX_TASK_ID"
+printf '%s' "${JARVIS_AGENT_STAGE:-}" > "$FAKE_CODEX_STAGE"
 pwd > "$FAKE_CODEX_CWD"
 output=""
 previous=""
@@ -42,6 +44,7 @@ printf '%s\n' 'diagnostic stderr' >&2
 	}
 	t.Setenv("FAKE_CODEX_ARGS", argsPath)
 	t.Setenv("FAKE_CODEX_TASK_ID", envPath)
+	t.Setenv("FAKE_CODEX_STAGE", stagePath)
 	t.Setenv("FAKE_CODEX_CWD", cwdPath)
 
 	runner, err := NewCodexRunner(binPath, "test-model", "medium", time.Minute)
@@ -71,6 +74,9 @@ printf '%s\n' 'diagnostic stderr' >&2
 	}
 	if got := readTestFile(t, envPath); got != "123" {
 		t.Fatalf("JARVIS_TASK_ID = %q, want 123", got)
+	}
+	if got := readTestFile(t, stagePath); got != "execute" {
+		t.Fatalf("JARVIS_AGENT_STAGE = %q, want execute", got)
 	}
 	if got := readTestFile(t, stdoutPath); !strings.Contains(got, `"type":"thread.started"`) {
 		t.Fatalf("captured stdout missing thread event: %s", got)
@@ -116,8 +122,12 @@ printf '%s\n' 'diagnostic stderr' >&2
 	if !strings.Contains(args, "--cd\n"+dir+"\n") {
 		t.Fatalf("workspace-rooted text run args missing --cd %q:\n%s", dir, args)
 	}
-	if got := strings.TrimSpace(readTestFile(t, cwdPath)); got != dir {
-		t.Fatalf("workspace-rooted text run cwd = %q, want %q", got, dir)
+	wantCWD, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve expected cwd: %v", err)
+	}
+	if got := strings.TrimSpace(readTestFile(t, cwdPath)); got != wantCWD {
+		t.Fatalf("workspace-rooted text run cwd = %q, want %q", got, wantCWD)
 	}
 }
 

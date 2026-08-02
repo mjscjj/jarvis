@@ -120,6 +120,7 @@ func (e *Extractor) ExtractWithTools(ctx context.Context, prompt extract.Prompt,
 	runCtx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 	command := exec.CommandContext(runCtx, e.bin, args...)
+	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=extract")
 	command.Dir = tempDir
 	command.Stdin = strings.NewReader(combined)
 	var stdout, stderr bytes.Buffer

@@ -5,31 +5,21 @@ import (
 	"testing"
 )
 
-func TestExtractStageExposesQueryOnlyJarvisTools(t *testing.T) {
+func TestEveryStageExposesTheSameJarvisToolPrinciplesAndCapabilities(t *testing.T) {
 	t.Parallel()
-	block, err := Block(StageExtract)
-	if err != nil {
-		t.Fatalf("Block(%q): %v", StageExtract, err)
-	}
-	for _, forbidden := range []string{"追加共享记忆", "管理独立定时触发", "暂停当前 Task", "yield-until"} {
-		if strings.Contains(block, forbidden) {
-			t.Fatalf("Block(%q) contains write capability %q:\n%s", StageExtract, forbidden, block)
+	for _, stage := range []string{StageExtract, StageExecute, StageChat} {
+		block, err := Block(stage)
+		if err != nil {
+			t.Fatalf("Block(%q): %v", stage, err)
 		}
-	}
-	if !strings.Contains(block, "项目资源") {
-		t.Fatalf("Block(%q) does not advertise project resources:\n%s", StageExtract, block)
-	}
-}
-
-func TestExecuteStageExposesTaskControls(t *testing.T) {
-	t.Parallel()
-	block, err := Block(StageExecute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{"追加共享记忆", "管理独立定时触发", "yield-until"} {
-		if !strings.Contains(block, required) {
-			t.Fatalf("execute block missing %q:\n%s", required, block)
+		for _, required := range []string{
+			"简单优先", "渐进式加载", "同一套工具能力", "不按阶段隐藏工具",
+			"query-messages", "query-captured-resources", "get-captured-resource",
+			"list-facts", "list-relations", "yield-until", "追加共享记忆", "修改 Todo 状态",
+		} {
+			if !strings.Contains(block, required) {
+				t.Fatalf("Block(%q) missing %q:\n%s", stage, required, block)
+			}
 		}
 	}
 }

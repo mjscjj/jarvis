@@ -15,11 +15,28 @@ import (
 
 type ScheduledTaskService interface {
 	List(context.Context, scheduledtask.ListFilter) ([]scheduledtask.View, error)
+	Get(context.Context, uint64) (*scheduledtask.View, error)
 	Create(context.Context, scheduledtask.Input) (*scheduledtask.View, error)
 	CreateYield(context.Context, scheduledtask.YieldInput) (*scheduledtask.View, error)
 	Update(context.Context, uint64, scheduledtask.Input) (*scheduledtask.View, error)
 	Delete(context.Context, uint64) error
 	Trigger(context.Context, uint64) (*scheduledtask.View, error)
+}
+
+func GetScheduledTask(service ScheduledTaskService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := scheduledTaskID(c)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40062, err)
+			return
+		}
+		view, err := service.Get(ctx, id)
+		if err != nil {
+			writeScheduledTaskError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
+	}
 }
 
 type yieldUntilRequest struct {

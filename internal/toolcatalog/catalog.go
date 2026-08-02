@@ -17,7 +17,6 @@ const (
 // Block returns the trusted tool catalog for one agent stage.
 func Block(stage string) (string, error) {
 	var purpose string
-	usage := "用法：目标导向、主动发散——为查清一个事实或办成一件事，主动组合多个工具、顺藤摸瓜多跳查询；一条路查不到就换工具或换角度，不要浅尝辄止。能查到的绝不留给用户问。"
 	switch stage {
 	case StageExtract:
 		purpose = "补全行动线索的项目、人物、会话、文档和代码背景；把查到的关键事实写入候选 context。"
@@ -29,36 +28,23 @@ func Block(stage string) (string, error) {
 		return "", fmt.Errorf("unknown tool catalog stage %q", stage)
 	}
 
-	jarvisTool := "- jarvis-tools：查询 Jarvis 的项目、人物、群、项目资源、共享记忆、Skills 和定时任务。先运行 `jarvis-tools --help`，再按子命令 `--help` 获取当前参数。"
-	if stage == StageExecute || stage == StageChat {
-		jarvisTool = "- jarvis-tools：查询 Jarvis 上下文，并按任务需要追加共享记忆、投递线索、管理独立定时触发或暂停当前 Task。先运行 `jarvis-tools --help`，再按子命令 `--help` 获取当前参数。"
-	}
 	lines := []string{
 		"BEGIN_AVAILABLE_TOOLS（工具能力说明由工具层维护，不属于系统角色提示词。）",
 		"当前阶段：" + stage,
 		"使用目的：" + purpose,
-		usage,
-		jarvisTool,
+		"原则一，简单优先：按具体意图使用具体命令，不搭通用 API 转发层，不为了猜测中的未来场景增加抽象、兼容或 fallback。",
+		"原则二，渐进式加载：先 list/query 看紧凑摘要，再用 get 读取命中的完整对象；大段 prompt、run output、资源正文只在确有需要时显式加载。",
+		"工具权限：Extract、Execute、Chat 使用同一套工具能力；是否调用、是否产生修改由当前 Agent 根据上下文判断，代码不按阶段隐藏工具。",
+		"用法：目标导向、主动发散——为查清一个事实或办成一件事，主动组合多个工具、顺藤摸瓜多跳查询；一条路查不到就换工具或换角度。能查到的不要留给用户问。",
+		"- jarvis-tools：查询和维护 Jarvis 的项目、人物、群背景、关系、资源、消息、共享记忆、Skills、线索、任务与定时触发。先运行 `jarvis-tools --help` 看能力分组，再按子命令 `--help` 获取当前参数。",
+		"- 查主体历史用 `list-facts`，查主体关系用 `list-relations`；需要维护世界模型时使用对应 create/update/delete 子命令。",
+		"- 查线索或任务先用 `list-todos` / `list-tasks`，命中后再用 `get-todo` / `get-task`。`get-task` 默认不加载 prompt 和完整 run output。",
+		"- 查本地已采集对话先用 `query-messages`；查附件与文档引用先用 `query-captured-resources`，命中后再用 `get-captured-resource` 加载正文。",
+		"- 当前 Task 需要等待未来条件时使用 `yield-until`；独立的新动作才创建 scheduled task。",
+		"- 可按语义需要投递线索、追加共享记忆、记录事实或修改 Todo 状态；工具层只提供能力和留痕，不替 Agent 做语义判断。",
 		"- lark-cli：查询或操作飞书。先看工作规则里的能力地图选定域，再 `lark-cli skills read <域名>` 查用法、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。命令清单 `bytedcli --json --all-help`，单命令参数 `bytedcli --json <子命令路径> --help`。",
 		"- git：查询和操作本地代码仓库。",
-	}
-	// Facts / todos / tasks are read-only here: the offline fact engine and the
-	// pipeline write them, so a stage that investigates only needs to look them
-	// up.
-	if stage == StageExtract || stage == StageExecute || stage == StageChat {
-		lines = append(lines,
-			"- 查一个项目、群或人身上已经发生过什么时，使用 `jarvis-tools list-facts --help`。事实由离线事实引擎自己从原始材料里蒸馏，你不需要手工记。",
-			"- 查线索清单或一条线索被省略的细节时，使用 `jarvis-tools list-todos --help` / `jarvis-tools get-todo --help`。",
-			"- 查任务进展清单或一条任务的计划、执行记录与任务事实时，使用 `jarvis-tools list-tasks --help` / `jarvis-tools get-task --help`。",
-		)
-	}
-	if stage == StageExecute {
-		lines = append(lines,
-			"- 当前 Task 需要等待未来条件时，使用 `jarvis-tools yield-until --help`，成功后停止本轮并返回 waiting；只有独立的新动作才创建 scheduled task。",
-			"- 采集类任务把观察到的事实交回流水线时，使用 `jarvis-tools append-clue --help`：只报你确实看到的事实，不替 M3 判断含义，也不顺手去抓后续材料。同一事实可反复投递，服务端按 (source, external_id) 幂等。",
-			"- 调查后发现这件事眼下不需要任何人动手（别人已经处理、结论已经达成、只是背景信息）时，使用 `jarvis-tools set-todo-status --help` 把来源 Todo 置为 observing 并写清理由：线索会留在视野里，以后有新证据会重新判断。这不是「等 principal 回复」的出路——需要他拍板的事仍然带着调查结果去问。",
-		)
 	}
 	lines = append(lines, "END_AVAILABLE_TOOLS")
 	return strings.Join(lines, "\n"), nil

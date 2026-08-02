@@ -409,6 +409,7 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	command := exec.CommandContext(runCtx, r.bin, args...)
+	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=execute")
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Cancel = func() error {
 		if command.Process == nil {
@@ -426,7 +427,7 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 		command.Dir = repoPath
 	}
 	if invocation.TaskID != 0 {
-		command.Env = append(os.Environ(), fmt.Sprintf("JARVIS_TASK_ID=%d", invocation.TaskID))
+		command.Env = append(command.Env, fmt.Sprintf("JARVIS_TASK_ID=%d", invocation.TaskID))
 	}
 	command.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer

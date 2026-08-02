@@ -3,7 +3,6 @@ package api
 
 import (
 	"fmt"
-
 	"time"
 
 	"jarvis/internal/background"
@@ -20,6 +19,7 @@ import (
 	"jarvis/internal/skill"
 	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
+	"jarvis/internal/toolquery"
 	"jarvis/internal/workrule"
 
 	"code.byted.org/middleware/hertz/pkg/app/server"
@@ -139,7 +139,14 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.RuntimeSettings == nil {
 		return fmt.Errorf("api runtime settings dependency is nil")
 	}
+	toolQueries, err := toolquery.NewService(deps.DB)
+	if err != nil {
+		return fmt.Errorf("create tool query service: %w", err)
+	}
 	h.GET("/healthz", Health(deps.DB))
+	h.GET("/api/messages", ListToolMessages(toolQueries))
+	h.GET("/api/captured-resources", ListCapturedResources(toolQueries))
+	h.GET("/api/captured-resources/:resource_id", GetCapturedResource(toolQueries))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
 	h.PATCH("/api/todos/:todo_id/status", SetTodoStatus(deps.TodoStatus))
@@ -206,6 +213,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/scheduled-tasks", ListScheduledTasks(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks", CreateScheduledTask(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks/yield", YieldUntil(deps.ScheduledTasks))
+	h.GET("/api/scheduled-tasks/:scheduled_task_id", GetScheduledTask(deps.ScheduledTasks))
 	h.PUT("/api/scheduled-tasks/:scheduled_task_id", UpdateScheduledTask(deps.ScheduledTasks))
 	h.DELETE("/api/scheduled-tasks/:scheduled_task_id", DeleteScheduledTask(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks/:scheduled_task_id/trigger", TriggerScheduledTask(deps.ScheduledTasks))

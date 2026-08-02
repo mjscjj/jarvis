@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -129,6 +130,7 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, emit func(
 	defer cancel()
 
 	command := exec.CommandContext(runCtx, r.bin, r.args(threadID)...)
+	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=chat")
 	command.Stdin = strings.NewReader(prompt)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
