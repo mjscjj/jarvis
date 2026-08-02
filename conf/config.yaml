@@ -88,9 +88,9 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 2m"
-  # Jarvis 直接持有该 Bot 的 im.message.receive_v1 长连接；同一 app 不得再由
-  # cc-connect/OpenClaw 等进程消费。轮询仍按 scan_schedule 运行，负责掉线补偿。
-  event_enabled: true
+  # Jarvis Bot 的实时对话入口由 CC Connect 独占；Jarvis 不再竞争消费同一 app
+  # 的 im.message.receive_v1。M2 继续按 scan_schedule 轮询采集工作消息。
+  event_enabled: false
   event_profile: "cli_a96a0c8d82b85cb1"
   # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
