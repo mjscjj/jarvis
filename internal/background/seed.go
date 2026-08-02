@@ -214,8 +214,8 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 		CommitmentStrength: "firm",
 		SourceMessageIDs:   sources, SourceQuote: "(seed)",
 		ProjectID: &projectID, Status: "confirmed",
-		DedupFingerprint: fingerprint, ExtractionModel: "seed", PromptVersion: "seed",
-		FirstSeenAt: now, LastEvidenceAt: now,
+		DedupFingerprint: fingerprint,
+		FirstSeenAt:      now, LastEvidenceAt: now,
 	}
 	if err := tx.Create(&todo).Error; err != nil {
 		return false, fmt.Errorf("create seed todo %q: %w", st.title, err)
@@ -231,16 +231,12 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 		return false, fmt.Errorf("encode seed plan %q: %w", st.title, err)
 	}
 	todoID := todo.ID
-	actionHash, err := taskcreate.ActionHash(st.actionType, st.title, json.RawMessage(plan))
-	if err != nil {
-		return false, fmt.Errorf("hash seed task %q: %w", st.title, err)
-	}
 	task := domain.Task{
 		TodoID: &todoID, Title: st.title, ActionType: st.actionType, Target: st.title,
 		Background: background, Plan: plan,
-		ConfirmedBy: "system", ConfirmedAt: now, ActionHash: actionHash,
+		ConfirmedBy: "system", ConfirmedAt: now,
 		SourceType: taskcreate.SourceTodo, SourceID: &todoID, ExecutionMode: taskcreate.ExecutionModeStandard,
-		Status: "pending", AutonomyMode: "copilot", ProjectID: &projectID,
+		Status: "pending", ProjectID: &projectID,
 	}
 	if err := tx.Create(&task).Error; err != nil {
 		return false, fmt.Errorf("create seed task %q: %w", st.title, err)

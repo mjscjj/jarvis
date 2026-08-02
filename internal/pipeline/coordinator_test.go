@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"jarvis/internal/capture"
-	"jarvis/internal/decide"
 	"jarvis/internal/domain"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -38,18 +37,18 @@ func (f *fakeExtractor) ExtractOnce(context.Context) (extract.WorkerStats, error
 }
 
 type fakeDecider struct {
-	calls  chan todoWork
-	result *decide.EvaluationResult
+	calls  chan m5Work
+	result *execute.EvaluationResult
 }
 
-func (f *fakeDecider) EvaluateTodo(_ context.Context, todoID uint64, version int32) (*decide.EvaluationResult, error) {
-	f.calls <- todoWork{TodoID: todoID, Version: version}
+func (f *fakeDecider) EvaluateTodo(_ context.Context, todoID uint64, version int32) (*execute.EvaluationResult, error) {
+	f.calls <- m5Work{TodoID: todoID, Version: version}
 	result := *f.result
 	return &result, nil
 }
 
-func (f *fakeDecider) EvaluateOnce(context.Context) (decide.WorkerStats, error) {
-	return decide.WorkerStats{}, nil
+func (f *fakeDecider) EvaluateOnce(context.Context) (execute.WorkerStats, error) {
+	return execute.WorkerStats{}, nil
 }
 
 type fakeExecutionStore struct {
@@ -129,9 +128,9 @@ func TestCoordinatorDrivesRealtimeM3M4M5(t *testing.T) {
 	taskID := uint64(31)
 	extractor := &fakeExtractor{todos: []extract.TodoRef{{ID: 21, Version: 3, Status: "extracted"}}}
 	decider := &fakeDecider{
-		calls: make(chan todoWork, 1),
-		result: &decide.EvaluationResult{
-			TodoID: 21, Status: decide.RouteAuto, Version: 4, TaskID: &taskID, TaskVersion: 0,
+		calls: make(chan m5Work, 1),
+		result: &execute.EvaluationResult{
+			TodoID: 21, Status: execute.RouteAuto, Version: 4, TaskID: &taskID, TaskVersion: 0,
 		},
 	}
 	executor := &fakeTaskExecutor{calls: make(chan execute.ExecuteInput, 1)}

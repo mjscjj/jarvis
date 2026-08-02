@@ -4,7 +4,6 @@ import type {
   AgentSkillInput,
   AgentProcessSnapshot,
   CommitWorklog,
-  ConfirmationDetail,
   DailyDigest,
   DailyDigestKickResult,
   DailyDigestScope,
@@ -37,6 +36,8 @@ import type {
   ExecutionRunList,
   TaskRunOutput,
   ProjectEvent,
+  ObservationList,
+  ObservationQuery,
   RelationEntityType,
   RelationFactList,
   TaskEvent,
@@ -93,32 +94,6 @@ export function listTodos(query: TodoQuery, signal?: AbortSignal): Promise<TodoL
 
 export function getTodo(id: number, signal?: AbortSignal): Promise<Todo> {
   return request<Todo>(`/api/todos/${id}`, { signal })
-}
-
-export function listConfirmations(page = 1, pageSize = 20, signal?: AbortSignal): Promise<TodoList> {
-  return request<TodoList>(`/api/confirmations?page=${page}&page_size=${pageSize}`, { signal })
-}
-
-export function getConfirmation(id: number, signal?: AbortSignal): Promise<ConfirmationDetail> {
-  return request<ConfirmationDetail>(`/api/confirmations/${id}`, { signal })
-}
-
-export function approveConfirmation(id: number, expectedVersion: number, plan: unknown): Promise<Task> {
-  return request<Task>(`/api/confirmations/${id}/approve`, {
-    method: 'POST', body: { expected_version: expectedVersion, plan },
-  })
-}
-
-export function rejectConfirmation(id: number, expectedVersion: number, reason: string): Promise<{ todo_id: number; status: string; version: number }> {
-  return request(`/api/confirmations/${id}/reject`, {
-    method: 'POST', body: { expected_version: expectedVersion, reason },
-  })
-}
-
-export function supplementConfirmation(id: number, expectedVersion: number, note: string): Promise<{ todo_id: number; status: string; version: number }> {
-  return request(`/api/confirmations/${id}/supplement`, {
-    method: 'POST', body: { expected_version: expectedVersion, note },
-  })
 }
 
 export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signal?: AbortSignal): Promise<TaskList> {
@@ -227,6 +202,18 @@ export function listEntityRelations(entityType: RelationEntityType, entityId: nu
     page_size: '100',
   })
   return request<RelationFactList>(`/api/relation-facts?${params.toString()}`, { signal })
+}
+
+export function listObservations(query: ObservationQuery, signal?: AbortSignal): Promise<ObservationList> {
+  const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) })
+  if (query.producer) params.set('producer', query.producer)
+  if (query.projectId) params.set('project_id', String(query.projectId))
+  if (query.keyword) params.set('keyword', query.keyword)
+  return request<ObservationList>(`/api/observations?${params.toString()}`, { signal })
+}
+
+export function deleteObservation(id: number): Promise<{ id: number; deleted: boolean }> {
+  return request(`/api/observations/${id}`, { method: 'DELETE' })
 }
 
 // --- M1 background management ---

@@ -34,7 +34,7 @@ type definition struct {
 var ruleDefinitions = []definition{
 	{key: StageAll, name: "全阶段", filename: "all.md"},
 	{key: StageExtract, name: "M3 抽取", filename: "m3.md"},
-	{key: StageDecide, name: "M4 决策", filename: "m4.md"},
+	{key: StageDecide, name: "M5 判断", filename: "decide.md"},
 	{key: StageExecute, name: "M5 执行", filename: "m5.md"},
 }
 

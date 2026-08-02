@@ -17,7 +17,7 @@ type ScheduleConfig struct {
 }
 
 // StartScheduler registers only compensation wake-ups. The coordinator remains
-// the sole automatic caller of M3/M4/M5 for both real-time and scheduled work.
+// the sole automatic caller of M3/M5 for both real-time and scheduled work.
 func StartScheduler(ctx context.Context, coordinator *Coordinator, cfg ScheduleConfig, logger *log.Logger) (*cron.Cron, error) {
 	if coordinator == nil {
 		return nil, fmt.Errorf("pipeline scheduler coordinator is nil")

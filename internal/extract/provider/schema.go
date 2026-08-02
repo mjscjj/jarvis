@@ -17,7 +17,7 @@ func TodoExtractionJSONSchema() map[string]any {
 			"action_type": map[string]any{
 				"type":        "string",
 				"pattern":     "^[a-z][a-z0-9_]*$",
-				"description": "线索的动作类型，小写蛇形标识符。优先用常见类型：code_change/summary_post/investigate/schedule_meeting/reply_message/doc_write/notify_principal/manual_followup；确实不属于任何一类时用 other 或自拟一个贴切的标识符，不要为凑类型扭曲本意。纯粹值得我知道、无需动作的信息用 notify_principal。",
+				"description": "线索的动作类型，小写蛇形标识符。优先用常见类型：code_change/summary_post/investigate/schedule_meeting/reply_message/doc_write/manual_followup；确实不属于任何一类时用 other 或自拟一个贴切的标识符，不要为凑类型扭曲本意。注意：纯粹值得我知道、不需要我做任何动作的信息不要放进 candidates，写进 observations。",
 			},
 			"title": map[string]any{"type": "string", "description": "一句话说清这件事，用于展示。"},
 			"target": map[string]any{
@@ -52,7 +52,7 @@ func TodoExtractionJSONSchema() map[string]any {
 			},
 			"semantics": map[string]any{
 				"type":        "string",
-				"description": "自由表达区：以上字段装不下、但下游判断需要的内容都写在这里，自然语言或 JSON 文本都可以。例如当前阻塞和解除条件、你的推断链和依据、候选路径与取舍、建议的下一步、你查到但不确定是否相关的线索。程序不解析这段内容，会原样带给 M4 决策和 M5 执行。没有要补充的写空字符串。",
+				"description": "自由表达区：以上字段装不下、但下游判断需要的内容都写在这里，自然语言或 JSON 文本都可以。例如当前阻塞和解除条件、你的推断链和依据、候选路径与取舍、建议的下一步、你查到但不确定是否相关的线索。程序不解析这段内容，会原样带给 M5 判断环节和 M5 执行。没有要补充的写空字符串。",
 			},
 		},
 		"required": []string{
@@ -61,12 +61,48 @@ func TodoExtractionJSONSchema() map[string]any {
 			"source_message_ids", "source_quote", "semantics",
 		},
 	}
+	observation := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"subject": map[string]any{
+				"type":        "string",
+				"description": "这条观察是关于什么的，用于以后检索。例：Bax PC 评测范围 / 谭蕴芯的工作安排 / agent-runtime 构建方式。",
+			},
+			"content": map[string]any{
+				"type":        "string",
+				"description": "观察到的事实本身，自然语言写清楚。可以包含：群里达成的结论、别人说明的现状、别人负责的事、你顺带发现的约束或背景。写成以后回头看也能懂的完整句子，不要只写半句。",
+			},
+			"project_hint": stringOrNull(),
+			"source_message_ids": map[string]any{
+				"type": "array", "items": map[string]any{"type": "string"},
+				"description": "Evidence message IDs. At least one ID must belong to a [new] message.",
+			},
+			"source_quote": map[string]any{
+				"type":        "string",
+				"description": "Exact contiguous substring copied verbatim from one cited [new] message; never paraphrase or combine messages.",
+			},
+		},
+		"required": []string{"subject", "content", "project_hint", "source_message_ids", "source_quote"},
+	}
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
 		"properties": map[string]any{
-			"candidates": map[string]any{"type": "array", "items": candidate},
+			"candidates": map[string]any{
+				"type":        "array",
+				"items":       candidate,
+				"description": "需要 principal 本人做点什么的线索。判据只有一条：这件事要求 principal 采取一个动作吗？不要求就不要放这里。",
+			},
+			"observations": map[string]any{
+				"type":  "array",
+				"items": observation,
+				"description": "值得记住、但不需要 principal 做任何事的信息。典型例子：群里达成的结论或口径、" +
+					"别人陈述的事实或现状、别人负责并会自己推进的事、你查证时顺带发现的背景和约束。" +
+					"这些会进入项目认知和日报，不会变成待办，也不会有人去执行它。拿不准算 candidate 还是 observation 时，" +
+					"先问「不做会不会有事情落空」：不会就是 observation。",
+			},
 		},
-		"required": []string{"candidates"},
+		"required": []string{"candidates", "observations"},
 	}
 }

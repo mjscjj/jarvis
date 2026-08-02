@@ -33,7 +33,7 @@ type preparedCandidate struct {
 	Resolution      datatypes.JSON
 	ContextSnapshot datatypes.JSON
 	// ExtractionResult 是抽取吐出的完整结论原文（整个 Candidate 的 JSON），随 Todo
-	// 落库，供 M4 决策整块复用，避免 M4 逐字段拷贝抽取结构造成耦合。
+	// 落库，供 M5 判断环节整块复用，避免判断环节逐字段拷贝抽取结构造成耦合。
 	ExtractionResult datatypes.JSON
 }
 
@@ -48,6 +48,10 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 		return PersistStats{}, fmt.Errorf("persist extraction model name must contain 1 to 64 bytes")
 	}
 	prepared, skipped, err := s.prepareResults(ctx, batch, results)
+	if err != nil {
+		return PersistStats{}, err
+	}
+	observations, err := s.prepareObservations(batch, results)
 	if err != nil {
 		return PersistStats{}, err
 	}
@@ -76,6 +80,11 @@ func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, result
 			}
 			todoRefs[todo.ID] = TodoRef{ID: todo.ID, Version: todo.Version, Status: todo.Status}
 		}
+		created, err := persistObservations(tx, observations)
+		if err != nil {
+			return err
+		}
+		stats.ObservationsCreated = created
 		watermark := domain.TodoExtractWatermark{
 			ChatID: batch.Group.ChatID, LastScannedMessageID: batch.LastNew.MessageID,
 			LastScannedAt: time.UnixMilli(batch.LastNew.CreateTime).In(s.location),
@@ -150,6 +159,92 @@ func (s *PipelineStore) prepareResults(ctx context.Context, batch ChatBatch, res
 		return nil, 0, fmt.Errorf("extraction results missing units: %s", strings.Join(missing, ","))
 	}
 	return prepared, skipped, nil
+}
+
+// prepareObservations validates and resolves every observation in the batch.
+// It reuses the candidate evidence rules, so a fabricated citation fails the
+// whole batch exactly like a fabricated todo would.
+func (s *PipelineStore) prepareObservations(batch ChatBatch, results []UnitExtraction) ([]domain.Observation, error) {
+	units := make(map[string]ConversationUnit, len(batch.Units))
+	for _, unit := range batch.Units {
+		units[unit.Key] = unit
+	}
+	rows := make([]domain.Observation, 0)
+	for _, result := range results {
+		unit, ok := units[result.UnitKey]
+		if !ok {
+			return nil, fmt.Errorf("extraction result references unknown unit %q", result.UnitKey)
+		}
+		for i := range result.Observations {
+			observation := result.Observations[i]
+			if err := ValidateObservation(&observation); err != nil {
+				return nil, fmt.Errorf("prepare observation unit=%s index=%d: %w", unit.Key, i, err)
+			}
+			if err := validateEvidence(unit, observation.SourceMessageIDs, observation.SourceQuote); err != nil {
+				return nil, fmt.Errorf("prepare observation unit=%s index=%d: %w", unit.Key, i, err)
+			}
+			projectID, _ := resolveProjectByHint(batch, observation.ProjectHint)
+			dedupKey, err := ObservationDedupKey(&observation, projectID)
+			if err != nil {
+				return nil, fmt.Errorf("prepare observation unit=%s index=%d: %w", unit.Key, i, err)
+			}
+			messageIDs, err := json.Marshal(observation.SourceMessageIDs)
+			if err != nil {
+				return nil, fmt.Errorf("encode observation source_message_ids unit=%s index=%d: %w", unit.Key, i, err)
+			}
+			rows = append(rows, domain.Observation{
+				Producer:         domain.ObservationProducerM3,
+				Subject:          strings.TrimSpace(observation.Subject),
+				Content:          strings.TrimSpace(observation.Content),
+				ProjectID:        projectID,
+				GroupID:          copyUint64(&batch.Group.ID),
+				SourceMessageIDs: datatypes.JSON(messageIDs),
+				SourceQuote:      observation.SourceQuote,
+				DedupKey:         dedupKey,
+				ObservedAt:       observedAt(unit, observation.SourceMessageIDs, s.location),
+			})
+		}
+	}
+	return rows, nil
+}
+
+// persistObservations stores observations idempotently. Re-extracting the same
+// fact is expected (the same message can be scanned again), so a duplicate key
+// is a no-op rather than an error.
+func persistObservations(tx *gorm.DB, rows []domain.Observation) (int, error) {
+	created := 0
+	for i := range rows {
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "dedup_key"}},
+			DoNothing: true,
+		}).Create(&rows[i])
+		if result.Error != nil {
+			return 0, fmt.Errorf("persist observation subject=%q: %w", rows[i].Subject, result.Error)
+		}
+		created += int(result.RowsAffected)
+	}
+	return created, nil
+}
+
+// observedAt is the newest cited message time: an observation describes the
+// state of the world as of the latest evidence backing it.
+func observedAt(unit ConversationUnit, sourceMessageIDs []string, location *time.Location) time.Time {
+	byID := make(map[string]MessageContext, len(unit.Messages))
+	for _, message := range unit.Messages {
+		byID[message.MessageID] = message
+	}
+	latest := time.Time{}
+	for _, messageID := range sourceMessageIDs {
+		message, ok := byID[messageID]
+		if !ok {
+			continue
+		}
+		at := time.UnixMilli(message.CreateTime).In(location)
+		if latest.IsZero() || at.After(latest) {
+			latest = at
+		}
+	}
+	return latest
 }
 
 func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, memories []map[string]any) (*preparedCandidate, error) {
@@ -292,8 +387,8 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 		GroupID: &batch.Group.ID, ProjectID: prepared.ProjectID,
 		AssignerOpenID: prepared.AssignerOpenID, IsLeaderAssigned: prepared.LeaderAssigned,
 		DueAt: prepared.DueAt, Status: "extracted",
-		DedupFingerprint: prepared.Fingerprint, ExtractionModel: modelName, PromptVersion: PromptVersion,
-		Resolution: prepared.Resolution, ContextSnapshot: prepared.ContextSnapshot,
+		DedupFingerprint: prepared.Fingerprint,
+		Resolution:       prepared.Resolution, ContextSnapshot: prepared.ContextSnapshot,
 		ExtractionResult: prepared.ExtractionResult,
 		Revision:         1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
 	}
@@ -345,12 +440,11 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		"open_questions": datatypes.JSON(openQuestions), "commitment_strength": prepared.Candidate.CommitmentStrength,
 		"source_message_ids": datatypes.JSON(sourceIDs), "source_quote": prepared.Candidate.SourceQuote,
 		"is_leader_assigned": existing.IsLeaderAssigned || prepared.LeaderAssigned,
-		"extraction_model":   modelName,
-		"prompt_version":     PromptVersion, "revision": existing.Revision + 1,
-		"last_evidence_at": maxTime(existing.LastEvidenceAt, prepared.LastEvidenceAt),
-		"version":          gorm.Expr("version + 1"),
+		"revision":           existing.Revision + 1,
+		"last_evidence_at":   maxTime(existing.LastEvidenceAt, prepared.LastEvidenceAt),
+		"version":            gorm.Expr("version + 1"),
 		// Refresh the frozen snapshot/resolution/extraction on new evidence so
-		// M4/M5 always replay the latest background and extraction for this clue.
+		// M5 always replay the latest background and extraction for this clue.
 		"context_snapshot":  prepared.ContextSnapshot,
 		"extraction_result": prepared.ExtractionResult,
 		"resolution":        prepared.Resolution,

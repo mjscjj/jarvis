@@ -8,11 +8,11 @@ import (
 	"jarvis/internal/capture"
 	"jarvis/internal/chat"
 	"jarvis/internal/config"
-	"jarvis/internal/decide"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
 	"jarvis/internal/knowledge"
+	"jarvis/internal/observe"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
 	"jarvis/internal/sharedmem"
@@ -29,8 +29,6 @@ import (
 type Dependencies struct {
 	DB                  *gorm.DB
 	Todos               extract.TodoReader
-	Confirmations       decide.ConfirmationService
-	ConfirmationDetails decide.ConfirmationDetailReader
 	Tasks               execute.TaskService
 	TaskSubmitter       *taskcreate.Submitter
 	Executor            *execute.AgentExecutor
@@ -47,6 +45,7 @@ type Dependencies struct {
 	ScheduledTasks      *scheduledtask.Service
 	Skills              *skill.Service
 	RelationFacts       knowledge.FactService
+	Observations        observe.Service
 	Progress            progress.EventService
 	Overview            *insight.OverviewService
 	Digests             *insight.DigestService
@@ -70,12 +69,6 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.Todos == nil {
 		return fmt.Errorf("api todo reader dependency is nil")
-	}
-	if deps.Confirmations == nil {
-		return fmt.Errorf("api confirmation service dependency is nil")
-	}
-	if deps.ConfirmationDetails == nil {
-		return fmt.Errorf("api confirmation detail reader dependency is nil")
 	}
 	if deps.Tasks == nil {
 		return fmt.Errorf("api Task service dependency is nil")
@@ -122,6 +115,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.RelationFacts == nil {
 		return fmt.Errorf("api relation fact service dependency is nil")
 	}
+	if deps.Observations == nil {
+		return fmt.Errorf("api observation service dependency is nil")
+	}
 	if deps.Progress == nil {
 		return fmt.Errorf("api progress service dependency is nil")
 	}
@@ -143,11 +139,6 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
-	h.GET("/api/confirmations", ListConfirmations(deps.Todos))
-	h.GET("/api/confirmations/:todo_id", GetConfirmation(deps.ConfirmationDetails))
-	h.POST("/api/confirmations/:todo_id/approve", ApproveConfirmation(deps.Confirmations))
-	h.POST("/api/confirmations/:todo_id/reject", RejectConfirmation(deps.Confirmations))
-	h.POST("/api/confirmations/:todo_id/supplement", SupplementConfirmation(deps.Confirmations))
 	h.GET("/api/tasks", ListTasks(deps.Tasks))
 	h.POST("/api/tasks", CreateTask(deps.TaskSubmitter))
 	h.GET("/api/tasks/:task_id/runs", ListTaskRuns(deps.Tasks))
@@ -160,6 +151,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/relation-facts", CreateRelationFact(deps.RelationFacts))
 	h.PUT("/api/relation-facts/:fact_id", UpdateRelationFact(deps.RelationFacts))
 	h.DELETE("/api/relation-facts/:fact_id", DeleteRelationFact(deps.RelationFacts))
+	h.GET("/api/observations", ListObservations(deps.Observations))
+	h.DELETE("/api/observations/:observation_id", DeleteObservation(deps.Observations))
 	if deps.Executor != nil {
 		h.GET("/api/tasks/:task_id/output", GetTaskRunOutput(deps.Executor))
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
@@ -212,7 +205,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/scheduled-tasks/:scheduled_task_id", UpdateScheduledTask(deps.ScheduledTasks))
 	h.DELETE("/api/scheduled-tasks/:scheduled_task_id", DeleteScheduledTask(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks/:scheduled_task_id/trigger", TriggerScheduledTask(deps.ScheduledTasks))
-	// Skills：扫描仓库 SKILL.md，后台控制启用状态和 M3/M4/M5 生效范围。
+	// Skills：扫描仓库 SKILL.md，后台控制启用状态和 M3/M5 生效范围。
 	h.GET("/api/skills", ListSkills(deps.Skills))
 	h.POST("/api/skills/scan", ScanSkills(deps.Skills))
 	h.PUT("/api/skills/:skill_name", UpdateSkill(deps.Skills))

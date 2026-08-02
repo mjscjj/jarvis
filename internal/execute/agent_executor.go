@@ -837,13 +837,6 @@ func validateTaskIntegrity(task *domain.Task) error {
 	default:
 		return fmt.Errorf("%w: task_id=%d unknown execution_mode=%q", ErrInvalidInput, task.ID, task.ExecutionMode)
 	}
-	hash, err := taskcreate.ActionHash(task.ActionType, task.Target, json.RawMessage(task.Plan))
-	if err != nil {
-		return fmt.Errorf("%w: task_id=%d action integrity: %v", ErrInvalidInput, task.ID, err)
-	}
-	if hash != task.ActionHash {
-		return fmt.Errorf("%w: task_id=%d action_hash mismatch", ErrInvalidInput, task.ID)
-	}
 	return nil
 }
 
@@ -893,6 +886,7 @@ func (e *AgentExecutor) executePropose(ctx context.Context, task *domain.Task, p
 // and the apply stage.
 func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVersion int32, run *domain.ExecutionRun, execErr error) (*ExecuteResult, error) {
 	ctx = context.WithoutCancel(ctx)
+	e.recordRunObservations(ctx, task, run)
 	if execErr == nil && run.Status == "waiting" {
 		waiting, err := waitingFromRun(run)
 		if err != nil {

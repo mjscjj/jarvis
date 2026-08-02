@@ -16,6 +16,14 @@ type RelationFact struct {
 	EntityBID   uint64 `gorm:"column:entity_b_id;type:bigint unsigned;not null;uniqueIndex:uk_relation_fact_pair,priority:4;index:idx_relation_fact_entity_b,priority:2"`
 	Description string `gorm:"column:description;type:text;not null"`
 
+	// ValidFrom and ValidUntil bound the period this relationship holds. Both are
+	// optional and independent: a nil ValidFrom means the start is unknown, a nil
+	// ValidUntil means the relationship still holds. A set ValidUntil is how a
+	// past relationship ("used to own this project") stays queryable instead of
+	// being deleted or rewritten in Description.
+	ValidFrom  *time.Time `gorm:"column:valid_from;type:datetime"`
+	ValidUntil *time.Time `gorm:"column:valid_until;type:datetime"`
+
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
 	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;autoUpdateTime"`
 }

@@ -52,9 +52,9 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 	if !strings.Contains(prompt, "执行阶段补充") || !strings.Contains(prompt, "标题要包含季度") {
 		t.Fatalf("prompt missing supplements: %s", prompt)
 	}
-	for _, want := range []string{`"m4_decision_context"`, `"需要保留的决策依据"`, `"future_field"`} {
+	for _, want := range []string{`"decision_context"`, `"需要保留的决策依据"`, `"future_field"`} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing M4 decision payload %q: %s", want, prompt)
+			t.Fatalf("prompt missing decision payload %q: %s", want, prompt)
 		}
 	}
 }
@@ -164,8 +164,8 @@ func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 		`"title_hint":"评测截图"`,
 		`"action_type_hint":"notify_principal"`,
 		`"target_hint":"评测截图影响面"`,
-		`"m4_direction":{"direction":"判断对项目的影响"}`,
-		`"m4_decision_context":{"value":"可能影响 runtime 选择"}`,
+		`"decision_direction":{"direction":"判断对项目的影响"}`,
+		`"decision_context":{"value":"可能影响 runtime 选择"}`,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("execution prompt missing hint field %q:\n%s", want, prompt)
@@ -183,7 +183,7 @@ func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 
 // TestBuildExecutionPromptForwardsM3ClueVerbatim pins the anti-goal-drift path:
 // M5 must see M3's original clue (notably desired_outcome) rather than only
-// M4's condensed direction, so a blocker raised downstream cannot silently
+// the decision step's condensed direction, so a blocker raised downstream cannot silently
 // become the task. See docs/design-long-horizon-agent-goal-control.md.
 func TestBuildExecutionPromptForwardsM3ClueVerbatim(t *testing.T) {
 	clue := `{"action_type":"manual_followup","desired_outcome":"产出这场会的结论并生成落到我身上的待办","semantics":"当前妙记无 view 权限，需先申请"}`
@@ -216,7 +216,7 @@ func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
 	prompt := string(content)
 	for _, want := range []string{
 		"M5 是真正理解任务、调查事实、确定目标、选择动作、执行并验证结果的阶段",
-		"`title_hint`、`action_type_hint`、`target_hint` 和 `m4_direction`",
+		"`title_hint`、`action_type_hint`、`target_hint` 和 `decision_direction`",
 		"可以基于证据修改、替换或放弃这些建议",
 		"根据调查持续重规划",
 		"`action_type_hint` 不限制实际动作",

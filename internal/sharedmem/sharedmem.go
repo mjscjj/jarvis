@@ -1,4 +1,4 @@
-// Package sharedmem manages the trusted free-text memory injected into M3, M4,
+// Package sharedmem manages the trusted free-text memory injected into M3,
 // M5, and chat. The local Markdown file is the single source of truth.
 package sharedmem
 

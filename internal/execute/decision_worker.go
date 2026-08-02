@@ -1,4 +1,4 @@
-package decide
+package execute
 
 import (
 	"context"
@@ -15,12 +15,10 @@ type WorkerOptions struct {
 }
 
 type WorkerStats struct {
-	Loaded       int
-	Evaluated    int
-	Auto         int
-	NeedInfo     int
-	NeedDecision int
-	Dropped      int
+	Loaded    int
+	Evaluated int
+	Auto      int
+	Dropped   int
 }
 
 type evaluationSource interface {
@@ -132,10 +130,6 @@ func (w *DecisionWorker) EvaluateOnce(ctx context.Context) (WorkerStats, error) 
 		switch result.Status {
 		case RouteAuto:
 			stats.Auto++
-		case RouteNeedInfo:
-			stats.NeedInfo++
-		case RouteNeedDecision:
-			stats.NeedDecision++
 		case RouteDropped:
 			stats.Dropped++
 		default:
@@ -145,7 +139,7 @@ func (w *DecisionWorker) EvaluateOnce(ctx context.Context) (WorkerStats, error) 
 	return stats, nil
 }
 
-// EvaluateTodo is the real-time M4 entry point. The caller passes the exact Todo
+// EvaluateTodo is the real-time decision entry point. The caller passes the exact Todo
 // version M3 committed; stale or duplicate notifications fail before any model
 // call, while the scheduled batch path continues to reuse evaluateLoaded.
 func (w *DecisionWorker) EvaluateTodo(ctx context.Context, todoID uint64, expectedVersion int32) (*EvaluationResult, error) {

@@ -6,11 +6,13 @@
 
 ## 技术栈
 
-Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `gpt-5.5`）+ `traex`（M5 执行 / 右侧对话的 agent CLI，模型 `gpt-5.6-sol`）+ 阿里云百炼 DashScope（`qwen-plus` 抽取/记忆 LLM、`text-embedding-v3` 1024 维 embedding）+ mem0（Python FastAPI sidecar）+ Qdrant + lark-cli。
+Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M5 判断的 agent CLI，模型 `gpt-5.5`）+ `traex`（M5 执行 / 右侧对话的 agent CLI，模型 `gpt-5.6-sol`）+ 阿里云百炼 DashScope（`qwen-plus` 抽取/记忆 LLM、`text-embedding-v3` 1024 维 embedding）+ mem0（Python FastAPI sidecar）+ Qdrant + lark-cli。
 
 ## 架构导航（写代码前先看这里）
 
-单体 Go 进程，一条流水线 5 个模块。M2 的消息扫描仍由 cron 发起；扫描落库后由进程内协调器按持久化 ID/version 实时串行推进 `M3 → M4 → M5`。MySQL 状态仍是 source of truth，M3/M4/M5 的原 schedule 只做漏通知、崩溃恢复和存量数据补偿。
+单体 Go 进程，一条流水线 4 个模块。M2 的消息扫描仍由 cron 发起；扫描落库后由进程内协调器按持久化 ID/version 实时推进 `M3 → M5`。MySQL 状态仍是 source of truth，M3/M5 的原 schedule 只做漏通知、崩溃恢复和存量数据补偿。
+
+M5 内部分两步：**判断环节**（read-only，给 Todo 定 disposition，决定值不值得做）和**执行环节**（工具全开的 agent，真正落地）。两步共用一个工作队列和一个 worker 池，不是两个流水线阶段——判断曾经是独立的 M4，现已并入 M5。
 
 ### 数据流
 
@@ -24,18 +26,22 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
                        │                             │  （自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库，冻结 context_snapshot）
                 Qdrant jarvis_memories        todo 表 + Qdrant todo_semantic
                                                      │
-                                               [M4 decide]  codex/traex 判 disposition / manual_mvp
+                                    ┌────────────────┴────────────────┐
+                                    │  M5 判断环节（read-only）        │
+                                    │  codex/traex 判 disposition      │
+                                    │  或 manual_mvp 全人工            │
+                                    └────────────────┬────────────────┘
                                                      │
              ┌───────────────────────────┬──────────┴────────────┐
              ▼                            ▼                        ▼
-      auto_execute                  need_review               need_info
+          ready                      need_review               need_info
      （直接建 Task）          （todo=need_decision，用户 Approve）  （payload 说明需补信息）
              │                            │
              └──────────────┬─────────────┘
                             ▼
                           task 表
                             │
-                     [M5 execute]  traex agent
+                  M5 执行环节  traex agent
                             │
         code_change：MR review 作为闸门，直接跑完（含 push/MR）
         其余 action_type：propose 判 needs_approval
@@ -52,14 +58,14 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 |---|---|---|
 | M2 采集 | 读取外部事实，记录成功、无权限、暂不可用等采集结果；按自己的可靠性策略重试 | 不判断要不要做事，不创建 Todo，不申请权限，不联系主持人 |
 | M3 Todo | 结合采集证据与项目、人物、会话上下文，决定创建、合并或忽略 Todo，并明确建议动作 | 不执行外部写操作 |
-| M4 决策 | 判断 Todo 是否应固化为 Task，以及缺信息还是需人工决策 | `auto_execute` 只表示自动建 Task，不代表授权外部写入 |
-| M5 执行 | 非 `code_change` Task 先形成可审阅方案；申请权限、发消息等业务外部写操作经明确批准后执行 | 不反过来替采集模块改写事实 |
+| M5 判断环节 | 判断 Todo 是否应固化为 Task，以及缺信息还是需人工决策 | `ready` 只表示自动建 Task，不代表授权外部写入；不形成执行方案 |
+| M5 执行环节 | 非 `code_change` Task 先形成可审阅方案；申请权限、发消息等业务外部写操作经明确批准后执行 | 不反过来替采集模块改写事实 |
 
 三条硬规则：
 
 - **错误是证据，不是决策。** 采集失败时，M2 只把原始错误原样写成证据；是否生成“申请权限”“联系对方”或其他 Todo，由 M3 结合上下文判断。
 - **流水线通用，来源差异靠提示词。** M2→M5 只有一套协议，不为某个来源（会议、邮件、日程……）在 Go 里开专用链路。详见 `AGENTS.md` §0.5。
-- **自动流转不等于外部授权。** M4 自动建 Task 后，申请权限、发消息、修改飞书等业务外部写操作仍须在 M5 等待明确批准。
+- **自动流转不等于外部授权。** 判断环节自动建 Task 后，申请权限、发消息、修改飞书等业务外部写操作仍须在执行环节等待明确批准。
 
 #### 线索投递：新来源接入 M2 的唯一入口
 
@@ -74,10 +80,10 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 | M2 采集 | `internal/capture/` | 采集群聊和内部单聊消息，把原始内容和中立采集结果写成下游证据；另开放通用线索投递入口，让任意 agent 把外部事实交回流水线 | `capture/service.go`（会话发现/扫描）、`scheduler.go`、`clue.go`（线索投递） | lark-cli（IM 只读接口） |
 | M2.5 记忆 | `internal/memory/` | 消息切窗 → mem0 抽事实 → 向量入库 | `worker.go`（窗口化编排）、`store.go`（pending 查询/标记）、`client.go`（sidecar HTTP） | mem0 sidecar → Qdrant `jarvis_memories` |
 | M3 抽取 | `internal/extract/` | 从新消息抽 Todo（默认 `engine=codex`：traex agent 自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库并冻结 `context_snapshot`；备用 `model_api` function-calling 循环）+ 语义去重 + source_quote 证据重抽 | `worker.go`（编排）、`pipeline_store.go`（加载/组批）、`prompt.go`（提示词）、`persist.go`（落库）、`dedup.go`（去重）、`codexengine/`（traex agent 引擎）、`provider/`（百炼 model API）、`tools/`（工具） | traex agent（`gpt-5.5`）/ 百炼 `qwen-plus` + Qdrant `todo_semantic` + mem0（检索） |
-| M4 决策 | `internal/decide/` | 给 Todo 定 disposition：`codex` 用 codex/traex 输出最小外壳 `disposition + plan + payload`，plan/payload 内部保持宽松；创建 Task 时原样固化 `decision_payload` 供 M5 使用；`manual_mvp` 全走人工确认 | `worker.go`（批处理）、`manual_gate.go` / `codex_evaluator.go`（两种评估器）、`codex.go`（调 agent CLI）、`evaluation.go`（落库）、`service.go`（Approve/Reject 建 Task）、`background.go`（快照）、`constants.go`（共享常量） | traex agent（`gpt-5.5`，read-only 判定，可自查补信息） |
+| M5 判断环节 | `internal/execute/decision_*.go`、`review*.go` | 给 Todo 定 disposition：`codex` 用 codex/traex 输出最小外壳 `disposition + plan + payload`，plan/payload 内部保持宽松；创建 Task 时原样固化 `decision_payload` 供执行环节使用；`manual_mvp` 全走人工确认 | `decision_worker.go`（批处理）、`decision_manual_gate.go` / `decision_evaluator.go`（两种评估器）、`decision_codex.go`（调 agent CLI）、`decision_apply.go`（落库）、`review.go`（Approve/Reject/Supplement 建 Task）、`review_detail.go`（确认详情） | traex agent（`gpt-5.5`，read-only 判定，可自查补信息） |
 | M5 执行 | `internal/execute/` | 执行确认后的 Task：支持 `completed/waiting/needs_human/failed` 结果；长等待时持久化 Codex Session，当前 Turn 退出，到期后 `exec resume` 续跑（CLI 不支持 resume 传 `--output-schema` 时，格式契约写进 prompt 并在本地校验，不合格打回重写）；高风险外部写入仍停在 `awaiting_approval` | `agent_executor.go`（执行/挂起/恢复）、`codex_runner.go`（Codex Session）、`store.go`（Task 状态机） | traex agent（`gpt-5.6-sol`） |
 | 定时任务 | `internal/scheduledtask/` | 时间触发器：独立计划到期物化新 Task；`yield-until` 创建的续接计划只恢复原 Task 和原 Codex Session | `service.go`（计划/抢占/Task 物化/Session 恢复）、`scheduler.go`（扫描 cron） | MySQL `scheduled_task` + M5 |
-| 流水线协调 | `internal/pipeline/` | 接收 M2/M3/M4 状态提交后的轻量通知，按 chat/todo/task 定向推进；内存队列只加速，启动与 cron 均从 MySQL 补偿 | `coordinator.go`（串行编排与 M5 并发）、`queue.go`（按 ID/version 合并）、`scheduler.go`（补偿调度） | — |
+| 流水线协调 | `internal/pipeline/` | 接收 M2/M3/M5 状态提交后的轻量通知，按 chat/todo/task 定向推进；内存队列只加速，启动与 cron 均从 MySQL 补偿 | `coordinator.go`（串行编排与 M5 并发）、`queue.go`（按 ID/version 合并）、`scheduler.go`（补偿调度） | — |
 | 背景管理 | `internal/background/` | 后台可编辑的项目/人物/群/决策主体；种子数据 | `project.go` / `person.go` / `group.go` / `profile.go`（各实体 service）、`resolve.go`（lark-cli 按名字查 open_id）、`seed.go` / `seed_persons.go`（`-seed` / `-seed-persons`） | lark-cli（resolve/拉群成员） |
 | 关系知识 | `internal/knowledge/` | 在现有业务实体之间保存带来源、有效期和置信度的动态关系；不建通用 entity 表 | `predicates.go`（predicate 注册表）、`service.go`（校验、去重、supersede/retract） | — |
 | 进度历史 | `internal/progress/` | 保存 Task 状态机和 Project 进度事件，提供显式存量快照回填 | `service.go`（事件写入/查询）、`backfill.go`（一次性 Task 快照） | — |
@@ -108,8 +114,8 @@ Go 1.26 + Hertz + GORM + `traex`（M3 抽取 / M4 决策的 agent CLI，模型 `
 
 - **改抽取提示词** → `internal/extract/prompt.go`
 - **改 M3 用哪些背景（principal/项目/人物）** → `internal/extract/pipeline_store.go`（`loadPrincipal` / `loadProjectSummaries` / `buildChatBatch`）
-- **改 codex 决策的判定逻辑** → `internal/decide/codex_evaluator.go`（`dispositionFromDecision` / `routeForDisposition`）
-- **改 codex CLI 怎么调（命令行/超时/schema）** → 决策 `internal/decide/codex.go`；执行 `internal/execute/codex_runner.go`
+- **改 codex 决策的判定逻辑** → `internal/execute/decision_evaluator.go`（`dispositionFromDecision` / `routeForDisposition`）
+- **改 codex CLI 怎么调（命令行/超时/schema）** → 判断 `internal/execute/decision_codex.go`；执行 `internal/execute/codex_runner.go`
 - **加/改 action_type 的执行策略（sandbox、是否需人工批准）** → `internal/execute/policy.go`
 - **加一个 HTTP 接口** → `internal/api/`（新建 handler + 在 `router.go` 注册）
 - **加一张表 / 改字段** → `internal/domain/`（改 model，加进 `CoreModels()`）
@@ -146,7 +152,7 @@ POST /api/chat                                            # 需 chat.enabled=tru
 
 ## 调度与后台循环
 
-M2 扫描发现新消息后立即通知 `internal/pipeline.Coordinator`。协调器先按 chat 跑 M3，拿到本次提交的 Todo ID/version 后定向跑 M4；M4 自动建 Task 或用户批准建 Task 后，再按 Task ID/version 入 M5。通知不承担持久化，进程重启可完全依靠 MySQL 状态恢复。间隔与开关仍在 `conf/config.yaml`：
+M2 扫描发现新消息后立即通知 `internal/pipeline.Coordinator`。协调器先按 chat 跑 M3，拿到本次提交的 Todo ID/version 后入 M5 队列走判断环节；判断为 ready 自动建 Task 或用户批准建 Task 后，Task 再入同一个 M5 队列走执行环节。通知不承担持久化，进程重启可完全依靠 MySQL 状态恢复。间隔与开关仍在 `conf/config.yaml`：
 
 | Loop | 配置键 | 默认间隔 | enable 开关 | 说明 |
 |---|---|---|---|---|
@@ -154,11 +160,11 @@ M2 扫描发现新消息后立即通知 `internal/pipeline.Coordinator`。协调
 | M2 采集-扫描 | `capture.scan_schedule` | `@every 5m` | 常开 | 对 `related_group=1` 群统一增量扫描（tier 仅用于 UI 展示） |
 | M2.5 记忆 | `mem0.schedule` | `@every 10m` | 常开 | 消息切窗 → mem0 抽事实 → Qdrant `jarvis_memories` |
 | M3 抽取补偿 | `extract.schedule` | `@every 10m` | `extract.enabled=true` | 实时路径按 chat 触发；cron 扫描遗漏的新消息并推进水位 |
-| M4 决策补偿 | `decide.schedule` | `@every 1m` | `decide.enabled=true` | 实时路径按 Todo ID/version 触发；cron 扫描遗漏的 `extracted` |
+| M5 判断补偿 | `decide.schedule` | `@every 1m` | `decide.enabled=true` | 实时路径按 Todo ID/version 触发；cron 扫描遗漏的 `extracted` |
 | M5 执行补偿 | `execute.schedule` | `@every 5m` | `execute.enabled=true` | 实时路径按 Task ID/version 入队；cron 恢复遗漏的 `pending` 和僵尸 `executing`，并发 `execute.concurrency`（默认 3） |
 | 定时任务 | `scheduled_task.schedule` | `@every 1m` | `scheduled_task.enabled=true` | 扫描已到期且启用的 `active` 计划：普通计划物化新 Task，续跑计划恢复原 Task 的 Codex Session |
 
-M3/M4/M5 的实时通知与补偿任务都只进入同一个协调器队列，不会由两套 scheduler 并行调用 worker。队列按实体 ID/version 合并等待中的重复通知；数据库状态与乐观锁拦截过期通知。一次性 CLI flag（见上）仍用同一批 worker 单跑一轮后退出。
+M3/M5 的实时通知与补偿任务都只进入同一个协调器队列，不会由两套 scheduler 并行调用 worker。队列按实体 ID/version 合并等待中的重复通知；数据库状态与乐观锁拦截过期通知。一次性 CLI flag（见上）仍用同一批 worker 单跑一轮后退出。
 
 ## 当前进度
 
@@ -167,8 +173,8 @@ M3/M4/M5 的实时通知与补偿任务都只进入同一个协调器队列，�
 - M0.4 提取 worker 已实现：相关群增量聚合、背景/记忆注入、Structured Outputs、Todo 事务落库与独立水位推进；同时提供只读 Todo API 和 React + Ant Design 看板。
 - M0.5 确认已完成：`extracted Todo → need_decision → 用户批准/拒绝`，批准后原子生成 Task。`decide.mode` 可选 `manual_mvp`（全走人工确认）或 `codex`（用 codex/traex 判 disposition，并把方案、澄清点、证据和风险保存在宽松 plan/payload 中）。
 - M0.6 MVP 执行闭环已完成：管理后台列出 Task，支持人工执行后回写 `done/failed + result`。确认与执行页面由同一个 Go 服务托管。
-- 现状：M3 抽取、M4 决策已 codex 化（默认走 traex agent 自跑工具推算项目/仓库并冻结上下文快照）；M5 执行支持自动执行、两阶段人工审批，以及 `needs_human` 挂起/回复后恢复原 Codex Session（不是重跑 Task）；抽取/记忆 LLM 接入阿里云百炼 `qwen-plus`，embedding 用 `text-embedding-v3`（1024 维）。
-- M3/M4/M5 已改为状态提交后实时串行推进；三者的 schedule 只承担启动恢复和周期补偿。人工审核一旦触发会写入 sticky gate，补充信息后的 M4 重评不会把它自动放行到 M5。
+- 现状：M3 抽取、M5 判断已 codex 化（默认走 traex agent 自跑工具推算项目/仓库并冻结上下文快照）；M5 执行支持自动执行、两阶段人工审批，以及 `needs_human` 挂起/回复后恢复原 Codex Session（不是重跑 Task）；抽取/记忆 LLM 接入阿里云百炼 `qwen-plus`，embedding 用 `text-embedding-v3`（1024 维）。
+- M3/M5 已改为状态提交后实时串行推进；两者的 schedule 只承担启动恢复和周期补偿。人工审核一旦触发会写入 sticky gate，补充信息后的重评不会把它自动放行到 M5。
 
 ## 本地运行
 
@@ -359,10 +365,9 @@ jarvis/
 │   ├── chat/            # 右侧流式对话（SSE），底层调 execute.bin 指定的 agent CLI
 │   ├── config/          # 配置加载与校验
 │   ├── contextsnap/     # 上下文快照（context_snapshot）组装与解析
-│   ├── decide/          # M4 决策：manual_mvp 人工闸门 / codex 判 disposition
 │   ├── domain/          # 8 个核心实体 + 各模块附属表 GORM model
 │   ├── embedding/       # M3 去重用的百炼 embedding client
-│   ├── execute/         # M5 agent CLI 驱动的 Task 执行 + 两阶段审批
+│   ├── execute/         # M5：decision_*.go/review*.go 判断环节（原 M4），其余为执行环节 + 两阶段审批
 │   ├── extract/         # M3 聚合、prompt、工具循环抽取、Todo 事务与水位
 │   │   ├── codexengine/ # traex agent 抽取引擎（默认 engine=codex）
 │   │   ├── provider/    # 百炼 OpenAI 兼容 model API 传输层（备用 model_api 引擎）
@@ -370,7 +375,7 @@ jarvis/
 │   ├── insight/         # 工作台/进度/调试面板的只读聚合
 │   ├── larkcli/         # lark-cli 子进程、限流、并发和超时
 │   ├── memory/          # 消息窗口化与 mem0 sidecar client
-│   ├── pipeline/        # M3→M4→M5 实时串行协调、去重队列与补偿 cron
+│   ├── pipeline/        # M3→M5 实时协调、去重队列与补偿 cron
 │   ├── semantic/        # Qdrant todo_semantic 索引
 │   └── store/           # MySQL 连接与迁移
 ├── sidecar/mem0/        # FastAPI + mem0 Python sidecar
@@ -381,4 +386,4 @@ jarvis/
 └── docs/                # 方案文档（00-overview + modules/01~05，archive/ 存已废弃方案）
 ```
 
-当前已覆盖采集、记忆、codex 化的 M3 抽取 / M4 决策、人工确认、Task 生成，以及 M5 的自动执行 + 两阶段人工审批闭环（含对外写入与 push/MR）。人工确认与手动执行始终可用，作为自动链路的兜底。
+当前已覆盖采集、记忆、codex 化的 M3 抽取 / M5 判断、人工确认、Task 生成，以及 M5 的自动执行 + 两阶段人工审批闭环（含对外写入与 push/MR）。人工确认与手动执行始终可用，作为自动链路的兜底。

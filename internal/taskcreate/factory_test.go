@@ -91,12 +91,6 @@ func TestNormalizeInputAcceptsEmptyBackgroundObject(t *testing.T) {
 	}
 }
 
-func TestDirectModeDoesNotGrantAutopilot(t *testing.T) {
-	if got := autonomyMode(ExecutionModeDirect); got != "copilot" {
-		t.Fatalf("autonomyMode(direct) = %q, want copilot", got)
-	}
-}
-
 func TestNormalizeInputRejectsEmptyPlanObject(t *testing.T) {
 	_, err := normalizeInput(Input{
 		Title: "空计划任务", ActionType: "agent_task", Target: "输出结论",
@@ -155,31 +149,6 @@ func TestNormalizeInputRejectsEmptyOpenPlanJSON(t *testing.T) {
 				t.Fatalf("normalizeInput() accepted plan %s", plan)
 			}
 		})
-	}
-}
-
-func TestActionHashCanonicalAndSensitive(t *testing.T) {
-	first, err := ActionHash("agent_task", "会议", json.RawMessage(`{"b":2,"a":1}`))
-	if err != nil {
-		t.Fatalf("ActionHash() error = %v", err)
-	}
-	second, err := ActionHash("agent_task", "会议", json.RawMessage(`{"a":1,"b":2}`))
-	if err != nil {
-		t.Fatalf("ActionHash() canonical error = %v", err)
-	}
-	if first != second {
-		t.Fatalf("canonical hashes differ: %s != %s", first, second)
-	}
-	changed, err := ActionHash("agent_task", "另一个会议", json.RawMessage(`{"a":1,"b":2}`))
-	if err != nil {
-		t.Fatalf("ActionHash() changed error = %v", err)
-	}
-	if changed == first {
-		t.Fatal("target change did not change action hash")
-	}
-	stringPlan, err := ActionHash("agent_task", "会议", json.RawMessage(`"直接调查"`))
-	if err != nil || stringPlan == "" {
-		t.Fatalf("ActionHash() open string plan hash=%q error=%v", stringPlan, err)
 	}
 }
 

@@ -56,16 +56,13 @@ type TaskView struct {
 	DecisionPayload      json.RawMessage       `json:"decision_payload"`
 	ConfirmedBy          string                `json:"confirmed_by"`
 	ConfirmedAt          time.Time             `json:"confirmed_at"`
-	ActionHash           string                `json:"action_hash"`
 	SourceType           string                `json:"source_type"`
 	SourceID             *uint64               `json:"source_id"`
 	OccurrenceKey        *string               `json:"occurrence_key"`
 	ExecutionMode        string                `json:"execution_mode"`
-	ApprovalRef          *string               `json:"approval_ref"`
 	Status               string                `json:"status"`
 	ExecutionResult      json.RawMessage       `json:"execution_result"`
 	ExecutionSupplements []ExecutionSupplement `json:"execution_supplements,omitempty"`
-	AutonomyMode         string                `json:"autonomy_mode"`
 	ProjectID            *uint64               `json:"project_id"`
 	Version              int32                 `json:"version"`
 	CreatedAt            time.Time             `json:"created_at"`
@@ -1111,12 +1108,11 @@ func taskView(ctx context.Context, task *domain.Task) TaskView {
 		Target:     task.Target,
 		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
 		DecisionPayload: rawJSON(task.DecisionPayload),
-		ConfirmedBy:     task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt, ActionHash: task.ActionHash,
+		ConfirmedBy:     task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt,
 		SourceType: task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
-		ExecutionMode: task.ExecutionMode, ApprovalRef: task.ApprovalRef,
-		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult),
+		ExecutionMode: task.ExecutionMode,
+		Status:        task.Status, ExecutionResult: rawJSON(task.ExecutionResult),
 		ExecutionSupplements: supplements,
-		AutonomyMode:         task.AutonomyMode,
 		ProjectID:            task.ProjectID, Version: task.Version, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
 	}
 }

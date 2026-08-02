@@ -48,7 +48,6 @@ type RuntimeSettings struct {
 	ExtractEvidenceRetryMax      int     `json:"extract_evidence_retry_max"`
 
 	DecideEnabled         bool   `json:"decide_enabled"`
-	DecideMode            string `json:"decide_mode"`
 	DecideSchedule        string `json:"decide_schedule"`
 	DecideBatchLimit      int    `json:"decide_batch_limit"`
 	DecideSandbox         string `json:"decide_sandbox"`
@@ -199,7 +198,6 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExtractToolMemoryMaxTopK:      cfg.Extract.ToolMemoryMaxTopK,
 		ExtractEvidenceRetryMax:       cfg.Extract.EvidenceRetryMax,
 		DecideEnabled:                 cfg.Decide.Enabled,
-		DecideMode:                    cfg.Decide.Mode,
 		DecideSchedule:                cfg.Decide.Schedule,
 		DecideBatchLimit:              cfg.Decide.BatchLimit,
 		DecideSandbox:                 cfg.Decide.CodexSandbox,
@@ -269,7 +267,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Extract.ToolMemoryMaxTopK = input.ExtractToolMemoryMaxTopK
 	cfg.Extract.EvidenceRetryMax = input.ExtractEvidenceRetryMax
 	cfg.Decide.Enabled = input.DecideEnabled
-	cfg.Decide.Mode = strings.TrimSpace(input.DecideMode)
 	cfg.Decide.Schedule = strings.TrimSpace(input.DecideSchedule)
 	cfg.Decide.BatchLimit = input.DecideBatchLimit
 	cfg.Decide.CodexSandbox = strings.TrimSpace(input.DecideSandbox)
@@ -336,7 +333,6 @@ type runtimeOverride struct {
 	} `yaml:"extract"`
 	Decide struct {
 		Enabled         bool   `yaml:"enabled"`
-		Mode            string `yaml:"mode"`
 		Schedule        string `yaml:"schedule"`
 		BatchLimit      int    `yaml:"batch_limit"`
 		Sandbox         string `yaml:"codex_sandbox"`
@@ -425,7 +421,6 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Extract.ToolMemoryMaxTopK = input.ExtractToolMemoryMaxTopK
 	override.Extract.EvidenceRetryMax = input.ExtractEvidenceRetryMax
 	override.Decide.Enabled = input.DecideEnabled
-	override.Decide.Mode = strings.TrimSpace(input.DecideMode)
 	override.Decide.Schedule = strings.TrimSpace(input.DecideSchedule)
 	override.Decide.BatchLimit = input.DecideBatchLimit
 	override.Decide.Sandbox = strings.TrimSpace(input.DecideSandbox)

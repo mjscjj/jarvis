@@ -20,7 +20,6 @@ import (
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/dailydigest"
-	"jarvis/internal/decide"
 	"jarvis/internal/domain"
 	"jarvis/internal/embedding"
 	"jarvis/internal/execute"
@@ -32,6 +31,7 @@ import (
 	"jarvis/internal/larkcli"
 	"jarvis/internal/memory"
 	"jarvis/internal/observability"
+	"jarvis/internal/observe"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
@@ -167,6 +167,10 @@ func main() {
 	if err != nil {
 		fatalf("initialize relation fact service failed: %v", err)
 	}
+	observationService, err := observe.NewService(db)
+	if err != nil {
+		fatalf("initialize observation service failed: %v", err)
+	}
 	progressService, err := progress.NewService(db)
 	if err != nil {
 		fatalf("initialize progress service failed: %v", err)
@@ -175,16 +179,16 @@ func main() {
 		fatalf("scan agent skills failed: %v", err)
 	}
 
-	var decisionWorker *decide.DecisionWorker
+	var decisionWorker *execute.DecisionWorker
 	if cfg.Decide.Enabled || *decideOnce {
 		if cfg.Decide.BatchLimit <= 0 {
-			fatalf("decision requires positive decide.batch_limit")
+			fatalf("decision requires positive execute.batch_limit")
 		}
-		decisionSource, err := decide.NewEvaluationSource(db)
+		decisionSource, err := execute.NewEvaluationSource(db)
 		if err != nil {
 			fatalf("initialize decision source failed: %v", err)
 		}
-		decisionStore, err := decide.NewEvaluationStore(db)
+		decisionStore, err := execute.NewEvaluationStore(db)
 		if err != nil {
 			fatalf("initialize decision store failed: %v", err)
 		}
@@ -192,11 +196,11 @@ func main() {
 		if err != nil {
 			fatalf("initialize decision evaluator failed: %v", err)
 		}
-		decisionWorker, err = decide.NewDecisionWorker(
+		decisionWorker, err = execute.NewDecisionWorker(
 			decisionSource,
 			evaluator,
 			decisionStore,
-			decide.WorkerOptions{BatchLimit: cfg.Decide.BatchLimit},
+			execute.WorkerOptions{BatchLimit: cfg.Decide.BatchLimit},
 		)
 		if err != nil {
 			fatalf("initialize decision worker failed: %v", err)
@@ -208,8 +212,8 @@ func main() {
 			fatalf("route Todos to manual confirmation failed: %v", err)
 		}
 		infof(
-			"decision completed: loaded=%d evaluated=%d auto=%d need_decision=%d need_info=%d dropped=%d",
-			stats.Loaded, stats.Evaluated, stats.Auto, stats.NeedDecision, stats.NeedInfo, stats.Dropped,
+			"decision completed: loaded=%d evaluated=%d auto=%d dropped=%d",
+			stats.Loaded, stats.Evaluated, stats.Auto, stats.Dropped,
 		)
 		return
 	}
@@ -273,25 +277,6 @@ func main() {
 	todoStore, err := extract.NewTodoStore(db)
 	if err != nil {
 		fatalf("initialize todo store failed: %v", err)
-	}
-	// Build an evaluator + store so the confirmation service can re-run M4
-	// asynchronously after a need_info supplement, independent of the decision
-	// cron being enabled. Mirrors the worker's evaluator selection.
-	supplementEvaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textFileService)
-	if err != nil {
-		fatalf("initialize supplement evaluator failed: %v", err)
-	}
-	supplementStore, err := decide.NewEvaluationStore(db)
-	if err != nil {
-		fatalf("initialize supplement evaluation store failed: %v", err)
-	}
-	confirmationService, err := decide.NewService(db, supplementEvaluator, supplementStore)
-	if err != nil {
-		fatalf("initialize confirmation service failed: %v", err)
-	}
-	confirmationDetails, err := decide.NewConfirmationDetailStore(db, todoStore)
-	if err != nil {
-		fatalf("initialize confirmation detail store failed: %v", err)
 	}
 	taskService, err := execute.NewStore(db)
 	if err != nil {
@@ -602,13 +587,6 @@ func main() {
 				fatalf("wire capture to real-time pipeline failed: %v", err)
 			}
 		}
-		if cfg.Decide.Enabled || cfg.Execute.Enabled {
-			if err := confirmationService.SetLifecycleNotifier(coordinator); err != nil {
-				cancelRuntime()
-				waitPipeline()
-				fatalf("wire confirmation to real-time pipeline failed: %v", err)
-			}
-		}
 		if cfg.Execute.Enabled {
 			if err := taskSubmitter.SetNotifier(coordinator); err != nil {
 				cancelRuntime()
@@ -750,10 +728,10 @@ func main() {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
 	if err := api.Register(h, api.Dependencies{
-		DB: db, Todos: todoStore, Confirmations: confirmationService, ConfirmationDetails: confirmationDetails,
+		DB: db, Todos: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,
-		Projects: projectService, Persons: personService, Groups: groupService,
+		Projects:        projectService, Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		SharedMemory:   sharedMemoryService,
 		WorkRules:      workRuleService,
@@ -761,6 +739,7 @@ func main() {
 		ScheduledTasks: scheduledTaskService,
 		Skills:         skillService,
 		RelationFacts:  relationFactService,
+		Observations:   observationService,
 		Progress:       progressService,
 		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		DailyDigests: dailyDigestService,
@@ -784,34 +763,25 @@ func main() {
 	h.Spin()
 }
 
-// decisionEvaluator is the M4 evaluator shape shared by the decision worker and
-// the confirmation service's async re-evaluation. It matches decide's internal
-// evaluator interface structurally.
+// decisionEvaluator is the shape the M5 judgment step expects. It matches
+// execute's internal evaluator interface structurally.
 type decisionEvaluator interface {
-	Evaluate(context.Context, *domain.Todo) (*decide.EvaluationInput, error)
+	Evaluate(context.Context, *domain.Todo) (*execute.EvaluationInput, error)
 }
 
-// buildDecisionEvaluator constructs the M4 evaluator from config. codex mode
-// judges each Todo read-only with codex and reuses the M3-frozen snapshot;
-// manual_mvp routes everything to human confirmation.
+// buildDecisionEvaluator constructs the M5 judgment evaluator: codex judges each
+// extracted Todo read-only, reusing the M3-frozen snapshot.
 func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, skills skill.Reader, prompts textstore.Reader) (decisionEvaluator, error) {
-	switch cfg.Decide.Mode {
-	case decide.ManualMVPMode:
-		return decide.ManualGateEvaluator{}, nil
-	case "codex":
-		decider, err := decide.NewCodexDecider(decide.CodexOptions{
-			Bin:             cfg.Codex.Bin,
-			Model:           cfg.Codex.Model,
-			Timeout:         time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
-			Sandbox:         cfg.Decide.CodexSandbox,
-			Network:         cfg.Decide.CodexNetwork,
-			ReasoningEffort: cfg.Decide.CodexReasoningEffort,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("initialize codex decider: %w", err)
-		}
-		return decide.NewCodexEvaluator(db, decider, sharedMem, workRules, skills, prompts)
-	default:
-		return nil, fmt.Errorf("decide.mode 必须是 %s 或 codex", decide.ManualMVPMode)
+	decider, err := execute.NewCodexDecider(execute.CodexOptions{
+		Bin:             cfg.Codex.Bin,
+		Model:           cfg.Codex.Model,
+		Timeout:         time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
+		Sandbox:         cfg.Decide.CodexSandbox,
+		Network:         cfg.Decide.CodexNetwork,
+		ReasoningEffort: cfg.Decide.CodexReasoningEffort,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize codex decider: %w", err)
 	}
+	return execute.NewCodexEvaluator(db, decider, sharedMem, workRules, skills, prompts)
 }

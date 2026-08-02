@@ -59,7 +59,7 @@ func newTestService(t *testing.T) *Service {
 	directory := t.TempDir()
 	contents := map[string]string{
 		"all.md": "global rule", "m3.md": "extract rule",
-		"m4.md": "decide rule", "m5.md": "execute rule",
+		"decide.md": "decide rule", "m5.md": "execute rule",
 	}
 	for name, content := range contents {
 		if err := os.WriteFile(filepath.Join(directory, name), []byte(content), 0o644); err != nil {

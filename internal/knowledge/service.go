@@ -45,14 +45,20 @@ type EntityRef struct {
 }
 
 type CreateInput struct {
-	EntityA     EntityRef `json:"entity_a"`
-	EntityB     EntityRef `json:"entity_b"`
-	Description string    `json:"description"`
+	EntityA     EntityRef  `json:"entity_a"`
+	EntityB     EntityRef  `json:"entity_b"`
+	Description string     `json:"description"`
+	ValidFrom   *time.Time `json:"valid_from"`
+	ValidUntil  *time.Time `json:"valid_until"`
 }
 
+// UpdateInput replaces the whole editable payload: an omitted ValidFrom or
+// ValidUntil clears that bound rather than leaving the stored value alone.
 type UpdateInput struct {
-	FactID      uint64 `json:"-"`
-	Description string `json:"description"`
+	FactID      uint64     `json:"-"`
+	Description string     `json:"description"`
+	ValidFrom   *time.Time `json:"valid_from"`
+	ValidUntil  *time.Time `json:"valid_until"`
 }
 
 type FactFilter struct {
@@ -63,12 +69,14 @@ type FactFilter struct {
 }
 
 type FactView struct {
-	ID          uint64    `json:"id"`
-	EntityA     EntityRef `json:"entity_a"`
-	EntityB     EntityRef `json:"entity_b"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          uint64     `json:"id"`
+	EntityA     EntityRef  `json:"entity_a"`
+	EntityB     EntityRef  `json:"entity_b"`
+	Description string     `json:"description"`
+	ValidFrom   *time.Time `json:"valid_from"`
+	ValidUntil  *time.Time `json:"valid_until"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type FactList struct {
@@ -117,9 +125,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*FactView, err
 		return nil, fmt.Errorf("find relation fact pair: %w", find.Error)
 	}
 	if find.RowsAffected == 1 {
-		if fact.Description != prepared.Description {
+		if fact.Description != prepared.Description ||
+			!sameInstant(fact.ValidFrom, prepared.ValidFrom) ||
+			!sameInstant(fact.ValidUntil, prepared.ValidUntil) {
 			if err := s.db.WithContext(ctx).Model(&domain.RelationFact{}).
-				Where("id = ?", fact.ID).Update("description", prepared.Description).Error; err != nil {
+				Where("id = ?", fact.ID).Updates(map[string]any{
+				"description": prepared.Description,
+				"valid_from":  prepared.ValidFrom,
+				"valid_until": prepared.ValidUntil,
+			}).Error; err != nil {
 				return nil, fmt.Errorf("update relation fact pair id=%d: %w", fact.ID, err)
 			}
 			if err := s.db.WithContext(ctx).First(&fact, fact.ID).Error; err != nil {
@@ -133,6 +147,8 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*FactView, err
 		EntityAType: string(prepared.EntityA.Type), EntityAID: prepared.EntityA.ID,
 		EntityBType: string(prepared.EntityB.Type), EntityBID: prepared.EntityB.ID,
 		Description: prepared.Description,
+		ValidFrom:   prepared.ValidFrom,
+		ValidUntil:  prepared.ValidUntil,
 	}
 	if err := s.db.WithContext(ctx).Create(&fact).Error; err != nil {
 		return nil, fmt.Errorf("create relation fact: %w", err)
@@ -184,6 +200,10 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (*FactView, err
 	if input.FactID == 0 || description == "" {
 		return nil, fmt.Errorf("%w: fact_id and description are required", ErrInvalidInput)
 	}
+	validFrom, validUntil, err := normalizePeriod(input.ValidFrom, input.ValidUntil)
+	if err != nil {
+		return nil, err
+	}
 	var fact domain.RelationFact
 	if err := s.db.WithContext(ctx).First(&fact, input.FactID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -191,9 +211,15 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (*FactView, err
 		}
 		return nil, fmt.Errorf("load relation fact id=%d: %w", input.FactID, err)
 	}
-	if fact.Description != description {
+	if fact.Description != description ||
+		!sameInstant(fact.ValidFrom, validFrom) ||
+		!sameInstant(fact.ValidUntil, validUntil) {
 		if err := s.db.WithContext(ctx).Model(&domain.RelationFact{}).
-			Where("id = ?", fact.ID).Update("description", description).Error; err != nil {
+			Where("id = ?", fact.ID).Updates(map[string]any{
+			"description": description,
+			"valid_from":  validFrom,
+			"valid_until": validUntil,
+		}).Error; err != nil {
 			return nil, fmt.Errorf("update relation fact id=%d: %w", fact.ID, err)
 		}
 		if err := s.db.WithContext(ctx).First(&fact, fact.ID).Error; err != nil {
@@ -233,10 +259,41 @@ func prepareCreate(input CreateInput) (*CreateInput, error) {
 	if input.Description == "" {
 		return nil, fmt.Errorf("%w: description is required", ErrInvalidInput)
 	}
+	validFrom, validUntil, err := normalizePeriod(input.ValidFrom, input.ValidUntil)
+	if err != nil {
+		return nil, err
+	}
+	input.ValidFrom, input.ValidUntil = validFrom, validUntil
 	if entityKey(input.EntityB) < entityKey(input.EntityA) {
 		input.EntityA, input.EntityB = input.EntityB, input.EntityA
 	}
 	return &input, nil
+}
+
+// normalizePeriod stores both bounds in UTC and rejects an inverted range. A
+// nil bound stays nil: the two ends are independent, so "start unknown" and
+// "still current" are both representable.
+func normalizePeriod(validFrom, validUntil *time.Time) (*time.Time, *time.Time, error) {
+	if validFrom != nil {
+		utc := validFrom.UTC()
+		validFrom = &utc
+	}
+	if validUntil != nil {
+		utc := validUntil.UTC()
+		validUntil = &utc
+	}
+	if validFrom != nil && validUntil != nil && validUntil.Before(*validFrom) {
+		return nil, nil, fmt.Errorf("%w: valid_until %s is before valid_from %s",
+			ErrInvalidInput, validUntil.Format(time.RFC3339), validFrom.Format(time.RFC3339))
+	}
+	return validFrom, validUntil, nil
+}
+
+func sameInstant(stored, incoming *time.Time) bool {
+	if stored == nil || incoming == nil {
+		return stored == nil && incoming == nil
+	}
+	return stored.Equal(*incoming)
 }
 
 func validateFilter(filter FactFilter) error {
@@ -321,7 +378,9 @@ func (s *Service) factView(ctx context.Context, fact *domain.RelationFact) (*Fac
 	}
 	return &FactView{
 		ID: fact.ID, EntityA: entityA, EntityB: entityB,
-		Description: fact.Description, CreatedAt: fact.CreatedAt, UpdatedAt: fact.UpdatedAt,
+		Description: fact.Description,
+		ValidFrom:   fact.ValidFrom, ValidUntil: fact.ValidUntil,
+		CreatedAt: fact.CreatedAt, UpdatedAt: fact.UpdatedAt,
 	}, nil
 }
 

@@ -221,11 +221,14 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 		}
 		// PersistChat re-reads the unit out of batch.Units by key, so hydrated
 		// evidence has to land there and not in a local copy.
-		resolved, candidateCount, err := w.extractUnitWithRetry(ctx, batch, &batch.Units[index], prompt, box)
+		resolved, observations, candidateCount, err := w.extractUnitWithRetry(ctx, batch, &batch.Units[index], prompt, box)
 		if err != nil {
 			return stats, PersistStats{}, err
 		}
-		results = append(results, UnitExtraction{UnitKey: unit.Key, Candidates: resolved, Memories: FilterMemoriesForSnapshot(memories.Results)})
+		results = append(results, UnitExtraction{
+			UnitKey: unit.Key, Candidates: resolved, Observations: observations,
+			Memories: FilterMemoriesForSnapshot(memories.Results),
+		})
 		stats.Units++
 		stats.Candidates += candidateCount
 	}
@@ -258,30 +261,30 @@ func mergeWorkerStats(target *WorkerStats, source WorkerStats) {
 // attempts. Any other failure (structural/schema, dedup error) aborts fail-fast
 // immediately. Retries also stop once attempts are exhausted, propagating the
 // last error (which carries the cited 原文 for diagnosis).
-func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit *ConversationUnit, prompt Prompt, box ToolBox) ([]ResolvedCandidate, int, error) {
+func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit *ConversationUnit, prompt Prompt, box ToolBox) ([]ResolvedCandidate, []ObservationCandidate, int, error) {
 	current := prompt
 	for attempt := 0; ; attempt++ {
 		extracted, err := w.model.ExtractWithTools(ctx, current, box)
 		if err != nil {
-			return nil, 0, fmt.Errorf("extract todos chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+			return nil, nil, 0, fmt.Errorf("extract todos chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
 		}
 		if extracted == nil {
-			return nil, 0, fmt.Errorf("extract todos chat_id=%s unit=%s: nil result", batch.Group.ChatID, unit.Key)
+			return nil, nil, 0, fmt.Errorf("extract todos chat_id=%s unit=%s: nil result", batch.Group.ChatID, unit.Key)
 		}
 		if err := w.hydrateCitedMessages(ctx, batch, unit, extracted); err != nil {
-			return nil, 0, err
+			return nil, nil, 0, err
 		}
 		resolved, evidenceErrs, err := w.validateExtraction(ctx, batch, *unit, extracted)
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, 0, err
 		}
 		if len(evidenceErrs) == 0 {
-			return resolved, len(extracted.Candidates), nil
+			return resolved, extracted.Observations, len(extracted.Candidates), nil
 		}
 		// Self-correctable evidence failure. Retry with feedback if budget
 		// remains; otherwise fail-fast with the aggregated errors (原文 included).
 		if attempt >= w.opts.EvidenceRetryMax {
-			return nil, 0, fmt.Errorf("validate extracted evidence chat_id=%s unit=%s: exhausted %d evidence retries: %s",
+			return nil, nil, 0, fmt.Errorf("validate extracted evidence chat_id=%s unit=%s: exhausted %d evidence retries: %s",
 				batch.Group.ChatID, unit.Key, w.opts.EvidenceRetryMax, strings.Join(evidenceErrs, "; "))
 		}
 		current = Prompt{System: prompt.System, User: prompt.User + "\n\n" + buildEvidenceFeedback(evidenceErrs)}
@@ -301,14 +304,22 @@ func (w *Worker) hydrateCitedMessages(ctx context.Context, batch ChatBatch, unit
 		present[message.MessageID] = struct{}{}
 	}
 	missing := make([]string, 0)
-	for i := range extracted.Candidates {
-		for _, messageID := range extracted.Candidates[i].SourceMessageIDs {
+	collect := func(messageIDs []string) {
+		for _, messageID := range messageIDs {
 			if _, ok := present[messageID]; ok {
 				continue
 			}
 			present[messageID] = struct{}{}
 			missing = append(missing, messageID)
 		}
+	}
+	for i := range extracted.Candidates {
+		collect(extracted.Candidates[i].SourceMessageIDs)
+	}
+	// Observations cite evidence under the same rules, so their messages have to
+	// be hydrated too or validation would read them as invented ids.
+	for i := range extracted.Observations {
+		collect(extracted.Observations[i].SourceMessageIDs)
 	}
 	if len(missing) == 0 {
 		return nil
@@ -369,6 +380,18 @@ func (w *Worker) validateExtraction(ctx context.Context, batch ChatBatch, unit C
 			return nil, nil, fmt.Errorf("validate extracted evidence chat_id=%s unit=%s candidate=%d: %w", batch.Group.ChatID, unit.Key, i, err)
 		}
 	}
+	for i := range extracted.Observations {
+		if err := ValidateObservation(&extracted.Observations[i]); err != nil {
+			return nil, nil, fmt.Errorf("validate extracted observation chat_id=%s unit=%s observation=%d: %w", batch.Group.ChatID, unit.Key, i, err)
+		}
+		if err := validateEvidence(unit, extracted.Observations[i].SourceMessageIDs, extracted.Observations[i].SourceQuote); err != nil {
+			if selfCorrectableEvidence(err) {
+				evidenceErrs = append(evidenceErrs, fmt.Sprintf("第%d条观察：%s", i+1, err.Error()))
+				continue
+			}
+			return nil, nil, fmt.Errorf("validate extracted observation evidence chat_id=%s unit=%s observation=%d: %w", batch.Group.ChatID, unit.Key, i, err)
+		}
+	}
 	if len(evidenceErrs) > 0 {
 		return nil, evidenceErrs, nil
 	}
@@ -421,32 +444,8 @@ func buildEvidenceFeedback(evidenceErrs []string) string {
 }
 
 func validateCandidateEvidence(unit ConversationUnit, candidate *Candidate) error {
-	byID := make(map[string]MessageContext, len(unit.Messages))
-	for _, message := range unit.Messages {
-		byID[message.MessageID] = message
-	}
-	hasNew := false
-	quoteFound := false
-	for _, messageID := range candidate.SourceMessageIDs {
-		message, ok := byID[messageID]
-		if !ok {
-			// Cited evidence that exists anywhere in the chat was already
-			// hydrated into the unit, so a miss here means the id is invented.
-			return fmt.Errorf("%w: source_message_id %q", ErrEvidenceUnknownMessage, messageID)
-		}
-		if message.IsNew && message.Extractable {
-			hasNew = true
-		}
-		if message.IsNew && containsNormalized(message.Content, candidate.SourceQuote) {
-			quoteFound = true
-		}
-	}
-	if !hasNew {
-		return fmt.Errorf("%w: cited messages are %s", ErrEvidenceNoNewSource, citedMessagesText(unit, candidate.SourceMessageIDs))
-	}
-	if !quoteFound {
-		return fmt.Errorf("%w: source_quote %q is not present in cited [new] messages; cited [new] messages: %s",
-			ErrEvidenceQuoteMismatch, candidate.SourceQuote, citedNewMessagesText(unit, candidate.SourceMessageIDs))
+	if err := validateEvidence(unit, candidate.SourceMessageIDs, candidate.SourceQuote); err != nil {
+		return err
 	}
 	// assigner_open_id is deliberately not checked against unit.Participants.
 	// Participants are just the distinct senders of the unit's messages, so the
@@ -456,6 +455,41 @@ func validateCandidateEvidence(unit ConversationUnit, candidate *Candidate) erro
 	// The evidence-based guard that does matter lives in prepareCandidate: when
 	// the cited messages include leader senders, the assigner must be one of
 	// them.
+	return nil
+}
+
+// validateEvidence is the citation discipline shared by todo candidates and
+// observations: every cited id must really exist in this unit, at least one of
+// them must be an extractable [new] message, and the quote must appear verbatim
+// in one of those new messages.
+func validateEvidence(unit ConversationUnit, sourceMessageIDs []string, sourceQuote string) error {
+	byID := make(map[string]MessageContext, len(unit.Messages))
+	for _, message := range unit.Messages {
+		byID[message.MessageID] = message
+	}
+	hasNew := false
+	quoteFound := false
+	for _, messageID := range sourceMessageIDs {
+		message, ok := byID[messageID]
+		if !ok {
+			// Cited evidence that exists anywhere in the chat was already
+			// hydrated into the unit, so a miss here means the id is invented.
+			return fmt.Errorf("%w: source_message_id %q", ErrEvidenceUnknownMessage, messageID)
+		}
+		if message.IsNew && message.Extractable {
+			hasNew = true
+		}
+		if message.IsNew && containsNormalized(message.Content, sourceQuote) {
+			quoteFound = true
+		}
+	}
+	if !hasNew {
+		return fmt.Errorf("%w: cited messages are %s", ErrEvidenceNoNewSource, citedMessagesText(unit, sourceMessageIDs))
+	}
+	if !quoteFound {
+		return fmt.Errorf("%w: source_quote %q is not present in cited [new] messages; cited [new] messages: %s",
+			ErrEvidenceQuoteMismatch, sourceQuote, citedNewMessagesText(unit, sourceMessageIDs))
+	}
 	return nil
 }
 

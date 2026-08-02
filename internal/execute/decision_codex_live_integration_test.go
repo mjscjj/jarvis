@@ -1,6 +1,6 @@
 //go:build integration
 
-package decide
+package execute
 
 import (
 	"context"
@@ -31,10 +31,10 @@ func TestCodexDeciderLiveDecision(t *testing.T) {
 		model = override
 	}
 	systemPrompt, err := os.ReadFile(
-		filepath.Join(filepath.Dir(configPath), "prompts", "m4-system-prompt.md"),
+		filepath.Join(filepath.Dir(configPath), "prompts", "m5-decision-system-prompt.md"),
 	)
 	if err != nil {
-		t.Fatalf("read M4 system prompt: %v", err)
+		t.Fatalf("read decision system prompt: %v", err)
 	}
 
 	decider, err := NewCodexDecider(CodexOptions{
@@ -65,7 +65,6 @@ func TestCodexDeciderLiveDecision(t *testing.T) {
               "source_quote":"README 里有个错别字，你抽空改下"
             }`),
 		},
-		RuleScore:    RuleScore{Confidence: 0.6, Risk: 0.2},
 		Background:   []byte(`{"principal":{"name":"我"},"project":{"name":"jarvis"}}`),
 		SystemPrompt: string(systemPrompt),
 	})

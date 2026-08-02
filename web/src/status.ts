@@ -24,8 +24,6 @@ export const todoStatusMeta: Record<TodoStatus, StatusMeta> = {
   extracted: { label: '待评估', color: C.info },
   scoring: { label: '评估中', color: C.processing },
   auto: { label: '自动执行', color: C.success },
-  need_info: { label: '待补信息', color: C.warning },
-  need_decision: { label: '待决策', color: C.warning },
   confirmed: { label: '已确认', color: C.success },
   dismissed: { label: '已忽略', color: C.default },
   dropped: { label: '已丢弃', color: C.default },

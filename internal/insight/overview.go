@@ -36,25 +36,26 @@ type StatusCount struct {
 type Overview struct {
 	Todos struct {
 		Total      int64         `json:"total"`
-		Open       int64         `json:"open"`        // extracted/scoring/need_info/need_decision
-		Pending    int64         `json:"pending"`     // need_info/need_decision (等我处理)
+		Open       int64         `json:"open"`        // extracted/scoring（等判断）
 		LeaderOpen int64         `json:"leader_open"` // leader 交办且未闭环
 		ByStatus   []StatusCount `json:"by_status"`
 	} `json:"todos"`
 	Tasks struct {
-		Total    int64         `json:"total"`
-		Pending  int64         `json:"pending"` // pending/executing
+		Total   int64 `json:"total"`
+		Pending int64 `json:"pending"` // pending/executing/waiting/needs_human
+		// NeedsMe counts the only human gate left in the pipeline: M5 parked a Task
+		// because it wants the principal to approve a proposal or answer a question.
+		NeedsMe  int64         `json:"needs_me"`
 		Done     int64         `json:"done"`
 		Failed   int64         `json:"failed"`
 		ByStatus []StatusCount `json:"by_status"`
 	} `json:"tasks"`
 }
 
-// openTodoStatuses are the not-yet-closed Todo states.
-var openTodoStatuses = []string{"extracted", "scoring", "need_info", "need_decision"}
-
-// pendingTodoStatuses are the states that need the user to act.
-var pendingTodoStatuses = []string{"need_info", "need_decision"}
+// openTodoStatuses are the not-yet-judged Todo states. A Todo never waits on the
+// user: once judged it is either auto (a Task exists) or dropped, and anything
+// that needs the user is raised by M5 on that Task.
+var openTodoStatuses = []string{"extracted", "scoring"}
 
 func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {
 	overview := &Overview{}
@@ -68,9 +69,6 @@ func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {
 		overview.Todos.Total += item.Count
 		if contains(openTodoStatuses, item.Status) {
 			overview.Todos.Open += item.Count
-		}
-		if contains(pendingTodoStatuses, item.Status) {
-			overview.Todos.Pending += item.Count
 		}
 	}
 	if err := s.db.WithContext(ctx).Model(&domain.Todo{}).
@@ -87,8 +85,11 @@ func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {
 	for _, item := range taskCounts {
 		overview.Tasks.Total += item.Count
 		switch item.Status {
-		case "pending", "executing", "waiting", "needs_human":
+		case "pending", "executing", "waiting":
 			overview.Tasks.Pending += item.Count
+		case "needs_human", "awaiting_approval":
+			overview.Tasks.Pending += item.Count
+			overview.Tasks.NeedsMe += item.Count
 		case "done":
 			overview.Tasks.Done += item.Count
 		case "failed":

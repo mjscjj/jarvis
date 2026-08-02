@@ -4,8 +4,6 @@ package taskcreate
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,7 +49,6 @@ type Input struct {
 	SourceID        *uint64
 	OccurrenceKey   *string
 	ExecutionMode   string
-	ApprovalRef     *string
 	ActorType       string
 	EventDetail     map[string]any
 }
@@ -134,10 +131,6 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 	if err != nil {
 		return nil, err
 	}
-	hash, err := ActionHash(normalized.ActionType, normalized.Target, normalized.Plan)
-	if err != nil {
-		return nil, err
-	}
 	if normalized.SourceID != nil && normalized.OccurrenceKey != nil {
 		var existing domain.Task
 		found := db.WithContext(ctx).
@@ -160,10 +153,9 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 		Target: normalized.Target, Background: datatypes.JSON(normalized.Background), Plan: datatypes.JSON(normalized.Plan),
 		SourceClue:      datatypes.JSON(normalized.SourceClue),
 		DecisionPayload: datatypes.JSON(normalized.DecisionPayload),
-		ConfirmedBy:     normalized.ConfirmedBy, ConfirmedAt: now, ActionHash: hash,
+		ConfirmedBy:     normalized.ConfirmedBy, ConfirmedAt: now,
 		SourceType: normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
-		ExecutionMode: normalized.ExecutionMode, ApprovalRef: normalized.ApprovalRef,
-		Status: "pending", AutonomyMode: autonomyMode(normalized.ExecutionMode),
+		ExecutionMode: normalized.ExecutionMode, Status: "pending",
 		ProjectID: normalized.ProjectID, Version: 0,
 	}
 	if err := db.WithContext(ctx).Create(&row).Error; err != nil {
@@ -243,31 +235,7 @@ func normalizeInput(input Input) (Input, error) {
 		}
 	}
 	input.OccurrenceKey = trimString(input.OccurrenceKey)
-	input.ApprovalRef = trimString(input.ApprovalRef)
 	return input, nil
-}
-
-// ActionHash fingerprints the exact approved action.
-func ActionHash(actionType, target string, plan json.RawMessage) (string, error) {
-	actionType = strings.TrimSpace(actionType)
-	target = strings.TrimSpace(target)
-	if actionType == "" || target == "" {
-		return "", fmt.Errorf("%w: action_type and target are required", ErrInvalidInput)
-	}
-	canonical := mustJSONValue(plan, false)
-	if canonical == nil {
-		return "", fmt.Errorf("%w: plan must be a non-empty JSON value", ErrInvalidInput)
-	}
-	payload, err := json.Marshal(struct {
-		ActionType string          `json:"action_type"`
-		Target     string          `json:"target"`
-		Plan       json.RawMessage `json:"plan"`
-	}{ActionType: actionType, Target: target, Plan: canonical})
-	if err != nil {
-		return "", fmt.Errorf("encode Task action hash: %w", err)
-	}
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 func mustJSONObject(raw []byte, allowEmpty bool) json.RawMessage {
@@ -345,8 +313,4 @@ func copyUint64(value *uint64) *uint64 {
 	}
 	copied := *value
 	return &copied
-}
-
-func autonomyMode(_ string) string {
-	return "copilot"
 }

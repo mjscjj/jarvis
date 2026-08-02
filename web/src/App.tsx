@@ -14,14 +14,15 @@ import {
   MenuUnfoldOutlined,
   DatabaseOutlined,
   CalendarOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
-import Confirmations from './Confirmations'
 import Tasks from './Tasks'
 import Background, { Settings } from './Background'
 import Overview from './Overview'
 import Progress from './Progress'
 import Debug from './Debug'
 import Todos from './Todos'
+import Observations from './Observations'
 import Chat from './Chat'
 import ScheduledTasks from './ScheduledTasks'
 import { PageContextProvider, usePageContext } from './pageContext'
@@ -46,11 +47,11 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
+  { key: 'overview', label: 'Overview', icon: <DashboardOutlined /> },
   { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
   { key: 'scheduled-tasks', label: '定时任务', icon: <CalendarOutlined /> },
-  { key: 'overview', label: 'Overview', icon: <DashboardOutlined /> },
   { key: 'todos', label: '待办', icon: <CheckCircleOutlined /> },
-  { key: 'confirmations', label: '待确认', icon: <CheckCircleOutlined /> },
+  { key: 'observations', label: '观察', icon: <EyeOutlined /> },
   { key: 'background', label: '背景', icon: <DatabaseOutlined /> },
   { key: 'settings', label: '设置', icon: <SettingOutlined /> },
   { key: 'progress', label: '进度', icon: <BarChartOutlined /> },
@@ -82,7 +83,7 @@ function AppShell() {
   const pages: Record<string, React.ReactNode> = {
     overview: <Overview />,
     todos: <Todos refreshKey={refreshKey} />,
-    confirmations: <Confirmations onDetailOpen={() => setChatOpen(false)} />,
+    observations: <Observations />,
     tasks: <Tasks onDetailOpen={() => setChatOpen(false)} />,
     'scheduled-tasks': <ScheduledTasks />,
     background: <Background />,

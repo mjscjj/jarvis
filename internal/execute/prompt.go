@@ -221,15 +221,18 @@ type executionTask struct {
 	ActionTypeHint string `json:"action_type_hint"`
 	TargetHint     string `json:"target_hint"`
 	// M3Clue is M3's complete extraction result forwarded verbatim. M5 reads the
-	// original clue (including its desired_outcome) instead of only M4's summary,
+	// original clue (including its desired_outcome) instead of only the decision step's summary,
 	// so a blocker raised downstream cannot silently replace the real goal.
-	M3Clue            json.RawMessage `json:"m3_clue,omitempty"`
-	M4Direction       json.RawMessage `json:"m4_direction"`
-	M4DecisionContext json.RawMessage `json:"m4_decision_context,omitempty"`
+	M3Clue json.RawMessage `json:"m3_clue,omitempty"`
+	// DecisionDirection and DecisionContext come from M5's own judgment step, which
+	// only decided the clue was worth pursuing. They are a starting direction, not a
+	// contract: the execution step may revise or abandon them.
+	DecisionDirection json.RawMessage `json:"decision_direction"`
+	DecisionContext   json.RawMessage `json:"decision_context,omitempty"`
 	Background        json.RawMessage `json:"background"`
 }
 
-// buildTaskContext assembles the shared TASK_CONTEXT block. M3/M4 semantic
+// buildTaskContext assembles the shared TASK_CONTEXT block. M3 and decision-step semantic
 // outputs are deliberately labeled as hints/direction rather than a confirmed
 // contract; M5 owns the actual goal, scope, action selection, and execution.
 // Frozen background, M5 supplements, and prior results still ride through
@@ -247,7 +250,7 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 	}
 	promptTask := executionTask{
 		ID: task.ID, TitleHint: task.Title, ActionTypeHint: task.ActionType, TargetHint: task.Target,
-		M4Direction: rawJSON(task.Plan), M4DecisionContext: rawJSON(task.DecisionPayload),
+		DecisionDirection: rawJSON(task.Plan), DecisionContext: rawJSON(task.DecisionPayload),
 		Background: rawJSON(task.Background),
 	}
 	// scheduled_task and manual Tasks have no M3 clue; omit the key entirely
@@ -294,7 +297,7 @@ func renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills str
 }
 
 // buildExecutionPrompt assembles the agent-driven execution prompt for local
-// actions (and low-level use). It gives codex M3/M4 hints, frozen context, and
+// actions (and low-level use). It gives codex M3 and decision-step hints, frozen context, and
 // repo without treating the upstream direction as a confirmed plan. Codex owns
 // the actual goal and work. task.execution_supplements (M5-only) are injected as
 // high-priority directives. previousRuns (if any) carry prior attempt results.

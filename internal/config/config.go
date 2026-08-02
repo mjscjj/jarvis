@@ -141,23 +141,22 @@ type CaptureConfig struct {
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
 }
 
-// DecideConfig controls the M4 MVP gate. The only enabled mode for now is
-// manual_mvp: extracted Todos wait for explicit user approval.
+// DecideConfig controls the M5 judgment step, which decides whether an extracted
+// clue is worth turning into a Task.
 type DecideConfig struct {
 	Enabled    bool   `yaml:"enabled"`
-	Mode       string `yaml:"mode"`
 	Schedule   string `yaml:"schedule"`
 	BatchLimit int    `yaml:"batch_limit"`
 
-	// CodexSandbox / CodexNetwork / CodexReasoningEffort configure the M4 codex
-	// evaluator (mode=codex). It shares the same full-access + network + low
-	// reasoning posture as M3 so it can self-query to fill gaps during decision.
+	// CodexSandbox / CodexNetwork / CodexReasoningEffort configure the judgment
+	// codex evaluator. It shares the same full-access + network posture as M3 so
+	// it can self-query to fill gaps while judging.
 	CodexSandbox         string `yaml:"codex_sandbox"`
 	CodexNetwork         bool   `yaml:"codex_network"`
 	CodexReasoningEffort string `yaml:"codex_reasoning_effort"`
 }
 
-// CodexConfig 是 M3 抽取 / M4 决策（以及 chat 复用的 bin）共用的 agent CLI。
+// CodexConfig 是 M3 抽取 / M5 判断环节（以及 chat 复用的 bin）共用的 agent CLI。
 // M5 任务执行用 ExecuteConfig.Bin/Model，可与这里不同（例如这里 traex、执行用 codex）。
 type CodexConfig struct {
 	Bin            string `yaml:"bin"`
@@ -411,22 +410,17 @@ func (c *Config) validate() error {
 		return fmt.Errorf("capture.auto_related_p2p_top_n 不能为负数")
 	}
 	if c.Decide.Enabled {
-		if c.Decide.Mode != "manual_mvp" && c.Decide.Mode != "codex" {
-			return fmt.Errorf("decide.mode 必须是 manual_mvp 或 codex")
-		}
 		if c.Decide.Schedule == "" {
 			return fmt.Errorf("decide.schedule 不能为空")
 		}
 		if c.Decide.BatchLimit <= 0 {
 			return fmt.Errorf("decide.batch_limit 必须大于 0")
 		}
-		if c.Decide.Mode == "codex" {
-			if err := validateCodexSandbox("decide", c.Decide.CodexSandbox); err != nil {
-				return err
-			}
-			if err := validateReasoningEffort("decide", c.Decide.CodexReasoningEffort); err != nil {
-				return err
-			}
+		if err := validateCodexSandbox("decide", c.Decide.CodexSandbox); err != nil {
+			return err
+		}
+		if err := validateReasoningEffort("decide", c.Decide.CodexReasoningEffort); err != nil {
+			return err
 		}
 	}
 	if c.Codex.Bin == "" {

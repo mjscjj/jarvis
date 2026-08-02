@@ -1,9 +1,9 @@
+// A clue is judged into auto (a Task exists) or dropped. It is never parked
+// waiting for the principal: that question rides along to M5 on the Task.
 export type TodoStatus =
   | 'extracted'
   | 'scoring'
   | 'auto'
-  | 'need_info'
-  | 'need_decision'
   | 'confirmed'
   | 'dismissed'
   | 'dropped'
@@ -42,7 +42,7 @@ export interface Resolution {
   basis: string | null
 }
 
-// ContextSnapshot is the M3-frozen background that M4/M5 replay unchanged.
+// ContextSnapshot is the M3-frozen background that M5 replays unchanged.
 export interface ContextSnapshot {
   snapshot_version: string
   captured_at: string
@@ -100,9 +100,6 @@ export interface Todo {
   is_leader_assigned: boolean
   due_at: string | null
   status: TodoStatus
-  confidence: number | null
-  risk: number | null
-  route: string | null
   revision: number
   version: number
   first_seen_at: string
@@ -128,44 +125,6 @@ export interface TodoQuery {
   leaderOnly: boolean
   page: number
   pageSize: number
-}
-
-export interface ConfirmationMessage {
-  message_id: string
-  sender_open_id: string
-  sender_name: string
-  content: string
-  create_time: number
-}
-
-export interface ConfirmationAssigner {
-  open_id: string
-  name: string | null
-  role: string | null
-  title: string | null
-}
-
-export interface DecisionAuditView {
-  id: number
-  ts: string
-  route: string
-  route_reason: string
-  confidence: number | null
-  risk: number | null
-  matched_rules: string[] | null
-  decision_engine: string
-  codex_session_id: string | null
-  threshold_config_version: string
-  final_status: string
-}
-
-export interface ConfirmationDetail {
-  todo: Todo
-  source_messages: ConfirmationMessage[]
-  assigner: ConfirmationAssigner | null
-  plan: unknown
-  decision_payload: unknown
-  audits: DecisionAuditView[] | null
 }
 
 export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'needs_human' | 'awaiting_approval' | 'done' | 'failed'
@@ -201,17 +160,14 @@ export interface Task {
   decision_payload: unknown
   confirmed_by: string
   confirmed_at: string
-  action_hash: string
   status: TaskStatus
   execution_result: Record<string, unknown> | null
   execution_supplements?: Array<{ note: string; at: string; channel?: string }>
-  autonomy_mode: string
   project_id: number | null
   source_type: 'todo' | 'scheduled_task' | 'manual'
   source_id: number | null
   occurrence_key: string | null
   execution_mode: 'standard' | 'direct'
-  approval_ref: string | null
   version: number
   created_at: string
   updated_at: string
@@ -345,6 +301,10 @@ export interface RelationFact {
   entity_a: RelationEntityRef
   entity_b: RelationEntityRef
   description: string
+  /** 关系成立的起点；null 表示起点未知 */
+  valid_from: string | null
+  /** 关系成立的终点；null 表示关系仍然有效 */
+  valid_until: string | null
   created_at: string
   updated_at: string
 }
@@ -354,6 +314,41 @@ export interface RelationFactList {
   total: number
   page: number
   page_size: number
+}
+
+/** m3 从消息里看到的，m5 执行时发现的 */
+export type ObservationProducer = 'm3' | 'm5'
+
+/** 值得记住、但不需要我做任何事的事实。不会变成待办，也不会被执行。 */
+export interface Observation {
+  id: number
+  producer: ObservationProducer
+  subject: string
+  content: string
+  project_id: number | null
+  project_name: string | null
+  group_id: number | null
+  group_name: string | null
+  source_run_id: number | null
+  source_message_ids: string[] | null
+  source_quote: string
+  observed_at: string
+  created_at: string
+}
+
+export interface ObservationList {
+  items: Observation[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ObservationQuery {
+  producer?: ObservationProducer
+  projectId?: number
+  keyword?: string
+  page: number
+  pageSize: number
 }
 
 export type ProjectRole = 'owner' | 'participant'
@@ -537,13 +532,13 @@ export interface Overview {
   todos: {
     total: number
     open: number
-    pending: number
     leader_open: number
     by_status: StatusCount[]
   }
   tasks: {
     total: number
     pending: number
+    needs_me: number
     done: number
     failed: number
     by_status: StatusCount[]

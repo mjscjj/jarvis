@@ -1,4 +1,4 @@
-// Package pipeline accelerates the durable M2 -> M3 -> M4 -> M5 state machine.
+// Package pipeline accelerates the durable M2 -> M3 -> M5 state machine.
 // Notifications only wake downstream work; MySQL watermarks, statuses, and
 // optimistic versions remain the source of truth and scheduled reconciliation
 // repairs any wake-up lost during a crash.
@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"jarvis/internal/capture"
-	"jarvis/internal/decide"
 	"jarvis/internal/domain"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -29,9 +28,12 @@ type extractor interface {
 	ExtractOnce(context.Context) (extract.WorkerStats, error)
 }
 
-type decider interface {
-	EvaluateTodo(context.Context, uint64, int32) (*decide.EvaluationResult, error)
-	EvaluateOnce(context.Context) (decide.WorkerStats, error)
+// todoDecider is M5's decision step: it judges whether an extracted Todo is
+// worth acting on and, when it is, materializes the Task the execution step
+// picks up. It is not a separate pipeline stage.
+type todoDecider interface {
+	EvaluateTodo(context.Context, uint64, int32) (*execute.EvaluationResult, error)
+	EvaluateOnce(context.Context) (execute.WorkerStats, error)
 }
 
 type executionStore interface {
@@ -57,31 +59,31 @@ type chatWork struct {
 	All    bool
 }
 
-type todoWork struct {
-	TodoID  uint64
-	Version int32
-	LogID   string
-	All     bool
+// m5Work is one unit of M5 work. M5 has two entry points into the same stage: a
+// Todo enters the decision step, a Task enters the execution step. They share
+// one queue and one worker pool, so a Todo that turns into a Task never crosses
+// a stage boundary.
+type m5Work struct {
+	// TodoID and TaskID are mutually exclusive; AllTodos requests a full
+	// decision reconciliation pass instead of one specific entity.
+	TodoID   uint64
+	TaskID   uint64
+	Version  int32
+	LogID    string
+	AllTodos bool
 }
 
-type taskWork struct {
-	TaskID  uint64
-	Version int32
-	LogID   string
-}
-
-// Coordinator owns every automatic M3/M4/M5 invocation, so real-time wake-ups
-// and scheduled reconciliation cannot run separate copies of the same worker.
+// Coordinator owns every automatic M3/M5 invocation, so real-time wake-ups and
+// scheduled reconciliation cannot run separate copies of the same worker.
 type Coordinator struct {
 	extractor extractor
-	decider   decider
+	decider   todoDecider
 	store     executionStore
 	executor  taskExecutor
 	opts      Options
 
 	chats *keyedQueue[chatWork]
-	todos *keyedQueue[todoWork]
-	tasks *keyedQueue[taskWork]
+	m5    *keyedQueue[m5Work]
 
 	startMu sync.Mutex
 	started bool
@@ -91,10 +93,10 @@ type Coordinator struct {
 // NewCoordinator wires the concrete process workers. Keeping the public
 // constructor concrete also avoids typed-nil interfaces accidentally enabling a
 // disabled stage; tests use newCoordinator with small fakes.
-func NewCoordinator(extractWorker *extract.Worker, decisionWorker *decide.DecisionWorker, executionTaskStore *execute.Store, agentExecutor *execute.AgentExecutor, opts Options) (*Coordinator, error) {
+func NewCoordinator(extractWorker *extract.Worker, decisionWorker *execute.DecisionWorker, executionTaskStore *execute.Store, agentExecutor *execute.AgentExecutor, opts Options) (*Coordinator, error) {
 	var (
 		extractStage extractor
-		decideStage  decider
+		decideStage  todoDecider
 		storeStage   executionStore
 		executeStage taskExecutor
 	)
@@ -113,7 +115,7 @@ func NewCoordinator(extractWorker *extract.Worker, decisionWorker *decide.Decisi
 	return newCoordinator(extractStage, decideStage, storeStage, executeStage, opts)
 }
 
-func newCoordinator(extractor extractor, decider decider, store executionStore, executor taskExecutor, opts Options) (*Coordinator, error) {
+func newCoordinator(extractor extractor, decider todoDecider, store executionStore, executor taskExecutor, opts Options) (*Coordinator, error) {
 	if opts.Logger == nil {
 		return nil, fmt.Errorf("pipeline logger is nil")
 	}
@@ -140,24 +142,23 @@ func newCoordinator(extractor extractor, decider decider, store executionStore, 
 	if err != nil {
 		return nil, err
 	}
-	todos, err := newKeyedQueue(queueCapacity, func(work todoWork) string {
-		if work.All {
-			return "all"
+	m5, err := newKeyedQueue(queueCapacity, func(work m5Work) string {
+		version := strconv.FormatInt(int64(work.Version), 10)
+		switch {
+		case work.AllTodos:
+			return "todos:all"
+		case work.TodoID != 0:
+			return "todo:" + strconv.FormatUint(work.TodoID, 10) + ":" + version
+		default:
+			return "task:" + strconv.FormatUint(work.TaskID, 10) + ":" + version
 		}
-		return strconv.FormatUint(work.TodoID, 10) + ":" + strconv.FormatInt(int64(work.Version), 10)
-	})
-	if err != nil {
-		return nil, err
-	}
-	tasks, err := newKeyedQueue(queueCapacity, func(work taskWork) string {
-		return strconv.FormatUint(work.TaskID, 10) + ":" + strconv.FormatInt(int64(work.Version), 10)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &Coordinator{
 		extractor: extractor, decider: decider, store: store, executor: executor, opts: opts,
-		chats: chats, todos: todos, tasks: tasks,
+		chats: chats, m5: m5,
 	}, nil
 }
 
@@ -175,14 +176,18 @@ func (c *Coordinator) Start(ctx context.Context) error {
 		c.wg.Add(1)
 		go c.runChats(ctx)
 	}
-	if c.decider != nil {
-		c.wg.Add(1)
-		go c.runTodos(ctx)
-	}
-	if c.executor != nil {
-		for range c.opts.ExecutionConcurrency {
+	// One pool drains both M5 steps. Sizing follows the execution step because
+	// it dominates: decisions are a single read-only model call, executions run
+	// a full agent session. With only the decision step enabled a single worker
+	// preserves the previous serial behavior.
+	if c.decider != nil || c.executor != nil {
+		workers := 1
+		if c.executor != nil {
+			workers = c.opts.ExecutionConcurrency
+		}
+		for range workers {
 			c.wg.Add(1)
-			go c.runTasks(ctx)
+			go c.runM5(ctx)
 		}
 	}
 	return nil
@@ -205,27 +210,28 @@ func (c *Coordinator) ChatScanned(ctx context.Context, result capture.ChatScanRe
 	return c.chats.enqueue(ctx, chatWork{ChatID: result.ChatID, Marker: marker, LogID: observability.LogID(ctx)})
 }
 
-// TodoReady and TaskReady implement decide.LifecycleNotifier.
+// TodoReady and TaskReady implement execute.LifecycleNotifier. Both feed the
+// same M5 queue; they differ only in which step of M5 picks the work up.
 func (c *Coordinator) TodoReady(ctx context.Context, todoID uint64, version int32) error {
 	if c.decider == nil {
-		return decide.ErrLifecycleStageDisabled
+		return execute.ErrLifecycleStageDisabled
 	}
 	if todoID == 0 || version < 0 {
 		return fmt.Errorf("pipeline Todo ID/version is invalid")
 	}
 	ctx = observability.EnsureLogID(ctx)
-	return c.todos.enqueue(ctx, todoWork{TodoID: todoID, Version: version, LogID: observability.LogID(ctx)})
+	return c.m5.enqueue(ctx, m5Work{TodoID: todoID, Version: version, LogID: observability.LogID(ctx)})
 }
 
 func (c *Coordinator) TaskReady(ctx context.Context, taskID uint64, version int32) error {
 	if c.executor == nil {
-		return decide.ErrLifecycleStageDisabled
+		return execute.ErrLifecycleStageDisabled
 	}
 	if taskID == 0 || version < 0 {
 		return fmt.Errorf("pipeline Task ID/version is invalid")
 	}
 	ctx = observability.EnsureLogID(ctx)
-	return c.tasks.enqueue(ctx, taskWork{TaskID: taskID, Version: version, LogID: observability.LogID(ctx)})
+	return c.m5.enqueue(ctx, m5Work{TaskID: taskID, Version: version, LogID: observability.LogID(ctx)})
 }
 
 func (c *Coordinator) ReconcileExtract(ctx context.Context) error {
@@ -241,7 +247,7 @@ func (c *Coordinator) ReconcileDecide(ctx context.Context) error {
 		return nil
 	}
 	ctx = observability.EnsureLogID(ctx)
-	return c.todos.enqueue(ctx, todoWork{All: true, LogID: observability.LogID(ctx)})
+	return c.m5.enqueue(ctx, m5Work{AllTodos: true, LogID: observability.LogID(ctx)})
 }
 
 func (c *Coordinator) ReconcileExecute(ctx context.Context) error {
@@ -253,7 +259,7 @@ func (c *Coordinator) ReconcileExecute(ctx context.Context) error {
 		return err
 	}
 	if failed > 0 {
-		c.logf(ctx, "stage=m5 trigger=reconcile stale_failed=%d", failed)
+		c.logf(ctx, "stage=m5 step=execute trigger=reconcile stale_failed=%d", failed)
 	}
 	return c.enqueuePendingTasks(ctx)
 }
@@ -296,7 +302,7 @@ func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 			c.logf(ctx, "stage=m3 trigger=reconcile status=ok chats=%d created=%d updated=%d", stats.ChatsProcessed, stats.Created, stats.Updated)
 		}
 		if err := c.ReconcileDecide(ctx); err != nil {
-			c.logf(ctx, "stage=m3 trigger=reconcile notify=m4 status=error error=%+v", err)
+			c.logf(ctx, "stage=m3 trigger=reconcile notify=m5 status=error error=%+v", err)
 		}
 		return
 	}
@@ -318,86 +324,92 @@ func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 				continue
 			}
 			if err := c.TodoReady(ctx, todo.ID, todo.Version); err != nil {
-				c.logf(ctx, "stage=m3 trigger=realtime notify=m4 todo_id=%d status=error error=%+v", todo.ID, err)
+				c.logf(ctx, "stage=m3 trigger=realtime notify=m5 todo_id=%d status=error error=%+v", todo.ID, err)
 			}
 		}
 	}
 }
 
-func (c *Coordinator) runTodos(ctx context.Context) {
+func (c *Coordinator) runM5(ctx context.Context) {
 	defer c.wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case work := <-c.todos.items:
-			c.todos.received(work)
-			c.processTodo(ctx, work)
+		case work := <-c.m5.items:
+			c.m5.received(work)
+			c.processM5(ctx, work)
 		}
 	}
 }
 
-func (c *Coordinator) processTodo(ctx context.Context, work todoWork) {
+func (c *Coordinator) processM5(ctx context.Context, work m5Work) {
 	ctx = observability.WithLogID(ctx, work.LogID)
-	if work.All {
-		for {
-			stats, err := c.decider.EvaluateOnce(ctx)
-			if err != nil {
-				c.logf(ctx, "stage=m4 trigger=reconcile status=error error=%+v", err)
-				return
-			}
-			if stats.Loaded == 0 {
-				break
-			}
-			c.logf(ctx, "stage=m4 trigger=reconcile status=ok evaluated=%d auto=%d need_info=%d need_decision=%d dropped=%d", stats.Evaluated, stats.Auto, stats.NeedInfo, stats.NeedDecision, stats.Dropped)
-			if stats.Auto > 0 {
-				if err := c.ReconcileExecute(ctx); err != nil {
-					c.logf(ctx, "stage=m4 trigger=reconcile notify=m5 status=error error=%+v", err)
-				}
+	switch {
+	case work.AllTodos:
+		c.reconcileDecisions(ctx)
+	case work.TodoID != 0:
+		c.decideTodo(ctx, work)
+	default:
+		c.executeTask(ctx, work)
+	}
+}
+
+// reconcileDecisions drains every extracted Todo left behind by a lost wake-up.
+// Tasks it materializes are picked up by ReconcileExecute rather than enqueued
+// one by one, so a large backlog cannot outrun the queue capacity.
+func (c *Coordinator) reconcileDecisions(ctx context.Context) {
+	for {
+		stats, err := c.decider.EvaluateOnce(ctx)
+		if err != nil {
+			c.logf(ctx, "stage=m5 step=decide trigger=reconcile status=error error=%+v", err)
+			return
+		}
+		if stats.Loaded == 0 {
+			return
+		}
+		c.logf(ctx, "stage=m5 step=decide trigger=reconcile status=ok evaluated=%d auto=%d dropped=%d", stats.Evaluated, stats.Auto, stats.Dropped)
+		if stats.Auto > 0 {
+			if err := c.ReconcileExecute(ctx); err != nil {
+				c.logf(ctx, "stage=m5 step=decide trigger=reconcile notify=execute status=error error=%+v", err)
 			}
 		}
-		return
 	}
+}
+
+func (c *Coordinator) decideTodo(ctx context.Context, work m5Work) {
 	result, err := c.decider.EvaluateTodo(ctx, work.TodoID, work.Version)
 	if err != nil {
-		if errors.Is(err, decide.ErrVersionConflict) || errors.Is(err, decide.ErrInvalidTransition) || errors.Is(err, decide.ErrTodoNotFound) {
-			c.logf(ctx, "stage=m4 trigger=realtime todo_id=%d version=%d status=stale", work.TodoID, work.Version)
+		if errors.Is(err, execute.ErrVersionConflict) || errors.Is(err, execute.ErrInvalidTransition) || errors.Is(err, execute.ErrTodoNotFound) {
+			c.logf(ctx, "stage=m5 step=decide trigger=realtime todo_id=%d version=%d status=stale", work.TodoID, work.Version)
 			return
 		}
-		c.logf(ctx, "stage=m4 trigger=realtime todo_id=%d version=%d status=error error=%+v", work.TodoID, work.Version, err)
+		c.logf(ctx, "stage=m5 step=decide trigger=realtime todo_id=%d version=%d status=error error=%+v", work.TodoID, work.Version, err)
 		return
 	}
-	c.logf(ctx, "stage=m4 trigger=realtime todo_id=%d status=ok route=%s", result.TodoID, result.Status)
+	c.logf(ctx, "stage=m5 step=decide trigger=realtime todo_id=%d status=ok route=%s", result.TodoID, result.Status)
 	if result.TaskID != nil && c.executor != nil {
 		if err := c.TaskReady(ctx, *result.TaskID, result.TaskVersion); err != nil {
-			c.logf(ctx, "stage=m4 trigger=realtime notify=m5 task_id=%d status=error error=%+v", *result.TaskID, err)
+			c.logf(ctx, "stage=m5 step=decide trigger=realtime notify=execute task_id=%d status=error error=%+v", *result.TaskID, err)
 		}
 	}
 }
 
-func (c *Coordinator) runTasks(ctx context.Context) {
-	defer c.wg.Done()
-	for {
-		select {
-		case <-ctx.Done():
+func (c *Coordinator) executeTask(ctx context.Context, work m5Work) {
+	result, err := c.executor.Execute(ctx, execute.ExecuteInput{TaskID: work.TaskID})
+	if err != nil {
+		if errors.Is(err, execute.ErrVersionConflict) || errors.Is(err, execute.ErrInvalidTransition) || errors.Is(err, execute.ErrTaskNotFound) {
+			c.logf(ctx, "stage=m5 step=execute trigger=queue task_id=%d version=%d status=stale", work.TaskID, work.Version)
 			return
-		case work := <-c.tasks.items:
-			c.tasks.received(work)
-			workCtx := observability.WithLogID(ctx, work.LogID)
-			result, err := c.executor.Execute(workCtx, execute.ExecuteInput{TaskID: work.TaskID})
-			if err != nil {
-				if errors.Is(err, execute.ErrVersionConflict) || errors.Is(err, execute.ErrInvalidTransition) || errors.Is(err, execute.ErrTaskNotFound) {
-					c.logf(workCtx, "stage=m5 trigger=queue task_id=%d version=%d status=stale", work.TaskID, work.Version)
-				} else {
-					c.logf(workCtx, "stage=m5 trigger=queue task_id=%d version=%d status=error error=%+v", work.TaskID, work.Version, err)
-				}
-			} else if result == nil {
-				c.logf(workCtx, "stage=m5 trigger=queue task_id=%d version=%d status=error error=nil_result", work.TaskID, work.Version)
-			} else {
-				c.logf(workCtx, "stage=m5 trigger=queue task_id=%d status=ok result=%s", work.TaskID, result.Status)
-			}
 		}
+		c.logf(ctx, "stage=m5 step=execute trigger=queue task_id=%d version=%d status=error error=%+v", work.TaskID, work.Version, err)
+		return
 	}
+	if result == nil {
+		c.logf(ctx, "stage=m5 step=execute trigger=queue task_id=%d version=%d status=error error=nil_result", work.TaskID, work.Version)
+		return
+	}
+	c.logf(ctx, "stage=m5 step=execute trigger=queue task_id=%d status=ok result=%s", work.TaskID, result.Status)
 }
 
 func (c *Coordinator) logf(ctx context.Context, format string, args ...any) {

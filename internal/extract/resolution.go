@@ -20,6 +20,13 @@ import (
 // fingerprint. reposHint is carried through when the matched project has none of
 // our repo data yet (repos are not populated this round).
 func resolveProject(batch ChatBatch, candidate Candidate) (*uint64, contextsnap.Resolution) {
+	return resolveProjectByHint(batch, candidate.ProjectHint)
+}
+
+// resolveProjectByHint is the attribution shared by todo candidates and
+// observations: a group binding wins outright, otherwise the model's hint is
+// matched against known projects.
+func resolveProjectByHint(batch ChatBatch, projectHint *string) (*uint64, contextsnap.Resolution) {
 	if batch.Group.ProjectID != nil {
 		name := boundProjectName(batch)
 		res := contextsnap.Resolution{
@@ -33,8 +40,8 @@ func resolveProject(batch ChatBatch, candidate Candidate) (*uint64, contextsnap.
 	}
 
 	hint := ""
-	if candidate.ProjectHint != nil {
-		hint = strings.TrimSpace(*candidate.ProjectHint)
+	if projectHint != nil {
+		hint = strings.TrimSpace(*projectHint)
 	}
 	if hint != "" {
 		if id, name, ok := matchProjectByHint(batch, hint); ok {

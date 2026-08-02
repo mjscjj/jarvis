@@ -9,7 +9,7 @@ import (
 )
 
 // activeTodoStatuses are Todo statuses that still represent a live clue for
-// semantic dedup. "auto" is included because M4 auto-routes ready clues into
+// semantic dedup. "auto" is included because the decision step auto-routes ready clues into
 // Tasks without human confirmation; the Todo remains the same action identity.
 var activeTodoStatuses = map[string]struct{}{
 	"extracted": {}, "scoring": {}, "auto": {}, "need_info": {}, "need_decision": {}, "confirmed": {},

@@ -91,27 +91,28 @@ capture:
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
   # 已结束会议妙记接入：今天内结束的会议每 5 分钟检查一次；产物未就绪会持久化重试。
-# M4 MVP：所有提取出的 Todo 都进入人工确认，不做评分、不调用 codex。
+# M5 判断环节：给 Todo 定 disposition，决定是否进入执行环节。
+# manual_mvp 模式下所有提取出的 Todo 都进入人工确认，不调用 codex。
 decide:
   enabled: true
-  mode: "codex"          # codex: 用 codex gpt-5.5 判 auto_execute/need_review/need_info；manual_mvp: 全部走人工确认
+  mode: "codex"          # codex: 用 codex gpt-5.5 判 ready/need_review/need_info/drop；manual_mvp: 全部走人工确认
   schedule: "@every 1m"
   batch_limit: 50
-  codex_sandbox: "danger-full-access"   # M4 决策也可自查补信息（本地可信环境）
+  codex_sandbox: "danger-full-access"   # 判断环节也可自查补信息（本地可信环境）
   codex_network: true
   codex_reasoning_effort: "medium"
 
-# 底层 agent CLI：供 extract(M3)/decide(M4) 使用。
+# 底层 agent CLI：供 extract(M3)/decide(M5 判断环节) 使用。
 # 与 execute/chat 独立——真正跑 Task 与右侧对话用 execute.bin/model。
 codex:
   bin: "traex"
   model: "gpt-5.5"
-  timeout_seconds: 600   # M3 抽取/M4 决策会多轮自跑 lark-cli/bytedcli 查飞书信息，放宽超时
+  timeout_seconds: 600   # M3 抽取/M5 判断会多轮自跑 lark-cli/bytedcli 查飞书信息，放宽超时
 
 # M5 任务执行：独立于上面的 codex 段。这里用更强模型真正落地。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron。
 execute:
-  enabled: true                                    # 全自动：M4 判 ready 建 Task 后立即执行；下方 schedule 只补偿遗漏（含对外动作 + push/MR）
+  enabled: true                                    # 全自动：判断环节判 ready 建 Task 后立即执行；下方 schedule 只补偿遗漏（含对外动作 + push/MR）
   schedule: "@every 5m"
   batch_limit: 5
   concurrency: 1                                    # 单次 sweep 内只执行一个 Task，避免多个 Codex/编译任务叠加占满 CPU

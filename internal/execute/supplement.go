@@ -8,7 +8,7 @@ import (
 )
 
 // ExecutionSupplement is one human clarification/instruction added during M5.
-// It is isolated from M4's Todo.context_snapshot.supplements.
+// It is isolated from the decision step's Todo.context_snapshot.supplements.
 type ExecutionSupplement struct {
 	Note    string `json:"note"`
 	At      string `json:"at"` // RFC3339 UTC
@@ -53,7 +53,7 @@ func formatExecutionSupplementDirective(items []ExecutionSupplement) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\n【执行阶段补充的信息/指示（委托人手动追加，须优先满足；可以修正或替换 m4_direction）】")
+	b.WriteString("\n\n【执行阶段补充的信息/指示（委托人手动追加，须优先满足；可以修正或替换 decision_direction）】")
 	for i, item := range items {
 		note := strings.TrimSpace(item.Note)
 		if note == "" {

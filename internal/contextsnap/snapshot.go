@@ -1,9 +1,9 @@
 // Package contextsnap defines the canonical background snapshot that M3 freezes
-// onto a Todo at extraction time and that M4/M5 replay unchanged.
+// onto a Todo at extraction time and that M5 replay unchanged.
 //
 // Per docs/design-context-pipeline.md the context is assembled/inferred exactly
 // once in M3, persisted into Todo.context_snapshot, and reused for the whole
-// M3→M4→M5 chain. Owning the struct here (instead of in decide/) prevents the
+// M3→M5 chain. Owning the struct here (instead of in decide/) prevents the
 // two ends from drifting into incompatible shapes.
 package contextsnap
 
@@ -28,14 +28,14 @@ type Snapshot struct {
 	Messages  []Message  `json:"messages"`
 	// Participants/resources/open_todos/other_projects are part of the exact
 	// context M3 used to make the extraction decision. They must be frozen too;
-	// otherwise M4/M5 only receive whichever fragments the model happened to
+	// otherwise M5 only receive whichever fragments the model happened to
 	// paraphrase into Candidate.Context.
 	Participants  []Participant  `json:"participants,omitempty"`
 	Resources     []Resource     `json:"resources,omitempty"`
 	OpenTodos     []OpenTodo     `json:"open_todos,omitempty"`
 	OtherProjects []ProjectBrief `json:"other_projects,omitempty"`
 	// Conversation is the surrounding chat context (several rounds around the
-	// cited Messages) so M4/M5 can read the fuller thread, not just the single
+	// cited Messages) so M5 can read the fuller thread, not just the single
 	// evidence message. Messages stays the precise cited evidence; Conversation
 	// is broader background.
 	Conversation []Message        `json:"conversation,omitempty"`
@@ -50,7 +50,7 @@ type Snapshot struct {
 	RequestContext json.RawMessage `json:"request_context,omitempty"`
 	// Supplements are human clarifications added after extraction (from a
 	// need_info or need_decision Todo). They are appended (never replaced) and
-	// replayed to M4 codex on re-evaluation so the decision maker sees the extra
+	// replayed to decision-step codex on re-evaluation so the decision maker sees the extra
 	// context/intent the extractor lacked.
 	Supplements []Supplement `json:"supplements,omitempty"`
 }

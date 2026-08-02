@@ -3,13 +3,11 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
-	"jarvis/internal/taskcreate"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -54,6 +52,9 @@ func Migrate(db *gorm.DB) error {
 	if err := migrateNaturalLanguageFacts(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := dropActionHash(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
 	models = append(models, domain.DecideModels()...)
@@ -64,6 +65,9 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
 	if err := backfillTaskRuntimeMVP(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
+	if err := dropRetiredColumns(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
 	return nil
@@ -103,18 +107,76 @@ func backfillTaskRuntimeMVP(db *gorm.DB) error {
 		if task.Target == "" {
 			return fmt.Errorf("Task id=%d has no target and no Todo target to backfill", task.ID)
 		}
-		hash, err := taskcreate.ActionHash(task.ActionType, task.Target, json.RawMessage(task.Plan))
-		if err != nil {
-			return fmt.Errorf("recompute Task id=%d action hash: %w", task.ID, err)
-		}
-		if hash != task.ActionHash {
-			updates["action_hash"] = hash
-		}
 		if len(updates) == 0 {
 			continue
 		}
 		if err := db.Model(&domain.Task{}).Where("id = ?", task.ID).Updates(updates).Error; err != nil {
 			return fmt.Errorf("backfill Task id=%d runtime fields: %w", task.ID, err)
+		}
+	}
+	return nil
+}
+
+// dropRetiredColumns removes columns that no longer back any behavior. The drop
+// is unconditional: none of them carry information worth preserving.
+//
+//   - todo.route stored the same string as todo.status.
+//   - todo.confidence/risk and the decision_audit scoring columns belonged to the
+//     rule engine, which no longer has an implementation.
+//   - todo.ttl_at was never read or written anywhere.
+//   - todo.extraction_model/prompt_version were written but never read.
+//   - task.autonomy_mode was derived by a function that ignored its argument and
+//     always returned "copilot"; task.approval_ref never had a writer.
+//   - todo.manual_gate_required belonged to the Todo-level confirmation queue,
+//     which is gone: the only human gate now lives on the Task.
+func dropRetiredColumns(db *gorm.DB) error {
+	retired := []struct {
+		model   any
+		table   string
+		columns []string
+	}{
+		{model: &domain.Todo{}, table: "todo", columns: []string{
+			"route", "confidence", "risk", "ttl_at", "extraction_model", "prompt_version",
+			"manual_gate_required",
+		}},
+		{model: &domain.Task{}, table: "task", columns: []string{"autonomy_mode", "approval_ref"}},
+		{model: &domain.DecisionAudit{}, table: "decision_audit", columns: []string{
+			"confidence_eff", "risk_eff", "confidence_factors", "risk_factors", "threshold_config_version",
+		}},
+	}
+	migrator := db.Migrator()
+	for _, entry := range retired {
+		if !migrator.HasTable(entry.model) {
+			continue
+		}
+		for _, column := range entry.columns {
+			if !migrator.HasColumn(entry.model, column) {
+				continue
+			}
+			if err := migrator.DropColumn(entry.model, column); err != nil {
+				return fmt.Errorf("drop retired column %s.%s: %w", entry.table, column, err)
+			}
+		}
+	}
+	return nil
+}
+
+// dropActionHash removes the abandoned action-integrity hash. It only ever
+// guarded against action_type/target/plan drift, which contradicts M5's right to
+// revise plan / background / decision_payload while executing (AGENTS.md §4).
+// task.action_hash is NOT NULL without a default, so the column must go before
+// inserts stop supplying it.
+// Table names and the raw ALTER are deliberate: action_hash no longer exists on
+// either model, so passing a model here would make the drop depend on GORM
+// resolving an unknown name as a column rather than a struct field.
+func dropActionHash(db *gorm.DB) error {
+	migrator := db.Migrator()
+	for _, table := range []string{"task", "decision_audit"} {
+		if !migrator.HasTable(table) || !migrator.HasColumn(table, "action_hash") {
+			continue
+		}
+		if err := db.Exec("ALTER TABLE `" + table + "` DROP COLUMN `action_hash`").Error; err != nil {
+			return fmt.Errorf("drop %s.action_hash: %w", table, err)
 		}
 	}
 	return nil

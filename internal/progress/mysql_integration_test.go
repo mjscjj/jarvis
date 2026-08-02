@@ -79,7 +79,7 @@ func TestProgressEventsMySQL(t *testing.T) {
 		Target: "jarvis", Context: "integration", OpenQuestions: datatypes.JSON(`[]`),
 		CommitmentStrength: "firm", SourceMessageIDs: datatypes.JSON(`[]`), SourceQuote: "test",
 		Status: "confirmed", DedupFingerprint: strings.Repeat("a", 64),
-		ExtractionModel: "test", PromptVersion: "test", FirstSeenAt: now, LastEvidenceAt: now,
+		FirstSeenAt: now, LastEvidenceAt: now,
 	}
 	if err := db.Create(&todo).Error; err != nil {
 		t.Fatalf("create Todo: %v", err)
@@ -87,9 +87,8 @@ func TestProgressEventsMySQL(t *testing.T) {
 	task := domain.Task{
 		TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType,
 		Background: datatypes.JSON(`{}`), Plan: datatypes.JSON(`{"steps":["test"]}`),
-		ConfirmedBy: "user", ConfirmedAt: now, ActionHash: strings.Repeat("b", 64),
-		Status: "pending", AutonomyMode: "copilot",
-	}
+		ConfirmedBy: "user", ConfirmedAt: now,
+		Status: "pending"}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create Task: %v", err)
 	}

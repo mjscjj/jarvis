@@ -54,10 +54,9 @@ func TestInterruptInactiveExecutionMarksTaskFailed(t *testing.T) {
 			action_type TEXT NOT NULL DEFAULT '', target TEXT NOT NULL DEFAULT '',
 			background TEXT NOT NULL DEFAULT '{}', plan TEXT NOT NULL DEFAULT '{}',
 			confirmed_by TEXT NOT NULL DEFAULT '', confirmed_at DATETIME,
-			action_hash TEXT NOT NULL DEFAULT '', source_type TEXT NOT NULL DEFAULT 'manual',
+			source_type TEXT NOT NULL DEFAULT 'manual',
 			source_id INTEGER, occurrence_key TEXT, execution_mode TEXT NOT NULL DEFAULT 'standard',
-			approval_ref TEXT, status TEXT NOT NULL, execution_result TEXT,
-			execution_supplements TEXT, autonomy_mode TEXT NOT NULL DEFAULT 'copilot',
+			status TEXT NOT NULL, execution_result TEXT, execution_supplements TEXT,
 			project_id INTEGER, version INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,

@@ -54,10 +54,6 @@ type TodoView struct {
 	IsLeaderAssigned   bool             `json:"is_leader_assigned"`
 	DueAt              *time.Time       `json:"due_at"`
 	Status             string           `json:"status"`
-	Confidence         *float64         `json:"confidence"`
-	Risk               *float64         `json:"risk"`
-	Route              *string          `json:"route"`
-	ManualGateRequired bool             `json:"manual_gate_required"`
 	Revision           int32            `json:"revision"`
 	Version            int32            `json:"version"`
 	FirstSeenAt        time.Time        `json:"first_seen_at"`
@@ -67,8 +63,8 @@ type TodoView struct {
 	Group              *TodoGroupView   `json:"group"`
 	Project            *TodoProjectView `json:"project"`
 	// Resolution / ContextSnapshot are the M3-frozen project inference trace and
-	// background so the confirmation UI can show "why this project/repo" and the
-	// full context that M4/M5 replay (docs/design-context-pipeline.md §5/§6).
+	// background, so the UI can show "why this project/repo" and the full context
+	// that M5 replays (docs/design-context-pipeline.md §5/§6).
 	Resolution      json.RawMessage `json:"resolution"`
 	ContextSnapshot json.RawMessage `json:"context_snapshot"`
 }
@@ -181,8 +177,7 @@ func todoView(todo *domain.Todo) TodoView {
 		CommitmentStrength: todo.CommitmentStrength,
 		SourceMessageIDs:   rawJSON(todo.SourceMessageIDs), SourceQuote: todo.SourceQuote,
 		AssignerOpenID: todo.AssignerOpenID, IsLeaderAssigned: todo.IsLeaderAssigned,
-		DueAt: todo.DueAt, Status: todo.Status, Confidence: todo.Confidence,
-		Risk: todo.Risk, Route: todo.Route, ManualGateRequired: todo.ManualGateRequired,
+		DueAt: todo.DueAt, Status: todo.Status,
 		Revision: todo.Revision, Version: todo.Version, FirstSeenAt: todo.FirstSeenAt,
 		LastEvidenceAt: todo.LastEvidenceAt, CreatedAt: todo.CreatedAt, UpdatedAt: todo.UpdatedAt,
 		Resolution: rawJSON(todo.Resolution), ContextSnapshot: rawJSON(todo.ContextSnapshot),

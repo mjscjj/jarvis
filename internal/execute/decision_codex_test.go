@@ -1,4 +1,4 @@
-package decide
+package execute
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func TestCodexDeciderUsesReadOnlyStructuredContract(t *testing.T) {
 }
 
 func TestCodexDeciderRejectsMissingSession(t *testing.T) {
-	resultJSON := `{"disposition":"need_info","plan":null,"payload":{"summary":"需要补充","blocks":[{"kind":"clarification","label":"缺失信息","content":"需要哪些信息？"}]}}`
+	resultJSON := `{"disposition":"drop","plan":null,"payload":{"summary":"不值得做","blocks":[{"kind":"reason","label":"理由","content":"闲聊，没有行动"}]}}`
 	decider, err := NewCodexDecider(CodexOptions{Bin: writeCodexFixture(t, resultJSON, false), Model: "fixture-model", Timeout: codexFixtureTimeout, Sandbox: "read-only", ReasoningEffort: "low"})
 	if err != nil {
 		t.Fatalf("NewCodexDecider() error = %v", err)
@@ -52,12 +52,15 @@ func TestDecodeCodexDecisionFailsFast(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{name: "unknown shell field", raw: `{"disposition":"need_info","plan":null,"payload":{"summary":"x"},"extra":1}`, want: "unknown field"},
+		{name: "unknown shell field", raw: `{"disposition":"drop","plan":null,"payload":{"summary":"x"},"extra":1}`, want: "unknown field"},
 		{name: "ready without plan", raw: `{"disposition":"ready","plan":null,"payload":{"summary":"x"}}`, want: "requires plan"},
 		{name: "ready with empty plan", raw: `{"disposition":"ready","plan":{},"payload":{"summary":"x"}}`, want: "empty object"},
-		{name: "missing payload", raw: `{"disposition":"need_info","plan":null}`, want: "payload is required"},
-		{name: "null payload", raw: `{"disposition":"need_info","plan":null,"payload":null}`, want: "must not be null"},
+		{name: "missing payload", raw: `{"disposition":"drop","plan":null}`, want: "payload is required"},
+		{name: "null payload", raw: `{"disposition":"drop","plan":null,"payload":null}`, want: "must not be null"},
 		{name: "invalid disposition", raw: `{"disposition":"bogus","plan":null,"payload":{"summary":"x"}}`, want: "invalid disposition"},
+		// The Todo-level confirmation queue is gone, so its dispositions must fail.
+		{name: "retired need_review", raw: `{"disposition":"need_review","plan":{"a":1},"payload":{"summary":"x"}}`, want: "invalid disposition"},
+		{name: "retired need_info", raw: `{"disposition":"need_info","plan":null,"payload":{"summary":"x"}}`, want: "invalid disposition"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -71,9 +74,10 @@ func TestDecodeCodexDecisionFailsFast(t *testing.T) {
 
 func TestDecodeCodexDecisionAcceptsOpenPlanAndPayload(t *testing.T) {
 	tests := map[string]string{
-		"string plan": `{"disposition":"ready","plan":"调查、验证并汇报","payload":{"unknown":{"nested":[1,true]}}}`,
-		"array plan":  `{"disposition":"need_review","plan":["调查",{"verify":true}],"payload":["风险待确认",{"kind":"future_kind"}]}`,
-		"need info":   `{"disposition":"need_info","plan":null,"payload":"请补充目标仓库"}`,
+		"string plan":   `{"disposition":"ready","plan":"调查、验证并汇报","payload":{"unknown":{"nested":[1,true]}}}`,
+		"array plan":    `{"disposition":"ready","plan":["调查",{"verify":true}],"payload":["风险待确认",{"kind":"future_kind"}]}`,
+		"open question": `{"disposition":"ready","plan":"先查清仓库再动手","payload":"需要 principal 确认目标仓库"}`,
+		"drop":          `{"disposition":"drop","plan":null,"payload":"闲聊，不值得做"}`,
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {

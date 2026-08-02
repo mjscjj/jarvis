@@ -490,22 +490,30 @@ func TestCodeChangeWithoutRepoGoesThroughPropose(t *testing.T) {
 	}
 }
 
-func TestValidateTaskIntegrityRejectsDrift(t *testing.T) {
-	plan := json.RawMessage(`{"instruction":"加入会议"}`)
-	hash, err := taskcreate.ActionHash("agent_task", "会议", plan)
-	if err != nil {
-		t.Fatalf("ActionHash() error = %v", err)
-	}
+// TestValidateTaskIntegrityChecksExecutionModeOnly pins the surviving integrity
+// check. plan / background / decision_payload are revisable by M5 while it
+// executes (AGENTS.md §4), so no field-drift detection may be reintroduced here.
+func TestValidateTaskIntegrityChecksExecutionModeOnly(t *testing.T) {
 	task := &domain.Task{
-		ID: 1, ActionType: "agent_task", Target: "会议", Plan: datatypes.JSON(plan),
-		ActionHash: hash, ExecutionMode: taskcreate.ExecutionModeDirect,
+		ID: 1, ActionType: "agent_task", Target: "会议",
+		Plan:          datatypes.JSON(`{"instruction":"加入会议"}`),
+		ExecutionMode: taskcreate.ExecutionModeDirect,
 	}
 	if err := validateTaskIntegrity(task); err != nil {
 		t.Fatalf("validateTaskIntegrity() error = %v", err)
 	}
-	task.Target = "被篡改的会议"
-	if err := validateTaskIntegrity(task); err == nil {
-		t.Fatal("validateTaskIntegrity() accepted action drift")
+
+	revised := *task
+	revised.Plan = datatypes.JSON(`{"instruction":"改为先申请权限再加入会议"}`)
+	revised.Target = "另一个会议"
+	if err := validateTaskIntegrity(&revised); err != nil {
+		t.Fatalf("validateTaskIntegrity() rejected a revised plan/target: %v", err)
+	}
+
+	unknownMode := *task
+	unknownMode.ExecutionMode = "turbo"
+	if err := validateTaskIntegrity(&unknownMode); err == nil {
+		t.Fatal("validateTaskIntegrity() accepted an unknown execution_mode")
 	}
 }
 

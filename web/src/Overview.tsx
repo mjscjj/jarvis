@@ -174,7 +174,9 @@ export default function Overview() {
   const taskNeedsHuman = countStatus(data?.tasks.by_status, 'needs_human', 'awaiting_approval')
   const taskExecuting = countStatus(data?.tasks.by_status, 'executing')
   const taskWaiting = countStatus(data?.tasks.by_status, 'waiting')
-  const needsAttention = (data?.todos.pending ?? 0) + taskNeedsHuman
+  // The only human gate is on the Task: M5 parks there when it wants me to
+  // approve a proposal or answer a question. Clues never wait on me.
+  const needsAttention = taskNeedsHuman
   const unresolvedFailures = failures.filter((item) => !item.recovered)
   const unresolvedFailureCount = unresolvedFailures.reduce((sum, item) => sum + Math.max(item.count, 1), 0)
   const today = digest?.mine.find((item) => item.date === todayDate) ?? digest?.mine[0]
@@ -238,9 +240,9 @@ export default function Overview() {
         <CompactMetric
           label="待我处理"
           value={data ? needsAttention : '—'}
-          detail={`Todo ${data?.todos.pending ?? 0} · Task ${taskNeedsHuman}`}
+          detail="待审批或待我答复的 Task"
           tone={needsAttention > 0 ? 'warning' : 'success'}
-          onClick={() => navigate(data?.todos.pending ? 'confirmations' : 'tasks')}
+          onClick={() => navigate('tasks')}
         />
         <CompactMetric
           label="Leader 未闭环"

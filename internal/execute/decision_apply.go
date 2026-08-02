@@ -1,4 +1,4 @@
-package decide
+package execute
 
 import (
 	"bytes"
@@ -17,31 +17,23 @@ import (
 )
 
 type EvaluationInput struct {
-	TodoID                 uint64
-	ExpectedVersion        int32
-	Confidence             float64
-	Risk                   float64
-	Route                  string
-	RouteReason            string
-	ConfidenceFactors      []DecisionFactor
-	RiskFactors            []DecisionFactor
-	MatchedRules           []string
-	DecisionEngine         string
-	CodexSessionID         *string
-	PromptVersion          string
-	ThresholdConfigVersion string
-	FailureDetail          string
-	Plan                   json.RawMessage
-	DecisionPayload        json.RawMessage
-	ManualGate             bool
+	TodoID          uint64
+	ExpectedVersion int32
+	Route           string
+	RouteReason     string
+	MatchedRules    []string
+	DecisionEngine  string
+	CodexSessionID  *string
+	PromptVersion   string
+	FailureDetail   string
+	Plan            json.RawMessage
+	DecisionPayload json.RawMessage
 }
 
 type EvaluationResult struct {
 	TodoID      uint64  `json:"todo_id"`
 	Status      string  `json:"status"`
 	Version     int32   `json:"version"`
-	Confidence  float64 `json:"confidence"`
-	Risk        float64 `json:"risk"`
 	TaskID      *uint64 `json:"task_id,omitempty"`
 	TaskVersion int32   `json:"task_version,omitempty"`
 }
@@ -62,14 +54,6 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 	if err := validateEvaluationInput(input); err != nil {
 		return nil, err
 	}
-	confidenceFactors, err := json.Marshal(input.ConfidenceFactors)
-	if err != nil {
-		return nil, fmt.Errorf("encode confidence factors: %w", err)
-	}
-	riskFactors, err := json.Marshal(input.RiskFactors)
-	if err != nil {
-		return nil, fmt.Errorf("encode risk factors: %w", err)
-	}
 	matchedRules, err := json.Marshal(input.MatchedRules)
 	if err != nil {
 		return nil, fmt.Errorf("encode matched rules: %w", err)
@@ -87,14 +71,7 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 			return transitionError(todo.ID, todo.Status, input.Route)
 		}
 		updates := map[string]any{
-			"route": input.Route, "status": input.Route, "version": gorm.Expr("version + 1"),
-		}
-		if input.Route == RouteNeedDecision {
-			updates["manual_gate_required"] = true
-		}
-		if input.DecisionEngine == DecisionEngineRule {
-			updates["confidence"] = input.Confidence
-			updates["risk"] = input.Risk
+			"status": input.Route, "version": gorm.Expr("version + 1"),
 		}
 		update := tx.Model(&domain.Todo{}).
 			Where("id = ? AND version = ? AND status = ?", todo.ID, input.ExpectedVersion, "extracted").
@@ -112,32 +89,22 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 			"plan":    input.Plan,
 			"payload": input.DecisionPayload,
 		}
-		if input.DecisionEngine == DecisionEngineRule {
-			eventDetail["confidence"] = input.Confidence
-			eventDetail["risk"] = input.Risk
-			eventDetail["confidence_factors"] = input.ConfidenceFactors
-			eventDetail["risk_factors"] = input.RiskFactors
-		}
 		if err := createTodoEvent(tx, todo.ID, "extracted", input.Route, eventDetail); err != nil {
 			return err
 		}
 		audit := domain.DecisionAudit{
 			TodoID: todo.ID, TS: s.now().UTC(), Route: input.Route, RouteReason: input.RouteReason,
-			ConfidenceFactors: datatypes.JSON(confidenceFactors), RiskFactors: datatypes.JSON(riskFactors), MatchedRules: datatypes.JSON(matchedRules),
+			MatchedRules:   datatypes.JSON(matchedRules),
 			DecisionEngine: input.DecisionEngine, CodexSessionID: copyString(input.CodexSessionID),
-			ThresholdConfigVersion: input.ThresholdConfigVersion, Channel: "auto", FinalStatus: input.Route,
-		}
-		if input.DecisionEngine == DecisionEngineRule {
-			audit.ConfidenceEff = float64Pointer(input.Confidence)
-			audit.RiskEff = float64Pointer(input.Risk)
+			Channel: "auto", FinalStatus: input.Route,
 		}
 		if err := tx.Create(&audit).Error; err != nil {
 			return fmt.Errorf("create evaluation audit todo_id=%d: %w", todo.ID, err)
 		}
-		// auto route: Codex judged the clue ready, so the system creates the Task
-		// itself (no human confirmation) and the Todo lands on "auto". The pipeline
-		// immediately wakes M5; its cron remains the recovery path. The confirmed
-		// plan is Codex's open plan value; the Task background is the same M3-frozen
+		// auto route: Codex judged the clue worth pursuing, so the system creates
+		// the Task itself and the Todo lands on "auto". The pipeline immediately
+		// wakes M5; its cron remains the recovery path. The confirmed plan is
+		// Codex's open plan value; the Task background is the same M3-frozen
 		// context_snapshot M5 replays.
 		var createdTask *domain.Task
 		if input.Route == RouteAuto {
@@ -152,7 +119,6 @@ func (s *EvaluationStore) Apply(ctx context.Context, input EvaluationInput) (*Ev
 		}
 		result = EvaluationResult{
 			TodoID: todo.ID, Status: input.Route, Version: todo.Version + 1,
-			Confidence: input.Confidence, Risk: input.Risk,
 		}
 		if createdTask != nil {
 			result.TaskID = &createdTask.ID
@@ -171,35 +137,15 @@ func validateEvaluationInput(input EvaluationInput) error {
 		return fmt.Errorf("%w: evaluation Todo ID/version is invalid", ErrInvalidInput)
 	}
 	switch input.Route {
-	case RouteAuto, RouteNeedInfo, RouteNeedDecision, RouteDropped:
+	case RouteAuto, RouteDropped:
 	default:
-		return fmt.Errorf("%w: evaluation route must be auto, need_info, need_decision or dropped", ErrInvalidInput)
+		return fmt.Errorf("%w: evaluation route must be auto or dropped", ErrInvalidInput)
 	}
 	if input.Route == RouteAuto && len(bytes.TrimSpace(input.Plan)) == 0 {
 		return fmt.Errorf("%w: auto route requires a plan", ErrInvalidInput)
 	}
 	if strings.TrimSpace(input.RouteReason) == "" {
 		return fmt.Errorf("%w: evaluation route reason is blank", ErrInvalidInput)
-	}
-	if input.ManualGate {
-		if input.Route != RouteNeedDecision || input.DecisionEngine != DecisionEngineManual {
-			return fmt.Errorf("%w: manual gate must route to need_decision with manual engine", ErrInvalidInput)
-		}
-		if len(input.ConfidenceFactors) != 0 || len(input.RiskFactors) != 0 || len(input.Plan) != 0 || len(input.DecisionPayload) != 0 || input.CodexSessionID != nil || input.PromptVersion != "" {
-			return fmt.Errorf("%w: manual gate must not contain scoring or Codex data", ErrInvalidInput)
-		}
-	} else {
-		if input.DecisionEngine == DecisionEngineRule {
-			if err := validateRuleScore(RuleScore{Confidence: input.Confidence, Risk: input.Risk}); err != nil {
-				return fmt.Errorf("%w: %v", ErrInvalidInput, err)
-			}
-			if err := validateFactors("confidence", input.ConfidenceFactors); err != nil {
-				return fmt.Errorf("%w: %v", ErrInvalidInput, err)
-			}
-			if err := validateFactors("risk", input.RiskFactors); err != nil {
-				return fmt.Errorf("%w: %v", ErrInvalidInput, err)
-			}
-		}
 	}
 	if len(input.MatchedRules) == 0 {
 		return fmt.Errorf("%w: evaluation matched rules is empty", ErrInvalidInput)
@@ -209,27 +155,17 @@ func validateEvaluationInput(input EvaluationInput) error {
 			return fmt.Errorf("%w: evaluation matched_rules[%d] is blank", ErrInvalidInput, position)
 		}
 	}
-	if input.DecisionEngine != DecisionEngineRule && input.DecisionEngine != DecisionEngineCodex && input.DecisionEngine != DecisionEngineManual {
+	if input.DecisionEngine != DecisionEngineCodex {
 		return fmt.Errorf("%w: evaluation decision engine is unsupported", ErrInvalidInput)
 	}
-	if input.DecisionEngine == DecisionEngineManual && !input.ManualGate {
-		return fmt.Errorf("%w: manual decision engine requires manual gate", ErrInvalidInput)
+	if strings.TrimSpace(input.PromptVersion) == "" {
+		return fmt.Errorf("%w: Codex evaluation prompt version is blank", ErrInvalidInput)
 	}
-	if strings.TrimSpace(input.ThresholdConfigVersion) == "" {
-		return fmt.Errorf("%w: evaluation threshold config version is blank", ErrInvalidInput)
+	if (input.CodexSessionID == nil || strings.TrimSpace(*input.CodexSessionID) == "") && strings.TrimSpace(input.FailureDetail) == "" {
+		return fmt.Errorf("%w: Codex evaluation requires session ID or failure detail", ErrInvalidInput)
 	}
-	if input.DecisionEngine == DecisionEngineCodex {
-		if strings.TrimSpace(input.PromptVersion) == "" {
-			return fmt.Errorf("%w: Codex evaluation prompt version is blank", ErrInvalidInput)
-		}
-		if (input.CodexSessionID == nil || strings.TrimSpace(*input.CodexSessionID) == "") && strings.TrimSpace(input.FailureDetail) == "" {
-			return fmt.Errorf("%w: Codex evaluation requires session ID or failure detail", ErrInvalidInput)
-		}
-		payload, err := canonicalJSONValue(input.DecisionPayload, "decision payload", false)
-		if err != nil {
-			return err
-		}
-		input.DecisionPayload = payload
+	if _, err := canonicalJSONValue(input.DecisionPayload, "decision payload", false); err != nil {
+		return err
 	}
 	if len(bytes.TrimSpace(input.Plan)) != 0 {
 		if _, err := canonicalJSONValue(input.Plan, "plan", false); err != nil {
@@ -240,9 +176,9 @@ func validateEvaluationInput(input EvaluationInput) error {
 }
 
 // createAutoTask creates the Task for an auto-routed Todo inside the evaluation
-// transaction. It mirrors Service.Approve's task creation but records the system
-// (m4_auto) as the confirmer instead of a human. The plan column retains M4's
-// open, low-confidence direction; M5 receives it explicitly as m4_direction.
+// transaction, recording the judgment step itself as the confirmer. The plan
+// column retains the judgment's open, low-confidence direction; M5 receives it
+// explicitly as decision_direction.
 func createAutoTask(ctx context.Context, tx *gorm.DB, now time.Time, todo *domain.Todo, plan, decisionPayload, background json.RawMessage) (*domain.Task, error) {
 	if len(bytes.TrimSpace(plan)) == 0 {
 		return nil, fmt.Errorf("%w: auto task todo_id=%d has no proposed plan", ErrInvalidInput, todo.ID)
@@ -268,9 +204,9 @@ func createAutoTask(ctx context.Context, tx *gorm.DB, now time.Time, todo *domai
 		TodoID: &todoID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
 		Background: background, SourceClue: json.RawMessage(todo.ExtractionResult),
 		Plan: planJSON, DecisionPayload: decisionPayload,
-		ConfirmedBy: "m4_auto", ConfirmedAt: &now,
+		ConfirmedBy: "m5_decision", ConfirmedAt: &now,
 		ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todoID,
-		ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "m4",
+		ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "m5",
 	})
 	if errors.Is(err, taskcreate.ErrExists) {
 		return nil, fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
@@ -284,9 +220,4 @@ func createAutoTask(ctx context.Context, tx *gorm.DB, now time.Time, todo *domai
 		return nil, err
 	}
 	return task, nil
-}
-
-func float64Pointer(value float64) *float64 {
-	copy := value
-	return &copy
 }

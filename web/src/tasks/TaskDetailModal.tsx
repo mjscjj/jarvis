@@ -1223,7 +1223,6 @@ function TaskMeta({ task }: { task: Task }) {
         <Descriptions.Item label="Task">#{task.id}</Descriptions.Item>
         <Descriptions.Item label="确认人">{task.confirmed_by || '—'}</Descriptions.Item>
         <Descriptions.Item label="确认时间">{task.confirmed_at ? formatTime(task.confirmed_at) : '—'}</Descriptions.Item>
-        <Descriptions.Item label="自主模式">{task.autonomy_mode || '—'}</Descriptions.Item>
         <Descriptions.Item label="版本">v{task.version}</Descriptions.Item>
       </Descriptions>
     </aside>

@@ -1,4 +1,4 @@
-package decide
+package execute
 
 import (
 	"context"
@@ -11,11 +11,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// maxPriorEvalsInPrompt caps how many previous M4 evaluation events ride into
+// maxPriorEvalsInPrompt caps how many previous decision evaluation events ride into
 // the next decision prompt. Oldest beyond the cap are dropped.
 const maxPriorEvalsInPrompt = 5
 
-// PriorEvaluation is a compact summary of one earlier M4 evaluation for a Todo.
+// PriorEvaluation is a compact summary of one earlier decision evaluation for a Todo.
 // It is injected into re-evaluation prompts so Codex knows what it already asked,
 // proposed, and looked up — instead of starting from a blank slate after a
 // human supplement.

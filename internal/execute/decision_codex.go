@@ -1,4 +1,4 @@
-package decide
+package execute
 
 import (
 	"bytes"
@@ -15,13 +15,12 @@ import (
 )
 
 const (
-	maxCodexOutputBytes = 1 << 20
 	codexDecisionSchema = `{
   "type":"object",
   "additionalProperties":false,
   "required":["disposition","plan","payload"],
   "properties":{
-    "disposition":{"type":"string","enum":["ready","need_review","need_info","drop"]},
+    "disposition":{"type":"string","enum":["ready","drop"]},
     "plan":{"type":"string","minLength":1},
     "payload":{"type":"string","minLength":1}
   }
@@ -32,8 +31,8 @@ type CodexOptions struct {
 	Bin     string
 	Model   string
 	Timeout time.Duration
-	// Sandbox / Network / ReasoningEffort配置 M4 决策 codex 的权限与推理档位。
-	// 设计 §2.3：M4 决策也可自查补信息，用 danger-full-access + 联网 + low 推理。
+	// Sandbox / Network / ReasoningEffort配置 M5 判断环节 codex 的权限与推理档位。
+	// 设计 §2.3：M5 判断环节也可自查补信息，用 danger-full-access + 联网 + low 推理。
 	Sandbox         string
 	Network         bool
 	ReasoningEffort string
@@ -45,22 +44,16 @@ type CodexInput struct {
 }
 
 type CodexDecision struct {
-	// Disposition is Codex's own verdict on how to handle the clue: ready /
-	// need_review / need_info / drop. It is authoritative — the route is derived
-	// from it directly, not re-inferred from semantic payload fields.
+	// Disposition is Codex's own verdict on whether the clue is worth pursuing:
+	// ready / drop. It is authoritative — the route is derived from it directly,
+	// not re-inferred from semantic payload fields.
 	Disposition string `json:"disposition"`
-	// Plan is the complete execution intent. M4 does not prescribe its semantic
-	// shape; ready/need_review only require a non-null JSON value.
+	// Plan is the complete execution intent. The decision step does not prescribe
+	// its semantic shape; ready only requires a non-null JSON value.
 	Plan json.RawMessage `json:"plan"`
-	// Payload carries reasoning, evidence, risks, clarification requests and any
-	// future model-authored semantics without widening this Go contract.
+	// Payload carries reasoning, evidence, risks, open questions for the principal
+	// and any future model-authored semantics without widening this Go contract.
 	Payload json.RawMessage `json:"payload"`
-}
-
-type DecisionFactor struct {
-	Name  string  `json:"name"`
-	Score float64 `json:"score"`
-	Basis string  `json:"basis"`
 }
 
 type CodexResult struct {
@@ -191,54 +184,6 @@ func validateRepoPath(value string) (string, error) {
 	return absolute, nil
 }
 
-// codexSessionID extracts the thread_id from codex/traex JSONL output. It uses a
-// streaming json.Decoder rather than a line scanner because a single JSONL event
-// (e.g. an investigate task's captured tool output) can exceed any fixed line
-// buffer; the decoder reads value-by-value and is not bound by line length.
-func codexSessionID(output []byte) (string, error) {
-	decoder := json.NewDecoder(bytes.NewReader(output))
-	var sessionID string
-	for {
-		var event struct {
-			Type     string `json:"type"`
-			ThreadID string `json:"thread_id"`
-		}
-		err := decoder.Decode(&event)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "", fmt.Errorf("decode codex JSONL stream: %w", err)
-		}
-		if event.Type == "thread.started" {
-			if strings.TrimSpace(event.ThreadID) == "" {
-				return "", fmt.Errorf("codex thread.started event is missing thread_id")
-			}
-			sessionID = event.ThreadID
-		}
-	}
-	if sessionID == "" {
-		return "", fmt.Errorf("codex JSONL output is missing thread.started event")
-	}
-	return sessionID, nil
-}
-
-func readLimitedFile(path string, limit int64) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open codex decision result: %w", err)
-	}
-	defer file.Close()
-	result, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("read codex decision result: %w", err)
-	}
-	if int64(len(result)) > limit {
-		return nil, fmt.Errorf("codex decision result exceeds %d bytes", limit)
-	}
-	return result, nil
-}
-
 func decodeCodexDecision(raw []byte) (*CodexDecision, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -259,22 +204,12 @@ func decodeCodexDecision(raw []byte) (*CodexDecision, error) {
 	}
 	decision.Payload = payload
 	switch decision.Disposition {
-	case DispositionReady, DispositionNeedReview:
+	case DispositionReady:
 		plan, err := canonicalJSONValue(decision.Plan, "codex decision plan", false)
 		if err != nil {
 			return nil, fmt.Errorf("codex decision disposition=%s requires plan: %w", decision.Disposition, err)
 		}
 		decision.Plan = plan
-	case DispositionNeedInfo:
-		if bytes.Equal(bytes.TrimSpace(decision.Plan), []byte("null")) {
-			decision.Plan = nil
-		} else if len(bytes.TrimSpace(decision.Plan)) != 0 {
-			plan, err := canonicalJSONValue(decision.Plan, "codex decision plan", false)
-			if err != nil {
-				return nil, err
-			}
-			decision.Plan = plan
-		}
 	case DispositionDrop:
 		if bytes.Equal(bytes.TrimSpace(decision.Plan), []byte("null")) {
 			decision.Plan = nil
@@ -289,36 +224,4 @@ func decodeCodexDecision(raw []byte) (*CodexDecision, error) {
 		return nil, fmt.Errorf("codex decision has invalid disposition %q", decision.Disposition)
 	}
 	return &decision, nil
-}
-
-func validateFactors(name string, factors []DecisionFactor) error {
-	if len(factors) == 0 {
-		return fmt.Errorf("codex decision %s_factors is empty", name)
-	}
-	seen := make(map[string]struct{}, len(factors))
-	for position, factor := range factors {
-		factorName := strings.TrimSpace(factor.Name)
-		if factorName == "" {
-			return fmt.Errorf("codex decision %s_factors[%d] has blank name", name, position)
-		}
-		if _, exists := seen[factorName]; exists {
-			return fmt.Errorf("codex decision %s_factors contains duplicate name %q", name, factorName)
-		}
-		seen[factorName] = struct{}{}
-		if !unitScore(factor.Score) {
-			return fmt.Errorf("codex decision %s factor %q score=%v is outside [0,1]", name, factorName, factor.Score)
-		}
-		if strings.TrimSpace(factor.Basis) == "" {
-			return fmt.Errorf("codex decision %s factor %q basis is blank", name, factorName)
-		}
-	}
-	return nil
-}
-
-func limitedText(value []byte, limit int) string {
-	value = bytes.TrimSpace(value)
-	if len(value) <= limit {
-		return string(value)
-	}
-	return string(value[:limit]) + "..."
 }

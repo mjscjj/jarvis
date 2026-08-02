@@ -21,8 +21,6 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-const PromptVersion = "todo-extraction-v3"
-
 var (
 	ErrInvalidExtraction     = errors.New("invalid extraction result")
 	ErrInvalidCandidate      = errors.New("invalid todo candidate")
@@ -108,13 +106,17 @@ type Candidate struct {
 	// Semantics is an open pocket (natural language or JSON text) for anything
 	// the model needs to carry that has no dedicated field: current blockers,
 	// inference chain, candidate paths, follow-ups. Go never parses it; it rides
-	// verbatim into extraction_result and on to M4 and M5. Adding a new kind of
+	// verbatim into extraction_result and on to the decision and execution steps. Adding a new kind of
 	// reasoning here must not require widening this struct.
 	Semantics string `json:"semantics"`
 }
 
 type ExtractionResult struct {
 	Candidates []Candidate `json:"candidates"`
+	// Observations are the things worth remembering that ask nothing of the
+	// principal. An empty list is a normal outcome (this batch was all noise or
+	// all work), so unlike Candidates a missing key is tolerated.
+	Observations []ObservationCandidate `json:"observations"`
 }
 
 // DecodeExtractionResult rejects unknown fields and trailing JSON before
@@ -135,6 +137,11 @@ func DecodeExtractionResult(payload []byte) (*ExtractionResult, error) {
 	for i := range result.Candidates {
 		if err := ValidateCandidate(&result.Candidates[i]); err != nil {
 			return nil, fmt.Errorf("%w: candidate[%d]: %v", ErrInvalidExtraction, i, err)
+		}
+	}
+	for i := range result.Observations {
+		if err := ValidateObservation(&result.Observations[i]); err != nil {
+			return nil, fmt.Errorf("%w: observation[%d]: %v", ErrInvalidExtraction, i, err)
 		}
 	}
 	return &result, nil

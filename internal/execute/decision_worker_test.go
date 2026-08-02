@@ -1,4 +1,4 @@
-package decide
+package execute
 
 import (
 	"context"
@@ -45,12 +45,13 @@ func (f *fakeTodoEvaluator) Evaluate(_ context.Context, todo *domain.Todo) (*Eva
 	if todo.ID == f.errAt {
 		return nil, errors.New("synthetic evaluation failure")
 	}
-	input := fixtureEvaluationInput()
+	input := fixtureCodexEvaluationInput()
 	input.TodoID = todo.ID
 	input.ExpectedVersion = todo.Version
 	if todo.ID%2 == 0 {
-		input.Route = RouteNeedInfo
-		input.RouteReason = "missing_required_slot"
+		input.Route = RouteDropped
+		input.RouteReason = "codex_" + DispositionDrop
+		input.Plan = nil
 	}
 	return &input, nil
 }
@@ -79,7 +80,7 @@ func TestDecisionWorkerEvaluateOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvaluateOnce() error = %v", err)
 	}
-	if stats.Loaded != 2 || stats.Evaluated != 2 || stats.NeedInfo != 1 || stats.NeedDecision != 1 {
+	if stats.Loaded != 2 || stats.Evaluated != 2 || stats.Auto != 1 || stats.Dropped != 1 {
 		t.Fatalf("stats = %#v", stats)
 	}
 	if source.limit != 20 || len(evaluator.calls) != 2 || len(writer.inputs) != 2 {

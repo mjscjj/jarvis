@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
@@ -42,10 +43,12 @@ func TestRelationFactsMySQL(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
+	validFrom := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
 	created, err := service.Create(context.Background(), knowledge.CreateInput{
 		EntityA:     knowledge.EntityRef{Type: knowledge.EntityProject, ID: project.ID},
 		EntityB:     knowledge.EntityRef{Type: knowledge.EntityPerson, ID: person.ID},
 		Description: "Owner 负责 Jarvis 项目。",
+		ValidFrom:   &validFrom,
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -53,17 +56,31 @@ func TestRelationFactsMySQL(t *testing.T) {
 	if created.EntityA.Label != "Owner" || created.EntityB.Label != "Jarvis" {
 		t.Fatalf("canonical labeled entities = %#v / %#v", created.EntityA, created.EntityB)
 	}
+	if created.ValidFrom == nil || !created.ValidFrom.Equal(validFrom) {
+		t.Fatalf("created valid_from = %v, want %v", created.ValidFrom, validFrom)
+	}
+	if created.ValidUntil != nil {
+		t.Fatalf("created valid_until = %v, want nil for a current relationship", created.ValidUntil)
+	}
 
+	// Ending a relationship is an upsert that sets valid_until; the row stays so
+	// "used to own this" remains queryable.
+	validUntil := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
 	upserted, err := service.Create(context.Background(), knowledge.CreateInput{
 		EntityA:     knowledge.EntityRef{Type: knowledge.EntityPerson, ID: person.ID},
 		EntityB:     knowledge.EntityRef{Type: knowledge.EntityProject, ID: project.ID},
 		Description: "Owner 负责 Jarvis 项目的交付。",
+		ValidFrom:   &validFrom,
+		ValidUntil:  &validUntil,
 	})
 	if err != nil {
 		t.Fatalf("upsert relation: %v", err)
 	}
 	if upserted.ID != created.ID || upserted.Description != "Owner 负责 Jarvis 项目的交付。" {
 		t.Fatalf("upserted = %#v", upserted)
+	}
+	if upserted.ValidUntil == nil || !upserted.ValidUntil.Equal(validUntil) {
+		t.Fatalf("upserted valid_until = %v, want %v", upserted.ValidUntil, validUntil)
 	}
 
 	entityType := knowledge.EntityProject
@@ -78,11 +95,16 @@ func TestRelationFactsMySQL(t *testing.T) {
 		t.Fatalf("facts = %#v", list)
 	}
 
+	// Update replaces the whole editable payload, so omitting both bounds clears
+	// them rather than silently keeping the stored period.
 	updated, err := service.Update(context.Background(), knowledge.UpdateInput{
 		FactID: created.ID, Description: "Owner 与 Jarvis 项目保持协作。",
 	})
 	if err != nil || updated.Description != "Owner 与 Jarvis 项目保持协作。" {
 		t.Fatalf("Update() result=%#v error=%v", updated, err)
+	}
+	if updated.ValidFrom != nil || updated.ValidUntil != nil {
+		t.Fatalf("updated period = %v / %v, want both cleared", updated.ValidFrom, updated.ValidUntil)
 	}
 	if err := service.Delete(context.Background(), created.ID); err != nil {
 		t.Fatalf("Delete() error = %v", err)

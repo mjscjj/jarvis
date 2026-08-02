@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -113,4 +116,25 @@ func writeAPIError(c *app.RequestContext, status, code int, err error) {
 		hlog.CtxWarnf(ctx, "api request rejected status=%d code=%d method=%s path=%s error=%+v", status, code, method, path, err)
 	}
 	c.JSON(status, map[string]any{"code": code, "msg": err.Error(), "logid": logID})
+}
+
+// decodeStrictJSON decodes one request body and rejects anything the target does
+// not declare, so a typo in a field name fails loudly instead of being ignored.
+func decodeStrictJSON(body []byte, target any) error {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return fmt.Errorf("request body is required")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return fmt.Errorf("decode request body: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("request body contains multiple JSON values")
+		}
+		return fmt.Errorf("decode trailing request body: %w", err)
+	}
+	return nil
 }
