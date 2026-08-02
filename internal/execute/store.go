@@ -34,7 +34,7 @@ var taskStatuses = map[string]struct{}{
 
 type TaskFilter struct {
 	Statuses []string
-	// From / Until narrow by COALESCE(last_progress_at, confirmed_at) as a
+	// From / Until narrow by COALESCE(last_progress_at, created_at) as a
 	// half-open RFC3339 window. Callers own the timezone.
 	From     *time.Time
 	Until    *time.Time
@@ -57,8 +57,6 @@ type TaskView struct {
 	Target               string                `json:"target"`
 	Background           json.RawMessage       `json:"background"`
 	Plan                 json.RawMessage       `json:"plan"`
-	ConfirmedBy          string                `json:"confirmed_by"`
-	ConfirmedAt          time.Time             `json:"confirmed_at"`
 	SourceType           string                `json:"source_type"`
 	SourceID             *uint64               `json:"source_id"`
 	OccurrenceKey        *string               `json:"occurrence_key"`
@@ -152,10 +150,10 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 		query = query.Where("status IN ?", filter.Statuses)
 	}
 	if filter.From != nil {
-		query = query.Where("COALESCE(last_progress_at, confirmed_at) >= ?", filter.From.UTC())
+		query = query.Where("COALESCE(last_progress_at, created_at) >= ?", filter.From.UTC())
 	}
 	if filter.Until != nil {
-		query = query.Where("COALESCE(last_progress_at, confirmed_at) < ?", filter.Until.UTC())
+		query = query.Where("COALESCE(last_progress_at, created_at) < ?", filter.Until.UTC())
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -425,7 +423,7 @@ func (s *Store) MarkExecuting(ctx context.Context, taskID uint64, expectedVersio
 }
 
 // MarkAwaitingApproval parks an executing Task at awaiting_approval after the
-// propose stage decided the external write is high-risk. It stores the approved-
+// running agent decides the next external write needs review. It stores the approved-
 // pending proposal (the plan + full artifact codex produced without touching the
 // outside world) into execution_result so the UI can render it and the later
 // apply stage can replay it. It bumps the version and returns the new version.
@@ -580,7 +578,7 @@ func (s *Store) MarkNeedsHuman(ctx context.Context, taskID uint64, expectedVersi
 // execution step concluded nobody needs to act.
 //
 // Execution decides after actually investigating, so it can find out the matter
-// is real but asks nothing of anyone. Leaving the clue on "auto" would keep
+// is real but asks nothing of anyone. Leaving the clue on "materialized" would keep
 // claiming a Task is driving it. observing is a live status for dedup, so
 // re-seeing the same matter updates this clue instead of minting a second one,
 // and fresh evidence can pull it back to extracted for another execution.
@@ -598,19 +596,19 @@ func parkClueAsObserving(db *gorm.DB, task *domain.Task) error {
 	if todo.Status == "observing" {
 		return nil
 	}
-	if todo.Status != "auto" {
+	if todo.Status != "materialized" {
 		return fmt.Errorf("%w: todo_id=%d from=%s to=observing", ErrInvalidTransition, todo.ID, todo.Status)
 	}
 	update := db.Model(&domain.Todo{}).
-		Where("id = ? AND status = ?", todo.ID, "auto").
+		Where("id = ? AND status = ?", todo.ID, "materialized").
 		Updates(map[string]any{"status": "observing", "version": gorm.Expr("version + 1")})
 	if update.Error != nil {
 		return fmt.Errorf("park clue id=%d as observing: %w", todo.ID, update.Error)
 	}
 	if update.RowsAffected != 1 {
-		return fmt.Errorf("%w: todo_id=%d from=auto to=observing", ErrVersionConflict, todo.ID)
+		return fmt.Errorf("%w: todo_id=%d from=materialized to=observing", ErrVersionConflict, todo.ID)
 	}
-	return createTodoEvent(db, todo.ID, "auto", "observing", map[string]any{
+	return createTodoEvent(db, todo.ID, "materialized", "observing", "m5", map[string]any{
 		"event_type": "parked_observing",
 		"reason":     "execution investigated and found nothing anyone needs to act on",
 		"task_id":    task.ID,
@@ -776,7 +774,7 @@ func needsHumanSourceRunID(raw []byte) (uint64, error) {
 // MarkExecutingFromApproval claims an awaiting_approval Task for the apply stage
 // (awaiting_approval -> executing) under optimistic lock and returns the new
 // version. It is the concurrency guard for Approve, mirroring MarkExecuting for
-// the propose stage.
+// the initial execution.
 func (s *Store) MarkExecutingFromApproval(ctx context.Context, taskID uint64, expectedVersion int32) (int32, error) {
 	if taskID == 0 || expectedVersion < 0 {
 		return 0, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
@@ -939,7 +937,7 @@ func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task,
 
 // ClaimForReapply claims a failed Task for a re-apply of its already-approved
 // proposal (failed -> executing) under optimistic lock, returning the new
-// version. Unlike rerun (which restarts propose and re-requests approval), this
+// version. Unlike rerun (which restarts execution and may request approval again), this
 // re-lands the SAME artifact a human already approved, so it only accepts a Task
 // whose last landing attempt (apply stage) failed — the caller verifies an
 // approved proposal is recoverable before invoking this. It does not clear the
@@ -991,7 +989,7 @@ func (s *Store) ClaimForReapply(ctx context.Context, taskID uint64, expectedVers
 }
 
 // LastApprovedProposal recovers the proposal a human approved for a Task by
-// reading its execution_run audit history: the propose-stage run stored the full
+// reading its execution_run audit history: the execution that paused stored the full
 // proposal (needs_approval=true) in output. It returns the newest such proposal
 // so a re-apply lands exactly what was approved. Returns (nil, nil) when no
 // approved proposal exists (e.g. the Task never went through approval).
@@ -1014,7 +1012,7 @@ func (s *Store) LastApprovedProposal(ctx context.Context, taskID uint64) (*codex
 	return nil, nil
 }
 
-// proposalFromRunOutput extracts a complete approved proposal from a propose-stage
+// proposalFromRunOutput extracts a complete approved proposal from an execution
 // run's output (needs_approval=true + full proposal). It returns nil for any run
 // whose output is not an approvable proposal (missing/partial), so callers can
 // scan run history newest-first and take the first non-nil.
@@ -1061,7 +1059,7 @@ func (s *Store) ListRuns(ctx context.Context, taskID uint64) (*RunList, error) {
 	return &RunList{Items: items}, nil
 }
 
-// LoadPending returns pending Tasks for the cron auto-executor, oldest first.
+// LoadPending returns pending Tasks for the scheduled executor, oldest first.
 func (s *Store) LoadPending(ctx context.Context, limit int) ([]domain.Task, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("%w: pending load limit must be positive", ErrInvalidInput)
@@ -1069,7 +1067,7 @@ func (s *Store) LoadPending(ctx context.Context, limit int) ([]domain.Task, erro
 	var rows []domain.Task
 	if err := s.db.WithContext(ctx).
 		Where("status = ?", "pending").
-		Order("confirmed_at ASC, id ASC").
+		Order("created_at ASC, id ASC").
 		Limit(limit).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load pending execution Tasks: %w", err)
 	}
@@ -1221,7 +1219,6 @@ func taskView(ctx context.Context, task *domain.Task) TaskView {
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
 		Target:     task.Target,
 		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
-		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt,
 		SourceType: task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
 		ExecutionMode: task.ExecutionMode,
 		Status:        task.Status, ExecutionResult: rawJSON(task.ExecutionResult),

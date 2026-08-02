@@ -181,14 +181,14 @@ func TestLoadBaselineUsesDayEventsAndIgnoresHistoricalOpenRows(t *testing.T) {
 	}
 	if err := db.Exec(
 		`INSERT INTO todo(id,title,status,commitment_strength,is_leader_assigned) VALUES
-		 (1,'历史开放 Todo','need_info','firm',1),
-		 (2,'当天 Todo','confirmed','firm',0)`,
+		 (1,'历史观察 Todo','observing','firm',1),
+		 (2,'当天 Todo','materialized','firm',0)`,
 	).Error; err != nil {
 		t.Fatalf("insert todos: %v", err)
 	}
 	if err := db.Exec(
-		`INSERT INTO todo_event(id,todo_id,to_status,actor,detail,snapshot,created_at)
-		 VALUES (20,2,'confirmed','m5','{}','{"title":"事件时标题","project_id":7,"commitment_strength":"firm","leader_assigned":false,"source_quote":"我会完成","context":"冻结背景"}',?)`,
+		`INSERT INTO todo_event(id,todo_id,from_status,to_status,actor,detail,snapshot,created_at)
+		 VALUES (20,2,'extracted','materialized','materializer','{}','{"title":"事件时标题","project_id":7,"commitment_strength":"firm","leader_assigned":false,"source_quote":"我会完成","context":"冻结背景"}',?)`,
 		start.Add(9*time.Hour),
 	).Error; err != nil {
 		t.Fatalf("insert todo event: %v", err)

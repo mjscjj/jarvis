@@ -5,6 +5,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 
@@ -64,8 +65,8 @@ type ModelConfig struct {
 // critical path, so a slow or failing round never blocks capture or execution.
 //
 // Bin/Model are independent of the codex and execute sections: distillation is
-// high-volume and low-stakes, so it runs on a cheap fast model while judgment
-// and execution keep theirs.
+// high-volume and low-stakes, so it runs on a cheap fast model while interactive
+// execution keeps its stronger model.
 type FactEngineConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	Schedule string `yaml:"schedule"`
@@ -235,13 +236,13 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
 	var cfg Config
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+	if err := decodeKnownYAML(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config %q: %w", path, err)
 	}
 	overridePath := RuntimeOverridePath(path)
 	overrideRaw, err := os.ReadFile(overridePath)
 	if err == nil {
-		if err := yaml.Unmarshal(overrideRaw, &cfg); err != nil {
+		if err := decodeKnownYAML(overrideRaw, &cfg); err != nil {
 			return nil, fmt.Errorf("parse runtime config override %q: %w", overridePath, err)
 		}
 	} else if !os.IsNotExist(err) {
@@ -251,6 +252,12 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid config %q: %w", path, err)
 	}
 	return &cfg, nil
+}
+
+func decodeKnownYAML(raw []byte, target any) error {
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+	return decoder.Decode(target)
 }
 
 // validate 校验当前已启用模块的全部启动条件。model/codex 会在各自

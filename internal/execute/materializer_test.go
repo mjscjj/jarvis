@@ -40,8 +40,22 @@ func TestMaterializeTodoCreatesTaskWithoutPlan(t *testing.T) {
 	if err := db.First(&todo, 7).Error; err != nil {
 		t.Fatal(err)
 	}
-	if todo.Status != "auto" || todo.Version != 4 {
+	if todo.Status != "materialized" || todo.Version != 4 {
 		t.Fatalf("todo status=%s version=%d", todo.Status, todo.Version)
+	}
+	var todoEvent domain.TodoEvent
+	if err := db.Where("todo_id = ?", 7).Take(&todoEvent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if todoEvent.Actor != "materializer" || todoEvent.FromStatus == nil || *todoEvent.FromStatus != "extracted" || todoEvent.ToStatus != "materialized" {
+		t.Fatalf("todo event = %#v", todoEvent)
+	}
+	var taskEvent domain.TaskEvent
+	if err := db.Where("task_id = ?", result.TaskID).Take(&taskEvent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if taskEvent.ActorType != "system" || taskEvent.EventType != "created" {
+		t.Fatalf("task event = %#v", taskEvent)
 	}
 }
 
@@ -116,8 +130,7 @@ func newMaterializerTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE task (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, todo_id INTEGER UNIQUE, title TEXT NOT NULL,
 			action_type TEXT NOT NULL, target TEXT NOT NULL, background TEXT NOT NULL,
-			source_clue TEXT, plan TEXT, confirmed_by TEXT NOT NULL,
-			confirmed_at DATETIME NOT NULL, source_type TEXT NOT NULL, source_id INTEGER,
+			source_clue TEXT, plan TEXT, source_type TEXT NOT NULL, source_id INTEGER,
 			occurrence_key TEXT, execution_mode TEXT NOT NULL, status TEXT NOT NULL,
 			execution_result TEXT, summary TEXT, last_progress_at DATETIME, execution_supplements TEXT,
 			project_id INTEGER, version INTEGER NOT NULL,

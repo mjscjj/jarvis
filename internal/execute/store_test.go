@@ -209,6 +209,54 @@ func TestNewStoreRejectsNilDB(t *testing.T) {
 	}
 }
 
+func TestTaskTimeWindowsAndPendingOrderUseCreatedAt(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE task (
+		id INTEGER PRIMARY KEY,
+		status TEXT NOT NULL,
+		last_progress_at DATETIME,
+		created_at DATETIME NOT NULL,
+		updated_at DATETIME NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create task table: %v", err)
+	}
+	for _, statement := range []string{
+		`INSERT INTO task(id, status, created_at, updated_at) VALUES (1, 'pending', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')`,
+		`INSERT INTO task(id, status, last_progress_at, created_at, updated_at) VALUES (2, 'pending', '2026-08-01T12:00:00Z', '2026-07-02T00:00:00Z', '2026-08-01T12:00:00Z')`,
+		`INSERT INTO task(id, status, created_at, updated_at) VALUES (3, 'done', '2026-08-02T00:00:00Z', '2026-08-02T00:00:00Z')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("insert task fixture: %v", err)
+		}
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	from := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
+	list, err := store.ListTasks(t.Context(), TaskFilter{From: &from, Until: &until, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("ListTasks() error = %v", err)
+	}
+	if len(list.Items) != 2 || list.Total != 2 {
+		t.Fatalf("time-window tasks = %#v total=%d", list.Items, list.Total)
+	}
+	pending, err := store.LoadPending(t.Context(), 20)
+	if err != nil {
+		t.Fatalf("LoadPending() error = %v", err)
+	}
+	if len(pending) != 2 || pending[0].ID != 1 || pending[1].ID != 2 {
+		t.Fatalf("pending order = %#v", pending)
+	}
+}
+
 func TestFailStaleExecutingRejectsInvalidInput(t *testing.T) {
 	s := &Store{}
 	if _, err := s.FailStaleExecuting(context.Background(), 0, time.Now()); !errors.Is(err, ErrInvalidInput) {

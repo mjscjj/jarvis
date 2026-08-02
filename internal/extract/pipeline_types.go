@@ -60,7 +60,7 @@ type OtherProjectContext struct {
 	Description string
 }
 
-// PrincipalContext is the decision-maker ("me") background fed to the model so
+// PrincipalContext is the principal ("me") background fed to the model so
 // it knows who the principal is, what they own, and who their direct leader is —
 // which is decisive for reading a leader's soft-worded assignment as a real
 // action clue.

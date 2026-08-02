@@ -10,7 +10,7 @@ import (
 func TestPrepareTaskRunOutputPublishesCompleteBundle(t *testing.T) {
 	executor := &AgentExecutor{runsDir: t.TempDir()}
 	startedAt := time.Date(2026, 7, 23, 21, 0, 0, 0, time.UTC)
-	capture, err := executor.prepareTaskRunOutput(67, "propose", startedAt, "FULL TASK INPUT")
+	capture, err := executor.prepareTaskRunOutput(67, "execute", startedAt, "FULL TASK INPUT")
 	if err != nil {
 		t.Fatalf("prepareTaskRunOutput() error = %v", err)
 	}
@@ -24,7 +24,7 @@ func TestPrepareTaskRunOutputPublishesCompleteBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latestTaskRunOutputPaths() error = %v", err)
 	}
-	if paths == nil || paths.Stage != "propose" {
+	if paths == nil || paths.Stage != "execute" {
 		t.Fatalf("paths = %#v", paths)
 	}
 	for path, want := range map[string]string{
@@ -46,7 +46,7 @@ func TestLatestTaskRunOutputPathsChoosesNewestInvocation(t *testing.T) {
 	executor := &AgentExecutor{runsDir: t.TempDir()}
 	first := time.Unix(0, 100).UTC()
 	second := time.Unix(0, 200).UTC()
-	if _, err := executor.prepareTaskRunOutput(9, "propose", first, "first"); err != nil {
+	if _, err := executor.prepareTaskRunOutput(9, "execute", first, "first"); err != nil {
 		t.Fatalf("prepare first output: %v", err)
 	}
 	if _, err := executor.prepareTaskRunOutput(9, "apply", second, "second"); err != nil {

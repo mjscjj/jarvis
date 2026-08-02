@@ -13,9 +13,9 @@ import (
 	"gorm.io/datatypes"
 )
 
-// TestParseProposeResultHighRisk accepts a high-risk verdict that carries a full
+// TestParseApprovalRequiredResult accepts a high-risk verdict that carries a full
 // proposal (action + target + artifact).
-func TestParseProposeResultHighRisk(t *testing.T) {
+func TestParseApprovalRequiredResult(t *testing.T) {
 	msg := `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"高风险：将更新飞书文档","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"更新周报文档","target":"周报 doc token=abc","artifact":"# 周报\n本周完成了 X。"},"effects":[],"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
@@ -26,10 +26,10 @@ func TestParseProposeResultHighRisk(t *testing.T) {
 	}
 }
 
-// TestParseProposeResultRejectsMissingProposal is the core fail-fast: a
+// TestParseApprovalRequiredResultRejectsMissingProposal is the core fail-fast: a
 // needs_approval=true verdict with no proposal (or an empty artifact) is useless
 // and must be an execution failure, not a silent stop.
-func TestParseProposeResultRejectsMissingProposal(t *testing.T) {
+func TestParseApprovalRequiredResultRejectsMissingProposal(t *testing.T) {
 	cases := map[string]string{
 		"nil proposal":   `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null}`,
 		"empty artifact": `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"群 X","artifact":""},"effects":[],"waiting":null}`,
@@ -46,9 +46,9 @@ func TestParseProposeResultRejectsMissingProposal(t *testing.T) {
 	}
 }
 
-// TestParseProposeResultLowRisk accepts a low-risk verdict where the agent
+// TestParseDirectExecutionResult accepts a low-risk verdict where the agent
 // already finished the work (needs_approval=false, no proposal required).
-func TestParseProposeResultLowRisk(t *testing.T) {
+func TestParseDirectExecutionResult(t *testing.T) {
 	msg := `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已给自己发提醒","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
@@ -59,9 +59,9 @@ func TestParseProposeResultLowRisk(t *testing.T) {
 	}
 }
 
-// TestParseProposeResultLowRiskFailureNeedsReason keeps the existing fail-fast:
+// TestParseExecutionFailureNeedsReason keeps the existing fail-fast:
 // a failed low-risk verdict must explain why.
-func TestParseProposeResultLowRiskFailureNeedsReason(t *testing.T) {
+func TestParseExecutionFailureNeedsReason(t *testing.T) {
 	msg := `{"needs_approval":false,"outcome":"failed","progress_summary":"","summary":"没做成","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null}`
 	if _, err := parseExecutionResult(msg); err == nil {
 		t.Fatalf("outcome=failed without failure_reason must fail")
@@ -199,7 +199,7 @@ func TestParseExecutionResultRejectsIncompleteEnrichment(t *testing.T) {
 	}
 }
 
-func TestParseProposeResultDropsStrippedCodexMemoryCitation(t *testing.T) {
+func TestParseApprovalResultDropsStrippedCodexMemoryCitation(t *testing.T) {
 	msg := `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":"doc_token=doc_x"},{"kind":"memory_citation","label":"Memory sources","content":""}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"effects":[],"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
@@ -213,7 +213,7 @@ func TestParseProposeResultDropsStrippedCodexMemoryCitation(t *testing.T) {
 	}
 }
 
-func TestParseProposeResultAcceptsStringEnrichmentContent(t *testing.T) {
+func TestParseApprovalResultAcceptsStringEnrichmentContent(t *testing.T) {
 	msg := `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"等待审批","failure_reason":"","needs_followup":"请检查产物","enrichments":[{"kind":"evidence","label":"写入依据","content":"doc_token=doc_x; 章节: 进展/风险"}],"proposal":{"action":"更新文档","target":"doc_x","artifact":"完整文档正文"},"effects":[],"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
@@ -232,12 +232,12 @@ func TestParseProposeResultAcceptsStringEnrichmentContent(t *testing.T) {
 func TestProposalPayloadRoundTrip(t *testing.T) {
 	session := "thread-123"
 	run := &domain.ExecutionRun{ActionType: "doc_write", CodexSessionID: &session}
-	propose := &codexResult{
+	verdict := &codexResult{
 		NeedsApproval: true,
 		Summary:       "将更新文档",
 		Proposal:      &codexProposal{Action: "更新文档", Target: "doc abc", Artifact: "全文内容"},
 	}
-	encoded, err := json.Marshal(proposalPayload(run, propose))
+	encoded, err := json.Marshal(proposalPayload(run, verdict))
 	if err != nil {
 		t.Fatalf("marshal proposal payload: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestDecodeStoredProposalRejectsNonProposal(t *testing.T) {
 	}
 }
 
-// TestProposalFromRunOutput recovers the approved proposal from a propose run's
+// TestProposalFromRunOutput recovers the approved proposal from an execution run's
 // output (needs_approval=true + full proposal), and returns nil for anything not
 // approvable — the basis for "用同一已批准方案重试落地" (reapply).
 func TestProposalFromRunOutput(t *testing.T) {
@@ -378,7 +378,7 @@ func TestRejectionPayload(t *testing.T) {
 	}
 }
 
-// TestBuildExecutionPrompt verifies the propose prompt injects the editable policy.
+// TestBuildExecutionPrompt verifies the execution prompt injects the editable policy.
 func TestBuildExecutionPrompt(t *testing.T) {
 	task := &domain.Task{
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
@@ -404,7 +404,7 @@ func TestBuildExecutionPrompt(t *testing.T) {
 	}
 }
 
-// 共享记忆非空时，propose prompt 应在 TASK_CONTEXT 之前包含 BEGIN_SHARED_MEMORY 标记
+// 共享记忆非空时，execution prompt 应在 TASK_CONTEXT 之前包含 BEGIN_SHARED_MEMORY 标记
 // 与内容；为空时不包含。
 func TestBuildExecutionPromptIncludesSharedMemory(t *testing.T) {
 	task := &domain.Task{
@@ -466,16 +466,6 @@ func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	}
 }
 
-// TestInvestigateGoesThroughPropose verifies the gate rule for a NON-code_change,
-// non-traditionally-external action (investigate): it does not run to completion,
-// it goes through the propose stage, and its propose prompt still asks the agent
-// to judge — by intent — whether it will touch the outside world. This closes the
-// "an investigate Task decides mid-run to send a message" gap.
-
-// TestCodeChangeWithoutRepoGoesThroughPropose closes the hole that let Task #82
-// (a coordination task misclassified as code_change, with no repo in its frozen
-// context) send Feishu messages with neither an MR nor an approval gate.
-
 // TestValidateTaskIntegrityChecksExecutionModeOnly pins the surviving integrity
 // check. plan and background are revisable by M5 while it
 // executes (AGENTS.md §4), so no field-drift detection may be reintroduced here.
@@ -503,10 +493,10 @@ func TestValidateTaskIntegrityChecksExecutionModeOnly(t *testing.T) {
 	}
 }
 
-// TestProposeRoutingReadOnlyVsMutation documents the two propose outcomes: a
+// TestExecutionRoutingReadOnlyVsMutation documents the two execution outcomes: a
 // read-only investigation finishes in place, while any intended mutation parks
 // with a complete proposal.
-func TestProposeRoutingReadOnlyVsMutation(t *testing.T) {
+func TestExecutionRoutingReadOnlyVsMutation(t *testing.T) {
 	readOnly := `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已读日志得出结论","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null}`
 	low, err := parseExecutionResult(readOnly)
 	if err != nil {

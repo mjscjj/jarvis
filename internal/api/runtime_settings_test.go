@@ -79,6 +79,17 @@ func TestUpdateRuntimeSettingsRejectsUnknownField(t *testing.T) {
 	}
 }
 
+func TestUpdateRuntimeSettingsRejectsRetiredDecideSetting(t *testing.T) {
+	service := &fakeRuntimeSettingsService{}
+	h := server.New()
+	h.PUT("/api/runtime-settings", UpdateRuntimeSettings(service))
+	body := []byte(`{"decide_enabled":true}`)
+	response := ut.PerformRequest(h.Engine, "PUT", "/api/runtime-settings", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+}
+
 func TestUpdateRuntimeSettingsMapsValidationError(t *testing.T) {
 	service := &fakeRuntimeSettingsService{updateErr: fmt.Errorf("%w: fixture", config.ErrInvalidRuntimeSettings)}
 	h := server.New()

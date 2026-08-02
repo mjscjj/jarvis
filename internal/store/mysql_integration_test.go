@@ -73,6 +73,12 @@ func TestMigrateMySQL(t *testing.T) {
 	assertColumnType(t, db, "project_event", "description", "text")
 	assertNoColumn(t, db, "relation_fact", "predicate")
 	assertNoColumn(t, db, "project_event", "event_type")
+	assertNoColumn(t, db, "task", "confirmed_by")
+	assertNoColumn(t, db, "task", "confirmed_at")
+	assertNoColumn(t, db, "task", "decision_payload")
+	if db.Migrator().HasTable("decision_audit") {
+		t.Error("unexpected retired decision_audit table")
+	}
 
 	for _, table := range []string{"project", "feishu_group", "person", "todo", "task", "resource"} {
 		var extra string

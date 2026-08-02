@@ -31,7 +31,7 @@ var (
 	ErrExecutionInterrupted = errors.New("execution interrupted by user")
 )
 
-// ExecuteInput drives one Task execution (the propose stage).
+// ExecuteInput drives one Task execution.
 type ExecuteInput struct {
 	TaskID uint64
 }
@@ -279,8 +279,9 @@ func (e *AgentExecutor) KickRerun(ctx context.Context, taskID uint64) (*ExecuteR
 }
 
 // KickReapply re-lands the SAME human-approved proposal for a Task whose apply
-// stage previously failed (failed -> executing), WITHOUT going back through
-// propose/approval. It recovers the last approved proposal from the run history,
+// stage previously failed (failed -> executing), WITHOUT restarting the initial
+// execution and asking for approval again. It recovers the last approved
+// proposal from the run history,
 // claims the Task, and runs the apply stage in the background. It fails-fast if
 // no approved proposal is recoverable (the Task never went through approval — the
 // caller should use rerun instead). Poll Task status for completion.
@@ -631,7 +632,7 @@ func (e *AgentExecutor) KickApprove(ctx context.Context, taskID uint64, expected
 // Approve lands a proposal that a human accepted, synchronously. It claims the
 // awaiting_approval Task (-> executing), rebuilds a fresh codex invocation with
 // the approved proposal embedded in the prompt (the apply stage — codex exec
-// --ephemeral cannot resume the propose session, so this is a new run that
+// --ephemeral cannot resume the initial execution session, so this is a new run that
 // faithfully lands the already-decided artifact), and finishes the Task
 // done/failed on the real external write's verdict. Prefer KickApprove from HTTP
 // handlers; this stays for callers that need to block on the outcome (tests).
@@ -689,7 +690,8 @@ func (e *AgentExecutor) applyApproved(ctx context.Context, task *domain.Task, po
 
 // Reject declines a proposed external write. It moves the awaiting_approval Task
 // to failed and records the rejection (optionally with a reason) in
-// execution_result so the UI shows why; the Task can later be rerun to re-propose.
+// execution_result so the UI shows why; the Task can later be rerun to produce a
+// new proposal when needed.
 func (e *AgentExecutor) Reject(ctx context.Context, taskID uint64, expectedVersion int32, reason string) (*ExecuteResult, error) {
 	if taskID == 0 {
 		return nil, fmt.Errorf("%w: task_id must be positive", ErrInvalidInput)

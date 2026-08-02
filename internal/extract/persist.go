@@ -364,8 +364,8 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 	// The latest extraction wins on status, so new evidence can promote an
 	// observing clue into materialization or demote one that turned out to need
 	// nobody. This only applies while the clue still sits in a state M3 owns:
-	// once it has become auto or moved on, re-extraction must not reset it —
-	// resetting an auto Todo would mint a duplicate Task.
+	// once it has been materialized, re-extraction must not reset it — resetting
+	// a materialized Todo would try to mint a duplicate Task.
 	nextStatus := existing.Status
 	if m3OwnedTodoStatuses[existing.Status] && prepared.Candidate.Status != existing.Status {
 		nextStatus = prepared.Candidate.Status

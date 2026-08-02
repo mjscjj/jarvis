@@ -149,14 +149,14 @@ func TestDeduplicatorSkipsLLMForExactFingerprint(t *testing.T) {
 	}
 }
 
-func TestDeduplicatorTreatsAutoStatusAsActive(t *testing.T) {
+func TestDeduplicatorTreatsMaterializedStatusAsActive(t *testing.T) {
 	candidate := validCandidate()
 	fingerprint, err := Fingerprint(&candidate, nil)
 	if err != nil {
 		t.Fatalf("Fingerprint() error = %v", err)
 	}
 	existing := semanticTodoFixture(t, candidate, nil, 111)
-	existing.Status = "auto"
+	existing.Status = "materialized"
 	existing.DedupFingerprint = fingerprint
 	dedup, err := NewDeduplicator(
 		&fakeSemanticEmbedder{vector: []float32{1}},
@@ -177,7 +177,7 @@ func TestDeduplicatorTreatsAutoStatusAsActive(t *testing.T) {
 }
 
 func TestActiveTodoStatusesOnlyContainsCurrentLifecycle(t *testing.T) {
-	want := []string{"extracted", "auto", "observing"}
+	want := []string{"extracted", "materialized", "observing"}
 	if got := ActiveTodoStatuses(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("ActiveTodoStatuses() = %v, want %v", got, want)
 	}

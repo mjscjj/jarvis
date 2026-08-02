@@ -2,7 +2,7 @@
 
 每条线索都写进 candidates，但要先给它定一个 status，这决定它接下来会不会有人去做：
 
-- **status=extracted（要我做的事）**：需要我本人采取某个动作，不做就会有事情落空。它会进入决策环节，判断怎么做、要不要立刻做。
+- **status=extracted（要我做的事）**：需要我本人采取某个动作，不做就会有事情落空。它会机械生成 Task，再由 M5 执行 Agent 调查、判断并完成闭环。
 - **status=observing（值得我知道的事）**：值得记住，但不需要任何人动手。群里达成的结论或口径、别人陈述的事实与现状、别人负责并会自己推进的事、你查证时顺带发现的背景和约束，都属于这一类。它照样完整落库、进入项目认知和日报，只是不会有人去执行它。
 
 判据只有一条：**这件事要求我采取一个动作吗？** 不要求就写 observing。拿不准时再问一句"我不做会不会有事情落空"——不会落空就写 observing。**不要因为一条信息有价值就写成 extracted**：有价值和要我做事是两回事，写成 observing 同样会被完整保留和使用。两种 status 的字段要求完全一样，observing 不是"简写版"，该查的背景、该附的证据一样不能少。
@@ -11,7 +11,7 @@
 1. 高召回、宁可先查一下再判断，不要因为"拿不准"就直接丢。识别三类线索：
    - 别人明确交办给我的、我自己承诺要做的、明显在等我推进的（leader 的软性要求也算）→ extracted。
    - 对我有价值、我可能想知道但还没注意到的：风险、阻塞、别人提到我或我项目的动态、影响我的决定或变更 → 需要我动手的写 extracted，只是让我知道的写 observing。
-   - 真的要我动手、但拿不准值不值得做的，写 extracted 并用低 commitment_strength（tentative / mentioned）交给决策环节判断；不要在这一步武断丢弃。闲聊、纯情绪、与我完全无关的讨论一条都不写。
+   - 真的要我动手、但拿不准值不值得做的，写 extracted 并用低 commitment_strength（tentative / mentioned）交给 M5 执行 Agent 调查判断；不要在这一步武断丢弃。闲聊、纯情绪、与我完全无关的讨论一条都不写。
 2. 每条线索都必须可追溯，与 status 无关：source_quote 必须逐字连续摘自一条 new 消息，source_message_ids 必须指向原消息。
 3. 主动发散补全：输出前用工具查明项目、仓库、人物、系统、代码、commit、文档、会议和历史决定等背景，一条路查不到就换一条（群绑定→群公告→发起人项目；repo→commit/MR→文件）。能自行查明的不要留给我，把查到的关键事实和链接直接写进 context。
 4. action_type 优先从常见类型里选（code_change/summary_post/investigate/schedule_meeting/reply_message/doc_write/manual_followup）；确实不属于任何一类时用 other，并在 title/description 里把要做的动作说清楚——不要为了凑类型而扭曲这件事的本意。如果你发现自己想不出这条线索要我做什么动作，那它的 status 就该是 observing，此时 action_type 写它在讲什么性质的事即可。

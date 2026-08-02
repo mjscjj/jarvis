@@ -35,7 +35,7 @@ func TestActionPolicies(t *testing.T) {
 
 func TestNovelActionTypeResolvesToDefaultPolicy(t *testing.T) {
 	// action_type is an open set: any non-blank intent must remain executable,
-	// running through the propose/approval gate (only code_change is special-cased).
+	// running through the same execution/approval path (only code_change is special-cased).
 	p, ok := lookupPolicy("no_such_action")
 	if !ok {
 		t.Fatalf("novel action_type must resolve to the default policy")

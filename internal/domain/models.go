@@ -102,8 +102,8 @@ type Todo struct {
 	AssignerOpenID     *string        `gorm:"column:assigner_open_id;type:varchar(64)"`
 	IsLeaderAssigned   bool           `gorm:"column:is_leader_assigned;type:tinyint(1);not null;default:0;index:idx_todo_leader_status,priority:1"`
 	DueAt              *time.Time     `gorm:"column:due_at;type:datetime"`
-	// Status is extracted while awaiting materialization, then auto once a Task
-	// exists. Observing clues stay visible without creating a Task.
+	// Status is extracted while awaiting materialization, then materialized once
+	// a Task exists. Observing clues stay visible without creating a Task.
 	Status           string         `gorm:"column:status;type:varchar(24);not null;default:extracted;index:idx_todo_status;index:idx_todo_leader_status,priority:2"`
 	DedupFingerprint string         `gorm:"column:dedup_fingerprint;type:char(64);not null;uniqueIndex:uk_todo_fingerprint"`
 	ContextSnapshot  datatypes.JSON `gorm:"column:context_snapshot;type:json"`  // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），Task 与执行环节全链路复用
@@ -138,8 +138,6 @@ type Task struct {
 	// have no M3 clue.
 	SourceClue      datatypes.JSON `gorm:"column:source_clue;type:json"`
 	Plan            datatypes.JSON `gorm:"column:plan;type:json"`
-	ConfirmedBy     string         `gorm:"column:confirmed_by;type:varchar(16);not null"`
-	ConfirmedAt     time.Time      `gorm:"column:confirmed_at;type:datetime;not null"`
 	SourceType      string         `gorm:"column:source_type;type:varchar(24);not null;default:todo;uniqueIndex:uk_task_source_occurrence,priority:1"`
 	SourceID        *uint64        `gorm:"column:source_id;type:bigint unsigned;uniqueIndex:uk_task_source_occurrence,priority:2"`
 	OccurrenceKey   *string        `gorm:"column:occurrence_key;type:varchar(128);uniqueIndex:uk_task_source_occurrence,priority:3"`

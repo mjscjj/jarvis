@@ -68,7 +68,6 @@ func newObservingTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT NOT NULL DEFAULT '',
 			action_type TEXT NOT NULL DEFAULT '', target TEXT NOT NULL DEFAULT '',
 			background TEXT NOT NULL DEFAULT '{}', plan TEXT NOT NULL DEFAULT '{}',
-			confirmed_by TEXT NOT NULL DEFAULT '', confirmed_at DATETIME,
 			source_type TEXT NOT NULL DEFAULT 'manual', source_id INTEGER, occurrence_key TEXT,
 			execution_mode TEXT NOT NULL DEFAULT 'standard', status TEXT NOT NULL,
 			execution_result TEXT, execution_supplements TEXT,
@@ -109,9 +108,9 @@ func insertObservingFixture(t *testing.T, db *gorm.DB, todoStatus string) {
 		t.Fatalf("insert Todo: %v", err)
 	}
 	if err := db.Exec(
-		`INSERT INTO task(id, todo_id, title, action_type, background, plan, confirmed_by, confirmed_at,
+		`INSERT INTO task(id, todo_id, title, action_type, background, plan,
 			status, version, target, source_type, execution_mode)
-		 VALUES (11, 7, '同步口径', 'notify_principal', '{}', '{}', 'materializer', CURRENT_TIMESTAMP,
+		 VALUES (11, 7, '同步口径', 'notify_principal', '{}', '{}',
 			'executing', 2, '评测口径', 'todo', 'standard')`,
 	).Error; err != nil {
 		t.Fatalf("insert Task: %v", err)
@@ -123,7 +122,7 @@ func insertObservingFixture(t *testing.T, db *gorm.DB, todoStatus string) {
 // the clue goes back to observing so dedup keeps treating it as live.
 func TestFinishObservingParksClue(t *testing.T) {
 	db := newObservingTestDB(t)
-	insertObservingFixture(t, db, "auto")
+	insertObservingFixture(t, db, "materialized")
 	store, err := NewStore(db)
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
@@ -166,7 +165,7 @@ func TestFinishObservingParksClue(t *testing.T) {
 // silently rewriting a clue that is not where the pipeline expects it.
 func TestFinishObservingRejectsUnexpectedClueStatus(t *testing.T) {
 	db := newObservingTestDB(t)
-	insertObservingFixture(t, db, "dropped")
+	insertObservingFixture(t, db, "extracted")
 	store, err := NewStore(db)
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
@@ -176,7 +175,7 @@ func TestFinishObservingRejectsUnexpectedClueStatus(t *testing.T) {
 		Result:    json.RawMessage(`{"stage":"executed"}`),
 		ActorType: "m5",
 	}); err == nil {
-		t.Fatal("finishing observing from a dropped clue must fail")
+		t.Fatal("finishing observing from an unmaterialized clue must fail")
 	}
 	var task domain.Task
 	if err := db.First(&task, 11).Error; err != nil {
@@ -192,9 +191,9 @@ func TestFinishObservingRejectsUnexpectedClueStatus(t *testing.T) {
 func TestFinishObservingWithoutClue(t *testing.T) {
 	db := newObservingTestDB(t)
 	if err := db.Exec(
-		`INSERT INTO task(id, todo_id, title, action_type, background, plan, confirmed_by, confirmed_at,
+		`INSERT INTO task(id, todo_id, title, action_type, background, plan,
 			status, version, target, source_type, execution_mode)
-		 VALUES (12, NULL, '定时巡检', 'investigate', '{}', '{}', 'system', CURRENT_TIMESTAMP,
+		 VALUES (12, NULL, '定时巡检', 'investigate', '{}', '{}',
 			'executing', 0, '巡检', 'scheduled_task', 'standard')`,
 	).Error; err != nil {
 		t.Fatalf("insert Task: %v", err)

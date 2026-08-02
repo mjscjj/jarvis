@@ -16,9 +16,9 @@ func TestNormalizeInputDefaultsTodoSourceID(t *testing.T) {
 	todoID := uint64(42)
 	input, err := normalizeInput(Input{
 		TodoID: &todoID, Title: "执行任务", ActionType: "investigate", Target: "目标",
-		Background:  json.RawMessage(`{"snapshot_version":"v1"}`),
-		Plan:        json.RawMessage(`{"instruction":"查清问题"}`),
-		ConfirmedBy: "user", SourceType: SourceTodo, ExecutionMode: ExecutionModeStandard,
+		Background: json.RawMessage(`{"snapshot_version":"v1"}`),
+		Plan:       json.RawMessage(`{"instruction":"查清问题"}`),
+		SourceType: SourceTodo, ExecutionMode: ExecutionModeStandard,
 	})
 	if err != nil {
 		t.Fatalf("normalizeInput() error = %v", err)
@@ -36,10 +36,10 @@ func TestNormalizeInputKeepsSourceClueVerbatim(t *testing.T) {
 	clue := `{"desired_outcome":"产出会议结论与我的待办","semantics":"当前妙记无 view 权限"}`
 	input, err := normalizeInput(Input{
 		TodoID: &todoID, Title: "会后处理", ActionType: "manual_followup", Target: "公会基建Agent 日会",
-		Background:  json.RawMessage(`{"snapshot_version":"v1"}`),
-		SourceClue:  json.RawMessage(clue),
-		Plan:        json.RawMessage(`{"instruction":"先申请权限"}`),
-		ConfirmedBy: "user", SourceType: SourceTodo, ExecutionMode: ExecutionModeStandard,
+		Background: json.RawMessage(`{"snapshot_version":"v1"}`),
+		SourceClue: json.RawMessage(clue),
+		Plan:       json.RawMessage(`{"instruction":"先申请权限"}`),
+		SourceType: SourceTodo, ExecutionMode: ExecutionModeStandard,
 	})
 	if err != nil {
 		t.Fatalf("normalizeInput() error = %v", err)
@@ -52,10 +52,10 @@ func TestNormalizeInputKeepsSourceClueVerbatim(t *testing.T) {
 func TestNormalizeInputRejectsNullSourceClue(t *testing.T) {
 	_, err := normalizeInput(Input{
 		Title: "任务", ActionType: "agent_task", Target: "输出结论",
-		Background:  json.RawMessage(`{}`),
-		SourceClue:  json.RawMessage(`null`),
-		Plan:        json.RawMessage(`{"instruction":"输出结论"}`),
-		ConfirmedBy: "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
+		Background: json.RawMessage(`{}`),
+		SourceClue: json.RawMessage(`null`),
+		Plan:       json.RawMessage(`{"instruction":"输出结论"}`),
+		SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
 	})
 	if err == nil {
 		t.Fatal("normalizeInput() accepted a null source_clue")
@@ -66,9 +66,9 @@ func TestNormalizeInputRequiresScheduledOccurrence(t *testing.T) {
 	sourceID := uint64(5)
 	_, err := normalizeInput(Input{
 		Title: "定时任务", ActionType: "agent_task", Target: "会议",
-		Background:  json.RawMessage(`{"meeting_number":"123"}`),
-		Plan:        json.RawMessage(`{"instruction":"加入会议"}`),
-		ConfirmedBy: "scheduled_task", SourceType: SourceScheduledTask, SourceID: &sourceID,
+		Background: json.RawMessage(`{"meeting_number":"123"}`),
+		Plan:       json.RawMessage(`{"instruction":"加入会议"}`),
+		SourceType: SourceScheduledTask, SourceID: &sourceID,
 		ExecutionMode: ExecutionModeDirect,
 	})
 	if err == nil {
@@ -79,9 +79,9 @@ func TestNormalizeInputRequiresScheduledOccurrence(t *testing.T) {
 func TestNormalizeInputAcceptsEmptyBackgroundObject(t *testing.T) {
 	input, err := normalizeInput(Input{
 		Title: "无额外背景任务", ActionType: "agent_task", Target: "输出结论",
-		Background:  json.RawMessage(`{}`),
-		Plan:        json.RawMessage(`{"instruction":"输出结论"}`),
-		ConfirmedBy: "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
+		Background: json.RawMessage(`{}`),
+		Plan:       json.RawMessage(`{"instruction":"输出结论"}`),
+		SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
 	})
 	if err != nil {
 		t.Fatalf("normalizeInput() error = %v", err)
@@ -95,7 +95,7 @@ func TestNormalizeInputAcceptsMissingPlan(t *testing.T) {
 	todoID := uint64(42)
 	input, err := normalizeInput(Input{
 		TodoID: &todoID, Title: "无上游计划任务", ActionType: "agent_task", Target: "输出结论",
-		Background: json.RawMessage(`{}`), ConfirmedBy: "materializer",
+		Background: json.RawMessage(`{}`),
 		SourceType: SourceTodo, ExecutionMode: ExecutionModeStandard,
 	})
 	if err != nil {
@@ -109,9 +109,9 @@ func TestNormalizeInputAcceptsMissingPlan(t *testing.T) {
 func TestNormalizeInputRejectsEmptyPlanObject(t *testing.T) {
 	_, err := normalizeInput(Input{
 		Title: "空计划任务", ActionType: "agent_task", Target: "输出结论",
-		Background:  json.RawMessage(`{}`),
-		Plan:        json.RawMessage(`{}`),
-		ConfirmedBy: "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
+		Background: json.RawMessage(`{}`),
+		Plan:       json.RawMessage(`{}`),
+		SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
 	})
 	if err == nil {
 		t.Fatal("normalizeInput() accepted empty plan")
@@ -128,9 +128,9 @@ func TestNormalizeInputAcceptsOpenPlanJSON(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			input, err := normalizeInput(Input{
 				Title: "开放计划", ActionType: "agent_task", Target: "输出结论",
-				Background:  json.RawMessage(`{}`),
-				Plan:        json.RawMessage(plan),
-				ConfirmedBy: "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
+				Background: json.RawMessage(`{}`),
+				Plan:       json.RawMessage(plan),
+				SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
 			})
 			if err != nil {
 				t.Fatalf("normalizeInput() error = %v", err)
@@ -152,9 +152,9 @@ func TestNormalizeInputRejectsEmptyOpenPlanJSON(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, err := normalizeInput(Input{
 				Title: "空计划", ActionType: "agent_task", Target: "输出结论",
-				Background:  json.RawMessage(`{}`),
-				Plan:        json.RawMessage(plan),
-				ConfirmedBy: "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
+				Background: json.RawMessage(`{}`),
+				Plan:       json.RawMessage(plan),
+				SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
 			})
 			if err == nil {
 				t.Fatalf("normalizeInput() accepted plan %s", plan)

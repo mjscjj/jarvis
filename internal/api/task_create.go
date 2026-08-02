@@ -36,7 +36,7 @@ func CreateTask(submitter *taskcreate.Submitter) app.HandlerFunc {
 		}
 		task, err := submitter.Submit(ctx, taskcreate.Input{
 			Title: request.Title, ActionType: request.ActionType, Target: request.Target,
-			Background: request.Background, Plan: request.Plan, ConfirmedBy: "user",
+			Background: request.Background, Plan: request.Plan,
 			ProjectID: request.ProjectID, SourceType: taskcreate.SourceManual,
 			ExecutionMode: mode, ActorType: "user",
 			EventDetail: map[string]any{"channel": "backend"},

@@ -79,7 +79,7 @@ func (s *PipelineStore) snapshotProject(ctx context.Context, batch ChatBatch, pr
 	if projectID == nil {
 		return nil, nil
 	}
-	// Bound project detail is already loaded in the batch (with repos/decisions).
+	// Bound project detail is already loaded in the batch (with repos/key project decisions).
 	if batch.Project != nil && batch.Project.ID == *projectID {
 		p := batch.Project
 		return &contextsnap.Project{

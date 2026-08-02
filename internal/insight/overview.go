@@ -36,7 +36,7 @@ type StatusCount struct {
 type Overview struct {
 	Todos struct {
 		Total      int64         `json:"total"`
-		Open       int64         `json:"open"`        // extracted（等判断）
+		Open       int64         `json:"open"`        // extracted（等待机械物化）
 		LeaderOpen int64         `json:"leader_open"` // leader 交办且未闭环
 		ByStatus   []StatusCount `json:"by_status"`
 	} `json:"todos"`
@@ -52,12 +52,12 @@ type Overview struct {
 	} `json:"tasks"`
 }
 
-// openTodoStatuses are the not-yet-judged Todo states. A Todo never waits on the
-// user: once judged it is auto (a Task exists), observing (nobody has to act) or
-// dropped, and anything that needs the user is raised by M5 on that Task.
-// observing belongs to none of these counts — it has been judged, and counting
-// it as open would put clues nobody is working on back in the overview's
-// backlog.
+// openTodoStatuses are Todo states still waiting for mechanical Task
+// materialization. A Todo never waits on the user: M3 either leaves it observing
+// (nobody has to act) or marks it extracted, after which the materializer creates
+// a Task and changes it to materialized. Anything that needs the user is raised
+// by M5 on that Task. Observing belongs to none of these counts because counting
+// it as open would put clues nobody is working on back in the overview backlog.
 var openTodoStatuses = []string{"extracted"}
 
 func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {

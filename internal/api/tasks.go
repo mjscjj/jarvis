@@ -181,9 +181,9 @@ func FinishTask(service execute.TaskService) app.HandlerFunc {
 	}
 }
 
-// ExecuteTask triggers agent-driven execution of a confirmed Task. Local actions
-// run to completion; external-side-effect actions run the propose stage — the
-// agent judges risk and either finishes low-risk work or produces a proposal and
+// ExecuteTask triggers agent-driven execution of a Task. The agent investigates,
+// judges risk, and either finishes the work or produces a proposal before the
+// controlled side effect, then
 // parks the Task at awaiting_approval for a human to approve (ApproveTask) or
 // reject (RejectTask). The click no longer directly lands external writes.
 func ExecuteTask(executor *execute.AgentExecutor) app.HandlerFunc {
@@ -319,9 +319,9 @@ func RerunTask(executor *execute.AgentExecutor) app.HandlerFunc {
 }
 
 // ReapplyTask re-lands the same human-approved proposal for a Task whose apply
-// stage previously failed, WITHOUT going through propose/approval again. It is
+// stage previously failed, WITHOUT restarting execution/approval again. It is
 // the "用同一已批准方案重试落地" shortcut, distinct from RerunTask (which restarts
-// from propose and re-requests approval).
+// execution and may request approval again).
 func ReapplyTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)

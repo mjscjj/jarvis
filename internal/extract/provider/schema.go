@@ -22,7 +22,7 @@ func TodoExtractionJSONSchema() map[string]any {
 			"status": map[string]any{
 				"type": "string",
 				"enum": []string{"extracted", "observing"},
-				"description": "这条线索要不要进决策。extracted：需要 principal 采取动作，交给决策环节判断怎么做。" +
+				"description": "这条线索是否需要行动。extracted：需要采取动作，将机械物化为 Task 并交给 M5 调查、决策和执行。" +
 					"observing：值得记住但不需要任何人动手——群里达成的结论或口径、别人陈述的现状、" +
 					"别人负责并会自己推进的事、你查证时顺带发现的背景和约束，都属于这类。" +
 					"拿不准时先问「不做会不会有事情落空」：不会就写 observing。" +

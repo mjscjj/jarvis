@@ -9,17 +9,17 @@ import (
 )
 
 // activeTodoStatuses are Todo statuses that still represent a live clue for
-// semantic dedup. "auto" is included because materialization creates Tasks
-// without human confirmation; the Todo remains the same action identity.
+// semantic dedup. "materialized" is included because creating a Task does not
+// change the Todo's action identity.
 // "observing" is included because a clue nobody acts on is still a live clue:
 // re-seeing it must update its evidence, not mint a second copy, and fresh
 // evidence can pull it back to "extracted" for execution.
 var activeTodoStatuses = map[string]struct{}{
-	"extracted": {}, "auto": {}, "observing": {},
+	"extracted": {}, "materialized": {}, "observing": {},
 }
 
 func ActiveTodoStatuses() []string {
-	return []string{"extracted", "auto", "observing"}
+	return []string{"extracted", "materialized", "observing"}
 }
 
 type SemanticTodo struct {
@@ -81,7 +81,7 @@ func (d *Deduplicator) Resolve(ctx context.Context, candidate Candidate, project
 		return SemanticResolution{}, err
 	}
 	resolution := SemanticResolution{Vector: vector}
-	var confirmed *uint64
+	var matched *uint64
 	for _, match := range matches {
 		existing, err := d.store.LoadSemanticTodo(ctx, match.TodoID)
 		if err != nil {
@@ -111,13 +111,13 @@ func (d *Deduplicator) Resolve(ctx context.Context, candidate Candidate, project
 		if !same {
 			continue
 		}
-		if confirmed != nil {
-			return SemanticResolution{}, fmt.Errorf("semantic candidate matches multiple Todos: %d and %d", *confirmed, existing.ID)
+		if matched != nil {
+			return SemanticResolution{}, fmt.Errorf("semantic candidate matches multiple Todos: %d and %d", *matched, existing.ID)
 		}
 		id := existing.ID
-		confirmed = &id
+		matched = &id
 	}
-	resolution.MatchedTodoID = confirmed
+	resolution.MatchedTodoID = matched
 	return resolution, nil
 }
 

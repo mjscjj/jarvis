@@ -199,7 +199,7 @@ type codexProposal struct {
 
 // CodexRunner wraps the codex CLI for execution. On this trusted local host runs
 // use danger-full-access so external tools (lark-cli/bytedcli) can reach the
-// network and macOS Keychain; the safety boundary is the propose/approval gate
+// network and macOS Keychain; the safety boundary is M5's approval pause
 // (the agent declares needs_approval before any local or external mutation), not
 // the sandbox.
 type CodexRunner struct {

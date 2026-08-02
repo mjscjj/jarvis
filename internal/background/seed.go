@@ -38,8 +38,8 @@ type seedProject struct {
 	techStack   []string
 }
 
-// seedTask is one confirmed action the owner is clearly driving, materialized as
-// a confirmed Todo + a pending Task snapshot so the Task board is not empty.
+// seedTask is one action the owner is clearly driving, materialized as a Todo +
+// a pending Task snapshot so the Task board is not empty.
 type seedTask struct {
 	projectCode string
 	actionType  string
@@ -213,7 +213,7 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 		Target: st.title, Context: "(seed)", OpenQuestions: openQuestions,
 		CommitmentStrength: "firm",
 		SourceMessageIDs:   sources, SourceQuote: "(seed)",
-		ProjectID: &projectID, Status: "auto",
+		ProjectID: &projectID, Status: "materialized",
 		DedupFingerprint: fingerprint,
 		FirstSeenAt:      now, LastEvidenceAt: now,
 	}
@@ -234,7 +234,6 @@ func seedOneTask(tx *gorm.DB, st seedTask, projectID uint64) (bool, error) {
 	task := domain.Task{
 		TodoID: &todoID, Title: st.title, ActionType: st.actionType, Target: st.title,
 		Background: background, Plan: plan,
-		ConfirmedBy: "system", ConfirmedAt: now,
 		SourceType: taskcreate.SourceTodo, SourceID: &todoID, ExecutionMode: taskcreate.ExecutionModeStandard,
 		Status: "pending", ProjectID: &projectID,
 	}

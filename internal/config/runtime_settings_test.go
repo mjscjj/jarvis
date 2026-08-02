@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -237,6 +238,21 @@ func TestRuntimeSettingsUpdateRejectsInvalidSchedule(t *testing.T) {
 	}
 	if _, err := os.Stat(RuntimeOverridePath(configPath)); !os.IsNotExist(err) {
 		t.Fatalf("invalid update wrote override: %v", err)
+	}
+}
+
+func TestLoadRejectsRetiredDecideSection(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	raw = append(raw, []byte("\ndecide:\n  enabled: true\n")...)
+	if err := os.WriteFile(configPath, raw, 0o600); err != nil {
+		t.Fatalf("write config with retired decide section: %v", err)
+	}
+	if _, err := Load(configPath); err == nil || !strings.Contains(err.Error(), "field decide not found") {
+		t.Fatalf("Load() error = %v, want retired decide field rejection", err)
 	}
 }
 

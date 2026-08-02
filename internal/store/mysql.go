@@ -55,6 +55,9 @@ func Migrate(db *gorm.DB) error {
 	if err := dropLegacyProjectEvent(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := removeLegacyDecisionModule(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
 	if err := dropActionHash(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
@@ -75,6 +78,72 @@ func Migrate(db *gorm.DB) error {
 	}
 	if err := dropRetiredColumns(db); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+	return nil
+}
+
+// removeLegacyDecisionModule removes the persisted contract of the retired M4
+// decision gate. Validation happens before the first write: every auto Todo must
+// already have its mechanically-created Task, otherwise startup fails and leaves
+// all legacy state untouched. Dropped clues map to observing, the only current
+// state that means "keep the clue visible without creating a Task".
+//
+// The migration deliberately does not preserve decision_audit or the Task
+// decision/confirmation columns. They were outputs of the removed module and
+// have no consumer after the separate decision stage was removed from the
+// M3 -> materializer -> M5 pipeline.
+func removeLegacyDecisionModule(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("remove legacy decision module: db is nil")
+	}
+	migrator := db.Migrator()
+	if migrator.HasTable("todo") {
+		var autoCount int64
+		if err := db.Table("todo").Where("status = ?", "auto").Count(&autoCount).Error; err != nil {
+			return fmt.Errorf("count legacy auto Todos: %w", err)
+		}
+		if autoCount > 0 {
+			if !migrator.HasTable("task") {
+				return fmt.Errorf("cannot migrate %d legacy auto Todos: task table does not exist", autoCount)
+			}
+			var orphanCount int64
+			if err := db.Table("todo AS t").
+				Joins("LEFT JOIN task AS k ON k.todo_id = t.id").
+				Where("t.status = ? AND k.id IS NULL", "auto").
+				Count(&orphanCount).Error; err != nil {
+				return fmt.Errorf("count legacy auto Todos without Tasks: %w", err)
+			}
+			if orphanCount != 0 {
+				return fmt.Errorf("cannot migrate legacy decision state: %d of %d auto Todos have no Task", orphanCount, autoCount)
+			}
+		}
+
+		updated := db.Table("todo").Where("status = ?", "auto").Update("status", "materialized")
+		if updated.Error != nil {
+			return fmt.Errorf("migrate legacy auto Todos to materialized: %w", updated.Error)
+		}
+		if updated.RowsAffected != autoCount {
+			return fmt.Errorf("migrate legacy auto Todos to materialized: updated %d rows, expected %d", updated.RowsAffected, autoCount)
+		}
+		if err := db.Table("todo").Where("status = ?", "dropped").Update("status", "observing").Error; err != nil {
+			return fmt.Errorf("migrate legacy dropped Todos to observing: %w", err)
+		}
+	}
+
+	if migrator.HasTable("task") {
+		for _, column := range []string{"confirmed_by", "confirmed_at", "decision_payload"} {
+			if !migrator.HasColumn("task", column) {
+				continue
+			}
+			if err := db.Exec("ALTER TABLE `task` DROP COLUMN `" + column + "`").Error; err != nil {
+				return fmt.Errorf("drop retired task.%s: %w", column, err)
+			}
+		}
+	}
+	if migrator.HasTable("decision_audit") {
+		if err := migrator.DropTable("decision_audit"); err != nil {
+			return fmt.Errorf("drop retired decision_audit table: %w", err)
+		}
 	}
 	return nil
 }

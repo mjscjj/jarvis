@@ -41,8 +41,6 @@ type Input struct {
 	Background    json.RawMessage
 	SourceClue    json.RawMessage
 	Plan          json.RawMessage
-	ConfirmedBy   string
-	ConfirmedAt   *time.Time
 	ProjectID     *uint64
 	SourceType    string
 	SourceID      *uint64
@@ -144,17 +142,13 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 		}
 	}
 	now := f.now().UTC()
-	if normalized.ConfirmedAt != nil {
-		now = normalized.ConfirmedAt.UTC()
-	}
 	row := domain.Task{
 		TodoID: normalized.TodoID, Title: normalized.Title, ActionType: normalized.ActionType,
 		Target: normalized.Target, Background: datatypes.JSON(normalized.Background), Plan: datatypes.JSON(normalized.Plan),
-		SourceClue:  datatypes.JSON(normalized.SourceClue),
-		ConfirmedBy: normalized.ConfirmedBy, ConfirmedAt: now,
+		SourceClue: datatypes.JSON(normalized.SourceClue),
 		SourceType: normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
 		ExecutionMode: normalized.ExecutionMode, Status: "pending",
-		ProjectID: normalized.ProjectID, Version: 0,
+		ProjectID: normalized.ProjectID, Version: 0, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.WithContext(ctx).Create(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
@@ -180,11 +174,10 @@ func normalizeInput(input Input) (Input, error) {
 	input.Title = strings.TrimSpace(input.Title)
 	input.ActionType = strings.TrimSpace(input.ActionType)
 	input.Target = strings.TrimSpace(input.Target)
-	input.ConfirmedBy = strings.TrimSpace(input.ConfirmedBy)
 	input.SourceType = strings.TrimSpace(input.SourceType)
 	input.ExecutionMode = strings.TrimSpace(input.ExecutionMode)
-	if input.Title == "" || input.ActionType == "" || input.Target == "" || input.ConfirmedBy == "" {
-		return Input{}, fmt.Errorf("%w: title, action_type, target and confirmed_by are required", ErrInvalidInput)
+	if input.Title == "" || input.ActionType == "" || input.Target == "" {
+		return Input{}, fmt.Errorf("%w: title, action_type and target are required", ErrInvalidInput)
 	}
 	switch input.SourceType {
 	case SourceTodo, SourceScheduledTask, SourceManual:

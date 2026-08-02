@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func createTodoEvent(db *gorm.DB, todoID uint64, fromStatus, toStatus string, detail map[string]any) error {
+func createTodoEvent(db *gorm.DB, todoID uint64, fromStatus, toStatus, actor string, detail map[string]any) error {
 	encoded, err := json.Marshal(detail)
 	if err != nil {
 		return fmt.Errorf("encode Todo event detail: %w", err)
@@ -26,7 +26,7 @@ func createTodoEvent(db *gorm.DB, todoID uint64, fromStatus, toStatus string, de
 	from := fromStatus
 	event := domain.TodoEvent{
 		TodoID: todoID, FromStatus: &from, ToStatus: toStatus,
-		Actor: "m5", Detail: datatypes.JSON(encoded), Snapshot: snapshot,
+		Actor: actor, Detail: datatypes.JSON(encoded), Snapshot: snapshot,
 	}
 	if err := db.Create(&event).Error; err != nil {
 		return fmt.Errorf("create Todo event todo_id=%d: %w", todoID, err)

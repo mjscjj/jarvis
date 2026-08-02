@@ -151,7 +151,7 @@ func renderUserPrompt(batch ChatBatch, unit ConversationUnit, world promptWorld,
 
 func renderPrincipal(principal *PrincipalContext) string {
 	if principal == nil {
-		return "(未设置——请在后台「我」中完善决策主体背景)"
+		return "(未设置——请在后台「我」中完善 principal 背景)"
 	}
 	parts := []string{fmt.Sprintf("open_id=%s name=%q", principal.OpenID, principal.Name)}
 	if principal.Department != "" {

@@ -183,7 +183,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.DELETE("/api/persons/:person_id", DeletePerson(deps.Persons))
 	h.GET("/api/groups", ListGroups(deps.Groups))
 	h.PUT("/api/groups/:group_id", UpdateGroupBackground(deps.Groups))
-	// 决策主体（“我”）：单例 profile，读取 + upsert。
+	// Principal（“我”）：单例 profile，读取 + upsert。
 	h.GET("/api/profile", GetProfile(deps.Profile))
 	h.PUT("/api/profile", UpdateProfile(deps.Profile))
 	// 共享记忆：全局单例大文本，读取 + 整段覆盖保存。
@@ -194,7 +194,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 保存到本地覆盖文件，进程重启后生效。
 	h.GET("/api/runtime-settings", GetRuntimeSettings(deps.RuntimeSettings))
 	h.PUT("/api/runtime-settings", UpdateRuntimeSettings(deps.RuntimeSettings))
-	// 工作规则：四个固定 Markdown 文件，运行时组合全阶段与当前阶段。
+	// 工作规则：三个固定 Markdown 文件，运行时组合全阶段与当前阶段。
 	h.GET("/api/work-rules", ListWorkRules(deps.WorkRules))
 	h.GET("/api/work-rules/:work_rule_key", GetWorkRule(deps.WorkRules))
 	h.PUT("/api/work-rules/:work_rule_key", UpdateWorkRule(deps.WorkRules))

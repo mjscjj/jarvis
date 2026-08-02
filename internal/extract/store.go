@@ -20,7 +20,7 @@ var (
 )
 
 var allowedTodoStatuses = map[string]struct{}{
-	"extracted": {}, "auto": {}, "dropped": {}, "observing": {},
+	"extracted": {}, "materialized": {}, "observing": {},
 }
 
 // m3OwnedTodoStatuses are the states re-extraction may still move a clue
@@ -181,15 +181,13 @@ type TodoStatusInput struct {
 }
 
 // observableTodoStatuses are the states this entry point may set. Everything
-// else is owned by the stage that produces it — materialization writes auto,
+// else is owned by the stage that produces it — materialization writes materialized,
 // execution and the principal write the rest — so re-pointing a clue by hand
 // is limited to parking it (observing) or handing it back for materialization
 // (extracted).
 var observableTodoStatuses = map[string]bool{"observing": true, "extracted": true}
 
 // SetTodoStatus parks a clue as observing or hands it back to materialization.
-// A clue that already finished (dropped/dismissed/expired) stays
-// finished: reviving it would put stale work back in front of the principal.
 func (s *TodoStore) SetTodoStatus(ctx context.Context, input TodoStatusInput) (*TodoView, error) {
 	if input.TodoID == 0 {
 		return nil, fmt.Errorf("todo id must be positive")
@@ -211,8 +209,8 @@ func (s *TodoStore) SetTodoStatus(ctx context.Context, input TodoStatusInput) (*
 	if err != nil {
 		return nil, fmt.Errorf("load todo id=%d: %w", input.TodoID, err)
 	}
-	if _, live := activeTodoStatuses[todo.Status]; !live {
-		return nil, fmt.Errorf("todo id=%d is %s and cannot be re-opened", todo.ID, todo.Status)
+	if err := validateTodoStatusTransition(todo.ID, todo.Status, input.Status); err != nil {
+		return nil, err
 	}
 	from := todo.Status
 	if from != input.Status {
@@ -246,6 +244,16 @@ func (s *TodoStore) SetTodoStatus(ctx context.Context, input TodoStatusInput) (*
 	}
 	view := todoView(&todo)
 	return &view, nil
+}
+
+func validateTodoStatusTransition(todoID uint64, from, to string) error {
+	if _, live := activeTodoStatuses[from]; !live {
+		return fmt.Errorf("todo id=%d is %s and cannot be re-opened", todoID, from)
+	}
+	if from == "materialized" && to == "extracted" {
+		return fmt.Errorf("todo id=%d is materialized and already has a Task; rerun that Task instead", todoID)
+	}
+	return nil
 }
 
 func ValidateTodoFilter(filter TodoListFilter) error {

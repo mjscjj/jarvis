@@ -9,8 +9,8 @@ import "strings"
 //   - The file-backed approval policy is interpreted by M5 against the concrete
 //     next side effect, including code changes; action_type grants no bypass.
 //   - Sandbox remains danger-full-access because read-side investigation may
-//     need lark-cli/bytedcli network and Keychain access. The propose/apply state
-//     machine is the approval boundary when M5 decides approval is required.
+//     need lark-cli/bytedcli network and Keychain access. The execution can pause
+//     at awaiting_approval when M5 decides a concrete side effect needs review.
 type actionPolicy struct {
 	sandbox string
 }

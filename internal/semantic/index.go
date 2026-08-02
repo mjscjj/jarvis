@@ -139,6 +139,9 @@ func (i *Index) Ensure(ctx context.Context) error {
 	if model != i.embeddingModel {
 		return fmt.Errorf("semantic collection %q embedding_model=%q, want %q", i.collection, model, i.embeddingModel)
 	}
+	if err := migrateLegacyTodoStatuses(ctx, i.client, i.collection); err != nil {
+		return err
+	}
 	return nil
 }
 

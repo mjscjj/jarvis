@@ -50,8 +50,8 @@ func buildDigestPrompt(digest *Digest) string {
 
 	b.WriteString("# 我的进展（每天）\n")
 	for _, day := range digest.Mine {
-		fmt.Fprintf(&b, "- %s：新增交办Todo %d，确认生成任务 %d，完成任务 %d，失败 %d\n",
-			day.Date, day.TodosCreated, day.Confirmed, day.TasksDone, day.TasksFailed)
+		fmt.Fprintf(&b, "- %s：新增交办Todo %d，生成任务 %d，完成任务 %d，失败 %d\n",
+			day.Date, day.TodosCreated, day.TasksCreated, day.TasksDone, day.TasksFailed)
 	}
 
 	b.WriteString("\n# 重点核心群进展（每天）\n")

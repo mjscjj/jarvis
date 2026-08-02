@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
@@ -28,15 +27,14 @@ type MaterializationStats struct {
 }
 
 type Materializer struct {
-	db  *gorm.DB
-	now func() time.Time
+	db *gorm.DB
 }
 
 func NewMaterializer(db *gorm.DB) (*Materializer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("Todo materializer db is nil")
 	}
-	return &Materializer{db: db, now: time.Now}, nil
+	return &Materializer{db: db}, nil
 }
 
 func (m *Materializer) MaterializeOnce(ctx context.Context) (MaterializationStats, error) {
@@ -69,7 +67,7 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 			return err
 		}
 		if todo.Version != expectedVersion {
-			if todo.Status == "auto" && todo.Version == expectedVersion+1 {
+			if todo.Status == "materialized" && todo.Version == expectedVersion+1 {
 				task, err := loadTaskByTodo(tx, todo.ID)
 				if err != nil {
 					return err
@@ -80,7 +78,7 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 			return versionConflict(todo.ID, expectedVersion, todo.Version)
 		}
 		if todo.Status != "extracted" {
-			return transitionError(todo.ID, todo.Status, "auto")
+			return transitionError(todo.ID, todo.Status, "materialized")
 		}
 		background, err := requireContextSnapshot(&todo)
 		if err != nil {
@@ -94,14 +92,14 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		}
 		update := tx.Model(&domain.Todo{}).
 			Where("id = ? AND version = ? AND status = ?", todo.ID, expectedVersion, "extracted").
-			Updates(map[string]any{"status": "auto", "version": gorm.Expr("version + 1")})
+			Updates(map[string]any{"status": "materialized", "version": gorm.Expr("version + 1")})
 		if update.Error != nil {
 			return fmt.Errorf("materialize Todo id=%d: %w", todo.ID, update.Error)
 		}
 		if update.RowsAffected != 1 {
 			return versionConflict(todo.ID, expectedVersion, todo.Version)
 		}
-		if err := createTodoEvent(tx, todo.ID, "extracted", "auto", map[string]any{
+		if err := createTodoEvent(tx, todo.ID, "extracted", "materialized", "materializer", map[string]any{
 			"event_type": "task_materialized",
 		}); err != nil {
 			return err
@@ -110,13 +108,11 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		if err != nil {
 			return err
 		}
-		now := m.now().UTC()
 		task, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
 			TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
 			Background: background, SourceClue: json.RawMessage(todo.ExtractionResult),
-			ConfirmedBy: "materializer", ConfirmedAt: &now,
 			ProjectID: copyUint64(todo.ProjectID), SourceType: taskcreate.SourceTodo, SourceID: &todo.ID,
-			ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "m5",
+			ExecutionMode: taskcreate.ExecutionModeStandard, ActorType: "system",
 		})
 		if errors.Is(err, taskcreate.ErrExists) {
 			return fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)

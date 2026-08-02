@@ -534,8 +534,8 @@ func taskInput(row *domain.ScheduledTask, occurrenceKey string) (taskcreate.Inpu
 	return taskcreate.Input{
 		Title: row.Title, ActionType: row.ActionType, Target: row.Title,
 		Background: json.RawMessage(row.ContextSnapshot), Plan: plan,
-		ConfirmedBy: "scheduled_task", SourceType: taskcreate.SourceScheduledTask,
-		SourceID: &row.ID, OccurrenceKey: &occurrenceKey,
+		SourceType: taskcreate.SourceScheduledTask,
+		SourceID:   &row.ID, OccurrenceKey: &occurrenceKey,
 		ExecutionMode: taskcreate.ExecutionModeStandard,
 		ActorType:     "scheduled_task",
 		EventDetail:   map[string]any{"scheduled_task_id": row.ID, "occurrence_key": occurrenceKey},

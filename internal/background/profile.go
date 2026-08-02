@@ -11,8 +11,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// ProfileInput is the editable decision-maker ("me") background maintained from
-// the admin UI. open_id is fixed by config, so it is not part of the input.
+// ProfileInput is the editable principal ("me") background maintained from the
+// admin UI. open_id is fixed by config, so it is not part of the input.
 type ProfileInput struct {
 	Name         string  `json:"name"`
 	Department   *string `json:"department"`
@@ -46,7 +46,7 @@ type ProfileView struct {
 
 // ProfileService owns the single-row principal_profile table. The principal
 // open_id is authoritative from config; the service always reads/writes that one
-// identity so there can only ever be one decision-maker.
+// identity so there can only ever be one principal profile.
 type ProfileService struct {
 	db              *gorm.DB
 	principalOpenID string
@@ -77,7 +77,7 @@ func (s *ProfileService) Get(ctx context.Context) (*ProfileView, error) {
 	return &view, nil
 }
 
-// Upsert writes the single decision-maker profile for the configured open_id.
+// Upsert writes the single principal profile for the configured open_id.
 func (s *ProfileService) Upsert(ctx context.Context, in ProfileInput) (*ProfileView, error) {
 	if err := in.validate(); err != nil {
 		return nil, invalid(err)

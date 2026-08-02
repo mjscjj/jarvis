@@ -46,8 +46,8 @@ var (
 // guidance. action_type is an OPEN set: the model may emit any snake_case
 // identifier (e.g. a novel intent, or "other") and downstream must accept it.
 // M5 execution policy only special-cases code_change; every other type—known or
-// novel—runs through the propose/approval gate, so the set stays advisory, not
-// a closed enum.
+// novel—runs through the same execution/approval path, so the set stays
+// advisory, not a closed enum.
 var commonActionTypes = map[string]struct{}{
 	"code_change": {}, "summary_post": {}, "investigate": {}, "schedule_meeting": {},
 	"reply_message": {}, "doc_write": {}, "notify_principal": {}, "manual_followup": {}, "other": {},

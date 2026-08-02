@@ -11,7 +11,7 @@ import (
 )
 
 // DigestService serves the Progress tab: a per-day timeline of "my" activity
-// (leader-assigned / my todos, confirmations, tasks) and key-group activity
+// (leader-assigned / my todos and tasks) and key-group activity
 // (messages captured, todos extracted). Pure aggregation, no cache, no cron.
 type DigestService struct {
 	db       *gorm.DB
@@ -32,7 +32,7 @@ func NewDigestService(db *gorm.DB, location *time.Location) (*DigestService, err
 type MyDay struct {
 	Date         string `json:"date"`          // YYYY-MM-DD in configured timezone
 	TodosCreated int64  `json:"todos_created"` // 当天新抽出的、leader 交办或与我相关的 Todo
-	Confirmed    int64  `json:"confirmed"`     // 当天确认（Task 生成）
+	TasksCreated int64  `json:"tasks_created"` // 当天生成的 Task
 	TasksDone    int64  `json:"tasks_done"`    // 当天完成的 Task
 	TasksFailed  int64  `json:"tasks_failed"`  // 当天失败的 Task
 }
@@ -115,11 +115,11 @@ func (s *DigestService) loadMine(ctx context.Context, buckets []dayBucket) ([]My
 			Count(&day.TodosCreated).Error; err != nil {
 			return nil, fmt.Errorf("count my todos on %s: %w", bucket.label, err)
 		}
-		// 当天确认：使用 Task 的 created 业务事件，不再从当前行猜历史。
+		// 当天生成 Task：使用 created 业务事件，不再从当前行猜历史。
 		if err := s.db.WithContext(ctx).Model(&domain.TaskEvent{}).
 			Where("event_type = ? AND occurred_at >= ? AND occurred_at < ?", "created", bucket.start, bucket.end).
-			Count(&day.Confirmed).Error; err != nil {
-			return nil, fmt.Errorf("count confirmations on %s: %w", bucket.label, err)
+			Count(&day.TasksCreated).Error; err != nil {
+			return nil, fmt.Errorf("count created tasks on %s: %w", bucket.label, err)
 		}
 		// 当天完成/失败：直接读取状态机事件时间；重跑产生的新完成也会如实计入。
 		if err := s.db.WithContext(ctx).Model(&domain.TaskEvent{}).

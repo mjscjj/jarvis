@@ -138,7 +138,7 @@ func (s *PipelineStore) LoadPendingChat(ctx context.Context, chatID string, opts
 	return batch, nil
 }
 
-// loadPrincipal returns the decision-maker profile, resolving the leader name
+// loadPrincipal returns the principal profile, resolving the leader name
 // from the person table when the profile did not capture it. Returns nil when no
 // profile row has been saved yet (extraction still works, just without the self
 // background section).
@@ -535,7 +535,7 @@ func (s *PipelineStore) loadRecentTasks(ctx context.Context, group GroupContext,
 	}
 	var rows []row
 	if err := query.Select("t.id, t.title, t.status, t.summary, t.last_progress_at").
-		Order("COALESCE(t.last_progress_at, t.confirmed_at) DESC, t.id DESC").
+		Order("COALESCE(t.last_progress_at, t.created_at) DESC, t.id DESC").
 		Limit(limit).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load recent tasks group_id=%d: %w", group.ID, err)
 	}

@@ -2,6 +2,7 @@ package extract
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -49,7 +50,7 @@ func TestSetTodoStatusRejectsBadInput(t *testing.T) {
 		{"blank actor", func(in *TodoStatusInput) { in.Actor = "  " }},
 		{"blank reason", func(in *TodoStatusInput) { in.Reason = "  " }},
 		// Statuses materialization and execution own are not settable here.
-		{"auto", func(in *TodoStatusInput) { in.Status = "auto" }},
+		{"materialized", func(in *TodoStatusInput) { in.Status = "materialized" }},
 		{"dropped", func(in *TodoStatusInput) { in.Status = "dropped" }},
 		{"unknown", func(in *TodoStatusInput) { in.Status = "parked" }},
 	}
@@ -69,5 +70,12 @@ func TestObservableTodoStatusesAreLive(t *testing.T) {
 		if _, ok := activeTodoStatuses[status]; !ok {
 			t.Fatalf("settable status %q is not an active Todo status", status)
 		}
+	}
+}
+
+func TestMaterializedTodoCannotReturnToExtracted(t *testing.T) {
+	err := validateTodoStatusTransition(1, "materialized", "extracted")
+	if err == nil || !strings.Contains(err.Error(), "rerun that Task instead") {
+		t.Fatalf("validateTodoStatusTransition() error = %v, want existing Task rejection", err)
 	}
 }
