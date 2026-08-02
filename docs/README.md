@@ -52,6 +52,7 @@
 | 文档 | 状态 | 已实现 / 未实现边界 |
 |---|---|---|
 | [长任务 Goal Control](design-long-horizon-agent-goal-control.md) | proposal / partial | 目标线索保真已改善；Goal Store、Supervisor、独立 Verifier 未实现 |
+| [主动巡视 Agent](design-proactive-heartbeat-agent.md) | proposal | 定时使用低成本 Agent 维护世界模型、看护未闭环事项，并为强 M5 创建 Task；尚未实现 |
 | [宽松语义契约](design-loose-semantic-contract.md) | proposal / partial | M3 Candidate、enrichment 等仍有严格结构；Todo→Task 已改为无模型固化 |
 | [世界上下文渐进加载](design-world-context-progressive.md) | implementation-in-progress | 本轮审计时 HEAD 未完整落地；不得提前标 completed |
 
