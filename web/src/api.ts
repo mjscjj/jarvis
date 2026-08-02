@@ -51,6 +51,8 @@ import type {
   ScheduledTaskInput,
   RuntimeSettings,
   RuntimeSettingsView,
+  ProactiveRun,
+  ProactiveRunDetail,
   SystemTaskRunList,
 } from './types'
 
@@ -354,6 +356,14 @@ export function getDebugWatermarks(signal?: AbortSignal): Promise<{ items: Water
 
 export function getDebugLogs(lines = 300, signal?: AbortSignal): Promise<LogTail> {
   return request<LogTail>(`/api/debug/logs?lines=${lines}`, { signal })
+}
+
+export function getDebugProactiveRuns(limit = 50, signal?: AbortSignal): Promise<{ items: ProactiveRun[] }> {
+  return request<{ items: ProactiveRun[] }>(`/api/debug/proactive-runs?limit=${limit}`, { signal })
+}
+
+export function getDebugProactiveRun(id: number, signal?: AbortSignal): Promise<ProactiveRunDetail> {
+  return request<ProactiveRunDetail>(`/api/debug/proactive-runs/${id}`, { signal })
 }
 
 export function getSystemTaskRuns(job: string, limit = 100, signal?: AbortSignal): Promise<SystemTaskRunList> {

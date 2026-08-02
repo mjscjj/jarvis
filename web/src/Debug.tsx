@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Collapse, Empty, Input, message, Segmented, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Collapse, Drawer, Empty, Input, message, Segmented, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import {
   captureDiscover,
@@ -9,12 +9,14 @@ import {
   getDebugFailures,
   getDebugLogs,
   getDebugModules,
+  getDebugProactiveRun,
+  getDebugProactiveRuns,
   getDebugScans,
   getDebugWatermarks,
 } from './api'
 import { agentModeLabels, agentSourceMeta } from './agentProcesses'
 import PageHeader from './components/PageHeader'
-import type { AgentProcess, AgentProcessSnapshot, FailureEvent, LogTail, ModuleRun, ScanRow, WatermarkRow } from './types'
+import type { AgentProcess, AgentProcessSnapshot, FailureEvent, LogTail, ModuleRun, ProactiveRun, ProactiveRunDetail, ScanRow, WatermarkRow } from './types'
 
 const { Text, Paragraph } = Typography
 
@@ -351,6 +353,101 @@ function LogsTab() {
   )
 }
 
+function ProactiveRunsTab() {
+  const { data, loading, error, refresh } = useDebugResource<{ items: ProactiveRun[] }>((signal) => getDebugProactiveRuns(50, signal))
+  const [selected, setSelected] = useState<ProactiveRun>()
+  const [detail, setDetail] = useState<ProactiveRunDetail>()
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string>()
+
+  useEffect(() => {
+    if (!selected) {
+      setDetail(undefined)
+      setDetailError(undefined)
+      return
+    }
+    const controller = new AbortController()
+    setDetail(undefined)
+    setDetailError(undefined)
+    setDetailLoading(true)
+    getDebugProactiveRun(selected.id, controller.signal)
+      .then(setDetail)
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setDetailError(errorText(cause))
+      })
+      .finally(() => { if (!controller.signal.aborted) setDetailLoading(false) })
+    return () => controller.abort()
+  }, [selected])
+
+  const columns: TableColumnsType<ProactiveRun> = [
+    { title: '轮次', dataIndex: 'id', width: 80, render: (value: number) => <Text className="mono">#{value}</Text> },
+    { title: '开始时间', dataIndex: 'started_at', width: 205, render: (value: string) => <Text className="mono">{value}</Text> },
+    {
+      title: '触发', dataIndex: 'trigger_type', width: 100,
+      render: (value: ProactiveRun['trigger_type']) => <Tag>{value === 'schedule' ? '定时' : '手动'}</Tag>,
+    },
+    {
+      title: '状态', dataIndex: 'status', width: 100,
+      render: (value: ProactiveRun['status']) => (
+        <Tag color={value === 'succeeded' ? 'green' : value === 'failed' ? 'red' : 'blue'}>
+          {value === 'succeeded' ? '成功' : value === 'failed' ? '失败' : '运行中'}
+        </Tag>
+      ),
+    },
+    { title: 'Agent', key: 'agent', width: 250, render: (_, row) => <Text>{row.engine} · {row.model}</Text> },
+    { title: '耗时', dataIndex: 'duration_ms', width: 100, render: (value: number | null) => value == null ? '—' : `${(value / 1000).toFixed(1)}s` },
+    { title: '错误', dataIndex: 'error_detail', ellipsis: true, render: (value: string | null) => value ? <Text type="danger">{value}</Text> : <Text type="secondary">—</Text> },
+    { title: '操作', width: 120, render: (_, row) => <Button size="small" onClick={() => setSelected(row)}>查看输入输出</Button> },
+  ]
+
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space wrap>
+        <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
+        <Text type="secondary">持久化保存每轮主动巡视的完整 Prompt、最终输出、模型、状态和耗时；列表仅加载摘要。</Text>
+      </Space>
+      {error && <Alert type="error" showIcon message="主动巡视记录加载失败" description={error} />}
+      <Table<ProactiveRun>
+        rowKey="id"
+        size="small"
+        columns={columns}
+        dataSource={data?.items ?? []}
+        loading={loading}
+        pagination={{ pageSize: 20, showSizeChanger: false }}
+        scroll={{ x: 1180 }}
+        onRow={(row) => ({ onDoubleClick: () => setSelected(row) })}
+        locale={{ emptyText: <Empty description="还没有主动巡视运行记录" /> }}
+      />
+      <Drawer
+        title={selected ? `主动巡视 #${selected.id}` : '主动巡视'}
+        open={Boolean(selected)}
+        width={920}
+        onClose={() => setSelected(undefined)}
+        destroyOnHidden
+      >
+        {detailError && <Alert type="error" showIcon message="运行详情加载失败" description={detailError} />}
+        {detailLoading && <Text type="secondary">正在加载完整输入输出…</Text>}
+        {detail && (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Space wrap>
+              <Tag color={detail.status === 'succeeded' ? 'green' : detail.status === 'failed' ? 'red' : 'blue'}>{detail.status}</Tag>
+              <Text>{detail.engine} · {detail.model}</Text>
+              <Text type="secondary">{detail.started_at}</Text>
+            </Space>
+            {detail.error_detail && <Alert type="error" showIcon message="本轮失败" description={detail.error_detail} />}
+            <Tabs
+              items={[
+                { key: 'input', label: '输入 Prompt', children: <pre className="debug-log">{detail.input}</pre> },
+                { key: 'output', label: '输出', children: <pre className="debug-log">{detail.output ?? (detail.status === 'running' ? '(运行中，尚无输出)' : '(无输出)')}</pre> },
+              ]}
+            />
+          </Space>
+        )}
+      </Drawer>
+    </Space>
+  )
+}
+
 // TriggerTab 是手动触发面板：本地手动跑一轮 M1 采集，无需等 cron。均为同步调用，
 // 采集完成才返回，因此按钮全程 loading。
 function TriggerTab() {
@@ -439,7 +536,7 @@ function TriggerTab() {
 export default function Debug() {
   return (
     <>
-      <PageHeader title="运行状态" subtitle="实时 Agent、模块与采集运行、报错时间线、抽取水位与运行日志" />
+      <PageHeader title="运行状态" subtitle="实时 Agent、模块与采集运行、主动巡视输入输出、报错时间线、抽取水位与运行日志" />
       <Card variant="borderless">
       <Tabs
         defaultActiveKey="failures"
@@ -447,6 +544,7 @@ export default function Debug() {
           { key: 'trigger', label: '手动触发', children: <TriggerTab /> },
           { key: 'runtime', label: '模块运行', children: <RuntimeTab /> },
           { key: 'agents', label: '实时 Agent', children: <AgentProcessesTab /> },
+          { key: 'proactive-runs', label: '主动巡视', children: <ProactiveRunsTab /> },
           { key: 'failures', label: '报错时间线', children: <FailuresTab /> },
           { key: 'watermarks', label: '抽取水位', children: <WatermarksTab /> },
           { key: 'logs', label: '运行日志', children: <LogsTab /> },

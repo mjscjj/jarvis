@@ -726,6 +726,23 @@ export interface SystemTaskRunList {
   notes: string[]
 }
 
+export interface ProactiveRun {
+  id: number
+  trigger_type: 'schedule' | 'manual'
+  engine: string
+  model: string
+  status: 'running' | 'succeeded' | 'failed'
+  error_detail: string | null
+  started_at: string
+  finished_at: string | null
+  duration_ms: number | null
+}
+
+export interface ProactiveRunDetail extends ProactiveRun {
+  input: string
+  output: string | null
+}
+
 export type ResourceType = 'doc' | 'link' | 'repo' | 'note' | 'other'
 
 // Resource is a manually curated reference that can be linked to a person, a

@@ -132,7 +132,7 @@ Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示�
 
 队列按实体 ID/version 合并等待通知，数据库状态和乐观锁拒绝陈旧执行。
 
-`internal/proactive` 使用独立低成本模型。主进程启动后先等待配置的启动延迟（基线 120 秒），运行第一轮，再按独立 cron 周期运行；同一时刻最多一轮。它可以通过既有工具维护 Jarvis 内部世界模型，但任何外部行动必须创建 `source_type=proactive` 的普通 Task，由同一个 Task Submitter 唤醒强 M5。巡视失败会明确记录，不切换模型，也不阻塞 M2→M3→M5 主链路。
+`internal/proactive` 使用独立低成本模型。主进程启动后先等待配置的启动延迟（基线 120 秒），运行第一轮，再按独立 cron 周期运行；同一时刻最多一轮。它可以通过既有工具维护 Jarvis 内部世界模型，但任何外部行动必须创建 `source_type=proactive` 的普通 Task，由同一个 Task Submitter 唤醒强 M5。巡视失败会明确记录，不切换模型，也不阻塞 M2→M3→M5 主链路。每次实际 Agent 调用都在 `proactive_run` 中持久化完整输入 Prompt、最终输出、错误、模型和耗时；运行状态页列表只读摘要，选中一轮后才加载完整正文。
 
 ## 5. 世界状态与长期事实
 
