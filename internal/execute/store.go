@@ -141,6 +141,44 @@ func NewStore(db *gorm.DB) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+// LoadTask returns the persistence entity used by the execution orchestrator.
+// Keeping this read in Store prevents orchestration code from depending on
+// GORM or duplicating not-found translation at every transition.
+func (s *Store) LoadTask(ctx context.Context, taskID uint64) (*domain.Task, error) {
+	if taskID == 0 {
+		return nil, fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
+	}
+	var task domain.Task
+	if err := s.db.WithContext(ctx).First(&task, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
+		}
+		return nil, fmt.Errorf("load execution Task id=%d: %w", taskID, err)
+	}
+	return &task, nil
+}
+
+func (s *Store) LoadRun(ctx context.Context, runID uint64) (*domain.ExecutionRun, error) {
+	if runID == 0 {
+		return nil, fmt.Errorf("%w: execution run ID is invalid", ErrInvalidInput)
+	}
+	var run domain.ExecutionRun
+	if err := s.db.WithContext(ctx).First(&run, runID).Error; err != nil {
+		return nil, fmt.Errorf("load execution run id=%d: %w", runID, err)
+	}
+	return &run, nil
+}
+
+func (s *Store) CreateRun(ctx context.Context, run *domain.ExecutionRun) error {
+	if run == nil || run.TaskID == 0 {
+		return fmt.Errorf("%w: execution run is invalid", ErrInvalidInput)
+	}
+	if err := s.db.WithContext(context.WithoutCancel(ctx)).Create(run).Error; err != nil {
+		return fmt.Errorf("create execution run task_id=%d: %w", run.TaskID, err)
+	}
+	return nil
+}
+
 func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, error) {
 	if err := ValidateTaskFilter(filter); err != nil {
 		return nil, err

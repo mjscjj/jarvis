@@ -83,7 +83,7 @@ func TestInterruptInactiveExecutionMarksTaskFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	executor := &AgentExecutor{db: db, store: store}
+	executor := &AgentExecutor{store: store}
 	result, err := executor.Interrupt(t.Context(), 54, 7)
 	if err != nil {
 		t.Fatalf("Interrupt() error = %v", err)

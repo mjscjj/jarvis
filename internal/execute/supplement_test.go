@@ -217,7 +217,8 @@ func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
 		// A cleared blocker must never read as a finished goal; see
 		// docs/design-long-horizon-agent-goal-control.md.
 		"解除阻塞不是完成",
-		"以 `m3_clue.desired_outcome` 为准",
+		"不得假设 payload 内存在固定 JSON 字段",
+		"以 payload 表达的真实最终结果为准",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("M5 prompt missing autonomy contract %q:\n%s", want, prompt)

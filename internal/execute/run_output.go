@@ -10,10 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"jarvis/internal/domain"
-
-	"gorm.io/gorm"
 )
 
 const (
@@ -89,11 +85,8 @@ func (e *AgentExecutor) LatestTaskRunOutput(ctx context.Context, taskID uint64) 
 	if taskID == 0 {
 		return nil, fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
 	}
-	var task domain.Task
-	if err := e.db.WithContext(ctx).Select("id", "status").First(&task, taskID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
-		}
+	task, err := e.store.LoadTask(ctx, taskID)
+	if err != nil {
 		return nil, fmt.Errorf("load Task output status task_id=%d: %w", taskID, err)
 	}
 	result := &TaskRunOutput{
