@@ -28,7 +28,7 @@ model:
 
 # 离线事实引擎：把流水线已经产出的原料（先接 message，之后接 todo / task）
 # 蒸馏成长期事实，写进 fact 表。跑在关键路径之外，一轮失败不影响采集和执行。
-# 抽取量大、单条价值低，所以用便宜快的 DeepSeek-V4-Flash，不与判断/执行共用模型。
+# 抽取量大、单条价值低，所以用便宜快的 DeepSeek-V4-Flash，不与 M5 执行共用模型。
 factengine:
   enabled: true
   schedule: "@every 15m"
@@ -91,33 +91,23 @@ capture:
   # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
-# M5 判断环节：给 Todo 定 disposition（ready 建 Task、observe 保留观察、drop 终结），
-# 这里没有人工闸门——要 principal 拍板的事由执行环节带着调查结果去问。
-decide:
-  enabled: true
-  schedule: "@every 1m"
-  batch_limit: 50
-  codex_sandbox: "danger-full-access"   # 判断环节也可自查补信息（本地可信环境）
-  codex_network: true
-  codex_reasoning_effort: "medium"
-
-# 底层 agent CLI：供 extract(M3)/decide(M5 判断环节) 使用。
+# 底层 agent CLI：仅供 extract(M3) 使用。
 # 与 execute/chat 独立——真正跑 Task 与右侧对话用 execute.bin/model。
 codex:
   bin: "traex"
-  model: "gpt-5.5"
-  timeout_seconds: 600   # M3 抽取/M5 判断会多轮自跑 lark-cli/bytedcli 查飞书信息，放宽超时
+  model: "DeepSeek-V4-Flash"
+  timeout_seconds: 600   # M3 抽取会多轮自跑 lark-cli/bytedcli/git/jarvis-tools 补全背景，放宽超时
 
 # M5 任务执行：独立于上面的 codex 段。这里用更强模型真正落地。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron。
 execute:
-  enabled: true                                    # 全自动：判断环节判 ready 建 Task 后立即执行；下方 schedule 只补偿遗漏（含对外动作 + push/MR）
+  enabled: true                                    # 全自动：extracted Todo 固化成 Task 后立即执行；下方 schedule 只补偿遗漏（含对外动作 + push/MR）
   schedule: "@every 5m"
   batch_limit: 5
   concurrency: 1                                    # 单次 sweep 内只执行一个 Task，避免多个 Codex/编译任务叠加占满 CPU
   repo_root: "/Users/bytedance/workspace-local"    # code_change 的 repo_ref 基目录
   runs_dir: "/Users/bytedance/workspace-local/jarvis/runs"  # diff/产物落盘
-  bin: "traex"                                     # 与 M3/判断环节同一个 CLI，但模型/超时独立（右侧对话与日报也复用本 bin）
+  bin: "traex"                                     # 与 M3 使用同一个 CLI，但模型/超时独立（右侧对话与日报也复用本 bin）
   model: "gpt-5.6-sol"                             # Latest frontier（无裸 gpt-5.6；luna/terra/sol 里 sol 最强）
   reasoning_effort: "medium"                       # 覆盖用户全局 xhigh，执行质量与耗时折中
   timeout_second: 1800                             # 单次执行超时：30 分钟（长任务需要查资料并调用外部工具）

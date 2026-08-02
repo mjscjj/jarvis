@@ -10,7 +10,6 @@ import (
 
 const (
 	StageExtract = "extract"
-	StageDecide  = "decide"
 	StageExecute = "execute"
 	StageChat    = "chat"
 )
@@ -22,9 +21,6 @@ func Block(stage string) (string, error) {
 	switch stage {
 	case StageExtract:
 		purpose = "补全行动线索的项目、人物、会话、文档和代码背景；把查到的关键事实写入候选 context。"
-	case StageDecide:
-		purpose = "只判断线索是否值得进入 M5 执行环节；不形成可执行计划，不执行外部动作。"
-		usage = "用法：默认不调用工具。只有一次低成本查询就可能改变 ready / drop 的价值判断时才查询；不要多跳调查，不要为了补齐目标、边界或执行方案而查询，这些由 M5 执行环节完成。"
 	case StageExecute:
 		purpose = "完成任务、核验结果；需要等待时暂停当前 Task，避免创建重复任务。"
 	case StageChat:
@@ -49,8 +45,7 @@ func Block(stage string) (string, error) {
 	}
 	// Facts / todos / tasks are read-only here: the offline fact engine and the
 	// pipeline write them, so a stage that investigates only needs to look them
-	// up. StageDecide is excluded on purpose — it is a cheap value judgment that
-	// does not investigate.
+	// up.
 	if stage == StageExtract || stage == StageExecute || stage == StageChat {
 		lines = append(lines,
 			"- 查一个项目、群或人身上已经发生过什么时，使用 `jarvis-tools list-facts --help`。事实由离线事实引擎自己从原始材料里蒸馏，你不需要手工记。",

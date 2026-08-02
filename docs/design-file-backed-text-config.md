@@ -15,7 +15,6 @@
 | key | 文件 | 用途 |
 | --- | --- | --- |
 | `m3_system_prompt` | `conf/prompts/m3-system-prompt.md` | M3 抽取系统提示词 |
-| `m5_decision_system_prompt` | `conf/prompts/m5-decision-system-prompt.md` | M5 判断环节系统提示词（宽松语义契约） |
 | `m5_system_prompt` | `conf/prompts/m5-system-prompt.md` | M5 执行环节系统提示词 |
 | `m5_approval_policy` | `conf/prompts/m5-approval-policy.md` | 执行期"要不要先请示 principal"的判定策略 |
 | `fact_extract_system_prompt` | `conf/prompts/fact-extract-system-prompt.md` | 离线事实抽取系统提示词 |
@@ -40,8 +39,8 @@
 
 ## 运行与迁移
 
-1. 先把当前有效的 M3、M5 判断/执行环节内容写入 Markdown，并新增审批策略文件。
-2. M3、M5 各环节和后台全部切换到文件服务。
+1. 先把当前有效的 M3、M5 执行内容写入 Markdown，并新增审批策略文件。
+2. M3、M5 执行和后台全部切换到文件服务。
 3. 删除 `TextStorage` 数据模型、种子逻辑和旧 CRUD。
 4. 新版本启动并验证文件读写后，删除 `text_storage` 表。
 
@@ -51,7 +50,7 @@
 
 配置页不再把配置正文或扫描缓存写入数据库：
 
-- 工作规则：`conf/rules/all.md` 与 `m3.md`、`decide.md`、`m5.md`。运行时组合全阶段文件和当前阶段文件。
+- 工作规则：`conf/rules/all.md` 与 `m3.md`、`m5.md`。运行时组合全阶段文件和当前阶段文件。
 - Skills：正文继续来自 `.agents/skills/*/SKILL.md`，启用状态和阶段范围来自 `conf/skills.yaml`。
 - 共享记忆：`data/shared-memory.md`，该目录被 Git 忽略，允许保存本机凭据和长期记忆。
 - 运行配置：继续使用现有 `conf/config.runtime.yaml`。

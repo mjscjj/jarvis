@@ -3,8 +3,8 @@
 //
 // Per docs/design-context-pipeline.md the context is assembled/inferred exactly
 // once in M3, persisted into Todo.context_snapshot, and reused for the whole
-// M3→M5 chain. Owning the struct here (instead of in decide/) prevents the
-// two ends from drifting into incompatible shapes.
+// M3→M5 chain. Owning the struct here prevents the two ends from drifting into
+// incompatible shapes.
 package contextsnap
 
 import (
@@ -27,7 +27,7 @@ type Snapshot struct {
 	Assigner  *Assigner  `json:"assigner"`
 	Messages  []Message  `json:"messages"`
 	// Participants/resources/open_todos/other_projects are part of the exact
-	// context M3 used to make the extraction decision. They must be frozen too;
+	// context M3 used to extract the clue. They must be frozen too;
 	// otherwise M5 only receive whichever fragments the model happened to
 	// paraphrase into Candidate.Context.
 	Participants  []Participant  `json:"participants,omitempty"`
@@ -49,10 +49,8 @@ type Snapshot struct {
 	// RequestContext preserves caller-supplied manual/scheduled background
 	// without allowing it to replace the authoritative common snapshot.
 	RequestContext json.RawMessage `json:"request_context,omitempty"`
-	// Supplements are human clarifications added after extraction (from a
-	// need_info or need_decision Todo). They are appended (never replaced) and
-	// replayed to decision-step codex on re-evaluation so the decision maker sees the extra
-	// context/intent the extractor lacked.
+	// Supplements are human clarifications added after extraction. They are
+	// appended rather than replacing the frozen background.
 	Supplements []Supplement `json:"supplements,omitempty"`
 }
 

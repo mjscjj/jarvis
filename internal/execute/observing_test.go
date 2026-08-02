@@ -71,7 +71,7 @@ func newObservingTestDB(t *testing.T) *gorm.DB {
 			confirmed_by TEXT NOT NULL DEFAULT '', confirmed_at DATETIME,
 			source_type TEXT NOT NULL DEFAULT 'manual', source_id INTEGER, occurrence_key TEXT,
 			execution_mode TEXT NOT NULL DEFAULT 'standard', status TEXT NOT NULL,
-			execution_result TEXT, execution_supplements TEXT, decision_payload TEXT,
+			execution_result TEXT, execution_supplements TEXT,
 			source_clue TEXT, summary TEXT, last_progress_at DATETIME,
 			project_id INTEGER, version INTEGER NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -111,7 +111,7 @@ func insertObservingFixture(t *testing.T, db *gorm.DB, todoStatus string) {
 	if err := db.Exec(
 		`INSERT INTO task(id, todo_id, title, action_type, background, plan, confirmed_by, confirmed_at,
 			status, version, target, source_type, execution_mode)
-		 VALUES (11, 7, '同步口径', 'notify_principal', '{}', '{}', 'm5_decision', CURRENT_TIMESTAMP,
+		 VALUES (11, 7, '同步口径', 'notify_principal', '{}', '{}', 'materializer', CURRENT_TIMESTAMP,
 			'executing', 2, '评测口径', 'todo', 'standard')`,
 	).Error; err != nil {
 		t.Fatalf("insert Task: %v", err)

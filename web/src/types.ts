@@ -161,8 +161,7 @@ export interface Task {
   action_type: ActionType
   target: string
   background: Record<string, unknown>
-  plan: unknown
-  decision_payload: unknown
+  plan: unknown | null
   confirmed_by: string
   confirmed_at: string
   status: TaskStatus
@@ -760,7 +759,7 @@ export interface ResourceInput {
   is_active?: boolean
 }
 
-export type WorkRuleStage = 'extract' | 'decide' | 'execute'
+export type WorkRuleStage = 'extract' | 'execute'
 
 export interface WorkRule {
   key: 'all' | WorkRuleStage
@@ -878,13 +877,6 @@ export interface RuntimeSettings {
   extract_tool_timeout_seconds: number
   extract_history_tool_limit: number
   extract_evidence_retry_max: number
-
-  decide_enabled: boolean
-  decide_schedule: string
-  decide_batch_limit: number
-  decide_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
-  decide_network_enabled: boolean
-  decide_reasoning_effort: ReasoningEffort
 
   execute_auto_enabled: boolean
   execute_cli: AgentCLI

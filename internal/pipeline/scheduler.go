@@ -12,7 +12,6 @@ import (
 
 type ScheduleConfig struct {
 	Extract string
-	Decide  string
 	Execute string
 }
 
@@ -34,8 +33,7 @@ func StartScheduler(ctx context.Context, coordinator *Coordinator, cfg ScheduleC
 		run     func(context.Context) error
 	}{
 		{name: "extract_reconcile", spec: cfg.Extract, enabled: coordinator.extractor != nil, run: coordinator.ReconcileExtract},
-		{name: "decide_reconcile", spec: cfg.Decide, enabled: coordinator.decider != nil, run: coordinator.ReconcileDecide},
-		{name: "execute_reconcile", spec: cfg.Execute, enabled: coordinator.executor != nil, run: coordinator.ReconcileExecute},
+		{name: "execute_reconcile", spec: cfg.Execute, enabled: coordinator.materializer != nil || coordinator.executor != nil, run: coordinator.ReconcileExecute},
 	}
 	for _, job := range jobs {
 		job := job

@@ -1,5 +1,5 @@
 // Package background owns M1: the manually maintained Project / Person / Group
-// backgrounds that give every downstream module (extraction, decision) its
+// backgrounds that give every downstream module (extraction, execution) its
 // context. It is the authoritative writer for Project and Person, and the
 // authoritative writer for the *human-curated* subset of Group columns only —
 // capture (M2) still owns the discovery columns (chat_id/name/tier/...), so this

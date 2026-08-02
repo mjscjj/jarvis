@@ -47,13 +47,6 @@ type RuntimeSettings struct {
 	ExtractHistoryToolLimit      int     `json:"extract_history_tool_limit"`
 	ExtractEvidenceRetryMax      int     `json:"extract_evidence_retry_max"`
 
-	DecideEnabled         bool   `json:"decide_enabled"`
-	DecideSchedule        string `json:"decide_schedule"`
-	DecideBatchLimit      int    `json:"decide_batch_limit"`
-	DecideSandbox         string `json:"decide_sandbox"`
-	DecideNetworkEnabled  bool   `json:"decide_network_enabled"`
-	DecideReasoningEffort string `json:"decide_reasoning_effort"`
-
 	ExecuteAutoEnabled     bool   `json:"execute_auto_enabled"`
 	ExecuteCLI             string `json:"execute_cli"`
 	ExecuteModel           string `json:"execute_model"`
@@ -200,12 +193,6 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExtractToolTimeoutSeconds:    cfg.Extract.ToolTimeoutSec,
 		ExtractHistoryToolLimit:      cfg.Extract.HistoryToolLimit,
 		ExtractEvidenceRetryMax:      cfg.Extract.EvidenceRetryMax,
-		DecideEnabled:                cfg.Decide.Enabled,
-		DecideSchedule:               cfg.Decide.Schedule,
-		DecideBatchLimit:             cfg.Decide.BatchLimit,
-		DecideSandbox:                cfg.Decide.CodexSandbox,
-		DecideNetworkEnabled:         cfg.Decide.CodexNetwork,
-		DecideReasoningEffort:        cfg.Decide.CodexReasoningEffort,
 		ExecuteAutoEnabled:           cfg.Execute.Enabled,
 		ExecuteCLI:                   cfg.Execute.Bin,
 		ExecuteModel:                 cfg.Execute.Model,
@@ -272,12 +259,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Extract.ToolTimeoutSec = input.ExtractToolTimeoutSeconds
 	cfg.Extract.HistoryToolLimit = input.ExtractHistoryToolLimit
 	cfg.Extract.EvidenceRetryMax = input.ExtractEvidenceRetryMax
-	cfg.Decide.Enabled = input.DecideEnabled
-	cfg.Decide.Schedule = strings.TrimSpace(input.DecideSchedule)
-	cfg.Decide.BatchLimit = input.DecideBatchLimit
-	cfg.Decide.CodexSandbox = strings.TrimSpace(input.DecideSandbox)
-	cfg.Decide.CodexNetwork = input.DecideNetworkEnabled
-	cfg.Decide.CodexReasoningEffort = strings.TrimSpace(input.DecideReasoningEffort)
 	cfg.Execute.Enabled = input.ExecuteAutoEnabled
 	cfg.Execute.Bin = strings.TrimSpace(input.ExecuteCLI)
 	cfg.Execute.Model = strings.TrimSpace(input.ExecuteModel)
@@ -340,14 +321,6 @@ type runtimeOverride struct {
 		HistoryToolLimit      int     `yaml:"history_tool_limit"`
 		EvidenceRetryMax      int     `yaml:"evidence_retry_max"`
 	} `yaml:"extract"`
-	Decide struct {
-		Enabled         bool   `yaml:"enabled"`
-		Schedule        string `yaml:"schedule"`
-		BatchLimit      int    `yaml:"batch_limit"`
-		Sandbox         string `yaml:"codex_sandbox"`
-		Network         bool   `yaml:"codex_network"`
-		ReasoningEffort string `yaml:"codex_reasoning_effort"`
-	} `yaml:"decide"`
 	Model struct {
 		Model      string `yaml:"model"`
 		TimeoutSec int    `yaml:"timeout_sec"`
@@ -432,12 +405,6 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Extract.ToolTimeoutSec = input.ExtractToolTimeoutSeconds
 	override.Extract.HistoryToolLimit = input.ExtractHistoryToolLimit
 	override.Extract.EvidenceRetryMax = input.ExtractEvidenceRetryMax
-	override.Decide.Enabled = input.DecideEnabled
-	override.Decide.Schedule = strings.TrimSpace(input.DecideSchedule)
-	override.Decide.BatchLimit = input.DecideBatchLimit
-	override.Decide.Sandbox = strings.TrimSpace(input.DecideSandbox)
-	override.Decide.Network = input.DecideNetworkEnabled
-	override.Decide.ReasoningEffort = strings.TrimSpace(input.DecideReasoningEffort)
 	override.Model.Model = strings.TrimSpace(input.ModelAPIModel)
 	override.Model.TimeoutSec = input.ModelAPITimeoutSeconds
 	override.Codex.Bin = strings.TrimSpace(input.AnalysisCLI)

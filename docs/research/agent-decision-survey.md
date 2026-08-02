@@ -5,7 +5,7 @@
 > Last verified against project: 2026-08-02 @ `89fa24b`
 > Warning: §6 的 Jarvis M4 / 人工确认 / confidence-risk 对照基于已退役架构，不代表当前 M5。通用研究部分仍可参考。
 
-> 定位：一份**系统性、可追溯**的历史调研。末尾项目对照使用的是当时的 M4 确认闸门，当前实现请看 `docs/modules/04-decision.md`。
+> 定位：一份**系统性、可追溯**的历史调研。末尾项目对照使用的是当时的 M4 确认闸门，当前实现请看 `docs/00-overview.md` 和 `docs/modules/05-execution.md`。
 > 调研时间：2026-07-19。来源以 2025/2026 最新资料为主，逐条附 arXiv 编号 / 官方文档 / GitHub 链接。
 > 阅读顺序建议：先看 §0 认知地图 → §5 通用设计思想归纳 → §6 对照 Jarvis M4。§1~§4 是可追溯的细节支撑，按需查阅。
 

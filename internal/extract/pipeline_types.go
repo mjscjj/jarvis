@@ -185,8 +185,8 @@ type PersistStats struct {
 	Skipped int
 }
 
-// TodoRef is the durable M3 handoff to the decision step. Status and version are captured after
-// persistence so the downstream optimistic-lock claim targets the exact row M3
+// TodoRef is the durable M3 handoff to Task materialization. Status and version
+// are captured after persistence so the downstream optimistic-lock claim targets the exact row M3
 // committed rather than re-discovering work by timing.
 type TodoRef struct {
 	ID      uint64

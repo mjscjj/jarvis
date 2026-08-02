@@ -27,7 +27,6 @@ type ScheduleField =
   | 'capture_discover_schedule'
   | 'capture_scan_schedule'
   | 'extract_schedule'
-  | 'decide_schedule'
   | 'execute_schedule'
   | 'fact_engine_schedule'
   | 'fact_engine_rollup_schedule'
@@ -36,7 +35,6 @@ type ScheduleField =
 
 type EnabledField =
   | 'extract_enabled'
-  | 'decide_enabled'
   | 'execute_auto_enabled'
   | 'fact_engine_enabled'
   | 'scheduled_task_enabled'
@@ -81,16 +79,6 @@ const systemTasks: SystemTaskDefinition[] = [
     scheduleField: 'extract_schedule',
     enabledField: 'extract_enabled',
     parameters: (s) => `每批最多 ${s.extract_batch_messages} 条消息`,
-  },
-  {
-    key: 'decide-reconcile',
-    name: 'M5 Todo 补偿判断',
-    category: 'Agent 流水线',
-    description: '补偿领取待判断 Todo，由 M5 判断进入执行、继续观察或忽略。',
-    job: 'decide_reconcile',
-    scheduleField: 'decide_schedule',
-    enabledField: 'decide_enabled',
-    parameters: (s) => `每批最多 ${s.decide_batch_limit} 个 Todo`,
   },
   {
     key: 'execute-reconcile',

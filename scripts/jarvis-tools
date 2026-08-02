@@ -230,8 +230,8 @@ usage: jarvis-tools set-todo-status --id TODO_ID --status observing|extracted --
 Move one clue between the two states that mean nobody is acting on it.
 
   observing  Nothing to do right now, but keep the clue in view. No Task is
-             created; later evidence can bring it back for a fresh decision.
-  extracted  Hand the clue back to the decision step to be judged again.
+             created; later evidence can bring it back for execution.
+  extracted  Hand the clue back for direct Task materialization and execution.
 
 A clue that already finished (dropped/dismissed/expired) cannot be revived.
 Pass "-" to --reason to read the reason from stdin.
@@ -1079,7 +1079,7 @@ cmd_create_scheduled_task() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
-# set-todo-status parks a clue or hands it back to the decision step. The server
+# set-todo-status parks a clue or hands it back to Task materialization. The server
 # owns which transitions are legal; this only names the caller and the reason.
 cmd_set_todo_status() {
   reset_flags

@@ -48,7 +48,7 @@ func TestSetTodoStatusRejectsBadInput(t *testing.T) {
 		{"zero id", func(in *TodoStatusInput) { in.TodoID = 0 }},
 		{"blank actor", func(in *TodoStatusInput) { in.Actor = "  " }},
 		{"blank reason", func(in *TodoStatusInput) { in.Reason = "  " }},
-		// Statuses the decision and execution stages own are not settable here.
+		// Statuses materialization and execution own are not settable here.
 		{"auto", func(in *TodoStatusInput) { in.Status = "auto" }},
 		{"dropped", func(in *TodoStatusInput) { in.Status = "dropped" }},
 		{"unknown", func(in *TodoStatusInput) { in.Status = "parked" }},

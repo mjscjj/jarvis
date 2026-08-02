@@ -103,11 +103,11 @@ func TestPrepareTaskEventRejectsUnknownType(t *testing.T) {
 	}
 }
 
-func TestPrepareTaskEventRejectsRetiredM4Actor(t *testing.T) {
+func TestPrepareTaskEventRejectsUnknownActor(t *testing.T) {
 	t.Parallel()
 	_, err := prepareTaskEvent(TaskEventInput{
 		TaskID: 1, TaskVersion: 0, EventType: "created",
-		ToStatus: "pending", ActorType: "m4", OccurredAt: time.Now(),
+		ToStatus: "pending", ActorType: "unknown_stage", OccurredAt: time.Now(),
 	})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("error = %v, want ErrInvalidInput", err)

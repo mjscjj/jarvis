@@ -28,12 +28,9 @@ type extractor interface {
 	ExtractOnce(context.Context) (extract.WorkerStats, error)
 }
 
-// todoDecider is M5's decision step: it judges whether an extracted Todo is
-// worth acting on and, when it is, materializes the Task the execution step
-// picks up. It is not a separate pipeline stage.
-type todoDecider interface {
-	EvaluateTodo(context.Context, uint64, int32) (*execute.EvaluationResult, error)
-	EvaluateOnce(context.Context) (execute.WorkerStats, error)
+type todoMaterializer interface {
+	MaterializeTodo(context.Context, uint64, int32) (*execute.MaterializationResult, error)
+	MaterializeOnce(context.Context) (execute.MaterializationStats, error)
 }
 
 type executionStore interface {
@@ -59,28 +56,23 @@ type chatWork struct {
 	All    bool
 }
 
-// m5Work is one unit of M5 work. M5 has two entry points into the same stage: a
-// Todo enters the decision step, a Task enters the execution step. They share
-// one queue and one worker pool, so a Todo that turns into a Task never crosses
-// a stage boundary.
+// m5Work is one unit of M5 work. A Todo is mechanically materialized before its
+// Task enters execution. Both use one queue and worker pool.
 type m5Work struct {
-	// TodoID and TaskID are mutually exclusive; AllTodos requests a full
-	// decision reconciliation pass instead of one specific entity.
-	TodoID   uint64
-	TaskID   uint64
-	Version  int32
-	LogID    string
-	AllTodos bool
+	TodoID  uint64
+	TaskID  uint64
+	Version int32
+	LogID   string
 }
 
 // Coordinator owns every automatic M3/M5 invocation, so real-time wake-ups and
 // scheduled reconciliation cannot run separate copies of the same worker.
 type Coordinator struct {
-	extractor extractor
-	decider   todoDecider
-	store     executionStore
-	executor  taskExecutor
-	opts      Options
+	extractor    extractor
+	materializer todoMaterializer
+	store        executionStore
+	executor     taskExecutor
+	opts         Options
 
 	chats *keyedQueue[chatWork]
 	m5    *keyedQueue[m5Work]
@@ -93,18 +85,18 @@ type Coordinator struct {
 // NewCoordinator wires the concrete process workers. Keeping the public
 // constructor concrete also avoids typed-nil interfaces accidentally enabling a
 // disabled stage; tests use newCoordinator with small fakes.
-func NewCoordinator(extractWorker *extract.Worker, decisionWorker *execute.DecisionWorker, executionTaskStore *execute.Store, agentExecutor *execute.AgentExecutor, opts Options) (*Coordinator, error) {
+func NewCoordinator(extractWorker *extract.Worker, materializer *execute.Materializer, executionTaskStore *execute.Store, agentExecutor *execute.AgentExecutor, opts Options) (*Coordinator, error) {
 	var (
-		extractStage extractor
-		decideStage  todoDecider
-		storeStage   executionStore
-		executeStage taskExecutor
+		extractStage     extractor
+		materializeStage todoMaterializer
+		storeStage       executionStore
+		executeStage     taskExecutor
 	)
 	if extractWorker != nil {
 		extractStage = extractWorker
 	}
-	if decisionWorker != nil {
-		decideStage = decisionWorker
+	if materializer != nil {
+		materializeStage = materializer
 	}
 	if executionTaskStore != nil {
 		storeStage = executionTaskStore
@@ -112,10 +104,10 @@ func NewCoordinator(extractWorker *extract.Worker, decisionWorker *execute.Decis
 	if agentExecutor != nil {
 		executeStage = agentExecutor
 	}
-	return newCoordinator(extractStage, decideStage, storeStage, executeStage, opts)
+	return newCoordinator(extractStage, materializeStage, storeStage, executeStage, opts)
 }
 
-func newCoordinator(extractor extractor, decider todoDecider, store executionStore, executor taskExecutor, opts Options) (*Coordinator, error) {
+func newCoordinator(extractor extractor, materializer todoMaterializer, store executionStore, executor taskExecutor, opts Options) (*Coordinator, error) {
 	if opts.Logger == nil {
 		return nil, fmt.Errorf("pipeline logger is nil")
 	}
@@ -145,8 +137,6 @@ func newCoordinator(extractor extractor, decider todoDecider, store executionSto
 	m5, err := newKeyedQueue(queueCapacity, func(work m5Work) string {
 		version := strconv.FormatInt(int64(work.Version), 10)
 		switch {
-		case work.AllTodos:
-			return "todos:all"
 		case work.TodoID != 0:
 			return "todo:" + strconv.FormatUint(work.TodoID, 10) + ":" + version
 		default:
@@ -157,7 +147,7 @@ func newCoordinator(extractor extractor, decider todoDecider, store executionSto
 		return nil, err
 	}
 	return &Coordinator{
-		extractor: extractor, decider: decider, store: store, executor: executor, opts: opts,
+		extractor: extractor, materializer: materializer, store: store, executor: executor, opts: opts,
 		chats: chats, m5: m5,
 	}, nil
 }
@@ -176,11 +166,8 @@ func (c *Coordinator) Start(ctx context.Context) error {
 		c.wg.Add(1)
 		go c.runChats(ctx)
 	}
-	// One pool drains both M5 steps. Sizing follows the execution step because
-	// it dominates: decisions are a single read-only model call, executions run
-	// a full agent session. With only the decision step enabled a single worker
-	// preserves the previous serial behavior.
-	if c.decider != nil || c.executor != nil {
+	// One pool drains mechanical Todo materialization and M5 execution.
+	if c.materializer != nil || c.executor != nil {
 		workers := 1
 		if c.executor != nil {
 			workers = c.opts.ExecutionConcurrency
@@ -210,10 +197,9 @@ func (c *Coordinator) ChatScanned(ctx context.Context, result capture.ChatScanRe
 	return c.chats.enqueue(ctx, chatWork{ChatID: result.ChatID, Marker: marker, LogID: observability.LogID(ctx)})
 }
 
-// TodoReady and TaskReady implement execute.LifecycleNotifier. Both feed the
-// same M5 queue; they differ only in which step of M5 picks the work up.
+// TodoReady and TaskReady implement execute.LifecycleNotifier.
 func (c *Coordinator) TodoReady(ctx context.Context, todoID uint64, version int32) error {
-	if c.decider == nil {
+	if c.materializer == nil {
 		return execute.ErrLifecycleStageDisabled
 	}
 	if todoID == 0 || version < 0 {
@@ -242,15 +228,19 @@ func (c *Coordinator) ReconcileExtract(ctx context.Context) error {
 	return c.chats.enqueue(ctx, chatWork{All: true, LogID: observability.LogID(ctx)})
 }
 
-func (c *Coordinator) ReconcileDecide(ctx context.Context) error {
-	if c.decider == nil {
-		return nil
-	}
-	ctx = observability.EnsureLogID(ctx)
-	return c.m5.enqueue(ctx, m5Work{AllTodos: true, LogID: observability.LogID(ctx)})
-}
-
 func (c *Coordinator) ReconcileExecute(ctx context.Context) error {
+	if c.materializer != nil {
+		for {
+			stats, err := c.materializer.MaterializeOnce(ctx)
+			if err != nil {
+				return err
+			}
+			if stats.Loaded == 0 {
+				break
+			}
+			c.logf(ctx, "stage=m5 step=materialize trigger=reconcile status=ok materialized=%d", stats.Materialized)
+		}
+	}
 	if c.executor == nil {
 		return nil
 	}
@@ -266,9 +256,6 @@ func (c *Coordinator) ReconcileExecute(ctx context.Context) error {
 
 func (c *Coordinator) ReconcileAll(ctx context.Context) error {
 	if err := c.ReconcileExtract(ctx); err != nil {
-		return err
-	}
-	if err := c.ReconcileDecide(ctx); err != nil {
 		return err
 	}
 	return c.ReconcileExecute(ctx)
@@ -301,7 +288,7 @@ func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 			}
 			c.logf(ctx, "stage=m3 trigger=reconcile status=ok chats=%d created=%d updated=%d", stats.ChatsProcessed, stats.Created, stats.Updated)
 		}
-		if err := c.ReconcileDecide(ctx); err != nil {
+		if err := c.ReconcileExecute(ctx); err != nil {
 			c.logf(ctx, "stage=m3 trigger=reconcile notify=m5 status=error error=%+v", err)
 		}
 		return
@@ -316,7 +303,7 @@ func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 			return
 		}
 		c.logf(ctx, "stage=m3 trigger=realtime chat_id=%s status=ok created=%d updated=%d", work.ChatID, stats.Created, stats.Updated)
-		if c.decider == nil {
+		if c.materializer == nil {
 			continue
 		}
 		for _, todo := range todos {
@@ -346,51 +333,27 @@ func (c *Coordinator) runM5(ctx context.Context) {
 func (c *Coordinator) processM5(ctx context.Context, work m5Work) {
 	ctx = observability.WithLogID(ctx, work.LogID)
 	switch {
-	case work.AllTodos:
-		c.reconcileDecisions(ctx)
 	case work.TodoID != 0:
-		c.decideTodo(ctx, work)
+		c.materializeTodo(ctx, work)
 	default:
 		c.executeTask(ctx, work)
 	}
 }
 
-// reconcileDecisions drains every extracted Todo left behind by a lost wake-up.
-// Tasks it materializes are picked up by ReconcileExecute rather than enqueued
-// one by one, so a large backlog cannot outrun the queue capacity.
-func (c *Coordinator) reconcileDecisions(ctx context.Context) {
-	for {
-		stats, err := c.decider.EvaluateOnce(ctx)
-		if err != nil {
-			c.logf(ctx, "stage=m5 step=decide trigger=reconcile status=error error=%+v", err)
-			return
-		}
-		if stats.Loaded == 0 {
-			return
-		}
-		c.logf(ctx, "stage=m5 step=decide trigger=reconcile status=ok evaluated=%d auto=%d observing=%d dropped=%d", stats.Evaluated, stats.Auto, stats.Observing, stats.Dropped)
-		if stats.Auto > 0 {
-			if err := c.ReconcileExecute(ctx); err != nil {
-				c.logf(ctx, "stage=m5 step=decide trigger=reconcile notify=execute status=error error=%+v", err)
-			}
-		}
-	}
-}
-
-func (c *Coordinator) decideTodo(ctx context.Context, work m5Work) {
-	result, err := c.decider.EvaluateTodo(ctx, work.TodoID, work.Version)
+func (c *Coordinator) materializeTodo(ctx context.Context, work m5Work) {
+	result, err := c.materializer.MaterializeTodo(ctx, work.TodoID, work.Version)
 	if err != nil {
 		if errors.Is(err, execute.ErrVersionConflict) || errors.Is(err, execute.ErrInvalidTransition) || errors.Is(err, execute.ErrTodoNotFound) {
-			c.logf(ctx, "stage=m5 step=decide trigger=realtime todo_id=%d version=%d status=stale", work.TodoID, work.Version)
+			c.logf(ctx, "stage=m5 step=materialize trigger=realtime todo_id=%d version=%d status=stale", work.TodoID, work.Version)
 			return
 		}
-		c.logf(ctx, "stage=m5 step=decide trigger=realtime todo_id=%d version=%d status=error error=%+v", work.TodoID, work.Version, err)
+		c.logf(ctx, "stage=m5 step=materialize trigger=realtime todo_id=%d version=%d status=error error=%+v", work.TodoID, work.Version, err)
 		return
 	}
-	c.logf(ctx, "stage=m5 step=decide trigger=realtime todo_id=%d status=ok route=%s", result.TodoID, result.Status)
-	if result.TaskID != nil && c.executor != nil {
-		if err := c.TaskReady(ctx, *result.TaskID, result.TaskVersion); err != nil {
-			c.logf(ctx, "stage=m5 step=decide trigger=realtime notify=execute task_id=%d status=error error=%+v", *result.TaskID, err)
+	c.logf(ctx, "stage=m5 step=materialize trigger=realtime todo_id=%d status=ok task_id=%d", result.TodoID, result.TaskID)
+	if c.executor != nil {
+		if err := c.TaskReady(ctx, result.TaskID, result.TaskVersion); err != nil {
+			c.logf(ctx, "stage=m5 step=materialize trigger=realtime notify=execute task_id=%d status=error error=%+v", result.TaskID, err)
 		}
 	}
 }

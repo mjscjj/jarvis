@@ -114,7 +114,7 @@ Factory 负责：
 4. 按来源批次防重。
 5. 创建 `Task(status=pending)` 和 `TaskEvent(created)`。
 
-M4 和自动决策继续控制自己的 Todo 状态、DecisionAudit 和事务，只把 Task 建表逻辑委托给 Factory。
+Todo 固化器在同一事务中把 `extracted` 更新为 `auto` 并调用 Factory 建 Task。
 
 ## 6. 定时触发
 

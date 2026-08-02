@@ -63,7 +63,6 @@ func Migrate(db *gorm.DB) error {
 	}
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
-	models = append(models, domain.DecideModels()...)
 	models = append(models, domain.ExecuteModels()...)
 	models = append(models, domain.KnowledgeModels()...)
 	models = append(models, domain.ProgressModels()...)
@@ -128,8 +127,7 @@ func backfillTaskRuntimeMVP(db *gorm.DB) error {
 // is unconditional: none of them carry information worth preserving.
 //
 //   - todo.route stored the same string as todo.status.
-//   - todo.confidence/risk and the decision_audit scoring columns belonged to the
-//     rule engine, which no longer has an implementation.
+//   - todo.confidence/risk belonged to the retired rule engine.
 //   - todo.ttl_at was never read or written anywhere.
 //   - todo.extraction_model/prompt_version were written but never read.
 //   - task.autonomy_mode was derived by a function that ignored its argument and
@@ -147,9 +145,6 @@ func dropRetiredColumns(db *gorm.DB) error {
 			"manual_gate_required",
 		}},
 		{model: &domain.Task{}, table: "task", columns: []string{"autonomy_mode", "approval_ref"}},
-		{model: &domain.DecisionAudit{}, table: "decision_audit", columns: []string{
-			"confidence_eff", "risk_eff", "confidence_factors", "risk_factors", "threshold_config_version",
-		}},
 	}
 	migrator := db.Migrator()
 	for _, entry := range retired {
@@ -190,21 +185,16 @@ func dropExecutionRunGitColumns(db *gorm.DB) error {
 
 // dropActionHash removes the abandoned action-integrity hash. It only ever
 // guarded against action_type/target/plan drift, which contradicts M5's right to
-// revise plan / background / decision_payload while executing (AGENTS.md §4).
+// revise task semantics while executing (AGENTS.md §4).
 // task.action_hash is NOT NULL without a default, so the column must go before
 // inserts stop supplying it.
-// Table names and the raw ALTER are deliberate: action_hash no longer exists on
-// either model, so passing a model here would make the drop depend on GORM
-// resolving an unknown name as a column rather than a struct field.
 func dropActionHash(db *gorm.DB) error {
 	migrator := db.Migrator()
-	for _, table := range []string{"task", "decision_audit"} {
-		if !migrator.HasTable(table) || !migrator.HasColumn(table, "action_hash") {
-			continue
-		}
-		if err := db.Exec("ALTER TABLE `" + table + "` DROP COLUMN `action_hash`").Error; err != nil {
-			return fmt.Errorf("drop %s.action_hash: %w", table, err)
-		}
+	if !migrator.HasTable("task") || !migrator.HasColumn("task", "action_hash") {
+		return nil
+	}
+	if err := db.Exec("ALTER TABLE `task` DROP COLUMN `action_hash`").Error; err != nil {
+		return fmt.Errorf("drop task.action_hash: %w", err)
 	}
 	return nil
 }

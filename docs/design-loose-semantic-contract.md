@@ -5,9 +5,9 @@
 > Last verified: 2026-08-02 @ `89fa24b`
 > Warning: M3 Candidate、execution enrichment 和部分 Structured Output 仍是严格结构；本文示例不是当前全链路协议。
 
-Jarvis 的 M3 与 M5（判断环节 + 执行环节）不应共享一套庞大的模型语义 DTO。程序只固定硬消费字段，模型语义用自然语言或宽松 JSON 原样传递。这样上游新增一段判断、证据或结果时，下游能直接带给模型，不需要同步改 Go struct、JSON Schema、前端类型和历史数据。
+Jarvis 的 M3 与 M5 执行不应共享一套庞大的模型语义 DTO。程序只固定硬消费字段，模型语义用自然语言或宽松 JSON 原样传递。这样上游新增一段判断、证据或结果时，下游能直接带给模型，不需要同步改 Go struct、JSON Schema、前端类型和历史数据。
 
-当前落地状态（2026-08-02）：M5 判断的 plan/payload 已按宽松 JSON 方向实现，M3 原始 extraction result 也会整体传给 Task；但 M3 Candidate、execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。`repo_path` 记录在 ExecutionRun，不在 Task。以 current 模块文档和代码为准。
+当前落地状态（2026-08-02）：M3 原始 extraction result 会整体传给 Task；Todo 来源的 `Task.plan` 可空，M5 执行直接根据 M3 clue 与冻结上下文判断。但 M3 Candidate、execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。`repo_path` 记录在 ExecutionRun，不在 Task。以 current 模块文档和代码为准。
 
 ## 目标
 
@@ -119,49 +119,19 @@ Jarvis 的 M3 与 M5（判断环节 + 执行环节）不应共享一套庞大的
 
 - 一次 M3 observation 产生一个不可变 ContextDocument，并记录 revision / observation id。
 - Todo 可以继续接收新证据，但新增证据写入 append-only supplement/event，不修改旧 ContextDocument。
-- 每次重新决策明确引用它实际使用的 observation 与 supplements，结果写入 append-only decision event（当前复用 `TodoEvent.detail`）。
-- Task 创建时冻结此次决策使用的 ContextDocument、supplements 和 Decision Event；M5 只消费 Task 自带背景，不回查并重建 Todo 当前状态。
-- M5 判断/执行环节默认把这些语义整体传给模型，不解析内部业务字段。
+- 每次重新抽取明确引用它实际使用的 observation 与 supplements。
+- Task 创建时冻结 M3 使用的 ContextDocument 与完整 clue；M5 只消费 Task 自带背景，不回查并重建 Todo 当前状态。
+- M5 执行默认把这些语义整体传给模型，不解析内部业务字段。
 
-## M5 判断环节
+## Todo 到 Task 固化
 
-硬字段：
+固化步骤不调用模型，也不生成新的语义内容，只保证机器边界：
 
-- `disposition`: `ready | observe | drop`
-- `plan`: 宽松 JSON 或自然语言。`ready` 时必须存在且非空，但不限定必须是对象。
-- `payload`: 宽松 JSON。
-
-目标输出：
-
-```json
-{
-  "disposition": "ready",
-  "plan": {
-    "summary": "修改 M5 enrichment 为开放 content，并更新前端渲染。"
-  },
-  "payload": {
-    "summary": "值得做，但涉及模型输出契约变更，执行时要先确认影响面。",
-    "blocks": [
-      {"kind": "risk", "label": "契约变更", "content": "需要同步后端 schema、解析和前端展示。"}
-    ]
-  }
-}
-```
-
-`confidence_factors`、`risk_factors`、`clarifications`、`evidence_gathered` 不再作为跨阶段固定 DTO。需要展示时放进 `payload.blocks`。
-
-需要 principal 拍板的点写进 `payload`，不构成第三种 disposition：线索不停下来等人，问题跟着 Task 走到执行环节再问。
-
-### 判断环节到 Task 的可靠交接
-
-当前实现已经在 `EvaluationStore.Apply` 的同一个既有事务中完成 Todo version CAS、append-only `TodoEvent`、`DecisionAudit` 和自动 Task 创建；Task 还有 `todo_id` 唯一键。事务失败会整体回滚，因此当前没有“Todo 已变成 auto，但 Task 漏建”的中间窗口，不需要再增加 DecisionEvent 表和 TaskMaterializer 抽象。
-
-保留下面几个边界即可：
-
-1. 判断环节的完整 `plan + payload` 写入本次 append-only `TodoEvent.detail`，不能只保留可变 Todo 上的投影值。
-2. Todo version CAS 防止旧判断覆盖补充信息后的新 revision。
-3. Task 创建继续受 `todo_id` 唯一键约束；重复创建直接 fail-fast。
-4. 不为“可能将来拆进程”预建 materializer/reconciler。如果以后确实要移除现有事务或跨进程物化，再单独设计可恢复协议并先确认复杂度。
+- `status=extracted` 的 Todo 通过 version CAS 更新为 `auto`。
+- 同一事务写入 append-only `TodoEvent` 并调用 Task Factory。
+- Task 继续受 `todo_id` 唯一键约束；同一旧通知重复到达时返回已有 Task。
+- `context_snapshot` 和 `extraction_result` 原样固化到 Task。
+- Todo 来源不生成 `plan`；`Task.plan` 保持 `NULL`，交给 M5 执行自行判断。
 
 ## M5 执行
 
@@ -221,9 +191,9 @@ Task 保留：
 - `status/version`
 - `project_id`
 - `execution_mode/approval_ref`
-- `background/plan/source_clue/decision_payload/execution_result` 宽松 JSON
+- `background/plan/source_clue/execution_result` 宽松 JSON
 
-`decision_payload` 在 Task 创建时从本次判断 event 原样固化，并随执行环节 `TASK_CONTEXT` 以 `decision_context` 传递（判断方向以 `decision_direction` 传递）。它不能靠执行环节回查 Todo 当前事件重建。
+Todo 来源的 `plan` 可空；已有行的非空 `plan` 原样保留。执行提示词使用 `source_clue` 中的完整 M3 线索，不人为生成占位计划。
 
 后续应给 Task 增加 `repo_path` 这类执行硬投影，让 M5 不再解析 `context_snapshot.project.repos`。
 
@@ -231,17 +201,16 @@ TodoEvent / TaskEvent：
 
 - 事件只记录状态变化、actor、时间和宽松 detail。
 - 状态事件不重复复制完整 context snapshot。
-- Observation、Decision、Proposal 等模型产物必须落在不可变 artifact/event 中并保存该次完整 payload；当前判断环节复用 append-only `TodoEvent.detail`，不额外建表。
+- Observation、Proposal 等模型产物必须落在不可变 artifact/event 中并保存该次完整 payload。
 - 工具调用 trace 单独保存为运行观测数据，不混入语义 payload；需要给后续模型时，以 `evidence` block 投影必要结论和引用。
 
 ## 实施顺序
 
 1. M5 `enrichments`: `detail string` 改为 `content` 任意非 `null` JSON，前端通用渲染未知内容。
-2. 判断环节输出改为 `disposition + plan + payload`，把 factor/evidence/clarification 放进阶段自己的宽松 payload；复用现有 Todo CAS、TodoEvent 和 Task 唯一键。
-3. M3 Candidate 改为硬字段 + payload；严格 Structured Output 阶段先用 JSON 文本承载开放 payload。
-4. ContextSnapshot v2 改为按 observation/revision 冻结的 ContextDocument，supplements 只追加。
-5. Task 增加 `repo_path`，移除 M5 对 `contextsnap` 的依赖。
-6. 清理普通 TodoEvent 的完整 snapshot 复制，保留不可变模型 artifact。历史数据是否迁移另行确认。
+2. M3 Candidate 改为硬字段 + payload；严格 Structured Output 阶段先用 JSON 文本承载开放 payload。
+3. ContextSnapshot v2 改为按 observation/revision 冻结的 ContextDocument，supplements 只追加。
+4. Task 增加 `repo_path`，移除 M5 对 `contextsnap` 的依赖。
+5. 清理普通 TodoEvent 的完整 snapshot 复制，保留不可变模型 artifact。历史数据是否迁移另行确认。
 
 ## 验收点
 
@@ -251,5 +220,5 @@ TodoEvent / TaskEvent：
 - 只有硬控制字段失败才 fail-fast；语义字段新增不需要改 Go struct。
 - M5 不因为新增 enrichment 字段而拒绝模型输出。
 - 同一个 Todo 只能创建一个 Task；任一步失败不会留下 Todo 已 auto 但 Task 不存在的提交状态。
-- 有新 supplement 时旧判断不会覆盖新 Todo revision。
-- 后续 M3 或判断环节改造时，新增 payload block 不要求 Task 或执行环节同步改类型。
+- 有新 supplement 时旧物化通知不会覆盖新 Todo revision。
+- 后续 M3 改造时，新增 payload block 不要求 Task 或执行环节同步改类型。

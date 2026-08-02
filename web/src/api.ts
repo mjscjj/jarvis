@@ -226,7 +226,11 @@ export function deleteProject(id: number): Promise<{ id: number; archived: boole
 }
 
 export function listProjectFacts(id: number, signal?: AbortSignal): Promise<{ items: Fact[] }> {
-  return request<{ items: Fact[] }>(`/api/facts?subject_type=project&subject_id=${id}&limit=200`, { signal })
+  return listSubjectFacts('project', id, signal)
+}
+
+export function listSubjectFacts(subjectType: 'project' | 'group' | 'person', id: number, signal?: AbortSignal): Promise<{ items: Fact[] }> {
+  return request<{ items: Fact[] }>(`/api/facts?subject_type=${subjectType}&subject_id=${id}&limit=200`, { signal })
 }
 
 export function appendProjectFact(id: number, description: string): Promise<Fact> {

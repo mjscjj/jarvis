@@ -23,10 +23,10 @@ M3 把新证据和工作背景转成 Todo。它只创建/更新 Todo，不创建
 
 M3 状态只有：
 
-- `extracted`：存在需要 M5 价值判断的动作线索；
+- `extracted`：存在需要 M5 执行 Agent 调查和判断的动作线索；
 - `observing`：值得知道，但当前无需任何人行动。
 
-重提取可以在 `extracted ↔ observing` 间调整，不随意重新打开已经 `auto` 或 `dropped` 的 Todo。
+重提取可以在 `extracted ↔ observing` 间调整，不随意重新打开已经 `auto` 的 Todo。
 
 ## 2. Candidate 契约
 

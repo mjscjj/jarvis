@@ -36,19 +36,19 @@ func (f *fakeExtractor) ExtractOnce(context.Context) (extract.WorkerStats, error
 	return extract.WorkerStats{}, nil
 }
 
-type fakeDecider struct {
+type fakeMaterializer struct {
 	calls  chan m5Work
-	result *execute.EvaluationResult
+	result *execute.MaterializationResult
 }
 
-func (f *fakeDecider) EvaluateTodo(_ context.Context, todoID uint64, version int32) (*execute.EvaluationResult, error) {
+func (f *fakeMaterializer) MaterializeTodo(_ context.Context, todoID uint64, version int32) (*execute.MaterializationResult, error) {
 	f.calls <- m5Work{TodoID: todoID, Version: version}
 	result := *f.result
 	return &result, nil
 }
 
-func (f *fakeDecider) EvaluateOnce(context.Context) (execute.WorkerStats, error) {
-	return execute.WorkerStats{}, nil
+func (f *fakeMaterializer) MaterializeOnce(context.Context) (execute.MaterializationStats, error) {
+	return execute.MaterializationStats{}, nil
 }
 
 type fakeExecutionStore struct {
@@ -127,14 +127,14 @@ func pipelineTestOptions() Options {
 func TestCoordinatorDrivesRealtimeM3M5(t *testing.T) {
 	taskID := uint64(31)
 	extractor := &fakeExtractor{todos: []extract.TodoRef{{ID: 21, Version: 3, Status: "extracted"}}}
-	decider := &fakeDecider{
+	materializer := &fakeMaterializer{
 		calls: make(chan m5Work, 1),
-		result: &execute.EvaluationResult{
-			TodoID: 21, Status: execute.RouteAuto, Version: 4, TaskID: &taskID, TaskVersion: 0,
+		result: &execute.MaterializationResult{
+			TodoID: 21, TodoVersion: 4, TaskID: taskID, TaskVersion: 0,
 		},
 	}
 	executor := &fakeTaskExecutor{calls: make(chan execute.ExecuteInput, 1)}
-	coordinator, err := newCoordinator(extractor, decider, &fakeExecutionStore{}, executor, pipelineTestOptions())
+	coordinator, err := newCoordinator(extractor, materializer, &fakeExecutionStore{}, executor, pipelineTestOptions())
 	if err != nil {
 		t.Fatalf("newCoordinator() error = %v", err)
 	}
@@ -153,12 +153,12 @@ func TestCoordinatorDrivesRealtimeM3M5(t *testing.T) {
 		t.Fatalf("ChatScanned() error = %v", err)
 	}
 	select {
-	case work := <-decider.calls:
+	case work := <-materializer.calls:
 		if work.TodoID != 21 || work.Version != 3 {
-			t.Fatalf("M5 judgment work = %#v", work)
+			t.Fatalf("Todo materialization work = %#v", work)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("M5 judgment was not triggered")
+		t.Fatal("Todo materialization was not triggered")
 	}
 	select {
 	case input := <-executor.calls:

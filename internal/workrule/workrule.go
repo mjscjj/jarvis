@@ -16,7 +16,6 @@ import (
 const (
 	StageAll     = "all"
 	StageExtract = "extract"
-	StageDecide  = "decide"
 	StageExecute = "execute"
 )
 
@@ -34,7 +33,6 @@ type definition struct {
 var ruleDefinitions = []definition{
 	{key: StageAll, name: "全阶段", filename: "all.md"},
 	{key: StageExtract, name: "M3 抽取", filename: "m3.md"},
-	{key: StageDecide, name: "M5 判断", filename: "decide.md"},
 	{key: StageExecute, name: "M5 执行", filename: "m5.md"},
 }
 
@@ -124,7 +122,7 @@ func (s *Service) Update(ctx context.Context, key string, input Input) (*View, e
 
 // Block combines the global rules and current-stage rules on every call.
 func (s *Service) Block(ctx context.Context, stage string) (string, error) {
-	if stage != StageExtract && stage != StageDecide && stage != StageExecute {
+	if stage != StageExtract && stage != StageExecute {
 		return "", fmt.Errorf("%w: unknown stage %q", ErrInvalidInput, stage)
 	}
 	global, err := s.Get(ctx, StageAll)

@@ -34,23 +34,22 @@ var (
 )
 
 type Input struct {
-	TodoID          *uint64
-	Title           string
-	ActionType      string
-	Target          string
-	Background      json.RawMessage
-	SourceClue      json.RawMessage
-	Plan            json.RawMessage
-	DecisionPayload json.RawMessage
-	ConfirmedBy     string
-	ConfirmedAt     *time.Time
-	ProjectID       *uint64
-	SourceType      string
-	SourceID        *uint64
-	OccurrenceKey   *string
-	ExecutionMode   string
-	ActorType       string
-	EventDetail     map[string]any
+	TodoID        *uint64
+	Title         string
+	ActionType    string
+	Target        string
+	Background    json.RawMessage
+	SourceClue    json.RawMessage
+	Plan          json.RawMessage
+	ConfirmedBy   string
+	ConfirmedAt   *time.Time
+	ProjectID     *uint64
+	SourceType    string
+	SourceID      *uint64
+	OccurrenceKey *string
+	ExecutionMode string
+	ActorType     string
+	EventDetail   map[string]any
 }
 
 type Factory struct {
@@ -151,9 +150,8 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 	row := domain.Task{
 		TodoID: normalized.TodoID, Title: normalized.Title, ActionType: normalized.ActionType,
 		Target: normalized.Target, Background: datatypes.JSON(normalized.Background), Plan: datatypes.JSON(normalized.Plan),
-		SourceClue:      datatypes.JSON(normalized.SourceClue),
-		DecisionPayload: datatypes.JSON(normalized.DecisionPayload),
-		ConfirmedBy:     normalized.ConfirmedBy, ConfirmedAt: now,
+		SourceClue:  datatypes.JSON(normalized.SourceClue),
+		ConfirmedBy: normalized.ConfirmedBy, ConfirmedAt: now,
 		SourceType: normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
 		ExecutionMode: normalized.ExecutionMode, Status: "pending",
 		ProjectID: normalized.ProjectID, Version: 0,
@@ -218,20 +216,16 @@ func normalizeInput(input Input) (Input, error) {
 	if input.Background == nil {
 		return Input{}, fmt.Errorf("%w: background must be a JSON object", ErrInvalidInput)
 	}
-	input.Plan = mustJSONValue(input.Plan, false)
-	if input.Plan == nil {
-		return Input{}, fmt.Errorf("%w: plan must be a non-empty JSON value", ErrInvalidInput)
+	if len(bytes.TrimSpace(input.Plan)) != 0 {
+		input.Plan = mustJSONValue(input.Plan, false)
+		if input.Plan == nil {
+			return Input{}, fmt.Errorf("%w: plan must be a non-empty JSON value", ErrInvalidInput)
+		}
 	}
 	if len(bytes.TrimSpace(input.SourceClue)) != 0 {
 		input.SourceClue = mustJSONValue(input.SourceClue, true)
 		if input.SourceClue == nil {
 			return Input{}, fmt.Errorf("%w: source_clue must be a non-null JSON value", ErrInvalidInput)
-		}
-	}
-	if len(bytes.TrimSpace(input.DecisionPayload)) != 0 {
-		input.DecisionPayload = mustJSONValue(input.DecisionPayload, true)
-		if input.DecisionPayload == nil {
-			return Input{}, fmt.Errorf("%w: decision_payload must be a non-null JSON value", ErrInvalidInput)
 		}
 	}
 	input.OccurrenceKey = trimString(input.OccurrenceKey)

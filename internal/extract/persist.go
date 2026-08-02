@@ -34,7 +34,7 @@ type preparedCandidate struct {
 	Resolution      datatypes.JSON
 	ContextSnapshot datatypes.JSON
 	// ExtractionResult 是抽取吐出的完整结论原文（整个 Candidate 的 JSON），随 Todo
-	// 落库，供 M5 判断环节整块复用，避免判断环节逐字段拷贝抽取结构造成耦合。
+	// 落库并随 Task 固化，供 M5 执行整块复用，避免下游逐字段拷贝抽取结构造成耦合。
 	ExtractionResult datatypes.JSON
 }
 
@@ -362,11 +362,10 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		updates["due_at"] = *prepared.DueAt
 	}
 	// The latest extraction wins on status, so new evidence can promote an
-	// observing clue into the decision queue or demote one that turned out to
-	// need nobody. This only applies while the clue still sits in a state M3
-	// owns: once it has been judged (auto/dropped) or moved on, re-extraction
-	// must not reset it — resetting an auto Todo would have the decision worker
-	// claim it again and mint a duplicate Task.
+	// observing clue into materialization or demote one that turned out to need
+	// nobody. This only applies while the clue still sits in a state M3 owns:
+	// once it has become auto or moved on, re-extraction must not reset it —
+	// resetting an auto Todo would mint a duplicate Task.
 	nextStatus := existing.Status
 	if m3OwnedTodoStatuses[existing.Status] && prepared.Candidate.Status != existing.Status {
 		nextStatus = prepared.Candidate.Status

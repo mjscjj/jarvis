@@ -377,7 +377,7 @@ type supplementTaskRequest struct {
 }
 
 // SupplementTask appends a human clarification/instruction to a Task's M5-only
-// execution_supplements. It does not trigger execution or decision re-evaluation.
+// execution_supplements. It does not trigger execution.
 func SupplementTask(service execute.TaskService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)

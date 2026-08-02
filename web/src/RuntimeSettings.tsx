@@ -258,7 +258,6 @@ export default function RuntimeSettings() {
   const m3Runtime = liveSettings.extract_engine === 'model_api'
     ? `Model API · ${liveSettings.model_api_model}`
     : `${liveSettings.analysis_cli} · ${liveSettings.analysis_model}`
-  const m5DecisionRuntime = `${liveSettings.analysis_cli} · ${liveSettings.analysis_model}`
 
   const panels = [
     {
@@ -268,16 +267,16 @@ export default function RuntimeSettings() {
         <>
           <Section title="阶段开关" description="控制后台自动运行；保存后需重启主服务。">
             <SwitchField name="extract_enabled" label="M3 自动提取" help="从新消息中识别行动线索并生成 Todo。" />
-			<SwitchField name="decide_enabled" label="M5 自动运行" help="同时启停 Todo 判断和 Task 执行；关闭后仍可手动执行 Task。" />
+            <SwitchField name="execute_auto_enabled" label="M5 自动执行" help="自动固化 extracted Todo 并执行 Task；关闭后仍可手动执行 Task。" />
             <SwitchField name="chat_enabled" label="右侧对话" help="启用页面右侧的 Jarvis 对话入口。" />
           </Section>
-          <Section title="M3 / M5 判断共用 Agent" description="M3 选择 Agent CLI 时与 M5 判断环节共用这组 CLI、模型和超时。">
-            <SelectField name="analysis_cli" label="分析 CLI" options={cliOptions} help="M3 提取和 M5 判断环节启动的命令行执行器。" />
-            <TextField name="analysis_model" label="分析模型" help="传给分析 CLI 的模型名。" />
-            <NumberField name="analysis_timeout_seconds" label="单次分析超时（秒）" min={30} max={3600} step={30} help="M3 提取和 M5 判断每次 Agent 调用的最长运行时间。" />
+          <Section title="M3 Agent" description="M3 选择 Agent CLI 时使用这组 CLI、模型和超时。">
+            <SelectField name="analysis_cli" label="M3 CLI" options={cliOptions} help="M3 提取启动的命令行执行器。" />
+            <TextField name="analysis_model" label="M3 模型" help="传给 M3 Agent CLI 的模型名。" />
+            <NumberField name="analysis_timeout_seconds" label="单次提取超时（秒）" min={30} max={3600} step={30} help="M3 每次 Agent 调用的最长运行时间。" />
           </Section>
           <Section title="Model API" description="当前用于 Todo 相似去重；M3 切到 Model API 后也用于线索提取。">
-            <TextField name="model_api_model" label="去重 / 备用提取模型" help="当前是 qwen-plus。不会替代 M5 判断、执行或对话模型。" />
+            <TextField name="model_api_model" label="去重 / 备用提取模型" help="当前是 qwen-plus。不会替代 M5 执行或对话模型。" />
             <NumberField name="model_api_timeout_seconds" label="API 请求超时（秒）" min={10} max={600} step={10} help="Model API 和文本向量 API 的 HTTP 请求超时。" />
           </Section>
           <Section title="M5 执行器" description="M5 使用独立 CLI；右侧对话复用该 CLI，但可另选模型。">
@@ -328,19 +327,6 @@ export default function RuntimeSettings() {
             <NumberField name="extract_history_tool_limit" label="历史消息返回上限" min={1} max={1000} />
           </Section>
         </>
-      ),
-    },
-    {
-      key: 'decide',
-      label: <PanelLabel title="M5 · Todo 判断" description="判断 Todo 是否值得进入任务执行" />,
-      children: (
-        <Section title="判断运行" description="这是 M5 的前置判断环节，使用“常用设置”中的分析 CLI、模型和超时。">
-          <SelectField name="decide_reasoning_effort" label="推理档位" options={reasoningOptions} />
-          <SelectField name="decide_sandbox" label="文件权限" options={sandboxOptions} />
-          <SwitchField name="decide_network_enabled" label="允许联网" help="允许 M5 在判断时用工具补查项目、人物、飞书和代码信息。" />
-          <TextField name="decide_schedule" label="补偿扫描周期" placeholder="@every 1m" />
-          <NumberField name="decide_batch_limit" label="每批 Todo 上限" min={1} max={1000} />
-        </Section>
       ),
     },
     {
@@ -488,13 +474,6 @@ export default function RuntimeSettings() {
         />
         <RuntimeStep
           stage="M5"
-          title="Todo 判断"
-          enabled={liveSettings.decide_enabled}
-          primary={m5DecisionRuntime}
-          secondary={`${liveSettings.decide_schedule} · 最多 ${liveSettings.decide_batch_limit} 条`}
-        />
-        <RuntimeStep
-          stage="M5"
           title="任务执行"
           enabled={liveSettings.execute_auto_enabled}
           primary={`${liveSettings.execute_cli} · ${liveSettings.execute_model}`}
@@ -526,10 +505,7 @@ export default function RuntimeSettings() {
         layout="vertical"
         requiredMark={false}
         size="small"
-        onValuesChange={(changed) => {
-          if (Object.prototype.hasOwnProperty.call(changed, 'decide_enabled')) {
-            form.setFieldValue('execute_auto_enabled', changed.decide_enabled)
-          }
+        onValuesChange={() => {
           setLiveSettings(form.getFieldsValue(true) as RuntimeSettingsInput)
         }}
       >

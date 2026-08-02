@@ -198,11 +198,11 @@ func TestRenderJarvisEvidenceCollapsesRepeatedTodoAndTaskEvents(t *testing.T) {
 	generator := &personGenerator{location: location, principalOpenID: "ou_me"}
 	baseline := &personBaseline{
 		TodoEvents: []baselineTodoEvent{
-			{EventID: 1, TodoID: 9, OccurredAt: "2026-07-25T09:00:00+08:00", ToStatus: "confirmed", Actor: "m4", Title: "同一事项", ContextSnapshot: "same large context"},
+			{EventID: 1, TodoID: 9, OccurredAt: "2026-07-25T09:00:00+08:00", ToStatus: "confirmed", Actor: "m5", Title: "同一事项", ContextSnapshot: "same large context"},
 			{EventID: 2, TodoID: 9, OccurredAt: "2026-07-25T09:01:00+08:00", FromStatus: "confirmed", ToStatus: "done", Actor: "m5", Title: "同一事项", ContextSnapshot: "same large context"},
 		},
 		TaskEvents: []baselineTaskEvent{
-			{EventID: 3, TaskID: 10, OccurredAt: "2026-07-25T09:02:00+08:00", EventType: "created", ToStatus: "pending", ActorType: "m4", Title: "同一任务", Background: "same background"},
+			{EventID: 3, TaskID: 10, OccurredAt: "2026-07-25T09:02:00+08:00", EventType: "created", ToStatus: "pending", ActorType: "m5", Title: "同一任务", Background: "same background"},
 			{EventID: 4, TaskID: 10, OccurredAt: "2026-07-25T09:03:00+08:00", EventType: "execution_succeeded", FromStatus: "running", ToStatus: "done", ActorType: "m5", Title: "同一任务", Background: "same background"},
 		},
 		ExecutionRuns: []baselineExecutionRun{

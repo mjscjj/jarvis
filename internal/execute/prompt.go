@@ -61,9 +61,8 @@ type priorRunSummary struct {
 // verdict: whether a side effect needs review is the model's judgment about what
 // it is about to do, not a property of the Task's declared action_type.
 //
-// outcome=observing exists because the judgment step decides on a frozen
-// snapshot while execution decides after investigating. When investigation shows
-// the matter is real but asks nothing of anyone, forcing that into completed
+// outcome=observing exists because execution may discover after investigating
+// that the matter is real but asks nothing of anyone. Forcing that into completed
 // (nothing was done) or failed (nothing went wrong) destroys the distinction.
 const executionResultSchema = `{
   "type":"object",
@@ -169,21 +168,15 @@ type executionTask struct {
 	ActionTypeHint string `json:"action_type_hint"`
 	TargetHint     string `json:"target_hint"`
 	// M3Clue is M3's complete extraction result forwarded verbatim. M5 reads the
-	// original clue (including its desired_outcome) instead of only the decision step's summary,
-	// so a blocker raised downstream cannot silently replace the real goal.
-	M3Clue json.RawMessage `json:"m3_clue,omitempty"`
-	// DecisionDirection and DecisionContext come from M5's own judgment step, which
-	// only decided the clue was worth pursuing. They are a starting direction, not a
-	// contract: the execution step may revise or abandon them.
-	DecisionDirection json.RawMessage `json:"decision_direction"`
-	DecisionContext   json.RawMessage `json:"decision_context,omitempty"`
-	Background        json.RawMessage `json:"background"`
+	// original clue (including its desired_outcome), so a blocker raised
+	// downstream cannot silently replace the real goal.
+	M3Clue     json.RawMessage `json:"m3_clue,omitempty"`
+	Background json.RawMessage `json:"background"`
 }
 
-// buildTaskContext assembles the shared TASK_CONTEXT block. M3 and decision-step semantic
-// outputs are deliberately labeled as hints/direction rather than a confirmed
-// contract; M5 owns the actual goal, scope, action selection, and execution.
-// Frozen background, M5 supplements, and prior results still ride through
+// buildTaskContext assembles the shared TASK_CONTEXT block. M3 output is a clue,
+// not a confirmed contract; M5 owns the actual goal, scope, action selection,
+// and execution. Frozen background, supplements, and prior results ride through
 // verbatim. Validation is fail-fast.
 func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRunSummary) ([]ExecutionSupplement, []byte, error) {
 	if task == nil || task.ID == 0 {
@@ -198,7 +191,6 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 	}
 	promptTask := executionTask{
 		ID: task.ID, TitleHint: task.Title, ActionTypeHint: task.ActionType, TargetHint: task.Target,
-		DecisionDirection: rawJSON(task.Plan), DecisionContext: rawJSON(task.DecisionPayload),
 		Background: rawJSON(task.Background),
 	}
 	// scheduled_task and manual Tasks have no M3 clue; omit the key entirely
@@ -248,8 +240,7 @@ func renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills str
 // action_type takes this one path: codex investigates, decides the real goal and
 // action, and then judges against the editable approvalPolicy whether the side
 // effect it is about to cause needs human review — code changes included. It
-// gives codex M3 and decision-step hints, frozen context, and the resolved repo
-// without treating the upstream direction as a confirmed plan.
+// gives codex the complete M3 clue, frozen context, and the resolved repo.
 // task.execution_supplements (M5-only) are injected as high-priority directives.
 // previousRuns (if any) carry prior attempt results.
 func buildExecutionPrompt(systemPrompt, approvalPolicy string, task *domain.Task, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {

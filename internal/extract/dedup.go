@@ -9,11 +9,11 @@ import (
 )
 
 // activeTodoStatuses are Todo statuses that still represent a live clue for
-// semantic dedup. "auto" is included because the decision step auto-routes ready clues into
-// Tasks without human confirmation; the Todo remains the same action identity.
+// semantic dedup. "auto" is included because materialization creates Tasks
+// without human confirmation; the Todo remains the same action identity.
 // "observing" is included because a clue nobody acts on is still a live clue:
 // re-seeing it must update its evidence, not mint a second copy, and fresh
-// evidence can pull it back to "extracted" for a real decision.
+// evidence can pull it back to "extracted" for execution.
 var activeTodoStatuses = map[string]struct{}{
 	"extracted": {}, "auto": {}, "observing": {},
 }

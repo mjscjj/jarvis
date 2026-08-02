@@ -1,6 +1,6 @@
 # Jarvis · 主动式任务数字分身
 
-Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞书消息和外部线索中保留原始证据，抽取 Todo，判断是否值得推进，再由执行 Agent 调用工具完成工作、处理等待与审批并留下结果。
+Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞书消息和外部线索中保留原始证据，抽取 Todo，并由执行 Agent 判断是否值得推进、调用工具完成工作、处理等待与审批并留下结果。
 
 先读：
 
@@ -18,11 +18,8 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
                                                             ├─ observing：保留观察，不创建 Task
                                                             └─ extracted
                                                                  │
-                                                        M5 判断：禁止副作用、允许查证
-                                                         ├─ ready   -> Todo=auto + Task
-                                                         ├─ observe -> Todo=observing
-                                                         └─ drop    -> Todo=dropped
-                                                                      │
+                                                    机械固化：Todo=auto + Task
+                                                                 │
                                                                M5 执行 Agent
                                                          ├─ completed -> Task=done
                                                          ├─ observing -> Task/Todo=observing
@@ -32,9 +29,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
                                                          └─ failed
 ```
 
-M5 判断和执行属于同一生命周期模块，共用协调队列，但职责不同：判断环节只回答“值不值得推进”，执行环节调查真实状态、选择动作并完成工作。
-
-判断环节在行为上禁止副作用，但为了查飞书、代码和 Jarvis 状态，运行时可使用 `danger-full-access + network`；不要把它误称为操作系统级只读沙箱。
+`extracted` Todo 不再经过模型判断，固化步骤只负责按 Todo ID/version 幂等创建 Task。M5 执行 Agent 持有全部语义判断权：调查真实状态、判断是否值得推进、选择动作并完成工作，或把来源 Todo 置回 `observing`。
 
 审批不是固定流水线阶段，也不由 `action_type` 决定。M5 根据即将发生的具体副作用和 [`conf/prompts/m5-approval-policy.md`](conf/prompts/m5-approval-policy.md) 判断：无需审批就直接完成，需要审批才返回完整 proposal 并停在 `awaiting_approval`。代码修改也没有类型级豁免。
 
@@ -45,7 +40,7 @@ M5 判断和执行属于同一生命周期模块，共用协调队列，但职�
 | M1 背景 | principal、项目、人物、会话背景、人工资源 | `internal/background/` |
 | M2 采集 | 会话发现、增量轮询、principal activity、通用 clue 落库 | `internal/capture/` |
 | M3 提取 | 证据校验、Todo 抽取/合并、上下文快照、语义去重 | `internal/extract/` |
-| M5 判断 | `ready / observe / drop`，创建值得推进的 Task | `internal/execute/decision_*.go` |
+| Todo 固化 | extracted Todo 按 ID/version 幂等创建 Task，不调用模型 | `internal/execute/materializer.go` |
 | M5 执行 | 调查、执行、审批、等待/续跑、人工回复、结果留痕 | `internal/execute/` |
 | 事实引擎 | 在关键路径外从 `message` 蒸馏长期事实 | `internal/factengine/` |
 | 定时任务 | 周期/单次 Task，以及等待 Session 的未来唤醒 | `internal/scheduledtask/`, `internal/taskcreate/` |
@@ -82,10 +77,9 @@ M5 判断和执行属于同一生命周期模块，共用协调队列，但职�
 ## 常见修改入口
 
 - 改 M3 抽取口径：`conf/prompts/m3-system-prompt.md`；改上下文组装：`internal/extract/prompt.go`、`internal/extract/snapshot.go`
-- 改 M5 价值判断：`conf/prompts/m5-decision-system-prompt.md`、`conf/rules/decide.md`
 - 改 M5 执行行为：`conf/prompts/m5-system-prompt.md`、`conf/rules/m5.md`
 - 改审批尺度：`conf/prompts/m5-approval-policy.md`
-- 改严格输出协议/状态路由：`internal/execute/decision_codex.go`、`internal/execute/prompt.go`、`internal/execute/store.go`
+- 改严格输出协议/状态路由：`internal/execute/prompt.go`、`internal/execute/store.go`
 - 改工具说明：`internal/toolcatalog/` 或对应 Skill，不把工具手册复制进系统提示词
 - 加 HTTP 接口：`internal/api/`，并在 `internal/api/router.go` 注册
 - 改表或字段：`internal/domain/` 与 `internal/store/mysql.go`
@@ -109,7 +103,6 @@ go run ./cmd/jarvis-server -config conf/config.yaml -discover-once
 go run ./cmd/jarvis-server -config conf/config.yaml -scan-chat oc_xxx
 go run ./cmd/jarvis-server -config conf/config.yaml -extract-facts-once
 go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
-go run ./cmd/jarvis-server -config conf/config.yaml -decide-once
 ```
 
 全部一次性 flags 以 `go run ./cmd/jarvis-server -h` 为准。

@@ -25,8 +25,8 @@ var allowedTodoStatuses = map[string]struct{}{
 
 // m3OwnedTodoStatuses are the states re-extraction may still move a clue
 // between. They are exactly the two values M3 can emit: a clue that has not yet
-// been judged, and one judged as not needing anybody. Every other status was
-// set downstream (decision, execution, the principal), so M3 leaves it alone.
+// been materialized, and one M3 judged as not needing anybody. Every other
+// status was set downstream, so M3 leaves it alone.
 var m3OwnedTodoStatuses = map[string]bool{"extracted": true, "observing": true}
 
 type TodoListFilter struct {
@@ -181,14 +181,14 @@ type TodoStatusInput struct {
 }
 
 // observableTodoStatuses are the states this entry point may set. Everything
-// else is owned by the stage that produces it — the decision step writes auto
-// and dropped, execution and the principal write the rest — so re-pointing a
-// clue by hand is limited to parking it (observing) or handing it back for a
-// fresh decision (extracted).
+// else is owned by the stage that produces it — materialization writes auto,
+// execution and the principal write the rest — so re-pointing a clue by hand
+// is limited to parking it (observing) or handing it back for materialization
+// (extracted).
 var observableTodoStatuses = map[string]bool{"observing": true, "extracted": true}
 
-// SetTodoStatus parks a clue as observing or hands it back to the decision
-// queue. A clue that already finished (dropped/dismissed/expired) stays
+// SetTodoStatus parks a clue as observing or hands it back to materialization.
+// A clue that already finished (dropped/dismissed/expired) stays
 // finished: reviving it would put stale work back in front of the principal.
 func (s *TodoStore) SetTodoStatus(ctx context.Context, input TodoStatusInput) (*TodoView, error) {
 	if input.TodoID == 0 {

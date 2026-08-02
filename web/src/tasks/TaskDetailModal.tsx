@@ -68,8 +68,6 @@ const taskEventLabels: Record<string, string> = {
 
 const actorLabels: Record<string, string> = {
   user: '我',
-  // 已落库的旧事件仍应显示当时的真实 actor；M4 合并后不再产生新 m4 事件。
-  m4: 'M4',
   m5: 'M5',
   system: '系统',
   seed: '初始化',
@@ -927,7 +925,7 @@ function ResultContent({ task }: { task: Task }) {
             ? `${String(waiting?.reason || summary || '正在等待外部条件')} · ${String(waiting?.wake_at || '唤醒时间待定')}`
             : task.status === 'needs_human'
               ? summary || 'Codex 已暂停当前 Session，等待你的回应。'
-              : planSummary || '任务已确认，执行器将按任务方案和上下文完成工作。'}
+              : planSummary || '任务已进入执行，执行器将根据 M3 线索和上下文自行判断并完成工作。'}
         </Paragraph>
         {task.status === 'needs_human' && followup && <Alert type="warning" showIcon title="需要你回应" description={followup} />}
       </div>
@@ -1266,17 +1264,11 @@ function PlanPanel({ task }: { task: Task }) {
         </section>
       )}
       {!summary && steps.length === 0 && parameters.length === 0 && basis.length === 0 && (
-        typeof task.plan === 'string'
+        task.plan == null
+          ? <Text type="secondary">无上游执行方案；M5 根据 M3 线索和上下文自行判断。</Text>
+          : typeof task.plan === 'string'
           ? <Paragraph>{task.plan}</Paragraph>
           : <pre className="task-enrichment-json">{printableValue(task.plan)}</pre>
-      )}
-      {task.decision_payload != null && (
-        <section>
-          <Title level={5}>决策上下文</Title>
-          {typeof task.decision_payload === 'string'
-            ? <Paragraph>{task.decision_payload}</Paragraph>
-            : <pre className="task-enrichment-json">{printableValue(task.decision_payload)}</pre>}
-        </section>
       )}
     </div>
   )
@@ -1334,7 +1326,6 @@ function TechnicalPanel({ task, runs, events }: { task: Task; runs: ExecutionRun
   return (
     <div className="task-technical-panel">
       <details><summary>执行方案原始数据</summary><pre>{JSON.stringify(task.plan, null, 2)}</pre></details>
-      <details><summary>决策语义原始数据</summary><pre>{JSON.stringify(task.decision_payload, null, 2)}</pre></details>
       <details><summary>任务结果原始数据</summary><pre>{JSON.stringify(task.execution_result, null, 2)}</pre></details>
       <details><summary>背景快照原始数据</summary><pre>{JSON.stringify(task.background, null, 2)}</pre></details>
       <details><summary>Run 原始数据</summary><pre>{JSON.stringify(runs, null, 2)}</pre></details>

@@ -25,11 +25,11 @@ func TestServiceCombinesGlobalAndStageRules(t *testing.T) {
 
 func TestServiceUpdatesOnlyAllowlistedFile(t *testing.T) {
 	service := newTestService(t)
-	updated, err := service.Update(t.Context(), StageDecide, Input{Content: "new decide rule"})
+	updated, err := service.Update(t.Context(), StageExecute, Input{Content: "new execute rule"})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if updated.Content != "new decide rule" {
+	if updated.Content != "new execute rule" {
 		t.Fatalf("updated content = %q", updated.Content)
 	}
 	if _, err := service.Update(t.Context(), "../secret", Input{Content: "x"}); err == nil {
@@ -59,7 +59,7 @@ func newTestService(t *testing.T) *Service {
 	directory := t.TempDir()
 	contents := map[string]string{
 		"all.md": "global rule", "m3.md": "extract rule",
-		"decide.md": "decide rule", "m5.md": "execute rule",
+		"m5.md": "execute rule",
 	}
 	for name, content := range contents {
 		if err := os.WriteFile(filepath.Join(directory, name), []byte(content), 0o644); err != nil {

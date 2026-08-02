@@ -40,6 +40,7 @@ import {
   listProjectFacts,
   listProjects,
   listResources,
+  listSubjectFacts,
   listSkills,
   listWorkRules,
   listTextFiles,
@@ -101,11 +102,63 @@ const personRoleColors: Record<PersonRole, string> = {
 }
 
 const workRuleStageLabels: Record<WorkRuleStage, string> = {
-  extract: 'M3 抽取 Todo', decide: 'M5 判断', execute: 'M5 执行',
+  extract: 'M3 抽取 Todo', execute: 'M5 执行',
 }
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
+}
+
+function SubjectFactsCard({ subjectType, subjectId, title }: {
+  subjectType: 'group' | 'person'
+  subjectId: number
+  title: string
+}) {
+  const [items, setItems] = useState<Fact[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    setError(undefined)
+    listSubjectFacts(subjectType, subjectId, controller.signal)
+      .then((result) => setItems(result.items))
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [subjectId, subjectType, refreshKey])
+
+  return (
+    <Card
+      size="small"
+      title={title}
+      variant="borderless"
+      extra={<Button size="small" onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>}
+    >
+      {error && <Alert type="error" showIcon title={`${title}加载失败`} description={error} style={{ marginBottom: 12 }} />}
+      {loading ? (
+        <div style={{ padding: 16, textAlign: 'center' }}><Spin size="small" /></div>
+      ) : items.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`暂无${title}`} />
+      ) : (
+        <Timeline items={items.map((fact) => ({
+          content: (
+            <div>
+              <div style={{ whiteSpace: 'pre-wrap' }}>{fact.description}</div>
+              <Space size={6}>
+                <Text type="secondary" style={{ fontSize: 12 }}>{new Date(fact.occurred_at).toLocaleString()}</Text>
+                {fact.source_kind && <Tag>{fact.source_kind === 'message' ? '消息抽取' : fact.source_kind}</Tag>}
+              </Space>
+            </div>
+          ),
+        }))} />
+      )}
+    </Card>
+  )
 }
 
 // --- Projects ---
@@ -495,7 +548,10 @@ function PersonsPanel() {
         <Form.Item name="comm_style" label="沟通风格(可选)" extra="辅助 AI 识别 leader 的隐含交办，如：结论先行、指令常以「看下」隐含表达"><Input.TextArea rows={2} /></Form.Item>
         <Form.Item name="notes" label="备注(可选)"><Input.TextArea rows={2} /></Form.Item>
       </Form>
-      {editing && <EntityRelations entityType="person" entityId={editing.id} />}
+      {editing && <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+        <SubjectFactsCard subjectType="person" subjectId={editing.id} title="人物事实" />
+        <EntityRelations entityType="person" entityId={editing.id} />
+      </Space>}
     </Modal>
   </>
 }
@@ -704,7 +760,7 @@ function GroupsPanel() {
         pagination={{ current: page, pageSize: PAGE_SIZE, total, showSizeChanger: false, onChange: setPage }}
       />
     </Card>
-    <Modal title={`编辑会话背景 · ${editing?.name || editing?.chat_id || ''}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden>
+    <Modal title={`编辑会话背景 · ${editing?.name || editing?.chat_id || ''}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden width={760}>
       <Form form={form} layout="vertical">
         <Form.Item
           name="background_note"
@@ -724,6 +780,7 @@ function GroupsPanel() {
         <Form.Item name="pinned" label="置顶(始终热扫)" valuePropName="checked"><Switch /></Form.Item>
         <Form.Item name="include_in_memory" label="纳入记忆" valuePropName="checked"><Switch /></Form.Item>
       </Form>
+      {editing && <SubjectFactsCard subjectType="group" subjectId={editing.id} title="群事实" />}
     </Modal>
   </>
 }
@@ -1072,7 +1129,6 @@ function WorkRulesPanel() {
   const definitions: Array<{ key: WorkRule['key']; label: string; description: string }> = [
     { key: 'all', label: '全阶段', description: '会与每个具体阶段的规则一起注入。' },
     { key: 'extract', label: 'M3 抽取', description: '只在行动线索抽取阶段注入。' },
-    { key: 'decide', label: 'M5 判断', description: '只在 M5 的行动判断环节注入。' },
     { key: 'execute', label: 'M5 执行', description: '只在任务执行阶段注入。' },
   ]
 
@@ -1182,12 +1238,6 @@ const systemPromptDefinitions = [
     name: 'M3 抽取',
     fileName: 'M3 系统提示词',
     description: '定义行动线索抽取者的角色、判断原则和输出要求。',
-  },
-  {
-    key: 'm5_decision_system_prompt',
-    name: 'M5 判断',
-    fileName: 'M5 判断系统提示词',
-    description: '定义 M5 行动判断环节的角色、处置原则和阶段安全边界。',
   },
   {
     key: 'm5_system_prompt',

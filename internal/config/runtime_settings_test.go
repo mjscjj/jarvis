@@ -73,14 +73,6 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 5m"
-decide:
-  enabled: true
-  mode: "codex"
-  schedule: "@every 1m"
-  batch_limit: 50
-  codex_sandbox: "danger-full-access"
-  codex_network: true
-  codex_reasoning_effort: "medium"
 codex:
   bin: "traex"
   model: "analysis-model"

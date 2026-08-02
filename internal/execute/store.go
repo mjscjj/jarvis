@@ -57,7 +57,6 @@ type TaskView struct {
 	Target               string                `json:"target"`
 	Background           json.RawMessage       `json:"background"`
 	Plan                 json.RawMessage       `json:"plan"`
-	DecisionPayload      json.RawMessage       `json:"decision_payload"`
 	ConfirmedBy          string                `json:"confirmed_by"`
 	ConfirmedAt          time.Time             `json:"confirmed_at"`
 	SourceType           string                `json:"source_type"`
@@ -580,12 +579,11 @@ func (s *Store) MarkNeedsHuman(ctx context.Context, taskID uint64, expectedVersi
 // parkClueAsObserving moves the originating clue back to observing when the
 // execution step concluded nobody needs to act.
 //
-// The judgment step decides on M3's frozen snapshot; execution decides after
-// actually investigating, so it is the one that can find out the matter is real
-// but asks nothing of anyone. Leaving the clue on "auto" would keep claiming a
-// Task is driving it. observing is a live status for dedup, so re-seeing the
-// same matter updates this clue instead of minting a second one, and fresh
-// evidence can pull it back to extracted for a real decision.
+// Execution decides after actually investigating, so it can find out the matter
+// is real but asks nothing of anyone. Leaving the clue on "auto" would keep
+// claiming a Task is driving it. observing is a live status for dedup, so
+// re-seeing the same matter updates this clue instead of minting a second one,
+// and fresh evidence can pull it back to extracted for another execution.
 //
 // A Task without a Todo (a scheduled run, say) has no clue to park.
 func parkClueAsObserving(db *gorm.DB, task *domain.Task) error {
@@ -906,7 +904,7 @@ func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task,
 		}
 		// observing reruns like any other terminal state: "nobody needs to act"
 		// was a verdict on the evidence at the time, and new evidence can overturn
-		// it. The clue stays observing until the rerun decides otherwise.
+		// it. The clue stays observing until the rerun concludes otherwise.
 		if task.Status != "done" && task.Status != "failed" && task.Status != "observing" {
 			return fmt.Errorf("%w: task_id=%d from=%s to=pending (only finished Tasks can rerun)", ErrInvalidTransition, task.ID, task.Status)
 		}
@@ -1223,8 +1221,7 @@ func taskView(ctx context.Context, task *domain.Task) TaskView {
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
 		Target:     task.Target,
 		Background: rawJSON(task.Background), Plan: rawJSON(task.Plan),
-		DecisionPayload: rawJSON(task.DecisionPayload),
-		ConfirmedBy:     task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt,
+		ConfirmedBy: task.ConfirmedBy, ConfirmedAt: task.ConfirmedAt,
 		SourceType: task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
 		ExecutionMode: task.ExecutionMode,
 		Status:        task.Status, ExecutionResult: rawJSON(task.ExecutionResult),

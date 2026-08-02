@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -20,7 +19,6 @@ import (
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/dailydigest"
-	"jarvis/internal/domain"
 	"jarvis/internal/embedding"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -46,7 +44,6 @@ import (
 	"code.byted.org/middleware/hertz/pkg/app"
 	"code.byted.org/middleware/hertz/pkg/app/server"
 	"code.byted.org/middleware/hertz/pkg/common/hlog"
-	"gorm.io/gorm"
 )
 
 // dailyDigestGitAuthor 是个人每日总结 prompt 里引导 codex 跑 git log --author 的
@@ -62,7 +59,6 @@ func main() {
 	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
 	extractFactsOnce := flag.Bool("extract-facts-once", false, "执行一次离线事实抽取，成功后退出")
 	extractOnce := flag.Bool("extract-once", false, "执行一次 Todo 提取，成功后退出")
-	decideOnce := flag.Bool("decide-once", false, "执行一轮 M5 Todo 判断，成功后退出")
 	seedOnce := flag.Bool("seed", false, "一次性幂等写入初始 项目/任务/群关联 背景种子，成功后退出")
 	seedPersons := flag.Bool("seed-persons", false, "从关键群真实成员导入 Person（幂等，按 open_id 跳过已存在），成功后退出")
 	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
@@ -84,7 +80,7 @@ func main() {
 		hlog.CtxInfof(startupCtx, format, args...)
 	}
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *extractFactsOnce, *extractOnce, *decideOnce, *seedOnce, *seedPersons, *openP2P} {
+	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *extractFactsOnce, *extractOnce, *seedOnce, *seedPersons, *openP2P} {
 		if selected {
 			actionCount++
 		}
@@ -174,43 +170,9 @@ func main() {
 		fatalf("scan agent skills failed: %v", err)
 	}
 
-	var decisionWorker *execute.DecisionWorker
-	if cfg.Decide.Enabled || *decideOnce {
-		if cfg.Decide.BatchLimit <= 0 {
-			fatalf("M5 judgment requires positive decide.batch_limit")
-		}
-		decisionSource, err := execute.NewEvaluationSource(db)
-		if err != nil {
-			fatalf("initialize decision source failed: %v", err)
-		}
-		decisionStore, err := execute.NewEvaluationStore(db)
-		if err != nil {
-			fatalf("initialize decision store failed: %v", err)
-		}
-		evaluator, err := buildDecisionEvaluator(cfg, db, sharedMemoryService, workRuleService, skillService, textFileService)
-		if err != nil {
-			fatalf("initialize decision evaluator failed: %v", err)
-		}
-		decisionWorker, err = execute.NewDecisionWorker(
-			decisionSource,
-			evaluator,
-			decisionStore,
-			execute.WorkerOptions{BatchLimit: cfg.Decide.BatchLimit},
-		)
-		if err != nil {
-			fatalf("initialize decision worker failed: %v", err)
-		}
-	}
-	if *decideOnce {
-		stats, err := decisionWorker.EvaluateOnce(startupCtx)
-		if err != nil {
-			fatalf("route Todos to manual confirmation failed: %v", err)
-		}
-		infof(
-			"decision completed: loaded=%d evaluated=%d auto=%d observing=%d dropped=%d",
-			stats.Loaded, stats.Evaluated, stats.Auto, stats.Observing, stats.Dropped,
-		)
-		return
+	materializer, err := execute.NewMaterializer(db)
+	if err != nil {
+		fatalf("initialize Todo materializer failed: %v", err)
 	}
 
 	larkClient, err := larkcli.New(larkcli.Options{
@@ -556,7 +518,7 @@ func main() {
 
 	stopPipelineScheduler := func() {}
 	waitPipeline := func() {}
-	if cfg.Extract.Enabled || cfg.Decide.Enabled || cfg.Execute.Enabled {
+	if cfg.Extract.Enabled || cfg.Execute.Enabled {
 		var (
 			executionTaskStore *execute.Store
 			executionAgent     *execute.AgentExecutor
@@ -567,7 +529,7 @@ func main() {
 		}
 		coordinator, err := pipeline.NewCoordinator(
 			extractWorker,
-			decisionWorker,
+			materializer,
 			executionTaskStore,
 			executionAgent,
 			pipeline.Options{
@@ -603,7 +565,6 @@ func main() {
 			coordinator,
 			pipeline.ScheduleConfig{
 				Extract: cfg.Extract.Schedule,
-				Decide:  cfg.Decide.Schedule,
 				Execute: cfg.Execute.Schedule,
 			},
 			log.New(os.Stderr, "pipeline-cron ", log.LstdFlags|log.Lmicroseconds),
@@ -773,27 +734,4 @@ func main() {
 	infof("jarvis-server listening on %s", cfg.Server.Addr)
 	// Spin 阻塞运行并处理优雅退出（SIGINT/SIGTERM/SIGHUP）。
 	h.Spin()
-}
-
-// decisionEvaluator is the shape the M5 judgment step expects. It matches
-// execute's internal evaluator interface structurally.
-type decisionEvaluator interface {
-	Evaluate(context.Context, *domain.Todo) (*execute.EvaluationInput, error)
-}
-
-// buildDecisionEvaluator constructs the M5 judgment evaluator: codex judges each
-// extracted Todo read-only, reusing the M3-frozen snapshot.
-func buildDecisionEvaluator(cfg *config.Config, db *gorm.DB, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, skills skill.Reader, prompts textstore.Reader) (decisionEvaluator, error) {
-	decider, err := execute.NewCodexDecider(execute.CodexOptions{
-		Bin:             cfg.Codex.Bin,
-		Model:           cfg.Codex.Model,
-		Timeout:         time.Duration(cfg.Codex.TimeoutSeconds) * time.Second,
-		Sandbox:         cfg.Decide.CodexSandbox,
-		Network:         cfg.Decide.CodexNetwork,
-		ReasoningEffort: cfg.Decide.CodexReasoningEffort,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("initialize codex decider: %w", err)
-	}
-	return execute.NewCodexEvaluator(db, decider, sharedMem, workRules, skills, prompts)
 }

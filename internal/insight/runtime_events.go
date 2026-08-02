@@ -98,10 +98,6 @@ func pipelineModule(stage string) (string, bool) {
 	switch stage {
 	case "m3":
 		return "extract", true
-	case "m4":
-		// Read pre-merge logs as historical evidence. New judgment logs use
-		// stage=m5 step=decide and are reported as part of M5 below.
-		return "decide", true
 	case "m5":
 		return "execute", true
 	default:
@@ -115,19 +111,8 @@ func pipelineScope(stage string, fields map[string]string) (string, string, stri
 	switch stage {
 	case "m3":
 		scopeType, scopeID = "chat_id", strings.TrimSpace(fields["chat_id"])
-	case "m4":
-		// Legacy M4 log shape, retained only so old failures remain inspectable.
-		scopeType, scopeID = "todo_id", strings.TrimSpace(fields["todo_id"])
 	case "m5":
-		switch strings.TrimSpace(fields["step"]) {
-		case "decide":
-			scopeType, scopeID = "todo_id", strings.TrimSpace(fields["todo_id"])
-		case "execute":
-			scopeType, scopeID = "task_id", strings.TrimSpace(fields["task_id"])
-		default:
-			// Older M5 execution logs had no step field.
-			scopeType, scopeID = "task_id", strings.TrimSpace(fields["task_id"])
-		}
+		scopeType, scopeID = "task_id", strings.TrimSpace(fields["task_id"])
 	}
 	if scopeID == "" {
 		scopeType, scopeID = "trigger", strings.TrimSpace(fields["trigger"])

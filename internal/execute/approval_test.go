@@ -477,7 +477,7 @@ func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 // context) send Feishu messages with neither an MR nor an approval gate.
 
 // TestValidateTaskIntegrityChecksExecutionModeOnly pins the surviving integrity
-// check. plan / background / decision_payload are revisable by M5 while it
+// check. plan and background are revisable by M5 while it
 // executes (AGENTS.md §4), so no field-drift detection may be reintroduced here.
 func TestValidateTaskIntegrityChecksExecutionModeOnly(t *testing.T) {
 	task := &domain.Task{

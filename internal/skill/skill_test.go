@@ -57,12 +57,12 @@ func TestServiceReadsAndUpdatesYAMLConfiguration(t *testing.T) {
 	}
 	enabled := false
 	updated, err := service.Update(t.Context(), "feishu-send-message", Input{
-		Stages: []string{StageDecide, StageExecute}, IsEnabled: &enabled,
+		Stages: []string{StageExtract, StageExecute}, IsEnabled: &enabled,
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if updated.IsEnabled || !reflect.DeepEqual(updated.Stages, []string{StageDecide, StageExecute}) {
+	if updated.IsEnabled || !reflect.DeepEqual(updated.Stages, []string{StageExtract, StageExecute}) {
 		t.Fatalf("Update() = %#v", updated)
 	}
 	reloaded, err := NewService(root, configPath)

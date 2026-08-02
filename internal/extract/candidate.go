@@ -91,9 +91,9 @@ type Candidate struct {
 	ActionType string `json:"action_type" validate:"required"`
 	// Status is the only control value M3 writes directly, and it is projected
 	// verbatim onto Todo.status. It is deliberately limited to the two states M3
-	// is entitled to pick between: extracted (needs an action, so the decision
-	// step judges it) and observing (worth remembering, nobody acts on it). M3
-	// must never be able to reach auto/dropped/confirmed and skip the decision.
+	// is entitled to pick between: extracted (needs an action, so it becomes a
+	// Task) and observing (worth remembering, nobody acts on it). M3 must never
+	// be able to reach downstream statuses directly.
 	Status string `json:"status" validate:"required,oneof=extracted observing"`
 	Title  string `json:"title" validate:"required"`
 	Target string `json:"target" validate:"required"`
@@ -112,8 +112,8 @@ type Candidate struct {
 	// Semantics is an open pocket (natural language or JSON text) for anything
 	// the model needs to carry that has no dedicated field: current blockers,
 	// inference chain, candidate paths, follow-ups. Go never parses it; it rides
-	// verbatim into extraction_result and on to the decision and execution steps. Adding a new kind of
-	// reasoning here must not require widening this struct.
+	// verbatim into extraction_result and on to M5 execution. Adding a new kind
+	// of reasoning here must not require widening this struct.
 	Semantics string `json:"semantics"`
 }
 

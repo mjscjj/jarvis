@@ -84,7 +84,8 @@ type Person struct {
 
 func (Person) TableName() string { return "person" }
 
-// Todo is an extracted action clue. M3 creates it and the decision step owns routing.
+// Todo is an extracted action clue. M3 chooses extracted or observing; extracted
+// clues are mechanically materialized as Tasks.
 type Todo struct {
 	ID                 uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
 	Title              string         `gorm:"column:title;type:varchar(512);not null"`
@@ -101,13 +102,12 @@ type Todo struct {
 	AssignerOpenID     *string        `gorm:"column:assigner_open_id;type:varchar(64)"`
 	IsLeaderAssigned   bool           `gorm:"column:is_leader_assigned;type:tinyint(1);not null;default:0;index:idx_todo_leader_status,priority:1"`
 	DueAt              *time.Time     `gorm:"column:due_at;type:datetime"`
-	// Status is extracted while awaiting judgment, then auto (a Task exists) or
-	// dropped (terminal). A clue is never parked waiting for the principal: that
-	// question travels with the Task and M5 raises it.
+	// Status is extracted while awaiting materialization, then auto once a Task
+	// exists. Observing clues stay visible without creating a Task.
 	Status           string         `gorm:"column:status;type:varchar(24);not null;default:extracted;index:idx_todo_status;index:idx_todo_leader_status,priority:2"`
 	DedupFingerprint string         `gorm:"column:dedup_fingerprint;type:char(64);not null;uniqueIndex:uk_todo_fingerprint"`
-	ContextSnapshot  datatypes.JSON `gorm:"column:context_snapshot;type:json"`  // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），判断/执行环节全链路复用
-	ExtractionResult datatypes.JSON `gorm:"column:extraction_result;type:json"` // M3 抽取吐出的完整结论原文（整个 Candidate），判断环节整块复用，不逐字段拆
+	ContextSnapshot  datatypes.JSON `gorm:"column:context_snapshot;type:json"`  // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），Task 与执行环节全链路复用
+	ExtractionResult datatypes.JSON `gorm:"column:extraction_result;type:json"` // M3 抽取吐出的完整结论原文（整个 Candidate），Task 与执行环节整块复用
 	Resolution       datatypes.JSON `gorm:"column:resolution;type:json"`        // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
 	// Revision counts how many times this clue was re-extracted; Version is the
 	// optimistic lock. They are different things and must not be merged.
@@ -124,8 +124,8 @@ type Todo struct {
 
 func (Todo) TableName() string { return "todo" }
 
-// Task is the executable snapshot materialized by the decision step. M5 may revise
-// its content during execution; see AGENTS.md §4.
+// Task is the executable snapshot materialized from a Todo or another source.
+// M5 owns all semantic judgment during execution.
 type Task struct {
 	ID         uint64         `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
 	TodoID     *uint64        `gorm:"column:todo_id;type:bigint unsigned;uniqueIndex:uk_task_todo"`
@@ -134,11 +134,10 @@ type Task struct {
 	Target     string         `gorm:"column:target;type:varchar(512);not null;default:''"`
 	Background datatypes.JSON `gorm:"column:background;type:json;not null"`
 	// SourceClue is M3's complete extraction result, frozen at materialization so
-	// M5 reads the original clue rather than the decision step's condensed direction. Nullable:
-	// scheduled_task and manual Tasks have no M3 clue.
+	// M5 reads the original M3 clue. Nullable: scheduled_task and manual Tasks
+	// have no M3 clue.
 	SourceClue      datatypes.JSON `gorm:"column:source_clue;type:json"`
-	Plan            datatypes.JSON `gorm:"column:plan;type:json;not null"`
-	DecisionPayload datatypes.JSON `gorm:"column:decision_payload;type:json"`
+	Plan            datatypes.JSON `gorm:"column:plan;type:json"`
 	ConfirmedBy     string         `gorm:"column:confirmed_by;type:varchar(16);not null"`
 	ConfirmedAt     time.Time      `gorm:"column:confirmed_at;type:datetime;not null"`
 	SourceType      string         `gorm:"column:source_type;type:varchar(24);not null;default:todo;uniqueIndex:uk_task_source_occurrence,priority:1"`
@@ -156,7 +155,7 @@ type Task struct {
 	// findable in one query, which UpdatedAt cannot do (any column write bumps it).
 	LastProgressAt *time.Time `gorm:"column:last_progress_at;type:datetime;index:idx_task_last_progress"`
 	// ExecutionSupplements are M5-only human clarifications/instructions, append-only
-	// and isolated from the decision step's Todo.context_snapshot.supplements.
+	// and isolated from Todo.context_snapshot.supplements.
 	ExecutionSupplements datatypes.JSON `gorm:"column:execution_supplements;type:json"`
 	ProjectID            *uint64        `gorm:"column:project_id;type:bigint unsigned;index:idx_task_project"`
 	Version              int32          `gorm:"column:version;not null;default:0"`

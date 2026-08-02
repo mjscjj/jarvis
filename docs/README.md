@@ -31,7 +31,6 @@
 - [M1 背景](modules/01-background.md)
 - [M2 消息与线索采集](modules/02-message.md)
 - [M3 Todo 提取](modules/03-task-extract.md)
-- [M5 判断环节](modules/04-decision.md)
 - [M5 执行环节](modules/05-execution.md)
 
 ### 横切能力
@@ -53,7 +52,7 @@
 | 文档 | 状态 | 已实现 / 未实现边界 |
 |---|---|---|
 | [长任务 Goal Control](design-long-horizon-agent-goal-control.md) | proposal / partial | 目标线索保真已改善；Goal Store、Supervisor、独立 Verifier 未实现 |
-| [宽松语义契约](design-loose-semantic-contract.md) | proposal / partial | 判断 plan/payload 已宽松；M3 Candidate、enrichment 等仍有严格结构 |
+| [宽松语义契约](design-loose-semantic-contract.md) | proposal / partial | M3 Candidate、enrichment 等仍有严格结构；Todo→Task 已改为无模型固化 |
 | [世界上下文渐进加载](design-world-context-progressive.md) | implementation-in-progress | 本轮审计时 HEAD 未完整落地；不得提前标 completed |
 
 [上下文链路重设计](design-context-pipeline.md) 是已实施的历史设计稿。当前稳定结论已经写入总纲和模块文档，正文里的“待实施”步骤不作为当前实现说明。

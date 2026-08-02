@@ -42,7 +42,6 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 	task := &domain.Task{
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		Plan: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
-		DecisionPayload:      datatypes.JSON(`{"summary":"需要保留的决策依据","future_field":{"free":true}}`),
 		ExecutionSupplements: datatypes.JSON(supplements),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
@@ -52,9 +51,9 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 	if !strings.Contains(prompt, "执行阶段补充") || !strings.Contains(prompt, "标题要包含季度") {
 		t.Fatalf("prompt missing supplements: %s", prompt)
 	}
-	for _, want := range []string{`"decision_context"`, `"需要保留的决策依据"`, `"future_field"`} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing decision payload %q: %s", want, prompt)
+	for _, obsolete := range []string{`"decision_context"`, `"decision_direction"`} {
+		if strings.Contains(prompt, obsolete) {
+			t.Fatalf("prompt contains removed decision field %q: %s", obsolete, prompt)
 		}
 	}
 }
@@ -152,9 +151,7 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 	task := &domain.Task{
 		ID: 12, Title: "评测截图", ActionType: "notify_principal", Target: "评测截图影响面",
-		Plan:            datatypes.JSON(`{"direction":"判断对项目的影响"}`),
-		DecisionPayload: datatypes.JSON(`{"value":"可能影响 runtime 选择"}`),
-		Background:      datatypes.JSON(`{"snapshot_version":"v1"}`),
+		Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
@@ -164,14 +161,12 @@ func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 		`"title_hint":"评测截图"`,
 		`"action_type_hint":"notify_principal"`,
 		`"target_hint":"评测截图影响面"`,
-		`"decision_direction":{"direction":"判断对项目的影响"}`,
-		`"decision_context":{"value":"可能影响 runtime 选择"}`,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("execution prompt missing hint field %q:\n%s", want, prompt)
 		}
 	}
-	for _, obsolete := range []string{`"action_type":`, `"plan":`, `"decision_payload":`} {
+	for _, obsolete := range []string{`"action_type":`, `"plan":`, `"decision_payload":`, `"decision_direction":`, `"decision_context":`} {
 		if strings.Contains(prompt, obsolete) {
 			t.Fatalf("execution prompt still exposes upstream semantics as authoritative field %q:\n%s", obsolete, prompt)
 		}
@@ -183,15 +178,13 @@ func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 
 // TestBuildExecutionPromptForwardsM3ClueVerbatim pins the anti-goal-drift path:
 // M5 must see M3's original clue (notably desired_outcome) rather than only
-// the decision step's condensed direction, so a blocker raised downstream cannot silently
-// become the task. See docs/design-long-horizon-agent-goal-control.md.
+// a blocker raised downstream cannot silently become the task.
 func TestBuildExecutionPromptForwardsM3ClueVerbatim(t *testing.T) {
 	clue := `{"action_type":"manual_followup","desired_outcome":"产出这场会的结论并生成落到我身上的待办","semantics":"当前妙记无 view 权限，需先申请"}`
 	task := &domain.Task{
 		ID: 13, Title: "公会基建 Agent 日会会后处理", ActionType: "manual_followup",
 		Target:     "公会基建Agent 日会（meeting_id=7667030332496007223）",
 		SourceClue: datatypes.JSON(clue),
-		Plan:       datatypes.JSON(`{"direction":"先申请妙记 view 权限"}`),
 		Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
@@ -216,7 +209,7 @@ func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
 	prompt := string(content)
 	for _, want := range []string{
 		"M5 是真正理解任务、调查事实、确定目标、选择动作、执行并验证结果的阶段",
-		"`title_hint`、`action_type_hint`、`target_hint` 和 `decision_direction`",
+		"`title_hint`、`action_type_hint` 和 `target_hint`",
 		"可以基于证据修改、替换或放弃这些建议",
 		"根据调查持续重规划",
 		"`action_type_hint` 不限制实际动作",
@@ -230,7 +223,7 @@ func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
 			t.Fatalf("M5 prompt missing autonomy contract %q:\n%s", want, prompt)
 		}
 	}
-	for _, obsolete := range []string{"严格执行 plan 的目标", "decision_payload 是 M4 原样传来的判断"} {
+	for _, obsolete := range []string{"严格执行 plan 的目标"} {
 		if strings.Contains(prompt, obsolete) {
 			t.Fatalf("M5 prompt still contains obsolete upstream constraint %q:\n%s", obsolete, prompt)
 		}

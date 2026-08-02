@@ -91,6 +91,21 @@ func TestNormalizeInputAcceptsEmptyBackgroundObject(t *testing.T) {
 	}
 }
 
+func TestNormalizeInputAcceptsMissingPlan(t *testing.T) {
+	todoID := uint64(42)
+	input, err := normalizeInput(Input{
+		TodoID: &todoID, Title: "无上游计划任务", ActionType: "agent_task", Target: "输出结论",
+		Background: json.RawMessage(`{}`), ConfirmedBy: "materializer",
+		SourceType: SourceTodo, ExecutionMode: ExecutionModeStandard,
+	})
+	if err != nil {
+		t.Fatalf("normalizeInput() error = %v", err)
+	}
+	if input.Plan != nil {
+		t.Fatalf("plan = %s, want nil", input.Plan)
+	}
+}
+
 func TestNormalizeInputRejectsEmptyPlanObject(t *testing.T) {
 	_, err := normalizeInput(Input{
 		Title: "空计划任务", ActionType: "agent_task", Target: "输出结论",
@@ -113,19 +128,15 @@ func TestNormalizeInputAcceptsOpenPlanJSON(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			input, err := normalizeInput(Input{
 				Title: "开放计划", ActionType: "agent_task", Target: "输出结论",
-				Background:      json.RawMessage(`{}`),
-				Plan:            json.RawMessage(plan),
-				DecisionPayload: json.RawMessage(`{"unknown":{"nested":[1,true]}}`),
-				ConfirmedBy:     "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
+				Background:  json.RawMessage(`{}`),
+				Plan:        json.RawMessage(plan),
+				ConfirmedBy: "user", SourceType: SourceManual, ExecutionMode: ExecutionModeDirect,
 			})
 			if err != nil {
 				t.Fatalf("normalizeInput() error = %v", err)
 			}
 			if string(input.Plan) != plan {
 				t.Fatalf("plan = %s, want %s", input.Plan, plan)
-			}
-			if string(input.DecisionPayload) != `{"unknown":{"nested":[1,true]}}` {
-				t.Fatalf("decision_payload = %s", input.DecisionPayload)
 			}
 		})
 	}

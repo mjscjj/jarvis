@@ -11,7 +11,7 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
-const SUBTITLE = '这段文本会作为可信背景注入所有 Agent（M3 抽取 / M5 判断与执行 / 对话）的提示词，请谨慎编辑；可能含凭据。'
+const SUBTITLE = '这段文本会作为可信背景注入所有 Agent（M3 抽取 / M5 执行 / 对话）的提示词，请谨慎编辑；可能含凭据。'
 
 export default function SharedMemory() {
   const [view, setView] = useState<SharedMemoryView>()

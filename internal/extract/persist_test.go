@@ -120,7 +120,7 @@ func resolvedCandidate(candidate Candidate) ResolvedCandidate {
 // TestM3OwnedTodoStatuses pins which states re-extraction may still move a clue
 // between. M3 owns the two it can emit; anything a downstream stage set must
 // survive re-extraction, or an already-routed clue would be pulled back into
-// the decision queue and mint a duplicate Task.
+// materialization and mint a duplicate Task.
 func TestM3OwnedTodoStatuses(t *testing.T) {
 	for _, status := range []string{"extracted", "observing"} {
 		if !m3OwnedTodoStatuses[status] {

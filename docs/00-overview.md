@@ -34,7 +34,7 @@ flowchart LR
 - `jarvis-server` 是主进程：HTTP、静态前端、M2/M3/M5、实时协调和补偿 cron 都在同一进程。
 - MySQL 是结构化状态真源。
 - Qdrant 当前只服务 Todo 语义去重，不是长期事实真源。
-- `traex` 运行 M3 默认引擎、M5 判断、M5 执行、对话和离线事实抽取；具体模型和超时读有效配置。
+- `traex` 运行 M3 默认引擎、M5 执行、对话和离线事实抽取；具体模型和超时读有效配置。
 - `lark-cli` 负责飞书读写；`bytedcli`、`git` 和 `jarvis-tools` 由 Agent 按需调用。
 - 生产前端由 18800 托管 `web/dist`；18801 是独立 Vite 开发服务。
 
@@ -52,10 +52,7 @@ flowchart TD
     F --> M3
     M3 --> OBS0["Todo observing"]
     M3 --> EXT0["Todo extracted"]
-    EXT0 --> JUDGE["M5 判断\n禁止副作用，允许查证"]
-    JUDGE --> DROP["Todo dropped"]
-    JUDGE --> OBS1["Todo observing"]
-    JUDGE --> AUTO["Todo auto + Task pending"]
+    EXT0 --> AUTO["机械固化\nTodo auto + Task pending"]
     AUTO --> EXEC["M5 执行 Agent"]
     EXEC --> DONE["done"]
     EXEC --> OBS2["observing"]
@@ -87,28 +84,20 @@ M3 默认使用 Agent CLI，可用工具补查项目、人物、群、代码和�
 
 M3 可以产出：
 
-- `extracted`：存在值得 M5 判断的动作线索；
+- `extracted`：存在需要交给 M5 执行 Agent 调查和判断的动作线索；
 - `observing`：值得保留，但当前不需要任何人行动。
 
 `context_snapshot` 是审计快照，不是实时世界状态。M5 全链路复用它，也可查询新事实；不得在下游重新查库拼一份替代快照。
 
-### 3.3 M5 判断：价值路由
+### 3.3 Todo 固化
 
-判断环节只消费 `extracted` Todo，输出严格外壳 `disposition + plan + payload`：
+`extracted` Todo 一律通过无模型的固化步骤创建一个 `pending` Task，并把 Todo 置为 `auto`。固化继续使用 Todo ID/version 乐观锁、`task.todo_id` 唯一键和同一事务；重复通知返回同一个 Task，陈旧版本 fail-fast。
 
-| Disposition | Todo 状态 | Task |
-|---|---|---|
-| `ready` | `auto` | 创建一个 `pending` Task |
-| `observe` | `observing` | 不创建 |
-| `drop` | `dropped` | 不创建 |
-
-`ready` 只表示值得交给执行 Agent 调查/推进，不代表外部写入已获授权。需要 principal 选择或补充只有本人知道的信息时仍可 `ready`；执行 Agent 做完能做的调查后再进入 `needs_human`。
-
-判断行为上禁止副作用，但运行时允许联网和整机查证。约束来自阶段 prompt，不是 OS 级 read-only sandbox。
+Todo 来源 Task 的 `plan` 为空；执行 Agent 直接读取完整 `source_clue` 和冻结 `background`，不人为制造中间计划或判断上下文。
 
 ### 3.4 M5 执行：调查、动作与恢复
 
-Task 可以来自 Todo、手工 API 或 ScheduledTask。执行 Agent 读取完整 M3 clue、判断方向、冻结背景、人工 supplements 和最近运行记录，把上游内容视为线索与方向，不视为不可修改的最终计划。
+Task 可以来自 Todo、手工 API 或 ScheduledTask。执行 Agent 读取完整 M3 clue、冻结背景、人工 supplements 和最近运行记录，把上游内容视为线索，不视为不可修改的最终计划。
 
 执行 outcome 与状态映射：
 
@@ -123,15 +112,15 @@ Task 可以来自 Todo、手工 API 或 ScheduledTask。执行 Agent 读取完�
 
 审批由模型根据具体副作用判断，不按 `action_type` 分流。代码提供状态、批准/驳回入口和审计载体。`effects` 的 `kind` 是开放字符串，外部后果按 Agent 声明留痕；当前不是独立 receipt verifier。
 
-Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示本次运行。当前 Store 能更新 supplements、状态、结果和 summary；虽然 `Task.background/plan/decision_payload` 在目标设计中可演进，但尚无通用更新 API/tool，不能把这项写成已实现能力。
+Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示本次运行。当前 Store 能更新 supplements、状态、结果和 summary。
 
 ## 4. 实时推进与恢复
 
 `internal/pipeline.Coordinator` 接收持久化提交后的轻量通知，按 chat/todo/task ID 和 version 推进工作。内存队列只加速，不承担真源：
 
 - M2 新消息唤醒 M3；
-- M3 新 `extracted` Todo 唤醒 M5 判断；
-- `ready` 创建 Task 后唤醒 M5 执行；
+- M3 新 `extracted` Todo 唤醒机械固化；
+- 固化创建 Task 后唤醒 M5 执行；
 - 各阶段 cron 扫描持久化状态，恢复漏通知和崩溃后的工作。
 
 队列按实体 ID/version 合并等待通知，数据库状态和乐观锁拒绝陈旧执行。
@@ -169,11 +158,10 @@ RelationFact 表示两个既有实体之间的自然语言关系和有效期；�
 ### Todo
 
 ```text
-M3 -> extracted -> M5 -> auto       -> Task
- |                  ├-> observing   -> 无 Task
- └-> observing      └-> dropped     -> 无 Task
+M3 -> extracted -> materialize -> auto -> Task -> M5 execution
+ └-> observing                              └-> observing（可同步来源 Todo）
 
-fresh evidence 可使 observing 回到 extracted；auto/dropped 不由 M3 随意重开。
+fresh evidence 可使 observing 回到 extracted；auto 不由 M3 随意重开。
 ```
 
 ### Task
@@ -203,7 +191,7 @@ pending -> executing -> done | observing | failed
 - `context_snapshot` 是冻结证据，不是版本化 live world state。
 - factengine 只消费 message，未自动吸收 Task/ExecutionRun。
 - effects 是 Agent 声明，不是外部系统 receipt 的独立验证。
-- Task 的背景/判断方向虽按原则可变，但缺通用更新 API/tool 与审计写入。
+- Task 的背景和可选计划缺通用更新 API/tool 与审计写入。
 - 编辑既有消息目前不会重新唤醒 M3。
 - Resource 通用下载、解析和内容哈希复用未闭环。
 

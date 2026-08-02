@@ -11,17 +11,17 @@
 
 Task 可来自：
 
-- `todo`：M5 判断 `ready` 后创建；
+- `todo`：`extracted` Todo 经无模型固化步骤创建；
 - `scheduled_task`：到期物化；
 - `manual`：通过 API 创建。
 
 `execution_mode=direct` 只是持久化元数据，不绕过审批。
 
-执行 prompt 包含：完整 `source_clue`、判断方向 `plan`、判断上下文 `decision_payload`、冻结 `background`、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。
+执行 prompt 包含：完整 `source_clue`、冻结 `background`、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。Todo 来源的 `plan` 为空且不注入 prompt；ScheduledTask/手工 Task 可继续保存自己的可选计划。
 
 执行进程可以自行派生只读的子 agent 去做素材密集的调查，只把带出处的结论收回主上下文；派生规则写在 `m5-system-prompt.md`，Go 侧不感知也不调度。审批判断、终态裁决、`effects` 申报、`progress_summary` 和 `yield-until` 不下放——可恢复的 Session 属于主进程。
 
-上游语义是 clue/direction，不是最终契约。当前代码尚无通用接口更新 `background/plan/decision_payload`；能更新的是 supplements、状态、结果和 Task summary。目标设计中的“可变且留痕”仍是实现缺口。
+上游语义是 clue，不是最终契约。当前代码尚无通用接口更新 `background/plan`；能更新的是 supplements、状态、结果和 Task summary。目标设计中的“可变且留痕”仍是实现缺口。
 
 ## 2. 执行 phases
 
@@ -87,5 +87,5 @@ Task 相关接口包括：runs、events、output、execute、interrupt、rerun�
 
 - 没有独立 Verifier；`done` 仍主要来自同一执行 Agent 的 completion claim。
 - effects 未对外部系统 receipt 做独立核验。
-- Task 三个可变语义字段缺更新 API/tool 与事件留痕。
+- Task 背景和可选计划缺更新 API/tool 与事件留痕。
 - Task/ExecutionRun 尚未接入 factengine 自动沉淀。

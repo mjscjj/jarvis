@@ -62,7 +62,6 @@ const moduleLabels: Record<string, string> = {
   capture: 'M1 采集',
   memory: 'M2 记忆',
   extract: 'M3 抽取',
-  decide: 'M5 判断',
   execute: 'M5 执行',
 }
 

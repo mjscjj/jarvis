@@ -20,14 +20,13 @@ import (
 
 const (
 	StageExtract = "extract"
-	StageDecide  = "decide"
 	StageExecute = "execute"
 )
 
 var (
 	ErrInvalidInput = errors.New("invalid agent skill input")
 	ErrNotFound     = errors.New("agent skill not found")
-	stageOrder      = map[string]int{StageExtract: 0, StageDecide: 1, StageExecute: 2}
+	stageOrder      = map[string]int{StageExtract: 0, StageExecute: 1}
 	skillName       = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 )
 

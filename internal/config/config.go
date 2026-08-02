@@ -21,7 +21,6 @@ type Config struct {
 	Extract       ExtractConfig       `yaml:"extract"`
 	LarkCLI       LarkCLIConfig       `yaml:"lark_cli"`
 	Capture       CaptureConfig       `yaml:"capture"`
-	Decide        DecideConfig        `yaml:"decide"`
 	Codex         CodexConfig         `yaml:"codex"`
 	Execute       ExecuteConfig       `yaml:"execute"`
 	Chat          ChatConfig          `yaml:"chat"`
@@ -167,23 +166,7 @@ type CaptureConfig struct {
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
 }
 
-// DecideConfig controls the M5 judgment step, which decides whether an extracted
-// clue is worth turning into a Task.
-type DecideConfig struct {
-	Enabled    bool   `yaml:"enabled"`
-	Schedule   string `yaml:"schedule"`
-	BatchLimit int    `yaml:"batch_limit"`
-
-	// CodexSandbox / CodexNetwork / CodexReasoningEffort configure the judgment
-	// codex evaluator. It shares the same full-access + network posture as M3 so
-	// it can self-query to fill gaps while judging.
-	CodexSandbox         string `yaml:"codex_sandbox"`
-	CodexNetwork         bool   `yaml:"codex_network"`
-	CodexReasoningEffort string `yaml:"codex_reasoning_effort"`
-}
-
-// CodexConfig 是 M3 抽取 / M5 判断环节（以及 chat 复用的 bin）共用的 agent CLI。
-// M5 任务执行用 ExecuteConfig.Bin/Model，可与这里不同（例如这里 traex、执行用 codex）。
+// CodexConfig controls the agent CLI used by M3 extraction.
 type CodexConfig struct {
 	Bin            string `yaml:"bin"`
 	Model          string `yaml:"model"`
@@ -194,7 +177,7 @@ type CodexConfig struct {
 // auto-execution plus its compensation cron; manual execution via the API is
 // always available regardless. RepoRoot is the base directory a Task's
 // repo_ref slot is joined under for code changes. Bin/Model 可独立于
-// codex 段（例如抽取/决策用 traex，真正执行用官方 codex + 更强模型）。
+// codex 段（例如抽取用 traex，真正执行用官方 codex + 更强模型）。
 type ExecuteConfig struct {
 	Enabled              bool   `yaml:"enabled"`                // 是否开实时自动执行（本地动作）
 	Schedule             string `yaml:"schedule"`               // 补偿 cron 表达式
@@ -411,23 +394,6 @@ func (c *Config) validate() error {
 	if c.Capture.AutoRelatedP2PTopN < 0 {
 		return fmt.Errorf("capture.auto_related_p2p_top_n 不能为负数")
 	}
-	if c.Decide.Enabled != c.Execute.Enabled {
-		return fmt.Errorf("M5 判断与执行必须同时启用或停用：decide.enabled=%t execute.enabled=%t", c.Decide.Enabled, c.Execute.Enabled)
-	}
-	if c.Decide.Enabled {
-		if c.Decide.Schedule == "" {
-			return fmt.Errorf("decide.schedule 不能为空")
-		}
-		if c.Decide.BatchLimit <= 0 {
-			return fmt.Errorf("decide.batch_limit 必须大于 0")
-		}
-		if err := validateCodexSandbox("decide.codex_sandbox", c.Decide.CodexSandbox); err != nil {
-			return err
-		}
-		if err := validateReasoningEffort("decide", c.Decide.CodexReasoningEffort); err != nil {
-			return err
-		}
-	}
 	if c.Codex.Bin == "" {
 		return fmt.Errorf("codex.bin 不能为空")
 	}
@@ -518,7 +484,6 @@ func (c *Config) validate() error {
 		{name: "extract.schedule", spec: c.Extract.Schedule},
 		{name: "capture.discover_schedule", spec: c.Capture.DiscoverSchedule},
 		{name: "capture.scan_schedule", spec: c.Capture.ScanSchedule},
-		{name: "decide.schedule", spec: c.Decide.Schedule},
 		{name: "execute.schedule", spec: c.Execute.Schedule},
 		{name: "dailydigest.schedule", spec: c.DailyDigest.Schedule},
 		{name: "scheduled_task.schedule", spec: c.ScheduledTask.Schedule},

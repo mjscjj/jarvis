@@ -84,7 +84,7 @@ ExcludeSourceKind *string
 
 ### 4.3 `internal/toolcatalog/catalog.go` 注册
 
-四个命令注册到 `StageExtract`、`StageExecute`、`StageChat`。**`StageDecide` 不给**，与 facts 现在的处理一致——判断环节是廉价价值判断，不做调查。
+四个命令注册到 `StageExtract`、`StageExecute`、`StageChat`。M3 和 M5 执行都可按需调查。
 
 ## 5. 事实日压缩（旁路）
 

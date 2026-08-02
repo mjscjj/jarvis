@@ -9,7 +9,7 @@ import (
 
 // ModuleRun is the most recent parsed runtime event for one module.
 type ModuleRun struct {
-	Module    string            `json:"module"`     // capture / memory / extract / decide / execute
+	Module    string            `json:"module"`     // capture / memory / extract / execute
 	Time      string            `json:"time"`       // 该模块最近一条日志的时间戳
 	Status    string            `json:"status"`     // ok / error / unknown（无 status= 字段时）
 	CurrentOK bool              `json:"current_ok"` // 最近一次运行是否没有报错

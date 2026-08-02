@@ -302,4 +302,4 @@ ReAct（`survey §1.1`，`Thought→Action→Observation` 循环）是几乎所�
 ## 9. 参考
 
 - 姊妹调研：`docs/research/agent-decision-survey.md`（三正交轴、HITL 最佳实践、编码 agent 自主度、治理护栏、完整来源索引）。本文所有"打分可靠性、按后果分级、控制/数据平面分离、fail-closed、审计留痕"等通用结论均以该文为准，不重复引用原始出处。
-- Jarvis 相关只作为历史实例参照。当前架构见 `docs/00-overview.md` 和 `docs/modules/04-decision.md`；旧的 `04-confirmation.md` 已随 M4 人工确认流退役。
+- Jarvis 相关只作为历史实例参照。当前架构见 `docs/00-overview.md`、`docs/modules/03-task-extract.md` 和 `docs/modules/05-execution.md`。

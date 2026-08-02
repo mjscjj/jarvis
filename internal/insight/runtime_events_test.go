@@ -22,9 +22,7 @@ func newRuntimeDebugService(t *testing.T, content string) *DebugService {
 func TestFailuresParsesPipelineStagesAndCron(t *testing.T) {
 	svc := newRuntimeDebugService(t, ""+
 		"pipeline 2026/07/24 15:42:01.000000 logid=log-m3 stage=m3 trigger=realtime chat_id=oc_failed status=error error=decode JSON: EOF\n"+
-		"pipeline 2026/07/24 15:43:01.000000 logid=log-m5-decide stage=m5 step=decide trigger=realtime todo_id=99 status=error error=decide failed\n"+
 		"pipeline 2026/07/24 15:44:01.000000 logid=log-m5-execute stage=m5 step=execute trigger=queue task_id=78 version=0 status=error error=execute Task id=78: enrichments[2] content is blank\n"+
-		"pipeline 2026/07/24 15:45:01.000000 logid=log-queued stage=m4 trigger=realtime todo_id=100 status=queued\n"+
 		"pipeline 2026/07/24 15:46:01.000000 logid=log-stale stage=m5 trigger=queue task_id=79 status=stale\n"+
 		"meeting-capture-cron 2026/07/24 15:47:01.000000 logid=log-cron job=meeting_minutes status=error error=permission check failed\n")
 
@@ -32,8 +30,8 @@ func TestFailuresParsesPipelineStagesAndCron(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failures() error = %v", err)
 	}
-	if len(events) != 4 {
-		t.Fatalf("Failures() len = %d, want 4: %+v", len(events), events)
+	if len(events) != 3 {
+		t.Fatalf("Failures() len = %d, want 3: %+v", len(events), events)
 	}
 
 	byLogID := make(map[string]FailureEvent, len(events))
@@ -41,7 +39,6 @@ func TestFailuresParsesPipelineStagesAndCron(t *testing.T) {
 		byLogID[event.LogID] = event
 	}
 	assertFailureScope(t, byLogID["log-m3"], "extract", "m3", "chat_id", "oc_failed")
-	assertFailureScope(t, byLogID["log-m5-decide"], "execute", "m5", "todo_id", "99")
 	assertFailureScope(t, byLogID["log-m5-execute"], "execute", "m5", "task_id", "78")
 	assertFailureScope(t, byLogID["log-cron"], "meeting-capture", "", "job", "meeting_minutes")
 }
@@ -76,7 +73,7 @@ func TestFailuresOnlySameScopeCanRecover(t *testing.T) {
 
 func TestPipelineScopeIgnoresKVTokensInsideErrorText(t *testing.T) {
 	svc := newRuntimeDebugService(t,
-		"pipeline 2026/07/24 10:42:53.469073 logid=log-m5 stage=m5 step=decide trigger=realtime todo_id=89 version=0 status=error error=evaluate Todo id=89: codex decision failed todo_id=89: codex decision command failed: signal: killed:\n")
+		"pipeline 2026/07/24 10:42:53.469073 logid=log-m5 stage=m5 step=execute trigger=realtime task_id=89 version=0 status=error error=execute Task id=89 failed task_id=90\n")
 
 	events, err := svc.Failures(1000, 0)
 	if err != nil {
@@ -86,22 +83,8 @@ func TestPipelineScopeIgnoresKVTokensInsideErrorText(t *testing.T) {
 		t.Fatalf("Failures() len = %d, want 1: %+v", len(events), events)
 	}
 	if events[0].ScopeID != "89" {
-		t.Fatalf("M5 decision ScopeID = %q, want structured prefix todo_id=89", events[0].ScopeID)
+		t.Fatalf("M5 execution ScopeID = %q, want structured prefix task_id=89", events[0].ScopeID)
 	}
-}
-
-func TestFailuresStillParsesLegacyM4Logs(t *testing.T) {
-	svc := newRuntimeDebugService(t,
-		"pipeline 2026/07/24 15:43:01.000000 logid=legacy-m4 stage=m4 trigger=realtime todo_id=99 status=error error=decide failed\n")
-
-	events, err := svc.Failures(1000, 0)
-	if err != nil {
-		t.Fatalf("Failures() error = %v", err)
-	}
-	if len(events) != 1 {
-		t.Fatalf("Failures() len = %d, want 1: %+v", len(events), events)
-	}
-	assertFailureScope(t, events[0], "decide", "m4", "todo_id", "99")
 }
 
 func TestFailuresMergesRepeatedSameScopeAndSummary(t *testing.T) {
