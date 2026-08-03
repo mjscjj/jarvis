@@ -426,7 +426,7 @@ curl -fsS 'http://127.0.0.1:18800/api/debug/modules'
 Expected:
 
 - `/healthz` 成功。
-- MySQL、Qdrant、mem0 为 `ok`。
+- SQLite、Qdrant、mem0 为 `ok`。
 - 既有 M3/M5 pipeline 错误出现在 failures。
 - 不同 scope 的成功不会错误恢复。
 - 返回包含 `scope_id`、`logid`、`count`。
