@@ -417,7 +417,7 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	if !validAgentStage(agentStage) {
 		return nil, fmt.Errorf("codex run agent stage is invalid: %q", agentStage)
 	}
-	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE="+agentStage)
+	command.Env = codexEnvironment(os.Environ(), invocation.TaskID, agentStage)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Cancel = func() error {
 		if command.Process == nil {
@@ -433,9 +433,6 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 		command.Dir = tempDir
 	} else if strings.TrimSpace(repoPath) != "" {
 		command.Dir = repoPath
-	}
-	if invocation.TaskID != 0 {
-		command.Env = append(command.Env, fmt.Sprintf("JARVIS_TASK_ID=%d", invocation.TaskID))
 	}
 	command.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
@@ -487,6 +484,25 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 		run.Result = result
 	}
 	return run, nil
+}
+
+// codexEnvironment removes Jarvis invocation metadata inherited from the
+// parent process before setting the metadata for this invocation. In
+// particular, one-shot agents must never impersonate the Task that happened to
+// launch them.
+func codexEnvironment(base []string, taskID uint64, agentStage string) []string {
+	environment := make([]string, 0, len(base)+2)
+	for _, entry := range base {
+		if strings.HasPrefix(entry, "JARVIS_TASK_ID=") || strings.HasPrefix(entry, "JARVIS_AGENT_STAGE=") {
+			continue
+		}
+		environment = append(environment, entry)
+	}
+	environment = append(environment, "JARVIS_AGENT_STAGE="+agentStage)
+	if taskID != 0 {
+		environment = append(environment, fmt.Sprintf("JARVIS_TASK_ID=%d", taskID))
+	}
+	return environment
 }
 
 // parseExecutionResult decodes codex's schema-constrained final message, for

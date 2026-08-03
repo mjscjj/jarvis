@@ -46,6 +46,8 @@ printf '%s\n' 'diagnostic stderr' >&2
 	t.Setenv("FAKE_CODEX_TASK_ID", envPath)
 	t.Setenv("FAKE_CODEX_STAGE", stagePath)
 	t.Setenv("FAKE_CODEX_CWD", cwdPath)
+	t.Setenv("JARVIS_TASK_ID", "999")
+	t.Setenv("JARVIS_AGENT_STAGE", "parent")
 
 	runner, err := NewCodexRunner(binPath, "test-model", "medium", time.Minute)
 	if err != nil {
