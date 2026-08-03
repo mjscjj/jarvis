@@ -128,8 +128,8 @@ func (s *GORMStore) AdvanceCursor(ctx context.Context, source string, lastID uin
 	err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "source"}},
 		DoUpdates: clause.Assignments(map[string]any{
-			"last_id":          gorm.Expr("GREATEST(`last_id`, VALUES(`last_id`))"),
-			"last_occurred_at": gorm.Expr("VALUES(`last_occurred_at`)"),
+			"last_id":          gorm.Expr("MAX(`last_id`, excluded.`last_id`)"),
+			"last_occurred_at": gorm.Expr("excluded.`last_occurred_at`"),
 		}),
 	}).Create(&row).Error
 	if err != nil {

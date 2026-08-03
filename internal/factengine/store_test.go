@@ -156,6 +156,34 @@ func TestWindowOptionsValidate(t *testing.T) {
 	}
 }
 
+func TestAdvanceCursorUsesSQLiteUpsertAndNeverMovesBackward(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&domain.FactSourceCursor{}); err != nil {
+		t.Fatalf("migrate fact source cursor: %v", err)
+	}
+	store, err := NewGORMStore(db)
+	if err != nil {
+		t.Fatalf("NewGORMStore: %v", err)
+	}
+	ctx := context.Background()
+	if err := store.AdvanceCursor(ctx, SourceTask, 10, time.Time{}); err != nil {
+		t.Fatalf("insert cursor: %v", err)
+	}
+	if err := store.AdvanceCursor(ctx, SourceTask, 8, time.Time{}); err != nil {
+		t.Fatalf("upsert stale cursor: %v", err)
+	}
+	lastID, found, err := store.Cursor(ctx, SourceTask)
+	if err != nil {
+		t.Fatalf("load cursor: %v", err)
+	}
+	if !found || lastID != 10 {
+		t.Fatalf("cursor found/last_id = %v/%d, want true/10", found, lastID)
+	}
+}
+
 func TestTodoAndTaskUnitsPassLifecycleEventAndCurrentRow(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
