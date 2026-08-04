@@ -1,0 +1,303 @@
+.chat-panel.jarvis-chat {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.jarvis-chat .chat-header {
+  gap: 0;
+  padding: 18px 20px 16px;
+}
+
+.chat-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.jarvis-chat .chat-title.ant-typography {
+  color: var(--color-text);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.chat-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.chat-ready > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px var(--color-success-bg);
+}
+
+.jarvis-chat .chat-context {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.chat-context-page {
+  flex: none;
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.chat-context-separator {
+  color: var(--color-text-tertiary);
+}
+
+.chat-context-selection {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jarvis-chat .chat-context-note.ant-typography {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.jarvis-chat .chat-messages {
+  min-height: 0;
+  padding: 20px;
+  overscroll-behavior: contain;
+}
+
+.jarvis-chat .chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  margin: auto 0;
+  padding: 24px 0;
+  text-align: left;
+}
+
+.chat-empty-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: var(--space-3);
+  border: 1px solid #cae5d4;
+  border-radius: 10px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.jarvis-chat .chat-empty-title.ant-typography {
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.jarvis-chat .chat-empty-description.ant-typography {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.chat-suggestions {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.chat-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px 9px 13px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.chat-suggestion:hover {
+  border-color: #b8d7c3;
+  background: var(--color-primary-light);
+  color: var(--color-primary-hover);
+}
+
+.chat-suggestion:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.chat-suggestion-arrow {
+  flex: none;
+  color: var(--color-text-tertiary);
+  font-size: 16px;
+  transition: transform 120ms ease, color 120ms ease;
+}
+
+.chat-suggestion:hover .chat-suggestion-arrow {
+  color: var(--color-primary);
+  transform: translateX(2px);
+}
+
+.jarvis-chat .chat-bubble-row.assistant {
+  justify-content: flex-start;
+}
+
+.jarvis-chat .chat-bubble {
+  max-width: min(90%, 640px);
+}
+
+.jarvis-chat .chat-bubble.assistant {
+  border: 1px solid var(--color-border);
+  border-bottom-left-radius: var(--radius-sm);
+  background: var(--color-bg-soft);
+  color: var(--color-text);
+}
+
+.jarvis-chat .chat-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-style: normal;
+}
+
+.chat-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.chat-typing-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: jarvis-chat-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-typing-dots i:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.chat-typing-dots i:nth-child(3) {
+  animation-delay: 280ms;
+}
+
+.jarvis-chat .chat-error {
+  margin: 0 20px var(--space-2);
+}
+
+.chat-composer {
+  flex: none;
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+}
+
+.jarvis-chat .chat-textarea.ant-input {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-color: var(--color-border-strong);
+  border-radius: 10px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 22px;
+  resize: none;
+}
+
+.jarvis-chat .chat-textarea.ant-input:hover,
+.jarvis-chat .chat-textarea.ant-input:focus {
+  border-color: var(--color-primary);
+}
+
+.jarvis-chat .chat-textarea.ant-input:focus {
+  box-shadow: 0 0 0 2px rgb(21 128 61 / 10%);
+}
+
+.chat-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 32px;
+  margin-top: var(--space-2);
+}
+
+.jarvis-chat .chat-composer-hint.ant-typography {
+  color: var(--color-text-tertiary);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+@keyframes jarvis-chat-pulse {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-2px); }
+}
+
+@media (max-width: 520px) {
+  .jarvis-chat .chat-header,
+  .jarvis-chat .chat-messages,
+  .chat-composer {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .jarvis-chat .chat-context {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .chat-context-separator {
+    display: none;
+  }
+
+  .chat-context-selection {
+    max-width: 100%;
+  }
+
+  .chat-composer-footer {
+    align-items: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-suggestion,
+  .chat-suggestion-arrow,
+  .chat-typing-dots i {
+    animation: none;
+    transition: none;
+  }
+}
