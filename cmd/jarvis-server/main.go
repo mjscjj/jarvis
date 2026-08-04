@@ -357,6 +357,10 @@ func main() {
 	if err != nil {
 		fatalf("initialize morning brief worker failed: %v", err)
 	}
+	morningBriefReader, err := morningbrief.NewReader(filepath.Dir(filepath.Dir(configPathAbsolute)), location)
+	if err != nil {
+		fatalf("initialize morning brief reader failed: %v", err)
+	}
 	agentExecutor, err := execute.NewAgentExecutor(
 		taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
@@ -931,6 +935,7 @@ func main() {
 		Progress:       progressService,
 		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		DailyDigests:  dailyDigestService,
+		MorningBriefs: morningBriefReader,
 		Worklog:       worklogService,
 		FactRollups:   factRollupWorker,
 		FactRollupLoc: location,

@@ -4,8 +4,8 @@
 // schedules, injects hard boundaries, runs the agent, and verifies that the
 // canonical Markdown brief was refreshed. All judgment — evidence scope,
 // capacity, ranking, delivery self-check — lives in the system prompt and
-// summarize-morning-brief Skill. There is no run table, HTTP surface, or
-// frontend page; the artifact itself is the observation surface.
+// summarize-morning-brief Skill. There is no run table: the artifact remains
+// the source of truth and is exposed read-only to the frontend.
 package morningbrief
 
 import (

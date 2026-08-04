@@ -53,6 +53,7 @@ type Dependencies struct {
 	Overview         *insight.OverviewService
 	Digests          *insight.DigestService
 	DailyDigests     DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
+	MorningBriefs    MorningBriefService     // 晨报 Markdown 归档，只读
 	Worklog          *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
 	DigestSummarizer *insight.Summarizer     // 可选：codex 未启用时为 nil，总结接口返回 503
 	FactRollups      FactRollupGenerator     // 事实日压缩手动触发；nil 则接口返回 503
@@ -132,6 +133,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.Digests == nil {
 		return fmt.Errorf("api digest service dependency is nil")
+	}
+	if deps.MorningBriefs == nil {
+		return fmt.Errorf("api morning brief service dependency is nil")
 	}
 	if deps.Debug == nil {
 		return fmt.Errorf("api debug service dependency is nil")
@@ -238,6 +242,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		h.GET("/api/daily-digests", GetDailyDigests(deps.DailyDigests))
 		h.POST("/api/daily-digests/generate", GenerateDailyDigest(deps.DailyDigests))
 	}
+	// 晨间作战简报：直接读取 canonical Markdown，不复制进数据库。
+	h.GET("/api/morning-briefs", ListMorningBriefs(deps.MorningBriefs))
 	// 进度页工作日志：我今天写/收到的文档、我今天在各仓库的 MR（实时调 bytedcli）。
 	if deps.Worklog != nil {
 		h.GET("/api/worklog/commits", GetWorklogCommits(deps.Worklog))
