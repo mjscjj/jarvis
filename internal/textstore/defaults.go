@@ -7,7 +7,11 @@ const (
 	// Jarvis's internal world model and creates Tasks for M5 without performing
 	// external business effects itself.
 	SystemPromptProactiveKey = "proactive_system_prompt"
-	ApprovalPolicyKey        = "m5_approval_policy"
+	// SystemPromptMeetingSweepKey drives the low-cost meeting collector: it
+	// searches recently ended Feishu meetings and delivers each as a clue for
+	// M3, performing no analysis of its own.
+	SystemPromptMeetingSweepKey = "meeting_sweep_system_prompt"
+	ApprovalPolicyKey           = "m5_approval_policy"
 	// SystemPromptFactExtractKey drives the offline fact engine, which distils
 	// long-lived facts out of material the pipeline already produced.
 	SystemPromptFactExtractKey = "fact_extract_system_prompt"
@@ -27,6 +31,7 @@ func definitions() []definition {
 		{key: SystemPromptM3Key, name: "M3 系统提示词", filename: "m3-system-prompt.md"},
 		{key: SystemPromptM5Key, name: "M5 执行系统提示词", filename: "m5-system-prompt.md"},
 		{key: SystemPromptProactiveKey, name: "主动巡视系统提示词", filename: "proactive-system-prompt.md"},
+		{key: SystemPromptMeetingSweepKey, name: "会议巡扫系统提示词", filename: "meeting-sweep-system-prompt.md"},
 		{key: ApprovalPolicyKey, name: "M5 审批策略", filename: "m5-approval-policy.md"},
 		{key: SystemPromptFactExtractKey, name: "离线事实抽取提示词", filename: "fact-extract-system-prompt.md"},
 		{key: SystemPromptFactRollupKey, name: "事实日压缩提示词", filename: "fact-rollup-system-prompt.md"},

@@ -51,6 +51,7 @@ func TestValidate(t *testing.T) {
 		},
 		FactEngine:    validFactEngineConfig(),
 		Proactive:     validProactiveConfig(),
+		MeetingSweep:  validMeetingSweepConfig(),
 		Skills:        SkillsConfig{Root: ".agents/skills"},
 		Codex:         validCodexConfig(),
 		Execute:       validExecuteConfig(),
@@ -143,6 +144,13 @@ func TestValidate(t *testing.T) {
 		{name: "proactive sandbox", mutate: func(c *Config) { c.Proactive.Sandbox = "yolo" }, wantErr: "proactive.sandbox"},
 		{name: "proactive reasoning", mutate: func(c *Config) { c.Proactive.ReasoningEffort = "ultra" }, wantErr: "proactive.codex_reasoning_effort"},
 		{name: "proactive timeout", mutate: func(c *Config) { c.Proactive.TimeoutSeconds = 0 }, wantErr: "proactive.timeout_seconds"},
+		{name: "meeting sweep schedule", mutate: func(c *Config) { c.MeetingSweep.Schedule = "" }, wantErr: "meeting_sweep.schedule"},
+		{name: "meeting sweep startup delay", mutate: func(c *Config) { c.MeetingSweep.StartupDelaySeconds = 0 }, wantErr: "meeting_sweep.startup_delay_seconds"},
+		{name: "meeting sweep bin", mutate: func(c *Config) { c.MeetingSweep.Bin = "" }, wantErr: "meeting_sweep.bin"},
+		{name: "meeting sweep model", mutate: func(c *Config) { c.MeetingSweep.Model = "" }, wantErr: "meeting_sweep.model"},
+		{name: "meeting sweep sandbox", mutate: func(c *Config) { c.MeetingSweep.Sandbox = "yolo" }, wantErr: "meeting_sweep.sandbox"},
+		{name: "meeting sweep reasoning", mutate: func(c *Config) { c.MeetingSweep.ReasoningEffort = "ultra" }, wantErr: "meeting_sweep.codex_reasoning_effort"},
+		{name: "meeting sweep timeout", mutate: func(c *Config) { c.MeetingSweep.TimeoutSeconds = 0 }, wantErr: "meeting_sweep.timeout_seconds"},
 		{name: "dailydigest schedule", mutate: func(c *Config) { c.DailyDigest.Schedule = "" }, wantErr: "dailydigest.schedule"},
 		{name: "dailydigest timeout", mutate: func(c *Config) { c.DailyDigest.TimeoutSeconds = 299 }, wantErr: "dailydigest.timeout_seconds"},
 		{name: "dailydigest group message limit", mutate: func(c *Config) { c.DailyDigest.GroupMessageLimit = 0 }, wantErr: "dailydigest.group_message_limit"},
@@ -202,6 +210,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 		},
 		FactEngine:    validFactEngineConfig(),
 		Proactive:     validProactiveConfig(),
+		MeetingSweep:  validMeetingSweepConfig(),
 		Skills:        SkillsConfig{Root: ".agents/skills"},
 		Codex:         validCodexConfig(),
 		Execute:       validExecuteConfig(),
@@ -264,5 +273,13 @@ func validProactiveConfig() ProactiveConfig {
 		Enabled: true, Schedule: "@every 1h", StartupDelaySeconds: 120,
 		Bin: "traex", Model: "DeepSeek-V4-Pro", Sandbox: "danger-full-access",
 		ReasoningEffort: "medium", TimeoutSeconds: 900,
+	}
+}
+
+func validMeetingSweepConfig() MeetingSweepConfig {
+	return MeetingSweepConfig{
+		Enabled: true, Schedule: "@every 2h", StartupDelaySeconds: 150,
+		Bin: "traex", Model: "DeepSeek-V4-Flash", Sandbox: "danger-full-access",
+		ReasoningEffort: "low", TimeoutSeconds: 600,
 	}
 }

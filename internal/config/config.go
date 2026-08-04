@@ -20,6 +20,7 @@ type Config struct {
 	Model         ModelConfig         `yaml:"model"`
 	FactEngine    FactEngineConfig    `yaml:"factengine"`
 	Proactive     ProactiveConfig     `yaml:"proactive"`
+	MeetingSweep  MeetingSweepConfig  `yaml:"meeting_sweep"`
 	Extract       ExtractConfig       `yaml:"extract"`
 	LarkCLI       LarkCLIConfig       `yaml:"lark_cli"`
 	Capture       CaptureConfig       `yaml:"capture"`
@@ -90,6 +91,21 @@ type FactEngineConfig struct {
 // current world model. It may update internal world-model records directly,
 // but hands every external action to the strong M5 by creating a normal Task.
 type ProactiveConfig struct {
+	Enabled             bool   `yaml:"enabled"`
+	Schedule            string `yaml:"schedule"`
+	StartupDelaySeconds int    `yaml:"startup_delay_seconds"`
+	Bin                 string `yaml:"bin"`
+	Model               string `yaml:"model"`
+	Sandbox             string `yaml:"sandbox"`
+	ReasoningEffort     string `yaml:"reasoning_effort"`
+	TimeoutSeconds      int    `yaml:"timeout_seconds"`
+}
+
+// MeetingSweepConfig controls the cheap periodic meeting collector. It searches
+// recently ended Feishu meetings and delivers each as a clue for M3; it runs no
+// analysis and creates no Task itself, so it mirrors ProactiveConfig's runtime
+// shape without any world-model write access.
+type MeetingSweepConfig struct {
 	Enabled             bool   `yaml:"enabled"`
 	Schedule            string `yaml:"schedule"`
 	StartupDelaySeconds int    `yaml:"startup_delay_seconds"`
@@ -298,6 +314,9 @@ func (c *Config) validate() error {
 	if err := c.validateProactive(); err != nil {
 		return err
 	}
+	if err := c.validateMeetingSweep(); err != nil {
+		return err
+	}
 	if c.Extract.Schedule == "" {
 		return fmt.Errorf("extract.schedule 不能为空")
 	}
@@ -499,6 +518,7 @@ func (c *Config) validate() error {
 		{name: "factengine.schedule", spec: c.FactEngine.Schedule},
 		{name: "factengine.rollup_schedule", spec: c.FactEngine.RollupSchedule},
 		{name: "proactive.schedule", spec: c.Proactive.Schedule},
+		{name: "meeting_sweep.schedule", spec: c.MeetingSweep.Schedule},
 		{name: "extract.schedule", spec: c.Extract.Schedule},
 		{name: "capture.discover_schedule", spec: c.Capture.DiscoverSchedule},
 		{name: "capture.scan_schedule", spec: c.Capture.ScanSchedule},
@@ -537,6 +557,33 @@ func (c *Config) validateProactive() error {
 	}
 	if c.Proactive.TimeoutSeconds <= 0 {
 		return fmt.Errorf("proactive.timeout_seconds 必须大于 0")
+	}
+	return nil
+}
+
+// validateMeetingSweep validates every field even when the cron is disabled,
+// because -meeting-sweep-once remains available as an explicit one-shot action.
+func (c *Config) validateMeetingSweep() error {
+	if c.MeetingSweep.Schedule == "" {
+		return fmt.Errorf("meeting_sweep.schedule 不能为空")
+	}
+	if c.MeetingSweep.StartupDelaySeconds <= 0 {
+		return fmt.Errorf("meeting_sweep.startup_delay_seconds 必须大于 0")
+	}
+	if c.MeetingSweep.Bin == "" {
+		return fmt.Errorf("meeting_sweep.bin 不能为空")
+	}
+	if c.MeetingSweep.Model == "" {
+		return fmt.Errorf("meeting_sweep.model 不能为空")
+	}
+	if err := validateCodexSandbox("meeting_sweep.sandbox", c.MeetingSweep.Sandbox); err != nil {
+		return err
+	}
+	if err := validateReasoningEffort("meeting_sweep", c.MeetingSweep.ReasoningEffort); err != nil {
+		return err
+	}
+	if c.MeetingSweep.TimeoutSeconds <= 0 {
+		return fmt.Errorf("meeting_sweep.timeout_seconds 必须大于 0")
 	}
 	return nil
 }

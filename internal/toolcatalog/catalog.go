@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	StageExtract   = "extract"
-	StageExecute   = "execute"
-	StageChat      = "chat"
-	StageProactive = "proactive"
+	StageExtract      = "extract"
+	StageExecute      = "execute"
+	StageChat         = "chat"
+	StageProactive    = "proactive"
+	StageMeetingSweep = "meeting_sweep"
 )
 
 // Block returns the trusted tool catalog for one agent stage.
@@ -27,6 +28,8 @@ func Block(stage string) (string, error) {
 		purpose = "按用户请求查询或操作本机与外部系统。"
 	case StageProactive:
 		purpose = "定时审视全局，维护 Jarvis 内部世界模型，并把值得推进的外部工作创建成普通 Task 交给强 M5。"
+	case StageMeetingSweep:
+		purpose = "定时查找最近结束的飞书会议，把每场会作为一条线索投递给 M2/M3；只采集，不分析。"
 	default:
 		return "", fmt.Errorf("unknown tool catalog stage %q", stage)
 	}

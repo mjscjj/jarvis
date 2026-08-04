@@ -36,6 +36,15 @@ proactive:
   sandbox: "danger-full-access"
   reasoning_effort: "medium"
   timeout_seconds: 900
+meeting_sweep:
+  enabled: true
+  schedule: "@every 2h"
+  startup_delay_seconds: 150
+  bin: "traex"
+  model: "DeepSeek-V4-Flash"
+  sandbox: "danger-full-access"
+  reasoning_effort: "low"
+  timeout_seconds: 600
 model:
   base_url: "https://model.test/v1"
   api_key: "plain-key"

@@ -111,6 +111,20 @@ proactive:
   reasoning_effort: "medium"
   timeout_seconds: 900
 
+# 会议巡扫：便宜的定时线索采集器。会议不产生群消息，没人唤醒 M3，
+# 所以这个 agent 定期回看最近结束的飞书会议，把每场会作为一条 clue 投递
+# （feishu-meeting-clue Skill → jarvis-tools append-clue），clue 落库自动唤醒 M3。
+# 它只采集不分析：不拉妙记、不判录制、不写总结——那些是 M3/M5 的事。
+meeting_sweep:
+  enabled: true
+  schedule: "@every 2h"
+  startup_delay_seconds: 150
+  bin: "traex"
+  model: "DeepSeek-V4-Flash"
+  sandbox: "danger-full-access"
+  reasoning_effort: "low"
+  timeout_seconds: 600
+
 # M5 任务执行：独立于上面的 codex 段。这里用更强模型真正落地。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron。
 execute:
