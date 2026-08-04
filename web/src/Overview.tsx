@@ -13,10 +13,12 @@ import {
   getDebugAgentProcesses,
   getDebugFailures,
   getDigests,
+  getMorningBriefs,
   getOverview,
   listTasks,
 } from './api'
 import PageHeader from './components/PageHeader'
+import MorningBriefPanel from './components/MorningBriefPanel'
 import { usePageContext } from './pageContext'
 import { taskStatusMeta } from './status'
 import { proposalOf, strField } from './tasks/taskPresentation'
@@ -25,6 +27,7 @@ import type {
   DailyDigest,
   Digest,
   FailureEvent,
+  MorningBrief,
   Overview as OverviewData,
   Task,
   TaskList,
@@ -125,6 +128,7 @@ export default function Overview() {
   const [overview, setOverview] = useState<OverviewData>()
   const [digest, setDigest] = useState<Digest>()
   const [dailyItems, setDailyItems] = useState<DailyDigest[]>([])
+  const [morningBriefs, setMorningBriefs] = useState<MorningBrief[]>()
   const [attention, setAttention] = useState<TaskList>()
   const [active, setActive] = useState<TaskList>()
   const [results, setResults] = useState<TaskList>()
@@ -145,6 +149,7 @@ export default function Overview() {
         getOverview(controller.signal),
         getDigests(1, controller.signal),
         getDailyDigests(todayDate, controller.signal),
+        getMorningBriefs(14, controller.signal),
         listTasks(ATTENTION_STATUSES, 1, 5, controller.signal),
         listTasks(ACTIVE_STATUSES, 1, 5, controller.signal),
         listTasks(RESULT_STATUSES, 1, 16, controller.signal),
@@ -156,7 +161,7 @@ export default function Overview() {
       const recordIssue = (label: string, reason: unknown) => {
         if (!isAbortError(reason)) issues.push({ label, detail: errorText(reason) })
       }
-      const [overviewResult, digestResult, dailyResult, attentionResult, activeResult, resultResult, failureResult] = settled
+      const [overviewResult, digestResult, dailyResult, morningBriefResult, attentionResult, activeResult, resultResult, failureResult] = settled
 
       if (overviewResult.status === 'fulfilled') setOverview(overviewResult.value)
       else recordIssue('任务统计', overviewResult.reason)
@@ -166,6 +171,12 @@ export default function Overview() {
 
       if (dailyResult.status === 'fulfilled') setDailyItems(dailyResult.value.items)
       else recordIssue('总结状态', dailyResult.reason)
+
+      if (morningBriefResult.status === 'fulfilled') setMorningBriefs(morningBriefResult.value.items)
+      else {
+        setMorningBriefs(undefined)
+        recordIssue('晨间作战简报', morningBriefResult.reason)
+      }
 
       if (attentionResult.status === 'fulfilled') setAttention(attentionResult.value)
       else recordIssue('需要我处理', attentionResult.reason)
@@ -284,6 +295,8 @@ export default function Overview() {
       )}
 
       <main className="today-layout">
+        <MorningBriefPanel briefs={morningBriefs} loading={loading} today={todayDate} />
+
         <Card className="today-panel today-attention-panel" variant="borderless">
           <div className="today-panel-heading">
             <div>

@@ -569,6 +569,13 @@ export interface DailyDigestKickResult {
   trigger_type: 'manual'
 }
 
+// MorningBrief is the canonical Markdown artifact for one local day.
+export interface MorningBrief {
+  date: string
+  content: string
+  generated_at: string
+}
+
 // --- 进度页「今天的文档」「项目代码」两个 Tab ---
 
 // CommitMR 是我在某仓库的一条 MR（字节 protected-branch 走 MR，以 MR 为提交粒度）。
