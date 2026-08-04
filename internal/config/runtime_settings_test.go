@@ -45,6 +45,15 @@ meeting_sweep:
   sandbox: "danger-full-access"
   reasoning_effort: "low"
   timeout_seconds: 600
+morning_brief:
+  enabled: true
+  schedule: "30 8 * * 1-5"
+  startup_delay_seconds: 180
+  bin: "traex"
+  model: "gpt-5.6-sol"
+  sandbox: "danger-full-access"
+  reasoning_effort: "medium"
+  timeout_seconds: 600
 model:
   base_url: "https://model.test/v1"
   api_key: "plain-key"

@@ -15,6 +15,7 @@ import (
 	"jarvis/internal/api"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
+	"jarvis/internal/cardapproval"
 	"jarvis/internal/chat"
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
@@ -30,6 +31,7 @@ import (
 	"jarvis/internal/knowledge"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/meetingsweep"
+	"jarvis/internal/morningbrief"
 	"jarvis/internal/observability"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/proactive"
@@ -64,6 +66,8 @@ func main() {
 	extractOnce := flag.Bool("extract-once", false, "执行一次 Todo 提取，成功后退出")
 	proactiveOnce := flag.Bool("proactive-once", false, "立即执行一次主动巡视，成功后退出；写操作通过当前运行中的 Jarvis API 完成")
 	meetingSweepOnce := flag.Bool("meeting-sweep-once", false, "立即执行一次会议巡扫，成功后退出；线索通过当前运行中的 Jarvis API 投递")
+	morningBriefOnce := flag.Bool("morning-brief-once", false, "立即执行一次晨间作战简报，成功后退出；手动默认只写本地 Markdown，不投递飞书")
+	morningBriefDeliver := flag.Bool("morning-brief-deliver", false, "立即执行一次晨间作战简报并按定时语义投递给 Principal（当天已投递过则只更新文件），成功后退出")
 	seedOnce := flag.Bool("seed", false, "一次性幂等写入初始 项目/任务/群关联 背景种子，成功后退出")
 	seedPersons := flag.Bool("seed-persons", false, "从关键群真实成员导入 Person（幂等，按 open_id 跳过已存在），成功后退出")
 	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
@@ -336,6 +340,23 @@ func main() {
 	if err != nil {
 		fatalf("initialize meeting sweep worker failed: %v", err)
 	}
+	morningBriefRunner, err := execute.NewCodexRunner(
+		cfg.MorningBrief.Bin, cfg.MorningBrief.Model, cfg.MorningBrief.ReasoningEffort,
+		time.Duration(cfg.MorningBrief.TimeoutSeconds)*time.Second,
+	)
+	if err != nil {
+		fatalf("initialize morning brief runner failed: %v", err)
+	}
+	morningBriefWorker, err := morningbrief.NewWorker(morningbrief.Options{
+		Runner:        morningBriefRunner,
+		Prompts:       textFileService,
+		Sandbox:       cfg.MorningBrief.Sandbox,
+		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		Location:      location,
+	})
+	if err != nil {
+		fatalf("initialize morning brief worker failed: %v", err)
+	}
 	agentExecutor, err := execute.NewAgentExecutor(
 		taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
@@ -584,6 +605,18 @@ func main() {
 		infof("meeting sweep completed: %s", result)
 		return
 	}
+	if *morningBriefOnce || *morningBriefDeliver {
+		trigger := morningbrief.TriggerManual
+		if *morningBriefDeliver {
+			trigger = morningbrief.TriggerSchedule
+		}
+		result, err := morningBriefWorker.Run(startupCtx, trigger)
+		if err != nil {
+			fatalf("morning brief failed: %v", err)
+		}
+		infof("morning brief completed trigger=%s: %s", trigger, result)
+		return
+	}
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	defer cancelRuntime()
 
@@ -734,6 +767,7 @@ func main() {
 		stopFactRollup = func() { <-factRollupScheduler.Stop().Done() }
 	}
 	var messageEventConsumer *capture.MessageEventConsumer
+	var cardActionConsumer *capture.CardActionConsumer
 	if cfg.Capture.EventEnabled {
 		messageEventConsumer, err = capture.StartMessageEventConsumer(
 			runtimeCtx,
@@ -752,6 +786,36 @@ func main() {
 			<-messageEventConsumer.Done()
 			if err := messageEventConsumer.Err(); err != nil && runtimeCtx.Err() == nil {
 				fatalf("Feishu message event consumer stopped: %v", err)
+			}
+		}()
+	}
+	if cfg.CardApproval.Enabled {
+		// Approval callbacks use their own app/profile so enabling them never
+		// competes with the current CC Connect-owned Jarvis Bot connection.
+		cardHandler, err := cardapproval.NewHandler(
+			taskService, agentExecutor, larkClient, cfg.CardApproval.PrincipalOpenID, cfg.CardApproval.Profile,
+			log.New(os.Stderr, "card-approval ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			fatalf("build card approval handler failed: %v", err)
+		}
+		cardActionConsumer, err = capture.StartCardActionConsumer(
+			runtimeCtx,
+			cardHandler,
+			capture.CardActionConsumerOptions{
+				Bin:          cfg.LarkCLI.Bin,
+				Profile:      cfg.CardApproval.Profile,
+				ReadyTimeout: time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+			},
+			log.New(os.Stderr, "card-action-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			fatalf("start Feishu card action consumer failed: %v", err)
+		}
+		go func() {
+			<-cardActionConsumer.Done()
+			if err := cardActionConsumer.Err(); err != nil && runtimeCtx.Err() == nil {
+				fatalf("Feishu card action consumer stopped: %v", err)
 			}
 		}()
 	}
@@ -783,6 +847,21 @@ func main() {
 		}
 		stopMeetingSweep = meetingSweepScheduler.Stop
 	}
+	stopMorningBrief := func() {}
+	if cfg.MorningBrief.Enabled {
+		morningBriefScheduler, err := morningbrief.StartScheduler(
+			runtimeCtx,
+			morningBriefWorker,
+			cfg.MorningBrief.Schedule,
+			time.Duration(cfg.MorningBrief.StartupDelaySeconds)*time.Second,
+			location,
+			log.New(os.Stderr, "morning-brief-cron ", log.LstdFlags|log.Lmicroseconds),
+		)
+		if err != nil {
+			fatalf("start morning brief scheduler failed: %v", err)
+		}
+		stopMorningBrief = morningBriefScheduler.Stop
+	}
 	defer func() {
 		cancelRuntime()
 		if messageEventConsumer != nil {
@@ -792,6 +871,13 @@ func main() {
 				errorf("stop Feishu message event consumer failed: %v", err)
 			}
 		}
+		if cardActionConsumer != nil {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := cardActionConsumer.Stop(stopCtx); err != nil {
+				errorf("stop Feishu card action consumer failed: %v", err)
+			}
+		}
 		<-scheduler.Stop().Done()
 		stopDailyDigest()
 		stopScheduledTasks()
@@ -799,6 +885,7 @@ func main() {
 		stopFactRollup()
 		stopProactive()
 		stopMeetingSweep()
+		stopMorningBrief()
 		stopPipelineScheduler()
 		waitPipeline()
 	}()

@@ -42,3 +42,17 @@ func TestProactiveStageRequiresTaskHandoffForExternalWork(t *testing.T) {
 		}
 	}
 }
+
+func TestMorningBriefStageIsReadMostlyWithPrincipalDeliveryOnly(t *testing.T) {
+	block, err := Block(StageMorningBrief)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"晨间简报默认只读", "Principal 本人", "不得创建 Task", "本地 Markdown",
+	} {
+		if !strings.Contains(block, required) {
+			t.Fatalf("morning brief block missing %q:\n%s", required, block)
+		}
+	}
+}

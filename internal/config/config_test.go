@@ -52,6 +52,7 @@ func TestValidate(t *testing.T) {
 		FactEngine:    validFactEngineConfig(),
 		Proactive:     validProactiveConfig(),
 		MeetingSweep:  validMeetingSweepConfig(),
+		MorningBrief:  validMorningBriefConfig(),
 		Skills:        SkillsConfig{Root: ".agents/skills"},
 		Codex:         validCodexConfig(),
 		Execute:       validExecuteConfig(),
@@ -107,6 +108,14 @@ func TestValidate(t *testing.T) {
 		{name: "capture timezone", mutate: func(c *Config) { c.Capture.Timezone = "" }, wantErr: "capture.timezone"},
 		{name: "capture schedules", mutate: func(c *Config) { c.Capture.ScanSchedule = "" }, wantErr: "schedule"},
 		{name: "capture event profile", mutate: func(c *Config) { c.Capture.EventEnabled = true }, wantErr: "event_profile"},
+		{name: "card approval profile", mutate: func(c *Config) { c.CardApproval.Enabled = true }, wantErr: "card_approval"},
+		{name: "card approval external profile conflict", mutate: func(c *Config) {
+			c.Capture.EventProfile = "cli_cc_connect"
+			c.CardApproval = CardApprovalConfig{Enabled: true, Profile: "cli_cc_connect", PrincipalOpenID: "ou_owner"}
+		}, wantErr: "不能复用"},
+		{name: "card approval principal", mutate: func(c *Config) {
+			c.CardApproval = CardApprovalConfig{Enabled: true, Profile: "cli_approval"}
+		}, wantErr: "card_approval.enabled"},
 		{name: "codex binary", mutate: func(c *Config) { c.Codex.Bin = "" }, wantErr: "codex.bin"},
 		{name: "codex model", mutate: func(c *Config) { c.Codex.Model = "" }, wantErr: "codex.model"},
 		{name: "codex timeout", mutate: func(c *Config) { c.Codex.TimeoutSeconds = 0 }, wantErr: "codex.timeout_seconds"},
@@ -151,6 +160,13 @@ func TestValidate(t *testing.T) {
 		{name: "meeting sweep sandbox", mutate: func(c *Config) { c.MeetingSweep.Sandbox = "yolo" }, wantErr: "meeting_sweep.sandbox"},
 		{name: "meeting sweep reasoning", mutate: func(c *Config) { c.MeetingSweep.ReasoningEffort = "ultra" }, wantErr: "meeting_sweep.codex_reasoning_effort"},
 		{name: "meeting sweep timeout", mutate: func(c *Config) { c.MeetingSweep.TimeoutSeconds = 0 }, wantErr: "meeting_sweep.timeout_seconds"},
+		{name: "morning brief schedule", mutate: func(c *Config) { c.MorningBrief.Schedule = "" }, wantErr: "morning_brief.schedule"},
+		{name: "morning brief startup delay", mutate: func(c *Config) { c.MorningBrief.StartupDelaySeconds = 0 }, wantErr: "morning_brief.startup_delay_seconds"},
+		{name: "morning brief bin", mutate: func(c *Config) { c.MorningBrief.Bin = "" }, wantErr: "morning_brief.bin"},
+		{name: "morning brief model", mutate: func(c *Config) { c.MorningBrief.Model = "" }, wantErr: "morning_brief.model"},
+		{name: "morning brief sandbox", mutate: func(c *Config) { c.MorningBrief.Sandbox = "yolo" }, wantErr: "morning_brief.sandbox"},
+		{name: "morning brief reasoning", mutate: func(c *Config) { c.MorningBrief.ReasoningEffort = "ultra" }, wantErr: "morning_brief.codex_reasoning_effort"},
+		{name: "morning brief timeout", mutate: func(c *Config) { c.MorningBrief.TimeoutSeconds = 0 }, wantErr: "morning_brief.timeout_seconds"},
 		{name: "dailydigest schedule", mutate: func(c *Config) { c.DailyDigest.Schedule = "" }, wantErr: "dailydigest.schedule"},
 		{name: "dailydigest timeout", mutate: func(c *Config) { c.DailyDigest.TimeoutSeconds = 299 }, wantErr: "dailydigest.timeout_seconds"},
 		{name: "dailydigest group message limit", mutate: func(c *Config) { c.DailyDigest.GroupMessageLimit = 0 }, wantErr: "dailydigest.group_message_limit"},
@@ -211,6 +227,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 		FactEngine:    validFactEngineConfig(),
 		Proactive:     validProactiveConfig(),
 		MeetingSweep:  validMeetingSweepConfig(),
+		MorningBrief:  validMorningBriefConfig(),
 		Skills:        SkillsConfig{Root: ".agents/skills"},
 		Codex:         validCodexConfig(),
 		Execute:       validExecuteConfig(),
@@ -281,5 +298,13 @@ func validMeetingSweepConfig() MeetingSweepConfig {
 		Enabled: true, Schedule: "@every 2h", StartupDelaySeconds: 150,
 		Bin: "traex", Model: "DeepSeek-V4-Flash", Sandbox: "danger-full-access",
 		ReasoningEffort: "low", TimeoutSeconds: 600,
+	}
+}
+
+func validMorningBriefConfig() MorningBriefConfig {
+	return MorningBriefConfig{
+		Enabled: true, Schedule: "30 8 * * 1-5", StartupDelaySeconds: 180,
+		Bin: "traex", Model: "gpt-5.6-sol", Sandbox: "danger-full-access",
+		ReasoningEffort: "medium", TimeoutSeconds: 600,
 	}
 }

@@ -14,6 +14,7 @@ const (
 	StageChat         = "chat"
 	StageProactive    = "proactive"
 	StageMeetingSweep = "meeting_sweep"
+	StageMorningBrief = "morning_brief"
 )
 
 // Block returns the trusted tool catalog for one agent stage.
@@ -30,6 +31,8 @@ func Block(stage string) (string, error) {
 		purpose = "定时审视全局，维护 Jarvis 内部世界模型，并把值得推进的外部工作创建成普通 Task 交给强 M5。"
 	case StageMeetingSweep:
 		purpose = "定时查找最近结束的飞书会议，把每场会作为一条线索投递给 M2/M3；只采集，不分析。"
+	case StageMorningBrief:
+		purpose = "每个工作日开工前生成晨间作战简报：读世界状态与日历，选出最多三个今日结果，写本地 Markdown 并只给 Principal 本人发一条飞书私聊。"
 	default:
 		return "", fmt.Errorf("unknown tool catalog stage %q", stage)
 	}
@@ -56,6 +59,12 @@ func Block(stage string) (string, error) {
 		lines = append(lines,
 			"- 主动巡视发现需要对外推进的工作时，必须使用 `jarvis-tools create-task --payload ...` 创建普通 Task；不得直接执行外部动作。",
 			"- 主动巡视可以直接维护 Jarvis 内部世界模型，但不得修改 Todo/Task 状态来绕过 M5。",
+		)
+	}
+	if stage == StageMorningBrief {
+		lines = append(lines,
+			"- 晨间简报默认只读：可以查 Task/Todo/Fact/消息/日历/工程状态，并写本地 Markdown 证据与正式稿。",
+			"- 唯一预授权外部副作用：给 Principal 本人发送一条 Jarvis Bot 私聊晨报。不得给其他人/群发消息，不得创建 Task，不得改日历、代码或文档。",
 		)
 	}
 	lines = append(lines, "END_AVAILABLE_TOOLS")

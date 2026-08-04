@@ -88,6 +88,25 @@ feishu-event-cron ... job=consume status=ok state=ready
 
 消息事件落库日志包含 `message_id/chat_id/inserted/related`；连接进程意外退出会记录 `status=error` 并让主服务退出，由 launchd 重启，而 2 分钟消息扫描继续承担恢复补偿。
 
+飞书卡片内审批使用独立配置，不复用消息采集的事件开关：
+
+```yaml
+card_approval:
+  enabled: true
+  profile: "cli_xxx"
+  principal_open_id: "ou_xxx"
+```
+
+启用后，`jarvis-server` 会启动 `card.action.trigger` 常驻消费者：委托人在审批卡片上点"同意/拒绝"，飞书经长连接把点击推回来，服务端直接落地既有 approve/reject 并回写卡片，人不用跳浏览器。`card_approval.profile` 必须属于一个未被 CC Connect/OpenClaw 占用的独立飞书 app；`principal_open_id` 必须是该独立 app 视角下的 Principal open_id（open_id 按 app 隔离）。发审批卡片时也必须显式使用这两个值。这样当前 Jarvis Bot 的 CC Connect 链路不需要改，也不会被抢连接。
+
+启用前还必须在独立 app 的开发者后台完成三件事：开启机器人并把 Principal 放进可用范围、授予发送/读取消息所需权限、在「事件与回调 → 回调配置」中启用回调。缺少最后一步时 consumer 仍能显示 ready，但飞书不会推送按钮事件。就绪日志：
+
+```text
+card-action-cron ... job=card-action status=ok state=ready
+```
+
+回调落地日志前缀为 `job=card-action`（连接层）和 `job=card-approval`（approve/reject 落地层）；只有 Principal 本人的独立按钮点击会进入审批，版本冲突/状态已变会记为 `skipped=already-handled` 并把卡片指回后台，不算失败。默认配置为 `enabled: false`，因此在独立 app 准备好以前不会影响当前 CC Connect。
+
 ## 故障恢复
 
 若主服务已注册但 API 不可达：

@@ -21,9 +21,11 @@ type Config struct {
 	FactEngine    FactEngineConfig    `yaml:"factengine"`
 	Proactive     ProactiveConfig     `yaml:"proactive"`
 	MeetingSweep  MeetingSweepConfig  `yaml:"meeting_sweep"`
+	MorningBrief  MorningBriefConfig  `yaml:"morning_brief"`
 	Extract       ExtractConfig       `yaml:"extract"`
 	LarkCLI       LarkCLIConfig       `yaml:"lark_cli"`
 	Capture       CaptureConfig       `yaml:"capture"`
+	CardApproval  CardApprovalConfig  `yaml:"card_approval"`
 	Codex         CodexConfig         `yaml:"codex"`
 	Execute       ExecuteConfig       `yaml:"execute"`
 	Chat          ChatConfig          `yaml:"chat"`
@@ -116,6 +118,21 @@ type MeetingSweepConfig struct {
 	TimeoutSeconds      int    `yaml:"timeout_seconds"`
 }
 
+// MorningBriefConfig controls the weekday morning planning brief. The agent is
+// Skill-driven and write-mostly to local Markdown; its only pre-authorized
+// external side effect is one Feishu DM to the principal. Runtime shape matches
+// MeetingSweepConfig so -morning-brief-once remains available when cron is off.
+type MorningBriefConfig struct {
+	Enabled             bool   `yaml:"enabled"`
+	Schedule            string `yaml:"schedule"`
+	StartupDelaySeconds int    `yaml:"startup_delay_seconds"`
+	Bin                 string `yaml:"bin"`
+	Model               string `yaml:"model"`
+	Sandbox             string `yaml:"sandbox"`
+	ReasoningEffort     string `yaml:"reasoning_effort"`
+	TimeoutSeconds      int    `yaml:"timeout_seconds"`
+}
+
 // ExtractConfig controls the M3 extraction worker. Disabled is an explicit
 // deployment state; once enabled every required dependency is validated.
 type ExtractConfig struct {
@@ -197,6 +214,16 @@ type CaptureConfig struct {
 	// AutoRelatedP2PTopN：discover 时按 active_time 自动纳入监听的内部真人私聊
 	// 上限。只开最活跃的前 N 个，僵尸老私聊与服务号私聊不开。
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
+}
+
+// CardApprovalConfig owns the Feishu app connection used only for interactive
+// approval-card callbacks. Keeping it separate from Capture lets CC Connect
+// continue owning the current Jarvis Bot while a dedicated app handles
+// card.action.trigger.
+type CardApprovalConfig struct {
+	Enabled         bool   `yaml:"enabled"`
+	Profile         string `yaml:"profile"`
+	PrincipalOpenID string `yaml:"principal_open_id"`
 }
 
 // CodexConfig controls the agent CLI used by M3 extraction.
@@ -317,6 +344,9 @@ func (c *Config) validate() error {
 	if err := c.validateMeetingSweep(); err != nil {
 		return err
 	}
+	if err := c.validateMorningBrief(); err != nil {
+		return err
+	}
 	if c.Extract.Schedule == "" {
 		return fmt.Errorf("extract.schedule 不能为空")
 	}
@@ -427,6 +457,15 @@ func (c *Config) validate() error {
 	if c.Capture.EventEnabled && c.Capture.EventProfile == "" {
 		return fmt.Errorf("capture.event_enabled=true 时 event_profile 不能为空")
 	}
+	if c.CardApproval.Enabled && c.CardApproval.Profile == "" {
+		return fmt.Errorf("card_approval.enabled=true 时 profile 不能为空")
+	}
+	if c.CardApproval.Enabled && !c.Capture.EventEnabled && c.CardApproval.Profile == c.Capture.EventProfile {
+		return fmt.Errorf("card_approval.profile 不能复用由外部连接占用的 capture.event_profile")
+	}
+	if c.CardApproval.Enabled && c.CardApproval.PrincipalOpenID == "" {
+		return fmt.Errorf("card_approval.enabled=true 时 principal_open_id 不能为空")
+	}
 	if c.Capture.AutoRelatedP2PTopN < 0 {
 		return fmt.Errorf("capture.auto_related_p2p_top_n 不能为负数")
 	}
@@ -519,6 +558,7 @@ func (c *Config) validate() error {
 		{name: "factengine.rollup_schedule", spec: c.FactEngine.RollupSchedule},
 		{name: "proactive.schedule", spec: c.Proactive.Schedule},
 		{name: "meeting_sweep.schedule", spec: c.MeetingSweep.Schedule},
+		{name: "morning_brief.schedule", spec: c.MorningBrief.Schedule},
 		{name: "extract.schedule", spec: c.Extract.Schedule},
 		{name: "capture.discover_schedule", spec: c.Capture.DiscoverSchedule},
 		{name: "capture.scan_schedule", spec: c.Capture.ScanSchedule},
@@ -584,6 +624,33 @@ func (c *Config) validateMeetingSweep() error {
 	}
 	if c.MeetingSweep.TimeoutSeconds <= 0 {
 		return fmt.Errorf("meeting_sweep.timeout_seconds 必须大于 0")
+	}
+	return nil
+}
+
+// validateMorningBrief validates every field even when the cron is disabled,
+// because -morning-brief-once remains available as an explicit one-shot action.
+func (c *Config) validateMorningBrief() error {
+	if c.MorningBrief.Schedule == "" {
+		return fmt.Errorf("morning_brief.schedule 不能为空")
+	}
+	if c.MorningBrief.StartupDelaySeconds <= 0 {
+		return fmt.Errorf("morning_brief.startup_delay_seconds 必须大于 0")
+	}
+	if c.MorningBrief.Bin == "" {
+		return fmt.Errorf("morning_brief.bin 不能为空")
+	}
+	if c.MorningBrief.Model == "" {
+		return fmt.Errorf("morning_brief.model 不能为空")
+	}
+	if err := validateCodexSandbox("morning_brief.sandbox", c.MorningBrief.Sandbox); err != nil {
+		return err
+	}
+	if err := validateReasoningEffort("morning_brief", c.MorningBrief.ReasoningEffort); err != nil {
+		return err
+	}
+	if c.MorningBrief.TimeoutSeconds <= 0 {
+		return fmt.Errorf("morning_brief.timeout_seconds 必须大于 0")
 	}
 	return nil
 }

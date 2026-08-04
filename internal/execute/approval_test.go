@@ -320,6 +320,21 @@ func TestRunResultPayloadTagsStage(t *testing.T) {
 	}
 }
 
+func TestProposalPayloadCarriesSourceRunID(t *testing.T) {
+	run := &domain.ExecutionRun{ID: 135, ActionType: "summary_post"}
+	result := &codexResult{
+		NeedsApproval: true,
+		Summary:       "等待审批",
+		Proposal: &codexProposal{
+			Action: "发消息", Target: "群聊", Artifact: "正文",
+		},
+	}
+	payload := proposalPayload(run, result)
+	if payload["stage"] != "proposal" || payload["source_run_id"] != uint64(135) {
+		t.Fatalf("proposalPayload() = %#v", payload)
+	}
+}
+
 var errTest = errors.New("group not found")
 
 // TestResumePromptsRequireApprovalPolicy pins the fix for resumed sessions being

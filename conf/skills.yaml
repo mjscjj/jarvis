@@ -12,6 +12,10 @@ skills:
       stages:
         - extract
         - execute
+    - name: summarize-morning-brief
+      enabled: true
+      stages:
+        - execute
     - name: summarize-person-day
       enabled: true
       stages:

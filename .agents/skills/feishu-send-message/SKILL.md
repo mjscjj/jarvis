@@ -32,13 +32,18 @@ lark-cli im +messages-send \
 
 ### 请我拍板：发审批卡片
 
-当你判断某个动作要先请我批准（依据见 `conf/prompts/m5-approval-policy.md`），别发纯文字，发一张带跳转按钮的交互卡片，我扫一眼就知道是什么事、点按钮就能去后台处理。
+当你判断某个动作要先请我批准（依据见 `conf/prompts/m5-approval-policy.md`），别发纯文字，发一张交互卡片，我扫一眼就知道是什么事。卡片正文永远用大白话讲清三件事：**要做什么**、**会产生什么影响**、**你的判断**。
 
-卡片正文用大白话讲清三件事：**要做什么**、**会产生什么影响**、**你的判断**；底部一个按钮跳到后台 `http://127.0.0.1:18800/`（进去就能看到「任务 → 审批中」）。
+按钮分两档，由你按动作的具体后果判断该给哪一档——**跟动作类型无关，只看这次改了什么**。但 callback 还有一个硬前提：`conf/config.yaml` 的 `card_approval.enabled=true`，且 `profile`、`principal_open_id` 都非空。没启用就只能发「查看详情」链接卡，不能发点了没反应的同意/拒绝按钮。
+
+- **callback 已启用，且动作简单、低风险、后果一句话说得清**（回个"收到"、改个注释、跑个只读查询…）→ 给 `[同意]` `[拒绝]` `[查看详情]` 三个按钮。我在飞书里点一下就直接落地，不用进后台。同意/拒绝是 callback 按钮，`value` 里带 `action` 和本任务的 `task_id`。
+- **高风险、对外承诺、删改线上、或后果说不清** → 只给 `[查看详情]` 一个跳转按钮，让我进后台看全貌再定，别让我在卡片上盲点。
+
+**带同意/拒绝的卡片**（简单动作）：
 
 ```bash
-lark-cli im +messages-send \
-  --user-id "<principal open_id>" \
+lark-cli --profile "<card_approval.profile>" im +messages-send \
+  --user-id "<card_approval.principal_open_id>" \
   --msg-type interactive \
   --content '{
   "schema": "2.0",
@@ -57,12 +62,52 @@ lark-cli im +messages-send \
         "content": "**要做的事**\n<具体要执行的动作，说人话>\n\n**会产生的影响**\n<对外/对线上会发生什么，能不能回滚>\n\n**我的判断**\n<为什么要先问你>"
       },
       {
-        "tag": "button",
-        "text": { "tag": "plain_text", "content": "去后台处理" },
-        "type": "primary_filled",
-        "width": "fill",
-        "behaviors": [
-          { "type": "open_url", "default_url": "http://127.0.0.1:18800/", "pc_url": "", "ios_url": "", "android_url": "" }
+        "tag": "column_set",
+        "flex_mode": "flow",
+        "horizontal_spacing": "medium",
+        "columns": [
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "elements": [{
+              "tag": "button",
+              "text": { "tag": "plain_text", "content": "同意" },
+              "type": "primary_filled",
+              "width": "fill",
+              "behaviors": [
+                { "type": "callback", "value": { "action": "approve", "task_id": <task_id> } }
+              ]
+            }]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "elements": [{
+              "tag": "button",
+              "text": { "tag": "plain_text", "content": "拒绝" },
+              "type": "danger",
+              "width": "fill",
+              "behaviors": [
+                { "type": "callback", "value": { "action": "reject", "task_id": <task_id> } }
+              ]
+            }]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "elements": [{
+              "tag": "button",
+              "text": { "tag": "plain_text", "content": "查看详情" },
+              "type": "default",
+              "width": "fill",
+              "behaviors": [
+                { "type": "open_url", "default_url": "http://127.0.0.1:18800/", "pc_url": "", "ios_url": "", "android_url": "" }
+              ]
+            }]
+          }
         ]
       }
     ]
@@ -71,7 +116,9 @@ lark-cli im +messages-send \
   --as bot
 ```
 
-按钮只是本地跳转打开后台，不回调服务端——批准/驳回在后台点，服务端照常走 `/api/tasks/:task_id/approve|reject`。卡片发送连续失败就退回 `--markdown` 纯文字通知，别卡在这。
+**只给查看详情的卡片**（高风险/说不清）：去掉上面两个 callback 按钮，只留最后那个 `[查看详情]` 的 open_url 按钮（`type` 设 `primary_filled`、加 `"width": "fill"` 撑满成强焦点）。若 `card_approval.enabled=true`，继续用独立 `profile` 和该 app 的 `principal_open_id` 发送；若 callback 未启用，按本 Skill 前面的普通 principal 私聊路径发送（不加 `--profile`，使用 `jarvis-tools get-principal` 返回的原 Jarvis Bot open_id）。
+
+`task_id` 必须填成本任务真实的数字 ID；`<card_approval.profile>` 和 `<card_approval.principal_open_id>` 必须逐字使用配置值，不能省略，也不能换成旧 app 的值。飞书 open_id 按 app 隔离，旧 Jarvis Bot 视角下的 principal open_id 不能用于独立审批 app。发卡片和消费 callback 必须是同一个 app。发送成功后，从 lark-cli 原始返回中取真实 `message_id`，在本轮 `effects[]` 的 `feishu_message.extra` 里原样记录 `{"message_id":"om_..."}`；服务端用它把点击绑定到当前 proposal，不能遗漏或编造。同意/拒绝的 callback 由 jarvis-server 直接落地（点一下就走已有的 approve/reject），并把卡片就地更新成「已同意/已驳回」——你不用再管后续，也不要自己再去调审批接口。`[查看详情]` 是纯本地跳转，不回调。卡片连续发送失败就退回 `--markdown` 纯文字通知（正文照样讲清三件事 + 后台入口），别卡在这。
 
 ## 给个人发消息
 

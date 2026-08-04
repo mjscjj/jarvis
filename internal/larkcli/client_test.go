@@ -2,6 +2,7 @@ package larkcli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -162,6 +163,40 @@ func TestRunRejectsCallerFormat(t *testing.T) {
 	}
 }
 
+func TestUpdateCardUsesConfiguredProfile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	script := `printf '%s\n' "$@" > ` + shellQuote(argsPath) + `
+printf '%s' '{"ok":true}'`
+	client, err := New(Options{
+		Bin: writeScript(t, script), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	card := json.RawMessage(`{"schema":"2.0","body":{"elements":[]}}`)
+	if err := client.UpdateCard(context.Background(), "cli_approval", "token_1", card); err != nil {
+		t.Fatalf("UpdateCard() error = %v", err)
+	}
+	raw, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read args: %v", err)
+	}
+	got := string(raw)
+	for _, want := range []string{
+		"--profile\ncli_approval\n",
+		"api\nPOST\n/open-apis/interactive/v1/card/update\n",
+		"--as\nbot\n",
+		`"token":"token_1"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("UpdateCard args missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func writeScript(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "fake-lark-cli")
@@ -170,4 +205,8 @@ func writeScript(t *testing.T, body string) string {
 		t.Fatalf("write fake lark-cli: %v", err)
 	}
 	return path
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

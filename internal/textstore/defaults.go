@@ -11,6 +11,10 @@ const (
 	// searches recently ended Feishu meetings and delivers each as a clue for
 	// M3, performing no analysis of its own.
 	SystemPromptMeetingSweepKey = "meeting_sweep_system_prompt"
+	// SystemPromptMorningBriefKey drives the daily morning planning brief: a
+	// read-mostly Skill agent that writes a short Feishu start-of-day plan and
+	// a local Markdown full brief. It does not create Tasks.
+	SystemPromptMorningBriefKey = "morning_brief_system_prompt"
 	ApprovalPolicyKey           = "m5_approval_policy"
 	// SystemPromptFactExtractKey drives the offline fact engine, which distils
 	// long-lived facts out of material the pipeline already produced.
@@ -32,6 +36,7 @@ func definitions() []definition {
 		{key: SystemPromptM5Key, name: "M5 执行系统提示词", filename: "m5-system-prompt.md"},
 		{key: SystemPromptProactiveKey, name: "主动巡视系统提示词", filename: "proactive-system-prompt.md"},
 		{key: SystemPromptMeetingSweepKey, name: "会议巡扫系统提示词", filename: "meeting-sweep-system-prompt.md"},
+		{key: SystemPromptMorningBriefKey, name: "晨间作战简报系统提示词", filename: "morning-brief-system-prompt.md"},
 		{key: ApprovalPolicyKey, name: "M5 审批策略", filename: "m5-approval-policy.md"},
 		{key: SystemPromptFactExtractKey, name: "离线事实抽取提示词", filename: "fact-extract-system-prompt.md"},
 		{key: SystemPromptFactRollupKey, name: "事实日压缩提示词", filename: "fact-rollup-system-prompt.md"},

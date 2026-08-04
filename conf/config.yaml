@@ -92,6 +92,14 @@ capture:
   # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
+
+# 飞书卡片内审批回调。必须使用一个未被 CC Connect/OpenClaw 占用的独立 app；
+# 发审批卡片和消费 card.action.trigger 都必须显式使用同一个 profile。
+card_approval:
+  enabled: false
+  profile: ""
+  principal_open_id: ""  # 该独立 app 视角下的 Principal open_id（open_id 按 app 隔离）
+
 # 底层 agent CLI：仅供 extract(M3) 使用。
 # 与 execute/chat 独立——真正跑 Task 与右侧对话用 execute.bin/model。
 codex:
@@ -123,6 +131,19 @@ meeting_sweep:
   model: "DeepSeek-V4-Flash"
   sandbox: "danger-full-access"
   reasoning_effort: "low"
+  timeout_seconds: 600
+
+# 晨间作战简报：工作日开工前一次。Skill 自带取证/取舍/投递判断；Go 只做调度与
+# 产物新鲜度检查。默认只读，唯一预授权副作用是给 Principal 本人发一条飞书私聊。
+# 手动触发：go run ./cmd/jarvis-server -config conf/config.yaml -morning-brief-once
+morning_brief:
+  enabled: false             # 先手动 -morning-brief-once 验收；通过后再改 true
+  schedule: "30 8 * * 1-5"   # 周一至周五 08:30（Asia/Shanghai）
+  startup_delay_seconds: 180
+  bin: "traex"
+  model: "gpt-5.6-sol"       # 与 execute 同级；一天一次，取舍质量优先
+  sandbox: "danger-full-access"
+  reasoning_effort: "medium"
   timeout_seconds: 600
 
 # M5 任务执行：独立于上面的 codex 段。这里用更强模型真正落地。

@@ -47,6 +47,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | M5 执行 | 调查、执行、审批、等待/续跑、人工回复、结果留痕 | `internal/execute/` |
 | 事实引擎 | 在关键路径外从 `message`、Todo、Task 通用蒸馏长期事实 | `internal/factengine/` |
 | 主动巡视 | 周期整理内部世界模型、看护未闭环工作、为外部行动创建普通 Task | `internal/proactive/` |
+| 晨间简报 | 工作日开工对齐：Skill 取证写稿，定时/手动触发，产物在本地 Markdown | `internal/morningbrief/` |
 | 定时任务 | 周期/单次 Task，以及等待 Session 的未来唤醒 | `internal/scheduledtask/`, `internal/taskcreate/` |
 | 实时协调 | 按持久化 ID/version 推进 M3→M5，cron 负责补偿 | `internal/pipeline/` |
 | 背景事实 | 自然语言 Fact、实体间自然语言 RelationFact | `internal/progress/`, `internal/knowledge/` |

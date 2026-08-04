@@ -1201,9 +1201,10 @@ func resultHasStage(raw []byte, stage string) bool {
 // artifact so the human reviews exactly what will be written.
 func proposalPayload(run *domain.ExecutionRun, result *codexResult) map[string]any {
 	payload := map[string]any{
-		"stage":       "proposal",
-		"action_type": run.ActionType,
-		"summary":     result.Summary,
+		"stage":         "proposal",
+		"action_type":   run.ActionType,
+		"source_run_id": run.ID,
+		"summary":       result.Summary,
 		"proposal": map[string]any{
 			"action":   result.Proposal.Action,
 			"target":   result.Proposal.Target,
