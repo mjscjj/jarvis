@@ -1,0 +1,217 @@
+.workbench-task-table .ant-table-cell {
+  overflow: hidden;
+}
+
+.workbench-task-table .ant-table-tbody > tr > td {
+  padding-block: 16px;
+  vertical-align: middle;
+}
+
+.workbench-task-main {
+  min-width: 0;
+}
+
+.workbench-task-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workbench-task-title {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-task-title-row .ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.workbench-task-conclusion {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+.workbench-task-conclusion > span {
+  flex: 0 0 auto;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workbench-task-conclusion > .ant-typography {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-task-origin {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-task-updated {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.task-workbench-drawer .ant-drawer-header {
+  padding: 16px 24px;
+}
+
+.task-workbench-drawer .ant-drawer-body {
+  padding: 0;
+  background: var(--color-bg);
+}
+
+.task-workbench-drawer .task-detail-shell {
+  height: auto;
+  min-height: 100%;
+}
+
+.task-workbench-drawer .task-detail-header {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+}
+
+.task-workbench-drawer .task-detail-scroll {
+  overflow: visible;
+}
+
+.task-decision-card {
+  padding: 22px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, var(--color-border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-warning-bg) 72%, var(--color-bg-elevated));
+}
+
+.task-decision-card .task-primary-summary.ant-typography {
+  margin-bottom: 16px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.task-decision-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.task-decision-heading .task-section-kicker {
+  margin-bottom: 0;
+}
+
+.task-decision-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.task-decision-fact {
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+}
+
+.task-decision-fact > .ant-typography:first-child {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.task-decision-fact > .ant-typography:last-child {
+  white-space: pre-wrap;
+}
+
+.task-decision-side-effect {
+  margin-top: 10px;
+}
+
+.task-decision-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.task-developer-collapse {
+  margin-top: 20px;
+  border-color: var(--color-border);
+  background: var(--color-bg-elevated);
+}
+
+.task-developer-collapse .ant-collapse-header-text {
+  font-weight: 600;
+}
+
+.task-process-panel {
+  min-height: 360px;
+}
+
+.task-process-back {
+  margin-bottom: 12px;
+}
+
+.task-detail-main-grid.task-detail-main-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.task-detail-main-single .task-primary-card {
+  padding: 22px;
+}
+
+.task-secondary-meta {
+  margin-top: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.task-secondary-meta .task-meta-card {
+  position: static;
+}
+
+@media (max-width: 900px) {
+  .workbench-task-table col:nth-child(2),
+  .workbench-task-table th:nth-child(2),
+  .workbench-task-table td:nth-child(2) {
+    display: none;
+  }
+
+  .task-decision-facts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .workbench-task-table col:nth-child(3),
+  .workbench-task-table th:nth-child(3),
+  .workbench-task-table td:nth-child(3) {
+    display: none;
+  }
+
+  .task-workbench-drawer {
+    width: 100% !important;
+  }
+
+  .task-workbench-drawer .task-detail-scroll {
+    padding: 16px;
+  }
+}

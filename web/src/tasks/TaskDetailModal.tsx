@@ -3,9 +3,10 @@ import type { ReactNode } from 'react'
 import {
   Alert,
   Button,
+  Collapse,
   Descriptions,
+  Drawer,
   Empty,
-  Modal,
   Space,
   Spin,
   Tabs,
@@ -39,7 +40,10 @@ import {
   failureKindOf,
   failureMeta,
   proposalOf,
+  proposalArtifactLabel,
   strField,
+  taskProjectName,
+  taskSourceName,
 } from './taskPresentation'
 
 const { Link, Paragraph, Text, Title } = Typography
@@ -406,9 +410,9 @@ function StructuredCodexOutput({ stdout }: { stdout: string }) {
                   {!isThought && input && <Text type="secondary">{oneLineSummary(input)}</Text>}
                 </div>
                 <Space size={4}>
-                  <Tag bordered={false} color={status.color}>{status.label}</Tag>
+                  <Tag variant="filled" color={status.color}>{status.label}</Tag>
                   {exitCode != null && (
-                    <Tag bordered={false} color={exitCode === 0 ? 'success' : 'error'}>
+                    <Tag variant="filled" color={exitCode === 0 ? 'success' : 'error'}>
                       code {printableValue(exitCode)}
                     </Tag>
                   )}
@@ -456,21 +460,19 @@ function StructuredCodexOutput({ stdout }: { stdout: string }) {
   )
 }
 
-function TaskRunOutputModal({
+function TaskRunOutputPanel({
   taskID,
-  open,
-  onClose,
+  active,
 }: {
   taskID: number
-  open: boolean
-  onClose: () => void
+  active: boolean
 }) {
   const [output, setOutput] = useState<TaskRunOutput>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
 
   useEffect(() => {
-    if (!open) {
+    if (!active) {
       setOutput(undefined)
       setError(undefined)
       return
@@ -501,7 +503,7 @@ function TaskRunOutputModal({
       controller.abort()
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [open, taskID])
+  }, [active, taskID])
 
   const outputTabs = [
     {
@@ -526,22 +528,16 @@ function TaskRunOutputModal({
     },
   ]
 
+  if (!active) return null
+
   return (
-    <Modal
-      open={open}
-      width={1120}
-      footer={null}
-      title="Task 执行过程"
-      onCancel={onClose}
-      destroyOnHidden
-      className="task-output-modal"
-    >
+    <section className="task-process-panel">
       {loading && !output ? (
         <div className="task-detail-loading"><Spin /></div>
       ) : error ? (
         <Alert type="error" showIcon title="执行过程加载失败" description={error} />
       ) : !output?.available ? (
-        <Empty description={output?.running ? 'Codex 正在准备输入，输出文件尚未建立。' : '这个 Task 暂无 Codex 输出记录。'} />
+        <Empty description={output?.running ? '执行器正在准备输入，输出文件尚未建立。' : '这个 Task 暂无执行输出记录。'} />
       ) : (
         <>
           <Space wrap className="task-output-meta">
@@ -553,7 +549,7 @@ function TaskRunOutputModal({
           <Tabs items={outputTabs} />
         </>
       )}
-    </Modal>
+    </section>
   )
 }
 
@@ -866,20 +862,38 @@ function PromptPanel({
   )
 }
 
-function ProposalContent({ task }: { task: Task }) {
+function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) {
   const result = proposalOf(task)
   if (!result) return null
   const { proposal } = result
   return (
-    <div className="task-primary-card task-proposal-card">
-      <div className="task-section-kicker">待审批产物</div>
-      {result.summary && <Paragraph className="task-readable-text task-primary-summary">{result.summary}</Paragraph>}
-      <div className="task-proposal-target">
-        <div><Text type="secondary">将执行</Text><Paragraph>{proposal.action}</Paragraph></div>
-        <div><Text type="secondary">操作目标</Text><Paragraph>{proposal.target}</Paragraph></div>
+    <div className="task-decision-card">
+      <div className="task-decision-heading">
+        <div className="task-section-kicker">需要你决定</div>
+        <Space wrap>{actions}</Space>
       </div>
+      <Paragraph className="task-readable-text task-primary-summary">
+        {result.summary || 'Agent 已准备好下面的动作；批准后才会真正落地。'}
+      </Paragraph>
+      <div className="task-decision-facts">
+        <div className="task-decision-fact">
+          <Text type="secondary">推荐动作</Text>
+          <Text>{proposal.action}</Text>
+        </div>
+        <div className="task-decision-fact">
+          <Text type="secondary">操作对象</Text>
+          <Text>{proposal.target}</Text>
+        </div>
+      </div>
+      <Alert
+        className="task-decision-side-effect"
+        type="warning"
+        showIcon
+        title="外部副作用"
+        description="当前尚未发生外部写入。批准后，Jarvis 将对上述对象执行真实写入或发送。"
+      />
       <div className="task-artifact">
-        <div className="task-artifact-title">完整产出物</div>
+        <div className="task-artifact-title">{proposalArtifactLabel(task)}</div>
         <div className="task-artifact-body">{proposal.artifact}</div>
       </div>
       {result.enrichments && result.enrichments.length > 0 && (
@@ -888,46 +902,34 @@ function ProposalContent({ task }: { task: Task }) {
         </div>
       )}
       {result.needs_followup?.trim() && (
-        <Alert type="info" showIcon title="批准后的动作" description={result.needs_followup} />
+        <Alert type="info" showIcon title="批准后" description={result.needs_followup} />
       )}
     </div>
   )
 }
 
-function ResultContent({ task }: { task: Task }) {
+function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
   const result = task.execution_result
-  const summary = strField(result, 'summary')
+  const summary = task.summary?.trim() || strField(result, 'summary')
   const error = strField(result, 'error')
   const rejectReason = strField(result, 'reject_reason')
   const followup = strField(result, 'needs_followup')
   const enrichments = enrichmentItems(result?.enrichments)
+  const stateCopy = taskStateCopy(task)
 
-  if (task.status === 'pending' || task.status === 'executing' || task.status === 'waiting' || task.status === 'needs_human') {
-    const waiting = task.status === 'waiting'
-      && task.execution_result?.waiting
-      && typeof task.execution_result.waiting === 'object'
-      ? task.execution_result.waiting as Record<string, unknown>
-      : null
-    return (
-      <div className="task-primary-card">
-        <div className="task-section-kicker">
-          {task.status === 'pending' ? '任务目标' : task.status === 'waiting' ? '等待唤醒' : task.status === 'needs_human' ? '等待我的回应' : '正在执行'}
-        </div>
-        <Paragraph className="task-readable-text task-primary-summary">
-          {task.status === 'waiting'
-            ? `${String(waiting?.reason || summary || '正在等待外部条件')} · ${String(waiting?.wake_at || '唤醒时间待定')}`
-            : task.status === 'needs_human'
-              ? summary || 'Codex 已暂停当前 Session，等待你的回应。'
-              : task.target || task.title}
-        </Paragraph>
-        {task.status === 'needs_human' && followup && <Alert type="warning" showIcon title="需要你回应" description={followup} />}
-      </div>
-    )
-  }
+  const sectionTitle = (() => {
+    if (task.status === 'pending') return '下一步'
+    if (task.status === 'executing') return '正在推进'
+    if (task.status === 'waiting') return '等待中'
+    if (task.status === 'needs_human') return '需要你回复'
+    if (task.status === 'done') return '完成结果'
+    if (task.status === 'observing') return '调查结论'
+    return '异常原因'
+  })()
 
   return (
     <div className="task-primary-card">
-      <div className="task-section-kicker">{task.status === 'done' ? '执行结果' : '失败结论'}</div>
+      <div className="task-section-kicker">{sectionTitle}</div>
       {task.status === 'failed' && (
         <Alert
           type={failureKindOf(task) === 'rejected' || failureKindOf(task) === 'manual' || failureKindOf(task) === 'interrupted' ? 'warning' : 'error'}
@@ -936,35 +938,49 @@ function ResultContent({ task }: { task: Task }) {
           description={rejectReason || error || summary || '任务没有记录失败详情。'}
         />
       )}
-      {task.status === 'done' && (
-        <Paragraph className="task-readable-text task-primary-summary">{summary || '任务已完成。'}</Paragraph>
+      {task.status !== 'failed' && (
+        <Paragraph className="task-readable-text task-primary-summary">{stateCopy.current}</Paragraph>
+      )}
+      {task.status === 'needs_human' ? (
+        <Alert type="warning" showIcon title="Agent 的问题" description={followup || stateCopy.next} />
+      ) : (
+        <Text type="secondary"><strong>接下来：</strong>{stateCopy.next}</Text>
       )}
       {enrichments.length > 0 && (
         <div className="task-enrichment-list">
           {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
         </div>
       )}
-      {followup && <Alert type="info" showIcon title="后续事项" description={followup} />}
+      {followup && task.status !== 'needs_human' && task.status !== 'done' && (
+        <Alert type="info" showIcon title="后续事项" description={followup} />
+      )}
+      <Space className="task-decision-actions" wrap>{actions}</Space>
     </div>
   )
 }
 
 function taskStateCopy(task: Task): { current: string; next: string } {
   const result = task.execution_result
-  const summary = strField(result, 'summary')
+  const summary = task.summary?.trim() || strField(result, 'summary')
   const followup = strField(result, 'needs_followup')
   const error = strField(result, 'error')
   const rejectReason = strField(result, 'reject_reason')
   if (task.status === 'awaiting_approval') {
     return {
       current: summary || '已生成完整产出物，尚未执行外部写入。',
-      next: followup || '请审阅产出物。批准后，Codex 将执行写入并验证结果。',
+      next: followup || '请审阅产出物。批准后，Jarvis 将执行写入并验证结果。',
     }
   }
   if (task.status === 'done') {
     return {
       current: summary || '任务已完成。',
       next: followup || '当前任务不需要继续操作。',
+    }
+  }
+  if (task.status === 'observing') {
+    return {
+      current: summary || task.summary || '调查已经完成，当前没有需要执行的动作。',
+      next: followup || '无需继续处理；后续出现新变化时会形成新的工作事项。',
     }
   }
   if (task.status === 'failed') {
@@ -980,7 +996,7 @@ function taskStateCopy(task: Task): { current: string; next: string } {
   }
   if (task.status === 'executing') {
     return {
-      current: 'Codex 正在执行任务。',
+      current: 'Jarvis 正在执行任务。',
       next: '可以等待执行完成；如需停止，可使用“打断执行”。',
     }
   }
@@ -991,19 +1007,19 @@ function taskStateCopy(task: Task): { current: string; next: string } {
     return {
       current: summary || String(waiting?.reason || '任务正在等待外部条件。'),
       next: waiting?.wake_at
-        ? `将在 ${String(waiting.wake_at)} 自动恢复同一个 Codex Session。`
-        : '已预约自动恢复同一个 Codex Session。',
+        ? `将在 ${String(waiting.wake_at)} 自动恢复同一个执行会话。`
+        : '已预约自动恢复同一个执行会话。',
     }
   }
   if (task.status === 'needs_human') {
     return {
-      current: summary || 'Codex 已暂停当前执行 Session。',
-      next: followup || '回复后将继续同一个 Codex Session，不会重跑任务。',
+      current: summary || 'Jarvis 已暂停当前执行会话。',
+      next: followup || '回复后将继续同一个执行会话，不会重跑任务。',
     }
   }
   return {
-    current: '任务已创建，正在等待执行。',
-    next: '开始执行后，Codex 将使用完整任务上下文完成工作。',
+    current: task.target || task.title,
+    next: '开始执行后，Jarvis 将使用完整任务上下文完成工作。',
   }
 }
 
@@ -1306,12 +1322,9 @@ export default function TaskDetailModal({
   onInterrupt,
 }: TaskDetailModalProps) {
   const [activeTab, setActiveTab] = useState('history')
-  const [outputOpen, setOutputOpen] = useState(false)
   useEffect(() => setActiveTab('history'), [task?.id])
-  useEffect(() => setOutputOpen(false), [task?.id])
   if (!task) return null
 
-  const stateCopy = taskStateCopy(task)
   const failure = failureKindOf(task)
   const recall: EffectRecall = {
     pending: recallingMessageID,
@@ -1333,36 +1346,33 @@ export default function TaskDetailModal({
     }
     if (task.status === 'awaiting_approval') {
       return <>
-        <Button type="primary" loading={approveSubmitting} onClick={() => onApprove(task)}>批准落地</Button>
+        <Button type="primary" loading={approveSubmitting} onClick={() => onApprove(task)}>批准 / 修改后批准</Button>
         <Button danger onClick={() => onReject(task)}>驳回</Button>
       </>
     }
-    if (task.status === 'done' || task.status === 'failed') {
+    if (task.status === 'done' || task.status === 'failed' || task.status === 'observing') {
       return <Button onClick={() => onRerun(task)}>重跑</Button>
     }
     if (task.status === 'waiting') {
-      return <StatusBadge label="等待定时唤醒" color={statusMeta.waiting.color} />
+      return <Text type="secondary">到达唤醒时间后会自动继续</Text>
     }
     if (task.status === 'needs_human') {
       return <Button type="primary" loading={resumeSubmitting} onClick={() => onResume(task)}>回复并继续</Button>
     }
     return <>
-      <StatusBadge label="Codex 执行中…" color={statusMeta.executing.color} />
       <Button danger loading={interrupting} onClick={() => onInterrupt(task)}>打断执行</Button>
     </>
   })()
 
   return (
-    <>
-      <Modal
+      <Drawer
         open
-        footer={null}
+        size="min(960px, 100vw)"
+        placement="right"
         closable={false}
-        centered
-        width={1180}
         mask={{ closable: true }}
-        onCancel={onClose}
-        className="task-detail-modal"
+        onClose={onClose}
+        className="task-workbench-drawer"
         destroyOnHidden
       >
         <div className="task-detail-shell">
@@ -1374,7 +1384,8 @@ export default function TaskDetailModal({
               <Title level={3}>{task.title}</Title>
             </Space>
             <Text type="secondary">
-              {stringValue(objectField(task.background, 'project')?.name) || '未关联项目'}
+              {taskProjectName(task)}
+              {' · '}{taskSourceName(task)}
               {' · '}{actionLabels[task.action_type] || task.action_type}
               {' · '}Task #{task.id}
               {' · '}更新于 {formatTime(task.updated_at)}
@@ -1384,26 +1395,16 @@ export default function TaskDetailModal({
         </header>
 
         <div className="task-detail-scroll">
-          <section className={`task-state-card task-state-${task.status}`}>
-            <div className="task-state-copy">
-              <div className="task-section-kicker">当前状态</div>
-              <Paragraph className="task-current-state">{stateCopy.current}</Paragraph>
-              <Text type="secondary"><strong>下一步：</strong>{stateCopy.next}</Text>
-            </div>
-            <Space className="task-state-actions" wrap>
-              {actions}
-              <Button
-                size="small"
-                className="task-output-trigger"
-                icon={<HistoryOutlined />}
-                onClick={() => setOutputOpen(true)}
-              >
-                过程
-              </Button>
-            </Space>
-          </section>
-
           {recallError && <Alert type="error" showIcon title="撤回飞书消息失败" description={recallError} />}
+
+          <div className="task-detail-main-grid task-detail-main-single">
+            <main>
+              {proposalOf(task)
+                ? <ProposalContent task={task} actions={actions} />
+                : <ResultContent task={task} actions={actions} />}
+              <EffectsCard effects={effectItems(task.execution_result?.effects)} recall={recall} />
+            </main>
+          </div>
 
           {eventsLoading ? (
             <section className="task-progress-strip"><Spin size="small" /></section>
@@ -1413,13 +1414,11 @@ export default function TaskDetailModal({
             <ProgressStrip events={events} onSelect={jumpToHistory} />
           )}
 
-          <div className="task-detail-main-grid">
-            <main>
-              {proposalOf(task) ? <ProposalContent task={task} /> : <ResultContent task={task} />}
-              <EffectsCard effects={effectItems(task.execution_result?.effects)} recall={recall} />
-            </main>
-            <TaskMeta task={task} />
-          </div>
+          <Collapse
+            className="task-secondary-meta"
+            ghost
+            items={[{ key: 'meta', label: '任务信息', children: <TaskMeta task={task} /> }]}
+          />
 
           <Tabs
             className="task-detail-tabs"
@@ -1442,19 +1441,36 @@ export default function TaskDetailModal({
                 ),
               },
               {
-                key: 'prompt',
-                label: '原始提示词',
-                children: <PromptPanel runs={runs} loading={runsLoading} error={runsError} />,
+                key: 'process',
+                label: <span><HistoryOutlined /> 执行过程</span>,
+                children: <TaskRunOutputPanel taskID={task.id} active={activeTab === 'process'} />,
               },
-              { key: 'source', label: '来源语义', children: <SourcePayloadPanel task={task} /> },
-              { key: 'context', label: '上下文依据', children: <ContextPanel task={task} /> },
-              { key: 'technical', label: '技术数据', children: <TechnicalPanel task={task} runs={runs} events={events} /> },
             ]}
+          />
+
+          <Collapse
+            className="task-developer-collapse"
+            items={[{
+              key: 'developer',
+              label: '开发者信息',
+              children: (
+                <Tabs
+                  items={[
+                    {
+                      key: 'prompt',
+                      label: '原始提示词',
+                      children: <PromptPanel runs={runs} loading={runsLoading} error={runsError} />,
+                    },
+                    { key: 'source', label: '来源语义', children: <SourcePayloadPanel task={task} /> },
+                    { key: 'context', label: '上下文依据', children: <ContextPanel task={task} /> },
+                    { key: 'technical', label: '技术数据', children: <TechnicalPanel task={task} runs={runs} events={events} /> },
+                  ]}
+                />
+              ),
+            }]}
           />
         </div>
         </div>
-      </Modal>
-      <TaskRunOutputModal taskID={task.id} open={outputOpen} onClose={() => setOutputOpen(false)} />
-    </>
+      </Drawer>
   )
 }

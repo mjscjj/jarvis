@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Input, Modal, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, executeTask, finishTask, interruptTask, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
+import { approveTask, executeTask, finishTask, getTask, interruptTask, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Task, TaskEvent, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -11,9 +11,13 @@ import TaskDetailModal from './tasks/TaskDetailModal'
 import {
   failureKindOf,
   failureMeta,
-  proposalOf,
   strField,
+  taskConclusion,
+  taskConclusionLabel,
+  taskProjectName,
+  taskSourceName,
 } from './tasks/taskPresentation'
+import './styles/workbench.css'
 
 const { Text } = Typography
 const taskActionModalZIndex = 1100
@@ -38,43 +42,27 @@ function FailureTag({ task }: { task: Task }) {
   return <Tag color={meta.color}>{meta.label}</Tag>
 }
 
-// CellText 把一段可能较长的可读文本按最多 3 行截断展示（详情抽屉里看全文），空则 '—'。
-function CellText({ text, danger }: { text: string | null; danger?: boolean }) {
-  if (!text) return <Text type="secondary">—</Text>
-  return (
-    <Text
-      type={danger ? 'danger' : undefined}
-      className="table-cell-clamp"
-      title={text}
-    >{text}</Text>
-  )
-}
-
-type TaskTab = 'human' | 'awaiting' | 'done' | 'observing' | 'failed' | 'others'
+type TaskTab = 'needs_me' | 'running' | 'waiting' | 'completed' | 'failed'
 
 const tabStatuses: Record<TaskTab, TaskStatus[]> = {
-  human: ['needs_human'],
-  awaiting: ['awaiting_approval'],
-  done: ['done'],
-  // What M5 investigated and then found nobody had to act on. Worth its own
-  // tab: it is the only place to see how much the pipeline is filtering out.
-  observing: ['observing'],
+  needs_me: ['needs_human', 'awaiting_approval'],
+  running: ['pending', 'executing'],
+  waiting: ['waiting'],
+  completed: ['done', 'observing'],
   failed: ['failed'],
-  others: ['pending', 'executing', 'waiting'],
 }
 
 const tabLabels: Record<TaskTab, string> = {
-  human: '待我处理',
-  awaiting: '审批中',
-  done: '执行成功',
-  observing: '无需动手',
-  failed: '执行失败',
-  others: '其他',
+  needs_me: '需要我',
+  running: '进行中',
+  waiting: '等待中',
+  completed: '已完成',
+  failed: '异常',
 }
 
 export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
-  const { setSelection } = usePageContext()
-  const [activeTab, setActiveTab] = useState<TaskTab>('awaiting')
+  const { context, setSelection } = usePageContext()
+  const [activeTab, setActiveTab] = useState<TaskTab>('needs_me')
   const statuses = useMemo<TaskStatus[]>(() => tabStatuses[activeTab], [activeTab])
   const [items, setItems] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
@@ -107,19 +95,27 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [eventsLoading, setEventsLoading] = useState(false)
   const [eventsError, setEventsError] = useState<string>()
 
+  const routedTaskID = context.active_key === 'tasks' && context.selection?.kind === 'task'
+    ? context.selection.id
+    : null
+
   useEffect(() => {
-    if (!detail) {
-      setSelection(null)
+    if (routedTaskID === null) {
+      setDetail(undefined)
       return
     }
-    setSelection({
-      kind: 'task',
-      id: detail.id,
-      label: `Task #${detail.id} ${detail.title}`,
-    })
-  }, [detail, setSelection])
-
-  useEffect(() => () => setSelection(null), [setSelection])
+    if (detail?.id === routedTaskID) return
+    const controller = new AbortController()
+    getTask(routedTaskID, controller.signal)
+      .then((task) => {
+        setDetail(task)
+        setRecallError(undefined)
+      })
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
+      })
+    return () => controller.abort()
+  }, [detail?.id, routedTaskID])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -164,11 +160,17 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     onDetailOpen?.()
     setRecallError(undefined)
     setDetail(task)
+    setSelection({
+      kind: 'task',
+      id: task.id,
+      label: `Task #${task.id} ${task.title}`,
+    })
   }
 
   const closeDetail = () => {
     setRecallError(undefined)
     setDetail(undefined)
+    setSelection(null)
   }
 
   useEffect(() => {
@@ -226,13 +228,13 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   }
 
   const runInterrupt = async (task: Task) => {
-    const ok = window.confirm(`确认打断「${task.title}」？\n\n这会立即停止当前 Codex 进程并把任务记为“已打断”。已经完成的外部操作不会自动回滚。`)
+    const ok = window.confirm(`确认打断「${task.title}」？\n\n这会立即停止当前执行进程并把任务记为“已打断”。已经完成的外部操作不会自动回滚。`)
     if (!ok) return
     setInterruptingId(task.id)
     setError(undefined)
     try {
       await interruptTask(task.id, task.version)
-      setDetail(undefined)
+      closeDetail()
       setRefreshKey((value) => value + 1)
     } catch (cause: unknown) {
       setError(errorText(cause))
@@ -281,7 +283,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       await approveTask(task.id, version)
       markLocalExecuting(task.id)
       setApproveTarget(undefined)
-      setDetail(undefined)
+      closeDetail()
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
@@ -308,7 +310,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       await resumeTask(task.id, task.version, resumeResponse.trim())
       markLocalExecuting(task.id)
       setResumeTarget(undefined)
-      setDetail(undefined)
+      closeDetail()
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
@@ -324,7 +326,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     try {
       await rejectTask(task.id, task.version, rejectReason.trim())
       setRejectTarget(undefined)
-      setDetail(undefined)
+      closeDetail()
       setRefreshKey((value) => value + 1)
     } catch (cause: unknown) {
       setError(errorText(cause))
@@ -356,81 +358,50 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     }
   }
 
-  const taskColumn: TableColumnsType<Task>[number] = {
-    title: '任务',
-    dataIndex: 'title',
-    width: 280,
-    render: (_, task) => (
-      <Space orientation="vertical" size={2} style={{ width: '100%' }}>
-        <Text strong className="table-cell-clamp" title={task.title}>{task.title}</Text>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {task.todo_id != null ? `Todo #${task.todo_id}` : `${task.source_type} #${task.source_id ?? '—'}`} · {task.action_type}
-        </Text>
-      </Space>
-    ),
-  }
-  const statusColumn: TableColumnsType<Task>[number] = {
-    title: '状态',
-    dataIndex: 'status',
-    width: 100,
-    render: (_, task) => (
-      <Space orientation="vertical" size={2}>
-        <StatusBadge label={statusMeta[task.status].label} color={statusMeta[task.status].color} />
-        <Text type="secondary" style={{ fontSize: 12 }}>{formatBriefTime(task.updated_at)}</Text>
-      </Space>
-    ),
-  }
-
-  // 待审批 Tab 特有列：动作（proposal.action）、待你拍板/后续（needs_followup）。
-  const awaitingCols: TableColumnsType<Task> = [
-    { title: '动作', width: 320, render: (_, task) => <CellText text={proposalOf(task)?.proposal.action ?? strField(task.execution_result, 'action')} /> },
-    { title: '待你拍板 / 后续', width: 260, render: (_, task) => <CellText text={proposalOf(task)?.needs_followup ?? strField(task.execution_result, 'needs_followup')} /> },
-  ]
-
-  // 非审批 Tab 共用列：执行摘要（summary→error→尚未执行）、待你拍板/后续（needs_followup）。
-  const resultCols: TableColumnsType<Task> = [
-    {
-      title: '执行摘要', width: 340, render: (_, task) => {
-        const failure = failureKindOf(task)
-        // failed 任务：先标来源，再展示驳回原因 / 摘要 / 错误详情。
-        if (failure) {
-          const reason = strField(task.execution_result, 'reject_reason')
-          const summaryText = strField(task.execution_result, 'summary')
-          const errText = strField(task.execution_result, 'error')
-          const detail = reason ?? summaryText ?? errText
-          return (
-            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
-              <FailureTag task={task} />
-              {detail ? <CellText text={detail} danger={failure === 'codex' || failure === 'stale'} /> : <Text type="secondary">—</Text>}
-            </Space>
-          )
-        }
-        const summaryText = strField(task.execution_result, 'summary')
-        if (summaryText) return <CellText text={summaryText} />
-        const errText = strField(task.execution_result, 'error')
-        if (errText) return <CellText text={errText} danger />
-        return <Text type="secondary">尚未执行</Text>
-      },
-    },
-    { title: '待你拍板 / 后续', width: 260, render: (_, task) => <CellText text={strField(task.execution_result, 'needs_followup')} /> },
-  ]
-
   const columns: TableColumnsType<Task> = [
-    taskColumn,
-    statusColumn,
-    ...(activeTab === 'awaiting' ? awaitingCols : resultCols),
     {
-      title: '操作', width: 200, render: (_, task) => {
+      title: '工作事项',
+      dataIndex: 'title',
+      render: (_, task) => (
+        <div className="workbench-task-main">
+          <div className="workbench-task-title-row">
+            <Text strong className="workbench-task-title" title={task.title}>{task.title}</Text>
+            {task.status === 'observing' && <Tag variant="filled">无需行动</Tag>}
+            <FailureTag task={task} />
+          </div>
+          <div className="workbench-task-conclusion">
+            <span>{taskConclusionLabel(task)}</span>
+            <Text title={taskConclusion(task)}>{taskConclusion(task)}</Text>
+          </div>
+          <Text type="secondary" className="workbench-task-origin">
+            {taskProjectName(task)} · {taskSourceName(task)}
+          </Text>
+        </div>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 126,
+      render: (_, task) => (
+        <Space orientation="vertical" size={4}>
+          <StatusBadge label={statusMeta[task.status].label} color={statusMeta[task.status].color} />
+          <Text type="secondary" className="workbench-task-updated">{formatBriefTime(task.updated_at)} 更新</Text>
+        </Space>
+      ),
+    },
+    {
+      title: '', width: 184, render: (_, task) => {
         if (task.status === 'pending') {
-          return <Space onClick={(e) => e.stopPropagation()}>
+          return <Space size={6} wrap onClick={(e) => e.stopPropagation()}>
             <Button type="primary" size="small" loading={executingId === task.id} onClick={(e) => { e.stopPropagation(); runExecute(task) }}>执行</Button>
             <Button size="small" onClick={(e) => { e.stopPropagation(); openFinish(task, 'done') }}>手动完成</Button>
             <Button danger size="small" onClick={(e) => { e.stopPropagation(); openFinish(task, 'failed') }}>失败</Button>
           </Space>
         }
         if (task.status === 'executing') {
-          return <Space onClick={(e) => e.stopPropagation()}>
-            <StatusBadge label="codex 执行中…" color={statusMeta.executing.color} />
+          return <Space size={6} wrap onClick={(e) => e.stopPropagation()}>
+            <StatusBadge label="Jarvis 执行中…" color={statusMeta.executing.color} />
             <Button danger size="small" loading={interruptingId === task.id} onClick={(e) => { e.stopPropagation(); runInterrupt(task) }}>打断</Button>
           </Space>
         }
@@ -441,8 +412,8 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
           return <Button type="primary" size="small" loading={resumeSubmitting && resumeTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openResume(task) }}>回复并继续</Button>
         }
         if (task.status === 'awaiting_approval') {
-          return <Space onClick={(e) => e.stopPropagation()}>
-            <Button type="primary" size="small" loading={approveSubmitting && approveTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openApprove(task) }}>批准落地</Button>
+          return <Space size={6} wrap onClick={(e) => e.stopPropagation()}>
+            <Button type="primary" size="small" loading={approveSubmitting && approveTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openApprove(task) }}>批准</Button>
             <Button danger size="small" onClick={(e) => { e.stopPropagation(); openReject(task) }}>驳回</Button>
           </Space>
         }
@@ -457,7 +428,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   ]
 
   return <>
-    <PageHeader title="任务执行" subtitle="已生成的可执行任务，点行查看方案与结果">
+    <PageHeader title="工作台" subtitle="先处理需要你决定的事项，再关注 Jarvis 正在推进的工作">
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
     {error && <Alert type="error" showIcon title="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
@@ -472,7 +443,17 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
             : tabLabels[key],
         }))}
       />
-      <Table<Task> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 1160 }} tableLayout="fixed" onRow={(task) => ({ onClick: () => openDetail(task), className: 'clickable-row' })} />
+      <Table<Task>
+        className="workbench-task-table"
+        rowKey="id"
+        columns={columns}
+        dataSource={items}
+        loading={loading}
+        pagination={false}
+        tableLayout="fixed"
+        locale={{ emptyText: activeTab === 'needs_me' ? '暂时没有需要你处理的事项' : '这个分组暂无任务' }}
+        onRow={(task) => ({ onClick: () => openDetail(task), className: 'clickable-row' })}
+      />
     </Card>
     <TaskDetailModal
       task={detail}
@@ -513,10 +494,10 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         <Alert
           type="warning"
           showIcon
-          title="Codex 正在等待你的回应"
+          title="Jarvis 正在等待你的回应"
           description={resumeTarget ? strField(resumeTarget.execution_result, 'needs_followup') || '请确认或补充所需信息。' : undefined}
         />
-        <Text type="secondary">提交后会继续原 Codex Session，不会重跑任务，也不会重新生成已批准产物。</Text>
+        <Text type="secondary">提交后会继续原执行会话，不会重跑任务，也不会重新生成已批准产物。</Text>
         <Input.TextArea rows={4} value={resumeResponse} onChange={(event) => setResumeResponse(event.target.value)} placeholder="确认操作，或补充 Agent 请求的信息" />
       </Space>
     </Modal>
@@ -530,7 +511,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       okText="确认批准并落地"
     >
       <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-        <Alert type="warning" showIcon title="对外写入将真正落地" description="批准后 codex 会按已审阅的方案真实写出/发送。可在下方追加落地时的补充指示（可不填）。" />
+        <Alert type="warning" showIcon title="对外写入将真正落地" description="批准后 Jarvis 会按已审阅的方案真实写出或发送。可在下方追加落地时的补充指示（可不填）。" />
         <Text type="secondary">可选填写补充信息/指示；留空则直接按已批准方案落地。填写后会持久保存到执行阶段补充，落地与之后重跑都会带上。</Text>
         <Input.TextArea rows={4} value={approveNote} onChange={(event) => setApproveNote(event.target.value)} placeholder="例如：标题加上【紧急】；抄送给 B；文档先放草稿区不要直接发公告等（可不填）" />
       </Space>

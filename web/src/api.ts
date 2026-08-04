@@ -110,6 +110,10 @@ export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signa
   return request<TaskList>(`/api/tasks?${params.toString()}`, { signal })
 }
 
+export function getTask(id: number, signal?: AbortSignal): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}`, { signal })
+}
+
 export function finishTask(id: number, expectedVersion: number, status: 'done' | 'failed', result: Record<string, unknown>): Promise<Task> {
   return request<Task>(`/api/tasks/${id}/finish`, {
     method: 'POST', body: { expected_version: expectedVersion, status, result },

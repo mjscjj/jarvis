@@ -30,18 +30,42 @@ const pageKeysByHash = Object.fromEntries(
   Object.entries(pageHashes).map(([key, path]) => [path, key]),
 ) as Record<string, string>
 
-function pageKeyFromHash(initialKey: string): string {
-  const path = window.location.hash.replace(/^#/, '').split('?')[0]
-  return pageKeysByHash[path] || initialKey
+interface HashRoute {
+  key: string
+  selection: PageSelection | null
 }
 
-function writePageHash(key: string, replace = false) {
-  const path = pageHashes[key]
-  if (!path) throw new Error(`unknown page key: ${key}`)
+function routeFromHash(initialKey: string): HashRoute {
+  const path = window.location.hash.replace(/^#/, '').split('?')[0]
+  const taskMatch = path.match(/^\/work\/task\/(\d+)$/)
+  if (taskMatch) {
+    const id = Number(taskMatch[1])
+    return { key: 'tasks', selection: { kind: 'task', id, label: `Task #${id}` } }
+  }
+  const todoMatch = path.match(/^\/manage\/clues\/(\d+)$/)
+  if (todoMatch) {
+    const id = Number(todoMatch[1])
+    return { key: 'todos', selection: { kind: 'todo', id, label: `线索 #${id}` } }
+  }
+  return { key: pageKeysByHash[path] || initialKey, selection: null }
+}
+
+function writePageHash(key: string, selection: PageSelection | null, replace = false) {
+  const basePath = pageHashes[key]
+  if (!basePath) throw new Error(`unknown page key: ${key}`)
+  let path = basePath
+  if (key === 'tasks' && selection?.kind === 'task') path = `/work/task/${selection.id}`
+  if (key === 'todos' && selection?.kind === 'todo') path = `/manage/clues/${selection.id}`
   const next = `#${path}`
   if (window.location.hash === next) return
   if (replace) window.history.replaceState(null, '', next)
   else window.location.hash = path
+}
+
+function pageKeyForSelection(selection: PageSelection, fallbackKey: string): string {
+  if (selection.kind === 'task') return 'tasks'
+  if (selection.kind === 'todo') return 'todos'
+  return fallbackKey
 }
 
 export function PageContextProvider({
@@ -51,14 +75,16 @@ export function PageContextProvider({
   initialKey: string
   children: ReactNode
 }) {
-  const [activeKey, setActiveKeyState] = useState(() => pageKeyFromHash(initialKey))
-  const [selection, setSelection] = useState<PageSelection | null>(null)
+  const initialRoute = useMemo(() => routeFromHash(initialKey), [initialKey])
+  const [activeKey, setActiveKeyState] = useState(initialRoute.key)
+  const [selection, setSelectionState] = useState<PageSelection | null>(initialRoute.selection)
 
   useEffect(() => {
-    if (!window.location.hash) writePageHash(initialKey, true)
+    if (!window.location.hash) writePageHash(initialKey, null, true)
     const syncFromHash = () => {
-      setActiveKeyState(pageKeyFromHash(initialKey))
-      setSelection(null)
+      const route = routeFromHash(initialKey)
+      setActiveKeyState(route.key)
+      setSelectionState(route.selection)
     }
     window.addEventListener('hashchange', syncFromHash)
     return () => window.removeEventListener('hashchange', syncFromHash)
@@ -66,13 +92,21 @@ export function PageContextProvider({
 
   const setActiveKey = useCallback((key: string) => {
     setActiveKeyState(key)
-    writePageHash(key)
+    setSelectionState(null)
+    writePageHash(key, null)
   }, [])
+
+  const setSelection = useCallback((next: PageSelection | null) => {
+    const targetKey = next ? pageKeyForSelection(next, activeKey) : activeKey
+    if (targetKey !== activeKey) setActiveKeyState(targetKey)
+    setSelectionState(next)
+    writePageHash(targetKey, next, next === null)
+  }, [activeKey])
 
   const navigate = useCallback((key: string) => {
     setActiveKeyState(key)
-    setSelection(null)
-    writePageHash(key)
+    setSelectionState(null)
+    writePageHash(key, null)
   }, [])
 
   const value = useMemo<PageContextValue>(
@@ -82,7 +116,7 @@ export function PageContextProvider({
       setSelection,
       navigate,
     }),
-    [activeKey, selection, setActiveKey, navigate],
+    [activeKey, selection, setActiveKey, setSelection, navigate],
   )
 
   return <Context.Provider value={value}>{children}</Context.Provider>

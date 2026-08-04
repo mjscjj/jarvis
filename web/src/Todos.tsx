@@ -65,7 +65,7 @@ function formatDate(value: string | null): string {
 }
 
 export default function Todos({ refreshKey }: { refreshKey: number }) {
-  const { setSelection } = usePageContext()
+  const { context, setSelection } = usePageContext()
   const [scope, setScope] = useState<ClueScope>('actionable')
   const [query, setQuery] = useState<TodoQuery>(initialQuery)
   const [items, setItems] = useState<Todo[]>([])
@@ -75,6 +75,31 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
   const [selected, setSelected] = useState<Todo>()
   const [drawerLoading, setDrawerLoading] = useState(false)
   const [savingStatusID, setSavingStatusID] = useState<number>()
+
+  const routedTodoID = context.active_key === 'todos' && context.selection?.kind === 'todo'
+    ? context.selection.id
+    : null
+
+  useEffect(() => {
+    if (routedTodoID === null) {
+      setSelected(undefined)
+      return
+    }
+    if (selected?.id === routedTodoID) return
+    const controller = new AbortController()
+    setDrawerLoading(true)
+    getTodo(routedTodoID, controller.signal)
+      .then(setSelected)
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
+          setError(cause instanceof Error ? cause.message : String(cause))
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDrawerLoading(false)
+      })
+    return () => controller.abort()
+  }, [routedTodoID, selected?.id])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -294,7 +319,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         title={selected?.title || '线索详情'}
         open={Boolean(selected)}
         loading={drawerLoading}
-        width={640}
+        size={640}
         onClose={closeTodo}
       >
         {selected && (

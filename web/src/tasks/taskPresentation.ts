@@ -35,3 +35,85 @@ export const failureMeta: Record<FailureKind, { label: string; color: string }> 
   stale: { label: '超时中断', color: 'orange' },
   unknown: { label: '失败', color: 'red' },
 }
+
+function objectField(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const field = value[key]
+  return field && typeof field === 'object' && !Array.isArray(field)
+    ? field as Record<string, unknown>
+    : null
+}
+
+function textValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+export function taskProjectName(task: Task): string {
+  const project = objectField(task.background, 'project')
+  return textValue(project?.name) || (task.project_id != null ? `项目 #${task.project_id}` : '未关联项目')
+}
+
+export function taskSourceName(task: Task): string {
+  const group = objectField(task.background, 'group')
+  const assigner = objectField(task.background, 'assigner')
+  const groupName = textValue(group?.name)
+  const assignerName = textValue(assigner?.name)
+  if (groupName && assignerName) return `${groupName} · ${assignerName}`
+  if (groupName || assignerName) return groupName || assignerName || ''
+  if (task.todo_id != null) return `线索 #${task.todo_id}`
+  return `${task.source_type} #${task.source_id ?? '—'}`
+}
+
+export function taskConclusion(task: Task): string {
+  const result = task.execution_result
+  const proposal = proposalOf(task)
+  const summary = task.summary?.trim() || strField(result, 'summary')
+  const followup = strField(result, 'needs_followup')
+  const error = strField(result, 'error')
+  const rejectReason = strField(result, 'reject_reason')
+
+  if (task.status === 'awaiting_approval') {
+    return proposal?.needs_followup?.trim()
+      || proposal?.summary?.trim()
+      || proposal?.proposal.action
+      || '方案已经准备好，等待你决定是否落地。'
+  }
+  if (task.status === 'needs_human') {
+    return followup || summary || 'Agent 正在等待你的回复。'
+  }
+  if (task.status === 'waiting') {
+    const waiting = result?.waiting && typeof result.waiting === 'object'
+      ? result.waiting as Record<string, unknown>
+      : null
+    const reason = textValue(waiting?.reason)
+    const wakeAt = textValue(waiting?.wake_at)
+    return [summary || reason || '正在等待外部条件', wakeAt ? `预计 ${wakeAt} 恢复` : null]
+      .filter(Boolean)
+      .join(' · ')
+  }
+  if (task.status === 'executing') return summary || 'Agent 正在执行，并会持续更新结果。'
+  if (task.status === 'pending') return summary || task.target || '任务已经就绪，等待开始执行。'
+  if (task.status === 'observing') return summary || '已经完成调查，当前无需采取行动。'
+  if (task.status === 'failed') return rejectReason || error || summary || '任务未完成，打开查看失败原因。'
+  return summary || followup || '任务已完成。'
+}
+
+export function taskConclusionLabel(task: Task): string {
+  switch (task.status) {
+    case 'awaiting_approval': return '需要你决定'
+    case 'needs_human': return '需要你回复'
+    case 'pending': return '下一步'
+    case 'executing': return '当前进展'
+    case 'waiting': return '等待原因'
+    case 'done': return '完成结果'
+    case 'observing': return '调查结论'
+    case 'failed': return '异常原因'
+  }
+}
+
+export function proposalArtifactLabel(task: Task): string {
+  const action = proposalOf(task)?.proposal.action.toLowerCase() || ''
+  if (/message|消息|通知|回复|发送|群/.test(action)) return '拟发送内容'
+  if (/mail|邮件/.test(action)) return '拟发送邮件'
+  if (/doc|文档|写入|更新|修改/.test(action)) return '拟写入内容'
+  return '拟落地产物'
+}
