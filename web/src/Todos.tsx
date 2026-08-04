@@ -5,6 +5,7 @@ import {
   Descriptions,
   Drawer,
   Flex,
+  Segmented,
   Select,
   Space,
   Switch,
@@ -20,18 +21,33 @@ import { TodoContextPanel } from './slots'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { actionLabels, leaderColor, todoStatusMeta as statusMeta } from './status'
-import type { ActionType, Todo, TodoQuery, TodoStatus } from './types'
+import type { Todo, TodoQuery, TodoStatus } from './types'
+import './styles/clues-automation.css'
 
 const { Text, Paragraph } = Typography
 
-const allTodoStatuses = Object.keys(statusMeta) as TodoStatus[]
-
-// 待办列表里可以手工互换的两个状态：都表示「眼下没人在动手」，区别只是
+// 线索列表里可以手工互换的两个状态：都表示「眼下没人在动手」，区别只是
 // 这条线索要不要重新进入 Task 固化与执行流水线。其余状态由流水线写入。
 const settableStatuses: TodoStatus[] = ['extracted', 'observing']
 
+type ClueScope = 'actionable' | 'observing' | 'materialized' | 'all'
+
+const scopeStatuses: Record<ClueScope, TodoStatus[]> = {
+  actionable: ['extracted'],
+  observing: ['observing'],
+  materialized: ['materialized'],
+  all: [],
+}
+
+const scopeOptions = [
+  { value: 'actionable', label: '待转任务' },
+  { value: 'observing', label: '观察中' },
+  { value: 'materialized', label: '已转任务' },
+  { value: 'all', label: '全部' },
+] satisfies Array<{ value: ClueScope; label: string }>
+
 const initialQuery: TodoQuery = {
-  statuses: allTodoStatuses,
+  statuses: scopeStatuses.actionable,
   leaderOnly: false,
   page: 1,
   pageSize: 20,
@@ -50,6 +66,7 @@ function formatDate(value: string | null): string {
 
 export default function Todos({ refreshKey }: { refreshKey: number }) {
   const { setSelection } = usePageContext()
+  const [scope, setScope] = useState<ClueScope>('actionable')
   const [query, setQuery] = useState<TodoQuery>(initialQuery)
   const [items, setItems] = useState<Todo[]>([])
   const [total, setTotal] = useState(0)
@@ -99,39 +116,48 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
   const changeStatus = useCallback((todo: Todo, next: TodoStatus) => {
     setSavingStatusID(todo.id)
     setError(undefined)
-    setTodoStatus(todo.id, next, '在待办列表手工调整')
+    setTodoStatus(todo.id, next, '在线索列表手工调整')
       .then((updated) => {
-        setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+        const remainsVisible = scopeStatuses[scope].length === 0 || scopeStatuses[scope].includes(updated.status)
+        setItems((current) => remainsVisible
+          ? current.map((item) => (item.id === updated.id ? updated : item))
+          : current.filter((item) => item.id !== updated.id))
+        if (!remainsVisible) setTotal((current) => Math.max(0, current - 1))
         setSelected((current) => (current?.id === updated.id ? updated : current))
       })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setSavingStatusID(undefined))
-  }, [])
+  }, [scope])
 
   const columns = useMemo<TableColumnsType<Todo>>(
     () => [
       {
-        title: '行动线索',
+        title: '线索',
         dataIndex: 'title',
         key: 'title',
-        ellipsis: true,
+        width: 360,
         render: (_, todo) => (
-          <Space size={6}>
-            {todo.is_leader_assigned && <StatusBadge label="L" color={leaderColor} />}
-            <Text strong ellipsis={{ tooltip: todo.title }}>
-              {todo.title}
-            </Text>
-          </Space>
-        ),
-      },
-      {
-        title: '类型',
-        dataIndex: 'action_type',
-        width: 96,
-        render: (value: ActionType) => (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {actionLabels[value]}
-          </Text>
+          <div className="clue-title-cell">
+            <Space size={6} wrap>
+              <Text strong ellipsis={{ tooltip: todo.title }}>
+                {todo.title}
+              </Text>
+              {todo.is_leader_assigned && <StatusBadge label="Leader 交办" color={leaderColor} />}
+            </Space>
+            <Paragraph
+              type="secondary"
+              ellipsis={{ rows: 2, tooltip: todo.description }}
+              className="clue-summary"
+            >
+              {todo.description}
+            </Paragraph>
+            <Space size={8} wrap className="clue-meta-line">
+              <Text type="secondary">{actionLabels[todo.action_type] || todo.action_type}</Text>
+              {todo.open_questions?.length ? (
+                <Text type="warning">{todo.open_questions.length} 项待补充</Text>
+              ) : null}
+            </Space>
+          </div>
         ),
       },
       {
@@ -158,9 +184,9 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
           ),
       },
       {
-        title: '项目 / 会话',
+        title: '关联',
         key: 'context',
-        width: 200,
+        width: 180,
         ellipsis: true,
         render: (_, todo) => (
           <Tooltip title={`${todo.project?.name || '未关联项目'} · ${todo.group?.name || todo.group?.chat_id || '未知会话'}`}>
@@ -176,27 +202,14 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         ),
       },
       {
-        title: '线索疑点',
-        dataIndex: 'open_questions',
-        width: 72,
-        align: 'center',
-        render: (values: string[] | null) =>
-          values?.length ? <Tag color="orange" style={{ margin: 0 }}>{values.length}</Tag> : <Text type="secondary">—</Text>,
-      },
-      {
-        title: '截止',
-        dataIndex: 'due_at',
-        width: 108,
-        render: (value: string | null) => <Text style={{ fontSize: 12 }}>{formatDate(value)}</Text>,
-      },
-      {
-        title: '最近证据',
-        dataIndex: 'last_evidence_at',
-        width: 108,
-        render: (value: string | null) => (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {formatDate(value)}
-          </Text>
+        title: '时间',
+        key: 'time',
+        width: 130,
+        render: (_, todo) => (
+          <Space direction="vertical" size={0}>
+            {todo.due_at && <Text style={{ fontSize: 12 }}>截止 {formatDate(todo.due_at)}</Text>}
+            <Text type="secondary" style={{ fontSize: 12 }}>更新 {formatDate(todo.last_evidence_at)}</Text>
+          </Space>
         ),
       },
     ],
@@ -205,19 +218,23 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
 
   return (
     <>
-      <PageHeader title="待办线索" subtitle="从会话中抽取的行动线索，点行查看详情" />
+      <PageHeader title="线索" subtitle="Jarvis 从会话中发现的行动信号，需要做事的会转成 Task" />
       <Card className="filter-card" variant="borderless">
-        <Flex gap={16} align="end" wrap>
-          <label className="filter-field filter-status">
-            <Text type="secondary">状态</Text>
-            <Select
-              mode="multiple"
-              value={query.statuses}
-              options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))}
-              onChange={(statuses) => setQuery((current) => ({ ...current, statuses, page: 1 }))}
-              maxTagCount="responsive"
-            />
-          </label>
+        <div className="clue-scope-row">
+          <Segmented<ClueScope>
+            value={scope}
+            disabled={savingStatusID !== undefined}
+            options={scopeOptions}
+            onChange={(nextScope) => {
+              setScope(nextScope)
+              setQuery((current) => ({ ...current, statuses: scopeStatuses[nextScope], page: 1 }))
+            }}
+          />
+          <Text type="secondary" className="scope-help">
+            {scope === 'actionable' ? '优先展示还没有进入执行流程的近期线索' : '按最近证据时间排序'}
+          </Text>
+        </div>
+        <Flex gap={16} align="end" wrap className="clue-filter-row">
           <label className="filter-field">
             <Text type="secondary">行动类型</Text>
             <Select
@@ -246,7 +263,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         <Alert
           type="error"
           showIcon
-          message="Todo 数据加载失败"
+          message="线索加载失败"
           description={error}
           closable
           onClose={() => setError(undefined)}
@@ -260,7 +277,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
           columns={columns}
           dataSource={items}
           loading={loading}
-          scroll={{ x: 860 }}
+          scroll={{ x: 790 }}
           onRow={(todo) => ({ onClick: () => openTodo(todo), className: 'clickable-row' })}
           pagination={{
             current: query.page,
@@ -274,7 +291,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
       </Card>
 
       <Drawer
-        title={selected?.title || 'Todo 详情'}
+        title={selected?.title || '线索详情'}
         open={Boolean(selected)}
         loading={drawerLoading}
         width={640}
@@ -284,10 +301,13 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
           <Space direction="vertical" size={24} className="drawer-content">
             <Space wrap>
               <StatusBadge label={statusMeta[selected.status].label} color={statusMeta[selected.status].color} />
-              <Tag>{actionLabels[selected.action_type]}</Tag>
+              <Tag>{actionLabels[selected.action_type] || selected.action_type}</Tag>
               {selected.is_leader_assigned && <StatusBadge label="Leader 交办" color={leaderColor} />}
             </Space>
-            <Paragraph>{selected.description}</Paragraph>
+            <section className="clue-detail-section">
+              <Text type="secondary">这条线索说了什么</Text>
+              <Paragraph>{selected.description}</Paragraph>
+            </section>
             <Descriptions column={2} size="small">
               <Descriptions.Item label="项目">{selected.project?.name || '未关联'}</Descriptions.Item>
               <Descriptions.Item label="会话">{selected.group?.name || selected.group?.chat_id || '未知'}</Descriptions.Item>
@@ -295,15 +315,27 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
               <Descriptions.Item label="截止时间">{formatDate(selected.due_at)}</Descriptions.Item>
               <Descriptions.Item label="版本">rev {selected.revision} / v{selected.version}</Descriptions.Item>
               <Descriptions.Item label="证据数">{selected.source_message_ids.length}</Descriptions.Item>
+              <Descriptions.Item label="首次发现">{formatDate(selected.first_seen_at)}</Descriptions.Item>
+              <Descriptions.Item label="最近更新">{formatDate(selected.last_evidence_at)}</Descriptions.Item>
             </Descriptions>
-            <section>
+            <section className="clue-detail-section">
               <Text type="secondary">源消息原文</Text>
               <blockquote>{selected.source_quote}</blockquote>
             </section>
-            <section>
-              <Text type="secondary">背景与待补充</Text>
+            <section className="clue-detail-section">
+              <Text type="secondary">目标、背景与待补充</Text>
               <TodoContextPanel target={selected.target} context={selected.context} openQuestions={selected.open_questions} />
             </section>
+            {selected.resolution && (
+              <section className="clue-detail-section">
+                <Text type="secondary">项目与代码定位</Text>
+                <Descriptions column={1} size="small" className="clue-resolution">
+                  <Descriptions.Item label="推断方式">{selected.resolution.method}</Descriptions.Item>
+                  <Descriptions.Item label="代码位置">{selected.resolution.repo_path || '未定位'}</Descriptions.Item>
+                  <Descriptions.Item label="依据">{selected.resolution.basis || '—'}</Descriptions.Item>
+                </Descriptions>
+              </section>
+            )}
           </Space>
         )}
       </Drawer>

@@ -1,11 +1,35 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, TimePicker, Typography, message } from 'antd'
+import {
+  Alert,
+  Button,
+  Card,
+  DatePicker,
+  Descriptions,
+  Drawer,
+  Flex,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
+  Segmented,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  TimePicker,
+  Tooltip,
+  Typography,
+  message,
+} from 'antd'
 import type { TableColumnsType } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { createScheduledTask, deleteScheduledTask, listScheduledTasks, triggerScheduledTask, updateScheduledTask } from './api'
 import PageHeader from './components/PageHeader'
 import type { ScheduledTask, ScheduledTaskInput, ScheduledTaskScheduleType, ScheduledTaskStatus } from './types'
+import './styles/clues-automation.css'
 
 const { Paragraph, Text } = Typography
 
@@ -13,8 +37,15 @@ const statusMeta: Record<ScheduledTaskStatus, { label: string; color: string }> 
   binding: { label: '正在绑定会话', color: 'orange' },
   active: { label: '等待调度', color: 'green' },
   running: { label: '触发中', color: 'blue' },
-  completed: { label: '已触发', color: 'default' },
+  completed: { label: '已结束', color: 'default' },
 }
+
+type ScheduleView = 'automations' | 'wakeups'
+
+const viewOptions = [
+  { value: 'automations', label: '我的自动化' },
+  { value: 'wakeups', label: '等待唤醒' },
+] satisfies Array<{ value: ScheduleView; label: string }>
 
 interface FormValue {
   title: string
@@ -64,9 +95,20 @@ function toInput(value: FormValue): ScheduledTaskInput {
 }
 
 function scheduleText(task: ScheduledTask): string {
-  if (task.schedule_type === 'once') return `一次：${new Date(task.run_at!).toLocaleString()}`
+  if (task.schedule_type === 'once') return `执行一次 · ${formatDateTime(task.run_at)}`
   if (task.schedule_type === 'daily') return `每天 ${task.daily_time}`
   return `每 ${task.interval_minutes} 分钟`
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) return '—'
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value))
 }
 
 function dailyTimeValue(value: string): Dayjs {
@@ -74,13 +116,21 @@ function dailyTimeValue(value: string): Dayjs {
   return dayjs().hour(hour).minute(minute).second(0).millisecond(0)
 }
 
+function lastRunText(task: ScheduledTask): string {
+  if (task.last_error_detail) return task.last_error_detail
+  if (task.last_task_id) return `Task #${task.last_task_id} · ${task.last_result || '已提交执行'}`
+  return '尚未触发'
+}
+
 export default function ScheduledTasks() {
   const [items, setItems] = useState<ScheduledTask[]>([])
+  const [view, setView] = useState<ScheduleView>('automations')
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<ScheduledTask | null>(null)
+  const [selected, setSelected] = useState<ScheduledTask | null>(null)
   const [form] = Form.useForm<FormValue>()
   const scheduleType = Form.useWatch('schedule_type', form)
 
@@ -89,7 +139,7 @@ export default function ScheduledTasks() {
     listScheduledTasks(status, signal)
       .then((data) => setItems(data.items))
       .catch((cause) => {
-        if (!signal?.aborted) message.error(`加载定时任务失败：${errorText(cause)}`)
+        if (!signal?.aborted) message.error(`加载自动化失败：${errorText(cause)}`)
       })
       .finally(() => { if (!signal?.aborted) setLoading(false) })
   }, [status])
@@ -105,6 +155,18 @@ export default function ScheduledTasks() {
     const timer = window.setInterval(() => load(), 3000)
     return () => window.clearInterval(timer)
   }, [items, load])
+
+  const displayedItems = useMemo(
+    () => items.filter((item) => view === 'wakeups'
+      ? item.dispatch_kind === 'resume_task'
+      : item.dispatch_kind === 'create_task'),
+    [items, view],
+  )
+
+  const counts = useMemo(() => ({
+    automations: items.filter((item) => item.dispatch_kind === 'create_task').length,
+    wakeups: items.filter((item) => item.dispatch_kind === 'resume_task').length,
+  }), [items])
 
   const openCreate = () => {
     setEditing(null)
@@ -138,10 +200,10 @@ export default function ScheduledTasks() {
       setSaving(true)
       if (editing) {
         await updateScheduledTask(editing.id, input)
-        message.success('定时任务已更新')
+        message.success('自动化已更新')
       } else {
         await createScheduledTask(input)
-        message.success('定时任务已创建')
+        message.success('自动化已创建')
       }
       setModalOpen(false)
       load()
@@ -158,7 +220,7 @@ export default function ScheduledTasks() {
       await triggerScheduledTask(task.id)
       message.success(task.schedule_type === 'once'
         ? `已触发“${task.title}”`
-        : `已触发“${task.title}”，原定时计划不变`)
+        : `已触发“${task.title}”，原计划不变`)
       load()
     } catch (cause) {
       message.error(`触发失败：${errorText(cause)}`)
@@ -168,93 +230,224 @@ export default function ScheduledTasks() {
   const remove = async (task: ScheduledTask) => {
     try {
       await deleteScheduledTask(task.id)
-      message.success('定时任务已删除')
+      message.success('自动化已删除')
+      setSelected((current) => current?.id === task.id ? null : current)
       load()
     } catch (cause) {
       message.error(`删除失败：${errorText(cause)}`)
     }
   }
 
-  const columns = useMemo<TableColumnsType<ScheduledTask>>(() => [
+  const automationColumns: TableColumnsType<ScheduledTask> = [
     {
-      title: '任务', dataIndex: 'title', width: 240,
+      title: '自动化', dataIndex: 'title', width: 360,
       render: (value: string, task) => (
-        <div>
-          <Space size={6}>
+        <div className="automation-title-cell">
+          <Space size={6} wrap>
             <Text strong>{value}</Text>
-            {task.dispatch_kind === 'resume_task' && <Tag color="purple">任务续跑</Tag>}
             {!task.enabled && <Tag>已停用</Tag>}
           </Space>
-          <Paragraph type="secondary" ellipsis={{ rows: 2, expandable: true }} style={{ margin: '4px 0 0', fontSize: 12, whiteSpace: 'pre-wrap' }}>
+          <Paragraph type="secondary" ellipsis={{ rows: 1, tooltip: task.instruction }}>
             {task.instruction}
           </Paragraph>
         </div>
       ),
     },
     {
-      title: '执行计划', width: 150,
-      render: (_, task) => scheduleText(task),
+      title: '计划', width: 190,
+      render: (_, task) => (
+        <Space direction="vertical" size={0}>
+          <Text>{scheduleText(task)}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {task.enabled && task.status !== 'completed' ? `下次 ${formatDateTime(task.next_run_at)}` : '暂无下次执行'}
+          </Text>
+        </Space>
+      ),
     },
     {
-      title: '下次执行', dataIndex: 'next_run_at', width: 180,
-      render: (value: string, task) => task.enabled && task.status !== 'completed' ? new Date(value).toLocaleString() : '—',
+      title: '运行', width: 180,
+      render: (_, task) => (
+        <Space direction="vertical" size={2}>
+          <Tag color={statusMeta[task.status].color}>{statusMeta[task.status].label}</Tag>
+          <Text
+            type={task.last_error_detail ? 'danger' : 'secondary'}
+            ellipsis={{ tooltip: lastRunText(task) }}
+            className="automation-last-run"
+          >
+            {lastRunText(task)}
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: '操作', fixed: 'right', width: 176,
+      render: (_, task) => (
+        <Space size={4} onClick={(event) => event.stopPropagation()}>
+          <Button
+            size="small"
+            icon={<ThunderboltOutlined />}
+            disabled={task.status === 'running'}
+            onClick={() => trigger(task)}
+          >
+            立即运行
+          </Button>
+          <Tooltip title="编辑">
+            <Button
+              size="small"
+              aria-label="编辑自动化"
+              icon={<EditOutlined />}
+              disabled={task.status === 'running'}
+              onClick={() => openEdit(task)}
+            />
+          </Tooltip>
+          <Popconfirm title="删除这条自动化？" okText="删除" cancelText="取消" onConfirm={() => remove(task)}>
+            <Button size="small" aria-label="删除自动化" danger icon={<DeleteOutlined />} disabled={task.status === 'running'} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
+  const wakeupColumns: TableColumnsType<ScheduledTask> = [
+    {
+      title: '等待唤醒的任务', dataIndex: 'title', width: 390,
+      render: (value: string, task) => (
+        <div className="automation-title-cell">
+          <Space size={6} wrap>
+            <Text strong>{value}</Text>
+            <Tag color="purple">系统等待</Tag>
+            {task.subject_id && <Tag>Task #{task.subject_id}</Tag>}
+          </Space>
+          <Paragraph type="secondary" ellipsis={{ rows: 2, tooltip: task.instruction }}>
+            {task.instruction}
+          </Paragraph>
+        </div>
+      ),
+    },
+    {
+      title: '唤醒时间', dataIndex: 'next_run_at', width: 150,
+      render: (value: string, task) => task.enabled && task.status !== 'completed' ? formatDateTime(value) : '—',
     },
     {
       title: '状态', dataIndex: 'status', width: 110,
       render: (value: ScheduledTaskStatus) => <Tag color={statusMeta[value].color}>{statusMeta[value].label}</Tag>,
     },
     {
-      title: '最近触发', width: 320,
-      render: (_, task) => task.last_error_detail ? (
-        <Paragraph type="danger" ellipsis={{ rows: 3, expandable: true }} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{task.last_error_detail}</Paragraph>
-      ) : (
-        <Paragraph ellipsis={{ rows: 3, expandable: true }} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-          {task.last_task_id ? `Task #${task.last_task_id} · ${task.last_result || '已提交 M5'}` : '尚未触发'}
-        </Paragraph>
-      ),
-    },
-    {
-      title: '操作', fixed: 'right', width: 230,
+      title: '最近结果', width: 240,
       render: (_, task) => (
-        <Space size={4}>
-          <Button size="small" icon={<ThunderboltOutlined />} disabled={task.status === 'running'} onClick={() => trigger(task)}>手动触发</Button>
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            disabled={task.status === 'running' || task.dispatch_kind === 'resume_task'}
-            onClick={() => openEdit(task)}
-          />
-          <Popconfirm title="删除这条定时任务？" okText="删除" cancelText="取消" onConfirm={() => remove(task)}>
-            <Button size="small" danger icon={<DeleteOutlined />} disabled={task.status === 'running'} />
-          </Popconfirm>
-        </Space>
+        <Text
+          type={task.last_error_detail ? 'danger' : 'secondary'}
+          ellipsis={{ tooltip: lastRunText(task) }}
+        >
+          {lastRunText(task)}
+        </Text>
       ),
     },
-  ], [load])
+  ]
 
   return (
     <div>
-      <PageHeader title="定时任务" subtitle="到点只创建 Task；任务由统一的 M5 执行入口完成。">
-        <Select
-          value={status}
-          onChange={setStatus}
-          style={{ width: 130 }}
-          options={[
-            { value: '', label: '全部状态' },
-            { value: 'active', label: '等待调度' },
-            { value: 'running', label: '触发中' },
-            { value: 'completed', label: '已触发' },
-          ]}
-        />
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建定时任务</Button>
+      <PageHeader title="自动化" subtitle="你创建的计划与执行任务的系统唤醒分开管理。">
+        {view === 'automations' && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建自动化</Button>}
       </PageHeader>
-      <Table<ScheduledTask>
-        rowKey="id" loading={loading} columns={columns} dataSource={items}
-        pagination={{ pageSize: 20, showSizeChanger: false }} scroll={{ x: 1230 }}
-      />
+
+      <Card className="automation-toolbar" variant="borderless">
+        <Flex align="center" justify="space-between" gap={16} wrap>
+          <Segmented<ScheduleView>
+            value={view}
+            options={viewOptions.map((option) => ({
+              ...option,
+              label: `${option.label} ${counts[option.value]}`,
+            }))}
+            onChange={(nextView) => {
+              setView(nextView)
+              setSelected(null)
+            }}
+          />
+          <Space>
+            <Text type="secondary">状态</Text>
+            <Select
+              value={status}
+              onChange={setStatus}
+              style={{ width: 130 }}
+              options={[
+                { value: '', label: '全部状态' },
+                { value: 'binding', label: '正在绑定' },
+                { value: 'active', label: '等待调度' },
+                { value: 'running', label: '触发中' },
+                { value: 'completed', label: '已结束' },
+              ]}
+            />
+          </Space>
+        </Flex>
+      </Card>
+
+      {view === 'wakeups' && (
+        <Alert
+          className="wakeup-explanation"
+          type="info"
+          showIcon
+          message="这些是任务执行中产生的等待点"
+          description="到时后 Jarvis 会回到原 Task 继续执行。它们由系统管理，在这里只读展示，不作为普通自动化编辑。"
+        />
+      )}
+
+      <Card className="table-card automation-table-card" variant="borderless">
+        <Table<ScheduledTask>
+          rowKey="id"
+          size="small"
+          loading={loading}
+          columns={view === 'automations' ? automationColumns : wakeupColumns}
+          dataSource={displayedItems}
+          pagination={{ pageSize: 15, showSizeChanger: false }}
+          scroll={{ x: view === 'automations' ? 906 : 890 }}
+          locale={{ emptyText: view === 'automations' ? '还没有自动化' : '当前没有等待唤醒的任务' }}
+          onRow={(task) => ({ onClick: () => setSelected(task), className: 'clickable-row' })}
+        />
+      </Card>
+
+      <Drawer
+        title={selected?.title || '调度详情'}
+        open={Boolean(selected)}
+        width={640}
+        onClose={() => setSelected(null)}
+      >
+        {selected && (
+          <Space direction="vertical" size={24} className="drawer-content">
+            <Space wrap>
+              <Tag color={selected.dispatch_kind === 'resume_task' ? 'purple' : 'green'}>
+                {selected.dispatch_kind === 'resume_task' ? '系统等待唤醒' : '用户自动化'}
+              </Tag>
+              <Tag color={statusMeta[selected.status].color}>{statusMeta[selected.status].label}</Tag>
+              {!selected.enabled && <Tag>已停用</Tag>}
+            </Space>
+            <section className="clue-detail-section">
+              <Text type="secondary">到时后做什么</Text>
+              <Paragraph className="automation-instruction">{selected.instruction}</Paragraph>
+            </section>
+            <Descriptions column={2} size="small">
+              <Descriptions.Item label="执行计划">{scheduleText(selected)}</Descriptions.Item>
+              <Descriptions.Item label="下次执行">{formatDateTime(selected.next_run_at)}</Descriptions.Item>
+              <Descriptions.Item label="关联 Task">{selected.subject_id ? `#${selected.subject_id}` : '—'}</Descriptions.Item>
+              <Descriptions.Item label="最近触发">{formatDateTime(selected.last_started_at)}</Descriptions.Item>
+              <Descriptions.Item label="最近结果" span={2}>{lastRunText(selected)}</Descriptions.Item>
+            </Descriptions>
+            <details className="automation-technical-details">
+              <summary>上下文背景</summary>
+              <pre>{JSON.stringify(selected.context_snapshot ?? {}, null, 2)}</pre>
+            </details>
+            {selected.dispatch_kind === 'resume_task' && selected.dispatch_payload && (
+              <details className="automation-technical-details">
+                <summary>系统唤醒信息</summary>
+                <pre>{JSON.stringify(selected.dispatch_payload, null, 2)}</pre>
+              </details>
+            )}
+          </Space>
+        )}
+      </Drawer>
 
       <Modal
-        title={editing ? '修改定时任务' : '新建定时任务'}
+        title={editing ? '修改自动化' : '新建自动化'}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={save}
@@ -290,13 +483,13 @@ export default function ScheduledTasks() {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <Form.Item name="instruction" label="任务指令" rules={[{ required: true, whitespace: true, message: '请输入任务指令' }]}>
-            <Input.TextArea autoSize={{ minRows: 5, maxRows: 12 }} placeholder="每次到点后交给统一任务执行入口完成什么" />
+          <Form.Item name="instruction" label="到时后做什么" rules={[{ required: true, whitespace: true, message: '请输入任务指令' }]}>
+            <Input.TextArea autoSize={{ minRows: 5, maxRows: 12 }} placeholder="描述每次到点后要交给 Jarvis 完成的事" />
           </Form.Item>
           <Form.Item
             name="context_snapshot"
             label="上下文背景（JSON）"
-            extra="创建时冻结，每次触发都完整交给 M5。可放项目、人物、会话、链接和历史判断。"
+            extra="创建时冻结，每次触发都完整交给执行者。可放项目、人物、会话、链接和历史判断。"
             rules={[{ required: true, whitespace: true, message: '请输入 JSON 对象，至少填写 {}' }]}
           >
             <Input.TextArea autoSize={{ minRows: 8, maxRows: 18 }} className="mono" />

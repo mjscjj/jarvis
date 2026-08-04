@@ -1,0 +1,128 @@
+.clue-scope-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.scope-help {
+  font-size: 12px;
+  text-align: right;
+}
+
+.clue-filter-row {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.clue-title-cell,
+.automation-title-cell {
+  min-width: 0;
+}
+
+.clue-title-cell > .ant-space,
+.automation-title-cell > .ant-space {
+  max-width: 100%;
+}
+
+.clue-summary,
+.automation-title-cell .ant-typography {
+  margin: 4px 0 0;
+  line-height: 1.45;
+}
+
+.clue-meta-line {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.clue-detail-section {
+  width: 100%;
+}
+
+.clue-detail-section > .ant-typography:first-child {
+  display: inline-block;
+  margin-bottom: var(--space-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.clue-detail-section blockquote {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--color-bg-soft);
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+}
+
+.clue-resolution {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+}
+
+.automation-toolbar {
+  margin: var(--space-4) 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+}
+
+.wakeup-explanation {
+  margin-bottom: var(--space-4);
+}
+
+.automation-table-card {
+  margin-top: 0;
+}
+
+.automation-last-run {
+  display: block;
+  width: 165px;
+  font-size: 12px;
+}
+
+.automation-instruction {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.automation-technical-details {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+}
+
+.automation-technical-details summary {
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.automation-technical-details pre {
+  max-height: 320px;
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-4);
+  overflow: auto;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 1100px) {
+  .clue-scope-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .scope-help {
+    text-align: left;
+  }
+}
