@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   Card,
+  Collapse,
   Descriptions,
   Drawer,
   Empty,
@@ -59,6 +60,7 @@ import SharedMemory from './SharedMemory'
 import RuntimeSettings from './RuntimeSettings'
 import SystemTasks from './SystemTasks'
 import EntityRelations from './components/EntityRelations'
+import PageHeader from './components/PageHeader'
 import type {
   AgentSkill,
   AgentSkillInput,
@@ -84,6 +86,7 @@ import type {
   TextFile,
   TextFileInput,
 } from './types'
+import './styles/review-memory.css'
 
 const { Text } = Typography
 
@@ -451,7 +454,7 @@ function PersonsPanel() {
   const columns: TableColumnsType<Person> = [
     {
       title: '姓名', dataIndex: 'name',
-      render: (_, p) => <Tooltip title={`open_id: ${p.open_id}`}><Text strong>{p.name}</Text></Tooltip>,
+      render: (_, p) => <Text strong>{p.name}</Text>,
     },
     {
       title: '角色', dataIndex: 'role', width: 140,
@@ -499,7 +502,7 @@ function PersonsPanel() {
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建人物</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon message="人物操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<Person> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 900 }} /></Card>
+    <Card className="table-card" variant="borderless"><Table<Person> rowKey="id" columns={columns} dataSource={visibleItems} loading={loading} pagination={false} scroll={{ x: 900 }} /></Card>
     <Modal title={editing ? '编辑人物' : '新建人物'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden width={720}>
       {!editing && (
         <Card size="small" style={{ marginBottom: 16 }}>
@@ -531,9 +534,6 @@ function PersonsPanel() {
             <Select options={Object.entries(personRoleLabels).map(([value, label]) => ({ value, label }))} onChange={(role: PersonRole) => { if (!editing) form.setFieldValue('priority_weight', roleDefaultWeight[role]) }} />
           </Form.Item>
         </Flex>
-        <Form.Item name="open_id" label="飞书 open_id" extra={editing ? '绑定键不可变更' : '由上方搜索选择自动绑定'}>
-          <Input disabled value={boundOpenID} placeholder="搜索并选择用户后自动填入" />
-        </Form.Item>
         <Flex gap={16}>
           <Form.Item name="priority_weight" label="优先权重(0-1)" rules={[{ required: true }]} style={{ width: 160 }}>
             <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
@@ -547,6 +547,19 @@ function PersonsPanel() {
         <Form.Item name="relation" label="与我的关系(可选)"><Input allowClear placeholder="如：直属领导 / 同组同事" /></Form.Item>
         <Form.Item name="comm_style" label="沟通风格(可选)" extra="辅助 AI 识别 leader 的隐含交办，如：结论先行、指令常以「看下」隐含表达"><Input.TextArea rows={2} /></Form.Item>
         <Form.Item name="notes" label="备注(可选)"><Input.TextArea rows={2} /></Form.Item>
+        <Collapse
+          ghost
+          className="memory-advanced"
+          items={[{
+            key: 'identity',
+            label: '高级信息',
+            children: (
+              <Form.Item name="open_id" label="飞书用户标识" extra={editing ? '系统绑定键，不可变更' : '由上方搜索选择自动绑定'}>
+                <Input disabled value={boundOpenID} placeholder="搜索并选择用户后自动填入" />
+              </Form.Item>
+            ),
+          }]}
+        />
       </Form>
       {editing && <Space orientation="vertical" size={16} style={{ width: '100%' }}>
         <SubjectFactsCard subjectType="person" subjectId={editing.id} title="人物事实" />
@@ -668,7 +681,7 @@ function GroupsPanel() {
   }
 
   const columns: TableColumnsType<Group> = [
-    { title: '会话', dataIndex: 'name', render: (_, g) => <Text strong>{g.name || g.chat_id}</Text> },
+    { title: '会话', dataIndex: 'name', render: (_, g) => <Text strong>{g.name || '未命名会话'}</Text> },
     { title: '类型', dataIndex: 'chat_mode', width: 80, render: (m: string) => chatModeLabels[m] || m },
     { title: '分层', dataIndex: 'tier', width: 70, render: (t: string) => <Tag color={tierColors[t] || 'default'}>{tierLabels[t] || t}</Tag> },
     { title: '关联项目', width: 150, render: (_, g) => g.project?.name || '—' },
@@ -719,7 +732,7 @@ function GroupsPanel() {
       />
       <Flex gap={8} wrap align="center">
         <Input.Search
-          allowClear placeholder="搜索群名 / 群主 / 项目 / chat_id" style={{ width: 260 }}
+          allowClear placeholder="搜索会话、群主或项目" style={{ width: 260 }}
           onSearch={(value) => { setKeyword(value); resetToFirstPage() }}
           onChange={(e) => { if (e.target.value === '') { setKeyword(''); resetToFirstPage() } }}
         />
@@ -760,7 +773,7 @@ function GroupsPanel() {
         pagination={{ current: page, pageSize: PAGE_SIZE, total, showSizeChanger: false, onChange: setPage }}
       />
     </Card>
-    <Modal title={`编辑会话背景 · ${editing?.name || editing?.chat_id || ''}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden width={760}>
+    <Modal title={`编辑会话背景 · ${editing?.name || '未命名会话'}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden width={760}>
       <Form form={form} layout="vertical">
         <Form.Item
           name="background_note"
@@ -865,11 +878,8 @@ function ProfilePanel() {
     {error && <Alert type="error" showIcon message="保存失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
     {ok && <Alert type="success" showIcon message="已保存，抽取时会把「我的背景」喂给模型" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
     {profile && !profile.saved && <Alert type="info" showIcon message="首次填写：Principal（我）背景尚未设置，完善后可显著提升 leader 软措辞交办的识别" style={{ marginBottom: 12 }} />}
-    <Card variant="borderless" loading={loading} style={{ maxWidth: 720 }}>
+    <Card variant="borderless" loading={loading} className="memory-profile-card">
       <Form form={form} layout="vertical">
-        <Form.Item label="open_id（由配置固定）">
-          <Input value={profile?.open_id} disabled />
-        </Form.Item>
         <Form.Item name="name" label="姓名（当前用户是谁）" rules={[{ required: true, message: '请填写姓名' }]}>
           <Input placeholder="如：储节节" />
         </Form.Item>
@@ -887,7 +897,6 @@ function ProfilePanel() {
           {leaderOpenID ? (
             <Flex gap={8} align="center">
               <Tag color="gold">{leaderName || leaderOpenID}</Tag>
-              <Text type="secondary" style={{ fontSize: 12 }}>{leaderOpenID}</Text>
               <Button size="small" onClick={clearLeader}>清除</Button>
             </Flex>
           ) : (
@@ -912,6 +921,20 @@ function ProfilePanel() {
             </Flex>
           )}
         </Form.Item>
+        <Collapse
+          ghost
+          className="memory-advanced"
+          items={[{
+            key: 'identity',
+            label: '高级信息',
+            children: (
+              <Descriptions size="small" column={1}>
+                <Descriptions.Item label="我的飞书用户标识"><Text copyable>{profile?.open_id || '—'}</Text></Descriptions.Item>
+                <Descriptions.Item label="直属 leader 用户标识"><Text copyable>{leaderOpenID || '—'}</Text></Descriptions.Item>
+              </Descriptions>
+            ),
+          }]}
+        />
         <Button type="primary" loading={saving} onClick={submit}>保存</Button>
       </Form>
     </Card>
@@ -1470,17 +1493,43 @@ function SkillsPanel() {
   </>
 }
 
+type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'profile'
+
 export default function Background() {
+  const [activeView, setActiveView] = useState<MemoryView>('projects')
+
   return (
-    <Tabs
-      items={[
-        { key: 'profile', label: '我（Principal）', children: <ProfilePanel /> },
-        { key: 'projects', label: '项目', children: <ProjectsPanel /> },
-        { key: 'persons', label: '人物', children: <PersonsPanel /> },
-        { key: 'groups', label: '会话背景', children: <GroupsPanel /> },
-        { key: 'resources', label: '资源', children: <ResourcePanel /> },
-      ]}
-    />
+    <div className="memory-page">
+      <PageHeader title="记忆" subtitle="浏览 Jarvis 用来理解你、项目和协作关系的长期背景">
+        <Button
+          type={activeView === 'profile' ? 'default' : 'text'}
+          onClick={() => setActiveView(activeView === 'profile' ? 'projects' : 'profile')}
+        >
+          {activeView === 'profile' ? '返回记忆' : '我的资料'}
+        </Button>
+      </PageHeader>
+
+      {activeView === 'profile' ? (
+        <div className="memory-profile-view">
+          <div className="memory-view-heading">
+            <Text strong>我的资料</Text>
+            <Text type="secondary">这些信息帮助 Jarvis 理解你的职责、偏好和汇报关系。</Text>
+          </div>
+          <ProfilePanel />
+        </div>
+      ) : (
+        <Tabs
+          activeKey={activeView}
+          onChange={(key) => setActiveView(key as MemoryView)}
+          items={[
+            { key: 'projects', label: '项目', children: <ProjectsPanel /> },
+            { key: 'persons', label: '人物', children: <PersonsPanel /> },
+            { key: 'groups', label: '会话', children: <GroupsPanel /> },
+            { key: 'resources', label: '资源', children: <ResourcePanel /> },
+          ]}
+        />
+      )}
+    </div>
   )
 }
 

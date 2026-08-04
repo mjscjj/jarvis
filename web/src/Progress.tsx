@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, DatePicker, Empty, Segmented, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Button, Card, DatePicker, Empty, Flex, Segmented, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
@@ -8,31 +8,15 @@ import PageHeader from './components/PageHeader'
 import EmptyState from './components/EmptyState'
 import MarkdownReport from './components/MarkdownReport'
 import type { CommitMR, CommitWorklog, DailyDigest, DailyDigestScope, Digest, DocumentWorklog, GroupProgress, MyDay, ProfileView, WorkDoc } from './types'
+import './styles/review-memory.css'
 
 const { Text, Link } = Typography
 
 const DAILY_DIGEST_POLL_MS = 5000
 const DAILY_DIGEST_RETRY_MS = 10000
-const DAILY_DIGEST_DATE_TAB_COUNT = 7
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
-}
-
-function dailyDigestDates(selected: Dayjs): Dayjs[] {
-  const selectedDay = selected.startOf('day')
-  const recent = Array.from(
-    { length: DAILY_DIGEST_DATE_TAB_COUNT },
-    (_, index) => dayjs().startOf('day').subtract(index, 'day'),
-  )
-  return recent.some((date) => date.isSame(selectedDay, 'day'))
-    ? recent
-    : [selectedDay, ...recent]
-}
-
-function dailyDigestDateLabel(date: Dayjs): string {
-  if (date.isSame(dayjs(), 'day')) return `今天 ${date.format('MM-DD')}`
-  return date.isSame(dayjs(), 'year') ? date.format('MM-DD') : date.format('YYYY-MM-DD')
 }
 
 // A day row shows a dash when nothing happened so quiet days read as quiet.
@@ -88,27 +72,8 @@ const dailySourceLabels: Record<string, string> = {
   other_materials: '其他材料',
 }
 
-// DayPicker 是两个工作日志 Tab 共用的「选一天」控件，默认今天，不可选未来。
-function DayPicker({ value, onChange }: { value: Dayjs; onChange: (d: Dayjs) => void }) {
-  return (
-    <Card className="filter-card" variant="borderless">
-      <Space size={8}>
-        <Text type="secondary">日期</Text>
-        <DatePicker
-          value={value}
-          onChange={(d) => onChange(d ?? dayjs())}
-          allowClear={false}
-          disabledDate={(d) => d.isAfter(dayjs(), 'day')}
-        />
-        <Button size="small" onClick={() => onChange(dayjs())} disabled={value.isSame(dayjs(), 'day')}>今天</Button>
-      </Space>
-    </Card>
-  )
-}
-
 // DocsTab —— 我在选定日期写/编辑的飞书文档 + 我当天收到的文档（消息里采集到的）。
-function DocsTab() {
-  const [date, setDate] = useState<Dayjs>(dayjs())
+function DocsTab({ date }: { date: Dayjs }) {
   const [data, setData] = useState<DocumentWorklog>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -146,12 +111,11 @@ function DocsTab() {
 
   return (
     <div>
-      <DayPicker value={date} onChange={setDate} />
-      {error && <Alert type="error" showIcon style={{ marginTop: 12 }} message="文档加载失败" description={error} />}
+      {error && <Alert type="error" showIcon message="文档加载失败" description={error} />}
       {loading ? (
         <div style={{ padding: '32px 0', textAlign: 'center' }}><Spin /></div>
       ) : (
-        <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 12 }}>
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Card variant="borderless" title={`我写的文档（${data?.authored.length ?? 0}）`}>
             {(data?.authored.length ?? 0) === 0
               ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这天没有我编辑的文档" />
@@ -169,8 +133,7 @@ function DocsTab() {
 }
 
 // CodeTab —— 我在选定日期于各仓库更新的 MR，按仓库分组。
-function CodeTab() {
-  const [date, setDate] = useState<Dayjs>(dayjs())
+function CodeTab({ date }: { date: Dayjs }) {
   const [data, setData] = useState<CommitWorklog>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -211,16 +174,15 @@ function CodeTab() {
 
   return (
     <div>
-      <DayPicker value={date} onChange={setDate} />
-      {error && <Alert type="error" showIcon style={{ marginTop: 12 }} message="代码提交加载失败" description={error} />}
+      {error && <Alert type="error" showIcon message="代码提交加载失败" description={error} />}
       {loading ? (
         <div style={{ padding: '32px 0', textAlign: 'center' }}><Spin /></div>
       ) : (data?.repos.length ?? 0) === 0 ? (
-        <Card variant="borderless" style={{ marginTop: 12 }}>
+        <Card variant="borderless">
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这天没有我更新的 MR" />
         </Card>
       ) : (
-        <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 12 }}>
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
           {data!.repos.map((repo) => (
             <Card key={repo.repo} variant="borderless" title={repo.repo}>
               <Table<CommitMR>
@@ -240,6 +202,7 @@ function CodeTab() {
 
 export default function Progress() {
   const [days, setDays] = useState(7)
+  const [activeView, setActiveView] = useState<'summary' | 'trend' | 'group-progress' | 'docs' | 'code'>('summary')
   const [data, setData] = useState<Digest>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -434,140 +397,112 @@ export default function Progress() {
     )
   }
 
-  const dailyDateItems = dailyDigestDates(dailyDate).map((date) => {
-    const dateKey = date.format('YYYY-MM-DD')
-    return {
-      key: dateKey,
-      label: dailyDigestDateLabel(date),
-      children: dateKey === selectedDate ? (
-        <>
-          {dailyError && <Alert type="error" showIcon message="每日总结加载失败" description={dailyError} />}
-          <Spin spinning={dailyLoading}>
-            <Tabs
-              activeKey={dailyScopeTab}
-              onChange={(key) => setDailyScopeTab(key as 'person' | 'groups')}
-              items={[
-                {
-                  key: 'person',
-                  label: '个人总结',
-                  children: (
-                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                      {profile
-                        ? digestCard('个人总结', 'person', profile.open_id)
-                        : <Card variant="borderless"><Spin size="small" /></Card>}
-                    </Space>
-                  ),
-                },
-                {
-                  key: 'groups',
-                  label: `群总结（${data?.key_groups.length ?? 0}）`,
-                  children: (
-                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                      {(data?.key_groups ?? []).map((group) => digestCard(group.name || group.chat_id, 'group', String(group.group_id)))}
-                      {!loading && (data?.key_groups.length ?? 0) === 0 && (
-                        <Card variant="borderless">
-                          <EmptyState description="暂无标记为核心群的会话" hint="可在「背景 → 会话背景」里标记 is_key_group" />
-                        </Card>
-                      )}
-                    </Space>
-                  ),
-                },
-              ]}
-            />
-          </Spin>
-        </>
-      ) : null,
+  const summaryContent = (
+    <>
+      <Card className="review-scope-card" variant="borderless">
+        <Flex justify="space-between" align="center" gap={12} wrap>
+          <div>
+            <Text strong>{dailyDate.isSame(dayjs(), 'day') ? '今天的结果' : `${dailyDate.format('M 月 D 日')}的结果`}</Text>
+            <div><Text type="secondary">先看个人工作结果，需要时再切换到关键群总结。</Text></div>
+          </div>
+          <Segmented
+            value={dailyScopeTab}
+            onChange={(value) => setDailyScopeTab(value as 'person' | 'groups')}
+            options={[
+              { value: 'person', label: '我的总结' },
+              { value: 'groups', label: `群总结 ${data?.key_groups.length ?? 0}` },
+            ]}
+          />
+        </Flex>
+      </Card>
+      {dailyError && <Alert type="error" showIcon message="每日总结加载失败" description={dailyError} />}
+      <Spin spinning={dailyLoading}>
+        {dailyScopeTab === 'person' ? (
+          profile
+            ? digestCard('我的工作回顾', 'person', profile.open_id)
+            : <Card variant="borderless"><Spin size="small" /></Card>
+        ) : (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            {(data?.key_groups ?? []).map((group) => digestCard(group.name || '未命名会话', 'group', String(group.group_id)))}
+            {!loading && (data?.key_groups.length ?? 0) === 0 && (
+              <Card variant="borderless">
+                <EmptyState description="暂无关键会话" hint="可在「记忆 → 会话」中将重要会话标为关键群" />
+              </Card>
+            )}
+          </Space>
+        )}
+      </Spin>
+    </>
+  )
+
+  const activeContent = (() => {
+    switch (activeView) {
+      case 'summary':
+        return summaryContent
+      case 'trend':
+        return (
+          <>
+            <Card className="review-detail-toolbar" variant="borderless">
+              <Space size={8}>
+                <Text type="secondary">统计范围</Text>
+                <Segmented value={days} onChange={(value) => setDays(value as number)} options={[{ label: '近 7 天', value: 7 }, { label: '近 14 天', value: 14 }, { label: '近 30 天', value: 30 }]} />
+              </Space>
+            </Card>
+            <Card variant="borderless">
+              <Table<MyDay> rowKey="date" size="small" columns={myColumns} dataSource={data?.mine ?? []} loading={loading} pagination={false} />
+            </Card>
+          </>
+        )
+      case 'group-progress':
+        return !loading && (data?.key_groups.length ?? 0) === 0 ? (
+          <Card variant="borderless">
+            <EmptyState description="暂无关键会话" hint="可在「记忆 → 会话」中将重要会话标为关键群" />
+          </Card>
+        ) : (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            {(data?.key_groups ?? []).map((group) => (
+              <Card key={group.group_id} variant="borderless" title={group.name || '未命名会话'}>
+                <Table rowKey="date" size="small" columns={groupColumns()} dataSource={group.days} loading={loading} pagination={false} />
+              </Card>
+            ))}
+          </Space>
+        )
+      case 'docs':
+        return <DocsTab date={dailyDate} />
+      case 'code':
+        return <CodeTab date={dailyDate} />
     }
-  })
+  })()
 
   return (
-    <div className="progress">
-      <PageHeader title="进度" subtitle="按自然日查看我的推进与关键群进展" />
+    <div className="progress review-page">
+      <PageHeader title="回顾" subtitle="从结果开始，回看一天里完成的工作、协作和产出">
+        {(activeView === 'summary' || activeView === 'docs' || activeView === 'code') && (
+          <Space size={8} className="review-date-control">
+            <DatePicker
+              value={dailyDate}
+              onChange={(date) => setDailyDate(date ?? dayjs())}
+              allowClear={false}
+              disabledDate={(date) => date.isAfter(dayjs(), 'day')}
+            />
+            <Button onClick={() => setDailyDate(dayjs())} disabled={dailyDate.isSame(dayjs(), 'day')}>今天</Button>
+          </Space>
+        )}
+      </PageHeader>
 
-      {error && <Alert type="error" showIcon message="进度加载失败" description={error} closable onClose={() => setError(undefined)} />}
+      {error && <Alert type="error" showIcon message="回顾加载失败" description={error} closable onClose={() => setError(undefined)} />}
 
-      <Tabs
-        defaultActiveKey="daily"
-        items={[
-          {
-            key: 'daily',
-            label: '每日总结',
-            children: (
-              <>
-                <Tabs
-                  activeKey={selectedDate}
-                  onChange={(date) => setDailyDate(dayjs(date))}
-                  tabBarExtraContent={(
-                    <Space size={8}>
-                      <Text type="secondary">其他日期</Text>
-                      <DatePicker
-                        size="small"
-                        value={dailyDate}
-                        onChange={(date) => setDailyDate(date ?? dayjs())}
-                        allowClear={false}
-                        disabledDate={(date) => date.isAfter(dayjs(), 'day')}
-                      />
-                    </Space>
-                  )}
-                  items={dailyDateItems}
-                />
-              </>
-            ),
-          },
-          {
-            key: 'mine',
-            label: '数量趋势',
-            children: (
-              <>
-                <Card className="filter-card" variant="borderless">
-                  <Space size={8}>
-                    <Text type="secondary">时间窗口</Text>
-                    <Segmented value={days} onChange={(value) => setDays(value as number)} options={[{ label: '近 7 天', value: 7 }, { label: '近 14 天', value: 14 }, { label: '近 30 天', value: 30 }]} />
-                  </Space>
-                </Card>
-                <Card variant="borderless" style={{ marginTop: 12 }}>
-                  <Table<MyDay> rowKey="date" size="small" columns={myColumns} dataSource={data?.mine ?? []} loading={loading} pagination={false} />
-                </Card>
-              </>
-            ),
-          },
-          {
-            key: 'groups',
-            label: '群进度',
-            children:
-              !loading && (data?.key_groups.length ?? 0) === 0 ? (
-                <Card variant="borderless">
-                  <EmptyState description="暂无标记为核心群的会话" hint="可在「背景 → 会话背景」里标记 is_key_group" />
-                </Card>
-              ) : (
-                <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                  {(data?.key_groups ?? []).map((group) => (
-                    <Card key={group.group_id} variant="borderless" title={group.name || group.chat_id}>
-                      <Table
-                        rowKey="date"
-                        size="small"
-                        columns={groupColumns()}
-                        dataSource={group.days}
-                        loading={loading}
-                        pagination={false}
-                      />
-                    </Card>
-                  ))}
-                </Space>
-              ),
-          },
-          {
-            key: 'docs',
-            label: '今天的文档',
-            children: <DocsTab />,
-          },
-          {
-            key: 'code',
-            label: '项目代码',
-            children: <CodeTab />,
-          },
-        ]}
-      />
+      <Flex className="review-view-nav" gap={4} wrap>
+        <Button type={activeView === 'summary' ? 'primary' : 'text'} onClick={() => setActiveView('summary')}>每日总结</Button>
+        <span className="review-nav-divider" />
+        <Text type="secondary" className="review-nav-label">更多记录</Text>
+        <Button type={activeView === 'trend' ? 'default' : 'text'} onClick={() => setActiveView('trend')}>数量趋势</Button>
+        <Button type={activeView === 'group-progress' ? 'default' : 'text'} onClick={() => setActiveView('group-progress')}>群进度</Button>
+        <Button type={activeView === 'docs' ? 'default' : 'text'} onClick={() => setActiveView('docs')}>文档</Button>
+        <Button type={activeView === 'code' ? 'default' : 'text'} onClick={() => setActiveView('code')}>代码</Button>
+      </Flex>
+
+      <div className="review-content">{activeContent}</div>
     </div>
   )
 }
