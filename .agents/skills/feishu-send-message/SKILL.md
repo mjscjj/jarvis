@@ -17,18 +17,61 @@ description: 使用 lark-cli 通过 Jarvis Bot 给个人或群聊发送飞书消
 jarvis-tools get-principal
 ```
 
-如果返回里已有与 Jarvis Bot 的私聊 chat_id，直接用它发送：
+给我本人发单聊最简单：Jarvis Bot 与我已有私聊关系，直接用我的 open_id 发，不用建群：
 
 ```bash
 lark-cli im +messages-send \
-  --chat-id "<principal 与 bot 的 chat_id>" \
+  --user-id "<principal open_id>" \
   --markdown "<消息内容>" \
   --as bot
 ```
 
-没有现成私聊时，按下面「给个人发消息」用我的 open_id 创建 Jarvis 私有群后再发。
+如果 `--user-id` 直发失败（极少见，说明还没建立私聊关系），再按下面「给个人发消息」用我的 open_id 创建 Jarvis 私有群后发。
 
 写给我的消息要点：说清是什么、为什么值得我知道、我可能要做什么；只发真正有用的，不制造噪音。
+
+### 请我拍板：发审批卡片
+
+当你判断某个动作要先请我批准（依据见 `conf/prompts/m5-approval-policy.md`），别发纯文字，发一张带跳转按钮的交互卡片，我扫一眼就知道是什么事、点按钮就能去后台处理。
+
+卡片正文用大白话讲清三件事：**要做什么**、**会产生什么影响**、**你的判断**；底部一个按钮跳到后台 `http://127.0.0.1:18800/`（进去就能看到「任务 → 审批中」）。
+
+```bash
+lark-cli im +messages-send \
+  --user-id "<principal open_id>" \
+  --msg-type interactive \
+  --content '{
+  "schema": "2.0",
+  "config": { "wide_screen_mode": true },
+  "header": {
+    "title": { "tag": "plain_text", "content": "需要你拍板：<一句话概括这件事>" },
+    "subtitle": { "tag": "plain_text", "content": "项目 <项目名> · 任务 #<task_id>" },
+    "template": "orange"
+  },
+  "body": {
+    "direction": "vertical",
+    "padding": "12px 12px 20px 12px",
+    "elements": [
+      {
+        "tag": "markdown",
+        "content": "**要做的事**\n<具体要执行的动作，说人话>\n\n**会产生的影响**\n<对外/对线上会发生什么，能不能回滚>\n\n**我的判断**\n<为什么要先问你>"
+      },
+      {
+        "tag": "button",
+        "text": { "tag": "plain_text", "content": "去后台处理" },
+        "type": "primary_filled",
+        "width": "fill",
+        "behaviors": [
+          { "type": "open_url", "default_url": "http://127.0.0.1:18800/", "pc_url": "", "ios_url": "", "android_url": "" }
+        ]
+      }
+    ]
+  }
+}' \
+  --as bot
+```
+
+按钮只是本地跳转打开后台，不回调服务端——批准/驳回在后台点，服务端照常走 `/api/tasks/:task_id/approve|reject`。卡片发送连续失败就退回 `--markdown` 纯文字通知，别卡在这。
 
 ## 给个人发消息
 
