@@ -256,7 +256,7 @@ export default function ScheduledTasks() {
     {
       title: '计划', width: 190,
       render: (_, task) => (
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Text>{scheduleText(task)}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
             {task.enabled && task.status !== 'completed' ? `下次 ${formatDateTime(task.next_run_at)}` : '暂无下次执行'}
@@ -267,7 +267,7 @@ export default function ScheduledTasks() {
     {
       title: '运行', width: 180,
       render: (_, task) => (
-        <Space direction="vertical" size={2}>
+        <Space orientation="vertical" size={2}>
           <Tag color={statusMeta[task.status].color}>{statusMeta[task.status].label}</Tag>
           <Text
             type={task.last_error_detail ? 'danger' : 'secondary'}
@@ -387,7 +387,7 @@ export default function ScheduledTasks() {
           className="wakeup-explanation"
           type="info"
           showIcon
-          message="这些是任务执行中产生的等待点"
+          title="这些是任务执行中产生的等待点"
           description="到时后 Jarvis 会回到原 Task 继续执行。它们由系统管理，在这里只读展示，不作为普通自动化编辑。"
         />
       )}
@@ -409,11 +409,11 @@ export default function ScheduledTasks() {
       <Drawer
         title={selected?.title || '调度详情'}
         open={Boolean(selected)}
-        width={640}
+        size={640}
         onClose={() => setSelected(null)}
       >
         {selected && (
-          <Space direction="vertical" size={24} className="drawer-content">
+          <Space orientation="vertical" size={24} className="drawer-content">
             <Space wrap>
               <Tag color={selected.dispatch_kind === 'resume_task' ? 'purple' : 'green'}>
                 {selected.dispatch_kind === 'resume_task' ? '系统等待唤醒' : '用户自动化'}

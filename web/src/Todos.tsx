@@ -215,7 +215,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         ellipsis: true,
         render: (_, todo) => (
           <Tooltip title={`${todo.project?.name || '未关联项目'} · ${todo.group?.name || todo.group?.chat_id || '未知会话'}`}>
-            <Space direction="vertical" size={0}>
+            <Space orientation="vertical" size={0}>
               <Text ellipsis style={{ fontSize: 13 }}>
                 {todo.project?.name || '未关联项目'}
               </Text>
@@ -231,7 +231,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         key: 'time',
         width: 130,
         render: (_, todo) => (
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             {todo.due_at && <Text style={{ fontSize: 12 }}>截止 {formatDate(todo.due_at)}</Text>}
             <Text type="secondary" style={{ fontSize: 12 }}>更新 {formatDate(todo.last_evidence_at)}</Text>
           </Space>
@@ -288,7 +288,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         <Alert
           type="error"
           showIcon
-          message="线索加载失败"
+          title="线索加载失败"
           description={error}
           closable
           onClose={() => setError(undefined)}
@@ -323,7 +323,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
         onClose={closeTodo}
       >
         {selected && (
-          <Space direction="vertical" size={24} className="drawer-content">
+          <Space orientation="vertical" size={24} className="drawer-content">
             <Space wrap>
               <StatusBadge label={statusMeta[selected.status].label} color={statusMeta[selected.status].color} />
               <Tag>{actionLabels[selected.action_type] || selected.action_type}</Tag>

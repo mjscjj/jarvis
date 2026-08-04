@@ -272,7 +272,7 @@ export default function Overview() {
           type="warning"
           showIcon
           className="today-load-alert"
-          message={`部分信息暂时无法显示：${issueList.map((item) => item.label).join('、')}`}
+          title={`部分信息暂时无法显示：${issueList.map((item) => item.label).join('、')}`}
           description={(
             <details>
               <summary>查看技术详情</summary>
@@ -284,7 +284,7 @@ export default function Overview() {
       )}
 
       <main className="today-layout">
-        <Card className="today-panel today-attention-panel" bordered={false}>
+        <Card className="today-panel today-attention-panel" variant="borderless">
           <div className="today-panel-heading">
             <div>
               <Text className="today-eyebrow">需要你决定</Text>
@@ -309,7 +309,7 @@ export default function Overview() {
           )}
         </Card>
 
-        <Card className="today-panel today-active-panel" bordered={false}>
+        <Card className="today-panel today-active-panel" variant="borderless">
           <div className="today-panel-heading today-panel-heading-compact">
             <div>
               <Text className="today-eyebrow">Jarvis 正在推进</Text>
@@ -337,7 +337,7 @@ export default function Overview() {
           )}
         </Card>
 
-        <Card className="today-panel today-results-panel" bordered={false}>
+        <Card className="today-panel today-results-panel" variant="borderless">
           <div className="today-panel-heading today-panel-heading-compact">
             <div>
               <Text className="today-eyebrow">今日结果</Text>
@@ -386,7 +386,7 @@ export default function Overview() {
           )}
         </Card>
 
-        <Card className="today-panel today-risk-panel" bordered={false}>
+        <Card className="today-panel today-risk-panel" variant="borderless">
           <div className="today-panel-heading today-panel-heading-compact">
             <div>
               <Text className="today-eyebrow">发现与风险</Text>

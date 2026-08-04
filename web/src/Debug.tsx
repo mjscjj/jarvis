@@ -101,22 +101,22 @@ function ModulesTab() {
   const healedRecently = rows.filter((r) => r.current_ok && r.failures > 0)
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       <Space>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
         <Text type="secondary">各 cron 模块最近一次运行（解析自日志尾部；cron 日志在 stderr 文件里）。</Text>
       </Space>
-      {error && <Alert type="error" showIcon message="模块运行加载失败" description={error} />}
+      {error && <Alert type="error" showIcon title="模块运行加载失败" description={error} />}
       {failingNow.length > 0 && (
         <Alert
-          type="error" showIcon message="模块最近一次运行失败（需处理）"
-          description={<Space direction="vertical" size={2}>{failingNow.map((r) => <Text key={r.module} className="mono">{r.last_error || r.raw}</Text>)}</Space>}
+          type="error" showIcon title="模块最近一次运行失败（需处理）"
+          description={<Space orientation="vertical" size={2}>{failingNow.map((r) => <Text key={r.module} className="mono">{r.last_error || r.raw}</Text>)}</Space>}
         />
       )}
       {failingNow.length === 0 && healedRecently.length > 0 && (
         <Alert
-          type="success" showIcon message="当前全部正常（窗口内曾有失败，最近一次已恢复）"
-          description={<Space direction="vertical" size={2}>{healedRecently.map((r) => <Text key={r.module} type="secondary" className="mono">{moduleLabels[r.module] ?? r.module}：窗口内 {r.failures} 次失败，最近一次已 ok</Text>)}</Space>}
+          type="success" showIcon title="当前全部正常（窗口内曾有失败，最近一次已恢复）"
+          description={<Space orientation="vertical" size={2}>{healedRecently.map((r) => <Text key={r.module} type="secondary" className="mono">{moduleLabels[r.module] ?? r.module}：窗口内 {r.failures} 次失败，最近一次已 ok</Text>)}</Space>}
         />
       )}
       <Table<ModuleRun>
@@ -169,19 +169,19 @@ function FailuresTab() {
   const healedOccurrences = occurrences - openOccurrences
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       <Space>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
         <Text type="secondary">近 24 小时 cron 与 M3/M5 运行错误，按 chat、Todo、Task 或 job 判断同范围恢复。</Text>
       </Space>
-      {error && <Alert type="error" showIcon message="报错时间线加载失败" description={error} />}
+      {error && <Alert type="error" showIcon title="报错时间线加载失败" description={error} />}
       {!error && rows.length === 0 && (
-        <Alert type="success" showIcon message="近 24 小时无运行错误" />
+        <Alert type="success" showIcon title="近 24 小时无运行错误" />
       )}
       {rows.length > 0 && (
         <Alert
           type={stillOpen.length > 0 ? 'warning' : 'info'} showIcon
-          message={`近 24h 共 ${occurrences} 次报错：${openOccurrences} 次仍需关注，${healedOccurrences} 次已恢复`}
+          title={`近 24h 共 ${occurrences} 次报错：${openOccurrences} 次仍需关注，${healedOccurrences} 次已恢复`}
         />
       )}
       <Table<FailureEvent>
@@ -216,9 +216,9 @@ function ScansTab() {
   const { data, loading, error, refresh } = useDebugResource<{ items: ScanRow[] }>((signal) => getDebugScans(50, signal))
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       <Button size="small" onClick={refresh} loading={loading} style={{ alignSelf: 'flex-start' }}>刷新</Button>
-      {error && <Alert type="error" showIcon message="采集流水加载失败" description={error} />}
+      {error && <Alert type="error" showIcon title="采集流水加载失败" description={error} />}
       <Table<ScanRow>
         rowKey="id" size="small" columns={scanColumns} dataSource={data?.items ?? []} loading={loading}
         pagination={{ pageSize: 20, showSizeChanger: false }}
@@ -231,7 +231,7 @@ function ScansTab() {
 
 function RuntimeTab() {
   return (
-    <Space direction="vertical" size={20} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={20} style={{ width: '100%' }}>
       <Card size="small" title="模块运行" variant="borderless"><ModulesTab /></Card>
       <Card size="small" title="采集流水" variant="borderless"><ScansTab /></Card>
     </Space>
@@ -273,12 +273,12 @@ function AgentProcessesTab() {
   }, [refresh])
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={16} style={{ width: '100%' }}>
       <Space wrap>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
         <Text type="secondary">每 3 秒自动刷新 · 采样时间 {data?.sampled_at ?? '—'}</Text>
       </Space>
-      {error && <Alert type="error" showIcon message="实时 Agent 加载失败" description={error} />}
+      {error && <Alert type="error" showIcon title="实时 Agent 加载失败" description={error} />}
       <Space size={32} wrap>
         <Statistic title="Codex 正在执行" value={data?.summary.codex_executing ?? 0} />
         <Statistic title="Trae 桌面端" value={data?.summary.trae_desktop ?? 0} />
@@ -302,7 +302,7 @@ function AgentProcessesTab() {
 }
 
 const watermarkColumns: TableColumnsType<WatermarkRow> = [
-  { title: '会话', key: 'chat', width: 280, render: (_, row) => <Space direction="vertical" size={0}><Text>{row.group_name || '(未命名)'}</Text><Text type="secondary" className="mono">{row.chat_id}</Text></Space> },
+  { title: '会话', key: 'chat', width: 280, render: (_, row) => <Space orientation="vertical" size={0}><Text>{row.group_name || '(未命名)'}</Text><Text type="secondary" className="mono">{row.chat_id}</Text></Space> },
   { title: '最后消息 ID', dataIndex: 'last_message_id', width: 260, render: (v: string) => <Text className="mono">{v}</Text> },
   { title: '最后抽取时间', dataIndex: 'last_scanned_at', width: 180 },
   { title: '更新时间', dataIndex: 'updated_at', width: 180 },
@@ -312,12 +312,12 @@ function WatermarksTab() {
   const { data, loading, error, refresh } = useDebugResource<{ items: WatermarkRow[] }>((signal) => getDebugWatermarks(signal))
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       <Space>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
         <Text type="secondary">每个会话的 M3 抽取游标（水位）。空表说明所有消息将被重新抽取。</Text>
       </Space>
-      {error && <Alert type="error" showIcon message="水位加载失败" description={error} />}
+      {error && <Alert type="error" showIcon title="水位加载失败" description={error} />}
       <Table<WatermarkRow>
         rowKey="chat_id" size="small" columns={watermarkColumns} dataSource={data?.items ?? []} loading={loading}
         pagination={false} scroll={{ x: 900 }}
@@ -335,7 +335,7 @@ function LogsTab() {
   const rendered = filtered.map((l) => (sources.length > 1 ? `[${l.source}] ${l.text}` : l.text)).join('\n')
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       <Space wrap>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
         <Segmented
@@ -346,8 +346,8 @@ function LogsTab() {
         />
         {data?.truncated && <Text type="secondary">（仅尾部）</Text>}
       </Space>
-      {error && <Alert type="error" showIcon message="日志加载失败" description={error} />}
-      {data?.notes?.map((note) => <Alert key={note} type="info" showIcon message={note} />)}
+      {error && <Alert type="error" showIcon title="日志加载失败" description={error} />}
+      {data?.notes?.map((note) => <Alert key={note} type="info" showIcon title={note} />)}
       <pre className="debug-log">{rendered || '(窗口内无日志)'}</pre>
     </Space>
   )
@@ -401,12 +401,12 @@ function ProactiveRunsTab() {
   ]
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       <Space wrap>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
         <Text type="secondary">持久化保存每轮主动巡视的完整 Prompt、最终输出、模型、状态和耗时；列表仅加载摘要。</Text>
       </Space>
-      {error && <Alert type="error" showIcon message="主动巡视记录加载失败" description={error} />}
+      {error && <Alert type="error" showIcon title="主动巡视记录加载失败" description={error} />}
       <Table<ProactiveRun>
         rowKey="id"
         size="small"
@@ -421,20 +421,20 @@ function ProactiveRunsTab() {
       <Drawer
         title={selected ? `主动巡视 #${selected.id}` : '主动巡视'}
         open={Boolean(selected)}
-        width={920}
+        size={920}
         onClose={() => setSelected(undefined)}
         destroyOnHidden
       >
-        {detailError && <Alert type="error" showIcon message="运行详情加载失败" description={detailError} />}
+        {detailError && <Alert type="error" showIcon title="运行详情加载失败" description={detailError} />}
         {detailLoading && <Text type="secondary">正在加载完整输入输出…</Text>}
         {detail && (
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={12} style={{ width: '100%' }}>
             <Space wrap>
               <Tag color={detail.status === 'succeeded' ? 'green' : detail.status === 'failed' ? 'red' : 'blue'}>{detail.status}</Tag>
               <Text>{detail.engine} · {detail.model}</Text>
               <Text type="secondary">{detail.started_at}</Text>
             </Space>
-            {detail.error_detail && <Alert type="error" showIcon message="本轮失败" description={detail.error_detail} />}
+            {detail.error_detail && <Alert type="error" showIcon title="本轮失败" description={detail.error_detail} />}
             <Tabs
               items={[
                 { key: 'input', label: '输入 Prompt', children: <pre className="debug-log">{detail.input}</pre> },
@@ -474,15 +474,15 @@ function TriggerTab() {
   const busy = running !== undefined
 
   return (
-    <Space direction="vertical" size={20} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={20} style={{ width: '100%' }}>
       <Alert
         type="info"
         showIcon
-        message="手动触发 M1 采集，无需等 cron"
+        title="手动触发 M1 采集，无需等 cron"
         description="全部为同步调用：采集会话消息期间按钮持续 loading，完成后弹出结果。跑完可去「采集流水」「抽取水位」子 tab 看效果。"
       />
       <Card size="small" title="全量采集" variant="borderless">
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Space wrap>
             <Button
               type="primary"
@@ -507,7 +507,7 @@ function TriggerTab() {
         </Space>
       </Card>
       <Card size="small" title="采集单个会话" variant="borderless">
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
             <Input
               placeholder="输入 chat_id（如 oc_xxx）"
@@ -528,7 +528,7 @@ function TriggerTab() {
           <Text type="secondary">对指定 chat_id 立即增量采集（等价 -scan-chat）；首次采集从当前时间起，不回补历史。</Text>
         </Space>
       </Card>
-      {lastResult && <Alert type="info" showIcon message="最近一次结果" description={<Text className="mono">{lastResult}</Text>} />}
+      {lastResult && <Alert type="info" showIcon title="最近一次结果" description={<Text className="mono">{lastResult}</Text>} />}
     </Space>
   )
 }

@@ -282,7 +282,7 @@ function ProjectsPanel() {
       <Text type="secondary">共 {items.length} 个项目</Text>
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建项目</Button></Flex>
     </Flex>
-    {error && <Alert type="error" showIcon message="项目操作失败" description={error} closable onClose={() => setError(undefined)} />}
+    {error && <Alert type="error" showIcon title="项目操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless"><Table<Project> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(project) => ({ onClick: () => setDetail(project), className: 'clickable-row' })} /></Card>
     <Modal title={editing ? '编辑项目' : '新建项目'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
@@ -501,7 +501,7 @@ function PersonsPanel() {
       </Flex>
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建人物</Button></Flex>
     </Flex>
-    {error && <Alert type="error" showIcon message="人物操作失败" description={error} closable onClose={() => setError(undefined)} />}
+    {error && <Alert type="error" showIcon title="人物操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless"><Table<Person> rowKey="id" columns={columns} dataSource={visibleItems} loading={loading} pagination={false} scroll={{ x: 900 }} /></Card>
     <Modal title={editing ? '编辑人物' : '新建人物'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden width={720}>
       {!editing && (
@@ -510,8 +510,8 @@ function PersonsPanel() {
             <Input value={query} onChange={(e) => setQuery(e.target.value)} onPressEnter={runResolve} placeholder="输入姓名或邮箱搜索飞书用户" allowClear />
             <Button type="primary" onClick={runResolve} loading={searching}>搜索</Button>
           </Flex>
-          {hasMore && <Alert style={{ marginTop: 8 }} type="warning" showIcon message="结果过多，请补全姓名或改用邮箱缩小范围" />}
-          {candidates && candidates.length === 0 && <Alert style={{ marginTop: 8 }} type="info" showIcon message="未找到匹配用户，换个关键词试试" />}
+          {hasMore && <Alert style={{ marginTop: 8 }} type="warning" showIcon title="结果过多，请补全姓名或改用邮箱缩小范围" />}
+          {candidates && candidates.length === 0 && <Alert style={{ marginTop: 8 }} type="info" showIcon title="未找到匹配用户，换个关键词试试" />}
           {candidates && candidates.length > 0 && (
             <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
               {candidates.map((c) => (
@@ -755,10 +755,10 @@ function GroupsPanel() {
     {broadened && (
       <Alert
         style={{ marginBottom: 8 }} type="info" showIcon
-        message={`「已监控」中没有匹配，已在全部会话中搜索「${keyword}」，命中 ${total} 个`}
+        title={`「已监控」中没有匹配，已在全部会话中搜索「${keyword}」，命中 ${total} 个`}
       />
     )}
-    {error && <Alert type="error" showIcon message="会话背景操作失败" description={error} closable onClose={() => setError(undefined)} />}
+    {error && <Alert type="error" showIcon title="会话背景操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
       <Table<Group>
         rowKey="id" columns={columns} dataSource={items} loading={loading} scroll={{ x: 1000 }}
@@ -875,9 +875,9 @@ function ProfilePanel() {
   }
 
   return <>
-    {error && <Alert type="error" showIcon message="保存失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon message="已保存，抽取时会把「我的背景」喂给模型" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
-    {profile && !profile.saved && <Alert type="info" showIcon message="首次填写：Principal（我）背景尚未设置，完善后可显著提升 leader 软措辞交办的识别" style={{ marginBottom: 12 }} />}
+    {error && <Alert type="error" showIcon title="保存失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon title="已保存，抽取时会把「我的背景」喂给模型" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    {profile && !profile.saved && <Alert type="info" showIcon title="首次填写：Principal（我）背景尚未设置，完善后可显著提升 leader 软措辞交办的识别" style={{ marginBottom: 12 }} />}
     <Card variant="borderless" loading={loading} className="memory-profile-card">
       <Form form={form} layout="vertical">
         <Form.Item name="name" label="姓名（当前用户是谁）" rules={[{ required: true, message: '请填写姓名' }]}>
@@ -1075,7 +1075,7 @@ function ResourcePanel() {
       <Text type="secondary">共 {items.length} 个资源</Text>
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建资源</Button></Flex>
     </Flex>
-    {error && <Alert type="error" showIcon message="资源操作失败" description={error} closable onClose={() => setError(undefined)} />}
+    {error && <Alert type="error" showIcon title="资源操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless"><Table<Resource> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} /></Card>
     <Modal title="新建资源" open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
@@ -1156,9 +1156,9 @@ function WorkRulesPanel() {
   ]
 
   return <>
-    {error && <Alert type="error" showIcon message="工作规则操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon message="工作规则已保存，后续对应阶段会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
-    <Alert type="info" showIcon message="工作规则直接读写本地 Markdown"
+    {error && <Alert type="error" showIcon title="工作规则操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon title="工作规则已保存，后续对应阶段会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    <Alert type="info" showIcon title="工作规则直接读写本地 Markdown"
       description="文件中的顺序就是执行优先级。全阶段规则会与当前阶段规则组合注入；清空文件即表示该范围没有规则。"
       style={{ marginBottom: 12 }} />
     <Card loading={loading} variant="borderless">
@@ -1234,9 +1234,9 @@ function ApprovalRulesPanel() {
   }
 
   return <>
-    {error && <Alert type="error" showIcon message="审批策略操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon message="审批策略已保存，后续 M5 任务会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
-    {!record && !loading && <Alert type="error" showIcon message="审批策略文件缺失，服务配置不完整。" style={{ marginBottom: 12 }} />}
+    {error && <Alert type="error" showIcon title="审批策略操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon title="审批策略已保存，后续 M5 任务会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    {!record && !loading && <Alert type="error" showIcon title="审批策略文件缺失，服务配置不完整。" style={{ marginBottom: 12 }} />}
     <Card loading={loading} variant="borderless">
       <Form form={form} layout="vertical" initialValues={{ content: '' }}>
         <Form.Item name="content" label="M5 审批判定策略" rules={[{ required: true, whitespace: true, message: '请输入审批策略' }]}
@@ -1335,12 +1335,12 @@ function SystemPromptsPanel() {
   }
 
   return <>
-    {error && <Alert type="error" showIcon message="系统提示词操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon message={`${definition.name}提示词已保存，后续对应执行实时读取`} closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    {error && <Alert type="error" showIcon title="系统提示词操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon title={`${definition.name}提示词已保存，后续对应执行实时读取`} closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
     <Alert
       type="info"
       showIcon
-      message="这些内容直接读写本地 Markdown 文件"
+      title="这些内容直接读写本地 Markdown 文件"
       description="M3、M5 与主动巡视会实时读取对应文件。工具说明由工具层维护，Skills 由 Skills 页维护；当前环节、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
       style={{ marginBottom: 12 }}
     />
@@ -1355,7 +1355,7 @@ function SystemPromptsPanel() {
           children: (
             <>
               {!records[item.key] && (
-                <Alert type="warning" showIcon message={`${item.name}提示词不存在，对应阶段会 fail-fast；请填写并保存。`} style={{ marginBottom: 12 }} />
+                <Alert type="warning" showIcon title={`${item.name}提示词不存在，对应阶段会 fail-fast；请填写并保存。`} style={{ marginBottom: 12 }} />
               )}
               <Text strong>{item.fileName}</Text>
               <div><Text type="secondary">{item.description}</Text></div>

@@ -73,7 +73,7 @@ export default function SharedMemory() {
       </PageHeader>
 
       {error && (
-        <Alert type="error" showIcon message="加载共享记忆失败" description={error} style={{ marginBottom: 16 }} closable onClose={() => setError(undefined)} />
+        <Alert type="error" showIcon title="加载共享记忆失败" description={error} style={{ marginBottom: 16 }} closable onClose={() => setError(undefined)} />
       )}
 
       <Spin spinning={loading}>

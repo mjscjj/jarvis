@@ -283,7 +283,7 @@ export default function Chat() {
         </div>
       ))}
     </div>
-    {error && <Alert className="chat-error" type="error" showIcon message="Jarvis 暂时无法回复" description={error} closable onClose={() => setError(undefined)} />}
+    {error && <Alert className="chat-error" type="error" showIcon title="Jarvis 暂时无法回复" description={error} closable onClose={() => setError(undefined)} />}
     <div className="chat-composer">
       <Input.TextArea
         ref={inputRef}

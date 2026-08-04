@@ -20,7 +20,7 @@ export function TodoContextPanel({
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无背景信息" />
   }
   return (
-    <Space direction="vertical" size="small" style={{ width: '100%' }}>
+    <Space orientation="vertical" size="small" style={{ width: '100%' }}>
       {target && (
         <div>
           <Text type="secondary">主题 / 去重身份</Text>
@@ -37,7 +37,7 @@ export function TodoContextPanel({
         <Alert
           type="warning"
           showIcon
-          message="执行时待查证 / 补全"
+          title="执行时待查证 / 补全"
           description={
             <ul style={{ margin: 0, paddingLeft: 18 }}>
               {questions.map((q, i) => (

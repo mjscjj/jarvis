@@ -401,12 +401,12 @@ export default function SystemTasks() {
       <Drawer
         title={selected ? `${selected.name} · 执行记录` : '执行记录'}
         open={Boolean(selected)}
-        width={860}
+        size={860}
         onClose={() => setSelected(undefined)}
         extra={<Button size="small" onClick={() => selected && loadRuns(selected)} loading={runsLoading}>刷新</Button>}
         destroyOnHidden
       >
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           {selected && <Text type="secondary">日志 job：<Text code>{selected.job}</Text>，最新记录在前。</Text>}
           {runs?.truncated && <Alert type="info" showIcon title="日志文件较大，仅展示当前日志尾部可读取到的记录。" />}
           {runs?.notes.map((note) => <Alert key={note} type="warning" showIcon title={note} />)}

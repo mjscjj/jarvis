@@ -111,11 +111,11 @@ function DocsTab({ date }: { date: Dayjs }) {
 
   return (
     <div>
-      {error && <Alert type="error" showIcon message="文档加载失败" description={error} />}
+      {error && <Alert type="error" showIcon title="文档加载失败" description={error} />}
       {loading ? (
         <div style={{ padding: '32px 0', textAlign: 'center' }}><Spin /></div>
       ) : (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={16} style={{ width: '100%' }}>
           <Card variant="borderless" title={`我写的文档（${data?.authored.length ?? 0}）`}>
             {(data?.authored.length ?? 0) === 0
               ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这天没有我编辑的文档" />
@@ -174,7 +174,7 @@ function CodeTab({ date }: { date: Dayjs }) {
 
   return (
     <div>
-      {error && <Alert type="error" showIcon message="代码提交加载失败" description={error} />}
+      {error && <Alert type="error" showIcon title="代码提交加载失败" description={error} />}
       {loading ? (
         <div style={{ padding: '32px 0', textAlign: 'center' }}><Spin /></div>
       ) : (data?.repos.length ?? 0) === 0 ? (
@@ -182,7 +182,7 @@ function CodeTab({ date }: { date: Dayjs }) {
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这天没有我更新的 MR" />
         </Card>
       ) : (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={16} style={{ width: '100%' }}>
           {data!.repos.map((repo) => (
             <Card key={repo.repo} variant="borderless" title={repo.repo}>
               <Table<CommitMR>
@@ -349,11 +349,11 @@ export default function Progress() {
         extra={<Button type={scope === 'person' ? 'primary' : 'default'} size="small" loading={isGenerating} disabled={isGenerating} onClick={() => generate(scope, scopeId)}>{buttonLabel}</Button>}
       >
         {status === 'failed' ? (
-          <Alert type="error" showIcon message="生成失败" description={item?.error_detail || '未记录错误详情'} />
+          <Alert type="error" showIcon title="生成失败" description={item?.error_detail || '未记录错误详情'} />
         ) : item?.summary ? (
           <>
             <MarkdownReport className="daily-digest-markdown" content={item.summary} />
-            <Space direction="vertical" size={6}>
+            <Space orientation="vertical" size={6}>
               <Text type="secondary">
                 {item.generated_at ? `生成于 ${dayjs(item.generated_at).format('YYYY-MM-DD HH:mm')}` : '尚未生成'}
                 {item.cutoff_at ? ` · 数据截至 ${dayjs(item.cutoff_at).format('YYYY-MM-DD HH:mm')}` : ''}
@@ -415,14 +415,14 @@ export default function Progress() {
           />
         </Flex>
       </Card>
-      {dailyError && <Alert type="error" showIcon message="每日总结加载失败" description={dailyError} />}
+      {dailyError && <Alert type="error" showIcon title="每日总结加载失败" description={dailyError} />}
       <Spin spinning={dailyLoading}>
         {dailyScopeTab === 'person' ? (
           profile
             ? digestCard('我的工作回顾', 'person', profile.open_id)
             : <Card variant="borderless"><Spin size="small" /></Card>
         ) : (
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
             {(data?.key_groups ?? []).map((group) => digestCard(group.name || '未命名会话', 'group', String(group.group_id)))}
             {!loading && (data?.key_groups.length ?? 0) === 0 && (
               <Card variant="borderless">
@@ -459,7 +459,7 @@ export default function Progress() {
             <EmptyState description="暂无关键会话" hint="可在「记忆 → 会话」中将重要会话标为关键群" />
           </Card>
         ) : (
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
             {(data?.key_groups ?? []).map((group) => (
               <Card key={group.group_id} variant="borderless" title={group.name || '未命名会话'}>
                 <Table rowKey="date" size="small" columns={groupColumns()} dataSource={group.days} loading={loading} pagination={false} />
@@ -490,7 +490,7 @@ export default function Progress() {
         )}
       </PageHeader>
 
-      {error && <Alert type="error" showIcon message="回顾加载失败" description={error} closable onClose={() => setError(undefined)} />}
+      {error && <Alert type="error" showIcon title="回顾加载失败" description={error} closable onClose={() => setError(undefined)} />}
 
       <Flex className="review-view-nav" gap={4} wrap>
         <Button type={activeView === 'summary' ? 'primary' : 'text'} onClick={() => setActiveView('summary')}>每日总结</Button>
