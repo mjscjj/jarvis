@@ -1,57 +1,53 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Col, Row, Space, Tag, Typography } from 'antd'
-import { ReloadOutlined } from '@ant-design/icons'
+import { Alert, Badge, Button, Card, Skeleton, Space, Tag, Typography } from 'antd'
+import {
+  ArrowRightOutlined,
+  CheckCircleFilled,
+  ClockCircleOutlined,
+  ExclamationCircleFilled,
+  ReloadOutlined,
+} from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { agentModeLabels, agentSourceMeta } from './agentProcesses'
-import { getDailyDigests, getDebugAgentProcesses, getDebugFailures, getDigests, getOverview } from './api'
+import {
+  getDailyDigests,
+  getDebugAgentProcesses,
+  getDebugFailures,
+  getDigests,
+  getOverview,
+  listTasks,
+} from './api'
 import PageHeader from './components/PageHeader'
-import StatusStackBar from './components/StatusStackBar'
 import { usePageContext } from './pageContext'
-import { taskStatusMeta, todoStatusMeta } from './status'
+import { taskStatusMeta } from './status'
+import { proposalOf, strField } from './tasks/taskPresentation'
 import type {
-  AgentProcess,
   AgentProcessSnapshot,
   DailyDigest,
   Digest,
   FailureEvent,
   Overview as OverviewData,
-  StatusCount,
+  Task,
+  TaskList,
+  TaskStatus,
 } from './types'
+import './styles/today.css'
 
-const { Text } = Typography
+const { Text, Title } = Typography
+
+const ATTENTION_STATUSES: TaskStatus[] = ['needs_human', 'awaiting_approval']
+const ACTIVE_STATUSES: TaskStatus[] = ['pending', 'executing', 'waiting']
+const RESULT_STATUSES: TaskStatus[] = ['done', 'failed']
 
 const digestStatusMeta: Record<DailyDigest['status'], { color: string; label: string }> = {
   pending: { color: 'default', label: '待生成' },
   generating: { color: 'processing', label: '生成中' },
   done: { color: 'success', label: '已生成' },
-  failed: { color: 'error', label: '失败' },
+  failed: { color: 'error', label: '生成失败' },
 }
 
-interface CompactMetricProps {
+interface LoadIssue {
   label: string
-  value: number | string
   detail: string
-  tone?: 'default' | 'warning' | 'error' | 'success'
-  onClick: () => void
-}
-
-function CompactMetric({ label, value, detail, tone = 'default', onClick }: CompactMetricProps) {
-  return (
-    <button type="button" className={`overview-key-metric overview-key-metric-${tone}`} onClick={onClick}>
-      <span className="overview-key-label">{label}</span>
-      <span className="overview-key-value">{value}</span>
-      <span className="overview-key-detail">{detail}</span>
-    </button>
-  )
-}
-
-function MiniStat({ label, value, tone }: { label: string; value: number | string; tone?: 'error' | 'success' }) {
-  return (
-    <div className="overview-mini-stat">
-      <Text type="secondary">{label}</Text>
-      <span className={tone ? `overview-mini-value overview-mini-value-${tone}` : 'overview-mini-value'}>{value}</span>
-    </div>
-  )
 }
 
 function errorText(cause: unknown): string {
@@ -62,89 +58,154 @@ function isAbortError(cause: unknown): boolean {
   return cause instanceof DOMException && cause.name === 'AbortError'
 }
 
-function countStatus(items: StatusCount[] | undefined, ...statuses: string[]): number {
-  if (!items) return 0
-  const targets = new Set(statuses)
-  return items.reduce((sum, item) => sum + (targets.has(item.status) ? item.count : 0), 0)
-}
-
-function timeOfDay(value: string | null | undefined): string {
-  if (!value) return '—'
+function timeLabel(value: string | null | undefined): string {
+  if (!value) return '时间未知'
   const parsed = dayjs(value)
-  return parsed.isValid() ? parsed.format('HH:mm') : value
+  if (!parsed.isValid()) return value
+  return parsed.format('YYYY-MM-DD') === dayjs().format('YYYY-MM-DD')
+    ? `今天 ${parsed.format('HH:mm')}`
+    : parsed.format('MM-DD HH:mm')
 }
 
-function shortText(value: string, maxLength = 120): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value
+function weekdayLabel(): string {
+  return ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][dayjs().day()]
+}
+
+function taskSupportingText(task: Task): string | null {
+  const proposal = proposalOf(task)
+  if (task.status === 'awaiting_approval') {
+    return proposal?.needs_followup
+      ?? proposal?.proposal.action
+      ?? strField(task.execution_result, 'needs_followup')
+      ?? strField(task.execution_result, 'action')
+  }
+  return task.summary
+    ?? strField(task.execution_result, 'summary')
+    ?? strField(task.execution_result, 'needs_followup')
+}
+
+function TaskRow({ task, onClick, emphasis = false }: { task: Task; onClick: () => void; emphasis?: boolean }) {
+  const supportingText = taskSupportingText(task)
+  const status = taskStatusMeta[task.status]
+
+  return (
+    <button
+      type="button"
+      className={`today-task-row${emphasis ? ' today-task-row-emphasis' : ''}`}
+      onClick={onClick}
+    >
+      <span className="today-task-status" style={{ background: status.color }} aria-hidden="true" />
+      <span className="today-task-content">
+        <span className="today-task-title">{task.title}</span>
+        {supportingText && <span className="today-task-summary">{supportingText}</span>}
+        <span className="today-task-meta">
+          <span>{status.label}</span>
+          {task.target && <><span aria-hidden="true">·</span><span>{task.target}</span></>}
+          <span aria-hidden="true">·</span>
+          <span>{timeLabel(task.updated_at)}</span>
+        </span>
+      </span>
+      <ArrowRightOutlined className="today-task-arrow" aria-hidden="true" />
+    </button>
+  )
+}
+
+function EmptyPanel({ text }: { text: string }) {
+  return (
+    <div className="today-empty">
+      <CheckCircleFilled />
+      <span>{text}</span>
+    </div>
+  )
 }
 
 export default function Overview() {
-  const { navigate } = usePageContext()
+  const { navigate, setSelection } = usePageContext()
   const todayDate = dayjs().format('YYYY-MM-DD')
-  const [data, setData] = useState<OverviewData>()
+  const [overview, setOverview] = useState<OverviewData>()
   const [digest, setDigest] = useState<Digest>()
   const [dailyItems, setDailyItems] = useState<DailyDigest[]>([])
+  const [attention, setAttention] = useState<TaskList>()
+  const [active, setActive] = useState<TaskList>()
+  const [results, setResults] = useState<TaskList>()
   const [failures, setFailures] = useState<FailureEvent[]>([])
   const [agents, setAgents] = useState<AgentProcessSnapshot>()
-  const [loading, setLoading] = useState(false)
-  const [agentLoading, setAgentLoading] = useState(false)
-  const [error, setError] = useState<string>()
-  const [agentError, setAgentError] = useState<string>()
+  const [loading, setLoading] = useState(true)
+  const [agentLoading, setAgentLoading] = useState(true)
+  const [loadIssues, setLoadIssues] = useState<LoadIssue[]>([])
+  const [agentIssue, setAgentIssue] = useState<LoadIssue>()
   const [refreshVersion, setRefreshVersion] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
 
-    async function loadOverview() {
+    async function loadToday() {
       setLoading(true)
-      const results = await Promise.allSettled([
+      const settled = await Promise.allSettled([
         getOverview(controller.signal),
         getDigests(1, controller.signal),
         getDailyDigests(todayDate, controller.signal),
+        listTasks(ATTENTION_STATUSES, 1, 5, controller.signal),
+        listTasks(ACTIVE_STATUSES, 1, 5, controller.signal),
+        listTasks(RESULT_STATUSES, 1, 16, controller.signal),
         getDebugFailures(24, controller.signal),
       ])
       if (controller.signal.aborted) return
 
-      const issues: string[] = []
-      const [overviewResult, digestResult, dailyResult, failureResult] = results
+      const issues: LoadIssue[] = []
+      const recordIssue = (label: string, reason: unknown) => {
+        if (!isAbortError(reason)) issues.push({ label, detail: errorText(reason) })
+      }
+      const [overviewResult, digestResult, dailyResult, attentionResult, activeResult, resultResult, failureResult] = settled
 
-      if (overviewResult.status === 'fulfilled') setData(overviewResult.value)
-      else if (!isAbortError(overviewResult.reason)) issues.push(`任务概览：${errorText(overviewResult.reason)}`)
+      if (overviewResult.status === 'fulfilled') setOverview(overviewResult.value)
+      else recordIssue('任务统计', overviewResult.reason)
 
       if (digestResult.status === 'fulfilled') setDigest(digestResult.value)
-      else if (!isAbortError(digestResult.reason)) issues.push(`今日进展：${errorText(digestResult.reason)}`)
+      else recordIssue('今日进度', digestResult.reason)
 
       if (dailyResult.status === 'fulfilled') setDailyItems(dailyResult.value.items)
-      else if (!isAbortError(dailyResult.reason)) issues.push(`每日总结：${errorText(dailyResult.reason)}`)
+      else recordIssue('总结状态', dailyResult.reason)
+
+      if (attentionResult.status === 'fulfilled') setAttention(attentionResult.value)
+      else recordIssue('需要我处理', attentionResult.reason)
+
+      if (activeResult.status === 'fulfilled') setActive(activeResult.value)
+      else recordIssue('正在推进', activeResult.reason)
+
+      if (resultResult.status === 'fulfilled') setResults(resultResult.value)
+      else recordIssue('今日结果', resultResult.reason)
 
       if (failureResult.status === 'fulfilled') setFailures(failureResult.value.items)
-      else if (!isAbortError(failureResult.reason)) issues.push(`运行错误：${errorText(failureResult.reason)}`)
+      else recordIssue('风险状态', failureResult.reason)
 
-      setError(issues.length > 0 ? issues.join('\n') : undefined)
+      setLoadIssues(issues)
       setLoading(false)
     }
 
-    void loadOverview()
+    void loadToday()
     return () => controller.abort()
   }, [refreshVersion, todayDate])
 
   useEffect(() => {
     const controller = new AbortController()
+    let stopped = false
     let inFlight = false
     let firstLoad = true
-    let stopped = false
 
     async function loadAgents() {
       if (inFlight) return
       inFlight = true
       if (firstLoad) setAgentLoading(true)
       try {
-        const result = await getDebugAgentProcesses(controller.signal)
+        const snapshot = await getDebugAgentProcesses(controller.signal)
         if (stopped) return
-        setAgents(result)
-        setAgentError(undefined)
+        setAgents(snapshot)
+        setAgentIssue(undefined)
       } catch (cause: unknown) {
-        if (!stopped && !isAbortError(cause)) setAgentError(errorText(cause))
+        if (!stopped && !isAbortError(cause)) {
+          setAgentIssue({ label: 'Jarvis 运行状态', detail: errorText(cause) })
+        }
       } finally {
         inFlight = false
         if (!stopped && firstLoad) {
@@ -155,7 +216,7 @@ export default function Overview() {
     }
 
     void loadAgents()
-    const timer = window.setInterval(() => void loadAgents(), 3000)
+    const timer = window.setInterval(() => void loadAgents(), 10_000)
     return () => {
       stopped = true
       controller.abort()
@@ -163,56 +224,38 @@ export default function Overview() {
     }
   }, [refreshVersion])
 
-  const todoTotal = useMemo(
-    () => data?.todos.by_status?.reduce((sum, item) => sum + item.count, 0) ?? 0,
-    [data],
-  )
-  const taskTotal = useMemo(
-    () => data?.tasks.by_status?.reduce((sum, item) => sum + item.count, 0) ?? 0,
-    [data],
-  )
-  const taskNeedsHuman = countStatus(data?.tasks.by_status, 'needs_human', 'awaiting_approval')
-  const taskExecuting = countStatus(data?.tasks.by_status, 'executing')
-  const taskWaiting = countStatus(data?.tasks.by_status, 'waiting')
-  // The only human gate is on the Task: M5 parks there when it wants me to
-  // approve a proposal or answer a question. Clues never wait on me.
-  const needsAttention = taskNeedsHuman
-  const unresolvedFailures = failures.filter((item) => !item.recovered)
-  const unresolvedFailureCount = unresolvedFailures.reduce((sum, item) => sum + Math.max(item.count, 1), 0)
-  const today = digest?.mine.find((item) => item.date === todayDate) ?? digest?.mine[0]
-  const todayGroupMessages = digest?.key_groups.reduce(
-    (sum, group) => sum + (group.days.find((item) => item.date === todayDate)?.messages ?? 0),
-    0,
-  ) ?? 0
+  const todayDigest = digest?.mine.find((item) => item.date === todayDate)
   const personDigest = dailyItems.find((item) => item.scope === 'person')
   const groupDigests = dailyItems.filter((item) => item.scope === 'group')
-  const finishedGroupDigests = groupDigests.filter((item) => item.status === 'done').length
-  const activeTaskAgents = (agents?.summary.codex_executing ?? 0) + (agents?.summary.trae_cli ?? 0)
-  const jarvisAgents = (agents?.summary.jarvis_codex ?? 0) + (agents?.summary.jarvis_trae ?? 0)
-  // 常驻 app-server 只说明运行时活着，不代表有任务在跑，这里不展示。
-  const agentPool = useMemo(
-    () => (agents?.items ?? []).filter((item) => item.mode !== 'app-server'),
-    [agents],
+  const failedDigests = dailyItems.filter((item) => item.status === 'failed')
+  const completedGroupDigests = groupDigests.filter((item) => item.status === 'done').length
+  const todayResults = useMemo(
+    () => (results?.items ?? []).filter((item) => dayjs(item.updated_at).format('YYYY-MM-DD') === todayDate).slice(0, 4),
+    [results, todayDate],
   )
-  const visibleAgents = useMemo(
-    () => [...agentPool]
-      .filter((item) => !item.nested || item.mode === 'exec' || item.mode === 'cli')
-      .sort((left, right) => Number(right.mode === 'exec' || right.mode === 'cli')
-        - Number(left.mode === 'exec' || left.mode === 'cli')
-        || Number(right.jarvis_owned) - Number(left.jarvis_owned)
-        || left.kind.localeCompare(right.kind))
-      .slice(0, 5),
-    [agentPool],
-  )
-  const hiddenAgentCount = Math.max(0, agentPool.length - visibleAgents.length)
-  const hasRuntimeProblem = unresolvedFailureCount > 0 || Boolean(agentError)
+  const failedTodayTasks = todayResults.filter((item) => item.status === 'failed')
+  const failedTodayTaskCount = todayDigest?.tasks_failed ?? failedTodayTasks.length
+  const unresolvedFailures = failures.filter((item) => !item.recovered)
+  const unresolvedFailureCount = unresolvedFailures.reduce((sum, item) => sum + Math.max(item.count, 1), 0)
+  const activeAgents = (agents?.summary.codex_executing ?? 0) + (agents?.summary.trae_cli ?? 0)
+  const healthPending = loading || (agentLoading && !agents)
+  const hasHealthConcern = unresolvedFailureCount > 0 || Boolean(agentIssue) || loadIssues.length > 0
+
+  function openTask(task: Task) {
+    navigate('tasks')
+    setSelection({ kind: 'task', id: task.id, label: `Task #${task.id} ${task.title}` })
+  }
+
+  const issueList = agentIssue ? [...loadIssues, agentIssue] : loadIssues
 
   return (
-    <div className="overview overview-compact">
-      <PageHeader title="Overview" subtitle={`今天 · ${dayjs().format('MM-DD')}`}>
+    <div className="today-home">
+      <PageHeader title="今日" subtitle={`${dayjs().format('M 月 D 日')} · ${weekdayLabel()}`}>
         <Space size={12}>
-          <Badge status={hasRuntimeProblem ? 'error' : 'success'} text={hasRuntimeProblem ? '有异常' : '运行正常'} />
-          <Text type="secondary" className="overview-updated-at">{timeOfDay(agents?.sampled_at)}</Text>
+          <Badge
+            status={healthPending ? 'processing' : hasHealthConcern ? 'warning' : 'success'}
+            text={healthPending ? '正在同步' : hasHealthConcern ? '有事项需关注' : 'Jarvis 正常'}
+          />
           <Button
             size="small"
             icon={<ReloadOutlined />}
@@ -224,174 +267,175 @@ export default function Overview() {
         </Space>
       </PageHeader>
 
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          message="部分数据加载失败"
-          description={<span style={{ whiteSpace: 'pre-line' }}>{error}</span>}
-          closable
-          onClose={() => setError(undefined)}
-          className="overview-alert"
-        />
-      )}
-
-      <div className="overview-status-strip" aria-busy={loading && data === undefined}>
-        <CompactMetric
-          label="待我处理"
-          value={data ? needsAttention : '—'}
-          detail="待审批或待我答复的 Task"
-          tone={needsAttention > 0 ? 'warning' : 'success'}
-          onClick={() => navigate('tasks')}
-        />
-        <CompactMetric
-          label="Leader 未闭环"
-          value={data?.todos.leader_open ?? (data ? 0 : '—')}
-          detail="仍在推进的交办"
-          tone={(data?.todos.leader_open ?? 0) > 0 ? 'error' : 'default'}
-          onClick={() => navigate('todos')}
-        />
-        <CompactMetric
-          label="Task 执行中"
-          value={data ? taskExecuting : '—'}
-          detail={`${taskWaiting} 个等待唤醒`}
-          onClick={() => navigate('tasks')}
-        />
-        <CompactMetric
-          label="运行异常"
-          value={loading && failures.length === 0 ? '—' : unresolvedFailureCount}
-          detail="最近 24 小时"
-          tone={unresolvedFailureCount > 0 ? 'error' : 'success'}
-          onClick={() => navigate('debug')}
-        />
-      </div>
-
-      {unresolvedFailureCount > 0 && (
+      {issueList.length > 0 && (
         <Alert
           type="warning"
           showIcon
-          message={`${unresolvedFailureCount} 个未恢复错误 · ${shortText(unresolvedFailures[0]?.error || '查看运行状态了解详情')}`}
-          action={<Button type="link" size="small" onClick={() => navigate('debug')}>查看</Button>}
-          className="overview-alert"
+          className="today-load-alert"
+          message={`部分信息暂时无法显示：${issueList.map((item) => item.label).join('、')}`}
+          description={(
+            <details>
+              <summary>查看技术详情</summary>
+              {issueList.map((item) => <div key={item.label}>{item.label}：{item.detail}</div>)}
+            </details>
+          )}
+          action={<Button type="link" size="small" onClick={() => navigate('debug')}>运行状态</Button>}
         />
       )}
 
-      <Row gutter={[12, 12]} className="overview-main-grid">
-        <Col xs={24} xl={14}>
-          <Card
-            size="small"
-            title="今天"
-            extra={<Button type="link" size="small" onClick={() => navigate('progress')}>进度与总结</Button>}
-            className="overview-panel"
-            loading={loading && digest === undefined}
-          >
-            <div className="overview-mini-grid">
-              <MiniStat label="新增 Todo" value={today?.todos_created ?? 0} />
-              <MiniStat label="生成 Task" value={today?.tasks_created ?? 0} />
-              <MiniStat label="完成 Task" value={today?.tasks_done ?? 0} tone="success" />
-              <MiniStat label="失败 Task" value={today?.tasks_failed ?? 0} tone={(today?.tasks_failed ?? 0) > 0 ? 'error' : undefined} />
-              <MiniStat label="群消息" value={todayGroupMessages} />
-            </div>
-
-            <div className="overview-summary-list">
-              <div className="overview-summary-row">
-                <Space size={8} wrap>
-                  <Text strong>个人总结</Text>
-                  {personDigest ? (
-                    <Tag color={digestStatusMeta[personDigest.status].color}>{digestStatusMeta[personDigest.status].label}</Tag>
-                  ) : (
-                    <Tag>未生成</Tag>
-                  )}
-                </Space>
-                <Text type="secondary">
-                  {personDigest
-                    ? `${timeOfDay(personDigest.generated_at)} · ${personDigest.source_count} 条证据`
-                    : '今天尚未生成'}
-                </Text>
-              </div>
-              <div className="overview-summary-row">
-                <Text strong>群总结</Text>
-                <Text type="secondary">
-                  {groupDigests.length > 0 ? `${finishedGroupDigests}/${groupDigests.length} 已生成` : '暂无群总结'}
-                </Text>
+      <main className="today-layout">
+        <Card className="today-panel today-attention-panel" bordered={false}>
+          <div className="today-panel-heading">
+            <div>
+              <Text className="today-eyebrow">需要你决定</Text>
+              <div className="today-heading-line">
+                <Title level={2}>{attention ? attention.total : '—'}</Title>
+                <Text>件待处理事项</Text>
               </div>
             </div>
-          </Card>
-        </Col>
+            <Button type="link" onClick={() => navigate('tasks')}>查看全部 <ArrowRightOutlined /></Button>
+          </div>
 
-        <Col xs={24} xl={10}>
-          <Card
-            size="small"
-            title="Agent 运行"
-            extra={<Button type="link" size="small" onClick={() => navigate('debug')}>详情</Button>}
-            className="overview-panel"
-            loading={agentLoading && agents === undefined}
-          >
-            {agentError && <Alert type="error" showIcon message="Agent 运行态加载失败" description={agentError} className="overview-inline-alert" />}
-            <div className="overview-mini-grid overview-runtime-stats">
-              <MiniStat label="执行任务" value={activeTaskAgents} tone={activeTaskAgents > 0 ? 'success' : undefined} />
-              <MiniStat label="Trae 桌面端" value={agents?.summary.trae_desktop ?? 0} />
-              <MiniStat label="Jarvis 启动" value={jarvisAgents} />
-            </div>
-
-            <div className="overview-agent-list">
-              {visibleAgents.length === 0 ? (
-                <Text type="secondary">当前没有 Codex 或 Trae 运行时</Text>
-              ) : visibleAgents.map((item: AgentProcess) => (
-                <div className="overview-agent-row" key={`${item.kind}-${item.pid}`}>
-                  <Space size={6}>
-                    <Tag color={agentSourceMeta[item.source].color}>{agentSourceMeta[item.source].label}</Tag>
-                    <Text>{item.kind === 'codex' ? 'Codex' : 'Trae'} · {agentModeLabels[item.mode]}</Text>
-                    {(item.mode === 'exec' || item.mode === 'cli') && <Badge status="processing" />}
-                  </Space>
-                  <Text type="secondary" className="mono">{item.elapsed}</Text>
-                </div>
+          {loading && !attention ? (
+            <Skeleton active paragraph={{ rows: 3 }} title={false} />
+          ) : attention && attention.items.length > 0 ? (
+            <div className="today-task-list">
+              {attention.items.map((task) => (
+                <TaskRow key={task.id} task={task} emphasis onClick={() => openTask(task)} />
               ))}
-              {hiddenAgentCount > 0 && (
-                <Button type="link" size="small" className="overview-agent-more" onClick={() => navigate('debug')}>
-                  另有 {hiddenAgentCount} 个派生进程
-                </Button>
-              )}
             </div>
-          </Card>
-        </Col>
-      </Row>
+          ) : (
+            <EmptyPanel text="当前没有需要你决定的事项" />
+          )}
+        </Card>
 
-      <Card
-        size="small"
-        title="全局队列"
-        className="overview-panel overview-queue-panel"
-        loading={loading && data === undefined}
-      >
-        <div className="overview-queue-row">
-          <div className="overview-queue-heading">
-            <Space size={8} wrap>
-              <Button type="link" size="small" onClick={() => navigate('todos')}>Todo</Button>
-              <Tag color={(data?.todos.open ?? 0) > 0 ? 'warning' : 'default'}>{data?.todos.open ?? 0} 未闭环</Tag>
-              <Text type="secondary">共 {data?.todos.total ?? 0}</Text>
-            </Space>
+        <Card className="today-panel today-active-panel" bordered={false}>
+          <div className="today-panel-heading today-panel-heading-compact">
+            <div>
+              <Text className="today-eyebrow">Jarvis 正在推进</Text>
+              <Title level={4}>{active ? `${active.total} 件进行中` : '正在读取'}</Title>
+            </div>
+            <div className="today-agent-state">
+              <span className={activeAgents > 0 ? 'is-active' : undefined} />
+              {agentLoading && !agents ? '检查中' : activeAgents > 0 ? `${activeAgents} 个执行器工作中` : '暂无执行器占用'}
+            </div>
           </div>
-          <div className="overview-queue-bar">
-            {todoTotal > 0
-              ? <StatusStackBar items={data?.todos.by_status ?? []} meta={todoStatusMeta} height={8} showLegend={false} />
-              : <Text type="secondary">暂无 Todo</Text>}
+
+          {loading && !active ? (
+            <Skeleton active paragraph={{ rows: 3 }} title={false} />
+          ) : active && active.items.length > 0 ? (
+            <div className="today-task-list today-task-list-compact">
+              {active.items.map((task) => <TaskRow key={task.id} task={task} onClick={() => openTask(task)} />)}
+            </div>
+          ) : (
+            <EmptyPanel text="当前没有正在推进的任务" />
+          )}
+          {active && active.total > active.items.length && (
+            <Button className="today-more-button" type="text" onClick={() => navigate('tasks')}>
+              另有 {active.total - active.items.length} 件 <ArrowRightOutlined />
+            </Button>
+          )}
+        </Card>
+
+        <Card className="today-panel today-results-panel" bordered={false}>
+          <div className="today-panel-heading today-panel-heading-compact">
+            <div>
+              <Text className="today-eyebrow">今日结果</Text>
+              <Title level={4}>做成了什么</Title>
+            </div>
+            <Button type="link" onClick={() => navigate('progress')}>查看回顾 <ArrowRightOutlined /></Button>
           </div>
-        </div>
-        <div className="overview-queue-row">
-          <div className="overview-queue-heading">
-            <Space size={8} wrap>
-              <Button type="link" size="small" onClick={() => navigate('tasks')}>Task</Button>
-              <Tag color={(data?.tasks.pending ?? 0) > 0 ? 'processing' : 'default'}>{data?.tasks.pending ?? 0} 进行中</Tag>
-              <Text type="secondary">{data?.tasks.done ?? 0} 完成 · {data?.tasks.failed ?? 0} 失败</Text>
-            </Space>
+
+          <div className="today-result-summary">
+            <div className="today-result-count today-result-count-success">
+              <CheckCircleFilled />
+              <strong>{todayDigest ? todayDigest.tasks_done : '—'}</strong>
+              <span>完成</span>
+            </div>
+            <div className={`today-result-count${failedTodayTaskCount > 0 ? ' today-result-count-error' : ''}`}>
+              <ExclamationCircleFilled />
+              <strong>{todayDigest ? todayDigest.tasks_failed : '—'}</strong>
+              <span>失败</span>
+            </div>
+            <div className="today-digest-state">
+              <span>个人总结</span>
+              {personDigest
+                ? <Tag color={digestStatusMeta[personDigest.status].color}>{digestStatusMeta[personDigest.status].label}</Tag>
+                : <Tag>尚未生成</Tag>}
+              <Text type="secondary">群总结 {completedGroupDigests}/{groupDigests.length}</Text>
+            </div>
           </div>
-          <div className="overview-queue-bar">
-            {taskTotal > 0
-              ? <StatusStackBar items={data?.tasks.by_status ?? []} meta={taskStatusMeta} height={8} showLegend={false} />
-              : <Text type="secondary">暂无 Task</Text>}
+
+          {todayResults.length > 0 ? (
+            <div className="today-result-list">
+              {todayResults.map((task) => (
+                <button key={task.id} type="button" onClick={() => openTask(task)}>
+                  <span className={task.status === 'failed' ? 'is-failed' : undefined}>
+                    {task.status === 'failed' ? <ExclamationCircleFilled /> : <CheckCircleFilled />}
+                  </span>
+                  <span>
+                    <strong>{task.title}</strong>
+                    {taskSupportingText(task) && <small>{taskSupportingText(task)}</small>}
+                  </span>
+                  <ArrowRightOutlined />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <Text type="secondary" className="today-no-result">今天还没有产生可展示的任务结果</Text>
+          )}
+        </Card>
+
+        <Card className="today-panel today-risk-panel" bordered={false}>
+          <div className="today-panel-heading today-panel-heading-compact">
+            <div>
+              <Text className="today-eyebrow">发现与风险</Text>
+              <Title level={4}>可能影响你的事项</Title>
+            </div>
           </div>
-        </div>
-      </Card>
+
+          <div className="today-risk-list">
+            {failedTodayTaskCount > 0 && (
+              <button type="button" onClick={() => navigate('tasks')}>
+                <span className="today-risk-icon"><ExclamationCircleFilled /></span>
+                <span><strong>{failedTodayTaskCount} 项任务今天执行失败</strong><small>预期结果可能尚未交付，需要检查后续动作。</small></span>
+                <ArrowRightOutlined />
+              </button>
+            )}
+            {failedDigests.length > 0 && (
+              <button type="button" onClick={() => navigate('progress')}>
+                <span className="today-risk-icon"><ClockCircleOutlined /></span>
+                <span><strong>{failedDigests.length} 项总结未生成成功</strong><small>今天的工作回顾可能不完整。</small></span>
+                <ArrowRightOutlined />
+              </button>
+            )}
+            {unresolvedFailureCount > 0 && (
+              <button type="button" onClick={() => navigate('debug')}>
+                <span className="today-risk-icon"><ExclamationCircleFilled /></span>
+                <span><strong>后台能力有 {unresolvedFailureCount} 次异常尚未恢复</strong><small>任务采集、执行或总结可能受到影响。</small></span>
+                <ArrowRightOutlined />
+              </button>
+            )}
+            {agentIssue && (
+              <button type="button" onClick={() => navigate('debug')}>
+                <span className="today-risk-icon"><ClockCircleOutlined /></span>
+                <span><strong>暂时无法确认 Jarvis 运行状态</strong><small>任务仍可查看，执行状态需要到运行页面确认。</small></span>
+                <ArrowRightOutlined />
+              </button>
+            )}
+            {failedTodayTaskCount === 0 && failedDigests.length === 0 && unresolvedFailureCount === 0 && !agentIssue && (
+              <EmptyPanel text="暂未发现会影响你工作的风险" />
+            )}
+          </div>
+
+          <div className="today-system-footnote">
+            <Text type="secondary">
+              全局 {overview ? overview.tasks.pending : '—'} 件任务在途 · {overview ? overview.todos.leader_open : '—'} 件 Leader 交办未闭环
+            </Text>
+            <Button type="link" size="small" onClick={() => navigate('todos')}>查看线索</Button>
+          </div>
+        </Card>
+      </main>
     </div>
   )
 }
