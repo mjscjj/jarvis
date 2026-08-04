@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
@@ -83,11 +84,9 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		if err != nil {
 			return err
 		}
-		if _, err := findTaskByTodo(tx, todo.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
-			if err != nil {
-				return err
-			}
-			return fmt.Errorf("%w: todo_id=%d", ErrTaskExists, todo.ID)
+		existingTask, findErr := findTaskByTodo(tx, todo.ID)
+		if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return findErr
 		}
 		update := tx.Model(&domain.Todo{}).
 			Where("id = ? AND version = ? AND status = ?", todo.ID, expectedVersion, "extracted").
@@ -97,6 +96,25 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		}
 		if update.RowsAffected != 1 {
 			return versionConflict(todo.ID, expectedVersion, todo.Version)
+		}
+		if existingTask != nil {
+			if existingTask.Status != "observing" {
+				return fmt.Errorf("%w: todo_id=%d task_id=%d status=%s", ErrTaskExists, todo.ID, existingTask.ID, existingTask.Status)
+			}
+			if err := createTodoEvent(tx, todo.ID, "extracted", "materialized", "materializer", map[string]any{
+				"event_type": "task_rematerialized", "task_id": existingTask.ID,
+				"reason": "fresh evidence reopened an observing Todo",
+			}); err != nil {
+				return err
+			}
+			rerunTask, err := resetTaskForRerun(tx, existingTask, "system", map[string]any{
+				"reason": "fresh_todo_evidence", "todo_id": todo.ID, "todo_revision": todo.Revision,
+			}, time.Now())
+			if err != nil {
+				return err
+			}
+			result = materializationResult(todo.ID, todo.Version+1, rerunTask)
+			return nil
 		}
 		if err := createTodoEvent(tx, todo.ID, "extracted", "materialized", "materializer", map[string]any{
 			"event_type": "task_materialized",

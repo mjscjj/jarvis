@@ -87,6 +87,108 @@ func TestMaterializeTodoDuplicateNotificationIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestMaterializeTodoFreshEvidenceRerunsExistingObservingTask(t *testing.T) {
+	db := newMaterializerTestDB(t)
+	insertMaterializerTodo(t, db, 10, 4)
+	todoID := uint64(10)
+	task := domain.Task{
+		ID: 56, TodoID: &todoID, Title: "已有执行任务", ActionType: "investigate", Target: "目标",
+		Background:    datatypes.JSON(`{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z"}`),
+		SourcePayload: datatypes.JSON(`{"original":"evidence"}`), SourceType: "todo", SourceID: &todoID,
+		Status: "observing", ExecutionResult: datatypes.JSON(`{"outcome":"observing"}`), Version: 6,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	materializer, err := NewMaterializer(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := materializer.MaterializeTodo(context.Background(), todoID, 4)
+	if err != nil {
+		t.Fatalf("MaterializeTodo() error = %v", err)
+	}
+	if result.TodoID != todoID || result.TodoVersion != 5 || result.TaskID != 56 || result.TaskVersion != 7 {
+		t.Fatalf("result = %#v", result)
+	}
+	var reloadedTask domain.Task
+	if err := db.First(&reloadedTask, 56).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reloadedTask.Status != "pending" || reloadedTask.Version != 7 || len(reloadedTask.ExecutionResult) != 0 {
+		t.Fatalf("Task status=%s version=%d execution_result=%s", reloadedTask.Status, reloadedTask.Version, reloadedTask.ExecutionResult)
+	}
+	if string(reloadedTask.SourcePayload) != `{"original":"evidence"}` || string(reloadedTask.Background) != `{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z"}` {
+		t.Fatalf("frozen Task evidence changed: source_payload=%s background=%s", reloadedTask.SourcePayload, reloadedTask.Background)
+	}
+	var todo domain.Todo
+	if err := db.First(&todo, todoID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if todo.Status != "materialized" || todo.Version != 5 {
+		t.Fatalf("Todo status=%s version=%d", todo.Status, todo.Version)
+	}
+	var taskEvent domain.TaskEvent
+	if err := db.Where("task_id = ? AND task_version = ?", 56, 7).Take(&taskEvent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if taskEvent.EventType != "rerun_requested" || taskEvent.ActorType != "system" || taskEvent.FromStatus == nil || *taskEvent.FromStatus != "observing" || taskEvent.ToStatus != "pending" {
+		t.Fatalf("Task event = %#v", taskEvent)
+	}
+	var todoEvent domain.TodoEvent
+	if err := db.Where("todo_id = ?", todoID).Take(&todoEvent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if todoEvent.Actor != "materializer" || todoEvent.FromStatus == nil || *todoEvent.FromStatus != "extracted" || todoEvent.ToStatus != "materialized" {
+		t.Fatalf("Todo event = %#v", todoEvent)
+	}
+
+	duplicate, err := materializer.MaterializeTodo(context.Background(), todoID, 4)
+	if err != nil {
+		t.Fatalf("duplicate MaterializeTodo() error = %v", err)
+	}
+	if *duplicate != *result {
+		t.Fatalf("first=%#v duplicate=%#v", result, duplicate)
+	}
+	var count int64
+	if err := db.Model(&domain.Task{}).Where("todo_id = ?", todoID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("Task count = %d", count)
+	}
+}
+
+func TestMaterializeTodoRejectsExistingNonObservingTask(t *testing.T) {
+	db := newMaterializerTestDB(t)
+	insertMaterializerTodo(t, db, 11, 2)
+	todoID := uint64(11)
+	task := domain.Task{
+		TodoID: &todoID, Title: "正在执行的任务", ActionType: "investigate", Target: "目标",
+		Background: datatypes.JSON(`{}`), SourcePayload: datatypes.JSON(`{}`),
+		SourceType: "todo", SourceID: &todoID, Status: "pending", Version: 3,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	materializer, err := NewMaterializer(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := materializer.MaterializeTodo(context.Background(), todoID, 2); !errors.Is(err, ErrTaskExists) {
+		t.Fatalf("MaterializeTodo() error = %v, want ErrTaskExists", err)
+	}
+	var todo domain.Todo
+	if err := db.First(&todo, todoID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if todo.Status != "extracted" || todo.Version != 2 {
+		t.Fatalf("Todo changed after rejected rematerialization: status=%s version=%d", todo.Status, todo.Version)
+	}
+}
+
 func TestMaterializeTodoRejectsVersionConflict(t *testing.T) {
 	db := newMaterializerTestDB(t)
 	insertMaterializerTodo(t, db, 9, 5)

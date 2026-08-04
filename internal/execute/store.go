@@ -919,7 +919,7 @@ func (s *Store) RejectAwaitingApproval(ctx context.Context, taskID uint64, expec
 	return &view, nil
 }
 
-// ResetForRerun transitions a finished Task (done/failed) back to pending so it
+// ResetForRerun transitions a terminal Task (done/failed/observing) back to pending so it
 // can be executed again, clearing the previous execution_result. It bumps the
 // version (optimistic lock) and returns the reloaded Task. A task that is not
 // finished (pending/executing) is rejected — you cannot "rerun" one that never
@@ -938,37 +938,54 @@ func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task,
 		if err != nil {
 			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
 		}
-		// observing reruns like any other terminal state: "nobody needs to act"
-		// was a verdict on the evidence at the time, and new evidence can overturn
-		// it. The clue stays observing until the rerun concludes otherwise.
-		if task.Status != "done" && task.Status != "failed" && task.Status != "observing" {
-			return fmt.Errorf("%w: task_id=%d from=%s to=pending (only finished Tasks can rerun)", ErrInvalidTransition, task.ID, task.Status)
-		}
-		update := tx.Model(&domain.Task{}).
-			Where("id = ? AND version = ? AND status = ?", task.ID, task.Version, task.Status).
-			Updates(map[string]any{"status": "pending", "execution_result": nil, "version": gorm.Expr("version + 1")})
-		if update.Error != nil {
-			return fmt.Errorf("reset execution Task id=%d for rerun: %w", task.ID, update.Error)
-		}
-		if update.RowsAffected != 1 {
-			return fmt.Errorf("%w: task_id=%d", ErrVersionConflict, task.ID)
-		}
-		newVersion := task.Version + 1
-		fromStatus := task.Status
-		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
-			TaskID: task.ID, TaskVersion: newVersion, EventType: "rerun_requested",
-			FromStatus: &fromStatus, ToStatus: "pending", ActorType: "user",
-			OccurredAt: time.Now().UTC(),
-		}); err != nil {
+		reset, err := resetTaskForRerun(tx, &task, "user", nil, time.Now())
+		if err != nil {
 			return err
 		}
-		if err := tx.First(&reloaded, taskID).Error; err != nil {
-			return fmt.Errorf("reload execution Task id=%d after reset: %w", task.ID, err)
-		}
+		reloaded = *reset
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	return &reloaded, nil
+}
+
+// resetTaskForRerun is the shared persistence boundary for both a principal
+// rerun and an automatic rerun caused by fresh evidence on an observing Todo.
+// The Task's source_payload/background stay frozen; prior runs plus live tools
+// give M5 the history and current-world lookup path for the new run.
+func resetTaskForRerun(db *gorm.DB, task *domain.Task, actorType string, detail any, occurredAt time.Time) (*domain.Task, error) {
+	if db == nil || task == nil || task.ID == 0 || occurredAt.IsZero() {
+		return nil, fmt.Errorf("%w: rerun Task, db and occurred_at are required", ErrInvalidInput)
+	}
+	// observing reruns like any other terminal state: "nobody needs to act"
+	// was a verdict on the evidence at the time, and new evidence can overturn
+	// it. The source Todo is moved back to materialized by the caller that owns it.
+	if task.Status != "done" && task.Status != "failed" && task.Status != "observing" {
+		return nil, fmt.Errorf("%w: task_id=%d from=%s to=pending (only finished Tasks can rerun)", ErrInvalidTransition, task.ID, task.Status)
+	}
+	update := db.Model(&domain.Task{}).
+		Where("id = ? AND version = ? AND status = ?", task.ID, task.Version, task.Status).
+		Updates(map[string]any{"status": "pending", "execution_result": nil, "version": gorm.Expr("version + 1")})
+	if update.Error != nil {
+		return nil, fmt.Errorf("reset execution Task id=%d for rerun: %w", task.ID, update.Error)
+	}
+	if update.RowsAffected != 1 {
+		return nil, fmt.Errorf("%w: task_id=%d", ErrVersionConflict, task.ID)
+	}
+	newVersion := task.Version + 1
+	fromStatus := task.Status
+	if err := progress.AppendTaskEvent(db, progress.TaskEventInput{
+		TaskID: task.ID, TaskVersion: newVersion, EventType: "rerun_requested",
+		FromStatus: &fromStatus, ToStatus: "pending", ActorType: actorType,
+		Detail: detail, OccurredAt: occurredAt.UTC(),
+	}); err != nil {
+		return nil, err
+	}
+	var reloaded domain.Task
+	if err := db.First(&reloaded, task.ID).Error; err != nil {
+		return nil, fmt.Errorf("reload execution Task id=%d after reset: %w", task.ID, err)
 	}
 	return &reloaded, nil
 }
