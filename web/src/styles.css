@@ -15,7 +15,7 @@
 
 body {
   margin: 0;
-  min-width: 960px;
+  min-width: 760px;
   min-height: 100vh;
   background: var(--color-bg);
   color: var(--color-text);
@@ -109,74 +109,27 @@ body {
   padding: var(--space-6) var(--space-6) var(--space-10);
 }
 
-.app-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: var(--space-4);
-}
-
-/* Chat dock：固定一屏高、吸顶，内部自己滚动，不随主内容撑高 */
-.chat-dock {
-  position: sticky;
+/* Jarvis 对话覆盖在页面之上，不再挤压表格和详情布局。 */
+.chat-overlay {
+  position: fixed;
+  z-index: 180;
   top: 0;
-  align-self: flex-start;
-  flex: 0 0 var(--chat-width);
+  right: 0;
+  bottom: 0;
   width: var(--chat-width);
-  height: 100vh;
+  max-width: calc(100vw - var(--sider-width) - 24px);
   border-left: 1px solid var(--color-border);
   background: var(--color-bg-elevated);
-  display: flex;
-  flex-direction: column;
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
-  transition: width 0.25s ease, flex-basis 0.25s ease;
+  pointer-events: none;
+  transform: translateX(102%);
+  transition: transform 0.2s ease;
 }
 
-/* 拖拽中关闭宽度过渡，跟手；否则会有滞后感 */
-.chat-dock.resizing {
-  transition: none;
-}
-
-.chat-dock.collapsed {
-  width: 0;
-  flex: 0 0 0;
-  overflow: hidden;
-  border-left: none;
-}
-
-/* 拖拽手柄：贴在对话框左边缘，向左拖变宽 */
-.chat-resize-handle {
-  position: absolute;
-  left: -4px;
-  top: 0;
-  bottom: 0;
-  width: 8px;
-  cursor: col-resize;
-  z-index: 10;
-  background: transparent;
-  transition: background 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* 中间一条竖向 grip，提示可拖 */
-.chat-resize-handle::after {
-  content: '';
-  width: 3px;
-  height: 32px;
-  border-radius: 3px;
-  background: var(--color-border-strong);
-  transition: background 0.15s ease, height 0.15s ease;
-}
-
-.chat-resize-handle:hover::after,
-.chat-dock.resizing .chat-resize-handle::after {
-  background: var(--color-primary);
-  height: 52px;
-}
-
-.chat-dock.collapsed .chat-resize-handle {
-  display: none;
+.chat-overlay.is-open {
+  pointer-events: auto;
+  transform: translateX(0);
 }
 
 .chat-dock-placeholder {
@@ -203,6 +156,12 @@ body {
 /* 对话框打开时，FAB 挪到 dock 左侧，避免盖住输入区的发送/停止按钮 */
 .chat-toggle.chat-open {
   right: calc(var(--chat-width) + var(--space-4));
+}
+
+@media (max-width: 900px) {
+  .chat-overlay {
+    max-width: calc(100vw - 24px);
+  }
 }
 
 /* Cards & tables — Linear 风：细边框、无阴影 */

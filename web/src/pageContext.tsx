@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PageContext, PageSelection } from './types'
 
@@ -15,6 +15,35 @@ export interface PageContextValue {
 
 const Context = createContext<PageContextValue | null>(null)
 
+const pageHashes: Record<string, string> = {
+  overview: '/today',
+  tasks: '/work',
+  progress: '/review',
+  background: '/memory',
+  todos: '/manage/clues',
+  'scheduled-tasks': '/manage/automations',
+  settings: '/manage/settings',
+  debug: '/manage/runtime',
+}
+
+const pageKeysByHash = Object.fromEntries(
+  Object.entries(pageHashes).map(([key, path]) => [path, key]),
+) as Record<string, string>
+
+function pageKeyFromHash(initialKey: string): string {
+  const path = window.location.hash.replace(/^#/, '').split('?')[0]
+  return pageKeysByHash[path] || initialKey
+}
+
+function writePageHash(key: string, replace = false) {
+  const path = pageHashes[key]
+  if (!path) throw new Error(`unknown page key: ${key}`)
+  const next = `#${path}`
+  if (window.location.hash === next) return
+  if (replace) window.history.replaceState(null, '', next)
+  else window.location.hash = path
+}
+
 export function PageContextProvider({
   initialKey,
   children,
@@ -22,14 +51,28 @@ export function PageContextProvider({
   initialKey: string
   children: ReactNode
 }) {
-  const [activeKey, setActiveKeyState] = useState(initialKey)
+  const [activeKey, setActiveKeyState] = useState(() => pageKeyFromHash(initialKey))
   const [selection, setSelection] = useState<PageSelection | null>(null)
 
-  const setActiveKey = useCallback((key: string) => setActiveKeyState(key), [])
+  useEffect(() => {
+    if (!window.location.hash) writePageHash(initialKey, true)
+    const syncFromHash = () => {
+      setActiveKeyState(pageKeyFromHash(initialKey))
+      setSelection(null)
+    }
+    window.addEventListener('hashchange', syncFromHash)
+    return () => window.removeEventListener('hashchange', syncFromHash)
+  }, [initialKey])
+
+  const setActiveKey = useCallback((key: string) => {
+    setActiveKeyState(key)
+    writePageHash(key)
+  }, [])
 
   const navigate = useCallback((key: string) => {
     setActiveKeyState(key)
     setSelection(null)
+    writePageHash(key)
   }, [])
 
   const value = useMemo<PageContextValue>(
