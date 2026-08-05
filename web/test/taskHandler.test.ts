@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Task } from '../src/types.ts'
-import { taskHandlerMeta } from '../src/tasks/taskPresentation.ts'
+import { modelCloseReason, taskHandlerMeta } from '../src/tasks/taskPresentation.ts'
 
 function resolvedBy(actorType: string): Task {
   return {
@@ -22,4 +22,14 @@ test('labels human and model task resolution distinctly', () => {
 
 test('does not guess a handler before terminal resolution', () => {
   assert.equal(taskHandlerMeta({ resolution: null } as Task), null)
+})
+
+test('shows the persisted reason only for proactive model closure', () => {
+  const task = {
+    ...resolvedBy('proactive'),
+    summary: '跨日审批已过期，当前没有继续执行价值。',
+    execution_result: { summary: '旧理由' },
+  }
+  assert.equal(modelCloseReason(task), '跨日审批已过期，当前没有继续执行价值。')
+  assert.equal(modelCloseReason({ ...task, resolution: { ...task.resolution!, actor_type: 'm5' } }), null)
 })

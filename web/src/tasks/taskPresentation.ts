@@ -45,6 +45,11 @@ export function taskHandlerMeta(task: Task): { label: string; detail: string; co
   return { label: '系统处理', detail: `最终处理者：${actor}`, color: 'default' }
 }
 
+export function modelCloseReason(task: Task): string | null {
+  if (task.resolution?.actor_type !== 'proactive' || task.resolution.event_type !== 'closed') return null
+  return task.summary?.trim() || strField(task.execution_result, 'summary')
+}
+
 function objectField(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
   const field = value[key]
   return field && typeof field === 'object' && !Array.isArray(field)

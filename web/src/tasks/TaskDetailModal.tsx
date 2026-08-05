@@ -40,6 +40,7 @@ import { actionLabels, taskStatusMeta as statusMeta } from '../status'
 import {
   failureKindOf,
   failureMeta,
+  modelCloseReason,
   proposalOf,
   proposalArtifactLabel,
   structureProposalAction,
@@ -934,12 +935,16 @@ function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
   const followup = strField(result, 'needs_followup')
   const enrichments = enrichmentItems(result?.enrichments)
   const stateCopy = taskStateCopy(task)
+  const closedByModel = task.resolution?.actor_type === 'proactive'
+    && task.resolution.event_type === 'closed'
+  const closeReason = modelCloseReason(task)
 
   const sectionTitle = (() => {
     if (task.status === 'pending') return '下一步'
     if (task.status === 'executing') return '正在推进'
     if (task.status === 'waiting') return '等待中'
     if (task.status === 'needs_human') return '需要你回复'
+    if (closedByModel) return '模型关闭原因'
     if (task.status === 'done') return '完成结果'
     if (task.status === 'observing') return '调查结论'
     return '异常原因'
@@ -956,7 +961,15 @@ function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
           description={rejectReason || error || summary || '任务没有记录失败详情。'}
         />
       )}
-      {task.status !== 'failed' && (
+      {closedByModel && (
+        <Alert
+          type="info"
+          showIcon
+          title="主动 Agent 的判断"
+          description={closeReason || '数据异常：这次模型关闭没有记录理由。'}
+        />
+      )}
+      {task.status !== 'failed' && !closedByModel && (
         <Paragraph className="task-readable-text task-primary-summary">{stateCopy.current}</Paragraph>
       )}
       {task.status === 'needs_human' ? (
@@ -983,6 +996,12 @@ function taskStateCopy(task: Task): { current: string; next: string } {
   const followup = strField(result, 'needs_followup')
   const error = strField(result, 'error')
   const rejectReason = strField(result, 'reject_reason')
+  if (task.resolution?.actor_type === 'proactive' && task.resolution.event_type === 'closed') {
+    return {
+      current: modelCloseReason(task) || '数据异常：这次模型关闭没有记录理由。',
+      next: '当前任务已由主动 Agent 停止追踪；如果判断有误，可以重跑任务。',
+    }
+  }
   if (task.status === 'awaiting_approval') {
     return {
       current: summary || '已生成完整产出物，尚未执行外部写入。',
