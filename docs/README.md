@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative index
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-08-05 @ `b91146d`
 
 本页区分“当前实现”“提案”“研究”和“历史记录”。代码事实仍以对应 source of truth 为准；`last verified` 只表示文档在该 commit 上做过人工核对。
 
@@ -57,6 +57,7 @@
 | [世界上下文渐进加载](design-world-context-progressive.md) | implementation-in-progress | 本轮审计时 HEAD 未完整落地；不得提前标 completed |
 | [晨间作战简报](design-morning-brief.md) | implementation-in-progress | Skill + `internal/morningbrief` 定时器已接线；无表无接口；用 `-morning-brief-once` 手动跑（只写文件）、`-morning-brief-deliver` 连投递一起验；产物在 `data/morning-brief/` |
 | [第一阶段产品方案](design-product-stage-1.md) | proposal | 单人本地协作主干的产品主线：飞书触达与就地处置、收件箱对称、项目工作台、阻塞恢复、世界模型卫生；全部未实现，S0 复用晨报投递路径 |
+| [CC Connect 支持飞书文档评论](design-cc-connect-feishu-document-comments.md) | proposal | cc-connect 复用现有 Feishu 长连接接收 `@Bot` 评论，并把 Agent 最终答案写回原评论卡片；尚未实现 |
 
 [上下文链路重设计](design-context-pipeline.md) 是已实施的历史设计稿。当前稳定结论已经写入总纲和模块文档，正文里的“待实施”步骤不作为当前实现说明。
 

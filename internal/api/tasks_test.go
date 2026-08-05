@@ -17,6 +17,7 @@ type fakeTaskService struct {
 	filter     execute.TaskFilter
 	finish     execute.FinishInput
 	close      execute.CloseInput
+	update     execute.TaskUpdateInput
 	supplement execute.SupplementInput
 	err        error
 }
@@ -74,6 +75,14 @@ func (f *fakeTaskService) Close(_ context.Context, input execute.CloseInput) (*e
 		return nil, f.err
 	}
 	return &execute.TaskView{ID: input.TaskID, Status: "done", Version: input.ExpectedVersion + 1}, nil
+}
+
+func (f *fakeTaskService) UpdateTask(_ context.Context, input execute.TaskUpdateInput) (*execute.TaskView, error) {
+	f.update = input
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &execute.TaskView{ID: input.TaskID, Status: "waiting", Version: input.ExpectedVersion + 1}, nil
 }
 
 func (f *fakeTaskService) Supplement(_ context.Context, input execute.SupplementInput) (*execute.TaskView, error) {
@@ -206,6 +215,25 @@ func TestCloseTaskTagsProactiveActorAndStage(t *testing.T) {
 	}
 	if !bytes.Contains(service.close.Result, []byte(`"stage":"proactive_closed"`)) {
 		t.Fatalf("close result missing proactive stage: %s", service.close.Result)
+	}
+}
+
+func TestUpdateTaskTagsProactiveActorAndPreservesLooseFields(t *testing.T) {
+	service := &fakeTaskService{}
+	h := server.New()
+	h.PATCH("/api/tasks/:task_id", UpdateTask(service))
+	body := []byte(`{"expected_version":4,"summary":"权限仍在等待","instruction":"恢复后先核验权限","reason":"等待条件仍有效"}`)
+	response := ut.PerformRequest(h.Engine, "PATCH", "/api/tasks/8", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	if service.update.TaskID != 8 || service.update.ExpectedVersion != 4 || service.update.ActorType != "proactive" {
+		t.Fatalf("update input = %#v", service.update)
+	}
+	if service.update.Summary == nil || *service.update.Summary != "权限仍在等待" ||
+		service.update.Instruction == nil || *service.update.Instruction != "恢复后先核验权限" ||
+		service.update.Reason != "等待条件仍有效" {
+		t.Fatalf("update semantic fields = %#v", service.update)
 	}
 }
 

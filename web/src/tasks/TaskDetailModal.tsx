@@ -59,6 +59,7 @@ const taskEventLabels: Record<string, string> = {
   approval_granted: '已批准执行',
   approval_rejected: '已驳回',
   rerun_requested: '请求重跑',
+  updated: '主动维护',
   reapply_started: '重新落地',
   human_input_requested: '等待我的回应',
   human_response_received: '已回复并继续',

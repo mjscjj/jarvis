@@ -255,7 +255,7 @@ func TestJarvisToolsCreateTaskIsProactiveOnlyAndForcesStrongTaskContract(t *test
 	}
 }
 
-func TestJarvisToolsProactiveCanStartAndCloseExistingTasks(t *testing.T) {
+func TestJarvisToolsProactiveCanStartUpdateAndCloseExistingTasks(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -279,6 +279,23 @@ func TestJarvisToolsProactiveCanStartAndCloseExistingTasks(t *testing.T) {
 				t.Fatalf("close payload = %#v", payload)
 			}
 			fmt.Fprint(w, `{"code":0,"data":{"id":20,"status":"done","resolution":{"actor_type":"proactive"}}}`)
+		case "/api/tasks/21":
+			if r.Method != http.MethodPatch {
+				t.Fatalf("update method = %s", r.Method)
+			}
+			var payload struct {
+				ExpectedVersion int    `json:"expected_version"`
+				Summary         string `json:"summary"`
+				Instruction     string `json:"instruction"`
+				Reason          string `json:"reason"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.ExpectedVersion != 2 || payload.Summary == "" || payload.Instruction == "" || payload.Reason == "" {
+				t.Fatalf("update payload = %#v", payload)
+			}
+			fmt.Fprint(w, `{"code":0,"data":{"id":21,"status":"waiting","version":3}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -292,9 +309,15 @@ func TestJarvisToolsProactiveCanStartAndCloseExistingTasks(t *testing.T) {
 	if out, err := runJarvisTools(t, server.URL, env, "close-task", "--id", "20", "--payload", payload); err != nil || !strings.Contains(out, `"actor_type":"proactive"`) {
 		t.Fatalf("close output = %s, error = %v", out, err)
 	}
-	for _, command := range []string{"start-task", "close-task"} {
+	updatePayload := `{"expected_version":2,"summary":"权限仍在等待","instruction":"恢复后先核验权限","reason":"等待条件仍有效"}`
+	if out, err := runJarvisTools(t, server.URL, env, "update-task", "--id", "21", "--payload", updatePayload); err != nil || !strings.Contains(out, `"version":3`) {
+		t.Fatalf("update output = %s, error = %v", out, err)
+	}
+	for _, command := range []string{"start-task", "update-task", "close-task"} {
 		args := []string{command, "--id", "20"}
-		if command == "close-task" {
+		if command == "update-task" {
+			args = append(args, "--payload", updatePayload)
+		} else if command == "close-task" {
 			args = append(args, "--payload", payload)
 		}
 		if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=execute"}, args...); err == nil {

@@ -332,6 +332,77 @@ func TestCloseResolvesTaskAndProjectsProactiveActor(t *testing.T) {
 	}
 }
 
+func TestUpdateTaskMaintainsMutableSurfaceAndFrozenEvidence(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE task (
+			id INTEGER PRIMARY KEY, title TEXT NOT NULL, action_type TEXT NOT NULL,
+			target TEXT NOT NULL, background TEXT NOT NULL, source_payload TEXT NOT NULL,
+			status TEXT NOT NULL, summary TEXT, last_progress_at DATETIME,
+			execution_supplements TEXT, version INTEGER NOT NULL,
+			created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE task_event (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL,
+			task_version INTEGER NOT NULL, event_type TEXT NOT NULL, from_status TEXT,
+			to_status TEXT NOT NULL, actor_type TEXT NOT NULL, actor_ref TEXT,
+			run_id INTEGER, detail TEXT, occurred_at DATETIME NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(task_id, task_version)
+		)`,
+		`INSERT INTO task(id,title,action_type,target,background,source_payload,status,execution_supplements,version,created_at,updated_at)
+		 VALUES (8,'旧标题','agent_task','旧目标','{"snapshot":"frozen"}','{"clue":"frozen"}','waiting','[]',2,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+		`INSERT INTO task(id,title,action_type,target,background,source_payload,status,execution_supplements,version,created_at,updated_at)
+		 VALUES (9,'待审批','agent_task','待审目标','{}','{}','awaiting_approval','[]',4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("fixture statement failed: %v", err)
+		}
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	title, target := "更新后的标题", "等待权限后完成文档入库"
+	summary, instruction := "权限申请仍有效，等待 owner 审批", "恢复后先核验权限，再继续转换文档"
+	view, err := store.UpdateTask(t.Context(), TaskUpdateInput{
+		TaskID: 8, ExpectedVersion: 2, Title: &title, Target: &target,
+		Summary: &summary, Instruction: &instruction,
+		Reason: "跨日后等待条件仍有效", ActorType: "proactive",
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask() error = %v", err)
+	}
+	if view.Status != "waiting" || view.Version != 3 || view.Title != title || view.Target != target || view.Summary == nil || *view.Summary != summary {
+		t.Fatalf("updated view = %#v", view)
+	}
+	if string(view.Background) != `{"snapshot":"frozen"}` || string(view.SourcePayload) != `{"clue":"frozen"}` {
+		t.Fatalf("frozen evidence changed: background=%s source_payload=%s", view.Background, view.SourcePayload)
+	}
+	if len(view.ExecutionSupplements) != 1 || view.ExecutionSupplements[0].Note != instruction || view.ExecutionSupplements[0].Channel != "proactive_agent" {
+		t.Fatalf("execution supplements = %#v", view.ExecutionSupplements)
+	}
+	var event domain.TaskEvent
+	if err := db.First(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	if event.EventType != "updated" || event.ActorType != "proactive" || event.ToStatus != "waiting" || !strings.Contains(string(event.Detail), "跨日后等待条件仍有效") {
+		t.Fatalf("update event = %#v detail=%s", event, event.Detail)
+	}
+	if _, err := store.UpdateTask(t.Context(), TaskUpdateInput{
+		TaskID: 9, ExpectedVersion: 4, Instruction: &instruction,
+		Reason: "不能暗改待审批方案", ActorType: "proactive",
+	}); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("awaiting_approval instruction update error = %v", err)
+	}
+}
+
 func TestFailStaleExecutingRejectsInvalidInput(t *testing.T) {
 	s := &Store{}
 	if _, err := s.FailStaleExecuting(context.Background(), 0, time.Now()); !errors.Is(err, ErrInvalidInput) {

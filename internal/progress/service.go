@@ -30,7 +30,7 @@ var taskEventTypes = map[string]struct{}{
 	"approval_granted": {}, "approval_rejected": {}, "rerun_requested": {},
 	"reapply_started": {}, "supplemented": {}, "execution_succeeded": {},
 	"execution_failed": {}, "execution_observing": {}, "execution_interrupted": {},
-	"stale_failed": {}, "snapshot_imported": {}, "closed": {},
+	"stale_failed": {}, "snapshot_imported": {}, "updated": {}, "closed": {},
 	"feishu_message_recalled": {},
 	"waiting_scheduled":       {}, "resumed": {}, "human_input_requested": {},
 	"human_response_received": {},

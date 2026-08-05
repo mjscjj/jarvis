@@ -69,7 +69,8 @@ subcommands:
   get-task               Get one task with bounded execution history
   create-task            Create a normal Task for strong M5 (proactive agent only)
   start-task             Start one pending Task with strong M5 (proactive agent only)
-  close-task             Close one stale or satisfied Task (proactive agent only)
+  update-task            Update one non-terminal Task (proactive agent only)
+  close-task             Close one verified resolved Task (proactive agent only)
   list-scheduled-tasks   List time-triggered tasks
   get-scheduled-task     Get one time-triggered task
   create-scheduled-task  Create a time trigger for a new task
@@ -306,14 +307,31 @@ only available when JARVIS_AGENT_STAGE=proactive. It returns after M5 claims the
 Task; use get-task in a later heartbeat to inspect and verify the result.
 EOF
       ;;
+    update-task) cat <<'EOF'
+usage: jarvis-tools update-task --id ID [--payload JSON|-] [--config PATH]
+
+Update the mutable current surface of one non-terminal Task. This command is
+only available when JARVIS_AGENT_STAGE=proactive. The payload requires
+expected_version, reason, and at least one of title, target, summary or
+instruction. source_payload/background remain frozen. instruction is appended
+for M5 rather than rewriting source evidence. An awaiting_approval Task only
+accepts summary updates so an Agent cannot silently alter a proposal awaiting
+human approval.
+
+example:
+  jarvis-tools update-task --id 42 --payload '{"expected_version":2,"summary":"权限申请仍有效，等待 owner 审批","instruction":"恢复后先重新核验权限，再继续转换文档","reason":"跨日后等待条件仍有效，补充最新状态而不是关闭"}'
+EOF
+      ;;
     close-task) cat <<'EOF'
 usage: jarvis-tools close-task --id ID [--payload JSON|-] [--config PATH]
 
-Close one existing non-terminal Task without external side effects. This
-command is only available when JARVIS_AGENT_STAGE=proactive. The payload must
-contain expected_version and a non-empty result object. Put the concrete close
-reason in result.summary and the checked facts in result.evidence; the server
-records actor=proactive and stage=proactive_closed.
+Close one existing non-terminal Task only after verified completion,
+cancellation, objective invalidation, or replacement by a surviving Task. This
+command is only available when JARVIS_AGENT_STAGE=proactive. Crossing a day,
+silence, or missing new evidence is not a close reason. The payload must contain
+expected_version and a non-empty result object. Put the concrete close reason in
+result.summary and the checked facts in result.evidence; the server records
+actor=proactive and stage=proactive_closed.
 
 example:
   jarvis-tools close-task --id 42 --payload '{"expected_version":2,"result":{"summary":"昨日事项已失效，关闭","evidence":"目标会议已结束，且没有仍需交付的产物"}}'
@@ -681,6 +699,7 @@ require_command_flag() {
     list-tasks) allowed+=" --date --status --limit" ;;
     get-task) allowed+=" --id --run-limit --event-limit --include-run-output --include-prompt" ;;
     start-task) allowed+=" --id" ;;
+    update-task) allowed+=" --id --payload" ;;
     close-task) allowed+=" --id --payload" ;;
     list-scheduled-tasks) allowed+=" --status --limit" ;;
     get-scheduled-task) allowed+=" --id" ;;
@@ -1691,6 +1710,32 @@ cmd_start_task() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+cmd_update_task() {
+  reset_flags
+  consume_flags "$@"
+  [[ "${JARVIS_AGENT_STAGE:-}" == "proactive" ]] || fail "update-task is only available to the proactive Agent"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "update-task requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  if [[ "$PAYLOAD" == "-" ]]; then
+    payload="$(cat)"
+  else
+    payload="$PAYLOAD"
+  fi
+  printf '%s' "$payload" | jq -e '
+    type == "object" and
+    (.expected_version | type == "number" and . >= 0 and floor == .) and
+    (.reason | type == "string" and length > 0) and
+    (has("title") or has("target") or has("summary") or has("instruction")) and
+    ((has("title") | not) or (.title | type == "string" and length > 0)) and
+    ((has("target") | not) or (.target | type == "string")) and
+    ((has("summary") | not) or (.summary | type == "string" and length > 0)) and
+    ((has("instruction") | not) or (.instruction | type == "string" and length > 0))
+  ' >/dev/null 2>&1 || fail "update-task payload requires expected_version, reason and at least one mutable Task field"
+  body="$(api_write PATCH "/api/tasks/${ID}" "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
 cmd_close_task() {
   reset_flags
   consume_flags "$@"
@@ -1872,6 +1917,7 @@ case "$SUBCOMMAND" in
   get-task)             cmd_get_task "$@" ;;
   create-task)          cmd_create_task "$@" ;;
   start-task)           cmd_start_task "$@" ;;
+  update-task)          cmd_update_task "$@" ;;
   close-task)           cmd_close_task "$@" ;;
   list-scheduled-tasks) cmd_list_scheduled_tasks "$@" ;;
   get-scheduled-task)   cmd_get_scheduled_task "$@" ;;

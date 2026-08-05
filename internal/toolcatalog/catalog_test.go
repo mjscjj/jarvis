@@ -36,7 +36,7 @@ func TestProactiveStageRequiresTaskHandoffForExternalWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"create-task", "start-task", "close-task", "不得直接执行外部动作", "内部世界模型", "理由与证据"} {
+	for _, required := range []string{"create-task", "start-task", "update-task", "close-task", "跨日、沉默或没有新证据不是关闭依据", "不得直接执行外部动作", "内部世界模型"} {
 		if !strings.Contains(block, required) {
 			t.Fatalf("proactive block missing %q:\n%s", required, block)
 		}

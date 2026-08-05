@@ -27,6 +27,15 @@ type closeTaskRequest struct {
 	Result          json.RawMessage `json:"result"`
 }
 
+type updateTaskRequest struct {
+	ExpectedVersion *int32  `json:"expected_version"`
+	Title           *string `json:"title"`
+	Target          *string `json:"target"`
+	Summary         *string `json:"summary"`
+	Instruction     *string `json:"instruction"`
+	Reason          string  `json:"reason"`
+}
+
 func ListTasks(service execute.TaskService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		page, err := positiveQueryInt(c.Query("page"), 1, "page")
@@ -214,6 +223,37 @@ func CloseTask(service execute.TaskService) app.HandlerFunc {
 		result, err := service.Close(ctx, execute.CloseInput{
 			TaskID: taskID, ExpectedVersion: *request.ExpectedVersion,
 			Result: tagged, ActorType: "proactive",
+		})
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+// UpdateTask lets the proactive Agent revise the mutable current Task surface
+// without rewriting frozen source evidence or pretending the goal is complete.
+func UpdateTask(service execute.TaskService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40033, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		var request updateTaskRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40033, err)
+			return
+		}
+		if request.ExpectedVersion == nil {
+			writeAPIError(c, consts.StatusBadRequest, 40033, fmt.Errorf("expected_version is required"))
+			return
+		}
+		result, err := service.UpdateTask(ctx, execute.TaskUpdateInput{
+			TaskID: taskID, ExpectedVersion: *request.ExpectedVersion,
+			Title: request.Title, Target: request.Target, Summary: request.Summary,
+			Instruction: request.Instruction, Reason: request.Reason, ActorType: "proactive",
 		})
 		if err != nil {
 			writeExecutionError(c, err)

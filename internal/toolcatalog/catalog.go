@@ -59,7 +59,8 @@ func Block(stage string) (string, error) {
 		lines = append(lines,
 			"- 主动巡视发现需要对外推进的工作时，必须使用 `jarvis-tools create-task --payload ...` 创建普通 Task；不得直接执行外部动作。",
 			"- 对今天已有的 pending Task，使用 `jarvis-tools start-task --id ...` 交给强 M5；不要创建重复 Task。",
-			"- 对已过期或已查证无需继续的现有 Task，使用 `jarvis-tools close-task --id ... --payload ...` 收口，并把理由与证据写全；close 只改变 Jarvis 内部状态，不得伪造外部完成。",
+			"- Task 的目标表达、当前进展或后续执行指示因新证据变化时，优先使用 `jarvis-tools update-task --id ... --payload ...` 维护；不得改写冻结的 source_payload/background。",
+			"- 只有已查证完成、明确取消、客观失效或被仍存活的 Task 完整取代时，才使用 `jarvis-tools close-task --id ... --payload ...` 收口；跨日、沉默或没有新证据不是关闭依据。",
 			"- 主动巡视可以直接维护 Jarvis 内部世界模型；外部动作与复杂执行仍必须交给 M5。",
 		)
 	}

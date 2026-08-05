@@ -168,6 +168,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/tasks/:task_id/events", ListTaskEvents(deps.Progress))
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
 	h.POST("/api/tasks/:task_id/close", CloseTask(deps.Tasks))
+	h.PATCH("/api/tasks/:task_id", UpdateTask(deps.Tasks))
 	h.POST("/api/tasks/:task_id/supplement", SupplementTask(deps.Tasks))
 	// 撤回任务「对外产出」里的某条飞书消息（走 lark-cli，按钮点击即高危确认）。
 	h.POST("/api/tasks/:task_id/effects/recall-message", RecallEffectMessage(deps.MessageRecaller, deps.Tasks))

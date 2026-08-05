@@ -102,6 +102,21 @@ type CloseInput struct {
 	ActorRef        *string
 }
 
+// TaskUpdateInput changes the mutable, current execution surface of a Task.
+// SourcePayload and Background are deliberately absent: they are frozen source
+// evidence and must never be rewritten as the Agent's understanding evolves.
+type TaskUpdateInput struct {
+	TaskID          uint64
+	ExpectedVersion int32
+	Title           *string
+	Target          *string
+	Summary         *string
+	Instruction     *string
+	Reason          string
+	ActorType       string
+	ActorRef        *string
+}
+
 type SupplementInput struct {
 	TaskID          uint64
 	ExpectedVersion int32
@@ -146,6 +161,7 @@ type TaskService interface {
 	GetTask(context.Context, uint64) (*TaskView, error)
 	Finish(context.Context, FinishInput) (*TaskView, error)
 	Close(context.Context, CloseInput) (*TaskView, error)
+	UpdateTask(context.Context, TaskUpdateInput) (*TaskView, error)
 	Supplement(context.Context, SupplementInput) (*TaskView, error)
 	ListRuns(context.Context, uint64) (*RunList, error)
 }
@@ -337,8 +353,8 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 	return &view, nil
 }
 
-// Close resolves stale or already-satisfied work without pretending that M5
-// executed it. It is intentionally generic: the caller supplies the complete
+// Close resolves verified completed, cancelled, invalidated or superseded work
+// without pretending that M5 executed it. The caller supplies the complete
 // semantic result, while the hard transition and actor audit stay in code.
 func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) {
 	if input.TaskID == 0 || input.ExpectedVersion < 0 || strings.TrimSpace(input.ActorType) == "" {
@@ -414,6 +430,114 @@ func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) 
 	view.Resolution = &TaskResolutionView{
 		EventType: "closed", ActorType: input.ActorType, ActorRef: input.ActorRef, OccurredAt: occurredAt,
 	}
+	return &view, nil
+}
+
+// UpdateTask lets the proactive Agent maintain a Task as the world changes
+// instead of forcing the binary choice between leaving stale wording untouched
+// and closing the work. It can update the mutable hints/current standing and
+// append a future M5 instruction, while frozen source evidence remains intact.
+func (s *Store) UpdateTask(ctx context.Context, input TaskUpdateInput) (*TaskView, error) {
+	if input.TaskID == 0 || input.ExpectedVersion < 0 || strings.TrimSpace(input.ActorType) == "" {
+		return nil, fmt.Errorf("%w: Task ID/version and actor type are required", ErrInvalidInput)
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		return nil, fmt.Errorf("%w: update reason is required", ErrInvalidInput)
+	}
+	if input.Title == nil && input.Target == nil && input.Summary == nil && input.Instruction == nil {
+		return nil, fmt.Errorf("%w: at least one Task field must be updated", ErrInvalidInput)
+	}
+
+	var task domain.Task
+	if err := s.db.WithContext(ctx).First(&task, input.TaskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, input.TaskID)
+		}
+		return nil, fmt.Errorf("load Task for update id=%d: %w", input.TaskID, err)
+	}
+	if task.Version != input.ExpectedVersion {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, input.ExpectedVersion, task.Version)
+	}
+	if isTerminalTaskStatus(task.Status) || task.Status == "executing" {
+		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot be updated", ErrInvalidTransition, task.ID, task.Status)
+	}
+	// An awaiting_approval Task carries a concrete proposal. Changing its goal or
+	// execution instruction behind the approval card would make approval unsafe;
+	// the proactive Agent may only refresh the visible standing while it waits.
+	if task.Status == "awaiting_approval" && (input.Title != nil || input.Target != nil || input.Instruction != nil) {
+		return nil, fmt.Errorf("%w: task_id=%d awaiting_approval only permits summary updates", ErrInvalidTransition, task.ID)
+	}
+
+	updates := map[string]any{}
+	changes := map[string]any{}
+	if input.Title != nil {
+		title := strings.TrimSpace(*input.Title)
+		if title == "" {
+			return nil, fmt.Errorf("%w: title must be non-blank", ErrInvalidInput)
+		}
+		if title != task.Title {
+			updates["title"] = title
+			changes["title"] = title
+		}
+	}
+	if input.Target != nil {
+		target := strings.TrimSpace(*input.Target)
+		if target != task.Target {
+			updates["target"] = target
+			changes["target"] = target
+		}
+	}
+	if input.Summary != nil {
+		summary := strings.TrimSpace(*input.Summary)
+		if summary == "" {
+			return nil, fmt.Errorf("%w: summary must be non-blank", ErrInvalidInput)
+		}
+		if task.Summary == nil || strings.TrimSpace(*task.Summary) != summary {
+			updates["summary"] = summary
+			updates["last_progress_at"] = time.Now().UTC()
+			changes["summary"] = summary
+		}
+	}
+	if input.Instruction != nil {
+		instruction := strings.TrimSpace(*input.Instruction)
+		if instruction == "" {
+			return nil, fmt.Errorf("%w: instruction must be non-blank", ErrInvalidInput)
+		}
+		encoded, err := appendExecutionSupplement(task.ExecutionSupplements, instruction, "proactive_agent", time.Now().UTC())
+		if err != nil {
+			return nil, fmt.Errorf("append proactive instruction task_id=%d: %w", task.ID, err)
+		}
+		updates["execution_supplements"] = datatypes.JSON(encoded)
+		changes["instruction"] = instruction
+	}
+	if len(updates) == 0 {
+		return nil, fmt.Errorf("%w: update does not change the Task", ErrInvalidInput)
+	}
+	updates["version"] = gorm.Expr("version + 1")
+	result := s.db.WithContext(ctx).Model(&domain.Task{}).
+		Where("id = ? AND version = ? AND status = ?", task.ID, input.ExpectedVersion, task.Status).
+		Updates(updates)
+	if result.Error != nil {
+		return nil, fmt.Errorf("update Task id=%d: %w", task.ID, result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, input.ExpectedVersion)
+	}
+
+	var reloaded domain.Task
+	if err := s.db.WithContext(ctx).First(&reloaded, task.ID).Error; err != nil {
+		return nil, fmt.Errorf("reload Task id=%d after update: %w", task.ID, err)
+	}
+	if err := progress.AppendTaskEvent(s.db.WithContext(ctx), progress.TaskEventInput{
+		TaskID: reloaded.ID, TaskVersion: reloaded.Version, EventType: "updated",
+		FromStatus: &reloaded.Status, ToStatus: reloaded.Status, ActorType: input.ActorType,
+		ActorRef: input.ActorRef, Detail: map[string]any{"reason": reason, "changes": changes},
+		OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		return nil, err
+	}
+	view := taskView(ctx, &reloaded)
 	return &view, nil
 }
 

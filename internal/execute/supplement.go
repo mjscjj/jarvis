@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// ExecutionSupplement is one human clarification/instruction added during M5.
-// It is isolated from Todo.context_snapshot.supplements.
+// ExecutionSupplement is one execution-time clarification/instruction from a
+// human or the proactive Agent. It is isolated from Todo.context_snapshot.
 type ExecutionSupplement struct {
 	Note    string `json:"note"`
 	At      string `json:"at"` // RFC3339 UTC
@@ -53,13 +53,17 @@ func formatExecutionSupplementDirective(items []ExecutionSupplement) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\n【执行阶段补充的信息/指示（委托人手动追加，须优先满足；可以修正或替换上游线索）】")
+	b.WriteString("\n\n【执行阶段补充的信息/指示（来源见每条标签；委托人补充优先于主动巡视维护，可以修正或替换上游线索）】")
 	for i, item := range items {
 		note := strings.TrimSpace(item.Note)
 		if note == "" {
 			continue
 		}
-		b.WriteString(fmt.Sprintf("\n%d. %s", i+1, note))
+		source := "委托人"
+		if item.Channel == "proactive_agent" {
+			source = "主动巡视"
+		}
+		b.WriteString(fmt.Sprintf("\n%d. 【%s】%s", i+1, source, note))
 		if at := strings.TrimSpace(item.At); at != "" {
 			b.WriteString(fmt.Sprintf("（%s）", at))
 		}

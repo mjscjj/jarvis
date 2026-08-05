@@ -142,9 +142,10 @@ type Task struct {
 	OccurrenceKey   *string        `gorm:"column:occurrence_key;uniqueIndex:uk_task_source_occurrence,priority:3"`
 	Status          string         `gorm:"column:status;not null;default:pending;index:idx_task_status"`
 	ExecutionResult datatypes.JSON `gorm:"column:execution_result"`
-	// Summary is where the matter itself now stands, written by M5 at the end of a
-	// run. It is not the same as ExecutionRun.Summary ("what this run did"): a Task
-	// spans several runs, and this field answers "how far has this thing got".
+	// Summary is where the matter itself now stands, written by M5 after a run or
+	// maintained by the proactive Agent when later evidence changes that standing.
+	// It is not the same as ExecutionRun.Summary ("what this run did"): a Task spans
+	// several runs, and this field answers "how far has this thing got".
 	Summary *string `gorm:"column:summary"`
 	// LastProgressAt moves only when Summary actually changes, so a Task that keeps
 	// resuming into waiting does not look alive. This is what makes stalled work

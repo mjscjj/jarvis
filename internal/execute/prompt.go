@@ -26,7 +26,7 @@ END_M5_PHASE`
 phase=apply
 下方 APPROVED_PROPOSAL 已获批准。artifact 是委托人已经审阅的最终产出，必须忠实落地：
 1. 不重新拟稿，不改变 action、target、artifact 的实质内容或收件对象。
-2. execution_supplements 是可信补充，须一并遵守。
+2. execution_supplements 是带来源的可信补充，须一并考虑；委托人的补充高于主动巡视 Agent 的维护内容。
 3. 先核对 previous_runs，已成功发生的同一副作用不得重复执行。
 4. 如果 proposal 无法按原样落地，返回 failed 并说明原因，不得擅自修改方案后执行。
 5. 本阶段的审批已经完成，needs_approval 返回 false、proposal 返回 null。若落地过程中出现了另一个尚未获批、按策略需要审批的副作用，停下来返回 needs_human 并写清它是什么。
