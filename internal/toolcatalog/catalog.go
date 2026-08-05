@@ -58,7 +58,9 @@ func Block(stage string) (string, error) {
 	if stage == StageProactive {
 		lines = append(lines,
 			"- 主动巡视发现需要对外推进的工作时，必须使用 `jarvis-tools create-task --payload ...` 创建普通 Task；不得直接执行外部动作。",
-			"- 主动巡视可以直接维护 Jarvis 内部世界模型，但不得修改 Todo/Task 状态来绕过 M5。",
+			"- 对今天已有的 pending Task，使用 `jarvis-tools start-task --id ...` 交给强 M5；不要创建重复 Task。",
+			"- 对已过期或已查证无需继续的现有 Task，使用 `jarvis-tools close-task --id ... --payload ...` 收口，并把理由与证据写全；close 只改变 Jarvis 内部状态，不得伪造外部完成。",
+			"- 主动巡视可以直接维护 Jarvis 内部世界模型；外部动作与复杂执行仍必须交给 M5。",
 		)
 	}
 	if stage == StageMorningBrief {

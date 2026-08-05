@@ -69,6 +69,18 @@ type TaskView struct {
 	Version              int32                 `json:"version"`
 	CreatedAt            time.Time             `json:"created_at"`
 	UpdatedAt            time.Time             `json:"updated_at"`
+	Resolution           *TaskResolutionView   `json:"resolution"`
+}
+
+// TaskResolutionView projects the append-only terminal TaskEvent that most
+// recently resolved a Task. task_event remains the only source of truth; this
+// small view lets list clients show whether a human or an Agent closed the work
+// without loading every Task's full event history.
+type TaskResolutionView struct {
+	EventType  string    `json:"event_type"`
+	ActorType  string    `json:"actor_type"`
+	ActorRef   *string   `json:"actor_ref"`
+	OccurredAt time.Time `json:"occurred_at"`
 }
 
 type FinishInput struct {
@@ -80,6 +92,14 @@ type FinishInput struct {
 	ActorRef        *string
 	RunID           *uint64
 	EventType       string
+}
+
+type CloseInput struct {
+	TaskID          uint64
+	ExpectedVersion int32
+	Result          json.RawMessage
+	ActorType       string
+	ActorRef        *string
 }
 
 type SupplementInput struct {
@@ -125,6 +145,7 @@ type TaskService interface {
 	ListTasks(context.Context, TaskFilter) (*TaskList, error)
 	GetTask(context.Context, uint64) (*TaskView, error)
 	Finish(context.Context, FinishInput) (*TaskView, error)
+	Close(context.Context, CloseInput) (*TaskView, error)
 	Supplement(context.Context, SupplementInput) (*TaskView, error)
 	ListRuns(context.Context, uint64) (*RunList, error)
 }
@@ -205,6 +226,9 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 	for i := range rows {
 		items[i] = taskView(ctx, &rows[i])
 	}
+	if err := s.attachTaskResolutions(ctx, items); err != nil {
+		return nil, err
+	}
 	return &TaskList{Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
 }
 
@@ -222,6 +246,11 @@ func (s *Store) GetTask(ctx context.Context, taskID uint64) (*TaskView, error) {
 		return nil, fmt.Errorf("get Task id=%d: %w", taskID, err)
 	}
 	view := taskView(ctx, &row)
+	if resolution, err := s.taskResolution(ctx, row.ID); err != nil {
+		return nil, err
+	} else {
+		view.Resolution = resolution
+	}
 	return &view, nil
 }
 
@@ -300,6 +329,91 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 		return nil, err
 	}
 	view := taskView(ctx, &finished)
+	if resolution, err := s.taskResolution(ctx, finished.ID); err != nil {
+		return nil, err
+	} else {
+		view.Resolution = resolution
+	}
+	return &view, nil
+}
+
+// Close resolves stale or already-satisfied work without pretending that M5
+// executed it. It is intentionally generic: the caller supplies the complete
+// semantic result, while the hard transition and actor audit stay in code.
+func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) {
+	if input.TaskID == 0 || input.ExpectedVersion < 0 || strings.TrimSpace(input.ActorType) == "" {
+		return nil, fmt.Errorf("%w: Task ID/version and actor type are required", ErrInvalidInput)
+	}
+	result, err := canonicalJSONObject(input.Result)
+	if err != nil {
+		return nil, err
+	}
+	var resultObject map[string]any
+	if err := json.Unmarshal(result, &resultObject); err != nil {
+		return nil, fmt.Errorf("%w: decode close result: %v", ErrInvalidInput, err)
+	}
+	summary, ok := resultObject["summary"].(string)
+	summary = strings.TrimSpace(summary)
+	if !ok || summary == "" {
+		return nil, fmt.Errorf("%w: close result.summary is required", ErrInvalidInput)
+	}
+	var closed domain.Task
+	var occurredAt time.Time
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task domain.Task
+		err := tx.First(&task, input.TaskID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, input.TaskID)
+		}
+		if err != nil {
+			return fmt.Errorf("load Task for close id=%d: %w", input.TaskID, err)
+		}
+		if task.Version != input.ExpectedVersion {
+			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, input.ExpectedVersion, task.Version)
+		}
+		if isTerminalTaskStatus(task.Status) {
+			return fmt.Errorf("%w: task_id=%d status=%s is already terminal", ErrInvalidTransition, task.ID, task.Status)
+		}
+		fromStatus := task.Status
+		occurredAt = time.Now().UTC()
+		update := tx.Model(&domain.Task{}).
+			Where("id = ? AND version = ? AND status = ?", task.ID, input.ExpectedVersion, fromStatus).
+			Updates(map[string]any{
+				"status": "done", "execution_result": datatypes.JSON(result),
+				"summary": summary, "version": gorm.Expr("version + 1"), "last_progress_at": occurredAt,
+			})
+		if update.Error != nil {
+			return fmt.Errorf("close Task id=%d: %w", task.ID, update.Error)
+		}
+		if update.RowsAffected != 1 {
+			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, input.ExpectedVersion)
+		}
+		if err := closeUnboundContinuations(tx, task.ID, "task was closed by the proactive agent"); err != nil {
+			return err
+		}
+		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
+			TaskID: task.ID, TaskVersion: task.Version + 1, EventType: "closed",
+			FromStatus: &fromStatus, ToStatus: "done", ActorType: input.ActorType,
+			ActorRef: input.ActorRef, Detail: json.RawMessage(result), OccurredAt: occurredAt,
+		}); err != nil {
+			return err
+		}
+		task.Status = "done"
+		task.ExecutionResult = datatypes.JSON(result)
+		task.Summary = &summary
+		task.LastProgressAt = &occurredAt
+		task.Version++
+		task.UpdatedAt = occurredAt
+		closed = task
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	view := taskView(ctx, &closed)
+	view.Resolution = &TaskResolutionView{
+		EventType: "closed", ActorType: input.ActorType, ActorRef: input.ActorRef, OccurredAt: occurredAt,
+	}
 	return &view, nil
 }
 
@@ -1258,6 +1372,61 @@ func canonicalJSONObject(raw []byte) (json.RawMessage, error) {
 		return nil, fmt.Errorf("encode execution result: %w", err)
 	}
 	return encoded, nil
+}
+
+func isTerminalTaskStatus(status string) bool {
+	switch status {
+	case "done", "failed", "observing":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Store) taskResolution(ctx context.Context, taskID uint64) (*TaskResolutionView, error) {
+	views := []TaskView{{ID: taskID}}
+	if err := s.attachTaskResolutions(ctx, views); err != nil {
+		return nil, err
+	}
+	return views[0].Resolution, nil
+}
+
+func (s *Store) attachTaskResolutions(ctx context.Context, tasks []TaskView) error {
+	ids := make([]uint64, 0, len(tasks))
+	byID := make(map[uint64]*TaskView, len(tasks))
+	for i := range tasks {
+		if !isTerminalTaskStatus(tasks[i].Status) && tasks[i].Status != "" {
+			continue
+		}
+		ids = append(ids, tasks[i].ID)
+		byID[tasks[i].ID] = &tasks[i]
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var events []domain.TaskEvent
+	if err := s.db.WithContext(ctx).
+		Where("task_id IN ? AND to_status IN ?", ids, []string{"done", "failed", "observing"}).
+		Order("task_id ASC, id DESC").Find(&events).Error; err != nil {
+		return fmt.Errorf("load Task resolution events: %w", err)
+	}
+	seen := make(map[uint64]struct{}, len(ids))
+	for i := range events {
+		event := &events[i]
+		if _, ok := seen[event.TaskID]; ok {
+			continue
+		}
+		task := byID[event.TaskID]
+		if task == nil {
+			continue
+		}
+		task.Resolution = &TaskResolutionView{
+			EventType: event.EventType, ActorType: event.ActorType,
+			ActorRef: event.ActorRef, OccurredAt: event.OccurredAt,
+		}
+		seen[event.TaskID] = struct{}{}
+	}
+	return nil
 }
 
 func taskView(ctx context.Context, task *domain.Task) TaskView {

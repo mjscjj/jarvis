@@ -16,6 +16,7 @@ import (
 type fakeTaskService struct {
 	filter     execute.TaskFilter
 	finish     execute.FinishInput
+	close      execute.CloseInput
 	supplement execute.SupplementInput
 	err        error
 }
@@ -65,6 +66,14 @@ func (f *fakeTaskService) Finish(_ context.Context, input execute.FinishInput) (
 		return nil, f.err
 	}
 	return &execute.TaskView{ID: input.TaskID, Status: input.Status, Version: input.ExpectedVersion + 1}, nil
+}
+
+func (f *fakeTaskService) Close(_ context.Context, input execute.CloseInput) (*execute.TaskView, error) {
+	f.close = input
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &execute.TaskView{ID: input.TaskID, Status: "done", Version: input.ExpectedVersion + 1}, nil
 }
 
 func (f *fakeTaskService) Supplement(_ context.Context, input execute.SupplementInput) (*execute.TaskView, error) {
@@ -180,6 +189,23 @@ func TestFinishTaskFailedTagsManualStage(t *testing.T) {
 	}
 	if !bytes.Contains(service.finish.Result, []byte(`"error":"我手动标记失败"`)) {
 		t.Fatalf("failed finish result dropped the error field: %s", service.finish.Result)
+	}
+}
+
+func TestCloseTaskTagsProactiveActorAndStage(t *testing.T) {
+	service := &fakeTaskService{}
+	h := server.New()
+	h.POST("/api/tasks/:task_id/close", CloseTask(service))
+	body := []byte(`{"expected_version":4,"result":{"summary":"已过期，关闭","evidence":"截止时间早于今天"}}`)
+	response := ut.PerformRequest(h.Engine, "POST", "/api/tasks/8/close", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	if service.close.TaskID != 8 || service.close.ExpectedVersion != 4 || service.close.ActorType != "proactive" {
+		t.Fatalf("close input = %#v", service.close)
+	}
+	if !bytes.Contains(service.close.Result, []byte(`"stage":"proactive_closed"`)) {
+		t.Fatalf("close result missing proactive stage: %s", service.close.Result)
 	}
 }
 

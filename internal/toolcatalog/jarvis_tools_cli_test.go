@@ -255,6 +255,54 @@ func TestJarvisToolsCreateTaskIsProactiveOnlyAndForcesStrongTaskContract(t *test
 	}
 }
 
+func TestJarvisToolsProactiveCanStartAndCloseExistingTasks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/tasks/19/execute":
+			if r.Method != http.MethodPost {
+				t.Fatalf("start method = %s", r.Method)
+			}
+			fmt.Fprint(w, `{"code":0,"data":{"id":19,"status":"executing"}}`)
+		case "/api/tasks/20/close":
+			if r.Method != http.MethodPost {
+				t.Fatalf("close method = %s", r.Method)
+			}
+			var payload struct {
+				ExpectedVersion int            `json:"expected_version"`
+				Result          map[string]any `json:"result"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.ExpectedVersion != 3 || payload.Result["evidence"] != "会议已结束" {
+				t.Fatalf("close payload = %#v", payload)
+			}
+			fmt.Fprint(w, `{"code":0,"data":{"id":20,"status":"done","resolution":{"actor_type":"proactive"}}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	env := []string{"JARVIS_AGENT_STAGE=proactive"}
+	if out, err := runJarvisTools(t, server.URL, env, "start-task", "--id", "19"); err != nil || !strings.Contains(out, `"status":"executing"`) {
+		t.Fatalf("start output = %s, error = %v", out, err)
+	}
+	payload := `{"expected_version":3,"result":{"summary":"过期关闭","evidence":"会议已结束"}}`
+	if out, err := runJarvisTools(t, server.URL, env, "close-task", "--id", "20", "--payload", payload); err != nil || !strings.Contains(out, `"actor_type":"proactive"`) {
+		t.Fatalf("close output = %s, error = %v", out, err)
+	}
+	for _, command := range []string{"start-task", "close-task"} {
+		args := []string{command, "--id", "20"}
+		if command == "close-task" {
+			args = append(args, "--payload", payload)
+		}
+		if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=execute"}, args...); err == nil {
+			t.Fatalf("%s succeeded outside proactive stage", command)
+		}
+	}
+}
+
 func runJarvisTools(t *testing.T, apiBase string, extraEnv []string, args ...string) (string, error) {
 	t.Helper()
 	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "jarvis-tools"))

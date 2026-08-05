@@ -226,6 +226,15 @@ func TestTaskTimeWindowsAndPendingOrderUseCreatedAt(t *testing.T) {
 	)`).Error; err != nil {
 		t.Fatalf("create task table: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE task_event (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL,
+		task_version INTEGER NOT NULL, event_type TEXT NOT NULL, from_status TEXT,
+		to_status TEXT NOT NULL, actor_type TEXT NOT NULL, actor_ref TEXT,
+		run_id INTEGER, detail TEXT, occurred_at DATETIME NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`).Error; err != nil {
+		t.Fatalf("create task_event table: %v", err)
+	}
 	for _, statement := range []string{
 		`INSERT INTO task(id, status, created_at, updated_at) VALUES (1, 'pending', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')`,
 		`INSERT INTO task(id, status, last_progress_at, created_at, updated_at) VALUES (2, 'pending', '2026-08-01T12:00:00Z', '2026-07-02T00:00:00Z', '2026-08-01T12:00:00Z')`,
@@ -254,6 +263,72 @@ func TestTaskTimeWindowsAndPendingOrderUseCreatedAt(t *testing.T) {
 	}
 	if len(pending) != 2 || pending[0].ID != 1 || pending[1].ID != 2 {
 		t.Fatalf("pending order = %#v", pending)
+	}
+}
+
+func TestCloseResolvesTaskAndProjectsProactiveActor(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE task (
+			id INTEGER PRIMARY KEY, status TEXT NOT NULL, execution_result TEXT,
+			summary TEXT, last_progress_at DATETIME, version INTEGER NOT NULL,
+			created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE task_event (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL,
+			task_version INTEGER NOT NULL, event_type TEXT NOT NULL, from_status TEXT,
+			to_status TEXT NOT NULL, actor_type TEXT NOT NULL, actor_ref TEXT,
+			run_id INTEGER, detail TEXT, occurred_at DATETIME NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(task_id, task_version)
+		)`,
+		`CREATE TABLE scheduled_task (
+			id INTEGER PRIMARY KEY, subject_type TEXT, subject_id INTEGER,
+			dispatch_kind TEXT, source_run_id INTEGER, status TEXT, last_run_status TEXT,
+			last_error_detail TEXT, last_finished_at DATETIME, updated_at DATETIME
+		)`,
+		`INSERT INTO task(id, status, version, created_at, updated_at)
+		 VALUES (7, 'waiting', 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		`INSERT INTO scheduled_task(id, subject_type, subject_id, dispatch_kind, status)
+		 VALUES (9, 'task', 7, 'resume_task', 'binding')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("fixture statement failed: %v", err)
+		}
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	view, err := store.Close(t.Context(), CloseInput{
+		TaskID: 7, ExpectedVersion: 3, ActorType: "proactive",
+		Result: []byte(`{"stage":"proactive_closed","summary":"昨日任务已过期","evidence":"截止时间已过"}`),
+	})
+	if err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if view.Status != "done" || view.Version != 4 || view.Resolution == nil || view.Resolution.ActorType != "proactive" {
+		t.Fatalf("closed view = %#v", view)
+	}
+	loaded, err := store.GetTask(t.Context(), 7)
+	if err != nil {
+		t.Fatalf("GetTask() error = %v", err)
+	}
+	if loaded.Resolution == nil || loaded.Resolution.EventType != "closed" || loaded.Resolution.ActorType != "proactive" {
+		t.Fatalf("loaded resolution = %#v", loaded.Resolution)
+	}
+	var scheduleStatus string
+	if err := db.Raw("SELECT status FROM scheduled_task WHERE id = 9").Scan(&scheduleStatus).Error; err != nil {
+		t.Fatalf("load scheduled task: %v", err)
+	}
+	if scheduleStatus != "completed" {
+		t.Fatalf("scheduled task status = %q, want completed", scheduleStatus)
 	}
 }
 

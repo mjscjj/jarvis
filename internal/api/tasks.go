@@ -22,6 +22,11 @@ type finishTaskRequest struct {
 	Result          json.RawMessage `json:"result"`
 }
 
+type closeTaskRequest struct {
+	ExpectedVersion *int32          `json:"expected_version"`
+	Result          json.RawMessage `json:"result"`
+}
+
 func ListTasks(service execute.TaskService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		page, err := positiveQueryInt(c.Query("page"), 1, "page")
@@ -173,6 +178,42 @@ func FinishTask(service execute.TaskService) app.HandlerFunc {
 		result, err := service.Finish(ctx, execute.FinishInput{
 			TaskID: taskID, ExpectedVersion: *request.ExpectedVersion,
 			Status: status, Result: tagged, ActorType: "user",
+		})
+		if err != nil {
+			writeExecutionError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+// CloseTask is the proactive Agent's internal cleanup path. It resolves an
+// existing non-terminal Task with explicit evidence and records actor=proactive;
+// it never runs an external side effect or impersonates an M5 execution.
+func CloseTask(service execute.TaskService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
+		if err != nil || taskID == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("task_id must be a positive integer"))
+			return
+		}
+		var request closeTaskRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40032, err)
+			return
+		}
+		if request.ExpectedVersion == nil {
+			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("expected_version is required"))
+			return
+		}
+		tagged, err := tagResultStage(request.Result, "proactive_closed")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40032, err)
+			return
+		}
+		result, err := service.Close(ctx, execute.CloseInput{
+			TaskID: taskID, ExpectedVersion: *request.ExpectedVersion,
+			Result: tagged, ActorType: "proactive",
 		})
 		if err != nil {
 			writeExecutionError(c, err)
