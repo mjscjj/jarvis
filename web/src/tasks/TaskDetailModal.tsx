@@ -44,6 +44,7 @@ import {
   proposalArtifactLabel,
   structureProposalAction,
   strField,
+  taskHandlerMeta,
   taskProjectName,
   taskSourceName,
 } from './taskPresentation'
@@ -69,11 +70,14 @@ const taskEventLabels: Record<string, string> = {
   feishu_message_recalled: '撤回飞书消息',
   stale_failed: '执行超时',
   snapshot_imported: '导入当前状态',
+  closed: '主动收口',
 }
 
 const actorLabels: Record<string, string> = {
   user: '我',
   m5: 'M5',
+  proactive: '主动 Agent',
+  scheduled_task: '定时恢复器',
   system: '系统',
   seed: '初始化',
   migration: '迁移',
@@ -1225,6 +1229,7 @@ function TaskMeta({ task }: { task: Task }) {
   const group = objectField(task.background, 'group')
   const project = objectField(task.background, 'project')
   const assigner = objectField(task.background, 'assigner')
+  const handler = taskHandlerMeta(task)
   return (
     <aside className="task-meta-card">
       <div className="task-section-kicker">任务信息</div>
@@ -1233,6 +1238,7 @@ function TaskMeta({ task }: { task: Task }) {
         <Descriptions.Item label="来源会话">{stringValue(group?.name) || '—'}</Descriptions.Item>
         <Descriptions.Item label="所属项目">{stringValue(project?.name) || (task.project_id != null ? `#${task.project_id}` : '未关联')}</Descriptions.Item>
         <Descriptions.Item label="来源">{task.source_type}{task.source_id != null ? ` #${task.source_id}` : ''}</Descriptions.Item>
+        <Descriptions.Item label="最终处理">{handler?.label || '尚未收口'}</Descriptions.Item>
         <Descriptions.Item label="Todo">{task.todo_id != null ? `#${task.todo_id}` : '—'}</Descriptions.Item>
         <Descriptions.Item label="Task">#{task.id}</Descriptions.Item>
         <Descriptions.Item label="版本">v{task.version}</Descriptions.Item>
@@ -1321,6 +1327,7 @@ export default function TaskDetailModal({
   if (!task) return null
 
   const failure = failureKindOf(task)
+  const handler = taskHandlerMeta(task)
   const recall: EffectRecall = {
     pending: recallingMessageID,
     run: (messageID: string) => onRecallMessage(task, messageID),
@@ -1376,6 +1383,7 @@ export default function TaskDetailModal({
             <Space size={10} wrap>
               <StatusBadge label={statusMeta[task.status].label} color={statusMeta[task.status].color} />
               {failure && <Tag color={failureMeta[failure].color}>{failureMeta[failure].label}</Tag>}
+              {handler && <Tag color={handler.color} title={handler.detail}>{handler.label}</Tag>}
               <Title level={3}>{task.title}</Title>
             </Space>
             <Text type="secondary">

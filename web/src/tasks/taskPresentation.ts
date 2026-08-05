@@ -36,6 +36,15 @@ export const failureMeta: Record<FailureKind, { label: string; color: string }> 
   unknown: { label: '失败', color: 'red' },
 }
 
+export function taskHandlerMeta(task: Task): { label: string; detail: string; color: string } | null {
+  const actor = task.resolution?.actor_type
+  if (!actor) return null
+  if (actor === 'user') return { label: '人工处理', detail: '最终状态由你手动确认', color: 'gold' }
+  if (actor === 'proactive') return { label: '模型关闭', detail: '主动 Agent 核验后收口', color: 'purple' }
+  if (actor === 'm5') return { label: '模型处理', detail: 'M5 Agent 执行或核验后收口', color: 'blue' }
+  return { label: '系统处理', detail: `最终处理者：${actor}`, color: 'default' }
+}
+
 function objectField(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
   const field = value[key]
   return field && typeof field === 'object' && !Array.isArray(field)

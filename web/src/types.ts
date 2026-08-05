@@ -165,6 +165,14 @@ export interface Task {
   version: number
   created_at: string
   updated_at: string
+  // Projection of the latest terminal TaskEvent. task_event remains the audit
+  // truth; this lets list views distinguish human and model resolution.
+  resolution: {
+    event_type: string
+    actor_type: string
+    actor_ref: string | null
+    occurred_at: string
+  } | null
 }
 
 export interface TaskList {

@@ -14,6 +14,7 @@ import {
   strField,
   taskConclusion,
   taskConclusionLabel,
+  taskHandlerMeta,
   taskProjectName,
   taskSourceName,
 } from './tasks/taskPresentation'
@@ -40,6 +41,12 @@ function FailureTag({ task }: { task: Task }) {
   if (!kind) return null
   const meta = failureMeta[kind]
   return <Tag color={meta.color}>{meta.label}</Tag>
+}
+
+function HandlerTag({ task }: { task: Task }) {
+  const meta = taskHandlerMeta(task)
+  if (!meta) return null
+  return <Tag color={meta.color} title={meta.detail}>{meta.label}</Tag>
 }
 
 type TaskTab = 'needs_me' | 'running' | 'waiting' | 'completed' | 'failed'
@@ -368,6 +375,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
             <Text strong className="workbench-task-title" title={task.title}>{task.title}</Text>
             {task.status === 'observing' && <Tag variant="filled">无需行动</Tag>}
             <FailureTag task={task} />
+            <HandlerTag task={task} />
           </div>
           <div className="workbench-task-conclusion">
             <span>{taskConclusionLabel(task)}</span>
