@@ -1,15 +1,14 @@
 // Package meetingsweep implements Jarvis's low-cost periodic meeting collector.
 //
-// Meetings produce no chat message, so nothing wakes M3 for them. This agent is
-// the missing first breath: it periodically searches recently ended Feishu
-// meetings and delivers each one as a clue via jarvis-tools append-clue. The
-// clue lands in the shared evidence stream, which wakes M3 automatically; from
-// there the existing pipeline (M3 判妙记 → summary_post Todo → M5 整理并发送)
-// runs unchanged.
+// Meetings and future calendar events produce no chat message, so nothing wakes
+// M3 for them. This agent is the missing first breath: it periodically searches
+// recently ended Feishu meetings and upcoming meeting events, then delivers
+// each one as a clue via jarvis-tools append-clue. The clue lands in the shared
+// evidence stream and wakes the existing M2 -> M3 -> M5 pipeline.
 //
 // It is a pure collector, not an analyser: it does not fetch minutes, judge
 // recordings, or write summaries — those are M3/M5's job. Its whole behaviour
-// lives in the system prompt plus the feishu-meeting-clue Skill, so unlike the
+// lives in the system prompt plus the two meeting clue Skills, so unlike the
 // proactive agent it needs neither shared memory nor work rules, and it records
 // no run table because its output is observable as clues and Todos.
 package meetingsweep
@@ -124,7 +123,7 @@ func buildPrompt(systemPrompt, tools string, now time.Time) string {
 		"BEGIN_HEARTBEAT\n"+
 			"当前时间："+now.Format(time.RFC3339)+"\n"+
 			"时区："+now.Location().String()+"\n"+
-			"现在执行一轮会议巡扫：回看最近结束的会议，逐场投递线索。没有新结束的会议就直接说明，不要硬造。\n"+
+			"现在执行一轮会议巡扫：回看最近结束的会议，并向前扫描未来 24 小时的待参加会议，逐场投递客观线索。两个时间窗都没有会议就直接说明，不要硬造。\n"+
 			"END_HEARTBEAT",
 	)
 	return strings.Join(parts, "\n\n")

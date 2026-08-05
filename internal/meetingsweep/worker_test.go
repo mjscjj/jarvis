@@ -27,7 +27,7 @@ type fakePromptReader struct {
 func (f fakePromptReader) Content(context.Context, string) (string, error) { return f.text, f.err }
 
 func TestWorkerBuildsHeartbeatPromptAndUsesMeetingSweepStage(t *testing.T) {
-	runner := &fakeRunner{result: "本轮没有新结束的会议"}
+	runner := &fakeRunner{result: "本轮没有会后或会前会议"}
 	worker, err := NewWorker(Options{
 		Runner: runner, Prompts: fakePromptReader{text: "collector mission"},
 		Sandbox: "danger-full-access", WorkspaceRoot: "/tmp/jarvis",
@@ -44,7 +44,7 @@ func TestWorkerBuildsHeartbeatPromptAndUsesMeetingSweepStage(t *testing.T) {
 	if result != runner.result {
 		t.Fatalf("result = %q", result)
 	}
-	for _, want := range []string{"collector mission", "BEGIN_AVAILABLE_TOOLS", "BEGIN_HEARTBEAT", "2026-08-02T23:04:05+08:00"} {
+	for _, want := range []string{"collector mission", "BEGIN_AVAILABLE_TOOLS", "BEGIN_HEARTBEAT", "2026-08-02T23:04:05+08:00", "未来 24 小时"} {
 		if !strings.Contains(runner.prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, runner.prompt)
 		}

@@ -30,7 +30,7 @@ func Block(stage string) (string, error) {
 	case StageProactive:
 		purpose = "定时审视全局，维护 Jarvis 内部世界模型，并把值得推进的外部工作创建成普通 Task 交给强 M5。"
 	case StageMeetingSweep:
-		purpose = "定时查找最近结束的飞书会议，把每场会作为一条线索投递给 M2/M3；只采集，不分析。"
+		purpose = "定时查找最近结束的飞书会议和未来待参加的会议日程，把每场会作为一条线索投递给 M2/M3；只采集，不分析。"
 	case StageMorningBrief:
 		purpose = "每个工作日开工前生成晨间作战简报：读世界状态与日历，选出最多三个今日结果，写本地 Markdown 并只给 Principal 本人发一条飞书私聊。"
 	default:

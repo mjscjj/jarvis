@@ -1,0 +1,4 @@
+interface:
+  display_name: "飞书未来会议线索采集"
+  short_description: "扫描未来飞书日程，逐场投递原始会议线索给 Jarvis"
+  default_prompt: "使用 $feishu-meeting-prep-clue 扫描我即将参加的飞书会议，并逐场投递原始会议线索。"

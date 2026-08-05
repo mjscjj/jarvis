@@ -57,7 +57,7 @@ message -> factengine（旁路）-> fact
 scripts/jarvis-tools append-clue
 ```
 
-它调用 `POST /api/clues`。新来源等于一个新 `source` + 一份 Skill/定时任务，不等于一个新 Go 模块。会议 Skill 只投递会议事实，录制/妙记/权限/等待语义由 M3/M5 判断。
+它调用 `POST /api/clues`。新来源等于一个新 `source` + 一份 Skill/定时任务，不等于一个新 Go 模块。会议巡扫同时投递已结束会议的 `feishu_meeting` 事实和未来会议日程的 `calendar` 事实；录制/妙记/权限/会议相关性/准备时机/等待语义都由 M3/M5 判断。
 
 ## 5. 调度与运维
 
@@ -66,6 +66,7 @@ scripts/jarvis-tools append-clue
 | event consume | `capture.event_enabled/event_profile` | 长连接实时接收 `im.message.receive_v1` |
 | discover | `capture.discover_schedule` | 会话元数据、内部 P2P Top-N |
 | scan | `capture.scan_schedule` | principal activity + related 会话增量轮询补偿 |
+| meeting sweep | `meeting_sweep.schedule` | 已结束会议 + 未来 24 小时会议日程，通过 clue 唤醒 M3 |
 
 ```bash
 ./bin/jarvis-server -config conf/config.yaml -discover-once
