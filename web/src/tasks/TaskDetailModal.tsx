@@ -41,6 +41,7 @@ import {
   failureMeta,
   proposalOf,
   proposalArtifactLabel,
+  structureProposalAction,
   strField,
   taskProjectName,
   taskSourceName,
@@ -862,47 +863,94 @@ function PromptPanel({
   )
 }
 
+function InlineCodeText({ text }: { text: string }) {
+  return <>{text.split(/(`[^`]+`)/g).filter(Boolean).map((part, index) => (
+    part.startsWith('`') && part.endsWith('`')
+      ? <code key={index}>{part.slice(1, -1)}</code>
+      : <span key={index}>{part}</span>
+  ))}</>
+}
+
 function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) {
   const result = proposalOf(task)
   if (!result) return null
   const { proposal } = result
+  const structuredAction = structureProposalAction(proposal.action)
+  const evidenceCount = result.enrichments?.length ?? 0
   return (
     <div className="task-decision-card">
       <div className="task-decision-heading">
         <div className="task-section-kicker">需要你决定</div>
         <Space wrap>{actions}</Space>
       </div>
-      <Paragraph className="task-readable-text task-primary-summary">
-        {result.summary || 'Agent 已准备好下面的动作；批准后才会真正落地。'}
-      </Paragraph>
-      <div className="task-decision-facts">
-        <div className="task-decision-fact">
-          <Text type="secondary">推荐动作</Text>
-          <Text>{proposal.action}</Text>
-        </div>
-        <div className="task-decision-fact">
-          <Text type="secondary">操作对象</Text>
-          <Text>{proposal.target}</Text>
+
+      <div className="task-decision-hero">
+        <div className="task-decision-hero-icon" aria-hidden="true"><SafetyOutlined /></div>
+        <div>
+          <Text type="secondary">这次审批的含义</Text>
+          <Text className="task-decision-request">
+            {result.needs_followup?.trim() || '允许 Jarvis 按下方方案进入真实执行。'}
+          </Text>
         </div>
       </div>
-      <Alert
-        className="task-decision-side-effect"
-        type="warning"
-        showIcon
-        title="外部副作用"
-        description="当前尚未发生外部写入。批准后，Jarvis 将对上述对象执行真实写入或发送。"
-      />
-      <div className="task-artifact">
-        <div className="task-artifact-title">{proposalArtifactLabel(task)}</div>
-        <div className="task-artifact-body">{proposal.artifact}</div>
-      </div>
-      {result.enrichments && result.enrichments.length > 0 && (
-        <div className="task-enrichment-list">
-          {result.enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+
+      <section className="task-decision-plan">
+        <div className="task-decision-section-title">批准后会做什么</div>
+        <Text className="task-decision-plan-intro">
+          <InlineCodeText text={structuredAction.introduction || proposal.action} />
+        </Text>
+        {structuredAction.steps.length > 0 && (
+          <details className="task-plan-details">
+            <summary>
+              <span>查看完整实施步骤</span>
+              <Tag>{structuredAction.steps.length} 步</Tag>
+            </summary>
+            <ol>
+              {structuredAction.steps.map((step, index) => (
+                <li key={index}>
+                  <span>{index + 1}</span>
+                  <div><InlineCodeText text={step} /></div>
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
+      </section>
+
+      <div className="task-decision-scope">
+        <div>
+          <Text type="secondary">操作范围</Text>
+          <Text><InlineCodeText text={proposal.target} /></Text>
         </div>
-      )}
-      {result.needs_followup?.trim() && (
-        <Alert type="info" showIcon title="批准后" description={result.needs_followup} />
+        <div>
+          <Text type="secondary">{proposalArtifactLabel(task)}</Text>
+          <Text><InlineCodeText text={proposal.artifact} /></Text>
+        </div>
+      </div>
+
+      <div className="task-decision-effect">
+        <ExclamationCircleOutlined />
+        <div>
+          <strong>当前尚未发生写入</strong>
+          <span>批准后才会按上述范围真实执行；你仍可在确认框补充限制条件。</span>
+        </div>
+      </div>
+
+      {(result.summary || evidenceCount > 0) && (
+        <details className="task-decision-evidence">
+          <summary>
+            <span>为什么这样建议</span>
+            <Text type="secondary">调查结论{evidenceCount > 0 ? ` · ${evidenceCount} 条依据` : ''}</Text>
+          </summary>
+          <div className="task-decision-evidence-body">
+            {result.summary && <Paragraph className="task-readable-text">{result.summary}</Paragraph>}
+            {result.enrichments && result.enrichments.length > 0 && (
+              <div className="task-enrichment-list">
+                {result.enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+              </div>
+            )}
+          </div>
+        </details>
       )}
     </div>
   )
@@ -1346,7 +1394,7 @@ export default function TaskDetailModal({
     }
     if (task.status === 'awaiting_approval') {
       return <>
-        <Button type="primary" loading={approveSubmitting} onClick={() => onApprove(task)}>批准 / 修改后批准</Button>
+        <Button type="primary" loading={approveSubmitting} onClick={() => onApprove(task)}>批准方案</Button>
         <Button danger onClick={() => onReject(task)}>驳回</Button>
       </>
     }

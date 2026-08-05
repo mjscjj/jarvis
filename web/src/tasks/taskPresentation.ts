@@ -112,8 +112,34 @@ export function taskConclusionLabel(task: Task): string {
 
 export function proposalArtifactLabel(task: Task): string {
   const action = proposalOf(task)?.proposal.action.toLowerCase() || ''
+  if (/code|代码|仓库|分支|测试|构建/.test(`${task.action_type.toLowerCase()} ${action}`)) return '交付物'
   if (/message|消息|通知|回复|发送|群/.test(action)) return '拟发送内容'
   if (/mail|邮件/.test(action)) return '拟发送邮件'
   if (/doc|文档|写入|更新|修改/.test(action)) return '拟写入内容'
   return '拟落地产物'
+}
+
+export interface StructuredProposalAction {
+  introduction: string
+  steps: string[]
+}
+
+// Proposal action remains free-form model text. This helper only adds a visual
+// projection when the text already contains multiple numbered steps; it does
+// not require or rewrite the stored payload.
+export function structureProposalAction(value: string): StructuredProposalAction {
+  const text = value.trim()
+  const markers = [...text.matchAll(/(^|[\s：:；;。])(\d{1,2})[.)、]\s*/g)]
+  if (markers.length < 2) return { introduction: text, steps: [] }
+
+  const first = markers[0]
+  const introduction = text.slice(0, first.index).trim().replace(/[：:；;。]+$/, '')
+  const steps = markers.map((marker, index) => {
+    const start = (marker.index ?? 0) + marker[0].length
+    const end = index + 1 < markers.length ? markers[index + 1].index : text.length
+    return text.slice(start, end).trim().replace(/[。；;]+$/, '')
+  }).filter(Boolean)
+
+  if (steps.length < 2) return { introduction: text, steps: [] }
+  return { introduction, steps }
 }
