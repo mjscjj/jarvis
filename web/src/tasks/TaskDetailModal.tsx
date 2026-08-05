@@ -7,6 +7,7 @@ import {
   Descriptions,
   Drawer,
   Empty,
+  Modal,
   Space,
   Spin,
   Tabs,
@@ -828,41 +829,6 @@ function RunDetails({ run, latest, recall }: { run: ExecutionRun; latest: boolea
   )
 }
 
-function PromptPanel({
-  runs,
-  loading,
-  error,
-}: {
-  runs: ExecutionRun[]
-  loading: boolean
-  error?: string
-}) {
-  if (loading) return <div className="task-detail-loading"><Spin /></div>
-  if (error) return <Alert type="error" showIcon title="原始提示词加载失败" description={error} />
-  if (runs.length === 0) {
-    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务执行提示词" />
-  }
-  return (
-    <Tabs
-      defaultActiveKey={String(runs[0].id)}
-      items={runs.map((run) => ({
-        key: String(run.id),
-        label: `Run #${run.id}`,
-        children: (
-          <div>
-            <Space wrap className="task-output-meta">
-              <Tag>{run.stage}</Tag>
-              <Tag>{run.status}</Tag>
-              <Text type="secondary">开始于 {formatTime(run.started_at)}</Text>
-            </Space>
-            <pre className="task-live-output">{run.prompt || '该次执行未保存提示词。'}</pre>
-          </div>
-        ),
-      }))}
-    />
-  )
-}
-
 function InlineCodeText({ text }: { text: string }) {
   return <>{text.split(/(`[^`]+`)/g).filter(Boolean).map((part, index) => (
     part.startsWith('`') && part.endsWith('`')
@@ -1275,17 +1241,6 @@ function TaskMeta({ task }: { task: Task }) {
   )
 }
 
-function SourcePayloadPanel({ task }: { task: Task }) {
-  return (
-    <div className="task-readable-panel">
-      <Text type="secondary">来源系统交给 M5 的完整原始语义，不预设固定结构。</Text>
-      {typeof task.source_payload === 'string'
-        ? <Paragraph>{task.source_payload}</Paragraph>
-        : <pre className="task-enrichment-json">{printableValue(task.source_payload)}</pre>}
-    </div>
-  )
-}
-
 function ContextPanel({ task }: { task: Task }) {
   const conversationValue = task.background.conversation
   const messagesValue = task.background.messages
@@ -1334,18 +1289,6 @@ function ContextPanel({ task }: { task: Task }) {
   )
 }
 
-function TechnicalPanel({ task, runs, events }: { task: Task; runs: ExecutionRun[]; events: TaskEvent[] }) {
-  return (
-    <div className="task-technical-panel">
-      <details><summary>来源语义原始数据</summary><pre>{JSON.stringify(task.source_payload, null, 2)}</pre></details>
-      <details><summary>任务结果原始数据</summary><pre>{JSON.stringify(task.execution_result, null, 2)}</pre></details>
-      <details><summary>背景快照原始数据</summary><pre>{JSON.stringify(task.background, null, 2)}</pre></details>
-      <details><summary>Run 原始数据</summary><pre>{JSON.stringify(runs, null, 2)}</pre></details>
-      <details><summary>事件原始数据</summary><pre>{JSON.stringify(events, null, 2)}</pre></details>
-    </div>
-  )
-}
-
 export default function TaskDetailModal({
   task,
   runs,
@@ -1370,7 +1313,11 @@ export default function TaskDetailModal({
   onInterrupt,
 }: TaskDetailModalProps) {
   const [activeTab, setActiveTab] = useState('history')
-  useEffect(() => setActiveTab('history'), [task?.id])
+  const [contextOpen, setContextOpen] = useState(false)
+  useEffect(() => {
+    setActiveTab('history')
+    setContextOpen(false)
+  }, [task?.id])
   if (!task) return null
 
   const failure = failureKindOf(task)
@@ -1412,7 +1359,7 @@ export default function TaskDetailModal({
     </>
   })()
 
-  return (
+  return (<>
       <Drawer
         open
         size="min(960px, 100vw)"
@@ -1439,7 +1386,10 @@ export default function TaskDetailModal({
               {' · '}更新于 {formatTime(task.updated_at)}
             </Text>
           </div>
-          <Button type="text" icon={<CloseOutlined />} aria-label="关闭" onClick={onClose} />
+          <div className="task-detail-header-actions">
+            <Button size="small" icon={<FileTextOutlined />} onClick={() => setContextOpen(true)}>上下文依据</Button>
+            <Button type="text" icon={<CloseOutlined />} aria-label="关闭" onClick={onClose} />
+          </div>
         </header>
 
         <div className="task-detail-scroll">
@@ -1496,29 +1446,20 @@ export default function TaskDetailModal({
             ]}
           />
 
-          <Collapse
-            className="task-developer-collapse"
-            items={[{
-              key: 'developer',
-              label: '开发者信息',
-              children: (
-                <Tabs
-                  items={[
-                    {
-                      key: 'prompt',
-                      label: '原始提示词',
-                      children: <PromptPanel runs={runs} loading={runsLoading} error={runsError} />,
-                    },
-                    { key: 'source', label: '来源语义', children: <SourcePayloadPanel task={task} /> },
-                    { key: 'context', label: '上下文依据', children: <ContextPanel task={task} /> },
-                    { key: 'technical', label: '技术数据', children: <TechnicalPanel task={task} runs={runs} events={events} /> },
-                  ]}
-                />
-              ),
-            }]}
-          />
         </div>
         </div>
       </Drawer>
-  )
+      <Modal
+        title="上下文依据"
+        open={contextOpen}
+        footer={null}
+        width={760}
+        zIndex={1300}
+        destroyOnHidden
+        className="task-context-modal"
+        onCancel={() => setContextOpen(false)}
+      >
+        <ContextPanel task={task} />
+      </Modal>
+    </>)
 }

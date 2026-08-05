@@ -91,6 +91,18 @@
   top: 0;
 }
 
+.task-detail-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-context-modal .ant-modal-body {
+  max-height: calc(100dvh - 180px);
+  overflow-y: auto;
+}
+
 .task-workbench-drawer .task-detail-scroll {
   overflow: visible;
 }
@@ -335,16 +347,6 @@
   line-height: 1.75;
 }
 
-.task-developer-collapse {
-  margin-top: 20px;
-  border-color: var(--color-border);
-  background: var(--color-bg-elevated);
-}
-
-.task-developer-collapse .ant-collapse-header-text {
-  font-weight: 600;
-}
-
 .task-process-panel {
   min-height: 360px;
 }
@@ -401,6 +403,10 @@
   .task-decision-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .task-detail-header-actions .ant-btn:first-child {
+    padding-inline: 8px;
   }
 
   .task-decision-scope > div {
