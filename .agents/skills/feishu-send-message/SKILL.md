@@ -36,7 +36,7 @@ lark-cli im +messages-send \
 
 按钮是否出现只由 callback 是否可用决定，不按动作类型或风险分档：
 
-- 有效配置里的 `card_approval.enabled=true`，且 `profile`、`principal_open_id` 都非空时，每张审批卡固定给 `[确认]` `[拒绝]` `[查看详情]` 三个按钮。确认/拒绝是 callback 按钮，`value` 里带 `action` 和本任务的 `task_id`；查看详情是跳转按钮。
+- 有效配置里的 `card_approval.enabled=true`，且 `profile`、`principal_open_id` 都非空时，每张审批卡固定给 `[确认]` `[拒绝]` `[查看详情]` 三个按钮。确认/拒绝是 callback 按钮，`value` 只带服务端协议要求的 `action`（分别为 `approve` / `reject`）和本任务的 `task_id`；查看详情是跳转按钮。
 - 高风险、对外承诺、删改线上或影响范围较大时，三个按钮一个都不能少；只在正文增加醒目的「高风险提示」，说明影响范围、不可逆后果和回滚方式，并给 `[确认]` 按钮增加二次确认弹窗。
 - callback 配置不可用时，才退化成只有 `[查看详情]` 的链接卡，不能发点了没反应的确认/拒绝按钮。
 
@@ -77,7 +77,7 @@ lark-cli --profile "<card_approval.profile>" im +messages-send \
               "type": "primary_filled",
               "width": "fill",
               "behaviors": [
-                { "type": "callback", "value": { "action": "jarvis_approval", "decision": "approve", "task_id": <task_id> } }
+                { "type": "callback", "value": { "action": "approve", "task_id": <task_id> } }
               ]
             }]
           },
@@ -91,7 +91,7 @@ lark-cli --profile "<card_approval.profile>" im +messages-send \
               "type": "danger",
               "width": "fill",
               "behaviors": [
-                { "type": "callback", "value": { "action": "jarvis_approval", "decision": "reject", "task_id": <task_id> } }
+                { "type": "callback", "value": { "action": "reject", "task_id": <task_id> } }
               ]
             }]
           },
