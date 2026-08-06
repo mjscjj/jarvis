@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Collapse,
+  DatePicker,
   Descriptions,
   Drawer,
   Empty,
@@ -26,8 +27,12 @@ import {
   Typography,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
+import dayjs from 'dayjs'
+import type { Dayjs } from 'dayjs'
 import {
   appendProjectFact,
+  closeKeyMatter,
+  createKeyMatter,
   createPerson,
   createProject,
   createResource,
@@ -37,6 +42,7 @@ import {
   getProfile,
   getSkillContent,
   listGroups,
+  listKeyMatters,
   listPersons,
   listProjectFacts,
   listProjects,
@@ -48,6 +54,7 @@ import {
   resolvePerson,
   scanSkills,
   updateGroupBackground,
+  updateKeyMatter,
   updatePerson,
   updateProfile,
   updateProject,
@@ -56,6 +63,7 @@ import {
   updateWorkRule,
   updateTextFile,
 } from './api'
+import { keyMatterToInput, replaceKeyMatter } from './keyMatters'
 import SharedMemory from './SharedMemory'
 import RuntimeSettings from './RuntimeSettings'
 import SystemTasks from './SystemTasks'
@@ -66,6 +74,8 @@ import type {
   AgentSkillInput,
   Group,
   GroupBackgroundInput,
+  KeyMatter,
+  KeyMatterInput,
   Person,
   PersonInput,
   PersonRole,
@@ -113,7 +123,7 @@ function errorText(cause: unknown): string {
 }
 
 function SubjectFactsCard({ subjectType, subjectId, title }: {
-  subjectType: 'group' | 'person'
+  subjectType: 'key_matter' | 'group' | 'person'
   subjectId: number
   title: string
 }) {
@@ -330,6 +340,205 @@ function ProjectsPanel() {
     </Drawer>
     <Modal title="记录项目进展" open={eventOpen} confirmLoading={eventSubmitting} onOk={recordEvent} onCancel={() => setEventOpen(false)} okText="记录">
       <Input.TextArea rows={6} value={eventDescription} onChange={(event) => setEventDescription(event.target.value)} placeholder="写清楚发生了什么、当前结果和下一步。" />
+    </Modal>
+  </>
+}
+
+// --- Key matters ---
+
+type KeyMatterField = 'status' | 'summary' | 'due_at'
+
+interface KeyMatterCreateFields {
+  title: string
+  status?: string
+  summary?: string
+  project_id?: number
+  due_at?: Dayjs
+}
+
+function KeyMattersPanel() {
+  const [items, setItems] = useState<KeyMatter[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+  const [open, setOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [selected, setSelected] = useState<KeyMatter>()
+  const [relationMatter, setRelationMatter] = useState<KeyMatter>()
+  const [editing, setEditing] = useState<{ id: number; field: KeyMatterField }>()
+  const [draftText, setDraftText] = useState('')
+  const [draftDueAt, setDraftDueAt] = useState<Dayjs | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [form] = Form.useForm<KeyMatterCreateFields>()
+
+  const reload = useCallback(() => {
+    setLoading(true)
+    listKeyMatters()
+      .then((result) => { setItems(result.items); setError(undefined) })
+      .catch((cause: unknown) => setError(errorText(cause)))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(reload, [reload])
+  useEffect(() => {
+    listProjects()
+      .then((result) => setProjects(result.items))
+      .catch((cause: unknown) => setError(errorText(cause)))
+  }, [])
+
+  const openCreate = () => {
+    form.setFieldsValue({ title: '', status: '', summary: undefined, project_id: undefined, due_at: undefined })
+    setOpen(true)
+  }
+
+  const submit = async () => {
+    const values = await form.validateFields()
+    const input: KeyMatterInput = {
+      title: values.title,
+      status: values.status ?? '',
+      summary: values.summary?.trim() || null,
+      project_id: values.project_id ?? null,
+      due_at: values.due_at?.toISOString() ?? null,
+    }
+    setSubmitting(true)
+    try {
+      await createKeyMatter(input)
+      setOpen(false)
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const beginEdit = (matter: KeyMatter, field: KeyMatterField) => {
+    setEditing({ id: matter.id, field })
+    setDraftText(field === 'status' ? matter.status : matter.summary ?? '')
+    setDraftDueAt(field === 'due_at' && matter.due_at ? dayjs(matter.due_at) : null)
+  }
+
+  const cancelEdit = () => setEditing(undefined)
+
+  const saveEdit = async (matter: KeyMatter) => {
+    if (!editing || editing.id !== matter.id) return
+    const patch: Partial<KeyMatterInput> = editing.field === 'status'
+      ? { status: draftText }
+      : editing.field === 'summary'
+        ? { summary: draftText.trim() || null }
+        : { due_at: draftDueAt?.toISOString() ?? null }
+    setSaving(true)
+    try {
+      const saved = await updateKeyMatter(matter.id, keyMatterToInput(matter, patch))
+      setItems((current) => replaceKeyMatter(current, saved))
+      if (selected?.id === saved.id) setSelected(saved)
+      setEditing(undefined)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const close = async (matter: KeyMatter) => {
+    try {
+      await closeKeyMatter(matter.id)
+      setItems((current) => current.filter((item) => item.id !== matter.id))
+      if (selected?.id === matter.id) setSelected(undefined)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    }
+  }
+
+  const textEditor = (matter: KeyMatter, field: Exclude<KeyMatterField, 'due_at'>) => {
+    if (editing?.id !== matter.id || editing.field !== field) {
+      const value = field === 'status' ? matter.status : matter.summary
+      return <Button type="link" size="small" onClick={(event) => { event.stopPropagation(); beginEdit(matter, field) }}>{value || '点击填写'}</Button>
+    }
+    return (
+      <Space orientation="vertical" size={4} onClick={(event) => event.stopPropagation()} style={{ width: '100%' }}>
+        {field === 'status'
+          ? <Input size="small" value={draftText} onChange={(event) => setDraftText(event.target.value)} onPressEnter={() => saveEdit(matter)} autoFocus />
+          : <Input.TextArea size="small" rows={2} value={draftText} onChange={(event) => setDraftText(event.target.value)} autoFocus />}
+        <Space size={4}>
+          <Button size="small" type="primary" loading={saving} onClick={() => saveEdit(matter)}>保存</Button>
+          <Button size="small" disabled={saving} onClick={cancelEdit}>取消</Button>
+        </Space>
+      </Space>
+    )
+  }
+
+  const dueAtEditor = (matter: KeyMatter) => {
+    if (editing?.id !== matter.id || editing.field !== 'due_at') {
+      return <Button type="link" size="small" onClick={(event) => { event.stopPropagation(); beginEdit(matter, 'due_at') }}>{matter.due_at ? dayjs(matter.due_at).format('YYYY-MM-DD HH:mm') : '点击填写'}</Button>
+    }
+    return (
+      <Space orientation="vertical" size={4} onClick={(event) => event.stopPropagation()}>
+        <DatePicker showTime value={draftDueAt} onChange={setDraftDueAt} format="YYYY-MM-DD HH:mm" autoFocus />
+        <Space size={4}>
+          <Button size="small" type="primary" loading={saving} onClick={() => saveEdit(matter)}>保存</Button>
+          <Button size="small" disabled={saving} onClick={cancelEdit}>取消</Button>
+        </Space>
+      </Space>
+    )
+  }
+
+  const columns: TableColumnsType<KeyMatter> = [
+    { title: '关键事项', dataIndex: 'title', width: 220, render: (value: string) => <Text strong>{value}</Text> },
+    { title: '状态', dataIndex: 'status', width: 180, render: (_, matter) => textEditor(matter, 'status') },
+    { title: '当前进展', dataIndex: 'summary', render: (_, matter) => textEditor(matter, 'summary') },
+    { title: '截止时间', dataIndex: 'due_at', width: 190, render: (_, matter) => dueAtEditor(matter) },
+    { title: '关联项目', dataIndex: 'project_id', width: 150, render: (_, matter) => matter.project?.name || '—' },
+    {
+      title: '操作', width: 150, render: (_, matter) => (
+        <Flex gap={8}>
+          <Button size="small" onClick={(event) => { event.stopPropagation(); setRelationMatter(matter) }}>关系</Button>
+          <Popconfirm title="闭环该关键事项？" onConfirm={() => close(matter)} okText="闭环" cancelText="取消">
+            <Button size="small" danger onClick={(event) => event.stopPropagation()}>闭环</Button>
+          </Popconfirm>
+        </Flex>
+      ),
+    },
+  ]
+
+  return <>
+    <Flex justify="space-between" align="center" className="section-heading">
+      <Text type="secondary">共 {items.length} 个未闭环关键事项</Text>
+      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建关键事项</Button></Flex>
+    </Flex>
+    {error && <Alert type="error" showIcon title="关键事项操作失败" description={error} closable onClose={() => setError(undefined)} />}
+    <Card className="table-card" variant="borderless">
+      <Table<KeyMatter> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(matter) => ({ onClick: () => setSelected(matter), className: 'clickable-row' })} />
+    </Card>
+    {selected && (
+      <Card title={selected.title} variant="borderless" style={{ marginTop: 16 }}>
+        <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+          <Descriptions column={2} size="small">
+            <Descriptions.Item label="状态">{selected.status || '—'}</Descriptions.Item>
+            <Descriptions.Item label="关联项目">{selected.project?.name || '—'}</Descriptions.Item>
+            <Descriptions.Item label="截止时间">{selected.due_at ? dayjs(selected.due_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
+            <Descriptions.Item label="最近实质进展">{selected.last_progress_at ? dayjs(selected.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
+            <Descriptions.Item label="当前进展" span={2}>{selected.summary || '—'}</Descriptions.Item>
+          </Descriptions>
+          <SubjectFactsCard subjectType="key_matter" subjectId={selected.id} title="关键事项事实" />
+        </Space>
+      </Card>
+    )}
+    <Modal title="新建关键事项" open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="创建" destroyOnHidden>
+      <Form form={form} layout="vertical">
+        <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入关键事项标题' }]}><Input /></Form.Item>
+        <Form.Item name="status" label="状态"><Input placeholder="自由文本，如：等法务回复" /></Form.Item>
+        <Form.Item name="summary" label="当前进展"><Input.TextArea rows={3} /></Form.Item>
+        <Form.Item name="project_id" label="关联项目（可选）">
+          <Select allowClear options={projects.map((project) => ({ value: project.id, label: project.name }))} />
+        </Form.Item>
+        <Form.Item name="due_at" label="截止时间（可选）"><DatePicker showTime format="YYYY-MM-DD HH:mm" style={{ width: '100%' }} /></Form.Item>
+      </Form>
+    </Modal>
+    <Modal title={`关联关系 · ${relationMatter?.title || ''}`} open={Boolean(relationMatter)} onCancel={() => setRelationMatter(undefined)} footer={null}>
+      {relationMatter && <EntityRelations entityType="key_matter" entityId={relationMatter.id} />}
     </Modal>
   </>
 }
@@ -1493,7 +1702,7 @@ function SkillsPanel() {
   </>
 }
 
-type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'profile'
+type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'profile'
 
 export default function Background() {
   const [activeView, setActiveView] = useState<MemoryView>('projects')
@@ -1526,6 +1735,7 @@ export default function Background() {
             { key: 'persons', label: '人物', children: <PersonsPanel /> },
             { key: 'groups', label: '会话', children: <GroupsPanel /> },
             { key: 'resources', label: '资源', children: <ResourcePanel /> },
+            { key: 'key-matters', label: '关键事项', children: <KeyMattersPanel /> },
           ]}
         />
       )}

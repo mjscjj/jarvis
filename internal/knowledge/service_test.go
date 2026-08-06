@@ -2,8 +2,13 @@ package knowledge
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"jarvis/internal/config"
+	"jarvis/internal/domain"
+	"jarvis/internal/store"
 )
 
 func TestPrepareCreateCanonicalizesPair(t *testing.T) {
@@ -142,5 +147,40 @@ func TestValidateFilterRequiresEntityPair(t *testing.T) {
 	err := validateFilter(FactFilter{EntityType: &entityType, Page: 1, PageSize: 20})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestServiceAcceptsKeyMatterEntity(t *testing.T) {
+	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
+	if err != nil {
+		t.Fatalf("OpenSQLite() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close(db) })
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	matter := domain.KeyMatter{Title: "法务口径", Status: "跟进中"}
+	person := domain.Person{OpenID: "ou_key_matter", Name: "法务同学", Role: "key", PriorityWeight: 1, IsActive: true}
+	if err := db.Create(&matter).Error; err != nil {
+		t.Fatalf("create key matter: %v", err)
+	}
+	if err := db.Create(&person).Error; err != nil {
+		t.Fatalf("create person: %v", err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	created, err := service.Create(t.Context(), CreateInput{
+		EntityA:     EntityRef{Type: EntityKeyMatter, ID: matter.ID},
+		EntityB:     EntityRef{Type: EntityPerson, ID: person.ID},
+		Description: "法务同学负责给出最终口径。",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	labels := map[EntityType]string{created.EntityA.Type: created.EntityA.Label, created.EntityB.Type: created.EntityB.Label}
+	if labels[EntityKeyMatter] != matter.Title {
+		t.Fatalf("key matter label = %q, want %q", labels[EntityKeyMatter], matter.Title)
 	}
 }

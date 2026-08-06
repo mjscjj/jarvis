@@ -141,13 +141,15 @@ Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示�
 
 当前世界状态分为：
 
-- 人工背景：PrincipalProfile、Project、Person、Group、ManagedResource；
+- 当前背景：PrincipalProfile、Project、KeyMatter、Person、Group、ManagedResource；
 - 原始证据：Message、Resource、ScanRecord；
 - 行动链路：Todo、Task、TodoEvent、TaskEvent、ExecutionRun；
 - 长期事实：Fact、RelationFact；
 - 时间触发和总结：ScheduledTask、DailyDigest。
 
 factengine 不新增第二套世界状态表：它通过既有通用 CRUD 工具持续维护上述载体。主动巡视主要消费这些持久状态，也可以在调查过程中维护已经确认的变化；跨轮记忆来自世界模型和事实历史，而不是续跑无限对话 Session。
+
+KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是一次执行动作的事项。是否闭环只由 `closed_at` 表示；`status` 是模型和人维护的自由文本。关键事项本身不进入 Task 执行链路，需要行动时另建普通 Task，进展历史继续写入 Fact 和 RelationFact。
 
 `internal/domain/*.go` 和 `internal/store/sqlite.go` 是字段与迁移真源。不要在文档复制完整 DDL。
 

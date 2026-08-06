@@ -2,8 +2,13 @@ package progress
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"jarvis/internal/config"
+	"jarvis/internal/domain"
+	"jarvis/internal/store"
 )
 
 func TestPrepareTaskEvent(t *testing.T) {
@@ -163,5 +168,38 @@ func TestPrepareFactKeepsUnknownSubjectType(t *testing.T) {
 	}
 	if _, ok := factSubjectModel("meeting"); ok {
 		t.Fatal("factSubjectModel(meeting) = ok, want no parent table")
+	}
+}
+
+func TestServiceAcceptsKeyMatterSubject(t *testing.T) {
+	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
+	if err != nil {
+		t.Fatalf("OpenSQLite() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close(db) })
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	matter := domain.KeyMatter{Title: "法务口径", Status: "跟进中"}
+	if err := db.Create(&matter).Error; err != nil {
+		t.Fatalf("create key matter: %v", err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	created, err := service.AppendFact(t.Context(), FactInput{
+		SubjectType: "key_matter", SubjectID: matter.ID, Description: "法务已给出第一版口径。",
+	})
+	if err != nil {
+		t.Fatalf("AppendFact() error = %v", err)
+	}
+	if created.SubjectType != "key_matter" || created.SubjectID != matter.ID {
+		t.Fatalf("AppendFact() = %+v", created)
+	}
+	if _, err := service.AppendFact(t.Context(), FactInput{
+		SubjectType: "key_matter", SubjectID: matter.ID + 99, Description: "孤儿事实。",
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("AppendFact() missing key matter error = %v, want ErrNotFound", err)
 	}
 }

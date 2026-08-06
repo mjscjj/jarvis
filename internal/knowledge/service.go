@@ -24,6 +24,7 @@ type EntityType string
 
 const (
 	EntityProject         EntityType = "project"
+	EntityKeyMatter       EntityType = "key_matter"
 	EntityPerson          EntityType = "person"
 	EntityPrincipal       EntityType = "principal"
 	EntityGroup           EntityType = "group"
@@ -34,7 +35,7 @@ const (
 )
 
 var validEntityTypes = map[EntityType]struct{}{
-	EntityProject: {}, EntityPerson: {}, EntityPrincipal: {}, EntityGroup: {},
+	EntityProject: {}, EntityKeyMatter: {}, EntityPerson: {}, EntityPrincipal: {}, EntityGroup: {},
 	EntityTodo: {}, EntityTask: {}, EntityResource: {}, EntityManagedResource: {},
 }
 
@@ -349,6 +350,8 @@ func entityModel(entityType EntityType) (any, error) {
 	switch entityType {
 	case EntityProject:
 		return &domain.Project{}, nil
+	case EntityKeyMatter:
+		return &domain.KeyMatter{}, nil
 	case EntityPerson:
 		return &domain.Person{}, nil
 	case EntityPrincipal:
@@ -397,6 +400,12 @@ func (s *Service) entityLabel(ctx context.Context, ref EntityRef) (string, error
 			return "", err
 		}
 		return row.Name, nil
+	case EntityKeyMatter:
+		var row domain.KeyMatter
+		if err := db.Select("id", "title").First(&row, ref.ID).Error; err != nil {
+			return "", err
+		}
+		return row.Title, nil
 	case EntityPerson:
 		var row domain.Person
 		if err := db.Select("id", "name").First(&row, ref.ID).Error; err != nil {

@@ -17,7 +17,7 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project"} {
+	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
@@ -35,6 +35,8 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/api/key-matters":
+			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":4,"title":"matter","status":"跟进中","summary":"current","project_id":1,"due_at":null,"last_progress_at":null,"closed_at":null,"project":{"large":true}}]}}`)
 		case "/api/todos":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":1,"title":"todo","description":"large","context_snapshot":{"large":true},"status":"extracted"}]}}`)
 		case "/api/tasks":
@@ -51,6 +53,7 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 		command   string
 		forbidden []string
 	}{
+		{"list-key-matters", []string{"closed_at", "project"}},
 		{"list-todos", []string{"description", "context_snapshot"}},
 		{"list-tasks", []string{"background", "source_payload", "execution_result"}},
 		{"list-scheduled-tasks", []string{"instruction", "dispatch_payload", "context_snapshot"}},
@@ -152,6 +155,9 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"create-project", []string{"--payload", `{"name":"p"}`}, http.MethodPost, "/api/projects"},
 		{"update-project", []string{"--id", "7", "--payload", `{"name":"p"}`}, http.MethodPut, "/api/projects/7"},
 		{"archive-project", []string{"--id", "7"}, http.MethodDelete, "/api/projects/7"},
+		{"create-key-matter", []string{"--payload", `{"title":"m"}`}, http.MethodPost, "/api/key-matters"},
+		{"update-key-matter", []string{"--id", "12", "--payload", `{"title":"m"}`}, http.MethodPut, "/api/key-matters/12"},
+		{"close-key-matter", []string{"--id", "12"}, http.MethodDelete, "/api/key-matters/12"},
 		{"update-group", []string{"--id", "8", "--payload", `{}`}, http.MethodPut, "/api/groups/8"},
 		{"update-principal", []string{"--payload", `{"name":"me"}`}, http.MethodPut, "/api/profile"},
 		{"create-person", []string{"--payload", `{"name":"a"}`}, http.MethodPost, "/api/persons"},
@@ -182,6 +188,21 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestJarvisToolsGetKeyMatterUsesExactEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/key-matters/17" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"id":17,"title":"关键事项"}}`)
+	}))
+	defer server.Close()
+	out, err := runJarvisTools(t, server.URL, nil, "get-key-matter", "--id", "17")
+	if err != nil || !strings.Contains(out, `"id":17`) {
+		t.Fatalf("output = %s, error = %v", out, err)
 	}
 }
 

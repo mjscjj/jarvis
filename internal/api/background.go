@@ -99,6 +99,101 @@ func DeleteProject(svc *background.ProjectService) app.HandlerFunc {
 	}
 }
 
+// --- Key matter handlers ---
+
+func ListKeyMatters(svc *background.KeyMatterService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		base, err := backgroundListFilter(c)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40020, err)
+			return
+		}
+		filter := background.KeyMatterFilter{ListFilter: base}
+		if raw := strings.TrimSpace(c.Query("include_closed")); raw != "" {
+			value, err := strconv.ParseBool(raw)
+			if err != nil {
+				writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("include_closed must be true or false"))
+				return
+			}
+			filter.IncludeClosed = value
+		}
+		result, err := svc.List(ctx, filter)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func CreateKeyMatter(svc *background.KeyMatterService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var in background.KeyMatterInput
+		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
+		result, err := svc.Create(ctx, in)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func GetKeyMatter(svc *background.KeyMatterService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "key_matter_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		result, err := svc.Get(ctx, id)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func UpdateKeyMatter(svc *background.KeyMatterService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "key_matter_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		var in background.KeyMatterInput
+		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
+		result, err := svc.Update(ctx, id, in)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func DeleteKeyMatter(svc *background.KeyMatterService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "key_matter_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		if err := svc.Delete(ctx, id); err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": id, "closed": true}})
+	}
+}
+
 // --- Person handlers ---
 
 func ListPersons(svc *background.PersonService) app.HandlerFunc {

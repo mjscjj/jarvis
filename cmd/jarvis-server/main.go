@@ -378,6 +378,10 @@ func main() {
 	if err != nil {
 		fatalf("initialize project service failed: %v", err)
 	}
+	keyMatterService, err := background.NewKeyMatterService(db)
+	if err != nil {
+		fatalf("initialize key matter service failed: %v", err)
+	}
 	personService, err := background.NewPersonService(db)
 	if err != nil {
 		fatalf("initialize person service failed: %v", err)
@@ -523,7 +527,7 @@ func main() {
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
 				OpenTodoLimit: cfg.Extract.OpenTodoLimit, RecentTaskLimit: cfg.Extract.RecentTaskLimit,
 			},
-			Concurrency: cfg.Extract.Concurrency,
+			Concurrency:     cfg.Extract.Concurrency,
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
 			FactLimit: cfg.Extract.FactLimit, KeyPersonLimit: cfg.Extract.KeyPersonLimit,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
@@ -643,7 +647,7 @@ func main() {
 			executionTaskStore,
 			executionAgent,
 			pipeline.Options{
-				ExtractConcurrency:    cfg.Extract.Concurrency,
+				ExtractConcurrency:   cfg.Extract.Concurrency,
 				ExecutionBatchLimit:  cfg.Execute.BatchLimit,
 				ExecutionConcurrency: cfg.Execute.Concurrency,
 				StaleExecuting:       time.Duration(cfg.Execute.StaleExecutingMinute) * time.Minute,
@@ -871,7 +875,8 @@ func main() {
 		DB: db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,
-		Projects:        projectService, Persons: personService, Groups: groupService,
+		Projects:        projectService, KeyMatters: keyMatterService,
+		Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		SharedMemory:   sharedMemoryService,
 		WorkRules:      workRuleService,

@@ -48,6 +48,10 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGroupBackgroundService() error = %v", err)
 	}
+	keyMatters, err := NewKeyMatterService(db)
+	if err != nil {
+		t.Fatalf("NewKeyMatterService() error = %v", err)
+	}
 
 	suffix := time.Now().UnixNano()
 
@@ -103,6 +107,30 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 		}
 		if err := projects.Delete(ctx, created.ID); !errors.Is(err, ErrInvalidInput) {
 			t.Fatalf("Delete() twice error = %v, want ErrInvalidInput", err)
+		}
+	})
+
+	t.Run("key matter table and fact side effects", func(t *testing.T) {
+		created, err := keyMatters.Create(ctx, KeyMatterInput{Title: "IntegrationMatter", Status: "跟进中"})
+		if err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		if !db.Migrator().HasTable(&domain.KeyMatter{}) {
+			t.Fatal("key_matter table was not migrated")
+		}
+		summary := "完成第一轮对齐"
+		if _, err := keyMatters.Update(ctx, created.ID, KeyMatterInput{Title: created.Title, Status: created.Status, Summary: &summary}); err != nil {
+			t.Fatalf("Update() error = %v", err)
+		}
+		if err := keyMatters.Delete(ctx, created.ID); err != nil {
+			t.Fatalf("Delete() error = %v", err)
+		}
+		var count int64
+		if err := db.Model(&domain.Fact{}).Where("subject_type = ? AND subject_id = ? AND source_kind = ?", "key_matter", created.ID, factSourceBackground).Count(&count).Error; err != nil {
+			t.Fatalf("count key matter facts: %v", err)
+		}
+		if count != 3 {
+			t.Fatalf("key matter fact count = %d, want 3", count)
 		}
 	})
 

@@ -304,6 +304,8 @@ func factSubjectModel(subjectType string) (any, bool) {
 	switch subjectType {
 	case "project":
 		return &domain.Project{}, true
+	case "key_matter":
+		return &domain.KeyMatter{}, true
 	case "group":
 		return &domain.Group{}, true
 	case "person":

@@ -1,4 +1,4 @@
-// Package background owns M1: the manually maintained Project / Person / Group
+// Package background owns M1: the manually maintained Project / KeyMatter / Person / Group
 // backgrounds that give every downstream module (extraction, execution) its
 // context. It is the authoritative writer for Project and Person, and the
 // authoritative writer for the *human-curated* subset of Group columns only —
@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // projectRoles / projectStatuses / personRoles are the application-level values.
@@ -84,6 +85,22 @@ func (in *ProjectInput) validate() error {
 		if err := validateOptionalJSON(name, raw); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// KeyMatterInput is the complete editable payload for a KeyMatter.
+type KeyMatterInput struct {
+	Title     string     `json:"title"`
+	Status    string     `json:"status"`
+	Summary   *string    `json:"summary"`
+	ProjectID *uint64    `json:"project_id"`
+	DueAt     *time.Time `json:"due_at"`
+}
+
+func (in *KeyMatterInput) validate() error {
+	if strings.TrimSpace(in.Title) == "" {
+		return fmt.Errorf("key matter title must not be blank")
 	}
 	return nil
 }

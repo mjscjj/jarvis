@@ -19,6 +19,8 @@ import type {
   GroupBackgroundInput,
   GroupList,
   GroupQuery,
+  KeyMatter,
+  KeyMatterInput,
   Overview,
   Paged,
   Person,
@@ -226,11 +228,33 @@ export function deleteProject(id: number): Promise<{ id: number; archived: boole
   return request(`/api/projects/${id}`, { method: 'DELETE' })
 }
 
+export function listKeyMatters(page = 1, pageSize = 100, includeClosed = false, signal?: AbortSignal): Promise<Paged<KeyMatter>> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  if (includeClosed) params.set('include_closed', 'true')
+  return request<Paged<KeyMatter>>(`/api/key-matters?${params.toString()}`, { signal })
+}
+
+export function createKeyMatter(body: KeyMatterInput): Promise<KeyMatter> {
+  return request<KeyMatter>('/api/key-matters', { method: 'POST', body })
+}
+
+export function getKeyMatter(id: number, signal?: AbortSignal): Promise<KeyMatter> {
+  return request<KeyMatter>(`/api/key-matters/${id}`, { signal })
+}
+
+export function updateKeyMatter(id: number, body: KeyMatterInput): Promise<KeyMatter> {
+  return request<KeyMatter>(`/api/key-matters/${id}`, { method: 'PUT', body })
+}
+
+export function closeKeyMatter(id: number): Promise<{ id: number; closed: boolean }> {
+  return request(`/api/key-matters/${id}`, { method: 'DELETE' })
+}
+
 export function listProjectFacts(id: number, signal?: AbortSignal): Promise<{ items: Fact[] }> {
   return listSubjectFacts('project', id, signal)
 }
 
-export function listSubjectFacts(subjectType: 'project' | 'group' | 'person', id: number, signal?: AbortSignal): Promise<{ items: Fact[] }> {
+export function listSubjectFacts(subjectType: 'project' | 'key_matter' | 'group' | 'person', id: number, signal?: AbortSignal): Promise<{ items: Fact[] }> {
   return request<{ items: Fact[] }>(`/api/facts?subject_type=${subjectType}&subject_id=${id}&limit=200`, { signal })
 }
 

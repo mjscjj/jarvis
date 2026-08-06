@@ -42,6 +42,7 @@
 | [主动巡视 Agent](design-proactive-heartbeat-agent.md) | implemented-history | 实现动机与验收设计；当前边界见总纲 |
 | [文件化文本配置](design-file-backed-text-config.md) | current | prompts、rules 与后台编辑边界 |
 | [实体关系与进度历史](design-temporal-relations-and-progress.md) | current，部分段落待继续校准 | RelationFact、TaskEvent、Fact |
+| [KeyMatter 关键事项实体](design-key-matter.md) | implemented-history | 已落地；当前实体边界见总纲，字段与接口以代码真源为准 |
 | [HTTP API](reference/http-api.md) | current | 路由分组；`router.go` 仍为真源 |
 | [运行与部署](reference/operations.md) | current | launchd、端口、签名和重建 |
 | [Lark / bytedcli 指南](guide-lark-byted-cli.md) | guide | 当前 CLI 用法，版本变化时需复核 help |

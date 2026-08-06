@@ -291,7 +291,7 @@ export interface Fact {
   created_at: string
 }
 
-export type RelationEntityType = 'project' | 'person' | 'principal' | 'group' | 'todo' | 'task' | 'resource' | 'managed_resource'
+export type RelationEntityType = 'project' | 'key_matter' | 'person' | 'principal' | 'group' | 'todo' | 'task' | 'resource' | 'managed_resource'
 
 export interface RelationEntityRef {
   type: RelationEntityType
@@ -339,6 +339,20 @@ export interface Project {
   notes: string | null
   created_at: string
   updated_at: string
+}
+
+export interface KeyMatter {
+  id: number
+  title: string
+  status: string
+  summary: string | null
+  project_id: number | null
+  due_at: string | null
+  closed_at: string | null
+  last_progress_at: string | null
+  created_at: string
+  updated_at: string
+  project: Project | null
 }
 
 export interface Person {
@@ -417,6 +431,14 @@ export interface ProjectInput {
   priority: number
   description?: string | null
   notes?: string | null
+}
+
+export interface KeyMatterInput {
+  title: string
+  status: string
+  summary: string | null
+  project_id: number | null
+  due_at: string | null
 }
 
 export interface PersonInput {

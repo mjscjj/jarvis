@@ -32,6 +32,28 @@ type Project struct {
 
 func (Project) TableName() string { return "project" }
 
+// KeyMatter is a long-running thing worth remembering that is not a Project
+// and not a single executable action. Its history lives in Fact rows with
+// subject_type=key_matter.
+type KeyMatter struct {
+	ID    uint64 `gorm:"column:id;primaryKey;autoIncrement"`
+	Title string `gorm:"column:title;not null"`
+	// Status is free text for humans and agents; only ClosedAt decides closure.
+	Status    string     `gorm:"column:status;not null;default:''"`
+	Summary   *string    `gorm:"column:summary"`
+	ProjectID *uint64    `gorm:"column:project_id;index:idx_key_matter_project"`
+	DueAt     *time.Time `gorm:"column:due_at;index:idx_key_matter_due"`
+	ClosedAt  *time.Time `gorm:"column:closed_at;index:idx_key_matter_closed"`
+	// LastProgressAt moves only when Summary actually changes.
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_key_matter_last_progress"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+
+	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:SET NULL"`
+}
+
+func (KeyMatter) TableName() string { return "key_matter" }
+
 // Group is a Feishu group chat or p2p conversation. The physical name avoids
 // the reserved SQL keyword GROUP.
 type Group struct {
@@ -323,6 +345,7 @@ func (ScheduledTask) TableName() string { return "scheduled_task" }
 func CoreModels() []any {
 	return []any{
 		&Project{},
+		&KeyMatter{},
 		&Group{},
 		&Person{},
 		&Todo{},

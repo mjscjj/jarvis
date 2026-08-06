@@ -33,6 +33,11 @@ subcommands:
   create-project         Create a project from a JSON payload
   update-project         Replace a project's editable background
   archive-project        Archive a project
+  list-key-matters       List open key matters
+  get-key-matter         Get one key matter's full background
+  create-key-matter      Create a key matter from a JSON payload
+  update-key-matter      Replace a key matter's editable background
+  close-key-matter       Close a key matter
   list-groups            Search Feishu groups
   get-group              Get one Feishu group by chat_id
   get-context            Assemble current principal/project/chat work context
@@ -105,6 +110,20 @@ EOF
     create-project) payload_help "create-project" "Create one project." ;;
     update-project) payload_id_help "update-project" "Replace one project's complete editable payload." ;;
     archive-project) delete_id_help "archive-project" "Archive one project; this does not hard-delete it." ;;
+    list-key-matters) cat <<'EOF'
+usage: jarvis-tools list-key-matters [--keyword TEXT] [--limit N] [--config PATH]
+List compact open key matters. Use get-key-matter for full background.
+EOF
+      ;;
+    get-key-matter) cat <<'EOF'
+usage: jarvis-tools get-key-matter --id ID [--config PATH]
+Get one key matter's full background. Use list-facts and list-relations to drill
+into history and relationships only when needed.
+EOF
+      ;;
+    create-key-matter) payload_help "create-key-matter" "Create one key matter." ;;
+    update-key-matter) payload_id_help "update-key-matter" "Replace one key matter's complete editable payload." ;;
+    close-key-matter) delete_id_help "close-key-matter" "Close one key matter; this does not hard-delete it." ;;
     list-groups) cat <<'EOF'
 usage: jarvis-tools list-groups [--keyword TEXT] [--limit N] [--config PATH]
 Search compact Feishu group summaries. Use get-group for full background.
@@ -671,11 +690,12 @@ require_command_flag() {
   local cmd="$1" flag="$2"
   local allowed="--config"
   case "$cmd" in
-    list-projects) allowed+=" --keyword --limit" ;;
+    list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
     get-project) allowed+=" --id --code" ;;
-    create-project | update-principal | create-person | create-resource | create-relation | create-task) allowed+=" --payload" ;;
-    update-project | update-group | update-person | update-resource | update-relation) allowed+=" --id --payload" ;;
-    archive-project | delete-person | delete-resource | delete-relation) allowed+=" --id" ;;
+    get-key-matter) allowed+=" --id" ;;
+    create-project | create-key-matter | update-principal | create-person | create-resource | create-relation | create-task) allowed+=" --payload" ;;
+    update-project | update-key-matter | update-group | update-person | update-resource | update-relation) allowed+=" --id --payload" ;;
+    archive-project | close-key-matter | delete-person | delete-resource | delete-relation) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
     get-group) allowed+=" --chat-id" ;;
     get-context) allowed+=" --chat-id --project-id" ;;
@@ -1117,6 +1137,40 @@ cmd_get_project() {
   local project
   project="$(printf '%s' "$matched" | jq -c '.[0]')"
   emit "$project"
+}
+
+cmd_list_key_matters() {
+  reset_flags
+  LIMIT="20"
+  consume_flags "$@"
+  require_limit list-key-matters "$LIMIT" 100
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local items total
+  if [[ -z "$KEYWORD" ]]; then
+    local body
+    body="$(api_get "/api/key-matters?page=1&page_size=${LIMIT}")"
+    items="$(printf '%s' "$body" | jq -c '.data.items')"
+    total="$(printf '%s' "$body" | jq -er '.data.total')"
+  else
+    local all
+    all="$(fetch_all_items /api/key-matters)"
+    items="$(printf '%s' "$all" | jq -c --arg keyword "$KEYWORD" --argjson limit "$LIMIT" '
+      [.[] | select((([.title,.status,.summary] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase)))][: $limit]')"
+    total="$(printf '%s' "$all" | jq -r --arg keyword "$KEYWORD" '
+      [.[] | select((([.title,.status,.summary] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase)))] | length')"
+  fi
+  items="$(printf '%s' "$items" | jq -c '[.[] | {id,title,status,summary,project_id,due_at,last_progress_at}]')"
+  emit "$(jq -cn --argjson total "$total" --argjson key_matters "$items" '{total:$total,key_matters:$key_matters}')"
+}
+
+cmd_get_key_matter() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-key-matter requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local body
+  body="$(api_get "/api/key-matters/${ID}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
 cmd_payload_create() {
@@ -1881,6 +1935,11 @@ case "$SUBCOMMAND" in
   create-project) cmd_payload_create create-project POST /api/projects "$@" ;;
   update-project) cmd_payload_by_id update-project PUT /api/projects "$@" ;;
   archive-project) cmd_delete_by_id archive-project /api/projects "$@" ;;
+  list-key-matters) cmd_list_key_matters "$@" ;;
+  get-key-matter) cmd_get_key_matter "$@" ;;
+  create-key-matter) cmd_payload_create create-key-matter POST /api/key-matters "$@" ;;
+  update-key-matter) cmd_payload_by_id update-key-matter PUT /api/key-matters "$@" ;;
+  close-key-matter) cmd_delete_by_id close-key-matter /api/key-matters "$@" ;;
   list-groups)    cmd_list_groups "$@" ;;
   get-group)      cmd_get_group "$@" ;;
   get-context)    cmd_get_context "$@" ;;

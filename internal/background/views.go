@@ -31,6 +31,21 @@ type ProjectView struct {
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
+// KeyMatterView is the API representation of a KeyMatter.
+type KeyMatterView struct {
+	ID             uint64       `json:"id"`
+	Title          string       `json:"title"`
+	Status         string       `json:"status"`
+	Summary        *string      `json:"summary"`
+	ProjectID      *uint64      `json:"project_id"`
+	DueAt          *time.Time   `json:"due_at"`
+	ClosedAt       *time.Time   `json:"closed_at"`
+	LastProgressAt *time.Time   `json:"last_progress_at"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	Project        *ProjectView `json:"project"`
+}
+
 // PersonView is the API representation of a Person.
 type PersonView struct {
 	ID             uint64    `json:"id"`
@@ -102,6 +117,27 @@ func toProjectViews(items []domain.Project) []ProjectView {
 	views := make([]ProjectView, len(items))
 	for i := range items {
 		views[i] = toProjectView(&items[i])
+	}
+	return views
+}
+
+func toKeyMatterView(matter *domain.KeyMatter) KeyMatterView {
+	view := KeyMatterView{
+		ID: matter.ID, Title: matter.Title, Status: matter.Status, Summary: matter.Summary,
+		ProjectID: matter.ProjectID, DueAt: matter.DueAt, ClosedAt: matter.ClosedAt,
+		LastProgressAt: matter.LastProgressAt, CreatedAt: matter.CreatedAt, UpdatedAt: matter.UpdatedAt,
+	}
+	if matter.Project != nil {
+		projectView := toProjectView(matter.Project)
+		view.Project = &projectView
+	}
+	return view
+}
+
+func toKeyMatterViews(items []domain.KeyMatter) []KeyMatterView {
+	views := make([]KeyMatterView, len(items))
+	for i := range items {
+		views[i] = toKeyMatterView(&items[i])
 	}
 	return views
 }

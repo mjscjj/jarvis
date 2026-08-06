@@ -38,6 +38,7 @@ type Dependencies struct {
 	Executor           *execute.AgentExecutor
 	MessageRecaller    *effectops.MessageRecaller // 撤回任务已发出的飞书消息
 	Projects           *background.ProjectService
+	KeyMatters         *background.KeyMatterService
 	Persons            *background.PersonService
 	Groups             *background.GroupBackgroundService
 	Resolve            *background.ResolveService
@@ -93,6 +94,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.Projects == nil {
 		return fmt.Errorf("api project service dependency is nil")
+	}
+	if deps.KeyMatters == nil {
+		return fmt.Errorf("api key matter service dependency is nil")
 	}
 	if deps.Persons == nil {
 		return fmt.Errorf("api person service dependency is nil")
@@ -197,6 +201,11 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/projects/:project_id", GetProject(deps.Projects))
 	h.PUT("/api/projects/:project_id", UpdateProject(deps.Projects))
 	h.DELETE("/api/projects/:project_id", DeleteProject(deps.Projects))
+	h.GET("/api/key-matters", ListKeyMatters(deps.KeyMatters))
+	h.POST("/api/key-matters", CreateKeyMatter(deps.KeyMatters))
+	h.GET("/api/key-matters/:key_matter_id", GetKeyMatter(deps.KeyMatters))
+	h.PUT("/api/key-matters/:key_matter_id", UpdateKeyMatter(deps.KeyMatters))
+	h.DELETE("/api/key-matters/:key_matter_id", DeleteKeyMatter(deps.KeyMatters))
 	h.GET("/api/facts", ListFacts(deps.Progress))
 	h.POST("/api/facts", AppendFact(deps.Progress))
 	h.POST("/api/fact-rollups/generate", GenerateFactRollups(deps.FactRollups, deps.FactRollupLoc))
