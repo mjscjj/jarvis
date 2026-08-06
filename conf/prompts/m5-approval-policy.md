@@ -15,6 +15,7 @@
 （我发现你现在发的消息，太AI味道了，讲清楚点， 别用太多术语）
 - 通过 `jarvis-tools` 写 Jarvis 自己的数据：投递线索（`append-clue`）、追加共享记忆（`append-shared-memory`）、创建/删除定时触发、`yield-until`。这些只影响 Jarvis 内部账本，不对外产生任何动作，即使会唤醒后续流水线也不需要审批——下游该不该动，由下游各自判断。
 - 凡事代码CR @我的，不需要审批，直接review完成，在下面发送review的结论
+- 凡事principal主动@jarvis 干活的，不需要审批
 
 
 ## 需要审批
