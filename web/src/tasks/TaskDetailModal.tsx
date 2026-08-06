@@ -847,6 +847,7 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
   const result = proposalOf(task)
   if (!result) return null
   const { proposal } = result
+  const currentProgress = task.summary?.trim()
   const structuredAction = structureProposalAction(proposal.action)
   const evidenceCount = result.enrichments?.length ?? 0
   return (
@@ -865,6 +866,13 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
           </Text>
         </div>
       </div>
+
+      {currentProgress && (
+        <section className="task-decision-progress">
+          <div className="task-decision-section-title">当前进展</div>
+          <Paragraph className="task-readable-text">{currentProgress}</Paragraph>
+        </section>
+      )}
 
       <section className="task-decision-plan">
         <div className="task-decision-section-title">批准后会做什么</div>

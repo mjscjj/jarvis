@@ -3,6 +3,7 @@ import type { ProposalResult, Task } from '../types'
 export type FailureKind = 'codex' | 'manual' | 'rejected' | 'interrupted' | 'stale' | 'unknown'
 
 export function proposalOf(task: Task): ProposalResult | null {
+  if (task.status !== 'awaiting_approval') return null
   const result = task.execution_result as ProposalResult | null
   if (result && result.stage === 'proposal' && result.proposal) return result
   return null

@@ -293,8 +293,8 @@ func TestCloseResolvesTaskAndProjectsProactiveActor(t *testing.T) {
 			dispatch_kind TEXT, source_run_id INTEGER, status TEXT, last_run_status TEXT,
 			last_error_detail TEXT, last_finished_at DATETIME, updated_at DATETIME
 		)`,
-		`INSERT INTO task(id, status, version, created_at, updated_at)
-		 VALUES (7, 'waiting', 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		`INSERT INTO task(id, status, execution_result, version, created_at, updated_at)
+		 VALUES (7, 'waiting', '{"stage":"proposal","summary":"原执行结论","proposal":{"action":"发消息"}}', 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		`INSERT INTO scheduled_task(id, subject_type, subject_id, dispatch_kind, status)
 		 VALUES (9, 'task', 7, 'resume_task', 'binding')`,
 	} {
@@ -316,12 +316,28 @@ func TestCloseResolvesTaskAndProjectsProactiveActor(t *testing.T) {
 	if view.Status != "done" || view.Version != 4 || view.Resolution == nil || view.Resolution.ActorType != "proactive" {
 		t.Fatalf("closed view = %#v", view)
 	}
+	if !strings.Contains(string(view.ExecutionResult), `"stage":"proposal"`) {
+		t.Fatalf("close replaced execution_result: %s", view.ExecutionResult)
+	}
+	if view.Summary == nil || *view.Summary != "昨日任务已过期" {
+		t.Fatalf("close summary = %#v", view.Summary)
+	}
 	loaded, err := store.GetTask(t.Context(), 7)
 	if err != nil {
 		t.Fatalf("GetTask() error = %v", err)
 	}
 	if loaded.Resolution == nil || loaded.Resolution.EventType != "closed" || loaded.Resolution.ActorType != "proactive" {
 		t.Fatalf("loaded resolution = %#v", loaded.Resolution)
+	}
+	if !strings.Contains(string(loaded.ExecutionResult), `"stage":"proposal"`) {
+		t.Fatalf("persisted execution_result was replaced: %s", loaded.ExecutionResult)
+	}
+	var closeDetail string
+	if err := db.Raw("SELECT detail FROM task_event WHERE task_id = 7 AND event_type = 'closed'").Scan(&closeDetail).Error; err != nil {
+		t.Fatalf("load close event detail: %v", err)
+	}
+	if !strings.Contains(closeDetail, `"stage":"proactive_closed"`) || !strings.Contains(closeDetail, `"evidence":"截止时间已过"`) {
+		t.Fatalf("close event detail = %s", closeDetail)
 	}
 	var scheduleStatus string
 	if err := db.Raw("SELECT status FROM scheduled_task WHERE id = 9").Scan(&scheduleStatus).Error; err != nil {

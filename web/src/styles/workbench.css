@@ -167,6 +167,20 @@
   margin-top: 18px;
 }
 
+.task-decision-progress {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--color-primary-bg);
+  border-radius: var(--radius-md);
+}
+
+.task-decision-progress > .task-readable-text.ant-typography {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .task-decision-section-title {
   margin-bottom: 6px;
   color: var(--color-text);

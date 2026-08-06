@@ -355,7 +355,8 @@ func (s *Store) Finish(ctx context.Context, input FinishInput) (*TaskView, error
 
 // Close resolves verified completed, cancelled, invalidated or superseded work
 // without pretending that M5 executed it. The caller supplies the complete
-// semantic result, while the hard transition and actor audit stay in code.
+// semantic close result for the TaskEvent and current summary. The existing
+// execution_result remains the immutable result of the last M5 execution.
 func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) {
 	if input.TaskID == 0 || input.ExpectedVersion < 0 || strings.TrimSpace(input.ActorType) == "" {
 		return nil, fmt.Errorf("%w: Task ID/version and actor type are required", ErrInvalidInput)
@@ -395,8 +396,8 @@ func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) 
 		update := tx.Model(&domain.Task{}).
 			Where("id = ? AND version = ? AND status = ?", task.ID, input.ExpectedVersion, fromStatus).
 			Updates(map[string]any{
-				"status": "done", "execution_result": datatypes.JSON(result),
-				"summary": summary, "version": gorm.Expr("version + 1"), "last_progress_at": occurredAt,
+				"status": "done", "summary": summary,
+				"version": gorm.Expr("version + 1"), "last_progress_at": occurredAt,
 			})
 		if update.Error != nil {
 			return fmt.Errorf("close Task id=%d: %w", task.ID, update.Error)
@@ -415,7 +416,6 @@ func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) 
 			return err
 		}
 		task.Status = "done"
-		task.ExecutionResult = datatypes.JSON(result)
 		task.Summary = &summary
 		task.LastProgressAt = &occurredAt
 		task.Version++
