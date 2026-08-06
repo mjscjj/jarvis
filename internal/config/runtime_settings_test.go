@@ -136,6 +136,16 @@ scheduled_task:
 
 func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
+card_approval:
+  enabled: true
+  transport: cc_connect
+  profile: cli_jarvis
+  principal_open_id: ou_principal
+  relay_secret: relay-secret
+`), 0o600); err != nil {
+		t.Fatalf("write card approval runtime override: %v", err)
+	}
 	baseBefore, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("read base config: %v", err)
@@ -206,6 +216,11 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {
 		t.Fatalf("reloaded config = %#v", reloaded)
+	}
+	if got := reloaded.CardApproval; !got.Enabled || got.Transport != "cc_connect" ||
+		got.Profile != "cli_jarvis" || got.PrincipalOpenID != "ou_principal" ||
+		got.RelaySecret != "relay-secret" {
+		t.Fatalf("card approval config was not preserved: %#v", got)
 	}
 	restartedService, err := NewRuntimeSettingsService(configPath, reloaded)
 	if err != nil {

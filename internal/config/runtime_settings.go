@@ -157,7 +157,9 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSettings, err)
 	}
-	if err := writeRuntimeOverride(RuntimeOverridePath(s.configPath), runtimeOverrideFromSettings(input)); err != nil {
+	override := runtimeOverrideFromSettings(input)
+	override.CardApproval = cfg.CardApproval
+	if err := writeRuntimeOverride(RuntimeOverridePath(s.configPath), override); err != nil {
 		return nil, err
 	}
 	return s.getLocked()
@@ -380,7 +382,11 @@ type runtimeOverride struct {
 		ScanSchedule       string `yaml:"scan_schedule"`
 		AutoRelatedP2PTopN int    `yaml:"auto_related_p2p_top_n"`
 	} `yaml:"capture"`
-	FactEngine struct {
+	// CardApproval is local identity/secret configuration, not a setting the
+	// management page may edit. Preserve its active value whenever that page
+	// rewrites the runtime overlay.
+	CardApproval CardApprovalConfig `yaml:"card_approval"`
+	FactEngine   struct {
 		Enabled           bool   `yaml:"enabled"`
 		Schedule          string `yaml:"schedule"`
 		RollupSchedule    string `yaml:"rollup_schedule"`

@@ -60,8 +60,8 @@ func TestHandleCardActionNonPrincipalIsRejected(t *testing.T) {
 
 	event := approveEvent(t, "approve", 7)
 	event.OperatorID = "ou_intruder"
-	if err := handler.HandleCardAction(context.Background(), event); err == nil {
-		t.Fatal("HandleCardAction() with non-principal unexpectedly succeeded")
+	if err := handler.HandleCardAction(context.Background(), event); !errors.Is(err, execute.ErrInvalidInput) {
+		t.Fatalf("HandleCardAction() error = %v, want ErrInvalidInput", err)
 	}
 	if approver.approvedTask != 0 || approver.rejectedTask != 0 {
 		t.Fatalf("approver touched for non-principal: %#v", approver)
@@ -99,17 +99,38 @@ func TestHandleCardActionCardUpdateFailureDoesNotUndoApproval(t *testing.T) {
 	}
 }
 
-func TestHandleCardActionRejectsClickBeforeTaskIsParked(t *testing.T) {
+func TestHandleCardActionFastRepeatIsReportedAsAlreadyHandled(t *testing.T) {
 	tasks := newFakeTasks(4)
 	tasks.status = "executing"
 	approver := &fakeApprover{}
-	handler := newTestHandler(t, tasks, approver, &fakeCards{})
+	cards := &fakeCards{}
+	handler := newTestHandler(t, tasks, approver, cards)
 
-	if err := handler.HandleCardAction(context.Background(), approveEvent(t, "approve", 7)); !errors.Is(err, execute.ErrInvalidTransition) {
-		t.Fatalf("HandleCardAction() error = %v, want ErrInvalidTransition", err)
+	if err := handler.HandleCardAction(context.Background(), approveEvent(t, "approve", 7)); err != nil {
+		t.Fatalf("HandleCardAction() error = %v", err)
 	}
 	if approver.approvedTask != 0 {
 		t.Fatalf("fast click approved task: %#v", approver)
+	}
+	if cards.updates != 1 {
+		t.Fatalf("fast repeat should replace the card, updates = %d", cards.updates)
+	}
+}
+
+func TestHandleCardActionWaitsForSecondProposalInsteadOfClosingNewCard(t *testing.T) {
+	tasks := &secondProposalTasks{}
+	approver := &fakeApprover{}
+	cards := &fakeCards{}
+	handler := newTestHandler(t, tasks, approver, cards)
+
+	if err := handler.HandleCardAction(context.Background(), approveEvent(t, "approve", 7)); err != nil {
+		t.Fatalf("HandleCardAction() error = %v", err)
+	}
+	if approver.approvedTask != 7 || approver.approvedVersion != 6 {
+		t.Fatalf("second proposal approval = task=%d version=%d", approver.approvedTask, approver.approvedVersion)
+	}
+	if cards.updates != 1 {
+		t.Fatalf("second proposal should replace the card after approval, updates = %d", cards.updates)
 	}
 }
 
@@ -179,6 +200,29 @@ func (f *fakeTasks) ListRuns(_ context.Context, taskID uint64) (*execute.RunList
 	}
 	effects, _ := json.Marshal([]map[string]any{{"kind": "feishu_message", "message_id": f.messageID}})
 	return &execute.RunList{Items: []execute.RunView{{ID: f.sourceRun, TaskID: taskID, Effects: effects}}}, nil
+}
+
+type secondProposalTasks struct {
+	loads int
+}
+
+func (f *secondProposalTasks) GetTask(_ context.Context, id uint64) (*execute.TaskView, error) {
+	f.loads++
+	status, version, sourceRun := "executing", int32(5), uint64(51)
+	if f.loads > 1 {
+		status, version, sourceRun = "awaiting_approval", 6, 52
+	}
+	result, _ := json.Marshal(map[string]any{"stage": "proposal", "source_run_id": sourceRun})
+	return &execute.TaskView{ID: id, Status: status, Version: version, ExecutionResult: result}, nil
+}
+
+func (f *secondProposalTasks) ListRuns(_ context.Context, taskID uint64) (*execute.RunList, error) {
+	oldEffects, _ := json.Marshal([]map[string]any{{"kind": "feishu_message", "message_id": "om_old"}})
+	newEffects, _ := json.Marshal([]map[string]any{{"kind": "feishu_message", "message_id": "om_1"}})
+	return &execute.RunList{Items: []execute.RunView{
+		{ID: 52, TaskID: taskID, Effects: newEffects},
+		{ID: 51, TaskID: taskID, Effects: oldEffects},
+	}}, nil
 }
 
 type fakeApprover struct {

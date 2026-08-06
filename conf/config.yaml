@@ -93,12 +93,14 @@ capture:
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
 
-# 飞书卡片内审批回调。必须使用一个未被 CC Connect/OpenClaw 占用的独立 app；
-# 发审批卡片和消费 card.action.trigger 都必须显式使用同一个 profile。
+# 飞书卡片内审批回调。cc_connect 复用当前 Jarvis Bot 的唯一长连接；
+# standalone_app 保留为独立 app 备用方案。
 card_approval:
   enabled: false
+  transport: ""  # cc_connect | standalone_app
   profile: ""
-  principal_open_id: ""  # 该独立 app 视角下的 Principal open_id（open_id 按 app 隔离）
+  principal_open_id: ""
+  relay_secret: ""  # 仅 cc_connect 使用；只写进 Git 忽略的 config.runtime.yaml
 
 # 底层 agent CLI：仅供 extract(M3) 使用。
 # 与 execute/chat 独立——真正跑 Task 与右侧对话用 execute.bin/model。

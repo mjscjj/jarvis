@@ -30,40 +30,42 @@ import (
 
 // Dependencies are process-level dependencies shared by API handlers.
 type Dependencies struct {
-	DB               *gorm.DB
-	Todos            extract.TodoReader
-	TodoStatus       extract.TodoStatusWriter
-	Tasks            execute.TaskService
-	TaskSubmitter    *taskcreate.Submitter
-	Executor         *execute.AgentExecutor
-	MessageRecaller  *effectops.MessageRecaller // 撤回任务已发出的飞书消息
-	Projects         *background.ProjectService
-	Persons          *background.PersonService
-	Groups           *background.GroupBackgroundService
-	Resolve          *background.ResolveService
-	Profile          *background.ProfileService
-	Resources        *background.ResourceService
-	SharedMemory     *sharedmem.SharedMemoryService
-	WorkRules        *workrule.Service
-	TextFiles        *textstore.Service
-	ScheduledTasks   *scheduledtask.Service
-	Skills           *skill.Service
-	RelationFacts    knowledge.FactService
-	Progress         progress.EventService
-	Overview         *insight.OverviewService
-	Digests          *insight.DigestService
-	DailyDigests     DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
-	MorningBriefs    MorningBriefService     // 晨报 Markdown 归档，只读
-	Worklog          *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
-	DigestSummarizer *insight.Summarizer     // 可选：codex 未启用时为 nil，总结接口返回 503
-	FactRollups      FactRollupGenerator     // 事实日压缩手动触发；nil 则接口返回 503
-	FactRollupLoc    *time.Location          // 手动触发时解析 YYYY-MM-DD 的时区
-	Debug            *insight.DebugService
-	Logs             *insight.LogReader
-	Chat             *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
-	Capture          *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
-	RuntimeSettings  *config.RuntimeSettingsService
-	ContextAssembler *contextsnap.Assembler
+	DB                 *gorm.DB
+	Todos              extract.TodoReader
+	TodoStatus         extract.TodoStatusWriter
+	Tasks              execute.TaskService
+	TaskSubmitter      *taskcreate.Submitter
+	Executor           *execute.AgentExecutor
+	MessageRecaller    *effectops.MessageRecaller // 撤回任务已发出的飞书消息
+	Projects           *background.ProjectService
+	Persons            *background.PersonService
+	Groups             *background.GroupBackgroundService
+	Resolve            *background.ResolveService
+	Profile            *background.ProfileService
+	Resources          *background.ResourceService
+	SharedMemory       *sharedmem.SharedMemoryService
+	WorkRules          *workrule.Service
+	TextFiles          *textstore.Service
+	ScheduledTasks     *scheduledtask.Service
+	Skills             *skill.Service
+	RelationFacts      knowledge.FactService
+	Progress           progress.EventService
+	Overview           *insight.OverviewService
+	Digests            *insight.DigestService
+	DailyDigests       DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
+	MorningBriefs      MorningBriefService     // 晨报 Markdown 归档，只读
+	Worklog            *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
+	DigestSummarizer   *insight.Summarizer     // 可选：codex 未启用时为 nil，总结接口返回 503
+	FactRollups        FactRollupGenerator     // 事实日压缩手动触发；nil 则接口返回 503
+	FactRollupLoc      *time.Location          // 手动触发时解析 YYYY-MM-DD 的时区
+	Debug              *insight.DebugService
+	Logs               *insight.LogReader
+	Chat               *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
+	Capture            *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
+	RuntimeSettings    *config.RuntimeSettingsService
+	ContextAssembler   *contextsnap.Assembler
+	CardApprovals      CardApprovalProcessor
+	CardApprovalSecret string
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -185,6 +187,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		h.POST("/api/tasks/:task_id/resume", ResumeTaskAfterHuman(deps.Executor))
 		h.POST("/api/tasks/:task_id/approve", ApproveTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/reject", RejectTask(deps.Executor))
+	}
+	if deps.CardApprovals != nil {
+		h.POST("/internal/card-approval/callback", RelayCardApproval(deps.CardApprovals, deps.CardApprovalSecret))
 	}
 	// M1 背景管理：Project/Person 全量 CRUD；Group 只可改人工背景字段（采集字段归 M2）。
 	h.GET("/api/projects", ListProjects(deps.Projects))

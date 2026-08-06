@@ -772,6 +772,7 @@ func main() {
 	}
 	var messageEventConsumer *capture.MessageEventConsumer
 	var cardActionConsumer *capture.CardActionConsumer
+	var cardApprovalProcessor api.CardApprovalProcessor
 	if cfg.Capture.EventEnabled {
 		messageEventConsumer, err = capture.StartMessageEventConsumer(
 			runtimeCtx,
@@ -794,34 +795,42 @@ func main() {
 		}()
 	}
 	if cfg.CardApproval.Enabled {
-		// Approval callbacks use their own app/profile so enabling them never
-		// competes with the current CC Connect-owned Jarvis Bot connection.
-		cardHandler, err := cardapproval.NewHandler(
-			taskService, agentExecutor, larkClient, cfg.CardApproval.PrincipalOpenID, cfg.CardApproval.Profile,
-			log.New(os.Stderr, "card-approval ", log.LstdFlags|log.Lmicroseconds),
-		)
-		if err != nil {
-			fatalf("build card approval handler failed: %v", err)
-		}
-		cardActionConsumer, err = capture.StartCardActionConsumer(
-			runtimeCtx,
-			cardHandler,
-			capture.CardActionConsumerOptions{
-				Bin:          cfg.LarkCLI.Bin,
-				Profile:      cfg.CardApproval.Profile,
-				ReadyTimeout: time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
-			},
-			log.New(os.Stderr, "card-action-cron ", log.LstdFlags|log.Lmicroseconds),
-		)
-		if err != nil {
-			fatalf("start Feishu card action consumer failed: %v", err)
-		}
-		go func() {
-			<-cardActionConsumer.Done()
-			if err := cardActionConsumer.Err(); err != nil && runtimeCtx.Err() == nil {
-				fatalf("Feishu card action consumer stopped: %v", err)
+		cardLogger := log.New(os.Stderr, "card-approval ", log.LstdFlags|log.Lmicroseconds)
+		switch cfg.CardApproval.Transport {
+		case "standalone_app":
+			cardHandler, err := cardapproval.NewHandler(
+				taskService, agentExecutor, larkClient, cfg.CardApproval.PrincipalOpenID, cfg.CardApproval.Profile, cardLogger,
+			)
+			if err != nil {
+				fatalf("build standalone card approval handler failed: %v", err)
 			}
-		}()
+			cardActionConsumer, err = capture.StartCardActionConsumer(
+				runtimeCtx,
+				cardHandler,
+				capture.CardActionConsumerOptions{
+					Bin:          cfg.LarkCLI.Bin,
+					Profile:      cfg.CardApproval.Profile,
+					ReadyTimeout: time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+				},
+				log.New(os.Stderr, "card-action-cron ", log.LstdFlags|log.Lmicroseconds),
+			)
+			if err != nil {
+				fatalf("start Feishu card action consumer failed: %v", err)
+			}
+			go func() {
+				<-cardActionConsumer.Done()
+				if err := cardActionConsumer.Err(); err != nil && runtimeCtx.Err() == nil {
+					fatalf("Feishu card action consumer stopped: %v", err)
+				}
+			}()
+		case "cc_connect":
+			cardApprovalProcessor, err = cardapproval.NewRelayHandler(
+				taskService, agentExecutor, cfg.CardApproval.PrincipalOpenID, cardLogger,
+			)
+			if err != nil {
+				fatalf("build CC Connect card approval handler failed: %v", err)
+			}
+		}
 	}
 	stopProactive := func() {}
 	if cfg.Proactive.Enabled {
@@ -940,8 +949,10 @@ func main() {
 		FactRollups:   factRollupWorker,
 		FactRollupLoc: location,
 		Debug:         debugService, Logs: logReader, Chat: chatService, Capture: captureService,
-		RuntimeSettings:  runtimeSettingsService,
-		ContextAssembler: contextAssembler,
+		RuntimeSettings:    runtimeSettingsService,
+		ContextAssembler:   contextAssembler,
+		CardApprovals:      cardApprovalProcessor,
+		CardApprovalSecret: cfg.CardApproval.RelaySecret,
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)
 	}

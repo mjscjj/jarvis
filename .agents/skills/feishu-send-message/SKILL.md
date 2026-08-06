@@ -34,7 +34,7 @@ lark-cli im +messages-send \
 
 当你判断某个动作要先请我批准（依据见 `conf/prompts/m5-approval-policy.md`），别发纯文字，发一张交互卡片，我扫一眼就知道是什么事。卡片正文永远用大白话讲清三件事：**要做什么**、**会产生什么影响**、**你的判断**。
 
-按钮分两档，由你按动作的具体后果判断该给哪一档——**跟动作类型无关，只看这次改了什么**。但 callback 还有一个硬前提：`conf/config.yaml` 的 `card_approval.enabled=true`，且 `profile`、`principal_open_id` 都非空。没启用就只能发「查看详情」链接卡，不能发点了没反应的同意/拒绝按钮。
+按钮分两档，由你按动作的具体后果判断该给哪一档——**跟动作类型无关，只看这次改了什么**。但 callback 还有一个硬前提：有效配置里的 `card_approval.enabled=true`，且 `transport`、`profile`、`principal_open_id` 都非空。没启用就只能发「查看详情」链接卡，不能发点了没反应的同意/拒绝按钮。
 
 - **callback 已启用，且动作简单、低风险、后果一句话说得清**（回个"收到"、改个注释、跑个只读查询…）→ 给 `[同意]` `[拒绝]` `[查看详情]` 三个按钮。我在飞书里点一下就直接落地，不用进后台。同意/拒绝是 callback 按钮，`value` 里带 `action` 和本任务的 `task_id`。
 - **高风险、对外承诺、删改线上、或后果说不清** → 只给 `[查看详情]` 一个跳转按钮，让我进后台看全貌再定，别让我在卡片上盲点。
@@ -76,7 +76,7 @@ lark-cli --profile "<card_approval.profile>" im +messages-send \
               "type": "primary_filled",
               "width": "fill",
               "behaviors": [
-                { "type": "callback", "value": { "action": "approve", "task_id": <task_id> } }
+                { "type": "callback", "value": { "action": "jarvis_approval", "decision": "approve", "task_id": <task_id> } }
               ]
             }]
           },
@@ -90,7 +90,7 @@ lark-cli --profile "<card_approval.profile>" im +messages-send \
               "type": "danger",
               "width": "fill",
               "behaviors": [
-                { "type": "callback", "value": { "action": "reject", "task_id": <task_id> } }
+                { "type": "callback", "value": { "action": "jarvis_approval", "decision": "reject", "task_id": <task_id> } }
               ]
             }]
           },
@@ -118,7 +118,7 @@ lark-cli --profile "<card_approval.profile>" im +messages-send \
 
 **只给查看详情的卡片**（高风险/说不清）：去掉上面两个 callback 按钮，只留最后那个 `[查看详情]` 的 open_url 按钮（`type` 设 `primary_filled`、加 `"width": "fill"` 撑满成强焦点）。若 `card_approval.enabled=true`，继续用独立 `profile` 和该 app 的 `principal_open_id` 发送；若 callback 未启用，按本 Skill 前面的普通 principal 私聊路径发送（不加 `--profile`，使用 `jarvis-tools get-principal` 返回的原 Jarvis Bot open_id）。
 
-`task_id` 必须填成本任务真实的数字 ID；`<card_approval.profile>` 和 `<card_approval.principal_open_id>` 必须逐字使用配置值，不能省略，也不能换成旧 app 的值。飞书 open_id 按 app 隔离，旧 Jarvis Bot 视角下的 principal open_id 不能用于独立审批 app。发卡片和消费 callback 必须是同一个 app。发送成功后，从 lark-cli 原始返回中取真实 `message_id`，在本轮 `effects[]` 的 `feishu_message.extra` 里原样记录 `{"message_id":"om_..."}`；服务端用它把点击绑定到当前 proposal，不能遗漏或编造。同意/拒绝的 callback 由 jarvis-server 直接落地（点一下就走已有的 approve/reject），并把卡片就地更新成「已同意/已驳回」——你不用再管后续，也不要自己再去调审批接口。`[查看详情]` 是纯本地跳转，不回调。卡片连续发送失败就退回 `--markdown` 纯文字通知（正文照样讲清三件事 + 后台入口），别卡在这。
+`task_id` 必须填成本任务真实的数字 ID；`<card_approval.profile>` 和 `<card_approval.principal_open_id>` 必须逐字使用有效配置值，不能省略。`transport=cc_connect` 时二者就是当前 Jarvis Bot 的 profile/open_id，CC Connect 继续独占该 app 的长连接；`transport=standalone_app` 时二者才是独立审批 app 的值。发卡片与接收 callback 必须属于同一个 app。发送成功后，从 lark-cli 原始返回中取真实 `message_id`，在本轮 `effects[]` 的 `feishu_message.extra` 里原样记录 `{"message_id":"om_..."}`；服务端用它把点击绑定到当前 proposal，不能遗漏或编造。同意/拒绝的 callback 由 jarvis-server 直接落地（点一下就走已有的 approve/reject），并把卡片就地更新成「已同意/已驳回」——你不用再管后续，也不要自己再去调审批接口。`[查看详情]` 是纯本地跳转，不回调。卡片连续发送失败就退回 `--markdown` 纯文字通知（正文照样讲清三件事 + 后台入口），别卡在这。
 
 ## 给个人发消息
 

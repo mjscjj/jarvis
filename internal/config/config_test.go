@@ -111,11 +111,16 @@ func TestValidate(t *testing.T) {
 		{name: "card approval profile", mutate: func(c *Config) { c.CardApproval.Enabled = true }, wantErr: "card_approval"},
 		{name: "card approval external profile conflict", mutate: func(c *Config) {
 			c.Capture.EventProfile = "cli_cc_connect"
-			c.CardApproval = CardApprovalConfig{Enabled: true, Profile: "cli_cc_connect", PrincipalOpenID: "ou_owner"}
+			c.CardApproval = CardApprovalConfig{Enabled: true, Transport: "standalone_app", Profile: "cli_cc_connect", PrincipalOpenID: "ou_owner"}
 		}, wantErr: "不能复用"},
 		{name: "card approval principal", mutate: func(c *Config) {
-			c.CardApproval = CardApprovalConfig{Enabled: true, Profile: "cli_approval"}
+			c.CardApproval = CardApprovalConfig{Enabled: true, Transport: "standalone_app", Profile: "cli_approval"}
 		}, wantErr: "card_approval.enabled"},
+		{name: "card approval relay secret", mutate: func(c *Config) {
+			c.CardApproval = CardApprovalConfig{
+				Enabled: true, Transport: "cc_connect", Profile: "cli_cc_connect", PrincipalOpenID: "ou_owner",
+			}
+		}, wantErr: "relay_secret"},
 		{name: "codex binary", mutate: func(c *Config) { c.Codex.Bin = "" }, wantErr: "codex.bin"},
 		{name: "codex model", mutate: func(c *Config) { c.Codex.Model = "" }, wantErr: "codex.model"},
 		{name: "codex timeout", mutate: func(c *Config) { c.Codex.TimeoutSeconds = 0 }, wantErr: "codex.timeout_seconds"},

@@ -30,6 +30,22 @@ func TestAuthorizeCardApprovalDecodesApproveAndReject(t *testing.T) {
 	}
 }
 
+func TestAuthorizeCardApprovalDecodesNamespacedAction(t *testing.T) {
+	event := CardActionEvent{
+		Type:        cardActionEventType,
+		OperatorID:  testPrincipalOpenID,
+		ActionTag:   "button",
+		ActionValue: `{"action":"jarvis_approval","decision":"reject","task_id":7}`,
+	}
+	got, err := AuthorizeCardApproval(event, testPrincipalOpenID)
+	if err != nil {
+		t.Fatalf("AuthorizeCardApproval() error = %v", err)
+	}
+	if got.Action != "reject" || got.TaskID != 7 {
+		t.Fatalf("AuthorizeCardApproval() = %#v", got)
+	}
+}
+
 func TestAuthorizeCardApprovalRejectsNonPrincipalAndBadValues(t *testing.T) {
 	tests := []struct {
 		name      string

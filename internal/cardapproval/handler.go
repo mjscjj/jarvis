@@ -53,22 +53,39 @@ type Handler struct {
 }
 
 func NewHandler(tasks ApprovalReader, approver Approver, cards CardUpdater, principalOpenID, profile string, logger *log.Logger) (*Handler, error) {
+	return newHandler(tasks, approver, cards, principalOpenID, profile, logger)
+}
+
+// NewRelayHandler builds the same approval processor without a card updater.
+// CC Connect owns the Feishu callback response in this mode and returns the
+// replacement card produced by ProcessCardAction directly to Feishu.
+func NewRelayHandler(tasks ApprovalReader, approver Approver, principalOpenID string, logger *log.Logger) (*Handler, error) {
+	handler, err := newHandler(tasks, approver, nil, principalOpenID, "", logger)
+	if err != nil {
+		return nil, err
+	}
+	// Feishu expects the synchronous callback response within 3 seconds and CC
+	// Connect reserves 500ms for transport. A faster click can retry after M5
+	// has persisted the proposal; never hold the callback for the standalone
+	// consumer's longer delayed-update window.
+	handler.readyTimeout = 2 * time.Second
+	return handler, nil
+}
+
+func newHandler(tasks ApprovalReader, approver Approver, cards CardUpdater, principalOpenID, profile string, logger *log.Logger) (*Handler, error) {
 	if tasks == nil {
 		return nil, fmt.Errorf("card approval task reader is nil")
 	}
 	if approver == nil {
 		return nil, fmt.Errorf("card approval approver is nil")
 	}
-	if cards == nil {
-		return nil, fmt.Errorf("card approval card updater is nil")
-	}
 	principalOpenID = strings.TrimSpace(principalOpenID)
 	if principalOpenID == "" {
 		return nil, fmt.Errorf("card approval principal open_id is empty")
 	}
 	profile = strings.TrimSpace(profile)
-	if profile == "" {
-		return nil, fmt.Errorf("card approval profile is empty")
+	if cards != nil && profile == "" {
+		return nil, fmt.Errorf("card approval profile is empty when card updater is configured")
 	}
 	if logger == nil {
 		return nil, fmt.Errorf("card approval logger is nil")
@@ -87,21 +104,33 @@ func NewHandler(tasks ApprovalReader, approver Approver, cards CardUpdater, prin
 // Unauthorized clicks never mutate the shared card. A card-update failure never fails the approval — the
 // state change already committed and the backend list stays authoritative.
 func (h *Handler) HandleCardAction(ctx context.Context, event capture.CardActionEvent) error {
+	card, err := h.ProcessCardAction(ctx, event)
+	if len(card) > 0 {
+		h.updateCard(ctx, event, card)
+	}
+	return err
+}
+
+// ProcessCardAction mechanically lands one callback and returns the complete
+// replacement card. CC Connect uses this method through the localhost relay,
+// while HandleCardAction adds delayed card updating for the standalone app
+// transport. Keeping the state transition in one method makes both transports
+// enforce the same principal/proposal/message/version checks.
+func (h *Handler) ProcessCardAction(ctx context.Context, event capture.CardActionEvent) (json.RawMessage, error) {
 	action, err := capture.AuthorizeCardApproval(event, h.principalOpen)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("%w: %v", execute.ErrInvalidInput, err)
 	}
 
-	view, alreadyHandled, err := h.waitForProposal(ctx, action.TaskID)
+	view, alreadyHandled, err := h.waitForProposal(ctx, action.TaskID, event.MessageID)
 	if err != nil {
-		return fmt.Errorf("card approval load task_id=%d: %w", action.TaskID, err)
+		return nil, fmt.Errorf("card approval load task_id=%d: %w", action.TaskID, err)
 	}
 	if alreadyHandled {
-		h.updateCard(ctx, event, cardNoticeText("这条审批已经处理过了，请去后台查看结果。"))
-		return nil
+		return cardNoticeText("这条审批已经处理过了，请去后台查看结果。"), nil
 	}
 	if err := h.verifyCurrentProposal(ctx, view, event.MessageID); err != nil {
-		return err
+		return nil, err
 	}
 
 	switch action.Action {
@@ -109,21 +138,22 @@ func (h *Handler) HandleCardAction(ctx context.Context, event capture.CardAction
 		if _, err := h.approver.KickApprove(ctx, action.TaskID, view.Version); err != nil {
 			return h.onLandFailed(ctx, event, action.TaskID, "approve", err)
 		}
-		h.updateCard(ctx, event, cardNoticeText("✅ 已同意，正在处理。"))
+		return cardNoticeText("✅ 已同意，正在处理。"), nil
 	case "reject":
 		if _, err := h.approver.Reject(ctx, action.TaskID, view.Version, "委托人在飞书卡片上驳回"); err != nil {
 			return h.onLandFailed(ctx, event, action.TaskID, "reject", err)
 		}
-		h.updateCard(ctx, event, cardNoticeText("已驳回，不会执行。"))
+		return cardNoticeText("已驳回，不会执行。"), nil
 	}
-	return nil
+	return nil, fmt.Errorf("%w: unsupported card approval action %q", execute.ErrInvalidInput, action.Action)
 }
 
 // The card is sent before the agent returns its proposal. A very fast click can
 // therefore arrive while the Task is still executing and before the proposal is
-// persisted. Wait only for that mechanical handoff window; an executing Task
-// that already carries a proposal was claimed by another approval click.
-func (h *Handler) waitForProposal(ctx context.Context, taskID uint64) (*execute.TaskView, bool, error) {
+// persisted. An executing Task may still carry the previous proposal while its
+// apply run is producing a second one, so only a card belonging to that stored
+// proposal is already handled; a different card keeps waiting for the handoff.
+func (h *Handler) waitForProposal(ctx context.Context, taskID uint64, messageID string) (*execute.TaskView, bool, error) {
 	deadline := time.NewTimer(h.readyTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(h.pollInterval)
@@ -139,7 +169,13 @@ func (h *Handler) waitForProposal(ctx context.Context, taskID uint64) (*execute.
 			return task, false, nil
 		case "executing":
 			if _, err := proposalSourceRunID(task.ExecutionResult); err == nil {
-				return task, true, nil
+				matches, err := h.proposalHasMessageID(ctx, task, messageID)
+				if err != nil {
+					return nil, false, err
+				}
+				if matches {
+					return task, true, nil
+				}
 			}
 		default:
 			return task, true, nil
@@ -161,24 +197,33 @@ func (h *Handler) verifyCurrentProposal(ctx context.Context, task *execute.TaskV
 	if task.Status != "awaiting_approval" {
 		return fmt.Errorf("%w: task_id=%d status=%q is not awaiting approval", execute.ErrInvalidTransition, task.ID, task.Status)
 	}
+	matches, err := h.proposalHasMessageID(ctx, task, messageID)
+	if err != nil {
+		return err
+	}
+	if !matches {
+		sourceRunID, _ := proposalSourceRunID(task.ExecutionResult)
+		return fmt.Errorf("%w: card message_id=%q was not sent by source_run_id=%d", execute.ErrInvalidInput, messageID, sourceRunID)
+	}
+	return nil
+}
+
+func (h *Handler) proposalHasMessageID(ctx context.Context, task *execute.TaskView, messageID string) (bool, error) {
 	sourceRunID, err := proposalSourceRunID(task.ExecutionResult)
 	if err != nil {
-		return fmt.Errorf("card approval task_id=%d: %w", task.ID, err)
+		return false, fmt.Errorf("card approval task_id=%d: %w", task.ID, err)
 	}
 	runs, err := h.tasks.ListRuns(ctx, task.ID)
 	if err != nil {
-		return fmt.Errorf("card approval list runs task_id=%d: %w", task.ID, err)
+		return false, fmt.Errorf("card approval list runs task_id=%d: %w", task.ID, err)
 	}
 	for _, run := range runs.Items {
 		if run.ID != sourceRunID {
 			continue
 		}
-		if !runEffectHasMessageID(run.Effects, messageID) {
-			return fmt.Errorf("%w: card message_id=%q was not sent by source_run_id=%d", execute.ErrInvalidInput, messageID, sourceRunID)
-		}
-		return nil
+		return runEffectHasMessageID(run.Effects, messageID), nil
 	}
-	return fmt.Errorf("%w: source_run_id=%d not found for task_id=%d", execute.ErrInvalidInput, sourceRunID, task.ID)
+	return false, fmt.Errorf("%w: source_run_id=%d not found for task_id=%d", execute.ErrInvalidInput, sourceRunID, task.ID)
 }
 
 func proposalSourceRunID(raw json.RawMessage) (uint64, error) {
@@ -231,18 +276,16 @@ func rawMessageID(raw json.RawMessage) string {
 // onLandFailed distinguishes a lost race (someone already handled it, or the
 // task moved on) from a real error. Either way the card points the principal at
 // the backend; only unexpected errors propagate to the consumer log.
-func (h *Handler) onLandFailed(ctx context.Context, event capture.CardActionEvent, taskID uint64, action string, err error) error {
+func (h *Handler) onLandFailed(_ context.Context, _ capture.CardActionEvent, taskID uint64, action string, err error) (json.RawMessage, error) {
 	if errors.Is(err, execute.ErrVersionConflict) || errors.Is(err, execute.ErrInvalidTransition) {
-		h.updateCard(ctx, event, cardNoticeText("这条审批可能已经处理过了，请去后台确认。"))
 		h.logger.Printf("job=card-approval status=info action=%s task_id=%d skipped=already-handled: %v", action, taskID, err)
-		return nil
+		return cardNoticeText("这条审批可能已经处理过了，请去后台确认。"), nil
 	}
-	h.updateCard(ctx, event, cardNoticeText("处理没成功，请去后台重试。"))
-	return fmt.Errorf("card approval %s task_id=%d: %w", action, taskID, err)
+	return cardNoticeText("处理没成功，请去后台重试。"), fmt.Errorf("card approval %s task_id=%d: %w", action, taskID, err)
 }
 
 func (h *Handler) updateCard(ctx context.Context, event capture.CardActionEvent, card json.RawMessage) {
-	if event.Token == "" {
+	if h.cards == nil || event.Token == "" {
 		return
 	}
 	if err := h.cards.UpdateCard(ctx, h.profile, event.Token, card); err != nil {

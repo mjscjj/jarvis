@@ -7,7 +7,9 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"os"
+	"strings"
 
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
@@ -216,14 +218,16 @@ type CaptureConfig struct {
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
 }
 
-// CardApprovalConfig owns the Feishu app connection used only for interactive
-// approval-card callbacks. Keeping it separate from Capture lets CC Connect
-// continue owning the current Jarvis Bot while a dedicated app handles
-// card.action.trigger.
+// CardApprovalConfig controls the transport for interactive approval callbacks.
+// standalone_app owns a dedicated Feishu connection; cc_connect keeps the
+// existing Jarvis Bot connection in CC Connect and accepts authenticated
+// localhost relays.
 type CardApprovalConfig struct {
 	Enabled         bool   `yaml:"enabled"`
+	Transport       string `yaml:"transport"`
 	Profile         string `yaml:"profile"`
 	PrincipalOpenID string `yaml:"principal_open_id"`
+	RelaySecret     string `yaml:"relay_secret"`
 }
 
 // CodexConfig controls the agent CLI used by M3 extraction.
@@ -457,14 +461,29 @@ func (c *Config) validate() error {
 	if c.Capture.EventEnabled && c.Capture.EventProfile == "" {
 		return fmt.Errorf("capture.event_enabled=true 时 event_profile 不能为空")
 	}
-	if c.CardApproval.Enabled && c.CardApproval.Profile == "" {
-		return fmt.Errorf("card_approval.enabled=true 时 profile 不能为空")
-	}
-	if c.CardApproval.Enabled && !c.Capture.EventEnabled && c.CardApproval.Profile == c.Capture.EventProfile {
-		return fmt.Errorf("card_approval.profile 不能复用由外部连接占用的 capture.event_profile")
-	}
-	if c.CardApproval.Enabled && c.CardApproval.PrincipalOpenID == "" {
-		return fmt.Errorf("card_approval.enabled=true 时 principal_open_id 不能为空")
+	if c.CardApproval.Enabled {
+		if c.CardApproval.Profile == "" {
+			return fmt.Errorf("card_approval.enabled=true 时 profile 不能为空")
+		}
+		if c.CardApproval.PrincipalOpenID == "" {
+			return fmt.Errorf("card_approval.enabled=true 时 principal_open_id 不能为空")
+		}
+		switch c.CardApproval.Transport {
+		case "standalone_app":
+			if !c.Capture.EventEnabled && c.CardApproval.Profile == c.Capture.EventProfile {
+				return fmt.Errorf("standalone_app 的 card_approval.profile 不能复用由外部连接占用的 capture.event_profile")
+			}
+		case "cc_connect":
+			if strings.TrimSpace(c.CardApproval.RelaySecret) == "" {
+				return fmt.Errorf("card_approval.transport=cc_connect 时 relay_secret 不能为空")
+			}
+			host, _, err := net.SplitHostPort(c.Server.Addr)
+			if err != nil || (host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback())) {
+				return fmt.Errorf("card_approval.transport=cc_connect 时 server.addr 必须监听 loopback")
+			}
+		default:
+			return fmt.Errorf("card_approval.transport 必须是 standalone_app 或 cc_connect")
+		}
 	}
 	if c.Capture.AutoRelatedP2PTopN < 0 {
 		return fmt.Errorf("capture.auto_related_p2p_top_n 不能为负数")

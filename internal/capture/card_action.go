@@ -36,8 +36,9 @@ type CardActionEvent struct {
 // button carries only which task and whether to approve or reject; the click
 // itself is the human's approval, exactly like the HTTP approve/reject handlers.
 type CardApprovalAction struct {
-	Action string `json:"action"`
-	TaskID uint64 `json:"task_id"`
+	Action   string `json:"action"`
+	Decision string `json:"decision,omitempty"`
+	TaskID   uint64 `json:"task_id"`
 }
 
 // AuthorizeCardApproval decodes and validates one card.action.trigger event for
@@ -69,6 +70,9 @@ func AuthorizeCardApproval(event CardActionEvent, principalOpenID string) (CardA
 		return CardApprovalAction{}, fmt.Errorf("decode card action value %q: %w", raw, err)
 	}
 	action.Action = strings.TrimSpace(action.Action)
+	if action.Action == "jarvis_approval" {
+		action.Action = strings.TrimSpace(action.Decision)
+	}
 	switch action.Action {
 	case "approve", "reject":
 	default:
