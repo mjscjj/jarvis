@@ -816,6 +816,7 @@ export interface WorkRuleInput {
 export interface TextFile {
   key: string
   name: string
+  description: string
   path: string
   content: string
 }

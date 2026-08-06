@@ -21,10 +21,11 @@ type Input struct {
 }
 
 type View struct {
-	Key     string `json:"key"`
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Path        string `json:"path"`
+	Content     string `json:"content"`
 }
 
 type Reader interface {
@@ -103,7 +104,10 @@ func (s *Service) Get(ctx context.Context, key string) (*View, error) {
 	if normalized == "" {
 		return nil, fmt.Errorf("%w: key=%s has empty content", ErrInvalidInput, item.key)
 	}
-	return &View{Key: item.key, Name: item.name, Path: path, Content: normalized}, nil
+	return &View{
+		Key: item.key, Name: item.name, Description: item.description,
+		Path: path, Content: normalized,
+	}, nil
 }
 
 func (s *Service) Update(ctx context.Context, key string, input Input) (*View, error) {

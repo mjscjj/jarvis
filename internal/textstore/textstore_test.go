@@ -27,6 +27,16 @@ func TestServiceListsAndReadsEveryDefinition(t *testing.T) {
 	}
 }
 
+// The admin editor renders List verbatim, so a file registered without a name
+// or description would reach the UI as a blank tab.
+func TestEveryDefinitionCarriesEditorLabels(t *testing.T) {
+	for _, item := range definitions() {
+		if strings.TrimSpace(item.name) == "" || strings.TrimSpace(item.description) == "" {
+			t.Errorf("definition %q needs both a name and a description, got %+v", item.key, item)
+		}
+	}
+}
+
 func TestServiceUpdateAtomicallyReplacesContent(t *testing.T) {
 	service := newTestService(t)
 	updated, err := service.Update(t.Context(), SystemPromptM5Key, Input{Content: " 第一行\n第二行 "})

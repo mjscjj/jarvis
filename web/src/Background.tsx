@@ -1401,96 +1401,14 @@ function WorkRulesPanel() {
   </>
 }
 
-// --- M5 approval policy (stored in a local Markdown file) ---
+// --- Agent prompts and policies (stored in local Markdown files) ---
 
-const approvalPolicyKey = 'm5_approval_policy'
-
-function ApprovalRulesPanel() {
-  const [record, setRecord] = useState<TextFile | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string>()
-  const [ok, setOk] = useState(false)
-  const [form] = Form.useForm<TextFileInput>()
-
-  const reload = useCallback(() => {
-    setLoading(true)
-    listTextFiles()
-      .then((result) => {
-        const found = result.items.find((item) => item.key === approvalPolicyKey) ?? null
-        setRecord(found)
-        form.setFieldsValue({ content: found?.content ?? '' })
-        setError(undefined)
-      })
-      .catch((cause: unknown) => setError(errorText(cause)))
-      .finally(() => setLoading(false))
-  }, [form])
-  useEffect(reload, [reload])
-
-  const save = async () => {
-    const values = await form.validateFields()
-    setSaving(true)
-    try {
-      const updated = await updateTextFile(approvalPolicyKey, { content: values.content })
-      setRecord(updated)
-      setOk(true)
-      setError(undefined)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return <>
-    {error && <Alert type="error" showIcon title="审批策略操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon title="审批策略已保存，后续 M5 任务会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
-    {!record && !loading && <Alert type="error" showIcon title="审批策略文件缺失，服务配置不完整。" style={{ marginBottom: 12 }} />}
-    <Card loading={loading} variant="borderless">
-      <Form form={form} layout="vertical" initialValues={{ content: '' }}>
-        <Form.Item name="content" label="M5 审批判定策略" rules={[{ required: true, whitespace: true, message: '请输入审批策略' }]}
-          extra="供 M5 在执行过程中判断哪些具体动作需要先请示、哪些可以直接完成。">
-          <Input.TextArea rows={18} placeholder="填写审批判定策略" style={{ fontFamily: 'monospace' }} />
-        </Form.Item>
-        {record && <div style={{ margin: '-8px 0 12px' }}><Text type="secondary">本地文件：</Text><Text code>{record.path}</Text></div>}
-        <Flex gap={8}>
-          <Button type="primary" onClick={save} loading={saving} disabled={!record}>保存修改</Button>
-          <Button onClick={reload} loading={loading}>刷新</Button>
-        </Flex>
-      </Form>
-    </Card>
-  </>
-}
-
-// --- Agent system prompts (stored in local Markdown files) ---
-
-const systemPromptDefinitions = [
-  {
-    key: 'm3_system_prompt',
-    name: 'M3 抽取',
-    fileName: 'M3 系统提示词',
-    description: '定义行动线索抽取者的角色、判断原则和输出要求。',
-  },
-  {
-    key: 'm5_system_prompt',
-    name: 'M5 执行',
-    fileName: 'M5 系统提示词',
-    description: 'execute、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。',
-  },
-  {
-    key: 'proactive_system_prompt',
-    name: '主动巡视',
-    fileName: '主动巡视系统提示词',
-    description: '定义每小时主动巡视的时间范围、世界模型维护、Task 创建及停止边界。',
-  },
-] as const
-
-type SystemPromptKey = typeof systemPromptDefinitions[number]['key']
-
-function SystemPromptsPanel() {
-  const [records, setRecords] = useState<Partial<Record<SystemPromptKey, TextFile>>>({})
-  const [drafts, setDrafts] = useState<Partial<Record<SystemPromptKey, string>>>({})
-  const [activeKey, setActiveKey] = useState<SystemPromptKey>(systemPromptDefinitions[0].key)
+// The tab list mirrors whatever the server registers, so adding a prompt file
+// is a textstore registration and needs no change here.
+function TextFilesPanel() {
+  const [items, setItems] = useState<TextFile[]>([])
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [activeKey, setActiveKey] = useState<string>()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
@@ -1500,19 +1418,11 @@ function SystemPromptsPanel() {
     setLoading(true)
     listTextFiles()
       .then((result) => {
-        const nextRecords: Partial<Record<SystemPromptKey, TextFile>> = {}
-        const nextDrafts: Partial<Record<SystemPromptKey, string>> = {}
-        for (const definition of systemPromptDefinitions) {
-          const found = result.items.find((item) => item.key === definition.key)
-          if (found) {
-            nextRecords[definition.key] = found
-            nextDrafts[definition.key] = found.content
-          } else {
-            nextDrafts[definition.key] = ''
-          }
-        }
-        setRecords(nextRecords)
-        setDrafts(nextDrafts)
+        setItems(result.items)
+        setDrafts(Object.fromEntries(result.items.map((item) => [item.key, item.content])))
+        setActiveKey((current) => (
+          current && result.items.some((item) => item.key === current) ? current : result.items[0]?.key
+        ))
         setError(undefined)
       })
       .catch((cause: unknown) => setError(errorText(cause)))
@@ -1520,20 +1430,17 @@ function SystemPromptsPanel() {
   }, [])
   useEffect(reload, [reload])
 
-  const definition = systemPromptDefinitions.find((item) => item.key === activeKey)!
-  const record = records[activeKey]
-  const content = drafts[activeKey] ?? ''
-
-  const save = async () => {
+  const save = async (item: TextFile) => {
+    const content = drafts[item.key] ?? ''
     if (!content.trim()) {
-      setError(`${definition.name}提示词不能为空`)
+      setError(`${item.name}不能为空`)
       return
     }
     setSaving(true)
     try {
-      const updated = await updateTextFile(definition.key, { content })
-      setRecords((current) => ({ ...current, [activeKey]: updated }))
-      setDrafts((current) => ({ ...current, [activeKey]: updated.content }))
+      const updated = await updateTextFile(item.key, { content })
+      setItems((current) => current.map((row) => (row.key === updated.key ? updated : row)))
+      setDrafts((current) => ({ ...current, [updated.key]: updated.content }))
       setOk(true)
       setError(undefined)
     } catch (cause: unknown) {
@@ -1544,43 +1451,40 @@ function SystemPromptsPanel() {
   }
 
   return <>
-    {error && <Alert type="error" showIcon title="系统提示词操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon title={`${definition.name}提示词已保存，后续对应执行实时读取`} closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
+    {error && <Alert type="error" showIcon title="提示词与策略操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
+    {ok && <Alert type="success" showIcon title="已保存，对应环节下次运行时实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
     <Alert
       type="info"
       showIcon
       title="这些内容直接读写本地 Markdown 文件"
-      description="M3、M5 与主动巡视会实时读取对应文件。工具说明由工具层维护，Skills 由 Skills 页维护；当前环节、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
+      description="清单由服务端注册表决定，各环节运行时实时读取。工具说明由工具层维护，Skills 由 Skills 页维护；当前环节、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
       style={{ marginBottom: 12 }}
     />
     <Card loading={loading} variant="borderless">
       <Tabs
         tabPosition="left"
         activeKey={activeKey}
-        onChange={(key) => { setActiveKey(key as SystemPromptKey); setOk(false); setError(undefined) }}
-        items={systemPromptDefinitions.map((item) => ({
+        onChange={(key) => { setActiveKey(key); setOk(false); setError(undefined) }}
+        items={items.map((item) => ({
           key: item.key,
           label: item.name,
           children: (
             <>
-              {!records[item.key] && (
-                <Alert type="warning" showIcon title={`${item.name}提示词不存在，对应阶段会 fail-fast；请填写并保存。`} style={{ marginBottom: 12 }} />
-              )}
-              <Text strong>{item.fileName}</Text>
               <div><Text type="secondary">{item.description}</Text></div>
               <div style={{ margin: '8px 0 12px' }}>
                 <Text code>{item.key}</Text>
-                {records[item.key] && <><Text type="secondary"> · </Text><Text code>{records[item.key]?.path}</Text></>}
+                <Text type="secondary"> · </Text>
+                <Text code>{item.path}</Text>
               </div>
               <Input.TextArea
                 value={drafts[item.key] ?? ''}
                 onChange={(event) => setDrafts((current) => ({ ...current, [item.key]: event.target.value }))}
                 autoSize={{ minRows: 16, maxRows: 30 }}
-                placeholder={`填写${item.name}系统提示词`}
+                placeholder={`填写${item.name}`}
                 style={{ fontFamily: 'monospace' }}
               />
               <Flex gap={8} style={{ marginTop: 12 }}>
-                <Button type="primary" onClick={save} loading={saving} disabled={!records[item.key]}>保存修改</Button>
+                <Button type="primary" onClick={() => save(item)} loading={saving}>保存修改</Button>
                 <Button onClick={reload} loading={loading}>刷新</Button>
               </Flex>
             </>
@@ -1750,8 +1654,7 @@ export function Settings() {
         { key: 'runtime-settings', label: '运行配置', children: <RuntimeSettings /> },
         { key: 'system-tasks', label: '系统任务', children: <SystemTasks /> },
         { key: 'work-rules', label: '工作规则', children: <WorkRulesPanel /> },
-        { key: 'system-prompts', label: '系统提示词', children: <SystemPromptsPanel /> },
-        { key: 'approval-rules', label: '审批规则管理', children: <ApprovalRulesPanel /> },
+        { key: 'text-files', label: '提示词与策略', children: <TextFilesPanel /> },
         { key: 'skills', label: 'Skills', children: <SkillsPanel /> },
         { key: 'shared-memory', label: '共享记忆', children: <SharedMemory /> },
       ]}
