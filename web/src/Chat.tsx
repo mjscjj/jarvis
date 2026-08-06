@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { SendOutlined, StopOutlined } from '@ant-design/icons'
+import { CloseOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import { usePageContext } from './pageContext'
@@ -83,7 +83,7 @@ function isAbortError(cause: unknown): boolean {
     || (cause instanceof Error && cause.name === 'AbortError')
 }
 
-export default function Chat() {
+export default function Chat({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -101,6 +101,10 @@ export default function Chat() {
   }, [messages])
 
   useEffect(() => () => abortRef.current?.abort(), [])
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus()
+  }, [open])
 
   useEffect(() => {
     if (!sending && messages.length > 0) inputRef.current?.focus()
@@ -233,6 +237,7 @@ export default function Chat() {
       <div className="chat-title-row">
         <Text strong className="chat-title">Jarvis 对话</Text>
         <span className="chat-ready" aria-label="对话将使用当前页面上下文"><span aria-hidden="true" />随当前页面</span>
+        <Button type="text" size="small" className="chat-close" icon={<CloseOutlined />} aria-label="关闭 Jarvis 对话" onClick={onClose} />
       </div>
       <div className="chat-context" aria-label="当前对话上下文">
         <span className="chat-context-page">正在查看「{currentPageLabel}」</span>

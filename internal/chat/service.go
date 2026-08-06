@@ -32,6 +32,7 @@ type Request struct {
 type PageContext struct {
 	ActiveKey string
 	Selection *PageSelection
+	ViewState json.RawMessage
 }
 
 // PageSelection 对应契约里的 selection：选中项的可读摘要。
@@ -191,7 +192,8 @@ func (s *Service) pageContextBlock(pc *PageContext) string {
 		return ""
 	}
 	activeKey := strings.TrimSpace(pc.ActiveKey)
-	if activeKey == "" && pc.Selection == nil {
+	viewState := strings.TrimSpace(string(pc.ViewState))
+	if activeKey == "" && pc.Selection == nil && (viewState == "" || viewState == "{}" || viewState == "null") {
 		return ""
 	}
 	var b strings.Builder
@@ -203,6 +205,9 @@ func (s *Service) pageContextBlock(pc *PageContext) string {
 		label := strings.TrimSpace(pc.Selection.Label)
 		kind := strings.TrimSpace(pc.Selection.Kind)
 		b.WriteString(fmt.Sprintf("- 当前选中项：%s（kind=%s id=%d）\n", label, kind, pc.Selection.ID))
+	}
+	if viewState != "" && viewState != "{}" && viewState != "null" {
+		b.WriteString(fmt.Sprintf("- 当前页内状态：%s\n", viewState))
 	}
 	return strings.TrimSpace(b.String())
 }

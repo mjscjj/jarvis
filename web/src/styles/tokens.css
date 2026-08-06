@@ -17,6 +17,7 @@
   --color-primary-hover: #166534;
   --color-primary-active: #14532d;
   --color-primary-light: #e9f5ee; /* 选中态浅底 */
+  --color-primary-bg: #e9f5ee;
 
   /* --- Text --- */
   --color-text: #101418;         /* 主文本，近黑但不死黑 */
@@ -75,7 +76,7 @@
   --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* --- Layout --- */
-  --sider-width: 140px;
-  --chat-width: 380px;
+  --sider-width: 184px;
+  --chat-width: 420px;
   --header-height: 56px;
 }

@@ -989,6 +989,9 @@ export interface PageContext {
   active_key: string
   // 当前选中项的可读摘要（如 "Todo #12 修复登录超时"）；无选中则 null
   selection: PageSelection | null
+  // 当前页面的页内视图、筛选和日期等宽松状态。页面自行写入，聊天只读取，
+  // 不为不同页面复制一套严格 DTO。
+  view_state: Record<string, string>
 }
 
 export interface PageSelection {

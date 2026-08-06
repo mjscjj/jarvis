@@ -87,6 +87,13 @@ function taskSupportingText(task: Task): string | null {
     ?? strField(task.execution_result, 'needs_followup')
 }
 
+function waitingWakeAt(task: Task): string | null {
+  const waiting = task.execution_result?.waiting
+  if (!waiting || typeof waiting !== 'object' || Array.isArray(waiting)) return null
+  const wakeAt = (waiting as Record<string, unknown>).wake_at
+  return typeof wakeAt === 'string' && wakeAt.trim() ? wakeAt : null
+}
+
 function TaskRow({ task, onClick, emphasis = false }: { task: Task; onClick: () => void; emphasis?: boolean }) {
   const supportingText = taskSupportingText(task)
   const status = taskStatusMeta[task.status]
@@ -249,6 +256,12 @@ export default function Overview() {
   const unresolvedFailures = failures.filter((item) => !item.recovered)
   const unresolvedFailureCount = unresolvedFailures.reduce((sum, item) => sum + Math.max(item.count, 1), 0)
   const activeAgents = (agents?.summary.codex_executing ?? 0) + (agents?.summary.trae_cli ?? 0)
+  const nextWakeAt = (active?.items ?? [])
+    .map(waitingWakeAt)
+    .filter((value): value is string => Boolean(value) && dayjs(value).isValid())
+    .sort((left, right) => dayjs(left).valueOf() - dayjs(right).valueOf())[0]
+  const activeTaskCount = (active?.items ?? []).filter((task) => task.status !== 'waiting').length
+  const waitingTaskCount = (active?.items ?? []).filter((task) => task.status === 'waiting').length
   const healthPending = loading || (agentLoading && !agents)
   const hasHealthConcern = unresolvedFailureCount > 0 || Boolean(agentIssue) || loadIssues.length > 0
 
@@ -294,9 +307,28 @@ export default function Overview() {
         />
       )}
 
-      <main className="today-layout">
-        <MorningBriefPanel briefs={morningBriefs} loading={loading} today={todayDate} />
+      <section className="today-command" aria-label="今日任务态势">
+        <div className="today-command-copy">
+          <Text className="today-command-kicker">今日任务态势</Text>
+          <Title level={2}>
+            有 <strong>{attention?.total ?? '—'}</strong> 件事等你拍板，Jarvis 正在推进 <strong>{active?.total ?? '—'}</strong> 件
+          </Title>
+          <Text type="secondary">
+            {nextWakeAt ? `下一次将在 ${timeLabel(nextWakeAt)} 回来继续处理` : activeAgents > 0 ? `${activeAgents} 个执行器正在工作` : '当前没有明确的下一次唤醒时间'}
+          </Text>
+        </div>
+        <div className="today-handoff-rail" aria-label="任务接力轨">
+          <span className={(attention?.total ?? 0) > 0 ? 'is-human' : ''}><strong>{attention?.total ?? '—'}</strong> 等你处理</span>
+          <i aria-hidden="true" />
+          <span className={activeTaskCount > 0 ? 'is-agent' : ''}><strong>{activeTaskCount}</strong> Jarvis 执行</span>
+          <i aria-hidden="true" />
+          <span className={waitingTaskCount > 0 ? 'is-waiting' : ''}><strong>{waitingTaskCount}</strong> 等待外部</span>
+          <i aria-hidden="true" />
+          <span className="is-done"><strong>{todayDigest?.tasks_done ?? '—'}</strong> 今日交付</span>
+        </div>
+      </section>
 
+      <div className="today-layout">
         <Card className="today-panel today-attention-panel" variant="borderless">
           <div className="today-panel-heading">
             <div>
@@ -349,6 +381,8 @@ export default function Overview() {
             </Button>
           )}
         </Card>
+
+        <MorningBriefPanel briefs={morningBriefs} loading={loading} today={todayDate} />
 
         <Card className="today-panel today-results-panel" variant="borderless">
           <div className="today-panel-heading today-panel-heading-compact">
@@ -448,7 +482,7 @@ export default function Overview() {
             <Button type="link" size="small" onClick={() => navigate('todos')}>查看线索</Button>
           </div>
         </Card>
-      </main>
+      </div>
     </div>
   )
 }

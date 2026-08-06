@@ -7,6 +7,7 @@ import { generateDailyDigest, getCommitWorklog, getDailyDigests, getDigests, get
 import PageHeader from './components/PageHeader'
 import EmptyState from './components/EmptyState'
 import MarkdownReport from './components/MarkdownReport'
+import { usePageContext } from './pageContext'
 import type { CommitMR, CommitWorklog, DailyDigest, DailyDigestScope, Digest, DocumentWorklog, GroupProgress, MyDay, ProfileView, WorkDoc } from './types'
 import './styles/review-memory.css'
 
@@ -201,12 +202,20 @@ function CodeTab({ date }: { date: Dayjs }) {
 }
 
 export default function Progress() {
+  const { context, setViewState } = usePageContext()
   const [days, setDays] = useState(7)
-  const [activeView, setActiveView] = useState<'summary' | 'trend' | 'group-progress' | 'docs' | 'code'>('summary')
+  type ReviewView = 'summary' | 'trend' | 'group-progress' | 'docs' | 'code'
+  const reviewView = (value: string | undefined): ReviewView => (
+    value === 'trend' || value === 'group-progress' || value === 'docs' || value === 'code' ? value : 'summary'
+  )
+  const [activeView, setActiveView] = useState<ReviewView>(() => reviewView(context.view_state.view))
   const [data, setData] = useState<Digest>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
-  const [dailyDate, setDailyDate] = useState<Dayjs>(dayjs())
+  const [dailyDate, setDailyDate] = useState<Dayjs>(() => {
+    const routeDate = dayjs(context.view_state.date)
+    return routeDate.isValid() ? routeDate : dayjs()
+  })
   const [dailyItems, setDailyItems] = useState<DailyDigest[]>([])
   const [profile, setProfile] = useState<ProfileView>()
   const [dailyLoading, setDailyLoading] = useState(false)
@@ -216,6 +225,22 @@ export default function Progress() {
   const [dailyRefresh, setDailyRefresh] = useState(0)
   const loadedDailyDateRef = useRef<string | undefined>(undefined)
   const generatingDatesRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    setActiveView(reviewView(context.view_state.view))
+    const routeDate = dayjs(context.view_state.date)
+    if (routeDate.isValid() && !routeDate.isSame(dailyDate, 'day')) setDailyDate(routeDate)
+  }, [context.view_state.date, context.view_state.view, dailyDate])
+
+  const selectView = (view: ReviewView) => {
+    setActiveView(view)
+    setViewState({ view, date: dailyDate.format('YYYY-MM-DD') })
+  }
+
+  const selectDate = (date: Dayjs) => {
+    setDailyDate(date)
+    setViewState({ view: activeView, date: date.format('YYYY-MM-DD') })
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -481,25 +506,34 @@ export default function Progress() {
           <Space size={8} className="review-date-control">
             <DatePicker
               value={dailyDate}
-              onChange={(date) => setDailyDate(date ?? dayjs())}
+              onChange={(date) => selectDate(date ?? dayjs())}
               allowClear={false}
               disabledDate={(date) => date.isAfter(dayjs(), 'day')}
             />
-            <Button onClick={() => setDailyDate(dayjs())} disabled={dailyDate.isSame(dayjs(), 'day')}>今天</Button>
+            <Button onClick={() => selectDate(dayjs())} disabled={dailyDate.isSame(dayjs(), 'day')}>今天</Button>
           </Space>
         )}
       </PageHeader>
 
       {error && <Alert type="error" showIcon title="回顾加载失败" description={error} closable onClose={() => setError(undefined)} />}
 
-      <Flex className="review-view-nav" gap={4} wrap>
-        <Button type={activeView === 'summary' ? 'primary' : 'text'} onClick={() => setActiveView('summary')}>每日总结</Button>
+      <Flex className="review-view-nav" gap={8} wrap>
+        <Segmented
+          value={activeView === 'trend' || activeView === 'group-progress' ? 'analysis' : 'results'}
+          onChange={(value) => selectView(value === 'analysis' ? 'trend' : 'summary')}
+          options={[{ label: '结果', value: 'results' }, { label: '分析', value: 'analysis' }]}
+        />
         <span className="review-nav-divider" />
-        <Text type="secondary" className="review-nav-label">更多记录</Text>
-        <Button type={activeView === 'trend' ? 'default' : 'text'} onClick={() => setActiveView('trend')}>数量趋势</Button>
-        <Button type={activeView === 'group-progress' ? 'default' : 'text'} onClick={() => setActiveView('group-progress')}>群进度</Button>
-        <Button type={activeView === 'docs' ? 'default' : 'text'} onClick={() => setActiveView('docs')}>文档</Button>
-        <Button type={activeView === 'code' ? 'default' : 'text'} onClick={() => setActiveView('code')}>代码</Button>
+        <div className="review-subnav">
+          {(activeView === 'trend' || activeView === 'group-progress') ? <>
+            <Button type={activeView === 'trend' ? 'primary' : 'text'} onClick={() => selectView('trend')}>数量趋势</Button>
+            <Button type={activeView === 'group-progress' ? 'primary' : 'text'} onClick={() => selectView('group-progress')}>群进度</Button>
+          </> : <>
+            <Button type={activeView === 'summary' ? 'primary' : 'text'} onClick={() => selectView('summary')}>每日总结</Button>
+            <Button type={activeView === 'docs' ? 'primary' : 'text'} onClick={() => selectView('docs')}>文档</Button>
+            <Button type={activeView === 'code' ? 'primary' : 'text'} onClick={() => selectView('code')}>代码</Button>
+          </>}
+        </div>
       </Flex>
 
       <div className="review-content">{activeContent}</div>

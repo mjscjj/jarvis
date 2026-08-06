@@ -69,6 +69,7 @@ import RuntimeSettings from './RuntimeSettings'
 import SystemTasks from './SystemTasks'
 import EntityRelations from './components/EntityRelations'
 import PageHeader from './components/PageHeader'
+import { usePageContext } from './pageContext'
 import type {
   AgentSkill,
   AgentSkillInput,
@@ -711,7 +712,7 @@ function PersonsPanel() {
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建人物</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="人物操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<Person> rowKey="id" columns={columns} dataSource={visibleItems} loading={loading} pagination={false} scroll={{ x: 900 }} /></Card>
+    <Card className="table-card" variant="borderless"><Table<Person> rowKey="id" columns={columns} dataSource={visibleItems} loading={loading} pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [20, 50, 100], hideOnSinglePage: visibleItems.length <= 20 }} scroll={{ x: 900 }} /></Card>
     <Modal title={editing ? '编辑人物' : '新建人物'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden width={720}>
       {!editing && (
         <Card size="small" style={{ marginBottom: 16 }}>
@@ -1285,7 +1286,7 @@ function ResourcePanel() {
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建资源</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="资源操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<Resource> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} /></Card>
+    <Card className="table-card" variant="borderless"><Table<Resource> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={{ pageSize: 20, hideOnSinglePage: items.length <= 20 }} /></Card>
     <Modal title="新建资源" open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
         <Form.Item name="title" label="名称" rules={[{ required: true, message: '请输入资源名称' }]}><Input /></Form.Item>
@@ -1609,14 +1610,29 @@ function SkillsPanel() {
 type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'profile'
 
 export default function Background() {
-  const [activeView, setActiveView] = useState<MemoryView>('projects')
+  const { context, setViewState } = usePageContext()
+  const memoryView = (value: string | undefined): MemoryView => (
+    value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'profile'
+      ? value
+      : 'projects'
+  )
+  const [activeView, setActiveView] = useState<MemoryView>(() => memoryView(context.view_state.view))
+
+  useEffect(() => {
+    setActiveView(memoryView(context.view_state.view))
+  }, [context.view_state.view])
+
+  const selectView = (view: MemoryView) => {
+    setActiveView(view)
+    setViewState({ view })
+  }
 
   return (
     <div className="memory-page">
       <PageHeader title="记忆" subtitle="浏览 Jarvis 用来理解你、项目和协作关系的长期背景">
         <Button
           type={activeView === 'profile' ? 'default' : 'text'}
-          onClick={() => setActiveView(activeView === 'profile' ? 'projects' : 'profile')}
+          onClick={() => selectView(activeView === 'profile' ? 'projects' : 'profile')}
         >
           {activeView === 'profile' ? '返回记忆' : '我的资料'}
         </Button>
@@ -1633,7 +1649,8 @@ export default function Background() {
       ) : (
         <Tabs
           activeKey={activeView}
-          onChange={(key) => setActiveView(key as MemoryView)}
+          onChange={(key) => selectView(key as MemoryView)}
+          destroyOnHidden
           items={[
             { key: 'projects', label: '项目', children: <ProjectsPanel /> },
             { key: 'persons', label: '人物', children: <PersonsPanel /> },
@@ -1648,16 +1665,39 @@ export default function Background() {
 }
 
 export function Settings() {
+  const { context, setViewState } = usePageContext()
+  type SettingsView = 'runtime' | 'scheduling' | 'behavior' | 'extensions'
+  const settingsView = (value: string | undefined): SettingsView => (
+    value === 'scheduling' || value === 'behavior' || value === 'extensions' ? value : 'runtime'
+  )
+  const activeView = settingsView(context.view_state.view)
+
   return (
-    <Tabs
-      items={[
-        { key: 'runtime-settings', label: '运行配置', children: <RuntimeSettings /> },
-        { key: 'system-tasks', label: '系统任务', children: <SystemTasks /> },
-        { key: 'work-rules', label: '工作规则', children: <WorkRulesPanel /> },
-        { key: 'text-files', label: '提示词与策略', children: <TextFilesPanel /> },
-        { key: 'skills', label: 'Skills', children: <SkillsPanel /> },
-        { key: 'shared-memory', label: '共享记忆', children: <SharedMemory /> },
-      ]}
-    />
+    <div className="settings-page">
+      <PageHeader title="系统设置" subtitle="配置 Jarvis 的运行、调度、行为和扩展能力" />
+      <Tabs
+        activeKey={activeView}
+        onChange={(view) => setViewState({ view })}
+        items={[
+          { key: 'runtime', label: '运行', children: <RuntimeSettings /> },
+          { key: 'scheduling', label: '调度', children: <SystemTasks /> },
+          {
+            key: 'behavior',
+            label: '行为',
+            children: (
+              <Tabs
+                size="small"
+                items={[
+                  { key: 'work-rules', label: '工作规则', children: <WorkRulesPanel /> },
+                  { key: 'text-files', label: '提示词与策略', children: <TextFilesPanel /> },
+                  { key: 'shared-memory', label: '共享记忆', children: <SharedMemory /> },
+                ]}
+              />
+            ),
+          },
+          { key: 'extensions', label: '扩展', children: <SkillsPanel /> },
+        ]}
+      />
+    </div>
   )
 }

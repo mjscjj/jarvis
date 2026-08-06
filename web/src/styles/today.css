@@ -4,9 +4,69 @@
   margin: 0 auto;
 }
 
-.today-home .section-heading {
+.today-home .page-header {
   min-height: 46px;
   margin: 0 0 14px;
+}
+
+.today-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(520px, 0.9fr);
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 12px;
+  padding: 20px 22px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: linear-gradient(120deg, #ffffff 0%, #f5f8f4 100%);
+}
+
+.today-command-kicker {
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.today-command h2.ant-typography {
+  margin: 4px 0 3px;
+  font-size: 22px;
+  line-height: 1.4;
+}
+
+.today-command h2 strong {
+  color: var(--color-primary);
+}
+
+.today-handoff-rail {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.today-handoff-rail span {
+  display: grid;
+  justify-items: center;
+  min-width: 70px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.today-handoff-rail span strong {
+  color: var(--color-text);
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.today-handoff-rail span.is-human strong { color: var(--color-warning); }
+.today-handoff-rail span.is-agent strong { color: var(--color-primary); }
+.today-handoff-rail span.is-waiting strong { color: var(--color-info); }
+.today-handoff-rail span.is-done strong { color: var(--color-success); }
+
+.today-handoff-rail i {
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-border-strong), var(--color-primary-light));
 }
 
 .today-load-alert {
@@ -46,8 +106,7 @@
 .today-morning-panel {
   grid-column: 1 / -1;
   background:
-    radial-gradient(circle at 8% -80%, rgb(250 204 21 / 24%), transparent 45%),
-    linear-gradient(110deg, #f7faf4 0%, #fbfcf8 55%, #f7f5ee 100%);
+    linear-gradient(110deg, #f8faf7 0%, #fbfcfa 55%, #f7f8f5 100%);
   border-color: #dfe5d5 !important;
 }
 
@@ -561,6 +620,10 @@
 }
 
 @media (max-width: 1080px) {
+  .today-command {
+    grid-template-columns: 1fr;
+  }
+
   .today-layout {
     grid-template-columns: 1fr;
   }
@@ -574,8 +637,34 @@
 }
 
 @media (max-width: 640px) {
-  .today-home .section-heading {
+  .today-home .page-header {
     align-items: flex-start;
+  }
+
+  .today-command {
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .today-command h2.ant-typography {
+    font-size: 18px;
+  }
+
+  .today-handoff-rail {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+
+  .today-handoff-rail i {
+    display: none;
+  }
+
+  .today-handoff-rail span {
+    min-width: 0;
+    padding: 8px 2px;
+    border-radius: var(--radius-md);
+    background: var(--color-bg-soft);
+    text-align: center;
   }
 
   .today-panel > .ant-card-body {

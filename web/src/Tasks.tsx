@@ -61,15 +61,26 @@ const tabStatuses: Record<TaskTab, TaskStatus[]> = {
 
 const tabLabels: Record<TaskTab, string> = {
   needs_me: '需要我',
-  running: '进行中',
-  waiting: '等待中',
+  running: 'Jarvis 处理中',
+  waiting: '等待外部',
   completed: '已完成',
   failed: '异常',
 }
 
+function taskTab(value: string | undefined): TaskTab {
+  return value && value in tabStatuses ? value as TaskTab : 'needs_me'
+}
+
+function positivePage(value: string | undefined): number {
+  const page = Number(value)
+  return Number.isInteger(page) && page > 0 ? page : 1
+}
+
 export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
-  const { context, setSelection } = usePageContext()
-  const [activeTab, setActiveTab] = useState<TaskTab>('needs_me')
+  const { context, setSelection, setViewState } = usePageContext()
+  const [activeTab, setActiveTab] = useState<TaskTab>(() => taskTab(context.view_state.view))
+  const [page, setPage] = useState(() => positivePage(context.view_state.page))
+  const [total, setTotal] = useState(0)
   const statuses = useMemo<TaskStatus[]>(() => tabStatuses[activeTab], [activeTab])
   const [items, setItems] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
@@ -107,6 +118,11 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     : null
 
   useEffect(() => {
+    setActiveTab(taskTab(context.view_state.view))
+    setPage(positivePage(context.view_state.page))
+  }, [context.view_state.page, context.view_state.view])
+
+  useEffect(() => {
     if (routedTaskID === null) {
       setDetail(undefined)
       return
@@ -127,26 +143,26 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
-    listTasks(statuses, 1, 100, controller.signal)
-      .then((result) => { setItems(result.items); setError(undefined) })
+    listTasks(statuses, page, 20, controller.signal)
+      .then((result) => { setItems(result.items); setTotal(result.total); setError(undefined) })
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [statuses, refreshKey])
+  }, [statuses, page, refreshKey])
 
   // 有任务在执行中时静默轮询列表，点完「执行」后状态会从执行中变为完成/失败，无需手动刷新。
   const hasExecuting = items.some((task) => task.status === 'executing')
   useEffect(() => {
     if (!hasExecuting) return
     const timer = window.setInterval(() => {
-      listTasks(statuses, 1, 100)
-        .then((result) => setItems(result.items))
+      listTasks(statuses, page, 20)
+        .then((result) => { setItems(result.items); setTotal(result.total) })
         .catch(() => { /* 轮询失败不打扰，下次再试 */ })
     }, 3000)
     return () => window.clearInterval(timer)
-  }, [hasExecuting, statuses])
+  }, [hasExecuting, page, statuses])
 
   // 打开详情抽屉时拉该 Task 的执行历史。detail 关闭（undefined）时清空。
   useEffect(() => {
@@ -408,46 +424,43 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
           </Space>
         }
         if (task.status === 'executing') {
-          return <Space size={6} wrap onClick={(e) => e.stopPropagation()}>
-            <StatusBadge label="Jarvis 执行中…" color={statusMeta.executing.color} />
-            <Button danger size="small" loading={interruptingId === task.id} onClick={(e) => { e.stopPropagation(); runInterrupt(task) }}>打断</Button>
-          </Space>
+          return <Button size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>查看进展</Button>
         }
         if (task.status === 'waiting') {
-          return <StatusBadge label="等待定时唤醒" color={statusMeta.waiting.color} />
+          return <Button size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>查看等待</Button>
         }
         if (task.status === 'needs_human') {
           return <Button type="primary" size="small" loading={resumeSubmitting && resumeTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openResume(task) }}>回复并继续</Button>
         }
         if (task.status === 'awaiting_approval') {
-          return <Space size={6} wrap onClick={(e) => e.stopPropagation()}>
-            <Button type="primary" size="small" loading={approveSubmitting && approveTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openApprove(task) }}>批准</Button>
-            <Button danger size="small" onClick={(e) => { e.stopPropagation(); openReject(task) }}>驳回</Button>
-          </Space>
+          return <Button type="primary" size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>审阅</Button>
         }
         if (task.status === 'done' || task.status === 'failed') {
-          return <Space onClick={(e) => e.stopPropagation()}>
-            <Button size="small" onClick={(e) => { e.stopPropagation(); openRerun(task) }}>重跑</Button>
-          </Space>
+          return <Button size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>{task.status === 'done' ? '查看结果' : '查看原因'}</Button>
         }
-        return '—'
+        return <Button size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>查看结论</Button>
       },
     },
   ]
 
   return <>
-    <PageHeader title="工作台" subtitle="先处理需要你决定的事项，再关注 Jarvis 正在推进的工作">
+    <PageHeader title="任务" subtitle="先处理需要你决定的事项，再查看 Jarvis 的推进、等待和历史结果">
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
     {error && <Alert type="error" showIcon title="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
       <Tabs
         activeKey={activeTab}
-        onChange={(key) => setActiveTab(key as TaskTab)}
+        onChange={(key) => {
+          const next = key as TaskTab
+          setActiveTab(next)
+          setPage(1)
+          setViewState({ view: next, page: 1 })
+        }}
         items={(Object.keys(tabLabels) as TaskTab[]).map((key) => ({
           key,
           label: activeTab === key
-            ? <Badge count={items.length} offset={[8, -2]} size="small" overflowCount={999}>{tabLabels[key]}</Badge>
+            ? <Badge count={total} offset={[8, -2]} size="small" overflowCount={999}>{tabLabels[key]}</Badge>
             : tabLabels[key],
         }))}
       />
@@ -457,10 +470,31 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         columns={columns}
         dataSource={items}
         loading={loading}
-        pagination={false}
+        pagination={{
+          current: page,
+          pageSize: 20,
+          total,
+          showSizeChanger: false,
+          hideOnSinglePage: true,
+          onChange: (nextPage) => {
+            setPage(nextPage)
+            setViewState({ view: activeTab, page: nextPage })
+          },
+        }}
         tableLayout="fixed"
         locale={{ emptyText: activeTab === 'needs_me' ? '暂时没有需要你处理的事项' : '这个分组暂无任务' }}
-        onRow={(task) => ({ onClick: () => openDetail(task), className: 'clickable-row' })}
+        onRow={(task) => ({
+          onClick: () => openDetail(task),
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              openDetail(task)
+            }
+          },
+          tabIndex: 0,
+          role: 'button',
+          className: 'clickable-row',
+        })}
       />
     </Card>
     <TaskDetailModal

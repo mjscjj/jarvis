@@ -1432,12 +1432,12 @@ export default function TaskDetailModal({
           {recallError && <Alert type="error" showIcon title="撤回飞书消息失败" description={recallError} />}
 
           <div className="task-detail-main-grid task-detail-main-single">
-            <main>
+            <section aria-label="任务结论与产出">
               {proposalOf(task)
                 ? <ProposalContent task={task} actions={actions} />
                 : <ResultContent task={task} actions={actions} />}
               <EffectsCard effects={effectItems(task.execution_result?.effects)} recall={recall} />
-            </main>
+            </section>
           </div>
 
           {eventsLoading ? (

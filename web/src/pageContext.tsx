@@ -9,6 +9,7 @@ export interface PageContextValue {
   context: PageContext
   setActiveKey: (key: string) => void
   setSelection: (selection: PageSelection | null) => void
+  setViewState: (state: Record<string, string | number | boolean | null | undefined>, replace?: boolean) => void
   // navigate switches to a page and clears the previous page's selection.
   navigate: (key: string) => void
 }
@@ -33,30 +34,41 @@ const pageKeysByHash = Object.fromEntries(
 interface HashRoute {
   key: string
   selection: PageSelection | null
+  viewState: Record<string, string>
 }
 
 function routeFromHash(initialKey: string): HashRoute {
-  const path = window.location.hash.replace(/^#/, '').split('?')[0]
+  const raw = window.location.hash.replace(/^#/, '')
+  const [path, query = ''] = raw.split('?')
+  const viewState = Object.fromEntries(new URLSearchParams(query).entries())
   const taskMatch = path.match(/^\/work\/task\/(\d+)$/)
   if (taskMatch) {
     const id = Number(taskMatch[1])
-    return { key: 'tasks', selection: { kind: 'task', id, label: `Task #${id}` } }
+    return { key: 'tasks', selection: { kind: 'task', id, label: `Task #${id}` }, viewState }
   }
   const todoMatch = path.match(/^\/manage\/clues\/(\d+)$/)
   if (todoMatch) {
     const id = Number(todoMatch[1])
-    return { key: 'todos', selection: { kind: 'todo', id, label: `线索 #${id}` } }
+    return { key: 'todos', selection: { kind: 'todo', id, label: `线索 #${id}` }, viewState }
   }
-  return { key: pageKeysByHash[path] || initialKey, selection: null }
+  return { key: pageKeysByHash[path] || initialKey, selection: null, viewState }
 }
 
-function writePageHash(key: string, selection: PageSelection | null, replace = false) {
+function writePageHash(
+  key: string,
+  selection: PageSelection | null,
+  viewState: Record<string, string>,
+  replace = false,
+) {
   const basePath = pageHashes[key]
   if (!basePath) throw new Error(`unknown page key: ${key}`)
   let path = basePath
   if (key === 'tasks' && selection?.kind === 'task') path = `/work/task/${selection.id}`
   if (key === 'todos' && selection?.kind === 'todo') path = `/manage/clues/${selection.id}`
-  const next = `#${path}`
+  const query = new URLSearchParams(
+    Object.entries(viewState).sort(([left], [right]) => left.localeCompare(right)),
+  ).toString()
+  const next = `#${path}${query ? `?${query}` : ''}`
   if (window.location.hash === next) return
   if (replace) window.history.replaceState(null, '', next)
   else window.location.hash = path
@@ -78,13 +90,15 @@ export function PageContextProvider({
   const initialRoute = useMemo(() => routeFromHash(initialKey), [initialKey])
   const [activeKey, setActiveKeyState] = useState(initialRoute.key)
   const [selection, setSelectionState] = useState<PageSelection | null>(initialRoute.selection)
+  const [viewState, setViewStateState] = useState<Record<string, string>>(initialRoute.viewState)
 
   useEffect(() => {
-    if (!window.location.hash) writePageHash(initialKey, null, true)
+    if (!window.location.hash) writePageHash(initialKey, null, {}, true)
     const syncFromHash = () => {
       const route = routeFromHash(initialKey)
       setActiveKeyState(route.key)
       setSelectionState(route.selection)
+      setViewStateState(route.viewState)
     }
     window.addEventListener('hashchange', syncFromHash)
     return () => window.removeEventListener('hashchange', syncFromHash)
@@ -93,30 +107,43 @@ export function PageContextProvider({
   const setActiveKey = useCallback((key: string) => {
     setActiveKeyState(key)
     setSelectionState(null)
-    writePageHash(key, null)
+    setViewStateState({})
+    writePageHash(key, null, {})
   }, [])
 
   const setSelection = useCallback((next: PageSelection | null) => {
     const targetKey = next ? pageKeyForSelection(next, activeKey) : activeKey
     if (targetKey !== activeKey) setActiveKeyState(targetKey)
     setSelectionState(next)
-    writePageHash(targetKey, next, next === null)
-  }, [activeKey])
+    writePageHash(targetKey, next, viewState, next === null)
+  }, [activeKey, viewState])
+
+  const setViewState = useCallback((next: Record<string, string | number | boolean | null | undefined>, replace = true) => {
+    const normalized = Object.fromEntries(
+      Object.entries(next)
+        .filter(([, value]) => value !== null && value !== undefined && value !== '')
+        .map(([key, value]) => [key, String(value)]),
+    )
+    setViewStateState(normalized)
+    writePageHash(activeKey, selection, normalized, replace)
+  }, [activeKey, selection])
 
   const navigate = useCallback((key: string) => {
     setActiveKeyState(key)
     setSelectionState(null)
-    writePageHash(key, null)
+    setViewStateState({})
+    writePageHash(key, null, {})
   }, [])
 
   const value = useMemo<PageContextValue>(
     () => ({
-      context: { active_key: activeKey, selection },
+      context: { active_key: activeKey, selection, view_state: viewState },
       setActiveKey,
       setSelection,
+      setViewState,
       navigate,
     }),
-    [activeKey, selection, setActiveKey, setSelection, navigate],
+    [activeKey, selection, viewState, setActiveKey, setSelection, setViewState, navigate],
   )
 
   return <Context.Provider value={value}>{children}</Context.Provider>

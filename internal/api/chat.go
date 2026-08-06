@@ -23,6 +23,7 @@ type chatRequestBody struct {
 type chatPageContext struct {
 	ActiveKey string             `json:"active_key"`
 	Selection *chatPageSelection `json:"selection"`
+	ViewState json.RawMessage    `json:"view_state"`
 }
 
 type chatPageSelection struct {
@@ -62,7 +63,7 @@ func Chat(svc *chat.Service) app.HandlerFunc {
 			req.ThreadID = *body.ThreadID
 		}
 		if body.PageContext != nil {
-			pc := &chat.PageContext{ActiveKey: body.PageContext.ActiveKey}
+			pc := &chat.PageContext{ActiveKey: body.PageContext.ActiveKey, ViewState: body.PageContext.ViewState}
 			if sel := body.PageContext.Selection; sel != nil {
 				pc.Selection = &chat.PageSelection{Kind: sel.Kind, ID: sel.ID, Label: sel.Label}
 			}

@@ -67,6 +67,7 @@ func TestBuildPromptInjectsToolsAndContext(t *testing.T) {
 		PageContext: &PageContext{
 			ActiveKey: "todos",
 			Selection: &PageSelection{Kind: "todo", ID: 12, Label: "修复登录超时"},
+			ViewState: json.RawMessage(`{"view":"observing","page":"2"}`),
 		},
 	})
 	if err != nil {
@@ -75,6 +76,7 @@ func TestBuildPromptInjectsToolsAndContext(t *testing.T) {
 	for _, want := range []string{
 		"todos",                 // active_key
 		"修复登录超时",                // selection.label
+		`"view":"observing"`,    // view_state
 		"现在有几个待办？",              // 用户消息
 		"安全约束",                  // 防注入提示
 		"BEGIN_AVAILABLE_TOOLS", // 工具说明由工具层独立注入
