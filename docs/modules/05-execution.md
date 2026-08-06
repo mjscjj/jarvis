@@ -15,7 +15,7 @@ Task 可来自：
 - `scheduled_task`：到期物化；
 - `manual`：通过 API 创建。
 
-执行 prompt 包含：完整 `source_payload`、冻结 `background` 的小投影（当前项目、群、交办人、引用消息 ID）、完整背景查询命令、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。conversation、facts、其它 Todo/Task、participants、resources 与其它项目不在首轮加载，需要时通过任务查询读取完整冻结背景。所有来源统一使用宽松 `source_payload`，Go 和前端都不把它解释成固定计划结构。Task 创建时已经把仓库工作目录投影到 `repo_path`，M5 直接消费该硬参数，不反解析 background。
+执行 prompt 包含：完整 `source_payload`、冻结 `background` 的小投影（当前项目、群、交办人、引用消息 ID）、完整背景查询命令、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。conversation、facts、其它 Todo/Task、participants、resources 与其它项目不在首轮加载，需要时通过任务查询读取完整冻结背景。所有来源统一使用宽松 `source_payload`，Go 和前端都不把它解释成固定计划结构。调用方明确选定仓库时，M5 消费 `repo_path`；否则继承 Jarvis 当前工作目录并自行定位，不从 background 的仓库列表猜默认值。
 
 执行进程可以自行派生只读的子 agent 去做素材密集的调查，只把带出处的结论收回主上下文；派生规则写在 `m5-system-prompt.md`，Go 侧不感知也不调度。审批判断、终态裁决、`effects` 申报、`progress_summary` 和 `yield-until` 不下放——可恢复的 Session 属于主进程。
 

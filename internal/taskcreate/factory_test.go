@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"jarvis/internal/contextsnap"
+	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 
 	"gorm.io/driver/sqlite"
@@ -187,7 +188,10 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 			t.Fatalf("create sqlite table: %v", err)
 		}
 	}
-	project := domain.Project{Name: "Jarvis", Role: "owner", Status: "active", Priority: 1}
+	project := domain.Project{
+		Name: "Jarvis", Role: "owner", Status: "active", Priority: 1,
+		Repos: datatypes.JSON(`[{"local_path":"/tmp/first-repo"},{"local_path":"/tmp/second-repo"}]`),
+	}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -221,6 +225,9 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 	if manualSnapshot.Principal == nil || manualSnapshot.Project == nil || manualSnapshot.Group != nil || string(manualSnapshot.RequestContext) != `{"chat_id":"oc_scheduled","note":"手工任务背景"}` {
 		t.Fatalf("manual snapshot = %#v", manualSnapshot)
 	}
+	if manual.RepoPath != nil {
+		t.Fatalf("manual repo_path = %v, want nil without an explicit selection", *manual.RepoPath)
+	}
 
 	scheduled, err := factory.assembleBackground(t.Context(), Input{
 		SourceType: SourceScheduledTask,
@@ -236,6 +243,9 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 	if scheduled.ProjectID == nil || *scheduled.ProjectID != project.ID || scheduledSnapshot.Project == nil || scheduledSnapshot.Group == nil || scheduledSnapshot.Group.ChatID != "oc_scheduled" {
 		t.Fatalf("scheduled input/snapshot = %#v / %#v", scheduled, scheduledSnapshot)
 	}
+	if scheduled.RepoPath != nil {
+		t.Fatalf("scheduled repo_path = %v, want nil without an explicit selection", *scheduled.RepoPath)
+	}
 
 	proactive, err := factory.assembleBackground(t.Context(), Input{
 		SourceType: SourceProactive, ProjectID: &project.ID,
@@ -250,5 +260,20 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 	}
 	if proactiveSnapshot.Principal == nil || proactiveSnapshot.Project == nil || string(proactiveSnapshot.RequestContext) != `{"why_now":"发现真实阻塞"}` {
 		t.Fatalf("proactive snapshot = %#v", proactiveSnapshot)
+	}
+	if proactive.RepoPath != nil {
+		t.Fatalf("proactive repo_path = %v, want nil without an explicit selection", *proactive.RepoPath)
+	}
+
+	explicitRepo := "/tmp/explicit-repo"
+	explicit, err := factory.assembleBackground(t.Context(), Input{
+		SourceType: SourceManual, ProjectID: &project.ID, RepoPath: &explicitRepo,
+		Background: json.RawMessage(`{"note":"明确指定仓库"}`),
+	})
+	if err != nil {
+		t.Fatalf("assemble explicit repo background: %v", err)
+	}
+	if explicit.RepoPath == nil || *explicit.RepoPath != explicitRepo {
+		t.Fatalf("explicit repo_path = %v, want %q", explicit.RepoPath, explicitRepo)
 	}
 }

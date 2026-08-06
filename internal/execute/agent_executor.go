@@ -1066,8 +1066,8 @@ func waitingFromRun(run *domain.ExecutionRun) (*codexWaiting, error) {
 	return output.Waiting, nil
 }
 
-// resolveRepo validates the hard execution projection captured on Task creation.
-// Background remains opaque to M5.
+// resolveRepo validates an explicitly selected Task working copy. Project repo
+// metadata never chooses one implicitly; an absent path preserves the server cwd.
 func (e *AgentExecutor) resolveRepo(task *domain.Task) (string, error) {
 	if task.RepoPath == nil || strings.TrimSpace(*task.RepoPath) == "" {
 		return "", nil

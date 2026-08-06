@@ -183,8 +183,8 @@ flowchart TB
 ### 2.4 模块 D：执行环节先拿简报、按需下钻
 
 - 执行环节提示词（`internal/execute/prompt.go`）只投影当前项目、群、交办人和引用消息 ID；完整 `task.background` 保留在 Task 上，通过 `get-task` 按需读取。
-- Task 创建时从 `project.repos[].local_path` 投影 `task.repo_path`；`internal/execute/agent_executor.go` 只消费这个硬执行参数，不解析 `context_snapshot`。
-- repos 为空时**本轮不阻塞**（用户决策）：codex 在 workspace-write/full-access 下自行想办法（可跑 git/lark-cli 定位），或如实报告"缺仓库地址、需补充"。
+- `task.repo_path` 只接受调用方明确选定的工作副本，不从 `project.repos[]` 默认取第一项；未明确指定时 M5 继承 Jarvis 当前工作目录，再按任务语义自行定位仓库。
+- 未明确指定 `repo_path` 时**本轮不阻塞**：codex 继承 Jarvis 当前工作目录，可通过完整背景与 `git`/`lark-cli` 自行定位需要的仓库；只有确实无法查明时才如实报告缺口。
 
 
 

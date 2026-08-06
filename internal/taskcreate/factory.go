@@ -121,10 +121,6 @@ func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, e
 		projectID := snapshot.Project.ID
 		input.ProjectID = &projectID
 	}
-	input.RepoPath, err = snapshot.RepoPath()
-	if err != nil {
-		return Input{}, fmt.Errorf("project assembled %s Task repo path: %w", input.SourceType, err)
-	}
 	return input, nil
 }
 

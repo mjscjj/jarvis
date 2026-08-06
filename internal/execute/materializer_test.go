@@ -33,7 +33,7 @@ func TestMaterializeTodoCarriesExtractionAsSourcePayload(t *testing.T) {
 	if err := db.First(&task, result.TaskID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if task.TodoID == nil || *task.TodoID != 7 || string(task.SourcePayload) != `{"desired_outcome":"完成目标"}` || task.RepoPath == nil || *task.RepoPath != "jarvis" {
+	if task.TodoID == nil || *task.TodoID != 7 || string(task.SourcePayload) != `{"desired_outcome":"完成目标"}` || task.RepoPath != nil {
 		t.Fatalf("task = %#v source_payload=%s", task, task.SourcePayload)
 	}
 	var todo domain.Todo

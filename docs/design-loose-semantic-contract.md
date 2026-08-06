@@ -7,7 +7,7 @@
 
 Jarvis 的 M3 与 M5 执行不应共享一套庞大的模型语义 DTO。程序只固定硬消费字段，模型语义用自然语言或宽松 JSON 原样传递。这样上游新增一段判断、证据或结果时，下游能直接带给模型，不需要同步改 Go struct、JSON Schema、前端类型和历史数据。
 
-当前落地状态（2026-08-03）：M3 Candidate 已是机器消费小外壳 + 文本 payload，Task 用一个宽松 `source_payload` 保存任意来源的完整原始语义；Todo 来源直接固化原始 extraction result，M5 结合它与冻结上下文判断。Task 创建时把 `context_snapshot.project.repos` 一次性投影为执行硬字段 `repo_path`，M5 不再解析 ContextSnapshot。但 execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。以 current 模块文档和代码为准。
+当前落地状态（2026-08-03）：M3 Candidate 已是机器消费小外壳 + 文本 payload，Task 用一个宽松 `source_payload` 保存任意来源的完整原始语义；Todo 来源直接固化原始 extraction result，M5 结合它与冻结上下文判断。`repo_path` 只保存调用方明确选定的执行工作副本，不从项目仓库列表猜测；未指定时 M5 继承 Jarvis 当前工作目录。但 execution enrichment、ContextSnapshot v1 和部分 Structured Output 仍是严格结构。以 current 模块文档和代码为准。
 
 ## 目标
 
@@ -190,7 +190,7 @@ Task 保留：
 
 所有来源统一提供非 `null` 的 `source_payload`；执行提示词完整透传，不假设内部固定字段，也不人为生成占位计划。
 
-`repo_path` 是 Task 创建时从快照得到的一次性硬投影；运行时只校验该目录是否为 Git working copy，不反解析 background。
+`repo_path` 是可选的明确执行参数；运行时只校验已指定目录是否为 Git working copy，不反解析 background，也不从项目仓库列表增加默认值。
 
 TodoEvent / TaskEvent：
 

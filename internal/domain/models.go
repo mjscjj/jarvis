@@ -177,8 +177,8 @@ type Task struct {
 	// and isolated from Todo.context_snapshot.supplements.
 	ExecutionSupplements datatypes.JSON `gorm:"column:execution_supplements"`
 	ProjectID            *uint64        `gorm:"column:project_id;index:idx_task_project"`
-	// RepoPath is the hard execution projection captured when the Task is
-	// created. M5 must not decode Background to rediscover it.
+	// RepoPath is an explicitly selected execution working copy. When absent,
+	// M5 inherits the Jarvis server working directory and locates repos itself.
 	RepoPath  *string   `gorm:"column:repo_path"`
 	Version   int32     `gorm:"column:version;not null;default:0"`
 	CreatedAt time.Time `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`

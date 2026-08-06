@@ -74,6 +74,20 @@ printf '%s\n' 'diagnostic stderr' >&2
 	if strings.Contains(args, "--ephemeral") {
 		t.Fatalf("persisted Task run contains --ephemeral:\n%s", args)
 	}
+	if !strings.Contains(args, "--skip-git-repo-check") || strings.Contains(args, "--cd\n") {
+		t.Fatalf("Task without an explicit repo changed its working directory:\n%s", args)
+	}
+	inheritedCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get inherited cwd: %v", err)
+	}
+	inheritedCWD, err = filepath.EvalSymlinks(inheritedCWD)
+	if err != nil {
+		t.Fatalf("resolve inherited cwd: %v", err)
+	}
+	if got := strings.TrimSpace(readTestFile(t, cwdPath)); got != inheritedCWD {
+		t.Fatalf("Task cwd = %q, want inherited cwd %q", got, inheritedCWD)
+	}
 	if got := readTestFile(t, envPath); got != "123" {
 		t.Fatalf("JARVIS_TASK_ID = %q, want 123", got)
 	}

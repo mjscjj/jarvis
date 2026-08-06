@@ -49,24 +49,6 @@ func TestDecodeRejectsEmptyAndBadVersion(t *testing.T) {
 	}
 }
 
-func TestSnapshotRepoPathProjectsFirstConfiguredWorkingCopy(t *testing.T) {
-	snapshot := &Snapshot{Project: &Project{Repos: json.RawMessage(`[{"name":"jarvis","local_path":"  jarvis  "},{"local_path":"other"}]`)}}
-	path, err := snapshot.RepoPath()
-	if err != nil {
-		t.Fatalf("RepoPath() error = %v", err)
-	}
-	if path == nil || *path != "jarvis" {
-		t.Fatalf("RepoPath() = %v, want jarvis", path)
-	}
-}
-
-func TestSnapshotRepoPathRejectsMalformedRepositories(t *testing.T) {
-	snapshot := &Snapshot{Project: &Project{Repos: json.RawMessage(`{"local_path":"jarvis"}`)}}
-	if _, err := snapshot.RepoPath(); err == nil {
-		t.Fatal("RepoPath() accepted non-array project repos")
-	}
-}
-
 func TestResolutionEncodeValidation(t *testing.T) {
 	pid := uint64(45)
 	valid := Resolution{Method: MethodCodexCLI, ProjectID: &pid, Confidence: 0.8, Basis: "codex 查群公告确认"}
