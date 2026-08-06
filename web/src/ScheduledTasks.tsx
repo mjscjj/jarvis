@@ -28,6 +28,7 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from 
 import dayjs, { type Dayjs } from 'dayjs'
 import { createScheduledTask, deleteScheduledTask, listScheduledTasks, triggerScheduledTask, updateScheduledTask } from './api'
 import PageHeader from './components/PageHeader'
+import { usePageContext } from './pageContext'
 import type { ScheduledTask, ScheduledTaskInput, ScheduledTaskScheduleType, ScheduledTaskStatus } from './types'
 import './styles/clues-automation.css'
 
@@ -123,9 +124,12 @@ function lastRunText(task: ScheduledTask): string {
 }
 
 export default function ScheduledTasks() {
+  const { context, setViewState } = usePageContext()
+  const routeView: ScheduleView = context.view_state.view === 'wakeups' ? 'wakeups' : 'automations'
+  const routeStatus = context.view_state.status || ''
   const [items, setItems] = useState<ScheduledTask[]>([])
-  const [view, setView] = useState<ScheduleView>('automations')
-  const [status, setStatus] = useState('')
+  const [view, setView] = useState<ScheduleView>(routeView)
+  const [status, setStatus] = useState(routeStatus)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -133,6 +137,11 @@ export default function ScheduledTasks() {
   const [selected, setSelected] = useState<ScheduledTask | null>(null)
   const [form] = Form.useForm<FormValue>()
   const scheduleType = Form.useWatch('schedule_type', form)
+
+  useEffect(() => {
+    setView((current) => current === routeView ? current : routeView)
+    setStatus((current) => current === routeStatus ? current : routeStatus)
+  }, [routeStatus, routeView])
 
   const load = useCallback((signal?: AbortSignal) => {
     setLoading(true)
@@ -362,13 +371,17 @@ export default function ScheduledTasks() {
             onChange={(nextView) => {
               setView(nextView)
               setSelected(null)
+              setViewState({ view: nextView, status })
             }}
           />
           <Space>
             <Text type="secondary">状态</Text>
             <Select
               value={status}
-              onChange={setStatus}
+              onChange={(nextStatus) => {
+                setStatus(nextStatus)
+                setViewState({ view, status: nextStatus })
+              }}
               style={{ width: 130 }}
               options={[
                 { value: '', label: '全部状态' },
@@ -402,7 +415,18 @@ export default function ScheduledTasks() {
           pagination={{ pageSize: 15, showSizeChanger: false }}
           scroll={{ x: view === 'automations' ? 906 : 890 }}
           locale={{ emptyText: view === 'automations' ? '还没有自动化' : '当前没有等待唤醒的任务' }}
-          onRow={(task) => ({ onClick: () => setSelected(task), className: 'clickable-row' })}
+          onRow={(task) => ({
+            onClick: () => setSelected(task),
+            onKeyDown: (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                setSelected(task)
+              }
+            },
+            tabIndex: 0,
+            role: 'button',
+            className: 'clickable-row',
+          })}
         />
       </Card>
 
@@ -486,14 +510,17 @@ export default function ScheduledTasks() {
           <Form.Item name="instruction" label="到时后做什么" rules={[{ required: true, whitespace: true, message: '请输入任务指令' }]}>
             <Input.TextArea autoSize={{ minRows: 5, maxRows: 12 }} placeholder="描述每次到点后要交给 Jarvis 完成的事" />
           </Form.Item>
-          <Form.Item
-            name="context_snapshot"
-            label="上下文背景（JSON）"
-            extra="创建时冻结，每次触发都完整交给执行者。可放项目、人物、会话、链接和历史判断。"
-            rules={[{ required: true, whitespace: true, message: '请输入 JSON 对象，至少填写 {}' }]}
-          >
-            <Input.TextArea autoSize={{ minRows: 8, maxRows: 18 }} className="mono" />
-          </Form.Item>
+          <details className="automation-context-editor">
+            <summary>高级设置 · 冻结上下文</summary>
+            <Text type="secondary">系统会在每次触发时完整交给执行者。只有确实需要固定项目、人物、会话或历史判断时再修改。</Text>
+            <Form.Item
+              name="context_snapshot"
+              label="上下文背景（JSON）"
+              rules={[{ required: true, whitespace: true, message: '请输入 JSON 对象，至少填写 {}' }]}
+            >
+              <Input.TextArea autoSize={{ minRows: 6, maxRows: 16 }} className="mono" />
+            </Form.Item>
+          </details>
         </Form>
       </Modal>
     </div>

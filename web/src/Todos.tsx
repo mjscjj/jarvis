@@ -65,9 +65,21 @@ function formatDate(value: string | null): string {
 }
 
 export default function Todos({ refreshKey }: { refreshKey: number }) {
-  const { context, setSelection } = usePageContext()
-  const [scope, setScope] = useState<ClueScope>('actionable')
-  const [query, setQuery] = useState<TodoQuery>(initialQuery)
+  const { context, setSelection, setViewState } = usePageContext()
+  const routeScope = context.view_state.view in scopeStatuses ? context.view_state.view as ClueScope : 'actionable'
+  const routePage = Math.max(1, Number(context.view_state.page) || 1)
+  const routePageSize = [20, 50, 100].includes(Number(context.view_state.page_size)) ? Number(context.view_state.page_size) : 20
+  const routeActionType = context.view_state.action_type || undefined
+  const routeLeaderOnly = context.view_state.leader_only === 'true'
+  const [scope, setScope] = useState<ClueScope>(routeScope)
+  const [query, setQuery] = useState<TodoQuery>({
+    ...initialQuery,
+    statuses: scopeStatuses[routeScope],
+    actionType: routeActionType,
+    leaderOnly: routeLeaderOnly,
+    page: routePage,
+    pageSize: routePageSize,
+  })
   const [items, setItems] = useState<Todo[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -79,6 +91,37 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
   const routedTodoID = context.active_key === 'todos' && context.selection?.kind === 'todo'
     ? context.selection.id
     : null
+
+  const updateRoute = useCallback((nextScope: ClueScope, nextQuery: TodoQuery) => {
+    setViewState({
+      view: nextScope,
+      action_type: nextQuery.actionType,
+      leader_only: nextQuery.leaderOnly || undefined,
+      page: nextQuery.page,
+      page_size: nextQuery.pageSize === 20 ? undefined : nextQuery.pageSize,
+    })
+  }, [setViewState])
+
+  useEffect(() => {
+    setScope((current) => current === routeScope ? current : routeScope)
+    setQuery((current) => {
+      if (
+        current.statuses === scopeStatuses[routeScope]
+        && current.actionType === routeActionType
+        && current.leaderOnly === routeLeaderOnly
+        && current.page === routePage
+        && current.pageSize === routePageSize
+      ) return current
+      return {
+        ...current,
+        statuses: scopeStatuses[routeScope],
+        actionType: routeActionType,
+        leaderOnly: routeLeaderOnly,
+        page: routePage,
+        pageSize: routePageSize,
+      }
+    })
+  }, [routeActionType, routeLeaderOnly, routePage, routePageSize, routeScope])
 
   useEffect(() => {
     if (routedTodoID === null) {
@@ -251,8 +294,10 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
             disabled={savingStatusID !== undefined}
             options={scopeOptions}
             onChange={(nextScope) => {
+              const nextQuery = { ...query, statuses: scopeStatuses[nextScope], page: 1 }
               setScope(nextScope)
-              setQuery((current) => ({ ...current, statuses: scopeStatuses[nextScope], page: 1 }))
+              setQuery(nextQuery)
+              updateRoute(nextScope, nextQuery)
             }}
           />
           <Text type="secondary" className="scope-help">
@@ -267,13 +312,21 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
               value={query.actionType}
               placeholder="全部类型"
               options={Object.entries(actionLabels).map(([value, label]) => ({ value, label }))}
-              onChange={(actionType) => setQuery((current) => ({ ...current, actionType, page: 1 }))}
+              onChange={(actionType) => {
+                const nextQuery = { ...query, actionType, page: 1 }
+                setQuery(nextQuery)
+                updateRoute(scope, nextQuery)
+              }}
             />
           </label>
           <label className="switch-field">
             <Switch
               checked={query.leaderOnly}
-              onChange={(leaderOnly) => setQuery((current) => ({ ...current, leaderOnly, page: 1 }))}
+              onChange={(leaderOnly) => {
+                const nextQuery = { ...query, leaderOnly, page: 1 }
+                setQuery(nextQuery)
+                updateRoute(scope, nextQuery)
+              }}
             />
             <Text>仅看 Leader 交办</Text>
           </label>
@@ -303,14 +356,29 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
           dataSource={items}
           loading={loading}
           scroll={{ x: 790 }}
-          onRow={(todo) => ({ onClick: () => openTodo(todo), className: 'clickable-row' })}
+          onRow={(todo) => ({
+            onClick: () => openTodo(todo),
+            onKeyDown: (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                openTodo(todo)
+              }
+            },
+            tabIndex: 0,
+            role: 'button',
+            className: 'clickable-row',
+          })}
           pagination={{
             current: query.page,
             pageSize: query.pageSize,
             total,
             showSizeChanger: true,
             pageSizeOptions: [20, 50, 100],
-            onChange: (page, pageSize) => setQuery((current) => ({ ...current, page, pageSize })),
+            onChange: (page, pageSize) => {
+              const nextQuery = { ...query, page, pageSize }
+              setQuery(nextQuery)
+              updateRoute(scope, nextQuery)
+            },
           }}
         />
       </Card>

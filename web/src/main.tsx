@@ -11,7 +11,7 @@ createRoot(document.getElementById('root')!).render(
       locale={zhCN}
       theme={{
         token: {
-          colorPrimary: '#15803d',
+          colorPrimary: '#287a4b',
           colorInfo: '#3b6fd4',
           colorSuccess: '#16a34a',
           colorWarning: '#b45309',
@@ -40,10 +40,10 @@ createRoot(document.getElementById('root')!).render(
           },
           Menu: {
             itemBg: 'transparent',
-            itemSelectedBg: '#e9f5ee',
-            itemSelectedColor: '#15803d',
+            itemSelectedBg: '#e8f3ec',
+            itemSelectedColor: '#287a4b',
             itemColor: '#5b6470',
-            itemHoverColor: '#15803d',
+            itemHoverColor: '#287a4b',
             itemHoverBg: '#f2f3f5',
             itemHeight: 38,
           },
@@ -64,7 +64,7 @@ createRoot(document.getElementById('root')!).render(
           },
           Segmented: {
             borderRadius: 8,
-            itemSelectedColor: '#15803d',
+            itemSelectedColor: '#287a4b',
           },
         },
       }}

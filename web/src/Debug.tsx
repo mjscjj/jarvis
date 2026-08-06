@@ -16,6 +16,7 @@ import {
 } from './api'
 import { agentModeLabels, agentSourceMeta } from './agentProcesses'
 import PageHeader from './components/PageHeader'
+import { usePageContext } from './pageContext'
 import type { AgentProcess, AgentProcessSnapshot, FailureEvent, LogTail, ModuleRun, ProactiveRun, ProactiveRunDetail, ScanRow, WatermarkRow } from './types'
 
 const { Text, Paragraph } = Typography
@@ -162,17 +163,25 @@ const failureColumns: TableColumnsType<FailureEvent> = [
 
 function FailuresTab() {
   const { data, loading, error, refresh } = useDebugResource<{ items: FailureEvent[] }>((signal) => getDebugFailures(24, signal))
+  const [scope, setScope] = useState<'open' | 'all'>('open')
   const rows = data?.items ?? []
   const stillOpen = rows.filter((r) => !r.recovered)
+  const displayedRows = scope === 'open' ? stillOpen : rows
   const occurrences = rows.reduce((total, row) => total + row.count, 0)
   const openOccurrences = stillOpen.reduce((total, row) => total + row.count, 0)
   const healedOccurrences = occurrences - openOccurrences
 
   return (
     <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-      <Space>
+      <Space wrap>
         <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
-        <Text type="secondary">近 24 小时 cron 与 M3/M5 运行错误，按 chat、Todo、Task 或 job 判断同范围恢复。</Text>
+        <Segmented
+          size="small"
+          value={scope}
+          onChange={(value) => setScope(value as 'open' | 'all')}
+          options={[{ label: `仍需关注 ${stillOpen.length}`, value: 'open' }, { label: `全部 ${rows.length}`, value: 'all' }]}
+        />
+        <Text type="secondary">默认只展示仍未恢复的问题；展开后可查看完整原始记录。</Text>
       </Space>
       {error && <Alert type="error" showIcon title="报错时间线加载失败" description={error} />}
       {!error && rows.length === 0 && (
@@ -185,8 +194,8 @@ function FailuresTab() {
         />
       )}
       <Table<FailureEvent>
-        rowKey={(r) => r.logid || `${r.time}-${r.module}-${r.scope_id}-${r.error}`} size="small" columns={failureColumns} dataSource={rows} loading={loading}
-        pagination={false}
+        rowKey={(r) => r.logid || `${r.time}-${r.module}-${r.scope_id}-${r.error}`} size="small" columns={failureColumns} dataSource={displayedRows} loading={loading}
+        pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: displayedRows.length <= 20 }}
         expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开原始日志行" />, rowExpandable: () => true }}
         scroll={{ x: 1350 }}
         locale={{ emptyText: <Empty description="近 24 小时无运行错误" /> }}
@@ -292,7 +301,7 @@ function AgentProcessesTab() {
         columns={agentColumns}
         dataSource={agentRows}
         loading={loading && data === undefined}
-        pagination={false}
+        pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: agentRows.length <= 20 }}
         expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开进程信息" />, rowExpandable: () => true }}
         scroll={{ x: 1080 }}
         locale={{ emptyText: <Empty description="当前没有 Codex 或 Trae 运行时" /> }}
@@ -320,7 +329,7 @@ function WatermarksTab() {
       {error && <Alert type="error" showIcon title="水位加载失败" description={error} />}
       <Table<WatermarkRow>
         rowKey="chat_id" size="small" columns={watermarkColumns} dataSource={data?.items ?? []} loading={loading}
-        pagination={false} scroll={{ x: 900 }}
+        pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: (data?.items.length ?? 0) <= 20 }} scroll={{ x: 900 }}
       />
     </Space>
   )
@@ -534,20 +543,41 @@ function TriggerTab() {
 }
 
 export default function Debug() {
+  const { context, setViewState } = usePageContext()
+  type DebugView = 'health' | 'agents' | 'failures' | 'logs' | 'tools'
+  const routeView = context.view_state.view
+  const activeView: DebugView = routeView === 'agents' || routeView === 'failures' || routeView === 'logs' || routeView === 'tools'
+    ? routeView
+    : 'health'
+
   return (
     <>
       <PageHeader title="运行状态" subtitle="实时 Agent、模块与采集运行、主动巡视输入输出、报错时间线、抽取水位与运行日志" />
       <Card variant="borderless">
       <Tabs
-        defaultActiveKey="failures"
+        activeKey={activeView}
+        onChange={(view) => setViewState({ view })}
+        destroyOnHidden
         items={[
-          { key: 'trigger', label: '手动触发', children: <TriggerTab /> },
-          { key: 'runtime', label: '模块运行', children: <RuntimeTab /> },
+          { key: 'health', label: '健康', children: <RuntimeTab /> },
           { key: 'agents', label: '实时 Agent', children: <AgentProcessesTab /> },
-          { key: 'proactive-runs', label: '主动巡视', children: <ProactiveRunsTab /> },
-          { key: 'failures', label: '报错时间线', children: <FailuresTab /> },
-          { key: 'watermarks', label: '抽取水位', children: <WatermarksTab /> },
+          { key: 'failures', label: '异常', children: <FailuresTab /> },
           { key: 'logs', label: '运行日志', children: <LogsTab /> },
+          {
+            key: 'tools',
+            label: '高级工具',
+            children: (
+              <Tabs
+                size="small"
+                destroyOnHidden
+                items={[
+                  { key: 'trigger', label: '手动触发', children: <TriggerTab /> },
+                  { key: 'proactive-runs', label: '主动巡视', children: <ProactiveRunsTab /> },
+                  { key: 'watermarks', label: '抽取水位', children: <WatermarksTab /> },
+                ]}
+              />
+            ),
+          },
         ]}
       />
       </Card>

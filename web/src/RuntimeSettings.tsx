@@ -204,6 +204,7 @@ export default function RuntimeSettings() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
   const [success, setSuccess] = useState<string>()
+  const [dirty, setDirty] = useState(false)
   const [restartRequired, setRestartRequired] = useState(false)
   const [overridePath, setOverridePath] = useState('')
   const [liveSettings, setLiveSettings] = useState<RuntimeSettingsInput>()
@@ -220,6 +221,7 @@ export default function RuntimeSettings() {
         setOverridePath(view.override_path)
         setError(undefined)
         setSuccess(undefined)
+        setDirty(false)
       })
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
@@ -247,6 +249,7 @@ export default function RuntimeSettings() {
       setOverridePath(view.override_path)
       setError(undefined)
       setSuccess('运行配置已保存')
+      setDirty(false)
     } catch (cause: unknown) {
       setSuccess(undefined)
       setError(errorText(cause))
@@ -464,7 +467,7 @@ export default function RuntimeSettings() {
         </div>
         <Space size={8}>
           <Button onClick={reload} disabled={saving}>重读</Button>
-          <Button type="primary" onClick={save} loading={saving}>保存配置</Button>
+          <Button type="primary" onClick={save} loading={saving} disabled={!dirty}>保存配置</Button>
         </Space>
       </Flex>
 
@@ -529,10 +532,22 @@ export default function RuntimeSettings() {
         size="small"
         onValuesChange={() => {
           setLiveSettings(form.getFieldsValue(true) as RuntimeSettingsInput)
+          setDirty(true)
+          setSuccess(undefined)
         }}
       >
         <Collapse size="small" defaultActiveKey={['common']} items={panels} />
       </Form>
+
+      {dirty && (
+        <div className="runtime-settings-actions" role="status" aria-live="polite">
+          <Text strong>有未保存的运行配置</Text>
+          <Space size={8}>
+            <Button onClick={reload} disabled={saving}>放弃修改</Button>
+            <Button type="primary" onClick={save} loading={saving}>保存配置</Button>
+          </Space>
+        </div>
+      )}
     </div>
   )
 }

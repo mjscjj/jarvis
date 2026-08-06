@@ -16,8 +16,8 @@ interface ChatMessage {
 const PAGE_LABELS: Record<string, string> = {
   today: '今日',
   overview: '今日',
-  workbench: '工作台',
-  tasks: '工作台',
+  workbench: '任务',
+  tasks: '任务',
   review: '回顾',
   progress: '回顾',
   memory: '记忆',
@@ -26,8 +26,8 @@ const PAGE_LABELS: Record<string, string> = {
   'scheduled-tasks': '自动化',
   clues: '线索',
   todos: '线索',
-  management: '管理',
-  settings: '管理',
+  management: '系统设置',
+  settings: '系统设置',
   debug: '运行诊断',
   'system-tasks': '系统任务',
 }
@@ -48,7 +48,7 @@ const PAGE_SUGGESTIONS: Record<string, string[]> = {
   memory: ['Jarvis 目前是怎么理解我的工作的？', '检查项目背景有没有过时信息', '帮我找到某个项目的关键上下文'],
   automation: ['哪些自动化即将运行？', '检查自动化之间是否有冲突', '帮我设计一个新的自动化'],
   clues: ['最近出现了哪些重要线索？', '哪些线索还在等待更多证据？', '帮我解释线索到任务的转换'],
-  management: ['检查 Jarvis 当前的关键配置', '有哪些系统异常会影响任务？', '帮我定位最近的运行问题'],
+  system: ['检查 Jarvis 当前的关键配置', '有哪些系统异常会影响任务？', '帮我定位最近的运行问题'],
 }
 
 function errorText(cause: unknown): string {
@@ -60,8 +60,8 @@ function pageLabel(activeKey: string): string {
 }
 
 function pageGroup(activeKey: string): string {
+  if (['management', 'settings', 'debug', 'system-tasks'].includes(activeKey)) return 'system'
   const label = pageLabel(activeKey)
-  if (label === '运行诊断' || label === '系统任务') return 'management'
   return Object.keys(PAGE_SUGGESTIONS).find((key) => pageLabel(key) === label) ?? 'today'
 }
 

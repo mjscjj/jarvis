@@ -394,6 +394,11 @@ body {
   background: var(--color-bg-soft) !important;
 }
 
+.clickable-row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
 /* 任务列表等：单元格最多 3 行，避免摘要把整行撑得很高；悬停看 title 全文 */
 .table-cell-clamp {
   display: -webkit-box;
@@ -1846,6 +1851,36 @@ pre {
 .runtime-settings-inline-note {
   margin: 6px 0 8px;
   padding-block: 6px;
+}
+
+.runtime-settings-actions {
+  position: sticky;
+  z-index: 5;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(10px);
+}
+
+@media (max-width: 680px) {
+  .runtime-settings-actions {
+    bottom: calc(var(--mobile-nav-height) + 10px);
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .runtime-settings-actions .ant-space,
+  .runtime-settings-actions .ant-btn {
+    width: 100%;
+  }
 }
 
 /* System task configuration and log-backed execution history. */

@@ -13,9 +13,10 @@ export interface StatusMeta {
 const C = {
   default: '#6b7280',
   info: '#3b6fd4',
-  processing: '#b45309',
-  warning: '#c2620b',
-  success: '#16a34a',
+  processing: '#287a4b',
+  waiting: '#5666a6',
+  warning: '#b66a1b',
+  success: '#287a4b',
   error: '#dc2626',
   leader: '#7c3aed',
 } as const
@@ -28,11 +29,11 @@ export const todoStatusMeta: Record<TodoStatus, StatusMeta> = {
 
 export const taskStatusMeta: Record<TaskStatus, StatusMeta> = {
   pending: { label: '待执行', color: C.info },
-  executing: { label: '执行中', color: C.processing },
-  waiting: { label: '等待唤醒', color: C.warning },
-  needs_human: { label: '待我处理', color: C.warning },
-  awaiting_approval: { label: '待审批', color: C.warning },
-  done: { label: '已完成', color: C.success },
+  executing: { label: 'Jarvis 执行中', color: C.processing },
+  waiting: { label: '等待外部', color: C.waiting },
+  needs_human: { label: '待我回复', color: C.warning },
+  awaiting_approval: { label: '待我审批', color: C.warning },
+  done: { label: '已交付', color: C.success },
   failed: { label: '失败', color: C.error },
   observing: { label: '无需动手', color: C.default },
 }

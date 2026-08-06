@@ -13,11 +13,11 @@
   --color-bg-code: #f6f7f9;     /* 内联 JSON/代码浅底 */
 
   /* --- Accent (克制的绿) --- */
-  --color-primary: #15803d;
-  --color-primary-hover: #166534;
-  --color-primary-active: #14532d;
-  --color-primary-light: #e9f5ee; /* 选中态浅底 */
-  --color-primary-bg: #e9f5ee;
+  --color-primary: #287a4b;
+  --color-primary-hover: #20673f;
+  --color-primary-active: #185533;
+  --color-primary-light: #e8f3ec; /* 选中态浅底 */
+  --color-primary-bg: #e8f3ec;
 
   /* --- Text --- */
   --color-text: #101418;         /* 主文本，近黑但不死黑 */
@@ -45,9 +45,10 @@
   /* --- Status colors (semantic, 低饱和统一入口) --- */
   --status-default: #6b7280;   /* 灰 */
   --status-info: #3b6fd4;      /* 蓝：待处理/待生成任务 */
-  --status-processing: #b45309;/* 琥珀：进行中 */
-  --status-warning: #c2620b;   /* 橙：待补/待审批 */
-  --status-success: #16a34a;   /* 绿：已生成任务/完成 */
+  --status-processing: #287a4b;/* 绿：Jarvis 执行中 */
+  --status-waiting: #5666a6;   /* 靛蓝：等待外部 */
+  --status-warning: #b66a1b;   /* 橙：待我处理/审批 */
+  --status-success: #287a4b;   /* 绿：已生成任务/完成 */
   --status-error: #dc2626;     /* 红：失败/过期 */
 
   /* --- Spacing --- */

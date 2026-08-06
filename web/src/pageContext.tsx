@@ -71,7 +71,7 @@ function writePageHash(
   const next = `#${path}${query ? `?${query}` : ''}`
   if (window.location.hash === next) return
   if (replace) window.history.replaceState(null, '', next)
-  else window.location.hash = path
+  else window.location.hash = next.slice(1)
 }
 
 function pageKeyForSelection(selection: PageSelection, fallbackKey: string): string {

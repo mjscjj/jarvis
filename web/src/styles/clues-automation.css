@@ -116,6 +116,25 @@
   word-break: break-word;
 }
 
+.automation-context-editor {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+}
+
+.automation-context-editor > summary {
+  margin-bottom: var(--space-2);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.automation-context-editor .ant-form-item {
+  margin-top: var(--space-3);
+  margin-bottom: 0;
+}
+
 @media (max-width: 1100px) {
   .clue-scope-row {
     align-items: flex-start;
