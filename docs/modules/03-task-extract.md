@@ -1,11 +1,11 @@
-# M3 Todo 提取模块
+# M3 Task 准入模块
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-08-06
 > Code source: `internal/extract/`, `internal/contextsnap/`
 
-M3 把新证据和工作背景转成 Todo。它只创建/更新 Todo，不创建 Task、不执行外部写操作、不手工写长期 Fact。
+M3 把新证据和工作背景转成经过准入判断的 Todo。它回答“这条线索是否值得启动一次 M5”，只创建/更新 Todo，不创建 Task、不执行外部写操作、不手工写长期 Fact，也不替 M5 制定方案或完成调查。
 
 ## 1. 输入与输出
 
@@ -30,7 +30,7 @@ M3 状态只有：
 
 ## 2. Candidate 契约
 
-Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`title`、`target`、`project_hint`、source message/quote，以及一段不解析的 `payload`。最终结果、当前状态、阻塞、背景、待决问题、交办人、期限、承诺强度和推断都由模型在 payload 中自然表达，Go 不再逐字段投影。
+Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`title`、`target`、`project_hint`、source message/quote，以及一段不解析的 `payload`。payload 是准入简报：自然表达与 principal 的相关性、未闭环状态、当前责任、已核验证据、status 依据和剩余不确定性。执行计划、候选方案、具体副作用、审批和最终完成标准由 M5 调查决定，Go 不逐字段投影。
 
 `action_type` 是开放的 snake_case 字符串；代码不维护封闭业务枚举。完整协议以 `internal/extract/candidate.go` 和 `internal/extract/provider/schema.go` 为准。
 
@@ -42,7 +42,7 @@ Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`
 
 1. Group 已绑定 Project 时直接使用；
 2. 否则用 `project_hint` 对 code/name 精确匹配；
-3. 仍无法确定则记录 unresolved resolution trace，模型可继续用工具调查。
+3. 一次短查询仍无法确定则记录 unresolved resolution trace，交给 M5 在确有需要时继续调查。
 
 冻结快照包含 principal、group、project、由证据发送者机械推导的 assigner、引用消息、会话上下文、参与人、资源、open Todos、其他项目和 Facts。`extraction_result` 保留完整 Candidate，`resolution` 保留项目/仓库推算轨迹。
 
@@ -67,7 +67,7 @@ Todo、事件、水位和去重向量在同一落库流程中协调；关键步�
 | `extract.fact_limit` | 默认注入的已有 Fact 上限 |
 | `extract.semantic_*` | Qdrant Todo 去重配置 |
 
-稳定行为正文在 `conf/prompts/m3-system-prompt.md`；运行时组装在 `internal/extract/prompt.go`；工具说明来自 `internal/toolcatalog`。
+稳定行为正文在 `conf/prompts/m3-system-prompt.md`；运行时组装在 `internal/extract/prompt.go`；工具说明来自 `internal/toolcatalog`。M3 的工具查询只服务四个准入问题：相关性、未闭环状态、责任归属和完成/重复检查；证据足够后立即停止。
 
 M2 新消息实时唤醒 M3；`extract.schedule` 只做持久化补偿。
 

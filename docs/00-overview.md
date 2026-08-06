@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative architecture
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-08-06
 
 本文只描述当前实现的稳定边界，不复制字段级 DDL、完整路由或本机运行值。文档入口与提案/历史分类见 [docs/README.md](README.md)。
 
@@ -80,20 +80,22 @@ M2 保存原文、来源、外部幂等键和资源引用，成功后唤醒 M3�
 
 Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。M2 按 `scan_schedule` 增量轮询已关联会话并按飞书 `message_id` 幂等落库，外部实时事件若要进入流水线只能由 CC Connect 经明确的本机 fan-out 接口转发，不能恢复第二条同 app 长连接。资源链路只稳定采集引用元数据；通用下载、正文回填和内容哈希复用尚未形成完整生产链路。
 
-### 3.2 M3：线索抽取与快照
+### 3.2 M3：Task 准入与快照
 
-M3 默认使用 Agent CLI，可用工具补查项目、人物、群、代码和飞书证据；model API 是备用引擎。它负责：
+M3 默认使用 Agent CLI，model API 是可选引擎。它只调查到足以决定是否值得启动一次 M5：判断线索与 principal 的相关性、是否存在未闭环结果、是否需要 principal/Jarvis 介入，以及是否已经完成或重复。它负责：
 
-- 判断新证据是否形成或更新 Todo；
+- 判断新证据是否形成或更新 Todo，以及应为 `extracted` 还是 `observing`；
 - 校验 source message / quote；
 - 精确、向量和模型辅助去重；
-- 推算项目归属和仓库提示，保存 `resolution`；
+- 在群绑定、原文或短查询能够确认时推算项目归属和仓库提示，保存 `resolution`；
 - 冻结 `context_snapshot` 和完整 `extraction_result`。
 
 M3 可以产出：
 
 - `extracted`：存在需要交给 M5 执行 Agent 调查和判断的动作线索；
 - `observing`：值得保留，但当前不需要任何人行动。
+
+M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归属，但证据足够作出准入结论后立即停止。它不制定执行方案、不选择具体副作用、不判断审批，也不为丰富 payload 展开代码、commit、MR 或长文档调查。`payload` 是开放的准入简报，只说明相关性、未闭环状态、责任、已核验证据、准入依据和不确定性。
 
 `context_snapshot` 是审计快照，不是实时世界状态。M5 首轮只拿项目、群、交办人和引用消息 ID 等小投影；需要创建时细节再查询这份冻结快照，需要新事实则调用工具，不在下游重拼一份替代快照。
 
@@ -105,7 +107,7 @@ Task 只用一个宽松 `source_payload` 保存来源交来的完整原始语义
 
 ### 3.4 M5 执行：调查、动作与恢复
 
-Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执行 Agent 读取完整来源证据、冻结背景的小投影、人工 supplements 和最近运行记录；缺细节时再查询完整冻结背景。上游内容是线索，不是不可修改的最终计划。
+Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执行 Agent 读取完整来源证据、冻结背景的小投影、人工 supplements 和最近运行记录；缺细节时再查询完整冻结背景。Todo 来源已经经过 M3 准入，M5 不从头重复泛化价值筛选；它先核验线索是否因新事实完成、失效或重复，准入仍成立时直接调查真实目标并执行。上游内容是线索，不是不可修改的最终计划。
 
 执行 outcome 与状态映射：
 

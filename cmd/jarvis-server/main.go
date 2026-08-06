@@ -496,10 +496,10 @@ func main() {
 		if err != nil {
 			fatalf("initialize extraction tool box builder failed: %v", err)
 		}
-		// Engine selection: codex is a full agent that self-runs CLIs to infer
-		// project/repo (danger-full-access + network + low reasoning); kimi is the
-		// legacy function-calling loop kept as fallback. The deduplicator always
-		// uses modelClient (kimi) for its SameAction adjudication regardless.
+		// Engine selection: codex self-runs CLIs only to collect the decisive facts
+		// needed for Task admission (danger-full-access + network + low reasoning);
+		// the model API is the alternate function-calling engine. The deduplicator
+		// always uses modelClient for SameAction adjudication regardless.
 		var extractionEngine extract.ToolExtractor = modelClient
 		extractionModelName := cfg.Model.Model
 		agentToolCatalog := false

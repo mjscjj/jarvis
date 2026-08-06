@@ -12,16 +12,14 @@ func TodoExtractionJSONSchema() map[string]any {
 			"action_type": map[string]any{
 				"type":        "string",
 				"pattern":     "^[a-z][a-z0-9_]*$",
-				"description": "线索的动作类型，小写蛇形标识符。优先用常见类型：code_change/summary_post/investigate/schedule_meeting/reply_message/doc_write/manual_followup；确实不属于任何一类时用 other 或自拟一个贴切的标识符，不要为凑类型扭曲本意。",
+				"description": "线索性质和展示提示，不是 M5 的执行路线。使用小写蛇形标识符；优先用常见类型：code_change/summary_post/investigate/schedule_meeting/reply_message/doc_write/manual_followup，确实不属于时用 other 或自拟贴切标识符。",
 			},
 			"status": map[string]any{
 				"type": "string",
 				"enum": []string{"extracted", "observing"},
-				"description": "这条线索是否需要行动。extracted：需要采取动作，将机械物化为 Task 并交给 M5 调查、决策和执行。" +
-					"observing：值得记住但不需要任何人动手——群里达成的结论或口径、别人陈述的现状、" +
-					"别人负责并会自己推进的事、你查证时顺带发现的背景和约束，都属于这类。" +
-					"拿不准时先问「不做会不会有事情落空」：不会就写 observing。" +
-					"observing 的线索照样完整填写其余字段并附证据，它不会消失，只是不会有人去执行。",
+				"description": "Task 准入结论。extracted：存在需要 Principal 或 Jarvis 介入的未闭环结果，值得启动 M5；" +
+					"observing：值得记住，但当前没有需要 Principal 或 Jarvis 推进的缺口。" +
+					"价值、责任或实现方式仍有不确定性不妨碍 extracted，但必须有可信的未闭环事项；只是可能有用不能准入。",
 			},
 			"title": map[string]any{"type": "string", "description": "一句话说清这件事，用于展示。"},
 			"target": map[string]any{
@@ -39,7 +37,7 @@ func TodoExtractionJSONSchema() map[string]any {
 			},
 			"payload": map[string]any{
 				"type":        "string",
-				"description": "完整语义正文，自然语言或 JSON 文本均可，程序不解析并原样交给 M5。至少写清最终要达成的现实结果、当前状态与阻塞、已补全的上下文、仍需 principal 决定的点；交办人、期限、承诺强度、推断依据、候选路径等按实际情况自由表达，不要为了字段结构拆散语义。",
+				"description": "开放的准入简报，自然语言或 JSON 文本均可，程序不解析并原样交给 M5。写清为什么与 Principal 有关、哪里尚未闭环、当前责任人、已核验事实、status 依据和剩余不确定性；不要写执行计划、候选方案、具体副作用或伪造的最终完成标准。",
 			},
 		},
 		"required": []string{
@@ -54,7 +52,7 @@ func TodoExtractionJSONSchema() map[string]any {
 			"candidates": map[string]any{
 				"type":        "array",
 				"items":       candidate,
-				"description": "这批消息里所有值得留下的线索，无论要不要动手：要动手的写 status=extracted，只值得记住的写 status=observing。",
+				"description": "这批消息里通过 Task 准入判断、值得留下的线索：需要 Principal/Jarvis 介入的写 extracted，只值得记住的写 observing；闲聊、无新增事实和完全无关内容不输出。",
 			},
 		},
 		"required": []string{"candidates"},

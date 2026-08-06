@@ -1,10 +1,12 @@
 // Package codexengine is the M3 extraction engine backed by the codex CLI.
 //
-// Unlike the kimi engine (an application-level function-calling loop), codex is
-// a full agent: it self-runs shell (jarvis-tools/lark-cli/bytedcli/git) inside
-// its own process to infer project/repo/person before emitting the result. We
-// therefore do NOT implement a Go tool loop here — we send one prompt and read
-// one structured JSON response (codex enforces --output-schema).
+// Unlike the model API engine (an application-level function-calling loop),
+// codex self-runs shell (jarvis-tools/lark-cli/bytedcli/git) inside its own
+// process to collect decisive Task-admission facts before emitting the result.
+// It must stop once it can admit, observe, or drop the clue; execution planning
+// remains M5's job. We therefore do NOT implement a Go tool loop here — we send
+// one prompt and read one structured JSON response (codex enforces
+// --output-schema).
 //
 // This engine implements the same method the worker calls on the kimi client
 // (ExtractWithTools) so it drops into extract.NewWorker unchanged. The ToolBox
@@ -29,9 +31,10 @@ import (
 
 const maxCodexOutputBytes = 1 << 20
 
-// Options configures the codex extraction engine. Sandbox/Network/ReasoningEffort
-// come from config (docs/design-context-pipeline.md §3); in the local trusted
-// environment sandbox is danger-full-access with network on.
+// Options configures the codex admission engine. Sandbox/Network/ReasoningEffort
+// come from config; in the local trusted environment sandbox is
+// danger-full-access with network on, while the prompt owns the no-write M3
+// boundary.
 type Options struct {
 	Bin             string
 	Model           string

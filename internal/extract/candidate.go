@@ -68,9 +68,11 @@ func IsValidActionType(value string) bool {
 	return actionTypeIdentifier.MatchString(strings.TrimSpace(value))
 }
 
-// Candidate is the small machine-consumed envelope between M3 and downstream.
-// All model semantics live in Payload and are carried verbatim; Go only consumes
-// the fields needed for routing, deduplication, project resolution and evidence.
+// Candidate is the small machine-consumed admission envelope between M3 and
+// downstream. M3 decides only whether a clue deserves M5 execution; all open
+// admission semantics live in Payload and are carried verbatim. Go consumes
+// only the fields needed for materialization, deduplication, project resolution
+// and evidence validation.
 type Candidate struct {
 	ActionType string `json:"action_type"`
 	// Status is the only control value M3 writes directly, and it is projected

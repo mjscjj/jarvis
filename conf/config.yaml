@@ -102,7 +102,7 @@ card_approval:
 codex:
   bin: "traex"
   model: "DeepSeek-V4-Flash"
-  timeout_seconds: 600   # M3 抽取会多轮自跑 lark-cli/bytedcli/git/jarvis-tools 补全背景，放宽超时
+  timeout_seconds: 600   # M3 可自跑只读工具补足准入证据；达到准入结论后立即停止
 
 # 主动巡视 Agent：启动 2 分钟后先跑一次，之后每小时读取世界模型、复盘未完成工作。
 # factengine 以持续建模为主；巡视可顺手维护明确变化，外部动作仍创建 Task 交给强 M5。
