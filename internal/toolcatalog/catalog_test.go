@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestEveryStageExposesTheSameJarvisToolPrinciplesAndCapabilities(t *testing.T) {
+func TestEveryStageExposesTheSameReadCapabilities(t *testing.T) {
 	t.Parallel()
 	for _, stage := range []string{StageExtract, StageExecute, StageChat, StageFactEngine} {
 		block, err := Block(stage)
@@ -15,11 +15,43 @@ func TestEveryStageExposesTheSameJarvisToolPrinciplesAndCapabilities(t *testing.
 		for _, required := range []string{
 			"简单优先", "渐进式加载", "同一套工具能力", "不按阶段隐藏工具",
 			"query-messages", "query-captured-resources", "get-captured-resource",
-			"list-facts", "list-relations", "yield-until", "追加共享记忆", "修改 Todo 状态",
+			"list-facts", "list-relations", "yield-until",
 		} {
 			if !strings.Contains(block, required) {
 				t.Fatalf("Block(%q) missing %q:\n%s", stage, required, block)
 			}
+		}
+	}
+}
+
+func TestExtractStageStopsAtTaskAdmissionAndForbidsWrites(t *testing.T) {
+	block, err := Block(StageExtract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"Task 准入", "最短证据链", "证据足够选择 extracted、observing 或不输出时立即停止",
+		"不制定执行方案", "不执行外部写", "不创建或推进 Task", "不修改 Todo",
+	} {
+		if !strings.Contains(block, required) {
+			t.Fatalf("extract block missing %q:\n%s", required, block)
+		}
+	}
+	for _, forbidden := range []string{"主动组合多个工具", "顺藤摸瓜多跳查询", "追加共享记忆、记录事实或修改 Todo 状态"} {
+		if strings.Contains(block, forbidden) {
+			t.Fatalf("extract block contains execution-stage guidance %q:\n%s", forbidden, block)
+		}
+	}
+}
+
+func TestExecuteStageRetainsDeepInvestigationAndAllowedMutations(t *testing.T) {
+	block, err := Block(StageExecute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"主动组合多个工具", "顺藤摸瓜多跳查询", "追加共享记忆", "修改 Todo 状态"} {
+		if !strings.Contains(block, required) {
+			t.Fatalf("execute block missing %q:\n%s", required, block)
 		}
 	}
 }

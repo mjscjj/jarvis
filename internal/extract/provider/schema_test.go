@@ -1,6 +1,9 @@
 package provider
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTodoExtractionJSONSchemaIsStrict(t *testing.T) {
 	schema := TodoExtractionJSONSchema()
@@ -26,5 +29,28 @@ func TestTodoExtractionJSONSchemaIsStrict(t *testing.T) {
 	}
 	if _, ok := candidate["properties"].(map[string]any)["open_questions"]; ok {
 		t.Fatal("candidate schema still exposes semantic projection open_questions")
+	}
+}
+
+func TestTodoExtractionJSONSchemaDescribesAdmissionNotExecutionPlan(t *testing.T) {
+	properties := TodoExtractionJSONSchema()["properties"].(map[string]any)
+	candidate := properties["candidates"].(map[string]any)["items"].(map[string]any)
+	fields := candidate["properties"].(map[string]any)
+	status := fields["status"].(map[string]any)["description"].(string)
+	payload := fields["payload"].(map[string]any)["description"].(string)
+	for _, want := range []string{"Task 准入结论", "未闭环结果", "只是可能有用不能准入"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("status description missing %q: %s", want, status)
+		}
+	}
+	for _, want := range []string{"开放的准入简报", "当前责任人", "不要写执行计划"} {
+		if !strings.Contains(payload, want) {
+			t.Fatalf("payload description missing %q: %s", want, payload)
+		}
+	}
+	for _, forbidden := range []string{"候选路径", "最终要达成的现实结果"} {
+		if strings.Contains(payload, forbidden) {
+			t.Fatalf("payload description still contains execution-stage requirement %q: %s", forbidden, payload)
+		}
 	}
 }

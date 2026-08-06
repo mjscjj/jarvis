@@ -120,3 +120,27 @@ func TestRepositoryFeishuApprovalCardKeepsDecisionActionsVisible(t *testing.T) {
 		}
 	}
 }
+
+func TestRepositoryFeishuMessageSkillIsNotExposedToExtract(t *testing.T) {
+	service, err := NewService(
+		filepath.Join("..", "..", ".agents", "skills"),
+		filepath.Join("..", "..", "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatalf("extract Catalog() error = %v", err)
+	}
+	if strings.Contains(extractCatalog, "feishu-send-message") {
+		t.Fatalf("extract catalog exposes feishu-send-message:\n%s", extractCatalog)
+	}
+	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatalf("execute Catalog() error = %v", err)
+	}
+	if !strings.Contains(executeCatalog, "feishu-send-message") {
+		t.Fatalf("execute catalog is missing feishu-send-message:\n%s", executeCatalog)
+	}
+}

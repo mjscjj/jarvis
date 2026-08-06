@@ -165,24 +165,32 @@ func TestBuildPromptCarriesMessageType(t *testing.T) {
 	}
 }
 
-// TestExtractionPromptKeepsBlockedGoalIntact pins the anti-goal-drift contract:
-// when a clue is blocked, payload must retain the real end state and the
-// blocker must be recorded as context rather than promoted to the clue's
-// identity. See docs/design-long-horizon-agent-goal-control.md.
-func TestExtractionPromptKeepsBlockedGoalIntact(t *testing.T) {
+func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
 	raw, err := os.ReadFile("../../conf/prompts/m3-system-prompt.md")
 	if err != nil {
 		t.Fatalf("read M3 system prompt: %v", err)
 	}
 	system := string(raw)
 	for _, want := range []string{
-		"payload 是完整、开放的语义正文",
-		"仍要写清障碍解除后真正要拿到的最终结果",
-		"不能冒充完成目标",
+		"任务准入 Agent",
+		"只回答四个问题",
+		"立即停止调查",
+		"准入简报",
+		"为什么与 principal 有关",
+		"不制定执行方案",
 		"程序不解析，会原样带给 M5",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"主动发散补全",
+		"候选路径与取舍",
+		"在交给我之前尽量把背景查全",
+	} {
+		if strings.Contains(system, forbidden) {
+			t.Fatalf("system prompt still contains execution-stage instruction %q", forbidden)
 		}
 	}
 }
