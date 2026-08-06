@@ -67,6 +67,7 @@ type Dependencies struct {
 	ContextAssembler   *contextsnap.Assembler
 	CardApprovals      CardApprovalProcessor
 	CardApprovalSecret string
+	Readiness          ReadinessTargets // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -160,6 +161,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		return fmt.Errorf("create tool query service: %w", err)
 	}
 	h.GET("/healthz", Health(deps.DB))
+	h.GET("/readyz", Readiness(deps.DB, deps.Readiness))
 	h.GET("/api/messages", ListToolMessages(toolQueries))
 	h.GET("/api/captured-resources", ListCapturedResources(toolQueries))
 	h.GET("/api/captured-resources/:resource_id", GetCapturedResource(toolQueries))

@@ -124,6 +124,9 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ./scripts/rebuild-server.sh
 
 curl http://127.0.0.1:18800/healthz
+
+# 逐项检查外部依赖（SQLite / Qdrant / lark-cli / agent CLI）
+curl -s http://127.0.0.1:18800/readyz | jq
 ```
 
 不要裸 `go build` 覆盖 `bin/jarvis-server` 后直接重启，否则会破坏 macOS TCC 的稳定签名。

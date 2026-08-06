@@ -871,6 +871,15 @@ func main() {
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
+	readinessTargets := api.ReadinessTargets{
+		LarkCLIBin:  cfg.LarkCLI.Bin,
+		AgentCLIBin: cfg.Execute.Bin,
+	}
+	// 语义去重关闭时 semanticIndex 是 nil 指针；直接赋进接口字段会得到一个非 nil
+	// 接口，探针就分不清「主动关掉」和「连不上 Qdrant」。
+	if semanticIndex != nil {
+		readinessTargets.VectorIndex = semanticIndex
+	}
 	if err := api.Register(h, api.Dependencies{
 		DB: db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
@@ -896,6 +905,7 @@ func main() {
 		ContextAssembler:   contextAssembler,
 		CardApprovals:      cardApprovalProcessor,
 		CardApprovalSecret: cfg.CardApproval.RelaySecret,
+		Readiness:          readinessTargets,
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)
 	}

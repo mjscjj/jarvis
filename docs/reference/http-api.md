@@ -8,7 +8,8 @@
 
 ## 健康与工作项
 
-- `GET /healthz`
+- `GET /healthz`：存活探针，只 ping SQLite。`scripts/rebuild-server.sh` 靠它判断重启成功，所以外部依赖不进它的状态码。
+- `GET /readyz`：依赖全景，逐项报告 SQLite、Qdrant、`lark-cli`、agent CLI。只有 SQLite 不通才返 503；外部依赖不通返 200 且 `status=degraded`，主动关掉的报 `disabled`。
 - Todo：`GET /api/todos`、`GET /api/todos/:todo_id`、`PATCH /api/todos/:todo_id/status`
 - Task：`GET/POST /api/tasks`、`GET /api/tasks/:task_id/runs|events|output`
 - Task 控制：`finish`、`supplement`、`execute`、`interrupt`、`rerun`、`reapply`、`resume`、`approve`、`reject`

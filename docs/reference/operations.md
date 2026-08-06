@@ -14,7 +14,9 @@
 
 18800 同时托管生产 `web/dist`；18801 只用于 Vite 开发热更。
 
-三份 plist 和 `conf/qdrant.yaml` 使用当前仓库的绝对路径。移动仓库或换用户后，先修改这些路径再 bootstrap。
+三份 plist 由 `deploy/*.plist.template` 渲染，`conf/qdrant.yaml` 用相对 `WorkingDirectory` 的路径。移动仓库或换用户后重新渲染即可，不必改仓库文件。
+
+`conf/config.yaml` 与 `conf/config.runtime.yaml` 都存明文密钥，权限保持 `600`。`config.yaml` 由 git 跟踪，而 git 只记录可执行位，重新 clone 后要再 `chmod 600`。
 
 ## 首次安装
 
@@ -24,6 +26,9 @@
 
 curl --fail http://127.0.0.1:18800/healthz
 curl --fail http://127.0.0.1:6333/healthz
+
+# 逐项确认外部依赖；status=degraded 时看 dependencies 里哪一项是 error
+curl -s http://127.0.0.1:18800/readyz | jq
 ```
 
 `install-launchd.sh` 会执行前端 `npm ci + build`、编译后端、稳定签名、渲染主服务的 LaunchAgent 并 bootstrap。它不会安装 Qdrant，也不会安装 Web 开发服务。

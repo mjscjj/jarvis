@@ -101,6 +101,20 @@ func (i *Index) Close() error {
 	return i.client.Close()
 }
 
+// HealthCheck reports whether Qdrant answers, and which version answered. It
+// does not touch the collection: Ensure already established that at startup, and
+// a readiness probe must not create or migrate anything.
+func (i *Index) HealthCheck(ctx context.Context) (string, error) {
+	if i == nil || i.client == nil {
+		return "", fmt.Errorf("semantic index is not initialized")
+	}
+	reply, err := i.client.HealthCheck(ctx)
+	if err != nil {
+		return "", fmt.Errorf("qdrant health check: %w", err)
+	}
+	return reply.GetVersion(), nil
+}
+
 func (i *Index) Ensure(ctx context.Context) error {
 	exists, err := i.client.CollectionExists(ctx, i.collection)
 	if err != nil {
