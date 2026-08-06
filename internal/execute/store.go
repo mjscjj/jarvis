@@ -1391,7 +1391,7 @@ func (s *Store) FailStaleExecuting(ctx context.Context, olderThan time.Duration,
 	var staleTasks []domain.Task
 	if err := s.db.WithContext(ctx).Model(&domain.Task{}).
 		Select("id", "version").
-		Where("status = ? AND updated_at < ?", "executing", cutoff).
+		Where("status = ? AND datetime(updated_at) < datetime(?)", "executing", cutoff.Format(time.RFC3339Nano)).
 		Find(&staleTasks).Error; err != nil {
 		return 0, fmt.Errorf("list stale executing Tasks: %w", err)
 	}

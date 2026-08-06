@@ -413,6 +413,104 @@ func TestFailStaleExecutingRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestFailStaleExecutingNormalizesSQLiteTimezoneOffsets(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE task (
+			id INTEGER PRIMARY KEY,
+			status TEXT NOT NULL,
+			execution_result TEXT,
+			version INTEGER NOT NULL,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE execution_run (
+			id INTEGER PRIMARY KEY,
+			task_id INTEGER NOT NULL,
+			status TEXT NOT NULL,
+			error_detail TEXT,
+			finished_at DATETIME
+		)`,
+		`CREATE TABLE task_event (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id INTEGER NOT NULL,
+			task_version INTEGER NOT NULL,
+			event_type TEXT NOT NULL,
+			from_status TEXT,
+			to_status TEXT NOT NULL,
+			actor_type TEXT NOT NULL,
+			actor_ref TEXT,
+			run_id INTEGER,
+			detail TEXT,
+			occurred_at DATETIME NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(task_id, task_version)
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO task(id, status, version, updated_at) VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
+		uint64(102), "executing", int32(4), "2026-08-06 14:52:29.208714+08:00",
+		uint64(115), "executing", int32(1), "2026-08-06 15:25:04.079434+08:00",
+	).Error; err != nil {
+		t.Fatalf("insert Tasks: %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO execution_run(id, task_id, status) VALUES (?, ?, ?)",
+		uint64(122), uint64(102), "running",
+	).Error; err != nil {
+		t.Fatalf("insert ExecutionRun: %v", err)
+	}
+
+	now := time.Date(2026, 8, 6, 7, 45, 0, 0, time.UTC)
+	failed, err := store.FailStaleExecuting(context.Background(), 45*time.Minute, now)
+	if err != nil {
+		t.Fatalf("FailStaleExecuting() error = %v", err)
+	}
+	if failed != 1 {
+		t.Fatalf("FailStaleExecuting() failed = %d, want 1", failed)
+	}
+	var stale, fresh domain.Task
+	if err := db.First(&stale, 102).Error; err != nil {
+		t.Fatalf("load stale Task: %v", err)
+	}
+	if err := db.First(&fresh, 115).Error; err != nil {
+		t.Fatalf("load fresh Task: %v", err)
+	}
+	if stale.Status != "failed" || stale.Version != 5 {
+		t.Fatalf("stale Task = status %q version %d", stale.Status, stale.Version)
+	}
+	if fresh.Status != "executing" || fresh.Version != 1 {
+		t.Fatalf("fresh Task = status %q version %d", fresh.Status, fresh.Version)
+	}
+	var run domain.ExecutionRun
+	if err := db.First(&run, 122).Error; err != nil {
+		t.Fatalf("load ExecutionRun: %v", err)
+	}
+	if run.Status != "failed" || run.FinishedAt == nil {
+		t.Fatalf("ExecutionRun = status %q finished_at %v", run.Status, run.FinishedAt)
+	}
+	var event domain.TaskEvent
+	if err := db.Where("task_id = ?", 102).First(&event).Error; err != nil {
+		t.Fatalf("load TaskEvent: %v", err)
+	}
+	if event.EventType != "stale_failed" || event.ToStatus != "failed" {
+		t.Fatalf("TaskEvent = %#v", event)
+	}
+}
+
 // TestRecordProgressMovesTimestampOnlyOnChange pins the reason last_progress_at
 // exists: a Task that keeps resuming and re-reporting the same standing must not
 // look alive, or the field cannot be used to find stalled work.
