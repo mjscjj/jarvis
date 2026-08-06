@@ -130,6 +130,7 @@ func (s *GORMStore) AdvanceCursor(ctx context.Context, source string, lastID uin
 		DoUpdates: clause.Assignments(map[string]any{
 			"last_id":          gorm.Expr("MAX(`last_id`, excluded.`last_id`)"),
 			"last_occurred_at": gorm.Expr("excluded.`last_occurred_at`"),
+			"updated_at":       gorm.Expr("CURRENT_TIMESTAMP"),
 		}),
 	}).Create(&row).Error
 	if err != nil {

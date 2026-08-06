@@ -1,12 +1,14 @@
 package execute
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 
 	"jarvis/internal/datatypes"
@@ -148,7 +150,7 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 	}
 }
 
-func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
+func TestBuildExecutionPromptKeepsOnlyUsefulTaskHints(t *testing.T) {
 	task := &domain.Task{
 		ID: 12, Title: "评测截图", ActionType: "notify_principal", Target: "评测截图影响面",
 		Background: datatypes.JSON(`{"snapshot_version":"v1"}`), SourcePayload: datatypes.JSON(`{"request":"评测截图"}`),
@@ -159,16 +161,75 @@ func TestBuildExecutionPromptLabelsUpstreamSemanticsAsHints(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"title_hint":"评测截图"`,
-		`"action_type_hint":"notify_principal"`,
 		`"target_hint":"评测截图影响面"`,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("execution prompt missing hint field %q:\n%s", want, prompt)
 		}
 	}
-	for _, obsolete := range []string{`"action_type":`, `"plan":`, `"decision_payload":`, `"decision_direction":`, `"decision_context":`} {
+	for _, obsolete := range []string{`"action_type_hint":`, `"action_type":`, `"plan":`, `"decision_payload":`, `"decision_direction":`, `"decision_context":`} {
 		if strings.Contains(prompt, obsolete) {
 			t.Fatalf("execution prompt still exposes upstream semantics as authoritative field %q:\n%s", obsolete, prompt)
+		}
+	}
+}
+
+func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
+	projectCode := "jarvis"
+	groupName := "公会 AI 突击群"
+	assignerName := "储节节"
+	assignerRole := "leader"
+	assignerRelation := "manager"
+	snapshot, err := (contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		CapturedAt:      "2026-08-06T03:00:00Z",
+		Principal:       &contextsnap.Principal{OpenID: "ou_principal", Name: "principal", Background: stringPtr("完整个人背景不应进执行简报")},
+		Project: &contextsnap.Project{
+			ID: 7, Code: &projectCode, Name: "Jarvis", Role: "owner", Status: "active",
+			KeyDecisions: json.RawMessage(`[{"decision":"完整项目决策不应进执行简报"}]`),
+		},
+		Group:    &contextsnap.Group{ID: 9, ChatID: "oc_group", Name: &groupName, Description: stringPtr("完整群背景不应进执行简报")},
+		Assigner: &contextsnap.Assigner{OpenID: "ou_assigner", Name: &assignerName, Role: &assignerRole, Relation: &assignerRelation},
+		Messages: []contextsnap.Message{
+			{MessageID: "om_1", Content: "完整源消息正文不应进执行简报"},
+			{MessageID: "om_1", Content: "重复引用也不应重复输出"},
+			{MessageID: "om_2", Content: "另一条完整正文也不应进入"},
+		},
+		Conversation: []contextsnap.Message{{MessageID: "om_context", Content: "完整 conversation 不应进执行简报"}},
+		Facts:        []contextsnap.Fact{{ID: 1, Description: "完整 fact 不应进执行简报"}},
+		OpenTodos:    []contextsnap.OpenTodo{{ID: 2, Title: "其它 Todo 不应进执行简报"}},
+		RecentTasks:  []contextsnap.RecentTask{{ID: 3, Summary: "其它 Task 摘要不应进执行简报"}},
+	}).Encode()
+	if err != nil {
+		t.Fatalf("encode snapshot: %v", err)
+	}
+	task := &domain.Task{
+		ID: 97, Title: "压缩上下文", ActionType: "code_change", Target: "M5 初始上下文",
+		ProjectID:     uint64Ptr(7),
+		SourcePayload: datatypes.JSON(`{"source_quote":"请压缩上下文","source_message_ids":["om_1","om_2"]}`),
+		Background:    datatypes.JSON(snapshot),
+	}
+	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil)
+	if err != nil {
+		t.Fatalf("build prompt: %v", err)
+	}
+	for _, want := range []string{
+		`"execution_context"`, `"id":7`, `"code":"jarvis"`, `"name":"Jarvis"`,
+		`"chat_id":"oc_group"`, `"open_id":"ou_assigner"`, `"source_message_ids":["om_1","om_2"]`,
+		`"background_lookup":"jarvis-tools get-task --id 97"`, `"source_quote":"请压缩上下文"`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("execution prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	for _, unwanted := range []string{
+		`"background":`, "完整个人背景不应进执行简报", "完整项目决策不应进执行简报",
+		"完整群背景不应进执行简报", "完整源消息正文不应进执行简报",
+		"完整 conversation 不应进执行简报", "完整 fact 不应进执行简报",
+		"其它 Todo 不应进执行简报", "其它 Task 摘要不应进执行简报",
+	} {
+		if strings.Contains(prompt, unwanted) {
+			t.Fatalf("execution prompt leaked %q:\n%s", unwanted, prompt)
 		}
 	}
 }
@@ -205,16 +266,17 @@ func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
 	prompt := string(content)
 	for _, want := range []string{
 		"M5 是真正理解任务、调查事实、确定目标、选择动作、执行并验证结果的阶段",
-		"`title_hint`、`action_type_hint` 和 `target_hint`",
+		"`title_hint` 和 `target_hint`",
 		"可以基于证据修改、替换或放弃这些建议",
 		"根据调查持续重规划",
-		"`action_type_hint` 不限制实际动作",
 		"本身不代表任务完成",
 		// A cleared blocker must never read as a finished goal; see
 		// docs/design-long-horizon-agent-goal-control.md.
 		"解除阻塞不是完成",
 		"不得假设其中存在固定 JSON 字段",
 		"以 source_payload 表达的真实最终结果为准",
+		"完整冻结背景仍保存在 Task.background",
+		"只有当前判断确实缺少某一类信息时才查",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("M5 prompt missing autonomy contract %q:\n%s", want, prompt)
@@ -226,6 +288,10 @@ func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
 		}
 	}
 }
+
+func stringPtr(value string) *string { return &value }
+
+func uint64Ptr(value uint64) *uint64 { return &value }
 
 func TestSummarizePriorRunsKeepsNewestOldestFirst(t *testing.T) {
 	s1, s2, s3 := "first", "second", "third"

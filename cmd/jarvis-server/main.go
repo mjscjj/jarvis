@@ -62,7 +62,7 @@ func main() {
 	discoverOnce := flag.Bool("discover-once", false, "执行一次飞书会话发现，成功后退出")
 	scanChat := flag.String("scan-chat", "", "增量扫描指定飞书 chat_id，成功后退出")
 	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
-	extractFactsOnce := flag.Bool("extract-facts-once", false, "执行一次离线事实抽取，成功后退出")
+	extractFactsOnce := flag.Bool("extract-facts-once", false, "执行一次持续世界建模，成功后退出")
 	extractOnce := flag.Bool("extract-once", false, "执行一次 Todo 提取，成功后退出")
 	proactiveOnce := flag.Bool("proactive-once", false, "立即执行一次主动巡视，成功后退出；写操作通过当前运行中的 Jarvis API 完成")
 	meetingSweepOnce := flag.Bool("meeting-sweep-once", false, "立即执行一次会议巡扫，成功后退出；线索通过当前运行中的 Jarvis API 投递")
@@ -228,10 +228,11 @@ func main() {
 		fatalf("initialize fact engine store failed: %v", err)
 	}
 	factExtractor, err := factengine.NewExtractor(factengine.ExtractorOptions{
-		Bin:     cfg.FactEngine.Bin,
-		Model:   cfg.FactEngine.Model,
-		Sandbox: cfg.FactEngine.Sandbox,
-		Timeout: time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
+		Bin:           cfg.FactEngine.Bin,
+		Model:         cfg.FactEngine.Model,
+		Sandbox:       cfg.FactEngine.Sandbox,
+		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		Timeout:       time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
 	})
 	if err != nil {
 		fatalf("initialize fact engine extractor failed: %v", err)
@@ -749,7 +750,7 @@ func main() {
 		}
 		stopScheduledTasks = func() { <-scheduledTaskScheduler.Stop().Done() }
 	}
-	// 离线事实抽取 cron：跑在关键路径之外，disabled 时 -extract-facts-once 仍可手动跑一轮。
+	// 持续世界建模 cron：跑在关键路径之外，disabled 时 -extract-facts-once 仍可手动跑一轮。
 	stopFactEngine := func() {}
 	stopFactRollup := func() {}
 	if cfg.FactEngine.Enabled {

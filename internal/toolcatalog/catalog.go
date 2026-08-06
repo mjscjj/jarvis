@@ -12,6 +12,7 @@ const (
 	StageExtract      = "extract"
 	StageExecute      = "execute"
 	StageChat         = "chat"
+	StageFactEngine   = "factengine"
 	StageProactive    = "proactive"
 	StageMeetingSweep = "meeting_sweep"
 	StageMorningBrief = "morning_brief"
@@ -27,8 +28,10 @@ func Block(stage string) (string, error) {
 		purpose = "完成任务、核验结果；需要等待时暂停当前 Task，避免创建重复任务。"
 	case StageChat:
 		purpose = "按用户请求查询或操作本机与外部系统。"
+	case StageFactEngine:
+		purpose = "阅读增量材料，按需查证并维护 Jarvis 内部世界模型；事实、当前画像、关系和资料都由 Agent 自己判断是否需要写入。"
 	case StageProactive:
-		purpose = "定时审视全局，维护 Jarvis 内部世界模型，并把值得推进的外部工作创建成普通 Task 交给强 M5。"
+		purpose = "定时读取世界模型、看护未闭环事项，并把值得推进的外部工作创建成普通 Task 交给强 M5；调查中可按需维护内部世界状态。"
 	case StageMeetingSweep:
 		purpose = "定时查找最近结束的飞书会议和未来待参加的会议日程，把每场会作为一条线索投递给 M2/M3；只采集，不分析。"
 	case StageMorningBrief:
@@ -61,7 +64,15 @@ func Block(stage string) (string, error) {
 			"- 对今天已有的 pending Task，使用 `jarvis-tools start-task --id ...` 交给强 M5；不要创建重复 Task。",
 			"- Task 的目标表达、当前进展或后续执行指示因新证据变化时，优先使用 `jarvis-tools update-task --id ... --payload ...` 维护；不得改写冻结的 source_payload/background。",
 			"- 只有已查证完成、明确取消、客观失效或被仍存活的 Task 完整取代时，才使用 `jarvis-tools close-task --id ... --payload ...` 收口；跨日、沉默或没有新证据不是关闭依据。",
-			"- 主动巡视可以直接维护 Jarvis 内部世界模型；外部动作与复杂执行仍必须交给 M5。",
+			"- factengine 的主要任务是持续维护人物、项目、群、资料、事实和关系；这不是对主动巡视的写入禁令。巡视调查中发现明确且有用的变化时，可以直接使用通用 CRUD 维护并立即读回，也可以按判断走统一线索入口。",
+			"- 世界模型维护只是巡视的辅助动作；不要为了补全模型扩大本轮范围或偏离看护、推进未闭环工作的主要任务。",
+		)
+	}
+	if stage == StageFactEngine {
+		lines = append(lines,
+			"- 事实建模 Agent 可以使用项目、人物、群、Principal、资料和关系的通用查询及 CRUD 命令维护 Jarvis 内部认知；先查现值，确认有新增或变化后再写，并立即读回。",
+			"- 不要用 `append-fact` 写本轮抽取出的事实；把事实放进最终 `facts` 数组，由事实引擎在游标边界统一落库。",
+			"- 本阶段不创建或推进 Task，不修改外部系统。需要补证据时可以只读查询 lark-cli、bytedcli 和 git。",
 		)
 	}
 	if stage == StageMorningBrief {

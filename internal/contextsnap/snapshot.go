@@ -1,5 +1,6 @@
 // Package contextsnap defines the canonical background snapshot that M3 freezes
-// onto a Todo at extraction time and that M5 replay unchanged.
+// onto a Todo at extraction time. M5 receives a small projection initially and
+// can query this unchanged snapshot when execution actually needs more detail.
 //
 // Per docs/design-context-pipeline.md the context is assembled/inferred exactly
 // once in M3, persisted into Todo.context_snapshot, and reused for the whole
@@ -27,18 +28,16 @@ type Snapshot struct {
 	Assigner  *Assigner  `json:"assigner"`
 	Messages  []Message  `json:"messages"`
 	// Participants/resources/open_todos/other_projects are part of the exact
-	// context M3 used to extract the clue. They must be frozen too;
-	// otherwise M5 only receive whichever fragments the model happened to
-	// paraphrase into Candidate.Context.
+	// context M3 used to extract the clue. They stay frozen for audit and
+	// on-demand lookup instead of riding in every M5 initial prompt.
 	Participants  []Participant  `json:"participants,omitempty"`
 	Resources     []Resource     `json:"resources,omitempty"`
 	OpenTodos     []OpenTodo     `json:"open_todos,omitempty"`
 	RecentTasks   []RecentTask   `json:"recent_tasks,omitempty"`
 	OtherProjects []ProjectBrief `json:"other_projects,omitempty"`
 	// Conversation is the surrounding chat context (several rounds around the
-	// cited Messages) so M5 can read the fuller thread, not just the single
-	// evidence message. Messages stays the precise cited evidence; Conversation
-	// is broader background.
+	// cited Messages). Messages stays the precise cited evidence; Conversation
+	// is broader background available through on-demand Task lookup.
 	Conversation []Message        `json:"conversation,omitempty"`
 	Memories     []map[string]any `json:"memories"`
 	// ManagedResources and Facts are loaded by the common context

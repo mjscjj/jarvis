@@ -172,6 +172,10 @@ func TestAdvanceCursorUsesSQLiteUpsertAndNeverMovesBackward(t *testing.T) {
 	if err := store.AdvanceCursor(ctx, SourceTask, 10, time.Time{}); err != nil {
 		t.Fatalf("insert cursor: %v", err)
 	}
+	staleUpdatedAt := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := db.Model(&domain.FactSourceCursor{}).Where("source = ?", SourceTask).Update("updated_at", staleUpdatedAt).Error; err != nil {
+		t.Fatalf("make cursor timestamp stale: %v", err)
+	}
 	if err := store.AdvanceCursor(ctx, SourceTask, 8, time.Time{}); err != nil {
 		t.Fatalf("upsert stale cursor: %v", err)
 	}
@@ -181,6 +185,13 @@ func TestAdvanceCursorUsesSQLiteUpsertAndNeverMovesBackward(t *testing.T) {
 	}
 	if !found || lastID != 10 {
 		t.Fatalf("cursor found/last_id = %v/%d, want true/10", found, lastID)
+	}
+	var row domain.FactSourceCursor
+	if err := db.Where("source = ?", SourceTask).First(&row).Error; err != nil {
+		t.Fatalf("load cursor row: %v", err)
+	}
+	if !row.UpdatedAt.After(staleUpdatedAt) {
+		t.Fatalf("cursor updated_at = %s, want newer than %s", row.UpdatedAt, staleUpdatedAt)
 	}
 }
 

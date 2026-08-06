@@ -12,8 +12,8 @@
 调查结论（代码事实，均已核实）：
 
 - M3 抽取阶段是唯一"推"世界数据的地方，`renderUserPrompt`（`internal/extract/prompt.go:74`）把 principal / project / group / participants / resources / facts / open_todos 渲染成 Markdown 段落。
-- M5 执行读的是 M3 冻结的 `Todo.ContextSnapshot`，整块塞进 `BEGIN_TASK_CONTEXT` 的 `background` 字段，没有独立的世界段落。
-- `fact` 只装载 group 和 project 两个主体（`internal/extract/worker.go:239`），离线事实引擎产出的 person 主体事实没有任何读取点。
+- M5 执行首轮只读取 M3 冻结 `Todo.ContextSnapshot` 的小投影；完整背景保存在 Task 上，通过 `get-task` 按需读取，没有独立的实时世界段落。
+- `fact` 只装载 group 和 project 两个主体（`internal/extract/worker.go:239`），持续世界建模 Agent 产出的 person 主体事实没有任何读取点。
 - `task` 完全没进过任何提示词。`Task.Summary` / `Task.LastProgressAt` 是只写字段，全仓库无读取点。
 - `todo` 进上下文的是"未闭环"清单，按 status 过滤而不按时间，一条三周前的和今天的混排。
 - 下钻通道断裂：`jarvis-tools` 没有任何 todo / task 查询命令，模型看到摘要后无法取细节。
@@ -23,7 +23,7 @@
 
 实施时以此为准，不要另作取舍。
 
-1. **M5 侧保持冻结。** 不为 M5 新增"当前时刻世界切片"的装配。M5 想要比快照更新的世界信息，自己调工具拉。这是有意接受的代价——因此下钻工具必须先做扎实。
+1. **M5 侧保持冻结。** 首轮只投影当前项目、群、交办人和引用消息 ID，不新增"当前时刻世界切片"的装配。创建时完整背景与最新世界信息都由 M5 在确有需要时调工具获取。
 2. **todo 不加摘要字段。** 进上下文只有 `todo_id` / `action_type` / `title` / `status`，细节靠新增的 `get-todo` 下钻。
 3. **`daily_digest` 完全不碰。** 它是给人看的日报，与本方案无关，也不进任何提示词。不要复用、不要改造、不要给它加 project scope。
 4. **推送层不设天窗。** "按天"是下钻维度（工具的 `--date`），不是推送维度。

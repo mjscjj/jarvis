@@ -96,3 +96,43 @@ func TestListFactsSourceKindEqualityAndExclusion(t *testing.T) {
 		t.Fatalf("ExcludeSourceKind must keep NULL source_kind rows: %#v", excluded)
 	}
 }
+
+func TestAppendFactReturnsExistingExactFactFromSameSourceUnit(t *testing.T) {
+	service := newFactTestService(t)
+	ctx := context.Background()
+	occurredAt := time.Date(2026, 8, 6, 3, 0, 0, 0, time.UTC)
+	sourceKind := "task"
+	sourceID := uint64(336)
+	input := FactInput{
+		SubjectType: "meeting", SubjectID: 9, Description: "评审结论已经确认",
+		OccurredAt: &occurredAt, SourceKind: &sourceKind, SourceID: &sourceID,
+	}
+	first, err := service.AppendFact(ctx, input)
+	if err != nil {
+		t.Fatalf("first AppendFact: %v", err)
+	}
+	second, err := service.AppendFact(ctx, input)
+	if err != nil {
+		t.Fatalf("second AppendFact: %v", err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("replayed fact ids = %d and %d, want same row", first.ID, second.ID)
+	}
+	var count int64
+	if err := service.db.Model(&domain.Fact{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("fact count = %d, want 1", count)
+	}
+
+	changed := input
+	changed.Description = "评审结论后来发生变化"
+	third, err := service.AppendFact(ctx, changed)
+	if err != nil {
+		t.Fatalf("changed AppendFact: %v", err)
+	}
+	if third.ID == first.ID {
+		t.Fatal("different fact content from same unit was incorrectly collapsed")
+	}
+}

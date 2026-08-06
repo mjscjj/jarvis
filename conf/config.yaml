@@ -23,9 +23,9 @@ model:
   embedding_model: "text-embedding-v3"
   embedding_dims: 1024
 
-# 离线事实引擎：把流水线已经产出的 message / todo / task 原料
-# 蒸馏成长期事实，写进 fact 表。跑在关键路径之外，一轮失败不影响采集和执行。
-# 抽取量大、单条价值低，所以用便宜快的 DeepSeek-V4-Flash，不与 M5 执行共用模型。
+# 持续世界建模：Agent 增量阅读 message / todo / task 原料，自主决定是否以及如何
+# 维护 Jarvis 内部的人、项目、群、资料、关系与历史 Fact。Go 只负责调度、游标、
+# 幂等和持久化边界。跑在关键路径之外，一轮失败不影响采集和执行。
 factengine:
   enabled: true
   schedule: "@every 15m"
@@ -53,7 +53,7 @@ extract:
   context_messages: 20
   context_window_minutes: 120
   open_todo_limit: 20
-  fact_limit: 10                 # 每主体今天的明细事实上限（排除 rollup；另加前一天 1 条 rollup）
+  fact_limit: 15                 # 每主体今天的明细事实上限（排除 rollup；另加前一天 1 条 rollup）
   key_person_limit: 5            # 推送 person 主体事实时，关键人并集上限
   recent_task_limit: 10          # 推送最近有进展的任务条数上限
   max_prompt_chars: 60000
@@ -104,8 +104,8 @@ codex:
   model: "DeepSeek-V4-Flash"
   timeout_seconds: 600   # M3 抽取会多轮自跑 lark-cli/bytedcli/git/jarvis-tools 补全背景，放宽超时
 
-# 主动巡视 Agent：启动 2 分钟后先跑一次，之后每小时复盘世界模型和未完成工作。
-# 可直接更新 Jarvis 内部世界模型；任何外部动作必须创建 Task，交给下面的强 M5 执行。
+# 主动巡视 Agent：启动 2 分钟后先跑一次，之后每小时读取世界模型、复盘未完成工作。
+# factengine 以持续建模为主；巡视可顺手维护明确变化，外部动作仍创建 Task 交给强 M5。
 proactive:
   enabled: true
   schedule: "@every 1h"
@@ -133,7 +133,7 @@ meeting_sweep:
 # 产物新鲜度检查。默认只读，唯一预授权副作用是给 Principal 本人发一条飞书私聊。
 # 手动触发：go run ./cmd/jarvis-server -config conf/config.yaml -morning-brief-once
 morning_brief:
-  enabled: false             # 先手动 -morning-brief-once 验收；通过后再改 true
+  enabled: true              # 工作日 08:30 自动生成并投递；错过时间的当天启动时补跑一次
   schedule: "30 8 * * 1-5"   # 周一至周五 08:30（Asia/Shanghai）
   startup_delay_seconds: 180
   bin: "traex"

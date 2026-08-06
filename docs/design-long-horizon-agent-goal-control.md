@@ -97,7 +97,7 @@ apply 提示词所说的“真正落地成功才填 completed”，在它自己�
 
 ### 2.3 一个额外的信息缺口
 
-当前 [M5 的 `executionTask`](../internal/execute/prompt.go)已经把 `title/action_type/target` 作为 hint，并完整传递 `source_payload/background`。来源证据与可变执行判断已经分开；本方案后续只需讨论长周期目标状态，不应再引入第二套来源计划字段。
+当前 [M5 的 `executionTask`](../internal/execute/prompt.go)只把 `title/target` 作为 hint，完整传递 `source_payload`，并从冻结 `background` 投影当前项目、群、交办人和引用消息 ID；完整背景按需查询。来源证据与可变执行判断已经分开；本方案后续只需讨论长周期目标状态，不应再引入第二套来源计划字段。
 
 ## 3. 必须先区分的八个概念
 

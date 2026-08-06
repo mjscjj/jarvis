@@ -73,8 +73,8 @@ type TodoView struct {
 	Group              *TodoGroupView   `json:"group"`
 	Project            *TodoProjectView `json:"project"`
 	// Resolution / ContextSnapshot are the M3-frozen project inference trace and
-	// background, so the UI can show "why this project/repo" and the full context
-	// that M5 replays (docs/design-context-pipeline.md §5/§6).
+	// background, so the UI can show "why this project/repo" and M5 can query the
+	// full creation-time context on demand (docs/design-context-pipeline.md §5/§6).
 	Resolution      json.RawMessage `json:"resolution"`
 	ContextSnapshot json.RawMessage `json:"context_snapshot"`
 }

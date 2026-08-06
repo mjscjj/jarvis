@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/sharedmem"
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
-const ExecutionPromptVersion = "task-exec-v9-source-payload"
+const ExecutionPromptVersion = "task-exec-v10-brief-context"
 
 // maxPriorRunsInPrompt caps how many previous execution_run rows ride into the
 // next M5 prompt. Newest runs are kept; older ones are dropped to bound size.
@@ -157,26 +158,60 @@ func schemaRewritePrompt(err error) string {
 type executionPromptPayload struct {
 	PromptVersion        string                `json:"prompt_version"`
 	Task                 executionTask         `json:"task"`
+	ExecutionContext     executionContext      `json:"execution_context"`
+	BackgroundLookup     string                `json:"background_lookup"`
 	RepoPath             string                `json:"repo_path,omitempty"`
 	ExecutionSupplements []ExecutionSupplement `json:"execution_supplements,omitempty"`
 	PreviousRuns         []priorRunSummary     `json:"previous_runs,omitempty"`
 }
 
 type executionTask struct {
-	ID             uint64 `json:"id"`
-	TitleHint      string `json:"title_hint"`
-	ActionTypeHint string `json:"action_type_hint"`
-	TargetHint     string `json:"target_hint"`
+	ID         uint64 `json:"id"`
+	TitleHint  string `json:"title_hint"`
+	TargetHint string `json:"target_hint"`
 	// SourcePayload is the source-owned semantic input forwarded verbatim for
 	// every Task source. M5 treats it as evidence, not an execution contract.
 	SourcePayload json.RawMessage `json:"source_payload"`
-	Background    json.RawMessage `json:"background"`
+}
+
+// executionContext is the small part of the frozen background M5 needs before
+// it starts investigating. The complete immutable Task.background stays in the
+// database and is available through BackgroundLookup when a Task actually needs
+// more of its creation-time world.
+type executionContext struct {
+	Project          *executionProject  `json:"project,omitempty"`
+	Group            *executionGroup    `json:"group,omitempty"`
+	Assigner         *executionAssigner `json:"assigner,omitempty"`
+	SourceMessageIDs []string           `json:"source_message_ids,omitempty"`
+}
+
+type executionProject struct {
+	ID     uint64  `json:"id"`
+	Code   *string `json:"code,omitempty"`
+	Name   string  `json:"name,omitempty"`
+	Role   string  `json:"role,omitempty"`
+	Status string  `json:"status,omitempty"`
+}
+
+type executionGroup struct {
+	ID        uint64  `json:"id"`
+	ChatID    string  `json:"chat_id,omitempty"`
+	Name      *string `json:"name,omitempty"`
+	ProjectID *uint64 `json:"project_id,omitempty"`
+}
+
+type executionAssigner struct {
+	OpenID   string  `json:"open_id"`
+	Name     *string `json:"name,omitempty"`
+	Role     *string `json:"role,omitempty"`
+	Relation *string `json:"relation,omitempty"`
 }
 
 // buildTaskContext assembles the shared TASK_CONTEXT block. M3 output is a clue,
 // not a confirmed contract; M5 owns the actual goal, scope, action selection,
-// and execution. Frozen background, supplements, and prior results ride through
-// verbatim. Validation is fail-fast.
+// and execution. Source semantics ride through verbatim; the frozen background
+// is projected to the small execution context above and remains queryable in
+// full. Validation is fail-fast.
 func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRunSummary) ([]ExecutionSupplement, []byte, error) {
 	if task == nil || task.ID == 0 {
 		return nil, nil, fmt.Errorf("execution prompt Task is invalid")
@@ -187,16 +222,22 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 	if len(bytes.TrimSpace(task.SourcePayload)) == 0 {
 		return nil, nil, fmt.Errorf("execution prompt Task id=%d missing source_payload", task.ID)
 	}
+	context, err := projectExecutionContext(task)
+	if err != nil {
+		return nil, nil, err
+	}
 	supplements, err := decodeExecutionSupplements(task.ExecutionSupplements)
 	if err != nil {
 		return nil, nil, fmt.Errorf("execution prompt Task id=%d execution_supplements invalid: %w", task.ID, err)
 	}
 	promptTask := executionTask{
-		ID: task.ID, TitleHint: task.Title, ActionTypeHint: task.ActionType, TargetHint: task.Target,
-		SourcePayload: rawJSON(task.SourcePayload), Background: rawJSON(task.Background),
+		ID: task.ID, TitleHint: task.Title, TargetHint: task.Target,
+		SourcePayload: rawJSON(task.SourcePayload),
 	}
 	payload := executionPromptPayload{
 		PromptVersion:        ExecutionPromptVersion,
+		ExecutionContext:     context,
+		BackgroundLookup:     fmt.Sprintf("jarvis-tools get-task --id %d", task.ID),
 		RepoPath:             repoPath,
 		ExecutionSupplements: supplements,
 		PreviousRuns:         previousRuns,
@@ -207,6 +248,47 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 		return nil, nil, fmt.Errorf("encode execution prompt payload task_id=%d: %w", task.ID, err)
 	}
 	return supplements, encoded, nil
+}
+
+func projectExecutionContext(task *domain.Task) (executionContext, error) {
+	snapshot, err := contextsnap.Decode(task.Background)
+	if err != nil {
+		return executionContext{}, fmt.Errorf("execution prompt Task id=%d background invalid: %w", task.ID, err)
+	}
+	result := executionContext{}
+	if snapshot.Project != nil {
+		result.Project = &executionProject{
+			ID: snapshot.Project.ID, Code: snapshot.Project.Code, Name: snapshot.Project.Name,
+			Role: snapshot.Project.Role, Status: snapshot.Project.Status,
+		}
+	} else if task.ProjectID != nil {
+		result.Project = &executionProject{ID: *task.ProjectID}
+	}
+	if snapshot.Group != nil {
+		result.Group = &executionGroup{
+			ID: snapshot.Group.ID, ChatID: snapshot.Group.ChatID,
+			Name: snapshot.Group.Name, ProjectID: snapshot.Group.ProjectID,
+		}
+	}
+	if snapshot.Assigner != nil {
+		result.Assigner = &executionAssigner{
+			OpenID: snapshot.Assigner.OpenID, Name: snapshot.Assigner.Name,
+			Role: snapshot.Assigner.Role, Relation: snapshot.Assigner.Relation,
+		}
+	}
+	seen := make(map[string]struct{}, len(snapshot.Messages))
+	for _, message := range snapshot.Messages {
+		id := strings.TrimSpace(message.MessageID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result.SourceMessageIDs = append(result.SourceMessageIDs, id)
+	}
+	return result, nil
 }
 
 // renderPrompt glues the stage instructions, the shared-memory block, the
@@ -237,7 +319,8 @@ func renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills str
 // action_type takes this one path: codex investigates, decides the real goal and
 // action, and then judges against the editable approvalPolicy whether the side
 // effect it is about to cause needs human review — code changes included. It
-// gives codex the complete M3 clue, frozen context, and the resolved repo.
+// gives codex the complete M3 clue, a small projection of frozen context, and
+// the resolved repo. Complete Task.background is loaded only when needed.
 // task.execution_supplements (M5-only) are injected as high-priority directives.
 // previousRuns (if any) carry prior attempt results.
 func buildExecutionPrompt(systemPrompt, approvalPolicy string, task *domain.Task, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {

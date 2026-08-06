@@ -17,7 +17,7 @@
 | `m3_system_prompt` | `conf/prompts/m3-system-prompt.md` | M3 抽取系统提示词 |
 | `m5_system_prompt` | `conf/prompts/m5-system-prompt.md` | M5 执行环节系统提示词 |
 | `m5_approval_policy` | `conf/prompts/m5-approval-policy.md` | 执行期"要不要先请示 principal"的判定策略 |
-| `fact_extract_system_prompt` | `conf/prompts/fact-extract-system-prompt.md` | 离线事实抽取系统提示词 |
+| `fact_extract_system_prompt` | `conf/prompts/fact-extract-system-prompt.md` | 持续世界建模系统提示词 |
 
 审批策略只回答“下一项具体副作用是否需要先审批”，包括代码修改。批准后的 proposal 必须原样落地、不得重复副作用等协议属于执行状态机的硬约束，保留在代码中，不能由后台关闭。
 

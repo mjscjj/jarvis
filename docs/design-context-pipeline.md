@@ -99,7 +99,7 @@ flowchart TB
     end
     F --> G["机械固化<br/>extracted → Task"]
     G --> H["Task<br/>快照 + M3 clue + 推算结果"]
-    H --> I["M5 执行(codex)<br/>拿完整上下文判断并干活"]
+    H --> I["M5 执行(codex)<br/>先拿执行简报，缺什么再查"]
 ```
 
 
@@ -180,9 +180,9 @@ flowchart TB
 
 
 
-### 2.4 模块 D：执行环节拿完整上下文（打通链路末端）
+### 2.4 模块 D：执行环节先拿简报、按需下钻
 
-- 执行环节提示词（`internal/execute/prompt.go`）已带 `task.background`；因 background 现含 `project.repos`，codex 执行时即可拿到仓库地址。
+- 执行环节提示词（`internal/execute/prompt.go`）只投影当前项目、群、交办人和引用消息 ID；完整 `task.background` 保留在 Task 上，通过 `get-task` 按需读取。
 - Task 创建时从 `project.repos[].local_path` 投影 `task.repo_path`；`internal/execute/agent_executor.go` 只消费这个硬执行参数，不解析 `context_snapshot`。
 - repos 为空时**本轮不阻塞**（用户决策）：codex 在 workspace-write/full-access 下自行想办法（可跑 git/lark-cli 定位），或如实报告"缺仓库地址、需补充"。
 

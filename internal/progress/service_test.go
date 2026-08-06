@@ -141,6 +141,10 @@ func TestPrepareFactRequiresDescriptionAndSubject(t *testing.T) {
 	if _, err := prepareFact(FactInput{SubjectID: 1, Description: "x", OccurredAt: &now}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("missing subject_type error = %v, want ErrInvalidInput", err)
 	}
+	sourceID := uint64(7)
+	if _, err := prepareFact(FactInput{SubjectType: "meeting", SubjectID: 1, Description: "x", OccurredAt: &now, SourceID: &sourceID}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("source_id without source_kind error = %v, want ErrInvalidInput", err)
+	}
 }
 
 // TestPrepareFactKeepsUnknownSubjectType pins the decision that SubjectType is

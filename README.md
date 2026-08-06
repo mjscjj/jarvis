@@ -2,7 +2,7 @@
 
 Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞书消息和外部线索中保留原始证据，抽取 Todo，并由执行 Agent 判断是否值得推进、调用工具完成工作、处理等待与审批并留下结果。
 
-系统另有独立的低成本主动巡视 Agent：启动 2 分钟后首次运行，之后默认每小时整理内部世界模型、看护未闭环工作；任何需要改变外部世界的动作都只创建 Task，交给强 M5 执行。
+系统另有两类低成本 Agent：factengine 以持续世界建模为主要任务；主动巡视默认每小时读取世界模型、看护未闭环工作，并可在调查过程中顺手维护明确变化。任何需要改变外部世界的动作都只创建 Task，交给强 M5 执行。
 
 先读：
 
@@ -45,8 +45,8 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | M3 提取 | 证据校验、Todo 抽取/合并、上下文快照、语义去重 | `internal/extract/` |
 | Todo 固化 | extracted Todo 按 ID/version 幂等创建 Task，不调用模型 | `internal/execute/materializer.go` |
 | M5 执行 | 调查、执行、审批、等待/续跑、人工回复、结果留痕 | `internal/execute/` |
-| 事实引擎 | 在关键路径外从 `message`、Todo、Task 通用蒸馏长期事实 | `internal/factengine/` |
-| 主动巡视 | 周期整理内部世界模型、看护未闭环工作、为外部行动创建普通 Task | `internal/proactive/` |
+| 事实引擎 | 在关键路径外从 `message`、Todo、Task 通用蒸馏长期事实，并通过通用工具按需维护当前实体、关系和资料 | `internal/factengine/` |
+| 主动巡视 | 周期读取世界模型、看护未闭环工作、按需维护内部认知、为外部行动创建普通 Task | `internal/proactive/` |
 | 会议巡扫 | 采集已结束会议和未来 24 小时日程，分别触发会后整理与逐场处理判断 | `internal/meetingsweep/` |
 | 晨间简报 | 工作日开工对齐：Skill 取证写稿，定时/手动触发，产物在本地 Markdown | `internal/morningbrief/` |
 | 定时任务 | 周期/单次 Task，以及等待 Session 的未来唤醒 | `internal/scheduledtask/`, `internal/taskcreate/` |
@@ -60,7 +60,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 - M2 只记录事实。错误原文也是事实，错误语义和下一步交给模型判断。
 - 新来源通过 `source + Skill/定时任务 + POST /api/clues` 接入，不在 Go 中新增来源专用流水线。
 - M3 冻结 `context_snapshot`，Todo→Task→执行复用同一份；下游可补证据，但不重建一份“看起来等价”的背景。
-- 主动巡视可写 Jarvis 内部世界模型，但不得直接产生外部副作用；外部行动统一创建 `source_type=proactive` 的 Task 交给 M5。
+- factengine 是持续世界建模的主要 Agent；主动巡视以看护和推进为主，但调查中可直接维护明确、有用的内部认知，也可把原始证据送入统一线索入口。外部行动统一创建 `source_type=proactive` 的 Task 交给 M5。
 
 各模块的当前实现详见 [`docs/modules/`](docs/README.md#当前实现)。
 

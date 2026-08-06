@@ -183,6 +183,24 @@ func (s *Service) AppendFact(ctx context.Context, input FactInput) (*FactView, e
 			return nil, err
 		}
 	}
+	// A factengine source unit can be retried after its Agent has already updated
+	// Jarvis's internal world model. The source pair is the mechanical replay
+	// boundary; exact content from that same unit is returned instead of appended
+	// again. Semantic consolidation across different units remains the Agent's job.
+	if fact.SourceKind != nil && fact.SourceID != nil {
+		var existing domain.Fact
+		result := db.Where(
+			"source_kind = ? AND source_id = ? AND subject_type = ? AND subject_id = ? AND description = ?",
+			*fact.SourceKind, *fact.SourceID, fact.SubjectType, fact.SubjectID, fact.Description,
+		).Limit(1).Find(&existing)
+		if result.Error != nil {
+			return nil, fmt.Errorf("find replayed fact source=%s/%d: %w", *fact.SourceKind, *fact.SourceID, result.Error)
+		}
+		if result.RowsAffected == 1 {
+			view := factView(&existing)
+			return &view, nil
+		}
+	}
 	if err := db.Create(fact).Error; err != nil {
 		return nil, fmt.Errorf("append fact subject=%s/%d: %w", fact.SubjectType, fact.SubjectID, err)
 	}
@@ -269,6 +287,9 @@ func prepareFact(input FactInput) (*domain.Fact, error) {
 	if input.SubjectType == "" || input.SubjectID == 0 || input.Description == "" ||
 		input.OccurredAt == nil || input.OccurredAt.IsZero() {
 		return nil, fmt.Errorf("%w: subject_type, subject_id, description and occurred_at are required", ErrInvalidInput)
+	}
+	if input.SourceID != nil && (*input.SourceID == 0 || input.SourceKind == nil) {
+		return nil, fmt.Errorf("%w: source_id must be positive and requires source_kind", ErrInvalidInput)
 	}
 	return &domain.Fact{
 		SubjectType: input.SubjectType, SubjectID: input.SubjectID,

@@ -14,7 +14,7 @@ M1 维护 principal 的稳定工作背景，供 M3/M5 和日报读取。SQLite �
 | PrincipalProfile、Project、Person、ManagedResource CRUD | 消息采集、Todo 抽取、M5 执行 |
 | Group 的人工背景与 Project 归属 | Group 发现、活跃度和消息落库 |
 | lark-cli 姓名解析 | 完整飞书读写封装 |
-| 后台背景配置页 | 离线事实蒸馏 |
+| 后台背景配置页 | 持续世界建模 |
 
 ## 2. 当前关系
 
@@ -43,7 +43,7 @@ erDiagram
 ## 4. Fact 与 RelationFact
 
 - Project 创建、修改、归档会写自然语言 Fact；Fact 也可通过 API 写入。
-- 离线 factengine 当前从 message 蒸馏 Fact。
+- factengine 从 message、TodoEvent 和 TaskEvent 持续蒸馏 Fact，并通过通用 CRUD 工具按需维护当前背景、关系和资料。
 - RelationFact 保存两个既有实体之间的自然语言关系与有效期。
 - M1 不负责从会话批量蒸馏事实。
 

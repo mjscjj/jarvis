@@ -117,7 +117,7 @@ created_at
 飞书开放平台权限仍未审批，当前阻塞消息回放验收。
 ```
 
-项目创建、资料更新、状态调整和归档会追加简短描述；Fact 也可通过 API 写入。离线 factengine 当前从 message 蒸馏 Fact。M3 和 M5 不会自动把每次抽取/执行旁路写成 Fact。
+项目创建、资料更新、状态调整和归档会追加简短描述；Fact 也可通过 API 写入。factengine 从 message、TodoEvent 和 TaskEvent 蒸馏 Fact，并可通过通用工具按需维护当前实体、关系和资料；M3/M5 的变化通过各自生命周期事件被同一事实引擎消费。
 
 `daily_digest` 是面向人的个人/群日报，不是通用 Fact rollup，也不替代 Fact 的时间查询。
 

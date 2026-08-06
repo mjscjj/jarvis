@@ -5,18 +5,19 @@
 > Last verified: 2026-08-02 @ `feature/proactive-heartbeat-agent`
 > Current behavior: 稳定边界已并入 [`00-overview.md`](00-overview.md)，本文保留实施动机和验收设计。
 
+> 2026-08-06 ownership update: factengine 以持续世界建模为主要任务；主动巡视以看护和推进未闭环工作为主。这个职责划分不是写入禁令：巡视调查中发现明确、有用的变化时，可以直接维护 Person / Project / Group / ManagedResource / Fact / RelationFact，但不为了补全模型扩大单轮范围。以 `00-overview.md` 为准。
+
 ## 1. 一句话结论
 
-增加一个由系统定时任务唤醒的低成本 Agent：它使用 `traex + DeepSeek-V4-Pro` 周期性审视 Jarvis 的世界状态，主动维护世界模型、看护未闭环事项，并把此刻值得推进且已经具备执行条件的工作创建成普通 Task，交给现有强 M5 Agent 执行。
+增加一个由系统定时任务唤醒的低成本 Agent：它使用 `traex + DeepSeek-V4-Pro` 周期性读取 factengine 维护的世界状态、看护未闭环事项，并把此刻值得推进且已经具备执行条件的工作创建成普通 Task，交给现有强 M5 Agent 执行。
 
 它不是新的规则引擎，也不是 M3/M5 之间的新闸门。它是站在现有流水线上方、定时醒来观察全局的 Agent。
 
 ```mermaid
 flowchart LR
     CRON["系统定时任务"] --> PA["主动巡视 Agent\ntraex + DeepSeek-V4-Pro"]
-    WORLD["世界模型\n人物 / 项目 / 关系 / 事实 / 任务"] <--> PA
+    FM["factengine\n持续世界建模"] --> WORLD["世界模型\n人物 / 项目 / 关系 / 事实 / 任务"] --> PA
     EXT["lark-cli / bytedcli / git\n按需查证"] --> PA
-    PA -->|"内部整理"| WORLD
     PA -->|"发现值得做且可执行"| TASK["普通 Task"]
     TASK --> M5["现有强 M5\ngpt-5.6-sol"]
     M5 --> EFFECT["真实执行 / 审批 / 等待 / 验证"]
@@ -39,27 +40,9 @@ flowchart LR
 
 ## 3. 主动巡视 Agent 的三个目标
 
-### 3.1 维护世界模型
+### 3.1 读取世界模型
 
-世界模型维护不是重复 factengine。两者职责不同：
-
-- factengine 用便宜模型把 message / Todo / Task 原料蒸馏成增量 `Fact`；
-- 主动巡视 Agent 从事实和外部证据中整理当前世界投影，补齐实体、关系、资源和重要背景。
-
-它可以：
-
-- 补充或修正 Principal、Person、Project、Group 的当前画像；
-- 发现并登记重要 repo、文档、链接等 ManagedResource；
-- 新建、更新或结束带时效的 RelationFact；
-- 把值得长期记住、但不适合覆盖当前画像的变化追加为 Fact；
-- 发现相互矛盾、已经过期或缺少证据的认知后，用工具进一步查证。
-
-写入原则：
-
-- 当前画像保存“现在是什么”；Fact 保存“发生过什么”；RelationFact 保存“实体之间在什么时间段是什么关系”；
-- 不用新值覆盖历史事实；关系失效时设置 `valid_until`，不删除真实历史；
-- 证据不足时继续调查或保持不变，不为了让数据库看起来完整而猜值；
-- 先 list/query，再 get 详情，按需渐进加载，不把整个世界塞进一次 prompt。
+factengine 用同一个低成本 Agent 把 message / Todo / Task 原料蒸馏成增量 Fact，并通过通用 CRUD 工具按需维护当前实体、关系、资源和重要背景。主动巡视从这些当前投影和事实历史中渐进加载上下文，不承担全量持续建模的主要职责；巡视调查时发现明确、有用的变化，可以直接维护并读回，也可以按判断走统一线索入口。
 
 ### 3.2 发现此刻值得推进的事情
 
@@ -80,7 +63,7 @@ flowchart LR
 - 已检查 Todo、运行中/等待中/已失败 Task，不存在等价事项；
 - Task 自带根目标、证据、成功标准、约束和相关项目/仓库上下文。
 
-不满足时，合法结果包括继续调查、只更新世界模型、保留观察，或本轮什么都不做。不要为了证明主动性而制造 Task。
+不满足时，合法结果包括继续调查、保留观察，或本轮什么都不做。不要为了证明主动性而制造 Task。
 
 ### 3.3 看护已经开始但尚未闭环的事情
 
@@ -103,7 +86,8 @@ MVP 不新增 Goal Tree、Concern、评分维度或完成状态机。Agent 先�
 主动巡视 Agent 本轮允许：
 
 - 使用 `jarvis-tools`、`lark-cli`、`bytedcli`、`git` 做调查；
-- 维护 Jarvis 内部的世界模型；
+- 读取 Jarvis 内部的世界模型；
+- 在调查过程中按需维护已经确认且有用的内部认知；
 - 创建普通 Task；
 - 本轮没有值得做的事时明确结束。
 
@@ -117,7 +101,7 @@ MVP 不新增 Goal Tree、Concern、评分维度或完成状态机。Agent 先�
 
 这些外部动作统一进入普通 Task，由现有 M5 在完整上下文下执行，并按具体副作用判断是否需要审批。
 
-这个边界不是按 action_type 做风险枚举，而是按两个 Agent 的职责划分：巡视 Agent 只维护内部认知和提出工作，Worker Agent 才改变外部世界。
+这个边界不是按 action_type 做风险枚举，而是按主要职责划分：factengine 持续维护内部认知；巡视 Agent 主要看护和推进工作，也能顺手维护调查确认的内部变化；Worker Agent 才改变外部世界。
 
 ## 5. 一轮 heartbeat 的行为
 
@@ -127,8 +111,6 @@ MVP 不新增 Goal Tree、Concern、评分维度或完成状态机。Agent 先�
 读取 Principal + 活跃项目 + 当前 Todo/Task 概览
   ↓
 按近期变化和当前关注点，渐进加载事实、关系、消息和外部状态
-  ↓
-整理世界模型：补充 / 修正 / 结束过期关系 / 追加事实
   ↓
 审视未闭环工作：是否卡住、失效、误关单或时机已经变化
   ↓
@@ -186,7 +168,7 @@ Prompt 只约束角色与行为，不复制工具手册。工具能力继续由 
 1. 你是 Jarvis 的主动巡视 Agent，不是业务执行 Worker；
 2. 先理解 Principal、活跃项目和未闭环工作，再决定查什么；
 3. 主动使用工具多跳查证，能查到的不要问 Principal；
-4. 维护世界模型时区分当前画像、增量事实和时效关系；
+4. 渐进读取当前画像、增量事实和时效关系；调查中发现明确变化时可顺手维护，但不为补全模型扩大范围；
 5. 创建 Task 前查重，并写清根目标、成功标准、证据、约束和 why now；
 6. 外部业务动作只创建 Task，不直接执行；
 7. `NOTHING` 是正常且常见的高质量结果；
@@ -234,8 +216,8 @@ Prompt 只约束角色与行为，不复制工具手册。工具能力继续由 
 |---|---|---|
 | M2 capture | 原样采集外部事实 | 必要时查询已采集消息，不介入采集判断 |
 | M3 extract | 从新证据提取/更新 Todo | 不替换 M3；巡视从全局状态主动发现跨线索机会 |
-| factengine | 原料蒸馏为增量 Fact | 作为巡视的低成本事实底座 |
-| World model CRUD | 保存画像、事实、关系和资源 | 巡视通过现有工具维护，不直连数据库 |
+| factengine | 原料蒸馏为增量 Fact，并用通用工具维护当前世界状态 | 作为巡视的持续世界模型 |
+| World model CRUD | 保存画像、事实、关系和资源 | factengine 主要维护；巡视调查中按需维护 |
 | taskcreate | 来源无关地创建 Task | `create-task` 复用同一 Submitter |
 | M5 execute | 调查并完成具体 Task | 继续使用 `gpt-5.6-sol` 做强执行 |
 | ScheduledTask | 到点创建 Task / 恢复等待 Session | 不承载 heartbeat 自身 |
@@ -298,4 +280,4 @@ web/src/SystemTasks.tsx                  展示配置与运行记录
 - 根据空跑率、Task 接受率、重复率和错误世界更新率自动调频；
 - 多 Principal、多 Agent 或并行巡视。
 
-先跑通“低成本定时巡视 → 世界模型更新 / NOTHING / 创建高质量 Task → 强 M5 执行 → 结果回到世界模型”这一条最小闭环，再决定哪些抽象真的有必要。
+先跑通“factengine 持续世界建模 → 低成本定时巡视读取状态并返回 NOTHING / 创建高质量 Task → 强 M5 执行 → TaskEvent 回到 factengine”这一条最小闭环，再决定哪些抽象真的有必要。

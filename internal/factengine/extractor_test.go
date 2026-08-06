@@ -1,6 +1,10 @@
 package factengine
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +17,47 @@ func TestDecodeFactsAcceptsEmptyArray(t *testing.T) {
 	}
 	if len(facts) != 0 {
 		t.Fatalf("facts = %v, want empty", facts)
+	}
+}
+
+func TestExtractorRunsFromWorkspaceAtFactEngineStage(t *testing.T) {
+	root := t.TempDir()
+	observedPath := filepath.Join(root, "observed.txt")
+	binPath := filepath.Join(root, "fake-agent")
+	script := fmt.Sprintf(`#!/bin/sh
+result=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output-last-message" ]; then
+    shift
+    result="$1"
+  fi
+  shift
+done
+printf '%%s\n%%s\n' "$PWD" "$JARVIS_AGENT_STAGE" > '%s'
+printf '{"facts":[]}' > "$result"
+`, observedPath)
+	if err := os.WriteFile(binPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	extractor, err := NewExtractor(ExtractorOptions{
+		Bin: binPath, Model: "test", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewExtractor: %v", err)
+	}
+	if _, err := extractor.Extract(context.Background(), "system", SourceUnit{Source: "message", Key: "unit", Body: "material"}); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	observed, err := os.ReadFile(observedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(observed) != resolvedRoot+"\nfactengine\n" {
+		t.Fatalf("observed workspace/stage = %q", observed)
 	}
 }
 
@@ -138,16 +183,19 @@ func TestSourceUnitPromptRejectsOnlyEmptyBody(t *testing.T) {
 }
 
 func TestNewExtractorValidatesOptions(t *testing.T) {
+	root := t.TempDir()
 	tests := []struct {
 		name    string
 		opts    ExtractorOptions
 		wantErr string
 	}{
-		{"no bin", ExtractorOptions{Model: "m", Sandbox: "read-only", Timeout: time.Second}, "bin is required"},
-		{"unknown bin", ExtractorOptions{Bin: "jarvis-no-such-binary", Model: "m", Sandbox: "read-only", Timeout: time.Second}, "find fact extractor binary"},
-		{"no model", ExtractorOptions{Bin: "sh", Sandbox: "read-only", Timeout: time.Second}, "model is required"},
-		{"bad sandbox", ExtractorOptions{Bin: "sh", Model: "m", Sandbox: "yolo", Timeout: time.Second}, "sandbox"},
-		{"no timeout", ExtractorOptions{Bin: "sh", Model: "m", Sandbox: "read-only"}, "timeout"},
+		{"no bin", ExtractorOptions{Model: "m", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second}, "bin is required"},
+		{"unknown bin", ExtractorOptions{Bin: "jarvis-no-such-binary", Model: "m", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second}, "find fact extractor binary"},
+		{"no model", ExtractorOptions{Bin: "sh", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second}, "model is required"},
+		{"bad sandbox", ExtractorOptions{Bin: "sh", Model: "m", Sandbox: "yolo", WorkspaceRoot: root, Timeout: time.Second}, "sandbox"},
+		{"no timeout", ExtractorOptions{Bin: "sh", Model: "m", Sandbox: "read-only", WorkspaceRoot: root}, "timeout"},
+		{"no workspace", ExtractorOptions{Bin: "sh", Model: "m", Sandbox: "read-only", Timeout: time.Second}, "workspace root"},
+		{"missing workspace", ExtractorOptions{Bin: "sh", Model: "m", Sandbox: "read-only", WorkspaceRoot: root + "/missing", Timeout: time.Second}, "stat fact extractor workspace root"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -156,5 +204,14 @@ func TestNewExtractorValidatesOptions(t *testing.T) {
 				t.Fatalf("NewExtractor() error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+	extractor, err := NewExtractor(ExtractorOptions{
+		Bin: "sh", Model: "m", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewExtractor(valid): %v", err)
+	}
+	if extractor.root != root {
+		t.Fatalf("extractor root = %q, want %q", extractor.root, root)
 	}
 }

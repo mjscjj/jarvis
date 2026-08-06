@@ -38,7 +38,7 @@ func definitions() []definition {
 		{key: SystemPromptMeetingSweepKey, name: "会议巡扫系统提示词", filename: "meeting-sweep-system-prompt.md"},
 		{key: SystemPromptMorningBriefKey, name: "晨间作战简报系统提示词", filename: "morning-brief-system-prompt.md"},
 		{key: ApprovalPolicyKey, name: "M5 审批策略", filename: "m5-approval-policy.md"},
-		{key: SystemPromptFactExtractKey, name: "离线事实抽取提示词", filename: "fact-extract-system-prompt.md"},
+		{key: SystemPromptFactExtractKey, name: "持续世界建模提示词", filename: "fact-extract-system-prompt.md"},
 		{key: SystemPromptFactRollupKey, name: "事实日压缩提示词", filename: "fact-rollup-system-prompt.md"},
 	}
 }

@@ -160,7 +160,7 @@ type UnitExtraction struct {
 	UnitKey    string
 	Candidates []ResolvedCandidate
 	// Facts are the already-distilled facts about this chat's group and project,
-	// frozen into each Todo's context_snapshot so M5 replay the same background.
+	// frozen into each Todo's context_snapshot for audit and M5 on-demand lookup.
 	Facts []contextsnap.Fact
 }
 

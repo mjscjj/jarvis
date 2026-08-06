@@ -14,7 +14,8 @@ import (
 // time (docs/design-context-pipeline.md §2.2). It assembles from the already
 // loaded ChatBatch/unit data; the only DB read is the full project detail when
 // the project was resolved from a hint (the bound project detail is already in
-// the batch). M5 replay this exact snapshot without re-querying.
+// the batch). M5 gets a compact projection first and can query this exact
+// snapshot when it needs creation-time detail.
 func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, projectID *uint64, assignerOpenID *string, facts []contextsnap.Fact) (contextsnap.Snapshot, error) {
 	snapshot := contextsnap.Snapshot{
 		SnapshotVersion: contextsnap.SnapshotVersion,
@@ -210,7 +211,7 @@ func snapshotMessages(unit ConversationUnit, candidate Candidate) []contextsnap.
 // maxConversationMessages bounds how many surrounding messages we freeze into
 // the snapshot's conversation context. Enough for several rounds of背景, small
 // enough to keep the snapshot from bloating.
-const maxConversationMessages = 40
+const maxConversationMessages = 25
 
 // snapshotConversation freezes the surrounding chat thread (the whole
 // conversation unit, capped) so M5 read more than the single cited message.

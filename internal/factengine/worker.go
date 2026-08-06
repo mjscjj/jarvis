@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"jarvis/internal/progress"
 	"jarvis/internal/textstore"
+	"jarvis/internal/toolcatalog"
 )
 
 type cursorStore interface {
@@ -51,8 +53,9 @@ type SourceStats struct {
 	Seeded bool
 }
 
-// Worker runs one offline extraction round: read material above the watermark,
-// distil each unit, store the facts, then move the watermark.
+// Worker runs one offline world-model round: read material above the watermark,
+// let the Agent investigate and maintain internal state, store its facts, then
+// move the watermark.
 type Worker struct {
 	store     cursorStore
 	sources   []MaterialSource
@@ -151,9 +154,13 @@ func (w *Worker) extractSource(ctx context.Context, source MaterialSource, syste
 		return stats, fmt.Errorf("source returned max_id=%d with no material units", maxID)
 	}
 	if *systemPrompt == "" {
-		*systemPrompt, err = w.opts.Prompts.Content(ctx, textstore.SystemPromptFactExtractKey)
+		rolePrompt, readErr := w.opts.Prompts.Content(ctx, textstore.SystemPromptFactExtractKey)
+		if readErr != nil {
+			return stats, fmt.Errorf("read fact extraction system prompt: %w", readErr)
+		}
+		*systemPrompt, err = buildAgentSystemPrompt(rolePrompt)
 		if err != nil {
-			return stats, fmt.Errorf("read fact extraction system prompt: %w", err)
+			return stats, err
 		}
 	}
 	for _, unit := range units {
@@ -185,12 +192,25 @@ func (w *Worker) extractSource(ctx context.Context, source MaterialSource, syste
 	return stats, nil
 }
 
+func buildAgentSystemPrompt(rolePrompt string) (string, error) {
+	rolePrompt = strings.TrimSpace(rolePrompt)
+	if rolePrompt == "" {
+		return "", fmt.Errorf("fact extraction system prompt is empty")
+	}
+	tools, err := toolcatalog.Block(toolcatalog.StageFactEngine)
+	if err != nil {
+		return "", fmt.Errorf("build fact engine tool catalog: %w", err)
+	}
+	return rolePrompt + "\n\n" + strings.TrimSpace(tools), nil
+}
+
 // storeFacts writes one unit's facts. SourceUnit.Subjects is context rather than
 // an allowlist: the agent may resolve another real subject with tools, and the
 // progress service validates the entity types it knows. Storage errors abort the
 // round instead of being hidden behind a source-specific fallback.
 func (w *Worker) storeFacts(ctx context.Context, unit SourceUnit, facts []ExtractedFact) (int, error) {
 	source := unit.Source
+	sourceID := unit.LastID
 	occurredAt := unit.OccurredAt
 	stored := 0
 	for _, fact := range facts {
@@ -200,6 +220,7 @@ func (w *Worker) storeFacts(ctx context.Context, unit SourceUnit, facts []Extrac
 			Description: fact.Description,
 			OccurredAt:  &occurredAt,
 			SourceKind:  &source,
+			SourceID:    &sourceID,
 		}); err != nil {
 			return stored, fmt.Errorf("store fact from unit=%s subject=%s/%d: %w",
 				unit.Key, fact.SubjectType, fact.SubjectID, err)

@@ -19,19 +19,21 @@ const maxExtractorOutputBytes = 1 << 20
 // reasoning-effort setting: the engine runs a cheap fast model where the flag is
 // not known to apply, and passing an unsupported option would fail every call.
 type ExtractorOptions struct {
-	Bin     string
-	Model   string
-	Sandbox string
-	Timeout time.Duration
+	Bin           string
+	Model         string
+	Sandbox       string
+	WorkspaceRoot string
+	Timeout       time.Duration
 }
 
 // Extractor runs the agent CLI once per source unit. The CLI is a full agent: it
-// can run jarvis-tools itself to check which facts a subject already has, so
-// there is no Go-side tool loop here.
+// can query and maintain Jarvis's internal world model through generic tools, so
+// there is no Go-side entity routing or tool loop here.
 type Extractor struct {
 	bin     string
 	model   string
 	sandbox string
+	root    string
 	timeout time.Duration
 }
 
@@ -54,7 +56,22 @@ func NewExtractor(opts ExtractorOptions) (*Extractor, error) {
 	if opts.Timeout <= 0 {
 		return nil, fmt.Errorf("fact extractor timeout must be positive")
 	}
-	return &Extractor{bin: bin, model: opts.Model, sandbox: opts.Sandbox, timeout: opts.Timeout}, nil
+	root := strings.TrimSpace(opts.WorkspaceRoot)
+	if root == "" {
+		return nil, fmt.Errorf("fact extractor workspace root is required")
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve fact extractor workspace root %q: %w", opts.WorkspaceRoot, err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, fmt.Errorf("stat fact extractor workspace root %q: %w", root, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("fact extractor workspace root %q is not a directory", root)
+	}
+	return &Extractor{bin: bin, model: opts.Model, sandbox: opts.Sandbox, root: root, timeout: opts.Timeout}, nil
 }
 
 // ExtractedFact is one fact the model decided to keep. Only the three fields the
@@ -142,7 +159,8 @@ func (e *Extractor) run(ctx context.Context, unit SourceUnit, prompt string) ([]
 	runCtx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 	command := exec.CommandContext(runCtx, e.bin, args...)
-	command.Dir = tempDir
+	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=factengine")
+	command.Dir = e.root
 	command.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout

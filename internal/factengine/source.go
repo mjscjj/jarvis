@@ -1,13 +1,14 @@
-// Package factengine is the offline fact engine: a cron-driven agent that reads
-// material the pipeline already produced and distils long-lived facts out of it.
+// Package factengine is the offline world-model engine: a cron-driven agent that
+// reads material the pipeline already produced, distils long-lived facts and
+// uses generic Jarvis tools to maintain current internal entities and relations.
 //
 // It runs off the M2→M3→M5 critical path. Nothing upstream waits for it, and a
 // failed round costs at most one retry — the source watermark only advances past
 // material whose facts are already committed.
 //
-// One extraction protocol serves every source. A source contributes a SQL
-// projection that renders material into SourceUnit; what counts as a fact and
-// how to bind it to a subject live in the prompt, not here. Adding the Todo and
+// One Agent protocol serves every source. A source contributes a SQL projection
+// that renders material into SourceUnit; what counts as a fact and whether any
+// world object should change live in the prompt, not here. Adding the Todo and
 // Task sources is a new projection, not a new pipeline.
 package factengine
 

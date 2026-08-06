@@ -146,8 +146,29 @@ func TestExtractOnceStoresFactsAndAdvancesCursor(t *testing.T) {
 	if stored.SourceKind == nil || *stored.SourceKind != SourceMessage {
 		t.Fatalf("stored source_kind = %v, want %q", stored.SourceKind, SourceMessage)
 	}
+	if stored.SourceID == nil || *stored.SourceID != 5 {
+		t.Fatalf("stored source_id = %v, want unit last_id 5", stored.SourceID)
+	}
 	if len(store.advanced) != 1 || store.advanced[0] != 5 {
 		t.Fatalf("advanced cursor = %v, want [5]", store.advanced)
+	}
+}
+
+func TestBuildAgentSystemPromptIncludesGenericWorldModelTools(t *testing.T) {
+	prompt, err := buildAgentSystemPrompt("维护长期事实与当前世界状态")
+	if err != nil {
+		t.Fatalf("buildAgentSystemPrompt: %v", err)
+	}
+	for _, want := range []string{
+		"维护长期事实与当前世界状态", "当前阶段：factengine", "通用查询及 CRUD",
+		"不创建或推进 Task", "最终 `facts` 数组",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	if _, err := buildAgentSystemPrompt("   "); err == nil {
+		t.Fatal("empty role prompt was accepted")
 	}
 }
 

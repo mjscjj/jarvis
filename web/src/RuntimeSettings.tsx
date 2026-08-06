@@ -381,7 +381,7 @@ export default function RuntimeSettings() {
     },
     {
       key: 'capture-facts',
-      label: <PanelLabel title="采集与长期事实" description="飞书消息和离线事实引擎" />,
+      label: <PanelLabel title="采集与世界模型" description="飞书消息和持续世界建模 Agent" />,
       children: (
         <>
           <Section title="消息采集" description="发现可处理的会话，并增量扫描飞书消息。">
@@ -391,9 +391,9 @@ export default function RuntimeSettings() {
             <NumberField name="capture_scan_workers" label="并发扫描会话数" min={1} max={32} />
             <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按近期活跃度自动纳入采集的私聊数量；0 表示关闭。" />
           </Section>
-          <Section title="离线事实引擎" description="在主流水线之外把消息切成会话窗口，提取可长期复用的工作事实；并按天把前一天的明细压成一条摘要。">
-            <SwitchField name="fact_engine_enabled" label="自动提取事实" />
-            <TextField name="fact_engine_schedule" label="事实提取周期" placeholder="@every 15m" />
+          <Section title="持续世界建模" description="在主流水线之外增量阅读消息、Todo 和 Task，由 Agent 自主维护人物、项目、群、资料、关系与历史事实；并按天压缩事实阅读层。">
+            <SwitchField name="fact_engine_enabled" label="自动世界建模" />
+            <TextField name="fact_engine_schedule" label="建模周期" placeholder="@every 15m" />
             <TextField name="fact_engine_rollup_schedule" label="日压缩周期" placeholder="0 2 * * *" help="每天把前一个自然日每个主体的明细事实压成一条摘要，供 M3 提示词使用。" />
             <TextField name="fact_engine_model" label="事实提取模型" />
             <NumberField name="fact_engine_timeout_seconds" label="单轮超时（秒）" min={1} max={3600} />

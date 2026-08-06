@@ -324,7 +324,7 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		"last_evidence_at":   maxTime(existing.LastEvidenceAt, prepared.LastEvidenceAt),
 		"version":            gorm.Expr("version + 1"),
 		// Refresh the frozen snapshot/resolution/extraction on new evidence so
-		// M5 always replay the latest background and extraction for this clue.
+		// M5 can query the latest creation-time evidence for this clue.
 		"context_snapshot":  prepared.ContextSnapshot,
 		"extraction_result": prepared.ExtractionResult,
 		"resolution":        prepared.Resolution,
