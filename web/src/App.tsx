@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Badge, Button, Drawer, Layout, Menu, Tooltip, Typography } from 'antd'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Badge, Button, Drawer, Layout, Menu, Spin, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   HomeOutlined,
@@ -15,20 +15,22 @@ import {
   CalendarOutlined,
   MoreOutlined,
 } from '@ant-design/icons'
-import Tasks from './Tasks'
-import Background, { Settings } from './Background'
 import Overview from './Overview'
-import Progress from './Progress'
-import Debug from './Debug'
-import Todos from './Todos'
-import Chat from './Chat'
-import ScheduledTasks from './ScheduledTasks'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
+
+const Tasks = lazy(() => import('./Tasks'))
+const Progress = lazy(() => import('./Progress'))
+const Background = lazy(() => import('./Background'))
+const Settings = lazy(() => import('./Background').then((module) => ({ default: module.Settings })))
+const Todos = lazy(() => import('./Todos'))
+const ScheduledTasks = lazy(() => import('./ScheduledTasks'))
+const Debug = lazy(() => import('./Debug'))
+const Chat = lazy(() => import('./Chat'))
 
 const DEFAULT_KEY = 'overview'
 
@@ -49,6 +51,7 @@ function AppShell() {
   const { context, navigate } = usePageContext()
   const runtimeFailures = useRuntimeFailureCount()
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
+  const [chatLoaded, setChatLoaded] = useState(chatOpen)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const [managementOpen, setManagementOpen] = useState(true)
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
@@ -92,6 +95,10 @@ function AppShell() {
     progress: <Progress />,
     debug: <Debug />,
   }
+
+  useEffect(() => {
+    if (chatOpen) setChatLoaded(true)
+  }, [chatOpen])
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -173,7 +180,9 @@ function AppShell() {
       <Layout>
         <div className="app-main">
           <Content className="app-content">
-            {pages[context.active_key]}
+            <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在加载…</span></div>}>
+              {pages[context.active_key]}
+            </Suspense>
           </Content>
           <aside
             ref={chatRef}
@@ -182,7 +191,11 @@ function AppShell() {
             inert={chatOpen ? undefined : true}
             onKeyDown={handleChatKeyDown}
           >
-            <Chat open={chatOpen} onClose={() => setChatOpen(false)} />
+            {chatLoaded && (
+              <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在打开对话…</span></div>}>
+                <Chat open={chatOpen} onClose={() => setChatOpen(false)} />
+              </Suspense>
+            )}
           </aside>
         </div>
       </Layout>

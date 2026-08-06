@@ -399,6 +399,15 @@ body {
   outline-offset: -2px;
 }
 
+.page-loading {
+  display: flex;
+  min-height: 240px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
 /* 任务列表等：单元格最多 3 行，避免摘要把整行撑得很高；悬停看 title 全文 */
 .table-cell-clamp {
   display: -webkit-box;
