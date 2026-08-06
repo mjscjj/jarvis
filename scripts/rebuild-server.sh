@@ -62,6 +62,7 @@ cd "$repo_dir"
 trap 'rm -f "$next_bin"' EXIT
 
 echo "building $next_bin"
+"$script_dir/check-build-toolchain.sh"
 go build -o "$next_bin" ./cmd/jarvis-server
 "$script_dir/sign-jarvis-server.sh" "$next_bin"
 "$script_dir/verify-server-signature.sh" "$next_bin"

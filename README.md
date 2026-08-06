@@ -95,9 +95,11 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 ## 本地运行
 
-要求 Go 1.26.4、Node/npm、`traex`、`lark-cli` 和 Qdrant。`conf/config.yaml` 使用本机明文密钥；请注意仓库配置可能包含真实凭证。SQLite 文件及父目录会在启动时自动创建，无需单独安装或建库。
+要求 Go 1.26.4、C 编译器（macOS 装 Xcode Command Line Tools）、Node/npm、`jq`、`git`、`traex`、`lark-cli` 和 Qdrant。`conf/config.yaml` 使用本机明文密钥，权限保持 `600`；请注意仓库配置可能包含真实凭证。SQLite 文件及父目录会在启动时自动创建，无需单独安装或建库。
 
-构建期只依赖公网：HTTP 框架用开源 `github.com/cloudwego/hertz`，`go.mod` 里没有 `code.byted.org` 模块，不需要内网 GOPROXY。运行期仍然需要内部 CLI（`traex`、`lark-cli`），它们靠 PATH 查找。
+C 编译器是硬依赖：持久层用 `gorm.io/driver/sqlite`，它包装 `mattn/go-sqlite3` 走 CGO。缺了它 `go build` 仍会成功并链接一个 stub，直到启动打开数据库才报 `go-sqlite3 requires cgo to work`，所以两个构建脚本都先跑 `scripts/check-build-toolchain.sh` 把问题挡在构建前。`jq` 供 `scripts/jarvis-tools` 和构建脚本解析 API 响应。
+
+构建期只依赖公网：HTTP 框架用开源 `github.com/cloudwego/hertz`，`go.mod` 里没有 `code.byted.org` 模块，不需要内网 GOPROXY；`web/package-lock.json` 里的 `resolved` 全部指向 `registry.npmjs.org`，`npm ci` 不需要内网镜像。运行期仍然需要内部 CLI（`traex`、`lark-cli`），它们靠 PATH 查找。
 
 只执行迁移或一次性动作：
 

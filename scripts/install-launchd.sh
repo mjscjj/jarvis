@@ -10,7 +10,8 @@ next_bin=$repo_dir/bin/jarvis-server.next
 mkdir -p "$repo_dir/bin" "$repo_dir/var/log"
 cd "$repo_dir"
 trap 'rm -f "$next_bin"' EXIT
-npm --prefix "$repo_dir/web" ci --registry=https://registry.npmjs.org
+"$script_dir/check-build-toolchain.sh"
+npm --prefix "$repo_dir/web" ci
 npm --prefix "$repo_dir/web" run build
 go build -o "$next_bin" ./cmd/jarvis-server
 "$script_dir/sign-jarvis-server.sh" "$next_bin"
