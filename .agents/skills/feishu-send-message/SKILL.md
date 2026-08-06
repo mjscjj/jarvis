@@ -36,7 +36,7 @@ lark-cli im +messages-send \
 
 按钮是否出现只由 callback 是否可用决定，不按动作类型或风险分档：
 
-- 有效配置里的 `card_approval.enabled=true`，且 `profile`、`principal_open_id` 都非空时，每张审批卡固定给 `[确认]` `[拒绝]` `[查看详情]` 三个按钮。确认/拒绝是 callback 按钮，`value` 只带服务端协议要求的 `action`（分别为 `approve` / `reject`）和本任务的 `task_id`；查看详情是跳转按钮。
+- 有效配置里的 `card_approval.enabled=true`，且 `profile`、`principal_open_id` 都非空时，每张审批卡固定给 `[确认]` `[拒绝]` `[查看详情]` 三个按钮。确认/拒绝是 callback 按钮，`value` 按 CC Connect 协议携带 `action=jarvis_approval`、`decision=approve|reject` 和本任务的 `task_id`；查看详情跳到 `http://127.0.0.1:18800/#/work/task/<task_id>`，直接打开对应 Task。
 - 高风险、对外承诺、删改线上或影响范围较大时，三个按钮一个都不能少；只在正文增加醒目的「高风险提示」，说明影响范围、不可逆后果和回滚方式，并给 `[确认]` 按钮增加二次确认弹窗。
 - callback 配置不可用时，才退化成只有 `[查看详情]` 的链接卡，不能发点了没反应的确认/拒绝按钮。
 
@@ -77,7 +77,7 @@ lark-cli --profile "<card_approval.profile>" im +messages-send \
               "type": "primary_filled",
               "width": "fill",
               "behaviors": [
-                { "type": "callback", "value": { "action": "approve", "task_id": <task_id> } }
+                { "type": "callback", "value": { "action": "jarvis_approval", "decision": "approve", "task_id": <task_id> } }
               ]
             }]
           },
@@ -91,7 +91,7 @@ lark-cli --profile "<card_approval.profile>" im +messages-send \
               "type": "danger",
               "width": "fill",
               "behaviors": [
-                { "type": "callback", "value": { "action": "reject", "task_id": <task_id> } }
+                { "type": "callback", "value": { "action": "jarvis_approval", "decision": "reject", "task_id": <task_id> } }
               ]
             }]
           },
@@ -105,7 +105,7 @@ lark-cli --profile "<card_approval.profile>" im +messages-send \
               "type": "default",
               "width": "fill",
               "behaviors": [
-                { "type": "open_url", "default_url": "http://127.0.0.1:18800/", "pc_url": "", "ios_url": "", "android_url": "" }
+                { "type": "open_url", "default_url": "http://127.0.0.1:18800/#/work/task/<task_id>", "pc_url": "", "ios_url": "", "android_url": "" }
               ]
             }]
           }
@@ -128,7 +128,7 @@ lark-cli --profile "<card_approval.profile>" im +messages-send \
 
 **callback 不可用的卡片**：去掉模板里的确认/拒绝 callback 按钮，只留 `[查看详情]` 的 open_url 按钮（`type` 设 `primary_filled`、加 `"width": "fill"` 撑满成强焦点），按本 Skill 前面的普通 principal 私聊路径发送（不加 `--profile`，使用 `jarvis-tools get-principal` 返回的原 Jarvis Bot open_id）。
 
-`task_id` 必须填成本任务真实的数字 ID；`<card_approval.profile>` 和 `<card_approval.principal_open_id>` 必须逐字使用有效配置值，不能省略。二者就是当前 Jarvis Bot 的 profile/open_id，CC Connect 始终独占该 app 的长连接并把审批 callback 转发给 Jarvis。发送成功后，从 lark-cli 原始返回中取真实 `message_id`，在本轮 `effects[]` 的 `feishu_message.extra` 里原样记录 `{"message_id":"om_..."}`；服务端用它把点击绑定到当前 proposal，不能遗漏或编造。确认/拒绝的 callback 由 jarvis-server 直接落地（点一下就走已有的 approve/reject），并把卡片就地更新成「已确认/已驳回」——你不用再管后续，也不要自己再去调审批接口。`[查看详情]` 是纯本地跳转，不回调。卡片连续发送失败就退回 `--markdown` 纯文字通知（正文照样讲清三件事 + 后台入口），别卡在这。
+`task_id` 必须填成本任务真实的数字 ID；`<card_approval.profile>` 和 `<card_approval.principal_open_id>` 必须逐字使用有效配置值，不能省略。二者就是当前 Jarvis Bot 的 profile/open_id，CC Connect 始终独占该 app 的长连接并把审批 callback 转发给 Jarvis。发送成功后，从 lark-cli 原始返回中取真实 `message_id`，在本轮 `effects[]` 的 `feishu_message.extra` 里原样记录 `{"message_id":"om_..."}`；服务端用它把点击绑定到当前 proposal，不能遗漏或编造。确认/拒绝的 callback 由 jarvis-server 直接落地（点一下就走已有的 approve/reject），并把卡片就地更新成「已确认/已驳回」——你不用再管后续，也不要自己再去调审批接口。`[查看详情]` 必须带当前 `task_id` 的 `#/work/task/<task_id>` 深链，它是纯本地跳转、不回调。卡片连续发送失败就退回 `--markdown` 纯文字通知（正文照样讲清三件事 + 对应 Task 深链），别卡在这。
 
 ## 给个人发消息
 

@@ -98,8 +98,9 @@ func TestRepositoryFeishuApprovalCardKeepsDecisionActionsVisible(t *testing.T) {
 		"三个按钮一个都不能少",
 		"给 `[确认]` 按钮增加二次确认弹窗",
 		`"confirm": {`,
-		`"value": { "action": "approve", "task_id": <task_id> }`,
-		`"value": { "action": "reject", "task_id": <task_id> }`,
+		`"value": { "action": "jarvis_approval", "decision": "approve", "task_id": <task_id> }`,
+		`"value": { "action": "jarvis_approval", "decision": "reject", "task_id": <task_id> }`,
+		`"default_url": "http://127.0.0.1:18800/#/work/task/<task_id>"`,
 		"callback 不可用的卡片",
 	} {
 		if !strings.Contains(skill, want) {
@@ -110,9 +111,9 @@ func TestRepositoryFeishuApprovalCardKeepsDecisionActionsVisible(t *testing.T) {
 		"只给查看详情的卡片（高风险/说不清）",
 		"动作简单、低风险、后果一句话说得清",
 		"[同意]",
-		`"action": "jarvis_approval"`,
-		`"decision": "approve"`,
-		`"decision": "reject"`,
+		`"value": { "action": "approve", "task_id": <task_id> }`,
+		`"value": { "action": "reject", "task_id": <task_id> }`,
+		`"default_url": "http://127.0.0.1:18800/"`,
 	} {
 		if strings.Contains(skill, obsolete) {
 			t.Fatalf("Feishu message skill still contains obsolete approval-card rule %q:\n%s", obsolete, skill)
