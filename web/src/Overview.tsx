@@ -311,7 +311,7 @@ export default function Overview() {
         <div className="today-command-copy">
           <Text className="today-command-kicker">今日任务态势</Text>
           <Title level={2}>
-            有 <strong>{attention?.total ?? '—'}</strong> 件事等你拍板，Jarvis 正在推进 <strong>{active?.total ?? '—'}</strong> 件
+            有 <strong>{attention?.total ?? '—'}</strong> 件事等你拍板，另有 <strong>{active?.total ?? '—'}</strong> 件任务在途
           </Title>
           <Text type="secondary">
             {nextWakeAt ? `下一次将在 ${timeLabel(nextWakeAt)} 回来继续处理` : activeAgents > 0 ? `${activeAgents} 个执行器正在工作` : '当前没有明确的下一次唤醒时间'}
@@ -357,8 +357,8 @@ export default function Overview() {
         <Card className="today-panel today-active-panel" variant="borderless">
           <div className="today-panel-heading today-panel-heading-compact">
             <div>
-              <Text className="today-eyebrow">Jarvis 正在推进</Text>
-              <Title level={4}>{active ? `${active.total} 件进行中` : '正在读取'}</Title>
+              <Text className="today-eyebrow">在途任务</Text>
+              <Title level={4}>{active ? `${active.total} 件未闭环` : '正在读取'}</Title>
             </div>
             <div className="today-agent-state">
               <span className={activeAgents > 0 ? 'is-active' : undefined} />
