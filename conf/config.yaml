@@ -49,6 +49,7 @@ extract:
   codex_sandbox: "danger-full-access"   # 本地可信环境，codex 可读写整机、联网
   codex_network: true                   # 开联网跑 lark-cli/bytedcli 查飞书侧信息
   codex_reasoning_effort: "low"         # 覆盖用户全局 xhigh，控单次耗时
+  concurrency: 2                        # 不同 chat_id（单聊/群聊）并发，同一 chat 串行
   batch_messages: 400
   context_messages: 20
   context_window_minutes: 120

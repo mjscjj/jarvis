@@ -523,6 +523,7 @@ func main() {
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
 				OpenTodoLimit: cfg.Extract.OpenTodoLimit, RecentTaskLimit: cfg.Extract.RecentTaskLimit,
 			},
+			Concurrency: cfg.Extract.Concurrency,
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
 			FactLimit: cfg.Extract.FactLimit, KeyPersonLimit: cfg.Extract.KeyPersonLimit,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
@@ -642,6 +643,7 @@ func main() {
 			executionTaskStore,
 			executionAgent,
 			pipeline.Options{
+				ExtractConcurrency:    cfg.Extract.Concurrency,
 				ExecutionBatchLimit:  cfg.Execute.BatchLimit,
 				ExecutionConcurrency: cfg.Execute.Concurrency,
 				StaleExecuting:       time.Duration(cfg.Execute.StaleExecutingMinute) * time.Minute,

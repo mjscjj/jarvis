@@ -30,6 +30,7 @@ type RuntimeSettings struct {
 	ExtractEnabled               bool    `json:"extract_enabled"`
 	ExtractEngine                string  `json:"extract_engine"`
 	ExtractSchedule              string  `json:"extract_schedule"`
+	ExtractConcurrency           int     `json:"extract_concurrency"`
 	ExtractBatchMessages         int     `json:"extract_batch_messages"`
 	ExtractSandbox               string  `json:"extract_sandbox"`
 	ExtractNetworkEnabled        bool    `json:"extract_network_enabled"`
@@ -188,6 +189,7 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExtractEnabled:               cfg.Extract.Enabled,
 		ExtractEngine:                cfg.Extract.Engine,
 		ExtractSchedule:              cfg.Extract.Schedule,
+		ExtractConcurrency:           cfg.Extract.Concurrency,
 		ExtractBatchMessages:         cfg.Extract.BatchMessages,
 		ExtractSandbox:               cfg.Extract.CodexSandbox,
 		ExtractNetworkEnabled:        cfg.Extract.CodexNetwork,
@@ -262,6 +264,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Extract.Enabled = input.ExtractEnabled
 	cfg.Extract.Engine = strings.TrimSpace(input.ExtractEngine)
 	cfg.Extract.Schedule = strings.TrimSpace(input.ExtractSchedule)
+	cfg.Extract.Concurrency = input.ExtractConcurrency
 	cfg.Extract.BatchMessages = input.ExtractBatchMessages
 	cfg.Extract.CodexSandbox = strings.TrimSpace(input.ExtractSandbox)
 	cfg.Extract.CodexNetwork = input.ExtractNetworkEnabled
@@ -331,6 +334,7 @@ type runtimeOverride struct {
 		Enabled               bool    `yaml:"enabled"`
 		Engine                string  `yaml:"engine"`
 		Schedule              string  `yaml:"schedule"`
+		Concurrency           int     `yaml:"concurrency"`
 		BatchMessages         int     `yaml:"batch_messages"`
 		Sandbox               string  `yaml:"codex_sandbox"`
 		Network               bool    `yaml:"codex_network"`
@@ -430,6 +434,7 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Extract.Enabled = input.ExtractEnabled
 	override.Extract.Engine = strings.TrimSpace(input.ExtractEngine)
 	override.Extract.Schedule = strings.TrimSpace(input.ExtractSchedule)
+	override.Extract.Concurrency = input.ExtractConcurrency
 	override.Extract.BatchMessages = input.ExtractBatchMessages
 	override.Extract.Sandbox = strings.TrimSpace(input.ExtractSandbox)
 	override.Extract.Network = input.ExtractNetworkEnabled

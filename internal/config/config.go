@@ -154,6 +154,7 @@ type ExtractConfig struct {
 	CodexSandbox          string  `yaml:"codex_sandbox"`
 	CodexNetwork          bool    `yaml:"codex_network"`
 	CodexReasoningEffort  string  `yaml:"codex_reasoning_effort"`
+	Concurrency           int     `yaml:"concurrency"`
 	BatchMessages         int     `yaml:"batch_messages"`
 	ContextMessages       int     `yaml:"context_messages"`
 	ContextWindowMinutes  int     `yaml:"context_window_minutes"`
@@ -374,6 +375,9 @@ func (c *Config) validate() error {
 	}
 	if c.Extract.Schedule == "" {
 		return fmt.Errorf("extract.schedule 不能为空")
+	}
+	if c.Extract.Concurrency <= 0 {
+		return fmt.Errorf("extract.concurrency 必须大于 0")
 	}
 	if c.Extract.BatchMessages <= 0 {
 		return fmt.Errorf("extract.batch_messages 必须大于 0")

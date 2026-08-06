@@ -22,6 +22,35 @@ type fakeExtractor struct {
 	todos     []extract.TodoRef
 }
 
+type blockingExtractor struct {
+	started          chan string
+	release          chan struct{}
+	reconcileStarted chan struct{}
+}
+
+func (f *blockingExtractor) ExtractChat(ctx context.Context, chatID string) (extract.WorkerStats, []extract.TodoRef, error) {
+	select {
+	case f.started <- chatID:
+	case <-ctx.Done():
+		return extract.WorkerStats{}, nil, ctx.Err()
+	}
+	select {
+	case <-f.release:
+		return extract.WorkerStats{}, nil, nil
+	case <-ctx.Done():
+		return extract.WorkerStats{}, nil, ctx.Err()
+	}
+}
+
+func (f *blockingExtractor) ExtractOnce(ctx context.Context) (extract.WorkerStats, error) {
+	select {
+	case f.reconcileStarted <- struct{}{}:
+		return extract.WorkerStats{}, nil
+	case <-ctx.Done():
+		return extract.WorkerStats{}, ctx.Err()
+	}
+}
+
 func (f *fakeExtractor) ExtractChat(context.Context, string) (extract.WorkerStats, []extract.TodoRef, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -119,8 +148,142 @@ func TestCoordinatorPreservesLogIDIntoM5(t *testing.T) {
 
 func pipelineTestOptions() Options {
 	return Options{
-		ExecutionBatchLimit: 5, ExecutionConcurrency: 1, StaleExecuting: time.Minute,
+		ExtractConcurrency: 2, ExecutionBatchLimit: 5, ExecutionConcurrency: 1, StaleExecuting: time.Minute,
 		Logger: log.New(io.Discard, "", 0),
+	}
+}
+
+func TestCoordinatorRejectsInvalidExtractConcurrency(t *testing.T) {
+	opts := pipelineTestOptions()
+	opts.ExtractConcurrency = 0
+	if _, err := newCoordinator(&fakeExtractor{}, nil, nil, nil, opts); err == nil {
+		t.Fatal("newCoordinator() accepted zero extract concurrency")
+	}
+}
+
+func TestCoordinatorRunsDifferentChatsConcurrently(t *testing.T) {
+	extractor := &blockingExtractor{
+		started: make(chan string, 2), release: make(chan struct{}), reconcileStarted: make(chan struct{}, 1),
+	}
+	opts := pipelineTestOptions()
+	opts.ExtractConcurrency = 2
+	coordinator, err := newCoordinator(extractor, nil, nil, nil, opts)
+	if err != nil {
+		t.Fatalf("newCoordinator() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := coordinator.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer func() {
+		cancel()
+		coordinator.Wait()
+	}()
+
+	for index, chatID := range []string{"oc_person", "oc_group"} {
+		if err := coordinator.ChatScanned(ctx, capture.ChatScanResult{
+			ChatID: chatID, InsertedCount: 1, HighWater: int64(index + 1),
+		}); err != nil {
+			t.Fatalf("ChatScanned(%s) error = %v", chatID, err)
+		}
+	}
+	seen := make(map[string]bool)
+	for range 2 {
+		select {
+		case chatID := <-extractor.started:
+			seen[chatID] = true
+		case <-time.After(2 * time.Second):
+			t.Fatal("different chats did not start concurrently")
+		}
+	}
+	close(extractor.release)
+	if !seen["oc_person"] || !seen["oc_group"] {
+		t.Fatalf("started chats = %#v", seen)
+	}
+}
+
+func TestCoordinatorSerializesSameChat(t *testing.T) {
+	extractor := &blockingExtractor{
+		started: make(chan string, 2), release: make(chan struct{}), reconcileStarted: make(chan struct{}, 1),
+	}
+	coordinator, err := newCoordinator(extractor, nil, nil, nil, pipelineTestOptions())
+	if err != nil {
+		t.Fatalf("newCoordinator() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := coordinator.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer func() {
+		cancel()
+		coordinator.Wait()
+	}()
+
+	if err := coordinator.ChatScanned(ctx, capture.ChatScanResult{ChatID: "oc_same", InsertedCount: 1, HighWater: 1}); err != nil {
+		t.Fatalf("first ChatScanned() error = %v", err)
+	}
+	select {
+	case <-extractor.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first chat extraction did not start")
+	}
+	if err := coordinator.ChatScanned(ctx, capture.ChatScanResult{ChatID: "oc_same", InsertedCount: 1, HighWater: 2}); err != nil {
+		t.Fatalf("second ChatScanned() error = %v", err)
+	}
+	select {
+	case <-extractor.started:
+		t.Fatal("same chat started concurrently")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(extractor.release)
+	select {
+	case chatID := <-extractor.started:
+		if chatID != "oc_same" {
+			t.Fatalf("second chat ID = %q", chatID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued pass for same chat did not run")
+	}
+}
+
+func TestCoordinatorKeepsReconciliationExclusiveFromRealtime(t *testing.T) {
+	extractor := &blockingExtractor{
+		started: make(chan string, 1), release: make(chan struct{}), reconcileStarted: make(chan struct{}, 1),
+	}
+	coordinator, err := newCoordinator(extractor, nil, nil, nil, pipelineTestOptions())
+	if err != nil {
+		t.Fatalf("newCoordinator() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := coordinator.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer func() {
+		cancel()
+		coordinator.Wait()
+	}()
+
+	if err := coordinator.ChatScanned(ctx, capture.ChatScanResult{ChatID: "oc_live", InsertedCount: 1, HighWater: 1}); err != nil {
+		t.Fatalf("ChatScanned() error = %v", err)
+	}
+	select {
+	case <-extractor.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("real-time extraction did not start")
+	}
+	if err := coordinator.ReconcileExtract(ctx); err != nil {
+		t.Fatalf("ReconcileExtract() error = %v", err)
+	}
+	select {
+	case <-extractor.reconcileStarted:
+		t.Fatal("reconciliation overlapped real-time extraction")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(extractor.release)
+	select {
+	case <-extractor.reconcileStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconciliation did not start after real-time extraction finished")
 	}
 }
 

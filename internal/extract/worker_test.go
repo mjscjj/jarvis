@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -166,6 +167,114 @@ func (fakeWorkRuleReader) Block(context.Context, string) (string, error) { retur
 type fakeSkillReader struct{}
 
 func (fakeSkillReader) Catalog(context.Context, string) (string, error) { return "", nil }
+
+type concurrentPipelineStore struct {
+	batches []ChatBatch
+	mu      sync.Mutex
+	saved   int
+}
+
+func (s *concurrentPipelineStore) LoadPendingChats(context.Context, LoadOptions) ([]ChatBatch, error) {
+	return append([]ChatBatch(nil), s.batches...), nil
+}
+
+func (s *concurrentPipelineStore) LoadPendingChat(context.Context, string, LoadOptions) (*ChatBatch, error) {
+	return nil, nil
+}
+
+func (s *concurrentPipelineStore) LoadChatMessages(context.Context, string, []string) ([]MessageContext, error) {
+	return nil, nil
+}
+
+func (s *concurrentPipelineStore) PersistChat(context.Context, ChatBatch, []UnitExtraction, string) (PersistStats, error) {
+	s.mu.Lock()
+	s.saved++
+	s.mu.Unlock()
+	return PersistStats{}, nil
+}
+
+type statelessModelExtractor struct{}
+
+func (statelessModelExtractor) ExtractWithTools(context.Context, Prompt, ToolBox) (*ExtractionResult, error) {
+	return &ExtractionResult{}, nil
+}
+
+type statelessFactReader struct{}
+
+func (statelessFactReader) ListFacts(context.Context, progress.FactFilter) ([]progress.FactView, error) {
+	return nil, nil
+}
+
+type blockingToolBoxBuilder struct {
+	started chan string
+	release chan struct{}
+}
+
+func (b *blockingToolBoxBuilder) Build(batch ChatBatch, _ ConversationUnit) (ToolBox, error) {
+	b.started <- batch.Group.ChatID
+	<-b.release
+	return fakeToolBox{}, nil
+}
+
+func TestWorkerExtractOnceRunsDifferentChatsConcurrently(t *testing.T) {
+	makeBatch := func(chatID, messageID string) ChatBatch {
+		message := MessageContext{
+			MessageID: messageID, ChatID: chatID, Content: "仅用于并发测试，无行动项",
+			CreateTime: 1_700_000_000_000, IsNew: true, Extractable: true,
+		}
+		return ChatBatch{
+			Group:   GroupContext{ID: uint64(len(chatID)), ChatID: chatID},
+			Units:   []ConversationUnit{{Key: "chat", Messages: []MessageContext{message}}},
+			LastNew: message,
+		}
+	}
+	store := &concurrentPipelineStore{batches: []ChatBatch{
+		makeBatch("oc_person", "om_person"), makeBatch("oc_group", "om_group"),
+	}}
+	builder := &blockingToolBoxBuilder{started: make(chan string, 2), release: make(chan struct{})}
+	opts := validWorkerOptions()
+	opts.Concurrency = 2
+	worker, err := NewWorker(
+		store, statelessModelExtractor{}, statelessFactReader{}, &fakeCandidateDeduplicator{},
+		builder, fakeSharedMemoryReader{}, opts,
+	)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := worker.ExtractOnce(context.Background())
+		done <- err
+	}()
+	seen := make(map[string]bool)
+	for range 2 {
+		select {
+		case chatID := <-builder.started:
+			seen[chatID] = true
+		case <-time.After(2 * time.Second):
+			close(builder.release)
+			t.Fatal("scheduled extraction did not start different chats concurrently")
+		}
+	}
+	close(builder.release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("ExtractOnce() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ExtractOnce() did not finish")
+	}
+	if !seen["oc_person"] || !seen["oc_group"] {
+		t.Fatalf("started chats = %#v", seen)
+	}
+	store.mu.Lock()
+	saved := store.saved
+	store.mu.Unlock()
+	if saved != 2 {
+		t.Fatalf("persisted chats = %d, want 2", saved)
+	}
+}
 
 func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	projectID := uint64(9)
@@ -561,6 +670,7 @@ func validWorkerOptions() WorkerOptions {
 			BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour,
 			OpenTodoLimit: 50, RecentTaskLimit: 10,
 		},
+		Concurrency:     2,
 		PrincipalOpenID: "ou_owner", ModelName: "model", FactLimit: 10, KeyPersonLimit: 5,
 		MaxPromptChars: 60_000, Location: time.UTC,
 		WorkRules:     fakeWorkRuleReader{},

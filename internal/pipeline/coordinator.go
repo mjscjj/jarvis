@@ -43,6 +43,7 @@ type taskExecutor interface {
 }
 
 type Options struct {
+	ExtractConcurrency   int
 	ExecutionBatchLimit  int
 	ExecutionConcurrency int
 	StaleExecuting       time.Duration
@@ -76,6 +77,12 @@ type Coordinator struct {
 
 	chats *keyedQueue[chatWork]
 	m5    *keyedQueue[m5Work]
+
+	chatLocks *keyedLocker
+	// extractMu keeps scheduled reconciliation exclusive from real-time chat
+	// extraction. Real-time workers share the read side after taking their
+	// per-chat lock, so different chats run concurrently and the same chat cannot overlap.
+	extractMu sync.RWMutex
 
 	startMu sync.Mutex
 	started bool
@@ -114,6 +121,9 @@ func newCoordinator(extractor extractor, materializer todoMaterializer, store ex
 	if (store == nil) != (executor == nil) {
 		return nil, fmt.Errorf("pipeline execution store and executor must be enabled together")
 	}
+	if extractor != nil && opts.ExtractConcurrency <= 0 {
+		return nil, fmt.Errorf("pipeline extract concurrency must be positive")
+	}
 	if executor != nil {
 		if opts.ExecutionBatchLimit <= 0 {
 			return nil, fmt.Errorf("pipeline execution batch limit must be positive")
@@ -148,7 +158,7 @@ func newCoordinator(extractor extractor, materializer todoMaterializer, store ex
 	}
 	return &Coordinator{
 		extractor: extractor, materializer: materializer, store: store, executor: executor, opts: opts,
-		chats: chats, m5: m5,
+		chats: chats, m5: m5, chatLocks: newKeyedLocker(),
 	}, nil
 }
 
@@ -163,8 +173,10 @@ func (c *Coordinator) Start(ctx context.Context) error {
 	}
 	c.started = true
 	if c.extractor != nil {
-		c.wg.Add(1)
-		go c.runChats(ctx)
+		for range c.opts.ExtractConcurrency {
+			c.wg.Add(1)
+			go c.runChats(ctx)
+		}
 	}
 	// One pool drains mechanical Todo materialization and M5 execution.
 	if c.materializer != nil || c.executor != nil {
@@ -277,10 +289,12 @@ func (c *Coordinator) runChats(ctx context.Context) {
 func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 	ctx = observability.WithLogID(ctx, work.LogID)
 	if work.All {
+		c.extractMu.Lock()
 		for {
 			stats, err := c.extractor.ExtractOnce(ctx)
 			if err != nil {
 				c.logf(ctx, "stage=m3 trigger=reconcile status=error error=%+v", err)
+				c.extractMu.Unlock()
 				return
 			}
 			if stats.ChatsLoaded == 0 {
@@ -288,11 +302,20 @@ func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 			}
 			c.logf(ctx, "stage=m3 trigger=reconcile status=ok chats=%d created=%d updated=%d", stats.ChatsProcessed, stats.Created, stats.Updated)
 		}
+		c.extractMu.Unlock()
 		if err := c.ReconcileExecute(ctx); err != nil {
 			c.logf(ctx, "stage=m3 trigger=reconcile notify=m5 status=error error=%+v", err)
 		}
 		return
 	}
+	unlock, err := c.chatLocks.lock(work.ChatID)
+	if err != nil {
+		c.logf(ctx, "stage=m3 trigger=realtime chat_id=%s status=error error=%+v", work.ChatID, err)
+		return
+	}
+	defer unlock()
+	c.extractMu.RLock()
+	defer c.extractMu.RUnlock()
 	for {
 		stats, todos, err := c.extractor.ExtractChat(ctx, work.ChatID)
 		if err != nil {

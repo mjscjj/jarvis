@@ -69,6 +69,7 @@ extract:
   codex_sandbox: "danger-full-access"
   codex_network: true
   codex_reasoning_effort: "low"
+  concurrency: 2
   batch_messages: 400
   context_messages: 20
   context_window_minutes: 120
@@ -171,6 +172,7 @@ card_approval:
 	input.ExecuteCLI = "traex"
 	input.ExecuteConcurrency = 4
 	input.ExtractSchedule = "@every 2m"
+	input.ExtractConcurrency = 4
 	input.CaptureScanWorkers = 6
 	input.FactEngineWindowMaxMessages = 80
 	input.ProactiveSchedule = "@every 2h"
@@ -188,7 +190,7 @@ card_approval:
 		t.Fatalf("round-trip settings mismatch:\nupdated=%#v\ninput=%#v", updated.Settings, input)
 	}
 	if updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
-		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" ||
+		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
 		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineWindowMaxMessages != 80 ||
 		updated.Settings.ProactiveSchedule != "@every 2h" || updated.Settings.ProactiveStartupDelaySeconds != 180 ||
 		updated.Settings.LarkRateLimit != 7.5 || updated.Settings.DailyDigestConcurrency != 4 {
@@ -210,7 +212,7 @@ card_approval:
 		t.Fatalf("Load() after update error = %v", err)
 	}
 	if reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
-		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" ||
+		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
 		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {

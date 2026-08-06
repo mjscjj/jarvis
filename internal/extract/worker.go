@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"jarvis/internal/contextsnap"
@@ -25,7 +26,10 @@ type factReader interface {
 }
 
 type WorkerOptions struct {
-	Load            LoadOptions
+	Load LoadOptions
+	// Concurrency bounds the number of distinct chats extracted in parallel.
+	// One chat is still processed serially by the pipeline coordinator.
+	Concurrency     int
 	PrincipalOpenID string
 	ModelName       string
 	// FactLimit caps how many of a subject's *today* detail facts (excluding
@@ -108,6 +112,9 @@ func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup
 	if err := validateLoadOptions(opts.Load); err != nil {
 		return nil, err
 	}
+	if opts.Concurrency <= 0 {
+		return nil, fmt.Errorf("extract worker concurrency must be positive")
+	}
 	if strings.TrimSpace(opts.PrincipalOpenID) == "" {
 		return nil, fmt.Errorf("extract worker principal open_id is empty")
 	}
@@ -138,15 +145,59 @@ func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
 		return WorkerStats{}, err
 	}
 	stats := WorkerStats{ChatsLoaded: len(batches)}
-	runNow := w.now()
-	for _, batch := range batches {
-		batchStats, _, err := w.extractBatch(ctx, batch, runNow)
-		if err != nil {
-			return stats, err
-		}
-		mergeWorkerStats(&stats, batchStats)
+	if len(batches) == 0 {
+		return stats, nil
 	}
-	return stats, nil
+	runNow := w.now()
+	type batchResult struct {
+		stats WorkerStats
+		err   error
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	jobs := make(chan ChatBatch)
+	results := make(chan batchResult, len(batches))
+	workerCount := min(w.opts.Concurrency, len(batches))
+	var workers sync.WaitGroup
+	for range workerCount {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for batch := range jobs {
+				batchStats, _, err := w.extractBatch(runCtx, batch, runNow)
+				results <- batchResult{stats: batchStats, err: err}
+				if err != nil {
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for _, batch := range batches {
+			select {
+			case jobs <- batch:
+			case <-runCtx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+	var firstErr error
+	for result := range results {
+		if result.err != nil {
+			if firstErr == nil {
+				firstErr = result.err
+			}
+			continue
+		}
+		mergeWorkerStats(&stats, result.stats)
+	}
+	return stats, firstErr
 }
 
 // ExtractChat processes the chat that M2 just advanced, then returns the exact

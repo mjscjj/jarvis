@@ -21,6 +21,48 @@ type keyedQueue[T any] struct {
 	queued map[string]struct{}
 }
 
+// keyedLocker serializes work for one durable entity while allowing unrelated
+// keys to run concurrently. Entries are reference-counted so a long-running
+// process does not retain every chat ID it has ever seen.
+type keyedLocker struct {
+	mu      sync.Mutex
+	entries map[string]*keyedLock
+}
+
+type keyedLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func newKeyedLocker() *keyedLocker {
+	return &keyedLocker{entries: make(map[string]*keyedLock)}
+}
+
+func (l *keyedLocker) lock(key string) (func(), error) {
+	if key == "" {
+		return nil, fmt.Errorf("pipeline lock key is empty")
+	}
+	l.mu.Lock()
+	entry := l.entries[key]
+	if entry == nil {
+		entry = &keyedLock{}
+		l.entries[key] = entry
+	}
+	entry.refs++
+	l.mu.Unlock()
+
+	entry.mu.Lock()
+	return func() {
+		entry.mu.Unlock()
+		l.mu.Lock()
+		entry.refs--
+		if entry.refs == 0 {
+			delete(l.entries, key)
+		}
+		l.mu.Unlock()
+	}, nil
+}
+
 func newKeyedQueue[T any](capacity int, key func(T) string) (*keyedQueue[T], error) {
 	if capacity <= 0 {
 		return nil, fmt.Errorf("pipeline queue capacity must be positive")

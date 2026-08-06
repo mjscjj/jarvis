@@ -58,6 +58,7 @@ func TestValidate(t *testing.T) {
 		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
 		Extract: ExtractConfig{
 			Schedule:              "@every 10m",
+			Concurrency:           2,
 			Engine:                "codex",
 			CodexSandbox:          "danger-full-access",
 			CodexNetwork:          true,
@@ -116,6 +117,7 @@ func TestValidate(t *testing.T) {
 		{name: "server web root", mutate: func(c *Config) { c.Server.WebRoot = "" }, wantErr: "server.web_root"},
 		{name: "sqlite path", mutate: func(c *Config) { c.SQLite.Path = "" }, wantErr: "sqlite.path"},
 		{name: "extract schedule", mutate: func(c *Config) { c.Extract.Schedule = "" }, wantErr: "extract.schedule"},
+		{name: "extract concurrency", mutate: func(c *Config) { c.Extract.Concurrency = 0 }, wantErr: "extract.concurrency"},
 		{name: "extract batch", mutate: func(c *Config) { c.Extract.BatchMessages = 0 }, wantErr: "extract.batch_messages"},
 		{name: "extract context count", mutate: func(c *Config) { c.Extract.ContextMessages = -1 }, wantErr: "extract.context_messages"},
 		{name: "extract context window", mutate: func(c *Config) { c.Extract.ContextWindowMinutes = 0 }, wantErr: "extract.context_window_minutes"},
@@ -259,7 +261,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 		Extract: ExtractConfig{
 			Enabled: true, PrincipalOpenID: "ou_owner", Schedule: "@every 10m",
 			Engine: "codex", CodexSandbox: "danger-full-access", CodexNetwork: true, CodexReasoningEffort: "low",
-			BatchMessages: 400, ContextMessages: 20, ContextWindowMinutes: 120,
+			Concurrency: 2, BatchMessages: 400, ContextMessages: 20, ContextWindowMinutes: 120,
 			OpenTodoLimit: 50, FactLimit: 10, KeyPersonLimit: 5, RecentTaskLimit: 10, MaxPromptChars: 60000,
 			SemanticCollection: "todo_semantic", SemanticThreshold: 0.85, SemanticNeighborLimit: 3,
 			ToolTimeoutSec: 10, HistoryToolLimit: 50, QdrantHost: "127.0.0.1", QdrantGRPCPort: 6334,

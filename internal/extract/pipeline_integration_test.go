@@ -182,6 +182,7 @@ func TestPipelineLive(t *testing.T) {
 			ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
 			OpenTodoLimit: cfg.Extract.OpenTodoLimit, RecentTaskLimit: cfg.Extract.RecentTaskLimit,
 		},
+		Concurrency:     2,
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
 		FactLimit: cfg.Extract.FactLimit, KeyPersonLimit: cfg.Extract.KeyPersonLimit,
 		MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
