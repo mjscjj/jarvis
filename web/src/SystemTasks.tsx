@@ -80,7 +80,7 @@ const systemTasks: SystemTaskDefinition[] = [
     job: 'extract_reconcile',
     scheduleField: 'extract_schedule',
     enabledField: 'extract_enabled',
-    parameters: (s) => `每批最多 ${s.extract_batch_messages} 条消息`,
+    parameters: (s) => `${s.extract_concurrency} 个会话并发，每批最多 ${s.extract_batch_messages} 条消息`,
   },
   {
     key: 'execute-reconcile',

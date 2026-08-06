@@ -880,6 +880,7 @@ export interface RuntimeSettings {
   extract_enabled: boolean
   extract_engine: 'codex' | 'model_api'
   extract_schedule: string
+  extract_concurrency: number
   extract_batch_messages: number
   extract_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
   extract_network_enabled: boolean

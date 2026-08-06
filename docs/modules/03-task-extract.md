@@ -64,12 +64,13 @@ Todo、事件、水位和去重向量在同一落库流程中协调；关键步�
 |---|---|
 | `extract.engine=codex` | 默认，traex Agent 自跑 lark-cli/bytedcli/git/jarvis-tools |
 | `extract.engine=model_api` | 备用 OpenAI-compatible function-calling 引擎 |
+| `extract.concurrency` | 不同 `chat_id` 的并发上限；同一单聊或群聊始终串行 |
 | `extract.fact_limit` | 默认注入的已有 Fact 上限 |
 | `extract.semantic_*` | Qdrant Todo 去重配置 |
 
 稳定行为正文在 `conf/prompts/m3-system-prompt.md`；运行时组装在 `internal/extract/prompt.go`；工具说明来自 `internal/toolcatalog`。M3 的工具查询只服务四个准入问题：相关性、未闭环状态、责任归属和完成/重复检查；证据足够后立即停止。
 
-M2 新消息实时唤醒 M3；`extract.schedule` 只做持久化补偿。
+M2 新消息实时唤醒 M3；`extract.schedule` 只做持久化补偿。单聊中的一个人和一个群都由各自的 `chat_id` 隔离：不同 chat 可以并行，同一 chat 的连续水位严格串行。补偿扫描与实时抽取互斥，拿到待处理 chat 后再按 `extract.concurrency` 并发，避免同一批证据被两条路径重复处理。
 
 ```bash
 ./bin/jarvis-server -config conf/config.yaml -extract-once

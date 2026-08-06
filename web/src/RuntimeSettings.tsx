@@ -316,6 +316,7 @@ export default function RuntimeSettings() {
             <SelectField name="extract_sandbox" label="文件权限" options={sandboxOptions} help="仅限制 M3 Agent CLI 子进程。" />
             <SwitchField name="extract_network_enabled" label="允许联网" help="允许 M3 Agent 查询飞书、代码平台和外部资料。" />
             <TextField name="extract_schedule" label="补偿扫描周期" placeholder="@every 10m" help="事件触发遗漏时，按此周期扫描待提取消息。" />
+            <NumberField name="extract_concurrency" label="并发会话数" min={1} max={16} help="不同单聊或群聊可并行；同一个 chat_id 始终串行。" />
             <NumberField name="extract_batch_messages" label="每批消息上限" min={1} max={5000} />
           </Section>
           <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo、今天的事实明细、关键人事实和最近有进展的任务。">
@@ -480,7 +481,7 @@ export default function RuntimeSettings() {
           title="线索提取"
           enabled={liveSettings.extract_enabled}
           primary={m3Runtime}
-          secondary={`${liveSettings.extract_schedule} · 最多 ${liveSettings.extract_batch_messages} 条`}
+          secondary={`${liveSettings.extract_schedule} · ${liveSettings.extract_concurrency} 并发 · 最多 ${liveSettings.extract_batch_messages} 条`}
         />
         <RuntimeStep
           stage="PULSE"
