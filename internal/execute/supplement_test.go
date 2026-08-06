@@ -277,12 +277,19 @@ func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
 		"以 source_payload 表达的真实最终结果为准",
 		"完整冻结背景仍保存在 Task.background",
 		"只有当前判断确实缺少某一类信息时才查",
+		"每张审批卡固定带「确认/拒绝/查看详情」",
+		"仍保留这三个按钮",
+		"给确认按钮增加二次确认弹窗",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("M5 prompt missing autonomy contract %q:\n%s", want, prompt)
 		}
 	}
-	for _, obsolete := range []string{"严格执行 plan 的目标"} {
+	for _, obsolete := range []string{
+		"严格执行 plan 的目标",
+		"高风险、对外承诺、删改线上或后果说不清时，只发「查看详情」",
+		"同意/拒绝/查看详情",
+	} {
 		if strings.Contains(prompt, obsolete) {
 			t.Fatalf("M5 prompt still contains obsolete upstream constraint %q:\n%s", obsolete, prompt)
 		}

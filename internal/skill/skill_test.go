@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -83,5 +84,33 @@ func TestServiceFailsWhenSkillConfigurationDoesNotMatchFiles(t *testing.T) {
 	}
 	if _, err := NewService(root, configPath); err == nil {
 		t.Fatal("stale configured skill must fail")
+	}
+}
+
+func TestRepositoryFeishuApprovalCardKeepsDecisionActionsVisible(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-send-message", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read repository Feishu message skill: %v", err)
+	}
+	skill := string(content)
+	for _, want := range []string{
+		"每张审批卡固定给 `[确认]` `[拒绝]` `[查看详情]` 三个按钮",
+		"三个按钮一个都不能少",
+		"给 `[确认]` 按钮增加二次确认弹窗",
+		`"confirm": {`,
+		"callback 不可用的卡片",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("Feishu message skill missing approval-card contract %q:\n%s", want, skill)
+		}
+	}
+	for _, obsolete := range []string{
+		"只给查看详情的卡片（高风险/说不清）",
+		"动作简单、低风险、后果一句话说得清",
+		"[同意]",
+	} {
+		if strings.Contains(skill, obsolete) {
+			t.Fatalf("Feishu message skill still contains obsolete approval-card rule %q:\n%s", obsolete, skill)
+		}
 	}
 }
