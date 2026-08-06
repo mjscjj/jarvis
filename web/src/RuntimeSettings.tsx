@@ -233,7 +233,11 @@ export default function RuntimeSettings() {
   useEffect(reload, [reload])
 
   const save = async () => {
-    const values = await form.validateFields()
+    await form.validateFields()
+    // Collapse lazily registers panel fields, while this API replaces the
+    // complete settings document. Include values loaded into the form store
+    // even when their panel has never been expanded.
+    const values = form.getFieldsValue(true) as RuntimeSettingsInput
     setSaving(true)
     try {
       const view = await updateRuntimeSettings(values)
