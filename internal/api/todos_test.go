@@ -9,11 +9,11 @@ import (
 
 	"jarvis/internal/extract"
 
-	hertzconsts "code.byted.org/middleware/hertz/byted/consts"
-	hertzctx "code.byted.org/middleware/hertz/byted/middlewares/server/ctx"
-	"code.byted.org/middleware/hertz/pkg/app/server"
-	"code.byted.org/middleware/hertz/pkg/common/ut"
-	"code.byted.org/middleware/hertz/pkg/protocol/consts"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/ut"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+
+	"jarvis/internal/observability"
 )
 
 type fakeTodoReader struct {
@@ -61,15 +61,15 @@ func TestListTodos(t *testing.T) {
 
 func TestListTodosRejectsInvalidQuery(t *testing.T) {
 	h := server.New()
-	h.Use(hertzctx.Ctx(true))
+	h.Use(observability.Middleware())
 	h.GET("/api/todos", ListTodos(&fakeTodoReader{}))
 	response := ut.PerformRequest(h.Engine, "GET", "/api/todos?leader_only=maybe", nil).Result()
 	if response.StatusCode() != consts.StatusBadRequest {
 		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
 	}
-	logID := string(response.Header.Peek(hertzconsts.TT_LOGID_HEADER_KEY))
-	if !regexp.MustCompile(`^02[0-9a-f]{51}$`).MatchString(logID) {
-		t.Fatalf("response LogID = %q, want standard ByteDance LogID", logID)
+	logID := string(response.Header.Peek(observability.HeaderLogID))
+	if !regexp.MustCompile(`^\d{13}[0-9a-f]{16}$`).MatchString(logID) {
+		t.Fatalf("response LogID = %q, want a generated LogID", logID)
 	}
 	var payload struct {
 		LogID string `json:"logid"`
@@ -84,7 +84,7 @@ func TestListTodosRejectsInvalidQuery(t *testing.T) {
 
 func TestHertzReusesInboundLogID(t *testing.T) {
 	h := server.New()
-	h.Use(hertzctx.Ctx(true))
+	h.Use(observability.Middleware())
 	h.GET("/api/todos", ListTodos(&fakeTodoReader{}))
 
 	const inbound = "02-inbound-test-logid"
@@ -93,9 +93,9 @@ func TestHertzReusesInboundLogID(t *testing.T) {
 		"GET",
 		"/api/todos?leader_only=maybe",
 		nil,
-		ut.Header{Key: hertzconsts.TT_LOGID_HEADER_FALLBACK_KEY, Value: inbound},
+		ut.Header{Key: observability.HeaderLogID, Value: inbound},
 	).Result()
-	if got := string(response.Header.Peek(hertzconsts.TT_LOGID_HEADER_KEY)); got != inbound {
+	if got := string(response.Header.Peek(observability.HeaderLogID)); got != inbound {
 		t.Fatalf("response LogID = %q, want %q", got, inbound)
 	}
 }

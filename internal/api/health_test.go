@@ -5,25 +5,25 @@ import (
 	"regexp"
 	"testing"
 
-	hertzconsts "code.byted.org/middleware/hertz/byted/consts"
-	hertzctx "code.byted.org/middleware/hertz/byted/middlewares/server/ctx"
-	"code.byted.org/middleware/hertz/pkg/app/server"
-	"code.byted.org/middleware/hertz/pkg/common/ut"
-	"code.byted.org/middleware/hertz/pkg/protocol/consts"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/ut"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+
+	"jarvis/internal/observability"
 )
 
 func TestHealthFailureCarriesLogID(t *testing.T) {
 	h := server.New()
-	h.Use(hertzctx.Ctx(true))
+	h.Use(observability.Middleware())
 	h.GET("/healthz", Health(nil))
 
 	response := ut.PerformRequest(h.Engine, "GET", "/healthz", nil).Result()
 	if response.StatusCode() != consts.StatusServiceUnavailable {
 		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
 	}
-	logID := string(response.Header.Peek(hertzconsts.TT_LOGID_HEADER_KEY))
-	if !regexp.MustCompile(`^02[0-9a-f]{51}$`).MatchString(logID) {
-		t.Fatalf("response LogID = %q, want standard ByteDance LogID", logID)
+	logID := string(response.Header.Peek(observability.HeaderLogID))
+	if !regexp.MustCompile(`^\d{13}[0-9a-f]{16}$`).MatchString(logID) {
+		t.Fatalf("response LogID = %q, want a generated LogID", logID)
 	}
 	var payload struct {
 		LogID string `json:"logid"`

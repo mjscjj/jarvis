@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"code.byted.org/middleware/hertz/pkg/app"
-	"code.byted.org/middleware/hertz/pkg/protocol/consts"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 // apiNotFound keeps unknown API requests inside the API protocol boundary.

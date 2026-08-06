@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/robfig/cron/v3"
@@ -307,7 +308,34 @@ func Load(path string) (*Config, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid config %q: %w", path, err)
 	}
+	if err := cfg.resolvePaths(); err != nil {
+		return nil, fmt.Errorf("invalid config %q: %w", path, err)
+	}
 	return &cfg, nil
+}
+
+// resolvePaths 把配置里的相对路径按进程工作目录展开成绝对路径，让基线配置
+// 不必写死某台机器的用户名和安装位置。
+//
+// 只处理会离开本进程的两个路径：repo_root 会写进交给模型的 prompt，runs_dir
+// 下的产物路径同样要在其它工作目录里可用；而 codex 子进程的工作目录是被改的
+// 仓库或临时目录，相对值到那里就解析错了。sqlite.path、server.web_root、
+// skills.root 只在本进程内打开，保持相对即可。
+func (c *Config) resolvePaths() error {
+	for _, item := range []struct {
+		name  string
+		value *string
+	}{
+		{"execute.repo_root", &c.Execute.RepoRoot},
+		{"execute.runs_dir", &c.Execute.RunsDir},
+	} {
+		absolute, err := filepath.Abs(*item.value)
+		if err != nil {
+			return fmt.Errorf("展开 %s %q 失败: %w", item.name, *item.value, err)
+		}
+		*item.value = absolute
+	}
+	return nil
 }
 
 func decodeKnownYAML(raw []byte, target any) error {

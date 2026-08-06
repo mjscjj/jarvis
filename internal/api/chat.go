@@ -8,8 +8,8 @@ import (
 	"jarvis/internal/chat"
 	"jarvis/internal/observability"
 
-	"code.byted.org/middleware/hertz/pkg/app"
-	"code.byted.org/middleware/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
 
 // chatRequestBody 是 POST /api/chat 的请求体，字段严格对齐前端冻结契约

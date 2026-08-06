@@ -81,7 +81,7 @@ if launchctl print "$service_target" >/dev/null 2>&1; then
   launchctl kickstart -k "$service_target"
 else
   mv "$next_bin" "$bin"
-  echo "launchd service not loaded; bootstrap from deploy/$label.plist if needed"
+  echo "launchd service not loaded; run ./scripts/install-launchd.sh if needed"
 fi
 
 for attempt in {1..10}; do

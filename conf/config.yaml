@@ -69,7 +69,7 @@ extract:
 
 # lark-cli 子进程封装（总纲 §4）
 lark_cli:
-  bin: "/Users/bytedance/.local/lib/node_modules/@larksuite/cli/bin/lark-cli"
+  bin: "lark-cli"                         # 走 PATH 查找，与 traex 同一风格
   rate_limit: 5
   burst: 10
   concurrent: 2
@@ -149,8 +149,8 @@ execute:
   schedule: "@every 5m"
   batch_limit: 5
   concurrency: 1                                    # 单次 sweep 内只执行一个 Task，避免多个 Codex/编译任务叠加占满 CPU
-  repo_root: "/Users/bytedance/workspace-local"    # code_change 的 repo_ref 基目录
-  runs_dir: "/Users/bytedance/workspace-local/jarvis/runs"  # diff/产物落盘
+  repo_root: ".."                                  # code_change 的 repo_ref 基目录（相对仓库根，加载时展开成绝对路径）
+  runs_dir: "runs"                                 # diff/产物落盘
   bin: "traex"                                     # 与 M3 使用同一个 CLI，但模型/超时独立（右侧对话与日报也复用本 bin）
   model: "gpt-5.6-sol"                             # Latest frontier（无裸 gpt-5.6；luna/terra/sol 里 sol 最强）
   reasoning_effort: "medium"                       # 覆盖用户全局 xhigh，执行质量与耗时折中

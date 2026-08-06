@@ -20,7 +20,7 @@ import (
 	"jarvis/internal/toolcatalog"
 	"jarvis/internal/workrule"
 
-	"code.byted.org/middleware/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
 
 var (

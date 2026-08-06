@@ -97,6 +97,8 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 要求 Go 1.26.4、Node/npm、`traex`、`lark-cli` 和 Qdrant。`conf/config.yaml` 使用本机明文密钥；请注意仓库配置可能包含真实凭证。SQLite 文件及父目录会在启动时自动创建，无需单独安装或建库。
 
+构建期只依赖公网：HTTP 框架用开源 `github.com/cloudwego/hertz`，`go.mod` 里没有 `code.byted.org` 模块，不需要内网 GOPROXY。运行期仍然需要内部 CLI（`traex`、`lark-cli`），它们靠 PATH 查找。
+
 只执行迁移或一次性动作：
 
 ```bash
@@ -136,9 +138,9 @@ curl http://127.0.0.1:18800/healthz
 | `com.bytedance.jarvis.web` | 18801 | Vite 开发热更；生产不依赖 |
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | HTTP / gRPC，当前只用于 Todo 语义去重 |
 
-仓库没有 Web launchd 安装脚本。首次启用 18801 时需要手工把 `deploy/com.bytedance.jarvis.web.plist` 链接到 `~/Library/LaunchAgents` 后执行 `launchctl bootstrap`。
+仓库没有 Web launchd 安装脚本。首次启用 18801 时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。
 
-`deploy/*.plist` 和 `conf/qdrant.yaml` 包含当前工作目录的绝对路径；迁移用户或目录时必须同步修改。
+launchd 不接受相对路径，所以 `deploy/` 只存 `*.plist.template`，安装脚本用 `scripts/render-launchd-plist.sh` 把 `__JARVIS_ROOT__` 和 `__HOME__` 展开到 `~/Library/LaunchAgents/`。仓库换目录或换用户后重新渲染即可，不需要改仓库文件。
 
 详细运维说明见 [docs/reference/operations.md](docs/reference/operations.md)。
 

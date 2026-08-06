@@ -6,17 +6,17 @@ import (
 	"regexp"
 	"testing"
 
-	hertzconsts "code.byted.org/middleware/hertz/byted/consts"
-	hertzctx "code.byted.org/middleware/hertz/byted/middlewares/server/ctx"
-	"code.byted.org/middleware/hertz/pkg/app"
-	"code.byted.org/middleware/hertz/pkg/app/server"
-	"code.byted.org/middleware/hertz/pkg/common/ut"
-	"code.byted.org/middleware/hertz/pkg/protocol/consts"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/ut"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+
+	"jarvis/internal/observability"
 )
 
 func TestAPINotFoundPrecedesRootStaticFS(t *testing.T) {
 	h := server.New()
-	h.Use(hertzctx.Ctx(true))
+	h.Use(observability.Middleware())
 	h.GET("/api/resources", func(_ context.Context, c *app.RequestContext) {
 		c.JSON(consts.StatusOK, map[string]any{"code": 0})
 	})
@@ -43,8 +43,8 @@ func TestAPINotFoundPrecedesRootStaticFS(t *testing.T) {
 	if payload.Code != 40400 || payload.Msg != "api route not found" {
 		t.Fatalf("unknown API payload = %+v", payload)
 	}
-	headerLogID := string(unknown.Header.Peek(hertzconsts.TT_LOGID_HEADER_KEY))
-	if !regexp.MustCompile(`^02[0-9a-f]{51}$`).MatchString(headerLogID) {
+	headerLogID := string(unknown.Header.Peek(observability.HeaderLogID))
+	if !regexp.MustCompile(`^\d{13}[0-9a-f]{16}$`).MatchString(headerLogID) {
 		t.Fatalf("unknown API header LogID = %q", headerLogID)
 	}
 	if payload.LogID != headerLogID {

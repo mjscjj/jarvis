@@ -6,13 +6,13 @@
   <string>com.bytedance.jarvis.qdrant</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/bytedance/workspace-local/jarvis/bin/qdrant</string>
+    <string>__JARVIS_ROOT__/bin/qdrant</string>
     <string>--config-path</string>
-    <string>/Users/bytedance/workspace-local/jarvis/conf/qdrant.yaml</string>
+    <string>__JARVIS_ROOT__/conf/qdrant.yaml</string>
     <string>--disable-telemetry</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/bytedance/workspace-local/jarvis/var/qdrant</string>
+  <string>__JARVIS_ROOT__/var/qdrant</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -23,8 +23,8 @@
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>StandardOutPath</key>
-  <string>/Users/bytedance/workspace-local/jarvis/var/log/jarvis-qdrant.log</string>
+  <string>__JARVIS_ROOT__/var/log/jarvis-qdrant.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/bytedance/workspace-local/jarvis/var/log/jarvis-qdrant.error.log</string>
+  <string>__JARVIS_ROOT__/var/log/jarvis-qdrant.error.log</string>
 </dict>
 </plist>

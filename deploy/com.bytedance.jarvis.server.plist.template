@@ -7,18 +7,18 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/bytedance/workspace-local/jarvis/scripts/run-signed-server.sh</string>
+        <string>__JARVIS_ROOT__/scripts/run-signed-server.sh</string>
         <string>-config</string>
-        <string>/Users/bytedance/workspace-local/jarvis/conf/config.yaml</string>
+        <string>__JARVIS_ROOT__/conf/config.yaml</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/bytedance/workspace-local/jarvis</string>
+    <string>__JARVIS_ROOT__</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/bytedance/.local/bin</string>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:__HOME__/.local/bin</string>
     </dict>
 
     <key>RunAtLoad</key>
@@ -34,9 +34,9 @@
     <string>Interactive</string>
 
     <key>StandardOutPath</key>
-    <string>/Users/bytedance/workspace-local/jarvis/var/log/jarvis-server.log</string>
+    <string>__JARVIS_ROOT__/var/log/jarvis-server.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/bytedance/workspace-local/jarvis/var/log/jarvis-server.error.log</string>
+    <string>__JARVIS_ROOT__/var/log/jarvis-server.error.log</string>
 </dict>
 </plist>

@@ -45,10 +45,9 @@ import (
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
 
-	"code.byted.org/middleware/hertz/byted"
-	"code.byted.org/middleware/hertz/pkg/app"
-	"code.byted.org/middleware/hertz/pkg/app/server"
-	"code.byted.org/middleware/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
 
 // dailyDigestGitAuthor 是个人每日总结 prompt 里引导 codex 跑 git log --author 的
@@ -72,12 +71,13 @@ func main() {
 	seedPersons := flag.Bool("seed-persons", false, "从关键群真实成员导入 Person（幂等，按 open_id 跳过已存在），成功后退出")
 	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
 	flag.Parse()
-	byted.Init()
+	// Hertz 默认到 Debug，会把每条路由注册和每次客户端断连都写进日志，压过 cron
+	// 运行结果。运行日志要给人和调试面板看，保持 Info。
+	hlog.SetLevel(hlog.LevelInfo)
 	startupCtx := observability.EnsureLogID(context.Background())
-	// hlog.CtxFatalf only forwards to the logger; the byted logger records the
-	// message and returns instead of exiting. Without the explicit exit main
-	// keeps running past a failed dependency and dies later on a nil pointer,
-	// hiding the real reason behind a SIGSEGV.
+	// hlog.CtxFatalf already exits, but keep the explicit call so a logger swap
+	// can never leave main running past a failed dependency and dying later on a
+	// nil pointer, which would hide the real reason behind a SIGSEGV.
 	fatalf := func(format string, args ...any) {
 		hlog.CtxFatalf(startupCtx, format, args...)
 		os.Exit(1)
@@ -857,9 +857,10 @@ func main() {
 		}
 	}
 
-	h := byted.Default(
+	h := server.Default(
 		server.WithHostPorts(cfg.Server.Addr),
 	)
+	h.Use(observability.Middleware())
 	runtimeSettingsService, err := config.NewRuntimeSettingsService(*configPath, cfg)
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)

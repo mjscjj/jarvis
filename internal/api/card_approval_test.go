@@ -10,9 +10,9 @@ import (
 	"jarvis/internal/cardapproval"
 	"jarvis/internal/execute"
 
-	"code.byted.org/middleware/hertz/pkg/app/server"
-	"code.byted.org/middleware/hertz/pkg/common/ut"
-	"code.byted.org/middleware/hertz/pkg/protocol/consts"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/ut"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 type fakeCardApprovalProcessor struct {

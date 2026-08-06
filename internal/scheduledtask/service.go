@@ -14,7 +14,7 @@ import (
 	"jarvis/internal/observability"
 	"jarvis/internal/taskcreate"
 
-	"code.byted.org/middleware/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 	"jarvis/internal/datatypes"
 )

@@ -8,8 +8,8 @@ import (
 
 	"jarvis/internal/dailydigest"
 
-	"code.byted.org/middleware/hertz/pkg/app"
-	"code.byted.org/middleware/hertz/pkg/protocol/consts"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 // DailyDigestService 是 API 层依赖的每日总结能力接口，便于 handler 单测打桩。

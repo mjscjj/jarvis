@@ -6,9 +6,6 @@ script_dir=${0:A:h}
 repo_dir=${script_dir:h}
 server_bin=$repo_dir/bin/jarvis-server
 
-export PSM=${PSM:-tikcast.agency.jarvis}
-export HERTZ_CONF_DIR=${HERTZ_CONF_DIR:-"$repo_dir/conf"}
-export HERTZ_LOG_DIR=${HERTZ_LOG_DIR:-"$repo_dir/var/log"}
 # Keep Jarvis-launched Go builds responsive on this 14-core workstation:
 # at most two packages compile concurrently, with two Go scheduler threads each.
 export GOMAXPROCS=2

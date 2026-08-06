@@ -8,8 +8,8 @@ import (
 
 	"jarvis/internal/contextsnap"
 
-	"code.byted.org/middleware/hertz/pkg/app/server"
-	"code.byted.org/middleware/hertz/pkg/common/ut"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/ut"
 )
 
 type contextAssemblerStub struct {

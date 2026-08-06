@@ -1,8 +1,9 @@
 log_level: INFO
 
+# 路径相对 launchd 里的 WorkingDirectory（var/qdrant）解析。
 storage:
-  storage_path: /Users/bytedance/workspace-local/jarvis/var/qdrant/storage
-  snapshots_path: /Users/bytedance/workspace-local/jarvis/var/qdrant/snapshots
+  storage_path: ./storage
+  snapshots_path: ./snapshots
 
 service:
   host: 127.0.0.1

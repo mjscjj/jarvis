@@ -10,7 +10,7 @@ import (
 	"jarvis/internal/domain"
 	"jarvis/internal/observability"
 
-	"code.byted.org/middleware/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 )
 

@@ -1,9 +1,54 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// repo_root 会写进交给模型的 prompt，runs_dir 下的产物路径也要在别的工作目录里
+// 可用，所以基线配置允许写相对路径，但加载后必须已经是绝对路径。
+func TestLoadExpandsRelativeExecutePaths(t *testing.T) {
+	source := strings.NewReplacer(
+		`repo_root: "/tmp/repos"`, `repo_root: ".."`,
+		`runs_dir: "/tmp/runs"`, `runs_dir: "runs"`,
+	).Replace(runtimeSettingsTestYAML)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if want := filepath.Dir(workingDir); cfg.Execute.RepoRoot != want {
+		t.Fatalf("execute.repo_root = %q, want %q", cfg.Execute.RepoRoot, want)
+	}
+	if want := filepath.Join(workingDir, "runs"); cfg.Execute.RunsDir != want {
+		t.Fatalf("execute.runs_dir = %q, want %q", cfg.Execute.RunsDir, want)
+	}
+}
+
+func TestLoadKeepsAbsoluteExecutePaths(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(runtimeSettingsTestYAML), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Execute.RepoRoot != "/tmp/repos" || cfg.Execute.RunsDir != "/tmp/runs" {
+		t.Fatalf("execute paths = %q / %q, want them untouched", cfg.Execute.RepoRoot, cfg.Execute.RunsDir)
+	}
+}
 
 func TestValidate(t *testing.T) {
 	t.Parallel()

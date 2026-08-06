@@ -24,7 +24,7 @@ import (
 	"jarvis/internal/toolquery"
 	"jarvis/internal/workrule"
 
-	"code.byted.org/middleware/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/app/server"
 	"gorm.io/gorm"
 )
 

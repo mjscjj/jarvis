@@ -14,9 +14,9 @@ import (
 	"jarvis/internal/extract"
 	"jarvis/internal/observability"
 
-	"code.byted.org/middleware/hertz/pkg/app"
-	"code.byted.org/middleware/hertz/pkg/common/hlog"
-	"code.byted.org/middleware/hertz/pkg/protocol/consts"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 func ListTodos(reader extract.TodoReader) app.HandlerFunc {

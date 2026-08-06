@@ -9,8 +9,8 @@ import (
 
 	"jarvis/internal/knowledge"
 
-	"code.byted.org/middleware/hertz/pkg/app"
-	"code.byted.org/middleware/hertz/pkg/protocol/consts"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 func CreateRelationFact(service knowledge.FactService) app.HandlerFunc {

@@ -5,20 +5,22 @@
     <key>Label</key>
     <string>com.bytedance.jarvis.web</string>
 
+    <!-- launchd 要求 program 是绝对路径；用 env 让 npm 的位置交给下面的 PATH 决定。 -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/bytedance/.local/bin/npm</string>
+        <string>/usr/bin/env</string>
+        <string>npm</string>
         <string>run</string>
         <string>dev</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/bytedance/workspace-local/jarvis/web</string>
+    <string>__JARVIS_ROOT__/web</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/bytedance/.local/bin</string>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:__HOME__/.local/bin</string>
     </dict>
 
     <key>RunAtLoad</key>
@@ -34,9 +36,9 @@
     <string>Interactive</string>
 
     <key>StandardOutPath</key>
-    <string>/Users/bytedance/workspace-local/jarvis/var/log/vite.log</string>
+    <string>__JARVIS_ROOT__/var/log/vite.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/bytedance/workspace-local/jarvis/var/log/vite.error.log</string>
+    <string>__JARVIS_ROOT__/var/log/vite.error.log</string>
 </dict>
 </plist>

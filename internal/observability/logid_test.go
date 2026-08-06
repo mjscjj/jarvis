@@ -5,16 +5,26 @@ import (
 	"regexp"
 	"testing"
 
-	hertzconsts "code.byted.org/middleware/hertz/byted/consts"
-	"code.byted.org/middleware/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app"
 )
 
-var standardLogID = regexp.MustCompile(`^02[0-9a-f]{51}$`)
+var generatedLogID = regexp.MustCompile(`^\d{13}[0-9a-f]{16}$`)
 
-func TestEnsureLogIDUsesByteDanceGenerator(t *testing.T) {
+func TestEnsureLogIDMintsSortableValue(t *testing.T) {
 	ctx := EnsureLogID(context.Background())
-	if got := LogID(ctx); !standardLogID.MatchString(got) {
-		t.Fatalf("LogID() = %q, want standard 53-character ByteDance LogID", got)
+	if got := LogID(ctx); !generatedLogID.MatchString(got) {
+		t.Fatalf("LogID() = %q, want millisecond timestamp followed by random hex", got)
+	}
+}
+
+func TestGenerateLogIDDoesNotRepeat(t *testing.T) {
+	seen := make(map[string]struct{}, 128)
+	for range 128 {
+		value := GenerateLogID()
+		if _, duplicate := seen[value]; duplicate {
+			t.Fatalf("GenerateLogID() returned %q twice", value)
+		}
+		seen[value] = struct{}{}
 	}
 }
 
@@ -33,13 +43,13 @@ func TestDetachedPreservesLogID(t *testing.T) {
 
 func TestFromRequestContextReusesInboundHeader(t *testing.T) {
 	request := &app.RequestContext{}
-	request.Request.Header.Set(hertzconsts.TT_LOGID_HEADER_FALLBACK_KEY, "inbound-log-id")
+	request.Request.Header.Set(headerLogIDFallback, "inbound-log-id")
 
 	ctx := FromRequestContext(context.Background(), request)
 	if got := LogID(ctx); got != "inbound-log-id" {
 		t.Fatalf("LogID() = %q, want inbound-log-id", got)
 	}
-	if got := string(request.Response.Header.Peek(hertzconsts.TT_LOGID_HEADER_KEY)); got != "inbound-log-id" {
+	if got := string(request.Response.Header.Peek(HeaderLogID)); got != "inbound-log-id" {
 		t.Fatalf("response header = %q, want inbound-log-id", got)
 	}
 }

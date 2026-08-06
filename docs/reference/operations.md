@@ -26,18 +26,16 @@ curl --fail http://127.0.0.1:18800/healthz
 curl --fail http://127.0.0.1:6333/healthz
 ```
 
-`install-launchd.sh` 会执行前端 `npm ci + build`、编译后端、稳定签名、建立主服务的 LaunchAgent 软链并 bootstrap。它不会安装 Qdrant，也不会安装 Web 开发服务。
+`install-launchd.sh` 会执行前端 `npm ci + build`、编译后端、稳定签名、渲染主服务的 LaunchAgent 并 bootstrap。它不会安装 Qdrant，也不会安装 Web 开发服务。
+
+launchd 不接受相对路径，所以 `deploy/` 里只有占位符模板；`scripts/render-launchd-plist.sh <label>` 按当前仓库位置和 `$HOME` 展开成 `~/Library/LaunchAgents/<label>.plist` 实体文件。改了模板要重新渲染才生效。
 
 首次启用 18801：
 
 ```bash
 uid=$(id -u)
-mkdir -p "$HOME/Library/LaunchAgents"
-ln -sfn \
-  /Users/bytedance/workspace-local/jarvis/deploy/com.bytedance.jarvis.web.plist \
-  "$HOME/Library/LaunchAgents/com.bytedance.jarvis.web.plist"
-launchctl bootstrap "gui/$uid" \
-  "$HOME/Library/LaunchAgents/com.bytedance.jarvis.web.plist"
+plist=$(./scripts/render-launchd-plist.sh com.bytedance.jarvis.web)
+launchctl bootstrap "gui/$uid" "$plist"
 ```
 
 ## 日常重建

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"sync"
 
-	"code.byted.org/middleware/hertz/pkg/app"
-	"code.byted.org/middleware/hertz/pkg/network"
-	"code.byted.org/middleware/hertz/pkg/protocol/http1/resp"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/network"
+	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
 )
 
 // sseWriter is the small server-side subset Jarvis needs. The internal Hertz
