@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"jarvis/internal/capture"
+	"jarvis/internal/cardapproval"
 
 	"code.byted.org/middleware/hertz/pkg/app"
 	"code.byted.org/middleware/hertz/pkg/protocol/consts"
@@ -19,7 +19,7 @@ const cardApprovalRelaySecretHeader = "X-Jarvis-Relay-Secret"
 // relay. The implementation still owns all task/proposal/message/version
 // validation; CC Connect only transports the authenticated Feishu callback.
 type CardApprovalProcessor interface {
-	ProcessCardAction(context.Context, capture.CardActionEvent) (json.RawMessage, error)
+	ProcessCardAction(context.Context, cardapproval.CardActionEvent) (json.RawMessage, error)
 }
 
 type cardApprovalRelayRequest struct {
@@ -32,9 +32,8 @@ type cardApprovalRelayRequest struct {
 }
 
 // RelayCardApproval accepts only authenticated localhost traffic registered by
-// the cc_connect transport. It returns a complete Card 2.0 replacement body so
-// CC Connect can answer Feishu synchronously without a second WebSocket or
-// delayed-update token.
+// CC Connect. It returns a complete Card 2.0 replacement body so CC Connect can
+// answer Feishu synchronously without a second WebSocket.
 func RelayCardApproval(processor CardApprovalProcessor, secret string) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		if processor == nil {
@@ -66,8 +65,7 @@ func RelayCardApproval(processor CardApprovalProcessor, secret string) app.Handl
 			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("encode action_value: %w", err))
 			return
 		}
-		card, err := processor.ProcessCardAction(ctx, capture.CardActionEvent{
-			Type:        "card.action.trigger",
+		card, err := processor.ProcessCardAction(ctx, cardapproval.CardActionEvent{
 			EventID:     request.EventID,
 			OperatorID:  request.OperatorID,
 			MessageID:   request.MessageID,

@@ -85,22 +85,17 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 2m"
-  # Jarvis Bot 的实时对话入口由 CC Connect 独占；Jarvis 不再竞争消费同一 app
-  # 的 im.message.receive_v1。M2 继续按 scan_schedule 轮询采集工作消息。
-  event_enabled: false
-  event_profile: "cli_a96a0c8d82b85cb1"
   # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
   # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
 
-# 飞书卡片内审批回调。cc_connect 复用当前 Jarvis Bot 的唯一长连接；
-# standalone_app 保留为独立 app 备用方案。
+# 飞书卡片内审批回调。CC Connect 持有当前 Jarvis Bot 的唯一长连接，
+# 把审批按钮点击经带共享密钥的 localhost HTTP 转发给 Jarvis。
 card_approval:
   enabled: false
-  transport: ""  # cc_connect | standalone_app
   profile: ""
   principal_open_id: ""
-  relay_secret: ""  # 仅 cc_connect 使用；只写进 Git 忽略的 config.runtime.yaml
+  relay_secret: ""  # 只写进 Git 忽略的 config.runtime.yaml
 
 # 底层 agent CLI：仅供 extract(M3) 使用。
 # 与 execute/chat 独立——真正跑 Task 与右侧对话用 execute.bin/model。

@@ -6,23 +6,22 @@ import (
 	"errors"
 	"io"
 	"log"
+	"strings"
 	"testing"
 
-	"jarvis/internal/capture"
 	"jarvis/internal/execute"
 )
 
 const principalOpenID = "ou_principal"
 
-func TestHandleCardActionApproveLandsAndUpdatesCard(t *testing.T) {
+func TestProcessCardActionApproveLandsAndReturnsCard(t *testing.T) {
 	tasks := newFakeTasks(4)
 	approver := &fakeApprover{}
-	cards := &fakeCards{}
-	handler := newTestHandler(t, tasks, approver, cards)
+	handler := newTestHandler(t, tasks, approver)
 
-	err := handler.HandleCardAction(context.Background(), approveEvent(t, "approve", 7))
+	card, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7))
 	if err != nil {
-		t.Fatalf("HandleCardAction() error = %v", err)
+		t.Fatalf("ProcessCardAction() error = %v", err)
 	}
 	if approver.approvedTask != 7 || approver.approvedVersion != 4 {
 		t.Fatalf("approve called with task=%d version=%d", approver.approvedTask, approver.approvedVersion)
@@ -30,145 +29,151 @@ func TestHandleCardActionApproveLandsAndUpdatesCard(t *testing.T) {
 	if approver.rejectedTask != 0 {
 		t.Fatalf("reject unexpectedly called: %#v", approver)
 	}
-	if cards.updates != 1 {
-		t.Fatalf("card update count = %d, want 1", cards.updates)
-	}
-	if cards.profile != "cli_approval" {
-		t.Fatalf("card update profile = %q", cards.profile)
+	if !strings.Contains(string(card), "已同意") {
+		t.Fatalf("replacement card = %s", card)
 	}
 }
 
-func TestHandleCardActionRejectLandsWithReason(t *testing.T) {
+func TestProcessCardActionRejectLandsWithReason(t *testing.T) {
 	tasks := newFakeTasks(9)
 	approver := &fakeApprover{}
-	cards := &fakeCards{}
-	handler := newTestHandler(t, tasks, approver, cards)
+	handler := newTestHandler(t, tasks, approver)
 
-	if err := handler.HandleCardAction(context.Background(), approveEvent(t, "reject", 3)); err != nil {
-		t.Fatalf("HandleCardAction() error = %v", err)
+	if _, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "reject", 3)); err != nil {
+		t.Fatalf("ProcessCardAction() error = %v", err)
 	}
 	if approver.rejectedTask != 3 || approver.rejectedVersion != 9 || approver.rejectReason == "" {
 		t.Fatalf("reject called wrong: %#v", approver)
 	}
 }
 
-func TestHandleCardActionNonPrincipalIsRejected(t *testing.T) {
+func TestProcessCardActionNonPrincipalIsRejected(t *testing.T) {
 	tasks := newFakeTasks(1)
 	approver := &fakeApprover{}
-	cards := &fakeCards{}
-	handler := newTestHandler(t, tasks, approver, cards)
+	handler := newTestHandler(t, tasks, approver)
 
 	event := approveEvent(t, "approve", 7)
 	event.OperatorID = "ou_intruder"
-	if err := handler.HandleCardAction(context.Background(), event); !errors.Is(err, execute.ErrInvalidInput) {
-		t.Fatalf("HandleCardAction() error = %v, want ErrInvalidInput", err)
+	if _, err := handler.ProcessCardAction(context.Background(), event); !errors.Is(err, execute.ErrInvalidInput) {
+		t.Fatalf("ProcessCardAction() error = %v, want ErrInvalidInput", err)
 	}
 	if approver.approvedTask != 0 || approver.rejectedTask != 0 {
 		t.Fatalf("approver touched for non-principal: %#v", approver)
 	}
-	if cards.updates != 0 {
-		t.Fatalf("non-principal must not mutate the shared card, updates = %d", cards.updates)
+}
+
+func TestProcessCardActionRejectsInvalidCallbackControls(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*CardActionEvent)
+	}{
+		{name: "non button", mutate: func(event *CardActionEvent) { event.ActionTag = "checker" }},
+		{name: "form submit", mutate: func(event *CardActionEvent) { event.FormValue = `{"reason":"x"}` }},
+		{name: "empty value", mutate: func(event *CardActionEvent) { event.ActionValue = "" }},
+		{name: "malformed value", mutate: func(event *CardActionEvent) { event.ActionValue = `{"action":` }},
+		{name: "unknown action", mutate: func(event *CardActionEvent) {
+			event.ActionValue = `{"action":"delete","task_id":7}`
+		}},
+		{name: "zero task id", mutate: func(event *CardActionEvent) {
+			event.ActionValue = `{"action":"approve","task_id":0}`
+		}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			tasks := newFakeTasks(1)
+			approver := &fakeApprover{}
+			handler := newTestHandler(t, tasks, approver)
+			event := approveEvent(t, "approve", 7)
+			testCase.mutate(&event)
+
+			if _, err := handler.ProcessCardAction(context.Background(), event); !errors.Is(err, execute.ErrInvalidInput) {
+				t.Fatalf("ProcessCardAction() error = %v, want ErrInvalidInput", err)
+			}
+			if approver.approvedTask != 0 || approver.rejectedTask != 0 {
+				t.Fatalf("approver touched for invalid callback: %#v", approver)
+			}
+		})
 	}
 }
 
-func TestHandleCardActionAlreadyHandledIsSkippedNotFailed(t *testing.T) {
+func TestProcessCardActionAlreadyHandledIsSkippedNotFailed(t *testing.T) {
 	tasks := newFakeTasks(2)
 	approver := &fakeApprover{approveErr: execute.ErrVersionConflict}
-	cards := &fakeCards{}
-	handler := newTestHandler(t, tasks, approver, cards)
+	handler := newTestHandler(t, tasks, approver)
 
-	if err := handler.HandleCardAction(context.Background(), approveEvent(t, "approve", 7)); err != nil {
-		t.Fatalf("HandleCardAction() on lost race should be nil, got %v", err)
+	card, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7))
+	if err != nil {
+		t.Fatalf("ProcessCardAction() on lost race should be nil, got %v", err)
 	}
-	if cards.updates != 1 {
-		t.Fatalf("expected an already-handled notice, updates = %d", cards.updates)
-	}
-}
-
-func TestHandleCardActionCardUpdateFailureDoesNotUndoApproval(t *testing.T) {
-	tasks := newFakeTasks(4)
-	approver := &fakeApprover{}
-	cards := &fakeCards{lastErr: errors.New("expired token")}
-	handler := newTestHandler(t, tasks, approver, cards)
-
-	if err := handler.HandleCardAction(context.Background(), approveEvent(t, "approve", 7)); err != nil {
-		t.Fatalf("HandleCardAction() update failure = %v", err)
-	}
-	if approver.approvedTask != 7 {
-		t.Fatalf("approval was not landed: %#v", approver)
+	if !strings.Contains(string(card), "已经处理") {
+		t.Fatalf("replacement card = %s", card)
 	}
 }
 
-func TestHandleCardActionFastRepeatIsReportedAsAlreadyHandled(t *testing.T) {
+func TestProcessCardActionFastRepeatIsReportedAsAlreadyHandled(t *testing.T) {
 	tasks := newFakeTasks(4)
 	tasks.status = "executing"
 	approver := &fakeApprover{}
-	cards := &fakeCards{}
-	handler := newTestHandler(t, tasks, approver, cards)
+	handler := newTestHandler(t, tasks, approver)
 
-	if err := handler.HandleCardAction(context.Background(), approveEvent(t, "approve", 7)); err != nil {
-		t.Fatalf("HandleCardAction() error = %v", err)
+	card, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7))
+	if err != nil {
+		t.Fatalf("ProcessCardAction() error = %v", err)
 	}
 	if approver.approvedTask != 0 {
 		t.Fatalf("fast click approved task: %#v", approver)
 	}
-	if cards.updates != 1 {
-		t.Fatalf("fast repeat should replace the card, updates = %d", cards.updates)
+	if !strings.Contains(string(card), "已经处理") {
+		t.Fatalf("replacement card = %s", card)
 	}
 }
 
-func TestHandleCardActionWaitsForSecondProposalInsteadOfClosingNewCard(t *testing.T) {
+func TestProcessCardActionWaitsForSecondProposalInsteadOfClosingNewCard(t *testing.T) {
 	tasks := &secondProposalTasks{}
 	approver := &fakeApprover{}
-	cards := &fakeCards{}
-	handler := newTestHandler(t, tasks, approver, cards)
+	handler := newTestHandler(t, tasks, approver)
 
-	if err := handler.HandleCardAction(context.Background(), approveEvent(t, "approve", 7)); err != nil {
-		t.Fatalf("HandleCardAction() error = %v", err)
+	if _, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7)); err != nil {
+		t.Fatalf("ProcessCardAction() error = %v", err)
 	}
 	if approver.approvedTask != 7 || approver.approvedVersion != 6 {
 		t.Fatalf("second proposal approval = task=%d version=%d", approver.approvedTask, approver.approvedVersion)
 	}
-	if cards.updates != 1 {
-		t.Fatalf("second proposal should replace the card after approval, updates = %d", cards.updates)
-	}
 }
 
-func TestHandleCardActionRejectsStaleCardMessage(t *testing.T) {
+func TestProcessCardActionRejectsStaleCardMessage(t *testing.T) {
 	tasks := newFakeTasks(4)
 	tasks.messageID = "om_new_proposal"
 	approver := &fakeApprover{}
-	handler := newTestHandler(t, tasks, approver, &fakeCards{})
+	handler := newTestHandler(t, tasks, approver)
 
-	if err := handler.HandleCardAction(context.Background(), approveEvent(t, "approve", 7)); !errors.Is(err, execute.ErrInvalidInput) {
-		t.Fatalf("HandleCardAction() error = %v, want ErrInvalidInput", err)
+	if _, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7)); !errors.Is(err, execute.ErrInvalidInput) {
+		t.Fatalf("ProcessCardAction() error = %v, want ErrInvalidInput", err)
 	}
 	if approver.approvedTask != 0 {
 		t.Fatalf("stale card approved task: %#v", approver)
 	}
 }
 
-func newTestHandler(t *testing.T, tasks ApprovalReader, approver Approver, cards CardUpdater) *Handler {
+func newTestHandler(t *testing.T, tasks ApprovalReader, approver Approver) *Handler {
 	t.Helper()
-	handler, err := NewHandler(tasks, approver, cards, principalOpenID, "cli_approval", log.New(io.Discard, "", 0))
+	handler, err := NewRelayHandler(tasks, approver, principalOpenID, log.New(io.Discard, "", 0))
 	if err != nil {
-		t.Fatalf("NewHandler() error = %v", err)
+		t.Fatalf("NewRelayHandler() error = %v", err)
 	}
 	return handler
 }
 
-func approveEvent(t *testing.T, action string, taskID uint64) capture.CardActionEvent {
+func approveEvent(t *testing.T, action string, taskID uint64) CardActionEvent {
 	t.Helper()
-	value, err := json.Marshal(capture.CardApprovalAction{Action: action, TaskID: taskID})
+	value, err := json.Marshal(cardApprovalAction{Action: action, TaskID: taskID})
 	if err != nil {
 		t.Fatalf("marshal action value: %v", err)
 	}
-	return capture.CardActionEvent{
-		Type:        "card.action.trigger",
+	return CardActionEvent{
 		EventID:     "evt_1",
 		OperatorID:  principalOpenID,
 		MessageID:   "om_1",
-		Token:       "tok_1",
 		ActionTag:   "button",
 		ActionValue: string(value),
 	}
@@ -252,16 +257,4 @@ func (f *fakeApprover) Reject(_ context.Context, taskID uint64, version int32, r
 		return nil, f.rejectErr
 	}
 	return &execute.ExecuteResult{}, nil
-}
-
-type fakeCards struct {
-	updates int
-	profile string
-	lastErr error
-}
-
-func (f *fakeCards) UpdateCard(_ context.Context, profile, _ string, _ json.RawMessage) error {
-	f.updates++
-	f.profile = profile
-	return f.lastErr
 }

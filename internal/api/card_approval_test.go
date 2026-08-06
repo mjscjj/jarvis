@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"jarvis/internal/capture"
+	"jarvis/internal/cardapproval"
 	"jarvis/internal/execute"
 
 	"code.byted.org/middleware/hertz/pkg/app/server"
@@ -16,12 +16,12 @@ import (
 )
 
 type fakeCardApprovalProcessor struct {
-	event capture.CardActionEvent
+	event cardapproval.CardActionEvent
 	card  json.RawMessage
 	err   error
 }
 
-func (f *fakeCardApprovalProcessor) ProcessCardAction(_ context.Context, event capture.CardActionEvent) (json.RawMessage, error) {
+func (f *fakeCardApprovalProcessor) ProcessCardAction(_ context.Context, event cardapproval.CardActionEvent) (json.RawMessage, error) {
 	f.event = event
 	return f.card, f.err
 }
@@ -46,7 +46,10 @@ func TestRelayCardApprovalAuthenticatesAndMapsNamespace(t *testing.T) {
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	var action capture.CardApprovalAction
+	var action struct {
+		Action string `json:"action"`
+		TaskID uint64 `json:"task_id"`
+	}
 	if err := json.Unmarshal([]byte(processor.event.ActionValue), &action); err != nil {
 		t.Fatalf("decode mapped action: %v", err)
 	}
@@ -68,7 +71,7 @@ func TestRelayCardApprovalRejectsBadSecret(t *testing.T) {
 	if response.StatusCode() != consts.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	if processor.event.Type != "" {
+	if processor.event.OperatorID != "" {
 		t.Fatalf("processor called for bad secret: %#v", processor.event)
 	}
 }

@@ -183,33 +183,6 @@ func (c *Client) RecallMessage(ctx context.Context, messageID string) error {
 	return nil
 }
 
-// UpdateCard replaces an interactive card in place using a delayed-update token
-// from a card.action.trigger event (valid 30 min, max 2 uses). It is how Jarvis
-// reflects a landed approve/reject back onto the card the principal clicked.
-// fail-fast: blank token/card is rejected and any CLI failure surfaces unchanged.
-func (c *Client) UpdateCard(ctx context.Context, profile, token string, card json.RawMessage) error {
-	profile = strings.TrimSpace(profile)
-	if profile == "" {
-		return fmt.Errorf("lark-cli card update profile is empty")
-	}
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return fmt.Errorf("lark-cli card update token is empty")
-	}
-	if len(card) == 0 {
-		return fmt.Errorf("lark-cli card update card is empty")
-	}
-	body, err := json.Marshal(map[string]any{"token": token, "card": card})
-	if err != nil {
-		return fmt.Errorf("encode card update body: %w", err)
-	}
-	var resp struct{}
-	if err := c.Run(ctx, &resp, "--profile", profile, "api", "POST", "/open-apis/interactive/v1/card/update", "--as", "bot", "--data", string(body)); err != nil {
-		return fmt.Errorf("lark-cli card update: %w", err)
-	}
-	return nil
-}
-
 // Run executes a lark-cli command and unmarshals its successful JSON envelope.
 // Callers must not pass --format; this boundary always forces JSON.
 func (c *Client) Run(ctx context.Context, out any, args ...string) error {

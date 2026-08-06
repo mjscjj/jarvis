@@ -80,20 +80,13 @@ conf/config.yaml
 
 `config.runtime.yaml` 由后台运行配置写入且被 Git 忽略。保存后需要重启；不要把其中数值写进 current 文档当成所有机器的默认值。
 
-`capture.event_enabled=true` 时，`jarvis-server` 是 `capture.event_profile` 对应飞书应用的唯一事件连接拥有者。不要再把同一个 app 配进 cc-connect/OpenClaw；否则启动会因远端已有连接而 fail-fast。连接成功会在 stderr 日志出现：
-
-```text
-feishu-event-cron ... job=consume status=ok state=ready
-```
-
-消息事件落库日志包含 `message_id/chat_id/inserted/related`；连接进程意外退出会记录 `status=error` 并让主服务退出，由 launchd 重启，而 2 分钟消息扫描继续承担恢复补偿。
+Jarvis Bot 的飞书长连接由 CC Connect 独占。`jarvis-server` 不启动 Feishu event consumer，M2 按 `capture.scan_schedule` 增量轮询工作消息；不要为同一个 app 恢复第二条连接。
 
 飞书卡片内审批使用独立配置，不复用消息采集的事件开关。推荐让 CC Connect 继续持有当前 Jarvis Bot 的唯一长连接：
 
 ```yaml
 card_approval:
   enabled: true
-  transport: "cc_connect"
   profile: "cli_a96a0c8d82b85cb1"
   principal_open_id: "ou_xxx"
   relay_secret: "<与 CC Connect 相同的本机共享密钥>"
@@ -107,19 +100,11 @@ jarvis_approval_secret = "<同一个本机共享密钥>"
 jarvis_approval_timeout_ms = 2500
 ```
 
-`cc_connect` transport 下，审批卡仍由当前 Jarvis Bot 发送；按钮值使用 `action=jarvis_approval` 命名空间。CC Connect 的现有 `OnP2CardActionTrigger` 收到点击后，通过带共享密钥的 localhost HTTP 请求转给 Jarvis，再把 Jarvis 返回的完整卡片同步回飞书。Jarvis 不启动第二条飞书连接，`capture.event_enabled` 继续为 false，因此普通消息、文档评论和既有 CC Connect 卡片链路不会被抢占。
+审批卡由当前 Jarvis Bot 发送；按钮值使用 `action=jarvis_approval` 命名空间。CC Connect 的现有 `OnP2CardActionTrigger` 收到点击后，通过带共享密钥的 localhost HTTP 请求转给 Jarvis，再把 Jarvis 返回的完整卡片同步回飞书。Jarvis 不启动 `card.action.trigger` 连接，因此普通消息、文档评论和既有 CC Connect 卡片链路不会被抢占。
 
 Jarvis 端仍校验 Principal open_id、当前 Task 状态、proposal 的 `source_run_id`、发送卡片的 `message_id` 和 Task version；CC Connect 只负责机械传输，不持有审批状态。URL 必须是 loopback，密钥只写进 Git 忽略的 `conf/config.runtime.yaml` 和本机 `~/.cc-connect/config.toml`。
 
-也可使用 `transport: standalone_app`：此时 `profile` 必须属于一个未被 CC Connect/OpenClaw 占用的独立飞书 app，Jarvis 会启动自己的 `card.action.trigger` consumer。该模式下 `principal_open_id` 必须是独立 app 视角下的值，且发卡片和消费 callback 必须使用同一 profile。
-
-无论使用哪种 transport，对应飞书 app 都必须在开发者后台开启机器人、授予消息权限，并在「事件与回调 → 回调配置」中启用 callback；当前 Jarvis Bot 已由 CC Connect 持有连接。`standalone_app` 的就绪日志：
-
-```text
-card-action-cron ... job=card-action status=ok state=ready
-```
-
-回调落地日志前缀为 `job=card-action`（standalone 连接层）和 `job=card-approval`（approve/reject 落地层）；只有 Principal 本人的独立按钮点击会进入审批，版本冲突/状态已变会记为 `skipped=already-handled`，不会重复执行。
+当前 Jarvis Bot 对应的飞书 app 必须在开发者后台开启机器人、授予消息权限，并在「事件与回调 → 回调配置」中启用 callback。回调落地日志前缀为 `job=card-approval`；只有 Principal 本人的按钮点击会进入审批，版本冲突/状态已变会记为 `skipped=already-handled`，不会重复执行。
 
 ## 故障恢复
 

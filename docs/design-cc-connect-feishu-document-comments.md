@@ -12,7 +12,7 @@
 
 核心决策：
 
-- 长连接仍只有 cc-connect 一个所有者；Jarvis `capture.event_enabled` 保持 `false`。
+- 长连接仍只有 cc-connect 一个所有者；Jarvis 不保留 Feishu event consumer。
 - 评论事件直接接入 cc-connect 当前 Feishu WebSocket dispatcher，不部署 sidecar。
 - 业务逻辑落在 cc-connect 而不是 Jarvis，是因为要复用 cc-connect 现成的 Agent 与 Session 引擎；Jarvis 侧没有等价的对话执行器。「谁拥有长连接」只排除了 sidecar，并不单独构成这个选择的理由。
 - 每一张评论卡片对应一个独立 Agent Session，避免同一文档的不同评论互相污染。
@@ -62,7 +62,7 @@
 截至 2026-08-05：
 
 - 本机运行的是 `cc-connect v1.4.1`，Jarvis cc-connect 项目使用 Feishu App `cli_a96a0c8d82b85cb1`。
-- 同一 App 也出现在 Jarvis `capture.event_profile`，但 `capture.event_enabled=false`，所以实时事件连接当前由 cc-connect 独占；这个边界必须保持。
+- 实时事件连接由 cc-connect 独占；Jarvis 不再保存同 app 的 event profile 或启停开关，这个边界必须保持。
 - cc-connect 当前 Feishu adapter 已在同 App 的多个项目间共享一条 WebSocket，并将 IM 事件 fan-out 给 sibling platform；当前没有注册 `drive.notice.comment_add_v1`。
 - 飞书官方事件列表包含 `drive.notice.comment_add_v1`，含“新增评论”和“新增回复”通知。事件体字段为 `comment_id`、`reply_id`、`is_mentioned` 与 `notice_meta.{file_token,file_type,notice_type,from_user_id,to_user_id}`；`event_id` 与 `create_time` 在 `header` 里，不在事件体里。
 - Bot 身份的用户云文档事件订阅通过 `drive user subscription` 完成，状态用 `drive user subscription_status --event-type` 查询，粒度是「用户云文档事件」而非单篇文件。文件级的 `is_subscribe` 是另一组接口，两者不要混用。截至目前当前 App 的 Bot 身份尚未订阅。
@@ -98,7 +98,7 @@ flowchart LR
 
 飞书同一个 App 的多条长连接是集群消费，不是广播。同一事件只会落到其中一个连接。若再运行一个 `lark-cli event consume drive.notice.comment_add_v1`，事件可能被 sidecar 或 cc-connect 随机拿走，无法保证触发 Agent。
 
-因此唯一正确的接入点是 cc-connect 当前 WebSocket 的 `EventDispatcher`。Jarvis 主服务的 `capture.event_enabled` 继续关闭；若未来需要让 Jarvis 流水线也消费同一 App 的事件，应由 cc-connect 作为唯一连接所有者再做本机 fan-out，而不是恢复第二条长连接。
+因此唯一正确的接入点是 cc-connect 当前 WebSocket 的 `EventDispatcher`。若未来需要让 Jarvis 流水线也消费同一 App 的事件，应由 cc-connect 作为唯一连接所有者再做本机 fan-out，而不是恢复第二条长连接。
 
 ## 5. 入站协议与过滤
 

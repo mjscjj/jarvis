@@ -209,22 +209,15 @@ type CaptureConfig struct {
 	Timezone         string `yaml:"timezone"`
 	DiscoverSchedule string `yaml:"discover_schedule"`
 	ScanSchedule     string `yaml:"scan_schedule"`
-	// EventEnabled makes jarvis-server the sole long-connection owner for the
-	// configured Feishu app. EventProfile is the lark-cli profile/app id.
-	EventEnabled bool   `yaml:"event_enabled"`
-	EventProfile string `yaml:"event_profile"`
 	// AutoRelatedP2PTopN：discover 时按 active_time 自动纳入监听的内部真人私聊
 	// 上限。只开最活跃的前 N 个，僵尸老私聊与服务号私聊不开。
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
 }
 
-// CardApprovalConfig controls the transport for interactive approval callbacks.
-// standalone_app owns a dedicated Feishu connection; cc_connect keeps the
-// existing Jarvis Bot connection in CC Connect and accepts authenticated
-// localhost relays.
+// CardApprovalConfig accepts authenticated localhost callbacks forwarded by
+// CC Connect, which remains the sole owner of the Jarvis Bot Feishu connection.
 type CardApprovalConfig struct {
 	Enabled         bool   `yaml:"enabled"`
-	Transport       string `yaml:"transport"`
 	Profile         string `yaml:"profile"`
 	PrincipalOpenID string `yaml:"principal_open_id"`
 	RelaySecret     string `yaml:"relay_secret"`
@@ -458,9 +451,6 @@ func (c *Config) validate() error {
 	if c.Capture.DiscoverSchedule == "" || c.Capture.ScanSchedule == "" {
 		return fmt.Errorf("capture 的 discover/scan schedule 均不能为空")
 	}
-	if c.Capture.EventEnabled && c.Capture.EventProfile == "" {
-		return fmt.Errorf("capture.event_enabled=true 时 event_profile 不能为空")
-	}
 	if c.CardApproval.Enabled {
 		if c.CardApproval.Profile == "" {
 			return fmt.Errorf("card_approval.enabled=true 时 profile 不能为空")
@@ -468,21 +458,12 @@ func (c *Config) validate() error {
 		if c.CardApproval.PrincipalOpenID == "" {
 			return fmt.Errorf("card_approval.enabled=true 时 principal_open_id 不能为空")
 		}
-		switch c.CardApproval.Transport {
-		case "standalone_app":
-			if !c.Capture.EventEnabled && c.CardApproval.Profile == c.Capture.EventProfile {
-				return fmt.Errorf("standalone_app 的 card_approval.profile 不能复用由外部连接占用的 capture.event_profile")
-			}
-		case "cc_connect":
-			if strings.TrimSpace(c.CardApproval.RelaySecret) == "" {
-				return fmt.Errorf("card_approval.transport=cc_connect 时 relay_secret 不能为空")
-			}
-			host, _, err := net.SplitHostPort(c.Server.Addr)
-			if err != nil || (host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback())) {
-				return fmt.Errorf("card_approval.transport=cc_connect 时 server.addr 必须监听 loopback")
-			}
-		default:
-			return fmt.Errorf("card_approval.transport 必须是 standalone_app 或 cc_connect")
+		if strings.TrimSpace(c.CardApproval.RelaySecret) == "" {
+			return fmt.Errorf("card_approval.enabled=true 时 relay_secret 不能为空")
+		}
+		host, _, err := net.SplitHostPort(c.Server.Addr)
+		if err != nil || (host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback())) {
+			return fmt.Errorf("card_approval.enabled=true 时 server.addr 必须监听 loopback")
 		}
 	}
 	if c.Capture.AutoRelatedP2PTopN < 0 {

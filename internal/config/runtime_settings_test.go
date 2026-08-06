@@ -139,7 +139,6 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
 card_approval:
   enabled: true
-  transport: cc_connect
   profile: cli_jarvis
   principal_open_id: ou_principal
   relay_secret: relay-secret
@@ -217,7 +216,7 @@ card_approval:
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {
 		t.Fatalf("reloaded config = %#v", reloaded)
 	}
-	if got := reloaded.CardApproval; !got.Enabled || got.Transport != "cc_connect" ||
+	if got := reloaded.CardApproval; !got.Enabled ||
 		got.Profile != "cli_jarvis" || got.PrincipalOpenID != "ou_principal" ||
 		got.RelaySecret != "relay-secret" {
 		t.Fatalf("card approval config was not preserved: %#v", got)

@@ -182,8 +182,8 @@ Principal 点按钮完成处置；如果想改方向，直接回复这条消息�
 `message` 表已有这两个字段。因此"这句回复属于哪个 Task"是一次机械查找，不需要编号协议，
 也不需要新表：**外发 message_id → effects → Task**。
 
-**前置条件必须先决策**：Jarvis Bot 的 `im.message.receive_v1` 当前由 CC Connect 独占
-（`capture.event_enabled=false`），同一 app 只能有一个事件连接拥有者；轮询侧也排除
+**前置条件必须先决策**：Jarvis Bot 的 `im.message.receive_v1` 当前由 CC Connect 独占，
+Jarvis 不保留第二条 event consumer；同一 app 只能有一个事件连接拥有者，轮询侧也排除
 `p2p_target_type=bot` 的私聊。也就是说**今天 Principal 回给 Bot 的消息既没有事件流、也不会被采集**。
 三条路径：给 Jarvis 单独申请一个 app（推荐，边界最干净）、让 CC Connect 转发、或放开 bot 私聊采集。
 这是一项独立基建决策，必须先做，A 的回程才存在。

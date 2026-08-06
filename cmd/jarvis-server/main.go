@@ -770,66 +770,14 @@ func main() {
 		}
 		stopFactRollup = func() { <-factRollupScheduler.Stop().Done() }
 	}
-	var messageEventConsumer *capture.MessageEventConsumer
-	var cardActionConsumer *capture.CardActionConsumer
 	var cardApprovalProcessor api.CardApprovalProcessor
-	if cfg.Capture.EventEnabled {
-		messageEventConsumer, err = capture.StartMessageEventConsumer(
-			runtimeCtx,
-			captureService,
-			capture.MessageEventConsumerOptions{
-				Bin:          cfg.LarkCLI.Bin,
-				Profile:      cfg.Capture.EventProfile,
-				ReadyTimeout: time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
-			},
-			log.New(os.Stderr, "feishu-event-cron ", log.LstdFlags|log.Lmicroseconds),
-		)
-		if err != nil {
-			fatalf("start Feishu message event consumer failed: %v", err)
-		}
-		go func() {
-			<-messageEventConsumer.Done()
-			if err := messageEventConsumer.Err(); err != nil && runtimeCtx.Err() == nil {
-				fatalf("Feishu message event consumer stopped: %v", err)
-			}
-		}()
-	}
 	if cfg.CardApproval.Enabled {
 		cardLogger := log.New(os.Stderr, "card-approval ", log.LstdFlags|log.Lmicroseconds)
-		switch cfg.CardApproval.Transport {
-		case "standalone_app":
-			cardHandler, err := cardapproval.NewHandler(
-				taskService, agentExecutor, larkClient, cfg.CardApproval.PrincipalOpenID, cfg.CardApproval.Profile, cardLogger,
-			)
-			if err != nil {
-				fatalf("build standalone card approval handler failed: %v", err)
-			}
-			cardActionConsumer, err = capture.StartCardActionConsumer(
-				runtimeCtx,
-				cardHandler,
-				capture.CardActionConsumerOptions{
-					Bin:          cfg.LarkCLI.Bin,
-					Profile:      cfg.CardApproval.Profile,
-					ReadyTimeout: time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
-				},
-				log.New(os.Stderr, "card-action-cron ", log.LstdFlags|log.Lmicroseconds),
-			)
-			if err != nil {
-				fatalf("start Feishu card action consumer failed: %v", err)
-			}
-			go func() {
-				<-cardActionConsumer.Done()
-				if err := cardActionConsumer.Err(); err != nil && runtimeCtx.Err() == nil {
-					fatalf("Feishu card action consumer stopped: %v", err)
-				}
-			}()
-		case "cc_connect":
-			cardApprovalProcessor, err = cardapproval.NewRelayHandler(
-				taskService, agentExecutor, cfg.CardApproval.PrincipalOpenID, cardLogger,
-			)
-			if err != nil {
-				fatalf("build CC Connect card approval handler failed: %v", err)
-			}
+		cardApprovalProcessor, err = cardapproval.NewRelayHandler(
+			taskService, agentExecutor, cfg.CardApproval.PrincipalOpenID, cardLogger,
+		)
+		if err != nil {
+			fatalf("build CC Connect card approval handler failed: %v", err)
 		}
 	}
 	stopProactive := func() {}
@@ -877,20 +825,6 @@ func main() {
 	}
 	defer func() {
 		cancelRuntime()
-		if messageEventConsumer != nil {
-			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if err := messageEventConsumer.Stop(stopCtx); err != nil {
-				errorf("stop Feishu message event consumer failed: %v", err)
-			}
-		}
-		if cardActionConsumer != nil {
-			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if err := cardActionConsumer.Stop(stopCtx); err != nil {
-				errorf("stop Feishu card action consumer failed: %v", err)
-			}
-		}
 		<-scheduler.Stop().Done()
 		stopDailyDigest()
 		stopScheduledTasks()

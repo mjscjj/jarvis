@@ -208,7 +208,7 @@ cron 表达式的 `1-5` 承担，Go 里没有第二份工作日判断：改成 `
 
 ### 3.5 想让 Jarvis 开始推进时怎么做
 
-第一阶段**不做飞书文本命令**。原因是仓库实测事实：`capture.event_enabled=false`，
+第一阶段**不做飞书文本命令**。原因是 Jarvis 不保留 Feishu event consumer，
 Jarvis Bot 的 `im.message.receive_v1` 由 CC Connect 独占（同一 app 只能有一个事件连接
 拥有者），而轮询侧 `isAutoRelatedP2P` 明确排除 `p2p_target_type=bot` 的私聊。也就是说
 Principal 回给 Bot 的消息今天既没有事件流、也不会被采集。

@@ -1,9 +1,6 @@
-// Package cardapproval bridges Feishu approval-card button clicks to the
-// existing Task approve/reject actions. It is the thin, judgement-free mapping
-// the design calls for: a click that reaches here already means the principal
-// decided, so this package only loads the current version, calls approve or
-// reject, and reflects the outcome back onto the card. It never inspects the
-// task's action_type or weighs risk — which buttons a card carries is M5's call.
+// Package cardapproval maps authenticated Feishu approval-card callbacks from
+// CC Connect to the existing Task approve/reject actions. It never inspects the
+// task's action_type or weighs risk; which buttons a card carries is M5's call.
 package cardapproval
 
 import (
@@ -15,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"jarvis/internal/capture"
 	"jarvis/internal/execute"
 )
 
@@ -34,45 +30,35 @@ type Approver interface {
 	Reject(ctx context.Context, taskID uint64, expectedVersion int32, reason string) (*execute.ExecuteResult, error)
 }
 
-// CardUpdater replaces the clicked card in place using the event's delayed-update
-// token. *larkcli.Client satisfies this via UpdateCard.
-type CardUpdater interface {
-	UpdateCard(ctx context.Context, profile, token string, card json.RawMessage) error
+// CardActionEvent is the strict relay payload needed to bind one Feishu click
+// to the current proposal. CC Connect owns the Feishu callback connection.
+type CardActionEvent struct {
+	EventID     string
+	OperatorID  string
+	MessageID   string
+	ChatID      string
+	ActionTag   string
+	ActionValue string
+	FormValue   string
 }
 
-// Handler implements capture.CardActionHandler.
+type cardApprovalAction struct {
+	Action string `json:"action"`
+	TaskID uint64 `json:"task_id"`
+}
+
 type Handler struct {
 	tasks         ApprovalReader
 	approver      Approver
-	cards         CardUpdater
 	principalOpen string
-	profile       string
 	logger        *log.Logger
 	readyTimeout  time.Duration
 	pollInterval  time.Duration
 }
 
-func NewHandler(tasks ApprovalReader, approver Approver, cards CardUpdater, principalOpenID, profile string, logger *log.Logger) (*Handler, error) {
-	return newHandler(tasks, approver, cards, principalOpenID, profile, logger)
-}
-
-// NewRelayHandler builds the same approval processor without a card updater.
-// CC Connect owns the Feishu callback response in this mode and returns the
-// replacement card produced by ProcessCardAction directly to Feishu.
+// NewRelayHandler builds the approval processor behind the authenticated
+// localhost relay. Jarvis never opens a Feishu event connection itself.
 func NewRelayHandler(tasks ApprovalReader, approver Approver, principalOpenID string, logger *log.Logger) (*Handler, error) {
-	handler, err := newHandler(tasks, approver, nil, principalOpenID, "", logger)
-	if err != nil {
-		return nil, err
-	}
-	// Feishu expects the synchronous callback response within 3 seconds and CC
-	// Connect reserves 500ms for transport. A faster click can retry after M5
-	// has persisted the proposal; never hold the callback for the standalone
-	// consumer's longer delayed-update window.
-	handler.readyTimeout = 2 * time.Second
-	return handler, nil
-}
-
-func newHandler(tasks ApprovalReader, approver Approver, cards CardUpdater, principalOpenID, profile string, logger *log.Logger) (*Handler, error) {
 	if tasks == nil {
 		return nil, fmt.Errorf("card approval task reader is nil")
 	}
@@ -83,41 +69,19 @@ func newHandler(tasks ApprovalReader, approver Approver, cards CardUpdater, prin
 	if principalOpenID == "" {
 		return nil, fmt.Errorf("card approval principal open_id is empty")
 	}
-	profile = strings.TrimSpace(profile)
-	if cards != nil && profile == "" {
-		return nil, fmt.Errorf("card approval profile is empty when card updater is configured")
-	}
 	if logger == nil {
 		return nil, fmt.Errorf("card approval logger is nil")
 	}
 	return &Handler{
-		tasks: tasks, approver: approver, cards: cards,
-		principalOpen: principalOpenID, profile: profile, logger: logger,
-		readyTimeout: 10 * time.Second, pollInterval: 100 * time.Millisecond,
+		tasks: tasks, approver: approver, principalOpen: principalOpenID, logger: logger,
+		readyTimeout: 2 * time.Second, pollInterval: 100 * time.Millisecond,
 	}, nil
 }
 
-// HandleCardAction lands one approve/reject click. The click is the approval, so
-// the only gate is AuthorizeCardApproval's hard boundaries (principal, valid
-// action, positive id). On success the card is updated to show the decision; on
-// a lost race (version/state conflict) the card is nudged toward the backend.
-// Unauthorized clicks never mutate the shared card. A card-update failure never fails the approval — the
-// state change already committed and the backend list stays authoritative.
-func (h *Handler) HandleCardAction(ctx context.Context, event capture.CardActionEvent) error {
-	card, err := h.ProcessCardAction(ctx, event)
-	if len(card) > 0 {
-		h.updateCard(ctx, event, card)
-	}
-	return err
-}
-
 // ProcessCardAction mechanically lands one callback and returns the complete
-// replacement card. CC Connect uses this method through the localhost relay,
-// while HandleCardAction adds delayed card updating for the standalone app
-// transport. Keeping the state transition in one method makes both transports
-// enforce the same principal/proposal/message/version checks.
-func (h *Handler) ProcessCardAction(ctx context.Context, event capture.CardActionEvent) (json.RawMessage, error) {
-	action, err := capture.AuthorizeCardApproval(event, h.principalOpen)
+// replacement card for CC Connect to return synchronously to Feishu.
+func (h *Handler) ProcessCardAction(ctx context.Context, event CardActionEvent) (json.RawMessage, error) {
+	action, err := authorizeCardApproval(event, h.principalOpen)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", execute.ErrInvalidInput, err)
 	}
@@ -146,6 +110,40 @@ func (h *Handler) ProcessCardAction(ctx context.Context, event capture.CardActio
 		return cardNoticeText("已驳回，不会执行。"), nil
 	}
 	return nil, fmt.Errorf("%w: unsupported card approval action %q", execute.ErrInvalidInput, action.Action)
+}
+
+func authorizeCardApproval(event CardActionEvent, principalOpenID string) (cardApprovalAction, error) {
+	principalOpenID = strings.TrimSpace(principalOpenID)
+	if principalOpenID == "" {
+		return cardApprovalAction{}, fmt.Errorf("card action principal open_id is not configured")
+	}
+	if strings.TrimSpace(event.OperatorID) != principalOpenID {
+		return cardApprovalAction{}, fmt.Errorf("card action operator_id=%q is not the principal", event.OperatorID)
+	}
+	if strings.TrimSpace(event.ActionTag) != "button" {
+		return cardApprovalAction{}, fmt.Errorf("card action tag=%q is not button", event.ActionTag)
+	}
+	if strings.TrimSpace(event.FormValue) != "" {
+		return cardApprovalAction{}, fmt.Errorf("card approval button must not submit a form")
+	}
+	raw := strings.TrimSpace(event.ActionValue)
+	if raw == "" {
+		return cardApprovalAction{}, fmt.Errorf("card action value is empty")
+	}
+	var action cardApprovalAction
+	if err := json.Unmarshal([]byte(raw), &action); err != nil {
+		return cardApprovalAction{}, fmt.Errorf("decode card action value %q: %w", raw, err)
+	}
+	action.Action = strings.TrimSpace(action.Action)
+	switch action.Action {
+	case "approve", "reject":
+	default:
+		return cardApprovalAction{}, fmt.Errorf("card action %q is not approve or reject", action.Action)
+	}
+	if action.TaskID == 0 {
+		return cardApprovalAction{}, fmt.Errorf("card action task_id must be positive")
+	}
+	return action, nil
 }
 
 // The card is sent before the agent returns its proposal. A very fast click can
@@ -276,23 +274,12 @@ func rawMessageID(raw json.RawMessage) string {
 // onLandFailed distinguishes a lost race (someone already handled it, or the
 // task moved on) from a real error. Either way the card points the principal at
 // the backend; only unexpected errors propagate to the consumer log.
-func (h *Handler) onLandFailed(_ context.Context, _ capture.CardActionEvent, taskID uint64, action string, err error) (json.RawMessage, error) {
+func (h *Handler) onLandFailed(_ context.Context, _ CardActionEvent, taskID uint64, action string, err error) (json.RawMessage, error) {
 	if errors.Is(err, execute.ErrVersionConflict) || errors.Is(err, execute.ErrInvalidTransition) {
 		h.logger.Printf("job=card-approval status=info action=%s task_id=%d skipped=already-handled: %v", action, taskID, err)
 		return cardNoticeText("这条审批可能已经处理过了，请去后台确认。"), nil
 	}
 	return cardNoticeText("处理没成功，请去后台重试。"), fmt.Errorf("card approval %s task_id=%d: %w", action, taskID, err)
-}
-
-func (h *Handler) updateCard(ctx context.Context, event capture.CardActionEvent, card json.RawMessage) {
-	if h.cards == nil || event.Token == "" {
-		return
-	}
-	if err := h.cards.UpdateCard(ctx, h.profile, event.Token, card); err != nil {
-		// The approval already landed; a stale/exhausted token just means the
-		// principal sees the old card. Log and move on, never fail the click.
-		h.logger.Printf("job=card-approval status=info update-card-skipped message_id=%s: %v", event.MessageID, err)
-	}
 }
 
 // cardNoticeText builds a minimal Card 2.0 body that states the outcome. It is a

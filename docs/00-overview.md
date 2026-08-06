@@ -72,12 +72,12 @@ flowchart TD
 
 M2 有两个事实入口：
 
-1. 飞书 IM 的实时消息事件，以及会话发现、principal activity 和增量轮询补偿；
+1. 飞书会话发现、principal activity 和 related chat 增量轮询；
 2. 外部定时任务/Skill 通过 `/api/clues` 投递原始事实。
 
 M2 保存原文、来源、外部幂等键和资源引用，成功后唤醒 M3。它不解释错误语义、不决定是否值得做、不创建 Todo、不为会议/邮件等来源增加专用状态机。
 
-`jarvis-server` 通过 `lark-cli event consume im.message.receive_v1` 直接持有 Bot 长连接。事件按飞书 `message_id` 幂等落库，提交后立即唤醒 M3；事件不推进轮询 checkpoint，定时扫描继续作为掉线和进程故障后的恢复真源。同一个 Bot app 只能有一个事件连接拥有者，不得同时配置到 cc-connect/OpenClaw 等进程。资源链路只稳定采集引用元数据；通用下载、正文回填和内容哈希复用尚未形成完整生产链路。
+Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。M2 按 `scan_schedule` 增量轮询已关联会话并按飞书 `message_id` 幂等落库，外部实时事件若要进入流水线只能由 CC Connect 经明确的本机 fan-out 接口转发，不能恢复第二条同 app 长连接。资源链路只稳定采集引用元数据；通用下载、正文回填和内容哈希复用尚未形成完整生产链路。
 
 ### 3.2 M3：线索抽取与快照
 
