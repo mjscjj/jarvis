@@ -81,6 +81,34 @@
   margin-top: 0;
 }
 
+.key-matter-table .ant-table-cell {
+  overflow: hidden;
+}
+
+.key-matter-title,
+.key-matter-edit-trigger > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.key-matter-edit-trigger.ant-btn {
+  width: 100%;
+  height: auto;
+  min-height: 24px;
+  padding-inline: 0;
+  text-align: left;
+  white-space: normal;
+}
+
+.key-matter-edit-trigger.ant-btn > span {
+  width: 100%;
+}
+
 .memory-view-heading {
   display: flex;
   flex-direction: column;

@@ -449,7 +449,17 @@ function KeyMattersPanel() {
   const textEditor = (matter: KeyMatter, field: Exclude<KeyMatterField, 'due_at'>) => {
     if (editing?.id !== matter.id || editing.field !== field) {
       const value = field === 'status' ? matter.status : matter.summary
-      return <Button type="link" size="small" onClick={(event) => { event.stopPropagation(); beginEdit(matter, field) }}>{value || '点击填写'}</Button>
+      return (
+        <Button
+          type="link"
+          size="small"
+          className="key-matter-edit-trigger"
+          title={value || '点击填写'}
+          onClick={(event) => { event.stopPropagation(); beginEdit(matter, field) }}
+        >
+          <span>{value || '点击填写'}</span>
+        </Button>
+      )
     }
     return (
       <Space orientation="vertical" size={4} onClick={(event) => event.stopPropagation()} style={{ width: '100%' }}>
@@ -480,13 +490,13 @@ function KeyMattersPanel() {
   }
 
   const columns: TableColumnsType<KeyMatter> = [
-    { title: '关键事项', dataIndex: 'title', width: 220, render: (value: string) => <Text strong>{value}</Text> },
-    { title: '状态', dataIndex: 'status', width: 180, render: (_, matter) => textEditor(matter, 'status') },
-    { title: '当前进展', dataIndex: 'summary', render: (_, matter) => textEditor(matter, 'summary') },
-    { title: '截止时间', dataIndex: 'due_at', width: 190, render: (_, matter) => dueAtEditor(matter) },
-    { title: '关联项目', dataIndex: 'project_id', width: 150, render: (_, matter) => matter.project?.name || '—' },
+    { title: '关键事项', dataIndex: 'title', width: 170, render: (value: string) => <Text strong className="key-matter-title" title={value}>{value}</Text> },
+    { title: '状态', dataIndex: 'status', width: 170, render: (_, matter) => textEditor(matter, 'status') },
+    { title: '当前进展', dataIndex: 'summary', width: 220, render: (_, matter) => textEditor(matter, 'summary') },
+    { title: '截止时间', dataIndex: 'due_at', width: 150, render: (_, matter) => dueAtEditor(matter) },
+    { title: '关联项目', dataIndex: 'project_id', width: 120, render: (_, matter) => matter.project?.name || '—' },
     {
-      title: '操作', width: 150, render: (_, matter) => (
+      title: '操作', width: 160, render: (_, matter) => (
         <Flex gap={8}>
           <Button size="small" onClick={(event) => { event.stopPropagation(); setRelationMatter(matter) }}>关系</Button>
           <Popconfirm title="闭环该关键事项？" onConfirm={() => close(matter)} okText="闭环" cancelText="取消">
@@ -504,7 +514,17 @@ function KeyMattersPanel() {
     </Flex>
     {error && <Alert type="error" showIcon title="关键事项操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
-      <Table<KeyMatter> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(matter) => ({ onClick: () => setSelected(matter), className: 'clickable-row' })} />
+      <Table<KeyMatter>
+        className="key-matter-table"
+        rowKey="id"
+        columns={columns}
+        dataSource={items}
+        loading={loading}
+        pagination={false}
+        tableLayout="fixed"
+        scroll={{ x: 990 }}
+        onRow={(matter) => ({ onClick: () => setSelected(matter), className: 'clickable-row' })}
+      />
     </Card>
     {selected && (
       <Card title={selected.title} variant="borderless" style={{ marginTop: 16 }}>
