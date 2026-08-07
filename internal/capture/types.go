@@ -49,6 +49,20 @@ type MessageSearchResponse struct {
 	} `json:"data"`
 }
 
+// MessageSearchListResponse is the full rendered message shape returned by
+// lark-cli im +messages-search for one related topic chat. It is separate from
+// MessageSearchResponse because principal-activity discovery only needs chat
+// metadata, while ordinary M2 capture persists the complete message payload.
+type MessageSearchListResponse struct {
+	OK   bool `json:"ok"`
+	Data struct {
+		Messages  []CLIMessage `json:"messages"`
+		HasMore   bool         `json:"has_more"`
+		PageToken string       `json:"page_token"`
+		Total     int          `json:"total"`
+	} `json:"data"`
+}
+
 // SearchedMessage contains only the fields required to identify a group where
 // the principal spoke and to bound that group's first capture window.
 type SearchedMessage struct {

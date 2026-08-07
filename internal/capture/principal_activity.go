@@ -35,14 +35,14 @@ func (s *Service) SyncPrincipalActivityGroups(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	startMS := endMS - s.opts.PrincipalSearchOverlap.Milliseconds()
+	startMS := endMS - s.opts.SearchOverlap.Milliseconds()
 	if found {
-		startMS = checkpoint.LastSearchAt - s.opts.PrincipalSearchOverlap.Milliseconds()
+		startMS = checkpoint.LastSearchAt - s.opts.SearchOverlap.Milliseconds()
 	}
 	if startMS < 0 {
 		startMS = 0
 	}
-	record, err := s.beginScan(principalActivityScanType, nil, nil, &startMS)
+	record, err := s.beginScan(principalActivityScanType, nil, nil, &startMS, &startMS)
 	if err != nil {
 		return err
 	}

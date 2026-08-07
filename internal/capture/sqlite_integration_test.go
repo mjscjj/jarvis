@@ -40,7 +40,7 @@ func TestCaptureSQLite(t *testing.T) {
 	}
 	service, err := NewService(db, &captureFixture{}, Options{
 		PageSize: 50, ScanWorkers: 2, HotAge: 6 * time.Hour, WarmAge: 7 * 24 * time.Hour, Location: location,
-		PrincipalOpenID: "ou_principal", PrincipalSearchOverlap: 10 * time.Minute, ActivationContext: 2 * time.Hour,
+		PrincipalOpenID: "ou_principal", SearchOverlap: 10 * time.Minute, ActivationContext: 2 * time.Hour,
 		AutoRelatedP2PTopN: 30,
 	})
 	if err != nil {
@@ -176,26 +176,29 @@ func (f *captureFixture) Run(_ context.Context, out any, args ...string) error {
 			{ChatID: "oc_p2p_external", ChatMode: "p2p", Name: "外部联系人", External: true, P2PTargetType: "user"},
 		}
 		return nil
-	case strings.Contains(joined, "+chat-messages-list"):
-		response := out.(*MessageListResponse)
+	case strings.Contains(joined, "+messages-search"):
+		response := out.(*MessageSearchListResponse)
 		response.OK = true
-		response.Data.Messages = []CLIMessage{{
-			ChatID:      "oc_fixture",
-			Content:     "evidence img_key:img_v3_fixture https://example.com/evidence",
-			CreateTime:  "2026-07-19 10:01",
-			MessageID:   "om_root",
-			MessageType: "post",
-			ThreadID:    "omt_fixture",
-			Sender:      CLISender{ID: "cli_app", OpenBotID: "ou_bot", Name: "bot", SenderType: "app"},
-			ThreadReplies: []CLIMessage{{
+		response.Data.Messages = []CLIMessage{
+			{
+				ChatID:      "oc_fixture",
+				Content:     "evidence img_key:img_v3_fixture https://example.com/evidence",
+				CreateTime:  "2026-07-19 10:01",
+				MessageID:   "om_root",
+				MessageType: "post",
+				ThreadID:    "omt_fixture",
+				Sender:      CLISender{ID: "cli_app", OpenBotID: "ou_bot", Name: "bot", SenderType: "app"},
+			},
+			{
 				ChatID:      "oc_fixture",
 				Content:     "reply",
 				CreateTime:  "2026-07-19 10:02",
 				MessageID:   "om_reply",
 				MessageType: "text",
+				ThreadID:    "omt_fixture",
 				Sender:      CLISender{ID: "ou_user", Name: "user", SenderType: "user"},
-			}},
-		}}
+			},
+		}
 		return nil
 	default:
 		return nil

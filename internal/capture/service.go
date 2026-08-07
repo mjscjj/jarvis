@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,14 +42,14 @@ type ScanObserver interface {
 
 // Options contains capture policy already decided by the technical design.
 type Options struct {
-	PageSize               int
-	ScanWorkers            int
-	HotAge                 time.Duration
-	WarmAge                time.Duration
-	Location               *time.Location
-	PrincipalOpenID        string
-	PrincipalSearchOverlap time.Duration
-	ActivationContext      time.Duration
+	PageSize          int
+	ScanWorkers       int
+	HotAge            time.Duration
+	WarmAge           time.Duration
+	Location          *time.Location
+	PrincipalOpenID   string
+	SearchOverlap     time.Duration
+	ActivationContext time.Duration
 	// AutoRelatedP2PTopN 是 discover 自动纳入监听的内部真人私聊上限（按 active_time
 	// 取最活跃的前 N 个）。0 表示不自动开任何私聊（全靠手动名单）。
 	AutoRelatedP2PTopN int
@@ -85,8 +86,8 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 	if strings.TrimSpace(opts.PrincipalOpenID) == "" {
 		return nil, fmt.Errorf("capture principal open_id is empty")
 	}
-	if opts.PrincipalSearchOverlap <= 0 {
-		return nil, fmt.Errorf("capture principal search overlap must be positive")
+	if opts.SearchOverlap <= 0 {
+		return nil, fmt.Errorf("capture search overlap must be positive")
 	}
 	if opts.ActivationContext <= 0 {
 		return nil, fmt.Errorf("capture activation context must be positive")
@@ -229,7 +230,7 @@ func normalizeChatIDs(chatIDs []string) ([]string, error) {
 // DiscoverChats enumerates every user-visible chat. New chats start at now and
 // therefore never backfill history.
 func (s *Service) DiscoverChats(ctx context.Context) (err error) {
-	record, err := s.beginScan("discover", nil, nil, nil)
+	record, err := s.beginScan("discover", nil, nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -457,7 +458,14 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 
 	scanType := "scan_" + group.Tier
 	windowStart := checkpoint.HighWaterCreateTime
-	record, err := s.beginScan(scanType, &group.ID, &chatID, &windowStart)
+	searchWindowStart := windowStart
+	if group.ChatMode == "topic" {
+		searchWindowStart -= s.opts.SearchOverlap.Milliseconds()
+		if searchWindowStart < 0 {
+			searchWindowStart = 0
+		}
+	}
+	record, err := s.beginScan(scanType, &group.ID, &chatID, &searchWindowStart, &windowStart)
 	if err != nil {
 		return err
 	}
@@ -474,39 +482,59 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	currentHW := windowStart
 	lastMessageID := checkpoint.LastMessageID
 	insertedMessageIDs := make([]string, 0)
-	for {
-		var response MessageListResponse
-		args := []string{
-			"im", "+chat-messages-list", "--as", "user", "--chat-id", chatID,
-			"--start", time.UnixMilli(windowStart).In(s.opts.Location).Format(time.RFC3339),
-			"--order", "asc", "--page-size", strconv.Itoa(s.opts.PageSize), "--no-reactions",
-		}
-		if pageToken != "" {
-			args = append(args, "--page-token", pageToken)
-		}
-		if err = s.lark.Run(ctx, &response, args...); err != nil {
-			return fmt.Errorf("list messages chat_id=%s page=%d: %w", chatID, record.PageCount+1, err)
-		}
-		messages := flattenMessages(response.Data.Messages)
-		var (
-			inserted    int32
-			insertedIDs []string
-		)
-		inserted, insertedIDs, currentHW, lastMessageID, err = s.persistMessagePage(&group, messages, currentHW, lastMessageID)
+	if group.ChatMode == "topic" {
+		var messages []CLIMessage
+		messages, record.PageCount, err = s.searchTopicMessages(ctx, chatID, searchWindowStart, s.now())
+		record.FetchedCount = int32(len(messages))
 		if err != nil {
-			return fmt.Errorf("persist messages chat_id=%s page=%d: %w", chatID, record.PageCount+1, err)
+			return err
 		}
-		record.FetchedCount += int32(len(messages))
-		record.InsertedCount += inserted
-		insertedMessageIDs = append(insertedMessageIDs, insertedIDs...)
-		record.PageCount++
-		if !response.Data.HasMore {
-			break
+		var inserted int32
+		inserted, insertedMessageIDs, currentHW, lastMessageID, err = s.persistMessagePage(
+			&group,
+			messages,
+			currentHW,
+			lastMessageID,
+		)
+		if err != nil {
+			return fmt.Errorf("persist topic messages chat_id=%s: %w", chatID, err)
 		}
-		if response.Data.PageToken == "" {
-			return fmt.Errorf("message list chat_id=%s page=%d has_more=true with empty page_token", chatID, record.PageCount)
+		record.InsertedCount = inserted
+	} else {
+		for {
+			var response MessageListResponse
+			args := []string{
+				"im", "+chat-messages-list", "--as", "user", "--chat-id", chatID,
+				"--start", time.UnixMilli(windowStart).In(s.opts.Location).Format(time.RFC3339),
+				"--order", "asc", "--page-size", strconv.Itoa(s.opts.PageSize), "--no-reactions",
+			}
+			if pageToken != "" {
+				args = append(args, "--page-token", pageToken)
+			}
+			if err = s.lark.Run(ctx, &response, args...); err != nil {
+				return fmt.Errorf("list messages chat_id=%s page=%d: %w", chatID, record.PageCount+1, err)
+			}
+			messages := flattenMessages(response.Data.Messages)
+			var (
+				inserted    int32
+				insertedIDs []string
+			)
+			inserted, insertedIDs, currentHW, lastMessageID, err = s.persistMessagePage(&group, messages, currentHW, lastMessageID)
+			if err != nil {
+				return fmt.Errorf("persist messages chat_id=%s page=%d: %w", chatID, record.PageCount+1, err)
+			}
+			record.FetchedCount += int32(len(messages))
+			record.InsertedCount += inserted
+			insertedMessageIDs = append(insertedMessageIDs, insertedIDs...)
+			record.PageCount++
+			if !response.Data.HasMore {
+				break
+			}
+			if response.Data.PageToken == "" {
+				return fmt.Errorf("message list chat_id=%s page=%d has_more=true with empty page_token", chatID, record.PageCount)
+			}
+			pageToken = response.Data.PageToken
 		}
-		pageToken = response.Data.PageToken
 	}
 
 	if err = s.finishChatOK(record, &checkpoint, currentHW, lastMessageID); err != nil {
@@ -524,6 +552,76 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 		MessageIDs: insertedMessageIDs, HighWater: currentHW,
 		LastMessageID: cloneString(lastMessageID),
 	})
+}
+
+// searchTopicMessages reads messages by their own create time. Feishu's chat
+// listing filters topic roots by root create time, so a new reply under an old
+// root is otherwise invisible after the root passes the chat checkpoint.
+//
+// Search results are not ordered. Fetch every page before persisting anything,
+// then sort deterministically so a failed or partial search cannot advance the
+// checkpoint past an unseen reply. The overlap tolerates search-index delay;
+// message_id remains the idempotency key when old rows are returned again.
+func (s *Service) searchTopicMessages(
+	ctx context.Context,
+	chatID string,
+	searchStart int64,
+	windowEnd time.Time,
+) ([]CLIMessage, int32, error) {
+	pageToken := ""
+	seenPageTokens := make(map[string]struct{})
+	messages := make([]CLIMessage, 0)
+	var pageCount int32
+	for {
+		var response MessageSearchListResponse
+		args := []string{
+			"im", "+messages-search", "--query", "", "--chat-id", chatID,
+			"--start", time.UnixMilli(searchStart).In(s.opts.Location).Format(time.RFC3339),
+			"--end", windowEnd.In(s.opts.Location).Format(time.RFC3339),
+			"--page-size", strconv.Itoa(s.opts.PageSize), "--no-reactions", "--as", "user",
+		}
+		if pageToken != "" {
+			args = append(args, "--page-token", pageToken)
+		}
+		if err := s.lark.Run(ctx, &response, args...); err != nil {
+			return messages, pageCount, fmt.Errorf(
+				"search topic messages chat_id=%s page=%d: %w",
+				chatID,
+				pageCount+1,
+				err,
+			)
+		}
+		pageCount++
+		messages = append(messages, response.Data.Messages...)
+		if !response.Data.HasMore {
+			break
+		}
+		nextPageToken := response.Data.PageToken
+		if nextPageToken == "" {
+			return messages, pageCount, fmt.Errorf(
+				"search topic messages chat_id=%s page=%d has_more=true with empty page_token",
+				chatID,
+				pageCount,
+			)
+		}
+		if _, exists := seenPageTokens[nextPageToken]; exists {
+			return messages, pageCount, fmt.Errorf(
+				"search topic messages chat_id=%s page=%d repeated page_token=%q",
+				chatID,
+				pageCount,
+				nextPageToken,
+			)
+		}
+		seenPageTokens[nextPageToken] = struct{}{}
+		pageToken = nextPageToken
+	}
+	sort.Slice(messages, func(i, j int) bool {
+		if messages[i].CreateTime == messages[j].CreateTime {
+			return messages[i].MessageID < messages[j].MessageID
+		}
+		return messages[i].CreateTime < messages[j].CreateTime
+	})
+	return messages, pageCount, nil
 }
 
 // ScanRelated scans every related chat in one pass. Tier no longer gates
@@ -833,15 +931,20 @@ func cloneString(value *string) *string {
 	return &copy
 }
 
-func (s *Service) beginScan(scanType string, groupID *uint64, chatID *string, windowStart *int64) (*domain.ScanRecord, error) {
-	highWater := windowStart
+func (s *Service) beginScan(
+	scanType string,
+	groupID *uint64,
+	chatID *string,
+	windowStart *int64,
+	highWaterBefore *int64,
+) (*domain.ScanRecord, error) {
 	record := &domain.ScanRecord{
 		ScanType:        scanType,
 		GroupID:         groupID,
 		ChatID:          chatID,
 		WindowStart:     windowStart,
 		Status:          "partial",
-		HighWaterBefore: highWater,
+		HighWaterBefore: highWaterBefore,
 		StartedAt:       s.now(),
 	}
 	if err := s.db.Create(record).Error; err != nil {
