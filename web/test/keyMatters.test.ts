@@ -13,6 +13,7 @@ function matter(id: number): KeyMatter {
     due_at: '2026-08-08T10:00:00Z',
     closed_at: null,
     last_progress_at: '2026-08-06T08:00:00Z',
+    last_active_at: '2026-08-06T09:00:00Z',
     created_at: '2026-08-01T08:00:00Z',
     updated_at: '2026-08-06T08:00:00Z',
     project: null,

@@ -41,6 +41,7 @@ type KeyMatterView struct {
 	DueAt          *time.Time   `json:"due_at"`
 	ClosedAt       *time.Time   `json:"closed_at"`
 	LastProgressAt *time.Time   `json:"last_progress_at"`
+	LastActiveAt   time.Time    `json:"last_active_at"`
 	CreatedAt      time.Time    `json:"created_at"`
 	UpdatedAt      time.Time    `json:"updated_at"`
 	Project        *ProjectView `json:"project"`
@@ -125,7 +126,8 @@ func toKeyMatterView(matter *domain.KeyMatter) KeyMatterView {
 	view := KeyMatterView{
 		ID: matter.ID, Title: matter.Title, Status: matter.Status, Summary: matter.Summary,
 		ProjectID: matter.ProjectID, DueAt: matter.DueAt, ClosedAt: matter.ClosedAt,
-		LastProgressAt: matter.LastProgressAt, CreatedAt: matter.CreatedAt, UpdatedAt: matter.UpdatedAt,
+		LastProgressAt: matter.LastProgressAt, LastActiveAt: matter.LastActiveAt,
+		CreatedAt: matter.CreatedAt, UpdatedAt: matter.UpdatedAt,
 	}
 	if matter.Project != nil {
 		projectView := toProjectView(matter.Project)

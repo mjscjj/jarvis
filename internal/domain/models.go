@@ -46,8 +46,12 @@ type KeyMatter struct {
 	ClosedAt  *time.Time `gorm:"column:closed_at;index:idx_key_matter_closed"`
 	// LastProgressAt moves only when Summary actually changes.
 	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_key_matter_last_progress"`
-	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
-	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+	// LastActiveAt is an explicit relevance signal. Ordinary profile edits do not
+	// move it; callers touch the matter only after fresh evidence confirms it is
+	// still worth keeping near the front of the working set.
+	LastActiveAt time.Time `gorm:"column:last_active_at;not null;default:'1970-01-01 00:00:00';index:idx_key_matter_active"`
+	CreatedAt    time.Time `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 
 	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:SET NULL"`
 }
@@ -274,6 +278,7 @@ type ManagedResource struct {
 	ProjectID     *uint64   `gorm:"column:project_id;index:idx_managed_resource_project"`
 	LinkPrincipal bool      `gorm:"column:link_principal;not null;default:0;index:idx_managed_resource_principal"`
 	IsActive      bool      `gorm:"column:is_active;not null;default:1;index:idx_managed_resource_active"`
+	LastActiveAt  time.Time `gorm:"column:last_active_at;not null;default:'1970-01-01 00:00:00';index:idx_managed_resource_last_active"`
 	CreatedAt     time.Time `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
 	UpdatedAt     time.Time `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 

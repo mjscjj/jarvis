@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"jarvis/internal/domain"
@@ -19,7 +20,10 @@ type KeyMatterList struct {
 	Total    int64           `json:"total"`
 	Page     int             `json:"page"`
 	PageSize int             `json:"page_size"`
+	MaxOpen  int             `json:"max_open"`
 }
+
+const maxOpenKeyMatters = 10
 
 // KeyMatterFilter controls whether closed matters are included.
 type KeyMatterFilter struct {
@@ -31,6 +35,8 @@ type KeyMatterFilter struct {
 type KeyMatterService struct {
 	db     *gorm.DB
 	events *progress.Service
+	now    func() time.Time
+	mu     sync.Mutex
 }
 
 func NewKeyMatterService(db *gorm.DB) (*KeyMatterService, error) {
@@ -41,7 +47,7 @@ func NewKeyMatterService(db *gorm.DB) (*KeyMatterService, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &KeyMatterService{db: db, events: events}, nil
+	return &KeyMatterService{db: db, events: events, now: time.Now}, nil
 }
 
 func (s *KeyMatterService) Create(ctx context.Context, in KeyMatterInput) (*KeyMatterView, error) {
@@ -51,9 +57,15 @@ func (s *KeyMatterService) Create(ctx context.Context, in KeyMatterInput) (*KeyM
 	if err := s.requireProject(ctx, in.ProjectID); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.requireOpenCapacity(ctx); err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
 	matter := domain.KeyMatter{
 		Title: in.Title, Status: in.Status, Summary: in.Summary,
-		ProjectID: in.ProjectID, DueAt: in.DueAt,
+		ProjectID: in.ProjectID, DueAt: in.DueAt, LastActiveAt: now,
 	}
 	if err := s.db.WithContext(ctx).Create(&matter).Error; err != nil {
 		return nil, fmt.Errorf("create key matter: %w", err)
@@ -70,6 +82,34 @@ func (s *KeyMatterService) Create(ctx context.Context, in KeyMatterInput) (*KeyM
 		return nil, err
 	}
 	return s.Get(ctx, matter.ID)
+}
+
+// Touch marks one open matter as freshly relevant without rewriting its
+// semantic fields or manufacturing a progress fact.
+func (s *KeyMatterService) Touch(ctx context.Context, id uint64) (*KeyMatterView, error) {
+	if id == 0 {
+		return nil, invalid(fmt.Errorf("key matter id must be positive"))
+	}
+	var matter domain.KeyMatter
+	if err := s.db.WithContext(ctx).Where("id = ?", id).Take(&matter).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("load key matter id=%d before touch: %w", id, err)
+	}
+	if matter.ClosedAt != nil {
+		return nil, invalid(fmt.Errorf("key matter id=%d is closed", id))
+	}
+	activeAt := s.now().UTC()
+	result := s.db.WithContext(ctx).Model(&domain.KeyMatter{}).Where("id = ? AND closed_at IS NULL", id).
+		UpdateColumn("last_active_at", activeAt)
+	if result.Error != nil {
+		return nil, fmt.Errorf("touch key matter id=%d: %w", id, result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, fmt.Errorf("touch key matter id=%d affected %d rows", id, result.RowsAffected)
+	}
+	return s.Get(ctx, id)
 }
 
 func (s *KeyMatterService) Get(ctx context.Context, id uint64) (*KeyMatterView, error) {
@@ -215,10 +255,13 @@ func (s *KeyMatterService) List(ctx context.Context, filter KeyMatterFilter) (*K
 	}
 	return &KeyMatterList{
 		Items: toKeyMatterViews(items), Total: total, Page: filter.Page, PageSize: filter.PageSize,
+		MaxOpen: maxOpenKeyMatters,
 	}, nil
 }
 
-const keyMatterOrder = "due_at IS NULL ASC, due_at ASC, last_progress_at DESC, id DESC"
+// SQLite stores legacy timestamps with mixed timezone suffixes. datetime()
+// compares their actual instants instead of their textual representations.
+const keyMatterOrder = "datetime(last_active_at) DESC, id DESC"
 
 func (s *KeyMatterService) openQuery(ctx context.Context) *gorm.DB {
 	return s.db.WithContext(ctx).Where("closed_at IS NULL")
@@ -234,6 +277,17 @@ func (s *KeyMatterService) requireProject(ctx context.Context, projectID *uint64
 	}
 	if count != 1 {
 		return invalid(fmt.Errorf("key matter project_id=%d does not exist", *projectID))
+	}
+	return nil
+}
+
+func (s *KeyMatterService) requireOpenCapacity(ctx context.Context) error {
+	var count int64
+	if err := s.openQuery(ctx).Model(&domain.KeyMatter{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("count open key matters before create: %w", err)
+	}
+	if count >= maxOpenKeyMatters {
+		return invalid(fmt.Errorf("open key matter limit reached: %d", maxOpenKeyMatters))
 	}
 	return nil
 }

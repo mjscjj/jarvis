@@ -212,6 +212,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/key-matters", CreateKeyMatter(deps.KeyMatters))
 	h.GET("/api/key-matters/:key_matter_id", GetKeyMatter(deps.KeyMatters))
 	h.PUT("/api/key-matters/:key_matter_id", UpdateKeyMatter(deps.KeyMatters))
+	h.POST("/api/key-matters/:key_matter_id/touch", TouchKeyMatter(deps.KeyMatters))
 	h.DELETE("/api/key-matters/:key_matter_id", DeleteKeyMatter(deps.KeyMatters))
 	h.GET("/api/facts", ListFacts(deps.Progress))
 	h.POST("/api/facts", AppendFact(deps.Progress))
@@ -297,6 +298,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/resources", CreateResource(deps.Resources))
 	h.GET("/api/resources/:resource_id", GetResource(deps.Resources))
 	h.PUT("/api/resources/:resource_id", UpdateResource(deps.Resources))
+	h.POST("/api/resources/:resource_id/touch", TouchResource(deps.Resources))
 	h.DELETE("/api/resources/:resource_id", DeleteResource(deps.Resources))
 	// 基于 codex CLI 的流式对话（SSE）。与 execute 一致：未启用（nil）则不注册路由。
 	if deps.Chat != nil {

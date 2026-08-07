@@ -179,6 +179,22 @@ func UpdateKeyMatter(svc *background.KeyMatterService) app.HandlerFunc {
 	}
 }
 
+func TouchKeyMatter(svc *background.KeyMatterService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "key_matter_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		result, err := svc.Touch(ctx, id)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func DeleteKeyMatter(svc *background.KeyMatterService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		id, err := backgroundID(c, "key_matter_id")
@@ -451,6 +467,22 @@ func UpdateResource(svc *background.ResourceService) app.HandlerFunc {
 			return
 		}
 		result, err := svc.Update(ctx, id, in)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func TouchResource(svc *background.ResourceService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "resource_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		result, err := svc.Touch(ctx, id)
 		if err != nil {
 			writeBackgroundError(c, err)
 			return

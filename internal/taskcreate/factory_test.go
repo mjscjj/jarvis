@@ -161,6 +161,7 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, resource_type TEXT NOT NULL,
 			url TEXT, description TEXT, person_id INTEGER, project_id INTEGER,
 			link_principal INTEGER NOT NULL, is_active INTEGER NOT NULL,
+			last_active_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE fact (

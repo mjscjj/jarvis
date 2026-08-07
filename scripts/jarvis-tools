@@ -37,6 +37,7 @@ subcommands:
   get-key-matter         Get one key matter's full background
   create-key-matter      Create a key matter from a JSON payload
   update-key-matter      Replace a key matter's editable background
+  touch-key-matter       Mark an open key matter as freshly active
   close-key-matter       Close a key matter
   list-groups            Search Feishu groups
   get-group              Get one Feishu group by chat_id
@@ -53,6 +54,7 @@ subcommands:
   get-resource           Get one managed resource
   create-resource        Create a managed resource
   update-resource        Replace a managed resource
+  touch-resource         Mark an enabled managed resource as freshly active
   delete-resource        Delete a managed resource
   query-messages         Query locally captured Feishu messages
   query-captured-resources List captured attachment/document summaries
@@ -123,6 +125,7 @@ EOF
       ;;
     create-key-matter) payload_help "create-key-matter" "Create one key matter." ;;
     update-key-matter) payload_id_help "update-key-matter" "Replace one key matter's complete editable payload." ;;
+    touch-key-matter) delete_id_help "touch-key-matter" "Mark one open key matter as freshly active without changing its content." ;;
     close-key-matter) delete_id_help "close-key-matter" "Close one key matter; this does not hard-delete it." ;;
     list-groups) cat <<'EOF'
 usage: jarvis-tools list-groups [--keyword TEXT] [--limit N] [--config PATH]
@@ -174,6 +177,7 @@ EOF
       ;;
     create-resource) payload_help "create-resource" "Create one managed resource." ;;
     update-resource) payload_id_help "update-resource" "Replace one managed resource's editable payload." ;;
+    touch-resource) delete_id_help "touch-resource" "Mark one enabled managed resource as freshly active without changing its content." ;;
     delete-resource) delete_id_help "delete-resource" "Delete one managed resource." ;;
     query-messages) cat <<'EOF'
 usage: jarvis-tools query-messages [--chat-id CHAT_ID] [--sender-open-id OPEN_ID]
@@ -692,7 +696,7 @@ require_command_flag() {
   case "$cmd" in
     list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
     get-project) allowed+=" --id --code" ;;
-    get-key-matter) allowed+=" --id" ;;
+    get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
     create-project | create-key-matter | update-principal | create-person | create-resource | create-relation | create-task) allowed+=" --payload" ;;
     update-project | update-key-matter | update-group | update-person | update-resource | update-relation) allowed+=" --id --payload" ;;
     archive-project | close-key-matter | delete-person | delete-resource | delete-relation) allowed+=" --id" ;;
@@ -1159,7 +1163,7 @@ cmd_list_key_matters() {
     total="$(printf '%s' "$all" | jq -r --arg keyword "$KEYWORD" '
       [.[] | select((([.title,.status,.summary] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase)))] | length')"
   fi
-  items="$(printf '%s' "$items" | jq -c '[.[] | {id,title,status,summary,project_id,due_at,last_progress_at}]')"
+  items="$(printf '%s' "$items" | jq -c '[.[] | {id,title,status,summary,project_id,due_at,last_progress_at,last_active_at}]')"
   emit "$(jq -cn --argjson total "$total" --argjson key_matters "$items" '{total:$total,key_matters:$key_matters}')"
 }
 
@@ -1207,6 +1211,18 @@ cmd_delete_by_id() {
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local body
   body="$(api_write DELETE "${path_prefix}/${ID}" '{}')"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_touch_by_id() {
+  local command_name="$1" path_prefix="$2"
+  shift 2
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "${command_name} requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local body
+  body="$(api_write POST "${path_prefix}/${ID}/touch" '{}')"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
@@ -1939,6 +1955,7 @@ case "$SUBCOMMAND" in
   get-key-matter) cmd_get_key_matter "$@" ;;
   create-key-matter) cmd_payload_create create-key-matter POST /api/key-matters "$@" ;;
   update-key-matter) cmd_payload_by_id update-key-matter PUT /api/key-matters "$@" ;;
+  touch-key-matter) cmd_touch_by_id touch-key-matter /api/key-matters "$@" ;;
   close-key-matter) cmd_delete_by_id close-key-matter /api/key-matters "$@" ;;
   list-groups)    cmd_list_groups "$@" ;;
   get-group)      cmd_get_group "$@" ;;
@@ -1955,6 +1972,7 @@ case "$SUBCOMMAND" in
   get-resource)         cmd_get_resource "$@" ;;
   create-resource)      cmd_payload_create create-resource POST /api/resources "$@" ;;
   update-resource)      cmd_payload_by_id update-resource PUT /api/resources "$@" ;;
+  touch-resource)       cmd_touch_by_id touch-resource /api/resources "$@" ;;
   delete-resource)      cmd_delete_by_id delete-resource /api/resources "$@" ;;
   query-messages)       cmd_query_messages "$@" ;;
   query-captured-resources) cmd_query_captured_resources "$@" ;;

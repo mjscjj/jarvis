@@ -76,6 +76,7 @@ func Block(stage string) (string, error) {
 	}
 	if stage == StageProactive {
 		lines = append(lines,
+			"- 未闭环关键事项最多 10 个、启用资源最多 50 个；列表默认按最近活跃时间倒序。只有新证据确认对象仍具持续价值时才使用 `touch-key-matter` / `touch-resource`，不得因读取过就刷新活跃时间。",
 			"- 主动巡视发现需要对外推进的工作时，必须使用 `jarvis-tools create-task --payload ...` 创建普通 Task；不得直接执行外部动作。",
 			"- 对今天已有的 pending Task，使用 `jarvis-tools start-task --id ...` 交给强 M5；不要创建重复 Task。",
 			"- Task 的目标表达、当前进展或后续执行指示因新证据变化时，优先使用 `jarvis-tools update-task --id ... --payload ...` 维护；不得改写冻结的 source_payload/background。",

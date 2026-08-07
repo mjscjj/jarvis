@@ -21,6 +21,7 @@ import type {
   GroupQuery,
   KeyMatter,
   KeyMatterInput,
+  KeyMatterList,
   Overview,
   Paged,
   Person,
@@ -31,6 +32,7 @@ import type {
   ProjectInput,
   Resource,
   ResourceInput,
+  ResourceList,
   ResolveResult,
   SharedMemory,
   Task,
@@ -230,10 +232,10 @@ export function deleteProject(id: number): Promise<{ id: number; archived: boole
   return request(`/api/projects/${id}`, { method: 'DELETE' })
 }
 
-export function listKeyMatters(page = 1, pageSize = 100, includeClosed = false, signal?: AbortSignal): Promise<Paged<KeyMatter>> {
+export function listKeyMatters(page = 1, pageSize = 100, includeClosed = false, signal?: AbortSignal): Promise<KeyMatterList> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   if (includeClosed) params.set('include_closed', 'true')
-  return request<Paged<KeyMatter>>(`/api/key-matters?${params.toString()}`, { signal })
+  return request<KeyMatterList>(`/api/key-matters?${params.toString()}`, { signal })
 }
 
 export function createKeyMatter(body: KeyMatterInput): Promise<KeyMatter> {
@@ -246,6 +248,10 @@ export function getKeyMatter(id: number, signal?: AbortSignal): Promise<KeyMatte
 
 export function updateKeyMatter(id: number, body: KeyMatterInput): Promise<KeyMatter> {
   return request<KeyMatter>(`/api/key-matters/${id}`, { method: 'PUT', body })
+}
+
+export function touchKeyMatter(id: number): Promise<KeyMatter> {
+  return request<KeyMatter>(`/api/key-matters/${id}/touch`, { method: 'POST' })
 }
 
 export function closeKeyMatter(id: number): Promise<{ id: number; closed: boolean }> {
@@ -414,8 +420,8 @@ export function captureScanChat(chatId: string): Promise<{ action: string; chat_
   return request(`/api/debug/capture/scan-chat`, { method: 'POST', body: { chat_id: chatId } })
 }
 
-export function listResources(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Resource>> {
-  return request<Paged<Resource>>(`/api/resources?page=${page}&page_size=${pageSize}`, { signal })
+export function listResources(page = 1, pageSize = 100, signal?: AbortSignal): Promise<ResourceList> {
+  return request<ResourceList>(`/api/resources?page=${page}&page_size=${pageSize}`, { signal })
 }
 
 export function createResource(body: ResourceInput): Promise<Resource> {
@@ -424,6 +430,10 @@ export function createResource(body: ResourceInput): Promise<Resource> {
 
 export function updateResource(id: number, body: ResourceInput): Promise<Resource> {
   return request<Resource>(`/api/resources/${id}`, { method: 'PUT', body })
+}
+
+export function touchResource(id: number): Promise<Resource> {
+  return request<Resource>(`/api/resources/${id}/touch`, { method: 'POST' })
 }
 
 export function deleteResource(id: number): Promise<{ id: number; deleted: boolean }> {

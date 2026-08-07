@@ -51,6 +51,8 @@ import {
   listSkills,
   resolvePerson,
   scanSkills,
+  touchKeyMatter,
+  touchResource,
   updateGroupBackground,
   updateKeyMatter,
   updatePerson,
@@ -352,6 +354,8 @@ interface KeyMatterCreateFields {
 
 function KeyMattersPanel() {
   const [items, setItems] = useState<KeyMatter[]>([])
+  const [total, setTotal] = useState(0)
+  const [maxOpen, setMaxOpen] = useState(10)
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -363,12 +367,18 @@ function KeyMattersPanel() {
   const [draftText, setDraftText] = useState('')
   const [draftDueAt, setDraftDueAt] = useState<Dayjs | null>(null)
   const [saving, setSaving] = useState(false)
+  const [touchingId, setTouchingId] = useState<number>()
   const [form] = Form.useForm<KeyMatterCreateFields>()
 
   const reload = useCallback(() => {
     setLoading(true)
     listKeyMatters()
-      .then((result) => { setItems(result.items); setError(undefined) })
+      .then((result) => {
+        setItems(result.items)
+        setTotal(result.total)
+        setMaxOpen(result.max_open)
+        setError(undefined)
+      })
       .catch((cause: unknown) => setError(errorText(cause)))
       .finally(() => setLoading(false))
   }, [])
@@ -439,10 +449,27 @@ function KeyMattersPanel() {
     try {
       await closeKeyMatter(matter.id)
       setItems((current) => current.filter((item) => item.id !== matter.id))
+      setTotal((current) => Math.max(0, current - 1))
       if (selected?.id === matter.id) setSelected(undefined)
       setError(undefined)
     } catch (cause: unknown) {
       setError(errorText(cause))
+    }
+  }
+
+  const touch = async (matter: KeyMatter) => {
+    setTouchingId(matter.id)
+    try {
+      const saved = await touchKeyMatter(matter.id)
+      setItems((current) => replaceKeyMatter(current, saved).sort((left, right) => (
+        dayjs(right.last_active_at).valueOf() - dayjs(left.last_active_at).valueOf()
+      )))
+      if (selected?.id === saved.id) setSelected(saved)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setTouchingId(undefined)
     }
   }
 
@@ -494,10 +521,12 @@ function KeyMattersPanel() {
     { title: '状态', dataIndex: 'status', width: 170, render: (_, matter) => textEditor(matter, 'status') },
     { title: '当前进展', dataIndex: 'summary', width: 220, render: (_, matter) => textEditor(matter, 'summary') },
     { title: '截止时间', dataIndex: 'due_at', width: 150, render: (_, matter) => dueAtEditor(matter) },
+    { title: '最近活跃', dataIndex: 'last_active_at', width: 150, render: (value: string) => dayjs(value).format('MM-DD HH:mm') },
     { title: '关联项目', dataIndex: 'project_id', width: 120, render: (_, matter) => matter.project?.name || '—' },
     {
-      title: '操作', width: 160, render: (_, matter) => (
-        <Flex gap={8}>
+      title: '操作', width: 220, render: (_, matter) => (
+        <Flex gap={6} wrap>
+          <Button size="small" loading={touchingId === matter.id} onClick={(event) => { event.stopPropagation(); touch(matter) }}>活跃</Button>
           <Button size="small" onClick={(event) => { event.stopPropagation(); setRelationMatter(matter) }}>关系</Button>
           <Popconfirm title="闭环该关键事项？" onConfirm={() => close(matter)} okText="闭环" cancelText="取消">
             <Button size="small" danger onClick={(event) => event.stopPropagation()}>闭环</Button>
@@ -509,8 +538,8 @@ function KeyMattersPanel() {
 
   return <>
     <Flex justify="space-between" align="center" className="section-heading">
-      <Text type="secondary">共 {items.length} 个未闭环关键事项</Text>
-      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建关键事项</Button></Flex>
+      <Text type="secondary">未闭环关键事项 {total}/{maxOpen}</Text>
+      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate} disabled={total >= maxOpen}>新建关键事项</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="关键事项操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
@@ -522,7 +551,7 @@ function KeyMattersPanel() {
         loading={loading}
         pagination={false}
         tableLayout="fixed"
-        scroll={{ x: 990 }}
+        scroll={{ x: 1210 }}
         onRow={(matter) => ({ onClick: () => setSelected(matter), className: 'clickable-row' })}
       />
     </Card>
@@ -534,6 +563,7 @@ function KeyMattersPanel() {
             <Descriptions.Item label="关联项目">{selected.project?.name || '—'}</Descriptions.Item>
             <Descriptions.Item label="截止时间">{selected.due_at ? dayjs(selected.due_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
             <Descriptions.Item label="最近实质进展">{selected.last_progress_at ? dayjs(selected.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
+            <Descriptions.Item label="最近活跃">{dayjs(selected.last_active_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
             <Descriptions.Item label="当前进展" span={2}>{selected.summary || '—'}</Descriptions.Item>
           </Descriptions>
           <SubjectFactsCard subjectType="key_matter" subjectId={selected.id} title="关键事项事实" />
@@ -1178,11 +1208,14 @@ function resourceToInput(resource: Resource): ResourceInput {
 
 function ResourcePanel() {
   const [items, setItems] = useState<Resource[]>([])
+  const [activeTotal, setActiveTotal] = useState(0)
+  const [maxActive, setMaxActive] = useState(50)
   const [persons, setPersons] = useState<Person[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
   const [savingId, setSavingId] = useState<number>()
+  const [touchingId, setTouchingId] = useState<number>()
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form] = Form.useForm<ResourceInput>()
@@ -1192,6 +1225,8 @@ function ResourcePanel() {
     Promise.all([listResources(), listPersons(), listProjects()])
       .then(([resourceResult, personResult, projectResult]) => {
         setItems(resourceResult.items)
+        setActiveTotal(resourceResult.active_total)
+        setMaxActive(resourceResult.max_active)
         setPersons(personResult.items)
         setProjects(projectResult.items)
         setError(undefined)
@@ -1233,6 +1268,17 @@ function ResourcePanel() {
   }
   const remove = async (resource: Resource) => {
     try { await deleteResource(resource.id); reload() } catch (cause: unknown) { setError(errorText(cause)) }
+  }
+  const touch = async (resource: Resource) => {
+    setTouchingId(resource.id)
+    try {
+      await touchResource(resource.id)
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setTouchingId(undefined)
+    }
   }
 
   const personOptions = [{ value: 0, label: '—' }, ...persons.map((p) => ({ value: p.id, label: p.name }))]
@@ -1285,21 +1331,28 @@ function ResourcePanel() {
       ),
     },
     {
-      title: '操作', width: 80, render: (_, r) => (
-        <Popconfirm title="删除该资源？" onConfirm={() => remove(r)} okText="删除" cancelText="取消">
-          <Button size="small" danger>删除</Button>
-        </Popconfirm>
+      title: '最近活跃', dataIndex: 'last_active_at', width: 150,
+      render: (value: string) => dayjs(value).format('MM-DD HH:mm'),
+    },
+    {
+      title: '操作', width: 140, render: (_, r) => (
+        <Flex gap={6}>
+          <Button size="small" disabled={!r.is_active} loading={touchingId === r.id} onClick={() => touch(r)}>活跃</Button>
+          <Popconfirm title="删除该资源？" onConfirm={() => remove(r)} okText="删除" cancelText="取消">
+            <Button size="small" danger>删除</Button>
+          </Popconfirm>
+        </Flex>
       ),
     },
   ]
 
   return <>
     <Flex justify="space-between" align="center" className="section-heading">
-      <Text type="secondary">共 {items.length} 个资源</Text>
-      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建资源</Button></Flex>
+      <Text type="secondary">启用资源 {activeTotal}/{maxActive}</Text>
+      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate} disabled={activeTotal >= maxActive}>新建资源</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="资源操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<Resource> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={{ pageSize: 20, hideOnSinglePage: items.length <= 20 }} /></Card>
+    <Card className="table-card" variant="borderless"><Table<Resource> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={{ pageSize: 20, hideOnSinglePage: items.length <= 20 }} scroll={{ x: 1350 }} /></Card>
     <Modal title="新建资源" open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
         <Form.Item name="title" label="名称" rules={[{ required: true, message: '请输入资源名称' }]}><Input /></Form.Item>

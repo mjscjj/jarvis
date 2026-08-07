@@ -233,7 +233,7 @@ func (a *Assembler) loadManagedResources(ctx context.Context, projectID *uint64)
 		query = query.Where("link_principal = ? OR project_id = ?", true, *projectID)
 	}
 	var rows []domain.ManagedResource
-	if err := query.Order("id ASC").Find(&rows).Error; err != nil {
+	if err := query.Order("datetime(last_active_at) DESC, id DESC").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("assemble context snapshot: load managed resources: %w", err)
 	}
 	result := make([]ManagedResource, len(rows))
@@ -242,6 +242,7 @@ func (a *Assembler) loadManagedResources(ctx context.Context, projectID *uint64)
 			ID: rows[i].ID, Title: rows[i].Title, ResourceType: rows[i].ResourceType,
 			URL: copyString(rows[i].URL), Description: copyString(rows[i].Description),
 			ProjectID: copyUint64(rows[i].ProjectID), LinkPrincipal: rows[i].LinkPrincipal,
+			LastActiveAt: rows[i].LastActiveAt.UTC().Format(time.RFC3339),
 		}
 	}
 	return result, nil

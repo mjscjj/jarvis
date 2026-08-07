@@ -17,7 +17,7 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters"} {
+	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
@@ -36,7 +36,7 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/key-matters":
-			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":4,"title":"matter","status":"跟进中","summary":"current","project_id":1,"due_at":null,"last_progress_at":null,"closed_at":null,"project":{"large":true}}]}}`)
+			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":4,"title":"matter","status":"跟进中","summary":"current","project_id":1,"due_at":null,"last_progress_at":null,"last_active_at":"2026-08-07T10:00:00Z","closed_at":null,"project":{"large":true}}]}}`)
 		case "/api/todos":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":1,"title":"todo","description":"large","context_snapshot":{"large":true},"status":"extracted"}]}}`)
 		case "/api/tasks":
@@ -157,6 +157,7 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"archive-project", []string{"--id", "7"}, http.MethodDelete, "/api/projects/7"},
 		{"create-key-matter", []string{"--payload", `{"title":"m"}`}, http.MethodPost, "/api/key-matters"},
 		{"update-key-matter", []string{"--id", "12", "--payload", `{"title":"m"}`}, http.MethodPut, "/api/key-matters/12"},
+		{"touch-key-matter", []string{"--id", "12"}, http.MethodPost, "/api/key-matters/12/touch"},
 		{"close-key-matter", []string{"--id", "12"}, http.MethodDelete, "/api/key-matters/12"},
 		{"update-group", []string{"--id", "8", "--payload", `{}`}, http.MethodPut, "/api/groups/8"},
 		{"update-principal", []string{"--payload", `{"name":"me"}`}, http.MethodPut, "/api/profile"},
@@ -165,6 +166,7 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"delete-person", []string{"--id", "9"}, http.MethodDelete, "/api/persons/9"},
 		{"create-resource", []string{"--payload", `{"title":"r"}`}, http.MethodPost, "/api/resources"},
 		{"update-resource", []string{"--id", "10", "--payload", `{"title":"r"}`}, http.MethodPut, "/api/resources/10"},
+		{"touch-resource", []string{"--id", "10"}, http.MethodPost, "/api/resources/10/touch"},
 		{"delete-resource", []string{"--id", "10"}, http.MethodDelete, "/api/resources/10"},
 		{"create-relation", []string{"--payload", `{"description":"r"}`}, http.MethodPost, "/api/relation-facts"},
 		{"update-relation", []string{"--id", "11", "--payload", `{"description":"r"}`}, http.MethodPut, "/api/relation-facts/11"},

@@ -170,6 +170,7 @@ type ManagedResource struct {
 	Description   *string `json:"description,omitempty"`
 	ProjectID     *uint64 `json:"project_id,omitempty"`
 	LinkPrincipal bool    `json:"link_principal"`
+	LastActiveAt  string  `json:"last_active_at"`
 }
 
 // Fact is one recorded observation about a subject, carried into the snapshot so

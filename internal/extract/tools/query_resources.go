@@ -100,6 +100,7 @@ type resourceItem struct {
 	Description  string `json:"description,omitempty"`
 	ProjectID    uint64 `json:"project_id,omitempty"`
 	PersonID     uint64 `json:"person_id,omitempty"`
+	LastActiveAt string `json:"last_active_at"`
 }
 
 type queryResourcesResult struct {
@@ -155,13 +156,16 @@ func (t *QueryResourcesTool) Invoke(ctx context.Context, arguments json.RawMessa
 	}
 
 	var rows []domain.ManagedResource
-	if err := query.Order("id DESC").Limit(limit).Find(&rows).Error; err != nil {
+	if err := query.Order("datetime(last_active_at) DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("query_resources load resources: %w", err)
 	}
 
 	result := queryResourcesResult{Count: len(rows), Resources: make([]resourceItem, len(rows))}
 	for i := range rows {
-		item := resourceItem{ID: rows[i].ID, Title: rows[i].Title, ResourceType: rows[i].ResourceType}
+		item := resourceItem{
+			ID: rows[i].ID, Title: rows[i].Title, ResourceType: rows[i].ResourceType,
+			LastActiveAt: rows[i].LastActiveAt.UTC().Format(time.RFC3339),
+		}
 		if rows[i].URL != nil {
 			item.URL = *rows[i].URL
 		}

@@ -350,6 +350,7 @@ export interface KeyMatter {
   due_at: string | null
   closed_at: string | null
   last_progress_at: string | null
+  last_active_at: string
   created_at: string
   updated_at: string
   project: Project | null
@@ -415,6 +416,15 @@ export interface Paged<T> {
   total: number
   page: number
   page_size: number
+}
+
+export interface KeyMatterList extends Paged<KeyMatter> {
+  max_open: number
+}
+
+export interface ResourceList extends Paged<Resource> {
+  active_total: number
+  max_active: number
 }
 
 // GroupList adds broadened: the backend sets it when a keyword search escaped
@@ -787,6 +797,7 @@ export interface Resource {
   project_name: string | null
   link_principal: boolean
   is_active: boolean
+  last_active_at: string
 }
 
 export interface ResourceInput {
