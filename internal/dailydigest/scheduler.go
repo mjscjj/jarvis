@@ -46,17 +46,18 @@ func StartScheduler(ctx context.Context, service *Service, spec string, logger *
 }
 
 func runScheduledPersonalDigest(ctx context.Context, service *Service, logger *log.Logger, reason string) {
+	startedAt := time.Now()
 	date := service.today()
 	generated, err := service.GeneratePersonalScheduled(ctx, date)
 	if err != nil {
-		logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=error date=%s error=%+v", observability.LogID(ctx), reason, date, err)
+		logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=error duration_ms=%d date=%s error=%+v", observability.LogID(ctx), reason, time.Since(startedAt).Milliseconds(), date, err)
 		return
 	}
 	if !generated {
-		logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=skipped date=%s reason=already_attempted", observability.LogID(ctx), reason, date)
+		logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=skipped duration_ms=%d date=%s reason=already_attempted", observability.LogID(ctx), reason, time.Since(startedAt).Milliseconds(), date)
 		return
 	}
-	logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=ok date=%s", observability.LogID(ctx), reason, date)
+	logger.Printf("logid=%s job=personal_daily_digest trigger=%s status=ok duration_ms=%d date=%s", observability.LogID(ctx), reason, time.Since(startedAt).Milliseconds(), date)
 }
 
 func catchUpDue(schedule cron.Schedule, now time.Time, location *time.Location) bool {

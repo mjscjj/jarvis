@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"jarvis/internal/observability"
 
@@ -48,11 +49,12 @@ func StartScheduler(ctx context.Context, service *Service, cfg ScheduleConfig, l
 		}
 		if _, err := scheduler.AddFunc(job.spec, func() {
 			jobCtx := observability.EnsureLogID(ctx)
+			startedAt := time.Now()
 			if err := job.run(jobCtx); err != nil {
-				logger.Printf("logid=%s job=%s status=error error=%+v", observability.LogID(jobCtx), job.name, err)
+				logger.Printf("logid=%s job=%s status=error duration_ms=%d error=%+v", observability.LogID(jobCtx), job.name, time.Since(startedAt).Milliseconds(), err)
 				return
 			}
-			logger.Printf("logid=%s job=%s status=ok", observability.LogID(jobCtx), job.name)
+			logger.Printf("logid=%s job=%s status=ok duration_ms=%d", observability.LogID(jobCtx), job.name, time.Since(startedAt).Milliseconds())
 		}); err != nil {
 			return nil, fmt.Errorf("register capture job %s schedule=%q: %w", job.name, job.spec, err)
 		}

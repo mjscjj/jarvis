@@ -9,10 +9,22 @@ export function monitoringRangeBounds(range: MonitoringRange, now = new Date()):
     from.setHours(0, 0, 0, 0)
     return { from, until }
   }
+  if (range === '24h') {
+    const from = new Date(now.getTime() - DAY_MS)
+    from.setMinutes(0, 0, 0)
+    return { from, until }
+  }
+  const from = new Date(now)
+  from.setHours(0, 0, 0, 0)
+  from.setDate(from.getDate() - 6)
   return {
-    from: new Date(now.getTime() - (range === '24h' ? DAY_MS : 7 * DAY_MS)),
+    from,
     until,
   }
+}
+
+export function formatMonitoringRate(value: number | null): string {
+  return value == null ? '—' : `${(value * 100).toFixed(value < 0.1 ? 1 : 0)}%`
 }
 
 export function formatMonitoringDuration(value: number | null): string {

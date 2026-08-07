@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"jarvis/internal/observability"
 
@@ -30,14 +31,15 @@ func StartScheduler(ctx context.Context, worker *Worker, spec string, logger *lo
 	))
 	if _, err := scheduler.AddFunc(spec, func() {
 		jobCtx := observability.EnsureLogID(ctx)
+		startedAt := time.Now()
 		stats, err := worker.ExtractOnce(jobCtx)
 		if err != nil {
-			logger.Printf("logid=%s job=world_maintenance status=error calls=%d units=%d material_chars=%d sources=%+v error=%+v", observability.LogID(jobCtx), stats.Calls, stats.Units, stats.MaterialChars, stats.Sources, err)
+			logger.Printf("logid=%s job=world_maintenance status=error duration_ms=%d calls=%d units=%d material_chars=%d sources=%+v error=%+v", observability.LogID(jobCtx), time.Since(startedAt).Milliseconds(), stats.Calls, stats.Units, stats.MaterialChars, stats.Sources, err)
 			return
 		}
 		logger.Printf(
-			"logid=%s job=world_maintenance status=ok calls=%d units=%d material_chars=%d result_chars=%d sources=%+v",
-			observability.LogID(jobCtx), stats.Calls, stats.Units, stats.MaterialChars, len(stats.Result), stats.Sources,
+			"logid=%s job=world_maintenance status=ok duration_ms=%d calls=%d units=%d material_chars=%d result_chars=%d sources=%+v",
+			observability.LogID(jobCtx), time.Since(startedAt).Milliseconds(), stats.Calls, stats.Units, stats.MaterialChars, len(stats.Result), stats.Sources,
 		)
 	}); err != nil {
 		return nil, fmt.Errorf("register fact engine job schedule=%q: %w", spec, err)

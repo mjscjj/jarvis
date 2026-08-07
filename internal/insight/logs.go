@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -61,13 +62,14 @@ type LogTail struct {
 // logs. System-task history intentionally has no database table: the launchd
 // stdout/stderr files remain the only source of truth.
 type SystemTaskRun struct {
-	Time   string            `json:"time"`
-	Source string            `json:"source"`
-	Module string            `json:"module"`
-	Job    string            `json:"job"`
-	Status string            `json:"status"`
-	Fields map[string]string `json:"fields"`
-	Raw    string            `json:"raw"`
+	Time       string            `json:"time"`
+	Source     string            `json:"source"`
+	Module     string            `json:"module"`
+	Job        string            `json:"job"`
+	Status     string            `json:"status"`
+	DurationMS *int64            `json:"duration_ms"`
+	Fields     map[string]string `json:"fields"`
+	Raw        string            `json:"raw"`
 }
 
 // parsedLine carries the sort key alongside the rendered line.
@@ -173,12 +175,31 @@ func (r *LogReader) SystemTaskRuns(job string, limit int) ([]SystemTaskRun, *Log
 		if fullError := errorMessage(match[2]); fullError != "" {
 			fields["error"] = fullError
 		}
+		durationMS, err := optionalNonNegativeInt64(fields, "duration_ms")
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse system task run job=%s time=%s: %w", job, line.Time, err)
+		}
 		runs = append(runs, SystemTaskRun{
 			Time: line.Time, Source: line.Source, Module: match[1], Job: job,
-			Status: fields["status"], Fields: fields, Raw: line.Text,
+			Status: fields["status"], DurationMS: durationMS, Fields: fields, Raw: line.Text,
 		})
 	}
 	return runs, tail, nil
+}
+
+func optionalNonNegativeInt64(fields map[string]string, key string) (*int64, error) {
+	raw, ok := fields[key]
+	if !ok {
+		return nil, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an integer, got %q: %w", key, raw, err)
+	}
+	if value < 0 {
+		return nil, fmt.Errorf("%s must not be negative, got %d", key, value)
+	}
+	return &value, nil
 }
 
 // readTail returns the last maxTailBytes of a file as lines (dropping a leading

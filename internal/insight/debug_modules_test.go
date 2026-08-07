@@ -3,6 +3,7 @@ package insight
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,7 +110,7 @@ func TestSystemTaskRunsFiltersExactJobAndSupportsHyphenatedModule(t *testing.T) 
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "jarvis-server.error.log")
 	content := "" +
-		"meeting-capture-cron 2026/07/24 16:32:16.899462 logid=meeting job=meeting_minutes status=ok discovered=1 imported=0\n" +
+		"meeting-capture-cron 2026/07/24 16:32:16.899462 logid=meeting job=meeting_minutes status=ok duration_ms=1250 discovered=1 imported=0\n" +
 		"pipeline-cron 2026/07/24 16:33:16.002420 logid=execute job=execute_reconcile status=queued\n" +
 		"meeting-capture-cron 2026/07/24 16:37:17.114470 logid=meeting2 job=meeting_minutes status=error error=permission denied for minute\n"
 	if err := os.WriteFile(logPath, []byte(content), 0o600); err != nil {
@@ -136,6 +137,9 @@ func TestSystemTaskRunsFiltersExactJobAndSupportsHyphenatedModule(t *testing.T) 
 	if runs[1].Status != "ok" {
 		t.Fatalf("older run = %#v", runs[1])
 	}
+	if runs[1].DurationMS == nil || *runs[1].DurationMS != 1250 {
+		t.Fatalf("older run duration = %#v", runs[1].DurationMS)
+	}
 	if tail == nil || len(tail.Sources) != 1 {
 		t.Fatalf("tail metadata = %#v", tail)
 	}
@@ -152,5 +156,19 @@ func TestSystemTaskRunsRejectsUnknownJobSyntax(t *testing.T) {
 	}
 	if _, _, err := reader.SystemTaskRuns("../server", 10); err == nil {
 		t.Fatal("SystemTaskRuns() accepted invalid job")
+	}
+}
+
+func TestSystemTaskRunsRejectsMalformedDuration(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "jarvis-server.error.log")
+	if err := os.WriteFile(logPath, []byte("capture-cron 2026/08/08 10:00:00.000001 job=discover status=ok duration_ms=nope\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := NewLogReader([]string{logPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := reader.SystemTaskRuns("discover", 10); err == nil || !strings.Contains(err.Error(), "duration_ms must be an integer") {
+		t.Fatalf("SystemTaskRuns malformed duration error = %v", err)
 	}
 }

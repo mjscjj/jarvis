@@ -10,14 +10,13 @@ import {
   getDebugModules,
   getDebugProactiveRun,
   getDebugProactiveRuns,
-  getDebugScans,
   getDebugWatermarks,
 } from './api'
 import { agentModeLabels, agentSourceMeta } from './agentProcesses'
 import PageHeader from './components/PageHeader'
-import MonitoringTab from './debug/MonitoringTab'
+import CoreTrends from './debug/CoreTrends'
 import { usePageContext } from './pageContext'
-import type { AgentProcess, AgentProcessSnapshot, FailureEvent, ModuleRun, ProactiveRun, ProactiveRunDetail, ScanRow, WatermarkRow } from './types'
+import type { AgentProcess, AgentProcessSnapshot, FailureEvent, ModuleRun, ProactiveRun, ProactiveRunDetail, WatermarkRow } from './types'
 
 const { Text, Paragraph } = Typography
 
@@ -151,17 +150,27 @@ function ModulesTab() {
       </Space>
       {error && <Alert type="error" showIcon title="模块运行加载失败" description={error} />}
       {failingNow.length > 0 && (
-        <Alert
-          type="error" showIcon title="模块最近一次运行失败（需处理）"
-          description={<Space orientation="vertical" size={2}>{failingNow.map((r) => <Text key={r.module} className="mono">{r.last_error || r.raw}</Text>)}</Space>}
+        <Collapse
+          size="small"
+          className="runtime-failure-collapse"
+          items={[{
+            key: 'current-failures',
+            label: <Text type="danger" strong>{failingNow.length} 个模块最近一次运行失败（需处理）</Text>,
+            children: (
+              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                {failingNow.map((row) => (
+                  <div key={row.module}>
+                    <Text strong>{moduleLabel(row.module)}</Text>
+                    <div><Text type="secondary" className="mono">{row.time || '—'}</Text></div>
+                    <div><Text type="danger" className="mono">{row.last_error || row.raw}</Text></div>
+                  </div>
+                ))}
+              </Space>
+            ),
+          }]}
         />
       )}
-      {failingNow.length === 0 && healedRecently.length > 0 && (
-        <Alert
-          type="success" showIcon title="当前全部正常（窗口内曾有失败，最近一次已恢复）"
-          description={<Space orientation="vertical" size={2}>{healedRecently.map((r) => <Text key={r.module} type="secondary">{moduleLabel(r.module)}：窗口内 {r.failures} 次失败，最近一次已恢复正常</Text>)}</Space>}
-        />
-      )}
+      {failingNow.length === 0 && <Text type="secondary">当前所有模块最近一次运行正常{healedRecently.length > 0 ? `；${healedRecently.length} 个模块在日志窗口内曾失败、现已恢复` : ''}。</Text>}
       <Table<ModuleRun>
         rowKey="module" size="small" columns={moduleColumns} dataSource={rows} loading={loading}
         pagination={false}
@@ -246,45 +255,11 @@ function FailuresTab() {
   )
 }
 
-const scanColumns: TableColumnsType<ScanRow> = [
-  { title: 'ID', dataIndex: 'id', width: 70 },
-  { title: '类型', dataIndex: 'scan_type', width: 130 },
-  {
-    title: '状态', dataIndex: 'status', width: 90,
-    render: (v: string) => <Tag color={v === 'ok' ? 'green' : 'red'}>{v}</Tag>,
-  },
-  { title: '拉取', dataIndex: 'fetched_count', width: 70 },
-  { title: '入库', dataIndex: 'inserted_count', width: 70 },
-  {
-    title: '错误', key: 'error', width: 260,
-    render: (_, row) => (row.error_type ? <Text type="danger">{row.error_type}: {row.error_message}</Text> : <Text type="secondary">—</Text>),
-  },
-  { title: '开始时间', dataIndex: 'started_at', width: 180 },
-  { title: '耗时(ms)', dataIndex: 'duration_ms', width: 90, render: (v: number | null) => v ?? '—' },
-]
-
-function ScansTab() {
-  const { data, loading, error, refresh } = useDebugResource<{ items: ScanRow[] }>((signal) => getDebugScans(50, signal))
-
-  return (
-    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-      <Button size="small" onClick={refresh} loading={loading} style={{ alignSelf: 'flex-start' }}>刷新</Button>
-      {error && <Alert type="error" showIcon title="采集流水加载失败" description={error} />}
-      <Table<ScanRow>
-        rowKey="id" size="small" columns={scanColumns} dataSource={data?.items ?? []} loading={loading}
-        pagination={{ pageSize: 20, showSizeChanger: false }}
-        expandable={{ expandedRowRender: (row) => <RawJSON value={row} label="展开完整记录 JSON" />, rowExpandable: () => true }}
-        scroll={{ x: 960 }}
-      />
-    </Space>
-  )
-}
-
 function RuntimeTab() {
   return (
     <Space orientation="vertical" size={20} style={{ width: '100%' }}>
+      <Card size="small" title="核心趋势" variant="borderless"><CoreTrends /></Card>
       <Card size="small" title="模块运行" variant="borderless"><ModulesTab /></Card>
-      <Card size="small" title="采集流水" variant="borderless"><ScansTab /></Card>
     </Space>
   )
 }
@@ -506,8 +481,8 @@ function TriggerTab() {
       <Alert
         type="info"
         showIcon
-        title="手动触发 M1 采集，无需等 cron"
-        description="全部为同步调用：采集会话消息期间按钮持续 loading，完成后弹出结果。跑完可去「采集流水」「抽取水位」子 tab 看效果。"
+        title="手动触发 M2 采集，无需等 cron"
+        description="全部为同步调用：采集会话消息期间按钮持续 loading，完成后弹出结果。跑完可在「健康」查看核心趋势，或在「抽取水位」查看消费进度。"
       />
       <Card size="small" title="全量采集" variant="borderless">
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
@@ -563,9 +538,9 @@ function TriggerTab() {
 
 export default function Debug() {
   const { context, setViewState } = usePageContext()
-  type DebugView = 'health' | 'proactive-runs' | 'tools' | 'monitoring' | 'agents' | 'failures'
+  type DebugView = 'health' | 'proactive-runs' | 'tools' | 'agents' | 'failures'
   const routeView = context.view_state.view
-  const activeView: DebugView = routeView === 'proactive-runs' || routeView === 'tools' || routeView === 'monitoring' || routeView === 'agents' || routeView === 'failures'
+  const activeView: DebugView = routeView === 'proactive-runs' || routeView === 'tools' || routeView === 'agents' || routeView === 'failures'
     ? routeView
     : 'health'
 
@@ -594,7 +569,6 @@ export default function Debug() {
               />
             ),
           },
-          { key: 'monitoring', label: '运行监控', children: <MonitoringTab /> },
           { key: 'agents', label: '实时 Agent', children: <AgentProcessesTab /> },
           { key: 'failures', label: '异常', children: <FailuresTab /> },
         ]}

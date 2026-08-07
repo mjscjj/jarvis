@@ -169,11 +169,17 @@ function runStatus(status: string) {
 }
 
 function resultSummary(run: SystemTaskRun): string {
-  const ignored = new Set(['logid', 'job', 'status'])
+  const ignored = new Set(['logid', 'job', 'status', 'duration_ms'])
   return Object.entries(run.fields)
     .filter(([key]) => !ignored.has(key))
     .map(([key, value]) => `${key}=${value}`)
     .join(' · ') || '—'
+}
+
+function formatRunDuration(value: number | null): string {
+  if (value == null) return '—'
+  if (value < 1000) return `${value} ms`
+  return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)} 秒`
 }
 
 export default function SystemTasks() {
@@ -429,6 +435,7 @@ export default function SystemTasks() {
                   return <Tag color={meta.color}>{meta.label}</Tag>
                 },
               },
+              { title: '耗时', dataIndex: 'duration_ms', width: 100, render: (value: number | null) => <Text className="mono">{formatRunDuration(value)}</Text> },
               { title: '结果', render: (_, run) => <Text type={run.status === 'error' ? 'danger' : 'secondary'}>{resultSummary(run)}</Text> },
             ]}
             expandable={{

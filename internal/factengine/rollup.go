@@ -103,17 +103,18 @@ func StartRollupScheduler(ctx context.Context, worker *RollupWorker, spec string
 	))
 	if _, err := scheduler.AddFunc(spec, func() {
 		jobCtx := observability.EnsureLogID(ctx)
+		startedAt := time.Now()
 		stats, err := worker.RollupPreviousDay(jobCtx)
 		if err != nil {
 			logger.Printf(
-				"logid=%s job=fact_rollup status=error day=%s subjects=%d batches=%d failed_batches=%d written=%d skipped=%d error=%+v",
-				observability.LogID(jobCtx), stats.Day, stats.Subjects, stats.Batches, stats.FailedBatches, stats.Written, stats.Skipped, err,
+				"logid=%s job=fact_rollup status=error duration_ms=%d day=%s subjects=%d batches=%d failed_batches=%d written=%d skipped=%d error=%+v",
+				observability.LogID(jobCtx), time.Since(startedAt).Milliseconds(), stats.Day, stats.Subjects, stats.Batches, stats.FailedBatches, stats.Written, stats.Skipped, err,
 			)
 			return
 		}
 		logger.Printf(
-			"logid=%s job=fact_rollup status=ok day=%s subjects=%d batches=%d failed_batches=%d written=%d skipped=%d",
-			observability.LogID(jobCtx), stats.Day, stats.Subjects, stats.Batches, stats.FailedBatches, stats.Written, stats.Skipped,
+			"logid=%s job=fact_rollup status=ok duration_ms=%d day=%s subjects=%d batches=%d failed_batches=%d written=%d skipped=%d",
+			observability.LogID(jobCtx), time.Since(startedAt).Milliseconds(), stats.Day, stats.Subjects, stats.Batches, stats.FailedBatches, stats.Written, stats.Skipped,
 		)
 	}); err != nil {
 		return nil, fmt.Errorf("register fact rollup job schedule=%q: %w", spec, err)

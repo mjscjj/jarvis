@@ -56,12 +56,13 @@ func StartScheduler(ctx context.Context, worker RunOnce, spec string, startupDel
 		cron.Recover(cronLogger),
 	).Then(cron.FuncJob(func() {
 		jobCtx := observability.EnsureLogID(runCtx)
+		startedAt := time.Now()
 		result, err := worker.Run(jobCtx, TriggerSchedule)
 		if err != nil {
-			logger.Printf("logid=%s job=proactive_heartbeat status=error error=%+v", observability.LogID(jobCtx), err)
+			logger.Printf("logid=%s job=proactive_heartbeat status=error duration_ms=%d error=%+v", observability.LogID(jobCtx), time.Since(startedAt).Milliseconds(), err)
 			return
 		}
-		logger.Printf("logid=%s job=proactive_heartbeat status=ok result_chars=%d result=%q", observability.LogID(jobCtx), len(result), result)
+		logger.Printf("logid=%s job=proactive_heartbeat status=ok duration_ms=%d result_chars=%d result=%q", observability.LogID(jobCtx), time.Since(startedAt).Milliseconds(), len(result), result)
 	}))
 	if _, err := scheduler.cron.AddJob(spec, scheduler.job); err != nil {
 		cancel()

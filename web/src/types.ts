@@ -785,6 +785,7 @@ export interface SystemTaskRun {
   module: string
   job: string
   status: string
+  duration_ms: number | null
   fields: Record<string, string>
   raw: string
 }
@@ -816,23 +817,59 @@ export interface ProactiveRunDetail extends ProactiveRun {
 export interface MonitoringSnapshot {
   from: string
   until: string
+  bucket: string
+  m2: {
+    inserted_messages: number
+    run_count: number
+    average_duration_ms: number | null
+    max_duration_ms: number | null
+    finished_runs: number
+    failed_runs: number
+    failure_rate: number | null
+    recorded_since: string | null
+    series: MonitoringPoint[]
+  }
   m3: {
+    chat_count: number
+    run_count: number
     processed_messages: number
     todos_created: number
     average_duration_ms: number | null
     max_duration_ms: number | null
     total_tokens: number | null
     token_coverage_complete: boolean
+    finished_runs: number
     failed_runs: number
+    failure_rate: number | null
+    recorded_since: string | null
+    series: MonitoringPoint[]
   }
   m5: {
     processed_tasks: number
+    run_count: number
     average_duration_ms: number | null
     max_duration_ms: number | null
     total_tokens: number | null
     token_coverage_complete: boolean
+    finished_runs: number
     failed_runs: number
+    failure_rate: number | null
+    recorded_since: string | null
+    series: MonitoringPoint[]
   }
+}
+
+export interface MonitoringPoint {
+  bucket_start: string
+  recording_active: boolean
+  scope_count: number
+  run_count: number
+  average_duration_ms: number | null
+  finished_runs: number
+  failed_runs: number
+  failure_rate: number | null
+  total_tokens: number | null
+  token_coverage_complete: boolean
 }
 
 export type ResourceType = 'doc' | 'link' | 'repo' | 'note' | 'other'
