@@ -8,7 +8,7 @@ import PageHeader from './components/PageHeader'
 import EmptyState from './components/EmptyState'
 import MarkdownReport from './components/MarkdownReport'
 import { usePageContext } from './pageContext'
-import type { CommitMR, CommitWorklog, DailyDigest, DailyDigestScope, Digest, DocumentWorklog, GroupProgress, MyDay, ProfileView, WorkDoc } from './types'
+import type { CommitMR, CommitWorklog, DailyDigest, DailyDigestScope, Digest, DocumentWorklog, ProfileView, WorkDoc } from './types'
 import './styles/review-memory.css'
 
 const { Text, Link } = Typography
@@ -20,25 +20,8 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
-// A day row shows a dash when nothing happened so quiet days read as quiet.
 function num(value: number) {
   return value > 0 ? value : <Text type="secondary">—</Text>
-}
-
-const myColumns: TableColumnsType<MyDay> = [
-  { title: '日期', dataIndex: 'date', width: 120 },
-  { title: '新增交办 Todo', dataIndex: 'todos_created', width: 130, render: num },
-  { title: '生成任务', dataIndex: 'tasks_created', width: 130, render: num },
-  { title: '完成任务', dataIndex: 'tasks_done', width: 110, render: num },
-  { title: '失败', dataIndex: 'tasks_failed', width: 90, render: (v: number) => (v > 0 ? <Tag color="red">{v}</Tag> : <Text type="secondary">—</Text>) },
-]
-
-function groupColumns(): TableColumnsType<GroupProgress['days'][number]> {
-  return [
-    { title: '日期', dataIndex: 'date', width: 120 },
-    { title: '消息数', dataIndex: 'messages', width: 110, render: num },
-    { title: '抽出 Todo', dataIndex: 'todos_extracted', width: 110, render: num },
-  ]
 }
 
 // 只显示时分（数据已是本地时区的 ISO 串）。
@@ -203,10 +186,9 @@ function CodeTab({ date }: { date: Dayjs }) {
 
 export default function Progress() {
   const { context, setViewState } = usePageContext()
-  const [days, setDays] = useState(7)
-  type ReviewView = 'summary' | 'trend' | 'group-progress' | 'docs' | 'code'
+  type ReviewView = 'summary' | 'docs' | 'code'
   const reviewView = (value: string | undefined): ReviewView => (
-    value === 'trend' || value === 'group-progress' || value === 'docs' || value === 'code' ? value : 'summary'
+    value === 'docs' || value === 'code' ? value : 'summary'
   )
   const [activeView, setActiveView] = useState<ReviewView>(() => reviewView(context.view_state.view))
   const [data, setData] = useState<Digest>()
@@ -245,14 +227,14 @@ export default function Progress() {
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
-    getDigests(days, controller.signal)
+    getDigests(7, controller.signal)
       .then((result) => { setData(result); setError(undefined) })
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [days])
+  }, [])
 
   const selectedDate = dailyDate.format('YYYY-MM-DD')
   const activeDailyDateRef = useRef(selectedDate)
@@ -464,34 +446,6 @@ export default function Progress() {
     switch (activeView) {
       case 'summary':
         return summaryContent
-      case 'trend':
-        return (
-          <>
-            <Card className="review-detail-toolbar" variant="borderless">
-              <Space size={8}>
-                <Text type="secondary">统计范围</Text>
-                <Segmented value={days} onChange={(value) => setDays(value as number)} options={[{ label: '近 7 天', value: 7 }, { label: '近 14 天', value: 14 }, { label: '近 30 天', value: 30 }]} />
-              </Space>
-            </Card>
-            <Card variant="borderless">
-              <Table<MyDay> rowKey="date" size="small" columns={myColumns} dataSource={data?.mine ?? []} loading={loading} pagination={false} />
-            </Card>
-          </>
-        )
-      case 'group-progress':
-        return !loading && (data?.key_groups.length ?? 0) === 0 ? (
-          <Card variant="borderless">
-            <EmptyState description="暂无关键会话" hint="可在「记忆 → 会话」中将重要会话标为关键群" />
-          </Card>
-        ) : (
-          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-            {(data?.key_groups ?? []).map((group) => (
-              <Card key={group.group_id} variant="borderless" title={group.name || '未命名会话'}>
-                <Table rowKey="date" size="small" columns={groupColumns()} dataSource={group.days} loading={loading} pagination={false} />
-              </Card>
-            ))}
-          </Space>
-        )
       case 'docs':
         return <DocsTab date={dailyDate} />
       case 'code':
@@ -502,37 +456,24 @@ export default function Progress() {
   return (
     <div className="progress review-page">
       <PageHeader title="回顾" subtitle="从结果开始，回看一天里完成的工作、协作和产出">
-        {(activeView === 'summary' || activeView === 'docs' || activeView === 'code') && (
-          <Space size={8} className="review-date-control">
-            <DatePicker
-              value={dailyDate}
-              onChange={(date) => selectDate(date ?? dayjs())}
-              allowClear={false}
-              disabledDate={(date) => date.isAfter(dayjs(), 'day')}
-            />
-            <Button onClick={() => selectDate(dayjs())} disabled={dailyDate.isSame(dayjs(), 'day')}>今天</Button>
-          </Space>
-        )}
+        <Space size={8} className="review-date-control">
+          <DatePicker
+            value={dailyDate}
+            onChange={(date) => selectDate(date ?? dayjs())}
+            allowClear={false}
+            disabledDate={(date) => date.isAfter(dayjs(), 'day')}
+          />
+          <Button onClick={() => selectDate(dayjs())} disabled={dailyDate.isSame(dayjs(), 'day')}>今天</Button>
+        </Space>
       </PageHeader>
 
       {error && <Alert type="error" showIcon title="回顾加载失败" description={error} closable onClose={() => setError(undefined)} />}
 
       <Flex className="review-view-nav" gap={8} wrap>
-        <Segmented
-          value={activeView === 'trend' || activeView === 'group-progress' ? 'analysis' : 'results'}
-          onChange={(value) => selectView(value === 'analysis' ? 'trend' : 'summary')}
-          options={[{ label: '结果', value: 'results' }, { label: '分析', value: 'analysis' }]}
-        />
-        <span className="review-nav-divider" />
         <div className="review-subnav">
-          {(activeView === 'trend' || activeView === 'group-progress') ? <>
-            <Button type={activeView === 'trend' ? 'primary' : 'text'} onClick={() => selectView('trend')}>数量趋势</Button>
-            <Button type={activeView === 'group-progress' ? 'primary' : 'text'} onClick={() => selectView('group-progress')}>群进度</Button>
-          </> : <>
-            <Button type={activeView === 'summary' ? 'primary' : 'text'} onClick={() => selectView('summary')}>每日总结</Button>
-            <Button type={activeView === 'docs' ? 'primary' : 'text'} onClick={() => selectView('docs')}>文档</Button>
-            <Button type={activeView === 'code' ? 'primary' : 'text'} onClick={() => selectView('code')}>代码</Button>
-          </>}
+          <Button type={activeView === 'summary' ? 'primary' : 'text'} onClick={() => selectView('summary')}>每日总结</Button>
+          <Button type={activeView === 'docs' ? 'primary' : 'text'} onClick={() => selectView('docs')}>文档</Button>
+          <Button type={activeView === 'code' ? 'primary' : 'text'} onClick={() => selectView('code')}>代码</Button>
         </div>
       </Flex>
 

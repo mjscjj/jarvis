@@ -41,25 +41,12 @@
   box-shadow: none;
 }
 
-.review-nav-divider {
-  width: 1px;
-  height: 22px;
-  margin: 0 6px;
-  background: var(--color-border);
-}
-
-.review-nav-label {
-  margin: 0 2px 0 4px;
-  font-size: 12px;
-}
-
 .review-content {
   display: grid;
   gap: var(--space-3);
 }
 
-.review-scope-card .ant-card-body,
-.review-detail-toolbar .ant-card-body {
+.review-scope-card .ant-card-body {
   padding: 14px 16px;
 }
 
@@ -151,11 +138,6 @@
   .review-view-nav {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .review-nav-divider,
-  .review-nav-label {
-    display: none;
   }
 
   .review-view-nav .ant-btn {
