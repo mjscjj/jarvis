@@ -36,6 +36,8 @@ import type {
   ResolveResult,
   SharedMemory,
   Task,
+  CreateTaskInput,
+  CreateTaskResult,
   TaskList,
   TaskStatus,
   ExecutionRunList,
@@ -120,6 +122,10 @@ export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signa
 
 export function getTask(id: number, signal?: AbortSignal): Promise<Task> {
   return request<Task>(`/api/tasks/${id}`, { signal })
+}
+
+export function createTask(body: CreateTaskInput): Promise<CreateTaskResult> {
+  return request<CreateTaskResult>('/api/tasks', { method: 'POST', body })
 }
 
 export function finishTask(id: number, expectedVersion: number, status: 'done' | 'failed', result: Record<string, unknown>): Promise<Task> {

@@ -182,6 +182,28 @@ export interface TaskList {
   page_size: number
 }
 
+export interface CreateTaskInput {
+  title: string
+  action_type: 'agent_task'
+  target: string
+  background: Record<string, unknown>
+  source_payload: unknown
+  project_id?: number
+}
+
+export interface CreateTaskResult {
+  id: number
+  todo_id: number | null
+  title: string
+  action_type: ActionType
+  target: string
+  status: TaskStatus
+  source_type: 'manual'
+  source_id: number | null
+  occurrence_key: string | null
+  version: number
+}
+
 // RunEnrichment 是 codex 主动"多做一步"准备的一条开放语义块：
 //   kind=context      正文/结论段落（如"会议一页纸"）
 //   kind=doc_link     引用的文件/文档路径

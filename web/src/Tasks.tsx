@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Input, Modal, Space, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Form, Input, message, Modal, Select, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, executeTask, finishTask, getTask, interruptTask, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
-import type { ExecutionRun, Task, TaskEvent, TaskStatus } from './types'
+import { approveTask, createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
+import type { ExecutionRun, Project, Task, TaskEvent, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
@@ -76,6 +76,12 @@ function positivePage(value: string | undefined): number {
   return Number.isInteger(page) && page > 0 ? page : 1
 }
 
+interface CreateTaskFields {
+  title: string
+  instruction: string
+  project_id?: number
+}
+
 export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const { context, setSelection, setViewState } = usePageContext()
   const [activeTab, setActiveTab] = useState<TaskTab>(() => taskTab(context.view_state.view))
@@ -112,10 +118,32 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [events, setEvents] = useState<TaskEvent[]>([])
   const [eventsLoading, setEventsLoading] = useState(false)
   const [eventsError, setEventsError] = useState<string>()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createSubmitting, setCreateSubmitting] = useState(false)
+  const [createError, setCreateError] = useState<string>()
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectsLoading, setProjectsLoading] = useState(false)
+  const [projectsError, setProjectsError] = useState<string>()
+  const [createForm] = Form.useForm<CreateTaskFields>()
 
   const routedTaskID = context.active_key === 'tasks' && context.selection?.kind === 'task'
     ? context.selection.id
     : null
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setProjectsLoading(true)
+    listProjects(1, 100, controller.signal)
+      .then((result) => {
+        setProjects(result.items)
+        setProjectsError(undefined)
+      })
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setProjectsError(errorText(cause))
+      })
+      .finally(() => { if (!controller.signal.aborted) setProjectsLoading(false) })
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
     setActiveTab(taskTab(context.view_state.view))
@@ -214,6 +242,41 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     setSelected(task)
     setFinishStatus(status)
     setSummary('')
+  }
+
+  const openCreate = () => {
+    createForm.resetFields()
+    setCreateError(undefined)
+    setCreateOpen(true)
+  }
+
+  const submitCreate = async () => {
+    const values = await createForm.validateFields()
+    const title = values.title.trim()
+    const instruction = values.instruction.trim()
+    setCreateSubmitting(true)
+    setCreateError(undefined)
+    try {
+      await createTask({
+        title,
+        action_type: 'agent_task',
+        target: instruction,
+        background: {},
+        source_payload: instruction,
+        ...(values.project_id === undefined ? {} : { project_id: values.project_id }),
+      })
+      setCreateOpen(false)
+      createForm.resetFields()
+      setActiveTab('running')
+      setPage(1)
+      setViewState({ view: 'running', page: 1 })
+      setRefreshKey((value) => value + 1)
+      message.success('任务已创建，Jarvis 正在处理')
+    } catch (cause: unknown) {
+      setCreateError(errorText(cause))
+    } finally {
+      setCreateSubmitting(false)
+    }
   }
 
   const submit = async () => {
@@ -445,6 +508,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
 
   return <>
     <PageHeader title="任务" subtitle="先处理需要你决定的事项，再查看 Jarvis 的推进、等待和历史结果">
+      <Button type="primary" onClick={openCreate}>新建任务</Button>
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
     {error && <Alert type="error" showIcon title="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
@@ -497,6 +561,44 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         })}
       />
     </Card>
+    <Modal
+      zIndex={taskActionModalZIndex}
+      title="新建任务"
+      open={createOpen}
+      confirmLoading={createSubmitting}
+      onOk={submitCreate}
+      onCancel={() => setCreateOpen(false)}
+      okText="创建并执行"
+      cancelButtonProps={{ disabled: createSubmitting }}
+      maskClosable={!createSubmitting}
+    >
+      <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+        <Alert type="info" showIcon title="创建后立即交给 Jarvis 执行；需要审批的外部操作仍会等待你确认。" />
+        {createError && <Alert type="error" showIcon title="任务创建失败" description={createError} />}
+        <Form form={createForm} layout="vertical" requiredMark={false}>
+          <Form.Item name="title" label="任务名称" rules={[{ required: true, whitespace: true, message: '请输入任务名称' }]}>
+            <Input autoFocus placeholder="例如：检查 FactEngine 最近失败原因" />
+          </Form.Item>
+          <Form.Item name="instruction" label="任务要求" rules={[{ required: true, whitespace: true, message: '请输入完整任务要求' }]}>
+            <Input.TextArea rows={6} placeholder="说清楚希望 Jarvis 完成什么；相关背景和验收要求也可以直接写在这里。" />
+          </Form.Item>
+          <Form.Item
+            name="project_id"
+            label="所属项目（可选）"
+            extra={projectsError ? `项目加载失败：${projectsError}` : '选择后会把该项目的当前世界背景带给执行 Agent。'}
+          >
+            <Select
+              allowClear
+              showSearch
+              loading={projectsLoading}
+              placeholder="不选择则由 Jarvis 根据任务内容判断"
+              optionFilterProp="label"
+              options={projects.map((project) => ({ value: project.id, label: project.name }))}
+            />
+          </Form.Item>
+        </Form>
+      </Space>
+    </Modal>
     <TaskDetailModal
       task={detail}
       runs={runs}
