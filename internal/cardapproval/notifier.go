@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -19,12 +20,17 @@ type larkRunner interface {
 // parked. It is intentionally a direct call: no outbox, polling, or fallback
 // path is needed for this local single-user runtime.
 type Notifier struct {
-	lark          larkRunner
-	principal     string
-	detailBaseURL string
+	lark           larkRunner
+	principal      string
+	serverPort     string
+	resolveLANIPv4 func() (net.IP, error)
 }
 
-func NewNotifier(lark larkRunner, principalOpenID, detailBaseURL string) (*Notifier, error) {
+func NewNotifier(lark larkRunner, principalOpenID, serverAddr string) (*Notifier, error) {
+	return newNotifier(lark, principalOpenID, serverAddr, currentLANIPv4)
+}
+
+func newNotifier(lark larkRunner, principalOpenID, serverAddr string, resolveLANIPv4 func() (net.IP, error)) (*Notifier, error) {
 	if lark == nil {
 		return nil, fmt.Errorf("card approval lark client is nil")
 	}
@@ -32,11 +38,14 @@ func NewNotifier(lark larkRunner, principalOpenID, detailBaseURL string) (*Notif
 	if principalOpenID == "" {
 		return nil, fmt.Errorf("card approval principal open_id is empty")
 	}
-	detailBaseURL = strings.TrimRight(strings.TrimSpace(detailBaseURL), "/")
-	if detailBaseURL == "" {
-		return nil, fmt.Errorf("card approval detail base URL is empty")
+	_, port, err := net.SplitHostPort(strings.TrimSpace(serverAddr))
+	if err != nil || port == "" {
+		return nil, fmt.Errorf("card approval server address %q is invalid", serverAddr)
 	}
-	return &Notifier{lark: lark, principal: principalOpenID, detailBaseURL: detailBaseURL}, nil
+	if resolveLANIPv4 == nil {
+		return nil, fmt.Errorf("card approval LAN IPv4 resolver is nil")
+	}
+	return &Notifier{lark: lark, principal: principalOpenID, serverPort: port, resolveLANIPv4: resolveLANIPv4}, nil
 }
 
 func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNotification) (*execute.ApprovalDelivery, error) {
@@ -50,7 +59,11 @@ func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNoti
 			return nil, fmt.Errorf("approval notification %s is empty", name)
 		}
 	}
-	card := n.approvalCard(notice)
+	detailURL, err := n.detailURL(notice.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	card := approvalCard(notice, detailURL)
 	content, err := json.Marshal(card)
 	if err != nil {
 		return nil, fmt.Errorf("encode approval card task_id=%d: %w", notice.TaskID, err)
@@ -74,15 +87,36 @@ func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNoti
 		MessageID: messageIDs[0],
 		Target:    n.principal,
 		Preview:   truncateRunes(notice.Artifact, 160),
-		URL:       n.detailURL(notice.TaskID),
+		URL:       detailURL,
 	}, nil
 }
 
-func (n *Notifier) detailURL(taskID uint64) string {
-	return fmt.Sprintf("%s/#/work/task/%d", n.detailBaseURL, taskID)
+func (n *Notifier) detailURL(taskID uint64) (string, error) {
+	ip, err := n.resolveLANIPv4()
+	if err != nil {
+		return "", fmt.Errorf("resolve approval detail LAN IPv4: %w", err)
+	}
+	ip = ip.To4()
+	if ip == nil || !ip.IsPrivate() || ip.IsLoopback() || ip.IsUnspecified() {
+		return "", fmt.Errorf("resolved approval detail address %q is not a private LAN IPv4", ip)
+	}
+	return fmt.Sprintf("http://%s/#/work/task/%d", net.JoinHostPort(ip.String(), n.serverPort), taskID), nil
 }
 
-func (n *Notifier) approvalCard(notice execute.ApprovalNotification) map[string]any {
+func currentLANIPv4() (net.IP, error) {
+	connection, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 53})
+	if err != nil {
+		return nil, err
+	}
+	defer connection.Close()
+	address, ok := connection.LocalAddr().(*net.UDPAddr)
+	if !ok || address.IP == nil {
+		return nil, fmt.Errorf("default route returned no local IPv4")
+	}
+	return address.IP, nil
+}
+
+func approvalCard(notice execute.ApprovalNotification, detailURL string) map[string]any {
 	callback := func(decision string) map[string]any {
 		return map[string]any{
 			"type": "callback",
@@ -109,7 +143,7 @@ func (n *Notifier) approvalCard(notice execute.ApprovalNotification) map[string]
 	details := map[string]any{
 		"tag": "button", "text": map[string]any{"tag": "plain_text", "content": "查看详情"},
 		"type": "default", "width": "fill",
-		"behaviors": []any{map[string]any{"type": "open_url", "default_url": n.detailURL(notice.TaskID)}},
+		"behaviors": []any{map[string]any{"type": "open_url", "default_url": detailURL}},
 	}
 	body := fmt.Sprintf("**要做的事**\n%s\n\n**作用对象**\n%s\n\n**待执行内容**\n%s", strings.TrimSpace(notice.Action), strings.TrimSpace(notice.Target), truncateRunes(strings.TrimSpace(notice.Artifact), 1200))
 	if summary := strings.TrimSpace(notice.Summary); summary != "" {

@@ -54,7 +54,7 @@ func TestValidate(t *testing.T) {
 	t.Parallel()
 
 	valid := Config{
-		Server: ServerConfig{Addr: "0.0.0.0:18800", PublicBaseURL: "http://192.168.3.91:18800", WebRoot: "web/dist"},
+		Server: ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
 		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
 		Extract: ExtractConfig{
 			Schedule:              "@every 10m",
@@ -114,7 +114,6 @@ func TestValidate(t *testing.T) {
 	}{
 		{name: "valid"},
 		{name: "server address", mutate: func(c *Config) { c.Server.Addr = "" }, wantErr: "server.addr"},
-		{name: "server public URL", mutate: func(c *Config) { c.Server.PublicBaseURL = "192.168.3.91:18800" }, wantErr: "server.public_base_url"},
 		{name: "server web root", mutate: func(c *Config) { c.Server.WebRoot = "" }, wantErr: "server.web_root"},
 		{name: "sqlite path", mutate: func(c *Config) { c.SQLite.Path = "" }, wantErr: "sqlite.path"},
 		{name: "extract schedule", mutate: func(c *Config) { c.Extract.Schedule = "" }, wantErr: "extract.schedule"},
@@ -164,12 +163,6 @@ func TestValidate(t *testing.T) {
 				Enabled: true, Profile: "cli_cc_connect", PrincipalOpenID: "ou_owner",
 			}
 		}, wantErr: "relay_secret"},
-		{name: "card approval public URL", mutate: func(c *Config) {
-			c.CardApproval = CardApprovalConfig{
-				Enabled: true, Profile: "cli_cc_connect", PrincipalOpenID: "ou_owner", RelaySecret: "secret",
-			}
-			c.Server.PublicBaseURL = ""
-		}, wantErr: "server.public_base_url"},
 		{name: "codex binary", mutate: func(c *Config) { c.Codex.Bin = "" }, wantErr: "codex.bin"},
 		{name: "codex model", mutate: func(c *Config) { c.Codex.Model = "" }, wantErr: "codex.model"},
 		{name: "codex timeout", mutate: func(c *Config) { c.Codex.TimeoutSeconds = 0 }, wantErr: "codex.timeout_seconds"},
@@ -259,7 +252,7 @@ func TestValidate(t *testing.T) {
 
 func TestValidateExtractEnabled(t *testing.T) {
 	cfg := Config{
-		Server: ServerConfig{Addr: "0.0.0.0:18800", PublicBaseURL: "http://192.168.3.91:18800", WebRoot: "web/dist"},
+		Server: ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
 		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
 		Model: ModelConfig{
 			BaseURL: "https://model.test/v1", APIKey: "plain-key", Model: "model", TimeoutSec: 60,

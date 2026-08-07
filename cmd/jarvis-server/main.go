@@ -351,7 +351,7 @@ func main() {
 		if err != nil {
 			fatalf("initialize approval lark-cli failed: %v", err)
 		}
-		approvalNotifier, err = cardapproval.NewNotifier(approvalClient, cfg.CardApproval.PrincipalOpenID, cfg.Server.PublicBaseURL)
+		approvalNotifier, err = cardapproval.NewNotifier(approvalClient, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
 		if err != nil {
 			fatalf("initialize approval notifier failed: %v", err)
 		}

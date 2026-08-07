@@ -136,10 +136,20 @@ resolve_api_base() {
   local resolved="$CONFIG_PATH"
   [[ "$resolved" == /* ]] || resolved="${REPO_ROOT}/${resolved}"
   [[ -f "$resolved" ]] || fail "config file not found: ${resolved}"
-  local public_base_url
-  public_base_url="$(grep -E '^\s*public_base_url:\s*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*public_base_url:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
-  [[ -n "$public_base_url" ]] || fail "could not parse server.public_base_url from ${resolved}"
-  printf '%s\n' "${public_base_url%/}"
+  local server_addr port default_interface lan_ip
+  server_addr="$(grep -E '^[[:space:]]*addr:[[:space:]]*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
+  [[ -n "$server_addr" ]] || fail "could not parse server.addr from ${resolved}"
+  port="${server_addr##*:}"
+  [[ "$port" =~ ^[0-9]+$ ]] || fail "server.addr has invalid port: ${server_addr}"
+  default_interface="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
+  [[ -n "$default_interface" ]] || fail "could not resolve the default network interface"
+  lan_ip="$(ipconfig getifaddr "$default_interface" 2>/dev/null || true)"
+  [[ -n "$lan_ip" ]] || fail "could not resolve LAN IPv4 for interface ${default_interface}"
+  case "$lan_ip" in
+    10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) ;;
+    *) fail "resolved address is not a private LAN IPv4: ${lan_ip}" ;;
+  esac
+  printf 'http://%s:%s\n' "$lan_ip" "$port"
 }
 
 api_call() {

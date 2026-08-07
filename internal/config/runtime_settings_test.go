@@ -13,7 +13,6 @@ import (
 const runtimeSettingsTestYAML = `
 server:
   addr: "0.0.0.0:18800"
-  public_base_url: "http://192.168.3.91:18800"
   web_root: "web/dist"
 sqlite:
   path: "var/jarvis.db"
