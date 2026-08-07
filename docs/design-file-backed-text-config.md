@@ -52,7 +52,7 @@ M3、M5 的系统提示词文件是稳定指令模板：M3 必须且只能包含
 
 配置页不再把配置正文或扫描缓存写入数据库：
 
-- 工作规则：`conf/rules/all.md` 与 `m3.md`、`m5.md`。运行时组合全阶段文件和当前阶段文件。
+- 工作规则：`conf/rules/m3.md` 与 `m5.md`。M3、M5 运行时只读取各自阶段文件；其它 Agent 不复用这两份规则。
 - Skills：正文继续来自 `.agents/skills/*/SKILL.md`，启用状态和阶段范围来自 `conf/skills.yaml`。
 - 共享记忆：`data/shared-memory.md`，该目录被 Git 忽略，允许保存本机凭据和长期记忆。
 - 运行配置：继续使用现有 `conf/config.runtime.yaml`。

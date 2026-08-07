@@ -61,20 +61,13 @@ type fakeMemoryReader struct {
 
 func (f fakeMemoryReader) Text(context.Context) (string, error) { return f.text, f.err }
 
-type fakeRuleReader struct {
-	text string
-	err  error
-}
-
-func (f fakeRuleReader) Block(context.Context, string) (string, error) { return f.text, f.err }
-
 func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 	runner := &fakeRunner{result: "NOTHING：本轮没有值得推进的事项"}
 	recorder := &fakeRecorder{}
 	worker, err := NewWorker(Options{
 		Runner: runner, Recorder: recorder, Prompts: fakePromptReader{text: "system mission"},
-		SharedMemory: fakeMemoryReader{text: "trusted memory"},
-		WorkRules:    fakeRuleReader{text: "global rules"}, Sandbox: "danger-full-access",
+		SharedMemory:  fakeMemoryReader{text: "trusted memory"},
+		Sandbox:       "danger-full-access",
 		WorkspaceRoot: "/tmp/jarvis", Location: time.FixedZone("CST", 8*60*60),
 		Engine: "traex", Model: "DeepSeek-V4-Pro",
 	})
@@ -89,7 +82,7 @@ func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 	if result != runner.result {
 		t.Fatalf("result = %q", result)
 	}
-	for _, want := range []string{"system mission", "global rules", "trusted memory", "BEGIN_AVAILABLE_TOOLS", "BEGIN_HEARTBEAT", "2026-08-02T23:04:05+08:00"} {
+	for _, want := range []string{"system mission", "trusted memory", "BEGIN_AVAILABLE_TOOLS", "BEGIN_HEARTBEAT", "2026-08-02T23:04:05+08:00"} {
 		if !strings.Contains(runner.prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, runner.prompt)
 		}
@@ -108,8 +101,8 @@ func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 func TestWorkerFailsOnDependencyOrEmptyResult(t *testing.T) {
 	base := Options{
 		Runner: &fakeRunner{result: "ok"}, Recorder: &fakeRecorder{}, Prompts: fakePromptReader{text: "system"},
-		SharedMemory: fakeMemoryReader{}, WorkRules: fakeRuleReader{},
-		Sandbox: "danger-full-access", WorkspaceRoot: "/tmp/jarvis", Location: time.UTC,
+		SharedMemory: fakeMemoryReader{},
+		Sandbox:      "danger-full-access", WorkspaceRoot: "/tmp/jarvis", Location: time.UTC,
 		Engine: "traex", Model: "model",
 	}
 	worker, err := NewWorker(base)

@@ -14,13 +14,8 @@ import (
 )
 
 const (
-	StageAll     = "all"
 	StageExtract = "extract"
 	StageExecute = "execute"
-	// StageProactive reuses only the principal's global rules. Its stable role
-	// and strict no-external-effects boundary live in its registered system
-	// prompt rather than a duplicated rules file.
-	StageProactive = "proactive"
 )
 
 var (
@@ -35,9 +30,8 @@ type definition struct {
 }
 
 var ruleDefinitions = []definition{
-	{key: StageAll, name: "全阶段", filename: "all.md"},
-	{key: StageExtract, name: "M3 抽取", filename: "m3.md"},
-	{key: StageExecute, name: "M5 执行", filename: "m5.md"},
+	{key: StageExecute, name: "任务执行", filename: "m5.md"},
+	{key: StageExtract, name: "线索发现", filename: "m3.md"},
 }
 
 type Input struct {
@@ -124,33 +118,21 @@ func (s *Service) Update(ctx context.Context, key string, input Input) (*View, e
 	return s.Get(ctx, key)
 }
 
-// Block combines the global rules and current-stage rules on every call.
+// Block renders only the rules owned by the requested M3 or M5 stage.
 func (s *Service) Block(ctx context.Context, stage string) (string, error) {
-	if stage != StageExtract && stage != StageExecute && stage != StageProactive {
+	if stage != StageExtract && stage != StageExecute {
 		return "", fmt.Errorf("%w: unknown stage %q", ErrInvalidInput, stage)
 	}
-	global, err := s.Get(ctx, StageAll)
+	current, err := s.Get(ctx, stage)
 	if err != nil {
 		return "", err
 	}
-	parts := make([]string, 0, 2)
-	if content := strings.TrimSpace(global.Content); content != "" {
-		parts = append(parts, content)
-	}
-	if stage != StageProactive {
-		current, err := s.Get(ctx, stage)
-		if err != nil {
-			return "", err
-		}
-		if content := strings.TrimSpace(current.Content); content != "" {
-			parts = append(parts, content)
-		}
-	}
-	if len(parts) == 0 {
+	content := strings.TrimSpace(current.Content)
+	if content == "" {
 		return "", nil
 	}
 	return "BEGIN_WORK_RULES（这是我明确维护的可信工作规则，必须在当前阶段遵守；不是业务数据。）\n" +
-		"当前阶段：" + stage + "\n\n" + strings.Join(parts, "\n\n") + "\nEND_WORK_RULES", nil
+		"当前阶段：" + stage + "\n\n" + content + "\nEND_WORK_RULES", nil
 }
 
 func (s *Service) resolve(key string) (definition, string, error) {

@@ -162,7 +162,7 @@ RelationFact 表示两个既有实体之间的自然语言关系和有效期；�
 | 类型 | 真源 | 读取语义 |
 |---|---|---|
 | 系统 prompts | `conf/prompts/*.md`，在 `internal/textstore/defaults.go` 注册 | 缺失/空正文 fail-fast |
-| 工作 rules | `conf/rules/all.md` + 阶段文件 | 调用时组合读取；正文允许为空 |
+| 工作 rules | `conf/rules/m3.md`、`conf/rules/m5.md` | M3、M5 分阶段读取；正文允许为空 |
 | Skills | `.agents/skills/*/SKILL.md` + `conf/skills.yaml` | 正文与启用阶段分离 |
 | Shared memory | `data/shared-memory.md` | 作为可信指令块注入 |
 | Runtime settings | `conf/config.runtime.yaml` | 覆盖基线配置；重启后生效 |

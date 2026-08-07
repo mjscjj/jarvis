@@ -45,10 +45,10 @@ func (s *Service) Preview(ctx context.Context, stage string) (*Preview, error) {
 	var dynamicBlocks []string
 	switch stage {
 	case prompttemplate.StageM3:
-		promptKey, ruleStage, name = textstore.SystemPromptM3Key, workrule.StageExtract, "M3 抽取"
+		promptKey, ruleStage, name = textstore.SystemPromptM3Key, workrule.StageExtract, "线索发现"
 		dynamicBlocks = []string{"principal_open_id", "tool_catalog", "shared_memory", "skills", "conversation_context", "output_contract"}
 	case prompttemplate.StageM5:
-		promptKey, ruleStage, name = textstore.SystemPromptM5Key, workrule.StageExecute, "M5 执行"
+		promptKey, ruleStage, name = textstore.SystemPromptM5Key, workrule.StageExecute, "任务执行"
 		dynamicBlocks = []string{"phase_instructions", "shared_memory", "skills", "tool_catalog", "task_context", "output_schema"}
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrStageNotFound, stage)

@@ -236,7 +236,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 保存到本地覆盖文件，进程重启后生效。
 	h.GET("/api/runtime-settings", GetRuntimeSettings(deps.RuntimeSettings))
 	h.PUT("/api/runtime-settings", UpdateRuntimeSettings(deps.RuntimeSettings))
-	// 工作规则：三个固定 Markdown 文件，运行时组合全阶段与当前阶段。
+	// 工作规则：M3 与 M5 各自读取一个固定 Markdown 文件。
 	h.GET("/api/work-rules", ListWorkRules(deps.WorkRules))
 	h.GET("/api/work-rules/:work_rule_key", GetWorkRule(deps.WorkRules))
 	h.PUT("/api/work-rules/:work_rule_key", UpdateWorkRule(deps.WorkRules))

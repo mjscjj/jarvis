@@ -1,25 +1,31 @@
 package workrule
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestServiceCombinesGlobalAndStageRules(t *testing.T) {
+func TestServiceRendersOnlyCurrentStageRules(t *testing.T) {
 	service := newTestService(t)
 	block, err := service.Block(t.Context(), StageExecute)
 	if err != nil {
 		t.Fatalf("Block() error = %v", err)
 	}
-	for _, want := range []string{"BEGIN_WORK_RULES", "global rule", "execute rule", "当前阶段：execute"} {
+	for _, want := range []string{"BEGIN_WORK_RULES", "execute rule", "当前阶段：execute"} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("Block() missing %q:\n%s", want, block)
 		}
 	}
 	if strings.Contains(block, "decide rule") {
 		t.Fatalf("Block() contains another stage:\n%s", block)
+	}
+	for _, stage := range []string{"all", "proactive", "unknown"} {
+		if _, err := service.Block(t.Context(), stage); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("Block(%q) error = %v, want ErrInvalidInput", stage, err)
+		}
 	}
 }
 
@@ -63,13 +69,13 @@ func TestServiceUpdatesOnlyAllowlistedFile(t *testing.T) {
 	if _, err := service.Update(t.Context(), "../secret", Input{Content: "x"}); err == nil {
 		t.Fatal("unknown key must fail")
 	}
+	if _, err := service.Update(t.Context(), "all", Input{Content: "x"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("legacy all-stage key error = %v, want ErrNotFound", err)
+	}
 }
 
 func TestServiceAllowsEmptyRuleFile(t *testing.T) {
 	service := newTestService(t)
-	if _, err := service.Update(t.Context(), StageAll, Input{Content: ""}); err != nil {
-		t.Fatalf("clear global rules: %v", err)
-	}
 	if _, err := service.Update(t.Context(), StageExtract, Input{Content: ""}); err != nil {
 		t.Fatalf("clear extract rules: %v", err)
 	}
@@ -86,8 +92,7 @@ func newTestService(t *testing.T) *Service {
 	t.Helper()
 	directory := t.TempDir()
 	contents := map[string]string{
-		"all.md": "global rule", "m3.md": "extract rule",
-		"m5.md": "execute rule",
+		"m3.md": "extract rule", "m5.md": "execute rule",
 	}
 	for name, content := range contents {
 		if err := os.WriteFile(filepath.Join(directory, name), []byte(content), 0o644); err != nil {

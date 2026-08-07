@@ -41,12 +41,12 @@ type definition struct {
 func definitions() []definition {
 	return []definition{
 		{
-			key: SystemPromptM3Key, name: "M3 系统提示词", filename: "m3-system-prompt.md",
-			description: "定义行动线索抽取者的角色、判断原则和输出要求。",
+			key: SystemPromptM3Key, name: "线索发现系统提示词", filename: "m3-system-prompt.md",
+			description: "定义线索发现 Agent 的角色、准入判断原则和输出要求。",
 			kind:        "system_prompt", stage: prompttemplate.StageM3,
 		},
 		{
-			key: SystemPromptM5Key, name: "M5 执行系统提示词", filename: "m5-system-prompt.md",
+			key: SystemPromptM5Key, name: "任务执行系统提示词", filename: "m5-system-prompt.md",
 			description: "execute、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。",
 			kind:        "system_prompt", stage: prompttemplate.StageM5,
 		},
@@ -66,8 +66,8 @@ func definitions() []definition {
 			kind:        "system_prompt", stage: "morning_brief",
 		},
 		{
-			key: ApprovalPolicyKey, name: "M5 审批策略", filename: "m5-approval-policy.md",
-			description: "供 M5 在执行过程中判断哪些具体动作需要先请示、哪些可以直接完成。",
+			key: ApprovalPolicyKey, name: "任务执行审批策略", filename: "m5-approval-policy.md",
+			description: "供任务执行 Agent 判断哪些具体动作需要先请示、哪些可以直接完成。",
 			kind:        "approval_policy", stage: prompttemplate.StageM5,
 		},
 		{

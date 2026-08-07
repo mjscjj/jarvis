@@ -317,7 +317,6 @@ func main() {
 		Recorder:      proactiveStore,
 		Prompts:       textFileService,
 		SharedMemory:  sharedMemoryService,
-		WorkRules:     workRuleService,
 		Sandbox:       cfg.Proactive.Sandbox,
 		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
 		Location:      location,

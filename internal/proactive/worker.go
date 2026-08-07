@@ -11,7 +11,6 @@ import (
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/textstore"
 	"jarvis/internal/toolcatalog"
-	"jarvis/internal/workrule"
 )
 
 const AgentStage = "proactive"
@@ -25,7 +24,6 @@ type Options struct {
 	Recorder      Recorder
 	Prompts       textstore.Reader
 	SharedMemory  sharedmem.SharedMemoryReader
-	WorkRules     workrule.Reader
 	Sandbox       string
 	WorkspaceRoot string
 	Location      *time.Location
@@ -38,7 +36,6 @@ type Worker struct {
 	recorder      Recorder
 	prompts       textstore.Reader
 	sharedMemory  sharedmem.SharedMemoryReader
-	workRules     workrule.Reader
 	sandbox       string
 	workspaceRoot string
 	location      *time.Location
@@ -60,9 +57,6 @@ func NewWorker(opts Options) (*Worker, error) {
 	if opts.SharedMemory == nil {
 		return nil, fmt.Errorf("proactive shared memory reader is nil")
 	}
-	if opts.WorkRules == nil {
-		return nil, fmt.Errorf("proactive work rule reader is nil")
-	}
 	if strings.TrimSpace(opts.Sandbox) == "" {
 		return nil, fmt.Errorf("proactive sandbox is required")
 	}
@@ -77,7 +71,7 @@ func NewWorker(opts Options) (*Worker, error) {
 	}
 	return &Worker{
 		runner: opts.Runner, recorder: opts.Recorder, prompts: opts.Prompts, sharedMemory: opts.SharedMemory,
-		workRules: opts.WorkRules, sandbox: strings.TrimSpace(opts.Sandbox),
+		sandbox:       strings.TrimSpace(opts.Sandbox),
 		workspaceRoot: strings.TrimSpace(opts.WorkspaceRoot), location: opts.Location,
 		engine: strings.TrimSpace(opts.Engine), model: strings.TrimSpace(opts.Model),
 		now: time.Now,
@@ -96,10 +90,6 @@ func (w *Worker) Run(ctx context.Context, trigger string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read proactive system prompt: %w", err)
 	}
-	workRules, err := w.workRules.Block(ctx, workrule.StageProactive)
-	if err != nil {
-		return "", fmt.Errorf("read proactive work rules: %w", err)
-	}
 	sharedMemory, err := w.sharedMemory.Text(ctx)
 	if err != nil {
 		return "", fmt.Errorf("read proactive shared memory: %w", err)
@@ -109,7 +99,7 @@ func (w *Worker) Run(ctx context.Context, trigger string) (string, error) {
 		return "", fmt.Errorf("build proactive tool catalog: %w", err)
 	}
 	startedAt := w.now().UTC()
-	prompt := buildPrompt(systemPrompt, workRules, sharedMemory, tools, startedAt.In(w.location))
+	prompt := buildPrompt(systemPrompt, sharedMemory, tools, startedAt.In(w.location))
 	runID, err := w.recorder.Start(ctx, trigger, w.engine, w.model, prompt, startedAt)
 	if err != nil {
 		return "", fmt.Errorf("record proactive run start: %w", err)
@@ -139,11 +129,8 @@ func (w *Worker) recordFailure(ctx context.Context, runID uint64, runErr error) 
 	return runErr
 }
 
-func buildPrompt(systemPrompt, workRules, sharedMemory, tools string, now time.Time) string {
+func buildPrompt(systemPrompt, sharedMemory, tools string, now time.Time) string {
 	parts := []string{strings.TrimSpace(systemPrompt)}
-	if block := strings.TrimSpace(workRules); block != "" {
-		parts = append(parts, block)
-	}
 	if block := sharedmem.RenderBlock(sharedMemory); block != "" {
 		parts = append(parts, block)
 	}
