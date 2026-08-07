@@ -33,6 +33,7 @@
 8. **超长降级先砍世界数据**，每类留一个下限，全部到下限后才开始砍原始会话消息。
 9. **rollup 覆盖前一天所有产出过明细事实的主体**，无事实的主体自然跳过，不需要白名单。
 10. **rollup 产物写回 fact 表本身**，`source_kind="rollup"`，原始明细不删。不新建表。
+11. **一份背景、每五个主体一个 Agent。** 每轮先用现有 `contextsnap.Assembler` 组装一次全局当前背景，按 `subject_type / subject_id` 稳定排序后每五个主体切一批；每批启动一个独立的 `DeepSeek-V4-Pro` Agent，一次输入、一次输出，最多产生五条 rollup。背景不按主体重建，也不让压缩 Agent 调工具。
 
 ## 3. 数据层
 
@@ -97,21 +98,25 @@ ExcludeSourceKind *string
 每天定时运行，处理前一个自然日（本地时区）：
 
 1. 找出前一天产出过明细事实的所有主体：`SELECT DISTINCT subject_type, subject_id FROM fact WHERE occurred_at >= ? AND occurred_at < ? AND (source_kind IS NULL OR source_kind <> 'rollup')`。
-2. 对每个主体，读出那天的明细事实，连同主体名称（项目名 / 群名 / 人名，便于模型写出可读的句子）送进压缩提示词。
-3. 模型返回一段话。**先删除该主体该天已有的 rollup 记录，再写入新的一条**——这是重跑幂等的方式。不用事务，按顺序写，中途出错 fail-fast 报错退出、下次重跑（AGENTS.md §5）。
-4. 写入的 fact：`subject_type` / `subject_id` 保持原主体，`occurred_at` 取被压缩那天的本地 00:00，`source_kind = "rollup"`，`description` 为模型返回的那段话。
+2. 主体非空时，用现有 `contextsnap.Assembler.AssembleConversation(ctx, contextsnap.AssembleOptions{})` 组装一次全局当前背景。它与 `/api/context`、Task 创建复用同一份 Snapshot 语义；本轮所有 Agent 收到完全相同的背景 JSON 和 `captured_at`。背景读取失败整轮 fail-fast，不用空背景继续。
+3. 按 `subject_type / subject_id` 稳定排序，每五个主体切成一批。对批内每个主体读出那天全部明细事实并按时间正序排列，附上主体类型、ID 和名称；不要按字符数或事实条数继续切片。
+4. 每批启动一个独立的 `DeepSeek-V4-Pro` Agent。一次输入为「同一份全局背景 + 最多五个主体及其全部明细事实」，一次输出为 `{"rollups":[...]}`。Go 校验输入主体与输出主体一一对应、无重复、无额外主体且 description 非空；整批校验成功后才开始写入。
+5. 对每条结果，**先删除该主体该天已有的 rollup 记录，再写入新的一条**——这是重跑幂等的方式。不用事务，按顺序写，中途出错 fail-fast 报错退出、下次重跑（AGENTS.md §5）。
+6. 写入的 fact：`subject_type` / `subject_id` 保持原主体，`occurred_at` 取被压缩那天的本地 00:00，`source_kind = "rollup"`，`description` 为模型返回的那段话。
 
 原始明细一条都不删。压缩只是加了一层更粗的记录，`list-facts --date` 下钻时仍能看到那天的全部原文。
+
+一批模型失败或输出校验失败时，该批不写入并继续后续批次；整轮结束后汇总返回错误。成功批次保留，手动重跑同一天时按上述替换语义重新生成。不增加批次表、游标或自动重试状态机。
 
 ### 5.3 提示词
 
 按 AGENTS.md §6：在 `internal/textstore/defaults.go` 注册稳定 key（如 `fact-rollup-system-prompt`），正文提交到 `conf/prompts/fact-rollup-system-prompt.md`，运行时通过注入的 `textstore.Reader` 实时读取，缺失或空正文直接报错。
 
-提示词只描述角色与稳定行为：把某个主体某一天的若干条事实压成一段能独立读懂的话，讲清那天定了什么、推进到哪、留下什么没解决；不要罗列、不要评价、不要编造原文没有的内容。不要在提示词里点工具名。
+提示词只描述角色与稳定行为：分别把最多五个主体某一天的事实压成各自一段能独立读懂的话，讲清那天定了什么、推进到哪、留下什么没解决；不要罗列、不要评价、不要编造原文没有的内容。全局背景只用于理解 Principal、项目、当前事项和术语，目标日期发生了什么只能依据 `DETAIL_FACTS`，不得把背景里的后来状态倒灌进历史。压缩 Agent 不调用工具、不维护世界模型。
 
 ### 5.4 配置与手动触发
 
-cron spec 加进配置，命名与现有事实引擎的调度配置项对齐。同时提供一个手动触发入口（如 `POST /api/fact-rollups/generate` 接受 `date`），便于验证与补算某一天——这比等第二天跑定时任务便宜得多。
+cron spec 加进配置，命名与现有事实引擎的调度配置项对齐。明细抽取继续使用 `factengine.model=DeepSeek-V4-Flash`，日压缩单独使用 `factengine.rollup_model=DeepSeek-V4-Pro`，两者不共享模型配置。同时提供一个手动触发入口（如 `POST /api/fact-rollups/generate` 接受 `date`），便于验证与补算某一天——这比等第二天跑定时任务便宜得多。
 
 ## 6. M3 推送层改造
 
@@ -164,7 +169,7 @@ cron spec 加进配置，命名与现有事实引擎的调度配置项对齐。�
 
 ## 9. 范围之外
 
-- 不改前端。rollup 事实在现有事实列表里作为普通 fact 显示即可。
+- 不新增 rollup 结果页；运行设置只增加独立的 `rollup_model` 字段，系统任务卡片显示真实压缩模型。
 - 不碰 `daily_digest`、不碰 `mem0`、不碰 `Snapshot.Memories`。
 - 不为 M5 新增世界切片装配。
 - 不回填历史 rollup。
@@ -173,5 +178,5 @@ cron spec 加进配置，命名与现有事实引擎的调度配置项对齐。�
 
 - `go build ./...`、`go test ./...` 全绿；`gofmt -w` 无残留 diff。
 - 前端未改动则无需 `tsc`；若改了 `web/`，跑 `npx tsc --noEmit`。
-- 单测至少覆盖：`FactFilter` 的 source_kind 等值与排除（含 NULL 放行）、rollup 重跑幂等（同主体同天不叠加）、M3 两层装载（今天明细排除 rollup、前一天只取 rollup）、关键人并集与上限截断、降级顺序（世界数据先到下限、会话消息后砍）。
+- 单测至少覆盖：`FactFilter` 的 source_kind 等值与排除（含 NULL 放行）、rollup 每五个主体切批、每轮背景只组装一次且各批相同、输入输出主体严格对应、批失败不饿死后续批次、重跑幂等（同主体同天不叠加）、M3 两层装载（今天明细排除 rollup、前一天只取 rollup）、关键人并集与上限截断、降级顺序（世界数据先到下限、会话消息后砍）。
 - 构建或重启主服务必须走 `./scripts/rebuild-server.sh`（AGENTS.md §7）。
