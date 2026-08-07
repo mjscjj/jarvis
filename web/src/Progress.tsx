@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, DatePicker, Empty, Flex, Modal, Segmented, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Button, Card, DatePicker, Empty, Flex, Segmented, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
@@ -15,15 +15,6 @@ const { Text, Link } = Typography
 
 const DAILY_DIGEST_POLL_MS = 5000
 const DAILY_DIGEST_RETRY_MS = 10000
-
-function summaryPreview(content: string): string {
-  return content
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*\*|__|`/g, '')
-    .replace(/^[-*>]\s*/gm, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
@@ -230,7 +221,6 @@ export default function Progress() {
   const [dailyLoading, setDailyLoading] = useState(false)
   const [dailyError, setDailyError] = useState<string>()
   const [dailyScopeTab, setDailyScopeTab] = useState<'person' | 'groups'>('person')
-  const [openedDigest, setOpenedDigest] = useState<{ title: string; item: DailyDigest }>()
   const [generating, setGenerating] = useState<Set<string>>(new Set())
   const [dailyRefresh, setDailyRefresh] = useState(0)
   const loadedDailyDateRef = useRef<string | undefined>(undefined)
@@ -381,26 +371,13 @@ export default function Progress() {
         key={`${selectedDate}:${scope}:${scopeId}`}
         variant="borderless"
         title={<Space>{title}{statusTag}</Space>}
-        extra={(
-          <Space size={6}>
-            {item?.summary && <Button size="small" onClick={() => setOpenedDigest({ title, item })}>查看完整总结</Button>}
-            <Button type={scope === 'person' ? 'primary' : 'default'} size="small" loading={isGenerating} disabled={isGenerating} onClick={() => generate(scope, scopeId)}>{buttonLabel}</Button>
-          </Space>
-        )}
+        extra={<Button type={scope === 'person' ? 'primary' : 'default'} size="small" loading={isGenerating} disabled={isGenerating} onClick={() => generate(scope, scopeId)}>{buttonLabel}</Button>}
       >
         {status === 'failed' ? (
           <Alert type="error" showIcon title="生成失败" description={item?.error_detail || '未记录错误详情'} />
         ) : item?.summary ? (
           <>
-            <button
-              type="button"
-              className="review-digest-preview"
-              onClick={() => setOpenedDigest({ title, item })}
-              aria-label={`查看完整总结：${title}`}
-            >
-              <span>{summaryPreview(item.summary)}</span>
-              <strong>查看全文</strong>
-            </button>
+            <MarkdownReport className="daily-digest-markdown" content={item.summary} />
             <Space orientation="vertical" size={6}>
               <Text type="secondary">
                 {item.generated_at ? `生成于 ${dayjs(item.generated_at).format('YYYY-MM-DD HH:mm')}` : '尚未生成'}
@@ -560,30 +537,6 @@ export default function Progress() {
       </Flex>
 
       <div className="review-content">{activeContent}</div>
-
-      <Modal
-        title={openedDigest ? `${openedDigest.title} · ${dayjs(openedDigest.item.digest_date).format('M 月 D 日')}` : '每日总结'}
-        open={Boolean(openedDigest)}
-        footer={null}
-        centered
-        width={1200}
-        onCancel={() => setOpenedDigest(undefined)}
-        className="report-detail-modal"
-        destroyOnHidden
-      >
-        {openedDigest && (
-          <div className="report-detail-content">
-            <div className="report-detail-meta">
-              <Text type="secondary">
-                {openedDigest.item.generated_at ? `生成于 ${dayjs(openedDigest.item.generated_at).format('YYYY-MM-DD HH:mm')}` : '尚未生成'}
-                {openedDigest.item.cutoff_at ? ` · 数据截至 ${dayjs(openedDigest.item.cutoff_at).format('YYYY-MM-DD HH:mm')}` : ''}
-                {` · ${openedDigest.item.source_count} 条证据`}
-              </Text>
-            </div>
-            <MarkdownReport className="daily-digest-markdown" content={openedDigest.item.summary} />
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }
