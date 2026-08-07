@@ -45,7 +45,7 @@ type ScheduleView = 'automations' | 'wakeups'
 
 const viewOptions = [
   { value: 'automations', label: '我的自动化' },
-  { value: 'wakeups', label: '等待唤醒' },
+  { value: 'wakeups', label: '系统任务' },
 ] satisfies Array<{ value: ScheduleView; label: string }>
 
 interface FormValue {
@@ -319,7 +319,7 @@ export default function ScheduledTasks() {
 
   const wakeupColumns: TableColumnsType<ScheduledTask> = [
     {
-      title: '等待唤醒的任务', dataIndex: 'title', width: 390,
+      title: '系统任务', dataIndex: 'title', width: 390,
       render: (value: string, task) => (
         <div className="automation-title-cell">
           <Space size={6} wrap>
@@ -356,7 +356,7 @@ export default function ScheduledTasks() {
 
   return (
     <div>
-      <PageHeader title="自动化" subtitle="你创建的计划与执行任务的系统唤醒分开管理。">
+      <PageHeader title="自动化" subtitle="你创建的计划与任务执行产生的系统任务分开管理。">
         {view === 'automations' && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建自动化</Button>}
       </PageHeader>
 
@@ -414,7 +414,7 @@ export default function ScheduledTasks() {
           dataSource={displayedItems}
           pagination={{ pageSize: 15, showSizeChanger: false }}
           scroll={{ x: view === 'automations' ? 906 : 890 }}
-          locale={{ emptyText: view === 'automations' ? '还没有自动化' : '当前没有等待唤醒的任务' }}
+          locale={{ emptyText: view === 'automations' ? '还没有自动化' : '当前没有系统任务' }}
           onRow={(task) => ({
             onClick: () => setSelected(task),
             onKeyDown: (event) => {
@@ -440,7 +440,7 @@ export default function ScheduledTasks() {
           <Space orientation="vertical" size={24} className="drawer-content">
             <Space wrap>
               <Tag color={selected.dispatch_kind === 'resume_task' ? 'purple' : 'green'}>
-                {selected.dispatch_kind === 'resume_task' ? '系统等待唤醒' : '用户自动化'}
+                {selected.dispatch_kind === 'resume_task' ? '系统任务' : '用户自动化'}
               </Tag>
               <Tag color={statusMeta[selected.status].color}>{statusMeta[selected.status].label}</Tag>
               {!selected.enabled && <Tag>已停用</Tag>}

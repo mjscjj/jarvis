@@ -1497,7 +1497,7 @@ export default function Background() {
   const memoryView = (value: string | undefined): MemoryView => (
     value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'profile'
       ? value
-      : 'projects'
+      : 'profile'
   )
   const [activeView, setActiveView] = useState<MemoryView>(() => memoryView(context.view_state.view))
 
@@ -1512,37 +1512,29 @@ export default function Background() {
 
   return (
     <div className="memory-page">
-      <PageHeader title="记忆" subtitle="浏览 Jarvis 用来理解你、项目和协作关系的长期背景">
-        <Button
-          type={activeView === 'profile' ? 'default' : 'text'}
-          onClick={() => selectView(activeView === 'profile' ? 'projects' : 'profile')}
-        >
-          {activeView === 'profile' ? '返回记忆' : '我的资料'}
-        </Button>
-      </PageHeader>
+      <PageHeader title="世界" subtitle="浏览 Jarvis 用来理解你、项目和协作关系的长期背景" />
 
-      {activeView === 'profile' ? (
-        <div className="memory-profile-view">
-          <div className="memory-view-heading">
-            <Text strong>我的资料</Text>
-            <Text type="secondary">这些信息帮助 Jarvis 理解你的职责、偏好和汇报关系。</Text>
-          </div>
-          <ProfilePanel />
-        </div>
-      ) : (
-        <Tabs
-          activeKey={activeView}
-          onChange={(key) => selectView(key as MemoryView)}
-          destroyOnHidden
-          items={[
-            { key: 'projects', label: '项目', children: <ProjectsPanel /> },
-            { key: 'persons', label: '人物', children: <PersonsPanel /> },
-            { key: 'groups', label: '会话', children: <GroupsPanel /> },
-            { key: 'resources', label: '资源', children: <ResourcePanel /> },
-            { key: 'key-matters', label: '关键事项', children: <KeyMattersPanel /> },
-          ]}
-        />
-      )}
+      <Tabs
+        activeKey={activeView}
+        onChange={(key) => selectView(key as MemoryView)}
+        destroyOnHidden
+        items={[
+          {
+            key: 'profile',
+            label: '我的资料',
+            children: (
+              <div className="memory-profile-view">
+                <ProfilePanel />
+              </div>
+            ),
+          },
+          { key: 'projects', label: '项目', children: <ProjectsPanel /> },
+          { key: 'persons', label: '人物', children: <PersonsPanel /> },
+          { key: 'groups', label: '会话', children: <GroupsPanel /> },
+          { key: 'resources', label: '资源', children: <ResourcePanel /> },
+          { key: 'key-matters', label: '关键事项', children: <KeyMattersPanel /> },
+        ]}
+      />
     </div>
   )
 }
