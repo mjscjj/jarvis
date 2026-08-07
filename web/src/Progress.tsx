@@ -31,7 +31,7 @@ function errorText(cause: unknown): string {
 }
 
 function reviewView(value: string | undefined): ReviewView {
-  return value === 'morning' || value === 'meetings' || value === 'groups' || value === 'docs' || value === 'code' ? value : 'daily'
+  return value === 'daily' || value === 'meetings' || value === 'groups' || value === 'docs' || value === 'code' ? value : 'morning'
 }
 
 function dateTabLabel(date: string) {
@@ -322,12 +322,12 @@ export default function Progress() {
 
   const topLevelTabs = [
     {
-      key: 'daily', label: <span className="review-primary-tab-label"><ReadOutlined />每日总结</span>,
-      children: <Tabs className="review-secondary-tabs" activeKey={date} onChange={(value) => selectDate(dayjs(value))} items={dailyTabs} tabBarGutter={8} />,
-    },
-    {
       key: 'morning', label: <span className="review-primary-tab-label"><ReadOutlined />晨报</span>,
       children: <Tabs className="review-secondary-tabs" activeKey={date} onChange={(value) => selectDate(dayjs(value))} items={morningTabs} tabBarGutter={8} />,
+    },
+    {
+      key: 'daily', label: <span className="review-primary-tab-label"><ReadOutlined />每日总结</span>,
+      children: <Tabs className="review-secondary-tabs" activeKey={date} onChange={(value) => selectDate(dayjs(value))} items={dailyTabs} tabBarGutter={8} />,
     },
     {
       key: 'meetings', label: <span className="review-primary-tab-label"><VideoCameraOutlined />会议总结</span>,

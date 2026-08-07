@@ -22,11 +22,11 @@
 .review-hero {
   position: relative;
   display: flex;
-  min-height: 164px;
+  min-height: 128px;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-8);
-  padding: 30px 32px 46px;
+  padding: 20px 28px 34px;
   border: 1px solid #dce8e1;
   border-radius: 20px;
   background:
@@ -622,8 +622,8 @@
     min-height: 0;
     align-items: stretch;
     flex-direction: column;
-    gap: 22px;
-    padding: 24px 22px 42px;
+    gap: 16px;
+    padding: 18px 22px 34px;
   }
 
   .review-date-control {
