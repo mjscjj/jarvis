@@ -23,9 +23,9 @@ type fakeExtractor struct {
 }
 
 type blockingExtractor struct {
-	started          chan string
-	release          chan struct{}
-	reconcileStarted chan struct{}
+	started chan string
+	release chan struct{}
+	pending []string
 }
 
 func (f *blockingExtractor) ExtractChat(ctx context.Context, chatID string) (extract.WorkerStats, []extract.TodoRef, error) {
@@ -42,13 +42,8 @@ func (f *blockingExtractor) ExtractChat(ctx context.Context, chatID string) (ext
 	}
 }
 
-func (f *blockingExtractor) ExtractOnce(ctx context.Context) (extract.WorkerStats, error) {
-	select {
-	case f.reconcileStarted <- struct{}{}:
-		return extract.WorkerStats{}, nil
-	case <-ctx.Done():
-		return extract.WorkerStats{}, ctx.Err()
-	}
+func (f *blockingExtractor) PendingChatIDs(context.Context) ([]string, error) {
+	return append([]string(nil), f.pending...), nil
 }
 
 func (f *fakeExtractor) ExtractChat(context.Context, string) (extract.WorkerStats, []extract.TodoRef, error) {
@@ -61,8 +56,8 @@ func (f *fakeExtractor) ExtractChat(context.Context, string) (extract.WorkerStat
 	return extract.WorkerStats{ChatsLoaded: 1, ChatsProcessed: 1, Created: len(f.todos)}, append([]extract.TodoRef(nil), f.todos...), nil
 }
 
-func (f *fakeExtractor) ExtractOnce(context.Context) (extract.WorkerStats, error) {
-	return extract.WorkerStats{}, nil
+func (f *fakeExtractor) PendingChatIDs(context.Context) ([]string, error) {
+	return nil, nil
 }
 
 type fakeMaterializer struct {
@@ -93,8 +88,8 @@ func (f *fakeExecutionStore) LoadPending(context.Context, int) ([]domain.Task, e
 	return result, nil
 }
 
-func (*fakeExecutionStore) FailStaleExecuting(context.Context, time.Duration, time.Time) (int, error) {
-	return 0, nil
+func (*fakeExecutionStore) FailStaleExecuting(context.Context, time.Duration, time.Time) (execute.StaleSweep, error) {
+	return execute.StaleSweep{}, nil
 }
 
 type fakeTaskExecutor struct {
@@ -163,7 +158,7 @@ func TestCoordinatorRejectsInvalidExtractConcurrency(t *testing.T) {
 
 func TestCoordinatorRunsDifferentChatsConcurrently(t *testing.T) {
 	extractor := &blockingExtractor{
-		started: make(chan string, 2), release: make(chan struct{}), reconcileStarted: make(chan struct{}, 1),
+		started: make(chan string, 2), release: make(chan struct{}),
 	}
 	opts := pipelineTestOptions()
 	opts.ExtractConcurrency = 2
@@ -204,7 +199,7 @@ func TestCoordinatorRunsDifferentChatsConcurrently(t *testing.T) {
 
 func TestCoordinatorSerializesSameChat(t *testing.T) {
 	extractor := &blockingExtractor{
-		started: make(chan string, 2), release: make(chan struct{}), reconcileStarted: make(chan struct{}, 1),
+		started: make(chan string, 2), release: make(chan struct{}),
 	}
 	coordinator, err := newCoordinator(extractor, nil, nil, nil, pipelineTestOptions())
 	if err != nil {
@@ -246,11 +241,58 @@ func TestCoordinatorSerializesSameChat(t *testing.T) {
 	}
 }
 
-func TestCoordinatorKeepsReconciliationExclusiveFromRealtime(t *testing.T) {
+// TestCoordinatorReconciliationDoesNotBlockOtherChats pins that the scheduled
+// sweep no longer holds the whole stage. It used to take a global lock for the
+// duration of a full pass, so a single chat that ran for ten minutes stalled
+// every incoming message behind it; now the sweep only queues chats and each
+// one is serialized against itself alone.
+func TestCoordinatorReconciliationDoesNotBlockOtherChats(t *testing.T) {
 	extractor := &blockingExtractor{
-		started: make(chan string, 1), release: make(chan struct{}), reconcileStarted: make(chan struct{}, 1),
+		started: make(chan string, 2), release: make(chan struct{}), pending: []string{"oc_slow"},
 	}
-	coordinator, err := newCoordinator(extractor, nil, nil, nil, pipelineTestOptions())
+	opts := pipelineTestOptions()
+	opts.ExtractConcurrency = 2
+	coordinator, err := newCoordinator(extractor, nil, nil, nil, opts)
+	if err != nil {
+		t.Fatalf("newCoordinator() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := coordinator.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := coordinator.ReconcileExtract(ctx); err != nil {
+		t.Fatalf("ReconcileExtract() error = %v", err)
+	}
+	select {
+	case chatID := <-extractor.started:
+		if chatID != "oc_slow" {
+			t.Fatalf("reconciled chat ID = %q", chatID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconciliation did not queue the pending chat")
+	}
+	if err := coordinator.ChatScanned(ctx, capture.ChatScanResult{ChatID: "oc_live", InsertedCount: 1, HighWater: 1}); err != nil {
+		t.Fatalf("ChatScanned() error = %v", err)
+	}
+	select {
+	case chatID := <-extractor.started:
+		if chatID != "oc_live" {
+			t.Fatalf("second chat ID = %q", chatID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("real-time extraction blocked behind the reconciled chat")
+	}
+	close(extractor.release)
+}
+
+func TestCoordinatorReconciliationSerializesWithTheSameChat(t *testing.T) {
+	extractor := &blockingExtractor{
+		started: make(chan string, 1), release: make(chan struct{}), pending: []string{"oc_live"},
+	}
+	opts := pipelineTestOptions()
+	opts.ExtractConcurrency = 2
+	coordinator, err := newCoordinator(extractor, nil, nil, nil, opts)
 	if err != nil {
 		t.Fatalf("newCoordinator() error = %v", err)
 	}
@@ -274,16 +316,21 @@ func TestCoordinatorKeepsReconciliationExclusiveFromRealtime(t *testing.T) {
 	if err := coordinator.ReconcileExtract(ctx); err != nil {
 		t.Fatalf("ReconcileExtract() error = %v", err)
 	}
+	// Same chat, so the reconciled pass waits on the per-chat lock even though
+	// a second worker is free.
 	select {
-	case <-extractor.reconcileStarted:
-		t.Fatal("reconciliation overlapped real-time extraction")
+	case <-extractor.started:
+		t.Fatal("reconciliation overlapped the same chat's real-time extraction")
 	case <-time.After(100 * time.Millisecond):
 	}
 	close(extractor.release)
 	select {
-	case <-extractor.reconcileStarted:
+	case chatID := <-extractor.started:
+		if chatID != "oc_live" {
+			t.Fatalf("reconciled chat ID = %q", chatID)
+		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("reconciliation did not start after real-time extraction finished")
+		t.Fatal("reconciliation did not run after real-time extraction finished")
 	}
 }
 

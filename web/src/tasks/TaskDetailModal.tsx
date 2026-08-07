@@ -71,6 +71,7 @@ const taskEventLabels: Record<string, string> = {
   execution_interrupted: '执行已打断',
   feishu_message_recalled: '撤回飞书消息',
   stale_failed: '执行超时',
+  stale_requeued: '执行中断，重新排队',
   snapshot_imported: '导入当前状态',
   closed: '主动收口',
 }

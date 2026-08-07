@@ -34,7 +34,6 @@ func TestParseApprovalRequiredResultRejectsMissingProposal(t *testing.T) {
 		"empty artifact": `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"群 X","artifact":""},"effects":[],"waiting":null}`,
 		"empty target":   `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"要审批","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"发消息","target":"","artifact":"你好"},"effects":[],"waiting":null}`,
 		"blank summary":  `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"},"effects":[],"waiting":null}`,
-		"unknown field":  `{"needs_approval":true,"outcome":"needs_human","progress_summary":"","summary":"x","failure_reason":"","needs_followup":"","enrichments":[],"proposal":{"action":"a","target":"b","artifact":"c"},"effects":[],"waiting":null,"extra":1}`,
 	}
 	for name, msg := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -42,6 +41,21 @@ func TestParseApprovalRequiredResultRejectsMissingProposal(t *testing.T) {
 				t.Fatalf("parseExecutionResult(%s) succeeded, want fail-fast", name)
 			}
 		})
+	}
+}
+
+// TestParseExecutionResultIgnoresUnknownField pins the other half: a verdict
+// that carries everything we consume must not be thrown away because the model
+// invented an extra key. The run already happened; losing it over a stray field
+// costs a real execution and reports the Task as failed when it was not.
+func TestParseExecutionResultIgnoresUnknownField(t *testing.T) {
+	msg := `{"needs_approval":false,"outcome":"completed","progress_summary":"","summary":"已回复","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null,"extra":1}`
+	result, err := parseExecutionResult(msg)
+	if err != nil {
+		t.Fatalf("parseExecutionResult() error = %v", err)
+	}
+	if result.Summary != "已回复" {
+		t.Fatalf("summary = %q", result.Summary)
 	}
 }
 

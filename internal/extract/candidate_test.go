@@ -5,10 +5,50 @@ import (
 	"testing"
 )
 
-func TestDecodeExtractionResultRejectsUnknownField(t *testing.T) {
-	_, err := DecodeExtractionResult([]byte(`{"candidates":[],"unexpected":true}`))
-	if !errors.Is(err, ErrInvalidExtraction) {
-		t.Fatalf("DecodeExtractionResult() error = %v", err)
+// TestDecodeExtractionResultToleratesPresentationNoise pins that the shapes a
+// model gets wrong without losing meaning — an invented key, a markdown fence,
+// prose after the object — do not discard a whole unit of candidates.
+func TestDecodeExtractionResultToleratesPresentationNoise(t *testing.T) {
+	body := `{"candidates":[{"action_type":"Reply Message","status":"extracted","title":"回复张伟",` +
+		`"target":"张伟的排期问题","project_hint":"","source_message_ids":["om_1"],` +
+		`"source_quote":"这个排期能确认下吗","payload":"张伟在等我确认排期。","description":"多余字段"}]}`
+	for name, payload := range map[string]string{
+		"unknown field": body,
+		"code fence":    "```json\n" + body + "\n```",
+		"trailing prose": body + `
+
+以上就是本轮抽取到的线索。`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := DecodeExtractionResult([]byte(payload))
+			if err != nil {
+				t.Fatalf("DecodeExtractionResult() error = %v", err)
+			}
+			if len(result.Candidates) != 1 {
+				t.Fatalf("candidates = %d, want 1", len(result.Candidates))
+			}
+			// action_type is normalized rather than rejected, so casing and
+			// separators cannot split the dedup fingerprint.
+			if got := result.Candidates[0].ActionType; got != "reply_message" {
+				t.Fatalf("action_type = %q, want reply_message", got)
+			}
+		})
+	}
+}
+
+// TestDecodeExtractionResultRejectsMissingCandidates pins what is still an
+// error: a final message that does not carry the field we consume. The worker
+// feeds this back to the model and re-extracts.
+func TestDecodeExtractionResultRejectsMissingCandidates(t *testing.T) {
+	for name, payload := range map[string]string{
+		"prose":              `本轮没有发现值得处理的线索。`,
+		"missing candidates": `{"result":"ok"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := DecodeExtractionResult([]byte(payload)); !errors.Is(err, ErrInvalidExtraction) {
+				t.Fatalf("DecodeExtractionResult() error = %v", err)
+			}
+		})
 	}
 }
 

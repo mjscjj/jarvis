@@ -21,9 +21,10 @@ const maxCodexOutputBytes = 1 << 20
 // run when a CodexRunner is constructed.
 const resumeProbeTimeout = 20 * time.Second
 
-// maxResumeSchemaRewrites is how many times a resume turn may be handed back to
-// the same session after it returned a final message that broke the contract.
-// It only applies to CLIs that cannot enforce --output-schema on resume.
+// maxResumeSchemaRewrites is how many extra times a session may be asked to
+// restate its final message after returning one that broke the contract. It
+// applies to fresh runs too: --output-schema describes the contract to the
+// model rather than constraining decoding, so any turn can end malformed.
 const maxResumeSchemaRewrites = 2
 
 // ErrSchemaViolation marks a final message that did not satisfy the required
@@ -298,7 +299,37 @@ func (r *CodexRunner) RunTaskWithOutput(ctx context.Context, prompt, sandbox, re
 	if taskID == 0 {
 		return nil, fmt.Errorf("codex task run requires a positive task ID")
 	}
-	return r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{TaskID: taskID, Output: output})
+	run, err := r.run(ctx, prompt, sandbox, repoPath, sch, runInvocation{TaskID: taskID, Output: output})
+	if err == nil || !errors.Is(err, ErrSchemaViolation) || run == nil {
+		return run, err
+	}
+	// --output-schema only describes the contract to the model, it does not
+	// constrain decoding, so a fresh exec can also end on a malformed final
+	// message. The Task's real side effects already happened, so ask the same
+	// session to restate them; never re-run the Task.
+	return r.rewriteFinalMessage(ctx, run.SessionID, sandbox, repoPath, sch, taskID, output, err)
+}
+
+// rewriteFinalMessage resumes a session whose work is done but whose final
+// message did not parse, and asks only for the report to be written again.
+func (r *CodexRunner) rewriteFinalMessage(
+	ctx context.Context, sessionID, sandbox, repoPath string, sch schema,
+	taskID uint64, output *codexOutputCapture, cause error,
+) (*codexRun, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, cause
+	}
+	invocation := runInvocation{SessionID: sessionID, TaskID: taskID, Output: output}
+	for attempt := 0; ; attempt++ {
+		run, err := r.run(ctx, schemaRewritePrompt(cause), sandbox, repoPath, sch, invocation)
+		if err == nil {
+			return run, nil
+		}
+		if !errors.Is(err, ErrSchemaViolation) || attempt >= maxResumeSchemaRewrites {
+			return nil, err
+		}
+		cause = err
+	}
 }
 
 // ResumeTask starts another turn in an existing persisted Codex session.
@@ -315,13 +346,14 @@ func (r *CodexRunner) ResumeTaskWithOutput(ctx context.Context, sessionID, promp
 		return nil, fmt.Errorf("codex resume requires a positive task ID")
 	}
 	invocation := runInvocation{SessionID: sessionID, TaskID: taskID, Output: output}
-	if _, enforceSchema := sch.definition(); !enforceSchema || r.resumeOutputSchema {
+	if _, enforceSchema := sch.definition(); !enforceSchema {
 		return r.run(ctx, prompt, sandbox, repoPath, sch, invocation)
 	}
-	// Without --output-schema the CLI can end the turn with a malformed final
-	// message. Hand the violation back to the same session for a rewrite instead
-	// of failing the Task on the first bad turn; the work itself is already done
-	// and re-running it would repeat real side effects.
+	// The CLI can end a turn with a malformed final message whether or not it
+	// took --output-schema, since that flag describes the contract rather than
+	// constraining decoding. Hand the violation back to the same session for a
+	// rewrite instead of failing the Task on the first bad turn; the work itself
+	// is already done and re-running it would repeat real side effects.
 	for attempt := 0; ; attempt++ {
 		run, err := r.run(ctx, prompt, sandbox, repoPath, sch, invocation)
 		if err == nil {
@@ -479,7 +511,10 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	case schemaExecution:
 		result, err := parseExecutionResult(lastMessage)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrSchemaViolation, err)
+			// The run itself happened; only its report is unreadable. Hand the
+			// session back so the caller can ask for a rewrite instead of
+			// throwing away real work.
+			return run, fmt.Errorf("%w: %w", ErrSchemaViolation, err)
 		}
 		run.Result = result
 	}
@@ -516,7 +551,6 @@ func parseExecutionResult(lastMessage string) (*codexResult, error) {
 		return nil, fmt.Errorf("codex exec returned empty result message")
 	}
 	decoder := json.NewDecoder(strings.NewReader(trimmed))
-	decoder.DisallowUnknownFields()
 	var result codexResult
 	if err := decoder.Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode codex exec result %q: %w", limitedText([]byte(trimmed), 512), err)

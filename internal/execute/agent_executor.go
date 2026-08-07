@@ -399,6 +399,9 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		TaskID: task.ID, ActionType: task.ActionType, Stage: stage, Sandbox: executionSandbox,
 		Status: "running", Prompt: prompt, StartedAt: startedAt,
 	}
+	if err := e.markRunStarted(ctx, run); err != nil {
+		return nil, err
+	}
 	if errors.Is(context.Cause(ctx), ErrExecutionInterrupted) {
 		e.failRun(run, startedAt, ErrExecutionInterrupted)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
@@ -844,6 +847,9 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 		TaskID: task.ID, ActionType: task.ActionType, Stage: "execute", Sandbox: executionSandbox,
 		Status: "running", StartedAt: startedAt,
 	}
+	if err := e.markRunStarted(ctx, run); err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
 
 	repoPath, err := e.resolveRepo(task)
 	if err != nil {
@@ -853,7 +859,7 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 		run.RepoPath = &repoPath
 	}
 
-	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID)
+	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID, run.ID)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -942,6 +948,9 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposa
 		TaskID: task.ID, ActionType: task.ActionType, Stage: "apply", Sandbox: executionSandbox,
 		Status: "running", StartedAt: startedAt,
 	}
+	if err := e.markRunStarted(ctx, run); err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
 
 	repoPath, err := e.resolveRepo(task)
 	if err != nil {
@@ -950,7 +959,7 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposa
 	if repoPath != "" {
 		run.RepoPath = &repoPath
 	}
-	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID)
+	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID, run.ID)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1047,7 +1056,17 @@ func (e *AgentExecutor) normalizeInterrupted(ctx context.Context, run *domain.Ex
 }
 
 func (e *AgentExecutor) persistRun(ctx context.Context, run *domain.ExecutionRun) error {
-	return e.store.CreateRun(ctx, run)
+	return e.store.SaveRun(ctx, run)
+}
+
+// markRunStarted lands the run row before the agent is invoked. Until it
+// exists, a crash mid-invocation is indistinguishable from a Task that never
+// started, and the stale sweep cannot tell which zombies are safe to re-queue.
+func (e *AgentExecutor) markRunStarted(ctx context.Context, run *domain.ExecutionRun) error {
+	if err := e.persistRun(ctx, run); err != nil {
+		return fmt.Errorf("persist started run task_id=%d: %w", run.TaskID, err)
+	}
+	return nil
 }
 
 func waitingFromRun(run *domain.ExecutionRun) (*codexWaiting, error) {

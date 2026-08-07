@@ -287,6 +287,39 @@ func TestCodexRunnerResumeRewritesInvalidResultWhenSchemaFlagUnsupported(t *test
 	}
 }
 
+// TestCodexRunnerRewritesInvalidResultOnFreshRun pins that --output-schema is
+// treated as guidance, not enforcement: a first run whose work already produced
+// real side effects must be asked to restate its verdict in the same session,
+// never re-run, and never reported as a failed Task over a malformed report.
+func TestCodexRunnerRewritesInvalidResultOnFreshRun(t *testing.T) {
+	dir := t.TempDir()
+	binPath := writeSchemalessResumeCLI(t, dir, `  1) printf '%s' '我已经把消息发出去了。' > "$output" ;;
+  *) printf '%s' '`+validExecutionResult+`' > "$output" ;;`)
+
+	runner, err := NewCodexRunner(binPath, "test-model", "medium", time.Minute)
+	if err != nil {
+		t.Fatalf("NewCodexRunner() error = %v", err)
+	}
+	run, err := runner.RunTask(t.Context(), "do the work", "danger-full-access", "", schemaExecution, 123)
+	if err != nil {
+		t.Fatalf("RunTask() error = %v", err)
+	}
+	if run.Result == nil || run.Result.Outcome != "completed" {
+		t.Fatalf("result = %+v, want outcome=completed", run.Result)
+	}
+	if got := readTestFile(t, filepath.Join(dir, "count.txt")); got != "2" {
+		t.Fatalf("invocation count = %q, want 2 (one bad run plus one rewrite)", got)
+	}
+	args := readTestFile(t, filepath.Join(dir, "args.txt"))
+	if !strings.Contains(args, "resume") {
+		t.Fatalf("rewrite must resume the same session rather than re-run the Task:\n%s", args)
+	}
+	prompt := readTestFile(t, filepath.Join(dir, "prompt.txt"))
+	if !strings.Contains(prompt, "不要重做上一轮已经完成的工作") {
+		t.Fatalf("rewrite turn must forbid redoing the work:\n%s", prompt)
+	}
+}
+
 func TestCodexRunnerResumeFailsAfterRewriteBudgetExhausted(t *testing.T) {
 	dir := t.TempDir()
 	binPath := writeSchemalessResumeCLI(t, dir, `  *) printf '%s' 'still not JSON' > "$output" ;;`)

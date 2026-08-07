@@ -25,7 +25,7 @@ const queueCapacity = 1024
 
 type extractor interface {
 	ExtractChat(context.Context, string) (extract.WorkerStats, []extract.TodoRef, error)
-	ExtractOnce(context.Context) (extract.WorkerStats, error)
+	PendingChatIDs(context.Context) ([]string, error)
 }
 
 type todoMaterializer interface {
@@ -35,7 +35,7 @@ type todoMaterializer interface {
 
 type executionStore interface {
 	LoadPending(context.Context, int) ([]domain.Task, error)
-	FailStaleExecuting(context.Context, time.Duration, time.Time) (int, error)
+	FailStaleExecuting(context.Context, time.Duration, time.Time) (execute.StaleSweep, error)
 }
 
 type taskExecutor interface {
@@ -50,11 +50,23 @@ type Options struct {
 	Logger               *log.Logger
 }
 
+// reconcileMarker is the Marker every reconciliation-scheduled chat carries. It
+// is a constant so repeated ticks over a chat that is already queued collapse
+// into one item instead of piling up.
+const reconcileMarker = "reconcile"
+
 type chatWork struct {
 	ChatID string
 	Marker string
 	LogID  string
 	All    bool
+}
+
+func (w chatWork) trigger() string {
+	if w.Marker == reconcileMarker {
+		return "reconcile"
+	}
+	return "realtime"
 }
 
 // m5Work is one unit of M5 work. A Todo is mechanically materialized before its
@@ -78,11 +90,11 @@ type Coordinator struct {
 	chats *keyedQueue[chatWork]
 	m5    *keyedQueue[m5Work]
 
+	// chatLocks is the only mutual exclusion extraction needs. Two runs of the
+	// same chat would race on its watermark, so they serialize; different chats
+	// share nothing and run freely. Scheduled reconciliation goes through the
+	// same locks, so a chat that takes ten minutes delays that chat alone.
 	chatLocks *keyedLocker
-	// extractMu keeps scheduled reconciliation exclusive from real-time chat
-	// extraction. Real-time workers share the read side after taking their
-	// per-chat lock, so different chats run concurrently and the same chat cannot overlap.
-	extractMu sync.RWMutex
 
 	startMu sync.Mutex
 	started bool
@@ -256,12 +268,12 @@ func (c *Coordinator) ReconcileExecute(ctx context.Context) error {
 	if c.executor == nil {
 		return nil
 	}
-	failed, err := c.store.FailStaleExecuting(ctx, c.opts.StaleExecuting, time.Now())
+	sweep, err := c.store.FailStaleExecuting(ctx, c.opts.StaleExecuting, time.Now())
 	if err != nil {
 		return err
 	}
-	if failed > 0 {
-		c.logf(ctx, "stage=m5 step=execute trigger=reconcile stale_failed=%d", failed)
+	if sweep.Failed > 0 || sweep.Requeued > 0 {
+		c.logf(ctx, "stage=m5 step=execute trigger=reconcile stale_failed=%d stale_requeued=%d", sweep.Failed, sweep.Requeued)
 	}
 	return c.enqueuePendingTasks(ctx)
 }
@@ -289,20 +301,7 @@ func (c *Coordinator) runChats(ctx context.Context) {
 func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 	ctx = observability.WithLogID(ctx, work.LogID)
 	if work.All {
-		c.extractMu.Lock()
-		for {
-			stats, err := c.extractor.ExtractOnce(ctx)
-			if err != nil {
-				c.logf(ctx, "stage=m3 trigger=reconcile status=error error=%+v", err)
-				c.extractMu.Unlock()
-				return
-			}
-			if stats.ChatsLoaded == 0 {
-				break
-			}
-			c.logf(ctx, "stage=m3 trigger=reconcile status=ok chats=%d created=%d updated=%d", stats.ChatsProcessed, stats.Created, stats.Updated)
-		}
-		c.extractMu.Unlock()
+		c.fanOutPendingChats(ctx)
 		if err := c.ReconcileExecute(ctx); err != nil {
 			c.logf(ctx, "stage=m3 trigger=reconcile notify=m5 status=error error=%+v", err)
 		}
@@ -310,22 +309,20 @@ func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 	}
 	unlock, err := c.chatLocks.lock(work.ChatID)
 	if err != nil {
-		c.logf(ctx, "stage=m3 trigger=realtime chat_id=%s status=error error=%+v", work.ChatID, err)
+		c.logf(ctx, "stage=m3 trigger=%s chat_id=%s status=error error=%+v", work.trigger(), work.ChatID, err)
 		return
 	}
 	defer unlock()
-	c.extractMu.RLock()
-	defer c.extractMu.RUnlock()
 	for {
 		stats, todos, err := c.extractor.ExtractChat(ctx, work.ChatID)
 		if err != nil {
-			c.logf(ctx, "stage=m3 trigger=realtime chat_id=%s status=error error=%+v", work.ChatID, err)
+			c.logf(ctx, "stage=m3 trigger=%s chat_id=%s status=error error=%+v", work.trigger(), work.ChatID, err)
 			return
 		}
 		if stats.ChatsLoaded == 0 {
 			return
 		}
-		c.logf(ctx, "stage=m3 trigger=realtime chat_id=%s status=ok created=%d updated=%d", work.ChatID, stats.Created, stats.Updated)
+		c.logf(ctx, "stage=m3 trigger=%s chat_id=%s status=ok created=%d updated=%d", work.trigger(), work.ChatID, stats.Created, stats.Updated)
 		if c.materializer == nil {
 			continue
 		}
@@ -334,10 +331,32 @@ func (c *Coordinator) processChat(ctx context.Context, work chatWork) {
 				continue
 			}
 			if err := c.TodoReady(ctx, todo.ID, todo.Version); err != nil {
-				c.logf(ctx, "stage=m3 trigger=realtime notify=m5 todo_id=%d status=error error=%+v", todo.ID, err)
+				c.logf(ctx, "stage=m3 trigger=%s notify=m5 todo_id=%d status=error error=%+v", work.trigger(), todo.ID, err)
 			}
 		}
 	}
+}
+
+// fanOutPendingChats turns one reconciliation tick into per-chat work items on
+// the same queue real-time wake-ups use. Reconciliation deliberately extracts
+// nothing itself: a round that held the whole stage while it worked through
+// every chat meant one slow chat blocked every incoming message behind it.
+func (c *Coordinator) fanOutPendingChats(ctx context.Context) {
+	chatIDs, err := c.extractor.PendingChatIDs(ctx)
+	if err != nil {
+		c.logf(ctx, "stage=m3 trigger=reconcile status=error error=%+v", err)
+		return
+	}
+	queued := 0
+	for _, chatID := range chatIDs {
+		work := chatWork{ChatID: chatID, Marker: reconcileMarker, LogID: observability.LogID(ctx)}
+		if err := c.chats.enqueue(ctx, work); err != nil {
+			c.logf(ctx, "stage=m3 trigger=reconcile chat_id=%s status=error error=%+v", chatID, err)
+			continue
+		}
+		queued++
+	}
+	c.logf(ctx, "stage=m3 trigger=reconcile status=ok pending_chats=%d queued=%d", len(chatIDs), queued)
 }
 
 func (c *Coordinator) runM5(ctx context.Context) {

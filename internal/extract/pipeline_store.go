@@ -42,54 +42,29 @@ func NewPipelineStore(db *gorm.DB, location *time.Location, sink semanticSink, p
 	return &PipelineStore{db: db, location: location, semantic: sink, principalOpenID: principalOpenID}, nil
 }
 
-func (s *PipelineStore) LoadPendingChats(ctx context.Context, opts LoadOptions) ([]ChatBatch, error) {
-	if err := validateLoadOptions(opts); err != nil {
-		return nil, err
-	}
+// PendingChatIDs lists the related chats holding messages beyond their
+// extraction watermark, in the same priority order LoadPendingChats uses. It
+// lets scheduled reconciliation hand work to the per-chat extraction path
+// instead of running a competing global pass of its own.
+func (s *PipelineStore) PendingChatIDs(ctx context.Context) ([]string, error) {
 	var groups []domain.Group
-	if err := s.db.WithContext(ctx).Preload("Project").
+	if err := s.db.WithContext(ctx).
 		Where("related_group = ?", true).
 		Order("is_key_group DESC, pinned DESC, COALESCE(last_active_at, 0) DESC, id ASC").
 		Find(&groups).Error; err != nil {
 		return nil, fmt.Errorf("list related groups for extraction: %w", err)
 	}
-
-	// Principal profile and the project map are global (not per-group), so load
-	// them once and share across every batch built in this pass.
-	principal, err := s.loadPrincipal(ctx)
-	if err != nil {
-		return nil, err
-	}
-	allProjects, err := s.loadProjectSummaries(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	remaining := opts.BatchMessages
-	batches := make([]ChatBatch, 0)
+	pending := make([]string, 0, len(groups))
 	for i := range groups {
-		if remaining == 0 {
-			break
-		}
-		messages, err := s.loadNewMessages(ctx, groups[i].ChatID, remaining)
+		messages, err := s.loadNewMessages(ctx, groups[i].ChatID, 1)
 		if err != nil {
 			return nil, err
 		}
-		if len(messages) == 0 {
-			continue
+		if len(messages) > 0 {
+			pending = append(pending, groups[i].ChatID)
 		}
-		batch, err := s.buildChatBatch(ctx, &groups[i], messages, opts)
-		if err != nil {
-			return nil, fmt.Errorf("build extraction batch chat_id=%s: %w", groups[i].ChatID, err)
-		}
-		batch.Principal = principal
-		// Other projects = every project except the one this group is bound to,
-		// rendered concisely; the bound project stays in batch.Project (detailed).
-		batch.OtherProjects = otherProjectsExcluding(allProjects, batch.Group.ProjectID)
-		batches = append(batches, *batch)
-		remaining -= len(messages)
 	}
-	return batches, nil
+	return pending, nil
 }
 
 // LoadPendingChat builds the same M3 batch as LoadPendingChats, scoped to the

@@ -60,7 +60,7 @@ func Block(stage string) (string, error) {
 		"- 查线索或任务先用 `list-todos` / `list-tasks`，命中后再用 `get-todo` / `get-task`。`get-task` 默认不加载 prompt 和完整 run output。",
 		"- 查本地已采集对话先用 `query-messages`；查附件与文档引用先用 `query-captured-resources`，命中后再用 `get-captured-resource` 加载正文。",
 		"- 当前 Task 需要等待未来条件时使用 `yield-until`；独立的新动作才创建 scheduled task。",
-		"- lark-cli：查询或操作飞书。先看工作规则里的能力地图选定域，再 `lark-cli skills read <域名>` 查用法、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
+		"- lark-cli：查询或操作飞书。先用 `lark-cli skills list` 查看能力目录并选定域，再用 `lark-cli skills read <域名>` 查工作流、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。命令清单 `bytedcli --json --all-help`，单命令参数 `bytedcli --json <子命令路径> --help`。",
 		"- git：查询和操作本地代码仓库。",
 	}

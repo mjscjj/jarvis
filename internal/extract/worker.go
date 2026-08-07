@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"jarvis/internal/contextsnap"
@@ -26,10 +25,7 @@ type factReader interface {
 }
 
 type WorkerOptions struct {
-	Load LoadOptions
-	// Concurrency bounds the number of distinct chats extracted in parallel.
-	// One chat is still processed serially by the pipeline coordinator.
-	Concurrency     int
+	Load            LoadOptions
 	PrincipalOpenID string
 	ModelName       string
 	// FactLimit caps how many of a subject's *today* detail facts (excluding
@@ -112,9 +108,6 @@ func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup
 	if err := validateLoadOptions(opts.Load); err != nil {
 		return nil, err
 	}
-	if opts.Concurrency <= 0 {
-		return nil, fmt.Errorf("extract worker concurrency must be positive")
-	}
 	if strings.TrimSpace(opts.PrincipalOpenID) == "" {
 		return nil, fmt.Errorf("extract worker principal open_id is empty")
 	}
@@ -139,65 +132,12 @@ func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup
 	return &Worker{store: store, model: model, facts: facts, dedup: dedup, toolBox: toolBox, sharedMem: sharedMem, opts: opts, now: time.Now}, nil
 }
 
-func (w *Worker) ExtractOnce(ctx context.Context) (WorkerStats, error) {
-	batches, err := w.store.LoadPendingChats(ctx, w.opts.Load)
-	if err != nil {
-		return WorkerStats{}, err
-	}
-	stats := WorkerStats{ChatsLoaded: len(batches)}
-	if len(batches) == 0 {
-		return stats, nil
-	}
-	runNow := w.now()
-	type batchResult struct {
-		stats WorkerStats
-		err   error
-	}
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	jobs := make(chan ChatBatch)
-	results := make(chan batchResult, len(batches))
-	workerCount := min(w.opts.Concurrency, len(batches))
-	var workers sync.WaitGroup
-	for range workerCount {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for batch := range jobs {
-				batchStats, _, err := w.extractBatch(runCtx, batch, runNow)
-				results <- batchResult{stats: batchStats, err: err}
-				if err != nil {
-					cancel()
-					return
-				}
-			}
-		}()
-	}
-	go func() {
-		defer close(jobs)
-		for _, batch := range batches {
-			select {
-			case jobs <- batch:
-			case <-runCtx.Done():
-				return
-			}
-		}
-	}()
-	go func() {
-		workers.Wait()
-		close(results)
-	}()
-	var firstErr error
-	for result := range results {
-		if result.err != nil {
-			if firstErr == nil {
-				firstErr = result.err
-			}
-			continue
-		}
-		mergeWorkerStats(&stats, result.stats)
-	}
-	return stats, firstErr
+// PendingChatIDs lists the chats with work left beyond their extraction
+// watermark. Extraction itself always runs one chat at a time through
+// ExtractChat, so reconciliation only has to name the chats a real-time wake-up
+// missed and let the caller schedule them.
+func (w *Worker) PendingChatIDs(ctx context.Context) ([]string, error) {
+	return w.store.PendingChatIDs(ctx)
 }
 
 // ExtractChat processes the chat that M2 just advanced, then returns the exact
@@ -404,19 +344,27 @@ func mergeWorkerStats(target *WorkerStats, source WorkerStats) {
 }
 
 // extractUnitWithRetry runs "hydrate cited evidence + ExtractWithTools + full
-// candidate validation" as one retryable unit. Evidence failures the model can
-// fix by itself — a paraphrased source_quote, an invented source_message_id, a
-// candidate grounded in no [new] message — do not abort the round: a Chinese
-// explanation of the mistake plus the cited [new] 原文 is appended to the user
-// prompt and the whole unit is re-extracted, up to opts.EvidenceRetryMax extra
-// attempts. Any other failure (structural/schema, dedup error) aborts fail-fast
-// immediately. Retries also stop once attempts are exhausted, propagating the
-// last error (which carries the cited 原文 for diagnosis).
+// candidate validation" as one retryable unit. Failures the model can fix by
+// itself do not abort the round: a Chinese explanation of the mistake is
+// appended to the user prompt and the whole unit is re-extracted, up to
+// opts.EvidenceRetryMax extra attempts. Two kinds qualify — a malformed final
+// message (prose instead of JSON, a missing candidates field, a candidate that
+// fails validation) and bad evidence (a paraphrased source_quote, an invented
+// source_message_id, a candidate grounded in no [new] message). Everything else
+// (transport, timeout, dedup error) aborts fail-fast immediately. Retries also
+// stop once attempts are exhausted, propagating the last error.
 func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit *ConversationUnit, prompt Prompt, box ToolBox) ([]ResolvedCandidate, int, error) {
 	current := prompt
 	for attempt := 0; ; attempt++ {
 		extracted, err := w.model.ExtractWithTools(ctx, current, box)
 		if err != nil {
+			// A broken final message is worth another shot: the model already
+			// spent minutes reading the chat and running tools, and the mistake
+			// is in the shape of the answer, not in the answer.
+			if errors.Is(err, ErrInvalidExtraction) && attempt < w.opts.EvidenceRetryMax {
+				current = Prompt{System: prompt.System, User: prompt.User + "\n\n" + buildFormatFeedback(err)}
+				continue
+			}
 			return nil, 0, fmt.Errorf("extract todos chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
 		}
 		if extracted == nil {
@@ -560,6 +508,14 @@ func selfCorrectableEvidence(err error) bool {
 // user prompt. evidenceErrs already carry the per-candidate detail (offending
 // quote, invented id, cited 原文); this adds the rules the model has to satisfy
 // on the next attempt.
+func buildFormatFeedback(err error) string {
+	return "【上一轮的最终消息没能解析，请重新输出】\n解析报错：" + err.Error() +
+		"\n\n本轮的调查结论不用推翻，也不要重新跑工具。" +
+		"只需要把同样的结论按输出格式重新写一遍最终消息：" +
+		"从 { 开始、到 } 结束的单个 JSON 对象，前后不能有任何其它字符，也不要包代码围栏。" +
+		"确实没有值得留下的线索时输出 {\"candidates\": []}。"
+}
+
 func buildEvidenceFeedback(evidenceErrs []string) string {
 	var b strings.Builder
 	b.WriteString("【上一轮抽取校验未通过，请修正后重新抽取】\n")

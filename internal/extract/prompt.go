@@ -28,6 +28,56 @@ type PromptOptions struct {
 	Skills string
 }
 
+// outputContract closes the user prompt. It sits last on purpose: by the time
+// the model finishes minutes of tool calls, an instruction from the middle of
+// the system prompt is far behind it, and it drifts back into chat prose. The
+// worked example matters as much as the rules — models copy shapes more
+// reliably than they follow prose.
+const outputContract = `
+
+=========================  输出格式（最重要，最后再读一遍）  =========================
+
+你的最后一条消息**必须是且只能是一个 JSON 对象**，从 { 开始，到 } 结束。
+
+- 不要写任何开场白、说明、总结或结束语；
+- 不要包 ` + "```json" + ` 代码围栏；
+- 不要输出多个 JSON；
+- 没有任何值得留下的线索时，输出 {"candidates": []}，不要用文字说明"本轮无线索"。
+
+candidates 中每个元素都必须包含全部八个字段：action_type、status、title、target、
+project_hint、source_message_ids、source_quote、payload。project_hint 判断不出来时写
+空字符串 ""，不要省略这个字段。
+
+完整示例（照着这个形状写）：
+
+{
+  "candidates": [
+    {
+      "action_type": "investigate",
+      "status": "extracted",
+      "title": "排查 agent-runtime 网关偶发 502",
+      "target": "agent-runtime 网关 502",
+      "project_hint": "agent-runtime",
+      "source_message_ids": ["om_x1"],
+      "source_quote": "今天线上又出现 502 了，麻烦帮忙看一下",
+      "payload": "张伟在群里直接点名让我排查，目前只知道偶发、未定位到具体服务，也没有人认领。属于需要我介入的未闭环问题。已核验：近期没有相同 Todo。不确定：是否与昨天的发布相关。"
+    },
+    {
+      "action_type": "other",
+      "status": "observing",
+      "title": "Bax 评测数据集本周冻结",
+      "target": "Bax 评测数据集冻结时间",
+      "project_hint": "",
+      "source_message_ids": ["om_x2"],
+      "source_quote": "数据集这周五冻结，之后不再接收新样本",
+      "payload": "李娜宣布的时间约束，由她本人负责推进，当前不需要我做什么，但会影响我后续提交样本的节奏，值得记住。"
+    }
+  ]
+}
+
+再说一次：**只输出这个 JSON 对象本身，前后不要有任何其它字符。**
+`
+
 // worldFloor is the minimum number of items kept for each world-data class when
 // the prompt is over budget. World data is trimmed first because it can be
 // re-fetched with tools; conversation messages are the primary evidence.
@@ -75,7 +125,7 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fac
 		system += "\n\n" + block
 	}
 	for {
-		user := renderUserPrompt(batch, trimmed, world, now.In(opts.Location), opts.Location)
+		user := renderUserPrompt(batch, trimmed, world, now.In(opts.Location), opts.Location) + outputContract
 		if utf8.RuneCountInString(system)+utf8.RuneCountInString(user) <= opts.MaxChars {
 			return Prompt{System: system, User: user}, nil
 		}

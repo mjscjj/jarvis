@@ -117,12 +117,12 @@ proactive:
   reasoning_effort: "medium"
   timeout_seconds: 900
 
-# 会议巡扫：便宜的定时线索采集器。每小时同时回看最近结束的会议、向前看
+# 会议巡扫：便宜的定时线索采集器。每 10 分钟同时回看最近结束的会议、向前看
 # 24 小时内待参加的日程，分别投递会后和会前 clue，落库后自动唤醒 M3。
 # 它只采集不分析：不拉妙记、不做会前准备、不写总结——那些是 M3/M5 的事。
 meeting_sweep:
   enabled: true
-  schedule: "@every 1h"
+  schedule: "@every 10m"
   startup_delay_seconds: 150
   bin: "traex"
   model: "DeepSeek-V4-Flash"

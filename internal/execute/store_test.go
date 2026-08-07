@@ -429,7 +429,8 @@ func TestFailStaleExecutingRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-func TestFailStaleExecutingNormalizesSQLiteTimezoneOffsets(t *testing.T) {
+func newStaleSweepDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	db, err := gorm.Open(
 		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
 		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
@@ -472,6 +473,11 @@ func TestFailStaleExecutingNormalizesSQLiteTimezoneOffsets(t *testing.T) {
 			t.Fatalf("create test table: %v", err)
 		}
 	}
+	return db
+}
+
+func TestFailStaleExecutingNormalizesSQLiteTimezoneOffsets(t *testing.T) {
+	db := newStaleSweepDB(t)
 	store, err := NewStore(db)
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
@@ -491,12 +497,12 @@ func TestFailStaleExecutingNormalizesSQLiteTimezoneOffsets(t *testing.T) {
 	}
 
 	now := time.Date(2026, 8, 6, 7, 45, 0, 0, time.UTC)
-	failed, err := store.FailStaleExecuting(context.Background(), 45*time.Minute, now)
+	sweep, err := store.FailStaleExecuting(context.Background(), 45*time.Minute, now)
 	if err != nil {
 		t.Fatalf("FailStaleExecuting() error = %v", err)
 	}
-	if failed != 1 {
-		t.Fatalf("FailStaleExecuting() failed = %d, want 1", failed)
+	if sweep.Failed != 1 || sweep.Requeued != 0 {
+		t.Fatalf("FailStaleExecuting() = %+v, want one failure", sweep)
 	}
 	var stale, fresh domain.Task
 	if err := db.First(&stale, 102).Error; err != nil {
@@ -523,6 +529,62 @@ func TestFailStaleExecutingNormalizesSQLiteTimezoneOffsets(t *testing.T) {
 		t.Fatalf("load TaskEvent: %v", err)
 	}
 	if event.EventType != "stale_failed" || event.ToStatus != "failed" {
+		t.Fatalf("TaskEvent = %#v", event)
+	}
+}
+
+// TestFailStaleExecutingRequeuesTasksWhoseAgentNeverStarted pins how the two
+// kinds of zombie are told apart. A Task whose agent never got a run row cannot
+// have written anything to the outside world, so losing it to a terminal
+// failure — which is how two meeting write-ups were silently dropped on
+// 2026-08-06 — is pure waste; it goes back in the queue. A Task that did start
+// may already have sent a message, so it still fails and waits for a human.
+func TestFailStaleExecutingRequeuesTasksWhoseAgentNeverStarted(t *testing.T) {
+	db := newStaleSweepDB(t)
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO task(id, status, version, updated_at) VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
+		uint64(110), "executing", int32(1), "2026-08-06 06:55:16+00:00",
+		uint64(106), "executing", int32(2), "2026-08-06 06:55:16+00:00",
+	).Error; err != nil {
+		t.Fatalf("insert Tasks: %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO execution_run(id, task_id, status) VALUES (?, ?, ?)",
+		uint64(128), uint64(106), "running",
+	).Error; err != nil {
+		t.Fatalf("insert ExecutionRun: %v", err)
+	}
+
+	now := time.Date(2026, 8, 6, 7, 51, 51, 0, time.UTC)
+	sweep, err := store.FailStaleExecuting(context.Background(), 45*time.Minute, now)
+	if err != nil {
+		t.Fatalf("FailStaleExecuting() error = %v", err)
+	}
+	if sweep.Requeued != 1 || sweep.Failed != 1 {
+		t.Fatalf("FailStaleExecuting() = %+v, want one requeue and one failure", sweep)
+	}
+	var neverStarted, started domain.Task
+	if err := db.First(&neverStarted, 110).Error; err != nil {
+		t.Fatalf("load requeued Task: %v", err)
+	}
+	if err := db.First(&started, 106).Error; err != nil {
+		t.Fatalf("load failed Task: %v", err)
+	}
+	if neverStarted.Status != "pending" || neverStarted.Version != 2 {
+		t.Fatalf("Task without a run = status %q version %d, want pending", neverStarted.Status, neverStarted.Version)
+	}
+	if started.Status != "failed" {
+		t.Fatalf("Task with a run = status %q, want failed", started.Status)
+	}
+	var event domain.TaskEvent
+	if err := db.Where("task_id = ?", 110).First(&event).Error; err != nil {
+		t.Fatalf("load TaskEvent: %v", err)
+	}
+	if event.EventType != "stale_requeued" || event.ToStatus != "pending" {
 		t.Fatalf("TaskEvent = %#v", event)
 	}
 }

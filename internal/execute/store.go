@@ -205,12 +205,16 @@ func (s *Store) LoadRun(ctx context.Context, runID uint64) (*domain.ExecutionRun
 	return &run, nil
 }
 
-func (s *Store) CreateRun(ctx context.Context, run *domain.ExecutionRun) error {
+// SaveRun inserts a run on its first call and updates it in place afterwards.
+// A run is written twice: once as running before the agent is invoked, so a
+// crash mid-invocation leaves evidence that work may have started, and once
+// with its terminal state.
+func (s *Store) SaveRun(ctx context.Context, run *domain.ExecutionRun) error {
 	if run == nil || run.TaskID == 0 {
 		return fmt.Errorf("%w: execution run is invalid", ErrInvalidInput)
 	}
-	if err := s.db.WithContext(context.WithoutCancel(ctx)).Create(run).Error; err != nil {
-		return fmt.Errorf("create execution run task_id=%d: %w", run.TaskID, err)
+	if err := s.db.WithContext(context.WithoutCancel(ctx)).Save(run).Error; err != nil {
+		return fmt.Errorf("save execution run task_id=%d: %w", run.TaskID, err)
 	}
 	return nil
 }
@@ -1367,25 +1371,43 @@ func (s *Store) LoadPending(ctx context.Context, limit int) ([]domain.Task, erro
 	return rows, nil
 }
 
-// FailStaleExecuting marks Tasks stuck in executing longer than olderThan as
-// failed. This recovers zombies left when the process restarts mid-run (Kick*
-// background goroutine dies but status stays executing). It also fails any
-// orphaned execution_run still marked running for those Tasks. Uses updated_at
-// as the "entered executing" clock (MarkExecuting bumps it).
-func (s *Store) FailStaleExecuting(ctx context.Context, olderThan time.Duration, now time.Time) (int, error) {
+// StaleSweep counts what one stale-executing sweep did.
+type StaleSweep struct {
+	// Requeued is Tasks put back in the queue because no run ever started for
+	// them, so nothing they could have done reached the outside world.
+	Requeued int
+	// Failed is Tasks whose agent did start and may already have written to the
+	// outside world. Re-running those could repeat a message or a merge request,
+	// so they stop here and wait for a human.
+	Failed int
+}
+
+// FailStaleExecuting recovers Tasks stuck in executing longer than olderThan,
+// the zombies left when the process dies mid-run: the background goroutine is
+// gone but the status never moved, and nothing else looks at these Tasks again.
+//
+// Whether a zombie is safe to re-run comes down to whether its agent ever
+// started, which is what the execution_run row records — SaveRun lands it as
+// running before the agent is invoked. No row means no side effects were
+// possible, so the Task goes back to pending; a row means the opposite, so the
+// Task fails and the orphaned run is closed out with it. Uses updated_at as the
+// "entered executing" clock (MarkExecuting bumps it).
+func (s *Store) FailStaleExecuting(ctx context.Context, olderThan time.Duration, now time.Time) (StaleSweep, error) {
+	var sweep StaleSweep
 	if olderThan <= 0 {
-		return 0, fmt.Errorf("%w: stale executing threshold must be positive", ErrInvalidInput)
+		return sweep, fmt.Errorf("%w: stale executing threshold must be positive", ErrInvalidInput)
 	}
 	if now.IsZero() {
-		return 0, fmt.Errorf("%w: stale executing now is required", ErrInvalidInput)
+		return sweep, fmt.Errorf("%w: stale executing now is required", ErrInvalidInput)
 	}
 	cutoff := now.UTC().Add(-olderThan)
+	errDetail := fmt.Sprintf("stale executing: stuck beyond %s", olderThan.Round(time.Minute))
 	resultJSON, err := json.Marshal(map[string]any{
 		"stage": "stale",
-		"error": fmt.Sprintf("stale executing: stuck beyond %s (likely process restart killed background run)", olderThan.Round(time.Minute)),
+		"error": errDetail + " (likely process restart killed background run)",
 	})
 	if err != nil {
-		return 0, fmt.Errorf("encode stale execution result: %w", err)
+		return sweep, fmt.Errorf("encode stale execution result: %w", err)
 	}
 
 	var staleTasks []domain.Task
@@ -1393,51 +1415,71 @@ func (s *Store) FailStaleExecuting(ctx context.Context, olderThan time.Duration,
 		Select("id", "version").
 		Where("status = ? AND datetime(updated_at) < datetime(?)", "executing", cutoff.Format(time.RFC3339Nano)).
 		Find(&staleTasks).Error; err != nil {
-		return 0, fmt.Errorf("list stale executing Tasks: %w", err)
+		return sweep, fmt.Errorf("list stale executing Tasks: %w", err)
 	}
 	if len(staleTasks) == 0 {
-		return 0, nil
+		return sweep, nil
 	}
 	ids := make([]uint64, len(staleTasks))
 	for i := range staleTasks {
 		ids[i] = staleTasks[i].ID
 	}
-
-	errDetail := fmt.Sprintf("stale executing: stuck beyond %s", olderThan.Round(time.Minute))
-	finishedAt := now.UTC()
+	var startedIDs []uint64
 	if err := s.db.WithContext(ctx).Model(&domain.ExecutionRun{}).
-		Where("task_id IN ? AND status = ?", ids, "running").
-		Updates(map[string]any{
-			"status": "failed", "error_detail": errDetail, "finished_at": finishedAt,
-		}).Error; err != nil {
-		return 0, fmt.Errorf("fail stale execution runs: %w", err)
+		Where("task_id IN ?", ids).Distinct().Pluck("task_id", &startedIDs).Error; err != nil {
+		return sweep, fmt.Errorf("list stale Tasks with started runs: %w", err)
+	}
+	started := make(map[uint64]struct{}, len(startedIDs))
+	for _, id := range startedIDs {
+		started[id] = struct{}{}
 	}
 
-	failed := 0
+	finishedAt := now.UTC()
+	if len(startedIDs) > 0 {
+		if err := s.db.WithContext(ctx).Model(&domain.ExecutionRun{}).
+			Where("task_id IN ? AND status = ?", startedIDs, "running").
+			Updates(map[string]any{
+				"status": "failed", "error_detail": errDetail, "finished_at": finishedAt,
+			}).Error; err != nil {
+			return sweep, fmt.Errorf("fail stale execution runs: %w", err)
+		}
+	}
+
 	fromStatus := "executing"
 	for i := range staleTasks {
 		task := &staleTasks[i]
+		_, agentStarted := started[task.ID]
+		changes := map[string]any{"status": "pending", "version": gorm.Expr("version + 1")}
+		eventType, toStatus := "stale_requeued", "pending"
+		if agentStarted {
+			changes = map[string]any{
+				"status": "failed", "execution_result": datatypes.JSON(resultJSON), "version": gorm.Expr("version + 1"),
+			}
+			eventType, toStatus = "stale_failed", "failed"
+		}
 		update := s.db.WithContext(ctx).Model(&domain.Task{}).
 			Where("id = ? AND version = ? AND status = ?", task.ID, task.Version, "executing").
-			Updates(map[string]any{
-				"status": "failed", "execution_result": datatypes.JSON(resultJSON), "version": gorm.Expr("version + 1"),
-			})
+			Updates(changes)
 		if update.Error != nil {
-			return failed, fmt.Errorf("fail stale executing Task id=%d: %w", task.ID, update.Error)
+			return sweep, fmt.Errorf("sweep stale executing Task id=%d: %w", task.ID, update.Error)
 		}
 		if update.RowsAffected == 0 {
 			continue
 		}
 		if err := progress.AppendTaskEvent(s.db.WithContext(ctx), progress.TaskEventInput{
-			TaskID: task.ID, TaskVersion: task.Version + 1, EventType: "stale_failed",
-			FromStatus: &fromStatus, ToStatus: "failed", ActorType: "system",
+			TaskID: task.ID, TaskVersion: task.Version + 1, EventType: eventType,
+			FromStatus: &fromStatus, ToStatus: toStatus, ActorType: "system",
 			Detail: map[string]any{"error": errDetail}, OccurredAt: finishedAt,
 		}); err != nil {
-			return failed, err
+			return sweep, err
 		}
-		failed++
+		if agentStarted {
+			sweep.Failed++
+		} else {
+			sweep.Requeued++
+		}
 	}
-	return failed, nil
+	return sweep, nil
 }
 
 func ValidateTaskFilter(filter TaskFilter) error {

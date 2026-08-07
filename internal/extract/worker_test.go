@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -34,8 +34,35 @@ func (fakeSystemPromptReader) Content(context.Context, string) (string, error) {
 	return "fixture M3 system prompt", nil
 }
 
-func (f *fakePipelineStore) LoadPendingChats(context.Context, LoadOptions) ([]ChatBatch, error) {
-	return f.batches, f.loadErr
+func (f *fakePipelineStore) PendingChatIDs(context.Context) ([]string, error) {
+	if f.loadErr != nil {
+		return nil, f.loadErr
+	}
+	chatIDs := make([]string, 0, len(f.batches))
+	for i := range f.batches {
+		chatIDs = append(chatIDs, f.batches[i].Group.ChatID)
+	}
+	return chatIDs, nil
+}
+
+// extractAllChats drives the worker the way the coordinator does: enumerate the
+// chats with pending work, then extract them one at a time. Extraction has no
+// whole-pass entry point of its own — a pass is just a list of chats.
+func extractAllChats(ctx context.Context, w *Worker) (WorkerStats, error) {
+	chatIDs, err := w.PendingChatIDs(ctx)
+	if err != nil {
+		return WorkerStats{}, err
+	}
+	stats := WorkerStats{ChatsLoaded: len(chatIDs)}
+	var firstErr error
+	for _, chatID := range chatIDs {
+		chatStats, _, err := w.ExtractChat(ctx, chatID)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+		mergeWorkerStats(&stats, chatStats)
+	}
+	return stats, firstErr
 }
 
 func (f *fakePipelineStore) LoadPendingChat(_ context.Context, chatID string, _ LoadOptions) (*ChatBatch, error) {
@@ -83,19 +110,23 @@ type fakeModelExtractor struct {
 	// where the first attempt returns a rewritten quote and a later one returns a
 	// verbatim quote. When empty the extractor falls back to result/err.
 	results []*ExtractionResult
+	// errs pairs with results to drive format-feedback retry, where the first
+	// call fails to decode and a later one returns a usable result.
+	errs []error
 }
 
 func (f *fakeModelExtractor) ExtractWithTools(_ context.Context, prompt Prompt, box ToolBox) (*ExtractionResult, error) {
 	f.prompts = append(f.prompts, prompt)
 	f.boxes = append(f.boxes, box)
-	if len(f.results) > 0 {
-		idx := len(f.prompts) - 1
-		if idx >= len(f.results) {
-			idx = len(f.results) - 1
-		}
-		return f.results[idx], f.err
+	idx := min(len(f.prompts)-1, max(len(f.results), len(f.errs))-1)
+	err := f.err
+	if len(f.errs) > 0 {
+		err = f.errs[idx]
 	}
-	return f.result, f.err
+	if len(f.results) > 0 {
+		return f.results[idx], err
+	}
+	return f.result, err
 }
 
 // fakeToolBox is a no-op ToolBox for worker wiring tests.
@@ -168,115 +199,7 @@ type fakeSkillReader struct{}
 
 func (fakeSkillReader) Catalog(context.Context, string) (string, error) { return "", nil }
 
-type concurrentPipelineStore struct {
-	batches []ChatBatch
-	mu      sync.Mutex
-	saved   int
-}
-
-func (s *concurrentPipelineStore) LoadPendingChats(context.Context, LoadOptions) ([]ChatBatch, error) {
-	return append([]ChatBatch(nil), s.batches...), nil
-}
-
-func (s *concurrentPipelineStore) LoadPendingChat(context.Context, string, LoadOptions) (*ChatBatch, error) {
-	return nil, nil
-}
-
-func (s *concurrentPipelineStore) LoadChatMessages(context.Context, string, []string) ([]MessageContext, error) {
-	return nil, nil
-}
-
-func (s *concurrentPipelineStore) PersistChat(context.Context, ChatBatch, []UnitExtraction, string) (PersistStats, error) {
-	s.mu.Lock()
-	s.saved++
-	s.mu.Unlock()
-	return PersistStats{}, nil
-}
-
-type statelessModelExtractor struct{}
-
-func (statelessModelExtractor) ExtractWithTools(context.Context, Prompt, ToolBox) (*ExtractionResult, error) {
-	return &ExtractionResult{}, nil
-}
-
-type statelessFactReader struct{}
-
-func (statelessFactReader) ListFacts(context.Context, progress.FactFilter) ([]progress.FactView, error) {
-	return nil, nil
-}
-
-type blockingToolBoxBuilder struct {
-	started chan string
-	release chan struct{}
-}
-
-func (b *blockingToolBoxBuilder) Build(batch ChatBatch, _ ConversationUnit) (ToolBox, error) {
-	b.started <- batch.Group.ChatID
-	<-b.release
-	return fakeToolBox{}, nil
-}
-
-func TestWorkerExtractOnceRunsDifferentChatsConcurrently(t *testing.T) {
-	makeBatch := func(chatID, messageID string) ChatBatch {
-		message := MessageContext{
-			MessageID: messageID, ChatID: chatID, Content: "仅用于并发测试，无行动项",
-			CreateTime: 1_700_000_000_000, IsNew: true, Extractable: true,
-		}
-		return ChatBatch{
-			Group:   GroupContext{ID: uint64(len(chatID)), ChatID: chatID},
-			Units:   []ConversationUnit{{Key: "chat", Messages: []MessageContext{message}}},
-			LastNew: message,
-		}
-	}
-	store := &concurrentPipelineStore{batches: []ChatBatch{
-		makeBatch("oc_person", "om_person"), makeBatch("oc_group", "om_group"),
-	}}
-	builder := &blockingToolBoxBuilder{started: make(chan string, 2), release: make(chan struct{})}
-	opts := validWorkerOptions()
-	opts.Concurrency = 2
-	worker, err := NewWorker(
-		store, statelessModelExtractor{}, statelessFactReader{}, &fakeCandidateDeduplicator{},
-		builder, fakeSharedMemoryReader{}, opts,
-	)
-	if err != nil {
-		t.Fatalf("NewWorker() error = %v", err)
-	}
-	done := make(chan error, 1)
-	go func() {
-		_, err := worker.ExtractOnce(context.Background())
-		done <- err
-	}()
-	seen := make(map[string]bool)
-	for range 2 {
-		select {
-		case chatID := <-builder.started:
-			seen[chatID] = true
-		case <-time.After(2 * time.Second):
-			close(builder.release)
-			t.Fatal("scheduled extraction did not start different chats concurrently")
-		}
-	}
-	close(builder.release)
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("ExtractOnce() error = %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("ExtractOnce() did not finish")
-	}
-	if !seen["oc_person"] || !seen["oc_group"] {
-		t.Fatalf("started chats = %#v", seen)
-	}
-	store.mu.Lock()
-	saved := store.saved
-	store.mu.Unlock()
-	if saved != 2 {
-		t.Fatalf("persisted chats = %d, want 2", saved)
-	}
-}
-
-func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
+func TestWorkerPersistsWholeChat(t *testing.T) {
 	projectID := uint64(9)
 	store := &fakePipelineStore{batches: []ChatBatch{{
 		Group: GroupContext{ID: 1, ChatID: "oc_1", ProjectID: &projectID},
@@ -293,9 +216,9 @@ func TestWorkerExtractOncePersistsWholeChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
-	stats, err := worker.ExtractOnce(context.Background())
+	stats, err := extractAllChats(context.Background(), worker)
 	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
+		t.Fatalf("extractAllChats() error = %v", err)
 	}
 	if stats.ChatsLoaded != 1 || stats.ChatsProcessed != 1 || stats.Units != 1 || stats.Created != 2 || stats.Updated != 1 {
 		t.Fatalf("stats = %#v", stats)
@@ -397,8 +320,8 @@ func TestWorkerDoesNotAdvanceWatermarkAfterModelFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
-	if _, err := worker.ExtractOnce(context.Background()); err == nil {
-		t.Fatal("ExtractOnce() accepted model failure")
+	if _, err := extractAllChats(context.Background(), worker); err == nil {
+		t.Fatal("extractAllChats() accepted model failure")
 	}
 	if store.persistCalls != 0 {
 		t.Fatalf("PersistChat() calls = %d, want 0", store.persistCalls)
@@ -427,8 +350,8 @@ func TestWorkerDoesNotPersistAfterSemanticDedupFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
-	if _, err := worker.ExtractOnce(context.Background()); err == nil || !strings.Contains(err.Error(), "qdrant unavailable") {
-		t.Fatalf("ExtractOnce() error = %v", err)
+	if _, err := extractAllChats(context.Background(), worker); err == nil || !strings.Contains(err.Error(), "qdrant unavailable") {
+		t.Fatalf("extractAllChats() error = %v", err)
 	}
 	if store.persistCalls != 0 || len(dedup.inputs) != 1 {
 		t.Fatalf("persistCalls=%d dedup.inputs=%d", store.persistCalls, len(dedup.inputs))
@@ -465,8 +388,8 @@ func TestWorkerDedupsWithinResolvedProjectScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
-	if _, err := worker.ExtractOnce(context.Background()); err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
+	if _, err := extractAllChats(context.Background(), worker); err != nil {
+		t.Fatalf("extractAllChats() error = %v", err)
 	}
 	if len(dedup.projects) != 1 {
 		t.Fatalf("dedup.projects=%d, want 1", len(dedup.projects))
@@ -516,9 +439,9 @@ func TestWorkerRetriesOnQuoteMismatchThenSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
-	stats, err := worker.ExtractOnce(context.Background())
+	stats, err := extractAllChats(context.Background(), worker)
 	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
+		t.Fatalf("extractAllChats() error = %v", err)
 	}
 	if len(model.prompts) != 2 {
 		t.Fatalf("extract calls = %d, want 2", len(model.prompts))
@@ -539,6 +462,36 @@ func TestWorkerRetriesOnQuoteMismatchThenSucceeds(t *testing.T) {
 	}
 }
 
+// TestWorkerRetriesUnparseableFinalMessage pins the cheapest recovery M3 has: a
+// run that read the whole chat and ran tools for minutes, then ended on prose
+// instead of JSON, must be asked to restate itself rather than thrown away.
+func TestWorkerRetriesUnparseableFinalMessage(t *testing.T) {
+	store := &fakePipelineStore{batches: []ChatBatch{retryBatch()}}
+	decodeErr := fmt.Errorf("decode codex extraction result: %w", ErrInvalidExtraction)
+	model := &fakeModelExtractor{
+		results: []*ExtractionResult{nil, {Candidates: []Candidate{retryCandidate("当前服务和架构梳理")}}},
+		errs:    []error{decodeErr, nil},
+	}
+	opts := validWorkerOptions()
+	opts.EvidenceRetryMax = 2
+	worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, fakeSharedMemoryReader{}, opts)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	if _, err := extractAllChats(context.Background(), worker); err != nil {
+		t.Fatalf("extractAllChats() error = %v", err)
+	}
+	if len(model.prompts) != 2 {
+		t.Fatalf("extract calls = %d, want 2", len(model.prompts))
+	}
+	if retry := model.prompts[1].User; !strings.Contains(retry, "最终消息没能解析") {
+		t.Fatalf("retry prompt missing format feedback; got %q", retry)
+	}
+	if store.persistCalls != 1 {
+		t.Fatalf("persistCalls = %d, want 1", store.persistCalls)
+	}
+}
+
 func TestWorkerFailsAfterExhaustingEvidenceRetries(t *testing.T) {
 	store := &fakePipelineStore{batches: []ChatBatch{retryBatch()}}
 	rewritten := retryCandidate("看下当前服务和架构梳理")
@@ -549,9 +502,9 @@ func TestWorkerFailsAfterExhaustingEvidenceRetries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
-	_, err = worker.ExtractOnce(context.Background())
+	_, err = extractAllChats(context.Background(), worker)
 	if err == nil || !strings.Contains(err.Error(), "exhausted") {
-		t.Fatalf("ExtractOnce() error = %v, want exhausted evidence retries", err)
+		t.Fatalf("extractAllChats() error = %v, want exhausted evidence retries", err)
 	}
 	if len(model.prompts) != 3 { // initial + 2 retries
 		t.Fatalf("extract calls = %d, want 3", len(model.prompts))
@@ -581,8 +534,8 @@ func TestWorkerHydratesCitedMessageFromOutsideUnit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
-	if _, err := worker.ExtractOnce(context.Background()); err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
+	if _, err := extractAllChats(context.Background(), worker); err != nil {
+		t.Fatalf("extractAllChats() error = %v", err)
 	}
 	if len(model.prompts) != 1 {
 		t.Fatalf("extract calls = %d, want 1 (no retry needed)", len(model.prompts))
@@ -617,8 +570,8 @@ func TestWorkerRetriesOnInventedMessageIDThenSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
-	if _, err := worker.ExtractOnce(context.Background()); err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
+	if _, err := extractAllChats(context.Background(), worker); err != nil {
+		t.Fatalf("extractAllChats() error = %v", err)
 	}
 	if len(model.prompts) != 2 {
 		t.Fatalf("extract calls = %d, want 2", len(model.prompts))
@@ -670,7 +623,6 @@ func validWorkerOptions() WorkerOptions {
 			BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour,
 			OpenTodoLimit: 50, RecentTaskLimit: 10,
 		},
-		Concurrency:     2,
 		PrincipalOpenID: "ou_owner", ModelName: "model", FactLimit: 10, KeyPersonLimit: 5,
 		MaxPromptChars: 60_000, Location: time.UTC,
 		WorkRules:     fakeWorkRuleReader{},

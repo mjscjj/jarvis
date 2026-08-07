@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"regexp"
 	"strings"
 
@@ -49,10 +48,16 @@ var commonActionTypes = map[string]struct{}{
 	"reply_message": {}, "doc_write": {}, "notify_principal": {}, "manual_followup": {}, "other": {},
 }
 
-// actionTypeIdentifier constrains an action_type to a lowercase snake_case
-// token. This is a structural guard (stable key for dedup/routing), not a
-// closed vocabulary—any well-formed identifier is accepted.
+// actionTypeIdentifier is the canonical action_type shape: a lowercase
+// snake_case token. Model output is normalized into it rather than rejected by
+// it; it still guards caller-supplied query filters, which have no such
+// normalization step.
 var actionTypeIdentifier = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// actionTypeSeparators matches the runs of whitespace, hyphens and other
+// punctuation a model may write between action_type words ("Code Change",
+// "code-change") where the canonical form uses a single underscore.
+var actionTypeSeparators = regexp.MustCompile(`[\s\-./]+`)
 
 // IsKnownActionType reports whether value is one of the well-known common types.
 // It no longer gates extraction (action_type is open); it is used where a
@@ -62,10 +67,18 @@ func IsKnownActionType(value string) bool {
 	return ok
 }
 
-// IsValidActionType reports whether value is an acceptable action_type: any
-// non-blank lowercase snake_case identifier.
+// IsValidActionType reports whether value is already a canonical action_type.
+// It gates query filters, not extraction.
 func IsValidActionType(value string) bool {
 	return actionTypeIdentifier.MatchString(strings.TrimSpace(value))
+}
+
+// NormalizeActionType folds a model-written action_type into the lowercase
+// snake_case form the fingerprint keys on, so "Code Change" and "code_change"
+// dedup together. Casing and separators are presentation, not meaning: the
+// vocabulary stays open and nothing is rejected for its shape.
+func NormalizeActionType(value string) string {
+	return actionTypeSeparators.ReplaceAllString(strings.ToLower(strings.TrimSpace(value)), "_")
 }
 
 // Candidate is the small machine-consumed admission envelope between M3 and
@@ -93,27 +106,46 @@ type ExtractionResult struct {
 	Candidates []Candidate `json:"candidates"`
 }
 
-// DecodeExtractionResult rejects unknown fields and trailing JSON before
-// applying the domain validator. There is deliberately no permissive parser.
+// DecodeExtractionResult reads the first JSON object out of the model's final
+// message and applies the domain validator. It is deliberately tolerant of the
+// shapes a model gets wrong without losing meaning — a markdown fence around
+// the object, extra keys it invented, prose trailing the object — because
+// discarding a whole unit of candidates over presentation wastes a multi-minute
+// extraction. Anything that does change meaning (no parseable object, a missing
+// candidates field, a candidate that fails validation) is still an error, and
+// the worker retries it with the error fed back to the model.
 func DecodeExtractionResult(payload []byte) (*ExtractionResult, error) {
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.DisallowUnknownFields()
+	decoder := json.NewDecoder(bytes.NewReader(stripCodeFence(payload)))
 	var result ExtractionResult
 	if err := decoder.Decode(&result); err != nil {
 		return nil, fmt.Errorf("%w: decode JSON: %v", ErrInvalidExtraction, err)
-	}
-	if err := ensureJSONEOF(decoder); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidExtraction, err)
 	}
 	if result.Candidates == nil {
 		return nil, fmt.Errorf("%w: candidates field is required", ErrInvalidExtraction)
 	}
 	for i := range result.Candidates {
+		result.Candidates[i].ActionType = NormalizeActionType(result.Candidates[i].ActionType)
 		if err := ValidateCandidate(&result.Candidates[i]); err != nil {
 			return nil, fmt.Errorf("%w: candidate[%d]: %v", ErrInvalidExtraction, i, err)
 		}
 	}
 	return &result, nil
+}
+
+// stripCodeFence unwraps a ```json ... ``` fence when the whole payload is one.
+// Models fall back to fenced output whenever they slip into chat mode.
+func stripCodeFence(payload []byte) []byte {
+	trimmed := bytes.TrimSpace(payload)
+	if !bytes.HasPrefix(trimmed, []byte("```")) {
+		return trimmed
+	}
+	if _, after, found := bytes.Cut(trimmed, []byte("\n")); found {
+		trimmed = after
+	}
+	if index := bytes.LastIndex(trimmed, []byte("```")); index >= 0 {
+		trimmed = trimmed[:index]
+	}
+	return bytes.TrimSpace(trimmed)
 }
 
 // ValidateCandidate validates only the machine-consumed envelope. Payload is
@@ -134,8 +166,8 @@ func ValidateCandidate(candidate *Candidate) error {
 	if candidate.Status != "extracted" && candidate.Status != "observing" {
 		return fmt.Errorf("%w: status %q must be extracted or observing", ErrInvalidCandidate, candidate.Status)
 	}
-	if !IsValidActionType(candidate.ActionType) {
-		return fmt.Errorf("%w: action_type %q must be a lowercase snake_case identifier", ErrInvalidCandidate, candidate.ActionType)
+	if strings.TrimSpace(candidate.ActionType) == "" {
+		return fmt.Errorf("%w: action_type must not be blank", ErrInvalidCandidate)
 	}
 	if len(candidate.SourceMessageIDs) == 0 {
 		return fmt.Errorf("%w: source_message_ids must not be empty", ErrInvalidCandidate)
@@ -184,16 +216,6 @@ func SemanticText(candidate *Candidate) (string, error) {
 		strings.TrimSpace(candidate.Payload),
 		normalizeText(candidate.Target),
 	}, "｜"), nil
-}
-
-func ensureJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); err == io.EOF {
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("decode trailing JSON: %w", err)
-	}
-	return fmt.Errorf("multiple JSON values are not allowed")
 }
 
 func validateMessageIDs(ids []string) error {

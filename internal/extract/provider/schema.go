@@ -4,14 +4,12 @@ package provider
 // Model semantics stay in payload as opaque text; adding a semantic concept
 // must not require changing this schema or the downstream Go pipeline.
 func TodoExtractionJSONSchema() map[string]any {
-	stringOrNull := func() map[string]any { return map[string]any{"type": []string{"string", "null"}} }
 	candidate := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
 		"properties": map[string]any{
 			"action_type": map[string]any{
 				"type":        "string",
-				"pattern":     "^[a-z][a-z0-9_]*$",
 				"description": "线索性质和展示提示，不是 M5 的执行路线。使用小写蛇形标识符；优先用常见类型：code_change/summary_post/investigate/schedule_meeting/reply_message/doc_write/manual_followup，确实不属于时用 other 或自拟贴切标识符。",
 			},
 			"status": map[string]any{
@@ -26,7 +24,10 @@ func TodoExtractionJSONSchema() map[string]any {
 				"type":        "string",
 				"description": "这件事作用的对象/主题，作为去重标识。例：agent-runtime 鉴权重构 / Bax 融合讨论会议 / 采集死锁问题。",
 			},
-			"project_hint": stringOrNull(),
+			"project_hint": map[string]any{
+				"type":        "string",
+				"description": "所属项目的名称或代号；无法判断时写空字符串。",
+			},
 			"source_message_ids": map[string]any{
 				"type": "array", "items": map[string]any{"type": "string"},
 				"description": "Evidence message IDs. At least one ID must belong to a [new] message.",

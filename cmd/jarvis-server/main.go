@@ -527,7 +527,6 @@ func main() {
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
 				OpenTodoLimit: cfg.Extract.OpenTodoLimit, RecentTaskLimit: cfg.Extract.RecentTaskLimit,
 			},
-			Concurrency:     cfg.Extract.Concurrency,
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
 			FactLimit: cfg.Extract.FactLimit, KeyPersonLimit: cfg.Extract.KeyPersonLimit,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
@@ -589,14 +588,21 @@ func main() {
 		return
 	}
 	if *extractOnce {
-		stats, err := extractWorker.ExtractOnce(startupCtx)
+		chatIDs, err := extractWorker.PendingChatIDs(startupCtx)
 		if err != nil {
-			fatalf("extract todos failed: %v", err)
+			fatalf("list pending extraction chats failed: %v", err)
 		}
-		infof(
-			"todo extraction completed: chats_loaded=%d chats_processed=%d units=%d candidates=%d created=%d updated=%d",
-			stats.ChatsLoaded, stats.ChatsProcessed, stats.Units, stats.Candidates, stats.Created, stats.Updated,
-		)
+		for _, chatID := range chatIDs {
+			stats, _, err := extractWorker.ExtractChat(startupCtx, chatID)
+			if err != nil {
+				fatalf("extract todos chat_id=%s failed: %v", chatID, err)
+			}
+			infof(
+				"todo extraction chat_id=%s: units=%d candidates=%d created=%d updated=%d",
+				chatID, stats.Units, stats.Candidates, stats.Created, stats.Updated,
+			)
+		}
+		infof("todo extraction completed: chats=%d", len(chatIDs))
 		return
 	}
 	if *proactiveOnce {
