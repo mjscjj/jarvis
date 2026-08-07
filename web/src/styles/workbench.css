@@ -98,6 +98,10 @@
   margin-bottom: 8px;
 }
 
+.task-decision-heading-actions-only {
+  justify-content: flex-end;
+}
+
 .task-decision-heading .task-section-kicker {
   margin-bottom: 0;
 }
@@ -250,37 +254,6 @@
 
 .task-decision-scope > div > .ant-typography:first-child {
   font-size: 12px;
-}
-
-.task-decision-effect {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 9px;
-  margin-top: 14px;
-  padding: 10px 12px;
-  color: #9a5105;
-  background: var(--color-warning-bg);
-  border-radius: var(--radius-md);
-}
-
-.task-decision-effect > .anticon {
-  margin-top: 3px;
-}
-
-.task-decision-effect strong,
-.task-decision-effect span {
-  display: block;
-}
-
-.task-decision-effect strong {
-  font-size: 12px;
-}
-
-.task-decision-effect span {
-  margin-top: 1px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 .task-decision-evidence {

@@ -852,13 +852,7 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
   const evidenceCount = result.enrichments?.length ?? 0
   return (
     <div className="task-decision-card">
-      <div className="task-decision-heading">
-        <div className="task-decision-heading-copy">
-          <div className="task-section-kicker">需要你决定</div>
-          <Text type="secondary">
-            {result.needs_followup?.trim() || '允许 Jarvis 按下方方案进入真实执行。'}
-          </Text>
-        </div>
+      <div className="task-decision-heading task-decision-heading-actions-only">
         <Space wrap>{actions}</Space>
       </div>
 
@@ -893,14 +887,6 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
         <div>
           <Text type="secondary">{proposalArtifactLabel(task)}</Text>
           <Text><InlineCodeText text={proposal.artifact} /></Text>
-        </div>
-      </div>
-
-      <div className="task-decision-effect">
-        <ExclamationCircleOutlined />
-        <div>
-          <strong>当前尚未发生写入</strong>
-          <span>批准后才会按上述范围真实执行；你仍可在确认框补充限制条件。</span>
         </div>
       </div>
 
