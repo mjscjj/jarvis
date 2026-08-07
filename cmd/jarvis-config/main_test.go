@@ -28,7 +28,8 @@ func TestRunConfigurePrincipal(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
 		t.Fatalf("decode output %q: %v", output.String(), err)
 	}
-	if got["principal_open_id"] != "ou_test" || got["lark_profile"] != "cli_test" || got["git_author"] != "test@example.com" || got["restart_required"] != true {
+	if got["principal_open_id"] != "ou_test" || got["lark_profile"] != "cli_test" || got["git_author"] != "test@example.com" ||
+		got["card_approval_configured"] != true || got["relay_secret_configured"] != true || got["restart_required"] != true {
 		t.Fatalf("run() output = %#v", got)
 	}
 }
@@ -54,7 +55,9 @@ func TestRunShowPrincipal(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
 		t.Fatalf("decode output %q: %v", output.String(), err)
 	}
-	if got["principal_open_id"] != "ou_test" || got["lark_profile"] != "cli_test" || got["git_author"] != "test@example.com" {
+	if got["principal_open_id"] != "ou_test" || got["lark_profile"] != "cli_test" || got["git_author"] != "test@example.com" ||
+		got["card_approval_enabled"] != true || got["card_approval_profile"] != "cli_test" ||
+		got["card_approval_principal_open_id"] != "ou_test" || got["relay_secret"] == "" || len(got["relay_secret_sha256"].(string)) != 64 {
 		t.Fatalf("run() output = %#v", got)
 	}
 }

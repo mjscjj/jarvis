@@ -89,13 +89,23 @@ func runShowPrincipal(args []string, stdout io.Writer) error {
 		return err
 	}
 	result := struct {
-		PrincipalOpenID string `json:"principal_open_id"`
-		LarkProfile     string `json:"lark_profile"`
-		GitAuthor       string `json:"git_author"`
+		PrincipalOpenID             string `json:"principal_open_id"`
+		LarkProfile                 string `json:"lark_profile"`
+		GitAuthor                   string `json:"git_author"`
+		CardApprovalEnabled         bool   `json:"card_approval_enabled"`
+		CardApprovalProfile         string `json:"card_approval_profile"`
+		CardApprovalPrincipalOpenID string `json:"card_approval_principal_open_id"`
+		RelaySecret                 string `json:"relay_secret"`
+		RelaySecretSHA256           string `json:"relay_secret_sha256"`
 	}{
-		PrincipalOpenID: cfg.Extract.PrincipalOpenID,
-		LarkProfile:     cfg.LarkCLI.Profile,
-		GitAuthor:       cfg.DailyDigest.GitAuthor,
+		PrincipalOpenID:             cfg.Extract.PrincipalOpenID,
+		LarkProfile:                 cfg.LarkCLI.Profile,
+		GitAuthor:                   cfg.DailyDigest.GitAuthor,
+		CardApprovalEnabled:         cfg.CardApproval.Enabled,
+		CardApprovalProfile:         cfg.CardApproval.Profile,
+		CardApprovalPrincipalOpenID: cfg.CardApproval.PrincipalOpenID,
+		RelaySecret:                 cfg.CardApproval.RelaySecret,
+		RelaySecretSHA256:           config.RelaySecretSHA256(cfg.CardApproval.RelaySecret),
 	}
 	encoder := json.NewEncoder(stdout)
 	encoder.SetEscapeHTML(false)

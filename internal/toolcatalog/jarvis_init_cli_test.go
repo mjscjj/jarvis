@@ -10,49 +10,85 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
-func TestJarvisInitIsSkillLocalAndAbsentFromJarvisTools(t *testing.T) {
-	initHelp, err := runJarvisInit(t, "", nil, "--help")
+func TestJarvisInitOwnsWorldModelRunStateOnly(t *testing.T) {
+	help, err := runJarvisInit(t, "", nil, "--help")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"private to $initialize-jarvis", "configure", "discover", "scan", "validate"} {
-		if !strings.Contains(initHelp, want) {
-			t.Fatalf("jarvis-init help missing %q:\n%s", want, initHelp)
+	for _, want := range []string{"start", "preflight", "status", "discover", "scan", "validate", "does not install services", "configure CC Connect"} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("jarvis-init help missing %q:\n%s", want, help)
+		}
+	}
+	for _, forbidden := range []string{"configure-app", "set-cc-app-secret", "validate-binding", "install-server"} {
+		if strings.Contains(help, forbidden) {
+			t.Fatalf("jarvis-init still owns install concern %q:\n%s", forbidden, help)
 		}
 	}
 	toolsHelp, err := runJarvisTools(t, "", nil, "--help")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"configure-principal", "validate-initialization", "discover-chats", "scan-chat"} {
+	for _, forbidden := range []string{"validate-initialization", "discover-chats", "scan-chat"} {
 		if strings.Contains(toolsHelp, forbidden) {
-			t.Fatalf("jarvis-tools still exposes initialization command %q:\n%s", forbidden, toolsHelp)
+			t.Fatalf("jarvis-tools exposes initialization-only command %q:\n%s", forbidden, toolsHelp)
 		}
 	}
 }
 
-func TestJarvisInitConfigureDelegatesToConfigBoundary(t *testing.T) {
-	binDir := t.TempDir()
-	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
-case "$*" in
-  "run ./cmd/jarvis-config configure-principal --config conf/config.yaml --open-id ou_ready --profile cli_ready --git-author ready@example.com")
-    printf '%s' '{"runtime_config_path":"conf/config.runtime.yaml","principal_open_id":"ou_ready","lark_profile":"cli_ready","git_author":"ready@example.com","restart_required":true}' ;;
-  *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
-esac
-`)
-	out, err := runJarvisInit(t, "", []string{"PATH=" + binDir + ":" + os.Getenv("PATH")},
-		"configure", "--open-id", "ou_ready", "--profile", "cli_ready", "--git-author", "ready@example.com")
+func TestJarvisInitCreatesOneAuditableChecklist(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `"principal_open_id":"ou_ready"`) {
-		t.Fatalf("configure output = %s", out)
+	runDir := filepath.Join(repoRoot, "var", "onboarding", fmt.Sprintf("test-%d", time.Now().UnixNano()))
+	defer os.RemoveAll(runDir)
+	out, err := runJarvisInit(t, "", nil, "start", "--profile", "cli_ready", "--run-dir", runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		OK        bool   `json:"ok"`
+		RunDir    string `json:"run_dir"`
+		Checklist string `json:"checklist"`
+	}
+	if err := json.Unmarshal([]byte(out), &created); err != nil {
+		t.Fatal(err)
+	}
+	if !created.OK || created.RunDir != runDir {
+		t.Fatalf("start result = %#v", created)
+	}
+	content, err := os.ReadFile(created.Checklist)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, want := range []string{"## A. 安装与运行底座", "## B. 世界模型", "## 未完成、未做或不适用", "cli_ready", "- [ ]"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("checklist missing %q:\n%s", want, text)
+		}
+	}
+	status, err := runJarvisInit(t, "", nil, "status", "--run-dir", runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary struct {
+		Completed int  `json:"completed"`
+		Pending   int  `json:"pending"`
+		Complete  bool `json:"complete"`
+	}
+	if err := json.Unmarshal([]byte(status), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Completed != 0 || summary.Pending == 0 || summary.Complete {
+		t.Fatalf("status = %#v", summary)
 	}
 }
 
-func TestJarvisInitValidate(t *testing.T) {
+func TestJarvisInitValidateReportsWorldModelWithoutRequiringGroups(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -64,8 +100,12 @@ func TestJarvisInitValidate(t *testing.T) {
 			fmt.Fprint(w, `{"code":0,"data":{"total":3,"items":[]}}`)
 		case "/api/key-matters":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"items":[]}}`)
+		case "/api/resources":
+			fmt.Fprint(w, `{"code":0,"data":{"total":4,"active_total":3,"items":[]}}`)
+		case "/api/relation-facts":
+			fmt.Fprint(w, `{"code":0,"data":{"total":5,"items":[]}}`)
 		case "/api/groups":
-			fmt.Fprint(w, `{"code":0,"data":{"total":1,"items":[{"chat_id":"oc_ready","last_scan_status":"ok"}]}}`)
+			fmt.Fprint(w, `{"code":0,"data":{"total":0,"items":[]}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -81,24 +121,32 @@ case "$*" in
 esac
 `)
 	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
-printf '%s' '{"identity":"user","verified":true,"identities":{"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready","userName":"Ready User"}}}'
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  printf '%s' '{"identity":"user","verified":true,"identities":{"bot":{"status":"ready","verified":true},"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready","userName":"Ready User"}}}'
+  exit 0
+fi
+printf '%s\n' "unexpected lark-cli args: $*" >&2
+exit 9
 `)
-	out, err := runJarvisInit(t, server.URL, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")},
-		"validate", "--profile", "cli_ready")
+	out, err := runJarvisInit(t, server.URL, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "validate", "--profile", "cli_ready")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var result struct {
-		Ready  bool `json:"ready"`
+		Ready        bool `json:"ready"`
+		Observations struct {
+			RelatedGroup bool `json:"related_group_configured"`
+		} `json:"observations"`
 		Counts struct {
-			Projects      int `json:"projects"`
-			RelatedGroups int `json:"related_groups"`
+			Projects  int `json:"projects"`
+			Resources int `json:"resources"`
+			Relations int `json:"relations"`
 		} `json:"counts"`
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("decode output %q: %v", out, err)
 	}
-	if !result.Ready || result.Counts.Projects != 2 || result.Counts.RelatedGroups != 1 {
+	if !result.Ready || result.Observations.RelatedGroup || result.Counts.Projects != 2 || result.Counts.Resources != 4 || result.Counts.Relations != 5 {
 		t.Fatalf("validation result = %#v", result)
 	}
 }
@@ -162,7 +210,7 @@ func writeExecutable(t *testing.T, path, content string) {
 
 func runJarvisInit(t *testing.T, apiBase string, extraEnv []string, args ...string) (string, error) {
 	t.Helper()
-	script, err := filepath.Abs(filepath.Join("..", "..", ".agents", "skills", "initialize-jarvis", "scripts", "jarvis-init"))
+	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "jarvis-init"))
 	if err != nil {
 		t.Fatal(err)
 	}

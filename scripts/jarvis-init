@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# Project-owned onboarding helper. It keeps the shared checklist and exposes
+# existing M1/M2 machine boundaries; semantic decisions remain in the Skills.
+set -euo pipefail
+
+fail() {
+  printf 'jarvis-init: %s\n' "$*" >&2
+  exit 1
+}
+
+command -v curl >/dev/null 2>&1 || fail "curl is required but not found in PATH"
+command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CONFIG_PATH="conf/config.yaml"
+PROFILE=""
+CHAT_ID=""
+RUN_DIR=""
+CHECKLIST_TEMPLATE="${REPO_ROOT}/docs/templates/jarvis-onboarding-checklist.md"
+
+usage() {
+  cat <<'EOF'
+usage: jarvis-init <start|preflight|status|discover|scan|validate> [flags]
+
+Project-owned helper used by $install-jarvis and $initialize-jarvis. It is not
+part of the normal Jarvis M3/M5 tool catalog and does not install services or
+configure CC Connect.
+
+commands:
+  start      Create var/onboarding/<run-id>/ with evidence/ and CHECKLIST.md
+  preflight  Validate repository-local initialization resources
+  status     Summarize checked and unchecked items in one run checklist
+  discover   Run one synchronous M2 chat discovery through the running server
+  scan       Run one synchronous M2 scan for one chat
+  validate   Validate the principal world model and report object/group counts
+EOF
+}
+
+consume_flags() {
+  while (( $# > 0 )); do
+    case "$1" in
+      --config)
+        (( $# >= 2 )) || fail "--config requires a value"
+        CONFIG_PATH="$2"; shift 2 ;;
+      --profile)
+        (( $# >= 2 )) || fail "--profile requires a value"
+        PROFILE="$2"; shift 2 ;;
+      --chat-id)
+        (( $# >= 2 )) || fail "--chat-id requires a value"
+        CHAT_ID="$2"; shift 2 ;;
+      --run-dir)
+        (( $# >= 2 )) || fail "--run-dir requires a value"
+        RUN_DIR="$2"; shift 2 ;;
+      --help|-h)
+        usage; exit 0 ;;
+      *) fail "unknown argument: $1" ;;
+    esac
+  done
+}
+
+resolve_run_dir() {
+  local resolved="$1"
+  if [[ "$resolved" != /* ]]; then
+    resolved="${REPO_ROOT}/${resolved}"
+  fi
+  case "$resolved" in
+    "${REPO_ROOT}/var/onboarding/"*) printf '%s\n' "$resolved" ;;
+    *) fail "run directory must be inside ${REPO_ROOT}/var/onboarding" ;;
+  esac
+}
+
+cmd_start() {
+  local run_id started_at checklist_path
+  run_id="$(date '+%Y%m%d-%H%M%S')"
+  started_at="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+  if [[ -z "$RUN_DIR" ]]; then
+    RUN_DIR="${REPO_ROOT}/var/onboarding/${run_id}"
+  else
+    RUN_DIR="$(resolve_run_dir "$RUN_DIR")"
+    run_id="$(basename "$RUN_DIR")"
+  fi
+  [[ ! -e "$RUN_DIR" ]] || fail "run directory already exists: ${RUN_DIR}"
+  [[ -f "$CHECKLIST_TEMPLATE" ]] || fail "checklist template is missing: ${CHECKLIST_TEMPLATE}"
+  mkdir -p "${RUN_DIR}/evidence"
+  checklist_path="${RUN_DIR}/CHECKLIST.md"
+  awk -v run_id="$run_id" -v started_at="$started_at" -v repo_root="$REPO_ROOT" -v profile="${PROFILE:-待选择}" '
+    { gsub(/\{\{RUN_ID\}\}/, run_id); gsub(/\{\{STARTED_AT\}\}/, started_at); gsub(/\{\{REPO_ROOT\}\}/, repo_root); gsub(/\{\{PROFILE\}\}/, profile); print }
+  ' "$CHECKLIST_TEMPLATE" >"$checklist_path"
+  jq -nc --arg run_dir "$RUN_DIR" --arg checklist "$checklist_path" --arg evidence_dir "${RUN_DIR}/evidence" \
+    '{ok:true,run_dir:$run_dir,checklist:$checklist,evidence_dir:$evidence_dir}'
+}
+
+cmd_preflight() {
+  local missing=() relative_path runtime_ignored dirty_count missing_json ready
+  for relative_path in \
+    conf/config.yaml conf/skills.yaml scripts/jarvis-tools scripts/jarvis-install scripts/jarvis-init \
+    scripts/install-cc-connect.sh integrations/cc-connect/manage.sh integrations/cc-connect/manifest.sh \
+    integrations/cc-connect/README.md \
+    integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch \
+    docs/templates/jarvis-onboarding-checklist.md .agents/skills/install-jarvis/SKILL.md \
+    .agents/skills/initialize-jarvis/SKILL.md .agents/skills/initialize-jarvis/references/ownership-map.md \
+    .agents/skills/initialize-jarvis/references/evidence-sources.md \
+    .agents/skills/initialize-jarvis/references/modeling-guide.md \
+    .agents/skills/initialize-jarvis/references/worknote-guide.md; do
+    [[ -e "${REPO_ROOT}/${relative_path}" ]] || missing+=("$relative_path")
+  done
+  runtime_ignored=false
+  git -C "$REPO_ROOT" check-ignore -q conf/config.runtime.yaml && runtime_ignored=true
+  dirty_count="$(git -C "$REPO_ROOT" status --porcelain | wc -l | tr -d ' ')"
+  missing_json="$(printf '%s\n' "${missing[@]-}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
+  ready=true
+  (( ${#missing[@]} == 0 )) || ready=false
+  [[ "$runtime_ignored" == "true" ]] || ready=false
+  jq -nc --arg repo_root "$REPO_ROOT" --argjson ready "$ready" --argjson missing "$missing_json" \
+    --argjson runtime_ignored "$runtime_ignored" --argjson dirty_count "$dirty_count" \
+    '{ready:$ready,repo_root:$repo_root,missing:$missing,runtime_config_ignored:$runtime_ignored,dirty_file_count:$dirty_count}'
+  [[ "$ready" == "true" ]]
+}
+
+cmd_status() {
+  [[ -n "$RUN_DIR" ]] || fail "status requires --run-dir"
+  RUN_DIR="$(resolve_run_dir "$RUN_DIR")"
+  local checklist_path completed pending explained
+  checklist_path="${RUN_DIR}/CHECKLIST.md"
+  [[ -f "$checklist_path" ]] || fail "checklist not found: ${checklist_path}"
+  completed="$(awk '/^- \[x\]/{n++} END{print n+0}' "$checklist_path")"
+  pending="$(awk '/^- \[ \]/{n++} END{print n+0}' "$checklist_path")"
+  explained="$(awk '/^- \[ \].*(未做|阻塞|不适用)/{n++} END{print n+0}' "$checklist_path")"
+  jq -nc --arg checklist "$checklist_path" --argjson completed "$completed" --argjson pending "$pending" --argjson pending_with_reason "$explained" \
+    '{checklist:$checklist,completed:$completed,pending:$pending,pending_with_reason:$pending_with_reason,complete:($pending == 0)}'
+}
+
+resolve_api_base() {
+  if [[ -n "${JARVIS_API_BASE:-}" ]]; then printf '%s\n' "${JARVIS_API_BASE%/}"; return; fi
+  local resolved="$CONFIG_PATH"
+  [[ "$resolved" == /* ]] || resolved="${REPO_ROOT}/${resolved}"
+  [[ -f "$resolved" ]] || fail "config file not found: ${resolved}"
+  local public_base_url
+  public_base_url="$(grep -E '^\s*public_base_url:\s*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*public_base_url:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
+  [[ -n "$public_base_url" ]] || fail "could not parse server.public_base_url from ${resolved}"
+  printf '%s\n' "${public_base_url%/}"
+}
+
+api_call() {
+  local method="$1" path="$2" body="${3:-}" url response http_code
+  url="${API_BASE}${path}"
+  if [[ "$method" == "GET" ]]; then
+    response="$(curl -sS -w '\n%{http_code}' --max-time 30 "$url")" || fail "curl failed for ${url}"
+  else
+    response="$(curl -sS -w '\n%{http_code}' --max-time 30 -X "$method" -H 'Content-Type: application/json' --data "$body" "$url")" || fail "curl failed for ${url}"
+  fi
+  http_code="$(printf '%s\n' "$response" | tail -n1)"
+  response="$(printf '%s\n' "$response" | sed '$d')"
+  [[ "$http_code" == "200" ]] || fail "HTTP ${http_code} from ${url}: ${response}"
+  printf '%s' "$response" | jq -e '.code == 0' >/dev/null 2>&1 || fail "invalid API response from ${url}: ${response}"
+  printf '%s' "$response"
+}
+
+cmd_discover() {
+  API_BASE="$(resolve_api_base)"
+  api_call POST /api/debug/capture/discover '{}' | jq -c '.data'
+}
+
+cmd_scan() {
+  [[ -n "$CHAT_ID" ]] || fail "scan requires --chat-id"
+  API_BASE="$(resolve_api_base)"
+  api_call POST /api/debug/capture/scan-chat "$(jq -nc --arg chat_id "$CHAT_ID" '{chat_id:$chat_id}')" | jq -c '.data'
+}
+
+cmd_validate() {
+  [[ -n "$PROFILE" ]] || fail "validate requires --profile"
+  command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
+  command -v go >/dev/null 2>&1 || fail "go is required but not found in PATH"
+  API_BASE="$(resolve_api_base)"
+  local auth configured principal projects persons matters resources relations groups result
+  auth="$(LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 lark-cli auth status --profile "$PROFILE" --json --verify)" || fail "lark-cli auth failed"
+  configured="$(cd "$REPO_ROOT" && go run ./cmd/jarvis-config show-principal --config "$CONFIG_PATH")" || fail "load machine identity failed"
+  principal="$(api_call GET /api/profile | jq -c '.data')"
+  projects="$(api_call GET '/api/projects?page=1&page_size=1' | jq -c '.data')"
+  persons="$(api_call GET '/api/persons?page=1&page_size=1' | jq -c '.data')"
+  matters="$(api_call GET '/api/key-matters?page=1&page_size=1' | jq -c '.data')"
+  resources="$(api_call GET '/api/resources?page=1&page_size=1' | jq -c '.data')"
+  relations="$(api_call GET '/api/relation-facts?page=1&page_size=1' | jq -c '.data')"
+  groups="$(api_call GET '/api/groups?page=1&page_size=100' | jq -c '.data')"
+  result="$(jq -nc --arg profile "$PROFILE" --argjson auth "$auth" --argjson configured "$configured" \
+    --argjson principal "$principal" --argjson projects "$projects" --argjson persons "$persons" \
+    --argjson matters "$matters" --argjson resources "$resources" --argjson relations "$relations" --argjson groups "$groups" '
+      ($auth.identities.user // {}) as $user |
+      (($auth.verified == true) and ($user.status == "ready") and ($user.verified == true) and ($user.tokenStatus == "valid")) as $auth_ok |
+      (($principal.saved == true) and ((($principal.open_id // "") | length) > 0) and ((($principal.name // "") | length) > 0)) as $principal_ok |
+      ($auth_ok and $principal_ok and ($user.openId == $configured.principal_open_id) and ($user.openId == $principal.open_id) and ($profile == $configured.lark_profile)) as $identity_ok |
+      ([($groups.items // [])[] | select(.last_scan_status == "ok")] | length) as $scans |
+      {
+        ready: ($auth_ok and $principal_ok and $identity_ok),
+        checks:{lark_user_authenticated:$auth_ok,principal_profile_saved:$principal_ok,principal_identity_matches_login:$identity_ok},
+        observations:{manager_known:((($principal.leader_open_id // "") | length) > 0),related_group_configured:(($groups.total // 0) > 0),successful_group_scan:($scans > 0)},
+        counts:{projects:($projects.total // 0),persons:($persons.total // 0),key_matters:($matters.total // 0),resources:($resources.total // 0),active_resources:($resources.active_total // 0),relations:($relations.total // 0),related_groups:($groups.total // 0),successful_scan_checkpoints_in_sample:$scans}
+      }')"
+  printf '%s\n' "$result" | jq -c .
+  jq -e '.ready == true' >/dev/null <<<"$result"
+}
+
+(( $# > 0 )) || { usage >&2; exit 2; }
+command_name="$1"
+shift
+consume_flags "$@"
+case "$command_name" in
+  start) cmd_start ;;
+  preflight) cmd_preflight ;;
+  status) cmd_status ;;
+  discover) cmd_discover ;;
+  scan) cmd_scan ;;
+  validate) cmd_validate ;;
+  help|--help|-h) usage ;;
+  *) fail "unknown command: ${command_name}" ;;
+esac

@@ -178,3 +178,132 @@ func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 		}
 	}
 }
+
+func TestInitializeJarvisUsesUserAuthoredDocumentsInsteadOfOKRAPI(t *testing.T) {
+	initializePath := filepath.Join("..", "..", ".agents", "skills", "initialize-jarvis")
+	initializeSkill, err := os.ReadFile(filepath.Join(initializePath, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceSources, err := os.ReadFile(filepath.Join(initializePath, "references", "evidence-sources.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	installSkill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "install-jarvis", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	combined := string(initializeSkill) + "\n" + string(evidenceSources)
+	for _, want := range []string{
+		"`lark-drive`、`lark-doc`",
+		"--created-by-me",
+		"--query \"\" --edited-since <from>",
+		"`docs +fetch`",
+		"不得改走 OKR API",
+		"search:docs:read",
+	} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("document-based initialization contract is missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"加载并遵循 `lark-contact`、`lark-okr`",
+		"当前 OKR 周期、Objective/KR",
+		"--query \"\" --created-by-me --edited-since",
+	} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("initialization still depends on the OKR API contract %q", forbidden)
+		}
+	}
+	if !strings.Contains(string(installSkill), "`lark-drive`、`lark-doc`") {
+		t.Fatalf("install skill does not require the document capabilities needed by initialization")
+	}
+}
+
+func TestInitializeJarvisBuildsAReadBackWorldModel(t *testing.T) {
+	initializePath := filepath.Join("..", "..", ".agents", "skills", "initialize-jarvis")
+	paths := []string{
+		"SKILL.md",
+		filepath.Join("references", "modeling-guide.md"),
+		filepath.Join("references", "worknote-guide.md"),
+		filepath.Join("references", "ownership-map.md"),
+		filepath.Join("references", "evidence-sources.md"),
+	}
+	var combined strings.Builder
+	for _, relativePath := range paths {
+		content, err := os.ReadFile(filepath.Join(initializePath, relativePath))
+		if err != nil {
+			t.Fatalf("read %s: %v", relativePath, err)
+		}
+		combined.Write(content)
+		combined.WriteByte('\n')
+	}
+	contract := combined.String()
+	for _, want := range []string{
+		"world-model.md",
+		"CHECKLIST.md",
+		"高置信且不会覆盖存量的事实可以直接应用",
+		"高影响歧义",
+		"create-relation",
+		"list-relations",
+		"append-fact",
+		"list-facts",
+		"--source initialization",
+		"source_kind=initialization",
+		"稳定锚点",
+		"最近活动面",
+		"定向扩展",
+		"Group→Project、KeyMatter→Project、ManagedResource→Person/Project/Principal",
+		"不生成 `approved-draft.json`、`approval.json` 或 hash 审批状态",
+		"真正的业务真源始终是 M1/M2",
+		"每次写入后立即使用对应 get/list/query 命令读回",
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("world-model initialization contract is missing %q", want)
+		}
+	}
+	if strings.Contains(contract, "get-context` 能看到正确 Principal、项目、人物、重点事项") {
+		t.Fatal("initialize skill still claims get-context returns the whole world model")
+	}
+}
+
+func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *testing.T) {
+	installPath := filepath.Join("..", "..", ".agents", "skills", "install-jarvis")
+	installSkill, err := os.ReadFile(filepath.Join(installPath, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundaries, err := os.ReadFile(filepath.Join(installPath, "references", "installation-boundaries.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initializeSkill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "initialize-jarvis", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	binding, err := os.ReadFile(filepath.Join(installPath, "references", "cc-connect-binding.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := string(installSkill) + "\n" + string(boundaries) + "\n" + string(binding) + "\n" + string(initializeSkill)
+	for _, want := range []string{
+		"机器事实 → 全部依赖 → `validate-dependencies`",
+		"依赖门通过前不得启动 CC Connect 或 Jarvis",
+		"世界模型不是服务启动前置条件",
+		"Qdrant 是依赖服务",
+		"`install-server` 必须在调用 `install-launchd.sh` 前再次通过依赖门",
+		"install-cc-connect",
+		"一个飞书 App/Bot 是身份根",
+		"CC Connect 是该 Bot WebSocket 的唯一所有者",
+		"validate-binding",
+		"已有 daemon 指向另一 binary/checkout",
+		"初始化只负责“Jarvis 如何理解这个用户的世界”",
+		"不安装或重启 daemon，也不配置 CC",
+	} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("dependency-first installation contract is missing %q", want)
+		}
+	}
+}

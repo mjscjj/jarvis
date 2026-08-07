@@ -108,18 +108,19 @@ cd jarvis_bot
 使用 $install-jarvis 检查这台机器并完成 Jarvis 首次安装和验收。
 ```
 
-`$install-jarvis` 会先报告机器、配置、旧实例和服务事实，再由用户的 Agent 选择依赖安装方式、飞书 app/profile 和后续动作；不会把 Homebrew、某个 profile 或历史数据策略写死。它会转入 `$initialize-jarvis`，基于最近 7 天飞书证据生成身份、项目、关键人物、重点事项和监听群草案，获得用户确认后才写入。
+`$install-jarvis` 会先报告机器、配置、旧实例和服务事实，再由用户的 Agent 选择依赖安装方式、飞书 App/Profile 和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把同一个 App/Profile 绑定到 Jarvis 与 CC Connect，启动并验收运行底座；服务就绪后才转入 `$initialize-jarvis`，根据最近 7 天飞书证据建立人物、项目、资料、重点事项和监听群。
 
 repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills 和仓库基线使用的 traex：
 
 ```bash
-./.agents/skills/install-jarvis/scripts/jarvis-install install-lark-cli
-./.agents/skills/install-jarvis/scripts/jarvis-install install-traex
+./scripts/jarvis-install install-lark-cli
+./scripts/jarvis-install install-traex
+./scripts/jarvis-install install-cc-connect
+./scripts/jarvis-install install-qdrant
+./scripts/jarvis-install validate-dependencies
 ```
 
-lark-cli 使用 larksuite 官方 npm installer；traex 使用其自带 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。Agent 会根据交互终端选择浏览器或 device flow，不在脚本中写死登录方式。
-
-内置服务安装目前只验收 macOS arm64。安装前会提醒：仓库基线配置可能包含共享的明文模型密钥，使用者应自行决定是否替换；安装脚本会把本机配置权限收紧到 `0600`，但不会在输出中展示密钥。
+lark-cli 使用 larksuite 官方 npm installer；traex 使用其 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装目前验收 macOS arm64。
 
 ## 本地运行
 
@@ -145,20 +146,33 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 
 ```bash
 # 推荐让 Agent 先取得事实；fresh clone 的 identity 配置不完整是正常状态
-./.agents/skills/install-jarvis/scripts/jarvis-install doctor
+./scripts/jarvis-install doctor
 
 # 按 doctor 结果安装运行 CLI；已有且可用时是无修改的验证
-./.agents/skills/install-jarvis/scripts/jarvis-install install-lark-cli
-./.agents/skills/install-jarvis/scripts/jarvis-install install-traex
+./scripts/jarvis-install install-lark-cli
+./scripts/jarvis-install install-traex
+./scripts/jarvis-install install-cc-connect
 
-# 先安装/确认 Qdrant，再由 initialize-jarvis 配置身份
-./.agents/skills/install-jarvis/scripts/jarvis-install install-qdrant
+# 安装/确认 Qdrant，然后通过全部依赖验收门
+./scripts/jarvis-install install-qdrant
+./scripts/jarvis-install validate-dependencies
 
-# 用户确认初始化草案后，初始化 Skill 会在 fresh clone 上调用：
-./.agents/skills/install-jarvis/scripts/jarvis-install install-server
+# 依赖门通过后选择并登录一个 lark-cli Profile，先建立整次运行的打勾清单：
+./scripts/jarvis-init start --profile <profile>
+
+# 再写本机 identity、绑定 CC：
+./scripts/jarvis-install configure-identity --open-id <open_id> --profile <profile> --git-author <author>
+./scripts/jarvis-install bind-cc --profile <profile>
+./scripts/jarvis-install validate-binding --profile <profile>
+
+# 启动补丁版 CC Connect 后，fresh clone 安装主服务：
+./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"
+./scripts/jarvis-install install-server
 
 # 系统级验收
-./.agents/skills/install-jarvis/scripts/jarvis-install validate
+./scripts/jarvis-install validate
+
+# 安装清单 A 区验收完成后，把同一个 run_dir 交给 $initialize-jarvis
 
 # 日常后端修改后重建、稳定签名并重启
 ./scripts/rebuild-server.sh
@@ -169,7 +183,7 @@ curl http://127.0.0.1:18800/healthz
 curl -s http://127.0.0.1:18800/readyz | jq
 ```
 
-不要在 fresh clone 上先运行 `install-launchd.sh`：主服务启动需要完成 identity 配置且 Qdrant 已健康。底层脚本仍是机器动作真源，首次安装由 `jarvis-install` 按这些前置条件调用。
+不要在 fresh clone 上提前运行 `install-launchd.sh`、`rebuild-server.sh` 或 `install-server`：必须先通过 `validate-dependencies`，再完成 identity 与 CC 绑定。世界模型初始化在服务就绪后执行，不是启动前置条件。`var/onboarding/<run-id>/CHECKLIST.md` 逐项标记完成、未做、阻塞或不适用及其原因。
 
 不要裸 `go build` 覆盖 `bin/jarvis-server` 后直接重启，否则会破坏 macOS TCC 的稳定签名。
 
@@ -182,6 +196,7 @@ curl -s http://127.0.0.1:18800/readyz | jq
 | `com.bytedance.jarvis.server` | 18800 | Hertz API + 生产 `web/dist` + 流水线与 cron |
 | `com.bytedance.jarvis.web` | 18801 | Vite 开发热更；生产不依赖 |
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | HTTP / gRPC，当前只用于 Todo 语义去重 |
+| `com.cc-connect.service` | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与审批 relay |
 
 仓库没有 Web launchd 安装脚本。首次启用 18801 时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。
 

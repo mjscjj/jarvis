@@ -1,4 +1,4 @@
 interface:
   display_name: "初始化 Jarvis"
-  short_description: "通过飞书证据初始化个人、人物、项目、重点事项和群监听"
-  default_prompt: "使用 $initialize-jarvis 为当前用户完成一次可审阅、可验证的 Jarvis 首次初始化。"
+  short_description: "用飞书证据初始化世界模型并维护完成清单"
+  default_prompt: "使用 $initialize-jarvis 在运行底座就绪后，以飞书证据建立人、事、物、群和重点事项，逐项写入读回，并在 CHECKLIST.md 标明完成与未完成内容。"

@@ -2,6 +2,9 @@ package config
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -16,11 +19,13 @@ import (
 // PrincipalConfiguration is the machine-readable result of initializing the
 // machine-consumed identity settings Jarvis needs before its first real run.
 type PrincipalConfiguration struct {
-	RuntimeConfigPath string `json:"runtime_config_path"`
-	PrincipalOpenID   string `json:"principal_open_id"`
-	LarkProfile       string `json:"lark_profile"`
-	GitAuthor         string `json:"git_author"`
-	RestartRequired   bool   `json:"restart_required"`
+	RuntimeConfigPath      string `json:"runtime_config_path"`
+	PrincipalOpenID        string `json:"principal_open_id"`
+	LarkProfile            string `json:"lark_profile"`
+	GitAuthor              string `json:"git_author"`
+	CardApprovalConfigured bool   `json:"card_approval_configured"`
+	RelaySecretConfigured  bool   `json:"relay_secret_configured"`
+	RestartRequired        bool   `json:"restart_required"`
 }
 
 // InitializationStatus projects only the machine-owned fields needed to
@@ -36,6 +41,7 @@ type InitializationStatus struct {
 	PrincipalOpenIDConfigured bool     `json:"principal_open_id_configured"`
 	LarkProfileConfigured     bool     `json:"lark_profile_configured"`
 	GitAuthorConfigured       bool     `json:"git_author_configured"`
+	CardApprovalConfigured    bool     `json:"card_approval_configured"`
 	ModelBaseURLConfigured    bool     `json:"model_base_url_configured"`
 	ModelAPIKeyConfigured     bool     `json:"model_api_key_configured"`
 	ModelNameConfigured       bool     `json:"model_name_configured"`
@@ -98,6 +104,12 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 		PrincipalOpenIDConfigured: strings.HasPrefix(strings.TrimSpace(cfg.Extract.PrincipalOpenID), "ou_") && len(strings.TrimSpace(cfg.Extract.PrincipalOpenID)) > len("ou_"),
 		LarkProfileConfigured:     strings.TrimSpace(cfg.LarkCLI.Profile) != "",
 		GitAuthorConfigured:       strings.TrimSpace(cfg.DailyDigest.GitAuthor) != "",
+		CardApprovalConfigured: cfg.CardApproval.Enabled &&
+			strings.TrimSpace(cfg.CardApproval.Profile) != "" &&
+			strings.TrimSpace(cfg.CardApproval.PrincipalOpenID) != "" &&
+			strings.TrimSpace(cfg.CardApproval.RelaySecret) != "" &&
+			cfg.CardApproval.Profile == cfg.LarkCLI.Profile &&
+			cfg.CardApproval.PrincipalOpenID == cfg.Extract.PrincipalOpenID,
 		ModelBaseURLConfigured:    strings.TrimSpace(cfg.Model.BaseURL) != "",
 		ModelAPIKeyConfigured:     strings.TrimSpace(cfg.Model.APIKey) != "",
 		ModelNameConfigured:       strings.TrimSpace(cfg.Model.Model) != "",
@@ -107,7 +119,7 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 		RuntimeBinaries:           initializationRuntimeBinaries(cfg),
 	}
 	status.MachineConfigurationReady = status.PrincipalOpenIDConfigured &&
-		status.LarkProfileConfigured && status.GitAuthorConfigured &&
+		status.LarkProfileConfigured && status.GitAuthorConfigured && status.CardApprovalConfigured &&
 		status.ModelBaseURLConfigured && status.ModelAPIKeyConfigured &&
 		status.ModelNameConfigured && status.EmbeddingModelConfigured &&
 		status.EmbeddingDimensionsReady
@@ -143,11 +155,12 @@ func initializationRuntimeBinaries(cfg Config) []string {
 	return result
 }
 
-// ConfigurePrincipal writes the app-scoped principal open_id and lark-cli
-// profile plus the principal's Git author pattern to the ignored runtime
-// overlay. It intentionally does not touch the tracked base config or any M1
-// business data. Existing unrelated overlay keys are preserved so a setup run
-// cannot erase local secrets or runtime tuning.
+// ConfigurePrincipal writes the app-scoped principal open_id, the one selected
+// lark-cli profile, its matching card-approval identity, and the principal's
+// Git author pattern to the ignored runtime overlay. The relay secret is
+// generated once and preserved across reruns; install-jarvis copies the same
+// value into CC Connect's jarvis-codex project. It intentionally does not
+// touch the tracked base config or any M1 business data.
 func ConfigurePrincipal(configPath, principalOpenID, larkProfile, gitAuthor string) (*PrincipalConfiguration, error) {
 	configPath = strings.TrimSpace(configPath)
 	principalOpenID = strings.TrimSpace(principalOpenID)
@@ -180,9 +193,26 @@ func ConfigurePrincipal(configPath, principalOpenID, larkProfile, gitAuthor stri
 		return nil, err
 	}
 	root := document.Content[0]
+	cardApproval := mappingValue(root, "card_approval")
+	relaySecret := ""
+	if cardApproval != nil {
+		if relayNode := mappingValue(cardApproval, "relay_secret"); relayNode != nil {
+			relaySecret = strings.TrimSpace(relayNode.Value)
+		}
+	}
+	if relaySecret == "" {
+		relaySecret, err = newRelaySecret()
+		if err != nil {
+			return nil, err
+		}
+	}
 	setYAMLScalar(root, "extract", "principal_open_id", principalOpenID)
 	setYAMLScalar(root, "lark_cli", "profile", larkProfile)
 	setYAMLScalar(root, "dailydigest", "git_author", gitAuthor)
+	setYAMLBool(root, "card_approval", "enabled", true)
+	setYAMLScalar(root, "card_approval", "profile", larkProfile)
+	setYAMLScalar(root, "card_approval", "principal_open_id", principalOpenID)
+	setYAMLScalar(root, "card_approval", "relay_secret", relaySecret)
 
 	var encoded bytes.Buffer
 	encoder := yaml.NewEncoder(&encoded)
@@ -200,12 +230,29 @@ func ConfigurePrincipal(configPath, principalOpenID, larkProfile, gitAuthor stri
 		return nil, err
 	}
 	return &PrincipalConfiguration{
-		RuntimeConfigPath: overridePath,
-		PrincipalOpenID:   principalOpenID,
-		LarkProfile:       larkProfile,
-		GitAuthor:         gitAuthor,
-		RestartRequired:   true,
+		RuntimeConfigPath:      overridePath,
+		PrincipalOpenID:        principalOpenID,
+		LarkProfile:            larkProfile,
+		GitAuthor:              gitAuthor,
+		CardApprovalConfigured: true,
+		RelaySecretConfigured:  true,
+		RestartRequired:        true,
 	}, nil
+}
+
+func newRelaySecret() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate CC Connect relay secret: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+// RelaySecretSHA256 returns a stable comparison value without exposing the
+// plaintext secret in command output.
+func RelaySecretSHA256(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
 }
 
 func readRuntimeOverrideDocument(path string) (*yaml.Node, error) {
@@ -254,6 +301,12 @@ func setYAMLScalar(root *yaml.Node, section, key, value string) {
 	valueNode.Tag = "!!str"
 	valueNode.Value = value
 	valueNode.Content = nil
+}
+
+func setYAMLBool(root *yaml.Node, section, key string, value bool) {
+	setYAMLScalar(root, section, key, fmt.Sprintf("%t", value))
+	valueNode := mappingValue(mappingValue(root, section), key)
+	valueNode.Tag = "!!bool"
 }
 
 func mappingValue(mapping *yaml.Node, key string) *yaml.Node {

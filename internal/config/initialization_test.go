@@ -30,7 +30,8 @@ lark_cli:
 		t.Fatalf("ConfigurePrincipal() error = %v", err)
 	}
 	if result.RuntimeConfigPath != overridePath || result.PrincipalOpenID != "ou_new_principal" ||
-		result.LarkProfile != "cli_new_user" || result.GitAuthor != "new.user@example.com" || !result.RestartRequired {
+		result.LarkProfile != "cli_new_user" || result.GitAuthor != "new.user@example.com" ||
+		!result.CardApprovalConfigured || !result.RelaySecretConfigured || !result.RestartRequired {
 		t.Fatalf("ConfigurePrincipal() = %#v", result)
 	}
 	cfg, err := Load(configPath)
@@ -41,8 +42,9 @@ lark_cli:
 		cfg.DailyDigest.GitAuthor != "new.user@example.com" || cfg.LarkCLI.RateLimit != 7 {
 		t.Fatalf("initialized config = extract:%q lark:%#v", cfg.Extract.PrincipalOpenID, cfg.LarkCLI)
 	}
-	if cfg.CardApproval.Profile != "cli_bot" || cfg.CardApproval.RelaySecret != "secret" {
-		t.Fatalf("card approval was not preserved: %#v", cfg.CardApproval)
+	if !cfg.CardApproval.Enabled || cfg.CardApproval.Profile != "cli_new_user" ||
+		cfg.CardApproval.PrincipalOpenID != "ou_new_principal" || cfg.CardApproval.RelaySecret != "secret" {
+		t.Fatalf("card approval was not rebound to the selected profile while preserving its secret: %#v", cfg.CardApproval)
 	}
 	raw, err := os.ReadFile(overridePath)
 	if err != nil {

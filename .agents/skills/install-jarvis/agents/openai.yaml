@@ -1,4 +1,4 @@
 interface:
   display_name: "安装 Jarvis"
-  short_description: "检查本机条件并引导 Agent 完成 Jarvis 安装与验收"
-  default_prompt: "使用 $install-jarvis 检查当前机器并完成 Jarvis 首次安装。"
+  short_description: "安装依赖、绑定 CC Connect，并启动验收运行底座"
+  default_prompt: "使用 $install-jarvis 安装并验收依赖，用同一个飞书 App/Profile 绑定 Jarvis 与 CC Connect，启动服务并维护首次安装清单；运行就绪后再转入世界模型初始化。"
