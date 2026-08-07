@@ -50,6 +50,8 @@ import type {
   WorkRuleInput,
   TextFile,
   TextFileInput,
+  AgentConfigPreview,
+  AgentConfigStage,
   ScheduledTask,
   ScheduledTaskInput,
   RuntimeSettings,
@@ -446,6 +448,10 @@ export function getTextFile(key: string, signal?: AbortSignal): Promise<TextFile
 
 export function updateTextFile(key: string, body: TextFileInput): Promise<TextFile> {
   return request<TextFile>(`/api/text-files/${encodeURIComponent(key)}`, { method: 'PUT', body })
+}
+
+export function getAgentConfigPreview(stage: AgentConfigStage, signal?: AbortSignal): Promise<AgentConfigPreview> {
+  return request<AgentConfigPreview>(`/api/agent-config/stages/${encodeURIComponent(stage)}/preview`, { signal })
 }
 
 export function listScheduledTasks(status = '', signal?: AbortSignal): Promise<{ items: ScheduledTask[] }> {

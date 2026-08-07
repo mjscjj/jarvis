@@ -817,12 +817,23 @@ export interface TextFile {
   key: string
   name: string
   description: string
+  kind: 'system_prompt' | 'approval_policy'
+  stage: string
   path: string
   content: string
 }
 
 export interface TextFileInput {
   content: string
+}
+
+export type AgentConfigStage = 'm3' | 'm5'
+
+export interface AgentConfigPreview {
+  stage: AgentConfigStage
+  name: string
+  content: string
+  dynamic_blocks: string[]
 }
 
 export type ScheduledTaskStatus = 'binding' | 'active' | 'running' | 'completed'

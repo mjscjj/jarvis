@@ -49,8 +49,6 @@ import {
   listResources,
   listSubjectFacts,
   listSkills,
-  listWorkRules,
-  listTextFiles,
   resolvePerson,
   scanSkills,
   updateGroupBackground,
@@ -60,8 +58,6 @@ import {
   updateProject,
   updateResource,
   updateSkill,
-  updateWorkRule,
-  updateTextFile,
 } from './api'
 import { keyMatterToInput, replaceKeyMatter } from './keyMatters'
 import SharedMemory from './SharedMemory'
@@ -92,10 +88,7 @@ import type {
   ResourceInput,
   ResourceType,
   SkillStage,
-  WorkRule,
   WorkRuleStage,
-  TextFile,
-  TextFileInput,
 } from './types'
 import './styles/review-memory.css'
 
@@ -1313,189 +1306,6 @@ function ResourcePanel() {
   </>
 }
 
-// --- Work rules ---
-
-function WorkRulesPanel() {
-  const [records, setRecords] = useState<Partial<Record<WorkRule['key'], WorkRule>>>({})
-  const [drafts, setDrafts] = useState<Partial<Record<WorkRule['key'], string>>>({})
-  const [activeKey, setActiveKey] = useState<WorkRule['key']>('all')
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string>()
-  const [ok, setOk] = useState(false)
-
-  const reload = useCallback(() => {
-    setLoading(true)
-    listWorkRules()
-      .then((result) => {
-        const nextRecords: Partial<Record<WorkRule['key'], WorkRule>> = {}
-        const nextDrafts: Partial<Record<WorkRule['key'], string>> = {}
-        for (const item of result.items) {
-          nextRecords[item.key] = item
-          nextDrafts[item.key] = item.content
-        }
-        setRecords(nextRecords)
-        setDrafts(nextDrafts)
-        setError(undefined)
-      })
-      .catch((cause: unknown) => setError(errorText(cause)))
-      .finally(() => setLoading(false))
-  }, [])
-  useEffect(reload, [reload])
-
-  const save = async () => {
-    const content = drafts[activeKey] ?? ''
-    setSaving(true)
-    try {
-      const updated = await updateWorkRule(activeKey, { content })
-      setRecords((current) => ({ ...current, [activeKey]: updated }))
-      setDrafts((current) => ({ ...current, [activeKey]: updated.content }))
-      setOk(true)
-      setError(undefined)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const definitions: Array<{ key: WorkRule['key']; label: string; description: string }> = [
-    { key: 'all', label: '全阶段', description: '会与每个具体阶段的规则一起注入。' },
-    { key: 'extract', label: 'M3 抽取', description: '只在行动线索抽取阶段注入。' },
-    { key: 'execute', label: 'M5 执行', description: '只在任务执行阶段注入。' },
-  ]
-
-  return <>
-    {error && <Alert type="error" showIcon title="工作规则操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon title="工作规则已保存，后续对应阶段会实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
-    <Alert type="info" showIcon title="工作规则直接读写本地 Markdown"
-      description="文件中的顺序就是执行优先级。全阶段规则会与当前阶段规则组合注入；清空文件即表示该范围没有规则。"
-      style={{ marginBottom: 12 }} />
-    <Card loading={loading} variant="borderless">
-      <Tabs
-        tabPosition="left"
-        activeKey={activeKey}
-        onChange={(key) => { setActiveKey(key as WorkRule['key']); setOk(false); setError(undefined) }}
-        items={definitions.map((definition) => ({
-          key: definition.key,
-          label: definition.label,
-          children: (
-            <>
-              <Text strong>{records[definition.key]?.name ?? definition.label}</Text>
-              <div><Text type="secondary">{definition.description}</Text></div>
-              <div style={{ margin: '8px 0 12px' }}><Text code>{records[definition.key]?.path}</Text></div>
-              <Input.TextArea
-                value={drafts[definition.key] ?? ''}
-                onChange={(event) => setDrafts((current) => ({ ...current, [definition.key]: event.target.value }))}
-                autoSize={{ minRows: 18, maxRows: 32 }}
-                style={{ fontFamily: 'monospace' }}
-              />
-              <Flex gap={8} style={{ marginTop: 12 }}>
-                <Button type="primary" onClick={save} loading={saving}>保存修改</Button>
-                <Button onClick={reload} loading={loading}>刷新</Button>
-              </Flex>
-            </>
-          ),
-        }))}
-      />
-    </Card>
-  </>
-}
-
-// --- Agent prompts and policies (stored in local Markdown files) ---
-
-// The tab list mirrors whatever the server registers, so adding a prompt file
-// is a textstore registration and needs no change here.
-function TextFilesPanel() {
-  const [items, setItems] = useState<TextFile[]>([])
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [activeKey, setActiveKey] = useState<string>()
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string>()
-  const [ok, setOk] = useState(false)
-
-  const reload = useCallback(() => {
-    setLoading(true)
-    listTextFiles()
-      .then((result) => {
-        setItems(result.items)
-        setDrafts(Object.fromEntries(result.items.map((item) => [item.key, item.content])))
-        setActiveKey((current) => (
-          current && result.items.some((item) => item.key === current) ? current : result.items[0]?.key
-        ))
-        setError(undefined)
-      })
-      .catch((cause: unknown) => setError(errorText(cause)))
-      .finally(() => setLoading(false))
-  }, [])
-  useEffect(reload, [reload])
-
-  const save = async (item: TextFile) => {
-    const content = drafts[item.key] ?? ''
-    if (!content.trim()) {
-      setError(`${item.name}不能为空`)
-      return
-    }
-    setSaving(true)
-    try {
-      const updated = await updateTextFile(item.key, { content })
-      setItems((current) => current.map((row) => (row.key === updated.key ? updated : row)))
-      setDrafts((current) => ({ ...current, [updated.key]: updated.content }))
-      setOk(true)
-      setError(undefined)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return <>
-    {error && <Alert type="error" showIcon title="提示词与策略操作失败" description={error} closable onClose={() => setError(undefined)} style={{ marginBottom: 12 }} />}
-    {ok && <Alert type="success" showIcon title="已保存，对应环节下次运行时实时读取" closable onClose={() => setOk(false)} style={{ marginBottom: 12 }} />}
-    <Alert
-      type="info"
-      showIcon
-      title="这些内容直接读写本地 Markdown 文件"
-      description="清单由服务端注册表决定，各环节运行时实时读取。工具说明由工具层维护，Skills 由 Skills 页维护；当前环节、任务上下文、审批产物和 JSON 输出协议由代码动态组装。"
-      style={{ marginBottom: 12 }}
-    />
-    <Card loading={loading} variant="borderless">
-      <Tabs
-        tabPosition="left"
-        activeKey={activeKey}
-        onChange={(key) => { setActiveKey(key); setOk(false); setError(undefined) }}
-        items={items.map((item) => ({
-          key: item.key,
-          label: item.name,
-          children: (
-            <>
-              <div><Text type="secondary">{item.description}</Text></div>
-              <div style={{ margin: '8px 0 12px' }}>
-                <Text code>{item.key}</Text>
-                <Text type="secondary"> · </Text>
-                <Text code>{item.path}</Text>
-              </div>
-              <Input.TextArea
-                value={drafts[item.key] ?? ''}
-                onChange={(event) => setDrafts((current) => ({ ...current, [item.key]: event.target.value }))}
-                autoSize={{ minRows: 16, maxRows: 30 }}
-                placeholder={`填写${item.name}`}
-                style={{ fontFamily: 'monospace' }}
-              />
-              <Flex gap={8} style={{ marginTop: 12 }}>
-                <Button type="primary" onClick={() => save(item)} loading={saving}>保存修改</Button>
-                <Button onClick={reload} loading={loading}>刷新</Button>
-              </Flex>
-            </>
-          ),
-        }))}
-      />
-    </Card>
-  </>
-}
-
 // --- Skills ---
 
 function SkillsPanel() {
@@ -1666,35 +1476,22 @@ export default function Background() {
 
 export function Settings() {
   const { context, setViewState } = usePageContext()
-  type SettingsView = 'runtime' | 'scheduling' | 'behavior' | 'extensions'
+  type SettingsView = 'runtime' | 'scheduling' | 'memory' | 'extensions'
   const settingsView = (value: string | undefined): SettingsView => (
-    value === 'scheduling' || value === 'behavior' || value === 'extensions' ? value : 'runtime'
+    value === 'scheduling' || value === 'memory' || value === 'extensions' ? value : 'runtime'
   )
   const activeView = settingsView(context.view_state.view)
 
   return (
     <div className="settings-page">
-      <PageHeader title="系统设置" subtitle="配置 Jarvis 的运行、调度、行为和扩展能力" />
+      <PageHeader title="系统设置" subtitle="配置 Jarvis 的运行、调度、共享记忆和扩展能力" />
       <Tabs
         activeKey={activeView}
         onChange={(view) => setViewState({ view })}
         items={[
           { key: 'runtime', label: '运行', children: <RuntimeSettings /> },
           { key: 'scheduling', label: '调度', children: <SystemTasks /> },
-          {
-            key: 'behavior',
-            label: '行为',
-            children: (
-              <Tabs
-                size="small"
-                items={[
-                  { key: 'work-rules', label: '工作规则', children: <WorkRulesPanel /> },
-                  { key: 'text-files', label: '提示词与策略', children: <TextFilesPanel /> },
-                  { key: 'shared-memory', label: '共享记忆', children: <SharedMemory /> },
-                ]}
-              />
-            ),
-          },
+          { key: 'memory', label: '共享记忆', children: <SharedMemory /> },
           { key: 'extensions', label: '扩展', children: <SkillsPanel /> },
         ]}
       />

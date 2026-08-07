@@ -31,7 +31,7 @@ type fakePipelineStore struct {
 type fakeSystemPromptReader struct{}
 
 func (fakeSystemPromptReader) Content(context.Context, string) (string, error) {
-	return "fixture M3 system prompt", nil
+	return "fixture M3 system prompt\n{{WORK_RULES}}", nil
 }
 
 func (f *fakePipelineStore) PendingChatIDs(context.Context) ([]string, error) {

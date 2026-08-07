@@ -1,0 +1,78 @@
+.agent-settings-page {
+  width: 100%;
+}
+
+.agent-settings-page > .ant-alert {
+  margin-bottom: var(--space-3);
+}
+
+.agent-settings-page > .ant-spin-nested-loading > .ant-spin-container > .ant-tabs > .ant-tabs-nav {
+  margin-bottom: var(--space-4);
+}
+
+.agent-settings-page > .ant-spin-nested-loading > .ant-spin-container > .ant-tabs > .ant-tabs-nav .ant-tabs-tab {
+  min-width: 92px;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.agent-stage-content {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.agent-config-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.agent-config-card-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: flex-start;
+  margin-bottom: var(--space-3);
+}
+
+.agent-config-card-heading > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.agent-markdown-editor,
+.agent-markdown-editor textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.agent-preview-editor {
+  background: var(--color-bg-layout);
+}
+
+.agent-dynamic-blocks {
+  margin-bottom: var(--space-3);
+}
+
+.agent-inline-path {
+  margin-bottom: var(--space-2);
+}
+
+.agent-rules-card > .ant-card-body > .ant-tabs > .ant-tabs-nav {
+  margin-bottom: var(--space-3);
+}
+
+.agent-config-card .agent-config-card {
+  border: 0;
+  box-shadow: none;
+}
+
+@media (max-width: 820px) {
+  .agent-config-card-heading {
+    flex-direction: column;
+  }
+
+  .agent-settings-page .ant-tabs-left > .ant-tabs-nav {
+    width: 128px;
+  }
+}

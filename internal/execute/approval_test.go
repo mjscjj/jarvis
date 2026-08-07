@@ -355,16 +355,16 @@ var errTest = errors.New("group not found")
 // asked to judge approval without the policy to judge against. Both resume
 // paths must refuse to build rather than run blind.
 func TestResumePromptsRequireApprovalPolicy(t *testing.T) {
-	if _, err := buildHumanResumePrompt("sys", "  ", "回应", "", testToolCatalog); err == nil {
+	if _, err := buildHumanResumePrompt(testM5SystemPrompt, "  ", "回应", "", testToolCatalog); err == nil {
 		t.Fatal("buildHumanResumePrompt() with blank approval policy = nil error, want error")
 	}
-	if _, err := buildScheduledResumePrompt("sys", "", "等 CI", "", testToolCatalog); err == nil {
+	if _, err := buildScheduledResumePrompt(testM5SystemPrompt, "", "等 CI", "", testToolCatalog); err == nil {
 		t.Fatal("buildScheduledResumePrompt() with blank approval policy = nil error, want error")
 	}
 }
 
 func TestBuildScheduledResumePromptCarriesApprovalPolicy(t *testing.T) {
-	prompt, err := buildScheduledResumePrompt("sys", "test approval policy", "等 CI 跑完", "", testToolCatalog)
+	prompt, err := buildScheduledResumePrompt(testM5SystemPrompt, "test approval policy", "等 CI 跑完", "", testToolCatalog)
 	if err != nil {
 		t.Fatalf("buildScheduledResumePrompt() error = %v", err)
 	}
@@ -376,7 +376,7 @@ func TestBuildScheduledResumePromptCarriesApprovalPolicy(t *testing.T) {
 }
 
 func TestBuildHumanResumePrompt(t *testing.T) {
-	prompt, err := buildHumanResumePrompt("test M5 system prompt", "test approval policy", "我已确认授权，请继续", "", testToolCatalog)
+	prompt, err := buildHumanResumePrompt(testM5SystemPrompt, "test approval policy", "我已确认授权，请继续", "", testToolCatalog)
 	if err != nil {
 		t.Fatalf("buildHumanResumePrompt() error = %v", err)
 	}
@@ -412,7 +412,7 @@ func TestBuildExecutionPrompt(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		SourcePayload: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildExecutionPrompt() error = %v", err)
 	}
@@ -439,14 +439,14 @@ func TestBuildExecutionPromptIncludesSharedMemory(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		SourcePayload: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildExecutionPrompt("test M5 system prompt", "只读不审批。", task, "", testToolCatalog, "", "", "", nil)
+	empty, err := buildExecutionPrompt(testM5SystemPrompt, "只读不审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildExecutionPrompt() error = %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "只读不审批。", task, "", testToolCatalog, "周报模板固定用飞书文档 xxx", "", "", nil)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "只读不审批。", task, "", testToolCatalog, "周报模板固定用飞书文档 xxx", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildExecutionPrompt() error = %v", err)
 	}
@@ -468,7 +468,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
-	prompt, err := buildApplyPrompt("test M5 system prompt", task, proposal, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildApplyPrompt(testM5SystemPrompt, "新的副作用需要审批。", task, proposal, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
@@ -477,11 +477,14 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 			t.Fatalf("apply prompt missing %q", want)
 		}
 	}
+	if !strings.Contains(prompt, "新的副作用需要审批。") {
+		t.Fatalf("apply prompt missing approval policy:\n%s", prompt)
+	}
 }
 
 func TestBuildExecutionPromptRequiresApprovalPolicy(t *testing.T) {
 	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", SourcePayload: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildExecutionPrompt("test M5 system prompt", "", task, "", testToolCatalog, "", "", "", nil); err == nil {
+	if _, err := buildExecutionPrompt(testM5SystemPrompt, "", task, "", testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatal("empty approval policy must fail")
 	}
 }
@@ -489,7 +492,7 @@ func TestBuildExecutionPromptRequiresApprovalPolicy(t *testing.T) {
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", SourcePayload: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildApplyPrompt("test M5 system prompt", task, nil, "", testToolCatalog, "", "", "", nil); err == nil {
+	if _, err := buildApplyPrompt(testM5SystemPrompt, "policy", task, nil, "", testToolCatalog, "", "", "", nil); err == nil {
 		t.Fatalf("nil proposal must fail")
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
+	"jarvis/internal/prompttemplate"
 	"jarvis/internal/sharedmem"
 )
 
@@ -295,13 +296,10 @@ func projectExecutionContext(task *domain.Task) (executionContext, error) {
 // supplement directive block, and the encoded TASK_CONTEXT into the final codex
 // prompt. sharedMemory (可信共享记忆) is injected right after the instructions and
 // before TASK_CONTEXT（不可信业务数据），即受信任指令区；为空则不注入。
-func renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills string, supplements []ExecutionSupplement, encoded []byte) string {
+func renderPrompt(instructions, toolCatalog, sharedMemory, skills string, supplements []ExecutionSupplement, encoded []byte) string {
 	directive := formatExecutionSupplementDirective(supplements)
 	prompt := strings.TrimSpace(instructions)
 	if block := sharedmem.RenderBlock(sharedMemory); block != "" {
-		prompt += "\n\n" + block
-	}
-	if block := strings.TrimSpace(workRules); block != "" {
 		prompt += "\n\n" + block
 	}
 	if block := strings.TrimSpace(skills); block != "" {
@@ -324,27 +322,19 @@ func renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills str
 // task.execution_supplements (M5-only) are injected as high-priority directives.
 // previousRuns (if any) carry prior attempt results.
 func buildExecutionPrompt(systemPrompt, approvalPolicy string, task *domain.Task, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
-	systemPrompt = strings.TrimSpace(systemPrompt)
-	if systemPrompt == "" {
-		return "", fmt.Errorf("execution system prompt is required")
-	}
-	approvalPolicy = strings.TrimSpace(approvalPolicy)
-	if approvalPolicy == "" {
-		return "", fmt.Errorf("execution approval policy is required")
+	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, systemPrompt, workRules, approvalPolicy)
+	if err != nil {
+		return "", fmt.Errorf("render M5 execution system prompt: %w", err)
 	}
 	supplements, encoded, err := buildTaskContext(task, repoPath, previousRuns)
 	if err != nil {
 		return "", err
 	}
 
-	instructions := systemPrompt + "\n\n" + m5PhaseExecute + `
-
-BEGIN_APPROVAL_POLICY（这是委托人在后台维护的可信审批判定策略。）
-` + approvalPolicy + `
-END_APPROVAL_POLICY`
+	instructions := renderedSystemPrompt + "\n\n" + m5PhaseExecute
 	instructions += repoInstruction(repoPath)
 
-	return renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills, supplements, encoded), nil
+	return renderPrompt(instructions, toolCatalog, sharedMemory, skills, supplements, encoded), nil
 }
 
 // repoInstruction only tells codex where the resolved working copy is. Delivery
@@ -360,13 +350,13 @@ func repoInstruction(repoPath string) string {
 // proposal. The approved action + full artifact is embedded verbatim and codex is
 // told to land it faithfully for real. Its final message must satisfy
 // executionResultSchema.
-func buildApplyPrompt(systemPrompt string, task *domain.Task, proposal *codexProposal, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
-	systemPrompt = strings.TrimSpace(systemPrompt)
-	if systemPrompt == "" {
-		return "", fmt.Errorf("apply system prompt is required")
-	}
+func buildApplyPrompt(systemPrompt, approvalPolicy string, task *domain.Task, proposal *codexProposal, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
 	if proposal == nil {
 		return "", fmt.Errorf("apply prompt Task id=%d has no approved proposal", task.ID)
+	}
+	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, systemPrompt, workRules, approvalPolicy)
+	if err != nil {
+		return "", fmt.Errorf("render M5 apply system prompt: %w", err)
 	}
 	supplements, encoded, err := buildTaskContext(task, repoPath, previousRuns)
 	if err != nil {
@@ -381,10 +371,10 @@ func buildApplyPrompt(systemPrompt string, task *domain.Task, proposal *codexPro
 		return "", fmt.Errorf("encode approved proposal task_id=%d: %w", task.ID, err)
 	}
 
-	instructions := systemPrompt + "\n\n" + m5PhaseApply + `
+	instructions := renderedSystemPrompt + "\n\n" + m5PhaseApply + `
 
 APPROVED_PROPOSAL=` + string(approved)
 	instructions += repoInstruction(repoPath)
 
-	return renderPrompt(instructions, toolCatalog, sharedMemory, workRules, skills, supplements, encoded), nil
+	return renderPrompt(instructions, toolCatalog, sharedMemory, skills, supplements, encoded), nil
 }

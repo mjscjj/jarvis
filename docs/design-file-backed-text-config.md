@@ -19,6 +19,8 @@
 | `m5_approval_policy` | `conf/prompts/m5-approval-policy.md` | 执行期"要不要先请示 principal"的判定策略 |
 | `fact_extract_system_prompt` | `conf/prompts/fact-extract-system-prompt.md` | 持续世界建模系统提示词 |
 
+M3、M5 的系统提示词文件是稳定指令模板：M3 必须且只能包含一个 `{{WORK_RULES}}`；M5 必须且只能包含一个 `{{WORK_RULES}}` 和一个 `{{APPROVAL_POLICY}}`。运行时与后台生效预览共用同一个严格渲染器。未知、缺失或重复占位符直接拒绝启动或保存，不在代码末尾兜底追加规则。
+
 审批策略只回答“下一项具体副作用是否需要先审批”，包括代码修改。批准后的 proposal 必须原样落地、不得重复副作用等协议属于执行状态机的硬约束，保留在代码中，不能由后台关闭。
 
 ## 通用能力
@@ -56,3 +58,5 @@
 - 运行配置：继续使用现有 `conf/config.runtime.yaml`。
 
 文件服务统一采用固定路径、实时读取和原子覆盖，不接受任意路径。对应的 `shared_memory`、`work_rule`、`agent_skill` 表在文件验证通过后删除。
+
+管理后台将 M3/M5 配置放在最外层「Agent 设置」页面。可编辑模板保留占位符；只读生效预览展开工作规则和审批规则，并明确列出仍由运行时注入的 phase、工具、Skills、上下文和输出协议，不能把预览冒充某次真实运行的完整 Prompt。

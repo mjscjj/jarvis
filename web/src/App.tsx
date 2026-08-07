@@ -14,6 +14,7 @@ import {
   DatabaseOutlined,
   CalendarOutlined,
   MoreOutlined,
+  RobotOutlined,
 } from '@ant-design/icons'
 import Overview from './Overview'
 import { PageContextProvider, usePageContext } from './pageContext'
@@ -26,6 +27,7 @@ const { Title } = Typography
 const Tasks = lazy(() => import('./Tasks'))
 const Progress = lazy(() => import('./Progress'))
 const Background = lazy(() => import('./Background'))
+const AgentSettings = lazy(() => import('./AgentSettings'))
 const Settings = lazy(() => import('./Background').then((module) => ({ default: module.Settings })))
 const Todos = lazy(() => import('./Todos'))
 const ScheduledTasks = lazy(() => import('./ScheduledTasks'))
@@ -41,6 +43,7 @@ const pageLabels: Record<string, string> = {
   tasks: '任务',
   progress: '回顾',
   background: '记忆',
+  agents: 'Agent 设置',
   todos: '线索',
   'scheduled-tasks': '自动化',
   settings: '系统设置',
@@ -71,6 +74,7 @@ function AppShell() {
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
     { key: 'background', label: '记忆', icon: <DatabaseOutlined /> },
+    { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
     { type: 'divider' },
     {
       key: 'management',
@@ -91,6 +95,7 @@ function AppShell() {
     tasks: <Tasks />,
     'scheduled-tasks': <ScheduledTasks />,
     background: <Background />,
+    agents: <AgentSettings />,
     settings: <Settings />,
     progress: <Progress />,
     debug: <Debug />,
@@ -217,6 +222,7 @@ function AppShell() {
           { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
           { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
           { key: 'background', label: '记忆', icon: <DatabaseOutlined /> },
+          { key: 'agents', label: 'Agent', icon: <RobotOutlined /> },
         ].map((item) => (
           <button key={item.key} type="button" className={context.active_key === item.key ? 'is-active' : ''} onClick={() => goTo(item.key)}>
             {item.icon}<span>{item.label}</span>

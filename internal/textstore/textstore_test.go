@@ -21,8 +21,11 @@ func TestServiceListsAndReadsEveryDefinition(t *testing.T) {
 		if item.Key != definitions()[i].key {
 			t.Errorf("List()[%d].Key = %q, want %q", i, item.Key, definitions()[i].key)
 		}
-		if item.Content != "initial "+item.Key {
+		if item.Content != testContent(definitions()[i]) {
 			t.Errorf("List()[%d].Content = %q", i, item.Content)
+		}
+		if item.Kind == "" || item.Stage == "" {
+			t.Errorf("List()[%d] missing presentation metadata: %+v", i, item)
 		}
 	}
 }
@@ -39,18 +42,18 @@ func TestEveryDefinitionCarriesEditorLabels(t *testing.T) {
 
 func TestServiceUpdateAtomicallyReplacesContent(t *testing.T) {
 	service := newTestService(t)
-	updated, err := service.Update(t.Context(), SystemPromptM5Key, Input{Content: " 第一行\n第二行 "})
+	updated, err := service.Update(t.Context(), SystemPromptM5Key, Input{Content: " 第一行\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}\n第二行 "})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if updated.Content != "第一行\n第二行" {
+	if updated.Content != "第一行\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}\n第二行" {
 		t.Fatalf("Update().Content = %q", updated.Content)
 	}
 	onDisk, err := os.ReadFile(updated.Path)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if string(onDisk) != "第一行\n第二行\n" {
+	if string(onDisk) != "第一行\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}\n第二行\n" {
 		t.Fatalf("on-disk content = %q", onDisk)
 	}
 }
@@ -62,6 +65,24 @@ func TestServiceRejectsUnknownKeyAndEmptyContent(t *testing.T) {
 	}
 	if _, err := service.Update(t.Context(), SystemPromptM5Key, Input{Content: "  "}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("Update(empty) error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestServiceRejectsInvalidSystemPromptTemplateWithoutReplacingFile(t *testing.T) {
+	service := newTestService(t)
+	before, err := service.Content(t.Context(), SystemPromptM5Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Update(t.Context(), SystemPromptM5Key, Input{Content: "missing placeholders"}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("Update(invalid template) error = %v, want ErrInvalidInput", err)
+	}
+	after, err := service.Content(t.Context(), SystemPromptM5Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("invalid update replaced file: before=%q after=%q", before, after)
 	}
 }
 
@@ -117,8 +138,19 @@ func writeDefinitions(t *testing.T, directory string) {
 	t.Helper()
 	for _, item := range definitions() {
 		path := filepath.Join(directory, item.filename)
-		if err := os.WriteFile(path, []byte("initial "+item.key+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(testContent(item)+"\n"), 0o644); err != nil {
 			t.Fatalf("write %s: %v", path, err)
 		}
+	}
+}
+
+func testContent(item definition) string {
+	switch item.key {
+	case SystemPromptM3Key:
+		return "initial " + item.key + "\n{{WORK_RULES}}"
+	case SystemPromptM5Key:
+		return "initial " + item.key + "\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}"
+	default:
+		return "initial " + item.key
 	}
 }

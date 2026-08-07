@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/agentconfig"
 	"jarvis/internal/api"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
@@ -122,6 +123,10 @@ func main() {
 	workRuleService, err := workrule.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "rules"))
 	if err != nil {
 		fatalf("initialize work rule service failed: %v", err)
+	}
+	agentConfigService, err := agentconfig.NewService(textFileService, workRuleService)
+	if err != nil {
+		fatalf("initialize agent config service failed: %v", err)
 	}
 	skillService, err := skill.NewService(cfg.Skills.Root, filepath.Join(filepath.Dir(configPathAbsolute), "skills.yaml"))
 	if err != nil {
@@ -896,6 +901,7 @@ func main() {
 		SharedMemory:   sharedMemoryService,
 		WorkRules:      workRuleService,
 		TextFiles:      textFileService,
+		AgentConfig:    agentConfigService,
 		ScheduledTasks: scheduledTaskService,
 		Skills:         skillService,
 		RelationFacts:  relationFactService,

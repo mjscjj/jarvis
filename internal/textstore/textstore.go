@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"jarvis/internal/prompttemplate"
 )
 
 var (
@@ -24,6 +26,8 @@ type View struct {
 	Key         string `json:"key"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	Kind        string `json:"kind"`
+	Stage       string `json:"stage"`
 	Path        string `json:"path"`
 	Content     string `json:"content"`
 }
@@ -104,8 +108,12 @@ func (s *Service) Get(ctx context.Context, key string) (*View, error) {
 	if normalized == "" {
 		return nil, fmt.Errorf("%w: key=%s has empty content", ErrInvalidInput, item.key)
 	}
+	if err := validateContent(item, normalized); err != nil {
+		return nil, err
+	}
 	return &View{
 		Key: item.key, Name: item.name, Description: item.description,
+		Kind: item.kind, Stage: item.stage,
 		Path: path, Content: normalized,
 	}, nil
 }
@@ -121,6 +129,9 @@ func (s *Service) Update(ctx context.Context, key string, input Input) (*View, e
 	content := strings.TrimSpace(input.Content)
 	if content == "" {
 		return nil, fmt.Errorf("%w: content is required", ErrInvalidInput)
+	}
+	if err := validateContent(item, content); err != nil {
+		return nil, err
 	}
 
 	temp, err := os.CreateTemp(s.directory, "."+item.filename+".tmp-*")
@@ -148,6 +159,22 @@ func (s *Service) Update(ctx context.Context, key string, input Input) (*View, e
 		return nil, fmt.Errorf("replace text file key=%s path=%s: %w", item.key, path, err)
 	}
 	return s.Get(ctx, key)
+}
+
+func validateContent(item definition, content string) error {
+	var stage string
+	switch item.key {
+	case SystemPromptM3Key:
+		stage = prompttemplate.StageM3
+	case SystemPromptM5Key:
+		stage = prompttemplate.StageM5
+	default:
+		return nil
+	}
+	if err := prompttemplate.Validate(stage, content); err != nil {
+		return fmt.Errorf("%w: key=%s: %v", ErrInvalidInput, item.key, err)
+	}
+	return nil
 }
 
 func (s *Service) Content(ctx context.Context, key string) (string, error) {

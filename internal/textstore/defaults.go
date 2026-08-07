@@ -1,5 +1,7 @@
 package textstore
 
+import "jarvis/internal/prompttemplate"
+
 const (
 	SystemPromptM3Key = "m3_system_prompt"
 	SystemPromptM5Key = "m5_system_prompt"
@@ -32,6 +34,8 @@ type definition struct {
 	name        string
 	filename    string
 	description string
+	kind        string
+	stage       string
 }
 
 func definitions() []definition {
@@ -39,34 +43,42 @@ func definitions() []definition {
 		{
 			key: SystemPromptM3Key, name: "M3 系统提示词", filename: "m3-system-prompt.md",
 			description: "定义行动线索抽取者的角色、判断原则和输出要求。",
+			kind:        "system_prompt", stage: prompttemplate.StageM3,
 		},
 		{
 			key: SystemPromptM5Key, name: "M5 执行系统提示词", filename: "m5-system-prompt.md",
 			description: "execute、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。",
+			kind:        "system_prompt", stage: prompttemplate.StageM5,
 		},
 		{
 			key: SystemPromptProactiveKey, name: "主动巡视系统提示词", filename: "proactive-system-prompt.md",
 			description: "定义每小时主动巡视的时间范围、世界模型维护、Task 创建及停止边界。",
+			kind:        "system_prompt", stage: "proactive",
 		},
 		{
 			key: SystemPromptMeetingSweepKey, name: "会议巡扫系统提示词", filename: "meeting-sweep-system-prompt.md",
 			description: "定义会议巡扫只采集不分析的边界：把已结束会议和未来日程原样投递为线索。",
+			kind:        "system_prompt", stage: "meeting_sweep",
 		},
 		{
 			key: SystemPromptMorningBriefKey, name: "晨间作战简报系统提示词", filename: "morning-brief-system-prompt.md",
 			description: "定义工作日晨间简报的取证范围、今日结果的选择标准和唯一允许的对外投递动作。",
+			kind:        "system_prompt", stage: "morning_brief",
 		},
 		{
 			key: ApprovalPolicyKey, name: "M5 审批策略", filename: "m5-approval-policy.md",
 			description: "供 M5 在执行过程中判断哪些具体动作需要先请示、哪些可以直接完成。",
+			kind:        "approval_policy", stage: prompttemplate.StageM5,
 		},
 		{
 			key: SystemPromptFactExtractKey, name: "持续世界建模提示词", filename: "fact-extract-system-prompt.md",
 			description: "定义哪些认知值得沉淀成实体、关键事项、事实和关系，以及哪些不写。",
+			kind:        "system_prompt", stage: "fact_extract",
 		},
 		{
 			key: SystemPromptFactRollupKey, name: "事实日压缩提示词", filename: "fact-rollup-system-prompt.md",
 			description: "定义把一个主体一天的明细事实压缩成单条日事实的口径。",
+			kind:        "system_prompt", stage: "fact_rollup",
 		},
 	}
 }

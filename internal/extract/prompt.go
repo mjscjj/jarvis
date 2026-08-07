@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"jarvis/internal/contextsnap"
+	"jarvis/internal/prompttemplate"
 	"jarvis/internal/sharedmem"
 )
 
@@ -110,15 +111,15 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fac
 	trimmed := unit
 	trimmed.Messages = append([]MessageContext(nil), unit.Messages...)
 	world := splitPromptWorld(batch, facts)
-	system := strings.TrimSpace(opts.SystemPrompt)
+	system, err := prompttemplate.Render(prompttemplate.StageM3, opts.SystemPrompt, opts.WorkRules, "")
+	if err != nil {
+		return Prompt{}, fmt.Errorf("render M3 system prompt: %w", err)
+	}
 	system += "\n\nPRINCIPAL_OPEN_ID=" + opts.PrincipalOpenID
 	if catalog := strings.TrimSpace(opts.ToolCatalog); catalog != "" {
 		system += "\n\n" + catalog
 	}
 	if block := sharedmem.RenderBlock(opts.SharedMemory); block != "" {
-		system += "\n\n" + block
-	}
-	if block := strings.TrimSpace(opts.WorkRules); block != "" {
 		system += "\n\n" + block
 	}
 	if block := strings.TrimSpace(opts.Skills); block != "" {

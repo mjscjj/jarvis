@@ -14,6 +14,7 @@ import (
 
 	"jarvis/internal/domain"
 	"jarvis/internal/observability"
+	"jarvis/internal/prompttemplate"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/textstore"
@@ -513,18 +514,11 @@ func buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, t
 // renderResumeInstructions assembles the shared resume preamble: phase, approval
 // policy, work rules and tool catalog.
 func renderResumeInstructions(systemPrompt, approvalPolicy, phase, workRules, toolCatalog string) (string, error) {
-	approvalPolicy = strings.TrimSpace(approvalPolicy)
-	if approvalPolicy == "" {
-		return "", fmt.Errorf("resume approval policy is required")
+	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, systemPrompt, workRules, approvalPolicy)
+	if err != nil {
+		return "", fmt.Errorf("render M5 resume system prompt: %w", err)
 	}
-	prompt := systemPrompt + "\n\n" + phase + `
-
-BEGIN_APPROVAL_POLICY（这是委托人在后台维护的可信审批判定策略。）
-` + approvalPolicy + `
-END_APPROVAL_POLICY`
-	if block := strings.TrimSpace(workRules); block != "" {
-		prompt += "\n\n" + block
-	}
+	prompt := renderedSystemPrompt + "\n\n" + phase
 	if block := strings.TrimSpace(toolCatalog); block != "" {
 		prompt += "\n\n" + block
 	}
@@ -976,6 +970,11 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposa
 		cause := fmt.Errorf("load M5 apply system prompt: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
+	approvalPolicy, err := e.textStore.Content(ctx, textstore.ApprovalPolicyKey)
+	if err != nil {
+		cause := fmt.Errorf("load M5 approval policy for apply: %w", err)
+		return e.failRun(run, startedAt, cause), nil, cause
+	}
 	toolCatalog, err := toolcatalog.Block(toolcatalog.StageExecute)
 	if err != nil {
 		cause := fmt.Errorf("load M5 tool catalog: %w", err)
@@ -985,7 +984,7 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposa
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	prompt, err := buildApplyPrompt(systemPrompt, task, proposal, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	prompt, err := buildApplyPrompt(systemPrompt, approvalPolicy, task, proposal, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}

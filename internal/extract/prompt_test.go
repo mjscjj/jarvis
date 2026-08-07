@@ -10,6 +10,8 @@ import (
 	"jarvis/internal/toolcatalog"
 )
 
+const testM3SystemPrompt = "test M3 system prompt\n{{WORK_RULES}}"
+
 func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 	unit := ConversationUnit{
 		Key: "chat",
@@ -22,7 +24,7 @@ func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 	facts := []contextsnap.Fact{
 		{ID: 7, SubjectType: "project", SubjectID: 3, Description: "鉴权改造由张三负责", OccurredAt: "2026-07-30T10:00:00Z"},
 	}
-	prompt, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{
+	prompt, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {
@@ -65,7 +67,7 @@ func TestBuildPromptInjectsSharedMemory(t *testing.T) {
 	}
 	batch := ChatBatch{Group: GroupContext{ID: 1, ChatID: "oc_1", Name: "研发群"}}
 
-	empty, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{
+	empty, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {
@@ -75,7 +77,7 @@ func TestBuildPromptInjectsSharedMemory(t *testing.T) {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty.System)
 	}
 
-	prompt, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{
+	prompt, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
 		SharedMemory: "采集死锁的坑：别在事务里调 lark-cli",
 	})
@@ -93,7 +95,7 @@ func TestBuildPromptInjectsSkills(t *testing.T) {
 	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
 		MessageID: "om_new", Content: "通知同事", CreateTime: 1_700_000_001_000, IsNew: true, Extractable: true,
 	}}}
-	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(), PromptOptions{
+	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
 		Skills: "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS",
 	})
@@ -115,7 +117,7 @@ func TestBuildPromptTrimsContextBeforeFailing(t *testing.T) {
 	}
 	prompt, err := BuildPrompt(
 		ChatBatch{Group: GroupContext{ID: 1, ChatID: "oc_1"}}, unit, nil, time.Now(),
-		PromptOptions{PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000},
+		PromptOptions{SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000},
 	)
 	if err != nil {
 		t.Fatalf("BuildPrompt() error = %v", err)
@@ -155,7 +157,7 @@ func TestBuildPromptCarriesMessageType(t *testing.T) {
 		unit,
 		nil,
 		time.Unix(1_700_000_100, 0),
-		PromptOptions{PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000},
+		PromptOptions{SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000},
 	)
 	if err != nil {
 		t.Fatalf("BuildPrompt() error = %v", err)
@@ -225,7 +227,7 @@ func TestBuildPromptCarriesPrincipalAndProjects(t *testing.T) {
 			{ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant", Description: "codex 方案"},
 		},
 	}
-	prompt, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{
+	prompt, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {
@@ -247,7 +249,7 @@ func TestBuildPromptCarriesGroupAnnouncement(t *testing.T) {
 		ID: 1, ChatID: "oc_1", Name: "Agent Runtime",
 		Description:    "本群负责 runtime 项目，代码仓库为 llm_agent_core。",
 		BackgroundNote: "优先检查 llm_agent_core，涉及旧实现再查 openclaw。",
-	}}, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{
+	}}, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {
@@ -264,7 +266,7 @@ func TestBuildPromptCarriesGroupAnnouncement(t *testing.T) {
 func TestBuildPromptCarriesTrustedWorkRules(t *testing.T) {
 	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, ConversationUnit{
 		Key: "chat", Messages: []MessageContext{{MessageID: "m1", Content: "做一下", IsNew: true, Extractable: true}},
-	}, nil, time.Now(), PromptOptions{
+	}, nil, time.Now(), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
 		WorkRules: "BEGIN_WORK_RULES\n- 先遵守规则\nEND_WORK_RULES",
 	})

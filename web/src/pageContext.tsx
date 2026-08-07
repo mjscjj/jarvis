@@ -21,6 +21,7 @@ const pageHashes: Record<string, string> = {
   tasks: '/work',
   progress: '/review',
   background: '/memory',
+  agents: '/agents',
   todos: '/manage/clues',
   'scheduled-tasks': '/manage/automations',
   settings: '/manage/settings',

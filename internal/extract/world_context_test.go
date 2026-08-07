@@ -179,7 +179,7 @@ func TestBuildPromptShrinksWorldBeforeConversation(t *testing.T) {
 
 	// Measure a prompt that already fits, then pick a MaxChars that forces world
 	// shrinkage but still leaves room for the context message.
-	full, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{
+	full, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 200_000,
 	})
 	if err != nil {
@@ -198,7 +198,7 @@ func TestBuildPromptShrinksWorldBeforeConversation(t *testing.T) {
 	if tight < 2000 {
 		t.Fatalf("unexpected full prompt size %d", tight)
 	}
-	shrunk, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{
+	shrunk, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: tight,
 	})
 	if err != nil {

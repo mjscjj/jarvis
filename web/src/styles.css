@@ -248,7 +248,7 @@ body {
     left: 0;
     height: 68px;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     padding: 6px max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
     border-top: 1px solid var(--color-border);
     background: rgba(255, 255, 255, 0.97);

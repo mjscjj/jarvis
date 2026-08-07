@@ -14,7 +14,10 @@ import (
 	"jarvis/internal/datatypes"
 )
 
-const testToolCatalog = "BEGIN_AVAILABLE_TOOLS\n- fixture-tool\nEND_AVAILABLE_TOOLS"
+const (
+	testToolCatalog    = "BEGIN_AVAILABLE_TOOLS\n- fixture-tool\nEND_AVAILABLE_TOOLS"
+	testM5SystemPrompt = "test M5 system prompt\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}"
+)
 
 func TestAppendExecutionSupplement(t *testing.T) {
 	at1 := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
@@ -46,7 +49,7 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 		ExecutionSupplements: datatypes.JSON(supplements),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -67,14 +70,14 @@ func TestBuildExecutionPromptInjectsSharedMemory(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	empty, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "lark-cli 的 token 存在 ~/.lark 里", "", "", nil)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "lark-cli 的 token 存在 ~/.lark 里", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -93,7 +96,7 @@ func TestBuildExecutionPromptInjectsWorkRules(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "BEGIN_WORK_RULES\n- 禁止直接私聊\nEND_WORK_RULES", "", nil)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "BEGIN_WORK_RULES\n- 禁止直接私聊\nEND_WORK_RULES", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -112,7 +115,7 @@ func TestBuildExecutionPromptInjectsSkills(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS", nil)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -137,7 +140,7 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 		RunID: 3, Status: "succeeded", Summary: summary,
 		StartedAt: "2026-07-21T07:55:00Z", FinishedAt: finished.Format(time.RFC3339),
 	}}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", prior)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", prior)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -155,7 +158,7 @@ func TestBuildExecutionPromptKeepsOnlyUsefulTaskHints(t *testing.T) {
 		ID: 12, Title: "评测截图", ActionType: "notify_principal", Target: "评测截图影响面",
 		Background: datatypes.JSON(`{"snapshot_version":"v1"}`), SourcePayload: datatypes.JSON(`{"request":"评测截图"}`),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -209,7 +212,7 @@ func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
 		SourcePayload: datatypes.JSON(`{"source_quote":"请压缩上下文","source_message_ids":["om_1","om_2"]}`),
 		Background:    datatypes.JSON(snapshot),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -244,7 +247,7 @@ func TestBuildExecutionPromptForwardsSourcePayloadVerbatim(t *testing.T) {
 		SourcePayload: datatypes.JSON(clue),
 		Background:    datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt("test M5 system prompt", "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
