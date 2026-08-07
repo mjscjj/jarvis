@@ -15,6 +15,10 @@ skills:
       enabled: true
       stages:
         - execute
+    - name: initialize-jarvis
+      enabled: true
+      stages:
+        - execute
     - name: summarize-morning-brief
       enabled: true
       stages:
