@@ -12,6 +12,7 @@ import type {
   FailureEvent,
   Group,
   LogTail,
+  MeetingReviewList,
   ModuleRun,
   MorningBrief,
   ScanRow,
@@ -300,6 +301,7 @@ export function listGroups(query: GroupQuery, signal?: AbortSignal): Promise<Gro
     page_size: String(query.pageSize),
   })
   if (query.relatedOnly) params.set('related_only', 'true')
+  if (query.keyOnly) params.set('key_only', 'true')
   if (query.keyword) params.set('keyword', query.keyword)
   if (query.chatMode) params.set('chat_mode', query.chatMode)
   if (query.tier) params.set('tier', query.tier)
@@ -344,6 +346,10 @@ export function summarizeDigest(days = 7): Promise<{ summary: string; days: numb
 
 export function getDailyDigests(date: string, signal?: AbortSignal): Promise<{ items: DailyDigest[] }> {
   return request<{ items: DailyDigest[] }>(`/api/daily-digests?date=${encodeURIComponent(date)}`, { signal })
+}
+
+export function getMeetingReviews(date: string, signal?: AbortSignal): Promise<MeetingReviewList> {
+  return request<MeetingReviewList>(`/api/review/meetings?date=${encodeURIComponent(date)}`, { signal })
 }
 
 export function getMorningBriefs(limit = 14, signal?: AbortSignal): Promise<{ items: MorningBrief[] }> {

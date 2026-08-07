@@ -404,6 +404,10 @@ func main() {
 	if err != nil {
 		fatalf("initialize digest service failed: %v", err)
 	}
+	meetingReviewService, err := insight.NewMeetingReviewService(db, location)
+	if err != nil {
+		fatalf("initialize meeting review service failed: %v", err)
+	}
 	worklogService, err := insight.NewWorklogService(db, location)
 	if err != nil {
 		fatalf("initialize worklog service failed: %v", err)
@@ -896,12 +900,13 @@ func main() {
 		RelationFacts:  relationFactService,
 		Progress:       progressService,
 		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
-		DailyDigests:  dailyDigestService,
-		MorningBriefs: morningBriefReader,
-		Worklog:       worklogService,
-		FactRollups:   factRollupWorker,
-		FactRollupLoc: location,
-		Debug:         debugService, Logs: logReader, Chat: chatService, Capture: captureService,
+		MeetingReviews: meetingReviewService,
+		DailyDigests:   dailyDigestService,
+		MorningBriefs:  morningBriefReader,
+		Worklog:        worklogService,
+		FactRollups:    factRollupWorker,
+		FactRollupLoc:  location,
+		Debug:          debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 		RuntimeSettings:    runtimeSettingsService,
 		ContextAssembler:   contextAssembler,
 		CardApprovals:      cardApprovalProcessor,

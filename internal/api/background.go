@@ -345,6 +345,14 @@ func ListGroups(svc *background.GroupBackgroundService) app.HandlerFunc {
 			}
 			filter.RelatedOnly = value
 		}
+		if raw := strings.TrimSpace(c.Query("key_only")); raw != "" {
+			value, err := strconv.ParseBool(raw)
+			if err != nil {
+				writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("key_only must be true or false"))
+				return
+			}
+			filter.KeyOnly = value
+		}
 		result, err := svc.List(ctx, filter)
 		if err != nil {
 			writeBackgroundError(c, err)

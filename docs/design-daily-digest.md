@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative design
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-08-07
 
 把「进度」页从现在的**任务数量播报**（按天 Count Todo/Task/消息，再把数字翻译成一段话）升级为**内容层面的每日进度总结**：对「我」个人和「关键群」各自，按自然日生成一段可读的进度摘要。
 
@@ -175,7 +175,19 @@ data/personal-daily/YYYY-MM-DD/
 **前端（React/TS）**：
 6. `web/src/types.ts`：加 `DailyDigest` 类型。
 7. `web/src/api.ts`：加 `getDailyDigests(date)` / `generateDailyDigest(scope, scopeId, date)`。
-8. `web/src/Progress.tsx`：每日总结使用两层 Tab：第一层按日期切换，第二层切换个人总结与群总结；个人报告按安全 Markdown 渲染，生成期间静默轮询。旧数量统计保留为辅助 Tab。
+8. `web/src/Progress.tsx` 与 `web/src/review/`：回顾页第一层横向排列每日总结、会议总结、群总结、文档、代码；每日总结第二层按日期横排，群总结第二层按关键群横排。个人报告按安全 Markdown 渲染，生成期间静默轮询。
+
+### 5.1 回顾页中的会议总结
+
+会议总结不扩展 `daily_digest` 的 scope，也不新增会议专用生成器。会议继续走唯一的
+`feishu_meeting clue → M3 → M5` 流水线；M5 确实形成会议总结时，在现有开放
+`enrichments` 中写入 `kind=meeting_summary` 的完整自然语言正文。
+
+`internal/insight/MeetingReviewService` 只读投影已有事实：按自然日读取会议线索，通过
+`source_message_ids` 关联 Todo/Task，再从 ExecutionRun 中读取最近一次明确标记的
+`meeting_summary` 和同轮 `effects`。`GET /api/review/meetings?date=YYYY-MM-DD`
+供前端按会议横向展示；没有会议时返回空列表，没有明确总结产物时正文为空，不使用
+Task 进度或普通 run summary 猜测会议总结。
 
 ## 6. 待观察 / 后续增强
 

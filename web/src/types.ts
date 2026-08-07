@@ -406,6 +406,7 @@ export interface GroupQuery {
   page: number
   pageSize: number
   relatedOnly: boolean
+  keyOnly?: boolean
   keyword?: string
   chatMode?: string
   tier?: string
@@ -607,6 +608,27 @@ export interface DailyDigestKickResult {
   date: string
   status: 'generating'
   trigger_type: 'manual'
+}
+
+export interface MeetingReviewItem {
+  meeting_id: string
+  title: string
+  occurred_at: string
+  start_at: string
+  end_at: string
+  host: string
+  participants: string
+  meeting_url: string
+  task_id: number | null
+  task_status: string
+  summary: string
+  summary_generated_at: string | null
+  effects: Array<Record<string, unknown>>
+}
+
+export interface MeetingReviewList {
+  date: string
+  items: MeetingReviewItem[]
 }
 
 // MorningBrief is the canonical Markdown artifact for one local day.

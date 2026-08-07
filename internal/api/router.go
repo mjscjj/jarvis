@@ -58,9 +58,10 @@ type Dependencies struct {
 	DailyDigests       DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
 	MorningBriefs      MorningBriefService     // 晨报 Markdown 归档，只读
 	Worklog            *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
-	DigestSummarizer   *insight.Summarizer     // 可选：codex 未启用时为 nil，总结接口返回 503
-	FactRollups        FactRollupGenerator     // 事实日压缩手动触发；nil 则接口返回 503
-	FactRollupLoc      *time.Location          // 手动触发时解析 YYYY-MM-DD 的时区
+	MeetingReviews     *insight.MeetingReviewService
+	DigestSummarizer   *insight.Summarizer // 可选：codex 未启用时为 nil，总结接口返回 503
+	FactRollups        FactRollupGenerator // 事实日压缩手动触发；nil 则接口返回 503
+	FactRollupLoc      *time.Location      // 手动触发时解析 YYYY-MM-DD 的时区
 	Debug              *insight.DebugService
 	Logs               *insight.LogReader
 	Chat               *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
@@ -145,6 +146,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.Digests == nil {
 		return fmt.Errorf("api digest service dependency is nil")
+	}
+	if deps.MeetingReviews == nil {
+		return fmt.Errorf("api meeting review service dependency is nil")
 	}
 	if deps.MorningBriefs == nil {
 		return fmt.Errorf("api morning brief service dependency is nil")
@@ -263,6 +267,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/overview", GetOverview(deps.Overview))
 	h.GET("/api/digests", GetDigests(deps.Digests))
 	h.POST("/api/digests/summarize", SummarizeDigest(deps.Digests, deps.DigestSummarizer))
+	h.GET("/api/review/meetings", GetMeetingReviews(deps.MeetingReviews))
 	// 每日进度总结：按日期读当天全部 scope + 异步触发单条生成/重算。
 	if deps.DailyDigests != nil {
 		h.GET("/api/daily-digests", GetDailyDigests(deps.DailyDigests))
