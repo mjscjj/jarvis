@@ -89,10 +89,10 @@ func TestToDomainMessageSystemSender(t *testing.T) {
 	group := &domain.Group{ID: 1, ChatID: "oc_fixture", ChatMode: "group"}
 
 	// 群系统消息（msg_type=system、无 sender，message_id 前缀仍是 om_）应落库为占位
-	// sender，而不是报错。这正是线上 "储节节 invited ... to the group" 那条的形状。
+	// sender，而不是报错。这正是 "测试用户 invited ... to the group" 这类系统消息的形状。
 	sys, err := svc.toDomainMessage(group, CLIMessage{
 		MessageID: "om_x100b6ae8", MessageType: "system", CreateTime: "2026-07-19 10:00",
-		Content: "储节节 invited local dev to the group.", Sender: CLISender{},
+		Content: "测试用户 invited local dev to the group.", Sender: CLISender{},
 	})
 	if err != nil {
 		t.Fatalf("system message rejected: %v", err)

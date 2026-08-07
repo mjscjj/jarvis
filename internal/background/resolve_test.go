@@ -25,7 +25,7 @@ func TestResolveServiceResolve(t *testing.T) {
 	t.Run("maps candidates and falls back to enterprise email", func(t *testing.T) {
 		stub := &stubSearcher{
 			users: []larkcli.UserCandidate{{
-				OpenID: "ou_abc", LocalizedName: "储节节", EnterpriseEmail: "c@x.com",
+				OpenID: "ou_abc", LocalizedName: "测试用户", EnterpriseEmail: "c@x.com",
 				Department: "公会", P2PChatID: "oc_1", IsCrossTenant: true, HasChatted: true,
 			}},
 			hasMore: true,
@@ -34,18 +34,18 @@ func TestResolveServiceResolve(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewResolveService() error = %v", err)
 		}
-		result, err := svc.Resolve(context.Background(), "储节节")
+		result, err := svc.Resolve(context.Background(), "测试用户")
 		if err != nil {
 			t.Fatalf("Resolve() error = %v", err)
 		}
-		if stub.gotQ != "储节节" {
-			t.Fatalf("Resolve() query = %q, want 储节节", stub.gotQ)
+		if stub.gotQ != "测试用户" {
+			t.Fatalf("Resolve() query = %q, want 测试用户", stub.gotQ)
 		}
 		if !result.HasMore || len(result.Candidates) != 1 {
 			t.Fatalf("Resolve() result = %+v, unexpected", result)
 		}
 		got := result.Candidates[0]
-		if got.OpenID != "ou_abc" || got.Name != "储节节" || got.Email != "c@x.com" || !got.IsExternal {
+		if got.OpenID != "ou_abc" || got.Name != "测试用户" || got.Email != "c@x.com" || !got.IsExternal {
 			t.Fatalf("Resolve() candidate = %+v, unexpected", got)
 		}
 	})

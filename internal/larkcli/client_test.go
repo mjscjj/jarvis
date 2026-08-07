@@ -126,19 +126,19 @@ func TestSearchUser(t *testing.T) {
 	}
 
 	t.Run("parses candidates and has_more", func(t *testing.T) {
-		body := `printf '%s' '{"ok":true,"data":{"users":[{"open_id":"ou_abc","localized_name":"储节节","email":"c@x.com","department":"公会","p2p_chat_id":"oc_1","is_cross_tenant":false,"has_chatted":true}],"has_more":true}}'`
+		body := `printf '%s' '{"ok":true,"data":{"users":[{"open_id":"ou_abc","localized_name":"测试用户","email":"c@x.com","department":"公会","p2p_chat_id":"oc_1","is_cross_tenant":false,"has_chatted":true}],"has_more":true}}'`
 		client, err := New(Options{Bin: writeScript(t, body), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
 		if err != nil {
 			t.Fatalf("New() error = %v", err)
 		}
-		users, hasMore, err := client.SearchUser(context.Background(), "储节节")
+		users, hasMore, err := client.SearchUser(context.Background(), "测试用户")
 		if err != nil {
 			t.Fatalf("SearchUser() error = %v", err)
 		}
 		if !hasMore {
 			t.Fatalf("SearchUser() has_more = false, want true")
 		}
-		if len(users) != 1 || users[0].OpenID != "ou_abc" || users[0].LocalizedName != "储节节" || users[0].P2PChatID != "oc_1" {
+		if len(users) != 1 || users[0].OpenID != "ou_abc" || users[0].LocalizedName != "测试用户" || users[0].P2PChatID != "oc_1" {
 			t.Fatalf("SearchUser() users = %+v, unexpected", users)
 		}
 	})

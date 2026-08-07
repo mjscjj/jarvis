@@ -97,7 +97,7 @@ type CommitMR struct {
 
 // CommitRepo 把我的 MR 按仓库归组。
 type CommitRepo struct {
-	Repo string     `json:"repo"` // 形如 chujiejie.1/jarvis_bot，从 URL 解析
+	Repo string     `json:"repo"` // 形如 team/jarvis_bot，从 URL 解析
 	MRs  []CommitMR `json:"mrs"`
 }
 
@@ -184,7 +184,7 @@ func (s *WorklogService) Commits(ctx context.Context, date string) (*CommitWorkl
 }
 
 // repoFromMRURL 从 MR 的 console URL 里抠出 owner/repo。
-// 形如 https://code.byted.org/chujiejie.1/jarvis_bot/merge_requests/1 → chujiejie.1/jarvis_bot。
+// 形如 https://code.byted.org/team/jarvis_bot/merge_requests/1 → team/jarvis_bot。
 func repoFromMRURL(url string) string {
 	const marker = "/merge_requests/"
 	idx := strings.Index(url, marker)

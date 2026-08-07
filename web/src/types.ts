@@ -633,7 +633,7 @@ export interface CommitMR {
 }
 
 export interface CommitRepo {
-  repo: string // 形如 chujiejie.1/jarvis_bot
+  repo: string // 形如 team/jarvis_bot
   mrs: CommitMR[]
 }
 

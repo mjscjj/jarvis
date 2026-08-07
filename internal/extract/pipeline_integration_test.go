@@ -78,7 +78,7 @@ func TestPipelineLive(t *testing.T) {
 	now := time.Now()
 	message := domain.Message{
 		MessageID: messageID, ChatID: chatID, GroupID: &group.ID, ChatMode: "group",
-		SenderOpenID: cfg.Extract.PrincipalOpenID, SenderName: "储节节", SenderType: "user",
+		SenderOpenID: cfg.Extract.PrincipalOpenID, SenderName: "测试用户", SenderType: "user",
 		MessageType: "text", Content: "我明确承诺：在 jarvis 仓库修改鉴权逻辑。",
 		CreateTime: now.UnixMilli(), Source: "poll", RenderOK: true,
 	}

@@ -180,7 +180,7 @@ func TestBuildExecutionPromptKeepsOnlyUsefulTaskHints(t *testing.T) {
 func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
 	projectCode := "jarvis"
 	groupName := "公会 AI 突击群"
-	assignerName := "储节节"
+	assignerName := "测试委托人"
 	assignerRole := "leader"
 	assignerRelation := "manager"
 	snapshot, err := (contextsnap.Snapshot{

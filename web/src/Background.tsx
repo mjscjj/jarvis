@@ -1134,7 +1134,7 @@ function ProfilePanel() {
     <Card variant="borderless" loading={loading} className="memory-profile-card">
       <Form form={form} layout="vertical">
         <Form.Item name="name" label="姓名（当前用户是谁）" rules={[{ required: true, message: '请填写姓名' }]}>
-          <Input placeholder="如：储节节" />
+          <Input placeholder="如：负责人姓名" />
         </Form.Item>
         <Flex gap={12}>
           <Form.Item name="department" label="部门" style={{ flex: 1 }}><Input placeholder="选填" /></Form.Item>

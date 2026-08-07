@@ -201,9 +201,9 @@ func TestRenderPrincipalInjectsSelfAndLeader(t *testing.T) {
 	rendered := renderPrincipal(&PrincipalContext{
 		OpenID: "ou_me", Name: "我", Department: "平台", Title: "工程师",
 		Background: "负责 Agent 基建", Preferences: "偏好直接给结论",
-		LeaderOpenID: "ou_boss", LeaderName: "严亮",
+		LeaderOpenID: "ou_boss", LeaderName: "测试主管",
 	})
-	for _, want := range []string{`name="我"`, `leader_open_id=ou_boss leader_name="严亮"`, "负责 Agent 基建", "偏好直接给结论"} {
+	for _, want := range []string{`name="我"`, `leader_open_id=ou_boss leader_name="测试主管"`, "负责 Agent 基建", "偏好直接给结论"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("renderPrincipal missing %q:\n%s", want, rendered)
 		}
@@ -222,7 +222,7 @@ func TestBuildPromptCarriesPrincipalAndProjects(t *testing.T) {
 	}}
 	batch := ChatBatch{
 		Group:     GroupContext{ID: 1, ChatID: "oc_1", Name: "研发群"},
-		Principal: &PrincipalContext{OpenID: "ou_me", Name: "我", LeaderName: "严亮", LeaderOpenID: "ou_boss"},
+		Principal: &PrincipalContext{OpenID: "ou_me", Name: "我", LeaderName: "测试主管", LeaderOpenID: "ou_boss"},
 		OtherProjects: []OtherProjectContext{
 			{ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant", Description: "codex 方案"},
 		},
@@ -233,7 +233,7 @@ func TestBuildPromptCarriesPrincipalAndProjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPrompt() error = %v", err)
 	}
-	for _, want := range []string{"# 我的背景(principal)", "leader_name=\"严亮\"", "# 我的其他项目（精简", "name=\"Agent Runtime\""} {
+	for _, want := range []string{"# 我的背景(principal)", "leader_name=\"测试主管\"", "# 我的其他项目（精简", "name=\"Agent Runtime\""} {
 		if !strings.Contains(prompt.User, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt.User)
 		}
