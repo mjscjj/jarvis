@@ -16,7 +16,7 @@ import (
 const cardApprovalRelaySecretHeader = "X-Jarvis-Relay-Secret"
 
 // CardApprovalProcessor is the strict machine boundary behind the CC Connect
-// relay. The implementation still owns all task/proposal/message/version
+// relay. The implementation still owns all task/proposal/version
 // validation; CC Connect only transports the authenticated Feishu callback.
 type CardApprovalProcessor interface {
 	ProcessCardAction(context.Context, cardapproval.CardActionEvent) (json.RawMessage, error)
@@ -32,8 +32,8 @@ type cardApprovalRelayRequest struct {
 }
 
 // RelayCardApproval accepts only authenticated localhost traffic registered by
-// CC Connect. It returns a complete Card 2.0 replacement body so CC Connect can
-// answer Feishu synchronously without a second WebSocket.
+// CC Connect. It returns a Card 2.0 outcome fragment for CC Connect to merge
+// into the original card and answer Feishu synchronously.
 func RelayCardApproval(processor CardApprovalProcessor, secret string) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		if processor == nil {
@@ -60,6 +60,7 @@ func RelayCardApproval(processor CardApprovalProcessor, secret string) app.Handl
 		actionValue, err := json.Marshal(map[string]any{
 			"action":  decision,
 			"task_id": request.ActionValue["task_id"],
+			"version": request.ActionValue["version"],
 		})
 		if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("encode action_value: %w", err))

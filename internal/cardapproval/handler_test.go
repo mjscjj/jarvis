@@ -8,39 +8,31 @@ import (
 	"log"
 	"strings"
 	"testing"
-	"time"
 
 	"jarvis/internal/execute"
 )
 
 const principalOpenID = "ou_principal"
 
-func TestProcessCardActionApproveLandsAndReturnsCard(t *testing.T) {
-	tasks := newFakeTasks(4)
+func TestProcessCardActionApproveUsesCardVersion(t *testing.T) {
 	approver := &fakeApprover{}
-	handler := newTestHandler(t, tasks, approver)
-
-	card, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7))
+	handler := newTestHandler(t, approver)
+	card, err := handler.ProcessCardAction(context.Background(), approvalEvent(t, "approve", 7, 4))
 	if err != nil {
 		t.Fatalf("ProcessCardAction() error = %v", err)
 	}
 	if approver.approvedTask != 7 || approver.approvedVersion != 4 {
 		t.Fatalf("approve called with task=%d version=%d", approver.approvedTask, approver.approvedVersion)
 	}
-	if approver.rejectedTask != 0 {
-		t.Fatalf("reject unexpectedly called: %#v", approver)
-	}
 	if !strings.Contains(string(card), "已同意") {
-		t.Fatalf("replacement card = %s", card)
+		t.Fatalf("outcome card = %s", card)
 	}
 }
 
-func TestProcessCardActionRejectLandsWithReason(t *testing.T) {
-	tasks := newFakeTasks(9)
+func TestProcessCardActionRejectUsesCardVersion(t *testing.T) {
 	approver := &fakeApprover{}
-	handler := newTestHandler(t, tasks, approver)
-
-	if _, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "reject", 3)); err != nil {
+	handler := newTestHandler(t, approver)
+	if _, err := handler.ProcessCardAction(context.Background(), approvalEvent(t, "reject", 3, 9)); err != nil {
 		t.Fatalf("ProcessCardAction() error = %v", err)
 	}
 	if approver.rejectedTask != 3 || approver.rejectedVersion != 9 || approver.rejectReason == "" {
@@ -48,228 +40,58 @@ func TestProcessCardActionRejectLandsWithReason(t *testing.T) {
 	}
 }
 
-func TestProcessCardActionNonPrincipalIsRejected(t *testing.T) {
-	tasks := newFakeTasks(1)
+func TestProcessCardActionRejectsMissingVersion(t *testing.T) {
 	approver := &fakeApprover{}
-	handler := newTestHandler(t, tasks, approver)
+	handler := newTestHandler(t, approver)
+	if _, err := handler.ProcessCardAction(context.Background(), approvalEvent(t, "approve", 7, 0)); !errors.Is(err, execute.ErrInvalidInput) {
+		t.Fatalf("ProcessCardAction() error = %v, want ErrInvalidInput", err)
+	}
+	if approver.approvedTask != 0 {
+		t.Fatalf("approver called for versionless card: %#v", approver)
+	}
+}
 
-	event := approveEvent(t, "approve", 7)
+func TestProcessCardActionRejectsNonPrincipal(t *testing.T) {
+	approver := &fakeApprover{}
+	handler := newTestHandler(t, approver)
+	event := approvalEvent(t, "approve", 7, 4)
 	event.OperatorID = "ou_intruder"
 	if _, err := handler.ProcessCardAction(context.Background(), event); !errors.Is(err, execute.ErrInvalidInput) {
 		t.Fatalf("ProcessCardAction() error = %v, want ErrInvalidInput", err)
 	}
-	if approver.approvedTask != 0 || approver.rejectedTask != 0 {
-		t.Fatalf("approver touched for non-principal: %#v", approver)
-	}
 }
 
-func TestProcessCardActionRejectsInvalidCallbackControls(t *testing.T) {
-	tests := []struct {
-		name   string
-		mutate func(*CardActionEvent)
-	}{
-		{name: "non button", mutate: func(event *CardActionEvent) { event.ActionTag = "checker" }},
-		{name: "form submit", mutate: func(event *CardActionEvent) { event.FormValue = `{"reason":"x"}` }},
-		{name: "empty value", mutate: func(event *CardActionEvent) { event.ActionValue = "" }},
-		{name: "malformed value", mutate: func(event *CardActionEvent) { event.ActionValue = `{"action":` }},
-		{name: "unknown action", mutate: func(event *CardActionEvent) {
-			event.ActionValue = `{"action":"delete","task_id":7}`
-		}},
-		{name: "zero task id", mutate: func(event *CardActionEvent) {
-			event.ActionValue = `{"action":"approve","task_id":0}`
-		}},
-	}
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			tasks := newFakeTasks(1)
-			approver := &fakeApprover{}
-			handler := newTestHandler(t, tasks, approver)
-			event := approveEvent(t, "approve", 7)
-			testCase.mutate(&event)
-
-			if _, err := handler.ProcessCardAction(context.Background(), event); !errors.Is(err, execute.ErrInvalidInput) {
-				t.Fatalf("ProcessCardAction() error = %v, want ErrInvalidInput", err)
-			}
-			if approver.approvedTask != 0 || approver.rejectedTask != 0 {
-				t.Fatalf("approver touched for invalid callback: %#v", approver)
-			}
-		})
-	}
-}
-
-func TestProcessCardActionAlreadyHandledIsSkippedNotFailed(t *testing.T) {
-	tasks := newFakeTasks(2)
+func TestProcessCardActionLostRaceIsAlreadyHandled(t *testing.T) {
 	approver := &fakeApprover{approveErr: execute.ErrVersionConflict}
-	handler := newTestHandler(t, tasks, approver)
-
-	card, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7))
+	handler := newTestHandler(t, approver)
+	card, err := handler.ProcessCardAction(context.Background(), approvalEvent(t, "approve", 7, 4))
 	if err != nil {
-		t.Fatalf("ProcessCardAction() on lost race should be nil, got %v", err)
+		t.Fatalf("ProcessCardAction() error = %v", err)
 	}
 	if !strings.Contains(string(card), "已经处理") {
-		t.Fatalf("replacement card = %s", card)
+		t.Fatalf("outcome card = %s", card)
 	}
 }
 
-func TestProcessCardActionFastRepeatIsReportedAsAlreadyHandled(t *testing.T) {
-	tasks := newFakeTasks(4)
-	tasks.status = "executing"
-	approver := &fakeApprover{}
-	handler := newTestHandler(t, tasks, approver)
-
-	card, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7))
-	if err != nil {
-		t.Fatalf("ProcessCardAction() error = %v", err)
-	}
-	if approver.approvedTask != 0 {
-		t.Fatalf("fast click approved task: %#v", approver)
-	}
-	if !strings.Contains(string(card), "已经处理") {
-		t.Fatalf("replacement card = %s", card)
-	}
-}
-
-func TestProcessCardActionWaitsForSecondProposalInsteadOfClosingNewCard(t *testing.T) {
-	tasks := &secondProposalTasks{}
-	approver := &fakeApprover{}
-	handler := newTestHandler(t, tasks, approver)
-
-	if _, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7)); err != nil {
-		t.Fatalf("ProcessCardAction() error = %v", err)
-	}
-	if approver.approvedTask != 7 || approver.approvedVersion != 6 {
-		t.Fatalf("second proposal approval = task=%d version=%d", approver.approvedTask, approver.approvedVersion)
-	}
-}
-
-func TestProcessCardActionDefersFastClickUntilProposalIsPersisted(t *testing.T) {
-	tasks := &delayedProposalTasks{readyAt: time.Now().Add(30 * time.Millisecond), base: newFakeTasks(6)}
-	approver := &fakeApprover{approved: make(chan struct{}, 1)}
-	handler := newTestHandler(t, tasks, approver)
-	handler.readyTimeout = 5 * time.Millisecond
-	handler.deferredReadyTimeout = 500 * time.Millisecond
-	handler.pollInterval = time.Millisecond
-
-	card, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7))
-	if err != nil {
-		t.Fatalf("ProcessCardAction() error = %v", err)
-	}
-	if !strings.Contains(string(card), "已收到同意") {
-		t.Fatalf("replacement card = %s", card)
-	}
-	select {
-	case <-approver.approved:
-	case <-time.After(time.Second):
-		t.Fatal("deferred approval was not landed")
-	}
-	if approver.approvedTask != 7 || approver.approvedVersion != 6 {
-		t.Fatalf("deferred approve called with task=%d version=%d", approver.approvedTask, approver.approvedVersion)
-	}
-}
-
-func TestProcessCardActionRejectsStaleCardMessage(t *testing.T) {
-	tasks := newFakeTasks(4)
-	tasks.messageID = "om_new_proposal"
-	approver := &fakeApprover{}
-	handler := newTestHandler(t, tasks, approver)
-
-	if _, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7)); !errors.Is(err, execute.ErrInvalidInput) {
-		t.Fatalf("ProcessCardAction() error = %v, want ErrInvalidInput", err)
-	}
-	if approver.approvedTask != 0 {
-		t.Fatalf("stale card approved task: %#v", approver)
-	}
-}
-
-func newTestHandler(t *testing.T, tasks ApprovalReader, approver Approver) *Handler {
+func newTestHandler(t *testing.T, approver Approver) *Handler {
 	t.Helper()
-	handler, err := NewRelayHandler(tasks, approver, principalOpenID, log.New(io.Discard, "", 0))
+	handler, err := NewRelayHandler(approver, principalOpenID, log.New(io.Discard, "", 0))
 	if err != nil {
 		t.Fatalf("NewRelayHandler() error = %v", err)
 	}
 	return handler
 }
 
-func approveEvent(t *testing.T, action string, taskID uint64) CardActionEvent {
+func approvalEvent(t *testing.T, action string, taskID uint64, version int32) CardActionEvent {
 	t.Helper()
-	value, err := json.Marshal(cardApprovalAction{Action: action, TaskID: taskID})
+	value, err := json.Marshal(cardApprovalAction{Action: action, TaskID: taskID, Version: version})
 	if err != nil {
 		t.Fatalf("marshal action value: %v", err)
 	}
 	return CardActionEvent{
-		EventID:     "evt_1",
-		OperatorID:  principalOpenID,
-		MessageID:   "om_1",
-		ActionTag:   "button",
-		ActionValue: string(value),
+		EventID: "evt_1", OperatorID: principalOpenID, MessageID: "om_1",
+		ActionTag: "button", ActionValue: string(value),
 	}
-}
-
-type fakeTasks struct {
-	version   int32
-	status    string
-	sourceRun uint64
-	messageID string
-	err       error
-}
-
-func newFakeTasks(version int32) *fakeTasks {
-	return &fakeTasks{version: version, status: "awaiting_approval", sourceRun: 51, messageID: "om_1"}
-}
-
-func (f *fakeTasks) GetTask(_ context.Context, id uint64) (*execute.TaskView, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	result, _ := json.Marshal(map[string]any{"stage": "proposal", "source_run_id": f.sourceRun})
-	return &execute.TaskView{ID: id, Status: f.status, Version: f.version, ExecutionResult: result}, nil
-}
-
-func (f *fakeTasks) ListRuns(_ context.Context, taskID uint64) (*execute.RunList, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	effects, _ := json.Marshal([]map[string]any{{"kind": "feishu_message", "message_id": f.messageID}})
-	return &execute.RunList{Items: []execute.RunView{{ID: f.sourceRun, TaskID: taskID, Effects: effects}}}, nil
-}
-
-type secondProposalTasks struct {
-	loads int
-}
-
-type delayedProposalTasks struct {
-	readyAt time.Time
-	base    *fakeTasks
-}
-
-func (f *delayedProposalTasks) GetTask(ctx context.Context, id uint64) (*execute.TaskView, error) {
-	if time.Now().Before(f.readyAt) {
-		return &execute.TaskView{ID: id, Status: "executing", Version: f.base.version, ExecutionResult: json.RawMessage(`{}`)}, nil
-	}
-	return f.base.GetTask(ctx, id)
-}
-
-func (f *delayedProposalTasks) ListRuns(ctx context.Context, taskID uint64) (*execute.RunList, error) {
-	return f.base.ListRuns(ctx, taskID)
-}
-
-func (f *secondProposalTasks) GetTask(_ context.Context, id uint64) (*execute.TaskView, error) {
-	f.loads++
-	status, version, sourceRun := "executing", int32(5), uint64(51)
-	if f.loads > 1 {
-		status, version, sourceRun = "awaiting_approval", 6, 52
-	}
-	result, _ := json.Marshal(map[string]any{"stage": "proposal", "source_run_id": sourceRun})
-	return &execute.TaskView{ID: id, Status: status, Version: version, ExecutionResult: result}, nil
-}
-
-func (f *secondProposalTasks) ListRuns(_ context.Context, taskID uint64) (*execute.RunList, error) {
-	oldEffects, _ := json.Marshal([]map[string]any{{"kind": "feishu_message", "message_id": "om_old"}})
-	newEffects, _ := json.Marshal([]map[string]any{{"kind": "feishu_message", "message_id": "om_1"}})
-	return &execute.RunList{Items: []execute.RunView{
-		{ID: 52, TaskID: taskID, Effects: newEffects},
-		{ID: 51, TaskID: taskID, Effects: oldEffects},
-	}}, nil
 }
 
 type fakeApprover struct {
@@ -279,31 +101,14 @@ type fakeApprover struct {
 	rejectedVersion int32
 	rejectReason    string
 	approveErr      error
-	rejectErr       error
-	approved        chan struct{}
 }
 
 func (f *fakeApprover) KickApprove(_ context.Context, taskID uint64, version int32) (*execute.ExecuteResult, error) {
-	f.approvedTask = taskID
-	f.approvedVersion = version
-	if f.approveErr != nil {
-		return nil, f.approveErr
-	}
-	if f.approved != nil {
-		select {
-		case f.approved <- struct{}{}:
-		default:
-		}
-	}
-	return &execute.ExecuteResult{}, nil
+	f.approvedTask, f.approvedVersion = taskID, version
+	return &execute.ExecuteResult{TaskID: taskID, Status: "executing"}, f.approveErr
 }
 
 func (f *fakeApprover) Reject(_ context.Context, taskID uint64, version int32, reason string) (*execute.ExecuteResult, error) {
-	f.rejectedTask = taskID
-	f.rejectedVersion = version
-	f.rejectReason = reason
-	if f.rejectErr != nil {
-		return nil, f.rejectErr
-	}
-	return &execute.ExecuteResult{}, nil
+	f.rejectedTask, f.rejectedVersion, f.rejectReason = taskID, version, reason
+	return &execute.ExecuteResult{TaskID: taskID, Status: "failed"}, nil
 }

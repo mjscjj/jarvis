@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentusage"
+	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 	"jarvis/internal/observability"
 	"jarvis/internal/prompttemplate"
@@ -46,6 +47,30 @@ type ExecuteResult struct {
 	Summary string `json:"summary,omitempty"`
 }
 
+// ApprovalNotification is the durable proposal projected into a user-facing
+// card only after Task.status has become awaiting_approval.
+type ApprovalNotification struct {
+	TaskID   uint64
+	RunID    uint64
+	Version  int32
+	Title    string
+	Summary  string
+	Action   string
+	Target   string
+	Artifact string
+}
+
+type ApprovalDelivery struct {
+	MessageID string
+	Target    string
+	Preview   string
+	URL       string
+}
+
+type ApprovalNotifier interface {
+	SendApproval(context.Context, ApprovalNotification) (*ApprovalDelivery, error)
+}
+
 // AgentExecutor is the execution core. It does not hard-code a per-action
 // workflow: it hands the Task's source payload/background and any resolved repo
 // path to codex and lets codex orchestrate.
@@ -58,6 +83,7 @@ type AgentExecutor struct {
 	workRules workrule.Reader
 	textStore textstore.Reader
 	skills    skill.Reader
+	approvals ApprovalNotifier
 	repoRoot  string
 	runsDir   string
 	now       func() time.Time
@@ -70,7 +96,7 @@ type activeExecution struct {
 	done   chan struct{}
 }
 
-func NewAgentExecutor(store *Store, runner *CodexRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, textStore textstore.Reader, skills skill.Reader, repoRoot, runsDir string) (*AgentExecutor, error) {
+func NewAgentExecutor(store *Store, runner *CodexRunner, sharedMem sharedmem.SharedMemoryReader, workRules workrule.Reader, textStore textstore.Reader, skills skill.Reader, approvals ApprovalNotifier, repoRoot, runsDir string) (*AgentExecutor, error) {
 	if store == nil {
 		return nil, fmt.Errorf("agent executor store is nil")
 	}
@@ -96,7 +122,7 @@ func NewAgentExecutor(store *Store, runner *CodexRunner, sharedMem sharedmem.Sha
 		return nil, fmt.Errorf("agent executor runs dir is required")
 	}
 	return &AgentExecutor{
-		store: store, runner: runner, sharedMem: sharedMem, workRules: workRules, textStore: textStore, skills: skills,
+		store: store, runner: runner, sharedMem: sharedMem, workRules: workRules, textStore: textStore, skills: skills, approvals: approvals,
 		repoRoot: repoRoot, runsDir: runsDir,
 		now: time.Now, active: make(map[uint64]*activeExecution),
 	}, nil
@@ -135,11 +161,25 @@ func (e *AgentExecutor) abandonExecution(taskID uint64, active *activeExecution)
 	e.endExecution(taskID, active)
 }
 
-func (e *AgentExecutor) runInBackground(taskID uint64, runCtx context.Context, active *activeExecution, run func(context.Context) error) {
+func (e *AgentExecutor) runInBackground(taskID uint64, runCtx context.Context, active *activeExecution, run func(context.Context) (*ExecuteResult, error)) {
 	go func() {
-		defer e.endExecution(taskID, active)
-		if err := run(runCtx); err != nil {
+		ended := false
+		defer func() {
+			if !ended {
+				e.endExecution(taskID, active)
+			}
+		}()
+		result, err := run(runCtx)
+		// Release the old run before publishing its approval card. A click can
+		// then claim the same Task immediately instead of racing the active slot.
+		e.endExecution(taskID, active)
+		ended = true
+		if err != nil {
 			hlog.CtxErrorf(runCtx, "background execution failed task_id=%d error=%+v", taskID, err)
+			return
+		}
+		if err := e.notifyAwaitingApproval(context.WithoutCancel(runCtx), result); err != nil {
+			hlog.CtxErrorf(runCtx, "approval notification failed task_id=%d error=%+v", taskID, err)
 		}
 	}()
 }
@@ -283,17 +323,15 @@ func (e *AgentExecutor) KickReapply(ctx context.Context, taskID uint64) (*Execut
 		e.abandonExecution(task.ID, active)
 		return nil, err
 	}
-	e.runInBackground(task.ID, runCtx, active, func(runCtx context.Context) error {
-		_, err := e.applyApproved(runCtx, task, proposal, execVersion)
-		return err
+	e.runInBackground(task.ID, runCtx, active, func(runCtx context.Context) (*ExecuteResult, error) {
+		return e.applyApproved(runCtx, task, proposal, execVersion)
 	})
 	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
 }
 
 func (e *AgentExecutor) executeClaimedInBackground(runCtx context.Context, active *activeExecution, taskID uint64, execVersion int32) {
-	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) error {
-		_, err := e.executeClaimed(runCtx, taskID, execVersion)
-		return err
+	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) (*ExecuteResult, error) {
+		return e.executeClaimed(runCtx, taskID, execVersion)
 	})
 }
 
@@ -334,9 +372,8 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 		e.abandonExecution(taskID, active)
 		return err
 	}
-	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) error {
-		_, err := e.resumeClaimed(runCtx, taskID, sourceRunID, prompt, execVersion)
-		return err
+	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) (*ExecuteResult, error) {
+		return e.resumeClaimed(runCtx, taskID, sourceRunID, prompt, execVersion)
 	})
 	return nil
 }
@@ -373,9 +410,8 @@ func (e *AgentExecutor) KickResumeAfterHuman(ctx context.Context, taskID uint64,
 		e.abandonExecution(taskID, active)
 		return nil, err
 	}
-	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) error {
-		_, err := e.resumeClaimed(runCtx, claim.TaskID, claim.SourceRunID, prompt, claim.Version)
-		return err
+	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) (*ExecuteResult, error) {
+		return e.resumeClaimed(runCtx, claim.TaskID, claim.SourceRunID, prompt, claim.Version)
 	})
 	return &ExecuteResult{TaskID: claim.TaskID, Status: "executing"}, nil
 }
@@ -580,9 +616,8 @@ func (e *AgentExecutor) KickApprove(ctx context.Context, taskID uint64, expected
 		e.abandonExecution(taskID, active)
 		return nil, err
 	}
-	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) error {
-		_, err := e.applyApproved(runCtx, task, proposal, execVersion)
-		return err
+	e.runInBackground(taskID, runCtx, active, func(runCtx context.Context) (*ExecuteResult, error) {
+		return e.applyApproved(runCtx, task, proposal, execVersion)
 	})
 	return &ExecuteResult{TaskID: task.ID, Status: "executing"}, nil
 }
@@ -599,7 +634,14 @@ func (e *AgentExecutor) Approve(ctx context.Context, taskID uint64, expectedVers
 	if err != nil {
 		return nil, err
 	}
-	return e.applyApproved(ctx, task, proposal, execVersion)
+	result, err := e.applyApproved(ctx, task, proposal, execVersion)
+	if err != nil {
+		return nil, err
+	}
+	if err := e.notifyAwaitingApproval(context.WithoutCancel(ctx), result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // claimForApproval validates an awaiting_approval Task, decodes its stored
@@ -680,14 +722,28 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	if err != nil {
 		return nil, err
 	}
-	defer e.endExecution(task.ID, active)
+	ended := false
+	defer func() {
+		if !ended {
+			e.endExecution(task.ID, active)
+		}
+	}()
 
 	// Claim the Task (pending -> executing). This is the concurrency guard.
 	execVersion, err := e.store.MarkExecuting(ctx, task.ID, task.Version)
 	if err != nil {
 		return nil, err
 	}
-	return e.executeClaimed(runCtx, task.ID, execVersion)
+	result, err := e.executeClaimed(runCtx, task.ID, execVersion)
+	e.endExecution(task.ID, active)
+	ended = true
+	if err != nil {
+		return nil, err
+	}
+	if err := e.notifyAwaitingApproval(context.WithoutCancel(ctx), result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // executeClaimed runs an already-claimed (executing) Task. Used by KickExecute /
@@ -742,6 +798,69 @@ func (e *AgentExecutor) routeRun(ctx context.Context, task *domain.Task, execVer
 		}, nil
 	}
 	return e.finishRun(ctx, task, execVersion, run, nil)
+}
+
+// notifyAwaitingApproval projects an already-persisted proposal into Feishu.
+// Persistence is the truth; notification is a subsequent side effect recorded
+// on the source run. There is deliberately no polling or alternate send path.
+func (e *AgentExecutor) notifyAwaitingApproval(ctx context.Context, result *ExecuteResult) error {
+	if e.approvals == nil || result == nil || result.Status != "awaiting_approval" {
+		return nil
+	}
+	task, err := e.store.LoadTask(ctx, result.TaskID)
+	if err != nil {
+		return fmt.Errorf("load persisted approval task_id=%d: %w", result.TaskID, err)
+	}
+	if task.Status != "awaiting_approval" {
+		return fmt.Errorf("%w: task_id=%d status=%s changed before approval notification", ErrInvalidTransition, task.ID, task.Status)
+	}
+	proposal, err := decodeStoredProposal(task.ExecutionResult)
+	if err != nil {
+		return fmt.Errorf("decode persisted approval task_id=%d: %w", task.ID, err)
+	}
+	delivery, err := e.approvals.SendApproval(ctx, ApprovalNotification{
+		TaskID: task.ID, RunID: result.RunID, Version: task.Version,
+		Title: task.Title, Summary: result.Summary,
+		Action: proposal.Action, Target: proposal.Target, Artifact: proposal.Artifact,
+	})
+	if err != nil {
+		return err
+	}
+	if delivery == nil || strings.TrimSpace(delivery.MessageID) == "" {
+		return fmt.Errorf("approval notifier returned no message_id for task_id=%d", task.ID)
+	}
+	run, err := e.store.LoadRun(ctx, result.RunID)
+	if err != nil {
+		return fmt.Errorf("load approval source run id=%d: %w", result.RunID, err)
+	}
+	effects, err := appendApprovalCardEffect(run.Effects, delivery)
+	if err != nil {
+		return fmt.Errorf("record approval card run_id=%d: %w", run.ID, err)
+	}
+	run.Effects = datatypes.JSON(effects)
+	if err := e.store.SaveRun(ctx, run); err != nil {
+		return fmt.Errorf("save approval card effect run_id=%d: %w", run.ID, err)
+	}
+	return nil
+}
+
+func appendApprovalCardEffect(raw []byte, delivery *ApprovalDelivery) ([]byte, error) {
+	var effects []map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &effects); err != nil {
+			return nil, fmt.Errorf("decode existing effects: %w", err)
+		}
+	}
+	extra, err := json.Marshal(map[string]any{"message_id": delivery.MessageID, "purpose": "approval"})
+	if err != nil {
+		return nil, fmt.Errorf("encode approval effect extra: %w", err)
+	}
+	effects = append(effects, map[string]any{
+		"kind": "feishu_message", "title": "审批卡片", "url": delivery.URL,
+		"target": delivery.Target, "preview": delivery.Preview, "extra": string(extra),
+		"message_id": delivery.MessageID,
+	})
+	return json.Marshal(effects)
 }
 
 // recordRunProgress stores where the matter now stands, as this run described

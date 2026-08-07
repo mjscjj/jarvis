@@ -349,6 +349,23 @@ func TestProposalPayloadCarriesSourceRunID(t *testing.T) {
 	}
 }
 
+func TestAppendApprovalCardEffectKeepsAgentEffects(t *testing.T) {
+	raw, err := appendApprovalCardEffect(json.RawMessage(`[{"kind":"file","title":"调查材料"}]`), &ApprovalDelivery{
+		MessageID: "om_approval", Target: "飞书私聊 principal",
+		Preview: "发送结论 → 评测群", URL: "http://127.0.0.1:18800/#/work/task/7",
+	})
+	if err != nil {
+		t.Fatalf("appendApprovalCardEffect() error = %v", err)
+	}
+	var effects []map[string]any
+	if err := json.Unmarshal(raw, &effects); err != nil {
+		t.Fatalf("decode effects: %v", err)
+	}
+	if len(effects) != 2 || effects[0]["kind"] != "file" || effects[1]["message_id"] != "om_approval" {
+		t.Fatalf("effects = %#v", effects)
+	}
+}
+
 var errTest = errors.New("group not found")
 
 // TestResumePromptsRequireApprovalPolicy pins the fix for resumed sessions being

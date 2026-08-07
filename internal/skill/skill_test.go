@@ -87,33 +87,26 @@ func TestServiceFailsWhenSkillConfigurationDoesNotMatchFiles(t *testing.T) {
 	}
 }
 
-func TestRepositoryFeishuApprovalCardKeepsDecisionActionsVisible(t *testing.T) {
+func TestRepositoryFeishuApprovalCardIsOwnedByServer(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-send-message", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("read repository Feishu message skill: %v", err)
 	}
 	skill := string(content)
 	for _, want := range []string{
-		"每张审批卡固定给 `[确认]` `[拒绝]` `[查看详情]` 三个按钮",
-		"三个按钮一个都不能少",
-		"给 `[确认]` 按钮增加二次确认弹窗",
-		`"confirm": {`,
-		`"value": { "action": "jarvis_approval", "decision": "approve", "task_id": <task_id> }`,
-		`"value": { "action": "jarvis_approval", "decision": "reject", "task_id": <task_id> }`,
-		`"default_url": "http://127.0.0.1:18800/#/work/task/<task_id>"`,
-		"callback 不可用的卡片",
+		"审批通知不由这个 Skill 发送",
+		"不要用本 Skill 发送审批卡片或纯文字提醒",
+		"先持久化提案",
+		"绑定当前 Task version",
 	} {
 		if !strings.Contains(skill, want) {
 			t.Fatalf("Feishu message skill missing approval-card contract %q:\n%s", want, skill)
 		}
 	}
 	for _, obsolete := range []string{
-		"只给查看详情的卡片（高风险/说不清）",
-		"动作简单、低风险、后果一句话说得清",
-		"[同意]",
-		`"value": { "action": "approve", "task_id": <task_id> }`,
-		`"value": { "action": "reject", "task_id": <task_id> }`,
-		`"default_url": "http://127.0.0.1:18800/"`,
+		`"action": "jarvis_approval"`,
+		`--msg-type interactive`,
+		"卡片连续发送失败就退回",
 	} {
 		if strings.Contains(skill, obsolete) {
 			t.Fatalf("Feishu message skill still contains obsolete approval-card rule %q:\n%s", obsolete, skill)

@@ -36,7 +36,7 @@ func TestRelayCardApprovalAuthenticatesAndMapsNamespace(t *testing.T) {
 		"message_id":"om_1",
 		"chat_id":"oc_1",
 		"action_tag":"button",
-		"action_value":{"action":"jarvis_approval","decision":"approve","task_id":7}
+		"action_value":{"action":"jarvis_approval","decision":"approve","task_id":7,"version":12}
 	}`)
 	response := ut.PerformRequest(
 		h.Engine, "POST", "/internal/card-approval/callback",
@@ -47,13 +47,14 @@ func TestRelayCardApprovalAuthenticatesAndMapsNamespace(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
 	var action struct {
-		Action string `json:"action"`
-		TaskID uint64 `json:"task_id"`
+		Action  string `json:"action"`
+		TaskID  uint64 `json:"task_id"`
+		Version int32  `json:"version"`
 	}
 	if err := json.Unmarshal([]byte(processor.event.ActionValue), &action); err != nil {
 		t.Fatalf("decode mapped action: %v", err)
 	}
-	if action.Action != "approve" || action.TaskID != 7 || processor.event.MessageID != "om_1" {
+	if action.Action != "approve" || action.TaskID != 7 || action.Version != 12 || processor.event.MessageID != "om_1" {
 		t.Fatalf("mapped event = %#v action=%#v", processor.event, action)
 	}
 }

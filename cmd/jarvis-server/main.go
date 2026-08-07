@@ -338,8 +338,26 @@ func main() {
 	if err != nil {
 		fatalf("initialize morning brief reader failed: %v", err)
 	}
+	var approvalNotifier execute.ApprovalNotifier
+	if cfg.CardApproval.Enabled {
+		approvalClient, err := larkcli.New(larkcli.Options{
+			Bin:         cfg.LarkCLI.Bin,
+			Profile:     cfg.CardApproval.Profile,
+			RateLimit:   cfg.LarkCLI.RateLimit,
+			Burst:       cfg.LarkCLI.Burst,
+			Concurrency: cfg.LarkCLI.Concurrent,
+			Timeout:     time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+		})
+		if err != nil {
+			fatalf("initialize approval lark-cli failed: %v", err)
+		}
+		approvalNotifier, err = cardapproval.NewNotifier(approvalClient, cfg.CardApproval.PrincipalOpenID)
+		if err != nil {
+			fatalf("initialize approval notifier failed: %v", err)
+		}
+	}
 	agentExecutor, err := execute.NewAgentExecutor(
-		taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, approvalNotifier, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
 		fatalf("initialize agent executor failed: %v", err)
@@ -763,7 +781,7 @@ func main() {
 	if cfg.CardApproval.Enabled {
 		cardLogger := log.New(os.Stderr, "card-approval ", log.LstdFlags|log.Lmicroseconds)
 		cardApprovalProcessor, err = cardapproval.NewRelayHandler(
-			taskService, agentExecutor, cfg.CardApproval.PrincipalOpenID, cardLogger,
+			agentExecutor, cfg.CardApproval.PrincipalOpenID, cardLogger,
 		)
 		if err != nil {
 			fatalf("build CC Connect card approval handler failed: %v", err)
