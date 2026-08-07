@@ -15,6 +15,7 @@ import './styles/agent-settings.css'
 const { Text } = Typography
 
 type AgentSettingsView = AgentConfigStage | 'other'
+type StageSection = 'prompt' | 'rules' | 'approval' | 'preview'
 
 const dynamicBlockLabels: Record<string, string> = {
   principal_open_id: 'Principal 身份',
@@ -106,7 +107,7 @@ function EffectivePreview({ preview }: { preview?: AgentConfigPreview }) {
 export default function AgentSettings() {
   const { context, setViewState } = usePageContext()
   const requestedView = context.view_state.stage
-  const activeView: AgentSettingsView = requestedView === 'm5' || requestedView === 'other' ? requestedView : 'm3'
+  const activeView: AgentSettingsView = requestedView === 'm3' || requestedView === 'other' ? requestedView : 'm5'
   const [textFiles, setTextFiles] = useState<TextFile[]>([])
   const [workRules, setWorkRules] = useState<WorkRule[]>([])
   const [textDrafts, setTextDrafts] = useState<Record<string, string>>({})
@@ -117,6 +118,10 @@ export default function AgentSettings() {
   const [error, setError] = useState<string>()
   const [notice, setNotice] = useState<string>()
   const [otherKey, setOtherKey] = useState<string>()
+  const [stageSections, setStageSections] = useState<Record<AgentConfigStage, StageSection>>({
+    m3: 'prompt',
+    m5: 'prompt',
+  })
 
   const reloadPreviews = useCallback(async () => {
     const [m3, m5] = await Promise.all([getAgentConfigPreview('m3'), getAgentConfigPreview('m5')])
@@ -188,21 +193,17 @@ export default function AgentSettings() {
 
   const stagePanel = (stage: AgentConfigStage) => {
     const isM3 = stage === 'm3'
+    const stageName = isM3 ? '线索发现' : '任务执行'
     const promptKey = isM3 ? 'm3_system_prompt' : 'm5_system_prompt'
     const stageRuleKey: WorkRule['key'] = isM3 ? 'extract' : 'execute'
     const promptFile = filesByKey[promptKey]
+    const stageRule = rulesByKey[stageRuleKey]
     const approvalFile = filesByKey.m5_approval_policy
-    return (
-      <div className="agent-stage-content">
-        <Alert
-          type="info"
-          showIcon
-          title={`${isM3 ? 'M3' : 'M5'} 系统提示词使用真实运行时模板`}
-          description={isM3
-            ? '模板必须保留一个 {{WORK_RULES}}；保存时会严格校验，运行时在该位置展开全阶段与 M3 专属规则。'
-            : '模板必须各保留一个 {{WORK_RULES}} 和 {{APPROVAL_POLICY}}；execute、apply 和 Session 恢复使用同一套组装逻辑。'}
-        />
-        {promptFile && (
+    const sections = [
+      {
+        key: 'prompt',
+        label: '系统提示词',
+        children: promptFile ? (
           <MarkdownEditor
             title={promptFile.name}
             description={promptFile.description}
@@ -212,44 +213,30 @@ export default function AgentSettings() {
             onChange={(value) => setTextDrafts((current) => ({ ...current, [promptFile.key]: value }))}
             onSave={() => saveText(promptFile.key)}
           />
-        )}
-        <Card className="agent-config-card agent-rules-card" variant="borderless">
-          <div className="agent-config-card-heading">
-            <div>
-              <Text strong>工作规则</Text>
-              <div><Text type="secondary">全阶段规则与当前阶段规则会组合后填入系统提示词占位符。</Text></div>
-            </div>
-          </div>
-          <Tabs
-            size="small"
-            items={(['all', stageRuleKey] as WorkRule['key'][]).map((key) => {
-              const rule = rulesByKey[key]
-              return {
-                key,
-                label: key === 'all' ? '全阶段' : isM3 ? 'M3 专属' : 'M5 专属',
-                children: rule ? (
-                  <>
-                    <div className="agent-inline-path"><Text code>{rule.path}</Text></div>
-                    <Input.TextArea
-                      value={ruleDrafts[key] ?? ''}
-                      onChange={(event) => setRuleDrafts((current) => ({ ...current, [key]: event.target.value }))}
-                      autoSize={{ minRows: 10, maxRows: 24 }}
-                      className="agent-markdown-editor"
-                    />
-                    <Flex justify="flex-end" style={{ marginTop: 12 }}>
-                      <Button type="primary" onClick={() => saveRule(key)} loading={savingKey === `rule:${key}`}>
-                        保存修改
-                      </Button>
-                    </Flex>
-                  </>
-                ) : <Empty description="工作规则未加载" />,
-              }
-            })}
-          />
-        </Card>
-        {!isM3 && approvalFile && (
+        ) : <Empty description="系统提示词未加载" />,
+      },
+      {
+        key: 'rules',
+        label: '工作规则',
+        children: stageRule ? (
           <MarkdownEditor
-            title="审批规则"
+            title={`${stageName}工作规则`}
+            description={`只在${stageName}阶段注入；不会与其他 Agent 共享。`}
+            path={stageRule.path}
+            value={ruleDrafts[stageRuleKey] ?? ''}
+            saving={savingKey === `rule:${stageRuleKey}`}
+            allowEmpty
+            onChange={(value) => setRuleDrafts((current) => ({ ...current, [stageRuleKey]: value }))}
+            onSave={() => saveRule(stageRuleKey)}
+          />
+        ) : <Empty description="工作规则未加载" />,
+      },
+      ...(!isM3 ? [{
+        key: 'approval',
+        label: '审批策略',
+        children: approvalFile ? (
+          <MarkdownEditor
+            title={approvalFile.name}
             description={approvalFile.description}
             path={approvalFile.path}
             value={textDrafts[approvalFile.key] ?? ''}
@@ -257,15 +244,39 @@ export default function AgentSettings() {
             onChange={(value) => setTextDrafts((current) => ({ ...current, [approvalFile.key]: value }))}
             onSave={() => saveText(approvalFile.key)}
           />
-        )}
-        <EffectivePreview preview={previews[stage]} />
+        ) : <Empty description="审批策略未加载" />,
+      }] : []),
+      {
+        key: 'preview',
+        label: '生效预览',
+        children: <EffectivePreview preview={previews[stage]} />,
+      },
+    ]
+    return (
+      <div className="agent-stage-content">
+        <Alert
+          type="info"
+          showIcon
+          title={`${stageName}使用真实运行时模板`}
+          description={isM3
+            ? '系统提示词必须保留一个 {{WORK_RULES}}；保存时会严格校验，运行时在该位置展开线索发现工作规则。'
+            : '模板必须各保留一个 {{WORK_RULES}} 和 {{APPROVAL_POLICY}}；execute、apply 和 Session 恢复使用同一套组装逻辑。'}
+        />
+        <Card className="agent-config-card agent-stage-tabs-card" variant="borderless">
+          <Tabs
+            className="agent-stage-tabs"
+            activeKey={stageSections[stage]}
+            onChange={(key) => setStageSections((current) => ({ ...current, [stage]: key as StageSection }))}
+            items={sections}
+          />
+        </Card>
       </div>
     )
   }
 
   return (
     <div className="agent-settings-page">
-      <PageHeader title="Agent 设置" subtitle="配置 M3、M5 的系统提示词、工作规则和审批规则" />
+      <PageHeader title="Agent 设置" subtitle="配置任务执行、线索发现及其他 Agent" />
       {error && <Alert type="error" showIcon title="Agent 设置操作失败" description={error} closable onClose={() => setError(undefined)} />}
       {notice && <Alert type="success" showIcon title={notice} closable onClose={() => setNotice(undefined)} />}
       <Spin spinning={loading}>
@@ -273,8 +284,8 @@ export default function AgentSettings() {
           activeKey={activeView}
           onChange={(stage) => setViewState({ stage })}
           items={[
-            { key: 'm3', label: 'M3 抽取', children: stagePanel('m3') },
-            { key: 'm5', label: 'M5 执行', children: stagePanel('m5') },
+            { key: 'm5', label: '任务执行', children: stagePanel('m5') },
+            { key: 'm3', label: '线索发现', children: stagePanel('m3') },
             {
               key: 'other',
               label: '其他 Agent',

@@ -54,12 +54,22 @@
   margin-bottom: var(--space-3);
 }
 
-.agent-inline-path {
+.agent-stage-tabs-card > .ant-card-body {
+  padding-top: 0;
+}
+
+.agent-stage-tabs > .ant-tabs-nav {
   margin-bottom: var(--space-2);
 }
 
-.agent-rules-card > .ant-card-body > .ant-tabs > .ant-tabs-nav {
-  margin-bottom: var(--space-3);
+.agent-stage-tabs > .ant-tabs-nav .ant-tabs-tab {
+  min-width: 104px;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.agent-stage-tabs > .ant-tabs-content-holder {
+  min-height: 520px;
 }
 
 .agent-config-card .agent-config-card {
@@ -74,5 +84,13 @@
 
   .agent-settings-page .ant-tabs-left > .ant-tabs-nav {
     width: 128px;
+  }
+
+  .agent-stage-tabs > .ant-tabs-nav .ant-tabs-tab {
+    min-width: auto;
+  }
+
+  .agent-stage-tabs > .ant-tabs-content-holder {
+    min-height: 0;
   }
 }

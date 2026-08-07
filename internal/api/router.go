@@ -244,7 +244,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/text-files", ListTextFiles(deps.TextFiles))
 	h.GET("/api/text-files/:text_file_key", GetTextFile(deps.TextFiles))
 	h.PUT("/api/text-files/:text_file_key", UpdateTextFile(deps.TextFiles))
-	// Agent 设置：按 M3/M5 阶段展示与运行时同源的稳定系统指令预览。
+	// Agent 设置：按线索发现/任务执行展示与运行时同源的稳定系统指令预览。
 	h.GET("/api/agent-config/stages/:agent_stage/preview", GetAgentConfigPreview(deps.AgentConfig))
 	// 周期定时任务：独立 CRUD、手动触发；自动执行由进程内每分钟 scheduler 负责。
 	h.GET("/api/scheduled-tasks", ListScheduledTasks(deps.ScheduledTasks))

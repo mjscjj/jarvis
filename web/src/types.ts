@@ -814,7 +814,7 @@ export interface ResourceInput {
 export type WorkRuleStage = 'extract' | 'execute'
 
 export interface WorkRule {
-  key: 'all' | WorkRuleStage
+  key: WorkRuleStage
   name: string
   path: string
   content: string
