@@ -306,7 +306,6 @@ export default function Progress() {
         <div className="review-hero-copy">
           <Text className="review-eyebrow">WORK REVIEW</Text>
           <Title level={1}>回顾</Title>
-          <Text>把一天里的总结、会议与产出收进同一个时间切面</Text>
         </div>
         <div className="review-date-control">
           <span className="review-date-icon"><CalendarOutlined /></span>
