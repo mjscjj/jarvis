@@ -19,6 +19,10 @@ skills:
       enabled: false # 独立仓库 Skill；不注入 M3/M5 runtime catalog
       stages:
         - execute
+    - name: install-jarvis
+      enabled: false # 独立仓库 Skill；只供用户的 Agent 首次安装，不注入 M3/M5
+      stages:
+        - execute
     - name: summarize-morning-brief
       enabled: true
       stages:

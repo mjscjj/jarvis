@@ -30,7 +30,10 @@ description: 独立执行首次初始化或经用户明确要求重建 Jarvis，
 
 ```bash
 bash .agents/skills/initialize-jarvis/scripts/preflight.sh
+./.agents/skills/install-jarvis/scripts/jarvis-install doctor
 ```
+
+`preflight.ready` 只表示可以开始只读取证，不表示机器 identity 或服务已经初始化。`jarvis-install doctor` 负责完整机器事实；若 `machine_ready=false`，先按 `$install-jarvis` 修复依赖。`configuration.status.machine_configuration_ready=false` 在 fresh clone 中是正常状态，可继续取证。若本地 `var/jarvis.db` 已存在但服务不可用，也按存量实例处理并先询问用户，不能把“查不到 API”解释为空实例。
 
 若 Jarvis 服务可用，读取 `get-principal`、`list-projects`、`list-persons`、`list-key-matters`、`query-resources` 和已人工标注的群。遇到存量业务数据，执行上述“全新实例”停止条件。群的机械发现记录本身不算业务数据。
 
@@ -38,12 +41,13 @@ bash .agents/skills/initialize-jarvis/scripts/preflight.sh
 
 ## 1. 确认并登录 lark-cli 用户身份
 
-加载并遵循当前环境的 `lark-shared` Skill。所有命令都显式携带本次 `--profile <profile>`，不要依赖机器默认 profile。
+加载并遵循当前环境的 `lark-shared` Skill。先列出现有 profiles 和非密钥 app 配置，再决定复用或新建；所有后续命令都显式携带本次 `--profile <profile>`，不要依赖机器默认 profile。
 
-1. 运行带 `--verify` 的 `auth status`，记录 user 的 `openId`、`userName`、token 状态和 scope；不记录 token。
-2. 如果用户身份未就绪，按 `lark-shared` 的 split-flow 发起最小只读授权。不得使用 `--domain all`。
-3. 当前轮只展示原始授权 URL 和二维码，然后结束并等待用户回复已授权。不要在同一轮阻塞轮询，也不要持久化 `device_code` 或授权 URL。
-4. 用户回来后重新发起一次 split-flow，亲自用新 `device_code` 完成登录，再次运行 `auth status --verify`。
+1. 只有一个明确属于本次 Jarvis app 的 profile 时可建议复用；没有 profile 时按 `lark-shared` 引导用户创建 app 配置；多个候选或 app 归属不清时，把差异交给用户选择，不根据名字猜。
+2. 运行带 `--verify` 的 `auth status`，记录 user 的 `openId`、`userName`、token 状态和 scope；不记录 token。
+3. 如果用户身份未就绪，按 `lark-shared` 的 split-flow 发起最小只读授权。不得使用 `--domain all`。
+4. 当前轮只展示原始授权 URL 和二维码，然后结束并等待用户回复已授权。不要在同一轮阻塞轮询，也不要持久化 `device_code` 或授权 URL。
+5. 用户回来后重新发起一次 split-flow，亲自用新 `device_code` 完成登录，再次运行 `auth status --verify`。
 
 缺少某个读取权限时，只增量申请错误明确给出的只读 scope。bot scope 缺失要给出开发者后台链接，禁止用用户登录替 bot 补权限。
 
@@ -87,7 +91,12 @@ bash .agents/skills/initialize-jarvis/scripts/preflight.sh
    ./.agents/skills/initialize-jarvis/scripts/jarvis-init configure --open-id <open_id> --profile <profile> --git-author <author>
    ```
 
-2. 仅用 `./scripts/rebuild-server.sh` 构建并重启主服务。禁止裸 `go build` 覆盖服务二进制。
+2. 重新运行 `jarvis-install doctor`，根据真实服务状态选择机器动作：
+   - `services.qdrant.healthy=false`：停止并回到 `$install-jarvis`，不得启动一个依赖不完整的主服务。
+   - 当前 checkout 的主服务已注册：仅用 `./scripts/rebuild-server.sh` 构建并重启。
+   - 主服务尚未注册：运行 `./.agents/skills/install-jarvis/scripts/jarvis-install install-server`。
+   - launchd label 的 program 指向其他 checkout 或归属不明：停止并取得用户是否替换的明确授权，不自动 bootout。
+   禁止裸 `go build` 覆盖服务二进制。
 3. 再次检查实例为空；如果重启后出现存量业务数据，停止并报告，不继续合并。
 4. 用 `update-principal` 写 Profile，并立即 `get-principal` 读回。
 5. 逐个 `create-project`，保存返回的真实 ID；再逐个读回。
@@ -99,7 +108,13 @@ bash .agents/skills/initialize-jarvis/scripts/preflight.sh
 
 ## 5. 验收
 
-先运行机器验收：
+先运行系统安装验收：
+
+```bash
+./.agents/skills/install-jarvis/scripts/jarvis-install validate
+```
+
+它必须确认配置完整且权限为 `0600`、Qdrant 和主服务健康、`/readyz` 没有 error 依赖。然后运行初始化业务验收：
 
 ```bash
 ./.agents/skills/initialize-jarvis/scripts/jarvis-init validate --profile <profile>

@@ -145,7 +145,7 @@ func TestRepositoryFeishuMessageSkillIsNotExposedToExtract(t *testing.T) {
 	}
 }
 
-func TestRepositoryInitializationSkillIsStandalone(t *testing.T) {
+func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 	service, err := NewService(
 		filepath.Join("..", "..", ".agents", "skills"),
 		filepath.Join("..", "..", "conf", "skills.yaml"),
@@ -157,24 +157,31 @@ func TestRepositoryInitializationSkillIsStandalone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	found := false
+	found := map[string]bool{
+		"initialize-jarvis": false,
+		"install-jarvis":    false,
+	}
 	for _, item := range items {
-		if item.Name != "initialize-jarvis" {
+		if _, exists := found[item.Name]; !exists {
 			continue
 		}
-		found = true
+		found[item.Name] = true
 		if item.IsEnabled {
-			t.Fatal("initialize-jarvis must stay disabled in the Jarvis runtime catalog")
+			t.Fatalf("%s must stay disabled in the Jarvis runtime catalog", item.Name)
 		}
 	}
-	if !found {
-		t.Fatal("initialize-jarvis repository skill was not discovered")
+	for name, wasFound := range found {
+		if !wasFound {
+			t.Fatalf("%s repository skill was not discovered", name)
+		}
 	}
 	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
 	if err != nil {
 		t.Fatalf("execute Catalog() error = %v", err)
 	}
-	if strings.Contains(executeCatalog, "initialize-jarvis") {
-		t.Fatalf("M5 catalog exposes standalone initialize-jarvis:\n%s", executeCatalog)
+	for name := range found {
+		if strings.Contains(executeCatalog, name) {
+			t.Fatalf("M5 catalog exposes standalone %s:\n%s", name, executeCatalog)
+		}
 	}
 }

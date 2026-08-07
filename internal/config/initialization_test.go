@@ -107,3 +107,30 @@ func TestConfigurePrincipalRejectsUnknownExistingRuntimeField(t *testing.T) {
 		t.Fatalf("invalid runtime config changed:\n%s", after)
 	}
 }
+
+func TestInspectInitializationReportsFreshAndConfiguredStates(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte(runtimeSettingsTestYAML), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := InspectInitialization(configPath)
+	if err != nil {
+		t.Fatalf("InspectInitialization(fresh) error = %v", err)
+	}
+	if fresh.RuntimeConfigExists || fresh.MachineConfigurationReady || fresh.BaseConfigMode != "0640" {
+		t.Fatalf("fresh status = %#v", fresh)
+	}
+	if got := strings.Join(fresh.RuntimeBinaries, ","); got != "codex,lark-cli,traex" {
+		t.Fatalf("fresh runtime binaries = %q", got)
+	}
+	if _, err := ConfigurePrincipal(configPath, "ou_ready", "cli_ready", "ready@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := InspectInitialization(configPath)
+	if err != nil {
+		t.Fatalf("InspectInitialization(configured) error = %v", err)
+	}
+	if !configured.RuntimeConfigExists || configured.RuntimeConfigMode != "0600" || !configured.MachineConfigurationReady {
+		t.Fatalf("configured status = %#v", configured)
+	}
+}

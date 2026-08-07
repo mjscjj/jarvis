@@ -58,3 +58,40 @@ func TestRunShowPrincipal(t *testing.T) {
 		t.Fatalf("run() output = %#v", got)
 	}
 }
+
+func TestRunInitializationStatusDoesNotExposeValues(t *testing.T) {
+	repoConfig := filepath.Join("..", "..", "conf", "config.yaml")
+	base, err := os.ReadFile(repoConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, base, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.ConfigurePrincipal(configPath, "ou_status_secret", "cli_status_secret", "status-secret@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := run([]string{"initialization-status", "--config", configPath}, &output); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if bytes.Contains(output.Bytes(), []byte("ou_status_secret")) || bytes.Contains(output.Bytes(), []byte("cli_status_secret")) || bytes.Contains(output.Bytes(), []byte("status-secret@example.com")) {
+		t.Fatalf("initialization status leaked identity values: %s", output.String())
+	}
+	var got struct {
+		Ready              bool     `json:"machine_configuration_ready"`
+		RuntimeExists      bool     `json:"runtime_config_exists"`
+		TrackedModelAPIKey bool     `json:"tracked_model_api_key_present"`
+		RuntimeBinaries    []string `json:"runtime_binaries"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Ready || !got.RuntimeExists || !got.TrackedModelAPIKey {
+		t.Fatalf("initialization status = %#v", got)
+	}
+	if len(got.RuntimeBinaries) == 0 {
+		t.Fatalf("initialization status omitted configured runtime binaries: %#v", got)
+	}
+}

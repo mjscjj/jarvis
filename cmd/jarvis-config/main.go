@@ -26,9 +26,30 @@ func run(args []string, stdout io.Writer) error {
 		return runConfigurePrincipal(args[1:], stdout)
 	case "show-principal":
 		return runShowPrincipal(args[1:], stdout)
+	case "initialization-status":
+		return runInitializationStatus(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown subcommand %q", args[0])
 	}
+}
+
+func runInitializationStatus(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("initialization-status", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	configPath := flags.String("config", "conf/config.yaml", "base config path")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
+	}
+	status, err := config.InspectInitialization(*configPath)
+	if err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(stdout)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(status)
 }
 
 func runConfigurePrincipal(args []string, stdout io.Writer) error {

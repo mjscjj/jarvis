@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -20,6 +21,126 @@ type PrincipalConfiguration struct {
 	LarkProfile       string `json:"lark_profile"`
 	GitAuthor         string `json:"git_author"`
 	RestartRequired   bool   `json:"restart_required"`
+}
+
+// InitializationStatus projects only the machine-owned fields needed to
+// decide whether Jarvis may be installed. It deliberately returns presence
+// booleans instead of credential or identity values so a doctor command can be
+// shared without leaking local configuration.
+type InitializationStatus struct {
+	BaseConfigPath            string   `json:"base_config_path"`
+	RuntimeConfigPath         string   `json:"runtime_config_path"`
+	RuntimeConfigExists       bool     `json:"runtime_config_exists"`
+	BaseConfigMode            string   `json:"base_config_mode"`
+	RuntimeConfigMode         string   `json:"runtime_config_mode,omitempty"`
+	PrincipalOpenIDConfigured bool     `json:"principal_open_id_configured"`
+	LarkProfileConfigured     bool     `json:"lark_profile_configured"`
+	GitAuthorConfigured       bool     `json:"git_author_configured"`
+	ModelBaseURLConfigured    bool     `json:"model_base_url_configured"`
+	ModelAPIKeyConfigured     bool     `json:"model_api_key_configured"`
+	ModelNameConfigured       bool     `json:"model_name_configured"`
+	EmbeddingModelConfigured  bool     `json:"embedding_model_configured"`
+	EmbeddingDimensionsReady  bool     `json:"embedding_dimensions_configured"`
+	TrackedModelAPIKeyPresent bool     `json:"tracked_model_api_key_present"`
+	RuntimeBinaries           []string `json:"runtime_binaries"`
+	MachineConfigurationReady bool     `json:"machine_configuration_ready"`
+}
+
+// InspectInitialization reads the strict base and optional runtime overlay
+// without applying the full server-start validation. A fresh clone is
+// intentionally incomplete, and the installer needs to report that state
+// rather than fail before the initialization Agent can act.
+func InspectInitialization(configPath string) (*InitializationStatus, error) {
+	configPath = strings.TrimSpace(configPath)
+	if configPath == "" {
+		return nil, fmt.Errorf("config path is empty")
+	}
+	absoluteConfigPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve config path %q: %w", configPath, err)
+	}
+	baseRaw, err := os.ReadFile(absoluteConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config %q: %w", absoluteConfigPath, err)
+	}
+	var cfg Config
+	if err := decodeKnownYAML(baseRaw, &cfg); err != nil {
+		return nil, fmt.Errorf("parse base config before initialization: %w", err)
+	}
+	baseOnly := cfg
+	baseInfo, err := os.Stat(absoluteConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat config %q: %w", absoluteConfigPath, err)
+	}
+	overridePath := RuntimeOverridePath(absoluteConfigPath)
+	overrideExists := false
+	overrideMode := ""
+	if overrideRaw, readErr := os.ReadFile(overridePath); readErr == nil {
+		overrideExists = true
+		if err := decodeKnownYAML(overrideRaw, &cfg); err != nil {
+			return nil, fmt.Errorf("parse runtime config override %q: %w", overridePath, err)
+		}
+		overrideInfo, err := os.Stat(overridePath)
+		if err != nil {
+			return nil, fmt.Errorf("stat runtime config override %q: %w", overridePath, err)
+		}
+		overrideMode = fmt.Sprintf("%04o", overrideInfo.Mode().Perm())
+	} else if !os.IsNotExist(readErr) {
+		return nil, fmt.Errorf("read runtime config override %q: %w", overridePath, readErr)
+	}
+
+	status := &InitializationStatus{
+		BaseConfigPath:            absoluteConfigPath,
+		RuntimeConfigPath:         overridePath,
+		RuntimeConfigExists:       overrideExists,
+		BaseConfigMode:            fmt.Sprintf("%04o", baseInfo.Mode().Perm()),
+		RuntimeConfigMode:         overrideMode,
+		PrincipalOpenIDConfigured: strings.HasPrefix(strings.TrimSpace(cfg.Extract.PrincipalOpenID), "ou_") && len(strings.TrimSpace(cfg.Extract.PrincipalOpenID)) > len("ou_"),
+		LarkProfileConfigured:     strings.TrimSpace(cfg.LarkCLI.Profile) != "",
+		GitAuthorConfigured:       strings.TrimSpace(cfg.DailyDigest.GitAuthor) != "",
+		ModelBaseURLConfigured:    strings.TrimSpace(cfg.Model.BaseURL) != "",
+		ModelAPIKeyConfigured:     strings.TrimSpace(cfg.Model.APIKey) != "",
+		ModelNameConfigured:       strings.TrimSpace(cfg.Model.Model) != "",
+		EmbeddingModelConfigured:  strings.TrimSpace(cfg.Model.EmbeddingModel) != "",
+		EmbeddingDimensionsReady:  cfg.Model.EmbeddingDims > 0,
+		TrackedModelAPIKeyPresent: strings.TrimSpace(baseOnly.Model.APIKey) != "",
+		RuntimeBinaries:           initializationRuntimeBinaries(cfg),
+	}
+	status.MachineConfigurationReady = status.PrincipalOpenIDConfigured &&
+		status.LarkProfileConfigured && status.GitAuthorConfigured &&
+		status.ModelBaseURLConfigured && status.ModelAPIKeyConfigured &&
+		status.ModelNameConfigured && status.EmbeddingModelConfigured &&
+		status.EmbeddingDimensionsReady
+	return status, nil
+}
+
+func initializationRuntimeBinaries(cfg Config) []string {
+	configured := []string{cfg.LarkCLI.Bin, cfg.Codex.Bin, cfg.Execute.Bin}
+	if cfg.FactEngine.Enabled {
+		configured = append(configured, cfg.FactEngine.Bin)
+	}
+	if cfg.Proactive.Enabled {
+		configured = append(configured, cfg.Proactive.Bin)
+	}
+	if cfg.MeetingSweep.Enabled {
+		configured = append(configured, cfg.MeetingSweep.Bin)
+	}
+	if cfg.MorningBrief.Enabled {
+		configured = append(configured, cfg.MorningBrief.Bin)
+	}
+	unique := make(map[string]struct{}, len(configured))
+	for _, binary := range configured {
+		binary = strings.TrimSpace(binary)
+		if binary != "" {
+			unique[binary] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(unique))
+	for binary := range unique {
+		result = append(result, binary)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // ConfigurePrincipal writes the app-scoped principal open_id and lark-cli

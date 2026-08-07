@@ -11,7 +11,7 @@ for command_name in bash curl git go jq lark-cli; do
     missing+=("$command_name")
   fi
 done
-for relative_path in conf/config.yaml conf/skills.yaml scripts/jarvis-tools .agents/skills/initialize-jarvis/SKILL.md .agents/skills/initialize-jarvis/scripts/jarvis-init; do
+for relative_path in conf/config.yaml conf/skills.yaml scripts/jarvis-tools .agents/skills/install-jarvis/SKILL.md .agents/skills/install-jarvis/scripts/jarvis-install .agents/skills/initialize-jarvis/SKILL.md .agents/skills/initialize-jarvis/scripts/jarvis-init; do
   if [[ ! -e "${REPO_ROOT}/${relative_path}" ]]; then
     missing+=("${relative_path}")
   fi
