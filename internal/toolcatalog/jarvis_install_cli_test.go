@@ -77,7 +77,17 @@ func TestJarvisInstallCreatesOneAuditableProjectChecklist(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, want := range []string{"## A. 仓库与安装决策", "## E. 世界模型初始化", "## 未完成、未做或不适用", "cli_ready", "- [ ]"} {
+	for _, want := range []string{
+		"## A. 仓库与安装决策",
+		"## B. 工具链与全部依赖",
+		"## C. 飞书身份与一体化绑定",
+		"## D. 服务启动与运行底座验收",
+		"## E. 世界模型初始化",
+		"## F. 真实端到端验收",
+		"## 未完成、未做或不适用",
+		"cli_ready",
+		"- [ ]",
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("checklist missing %q:\n%s", want, text)
 		}

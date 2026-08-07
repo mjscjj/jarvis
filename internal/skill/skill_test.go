@@ -242,7 +242,7 @@ func TestInitializeJarvisBuildsAReadBackWorldModel(t *testing.T) {
 	contract := combined.String()
 	for _, want := range []string{
 		"world-model.md",
-		"CHECKLIST.md",
+		"INSTALL_CHECKLIST.md",
 		"高置信且不会覆盖存量的事实可以直接应用",
 		"高影响歧义",
 		"create-relation",
@@ -289,7 +289,10 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 	}
 	combined := string(installSkill) + "\n" + string(boundaries) + "\n" + string(binding) + "\n" + string(initializeSkill)
 	for _, want := range []string{
-		"机器事实 → 全部依赖 → `validate-dependencies`",
+		"本 Skill 是从完整仓库 checkout 到最终可用的安装流程所有者",
+		"仓库与安装运行 → 机器事实 → 全部依赖 → `validate-dependencies`",
+		"./scripts/jarvis-install start",
+		"run_dir/INSTALL_CHECKLIST.md",
 		"依赖门通过前不得启动 CC Connect 或 Jarvis",
 		"世界模型不是服务启动前置条件",
 		"Qdrant 是依赖服务",
@@ -301,9 +304,19 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		"已有 daemon 指向另一 binary/checkout",
 		"初始化只负责“Jarvis 如何理解这个用户的世界”",
 		"不安装或重启 daemon，也不配置 CC",
+		"只更新清单 E 区",
+		"./scripts/jarvis-install status --run-dir <run_dir>",
 	} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("dependency-first installation contract is missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"./scripts/jarvis-init start",
+		"./scripts/jarvis-init status",
+	} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("whole-project installation state still belongs to jarvis-init: %q", forbidden)
 		}
 	}
 }
