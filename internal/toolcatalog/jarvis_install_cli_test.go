@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
@@ -17,6 +18,7 @@ func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
+		"start",
 		"doctor",
 		"install-lark-cli",
 		"install-traex",
@@ -28,6 +30,7 @@ func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
 		"validate-binding",
 		"install-server",
 		"validate",
+		"status",
 		"The calling",
 		"Agent decides",
 	} {
@@ -44,6 +47,55 @@ func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
 		if strings.Contains(toolsHelp, forbidden) {
 			t.Fatalf("jarvis-tools exposes installation-only command %q:\n%s", forbidden, toolsHelp)
 		}
+	}
+}
+
+func TestJarvisInstallCreatesOneAuditableProjectChecklist(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(repoRoot, "var", "install", fmt.Sprintf("test-%d", time.Now().UnixNano()))
+	defer os.RemoveAll(runDir)
+	out, err := runJarvisInstall(t, nil, "start", "--profile", "cli_ready", "--run-dir", runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		OK        bool   `json:"ok"`
+		RunDir    string `json:"run_dir"`
+		Checklist string `json:"checklist"`
+	}
+	if err := json.Unmarshal([]byte(out), &created); err != nil {
+		t.Fatal(err)
+	}
+	if !created.OK || created.RunDir != runDir {
+		t.Fatalf("start result = %#v", created)
+	}
+	content, err := os.ReadFile(created.Checklist)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, want := range []string{"## A. 仓库与安装决策", "## E. 世界模型初始化", "## 未完成、未做或不适用", "cli_ready", "- [ ]"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("checklist missing %q:\n%s", want, text)
+		}
+	}
+	status, err := runJarvisInstall(t, nil, "status", "--run-dir", runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary struct {
+		Completed int  `json:"completed"`
+		Pending   int  `json:"pending"`
+		Complete  bool `json:"complete"`
+	}
+	if err := json.Unmarshal([]byte(status), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Completed != 0 || summary.Pending == 0 || summary.Complete {
+		t.Fatalf("status = %#v", summary)
 	}
 }
 

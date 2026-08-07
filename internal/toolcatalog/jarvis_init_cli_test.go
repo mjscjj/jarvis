@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestJarvisInitOwnsWorldModelRunStateOnly(t *testing.T) {
@@ -18,12 +17,12 @@ func TestJarvisInitOwnsWorldModelRunStateOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"start", "preflight", "status", "discover", "scan", "validate", "does not install services", "configure CC Connect"} {
+	for _, want := range []string{"preflight", "discover", "scan", "validate", "does not install services", "installation state", "configure CC Connect"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("jarvis-init help missing %q:\n%s", want, help)
 		}
 	}
-	for _, forbidden := range []string{"configure-app", "set-cc-app-secret", "validate-binding", "install-server"} {
+	for _, forbidden := range []string{"\n  start      ", "\n  status     ", "configure-app", "set-cc-app-secret", "validate-binding", "install-server"} {
 		if strings.Contains(help, forbidden) {
 			t.Fatalf("jarvis-init still owns install concern %q:\n%s", forbidden, help)
 		}
@@ -36,55 +35,6 @@ func TestJarvisInitOwnsWorldModelRunStateOnly(t *testing.T) {
 		if strings.Contains(toolsHelp, forbidden) {
 			t.Fatalf("jarvis-tools exposes initialization-only command %q:\n%s", forbidden, toolsHelp)
 		}
-	}
-}
-
-func TestJarvisInitCreatesOneAuditableChecklist(t *testing.T) {
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runDir := filepath.Join(repoRoot, "var", "onboarding", fmt.Sprintf("test-%d", time.Now().UnixNano()))
-	defer os.RemoveAll(runDir)
-	out, err := runJarvisInit(t, "", nil, "start", "--profile", "cli_ready", "--run-dir", runDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var created struct {
-		OK        bool   `json:"ok"`
-		RunDir    string `json:"run_dir"`
-		Checklist string `json:"checklist"`
-	}
-	if err := json.Unmarshal([]byte(out), &created); err != nil {
-		t.Fatal(err)
-	}
-	if !created.OK || created.RunDir != runDir {
-		t.Fatalf("start result = %#v", created)
-	}
-	content, err := os.ReadFile(created.Checklist)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(content)
-	for _, want := range []string{"## A. 安装与运行底座", "## B. 世界模型", "## 未完成、未做或不适用", "cli_ready", "- [ ]"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("checklist missing %q:\n%s", want, text)
-		}
-	}
-	status, err := runJarvisInit(t, "", nil, "status", "--run-dir", runDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var summary struct {
-		Completed int  `json:"completed"`
-		Pending   int  `json:"pending"`
-		Complete  bool `json:"complete"`
-	}
-	if err := json.Unmarshal([]byte(status), &summary); err != nil {
-		t.Fatal(err)
-	}
-	if summary.Completed != 0 || summary.Pending == 0 || summary.Complete {
-		t.Fatalf("status = %#v", summary)
 	}
 }
 

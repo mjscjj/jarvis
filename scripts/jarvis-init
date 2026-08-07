@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Project-owned onboarding helper. It keeps the shared checklist and exposes
-# existing M1/M2 machine boundaries; semantic decisions remain in the Skills.
+# Project-owned world-model helper. It exposes existing M1/M2 machine
+# boundaries; semantic decisions and installation state remain in the Skills.
 set -euo pipefail
 
 fail() {
@@ -16,21 +16,18 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_PATH="conf/config.yaml"
 PROFILE=""
 CHAT_ID=""
-RUN_DIR=""
-CHECKLIST_TEMPLATE="${REPO_ROOT}/docs/templates/jarvis-onboarding-checklist.md"
 
 usage() {
   cat <<'EOF'
-usage: jarvis-init <start|preflight|status|discover|scan|validate> [flags]
+usage: jarvis-init <preflight|discover|scan|validate> [flags]
 
-Project-owned helper used by $install-jarvis and $initialize-jarvis. It is not
-part of the normal Jarvis M3/M5 tool catalog and does not install services or
-configure CC Connect.
+Project-owned helper used by $initialize-jarvis. The whole-project installation
+run and checklist belong to jarvis-install start/status. This helper is not part
+of the normal Jarvis M3/M5 tool catalog and does not install services, maintain
+installation state, or configure CC Connect.
 
 commands:
-  start      Create var/onboarding/<run-id>/ with evidence/ and CHECKLIST.md
   preflight  Validate repository-local initialization resources
-  status     Summarize checked and unchecked items in one run checklist
   discover   Run one synchronous M2 chat discovery through the running server
   scan       Run one synchronous M2 scan for one chat
   validate   Validate the principal world model and report object/group counts
@@ -49,46 +46,11 @@ consume_flags() {
       --chat-id)
         (( $# >= 2 )) || fail "--chat-id requires a value"
         CHAT_ID="$2"; shift 2 ;;
-      --run-dir)
-        (( $# >= 2 )) || fail "--run-dir requires a value"
-        RUN_DIR="$2"; shift 2 ;;
       --help|-h)
         usage; exit 0 ;;
       *) fail "unknown argument: $1" ;;
     esac
   done
-}
-
-resolve_run_dir() {
-  local resolved="$1"
-  if [[ "$resolved" != /* ]]; then
-    resolved="${REPO_ROOT}/${resolved}"
-  fi
-  case "$resolved" in
-    "${REPO_ROOT}/var/onboarding/"*) printf '%s\n' "$resolved" ;;
-    *) fail "run directory must be inside ${REPO_ROOT}/var/onboarding" ;;
-  esac
-}
-
-cmd_start() {
-  local run_id started_at checklist_path
-  run_id="$(date '+%Y%m%d-%H%M%S')"
-  started_at="$(date '+%Y-%m-%dT%H:%M:%S%z')"
-  if [[ -z "$RUN_DIR" ]]; then
-    RUN_DIR="${REPO_ROOT}/var/onboarding/${run_id}"
-  else
-    RUN_DIR="$(resolve_run_dir "$RUN_DIR")"
-    run_id="$(basename "$RUN_DIR")"
-  fi
-  [[ ! -e "$RUN_DIR" ]] || fail "run directory already exists: ${RUN_DIR}"
-  [[ -f "$CHECKLIST_TEMPLATE" ]] || fail "checklist template is missing: ${CHECKLIST_TEMPLATE}"
-  mkdir -p "${RUN_DIR}/evidence"
-  checklist_path="${RUN_DIR}/CHECKLIST.md"
-  awk -v run_id="$run_id" -v started_at="$started_at" -v repo_root="$REPO_ROOT" -v profile="${PROFILE:-待选择}" '
-    { gsub(/\{\{RUN_ID\}\}/, run_id); gsub(/\{\{STARTED_AT\}\}/, started_at); gsub(/\{\{REPO_ROOT\}\}/, repo_root); gsub(/\{\{PROFILE\}\}/, profile); print }
-  ' "$CHECKLIST_TEMPLATE" >"$checklist_path"
-  jq -nc --arg run_dir "$RUN_DIR" --arg checklist "$checklist_path" --arg evidence_dir "${RUN_DIR}/evidence" \
-    '{ok:true,run_dir:$run_dir,checklist:$checklist,evidence_dir:$evidence_dir}'
 }
 
 cmd_preflight() {
@@ -98,7 +60,7 @@ cmd_preflight() {
     scripts/install-cc-connect.sh integrations/cc-connect/manage.sh integrations/cc-connect/manifest.sh \
     integrations/cc-connect/README.md \
     integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch \
-    docs/templates/jarvis-onboarding-checklist.md .agents/skills/install-jarvis/SKILL.md \
+    docs/templates/jarvis-install-checklist.md .agents/skills/install-jarvis/SKILL.md \
     .agents/skills/initialize-jarvis/SKILL.md .agents/skills/initialize-jarvis/references/ownership-map.md \
     .agents/skills/initialize-jarvis/references/evidence-sources.md \
     .agents/skills/initialize-jarvis/references/modeling-guide.md \
@@ -116,19 +78,6 @@ cmd_preflight() {
     --argjson runtime_ignored "$runtime_ignored" --argjson dirty_count "$dirty_count" \
     '{ready:$ready,repo_root:$repo_root,missing:$missing,runtime_config_ignored:$runtime_ignored,dirty_file_count:$dirty_count}'
   [[ "$ready" == "true" ]]
-}
-
-cmd_status() {
-  [[ -n "$RUN_DIR" ]] || fail "status requires --run-dir"
-  RUN_DIR="$(resolve_run_dir "$RUN_DIR")"
-  local checklist_path completed pending explained
-  checklist_path="${RUN_DIR}/CHECKLIST.md"
-  [[ -f "$checklist_path" ]] || fail "checklist not found: ${checklist_path}"
-  completed="$(awk '/^- \[x\]/{n++} END{print n+0}' "$checklist_path")"
-  pending="$(awk '/^- \[ \]/{n++} END{print n+0}' "$checklist_path")"
-  explained="$(awk '/^- \[ \].*(未做|阻塞|不适用)/{n++} END{print n+0}' "$checklist_path")"
-  jq -nc --arg checklist "$checklist_path" --argjson completed "$completed" --argjson pending "$pending" --argjson pending_with_reason "$explained" \
-    '{checklist:$checklist,completed:$completed,pending:$pending,pending_with_reason:$pending_with_reason,complete:($pending == 0)}'
 }
 
 resolve_api_base() {
@@ -216,9 +165,7 @@ command_name="$1"
 shift
 consume_flags "$@"
 case "$command_name" in
-  start) cmd_start ;;
   preflight) cmd_preflight ;;
-  status) cmd_status ;;
   discover) cmd_discover ;;
   scan) cmd_scan ;;
   validate) cmd_validate ;;
