@@ -8,6 +8,7 @@ import (
 	"log"
 	"strings"
 	"testing"
+	"time"
 
 	"jarvis/internal/execute"
 )
@@ -141,6 +142,31 @@ func TestProcessCardActionWaitsForSecondProposalInsteadOfClosingNewCard(t *testi
 	}
 }
 
+func TestProcessCardActionDefersFastClickUntilProposalIsPersisted(t *testing.T) {
+	tasks := &delayedProposalTasks{readyAt: time.Now().Add(30 * time.Millisecond), base: newFakeTasks(6)}
+	approver := &fakeApprover{approved: make(chan struct{}, 1)}
+	handler := newTestHandler(t, tasks, approver)
+	handler.readyTimeout = 5 * time.Millisecond
+	handler.deferredReadyTimeout = 500 * time.Millisecond
+	handler.pollInterval = time.Millisecond
+
+	card, err := handler.ProcessCardAction(context.Background(), approveEvent(t, "approve", 7))
+	if err != nil {
+		t.Fatalf("ProcessCardAction() error = %v", err)
+	}
+	if !strings.Contains(string(card), "已收到同意") {
+		t.Fatalf("replacement card = %s", card)
+	}
+	select {
+	case <-approver.approved:
+	case <-time.After(time.Second):
+		t.Fatal("deferred approval was not landed")
+	}
+	if approver.approvedTask != 7 || approver.approvedVersion != 6 {
+		t.Fatalf("deferred approve called with task=%d version=%d", approver.approvedTask, approver.approvedVersion)
+	}
+}
+
 func TestProcessCardActionRejectsStaleCardMessage(t *testing.T) {
 	tasks := newFakeTasks(4)
 	tasks.messageID = "om_new_proposal"
@@ -211,6 +237,22 @@ type secondProposalTasks struct {
 	loads int
 }
 
+type delayedProposalTasks struct {
+	readyAt time.Time
+	base    *fakeTasks
+}
+
+func (f *delayedProposalTasks) GetTask(ctx context.Context, id uint64) (*execute.TaskView, error) {
+	if time.Now().Before(f.readyAt) {
+		return &execute.TaskView{ID: id, Status: "executing", Version: f.base.version, ExecutionResult: json.RawMessage(`{}`)}, nil
+	}
+	return f.base.GetTask(ctx, id)
+}
+
+func (f *delayedProposalTasks) ListRuns(ctx context.Context, taskID uint64) (*execute.RunList, error) {
+	return f.base.ListRuns(ctx, taskID)
+}
+
 func (f *secondProposalTasks) GetTask(_ context.Context, id uint64) (*execute.TaskView, error) {
 	f.loads++
 	status, version, sourceRun := "executing", int32(5), uint64(51)
@@ -238,6 +280,7 @@ type fakeApprover struct {
 	rejectReason    string
 	approveErr      error
 	rejectErr       error
+	approved        chan struct{}
 }
 
 func (f *fakeApprover) KickApprove(_ context.Context, taskID uint64, version int32) (*execute.ExecuteResult, error) {
@@ -245,6 +288,12 @@ func (f *fakeApprover) KickApprove(_ context.Context, taskID uint64, version int
 	f.approvedVersion = version
 	if f.approveErr != nil {
 		return nil, f.approveErr
+	}
+	if f.approved != nil {
+		select {
+		case f.approved <- struct{}{}:
+		default:
+		}
 	}
 	return &execute.ExecuteResult{}, nil
 }

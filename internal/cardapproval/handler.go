@@ -48,13 +48,16 @@ type cardApprovalAction struct {
 }
 
 type Handler struct {
-	tasks         ApprovalReader
-	approver      Approver
-	principalOpen string
-	logger        *log.Logger
-	readyTimeout  time.Duration
-	pollInterval  time.Duration
+	tasks                ApprovalReader
+	approver             Approver
+	principalOpen        string
+	logger               *log.Logger
+	readyTimeout         time.Duration
+	deferredReadyTimeout time.Duration
+	pollInterval         time.Duration
 }
+
+var errProposalNotReady = errors.New("approval proposal is not ready")
 
 // NewRelayHandler builds the approval processor behind the authenticated
 // localhost relay. Jarvis never opens a Feishu event connection itself.
@@ -74,7 +77,7 @@ func NewRelayHandler(tasks ApprovalReader, approver Approver, principalOpenID st
 	}
 	return &Handler{
 		tasks: tasks, approver: approver, principalOpen: principalOpenID, logger: logger,
-		readyTimeout: 2 * time.Second, pollInterval: 100 * time.Millisecond,
+		readyTimeout: 250 * time.Millisecond, deferredReadyTimeout: 30 * time.Second, pollInterval: 100 * time.Millisecond,
 	}, nil
 }
 
@@ -86,7 +89,14 @@ func (h *Handler) ProcessCardAction(ctx context.Context, event CardActionEvent) 
 		return nil, fmt.Errorf("%w: %v", execute.ErrInvalidInput, err)
 	}
 
-	view, alreadyHandled, err := h.waitForProposal(ctx, action.TaskID, event.MessageID)
+	view, alreadyHandled, err := h.waitForProposal(ctx, action.TaskID, event.MessageID, h.readyTimeout)
+	if errors.Is(err, errProposalNotReady) {
+		h.deferCardApproval(event, action)
+		if action.Action == "approve" {
+			return cardNoticeText("✅ 已收到同意，正在处理。"), nil
+		}
+		return cardNoticeText("已收到拒绝，正在处理。"), nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("card approval load task_id=%d: %w", action.TaskID, err)
 	}
@@ -97,19 +107,55 @@ func (h *Handler) ProcessCardAction(ctx context.Context, event CardActionEvent) 
 		return nil, err
 	}
 
+	if err := h.landCardApproval(ctx, action, view.Version); err != nil {
+		return h.onLandFailed(ctx, event, action.TaskID, action.Action, err)
+	}
+	if action.Action == "approve" {
+		return cardNoticeText("✅ 已同意，正在处理。"), nil
+	}
+	return cardNoticeText("已驳回，不会执行。"), nil
+}
+
+func (h *Handler) landCardApproval(ctx context.Context, action cardApprovalAction, version int32) error {
 	switch action.Action {
 	case "approve":
-		if _, err := h.approver.KickApprove(ctx, action.TaskID, view.Version); err != nil {
-			return h.onLandFailed(ctx, event, action.TaskID, "approve", err)
-		}
-		return cardNoticeText("✅ 已同意，正在处理。"), nil
+		_, err := h.approver.KickApprove(ctx, action.TaskID, version)
+		return err
 	case "reject":
-		if _, err := h.approver.Reject(ctx, action.TaskID, view.Version, "委托人在飞书卡片上驳回"); err != nil {
-			return h.onLandFailed(ctx, event, action.TaskID, "reject", err)
-		}
-		return cardNoticeText("已驳回，不会执行。"), nil
+		_, err := h.approver.Reject(ctx, action.TaskID, version, "委托人在飞书卡片上驳回")
+		return err
+	default:
+		return fmt.Errorf("%w: unsupported card approval action %q", execute.ErrInvalidInput, action.Action)
 	}
-	return nil, fmt.Errorf("%w: unsupported card approval action %q", execute.ErrInvalidInput, action.Action)
+}
+
+func (h *Handler) deferCardApproval(event CardActionEvent, action cardApprovalAction) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), h.deferredReadyTimeout)
+		defer cancel()
+		view, alreadyHandled, err := h.waitForProposal(ctx, action.TaskID, event.MessageID, h.deferredReadyTimeout)
+		if err != nil {
+			h.logger.Printf("job=card-approval status=error action=%s task_id=%d deferred=true error=%v", action.Action, action.TaskID, err)
+			return
+		}
+		if alreadyHandled {
+			h.logger.Printf("job=card-approval status=info action=%s task_id=%d deferred=true skipped=already-handled", action.Action, action.TaskID)
+			return
+		}
+		if err := h.verifyCurrentProposal(ctx, view, event.MessageID); err != nil {
+			h.logger.Printf("job=card-approval status=error action=%s task_id=%d deferred=true error=%v", action.Action, action.TaskID, err)
+			return
+		}
+		if err := h.landCardApproval(ctx, action, view.Version); err != nil {
+			if errors.Is(err, execute.ErrVersionConflict) || errors.Is(err, execute.ErrInvalidTransition) {
+				h.logger.Printf("job=card-approval status=info action=%s task_id=%d deferred=true skipped=already-handled: %v", action.Action, action.TaskID, err)
+				return
+			}
+			h.logger.Printf("job=card-approval status=error action=%s task_id=%d deferred=true error=%v", action.Action, action.TaskID, err)
+			return
+		}
+		h.logger.Printf("job=card-approval status=ok action=%s task_id=%d deferred=true", action.Action, action.TaskID)
+	}()
 }
 
 func authorizeCardApproval(event CardActionEvent, principalOpenID string) (cardApprovalAction, error) {
@@ -151,8 +197,8 @@ func authorizeCardApproval(event CardActionEvent, principalOpenID string) (cardA
 // persisted. An executing Task may still carry the previous proposal while its
 // apply run is producing a second one, so only a card belonging to that stored
 // proposal is already handled; a different card keeps waiting for the handoff.
-func (h *Handler) waitForProposal(ctx context.Context, taskID uint64, messageID string) (*execute.TaskView, bool, error) {
-	deadline := time.NewTimer(h.readyTimeout)
+func (h *Handler) waitForProposal(ctx context.Context, taskID uint64, messageID string, timeout time.Duration) (*execute.TaskView, bool, error) {
+	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(h.pollInterval)
 	defer ticker.Stop()
@@ -182,7 +228,7 @@ func (h *Handler) waitForProposal(ctx context.Context, taskID uint64, messageID 
 		case <-ctx.Done():
 			return nil, false, ctx.Err()
 		case <-deadline.C:
-			return nil, false, fmt.Errorf("proposal was not persisted within %s", h.readyTimeout)
+			return nil, false, fmt.Errorf("%w within %s", errProposalNotReady, timeout)
 		case <-ticker.C:
 		}
 	}
