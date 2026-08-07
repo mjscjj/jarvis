@@ -197,7 +197,7 @@ pending -> executing -> done | observing | failed
 - 运行部署：[reference/operations.md](reference/operations.md)
 - 页面真源：`web/src/App.tsx`
 - 当前主导航：Overview、任务、定时任务、待办、背景、设置、进度、运行状态
-- 生产入口：`http://127.0.0.1:18800/`
+- 生产服务监听 `0.0.0.0:18800`，局域网入口由 `server.public_base_url` 配置
 
 ## 9. 当前已知实现缺口
 

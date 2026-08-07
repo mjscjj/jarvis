@@ -2,7 +2,8 @@
 # 主要配置段均已投入运行并在启动时校验；同目录 config.runtime.yaml 会覆盖本文件，保存后需重启生效。
 
 server:
-  addr: "127.0.0.1:18800"
+  addr: "0.0.0.0:18800"
+  public_base_url: "http://192.168.3.91:18800"
   web_root: "web/dist"
   log_files:                              # 调试面板尾读并归并的运行日志；stderr 里有各 cron 运行结果，必须一起读
     - "var/log/jarvis-server.log"

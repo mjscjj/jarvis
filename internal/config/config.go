@@ -7,7 +7,7 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,9 +39,10 @@ type Config struct {
 
 // ServerConfig Hertz 监听配置。
 type ServerConfig struct {
-	Addr     string   `yaml:"addr"`      // 形如 127.0.0.1:18800
-	WebRoot  string   `yaml:"web_root"`  // React production build directory
-	LogFiles []string `yaml:"log_files"` // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
+	Addr          string   `yaml:"addr"`            // 形如 0.0.0.0:18800
+	PublicBaseURL string   `yaml:"public_base_url"` // 用于飞书卡片等外部入口，形如 http://192.168.1.10:18800
+	WebRoot       string   `yaml:"web_root"`        // React production build directory
+	LogFiles      []string `yaml:"log_files"`       // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
 }
 
 // SQLiteConfig is the single local business source of truth.
@@ -353,6 +354,12 @@ func (c *Config) validate() error {
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")
 	}
+	if c.Server.PublicBaseURL != "" {
+		parsed, err := url.Parse(c.Server.PublicBaseURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("server.public_base_url 必须是不带路径的 http(s) URL")
+		}
+	}
 	if c.Server.WebRoot == "" {
 		return fmt.Errorf("server.web_root 不能为空")
 	}
@@ -495,9 +502,8 @@ func (c *Config) validate() error {
 		if strings.TrimSpace(c.CardApproval.RelaySecret) == "" {
 			return fmt.Errorf("card_approval.enabled=true 时 relay_secret 不能为空")
 		}
-		host, _, err := net.SplitHostPort(c.Server.Addr)
-		if err != nil || (host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback())) {
-			return fmt.Errorf("card_approval.enabled=true 时 server.addr 必须监听 loopback")
+		if c.Server.PublicBaseURL == "" {
+			return fmt.Errorf("card_approval.enabled=true 时 server.public_base_url 不能为空")
 		}
 	}
 	if c.Capture.AutoRelatedP2PTopN < 0 {

@@ -19,11 +19,12 @@ type larkRunner interface {
 // parked. It is intentionally a direct call: no outbox, polling, or fallback
 // path is needed for this local single-user runtime.
 type Notifier struct {
-	lark      larkRunner
-	principal string
+	lark          larkRunner
+	principal     string
+	detailBaseURL string
 }
 
-func NewNotifier(lark larkRunner, principalOpenID string) (*Notifier, error) {
+func NewNotifier(lark larkRunner, principalOpenID, detailBaseURL string) (*Notifier, error) {
 	if lark == nil {
 		return nil, fmt.Errorf("card approval lark client is nil")
 	}
@@ -31,7 +32,11 @@ func NewNotifier(lark larkRunner, principalOpenID string) (*Notifier, error) {
 	if principalOpenID == "" {
 		return nil, fmt.Errorf("card approval principal open_id is empty")
 	}
-	return &Notifier{lark: lark, principal: principalOpenID}, nil
+	detailBaseURL = strings.TrimRight(strings.TrimSpace(detailBaseURL), "/")
+	if detailBaseURL == "" {
+		return nil, fmt.Errorf("card approval detail base URL is empty")
+	}
+	return &Notifier{lark: lark, principal: principalOpenID, detailBaseURL: detailBaseURL}, nil
 }
 
 func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNotification) (*execute.ApprovalDelivery, error) {
@@ -45,7 +50,7 @@ func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNoti
 			return nil, fmt.Errorf("approval notification %s is empty", name)
 		}
 	}
-	card := approvalCard(notice)
+	card := n.approvalCard(notice)
 	content, err := json.Marshal(card)
 	if err != nil {
 		return nil, fmt.Errorf("encode approval card task_id=%d: %w", notice.TaskID, err)
@@ -69,11 +74,15 @@ func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNoti
 		MessageID: messageIDs[0],
 		Target:    n.principal,
 		Preview:   truncateRunes(notice.Artifact, 160),
-		URL:       fmt.Sprintf("http://127.0.0.1:18800/#/work/task/%d", notice.TaskID),
+		URL:       n.detailURL(notice.TaskID),
 	}, nil
 }
 
-func approvalCard(notice execute.ApprovalNotification) map[string]any {
+func (n *Notifier) detailURL(taskID uint64) string {
+	return fmt.Sprintf("%s/#/work/task/%d", n.detailBaseURL, taskID)
+}
+
+func (n *Notifier) approvalCard(notice execute.ApprovalNotification) map[string]any {
 	callback := func(decision string) map[string]any {
 		return map[string]any{
 			"type": "callback",
@@ -97,11 +106,10 @@ func approvalCard(notice execute.ApprovalNotification) map[string]any {
 	column := func(element map[string]any) map[string]any {
 		return map[string]any{"tag": "column", "width": "weighted", "weight": 1, "elements": []any{element}}
 	}
-	detailURL := fmt.Sprintf("http://127.0.0.1:18800/#/work/task/%d", notice.TaskID)
 	details := map[string]any{
 		"tag": "button", "text": map[string]any{"tag": "plain_text", "content": "查看详情"},
 		"type": "default", "width": "fill",
-		"behaviors": []any{map[string]any{"type": "open_url", "default_url": detailURL}},
+		"behaviors": []any{map[string]any{"type": "open_url", "default_url": n.detailURL(notice.TaskID)}},
 	}
 	body := fmt.Sprintf("**要做的事**\n%s\n\n**作用对象**\n%s\n\n**待执行内容**\n%s", strings.TrimSpace(notice.Action), strings.TrimSpace(notice.Target), truncateRunes(strings.TrimSpace(notice.Artifact), 1200))
 	if summary := strings.TrimSpace(notice.Summary); summary != "" {

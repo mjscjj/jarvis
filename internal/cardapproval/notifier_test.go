@@ -11,7 +11,7 @@ import (
 
 func TestNotifierSendsVersionBoundApprovalCard(t *testing.T) {
 	runner := &fakeLarkRunner{response: `{"data":{"message_id":"om_card_1"}}`}
-	notifier, err := NewNotifier(runner, "ou_principal")
+	notifier, err := NewNotifier(runner, "ou_principal", "http://192.168.3.91:18800")
 	if err != nil {
 		t.Fatalf("NewNotifier() error = %v", err)
 	}
@@ -25,8 +25,11 @@ func TestNotifierSendsVersionBoundApprovalCard(t *testing.T) {
 	if delivery.MessageID != "om_card_1" {
 		t.Fatalf("delivery = %#v", delivery)
 	}
+	if delivery.URL != "http://192.168.3.91:18800/#/work/task/17" {
+		t.Fatalf("delivery URL = %q", delivery.URL)
+	}
 	joined := strings.Join(runner.args, "\n")
-	for _, want := range []string{"--msg-type\ninteractive", "jarvis-approval-17-v6", `"task_id":17`, `"version":6`, `"decision":"approve"`, `"decision":"reject"`} {
+	for _, want := range []string{"--msg-type\ninteractive", "jarvis-approval-17-v6", `"task_id":17`, `"version":6`, `"decision":"approve"`, `"decision":"reject"`, `"default_url":"http://192.168.3.91:18800/#/work/task/17"`} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("lark args missing %q:\n%s", want, joined)
 		}
@@ -35,7 +38,7 @@ func TestNotifierSendsVersionBoundApprovalCard(t *testing.T) {
 
 func TestNotifierFailsWithoutMessageID(t *testing.T) {
 	runner := &fakeLarkRunner{response: `{"data":{}}`}
-	notifier, err := NewNotifier(runner, "ou_principal")
+	notifier, err := NewNotifier(runner, "ou_principal", "http://192.168.3.91:18800")
 	if err != nil {
 		t.Fatalf("NewNotifier() error = %v", err)
 	}
@@ -45,6 +48,13 @@ func TestNotifierFailsWithoutMessageID(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "exactly one") {
 		t.Fatalf("SendApproval() error = %v", err)
+	}
+}
+
+func TestNewNotifierFailsWithoutDetailBaseURL(t *testing.T) {
+	_, err := NewNotifier(&fakeLarkRunner{}, "ou_principal", "")
+	if err == nil || !strings.Contains(err.Error(), "detail base URL") {
+		t.Fatalf("NewNotifier() error = %v", err)
 	}
 }
 
