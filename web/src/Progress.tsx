@@ -10,12 +10,13 @@ import {
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
-import { generateDailyDigest, getDailyDigests, getProfile, listGroups } from './api'
+import { generateDailyDigest, getDailyDigests, getMorningBriefs, getProfile, listGroups } from './api'
 import DigestCard from './review/DigestCard'
 import MeetingSummaryView from './review/MeetingSummaryView'
+import MorningBriefCard from './review/MorningBriefCard'
 import { CodeView, DocumentsView } from './review/WorklogViews'
 import { usePageContext } from './pageContext'
-import type { DailyDigest, DailyDigestScope, Group, ProfileView } from './types'
+import type { DailyDigest, DailyDigestScope, Group, MorningBrief, ProfileView } from './types'
 import './styles/review-memory.css'
 
 const DAILY_DIGEST_POLL_MS = 5000
@@ -23,14 +24,14 @@ const DAILY_DIGEST_RETRY_MS = 10000
 const RECENT_DATE_TABS = 14
 const { Text, Title } = Typography
 
-type ReviewView = 'daily' | 'meetings' | 'groups' | 'docs' | 'code'
+type ReviewView = 'daily' | 'morning' | 'meetings' | 'groups' | 'docs' | 'code'
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
 function reviewView(value: string | undefined): ReviewView {
-  return value === 'meetings' || value === 'groups' || value === 'docs' || value === 'code' ? value : 'daily'
+  return value === 'morning' || value === 'meetings' || value === 'groups' || value === 'docs' || value === 'code' ? value : 'daily'
 }
 
 function dateTabLabel(date: string) {
@@ -66,6 +67,9 @@ export default function Progress() {
   const [dailyItems, setDailyItems] = useState<DailyDigest[]>([])
   const [dailyLoading, setDailyLoading] = useState(false)
   const [dailyError, setDailyError] = useState<string>()
+  const [morningItems, setMorningItems] = useState<MorningBrief[]>([])
+  const [morningLoading, setMorningLoading] = useState(false)
+  const [morningError, setMorningError] = useState<string>()
   const [generating, setGenerating] = useState<Set<string>>(new Set())
   const [dailyRefresh, setDailyRefresh] = useState(0)
   const generatingDatesRef = useRef<Set<string>>(new Set())
@@ -149,6 +153,22 @@ export default function Progress() {
       if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [activeView, date, dailyRefresh])
+
+  useEffect(() => {
+    if (activeView !== 'morning') return
+    const controller = new AbortController()
+    setMorningLoading(true)
+    setMorningError(undefined)
+    getMorningBriefs(RECENT_DATE_TABS, controller.signal)
+      .then((result) => setMorningItems(result.items))
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setMorningError(errorText(cause))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setMorningLoading(false)
+      })
+    return () => controller.abort()
+  }, [activeView])
 
   const selectView = (view: ReviewView) => {
     setActiveView(view)
@@ -244,6 +264,20 @@ export default function Progress() {
     label: dateTabLabel(value),
     children: value === date ? dailyContent : null,
   }))
+  const morningBrief = morningItems.find((item) => item.date === date)
+  const morningContent = (
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+      {morningError && <Alert type="error" showIcon title="晨报加载失败" description={morningError} />}
+      <Spin spinning={morningLoading}>
+        <MorningBriefCard item={morningBrief} />
+      </Spin>
+    </Space>
+  )
+  const morningTabs = recentDates.map((value) => ({
+    key: value,
+    label: dateTabLabel(value),
+    children: value === date ? morningContent : null,
+  }))
 
   const activeGroupID = keyGroups.some((group) => String(group.id) === context.view_state.group_id)
     ? context.view_state.group_id
@@ -290,6 +324,10 @@ export default function Progress() {
     {
       key: 'daily', label: <span className="review-primary-tab-label"><ReadOutlined />每日总结</span>,
       children: <Tabs className="review-secondary-tabs" activeKey={date} onChange={(value) => selectDate(dayjs(value))} items={dailyTabs} tabBarGutter={8} />,
+    },
+    {
+      key: 'morning', label: <span className="review-primary-tab-label"><ReadOutlined />晨报</span>,
+      children: <Tabs className="review-secondary-tabs" activeKey={date} onChange={(value) => selectDate(dayjs(value))} items={morningTabs} tabBarGutter={8} />,
     },
     {
       key: 'meetings', label: <span className="review-primary-tab-label"><VideoCameraOutlined />会议总结</span>,
