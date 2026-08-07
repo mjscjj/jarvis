@@ -730,6 +730,7 @@ export interface WatermarkRow {
   chat_id: string
   group_name: string
   last_message_id: string
+  last_message_content: string
   last_scanned_at: string
   updated_at: string
 }

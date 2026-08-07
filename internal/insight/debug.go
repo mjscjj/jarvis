@@ -62,13 +62,15 @@ func (s *DebugService) Scans(ctx context.Context, limit int) ([]ScanRow, error) 
 	return rows, nil
 }
 
-// WatermarkRow is one chat's extraction cursor joined with its name.
+// WatermarkRow is one chat's extraction cursor enriched with its name and the
+// plaintext message referenced by the cursor.
 type WatermarkRow struct {
-	ChatID        string `json:"chat_id"`
-	GroupName     string `json:"group_name"`
-	LastMessageID string `json:"last_message_id"`
-	LastScannedAt string `json:"last_scanned_at"`
-	UpdatedAt     string `json:"updated_at"`
+	ChatID             string `json:"chat_id"`
+	GroupName          string `json:"group_name"`
+	LastMessageID      string `json:"last_message_id"`
+	LastMessageContent string `json:"last_message_content"`
+	LastScannedAt      string `json:"last_scanned_at"`
+	UpdatedAt          string `json:"updated_at"`
 }
 
 func (s *DebugService) Watermarks(ctx context.Context) ([]WatermarkRow, error) {
@@ -85,6 +87,14 @@ func (s *DebugService) Watermarks(ctx context.Context) ([]WatermarkRow, error) {
 			LastScannedAt: m.LastScannedAt.Format(time.RFC3339),
 			UpdatedAt:     m.UpdatedAt.Format(time.RFC3339),
 		}
+		var message domain.Message
+		if err := s.db.WithContext(ctx).
+			Select("content").
+			Where("chat_id = ? AND message_id = ?", m.ChatID, m.LastScannedMessageID).
+			First(&message).Error; err != nil {
+			return nil, fmt.Errorf("load extract watermark message chat_id=%s message_id=%s: %w", m.ChatID, m.LastScannedMessageID, err)
+		}
+		row.LastMessageContent = message.Content
 		var group domain.Group
 		if err := s.db.WithContext(ctx).Select("name").Where("chat_id = ?", m.ChatID).First(&group).Error; err == nil && group.Name != nil {
 			row.GroupName = *group.Name

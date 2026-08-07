@@ -314,6 +314,10 @@ function AgentProcessesTab() {
 const watermarkColumns: TableColumnsType<WatermarkRow> = [
   { title: '会话', key: 'chat', width: 280, render: (_, row) => <Space orientation="vertical" size={0}><Text>{row.group_name || '(未命名)'}</Text><Text type="secondary" className="mono">{row.chat_id}</Text></Space> },
   { title: '最后消息 ID', dataIndex: 'last_message_id', width: 260, render: (v: string) => <Text className="mono">{v}</Text> },
+  {
+    title: '最后消息内容', dataIndex: 'last_message_content', width: 420,
+    render: (v: string) => <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }} ellipsis={{ rows: 2, tooltip: v }}>{v || '—'}</Paragraph>,
+  },
   { title: '最后抽取时间', dataIndex: 'last_scanned_at', width: 180 },
   { title: '更新时间', dataIndex: 'updated_at', width: 180 },
 ]
@@ -330,7 +334,7 @@ function WatermarksTab() {
       {error && <Alert type="error" showIcon title="水位加载失败" description={error} />}
       <Table<WatermarkRow>
         rowKey="chat_id" size="small" columns={watermarkColumns} dataSource={data?.items ?? []} loading={loading}
-        pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: (data?.items.length ?? 0) <= 20 }} scroll={{ x: 900 }}
+        pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: (data?.items.length ?? 0) <= 20 }} scroll={{ x: 1320 }}
       />
     </Space>
   )
