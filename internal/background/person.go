@@ -53,6 +53,9 @@ func (s *PersonService) Create(ctx context.Context, in PersonInput) (*PersonView
 		IsActive:       in.IsActive == nil || *in.IsActive,
 	}
 	if err := s.db.WithContext(ctx).Create(&person).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, fmt.Errorf("%w: person open_id=%s", ErrConflict, in.OpenID)
+		}
 		return nil, fmt.Errorf("create person: %w", err)
 	}
 	view := toPersonView(&person)

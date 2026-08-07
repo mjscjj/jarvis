@@ -24,6 +24,12 @@ var ErrNotFound = errors.New("background record not found")
 // can map it to HTTP 400 while genuine storage failures surface as 500.
 var ErrInvalidInput = errors.New("invalid background input")
 
+// ErrConflict wraps a unique-key violation so the API layer maps it to HTTP 409
+// instead of a generic 500. Re-creating an existing record (for example a person
+// keyed by open_id) is a caller conflict, not a server failure, and must not spam
+// the error log.
+var ErrConflict = errors.New("background record already exists")
+
 // invalid wraps a validation failure with the ErrInvalidInput sentinel.
 func invalid(err error) error {
 	if err == nil {

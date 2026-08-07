@@ -571,6 +571,8 @@ func writeBackgroundError(c *app.RequestContext, err error) {
 		writeAPIError(c, consts.StatusBadRequest, 40023, err)
 	case errors.Is(err, background.ErrNotFound):
 		writeAPIError(c, consts.StatusNotFound, 40420, err)
+	case errors.Is(err, background.ErrConflict):
+		writeAPIError(c, consts.StatusConflict, 40922, err)
 	default:
 		writeAPIError(c, consts.StatusInternalServerError, 50020, fmt.Errorf("background request failed: %s", strings.TrimSpace(err.Error())))
 	}
