@@ -2303,12 +2303,14 @@ pre {
 
 .report-detail-modal .ant-modal-container {
   display: flex;
+  height: min(860px, calc(100dvh - 48px));
   max-height: calc(100dvh - 48px);
   flex-direction: column;
   overflow: hidden;
 }
 
 .report-detail-modal .ant-modal-body {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2363,6 +2365,7 @@ pre {
   }
 
   .report-detail-modal .ant-modal-container {
+    height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
   }
 

@@ -107,7 +107,7 @@ export default function MorningBriefPanel({ briefs, loading, today }: MorningBri
         open={modalOpen}
         footer={null}
         centered
-        width={900}
+        width={1200}
         onCancel={() => setModalOpen(false)}
         className="report-detail-modal morning-brief-modal"
         destroyOnHidden

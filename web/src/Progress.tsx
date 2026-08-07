@@ -566,7 +566,7 @@ export default function Progress() {
         open={Boolean(openedDigest)}
         footer={null}
         centered
-        width={900}
+        width={1200}
         onCancel={() => setOpenedDigest(undefined)}
         className="report-detail-modal"
         destroyOnHidden
