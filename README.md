@@ -93,9 +93,35 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 - 改表或字段：`internal/domain/` 与 `internal/store/sqlite.go`
 - 改前端页面：`web/src/`
 
+## 给其他人安装（推荐）
+
+当前远端是需要权限的 Code 仓库。使用者先 clone **完整仓库**，再在仓库根目录启动支持 repo-local `.agents/skills/` 的 Agent：
+
+```bash
+git clone git@code.byted.org:chujiejie.1/jarvis_bot.git
+cd jarvis_bot
+```
+
+然后直接告诉 Agent：
+
+```text
+使用 $install-jarvis 检查这台机器并完成 Jarvis 首次安装和验收。
+```
+
+`$install-jarvis` 会先报告机器、配置、旧实例和服务事实，再由用户的 Agent 选择依赖安装方式、飞书 app/profile 和后续动作；不会把 Homebrew、某个 profile 或历史数据策略写死。它会转入 `$initialize-jarvis`，基于最近 7 天飞书证据生成身份、项目、关键人物、重点事项和监听群草案，获得用户确认后才写入。
+
+repo-local Skill 依赖 Agent 已加载官方 lark-cli Skills。缺少时可用当前官方入口安装后重新启动/刷新 Agent：
+
+```bash
+npm install -g @larksuite/cli
+npx skills add larksuite/cli -g -y
+```
+
+内置服务安装目前只验收 macOS arm64。安装前会提醒：仓库基线配置可能包含共享的明文模型密钥，使用者应自行决定是否替换；安装脚本会把本机配置权限收紧到 `0600`，但不会在输出中展示密钥。
+
 ## 本地运行
 
-要求 Go 1.26.4、C 编译器（macOS 装 Xcode Command Line Tools）、Node/npm、`jq`、`git`、`traex`、`lark-cli` 和 Qdrant。`conf/config.yaml` 使用本机明文密钥，权限保持 `600`；请注意仓库配置可能包含真实凭证。SQLite 文件及父目录会在启动时自动创建，无需单独安装或建库。
+要求 Go 1.26.4 或更高版本、C 编译器（macOS 装 Xcode Command Line Tools）、满足 Vite engines 的 Node（`^20.19.0` 或 `>=22.12.0`）/npm、`jq`、`git`、`lark-cli`、配置中实际选择的 Agent CLI（仓库基线是 `traex`，可改成其他兼容 CLI）和 Qdrant。doctor 会从合并后的配置读取应检查的 binary，不把 `traex` 写死成安装协议。`conf/config.yaml` 使用本机明文密钥，权限保持 `600`；请注意仓库配置可能包含真实凭证。SQLite 文件及父目录会在启动时自动创建，无需单独安装或建库。
 
 C 编译器是硬依赖：持久层用 `gorm.io/driver/sqlite`，它包装 `mattn/go-sqlite3` 走 CGO。缺了它 `go build` 仍会成功并链接一个 stub，直到启动打开数据库才报 `go-sqlite3 requires cgo to work`，所以两个构建脚本都先跑 `scripts/check-build-toolchain.sh` 把问题挡在构建前。`jq` 供 `scripts/jarvis-tools` 和构建脚本解析 API 响应。
 
@@ -116,11 +142,17 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ### 安装与重建
 
 ```bash
-# 主服务：安装依赖、构建前端、编译并签名后端、注册 launchd
-./scripts/install-launchd.sh
+# 推荐让 Agent 先取得事实；fresh clone 的 identity 配置不完整是正常状态
+./.agents/skills/install-jarvis/scripts/jarvis-install doctor
 
-# Qdrant 单独安装
-./scripts/install-qdrant.sh
+# 先安装/确认 Qdrant，再由 initialize-jarvis 配置身份
+./.agents/skills/install-jarvis/scripts/jarvis-install install-qdrant
+
+# 用户确认初始化草案后，初始化 Skill 会在 fresh clone 上调用：
+./.agents/skills/install-jarvis/scripts/jarvis-install install-server
+
+# 系统级验收
+./.agents/skills/install-jarvis/scripts/jarvis-install validate
 
 # 日常后端修改后重建、稳定签名并重启
 ./scripts/rebuild-server.sh
@@ -130,6 +162,8 @@ curl http://127.0.0.1:18800/healthz
 # 逐项检查外部依赖（SQLite / Qdrant / lark-cli / agent CLI）
 curl -s http://127.0.0.1:18800/readyz | jq
 ```
+
+不要在 fresh clone 上先运行 `install-launchd.sh`：主服务启动需要完成 identity 配置且 Qdrant 已健康。底层脚本仍是机器动作真源，首次安装由 `jarvis-install` 按这些前置条件调用。
 
 不要裸 `go build` 覆盖 `bin/jarvis-server` 后直接重启，否则会破坏 macOS TCC 的稳定签名。
 

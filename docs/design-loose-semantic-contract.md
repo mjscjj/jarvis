@@ -100,7 +100,7 @@ M3 的 `payload` 当前定义为非空文本，自然语言或 JSON 文本均可
 {
   "snapshot_version": "v2",
   "captured_at": "2026-07-24T10:00:00Z",
-  "summary": "这条任务来自 Jarvis 项目群，涉及本地仓库 /Users/bytedance/workspace-local/jarvis。",
+  "summary": "这条任务来自 Jarvis 项目群，涉及当前机器上的 Jarvis 仓库。",
   "blocks": [
     {"kind": "principal", "label": "我", "content": {}},
     {"kind": "project", "label": "Jarvis", "content": {}},

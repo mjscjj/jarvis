@@ -10,7 +10,7 @@ func TestSnapshotEncodeDecodeRoundTrip(t *testing.T) {
 	snap := Snapshot{
 		SnapshotVersion: SnapshotVersion,
 		CapturedAt:      "2026-07-19T00:00:00Z",
-		Principal:       &Principal{OpenID: "ou_me", Name: "chujiejie"},
+		Principal:       &Principal{OpenID: "ou_me", Name: "principal"},
 		Group:           &Group{ID: 1, ChatID: "oc_x", Name: &name},
 		Messages:        []Message{{MessageID: "m1", ChatID: "oc_x", Content: "读下 agent loop 代码"}},
 	}

@@ -61,7 +61,7 @@
 
 截至 2026-08-05：
 
-- 本机运行的是 `cc-connect v1.4.1`，Jarvis cc-connect 项目使用 Feishu App `cli_a96a0c8d82b85cb1`。
+- 本机运行的是 `cc-connect v1.4.1`；Jarvis cc-connect 项目使用的 Feishu App/profile 由各机器配置，不在设计文档中固化个人实例值。
 - 实时事件连接由 cc-connect 独占；Jarvis 不再保存同 app 的 event profile 或启停开关，这个边界必须保持。
 - cc-connect 当前 Feishu adapter 已在同 App 的多个项目间共享一条 WebSocket，并将 IM 事件 fan-out 给 sibling platform；当前没有注册 `drive.notice.comment_add_v1`。
 - 飞书官方事件列表包含 `drive.notice.comment_add_v1`，含“新增评论”和“新增回复”通知。事件体字段为 `comment_id`、`reply_id`、`is_mentioned` 与 `notice_meta.{file_token,file_type,notice_type,from_user_id,to_user_id}`；`event_id` 与 `create_time` 在 `header` 里，不在事件体里。
@@ -293,7 +293,7 @@ event_id
 一次性订阅可用当前 CLI 明确执行：
 
 ```bash
-lark-cli --profile cli_a96a0c8d82b85cb1 \
+lark-cli --profile <jarvis_lark_profile> \
   drive user subscription \
   --data '{"event_type":"drive.notice.comment_add_v1"}' \
   --as bot --format json

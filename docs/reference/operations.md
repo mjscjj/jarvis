@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: reference; scripts and plist files are source of truth
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-08-07
 
 ## 服务
 
@@ -20,9 +20,15 @@
 
 ## 首次安装
 
+推荐在完整仓库根目录让用户的 Agent 执行 `$install-jarvis`。它先用 doctor 暴露事实，再由 Agent 决定缺失依赖的安装方式、飞书 profile 和旧实例处置；机器脚本不固定包管理器或用户身份。
+
 ```bash
-./scripts/install-launchd.sh
-./scripts/install-qdrant.sh
+./.agents/skills/install-jarvis/scripts/jarvis-install doctor
+./.agents/skills/install-jarvis/scripts/jarvis-install install-qdrant
+
+# 转入 $initialize-jarvis，完成飞书取证、草案审阅和本机 identity 配置后：
+./.agents/skills/install-jarvis/scripts/jarvis-install install-server
+./.agents/skills/install-jarvis/scripts/jarvis-install validate
 
 curl --fail http://127.0.0.1:18800/healthz
 curl --fail http://127.0.0.1:6333/healthz
@@ -31,7 +37,9 @@ curl --fail http://127.0.0.1:6333/healthz
 curl -s http://127.0.0.1:18800/readyz | jq
 ```
 
-`install-launchd.sh` 会执行前端 `npm ci + build`、编译后端、稳定签名、渲染主服务的 LaunchAgent 并 bootstrap。它不会安装 Qdrant，也不会安装 Web 开发服务。
+顺序是硬边界：Qdrant 健康 → identity 和模型配置完整 → 主服务注册。`install-server` 会检查这些前置条件、把 base/runtime 配置权限收紧到 `0600`，然后调用 `install-launchd.sh`。后者执行前端 `npm ci + build`、编译后端、稳定签名、渲染主服务的 LaunchAgent 并 bootstrap；它不会安装 Qdrant，也不会安装 Web 开发服务。
+
+当前内置 Qdrant 安装器只支持 macOS arm64。doctor 会按 `go.mod`、Vite engines、CGO/Xcode 工具链、Lark Skills、已有数据库与 launchd program 报告当前状态。若 label 属于其他 checkout 或发现旧业务数据，Agent 必须先请用户决定复用、迁移或替换。
 
 launchd 不接受相对路径，所以 `deploy/` 里只有占位符模板；`scripts/render-launchd-plist.sh <label>` 按当前仓库位置和 `$HOME` 展开成 `~/Library/LaunchAgents/<label>.plist` 实体文件。改了模板要重新渲染才生效。
 
@@ -90,7 +98,7 @@ Jarvis Bot 的飞书长连接由 CC Connect 独占。`jarvis-server` 不启动 F
 ```yaml
 card_approval:
   enabled: true
-  profile: "cli_a96a0c8d82b85cb1"
+  profile: "<已确认的 lark-cli profile>"
   principal_open_id: "ou_xxx"
   relay_secret: "<与 CC Connect 相同的本机共享密钥>"
 ```
