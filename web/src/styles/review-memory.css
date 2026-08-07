@@ -64,11 +64,6 @@
   letter-spacing: -0.03em;
 }
 
-.review-hero-copy > .ant-typography:last-child {
-  color: #5f6d64;
-  font-size: 14px;
-}
-
 .review-eyebrow.ant-typography,
 .review-card-eyebrow.ant-typography {
   color: var(--color-primary);
