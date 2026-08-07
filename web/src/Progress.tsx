@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Badge, Button, Card, DatePicker, Empty, Space, Spin, Tabs } from 'antd'
+import { Alert, Badge, Button, Card, DatePicker, Empty, Space, Spin, Tabs, Typography } from 'antd'
+import {
+  CalendarOutlined,
+  CodeOutlined,
+  FileTextOutlined,
+  ReadOutlined,
+  TeamOutlined,
+  VideoCameraOutlined,
+} from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
 import { generateDailyDigest, getDailyDigests, getProfile, listGroups } from './api'
-import PageHeader from './components/PageHeader'
 import DigestCard from './review/DigestCard'
 import MeetingSummaryView from './review/MeetingSummaryView'
 import { CodeView, DocumentsView } from './review/WorklogViews'
@@ -14,6 +21,7 @@ import './styles/review-memory.css'
 const DAILY_DIGEST_POLL_MS = 5000
 const DAILY_DIGEST_RETRY_MS = 10000
 const RECENT_DATE_TABS = 14
+const { Text, Title } = Typography
 
 type ReviewView = 'daily' | 'meetings' | 'groups' | 'docs' | 'code'
 
@@ -27,9 +35,13 @@ function reviewView(value: string | undefined): ReviewView {
 
 function dateTabLabel(date: string) {
   const value = dayjs(date)
-  if (value.isSame(dayjs(), 'day')) return '今天'
   const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][value.day()]
-  return `${weekday} ${value.format('M/D')}`
+  return (
+    <span className="review-date-tab-label">
+      <span>{value.isSame(dayjs(), 'day') ? '今天' : weekday}</span>
+      <small>{value.format('M月D日')}</small>
+    </span>
+  )
 }
 
 function digestBadge(item?: DailyDigest) {
@@ -223,7 +235,7 @@ export default function Progress() {
             primaryAction
             onGenerate={() => generate('person', profile.open_id)}
           />
-        ) : <Card variant="borderless"><Spin size="small" /></Card>}
+        ) : <Card className="review-content-card" variant="borderless"><Spin size="small" /></Card>}
       </Spin>
     </Space>
   )
@@ -258,7 +270,7 @@ export default function Progress() {
   ) : groupsLoading ? (
     <div className="review-loading"><Spin /></div>
   ) : keyGroups.length === 0 ? (
-    <Card variant="borderless"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无关键群" /></Card>
+    <Card className="review-content-card" variant="borderless"><div className="review-state-panel"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无关键群" /></div></Card>
   ) : (
     <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       {dailyError && <Alert type="error" showIcon title="群总结加载失败" description={dailyError} />}
@@ -276,31 +288,42 @@ export default function Progress() {
 
   const topLevelTabs = [
     {
-      key: 'daily', label: '每日总结',
+      key: 'daily', label: <span className="review-primary-tab-label"><ReadOutlined />每日总结</span>,
       children: <Tabs className="review-secondary-tabs" activeKey={date} onChange={(value) => selectDate(dayjs(value))} items={dailyTabs} tabBarGutter={8} />,
     },
     {
-      key: 'meetings', label: '会议总结',
+      key: 'meetings', label: <span className="review-primary-tab-label"><VideoCameraOutlined />会议总结</span>,
       children: <MeetingSummaryView date={date} selectedMeetingID={context.view_state.meeting_id} onSelectMeeting={selectMeeting} />,
     },
-    { key: 'groups', label: '群总结', children: groupsContent },
-    { key: 'docs', label: '文档', children: <DocumentsView date={selectedDate} /> },
-    { key: 'code', label: '代码', children: <CodeView date={selectedDate} /> },
+    { key: 'groups', label: <span className="review-primary-tab-label"><TeamOutlined />群总结</span>, children: groupsContent },
+    { key: 'docs', label: <span className="review-primary-tab-label"><FileTextOutlined />文档</span>, children: <DocumentsView date={selectedDate} /> },
+    { key: 'code', label: <span className="review-primary-tab-label"><CodeOutlined />代码</span>, children: <CodeView date={selectedDate} /> },
   ]
 
   return (
     <div className="progress review-page">
-      <PageHeader title="回顾" subtitle="按日期、会议和关键群回看已完成的工作与产出">
-        <Space size={8} className="review-date-control">
-          <DatePicker
-            value={selectedDate}
-            onChange={(value) => selectDate(value ?? dayjs())}
-            allowClear={false}
-            disabledDate={(value) => value.isAfter(dayjs(), 'day')}
-          />
-          <Button onClick={() => selectDate(dayjs())} disabled={selectedDate.isSame(dayjs(), 'day')}>今天</Button>
-        </Space>
-      </PageHeader>
+      <header className="review-hero">
+        <div className="review-hero-copy">
+          <Text className="review-eyebrow">WORK REVIEW</Text>
+          <Title level={1}>回顾</Title>
+          <Text>把一天里的总结、会议与产出收进同一个时间切面</Text>
+        </div>
+        <div className="review-date-control">
+          <span className="review-date-icon"><CalendarOutlined /></span>
+          <div className="review-date-picker-wrap">
+            <Text>当前日期</Text>
+            <DatePicker
+              value={selectedDate}
+              onChange={(value) => selectDate(value ?? dayjs())}
+              allowClear={false}
+              variant="borderless"
+              format="YYYY年M月D日"
+              disabledDate={(value) => value.isAfter(dayjs(), 'day')}
+            />
+          </div>
+          <Button type="text" onClick={() => selectDate(dayjs())} disabled={selectedDate.isSame(dayjs(), 'day')}>回到今天</Button>
+        </div>
+      </header>
 
       <Tabs
         className="review-primary-tabs"

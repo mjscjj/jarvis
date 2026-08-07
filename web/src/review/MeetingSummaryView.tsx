@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Descriptions, Empty, Space, Spin, Tabs, Tag, Typography } from 'antd'
+import { ExportOutlined, ProfileOutlined, VideoCameraOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { getMeetingReviews } from '../api'
 import MarkdownReport from '../components/MarkdownReport'
@@ -40,27 +41,38 @@ function meetingContent(item: MeetingReviewItem) {
   ]
   return (
     <Card
+      className="review-content-card review-meeting-card"
       variant="borderless"
-      title={<Space>{item.title}{statusTag(item.task_status, Boolean(item.summary))}</Space>}
+      title={(
+        <div className="review-card-heading">
+          <span className="review-card-icon review-card-icon-meeting"><VideoCameraOutlined /></span>
+          <div>
+            <Text className="review-card-eyebrow">MEETING RECAP</Text>
+            <div className="review-card-title"><span>{item.title}</span>{statusTag(item.task_status, Boolean(item.summary))}</div>
+          </div>
+        </div>
+      )}
       extra={(
         <Space>
-          {item.meeting_url && <Button size="small" href={item.meeting_url} target="_blank">打开会议</Button>}
-          {item.task_id && <Button size="small" href={`#/work/task/${item.task_id}`}>查看 Task</Button>}
+          {item.meeting_url && <Button icon={<ExportOutlined />} href={item.meeting_url} target="_blank">打开会议</Button>}
+          {item.task_id && <Button icon={<ProfileOutlined />} href={`#/work/task/${item.task_id}`}>查看 Task</Button>}
         </Space>
       )}
     >
-      <Descriptions size="small" column={2} items={details} />
+      <Descriptions className="review-meeting-meta" size="small" column={2} items={details} />
       <div className="review-meeting-summary">
         {item.summary ? (
           <>
-            <MarkdownReport content={item.summary} />
-            <Space orientation="vertical" size={6}>
+            <div className="review-reading-canvas review-meeting-reading">
+              <MarkdownReport className="daily-digest-markdown" content={item.summary} />
+            </div>
+            <Space orientation="vertical" size={6} className="review-digest-footer">
               {item.summary_generated_at && <Text type="secondary">生成于 {dayjs(item.summary_generated_at).format('YYYY-MM-DD HH:mm')}</Text>}
               {item.effects.length > 0 && <Space size={[12, 6]} wrap><Text type="secondary">相关产物：</Text>{item.effects.map(effectLink)}</Space>}
             </Space>
           </>
         ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无明确的会议总结产物" />
+          <div className="review-state-panel"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无明确的会议总结产物" /></div>
         )}
       </div>
     </Card>
@@ -96,14 +108,19 @@ export default function MeetingSummaryView({ date, selectedMeetingID, onSelectMe
     : items[0]?.meeting_id
   const tabs = useMemo(() => items.map((item) => ({
     key: item.meeting_id,
-    label: `${item.start_at ? dayjs(item.start_at).format('HH:mm') : '--:--'} ${item.title}`,
+    label: (
+      <span className="review-object-tab-label">
+        <small>{item.start_at ? dayjs(item.start_at).format('HH:mm') : '--:--'}</small>
+        <span>{item.title}</span>
+      </span>
+    ),
     children: item.meeting_id === activeMeetingID ? meetingContent(item) : null,
   })), [activeMeetingID, items])
 
   if (error) return <Alert type="error" showIcon title="会议总结加载失败" description={error} />
   if (loading) return <div className="review-loading"><Spin /></div>
   if (items.length === 0) {
-    return <Card variant="borderless"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这一天没有已结束的会议" /></Card>
+    return <Card className="review-content-card" variant="borderless"><div className="review-state-panel"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这一天没有已结束的会议" /></div></Card>
   }
   return (
     <Tabs
