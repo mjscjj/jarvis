@@ -5,6 +5,8 @@
 | 事项 | 唯一所有者 | 安装 Agent 的动作 |
 |---|---|---|
 | 本机依赖、版本、平台、服务与文件权限事实 | `jarvis-install doctor/validate` | 读取 JSON，选择处理方式 |
+| lark-cli 与官方 Agent Skills 安装 | larksuite 官方 npm installer | 通过 `install-lark-cli` 调用并读回版本/Skills |
+| traex stable 安装 | TRAE CLI updater 公布的 Code 内网 installer | 通过 `install-traex` 调用并完成 SSO |
 | Qdrant 下载版本、校验和、launchd 安装 | `scripts/install-qdrant.sh` | 通过 `jarvis-install install-qdrant` 调用 |
 | 主服务构建、签名、launchd 注册 | `scripts/install-launchd.sh` | 配置完成后通过 `install-server` 调用 |
 | 已注册主服务的安全重建 | `scripts/rebuild-server.sh` | 确认属于当前 checkout 后调用 |
@@ -18,6 +20,7 @@
 
 - 当前内置 Qdrant 安装器只支持 Darwin arm64；其他平台 fail-fast。
 - Go 版本不得低于 `go.mod`，Node 满足当前 Vite engines，CGO 和 C toolchain 可用。
+- 配置引用的 runtime binary 必须存在；引用 `traex` 时必须已登录。
 - `conf/config.runtime.yaml` 被 Git 忽略；服务安装前 base/runtime 配置都收紧到 `0600`。
 - identity、模型和 embedding 机器配置不完整时不得注册主服务。
 - Qdrant 不健康时不得注册主服务。

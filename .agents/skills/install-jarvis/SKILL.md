@@ -23,15 +23,33 @@ description: 在一台新的 macOS 机器或新的 Jarvis checkout 中，由用�
 
 读取 JSON 后再决定动作：
 
-- `machine_ready=false`：逐项处理 `toolchain.missing`、版本、CGO 或 Xcode Command Line Tools。根据机器已有条件选择 Homebrew、官方安装器、npm 或其他方式；执行任何系统级安装前说明将改变什么。
+- `machine_ready=false`：逐项处理 `toolchain.missing`、版本、CGO、Xcode Command Line Tools 或 Agent CLI 登录。根据机器已有条件选择 Homebrew、官方安装器、npm 或其他方式；执行任何系统级安装前说明将改变什么。
 - `agent_capabilities.lark_skill_pack_ready=false` 只表示脚本没有在常见目录发现 Skill，不足以否定当前 Agent 已加载的插件能力。由 Agent 对照自己的可用 Skills 判断；确实缺少时再安装。
 - `configuration.status.machine_configuration_ready=false` 是 fresh clone 的正常事实，不是 doctor 失败。它表示还要由 `$initialize-jarvis` 确认个人身份、profile 和 Git author。
 - `repo.database_exists=true`、已有业务对象、`services.*.launchd_loaded=true` 且 program 指向其他 checkout，都是停止条件。先向用户展示现状并询问是复用、迁移还是替换；不要自动接管。
 - `warnings` 必须展示给用户，但不得输出密钥值。仓库基线可能带共享的明文模型密钥；提醒使用者自行决定是否替换。
 
-若缺少 lark-cli，优先查看当前官方安装说明；当前仓库已验证的 npm 包名为 `@larksuite/cli`。若缺少 Lark Skills，当前官方入口为 `npx skills add larksuite/cli -g -y`。安装后重新运行 doctor，不凭安装命令成功推断能力已经可用。
+## 2. 安装运行 CLI
 
-## 2. 选择飞书身份，不猜应用
+缺少 lark-cli 或官方 Lark Agent Skills 时运行：
+
+```bash
+./.agents/skills/install-jarvis/scripts/jarvis-install install-lark-cli
+```
+
+该动作调用官方 `npx @larksuite/cli@latest install`，同时安装/更新 CLI 与 Agent Skills；已有两者时只验证、不更新。完成后重新加载 Agent 能力，并以 `lark-cli --version` 和可用 Skills 为准。
+
+若 `configuration.status.runtime_binaries` 包含 `traex` 且本机缺少它，运行：
+
+```bash
+./.agents/skills/install-jarvis/scripts/jarvis-install install-traex
+```
+
+该动作使用 TRAE CLI 自带 updater 指向的 Code 内网 stable 安装器，并返回版本与 `login_ready`，不替用户登录。若未登录，由 Agent 根据终端形态选择 `traex login --sso` 或 `traex login --sso-device`，让用户完成 SSO，再用 `traex login status` 读回。安装器要求使用者能访问公司 Code；访问失败就报告权限问题，不伪造公网 fallback。
+
+重新运行 doctor，要求 CLI 路径、版本、Lark Skills 和 `agent_capabilities.traex.login_ready` 均符合当前配置；不凭安装命令成功推断运行能力已经就绪。
+
+## 3. 选择飞书身份，不猜应用
 
 加载并遵循 `lark-shared`。先列出现有 profiles 并读取非密钥配置：
 
@@ -41,7 +59,7 @@ description: 在一台新的 macOS 机器或新的 Jarvis checkout 中，由用�
 
 所有后续飞书命令显式使用选定 profile。只申请初始化实际缺少的只读权限，不用 `--domain all`，不打印 token/appSecret。
 
-## 3. 准备本机服务
+## 4. 准备本机服务
 
 Qdrant 未健康且没有待确认的其他实例时，运行：
 
@@ -61,7 +79,7 @@ Qdrant 未健康且没有待确认的其他实例时，运行：
 
 `install-server` 会在配置完整、Qdrant 健康后构建前端、编译并稳定签名后端、收紧配置权限并注册 launchd。不要裸 `go build` 覆盖服务二进制。
 
-## 4. 双层验收
+## 5. 双层验收
 
 先运行系统验收：
 
@@ -71,4 +89,4 @@ Qdrant 未健康且没有待确认的其他实例时，运行：
 
 要求配置完整且权限为 `0600`、Qdrant 健康、Jarvis `/healthz` 正常、`/readyz` 没有 error 依赖。再按 `$initialize-jarvis` 做身份/M1/群 checkpoint 验收，并让用户本人在新监听群发送一条新消息后读回。
 
-最终报告至少包含：仓库路径、实际选择的飞书 profile（不含密钥）、服务状态、初始化对象数量、监听群、端到端消息结果、仍缺权限或待用户决定的事项。安装命令成功不等于验收完成。
+最终报告至少包含：仓库路径、lark-cli/traex 版本与登录状态、实际选择的飞书 profile（不含密钥）、服务状态、初始化对象数量、监听群、端到端消息结果、仍缺权限或待用户决定的事项。安装命令成功不等于验收完成。

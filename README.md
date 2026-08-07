@@ -110,12 +110,14 @@ cd jarvis_bot
 
 `$install-jarvis` 会先报告机器、配置、旧实例和服务事实，再由用户的 Agent 选择依赖安装方式、飞书 app/profile 和后续动作；不会把 Homebrew、某个 profile 或历史数据策略写死。它会转入 `$initialize-jarvis`，基于最近 7 天飞书证据生成身份、项目、关键人物、重点事项和监听群草案，获得用户确认后才写入。
 
-repo-local Skill 依赖 Agent 已加载官方 lark-cli Skills。缺少时可用当前官方入口安装后重新启动/刷新 Agent：
+repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills 和仓库基线使用的 traex：
 
 ```bash
-npm install -g @larksuite/cli
-npx skills add larksuite/cli -g -y
+./.agents/skills/install-jarvis/scripts/jarvis-install install-lark-cli
+./.agents/skills/install-jarvis/scripts/jarvis-install install-traex
 ```
+
+lark-cli 使用 larksuite 官方 npm installer；traex 使用其自带 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。Agent 会根据交互终端选择浏览器或 device flow，不在脚本中写死登录方式。
 
 内置服务安装目前只验收 macOS arm64。安装前会提醒：仓库基线配置可能包含共享的明文模型密钥，使用者应自行决定是否替换；安装脚本会把本机配置权限收紧到 `0600`，但不会在输出中展示密钥。
 
@@ -144,6 +146,10 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ```bash
 # 推荐让 Agent 先取得事实；fresh clone 的 identity 配置不完整是正常状态
 ./.agents/skills/install-jarvis/scripts/jarvis-install doctor
+
+# 按 doctor 结果安装运行 CLI；已有且可用时是无修改的验证
+./.agents/skills/install-jarvis/scripts/jarvis-install install-lark-cli
+./.agents/skills/install-jarvis/scripts/jarvis-install install-traex
 
 # 先安装/确认 Qdrant，再由 initialize-jarvis 配置身份
 ./.agents/skills/install-jarvis/scripts/jarvis-install install-qdrant

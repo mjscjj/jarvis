@@ -24,6 +24,8 @@
 
 ```bash
 ./.agents/skills/install-jarvis/scripts/jarvis-install doctor
+./.agents/skills/install-jarvis/scripts/jarvis-install install-lark-cli
+./.agents/skills/install-jarvis/scripts/jarvis-install install-traex
 ./.agents/skills/install-jarvis/scripts/jarvis-install install-qdrant
 
 # 转入 $initialize-jarvis，完成飞书取证、草案审阅和本机 identity 配置后：
@@ -37,7 +39,7 @@ curl --fail http://127.0.0.1:6333/healthz
 curl -s http://127.0.0.1:18800/readyz | jq
 ```
 
-顺序是硬边界：Qdrant 健康 → identity 和模型配置完整 → 主服务注册。`install-server` 会检查这些前置条件、把 base/runtime 配置权限收紧到 `0600`，然后调用 `install-launchd.sh`。后者执行前端 `npm ci + build`、编译后端、稳定签名、渲染主服务的 LaunchAgent 并 bootstrap；它不会安装 Qdrant，也不会安装 Web 开发服务。
+顺序是硬边界：运行 CLI 已安装且 traex 已登录 → Qdrant 健康 → identity 和模型配置完整 → 主服务注册。lark-cli 走 larksuite 官方 npm installer；traex 走其 updater 公布的 Code 内网 stable installer。`install-server` 会检查这些前置条件、把 base/runtime 配置权限收紧到 `0600`，然后调用 `install-launchd.sh`。后者执行前端 `npm ci + build`、编译后端、稳定签名、渲染主服务的 LaunchAgent 并 bootstrap；它不会安装 Qdrant，也不会安装 Web 开发服务。
 
 当前内置 Qdrant 安装器只支持 macOS arm64。doctor 会按 `go.mod`、Vite engines、CGO/Xcode 工具链、Lark Skills、已有数据库与 launchd program 报告当前状态。若 label 属于其他 checkout 或发现旧业务数据，Agent 必须先请用户决定复用、迁移或替换。
 

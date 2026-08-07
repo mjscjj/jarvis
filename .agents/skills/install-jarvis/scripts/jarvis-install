@@ -8,12 +8,15 @@ SERVER_LABEL="com.bytedance.jarvis.server"
 QDRANT_LABEL="com.bytedance.jarvis.qdrant"
 SERVER_URL="http://127.0.0.1:18800"
 QDRANT_URL="http://127.0.0.1:6333"
+TRAEX_INSTALLER_URL="https://code.byted.org/api/tos-proxy/download/traex_install.sh"
 
 usage() {
   cat >&2 <<'EOF'
-Usage: jarvis-install <doctor|install-qdrant|install-server|validate> [--config PATH]
+Usage: jarvis-install <doctor|install-lark-cli|install-traex|install-qdrant|install-server|validate> [--config PATH]
 
 doctor          Report machine, configuration, service, and data facts as JSON.
+install-lark-cli Install the official Lark CLI and its Agent Skills.
+install-traex    Install the stable ByteDance internal TRAE CLI.
 install-qdrant  Install the pinned macOS arm64 Qdrant service for this checkout.
 install-server  Build and register Jarvis after configuration and Qdrant are ready.
 validate        Verify configuration permissions and end-to-end service readiness.
@@ -127,6 +130,15 @@ lark_skill_pack_path() {
   return 1
 }
 
+traex_login_ready() {
+  local binary="$1"
+  local status
+  if ! status="$("$binary" login status 2>&1)"; then
+    return 1
+  fi
+  [[ "$status" == "Logged in"* ]]
+}
+
 initialization_status() {
   (
     cd "$REPO_ROOT"
@@ -139,7 +151,7 @@ doctor() {
 
   local missing=()
   local required_command
-  for required_command in bash zsh curl git go node npm jq codesign security openssl plutil launchctl shasum tar install xcode-select; do
+  for required_command in bash zsh curl git go node npm npx jq codesign security openssl plutil launchctl shasum tar install xcode-select; do
     if ! command -v "$required_command" >/dev/null 2>&1; then
       missing+=("$required_command")
     fi
@@ -228,13 +240,40 @@ doctor() {
   else
     config_error="go or config file is missing"
   fi
+  local traex_required traex_binary
+  traex_required=false
+  traex_binary=""
   if [[ "$config_inspection_ok" == "true" ]]; then
     local runtime_binary
     while IFS= read -r runtime_binary; do
       if [[ -n "$runtime_binary" ]] && ! command -v "$runtime_binary" >/dev/null 2>&1; then
         missing+=("configured runtime binary: ${runtime_binary}")
       fi
+      if [[ "${runtime_binary##*/}" == "traex" ]]; then
+        traex_required=true
+        traex_binary="$runtime_binary"
+      fi
     done < <(jq -r '.runtime_binaries[]?' <<<"$config_status")
+  fi
+
+  local lark_cli_path lark_cli_version traex_path traex_version traex_login_is_ready
+  lark_cli_path="$(command -v lark-cli 2>/dev/null || true)"
+  lark_cli_version=""
+  if [[ -n "$lark_cli_path" ]]; then
+    lark_cli_version="$("$lark_cli_path" --version 2>/dev/null | head -n1 || true)"
+  fi
+  traex_path=""
+  traex_version=""
+  traex_login_is_ready=true
+  if [[ "$traex_required" == "true" ]]; then
+    traex_login_is_ready=false
+    traex_path="$(command -v "$traex_binary" 2>/dev/null || true)"
+    if [[ -n "$traex_path" ]]; then
+      traex_version="$("$traex_path" --version 2>/dev/null | head -n1 || true)"
+      if traex_login_ready "$traex_path"; then
+        traex_login_is_ready=true
+      fi
+    fi
   fi
 
   local qdrant_healthy server_healthy readiness_json
@@ -285,7 +324,7 @@ doctor() {
   if (( ${#missing[@]} > 0 )) || [[ "$platform_supported" != "true" ]] || \
     [[ "$go_supported" != "true" ]] || [[ "$node_supported" != "true" ]] || \
     [[ "$cgo_ready" != "true" ]] || [[ "$c_compiler_ready" != "true" ]] || [[ "$xcode_tools_ready" != "true" ]] || \
-    [[ "$config_inspection_ok" != "true" ]] || \
+    [[ "$config_inspection_ok" != "true" ]] || [[ "$traex_login_is_ready" != "true" ]] || \
     [[ "$runtime_ignored" != "true" ]]; then
     machine_ready=false
   fi
@@ -300,6 +339,10 @@ doctor() {
     --arg actual_node "$actual_node" \
     --arg c_compiler "$c_compiler" \
     --arg lark_skill_path "$lark_skill_path" \
+    --arg lark_cli_path "$lark_cli_path" \
+    --arg lark_cli_version "$lark_cli_version" \
+    --arg traex_path "$traex_path" \
+    --arg traex_version "$traex_version" \
     --arg config_error "$config_error" \
     --arg server_program "$server_program_path" \
     --arg qdrant_program "$qdrant_program_path" \
@@ -313,6 +356,8 @@ doctor() {
     --argjson c_compiler_ready "$c_compiler_ready" \
     --argjson xcode_tools_ready "$xcode_tools_ready" \
     --argjson lark_skill_pack_ready "$lark_skill_pack_ready" \
+    --argjson traex_required "$traex_required" \
+    --argjson traex_login_ready "$traex_login_is_ready" \
     --argjson config_inspection_ok "$config_inspection_ok" \
     --argjson config "$config_status" \
     --argjson runtime_ignored "$runtime_ignored" \
@@ -329,12 +374,98 @@ doctor() {
       repo:{root:$repo_root,git_dirty_file_count:$git_dirty_count,database_exists:$database_exists},
       platform:{os:$platform,arch:$arch,supported:$platform_supported},
       toolchain:{missing:$missing,go:{required:$required_go,actual:$actual_go,supported:$go_supported},node:{required:"^20.19.0 or >=22.12.0",actual:$actual_node,supported:$node_supported},cgo_ready:$cgo_ready,c_compiler:{command:(if $c_compiler == "" then null else $c_compiler end),ready:$c_compiler_ready},xcode_tools_ready:$xcode_tools_ready},
-      agent_capabilities:{lark_skill_pack_ready:$lark_skill_pack_ready,lark_skill_pack_path:(if $lark_skill_path == "" then null else $lark_skill_path end)},
+      agent_capabilities:{lark_cli:{path:(if $lark_cli_path == "" then null else $lark_cli_path end),version:(if $lark_cli_version == "" then null else $lark_cli_version end)},lark_skill_pack_ready:$lark_skill_pack_ready,lark_skill_pack_path:(if $lark_skill_path == "" then null else $lark_skill_path end),traex:{required:$traex_required,path:(if $traex_path == "" then null else $traex_path end),version:(if $traex_version == "" then null else $traex_version end),login_ready:$traex_login_ready}},
       configuration:{path:$config_path,inspection_ok:$config_inspection_ok,error:(if $config_error == "" then null else $config_error end),status:$config,runtime_override_ignored:$runtime_ignored},
       services:{server:{launchd_loaded:$server_loaded,program:(if $server_program == "" then null else $server_program end),belongs_to_checkout:$server_belongs_to_checkout,healthy:$server_healthy,readiness:$readiness},qdrant:{launchd_loaded:$qdrant_loaded,program:(if $qdrant_program == "" then null else $qdrant_program end),belongs_to_checkout:$qdrant_belongs_to_checkout,healthy:$qdrant_healthy}},
       warnings:$warnings}'
 
   [[ "$machine_ready" == "true" ]]
+}
+
+install_lark_cli() {
+  require_command jq
+  require_command npx
+
+  local changed lark_cli_path lark_cli_version lark_skill_path lark_skill_ready
+  changed=false
+  lark_skill_path=""
+  lark_skill_ready=false
+  if lark_skill_path="$(lark_skill_pack_path)"; then
+    lark_skill_ready=true
+  fi
+  if ! command -v lark-cli >/dev/null 2>&1 || [[ "$lark_skill_ready" != "true" ]]; then
+    npx --yes @larksuite/cli@latest install >&2
+    changed=true
+  fi
+
+  lark_cli_path="$(command -v lark-cli 2>/dev/null || true)"
+  [[ -n "$lark_cli_path" ]] || fail "the official installer completed but lark-cli is not available in PATH"
+  lark_cli_version="$("$lark_cli_path" --version 2>/dev/null | head -n1 || true)"
+  [[ -n "$lark_cli_version" ]] || fail "lark-cli did not return a version after installation"
+  lark_skill_path=""
+  lark_skill_ready=false
+  if lark_skill_path="$(lark_skill_pack_path)"; then
+    lark_skill_ready=true
+  fi
+
+  jq -nc \
+    --argjson changed "$changed" \
+    --arg path "$lark_cli_path" \
+    --arg version "$lark_cli_version" \
+    --argjson skill_pack_ready "$lark_skill_ready" \
+    --arg skill_pack_path "$lark_skill_path" \
+    '{ok:true,changed:$changed,path:$path,version:$version,agent_skill_pack_detected:$skill_pack_ready,agent_skill_pack_path:(if $skill_pack_path == "" then null else $skill_pack_path end)}'
+}
+
+install_traex() {
+  require_command curl
+  require_command jq
+  [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] || \
+    fail "this Jarvis installer currently supports traex on macOS arm64 only"
+
+  local changed traex_path traex_version login_ready shell_refresh_required installer_path
+  changed=false
+  shell_refresh_required=false
+  traex_path="$(command -v traex 2>/dev/null || true)"
+  if [[ -z "$traex_path" ]]; then
+    installer_path="$(mktemp "${TMPDIR:-/tmp}/traex-install.XXXXXX")"
+    if ! curl -fsSL "$TRAEX_INSTALLER_URL" -o "$installer_path"; then
+      rm -f "$installer_path"
+      fail "download the official traex installer failed: $TRAEX_INSTALLER_URL"
+    fi
+    if ! TRAEX_INSTALL_ASSUME_YES=1 \
+      TRAEX_INSTALL_MIGRATE_BREW=1 \
+      TRAEX_INSTALL_REMOVE_BREW=0 \
+      TRAEX_INSTALL_CHANNEL=stable \
+      sh "$installer_path" >&2; then
+      rm -f "$installer_path"
+      fail "the official traex installer failed"
+    fi
+    rm -f "$installer_path"
+    changed=true
+    traex_path="$(command -v traex 2>/dev/null || true)"
+    if [[ -z "$traex_path" && -x "${HOME}/.local/bin/traex" ]]; then
+      traex_path="${HOME}/.local/bin/traex"
+      shell_refresh_required=true
+    fi
+  fi
+
+  [[ -n "$traex_path" && -x "$traex_path" ]] || fail "traex is not executable after installation"
+  traex_version="$("$traex_path" --version 2>/dev/null | head -n1 || true)"
+  [[ -n "$traex_version" ]] || fail "traex did not return a version after installation"
+  login_ready=false
+  if traex_login_ready "$traex_path"; then
+    login_ready=true
+  fi
+
+  jq -nc \
+    --argjson changed "$changed" \
+    --arg path "$traex_path" \
+    --arg version "$traex_version" \
+    --arg installer_url "$TRAEX_INSTALLER_URL" \
+    --argjson login_ready "$login_ready" \
+    --argjson shell_refresh_required "$shell_refresh_required" \
+    '{ok:true,changed:$changed,path:$path,version:$version,installer_url:$installer_url,login_ready:$login_ready,shell_refresh_required:$shell_refresh_required}'
 }
 
 install_qdrant() {
@@ -385,6 +516,9 @@ install_server() {
   while IFS= read -r runtime_binary; do
     [[ -n "$runtime_binary" ]] || continue
     require_command "$runtime_binary"
+    if [[ "${runtime_binary##*/}" == "traex" ]] && ! traex_login_ready "$runtime_binary"; then
+      fail "traex is configured but not logged in; let the user complete traex login before installing the service"
+    fi
   done < <(jq -r '.runtime_binaries[]?' <<<"$status")
   curl -fsS --max-time 2 "${QDRANT_URL}/healthz" -o /dev/null || \
     fail "Qdrant is not healthy; install or select the vector service first"
@@ -409,7 +543,7 @@ validate_installation() {
   require_command curl
   require_command go
 
-  local status qdrant_healthy server_healthy readiness readiness_ok permissions_ok ok
+  local status qdrant_healthy server_healthy readiness readiness_ok permissions_ok agent_cli_auth_ready ok
   status="$(initialization_status)"
   qdrant_healthy="$(bool_json curl -fsS --max-time 2 "${QDRANT_URL}/healthz" -o /dev/null)"
   server_healthy="$(bool_json curl -fsS --max-time 2 "${SERVER_URL}/healthz" -o /dev/null)"
@@ -426,9 +560,16 @@ validate_installation() {
   if jq -e '.base_config_mode == "0600" and .runtime_config_mode == "0600"' >/dev/null <<<"$status"; then
     permissions_ok=true
   fi
+  agent_cli_auth_ready=true
+  local runtime_binary
+  while IFS= read -r runtime_binary; do
+    if [[ "${runtime_binary##*/}" == "traex" ]] && ! traex_login_ready "$runtime_binary"; then
+      agent_cli_auth_ready=false
+    fi
+  done < <(jq -r '.runtime_binaries[]?' <<<"$status")
   ok=false
   if jq -e '.machine_configuration_ready == true' >/dev/null <<<"$status" && \
-    [[ "$qdrant_healthy" == "true" && "$server_healthy" == "true" && "$readiness_ok" == "true" && "$permissions_ok" == "true" ]]; then
+    [[ "$qdrant_healthy" == "true" && "$server_healthy" == "true" && "$readiness_ok" == "true" && "$permissions_ok" == "true" && "$agent_cli_auth_ready" == "true" ]]; then
     ok=true
   fi
 
@@ -436,11 +577,12 @@ validate_installation() {
     --argjson ok "$ok" \
     --argjson configuration "$status" \
     --argjson permissions_ok "$permissions_ok" \
+    --argjson agent_cli_auth_ready "$agent_cli_auth_ready" \
     --argjson qdrant_healthy "$qdrant_healthy" \
     --argjson server_healthy "$server_healthy" \
     --argjson readiness_ok "$readiness_ok" \
     --argjson readiness "$readiness" \
-    '{ok:$ok,configuration:$configuration,permissions_ok:$permissions_ok,services:{qdrant_healthy:$qdrant_healthy,server_healthy:$server_healthy,readiness_ok:$readiness_ok,readiness:$readiness}}'
+    '{ok:$ok,configuration:$configuration,permissions_ok:$permissions_ok,agent_cli_auth_ready:$agent_cli_auth_ready,services:{qdrant_healthy:$qdrant_healthy,server_healthy:$server_healthy,readiness_ok:$readiness_ok,readiness:$readiness}}'
   [[ "$ok" == "true" ]]
 }
 
@@ -455,6 +597,8 @@ parse_common_flags "$@"
 
 case "$subcommand" in
   doctor) doctor ;;
+  install-lark-cli) install_lark_cli ;;
+  install-traex) install_traex ;;
   install-qdrant) install_qdrant ;;
   install-server) install_server ;;
   validate) validate_installation ;;
