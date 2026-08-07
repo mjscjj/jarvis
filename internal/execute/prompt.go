@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
@@ -13,7 +14,7 @@ import (
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
-const ExecutionPromptVersion = "task-exec-v10-brief-context"
+const ExecutionPromptVersion = "task-exec-v11-task-state-evidence"
 
 // maxPriorRunsInPrompt caps how many previous execution_run rows ride into the
 // next M5 prompt. Newest runs are kept; older ones are dropped to bound size.
@@ -167,9 +168,12 @@ type executionPromptPayload struct {
 }
 
 type executionTask struct {
-	ID         uint64 `json:"id"`
-	TitleHint  string `json:"title_hint"`
-	TargetHint string `json:"target_hint"`
+	ID             uint64  `json:"id"`
+	TitleHint      string  `json:"title_hint"`
+	TargetHint     string  `json:"target_hint"`
+	CurrentStatus  string  `json:"current_status"`
+	CurrentSummary *string `json:"current_summary,omitempty"`
+	LastProgressAt string  `json:"last_progress_at,omitempty"`
 	// SourcePayload is the source-owned semantic input forwarded verbatim for
 	// every Task source. M5 treats it as evidence, not an execution contract.
 	SourcePayload json.RawMessage `json:"source_payload"`
@@ -180,10 +184,16 @@ type executionTask struct {
 // database and is available through BackgroundLookup when a Task actually needs
 // more of its creation-time world.
 type executionContext struct {
-	Project          *executionProject  `json:"project,omitempty"`
-	Group            *executionGroup    `json:"group,omitempty"`
-	Assigner         *executionAssigner `json:"assigner,omitempty"`
-	SourceMessageIDs []string           `json:"source_message_ids,omitempty"`
+	Principal      *executionPrincipal   `json:"principal,omitempty"`
+	Project        *executionProject     `json:"project,omitempty"`
+	Group          *executionGroup       `json:"group,omitempty"`
+	Assigner       *executionAssigner    `json:"assigner,omitempty"`
+	SourceMessages []contextsnap.Message `json:"source_messages,omitempty"`
+}
+
+type executionPrincipal struct {
+	OpenID string `json:"open_id,omitempty"`
+	Name   string `json:"name,omitempty"`
 }
 
 type executionProject struct {
@@ -233,7 +243,11 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 	}
 	promptTask := executionTask{
 		ID: task.ID, TitleHint: task.Title, TargetHint: task.Target,
+		CurrentStatus: task.Status, CurrentSummary: task.Summary,
 		SourcePayload: rawJSON(task.SourcePayload),
+	}
+	if task.LastProgressAt != nil {
+		promptTask.LastProgressAt = task.LastProgressAt.UTC().Format(time.RFC3339)
 	}
 	payload := executionPromptPayload{
 		PromptVersion:        ExecutionPromptVersion,
@@ -257,6 +271,12 @@ func projectExecutionContext(task *domain.Task) (executionContext, error) {
 		return executionContext{}, fmt.Errorf("execution prompt Task id=%d background invalid: %w", task.ID, err)
 	}
 	result := executionContext{}
+	if snapshot.Principal != nil {
+		result.Principal = &executionPrincipal{
+			OpenID: snapshot.Principal.OpenID,
+			Name:   snapshot.Principal.Name,
+		}
+	}
 	if snapshot.Project != nil {
 		result.Project = &executionProject{
 			ID: snapshot.Project.ID, Code: snapshot.Project.Code, Name: snapshot.Project.Name,
@@ -287,7 +307,7 @@ func projectExecutionContext(task *domain.Task) (executionContext, error) {
 			continue
 		}
 		seen[id] = struct{}{}
-		result.SourceMessageIDs = append(result.SourceMessageIDs, id)
+		result.SourceMessages = append(result.SourceMessages, message)
 	}
 	return result, nil
 }

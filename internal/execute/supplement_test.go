@@ -194,9 +194,9 @@ func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
 		Group:    &contextsnap.Group{ID: 9, ChatID: "oc_group", Name: &groupName, Description: stringPtr("完整群背景不应进执行简报")},
 		Assigner: &contextsnap.Assigner{OpenID: "ou_assigner", Name: &assignerName, Role: &assignerRole, Relation: &assignerRelation},
 		Messages: []contextsnap.Message{
-			{MessageID: "om_1", Content: "完整源消息正文不应进执行简报"},
+			{MessageID: "om_1", ChatID: "oc_group", SenderOpenID: "ou_sender_1", SenderName: "发送人一", Content: "完整源消息正文必须进入执行简报", CreateTime: 1785985200},
 			{MessageID: "om_1", Content: "重复引用也不应重复输出"},
-			{MessageID: "om_2", Content: "另一条完整正文也不应进入"},
+			{MessageID: "om_2", ChatID: "oc_group", SenderOpenID: "ou_sender_2", SenderName: "发送人二", Content: "另一条完整正文也必须进入", CreateTime: 1785985260},
 		},
 		Conversation: []contextsnap.Message{{MessageID: "om_context", Content: "完整 conversation 不应进执行简报"}},
 		Facts:        []contextsnap.Fact{{ID: 1, Description: "完整 fact 不应进执行简报"}},
@@ -206,19 +206,26 @@ func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode snapshot: %v", err)
 	}
+	lastProgressAt := time.Date(2026, 8, 6, 4, 5, 0, 0, time.UTC)
 	task := &domain.Task{
 		ID: 97, Title: "压缩上下文", ActionType: "code_change", Target: "M5 初始上下文",
-		ProjectID:     uint64Ptr(7),
-		SourcePayload: datatypes.JSON(`{"source_quote":"请压缩上下文","source_message_ids":["om_1","om_2"]}`),
-		Background:    datatypes.JSON(snapshot),
+		Status:         "waiting",
+		Summary:        stringPtr("已经定位背景缺失，等待补齐 M5 首轮上下文"),
+		LastProgressAt: &lastProgressAt,
+		ProjectID:      uint64Ptr(7),
+		SourcePayload:  datatypes.JSON(`{"source_quote":"请压缩上下文","source_message_ids":["om_1","om_2"]}`),
+		Background:     datatypes.JSON(snapshot),
 	}
 	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
 	for _, want := range []string{
-		`"execution_context"`, `"id":7`, `"code":"jarvis"`, `"name":"Jarvis"`,
-		`"chat_id":"oc_group"`, `"open_id":"ou_assigner"`, `"source_message_ids":["om_1","om_2"]`,
+		`"execution_context"`, `"current_status":"waiting"`, `"current_summary":"已经定位背景缺失，等待补齐 M5 首轮上下文"`,
+		`"last_progress_at":"2026-08-06T04:05:00Z"`, `"principal":{"open_id":"ou_principal","name":"principal"}`,
+		`"id":7`, `"code":"jarvis"`, `"name":"Jarvis"`, `"chat_id":"oc_group"`, `"open_id":"ou_assigner"`,
+		`"source_messages":[{"message_id":"om_1","chat_id":"oc_group","sender_open_id":"ou_sender_1","sender_name":"发送人一","content":"完整源消息正文必须进入执行简报","create_time":1785985200}`,
+		`{"message_id":"om_2","chat_id":"oc_group","sender_open_id":"ou_sender_2","sender_name":"发送人二","content":"另一条完整正文也必须进入","create_time":1785985260}`,
 		`"background_lookup":"jarvis-tools get-task --id 97"`, `"source_quote":"请压缩上下文"`,
 	} {
 		if !strings.Contains(prompt, want) {
@@ -227,7 +234,7 @@ func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
 	}
 	for _, unwanted := range []string{
 		`"background":`, "完整个人背景不应进执行简报", "完整项目决策不应进执行简报",
-		"完整群背景不应进执行简报", "完整源消息正文不应进执行简报",
+		"完整群背景不应进执行简报", "重复引用也不应重复输出",
 		"完整 conversation 不应进执行简报", "完整 fact 不应进执行简报",
 		"其它 Todo 不应进执行简报", "其它 Task 摘要不应进执行简报",
 	} {
