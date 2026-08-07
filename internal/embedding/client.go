@@ -1,5 +1,5 @@
-// Package embedding implements the OpenAI-compatible embedding transport used
-// by Todo semantic deduplication.
+// Package embedding implements the Volcengine Ark multimodal embedding
+// transport used by Todo semantic deduplication.
 package embedding
 
 import (
@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentusage"
+	"jarvis/internal/ark"
 )
 
 const maxResponseBody = 16 << 20
@@ -27,7 +28,11 @@ type Client struct {
 	http       *http.Client
 }
 
-func NewClient(baseURL, apiKey, model string, dimensions int, timeout time.Duration) (*Client, error) {
+func NewClient(timeout time.Duration) (*Client, error) {
+	return newClient(ark.BaseURL, ark.APIKey, ark.EmbeddingModel, ark.EmbeddingDimensions, timeout)
+}
+
+func newClient(baseURL, apiKey, model string, dimensions int, timeout time.Duration) (*Client, error) {
 	for name, value := range map[string]string{"base_url": baseURL, "api_key": apiKey, "model": model} {
 		if strings.TrimSpace(value) == "" {
 			return nil, fmt.Errorf("embedding %s must be non-empty", name)
@@ -60,15 +65,23 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 		return nil, fmt.Errorf("embedding input must be non-blank")
 	}
 	requestBody := struct {
-		Model          string `json:"model"`
-		Input          string `json:"input"`
+		Model string `json:"model"`
+		Input []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"input"`
 		EncodingFormat string `json:"encoding_format"`
-	}{Model: c.model, Input: text, EncodingFormat: "float"}
+		Dimensions     int    `json:"dimensions"`
+	}{Model: c.model, EncodingFormat: "float", Dimensions: c.dimensions}
+	requestBody.Input = append(requestBody.Input, struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}{Type: "text", Text: text})
 	encoded, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("encode embedding request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/embeddings", bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/embeddings/multimodal", bytes.NewReader(encoded))
 	if err != nil {
 		return nil, fmt.Errorf("create embedding request: %w", err)
 	}
@@ -91,8 +104,7 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 		return nil, fmt.Errorf("embedding status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	var response struct {
-		Data []struct {
-			Index     int       `json:"index"`
+		Data struct {
 			Embedding []float64 `json:"embedding"`
 		} `json:"data"`
 		Usage *struct {
@@ -103,11 +115,8 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 	if err := json.Unmarshal(payload, &response); err != nil {
 		return nil, fmt.Errorf("decode embedding response: %w", err)
 	}
-	if len(response.Data) != 1 || response.Data[0].Index != 0 {
-		return nil, fmt.Errorf("embedding response data must contain exactly index 0, got %d items", len(response.Data))
-	}
-	if len(response.Data[0].Embedding) != c.dimensions {
-		return nil, fmt.Errorf("embedding dimensions=%d, want %d", len(response.Data[0].Embedding), c.dimensions)
+	if len(response.Data.Embedding) != c.dimensions {
+		return nil, fmt.Errorf("embedding dimensions=%d, want %d", len(response.Data.Embedding), c.dimensions)
 	}
 	if response.Usage != nil {
 		var inputTokens int64
@@ -125,7 +134,7 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 		}
 	}
 	vector := make([]float32, c.dimensions)
-	for i, value := range response.Data[0].Embedding {
+	for i, value := range response.Data.Embedding {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			return nil, fmt.Errorf("embedding value[%d] is not finite", i)
 		}

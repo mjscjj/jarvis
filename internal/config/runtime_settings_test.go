@@ -57,12 +57,8 @@ morning_brief:
   reasoning_effort: "medium"
   timeout_seconds: 600
 model:
-  base_url: "https://model.test/v1"
-  api_key: "plain-key"
   model: "model"
   timeout_sec: 60
-  embedding_model: "embed-model"
-  embedding_dims: 1024
 extract:
   enabled: true
   principal_open_id: "ou_owner"

@@ -454,7 +454,7 @@ doctor() {
   warnings_json="$(jq -nc \
     --argjson tracked_key "$(jq -r '.tracked_model_api_key_present // false' <<<"$config_status")" \
     --arg base_mode "$(jq -r '.base_config_mode // ""' <<<"$config_status")" \
-    '[if $tracked_key then "tracked conf/config.yaml contains a shared plaintext model API key" else empty end,
+    '[if $tracked_key then "tracked source contains a shared plaintext model API key" else empty end,
       if ($base_mode != "" and $base_mode != "0600") then "base config permissions are broader than 0600; install-server will restrict them" else empty end]')"
 
   machine_ready=true

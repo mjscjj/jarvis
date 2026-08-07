@@ -12,16 +12,13 @@ server:
 sqlite:
   path: "var/jarvis.db"
 
-# M3 备用 model_api 引擎和 Todo 去重 embedding（OpenAI 兼容端点，可配置）。
+# M3 备用 model_api 模型名与超时。Ark endpoint、API Key、Todo embedding
+# 模型和维度按本机部署约定固定在 internal/ark，避免配置层出现第二真源。
 # 默认 M3 引擎是下面 extract.engine=codex；M2 不调用模型。
 model:
-  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-  api_key: "sk-170fbd90ff3f4d4491657722fd6de026"
-  model: "qwen-plus"
+  model: "doubao-seed-2-0-lite-260215"
   is_reasoning_model: false
   timeout_sec: 60
-  embedding_model: "text-embedding-v3"
-  embedding_dims: 1024
 
 # 持续世界建模：Agent 增量阅读 message / todo / task 原料，自主决定是否以及如何
 # 维护 Jarvis 内部的人、项目、群、资料、关系与历史 Fact。Go 只负责调度、游标、
@@ -60,7 +57,7 @@ extract:
   key_person_limit: 5            # 推送 person 主体事实时，关键人并集上限
   recent_task_limit: 10          # 推送最近有进展的任务条数上限
   max_prompt_chars: 60000
-  semantic_collection: "todo_semantic"
+  semantic_collection: "todo_semantic_volcengine"
   semantic_threshold: 0.85
   semantic_neighbor_limit: 3
   qdrant_host: "127.0.0.1"

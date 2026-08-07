@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 
+	"jarvis/internal/ark"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -73,7 +75,6 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 	if err := decodeKnownYAML(baseRaw, &cfg); err != nil {
 		return nil, fmt.Errorf("parse base config before initialization: %w", err)
 	}
-	baseOnly := cfg
 	baseInfo, err := os.Stat(absoluteConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("stat config %q: %w", absoluteConfigPath, err)
@@ -110,12 +111,12 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 			strings.TrimSpace(cfg.CardApproval.RelaySecret) != "" &&
 			cfg.CardApproval.Profile == cfg.LarkCLI.Profile &&
 			cfg.CardApproval.PrincipalOpenID == cfg.Extract.PrincipalOpenID,
-		ModelBaseURLConfigured:    strings.TrimSpace(cfg.Model.BaseURL) != "",
-		ModelAPIKeyConfigured:     strings.TrimSpace(cfg.Model.APIKey) != "",
+		ModelBaseURLConfigured:    strings.TrimSpace(ark.BaseURL) != "",
+		ModelAPIKeyConfigured:     strings.TrimSpace(ark.APIKey) != "",
 		ModelNameConfigured:       strings.TrimSpace(cfg.Model.Model) != "",
-		EmbeddingModelConfigured:  strings.TrimSpace(cfg.Model.EmbeddingModel) != "",
-		EmbeddingDimensionsReady:  cfg.Model.EmbeddingDims > 0,
-		TrackedModelAPIKeyPresent: strings.TrimSpace(baseOnly.Model.APIKey) != "",
+		EmbeddingModelConfigured:  strings.TrimSpace(ark.EmbeddingModel) != "",
+		EmbeddingDimensionsReady:  ark.EmbeddingDimensions > 0,
+		TrackedModelAPIKeyPresent: strings.TrimSpace(ark.APIKey) != "",
 		RuntimeBinaries:           initializationRuntimeBinaries(cfg),
 	}
 	status.MachineConfigurationReady = status.PrincipalOpenIDConfigured &&

@@ -14,6 +14,7 @@ import (
 
 	"jarvis/internal/agentconfig"
 	"jarvis/internal/api"
+	"jarvis/internal/ark"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
 	"jarvis/internal/cardapproval"
@@ -459,28 +460,22 @@ func main() {
 	var semanticIndex *semantic.Index
 	if cfg.Extract.Enabled || *extractOnce {
 		modelClient, err := provider.NewClient(
-			cfg.Model.BaseURL,
-			cfg.Model.APIKey,
+			ark.BaseURL,
+			ark.APIKey,
 			cfg.Model.Model,
 			time.Duration(cfg.Model.TimeoutSec)*time.Second,
 		)
 		if err != nil {
 			fatalf("initialize extraction model client failed: %v", err)
 		}
-		embeddingClient, err := embedding.NewClient(
-			cfg.Model.BaseURL,
-			cfg.Model.APIKey,
-			cfg.Model.EmbeddingModel,
-			cfg.Model.EmbeddingDims,
-			time.Duration(cfg.Model.TimeoutSec)*time.Second,
-		)
+		embeddingClient, err := embedding.NewClient(time.Duration(cfg.Model.TimeoutSec) * time.Second)
 		if err != nil {
 			fatalf("initialize Todo embedding client failed: %v", err)
 		}
 		semanticIndex, err = semantic.NewIndex(semantic.Options{
 			Host: cfg.Extract.QdrantHost, Port: cfg.Extract.QdrantGRPCPort,
-			Collection: cfg.Extract.SemanticCollection, EmbeddingModel: cfg.Model.EmbeddingModel,
-			Dimensions:     cfg.Model.EmbeddingDims,
+			Collection: cfg.Extract.SemanticCollection, EmbeddingModel: ark.EmbeddingModel,
+			Dimensions:     ark.EmbeddingDimensions,
 			ScoreThreshold: cfg.Extract.SemanticThreshold, NeighborLimit: cfg.Extract.SemanticNeighborLimit,
 			ActiveStatuses: extract.ActiveTodoStatuses(),
 		})

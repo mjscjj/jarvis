@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"jarvis/internal/ark"
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
 	"jarvis/internal/embedding"
@@ -87,7 +88,7 @@ func TestPipelineLive(t *testing.T) {
 	}
 
 	modelClient, err := provider.NewClient(
-		cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.Model,
+		ark.BaseURL, ark.APIKey, cfg.Model.Model,
 		time.Duration(cfg.Model.TimeoutSec)*time.Second,
 	)
 	if err != nil {
@@ -97,17 +98,14 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("time.LoadLocation() error = %v", err)
 	}
-	embeddingClient, err := embedding.NewClient(
-		cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.EmbeddingModel,
-		cfg.Model.EmbeddingDims, time.Duration(cfg.Model.TimeoutSec)*time.Second,
-	)
+	embeddingClient, err := embedding.NewClient(time.Duration(cfg.Model.TimeoutSec) * time.Second)
 	if err != nil {
 		t.Fatalf("embedding.NewClient() error = %v", err)
 	}
 	semanticCollection := fmt.Sprintf("todo_semantic_pipeline_test_%d", suffix)
 	semanticIndex, err := semantic.NewIndex(semantic.Options{
 		Host: cfg.Extract.QdrantHost, Port: cfg.Extract.QdrantGRPCPort, Collection: semanticCollection,
-		EmbeddingModel: cfg.Model.EmbeddingModel, Dimensions: cfg.Model.EmbeddingDims, ScoreThreshold: cfg.Extract.SemanticThreshold,
+		EmbeddingModel: ark.EmbeddingModel, Dimensions: ark.EmbeddingDimensions, ScoreThreshold: cfg.Extract.SemanticThreshold,
 		NeighborLimit: cfg.Extract.SemanticNeighborLimit, ActiveStatuses: extract.ActiveTodoStatuses(),
 	})
 	if err != nil {

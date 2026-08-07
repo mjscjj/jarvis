@@ -137,12 +137,7 @@ func TestValidate(t *testing.T) {
 		{name: "extract model", mutate: func(c *Config) {
 			c.Extract.Enabled = true
 			c.Extract.PrincipalOpenID = "ou_owner"
-		}, wantErr: "model.base_url"},
-		{name: "extract embedding model", mutate: func(c *Config) {
-			c.Extract.Enabled = true
-			c.Extract.PrincipalOpenID = "ou_owner"
-			c.Model = ModelConfig{BaseURL: "http://127.0.0.1:1", APIKey: "k", Model: "m", TimeoutSec: 60}
-		}, wantErr: "model.embedding_model"},
+		}, wantErr: "model.model"},
 		{name: "lark binary", mutate: func(c *Config) { c.LarkCLI.Bin = "" }, wantErr: "lark_cli.bin"},
 		{name: "lark rate", mutate: func(c *Config) { c.LarkCLI.RateLimit = 0 }, wantErr: "lark_cli.rate_limit"},
 		{name: "lark burst", mutate: func(c *Config) { c.LarkCLI.Burst = 0 }, wantErr: "lark_cli.burst"},
@@ -257,8 +252,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 		Server: ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
 		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
 		Model: ModelConfig{
-			BaseURL: "https://model.test/v1", APIKey: "plain-key", Model: "model", TimeoutSec: 60,
-			EmbeddingModel: "embed-model", EmbeddingDims: 1024,
+			Model: "model", TimeoutSec: 60,
 		},
 		Extract: ExtractConfig{
 			Enabled: true, PrincipalOpenID: "ou_owner", Schedule: "@every 10m",

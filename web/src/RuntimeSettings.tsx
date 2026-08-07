@@ -284,8 +284,8 @@ export default function RuntimeSettings() {
             <NumberField name="analysis_timeout_seconds" label="单次提取超时（秒）" min={30} max={3600} step={30} help="M3 每次 Agent 调用的最长运行时间。" />
           </Section>
           <Section title="Model API" description="当前用于 Todo 相似去重；M3 切到 Model API 后也用于线索提取。">
-            <TextField name="model_api_model" label="去重 / 备用提取模型" help="当前是 qwen-plus。不会替代 M5 执行或对话模型。" />
-            <NumberField name="model_api_timeout_seconds" label="API 请求超时（秒）" min={10} max={600} step={10} help="Model API 和文本向量 API 的 HTTP 请求超时。" />
+            <TextField name="model_api_model" label="去重 / 备用提取模型" help="当前使用火山 Ark 模型，不会替代 M5 执行或对话模型。" />
+            <NumberField name="model_api_timeout_seconds" label="API 请求超时（秒）" min={10} max={600} step={10} help="Ark Model API 和向量 API 的 HTTP 请求超时。" />
           </Section>
           <Section title="M5 执行器" description="M5 使用独立 CLI；右侧对话复用该 CLI，但可另选模型。">
             <SelectField name="execute_cli" label="执行 CLI" options={cliOptions} help="M5 执行任务及右侧对话使用的命令行执行器。" />

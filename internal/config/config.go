@@ -48,18 +48,12 @@ type SQLiteConfig struct {
 	Path string `yaml:"path"`
 }
 
-// ModelConfig 高频抽取用的 OpenAI 兼容端点（M2/M3，总纲 §6）。
+// ModelConfig controls the Ark chat model used for semantic adjudication and
+// the optional model_api extraction engine. Endpoint identity is code-owned.
 type ModelConfig struct {
-	BaseURL          string `yaml:"base_url"`
-	APIKey           string `yaml:"api_key"` // 本地明文
 	Model            string `yaml:"model"`
 	IsReasoningModel bool   `yaml:"is_reasoning_model"`
 	TimeoutSec       int    `yaml:"timeout_sec"`
-
-	// EmbeddingModel/EmbeddingDims serve Todo semantic dedup, which shares this
-	// endpoint's base URL and key.
-	EmbeddingModel string `yaml:"embedding_model"`
-	EmbeddingDims  int    `yaml:"embedding_dims"`
 }
 
 // FactEngineConfig controls the offline world-maintenance Agent. One session
@@ -438,14 +432,11 @@ func (c *Config) validate() error {
 		if c.Extract.PrincipalOpenID == "" {
 			return fmt.Errorf("extract.principal_open_id 不能为空")
 		}
-		if c.Model.BaseURL == "" || c.Model.APIKey == "" || c.Model.Model == "" {
-			return fmt.Errorf("extract 启用时 model.base_url/api_key/model 均不能为空")
+		if c.Model.Model == "" {
+			return fmt.Errorf("extract 启用时 model.model 不能为空")
 		}
 		if c.Model.TimeoutSec <= 0 {
 			return fmt.Errorf("extract 启用时 model.timeout_sec 必须大于 0")
-		}
-		if c.Model.EmbeddingModel == "" || c.Model.EmbeddingDims <= 0 {
-			return fmt.Errorf("extract 启用时 model.embedding_model 不能为空且 embedding_dims 必须大于 0")
 		}
 	}
 	if c.LarkCLI.Bin == "" {

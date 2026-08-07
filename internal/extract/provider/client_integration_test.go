@@ -8,25 +8,24 @@ import (
 	"testing"
 	"time"
 
+	"jarvis/internal/ark"
 	"jarvis/internal/config"
 	"jarvis/internal/extract"
 )
 
 func TestClientLiveStructuredOutput(t *testing.T) {
-	baseURL := os.Getenv("JARVIS_TEST_MODEL_BASE_URL")
-	apiKey := os.Getenv("JARVIS_TEST_MODEL_API_KEY")
+	baseURL := ark.BaseURL
+	apiKey := ark.APIKey
 	model := os.Getenv("JARVIS_TEST_MODEL_NAME")
 	if configPath := os.Getenv("JARVIS_TEST_MODEL_CONFIG"); configPath != "" {
 		cfg, err := config.Load(configPath)
 		if err != nil {
 			t.Fatalf("config.Load() error = %v", err)
 		}
-		baseURL = cfg.Model.BaseURL
-		apiKey = cfg.Model.APIKey
 		model = cfg.Model.Model
 	}
 	if baseURL == "" || apiKey == "" || model == "" {
-		t.Fatal("set JARVIS_TEST_MODEL_CONFIG or all JARVIS_TEST_MODEL_* variables")
+		t.Fatal("set JARVIS_TEST_MODEL_CONFIG or JARVIS_TEST_MODEL_NAME")
 	}
 
 	client, err := NewClient(baseURL, apiKey, model, 90*time.Second)
