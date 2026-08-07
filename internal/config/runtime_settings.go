@@ -159,6 +159,9 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSettings, err)
 	}
 	override := runtimeOverrideFromSettings(input)
+	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
+	override.LarkCLI.Bin = cfg.LarkCLI.Bin
+	override.LarkCLI.Profile = cfg.LarkCLI.Profile
 	override.CardApproval = cfg.CardApproval
 	if err := writeRuntimeOverride(RuntimeOverridePath(s.configPath), override); err != nil {
 		return nil, err
@@ -331,6 +334,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 
 type runtimeOverride struct {
 	Extract struct {
+		PrincipalOpenID       string  `yaml:"principal_open_id"`
 		Enabled               bool    `yaml:"enabled"`
 		Engine                string  `yaml:"engine"`
 		Schedule              string  `yaml:"schedule"`
@@ -411,6 +415,8 @@ type runtimeOverride struct {
 		TimeoutSeconds      int    `yaml:"timeout_seconds"`
 	} `yaml:"proactive"`
 	LarkCLI struct {
+		Bin        string  `yaml:"bin"`
+		Profile    string  `yaml:"profile"`
 		RateLimit  float64 `yaml:"rate_limit"`
 		Burst      int     `yaml:"burst"`
 		Concurrent int     `yaml:"concurrent"`

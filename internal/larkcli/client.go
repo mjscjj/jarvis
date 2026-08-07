@@ -19,6 +19,7 @@ import (
 // Options configures a Client. Invalid values are rejected at construction.
 type Options struct {
 	Bin         string
+	Profile     string
 	RateLimit   float64
 	Burst       int
 	Concurrency int
@@ -28,6 +29,7 @@ type Options struct {
 // Client is safe for concurrent use by all capture jobs.
 type Client struct {
 	bin     string
+	profile string
 	limiter *rate.Limiter
 	sem     chan struct{}
 	timeout time.Duration
@@ -91,6 +93,7 @@ func New(opts Options) (*Client, error) {
 	}
 	return &Client{
 		bin:     bin,
+		profile: strings.TrimSpace(opts.Profile),
 		limiter: rate.NewLimiter(rate.Limit(opts.RateLimit), opts.Burst),
 		sem:     make(chan struct{}, opts.Concurrency),
 		timeout: opts.Timeout,
@@ -196,6 +199,9 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 		if arg == "--format" || strings.HasPrefix(arg, "--format=") || arg == "--json" {
 			return fmt.Errorf("lark-cli output format is owned by the client")
 		}
+		if arg == "--profile" || strings.HasPrefix(arg, "--profile=") {
+			return fmt.Errorf("lark-cli profile is owned by the client")
+		}
 	}
 	if err := c.limiter.Wait(ctx); err != nil {
 		return fmt.Errorf("wait for lark-cli rate limit: %w", err)
@@ -209,7 +215,11 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 
 	commandCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	commandArgs := append(append([]string(nil), args...), "--format", "json")
+	commandArgs := append([]string(nil), args...)
+	if c.profile != "" {
+		commandArgs = append(commandArgs, "--profile", c.profile)
+	}
+	commandArgs = append(commandArgs, "--format", "json")
 	cmd := exec.CommandContext(commandCtx, c.bin, commandArgs...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

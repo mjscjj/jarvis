@@ -143,6 +143,11 @@ card_approval:
   profile: cli_jarvis
   principal_open_id: ou_principal
   relay_secret: relay-secret
+extract:
+  principal_open_id: ou_initialized
+lark_cli:
+  bin: custom-lark-cli
+  profile: cli_initialized
 `), 0o600); err != nil {
 		t.Fatalf("write card approval runtime override: %v", err)
 	}
@@ -222,6 +227,10 @@ card_approval:
 		got.Profile != "cli_jarvis" || got.PrincipalOpenID != "ou_principal" ||
 		got.RelaySecret != "relay-secret" {
 		t.Fatalf("card approval config was not preserved: %#v", got)
+	}
+	if reloaded.Extract.PrincipalOpenID != "ou_initialized" ||
+		reloaded.LarkCLI.Bin != "custom-lark-cli" || reloaded.LarkCLI.Profile != "cli_initialized" {
+		t.Fatalf("initialization identity config was not preserved: extract=%q lark=%#v", reloaded.Extract.PrincipalOpenID, reloaded.LarkCLI)
 	}
 	restartedService, err := NewRuntimeSettingsService(configPath, reloaded)
 	if err != nil {

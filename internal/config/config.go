@@ -194,6 +194,7 @@ type ExtractConfig struct {
 // LarkCLIConfig lark-cli 子进程封装（总纲 §4）。
 type LarkCLIConfig struct {
 	Bin        string  `yaml:"bin"`         // lark-cli 绝对路径
+	Profile    string  `yaml:"profile"`     // 可选；为空时使用 lark-cli 当前默认 profile
 	RateLimit  float64 `yaml:"rate_limit"`  // 令牌桶补充速率 tokens/s
 	Burst      int     `yaml:"burst"`       // 令牌桶容量
 	Concurrent int     `yaml:"concurrent"`  // 并发子进程上限

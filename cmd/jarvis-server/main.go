@@ -191,6 +191,7 @@ func main() {
 
 	larkClient, err := larkcli.New(larkcli.Options{
 		Bin:         cfg.LarkCLI.Bin,
+		Profile:     cfg.LarkCLI.Profile,
 		RateLimit:   cfg.LarkCLI.RateLimit,
 		Burst:       cfg.LarkCLI.Burst,
 		Concurrency: cfg.LarkCLI.Concurrent,
