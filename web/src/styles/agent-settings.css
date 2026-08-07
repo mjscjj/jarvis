@@ -21,6 +21,13 @@
   gap: var(--space-3);
 }
 
+.agent-stage-hint {
+  display: block;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .agent-config-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);

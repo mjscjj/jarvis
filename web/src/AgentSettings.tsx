@@ -254,14 +254,11 @@ export default function AgentSettings() {
     ]
     return (
       <div className="agent-stage-content">
-        <Alert
-          type="info"
-          showIcon
-          title={`${stageName}使用真实运行时模板`}
-          description={isM3
+        <Text type="secondary" className="agent-stage-hint">
+          {`${stageName}使用真实运行时模板。${isM3
             ? '系统提示词必须保留一个 {{WORK_RULES}}；保存时会严格校验，运行时在该位置展开线索发现工作规则。'
-            : '模板必须各保留一个 {{WORK_RULES}} 和 {{APPROVAL_POLICY}}；execute、apply 和 Session 恢复使用同一套组装逻辑。'}
-        />
+            : '模板必须各保留一个 {{WORK_RULES}} 和 {{APPROVAL_POLICY}}；execute、apply 和 Session 恢复使用同一套组装逻辑。'}`}
+        </Text>
         <Card className="agent-config-card agent-stage-tabs-card" variant="borderless">
           <Tabs
             className="agent-stage-tabs"
