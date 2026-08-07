@@ -341,21 +341,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     }
   }
 
-  const submitInlineResume = async (task: Task, response: string) => {
-    if (!response.trim()) return
-    setResumeSubmitting(true)
-    setError(undefined)
-    try {
-      await resumeTask(task.id, task.version, response.trim())
-      markLocalExecuting(task.id)
-      closeDetail()
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setResumeSubmitting(false)
-    }
-  }
-
   const submitReject = async () => {
     if (!rejectTarget) return
     const task = rejectTarget
@@ -459,87 +444,82 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   ]
 
   return <>
+    <PageHeader title="任务" subtitle="先处理需要你决定的事项，再查看 Jarvis 的推进、等待和历史结果">
+      <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
+    </PageHeader>
     {error && <Alert type="error" showIcon title="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    {detail ? (
-      <TaskDetailModal
-        task={detail}
-        runs={runs}
-        events={events}
-        runsLoading={runsLoading}
-        eventsLoading={eventsLoading}
-        runsError={runsError}
-        eventsError={eventsError}
-        executing={executingId === detail.id}
-        approveSubmitting={approveSubmitting && approveTarget?.id === detail.id}
-        resumeSubmitting={resumeSubmitting}
-        interrupting={interruptingId === detail.id}
-        recallingMessageID={recallingMessageID}
-        recallError={recallError}
-        onRecallMessage={runRecallMessage}
-        onClose={closeDetail}
-        onExecute={runExecute}
-        onApprove={openApprove}
-        onReject={openReject}
-        onRerun={openRerun}
-        onResume={submitInlineResume}
-        onInterrupt={runInterrupt}
+    <Card className="table-card" variant="borderless">
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => {
+          const next = key as TaskTab
+          setActiveTab(next)
+          setPage(1)
+          setViewState({ view: next, page: 1 })
+        }}
+        items={(Object.keys(tabLabels) as TaskTab[]).map((key) => ({
+          key,
+          label: activeTab === key
+            ? <Badge count={total} offset={[8, -2]} size="small" overflowCount={999}>{tabLabels[key]}</Badge>
+            : tabLabels[key],
+        }))}
       />
-    ) : (
-      <>
-        <PageHeader title="任务" subtitle="先处理需要你决定的事项，再查看 Jarvis 的推进、等待和历史结果">
-          <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
-        </PageHeader>
-        <Card className="table-card" variant="borderless">
-          <Tabs
-            activeKey={activeTab}
-            onChange={(key) => {
-              const next = key as TaskTab
-              setActiveTab(next)
-              setPage(1)
-              setViewState({ view: next, page: 1 })
-            }}
-            items={(Object.keys(tabLabels) as TaskTab[]).map((key) => ({
-              key,
-              label: activeTab === key
-                ? <Badge count={total} offset={[8, -2]} size="small" overflowCount={999}>{tabLabels[key]}</Badge>
-                : tabLabels[key],
-            }))}
-          />
-          <Table<Task>
-            className="workbench-task-table"
-            rowKey="id"
-            columns={columns}
-            dataSource={items}
-            loading={loading}
-            pagination={{
-              current: page,
-              pageSize: 20,
-              total,
-              showSizeChanger: false,
-              hideOnSinglePage: true,
-              onChange: (nextPage) => {
-                setPage(nextPage)
-                setViewState({ view: activeTab, page: nextPage })
-              },
-            }}
-            tableLayout="fixed"
-            locale={{ emptyText: activeTab === 'needs_me' ? '暂时没有需要你处理的事项' : '这个分组暂无任务' }}
-            onRow={(task) => ({
-              onClick: () => openDetail(task),
-              onKeyDown: (event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  openDetail(task)
-                }
-              },
-              tabIndex: 0,
-              role: 'button',
-              className: 'clickable-row',
-            })}
-          />
-        </Card>
-      </>
-    )}
+      <Table<Task>
+        className="workbench-task-table"
+        rowKey="id"
+        columns={columns}
+        dataSource={items}
+        loading={loading}
+        pagination={{
+          current: page,
+          pageSize: 20,
+          total,
+          showSizeChanger: false,
+          hideOnSinglePage: true,
+          onChange: (nextPage) => {
+            setPage(nextPage)
+            setViewState({ view: activeTab, page: nextPage })
+          },
+        }}
+        tableLayout="fixed"
+        locale={{ emptyText: activeTab === 'needs_me' ? '暂时没有需要你处理的事项' : '这个分组暂无任务' }}
+        onRow={(task) => ({
+          onClick: () => openDetail(task),
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              openDetail(task)
+            }
+          },
+          tabIndex: 0,
+          role: 'button',
+          className: 'clickable-row',
+        })}
+      />
+    </Card>
+    <TaskDetailModal
+      task={detail}
+      runs={runs}
+      events={events}
+      runsLoading={runsLoading}
+      eventsLoading={eventsLoading}
+      runsError={runsError}
+      eventsError={eventsError}
+      executing={detail ? executingId === detail.id : false}
+      approveSubmitting={detail ? approveSubmitting && approveTarget?.id === detail.id : false}
+      resumeSubmitting={detail ? resumeSubmitting && resumeTarget?.id === detail.id : false}
+      interrupting={detail ? interruptingId === detail.id : false}
+      recallingMessageID={recallingMessageID}
+      recallError={recallError}
+      onRecallMessage={runRecallMessage}
+      onClose={closeDetail}
+      onExecute={runExecute}
+      onApprove={openApprove}
+      onReject={openReject}
+      onRerun={openRerun}
+      onResume={openResume}
+      onInterrupt={runInterrupt}
+    />
     <Modal zIndex={taskActionModalZIndex} title={finishStatus === 'done' ? '记录完成结果' : '记录失败原因'} open={Boolean(selected)} confirmLoading={submitting} onOk={submit} onCancel={() => setSelected(undefined)} okText="提交">
       <Input.TextArea rows={5} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder={finishStatus === 'done' ? '完成了什么、产物在哪里' : '失败原因和需要的后续处理'} />
     </Modal>
