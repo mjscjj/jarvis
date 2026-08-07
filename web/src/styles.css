@@ -425,133 +425,12 @@ body {
   padding-bottom: 12px;
 }
 
-/* Task detail modal */
-.task-detail-modal {
-  max-width: calc(100vw - 48px);
-  padding-bottom: 0;
-}
-
-.task-detail-modal .ant-modal-container {
-  display: flex;
-  flex-direction: column;
-  height: min(920px, calc(100dvh - 48px));
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
-}
-
-.task-detail-modal .ant-modal-body {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-}
-
-.task-detail-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  background: var(--color-bg);
-}
-
-.task-detail-header {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: 18px var(--space-6);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-bg-elevated);
-}
-
-.task-detail-title {
-  min-width: 0;
-}
-
-.task-detail-title .ant-space {
-  align-items: center;
-}
-
-.task-detail-title h3.ant-typography {
-  margin: 0;
-  font-size: 20px;
-  line-height: 1.35;
-}
-
-.task-detail-title > .ant-typography {
-  display: block;
-  margin-top: var(--space-1);
-  font-size: 12px;
-}
-
-.task-detail-scroll {
-  flex: 1;
-  min-height: 0;
-  padding: var(--space-5) var(--space-6) var(--space-8);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
 .task-section-kicker {
   margin-bottom: 6px;
   color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
-}
-
-.task-state-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--color-border);
-  border-left-width: 4px;
-  border-radius: var(--radius-lg);
-  background: var(--color-bg-elevated);
-}
-
-.task-state-awaiting_approval {
-  border-left-color: var(--color-warning);
-  background: var(--color-warning-bg);
-}
-
-.task-state-executing,
-.task-state-pending {
-  border-left-color: var(--color-info);
-  background: var(--color-info-bg);
-}
-
-.task-state-done {
-  border-left-color: var(--color-success);
-  background: var(--color-success-bg);
-}
-
-.task-state-failed {
-  border-left-color: var(--color-error);
-  background: var(--color-error-bg);
-}
-
-.task-state-copy {
-  min-width: 0;
-}
-
-.task-current-state.ant-typography {
-  max-width: 780px;
-  margin: 0 0 6px;
-  color: var(--color-text);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.55;
-}
-
-.task-state-actions {
-  flex: 0 0 auto;
 }
 
 .task-progress-strip {
@@ -651,14 +530,6 @@ body {
   border-radius: var(--radius-full, 999px);
 }
 
-.task-detail-main-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 2.6fr) minmax(240px, 1fr);
-  gap: var(--space-4);
-  align-items: start;
-  margin-top: var(--space-4);
-}
-
 .task-primary-card,
 .task-meta-card {
   padding: var(--space-5);
@@ -667,31 +538,7 @@ body {
   background: var(--color-bg-elevated);
 }
 
-.task-primary-summary.ant-typography {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.7;
-}
-
 .task-readable-text.ant-typography {
-  white-space: pre-wrap;
-}
-
-.task-proposal-target {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-}
-
-.task-proposal-target > div {
-  padding: var(--space-3);
-  background: var(--color-bg-soft);
-  border-radius: var(--radius-md);
-}
-
-.task-proposal-target .ant-typography {
-  margin: 4px 0 0;
   white-space: pre-wrap;
 }
 
@@ -1264,35 +1111,12 @@ body {
 }
 
 @media (max-width: 980px) {
-  .task-detail-modal {
-    max-width: calc(100vw - 24px);
-  }
-
-  .task-detail-modal .ant-modal-container {
-    height: calc(100dvh - 24px);
-  }
-
-  .task-detail-scroll {
-    padding: var(--space-4);
-  }
-
-  .task-state-card,
-  .task-detail-main-grid {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .task-state-actions,
   .task-meta-card {
     width: 100%;
   }
 
   .task-meta-card {
     position: static;
-  }
-
-  .task-proposal-target {
-    grid-template-columns: 1fr;
   }
 }
 

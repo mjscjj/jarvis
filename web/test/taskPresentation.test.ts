@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Task } from '../src/types.ts'
-import { proposalOf, structureProposalAction } from '../src/tasks/taskPresentation.ts'
+import { proposalOf, structureProposalAction, taskStateCopy } from '../src/tasks/taskPresentation.ts'
 
 test('structures a free-form numbered proposal without dropping its parts', () => {
   const result = structureProposalAction('在独立分支实施，不发布：1) 修改 core 并补测试。2) 修改 gateway。3) 运行 PPE 回归。')
@@ -29,4 +29,54 @@ test('treats a preserved proposal as active only while awaiting approval', () =>
   } as Task
   assert.equal(proposalOf(task)?.proposal.action, '发消息')
   assert.equal(proposalOf({ ...task, status: 'done' }), null)
+})
+
+test('gives every task state a concrete current state and next step', () => {
+  const base = {
+    id: 1,
+    title: '测试任务',
+    target: '完成测试',
+    background: {},
+    execution_result: null,
+  } as Task
+  const statuses: Task['status'][] = [
+    'pending',
+    'executing',
+    'waiting',
+    'needs_human',
+    'awaiting_approval',
+    'done',
+    'failed',
+    'observing',
+  ]
+
+  for (const status of statuses) {
+    const copy = taskStateCopy({ ...base, status })
+    assert.ok(copy.current.trim(), `${status} should explain the current state`)
+    assert.ok(copy.next.trim(), `${status} should explain the next step`)
+  }
+})
+
+test('uses failure provenance and waiting schedule in state guidance', () => {
+  const base = {
+    id: 1,
+    title: '测试任务',
+    target: '完成测试',
+    background: {},
+  } as Task
+  const rejected = taskStateCopy({
+    ...base,
+    status: 'failed',
+    execution_result: { stage: 'rejected', reject_reason: '**不落地**' },
+  })
+  assert.equal(rejected.current, '**不落地**')
+  assert.match(rejected.next, /重新生成审批方案/)
+
+  const waiting = taskStateCopy({
+    ...base,
+    status: 'waiting',
+    execution_result: { waiting: { reason: '等待妙记', wake_at: '2026-08-08T09:00:00Z' } },
+  })
+  assert.equal(waiting.current, '等待妙记')
+  assert.match(waiting.next, /2026-08-08T09:00:00Z/)
 })

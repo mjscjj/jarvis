@@ -125,6 +125,76 @@ export function taskConclusionLabel(task: Task): string {
   }
 }
 
+export function taskStateCopy(task: Task): { current: string; next: string } {
+  const result = task.execution_result
+  const summary = task.summary?.trim() || strField(result, 'summary')
+  const followup = strField(result, 'needs_followup')
+  const error = strField(result, 'error')
+  const rejectReason = strField(result, 'reject_reason')
+  if (task.resolution?.actor_type === 'proactive' && task.resolution.event_type === 'closed') {
+    return {
+      current: modelCloseReason(task) || '数据异常：这次模型关闭没有记录理由。',
+      next: '当前任务已由主动 Agent 停止追踪；如果判断有误，可以重跑任务。',
+    }
+  }
+  if (task.status === 'awaiting_approval') {
+    return {
+      current: summary || '已生成完整产出物，尚未执行外部写入。',
+      next: followup || '请审阅产出物。批准后，Jarvis 将执行写入并验证结果。',
+    }
+  }
+  if (task.status === 'done') {
+    return {
+      current: summary || '任务已完成。',
+      next: followup || '当前任务不需要继续操作。',
+    }
+  }
+  if (task.status === 'observing') {
+    return {
+      current: summary || '调查已经完成，当前没有需要执行的动作。',
+      next: followup || '无需继续处理；后续出现新变化时会形成新的工作事项。',
+    }
+  }
+  if (task.status === 'failed') {
+    const kind = failureKindOf(task)
+    return {
+      current: rejectReason || error || summary || '任务执行失败。',
+      next: kind === 'rejected'
+        ? '可重跑任务，重新生成审批方案。'
+        : kind === 'manual'
+          ? '这是你手动标记的失败；需要时可以重跑任务。'
+          : '检查失败原因后重跑任务。',
+    }
+  }
+  if (task.status === 'executing') {
+    return {
+      current: 'Jarvis 正在执行任务。',
+      next: '可以等待执行完成；如需停止，可使用“打断执行”。',
+    }
+  }
+  if (task.status === 'waiting') {
+    const waiting = result?.waiting && typeof result.waiting === 'object'
+      ? result.waiting as Record<string, unknown>
+      : null
+    return {
+      current: summary || textValue(waiting?.reason) || '任务正在等待外部条件。',
+      next: textValue(waiting?.wake_at)
+        ? `将在 ${textValue(waiting?.wake_at)} 自动恢复同一个执行会话。`
+        : '已预约自动恢复同一个执行会话。',
+    }
+  }
+  if (task.status === 'needs_human') {
+    return {
+      current: summary || 'Jarvis 已暂停当前执行会话。',
+      next: followup || '回复后将继续同一个执行会话，不会重跑任务。',
+    }
+  }
+  return {
+    current: task.target || task.title,
+    next: '开始执行后，Jarvis 将使用完整任务上下文完成工作。',
+  }
+}
+
 export function proposalArtifactLabel(task: Task): string {
   const action = proposalOf(task)?.proposal.action.toLowerCase() || ''
   if (/code|代码|仓库|分支|测试|构建/.test(`${task.action_type.toLowerCase()} ${action}`)) return '交付物'

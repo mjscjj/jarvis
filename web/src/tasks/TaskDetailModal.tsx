@@ -3,9 +3,9 @@ import type { ReactNode } from 'react'
 import {
   Alert,
   Button,
-  Collapse,
   Descriptions,
   Empty,
+  Input,
   Modal,
   Space,
   Spin,
@@ -15,18 +15,21 @@ import {
 } from 'antd'
 import {
   ApiOutlined,
+  ArrowLeftOutlined,
   BulbOutlined,
   CalendarOutlined,
   CheckCircleOutlined,
-  CloseOutlined,
   CommentOutlined,
   ExclamationCircleOutlined,
   FileTextOutlined,
   HistoryOutlined,
   LinkOutlined,
   MessageOutlined,
+  PauseCircleOutlined,
   PaperClipOutlined,
+  PlayCircleOutlined,
   PullRequestOutlined,
+  QuestionCircleOutlined,
   SafetyOutlined,
   ToolOutlined,
   UndoOutlined,
@@ -34,6 +37,7 @@ import {
 import type { Effect, ExecutionRun, RunEnrichment, Task, TaskEvent, TaskRunOutput } from '../types'
 import { getTaskRunOutput } from '../api'
 import EntityRelations from '../components/EntityRelations'
+import MarkdownReport from '../components/MarkdownReport'
 import StatusBadge from '../components/StatusBadge'
 import { actionLabels, taskStatusMeta as statusMeta } from '../status'
 import {
@@ -44,9 +48,11 @@ import {
   proposalArtifactLabel,
   structureProposalAction,
   strField,
+  taskConclusionLabel,
   taskHandlerMeta,
   taskProjectName,
   taskSourceName,
+  taskStateCopy,
 } from './taskPresentation'
 
 const { Link, Paragraph, Text, Title } = Typography
@@ -62,6 +68,7 @@ const taskEventLabels: Record<string, string> = {
   reapply_started: '重新落地',
   human_input_requested: '等待我的回应',
   human_response_received: '已回复并继续',
+  waiting_scheduled: '安排自动恢复',
   resumed: '恢复原 Session',
   supplemented: '我的补充',
   execution_succeeded: '执行成功',
@@ -113,7 +120,7 @@ interface TaskDetailModalProps {
   onApprove: (task: Task) => void
   onReject: (task: Task) => void
   onRerun: (task: Task) => void
-  onResume: (task: Task) => void
+  onResume: (task: Task, response: string) => void
   onInterrupt: (task: Task) => void
 }
 
@@ -764,7 +771,7 @@ function EffectCard({ effect, recall }: { effect: Effect; recall: EffectRecall }
       {url && (
         <div className="task-effect-link">
           <LinkOutlined />
-          <Link href={url} target="_blank" rel="noreferrer">{url}</Link>
+          <Link href={url} target="_blank" rel="noreferrer">打开{meta.label}</Link>
         </div>
       )}
       {preview && <div className="task-effect-preview">{preview}</div>}
@@ -779,7 +786,7 @@ function EffectsCard({ effects, recall }: { effects: Effect[]; recall: EffectRec
   if (effects.length === 0) return null
   return (
     <div className="task-primary-card task-effects-card">
-      <div className="task-section-kicker">对外产出（{effects.length}）</div>
+      <div className="task-section-kicker">交付物与外部影响（{effects.length}）</div>
       <div className="task-effect-list">
         {effects.map((effect, index) => <EffectCard key={index} effect={effect} recall={recall} />)}
       </div>
@@ -843,7 +850,7 @@ function InlineCodeText({ text }: { text: string }) {
   ))}</>
 }
 
-function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) {
+function ProposalContent({ task }: { task: Task }) {
   const result = proposalOf(task)
   if (!result) return null
   const { proposal } = result
@@ -859,7 +866,6 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
             {result.needs_followup?.trim() || '允许 Jarvis 按下方方案进入真实执行。'}
           </Text>
         </div>
-        <Space wrap>{actions}</Space>
       </div>
 
       <section className="task-decision-plan">
@@ -905,163 +911,174 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
       </div>
 
       {(result.summary || evidenceCount > 0) && (
-        <section className="task-decision-evidence">
-          <div className="task-decision-evidence-heading">
+        <details className="task-decision-evidence">
+          <summary>
             <span>为什么这样建议</span>
             <Text type="secondary">调查结论{evidenceCount > 0 ? ` · ${evidenceCount} 条依据` : ''}</Text>
-          </div>
+          </summary>
           <div className="task-decision-evidence-body">
-            {result.summary && <Paragraph className="task-readable-text">{result.summary}</Paragraph>}
+            {result.summary && <MarkdownReport className="task-summary-markdown" content={result.summary} />}
             {result.enrichments && result.enrichments.length > 0 && (
               <div className="task-enrichment-list">
                 {result.enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
               </div>
             )}
           </div>
-        </section>
+        </details>
       )}
 
       {currentProgress && (
         <section className="task-decision-progress">
           <div className="task-decision-section-title">当前进展</div>
-          <Paragraph className="task-readable-text">{currentProgress}</Paragraph>
+          <MarkdownReport className="task-summary-markdown" content={currentProgress} />
         </section>
       )}
     </div>
   )
 }
 
-function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
+function plainLead(value: string, maxLength = 320): string {
+  const compact = value
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[`*_>#]/g, '')
+    .replace(/(^|\s)[-+]\s+/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return compact.length > maxLength ? `${compact.slice(0, maxLength)}…` : compact
+}
+
+function taskStatusIcon(task: Task): ReactNode {
+  switch (task.status) {
+    case 'pending': return <PlayCircleOutlined />
+    case 'executing': return <ToolOutlined />
+    case 'waiting': return <PauseCircleOutlined />
+    case 'needs_human': return <QuestionCircleOutlined />
+    case 'done': return <CheckCircleOutlined />
+    case 'observing': return <BulbOutlined />
+    case 'failed': return <ExclamationCircleOutlined />
+    default: return <SafetyOutlined />
+  }
+}
+
+function taskStatusHeading(task: Task): string {
+  switch (task.status) {
+    case 'pending': return '准备执行'
+    case 'executing': return 'Jarvis 正在处理'
+    case 'waiting': return '等待外部条件'
+    case 'needs_human': return '需要你回复'
+    case 'done': return '任务已完成'
+    case 'observing': return '调查完成，暂不行动'
+    case 'failed': return failureMeta[failureKindOf(task) || 'unknown'].label
+    default: return '需要你决定'
+  }
+}
+
+function TaskStatusHero({ task }: { task: Task }) {
+  const stateCopy = taskStateCopy(task)
+  const waiting = asRecord(task.execution_result?.waiting)
+  const wakeAt = printableValue(waiting?.wake_at)
+  const waitingReason = printableValue(waiting?.reason)
+  return (
+    <section className={`task-status-hero task-status-hero-${task.status}`}>
+      <span className="task-status-hero-icon">{taskStatusIcon(task)}</span>
+      <div className="task-status-hero-copy">
+        <Text className="task-section-kicker">{taskConclusionLabel(task)}</Text>
+        <Title level={2}>{taskStatusHeading(task)}</Title>
+        <Paragraph>{plainLead(stateCopy.current)}</Paragraph>
+        <Text type="secondary"><strong>接下来：</strong>{stateCopy.next}</Text>
+        {task.status === 'waiting' && (wakeAt || waitingReason) && (
+          <div className="task-waiting-facts">
+            {waitingReason && <div><Text type="secondary">等待原因</Text><Text>{waitingReason}</Text></div>}
+            {wakeAt && <div><Text type="secondary">自动恢复</Text><Text strong>{formatTime(wakeAt)}</Text></div>}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function TaskFullReport({ title, content }: { title: string; content: string }) {
+  const expanded = content.length <= 700
+  return (
+    <details className="task-full-report" open={expanded}>
+      <summary>
+        <span>{title}</span>
+        <Text type="secondary">完整内容</Text>
+      </summary>
+      <div className="task-full-report-body">
+        <MarkdownReport className="task-summary-markdown" content={content} />
+      </div>
+    </details>
+  )
+}
+
+function ResultContent({
+  task,
+  humanResponse,
+  resumeSubmitting,
+  onHumanResponseChange,
+  onResume,
+}: {
+  task: Task
+  humanResponse: string
+  resumeSubmitting: boolean
+  onHumanResponseChange: (value: string) => void
+  onResume: () => void
+}) {
   const result = task.execution_result
   const summary = task.summary?.trim() || strField(result, 'summary')
   const error = strField(result, 'error')
   const rejectReason = strField(result, 'reject_reason')
   const followup = strField(result, 'needs_followup')
   const enrichments = enrichmentItems(result?.enrichments)
-  const stateCopy = taskStateCopy(task)
   const closedByModel = task.resolution?.actor_type === 'proactive'
     && task.resolution.event_type === 'closed'
   const closeReason = modelCloseReason(task)
-
-  const sectionTitle = (() => {
-    if (task.status === 'pending') return '下一步'
-    if (task.status === 'executing') return '正在推进'
-    if (task.status === 'waiting') return '等待中'
-    if (task.status === 'needs_human') return '需要你回复'
-    if (closedByModel) return '模型关闭原因'
-    if (task.status === 'done') return '完成结果'
-    if (task.status === 'observing') return '调查结论'
-    return '异常原因'
-  })()
+  const report = task.status === 'failed'
+    ? rejectReason || error || summary
+    : closedByModel ? closeReason : summary
+  const reportTitle = task.status === 'failed'
+    ? failureKindOf(task) === 'rejected' ? '驳回前的调查与方案状态' : '完整失败信息'
+    : task.status === 'done' ? '完整完成报告'
+      : task.status === 'observing' ? '完整调查结论'
+        : task.status === 'waiting' ? '完整等待背景'
+          : '完整任务说明'
 
   return (
-    <div className="task-primary-card">
-      <div className="task-section-kicker">{sectionTitle}</div>
-      {task.status === 'failed' && (
-        <Alert
-          type={failureKindOf(task) === 'rejected' || failureKindOf(task) === 'manual' || failureKindOf(task) === 'interrupted' ? 'warning' : 'error'}
-          showIcon
-          title={failureMeta[failureKindOf(task) || 'unknown'].label}
-          description={rejectReason || error || summary || '任务没有记录失败详情。'}
-        />
+    <div className="task-result-content">
+      <TaskStatusHero task={task} />
+      {task.status === 'needs_human' && (
+        <section className="task-human-response-card">
+          <div className="task-section-kicker">Agent 的问题</div>
+          <Paragraph>{followup || '请确认或补充所需信息。'}</Paragraph>
+          <Input.TextArea
+            rows={4}
+            value={humanResponse}
+            onChange={(event) => onHumanResponseChange(event.target.value)}
+            placeholder="确认操作，或补充 Agent 请求的信息"
+          />
+          <div className="task-human-response-actions">
+            <Text type="secondary">提交后继续原执行会话，不会重跑任务。</Text>
+            <Button type="primary" loading={resumeSubmitting} disabled={!humanResponse.trim()} onClick={onResume}>
+              提交并继续
+            </Button>
+          </div>
+        </section>
       )}
-      {closedByModel && (
-        <Alert
-          type="info"
-          showIcon
-          title="主动 Agent 的判断"
-          description={closeReason || '数据异常：这次模型关闭没有记录理由。'}
-        />
-      )}
-      {task.status !== 'failed' && !closedByModel && (
-        <Paragraph className="task-readable-text task-primary-summary">{stateCopy.current}</Paragraph>
-      )}
-      {task.status === 'needs_human' ? (
-        <Alert type="warning" showIcon title="Agent 的问题" description={followup || stateCopy.next} />
-      ) : (
-        <Text type="secondary"><strong>接下来：</strong>{stateCopy.next}</Text>
-      )}
+      {report && <TaskFullReport title={reportTitle} content={report} />}
       {enrichments.length > 0 && (
-        <div className="task-enrichment-list">
-          {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
-        </div>
+        <section className="task-primary-card task-enrichment-card">
+          <div className="task-section-kicker">补充信息（{enrichments.length}）</div>
+          <div className="task-enrichment-list">
+            {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+          </div>
+        </section>
       )}
       {followup && task.status !== 'needs_human' && task.status !== 'done' && (
         <Alert type="info" showIcon title="后续事项" description={followup} />
       )}
-      <Space className="task-decision-actions" wrap>{actions}</Space>
     </div>
   )
-}
-
-function taskStateCopy(task: Task): { current: string; next: string } {
-  const result = task.execution_result
-  const summary = task.summary?.trim() || strField(result, 'summary')
-  const followup = strField(result, 'needs_followup')
-  const error = strField(result, 'error')
-  const rejectReason = strField(result, 'reject_reason')
-  if (task.resolution?.actor_type === 'proactive' && task.resolution.event_type === 'closed') {
-    return {
-      current: modelCloseReason(task) || '数据异常：这次模型关闭没有记录理由。',
-      next: '当前任务已由主动 Agent 停止追踪；如果判断有误，可以重跑任务。',
-    }
-  }
-  if (task.status === 'awaiting_approval') {
-    return {
-      current: summary || '已生成完整产出物，尚未执行外部写入。',
-      next: followup || '请审阅产出物。批准后，Jarvis 将执行写入并验证结果。',
-    }
-  }
-  if (task.status === 'done') {
-    return {
-      current: summary || '任务已完成。',
-      next: followup || '当前任务不需要继续操作。',
-    }
-  }
-  if (task.status === 'observing') {
-    return {
-      current: summary || task.summary || '调查已经完成，当前没有需要执行的动作。',
-      next: followup || '无需继续处理；后续出现新变化时会形成新的工作事项。',
-    }
-  }
-  if (task.status === 'failed') {
-    const kind = failureKindOf(task)
-    return {
-      current: rejectReason || error || summary || '任务执行失败。',
-      next: kind === 'rejected'
-        ? '可重跑任务，重新生成审批方案。'
-        : kind === 'manual'
-          ? '这是你手动标记的失败；需要时可以重跑任务。'
-          : '检查失败原因后重跑任务。',
-    }
-  }
-  if (task.status === 'executing') {
-    return {
-      current: 'Jarvis 正在执行任务。',
-      next: '可以等待执行完成；如需停止，可使用“打断执行”。',
-    }
-  }
-  if (task.status === 'waiting') {
-    const waiting = result?.waiting && typeof result.waiting === 'object'
-      ? result.waiting as Record<string, unknown>
-      : null
-    return {
-      current: summary || String(waiting?.reason || '任务正在等待外部条件。'),
-      next: waiting?.wake_at
-        ? `将在 ${String(waiting.wake_at)} 自动恢复同一个执行会话。`
-        : '已预约自动恢复同一个执行会话。',
-    }
-  }
-  if (task.status === 'needs_human') {
-    return {
-      current: summary || 'Jarvis 已暂停当前执行会话。',
-      next: followup || '回复后将继续同一个执行会话，不会重跑任务。',
-    }
-  }
-  return {
-    current: task.target || task.title,
-    next: '开始执行后，Jarvis 将使用完整任务上下文完成工作。',
-  }
 }
 
 function ProgressStrip({
@@ -1072,10 +1089,11 @@ function ProgressStrip({
   onSelect: (event: TaskEvent) => void
 }) {
   const ordered = useMemo(
-    () => [...events].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime()),
+    () => [...events].sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime()),
     [events],
   )
-  const visible = ordered.slice(0, 5)
+  const visible = ordered.slice(-5)
+  const hiddenCount = ordered.length - visible.length
   return (
     <section className="task-progress-strip">
       <div className="task-progress-header">
@@ -1090,6 +1108,7 @@ function ProgressStrip({
         <Text type="secondary">暂无任务进展</Text>
       ) : (
         <div className="task-progress-items">
+          {hiddenCount > 0 && <div className="task-progress-more">+{hiddenCount}</div>}
           {visible.map((event, index) => (
             <button key={event.id} className="task-progress-item" onClick={() => onSelect(event)}>
               <span className="task-progress-node">
@@ -1102,9 +1121,6 @@ function ProgressStrip({
               </span>
             </button>
           ))}
-          {ordered.length > visible.length && (
-            <div className="task-progress-more">+{ordered.length - visible.length}</div>
-          )}
         </div>
       )}
     </section>
@@ -1254,7 +1270,7 @@ function TaskMeta({ task }: { task: Task }) {
   const assigner = objectField(task.background, 'assigner')
   const handler = taskHandlerMeta(task)
   return (
-    <aside className="task-meta-card">
+    <div className="task-meta-card">
       <div className="task-section-kicker">任务信息</div>
       <Descriptions size="small" column={1} colon={false}>
         <Descriptions.Item label="交办人">{stringValue(assigner?.name) || '—'}</Descriptions.Item>
@@ -1266,7 +1282,7 @@ function TaskMeta({ task }: { task: Task }) {
         <Descriptions.Item label="Task">#{task.id}</Descriptions.Item>
         <Descriptions.Item label="版本">v{task.version}</Descriptions.Item>
       </Descriptions>
-    </aside>
+    </div>
   )
 }
 
@@ -1343,10 +1359,12 @@ export default function TaskDetailModal({
 }: TaskDetailModalProps) {
   const [activeTab, setActiveTab] = useState('history')
   const [contextOpen, setContextOpen] = useState(false)
+  const [humanResponse, setHumanResponse] = useState('')
   useEffect(() => {
-    setActiveTab('history')
+    setActiveTab(task?.status === 'executing' ? 'process' : 'history')
     setContextOpen(false)
-  }, [task?.id])
+    setHumanResponse('')
+  }, [task?.id, task?.status])
   if (!task) return null
 
   const failure = failureKindOf(task)
@@ -1382,105 +1400,101 @@ export default function TaskDetailModal({
       return <Text type="secondary">到达唤醒时间后会自动继续</Text>
     }
     if (task.status === 'needs_human') {
-      return <Button type="primary" loading={resumeSubmitting} onClick={() => onResume(task)}>回复并继续</Button>
+      return <Text type="secondary">请在任务问题下方直接回复</Text>
     }
     return <>
       <Button danger loading={interrupting} onClick={() => onInterrupt(task)}>打断执行</Button>
     </>
   })()
 
+  const detailTabs = [
+    {
+      key: 'history',
+      label: '进展记录',
+      children: (
+        <TaskHistory
+          task={task}
+          events={events}
+          runs={runs}
+          loading={eventsLoading || runsLoading}
+          eventsError={eventsError}
+          runsError={runsError}
+          recall={recall}
+        />
+      ),
+    },
+    ...((runs.length > 0 || task.status === 'executing') ? [{
+      key: 'process',
+      label: <span><HistoryOutlined /> Agent 过程</span>,
+      children: <TaskRunOutputPanel taskID={task.id} active={activeTab === 'process'} />,
+    }] : []),
+  ]
+
   return (<>
-      <Modal
-        open
-        footer={null}
-        closable={false}
-        centered
-        width={1180}
-        mask={{ closable: true }}
-        onCancel={onClose}
-        className="task-detail-modal"
-        destroyOnHidden
-      >
-        <div className="task-detail-shell">
-        <header className="task-detail-header">
-          <div className="task-detail-title">
-            <Space size={10} wrap>
-              <StatusBadge label={statusMeta[task.status].label} color={statusMeta[task.status].color} />
-              {failure && <Tag color={failureMeta[failure].color}>{failureMeta[failure].label}</Tag>}
-              {handler && <Tag color={handler.color} title={handler.detail}>{handler.label}</Tag>}
-              <Title level={3}>{task.title}</Title>
-            </Space>
-            <Text type="secondary">
-              {taskProjectName(task)}
-              {' · '}{taskSourceName(task)}
-              {' · '}{actionLabels[task.action_type] || task.action_type}
-              {' · '}Task #{task.id}
-              {' · '}更新于 {formatTime(task.updated_at)}
-            </Text>
+      <div className="task-detail-page">
+        <header className="task-detail-page-header">
+          <div className="task-detail-page-back-row">
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose}>返回任务</Button>
+            <Button icon={<FileTextOutlined />} onClick={() => setContextOpen(true)}>上下文依据</Button>
           </div>
-          <div className="task-detail-header-actions">
-            <Button size="small" icon={<FileTextOutlined />} onClick={() => setContextOpen(true)}>上下文依据</Button>
-            <Button type="text" icon={<CloseOutlined />} aria-label="关闭" onClick={onClose} />
+          <div className="task-detail-page-heading">
+            <div className="task-detail-title">
+              <Space size={8} wrap className="task-detail-statuses">
+                <StatusBadge label={statusMeta[task.status].label} color={statusMeta[task.status].color} />
+                {failure && <Tag color={failureMeta[failure].color}>{failureMeta[failure].label}</Tag>}
+                {handler && <Tag color={handler.color} title={handler.detail}>{handler.label}</Tag>}
+              </Space>
+              <Title level={1}>{task.title}</Title>
+              <Text type="secondary">
+                {taskProjectName(task)}
+                {' · '}{taskSourceName(task)}
+                {' · '}{actionLabels[task.action_type] || task.action_type}
+                {' · '}Task #{task.id}
+                {' · '}更新于 {formatTime(task.updated_at)}
+              </Text>
+            </div>
+            <Space wrap className="task-detail-primary-actions">{actions}</Space>
           </div>
         </header>
 
-        <div className="task-detail-scroll">
-          {recallError && <Alert type="error" showIcon title="撤回飞书消息失败" description={recallError} />}
+        {recallError && <Alert type="error" showIcon title="撤回飞书消息失败" description={recallError} />}
 
-          <div className="task-detail-main-grid task-detail-main-single">
-            <section aria-label="任务结论与产出">
-              {proposalOf(task)
-                ? <ProposalContent task={task} actions={actions} />
-                : <ResultContent task={task} actions={actions} />}
-              <EffectsCard effects={effectItems(task.execution_result?.effects)} recall={recall} />
-            </section>
-          </div>
+        <div className="task-detail-page-grid">
+          <main className="task-detail-page-main" aria-label="任务结论与产出">
+            {proposalOf(task)
+              ? <ProposalContent task={task} />
+              : (
+                <ResultContent
+                  task={task}
+                  humanResponse={humanResponse}
+                  resumeSubmitting={resumeSubmitting}
+                  onHumanResponseChange={setHumanResponse}
+                  onResume={() => onResume(task, humanResponse.trim())}
+                />
+              )}
+            <EffectsCard effects={effectItems(task.execution_result?.effects)} recall={recall} />
 
-          {eventsLoading ? (
-            <section className="task-progress-strip"><Spin size="small" /></section>
-          ) : eventsError ? (
-            <Alert type="error" showIcon title="任务进展加载失败" description={eventsError} />
-          ) : (
-            <ProgressStrip events={events} onSelect={jumpToHistory} />
-          )}
+            {eventsLoading ? (
+              <section className="task-progress-strip"><Spin size="small" /></section>
+            ) : eventsError ? (
+              <Alert type="error" showIcon title="任务进展加载失败" description={eventsError} />
+            ) : (
+              <ProgressStrip events={events} onSelect={jumpToHistory} />
+            )}
 
-          <Collapse
-            className="task-secondary-meta"
-            ghost
-            items={[{ key: 'meta', label: '任务信息', children: <TaskMeta task={task} /> }]}
-          />
+            <Tabs
+              className="task-detail-tabs"
+              activeKey={activeTab}
+              onChange={setActiveTab}
+              items={detailTabs}
+            />
+          </main>
 
-          <Tabs
-            className="task-detail-tabs"
-            activeKey={activeTab}
-            onChange={setActiveTab}
-            items={[
-              {
-                key: 'history',
-                label: '任务历史',
-                children: (
-                  <TaskHistory
-                    task={task}
-                    events={events}
-                    runs={runs}
-                    loading={eventsLoading || runsLoading}
-                    eventsError={eventsError}
-                    runsError={runsError}
-                    recall={recall}
-                  />
-                ),
-              },
-              {
-                key: 'process',
-                label: <span><HistoryOutlined /> 执行过程</span>,
-                children: <TaskRunOutputPanel taskID={task.id} active={activeTab === 'process'} />,
-              },
-            ]}
-          />
-
+          <aside className="task-detail-page-rail">
+            <TaskMeta task={task} />
+          </aside>
         </div>
-        </div>
-      </Modal>
+      </div>
       <Modal
         title="上下文依据"
         open={contextOpen}
