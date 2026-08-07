@@ -4,6 +4,7 @@
 
 | 事项 | 唯一所有者 | 安装 Agent 的动作 |
 |---|---|---|
+| 从 checkout 到最终可用的安装运行与清单 | `$install-jarvis` + `var/install/<run-id>/INSTALL_CHECKLIST.md` | 一开始创建，跨依赖、绑定、服务、世界模型和端到端阶段持续更新 |
 | 本机依赖、版本、平台、服务与文件权限事实 | `jarvis-install doctor/validate-dependencies/validate` | 读取 JSON，选择处理方式；依赖门通过前不启动主服务 |
 | lark-cli 与官方 Agent Skills 安装 | larksuite 官方 npm installer | 通过 `install-lark-cli` 调用并读回版本/Skills |
 | traex stable 安装 | TRAE CLI updater 公布的 Code 内网 installer | 通过 `install-traex` 调用并完成 SSO |
@@ -14,7 +15,7 @@
 | 主服务构建、签名、launchd 注册 | `scripts/install-launchd.sh` | 配置完成后通过 `install-server` 调用 |
 | 已注册主服务的安全重建 | `scripts/rebuild-server.sh` | 确认属于当前 checkout 后调用 |
 | 飞书 App/Profile 登录和本机 identity | `$install-jarvis` | 在服务启动前配置并读回 |
-| 近 7 天业务证据与世界模型工作稿 | `$initialize-jarvis` | 服务就绪后转交，不在安装 Skill 复制 |
+| 近 7 天业务证据与世界模型工作稿 | `$initialize-jarvis` | 服务就绪后转交同一个 install run；初始化只更新清单 E 区 |
 | PrincipalProfile、项目、人物、重点事项、群监听 | M1/M2 现有接口 | 只由 `$initialize-jarvis` 编排 |
 | 缺失依赖的具体安装方式 | 用户的 Agent | 按机器选择，不在脚本写死包管理器 |
 | 使用哪个飞书 app/profile | 用户 | Agent 展示候选与证据，不猜 |
@@ -47,6 +48,7 @@
 - 系统已有健康 Qdrant 时可以复用，不要求重新安装。
 - Qdrant 是可在依赖阶段启动的依赖服务；Jarvis 主服务在依赖门、identity 和 CC 绑定完成后启动，不等待世界模型工作稿。
 - fresh clone 和已有 checkout 共享同一安装 Skill，但分别走 install-server 或 rebuild-server。
+- 整体安装清单固定安装阶段和硬验收点，但每一阶段的调查路径、依赖安装方式、证据深度和实体数量由用户的 Agent 根据现状决定。
 
 ## 分发边界
 

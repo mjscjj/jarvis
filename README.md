@@ -108,7 +108,7 @@ cd jarvis_bot
 使用 $install-jarvis 检查这台机器并完成 Jarvis 首次安装和验收。
 ```
 
-`$install-jarvis` 会先报告机器、配置、旧实例和服务事实，再由用户的 Agent 选择依赖安装方式、飞书 App/Profile 和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把同一个 App/Profile 绑定到 Jarvis 与 CC Connect，启动并验收运行底座；服务就绪后才转入 `$initialize-jarvis`，根据最近 7 天飞书证据建立人物、项目、资料、重点事项和监听群。
+`$install-jarvis` 是整个项目安装流程：先创建 `var/install/<run-id>/INSTALL_CHECKLIST.md`，再报告机器、配置、旧实例和服务事实，由用户的 Agent 选择依赖安装方式、飞书 App/Profile 和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把同一个 App/Profile 绑定到 Jarvis 与 CC Connect，启动并验收运行底座；服务就绪后转入 `$initialize-jarvis` 建立人物、项目、资料、重点事项和监听群，最后完成消息与 CC 对话的真实端到端验收。
 
 repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills 和仓库基线使用的 traex：
 
@@ -145,6 +145,9 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ### 安装与重建
 
 ```bash
+# clone 后的第一个项目动作：建立整个安装过程的状态页
+./scripts/jarvis-install start
+
 # 推荐让 Agent 先取得事实；fresh clone 的 identity 配置不完整是正常状态
 ./scripts/jarvis-install doctor
 
@@ -157,10 +160,7 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ./scripts/jarvis-install install-qdrant
 ./scripts/jarvis-install validate-dependencies
 
-# 依赖门通过后选择并登录一个 lark-cli Profile，先建立整次运行的打勾清单：
-./scripts/jarvis-init start --profile <profile>
-
-# 再写本机 identity、绑定 CC：
+# 依赖门通过后选择并登录一个 lark-cli Profile，再写本机 identity、绑定 CC：
 ./scripts/jarvis-install configure-identity --open-id <open_id> --profile <profile> --git-author <author>
 ./scripts/jarvis-install bind-cc --profile <profile>
 ./scripts/jarvis-install validate-binding --profile <profile>
@@ -172,7 +172,9 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 # 系统级验收
 ./scripts/jarvis-install validate
 
-# 安装清单 A 区验收完成后，把同一个 run_dir 交给 $initialize-jarvis
+# 把同一个 run_dir 交给 $initialize-jarvis 完成安装清单 E 区
+# 再完成监听群新消息和绑定 Bot 对话的真实端到端验收，最后读回总状态
+./scripts/jarvis-install status --run-dir <run_dir>
 
 # 日常后端修改后重建、稳定签名并重启
 ./scripts/rebuild-server.sh
@@ -183,7 +185,7 @@ curl http://127.0.0.1:18800/healthz
 curl -s http://127.0.0.1:18800/readyz | jq
 ```
 
-不要在 fresh clone 上提前运行 `install-launchd.sh`、`rebuild-server.sh` 或 `install-server`：必须先通过 `validate-dependencies`，再完成 identity 与 CC 绑定。世界模型初始化在服务就绪后执行，不是启动前置条件。`var/onboarding/<run-id>/CHECKLIST.md` 逐项标记完成、未做、阻塞或不适用及其原因。
+不要在 fresh clone 上提前运行 `install-launchd.sh`、`rebuild-server.sh` 或 `install-server`：必须先通过 `validate-dependencies`，再完成 identity 与 CC 绑定。世界模型初始化在服务就绪后执行，不是启动前置条件，但属于整体项目安装的一部分。`var/install/<run-id>/INSTALL_CHECKLIST.md` 从 checkout 一直记录到端到端验收，逐项标记完成、未做、阻塞或不适用及其原因。
 
 不要裸 `go build` 覆盖 `bin/jarvis-server` 后直接重启，否则会破坏 macOS TCC 的稳定签名。
 

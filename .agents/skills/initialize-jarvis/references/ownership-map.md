@@ -15,6 +15,7 @@
 | 群的背景与监听选择 | M1 Group curated columns | `update-group` | 直接改 checkpoint 或 message 表 |
 | 群扫描水位与消息 | M2 capture | 通过 related_group 触发现有扫描并读回 | 把初始化历史灌入 M2/M3 |
 | 稳定行为偏好 | 适用阶段 rules | 默认只记录在工作稿，另行确认后再改 rules | 混进 Principal 事实或工具手册 |
-| 运行证据、工作稿与完成清单 | `var/onboarding/<run-id>/` | 持续更新 `world-model.md` 和 `CHECKLIST.md` | 用工作稿替代 M1/M2 业务真源 |
+| 整体安装状态页 | `$install-jarvis` 的 `var/install/<run-id>/INSTALL_CHECKLIST.md` | 由整体安装调用时只更新世界模型 E 区 | 独立初始化伪造或接管整张安装清单 |
+| 世界模型证据与工作稿 | 安装时复用 `var/install/<run-id>/`；独立重建用 `var/onboarding/<run-id>/` | 持续更新 `evidence/` 和 `world-model.md` | 用工作稿替代 M1/M2 业务真源 |
 
 初始化 Skill 是流程真源，不拥有业务事实。它只调用现有所有者，并在每次写入后读回。Group→Project、KeyMatter→Project、ManagedResource→Person/Project/Principal 已有结构化字段时，以对应实体为唯一所有者，不再额外创建同义 RelationFact。

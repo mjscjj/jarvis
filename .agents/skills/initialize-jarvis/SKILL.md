@@ -1,6 +1,6 @@
 ---
 name: initialize-jarvis
-description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，首次建立或按用户决定重建 Jarvis 世界模型。以飞书身份、直属上级、本人创建的 OKR 文档、最近 7 天本人撰写或编辑的文档、消息和群聊为证据，推断并写入 Principal、项目、关键人物、资料、重点事项、关系、事实和群监听；持续维护可打勾的初始化清单。企业策略下不调用 OKR API；已有业务数据时先确认合并、补充或重建策略。
+description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，首次建立或按用户决定重建 Jarvis 世界模型。以飞书身份、直属上级、本人创建的 OKR 文档、最近 7 天本人撰写或编辑的文档、消息和群聊为证据，推断并写入 Principal、项目、关键人物、资料、重点事项、关系、事实和群监听；作为整体安装的一部分时更新安装清单的世界模型阶段。企业策略下不调用 OKR API；已有业务数据时先确认合并、补充或重建策略。
 ---
 
 # 初始化 Jarvis 世界模型
@@ -9,17 +9,16 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 
 先完整读取 [ownership-map.md](references/ownership-map.md)、[evidence-sources.md](references/evidence-sources.md)、[modeling-guide.md](references/modeling-guide.md) 和 [worknote-guide.md](references/worknote-guide.md)。
 
-## 0. 取得运行清单并预检
+## 0. 取得工作目录并预检
 
-优先复用 `$install-jarvis` 返回的 `run_dir`。独立重建世界模型时新建：
+由整体安装调用时，必须复用 `$install-jarvis` 返回的 `run_dir`，使用其中的 `evidence/`、`world-model.md` 和 `INSTALL_CHECKLIST.md`。只更新清单 E 区，不创建或维护整张安装状态页。独立重建世界模型时可在 `var/onboarding/<run-id>/` 建自己的 `evidence/` 与 `world-model.md`，但不伪造整体项目安装清单。
 
 ```bash
-./scripts/jarvis-init start --profile <profile>
 ./scripts/jarvis-init preflight
 ./scripts/jarvis-install validate
 ```
 
-`jarvis-install validate` 不通过就返回安装 Skill；不要在这里修服务。全过程维护 `run_dir/CHECKLIST.md`：每完成一项立即打勾并附读回结果；未做、阻塞、不适用保持未勾选并写明原因。原始证据写入 `run_dir/evidence/`，世界模型工作稿写入 `run_dir/world-model.md`。
+`jarvis-install validate` 不通过就返回安装 Skill；不要在这里修服务。属于整体安装时，每完成一项立即更新 `run_dir/INSTALL_CHECKLIST.md` 的 E 区并附读回结果；未做、阻塞、不适用保持未勾选并写明原因。原始证据写入 `run_dir/evidence/`，世界模型工作稿写入 `run_dir/world-model.md`。
 
 ## 1. 先检查存量
 
@@ -67,20 +66,14 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 4. 结构化字段表达不了的重要关系才 `create-relation`，随后 `list-relations`。
 5. 只有真实发生时间的决策、交付、阻塞或方向变化才 `append-fact --source initialization`，随后 `list-facts`。
 
-每项成功后立刻更新 checklist。中途失败就停止，保留已经读回的结果和原始错误；恢复时先查当前世界模型，确认对象不存在再写，不靠事务、回滚或隐藏 fallback。
+属于整体安装时，每项成功后立刻更新清单 E 区。中途失败就停止，保留已经读回的结果和原始错误；恢复时先查当前世界模型，确认对象不存在再写，不靠事务、回滚或隐藏 fallback。
 
 ## 5. 验收与交付
 
 ```bash
 ./scripts/jarvis-init validate --profile <profile>
-./scripts/jarvis-init status --run-dir <run_dir>
 ```
 
 再按对象逐项语义抽查。项目、人物、资料、重点事项或监听群都没有固定数量下限；为零时说明这是证据结论、覆盖不足、权限缺口还是尚未决定。
 
-最后做两个真实端到端验收：
-
-1. 请用户在一个监听群发送一条新消息，等待正常 M2 扫描后用 `query-messages --chat-id ...` 读回。
-2. 请用户通过绑定的 Jarvis Bot 发起一次 CC 对话，确认该 Agent 先读取当前 Jarvis context 后再回复。
-
-最终交付直接给出 `CHECKLIST.md` 路径、已完成项、所有未勾选项及原因、实体/关系/事实数量和两个端到端结果。清单是“做了什么、没做什么”的唯一运行状态页。
+将实体/关系/事实数量、语义抽查结果、覆盖不足和未解决项交还 `$install-jarvis`。两个真实端到端验收和最终 `jarvis-install status` 归整体安装 Skill，不在这里接管。独立重建时直接交付 `world-model.md` 与读回结果。
