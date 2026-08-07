@@ -276,6 +276,7 @@ type DailyDigestConfig struct {
 	Enabled           bool   `yaml:"enabled"`
 	Schedule          string `yaml:"schedule"`            // cron 表达式，默认 "0 19 * * *"（每晚 19:00）
 	TimeoutSeconds    int    `yaml:"timeout_seconds"`     // 单次 Codex 总编排硬上限，默认 600
+	GitAuthor         string `yaml:"git_author"`          // 个人日报查询提交时使用的 git log --author 模式，由初始化写入本机配置
 	GroupMessageLimit int    `yaml:"group_message_limit"` // 每群每天喂进 prompt 的消息上限，默认 200
 	GroupConcurrency  int    `yaml:"group_concurrency"`   // 一轮批量里群总结的并发上限，默认 2，>=1
 }
@@ -567,6 +568,9 @@ func (c *Config) validate() error {
 	}
 	if c.DailyDigest.TimeoutSeconds < 300 {
 		return fmt.Errorf("dailydigest.timeout_seconds 必须大于等于 300")
+	}
+	if strings.TrimSpace(c.DailyDigest.GitAuthor) == "" {
+		return fmt.Errorf("dailydigest.git_author 不能为空")
 	}
 	if c.DailyDigest.GroupMessageLimit <= 0 {
 		return fmt.Errorf("dailydigest.group_message_limit 必须大于 0")

@@ -7,6 +7,11 @@
   "version": 1,
   "run_id": "20260807-153000",
   "profile": "cli_example",
+  "machine_config": {
+    "principal_open_id": "ou_example",
+    "lark_profile": "cli_example",
+    "daily_digest_git_author": "example.user@example.com"
+  },
   "evidence_window": {
     "timezone": "Asia/Shanghai",
     "from": "2026-08-01T00:00:00+08:00",
@@ -31,6 +36,7 @@
 ## 外壳字段
 
 - `version` 固定为 `1`。
+- `machine_config` 只承载程序直接消费的本机身份配置；Git author 必须经本机配置和近期提交验证，无法唯一确认时放入 `unknowns`，不得执行写入。
 - `ref` 在本草案内唯一，供应用日志和逻辑引用使用。
 - `target_type` 只用于选择现有入口：`principal`、`project`、`person`、`key_matter`、`resource`、`group`。
 - `operation` 首次初始化只使用 `upsert`（principal）或 `create`/`update`（其它对象）。

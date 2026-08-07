@@ -47,14 +47,11 @@ erDiagram
 - RelationFact 保存两个既有实体之间的自然语言关系与有效期。
 - M1 不负责从会话批量蒸馏事实。
 
-## 5. API 与运维
+## 5. API 与初始化
 
 Projects、Persons、Groups、Profile、Managed resources、Facts 和 RelationFacts 的路由见 [HTTP API](../reference/http-api.md)。`DELETE /api/projects/:id` 实际是软归档。
 
-```bash
-./bin/jarvis-server -config conf/config.yaml -seed
-./bin/jarvis-server -config conf/config.yaml -seed-persons
-```
+首次身份、项目、人物、重点事项和群监听统一由仓库级 `initialize-jarvis` Skill 依据当前用户证据初始化。M1 不保留任何特定用户的 seed 数据，也不从关键群机械批量导入人物。
 
 ## 6. 已知边界
 

@@ -162,6 +162,7 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
 	override.LarkCLI.Bin = cfg.LarkCLI.Bin
 	override.LarkCLI.Profile = cfg.LarkCLI.Profile
+	override.DailyDigest.GitAuthor = cfg.DailyDigest.GitAuthor
 	override.CardApproval = cfg.CardApproval
 	if err := writeRuntimeOverride(RuntimeOverridePath(s.configPath), override); err != nil {
 		return nil, err
@@ -430,6 +431,7 @@ type runtimeOverride struct {
 	DailyDigest struct {
 		Enabled           bool   `yaml:"enabled"`
 		Schedule          string `yaml:"schedule"`
+		GitAuthor         string `yaml:"git_author"`
 		GroupMessageLimit int    `yaml:"group_message_limit"`
 		GroupConcurrency  int    `yaml:"group_concurrency"`
 	} `yaml:"dailydigest"`

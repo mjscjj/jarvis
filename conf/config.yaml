@@ -185,5 +185,6 @@ dailydigest:
   enabled: true
   schedule: "0 19 * * *"     # 每晚 19:00 生成当天（截至生成时刻）
   timeout_seconds: 1200      # 正常目标 3–5 分钟；20 分钟只作为失控兜底
+  git_author: ""             # 首次运行前由 initialize-jarvis 写入本机 runtime overlay
   group_message_limit: 200   # 每个关键群每天喂进 prompt 的消息上限
   group_concurrency: 2       # 一轮批量里群总结的并发上限（>=1）

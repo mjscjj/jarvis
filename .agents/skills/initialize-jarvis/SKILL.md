@@ -54,10 +54,11 @@ bash .agents/skills/initialize-jarvis/scripts/preflight.sh
 按 [evidence-sources.md](references/evidence-sources.md) 采集，并把每次成功原始 JSON 分文件写入 `evidence/`：
 
 1. 当前登录用户身份与通讯录基本资料。
-2. 直属上级、部门、职务。直属上级拿不到时保留“未知 + 原始错误/权限边界”，不得猜名字。
-3. 当前 OKR 周期、Objective/KR、对齐信息；没有 OKR 是合法事实。
-4. 最近 7 个自然日用户参与的群聊和私聊消息，优先用户本人发言、@用户、线程回复和活跃群。
-5. 候选群成员与群元数据，仅为判断关键人物、项目归属和监听范围服务。
+2. 本机 Git 配置与已确认仓库的近期提交，用于确认唯一的 `git log --author` 模式；无法唯一确认时必须询问用户。
+3. 直属上级、部门、职务。直属上级拿不到时保留“未知 + 原始错误/权限边界”，不得猜名字。
+4. 当前 OKR 周期、Objective/KR、对齐信息；没有 OKR 是合法事实。
+5. 最近 7 个自然日用户参与的群聊和私聊消息，优先用户本人发言、@用户、线程回复和活跃群。
+6. 候选群成员与群元数据，仅为判断关键人物、项目归属和监听范围服务。
 
 附件正文默认不下载；只有它对项目或重点事项判断不可替代时才读取，并在草案理由中说明。
 
@@ -74,7 +75,7 @@ bash .agents/skills/initialize-jarvis/scripts/preflight.sh
 - Group 只选择与候选项目或关键协作持续相关的群。`related_group` 表示进入 M2 持续监听，`is_key_group` 要更严格。
 - 每个候选项都给出 `rationale`、`evidence_refs` 和 `confidence`。证据相互冲突时保留冲突，不强行归一。
 
-向用户展示：身份、直属上级、项目、关键人物、重点事项、拟监听群，以及未知项和权限缺口。然后明确询问是否按该草案写入，并结束当前轮。用户未明确同意前不得进入下一步。
+向用户展示：身份、本机 Git author、直属上级、项目、关键人物、重点事项、拟监听群，以及未知项和权限缺口。然后明确询问是否按该草案写入，并结束当前轮。用户未明确同意前不得进入下一步。
 
 ## 4. 写入并建立监听
 
@@ -83,7 +84,7 @@ bash .agents/skills/initialize-jarvis/scripts/preflight.sh
 1. 用已验证的 user `openId` 和本次 profile 写运行配置：
 
    ```bash
-   ./.agents/skills/initialize-jarvis/scripts/jarvis-init configure --open-id <open_id> --profile <profile>
+   ./.agents/skills/initialize-jarvis/scripts/jarvis-init configure --open-id <open_id> --profile <profile> --git-author <author>
    ```
 
 2. 仅用 `./scripts/rebuild-server.sh` 构建并重启主服务。禁止裸 `go build` 覆盖服务二进制。

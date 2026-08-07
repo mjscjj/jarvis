@@ -37,13 +37,13 @@ func TestJarvisInitConfigureDelegatesToConfigBoundary(t *testing.T) {
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
-  "run ./cmd/jarvis-config configure-principal --config conf/config.yaml --open-id ou_ready --profile cli_ready")
-    printf '%s' '{"runtime_config_path":"conf/config.runtime.yaml","principal_open_id":"ou_ready","lark_profile":"cli_ready","restart_required":true}' ;;
+  "run ./cmd/jarvis-config configure-principal --config conf/config.yaml --open-id ou_ready --profile cli_ready --git-author ready@example.com")
+    printf '%s' '{"runtime_config_path":"conf/config.runtime.yaml","principal_open_id":"ou_ready","lark_profile":"cli_ready","git_author":"ready@example.com","restart_required":true}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
 esac
 `)
 	out, err := runJarvisInit(t, "", []string{"PATH=" + binDir + ":" + os.Getenv("PATH")},
-		"configure", "--open-id", "ou_ready", "--profile", "cli_ready")
+		"configure", "--open-id", "ou_ready", "--profile", "cli_ready", "--git-author", "ready@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +73,13 @@ func TestJarvisInitValidate(t *testing.T) {
 	defer server.Close()
 
 	binDir := t.TempDir()
+	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
+case "$*" in
+  "run ./cmd/jarvis-config show-principal --config conf/config.yaml")
+    printf '%s' '{"principal_open_id":"ou_ready","lark_profile":"cli_ready","git_author":"ready@example.com"}' ;;
+  *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
+esac
+`)
 	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
 printf '%s' '{"identity":"user","verified":true,"identities":{"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready","userName":"Ready User"}}}'
 `)

@@ -16,6 +16,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 CONFIG_PATH="conf/config.yaml"
 OPEN_ID=""
 PROFILE=""
+GIT_AUTHOR=""
 CHAT_ID=""
 
 print_usage() {
@@ -26,7 +27,7 @@ This tool is private to $initialize-jarvis and is not part of the normal M5
 tool catalog.
 
 subcommands:
-  configure   Save principal open_id and lark-cli profile locally
+  configure   Save principal open_id, lark-cli profile and Git author locally
   discover    Run one synchronous M2 Feishu chat discovery
   scan        Run one synchronous M2 scan for a chat
   validate    Validate identity, M1 data and group scan readiness
@@ -38,9 +39,10 @@ EOF
 print_subcommand_help() {
   case "$1" in
     configure) cat <<'EOF'
-usage: jarvis-init configure --open-id OPEN_ID --profile PROFILE [--config PATH]
-Atomically save the app-scoped principal open_id and lark-cli profile in the
-ignored runtime config. This does not write M1 data; restart Jarvis afterward.
+usage: jarvis-init configure --open-id OPEN_ID --profile PROFILE --git-author AUTHOR [--config PATH]
+Atomically save the app-scoped principal open_id, lark-cli profile and personal
+daily-digest Git author in the ignored runtime config. This does not write M1
+data; restart Jarvis afterward.
 EOF
       ;;
     discover) cat <<'EOF'
@@ -68,7 +70,7 @@ EOF
 require_flag() {
   local command_name="$1" flag="$2" allowed="--config"
   case "$command_name" in
-    configure) allowed+=" --open-id --profile" ;;
+    configure) allowed+=" --open-id --profile --git-author" ;;
     discover) ;;
     scan) allowed+=" --chat-id" ;;
     validate) allowed+=" --profile" ;;
@@ -103,6 +105,12 @@ consume_flags() {
         shift 2
         ;;
       --profile=*) PROFILE="${1#--profile=}"; shift ;;
+      --git-author)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        GIT_AUTHOR="$2"
+        shift 2
+        ;;
+      --git-author=*) GIT_AUTHOR="${1#--git-author=}"; shift ;;
       --chat-id)
         [[ $# -ge 2 ]] || fail "$1 requires a value"
         CHAT_ID="$2"
@@ -158,11 +166,12 @@ api_call() {
 cmd_configure() {
   [[ "$OPEN_ID" == ou_* && "$OPEN_ID" != "ou_" ]] || fail "configure --open-id must be a non-empty ou_ id"
   [[ -n "$PROFILE" ]] || fail "configure requires --profile"
+  [[ -n "$GIT_AUTHOR" ]] || fail "configure requires --git-author"
   command -v go >/dev/null 2>&1 || fail "go is required for configure but not found in PATH"
   (
     cd "$REPO_ROOT"
     go run ./cmd/jarvis-config configure-principal \
-      --config "$CONFIG_PATH" --open-id "$OPEN_ID" --profile "$PROFILE"
+      --config "$CONFIG_PATH" --open-id "$OPEN_ID" --profile "$PROFILE" --git-author "$GIT_AUTHOR"
   ) | jq -c .
 }
 
@@ -185,9 +194,10 @@ cmd_scan() {
 cmd_validate() {
   [[ -n "$PROFILE" ]] || fail "validate requires --profile"
   command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
+  command -v go >/dev/null 2>&1 || fail "go is required for validate but not found in PATH"
   API_BASE="$(resolve_api_base)"
 
-  local auth_status principal projects persons key_matters groups
+  local auth_status configured_identity principal projects persons key_matters groups
   if ! auth_status="$(
     LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 \
     LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 \
@@ -197,6 +207,10 @@ cmd_validate() {
   fi
   printf '%s' "$auth_status" | jq -e 'type == "object"' >/dev/null 2>&1 ||
     fail "lark-cli auth status did not return a JSON object"
+  configured_identity="$(
+    cd "$REPO_ROOT"
+    go run ./cmd/jarvis-config show-principal --config "$CONFIG_PATH"
+  )" || fail "load initialized machine identity failed"
   principal="$(api_call GET /api/profile | jq -c '.data')"
   projects="$(api_call GET '/api/projects?page=1&page_size=1' | jq -c '.data')"
   persons="$(api_call GET '/api/persons?page=1&page_size=1' | jq -c '.data')"
@@ -207,6 +221,7 @@ cmd_validate() {
   result="$(jq -nc \
     --arg profile "$PROFILE" \
     --argjson auth "$auth_status" \
+    --argjson configured "$configured_identity" \
     --argjson principal "$principal" \
     --argjson projects "$projects" \
     --argjson persons "$persons" \
@@ -214,14 +229,21 @@ cmd_validate() {
     --argjson groups "$groups" '
       ($auth.identities.user // {}) as $user |
       (($auth.verified == true) and ($user.status == "ready") and ($user.verified == true) and ($user.tokenStatus == "valid")) as $auth_ok |
+      (((($configured.principal_open_id // "") | length) > 0) and
+       ((($configured.lark_profile // "") | length) > 0) and
+       ((($configured.git_author // "") | length) > 0)) as $machine_identity_ok |
       (($principal.saved == true) and ((($principal.open_id // "") | length) > 0) and ((($principal.name // "") | length) > 0)) as $profile_ok |
-      ($auth_ok and ($user.openId == $principal.open_id)) as $identity_match |
+      ($auth_ok and $machine_identity_ok and
+       ($user.openId == $configured.principal_open_id) and
+       ($user.openId == $principal.open_id) and
+       ($profile == $configured.lark_profile)) as $identity_match |
       (($groups.total // 0) > 0) as $groups_ok |
       ([($groups.items // [])[] | select(.last_scan_status == "ok")] | length) as $successful_scans |
       {
-        ready: ($auth_ok and $profile_ok and $identity_match and $groups_ok and ($successful_scans > 0)),
+        ready: ($auth_ok and $machine_identity_ok and $profile_ok and $identity_match and $groups_ok and ($successful_scans > 0)),
         checks: {
           lark_user_authenticated: $auth_ok,
+          machine_identity_configured: $machine_identity_ok,
           principal_profile_saved: $profile_ok,
           principal_identity_matches_login: $identity_match,
           related_group_configured: $groups_ok,
@@ -229,8 +251,11 @@ cmd_validate() {
         },
         identity: {
           profile: $profile,
+          configured_profile: ($configured.lark_profile // null),
           auth_open_id: ($user.openId // null),
+          configured_open_id: ($configured.principal_open_id // null),
           principal_open_id: ($principal.open_id // null),
+          git_author: ($configured.git_author // null),
           user_name: ($user.userName // null),
           principal_name: ($principal.name // null),
           manager_known: ((($principal.leader_open_id // "") | length) > 0)

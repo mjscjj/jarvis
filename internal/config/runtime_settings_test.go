@@ -127,6 +127,7 @@ dailydigest:
   enabled: true
   schedule: "0 19 * * *"
   timeout_seconds: 600
+  git_author: "owner@example.com"
   group_message_limit: 200
   group_concurrency: 2
 scheduled_task:
@@ -148,6 +149,8 @@ extract:
 lark_cli:
   bin: custom-lark-cli
   profile: cli_initialized
+dailydigest:
+  git_author: initialized@example.com
 `), 0o600); err != nil {
 		t.Fatalf("write card approval runtime override: %v", err)
 	}
@@ -229,8 +232,9 @@ lark_cli:
 		t.Fatalf("card approval config was not preserved: %#v", got)
 	}
 	if reloaded.Extract.PrincipalOpenID != "ou_initialized" ||
-		reloaded.LarkCLI.Bin != "custom-lark-cli" || reloaded.LarkCLI.Profile != "cli_initialized" {
-		t.Fatalf("initialization identity config was not preserved: extract=%q lark=%#v", reloaded.Extract.PrincipalOpenID, reloaded.LarkCLI)
+		reloaded.LarkCLI.Bin != "custom-lark-cli" || reloaded.LarkCLI.Profile != "cli_initialized" ||
+		reloaded.DailyDigest.GitAuthor != "initialized@example.com" {
+		t.Fatalf("initialization identity config was not preserved: extract=%q lark=%#v dailydigest=%#v", reloaded.Extract.PrincipalOpenID, reloaded.LarkCLI, reloaded.DailyDigest)
 	}
 	restartedService, err := NewRuntimeSettingsService(configPath, reloaded)
 	if err != nil {

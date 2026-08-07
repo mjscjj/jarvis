@@ -316,7 +316,7 @@ func validChatConfig() ChatConfig {
 func validDailyDigestConfig() DailyDigestConfig {
 	return DailyDigestConfig{
 		Enabled: true, Schedule: "0 19 * * *", TimeoutSeconds: 600,
-		GroupMessageLimit: 200, GroupConcurrency: 2,
+		GitAuthor: "owner@example.com", GroupMessageLimit: 200, GroupConcurrency: 2,
 	}
 }
 

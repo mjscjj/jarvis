@@ -51,10 +51,6 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
 
-// dailyDigestGitAuthor 是个人每日总结 prompt 里引导 codex 跑 git log --author 的
-// 作者名（即「我」）。单用户本地系统，固定值即可。
-const dailyDigestGitAuthor = "chujiejie.1"
-
 func main() {
 	configPath := flag.String("config", "conf/config.yaml", "配置文件路径")
 	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库迁移，成功后退出")
@@ -68,8 +64,6 @@ func main() {
 	meetingSweepOnce := flag.Bool("meeting-sweep-once", false, "立即执行一次会议巡扫，成功后退出；线索通过当前运行中的 Jarvis API 投递")
 	morningBriefOnce := flag.Bool("morning-brief-once", false, "立即执行一次晨间作战简报，成功后退出；手动默认只写本地 Markdown，不投递飞书")
 	morningBriefDeliver := flag.Bool("morning-brief-deliver", false, "立即执行一次晨间作战简报并按定时语义投递给 Principal（当天已投递过则只更新文件），成功后退出")
-	seedOnce := flag.Bool("seed", false, "一次性幂等写入初始 项目/任务/群关联 背景种子，成功后退出")
-	seedPersons := flag.Bool("seed-persons", false, "从关键群真实成员导入 Person（幂等，按 open_id 跳过已存在），成功后退出")
 	openP2P := flag.Bool("open-p2p", false, "把存量内部私聊(p2p)一次性纳入监听(related_group=1)，成功后退出")
 	flag.Parse()
 	// Hertz 默认到 Debug，会把每条路由注册和每次客户端断连都写进日志，压过 cron
@@ -90,7 +84,7 @@ func main() {
 		hlog.CtxInfof(startupCtx, format, args...)
 	}
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *extractFactsOnce, *extractOnce, *proactiveOnce, *seedOnce, *seedPersons, *openP2P} {
+	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *extractFactsOnce, *extractOnce, *proactiveOnce, *openP2P} {
 		if selected {
 			actionCount++
 		}
@@ -160,18 +154,6 @@ func main() {
 		infof("progress event backfill completed: tasks_scanned=%d events_created=%d", stats.TasksScanned, stats.EventsCreated)
 		return
 	}
-	if *seedOnce {
-		stats, err := background.Seed(startupCtx, db)
-		if err != nil {
-			fatalf("seed backgrounds failed: %v", err)
-		}
-		infof(
-			"seed completed: projects_created=%d projects_skipped=%d tasks_created=%d tasks_skipped=%d groups_linked=%d",
-			stats.ProjectsCreated, stats.ProjectsSkipped, stats.TasksCreated, stats.TasksSkipped, stats.GroupsLinked,
-		)
-		return
-	}
-
 	relationFactService, err := knowledge.NewService(db)
 	if err != nil {
 		fatalf("initialize relation fact service failed: %v", err)
@@ -199,17 +181,6 @@ func main() {
 	})
 	if err != nil {
 		fatalf("initialize lark-cli failed: %v", err)
-	}
-	if *seedPersons {
-		stats, err := background.SeedPersonsFromKeyGroups(startupCtx, db, larkClient)
-		if err != nil {
-			fatalf("seed persons from key groups failed: %v", err)
-		}
-		infof(
-			"seed persons completed: groups_scanned=%d persons_seen=%d persons_added=%d persons_skipped=%d",
-			stats.GroupsScanned, stats.PersonsSeen, stats.PersonsAdded, stats.PersonsSkip,
-		)
-		return
 	}
 	location, err := time.LoadLocation(cfg.Capture.Timezone)
 	if err != nil {
@@ -431,7 +402,7 @@ func main() {
 		Location:        location,
 		Runner:          dailyDigestRunner,
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID,
-		GitAuthor:       dailyDigestGitAuthor,
+		GitAuthor:       cfg.DailyDigest.GitAuthor,
 		RepoRoot:        cfg.Execute.RepoRoot,
 		WorkspaceRoot:   filepath.Dir(filepath.Dir(configPathAbsolute)),
 		PersonSkillDir:  filepath.Join(cfg.Skills.Root, "summarize-person-day"),

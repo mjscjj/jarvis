@@ -13,22 +13,25 @@ import (
 )
 
 // PrincipalConfiguration is the machine-readable result of initializing the
-// two app-scoped identity settings Jarvis needs before its first real run.
+// machine-consumed identity settings Jarvis needs before its first real run.
 type PrincipalConfiguration struct {
 	RuntimeConfigPath string `json:"runtime_config_path"`
 	PrincipalOpenID   string `json:"principal_open_id"`
 	LarkProfile       string `json:"lark_profile"`
+	GitAuthor         string `json:"git_author"`
 	RestartRequired   bool   `json:"restart_required"`
 }
 
 // ConfigurePrincipal writes the app-scoped principal open_id and lark-cli
-// profile to the ignored runtime overlay. It intentionally does not touch the
-// tracked base config or any M1 business data. Existing unrelated overlay keys
-// are preserved so a setup run cannot erase local secrets or runtime tuning.
-func ConfigurePrincipal(configPath, principalOpenID, larkProfile string) (*PrincipalConfiguration, error) {
+// profile plus the principal's Git author pattern to the ignored runtime
+// overlay. It intentionally does not touch the tracked base config or any M1
+// business data. Existing unrelated overlay keys are preserved so a setup run
+// cannot erase local secrets or runtime tuning.
+func ConfigurePrincipal(configPath, principalOpenID, larkProfile, gitAuthor string) (*PrincipalConfiguration, error) {
 	configPath = strings.TrimSpace(configPath)
 	principalOpenID = strings.TrimSpace(principalOpenID)
 	larkProfile = strings.TrimSpace(larkProfile)
+	gitAuthor = strings.TrimSpace(gitAuthor)
 	if configPath == "" {
 		return nil, fmt.Errorf("config path is empty")
 	}
@@ -37,6 +40,9 @@ func ConfigurePrincipal(configPath, principalOpenID, larkProfile string) (*Princ
 	}
 	if larkProfile == "" {
 		return nil, fmt.Errorf("lark profile is empty")
+	}
+	if gitAuthor == "" {
+		return nil, fmt.Errorf("git author is empty")
 	}
 
 	absoluteConfigPath, err := filepath.Abs(configPath)
@@ -55,6 +61,7 @@ func ConfigurePrincipal(configPath, principalOpenID, larkProfile string) (*Princ
 	root := document.Content[0]
 	setYAMLScalar(root, "extract", "principal_open_id", principalOpenID)
 	setYAMLScalar(root, "lark_cli", "profile", larkProfile)
+	setYAMLScalar(root, "dailydigest", "git_author", gitAuthor)
 
 	var encoded bytes.Buffer
 	encoder := yaml.NewEncoder(&encoded)
@@ -75,6 +82,7 @@ func ConfigurePrincipal(configPath, principalOpenID, larkProfile string) (*Princ
 		RuntimeConfigPath: overridePath,
 		PrincipalOpenID:   principalOpenID,
 		LarkProfile:       larkProfile,
+		GitAuthor:         gitAuthor,
 		RestartRequired:   true,
 	}, nil
 }
