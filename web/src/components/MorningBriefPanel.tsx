@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ArrowRightOutlined, ReadOutlined } from '@ant-design/icons'
-import { Button, Card, Drawer, Select, Skeleton, Space, Tag, Typography } from 'antd'
+import { Button, Card, Modal, Select, Skeleton, Space, Tag, Typography } from 'antd'
 import dayjs from 'dayjs'
 import type { MorningBrief } from '../types'
 import MarkdownReport from './MarkdownReport'
@@ -32,7 +32,7 @@ function briefDateLabel(date: string): string {
 }
 
 export default function MorningBriefPanel({ briefs, loading, today }: MorningBriefPanelProps) {
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string>()
   const todayBrief = briefs?.find((brief) => brief.date === today)
   const latestBrief = briefs?.[0]
@@ -45,7 +45,7 @@ export default function MorningBriefPanel({ briefs, loading, today }: MorningBri
 
   function openBrief(date?: string) {
     setSelectedDate(date ?? todayBrief?.date ?? latestBrief?.date)
-    setDrawerOpen(true)
+    setModalOpen(true)
   }
 
   return (
@@ -102,14 +102,18 @@ export default function MorningBriefPanel({ briefs, loading, today }: MorningBri
         </div>
       </Card>
 
-      <Drawer
+      <Modal
         title={selectedBrief ? `晨间作战简报 · ${briefDateLabel(selectedBrief.date)}` : '晨间作战简报'}
-        open={drawerOpen}
-        size={760}
-        onClose={() => setDrawerOpen(false)}
+        open={modalOpen}
+        footer={null}
+        centered
+        width={900}
+        onCancel={() => setModalOpen(false)}
+        className="report-detail-modal morning-brief-modal"
+        destroyOnHidden
       >
         {selectedBrief && briefs && (
-          <div className="morning-brief-drawer">
+          <div className="morning-brief-dialog">
             <div className="morning-brief-drawer-toolbar">
               <Select
                 aria-label="选择晨报日期"
@@ -122,7 +126,7 @@ export default function MorningBriefPanel({ briefs, loading, today }: MorningBri
             <MarkdownReport className="daily-digest-markdown morning-brief-markdown" content={selectedBrief.content} />
           </div>
         )}
-      </Drawer>
+      </Modal>
     </>
   )
 }

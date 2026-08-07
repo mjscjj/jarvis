@@ -71,26 +71,6 @@
   white-space: nowrap;
 }
 
-.task-workbench-drawer .ant-drawer-header {
-  padding: 16px 24px;
-}
-
-.task-workbench-drawer .ant-drawer-body {
-  padding: 0;
-  background: var(--color-bg);
-}
-
-.task-workbench-drawer .task-detail-shell {
-  height: auto;
-  min-height: 100%;
-}
-
-.task-workbench-drawer .task-detail-header {
-  position: sticky;
-  z-index: 5;
-  top: 0;
-}
-
 .task-detail-header-actions {
   display: flex;
   flex: 0 0 auto;
@@ -101,10 +81,6 @@
 .task-context-modal .ant-modal-body {
   max-height: calc(100dvh - 180px);
   overflow-y: auto;
-}
-
-.task-workbench-drawer .task-detail-scroll {
-  overflow: visible;
 }
 
 .task-decision-card {
@@ -400,14 +376,6 @@
   .workbench-task-table th:nth-child(3),
   .workbench-task-table td:nth-child(3) {
     display: none;
-  }
-
-  .task-workbench-drawer {
-    width: 100% !important;
-  }
-
-  .task-workbench-drawer .task-detail-scroll {
-    padding: 16px;
   }
 
   .task-decision-card {

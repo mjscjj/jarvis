@@ -5,7 +5,6 @@ import {
   Button,
   Collapse,
   Descriptions,
-  Drawer,
   Empty,
   Modal,
   Space,
@@ -1396,14 +1395,15 @@ export default function TaskDetailModal({
   })()
 
   return (<>
-      <Drawer
+      <Modal
         open
-        size="min(960px, 100vw)"
-        placement="right"
+        footer={null}
         closable={false}
+        centered
+        width={1180}
         mask={{ closable: true }}
-        onClose={onClose}
-        className="task-workbench-drawer"
+        onCancel={onClose}
+        className="task-detail-modal"
         destroyOnHidden
       >
         <div className="task-detail-shell">
@@ -1485,7 +1485,7 @@ export default function TaskDetailModal({
 
         </div>
         </div>
-      </Drawer>
+      </Modal>
       <Modal
         title="上下文依据"
         open={contextOpen}
