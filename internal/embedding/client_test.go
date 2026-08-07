@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"jarvis/internal/agentusage"
 )
 
 func TestClientEmbed(t *testing.T) {
@@ -29,14 +31,18 @@ func TestClientEmbed(t *testing.T) {
 		if body["model"] != "embed-model" || body["input"] != "todo text" || body["encoding_format"] != "float" {
 			t.Fatalf("request body = %#v", body)
 		}
-		return jsonResponse(http.StatusOK, `{"data":[{"index":0,"embedding":[0.1,0.2,0.3]}]}`), nil
+		return jsonResponse(http.StatusOK, `{"data":[{"index":0,"embedding":[0.1,0.2,0.3]}],"usage":{"prompt_tokens":8,"total_tokens":8}}`), nil
 	})
-	vector, err := client.Embed(context.Background(), "todo text")
+	ctx, collector := agentusage.WithCollector(context.Background())
+	vector, err := client.Embed(ctx, "todo text")
 	if err != nil {
 		t.Fatalf("Embed() error = %v", err)
 	}
 	if len(vector) != 3 || vector[0] != float32(0.1) || vector[2] != float32(0.3) {
 		t.Fatalf("vector = %#v", vector)
+	}
+	if usage := collector.Total(); !usage.Reported || usage.TotalTokens() != 8 {
+		t.Fatalf("usage = %+v, want 8 input tokens", usage)
 	}
 }
 

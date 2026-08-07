@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"jarvis/internal/agentusage"
 )
 
 const maxResponseBody = 16 << 20
@@ -93,6 +95,10 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 			Index     int       `json:"index"`
 			Embedding []float64 `json:"embedding"`
 		} `json:"data"`
+		Usage *struct {
+			PromptTokens *int64 `json:"prompt_tokens"`
+			TotalTokens  *int64 `json:"total_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
 		return nil, fmt.Errorf("decode embedding response: %w", err)
@@ -102,6 +108,21 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 	}
 	if len(response.Data[0].Embedding) != c.dimensions {
 		return nil, fmt.Errorf("embedding dimensions=%d, want %d", len(response.Data[0].Embedding), c.dimensions)
+	}
+	if response.Usage != nil {
+		var inputTokens int64
+		switch {
+		case response.Usage.PromptTokens != nil:
+			inputTokens = *response.Usage.PromptTokens
+			if response.Usage.TotalTokens != nil && *response.Usage.TotalTokens != inputTokens {
+				return nil, fmt.Errorf("embedding total_tokens=%d differs from prompt_tokens=%d", *response.Usage.TotalTokens, inputTokens)
+			}
+		case response.Usage.TotalTokens != nil:
+			inputTokens = *response.Usage.TotalTokens
+		}
+		if err := agentusage.Record(ctx, agentusage.Usage{InputTokens: inputTokens, Reported: true}); err != nil {
+			return nil, fmt.Errorf("record embedding usage: %w", err)
+		}
 	}
 	vector := make([]float32, c.dimensions)
 	for i, value := range response.Data[0].Embedding {
