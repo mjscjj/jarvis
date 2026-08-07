@@ -853,26 +853,14 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
   return (
     <div className="task-decision-card">
       <div className="task-decision-heading">
-        <div className="task-section-kicker">需要你决定</div>
-        <Space wrap>{actions}</Space>
-      </div>
-
-      <div className="task-decision-hero">
-        <div className="task-decision-hero-icon" aria-hidden="true"><SafetyOutlined /></div>
-        <div>
-          <Text type="secondary">这次审批的含义</Text>
-          <Text className="task-decision-request">
+        <div className="task-decision-heading-copy">
+          <div className="task-section-kicker">需要你决定</div>
+          <Text type="secondary">
             {result.needs_followup?.trim() || '允许 Jarvis 按下方方案进入真实执行。'}
           </Text>
         </div>
+        <Space wrap>{actions}</Space>
       </div>
-
-      {currentProgress && (
-        <section className="task-decision-progress">
-          <div className="task-decision-section-title">当前进展</div>
-          <Paragraph className="task-readable-text">{currentProgress}</Paragraph>
-        </section>
-      )}
 
       <section className="task-decision-plan">
         <div className="task-decision-section-title">批准后会做什么</div>
@@ -917,11 +905,11 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
       </div>
 
       {(result.summary || evidenceCount > 0) && (
-        <details className="task-decision-evidence">
-          <summary>
+        <section className="task-decision-evidence">
+          <div className="task-decision-evidence-heading">
             <span>为什么这样建议</span>
             <Text type="secondary">调查结论{evidenceCount > 0 ? ` · ${evidenceCount} 条依据` : ''}</Text>
-          </summary>
+          </div>
           <div className="task-decision-evidence-body">
             {result.summary && <Paragraph className="task-readable-text">{result.summary}</Paragraph>}
             {result.enrichments && result.enrichments.length > 0 && (
@@ -930,7 +918,14 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
               </div>
             )}
           </div>
-        </details>
+        </section>
+      )}
+
+      {currentProgress && (
+        <section className="task-decision-progress">
+          <div className="task-decision-section-title">当前进展</div>
+          <Paragraph className="task-readable-text">{currentProgress}</Paragraph>
+        </section>
       )}
     </div>
   )

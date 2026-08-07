@@ -102,41 +102,14 @@
   margin-bottom: 0;
 }
 
-.task-decision-hero {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: 12px;
-  padding: 14px 16px;
-  background: color-mix(in srgb, var(--color-warning-bg) 76%, var(--color-bg-elevated));
-  border: 1px solid color-mix(in srgb, var(--color-warning) 22%, var(--color-border));
-  border-radius: var(--radius-md);
+.task-decision-heading-copy {
+  min-width: 0;
 }
 
-.task-decision-hero-icon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  color: #a95d08;
-  background: rgb(255 255 255 / 68%);
-  border-radius: 10px;
-  font-size: 16px;
-}
-
-.task-decision-hero .ant-typography {
+.task-decision-heading-copy > .ant-typography {
   display: block;
-}
-
-.task-decision-hero .ant-typography-secondary {
-  margin-bottom: 3px;
+  margin-top: 3px;
   font-size: 12px;
-}
-
-.task-decision-request.ant-typography {
-  color: var(--color-text);
-  font-size: 15px;
-  font-weight: 650;
-  line-height: 1.55;
 }
 
 .task-decision-plan {
@@ -313,6 +286,24 @@
 .task-decision-evidence {
   margin-top: 14px;
   background: var(--color-bg-elevated);
+}
+
+.task-decision-evidence-heading {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.task-decision-evidence-heading .ant-typography {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .task-decision-evidence > summary .ant-typography {
