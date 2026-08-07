@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+# Skill-local initialization boundary. Keep onboarding-only operations out of
+# the normal Jarvis Agent tool catalog.
+set -euo pipefail
+
+fail() {
+  echo "jarvis-init error: $*" >&2
+  exit 1
+}
+
+command -v curl >/dev/null 2>&1 || fail "curl is required but not found in PATH"
+command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+CONFIG_PATH="conf/config.yaml"
+OPEN_ID=""
+PROFILE=""
+CHAT_ID=""
+
+print_usage() {
+  cat <<'EOF'
+usage: jarvis-init <subcommand> [flags]
+
+This tool is private to $initialize-jarvis and is not part of the normal M5
+tool catalog.
+
+subcommands:
+  configure   Save principal open_id and lark-cli profile locally
+  discover    Run one synchronous M2 Feishu chat discovery
+  scan        Run one synchronous M2 scan for a chat
+  validate    Validate identity, M1 data and group scan readiness
+
+Run "jarvis-init <subcommand> --help" for command-specific flags.
+EOF
+}
+
+print_subcommand_help() {
+  case "$1" in
+    configure) cat <<'EOF'
+usage: jarvis-init configure --open-id OPEN_ID --profile PROFILE [--config PATH]
+Atomically save the app-scoped principal open_id and lark-cli profile in the
+ignored runtime config. This does not write M1 data; restart Jarvis afterward.
+EOF
+      ;;
+    discover) cat <<'EOF'
+usage: jarvis-init discover [--config PATH]
+Synchronously run the existing M2 chat discovery through the running server.
+EOF
+      ;;
+    scan) cat <<'EOF'
+usage: jarvis-init scan --chat-id CHAT_ID [--config PATH]
+Synchronously scan one discovered Feishu chat and advance its normal M2
+checkpoint. This does not create an initialization-specific capture path.
+EOF
+      ;;
+    validate) cat <<'EOF'
+usage: jarvis-init validate --profile PROFILE [--config PATH]
+Verify the lark-cli user token, its open_id match with PrincipalProfile, M1
+object counts, related groups and at least one successful scan checkpoint.
+Prints JSON and exits non-zero when machine acceptance is not ready.
+EOF
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+require_flag() {
+  local command_name="$1" flag="$2" allowed="--config"
+  case "$command_name" in
+    configure) allowed+=" --open-id --profile" ;;
+    discover) ;;
+    scan) allowed+=" --chat-id" ;;
+    validate) allowed+=" --profile" ;;
+    *) fail "unknown subcommand \"${command_name}\"" ;;
+  esac
+  case " ${allowed} " in
+    *" ${flag} "*) ;;
+    *) fail "${command_name} does not accept ${flag}" ;;
+  esac
+}
+
+consume_flags() {
+  while [[ $# -gt 0 ]]; do
+    [[ "$1" == --* ]] || fail "unexpected positional argument: $1"
+    require_flag "$SUBCOMMAND" "${1%%=*}"
+    case "$1" in
+      --config)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        CONFIG_PATH="$2"
+        shift 2
+        ;;
+      --config=*) CONFIG_PATH="${1#--config=}"; shift ;;
+      --open-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        OPEN_ID="$2"
+        shift 2
+        ;;
+      --open-id=*) OPEN_ID="${1#--open-id=}"; shift ;;
+      --profile)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        PROFILE="$2"
+        shift 2
+        ;;
+      --profile=*) PROFILE="${1#--profile=}"; shift ;;
+      --chat-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        CHAT_ID="$2"
+        shift 2
+        ;;
+      --chat-id=*) CHAT_ID="${1#--chat-id=}"; shift ;;
+    esac
+  done
+}
+
+emit() {
+  printf '%s\n' "$1" | jq -c .
+}
+
+resolve_api_base() {
+  if [[ -n "${JARVIS_API_BASE:-}" ]]; then
+    printf '%s\n' "${JARVIS_API_BASE%/}"
+    return
+  fi
+  local resolved=""
+  if [[ -f "$CONFIG_PATH" ]]; then
+    resolved="$CONFIG_PATH"
+  elif [[ "$CONFIG_PATH" != /* && -f "${REPO_ROOT}/${CONFIG_PATH}" ]]; then
+    resolved="${REPO_ROOT}/${CONFIG_PATH}"
+  fi
+  [[ -n "$resolved" ]] || fail "config file not found: ${CONFIG_PATH}"
+  local addr
+  addr="$(grep -E '^\s*addr:\s*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
+  [[ -n "$addr" ]] || fail "could not parse server.addr from ${resolved}"
+  printf 'http://%s\n' "$addr"
+}
+
+api_call() {
+  local method="$1"
+  local path="$2"
+  local body="${3:-}"
+  local url="${API_BASE}${path}"
+  local response http_code
+  if [[ "$method" == "GET" ]]; then
+    response="$(curl -sS -w '\n%{http_code}' --max-time 30 "$url")" || fail "curl failed for ${url}"
+  else
+    response="$(curl -sS -w '\n%{http_code}' --max-time 30 -X "$method" \
+      -H 'Content-Type: application/json' --data "$body" "$url")" || fail "curl failed for ${url}"
+  fi
+  http_code="$(printf '%s\n' "$response" | tail -n1)"
+  response="$(printf '%s\n' "$response" | sed '$d')"
+  [[ "$http_code" == "200" ]] || fail "HTTP ${http_code} from ${url}: ${response}"
+  printf '%s' "$response" | jq -e '.code == 0' >/dev/null 2>&1 ||
+    fail "invalid API response from ${url}: ${response}"
+  printf '%s' "$response"
+}
+
+cmd_configure() {
+  [[ "$OPEN_ID" == ou_* && "$OPEN_ID" != "ou_" ]] || fail "configure --open-id must be a non-empty ou_ id"
+  [[ -n "$PROFILE" ]] || fail "configure requires --profile"
+  command -v go >/dev/null 2>&1 || fail "go is required for configure but not found in PATH"
+  (
+    cd "$REPO_ROOT"
+    go run ./cmd/jarvis-config configure-principal \
+      --config "$CONFIG_PATH" --open-id "$OPEN_ID" --profile "$PROFILE"
+  ) | jq -c .
+}
+
+cmd_discover() {
+  API_BASE="$(resolve_api_base)"
+  local response
+  response="$(api_call POST /api/debug/capture/discover '{}')"
+  emit "$(printf '%s' "$response" | jq -c '.data')"
+}
+
+cmd_scan() {
+  [[ -n "$CHAT_ID" ]] || fail "scan requires --chat-id"
+  API_BASE="$(resolve_api_base)"
+  local payload response
+  payload="$(jq -nc --arg chat_id "$CHAT_ID" '{chat_id:$chat_id}')"
+  response="$(api_call POST /api/debug/capture/scan-chat "$payload")"
+  emit "$(printf '%s' "$response" | jq -c '.data')"
+}
+
+cmd_validate() {
+  [[ -n "$PROFILE" ]] || fail "validate requires --profile"
+  command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
+  API_BASE="$(resolve_api_base)"
+
+  local auth_status principal projects persons key_matters groups
+  if ! auth_status="$(
+    LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 \
+    LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 \
+      lark-cli auth status --profile "$PROFILE" --json --verify
+  )"; then
+    fail "lark-cli auth status failed for profile=${PROFILE}"
+  fi
+  printf '%s' "$auth_status" | jq -e 'type == "object"' >/dev/null 2>&1 ||
+    fail "lark-cli auth status did not return a JSON object"
+  principal="$(api_call GET /api/profile | jq -c '.data')"
+  projects="$(api_call GET '/api/projects?page=1&page_size=1' | jq -c '.data')"
+  persons="$(api_call GET '/api/persons?page=1&page_size=1' | jq -c '.data')"
+  key_matters="$(api_call GET '/api/key-matters?page=1&page_size=1' | jq -c '.data')"
+  groups="$(api_call GET '/api/groups?page=1&page_size=100' | jq -c '.data')"
+
+  local result ready
+  result="$(jq -nc \
+    --arg profile "$PROFILE" \
+    --argjson auth "$auth_status" \
+    --argjson principal "$principal" \
+    --argjson projects "$projects" \
+    --argjson persons "$persons" \
+    --argjson key_matters "$key_matters" \
+    --argjson groups "$groups" '
+      ($auth.identities.user // {}) as $user |
+      (($auth.verified == true) and ($user.status == "ready") and ($user.verified == true) and ($user.tokenStatus == "valid")) as $auth_ok |
+      (($principal.saved == true) and ((($principal.open_id // "") | length) > 0) and ((($principal.name // "") | length) > 0)) as $profile_ok |
+      ($auth_ok and ($user.openId == $principal.open_id)) as $identity_match |
+      (($groups.total // 0) > 0) as $groups_ok |
+      ([($groups.items // [])[] | select(.last_scan_status == "ok")] | length) as $successful_scans |
+      {
+        ready: ($auth_ok and $profile_ok and $identity_match and $groups_ok and ($successful_scans > 0)),
+        checks: {
+          lark_user_authenticated: $auth_ok,
+          principal_profile_saved: $profile_ok,
+          principal_identity_matches_login: $identity_match,
+          related_group_configured: $groups_ok,
+          group_scan_checkpoint_ready: ($successful_scans > 0)
+        },
+        identity: {
+          profile: $profile,
+          auth_open_id: ($user.openId // null),
+          principal_open_id: ($principal.open_id // null),
+          user_name: ($user.userName // null),
+          principal_name: ($principal.name // null),
+          manager_known: ((($principal.leader_open_id // "") | length) > 0)
+        },
+        counts: {
+          projects: ($projects.total // 0),
+          persons: ($persons.total // 0),
+          key_matters: ($key_matters.total // 0),
+          related_groups: ($groups.total // 0),
+          successful_scan_checkpoints_in_sample: $successful_scans,
+          sampled_groups: (($groups.items // []) | length)
+        }
+      }')"
+  emit "$result"
+  ready="$(printf '%s' "$result" | jq -r '.ready')"
+  [[ "$ready" == "true" ]] || return 1
+}
+
+[[ $# -ge 1 ]] || { print_usage >&2; exit 1; }
+SUBCOMMAND="$1"
+shift
+if [[ "$SUBCOMMAND" == "--help" || "$SUBCOMMAND" == "-h" ]]; then
+  print_usage
+  exit 0
+fi
+if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]; then
+  print_subcommand_help "$SUBCOMMAND" || fail "unknown subcommand \"${SUBCOMMAND}\""
+  exit 0
+fi
+consume_flags "$@"
+
+case "$SUBCOMMAND" in
+  configure) cmd_configure ;;
+  discover) cmd_discover ;;
+  scan) cmd_scan ;;
+  validate) cmd_validate ;;
+  *) fail "unknown subcommand \"${SUBCOMMAND}\"; run jarvis-init --help" ;;
+esac

@@ -16,7 +16,7 @@ skills:
       stages:
         - execute
     - name: initialize-jarvis
-      enabled: true
+      enabled: false # 独立仓库 Skill；不注入 M3/M5 runtime catalog
       stages:
         - execute
     - name: summarize-morning-brief

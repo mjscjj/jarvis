@@ -42,10 +42,6 @@ subcommands:
   list-groups            Search Feishu groups
   get-group              Get one Feishu group by chat_id
   get-context            Assemble current principal/project/chat work context
-  configure-principal    Save principal open_id and lark-cli profile locally
-  validate-initialization Validate identity, M1 data and group scan readiness
-  discover-chats         Run one synchronous M2 Feishu chat discovery
-  scan-chat              Run one synchronous M2 scan for a chat
   update-group           Replace one group's curated background
   get-principal          Get the assistant owner's profile
   update-principal       Replace the assistant owner's profile
@@ -146,30 +142,6 @@ usage: jarvis-tools get-context [--chat-id CHAT_ID] [--project-id ID] [--config 
 Assemble the canonical current context. An explicit project wins; otherwise a
 chat resolves through its Jarvis group binding. With neither flag, returns the
 principal-level global context.
-EOF
-      ;;
-    configure-principal) cat <<'EOF'
-usage: jarvis-tools configure-principal --open-id OPEN_ID --profile PROFILE [--config PATH]
-Atomically save the app-scoped principal open_id and lark-cli profile in the
-ignored runtime config. This does not change M1 data; restart Jarvis afterward.
-EOF
-      ;;
-    validate-initialization) cat <<'EOF'
-usage: jarvis-tools validate-initialization --profile PROFILE [--config PATH]
-Verify the lark-cli user token, its open_id match with PrincipalProfile, M1
-object counts, related groups and at least one successful group scan checkpoint.
-Prints JSON and exits non-zero when the machine acceptance checks are not ready.
-EOF
-      ;;
-    discover-chats) cat <<'EOF'
-usage: jarvis-tools discover-chats [--config PATH]
-Synchronously run one normal M2 chat discovery through the running server.
-EOF
-      ;;
-    scan-chat) cat <<'EOF'
-usage: jarvis-tools scan-chat --chat-id CHAT_ID [--config PATH]
-Synchronously scan one already discovered Feishu chat and advance its normal M2
-checkpoint. This does not create an onboarding-specific capture path.
 EOF
       ;;
     update-group) payload_id_help "update-group" "Replace one group's curated background fields only." ;;
@@ -654,7 +626,6 @@ PRINCIPAL_ONLY="false"
 KEYWORD=""
 NOTE="-"
 NAME=""
-PROFILE=""
 STATUS=""
 LIMIT="200"
 PAYLOAD="-"
@@ -690,7 +661,6 @@ reset_flags() {
   KEYWORD=""
   NOTE="-"
   NAME=""
-  PROFILE=""
   STATUS=""
   LIMIT="200"
   PAYLOAD="-"
@@ -733,10 +703,6 @@ require_command_flag() {
     list-groups) allowed+=" --keyword --limit" ;;
     get-group) allowed+=" --chat-id" ;;
     get-context) allowed+=" --chat-id --project-id" ;;
-    configure-principal) allowed+=" --open-id --profile" ;;
-    validate-initialization) allowed+=" --profile" ;;
-    discover-chats) ;;
-    scan-chat) allowed+=" --chat-id" ;;
     get-principal | get-shared-memory) ;;
     list-persons) allowed+=" --role --keyword --limit" ;;
     get-person) allowed+=" --open-id" ;;
@@ -890,15 +856,6 @@ consume_flags() {
         ;;
       --name=*)
         NAME="${1#--name=}"
-        shift
-        ;;
-      --profile)
-        [[ $# -ge 2 ]] || fail "$1 requires a value"
-        PROFILE="$2"
-        shift 2
-        ;;
-      --profile=*)
-        PROFILE="${1#--profile=}"
         shift
         ;;
       --status)
@@ -1324,105 +1281,6 @@ cmd_get_context() {
   }')"
   body="$(api_write POST /api/context "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
-}
-
-cmd_configure_principal() {
-  reset_flags
-  consume_flags "$@"
-  [[ "$OPEN_ID" == ou_* && "$OPEN_ID" != "ou_" ]] || fail "configure-principal --open-id must be a non-empty ou_ id"
-  [[ -n "$PROFILE" ]] || fail "configure-principal requires --profile"
-  command -v go >/dev/null 2>&1 || fail "go is required for configure-principal but not found in PATH"
-  (
-    cd "$REPO_ROOT"
-    go run ./cmd/jarvis-config configure-principal \
-      --config "$CONFIG_PATH" --open-id "$OPEN_ID" --profile "$PROFILE"
-  ) | jq -c .
-}
-
-cmd_validate_initialization() {
-  reset_flags
-  consume_flags "$@"
-  [[ -n "$PROFILE" ]] || fail "validate-initialization requires --profile"
-  command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-
-  local auth_status principal projects persons key_matters groups
-  if ! auth_status="$(
-    LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 \
-    LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 \
-      lark-cli auth status --profile "$PROFILE" --json --verify
-  )"; then
-    fail "lark-cli auth status failed for profile=${PROFILE}"
-  fi
-  printf '%s' "$auth_status" | jq -e 'type == "object"' >/dev/null 2>&1 ||
-    fail "lark-cli auth status did not return a JSON object"
-  principal="$(api_get /api/profile | jq -c '.data')"
-  projects="$(api_get '/api/projects?page=1&page_size=1' | jq -c '.data')"
-  persons="$(api_get '/api/persons?page=1&page_size=1' | jq -c '.data')"
-  key_matters="$(api_get '/api/key-matters?page=1&page_size=1' | jq -c '.data')"
-  groups="$(api_get '/api/groups?page=1&page_size=100' | jq -c '.data')"
-
-  local result ready
-  result="$(jq -nc \
-    --arg profile "$PROFILE" \
-    --argjson auth "$auth_status" \
-    --argjson principal "$principal" \
-    --argjson projects "$projects" \
-    --argjson persons "$persons" \
-    --argjson key_matters "$key_matters" \
-    --argjson groups "$groups" '
-      ($auth.identities.user // {}) as $user |
-      (($auth.verified == true) and ($user.status == "ready") and ($user.verified == true) and ($user.tokenStatus == "valid")) as $auth_ok |
-      (($principal.saved == true) and ((($principal.open_id // "") | length) > 0) and ((($principal.name // "") | length) > 0)) as $profile_ok |
-      ($auth_ok and ($user.openId == $principal.open_id)) as $identity_match |
-      (($groups.total // 0) > 0) as $groups_ok |
-      ([($groups.items // [])[] | select(.last_scan_status == "ok")] | length) as $successful_scans |
-      {
-        ready: ($auth_ok and $profile_ok and $identity_match and $groups_ok and ($successful_scans > 0)),
-        checks: {
-          lark_user_authenticated: $auth_ok,
-          principal_profile_saved: $profile_ok,
-          principal_identity_matches_login: $identity_match,
-          related_group_configured: $groups_ok,
-          group_scan_checkpoint_ready: ($successful_scans > 0)
-        },
-        identity: {
-          profile: $profile,
-          auth_open_id: ($user.openId // null),
-          principal_open_id: ($principal.open_id // null),
-          user_name: ($user.userName // null),
-          principal_name: ($principal.name // null),
-          manager_known: ((($principal.leader_open_id // "") | length) > 0)
-        },
-        counts: {
-          projects: ($projects.total // 0),
-          persons: ($persons.total // 0),
-          key_matters: ($key_matters.total // 0),
-          related_groups: ($groups.total // 0),
-          successful_scan_checkpoints_in_sample: $successful_scans,
-          sampled_groups: (($groups.items // []) | length)
-        }
-      }')"
-  emit "$result"
-  ready="$(printf '%s' "$result" | jq -r '.ready')"
-  [[ "$ready" == "true" ]] || return 1
-}
-
-cmd_discover_chats() {
-  reset_flags
-  consume_flags "$@"
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  emit "$(api_write POST /api/debug/capture/discover '{}' | jq -c '.data')"
-}
-
-cmd_scan_chat() {
-  reset_flags
-  consume_flags "$@"
-  [[ -n "$CHAT_ID" ]] || fail "scan-chat requires --chat-id"
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local payload
-  payload="$(jq -nc --arg chat_id "$CHAT_ID" '{chat_id:$chat_id}')"
-  emit "$(api_write POST /api/debug/capture/scan-chat "$payload" | jq -c '.data')"
 }
 
 cmd_get_principal() {
@@ -2102,10 +1960,6 @@ case "$SUBCOMMAND" in
   list-groups)    cmd_list_groups "$@" ;;
   get-group)      cmd_get_group "$@" ;;
   get-context)    cmd_get_context "$@" ;;
-  configure-principal) cmd_configure_principal "$@" ;;
-  validate-initialization) cmd_validate_initialization "$@" ;;
-  discover-chats) cmd_discover_chats "$@" ;;
-  scan-chat) cmd_scan_chat "$@" ;;
   update-group)   cmd_payload_by_id update-group PUT /api/groups "$@" ;;
   get-principal)  cmd_get_principal "$@" ;;
   update-principal) cmd_payload_create update-principal PUT /api/profile "$@" ;;

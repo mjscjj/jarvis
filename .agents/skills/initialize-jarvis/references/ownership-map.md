@@ -2,8 +2,8 @@
 
 | 语义 | 唯一所有者 / 写入入口 | 初始化阶段的做法 | 禁止做法 |
 |---|---|---|---|
-| Principal 的 app-scoped open_id | `extract.principal_open_id`，本机 `conf/config.runtime.yaml` | `jarvis-tools configure-principal` | 写进 Profile payload 或共享记忆冒充配置 |
-| lark-cli 用户 profile | `lark_cli.profile`，本机 `conf/config.runtime.yaml` | `jarvis-tools configure-principal` | 依赖机器默认 profile |
+| Principal 的 app-scoped open_id | `extract.principal_open_id`，本机 `conf/config.runtime.yaml` | Skill 自带 `jarvis-init configure` | 写进 Profile payload 或共享记忆冒充配置 |
+| lark-cli 用户 profile | `lark_cli.profile`，本机 `conf/config.runtime.yaml` | Skill 自带 `jarvis-init configure` | 依赖机器默认 profile |
 | Principal 身份与简介 | M1 `PrincipalProfile` | `update-principal` | 写进 rules、prompt 或 Skill 正文 |
 | 项目、重点事项、人物、资料 | M1 对应服务 | 现有 `jarvis-tools` CRUD | 建 onboarding 专用表或 DTO 链路 |
 | 群的发现字段 | M2 capture | 触发 discovery 后只读 | 由 M1 创建群、覆盖 chat_id/name/tier |

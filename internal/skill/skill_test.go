@@ -144,3 +144,37 @@ func TestRepositoryFeishuMessageSkillIsNotExposedToExtract(t *testing.T) {
 		t.Fatalf("execute catalog is missing feishu-send-message:\n%s", executeCatalog)
 	}
 }
+
+func TestRepositoryInitializationSkillIsStandalone(t *testing.T) {
+	service, err := NewService(
+		filepath.Join("..", "..", ".agents", "skills"),
+		filepath.Join("..", "..", "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	items, err := service.List(t.Context())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	found := false
+	for _, item := range items {
+		if item.Name != "initialize-jarvis" {
+			continue
+		}
+		found = true
+		if item.IsEnabled {
+			t.Fatal("initialize-jarvis must stay disabled in the Jarvis runtime catalog")
+		}
+	}
+	if !found {
+		t.Fatal("initialize-jarvis repository skill was not discovered")
+	}
+	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatalf("execute Catalog() error = %v", err)
+	}
+	if strings.Contains(executeCatalog, "initialize-jarvis") {
+		t.Fatalf("M5 catalog exposes standalone initialize-jarvis:\n%s", executeCatalog)
+	}
+}

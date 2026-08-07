@@ -1,11 +1,13 @@
 ---
 name: initialize-jarvis
-description: 首次初始化或经用户明确要求重建 Jarvis。通过 lark-cli 引导用户登录，以近 7 天飞书身份、直属上级、OKR、消息与群聊为证据，生成可审阅草案，再初始化 PrincipalProfile、项目、关键人物、重点事项和群监听。已有业务数据时必须先停下确认，不用于日常增量维护。
+description: 独立执行首次初始化或经用户明确要求重建 Jarvis，不注入 M3/M5。通过 lark-cli 引导用户登录，以近 7 天飞书身份、直属上级、OKR、消息与群聊为证据，生成可审阅草案，再初始化 PrincipalProfile、项目、关键人物、重点事项和群监听。已有业务数据时必须先停下确认，不用于日常增量维护。
 ---
 
 # 初始化 Jarvis
 
 把初始化当作一次有证据、可审阅、可重跑的 Agent 工作流。Skill 负责编排和语义判断；配置、M1 CRUD、M2 群发现与 checkpoint 仍由各自现有模块负责。
+
+本 Skill 由仓库中的 Codex 独立触发，不进入 Jarvis M3/M5 Skill catalog。初始化专用机器动作只走 Skill 自带的 `scripts/jarvis-init`；`scripts/jarvis-tools` 只承载可复用的常规 M1 查询与 CRUD。
 
 ## 不可越过的边界
 
@@ -81,7 +83,7 @@ bash .agents/skills/initialize-jarvis/scripts/preflight.sh
 1. 用已验证的 user `openId` 和本次 profile 写运行配置：
 
    ```bash
-   ./scripts/jarvis-tools configure-principal --open-id <open_id> --profile <profile>
+   ./.agents/skills/initialize-jarvis/scripts/jarvis-init configure --open-id <open_id> --profile <profile>
    ```
 
 2. 仅用 `./scripts/rebuild-server.sh` 构建并重启主服务。禁止裸 `go build` 覆盖服务二进制。
@@ -89,8 +91,8 @@ bash .agents/skills/initialize-jarvis/scripts/preflight.sh
 4. 用 `update-principal` 写 Profile，并立即 `get-principal` 读回。
 5. 逐个 `create-project`，保存返回的真实 ID；再逐个读回。
 6. 逐个 `create-person`；再写 KeyMatter、ManagedResource。把草案中的逻辑引用替换为刚返回的真实 ID。
-7. 运行 `jarvis-tools discover-chats` 触发一次 M2 会话发现，等待候选群出现在 `list-groups`。M1 不创建群记录。
-8. 对每个已发现候选群调用 `update-group`，写人工背景、项目绑定和监听标记；随后调用 `scan-chat --chat-id ...` 做同步首次扫描，明确暴露 checkpoint 错误。
+7. 运行 Skill 自带的 `jarvis-init discover` 触发一次 M2 会话发现，等待候选群出现在 `jarvis-tools list-groups`。M1 不创建群记录。
+8. 对每个已发现候选群调用 `jarvis-tools update-group`，写人工背景、项目绑定和监听标记；随后调用 `jarvis-init scan --chat-id ...` 做同步首次扫描，明确暴露 checkpoint 错误。
 
 每个成功动作追加到 `run_dir/applied.ndjson`，包含 target、返回 ID、时间和对应草案 ref；不得写 token。失败时输出最后一个成功动作和原始错误，等待用户决定是否从未完成项继续。
 
@@ -99,7 +101,7 @@ bash .agents/skills/initialize-jarvis/scripts/preflight.sh
 先运行机器验收：
 
 ```bash
-./scripts/jarvis-tools validate-initialization --profile <profile>
+./.agents/skills/initialize-jarvis/scripts/jarvis-init validate --profile <profile>
 ```
 
 它必须确认：lark 用户 token 有效、登录 open_id 与 PrincipalProfile 一致、Profile 已保存、至少一个 related 群存在、样本中至少一个群 scan checkpoint 成功；同时报告项目、人物和重点事项数量。

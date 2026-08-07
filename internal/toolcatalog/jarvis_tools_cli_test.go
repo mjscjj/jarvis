@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -18,57 +17,10 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "configure-principal", "validate-initialization", "discover-chats", "scan-chat"} {
+	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
-	}
-}
-
-func TestJarvisToolsValidateInitialization(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/profile":
-			fmt.Fprint(w, `{"code":0,"data":{"open_id":"ou_ready","name":"Ready User","leader_open_id":"ou_leader","saved":true}}`)
-		case "/api/projects":
-			fmt.Fprint(w, `{"code":0,"data":{"total":2,"items":[]}}`)
-		case "/api/persons":
-			fmt.Fprint(w, `{"code":0,"data":{"total":3,"items":[]}}`)
-		case "/api/key-matters":
-			fmt.Fprint(w, `{"code":0,"data":{"total":1,"items":[]}}`)
-		case "/api/groups":
-			fmt.Fprint(w, `{"code":0,"data":{"total":1,"items":[{"chat_id":"oc_ready","last_scan_status":"ok"}]}}`)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	binDir := t.TempDir()
-	larkCLI := filepath.Join(binDir, "lark-cli")
-	if err := os.WriteFile(larkCLI, []byte(`#!/bin/sh
-printf '%s' '{"identity":"user","verified":true,"identities":{"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready","userName":"Ready User"}}}'
-`), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	out, err := runJarvisTools(t, server.URL, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")},
-		"validate-initialization", "--profile", "cli_ready")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result struct {
-		Ready  bool `json:"ready"`
-		Counts struct {
-			Projects      int `json:"projects"`
-			RelatedGroups int `json:"related_groups"`
-		} `json:"counts"`
-	}
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		t.Fatalf("decode output %q: %v", out, err)
-	}
-	if !result.Ready || result.Counts.Projects != 2 || result.Counts.RelatedGroups != 1 {
-		t.Fatalf("validation result = %#v", result)
 	}
 }
 
@@ -190,43 +142,6 @@ func TestJarvisToolsGetContextPassesChatAndProjectScope(t *testing.T) {
 	out, err := runJarvisTools(t, server.URL, nil, "get-context", "--chat-id", "oc_runtime", "--project-id", "45")
 	if err != nil || !strings.Contains(out, `"snapshot_version":"v1"`) {
 		t.Fatalf("output = %s, error = %v", out, err)
-	}
-}
-
-func TestJarvisToolsCaptureCommandsUseExistingM2Endpoints(t *testing.T) {
-	requests := make([]string, 0, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.Method+" "+r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/debug/capture/discover":
-			fmt.Fprint(w, `{"code":0,"data":{"action":"discover","ok":true}}`)
-		case "/api/debug/capture/scan-chat":
-			var payload struct {
-				ChatID string `json:"chat_id"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Fatal(err)
-			}
-			if payload.ChatID != "oc_init" {
-				t.Fatalf("scan payload = %#v", payload)
-			}
-			fmt.Fprint(w, `{"code":0,"data":{"action":"scan_chat","chat_id":"oc_init","ok":true}}`)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	if _, err := runJarvisTools(t, server.URL, nil, "discover-chats"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := runJarvisTools(t, server.URL, nil, "scan-chat", "--chat-id", "oc_init"); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"POST /api/debug/capture/discover", "POST /api/debug/capture/scan-chat"}
-	if fmt.Sprint(requests) != fmt.Sprint(want) {
-		t.Fatalf("requests = %v, want %v", requests, want)
 	}
 }
 
