@@ -781,6 +781,28 @@ export interface ProactiveRunDetail extends ProactiveRun {
   output: string | null
 }
 
+export interface MonitoringSnapshot {
+  from: string
+  until: string
+  m3: {
+    processed_messages: number
+    todos_created: number
+    average_duration_ms: number | null
+    max_duration_ms: number | null
+    total_tokens: number | null
+    token_coverage_complete: boolean
+    failed_runs: number
+  }
+  m5: {
+    processed_tasks: number
+    average_duration_ms: number | null
+    max_duration_ms: number | null
+    total_tokens: number | null
+    token_coverage_complete: boolean
+    failed_runs: number
+  }
+}
+
 export type ResourceType = 'doc' | 'link' | 'repo' | 'note' | 'other'
 
 // Resource is a manually curated reference that can be linked to a person, a

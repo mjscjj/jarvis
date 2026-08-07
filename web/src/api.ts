@@ -60,6 +60,7 @@ import type {
   RuntimeSettingsView,
   ProactiveRun,
   ProactiveRunDetail,
+  MonitoringSnapshot,
   SystemTaskRunList,
 } from './types'
 
@@ -379,6 +380,11 @@ export function getDebugAgentProcesses(signal?: AbortSignal): Promise<AgentProce
 
 export function getDebugFailures(hours = 24, signal?: AbortSignal): Promise<{ items: FailureEvent[] }> {
   return request<{ items: FailureEvent[] }>(`/api/debug/failures?hours=${hours}`, { signal })
+}
+
+export function getDebugMonitoring(from: string, until: string, signal?: AbortSignal): Promise<MonitoringSnapshot> {
+  const params = new URLSearchParams({ from, until })
+  return request<MonitoringSnapshot>(`/api/debug/monitoring?${params.toString()}`, { signal })
 }
 
 export function getDebugScans(limit = 50, signal?: AbortSignal): Promise<{ items: ScanRow[] }> {

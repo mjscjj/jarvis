@@ -16,6 +16,7 @@ import {
 } from './api'
 import { agentModeLabels, agentSourceMeta } from './agentProcesses'
 import PageHeader from './components/PageHeader'
+import MonitoringTab from './debug/MonitoringTab'
 import { usePageContext } from './pageContext'
 import type { AgentProcess, AgentProcessSnapshot, FailureEvent, LogTail, ModuleRun, ProactiveRun, ProactiveRunDetail, ScanRow, WatermarkRow } from './types'
 
@@ -544,15 +545,15 @@ function TriggerTab() {
 
 export default function Debug() {
   const { context, setViewState } = usePageContext()
-  type DebugView = 'health' | 'agents' | 'failures' | 'logs' | 'tools'
+  type DebugView = 'health' | 'monitoring' | 'agents' | 'failures' | 'logs' | 'tools'
   const routeView = context.view_state.view
-  const activeView: DebugView = routeView === 'agents' || routeView === 'failures' || routeView === 'logs' || routeView === 'tools'
+  const activeView: DebugView = routeView === 'monitoring' || routeView === 'agents' || routeView === 'failures' || routeView === 'logs' || routeView === 'tools'
     ? routeView
     : 'health'
 
   return (
     <>
-      <PageHeader title="运行状态" subtitle="实时 Agent、模块与采集运行、主动巡视输入输出、报错时间线、抽取水位与运行日志" />
+      <PageHeader title="运行状态" subtitle="核心运行监控、实时 Agent、异常与诊断工具" />
       <Card variant="borderless">
       <Tabs
         activeKey={activeView}
@@ -560,6 +561,7 @@ export default function Debug() {
         destroyOnHidden
         items={[
           { key: 'health', label: '健康', children: <RuntimeTab /> },
+          { key: 'monitoring', label: '运行监控', children: <MonitoringTab /> },
           { key: 'agents', label: '实时 Agent', children: <AgentProcessesTab /> },
           { key: 'failures', label: '异常', children: <FailuresTab /> },
           { key: 'logs', label: '运行日志', children: <LogsTab /> },
