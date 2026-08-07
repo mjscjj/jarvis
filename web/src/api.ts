@@ -11,7 +11,6 @@ import type {
   DocumentWorklog,
   FailureEvent,
   Group,
-  LogTail,
   MeetingReviewList,
   ModuleRun,
   MorningBrief,
@@ -399,10 +398,6 @@ export function getDebugScans(limit = 50, signal?: AbortSignal): Promise<{ items
 
 export function getDebugWatermarks(signal?: AbortSignal): Promise<{ items: WatermarkRow[] }> {
   return request<{ items: WatermarkRow[] }>('/api/debug/watermarks', { signal })
-}
-
-export function getDebugLogs(lines = 300, signal?: AbortSignal): Promise<LogTail> {
-  return request<LogTail>(`/api/debug/logs?lines=${lines}`, { signal })
 }
 
 export function getDebugProactiveRuns(limit = 50, signal?: AbortSignal): Promise<{ items: ProactiveRun[] }> {

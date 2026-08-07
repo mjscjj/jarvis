@@ -757,19 +757,6 @@ export interface WatermarkRow {
   updated_at: string
 }
 
-export interface LogLine {
-  source: string
-  time: string
-  text: string
-}
-
-export interface LogTail {
-  sources: string[]
-  lines: LogLine[]
-  truncated: boolean
-  notes: string[]
-}
-
 export interface SystemTaskRun {
   time: string
   source: string

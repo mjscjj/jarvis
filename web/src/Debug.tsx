@@ -7,7 +7,6 @@ import {
   captureScanRelated,
   getDebugAgentProcesses,
   getDebugFailures,
-  getDebugLogs,
   getDebugModules,
   getDebugProactiveRun,
   getDebugProactiveRuns,
@@ -18,7 +17,7 @@ import { agentModeLabels, agentSourceMeta } from './agentProcesses'
 import PageHeader from './components/PageHeader'
 import MonitoringTab from './debug/MonitoringTab'
 import { usePageContext } from './pageContext'
-import type { AgentProcess, AgentProcessSnapshot, FailureEvent, LogTail, ModuleRun, ProactiveRun, ProactiveRunDetail, ScanRow, WatermarkRow } from './types'
+import type { AgentProcess, AgentProcessSnapshot, FailureEvent, ModuleRun, ProactiveRun, ProactiveRunDetail, ScanRow, WatermarkRow } from './types'
 
 const { Text, Paragraph } = Typography
 
@@ -63,22 +62,63 @@ function RawJSON({ value, label }: { value: unknown; label: string }) {
 }
 
 const moduleLabels: Record<string, string> = {
-  capture: 'M1 采集',
-  memory: 'M2 记忆',
-  extract: 'M3 抽取',
-  execute: 'M5 执行',
+  capture: '消息采集（M2）',
+  pipeline: '流水线协调',
+  extract: '待办提取（M3）',
+  execute: '任务执行（M5）',
+  scheduledtask: '定时任务调度',
+  factengine: '事实提取',
+  factrollup: '事实汇总',
+  proactive: '主动巡视',
+  'meeting-sweep': '会议巡扫',
+  'meeting-capture': '会议记录采集',
+  'morning-brief': '晨间简报',
+  'daily-digest': '个人日报',
+}
+
+const jobLabels: Record<string, string> = {
+  discover: '发现会话',
+  scan_related: '采集相关会话',
+  extract: '提取待办',
+  extract_reconcile: '补偿提取待办',
+  execute: '执行任务',
+  execute_reconcile: '补偿执行任务',
+  scheduled_tasks: '调度定时任务',
+  extract_facts: '提取事实',
+  fact_rollup: '汇总事实',
+  proactive_heartbeat: '主动巡视',
+  meeting_sweep: '巡扫会议',
+  meeting_minutes: '采集会议纪要',
+  morning_brief: '生成晨间简报',
+  personal_daily_digest: '生成个人日报',
+}
+
+const statusPresentation: Record<string, { label: string; color: string }> = {
+  ok: { label: '正常', color: 'green' },
+  error: { label: '异常', color: 'red' },
+  unknown: { label: '状态未知', color: 'default' },
+  queued: { label: '已排队', color: 'blue' },
+  running: { label: '运行中', color: 'processing' },
+  skipped: { label: '已跳过', color: 'default' },
+}
+
+function moduleLabel(module: string): string {
+  return moduleLabels[module] ?? `未配置中文名（${module}）`
 }
 
 const moduleColumns: TableColumnsType<ModuleRun> = [
   {
-    title: '模块', dataIndex: 'module', width: 130,
-    render: (v: string) => <Text strong>{moduleLabels[v] ?? v}</Text>,
+    title: '系统模块', dataIndex: 'module', width: 190,
+    render: (v: string) => <Text strong>{moduleLabel(v)}</Text>,
   },
   {
-    title: '最近状态', dataIndex: 'status', width: 100,
-    render: (v: string) => <Tag color={v === 'ok' ? 'green' : v === 'unknown' ? 'default' : 'red'}>{v}</Tag>,
+    title: '最近状态', dataIndex: 'status', width: 110,
+    render: (v: string) => {
+      const presentation = statusPresentation[v] ?? { label: `未知状态（${v}）`, color: 'default' }
+      return <Tag color={presentation.color}>{presentation.label}</Tag>
+    },
   },
-  { title: 'job', dataIndex: 'job', width: 130, render: (v: string) => v || '—' },
+  { title: '最近任务', dataIndex: 'job', width: 170, render: (v: string) => v ? (jobLabels[v] ?? `未配置中文名（${v}）`) : '—' },
   { title: '最近时间', dataIndex: 'time', width: 200, render: (v: string) => <Text className="mono">{v || '—'}</Text> },
   { title: '窗口内次数', dataIndex: 'runs', width: 100 },
   {
@@ -118,7 +158,7 @@ function ModulesTab() {
       {failingNow.length === 0 && healedRecently.length > 0 && (
         <Alert
           type="success" showIcon title="当前全部正常（窗口内曾有失败，最近一次已恢复）"
-          description={<Space orientation="vertical" size={2}>{healedRecently.map((r) => <Text key={r.module} type="secondary" className="mono">{moduleLabels[r.module] ?? r.module}：窗口内 {r.failures} 次失败，最近一次已 ok</Text>)}</Space>}
+          description={<Space orientation="vertical" size={2}>{healedRecently.map((r) => <Text key={r.module} type="secondary">{moduleLabel(r.module)}：窗口内 {r.failures} 次失败，最近一次已恢复正常</Text>)}</Space>}
         />
       )}
       <Table<ModuleRun>
@@ -340,33 +380,6 @@ function WatermarksTab() {
   )
 }
 
-function LogsTab() {
-  const { data, loading, error, refresh } = useDebugResource<LogTail>((signal) => getDebugLogs(600, signal))
-  const [source, setSource] = useState<string>('all')
-
-  const sources = data?.sources ?? []
-  const filtered = (data?.lines ?? []).filter((l) => source === 'all' || l.source === source)
-  const rendered = filtered.map((l) => (sources.length > 1 ? `[${l.source}] ${l.text}` : l.text)).join('\n')
-
-  return (
-    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-      <Space wrap>
-        <Button size="small" onClick={refresh} loading={loading}>刷新</Button>
-        <Segmented
-          size="small"
-          value={source}
-          onChange={(v) => setSource(String(v))}
-          options={[{ label: '全部', value: 'all' }, ...sources.map((s) => ({ label: s, value: s }))]}
-        />
-        {data?.truncated && <Text type="secondary">（仅尾部）</Text>}
-      </Space>
-      {error && <Alert type="error" showIcon title="日志加载失败" description={error} />}
-      {data?.notes?.map((note) => <Alert key={note} type="info" showIcon title={note} />)}
-      <pre className="debug-log">{rendered || '(窗口内无日志)'}</pre>
-    </Space>
-  )
-}
-
 function ProactiveRunsTab() {
   const { data, loading, error, refresh } = useDebugResource<{ items: ProactiveRun[] }>((signal) => getDebugProactiveRuns(50, signal))
   const [selected, setSelected] = useState<ProactiveRun>()
@@ -549,9 +562,9 @@ function TriggerTab() {
 
 export default function Debug() {
   const { context, setViewState } = usePageContext()
-  type DebugView = 'health' | 'monitoring' | 'agents' | 'failures' | 'logs' | 'tools'
+  type DebugView = 'health' | 'proactive-runs' | 'tools' | 'monitoring' | 'agents' | 'failures'
   const routeView = context.view_state.view
-  const activeView: DebugView = routeView === 'monitoring' || routeView === 'agents' || routeView === 'failures' || routeView === 'logs' || routeView === 'tools'
+  const activeView: DebugView = routeView === 'proactive-runs' || routeView === 'tools' || routeView === 'monitoring' || routeView === 'agents' || routeView === 'failures'
     ? routeView
     : 'health'
 
@@ -565,10 +578,7 @@ export default function Debug() {
         destroyOnHidden
         items={[
           { key: 'health', label: '健康', children: <RuntimeTab /> },
-          { key: 'monitoring', label: '运行监控', children: <MonitoringTab /> },
-          { key: 'agents', label: '实时 Agent', children: <AgentProcessesTab /> },
-          { key: 'failures', label: '异常', children: <FailuresTab /> },
-          { key: 'logs', label: '运行日志', children: <LogsTab /> },
+          { key: 'proactive-runs', label: '主动巡视', children: <ProactiveRunsTab /> },
           {
             key: 'tools',
             label: '高级工具',
@@ -578,12 +588,14 @@ export default function Debug() {
                 destroyOnHidden
                 items={[
                   { key: 'trigger', label: '手动触发', children: <TriggerTab /> },
-                  { key: 'proactive-runs', label: '主动巡视', children: <ProactiveRunsTab /> },
                   { key: 'watermarks', label: '抽取水位', children: <WatermarksTab /> },
                 ]}
               />
             ),
           },
+          { key: 'monitoring', label: '运行监控', children: <MonitoringTab /> },
+          { key: 'agents', label: '实时 Agent', children: <AgentProcessesTab /> },
+          { key: 'failures', label: '异常', children: <FailuresTab /> },
         ]}
       />
       </Card>
