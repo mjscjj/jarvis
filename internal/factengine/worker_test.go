@@ -7,383 +7,248 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"jarvis/internal/progress"
 )
 
-type fakeStore struct {
-	cursor          uint64
-	cursorSeeded    bool
-	maxMessageID    uint64
-	units           []SourceUnit
-	maxID           uint64
-	listErr         error
-	advanced        []uint64
-	advancedSources []string
-	advancedTime    []time.Time
-	sources         []MaterialSource
+type fakeCursorStore struct {
+	cursors  map[string]uint64
+	advanced map[string][]uint64
 }
 
-func (f *fakeStore) Cursor(context.Context, string) (uint64, bool, error) {
-	return f.cursor, f.cursorSeeded, nil
+func (f *fakeCursorStore) Cursor(_ context.Context, source string) (uint64, bool, error) {
+	value, ok := f.cursors[source]
+	return value, ok, nil
 }
 
-func (f *fakeStore) MaxMessageID(context.Context) (uint64, error) { return f.maxMessageID, nil }
-
-func (f *fakeStore) AdvanceCursor(_ context.Context, source string, lastID uint64, occurredAt time.Time) error {
-	f.advanced = append(f.advanced, lastID)
-	f.advancedSources = append(f.advancedSources, source)
-	f.advancedTime = append(f.advancedTime, occurredAt)
+func (f *fakeCursorStore) AdvanceCursor(_ context.Context, source string, lastID uint64, _ time.Time) error {
+	if f.cursors == nil {
+		f.cursors = map[string]uint64{}
+	}
+	if f.advanced == nil {
+		f.advanced = map[string][]uint64{}
+	}
+	f.cursors[source] = lastID
+	f.advanced[source] = append(f.advanced[source], lastID)
 	return nil
 }
 
-func (f *fakeStore) MessageUnits(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error) {
-	if f.listErr != nil {
-		return nil, 0, f.listErr
-	}
-	return f.units, f.maxID, nil
-}
-
-func (f *fakeStore) materialSources() []MaterialSource {
-	if f.sources != nil {
-		return f.sources
-	}
-	return []MaterialSource{{
-		Name: SourceMessage, StartAtPresent: true,
-		MaxID: f.MaxMessageID, Units: f.MessageUnits,
-	}}
-}
-
-type fakeExtractor struct {
-	byUnit map[string][]ExtractedFact
+type fakeMaintainer struct {
+	result string
 	err    error
-	calls  []string
+	calls  int
+	system string
+	user   string
 }
 
-func (f *fakeExtractor) Extract(_ context.Context, systemPrompt string, unit SourceUnit) ([]ExtractedFact, error) {
-	if strings.TrimSpace(systemPrompt) == "" {
-		return nil, fmt.Errorf("system prompt was not passed through")
-	}
-	f.calls = append(f.calls, unit.Key)
+func (f *fakeMaintainer) Maintain(_ context.Context, system, user string) (string, error) {
+	f.calls++
+	f.system, f.user = system, user
 	if f.err != nil {
-		return nil, f.err
+		return "", f.err
 	}
-	return f.byUnit[unit.Key], nil
-}
-
-type fakeAppender struct {
-	stored []progress.FactInput
-	err    error
-}
-
-func (f *fakeAppender) AppendFact(_ context.Context, input progress.FactInput) (*progress.FactView, error) {
-	if f.err != nil {
-		return nil, f.err
+	if f.result == "" {
+		return "NOTHING", nil
 	}
-	f.stored = append(f.stored, input)
-	return &progress.FactView{ID: uint64(len(f.stored))}, nil
-}
-
-func (f *fakeAppender) ListFacts(context.Context, progress.FactFilter) ([]progress.FactView, error) {
-	return nil, nil
+	return f.result, nil
 }
 
 type fakePrompts struct{ content string }
 
 func (f fakePrompts) Content(context.Context, string) (string, error) { return f.content, nil }
 
-func testUnit(key string, lastID uint64, occurredAt time.Time) SourceUnit {
-	return SourceUnit{
-		Source: SourceMessage, Key: key, LastID: lastID, OccurredAt: occurredAt,
-		Body: "some conversation",
-		Subjects: []Subject{
-			{Type: "project", ID: 7, Name: "Jarvis"},
-			{Type: "group", ID: 3, Name: "研发群"},
+func materialSource(name string, maxID uint64, units func(limit int) []SourceUnit) MaterialSource {
+	return MaterialSource{
+		Name:  name,
+		MaxID: func(context.Context) (uint64, error) { return maxID, nil },
+		Units: func(_ context.Context, _ uint64, limit int, _ WindowOptions) ([]SourceUnit, uint64, error) {
+			selected := units(limit)
+			if len(selected) == 0 {
+				return nil, 0, nil
+			}
+			return selected, selected[len(selected)-1].LastID, nil
 		},
 	}
 }
 
-func newTestWorker(t *testing.T, store *fakeStore, extractor factExtractor, facts factAppender) *Worker {
+func testUnit(source, key string, lastID uint64, body string) SourceUnit {
+	return SourceUnit{Source: source, Key: key, LastID: lastID, OccurredAt: time.Unix(int64(lastID), 0), Body: body}
+}
+
+func newTestWorker(t *testing.T, store *fakeCursorStore, sources []MaterialSource, maintainer worldMaintainer, maxChars int) *Worker {
 	t.Helper()
-	worker, err := NewWorker(store, store.materialSources(), extractor, facts, WorkerOptions{
-		BatchLimit: 100,
-		Window:     WindowOptions{Gap: 30 * time.Minute, MaxMessages: 40, Location: time.UTC},
-		Prompts:    fakePrompts{content: "记事实"},
+	worker, err := NewWorker(store, sources, maintainer, WorkerOptions{
+		BatchLimit: 50, MaxMaterialChars: maxChars,
+		Window:  WindowOptions{Gap: 30 * time.Minute, MaxMessages: 40, Location: time.UTC},
+		Prompts: fakePrompts{content: "维护世界模型"},
 	})
 	if err != nil {
-		t.Fatalf("NewWorker() error = %v", err)
+		t.Fatalf("NewWorker: %v", err)
 	}
 	return worker
 }
 
-func TestExtractOnceStoresFactsAndAdvancesCursor(t *testing.T) {
-	occurredAt := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
-	store := &fakeStore{cursorSeeded: true, units: []SourceUnit{testUnit("chat-a:1-5", 5, occurredAt)}, maxID: 5}
-	extractor := &fakeExtractor{byUnit: map[string][]ExtractedFact{
-		"chat-a:1-5": {{SubjectType: "project", SubjectID: 7, Description: "定了用离线链路抽事实"}},
-	}}
-	facts := &fakeAppender{}
-
-	stats, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
+func TestExtractOnceRunsOneAgentForAllNewMaterial(t *testing.T) {
+	store := &fakeCursorStore{cursors: map[string]uint64{SourceMessage: 1, SourceTask: 10}}
+	sources := []MaterialSource{
+		materialSource(SourceMessage, 2, func(int) []SourceUnit { return []SourceUnit{testUnit(SourceMessage, "m:2", 2, "消息原文")} }),
+		materialSource(SourceTask, 11, func(int) []SourceUnit { return []SourceUnit{testUnit(SourceTask, "t:11", 11, "任务结果")} }),
+	}
+	maintainer := &fakeMaintainer{result: "更新了项目状态并写入一条事实"}
+	stats, err := newTestWorker(t, store, sources, maintainer, 100000).ExtractOnce(t.Context())
 	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
+		t.Fatalf("ExtractOnce: %v", err)
 	}
-	if stats.Units != 1 || stats.Facts != 1 || len(stats.Sources) != 1 || stats.Sources[0].LastID != 5 {
-		t.Fatalf("stats = %+v", stats)
+	if maintainer.calls != 1 || stats.Calls != 1 || stats.Units != 2 {
+		t.Fatalf("maintainer calls=%d stats=%+v", maintainer.calls, stats)
 	}
-	if len(facts.stored) != 1 {
-		t.Fatalf("stored facts = %d, want 1", len(facts.stored))
+	for _, want := range []string{"WORLD_CHANGES", "MATERIAL_SOURCE: message", "消息原文", "MATERIAL_SOURCE: task", "任务结果"} {
+		if !strings.Contains(maintainer.user, want) {
+			t.Fatalf("batch prompt missing %q:\n%s", want, maintainer.user)
+		}
 	}
-	stored := facts.stored[0]
-	if stored.SubjectType != "project" || stored.SubjectID != 7 {
-		t.Fatalf("stored subject = %s/%d", stored.SubjectType, stored.SubjectID)
-	}
-	// The fact must land on the day the conversation happened, not on the day the
-	// offline round got around to reading it.
-	if stored.OccurredAt == nil || !stored.OccurredAt.Equal(occurredAt) {
-		t.Fatalf("stored occurred_at = %v, want %v", stored.OccurredAt, occurredAt)
-	}
-	if stored.SourceKind == nil || *stored.SourceKind != SourceMessage {
-		t.Fatalf("stored source_kind = %v, want %q", stored.SourceKind, SourceMessage)
-	}
-	if stored.SourceID == nil || *stored.SourceID != 5 {
-		t.Fatalf("stored source_id = %v, want unit last_id 5", stored.SourceID)
-	}
-	if len(store.advanced) != 1 || store.advanced[0] != 5 {
-		t.Fatalf("advanced cursor = %v, want [5]", store.advanced)
+	if fmt.Sprint(store.advanced[SourceMessage]) != "[2]" || fmt.Sprint(store.advanced[SourceTask]) != "[11]" {
+		t.Fatalf("advanced=%v", store.advanced)
 	}
 }
 
-func TestBuildAgentSystemPromptIncludesGenericWorldModelTools(t *testing.T) {
+func TestExtractOnceShrinksRowLimitToCoarseCharacterBudget(t *testing.T) {
+	store := &fakeCursorStore{cursors: map[string]uint64{SourceTask: 1}}
+	var limits []int
+	source := materialSource(SourceTask, 51, func(limit int) []SourceUnit {
+		limits = append(limits, limit)
+		units := make([]SourceUnit, min(limit, 8))
+		for i := range units {
+			units[i] = testUnit(SourceTask, fmt.Sprintf("t:%d", i+2), uint64(i+2), strings.Repeat("字", 1000))
+		}
+		return units
+	})
+	stats, err := newTestWorker(t, store, []MaterialSource{source}, &fakeMaintainer{}, 3500).ExtractOnce(t.Context())
+	if err != nil {
+		t.Fatalf("ExtractOnce: %v", err)
+	}
+	if len(limits) < 2 || limits[len(limits)-1] >= limits[0] {
+		t.Fatalf("row limits=%v, want coarse halving", limits)
+	}
+	if stats.MaterialChars > 3500 {
+		t.Fatalf("material chars=%d, want <=3500", stats.MaterialChars)
+	}
+}
+
+func TestExtractOnceDefersWholeSourceWhenMinimumRowsExceedBudget(t *testing.T) {
+	store := &fakeCursorStore{cursors: map[string]uint64{SourceTodo: 1, SourceTask: 10}}
+	sources := []MaterialSource{
+		materialSource(SourceTodo, 2, func(int) []SourceUnit {
+			return []SourceUnit{testUnit(SourceTodo, "todo:2", 2, strings.Repeat("待", 2500))}
+		}),
+		materialSource(SourceTask, 11, func(int) []SourceUnit {
+			return []SourceUnit{testUnit(SourceTask, "task:11", 11, strings.Repeat("任", 2500))}
+		}),
+	}
+	maintainer := &fakeMaintainer{}
+	stats, err := newTestWorker(t, store, sources, maintainer, 3200).ExtractOnce(t.Context())
+	if err != nil {
+		t.Fatalf("ExtractOnce: %v", err)
+	}
+	if stats.MaterialChars > 3200 || stats.Units != 1 {
+		t.Fatalf("stats=%+v, want one whole source within budget", stats)
+	}
+	if fmt.Sprint(store.advanced[SourceTodo]) != "[2]" || len(store.advanced[SourceTask]) != 0 {
+		t.Fatalf("advanced=%v, want deferred task cursor unchanged", store.advanced)
+	}
+	if strings.Contains(maintainer.user, "task:11") {
+		t.Fatalf("deferred source leaked into prompt:\n%s", maintainer.user)
+	}
+}
+
+func TestExtractOnceKeepsAllMaterialCursorsWhenAgentFails(t *testing.T) {
+	store := &fakeCursorStore{cursors: map[string]uint64{SourceMessage: 1, SourceTask: 10}}
+	sources := []MaterialSource{
+		materialSource(SourceMessage, 2, func(int) []SourceUnit { return []SourceUnit{testUnit(SourceMessage, "m", 2, "m")} }),
+		materialSource(SourceTask, 11, func(int) []SourceUnit { return []SourceUnit{testUnit(SourceTask, "t", 11, "t")} }),
+	}
+	_, err := newTestWorker(t, store, sources, &fakeMaintainer{err: errors.New("model unavailable")}, 100000).ExtractOnce(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "model unavailable") {
+		t.Fatalf("ExtractOnce error=%v", err)
+	}
+	if len(store.advanced) != 0 {
+		t.Fatalf("advanced=%v, want none", store.advanced)
+	}
+}
+
+func TestExtractOnceSkipsAgentWhenThereIsNoNewMaterial(t *testing.T) {
+	store := &fakeCursorStore{cursors: map[string]uint64{SourceMessage: 1}}
+	source := materialSource(SourceMessage, 1, func(int) []SourceUnit { return nil })
+	maintainer := &fakeMaintainer{}
+	stats, err := newTestWorker(t, store, []MaterialSource{source}, maintainer, 100000).ExtractOnce(t.Context())
+	if err != nil {
+		t.Fatalf("ExtractOnce: %v", err)
+	}
+	if maintainer.calls != 0 || stats.Calls != 0 {
+		t.Fatalf("maintainer calls=%d stats=%+v", maintainer.calls, stats)
+	}
+}
+
+func TestExtractOnceSeedsPresentOnlyMessageSource(t *testing.T) {
+	store := &fakeCursorStore{}
+	source := materialSource(SourceMessage, 8421, func(int) []SourceUnit { return nil })
+	source.StartAtPresent = true
+	stats, err := newTestWorker(t, store, []MaterialSource{source}, &fakeMaintainer{}, 100000).ExtractOnce(t.Context())
+	if err != nil {
+		t.Fatalf("ExtractOnce: %v", err)
+	}
+	if !stats.Sources[0].Seeded || stats.Sources[0].LastID != 8421 || fmt.Sprint(store.advanced[SourceMessage]) != "[8421]" {
+		t.Fatalf("stats=%+v advanced=%v", stats, store.advanced)
+	}
+}
+
+func TestBuildWorldBatchPromptEscapesInvalidUTF8WithoutDroppingByte(t *testing.T) {
+	unit := testUnit(SourceMessage, "m", 1, "before"+string([]byte{0xff})+"after")
+	prompt, err := buildWorldBatchPrompt([]selectedSource{{units: []SourceUnit{unit}}})
+	if err != nil {
+		t.Fatalf("buildWorldBatchPrompt: %v", err)
+	}
+	if !strings.Contains(prompt, `before\xFFafter`) || !utf8Valid(prompt) {
+		t.Fatalf("prompt=%q", prompt)
+	}
+}
+
+func utf8Valid(value string) bool {
+	return !strings.ContainsRune(value, '\uFFFD') && strings.ToValidUTF8(value, "") == value
+}
+
+func TestBuildAgentSystemPromptOwnsDirectFactWrites(t *testing.T) {
 	prompt, err := buildAgentSystemPrompt("维护长期事实与当前世界状态")
 	if err != nil {
 		t.Fatalf("buildAgentSystemPrompt: %v", err)
 	}
-	for _, want := range []string{
-		"维护长期事实与当前世界状态", "当前阶段：factengine", "通用查询及 CRUD",
-		"不创建或推进 Task", "最终 `facts` 数组",
-	} {
+	for _, want := range []string{"当前阶段：factengine", "通用查询及 CRUD", "`append-fact` 直接写入", "不创建或推进 Task"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
-	if _, err := buildAgentSystemPrompt("   "); err == nil {
-		t.Fatal("empty role prompt was accepted")
-	}
-}
-
-func TestExtractOnceRunsTodoAndTaskThroughSameProtocolFromHistory(t *testing.T) {
-	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
-	todoUnit := SourceUnit{Source: SourceTodo, Key: "todo_event:8", LastID: 8, OccurredAt: now, Body: `{"todo":"完整原文"}`}
-	taskUnit := SourceUnit{Source: SourceTask, Key: "task_event:13", LastID: 13, OccurredAt: now, Body: `{"task":"完整原文"}`}
-	store := &fakeStore{}
-	store.sources = []MaterialSource{
-		{Name: SourceTodo, MaxID: func(context.Context) (uint64, error) { return 8, nil }, Units: func(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error) {
-			return []SourceUnit{todoUnit}, 8, nil
-		}},
-		{Name: SourceTask, MaxID: func(context.Context) (uint64, error) { return 13, nil }, Units: func(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error) {
-			return []SourceUnit{taskUnit}, 13, nil
-		}},
-	}
-	extractor := &fakeExtractor{byUnit: map[string][]ExtractedFact{
-		todoUnit.Key: {{SubjectType: SourceTodo, SubjectID: 4, Description: "Todo 已明确完整目标"}},
-		taskUnit.Key: {{SubjectType: SourceTask, SubjectID: 6, Description: "Task 已经执行完成"}},
-	}}
-	facts := &fakeAppender{}
-
-	stats, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
-	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
-	}
-	if stats.Units != 2 || stats.Facts != 2 || len(stats.Sources) != 2 {
-		t.Fatalf("stats = %+v", stats)
-	}
-	if fmt.Sprint(store.advancedSources) != fmt.Sprint([]string{SourceTodo, SourceTask}) || fmt.Sprint(store.advanced) != fmt.Sprint([]uint64{8, 13}) {
-		t.Fatalf("advanced sources=%v ids=%v", store.advancedSources, store.advanced)
-	}
-	if facts.stored[0].SourceKind == nil || *facts.stored[0].SourceKind != SourceTodo || facts.stored[1].SourceKind == nil || *facts.stored[1].SourceKind != SourceTask {
-		t.Fatalf("stored source kinds = %+v", facts.stored)
-	}
-}
-
-// Material that yields nothing still moves the watermark: "nothing worth
-// remembering here" is the common answer, and re-reading it would cost the same
-// tokens on every round forever.
-func TestExtractOnceAdvancesCursorWhenNoFactsFound(t *testing.T) {
-	store := &fakeStore{cursorSeeded: true, units: []SourceUnit{testUnit("chat-a:1-5", 5, time.Now().UTC())}, maxID: 5}
-	extractor := &fakeExtractor{byUnit: map[string][]ExtractedFact{}}
-	facts := &fakeAppender{}
-
-	stats, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
-	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
-	}
-	if stats.Facts != 0 || len(facts.stored) != 0 {
-		t.Fatalf("stats = %+v stored = %d", stats, len(facts.stored))
-	}
-	if len(store.advanced) != 1 || store.advanced[0] != 5 {
-		t.Fatalf("advanced cursor = %v, want [5]", store.advanced)
-	}
-}
-
-func TestExtractOnceSkipsEmptyBatch(t *testing.T) {
-	store := &fakeStore{cursorSeeded: true}
-	extractor := &fakeExtractor{}
-	facts := &fakeAppender{}
-
-	stats, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
-	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
-	}
-	if stats.Units != 0 || stats.Facts != 0 || len(stats.Sources) != 1 || stats.Sources[0].Source != SourceMessage {
-		t.Fatalf("stats = %+v, want one idle message source", stats)
-	}
-	if len(extractor.calls) != 0 || len(store.advanced) != 0 {
-		t.Fatalf("calls = %v advanced = %v", extractor.calls, store.advanced)
-	}
-}
-
-// Subjects surfaced by a source are context, not a protocol allowlist. An agent
-// may resolve another subject with tools; the real progress service validates
-// known entity types when it stores the fact.
-func TestExtractOnceAcceptsSubjectOutsideSourceContext(t *testing.T) {
-	store := &fakeStore{cursorSeeded: true, units: []SourceUnit{testUnit("chat-a:1-5", 5, time.Now().UTC())}, maxID: 5}
-	extractor := &fakeExtractor{byUnit: map[string][]ExtractedFact{
-		"chat-a:1-5": {
-			{SubjectType: "person", SubjectID: 999, Description: "编出来的主体"},
-			{SubjectType: "group", SubjectID: 3, Description: "群里定的口径"},
-		},
-	}}
-	facts := &fakeAppender{}
-
-	stats, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
-	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
-	}
-	if stats.Facts != 2 {
-		t.Fatalf("stats = %+v, want both model-selected subjects stored", stats)
-	}
-	if len(facts.stored) != 2 || facts.stored[0].SubjectID != 999 || facts.stored[1].SubjectID != 3 {
-		t.Fatalf("stored = %+v", facts.stored)
-	}
-}
-
-// Case differences are the model's, not a different subject: the fact table
-// lowercases subject_type on insert, so the offered-subject check has to match.
-func TestExtractOnceMatchesSubjectTypeCaseInsensitively(t *testing.T) {
-	store := &fakeStore{cursorSeeded: true, units: []SourceUnit{testUnit("chat-a:1-5", 5, time.Now().UTC())}, maxID: 5}
-	extractor := &fakeExtractor{byUnit: map[string][]ExtractedFact{
-		"chat-a:1-5": {{SubjectType: "Project", SubjectID: 7, Description: "大写也算同一个主体"}},
-	}}
-	facts := &fakeAppender{}
-
-	stats, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
-	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
-	}
-	if stats.Facts != 1 {
-		t.Fatalf("stats = %+v", stats)
-	}
-}
-
-// A failed extraction must not move the watermark, or the material it never read
-// is skipped forever.
-func TestExtractOnceKeepsCursorWhenExtractionFails(t *testing.T) {
-	store := &fakeStore{cursorSeeded: true, units: []SourceUnit{testUnit("chat-a:1-5", 5, time.Now().UTC())}, maxID: 5}
-	extractor := &fakeExtractor{err: errors.New("model unavailable")}
-	facts := &fakeAppender{}
-
-	_, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
-	if err == nil {
-		t.Fatal("ExtractOnce() error = nil, want extraction failure")
-	}
-	if len(store.advanced) != 0 {
-		t.Fatalf("advanced cursor = %v, want none", store.advanced)
-	}
-}
-
-func TestExtractOnceKeepsCursorWhenStoringFails(t *testing.T) {
-	store := &fakeStore{cursorSeeded: true, units: []SourceUnit{testUnit("chat-a:1-5", 5, time.Now().UTC())}, maxID: 5}
-	extractor := &fakeExtractor{byUnit: map[string][]ExtractedFact{
-		"chat-a:1-5": {{SubjectType: "group", SubjectID: 3, Description: "群里定的口径"}},
-	}}
-	facts := &fakeAppender{err: errors.New("subject not found")}
-
-	_, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
-	if err == nil {
-		t.Fatal("ExtractOnce() error = nil, want storage failure")
-	}
-	if len(store.advanced) != 0 {
-		t.Fatalf("advanced cursor = %v, want none", store.advanced)
-	}
 }
 
 func TestNewWorkerRejectsIncompleteOptions(t *testing.T) {
-	store := &fakeStore{}
-	extractor := &fakeExtractor{}
-	facts := &fakeAppender{}
-	valid := WorkerOptions{
-		BatchLimit: 100,
-		Window:     WindowOptions{Gap: time.Minute, MaxMessages: 10, Location: time.UTC},
-		Prompts:    fakePrompts{content: "x"},
-	}
-	tests := []struct {
-		name    string
-		mutate  func(*WorkerOptions)
-		wantErr string
+	store := &fakeCursorStore{}
+	source := materialSource(SourceMessage, 0, func(int) []SourceUnit { return nil })
+	valid := WorkerOptions{BatchLimit: 1, MaxMaterialChars: 1000, Window: WindowOptions{Gap: time.Minute, MaxMessages: 1, Location: time.UTC}, Prompts: fakePrompts{content: "x"}}
+	for _, tt := range []struct {
+		name string
+		edit func(*WorkerOptions)
+		want string
 	}{
 		{"batch limit", func(o *WorkerOptions) { o.BatchLimit = 0 }, "batch limit"},
+		{"material chars", func(o *WorkerOptions) { o.MaxMaterialChars = 0 }, "material chars"},
 		{"window gap", func(o *WorkerOptions) { o.Window.Gap = 0 }, "window gap"},
-		{"window max", func(o *WorkerOptions) { o.Window.MaxMessages = 0 }, "window max messages"},
+		{"window max", func(o *WorkerOptions) { o.Window.MaxMessages = 0 }, "window max"},
 		{"location", func(o *WorkerOptions) { o.Window.Location = nil }, "location"},
 		{"prompts", func(o *WorkerOptions) { o.Prompts = nil }, "prompt reader"},
-	}
-	for _, tt := range tests {
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := valid
-			tt.mutate(&opts)
-			if _, err := NewWorker(store, store.materialSources(), extractor, facts, opts); err == nil ||
-				!strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("NewWorker() error = %v, want containing %q", err, tt.wantErr)
+			tt.edit(&opts)
+			if _, err := NewWorker(store, []MaterialSource{source}, &fakeMaintainer{}, opts); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("NewWorker error=%v, want %q", err, tt.want)
 			}
 		})
-	}
-}
-
-// Turning the engine on must not re-distil every message ever captured: a source
-// with no watermark plants one at the present and reads nothing.
-func TestExtractOnceSeedsCursorAtPresentOnFirstRun(t *testing.T) {
-	store := &fakeStore{maxMessageID: 8421, units: []SourceUnit{testUnit("chat-a:1-5", 5, time.Now().UTC())}, maxID: 5}
-	extractor := &fakeExtractor{}
-	facts := &fakeAppender{}
-
-	stats, err := newTestWorker(t, store, extractor, facts).ExtractOnce(context.Background())
-	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
-	}
-	if len(stats.Sources) != 1 || !stats.Sources[0].Seeded || stats.Sources[0].LastID != 8421 || stats.Units != 0 {
-		t.Fatalf("stats = %+v, want a seed-only round at 8421", stats)
-	}
-	if len(extractor.calls) != 0 {
-		t.Fatalf("extractor calls = %v, want none on the seeding round", extractor.calls)
-	}
-	if len(store.advanced) != 1 || store.advanced[0] != 8421 {
-		t.Fatalf("advanced cursor = %v, want [8421]", store.advanced)
-	}
-}
-
-// An empty message table has no present to seed at, so the source stays unseeded
-// and tries again next round instead of pinning itself at zero.
-func TestExtractOnceLeavesCursorUnseededWhenNoMessages(t *testing.T) {
-	store := &fakeStore{}
-	stats, err := newTestWorker(t, store, &fakeExtractor{}, &fakeAppender{}).ExtractOnce(context.Background())
-	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
-	}
-	if stats.Units != 0 || stats.Facts != 0 || len(stats.Sources) != 1 || stats.Sources[0].Source != SourceMessage {
-		t.Fatalf("stats = %+v, want one idle message source", stats)
-	}
-	if len(store.advanced) != 0 {
-		t.Fatalf("advanced cursor = %v, want none", store.advanced)
 	}
 }

@@ -32,16 +32,14 @@ const (
 // protocol. The composition root registers projections explicitly; the worker,
 // prompt, extractor and fact persistence path remain unchanged.
 type MaterialSource struct {
-	Name               string
-	StartAtPresent     bool
-	CheckpointEachUnit bool
-	MaxID              func(context.Context) (uint64, error)
-	Units              func(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error)
+	Name           string
+	StartAtPresent bool
+	MaxID          func(context.Context) (uint64, error)
+	Units          func(context.Context, uint64, int, WindowOptions) ([]SourceUnit, uint64, error)
 }
 
-// WindowOptions cuts a chat's messages into conversation windows. One window is
-// one extraction call, so these bound both the prompt size and the cost of a
-// round.
+// WindowOptions cuts a chat's messages into complete conversation windows.
+// Windows are material boundaries inside one combined world-maintenance batch.
 type WindowOptions struct {
 	Gap         time.Duration
 	MaxMessages int

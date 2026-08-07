@@ -216,11 +216,12 @@ func main() {
 	}
 	factSources := []factengine.MaterialSource{
 		{Name: factengine.SourceMessage, StartAtPresent: true, MaxID: factEngineStore.MaxMessageID, Units: factEngineStore.MessageUnits},
-		{Name: factengine.SourceTodo, CheckpointEachUnit: true, MaxID: factEngineStore.MaxTodoEventID, Units: factEngineStore.TodoUnits},
-		{Name: factengine.SourceTask, CheckpointEachUnit: true, MaxID: factEngineStore.MaxTaskEventID, Units: factEngineStore.TaskUnits},
+		{Name: factengine.SourceTodo, MaxID: factEngineStore.MaxTodoEventID, Units: factEngineStore.TodoUnits},
+		{Name: factengine.SourceTask, MaxID: factEngineStore.MaxTaskEventID, Units: factEngineStore.TaskUnits},
 	}
-	factEngineWorker, err := factengine.NewWorker(factEngineStore, factSources, factExtractor, progressService, factengine.WorkerOptions{
-		BatchLimit: cfg.FactEngine.BatchLimit,
+	factEngineWorker, err := factengine.NewWorker(factEngineStore, factSources, factExtractor, factengine.WorkerOptions{
+		BatchLimit:       cfg.FactEngine.BatchLimit,
+		MaxMaterialChars: cfg.FactEngine.MaxMaterialChars,
 		Window: factengine.WindowOptions{
 			Gap:         time.Duration(cfg.FactEngine.WindowGapMinutes) * time.Minute,
 			MaxMessages: cfg.FactEngine.WindowMaxMessages,
@@ -231,9 +232,15 @@ func main() {
 	if err != nil {
 		fatalf("initialize fact engine worker failed: %v", err)
 	}
-	factRollupWorker, err := factengine.NewRollupWorker(db, factExtractor, progressService, textFileService, location)
+	factRollupExtractor, err := factengine.NewExtractor(factengine.ExtractorOptions{
+		Bin:           cfg.FactEngine.Bin,
+		Model:         cfg.FactEngine.RollupModel,
+		Sandbox:       "read-only",
+		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		Timeout:       time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
+	})
 	if err != nil {
-		fatalf("initialize fact rollup worker failed: %v", err)
+		fatalf("initialize fact rollup extractor failed: %v", err)
 	}
 	todoStore, err := extract.NewTodoStore(db)
 	if err != nil {
@@ -246,6 +253,10 @@ func main() {
 	contextAssembler, err := contextsnap.NewAssembler(db, cfg.Extract.PrincipalOpenID)
 	if err != nil {
 		fatalf("initialize common context snapshot assembler failed: %v", err)
+	}
+	factRollupWorker, err := factengine.NewRollupWorker(db, factRollupExtractor, progressService, textFileService, contextAssembler, location)
+	if err != nil {
+		fatalf("initialize fact rollup worker failed: %v", err)
 	}
 	taskFactory, err := taskcreate.NewFactory(db, contextAssembler)
 	if err != nil {
@@ -580,8 +591,8 @@ func main() {
 			fatalf("extract facts failed: %v", err)
 		}
 		infof(
-			"offline fact extraction completed: units=%d facts=%d sources=%+v",
-			stats.Units, stats.Facts, stats.Sources,
+			"world maintenance completed: calls=%d units=%d material_chars=%d sources=%+v result=%q",
+			stats.Calls, stats.Units, stats.MaterialChars, stats.Sources, stats.Result,
 		)
 		return
 	}

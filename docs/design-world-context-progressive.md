@@ -116,7 +116,7 @@ ExcludeSourceKind *string
 
 ### 5.4 配置与手动触发
 
-cron spec 加进配置，命名与现有事实引擎的调度配置项对齐。明细抽取继续使用 `factengine.model=DeepSeek-V4-Flash`，日压缩单独使用 `factengine.rollup_model=DeepSeek-V4-Pro`，两者不共享模型配置。同时提供一个手动触发入口（如 `POST /api/fact-rollups/generate` 接受 `date`），便于验证与补算某一天——这比等第二天跑定时任务便宜得多。
+cron spec 加进配置，命名与现有事实引擎的调度配置项对齐。世界维护使用 `factengine.model=DeepSeek-V4-Pro`，日压缩单独使用 `factengine.rollup_model=DeepSeek-V4-Pro`，两者仍不共享模型配置。同时提供一个手动触发入口（如 `POST /api/fact-rollups/generate` 接受 `date`），便于验证与补算某一天——这比等第二天跑定时任务便宜得多。
 
 ## 6. M3 推送层改造
 

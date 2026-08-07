@@ -1576,6 +1576,8 @@ cmd_append_fact() {
     source_id="$JARVIS_TASK_ID"
   elif [[ -z "$source_kind" && "${JARVIS_AGENT_STAGE:-}" == "proactive" ]]; then
     source_kind="proactive"
+  elif [[ -z "$source_kind" && "${JARVIS_AGENT_STAGE:-}" == "factengine" ]]; then
+    source_kind="factengine"
   elif [[ -n "$SOURCE_ID" ]]; then
     [[ -n "$source_kind" ]] || fail "append-fact --source-id requires --source"
     [[ "$SOURCE_ID" =~ ^[1-9][0-9]*$ ]] || fail "append-fact --source-id must be a positive integer"

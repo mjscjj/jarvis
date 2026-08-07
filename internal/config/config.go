@@ -62,14 +62,9 @@ type ModelConfig struct {
 	EmbeddingDims  int    `yaml:"embedding_dims"`
 }
 
-// FactEngineConfig controls the offline fact engine: a cron-driven agent that
-// reads material the pipeline already produced (messages today; Todos and Task
-// runs next) and distills long-lived facts out of it. It runs off the M2→M3→M5
-// critical path, so a slow or failing round never blocks capture or execution.
-//
-// Bin/Model are independent of the codex and execute sections: distillation is
-// high-volume and low-stakes, so it runs on a cheap fast model while interactive
-// execution keeps its stronger model.
+// FactEngineConfig controls the offline world-maintenance Agent. One session
+// reads a coarsely bounded batch of new material and writes current entities,
+// relations and Facts directly through tools. It stays off the M2→M3→M5 path.
 type FactEngineConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	Schedule string `yaml:"schedule"`
@@ -78,15 +73,17 @@ type FactEngineConfig struct {
 	// facts for the previous local day.
 	RollupSchedule string `yaml:"rollup_schedule"`
 
-	Bin        string `yaml:"bin"`
-	Model      string `yaml:"model"`
-	Sandbox    string `yaml:"sandbox"`
-	TimeoutSec int    `yaml:"timeout_sec"`
+	Bin         string `yaml:"bin"`
+	Model       string `yaml:"model"`
+	RollupModel string `yaml:"rollup_model"`
+	Sandbox     string `yaml:"sandbox"`
+	TimeoutSec  int    `yaml:"timeout_sec"`
 
-	// BatchLimit caps how many source rows one round consumes. WindowGapMinutes
-	// and WindowMaxMessages cut a chat's messages into conversation windows, one
-	// extraction call each: a window is the unit a fact is distilled from.
+	// BatchLimit supplies the initial rows-per-source candidate. The worker halves
+	// it until the complete rendered material fits MaxMaterialChars; it never
+	// truncates an individual material item.
 	BatchLimit        int `yaml:"batch_limit"`
+	MaxMaterialChars  int `yaml:"max_material_chars"`
 	WindowGapMinutes  int `yaml:"window_gap_minutes"`
 	WindowMaxMessages int `yaml:"window_max_messages"`
 }
@@ -703,6 +700,9 @@ func (c *Config) validateFactEngine() error {
 	if c.FactEngine.Model == "" {
 		return fmt.Errorf("factengine.model 不能为空")
 	}
+	if c.FactEngine.RollupModel == "" {
+		return fmt.Errorf("factengine.rollup_model 不能为空")
+	}
 	if err := validateCodexSandbox("factengine.sandbox", c.FactEngine.Sandbox); err != nil {
 		return err
 	}
@@ -711,6 +711,9 @@ func (c *Config) validateFactEngine() error {
 	}
 	if c.FactEngine.BatchLimit <= 0 {
 		return fmt.Errorf("factengine.batch_limit 必须大于 0")
+	}
+	if c.FactEngine.MaxMaterialChars <= 0 {
+		return fmt.Errorf("factengine.max_material_chars 必须大于 0")
 	}
 	if c.FactEngine.WindowGapMinutes <= 0 {
 		return fmt.Errorf("factengine.window_gap_minutes 必须大于 0")

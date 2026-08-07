@@ -85,6 +85,7 @@ const jobLabels: Record<string, string> = {
   execute_reconcile: '补偿执行任务',
   scheduled_tasks: '调度定时任务',
   extract_facts: '提取事实',
+  world_maintenance: '世界维护',
   fact_rollup: '汇总事实',
   proactive_heartbeat: '主动巡视',
   meeting_sweep: '巡扫会议',

@@ -403,9 +403,11 @@ export default function RuntimeSettings() {
             <SwitchField name="fact_engine_enabled" label="自动世界建模" />
             <TextField name="fact_engine_schedule" label="建模周期" placeholder="@every 15m" />
             <TextField name="fact_engine_rollup_schedule" label="日压缩周期" placeholder="0 2 * * *" help="每天把前一个自然日每个主体的明细事实压成一条摘要，供 M3 提示词使用。" />
-            <TextField name="fact_engine_model" label="事实提取模型" />
+            <TextField name="fact_engine_model" label="世界维护模型" />
+            <TextField name="fact_engine_rollup_model" label="事实日压缩模型" />
             <NumberField name="fact_engine_timeout_seconds" label="单轮超时（秒）" min={1} max={3600} />
-            <NumberField name="fact_engine_batch_limit" label="每批消息上限" min={1} max={5000} />
+            <NumberField name="fact_engine_batch_limit" label="每来源候选行上限" min={1} max={5000} />
+            <NumberField name="fact_engine_max_material_chars" label="单次材料字符上限" min={1} max={1000000} />
             <NumberField name="fact_engine_window_gap_minutes" label="新窗口间隔（分钟）" min={1} max={1440} help="同一会话相邻消息超过该间隔时拆成两个事实窗口。" />
             <NumberField name="fact_engine_window_max_messages" label="每个窗口消息上限" min={1} max={1000} />
           </Section>
@@ -516,7 +518,7 @@ export default function RuntimeSettings() {
           title="长期事实"
           enabled={liveSettings.fact_engine_enabled}
           primary={liveSettings.fact_engine_model}
-          secondary={`${liveSettings.fact_engine_schedule} · 最多 ${liveSettings.fact_engine_batch_limit} 条`}
+          secondary={`${liveSettings.fact_engine_schedule} · 单次最多 ${liveSettings.fact_engine_max_material_chars} 字符`}
         />
       </div>
 

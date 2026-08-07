@@ -3,8 +3,8 @@
 // uses generic Jarvis tools to maintain current internal entities and relations.
 //
 // It runs off the M2→M3→M5 critical path. Nothing upstream waits for it, and a
-// failed round costs at most one retry — the source watermark only advances past
-// material whose facts are already committed.
+// failed round costs at most one retry — source watermarks advance only after the
+// complete maintenance session succeeds.
 //
 // One Agent protocol serves every source. A source contributes a SQL projection
 // that renders material into SourceUnit; what counts as a fact and whether any
@@ -33,7 +33,7 @@ type SourceUnit struct {
 	Key string
 
 	// LastID is the highest database id this unit consumed. The worker advances
-	// the source cursor to it once the unit's facts are committed.
+	// each source cursor after the combined maintenance session succeeds.
 	LastID uint64
 
 	// OccurredAt is when the material happened; it becomes the fact's
@@ -65,8 +65,8 @@ type Subject struct {
 	Name string
 }
 
-// Prompt renders the user half of one extraction call. The system half is the
-// fact_extract_system_prompt text file.
+// Prompt renders one complete material block. The worker combines all selected
+// blocks into the user half of one world-maintenance Agent session.
 func (u SourceUnit) Prompt() (string, error) {
 	if strings.TrimSpace(u.Body) == "" {
 		return "", fmt.Errorf("source unit %s/%s has an empty body", u.Source, u.Key)

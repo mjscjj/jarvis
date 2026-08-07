@@ -22,9 +22,11 @@ factengine:
   rollup_schedule: "0 2 * * *"
   bin: "traex"
   model: "fixture-fact-model"
+  rollup_model: "fixture-rollup-model"
   sandbox: "danger-full-access"
   timeout_sec: 300
   batch_limit: 200
+  max_material_chars: 100000
   window_gap_minutes: 30
   window_max_messages: 40
 proactive:

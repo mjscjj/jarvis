@@ -188,9 +188,11 @@ func TestValidate(t *testing.T) {
 		{name: "factengine schedule", mutate: func(c *Config) { c.FactEngine.Schedule = "" }, wantErr: "factengine.schedule"},
 		{name: "factengine bin", mutate: func(c *Config) { c.FactEngine.Bin = "" }, wantErr: "factengine.bin"},
 		{name: "factengine model", mutate: func(c *Config) { c.FactEngine.Model = "" }, wantErr: "factengine.model"},
+		{name: "factengine rollup model", mutate: func(c *Config) { c.FactEngine.RollupModel = "" }, wantErr: "factengine.rollup_model"},
 		{name: "factengine sandbox", mutate: func(c *Config) { c.FactEngine.Sandbox = "yolo" }, wantErr: "factengine.sandbox"},
 		{name: "factengine timeout", mutate: func(c *Config) { c.FactEngine.TimeoutSec = 0 }, wantErr: "factengine.timeout_sec"},
 		{name: "factengine batch", mutate: func(c *Config) { c.FactEngine.BatchLimit = 0 }, wantErr: "factengine.batch_limit"},
+		{name: "factengine material chars", mutate: func(c *Config) { c.FactEngine.MaxMaterialChars = 0 }, wantErr: "factengine.max_material_chars"},
 		{name: "factengine window gap", mutate: func(c *Config) { c.FactEngine.WindowGapMinutes = 0 }, wantErr: "factengine.window_gap_minutes"},
 		{name: "factengine window max", mutate: func(c *Config) { c.FactEngine.WindowMaxMessages = 0 }, wantErr: "factengine.window_max_messages"},
 		{name: "proactive schedule", mutate: func(c *Config) { c.Proactive.Schedule = "" }, wantErr: "proactive.schedule"},
@@ -327,8 +329,8 @@ func validScheduledTaskConfig() ScheduledTaskConfig {
 func validFactEngineConfig() FactEngineConfig {
 	return FactEngineConfig{
 		Enabled: true, Schedule: "@every 15m", RollupSchedule: "0 2 * * *",
-		Bin: "traex", Model: "fixture-fact-model", Sandbox: "danger-full-access", TimeoutSec: 300,
-		BatchLimit: 200, WindowGapMinutes: 30, WindowMaxMessages: 40,
+		Bin: "traex", Model: "fixture-fact-model", RollupModel: "fixture-rollup-model", Sandbox: "danger-full-access", TimeoutSec: 300,
+		BatchLimit: 200, MaxMaterialChars: 100000, WindowGapMinutes: 30, WindowMaxMessages: 40,
 	}
 }
 

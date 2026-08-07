@@ -74,8 +74,10 @@ type RuntimeSettings struct {
 	FactEngineSchedule          string `json:"fact_engine_schedule"`
 	FactEngineRollupSchedule    string `json:"fact_engine_rollup_schedule"`
 	FactEngineModel             string `json:"fact_engine_model"`
+	FactEngineRollupModel       string `json:"fact_engine_rollup_model"`
 	FactEngineTimeoutSeconds    int    `json:"fact_engine_timeout_seconds"`
 	FactEngineBatchLimit        int    `json:"fact_engine_batch_limit"`
+	FactEngineMaxMaterialChars  int    `json:"fact_engine_max_material_chars"`
 	FactEngineWindowGapMinutes  int    `json:"fact_engine_window_gap_minutes"`
 	FactEngineWindowMaxMessages int    `json:"fact_engine_window_max_messages"`
 
@@ -233,8 +235,10 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		FactEngineSchedule:           cfg.FactEngine.Schedule,
 		FactEngineRollupSchedule:     cfg.FactEngine.RollupSchedule,
 		FactEngineModel:              cfg.FactEngine.Model,
+		FactEngineRollupModel:        cfg.FactEngine.RollupModel,
 		FactEngineTimeoutSeconds:     cfg.FactEngine.TimeoutSec,
 		FactEngineBatchLimit:         cfg.FactEngine.BatchLimit,
+		FactEngineMaxMaterialChars:   cfg.FactEngine.MaxMaterialChars,
 		FactEngineWindowGapMinutes:   cfg.FactEngine.WindowGapMinutes,
 		FactEngineWindowMaxMessages:  cfg.FactEngine.WindowMaxMessages,
 		ProactiveEnabled:             cfg.Proactive.Enabled,
@@ -308,8 +312,10 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
 	cfg.FactEngine.RollupSchedule = strings.TrimSpace(input.FactEngineRollupSchedule)
 	cfg.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
+	cfg.FactEngine.RollupModel = strings.TrimSpace(input.FactEngineRollupModel)
 	cfg.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
 	cfg.FactEngine.BatchLimit = input.FactEngineBatchLimit
+	cfg.FactEngine.MaxMaterialChars = input.FactEngineMaxMaterialChars
 	cfg.FactEngine.WindowGapMinutes = input.FactEngineWindowGapMinutes
 	cfg.FactEngine.WindowMaxMessages = input.FactEngineWindowMaxMessages
 	cfg.Proactive.Enabled = input.ProactiveEnabled
@@ -400,8 +406,10 @@ type runtimeOverride struct {
 		Schedule          string `yaml:"schedule"`
 		RollupSchedule    string `yaml:"rollup_schedule"`
 		Model             string `yaml:"model"`
+		RollupModel       string `yaml:"rollup_model"`
 		TimeoutSec        int    `yaml:"timeout_sec"`
 		BatchLimit        int    `yaml:"batch_limit"`
+		MaxMaterialChars  int    `yaml:"max_material_chars"`
 		WindowGapMinutes  int    `yaml:"window_gap_minutes"`
 		WindowMaxMessages int    `yaml:"window_max_messages"`
 	} `yaml:"factengine"`
@@ -487,8 +495,10 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
 	override.FactEngine.RollupSchedule = strings.TrimSpace(input.FactEngineRollupSchedule)
 	override.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
+	override.FactEngine.RollupModel = strings.TrimSpace(input.FactEngineRollupModel)
 	override.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
 	override.FactEngine.BatchLimit = input.FactEngineBatchLimit
+	override.FactEngine.MaxMaterialChars = input.FactEngineMaxMaterialChars
 	override.FactEngine.WindowGapMinutes = input.FactEngineWindowGapMinutes
 	override.FactEngine.WindowMaxMessages = input.FactEngineWindowMaxMessages
 	override.Proactive.Enabled = input.ProactiveEnabled

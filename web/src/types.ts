@@ -1001,8 +1001,10 @@ export interface RuntimeSettings {
   fact_engine_schedule: string
   fact_engine_rollup_schedule: string
   fact_engine_model: string
+  fact_engine_rollup_model: string
   fact_engine_timeout_seconds: number
   fact_engine_batch_limit: number
+  fact_engine_max_material_chars: number
   fact_engine_window_gap_minutes: number
   fact_engine_window_max_messages: number
   proactive_enabled: boolean
