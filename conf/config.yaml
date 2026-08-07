@@ -33,8 +33,8 @@ factengine:
   bin: "traex"
   model: "DeepSeek-V4-Flash"
   sandbox: "danger-full-access"   # 本地可信环境；抽取时可自跑 jarvis-tools 查已有事实避免重复
-  timeout_sec: 300
-  batch_limit: 200               # 单轮消费的原料行数上限
+  timeout_sec: 1200              # 单个原料单元最多处理 20 分钟
+  batch_limit: 50                # 单轮消费的原料行数上限
   window_gap_minutes: 30         # 超过此间隔视为另一段对话
   window_max_messages: 40        # 单个对话窗口的消息上限
 
