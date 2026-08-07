@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"jarvis/internal/agentusage"
 )
 
 const maxCodexOutputBytes = 1 << 20
@@ -37,6 +39,7 @@ var ErrSchemaViolation = errors.New("agent final message violates the required s
 type codexRun struct {
 	SessionID   string
 	LastMessage string
+	Usage       agentusage.Usage
 	// Result is the structured verdict codex returns per executionResultSchema,
 	// which every task-executing stage shares. It is nil unless that schema was
 	// enforced.
@@ -307,7 +310,14 @@ func (r *CodexRunner) RunTaskWithOutput(ctx context.Context, prompt, sandbox, re
 	// constrain decoding, so a fresh exec can also end on a malformed final
 	// message. The Task's real side effects already happened, so ask the same
 	// session to restate them; never re-run the Task.
-	return r.rewriteFinalMessage(ctx, run.SessionID, sandbox, repoPath, sch, taskID, output, err)
+	rewritten, rewriteErr := r.rewriteFinalMessage(ctx, run.SessionID, sandbox, repoPath, sch, taskID, output, err)
+	if rewritten == nil {
+		return run, rewriteErr
+	}
+	if addErr := rewritten.Usage.Add(run.Usage); addErr != nil {
+		return rewritten, fmt.Errorf("combine codex rewrite usage: %w", addErr)
+	}
+	return rewritten, rewriteErr
 }
 
 // rewriteFinalMessage resumes a session whose work is done but whose final
@@ -320,14 +330,21 @@ func (r *CodexRunner) rewriteFinalMessage(
 		return nil, cause
 	}
 	invocation := runInvocation{SessionID: sessionID, TaskID: taskID, Output: output}
+	var priorUsage agentusage.Usage
 	for attempt := 0; ; attempt++ {
 		run, err := r.run(ctx, schemaRewritePrompt(cause), sandbox, repoPath, sch, invocation)
+		if run != nil {
+			if addErr := run.Usage.Add(priorUsage); addErr != nil {
+				return run, fmt.Errorf("combine codex rewrite usage: %w", addErr)
+			}
+		}
 		if err == nil {
 			return run, nil
 		}
 		if !errors.Is(err, ErrSchemaViolation) || attempt >= maxResumeSchemaRewrites {
-			return nil, err
+			return run, err
 		}
+		priorUsage = run.Usage
 		cause = err
 	}
 }
@@ -354,14 +371,21 @@ func (r *CodexRunner) ResumeTaskWithOutput(ctx context.Context, sessionID, promp
 	// constraining decoding. Hand the violation back to the same session for a
 	// rewrite instead of failing the Task on the first bad turn; the work itself
 	// is already done and re-running it would repeat real side effects.
+	var priorUsage agentusage.Usage
 	for attempt := 0; ; attempt++ {
 		run, err := r.run(ctx, prompt, sandbox, repoPath, sch, invocation)
+		if run != nil {
+			if addErr := run.Usage.Add(priorUsage); addErr != nil {
+				return run, fmt.Errorf("combine codex resume usage: %w", addErr)
+			}
+		}
 		if err == nil {
 			return run, nil
 		}
 		if !errors.Is(err, ErrSchemaViolation) || attempt >= maxResumeSchemaRewrites {
-			return nil, err
+			return run, err
 		}
+		priorUsage = run.Usage
 		prompt = schemaRewritePrompt(err)
 	}
 }
@@ -487,14 +511,26 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	}
 	command.Stdout = stdoutWriter
 	command.Stderr = stderrWriter
-	if err := command.Run(); err != nil {
-		if errors.Is(context.Cause(runCtx), ErrExecutionInterrupted) {
-			return nil, ErrExecutionInterrupted
+	commandErr := command.Run()
+	usage, usageErr := agentusage.ParseCodexJSONL(stdout.Bytes())
+	partialRun := &codexRun{Usage: usage}
+	if commandErr != nil {
+		var runErr error
+		switch {
+		case errors.Is(context.Cause(runCtx), ErrExecutionInterrupted):
+			runErr = ErrExecutionInterrupted
+		case runCtx.Err() == context.DeadlineExceeded:
+			runErr = fmt.Errorf("codex exec timed out after %s", r.timeout)
+		default:
+			runErr = fmt.Errorf("codex exec failed: %w: %s", commandErr, limitedText(stderr.Bytes(), 4096))
 		}
-		if runCtx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("codex exec timed out after %s", r.timeout)
+		if usageErr != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("parse failed codex exec usage: %w", usageErr))
 		}
-		return nil, fmt.Errorf("codex exec failed: %w: %s", err, limitedText(stderr.Bytes(), 4096))
+		return partialRun, runErr
+	}
+	if usageErr != nil {
+		return partialRun, fmt.Errorf("parse codex exec usage: %w", usageErr)
 	}
 
 	sessionID, err := codexSessionID(stdout.Bytes())
@@ -506,7 +542,7 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 		return nil, err
 	}
 	lastMessage := string(bytes.TrimSpace(last))
-	run := &codexRun{SessionID: sessionID, LastMessage: lastMessage}
+	run := &codexRun{SessionID: sessionID, LastMessage: lastMessage, Usage: usage}
 	switch sch {
 	case schemaExecution:
 		result, err := parseExecutionResult(lastMessage)

@@ -37,6 +37,7 @@ done
 [ -n "$output" ]
 printf '%s' '{"outcome":"completed","summary":"done","failure_reason":"","needs_followup":"","enrichments":[],"waiting":null}' > "$output"
 printf '%s\n' '{"type":"thread.started","thread_id":"session-42"}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":20,"output_tokens":30,"reasoning_output_tokens":10}}'
 printf '%s\n' 'diagnostic stderr' >&2
 `
 	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
@@ -69,6 +70,9 @@ printf '%s\n' 'diagnostic stderr' >&2
 	}
 	if first.SessionID != "session-42" {
 		t.Fatalf("session ID = %q", first.SessionID)
+	}
+	if !first.Usage.Reported || first.Usage.TotalTokens() != 150 {
+		t.Fatalf("usage = %+v, want 150 total tokens", first.Usage)
 	}
 	args := readTestFile(t, argsPath)
 	if strings.Contains(args, "--ephemeral") {

@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/agentusage"
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/provider"
 )
@@ -129,11 +131,27 @@ func (e *Extractor) ExtractWithTools(ctx context.Context, prompt extract.Prompt,
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
-		if runCtx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("codex extraction timed out after %s", e.timeout)
+	commandErr := command.Run()
+	usage, usageErr := agentusage.ParseCodexJSONL(stdout.Bytes())
+	if usageErr == nil {
+		if err := agentusage.Record(ctx, usage); err != nil {
+			return nil, fmt.Errorf("record codex extraction usage: %w", err)
 		}
-		return nil, fmt.Errorf("codex extraction failed: %w: %s", err, limitedText(stderr.Bytes(), 4096))
+	}
+	if commandErr != nil {
+		var runErr error
+		if runCtx.Err() == context.DeadlineExceeded {
+			runErr = fmt.Errorf("codex extraction timed out after %s", e.timeout)
+		} else {
+			runErr = fmt.Errorf("codex extraction failed: %w: %s", commandErr, limitedText(stderr.Bytes(), 4096))
+		}
+		if usageErr != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("parse failed codex extraction usage: %w", usageErr))
+		}
+		return nil, runErr
+	}
+	if usageErr != nil {
+		return nil, fmt.Errorf("parse codex extraction usage: %w", usageErr)
 	}
 
 	resultBytes, err := readLimitedFile(resultPath, maxCodexOutputBytes)

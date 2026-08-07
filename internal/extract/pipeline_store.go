@@ -294,11 +294,12 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 	}
 
 	batch := &ChatBatch{
-		Group:       groupContext,
-		OpenTodos:   openTodos,
-		RecentTasks: recentTasks,
-		Units:       units,
-		LastNew:     newMessages[len(newMessages)-1],
+		Group:           groupContext,
+		OpenTodos:       openTodos,
+		RecentTasks:     recentTasks,
+		Units:           units,
+		LastNew:         newMessages[len(newMessages)-1],
+		NewMessageCount: len(newMessages),
 	}
 	if group.Project != nil {
 		batch.Project = projectContext(group.Project)

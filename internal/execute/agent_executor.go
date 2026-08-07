@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"jarvis/internal/agentusage"
 	"jarvis/internal/domain"
 	"jarvis/internal/observability"
 	"jarvis/internal/prompttemplate"
@@ -424,6 +425,9 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		return e.finishRun(ctx, task, execVersion, run, err)
 	}
 	codexOut, execErr := e.runner.ResumeTaskWithOutput(ctx, *source.CodexSessionID, prompt, executionSandbox, repoPath, schemaExecution, task.ID, outputCapture)
+	if codexOut != nil {
+		recordAgentUsage(run, codexOut.Usage)
+	}
 	if execErr != nil {
 		e.failRun(run, startedAt, execErr)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
@@ -895,6 +899,9 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 		return e.failRun(run, startedAt, err), nil, err
 	}
 	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, executionSandbox, repoPath, schemaExecution, task.ID, outputCapture)
+	if codexOut != nil {
+		recordAgentUsage(run, codexOut.Usage)
+	}
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -995,6 +1002,9 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposa
 		return e.failRun(run, startedAt, err), nil, err
 	}
 	codexOut, err := e.runner.RunTaskWithOutput(ctx, prompt, executionSandbox, repoPath, schemaExecution, task.ID, outputCapture)
+	if codexOut != nil {
+		recordAgentUsage(run, codexOut.Usage)
+	}
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1042,6 +1052,20 @@ func (e *AgentExecutor) failRun(run *domain.ExecutionRun, startedAt time.Time, c
 		run.Prompt = "(prompt not built)"
 	}
 	return run
+}
+
+func recordAgentUsage(run *domain.ExecutionRun, usage agentusage.Usage) {
+	if run == nil || !usage.Reported {
+		return
+	}
+	input := usage.InputTokens
+	cachedInput := usage.CachedInputTokens
+	output := usage.OutputTokens
+	reasoningOutput := usage.ReasoningOutputTokens
+	run.InputTokens = &input
+	run.CachedInputTokens = &cachedInput
+	run.OutputTokens = &output
+	run.ReasoningOutputTokens = &reasoningOutput
 }
 
 func (e *AgentExecutor) normalizeInterrupted(ctx context.Context, run *domain.ExecutionRun, execErr error) error {

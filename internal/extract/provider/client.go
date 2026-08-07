@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/agentusage"
 	"jarvis/internal/extract"
 )
 
@@ -222,7 +223,8 @@ func (c *Client) postChatCompletion(ctx context.Context, operation string, reque
 		return nil, fmt.Errorf("model %s status=%d body=%s", operation, resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	var response struct {
-		Choices []chatChoice `json:"choices"`
+		Choices []chatChoice    `json:"choices"`
+		Usage   json.RawMessage `json:"usage"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
 		return nil, fmt.Errorf("decode model %s envelope: %w", operation, err)
@@ -230,5 +232,59 @@ func (c *Client) postChatCompletion(ctx context.Context, operation string, reque
 	if len(response.Choices) != 1 {
 		return nil, fmt.Errorf("model %s choices=%d, want 1", operation, len(response.Choices))
 	}
+	if len(response.Usage) > 0 && !bytes.Equal(response.Usage, []byte("null")) {
+		usage, err := decodeChatUsage(response.Usage)
+		if err != nil {
+			return nil, fmt.Errorf("decode model %s usage: %w", operation, err)
+		}
+		if err := agentusage.Record(ctx, usage); err != nil {
+			return nil, fmt.Errorf("record model %s usage: %w", operation, err)
+		}
+	}
 	return &response.Choices[0], nil
+}
+
+func decodeChatUsage(payload []byte) (agentusage.Usage, error) {
+	var raw struct {
+		InputTokens           *int64 `json:"input_tokens"`
+		OutputTokens          *int64 `json:"output_tokens"`
+		CachedInputTokens     *int64 `json:"cached_input_tokens"`
+		ReasoningOutputTokens *int64 `json:"reasoning_output_tokens"`
+		PromptTokens          *int64 `json:"prompt_tokens"`
+		CompletionTokens      *int64 `json:"completion_tokens"`
+		PromptTokensDetails   struct {
+			CachedTokens *int64 `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+		CompletionTokensDetails struct {
+			ReasoningTokens *int64 `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+	}
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return agentusage.Usage{}, err
+	}
+	usage := agentusage.Usage{Reported: true}
+	if raw.InputTokens != nil {
+		usage.InputTokens = *raw.InputTokens
+	} else if raw.PromptTokens != nil {
+		usage.InputTokens = *raw.PromptTokens
+	}
+	if raw.OutputTokens != nil {
+		usage.OutputTokens = *raw.OutputTokens
+	} else if raw.CompletionTokens != nil {
+		usage.OutputTokens = *raw.CompletionTokens
+	}
+	if raw.CachedInputTokens != nil {
+		usage.CachedInputTokens = *raw.CachedInputTokens
+	} else if raw.PromptTokensDetails.CachedTokens != nil {
+		usage.CachedInputTokens = *raw.PromptTokensDetails.CachedTokens
+	}
+	if raw.ReasoningOutputTokens != nil {
+		usage.ReasoningOutputTokens = *raw.ReasoningOutputTokens
+	} else if raw.CompletionTokensDetails.ReasoningTokens != nil {
+		usage.ReasoningOutputTokens = *raw.CompletionTokensDetails.ReasoningTokens
+	}
+	if err := usage.Validate(); err != nil {
+		return agentusage.Usage{}, err
+	}
+	return usage, nil
 }

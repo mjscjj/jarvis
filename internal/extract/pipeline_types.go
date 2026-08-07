@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"jarvis/internal/agentusage"
 	"jarvis/internal/contextsnap"
 )
 
@@ -154,6 +155,9 @@ type ChatBatch struct {
 	RecentTasks   []RecentTaskContext
 	Units         []ConversationUnit
 	LastNew       MessageContext
+	// NewMessageCount includes every message advanced by this batch, including
+	// non-extractable message types that still move the M3 watermark.
+	NewMessageCount int
 }
 
 type UnitExtraction struct {
@@ -198,7 +202,18 @@ type pipelineStore interface {
 	PendingChatIDs(context.Context) ([]string, error)
 	LoadPendingChat(context.Context, string, LoadOptions) (*ChatBatch, error)
 	LoadChatMessages(context.Context, string, []string) ([]MessageContext, error)
+	StartExtractionRun(context.Context, string, time.Time) (uint64, error)
+	FinishExtractionRun(context.Context, uint64, ExtractionRunFinish) error
 	PersistChat(context.Context, ChatBatch, []UnitExtraction, string) (PersistStats, error)
+}
+
+type ExtractionRunFinish struct {
+	Status       string
+	MessageCount int64
+	TodoCount    int64
+	Usage        agentusage.Usage
+	ErrorDetail  *string
+	FinishedAt   time.Time
 }
 
 type candidateDeduplicator interface {

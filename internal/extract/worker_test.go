@@ -20,6 +20,8 @@ type fakePipelineStore struct {
 	persistErr   error
 	persistCalls int
 	results      []UnitExtraction
+	nextRunID    uint64
+	runFinishes  []ExtractionRunFinish
 	// persistedBatch is the batch PersistChat received, so a test can assert on
 	// the unit state (including hydrated evidence) persistence actually reads.
 	persistedBatch ChatBatch
@@ -88,6 +90,16 @@ func (f *fakePipelineStore) LoadChatMessages(_ context.Context, _ string, messag
 	}
 	sort.Slice(found, func(i, j int) bool { return messageBefore(found[i], found[j]) })
 	return found, nil
+}
+
+func (f *fakePipelineStore) StartExtractionRun(context.Context, string, time.Time) (uint64, error) {
+	f.nextRunID++
+	return f.nextRunID, nil
+}
+
+func (f *fakePipelineStore) FinishExtractionRun(_ context.Context, _ uint64, finish ExtractionRunFinish) error {
+	f.runFinishes = append(f.runFinishes, finish)
+	return nil
 }
 
 func (f *fakePipelineStore) PersistChat(_ context.Context, batch ChatBatch, results []UnitExtraction, _ string) (PersistStats, error) {

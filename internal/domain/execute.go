@@ -38,11 +38,17 @@ type ExecutionRun struct {
 	// are stored and rendered as-is, never rejected.
 	Effects     datatypes.JSON `gorm:"column:effects"`
 	ErrorDetail *string        `gorm:"column:error_detail"`
+	// Token fields are nullable so runs created before usage persistence can be
+	// distinguished from a real, reported zero-token run.
+	InputTokens           *int64 `gorm:"column:input_tokens"`
+	CachedInputTokens     *int64 `gorm:"column:cached_input_tokens"`
+	OutputTokens          *int64 `gorm:"column:output_tokens"`
+	ReasoningOutputTokens *int64 `gorm:"column:reasoning_output_tokens"`
 	// RepoPath is the working copy this run was pointed at, when one resolved. It
 	// records where the agent worked, not how it delivered.
 	RepoPath *string `gorm:"column:repo_path"`
 
-	StartedAt  time.Time  `gorm:"column:started_at;not null"`
+	StartedAt  time.Time  `gorm:"column:started_at;not null;index:idx_execution_run_started"`
 	FinishedAt *time.Time `gorm:"column:finished_at"`
 	DurationMs *int64     `gorm:"column:duration_ms"`
 	CreatedAt  time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`

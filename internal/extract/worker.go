@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/agentusage"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/progress"
 	"jarvis/internal/sharedmem"
@@ -143,7 +144,7 @@ func (w *Worker) PendingChatIDs(ctx context.Context) ([]string, error) {
 // ExtractChat processes the chat that M2 just advanced, then returns the exact
 // Todo rows M3 committed. Duplicate wake-ups are cheap: a chat with no messages
 // beyond its extraction watermark returns zero stats and no Todo references.
-func (w *Worker) ExtractChat(ctx context.Context, chatID string) (WorkerStats, []TodoRef, error) {
+func (w *Worker) ExtractChat(ctx context.Context, chatID string) (stats WorkerStats, todos []TodoRef, retErr error) {
 	batch, err := w.store.LoadPendingChat(ctx, chatID, w.opts.Load)
 	if err != nil {
 		return WorkerStats{}, nil, err
@@ -151,13 +152,54 @@ func (w *Worker) ExtractChat(ctx context.Context, chatID string) (WorkerStats, [
 	if batch == nil {
 		return WorkerStats{}, nil, nil
 	}
-	stats := WorkerStats{ChatsLoaded: 1}
-	batchStats, persisted, err := w.extractBatch(ctx, *batch, w.now())
+	stats = WorkerStats{ChatsLoaded: 1}
+	startedAt := w.now().UTC()
+	runID, err := w.store.StartExtractionRun(ctx, batch.Group.ChatID, startedAt)
+	if err != nil {
+		return stats, nil, err
+	}
+	runCtx, usageCollector := agentusage.WithCollector(ctx)
+	messageCount := countNewMessages(*batch)
+	defer func() {
+		finishedAt := w.now().UTC()
+		status := "succeeded"
+		var errorDetail *string
+		if retErr != nil {
+			status = "failed"
+			detail := retErr.Error()
+			errorDetail = &detail
+		}
+		finishErr := w.store.FinishExtractionRun(context.WithoutCancel(ctx), runID, ExtractionRunFinish{
+			Status: status, MessageCount: int64(messageCount), TodoCount: int64(stats.Created),
+			Usage: usageCollector.Total(), ErrorDetail: errorDetail, FinishedAt: finishedAt,
+		})
+		if finishErr != nil {
+			retErr = errors.Join(retErr, finishErr)
+		}
+	}()
+
+	batchStats, persisted, err := w.extractBatch(runCtx, *batch, startedAt)
 	if err != nil {
 		return stats, nil, err
 	}
 	mergeWorkerStats(&stats, batchStats)
 	return stats, append([]TodoRef(nil), persisted.Todos...), nil
+}
+
+func countNewMessages(batch ChatBatch) int {
+	if batch.NewMessageCount > 0 {
+		return batch.NewMessageCount
+	}
+	seen := make(map[string]struct{})
+	for _, unit := range batch.Units {
+		for _, message := range unit.Messages {
+			if !message.IsNew {
+				continue
+			}
+			seen[message.MessageID] = struct{}{}
+		}
+	}
+	return len(seen)
 }
 
 func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.Time) (WorkerStats, PersistStats, error) {

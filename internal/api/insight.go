@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"jarvis/internal/insight"
 
@@ -15,6 +16,35 @@ import (
 type ProactiveRunReader interface {
 	ProactiveRuns(context.Context, int) ([]insight.ProactiveRunRow, error)
 	ProactiveRun(context.Context, uint64) (*insight.ProactiveRunDetail, error)
+}
+
+type MonitoringReader interface {
+	Monitoring(context.Context, time.Time, time.Time) (*insight.MonitoringSnapshot, error)
+}
+
+func GetDebugMonitoring(service MonitoringReader) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		from, err := time.Parse(time.RFC3339, string(c.Query("from")))
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40033, fmt.Errorf("from must be RFC3339: %w", err))
+			return
+		}
+		until, err := time.Parse(time.RFC3339, string(c.Query("until")))
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40034, fmt.Errorf("until must be RFC3339: %w", err))
+			return
+		}
+		if !from.Before(until) || until.Sub(from) > 8*24*time.Hour {
+			writeAPIError(c, consts.StatusBadRequest, 40035, fmt.Errorf("monitoring range must be positive and at most 8 days"))
+			return
+		}
+		snapshot, err := service.Monitoring(ctx, from, until)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50033, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": snapshot})
+	}
 }
 
 // GetOverview serves the Overview dashboard: live todo/task status counts.
