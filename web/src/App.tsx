@@ -74,6 +74,7 @@ function AppShell() {
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
     { key: 'background', label: '记忆', icon: <DatabaseOutlined /> },
+    { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
     { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
     { type: 'divider' },
     {
@@ -82,7 +83,6 @@ function AppShell() {
       icon: managementIcon,
       children: [
         { key: 'todos', label: '线索', icon: <CheckCircleOutlined /> },
-        { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
         { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
         { key: 'debug', label: '运行状态', icon: <ToolOutlined /> },
       ],
@@ -222,6 +222,7 @@ function AppShell() {
           { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
           { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
           { key: 'background', label: '记忆', icon: <DatabaseOutlined /> },
+          { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
           { key: 'agents', label: 'Agent', icon: <RobotOutlined /> },
         ].map((item) => (
           <button key={item.key} type="button" className={context.active_key === item.key ? 'is-active' : ''} onClick={() => goTo(item.key)}>
@@ -240,7 +241,6 @@ function AppShell() {
         <div className="mobile-system-links">
           {[
             { key: 'todos', label: '线索', icon: <CheckCircleOutlined /> },
-            { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
             { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
             { key: 'debug', label: '运行状态', icon: <ToolOutlined /> },
           ].map((item) => (
