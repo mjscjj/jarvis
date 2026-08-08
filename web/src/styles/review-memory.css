@@ -628,6 +628,115 @@
   padding-inline: 0;
 }
 
+.fact-alert {
+  margin-bottom: 14px;
+}
+
+.fact-loading {
+  padding: 28px;
+  text-align: center;
+}
+
+.fact-timeline-card > .ant-card-body {
+  padding-top: 14px;
+}
+
+.fact-day-heading {
+  margin-bottom: 12px;
+}
+
+.fact-item {
+  min-width: 0;
+  padding-bottom: 2px;
+}
+
+.fact-subject {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.fact-description {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.fact-time {
+  font-size: 12px;
+}
+
+.fact-history-label {
+  width: 100%;
+  padding: 11px 13px 9px;
+  background: #fafbf9;
+}
+
+.fact-history-row {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.fact-history-summary {
+  padding: 0 12px 10px;
+  background: #fafbf9;
+}
+
+.fact-rollup {
+  padding: 13px 15px;
+  border: 1px solid #d9e6dc;
+  border-radius: 10px;
+  background: #f6faf7;
+}
+
+.fact-rollup-stale {
+  border-color: #f0d7ad;
+  background: #fffaf0;
+}
+
+.fact-rollup-kicker {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+.fact-rollup-description.ant-typography {
+  margin-bottom: 0;
+}
+
+.fact-raw-collapse > .ant-collapse-item {
+  border-bottom: 0;
+}
+
+.fact-raw-collapse > .ant-collapse-item > .ant-collapse-header {
+  padding: 9px 13px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.fact-raw-collapse > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
+  padding: 10px 16px 4px;
+}
+
+.fact-search-card > .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.fact-search-controls {
+  align-items: center;
+}
+
+.fact-search-result {
+  padding: 13px 15px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.fact-search-result .fact-description {
+  margin-top: 7px;
+}
+
 @media (max-width: 820px) {
   .review-hero {
     min-height: 0;

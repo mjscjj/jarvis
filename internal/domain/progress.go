@@ -57,7 +57,7 @@ type Fact struct {
 	// half-open range over this column; there is no separate date column
 	// because a stored local date would silently go wrong if the configured
 	// timezone ever changed.
-	OccurredAt time.Time `gorm:"column:occurred_at;not null;index:idx_fact_subject_time,priority:3"`
+	OccurredAt time.Time `gorm:"column:occurred_at;not null;index:idx_fact_subject_time,priority:3;index:idx_fact_occurred_at"`
 
 	// SourceKind and SourceID trace a fact back to what produced it (m3, m5,
 	// task, run, background). Both optional: a fact is still useful when its

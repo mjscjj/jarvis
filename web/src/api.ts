@@ -44,6 +44,9 @@ import type {
   ExecutionRunList,
   TaskRunOutput,
   Fact,
+  FactSearchQuery,
+  FactSearchResult,
+  FactTimeline,
   RelationEntityType,
   RelationFactList,
   TaskEvent,
@@ -270,14 +273,77 @@ export function listProjectFacts(id: number, signal?: AbortSignal): Promise<{ it
   return listSubjectFacts('project', id, signal)
 }
 
-export function listSubjectFacts(subjectType: 'project' | 'key_matter' | 'group' | 'person', id: number, signal?: AbortSignal): Promise<{ items: Fact[] }> {
-  return request<{ items: Fact[] }>(`/api/facts?subject_type=${subjectType}&subject_id=${id}&limit=200`, { signal })
+export function listSubjectFacts(subjectType: string, id: number, signal?: AbortSignal, options: {
+  from?: string
+  until?: string
+  sourceKind?: string
+  excludeSourceKind?: string
+  limit?: number
+} = {}): Promise<{ items: Fact[] }> {
+  const params = new URLSearchParams({
+    subject_type: subjectType,
+    subject_id: String(id),
+    limit: String(options.limit ?? 200),
+  })
+  if (options.from) params.set('from', options.from)
+  if (options.until) params.set('until', options.until)
+  if (options.sourceKind) params.set('source_kind', options.sourceKind)
+  if (options.excludeSourceKind) params.set('exclude_source_kind', options.excludeSourceKind)
+  return request<{ items: Fact[] }>(`/api/facts?${params.toString()}`, { signal })
 }
 
 export function appendProjectFact(id: number, description: string): Promise<Fact> {
-  return request<Fact>('/api/facts', {
+	return appendFact({ subject_type: 'project', subject_id: id, description })
+}
+
+export function appendFact(body: {
+  subject_type: string
+  subject_id: number
+  description: string
+  occurred_at?: string
+  source_kind?: string
+}): Promise<Fact> {
+	return request<Fact>('/api/facts', {
     method: 'POST',
-    body: { subject_type: 'project', subject_id: id, description },
+		body,
+  })
+}
+
+export function getFactTimeline(days = 3, subject?: { type: string; id: number }, signal?: AbortSignal): Promise<FactTimeline> {
+  const params = new URLSearchParams({ days: String(days) })
+  if (subject) {
+    params.set('subject_type', subject.type)
+    params.set('subject_id', String(subject.id))
+  }
+  return request<FactTimeline>(`/api/facts/timeline?${params.toString()}`, { signal })
+}
+
+export function searchFacts(query: FactSearchQuery, signal?: AbortSignal): Promise<FactSearchResult> {
+  const params = new URLSearchParams({
+    page: String(query.page ?? 1),
+    page_size: String(query.pageSize ?? 50),
+    layer: query.layer ?? 'all',
+  })
+  if (query.q) params.set('q', query.q)
+  if (query.from) params.set('from', query.from)
+  if (query.until) params.set('until', query.until)
+  if (query.subjectType) params.set('subject_type', query.subjectType)
+  if (query.subjectId) params.set('subject_id', String(query.subjectId))
+  if (query.sourceKind) params.set('source_kind', query.sourceKind)
+  return request<FactSearchResult>(`/api/facts/search?${params.toString()}`, { signal })
+}
+
+export function generateFactRollup(date: string, subject?: { type: string; id: number }): Promise<{
+  Subjects: number
+  Batches: number
+  FailedBatches: number
+  Written: number
+  Skipped: number
+  Day: string
+}> {
+  return request('/api/fact-rollups/generate', {
+    method: 'POST',
+    body: subject ? { date, subject_type: subject.type, subject_id: subject.id } : { date },
   })
 }
 

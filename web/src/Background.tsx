@@ -7,7 +7,6 @@ import {
   DatePicker,
   Descriptions,
   Drawer,
-  Empty,
   Flex,
   Form,
   Input,
@@ -17,12 +16,10 @@ import {
   Segmented,
   Select,
   Space,
-  Spin,
   Switch,
   Table,
   Tag,
   Tabs,
-  Timeline,
   Tooltip,
   Typography,
 } from 'antd'
@@ -44,10 +41,8 @@ import {
   listGroups,
   listKeyMatters,
   listPersons,
-  listProjectFacts,
   listProjects,
   listResources,
-  listSubjectFacts,
   listSkills,
   resolvePerson,
   scanSkills,
@@ -68,6 +63,8 @@ import RuntimeSettings from './RuntimeSettings'
 import SystemTasks from './SystemTasks'
 import EntityRelations from './components/EntityRelations'
 import PageHeader from './components/PageHeader'
+import FactTimeline from './world/FactTimeline'
+import FactsPanel from './world/FactsPanel'
 import { usePageContext } from './pageContext'
 import type {
   AgentSkill,
@@ -82,7 +79,6 @@ import type {
   ProfileInput,
   ProfileView,
   Project,
-  Fact,
   ProjectInput,
   ProjectRole,
   ProjectStatus,
@@ -115,58 +111,6 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
-function SubjectFactsCard({ subjectType, subjectId, title }: {
-  subjectType: 'key_matter' | 'group' | 'person'
-  subjectId: number
-  title: string
-}) {
-  const [items, setItems] = useState<Fact[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string>()
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    setLoading(true)
-    setError(undefined)
-    listSubjectFacts(subjectType, subjectId, controller.signal)
-      .then((result) => setItems(result.items))
-      .catch((cause: unknown) => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    return () => controller.abort()
-  }, [subjectId, subjectType, refreshKey])
-
-  return (
-    <Card
-      size="small"
-      title={title}
-      variant="borderless"
-      extra={<Button size="small" onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>}
-    >
-      {error && <Alert type="error" showIcon title={`${title}加载失败`} description={error} style={{ marginBottom: 12 }} />}
-      {loading ? (
-        <div style={{ padding: 16, textAlign: 'center' }}><Spin size="small" /></div>
-      ) : items.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`暂无${title}`} />
-      ) : (
-        <Timeline items={items.map((fact) => ({
-          content: (
-            <div>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{fact.description}</div>
-              <Space size={6}>
-                <Text type="secondary" style={{ fontSize: 12 }}>{new Date(fact.occurred_at).toLocaleString()}</Text>
-                {fact.source_kind && <Tag>{fact.source_kind === 'message' ? '消息抽取' : fact.source_kind}</Tag>}
-              </Space>
-            </div>
-          ),
-        }))} />
-      )}
-    </Card>
-  )
-}
-
 // --- Projects ---
 
 function ProjectsPanel() {
@@ -178,9 +122,6 @@ function ProjectsPanel() {
   const [submitting, setSubmitting] = useState(false)
   const [form] = Form.useForm<ProjectInput>()
   const [detail, setDetail] = useState<Project>()
-  const [events, setEvents] = useState<Fact[]>([])
-  const [eventsLoading, setEventsLoading] = useState(false)
-  const [eventsError, setEventsError] = useState<string>()
   const [eventOpen, setEventOpen] = useState(false)
   const [eventDescription, setEventDescription] = useState('')
   const [eventSubmitting, setEventSubmitting] = useState(false)
@@ -194,20 +135,6 @@ function ProjectsPanel() {
       .finally(() => setLoading(false))
   }, [])
   useEffect(reload, [reload])
-
-  useEffect(() => {
-    if (!detail) { setEvents([]); setEventsError(undefined); return }
-    const controller = new AbortController()
-    setEventsLoading(true)
-    setEventsError(undefined)
-    listProjectFacts(detail.id, controller.signal)
-      .then((result) => setEvents(result.items))
-      .catch((cause: unknown) => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setEventsError(errorText(cause))
-      })
-      .finally(() => { if (!controller.signal.aborted) setEventsLoading(false) })
-    return () => controller.abort()
-  }, [detail, eventRefresh])
 
   const openCreate = () => {
     setEditing(null)
@@ -254,9 +181,9 @@ function ProjectsPanel() {
       setEventDescription('')
       setEventOpen(false)
       setEventRefresh((value) => value + 1)
-      setEventsError(undefined)
+      setError(undefined)
     } catch (cause: unknown) {
-      setEventsError(errorText(cause))
+      setError(errorText(cause))
     } finally {
       setEventSubmitting(false)
     }
@@ -316,18 +243,12 @@ function ProjectsPanel() {
           <Descriptions.Item label="项目描述" span={2}>{detail.description || '—'}</Descriptions.Item>
           <Descriptions.Item label="备注" span={2}>{detail.notes || '—'}</Descriptions.Item>
         </Descriptions>
-        <Card size="small" title="项目进展" variant="borderless" extra={<Button size="small" type="primary" onClick={() => setEventOpen(true)}>记录进展</Button>}>
-          {eventsError && <Alert type="error" showIcon title="项目进展加载失败" description={eventsError} style={{ marginBottom: 12 }} />}
-          {eventsLoading ? (
-            <div style={{ padding: 16, textAlign: 'center' }}><Spin size="small" /></div>
-          ) : events.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无项目进展" />
-          ) : (
-            <Timeline items={events.map((event) => ({
-              content: <div><div style={{ whiteSpace: 'pre-wrap' }}>{event.description}</div><Text type="secondary" style={{ fontSize: 12 }}>{new Date(event.occurred_at).toLocaleString()}</Text></div>,
-            }))} />
-          )}
-        </Card>
+        <FactTimeline
+          subject={{ type: 'project', id: detail.id }}
+          title="项目事实"
+          refreshToken={eventRefresh}
+          extra={<Button size="small" type="primary" onClick={() => setEventOpen(true)}>记录进展</Button>}
+        />
         <EntityRelations entityType="project" entityId={detail.id} />
       </Space>}
     </Drawer>
@@ -611,7 +532,7 @@ function KeyMattersPanel() {
             <Descriptions.Item label="最近实质进展">{selected.last_progress_at ? dayjs(selected.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
             <Descriptions.Item label="最近活跃">{dayjs(selected.last_active_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
           </Descriptions>
-          <SubjectFactsCard subjectType="key_matter" subjectId={selected.id} title="关键事项事实" />
+          <FactTimeline subject={{ type: 'key_matter', id: selected.id }} title="关键事项事实" />
           <EntityRelations entityType="key_matter" entityId={selected.id} />
         </Space>
       )}
@@ -885,7 +806,7 @@ function PersonsPanel() {
         />
       </Form>
       {editing && <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-        <SubjectFactsCard subjectType="person" subjectId={editing.id} title="人物事实" />
+        <FactTimeline subject={{ type: 'person', id: editing.id }} title="人物事实" />
         <EntityRelations entityType="person" entityId={editing.id} />
       </Space>}
     </Drawer>
@@ -1140,7 +1061,7 @@ function GroupsPanel() {
             <Form.Item name="include_in_memory" label="纳入记忆" valuePropName="checked"><Switch /></Form.Item>
           </Flex>
         </Form>
-        <SubjectFactsCard subjectType="group" subjectId={editing.id} title="会话事实" />
+        <FactTimeline subject={{ type: 'group', id: editing.id }} title="会话事实" />
         <EntityRelations entityType="group" entityId={editing.id} />
       </Space>}
     </Drawer>
@@ -1586,23 +1507,18 @@ function SkillsPanel() {
   </>
 }
 
-type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'profile'
+type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'facts' | 'profile'
 
 export default function Background() {
   const { context, setViewState } = usePageContext()
   const memoryView = (value: string | undefined): MemoryView => (
-    value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'profile'
+    value === 'projects' || value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'facts' || value === 'profile'
       ? value
       : 'profile'
   )
-  const [activeView, setActiveView] = useState<MemoryView>(() => memoryView(context.view_state.view))
-
-  useEffect(() => {
-    setActiveView(memoryView(context.view_state.view))
-  }, [context.view_state.view])
+  const activeView = memoryView(context.view_state.view)
 
   const selectView = (view: MemoryView) => {
-    setActiveView(view)
     setViewState({ view })
   }
 
@@ -1629,6 +1545,7 @@ export default function Background() {
           { key: 'groups', label: '会话', children: <GroupsPanel /> },
           { key: 'resources', label: '资源', children: <ResourcePanel /> },
           { key: 'key-matters', label: '关键事项', children: <KeyMattersPanel /> },
+          { key: 'facts', label: '事实', children: <FactsPanel /> },
         ]}
       />
     </div>

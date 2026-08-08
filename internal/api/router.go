@@ -53,6 +53,7 @@ type Dependencies struct {
 	Skills             *skill.Service
 	RelationFacts      knowledge.FactService
 	Progress           progress.EventService
+	FactQueries        progress.FactQueryService
 	Overview           *insight.OverviewService
 	Digests            *insight.DigestService
 	DailyDigests       DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
@@ -141,6 +142,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Progress == nil {
 		return fmt.Errorf("api progress service dependency is nil")
 	}
+	if deps.FactQueries == nil {
+		return fmt.Errorf("api fact query service dependency is nil")
+	}
 	if deps.Overview == nil {
 		return fmt.Errorf("api overview service dependency is nil")
 	}
@@ -220,6 +224,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.DELETE("/api/key-matters/:key_matter_id", DeleteKeyMatter(deps.KeyMatters))
 	h.GET("/api/facts", ListFacts(deps.Progress))
 	h.POST("/api/facts", AppendFact(deps.Progress))
+	h.GET("/api/facts/timeline", FactTimeline(deps.FactQueries, deps.FactRollupLoc))
+	h.GET("/api/facts/search", SearchFacts(deps.FactQueries))
 	h.POST("/api/fact-rollups/generate", GenerateFactRollups(deps.FactRollups, deps.FactRollupLoc))
 	h.GET("/api/persons", ListPersons(deps.Persons))
 	h.POST("/api/persons/resolve", ResolvePerson(deps.Resolve))

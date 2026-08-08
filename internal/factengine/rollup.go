@@ -134,6 +134,23 @@ func (w *RollupWorker) RollupPreviousDay(ctx context.Context) (RollupStats, erro
 // dayStart must already be in the worker's location at 00:00; the half-open
 // window is [dayStart, dayStart+24h).
 func (w *RollupWorker) RollupDay(ctx context.Context, dayStart time.Time) (RollupStats, error) {
+	return w.rollupDay(ctx, dayStart, nil)
+}
+
+// RollupSubjectDay recomputes exactly one subject's rollup for one natural day.
+// It uses the same compression path as the scheduled full-day job; the narrower
+// entry point exists so the UI can repair a stale or missing subject without
+// rerunning every other subject for that day.
+func (w *RollupWorker) RollupSubjectDay(ctx context.Context, dayStart time.Time, subjectType string, subjectID uint64) (RollupStats, error) {
+	subjectType = strings.TrimSpace(strings.ToLower(subjectType))
+	if subjectType == "" || subjectID == 0 {
+		return RollupStats{}, fmt.Errorf("subject_type and positive subject_id are required")
+	}
+	subject := rollupSubject{Type: subjectType, ID: subjectID}
+	return w.rollupDay(ctx, dayStart, &subject)
+}
+
+func (w *RollupWorker) rollupDay(ctx context.Context, dayStart time.Time, requested *rollupSubject) (RollupStats, error) {
 	dayStart = time.Date(dayStart.Year(), dayStart.Month(), dayStart.Day(), 0, 0, 0, 0, w.location)
 	dayEnd := dayStart.AddDate(0, 0, 1)
 	stats := RollupStats{Day: dayStart.Format("2006-01-02")}
@@ -141,6 +158,15 @@ func (w *RollupWorker) RollupDay(ctx context.Context, dayStart time.Time) (Rollu
 	subjects, err := w.subjectsWithDetails(ctx, dayStart, dayEnd)
 	if err != nil {
 		return stats, err
+	}
+	if requested != nil {
+		matched := subjects[:0]
+		for _, subject := range subjects {
+			if subject == *requested {
+				matched = append(matched, subject)
+			}
+		}
+		subjects = matched
 	}
 	stats.Subjects = len(subjects)
 	if len(subjects) == 0 {

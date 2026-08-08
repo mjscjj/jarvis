@@ -184,6 +184,33 @@ func TestRollupDayBatchesFiveSubjectsAndReusesOneBackground(t *testing.T) {
 	}
 }
 
+func TestRollupSubjectDayOnlyReplacesRequestedSubject(t *testing.T) {
+	db := newRollupTestDB(t)
+	day := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	seedRollupDetail(t, db, "topic", 1, "detail one", day.Add(time.Hour))
+	seedRollupDetail(t, db, "topic", 2, "detail two", day.Add(2*time.Hour))
+	compressor := &fakeCompressor{responses: [][]rollupResult{{
+		{SubjectType: "topic", SubjectID: 2, Description: "only two"},
+	}}}
+	contexts := &fakeRollupContexts{background: json.RawMessage(`{"principal":{"name":"Principal"}}`)}
+	worker := newTestRollupWorker(t, db, compressor, contexts)
+
+	stats, err := worker.RollupSubjectDay(context.Background(), day, "topic", 2)
+	if err != nil {
+		t.Fatalf("RollupSubjectDay: %v", err)
+	}
+	if stats.Subjects != 1 || stats.Written != 1 || len(compressor.calls) != 1 {
+		t.Fatalf("stats=%+v calls=%d", stats, len(compressor.calls))
+	}
+	var rollups []domain.Fact
+	if err := db.Where("source_kind = ?", progress.FactSourceRollup).Find(&rollups).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rollups) != 1 || rollups[0].SubjectID != 2 || rollups[0].Description != "only two" {
+		t.Fatalf("rollups = %#v", rollups)
+	}
+}
+
 func TestRollupDayRejectsMismatchedSubjectsWithoutWriting(t *testing.T) {
 	t.Parallel()
 	db := newRollupTestDB(t)

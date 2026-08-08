@@ -313,6 +313,55 @@ export interface Fact {
   created_at: string
 }
 
+export interface LabeledFact extends Fact {
+  subject_label: string
+}
+
+export type FactRollupState = 'fresh' | 'stale' | 'missing'
+
+export interface FactSubjectDay {
+  subject_type: string
+  subject_id: number
+  subject_label: string
+  rollup: LabeledFact | null
+  rollup_state: FactRollupState
+  detail_count: number
+  late_detail_count: number
+  latest_occurred_at: string
+}
+
+export interface FactTimelineDay {
+  date: string
+  is_today: boolean
+  detail_count: number
+  details: LabeledFact[]
+  subjects: FactSubjectDay[]
+}
+
+export interface FactTimeline {
+  timezone: string
+  days: FactTimelineDay[]
+}
+
+export interface FactSearchResult {
+  items: LabeledFact[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface FactSearchQuery {
+  q?: string
+  from?: string
+  until?: string
+  subjectType?: string
+  subjectId?: number
+  sourceKind?: string
+  layer?: 'all' | 'detail' | 'rollup'
+  page?: number
+  pageSize?: number
+}
+
 export type RelationEntityType = 'project' | 'key_matter' | 'person' | 'principal' | 'group' | 'todo' | 'task' | 'resource' | 'managed_resource'
 
 export interface RelationEntityRef {

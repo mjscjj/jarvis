@@ -905,6 +905,7 @@ func main() {
 		Skills:         skillService,
 		RelationFacts:  relationFactService,
 		Progress:       progressService,
+		FactQueries:    progressService,
 		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		MeetingReviews: meetingReviewService,
 		DailyDigests:   dailyDigestService,

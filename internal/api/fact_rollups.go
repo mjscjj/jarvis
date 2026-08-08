@@ -15,10 +15,13 @@ import (
 // FactRollupGenerator compresses one natural day's detail facts into rollups.
 type FactRollupGenerator interface {
 	RollupDay(context.Context, time.Time) (factengine.RollupStats, error)
+	RollupSubjectDay(context.Context, time.Time, string, uint64) (factengine.RollupStats, error)
 }
 
 type generateFactRollupRequest struct {
-	Date string `json:"date"`
+	Date        string `json:"date"`
+	SubjectType string `json:"subject_type"`
+	SubjectID   uint64 `json:"subject_id"`
 }
 
 // GenerateFactRollups manually compresses one local calendar day. The date is
@@ -49,7 +52,17 @@ func GenerateFactRollups(generator FactRollupGenerator, location *time.Location)
 			writeAPIError(c, consts.StatusBadRequest, 40070, fmt.Errorf("date must be YYYY-MM-DD: %w", err))
 			return
 		}
-		stats, err := generator.RollupDay(ctx, dayStart)
+		req.SubjectType = strings.TrimSpace(strings.ToLower(req.SubjectType))
+		if (req.SubjectType == "") != (req.SubjectID == 0) {
+			writeAPIError(c, consts.StatusBadRequest, 40070, fmt.Errorf("subject_type and subject_id must be provided together"))
+			return
+		}
+		var stats factengine.RollupStats
+		if req.SubjectType != "" {
+			stats, err = generator.RollupSubjectDay(ctx, dayStart, req.SubjectType, req.SubjectID)
+		} else {
+			stats, err = generator.RollupDay(ctx, dayStart)
+		}
 		if err != nil {
 			writeAPIError(c, consts.StatusInternalServerError, 50070, err)
 			return
