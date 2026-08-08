@@ -9,8 +9,12 @@ func validProjectInput() ProjectInput {
 	return ProjectInput{Name: "Jarvis", Role: "owner", Status: "active", Priority: 3}
 }
 
-func validPersonInput() PersonInput {
-	return PersonInput{OpenID: "ou_abc", Name: "Leader", Role: "leader", PriorityWeight: 0.9}
+func validPersonUpdateInput() PersonUpdateInput {
+	return PersonUpdateInput{Name: "Leader", Role: "leader", PriorityWeight: 0.9}
+}
+
+func validPersonCreateInput() PersonCreateInput {
+	return PersonCreateInput{OpenID: "ou_abc", PersonUpdateInput: validPersonUpdateInput()}
 }
 
 func TestProjectInputValidate(t *testing.T) {
@@ -48,26 +52,34 @@ func TestProjectInputValidateAcceptsJSON(t *testing.T) {
 	}
 }
 
-func TestPersonInputValidate(t *testing.T) {
+func TestPersonCreateInputValidate(t *testing.T) {
 	t.Parallel()
-	base := validPersonInput()
+	base := validPersonCreateInput()
 	if err := base.validate(); err != nil {
-		t.Fatalf("valid person rejected: %v", err)
+		t.Fatalf("valid person create rejected: %v", err)
 	}
 
-	cases := map[string]func(*PersonInput){
-		"blank open_id":   func(in *PersonInput) { in.OpenID = "" },
-		"blank name":      func(in *PersonInput) { in.Name = " " },
-		"bad role":        func(in *PersonInput) { in.Role = "manager" },
-		"weight negative": func(in *PersonInput) { in.PriorityWeight = -0.1 },
-		"weight over one": func(in *PersonInput) { in.PriorityWeight = 1.5 },
+	cases := map[string]func(*PersonCreateInput){
+		"blank open_id":   func(in *PersonCreateInput) { in.OpenID = "" },
+		"blank name":      func(in *PersonCreateInput) { in.Name = " " },
+		"bad role":        func(in *PersonCreateInput) { in.Role = "manager" },
+		"weight negative": func(in *PersonCreateInput) { in.PriorityWeight = -0.1 },
+		"weight over one": func(in *PersonCreateInput) { in.PriorityWeight = 1.5 },
 	}
 	for name, mutate := range cases {
-		in := validPersonInput()
+		in := validPersonCreateInput()
 		mutate(&in)
 		if err := in.validate(); err == nil {
 			t.Errorf("case %q: expected validation error, got nil", name)
 		}
+	}
+}
+
+func TestPersonUpdateInputDoesNotRequireIdentity(t *testing.T) {
+	t.Parallel()
+	in := validPersonUpdateInput()
+	if err := in.validate(); err != nil {
+		t.Fatalf("valid person update rejected: %v", err)
 	}
 }
 

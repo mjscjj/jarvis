@@ -559,6 +559,17 @@
   margin-top: 0;
 }
 
+.world-detail-descriptions .ant-descriptions-item-label {
+  width: 116px;
+  white-space: nowrap;
+}
+
+.world-detail-descriptions .ant-descriptions-item-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .key-matter-table .ant-table-cell {
   overflow: hidden;
 }

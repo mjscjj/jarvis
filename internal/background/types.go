@@ -105,29 +105,22 @@ func (in *KeyMatterInput) validate() error {
 	return nil
 }
 
-// PersonInput is the create/update payload for a Person.
-type PersonInput struct {
-	OpenID         string  `json:"open_id"`
-	UnionID        *string `json:"union_id"`
-	FeishuUserID   *string `json:"feishu_user_id"`
+// PersonUpdateInput contains only the human-editable Person fields. Identity
+// fields belong to the existing Person record and must not be rewritten by an
+// edit form.
+type PersonUpdateInput struct {
 	Name           string  `json:"name"`
-	EnName         *string `json:"en_name"`
-	AvatarURL      *string `json:"avatar_url"`
 	Department     *string `json:"department"`
 	Title          *string `json:"title"`
 	Role           string  `json:"role"`
 	PriorityWeight float64 `json:"priority_weight"`
 	Relation       *string `json:"relation"`
 	CommStyle      *string `json:"comm_style"`
-	P2PChatID      *string `json:"p2p_chat_id"`
 	Notes          *string `json:"notes"`
 	IsActive       *bool   `json:"is_active"`
 }
 
-func (in *PersonInput) validate() error {
-	if strings.TrimSpace(in.OpenID) == "" {
-		return fmt.Errorf("person open_id must not be blank")
-	}
+func (in *PersonUpdateInput) validate() error {
 	if strings.TrimSpace(in.Name) == "" {
 		return fmt.Errorf("person name must not be blank")
 	}
@@ -138,6 +131,25 @@ func (in *PersonInput) validate() error {
 		return fmt.Errorf("person priority_weight must be between 0 and 1")
 	}
 	return nil
+}
+
+// PersonCreateInput includes the external identity required when a Person is
+// first bound. Later updates use PersonUpdateInput and preserve these fields.
+type PersonCreateInput struct {
+	PersonUpdateInput
+	OpenID       string  `json:"open_id"`
+	UnionID      *string `json:"union_id"`
+	FeishuUserID *string `json:"feishu_user_id"`
+	EnName       *string `json:"en_name"`
+	AvatarURL    *string `json:"avatar_url"`
+	P2PChatID    *string `json:"p2p_chat_id"`
+}
+
+func (in *PersonCreateInput) validate() error {
+	if strings.TrimSpace(in.OpenID) == "" {
+		return fmt.Errorf("person open_id must not be blank")
+	}
+	return in.PersonUpdateInput.validate()
 }
 
 // GroupBackgroundInput is the human-curated subset of Group. It deliberately

@@ -230,7 +230,7 @@ func ListPersons(svc *background.PersonService) app.HandlerFunc {
 
 func CreatePerson(svc *background.PersonService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		var in background.PersonInput
+		var in background.PersonCreateInput
 		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40021, err)
 			return
@@ -293,7 +293,7 @@ func UpdatePerson(svc *background.PersonService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40022, err)
 			return
 		}
-		var in background.PersonInput
+		var in background.PersonUpdateInput
 		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40021, err)
 			return

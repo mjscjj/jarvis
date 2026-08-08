@@ -25,7 +25,8 @@ import type {
   Overview,
   Paged,
   Person,
-  PersonInput,
+  PersonCreateInput,
+  PersonUpdateInput,
   ProfileInput,
   ProfileView,
   Project,
@@ -288,11 +289,11 @@ export function resolvePerson(query: string): Promise<ResolveResult> {
   return request<ResolveResult>('/api/persons/resolve', { method: 'POST', body: { query } })
 }
 
-export function createPerson(body: PersonInput): Promise<Person> {
+export function createPerson(body: PersonCreateInput): Promise<Person> {
   return request<Person>('/api/persons', { method: 'POST', body })
 }
 
-export function updatePerson(id: number, body: PersonInput): Promise<Person> {
+export function updatePerson(id: number, body: PersonUpdateInput): Promise<Person> {
   return request<Person>(`/api/persons/${id}`, { method: 'PUT', body })
 }
 

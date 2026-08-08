@@ -62,6 +62,7 @@ import {
   updateSkill,
 } from './api'
 import { keyMatterToInput, replaceKeyMatter } from './keyMatters'
+import { personToUpdateInput } from './persons'
 import SharedMemory from './SharedMemory'
 import RuntimeSettings from './RuntimeSettings'
 import SystemTasks from './SystemTasks'
@@ -76,7 +77,7 @@ import type {
   KeyMatter,
   KeyMatterInput,
   Person,
-  PersonInput,
+  PersonUpdateInput,
   PersonRole,
   ProfileInput,
   ProfileView,
@@ -106,10 +107,6 @@ const personRoleLabels: Record<PersonRole, string> = {
 const resourceTypeLabels: Record<ResourceType, string> = {
   doc: '文档', link: '链接', repo: '仓库', note: '笔记', other: '其他',
 }
-const personRoleColors: Record<PersonRole, string> = {
-  leader: 'volcano', key: 'gold', colleague: 'blue', other: 'default',
-}
-
 const workRuleStageLabels: Record<WorkRuleStage, string> = {
   extract: 'M3 抽取 Todo', execute: 'M5 执行',
 }
@@ -362,7 +359,6 @@ function KeyMattersPanel() {
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [selected, setSelected] = useState<KeyMatter>()
-  const [relationMatter, setRelationMatter] = useState<KeyMatter>()
   const [editing, setEditing] = useState<{ id: number; field: KeyMatterField }>()
   const [draftText, setDraftText] = useState('')
   const [draftDueAt, setDraftDueAt] = useState<Dayjs | null>(null)
@@ -395,6 +391,17 @@ function KeyMattersPanel() {
     setOpen(true)
   }
 
+  const openDetail = (matter: KeyMatter) => {
+    setSelected(matter)
+    form.setFieldsValue({
+      title: matter.title,
+      status: matter.status,
+      summary: matter.summary ?? undefined,
+      project_id: matter.project_id ?? undefined,
+      due_at: matter.due_at ? dayjs(matter.due_at) : undefined,
+    })
+  }
+
   const submit = async () => {
     const values = await form.validateFields()
     const input: KeyMatterInput = {
@@ -409,6 +416,28 @@ function KeyMattersPanel() {
       await createKeyMatter(input)
       setOpen(false)
       reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const saveDetail = async () => {
+    if (!selected) return
+    const values = await form.validateFields()
+    setSubmitting(true)
+    try {
+      const saved = await updateKeyMatter(selected.id, {
+        title: values.title,
+        status: values.status ?? '',
+        summary: values.summary?.trim() || null,
+        project_id: values.project_id ?? null,
+        due_at: values.due_at?.toISOString() ?? null,
+      })
+      setItems((current) => replaceKeyMatter(current, saved))
+      setSelected(undefined)
+      setError(undefined)
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
@@ -527,7 +556,7 @@ function KeyMattersPanel() {
       title: '操作', width: 220, render: (_, matter) => (
         <Flex gap={6} wrap>
           <Button size="small" loading={touchingId === matter.id} onClick={(event) => { event.stopPropagation(); touch(matter) }}>活跃</Button>
-          <Button size="small" onClick={(event) => { event.stopPropagation(); setRelationMatter(matter) }}>关系</Button>
+          <Button size="small" onClick={(event) => { event.stopPropagation(); openDetail(matter) }}>详情</Button>
           <Popconfirm title="闭环该关键事项？" onConfirm={() => close(matter)} okText="闭环" cancelText="取消">
             <Button size="small" danger onClick={(event) => event.stopPropagation()}>闭环</Button>
           </Popconfirm>
@@ -552,24 +581,41 @@ function KeyMattersPanel() {
         pagination={false}
         tableLayout="fixed"
         scroll={{ x: 1210 }}
-        onRow={(matter) => ({ onClick: () => setSelected(matter), className: 'clickable-row' })}
+        onRow={(matter) => ({
+          onClick: () => openDetail(matter),
+          onKeyDown: (event) => { if (event.key === 'Enter') openDetail(matter) },
+          className: 'clickable-row', tabIndex: 0,
+        })}
       />
     </Card>
-    {selected && (
-      <Card title={selected.title} variant="borderless" style={{ marginTop: 16 }}>
+    <Drawer
+      title={selected?.title || '关键事项详情'}
+      open={Boolean(selected)}
+      size={680}
+      onClose={() => setSelected(undefined)}
+      destroyOnHidden
+      footer={<Flex justify="flex-end" gap={8}><Button onClick={() => setSelected(undefined)}>关闭</Button><Button type="primary" loading={submitting} onClick={saveDetail}>保存</Button></Flex>}
+    >
+      {selected && (
         <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-          <Descriptions column={2} size="small">
-            <Descriptions.Item label="状态">{selected.status || '—'}</Descriptions.Item>
-            <Descriptions.Item label="关联项目">{selected.project?.name || '—'}</Descriptions.Item>
-            <Descriptions.Item label="截止时间">{selected.due_at ? dayjs(selected.due_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
+          <Form form={form} layout="vertical">
+            <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入关键事项标题' }]}><Input /></Form.Item>
+            <Form.Item name="status" label="状态"><Input placeholder="自由文本，如：等法务回复" /></Form.Item>
+            <Form.Item name="summary" label="当前进展"><Input.TextArea rows={6} /></Form.Item>
+            <Form.Item name="project_id" label="关联项目（可选）">
+              <Select allowClear options={projects.map((project) => ({ value: project.id, label: project.name }))} />
+            </Form.Item>
+            <Form.Item name="due_at" label="截止时间（可选）"><DatePicker showTime format="YYYY-MM-DD HH:mm" style={{ width: '100%' }} /></Form.Item>
+          </Form>
+          <Descriptions className="world-detail-descriptions" column={1} size="small" bordered>
             <Descriptions.Item label="最近实质进展">{selected.last_progress_at ? dayjs(selected.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
             <Descriptions.Item label="最近活跃">{dayjs(selected.last_active_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
-            <Descriptions.Item label="当前进展" span={2}>{selected.summary || '—'}</Descriptions.Item>
           </Descriptions>
           <SubjectFactsCard subjectType="key_matter" subjectId={selected.id} title="关键事项事实" />
+          <EntityRelations entityType="key_matter" entityId={selected.id} />
         </Space>
-      </Card>
-    )}
+      )}
+    </Drawer>
     <Modal title="新建关键事项" open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="创建" destroyOnHidden>
       <Form form={form} layout="vertical">
         <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入关键事项标题' }]}><Input /></Form.Item>
@@ -581,9 +627,6 @@ function KeyMattersPanel() {
         <Form.Item name="due_at" label="截止时间（可选）"><DatePicker showTime format="YYYY-MM-DD HH:mm" style={{ width: '100%' }} /></Form.Item>
       </Form>
     </Modal>
-    <Modal title={`关联关系 · ${relationMatter?.title || ''}`} open={Boolean(relationMatter)} onCancel={() => setRelationMatter(undefined)} footer={null}>
-      {relationMatter && <EntityRelations entityType="key_matter" entityId={relationMatter.id} />}
-    </Modal>
   </>
 }
 
@@ -592,16 +635,6 @@ function KeyMattersPanel() {
 const roleDefaultWeight: Record<PersonRole, number> = { leader: 1.0, key: 0.7, colleague: 0.4, other: 0.1 }
 
 type PersonRoleFilter = 'all' | PersonRole
-
-// personToInput projects a stored Person back into the update payload so an
-// inline edit patches exactly one field without dropping the rest.
-function personToInput(person: Person): PersonInput {
-  return {
-    open_id: person.open_id, name: person.name, role: person.role, priority_weight: person.priority_weight,
-    department: person.department, title: person.title, relation: person.relation,
-    comm_style: person.comm_style, p2p_chat_id: person.p2p_chat_id, notes: person.notes, is_active: person.is_active,
-  }
-}
 
 function PersonsPanel() {
   const [items, setItems] = useState<Person[]>([])
@@ -612,8 +645,9 @@ function PersonsPanel() {
   const [submitting, setSubmitting] = useState(false)
   const [roleFilter, setRoleFilter] = useState<PersonRoleFilter>('all')
   const [savingId, setSavingId] = useState<number>()
-  const [form] = Form.useForm<PersonInput>()
+  const [form] = Form.useForm<PersonUpdateInput>()
   const [boundOpenID, setBoundOpenID] = useState('')
+  const [boundP2PChatID, setBoundP2PChatID] = useState('')
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [candidates, setCandidates] = useState<ResolveCandidate[] | null>(null)
@@ -629,11 +663,12 @@ function PersonsPanel() {
   useEffect(reload, [reload])
 
   // patchPerson performs an inline single-field update straight from the list.
-  const patchPerson = async (person: Person, patch: Partial<PersonInput>) => {
+  const patchPerson = async (person: Person, patch: Partial<PersonUpdateInput>) => {
     setSavingId(person.id)
     try {
-      await updatePerson(person.id, { ...personToInput(person), ...patch })
-      reload()
+      const saved = await updatePerson(person.id, { ...personToUpdateInput(person), ...patch })
+      setItems((current) => current.map((item) => item.id === saved.id ? saved : item))
+      setError(undefined)
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
@@ -643,21 +678,28 @@ function PersonsPanel() {
 
   const visibleItems = roleFilter === 'all' ? items : items.filter((p) => p.role === roleFilter)
 
-  const resetResolve = () => { setQuery(''); setCandidates(null); setHasMore(false); setBoundOpenID('') }
+  const resetResolve = () => {
+    setQuery('')
+    setCandidates(null)
+    setHasMore(false)
+    setBoundOpenID('')
+    setBoundP2PChatID('')
+  }
   const openCreate = () => {
     setEditing(null)
     resetResolve()
-    form.setFieldsValue({ open_id: '', name: '', role: 'colleague', priority_weight: 0.4, department: null, title: null, relation: null, comm_style: null, p2p_chat_id: null, notes: null, is_active: true })
+    form.setFieldsValue({ name: '', role: 'colleague', priority_weight: 0.4, department: null, title: null, relation: null, comm_style: null, notes: null, is_active: true })
     setOpen(true)
   }
   const openEdit = (person: Person) => {
     setEditing(person)
     resetResolve()
     setBoundOpenID(person.open_id)
+    setBoundP2PChatID(person.p2p_chat_id || '')
     form.setFieldsValue({
-      open_id: person.open_id, name: person.name, role: person.role, priority_weight: person.priority_weight,
+      name: person.name, role: person.role, priority_weight: person.priority_weight,
       department: person.department, title: person.title, relation: person.relation,
-      comm_style: person.comm_style, p2p_chat_id: person.p2p_chat_id, notes: person.notes, is_active: person.is_active,
+      comm_style: person.comm_style, notes: person.notes, is_active: person.is_active,
     })
     setOpen(true)
   }
@@ -677,10 +719,10 @@ function PersonsPanel() {
   }
   const pickCandidate = (candidate: ResolveCandidate) => {
     setBoundOpenID(candidate.open_id)
+    setBoundP2PChatID(candidate.p2p_chat_id || '')
     const role = (form.getFieldValue('role') as PersonRole) || 'colleague'
     form.setFieldsValue({
-      open_id: candidate.open_id, name: candidate.name,
-      department: candidate.department || null, p2p_chat_id: candidate.p2p_chat_id || null,
+      name: candidate.name, department: candidate.department || null,
       priority_weight: form.getFieldValue('priority_weight') ?? roleDefaultWeight[role],
     })
     setCandidates(null)
@@ -690,10 +732,15 @@ function PersonsPanel() {
     if (!editing && !boundOpenID) { setError('请先搜索并选择一个飞书用户'); return }
     setSubmitting(true)
     try {
-      if (editing) await updatePerson(editing.id, values)
-      else await createPerson({ ...values, open_id: boundOpenID })
+      if (editing) {
+        const saved = await updatePerson(editing.id, values)
+        setItems((current) => current.map((item) => item.id === saved.id ? saved : item))
+      } else {
+        await createPerson({ ...values, open_id: boundOpenID, p2p_chat_id: boundP2PChatID || null })
+        reload()
+      }
       setOpen(false)
-      reload()
+      setError(undefined)
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
@@ -701,7 +748,12 @@ function PersonsPanel() {
     }
   }
   const remove = async (person: Person) => {
-    try { await deletePerson(person.id); reload() } catch (cause: unknown) { setError(errorText(cause)) }
+    try {
+      await deletePerson(person.id)
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    }
   }
 
   const columns: TableColumnsType<Person> = [
@@ -714,6 +766,7 @@ function PersonsPanel() {
       // 行内直接改角色，同时把权重联动为该角色默认值（规范：列表页优先行内编辑）。
       render: (r: PersonRole, p) => (
         <Select<PersonRole> size="small" variant="borderless" value={r} disabled={savingId === p.id} style={{ width: 120 }}
+          onClick={(event) => event.stopPropagation()}
           onChange={(role) => patchPerson(p, { role, priority_weight: roleDefaultWeight[role] })}
           options={Object.entries(personRoleLabels).map(([value, label]) => ({ value, label }))} />
       ),
@@ -723,11 +776,11 @@ function PersonsPanel() {
     { title: '沟通风格', dataIndex: 'comm_style', ellipsis: true, render: (v: string | null) => v || '—' },
     {
       title: '启用', dataIndex: 'is_active', width: 70,
-      render: (v: boolean, p) => <Switch size="small" checked={v} loading={savingId === p.id} onChange={(next) => patchPerson(p, { is_active: next })} />,
+      render: (v: boolean, p) => <span onClick={(event) => event.stopPropagation()}><Switch size="small" checked={v} loading={savingId === p.id} onChange={(next) => patchPerson(p, { is_active: next })} /></span>,
     },
     {
       title: '操作', width: 150, render: (_, p) => (
-        <Flex gap={8}>
+        <Flex gap={8} onClick={(event) => event.stopPropagation()}>
           <Button size="small" onClick={() => openEdit(p)}>编辑</Button>
           <Popconfirm title="删除该人物？" onConfirm={() => remove(p)} okText="删除" cancelText="取消">
             <Button size="small" danger>删除</Button>
@@ -755,8 +808,24 @@ function PersonsPanel() {
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建人物</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="人物操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<Person> rowKey="id" columns={columns} dataSource={visibleItems} loading={loading} pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [20, 50, 100], hideOnSinglePage: visibleItems.length <= 20 }} scroll={{ x: 900 }} /></Card>
-    <Modal title={editing ? '编辑人物' : '新建人物'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden width={720}>
+    <Card className="table-card" variant="borderless"><Table<Person>
+      rowKey="id" columns={columns} dataSource={visibleItems} loading={loading}
+      pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [20, 50, 100], hideOnSinglePage: visibleItems.length <= 20 }}
+      scroll={{ x: 900 }}
+      onRow={(person) => ({
+        onClick: () => openEdit(person),
+        onKeyDown: (event) => { if (event.key === 'Enter') openEdit(person) },
+        className: 'clickable-row', tabIndex: 0,
+      })}
+    /></Card>
+    <Drawer
+      title={editing ? editing.name : '新建人物'}
+      open={open}
+      size={720}
+      onClose={() => setOpen(false)}
+      destroyOnHidden
+      footer={<Flex justify="flex-end" gap={8}><Button onClick={() => setOpen(false)}>关闭</Button><Button type="primary" loading={submitting} onClick={submit}>保存</Button></Flex>}
+    >
       {!editing && (
         <Card size="small" style={{ marginBottom: 16 }}>
           <Flex gap={8}>
@@ -807,9 +876,10 @@ function PersonsPanel() {
             key: 'identity',
             label: '高级信息',
             children: (
-              <Form.Item name="open_id" label="飞书用户标识" extra={editing ? '系统绑定键，不可变更' : '由上方搜索选择自动绑定'}>
-                <Input disabled value={boundOpenID} placeholder="搜索并选择用户后自动填入" />
-              </Form.Item>
+              <div>
+                <Text type="secondary">飞书用户标识</Text>
+                <div><Text copyable={Boolean(boundOpenID)}>{boundOpenID || '搜索并选择用户后自动绑定'}</Text></div>
+              </div>
             ),
           }]}
         />
@@ -818,7 +888,7 @@ function PersonsPanel() {
         <SubjectFactsCard subjectType="person" subjectId={editing.id} title="人物事实" />
         <EntityRelations entityType="person" entityId={editing.id} />
       </Space>}
-    </Modal>
+    </Drawer>
   </>
 }
 
@@ -962,7 +1032,7 @@ function GroupsPanel() {
     { title: '消息数', dataIndex: 'message_count', width: 80, render: (v: number, g) => g.related_group ? v : <Text type="secondary">—</Text> },
     {
       title: '操作', width: 180, fixed: 'right', render: (_, g) => (
-        <Flex gap={8}>
+        <Flex gap={8} onClick={(event) => event.stopPropagation()}>
           {g.related_group ? (
             <Popconfirm title="移出监控？将停止采集该会话" onConfirm={() => toggleRelated(g, false)} okText="移出" cancelText="取消">
               <Button size="small" danger loading={togglingId === g.id}>移出监控</Button>
@@ -1015,6 +1085,11 @@ function GroupsPanel() {
     <Card className="table-card" variant="borderless">
       <Table<Group>
         rowKey="id" columns={columns} dataSource={items} loading={loading} scroll={{ x: 1000 }}
+        onRow={(group) => ({
+          onClick: () => openEdit(group),
+          onKeyDown: (event) => { if (event.key === 'Enter') openEdit(group) },
+          className: 'clickable-row', tabIndex: 0,
+        })}
         locale={{
           emptyText: keyword
             ? <Flex vertical align="center" gap={8} style={{ padding: '24px 0' }}>
@@ -1026,28 +1101,49 @@ function GroupsPanel() {
         pagination={{ current: page, pageSize: PAGE_SIZE, total, showSizeChanger: false, onChange: setPage }}
       />
     </Card>
-    <Modal title={`编辑会话背景 · ${editing?.name || '未命名会话'}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden width={760}>
-      <Form form={form} layout="vertical">
-        <Form.Item
-          name="background_note"
-          label="人工背景"
-          tooltip="只由你维护，会和群公告一起进入后续 Todo 的上下文快照。"
-        >
-          <Input.TextArea
-            rows={5}
-            placeholder="说明本会话讨论什么、哪些人/模块是重点、任务应如何定位代码和识别高信号。"
-          />
-        </Form.Item>
-        <Form.Item name="project_id" label="关联项目">
-          <Select allowClear placeholder="不关联" options={projects.map((p) => ({ value: p.id, label: p.name }))} />
-        </Form.Item>
-        <Form.Item name="related_group" label="相关会话(纳入监控)" valuePropName="checked"><Switch /></Form.Item>
-        <Form.Item name="is_key_group" label="关键群" valuePropName="checked"><Switch /></Form.Item>
-        <Form.Item name="pinned" label="置顶(始终热扫)" valuePropName="checked"><Switch /></Form.Item>
-        <Form.Item name="include_in_memory" label="纳入记忆" valuePropName="checked"><Switch /></Form.Item>
-      </Form>
-      {editing && <SubjectFactsCard subjectType="group" subjectId={editing.id} title="群事实" />}
-    </Modal>
+    <Drawer
+      title={editing?.name || '未命名会话'}
+      open={Boolean(editing)}
+      size={720}
+      onClose={() => setEditing(null)}
+      destroyOnHidden
+      footer={<Flex justify="flex-end" gap={8}><Button onClick={() => setEditing(null)}>关闭</Button><Button type="primary" loading={submitting} onClick={submit}>保存</Button></Flex>}
+    >
+      {editing && <Space orientation="vertical" size={20} style={{ width: '100%' }}>
+        <Descriptions className="world-detail-descriptions" column={1} size="small" bordered>
+          <Descriptions.Item label="类型">{chatModeLabels[editing.chat_mode] || editing.chat_mode}</Descriptions.Item>
+          <Descriptions.Item label="分层"><Tag color={tierColors[editing.tier] || 'default'}>{tierLabels[editing.tier] || editing.tier}</Tag></Descriptions.Item>
+          <Descriptions.Item label="最近活跃">{editing.last_active_at ? new Date(editing.last_active_at).toLocaleString('zh-CN', { hour12: false }) : '—'}</Descriptions.Item>
+          <Descriptions.Item label="消息数">{editing.related_group ? editing.message_count : '—'}</Descriptions.Item>
+          <Descriptions.Item label="最近扫描">{editing.related_group ? formatScanTime(editing.last_scan_at) : '—'}</Descriptions.Item>
+          <Descriptions.Item label="扫描状态">{editing.last_scan_status ? scanStatusMeta[editing.last_scan_status]?.label || editing.last_scan_status : '—'}</Descriptions.Item>
+          <Descriptions.Item label="会话说明">{editing.description || '—'}</Descriptions.Item>
+        </Descriptions>
+        <Form form={form} layout="vertical">
+          <Form.Item
+            name="background_note"
+            label="人工背景"
+            tooltip="只由你维护，会和群公告一起进入后续 Todo 的上下文快照。"
+          >
+            <Input.TextArea
+              rows={5}
+              placeholder="说明本会话讨论什么、哪些人/模块是重点、任务应如何定位代码和识别高信号。"
+            />
+          </Form.Item>
+          <Form.Item name="project_id" label="关联项目">
+            <Select allowClear placeholder="不关联" options={projects.map((p) => ({ value: p.id, label: p.name }))} />
+          </Form.Item>
+          <Flex gap={20} wrap>
+            <Form.Item name="related_group" label="纳入监控" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name="is_key_group" label="关键群" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name="pinned" label="始终热扫" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name="include_in_memory" label="纳入记忆" valuePropName="checked"><Switch /></Form.Item>
+          </Flex>
+        </Form>
+        <SubjectFactsCard subjectType="group" subjectId={editing.id} title="会话事实" />
+        <EntityRelations entityType="group" entityId={editing.id} />
+      </Space>}
+    </Drawer>
   </>
 }
 

@@ -31,7 +31,7 @@ func NewPersonService(db *gorm.DB) (*PersonService, error) {
 	return &PersonService{db: db}, nil
 }
 
-func (s *PersonService) Create(ctx context.Context, in PersonInput) (*PersonView, error) {
+func (s *PersonService) Create(ctx context.Context, in PersonCreateInput) (*PersonView, error) {
 	if err := in.validate(); err != nil {
 		return nil, invalid(err)
 	}
@@ -97,7 +97,7 @@ func (s *PersonService) GetByOpenID(ctx context.Context, openID string) (*Person
 	return &view, nil
 }
 
-func (s *PersonService) Update(ctx context.Context, id uint64, in PersonInput) (*PersonView, error) {
+func (s *PersonService) Update(ctx context.Context, id uint64, in PersonUpdateInput) (*PersonView, error) {
 	if id == 0 {
 		return nil, invalid(fmt.Errorf("person id must be positive"))
 	}
@@ -105,19 +105,13 @@ func (s *PersonService) Update(ctx context.Context, id uint64, in PersonInput) (
 		return nil, invalid(err)
 	}
 	updates := map[string]any{
-		"open_id":         in.OpenID,
-		"union_id":        in.UnionID,
-		"feishu_user_id":  in.FeishuUserID,
 		"name":            in.Name,
-		"en_name":         in.EnName,
-		"avatar_url":      in.AvatarURL,
 		"department":      in.Department,
 		"title":           in.Title,
 		"role":            in.Role,
 		"priority_weight": in.PriorityWeight,
 		"relation":        in.Relation,
 		"comm_style":      in.CommStyle,
-		"p2p_chat_id":     in.P2PChatID,
 		"notes":           in.Notes,
 		"is_active":       in.IsActive == nil || *in.IsActive,
 	}

@@ -474,8 +474,7 @@ export interface KeyMatterInput {
   due_at: string | null
 }
 
-export interface PersonInput {
-  open_id: string
+export interface PersonUpdateInput {
   name: string
   role: PersonRole
   priority_weight: number
@@ -483,9 +482,17 @@ export interface PersonInput {
   title?: string | null
   relation?: string | null
   comm_style?: string | null
-  p2p_chat_id?: string | null
   notes?: string | null
   is_active?: boolean
+}
+
+export interface PersonCreateInput extends PersonUpdateInput {
+  open_id: string
+  union_id?: string | null
+  feishu_user_id?: string | null
+  en_name?: string | null
+  avatar_url?: string | null
+  p2p_chat_id?: string | null
 }
 
 export interface ResolveCandidate {

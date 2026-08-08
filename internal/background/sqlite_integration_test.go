@@ -136,8 +136,9 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 
 	t.Run("person lifecycle", func(t *testing.T) {
 		openID := "ou_integration_" + itoa(suffix)
-		created, err := persons.Create(ctx, PersonInput{
-			OpenID: openID, Name: "IntegrationLeader", Role: "leader", PriorityWeight: 0.95,
+		created, err := persons.Create(ctx, PersonCreateInput{
+			OpenID:            openID,
+			PersonUpdateInput: PersonUpdateInput{Name: "IntegrationLeader", Role: "leader", PriorityWeight: 0.95},
 		})
 		if err != nil {
 			t.Fatalf("Create() error = %v", err)
@@ -148,14 +149,17 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 		}
 
 		inactive := false
-		updated, err := persons.Update(ctx, created.ID, PersonInput{
-			OpenID: openID, Name: "IntegrationLeader", Role: "key", PriorityWeight: 0.5, IsActive: &inactive,
+		updated, err := persons.Update(ctx, created.ID, PersonUpdateInput{
+			Name: "IntegrationLeader", Role: "key", PriorityWeight: 0.5, IsActive: &inactive,
 		})
 		if err != nil {
 			t.Fatalf("Update() error = %v", err)
 		}
 		if updated.Role != "key" || updated.IsActive {
 			t.Fatalf("Update() = %+v, unexpected", updated)
+		}
+		if updated.OpenID != openID {
+			t.Fatalf("Update() open_id = %q, want preserved %q", updated.OpenID, openID)
 		}
 
 		if err := persons.Delete(ctx, created.ID); err != nil {
@@ -220,8 +224,9 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 	t.Run("group keyword search spans owner/project/description", func(t *testing.T) {
 		token := "kwsearch" + itoa(suffix)
 		ownerID := "ou_owner_" + token
-		owner, err := persons.Create(ctx, PersonInput{
-			OpenID: ownerID, Name: "OwnerPerson" + token, Role: "colleague", PriorityWeight: 0.4,
+		owner, err := persons.Create(ctx, PersonCreateInput{
+			OpenID:            ownerID,
+			PersonUpdateInput: PersonUpdateInput{Name: "OwnerPerson" + token, Role: "colleague", PriorityWeight: 0.4},
 		})
 		if err != nil {
 			t.Fatalf("Create() owner person error = %v", err)
@@ -289,7 +294,7 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 		if _, err := projects.Create(ctx, ProjectInput{Name: "", Role: "owner", Status: "active", Priority: 1}); !errors.Is(err, ErrInvalidInput) {
 			t.Fatalf("Create() blank name error = %v, want ErrInvalidInput", err)
 		}
-		if _, err := persons.Create(ctx, PersonInput{OpenID: "x", Name: "y", Role: "bad", PriorityWeight: 0.5}); !errors.Is(err, ErrInvalidInput) {
+		if _, err := persons.Create(ctx, PersonCreateInput{OpenID: "x", PersonUpdateInput: PersonUpdateInput{Name: "y", Role: "bad", PriorityWeight: 0.5}}); !errors.Is(err, ErrInvalidInput) {
 			t.Fatalf("Create() bad role error = %v, want ErrInvalidInput", err)
 		}
 	})
