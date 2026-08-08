@@ -108,7 +108,7 @@ cd jarvis_bot
 使用 $install-jarvis 检查这台机器并完成 Jarvis 首次安装和验收。
 ```
 
-`$install-jarvis` 是整个项目安装流程：先创建 `var/install/<run-id>/INSTALL_CHECKLIST.md`，再报告机器、配置、旧实例和服务事实，由用户的 Agent 选择依赖安装方式、飞书 App/Profile 和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把同一个 App/Profile 绑定到 Jarvis 与 CC Connect，启动并验收运行底座；服务就绪后转入 `$initialize-jarvis` 建立人物、项目、资料、重点事项和监听群，最后完成消息与 CC 对话的真实端到端验收。
+`$install-jarvis` 是整个项目安装流程：先创建 `var/install/<run-id>/INSTALL_CHECKLIST.md`，再报告机器、配置、旧实例和服务事实，由用户的 Agent 选择依赖安装方式、飞书 App/Profile 和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把同一个 App/Profile 绑定到 Jarvis 与 CC Connect，启动并验收运行底座；服务就绪后转入 `$bootstrap-jarvis-world-model` 建立人物、项目、资料、重点事项和监听群，最后完成消息与 CC 对话的真实端到端验收。
 
 repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills 和仓库基线使用的 traex：
 
@@ -172,7 +172,7 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 # 系统级验收
 ./scripts/jarvis-install validate
 
-# 把同一个 run_dir 交给 $initialize-jarvis 完成安装清单 E 区
+# 把同一个 run_dir 交给 $bootstrap-jarvis-world-model 完成安装清单 E 区
 # 再完成监听群新消息和绑定 Bot 对话的真实端到端验收，最后读回总状态
 ./scripts/jarvis-install status --run-dir <run_dir>
 

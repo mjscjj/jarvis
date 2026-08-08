@@ -40,7 +40,7 @@ factengine:
 # M3 Todo 提取。enabled=true 时任一必填依赖为空都会启动失败，不静默跳过。
 extract:
   enabled: true
-  principal_open_id: ""                 # 首次运行前由 initialize-jarvis 写入本机 runtime overlay
+  principal_open_id: ""                 # 首次运行前由 install-jarvis 写入本机 runtime overlay
   schedule: "@every 10m"
   # 提取引擎：codex（默认，agent 可自跑 lark-cli/bytedcli/git/jarvis-tools 推算项目/仓库）
   #           model_api（备用 kimi function-calling 循环）
@@ -184,6 +184,6 @@ dailydigest:
   enabled: true
   schedule: "0 19 * * *"     # 每晚 19:00 生成当天（截至生成时刻）
   timeout_seconds: 1200      # 正常目标 3–5 分钟；20 分钟只作为失控兜底
-  git_author: ""             # 首次运行前由 initialize-jarvis 写入本机 runtime overlay
+  git_author: ""             # 首次运行前由 install-jarvis 写入本机 runtime overlay
   group_message_limit: 200   # 每个关键群每天喂进 prompt 的消息上限
   group_concurrency: 2       # 一轮批量里群总结的并发上限（>=1）

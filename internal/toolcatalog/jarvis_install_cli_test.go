@@ -82,7 +82,7 @@ func TestJarvisInstallCreatesOneAuditableProjectChecklist(t *testing.T) {
 		"## B. 工具链与全部依赖",
 		"## C. 飞书身份与一体化绑定",
 		"## D. 服务启动与运行底座验收",
-		"## E. 世界模型初始化",
+		"## E. 世界模型建立",
 		"## F. 真实端到端验收",
 		"## 未完成、未做或不适用",
 		"cli_ready",

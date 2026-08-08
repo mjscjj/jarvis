@@ -4,7 +4,7 @@
 set -euo pipefail
 
 fail() {
-  printf 'jarvis-init: %s\n' "$*" >&2
+  printf 'jarvis-world-model: %s\n' "$*" >&2
   exit 1
 }
 
@@ -19,15 +19,15 @@ CHAT_ID=""
 
 usage() {
   cat <<'EOF'
-usage: jarvis-init <preflight|discover|scan|validate> [flags]
+usage: jarvis-world-model <preflight|discover|scan|validate> [flags]
 
-Project-owned helper used by $initialize-jarvis. The whole-project installation
+Project-owned helper used by $bootstrap-jarvis-world-model. The whole-project installation
 run and checklist belong to jarvis-install start/status. This helper is not part
 of the normal Jarvis M3/M5 tool catalog and does not install services, maintain
 installation state, or configure CC Connect.
 
 commands:
-  preflight  Validate repository-local initialization resources
+  preflight  Validate repository-local world-model resources
   discover   Run one synchronous M2 chat discovery through the running server
   scan       Run one synchronous M2 scan for one chat
   validate   Validate the principal world model and report object/group counts
@@ -56,15 +56,15 @@ consume_flags() {
 cmd_preflight() {
   local missing=() relative_path runtime_ignored dirty_count missing_json ready
   for relative_path in \
-    conf/config.yaml conf/skills.yaml scripts/jarvis-tools scripts/jarvis-install scripts/jarvis-init \
+    conf/config.yaml conf/skills.yaml scripts/jarvis-tools scripts/jarvis-install scripts/jarvis-world-model \
     scripts/install-cc-connect.sh integrations/cc-connect/manage.sh integrations/cc-connect/manifest.sh \
     integrations/cc-connect/README.md \
     integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch \
     docs/templates/jarvis-install-checklist.md .agents/skills/install-jarvis/SKILL.md \
-    .agents/skills/initialize-jarvis/SKILL.md .agents/skills/initialize-jarvis/references/ownership-map.md \
-    .agents/skills/initialize-jarvis/references/evidence-sources.md \
-    .agents/skills/initialize-jarvis/references/modeling-guide.md \
-    .agents/skills/initialize-jarvis/references/worknote-guide.md; do
+    .agents/skills/bootstrap-jarvis-world-model/SKILL.md .agents/skills/bootstrap-jarvis-world-model/references/ownership-map.md \
+    .agents/skills/bootstrap-jarvis-world-model/references/evidence-sources.md \
+    .agents/skills/bootstrap-jarvis-world-model/references/modeling-guide.md \
+    .agents/skills/bootstrap-jarvis-world-model/references/worknote-guide.md; do
     [[ -e "${REPO_ROOT}/${relative_path}" ]] || missing+=("$relative_path")
   done
   runtime_ignored=false

@@ -15,8 +15,8 @@
 | 主服务构建、签名、launchd 注册 | `scripts/install-launchd.sh` | 配置完成后通过 `install-server` 调用 |
 | 已注册主服务的安全重建 | `scripts/rebuild-server.sh` | 确认属于当前 checkout 后调用 |
 | 飞书 App/Profile 登录和本机 identity | `$install-jarvis` | 在服务启动前配置并读回 |
-| 近 7 天业务证据与世界模型工作稿 | `$initialize-jarvis` | 服务就绪后转交同一个 install run；初始化只更新清单 E 区 |
-| PrincipalProfile、项目、人物、重点事项、群监听 | M1/M2 现有接口 | 只由 `$initialize-jarvis` 编排 |
+| 近 7 天业务证据与世界模型工作稿 | `$bootstrap-jarvis-world-model` | 服务就绪后转交同一个 install run；世界模型 Skill 只更新清单 E 区 |
+| PrincipalProfile、项目、人物、重点事项、群监听 | M1/M2 现有接口 | 只由 `$bootstrap-jarvis-world-model` 编排 |
 | 缺失依赖的具体安装方式 | 用户的 Agent | 按机器选择，不在脚本写死包管理器 |
 | 使用哪个飞书 app/profile | 用户 | Agent 展示候选与证据，不猜 |
 | 旧实例、旧数据库如何处理 | 用户 | 发现后停止，询问复用/迁移/替换 |

@@ -51,7 +51,7 @@ erDiagram
 
 Projects、Persons、Groups、Profile、Managed resources、Facts 和 RelationFacts 的路由见 [HTTP API](../reference/http-api.md)。`DELETE /api/projects/:id` 实际是软归档。
 
-首次身份、项目、人物、重点事项和群监听统一由仓库级 `initialize-jarvis` Skill 依据当前用户证据初始化。M1 不保留任何特定用户的 seed 数据，也不从关键群机械批量导入人物。
+首次身份、项目、人物、重点事项和群监听统一由仓库级 `bootstrap-jarvis-world-model` Skill 依据当前用户证据建立。M1 不保留任何特定用户的 seed 数据，也不从关键群机械批量导入人物。
 
 ## 6. 已知边界
 

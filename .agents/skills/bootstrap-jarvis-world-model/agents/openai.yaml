@@ -1,0 +1,4 @@
+interface:
+  display_name: "建立 Jarvis 世界模型"
+  short_description: "依据飞书证据建立、读回并验收 Jarvis 世界模型"
+  default_prompt: "使用 $bootstrap-jarvis-world-model 在运行底座就绪后，以飞书证据建立人、事、物、群和重点事项并逐项写入读回；若属于整体安装，只更新 INSTALL_CHECKLIST.md 的世界模型阶段。"

@@ -1,9 +1,9 @@
 ---
-name: initialize-jarvis
-description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，首次建立或按用户决定重建 Jarvis 世界模型。以飞书身份、直属上级、本人创建的 OKR 文档、最近 7 天本人撰写或编辑的文档、消息和群聊为证据，推断并写入 Principal、项目、关键人物、资料、重点事项、关系、事实和群监听；作为整体安装的一部分时更新安装清单的世界模型阶段。企业策略下不调用 OKR API；已有业务数据时先确认合并、补充或重建策略。
+name: bootstrap-jarvis-world-model
+description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，首次建立或按用户决定重建 Jarvis 世界模型。以飞书身份、直属上级、本人创建的 OKR 文档、最近 7 天本人撰写或编辑的文档、消息和群聊为证据，推断并写入 Principal、项目、关键人物、资料、重点事项、关系、事实和群监听；作为整体安装的一部分时更新安装清单的世界模型阶段。适用于“建立世界模型”“重建 Jarvis 背景”“补全人事物群”；企业策略下不调用 OKR API，已有业务数据时先确认合并、补充或重建策略。
 ---
 
-# 初始化 Jarvis 世界模型
+# 建立 Jarvis 世界模型
 
 初始化只负责“Jarvis 如何理解这个用户的世界”。依赖、App/Profile、CC Connect 和主服务归 `$install-jarvis`；本 Skill 不安装或重启 daemon，也不配置 CC。它不进入 Jarvis M3/M5 Skill catalog。
 
@@ -14,7 +14,7 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 由整体安装调用时，必须复用 `$install-jarvis` 返回的 `run_dir`，使用其中的 `evidence/`、`world-model.md` 和 `INSTALL_CHECKLIST.md`。只更新清单 E 区，不创建或维护整张安装状态页。独立重建世界模型时可在 `var/onboarding/<run-id>/` 建自己的 `evidence/` 与 `world-model.md`，但不伪造整体项目安装清单。
 
 ```bash
-./scripts/jarvis-init preflight
+./scripts/jarvis-world-model preflight
 ./scripts/jarvis-install validate
 ```
 
@@ -28,7 +28,7 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 - 已有数据：先展示存量，请用户选择补充、合并或重建；没有决定前不写。
 - 群的机械发现记录不等于人工世界模型数据。
 
-在 checklist 的 `init.existing-data` 记录结论。
+在 checklist 的 `world-model.existing-data` 记录结论。
 
 ## 2. 读取证据
 
@@ -62,7 +62,7 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 
 1. `update-principal`，立即 `get-principal`。
 2. Project、Person、KeyMatter、ManagedResource 逐项查询业务键、写入、立即读回；拿到真实 ID 后再处理引用。
-3. `./scripts/jarvis-init discover` 触发正常 M2 群发现。按证据中的 `chat_id` 精确选择群，用 `update-group` 写背景和监听标记，再 `./scripts/jarvis-init scan --chat-id ...` 走正常 checkpoint。
+3. `./scripts/jarvis-world-model discover` 触发正常 M2 群发现。按证据中的 `chat_id` 精确选择群，用 `update-group` 写背景和监听标记，再 `./scripts/jarvis-world-model scan --chat-id ...` 走正常 checkpoint。
 4. 结构化字段表达不了的重要关系才 `create-relation`，随后 `list-relations`。
 5. 只有真实发生时间的决策、交付、阻塞或方向变化才 `append-fact --source initialization`，随后 `list-facts`。
 
@@ -71,7 +71,7 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 ## 5. 验收与交付
 
 ```bash
-./scripts/jarvis-init validate --profile <profile>
+./scripts/jarvis-world-model validate --profile <profile>
 ```
 
 再按对象逐项语义抽查。项目、人物、资料、重点事项或监听群都没有固定数量下限；为零时说明这是证据结论、覆盖不足、权限缺口还是尚未决定。

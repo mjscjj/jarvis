@@ -15,7 +15,7 @@ skills:
       enabled: true
       stages:
         - execute
-    - name: initialize-jarvis
+    - name: bootstrap-jarvis-world-model
       enabled: false # 独立仓库 Skill；不注入 M3/M5 runtime catalog
       stages:
         - execute

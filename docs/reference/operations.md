@@ -42,7 +42,7 @@
 ./scripts/jarvis-install install-server
 ./scripts/jarvis-install validate
 
-# 把同一个 run_dir 交给 $initialize-jarvis 完成 INSTALL_CHECKLIST.md 的世界模型 E 区
+# 把同一个 run_dir 交给 $bootstrap-jarvis-world-model 完成 INSTALL_CHECKLIST.md 的世界模型 E 区
 # 完成监听群新消息和绑定 Bot 对话的真实端到端验收后读回总状态
 ./scripts/jarvis-install status --run-dir <run_dir>
 
@@ -53,7 +53,7 @@ curl --fail http://127.0.0.1:6333/healthz
 curl -s http://127.0.0.1:18800/readyz | jq
 ```
 
-顺序是硬边界：创建整体安装清单 → 基础工具链、lark-cli/Lark Skills、traex 登录、补丁版 CC Connect binary 和 Qdrant → `validate-dependencies` → 选择一个 App/Profile 并完成飞书用户登录 → 写 Jarvis runtime identity 与 CC Connect `jarvis-codex` → `validate-binding` → 启动补丁版 CC Connect → 主服务注册 → `$initialize-jarvis` → 真实端到端验收 → `status`。Qdrant 是依赖服务，可以在依赖阶段启动；CC Connect/Jarvis 不能在依赖门前启动。`install-server` 会再次强制通过依赖门和一体化绑定门。
+顺序是硬边界：创建整体安装清单 → 基础工具链、lark-cli/Lark Skills、traex 登录、补丁版 CC Connect binary 和 Qdrant → `validate-dependencies` → 选择一个 App/Profile 并完成飞书用户登录 → 写 Jarvis runtime identity 与 CC Connect `jarvis-codex` → `validate-binding` → 启动补丁版 CC Connect → 主服务注册 → `$bootstrap-jarvis-world-model` → 真实端到端验收 → `status`。Qdrant 是依赖服务，可以在依赖阶段启动；CC Connect/Jarvis 不能在依赖门前启动。`install-server` 会再次强制通过依赖门和一体化绑定门。
 
 当前内置 Qdrant 安装器只支持 macOS arm64。doctor 会按 `go.mod`、Vite engines、CGO/Xcode 工具链、Lark Skills、已有数据库与 launchd program 报告当前状态。若 label 属于其他 checkout 或发现旧业务数据，Agent 必须先请用户决定复用、迁移或替换。
 

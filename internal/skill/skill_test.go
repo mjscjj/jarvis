@@ -151,8 +151,8 @@ func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 		t.Fatalf("List() error = %v", err)
 	}
 	found := map[string]bool{
-		"initialize-jarvis": false,
-		"install-jarvis":    false,
+		"bootstrap-jarvis-world-model": false,
+		"install-jarvis":               false,
 	}
 	for _, item := range items {
 		if _, exists := found[item.Name]; !exists {
@@ -179,13 +179,13 @@ func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 	}
 }
 
-func TestInitializeJarvisUsesUserAuthoredDocumentsInsteadOfOKRAPI(t *testing.T) {
-	initializePath := filepath.Join("..", "..", ".agents", "skills", "initialize-jarvis")
-	initializeSkill, err := os.ReadFile(filepath.Join(initializePath, "SKILL.md"))
+func TestBootstrapJarvisWorldModelUsesUserAuthoredDocumentsInsteadOfOKRAPI(t *testing.T) {
+	worldModelPath := filepath.Join("..", "..", ".agents", "skills", "bootstrap-jarvis-world-model")
+	worldModelSkill, err := os.ReadFile(filepath.Join(worldModelPath, "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	evidenceSources, err := os.ReadFile(filepath.Join(initializePath, "references", "evidence-sources.md"))
+	evidenceSources, err := os.ReadFile(filepath.Join(worldModelPath, "references", "evidence-sources.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestInitializeJarvisUsesUserAuthoredDocumentsInsteadOfOKRAPI(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	combined := string(initializeSkill) + "\n" + string(evidenceSources)
+	combined := string(worldModelSkill) + "\n" + string(evidenceSources)
 	for _, want := range []string{
 		"`lark-drive`、`lark-doc`",
 		"--created-by-me",
@@ -221,8 +221,8 @@ func TestInitializeJarvisUsesUserAuthoredDocumentsInsteadOfOKRAPI(t *testing.T) 
 	}
 }
 
-func TestInitializeJarvisBuildsAReadBackWorldModel(t *testing.T) {
-	initializePath := filepath.Join("..", "..", ".agents", "skills", "initialize-jarvis")
+func TestBootstrapJarvisBuildsAReadBackWorldModel(t *testing.T) {
+	worldModelPath := filepath.Join("..", "..", ".agents", "skills", "bootstrap-jarvis-world-model")
 	paths := []string{
 		"SKILL.md",
 		filepath.Join("references", "modeling-guide.md"),
@@ -232,7 +232,7 @@ func TestInitializeJarvisBuildsAReadBackWorldModel(t *testing.T) {
 	}
 	var combined strings.Builder
 	for _, relativePath := range paths {
-		content, err := os.ReadFile(filepath.Join(initializePath, relativePath))
+		content, err := os.ReadFile(filepath.Join(worldModelPath, relativePath))
 		if err != nil {
 			t.Fatalf("read %s: %v", relativePath, err)
 		}
@@ -278,7 +278,7 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	initializeSkill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "initialize-jarvis", "SKILL.md"))
+	worldModelSkill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "bootstrap-jarvis-world-model", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	combined := string(installSkill) + "\n" + string(boundaries) + "\n" + string(binding) + "\n" + string(initializeSkill)
+	combined := string(installSkill) + "\n" + string(boundaries) + "\n" + string(binding) + "\n" + string(worldModelSkill)
 	for _, want := range []string{
 		"本 Skill 是从完整仓库 checkout 到最终可用的安装流程所有者",
 		"仓库与安装运行 → 机器事实 → 全部依赖 → `validate-dependencies`",
@@ -312,11 +312,11 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		}
 	}
 	for _, forbidden := range []string{
-		"./scripts/jarvis-init start",
-		"./scripts/jarvis-init status",
+		"./scripts/jarvis-world-model start",
+		"./scripts/jarvis-world-model status",
 	} {
 		if strings.Contains(combined, forbidden) {
-			t.Fatalf("whole-project installation state still belongs to jarvis-init: %q", forbidden)
+			t.Fatalf("whole-project installation state still belongs to jarvis-world-model: %q", forbidden)
 		}
 	}
 }

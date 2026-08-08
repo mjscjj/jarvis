@@ -227,7 +227,7 @@ integrated_binding_validation() {
     go run ./cmd/jarvis-config show-principal --config "$CONFIG_PATH"
   )"
   profile="$(jq -r '.lark_profile // ""' <<<"$identity")"
-  [[ -n "$profile" ]] || fail "Jarvis lark-cli profile is empty; finish initialize-jarvis first"
+  [[ -n "$profile" ]] || fail "Jarvis lark-cli profile is empty; run configure-identity first"
   "${REPO_ROOT}/integrations/cc-connect/manage.sh" \
     validate --config "$CONFIG_PATH" --profile "$profile"
 }
@@ -273,12 +273,12 @@ doctor() {
     scripts/install-launchd.sh \
     scripts/rebuild-server.sh \
     scripts/jarvis-install \
-    scripts/jarvis-init \
+    scripts/jarvis-world-model \
     scripts/install-cc-connect.sh \
     integrations/cc-connect/manifest.sh \
     integrations/cc-connect/manage.sh \
     .agents/skills/install-jarvis/SKILL.md \
-    .agents/skills/initialize-jarvis/SKILL.md \
+    .agents/skills/bootstrap-jarvis-world-model/SKILL.md \
     "${CC_CONNECT_PATCH_RELATIVE_PATH}"; do
     if [[ ! -e "${REPO_ROOT}/${required_path}" ]]; then
       missing+=("$required_path")
@@ -695,7 +695,7 @@ install_server() {
   local status
   status="$(initialization_status)"
   jq -e '.machine_configuration_ready == true' >/dev/null <<<"$status" || \
-    fail "machine configuration is incomplete; finish initialize-jarvis before installing the service"
+    fail "machine configuration is incomplete; finish install-jarvis identity configuration before installing the service"
   local runtime_binary
   while IFS= read -r runtime_binary; do
     [[ -n "$runtime_binary" ]] || continue

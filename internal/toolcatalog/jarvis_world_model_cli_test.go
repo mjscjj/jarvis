@@ -12,19 +12,19 @@ import (
 	"testing"
 )
 
-func TestJarvisInitOwnsWorldModelRunStateOnly(t *testing.T) {
-	help, err := runJarvisInit(t, "", nil, "--help")
+func TestJarvisWorldModelOwnsWorldModelRunStateOnly(t *testing.T) {
+	help, err := runJarvisWorldModel(t, "", nil, "--help")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"preflight", "discover", "scan", "validate", "does not install services", "installation state", "configure CC Connect"} {
 		if !strings.Contains(help, want) {
-			t.Fatalf("jarvis-init help missing %q:\n%s", want, help)
+			t.Fatalf("jarvis-world-model help missing %q:\n%s", want, help)
 		}
 	}
 	for _, forbidden := range []string{"\n  start      ", "\n  status     ", "configure-app", "set-cc-app-secret", "validate-binding", "install-server"} {
 		if strings.Contains(help, forbidden) {
-			t.Fatalf("jarvis-init still owns install concern %q:\n%s", forbidden, help)
+			t.Fatalf("jarvis-world-model still owns install concern %q:\n%s", forbidden, help)
 		}
 	}
 	toolsHelp, err := runJarvisTools(t, "", nil, "--help")
@@ -38,7 +38,7 @@ func TestJarvisInitOwnsWorldModelRunStateOnly(t *testing.T) {
 	}
 }
 
-func TestJarvisInitValidateReportsWorldModelWithoutRequiringGroups(t *testing.T) {
+func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -78,7 +78,7 @@ fi
 printf '%s\n' "unexpected lark-cli args: $*" >&2
 exit 9
 `)
-	out, err := runJarvisInit(t, server.URL, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "validate", "--profile", "cli_ready")
+	out, err := runJarvisWorldModel(t, server.URL, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "validate", "--profile", "cli_ready")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ exit 9
 	}
 }
 
-func TestJarvisInitCaptureCommandsReuseM2Endpoints(t *testing.T) {
+func TestJarvisWorldModelCaptureCommandsReuseM2Endpoints(t *testing.T) {
 	requests := make([]string, 0, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.Method+" "+r.URL.Path)
@@ -126,10 +126,10 @@ func TestJarvisInitCaptureCommandsReuseM2Endpoints(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := runJarvisInit(t, server.URL, nil, "discover"); err != nil {
+	if _, err := runJarvisWorldModel(t, server.URL, nil, "discover"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runJarvisInit(t, server.URL, nil, "scan", "--chat-id", "oc_init"); err != nil {
+	if _, err := runJarvisWorldModel(t, server.URL, nil, "scan", "--chat-id", "oc_init"); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"POST /api/debug/capture/discover", "POST /api/debug/capture/scan-chat"}
@@ -138,14 +138,14 @@ func TestJarvisInitCaptureCommandsReuseM2Endpoints(t *testing.T) {
 	}
 }
 
-func TestJarvisInitCaptureFailureIsNotSwallowed(t *testing.T) {
+func TestJarvisWorldModelCaptureFailureIsNotSwallowed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, `{"code":50030,"message":"discover failed"}`)
 	}))
 	defer server.Close()
-	_, err := runJarvisInit(t, server.URL, nil, "discover")
+	_, err := runJarvisWorldModel(t, server.URL, nil, "discover")
 	if err == nil || !strings.Contains(err.Error(), "HTTP 500") {
 		t.Fatalf("discover error = %v, want HTTP 500", err)
 	}
@@ -158,9 +158,9 @@ func writeExecutable(t *testing.T, path, content string) {
 	}
 }
 
-func runJarvisInit(t *testing.T, apiBase string, extraEnv []string, args ...string) (string, error) {
+func runJarvisWorldModel(t *testing.T, apiBase string, extraEnv []string, args ...string) (string, error) {
 	t.Helper()
-	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "jarvis-init"))
+	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "jarvis-world-model"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func runJarvisInit(t *testing.T, apiBase string, extraEnv []string, args ...stri
 	}
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return string(output), fmt.Errorf("jarvis-init %s: %w: %s", strings.Join(args, " "), err, output)
+		return string(output), fmt.Errorf("jarvis-world-model %s: %w: %s", strings.Join(args, " "), err, output)
 	}
 	return string(output), nil
 }

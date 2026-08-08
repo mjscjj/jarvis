@@ -5,9 +5,9 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 # 安装 Jarvis 整体项目
 
-本 Skill 是从完整仓库 checkout 到最终可用的安装流程所有者，也是 `INSTALL_CHECKLIST.md` 的唯一所有者。世界模型阶段由 `$initialize-jarvis` 执行，但仍是整体安装的一部分；安装 Agent 负责把同一个 `run_dir` 传入、继续维护清单并完成最终验收。可执行实现都在仓库的 `scripts/` 和 `integrations/cc-connect/`，本 Skill 只根据机器事实编排，不进入 Jarvis M3/M5。
+本 Skill 是从完整仓库 checkout 到最终可用的安装流程所有者，也是 `INSTALL_CHECKLIST.md` 的唯一所有者。世界模型阶段由 `$bootstrap-jarvis-world-model` 执行，但仍是整体安装的一部分；安装 Agent 负责把同一个 `run_dir` 传入、继续维护清单并完成最终验收。可执行实现都在仓库的 `scripts/` 和 `integrations/cc-connect/`，本 Skill 只根据机器事实编排，不进入 Jarvis M3/M5。
 
-执行顺序：**仓库与安装运行 → 机器事实 → 全部依赖 → `validate-dependencies` → 一个飞书 App/Profile → 本机 identity 与 CC 绑定 → 启动 CC Connect/Jarvis → `validate` → `$initialize-jarvis` → 两个真实端到端验收 → `status`**。依赖门通过前不得启动 CC Connect 或 Jarvis；世界模型不是服务启动前置条件，但没有完成或明确标注未做原因时，整个项目安装不能宣称完整。
+执行顺序：**仓库与安装运行 → 机器事实 → 全部依赖 → `validate-dependencies` → 一个飞书 App/Profile → 本机 identity 与 CC 绑定 → 启动 CC Connect/Jarvis → `validate` → `$bootstrap-jarvis-world-model` → 两个真实端到端验收 → `status`**。依赖门通过前不得启动 CC Connect 或 Jarvis；世界模型不是服务启动前置条件，但没有完成或明确标注未做原因时，整个项目安装不能宣称完整。
 
 先完整读取 [installation-boundaries.md](references/installation-boundaries.md) 和 [cc-connect-binding.md](references/cc-connect-binding.md)。
 
@@ -87,7 +87,7 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 ## 5. 完成世界模型阶段
 
-把 `run_dir`、实际 Profile 和 `run_dir/evidence/` 交给 `$initialize-jarvis`。初始化 Skill 只负责取证、推断、写入和读回人、事、物、群、重点事项；它更新 `INSTALL_CHECKLIST.md` 的 E 区，不接管整张安装清单，也不安装或重启服务。
+把 `run_dir`、实际 Profile 和 `run_dir/evidence/` 交给 `$bootstrap-jarvis-world-model`。世界模型 Skill 只负责取证、推断、写入和读回人、事、物、群、重点事项；它更新 `INSTALL_CHECKLIST.md` 的 E 区，不接管整张安装清单，也不安装或重启服务。
 
 世界模型没有固定实体数量下限。确实不做、证据不足或被权限阻塞时，保持对应项未勾选并写清原因；不得把“服务已启动”描述成“整体项目已安装完成”。
 

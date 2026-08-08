@@ -9,7 +9,7 @@
 
 ## A. 仓库与安装决策（`$install-jarvis`）
 
-- [ ] <!-- id:install.checkout --> 完整仓库已 checkout，当前分支/commit 和远端已记录，Agent 已加载 repo-local `$install-jarvis` 与 `$initialize-jarvis`。
+- [ ] <!-- id:install.checkout --> 完整仓库已 checkout，当前分支/commit 和远端已记录，Agent 已加载 repo-local `$install-jarvis` 与 `$bootstrap-jarvis-world-model`。
 - [ ] <!-- id:install.run --> 本安装运行目录、清单和 `evidence/` 已创建；后续所有阶段持续更新本页。
 - [ ] <!-- id:install.existing --> 已检查旧数据库、已有 Jarvis/Qdrant/CC Connect 服务及其 checkout 归属；复用、迁移、新装或替换策略已决定。
 
@@ -34,17 +34,17 @@
 - [ ] <!-- id:install.server --> Jarvis 主服务已通过签名安装脚本从当前 checkout 启动；没有裸 `go build` 覆盖运行 binary。
 - [ ] <!-- id:install.runtime --> `jarvis-install validate` 已通过；Qdrant、Jarvis `/healthz`、`/readyz`、配置权限和同一 App/Profile 绑定均正常。
 
-## E. 世界模型初始化（`$initialize-jarvis`）
+## E. 世界模型建立（`$bootstrap-jarvis-world-model`）
 
-- [ ] <!-- id:init.existing-data --> 已检查存量 Principal、项目、人物、重点事项、资料与人工群背景；如有存量，已取得合并、补充或重建决定。
-- [ ] <!-- id:init.identity-evidence --> 已读取本人身份、部门、职位和直属上级；未知字段保留原因，没有猜测。
-- [ ] <!-- id:init.documents --> 已搜索并按需读取本人创建的 OKR 文档，以及最近 7 天本人撰写或编辑的文档；记录分页、权限和覆盖边界。
-- [ ] <!-- id:init.messages --> 已读取最近 7 天必要的消息、群元数据和成员信息；没有把历史消息灌入正常线索流水线。
-- [ ] <!-- id:init.inference --> 已形成“人、事、物、群、重点事项”的世界模型工作稿；高影响歧义已请用户决定，其余未知项已明确保留。
-- [ ] <!-- id:init.entities --> Principal、Project、Person、ManagedResource 与 KeyMatter 已逐项写入并逐项读回。
-- [ ] <!-- id:init.groups --> 候选群已发现；选中的监听群已按 chat_id 更新、首次扫描并读回 checkpoint。
-- [ ] <!-- id:init.relations --> 必要的关系和有真实时间的基线事实已写入并读回；没有重复已有结构化关联。
-- [ ] <!-- id:init.acceptance --> `jarvis-init validate` 与语义抽查已完成；数量、覆盖不足和所有未解决项已记录。
+- [ ] <!-- id:world-model.existing-data --> 已检查存量 Principal、项目、人物、重点事项、资料与人工群背景；如有存量，已取得合并、补充或重建决定。
+- [ ] <!-- id:world-model.identity-evidence --> 已读取本人身份、部门、职位和直属上级；未知字段保留原因，没有猜测。
+- [ ] <!-- id:world-model.documents --> 已搜索并按需读取本人创建的 OKR 文档，以及最近 7 天本人撰写或编辑的文档；记录分页、权限和覆盖边界。
+- [ ] <!-- id:world-model.messages --> 已读取最近 7 天必要的消息、群元数据和成员信息；没有把历史消息灌入正常线索流水线。
+- [ ] <!-- id:world-model.inference --> 已形成“人、事、物、群、重点事项”的世界模型工作稿；高影响歧义已请用户决定，其余未知项已明确保留。
+- [ ] <!-- id:world-model.entities --> Principal、Project、Person、ManagedResource 与 KeyMatter 已逐项写入并逐项读回。
+- [ ] <!-- id:world-model.groups --> 候选群已发现；选中的监听群已按 chat_id 更新、首次扫描并读回 checkpoint。
+- [ ] <!-- id:world-model.relations --> 必要的关系和有真实时间的基线事实已写入并读回；没有重复已有结构化关联。
+- [ ] <!-- id:world-model.acceptance --> `jarvis-world-model validate` 与语义抽查已完成；数量、覆盖不足和所有未解决项已记录。
 
 ## F. 真实端到端验收（`$install-jarvis`）
 
