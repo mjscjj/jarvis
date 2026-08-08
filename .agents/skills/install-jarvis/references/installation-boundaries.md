@@ -15,6 +15,7 @@
 | 主服务构建、签名、launchd 注册 | `scripts/install-launchd.sh` | 配置完成后通过 `install-server` 调用 |
 | 已注册主服务的安全重建 | `scripts/rebuild-server.sh` | 确认属于当前 checkout 后调用 |
 | 飞书 App/Profile 登录和本机 identity | `$install-jarvis` | 在服务启动前配置并读回 |
+| 飞书初始化能力与权限缺口 | `$install-jarvis` + `feishu-capability-audit.md` | 对选定 Profile 做只读探针并分为核心、可选增强、条件能力和不使用；不发起权限申请 |
 | 近 7 天业务证据与世界模型工作稿 | `$bootstrap-jarvis-world-model` | 服务就绪后转交同一个 install run；世界模型 Skill 只更新清单 E 区 |
 | PrincipalProfile、项目、人物、重点事项、群监听 | M1/M2 现有接口 | 只由 `$bootstrap-jarvis-world-model` 编排 |
 | 缺失依赖的具体安装方式 | 用户的 Agent | 按机器选择，不在脚本写死包管理器 |
@@ -42,6 +43,7 @@
 
 - 依赖可能已由 Homebrew、npm、公司环境管理器或手工安装提供；只验证能力，不强制来源。
 - 一个用户可能有多个 lark-cli app/profile；Agent 应读取现状、最小授权并在歧义时请用户选择。
+- 安装初始化只审计当前飞书能力，不自动申请缺失 scope；核心能力缺失如实阻塞相关阶段，可选高级通讯录字段缺失则记录未知并继续。
 - 选定 Profile 后，CC Connect 的 model、display、allow/admin 和群回复策略仍由 Agent 与用户按场景决定；App 身份和 relay 绑定不可自由漂移。
 - 初始化证据不足时可继续调查或保留未知，不为填满字段编造内容。
 - 项目、关键人物、重点事项和监听群数量没有固定下限；由证据决定，高影响歧义再交给用户。

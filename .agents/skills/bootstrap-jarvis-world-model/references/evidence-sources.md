@@ -15,9 +15,9 @@
 
 1. `auth status --verify`：确认 user openId、userName、tokenStatus、scope；保存前删除 token 类字段。
 2. 本机 Git 身份：读取 `git config user.name`、`git config user.email`，并在当前仓库及已确认项目仓库抽样近期提交，确定可供 `git log --author` 使用的唯一模式。配置与提交不一致或有多个候选时列为未知项，请用户确认，不得猜测。
-3. 通讯录当前用户：姓名、部门、职务、企业邮箱等稳定字段。
-4. 用户详情：读取 `leader_user_id` 等直属上级字段。现有 shortcut 不足时才用 `lark-openapi-explorer` 找官方通讯录接口。
-5. 直属上级详情：只在得到明确 leader id 后查询；跨 app 的 open_id 不能混用。
+3. 通讯录当前用户：读取姓名和当前身份可见的基础资料、部门展示信息；字段为空与调用失败分开记录。
+4. 用户详情：尝试读取 `leader_user_id`、职务和部门路径等组织字段。它们属于可选增强；API 未返回时记录字段缺口，不申请高级权限。
+5. 直属上级详情：只在得到明确 leader id 后查询；跨 app 的 open_id 不能混用。没有明确 leader id 时可从 OKR 文档、近期文档和多条消息定向调查，证据仍不足就保留未知，不用单条称呼猜测。
 6. 本人 OKR 文档：用 `drive +search --query "<okr关键词>" --created-by-me --doc-types doc,docx,wiki --sort edit_time` 从本人原始创建的文档中搜索 OKR、目标、关键结果和周期线索；先查 `OKR`，再由 Agent 根据用户语境扩展关键词。按 `has_more` 翻页，保存候选的 URL/token、类型、标题、创建/编辑时间和原始创建者证据。再用 `docs +fetch` 读取候选目录、关键词命中或相关章节，结合正文判断当前有效版本，不按标题机械认定。
 
 ### 最近活动面
@@ -47,8 +47,10 @@
 
 ## 权限和失败
 
-- 权限错误按 `lark-shared` 处理：user 只增量申请明确缺失的只读 scope；bot 缺权限给后台链接。
-- 企业策略不支持 OKR 权限；初始化不得加载 `lark-okr`、调用 OKR API 或申请 OKR scope。OKR 证据的唯一来源是本人撰写且当前身份可读的文档；这条限制优先于 `lark-shared` 的通用缺失 scope 恢复规则。
-- 文档搜索为空、搜索分页未覆盖完整、候选正文不可读和确实没有匹配文档，是不同结论。缺少 `search:docs:read` 或文档读取 scope 时记录原始错误并增量申请对应只读权限，不得改走 OKR API。
-- API 不提供字段、租户未开放字段和用户确实没有该数据，是三种不同结论。
+- 本初始化阶段覆盖 `lark-shared` 的通用缺失 scope 恢复动作：只做只读审计，不运行 `auth login`、不发起增量授权、不修改开发者后台。错误中的 `missing_scopes` 和后台链接只作为证据与下一步记录。
+- 核心读取能力缺失时保留原始错误，整体安装场景返回 `$install-jarvis` 保持对应项未勾选；独立重建场景在工作稿中标阻塞。不要用其它来源假装该能力已经通过。
+- `contact:user.department:readonly`、`contact:user.employee:readonly`、`contact:user.department_path:readonly` 是可选组织信息增强。缺失时继续初始化，把直属上级、职务或部门路径写成有来源的未知项；多源业务证据足够时可以写推断和置信度，但不得冒充通讯录事实。
+- 企业策略不支持 OKR 权限；初始化不得加载 `lark-okr`、调用 OKR API 或申请 OKR scope。OKR 证据的唯一来源是本人撰写且当前身份可读的文档。
+- 文档搜索为空、搜索分页未覆盖完整、候选正文不可读和确实没有匹配文档，是不同结论。单份文档无权是资源边界，不自动上升为全局 scope 缺失，也不发起文档权限申请。
+- API 不提供字段、租户未开放字段和用户确实没有该数据，是三种不同结论；无法通过只读证据区分时保持未知。
 - 某一来源失败不允许伪装成空数据。工作稿的未知项必须包含来源、原始错误文件和它阻断的判断。

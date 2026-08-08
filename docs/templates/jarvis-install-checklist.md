@@ -25,6 +25,7 @@
 ## C. 飞书身份与一体化绑定（`$install-jarvis`）
 
 - [ ] <!-- id:install.lark-profile --> 已选择一个 lark-cli Profile；该 Profile 的用户 OAuth、Bot 和 token 均验证成功。
+- [ ] <!-- id:install.feishu-capabilities --> 已完成飞书能力只读审计；核心文档、消息、群和 Bot 读取 API 已验收，无候选数据时已记录覆盖边界，已启用的条件能力已检查；高级组织字段缺失已记录为非阻塞未知项，过程中没有发起权限申请。
 - [ ] <!-- id:install.identity --> Principal open_id、Profile 和 Git author 已写入本机 runtime config 并读回。
 - [ ] <!-- id:install.cc-binding --> CC Connect `jarvis-codex` 已绑定同一个 App/Bot；Agent 每轮先读取 Jarvis context；`validate-binding` 通过。
 
@@ -37,7 +38,7 @@
 ## E. 世界模型建立（`$bootstrap-jarvis-world-model`）
 
 - [ ] <!-- id:world-model.existing-data --> 已检查存量 Principal、项目、人物、重点事项、资料与人工群背景；如有存量，已取得合并、补充或重建决定。
-- [ ] <!-- id:world-model.identity-evidence --> 已读取本人身份、部门、职位和直属上级；未知字段保留原因，没有猜测。
+- [ ] <!-- id:world-model.identity-evidence --> 已读取本人基础身份和当前可见的部门信息；职位、直属上级和部门路径已尝试取证，缺失时保留原因并继续，没有申请高级权限或猜测。
 - [ ] <!-- id:world-model.documents --> 已搜索并按需读取本人创建的 OKR 文档，以及最近 7 天本人撰写或编辑的文档；记录分页、权限和覆盖边界。
 - [ ] <!-- id:world-model.messages --> 已读取最近 7 天必要的消息、群元数据和成员信息；没有把历史消息灌入正常线索流水线。
 - [ ] <!-- id:world-model.inference --> 已形成“人、事、物、群、重点事项”的世界模型工作稿；高影响歧义已请用户决定，其余未知项已明确保留。
@@ -62,6 +63,7 @@
 
 - 依赖验收：待填写
 - 身份与绑定验收：待填写
+- 飞书能力审计：待填写
 - 服务验收：待填写
 - 世界模型验收：待填写
 - 端到端验收：待填写

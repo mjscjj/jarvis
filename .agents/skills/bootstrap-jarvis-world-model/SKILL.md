@@ -1,17 +1,17 @@
 ---
 name: bootstrap-jarvis-world-model
-description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，首次建立或按用户决定重建 Jarvis 世界模型。以飞书身份、直属上级、本人创建的 OKR 文档、最近 7 天本人撰写或编辑的文档、消息和群聊为证据，推断并写入 Principal、项目、关键人物、资料、重点事项、关系、事实和群监听；作为整体安装的一部分时更新安装清单的世界模型阶段。适用于“建立世界模型”“重建 Jarvis 背景”“补全人事物群”；企业策略下不调用 OKR API，已有业务数据时先确认合并、补充或重建策略。
+description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，首次建立或按用户决定重建 Jarvis 世界模型。以飞书身份、本人创建的 OKR 文档、最近 7 天本人撰写或编辑的文档、消息和群聊为证据，推断并写入 Principal、项目、关键人物、资料、重点事项、关系、事实和群监听；作为整体安装的一部分时更新安装清单的世界模型阶段。适用于“建立世界模型”“重建 Jarvis 背景”“补全人事物群”；企业策略下不调用 OKR API、不申请缺失的高级通讯录权限，已有业务数据时先确认合并、补充或重建策略。
 ---
 
 # 建立 Jarvis 世界模型
 
 初始化只负责“Jarvis 如何理解这个用户的世界”。依赖、App/Profile、CC Connect 和主服务归 `$install-jarvis`；本 Skill 不安装或重启 daemon，也不配置 CC。它不进入 Jarvis M3/M5 Skill catalog。
 
-先完整读取 [ownership-map.md](references/ownership-map.md)、[evidence-sources.md](references/evidence-sources.md)、[modeling-guide.md](references/modeling-guide.md) 和 [worknote-guide.md](references/worknote-guide.md)。
+先完整读取 [ownership-map.md](references/ownership-map.md)、[evidence-sources.md](references/evidence-sources.md)、[modeling-guide.md](references/modeling-guide.md)、[worknote-guide.md](references/worknote-guide.md) 和安装 Skill 的 [feishu-capability-audit.md](../install-jarvis/references/feishu-capability-audit.md)。
 
 ## 0. 取得工作目录并预检
 
-由整体安装调用时，必须复用 `$install-jarvis` 返回的 `run_dir`，使用其中的 `evidence/`、`world-model.md` 和 `INSTALL_CHECKLIST.md`。只更新清单 E 区，不创建或维护整张安装状态页。独立重建世界模型时可在 `var/onboarding/<run-id>/` 建自己的 `evidence/` 与 `world-model.md`，但不伪造整体项目安装清单。
+由整体安装调用时，必须复用 `$install-jarvis` 返回的 `run_dir`，使用其中的 `evidence/`、`evidence/feishu-capabilities.md`、`world-model.md` 和 `INSTALL_CHECKLIST.md`。只更新清单 E 区，不创建或维护整张安装状态页。独立重建世界模型时可在 `var/onboarding/<run-id>/` 建自己的 `evidence/` 与 `world-model.md`；若没有现成的飞书能力证据，按安装 Skill 的能力审计策略只读补做，但不伪造整体项目安装清单，也不发起权限申请。
 
 ```bash
 ./scripts/jarvis-world-model preflight
@@ -36,13 +36,13 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 
 至少覆盖：
 
-1. 本人身份、部门、职务和直属上级。
+1. 本人基础身份和当前可见的部门信息；职务、直属上级和完整部门路径属于可选增强，尝试读取但缺失时记录原因并继续，不申请对应高级权限。
 2. 本人原始创建的当前 OKR 文档。企业策略不支持 OKR 权限，不加载 `lark-okr`、不调用 OKR API。
 3. 最近 7 天本人创建或参与编辑的文档，保存分页和正文读取覆盖。
 4. 最近 7 天必要的本人消息、@、线程回复、活跃群、候选群元数据和成员。
 5. 本机 Git 身份及已确认项目仓库的近期提交，只用于确认 Git author 和项目线索。
 
-调查阶段不发消息、不改文档，不把历史消息投递给 `append-clue` 或改变 M2/M3 水位。失败和空结果分开记录。
+调查阶段不发消息、不改文档、不申请权限，不把历史消息投递给 `append-clue` 或改变 M2/M3 水位。失败和空结果分开记录。核心读取能力与安装审计不一致时保留新证据并返回 `$install-jarvis` 标阻塞；可选组织字段缺失不阻塞后续推断。
 
 ## 3. 推断世界模型
 
