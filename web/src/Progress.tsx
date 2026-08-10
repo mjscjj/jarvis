@@ -16,6 +16,7 @@ import MeetingSummaryView from './review/MeetingSummaryView'
 import MorningBriefCard from './review/MorningBriefCard'
 import { CodeView, DocumentsView } from './review/WorklogViews'
 import { usePageContext } from './pageContext'
+import { isReviewDateStateFresh, reviewDateStateExpiresAt } from './reviewDateState'
 import type { DailyDigest, DailyDigestScope, Group, MorningBrief, ProfileView } from './types'
 import './styles/review-memory.css'
 
@@ -57,7 +58,7 @@ export default function Progress() {
   const [activeView, setActiveView] = useState<ReviewView>(() => reviewView(context.view_state.view))
   const [selectedDate, setSelectedDate] = useState<Dayjs>(() => {
     const routeDate = dayjs(context.view_state.date)
-    return routeDate.isValid() ? routeDate : dayjs()
+    return routeDate.isValid() && isReviewDateStateFresh(context.view_state.date_selected_at) ? routeDate : dayjs()
   })
   const [profile, setProfile] = useState<ProfileView>()
   const [profileError, setProfileError] = useState<string>()
@@ -80,9 +81,31 @@ export default function Progress() {
 
   useEffect(() => {
     setActiveView(reviewView(context.view_state.view))
+  }, [context.view_state.view])
+
+  useEffect(() => {
+    const now = Date.now()
     const routeDate = dayjs(context.view_state.date)
-    if (routeDate.isValid() && !routeDate.isSame(selectedDate, 'day')) setSelectedDate(routeDate)
-  }, [context.view_state.date, context.view_state.view, selectedDate])
+    const selectedAt = context.view_state.date_selected_at
+    if (!routeDate.isValid() || !isReviewDateStateFresh(selectedAt, now)) {
+      const today = dayjs()
+      setSelectedDate(today)
+      if (context.view_state.date || selectedAt) {
+        setViewState({ view: reviewView(context.view_state.view), date: today.format('YYYY-MM-DD') })
+      }
+      return
+    }
+
+    setSelectedDate(routeDate)
+    const expiresAt = reviewDateStateExpiresAt(selectedAt)
+    if (expiresAt === undefined) return
+    const timer = window.setTimeout(() => {
+      const today = dayjs()
+      setSelectedDate(today)
+      setViewState({ view: reviewView(context.view_state.view), date: today.format('YYYY-MM-DD') })
+    }, expiresAt - now)
+    return () => window.clearTimeout(timer)
+  }, [context.view_state.date, context.view_state.date_selected_at, context.view_state.view, setViewState])
 
   useEffect(() => {
     getProfile()
@@ -172,7 +195,12 @@ export default function Progress() {
 
   const selectView = (view: ReviewView) => {
     setActiveView(view)
-    const next: Record<string, string> = { view, date }
+    const freshDateState = isReviewDateStateFresh(context.view_state.date_selected_at)
+    const next: Record<string, string> = {
+      view,
+      date: freshDateState ? date : dayjs().format('YYYY-MM-DD'),
+      date_selected_at: freshDateState ? context.view_state.date_selected_at : String(Date.now()),
+    }
     if (view === 'meetings' && context.view_state.meeting_id) next.meeting_id = context.view_state.meeting_id
     if (view === 'groups' && context.view_state.group_id) next.group_id = context.view_state.group_id
     setViewState(next)
@@ -180,17 +208,33 @@ export default function Progress() {
 
   const selectDate = (nextDate: Dayjs) => {
     setSelectedDate(nextDate)
-    const next: Record<string, string> = { view: activeView, date: nextDate.format('YYYY-MM-DD') }
+    const next: Record<string, string> = {
+      view: activeView,
+      date: nextDate.format('YYYY-MM-DD'),
+      date_selected_at: String(Date.now()),
+    }
     if (activeView === 'groups' && context.view_state.group_id) next.group_id = context.view_state.group_id
     setViewState(next)
   }
 
   const selectMeeting = (meetingID: string) => {
-    setViewState({ view: 'meetings', date, meeting_id: meetingID })
+    const freshDateState = isReviewDateStateFresh(context.view_state.date_selected_at)
+    setViewState({
+      view: 'meetings',
+      date: freshDateState ? date : dayjs().format('YYYY-MM-DD'),
+      date_selected_at: freshDateState ? context.view_state.date_selected_at : String(Date.now()),
+      meeting_id: meetingID,
+    })
   }
 
   const selectGroup = (groupID: string) => {
-    setViewState({ view: 'groups', date, group_id: groupID })
+    const freshDateState = isReviewDateStateFresh(context.view_state.date_selected_at)
+    setViewState({
+      view: 'groups',
+      date: freshDateState ? date : dayjs().format('YYYY-MM-DD'),
+      date_selected_at: freshDateState ? context.view_state.date_selected_at : String(Date.now()),
+      group_id: groupID,
+    })
   }
 
   const digestFor = (scope: DailyDigestScope, scopeID: string) =>
