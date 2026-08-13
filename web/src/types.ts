@@ -579,6 +579,7 @@ export interface SharedMemory {
 }
 
 export interface ProfileView {
+  id: number
   open_id: string
   name: string
   department?: string | null

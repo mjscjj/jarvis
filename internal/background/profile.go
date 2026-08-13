@@ -33,6 +33,7 @@ func (in ProfileInput) validate() error {
 // ProfileView is the API projection of the principal profile, always carrying
 // the configured open_id even before the row is first saved.
 type ProfileView struct {
+	ID           uint64  `json:"id"`
 	OpenID       string  `json:"open_id"`
 	Name         string  `json:"name"`
 	Department   *string `json:"department"`
@@ -112,7 +113,7 @@ func (s *ProfileService) Upsert(ctx context.Context, in ProfileInput) (*ProfileV
 
 func toProfileView(profile *domain.PrincipalProfile) ProfileView {
 	return ProfileView{
-		OpenID: profile.OpenID, Name: profile.Name, Department: profile.Department, Title: profile.Title,
+		ID: profile.ID, OpenID: profile.OpenID, Name: profile.Name, Department: profile.Department, Title: profile.Title,
 		Background: profile.Background, Preferences: profile.Preferences,
 		LeaderOpenID: profile.LeaderOpenID, LeaderName: profile.LeaderName, Saved: true,
 	}

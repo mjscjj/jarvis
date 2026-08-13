@@ -54,6 +54,7 @@ export default function FactTimeline({
   const [details, setDetails] = useState<Record<string, Fact[]>>({})
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({})
   const [rolling, setRolling] = useState<string>()
+  const timelineDays = subject ? 31 : 3
 
   const reload = useCallback(() => setRevision((value) => value + 1), [])
 
@@ -61,7 +62,7 @@ export default function FactTimeline({
     const controller = new AbortController()
     const load = () => {
       setLoading(true)
-      getFactTimeline(3, subject, controller.signal)
+      getFactTimeline(timelineDays, subject, controller.signal)
         .then((result) => { setTimeline(result); setError(undefined) })
         .catch((cause: unknown) => {
           if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(cause instanceof Error ? cause.message : String(cause))
@@ -186,7 +187,7 @@ export default function FactTimeline({
               <Text type="secondary">默认看压缩结果，展开查看原始事实</Text>
             </Flex>
             {historyRows.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="昨天、前天暂无事实" />
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={subject ? '最近 30 天暂无事实' : '昨天、前天暂无事实'} />
             ) : (
               <Space orientation="vertical" size={10} style={{ width: '100%' }}>{historyRows}</Space>
             )}

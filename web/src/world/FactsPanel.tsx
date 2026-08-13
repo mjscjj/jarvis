@@ -97,8 +97,8 @@ export default function FactsPanel() {
       <Card variant="borderless" className="fact-search-card">
         <Flex justify="space-between" align="center" gap={12} wrap>
           <div>
-            <Text strong>搜索与管理事实</Text>
-            <div><Text type="secondary">搜索会覆盖压缩摘要和被折叠的原始事实。</Text></div>
+            <Text strong>全部事实</Text>
+            <div><Text type="secondary">跨主题查看最终压缩结果，也可以展开和搜索每条原始事实。</Text></div>
           </div>
           <Button type="primary" onClick={() => { form.setFieldsValue({ occurred_at: dayjs() }); setOpen(true) }}>记录事实</Button>
         </Flex>
@@ -147,7 +147,7 @@ export default function FactsPanel() {
             </Space>
           )}
         </Card>
-      ) : <FactTimeline title="事实时间线" refreshToken={refreshToken} />}
+      ) : <FactTimeline title="全部事实时间线" refreshToken={refreshToken} />}
 
       <Modal title="记录事实" open={open} confirmLoading={saving} onOk={() => void create()} onCancel={() => setOpen(false)} okText="记录" destroyOnHidden>
         <Form form={form} layout="vertical">
