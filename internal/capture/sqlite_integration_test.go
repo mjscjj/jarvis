@@ -68,6 +68,26 @@ func TestCaptureSQLite(t *testing.T) {
 	assertRelated(t, db, "oc_p2p_bot", false)
 	assertRelated(t, db, "oc_p2p_external", false)
 	assertRelated(t, db, "oc_fixture", false)
+	// 成功扫描后，水位连续 5 天没有推进的会话退出监听；后续 discover 会把
+	// 重新活跃并排进 TopN 的私聊打开，同时保留旧水位以补到关闭期间的新消息。
+	service.now = func() time.Time { return discoveredAt.Add(6 * 24 * time.Hour) }
+	if err := service.ScanChat(context.Background(), "oc_p2p_internal"); err != nil {
+		t.Fatalf("inactive p2p ScanChat() error = %v", err)
+	}
+	assertRelated(t, db, "oc_p2p_internal", false)
+	if err := service.DiscoverChats(context.Background()); err != nil {
+		t.Fatalf("DiscoverChats() after inactive removal error = %v", err)
+	}
+	assertRelated(t, db, "oc_p2p_internal", true)
+	var reopenedCheckpoint domain.Checkpoint
+	if err := db.First(&reopenedCheckpoint, "chat_id = ?", "oc_p2p_internal").Error; err != nil {
+		t.Fatalf("load reopened p2p checkpoint: %v", err)
+	}
+	if reopenedCheckpoint.HighWaterCreateTime != discoveredAt.UnixMilli() {
+		t.Fatalf("reopened p2p high water = %d, want preserved %d", reopenedCheckpoint.HighWaterCreateTime, discoveredAt.UnixMilli())
+	}
+	service.now = func() time.Time { return discoveredAt }
+
 	// 外部私聊不能被手动加入名单。
 	if err := service.ReplaceRelatedGroups([]string{"oc_p2p_external"}); err == nil || !strings.Contains(err.Error(), "external p2p") {
 		t.Fatalf("ReplaceRelatedGroups(external p2p) error = %v, want external p2p rejection", err)

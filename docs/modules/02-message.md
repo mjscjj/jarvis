@@ -27,6 +27,7 @@ Jarvis Bot 的事件连接由 CC Connect 独占；`jarvis-server` 不启动 `lar
 
 - 全量发现会话，但首次只从当前时刻建立 checkpoint，不回溯历史。
 - 扫描 `related_group=1` 会话并在新增消息后唤醒 M3；tier 只用于展示。
+- 每次成功扫描后，连续 5 天没有新消息的会话退出监听；扫描失败时保留监听状态。
 - 按活跃度自动纳入内部真人 P2P Top-N，排除服务号 P2P。
 - 搜索 principal activity，发现本人发言的群聊/话题并维护独立 checkpoint。
 - 原样保存消息和外部 clue；资源只登记引用元数据，不通用下载正文。
