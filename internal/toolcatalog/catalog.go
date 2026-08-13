@@ -66,7 +66,7 @@ func Block(stage string) (string, error) {
 	}
 	if stage == StageExtract {
 		lines = append(lines,
-			"- M3 只做准入调查：不制定执行方案，不执行外部写，不创建或推进 Task，不修改 Todo、事实、共享记忆、代码、文档、日历或消息。",
+			"- M3 只做准入调查：不读取或修改共享记忆，不制定执行方案，不执行外部写，不创建或推进 Task，不修改 Todo、事实、代码、文档、日历或消息。",
 			"- 已有摘要足够时不要调用工具；需要补证据时优先查询现有 Todo/Task、消息和明确归属，不为丰富 payload 展开长链路调查。",
 		)
 	} else if stage != StageMeetingSweep {

@@ -31,7 +31,7 @@ func TestExtractStageStopsAtTaskAdmissionAndForbidsWrites(t *testing.T) {
 	}
 	for _, required := range []string{
 		"Task 准入", "最短证据链", "证据足够选择 extracted、observing 或不输出时立即停止",
-		"不制定执行方案", "不执行外部写", "不创建或推进 Task", "不修改 Todo",
+		"不读取或修改共享记忆", "不制定执行方案", "不执行外部写", "不创建或推进 Task", "不修改 Todo",
 	} {
 		if !strings.Contains(block, required) {
 			t.Fatalf("extract block missing %q:\n%s", required, block)

@@ -19,7 +19,6 @@ import (
 	"jarvis/internal/extract/provider"
 	"jarvis/internal/progress"
 	"jarvis/internal/semantic"
-	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/store"
 	"jarvis/internal/textstore"
@@ -151,10 +150,6 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract.NewRegistryToolBoxBuilder() error = %v", err)
 	}
-	sharedMemoryService, err := sharedmem.NewSharedMemoryService(filepath.Join("..", "..", "data", "shared-memory.md"))
-	if err != nil {
-		t.Fatalf("sharedmem.NewSharedMemoryService() error = %v", err)
-	}
 	workRuleService, err := workrule.NewService(filepath.Join("..", "..", "conf", "rules"))
 	if err != nil {
 		t.Fatalf("workrule.NewService() error = %v", err)
@@ -174,7 +169,7 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("progress.NewService() error = %v", err)
 	}
-	worker, err := extract.NewWorker(pipelineStore, modelClient, progressService, deduplicator, toolBoxBuilder, sharedMemoryService, extract.WorkerOptions{
+	worker, err := extract.NewWorker(pipelineStore, modelClient, progressService, deduplicator, toolBoxBuilder, extract.WorkerOptions{
 		Load: extract.LoadOptions{
 			BatchMessages: 10, ContextMessages: cfg.Extract.ContextMessages,
 			ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,

@@ -10,7 +10,6 @@ import (
 	"jarvis/internal/agentusage"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/progress"
-	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/textstore"
 	"jarvis/internal/toolcatalog"
@@ -65,20 +64,19 @@ type WorkerStats struct {
 
 // Worker performs network enrichment outside transactions, then commits all
 // candidates and the watermark for one chat atomically. Extraction runs as a
-// function-calling loop: the model may call retrieval tools (chat history,
-// memory) via the per-unit tool box before emitting the final result.
+// function-calling loop, but the M3 prompt keeps tool use limited to the shortest
+// read-only query needed for admission before emitting the final result.
 type Worker struct {
-	store     pipelineStore
-	model     ToolExtractor
-	facts     factReader
-	dedup     candidateDeduplicator
-	toolBox   toolBoxBuilder
-	sharedMem sharedmem.SharedMemoryReader
-	opts      WorkerOptions
-	now       func() time.Time
+	store   pipelineStore
+	model   ToolExtractor
+	facts   factReader
+	dedup   candidateDeduplicator
+	toolBox toolBoxBuilder
+	opts    WorkerOptions
+	now     func() time.Time
 }
 
-func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup candidateDeduplicator, toolBox toolBoxBuilder, sharedMem sharedmem.SharedMemoryReader, opts WorkerOptions) (*Worker, error) {
+func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup candidateDeduplicator, toolBox toolBoxBuilder, opts WorkerOptions) (*Worker, error) {
 	if store == nil {
 		return nil, fmt.Errorf("extract worker store is nil")
 	}
@@ -93,9 +91,6 @@ func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup
 	}
 	if toolBox == nil {
 		return nil, fmt.Errorf("extract worker tool box builder is nil")
-	}
-	if sharedMem == nil {
-		return nil, fmt.Errorf("extract worker shared memory reader is nil")
 	}
 	if opts.WorkRules == nil {
 		return nil, fmt.Errorf("extract worker work rule reader is nil")
@@ -130,7 +125,7 @@ func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup
 	if opts.Location == nil {
 		return nil, fmt.Errorf("extract worker location is nil")
 	}
-	return &Worker{store: store, model: model, facts: facts, dedup: dedup, toolBox: toolBox, sharedMem: sharedMem, opts: opts, now: time.Now}, nil
+	return &Worker{store: store, model: model, facts: facts, dedup: dedup, toolBox: toolBox, opts: opts, now: time.Now}, nil
 }
 
 // PendingChatIDs lists the chats with work left beyond their extraction
@@ -204,11 +199,6 @@ func countNewMessages(batch ChatBatch) int {
 
 func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.Time) (WorkerStats, PersistStats, error) {
 	stats := WorkerStats{}
-	// 实时读一次共享记忆文本，注入本 chat 各 unit 的抽取 prompt；读表出错 fail-fast。
-	sharedMemory, err := w.sharedMem.Text(ctx)
-	if err != nil {
-		return stats, PersistStats{}, fmt.Errorf("read shared memory chat_id=%s: %w", batch.Group.ChatID, err)
-	}
 	workRules, err := w.opts.WorkRules.Block(ctx, workrule.StageExtract)
 	if err != nil {
 		return stats, PersistStats{}, fmt.Errorf("read extract work rules chat_id=%s: %w", batch.Group.ChatID, err)
@@ -240,7 +230,7 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 		prompt, err := BuildPrompt(batch, unit, facts, runNow, PromptOptions{
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
 			SystemPrompt: systemPrompt, ToolCatalog: toolCatalog,
-			SharedMemory: sharedMemory, WorkRules: workRules, Skills: skills,
+			WorkRules: workRules, Skills: skills,
 		})
 		if err != nil {
 			return stats, PersistStats{}, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
