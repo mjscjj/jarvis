@@ -228,12 +228,13 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 	for i := range newRows {
 		newMessages[i] = messageContext(&newRows[i], true)
 	}
+	// 老式"回复某条消息"没有 thread_id，根消息自己也不带任何话题标记，需要按
+	// 回复的 root_id 把它拉进同一单元。带 thread_id 的消息不需要：根消息同样带着
+	// 那个 thread_id，本来就会落进同一单元。
 	topicRoots := make(map[string]struct{})
 	for _, message := range newMessages {
-		if message.RootID != "" {
+		if message.ThreadID == "" && message.RootID != "" {
 			topicRoots[message.RootID] = struct{}{}
-		} else if message.ThreadID != "" {
-			topicRoots[message.ThreadID] = struct{}{}
 		}
 	}
 	grouped := make(map[string][]MessageContext)
@@ -336,15 +337,18 @@ func (s *PipelineStore) loadContextMessages(ctx context.Context, chatID, key str
 	if opts.ContextMessages == 0 {
 		return nil, nil
 	}
-	startMS := first.CreateTime - opts.ContextWindow.Milliseconds()
-	query := s.db.WithContext(ctx).Where("chat_id = ? AND create_time >= ?", chatID, startMS).
+	query := s.db.WithContext(ctx).Where("chat_id = ?", chatID).
 		Where("create_time < ? OR (create_time = ? AND id < ?)", first.CreateTime, first.CreateTime, first.DatabaseID).
 		Where("render_ok = ?", true)
 	if key == "chat" {
-		query = query.Where("(root_id IS NULL OR root_id = '') AND (thread_id IS NULL OR thread_id = '')")
+		// 主线消息只有时间邻近性可依赖：同一个群里几小时前的对话通常已是另一件事。
+		query = query.Where("create_time >= ?", first.CreateTime-opts.ContextWindow.Milliseconds()).
+			Where("(root_id IS NULL OR root_id = '') AND (thread_id IS NULL OR thread_id = '')")
 	} else {
+		// thread 本身就是话题边界，隔多久都是同一件事，因此不设时间下限，只受
+		// ContextMessages 条数约束——否则跨天的 thread 会只剩本轮新消息，指代词失去指向。
 		topicID := strings.TrimPrefix(key, "topic:")
-		query = query.Where("(COALESCE(NULLIF(root_id, ''), NULLIF(thread_id, '')) = ? OR message_id = ?)", topicID, topicID)
+		query = query.Where("(COALESCE(NULLIF(thread_id, ''), NULLIF(root_id, '')) = ? OR message_id = ?)", topicID, topicID)
 	}
 	var rows []domain.Message
 	if err := query.Order("create_time DESC, id DESC").Limit(opts.ContextMessages).Find(&rows).Error; err != nil {
@@ -559,12 +563,15 @@ func extractableMessage(message *domain.Message) bool {
 	return false
 }
 
+// conversationKey 用 thread_id 作为话题身份。root_id 只是"回复链根消息 ID"，
+// 取决于采集路径——messages-search 常留空，chat-messages-list 展平时才回填——
+// 拿它当身份会把同一个 thread 按采集时间拆成互不可见的两半。
 func conversationKey(message MessageContext) string {
-	if message.RootID != "" {
-		return "topic:" + message.RootID
-	}
 	if message.ThreadID != "" {
 		return "topic:" + message.ThreadID
+	}
+	if message.RootID != "" {
+		return "topic:" + message.RootID
 	}
 	return "chat"
 }
