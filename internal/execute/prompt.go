@@ -259,9 +259,6 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 func projectExecutionContext(task *domain.Task) (executionContext, error) {
 	snapshot, err := contextsnap.Decode(task.Background)
 	if err != nil {
-		if task.SourceType == "todo" {
-			return executionContext{}, nil
-		}
 		return executionContext{}, fmt.Errorf("execution prompt Task id=%d background invalid: %w", task.ID, err)
 	}
 	result := executionContext{}

@@ -2,8 +2,10 @@ package execute
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -36,9 +38,7 @@ func TestMaterializeTodoCarriesExtractionAsSourcePayload(t *testing.T) {
 	if task.TodoID == nil || *task.TodoID != 7 || string(task.SourcePayload) != `{"desired_outcome":"完成目标"}` || task.RepoPath != nil {
 		t.Fatalf("task = %#v source_payload=%s", task, task.SourcePayload)
 	}
-	if string(task.Background) != `{"desired_outcome":"完成目标"}` {
-		t.Fatalf("task = %#v background=%s", task, task.Background)
-	}
+	assertSameJSON(t, "task background", task.Background, []byte(materializerTodoContextSnapshot))
 	var todo domain.Todo
 	if err := db.First(&todo, 7).Error; err != nil {
 		t.Fatal(err)
@@ -256,6 +256,24 @@ func newMaterializerTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+// assertSameJSON compares JSON by value: storage canonicalizes key order, so a
+// byte comparison would fail even when the snapshot travelled through intact.
+func assertSameJSON(t *testing.T, label string, got, want []byte) {
+	t.Helper()
+	var gotValue, wantValue any
+	if err := json.Unmarshal(got, &gotValue); err != nil {
+		t.Fatalf("decode %s: %v", label, err)
+	}
+	if err := json.Unmarshal(want, &wantValue); err != nil {
+		t.Fatalf("decode expected %s: %v", label, err)
+	}
+	if !reflect.DeepEqual(gotValue, wantValue) {
+		t.Fatalf("%s = %s, want %s", label, got, want)
+	}
+}
+
+const materializerTodoContextSnapshot = `{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z","principal":{"open_id":"ou_owner","name":"Owner"},"project":{"id":1,"name":"Jarvis","role":"owner","repos":[{"local_path":"jarvis"}]},"messages":[],"memories":[],"facts":[],"recent_tasks":[],"open_todos":[]}`
+
 func insertMaterializerTodo(t *testing.T, db *gorm.DB, id uint64, version int32) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -264,7 +282,7 @@ func insertMaterializerTodo(t *testing.T, db *gorm.DB, id uint64, version int32)
 		Status: "extracted", DedupFingerprint: fmt.Sprintf("fp-%d", id),
 		OpenQuestions:    datatypes.JSON(`[]`),
 		SourceMessageIDs: datatypes.JSON(`[]`),
-		ContextSnapshot:  datatypes.JSON(`{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z","principal":{"open_id":"ou_owner","name":"Owner"},"project":{"id":1,"name":"Jarvis","role":"owner","repos":[{"local_path":"jarvis"}]},"messages":[],"memories":[],"facts":[],"recent_tasks":[],"open_todos":[]}`),
+		ContextSnapshot:  datatypes.JSON(materializerTodoContextSnapshot),
 		ExtractionResult: datatypes.JSON(`{"desired_outcome":"完成目标"}`),
 		Revision:         1, Version: version, FirstSeenAt: now, LastEvidenceAt: now,
 	}

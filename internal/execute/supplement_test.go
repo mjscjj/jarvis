@@ -265,23 +265,18 @@ func TestBuildExecutionPromptForwardsSourcePayloadVerbatim(t *testing.T) {
 	}
 }
 
-func TestBuildExecutionPromptForTodoTaskWithNonSnapshotBackground(t *testing.T) {
+func TestBuildExecutionPromptRejectsNonSnapshotBackground(t *testing.T) {
 	task := &domain.Task{
 		ID: 18, Title: "事实维护任务", ActionType: "fact_update", Target: "世界事实抽取",
 		SourcePayload: datatypes.JSON(`{"desired_outcome":"抽取这波事实并更新世界模型"}`),
 		Background:    datatypes.JSON(`{"desired_outcome":"抽取这波事实并更新世界模型"}`), SourceType: "todo",
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil)
-	if err != nil {
-		t.Fatalf("build prompt: %v", err)
+	_, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil)
+	if err == nil {
+		t.Fatal("build prompt: expected todo Task without a context snapshot to fail")
 	}
-	for _, want := range []string{
-		`"source_payload":{"desired_outcome":"抽取这波事实并更新世界模型"}`,
-		`"background_lookup":"jarvis-tools get-task --id 18"`,
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("execution prompt missing %q:\n%s", want, prompt)
-		}
+	if !strings.Contains(err.Error(), "background invalid") {
+		t.Fatalf("build prompt error = %v", err)
 	}
 }
 
