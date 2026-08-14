@@ -96,6 +96,33 @@ func AppendFact(service progress.EventService) app.HandlerFunc {
 	}
 }
 
+// AppendFacts appends one batch of facts in one request path. The service still
+// writes each fact through AppendFact so replay and parent checks remain
+// unchanged. Fail-fast is on: the first failed write aborts the batch.
+func AppendFacts(service progress.EventService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var inputs []progress.FactInput
+		if err := decodeStrictJSON(c.Request.Body(), &inputs); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40064, err)
+			return
+		}
+		if len(inputs) == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40064, fmt.Errorf("%w: at least one fact is required", progress.ErrInvalidInput))
+			return
+		}
+		items := make([]progress.FactView, 0, len(inputs))
+		for _, input := range inputs {
+			result, err := service.AppendFact(ctx, input)
+			if err != nil {
+				writeProgressError(c, err)
+				return
+			}
+			items = append(items, *result)
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": items}})
+	}
+}
+
 func writeProgressError(c *app.RequestContext, err error) {
 	switch {
 	case errors.Is(err, progress.ErrInvalidInput):

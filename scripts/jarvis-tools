@@ -65,6 +65,7 @@ subcommands:
   append-shared-memory   Append one entry to shared memory
   append-clue            Hand M2 one observed fact as evidence for M3
   append-fact            Record one fact about a project, group, person or other subject
+  append-facts-batch     Record multiple facts from one JSON array
   list-facts             Read a subject's recorded facts, optionally for one day
   list-relations         Read relation facts for one entity
   create-relation        Create a natural-language relation fact
@@ -250,6 +251,26 @@ you run.
 example:
   jarvis-tools append-fact --subject-type project --subject-id 3 --description - <<'TXT'
   事实表方案定稿：复用并泛化 project_event，不新建表。按天总结沿用 daily_digest。
+  TXT
+EOF
+      ;;
+    append-facts-batch) cat <<'EOF'
+usage: jarvis-tools append-facts-batch --payload JSON|- [--config PATH]
+
+Record one batch of facts in one request.
+
+  --payload  JSON array of fact objects. Each fact must include
+             subject_type, subject_id, description.
+             Optional: occurred_at/source/source_id.
+
+  --payload - reads from stdin. Omit it to pass --payload text directly.
+
+example:
+  cat <<'TXT' | jarvis-tools append-facts-batch --payload -
+  [
+    {"subject_type":"project","subject_id":3,"description":"决议：本周验收窗口已冻结","source":"factengine","source_id":1},
+    {"subject_type":"task","subject_id":18,"description":"开发完成，待验收","source":"factengine","source_id":100}
+  ]
   TXT
 EOF
       ;;
@@ -716,6 +737,7 @@ require_command_flag() {
     append-shared-memory) allowed+=" --note" ;;
     append-clue) allowed+=" --source --external-id --title --content --occurred-at" ;;
     append-fact) allowed+=" --subject-type --subject-id --description --occurred-at --source --source-id" ;;
+    append-facts-batch) allowed+=" --payload" ;;
     list-facts) allowed+=" --subject-type --subject-id --date --limit" ;;
     list-relations) allowed+=" --entity-type --entity-id --limit" ;;
     list-todos) allowed+=" --date --status --limit" ;;
@@ -1594,6 +1616,22 @@ cmd_append_fact() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+cmd_append_facts_batch() {
+  reset_flags
+  consume_flags "$@"
+  local payload
+  if [[ "$PAYLOAD" == "-" ]]; then
+    payload="$(cat)"
+  else
+    payload="$PAYLOAD"
+  fi
+  printf '%s' "$payload" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1 ||
+    fail "append-facts-batch payload must be a non-empty JSON array"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  body="$(api_write POST /api/facts/batch "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data.items')"
+}
+
 # local_day_bounds DATE CMD — resolve YYYY-MM-DD to RFC3339 half-open [from, until)
 # in the local timezone. Fail-fast with the calling command name on bad input.
 local_day_bounds() {
@@ -1985,6 +2023,7 @@ case "$SUBCOMMAND" in
   append-shared-memory) cmd_append_shared_memory "$@" ;;
   append-clue)          cmd_append_clue "$@" ;;
   append-fact)          cmd_append_fact "$@" ;;
+  append-facts-batch)   cmd_append_facts_batch "$@" ;;
   list-facts)           cmd_list_facts "$@" ;;
   list-relations)       cmd_list_relations "$@" ;;
   create-relation)      cmd_payload_create create-relation POST /api/relation-facts "$@" ;;

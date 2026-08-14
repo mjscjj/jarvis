@@ -88,7 +88,8 @@ func Block(stage string) (string, error) {
 	if stage == StageFactEngine {
 		lines = append(lines,
 			"- 事实建模 Agent 可以使用项目、人物、群、Principal、资料和关系的通用查询及 CRUD 命令维护 Jarvis 内部认知；先查现值，确认有新增或变化后再写，并立即读回。",
-			"- 发生过的决定、交付、进展、阻塞、承诺或方向变化使用 `append-fact` 直接写入；重放材料时先查询近期事实，不重复写。",
+			"- 发生过的决定、交付、进展、阻塞、承诺或方向变化使用 `append-facts-batch` 一次性提炼并统一提交；重放材料时先查询近期事实，不重复写。",
+			"- 当只需单条时，可退化为 `append-fact`；但默认目标是一次判断一次提交。",
 			"- 本阶段不创建或推进 Task，不修改外部系统。需要补证据时可以只读查询 lark-cli、bytedcli 和 git。",
 		)
 	}

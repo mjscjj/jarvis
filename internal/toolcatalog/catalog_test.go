@@ -62,8 +62,8 @@ func TestFactEngineStageOwnsInternalWorldModelButNotExternalWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		"通用查询及 CRUD", "先查现值", "立即读回", "`append-fact` 直接写入",
-		"不创建或推进 Task", "不修改外部系统",
+		"通用查询及 CRUD", "先查现值", "立即读回", "`append-facts-batch`",
+		"`append-fact`", "不创建或推进 Task", "不修改外部系统",
 	} {
 		if !strings.Contains(block, required) {
 			t.Fatalf("factengine block missing %q:\n%s", required, block)

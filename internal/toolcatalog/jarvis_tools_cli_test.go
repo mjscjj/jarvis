@@ -171,6 +171,7 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"create-relation", []string{"--payload", `{"description":"r"}`}, http.MethodPost, "/api/relation-facts"},
 		{"update-relation", []string{"--id", "11", "--payload", `{"description":"r"}`}, http.MethodPut, "/api/relation-facts/11"},
 		{"delete-relation", []string{"--id", "11"}, http.MethodDelete, "/api/relation-facts/11"},
+		{"append-facts-batch", []string{"--payload", `[{"subject_type":"project","subject_id":1,"description":"d1"},{"subject_type":"project","subject_id":2,"description":"d2"}]`}, http.MethodPost, "/api/facts/batch"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {

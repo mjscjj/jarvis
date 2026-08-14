@@ -224,6 +224,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.DELETE("/api/key-matters/:key_matter_id", DeleteKeyMatter(deps.KeyMatters))
 	h.GET("/api/facts", ListFacts(deps.Progress))
 	h.POST("/api/facts", AppendFact(deps.Progress))
+	h.POST("/api/facts/batch", AppendFacts(deps.Progress))
 	h.GET("/api/facts/timeline", FactTimeline(deps.FactQueries, deps.FactRollupLoc))
 	h.GET("/api/facts/search", SearchFacts(deps.FactQueries))
 	h.POST("/api/fact-rollups/generate", GenerateFactRollups(deps.FactRollups, deps.FactRollupLoc))

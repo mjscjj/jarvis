@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 type fakeProgressService struct {
 	taskID     uint64
 	factFilter progress.FactFilter
+	factInputs []progress.FactInput
 	factInput  progress.FactInput
 	err        error
 }
@@ -26,6 +28,7 @@ func (f *fakeProgressService) ListTaskEvents(_ context.Context, taskID uint64) (
 }
 
 func (f *fakeProgressService) AppendFact(_ context.Context, input progress.FactInput) (*progress.FactView, error) {
+	f.factInputs = append(f.factInputs, input)
 	f.factInput = input
 	return &progress.FactView{
 		SubjectType: input.SubjectType, SubjectID: input.SubjectID, Description: input.Description,
@@ -61,6 +64,44 @@ func TestAppendFact(t *testing.T) {
 	if svc.factInput.SubjectType != "group" || svc.factInput.SubjectID != 3 ||
 		svc.factInput.Description != "接口已经完成，下一步联调。" {
 		t.Fatalf("input=%#v", svc.factInput)
+	}
+}
+
+func TestAppendFacts(t *testing.T) {
+	svc := &fakeProgressService{}
+	h := server.New()
+	h.POST("/api/facts/batch", AppendFacts(svc))
+	body := []byte(`[
+		{"subject_type":"group","subject_id":3,"description":"事实 A"},
+		{"subject_type":"task","subject_id":4,"description":"事实 B"}
+	]`)
+	response := ut.PerformRequest(h.Engine, "POST", "/api/facts/batch", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	if len(svc.factInputs) != 2 {
+		t.Fatalf("factInputs = %#v", svc.factInputs)
+	}
+	if svc.factInputs[0].SubjectType != "group" || svc.factInputs[1].SubjectType != "task" {
+		t.Fatalf("fact order/input=%#v", svc.factInputs)
+	}
+	bodyStr := string(response.Body())
+	if !strings.Contains(bodyStr, "\"items\":") {
+		t.Fatalf("response missing items: %s", bodyStr)
+	}
+}
+
+func TestAppendFactsRejectsEmptyBatch(t *testing.T) {
+	svc := &fakeProgressService{}
+	h := server.New()
+	h.POST("/api/facts/batch", AppendFacts(svc))
+	body := []byte(`[]`)
+	response := ut.PerformRequest(h.Engine, "POST", "/api/facts/batch", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	if len(svc.factInputs) != 0 {
+		t.Fatalf("factInputs should be empty: %#v", svc.factInputs)
 	}
 }
 
