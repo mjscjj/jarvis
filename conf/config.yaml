@@ -33,7 +33,7 @@ factengine:
   sandbox: "danger-full-access"   # 本地可信环境；抽取时可自跑 jarvis-tools 查已有事实避免重复
   timeout_sec: 1200              # 一次完整世界维护 Agent 会话最多 20 分钟
   batch_limit: 50                # 每个来源参与粗粒度缩批的候选行上限
-  max_material_chars: 100000     # 一次 Agent 会话的粗粒度材料预算；只在完整材料之间缩批
+  max_material_chars: 1600000    # 一次 Agent 会话的粗粒度材料预算；只在完整材料之间缩批
   window_gap_minutes: 30         # 超过此间隔视为另一段对话
   window_max_messages: 40        # 单个对话窗口的消息上限
 

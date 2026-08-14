@@ -407,7 +407,7 @@ export default function RuntimeSettings() {
             <TextField name="fact_engine_rollup_model" label="事实日压缩模型" />
             <NumberField name="fact_engine_timeout_seconds" label="单轮超时（秒）" min={1} max={3600} />
             <NumberField name="fact_engine_batch_limit" label="每来源候选行上限" min={1} max={5000} />
-            <NumberField name="fact_engine_max_material_chars" label="单次材料字符上限" min={1} max={1000000} />
+            <NumberField name="fact_engine_max_material_chars" label="单次材料字符上限" min={1} max={1600000} />
             <NumberField name="fact_engine_window_gap_minutes" label="新窗口间隔（分钟）" min={1} max={1440} help="同一会话相邻消息超过该间隔时拆成两个事实窗口。" />
             <NumberField name="fact_engine_window_max_messages" label="每个窗口消息上限" min={1} max={1000} />
           </Section>
