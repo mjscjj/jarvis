@@ -138,15 +138,23 @@ func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
 		t.Fatalf("read M3 system prompt: %v", err)
 	}
 	system := string(raw)
+	// principal 每天都在调这份提示词的措辞，所以这里只锚定两类不该漂的东西：
+	// 模型必须填的机器契约字段，以及两条曾经真的回归过的语义边界。散文表述
+	// 不做断言——之前逐句断言的版本被一次正常的措辞调整弄红过。
 	for _, want := range []string{
-		"任务准入 Agent",
-		"只回答四个问题",
-		"立即停止调查",
-		"准入简报",
-		"为什么与 principal 有关",
-		"不读取共享记忆",
+		// 机器契约：status 枚举与 schema 要求的八个字段必须出现在提示词里。
+		"status=extracted",
+		"status=observing",
+		"action_type",
+		"project_hint",
+		"source_message_ids",
+		"source_quote",
+		"payload",
+		// 语义边界一：M3 只做准入，不越界到执行阶段。
 		"不制定执行方案",
-		"程序不解析，会原样带给 M5",
+		// 语义边界二：principal 直接给 Jarvis 的指令必须绕过价值判断。少了这条，
+		// 强模型会把「让 jarvis 说句话」判成测试信息并丢弃。
+		"principal 直接要求 Jarvis",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q", want)

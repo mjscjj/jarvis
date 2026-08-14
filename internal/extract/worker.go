@@ -606,8 +606,20 @@ func validateEvidence(unit ConversationUnit, sourceMessageIDs []string, sourceQu
 	return nil
 }
 
+// quoteFolding maps the curly quotes Feishu messages carry onto their ASCII
+// equivalents. Models routinely retype “…” as "…" while copying a quote, which
+// the verbatim check would otherwise read as a rewritten citation. Folding them
+// keeps the check's real job — catching invented or paraphrased evidence —
+// because the surrounding characters still have to match exactly.
+var quoteFolding = strings.NewReplacer(
+	"\u201c", `"`, "\u201d", `"`,
+	"\u2018", "'", "\u2019", "'",
+)
+
 func containsNormalized(content, quote string) bool {
-	normalize := func(value string) string { return strings.Join(strings.Fields(value), " ") }
+	normalize := func(value string) string {
+		return quoteFolding.Replace(strings.Join(strings.Fields(value), " "))
+	}
 	return strings.Contains(normalize(content), normalize(quote))
 }
 

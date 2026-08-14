@@ -66,7 +66,7 @@ extract:
   # M3 function-calling 工具循环
   tool_timeout_sec: 10        # 单次工具调用超时（秒）
   history_tool_limit: 20      # query_chat_history 单次最多返回消息数
-  evidence_retry_max: 0       # 轻量准入不重跑完整 Agent；失败直接暴露并由补偿扫描重试
+  evidence_retry_max: 1       # 引用改写是模型能自己改对的格式错误；给一次纠正机会，不给预算等于把已产出的线索整轮丢弃
 
 # lark-cli 子进程封装（总纲 §4）
 lark_cli:
@@ -104,7 +104,7 @@ card_approval:
 codex:
   bin: "traex"
   model: "DeepSeek-V4-Flash"
-  timeout_seconds: 90    # M3 只做轻量准入判断，异常调用尽快 fail-fast
+  timeout_seconds: 180   # 准入仍要留出工具查证和一次证据重跑的余量；90s 会把正常轮次打成 killed
 
 # 主动巡视 Agent：启动 2 分钟后先跑一次，之后每小时读取世界模型、复盘未完成工作。
 # factengine 以持续建模为主；巡视可顺手维护明确变化，外部动作仍创建 Task 交给强 M5。

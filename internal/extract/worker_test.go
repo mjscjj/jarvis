@@ -617,6 +617,33 @@ func TestValidateCandidateEvidenceIgnoresOpaquePayload(t *testing.T) {
 	}
 }
 
+// 飞书原文里的中文引号被模型重打成 ASCII 引号时，引用仍然算逐字：这只是同一个
+// 标点的两种写法，不是改写证据。改写、拼接和凭空编造仍必须被挡住。
+func TestValidateCandidateEvidenceFoldsCurlyQuotes(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID: "om_1", Source: "poll", SenderOpenID: "ou_owner",
+		Content: "jarvis，给我说 “今年赚一个亿”", IsNew: true, Extractable: true,
+	}}}
+	candidate := func(quote string) Candidate {
+		return Candidate{
+			ActionType: "reply_message", Status: "extracted", Title: "回复", Target: "回复一句话",
+			SourceMessageIDs: []string{"om_1"}, SourceQuote: quote, Payload: "principal 直接要求 Jarvis 回复。",
+		}
+	}
+	folded := candidate(`jarvis，给我说 "今年赚一个亿"`)
+	if err := validateCandidateEvidence(unit, &folded); err != nil {
+		t.Fatalf("ASCII 引号版本应通过逐字校验，got error = %v", err)
+	}
+	original := candidate("jarvis，给我说 “今年赚一个亿”")
+	if err := validateCandidateEvidence(unit, &original); err != nil {
+		t.Fatalf("原文引号版本应通过逐字校验，got error = %v", err)
+	}
+	rewritten := candidate("jarvis，给我说今年赚两个亿")
+	if err := validateCandidateEvidence(unit, &rewritten); !errors.Is(err, ErrEvidenceQuoteMismatch) {
+		t.Fatalf("改写后的 quote 必须被挡住，got error = %v", err)
+	}
+}
+
 func validWorkerOptions() WorkerOptions {
 	return WorkerOptions{
 		Load: LoadOptions{
