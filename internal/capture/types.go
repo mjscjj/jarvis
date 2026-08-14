@@ -50,7 +50,7 @@ type MessageSearchResponse struct {
 }
 
 // MessageSearchListResponse is the full rendered message shape returned by
-// lark-cli im +messages-search for one related topic chat. It is separate from
+// lark-cli im +messages-search for one related group or topic chat. It is separate from
 // MessageSearchResponse because principal-activity discovery only needs chat
 // metadata, while ordinary M2 capture persists the complete message payload.
 type MessageSearchListResponse struct {

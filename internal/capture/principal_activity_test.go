@@ -410,15 +410,25 @@ func (f *principalActivityFixture) Run(_ context.Context, out any, args ...strin
 	joined := strings.Join(args, " ")
 	switch {
 	case strings.Contains(joined, "+messages-search"):
-		f.searchArgs = append([]string(nil), args...)
-		if f.searchErr != nil {
-			return f.searchErr
+		switch response := out.(type) {
+		case *MessageSearchResponse:
+			f.searchArgs = append([]string(nil), args...)
+			if f.searchErr != nil {
+				return f.searchErr
+			}
+			response.OK = true
+			response.Data.Messages = append([]SearchedMessage(nil), f.searchMessages...)
+			response.Data.Total = len(f.searchMessages)
+			return nil
+		case *MessageSearchListResponse:
+			response.OK = true
+			chatID := argValue(args, "--chat-id")
+			response.Data.Messages = append([]CLIMessage(nil), f.chatMessages[chatID]...)
+			response.Data.Total = len(response.Data.Messages)
+			return nil
+		default:
+			return fmt.Errorf("unexpected messages-search response type %T", out)
 		}
-		response := out.(*MessageSearchResponse)
-		response.OK = true
-		response.Data.Messages = append([]SearchedMessage(nil), f.searchMessages...)
-		response.Data.Total = len(f.searchMessages)
-		return nil
 	case strings.Contains(joined, "+chat-messages-list"):
 		response := out.(*MessageListResponse)
 		response.OK = true

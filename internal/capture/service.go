@@ -460,7 +460,7 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	scanType := "scan_" + group.Tier
 	windowStart := checkpoint.HighWaterCreateTime
 	searchWindowStart := windowStart
-	if group.ChatMode == "topic" {
+	if isGroupConversation(group.ChatMode) {
 		searchWindowStart -= s.opts.SearchOverlap.Milliseconds()
 		if searchWindowStart < 0 {
 			searchWindowStart = 0
@@ -483,9 +483,9 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	currentHW := windowStart
 	lastMessageID := checkpoint.LastMessageID
 	insertedMessageIDs := make([]string, 0)
-	if group.ChatMode == "topic" {
+	if isGroupConversation(group.ChatMode) {
 		var messages []CLIMessage
-		messages, record.PageCount, err = s.searchTopicMessages(ctx, chatID, searchWindowStart, s.now())
+		messages, record.PageCount, err = s.searchGroupMessages(ctx, chatID, searchWindowStart, s.now())
 		record.FetchedCount = int32(len(messages))
 		if err != nil {
 			return err
@@ -498,7 +498,7 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 			lastMessageID,
 		)
 		if err != nil {
-			return fmt.Errorf("persist topic messages chat_id=%s: %w", chatID, err)
+			return fmt.Errorf("persist group messages chat_id=%s: %w", chatID, err)
 		}
 		record.InsertedCount = inserted
 	} else {
@@ -562,15 +562,20 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	})
 }
 
-// searchTopicMessages reads messages by their own create time. Feishu's chat
-// listing filters topic roots by root create time, so a new reply under an old
-// root is otherwise invisible after the root passes the chat checkpoint.
+func isGroupConversation(chatMode string) bool {
+	return chatMode == "group" || chatMode == "topic"
+}
+
+// searchGroupMessages reads group and topic messages by their own create time.
+// Feishu's chat listing filters thread roots by root create time, including in
+// regular groups, so a new reply under an old root is otherwise invisible after
+// the root passes the chat checkpoint.
 //
 // Search results are not ordered. Fetch every page before persisting anything,
 // then sort deterministically so a failed or partial search cannot advance the
 // checkpoint past an unseen reply. The overlap tolerates search-index delay;
 // message_id remains the idempotency key when old rows are returned again.
-func (s *Service) searchTopicMessages(
+func (s *Service) searchGroupMessages(
 	ctx context.Context,
 	chatID string,
 	searchStart int64,
@@ -593,7 +598,7 @@ func (s *Service) searchTopicMessages(
 		}
 		if err := s.lark.Run(ctx, &response, args...); err != nil {
 			return messages, pageCount, fmt.Errorf(
-				"search topic messages chat_id=%s page=%d: %w",
+				"search group messages chat_id=%s page=%d: %w",
 				chatID,
 				pageCount+1,
 				err,
@@ -607,14 +612,14 @@ func (s *Service) searchTopicMessages(
 		nextPageToken := response.Data.PageToken
 		if nextPageToken == "" {
 			return messages, pageCount, fmt.Errorf(
-				"search topic messages chat_id=%s page=%d has_more=true with empty page_token",
+				"search group messages chat_id=%s page=%d has_more=true with empty page_token",
 				chatID,
 				pageCount,
 			)
 		}
 		if _, exists := seenPageTokens[nextPageToken]; exists {
 			return messages, pageCount, fmt.Errorf(
-				"search topic messages chat_id=%s page=%d repeated page_token=%q",
+				"search group messages chat_id=%s page=%d repeated page_token=%q",
 				chatID,
 				pageCount,
 				nextPageToken,

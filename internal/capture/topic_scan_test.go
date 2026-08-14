@@ -120,6 +120,73 @@ func TestTopicScanCapturesNewRepliesUnderOldRoot(t *testing.T) {
 	}
 }
 
+func TestRegularGroupScanCapturesNewReplyUnderOldRoot(t *testing.T) {
+	location := mustShanghai(t)
+	windowStart := time.Date(2026, 8, 7, 12, 25, 0, 0, location)
+	now := time.Date(2026, 8, 7, 12, 45, 0, 0, location)
+	db := newCaptureTestDB(t)
+	createDiscoveredGroup(t, db, "oc_group", "group", true, windowStart)
+
+	runner := &topicSearchFixture{pages: map[string]topicSearchPage{
+		"": {
+			messages: []CLIMessage{
+				topicMessage("om_group_reply", "omt_old", "jarvis，把这个接入方案增加到文档里", "2026-08-07 12:40"),
+			},
+		},
+	}}
+	service := newPrincipalActivityService(t, db, runner, location)
+	service.now = func() time.Time { return now }
+	observer := &activityRecordingObserver{}
+	if err := service.SetScanObserver(observer); err != nil {
+		t.Fatalf("SetScanObserver() error = %v", err)
+	}
+
+	if err := service.ScanChat(context.Background(), "oc_group"); err != nil {
+		t.Fatalf("ScanChat() error = %v", err)
+	}
+
+	var message domain.Message
+	if err := db.Where("chat_id = ? AND message_id = ?", "oc_group", "om_group_reply").First(&message).Error; err != nil {
+		t.Fatalf("load stored regular-group reply: %v", err)
+	}
+	if message.ChatMode != "group" {
+		t.Fatalf("stored chat_mode = %q, want group", message.ChatMode)
+	}
+	if message.ThreadID == nil || *message.ThreadID != "omt_old" {
+		t.Fatalf("stored thread_id = %v, want omt_old", message.ThreadID)
+	}
+	if len(observer.results) != 1 || observer.results[0].InsertedCount != 1 {
+		t.Fatalf("scan observer results = %#v, want one inserted message", observer.results)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("group search calls = %d, want 1", len(runner.calls))
+	}
+	firstArgs := strings.Join(runner.calls[0], " ")
+	for _, required := range []string{
+		"+messages-search",
+		"--query  --chat-id oc_group",
+		"--start 2026-08-07T12:15:00+08:00",
+		"--end 2026-08-07T12:45:00+08:00",
+	} {
+		if !strings.Contains(firstArgs, required) {
+			t.Errorf("group search args %q do not contain %q", firstArgs, required)
+		}
+	}
+
+	// The overlap returns the same reply again; message_id idempotency must keep
+	// both storage and the M3 observer at one event.
+	if err := service.ScanChat(context.Background(), "oc_group"); err != nil {
+		t.Fatalf("second ScanChat() error = %v", err)
+	}
+	var count int64
+	if err := db.Model(&domain.Message{}).Where("chat_id = ?", "oc_group").Count(&count).Error; err != nil {
+		t.Fatalf("count stored regular-group replies: %v", err)
+	}
+	if count != 1 || len(observer.results) != 1 {
+		t.Fatalf("overlap count=%d observer_results=%d, want 1 and 1", count, len(observer.results))
+	}
+}
+
 func TestTopicScanPaginationFailureDoesNotAdvanceCheckpoint(t *testing.T) {
 	location := mustShanghai(t)
 	windowStart := time.Date(2026, 8, 7, 12, 25, 0, 0, location)
