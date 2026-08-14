@@ -144,18 +144,18 @@ Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示�
 - 当前背景：PrincipalProfile、Project、KeyMatter、Person、Group、ManagedResource；
 - 原始证据：Message、Resource、ScanRecord；
 - 行动链路：Todo、Task、TodoEvent、TaskEvent、ExecutionRun；
-- 长期事实：Fact、RelationFact；
+- 长期事实：各实体的 `summary` 页、Fact；
 - 时间触发和总结：ScheduledTask、DailyDigest。
 
 factengine 不新增第二套世界状态表：它通过既有通用 CRUD 工具持续维护上述载体。主动巡视主要消费这些持久状态，也可以在调查过程中维护已经确认的变化；跨轮记忆来自世界模型和事实历史，而不是续跑无限对话 Session。
 
-KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是一次执行动作的事项。是否闭环只由 `closed_at` 表示；`status` 是模型和人维护的自由文本。关键事项本身不进入 Task 执行链路，需要行动时另建普通 Task，进展历史继续写入 Fact 和 RelationFact。
+KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是一次执行动作的事项。是否闭环只由 `closed_at` 表示；`status` 是模型和人维护的自由文本。关键事项本身不进入 Task 执行链路，需要行动时另建普通 Task，当前状态写在它的 `summary` 页，历史明细继续写入 Fact。
 
 `internal/domain/*.go` 和 `internal/store/sqlite.go` 是字段与迁移真源。不要在文档复制完整 DDL。
 
 持续 factengine 消费 `message`、`todo`、`task` 三种来源并保留独立游标。Message 提供原文，Todo/Task 只投影状态与最终产物，不重复携带已经持久化的背景、快照、来源 payload、计划和执行 prompt。每轮把各来源游标之后的材料合成一个世界变化批次，只启动一次 Agent；材料超过配置的粗粒度字符预算时减少候选行重新取批，降到每来源一行仍超限就把装不下的完整来源材料留到下轮，不截断单条材料；只有第一条完整材料自身超限时允许整条通过。Agent 在真实 Jarvis 工作区运行，使用同一套通用工具按需查询并直接维护当前实体、关系、资料和 Fact，最终自然语言只作审计，不承担机器协议。整次 Agent 会话成功后才推进本批来源游标，失败则保留游标供下次重放；Go 不按来源或实体类型编排语义写入。首次接入 Todo/Task 从事件 0 开始消费已有材料，Message 保留从当前时刻起步的历史边界。
 
-RelationFact 表示两个既有实体之间的自然语言关系和有效期；它没有 predicate/source/confidence/supersede 状态机。
+每个世界实体有一个 `summary` 页承载它的长期事实，整体读写、有字符上限、写入时 CAS 防覆盖。实体之间的关系用页内 Markdown 引用（形如 `[名字](person:12)`）表达，写入时校验目标存在，反查用 `list-backlinks`；不另建关系表。summary 答「现在是什么」，Fact 答「发生了什么」，详见 `docs/design-entity-summary.md`。
 
 ## 6. 文件化 Agent 配置
 
