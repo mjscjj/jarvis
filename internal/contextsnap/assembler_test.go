@@ -14,13 +14,10 @@ import (
 
 func TestAssemblerLoadsCommonContextAndPreservesRequestContext(t *testing.T) {
 	db := openAssemblerTestDB(t)
-	description := "Jarvis 个人助手"
 	repoURL := "https://example.com/jarvis"
+	summary := "Jarvis 是个人 agent 系统。"
 	project := domain.Project{
-		Name: "Jarvis", Role: "owner", Status: "active", Priority: 1,
-		Description: &description, Repos: []byte(`[{"path":"/workspace/jarvis"}]`),
-		TechStack: []byte(`["Go"]`), KeyDecisions: []byte(`["agent-first"]`),
-		Timeline: []byte(`{"mvp":"2026-07"}`),
+		Name: "Jarvis", Role: "owner", Status: "active", Priority: 1, Summary: &summary,
 	}
 	other := domain.Project{Name: "Other", Role: "participant", Status: "active", Priority: 3}
 	if err := db.Create(&project).Error; err != nil {
@@ -63,8 +60,11 @@ func TestAssemblerLoadsCommonContextAndPreservesRequestContext(t *testing.T) {
 	if snapshot.Principal == nil || snapshot.Principal.OpenID != "ou_me" {
 		t.Fatalf("principal = %#v", snapshot.Principal)
 	}
-	if snapshot.Project == nil || snapshot.Project.ID != project.ID || string(snapshot.Project.TechStack) != `["Go"]` {
+	if snapshot.Project == nil || snapshot.Project.ID != project.ID || snapshot.Project.Name != "Jarvis" {
 		t.Fatalf("project = %#v", snapshot.Project)
+	}
+	if snapshot.Project.Summary == nil || *snapshot.Project.Summary != summary {
+		t.Fatalf("project.summary = %#v", snapshot.Project.Summary)
 	}
 	if len(snapshot.OtherProjects) != 1 || snapshot.OtherProjects[0].ID != other.ID {
 		t.Fatalf("other_projects = %#v", snapshot.OtherProjects)
@@ -120,8 +120,8 @@ func TestAssemblerResolvesChatBackgroundAndCurrentWork(t *testing.T) {
 	if err := db.Create(&domain.PrincipalProfile{OpenID: "ou_me", Name: "我"}).Error; err != nil {
 		t.Fatalf("create principal: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO feishu_group(id, chat_id, name, background_note, project_id, is_key_group)
-		VALUES (7, 'oc_runtime', 'Agent runtime 攻坚小队', '关注 Runtime 主链路', ?, 1)`, project.ID).Error; err != nil {
+	if err := db.Exec(`INSERT INTO feishu_group(id, chat_id, name, description, summary, project_id, is_key_group)
+		VALUES (7, 'oc_runtime', 'Agent runtime 攻坚小队', '群公告', '关注 Runtime 主链路', ?, 1)`, project.ID).Error; err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	now := time.Now().UTC()
@@ -157,8 +157,11 @@ func TestAssemblerResolvesChatBackgroundAndCurrentWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode() error = %v", err)
 	}
-	if snapshot.Group == nil || snapshot.Group.ChatID != "oc_runtime" || snapshot.Group.BackgroundNote == nil || *snapshot.Group.BackgroundNote != "关注 Runtime 主链路" {
+	if snapshot.Group == nil || snapshot.Group.ChatID != "oc_runtime" {
 		t.Fatalf("group = %#v", snapshot.Group)
+	}
+	if snapshot.Group.Summary == nil || *snapshot.Group.Summary != "关注 Runtime 主链路" {
+		t.Fatalf("group.summary = %#v", snapshot.Group.Summary)
 	}
 	if snapshot.Project == nil || snapshot.Project.ID != project.ID {
 		t.Fatalf("project = %#v", snapshot.Project)
@@ -203,18 +206,17 @@ func createAssemblerTables(t *testing.T, db *gorm.DB) {
 	statements := []string{
 		`CREATE TABLE principal_profile (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, open_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
-			department TEXT, title TEXT, background TEXT, preferences TEXT,
+			department TEXT, title TEXT, summary TEXT, last_progress_at DATETIME,
 			leader_open_id TEXT, leader_name TEXT, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE project (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, name TEXT NOT NULL, role TEXT NOT NULL,
-			status TEXT NOT NULL, priority INTEGER NOT NULL, description TEXT, repos JSON,
-			tech_stack JSON, key_decisions JSON, timeline JSON, notes TEXT,
+			status TEXT NOT NULL, priority INTEGER NOT NULL, summary TEXT, last_progress_at DATETIME,
 			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE managed_resource (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, resource_type TEXT NOT NULL,
-			url TEXT, description TEXT, person_id INTEGER, project_id INTEGER,
+			url TEXT, summary TEXT, last_progress_at DATETIME, person_id INTEGER, project_id INTEGER,
 			link_principal INTEGER NOT NULL, is_active INTEGER NOT NULL,
 			last_active_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			created_at DATETIME, updated_at DATETIME
@@ -226,7 +228,7 @@ func createAssemblerTables(t *testing.T, db *gorm.DB) {
 		)`,
 		`CREATE TABLE feishu_group (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL UNIQUE,
-			name TEXT, description TEXT, background_note TEXT, project_id INTEGER,
+			name TEXT, description TEXT, summary TEXT, last_progress_at DATETIME, project_id INTEGER,
 			is_key_group INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE todo (

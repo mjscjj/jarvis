@@ -33,7 +33,6 @@ import {
 } from '@ant-design/icons'
 import type { Effect, ExecutionRun, RunEnrichment, Task, TaskEvent, TaskRunOutput } from '../types'
 import { getTaskRunOutput } from '../api'
-import EntityRelations from '../components/EntityRelations'
 import StatusBadge from '../components/StatusBadge'
 import { actionLabels, taskStatusMeta as statusMeta } from '../status'
 import {
@@ -1299,7 +1298,6 @@ function ContextPanel({ task }: { task: Task }) {
           </div>
         </section>
       )}
-      <EntityRelations entityType="task" entityId={task.id} />
     </div>
   )
 }

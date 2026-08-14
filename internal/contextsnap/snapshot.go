@@ -65,61 +65,52 @@ type Principal struct {
 	Name         string  `json:"name"`
 	Department   *string `json:"department"`
 	Title        *string `json:"title"`
-	Background   *string `json:"background"`
-	Preferences  *string `json:"preferences"`
+	Summary      *string `json:"summary,omitempty"`
 	LeaderOpenID *string `json:"leader_open_id"`
 	LeaderName   *string `json:"leader_name"`
 }
 
-// Project carries the inferred/bound project including repos (so M5 can locate
-// the working directory) and the key decisions that frame the work.
+// Project is the inferred/bound project.
 type Project struct {
-	ID           uint64          `json:"id"`
-	Code         *string         `json:"code"`
-	Name         string          `json:"name"`
-	Role         string          `json:"role"`
-	Status       string          `json:"status,omitempty"`
-	Priority     uint8           `json:"priority,omitempty"`
-	Description  *string         `json:"description"`
-	Repos        json.RawMessage `json:"repos"`
-	TechStack    json.RawMessage `json:"tech_stack,omitempty"`
-	KeyDecisions json.RawMessage `json:"key_decisions"`
-	Timeline     json.RawMessage `json:"timeline,omitempty"`
-	Notes        *string         `json:"notes,omitempty"`
+	ID       uint64  `json:"id"`
+	Code     *string `json:"code"`
+	Name     string  `json:"name"`
+	Role     string  `json:"role"`
+	Status   string  `json:"status,omitempty"`
+	Priority uint8   `json:"priority,omitempty"`
+	Summary  *string `json:"summary,omitempty"`
 }
 
 // Group is the originating Feishu conversation. Description is the captured
-// announcement, while BackgroundNote is human-curated task interpretation.
+// announcement; Summary is Jarvis's long-term truth about the group.
 type Group struct {
-	ID             uint64  `json:"id"`
-	ChatID         string  `json:"chat_id"`
-	Name           *string `json:"name"`
-	Description    *string `json:"description"`
-	BackgroundNote *string `json:"background_note"`
-	IsKeyGroup     bool    `json:"is_key_group"`
-	ProjectID      *uint64 `json:"project_id"`
+	ID          uint64  `json:"id"`
+	ChatID      string  `json:"chat_id"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	Summary     *string `json:"summary,omitempty"`
+	IsKeyGroup  bool    `json:"is_key_group"`
+	ProjectID   *uint64 `json:"project_id"`
 }
 
-// Assigner is who handed the Todo over (leader/colleague), with the relation to
-// the principal so executors understand priority and tone.
+// Assigner is who handed the Todo over (leader/colleague).
 type Assigner struct {
-	OpenID   string  `json:"open_id"`
-	Name     *string `json:"name"`
-	Role     *string `json:"role"`
-	Title    *string `json:"title"`
-	Relation *string `json:"relation"`
+	OpenID  string  `json:"open_id"`
+	Name    *string `json:"name"`
+	Role    *string `json:"role"`
+	Title   *string `json:"title"`
+	Summary *string `json:"summary,omitempty"`
 }
 
 // Participant freezes the people information M3 used to interpret tone,
 // authority and implicit assignments.
 type Participant struct {
-	OpenID    string  `json:"open_id"`
-	Name      *string `json:"name,omitempty"`
-	Role      *string `json:"role,omitempty"`
-	Title     *string `json:"title,omitempty"`
-	IsLeader  bool    `json:"is_leader"`
-	Relation  *string `json:"relation,omitempty"`
-	CommStyle *string `json:"comm_style,omitempty"`
+	OpenID   string  `json:"open_id"`
+	Name     *string `json:"name,omitempty"`
+	Role     *string `json:"role,omitempty"`
+	Title    *string `json:"title,omitempty"`
+	IsLeader bool    `json:"is_leader"`
+	Summary  *string `json:"summary,omitempty"`
 }
 
 // Resource is a captured attachment/document referenced by the conversation.
@@ -153,13 +144,12 @@ type RecentTask struct {
 }
 
 type ProjectBrief struct {
-	ID          uint64  `json:"id"`
-	Code        *string `json:"code,omitempty"`
-	Name        string  `json:"name"`
-	Role        string  `json:"role"`
-	Status      string  `json:"status,omitempty"`
-	Priority    uint8   `json:"priority,omitempty"`
-	Description *string `json:"description,omitempty"`
+	ID       uint64  `json:"id"`
+	Code     *string `json:"code,omitempty"`
+	Name     string  `json:"name"`
+	Role     string  `json:"role"`
+	Status   string  `json:"status,omitempty"`
+	Priority uint8   `json:"priority,omitempty"`
 }
 
 type ManagedResource struct {
@@ -167,7 +157,7 @@ type ManagedResource struct {
 	Title         string  `json:"title"`
 	ResourceType  string  `json:"resource_type"`
 	URL           *string `json:"url,omitempty"`
-	Description   *string `json:"description,omitempty"`
+	Summary       *string `json:"summary,omitempty"`
 	ProjectID     *uint64 `json:"project_id,omitempty"`
 	LinkPrincipal bool    `json:"link_principal"`
 	LastActiveAt  string  `json:"last_active_at"`

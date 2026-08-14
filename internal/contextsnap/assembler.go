@@ -168,7 +168,7 @@ func (a *Assembler) loadGroup(ctx context.Context, chatID string, groupID *uint6
 	}
 	return &Group{
 		ID: row.ID, ChatID: row.ChatID, Name: copyString(row.Name),
-		Description: copyString(row.Description), BackgroundNote: copyString(row.BackgroundNote),
+		Description: copyString(row.Description), Summary: copyString(row.Summary),
 		IsKeyGroup: row.IsKeyGroup, ProjectID: copyUint64(row.ProjectID),
 	}, nil
 }
@@ -184,9 +184,9 @@ func (a *Assembler) loadPrincipal(ctx context.Context) (*Principal, error) {
 	}
 	return &Principal{
 		OpenID: row.OpenID, Name: row.Name, Department: copyString(row.Department),
-		Title: copyString(row.Title), Background: copyString(row.Background),
-		Preferences: copyString(row.Preferences), LeaderOpenID: copyString(row.LeaderOpenID),
-		LeaderName: copyString(row.LeaderName),
+		Title: copyString(row.Title), Summary: copyString(row.Summary),
+		LeaderOpenID: copyString(row.LeaderOpenID),
+		LeaderName:   copyString(row.LeaderName),
 	}, nil
 }
 
@@ -219,7 +219,6 @@ func (a *Assembler) loadOtherProjects(ctx context.Context, selectedID *uint64) (
 		result[i] = ProjectBrief{
 			ID: rows[i].ID, Code: copyString(rows[i].Code), Name: rows[i].Name,
 			Role: rows[i].Role, Status: rows[i].Status, Priority: rows[i].Priority,
-			Description: copyString(rows[i].Description),
 		}
 	}
 	return result, nil
@@ -240,7 +239,7 @@ func (a *Assembler) loadManagedResources(ctx context.Context, projectID *uint64)
 	for i := range rows {
 		result[i] = ManagedResource{
 			ID: rows[i].ID, Title: rows[i].Title, ResourceType: rows[i].ResourceType,
-			URL: copyString(rows[i].URL), Description: copyString(rows[i].Description),
+			URL: copyString(rows[i].URL), Summary: copyString(rows[i].Summary),
 			ProjectID: copyUint64(rows[i].ProjectID), LinkPrincipal: rows[i].LinkPrincipal,
 			LastActiveAt: rows[i].LastActiveAt.UTC().Format(time.RFC3339),
 		}
@@ -354,10 +353,7 @@ func projectFromDomain(row *domain.Project) *Project {
 	}
 	return &Project{
 		ID: row.ID, Code: copyString(row.Code), Name: row.Name, Role: row.Role,
-		Status: row.Status, Priority: row.Priority, Description: copyString(row.Description),
-		Repos: rawJSONOrNull(row.Repos), TechStack: rawJSONOrNull(row.TechStack),
-		KeyDecisions: rawJSONOrNull(row.KeyDecisions), Timeline: rawJSONOrNull(row.Timeline),
-		Notes: copyString(row.Notes),
+		Status: row.Status, Priority: row.Priority, Summary: copyString(row.Summary),
 	}
 }
 
@@ -423,13 +419,6 @@ func chatHint(object map[string]any) (string, error) {
 		return "", fmt.Errorf("assemble context snapshot: request context chat_id must be a non-empty string")
 	}
 	return strings.TrimSpace(chatID), nil
-}
-
-func rawJSONOrNull(raw []byte) json.RawMessage {
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return json.RawMessage("null")
-	}
-	return json.RawMessage(append([]byte(nil), raw...))
 }
 
 func copyString(value *string) *string {

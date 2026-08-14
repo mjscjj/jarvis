@@ -25,11 +25,10 @@ test('inline key matter edits preserve the complete editable payload', () => {
   assert.deepEqual(keyMatterToInput(current, { status: '本周收口' }), {
     title: '事项 7',
     status: '本周收口',
-    summary: '已完成第一轮对齐',
     project_id: 3,
     due_at: '2026-08-08T10:00:00Z',
   })
-  assert.equal(keyMatterToInput(current, { summary: null }).summary, null)
+  assert.equal('summary' in keyMatterToInput(current), false)
   assert.equal(keyMatterToInput(current, { due_at: null }).due_at, null)
 })
 

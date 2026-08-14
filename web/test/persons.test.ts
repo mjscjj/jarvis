@@ -16,10 +16,9 @@ test('person updates contain editable fields only', () => {
     title: '工程师',
     role: 'colleague',
     priority_weight: 0.4,
-    relation: '同事',
-    comm_style: '结论先行',
     p2p_chat_id: 'oc_immutable',
-    notes: '备注',
+    summary: '同事，负责鉴权改造。',
+    last_progress_at: '2026-08-08T00:00:00Z',
     is_active: true,
     created_at: '2026-08-01T00:00:00Z',
     updated_at: '2026-08-08T00:00:00Z',
@@ -32,11 +31,9 @@ test('person updates contain editable fields only', () => {
     priority_weight: 0.4,
     department: '研发',
     title: '工程师',
-    relation: '同事',
-    comm_style: '结论先行',
-    notes: '备注',
     is_active: true,
   })
   assert.equal('open_id' in input, false)
   assert.equal('p2p_chat_id' in input, false)
+  assert.equal('summary' in input, false)
 })

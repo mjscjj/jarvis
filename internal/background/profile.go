@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"jarvis/internal/domain"
 
@@ -17,8 +18,6 @@ type ProfileInput struct {
 	Name         string  `json:"name"`
 	Department   *string `json:"department"`
 	Title        *string `json:"title"`
-	Background   *string `json:"background"`
-	Preferences  *string `json:"preferences"`
 	LeaderOpenID *string `json:"leader_open_id"`
 	LeaderName   *string `json:"leader_name"`
 }
@@ -33,16 +32,16 @@ func (in ProfileInput) validate() error {
 // ProfileView is the API projection of the principal profile, always carrying
 // the configured open_id even before the row is first saved.
 type ProfileView struct {
-	ID           uint64  `json:"id"`
-	OpenID       string  `json:"open_id"`
-	Name         string  `json:"name"`
-	Department   *string `json:"department"`
-	Title        *string `json:"title"`
-	Background   *string `json:"background"`
-	Preferences  *string `json:"preferences"`
-	LeaderOpenID *string `json:"leader_open_id"`
-	LeaderName   *string `json:"leader_name"`
-	Saved        bool    `json:"saved"`
+	ID             uint64     `json:"id"`
+	OpenID         string     `json:"open_id"`
+	Name           string     `json:"name"`
+	Department     *string    `json:"department"`
+	Title          *string    `json:"title"`
+	Summary        *string    `json:"summary"`
+	LastProgressAt *time.Time `json:"last_progress_at"`
+	LeaderOpenID   *string    `json:"leader_open_id"`
+	LeaderName     *string    `json:"leader_name"`
+	Saved          bool       `json:"saved"`
 }
 
 // ProfileService owns the single-row principal_profile table. The principal
@@ -91,7 +90,6 @@ func (s *ProfileService) Upsert(ctx context.Context, in ProfileInput) (*ProfileV
 	if found.RowsAffected == 1 {
 		updates := map[string]any{
 			"name": in.Name, "department": in.Department, "title": in.Title,
-			"background": in.Background, "preferences": in.Preferences,
 			"leader_open_id": in.LeaderOpenID, "leader_name": in.LeaderName,
 		}
 		if err := s.db.WithContext(ctx).Model(&domain.PrincipalProfile{}).
@@ -101,7 +99,6 @@ func (s *ProfileService) Upsert(ctx context.Context, in ProfileInput) (*ProfileV
 	} else {
 		profile := domain.PrincipalProfile{
 			OpenID: s.principalOpenID, Name: in.Name, Department: in.Department, Title: in.Title,
-			Background: in.Background, Preferences: in.Preferences,
 			LeaderOpenID: in.LeaderOpenID, LeaderName: in.LeaderName,
 		}
 		if err := s.db.WithContext(ctx).Create(&profile).Error; err != nil {
@@ -114,7 +111,7 @@ func (s *ProfileService) Upsert(ctx context.Context, in ProfileInput) (*ProfileV
 func toProfileView(profile *domain.PrincipalProfile) ProfileView {
 	return ProfileView{
 		ID: profile.ID, OpenID: profile.OpenID, Name: profile.Name, Department: profile.Department, Title: profile.Title,
-		Background: profile.Background, Preferences: profile.Preferences,
+		Summary: profile.Summary, LastProgressAt: profile.LastProgressAt,
 		LeaderOpenID: profile.LeaderOpenID, LeaderName: profile.LeaderName, Saved: true,
 	}
 }

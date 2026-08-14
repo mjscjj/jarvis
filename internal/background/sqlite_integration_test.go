@@ -4,7 +4,6 @@ package background
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -58,7 +57,6 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 	t.Run("project lifecycle", func(t *testing.T) {
 		created, err := projects.Create(ctx, ProjectInput{
 			Name: "IntegrationProject", Role: "owner", Status: "active", Priority: 2,
-			Repos: json.RawMessage(`["repo-a"]`),
 		})
 		if err != nil {
 			t.Fatalf("Create() error = %v", err)
@@ -84,10 +82,6 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 		}
 		if updated.Name != "IntegrationProjectV2" || updated.Status != "paused" || updated.Priority != 4 {
 			t.Fatalf("Update() = %+v, unexpected", updated)
-		}
-		// JSON column cleared on update when omitted.
-		if len(updated.Repos) != 0 && string(updated.Repos) != "null" {
-			t.Fatalf("Update() repos = %q, want cleared", string(updated.Repos))
 		}
 
 		list, err := projects.List(ctx, ListFilter{Page: 1, PageSize: 50})
@@ -118,8 +112,7 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 		if !db.Migrator().HasTable(&domain.KeyMatter{}) {
 			t.Fatal("key_matter table was not migrated")
 		}
-		summary := "完成第一轮对齐"
-		if _, err := keyMatters.Update(ctx, created.ID, KeyMatterInput{Title: created.Title, Status: created.Status, Summary: &summary}); err != nil {
+		if _, err := keyMatters.Update(ctx, created.ID, KeyMatterInput{Title: created.Title, Status: "推进中"}); err != nil {
 			t.Fatalf("Update() error = %v", err)
 		}
 		if err := keyMatters.Delete(ctx, created.ID); err != nil {
@@ -129,8 +122,8 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 		if err := db.Model(&domain.Fact{}).Where("subject_type = ? AND subject_id = ? AND source_kind = ?", "key_matter", created.ID, factSourceBackground).Count(&count).Error; err != nil {
 			t.Fatalf("count key matter facts: %v", err)
 		}
-		if count != 3 {
-			t.Fatalf("key matter fact count = %d, want 3", count)
+		if count != 2 {
+			t.Fatalf("key matter fact count = %d, want 2", count)
 		}
 	})
 
@@ -188,10 +181,8 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = projects.Delete(ctx, project.ID) })
 
-		backgroundNote := "人工维护的会话背景"
 		updated, err := groups.UpdateBackground(ctx, seed.ID, GroupBackgroundInput{
-			BackgroundNote: &backgroundNote,
-			ProjectID:      &project.ID, RelatedGroup: true, Pinned: true, IncludeInMemory: true, IsKeyGroup: true,
+			ProjectID: &project.ID, RelatedGroup: true, Pinned: true, IncludeInMemory: true, IsKeyGroup: true,
 		})
 		if err != nil {
 			t.Fatalf("UpdateBackground() error = %v", err)
@@ -201,9 +192,6 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 		}
 		if !updated.RelatedGroup || !updated.IsKeyGroup || !updated.Pinned {
 			t.Fatalf("UpdateBackground() curated flags = %+v, unexpected", updated)
-		}
-		if updated.BackgroundNote == nil || *updated.BackgroundNote != "人工维护的会话背景" {
-			t.Fatalf("UpdateBackground() background_note = %v, want curated value", updated.BackgroundNote)
 		}
 		// Capture-owned columns must be untouched.
 		if updated.ChatID != chatID || updated.Name == nil || *updated.Name != discoveredName || updated.Tier != "cold" {

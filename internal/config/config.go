@@ -155,13 +155,6 @@ type ExtractConfig struct {
 	SemanticThreshold     float64 `yaml:"semantic_threshold"`
 	SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
 
-	// FactLimit caps how many of a subject's *today* detail facts (excluding
-	// rollups) are injected into one extraction prompt. Each subject also gets
-	// at most one previous-day rollup on top of this.
-	FactLimit int `yaml:"fact_limit"`
-	// KeyPersonLimit caps how many person subjects (assigner ∪ leaders ∪
-	// speakers) contribute facts to one extraction prompt.
-	KeyPersonLimit int `yaml:"key_person_limit"`
 	// RecentTaskLimit caps how many recently progressed tasks are injected.
 	RecentTaskLimit int `yaml:"recent_task_limit"`
 
@@ -383,12 +376,6 @@ func (c *Config) validate() error {
 	}
 	if c.Extract.OpenTodoLimit <= 0 {
 		return fmt.Errorf("extract.open_todo_limit 必须大于 0")
-	}
-	if c.Extract.FactLimit <= 0 {
-		return fmt.Errorf("extract.fact_limit 必须大于 0")
-	}
-	if c.Extract.KeyPersonLimit <= 0 {
-		return fmt.Errorf("extract.key_person_limit 必须大于 0")
 	}
 	if c.Extract.RecentTaskLimit <= 0 {
 		return fmt.Errorf("extract.recent_task_limit 必须大于 0")

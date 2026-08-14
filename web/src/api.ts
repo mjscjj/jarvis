@@ -29,6 +29,9 @@ import type {
   PersonUpdateInput,
   ProfileInput,
   ProfileView,
+  PageType,
+  PageUpdateInput,
+  PageView,
   Project,
   ProjectInput,
   Resource,
@@ -47,8 +50,6 @@ import type {
   FactSearchQuery,
   FactSearchResult,
   FactTimeline,
-  RelationEntityType,
-  RelationFactList,
   TaskEvent,
   Todo,
   TodoList,
@@ -215,14 +216,41 @@ export function listTaskEvents(id: number, signal?: AbortSignal): Promise<{ item
   return request<{ items: TaskEvent[] }>(`/api/tasks/${id}/events`, { signal })
 }
 
-export function listEntityRelations(entityType: RelationEntityType, entityId: number, signal?: AbortSignal): Promise<RelationFactList> {
-  const params = new URLSearchParams({
-    entity_type: entityType,
-    entity_id: String(entityId),
-    page: '1',
-    page_size: '100',
+export class PageConflictError extends Error {
+  readonly current: PageView
+
+  constructor(current: PageView, message: string) {
+    super(message)
+    this.name = 'PageConflictError'
+    this.current = current
+  }
+}
+
+export function isPageConflictError(cause: unknown): cause is PageConflictError {
+  return cause instanceof PageConflictError
+}
+
+export function getPage(type: PageType, id: number, signal?: AbortSignal): Promise<PageView> {
+  return request<PageView>(`/api/pages/${type}/${id}`, { signal })
+}
+
+export async function updatePage(type: PageType, id: number, body: PageUpdateInput): Promise<PageView> {
+  const response = await fetch(`/api/pages/${type}/${id}`, {
+    method: 'PUT',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   })
-  return request<RelationFactList>(`/api/relation-facts?${params.toString()}`, { signal })
+  const payload = (await response.json()) as APIResponse<PageView>
+  if (response.status === 409) {
+    if (payload.data === undefined) {
+      throw new Error(payload.msg || '页面已被其他人更新，但响应未返回当前全文')
+    }
+    throw new PageConflictError(payload.data, payload.msg || '页面已被其他人更新')
+  }
+  if (!response.ok || payload.code !== 0 || payload.data === undefined) {
+    throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
+  }
+  return payload.data
 }
 
 // --- M1 background management ---

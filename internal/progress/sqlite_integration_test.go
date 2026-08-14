@@ -42,9 +42,8 @@ func TestProgressEventsSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create project error = %v", err)
 	}
-	description := "主动式助手"
 	project, err = projectService.Update(context.Background(), project.ID, background.ProjectInput{
-		Name: "Jarvis", Role: "owner", Status: "active", Priority: 1, Description: &description,
+		Name: "Jarvis", Role: "owner", Status: "active", Priority: 1,
 	})
 	if err != nil {
 		t.Fatalf("Update project error = %v", err)
@@ -62,8 +61,8 @@ func TestProgressEventsSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListFacts() error = %v", err)
 	}
-	if len(facts) != 4 {
-		t.Fatalf("fact count = %d, want 4: %#v", len(facts), facts)
+	if len(facts) != 3 {
+		t.Fatalf("fact count = %d, want 3: %#v", len(facts), facts)
 	}
 	for _, fact := range facts {
 		if fact.Description == "" {

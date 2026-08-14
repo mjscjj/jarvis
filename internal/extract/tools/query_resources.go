@@ -152,7 +152,7 @@ func (t *QueryResourcesTool) Invoke(ctx context.Context, arguments json.RawMessa
 	}
 	if args.Keyword != nil && strings.TrimSpace(*args.Keyword) != "" {
 		like := "%" + likeEscape(strings.TrimSpace(*args.Keyword)) + "%"
-		query = query.Where("title LIKE ? OR description LIKE ?", like, like)
+		query = query.Where("title LIKE ? OR summary LIKE ?", like, like)
 	}
 
 	var rows []domain.ManagedResource
@@ -169,8 +169,8 @@ func (t *QueryResourcesTool) Invoke(ctx context.Context, arguments json.RawMessa
 		if rows[i].URL != nil {
 			item.URL = *rows[i].URL
 		}
-		if rows[i].Description != nil {
-			item.Description = capRunes(*rows[i].Description, resourceDescriptionRuneCap)
+		if rows[i].Summary != nil {
+			item.Description = capRunes(*rows[i].Summary, resourceDescriptionRuneCap)
 		}
 		if rows[i].ProjectID != nil {
 			item.ProjectID = *rows[i].ProjectID

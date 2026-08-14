@@ -1,8 +1,9 @@
 package background
 
 import (
-	"encoding/json"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func validProjectInput() ProjectInput {
@@ -25,13 +26,12 @@ func TestProjectInputValidate(t *testing.T) {
 	}
 
 	cases := map[string]func(*ProjectInput){
-		"blank name":     func(in *ProjectInput) { in.Name = "  " },
-		"bad role":       func(in *ProjectInput) { in.Role = "boss" },
-		"bad status":     func(in *ProjectInput) { in.Status = "running" },
-		"priority zero":  func(in *ProjectInput) { in.Priority = 0 },
-		"priority high":  func(in *ProjectInput) { in.Priority = 6 },
-		"blank code":     func(in *ProjectInput) { blank := "  "; in.Code = &blank },
-		"bad repos json": func(in *ProjectInput) { in.Repos = json.RawMessage("{oops") },
+		"blank name":    func(in *ProjectInput) { in.Name = "  " },
+		"bad role":      func(in *ProjectInput) { in.Role = "boss" },
+		"bad status":    func(in *ProjectInput) { in.Status = "running" },
+		"priority zero": func(in *ProjectInput) { in.Priority = 0 },
+		"priority high": func(in *ProjectInput) { in.Priority = 6 },
+		"blank code":    func(in *ProjectInput) { blank := "  "; in.Code = &blank },
 	}
 	for name, mutate := range cases {
 		in := validProjectInput()
@@ -39,16 +39,6 @@ func TestProjectInputValidate(t *testing.T) {
 		if err := in.validate(); err == nil {
 			t.Errorf("case %q: expected validation error, got nil", name)
 		}
-	}
-}
-
-func TestProjectInputValidateAcceptsJSON(t *testing.T) {
-	t.Parallel()
-	in := validProjectInput()
-	in.Repos = json.RawMessage(`["a","b"]`)
-	in.Timeline = json.RawMessage(`{"kickoff":"2026-01-01"}`)
-	if err := in.validate(); err != nil {
-		t.Fatalf("valid JSON columns rejected: %v", err)
 	}
 }
 
@@ -106,15 +96,18 @@ func TestListFilterOffset(t *testing.T) {
 	}
 }
 
-func TestValidateOptionalJSON(t *testing.T) {
+func TestValidateSummaryLimit(t *testing.T) {
 	t.Parallel()
-	if err := validateOptionalJSON("repos", nil); err != nil {
-		t.Fatalf("nil JSON rejected: %v", err)
+	if err := validateSummary("短内容"); err != nil {
+		t.Fatalf("short summary rejected: %v", err)
 	}
-	if err := validateOptionalJSON("repos", json.RawMessage(`{"ok":true}`)); err != nil {
-		t.Fatalf("valid JSON rejected: %v", err)
+	over := strings.Repeat("字", SummaryMaxChars+1)
+	err := validateSummary(over)
+	if err == nil {
+		t.Fatal("over-limit summary accepted")
 	}
-	if err := validateOptionalJSON("repos", json.RawMessage("not json")); err == nil {
-		t.Fatal("invalid JSON accepted")
+	n := utf8.RuneCountInString(over)
+	if !strings.Contains(err.Error(), "8000") || !strings.Contains(err.Error(), "8001") {
+		t.Fatalf("error = %q, want current count %d and limit %d", err, n, SummaryMaxChars)
 	}
 }

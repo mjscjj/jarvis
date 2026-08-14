@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"jarvis/internal/contextsnap"
-	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 
 	"gorm.io/driver/sqlite"
@@ -148,18 +147,17 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 	for _, statement := range []string{
 		`CREATE TABLE principal_profile (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, open_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
-			department TEXT, title TEXT, background TEXT, preferences TEXT,
+			department TEXT, title TEXT, summary TEXT, last_progress_at DATETIME,
 			leader_open_id TEXT, leader_name TEXT, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE project (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, name TEXT NOT NULL, role TEXT NOT NULL,
-			status TEXT NOT NULL, priority INTEGER NOT NULL, description TEXT, repos JSON,
-			tech_stack JSON, key_decisions JSON, timeline JSON, notes TEXT,
+			status TEXT NOT NULL, priority INTEGER NOT NULL, summary TEXT, last_progress_at DATETIME,
 			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE managed_resource (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, resource_type TEXT NOT NULL,
-			url TEXT, description TEXT, person_id INTEGER, project_id INTEGER,
+			url TEXT, summary TEXT, last_progress_at DATETIME, person_id INTEGER, project_id INTEGER,
 			link_principal INTEGER NOT NULL, is_active INTEGER NOT NULL,
 			last_active_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			created_at DATETIME, updated_at DATETIME
@@ -171,7 +169,7 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 		)`,
 		`CREATE TABLE feishu_group (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL UNIQUE,
-			name TEXT, description TEXT, background_note TEXT, project_id INTEGER,
+			name TEXT, description TEXT, summary TEXT, last_progress_at DATETIME, project_id INTEGER,
 			is_key_group INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE todo (
@@ -191,7 +189,6 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 	}
 	project := domain.Project{
 		Name: "Jarvis", Role: "owner", Status: "active", Priority: 1,
-		Repos: datatypes.JSON(`[{"local_path":"/tmp/first-repo"},{"local_path":"/tmp/second-repo"}]`),
 	}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)

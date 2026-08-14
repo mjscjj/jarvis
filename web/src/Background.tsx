@@ -61,10 +61,11 @@ import { personToUpdateInput } from './persons'
 import SharedMemory from './SharedMemory'
 import RuntimeSettings from './RuntimeSettings'
 import SystemTasks from './SystemTasks'
-import EntityRelations from './components/EntityRelations'
 import PageHeader from './components/PageHeader'
 import FactTimeline from './world/FactTimeline'
 import FactsPanel from './world/FactsPanel'
+import SummaryPageEditor from './world/SummaryPageEditor'
+import { summaryIndexLine } from './world/summary'
 import { usePageContext } from './pageContext'
 import type {
   AgentSkill,
@@ -138,14 +139,14 @@ function ProjectsPanel() {
 
   const openCreate = () => {
     setEditing(null)
-    form.setFieldsValue({ name: '', role: 'participant', status: 'active', priority: 3, code: null, description: null, notes: null })
+    form.setFieldsValue({ name: '', role: 'participant', status: 'active', priority: 3, code: null })
     setOpen(true)
   }
   const openEdit = (project: Project) => {
     setEditing(project)
     form.setFieldsValue({
       name: project.name, role: project.role, status: project.status, priority: project.priority,
-      code: project.code, description: project.description, notes: project.notes,
+      code: project.code,
     })
     setOpen(true)
   }
@@ -194,7 +195,7 @@ function ProjectsPanel() {
     { title: '角色', dataIndex: 'role', width: 100, render: (r: ProjectRole) => projectRoleLabels[r] },
     { title: '状态', dataIndex: 'status', width: 100, render: (s: ProjectStatus) => <Tag>{projectStatusLabels[s]}</Tag> },
     { title: '优先级', dataIndex: 'priority', width: 90 },
-    { title: '描述', dataIndex: 'description', ellipsis: true, render: (v: string | null) => v || '—' },
+    { title: '长期事实', dataIndex: 'summary', ellipsis: true, render: (v: string | null) => summaryIndexLine(v) || '—' },
     {
       title: '操作', width: 200, render: (_, p) => (
         <Flex gap={8}>
@@ -230,8 +231,6 @@ function ProjectsPanel() {
           </Form.Item>
         </Flex>
         <Form.Item name="code" label="项目代号(可选)"><Input allowClear /></Form.Item>
-        <Form.Item name="description" label="描述(可选)"><Input.TextArea rows={2} /></Form.Item>
-        <Form.Item name="notes" label="备注(可选)"><Input.TextArea rows={2} /></Form.Item>
       </Form>
     </Modal>
     <Drawer title={detail?.name || '项目详情'} open={Boolean(detail)} size={720} onClose={() => setDetail(undefined)}>
@@ -241,16 +240,15 @@ function ProjectsPanel() {
           <Descriptions.Item label="我的角色">{projectRoleLabels[detail.role]}</Descriptions.Item>
           <Descriptions.Item label="优先级">{detail.priority}</Descriptions.Item>
           <Descriptions.Item label="项目代号">{detail.code || '—'}</Descriptions.Item>
-          <Descriptions.Item label="项目描述" span={2}>{detail.description || '—'}</Descriptions.Item>
-          <Descriptions.Item label="备注" span={2}>{detail.notes || '—'}</Descriptions.Item>
+          <Descriptions.Item label="最近实质进展" span={2}>{detail.last_progress_at ? dayjs(detail.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
         </Descriptions>
+        <SummaryPageEditor type="project" id={detail.id} />
         <FactTimeline
           subject={{ type: 'project', id: detail.id }}
           title="项目事实"
           refreshToken={eventRefresh}
           extra={<Button size="small" type="primary" onClick={() => setEventOpen(true)}>记录进展</Button>}
         />
-        <EntityRelations entityType="project" entityId={detail.id} />
       </Space>}
     </Drawer>
     <Modal title="记录项目进展" open={eventOpen} confirmLoading={eventSubmitting} onOk={recordEvent} onCancel={() => setEventOpen(false)} okText="记录">
@@ -261,12 +259,11 @@ function ProjectsPanel() {
 
 // --- Key matters ---
 
-type KeyMatterField = 'status' | 'summary' | 'due_at'
+type KeyMatterField = 'status' | 'due_at'
 
 interface KeyMatterCreateFields {
   title: string
   status?: string
-  summary?: string
   project_id?: number
   due_at?: Dayjs
 }
@@ -309,7 +306,7 @@ function KeyMattersPanel() {
   }, [])
 
   const openCreate = () => {
-    form.setFieldsValue({ title: '', status: '', summary: undefined, project_id: undefined, due_at: undefined })
+    form.setFieldsValue({ title: '', status: '', project_id: undefined, due_at: undefined })
     setOpen(true)
   }
 
@@ -318,7 +315,6 @@ function KeyMattersPanel() {
     form.setFieldsValue({
       title: matter.title,
       status: matter.status,
-      summary: matter.summary ?? undefined,
       project_id: matter.project_id ?? undefined,
       due_at: matter.due_at ? dayjs(matter.due_at) : undefined,
     })
@@ -329,7 +325,6 @@ function KeyMattersPanel() {
     const input: KeyMatterInput = {
       title: values.title,
       status: values.status ?? '',
-      summary: values.summary?.trim() || null,
       project_id: values.project_id ?? null,
       due_at: values.due_at?.toISOString() ?? null,
     }
@@ -353,7 +348,6 @@ function KeyMattersPanel() {
       const saved = await updateKeyMatter(selected.id, {
         title: values.title,
         status: values.status ?? '',
-        summary: values.summary?.trim() || null,
         project_id: values.project_id ?? null,
         due_at: values.due_at?.toISOString() ?? null,
       })
@@ -369,7 +363,7 @@ function KeyMattersPanel() {
 
   const beginEdit = (matter: KeyMatter, field: KeyMatterField) => {
     setEditing({ id: matter.id, field })
-    setDraftText(field === 'status' ? matter.status : matter.summary ?? '')
+    setDraftText(matter.status)
     setDraftDueAt(field === 'due_at' && matter.due_at ? dayjs(matter.due_at) : null)
   }
 
@@ -379,9 +373,7 @@ function KeyMattersPanel() {
     if (!editing || editing.id !== matter.id) return
     const patch: Partial<KeyMatterInput> = editing.field === 'status'
       ? { status: draftText }
-      : editing.field === 'summary'
-        ? { summary: draftText.trim() || null }
-        : { due_at: draftDueAt?.toISOString() ?? null }
+      : { due_at: draftDueAt?.toISOString() ?? null }
     setSaving(true)
     try {
       const saved = await updateKeyMatter(matter.id, keyMatterToInput(matter, patch))
@@ -424,26 +416,23 @@ function KeyMattersPanel() {
     }
   }
 
-  const textEditor = (matter: KeyMatter, field: Exclude<KeyMatterField, 'due_at'>) => {
-    if (editing?.id !== matter.id || editing.field !== field) {
-      const value = field === 'status' ? matter.status : matter.summary
+  const textEditor = (matter: KeyMatter) => {
+    if (editing?.id !== matter.id || editing.field !== 'status') {
       return (
         <Button
           type="link"
           size="small"
           className="key-matter-edit-trigger"
-          title={value || '点击填写'}
-          onClick={(event) => { event.stopPropagation(); beginEdit(matter, field) }}
+          title={matter.status || '点击填写'}
+          onClick={(event) => { event.stopPropagation(); beginEdit(matter, 'status') }}
         >
-          <span>{value || '点击填写'}</span>
+          <span>{matter.status || '点击填写'}</span>
         </Button>
       )
     }
     return (
       <Space orientation="vertical" size={4} onClick={(event) => event.stopPropagation()} style={{ width: '100%' }}>
-        {field === 'status'
-          ? <Input size="small" value={draftText} onChange={(event) => setDraftText(event.target.value)} onPressEnter={() => saveEdit(matter)} autoFocus />
-          : <Input.TextArea size="small" rows={2} value={draftText} onChange={(event) => setDraftText(event.target.value)} autoFocus />}
+        <Input size="small" value={draftText} onChange={(event) => setDraftText(event.target.value)} onPressEnter={() => saveEdit(matter)} autoFocus />
         <Space size={4}>
           <Button size="small" type="primary" loading={saving} onClick={() => saveEdit(matter)}>保存</Button>
           <Button size="small" disabled={saving} onClick={cancelEdit}>取消</Button>
@@ -469,8 +458,8 @@ function KeyMattersPanel() {
 
   const columns: TableColumnsType<KeyMatter> = [
     { title: '关键事项', dataIndex: 'title', width: 170, render: (value: string) => <Text strong className="key-matter-title" title={value}>{value}</Text> },
-    { title: '状态', dataIndex: 'status', width: 170, render: (_, matter) => textEditor(matter, 'status') },
-    { title: '当前进展', dataIndex: 'summary', width: 220, render: (_, matter) => textEditor(matter, 'summary') },
+    { title: '状态', dataIndex: 'status', width: 170, render: (_, matter) => textEditor(matter) },
+    { title: '长期事实', dataIndex: 'summary', width: 220, render: (value: string | null) => summaryIndexLine(value) || '—' },
     { title: '截止时间', dataIndex: 'due_at', width: 150, render: (_, matter) => dueAtEditor(matter) },
     { title: '最近活跃', dataIndex: 'last_active_at', width: 150, render: (value: string) => dayjs(value).format('MM-DD HH:mm') },
     { title: '关联项目', dataIndex: 'project_id', width: 120, render: (_, matter) => matter.project?.name || '—' },
@@ -523,7 +512,6 @@ function KeyMattersPanel() {
           <Form form={form} layout="vertical">
             <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入关键事项标题' }]}><Input /></Form.Item>
             <Form.Item name="status" label="状态"><Input placeholder="自由文本，如：等法务回复" /></Form.Item>
-            <Form.Item name="summary" label="当前进展"><Input.TextArea rows={6} /></Form.Item>
             <Form.Item name="project_id" label="关联项目（可选）">
               <Select allowClear options={projects.map((project) => ({ value: project.id, label: project.name }))} />
             </Form.Item>
@@ -533,8 +521,8 @@ function KeyMattersPanel() {
             <Descriptions.Item label="最近实质进展">{selected.last_progress_at ? dayjs(selected.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
             <Descriptions.Item label="最近活跃">{dayjs(selected.last_active_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
           </Descriptions>
+          <SummaryPageEditor type="key_matter" id={selected.id} />
           <FactTimeline subject={{ type: 'key_matter', id: selected.id }} title="关键事项事实" />
-          <EntityRelations entityType="key_matter" entityId={selected.id} />
         </Space>
       )}
     </Drawer>
@@ -542,7 +530,6 @@ function KeyMattersPanel() {
       <Form form={form} layout="vertical">
         <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入关键事项标题' }]}><Input /></Form.Item>
         <Form.Item name="status" label="状态"><Input placeholder="自由文本，如：等法务回复" /></Form.Item>
-        <Form.Item name="summary" label="当前进展"><Input.TextArea rows={3} /></Form.Item>
         <Form.Item name="project_id" label="关联项目（可选）">
           <Select allowClear options={projects.map((project) => ({ value: project.id, label: project.name }))} />
         </Form.Item>
@@ -610,7 +597,7 @@ function PersonsPanel() {
   const openCreate = () => {
     setEditing(null)
     resetResolve()
-    form.setFieldsValue({ name: '', role: 'colleague', priority_weight: 0.4, department: null, title: null, relation: null, comm_style: null, notes: null, is_active: true })
+    form.setFieldsValue({ name: '', role: 'colleague', priority_weight: 0.4, department: null, title: null, is_active: true })
     setOpen(true)
   }
   const openEdit = (person: Person) => {
@@ -620,8 +607,7 @@ function PersonsPanel() {
     setBoundP2PChatID(person.p2p_chat_id || '')
     form.setFieldsValue({
       name: person.name, role: person.role, priority_weight: person.priority_weight,
-      department: person.department, title: person.title, relation: person.relation,
-      comm_style: person.comm_style, notes: person.notes, is_active: person.is_active,
+      department: person.department, title: person.title, is_active: person.is_active,
     })
     setOpen(true)
   }
@@ -695,7 +681,7 @@ function PersonsPanel() {
     },
     { title: '权重', dataIndex: 'priority_weight', width: 80 },
     { title: '部门/职位', width: 200, render: (_, p) => [p.department, p.title].filter(Boolean).join(' · ') || '—' },
-    { title: '沟通风格', dataIndex: 'comm_style', ellipsis: true, render: (v: string | null) => v || '—' },
+    { title: '长期事实', dataIndex: 'summary', ellipsis: true, render: (v: string | null) => summaryIndexLine(v) || '—' },
     {
       title: '启用', dataIndex: 'is_active', width: 70,
       render: (v: boolean, p) => <span onClick={(event) => event.stopPropagation()}><Switch size="small" checked={v} loading={savingId === p.id} onChange={(next) => patchPerson(p, { is_active: next })} /></span>,
@@ -788,9 +774,6 @@ function PersonsPanel() {
           <Form.Item name="department" label="部门(可选)" style={{ flex: 1 }}><Input allowClear /></Form.Item>
           <Form.Item name="title" label="职位(可选)" style={{ flex: 1 }}><Input allowClear /></Form.Item>
         </Flex>
-        <Form.Item name="relation" label="与我的关系(可选)"><Input allowClear placeholder="如：直属领导 / 同组同事" /></Form.Item>
-        <Form.Item name="comm_style" label="沟通风格(可选)" extra="辅助 AI 识别 leader 的隐含交办，如：结论先行、指令常以「看下」隐含表达"><Input.TextArea rows={2} /></Form.Item>
-        <Form.Item name="notes" label="备注(可选)"><Input.TextArea rows={2} /></Form.Item>
         <Collapse
           ghost
           className="memory-advanced"
@@ -807,8 +790,8 @@ function PersonsPanel() {
         />
       </Form>
       {editing && <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+        <SummaryPageEditor type="person" id={editing.id} />
         <FactTimeline subject={{ type: 'person', id: editing.id }} title="人物事实" />
-        <EntityRelations entityType="person" entityId={editing.id} />
       </Space>}
     </Drawer>
   </>
@@ -885,7 +868,7 @@ function GroupsPanel() {
   const openEdit = (group: Group) => {
     setEditing(group)
     form.setFieldsValue({
-      background_note: group.background_note, project_id: group.project_id, related_group: group.related_group, pinned: group.pinned,
+      project_id: group.project_id, related_group: group.related_group, pinned: group.pinned,
       include_in_memory: group.include_in_memory, is_key_group: group.is_key_group,
     })
   }
@@ -911,7 +894,7 @@ function GroupsPanel() {
     setTogglingId(group.id)
     try {
       await updateGroupBackground(group.id, {
-        background_note: group.background_note, project_id: group.project_id,
+        project_id: group.project_id,
         related_group: next,
         pinned: group.pinned,
         include_in_memory: group.include_in_memory,
@@ -1042,16 +1025,6 @@ function GroupsPanel() {
           <Descriptions.Item label="会话说明">{editing.description || '—'}</Descriptions.Item>
         </Descriptions>
         <Form form={form} layout="vertical">
-          <Form.Item
-            name="background_note"
-            label="人工背景"
-            tooltip="只由你维护，会和群公告一起进入后续 Todo 的上下文快照。"
-          >
-            <Input.TextArea
-              rows={5}
-              placeholder="说明本会话讨论什么、哪些人/模块是重点、任务应如何定位代码和识别高信号。"
-            />
-          </Form.Item>
           <Form.Item name="project_id" label="关联项目">
             <Select allowClear placeholder="不关联" options={projects.map((p) => ({ value: p.id, label: p.name }))} />
           </Form.Item>
@@ -1062,8 +1035,8 @@ function GroupsPanel() {
             <Form.Item name="include_in_memory" label="纳入记忆" valuePropName="checked"><Switch /></Form.Item>
           </Flex>
         </Form>
+        <SummaryPageEditor type="group" id={editing.id} />
         <FactTimeline subject={{ type: 'group', id: editing.id }} title="会话事实" />
-        <EntityRelations entityType="group" entityId={editing.id} />
       </Space>}
     </Drawer>
   </>
@@ -1095,7 +1068,6 @@ function ProfilePanel() {
         setLeaderName(result.leader_name || '')
         form.setFieldsValue({
           name: result.name, department: result.department, title: result.title,
-          background: result.background, preferences: result.preferences,
         })
         setError(undefined)
       })
@@ -1158,12 +1130,6 @@ function ProfilePanel() {
           <Form.Item name="department" label="部门" style={{ flex: 1 }}><Input placeholder="选填" /></Form.Item>
           <Form.Item name="title" label="职位" style={{ flex: 1 }}><Input placeholder="选填" /></Form.Item>
         </Flex>
-        <Form.Item name="background" label="背景 / 负责方向" tooltip="我是谁、负责什么方向，会作为抽取上下文喂给模型">
-          <Input.TextArea rows={3} placeholder="如：研发工程师，负责公会 Agent 基建（runtime / skill 治理 / 自建活动 AI 助手）" />
-        </Form.Item>
-        <Form.Item name="preferences" label="喜好 / 工作偏好" tooltip="沟通与工作偏好，帮助模型贴合你的习惯">
-          <Input.TextArea rows={2} placeholder="如：偏好先给结论再展开；紧急事项直接同步" />
-        </Form.Item>
         <Form.Item label="直属 leader" tooltip="显式告诉模型「我的 leader 是谁」，对识别 leader 软措辞交办最关键">
           {leaderOpenID ? (
             <Flex gap={8} align="center">
@@ -1210,6 +1176,9 @@ function ProfilePanel() {
       </Form>
     </Card>
     {profile?.saved && profile.id > 0 && (
+      <SummaryPageEditor type="principal" id={profile.id} />
+    )}
+    {profile?.saved && profile.id > 0 && (
       <FactTimeline subject={{ type: 'principal', id: profile.id }} title="我的事实" />
     )}
   </>
@@ -1222,7 +1191,7 @@ function ProfilePanel() {
 function resourceToInput(resource: Resource): ResourceInput {
   return {
     title: resource.title, resource_type: resource.resource_type, url: resource.url,
-    description: resource.description, person_id: resource.person_id, project_id: resource.project_id,
+    person_id: resource.person_id, project_id: resource.project_id,
     link_principal: resource.link_principal, is_active: resource.is_active,
   }
 }
@@ -1336,7 +1305,7 @@ function ResourcePanel() {
   }
 
   const openCreate = () => {
-    form.setFieldsValue({ title: '', resource_type: 'link', url: null, description: null, person_id: null, project_id: null, link_principal: false, is_active: true })
+    form.setFieldsValue({ title: '', resource_type: 'link', url: null, person_id: null, project_id: null, link_principal: false, is_active: true })
     setOpen(true)
   }
   const submit = async () => {
@@ -1387,7 +1356,7 @@ function ResourcePanel() {
       if (statusFilter === 'inactive' && resource.is_active) return false
       if (typeFilter !== 'all' && resource.resource_type !== typeFilter) return false
       if (!normalizedQuery) return true
-      return [resource.title, resource.description, resource.url, resource.person_name, resource.project_name]
+      return [resource.title, resource.summary, resource.url, resource.person_name, resource.project_name]
         .some((value) => value?.toLocaleLowerCase().includes(normalizedQuery))
     })
   }, [items, query, statusFilter, typeFilter])
@@ -1405,8 +1374,6 @@ function ResourcePanel() {
             <Input value={draft.url ?? ''} placeholder="链接或仓库地址（可选）" disabled={savingId === r.id}
               onChange={(event) => setDraft((current) => current ? { ...current, url: event.target.value || null } : current)} />
           </Flex>
-          <Input.TextArea value={draft.description ?? ''} autoSize={{ minRows: 1, maxRows: 3 }} placeholder="说明或备注（可选）" disabled={savingId === r.id}
-            onChange={(event) => setDraft((current) => current ? { ...current, description: event.target.value || null } : current)} />
         </div>
       ) : (
         <div className="resource-primary">
@@ -1414,7 +1381,7 @@ function ResourcePanel() {
             <Text strong className="resource-title">{r.title}</Text>
             <Tag variant="filled" className={`resource-type resource-type-${r.resource_type}`}>{resourceTypeLabels[r.resource_type]}</Tag>
           </Flex>
-          {r.description && <Text type="secondary" className="resource-description">{r.description}</Text>}
+          {summaryIndexLine(r.summary) && <Text type="secondary" className="resource-description">{summaryIndexLine(r.summary)}</Text>}
           {r.url ? (
             /^https?:\/\//i.test(r.url)
               ? <Tooltip title={r.url}><Typography.Link className="resource-address" href={r.url} target="_blank" rel="noreferrer">{resourceAddressLabel(r.url)}</Typography.Link></Tooltip>
@@ -1502,7 +1469,7 @@ function ResourcePanel() {
     {error && <Alert type="error" showIcon title="资源操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="resource-list-card" variant="borderless">
       <div className="resource-filters">
-        <Input value={query} allowClear disabled={editingId !== undefined} placeholder="搜索名称、说明、地址、人物或项目" onChange={(event) => setQuery(event.target.value)} />
+        <Input value={query} allowClear disabled={editingId !== undefined} placeholder="搜索名称、长期事实、地址、人物或项目" onChange={(event) => setQuery(event.target.value)} />
         <Segmented<ResourceStatusFilter> value={statusFilter} disabled={editingId !== undefined} onChange={setStatusFilter} options={[
           { label: `全部 ${items.length}`, value: 'all' },
           { label: `已启用 ${items.filter((item) => item.is_active).length}`, value: 'active' },
@@ -1546,11 +1513,10 @@ function ResourcePanel() {
               {!selectedResource.project_name && !selectedResource.person_name && !selectedResource.link_principal && <Text type="secondary">未关联</Text>}
             </Flex>
           </Descriptions.Item>
-          <Descriptions.Item label="说明">{selectedResource.description || '—'}</Descriptions.Item>
           <Descriptions.Item label="最近确认">{dayjs(selectedResource.last_active_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
         </Descriptions>
+        <SummaryPageEditor type="resource" id={selectedResource.id} />
         <FactTimeline subject={{ type: 'managed_resource', id: selectedResource.id }} title="资源事实" />
-        <EntityRelations entityType="managed_resource" entityId={selectedResource.id} />
       </Space>}
     </Drawer>
     <Modal title="新建资源" open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
@@ -1573,7 +1539,6 @@ function ResourcePanel() {
               options={projects.map((p) => ({ value: p.id, label: p.name }))} />
           </Form.Item>
         </Flex>
-        <Form.Item name="description" label="说明/备注(可选)"><Input.TextArea rows={2} /></Form.Item>
       </Form>
     </Modal>
   </>

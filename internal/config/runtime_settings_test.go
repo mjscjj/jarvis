@@ -73,8 +73,6 @@ extract:
   context_messages: 20
   context_window_minutes: 120
   open_todo_limit: 50
-  fact_limit: 10
-  key_person_limit: 5
   recent_task_limit: 10
   max_prompt_chars: 60000
   semantic_collection: "todo_semantic"

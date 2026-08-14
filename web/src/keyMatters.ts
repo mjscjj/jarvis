@@ -4,7 +4,6 @@ export function keyMatterToInput(matter: KeyMatter, patch: Partial<KeyMatterInpu
   return {
     title: matter.title,
     status: matter.status,
-    summary: matter.summary,
     project_id: matter.project_id,
     due_at: matter.due_at,
     ...patch,

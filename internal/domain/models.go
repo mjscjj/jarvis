@@ -14,20 +14,20 @@ import (
 
 // Project is the long-lived background for a project the owner participates in.
 type Project struct {
-	ID           uint64         `gorm:"column:id;primaryKey;autoIncrement"`
-	Code         *string        `gorm:"column:code;uniqueIndex:uk_project_code"`
-	Name         string         `gorm:"column:name;not null"`
-	Role         string         `gorm:"column:role;not null;index:idx_project_role"`
-	Status       string         `gorm:"column:status;not null;default:active;index:idx_project_status"`
-	Priority     uint8          `gorm:"column:priority;not null;default:3;check:ck_project_priority,priority between 1 and 5"`
-	Description  *string        `gorm:"column:description"`
-	Repos        datatypes.JSON `gorm:"column:repos"`
-	TechStack    datatypes.JSON `gorm:"column:tech_stack"`
-	KeyDecisions datatypes.JSON `gorm:"column:key_decisions"`
-	Timeline     datatypes.JSON `gorm:"column:timeline"`
-	Notes        *string        `gorm:"column:notes"`
-	CreatedAt    time.Time      `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
-	UpdatedAt    time.Time      `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+	ID       uint64  `gorm:"column:id;primaryKey;autoIncrement"`
+	Code     *string `gorm:"column:code;uniqueIndex:uk_project_code"`
+	Name     string  `gorm:"column:name;not null"`
+	Role     string  `gorm:"column:role;not null;index:idx_project_role"`
+	Status   string  `gorm:"column:status;not null;default:active;index:idx_project_status"`
+	Priority uint8   `gorm:"column:priority;not null;default:3;check:ck_project_priority,priority between 1 and 5"`
+	// Summary is this entity's long-term truth: what it is and where it stands.
+	// It is read and written whole. Line one is the index line. Detail history
+	// lives in Fact rows; drill down with list-facts.
+	Summary *string `gorm:"column:summary"`
+	// LastProgressAt moves only when Summary actually changes.
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_project_last_progress"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
 func (Project) TableName() string { return "project" }
@@ -61,25 +61,30 @@ func (KeyMatter) TableName() string { return "key_matter" }
 // Group is a Feishu group chat or p2p conversation. The physical name avoids
 // the reserved SQL keyword GROUP.
 type Group struct {
-	ID              uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	ChatID          string    `gorm:"column:chat_id;not null;uniqueIndex:uk_group_chat_id"`
-	ChatMode        string    `gorm:"column:chat_mode;not null"` // group | p2p | topic
-	Name            *string   `gorm:"column:name"`
-	Description     *string   `gorm:"column:description"`
-	BackgroundNote  *string   `gorm:"column:background_note"` // Human-curated context; capture owns Description.
-	OwnerOpenID     *string   `gorm:"column:owner_open_id"`
-	External        bool      `gorm:"column:external;not null;default:0"`
-	TenantKey       *string   `gorm:"column:tenant_key"`
-	P2PTargetType   *string   `gorm:"column:p2p_target_type"` // 私聊对端类型：user=真人，bot=服务号；群/话题为空
-	ProjectID       *uint64   `gorm:"column:project_id;index:idx_group_project"`
-	RelatedGroup    bool      `gorm:"column:related_group;not null;default:0;index:idx_group_related_tier,priority:1"`
-	Tier            string    `gorm:"column:tier;not null;default:cold;index:idx_group_tier_active,priority:1;index:idx_group_related_tier,priority:2"`
-	Pinned          bool      `gorm:"column:pinned;not null;default:0"`
-	IncludeInMemory bool      `gorm:"column:include_in_memory;not null;default:1"`
-	IsKeyGroup      bool      `gorm:"column:is_key_group;not null;default:0"`
-	LastActiveAt    *int64    `gorm:"column:last_active_at;index:idx_group_tier_active,priority:2;index:idx_group_related_tier,priority:3"`
-	CreatedAt       time.Time `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
-	UpdatedAt       time.Time `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+	ID          uint64  `gorm:"column:id;primaryKey;autoIncrement"`
+	ChatID      string  `gorm:"column:chat_id;not null;uniqueIndex:uk_group_chat_id"`
+	ChatMode    string  `gorm:"column:chat_mode;not null"` // group | p2p | topic
+	Name        *string `gorm:"column:name"`
+	Description *string `gorm:"column:description"` // capture owns Description (Feishu group announcement).
+	// Summary is this entity's long-term truth: what it is and where it stands.
+	// It is read and written whole. Line one is the index line. Detail history
+	// lives in Fact rows; drill down with list-facts.
+	Summary         *string `gorm:"column:summary"`
+	OwnerOpenID     *string `gorm:"column:owner_open_id"`
+	External        bool    `gorm:"column:external;not null;default:0"`
+	TenantKey       *string `gorm:"column:tenant_key"`
+	P2PTargetType   *string `gorm:"column:p2p_target_type"` // 私聊对端类型：user=真人，bot=服务号；群/话题为空
+	ProjectID       *uint64 `gorm:"column:project_id;index:idx_group_project"`
+	RelatedGroup    bool    `gorm:"column:related_group;not null;default:0;index:idx_group_related_tier,priority:1"`
+	Tier            string  `gorm:"column:tier;not null;default:cold;index:idx_group_tier_active,priority:1;index:idx_group_related_tier,priority:2"`
+	Pinned          bool    `gorm:"column:pinned;not null;default:0"`
+	IncludeInMemory bool    `gorm:"column:include_in_memory;not null;default:1"`
+	IsKeyGroup      bool    `gorm:"column:is_key_group;not null;default:0"`
+	LastActiveAt    *int64  `gorm:"column:last_active_at;index:idx_group_tier_active,priority:2;index:idx_group_related_tier,priority:3"`
+	// LastProgressAt moves only when Summary actually changes.
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_group_last_progress"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 
 	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:SET NULL"`
 }
@@ -88,24 +93,27 @@ func (Group) TableName() string { return "feishu_group" }
 
 // Person is a manually maintained important person, keyed by Feishu open_id.
 type Person struct {
-	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	OpenID         string    `gorm:"column:open_id;not null;uniqueIndex:uk_person_open_id"`
-	UnionID        *string   `gorm:"column:union_id"`
-	FeishuUserID   *string   `gorm:"column:feishu_user_id"`
-	Name           string    `gorm:"column:name;not null"`
-	EnName         *string   `gorm:"column:en_name"`
-	AvatarURL      *string   `gorm:"column:avatar_url"`
-	Department     *string   `gorm:"column:department"`
-	Title          *string   `gorm:"column:title"`
-	Role           string    `gorm:"column:role;not null;index:idx_person_role"`
-	PriorityWeight float64   `gorm:"column:priority_weight;not null;check:ck_person_priority_weight,priority_weight between 0 and 1"`
-	Relation       *string   `gorm:"column:relation"`
-	CommStyle      *string   `gorm:"column:comm_style"`
-	P2PChatID      *string   `gorm:"column:p2p_chat_id"`
-	Notes          *string   `gorm:"column:notes"`
-	IsActive       bool      `gorm:"column:is_active;not null;default:1"`
-	CreatedAt      time.Time `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
-	UpdatedAt      time.Time `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+	ID             uint64  `gorm:"column:id;primaryKey;autoIncrement"`
+	OpenID         string  `gorm:"column:open_id;not null;uniqueIndex:uk_person_open_id"`
+	UnionID        *string `gorm:"column:union_id"`
+	FeishuUserID   *string `gorm:"column:feishu_user_id"`
+	Name           string  `gorm:"column:name;not null"`
+	EnName         *string `gorm:"column:en_name"`
+	AvatarURL      *string `gorm:"column:avatar_url"`
+	Department     *string `gorm:"column:department"`
+	Title          *string `gorm:"column:title"`
+	Role           string  `gorm:"column:role;not null;index:idx_person_role"`
+	PriorityWeight float64 `gorm:"column:priority_weight;not null;check:ck_person_priority_weight,priority_weight between 0 and 1"`
+	P2PChatID      *string `gorm:"column:p2p_chat_id"`
+	// Summary is this entity's long-term truth: what it is and where it stands.
+	// It is read and written whole. Line one is the index line. Detail history
+	// lives in Fact rows; drill down with list-facts.
+	Summary *string `gorm:"column:summary"`
+	// LastProgressAt moves only when Summary actually changes.
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_person_last_progress"`
+	IsActive       bool       `gorm:"column:is_active;not null;default:1"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
 func (Person) TableName() string { return "person" }
@@ -242,23 +250,25 @@ type ScanRecord struct {
 func (ScanRecord) TableName() string { return "scan_record" }
 
 // PrincipalProfile is the single decision-maker ("me") whose action clues M3
-// extracts. It is a single-row table keyed by the owner's Feishu open_id; the
-// background/preferences here are fed into the extraction prompt so the model
-// knows who the principal is, what they own, and who their leader is. Kept
-// separate from Person because its semantics (self-profile, preferences, direct
+// extracts. It is a single-row table keyed by the owner's Feishu open_id.
+// Kept separate from Person because its semantics (self-profile, direct
 // leader) differ from a chat participant.
 type PrincipalProfile struct {
-	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	OpenID       string    `gorm:"column:open_id;not null;uniqueIndex:uk_principal_open_id"`
-	Name         string    `gorm:"column:name;not null"`
-	Department   *string   `gorm:"column:department"`
-	Title        *string   `gorm:"column:title"`
-	Background   *string   `gorm:"column:background"`  // 我是谁、负责什么方向
-	Preferences  *string   `gorm:"column:preferences"` // 喜好、工作/沟通偏好
-	LeaderOpenID *string   `gorm:"column:leader_open_id"`
-	LeaderName   *string   `gorm:"column:leader_name"`
-	CreatedAt    time.Time `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+	ID         uint64  `gorm:"column:id;primaryKey;autoIncrement"`
+	OpenID     string  `gorm:"column:open_id;not null;uniqueIndex:uk_principal_open_id"`
+	Name       string  `gorm:"column:name;not null"`
+	Department *string `gorm:"column:department"`
+	Title      *string `gorm:"column:title"`
+	// Summary is this entity's long-term truth: what it is and where it stands.
+	// It is read and written whole. Line one is the index line. Detail history
+	// lives in Fact rows; drill down with list-facts.
+	Summary      *string `gorm:"column:summary"`
+	LeaderOpenID *string `gorm:"column:leader_open_id"`
+	LeaderName   *string `gorm:"column:leader_name"`
+	// LastProgressAt moves only when Summary actually changes.
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_principal_last_progress"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
 func (PrincipalProfile) TableName() string { return "principal_profile" }
@@ -269,18 +279,23 @@ func (PrincipalProfile) TableName() string { return "principal_profile" }
 // linked to a Person, a Project, and/or the principal ("me") so the extraction
 // tools can surface the right background material on demand.
 type ManagedResource struct {
-	ID            uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	Title         string    `gorm:"column:title;not null"`
-	ResourceType  string    `gorm:"column:resource_type;not null;default:link;index:idx_managed_resource_type"`
-	URL           *string   `gorm:"column:url"`
-	Description   *string   `gorm:"column:description"`
+	ID           uint64  `gorm:"column:id;primaryKey;autoIncrement"`
+	Title        string  `gorm:"column:title;not null"`
+	ResourceType string  `gorm:"column:resource_type;not null;default:link;index:idx_managed_resource_type"`
+	URL          *string `gorm:"column:url"`
+	// Summary is this entity's long-term truth: what it is and where it stands.
+	// It is read and written whole. Line one is the index line. Detail history
+	// lives in Fact rows; drill down with list-facts.
+	Summary       *string   `gorm:"column:summary"`
 	PersonID      *uint64   `gorm:"column:person_id;index:idx_managed_resource_person"`
 	ProjectID     *uint64   `gorm:"column:project_id;index:idx_managed_resource_project"`
 	LinkPrincipal bool      `gorm:"column:link_principal;not null;default:0;index:idx_managed_resource_principal"`
 	IsActive      bool      `gorm:"column:is_active;not null;default:1;index:idx_managed_resource_active"`
 	LastActiveAt  time.Time `gorm:"column:last_active_at;not null;default:'1970-01-01 00:00:00';index:idx_managed_resource_last_active"`
-	CreatedAt     time.Time `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
-	UpdatedAt     time.Time `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+	// LastProgressAt moves only when Summary actually changes.
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_managed_resource_last_progress"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 
 	Person  *Person  `gorm:"foreignKey:PersonID;constraint:OnDelete:SET NULL"`
 	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:SET NULL"`

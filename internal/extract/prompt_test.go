@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"jarvis/internal/contextsnap"
 	"jarvis/internal/toolcatalog"
 )
 
@@ -21,19 +20,20 @@ func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 		},
 	}
 	batch := ChatBatch{Group: GroupContext{ID: 1, ChatID: "oc_1", Name: "研发群"}}
-	facts := []contextsnap.Fact{
-		{ID: 7, SubjectType: "project", SubjectID: 3, Description: "鉴权改造由张三负责", OccurredAt: "2026-07-30T10:00:00Z"},
-	}
-	prompt, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	counts := []FactCount{{SubjectType: "project", SubjectID: 3, Label: "鉴权", Today: 1, Last7Days: 2}}
+	prompt, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {
 		t.Fatalf("BuildPrompt() error = %v", err)
 	}
-	for _, want := range []string{"[context] msg_id=om_context", "[new] msg_id=om_new", "鉴权改造由张三负责", "已沉淀的事实"} {
+	for _, want := range []string{"[context] msg_id=om_context", "[new] msg_id=om_new", "世界事实（明细未展开）", "project:3「鉴权」今日 1 条、近 7 天 2 条"} {
 		if !strings.Contains(prompt.User, want) {
 			t.Fatalf("prompt user missing %q:\n%s", want, prompt.User)
 		}
+	}
+	if strings.Contains(prompt.User, "鉴权改造由张三负责") {
+		t.Fatalf("prompt still contains fact body:\n%s", prompt.User)
 	}
 }
 
@@ -92,19 +92,15 @@ func TestBuildPromptTrimsContextBeforeFailing(t *testing.T) {
 	}
 }
 
-func TestRenderParticipantsInjectsCommStyle(t *testing.T) {
+func TestRenderParticipantsKeepsIdentity(t *testing.T) {
 	rendered := renderParticipants([]ParticipantContext{
-		{OpenID: "ou_leader", Name: "老板", Role: "leader", IsLeader: true, Relation: "直属领导", CommStyle: "指令常以「看下」隐含表达"},
+		{OpenID: "ou_leader", Name: "老板", Role: "leader", IsLeader: true, Title: "负责人"},
 		{OpenID: "ou_peer", Name: "同事", Role: "colleague"},
 	})
-	for _, want := range []string{`relation="直属领导"`, `comm_style="指令常以「看下」隐含表达"`} {
+	for _, want := range []string{`name="老板"`, `role=leader`, `title="负责人"`, `name="同事"`} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("renderParticipants missing %q:\n%s", want, rendered)
 		}
-	}
-	// A participant without comm_style must not emit an empty comm_style token.
-	if strings.Contains(rendered, `name="同事" role=colleague is_leader=false comm_style`) {
-		t.Fatalf("renderParticipants emitted empty comm_style for peer:\n%s", rendered)
 	}
 }
 
@@ -174,10 +170,10 @@ func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
 func TestRenderPrincipalInjectsSelfAndLeader(t *testing.T) {
 	rendered := renderPrincipal(&PrincipalContext{
 		OpenID: "ou_me", Name: "我", Department: "平台", Title: "工程师",
-		Background: "负责 Agent 基建", Preferences: "偏好直接给结论",
+		Summary:      "负责 Agent 基建",
 		LeaderOpenID: "ou_boss", LeaderName: "测试主管",
 	})
-	for _, want := range []string{`name="我"`, `leader_open_id=ou_boss leader_name="测试主管"`, "负责 Agent 基建", "偏好直接给结论"} {
+	for _, want := range []string{`name="我"`, `leader_open_id=ou_boss leader_name="测试主管"`, "负责 Agent 基建"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("renderPrincipal missing %q:\n%s", want, rendered)
 		}
@@ -198,7 +194,7 @@ func TestBuildPromptCarriesPrincipalAndProjects(t *testing.T) {
 		Group:     GroupContext{ID: 1, ChatID: "oc_1", Name: "研发群"},
 		Principal: &PrincipalContext{OpenID: "ou_me", Name: "我", LeaderName: "测试主管", LeaderOpenID: "ou_boss"},
 		OtherProjects: []OtherProjectContext{
-			{ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant", Description: "codex 方案"},
+			{ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant"},
 		},
 	}
 	prompt, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
@@ -221,8 +217,7 @@ func TestBuildPromptCarriesGroupAnnouncement(t *testing.T) {
 	}}}
 	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{
 		ID: 1, ChatID: "oc_1", Name: "Agent Runtime",
-		Description:    "本群负责 runtime 项目，代码仓库为 llm_agent_core。",
-		BackgroundNote: "优先检查 llm_agent_core，涉及旧实现再查 openclaw。",
+		Description: "本群负责 runtime 项目，代码仓库为 llm_agent_core。",
 	}}, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
 	})
@@ -231,9 +226,6 @@ func TestBuildPromptCarriesGroupAnnouncement(t *testing.T) {
 	}
 	if !strings.Contains(prompt.User, "群公告：本群负责 runtime 项目，代码仓库为 llm_agent_core。") {
 		t.Fatalf("prompt missing group announcement:\n%s", prompt.User)
-	}
-	if !strings.Contains(prompt.User, "人工背景：优先检查 llm_agent_core，涉及旧实现再查 openclaw。") {
-		t.Fatalf("prompt missing group background note:\n%s", prompt.User)
 	}
 }
 
@@ -249,5 +241,75 @@ func TestBuildPromptCarriesTrustedWorkRules(t *testing.T) {
 	}
 	if !strings.Contains(prompt.System, "BEGIN_WORK_RULES") || strings.Contains(prompt.User, "BEGIN_WORK_RULES") {
 		t.Fatalf("work rules must be in trusted system prompt only: %+v", prompt)
+	}
+}
+
+func TestBuildPromptRendersSummaryAndFactCountsOnly(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID: "om_new", Content: "看下这个", CreateTime: 1_700_000_001_000,
+		IsNew: true, Extractable: true,
+	}}}
+	batch := ChatBatch{
+		Principal: &PrincipalContext{
+			OpenID: "ou_me", Name: "我", Summary: "我负责公会 Agent 基建。",
+		},
+		Project: &ProjectContext{
+			ID: 44, Code: "agency", Name: "公会 Agent 基建", Role: "owner",
+			Status: "active", Priority: 1, Summary: "公会侧个人 agent 系统，正在收口世界模型。",
+		},
+		Group: GroupContext{
+			ID: 7, ChatID: "oc_1", Name: "公会群",
+			Description: "飞书群公告原文",
+			Summary:     "这个群跟进公会 Agent 基建。",
+		},
+		OtherProjects: []OtherProjectContext{
+			{ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant", Status: "active", Priority: 2},
+		},
+	}
+	counts := []FactCount{{
+		SubjectType: "project", SubjectID: 44, Label: "公会 Agent 基建", Today: 23, Last7Days: 187,
+	}}
+	prompt, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
+	})
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	for _, want := range []string{
+		"我负责公会 Agent 基建。",
+		"公会侧个人 agent 系统，正在收口世界模型。",
+		"这个群跟进公会 Agent 基建。",
+		"群公告：飞书群公告原文",
+		"project:44「公会 Agent 基建」今日 23 条、近 7 天 187 条 —— 需要细节用 list-facts 按主体和日期查。",
+	} {
+		if !strings.Contains(prompt.User, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt.User)
+		}
+	}
+	for _, forbidden := range []string{
+		"description=", "repos=", "tech_stack=", "key_decisions=", "timeline=", "notes=",
+		"负责方向/背景", "喜好/工作偏好", "人工背景：", "relation=", "comm_style=",
+		"desc=",
+	} {
+		if strings.Contains(prompt.User, forbidden) {
+			t.Fatalf("prompt still contains deleted field %q:\n%s", forbidden, prompt.User)
+		}
+	}
+}
+
+func TestRenderFactCountsOmitsFactBodies(t *testing.T) {
+	rendered := renderFactCounts([]FactCount{{
+		SubjectType: "project", SubjectID: 44, Label: "公会 Agent 基建", Today: 23, Last7Days: 187,
+	}})
+	if !strings.Contains(rendered, "project:44「公会 Agent 基建」今日 23 条、近 7 天 187 条") {
+		t.Fatalf("renderFactCounts missing count line:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "list-facts") {
+		t.Fatalf("renderFactCounts missing drill-down hint:\n%s", rendered)
+	}
+	for _, forbidden := range []string{"鉴权改造由张三负责", "今天明细", "昨天压缩"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("renderFactCounts leaked fact body %q:\n%s", forbidden, rendered)
+		}
 	}
 }

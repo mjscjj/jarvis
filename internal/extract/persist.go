@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/semantic"
 
@@ -125,7 +124,7 @@ func (s *PipelineStore) prepareResults(ctx context.Context, batch ChatBatch, res
 		}
 		seenResults[result.UnitKey] = struct{}{}
 		for i := range result.Candidates {
-			candidate, err := s.prepareCandidate(ctx, batch, unit, result.Candidates[i].Candidate, result.Facts)
+			candidate, err := s.prepareCandidate(ctx, batch, unit, result.Candidates[i].Candidate)
 			if err != nil {
 				// target is a required field, so a missing dedup identity is a hard
 				// contract violation from the model, not a skip. Fail fast.
@@ -152,7 +151,7 @@ func (s *PipelineStore) prepareResults(ctx context.Context, batch ChatBatch, res
 	return prepared, skipped, nil
 }
 
-func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, facts []contextsnap.Fact) (*preparedCandidate, error) {
+func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate) (*preparedCandidate, error) {
 	if err := ValidateCandidate(&candidate); err != nil {
 		return nil, err
 	}
@@ -197,7 +196,7 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 			assigner = &openID
 		}
 	}
-	snapshot, err := s.buildContextSnapshot(ctx, batch, unit, candidate, projectID, assigner, facts)
+	snapshot, err := s.buildContextSnapshot(ctx, batch, unit, candidate, projectID, assigner)
 	if err != nil {
 		return nil, err
 	}

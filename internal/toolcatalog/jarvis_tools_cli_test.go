@@ -18,7 +18,7 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource"} {
+	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "update-page", "list-pages", "list-backlinks"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
@@ -186,9 +186,7 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"update-resource", []string{"--id", "10", "--payload", `{"title":"r"}`}, http.MethodPut, "/api/resources/10"},
 		{"touch-resource", []string{"--id", "10"}, http.MethodPost, "/api/resources/10/touch"},
 		{"delete-resource", []string{"--id", "10"}, http.MethodDelete, "/api/resources/10"},
-		{"create-relation", []string{"--payload", `{"description":"r"}`}, http.MethodPost, "/api/relation-facts"},
-		{"update-relation", []string{"--id", "11", "--payload", `{"description":"r"}`}, http.MethodPut, "/api/relation-facts/11"},
-		{"delete-relation", []string{"--id", "11"}, http.MethodDelete, "/api/relation-facts/11"},
+		{"update-page", []string{"--type", "project", "--id", "7", "--content", "hello", "--if-unchanged-since", "2026-08-15T00:00:00Z"}, http.MethodPut, "/api/pages/project/7"},
 		{"append-facts-batch", []string{"--payload", `[{"subject_type":"project","subject_id":1,"description":"d1"},{"subject_type":"project","subject_id":2,"description":"d2"}]`}, http.MethodPost, "/api/facts/batch"},
 	}
 	for _, tt := range tests {
@@ -289,6 +287,95 @@ func TestJarvisToolsGetKeyMatterUsesExactEndpoint(t *testing.T) {
 	out, err := runJarvisTools(t, server.URL, nil, "get-key-matter", "--id", "17")
 	if err != nil || !strings.Contains(out, `"id":17`) {
 		t.Fatalf("output = %s, error = %v", out, err)
+	}
+}
+
+func TestJarvisToolsPageCommandsUseExactEndpoints(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/pages/project/7":
+			fmt.Fprint(w, `{"code":0,"data":{"type":"project","id":7,"summary":"page","updated_at":"2026-08-15T00:00:00Z","fact_count":12}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/pages":
+			if r.URL.Query().Get("type") != "person" || r.URL.Query().Get("all") != "true" ||
+				r.URL.Query().Get("stale_days") != "14" || r.URL.Query().Get("over_limit") != "true" {
+				t.Fatalf("list-pages query = %s", r.URL.RawQuery)
+			}
+			fmt.Fprint(w, `{"code":0,"data":{"items":[{"type":"person","id":12}]}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/pages/person/12/backlinks":
+			fmt.Fprint(w, `{"code":0,"data":{"items":[{"type":"project","id":7}]}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	out, err := runJarvisTools(t, server.URL, nil, "get-page", "--type", "project", "--id", "7")
+	if err != nil || !strings.Contains(out, `"fact_count":12`) {
+		t.Fatalf("get-page output = %s, error = %v", out, err)
+	}
+	out, err = runJarvisTools(t, server.URL, nil, "list-pages", "--type", "person", "--all", "--stale-days", "14", "--over-limit")
+	if err != nil || !strings.Contains(out, `"id":12`) {
+		t.Fatalf("list-pages output = %s, error = %v", out, err)
+	}
+	out, err = runJarvisTools(t, server.URL, nil, "list-backlinks", "--type", "person", "--id", "12")
+	if err != nil || !strings.Contains(out, `"id":7`) {
+		t.Fatalf("list-backlinks output = %s, error = %v", out, err)
+	}
+}
+
+func TestJarvisToolsUpdatePageSurfacesConflictBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/pages/project/7" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var payload struct {
+			Content          string `json:"content"`
+			IfUnchangedSince string `json:"if_unchanged_since"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Content != "new page" || payload.IfUnchangedSince != "2026-08-15T00:00:00Z" {
+			t.Fatalf("payload = %#v", payload)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"code":40900,"data":{"summary":"current full page","updated_at":"2026-08-15T01:00:00Z"}}`)
+	}))
+	defer server.Close()
+	_, err := runJarvisTools(t, server.URL, nil, "update-page", "--type", "project", "--id", "7",
+		"--content", "new page", "--if-unchanged-since", "2026-08-15T00:00:00Z")
+	if err == nil || !strings.Contains(err.Error(), "HTTP 409") || !strings.Contains(err.Error(), "current full page") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestJarvisToolsUpdateCommandsRejectSummary(t *testing.T) {
+	commands := [][]string{
+		{"update-project", "--id", "7", "--payload", `{"summary":"no"}`},
+		{"update-person", "--id", "9", "--payload", `{"summary":"no"}`},
+		{"update-key-matter", "--id", "12", "--payload", `{"summary":"no"}`},
+		{"update-resource", "--id", "10", "--payload", `{"summary":"no"}`},
+		{"update-group", "--id", "8", "--payload", `{"summary":"no"}`},
+		{"update-principal", "--payload", `{"summary":"no"}`},
+	}
+	for _, args := range commands {
+		t.Run(args[0], func(t *testing.T) {
+			_, err := runJarvisTools(t, "http://127.0.0.1:1", nil, args...)
+			if err == nil || !strings.Contains(err.Error(), "does not accept summary") {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
+func TestJarvisToolsRelationCommandsAreGone(t *testing.T) {
+	for _, command := range []string{"create-relation", "update-relation", "list-relations", "delete-relation"} {
+		_, err := runJarvisTools(t, "", nil, command, "--help")
+		if err == nil || !strings.Contains(err.Error(), "unknown subcommand") {
+			t.Fatalf("%s help error = %v", command, err)
+		}
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"jarvis/internal/contextsnap"
 	"jarvis/internal/prompttemplate"
 )
 
@@ -75,22 +74,7 @@ project_hint、source_message_ids、source_quote、payload。project_hint 判断
 再说一次：**只输出这个 JSON 对象本身，前后不要有任何其它字符。**
 `
 
-// worldFloor is the minimum number of items kept for each world-data class when
-// the prompt is over budget. World data is trimmed first because it can be
-// re-fetched with tools; conversation messages are the primary evidence.
-const worldFloor = 3
-
-// promptWorld holds the mutable world-data slices that BuildPrompt may shrink
-// before it starts dropping conversation context messages.
-type promptWorld struct {
-	PersonFacts   []contextsnap.Fact
-	GroupFacts    []contextsnap.Fact
-	OtherProjects []OtherProjectContext
-	RecentTasks   []RecentTaskContext
-	OpenTodos     []OpenTodoContext
-}
-
-func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fact, now time.Time, opts PromptOptions) (Prompt, error) {
+func BuildPrompt(batch ChatBatch, unit ConversationUnit, counts []FactCount, now time.Time, opts PromptOptions) (Prompt, error) {
 	if strings.TrimSpace(opts.PrincipalOpenID) == "" {
 		return Prompt{}, fmt.Errorf("extract principal open_id is empty")
 	}
@@ -106,7 +90,6 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fac
 
 	trimmed := unit
 	trimmed.Messages = append([]MessageContext(nil), unit.Messages...)
-	world := splitPromptWorld(batch, facts)
 	system, err := prompttemplate.Render(prompttemplate.StageM3, opts.SystemPrompt, opts.WorkRules, "")
 	if err != nil {
 		return Prompt{}, fmt.Errorf("render M3 system prompt: %w", err)
@@ -119,12 +102,9 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fac
 		system += "\n\n" + block
 	}
 	for {
-		user := renderUserPrompt(batch, trimmed, world, now.In(opts.Location), opts.Location) + outputContract
+		user := renderUserPrompt(batch, trimmed, counts, now.In(opts.Location), opts.Location) + outputContract
 		if utf8.RuneCountInString(system)+utf8.RuneCountInString(user) <= opts.MaxChars {
 			return Prompt{System: system, User: user}, nil
-		}
-		if shrinkPromptWorld(&world) {
-			continue
 		}
 		index := firstContextIndex(trimmed.Messages)
 		if index < 0 {
@@ -134,60 +114,18 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, facts []contextsnap.Fac
 	}
 }
 
-func splitPromptWorld(batch ChatBatch, facts []contextsnap.Fact) promptWorld {
-	world := promptWorld{
-		OtherProjects: append([]OtherProjectContext(nil), batch.OtherProjects...),
-		RecentTasks:   append([]RecentTaskContext(nil), batch.RecentTasks...),
-		OpenTodos:     append([]OpenTodoContext(nil), batch.OpenTodos...),
-	}
-	for _, fact := range facts {
-		if fact.SubjectType == "person" {
-			world.PersonFacts = append(world.PersonFacts, fact)
-			continue
-		}
-		world.GroupFacts = append(world.GroupFacts, fact)
-	}
-	return world
-}
-
-// shrinkPromptWorld tightens world data one class at a time down to worldFloor.
-// Order: person facts → other_projects → recent_tasks → open_todos →
-// group/project facts. Returns false when every class is already at its floor.
-func shrinkPromptWorld(world *promptWorld) bool {
-	switch {
-	case len(world.PersonFacts) > worldFloor:
-		world.PersonFacts = world.PersonFacts[:len(world.PersonFacts)-1]
-		return true
-	case len(world.OtherProjects) > worldFloor:
-		world.OtherProjects = world.OtherProjects[:len(world.OtherProjects)-1]
-		return true
-	case len(world.RecentTasks) > worldFloor:
-		world.RecentTasks = world.RecentTasks[:len(world.RecentTasks)-1]
-		return true
-	case len(world.OpenTodos) > worldFloor:
-		world.OpenTodos = world.OpenTodos[:len(world.OpenTodos)-1]
-		return true
-	case len(world.GroupFacts) > worldFloor:
-		world.GroupFacts = world.GroupFacts[:len(world.GroupFacts)-1]
-		return true
-	default:
-		return false
-	}
-}
-
-func renderUserPrompt(batch ChatBatch, unit ConversationUnit, world promptWorld, now time.Time, location *time.Location) string {
-	facts := append(append([]contextsnap.Fact(nil), world.GroupFacts...), world.PersonFacts...)
+func renderUserPrompt(batch ChatBatch, unit ConversationUnit, counts []FactCount, now time.Time, location *time.Location) string {
 	sections := []string{
 		"# 当前时间\n" + now.Format(time.RFC3339) + "（时区 " + location.String() + "）",
 		"# 我的背景(principal)\n" + renderPrincipal(batch.Principal),
 		"# 当前会话所属项目（详细）\n" + renderProject(batch.Project),
-		"# 我的其他项目（精简，仅作归属参考）\n" + renderOtherProjects(world.OtherProjects),
+		"# 我的其他项目（精简，仅作归属参考）\n" + renderOtherProjects(batch.OtherProjects),
 		"# 来源会话（Group）\n" + renderGroup(batch.Group),
 		"# 参与者\n" + renderParticipants(unit.Participants),
 		"# 相关资源\n" + renderResources(unit.Resources),
-		"# 已沉淀的事实（仅作背景）\n" + renderFacts(facts),
-		"# 最近有进展的任务（仅作背景）\n" + renderRecentTasks(world.RecentTasks),
-		"# 已存在的未闭环 Todo（仅作背景）\n" + renderOpenTodos(world.OpenTodos),
+		"# 世界事实（明细未展开）\n" + renderFactCounts(counts),
+		"# 最近有进展的任务（仅作背景）\n" + renderRecentTasks(batch.RecentTasks),
+		"# 已存在的未闭环 Todo（仅作背景）\n" + renderOpenTodos(batch.OpenTodos),
 		"# 会话记录\n" + renderConversation(unit.Messages, location),
 	}
 	return strings.Join(sections, "\n\n")
@@ -208,11 +146,8 @@ func renderPrincipal(principal *PrincipalContext) string {
 		parts = append(parts, fmt.Sprintf("leader_open_id=%s leader_name=%q", principal.LeaderOpenID, principal.LeaderName))
 	}
 	line := strings.Join(parts, " ")
-	if principal.Background != "" {
-		line += "\n负责方向/背景：" + principal.Background
-	}
-	if principal.Preferences != "" {
-		line += "\n喜好/工作偏好：" + principal.Preferences
+	if summary := strings.TrimSpace(principal.Summary); summary != "" {
+		line += "\n" + summary
 	}
 	return line
 }
@@ -223,11 +158,7 @@ func renderOtherProjects(projects []OtherProjectContext) string {
 	}
 	lines := make([]string, len(projects))
 	for i, project := range projects {
-		line := fmt.Sprintf("id=%d code=%q name=%q role=%s status=%s priority=%d", project.ID, project.Code, project.Name, project.Role, project.Status, project.Priority)
-		if project.Description != "" {
-			line += fmt.Sprintf(" desc=%q", project.Description)
-		}
-		lines[i] = line
+		lines[i] = fmt.Sprintf("id=%d code=%q name=%q role=%s status=%s priority=%d", project.ID, project.Code, project.Name, project.Role, project.Status, project.Priority)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -236,10 +167,12 @@ func renderProject(project *ProjectContext) string {
 	if project == nil {
 		return "(none)"
 	}
-	return fmt.Sprintf("id=%d code=%q name=%q role=%s status=%s priority=%d description=%q repos=%s tech_stack=%s key_decisions=%s timeline=%s notes=%q",
-		project.ID, project.Code, project.Name, project.Role, project.Status, project.Priority,
-		project.Description, jsonOrNull(project.Repos), jsonOrNull(project.TechStack),
-		jsonOrNull(project.KeyDecisions), jsonOrNull(project.Timeline), project.Notes)
+	line := fmt.Sprintf("id=%d code=%q name=%q role=%s status=%s priority=%d",
+		project.ID, project.Code, project.Name, project.Role, project.Status, project.Priority)
+	if summary := strings.TrimSpace(project.Summary); summary != "" {
+		line += "\n" + summary
+	}
+	return line
 }
 
 func renderGroup(group GroupContext) string {
@@ -247,8 +180,8 @@ func renderGroup(group GroupContext) string {
 	if strings.TrimSpace(group.Description) != "" {
 		line += "\n群公告：" + group.Description
 	}
-	if strings.TrimSpace(group.BackgroundNote) != "" {
-		line += "\n人工背景：" + group.BackgroundNote
+	if summary := strings.TrimSpace(group.Summary); summary != "" {
+		line += "\n" + summary
 	}
 	return line
 }
@@ -260,14 +193,11 @@ func renderParticipants(participants []ParticipantContext) string {
 	lines := make([]string, len(participants))
 	for i, participant := range participants {
 		line := fmt.Sprintf("open_id=%s name=%q role=%s is_leader=%t", participant.OpenID, participant.Name, participant.Role, participant.IsLeader)
-		if participant.Relation != "" {
-			line += fmt.Sprintf(" relation=%q", participant.Relation)
-		}
 		if participant.Title != "" {
 			line += fmt.Sprintf(" title=%q", participant.Title)
 		}
-		if participant.CommStyle != "" {
-			line += fmt.Sprintf(" comm_style=%q", participant.CommStyle)
+		if summary := strings.TrimSpace(participant.Summary); summary != "" {
+			line += "\n" + summary
 		}
 		lines[i] = line
 	}
@@ -286,16 +216,18 @@ func renderResources(resources []ResourceContext) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderFacts shows what the offline fact engine has already established about
-// this conversation's group, project and key persons.
-func renderFacts(facts []contextsnap.Fact) string {
-	if len(facts) == 0 {
+func renderFactCounts(counts []FactCount) string {
+	if len(counts) == 0 {
 		return "(none)"
 	}
-	lines := make([]string, 0, len(facts))
-	for _, fact := range facts {
-		lines = append(lines, fmt.Sprintf("[%s] %s/%d: %s",
-			fact.OccurredAt, fact.SubjectType, fact.SubjectID, fact.Description))
+	lines := make([]string, 0, len(counts))
+	for _, count := range counts {
+		label := strings.TrimSpace(count.Label)
+		if label == "" {
+			label = fmt.Sprintf("%s:%d", count.SubjectType, count.SubjectID)
+		}
+		lines = append(lines, fmt.Sprintf("%s:%d「%s」今日 %d 条、近 7 天 %d 条 —— 需要细节用 list-facts 按主体和日期查。",
+			count.SubjectType, count.SubjectID, label, count.Today, count.Last7Days))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -355,13 +287,6 @@ func firstContextIndex(messages []MessageContext) int {
 		}
 	}
 	return -1
-}
-
-func jsonOrNull(value []byte) string {
-	if len(value) == 0 {
-		return "null"
-	}
-	return string(value)
 }
 
 func uint64PointerText(value *uint64) string {

@@ -7,10 +7,10 @@
 package background
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // projectRoles / projectStatuses / personRoles are the application-level values.
@@ -26,6 +26,10 @@ var personRoles = map[string]struct{}{
 }
 
 const maxPageSize = 100
+
+// SummaryMaxChars forces compaction at write time. This is the whole
+// mechanism: without a ceiling the agent always appends.
+const SummaryMaxChars = 8000
 
 // ListFilter is the shared pagination contract for every list endpoint.
 type ListFilter struct {
@@ -45,21 +49,22 @@ func (f ListFilter) validate() error {
 
 func (f ListFilter) offset() int { return (f.Page - 1) * f.PageSize }
 
-// ProjectInput is the create/update payload for a Project. JSON columns accept
-// raw JSON so the caller keeps full control of their shape; nil means "leave
-// unset" on create and is stored as SQL NULL.
+func validateSummary(content string) error {
+	n := utf8.RuneCountInString(content)
+	if n > SummaryMaxChars {
+		return fmt.Errorf("summary 有 %d 字符，上限 %d。请先压缩：合并旧明细为一句结论、把某一节改成对 fact 的引用、或删除已不重要的内容，再重新提交", n, SummaryMaxChars)
+	}
+	return nil
+}
+
+// ProjectInput is the create/update payload for a Project. It only carries
+// control fields; long-term truth is written through UpdatePage.
 type ProjectInput struct {
-	Code         *string         `json:"code"`
-	Name         string          `json:"name"`
-	Role         string          `json:"role"`
-	Status       string          `json:"status"`
-	Priority     uint8           `json:"priority"`
-	Description  *string         `json:"description"`
-	Repos        json.RawMessage `json:"repos"`
-	TechStack    json.RawMessage `json:"tech_stack"`
-	KeyDecisions json.RawMessage `json:"key_decisions"`
-	Timeline     json.RawMessage `json:"timeline"`
-	Notes        *string         `json:"notes"`
+	Code     *string `json:"code"`
+	Name     string  `json:"name"`
+	Role     string  `json:"role"`
+	Status   string  `json:"status"`
+	Priority uint8   `json:"priority"`
 }
 
 func (in *ProjectInput) validate() error {
@@ -78,14 +83,6 @@ func (in *ProjectInput) validate() error {
 	if in.Code != nil && strings.TrimSpace(*in.Code) == "" {
 		return fmt.Errorf("project code must not be blank when provided")
 	}
-	for name, raw := range map[string]json.RawMessage{
-		"repos": in.Repos, "tech_stack": in.TechStack,
-		"key_decisions": in.KeyDecisions, "timeline": in.Timeline,
-	} {
-		if err := validateOptionalJSON(name, raw); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -93,7 +90,6 @@ func (in *ProjectInput) validate() error {
 type KeyMatterInput struct {
 	Title     string     `json:"title"`
 	Status    string     `json:"status"`
-	Summary   *string    `json:"summary"`
 	ProjectID *uint64    `json:"project_id"`
 	DueAt     *time.Time `json:"due_at"`
 }
@@ -105,18 +101,15 @@ func (in *KeyMatterInput) validate() error {
 	return nil
 }
 
-// PersonUpdateInput contains only the human-editable Person fields. Identity
-// fields belong to the existing Person record and must not be rewritten by an
-// edit form.
+// PersonUpdateInput contains only the human-editable Person control fields.
+// Identity fields belong to the existing Person record and must not be rewritten
+// by an edit form. Long-term truth is written through UpdatePage.
 type PersonUpdateInput struct {
 	Name           string  `json:"name"`
 	Department     *string `json:"department"`
 	Title          *string `json:"title"`
 	Role           string  `json:"role"`
 	PriorityWeight float64 `json:"priority_weight"`
-	Relation       *string `json:"relation"`
-	CommStyle      *string `json:"comm_style"`
-	Notes          *string `json:"notes"`
 	IsActive       *bool   `json:"is_active"`
 }
 
@@ -155,20 +148,9 @@ func (in *PersonCreateInput) validate() error {
 // GroupBackgroundInput is the human-curated subset of Group. It deliberately
 // omits every discovery column owned by capture (chat_id/name/description/tier/...).
 type GroupBackgroundInput struct {
-	BackgroundNote  *string `json:"background_note"`
 	ProjectID       *uint64 `json:"project_id"`
 	RelatedGroup    bool    `json:"related_group"`
 	Pinned          bool    `json:"pinned"`
 	IncludeInMemory bool    `json:"include_in_memory"`
 	IsKeyGroup      bool    `json:"is_key_group"`
-}
-
-func validateOptionalJSON(field string, raw json.RawMessage) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	if !json.Valid(raw) {
-		return fmt.Errorf("%s must be valid JSON", field)
-	}
-	return nil
 }

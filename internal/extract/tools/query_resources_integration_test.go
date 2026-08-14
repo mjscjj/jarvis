@@ -49,9 +49,9 @@ func TestQueryResourcesSQLite(t *testing.T) {
 		t.Fatalf("seed project: %v", err)
 	}
 	docURL := "https://example.com/doc"
-	desc := "runtime 方案要点"
+	runtimeSummary := "runtime 方案"
 	seed := []domain.ManagedResource{
-		{Title: "项目方案", ResourceType: "doc", URL: &docURL, Description: &desc, ProjectID: &project.ID, IsActive: true},
+		{Title: "项目方案", ResourceType: "doc", URL: &docURL, ProjectID: &project.ID, IsActive: true, Summary: &runtimeSummary},
 		{Title: "Alice 的仓库", ResourceType: "repo", PersonID: &person.ID, IsActive: true},
 		{Title: "我的偏好清单", ResourceType: "note", LinkPrincipal: true, IsActive: true},
 		{Title: "停用资源", ResourceType: "link", ProjectID: &project.ID, IsActive: false},

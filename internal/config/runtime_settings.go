@@ -38,8 +38,6 @@ type RuntimeSettings struct {
 	ExtractContextMessages       int     `json:"extract_context_messages"`
 	ExtractContextWindowMinutes  int     `json:"extract_context_window_minutes"`
 	ExtractOpenTodoLimit         int     `json:"extract_open_todo_limit"`
-	ExtractFactLimit             int     `json:"extract_fact_limit"`
-	ExtractKeyPersonLimit        int     `json:"extract_key_person_limit"`
 	ExtractRecentTaskLimit       int     `json:"extract_recent_task_limit"`
 	ExtractMaxPromptChars        int     `json:"extract_max_prompt_chars"`
 	ExtractSemanticThreshold     float64 `json:"extract_semantic_threshold"`
@@ -204,8 +202,6 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExtractContextMessages:       cfg.Extract.ContextMessages,
 		ExtractContextWindowMinutes:  cfg.Extract.ContextWindowMinutes,
 		ExtractOpenTodoLimit:         cfg.Extract.OpenTodoLimit,
-		ExtractFactLimit:             cfg.Extract.FactLimit,
-		ExtractKeyPersonLimit:        cfg.Extract.KeyPersonLimit,
 		ExtractRecentTaskLimit:       cfg.Extract.RecentTaskLimit,
 		ExtractMaxPromptChars:        cfg.Extract.MaxPromptChars,
 		ExtractSemanticThreshold:     cfg.Extract.SemanticThreshold,
@@ -282,8 +278,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Extract.ContextMessages = input.ExtractContextMessages
 	cfg.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
 	cfg.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
-	cfg.Extract.FactLimit = input.ExtractFactLimit
-	cfg.Extract.KeyPersonLimit = input.ExtractKeyPersonLimit
 	cfg.Extract.RecentTaskLimit = input.ExtractRecentTaskLimit
 	cfg.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	cfg.Extract.SemanticThreshold = input.ExtractSemanticThreshold
@@ -356,8 +350,6 @@ type runtimeOverride struct {
 		ContextMessages       int     `yaml:"context_messages"`
 		ContextWindowMinutes  int     `yaml:"context_window_minutes"`
 		OpenTodoLimit         int     `yaml:"open_todo_limit"`
-		FactLimit             int     `yaml:"fact_limit"`
-		KeyPersonLimit        int     `yaml:"key_person_limit"`
 		RecentTaskLimit       int     `yaml:"recent_task_limit"`
 		MaxPromptChars        int     `yaml:"max_prompt_chars"`
 		SemanticThreshold     float64 `yaml:"semantic_threshold"`
@@ -462,8 +454,6 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Extract.ContextMessages = input.ExtractContextMessages
 	override.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
 	override.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
-	override.Extract.FactLimit = input.ExtractFactLimit
-	override.Extract.KeyPersonLimit = input.ExtractKeyPersonLimit
 	override.Extract.RecentTaskLimit = input.ExtractRecentTaskLimit
 	override.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	override.Extract.SemanticThreshold = input.ExtractSemanticThreshold

@@ -41,28 +41,26 @@ export interface ContextSnapshot {
     department: string | null
     title: string | null
     leader_name: string | null
+    summary: string | null
   } | null
   project: {
     id: number
     code: string | null
     name: string
     role: string
-    description: string | null
-    repos: unknown
-    key_decisions: unknown
+    summary: string | null
   } | null
   group: {
     id: number
     chat_id: string
     name: string | null
     description: string | null
-    background_note: string | null
+    summary: string | null
   } | null
   assigner: {
     open_id: string
     name: string | null
     role: string | null
-    relation: string | null
   } | null
   messages: Array<{
     message_id: string
@@ -362,34 +360,31 @@ export interface FactSearchQuery {
   pageSize?: number
 }
 
-export type RelationEntityType = 'project' | 'key_matter' | 'person' | 'principal' | 'group' | 'todo' | 'task' | 'resource' | 'managed_resource'
+export type PageType = 'principal' | 'person' | 'project' | 'key_matter' | 'group' | 'resource'
 
-export interface RelationEntityRef {
-  type: RelationEntityType
+export interface PageLink {
+  type: string
   id: number
-  label: string
+  name: string
 }
 
-export interface RelationFact {
+export interface PageView {
+  type: PageType
   id: number
-  entity_a: RelationEntityRef
-  entity_b: RelationEntityRef
-  description: string
-  /** 关系成立的起点；null 表示起点未知 */
-  valid_from: string | null
-  /** 关系成立的终点；null 表示关系仍然有效 */
-  valid_until: string | null
-  created_at: string
+  name: string
+  summary: string | null
+  char_count: number
+  max_chars: number
   updated_at: string
+  outgoing: PageLink[]
+  backlinks: PageLink[]
+  fact_count: number
 }
 
-export interface RelationFactList {
-  items: RelationFact[]
-  total: number
-  page: number
-  page_size: number
+export interface PageUpdateInput {
+  content: string
+  if_unchanged_since: string
 }
-
 
 export type ProjectRole = 'owner' | 'participant'
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'archived' | 'done'
@@ -402,12 +397,8 @@ export interface Project {
   role: ProjectRole
   status: ProjectStatus
   priority: number
-  description: string | null
-  repos: unknown
-  tech_stack: unknown
-  key_decisions: unknown
-  timeline: unknown
-  notes: string | null
+  summary: string | null
+  last_progress_at: string | null
   created_at: string
   updated_at: string
 }
@@ -439,10 +430,9 @@ export interface Person {
   title: string | null
   role: PersonRole
   priority_weight: number
-  relation: string | null
-  comm_style: string | null
   p2p_chat_id: string | null
-  notes: string | null
+  summary: string | null
+  last_progress_at: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -454,7 +444,8 @@ export interface Group {
   chat_mode: string
   name: string | null
   description: string | null
-  background_note: string | null
+  summary: string | null
+  last_progress_at: string | null
   owner_open_id: string | null
   external: boolean
   tenant_key: string | null
@@ -511,14 +502,11 @@ export interface ProjectInput {
   role: ProjectRole
   status: ProjectStatus
   priority: number
-  description?: string | null
-  notes?: string | null
 }
 
 export interface KeyMatterInput {
   title: string
   status: string
-  summary: string | null
   project_id: number | null
   due_at: string | null
 }
@@ -529,9 +517,6 @@ export interface PersonUpdateInput {
   priority_weight: number
   department?: string | null
   title?: string | null
-  relation?: string | null
-  comm_style?: string | null
-  notes?: string | null
   is_active?: boolean
 }
 
@@ -560,7 +545,6 @@ export interface ResolveResult {
 }
 
 export interface GroupBackgroundInput {
-  background_note?: string | null
   project_id: number | null
   related_group: boolean
   pinned: boolean
@@ -584,8 +568,8 @@ export interface ProfileView {
   name: string
   department?: string | null
   title?: string | null
-  background?: string | null
-  preferences?: string | null
+  summary: string | null
+  last_progress_at: string | null
   leader_open_id?: string | null
   leader_name?: string | null
   saved: boolean
@@ -595,8 +579,6 @@ export interface ProfileInput {
   name: string
   department?: string | null
   title?: string | null
-  background?: string | null
-  preferences?: string | null
   leader_open_id?: string | null
   leader_name?: string | null
 }
@@ -938,7 +920,8 @@ export interface Resource {
   title: string
   resource_type: ResourceType
   url: string | null
-  description: string | null
+  summary: string | null
+  last_progress_at: string | null
   person_id: number | null
   person_name: string | null
   project_id: number | null
@@ -952,7 +935,6 @@ export interface ResourceInput {
   title: string
   resource_type: ResourceType
   url?: string | null
-  description?: string | null
   person_id?: number | null
   project_id?: number | null
   link_principal: boolean

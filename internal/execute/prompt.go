@@ -288,7 +288,7 @@ func projectExecutionContext(task *domain.Task) (executionContext, error) {
 	if snapshot.Assigner != nil {
 		result.Assigner = &executionAssigner{
 			OpenID: snapshot.Assigner.OpenID, Name: snapshot.Assigner.Name,
-			Role: snapshot.Assigner.Role, Relation: snapshot.Assigner.Relation,
+			Role: snapshot.Assigner.Role,
 		}
 	}
 	seen := make(map[string]struct{}, len(snapshot.Messages))

@@ -245,6 +245,31 @@ func (s *Service) ListFacts(ctx context.Context, filter FactFilter) ([]FactView,
 	return views, nil
 }
 
+func (s *Service) CountFacts(ctx context.Context, filter FactFilter) (int, error) {
+	subjectType := strings.TrimSpace(strings.ToLower(filter.SubjectType))
+	if subjectType == "" || filter.SubjectID == 0 {
+		return 0, fmt.Errorf("%w: subject_type and positive subject_id are required", ErrInvalidInput)
+	}
+	query := s.db.WithContext(ctx).Model(&domain.Fact{}).Where("subject_type = ? AND subject_id = ?", subjectType, filter.SubjectID)
+	if filter.From != nil {
+		query = query.Where("occurred_at >= ?", filter.From.UTC())
+	}
+	if filter.Until != nil {
+		query = query.Where("occurred_at < ?", filter.Until.UTC())
+	}
+	if filter.SourceKind != nil {
+		query = query.Where("source_kind = ?", strings.TrimSpace(*filter.SourceKind))
+	}
+	if filter.ExcludeSourceKind != nil {
+		query = query.Where("(source_kind IS NULL OR source_kind <> ?)", strings.TrimSpace(*filter.ExcludeSourceKind))
+	}
+	var n int64
+	if err := query.Count(&n).Error; err != nil {
+		return 0, fmt.Errorf("count facts subject=%s/%d: %w", subjectType, filter.SubjectID, err)
+	}
+	return int(n), nil
+}
+
 func prepareTaskEvent(input TaskEventInput) (*domain.TaskEvent, error) {
 	input.EventType = strings.TrimSpace(strings.ToLower(input.EventType))
 	input.ActorType = strings.TrimSpace(strings.ToLower(input.ActorType))

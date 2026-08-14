@@ -26,7 +26,6 @@ type ResourceInput struct {
 	Title         string  `json:"title"`
 	ResourceType  string  `json:"resource_type"`
 	URL           *string `json:"url"`
-	Description   *string `json:"description"`
 	PersonID      *uint64 `json:"person_id"`
 	ProjectID     *uint64 `json:"project_id"`
 	LinkPrincipal bool    `json:"link_principal"`
@@ -55,18 +54,19 @@ func (in *ResourceInput) validate() error {
 // ResourceView is the API projection of a managed resource. It carries the
 // linked person/project names so the list can render them without a second call.
 type ResourceView struct {
-	ID            uint64    `json:"id"`
-	Title         string    `json:"title"`
-	ResourceType  string    `json:"resource_type"`
-	URL           *string   `json:"url"`
-	Description   *string   `json:"description"`
-	PersonID      *uint64   `json:"person_id"`
-	PersonName    *string   `json:"person_name"`
-	ProjectID     *uint64   `json:"project_id"`
-	ProjectName   *string   `json:"project_name"`
-	LinkPrincipal bool      `json:"link_principal"`
-	IsActive      bool      `json:"is_active"`
-	LastActiveAt  time.Time `json:"last_active_at"`
+	ID             uint64     `json:"id"`
+	Title          string     `json:"title"`
+	ResourceType   string     `json:"resource_type"`
+	URL            *string    `json:"url"`
+	Summary        *string    `json:"summary"`
+	LastProgressAt *time.Time `json:"last_progress_at"`
+	PersonID       *uint64    `json:"person_id"`
+	PersonName     *string    `json:"person_name"`
+	ProjectID      *uint64    `json:"project_id"`
+	ProjectName    *string    `json:"project_name"`
+	LinkPrincipal  bool       `json:"link_principal"`
+	IsActive       bool       `json:"is_active"`
+	LastActiveAt   time.Time  `json:"last_active_at"`
 }
 
 // ResourceList is the paginated response for managed resources.
@@ -116,7 +116,7 @@ func (s *ResourceService) Create(ctx context.Context, in ResourceInput) (*Resour
 	defer s.mu.Unlock()
 	requestedActive := boolOrDefault(in.IsActive, true)
 	resource := domain.ManagedResource{
-		Title: in.Title, ResourceType: in.ResourceType, URL: in.URL, Description: in.Description,
+		Title: in.Title, ResourceType: in.ResourceType, URL: in.URL,
 		PersonID: in.PersonID, ProjectID: in.ProjectID, LinkPrincipal: in.LinkPrincipal,
 		IsActive: requestedActive, LastActiveAt: s.now().UTC(),
 	}
@@ -190,7 +190,7 @@ func (s *ResourceService) Update(ctx context.Context, id uint64, in ResourceInpu
 	// always overwrites the optional links to NULL when the caller omits them.
 	updates := map[string]any{
 		"title": in.Title, "resource_type": in.ResourceType, "url": in.URL,
-		"description": in.Description, "person_id": in.PersonID, "project_id": in.ProjectID,
+		"person_id": in.PersonID, "project_id": in.ProjectID,
 		"link_principal": in.LinkPrincipal, "is_active": nextActive,
 	}
 	if !before.IsActive && nextActive {
@@ -335,7 +335,7 @@ func applyResourceFilter(query *gorm.DB, filter ResourceFilter) *gorm.DB {
 func toResourceView(resource *domain.ManagedResource) ResourceView {
 	view := ResourceView{
 		ID: resource.ID, Title: resource.Title, ResourceType: resource.ResourceType,
-		URL: resource.URL, Description: resource.Description,
+		URL: resource.URL, Summary: resource.Summary, LastProgressAt: resource.LastProgressAt,
 		PersonID: resource.PersonID, ProjectID: resource.ProjectID,
 		LinkPrincipal: resource.LinkPrincipal, IsActive: resource.IsActive, LastActiveAt: resource.LastActiveAt,
 	}

@@ -44,9 +44,8 @@ func TestKeyMatterLifecycleAndFacts(t *testing.T) {
 	ctx := context.Background()
 	createdAt := time.Date(2026, 8, 6, 9, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return createdAt }
-	initialSummary := "等待法务给出第一版意见"
 	created, err := service.Create(ctx, KeyMatterInput{
-		Title: "对齐合规口径", Status: "等法务回复", Summary: &initialSummary, ProjectID: &project.ID,
+		Title: "对齐合规口径", Status: "等法务回复", ProjectID: &project.ID,
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -55,39 +54,27 @@ func TestKeyMatterLifecycleAndFacts(t *testing.T) {
 		t.Fatalf("Create() = %+v, unexpected", created)
 	}
 
-	progressSummary := "法务已确认国内口径，等待海外意见"
-	progressed, err := service.Update(ctx, created.ID, KeyMatterInput{
-		Title: created.Title, Status: created.Status, Summary: &progressSummary, ProjectID: created.ProjectID,
-	})
-	if err != nil {
-		t.Fatalf("Update() summary error = %v", err)
-	}
-	if progressed.LastProgressAt == nil {
-		t.Fatal("summary change did not set last_progress_at")
-	}
-	progressAt := *progressed.LastProgressAt
-	if !progressed.LastActiveAt.Equal(createdAt) {
-		t.Fatalf("summary update moved last_active_at = %s", progressed.LastActiveAt)
-	}
-
 	updated, err := service.Update(ctx, created.ID, KeyMatterInput{
-		Title: created.Title, Status: "本周收口", Summary: &progressSummary, ProjectID: created.ProjectID,
+		Title: created.Title, Status: "本周收口", ProjectID: created.ProjectID,
 	})
 	if err != nil {
 		t.Fatalf("Update() status error = %v", err)
 	}
-	if updated.LastProgressAt == nil || !updated.LastProgressAt.Equal(progressAt) {
-		t.Fatalf("status-only update moved last_progress_at from %v to %v", progressAt, updated.LastProgressAt)
+	if updated.LastProgressAt != nil {
+		t.Fatalf("control-field update set last_progress_at = %v", updated.LastProgressAt)
+	}
+	if !updated.LastActiveAt.Equal(createdAt) {
+		t.Fatalf("status update moved last_active_at = %s", updated.LastActiveAt)
 	}
 
 	unchanged, err := service.Update(ctx, created.ID, KeyMatterInput{
-		Title: updated.Title, Status: updated.Status, Summary: &progressSummary, ProjectID: updated.ProjectID,
+		Title: updated.Title, Status: updated.Status, ProjectID: updated.ProjectID,
 	})
 	if err != nil {
 		t.Fatalf("Update() unchanged error = %v", err)
 	}
-	if unchanged.LastProgressAt == nil || !unchanged.LastProgressAt.Equal(progressAt) {
-		t.Fatalf("unchanged summary moved last_progress_at from %v to %v", progressAt, unchanged.LastProgressAt)
+	if unchanged.LastProgressAt != nil {
+		t.Fatalf("unchanged update set last_progress_at = %v", unchanged.LastProgressAt)
 	}
 	touchedAt := createdAt.Add(24 * time.Hour)
 	service.now = func() time.Time { return touchedAt }
@@ -115,15 +102,15 @@ func TestKeyMatterLifecycleAndFacts(t *testing.T) {
 	if err := db.Where("subject_type = ? AND subject_id = ?", "key_matter", created.ID).Order("id ASC").Find(&facts).Error; err != nil {
 		t.Fatalf("list key matter facts: %v", err)
 	}
-	if len(facts) != 4 {
-		t.Fatalf("fact count = %d, want 4: %+v", len(facts), facts)
+	if len(facts) != 2 {
+		t.Fatalf("fact count = %d, want 2: %+v", len(facts), facts)
 	}
 	for _, fact := range facts {
 		if fact.SourceKind == nil || *fact.SourceKind != factSourceBackground {
 			t.Fatalf("fact source = %#v, want background", fact.SourceKind)
 		}
 	}
-	for i, want := range []string{"立项关键事项", "当前进展更新", "更新关键事项资料：status", "已闭环"} {
+	for i, want := range []string{"立项关键事项", "已闭环"} {
 		if !strings.Contains(facts[i].Description, want) {
 			t.Fatalf("fact[%d] = %q, want contains %q", i, facts[i].Description, want)
 		}

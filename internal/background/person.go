@@ -46,10 +46,7 @@ func (s *PersonService) Create(ctx context.Context, in PersonCreateInput) (*Pers
 		Title:          in.Title,
 		Role:           in.Role,
 		PriorityWeight: in.PriorityWeight,
-		Relation:       in.Relation,
-		CommStyle:      in.CommStyle,
 		P2PChatID:      in.P2PChatID,
-		Notes:          in.Notes,
 		IsActive:       in.IsActive == nil || *in.IsActive,
 	}
 	if err := s.db.WithContext(ctx).Create(&person).Error; err != nil {
@@ -110,9 +107,6 @@ func (s *PersonService) Update(ctx context.Context, id uint64, in PersonUpdateIn
 		"title":           in.Title,
 		"role":            in.Role,
 		"priority_weight": in.PriorityWeight,
-		"relation":        in.Relation,
-		"comm_style":      in.CommStyle,
-		"notes":           in.Notes,
 		"is_active":       in.IsActive == nil || *in.IsActive,
 	}
 	result := s.db.WithContext(ctx).Model(&domain.Person{}).Where("id = ?", id).Updates(updates)

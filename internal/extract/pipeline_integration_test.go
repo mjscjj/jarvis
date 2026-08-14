@@ -176,7 +176,6 @@ func TestPipelineLive(t *testing.T) {
 			OpenTodoLimit: cfg.Extract.OpenTodoLimit, RecentTaskLimit: cfg.Extract.RecentTaskLimit,
 		},
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
-		FactLimit: cfg.Extract.FactLimit, KeyPersonLimit: cfg.Extract.KeyPersonLimit,
 		MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 		WorkRules:     workRuleService,
 		Skills:        skillService,

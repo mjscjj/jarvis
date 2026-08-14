@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"jarvis/internal/agentusage"
-	"jarvis/internal/contextsnap"
 	"jarvis/internal/progress"
 	"jarvis/internal/skill"
 	"jarvis/internal/textstore"
@@ -16,26 +15,16 @@ import (
 	"jarvis/internal/workrule"
 )
 
-// factReader is progress.Service. M3 reads the facts the offline engine has
-// already distilled instead of retrieving raw conversation memories: a fact is
-// a settled conclusion bound to a subject, which is what deciding "is this clue
-// new" actually needs.
 type factReader interface {
-	ListFacts(context.Context, progress.FactFilter) ([]progress.FactView, error)
+	CountFacts(context.Context, progress.FactFilter) (int, error)
 }
 
 type WorkerOptions struct {
 	Load            LoadOptions
 	PrincipalOpenID string
 	ModelName       string
-	// FactLimit caps how many of a subject's *today* detail facts (excluding
-	// rollups) are injected per extraction prompt. Each subject also gets at
-	// most one previous-day rollup on top of this.
-	FactLimit int
-	// KeyPersonLimit caps how many person subjects contribute facts.
-	KeyPersonLimit int
-	MaxPromptChars int
-	Location       *time.Location
+	MaxPromptChars  int
+	Location        *time.Location
 	// AgentToolCatalog controls whether shell-tool descriptions are injected.
 	// It is true for the Codex engine and false for schema-driven model_api.
 	AgentToolCatalog bool
@@ -109,12 +98,6 @@ func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup
 	}
 	if strings.TrimSpace(opts.ModelName) == "" {
 		return nil, fmt.Errorf("extract worker model name is empty")
-	}
-	if opts.FactLimit <= 0 {
-		return nil, fmt.Errorf("extract worker fact limit must be positive")
-	}
-	if opts.KeyPersonLimit <= 0 {
-		return nil, fmt.Errorf("extract worker key person limit must be positive")
 	}
 	if opts.MaxPromptChars <= 0 {
 		return nil, fmt.Errorf("extract worker max prompt chars must be positive")
@@ -218,16 +201,14 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 			return stats, PersistStats{}, fmt.Errorf("read extract tool catalog chat_id=%s: %w", batch.Group.ChatID, err)
 		}
 	}
-	// Facts are bound to the group / project / key persons of this chat, not to
-	// one unit, so they are read once per chat rather than once per unit.
-	facts, err := w.loadFacts(ctx, batch, runNow)
+	counts, err := w.loadFactCounts(ctx, batch, runNow)
 	if err != nil {
 		return stats, PersistStats{}, err
 	}
 	results := make([]UnitExtraction, 0, len(batch.Units))
 	for index := range batch.Units {
 		unit := batch.Units[index]
-		prompt, err := BuildPrompt(batch, unit, facts, runNow, PromptOptions{
+		prompt, err := BuildPrompt(batch, unit, counts, runNow, PromptOptions{
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
 			SystemPrompt: systemPrompt, ToolCatalog: toolCatalog,
 			WorkRules: workRules, Skills: skills,
@@ -246,7 +227,7 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 			return stats, PersistStats{}, err
 		}
 		results = append(results, UnitExtraction{
-			UnitKey: unit.Key, Candidates: resolved, Facts: facts,
+			UnitKey: unit.Key, Candidates: resolved,
 		})
 		stats.Units++
 		stats.Candidates += candidateCount
@@ -262,108 +243,65 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.
 	return stats, persisted, nil
 }
 
-// loadFacts loads two layers per subject: today's detail facts (excluding
-// rollups) and yesterday's single rollup. Subjects are the group, its project,
-// and the key persons of this chat (assigners ∪ leaders ∪ speakers).
-func (w *Worker) loadFacts(ctx context.Context, batch ChatBatch, now time.Time) ([]contextsnap.Fact, error) {
-	subjects := []factSubject{{subjectType: "group", subjectID: batch.Group.ID}}
+func (w *Worker) loadFactCounts(ctx context.Context, batch ChatBatch, now time.Time) ([]FactCount, error) {
+	subjects := []factSubject{{
+		subjectType: "group", subjectID: batch.Group.ID, label: batch.Group.Name,
+	}}
 	if batch.Group.ProjectID != nil {
-		subjects = append(subjects, factSubject{subjectType: "project", subjectID: *batch.Group.ProjectID})
-	}
-	for _, personID := range selectKeyPersonIDs(batch, w.opts.KeyPersonLimit) {
-		subjects = append(subjects, factSubject{subjectType: "person", subjectID: personID})
+		label := ""
+		if batch.Project != nil && batch.Project.ID == *batch.Group.ProjectID {
+			label = batch.Project.Name
+		}
+		subjects = append(subjects, factSubject{
+			subjectType: "project", subjectID: *batch.Group.ProjectID, label: label,
+		})
 	}
 
 	localNow := now.In(w.opts.Location)
 	todayStart := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, w.opts.Location)
 	tomorrowStart := todayStart.AddDate(0, 0, 1)
-	yesterdayStart := todayStart.AddDate(0, 0, -1)
-	excludeRollup := progress.FactSourceRollup
-	rollupKind := progress.FactSourceRollup
+	weekStart := todayStart.AddDate(0, 0, -6)
 
-	facts := make([]contextsnap.Fact, 0, len(subjects)*(w.opts.FactLimit+1))
+	counts := make([]FactCount, 0, len(subjects))
 	for _, subject := range subjects {
 		if subject.subjectID == 0 {
 			continue
 		}
-		details, err := w.facts.ListFacts(ctx, progress.FactFilter{
-			SubjectType:       subject.subjectType,
-			SubjectID:         subject.subjectID,
-			From:              &todayStart,
-			Until:             &tomorrowStart,
-			ExcludeSourceKind: &excludeRollup,
-			Limit:             w.opts.FactLimit,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("read today facts chat_id=%s subject=%s/%d: %w",
-				batch.Group.ChatID, subject.subjectType, subject.subjectID, err)
-		}
-		rollups, err := w.facts.ListFacts(ctx, progress.FactFilter{
+		today, err := w.facts.CountFacts(ctx, progress.FactFilter{
 			SubjectType: subject.subjectType,
 			SubjectID:   subject.subjectID,
-			From:        &yesterdayStart,
-			Until:       &todayStart,
-			SourceKind:  &rollupKind,
-			Limit:       1,
+			From:        &todayStart,
+			Until:       &tomorrowStart,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("read yesterday rollup chat_id=%s subject=%s/%d: %w",
+			return nil, fmt.Errorf("count today facts chat_id=%s subject=%s/%d: %w",
 				batch.Group.ChatID, subject.subjectType, subject.subjectID, err)
 		}
-		for _, fact := range append(details, rollups...) {
-			facts = append(facts, contextsnap.Fact{
-				ID: fact.ID, SubjectType: fact.SubjectType, SubjectID: fact.SubjectID,
-				Description: fact.Description, OccurredAt: fact.OccurredAt.UTC().Format(time.RFC3339),
-			})
+		week, err := w.facts.CountFacts(ctx, progress.FactFilter{
+			SubjectType: subject.subjectType,
+			SubjectID:   subject.subjectID,
+			From:        &weekStart,
+			Until:       &tomorrowStart,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("count week facts chat_id=%s subject=%s/%d: %w",
+				batch.Group.ChatID, subject.subjectType, subject.subjectID, err)
 		}
+		counts = append(counts, FactCount{
+			SubjectType: subject.subjectType,
+			SubjectID:   subject.subjectID,
+			Label:       subject.label,
+			Today:       today,
+			Last7Days:   week,
+		})
 	}
-	return facts, nil
+	return counts, nil
 }
 
 type factSubject struct {
 	subjectType string
 	subjectID   uint64
-}
-
-// selectKeyPersonIDs unions assigners (from open todos), IsLeader participants
-// and message speakers, then truncates to limit. People without a person-table
-// id are skipped silently.
-func selectKeyPersonIDs(batch ChatBatch, limit int) []uint64 {
-	if limit <= 0 {
-		return nil
-	}
-	seen := make(map[uint64]struct{})
-	ordered := make([]uint64, 0, limit)
-	add := func(id *uint64) {
-		if id == nil || *id == 0 {
-			return
-		}
-		if _, ok := seen[*id]; ok {
-			return
-		}
-		if len(ordered) >= limit {
-			return
-		}
-		seen[*id] = struct{}{}
-		ordered = append(ordered, *id)
-	}
-	for _, todo := range batch.OpenTodos {
-		add(todo.AssignerPersonID)
-	}
-	for _, unit := range batch.Units {
-		byOpenID := make(map[string]*uint64, len(unit.Participants))
-		for i := range unit.Participants {
-			participant := &unit.Participants[i]
-			byOpenID[participant.OpenID] = participant.PersonID
-			if participant.IsLeader {
-				add(participant.PersonID)
-			}
-		}
-		for _, message := range unit.Messages {
-			add(byOpenID[message.SenderOpenID])
-		}
-	}
-	return ordered
+	label       string
 }
 
 func mergeWorkerStats(target *WorkerStats, source WorkerStats) {

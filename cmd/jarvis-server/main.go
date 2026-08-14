@@ -30,7 +30,6 @@ import (
 	"jarvis/internal/extract/provider"
 	"jarvis/internal/factengine"
 	"jarvis/internal/insight"
-	"jarvis/internal/knowledge"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/meetingsweep"
 	"jarvis/internal/morningbrief"
@@ -154,10 +153,6 @@ func main() {
 		}
 		infof("progress event backfill completed: tasks_scanned=%d events_created=%d", stats.TasksScanned, stats.EventsCreated)
 		return
-	}
-	relationFactService, err := knowledge.NewService(db)
-	if err != nil {
-		fatalf("initialize relation fact service failed: %v", err)
 	}
 	progressService, err := progress.NewService(db)
 	if err != nil {
@@ -409,6 +404,10 @@ func main() {
 	if err != nil {
 		fatalf("initialize resource service failed: %v", err)
 	}
+	pageService, err := background.NewPageService(db)
+	if err != nil {
+		fatalf("initialize page service failed: %v", err)
+	}
 	overviewService, err := insight.NewOverviewService(db)
 	if err != nil {
 		fatalf("initialize overview service failed: %v", err)
@@ -533,7 +532,6 @@ func main() {
 				OpenTodoLimit: cfg.Extract.OpenTodoLimit, RecentTaskLimit: cfg.Extract.RecentTaskLimit,
 			},
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
-			FactLimit: cfg.Extract.FactLimit, KeyPersonLimit: cfg.Extract.KeyPersonLimit,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 			EvidenceRetryMax: cfg.Extract.EvidenceRetryMax,
 			AgentToolCatalog: agentToolCatalog,
@@ -898,13 +896,13 @@ func main() {
 		Projects:        projectService, KeyMatters: keyMatterService,
 		Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
+		Pages:          pageService,
 		SharedMemory:   sharedMemoryService,
 		WorkRules:      workRuleService,
 		TextFiles:      textFileService,
 		AgentConfig:    agentConfigService,
 		ScheduledTasks: scheduledTaskService,
 		Skills:         skillService,
-		RelationFacts:  relationFactService,
 		Progress:       progressService,
 		FactQueries:    progressService,
 		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,

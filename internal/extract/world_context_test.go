@@ -6,217 +6,127 @@ import (
 	"testing"
 	"time"
 
-	"jarvis/internal/contextsnap"
 	"jarvis/internal/progress"
 )
 
-type scriptedFactReader struct {
-	calls   []progress.FactFilter
-	byQuery func(progress.FactFilter) []progress.FactView
-}
-
-func (s *scriptedFactReader) ListFacts(_ context.Context, filter progress.FactFilter) ([]progress.FactView, error) {
-	s.calls = append(s.calls, filter)
-	if s.byQuery == nil {
-		return nil, nil
-	}
-	return s.byQuery(filter), nil
-}
-
-func TestLoadFactsTwoLayers(t *testing.T) {
+func TestLoadFactCountsTodayAndLast7Days(t *testing.T) {
 	t.Parallel()
 	loc := time.FixedZone("CST", 8*3600)
 	now := time.Date(2026, 8, 2, 15, 0, 0, 0, loc)
 	todayStart := time.Date(2026, 8, 2, 0, 0, 0, 0, loc)
 	tomorrow := todayStart.AddDate(0, 0, 1)
-	yesterday := todayStart.AddDate(0, 0, -1)
-	rollup := progress.FactSourceRollup
+	weekStart := todayStart.AddDate(0, 0, -6)
 
-	reader := &scriptedFactReader{byQuery: func(filter progress.FactFilter) []progress.FactView {
+	reader := &scriptedFactCounter{byQuery: func(filter progress.FactFilter) int {
+		if filter.From == nil || filter.Until == nil {
+			t.Fatalf("count window missing: %#v", filter)
+		}
 		switch {
-		case filter.ExcludeSourceKind != nil && *filter.ExcludeSourceKind == progress.FactSourceRollup:
-			if filter.From == nil || filter.Until == nil || !filter.From.Equal(todayStart) || !filter.Until.Equal(tomorrow) {
-				t.Fatalf("today detail window = %v/%v, want %v/%v", filter.From, filter.Until, todayStart, tomorrow)
+		case filter.From.Equal(todayStart) && filter.Until.Equal(tomorrow):
+			if filter.SubjectType == "group" {
+				return 2
 			}
-			if filter.Limit != 10 {
-				t.Fatalf("today detail limit = %d, want 10", filter.Limit)
+			return 23
+		case filter.From.Equal(weekStart) && filter.Until.Equal(tomorrow):
+			if filter.SubjectType == "group" {
+				return 10
 			}
-			return []progress.FactView{{
-				ID: 1, SubjectType: filter.SubjectType, SubjectID: filter.SubjectID,
-				Description: "今天明细", OccurredAt: todayStart.Add(2 * time.Hour),
-			}}
-		case filter.SourceKind != nil && *filter.SourceKind == progress.FactSourceRollup:
-			if filter.From == nil || filter.Until == nil || !filter.From.Equal(yesterday) || !filter.Until.Equal(todayStart) {
-				t.Fatalf("yesterday rollup window = %v/%v, want %v/%v", filter.From, filter.Until, yesterday, todayStart)
-			}
-			if filter.Limit != 1 {
-				t.Fatalf("rollup limit = %d, want 1", filter.Limit)
-			}
-			return []progress.FactView{{
-				ID: 2, SubjectType: filter.SubjectType, SubjectID: filter.SubjectID,
-				Description: "昨天压缩", OccurredAt: yesterday, SourceKind: &rollup,
-			}}
+			return 187
 		default:
 			t.Fatalf("unexpected filter: %#v", filter)
-			return nil
+			return 0
 		}
 	}}
 
 	worker := &Worker{
 		facts: reader,
-		opts:  WorkerOptions{FactLimit: 10, KeyPersonLimit: 5, Location: loc},
+		opts:  WorkerOptions{Location: loc},
 	}
-	projectID := uint64(9)
-	facts, err := worker.loadFacts(context.Background(), ChatBatch{
-		Group: GroupContext{ID: 4, ChatID: "oc_1", ProjectID: &projectID},
+	projectID := uint64(44)
+	counts, err := worker.loadFactCounts(context.Background(), ChatBatch{
+		Group:   GroupContext{ID: 4, ChatID: "oc_1", Name: "公会群", ProjectID: &projectID},
+		Project: &ProjectContext{ID: 44, Name: "公会 Agent 基建"},
 	}, now)
 	if err != nil {
-		t.Fatalf("loadFacts: %v", err)
+		t.Fatalf("loadFactCounts: %v", err)
 	}
 	if len(reader.calls) != 4 {
-		t.Fatalf("ListFacts calls = %d, want 4 (group+project × today+rollup)", len(reader.calls))
+		t.Fatalf("CountFacts calls = %d, want 4 (group+project × today+week)", len(reader.calls))
 	}
-	if len(facts) != 4 {
-		t.Fatalf("facts = %d, want 4", len(facts))
+	if len(counts) != 2 {
+		t.Fatalf("counts = %#v, want group+project", counts)
 	}
-	var sawDetail, sawRollup bool
-	for _, fact := range facts {
-		switch fact.Description {
-		case "今天明细":
-			sawDetail = true
-		case "昨天压缩":
-			sawRollup = true
-		}
+	if counts[0].SubjectType != "group" || counts[0].Today != 2 || counts[0].Last7Days != 10 || counts[0].Label != "公会群" {
+		t.Fatalf("group count = %#v", counts[0])
 	}
-	if !sawDetail || !sawRollup {
-		t.Fatalf("missing layer in facts: %#v", facts)
+	if counts[1].SubjectType != "project" || counts[1].SubjectID != 44 || counts[1].Today != 23 || counts[1].Last7Days != 187 || counts[1].Label != "公会 Agent 基建" {
+		t.Fatalf("project count = %#v", counts[1])
 	}
 }
 
-func TestSelectKeyPersonIDsUnionAndCap(t *testing.T) {
-	t.Parallel()
-	assigner := uint64(11)
-	leader := uint64(12)
-	speaker := uint64(13)
-	extra := uint64(14)
-	batch := ChatBatch{
-		OpenTodos: []OpenTodoContext{{ID: 1, AssignerPersonID: &assigner}},
-		Units: []ConversationUnit{{
-			Participants: []ParticipantContext{
-				{OpenID: "ou_leader", IsLeader: true, PersonID: &leader},
-				{OpenID: "ou_speaker", PersonID: &speaker},
-				{OpenID: "ou_extra", PersonID: &extra},
-				{OpenID: "ou_unknown", IsLeader: true}, // no PersonID → skip
-			},
-			Messages: []MessageContext{
-				{SenderOpenID: "ou_speaker"},
-				{SenderOpenID: "ou_extra"},
-			},
-		}},
-	}
-	got := selectKeyPersonIDs(batch, 3)
-	if len(got) != 3 {
-		t.Fatalf("key persons = %v, want length 3", got)
-	}
-	if got[0] != assigner || got[1] != leader || got[2] != speaker {
-		t.Fatalf("key persons = %v, want assigner→leader→speaker before cap drops extra", got)
-	}
-	uncapped := selectKeyPersonIDs(batch, 10)
-	if len(uncapped) != 4 {
-		t.Fatalf("uncapped = %v, want 4 distinct person ids", uncapped)
-	}
-}
-
-func TestBuildPromptShrinksWorldBeforeConversation(t *testing.T) {
+func TestBuildPromptDropsContextOnlyWhenOverBudget(t *testing.T) {
 	t.Parallel()
 	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{
 		{MessageID: "om_ctx", Content: "CONTEXT_MARKER unique-context-line", CreateTime: 1_700_000_000_000, IsNew: false, Extractable: true},
 		{MessageID: "om_new", Content: "NEW_MARKER unique-new-line", CreateTime: 1_700_000_001_000, IsNew: true, Extractable: true},
 	}}
-	personFacts := make([]contextsnap.Fact, 0, 6)
-	for i := 0; i < 6; i++ {
-		personFacts = append(personFacts, contextsnap.Fact{
-			ID: uint64(100 + i), SubjectType: "person", SubjectID: 1,
-			Description: "person-fact-" + strings.Repeat("x", 40) + "-" + string(rune('a'+i)),
-			OccurredAt:  "2026-08-02T01:00:00Z",
-		})
-	}
-	groupFacts := make([]contextsnap.Fact, 0, 6)
-	for i := 0; i < 6; i++ {
-		groupFacts = append(groupFacts, contextsnap.Fact{
-			ID: uint64(200 + i), SubjectType: "group", SubjectID: 1,
-			Description: "group-fact-" + strings.Repeat("y", 40) + "-" + string(rune('a'+i)),
-			OccurredAt:  "2026-08-02T02:00:00Z",
-		})
-	}
 	otherProjects := make([]OtherProjectContext, 0, 6)
 	for i := 0; i < 6; i++ {
 		otherProjects = append(otherProjects, OtherProjectContext{
 			ID: uint64(i + 1), Code: "p", Name: "proj-" + string(rune('a'+i)), Role: "owner",
-			Description: strings.Repeat("other-project-", 8),
-		})
-	}
-	recentTasks := make([]RecentTaskContext, 0, 6)
-	for i := 0; i < 6; i++ {
-		recentTasks = append(recentTasks, RecentTaskContext{
-			ID: uint64(i + 1), Title: "task-" + string(rune('a'+i)), Status: "done",
-			Summary: strings.Repeat("task-summary-", 8),
-		})
-	}
-	openTodos := make([]OpenTodoContext, 0, 6)
-	for i := 0; i < 6; i++ {
-		openTodos = append(openTodos, OpenTodoContext{
-			ID: uint64(i + 1), ActionType: "investigate", Title: "todo-" + string(rune('a'+i)), Status: "extracted",
 		})
 	}
 	batch := ChatBatch{
 		Group:         GroupContext{ChatID: "oc_1"},
 		OtherProjects: otherProjects,
-		RecentTasks:   recentTasks,
-		OpenTodos:     openTodos,
 	}
-	facts := append(append([]contextsnap.Fact{}, groupFacts...), personFacts...)
+	counts := []FactCount{{
+		SubjectType: "group", SubjectID: 1, Label: "研发群", Today: 3, Last7Days: 12,
+	}}
 
-	// Measure a prompt that already fits, then pick a MaxChars that forces world
-	// shrinkage but still leaves room for the context message.
-	full, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	full, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 200_000,
 	})
 	if err != nil {
 		t.Fatalf("full BuildPrompt: %v", err)
 	}
-	if !strings.Contains(full.User, "CONTEXT_MARKER") {
-		t.Fatalf("full prompt missing context marker")
+	if !strings.Contains(full.User, "CONTEXT_MARKER") || !strings.Contains(full.User, "NEW_MARKER") {
+		t.Fatalf("full prompt missing conversation markers")
 	}
-	if !strings.Contains(full.User, "person-fact-") || !strings.Contains(full.User, "# 最近有进展的任务") {
+	if !strings.Contains(full.User, "proj-a") || !strings.Contains(full.User, "今日 3 条") {
 		t.Fatalf("full prompt missing world sections:\n%s", full.User)
 	}
 
-	// Tight budget: world must shrink first. Keep enough for system + new message
-	// + floors, but less than the full world payload.
-	tight := len([]rune(full.System)) + len([]rune(full.User)) - 800
+	tight := len([]rune(full.System)) + len([]rune(full.User)) - 80
 	if tight < 2000 {
 		t.Fatalf("unexpected full prompt size %d", tight)
 	}
-	shrunk, err := BuildPrompt(batch, unit, facts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	shrunk, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: tight,
 	})
 	if err != nil {
 		t.Fatalf("tight BuildPrompt: %v", err)
 	}
-	if !strings.Contains(shrunk.User, "CONTEXT_MARKER") {
-		t.Fatalf("tight prompt dropped conversation context before world floor; world-first shrink failed:\n%s", shrunk.User)
+	if strings.Contains(shrunk.User, "CONTEXT_MARKER") {
+		t.Fatalf("tight prompt kept context message:\n%s", shrunk.User)
 	}
 	if !strings.Contains(shrunk.User, "NEW_MARKER") {
 		t.Fatalf("tight prompt lost new message:\n%s", shrunk.User)
 	}
-	// Person facts are trimmed first; with 6→floor 3, at least one person-fact
-	// letter must have disappeared while context stays.
-	personCount := strings.Count(shrunk.User, "person-fact-")
-	if personCount >= 6 {
-		t.Fatalf("person facts were not trimmed under budget pressure: count=%d", personCount)
+	if !strings.Contains(shrunk.User, "proj-a") || !strings.Contains(shrunk.User, "今日 3 条") {
+		t.Fatalf("tight prompt trimmed world data:\n%s", shrunk.User)
 	}
-	if personCount < worldFloor {
-		t.Fatalf("person facts trimmed below floor: count=%d", personCount)
+}
+
+type scriptedFactCounter struct {
+	calls   []progress.FactFilter
+	byQuery func(progress.FactFilter) int
+}
+
+func (s *scriptedFactCounter) CountFacts(_ context.Context, filter progress.FactFilter) (int, error) {
+	s.calls = append(s.calls, filter)
+	if s.byQuery == nil {
+		return 0, nil
 	}
+	return s.byQuery(filter), nil
 }

@@ -18,7 +18,7 @@ func TestEveryStageExposesTheSameMachineCapabilities(t *testing.T) {
 		for _, required := range []string{
 			"同一套工具能力", "参数、环境和权限硬校验",
 			"query-messages", "query-captured-resources", "get-captured-resource",
-			"list-facts", "list-relations", "yield-until", "JARVIS_TASK_ID",
+			"list-facts", "get-page", "update-page", "list-pages", "yield-until", "JARVIS_TASK_ID",
 			"JARVIS_AGENT_STAGE=proactive",
 		} {
 			if !strings.Contains(block, required) {

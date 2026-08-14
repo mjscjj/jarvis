@@ -54,8 +54,6 @@ extract:
   context_messages: 20
   context_window_minutes: 120
   open_todo_limit: 20
-  fact_limit: 15                 # 每主体今天的明细事实上限（排除 rollup；另加前一天 1 条 rollup）
-  key_person_limit: 5            # 推送 person 主体事实时，关键人并集上限
   recent_task_limit: 10          # 推送最近有进展的任务条数上限
   max_prompt_chars: 60000
   semantic_collection: "todo_semantic_volcengine"

@@ -129,7 +129,7 @@ func (s *PipelineStore) loadPrincipal(ctx context.Context) (*PrincipalContext, e
 	principal := &PrincipalContext{
 		OpenID: profile.OpenID, Name: profile.Name,
 		Department: stringValue(profile.Department), Title: stringValue(profile.Title),
-		Background: stringValue(profile.Background), Preferences: stringValue(profile.Preferences),
+		Summary:      stringValue(profile.Summary),
 		LeaderOpenID: stringValue(profile.LeaderOpenID), LeaderName: stringValue(profile.LeaderName),
 	}
 	if principal.LeaderOpenID != "" && principal.LeaderName == "" {
@@ -159,7 +159,6 @@ func (s *PipelineStore) loadProjectSummaries(ctx context.Context) ([]OtherProjec
 		summaries[i] = OtherProjectContext{
 			ID: rows[i].ID, Code: stringValue(rows[i].Code), Name: rows[i].Name,
 			Role: rows[i].Role, Status: rows[i].Status, Priority: rows[i].Priority,
-			Description: stringValue(rows[i].Description),
 		}
 	}
 	return summaries, nil
@@ -266,7 +265,7 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 	}
 	groupContext := GroupContext{
 		ID: group.ID, ChatID: group.ChatID, Name: stringValue(group.Name),
-		Description: stringValue(group.Description), BackgroundNote: stringValue(group.BackgroundNote),
+		Description: stringValue(group.Description), Summary: stringValue(group.Summary),
 		IsKeyGroup: group.IsKeyGroup, ProjectID: copyUint64(group.ProjectID),
 	}
 	recentTasks, err := s.loadRecentTasks(ctx, groupContext, opts.RecentTaskLimit)
@@ -388,14 +387,11 @@ func (s *PipelineStore) enrichParticipants(ctx context.Context, messages []Messa
 		person, ok := byID[openID]
 		participant := ParticipantContext{OpenID: openID, Role: "unknown"}
 		if ok {
-			personID := person.ID
-			participant.PersonID = &personID
 			participant.Name = person.Name
 			participant.Role = person.Role
 			participant.Title = stringValue(person.Title)
+			participant.Summary = stringValue(person.Summary)
 			participant.IsLeader = person.Role == "leader"
-			participant.Relation = stringValue(person.Relation)
-			participant.CommStyle = stringValue(person.CommStyle)
 		}
 		if participant.Name == "" {
 			for _, message := range messages {
@@ -449,43 +445,9 @@ func (s *PipelineStore) loadOpenTodos(ctx context.Context, groupID uint64, limit
 		Order("last_evidence_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load open todos group_id=%d: %w", groupID, err)
 	}
-	assignerOpenIDs := make([]string, 0)
-	seenAssigner := make(map[string]struct{})
-	for _, row := range rows {
-		if row.AssignerOpenID == nil || strings.TrimSpace(*row.AssignerOpenID) == "" {
-			continue
-		}
-		openID := strings.TrimSpace(*row.AssignerOpenID)
-		if _, ok := seenAssigner[openID]; ok {
-			continue
-		}
-		seenAssigner[openID] = struct{}{}
-		assignerOpenIDs = append(assignerOpenIDs, openID)
-	}
-	personByOpenID := map[string]uint64{}
-	if len(assignerOpenIDs) > 0 {
-		var people []domain.Person
-		if err := s.db.WithContext(ctx).Select("id", "open_id").
-			Where("open_id IN ? AND is_active = ?", assignerOpenIDs, true).Find(&people).Error; err != nil {
-			return nil, fmt.Errorf("load open todo assigners group_id=%d: %w", groupID, err)
-		}
-		for _, person := range people {
-			personByOpenID[person.OpenID] = person.ID
-		}
-	}
 	result := make([]OpenTodoContext, len(rows))
 	for i := range rows {
-		item := OpenTodoContext{ID: rows[i].ID, ActionType: rows[i].ActionType, Title: rows[i].Title, Status: rows[i].Status}
-		if rows[i].AssignerOpenID != nil {
-			openID := strings.TrimSpace(*rows[i].AssignerOpenID)
-			if openID != "" {
-				item.AssignerOpenID = &openID
-				if personID, ok := personByOpenID[openID]; ok {
-					item.AssignerPersonID = &personID
-				}
-			}
-		}
-		result[i] = item
+		result[i] = OpenTodoContext{ID: rows[i].ID, ActionType: rows[i].ActionType, Title: rows[i].Title, Status: rows[i].Status}
 	}
 	return result, nil
 }
@@ -579,10 +541,7 @@ func conversationKey(message MessageContext) string {
 func projectContext(project *domain.Project) *ProjectContext {
 	return &ProjectContext{
 		ID: project.ID, Code: stringValue(project.Code), Name: project.Name, Role: project.Role,
-		Status: project.Status, Priority: project.Priority, Description: stringValue(project.Description),
-		Repos: append([]byte(nil), project.Repos...), TechStack: append([]byte(nil), project.TechStack...),
-		KeyDecisions: append([]byte(nil), project.KeyDecisions...), Timeline: append([]byte(nil), project.Timeline...),
-		Notes: stringValue(project.Notes),
+		Status: project.Status, Priority: project.Priority, Summary: stringValue(project.Summary),
 	}
 }
 

@@ -168,7 +168,6 @@ func allModels() []any {
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
 	models = append(models, domain.ExecuteModels()...)
-	models = append(models, domain.KnowledgeModels()...)
 	models = append(models, domain.ProgressModels()...)
 	models = append(models, domain.FactEngineModels()...)
 	return append(models, domain.ProactiveModels()...)

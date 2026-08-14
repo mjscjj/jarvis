@@ -5,8 +5,18 @@ import (
 	"time"
 
 	"jarvis/internal/agentusage"
-	"jarvis/internal/contextsnap"
 )
+
+// FactCount is the only fact signal pushed into the M3 prompt: how many facts
+// a subject already has, so the model drills down with list-facts instead of
+// reading bodies that would make appending cheaper than rewriting summary.
+type FactCount struct {
+	SubjectType string
+	SubjectID   uint64
+	Label       string
+	Today       int
+	Last7Days   int
+}
 
 // Prompt is the provider-independent input to the structured-output model.
 type Prompt struct {
@@ -23,28 +33,23 @@ type LoadOptions struct {
 }
 
 type GroupContext struct {
-	ID             uint64
-	ChatID         string
-	Name           string
-	Description    string // group announcement; a strong signal for project attribution
-	BackgroundNote string // human-curated context that complements the group announcement
-	IsKeyGroup     bool
-	ProjectID      *uint64
+	ID          uint64
+	ChatID      string
+	Name        string
+	Description string // group announcement; a strong signal for project attribution
+	Summary     string
+	IsKeyGroup  bool
+	ProjectID   *uint64
 }
 
 type ProjectContext struct {
-	ID           uint64
-	Code         string
-	Name         string
-	Role         string
-	Status       string
-	Priority     uint8
-	Description  string
-	Repos        []byte
-	TechStack    []byte
-	KeyDecisions []byte
-	Timeline     []byte
-	Notes        string
+	ID       uint64
+	Code     string
+	Name     string
+	Role     string
+	Status   string
+	Priority uint8
+	Summary  string
 }
 
 // OtherProjectContext is the concise projection of a project the group is NOT
@@ -52,13 +57,12 @@ type ProjectContext struct {
 // (so it can attribute a clue to the right area) without the full detail of the
 // bound project.
 type OtherProjectContext struct {
-	ID          uint64
-	Code        string
-	Name        string
-	Role        string
-	Status      string
-	Priority    uint8
-	Description string
+	ID       uint64
+	Code     string
+	Name     string
+	Role     string
+	Status   string
+	Priority uint8
 }
 
 // PrincipalContext is the principal ("me") background fed to the model so
@@ -70,8 +74,7 @@ type PrincipalContext struct {
 	Name         string
 	Department   string
 	Title        string
-	Background   string
-	Preferences  string
+	Summary      string
 	LeaderOpenID string
 	LeaderName   string
 }
@@ -95,15 +98,12 @@ type MessageContext struct {
 }
 
 type ParticipantContext struct {
-	OpenID    string
-	Name      string
-	Role      string
-	Title     string
-	IsLeader  bool
-	Relation  string
-	CommStyle string
-	// PersonID is the person-table id when this open_id is enrolled; nil means
-	// the speaker is unknown to the roster and cannot contribute person facts.
+	OpenID   string
+	Name     string
+	Role     string
+	Title    string
+	IsLeader bool
+	Summary  string
 	PersonID *uint64
 }
 
@@ -119,12 +119,10 @@ type ResourceContext struct {
 }
 
 type OpenTodoContext struct {
-	ID         uint64
-	ActionType string
-	Title      string
-	Status     string
-	// AssignerOpenID / AssignerPersonID are not rendered in the prompt; they
-	// feed key-person fact loading (交办人 ∪ leaders ∪ speakers).
+	ID               uint64
+	ActionType       string
+	Title            string
+	Status           string
 	AssignerOpenID   *string
 	AssignerPersonID *uint64
 }
@@ -163,9 +161,6 @@ type ChatBatch struct {
 type UnitExtraction struct {
 	UnitKey    string
 	Candidates []ResolvedCandidate
-	// Facts are the already-distilled facts about this chat's group and project,
-	// frozen into each Todo's context_snapshot for audit and M5 on-demand lookup.
-	Facts []contextsnap.Fact
 }
 
 type ResolvedCandidate struct {

@@ -29,31 +29,31 @@ principles:
 
 subcommands:
   list-projects          List projects
-  get-project            Get one project's full background
+  get-project            Get one project
   create-project         Create a project from a JSON payload
-  update-project         Replace a project's editable background
+  update-project         Replace a project's control fields
   archive-project        Archive a project
   list-key-matters       List open key matters
-  get-key-matter         Get one key matter's full background
+  get-key-matter         Get one key matter
   create-key-matter      Create a key matter from a JSON payload
-  update-key-matter      Replace a key matter's editable background
+  update-key-matter      Replace a key matter's control fields
   touch-key-matter       Mark an open key matter as freshly active
   close-key-matter       Close a key matter
   list-groups            Search Feishu groups
   get-group              Get one Feishu group by chat_id
   get-context            Assemble current principal/project/chat work context
-  update-group           Replace one group's curated background
+  update-group           Replace one group's control fields
   get-principal          Get the assistant owner's profile
-  update-principal       Replace the assistant owner's profile
+  update-principal       Replace the principal's control fields
   list-persons           List important people, optionally by role
   get-person             Get one person by Feishu open_id
   create-person          Create a person from a JSON payload
-  update-person          Replace a person's editable background
+  update-person          Replace a person's control fields
   delete-person          Delete a person
   query-resources        Query managed resource summaries
   get-resource           Get one managed resource
   create-resource        Create a managed resource
-  update-resource        Replace a managed resource
+  update-resource        Replace a managed resource's control fields
   touch-resource         Mark an enabled managed resource as freshly active
   delete-resource        Delete a managed resource
   query-messages         Query locally captured Feishu messages
@@ -64,13 +64,13 @@ subcommands:
   get-skill              Read one locally managed Skill
   append-shared-memory   Append one entry to shared memory
   append-clue            Hand M2 one observed fact as evidence for M3
+  get-page               Read one entity's long-term fact page
+  update-page            Replace one entity's long-term fact page
+  list-pages             List long-term fact page indexes
+  list-backlinks         List pages that reference an entity
   append-fact            Record one fact about a project, group, person or other subject
   append-facts-batch     Record multiple facts from one JSON array
   list-facts             Read a subject's recorded facts, optionally for one day
-  list-relations         Read relation facts for one entity
-  create-relation        Create a natural-language relation fact
-  update-relation        Replace a relation fact's editable content
-  delete-relation        Delete a relation fact
   list-todos             List action clues, optionally for one day
   get-todo               Get one clue with the details omitted from summaries
   list-tasks             List tasks, optionally for one day
@@ -106,12 +106,11 @@ EOF
       ;;
     get-project) cat <<'EOF'
 usage: jarvis-tools get-project (--id ID | --code CODE) [--config PATH]
-Get one project's full background. Use list-facts and list-relations to drill
-into history and relationships only when needed.
+Get one project. Long-term facts are on get-page; use list-facts for history detail.
 EOF
       ;;
     create-project) payload_help "create-project" "Create one project." ;;
-    update-project) payload_id_help "update-project" "Replace one project's complete editable payload." ;;
+    update-project) payload_id_help "update-project" "Replace one project's control fields. Long-term facts are written with update-page; this payload does not accept summary." ;;
     archive-project) delete_id_help "archive-project" "Archive one project; this does not hard-delete it." ;;
     list-key-matters) cat <<'EOF'
 usage: jarvis-tools list-key-matters [--keyword TEXT] [--limit N] [--config PATH]
@@ -120,12 +119,11 @@ EOF
       ;;
     get-key-matter) cat <<'EOF'
 usage: jarvis-tools get-key-matter --id ID [--config PATH]
-Get one key matter's full background. Use list-facts and list-relations to drill
-into history and relationships only when needed.
+Get one key matter. Long-term facts are on get-page; use list-facts for history detail.
 EOF
       ;;
     create-key-matter) payload_help "create-key-matter" "Create one key matter." ;;
-    update-key-matter) payload_id_help "update-key-matter" "Replace one key matter's complete editable payload." ;;
+    update-key-matter) payload_id_help "update-key-matter" "Replace one key matter's control fields. Long-term facts are written with update-page; this payload does not accept summary." ;;
     touch-key-matter) delete_id_help "touch-key-matter" "Mark one open key matter as freshly active without changing its content." ;;
     close-key-matter) delete_id_help "close-key-matter" "Close one key matter; this does not hard-delete it." ;;
     list-groups) cat <<'EOF'
@@ -145,13 +143,13 @@ chat resolves through its Jarvis group binding. With neither flag, returns the
 principal-level global context.
 EOF
       ;;
-    update-group) payload_id_help "update-group" "Replace one group's curated background fields only." ;;
+    update-group) payload_id_help "update-group" "Replace one group's control fields. Long-term facts are written with update-page; this payload does not accept summary." ;;
     get-principal) cat <<'EOF'
 usage: jarvis-tools get-principal [--config PATH]
 Get the profile of the person Jarvis assists.
 EOF
       ;;
-    update-principal) payload_help "update-principal" "Replace the principal profile." ;;
+    update-principal) payload_help "update-principal" "Replace the principal's control fields. Long-term facts are written with update-page; this payload does not accept summary." ;;
     list-persons) cat <<'EOF'
 usage: jarvis-tools list-persons [--role leader|key|colleague|other]
                                  [--keyword TEXT] [--limit N] [--config PATH]
@@ -160,11 +158,12 @@ EOF
       ;;
     get-person) cat <<'EOF'
 usage: jarvis-tools get-person --open-id OPEN_ID [--config PATH]
-Get one person by exact Feishu open_id. Use list-relations for relationships.
+Get one person by exact Feishu open_id. Long-term facts are on get-page; use
+list-facts for history detail.
 EOF
       ;;
     create-person) payload_help "create-person" "Create one person." ;;
-    update-person) payload_id_help "update-person" "Replace one person's complete editable payload." ;;
+    update-person) payload_id_help "update-person" "Replace one person's control fields. Long-term facts are written with update-page; this payload does not accept summary." ;;
     delete-person) delete_id_help "delete-person" "Delete one person." ;;
     query-resources) cat <<'EOF'
 usage: jarvis-tools query-resources [--project-id ID] [--person-open-id OPEN_ID] [--principal-only] [--keyword TEXT] [--limit N] [--config PATH]
@@ -177,7 +176,7 @@ Get one managed resource in full.
 EOF
       ;;
     create-resource) payload_help "create-resource" "Create one managed resource." ;;
-    update-resource) payload_id_help "update-resource" "Replace one managed resource's editable payload." ;;
+    update-resource) payload_id_help "update-resource" "Replace one managed resource's control fields. Long-term facts are written with update-page; this payload does not accept summary." ;;
     touch-resource) delete_id_help "touch-resource" "Mark one enabled managed resource as freshly active without changing its content." ;;
     delete-resource) delete_id_help "delete-resource" "Delete one managed resource." ;;
     query-messages) cat <<'EOF'
@@ -291,15 +290,37 @@ example:
   jarvis-tools list-facts --subject-type group --subject-id 12 --date 2026-08-02
 EOF
       ;;
-    list-relations) cat <<'EOF'
-usage: jarvis-tools list-relations --entity-type TYPE --entity-id ID
-                                   [--limit N] [--config PATH]
-List relation facts involving one entity. --limit defaults to 20.
+    get-page) cat <<'EOF'
+usage: jarvis-tools get-page --type TYPE --id N [--config PATH]
+Read one entity's long-term fact page. TYPE is principal, person, project,
+key_matter, group or resource. Returns the full summary, character count and
+limit, updated_at for CAS, outbound and back links, and the subject's fact
+count without fact content. Use list-facts for history detail.
 EOF
       ;;
-    create-relation) payload_help "create-relation" "Create one natural-language relation fact." ;;
-    update-relation) payload_id_help "update-relation" "Replace one relation fact's description and validity bounds." ;;
-    delete-relation) delete_id_help "delete-relation" "Delete one relation fact." ;;
+    update-page) cat <<'EOF'
+usage: jarvis-tools update-page --type TYPE --id N --content -|TEXT
+                               --if-unchanged-since TS [--config PATH]
+Replace one entity's long-term fact page. TYPE is principal, person, project,
+key_matter, group or resource. --content - reads stdin. --if-unchanged-since is
+the updated_at from get-page; a 409 response returns the current page so the
+caller can re-merge.
+EOF
+      ;;
+    list-pages) cat <<'EOF'
+usage: jarvis-tools list-pages [--type TYPE] [--all] [--stale-days N]
+                              [--over-limit] [--config PATH]
+List long-term fact page indexes. TYPE is principal, person, project,
+key_matter, group or resource. Default is active entities only; --all includes
+inactive ones. --stale-days and --over-limit are inspection filters.
+EOF
+      ;;
+    list-backlinks) cat <<'EOF'
+usage: jarvis-tools list-backlinks --type TYPE --id N [--config PATH]
+List pages that reference this entity. TYPE is principal, person, project,
+key_matter, group or resource.
+EOF
+      ;;
     list-todos) cat <<'EOF'
 usage: jarvis-tools list-todos [--date YYYY-MM-DD] [--status S] [--limit N] [--config PATH]
 
@@ -603,6 +624,15 @@ read_payload_object() {
   printf '%s' "$payload"
 }
 
+# Entity control-field updates do not write long-term facts. summary belongs to
+# update-page; reject it here rather than let it silently travel to the server.
+forbid_summary_payload() {
+  local command_name="$1" payload="$2"
+  if printf '%s' "$payload" | jq -e 'has("summary")' >/dev/null 2>&1; then
+    fail "${command_name} does not accept summary; use update-page for long-term facts"
+  fi
+}
+
 # emit compact JSON (+ newline) to stdout — the ONLY successful stdout write.
 emit() {
   printf '%s\n' "$1" | jq -c .
@@ -671,6 +701,11 @@ INCLUDE_PROMPT="false"
 MESSAGE_ID=""
 RESOURCE_TYPE=""
 SENDER_OPEN_ID=""
+TYPE=""
+ALL="false"
+STALE_DAYS=""
+OVER_LIMIT="false"
+IF_UNCHANGED_SINCE=""
 
 reset_flags() {
   CONFIG_PATH="$CONFIG_DEFAULT"
@@ -703,6 +738,11 @@ reset_flags() {
   DATE=""
   ENTITY_TYPE=""
   ENTITY_ID=""
+  TYPE=""
+  ALL="false"
+  STALE_DAYS=""
+  OVER_LIMIT="false"
+  IF_UNCHANGED_SINCE=""
   RUN_LIMIT="3"
   EVENT_LIMIT="20"
   INCLUDE_RUN_OUTPUT="false"
@@ -721,9 +761,9 @@ require_command_flag() {
     list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
     get-project) allowed+=" --id --code" ;;
     get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
-    create-project | create-key-matter | update-principal | create-person | create-resource | create-relation | create-task) allowed+=" --payload" ;;
-    update-project | update-key-matter | update-group | update-person | update-resource | update-relation) allowed+=" --id --payload" ;;
-    archive-project | close-key-matter | delete-person | delete-resource | delete-relation) allowed+=" --id" ;;
+    create-project | create-key-matter | update-principal | create-person | create-resource | create-task) allowed+=" --payload" ;;
+    update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
+    archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
     get-group) allowed+=" --chat-id" ;;
     get-context) allowed+=" --chat-id --project-id" ;;
@@ -742,7 +782,9 @@ require_command_flag() {
     append-fact) allowed+=" --subject-type --subject-id --description --occurred-at --source --source-id" ;;
     append-facts-batch) allowed+=" --payload" ;;
     list-facts) allowed+=" --subject-type --subject-id --date --limit" ;;
-    list-relations) allowed+=" --entity-type --entity-id --limit" ;;
+    get-page | list-backlinks) allowed+=" --type --id" ;;
+    update-page) allowed+=" --type --id --content --if-unchanged-since" ;;
+    list-pages) allowed+=" --type --all --stale-days --over-limit" ;;
     list-todos) allowed+=" --date --status --limit" ;;
     get-todo) allowed+=" --id" ;;
     list-tasks) allowed+=" --date --status --limit" ;;
@@ -770,6 +812,14 @@ require_limit() {
   local cmd="$1" value="$2" max="$3"
   [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "${cmd} limit must be a positive integer"
   (( value <= max )) || fail "${cmd} limit must not exceed ${max}"
+}
+
+require_page_type() {
+  local cmd="$1" value="$2"
+  case "$value" in
+    principal|person|project|key_matter|group|resource) ;;
+    *) fail "${cmd} --type must be principal, person, project, key_matter, group or resource" ;;
+  esac
 }
 
 # parse_kv_flag NAME VALUE — supports --name value and --name=value via caller.
@@ -1098,6 +1148,41 @@ consume_flags() {
         SENDER_OPEN_ID="${1#--sender-open-id=}"
         shift
         ;;
+      --type)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        TYPE="$2"
+        shift 2
+        ;;
+      --type=*)
+        TYPE="${1#--type=}"
+        shift
+        ;;
+      --all)
+        ALL="true"
+        shift
+        ;;
+      --stale-days)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        STALE_DAYS="$2"
+        shift 2
+        ;;
+      --stale-days=*)
+        STALE_DAYS="${1#--stale-days=}"
+        shift
+        ;;
+      --over-limit)
+        OVER_LIMIT="true"
+        shift
+        ;;
+      --if-unchanged-since)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        IF_UNCHANGED_SINCE="$2"
+        shift 2
+        ;;
+      --if-unchanged-since=*)
+        IF_UNCHANGED_SINCE="${1#--if-unchanged-since=}"
+        shift
+        ;;
       -*)
         fail "unknown flag: $1"
         ;;
@@ -1210,6 +1295,9 @@ cmd_payload_create() {
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local payload body
   payload="$(read_payload_object "$command_name")"
+  if [[ "$command_name" == "update-principal" ]]; then
+    forbid_summary_payload "$command_name" "$payload"
+  fi
   body="$(api_write "$method" "$path" "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
@@ -1223,6 +1311,11 @@ cmd_payload_by_id() {
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local payload body
   payload="$(read_payload_object "$command_name")"
+  case "$command_name" in
+    update-project|update-key-matter|update-group|update-person|update-resource)
+      forbid_summary_payload "$command_name" "$payload"
+      ;;
+  esac
   body="$(api_write "$method" "${path_prefix}/${ID}" "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
@@ -1721,17 +1814,97 @@ cmd_list_facts() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
-cmd_list_relations() {
+cmd_get_page() {
   reset_flags
-  LIMIT="20"
   consume_flags "$@"
-  [[ -n "$ENTITY_TYPE" ]] || fail "list-relations requires --entity-type"
-  [[ "$ENTITY_ID" =~ ^[1-9][0-9]*$ ]] || fail "list-relations requires positive --entity-id"
-  require_limit list-relations "$LIMIT" 100
+  require_page_type get-page "$TYPE"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-page requires a positive --id"
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local enc_type body
-  enc_type="$(jq -rn --arg s "$ENTITY_TYPE" '$s|@uri')"
-  body="$(api_get "/api/relation-facts?entity_type=${enc_type}&entity_id=${ENTITY_ID}&page=1&page_size=${LIMIT}")"
+  local body
+  body="$(api_get "/api/pages/${TYPE}/${ID}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_update_page() {
+  reset_flags
+  consume_flags "$@"
+  require_page_type update-page "$TYPE"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "update-page requires a positive --id"
+  [[ -n "$IF_UNCHANGED_SINCE" ]] || fail "update-page requires --if-unchanged-since"
+  local content
+  if [[ "$CONTENT" == "-" ]]; then
+    content="$(cat)"
+  else
+    content="$CONTENT"
+  fi
+  content="${content%$'\n'}"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload url body http_code code
+  payload="$(jq -cn --arg content "$content" --arg if_unchanged_since "$IF_UNCHANGED_SINCE" \
+    '{content:$content,if_unchanged_since:$if_unchanged_since}')"
+  url="${API_BASE}/api/pages/${TYPE}/${ID}"
+  body="$(curl -sS -w '\n%{http_code}' --max-time 30 -X PUT \
+    -H 'Content-Type: application/json' --data "$payload" "$url")" || fail "curl failed for ${url}"
+  http_code="$(printf '%s\n' "$body" | tail -n1)"
+  body="$(printf '%s\n' "$body" | sed '$d')"
+  if [[ "$http_code" == "404" ]]; then
+    fail "not found"
+  fi
+  if [[ "$http_code" == "409" ]]; then
+    fail "update-page conflict (HTTP 409); current page: ${body}"
+  fi
+  if [[ "$http_code" != "200" ]]; then
+    fail "HTTP ${http_code} from ${url}: ${body}"
+  fi
+  if printf '%s' "$body" | jq -e . >/dev/null 2>&1; then
+    code="$(printf '%s' "$body" | jq -r '.code // empty')"
+  fi
+  if [[ -z "${code:-}" || "$code" != "0" ]]; then
+    fail "invalid API response from ${url}: ${body}"
+  fi
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_list_pages() {
+  reset_flags
+  consume_flags "$@"
+  if [[ -n "$TYPE" ]]; then
+    require_page_type list-pages "$TYPE"
+  fi
+  if [[ -n "$STALE_DAYS" ]]; then
+    [[ "$STALE_DAYS" =~ ^[1-9][0-9]*$ ]] || fail "list-pages --stale-days must be a positive integer"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local query="" sep="?"
+  if [[ -n "$TYPE" ]]; then
+    query="${query}${sep}type=$(jq -rn --arg s "$TYPE" '$s|@uri')"
+    sep="&"
+  fi
+  if [[ "$ALL" == "true" ]]; then
+    query="${query}${sep}all=true"
+    sep="&"
+  fi
+  if [[ -n "$STALE_DAYS" ]]; then
+    query="${query}${sep}stale_days=${STALE_DAYS}"
+    sep="&"
+  fi
+  if [[ "$OVER_LIMIT" == "true" ]]; then
+    query="${query}${sep}over_limit=true"
+    sep="&"
+  fi
+  local body
+  body="$(api_get "/api/pages${query}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_list_backlinks() {
+  reset_flags
+  consume_flags "$@"
+  require_page_type list-backlinks "$TYPE"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "list-backlinks requires a positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local body
+  body="$(api_get "/api/pages/${TYPE}/${ID}/backlinks")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
@@ -2075,10 +2248,10 @@ case "$SUBCOMMAND" in
   append-fact)          cmd_append_fact "$@" ;;
   append-facts-batch)   cmd_append_facts_batch "$@" ;;
   list-facts)           cmd_list_facts "$@" ;;
-  list-relations)       cmd_list_relations "$@" ;;
-  create-relation)      cmd_payload_create create-relation POST /api/relation-facts "$@" ;;
-  update-relation)      cmd_payload_by_id update-relation PUT /api/relation-facts "$@" ;;
-  delete-relation)      cmd_delete_by_id delete-relation /api/relation-facts "$@" ;;
+  get-page)             cmd_get_page "$@" ;;
+  update-page)          cmd_update_page "$@" ;;
+  list-pages)           cmd_list_pages "$@" ;;
+  list-backlinks)       cmd_list_backlinks "$@" ;;
   list-todos)           cmd_list_todos "$@" ;;
   get-todo)             cmd_get_todo "$@" ;;
   list-tasks)           cmd_list_tasks "$@" ;;

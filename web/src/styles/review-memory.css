@@ -570,6 +570,57 @@
   white-space: pre-wrap;
 }
 
+.summary-page-editor > .ant-card-body {
+  display: grid;
+  gap: 12px;
+}
+
+.summary-page-loading {
+  padding: 24px 0;
+  text-align: center;
+}
+
+.summary-page-heading {
+  margin-bottom: 0;
+}
+
+.summary-page-meter {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.summary-page-meter-warn {
+  color: #ad6800;
+  font-weight: 650;
+}
+
+.summary-page-meter-danger {
+  color: #cf1322;
+  font-weight: 700;
+}
+
+.summary-page-textarea,
+.summary-page-textarea textarea,
+.summary-page-conflict-body,
+.summary-page-conflict-body textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.summary-page-over-limit {
+  display: block;
+}
+
+.summary-page-conflict {
+  display: grid;
+  gap: 8px;
+}
+
+.summary-page-meta {
+  align-items: center;
+}
+
 .key-matter-table .ant-table-cell {
   overflow: hidden;
 }
@@ -613,7 +664,9 @@
   max-width: 920px;
 }
 
-.memory-profile-card + .fact-timeline-card {
+.memory-profile-card + .fact-timeline-card,
+.memory-profile-card + .summary-page-editor,
+.summary-page-editor + .fact-timeline-card {
   margin-top: var(--space-3);
 }
 

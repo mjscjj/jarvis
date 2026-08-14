@@ -23,7 +23,7 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 			}},
 			Participants: []ParticipantContext{{
 				OpenID: "ou_leader", Name: "Leader", Role: "leader", Title: "负责人",
-				IsLeader: true, Relation: "直属领导", CommStyle: "常用简短交办",
+				IsLeader: true, Summary: "直属领导，常用简短交办",
 			}},
 			Resources: []ResourceContext{{
 				ID: 7, ResourceType: "doc", DocToken: "doc_1", Name: "设计文档",
@@ -33,7 +33,7 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 		OpenTodos: []OpenTodoContext{{ID: 8, ActionType: "code_change", Title: "旧鉴权任务", Status: "need_info"}},
 		OtherProjects: []OtherProjectContext{{
 			ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant",
-			Status: "active", Priority: 2, Description: "运行时项目",
+			Status: "active", Priority: 2,
 		}},
 	}
 	prepared, skipped, err := store.prepareResults(context.Background(), batch, []UnitExtraction{{UnitKey: "chat", Candidates: []ResolvedCandidate{resolvedCandidate(candidate)}}})
@@ -55,6 +55,9 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 	}
 	if snapshot.Assigner == nil || snapshot.Assigner.OpenID != "ou_leader" || snapshot.Assigner.Title == nil || *snapshot.Assigner.Title != "负责人" {
 		t.Fatalf("snapshot assigner = %#v", snapshot.Assigner)
+	}
+	if snapshot.Assigner.Summary == nil || *snapshot.Assigner.Summary != "直属领导，常用简短交办" {
+		t.Fatalf("snapshot assigner.summary = %#v", snapshot.Assigner.Summary)
 	}
 	if len(snapshot.Participants) != 1 || len(snapshot.Resources) != 1 || len(snapshot.OpenTodos) != 1 || len(snapshot.OtherProjects) != 1 {
 		t.Fatalf("snapshot did not freeze full M3 context: %#v", snapshot)

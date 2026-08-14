@@ -15,7 +15,6 @@ import (
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
-	"jarvis/internal/knowledge"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
 	"jarvis/internal/sharedmem"
@@ -45,13 +44,13 @@ type Dependencies struct {
 	Resolve            *background.ResolveService
 	Profile            *background.ProfileService
 	Resources          *background.ResourceService
+	Pages              *background.PageService
 	SharedMemory       *sharedmem.SharedMemoryService
 	WorkRules          *workrule.Service
 	TextFiles          *textstore.Service
 	AgentConfig        *agentconfig.Service
 	ScheduledTasks     *scheduledtask.Service
 	Skills             *skill.Service
-	RelationFacts      knowledge.FactService
 	Progress           progress.EventService
 	FactQueries        progress.FactQueryService
 	Overview           *insight.OverviewService
@@ -118,6 +117,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Resources == nil {
 		return fmt.Errorf("api resource service dependency is nil")
 	}
+	if deps.Pages == nil {
+		return fmt.Errorf("api page service dependency is nil")
+	}
 	if deps.SharedMemory == nil {
 		return fmt.Errorf("api shared memory service dependency is nil")
 	}
@@ -135,9 +137,6 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.Skills == nil {
 		return fmt.Errorf("api skill service dependency is nil")
-	}
-	if deps.RelationFacts == nil {
-		return fmt.Errorf("api relation fact service dependency is nil")
 	}
 	if deps.Progress == nil {
 		return fmt.Errorf("api progress service dependency is nil")
@@ -193,10 +192,6 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/tasks/:task_id/supplement", SupplementTask(deps.Tasks))
 	// 撤回任务「对外产出」里的某条飞书消息（走 lark-cli，按钮点击即高危确认）。
 	h.POST("/api/tasks/:task_id/effects/recall-message", RecallEffectMessage(deps.MessageRecaller, deps.Tasks))
-	h.GET("/api/relation-facts", ListRelationFacts(deps.RelationFacts))
-	h.POST("/api/relation-facts", CreateRelationFact(deps.RelationFacts))
-	h.PUT("/api/relation-facts/:fact_id", UpdateRelationFact(deps.RelationFacts))
-	h.DELETE("/api/relation-facts/:fact_id", DeleteRelationFact(deps.RelationFacts))
 	if deps.Executor != nil {
 		h.GET("/api/tasks/:task_id/output", GetTaskRunOutput(deps.Executor))
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
@@ -236,6 +231,10 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.DELETE("/api/persons/:person_id", DeletePerson(deps.Persons))
 	h.GET("/api/groups", ListGroups(deps.Groups))
 	h.PUT("/api/groups/:group_id", UpdateGroupBackground(deps.Groups))
+	h.GET("/api/pages", ListPages(deps.Pages))
+	h.GET("/api/pages/:type/:id", GetPage(deps.Pages))
+	h.PUT("/api/pages/:type/:id", UpdatePage(deps.Pages))
+	h.GET("/api/pages/:type/:id/backlinks", ListPageBacklinks(deps.Pages))
 	// Principal（“我”）：单例 profile，读取 + upsert。
 	h.GET("/api/profile", GetProfile(deps.Profile))
 	h.PUT("/api/profile", UpdateProfile(deps.Profile))

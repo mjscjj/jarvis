@@ -78,7 +78,6 @@ func Migrate(db *gorm.DB) error {
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
 	models = append(models, domain.ExecuteModels()...)
-	models = append(models, domain.KnowledgeModels()...)
 	models = append(models, domain.ProgressModels()...)
 	models = append(models, domain.FactEngineModels()...)
 	models = append(models, domain.ProactiveModels()...)

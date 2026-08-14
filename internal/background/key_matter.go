@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -64,7 +63,7 @@ func (s *KeyMatterService) Create(ctx context.Context, in KeyMatterInput) (*KeyM
 	}
 	now := s.now().UTC()
 	matter := domain.KeyMatter{
-		Title: in.Title, Status: in.Status, Summary: in.Summary,
+		Title: in.Title, Status: in.Status,
 		ProjectID: in.ProjectID, DueAt: in.DueAt, LastActiveAt: now,
 	}
 	if err := s.db.WithContext(ctx).Create(&matter).Error; err != nil {
@@ -145,18 +144,13 @@ func (s *KeyMatterService) Update(ctx context.Context, id uint64, in KeyMatterIn
 		}
 		return nil, fmt.Errorf("load key matter id=%d before update: %w", id, err)
 	}
-	changedFields := keyMatterChangedFields(&before, in)
-	if len(changedFields) == 0 {
+	if before.Title == in.Title && before.Status == in.Status &&
+		sameOptionalUint64(before.ProjectID, in.ProjectID) && sameOptionalTime(before.DueAt, in.DueAt) {
 		return s.Get(ctx, id)
 	}
 	updates := map[string]any{
-		"title": in.Title, "status": in.Status, "summary": in.Summary,
+		"title": in.Title, "status": in.Status,
 		"project_id": in.ProjectID, "due_at": in.DueAt,
-	}
-	summaryChanged := containsField(changedFields, "summary")
-	now := time.Now().UTC()
-	if summaryChanged {
-		updates["last_progress_at"] = now
 	}
 	result := s.db.WithContext(ctx).Model(&domain.KeyMatter{}).Where("id = ?", id).Updates(updates)
 	if result.Error != nil {
@@ -164,28 +158,6 @@ func (s *KeyMatterService) Update(ctx context.Context, id uint64, in KeyMatterIn
 	}
 	if result.RowsAffected != 1 {
 		return nil, fmt.Errorf("update key matter id=%d affected %d rows", id, result.RowsAffected)
-	}
-	if summaryChanged {
-		description := "清空关键事项当前进展。"
-		if in.Summary != nil {
-			description = fmt.Sprintf("关键事项当前进展更新为：%s。", *in.Summary)
-		}
-		if _, err := s.events.AppendFact(ctx, progress.FactInput{
-			SubjectType: "key_matter", SubjectID: id, Description: description,
-			OccurredAt: &now, SourceKind: &factSourceBackground,
-		}); err != nil {
-			return nil, err
-		}
-	}
-	profileFields := withoutField(changedFields, "summary")
-	if len(profileFields) > 0 {
-		if _, err := s.events.AppendFact(ctx, progress.FactInput{
-			SubjectType: "key_matter", SubjectID: id,
-			Description: fmt.Sprintf("更新关键事项资料：%s。", strings.Join(profileFields, "、")),
-			OccurredAt:  &now, SourceKind: &factSourceBackground,
-		}); err != nil {
-			return nil, err
-		}
 	}
 	return s.Get(ctx, id)
 }
@@ -290,35 +262,6 @@ func (s *KeyMatterService) requireOpenCapacity(ctx context.Context) error {
 		return invalid(fmt.Errorf("open key matter limit reached: %d", maxOpenKeyMatters))
 	}
 	return nil
-}
-
-func keyMatterChangedFields(before *domain.KeyMatter, in KeyMatterInput) []string {
-	fields := make([]string, 0, 5)
-	if before.Title != in.Title {
-		fields = append(fields, "title")
-	}
-	if before.Status != in.Status {
-		fields = append(fields, "status")
-	}
-	if !sameOptionalString(before.Summary, in.Summary) {
-		fields = append(fields, "summary")
-	}
-	if !sameOptionalUint64(before.ProjectID, in.ProjectID) {
-		fields = append(fields, "project_id")
-	}
-	if !sameOptionalTime(before.DueAt, in.DueAt) {
-		fields = append(fields, "due_at")
-	}
-	return fields
-}
-
-func containsField(fields []string, target string) bool {
-	for _, field := range fields {
-		if field == target {
-			return true
-		}
-	}
-	return false
 }
 
 func sameOptionalString(left, right *string) bool {

@@ -1,7 +1,6 @@
 package execute
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,17 +181,15 @@ func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
 	groupName := "公会 AI 突击群"
 	assignerName := "测试委托人"
 	assignerRole := "leader"
-	assignerRelation := "manager"
 	snapshot, err := (contextsnap.Snapshot{
 		SnapshotVersion: contextsnap.SnapshotVersion,
 		CapturedAt:      "2026-08-06T03:00:00Z",
-		Principal:       &contextsnap.Principal{OpenID: "ou_principal", Name: "principal", Background: stringPtr("完整个人背景不应进执行简报")},
+		Principal:       &contextsnap.Principal{OpenID: "ou_principal", Name: "principal", Summary: stringPtr("完整个人背景不应进执行简报")},
 		Project: &contextsnap.Project{
 			ID: 7, Code: &projectCode, Name: "Jarvis", Role: "owner", Status: "active",
-			KeyDecisions: json.RawMessage(`[{"decision":"完整项目决策不应进执行简报"}]`),
 		},
 		Group:    &contextsnap.Group{ID: 9, ChatID: "oc_group", Name: &groupName, Description: stringPtr("完整群背景不应进执行简报")},
-		Assigner: &contextsnap.Assigner{OpenID: "ou_assigner", Name: &assignerName, Role: &assignerRole, Relation: &assignerRelation},
+		Assigner: &contextsnap.Assigner{OpenID: "ou_assigner", Name: &assignerName, Role: &assignerRole},
 		Messages: []contextsnap.Message{
 			{MessageID: "om_1", ChatID: "oc_group", SenderOpenID: "ou_sender_1", SenderName: "发送人一", Content: "完整源消息正文必须进入执行简报", CreateTime: 1785985200},
 			{MessageID: "om_1", Content: "重复引用也不应重复输出"},

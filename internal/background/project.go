@@ -1,19 +1,15 @@
 package background
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
-	"strings"
 	"time"
 
 	"jarvis/internal/domain"
 	"jarvis/internal/progress"
 
 	"gorm.io/gorm"
-	"jarvis/internal/datatypes"
 )
 
 // ErrNotFound is returned when a background row does not exist. Callers map it
@@ -71,17 +67,11 @@ func (s *ProjectService) Create(ctx context.Context, in ProjectInput) (*ProjectV
 		return nil, invalid(err)
 	}
 	project := domain.Project{
-		Code:         in.Code,
-		Name:         in.Name,
-		Role:         in.Role,
-		Status:       in.Status,
-		Priority:     in.Priority,
-		Description:  in.Description,
-		Repos:        datatypes.JSON(in.Repos),
-		TechStack:    datatypes.JSON(in.TechStack),
-		KeyDecisions: datatypes.JSON(in.KeyDecisions),
-		Timeline:     datatypes.JSON(in.Timeline),
-		Notes:        in.Notes,
+		Code:     in.Code,
+		Name:     in.Name,
+		Role:     in.Role,
+		Status:   in.Status,
+		Priority: in.Priority,
 	}
 	if err := s.db.WithContext(ctx).Create(&project).Error; err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
@@ -151,25 +141,17 @@ func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput)
 		}
 		return nil, fmt.Errorf("load project id=%d before update: %w", id, err)
 	}
-	changedFields := projectChangedFields(&before, in)
-	if len(changedFields) == 0 {
+	if sameOptionalString(before.Code, in.Code) && before.Name == in.Name && before.Role == in.Role &&
+		before.Status == in.Status && before.Priority == in.Priority {
 		view := toProjectView(&before)
 		return &view, nil
 	}
-	// Explicit column list so an update never silently touches audit columns and
-	// always overwrites JSON fields to NULL when the caller omits them.
 	updates := map[string]any{
-		"code":          in.Code,
-		"name":          in.Name,
-		"role":          in.Role,
-		"status":        in.Status,
-		"priority":      in.Priority,
-		"description":   in.Description,
-		"repos":         datatypes.JSON(in.Repos),
-		"tech_stack":    datatypes.JSON(in.TechStack),
-		"key_decisions": datatypes.JSON(in.KeyDecisions),
-		"timeline":      datatypes.JSON(in.Timeline),
-		"notes":         in.Notes,
+		"code":     in.Code,
+		"name":     in.Name,
+		"role":     in.Role,
+		"status":   in.Status,
+		"priority": in.Priority,
 	}
 	result := s.db.WithContext(ctx).Model(&domain.Project{}).Where("id = ?", id).Updates(updates)
 	if result.Error != nil {
@@ -178,24 +160,12 @@ func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput)
 	if result.RowsAffected != 1 {
 		return nil, fmt.Errorf("update project id=%d affected %d rows", id, result.RowsAffected)
 	}
-	now := time.Now().UTC()
 	if before.Status != in.Status {
+		now := time.Now().UTC()
 		if _, err := s.events.AppendFact(ctx, progress.FactInput{
 			SubjectType: "project",
 			SubjectID:   id,
 			Description: fmt.Sprintf("项目状态从“%s”调整为“%s”。", before.Status, in.Status),
-			OccurredAt:  &now,
-			SourceKind:  &factSourceBackground,
-		}); err != nil {
-			return nil, err
-		}
-	}
-	profileFields := withoutField(changedFields, "status")
-	if len(profileFields) > 0 {
-		if _, err := s.events.AppendFact(ctx, progress.FactInput{
-			SubjectType: "project",
-			SubjectID:   id,
-			Description: fmt.Sprintf("更新项目资料：%s。", strings.Join(profileFields, "、")),
 			OccurredAt:  &now,
 			SourceKind:  &factSourceBackground,
 		}); err != nil {
@@ -272,52 +242,4 @@ func (s *ProjectService) List(ctx context.Context, filter ListFilter) (*ProjectL
 		}
 	}
 	return &ProjectList{Items: toProjectViews(items), Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
-}
-
-func projectChangedFields(before *domain.Project, in ProjectInput) []string {
-	fields := make([]string, 0, 10)
-	if !reflect.DeepEqual(before.Code, in.Code) {
-		fields = append(fields, "code")
-	}
-	if before.Name != in.Name {
-		fields = append(fields, "name")
-	}
-	if before.Role != in.Role {
-		fields = append(fields, "role")
-	}
-	if before.Status != in.Status {
-		fields = append(fields, "status")
-	}
-	if before.Priority != in.Priority {
-		fields = append(fields, "priority")
-	}
-	if !reflect.DeepEqual(before.Description, in.Description) {
-		fields = append(fields, "description")
-	}
-	if !bytes.Equal(before.Repos, in.Repos) {
-		fields = append(fields, "repos")
-	}
-	if !bytes.Equal(before.TechStack, in.TechStack) {
-		fields = append(fields, "tech_stack")
-	}
-	if !bytes.Equal(before.KeyDecisions, in.KeyDecisions) {
-		fields = append(fields, "key_decisions")
-	}
-	if !bytes.Equal(before.Timeline, in.Timeline) {
-		fields = append(fields, "timeline")
-	}
-	if !reflect.DeepEqual(before.Notes, in.Notes) {
-		fields = append(fields, "notes")
-	}
-	return fields
-}
-
-func withoutField(fields []string, excluded string) []string {
-	result := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if field != excluded {
-			result = append(result, field)
-		}
-	}
-	return result
 }
