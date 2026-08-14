@@ -25,11 +25,11 @@ model:
 # 幂等和持久化边界。跑在关键路径之外，一轮失败不影响采集和执行。
 factengine:
   enabled: true
-  schedule: "@every 1m"
+  schedule: "@every 15m"
   rollup_schedule: "0 2 * * *"   # 每天本地 02:00 压缩前一自然日的明细事实
   bin: "traex"
   model: "DeepSeek-V4-Flash"
-  reasoning_effort: "medium"     # 临时追赶积压；兼顾 Flash 速度与 Fact 判断质量
+  reasoning_effort: "medium"     # 兼顾 Flash 速度与 Fact 判断质量
   rollup_model: "DeepSeek-V4-Pro"
   sandbox: "danger-full-access"   # 本地可信环境；抽取时可自跑 jarvis-tools 查已有事实避免重复
   timeout_sec: 1200              # 一次完整世界维护 Agent 会话最多 20 分钟
