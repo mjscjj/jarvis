@@ -13,7 +13,7 @@ fail() {
   exit 1
 }
 
-for command_name in git go install jq; do
+for command_name in git go install jq npm; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: ${command_name}"
 done
 [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] || fail "the Jarvis CC Connect build currently supports macOS arm64 only"
@@ -48,6 +48,11 @@ git -C "$source_dir" apply --check "$PATCH_PATH"
 git -C "$source_dir" apply "$PATCH_PATH"
 (
   cd "$source_dir"
+  (
+    cd web
+    npm install --no-audit --no-fund
+    npm run build
+  )
   go test ./platform/feishu >&2
   build_time="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   go build -tags goolm \

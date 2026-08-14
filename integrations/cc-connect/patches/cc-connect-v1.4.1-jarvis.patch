@@ -1,11 +1,13 @@
 diff --git a/config.example.toml b/config.example.toml
-index cc57caf..1324ecd 100644
+index cc57caf056fca7d9e5a6cb1fe61426424196efc0..00552308e42faf00f615a7333cb72ca2599c7dec 100644
 --- a/config.example.toml
 +++ b/config.example.toml
-@@ -1005,6 +1005,15 @@ app_secret = "your-feishu-app-secret"
+@@ -1005,6 +1005,17 @@ app_secret = "your-feishu-app-secret"
  #                                   # 设为 true 时，群聊内所有用户共享同一个 Agent 会话
  # thread_isolation = false  # If true, group messages use Feishu reply threads as session boundaries (one thread/root = one agent session)
  #                           # 设为 true 时，群聊按飞书话题/根消息隔离会话（一个 thread/root 对应一个 Agent 会话）
++#                           # This does not relax mention filtering: when group_reply_all=false, every message, including attachments, must @mention the bot.
++#                           # 此选项不放宽 @ 过滤：group_reply_all=false 时，每条消息（包括附件）都必须 @机器人。
 +# document_comments = false # Respond when this bot is @mentioned in an unresolved inline docx comment. One project per app_id may enable it.
 +#                           # 响应新版飞书文档未解决的局部评论中的 @机器人；同一 app_id 最多一个项目可开启。
 +# jarvis_approval_url = "http://127.0.0.1:18800/internal/card-approval/callback"
@@ -19,10 +21,10 @@ index cc57caf..1324ecd 100644
  #                           # 默认 true：用「回复消息」API（引用用户消息）。设为 false 则在会话里发普通消息、不引用触发消息。
  # progress_style = "legacy" # Progress rendering style: legacy | compact | card
 diff --git a/docs/feishu.md b/docs/feishu.md
-index b9e871b..5d1af00 100644
+index b9e871bae39aef13e13d70ab5f2f0ff43b57c40b..b0bc91cb5d02eb5b8b55988b1de213d64b38736f 100644
 --- a/docs/feishu.md
 +++ b/docs/feishu.md
-@@ -110,6 +110,10 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
+@@ -110,13 +110,18 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
  # domain = "https://open.feishu.cn" # 可选：覆盖运行时 API/WebSocket 域名
  # enable_feishu_card = true  # 可选：关闭后统一回退纯文本回复
  # thread_isolation = true    # 可选：按飞书 thread/root 隔离群聊会话
@@ -33,10 +35,11 @@ index b9e871b..5d1af00 100644
  # progress_style = "legacy"  # 可选：legacy | compact | card
  # done_emoji = "none"          # 可选：agent 完成回复后添加的表情回复（如 "Done"）；设为 "none" 可禁用
  # image_batch_window_ms = 500  # 可选：连续多图合批窗口（默认 500ms，详见下文）
-@@ -117,6 +121,7 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
+ ```
  
  > 如果应用没有交互卡片权限，或后台未配置卡片回调，可将 `enable_feishu_card = false`，让所有命令统一走纯文本回复，避免卡片发送失败后用户看不到内容。
- > 如果开启 `thread_isolation = true`，群聊里每个根消息 / reply thread 会对应一个独立 agent session；私聊行为保持原样。
+-> 如果开启 `thread_isolation = true`，群聊里每个根消息 / reply thread 会对应一个独立 agent session；私聊行为保持原样。
++> 如果开启 `thread_isolation = true`，群聊里每个根消息 / reply thread 会对应一个独立 agent session；私聊行为保持原样。该选项只改变会话边界，不放宽 @ 过滤：`group_reply_all = false` 时，每条群消息（包括图片、文件、音频和视频）仍须显式 @机器人。
 +> `jarvis_approval_url` 只接管按钮值中 `action="jarvis_approval"` 的卡片。CC Connect 仍是该飞书 app 的唯一 WebSocket 所有者，把点击通过带共享密钥的 localhost HTTP 请求转给 Jarvis；审批落地后读取飞书中的原卡片，保留标题、正文和“查看详情”，只移除已失效的确认/拒绝按钮并追加处理结果。原卡片读取失败时不做整卡替换，避免审批正文消失。普通消息、权限卡片、卡片导航和文档评论不经过这条分支。URL 强制为 localhost，不能配置外网地址。
  > `progress_style = "compact"` 会把思考/工具进度合并到一条可更新消息里，减少刷屏；`legacy` 保持原有逐条发送；`card` 会使用结构化卡片（标题 + 进度块）持续更新同一条消息，观感比纯文本更清晰。
  > `domain` 只影响运行时 API / WebSocket 请求地址；CLI `setup/new/bind` 的引导域名仍然使用内置默认值。
@@ -84,7 +87,7 @@ index b9e871b..5d1af00 100644
  ## 第六步：启动 cc-connect
 diff --git a/platform/feishu/comment.go b/platform/feishu/comment.go
 new file mode 100644
-index 0000000..cf37b6a
+index 0000000000000000000000000000000000000000..cf37b6a07be88a02a72a7f404453d7bb687ccfa1
 --- /dev/null
 +++ b/platform/feishu/comment.go
 @@ -0,0 +1,634 @@
@@ -724,7 +727,7 @@ index 0000000..cf37b6a
 +}
 diff --git a/platform/feishu/comment_test.go b/platform/feishu/comment_test.go
 new file mode 100644
-index 0000000..be492ed
+index 0000000000000000000000000000000000000000..be492ed80400d5459d0fcd9645636a7cf407e80b
 --- /dev/null
 +++ b/platform/feishu/comment_test.go
 @@ -0,0 +1,401 @@
@@ -1130,7 +1133,7 @@ index 0000000..be492ed
 +	}
 +}
 diff --git a/platform/feishu/feishu.go b/platform/feishu/feishu.go
-index bafedee..0e5f87f 100644
+index bafedee0a3dc6d54aa6df456b59c216a968ead6f..acdd81544b8df3e4ab6ea0c63d7893e9ebbc8ba0 100644
 --- a/platform/feishu/feishu.go
 +++ b/platform/feishu/feishu.go
 @@ -130,6 +130,11 @@ type Platform struct {
@@ -1145,16 +1148,27 @@ index bafedee..0e5f87f 100644
  	// noReplyToTrigger: when true, send via Create instead of Im.Message.Reply (no quote to the user's message).
  	noReplyToTrigger bool
  	resolveMentions  bool
-@@ -167,6 +172,8 @@ type Platform struct {
- 	// without requiring another @bot mention. Value is the last-seen time so
- 	// stale entries can be expired by a future TTL sweep if needed.
- 	activeThreadSessions sync.Map // sessionKey -> time.Time
-+	unsupportedComments  sync.Map // commentID -> struct{}
-+	commentRetryDelay    time.Duration
+@@ -158,15 +163,10 @@ type Platform struct {
+ 	isWSPrimary  bool           // true if this platform owns the shared WebSocket connection
+ 	// cardActionMessageIDs tracks the most recent card-action messageID per
+ 	// session key, enabling async card refreshes via the Patch API.
+-	cardActionMsgMu  sync.Mutex
+-	cardActionMsgIDs map[string]string // sessionKey → messageID
+-	// activeThreadSessions tracks thread sessionKeys that have already been
+-	// accepted by the bot. In group chats with thread_isolation, once a thread
+-	// has been engaged (the first @bot message), subsequent attachment-only
+-	// messages (image/file/audio) inside the same thread are passed through
+-	// without requiring another @bot mention. Value is the last-seen time so
+-	// stale entries can be expired by a future TTL sweep if needed.
+-	activeThreadSessions sync.Map // sessionKey -> time.Time
++	cardActionMsgMu     sync.Mutex
++	cardActionMsgIDs    map[string]string // sessionKey → messageID
++	unsupportedComments sync.Map          // commentID -> struct{}
++	commentRetryDelay   time.Duration
  
  	richCardImageMu         sync.Mutex
  	richCardImageResolved   map[string]string
-@@ -306,6 +313,32 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -306,6 +306,32 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  	respondToAtEveryoneAndHere, _ := opts["respond_to_at_everyone_and_here"].(bool)
  	shareSessionInChannel, _ := opts["share_session_in_channel"].(bool)
  	threadIsolation, _ := opts["thread_isolation"].(bool)
@@ -1187,7 +1201,7 @@ index bafedee..0e5f87f 100644
  	resolveMentionsOpt, _ := opts["resolve_mentions"].(bool)
  	noReplyToTrigger := false
  	if v, ok := opts["reply_to_trigger"].(bool); ok && !v {
-@@ -381,6 +414,10 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -381,6 +407,10 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  		respondToAtEveryoneAndHere: respondToAtEveryoneAndHere,
  		shareSessionInChannel:      shareSessionInChannel,
  		threadIsolation:            threadIsolation,
@@ -1198,7 +1212,7 @@ index bafedee..0e5f87f 100644
  		resolveMentions:            resolveMentionsOpt,
  		noReplyToTrigger:           noReplyToTrigger,
  		client:                     lark.NewClient(appID, appSecret, clientOpts...),
-@@ -392,7 +429,9 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -392,7 +422,9 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  		peerBots:                   peerBots,
  		imageBatch:                 make(map[string]*imageBatchEntry),
  		imageBatchWindow:           imageBatchWindow,
@@ -1208,7 +1222,7 @@ index bafedee..0e5f87f 100644
  	if !useInteractiveCard {
  		base.self = base
  		return base, nil
-@@ -469,7 +508,10 @@ func (p *Platform) Start(handler core.MessageHandler) error {
+@@ -469,7 +501,10 @@ func (p *Platform) Start(handler core.MessageHandler) error {
  	// Register for shared WebSocket: multiple projects using the same app_id
  	// share a single WebSocket connection to avoid Feishu's server-side
  	// load-balancing which randomly routes messages across connections.
@@ -1220,7 +1234,7 @@ index bafedee..0e5f87f 100644
  	p.sharedGroup = group
  	p.isWSPrimary = isPrimary
  
-@@ -480,6 +522,17 @@ func (p *Platform) Start(handler core.MessageHandler) error {
+@@ -480,6 +515,17 @@ func (p *Platform) Start(handler core.MessageHandler) error {
  	}
  
  	p.eventHandler = dispatcher.NewEventDispatcher("", p.encryptKey).
@@ -1238,7 +1252,7 @@ index bafedee..0e5f87f 100644
  		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
  			// Fan out to all platforms sharing this WebSocket connection.
  			// Each platform's onMessage applies its own allow_chat filter.
-@@ -649,6 +702,12 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
+@@ -649,6 +695,12 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
  	}
  
  	actionVal, _ := event.Event.Action.Value["action"].(string)
@@ -1251,7 +1265,7 @@ index bafedee..0e5f87f 100644
  
  	// select_static callbacks put the chosen value in event.Event.Action.Option
  	if actionVal == "" && event.Event.Action.Option != "" {
-@@ -871,6 +930,292 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
+@@ -871,6 +923,292 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
  	return nil, nil
  }
  
@@ -1544,7 +1558,47 @@ index bafedee..0e5f87f 100644
  func (p *Platform) addReaction(messageID string) string {
  	return p.addReactionWithEmoji(messageID, p.reactionEmoji)
  }
-@@ -2595,24 +2940,28 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
+@@ -1304,25 +1642,15 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+ 		"thread_isolation", p.threadIsolation,
+ 	)
+ 
+-	// Pre-compute sessionKey so the @bot filter below can consult the active
+-	// thread set; sessionKey is also used downstream for dispatch.
++	// Pre-compute sessionKey for authorization replies and downstream dispatch.
+ 	sessionKey := p.makeSessionKey(msg, chatID, userID)
+ 
+ 	if chatType == "group" && !p.groupReplyAll && p.getBotOpenID() != "" {
+ 		if !isBotMentioned(msg.Mentions, p.getBotOpenID()) {
+-			switch {
+ 			// Feishu @all sends {"text":"@_all"} with 0 mentions.
+-			case p.respondToAtEveryoneAndHere && msg.Content != nil && strings.Contains(*msg.Content, "@_all"):
++			if p.respondToAtEveryoneAndHere && msg.Content != nil && strings.Contains(*msg.Content, "@_all") {
+ 				slog.Debug(p.tag()+": responding to @all message", "chat_id", chatID)
+-			// Once a thread has been engaged via @bot, allow follow-up
+-			// attachment-only messages (image/file/audio) in the same thread
+-			// through without re-mentioning the bot. Plain text and rich-text
+-			// posts still require an explicit @bot to avoid pulling in
+-			// unrelated chatter.
+-			case p.threadIsolation && isAttachmentMsgType(msgType) && p.isActiveThreadSession(sessionKey):
+-				slog.Debug(p.tag()+": passing attachment through active thread without mention",
+-					"chat_id", chatID, "session_key", sessionKey, "msg_type", msgType, "message_id", messageID)
+-			default:
++			} else {
+ 				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)
+ 				return nil
+ 			}
+@@ -1364,10 +1692,6 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+ 		"reply_in_thread", p.shouldReplyInThread(rctx),
+ 	)
+ 
+-	// Mark this thread as bot-engaged so subsequent attachment-only messages
+-	// in the same thread can pass through without re-mentioning the bot.
+-	p.markThreadSessionActive(sessionKey)
+-
+ 	// Dispatch message handling asynchronously so the SDK event loop is not
+ 	// blocked by IO-heavy operations (image/audio download, handler HTTP calls).
+ 	// The dedup and old-message checks above remain synchronous to guarantee
+@@ -2595,24 +2919,28 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
  }
  
  func (p *Platform) Reply(ctx context.Context, rctx any, content string) error {
@@ -1583,7 +1637,7 @@ index bafedee..0e5f87f 100644
  	rc, ok := rctx.(replyContext)
  	if !ok {
  		return fmt.Errorf("%s: invalid reply context type %T", p.tag(), rctx)
-@@ -2632,6 +2981,9 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
+@@ -2632,6 +2960,9 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
  // the interactive card path so the footer can render with text_size:
  // "notation". Falls back to plain Send when the footer is empty.
  func (p *Platform) SendWithStatusFooter(ctx context.Context, rctx any, content, footer string) error {
@@ -1593,7 +1647,46 @@ index bafedee..0e5f87f 100644
  	if strings.TrimSpace(footer) == "" {
  		return p.Send(ctx, rctx, content)
  	}
-@@ -6251,10 +6603,9 @@ func buildRichCardJSONBytes(status core.CardStatus, steps []core.ToolStep, markd
+@@ -3253,38 +3584,6 @@ func isBotMentioned(mentions []*larkim.MentionEvent, botOpenID string) bool {
+ 	return false
+ }
+ 
+-// isAttachmentMsgType reports whether a Feishu message type carries only an
+-// attachment payload (no free-form text the user could use to address another
+-// human). These are the message types we are willing to admit into an
+-// already-engaged thread without an explicit @bot mention.
+-func isAttachmentMsgType(msgType string) bool {
+-	switch msgType {
+-	case "image", "file", "audio", "media":
+-		return true
+-	}
+-	return false
+-}
+-
+-// markThreadSessionActive records that a thread sessionKey has been engaged
+-// by an @bot message, enabling attachment-only follow-ups inside the thread.
+-// No-op when thread isolation is disabled or sessionKey is not a thread key.
+-func (p *Platform) markThreadSessionActive(sessionKey string) {
+-	if !p.threadIsolation || !isThreadSessionKey(sessionKey) {
+-		return
+-	}
+-	p.activeThreadSessions.Store(sessionKey, time.Now())
+-}
+-
+-// isActiveThreadSession reports whether the given sessionKey corresponds to a
+-// thread that has previously been engaged by an @bot message.
+-func (p *Platform) isActiveThreadSession(sessionKey string) bool {
+-	if !p.threadIsolation || !isThreadSessionKey(sessionKey) {
+-		return false
+-	}
+-	_, ok := p.activeThreadSessions.Load(sessionKey)
+-	return ok
+-}
+-
+ // stripMentions processes @mention placeholders (e.g. @_user_1) in text.
+ // The bot's own mention is removed; other user mentions are replaced with
+ // their display name so the agent can see who was referenced.
+@@ -6251,10 +6550,9 @@ func buildRichCardJSONBytes(status core.CardStatus, steps []core.ToolStep, markd
  				continue
  			}
  			footerElements = append(footerElements, map[string]any{
@@ -1607,8 +1700,162 @@ index bafedee..0e5f87f 100644
  			})
  		}
  	}
+diff --git a/platform/feishu/feishu_test.go b/platform/feishu/feishu_test.go
+index 8c0eae916b1b7b4a49f1c955eb1351e6ab3b76e1..9aa044ddba8b476cc682cb2311491d0ef25903da 100644
+--- a/platform/feishu/feishu_test.go
++++ b/platform/feishu/feishu_test.go
+@@ -1007,68 +1007,12 @@ func TestResolveBotSenderName_NilMap(t *testing.T) {
+ 	}
+ }
+ 
+-func TestIsAttachmentMsgType(t *testing.T) {
+-	tests := []struct {
+-		msgType string
+-		want    bool
+-	}{
+-		{"image", true},
+-		{"file", true},
+-		{"audio", true},
+-		{"media", true},
+-		{"text", false},
+-		{"post", false},
+-		{"sticker", false},
+-		{"merge_forward", false},
+-		{"", false},
+-	}
+-	for _, tt := range tests {
+-		if got := isAttachmentMsgType(tt.msgType); got != tt.want {
+-			t.Errorf("isAttachmentMsgType(%q) = %v, want %v", tt.msgType, got, tt.want)
+-		}
+-	}
+-}
+-
+-func TestMarkAndIsActiveThreadSession(t *testing.T) {
+-	const threadKey = "feishu:oc_chat:root:om_root"
+-	const directKey = "feishu:oc_chat:ou_user"
+-
+-	t.Run("thread isolation disabled is no-op", func(t *testing.T) {
+-		p := &Platform{threadIsolation: false}
+-		p.markThreadSessionActive(threadKey)
+-		if p.isActiveThreadSession(threadKey) {
+-			t.Fatal("expected no-op when thread_isolation is off")
+-		}
+-	})
+-
+-	t.Run("non-thread sessionKey is ignored", func(t *testing.T) {
+-		p := &Platform{threadIsolation: true}
+-		p.markThreadSessionActive(directKey)
+-		if p.isActiveThreadSession(directKey) {
+-			t.Fatal("expected non-thread sessionKey to be ignored")
+-		}
+-	})
+-
+-	t.Run("thread sessionKey is recorded", func(t *testing.T) {
+-		p := &Platform{threadIsolation: true}
+-		if p.isActiveThreadSession(threadKey) {
+-			t.Fatal("thread should not be active before mark")
+-		}
+-		p.markThreadSessionActive(threadKey)
+-		if !p.isActiveThreadSession(threadKey) {
+-			t.Fatal("thread should be active after mark")
+-		}
+-	})
+-}
+-
+-// TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention covers the fix
+-// for the case where a user @mentions the bot in a thread, then drops follow-up
+-// images into the same thread without re-mentioning. Pre-fix, those images
+-// were silently dropped by the group @bot filter; post-fix they should pass
+-// through and be dispatched.
+-func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
+-	const appID = "cli_thread_admit"
+-	const appSecret = "secret-thread-admit"
++// TestOnMessageThreadIsolationRequiresMentionForAttachments locks the group
++// trigger boundary: thread isolation changes the session key, not whether a
++// message is admitted. Attachments in an existing thread still require @bot.
++func TestOnMessageThreadIsolationRequiresMentionForAttachments(t *testing.T) {
++	const appID = "cli_thread_strict_mention"
++	const appSecret = "secret-thread-strict-mention"
+ 	const botOpenID = "ou_bot"
+ 	const userOpenID = "ou_user"
+ 	const chatID = "oc_chat"
+@@ -1160,59 +1104,42 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
+ 		},
+ 	}
+ 
+-	// Step 1: opening message @mentions the bot — establishes the thread.
++	// Step 1: an opening text that @mentions the bot is dispatched.
+ 	if err := p.onMessage(context.Background(), buildEvent(rootMsgID, "text", `{"text":"@_user_1 看看这个"}`, botMention, "")); err != nil {
+ 		t.Fatalf("onMessage(root) error = %v", err)
+ 	}
+-	threadKey := "feishu:" + chatID + ":root:" + rootMsgID
+-	if !p.isActiveThreadSession(threadKey) {
+-		t.Fatalf("thread %q should be marked active after @bot text", threadKey)
+-	}
+ 	select {
+ 	case <-received:
+ 	case <-time.After(2 * time.Second):
+ 		t.Fatal("timed out waiting for the opening @bot text to dispatch")
+ 	}
+ 
+-	// Step 2: follow-up image in the same thread, no @mention — should pass through.
++	// Step 2: an image in that same thread without @mention is ignored.
+ 	imgContent := `{"image_key":"` + imageKey + `"}`
+ 	if err := p.onMessage(context.Background(), buildEvent("om_thread_img", "image", imgContent, nil, rootMsgID)); err != nil {
+ 		t.Fatalf("onMessage(image in thread) error = %v", err)
+ 	}
+ 	select {
+ 	case msg := <-received:
+-		if msg.MessageID != "om_thread_img" {
+-			t.Fatalf("expected dispatched image om_thread_img, got %q", msg.MessageID)
+-		}
+-		if len(msg.Images) != 1 {
+-			t.Fatalf("expected dispatched image to carry 1 attachment, got %d", len(msg.Images))
+-		}
+-	case <-time.After(2 * time.Second):
+-		t.Fatal("expected image in active thread to be dispatched without @mention")
+-	}
+-
+-	// Step 3: image in a *different* thread without @mention — should still be dropped.
+-	if err := p.onMessage(context.Background(), buildEvent("om_other_img", "image", imgContent, nil, "om_other_root")); err != nil {
+-		t.Fatalf("onMessage(image in unrelated thread) error = %v", err)
+-	}
+-	select {
+-	case msg := <-received:
+-		t.Fatalf("image in unrelated thread should be dropped, but handler received %q", msg.MessageID)
++		t.Fatalf("image in existing thread without @mention should be dropped, got %q", msg.MessageID)
+ 	case <-time.After(300 * time.Millisecond):
+-		// expected: nothing dispatched
++		// expected
+ 	}
+ 
+-	// Step 4: text without @mention in the active thread — should be dropped
+-	// (only attachments are admitted; otherwise unrelated thread chatter would
+-	// flood the agent).
+-	if err := p.onMessage(context.Background(), buildEvent("om_thread_text", "text", `{"text":"刚才那张图能看到吗"}`, nil, rootMsgID)); err != nil {
+-		t.Fatalf("onMessage(text in thread without mention) error = %v", err)
++	// Step 3: the same attachment type with an explicit @mention is dispatched.
++	if err := p.onMessage(context.Background(), buildEvent("om_mentioned_img", "image", imgContent, botMention, rootMsgID)); err != nil {
++		t.Fatalf("onMessage(mentioned image in thread) error = %v", err)
+ 	}
+ 	select {
+ 	case msg := <-received:
+-		t.Fatalf("text in active thread without @mention should be dropped, got %q", msg.MessageID)
+-	case <-time.After(300 * time.Millisecond):
+-		// expected
++		if msg.MessageID != "om_mentioned_img" {
++			t.Fatalf("expected dispatched image om_mentioned_img, got %q", msg.MessageID)
++		}
++		if len(msg.Images) != 1 {
++			t.Fatalf("expected dispatched image to carry 1 attachment, got %d", len(msg.Images))
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("timed out waiting for explicitly mentioned image to dispatch")
+ 	}
+ }
+ 
 diff --git a/platform/feishu/platform_test.go b/platform/feishu/platform_test.go
-index 0695550..409b8ce 100644
+index 069555030a9b5ef46d77a0bffed2beaf63203b07..409b8ce63c053172377ad35bac4fc6b92848530e 100644
 --- a/platform/feishu/platform_test.go
 +++ b/platform/feishu/platform_test.go
 @@ -5,8 +5,11 @@ import (
@@ -1851,7 +2098,7 @@ index 0695550..409b8ce 100644
  	platformAny, err := New(map[string]any{"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true})
  	if err != nil {
 diff --git a/platform/feishu/ws_shared.go b/platform/feishu/ws_shared.go
-index 3c0bf13..877fb82 100644
+index 3c0bf136abcb49cf2d30a2a0a2926315b4585b1f..877fb8223be9c6539d2cd4d331b2aae2b6ff365c 100644
 --- a/platform/feishu/ws_shared.go
 +++ b/platform/feishu/ws_shared.go
 @@ -1,6 +1,7 @@
@@ -1894,7 +2141,7 @@ index 3c0bf13..877fb82 100644
  
  // unregisterSharedWS removes a platform from its shared group.
 diff --git a/platform/feishu/ws_shared_test.go b/platform/feishu/ws_shared_test.go
-index 9ecf357..5d13670 100644
+index 9ecf357c860d72f824f859769acdda259a0f59fb..5d136706b1e9b1209f89b73b9f2bfe11cc71bf43 100644
 --- a/platform/feishu/ws_shared_test.go
 +++ b/platform/feishu/ws_shared_test.go
 @@ -20,7 +20,10 @@ func TestSharedWSGroup_RegisterAndAllPlatforms(t *testing.T) {
