@@ -79,7 +79,11 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | 页面入口 | `web/src/App.tsx` |
 | Agent 工具 | `internal/toolcatalog/`, `scripts/jarvis-tools` |
 
-有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果。后台保存 runtime settings 后需要重启服务；文档中的配置数值只代表仓库基线，不代表当前进程一定正在使用该值。
+有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 文件按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。
+
+**改本机运行参数改 `conf/config.runtime.yaml`，不要改 `conf/config.yaml`。** 后台设置页保存时会把整份可调参数快照写进 runtime 文件，此后基线里的同名 key 永久失效——这是「改了 `conf/config.yaml` 没有任何效果」的典型原因。基线只负责仓库默认值和 runtime 未覆盖的键（`sqlite.path`、`server.*`、`capture.hot_age_hours` 等）；身份与密钥（`extract.principal_open_id`、`lark_cli.profile`、`card_approval.relay_secret`）只写 runtime 文件，它不进 Git、权限保持 `600`。
+
+后台保存 runtime settings 后需要重启服务；文档中的配置数值只代表仓库基线，不代表当前进程一定正在使用该值。
 
 ## 常见修改入口
 
@@ -89,6 +93,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 - 改审批尺度：`conf/prompts/m5-approval-policy.md`
 - 改严格输出协议/状态路由：`internal/execute/prompt.go`、`internal/execute/store.go`
 - 改工具说明：`internal/toolcatalog/` 或对应 Skill，不把工具手册复制进系统提示词
+- 改调度、并发、超时等运行参数：`conf/config.runtime.yaml` 或后台设置页，改基线 `conf/config.yaml` 对已被 runtime 覆盖的 key 无效
 - 加 HTTP 接口：`internal/api/`，并在 `internal/api/router.go` 注册
 - 改表或字段：`internal/domain/` 与 `internal/store/sqlite.go`
 - 改前端页面：`web/src/`
