@@ -61,8 +61,10 @@ func (f *fakeExtractor) PendingChatIDs(context.Context) ([]string, error) {
 }
 
 type fakeMaterializer struct {
-	calls  chan m5Work
-	result *execute.MaterializationResult
+	calls     chan m5Work
+	result    *execute.MaterializationResult
+	onceStats execute.MaterializationStats
+	onceErr   error
 }
 
 func (f *fakeMaterializer) MaterializeTodo(_ context.Context, todoID uint64, version int32) (*execute.MaterializationResult, error) {
@@ -72,7 +74,7 @@ func (f *fakeMaterializer) MaterializeTodo(_ context.Context, todoID uint64, ver
 }
 
 func (f *fakeMaterializer) MaterializeOnce(context.Context) (execute.MaterializationStats, error) {
-	return execute.MaterializationStats{}, nil
+	return f.onceStats, f.onceErr
 }
 
 type fakeExecutionStore struct {
@@ -406,6 +408,44 @@ func TestCoordinatorReconcileExecuteLoadsDurablePendingTasks(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("pending Task was not recovered")
+	}
+}
+
+// A Todo that cannot become a Task is its own problem. It must not also strand
+// the Tasks that a missed wake-up left sitting in pending, and the retry loop
+// has to stop even though the failed Todo stays `extracted` and keeps loading.
+func TestCoordinatorReconcileExecuteRecoversPendingTasksDespiteMaterializationFailure(t *testing.T) {
+	materializer := &fakeMaterializer{
+		calls:     make(chan m5Work, 1),
+		result:    &execute.MaterializationResult{},
+		onceStats: execute.MaterializationStats{Loaded: 1, Failed: 1},
+		onceErr:   errors.New("todo_id=7 already has a Task"),
+	}
+	store := &fakeExecutionStore{pending: []domain.Task{{ID: 42, Version: 3, Status: "pending"}}}
+	executor := &fakeTaskExecutor{calls: make(chan execute.ExecuteInput, 1)}
+	coordinator, err := newCoordinator(nil, materializer, store, executor, pipelineTestOptions())
+	if err != nil {
+		t.Fatalf("newCoordinator() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := coordinator.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer func() {
+		cancel()
+		coordinator.Wait()
+	}()
+
+	if err := coordinator.ReconcileExecute(ctx); err == nil {
+		t.Fatal("ReconcileExecute() hid the materialization failure")
+	}
+	select {
+	case input := <-executor.calls:
+		if input.TaskID != 42 {
+			t.Fatalf("M5 input = %#v", input)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pending Task was stranded by the materialization failure")
 	}
 }
 

@@ -252,30 +252,44 @@ func (c *Coordinator) ReconcileExtract(ctx context.Context) error {
 	return c.chats.enqueue(ctx, chatWork{All: true, LogID: observability.LogID(ctx)})
 }
 
+// ReconcileExecute runs every compensation step even when an earlier one fails.
+// Materialization used to abort the whole round, so a single Todo that cannot
+// become a Task also stopped the stale-executing sweep and the pending-Task
+// requeue — two recoveries that have nothing to do with that Todo. Failures are
+// collected and returned together instead.
 func (c *Coordinator) ReconcileExecute(ctx context.Context) error {
+	var errs []error
 	if c.materializer != nil {
+		// Loop on progress, not on backlog: Todos that failed stay `extracted`
+		// and would be loaded again forever.
 		for {
 			stats, err := c.materializer.MaterializeOnce(ctx)
 			if err != nil {
-				return err
+				errs = append(errs, err)
 			}
-			if stats.Loaded == 0 {
-				break
+			if stats.Materialized > 0 {
+				c.logf(ctx, "stage=m5 step=materialize trigger=reconcile status=ok materialized=%d failed=%d", stats.Materialized, stats.Failed)
+				continue
 			}
-			c.logf(ctx, "stage=m5 step=materialize trigger=reconcile status=ok materialized=%d", stats.Materialized)
+			if stats.Failed > 0 {
+				c.logf(ctx, "stage=m5 step=materialize trigger=reconcile status=error loaded=%d failed=%d", stats.Loaded, stats.Failed)
+			}
+			break
 		}
 	}
 	if c.executor == nil {
-		return nil
+		return errors.Join(errs...)
 	}
 	sweep, err := c.store.FailStaleExecuting(ctx, c.opts.StaleExecuting, time.Now())
 	if err != nil {
-		return err
-	}
-	if sweep.Failed > 0 || sweep.Requeued > 0 {
+		errs = append(errs, err)
+	} else if sweep.Failed > 0 || sweep.Requeued > 0 {
 		c.logf(ctx, "stage=m5 step=execute trigger=reconcile stale_failed=%d stale_requeued=%d", sweep.Failed, sweep.Requeued)
 	}
-	return c.enqueuePendingTasks(ctx)
+	if err := c.enqueuePendingTasks(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 func (c *Coordinator) ReconcileAll(ctx context.Context) error {

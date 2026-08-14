@@ -24,6 +24,7 @@ type MaterializationResult struct {
 type MaterializationStats struct {
 	Loaded       int
 	Materialized int
+	Failed       int
 }
 
 type Materializer struct {
@@ -47,13 +48,18 @@ func (m *Materializer) MaterializeOnce(ctx context.Context) (MaterializationStat
 		return MaterializationStats{}, fmt.Errorf("load extracted Todos: %w", err)
 	}
 	stats := MaterializationStats{Loaded: len(todos)}
+	// One Todo that cannot be materialized must not hide the rest of the batch:
+	// every failure is reported, but the remaining Todos still get their Task.
+	var errs []error
 	for i := range todos {
 		if _, err := m.MaterializeTodo(ctx, todos[i].ID, todos[i].Version); err != nil {
-			return stats, err
+			stats.Failed++
+			errs = append(errs, fmt.Errorf("materialize todo_id=%d: %w", todos[i].ID, err))
+			continue
 		}
 		stats.Materialized++
 	}
-	return stats, nil
+	return stats, errors.Join(errs...)
 }
 
 func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expectedVersion int32) (*MaterializationResult, error) {
