@@ -36,6 +36,9 @@ func TestMaterializeTodoCarriesExtractionAsSourcePayload(t *testing.T) {
 	if task.TodoID == nil || *task.TodoID != 7 || string(task.SourcePayload) != `{"desired_outcome":"完成目标"}` || task.RepoPath != nil {
 		t.Fatalf("task = %#v source_payload=%s", task, task.SourcePayload)
 	}
+	if string(task.Background) != `{"desired_outcome":"完成目标"}` {
+		t.Fatalf("task = %#v background=%s", task, task.Background)
+	}
 	var todo domain.Todo
 	if err := db.First(&todo, 7).Error; err != nil {
 		t.Fatal(err)
