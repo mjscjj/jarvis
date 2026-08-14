@@ -239,7 +239,7 @@ func TestFactEngineSystemPromptOwnsWorldWriteAndExternalQueryPolicy(t *testing.T
 		t.Fatalf("read FactEngine system prompt: %v", err)
 	}
 	system := string(raw)
-	for _, want := range []string{"写入前读取现值", "写入后立即读回", "不创建、启动、更新或关闭 Todo、Task", "原则上不查询外部系统补证据"} {
+	for _, want := range []string{"写入前读取现值", "写入后立即读回", "不得改用单条 `append-fact`", "不创建、启动、更新或关闭 Todo、Task", "原则上不查询外部系统补证据"} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("FactEngine system prompt missing owned policy %q", want)
 		}

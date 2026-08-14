@@ -261,15 +261,20 @@ Record one batch of facts in one request.
 
   --payload  JSON array of fact objects. Each fact must include
              subject_type, subject_id, description.
-             Optional: occurred_at/source/source_id.
+             Optional: occurred_at, source, source_id.
+             occurred_at defaults to now. source maps to the API's
+             source_kind; when omitted, the current Agent stage supplies the
+             same provenance default as append-fact. source_id must be a
+             positive JSON integer and requires an explicit source.
+             Unknown fields are rejected before the request is sent.
 
   --payload - reads from stdin. Omit it to pass --payload text directly.
 
 example:
   cat <<'TXT' | jarvis-tools append-facts-batch --payload -
   [
-    {"subject_type":"project","subject_id":3,"description":"决议：本周验收窗口已冻结","source":"factengine","source_id":1},
-    {"subject_type":"task","subject_id":18,"description":"开发完成，待验收","source":"factengine","source_id":100}
+    {"subject_type":"project","subject_id":3,"description":"决议：本周验收窗口已冻结"},
+    {"subject_type":"task","subject_id":18,"description":"开发完成，待验收"}
   ]
   TXT
 EOF
@@ -1564,9 +1569,7 @@ cmd_append_clue() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
-# append-fact records one thing that happened about a subject. Facts are the
-# side channel the daily digests read back, so write them as they are learned
-# rather than batching them at the end.
+# append-fact records one thing that happened about a subject.
 cmd_append_fact() {
   reset_flags
   consume_flags "$@"
@@ -1617,16 +1620,65 @@ cmd_append_fact() {
 cmd_append_facts_batch() {
   reset_flags
   consume_flags "$@"
-  local payload
+  local payload occurred_at default_source_kind="" default_source_id="null" normalized
   if [[ "$PAYLOAD" == "-" ]]; then
     payload="$(cat)"
   else
     payload="$PAYLOAD"
   fi
-  printf '%s' "$payload" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1 ||
-    fail "append-facts-batch payload must be a non-empty JSON array"
+  occurred_at="$(date +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
+  if [[ "${JARVIS_TASK_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
+    default_source_kind="task"
+    default_source_id="$JARVIS_TASK_ID"
+  elif [[ "${JARVIS_AGENT_STAGE:-}" == "proactive" ]]; then
+    default_source_kind="proactive"
+  elif [[ "${JARVIS_AGENT_STAGE:-}" == "factengine" ]]; then
+    default_source_kind="factengine"
+  fi
+  normalized="$(printf '%s' "$payload" | jq -ce \
+    --arg occurred_at "$occurred_at" \
+    --arg default_source_kind "$default_source_kind" \
+    --argjson default_source_id "$default_source_id" '
+      def nonblank: type == "string" and test("[^[:space:]]");
+      def positive_integer: type == "number" and . > 0 and floor == .;
+      if type != "array" or length == 0 then
+        error("payload must be a non-empty JSON array")
+      else
+        map(
+          if type != "object" then
+            error("every fact must be a JSON object")
+          elif ((keys_unsorted - ["subject_type", "subject_id", "description", "occurred_at", "source", "source_id"]) | length) != 0 then
+            error("fact contains an unknown field")
+          elif (.subject_type | nonblank) | not then
+            error("subject_type must be a non-empty string")
+          elif (.subject_id | positive_integer) | not then
+            error("subject_id must be a positive integer")
+          elif (.description | nonblank) | not then
+            error("description must be a non-empty string")
+          elif (has("occurred_at") and .occurred_at != null and (.occurred_at | type != "string")) then
+            error("occurred_at must be a string or null")
+          elif (has("source") and .source != null and ((.source | nonblank) | not)) then
+            error("source must be a non-empty string or null")
+          elif (has("source_id") and .source_id != null and ((.source_id | positive_integer) | not)) then
+            error("source_id must be a positive integer or null")
+          elif (has("source_id") and .source_id != null and ((.source // "") == "")) then
+            error("source_id requires an explicit source")
+          else
+            (.source // "") as $source
+            | {
+                subject_type: .subject_type,
+                subject_id: .subject_id,
+                description: .description,
+                occurred_at: (if ((.occurred_at // "") == "") then $occurred_at else .occurred_at end),
+                source_kind: (if $source != "" then $source elif $default_source_kind != "" then $default_source_kind else null end),
+                source_id: (if $source != "" then (.source_id // null) else $default_source_id end)
+              }
+          end
+        )
+      end
+    ')" || fail "append-facts-batch payload is invalid"
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  body="$(api_write POST /api/facts/batch "$payload")"
+  body="$(api_write POST /api/facts/batch "$normalized")"
   emit "$(printf '%s' "$body" | jq -c '.data.items')"
 }
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
@@ -206,6 +207,71 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 			defer server.Close()
 			if _, err := runJarvisTools(t, server.URL, nil, append([]string{tt.command}, tt.args...)...); err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestJarvisToolsAppendFactsBatchNormalizesMachinePayload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/facts/batch" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var payload []map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload) != 2 {
+			t.Fatalf("payload = %#v", payload)
+		}
+		first := payload[0]
+		if first["source_kind"] != "factengine" || first["source_id"] != nil {
+			t.Fatalf("default provenance = %#v", first)
+		}
+		if _, exists := first["source"]; exists {
+			t.Fatalf("payload leaked CLI source field: %#v", first)
+		}
+		occurredAt, ok := first["occurred_at"].(string)
+		if !ok {
+			t.Fatalf("default occurred_at = %#v", first["occurred_at"])
+		}
+		if _, err := time.Parse(time.RFC3339, occurredAt); err != nil {
+			t.Fatalf("default occurred_at = %q: %v", occurredAt, err)
+		}
+		second := payload[1]
+		if second["source_kind"] != "manual_review" || second["source_id"] != float64(7) ||
+			second["occurred_at"] != "2026-08-14T12:34:56+08:00" {
+			t.Fatalf("explicit provenance = %#v", second)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"items":[]}}`)
+	}))
+	defer server.Close()
+	payload := `[
+		{"subject_type":"project","subject_id":1,"description":"事实 A"},
+		{"subject_type":"task","subject_id":2,"description":"事实 B","occurred_at":"2026-08-14T12:34:56+08:00","source":"manual_review","source_id":7}
+	]`
+	if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=factengine"},
+		"append-facts-batch", "--payload", payload); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJarvisToolsAppendFactsBatchRejectsInvalidFieldsBeforeRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+	}{
+		{name: "unknown field", payload: `[{"subject_type":"project","subject_id":1,"description":"事实","fact_type":"decision"}]`},
+		{name: "string source id", payload: `[{"subject_type":"project","subject_id":1,"description":"事实","source":"factengine","source_id":"1"}]`},
+		{name: "source id without source", payload: `[{"subject_type":"project","subject_id":1,"description":"事实","source_id":1}]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := runJarvisTools(t, "http://127.0.0.1:1", []string{"JARVIS_AGENT_STAGE=factengine"},
+				"append-facts-batch", "--payload", tt.payload)
+			if err == nil || !strings.Contains(err.Error(), "payload is invalid") {
+				t.Fatalf("error = %v", err)
 			}
 		})
 	}

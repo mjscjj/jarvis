@@ -132,18 +132,18 @@ Go 只负责以下机器边界：
 
 ### 5.4 Agent 输入、背景与工具
 
-世界维护 Agent 的显式输入是本轮消息原文和 Todo/Task 最终产物增量。Todo/Task 已持久化的背景、快照、来源 payload、计划和执行 prompt 不重复进入本阶段；Agent 通过统一工具目录按需读取 Principal、项目、人物、群、事项、资料、近期 Fact 和关系，再直接调用对应 CRUD 或 `append-fact` 写入。
+世界维护 Agent 的显式输入是本轮消息原文和 Todo/Task 最终产物增量。Todo/Task 已持久化的背景、快照、来源 payload、计划和执行 prompt 不重复进入本阶段；Agent 通过统一工具目录按需读取 Principal、项目、人物、群、事项、资料、近期 Fact 和关系，再直接调用对应 CRUD，并把同一轮新增 Fact 通过一次 `append-facts-batch` 写入。
 
 稳定行为由 `conf/prompts/fact-extract-system-prompt.md` 所有，工具能力由 `internal/toolcatalog` 和 `scripts/jarvis-tools` 所有：
 
 - 写前查询现值和近期事实，确认确有新增或变化；
 - 当前画像、资料和关系用通用 CRUD 维护；
-- 决定、交付、进展、阻塞、承诺和方向变化用 `append-fact` 记录；
+- 决定、交付、进展、阻塞、承诺和方向变化聚合后用一次 `append-facts-batch` 记录，批量失败时不回退到逐条写入；
 - 写后立即读回；
 - 没有新认知时不写，最终回复 `NOTHING`；
 - 不创建或推进 Todo、Task、ScheduledTask，不修改外部系统。
 
-`JARVIS_AGENT_STAGE=factengine` 下调用 `append-fact` 时，工具默认写入 `source_kind=factengine`。最终回复是自然语言审计，Go 不从中解析 Fact，也不因格式问题自动重试。
+`JARVIS_AGENT_STAGE=factengine` 下调用 `append-facts-batch` 时，工具会逐项补齐发生时间并默认写入 `source_kind=factengine`，再把 CLI 的 `source` 规范化为 API 的 `source_kind`。最终回复是自然语言审计，Go 不从中解析 Fact，也不因格式问题自动重试。
 
 ### 5.5 成功、失败与重放
 
