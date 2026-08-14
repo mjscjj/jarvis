@@ -74,6 +74,7 @@ type RuntimeSettings struct {
 	FactEngineSchedule          string `json:"fact_engine_schedule"`
 	FactEngineRollupSchedule    string `json:"fact_engine_rollup_schedule"`
 	FactEngineModel             string `json:"fact_engine_model"`
+	FactEngineReasoningEffort   string `json:"fact_engine_reasoning_effort"`
 	FactEngineRollupModel       string `json:"fact_engine_rollup_model"`
 	FactEngineTimeoutSeconds    int    `json:"fact_engine_timeout_seconds"`
 	FactEngineBatchLimit        int    `json:"fact_engine_batch_limit"`
@@ -235,6 +236,7 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		FactEngineSchedule:           cfg.FactEngine.Schedule,
 		FactEngineRollupSchedule:     cfg.FactEngine.RollupSchedule,
 		FactEngineModel:              cfg.FactEngine.Model,
+		FactEngineReasoningEffort:    cfg.FactEngine.ReasoningEffort,
 		FactEngineRollupModel:        cfg.FactEngine.RollupModel,
 		FactEngineTimeoutSeconds:     cfg.FactEngine.TimeoutSec,
 		FactEngineBatchLimit:         cfg.FactEngine.BatchLimit,
@@ -312,6 +314,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
 	cfg.FactEngine.RollupSchedule = strings.TrimSpace(input.FactEngineRollupSchedule)
 	cfg.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
+	cfg.FactEngine.ReasoningEffort = strings.TrimSpace(input.FactEngineReasoningEffort)
 	cfg.FactEngine.RollupModel = strings.TrimSpace(input.FactEngineRollupModel)
 	cfg.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
 	cfg.FactEngine.BatchLimit = input.FactEngineBatchLimit
@@ -406,6 +409,7 @@ type runtimeOverride struct {
 		Schedule          string `yaml:"schedule"`
 		RollupSchedule    string `yaml:"rollup_schedule"`
 		Model             string `yaml:"model"`
+		ReasoningEffort   string `yaml:"reasoning_effort"`
 		RollupModel       string `yaml:"rollup_model"`
 		TimeoutSec        int    `yaml:"timeout_sec"`
 		BatchLimit        int    `yaml:"batch_limit"`
@@ -495,6 +499,7 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
 	override.FactEngine.RollupSchedule = strings.TrimSpace(input.FactEngineRollupSchedule)
 	override.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
+	override.FactEngine.ReasoningEffort = strings.TrimSpace(input.FactEngineReasoningEffort)
 	override.FactEngine.RollupModel = strings.TrimSpace(input.FactEngineRollupModel)
 	override.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
 	override.FactEngine.BatchLimit = input.FactEngineBatchLimit

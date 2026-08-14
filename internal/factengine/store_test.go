@@ -195,7 +195,7 @@ func TestAdvanceCursorUsesSQLiteUpsertAndNeverMovesBackward(t *testing.T) {
 	}
 }
 
-func TestTodoAndTaskUnitsPassLifecycleEventAndCurrentRow(t *testing.T) {
+func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
@@ -203,10 +203,10 @@ func TestTodoAndTaskUnitsPassLifecycleEventAndCurrentRow(t *testing.T) {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE todo (id INTEGER PRIMARY KEY, title TEXT, description TEXT, action_type TEXT, target TEXT, context TEXT, open_questions JSON, commitment_strength TEXT, source_message_ids JSON, source_quote TEXT, group_id INTEGER, project_id INTEGER, status TEXT, dedup_fingerprint TEXT, revision INTEGER, first_seen_at DATETIME, last_evidence_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE todo (id INTEGER PRIMARY KEY, title TEXT, description TEXT, action_type TEXT, target TEXT, context TEXT, open_questions JSON, commitment_strength TEXT, source_message_ids JSON, source_quote TEXT, group_id INTEGER, project_id INTEGER, status TEXT, dedup_fingerprint TEXT, context_snapshot JSON, extraction_result JSON, resolution JSON, revision INTEGER, first_seen_at DATETIME, last_evidence_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE todo_event (id INTEGER PRIMARY KEY, todo_id INTEGER, from_status TEXT, to_status TEXT, actor TEXT, detail JSON, snapshot JSON, created_at DATETIME)`,
-		`CREATE TABLE task (id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT, action_type TEXT, target TEXT, background JSON, source_payload JSON, source_type TEXT, status TEXT, execution_result JSON, project_id INTEGER, created_at DATETIME, updated_at DATETIME)`,
-		`CREATE TABLE execution_run (id INTEGER PRIMARY KEY, task_id INTEGER, action_type TEXT, stage TEXT, sandbox TEXT, status TEXT, prompt TEXT, summary TEXT, output JSON, effects JSON, started_at DATETIME, finished_at DATETIME, created_at DATETIME)`,
+		`CREATE TABLE task (id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT, action_type TEXT, target TEXT, background JSON, source_payload JSON, source_type TEXT, status TEXT, execution_result JSON, summary TEXT, project_id INTEGER, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE execution_run (id INTEGER PRIMARY KEY, task_id INTEGER, action_type TEXT, stage TEXT, sandbox TEXT, status TEXT, prompt TEXT, summary TEXT, output JSON, effects JSON, error_detail TEXT, started_at DATETIME, finished_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE task_event (id INTEGER PRIMARY KEY, task_id INTEGER, task_version INTEGER, event_type TEXT, from_status TEXT, to_status TEXT, actor_type TEXT, actor_ref TEXT, run_id INTEGER, detail JSON, occurred_at DATETIME, created_at DATETIME)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
@@ -219,7 +219,9 @@ func TestTodoAndTaskUnitsPassLifecycleEventAndCurrentRow(t *testing.T) {
 		ID: 11, Title: "接入通用事实源", Description: "把材料直接交给 Agent", ActionType: "agent_task",
 		Target: "factengine", Context: "完整背景", OpenQuestions: []byte(`[]`), CommitmentStrength: "firm",
 		SourceMessageIDs: []byte(`["om_1"]`), SourceQuote: "全都扔进去", GroupID: &groupID, ProjectID: &projectID,
-		Status: "extracted", DedupFingerprint: strings.Repeat("a", 64), Revision: 1,
+		Status: "extracted", DedupFingerprint: strings.Repeat("a", 64),
+		ContextSnapshot:  []byte(`{"background":"不要进入世界维护材料"}`),
+		ExtractionResult: []byte(`{"decision":"extracted"}`), Resolution: []byte(`{"project":"jarvis"}`), Revision: 1,
 		FirstSeenAt: now, LastEvidenceAt: now, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.Table("todo").Create(map[string]any{
@@ -227,36 +229,38 @@ func TestTodoAndTaskUnitsPassLifecycleEventAndCurrentRow(t *testing.T) {
 		"target": todo.Target, "context": todo.Context, "open_questions": todo.OpenQuestions,
 		"commitment_strength": todo.CommitmentStrength, "source_message_ids": todo.SourceMessageIDs,
 		"source_quote": todo.SourceQuote, "group_id": todo.GroupID, "project_id": todo.ProjectID,
-		"status": todo.Status, "dedup_fingerprint": todo.DedupFingerprint, "revision": todo.Revision,
+		"status": todo.Status, "dedup_fingerprint": todo.DedupFingerprint,
+		"context_snapshot": todo.ContextSnapshot, "extraction_result": todo.ExtractionResult, "resolution": todo.Resolution,
+		"revision":      todo.Revision,
 		"first_seen_at": todo.FirstSeenAt, "last_evidence_at": todo.LastEvidenceAt,
 		"created_at": todo.CreatedAt, "updated_at": todo.UpdatedAt,
 	}).Error; err != nil {
 		t.Fatalf("create todo: %v", err)
 	}
-	todoEvent := domain.TodoEvent{ID: 21, TodoID: todo.ID, ToStatus: "extracted", Actor: "m3", Detail: []byte(`{"kind":"created"}`), Snapshot: []byte(`{"title":"接入通用事实源"}`), CreatedAt: now}
+	todoEvent := domain.TodoEvent{ID: 21, TodoID: todo.ID, ToStatus: "extracted", Actor: "m3", Detail: []byte(`{"kind":"不要进入的过程"}`), Snapshot: []byte(`{"background":"不要进入的历史快照"}`), CreatedAt: now}
 	if err := db.Table("todo_event").Create(map[string]any{
 		"id": todoEvent.ID, "todo_id": todoEvent.TodoID, "to_status": todoEvent.ToStatus,
 		"actor": todoEvent.Actor, "detail": todoEvent.Detail, "snapshot": todoEvent.Snapshot, "created_at": todoEvent.CreatedAt,
 	}).Error; err != nil {
 		t.Fatalf("create todo event: %v", err)
 	}
+	summary := "实现并验证完成"
 	task := domain.Task{
 		ID: 31, TodoID: &todo.ID, Title: "实现通用事实源", ActionType: "agent_task", Target: "factengine",
-		Background: []byte(`{"context":"完整背景"}`), SourcePayload: []byte(`{"title":"接入通用事实源","steps":["实现"]}`),
+		Background: []byte(`{"context":"不要进入的任务背景"}`), SourcePayload: []byte(`{"steps":["不要进入的来源步骤"]}`),
 		SourceType: "todo",
-		Status:     "succeeded", ExecutionResult: []byte(`{"summary":"已经完成"}`), ProjectID: &projectID,
+		Status:     "succeeded", ExecutionResult: []byte(`{"summary":"已经完成"}`), Summary: &summary, ProjectID: &projectID,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.Table("task").Create(map[string]any{
 		"id": task.ID, "todo_id": task.TodoID, "title": task.Title, "action_type": task.ActionType,
 		"target": task.Target, "background": task.Background, "source_payload": task.SourcePayload,
 		"source_type": task.SourceType,
-		"status":      task.Status, "execution_result": task.ExecutionResult, "project_id": task.ProjectID,
+		"status":      task.Status, "execution_result": task.ExecutionResult, "summary": task.Summary, "project_id": task.ProjectID,
 		"created_at": task.CreatedAt, "updated_at": task.UpdatedAt,
 	}).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	summary := "实现并验证完成"
 	run := domain.ExecutionRun{ID: 41, TaskID: task.ID, ActionType: "agent_task", Stage: "execute", Sandbox: "danger-full-access", Status: "succeeded", Prompt: "执行任务", Summary: &summary, Output: []byte(`{"ok":true}`), StartedAt: now, FinishedAt: &now, CreatedAt: now}
 	if err := db.Table("execution_run").Create(map[string]any{
 		"id": run.ID, "task_id": run.TaskID, "action_type": run.ActionType, "stage": run.Stage,
@@ -286,9 +290,14 @@ func TestTodoAndTaskUnitsPassLifecycleEventAndCurrentRow(t *testing.T) {
 	if todoMax != 21 || len(todoUnits) != 1 || todoUnits[0].Source != SourceTodo {
 		t.Fatalf("todo units=%+v max=%d", todoUnits, todoMax)
 	}
-	for _, fragment := range []string{`"event"`, `"current_todo"`, "接入通用事实源", "全都扔进去"} {
+	for _, fragment := range []string{`"event"`, `"todo_result"`, "接入通用事实源", `"decision": "extracted"`, `"project": "jarvis"`} {
 		if !strings.Contains(todoUnits[0].Body, fragment) {
 			t.Fatalf("todo material missing %q:\n%s", fragment, todoUnits[0].Body)
+		}
+	}
+	for _, fragment := range []string{"完整背景", "全都扔进去", "不要进入世界维护材料", "不要进入的过程", "不要进入的历史快照"} {
+		if strings.Contains(todoUnits[0].Body, fragment) {
+			t.Fatalf("todo material contains background %q:\n%s", fragment, todoUnits[0].Body)
 		}
 	}
 
@@ -299,9 +308,14 @@ func TestTodoAndTaskUnitsPassLifecycleEventAndCurrentRow(t *testing.T) {
 	if taskMax != 51 || len(taskUnits) != 1 || taskUnits[0].Source != SourceTask {
 		t.Fatalf("task units=%+v max=%d", taskUnits, taskMax)
 	}
-	for _, fragment := range []string{`"event"`, `"current_task"`, `"execution_run"`, "实现并验证完成"} {
+	for _, fragment := range []string{`"event"`, `"task_result"`, `"run_result"`, "实现并验证完成", `"ok": true`} {
 		if !strings.Contains(taskUnits[0].Body, fragment) {
 			t.Fatalf("task material missing %q:\n%s", fragment, taskUnits[0].Body)
+		}
+	}
+	for _, fragment := range []string{"不要进入的任务背景", "不要进入的来源步骤", "执行任务"} {
+		if strings.Contains(taskUnits[0].Body, fragment) {
+			t.Fatalf("task material contains background %q:\n%s", fragment, taskUnits[0].Body)
 		}
 	}
 }

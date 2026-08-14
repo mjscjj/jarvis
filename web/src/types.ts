@@ -1117,6 +1117,7 @@ export interface RuntimeSettings {
   fact_engine_schedule: string
   fact_engine_rollup_schedule: string
   fact_engine_model: string
+  fact_engine_reasoning_effort: ReasoningEffort
   fact_engine_rollup_model: string
   fact_engine_timeout_seconds: number
   fact_engine_batch_limit: number

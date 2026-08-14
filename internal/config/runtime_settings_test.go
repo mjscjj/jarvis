@@ -22,6 +22,7 @@ factengine:
   rollup_schedule: "0 2 * * *"
   bin: "traex"
   model: "fixture-fact-model"
+  reasoning_effort: "medium"
   rollup_model: "fixture-rollup-model"
   sandbox: "danger-full-access"
   timeout_sec: 300
@@ -180,6 +181,7 @@ dailydigest:
 	input.ExtractSchedule = "@every 2m"
 	input.ExtractConcurrency = 4
 	input.CaptureScanWorkers = 6
+	input.FactEngineReasoningEffort = "high"
 	input.FactEngineWindowMaxMessages = 80
 	input.ProactiveSchedule = "@every 2h"
 	input.ProactiveStartupDelaySeconds = 180
@@ -197,7 +199,7 @@ dailydigest:
 	}
 	if updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
-		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineWindowMaxMessages != 80 ||
+		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
 		updated.Settings.ProactiveSchedule != "@every 2h" || updated.Settings.ProactiveStartupDelaySeconds != 180 ||
 		updated.Settings.LarkRateLimit != 7.5 || updated.Settings.DailyDigestConcurrency != 4 {
 		t.Fatalf("updated settings = %#v", updated.Settings)
@@ -219,7 +221,7 @@ dailydigest:
 	}
 	if reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
-		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.WindowMaxMessages != 80 ||
+		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {
 		t.Fatalf("reloaded config = %#v", reloaded)

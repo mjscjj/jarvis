@@ -67,11 +67,12 @@ type FactEngineConfig struct {
 	// facts for the previous local day.
 	RollupSchedule string `yaml:"rollup_schedule"`
 
-	Bin         string `yaml:"bin"`
-	Model       string `yaml:"model"`
-	RollupModel string `yaml:"rollup_model"`
-	Sandbox     string `yaml:"sandbox"`
-	TimeoutSec  int    `yaml:"timeout_sec"`
+	Bin             string `yaml:"bin"`
+	Model           string `yaml:"model"`
+	ReasoningEffort string `yaml:"reasoning_effort"`
+	RollupModel     string `yaml:"rollup_model"`
+	Sandbox         string `yaml:"sandbox"`
+	TimeoutSec      int    `yaml:"timeout_sec"`
 
 	// BatchLimit supplies the initial rows-per-source candidate. The worker halves
 	// it until the complete rendered material fits MaxMaterialChars; it never
@@ -690,6 +691,9 @@ func (c *Config) validateFactEngine() error {
 	}
 	if c.FactEngine.Model == "" {
 		return fmt.Errorf("factengine.model 不能为空")
+	}
+	if err := validateReasoningEffort("factengine", c.FactEngine.ReasoningEffort); err != nil {
+		return err
 	}
 	if c.FactEngine.RollupModel == "" {
 		return fmt.Errorf("factengine.rollup_model 不能为空")

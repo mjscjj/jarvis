@@ -98,7 +98,7 @@ ExcludeSourceKind *string
 
 Go 只负责以下机器边界：
 
-- 从 `message`、`todo_event`、`task_event` 投影完整原料；
+- 从 `message` 投影原文，从 `todo_event`、`task_event` 投影状态和最终产物；Todo/Task 背景仍保存在原表，不重复送入世界维护；
 - 为三个来源分别保存消费游标；
 - 按配置调度、限制粗粒度批量，并保证同一调度器内不重入；
 - 启动一次完整 Agent 会话，记录成功或失败；
@@ -111,28 +111,28 @@ Go 只负责以下机器边界：
 一次 `Worker.ExtractOnce` 最多启动一个 Agent Session：
 
 1. 按注册顺序读取 message、todo、task 三个来源游标之后的新材料；Message 首次接入从当前最大 ID 起步，Todo/Task 从已有事件继续消费。
-2. 每个来源最多读取 `factengine.batch_limit` 行，当前基线为 50。消息可按对话窗口组成 `SourceUnit`，Todo/Task 可按自然日和完整事件组成 `SourceUnit`；这些只是完整材料边界，不是 Agent 调用边界。
-3. 把所有选中的 `SourceUnit` 合成一个 `WORLD_CHANGES` 用户输入，只启动一个 `DeepSeek-V4-Pro` Agent。
+2. 每个来源最多读取 `factengine.batch_limit` 行，当前基线为 50。消息可按对话窗口组成 `SourceUnit`，Todo/Task 可按自然日和事件结果组成 `SourceUnit`；这些只是材料边界，不是 Agent 调用边界。
+3. 把所有选中的 `SourceUnit` 合成一个 `WORLD_CHANGES` 用户输入，只启动一个 `DeepSeek-V4-Flash` Agent。
 4. 没有新增材料时不调用 Agent。
 
 因此“每一个任务调用一次”“每条事实调用一次”“每个来源调用一次”都不是现行语义。一轮有多少 Message、Todo、Task 不决定调用次数，装箱后的整批才决定一次调用。
 
-### 5.3 160 万字符粗装箱
+### 5.3 80 万字符粗装箱
 
-`factengine.max_material_chars` 当前为 `1600000`，只计算 `WORLD_CHANGES` 用户材料的 Unicode 字符数，不估算 token，也不把系统提示词和工具目录计入这个材料预算。
+`factengine.max_material_chars` 当前为 `800000`，只计算 `WORLD_CHANGES` 用户材料的 Unicode 字符数，不估算 token，也不把系统提示词和工具目录计入这个材料预算。
 
 算法保持简单：
 
 1. 先按 `batch_limit` 读取各来源并渲染完整批次。
-2. 超过 160 万字符时，把各来源共同的候选行上限减半后重新读取，直到批次不超限或行上限降到 1。
+2. 超过 80 万字符时，把各来源共同的候选行上限减半后重新读取，直到批次不超限或行上限降到 1。
 3. 每来源一行合起来仍超限时，只保留能完整装下的来源批；装不下的来源不推进游标，留到下一轮。
-4. 第一条完整材料自身超过 160 万字符时，允许整条超过预算进入 Agent，绝不截断原料。
+4. 第一条完整材料自身超过 80 万字符时，允许整条超过预算进入 Agent，绝不截断原料。
 
-这里故意不引入 tokenizer、精确 token 计算、跨轮分片表、材料摘要器或动态模型路由。160 万字符是保护单次调用规模的粗判断，不是严格上下文上限。
+这里故意不引入 tokenizer、精确 token 计算、跨轮分片表、材料摘要器或动态模型路由。80 万字符是保护单次调用规模的粗判断，不是严格上下文上限。
 
 ### 5.4 Agent 输入、背景与工具
 
-世界维护 Agent 的显式输入是本轮完整增量材料。当前世界背景不在 Go 中为每条材料重新拼装；Agent 通过统一工具目录按需读取 Principal、项目、人物、群、事项、资料、近期 Fact 和关系，再直接调用对应 CRUD 或 `append-fact` 写入。
+世界维护 Agent 的显式输入是本轮消息原文和 Todo/Task 最终产物增量。Todo/Task 已持久化的背景、快照、来源 payload、计划和执行 prompt 不重复进入本阶段；Agent 通过统一工具目录按需读取 Principal、项目、人物、群、事项、资料、近期 Fact 和关系，再直接调用对应 CRUD 或 `append-fact` 写入。
 
 稳定行为由 `conf/prompts/fact-extract-system-prompt.md` 所有，工具能力由 `internal/toolcatalog` 和 `scripts/jarvis-tools` 所有：
 
@@ -153,8 +153,8 @@ Go 只负责以下机器边界：
 
 ### 5.6 模型、调度与观测
 
-- 世界维护模型：`factengine.model=DeepSeek-V4-Pro`。
-- 当前调度：`factengine.schedule=@every 15m`，这是可配置运行频率，不是事实语义边界。
+- 世界维护模型：`factengine.model=DeepSeek-V4-Flash`，临时追赶积压时使用 `factengine.reasoning_effort=medium`。
+- 当前调度：`factengine.schedule=@every 1m`，这是临时追赶期的可配置运行频率，不是事实语义边界。
 - 当前超时：1200 秒。
 - sandbox：`danger-full-access`，以便使用本地通用工具维护内部世界。
 - cron 日志记录 `calls`、`units`、`material_chars`、各来源游标和最终结果字符数。
@@ -191,7 +191,7 @@ Go 只负责以下机器边界：
 
 ### 6.4 配置与手动触发
 
-世界维护使用 `factengine.model=DeepSeek-V4-Pro`，日压缩单独使用 `factengine.rollup_model=DeepSeek-V4-Pro`，两者不共享 Agent Session 或 sandbox。当前 Rollup 调度为每天本地时间 02:00，处理前一自然日；`POST /api/fact-rollups/generate` 接受 `date`，用于手动验证与补算。
+世界维护使用 `factengine.model=DeepSeek-V4-Flash` 和 `factengine.reasoning_effort=medium`，日压缩单独使用 `factengine.rollup_model=DeepSeek-V4-Pro`，两者不共享 Agent Session 或 sandbox。当前 Rollup 调度为每天本地时间 02:00，处理前一自然日；`POST /api/fact-rollups/generate` 接受 `date`，用于手动验证与补算。
 
 ## 7. M3 推送层改造
 

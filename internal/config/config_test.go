@@ -183,6 +183,7 @@ func TestValidate(t *testing.T) {
 		{name: "factengine schedule", mutate: func(c *Config) { c.FactEngine.Schedule = "" }, wantErr: "factengine.schedule"},
 		{name: "factengine bin", mutate: func(c *Config) { c.FactEngine.Bin = "" }, wantErr: "factengine.bin"},
 		{name: "factengine model", mutate: func(c *Config) { c.FactEngine.Model = "" }, wantErr: "factengine.model"},
+		{name: "factengine reasoning", mutate: func(c *Config) { c.FactEngine.ReasoningEffort = "ultra" }, wantErr: "factengine.codex_reasoning_effort"},
 		{name: "factengine rollup model", mutate: func(c *Config) { c.FactEngine.RollupModel = "" }, wantErr: "factengine.rollup_model"},
 		{name: "factengine sandbox", mutate: func(c *Config) { c.FactEngine.Sandbox = "yolo" }, wantErr: "factengine.sandbox"},
 		{name: "factengine timeout", mutate: func(c *Config) { c.FactEngine.TimeoutSec = 0 }, wantErr: "factengine.timeout_sec"},
@@ -323,7 +324,7 @@ func validScheduledTaskConfig() ScheduledTaskConfig {
 func validFactEngineConfig() FactEngineConfig {
 	return FactEngineConfig{
 		Enabled: true, Schedule: "@every 15m", RollupSchedule: "0 2 * * *",
-		Bin: "traex", Model: "fixture-fact-model", RollupModel: "fixture-rollup-model", Sandbox: "danger-full-access", TimeoutSec: 300,
+		Bin: "traex", Model: "fixture-fact-model", ReasoningEffort: "medium", RollupModel: "fixture-rollup-model", Sandbox: "danger-full-access", TimeoutSec: 300,
 		BatchLimit: 200, MaxMaterialChars: 100000, WindowGapMinutes: 30, WindowMaxMessages: 40,
 	}
 }

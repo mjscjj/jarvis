@@ -206,11 +206,12 @@ func main() {
 		fatalf("initialize fact engine store failed: %v", err)
 	}
 	factExtractor, err := factengine.NewExtractor(factengine.ExtractorOptions{
-		Bin:           cfg.FactEngine.Bin,
-		Model:         cfg.FactEngine.Model,
-		Sandbox:       cfg.FactEngine.Sandbox,
-		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
-		Timeout:       time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
+		Bin:             cfg.FactEngine.Bin,
+		Model:           cfg.FactEngine.Model,
+		ReasoningEffort: cfg.FactEngine.ReasoningEffort,
+		Sandbox:         cfg.FactEngine.Sandbox,
+		WorkspaceRoot:   filepath.Dir(filepath.Dir(configPathAbsolute)),
+		Timeout:         time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
 	})
 	if err != nil {
 		fatalf("initialize fact engine extractor failed: %v", err)

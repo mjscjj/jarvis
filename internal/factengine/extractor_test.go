@@ -15,6 +15,7 @@ func TestMaintainerRunsOnePlainAgentSessionAtFactEngineStage(t *testing.T) {
 	observedPath := filepath.Join(root, "observed.txt")
 	binPath := filepath.Join(root, "fake-agent")
 	script := fmt.Sprintf(`#!/bin/sh
+args="$*"
 result=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output-last-message" ]; then
@@ -23,13 +24,16 @@ while [ "$#" -gt 0 ]; do
   fi
   shift
 done
-printf '%%s\n%%s\n' "$PWD" "$JARVIS_AGENT_STAGE" > '%s'
+printf '%%s\n%%s\n%%s\n' "$PWD" "$JARVIS_AGENT_STAGE" "$args" > '%s'
 printf 'updated world model' > "$result"
 `, observedPath)
 	if err := os.WriteFile(binPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	extractor, err := NewExtractor(ExtractorOptions{Bin: binPath, Model: "test", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second})
+	extractor, err := NewExtractor(ExtractorOptions{
+		Bin: binPath, Model: "test", ReasoningEffort: "medium",
+		Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second,
+	})
 	if err != nil {
 		t.Fatalf("NewExtractor: %v", err)
 	}
@@ -48,7 +52,8 @@ printf 'updated world model' > "$result"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(observed) != resolvedRoot+"\nfactengine\n" {
+	if !strings.HasPrefix(string(observed), resolvedRoot+"\nfactengine\n") ||
+		!strings.Contains(string(observed), "-c model_reasoning_effort=medium") {
 		t.Fatalf("observed workspace/stage=%q", observed)
 	}
 }
@@ -95,6 +100,7 @@ func TestNewExtractorValidatesOptions(t *testing.T) {
 		{"no bin", ExtractorOptions{Model: "m", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second}, "bin is required"},
 		{"unknown bin", ExtractorOptions{Bin: "jarvis-no-such-binary", Model: "m", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second}, "find fact extractor binary"},
 		{"no model", ExtractorOptions{Bin: "sh", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second}, "model is required"},
+		{"bad reasoning", ExtractorOptions{Bin: "sh", Model: "m", ReasoningEffort: "ultra", Sandbox: "read-only", WorkspaceRoot: root, Timeout: time.Second}, "reasoning effort"},
 		{"bad sandbox", ExtractorOptions{Bin: "sh", Model: "m", Sandbox: "yolo", WorkspaceRoot: root, Timeout: time.Second}, "sandbox"},
 		{"no timeout", ExtractorOptions{Bin: "sh", Model: "m", Sandbox: "read-only", WorkspaceRoot: root}, "timeout"},
 		{"no workspace", ExtractorOptions{Bin: "sh", Model: "m", Sandbox: "read-only", Timeout: time.Second}, "workspace root"},

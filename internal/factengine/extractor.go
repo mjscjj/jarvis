@@ -17,21 +17,23 @@ const maxExtractorOutputBytes = 1 << 20
 // ExtractorOptions configures the Agent CLI used by world maintenance and the
 // daily rollup. Each caller owns its own Extractor so their models can differ.
 type ExtractorOptions struct {
-	Bin           string
-	Model         string
-	Sandbox       string
-	WorkspaceRoot string
-	Timeout       time.Duration
+	Bin             string
+	Model           string
+	ReasoningEffort string
+	Sandbox         string
+	WorkspaceRoot   string
+	Timeout         time.Duration
 }
 
 // Extractor runs a complete ephemeral Agent session. World maintenance writes
 // through tools and returns an audit message; no semantic output is parsed by Go.
 type Extractor struct {
-	bin     string
-	model   string
-	sandbox string
-	root    string
-	timeout time.Duration
+	bin             string
+	model           string
+	reasoningEffort string
+	sandbox         string
+	root            string
+	timeout         time.Duration
 }
 
 func NewExtractor(opts ExtractorOptions) (*Extractor, error) {
@@ -44,6 +46,14 @@ func NewExtractor(opts ExtractorOptions) (*Extractor, error) {
 	}
 	if strings.TrimSpace(opts.Model) == "" {
 		return nil, fmt.Errorf("fact extractor model is required")
+	}
+	reasoningEffort := strings.TrimSpace(opts.ReasoningEffort)
+	if reasoningEffort != "" {
+		switch reasoningEffort {
+		case "minimal", "low", "medium", "high", "xhigh":
+		default:
+			return nil, fmt.Errorf("fact extractor reasoning effort %q is invalid", reasoningEffort)
+		}
 	}
 	switch opts.Sandbox {
 	case "read-only", "workspace-write", "danger-full-access":
@@ -68,7 +78,10 @@ func NewExtractor(opts ExtractorOptions) (*Extractor, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("fact extractor workspace root %q is not a directory", root)
 	}
-	return &Extractor{bin: bin, model: opts.Model, sandbox: opts.Sandbox, root: root, timeout: opts.Timeout}, nil
+	return &Extractor{
+		bin: bin, model: opts.Model, reasoningEffort: reasoningEffort,
+		sandbox: opts.Sandbox, root: root, timeout: opts.Timeout,
+	}, nil
 }
 
 // Maintain runs one world-maintenance batch. The Agent performs every durable
@@ -102,8 +115,12 @@ func (e *Extractor) run(ctx context.Context, label, prompt string) ([]byte, erro
 	args := []string{
 		"exec", "--ephemeral", "--sandbox", e.sandbox, "--color", "never",
 		"--output-last-message", resultPath,
-		"--model", e.model, "--skip-git-repo-check", "-",
+		"--model", e.model,
 	}
+	if e.reasoningEffort != "" {
+		args = append(args, "-c", "model_reasoning_effort="+e.reasoningEffort)
+	}
+	args = append(args, "--skip-git-repo-check", "-")
 	runCtx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 	command := exec.CommandContext(runCtx, e.bin, args...)
