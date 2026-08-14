@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -215,14 +216,32 @@ func utf8Valid(value string) bool {
 	return !strings.ContainsRune(value, '\uFFFD') && strings.ToValidUTF8(value, "") == value
 }
 
-func TestBuildAgentSystemPromptOwnsDirectFactWrites(t *testing.T) {
+func TestBuildAgentSystemPromptAppendsCapabilityCatalogWithoutStagePolicy(t *testing.T) {
 	prompt, err := buildAgentSystemPrompt("维护长期事实与当前世界状态")
 	if err != nil {
 		t.Fatalf("buildAgentSystemPrompt: %v", err)
 	}
-	for _, want := range []string{"当前阶段：factengine", "通用查询及 CRUD", "`append-fact` 直接写入", "不创建或推进 Task"} {
+	for _, want := range []string{"维护长期事实与当前世界状态", "当前阶段：factengine", "jarvis-tools", "参数、环境和权限硬校验"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{"不创建或推进 Task", "需要补证据时可以只读查询", "确认有新增或变化后再写"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("tool catalog contains FactEngine stage policy %q:\n%s", forbidden, prompt)
+		}
+	}
+}
+
+func TestFactEngineSystemPromptOwnsWorldWriteAndExternalQueryPolicy(t *testing.T) {
+	raw, err := os.ReadFile("../../conf/prompts/fact-extract-system-prompt.md")
+	if err != nil {
+		t.Fatalf("read FactEngine system prompt: %v", err)
+	}
+	system := string(raw)
+	for _, want := range []string{"写入前读取现值", "写入后立即读回", "不创建、启动、更新或关闭 Todo、Task", "原则上不查询外部系统补证据"} {
+		if !strings.Contains(system, want) {
+			t.Fatalf("FactEngine system prompt missing owned policy %q", want)
 		}
 	}
 }

@@ -400,8 +400,6 @@ func TestBuildHumanResumePrompt(t *testing.T) {
 	for _, want := range []string{
 		"我已确认授权，请继续",
 		"phase=resume_human",
-		"同一个 Task、同一个 Session",
-		"不重跑、不重复副作用",
 		"BEGIN_APPROVAL_POLICY",
 		"test approval policy",
 	} {
@@ -435,12 +433,8 @@ func TestBuildExecutionPrompt(t *testing.T) {
 	}
 	for _, want := range []string{
 		"phase=execute",
-		"先完成安全的只读调查",
-		"独立确定真实目标、范围和下一步具体动作",
-		"对下一步受控副作用自己判断是否需要审批",
 		"BEGIN_APPROVAL_POLICY",
 		"修改文件需要审批。",
-		"proposal",
 		"BEGIN_TASK_CONTEXT",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -489,7 +483,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
-	for _, want := range []string{"phase=apply", "已获批准", "不重新拟稿", "不得重复执行", "本周关键进展如下：AAA", "APPROVED_PROPOSAL", "研发群 chat_id=xyz"} {
+	for _, want := range []string{"phase=apply", "本周关键进展如下：AAA", "APPROVED_PROPOSAL", "研发群 chat_id=xyz"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("apply prompt missing %q", want)
 		}

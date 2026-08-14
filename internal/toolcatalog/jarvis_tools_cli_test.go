@@ -24,6 +24,23 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 	}
 }
 
+func TestJarvisToolsCloseTaskHelpContainsOnlyMachineContract(t *testing.T) {
+	out, err := runJarvisTools(t, "", nil, "close-task", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"JARVIS_AGENT_STAGE=proactive", "expected_version", "result.summary", "stage=proactive_closed"} {
+		if !strings.Contains(out, required) {
+			t.Fatalf("close-task help missing machine contract %q:\n%s", required, out)
+		}
+	}
+	for _, forbidden := range []string{"verified completion", "objective invalidation", "Crossing a day", "silence", "not a close reason"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("close-task help contains semantic close policy %q:\n%s", forbidden, out)
+		}
+	}
+}
+
 func TestJarvisToolsRejectsFlagsFromAnotherCommand(t *testing.T) {
 	_, err := runJarvisTools(t, "http://unused.test", nil, "list-projects", "--id", "7")
 	if err == nil || !strings.Contains(err.Error(), "list-projects does not accept --id") {

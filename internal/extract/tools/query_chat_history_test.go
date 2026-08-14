@@ -3,9 +3,19 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestQueryChatHistorySchemaOnlyDescribesEnforcedArguments(t *testing.T) {
+	schema := (&QueryChatHistoryTool{maxLimit: 50}).Schema()
+	properties := schema["properties"].(map[string]any)
+	description := properties["chat_id"].(map[string]any)["description"].(string)
+	if strings.Contains(description, "必须是上下文中出现过") {
+		t.Fatalf("chat_id schema contains an unenforced stage rule: %s", description)
+	}
+}
 
 func TestQueryChatHistoryRejectsBadArgs(t *testing.T) {
 	// db is only touched after argument validation, so a nil-ish tool with a

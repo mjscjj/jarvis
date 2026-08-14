@@ -65,7 +65,7 @@ func (t *QueryChatHistoryTool) Schema() map[string]any {
 		"properties": map[string]any{
 			"chat_id": map[string]any{
 				"type":        "string",
-				"description": "目标群的 chat_id，必须是上下文中出现过的 chat_id。",
+				"description": "要查询的飞书群 chat_id。",
 			},
 			"start_time": map[string]any{
 				"type":        []string{"string", "null"},
