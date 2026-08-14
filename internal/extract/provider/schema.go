@@ -10,35 +10,33 @@ func TodoExtractionJSONSchema() map[string]any {
 		"properties": map[string]any{
 			"action_type": map[string]any{
 				"type":        "string",
-				"description": "线索性质和展示提示，不是 M5 的执行路线。使用小写蛇形标识符；优先用常见类型：code_change/summary_post/investigate/schedule_meeting/reply_message/doc_write/manual_followup，确实不属于时用 other 或自拟贴切标识符。",
+				"description": "用于展示和去重的开放小写蛇形标识符；程序接受未预定义的新值。",
 			},
 			"status": map[string]any{
-				"type": "string",
-				"enum": []string{"extracted", "observing"},
-				"description": "Task 准入结论。extracted：存在需要 Principal 或 Jarvis 介入的未闭环结果，值得启动 M5；" +
-					"observing：值得记住，但当前没有需要 Principal 或 Jarvis 推进的缺口。" +
-					"价值、责任或实现方式仍有不确定性不妨碍 extracted，但必须有可信的未闭环事项；只是可能有用不能准入。",
+				"type":        "string",
+				"enum":        []string{"extracted", "observing"},
+				"description": "M3 输出的 Todo 控制状态；具体选择规则由 M3 系统提示词定义。",
 			},
-			"title": map[string]any{"type": "string", "description": "一句话说清这件事，用于展示。"},
+			"title": map[string]any{"type": "string", "description": "用于展示的简短标题。"},
 			"target": map[string]any{
 				"type":        "string",
-				"description": "这件事作用的对象/主题，作为去重标识。例：agent-runtime 鉴权重构 / Bax 融合讨论会议 / 采集死锁问题。",
+				"description": "用于去重的稳定对象或主题描述。",
 			},
 			"project_hint": map[string]any{
 				"type":        "string",
-				"description": "所属项目的名称或代号；无法判断时写空字符串。",
+				"description": "项目名称或代号；未知时使用空字符串。",
 			},
 			"source_message_ids": map[string]any{
 				"type": "array", "items": map[string]any{"type": "string"},
-				"description": "Evidence message IDs. At least one ID must belong to a [new] message.",
+				"description": "真实证据消息 ID；至少一个必须对应本轮 [new] 消息。",
 			},
 			"source_quote": map[string]any{
 				"type":        "string",
-				"description": "Exact contiguous substring copied verbatim from one cited [new] message; never paraphrase or combine messages.",
+				"description": "从一条被引用的 [new] 消息中逐字连续摘录的原文。",
 			},
 			"payload": map[string]any{
 				"type":        "string",
-				"description": "开放的准入简报，自然语言或 JSON 文本均可，程序不解析并原样交给 M5。写清为什么与 Principal 有关、哪里尚未闭环、当前责任人、已核验事实、status 依据和剩余不确定性；不要写执行计划、候选方案、具体副作用或伪造的最终完成标准。",
+				"description": "原样交给下游的开放文本；程序不解析或重写。",
 			},
 		},
 		"required": []string{
@@ -53,7 +51,7 @@ func TodoExtractionJSONSchema() map[string]any {
 			"candidates": map[string]any{
 				"type":        "array",
 				"items":       candidate,
-				"description": "这批消息里通过 Task 准入判断、值得留下的线索：需要 Principal/Jarvis 介入的写 extracted，只值得记住的写 observing；闲聊、无新增事实和完全无关内容不输出。",
+				"description": "M3 输出的候选线索列表；没有候选时使用空数组。",
 			},
 		},
 		"required": []string{"candidates"},

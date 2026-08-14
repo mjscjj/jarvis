@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -32,25 +33,34 @@ func TestTodoExtractionJSONSchemaIsStrict(t *testing.T) {
 	}
 }
 
-func TestTodoExtractionJSONSchemaDescribesAdmissionNotExecutionPlan(t *testing.T) {
+func TestTodoExtractionJSONSchemaIsMachineEnvelopeOnly(t *testing.T) {
 	properties := TodoExtractionJSONSchema()["properties"].(map[string]any)
-	candidate := properties["candidates"].(map[string]any)["items"].(map[string]any)
+	candidates := properties["candidates"].(map[string]any)
+	candidate := candidates["items"].(map[string]any)
 	fields := candidate["properties"].(map[string]any)
 	status := fields["status"].(map[string]any)["description"].(string)
 	payload := fields["payload"].(map[string]any)["description"].(string)
-	for _, want := range []string{"Task 准入结论", "未闭环结果", "只是可能有用不能准入"} {
-		if !strings.Contains(status, want) {
-			t.Fatalf("status description missing %q: %s", want, status)
-		}
+	if !strings.Contains(status, "控制状态") || !strings.Contains(status, "系统提示词定义") {
+		t.Fatalf("status description does not delegate semantics to the system prompt: %s", status)
 	}
-	for _, want := range []string{"开放的准入简报", "当前责任人", "不要写执行计划"} {
-		if !strings.Contains(payload, want) {
-			t.Fatalf("payload description missing %q: %s", want, payload)
-		}
+	if !strings.Contains(payload, "开放文本") || !strings.Contains(payload, "不解析或重写") {
+		t.Fatalf("payload description is not an opaque transport contract: %s", payload)
 	}
-	for _, forbidden := range []string{"候选路径", "最终要达成的现实结果"} {
-		if strings.Contains(payload, forbidden) {
-			t.Fatalf("payload description still contains execution-stage requirement %q: %s", forbidden, payload)
+	if description := candidates["description"].(string); !strings.Contains(description, "没有候选时使用空数组") {
+		t.Fatalf("candidates description does not define the empty representation: %s", description)
+	}
+
+	encoded, err := json.Marshal(TodoExtractionJSONSchema())
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	text := string(encoded)
+	for _, forbidden := range []string{
+		"闲聊", "值得启动", "未闭环", "只是可能有用", "需要 Principal", "需要 Jarvis",
+		"准入结论", "当前责任人", "执行计划", "候选方案", "最终完成标准",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("machine schema contains admission semantic %q: %s", forbidden, text)
 		}
 	}
 }
