@@ -28,7 +28,7 @@ index cc57caf..9e94a0d 100644
  #                           # 默认 true：用「回复消息」API（引用用户消息）。设为 false 则在会话里发普通消息、不引用触发消息。
  # progress_style = "legacy" # Progress rendering style: legacy | compact | card
 diff --git a/docs/feishu.md b/docs/feishu.md
-index b9e871b..b50b17a 100644
+index b9e871b..6be9304 100644
 --- a/docs/feishu.md
 +++ b/docs/feishu.md
 @@ -110,13 +110,23 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
@@ -52,7 +52,7 @@ index b9e871b..b50b17a 100644
 +> 如果开启 `thread_isolation = true`，群聊里每个根消息 / reply thread 会对应一个独立 agent session；私聊行为保持原样。该选项只改变会话边界，不放宽 @ 过滤：`group_reply_all = false` 时，每条群消息（包括图片、文件、音频和视频）仍须显式 @机器人。
 +> `jarvis_approval_url` 只接管按钮值中 `action="jarvis_approval"` 的卡片。CC Connect 仍是该飞书 app 的唯一 WebSocket 所有者，把点击通过带共享密钥的 localhost HTTP 请求转给 Jarvis；审批落地后读取飞书中的原卡片，保留标题、正文和“查看详情”，只移除已失效的确认/拒绝按钮并追加处理结果。原卡片读取失败时不做整卡替换，避免审批正文消失。普通消息、权限卡片、卡片导航和文档评论不经过这条分支。URL 强制为 localhost，不能配置外网地址。
 +> `jarvis_route_claim_url` 不接管 Agent 执行。CC Connect 完成白名单、群聊 @ 和会话过滤后，先同步把当前消息标记为已由交互链路接管，再继续走原生 CC Agent/session；失败时停止本条分发并明确回复错误。route claim 请求本身不携带历史、不创建 Jarvis Task，也不改变 Jarvis 的 M2 监听范围。URL 强制为 localhost，不能配置外网地址。
-+> 启用 `jarvis_route_claim_url` 后，群聊直接请求还会在进入 Agent 前从飞书实时读取最多 24 条前序消息，与当前消息组成最多 25 条会话证据。普通群使用 chat 容器，话题和回复使用 thread 容器；历史内容只注入当前 Agent turn，不随 route claim 写入 Jarvis。
++> 启用 `jarvis_route_claim_url` 后，群聊直接请求还会在进入 Agent 前从飞书实时读取最多 14 条前序消息，与当前消息组成最多 15 条会话证据。普通群使用 chat 容器，话题和回复使用 thread 容器；历史内容只注入当前 Agent turn，不随 route claim 写入 Jarvis。
  > `progress_style = "compact"` 会把思考/工具进度合并到一条可更新消息里，减少刷屏；`legacy` 保持原有逐条发送；`card` 会使用结构化卡片（标题 + 进度块）持续更新同一条消息，观感比纯文本更清晰。
  > `domain` 只影响运行时 API / WebSocket 请求地址；CLI `setup/new/bind` 的引导域名仍然使用内置默认值。
  > `done_emoji` 设置后，agent 每次完成回复时会在用户消息上添加指定表情（如 `"Done"` → ✅）。先移除 "OnIt" 表情（如果有），再添加 done 表情。在 quiet 模式下特别有用，因为飞书卡片原地更新不触发推送，done 表情可以通知用户 agent 已完成。设为 `"none"` 或不配置则禁用。
@@ -2121,7 +2121,7 @@ index 8c0eae9..9aa044d 100644
  
 diff --git a/platform/feishu/live_context.go b/platform/feishu/live_context.go
 new file mode 100644
-index 0000000..bc935c3
+index 0000000..fca547f
 --- /dev/null
 +++ b/platform/feishu/live_context.go
 @@ -0,0 +1,296 @@
@@ -2138,7 +2138,7 @@ index 0000000..bc935c3
 +	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 +)
 +
-+const feishuConversationMessageLimit = 25
++const feishuConversationMessageLimit = 15
 +
 +type feishuLiveContextMessage struct {
 +	MessageID    string          `json:"message_id"`
@@ -2423,7 +2423,7 @@ index 0000000..bc935c3
 +}
 diff --git a/platform/feishu/live_context_test.go b/platform/feishu/live_context_test.go
 new file mode 100644
-index 0000000..fe33f74
+index 0000000..9081517
 --- /dev/null
 +++ b/platform/feishu/live_context_test.go
 @@ -0,0 +1,141 @@
@@ -2499,7 +2499,7 @@ index 0000000..fe33f74
 +	}
 +}
 +
-+func TestFetchFeishuLiveContextReturnsTwentyFourPreviousMessages(t *testing.T) {
++func TestFetchFeishuLiveContextReturnsFourteenPreviousMessages(t *testing.T) {
 +	items := make([]any, 0, 30)
 +	for index := 30; index >= 1; index-- {
 +		messageID := fmt.Sprintf("om_%02d", index)
@@ -2529,7 +2529,7 @@ index 0000000..fe33f74
 +	if err != nil {
 +		t.Fatalf("fetchFeishuLiveContext() error = %v", err)
 +	}
-+	if len(messages) != 24 || messages[0].MessageID != "om_06" || messages[23].MessageID != "om_29" {
++	if len(messages) != 14 || messages[0].MessageID != "om_16" || messages[13].MessageID != "om_29" {
 +		t.Fatalf("context bounds = len:%d first:%#v last:%#v", len(messages), messages[0], messages[len(messages)-1])
 +	}
 +}

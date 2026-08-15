@@ -81,7 +81,7 @@ M2 有两个事实入口：
 
 M2 保存原文、来源、外部幂等键和资源引用，成功后唤醒 M3。它不解释错误语义、不决定是否值得做、不创建 Todo、不为会议/邮件等来源增加专用状态机。
 
-Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。CC Connect 完成发送者、会话和 @ 过滤后，对自己接受的消息先同步调用 `/internal/message-routing/claim`：只把当前 `message_id` 标记为 `extraction_skipped`，再继续由 CC 原生 Agent/session 处理。claim 本身不携带历史、不创建 Task、不唤醒 M3，也不修改 `related_group`。群聊 Agent turn 的会话证据在传输层从飞书实时读取：普通群取 chat 中截至当前消息的最近记录，话题/回复取对应 thread，最多 24 条前序消息；这些历史不会写进 Jarvis `message` 表。传输上下文同时提供 `chat_id`，供 Agent 用 `get-context --chat-id` 读取当前群绑定的世界上下文。
+Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。CC Connect 完成发送者、会话和 @ 过滤后，对自己接受的消息先同步调用 `/internal/message-routing/claim`：只把当前 `message_id` 标记为 `extraction_skipped`，再继续由 CC 原生 Agent/session 处理。claim 本身不携带历史、不创建 Task、不唤醒 M3，也不修改 `related_group`。群聊 Agent turn 的会话证据在传输层从飞书实时读取：普通群取 chat 中截至当前消息的最近记录，话题/回复取对应 thread，最多 14 条前序消息；这些历史不会写进 Jarvis `message` 表。传输上下文同时提供 `chat_id`，供 Agent 用 `get-context --chat-id` 读取当前群绑定的世界上下文。
 
 M2 按 `scan_schedule` 增量轮询已关联会话并按飞书 `message_id` 幂等落库；普通群和私聊按会话消息流增量读取，话题群按消息自身时间搜索，因此旧话题中的新回复不会受话题根消息水位影响。CC 未接受的普通群消息继续通过这条通用流水线；需要进入 M2 的其它实时外部事实仍只能经明确的本机 fan-out 接口转发，不能恢复第二条同 app 长连接。资源链路只稳定采集引用元数据；通用下载、正文回填和内容哈希复用尚未形成完整生产链路。
 
