@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"jarvis/internal/domain"
 	"jarvis/internal/observability"
@@ -31,8 +32,31 @@ var taskStatuses = map[string]struct{}{
 	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {}, "observing": {},
 }
 
+// TaskSummaryMaxChars caps Task.summary. M5 rewrites the summary in full on
+// every run, and every Task's summary is injected into every other Task's
+// current_world, so an uncapped summary leaks into every future prompt. The
+// ceiling is the mechanism: without one the agent keeps appending instead of
+// restating where the matter stands.
+const TaskSummaryMaxChars = 1000
+
+// validateTaskSummary carries no sentinel of its own: the caller decides whether
+// an over-limit summary is a rejected input (store) or a broken agent contract
+// worth a rewrite (result parser).
+func validateTaskSummary(summary string) error {
+	n := utf8.RuneCountInString(summary)
+	if n > TaskSummaryMaxChars {
+		return fmt.Errorf("summary 有 %d 字符，上限 %d。请先压缩：把已经结束的细节合并成一句结论、删掉不再影响后续判断的过程，再重新提交",
+			n, TaskSummaryMaxChars)
+	}
+	return nil
+}
+
 type TaskFilter struct {
-	Statuses []string
+	Statuses  []string
+	ProjectID *uint64
+	// GroupID matches through the source Todo: a Task has no group of its own,
+	// and manual/scheduled/proactive Tasks legitimately belong to no group.
+	GroupID *uint64
 	// From / Until narrow by COALESCE(last_progress_at, created_at) as a
 	// half-open RFC3339 window. Callers own the timezone.
 	From     *time.Time
@@ -227,6 +251,15 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 	if len(filter.Statuses) > 0 {
 		query = query.Where("status IN ?", filter.Statuses)
 	}
+	if filter.ProjectID != nil {
+		query = query.Where("project_id = ?", *filter.ProjectID)
+	}
+	if filter.GroupID != nil {
+		// Subquery rather than JOIN: Count and Find below both run off this same
+		// query, and a JOIN would make their column sets diverge.
+		query = query.Where("todo_id IN (?)",
+			s.db.WithContext(ctx).Model(&domain.Todo{}).Select("id").Where("group_id = ?", *filter.GroupID))
+	}
 	if filter.From != nil {
 		query = query.Where("COALESCE(last_progress_at, created_at) >= ?", filter.From.UTC())
 	}
@@ -378,6 +411,9 @@ func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) 
 	if !ok || summary == "" {
 		return nil, fmt.Errorf("%w: close result.summary is required", ErrInvalidInput)
 	}
+	if err := validateTaskSummary(summary); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
 	var closed domain.Task
 	var occurredAt time.Time
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -497,6 +533,9 @@ func (s *Store) UpdateTask(ctx context.Context, input TaskUpdateInput) (*TaskVie
 		if summary == "" {
 			return nil, fmt.Errorf("%w: summary must be non-blank", ErrInvalidInput)
 		}
+		if err := validateTaskSummary(summary); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		}
 		if task.Summary == nil || strings.TrimSpace(*task.Summary) != summary {
 			updates["summary"] = summary
 			updates["last_progress_at"] = time.Now().UTC()
@@ -564,6 +603,13 @@ func (s *Store) RecordProgress(ctx context.Context, taskID uint64, summary strin
 	summary = strings.TrimSpace(summary)
 	if summary == "" {
 		return nil
+	}
+	// The result parser already rejected an over-limit progress_summary and gave
+	// the session a chance to compact it, so reaching here means the summary
+	// arrived by some other route. Reject rather than truncate: the Task keeps a
+	// readable previous standing, whereas a sentence cut in half is unusable.
+	if err := validateTaskSummary(summary); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	var task domain.Task
 	if err := s.db.WithContext(ctx).Select("id", "summary").First(&task, taskID).Error; err != nil {

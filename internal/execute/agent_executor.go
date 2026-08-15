@@ -77,11 +77,16 @@ type TaskFeedbackDelivery struct {
 	MessageID string
 }
 
+type TaskFeedbackTarget struct {
+	SourceMessageID string
+	ReplyInThread   bool
+}
+
 // TaskFeedbackNotifier owns the Feishu transport for one replace-in-place M5
 // status message. M5 owns when execution starts/ends; the notifier only replies
 // to the source message and updates the bot message it created.
 type TaskFeedbackNotifier interface {
-	ReplyProcessing(context.Context, uint64, string) (*TaskFeedbackDelivery, error)
+	ReplyProcessing(context.Context, uint64, TaskFeedbackTarget) (*TaskFeedbackDelivery, error)
 	Update(context.Context, string, string, string) error
 }
 
@@ -937,11 +942,11 @@ func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task
 	if e.feedback == nil || task == nil || run == nil {
 		return nil
 	}
-	sourceMessageID, err := taskFeedbackSourceMessageID(task.Background)
+	target, err := taskFeedbackTarget(task.Background)
 	if err != nil {
 		return fmt.Errorf("resolve Task feedback source task_id=%d: %w", task.ID, err)
 	}
-	if sourceMessageID == "" {
+	if target.SourceMessageID == "" {
 		return nil
 	}
 	existingMessageID, err := e.findTaskFeedbackMessage(ctx, task.ID)
@@ -951,14 +956,14 @@ func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task
 	if existingMessageID != "" {
 		return e.feedback.Update(ctx, existingMessageID, "executing", "")
 	}
-	delivery, err := e.feedback.ReplyProcessing(ctx, task.ID, sourceMessageID)
+	delivery, err := e.feedback.ReplyProcessing(ctx, task.ID, target)
 	if err != nil {
 		return err
 	}
 	if delivery == nil || strings.TrimSpace(delivery.MessageID) == "" {
 		return fmt.Errorf("Task feedback notifier returned no message_id for task_id=%d", task.ID)
 	}
-	effects, err := appendTaskFeedbackEffect(run.Effects, delivery.MessageID, sourceMessageID)
+	effects, err := appendTaskFeedbackEffect(run.Effects, delivery.MessageID, target.SourceMessageID)
 	if err != nil {
 		return fmt.Errorf("record Task feedback effect run_id=%d: %w", run.ID, err)
 	}
@@ -977,11 +982,11 @@ func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteR
 	if err != nil {
 		return fmt.Errorf("load Task for feedback task_id=%d: %w", result.TaskID, err)
 	}
-	sourceMessageID, err := taskFeedbackSourceMessageID(task.Background)
+	target, err := taskFeedbackTarget(task.Background)
 	if err != nil {
 		return fmt.Errorf("resolve Task feedback source task_id=%d: %w", task.ID, err)
 	}
-	if sourceMessageID == "" {
+	if target.SourceMessageID == "" {
 		return nil
 	}
 	messageID, err := e.findTaskFeedbackMessage(ctx, task.ID)
@@ -994,10 +999,10 @@ func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteR
 	return e.feedback.Update(ctx, messageID, result.Status, result.Summary)
 }
 
-func taskFeedbackSourceMessageID(raw []byte) (string, error) {
+func taskFeedbackTarget(raw []byte) (TaskFeedbackTarget, error) {
 	snapshot, err := contextsnap.Decode(raw)
 	if err != nil {
-		return "", err
+		return TaskFeedbackTarget{}, err
 	}
 	var selected contextsnap.Message
 	for _, message := range snapshot.Messages {
@@ -1008,7 +1013,10 @@ func taskFeedbackSourceMessageID(raw []byte) (string, error) {
 			selected = message
 		}
 	}
-	return strings.TrimSpace(selected.MessageID), nil
+	return TaskFeedbackTarget{
+		SourceMessageID: strings.TrimSpace(selected.MessageID),
+		ReplyInThread:   strings.TrimSpace(selected.ThreadID) != "",
+	}, nil
 }
 
 func (e *AgentExecutor) findTaskFeedbackMessage(ctx context.Context, taskID uint64) (string, error) {
@@ -1196,7 +1204,16 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	prompt, err := buildExecutionPrompt(systemPrompt, approvalPolicy, task, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	world, err := e.loadCurrentWorld(ctx, task.ID)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	prompt, err := buildExecutionPrompt(executionPromptInput{
+		SystemPrompt: systemPrompt, ApprovalPolicy: approvalPolicy, Task: task,
+		RepoPath: repoPath, ToolCatalog: toolCatalog, SharedMemory: sharedMemory,
+		WorkRules: workRules, Skills: skills,
+		PreviousRuns: previousRuns, CurrentWorld: world,
+	})
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1302,7 +1319,16 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposa
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	prompt, err := buildApplyPrompt(systemPrompt, approvalPolicy, task, proposal, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	world, err := e.loadCurrentWorld(ctx, task.ID)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	prompt, err := buildApplyPrompt(executionPromptInput{
+		SystemPrompt: systemPrompt, ApprovalPolicy: approvalPolicy, Task: task,
+		RepoPath: repoPath, ToolCatalog: toolCatalog, SharedMemory: sharedMemory,
+		WorkRules: workRules, Skills: skills,
+		PreviousRuns: previousRuns, CurrentWorld: world,
+	}, proposal)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}

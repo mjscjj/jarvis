@@ -56,34 +56,34 @@ func TestListFactsSourceKindEqualityAndExclusion(t *testing.T) {
 	service := newFactTestService(t)
 	ctx := context.Background()
 	day := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
-	rollup := FactSourceRollup
+	pageRevision := FactSourcePageRevision
 	m3 := "m3"
 	insertFact(t, service, "group", 7, "明细 A", day, &m3)
 	insertFact(t, service, "group", 7, "明细 NULL source", day.Add(time.Hour), nil)
-	insertFact(t, service, "group", 7, "rollup 当天", day.Add(2*time.Hour), &rollup)
+	insertFact(t, service, "group", 7, "页面旧版全文", day.Add(2*time.Hour), &pageRevision)
 
 	equal, err := service.ListFacts(ctx, FactFilter{
-		SubjectType: "group", SubjectID: 7, SourceKind: &rollup,
+		SubjectType: "group", SubjectID: 7, SourceKind: &pageRevision,
 	})
 	if err != nil {
-		t.Fatalf("ListFacts SourceKind=rollup: %v", err)
+		t.Fatalf("ListFacts SourceKind=page_revision: %v", err)
 	}
-	if len(equal) != 1 || equal[0].Description != "rollup 当天" {
-		t.Fatalf("SourceKind equality = %#v, want only rollup", equal)
+	if len(equal) != 1 || equal[0].Description != "页面旧版全文" {
+		t.Fatalf("SourceKind equality = %#v, want only the page revision", equal)
 	}
 
 	excluded, err := service.ListFacts(ctx, FactFilter{
-		SubjectType: "group", SubjectID: 7, ExcludeSourceKind: &rollup,
+		SubjectType: "group", SubjectID: 7, ExcludeSourceKind: &pageRevision,
 	})
 	if err != nil {
-		t.Fatalf("ListFacts ExcludeSourceKind=rollup: %v", err)
+		t.Fatalf("ListFacts ExcludeSourceKind=page_revision: %v", err)
 	}
 	if len(excluded) != 2 {
 		t.Fatalf("ExcludeSourceKind count = %d, want 2 (NULL must pass): %#v", len(excluded), excluded)
 	}
 	for _, fact := range excluded {
-		if fact.SourceKind != nil && *fact.SourceKind == FactSourceRollup {
-			t.Fatalf("excluded set still contains rollup: %#v", fact)
+		if fact.SourceKind != nil && *fact.SourceKind == FactSourcePageRevision {
+			t.Fatalf("excluded set still contains a page revision: %#v", fact)
 		}
 	}
 	var sawNil bool

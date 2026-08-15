@@ -14,8 +14,11 @@ import (
 // time (docs/design-context-pipeline.md §2.2). It assembles from the already
 // loaded ChatBatch/unit data; the only DB read is the full project detail when
 // the project was resolved from a hint (the bound project detail is already in
-// the batch). M5 gets a compact projection first and can query this exact
-// snapshot when it needs creation-time detail.
+// the batch).
+//
+// Open Todos and recent Tasks are loaded into the M3 prompt for dedup judgement
+// but deliberately are not frozen here: they are world state, and M5 loads them
+// fresh at execution time instead.
 func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, projectID *uint64, assignerOpenID *string) (contextsnap.Snapshot, error) {
 	snapshot := contextsnap.Snapshot{
 		SnapshotVersion: contextsnap.SnapshotVersion,
@@ -26,8 +29,6 @@ func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatc
 		Conversation:    snapshotConversation(unit),
 		Participants:    snapshotParticipants(unit.Participants),
 		Resources:       snapshotResources(unit.Resources),
-		OpenTodos:       snapshotOpenTodos(batch.OpenTodos),
-		RecentTasks:     snapshotRecentTasks(batch.RecentTasks),
 		OtherProjects:   snapshotOtherProjects(batch.OtherProjects, projectID),
 	}
 
@@ -134,28 +135,6 @@ func snapshotResources(resources []ResourceContext) []contextsnap.Resource {
 	return result
 }
 
-func snapshotOpenTodos(todos []OpenTodoContext) []contextsnap.OpenTodo {
-	result := make([]contextsnap.OpenTodo, len(todos))
-	for i := range todos {
-		result[i] = contextsnap.OpenTodo{
-			ID: todos[i].ID, ActionType: todos[i].ActionType,
-			Title: todos[i].Title, Status: todos[i].Status,
-		}
-	}
-	return result
-}
-
-func snapshotRecentTasks(tasks []RecentTaskContext) []contextsnap.RecentTask {
-	result := make([]contextsnap.RecentTask, len(tasks))
-	for i := range tasks {
-		result[i] = contextsnap.RecentTask{
-			ID: tasks[i].ID, Title: tasks[i].Title, Status: tasks[i].Status,
-			Summary: tasks[i].Summary, LastProgressAt: tasks[i].LastProgressAt,
-		}
-	}
-	return result
-}
-
 func snapshotOtherProjects(projects []OtherProjectContext, selectedID *uint64) []contextsnap.ProjectBrief {
 	result := make([]contextsnap.ProjectBrief, 0, len(projects))
 	for i := range projects {
@@ -186,7 +165,7 @@ func snapshotMessages(unit ConversationUnit, candidate Candidate) []contextsnap.
 		messages = append(messages, contextsnap.Message{
 			MessageID: message.MessageID, ChatID: message.ChatID,
 			SenderOpenID: message.SenderOpenID, SenderName: message.SenderName,
-			Content: message.Content, CreateTime: message.CreateTime,
+			Content: message.Content, RootID: message.RootID, ThreadID: message.ThreadID, CreateTime: message.CreateTime,
 		})
 	}
 	return messages
@@ -214,7 +193,7 @@ func snapshotConversation(unit ConversationUnit) []contextsnap.Message {
 		conversation = append(conversation, contextsnap.Message{
 			MessageID: message.MessageID, ChatID: message.ChatID,
 			SenderOpenID: message.SenderOpenID, SenderName: message.SenderName,
-			Content: message.Content, CreateTime: message.CreateTime,
+			Content: message.Content, RootID: message.RootID, ThreadID: message.ThreadID, CreateTime: message.CreateTime,
 		})
 	}
 	return conversation

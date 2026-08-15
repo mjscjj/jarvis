@@ -33,9 +33,6 @@ func TestBuildContextSnapshotFreezesSummary(t *testing.T) {
 	if snapshot.Group == nil || snapshot.Group.Summary == nil || *snapshot.Group.Summary != groupSummary {
 		t.Fatalf("group.summary = %#v", snapshot.Group)
 	}
-	if len(snapshot.Facts) != 0 {
-		t.Fatalf("snapshot.facts = %#v, want empty", snapshot.Facts)
-	}
 }
 
 func TestSnapshotConversationKeepsLatestTwentyFiveMessages(t *testing.T) {

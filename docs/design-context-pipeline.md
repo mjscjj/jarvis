@@ -182,7 +182,8 @@ flowchart TB
 
 ### 2.4 模块 D：执行环节先拿简报、按需下钻
 
-- 执行环节提示词（`internal/execute/prompt.go`）只投影当前项目、群、交办人和引用消息 ID；完整 `task.background` 保留在 Task 上，通过 `get-task` 按需读取。
+- 执行环节提示词（`internal/execute/prompt.go`）把整份 `task.background` 原样放进 `execution_context`，不做投影或裁剪。
+- 同一份提示词还带一段与之平级的 `current_world`（`internal/execute/currentworld.go`）：每次 run 开始时实时查最近 20 个 Task 和 20 条未闭环 Todo 的摘要。它不进 `task.background`，也不冻结。`execution_context` 答「这条线索被准入时世界是什么样」，`current_world` 答「此刻还有什么在做、刚做完了什么」，后者是防重复执行的依据——最容易被重做的正是刚 `done` 的 Task，所以这份列表不按状态过滤。
 - `task.repo_path` 只接受调用方明确选定的工作副本，不从 `project.repos[]` 默认取第一项；未明确指定时 M5 继承 Jarvis 当前工作目录，再按任务语义自行定位仓库。
 - 未明确指定 `repo_path` 时**本轮不阻塞**：codex 继承 Jarvis 当前工作目录，可通过完整背景与 `git`/`lark-cli` 自行定位需要的仓库；只有确实无法查明时才如实报告缺口。
 

@@ -3,6 +3,7 @@ package contextsnap
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,11 +70,13 @@ func TestAssemblerLoadsCommonContextAndPreservesRequestContext(t *testing.T) {
 	if len(snapshot.OtherProjects) != 1 || snapshot.OtherProjects[0].ID != other.ID {
 		t.Fatalf("other_projects = %#v", snapshot.OtherProjects)
 	}
-	if len(snapshot.ManagedResources) != 1 || len(snapshot.Facts) != 1 {
-		t.Fatalf("resources/facts = %#v / %#v", snapshot.ManagedResources, snapshot.Facts)
+	if len(snapshot.ManagedResources) != 1 {
+		t.Fatalf("resources = %#v", snapshot.ManagedResources)
 	}
-	if snapshot.Facts[0].SubjectType != "project" || snapshot.Facts[0].SubjectID != project.ID {
-		t.Fatalf("fact subject = %#v", snapshot.Facts[0])
+	// The project fact seeded above must not ride along: entity Summary answers
+	// "what is this now", fact history is drilled into with list-facts.
+	if strings.Contains(string(raw), "完成上下文链路") {
+		t.Fatalf("snapshot pushed fact detail:\n%s", raw)
 	}
 	if string(snapshot.RequestContext) != `{"instruction_context":"只改后端"}` {
 		t.Fatalf("request_context = %s", snapshot.RequestContext)
@@ -166,14 +169,16 @@ func TestAssemblerResolvesChatBackgroundAndCurrentWork(t *testing.T) {
 	if snapshot.Project == nil || snapshot.Project.ID != project.ID {
 		t.Fatalf("project = %#v", snapshot.Project)
 	}
-	if len(snapshot.OpenTodos) != 1 || snapshot.OpenTodos[0].ID != 11 {
-		t.Fatalf("open_todos = %#v", snapshot.OpenTodos)
+	// The todos and tasks seeded above must not be frozen here. They are world
+	// state, so M5 loads them fresh on every run; a frozen copy would only tell
+	// it what was true when the snapshot was taken.
+	for _, stale := range []string{"open_todos", "recent_tasks", "排查上下文", "等待下一轮验证"} {
+		if strings.Contains(string(raw), stale) {
+			t.Fatalf("conversation snapshot froze live world state %q:\n%s", stale, raw)
+		}
 	}
-	if len(snapshot.RecentTasks) != 1 || snapshot.RecentTasks[0].ID != 21 || snapshot.RecentTasks[0].Summary != "等待下一轮验证" {
-		t.Fatalf("recent_tasks = %#v", snapshot.RecentTasks)
-	}
-	if len(snapshot.Facts) != 1 || snapshot.Facts[0].SubjectType != "group" {
-		t.Fatalf("facts = %#v", snapshot.Facts)
+	if strings.Contains(string(raw), "群内要求先验证再上线") {
+		t.Fatalf("conversation snapshot pushed fact detail:\n%s", raw)
 	}
 }
 
@@ -225,6 +230,54 @@ func TestAssemblerFreezesTwentyFiveMessagesThroughAnchor(t *testing.T) {
 	}
 	if len(snapshot.Conversation) != 25 || snapshot.Conversation[0].MessageID != "om_06" || snapshot.Conversation[24].MessageID != "om_30" {
 		t.Fatalf("conversation bounds = len:%d first:%#v last:%#v", len(snapshot.Conversation), snapshot.Conversation[0], snapshot.Conversation[len(snapshot.Conversation)-1])
+	}
+}
+
+func TestAssemblerFreezesExactlySelectedFeishuConversation(t *testing.T) {
+	db := openAssemblerTestDB(t)
+	if err := db.Create(&domain.PrincipalProfile{OpenID: "ou_me", Name: "我"}).Error; err != nil {
+		t.Fatalf("create principal: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO feishu_group(id, chat_id, name, is_key_group) VALUES (7, 'oc_direct', '直达群', 0)`).Error; err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	rows := []struct {
+		id, messageID, rootID, threadID string
+		createTime                      int64
+	}{
+		{"1", "om_selected_1", "", "omt_topic", 10},
+		{"2", "om_unrelated", "", "", 15},
+		{"3", "om_selected_2", "om_selected_1", "omt_topic", 20},
+		{"4", "om_anchor", "om_selected_1", "omt_topic", 30},
+	}
+	for _, row := range rows {
+		if err := db.Exec(`INSERT INTO message(id, message_id, chat_id, group_id, sender_open_id, sender_name, content, root_id, thread_id, create_time, render_ok)
+			VALUES (?, ?, 'oc_direct', 7, 'ou_sender', '发起人', ?, ?, ?, ?, 1)`, row.id, row.messageID, row.messageID, row.rootID, row.threadID, row.createTime).Error; err != nil {
+			t.Fatalf("create message %s: %v", row.messageID, err)
+		}
+	}
+	assembler, err := NewAssembler(db, "ou_me")
+	if err != nil {
+		t.Fatalf("NewAssembler() error = %v", err)
+	}
+	raw, err := assembler.AssembleConversation(t.Context(), AssembleOptions{
+		ChatID: "oc_direct", AnchorMessageID: "om_anchor", ConversationLimit: 25,
+		ConversationMessageIDs: []string{"om_selected_1", "om_selected_2", "om_anchor"},
+	})
+	if err != nil {
+		t.Fatalf("AssembleConversation() error = %v", err)
+	}
+	snapshot, err := Decode(raw)
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if len(snapshot.Conversation) != 3 {
+		t.Fatalf("conversation = %#v", snapshot.Conversation)
+	}
+	for index, wantID := range []string{"om_selected_1", "om_selected_2", "om_anchor"} {
+		if snapshot.Conversation[index].MessageID != wantID || snapshot.Conversation[index].ThreadID != "omt_topic" {
+			t.Fatalf("conversation[%d] = %#v", index, snapshot.Conversation[index])
+		}
 	}
 }
 

@@ -26,12 +26,28 @@ type interactiveTaskSubmitter interface {
 }
 
 type interactiveTaskRelayRequest struct {
+	MessageID      string                           `json:"message_id"`
+	ChatID         string                           `json:"chat_id"`
+	ChatMode       string                           `json:"chat_mode"`
+	ChatName       string                           `json:"chat_name"`
+	SenderOpenID   string                           `json:"sender_open_id"`
+	SenderName     string                           `json:"sender_name"`
+	MessageType    string                           `json:"message_type"`
+	Content        string                           `json:"content"`
+	ContentRaw     string                           `json:"content_raw"`
+	Mentions       json.RawMessage                  `json:"mentions"`
+	ParentID       string                           `json:"parent_id"`
+	RootID         string                           `json:"root_id"`
+	ThreadID       string                           `json:"thread_id"`
+	CreateTime     int64                            `json:"create_time"`
+	RecentMessages []interactiveHistoryRelayMessage `json:"recent_messages"`
+}
+
+type interactiveHistoryRelayMessage struct {
 	MessageID    string          `json:"message_id"`
-	ChatID       string          `json:"chat_id"`
-	ChatMode     string          `json:"chat_mode"`
-	ChatName     string          `json:"chat_name"`
 	SenderOpenID string          `json:"sender_open_id"`
 	SenderName   string          `json:"sender_name"`
+	SenderType   string          `json:"sender_type"`
 	MessageType  string          `json:"message_type"`
 	Content      string          `json:"content"`
 	ContentRaw   string          `json:"content_raw"`
@@ -43,9 +59,9 @@ type interactiveTaskRelayRequest struct {
 }
 
 // RelayInteractiveTask is the authenticated machine boundary used by CC
-// Connect after it has established that the bot was explicitly mentioned. It
-// captures the raw message, freezes 25 recent messages, creates one Task and
-// wakes M5 without involving M3.
+// Connect for P2P messages and explicit group mentions. It captures the raw
+// message plus Feishu-fetched history, freezes at most 25 messages, creates one
+// Task and wakes M5 without involving M3.
 func RelayInteractiveTask(capturer interactiveMessageCapturer, submitter interactiveTaskSubmitter, secret string) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		if capturer == nil || submitter == nil {
@@ -63,12 +79,25 @@ func RelayInteractiveTask(capturer interactiveMessageCapturer, submitter interac
 			writeAPIError(c, consts.StatusBadRequest, 40033, err)
 			return
 		}
+		recentMessages := make([]capture.InteractiveHistoryMessage, len(request.RecentMessages))
+		conversationMessageIDs := make([]string, 0, len(request.RecentMessages)+1)
+		for index := range request.RecentMessages {
+			recent := request.RecentMessages[index]
+			recentMessages[index] = capture.InteractiveHistoryMessage{
+				MessageID: recent.MessageID, SenderOpenID: recent.SenderOpenID, SenderName: recent.SenderName,
+				SenderType: recent.SenderType, MessageType: recent.MessageType, Content: recent.Content,
+				ContentRaw: recent.ContentRaw, Mentions: recent.Mentions, ParentID: recent.ParentID,
+				RootID: recent.RootID, ThreadID: recent.ThreadID, CreateTime: recent.CreateTime,
+			}
+			conversationMessageIDs = append(conversationMessageIDs, recent.MessageID)
+		}
+		conversationMessageIDs = append(conversationMessageIDs, request.MessageID)
 		message, err := capturer.CaptureInteractive(ctx, capture.InteractiveMessage{
 			MessageID: request.MessageID, ChatID: request.ChatID, ChatMode: request.ChatMode,
 			ChatName: request.ChatName, SenderOpenID: request.SenderOpenID, SenderName: request.SenderName,
 			MessageType: request.MessageType, Content: request.Content, ContentRaw: request.ContentRaw,
 			Mentions: request.Mentions, ParentID: request.ParentID, RootID: request.RootID,
-			ThreadID: request.ThreadID, CreateTime: request.CreateTime,
+			ThreadID: request.ThreadID, CreateTime: request.CreateTime, RecentMessages: recentMessages,
 		})
 		if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40033, err)
@@ -84,7 +113,7 @@ func RelayInteractiveTask(capturer interactiveMessageCapturer, submitter interac
 			return
 		}
 		requestContext, err := json.Marshal(map[string]any{
-			"entrypoint": "feishu_explicit_mention", "message_id": message.MessageID,
+			"entrypoint": "feishu_direct_request", "message_id": message.MessageID,
 			"chat_id": message.ChatID, "thread_id": request.ThreadID, "root_id": request.RootID,
 		})
 		if err != nil {
@@ -97,9 +126,9 @@ func RelayInteractiveTask(capturer interactiveMessageCapturer, submitter interac
 			ActionType: "direct_request", Target: message.Content,
 			Background: requestContext, SourcePayload: rawSource,
 			SourceType: taskcreate.SourceInteractive, SourceID: message.GroupID, OccurrenceKey: &occurrenceKey,
-			ActorType: "feishu_user", EventDetail: map[string]any{"channel": "cc_connect", "message_id": message.MessageID},
+			ActorType: "user", EventDetail: map[string]any{"channel": "cc_connect", "message_id": message.MessageID},
 			ChatID: message.ChatID, AnchorMessageID: message.MessageID,
-			ConversationLimit: taskcreate.InteractiveConversationLimit,
+			ConversationLimit: taskcreate.InteractiveConversationLimit, ConversationMessageIDs: conversationMessageIDs,
 		})
 		if err != nil {
 			switch {

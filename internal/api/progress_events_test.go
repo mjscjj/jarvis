@@ -161,12 +161,12 @@ func TestListFactsParsesSourceKindFilters(t *testing.T) {
 	svc := &fakeProgressService{}
 	h := server.New()
 	h.GET("/api/facts", ListFacts(svc))
-	url := "/api/facts?subject_type=group&subject_id=4&source_kind=rollup&exclude_source_kind=m3"
+	url := "/api/facts?subject_type=group&subject_id=4&source_kind=page_revision&exclude_source_kind=m3"
 	response := ut.PerformRequest(h.Engine, "GET", url, nil).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	if svc.factFilter.SourceKind == nil || *svc.factFilter.SourceKind != "rollup" {
+	if svc.factFilter.SourceKind == nil || *svc.factFilter.SourceKind != "page_revision" {
 		t.Fatalf("SourceKind = %#v", svc.factFilter.SourceKind)
 	}
 	if svc.factFilter.ExcludeSourceKind == nil || *svc.factFilter.ExcludeSourceKind != "m3" {
@@ -179,14 +179,14 @@ func TestListFactsParsesExcludeSourceKindAlone(t *testing.T) {
 	svc := &fakeProgressService{}
 	h := server.New()
 	h.GET("/api/facts", ListFacts(svc))
-	response := ut.PerformRequest(h.Engine, "GET", "/api/facts?subject_type=group&subject_id=4&exclude_source_kind=rollup", nil).Result()
+	response := ut.PerformRequest(h.Engine, "GET", "/api/facts?subject_type=group&subject_id=4&exclude_source_kind=page_revision", nil).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
 	if svc.factFilter.SourceKind != nil {
 		t.Fatalf("SourceKind should be nil: %#v", svc.factFilter.SourceKind)
 	}
-	if svc.factFilter.ExcludeSourceKind == nil || *svc.factFilter.ExcludeSourceKind != "rollup" {
+	if svc.factFilter.ExcludeSourceKind == nil || *svc.factFilter.ExcludeSourceKind != "page_revision" {
 		t.Fatalf("ExcludeSourceKind = %#v", svc.factFilter.ExcludeSourceKind)
 	}
 }

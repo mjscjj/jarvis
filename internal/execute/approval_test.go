@@ -44,6 +44,53 @@ func TestParseApprovalRequiredResultRejectsMissingProposal(t *testing.T) {
 	}
 }
 
+// TestParseExecutionResultRejectsOverLongProgressSummary pins where the summary
+// ceiling is enforced. The parser is the only real gate — --output-schema
+// describes the contract to the model without constraining decoding — and a
+// violation caught here is handed back to the same session for a more compact
+// restatement. Enforcing it only at the store would instead drop the progress of
+// a run that already did its work.
+func TestParseExecutionResultRejectsOverLongProgressSummary(t *testing.T) {
+	atLimit := strings.Repeat("界", TaskSummaryMaxChars)
+	if _, err := parseExecutionResult(progressSummaryResult(atLimit)); err != nil {
+		t.Fatalf("parseExecutionResult() at the ceiling error = %v, want it accepted", err)
+	}
+
+	over := strings.Repeat("超", TaskSummaryMaxChars+1)
+	err := parseExecutionResultErr(t, over)
+	for _, want := range []string{"progress_summary", "1001", "1000", "压缩"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want it to mention %q so the rewrite turn knows what to fix", err, want)
+		}
+	}
+	// The store's own ErrInvalidInput must not leak into the agent contract: the
+	// runner routes rewrites on ErrSchemaViolation alone.
+	if errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("error = %v, want a contract violation rather than a store input error", err)
+	}
+}
+
+func progressSummaryResult(progress string) string {
+	msg, err := json.Marshal(map[string]any{
+		"needs_approval": false, "outcome": "completed", "summary": "已完成",
+		"progress_summary": progress, "failure_reason": "", "needs_followup": "",
+		"enrichments": []any{}, "effects": []any{}, "proposal": nil, "waiting": nil,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return string(msg)
+}
+
+func parseExecutionResultErr(t *testing.T, progress string) error {
+	t.Helper()
+	_, err := parseExecutionResult(progressSummaryResult(progress))
+	if err == nil {
+		t.Fatal("parseExecutionResult() over the ceiling succeeded, want a rewrite-triggering violation")
+	}
+	return err
+}
+
 // TestParseExecutionResultIgnoresUnknownField pins the other half: a verdict
 // that carries everything we consume must not be thrown away because the model
 // invented an extra key. The run already happened; losing it over a stray field
@@ -427,7 +474,7 @@ func TestBuildExecutionPrompt(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		SourcePayload: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil))
 	if err != nil {
 		t.Fatalf("buildExecutionPrompt() error = %v", err)
 	}
@@ -450,14 +497,14 @@ func TestBuildExecutionPromptIncludesSharedMemory(t *testing.T) {
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
 		SourcePayload: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildExecutionPrompt(testM5SystemPrompt, "只读不审批。", task, "", testToolCatalog, "", "", "", nil)
+	empty, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "只读不审批。", task, "", testToolCatalog, "", "", "", nil))
 	if err != nil {
 		t.Fatalf("buildExecutionPrompt() error = %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "只读不审批。", task, "", testToolCatalog, "周报模板固定用飞书文档 xxx", "", "", nil)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "只读不审批。", task, "", testToolCatalog, "周报模板固定用飞书文档 xxx", "", "", nil))
 	if err != nil {
 		t.Fatalf("buildExecutionPrompt() error = %v", err)
 	}
@@ -479,7 +526,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
 	proposal := &codexProposal{Action: "向群发送周报", Target: "研发群 chat_id=xyz", Artifact: "本周关键进展如下：AAA"}
-	prompt, err := buildApplyPrompt(testM5SystemPrompt, "新的副作用需要审批。", task, proposal, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildApplyPrompt(testExecutionPromptInput(testM5SystemPrompt, "新的副作用需要审批。", task, "", testToolCatalog, "", "", "", nil), proposal)
 	if err != nil {
 		t.Fatalf("buildApplyPrompt() error = %v", err)
 	}
@@ -495,7 +542,7 @@ func TestBuildApplyPromptEmbedsArtifact(t *testing.T) {
 
 func TestBuildExecutionPromptRequiresApprovalPolicy(t *testing.T) {
 	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", SourcePayload: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildExecutionPrompt(testM5SystemPrompt, "", task, "", testToolCatalog, "", "", "", nil); err == nil {
+	if _, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "", task, "", testToolCatalog, "", "", "", nil)); err == nil {
 		t.Fatal("empty approval policy must fail")
 	}
 }
@@ -503,7 +550,7 @@ func TestBuildExecutionPromptRequiresApprovalPolicy(t *testing.T) {
 // TestBuildApplyPromptRequiresProposal fails-fast when no proposal is given.
 func TestBuildApplyPromptRequiresProposal(t *testing.T) {
 	task := &domain.Task{ID: 13, Title: "x", ActionType: "doc_write", SourcePayload: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
-	if _, err := buildApplyPrompt(testM5SystemPrompt, "policy", task, nil, "", testToolCatalog, "", "", "", nil); err == nil {
+	if _, err := buildApplyPrompt(testExecutionPromptInput(testM5SystemPrompt, "policy", task, "", testToolCatalog, "", "", "", nil), nil); err == nil {
 		t.Fatalf("nil proposal must fail")
 	}
 }

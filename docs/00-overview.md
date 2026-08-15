@@ -97,17 +97,17 @@ M3 可以产出：
 
 M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归属，但证据足够作出准入结论后立即停止。它不制定执行方案、不选择具体副作用、不判断审批，也不为丰富 payload 展开代码、commit、MR 或长文档调查。`payload` 是开放的准入简报，只说明相关性、未闭环状态、责任、已核验证据、准入依据和不确定性。
 
-`context_snapshot` 是审计快照，不是实时世界状态。M5 首轮只拿项目、群、交办人和引用消息 ID 等小投影；需要创建时细节再查询这份冻结快照，需要新事实则调用工具，不在下游重拼一份替代快照。
+`context_snapshot` 是创建时的世界，不是实时世界状态。它整份传给 M5，下游不做投影、裁剪或重拼。M5 需要某个实体**现在**的状态时读它的 `summary` 页，需要更细的历史时按主体和日期查 fact。
 
 ### 3.3 Todo 固化
 
 `extracted` Todo 一律通过无模型的固化步骤创建一个 `pending` Task，并把 Todo 置为 `materialized`。固化继续使用 Todo ID/version 乐观锁、`task.todo_id` 唯一键和同一事务；重复通知返回同一个 Task，陈旧版本 fail-fast。Task 只记录自己的来源与创建时间，不把这一机械步骤包装成判断或确认闸门。
 
-Task 只用一个宽松 `source_payload` 保存来源交来的完整原始语义；Todo 来源直接固化完整 `extraction_result`，定时、手工和主动来源保存各自原始指令。执行 Agent 首轮读取完整 `source_payload` 和冻结 `background` 的小投影，需要时再通过任务查询读取完整背景，不人为制造中间计划或判断上下文。
+Task 只用一个宽松 `source_payload` 保存来源交来的完整原始语义；Todo 来源直接固化完整 `extraction_result`，定时、手工和主动来源保存各自原始指令。执行 Agent 读取完整 `source_payload` 和整份冻结 `background`，不人为制造中间计划或判断上下文。
 
 ### 3.4 M5 执行：调查、动作与恢复
 
-Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执行 Agent 读取完整来源证据、冻结背景的小投影、人工 supplements 和最近运行记录；缺细节时再查询完整冻结背景。Todo 来源已经经过 M3 准入，M5 不从头重复泛化价值筛选；它先核验线索是否因新事实完成、失效或重复，准入仍成立时直接调查真实目标并执行。上游内容是线索，不是不可修改的最终计划。
+Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执行 Agent 读取完整来源证据、整份冻结背景、执行时实时装配的 `current_world`、人工 supplements 和最近运行记录；需要实体当前状态时再查 `summary` 页和 fact。`current_world` 是每次 run 开始时查的最近 20 个 Task 与 20 条未闭环 Todo 摘要，专门用来避免重复执行——冻结背景结构上答不了「此刻还有什么在做、刚做完了什么」。Todo 来源已经经过 M3 准入，M5 不从头重复泛化价值筛选；它先核验线索是否因新事实完成、失效或重复，准入仍成立时直接调查真实目标并执行。上游内容是线索，不是不可修改的最终计划。
 
 执行 outcome 与状态映射：
 

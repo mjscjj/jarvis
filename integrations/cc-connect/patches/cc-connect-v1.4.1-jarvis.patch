@@ -1,5 +1,5 @@
 diff --git a/config.example.toml b/config.example.toml
-index cc57caf..dfc2513 100644
+index cc57caf..b810309 100644
 --- a/config.example.toml
 +++ b/config.example.toml
 @@ -1005,6 +1005,21 @@ app_secret = "your-feishu-app-secret"
@@ -17,7 +17,7 @@ index cc57caf..dfc2513 100644
 +#                           # 本机转发共享密钥；配置 URL 时必填。
 +# jarvis_approval_timeout_ms = 2500 # Keep below Feishu's synchronous callback window.
 +# jarvis_task_url = "http://127.0.0.1:18800/internal/interactive-task"
-+#                       # Optional: explicit @bot group messages bypass the CC agent and become Jarvis M5 Tasks.
++#                       # Optional: P2P and explicit @bot group messages become Jarvis M5 Tasks with up to 25 Feishu messages of context.
 +# jarvis_task_secret = "" # Local shared secret; required with jarvis_task_url.
 +# jarvis_task_timeout_ms = 5000
 +#                           # 转发超时，应低于飞书同步回调窗口。
@@ -25,7 +25,7 @@ index cc57caf..dfc2513 100644
  #                           # 默认 true：用「回复消息」API（引用用户消息）。设为 false 则在会话里发普通消息、不引用触发消息。
  # progress_style = "legacy" # Progress rendering style: legacy | compact | card
 diff --git a/docs/feishu.md b/docs/feishu.md
-index b9e871b..d2bebc6 100644
+index b9e871b..c3dbefe 100644
 --- a/docs/feishu.md
 +++ b/docs/feishu.md
 @@ -110,13 +110,23 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
@@ -36,7 +36,7 @@ index b9e871b..d2bebc6 100644
 +# jarvis_approval_url = "http://127.0.0.1:18800/internal/card-approval/callback" # 可选：转发 Jarvis 审批卡片
 +# jarvis_approval_secret = "" # 与 Jarvis card_approval.relay_secret 一致
 +# jarvis_approval_timeout_ms = 2500
-+# jarvis_task_url = "http://127.0.0.1:18800/internal/interactive-task" # 可选：显式 @bot 直达 Jarvis M5
++# jarvis_task_url = "http://127.0.0.1:18800/internal/interactive-task" # 可选：单聊及群内显式 @bot 直达 Jarvis M5
 +# jarvis_task_secret = "" # 与 Jarvis relay_secret 一致
 +# jarvis_task_timeout_ms = 5000
  # progress_style = "legacy"  # 可选：legacy | compact | card
@@ -49,7 +49,7 @@ index b9e871b..d2bebc6 100644
 +> 如果开启 `thread_isolation = true`，群聊里每个根消息 / reply thread 会对应一个独立 agent session；私聊行为保持原样。该选项只改变会话边界，不放宽 @ 过滤：`group_reply_all = false` 时，每条群消息（包括图片、文件、音频和视频）仍须显式 @机器人。
 +> `jarvis_approval_url` 只接管按钮值中 `action="jarvis_approval"` 的卡片。CC Connect 仍是该飞书 app 的唯一 WebSocket 所有者，把点击通过带共享密钥的 localhost HTTP 请求转给 Jarvis；审批落地后读取飞书中的原卡片，保留标题、正文和“查看详情”，只移除已失效的确认/拒绝按钮并追加处理结果。原卡片读取失败时不做整卡替换，避免审批正文消失。普通消息、权限卡片、卡片导航和文档评论不经过这条分支。URL 强制为 localhost，不能配置外网地址。
 +
-+> `jarvis_task_url` 只接管群里明确 @bot 的消息。CC Connect 保留实时 WebSocket、鉴权和 mention 判断，把原始消息及会话定位信息交给 Jarvis 创建直达 M5 的 Task；未 @bot 的普通消息继续由 Jarvis M2/M3 采集。URL 同样强制为 localhost。
++> `jarvis_task_url` 接管单聊消息和群里明确 @bot 的消息。CC Connect 从飞书实时读取最多 24 条前序消息，与当前消息组成最多 25 条冻结上下文：单聊和普通群按 chat 读取，话题消息按 thread 读取。Jarvis 创建直达 M5 的 Task，并把处理进度回复到原话题；群内未 @bot 的普通消息继续由 Jarvis M2/M3 采集。URL 同样强制为 localhost。
  > `progress_style = "compact"` 会把思考/工具进度合并到一条可更新消息里，减少刷屏；`legacy` 保持原有逐条发送；`card` 会使用结构化卡片（标题 + 进度块）持续更新同一条消息，观感比纯文本更清晰。
  > `domain` 只影响运行时 API / WebSocket 请求地址；CLI `setup/new/bind` 的引导域名仍然使用内置默认值。
  > `done_emoji` 设置后，agent 每次完成回复时会在用户消息上添加指定表情（如 `"Done"` → ✅）。先移除 "OnIt" 表情（如果有），再添加 done 表情。在 quiet 模式下特别有用，因为飞书卡片原地更新不触发推送，done 表情可以通知用户 agent 已完成。设为 `"none"` 或不配置则禁用。
@@ -1142,10 +1142,10 @@ index 0000000..be492ed
 +	}
 +}
 diff --git a/platform/feishu/feishu.go b/platform/feishu/feishu.go
-index bafedee..9289dda 100644
+index bafedee..c75882a 100644
 --- a/platform/feishu/feishu.go
 +++ b/platform/feishu/feishu.go
-@@ -130,6 +130,14 @@ type Platform struct {
+@@ -130,6 +130,15 @@ type Platform struct {
  	respondToAtEveryoneAndHere bool
  	shareSessionInChannel      bool
  	threadIsolation            bool
@@ -1157,10 +1157,11 @@ index bafedee..9289dda 100644
 +	jarvisTaskURL              string
 +	jarvisTaskSecret           string
 +	jarvisTaskTimeout          time.Duration
++	jarvisTaskHistoryFetch     func(context.Context, string, string, int64, string) ([]jarvisTaskHistoryMessage, error)
  	// noReplyToTrigger: when true, send via Create instead of Im.Message.Reply (no quote to the user's message).
  	noReplyToTrigger bool
  	resolveMentions  bool
-@@ -158,15 +166,10 @@ type Platform struct {
+@@ -158,15 +167,10 @@ type Platform struct {
  	isWSPrimary  bool           // true if this platform owns the shared WebSocket connection
  	// cardActionMessageIDs tracks the most recent card-action messageID per
  	// session key, enabling async card refreshes via the Patch API.
@@ -1180,7 +1181,7 @@ index bafedee..9289dda 100644
  
  	richCardImageMu         sync.Mutex
  	richCardImageResolved   map[string]string
-@@ -306,6 +309,57 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -306,6 +310,57 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  	respondToAtEveryoneAndHere, _ := opts["respond_to_at_everyone_and_here"].(bool)
  	shareSessionInChannel, _ := opts["share_session_in_channel"].(bool)
  	threadIsolation, _ := opts["thread_isolation"].(bool)
@@ -1238,7 +1239,7 @@ index bafedee..9289dda 100644
  	resolveMentionsOpt, _ := opts["resolve_mentions"].(bool)
  	noReplyToTrigger := false
  	if v, ok := opts["reply_to_trigger"].(bool); ok && !v {
-@@ -381,6 +435,13 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -381,6 +436,13 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  		respondToAtEveryoneAndHere: respondToAtEveryoneAndHere,
  		shareSessionInChannel:      shareSessionInChannel,
  		threadIsolation:            threadIsolation,
@@ -1252,7 +1253,7 @@ index bafedee..9289dda 100644
  		resolveMentions:            resolveMentionsOpt,
  		noReplyToTrigger:           noReplyToTrigger,
  		client:                     lark.NewClient(appID, appSecret, clientOpts...),
-@@ -392,7 +453,9 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -392,7 +454,9 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  		peerBots:                   peerBots,
  		imageBatch:                 make(map[string]*imageBatchEntry),
  		imageBatchWindow:           imageBatchWindow,
@@ -1262,7 +1263,7 @@ index bafedee..9289dda 100644
  	if !useInteractiveCard {
  		base.self = base
  		return base, nil
-@@ -469,7 +532,10 @@ func (p *Platform) Start(handler core.MessageHandler) error {
+@@ -469,7 +533,10 @@ func (p *Platform) Start(handler core.MessageHandler) error {
  	// Register for shared WebSocket: multiple projects using the same app_id
  	// share a single WebSocket connection to avoid Feishu's server-side
  	// load-balancing which randomly routes messages across connections.
@@ -1274,7 +1275,7 @@ index bafedee..9289dda 100644
  	p.sharedGroup = group
  	p.isWSPrimary = isPrimary
  
-@@ -480,6 +546,17 @@ func (p *Platform) Start(handler core.MessageHandler) error {
+@@ -480,6 +547,17 @@ func (p *Platform) Start(handler core.MessageHandler) error {
  	}
  
  	p.eventHandler = dispatcher.NewEventDispatcher("", p.encryptKey).
@@ -1292,7 +1293,7 @@ index bafedee..9289dda 100644
  		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
  			// Fan out to all platforms sharing this WebSocket connection.
  			// Each platform's onMessage applies its own allow_chat filter.
-@@ -649,6 +726,12 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
+@@ -649,6 +727,12 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
  	}
  
  	actionVal, _ := event.Event.Action.Value["action"].(string)
@@ -1305,7 +1306,7 @@ index bafedee..9289dda 100644
  
  	// select_static callbacks put the chosen value in event.Event.Action.Option
  	if actionVal == "" && event.Event.Action.Option != "" {
-@@ -871,6 +954,360 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
+@@ -871,6 +955,361 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
  	return nil, nil
  }
  
@@ -1320,20 +1321,21 @@ index bafedee..9289dda 100644
 +}
 +
 +type jarvisTaskRelayRequest struct {
-+	MessageID    string                 `json:"message_id"`
-+	ChatID       string                 `json:"chat_id"`
-+	ChatMode     string                 `json:"chat_mode"`
-+	ChatName     string                 `json:"chat_name"`
-+	SenderOpenID string                 `json:"sender_open_id"`
-+	SenderName   string                 `json:"sender_name"`
-+	MessageType  string                 `json:"message_type"`
-+	Content      string                 `json:"content"`
-+	ContentRaw   string                 `json:"content_raw"`
-+	Mentions     []*larkim.MentionEvent `json:"mentions"`
-+	ParentID     string                 `json:"parent_id"`
-+	RootID       string                 `json:"root_id"`
-+	ThreadID     string                 `json:"thread_id"`
-+	CreateTime   int64                  `json:"create_time"`
++	MessageID      string                     `json:"message_id"`
++	ChatID         string                     `json:"chat_id"`
++	ChatMode       string                     `json:"chat_mode"`
++	ChatName       string                     `json:"chat_name"`
++	SenderOpenID   string                     `json:"sender_open_id"`
++	SenderName     string                     `json:"sender_name"`
++	MessageType    string                     `json:"message_type"`
++	Content        string                     `json:"content"`
++	ContentRaw     string                     `json:"content_raw"`
++	Mentions       []*larkim.MentionEvent     `json:"mentions"`
++	ParentID       string                     `json:"parent_id"`
++	RootID         string                     `json:"root_id"`
++	ThreadID       string                     `json:"thread_id"`
++	CreateTime     int64                      `json:"create_time"`
++	RecentMessages []jarvisTaskHistoryMessage `json:"recent_messages"`
 +}
 +
 +type jarvisTaskRelayResponse struct {
@@ -1666,7 +1668,7 @@ index bafedee..9289dda 100644
  func (p *Platform) addReaction(messageID string) string {
  	return p.addReactionWithEmoji(messageID, p.reactionEmoji)
  }
-@@ -1304,25 +1741,17 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+@@ -1304,25 +1743,17 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
  		"thread_isolation", p.threadIsolation,
  	)
  
@@ -1676,7 +1678,7 @@ index bafedee..9289dda 100644
  	sessionKey := p.makeSessionKey(msg, chatID, userID)
  
 +	explicitBotMention := chatType == "group" && p.getBotOpenID() != "" && isBotMentioned(msg.Mentions, p.getBotOpenID())
-+	directTaskMention := explicitBotMention && p.jarvisTaskURL != ""
++	directTaskRequest := p.jarvisTaskURL != "" && (chatType == "p2p" || explicitBotMention)
  	if chatType == "group" && !p.groupReplyAll && p.getBotOpenID() != "" {
 -		if !isBotMentioned(msg.Mentions, p.getBotOpenID()) {
 -			switch {
@@ -1698,7 +1700,7 @@ index bafedee..9289dda 100644
  				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)
  				return nil
  			}
-@@ -1356,6 +1785,8 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+@@ -1356,6 +1787,8 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
  	}
  	mentions := msg.Mentions
  	parentID := stringValue(msg.ParentId)
@@ -1707,7 +1709,7 @@ index bafedee..9289dda 100644
  
  	rctx := replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey}
  	slog.Debug(p.tag()+": routed inbound message",
-@@ -1364,15 +1795,11 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+@@ -1364,15 +1797,11 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
  		"reply_in_thread", p.shouldReplyInThread(rctx),
  	)
  
@@ -1720,38 +1722,47 @@ index bafedee..9289dda 100644
  	// The dedup and old-message checks above remain synchronous to guarantee
  	// correctness before spawning the goroutine.
 -	go p.dispatchMessage(ctx, msgType, content, mentions, messageID, sessionKey, userID, chatID, rctx, parentID, createTimeMs)
-+	go p.dispatchMessageWithRoute(ctx, msgType, content, mentions, messageID, sessionKey, userID, chatID, chatType, rctx, parentID, rootID, threadID, createTimeMs, directTaskMention)
++	go p.dispatchMessageWithRoute(ctx, msgType, content, mentions, messageID, sessionKey, userID, chatID, chatType, rctx, parentID, rootID, threadID, createTimeMs, directTaskRequest)
  
  	return nil
  }
-@@ -1390,6 +1817,10 @@ func (p *Platform) replyUnauthorizedAccess(ctx context.Context, rctx replyContex
+@@ -1390,6 +1819,10 @@ func (p *Platform) replyUnauthorizedAccess(ctx context.Context, rctx replyContex
  // handler invocation. It runs in its own goroutine so that onMessage returns
  // quickly and does not block the SDK event loop.
  func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID string, rctx replyContext, parentID string, createTimeMs int64) {
 +	p.dispatchMessageWithRoute(ctx, msgType, content, mentions, messageID, sessionKey, userID, chatID, "", rctx, parentID, "", "", createTimeMs, false)
 +}
 +
-+func (p *Platform) dispatchMessageWithRoute(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID, chatType string, rctx replyContext, parentID, rootID, threadID string, createTimeMs int64, explicitBotMention bool) {
++func (p *Platform) dispatchMessageWithRoute(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID, chatType string, rctx replyContext, parentID, rootID, threadID string, createTimeMs int64, directTaskRequest bool) {
  	if p.isMessageRecalled(messageID) {
  		slog.Debug(p.tag()+": recalled message ignored in async dispatch", "message_id", messageID)
  		return
-@@ -1401,6 +1832,28 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
+@@ -1401,6 +1834,37 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
  		userName = p.resolveUserName(userID)
  	}
  	chatName := p.resolveChatName(chatID)
 +	relayDirect := func(rendered string) bool {
-+		if !explicitBotMention {
++		if !directTaskRequest {
 +			return false
 +		}
 +		rendered = strings.TrimSpace(rendered)
 +		if rendered == "" {
 +			rendered = "[" + msgType + "]"
 +		}
-+		err := p.forwardJarvisTask(ctx, jarvisTaskRelayRequest{
++		recentMessages, err := p.loadJarvisTaskHistory(ctx, chatID, threadID, createTimeMs, messageID)
++		if err != nil {
++			slog.Error(p.tag()+": load Jarvis interactive Task history failed", "message_id", messageID, "err", err)
++			if replyErr := p.Reply(context.Background(), rctx, "任务创建失败，请稍后重试。"); replyErr != nil {
++				slog.Error(p.tag()+": Jarvis interactive Task history failure reply failed", "message_id", messageID, "err", replyErr)
++			}
++			return true
++		}
++		err = p.forwardJarvisTask(ctx, jarvisTaskRelayRequest{
 +			MessageID: messageID, ChatID: chatID, ChatMode: chatType, ChatName: chatName,
 +			SenderOpenID: userID, SenderName: userName, MessageType: msgType,
 +			Content: rendered, ContentRaw: content, Mentions: mentions,
 +			ParentID: parentID, RootID: rootID, ThreadID: threadID, CreateTime: createTimeMs,
++			RecentMessages: recentMessages,
 +		})
 +		if err != nil {
 +			slog.Error(p.tag()+": Jarvis interactive Task relay failed", "message_id", messageID, "err", err)
@@ -1764,18 +1775,18 @@ index bafedee..9289dda 100644
  
  	// If this message is a reply to another message, fetch the quoted content
  	// and prepend it so the agent has full context.
-@@ -1411,6 +1864,10 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
+@@ -1411,6 +1875,10 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
  	if parentID != "" && !(p.threadIsolation && isThreadSessionKey(sessionKey)) {
  		quoted = p.fetchQuotedMessage(ctx, parentID)
  	}
-+	if explicitBotMention && msgType != "text" && msgType != "post" && msgType != "image" {
++	if directTaskRequest && msgType != "text" && msgType != "post" && msgType != "image" {
 +		relayDirect("[" + msgType + "]")
 +		return
 +	}
  
  	switch msgType {
  	case "text":
-@@ -1430,6 +1887,9 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
+@@ -1430,6 +1898,9 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
  			)
  			return
  		}
@@ -1785,7 +1796,7 @@ index bafedee..9289dda 100644
  		p.dispatchCoreMessage(&core.Message{
  			SessionKey: sessionKey, Platform: p.platformName,
  			MessageID: messageID,
-@@ -1439,6 +1899,9 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
+@@ -1439,6 +1910,9 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
  		})
  
  	case "image":
@@ -1795,7 +1806,7 @@ index bafedee..9289dda 100644
  		var imgBody struct {
  			ImageKey string `json:"image_key"`
  		}
-@@ -1521,6 +1984,9 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
+@@ -1521,6 +1995,9 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
  	case "post":
  		textParts, images := p.parsePostContent(messageID, content)
  		text := stripMentions(strings.Join(textParts, "\n"), mentions, p.getBotOpenID())
@@ -1805,7 +1816,7 @@ index bafedee..9289dda 100644
  		if text == "" && len(images) == 0 && quoted.text == "" && len(quoted.images) == 0 {
  			return
  		}
-@@ -2595,24 +3061,28 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
+@@ -2595,24 +3072,28 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
  }
  
  func (p *Platform) Reply(ctx context.Context, rctx any, content string) error {
@@ -1844,7 +1855,7 @@ index bafedee..9289dda 100644
  	rc, ok := rctx.(replyContext)
  	if !ok {
  		return fmt.Errorf("%s: invalid reply context type %T", p.tag(), rctx)
-@@ -2632,6 +3102,9 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
+@@ -2632,6 +3113,9 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
  // the interactive card path so the footer can render with text_size:
  // "notation". Falls back to plain Send when the footer is empty.
  func (p *Platform) SendWithStatusFooter(ctx context.Context, rctx any, content, footer string) error {
@@ -1854,7 +1865,7 @@ index bafedee..9289dda 100644
  	if strings.TrimSpace(footer) == "" {
  		return p.Send(ctx, rctx, content)
  	}
-@@ -3253,38 +3726,6 @@ func isBotMentioned(mentions []*larkim.MentionEvent, botOpenID string) bool {
+@@ -3253,38 +3737,6 @@ func isBotMentioned(mentions []*larkim.MentionEvent, botOpenID string) bool {
  	return false
  }
  
@@ -1893,7 +1904,7 @@ index bafedee..9289dda 100644
  // stripMentions processes @mention placeholders (e.g. @_user_1) in text.
  // The bot's own mention is removed; other user mentions are replaced with
  // their display name so the agent can see who was referenced.
-@@ -6251,10 +6692,9 @@ func buildRichCardJSONBytes(status core.CardStatus, steps []core.ToolStep, markd
+@@ -6251,10 +6703,9 @@ func buildRichCardJSONBytes(status core.CardStatus, steps []core.ToolStep, markd
  				continue
  			}
  			footerElements = append(footerElements, map[string]any{
@@ -1908,7 +1919,7 @@ index bafedee..9289dda 100644
  		}
  	}
 diff --git a/platform/feishu/feishu_test.go b/platform/feishu/feishu_test.go
-index 8c0eae9..43ba51a 100644
+index 8c0eae9..50c650f 100644
 --- a/platform/feishu/feishu_test.go
 +++ b/platform/feishu/feishu_test.go
 @@ -2,6 +2,7 @@ package feishu
@@ -2012,7 +2023,7 @@ index 8c0eae9..43ba51a 100644
  		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
  			w.Header().Set("Content-Type", "application/json")
  			writeJSON(t, w, map[string]any{
-@@ -1103,13 +1057,16 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
+@@ -1103,13 +1057,19 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
  
  	received := make(chan *core.Message, 8)
  	p := &Platform{
@@ -2032,11 +2043,14 @@ index 8c0eae9..43ba51a 100644
 +		jarvisTaskURL:     srv.URL + "/internal/interactive-task",
 +		jarvisTaskSecret:  "relay-secret",
 +		jarvisTaskTimeout: 2 * time.Second,
-+		dedup:             &core.MessageDedup{},
++		jarvisTaskHistoryFetch: func(context.Context, string, string, int64, string) ([]jarvisTaskHistoryMessage, error) {
++			return nil, nil
++		},
++		dedup: &core.MessageDedup{},
  		client: lark.NewClient(appID, appSecret,
  			lark.WithOpenBaseUrl(srv.URL),
  			lark.WithHttpClient(srv.Client()),
-@@ -1160,59 +1117,47 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
+@@ -1160,59 +1120,47 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
  		},
  	}
  
@@ -2117,8 +2131,394 @@ index 8c0eae9..43ba51a 100644
  	}
  }
  
+diff --git a/platform/feishu/jarvis_task.go b/platform/feishu/jarvis_task.go
+new file mode 100644
+index 0000000..0354d64
+--- /dev/null
++++ b/platform/feishu/jarvis_task.go
+@@ -0,0 +1,269 @@
++package feishu
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"sort"
++	"strconv"
++	"strings"
++
++	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
++)
++
++const jarvisTaskConversationLimit = 25
++
++// jarvisTaskHistoryMessage is the source-owned Feishu message shape handed to
++// Jarvis before it freezes Task.background. The current triggering message is
++// carried separately, so this slice contains at most the preceding 24 messages.
++type jarvisTaskHistoryMessage struct {
++	MessageID    string          `json:"message_id"`
++	SenderOpenID string          `json:"sender_open_id"`
++	SenderName   string          `json:"sender_name"`
++	SenderType   string          `json:"sender_type"`
++	MessageType  string          `json:"message_type"`
++	Content      string          `json:"content"`
++	ContentRaw   string          `json:"content_raw"`
++	Mentions     json.RawMessage `json:"mentions"`
++	ParentID     string          `json:"parent_id"`
++	RootID       string          `json:"root_id"`
++	ThreadID     string          `json:"thread_id"`
++	CreateTime   int64           `json:"create_time"`
++}
++
++func (p *Platform) loadJarvisTaskHistory(ctx context.Context, chatID, threadID string, anchorTime int64, anchorMessageID string) ([]jarvisTaskHistoryMessage, error) {
++	if p.jarvisTaskHistoryFetch != nil {
++		return p.jarvisTaskHistoryFetch(ctx, chatID, threadID, anchorTime, anchorMessageID)
++	}
++	return p.fetchJarvisTaskHistory(ctx, chatID, threadID, anchorTime, anchorMessageID)
++}
++
++// fetchJarvisTaskHistory reads the source conversation from Feishu itself.
++// P2P and ordinary group messages use their chat container; topic messages use
++// their thread container so unrelated group traffic never enters the snapshot.
++func (p *Platform) fetchJarvisTaskHistory(_ context.Context, chatID, threadID string, anchorTime int64, anchorMessageID string) ([]jarvisTaskHistoryMessage, error) {
++	chatID = strings.TrimSpace(chatID)
++	threadID = strings.TrimSpace(threadID)
++	anchorMessageID = strings.TrimSpace(anchorMessageID)
++	if chatID == "" || anchorMessageID == "" || anchorTime <= 0 {
++		return nil, fmt.Errorf("Jarvis Task history requires chat_id, anchor message_id and positive create_time")
++	}
++	if p.client == nil || p.jarvisTaskTimeout <= 0 {
++		return nil, fmt.Errorf("Jarvis Task history client/timeout is not initialized")
++	}
++	containerType, containerID := "chat", chatID
++	if threadID != "" {
++		containerType, containerID = "thread", threadID
++	}
++	requestCtx, cancel := context.WithTimeout(context.Background(), p.jarvisTaskTimeout)
++	defer cancel()
++	pageToken := ""
++	result := make([]jarvisTaskHistoryMessage, 0, jarvisTaskConversationLimit-1)
++	for len(result) < jarvisTaskConversationLimit-1 {
++		builder := larkim.NewListMessageReqBuilder().
++			ContainerIdType(containerType).
++			ContainerId(containerID).
++			SortType("ByCreateTimeDesc").
++			PageSize(50)
++		// Feishu only supports time filters for chat containers. Thread
++		// history must be paged without end_time and trimmed against the
++		// millisecond anchor locally below.
++		if containerType == "chat" {
++			builder.EndTime(strconv.FormatInt((anchorTime+999)/1000, 10))
++		}
++		if pageToken != "" {
++			builder.PageToken(pageToken)
++		}
++		resp, err := p.client.Im.Message.List(requestCtx, builder.Build())
++		if err != nil {
++			return nil, fmt.Errorf("list Feishu %s history container_id=%s: %w", containerType, containerID, err)
++		}
++		if !resp.Success() {
++			return nil, fmt.Errorf("list Feishu %s history container_id=%s failed code=%d msg=%s", containerType, containerID, resp.Code, resp.Msg)
++		}
++		if resp.Data == nil {
++			return nil, fmt.Errorf("list Feishu %s history container_id=%s returned nil data", containerType, containerID)
++		}
++		for _, item := range resp.Data.Items {
++			if item == nil || boolValue(item.Deleted) || stringValue(item.MessageId) == anchorMessageID {
++				continue
++			}
++			history, ok, err := p.jarvisTaskHistoryMessage(item, anchorTime)
++			if err != nil {
++				return nil, err
++			}
++			if !ok {
++				continue
++			}
++			result = append(result, history)
++			if len(result) == jarvisTaskConversationLimit-1 {
++				break
++			}
++		}
++		if len(result) == jarvisTaskConversationLimit-1 || !boolValue(resp.Data.HasMore) {
++			break
++		}
++		next := strings.TrimSpace(stringValue(resp.Data.PageToken))
++		if next == "" || next == pageToken {
++			return nil, fmt.Errorf("list Feishu %s history container_id=%s has_more without a new page_token", containerType, containerID)
++		}
++		pageToken = next
++	}
++	sort.Slice(result, func(i, j int) bool {
++		if result[i].CreateTime == result[j].CreateTime {
++			return result[i].MessageID < result[j].MessageID
++		}
++		return result[i].CreateTime < result[j].CreateTime
++	})
++	return result, nil
++}
++
++func (p *Platform) jarvisTaskHistoryMessage(item *larkim.Message, anchorTime int64) (jarvisTaskHistoryMessage, bool, error) {
++	messageID := strings.TrimSpace(stringValue(item.MessageId))
++	msgType := strings.TrimSpace(stringValue(item.MsgType))
++	if messageID == "" || msgType == "" {
++		return jarvisTaskHistoryMessage{}, false, nil
++	}
++	createTime, err := strconv.ParseInt(strings.TrimSpace(stringValue(item.CreateTime)), 10, 64)
++	if err != nil || createTime <= 0 {
++		return jarvisTaskHistoryMessage{}, false, fmt.Errorf("parse Feishu history message_id=%s create_time=%q", messageID, stringValue(item.CreateTime))
++	}
++	if createTime > anchorTime {
++		return jarvisTaskHistoryMessage{}, false, nil
++	}
++	raw := ""
++	if item.Body != nil {
++		raw = stringValue(item.Body.Content)
++	}
++	content := renderJarvisTaskHistoryContent(msgType, raw, item.Mentions, p.getBotOpenID())
++	senderID, senderType := "", "unknown"
++	if item.Sender != nil {
++		senderID = strings.TrimSpace(stringValue(item.Sender.Id))
++		senderType = strings.TrimSpace(stringValue(item.Sender.SenderType))
++	}
++	if senderID == "" && msgType == "system" {
++		senderID, senderType = "__system__", "system"
++	}
++	if senderID == "" {
++		return jarvisTaskHistoryMessage{}, false, fmt.Errorf("Feishu history message_id=%s sender id is empty", messageID)
++	}
++	senderName := senderID
++	if senderType == "app" {
++		senderName = p.resolveBotSenderName(senderID)
++	}
++	mentions, err := json.Marshal(item.Mentions)
++	if err != nil {
++		return jarvisTaskHistoryMessage{}, false, fmt.Errorf("encode Feishu history message_id=%s mentions: %w", messageID, err)
++	}
++	if len(item.Mentions) == 0 {
++		mentions = []byte("[]")
++	}
++	return jarvisTaskHistoryMessage{
++		MessageID: messageID, SenderOpenID: senderID, SenderName: senderName, SenderType: senderType,
++		MessageType: msgType, Content: content, ContentRaw: raw, Mentions: mentions,
++		ParentID: stringValue(item.ParentId), RootID: stringValue(item.RootId), ThreadID: stringValue(item.ThreadId),
++		CreateTime: createTime,
++	}, true, nil
++}
++
++func renderJarvisTaskHistoryContent(msgType, raw string, mentions []*larkim.Mention, botOpenID string) string {
++	switch msgType {
++	case "text":
++		var body struct {
++			Text string `json:"text"`
++		}
++		if json.Unmarshal([]byte(raw), &body) == nil {
++			for _, mention := range mentions {
++				if mention == nil || mention.Key == nil {
++					continue
++				}
++				replacement := ""
++				if stringValue(mention.Id) != botOpenID && strings.TrimSpace(stringValue(mention.Name)) != "" {
++					replacement = "@" + strings.TrimSpace(stringValue(mention.Name))
++				}
++				body.Text = strings.ReplaceAll(body.Text, stringValue(mention.Key), replacement)
++			}
++			if text := strings.TrimSpace(body.Text); text != "" {
++				return text
++			}
++		}
++	case "post":
++		if text := renderJarvisTaskPost(raw, botOpenID); text != "" {
++			return text
++		}
++	case "image":
++		return "[图片]"
++	case "file":
++		var body struct {
++			FileName string `json:"file_name"`
++		}
++		if json.Unmarshal([]byte(raw), &body) == nil && strings.TrimSpace(body.FileName) != "" {
++			return "[文件: " + strings.TrimSpace(body.FileName) + "]"
++		}
++		return "[文件]"
++	case "audio":
++		return "[音频]"
++	case "media":
++		return "[视频]"
++	case "sticker":
++		return "[表情]"
++	case "interactive":
++		return "[卡片]"
++	case "share_chat":
++		return "[群名片]"
++	case "share_user":
++		return "[个人名片]"
++	case "merge_forward":
++		return "[合并转发]"
++	}
++	return "[" + msgType + "]"
++}
++
++func renderJarvisTaskPost(raw, botOpenID string) string {
++	var post postLang
++	if err := json.Unmarshal([]byte(raw), &post); err != nil || post.Content == nil {
++		var languages map[string]postLang
++		if json.Unmarshal([]byte(raw), &languages) != nil || len(languages) == 0 {
++			return ""
++		}
++		keys := make([]string, 0, len(languages))
++		for key := range languages {
++			keys = append(keys, key)
++		}
++		sort.Strings(keys)
++		post = languages[keys[0]]
++	}
++	parts := make([]string, 0)
++	if title := strings.TrimSpace(post.Title); title != "" {
++		parts = append(parts, title)
++	}
++	for _, line := range post.Content {
++		lineParts := make([]string, 0)
++		for _, element := range line {
++			switch element.Tag {
++			case "text", "markdown", "code_block":
++				lineParts = append(lineParts, element.Text)
++			case "a":
++				if element.Href != "" {
++					lineParts = append(lineParts, fmt.Sprintf("[%s](%s)", element.Text, element.Href))
++				} else {
++					lineParts = append(lineParts, element.Text)
++				}
++			case "at":
++				if element.UserId != botOpenID {
++					if element.UserName != "" {
++						lineParts = append(lineParts, "@"+element.UserName)
++					} else if element.UserId != "" {
++						lineParts = append(lineParts, "@"+element.UserId)
++					}
++				}
++			case "img":
++				lineParts = append(lineParts, "[图片]")
++			}
++		}
++		if lineText := strings.TrimSpace(strings.Join(lineParts, "")); lineText != "" {
++			parts = append(parts, lineText)
++		}
++	}
++	return strings.TrimSpace(strings.Join(parts, "\n"))
++}
+diff --git a/platform/feishu/jarvis_task_test.go b/platform/feishu/jarvis_task_test.go
+new file mode 100644
+index 0000000..f28f40c
+--- /dev/null
++++ b/platform/feishu/jarvis_task_test.go
+@@ -0,0 +1,105 @@
++package feishu
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++	"time"
++
++	lark "github.com/larksuite/oapi-sdk-go/v3"
++)
++
++func TestFetchJarvisTaskHistoryUsesChatOrThreadContainer(t *testing.T) {
++	const anchorTime = int64(1786752000000)
++	tests := []struct {
++		name, chatID, threadID, wantType, wantID string
++	}{
++		{name: "p2p or ordinary group", chatID: "oc_chat", wantType: "chat", wantID: "oc_chat"},
++		{name: "topic message", chatID: "oc_topic", threadID: "omt_topic", wantType: "thread", wantID: "omt_topic"},
++	}
++	for _, test := range tests {
++		t.Run(test.name, func(t *testing.T) {
++			var gotType, gotID, gotEndTime string
++			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				w.Header().Set("Content-Type", "application/json")
++				switch r.URL.Path {
++				case "/open-apis/auth/v3/tenant_access_token/internal":
++					_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "msg": "success", "expire": 7200, "tenant_access_token": "tenant-token"})
++				case "/open-apis/im/v1/messages":
++					gotType, gotID = r.URL.Query().Get("container_id_type"), r.URL.Query().Get("container_id")
++					gotEndTime = r.URL.Query().Get("end_time")
++					_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "msg": "success", "data": map[string]any{
++						"has_more": false,
++						"items": []any{
++							map[string]any{"message_id": "om_future", "msg_type": "text", "create_time": "1786752000001", "thread_id": test.threadID, "body": map[string]any{"content": `{"text":"稍后的消息"}`}, "sender": map[string]any{"id": "ou_user", "sender_type": "user"}},
++							map[string]any{"message_id": "om_anchor", "msg_type": "text", "create_time": "1786752000000", "body": map[string]any{"content": `{"text":"当前"}`}, "sender": map[string]any{"id": "ou_user", "sender_type": "user"}},
++							map[string]any{"message_id": "om_previous", "msg_type": "text", "create_time": "1786751999000", "thread_id": test.threadID, "body": map[string]any{"content": `{"text":"上一条"}`}, "sender": map[string]any{"id": "ou_user", "sender_type": "user"}},
++						},
++					}})
++				default:
++					t.Fatalf("unexpected request path %s", r.URL.Path)
++				}
++			}))
++			defer server.Close()
++			platform := &Platform{
++				platformName: "feishu", appID: "cli_test", appSecret: "secret", domain: server.URL,
++				jarvisTaskTimeout: 2 * time.Second,
++				client:            lark.NewClient("cli_test", "secret", lark.WithOpenBaseUrl(server.URL), lark.WithHttpClient(server.Client())),
++			}
++			history, err := platform.fetchJarvisTaskHistory(context.Background(), test.chatID, test.threadID, anchorTime, "om_anchor")
++			if err != nil {
++				t.Fatalf("fetchJarvisTaskHistory() error = %v", err)
++			}
++			if gotType != test.wantType || gotID != test.wantID {
++				t.Fatalf("container = %s/%s, want %s/%s", gotType, gotID, test.wantType, test.wantID)
++			}
++			if test.wantType == "chat" && gotEndTime == "" {
++				t.Fatal("chat history request omitted end_time")
++			}
++			if test.wantType == "thread" && gotEndTime != "" {
++				t.Fatalf("thread history end_time = %q, want omitted", gotEndTime)
++			}
++			if len(history) != 1 || history[0].MessageID != "om_previous" || history[0].Content != "上一条" {
++				t.Fatalf("history = %#v", history)
++			}
++		})
++	}
++}
++
++func TestFetchJarvisTaskHistoryReturnsTwentyFourPreviousMessages(t *testing.T) {
++	items := make([]any, 0, 30)
++	for index := 30; index >= 1; index-- {
++		messageID := fmt.Sprintf("om_%02d", index)
++		if index == 30 {
++			messageID = "om_anchor"
++		}
++		items = append(items, map[string]any{
++			"message_id": messageID, "msg_type": "text", "create_time": fmt.Sprintf("%d", index*1000),
++			"body":   map[string]any{"content": fmt.Sprintf(`{"text":"第 %d 条"}`, index)},
++			"sender": map[string]any{"id": "ou_user", "sender_type": "user"},
++		})
++	}
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Content-Type", "application/json")
++		if r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal" {
++			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "msg": "success", "expire": 7200, "tenant_access_token": "tenant-token"})
++			return
++		}
++		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "msg": "success", "data": map[string]any{"has_more": false, "items": items}})
++	}))
++	defer server.Close()
++	platform := &Platform{
++		platformName: "feishu", appID: "cli_test", appSecret: "secret", jarvisTaskTimeout: 2 * time.Second,
++		client: lark.NewClient("cli_test", "secret", lark.WithOpenBaseUrl(server.URL), lark.WithHttpClient(server.Client())),
++	}
++	history, err := platform.fetchJarvisTaskHistory(context.Background(), "oc_chat", "", 30000, "om_anchor")
++	if err != nil {
++		t.Fatalf("fetchJarvisTaskHistory() error = %v", err)
++	}
++	if len(history) != 24 || history[0].MessageID != "om_06" || history[23].MessageID != "om_29" {
++		t.Fatalf("history bounds = len:%d first:%#v last:%#v", len(history), history[0], history[len(history)-1])
++	}
++}
 diff --git a/platform/feishu/platform_test.go b/platform/feishu/platform_test.go
-index 0695550..f8bd714 100644
+index 0695550..d25968f 100644
 --- a/platform/feishu/platform_test.go
 +++ b/platform/feishu/platform_test.go
 @@ -5,8 +5,11 @@ import (
@@ -2141,7 +2541,7 @@ index 0695550..f8bd714 100644
  
  	"github.com/chenhg5/cc-connect/core"
  	callback "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
-@@ -314,6 +318,272 @@ func TestInteractivePlatform_CardActionPassesCardSenderToHandler(t *testing.T) {
+@@ -314,6 +318,334 @@ func TestInteractivePlatform_CardActionPassesCardSenderToHandler(t *testing.T) {
  	}
  }
  
@@ -2261,6 +2661,12 @@ index 0695550..f8bd714 100644
 +	ip.handler = func(core.Platform, *core.Message) { dispatched = true }
 +	ip.userNameCache.Store("ou_user", "发起人")
 +	ip.chatNameCache.Store("oc_group", "项目群")
++	ip.jarvisTaskHistoryFetch = func(_ context.Context, chatID, threadID string, anchorTime int64, anchorMessageID string) ([]jarvisTaskHistoryMessage, error) {
++		if chatID != "oc_group" || threadID != "" || anchorTime != 1786752000000 || anchorMessageID != "om_direct" {
++			t.Fatalf("history scope = chat:%s thread:%s time:%d anchor:%s", chatID, threadID, anchorTime, anchorMessageID)
++		}
++		return []jarvisTaskHistoryMessage{{MessageID: "om_previous", Content: "上一条", CreateTime: 1786751999000}}, nil
++	}
 +	ip.dispatchMessageWithRoute(
 +		context.Background(), "text", `{"text":"帮我查一下延迟"}`, nil,
 +		"om_direct", "feishu:oc_group:ou_user", "ou_user", "oc_group", "group",
@@ -2280,6 +2686,62 @@ index 0695550..f8bd714 100644
 +		if gotBody[key] != want {
 +			t.Fatalf("relay body[%s] = %#v, want %#v; body=%#v", key, gotBody[key], want, gotBody)
 +		}
++	}
++	recent, ok := gotBody["recent_messages"].([]any)
++	if !ok || len(recent) != 1 || recent[0].(map[string]any)["message_id"] != "om_previous" {
++		t.Fatalf("relay recent_messages = %#v", gotBody["recent_messages"])
++	}
++}
++
++func TestP2PMessageRelaysJarvisTaskWithoutMention(t *testing.T) {
++	relayed := make(chan map[string]any, 1)
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		var payload map[string]any
++		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
++			t.Fatalf("decode Task relay request: %v", err)
++		}
++		relayed <- payload
++		w.Header().Set("Content-Type", "application/json")
++		w.WriteHeader(http.StatusCreated)
++		_, _ = io.WriteString(w, `{"code":0,"data":{"task_id":18}}`)
++	}))
++	defer server.Close()
++	platformAny, err := New(map[string]any{
++		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true,
++		"jarvis_task_url": server.URL, "jarvis_task_secret": "task-secret",
++	})
++	if err != nil {
++		t.Fatalf("New() error = %v", err)
++	}
++	ip := platformAny.(*interactivePlatform)
++	ip.userNameCache.Store("ou_user", "发起人")
++	ip.chatNameCache.Store("oc_p2p", "单聊")
++	ip.jarvisTaskHistoryFetch = func(_ context.Context, chatID, threadID string, _ int64, _ string) ([]jarvisTaskHistoryMessage, error) {
++		if chatID != "oc_p2p" || threadID != "" {
++			t.Fatalf("history scope = chat:%s thread:%s", chatID, threadID)
++		}
++		return nil, nil
++	}
++	dispatched := false
++	ip.handler = func(core.Platform, *core.Message) { dispatched = true }
++	messageID, chatID, userID, msgType, chatType, senderType := "om_p2p", "oc_p2p", "ou_user", "text", "p2p", "user"
++	content, createTime := `{"text":"帮我处理"}`, strconv.FormatInt(time.Now().UnixMilli(), 10)
++	if err := ip.onMessage(context.Background(), &larkim.P2MessageReceiveV1{Event: &larkim.P2MessageReceiveV1Data{
++		Sender:  &larkim.EventSender{SenderId: &larkim.UserId{OpenId: &userID}, SenderType: &senderType},
++		Message: &larkim.EventMessage{MessageId: &messageID, ChatId: &chatID, ChatType: &chatType, MessageType: &msgType, Content: &content, CreateTime: &createTime},
++	}}); err != nil {
++		t.Fatalf("onMessage() error = %v", err)
++	}
++	select {
++	case payload := <-relayed:
++		if payload["message_id"] != messageID || payload["chat_mode"] != "p2p" {
++			t.Fatalf("p2p relay payload = %#v", payload)
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("timed out waiting for p2p Task relay")
++	}
++	if dispatched {
++		t.Fatal("p2p direct request was also dispatched to the CC agent")
 +	}
 +}
 +

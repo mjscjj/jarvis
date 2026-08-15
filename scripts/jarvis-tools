@@ -322,14 +322,19 @@ key_matter, group or resource.
 EOF
       ;;
     list-todos) cat <<'EOF'
-usage: jarvis-tools list-todos [--date YYYY-MM-DD] [--status S] [--limit N] [--config PATH]
+usage: jarvis-tools list-todos [--date YYYY-MM-DD] [--status S] [--limit N]
+                              [--project-id N] [--group-id N] [--config PATH]
 
 List compact action-clue summaries newest-evidence first. --date narrows by
 last_evidence_at to one local natural day. --limit defaults to 20. Use get-todo
 for description, context, source evidence, resolution and the frozen snapshot.
 
+--group-id is the sharper scope: every clue comes from a chat, while
+--project-id only matches once that chat is bound to a project.
+
 example:
   jarvis-tools list-todos --date 2026-08-02 --status extracted
+  jarvis-tools list-todos --group-id 7 --status observing
 EOF
       ;;
     get-todo) cat <<'EOF'
@@ -340,14 +345,19 @@ the fields omitted from the summary list in prompts.
 EOF
       ;;
     list-tasks) cat <<'EOF'
-usage: jarvis-tools list-tasks [--date YYYY-MM-DD] [--status S] [--limit N] [--config PATH]
+usage: jarvis-tools list-tasks [--date YYYY-MM-DD] [--status S] [--limit N]
+                              [--project-id N] [--group-id N] [--config PATH]
 
 List compact task summaries. --date narrows by COALESCE(last_progress_at,
 created_at) to one local natural day. --limit defaults to 20. Without --status,
 all task statuses are queried. Use get-task for details and recent history.
 
+--group-id matches through the source clue, so manual, scheduled and proactive
+tasks belong to no group and are excluded by it.
+
 example:
   jarvis-tools list-tasks --date 2026-08-02 --status done,executing
+  jarvis-tools list-tasks --project-id 44 --status done
 EOF
       ;;
     get-task) cat <<'EOF'
@@ -715,6 +725,7 @@ reset_flags() {
   OPEN_ID=""
   ROLE=""
   PROJECT_ID=""
+  GROUP_ID=""
   PERSON_OPEN_ID=""
   PRINCIPAL_ONLY="false"
   KEYWORD=""
@@ -785,9 +796,9 @@ require_command_flag() {
     get-page | list-backlinks) allowed+=" --type --id" ;;
     update-page) allowed+=" --type --id --content --if-unchanged-since" ;;
     list-pages) allowed+=" --type --all --stale-days --over-limit" ;;
-    list-todos) allowed+=" --date --status --limit" ;;
+    list-todos) allowed+=" --date --status --limit --project-id --group-id" ;;
     get-todo) allowed+=" --id" ;;
-    list-tasks) allowed+=" --date --status --limit" ;;
+    list-tasks) allowed+=" --date --status --limit --project-id --group-id" ;;
     get-task) allowed+=" --id --run-limit --event-limit --include-run-output --include-prompt" ;;
     start-task) allowed+=" --id" ;;
     update-task) allowed+=" --id --payload" ;;
@@ -891,6 +902,15 @@ consume_flags() {
         ;;
       --project-id=*)
         PROJECT_ID="${1#--project-id=}"
+        shift
+        ;;
+      --group-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        GROUP_ID="$2"
+        shift 2
+        ;;
+      --group-id=*)
+        GROUP_ID="${1#--group-id=}"
         shift
         ;;
       --person-open-id)
@@ -1913,10 +1933,22 @@ cmd_list_todos() {
   LIMIT="20"
   consume_flags "$@"
   require_limit list-todos "$LIMIT" 100
+  if [[ -n "$PROJECT_ID" && ! "$PROJECT_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "list-todos --project-id must be a positive integer"
+  fi
+  if [[ -n "$GROUP_ID" && ! "$GROUP_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "list-todos --group-id must be a positive integer"
+  fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local query="?page=1&page_size=${LIMIT}"
   if [[ -n "$STATUS" ]]; then
     query="${query}&status=$(jq -rn --arg s "$STATUS" '$s|@uri')"
+  fi
+  if [[ -n "$PROJECT_ID" ]]; then
+    query="${query}&project_id=${PROJECT_ID}"
+  fi
+  if [[ -n "$GROUP_ID" ]]; then
+    query="${query}&group_id=${GROUP_ID}"
   fi
   if [[ -n "$DATE" ]]; then
     local from until
@@ -1946,12 +1978,24 @@ cmd_list_tasks() {
   LIMIT="20"
   consume_flags "$@"
   require_limit list-tasks "$LIMIT" 100
+  if [[ -n "$PROJECT_ID" && ! "$PROJECT_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "list-tasks --project-id must be a positive integer"
+  fi
+  if [[ -n "$GROUP_ID" && ! "$GROUP_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "list-tasks --group-id must be a positive integer"
+  fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local query="?page=1&page_size=${LIMIT}"
   if [[ -z "$STATUS" ]]; then
     STATUS="pending,executing,waiting,needs_human,awaiting_approval,done,failed,observing"
   fi
   query="${query}&status=$(jq -rn --arg s "$STATUS" '$s|@uri')"
+  if [[ -n "$PROJECT_ID" ]]; then
+    query="${query}&project_id=${PROJECT_ID}"
+  fi
+  if [[ -n "$GROUP_ID" ]]; then
+    query="${query}&group_id=${GROUP_ID}"
+  fi
   if [[ -n "$DATE" ]]; then
     local from until
     read -r from until <<<"$(local_day_bounds "$DATE" list-tasks)"

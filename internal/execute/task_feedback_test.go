@@ -9,22 +9,22 @@ import (
 	"jarvis/internal/domain"
 )
 
-func TestTaskFeedbackSourceUsesNewestFeishuEvidence(t *testing.T) {
+func TestTaskFeedbackTargetUsesNewestFeishuEvidenceAndThread(t *testing.T) {
 	raw, err := (contextsnap.Snapshot{
 		SnapshotVersion: contextsnap.SnapshotVersion,
 		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
 		Messages: []contextsnap.Message{
 			{MessageID: "meeting:1", CreateTime: 30},
 			{MessageID: "om_old", CreateTime: 10},
-			{MessageID: "om_new", CreateTime: 20},
+			{MessageID: "om_new", ThreadID: "omt_topic", CreateTime: 20},
 		},
 	}).Encode()
 	if err != nil {
 		t.Fatalf("Encode() error = %v", err)
 	}
-	got, err := taskFeedbackSourceMessageID(raw)
-	if err != nil || got != "om_new" {
-		t.Fatalf("taskFeedbackSourceMessageID() = %q, %v", got, err)
+	got, err := taskFeedbackTarget(raw)
+	if err != nil || got.SourceMessageID != "om_new" || !got.ReplyInThread {
+		t.Fatalf("taskFeedbackTarget() = %#v, %v", got, err)
 	}
 }
 

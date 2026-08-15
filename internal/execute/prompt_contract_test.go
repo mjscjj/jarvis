@@ -49,6 +49,27 @@ func TestM5SystemPromptOwnsPhaseBehaviorAndStructuredFinalProtocol(t *testing.T)
 	}
 }
 
+func TestM5SystemPromptAuthorizesReadTimeSummaryFixesWithBoundaries(t *testing.T) {
+	raw, err := os.ReadFile("../../conf/prompts/m5-system-prompt.md")
+	if err != nil {
+		t.Fatalf("read M5 system prompt: %v", err)
+	}
+	system := string(raw)
+	for _, want := range []string{
+		"但读到已经写错的长期事实页时，就地改对",
+		"只改你本轮亲自核实过的那部分结论",
+		"必须带上刚 `get-page` 读到的 `updated_at`",
+		"既不是需要审批的对外副作用",
+	} {
+		if !strings.Contains(system, want) {
+			t.Fatalf("M5 system prompt missing read-time fix contract %q", want)
+		}
+	}
+	if strings.Contains(system, "4. 长期事实不用你手工记") {
+		t.Fatal("M5 system prompt still forbids all summary writes instead of authorizing read-time fixes")
+	}
+}
+
 func TestRuntimeM5PhaseBlocksOnlyCarryPhaseState(t *testing.T) {
 	for phase, block := range map[string]string{
 		"execute":        m5PhaseExecute,

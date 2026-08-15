@@ -8,20 +8,19 @@ import (
 	"jarvis/internal/domain"
 )
 
-func TestFactTimelineSeparatesTodayAndReportsRollupFreshness(t *testing.T) {
+func TestFactTimelineSeparatesTodayFromEarlierSubjectDays(t *testing.T) {
 	service := newFactTestService(t)
 	location := time.FixedZone("Asia/Shanghai", 8*60*60)
 	service.now = func() time.Time { return time.Date(2026, 8, 8, 12, 0, 0, 0, location) }
 	yesterday := time.Date(2026, 8, 7, 0, 0, 0, 0, location)
 	today := yesterday.AddDate(0, 0, 1)
-	rollup := FactSourceRollup
+	pageRevision := FactSourcePageRevision
 	rows := []domain.Fact{
 		{SubjectType: "topic", SubjectID: 1, Description: "today detail", OccurredAt: today.Add(9 * time.Hour), CreatedAt: today.Add(9 * time.Hour)},
-		{SubjectType: "topic", SubjectID: 1, Description: "fresh detail", OccurredAt: yesterday.Add(9 * time.Hour), CreatedAt: yesterday.Add(10 * time.Hour)},
-		{SubjectType: "topic", SubjectID: 1, Description: "fresh rollup", OccurredAt: yesterday, SourceKind: &rollup, CreatedAt: yesterday.Add(11 * time.Hour)},
-		{SubjectType: "topic", SubjectID: 2, Description: "late detail", OccurredAt: yesterday.Add(10 * time.Hour), CreatedAt: today.Add(time.Hour)},
-		{SubjectType: "topic", SubjectID: 2, Description: "stale rollup", OccurredAt: yesterday, SourceKind: &rollup, CreatedAt: yesterday.Add(11 * time.Hour)},
-		{SubjectType: "topic", SubjectID: 3, Description: "missing rollup", OccurredAt: yesterday.Add(8 * time.Hour), CreatedAt: yesterday.Add(8 * time.Hour)},
+		{SubjectType: "topic", SubjectID: 1, Description: "yesterday detail", OccurredAt: yesterday.Add(9 * time.Hour), CreatedAt: yesterday.Add(10 * time.Hour)},
+		{SubjectType: "topic", SubjectID: 1, Description: "older yesterday detail", OccurredAt: yesterday.Add(8 * time.Hour), CreatedAt: yesterday.Add(8 * time.Hour)},
+		{SubjectType: "topic", SubjectID: 2, Description: "other subject", OccurredAt: yesterday.Add(10 * time.Hour), CreatedAt: today.Add(time.Hour)},
+		{SubjectType: "topic", SubjectID: 1, Description: "页面旧版全文", OccurredAt: yesterday.Add(11 * time.Hour), SourceKind: &pageRevision, CreatedAt: yesterday.Add(11 * time.Hour)},
 	}
 	if err := service.db.Create(&rows).Error; err != nil {
 		t.Fatalf("seed facts: %v", err)
@@ -34,18 +33,18 @@ func TestFactTimelineSeparatesTodayAndReportsRollupFreshness(t *testing.T) {
 	if len(result.Days) != 3 || len(result.Days[0].Details) != 1 || result.Days[0].Details[0].Description != "today detail" {
 		t.Fatalf("today = %#v", result.Days[0])
 	}
+	if result.Days[1].DetailCount != 3 || len(result.Days[1].Subjects) != 2 {
+		t.Fatalf("yesterday = %#v", result.Days[1])
+	}
 	states := map[uint64]FactSubjectDayView{}
 	for _, subject := range result.Days[1].Subjects {
 		states[subject.SubjectID] = subject
 	}
-	if states[1].RollupState != RollupStateFresh || states[1].Rollup == nil {
-		t.Fatalf("subject 1 = %#v, want fresh rollup", states[1])
+	if states[1].DetailCount != 2 || !states[1].LatestOccurredAt.Equal(yesterday.Add(9*time.Hour)) {
+		t.Fatalf("subject 1 = %#v, want two details latest 09:00 without the archived page revision", states[1])
 	}
-	if states[2].RollupState != RollupStateStale || states[2].LateDetailCount != 1 {
-		t.Fatalf("subject 2 = %#v, want stale with one late detail", states[2])
-	}
-	if states[3].RollupState != RollupStateMissing || states[3].Rollup != nil {
-		t.Fatalf("subject 3 = %#v, want missing", states[3])
+	if states[2].DetailCount != 1 {
+		t.Fatalf("subject 2 = %#v, want one detail", states[2])
 	}
 }
 
@@ -56,7 +55,7 @@ func TestSearchFactsFindsHiddenDetailAndPaginates(t *testing.T) {
 	insertFact(t, service, "topic", 7, "second hidden detail", now.Add(time.Minute), nil)
 	insertFact(t, service, "topic", 8, "unrelated", now.Add(2*time.Minute), nil)
 
-	result, err := service.SearchFacts(context.Background(), FactSearchFilter{Query: "hidden", Layer: "detail", Page: 2, PageSize: 1})
+	result, err := service.SearchFacts(context.Background(), FactSearchFilter{Query: "hidden", Page: 2, PageSize: 1})
 	if err != nil {
 		t.Fatalf("SearchFacts: %v", err)
 	}
@@ -64,7 +63,7 @@ func TestSearchFactsFindsHiddenDetailAndPaginates(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 
-	bySubject, err := service.SearchFacts(context.Background(), FactSearchFilter{Query: "topic/8", Layer: "all", Page: 1, PageSize: 10})
+	bySubject, err := service.SearchFacts(context.Background(), FactSearchFilter{Query: "topic/8", Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatalf("SearchFacts subject fallback: %v", err)
 	}

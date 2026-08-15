@@ -33,6 +33,10 @@ type TodoListFilter struct {
 	Statuses   []string
 	ActionType string
 	ProjectID  *uint64
+	// GroupID is the sharper of the two scopes: every Todo comes from a chat, so
+	// group_id is always set, while project_id is only present once a group is
+	// bound to a project.
+	GroupID    *uint64
 	LeaderOnly *bool
 	// From / Until narrow by last_evidence_at as a half-open RFC3339 window.
 	// Callers own the timezone (same contract as FactFilter).
@@ -124,6 +128,9 @@ func (s *TodoStore) ListTodos(ctx context.Context, filter TodoListFilter) (*Todo
 	}
 	if filter.ProjectID != nil {
 		query = query.Where("project_id = ?", *filter.ProjectID)
+	}
+	if filter.GroupID != nil {
+		query = query.Where("group_id = ?", *filter.GroupID)
 	}
 	if filter.LeaderOnly != nil {
 		query = query.Where("is_leader_assigned = ?", *filter.LeaderOnly)

@@ -62,15 +62,10 @@ type ModelConfig struct {
 type FactEngineConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	Schedule string `yaml:"schedule"`
-	// RollupSchedule is the daily compression cron. It runs independently of
-	// Schedule (which drives detail extraction) and writes source_kind=rollup
-	// facts for the previous local day.
-	RollupSchedule string `yaml:"rollup_schedule"`
 
 	Bin             string `yaml:"bin"`
 	Model           string `yaml:"model"`
 	ReasoningEffort string `yaml:"reasoning_effort"`
-	RollupModel     string `yaml:"rollup_model"`
 	Sandbox         string `yaml:"sandbox"`
 	TimeoutSec      int    `yaml:"timeout_sec"`
 
@@ -563,7 +558,6 @@ func (c *Config) validate() error {
 		spec string
 	}{
 		{name: "factengine.schedule", spec: c.FactEngine.Schedule},
-		{name: "factengine.rollup_schedule", spec: c.FactEngine.RollupSchedule},
 		{name: "proactive.schedule", spec: c.Proactive.Schedule},
 		{name: "meeting_sweep.schedule", spec: c.MeetingSweep.Schedule},
 		{name: "morning_brief.schedule", spec: c.MorningBrief.Schedule},
@@ -670,9 +664,6 @@ func (c *Config) validateFactEngine() error {
 	if c.FactEngine.Schedule == "" {
 		return fmt.Errorf("factengine.schedule 不能为空")
 	}
-	if c.FactEngine.RollupSchedule == "" {
-		return fmt.Errorf("factengine.rollup_schedule 不能为空")
-	}
 	if c.FactEngine.Bin == "" {
 		return fmt.Errorf("factengine.bin 不能为空")
 	}
@@ -681,9 +672,6 @@ func (c *Config) validateFactEngine() error {
 	}
 	if err := validateReasoningEffort("factengine", c.FactEngine.ReasoningEffort); err != nil {
 		return err
-	}
-	if c.FactEngine.RollupModel == "" {
-		return fmt.Errorf("factengine.rollup_model 不能为空")
 	}
 	if err := validateCodexSandbox("factengine.sandbox", c.FactEngine.Sandbox); err != nil {
 		return err

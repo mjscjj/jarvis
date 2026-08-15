@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var factSourcePageRevision = "page_revision"
+var factSourcePageRevision = progress.FactSourcePageRevision
 
 // PageView is the whole-page read model for one world entity.
 type PageView struct {

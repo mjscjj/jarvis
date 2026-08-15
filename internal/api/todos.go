@@ -120,6 +120,13 @@ func todoListFilter(c *app.RequestContext) (extract.TodoListFilter, error) {
 		}
 		filter.ProjectID = &value
 	}
+	if raw := strings.TrimSpace(c.Query("group_id")); raw != "" {
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || value == 0 {
+			return extract.TodoListFilter{}, fmt.Errorf("group_id must be a positive integer")
+		}
+		filter.GroupID = &value
+	}
 	if raw := strings.TrimSpace(c.Query("leader_only")); raw != "" {
 		value, err := strconv.ParseBool(raw)
 		if err != nil {

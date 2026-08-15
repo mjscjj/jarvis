@@ -19,12 +19,13 @@ import (
 // background. RequestContext is preserved as data; it never replaces common
 // context. ChatID and GroupID are consumed only by AssembleConversation.
 type AssembleOptions struct {
-	ProjectID         *uint64
-	ChatID            string
-	GroupID           *uint64
-	AnchorMessageID   string
-	ConversationLimit int
-	RequestContext    json.RawMessage
+	ProjectID              *uint64
+	ChatID                 string
+	GroupID                *uint64
+	AnchorMessageID        string
+	ConversationLimit      int
+	ConversationMessageIDs []string
+	RequestContext         json.RawMessage
 }
 
 // Assembler builds one canonical background shape. Assemble serves ordinary
@@ -104,24 +105,10 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 	if err != nil {
 		return nil, err
 	}
-	facts, err := a.loadFacts(ctx, projectID, group)
-	if err != nil {
-		return nil, err
-	}
-	var openTodos []OpenTodo
-	var recentTasks []RecentTask
 	var messages []Message
 	var conversation []Message
 	if includeLiveContext {
-		openTodos, err = a.loadOpenTodos(ctx, projectID, group)
-		if err != nil {
-			return nil, err
-		}
-		recentTasks, err = a.loadRecentTasks(ctx, projectID, group)
-		if err != nil {
-			return nil, err
-		}
-		messages, conversation, err = a.loadConversation(ctx, group, options.AnchorMessageID, options.ConversationLimit)
+		messages, conversation, err = a.loadConversation(ctx, group, options.AnchorMessageID, options.ConversationLimit, options.ConversationMessageIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -137,9 +124,6 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 		Conversation:     conversation,
 		OtherProjects:    otherProjects,
 		ManagedResources: managedResources,
-		Facts:            facts,
-		OpenTodos:        openTodos,
-		RecentTasks:      recentTasks,
 		Memories:         make([]map[string]any, 0),
 		RequestContext:   requestContext,
 	}
@@ -150,7 +134,7 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 	return raw, nil
 }
 
-func (a *Assembler) loadConversation(ctx context.Context, group *Group, anchorMessageID string, limit int) ([]Message, []Message, error) {
+func (a *Assembler) loadConversation(ctx context.Context, group *Group, anchorMessageID string, limit int, messageIDs []string) ([]Message, []Message, error) {
 	anchorMessageID = strings.TrimSpace(anchorMessageID)
 	if limit < 0 {
 		return nil, nil, fmt.Errorf("assemble context snapshot: conversation_limit must not be negative")
@@ -163,6 +147,9 @@ func (a *Assembler) loadConversation(ctx context.Context, group *Group, anchorMe
 	}
 	if group == nil || strings.TrimSpace(group.ChatID) == "" {
 		return nil, nil, fmt.Errorf("assemble context snapshot: conversation requires a configured group")
+	}
+	if len(messageIDs) > 0 {
+		return a.loadSelectedConversation(ctx, group, anchorMessageID, limit, messageIDs)
 	}
 	var anchor domain.Message
 	if err := a.db.WithContext(ctx).
@@ -196,10 +183,53 @@ func (a *Assembler) loadConversation(ctx context.Context, group *Group, anchorMe
 	return []Message{snapshotMessage(&anchor)}, conversation, nil
 }
 
+func (a *Assembler) loadSelectedConversation(ctx context.Context, group *Group, anchorMessageID string, limit int, messageIDs []string) ([]Message, []Message, error) {
+	if len(messageIDs) > limit {
+		return nil, nil, fmt.Errorf("assemble context snapshot: selected conversation has %d messages, limit is %d", len(messageIDs), limit)
+	}
+	normalized := make([]string, 0, len(messageIDs))
+	seen := make(map[string]struct{}, len(messageIDs))
+	anchorFound := false
+	for _, raw := range messageIDs {
+		messageID := strings.TrimSpace(raw)
+		if messageID == "" {
+			return nil, nil, fmt.Errorf("assemble context snapshot: selected conversation contains blank message_id")
+		}
+		if _, exists := seen[messageID]; exists {
+			return nil, nil, fmt.Errorf("assemble context snapshot: selected conversation contains duplicate message_id=%s", messageID)
+		}
+		seen[messageID] = struct{}{}
+		normalized = append(normalized, messageID)
+		anchorFound = anchorFound || messageID == anchorMessageID
+	}
+	if !anchorFound {
+		return nil, nil, fmt.Errorf("assemble context snapshot: selected conversation does not contain anchor message_id=%s", anchorMessageID)
+	}
+	var rows []domain.Message
+	if err := a.db.WithContext(ctx).Where("chat_id = ? AND message_id IN ?", group.ChatID, normalized).Find(&rows).Error; err != nil {
+		return nil, nil, fmt.Errorf("assemble context snapshot: load selected conversation chat_id=%s: %w", group.ChatID, err)
+	}
+	byID := make(map[string]*domain.Message, len(rows))
+	for index := range rows {
+		byID[rows[index].MessageID] = &rows[index]
+	}
+	conversation := make([]Message, 0, len(normalized))
+	for _, messageID := range normalized {
+		row := byID[messageID]
+		if row == nil {
+			return nil, nil, fmt.Errorf("assemble context snapshot: selected message_id=%s is not captured in chat_id=%s", messageID, group.ChatID)
+		}
+		conversation = append(conversation, snapshotMessage(row))
+	}
+	anchor := byID[anchorMessageID]
+	return []Message{snapshotMessage(anchor)}, conversation, nil
+}
+
 func snapshotMessage(row *domain.Message) Message {
 	return Message{
 		MessageID: row.MessageID, ChatID: row.ChatID, SenderOpenID: row.SenderOpenID,
-		SenderName: row.SenderName, Content: row.Content, CreateTime: row.CreateTime,
+		SenderName: row.SenderName, Content: row.Content,
+		RootID: stringValue(row.RootID), ThreadID: stringValue(row.ThreadID), CreateTime: row.CreateTime,
 	}
 }
 
@@ -312,106 +342,6 @@ func (a *Assembler) loadManagedResources(ctx context.Context, projectID *uint64)
 			URL: copyString(rows[i].URL), Summary: copyString(rows[i].Summary),
 			ProjectID: copyUint64(rows[i].ProjectID), LinkPrincipal: rows[i].LinkPrincipal,
 			LastActiveAt: rows[i].LastActiveAt.UTC().Format(time.RFC3339),
-		}
-	}
-	return result, nil
-}
-
-// snapshotFactLimit caps how much history rides along in every snapshot. The
-// snapshot is copied onto every Todo and Task, so an unbounded project history
-// would grow the payload of all downstream work forever. Older facts stay in
-// the table and remain queryable by tool.
-const snapshotFactLimit = 50
-
-func (a *Assembler) loadFacts(ctx context.Context, projectID *uint64, group *Group) ([]Fact, error) {
-	if projectID == nil && group == nil {
-		return nil, nil
-	}
-	query := a.db.WithContext(ctx).Model(&domain.Fact{})
-	switch {
-	case projectID != nil && group != nil:
-		query = query.Where("(subject_type = ? AND subject_id = ?) OR (subject_type = ? AND subject_id = ?)",
-			"project", *projectID, "group", group.ID)
-	case projectID != nil:
-		query = query.Where("subject_type = ? AND subject_id = ?", "project", *projectID)
-	default:
-		query = query.Where("subject_type = ? AND subject_id = ?", "group", group.ID)
-	}
-	var rows []domain.Fact
-	if err := query.Order("occurred_at DESC, id DESC").Limit(snapshotFactLimit).Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("assemble context snapshot: load scoped facts: %w", err)
-	}
-	result := make([]Fact, len(rows))
-	for i := range rows {
-		result[i] = Fact{
-			ID: rows[i].ID, SubjectType: rows[i].SubjectType, SubjectID: rows[i].SubjectID,
-			Description: rows[i].Description,
-			OccurredAt:  rows[i].OccurredAt.UTC().Format(time.RFC3339),
-		}
-	}
-	return result, nil
-}
-
-const (
-	snapshotOpenTodoLimit   = 20
-	snapshotRecentTaskLimit = 10
-)
-
-func (a *Assembler) loadOpenTodos(ctx context.Context, projectID *uint64, group *Group) ([]OpenTodo, error) {
-	query := a.db.WithContext(ctx).Model(&domain.Todo{}).
-		Where("status IN ?", []string{"extracted", "observing"})
-	switch {
-	case projectID != nil && group != nil:
-		query = query.Where("group_id = ? OR project_id = ?", group.ID, *projectID)
-	case projectID != nil:
-		query = query.Where("project_id = ?", *projectID)
-	case group != nil:
-		query = query.Where("group_id = ?", group.ID)
-	}
-	var rows []domain.Todo
-	if err := query.Order("last_evidence_at DESC, id DESC").Limit(snapshotOpenTodoLimit).Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("assemble context snapshot: load open todos: %w", err)
-	}
-	result := make([]OpenTodo, len(rows))
-	for i := range rows {
-		result[i] = OpenTodo{ID: rows[i].ID, ActionType: rows[i].ActionType, Title: rows[i].Title, Status: rows[i].Status}
-	}
-	return result, nil
-}
-
-func (a *Assembler) loadRecentTasks(ctx context.Context, projectID *uint64, group *Group) ([]RecentTask, error) {
-	query := a.db.WithContext(ctx).Table("task AS t").
-		Joins("LEFT JOIN todo AS td ON td.id = t.todo_id").
-		Where("t.status IN ?", []string{"pending", "executing", "waiting", "needs_human", "awaiting_approval"})
-	switch {
-	case projectID != nil && group != nil:
-		query = query.Where("t.project_id = ? OR td.group_id = ?", *projectID, group.ID)
-	case projectID != nil:
-		query = query.Where("t.project_id = ?", *projectID)
-	case group != nil:
-		query = query.Where("td.group_id = ?", group.ID)
-	}
-	type taskRow struct {
-		ID             uint64
-		Title          string
-		Status         string
-		Summary        *string
-		LastProgressAt *time.Time
-	}
-	var rows []taskRow
-	if err := query.Select("t.id, t.title, t.status, t.summary, t.last_progress_at").
-		Order("COALESCE(t.last_progress_at, t.created_at) DESC, t.id DESC").
-		Limit(snapshotRecentTaskLimit).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("assemble context snapshot: load recent tasks: %w", err)
-	}
-	result := make([]RecentTask, len(rows))
-	for i := range rows {
-		result[i] = RecentTask{ID: rows[i].ID, Title: rows[i].Title, Status: rows[i].Status}
-		if rows[i].Summary != nil {
-			result[i].Summary = *rows[i].Summary
-		}
-		if rows[i].LastProgressAt != nil {
-			result[i].LastProgressAt = rows[i].LastProgressAt.UTC().Format(time.RFC3339)
 		}
 	}
 	return result, nil

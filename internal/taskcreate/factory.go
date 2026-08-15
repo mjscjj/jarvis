@@ -34,22 +34,23 @@ var (
 )
 
 type Input struct {
-	TodoID            *uint64
-	Title             string
-	ActionType        string
-	Target            string
-	Background        json.RawMessage
-	SourcePayload     json.RawMessage
-	ProjectID         *uint64
-	RepoPath          *string
-	SourceType        string
-	SourceID          *uint64
-	OccurrenceKey     *string
-	ActorType         string
-	EventDetail       map[string]any
-	ChatID            string
-	AnchorMessageID   string
-	ConversationLimit int
+	TodoID                 *uint64
+	Title                  string
+	ActionType             string
+	Target                 string
+	Background             json.RawMessage
+	SourcePayload          json.RawMessage
+	ProjectID              *uint64
+	RepoPath               *string
+	SourceType             string
+	SourceID               *uint64
+	OccurrenceKey          *string
+	ActorType              string
+	EventDetail            map[string]any
+	ChatID                 string
+	AnchorMessageID        string
+	ConversationLimit      int
+	ConversationMessageIDs []string
 }
 
 type Factory struct {
@@ -122,7 +123,8 @@ func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, e
 	options := contextsnap.AssembleOptions{
 		ProjectID: input.ProjectID, ChatID: input.ChatID,
 		AnchorMessageID: input.AnchorMessageID, ConversationLimit: input.ConversationLimit,
-		RequestContext: input.Background,
+		ConversationMessageIDs: input.ConversationMessageIDs,
+		RequestContext:         input.Background,
 	}
 	var background json.RawMessage
 	var err error

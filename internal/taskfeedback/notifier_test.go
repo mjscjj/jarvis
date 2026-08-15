@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"jarvis/internal/execute"
 )
 
 type fakeRunner struct {
@@ -32,7 +34,7 @@ func TestNotifierRepliesOnceThenUpdatesSameMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewNotifier() error = %v", err)
 	}
-	delivery, err := notifier.ReplyProcessing(t.Context(), 17, "om_source")
+	delivery, err := notifier.ReplyProcessing(t.Context(), 17, execute.TaskFeedbackTarget{SourceMessageID: "om_source", ReplyInThread: true})
 	if err != nil {
 		t.Fatalf("ReplyProcessing() error = %v", err)
 	}
@@ -46,7 +48,7 @@ func TestNotifierRepliesOnceThenUpdatesSameMessage(t *testing.T) {
 		t.Fatalf("calls = %d, want 2", len(runner.calls))
 	}
 	first := strings.Join(runner.calls[0], "\n")
-	for _, want := range []string{"+messages-reply", "om_source", "正在处理中", "jarvis-task-17-progress"} {
+	for _, want := range []string{"+messages-reply", "om_source", "正在处理中", "jarvis-task-17-progress", "--reply-in-thread"} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("reply args missing %q: %s", want, first)
 		}
@@ -56,6 +58,20 @@ func TestNotifierRepliesOnceThenUpdatesSameMessage(t *testing.T) {
 		if !strings.Contains(second, want) {
 			t.Fatalf("update args missing %q: %s", want, second)
 		}
+	}
+}
+
+func TestNotifierMainChatReplyDoesNotForceThread(t *testing.T) {
+	runner := &fakeRunner{responses: []any{map[string]any{"data": map[string]any{"message_id": "om_progress"}}}}
+	notifier, err := NewNotifier(runner)
+	if err != nil {
+		t.Fatalf("NewNotifier() error = %v", err)
+	}
+	if _, err := notifier.ReplyProcessing(t.Context(), 18, execute.TaskFeedbackTarget{SourceMessageID: "om_source"}); err != nil {
+		t.Fatalf("ReplyProcessing() error = %v", err)
+	}
+	if got := strings.Join(runner.calls[0], "\n"); strings.Contains(got, "--reply-in-thread") {
+		t.Fatalf("main-chat reply unexpectedly forced into thread: %s", got)
 	}
 }
 

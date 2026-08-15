@@ -20,10 +20,10 @@ var (
 	ErrNotFound     = errors.New("progress event parent not found")
 )
 
-// FactSourceRollup marks a fact written by the daily compression job. Detail
-// facts keep their original source_kind (or NULL); the prompt loads the two
-// layers separately via SourceKind / ExcludeSourceKind.
-const FactSourceRollup = "rollup"
+// FactSourcePageRevision marks a fact that archives one entity summary page's
+// previous text. It is a page version, not something that happened, so readers
+// that count or list events exclude it via ExcludeSourceKind.
+const FactSourcePageRevision = "page_revision"
 
 var taskEventTypes = map[string]struct{}{
 	"created": {}, "execution_started": {}, "approval_requested": {},
@@ -72,9 +72,8 @@ type FactInput struct {
 // local midnight and the next one. Limit caps the newest-first result.
 //
 // SourceKind restricts to facts written by one producer; ExcludeSourceKind
-// removes one. They exist because the prompt needs the two layers separately:
-// today's detail is "everything except the rollup", the previous day is
-// "the rollup only".
+// removes one, which is how callers that count real events drop archived page
+// revisions.
 type FactFilter struct {
 	SubjectType       string
 	SubjectID         uint64

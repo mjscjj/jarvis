@@ -402,10 +402,8 @@ export default function RuntimeSettings() {
           <Section title="持续世界建模" description="在主流水线之外增量阅读消息、Todo 和 Task，由 Agent 自主维护人物、项目、群、资料、关系与历史事实；并按天压缩事实阅读层。">
             <SwitchField name="fact_engine_enabled" label="自动世界建模" />
             <TextField name="fact_engine_schedule" label="建模周期" placeholder="@every 15m" />
-            <TextField name="fact_engine_rollup_schedule" label="日压缩周期" placeholder="0 2 * * *" help="每天把前一个自然日每个主体的明细事实压成一条摘要，供 M3 提示词使用。" />
             <TextField name="fact_engine_model" label="世界维护模型" />
             <SelectField name="fact_engine_reasoning_effort" label="世界维护推理档位" options={reasoningOptions} />
-            <TextField name="fact_engine_rollup_model" label="事实日压缩模型" />
             <NumberField name="fact_engine_timeout_seconds" label="单轮超时（秒）" min={1} max={3600} />
             <NumberField name="fact_engine_batch_limit" label="每来源候选行上限" min={1} max={5000} />
             <NumberField name="fact_engine_max_material_chars" label="单次材料字符上限" min={1} max={900000} />

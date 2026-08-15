@@ -57,6 +57,22 @@ func ListTasks(service execute.TaskService) app.HandlerFunc {
 			statuses = []string{"pending"}
 		}
 		filter := execute.TaskFilter{Statuses: statuses, Page: page, PageSize: pageSize}
+		if raw := strings.TrimSpace(c.Query("project_id")); raw != "" {
+			value, err := strconv.ParseUint(raw, 10, 64)
+			if err != nil || value == 0 {
+				writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("project_id must be a positive integer"))
+				return
+			}
+			filter.ProjectID = &value
+		}
+		if raw := strings.TrimSpace(c.Query("group_id")); raw != "" {
+			value, err := strconv.ParseUint(raw, 10, 64)
+			if err != nil || value == 0 {
+				writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("group_id must be a positive integer"))
+				return
+			}
+			filter.GroupID = &value
+		}
 		if raw := strings.TrimSpace(c.Query("from")); raw != "" {
 			from, err := time.Parse(time.RFC3339, raw)
 			if err != nil {

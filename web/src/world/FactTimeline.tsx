@@ -1,21 +1,14 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Alert, Button, Card, Collapse, Empty, Flex, Space, Spin, Tag, Timeline, Typography } from 'antd'
 import dayjs from 'dayjs'
-import { generateFactRollup, getFactTimeline, listSubjectFacts } from '../api'
-import type { Fact, FactRollupState, FactSubjectDay, FactTimeline as FactTimelineData } from '../types'
+import { getFactTimeline, listSubjectFacts } from '../api'
+import type { Fact, FactSubjectDay, FactTimeline as FactTimelineData } from '../types'
 
 const { Text } = Typography
-
-const rollupStateMeta: Record<FactRollupState, { label: string; color: string }> = {
-  fresh: { label: '已压缩', color: 'green' },
-  stale: { label: '有新增待重压', color: 'orange' },
-  missing: { label: '未压缩', color: 'default' },
-}
 
 function sourceLabel(source: string | null): string | null {
   if (!source) return null
   if (source === 'message') return '消息抽取'
-  if (source === 'rollup') return '事实压缩'
   return source
 }
 
@@ -53,7 +46,6 @@ export default function FactTimeline({
   const [revision, setRevision] = useState(0)
   const [details, setDetails] = useState<Record<string, Fact[]>>({})
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({})
-  const [rolling, setRolling] = useState<string>()
   const timelineDays = subject ? 31 : 3
 
   const reload = useCallback(() => setRevision((value) => value + 1), [])
@@ -81,7 +73,7 @@ export default function FactTimeline({
     try {
       const from = dayjs(`${date}T00:00:00`).toISOString()
       const until = dayjs(`${date}T00:00:00`).add(1, 'day').toISOString()
-      const result = await listSubjectFacts(item.subject_type, item.subject_id, undefined, { from, until, excludeSourceKind: 'rollup' })
+      const result = await listSubjectFacts(item.subject_type, item.subject_id, undefined, { from, until, excludeSourceKind: 'page_revision' })
       setDetails((current) => ({ ...current, [key]: result.items }))
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -90,62 +82,24 @@ export default function FactTimeline({
     }
   }
 
-  const reroll = async (date: string, item: FactSubjectDay) => {
-    const key = subjectDayKey(date, item)
-    setRolling(key)
-    try {
-      await generateFactRollup(date, { type: item.subject_type, id: item.subject_id })
-      setDetails((current) => {
-        const next = { ...current }
-        delete next[key]
-        return next
-      })
-      reload()
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setRolling(undefined)
-    }
-  }
-
   const historyRows = timeline?.days.slice(1).flatMap((day) => day.subjects.map((item) => {
     const key = subjectDayKey(day.date, item)
-    const meta = rollupStateMeta[item.rollup_state]
     return (
       <div className="fact-history-row" key={key}>
         <Flex align="center" justify="space-between" gap={12} className="fact-history-label">
           <Space size={8} wrap>
             <Text strong>{dayjs(day.date).format('M月D日')}</Text>
             {!subject && <Text>{item.subject_label}</Text>}
-            <Tag color={meta.color}>{meta.label}</Tag>
-            <Text type="secondary">{item.detail_count} 条原始事实</Text>
-            {item.late_detail_count > 0 && <Text type="warning">新增 {item.late_detail_count} 条</Text>}
+            <Tag>{item.detail_count} 条事实</Tag>
+            <Text type="secondary">最近 {dayjs(item.latest_occurred_at).format('HH:mm')}</Text>
           </Space>
-          {item.rollup_state !== 'fresh' && item.detail_count > 0 && (
-            <Button size="small" loading={rolling === key} onClick={(event) => { event.stopPropagation(); void reroll(day.date, item) }}>重新压缩</Button>
-          )}
         </Flex>
-        <div className="fact-history-summary">
-          {item.rollup ? (
-            <div className={`fact-rollup fact-rollup-${item.rollup_state}`}>
-              <Text type="secondary" className="fact-rollup-kicker">压缩结果</Text>
-              <Typography.Paragraph
-                className="fact-description fact-rollup-description"
-                ellipsis={{ rows: subject ? 8 : 3, expandable: true, symbol: '展开摘要' }}
-              >
-                {item.rollup.description}
-              </Typography.Paragraph>
-            </div>
-          ) : (
-            <Alert type="warning" showIcon title="这一天还没有压缩产物" description="原始事实仍完整保留；点击重新压缩后会生成默认摘要。" />
-          )}
-        </div>
         <Collapse
           ghost
           className="fact-raw-collapse"
           items={[{
             key,
-            label: <Text type="secondary">展开 {item.detail_count} 条原始事实</Text>,
+            label: <Text type="secondary">展开 {item.detail_count} 条事实</Text>,
             children: detailLoading[key] ? <Spin size="small" /> : (
               <Timeline items={(details[key] || []).map((fact) => ({ content: factContent(fact) }))} />
             ),
@@ -184,7 +138,7 @@ export default function FactTimeline({
           <section>
             <Flex align="baseline" gap={8} className="fact-day-heading">
               <Text strong>历史</Text>
-              <Text type="secondary">默认看压缩结果，展开查看原始事实</Text>
+              <Text type="secondary">按主体分组，展开查看当天事实</Text>
             </Flex>
             {historyRows.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={subject ? '最近 30 天暂无事实' : '昨天、前天暂无事实'} />

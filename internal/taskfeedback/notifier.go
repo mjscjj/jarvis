@@ -27,17 +27,21 @@ func NewNotifier(lark larkRunner) (*Notifier, error) {
 	return &Notifier{lark: lark}, nil
 }
 
-func (n *Notifier) ReplyProcessing(ctx context.Context, taskID uint64, sourceMessageID string) (*execute.TaskFeedbackDelivery, error) {
-	sourceMessageID = strings.TrimSpace(sourceMessageID)
+func (n *Notifier) ReplyProcessing(ctx context.Context, taskID uint64, target execute.TaskFeedbackTarget) (*execute.TaskFeedbackDelivery, error) {
+	sourceMessageID := strings.TrimSpace(target.SourceMessageID)
 	if taskID == 0 || sourceMessageID == "" {
 		return nil, fmt.Errorf("Task feedback task_id/source_message_id is invalid")
 	}
-	var response any
-	if err := n.lark.Run(ctx, &response,
+	args := []string{
 		"im", "+messages-reply", "--message-id", sourceMessageID,
 		"--text", "正在处理中", "--idempotency-key", fmt.Sprintf("jarvis-task-%d-progress", taskID),
 		"--as", "bot",
-	); err != nil {
+	}
+	if target.ReplyInThread {
+		args = append(args, "--reply-in-thread")
+	}
+	var response any
+	if err := n.lark.Run(ctx, &response, args...); err != nil {
 		return nil, fmt.Errorf("reply Task processing task_id=%d source_message_id=%s: %w", taskID, sourceMessageID, err)
 	}
 	messageIDs := distinctMessageIDs(response)

@@ -61,8 +61,7 @@ type Dependencies struct {
 	Worklog            *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
 	MeetingReviews     *insight.MeetingReviewService
 	DigestSummarizer   *insight.Summarizer // 可选：codex 未启用时为 nil，总结接口返回 503
-	FactRollups        FactRollupGenerator // 事实日压缩手动触发；nil 则接口返回 503
-	FactRollupLoc      *time.Location      // 手动触发时解析 YYYY-MM-DD 的时区
+	FactTimelineLoc    *time.Location      // 事实时间线按自然日分组的时区
 	Debug              *insight.DebugService
 	Logs               *insight.LogReader
 	Chat               *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
@@ -224,9 +223,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/facts", ListFacts(deps.Progress))
 	h.POST("/api/facts", AppendFact(deps.Progress))
 	h.POST("/api/facts/batch", AppendFacts(deps.Progress))
-	h.GET("/api/facts/timeline", FactTimeline(deps.FactQueries, deps.FactRollupLoc))
+	h.GET("/api/facts/timeline", FactTimeline(deps.FactQueries, deps.FactTimelineLoc))
 	h.GET("/api/facts/search", SearchFacts(deps.FactQueries))
-	h.POST("/api/fact-rollups/generate", GenerateFactRollups(deps.FactRollups, deps.FactRollupLoc))
 	h.GET("/api/persons", ListPersons(deps.Persons))
 	h.POST("/api/persons/resolve", ResolvePerson(deps.Resolve))
 	h.POST("/api/persons", CreatePerson(deps.Persons))
