@@ -121,7 +121,7 @@ func TestJarvisInstallPinsPatchedCCConnectWithoutStartingIt(t *testing.T) {
 	manifest := string(manifestContent)
 	for _, want := range []string{
 		`CC_CONNECT_BASE_COMMIT="5d4c96dd12774574369e75b60084140101c9a59a"`,
-		`CC_CONNECT_PATCH_COMMIT="97b4bed5e0cf2a2320519208a6c22bc9edf109ee"`,
+		`CC_CONNECT_PATCH_COMMIT="5e2eefd3677fccce4725417d52bacd6cba98cee2"`,
 		`CC_CONNECT_PATCH_RELATIVE_PATH="integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch"`,
 	} {
 		if !strings.Contains(manifest, want) {
@@ -248,7 +248,7 @@ exit 9
 	text := string(content)
 	for _, want := range []string{
 		`name = "keep-me"`, `name = "jarvis-codex"`, `app_id = "cli_app_ready"`,
-		`scripts/jarvis-tools get-context`, `--profile cli_ready`,
+		`scripts/jarvis-tools get-context --chat-id`, `Feishu transport context`, `--profile cli_ready`,
 		`jarvis_route_claim_url = "http://127.0.0.1:18800/internal/message-routing/claim"`,
 	} {
 		if !strings.Contains(text, want) {

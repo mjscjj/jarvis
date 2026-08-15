@@ -23,7 +23,7 @@ message -> factengine（旁路）-> fact
 
 Jarvis Bot 的事件连接由 CC Connect 独占；`jarvis-server` 不启动 `lark-cli event consume`。M2 依赖会话发现与增量轮询，按 checkpoint 推进恢复水位；未来若需要实时事件，只能由 CC Connect 通过明确的本机 fan-out 接口转发。
 
-CC Connect 自己接受的交互消息不进入 Todo 流水线。它在原生 Agent 执行前同步调用 `/internal/message-routing/claim`，按飞书 `message_id` 幂等保存当前消息并设置 `extraction_skipped=true`。该机器边界不抓历史、不创建 Task、不唤醒 M3，也不把会话自动改成 `related_group`；消息仍可作为后续普通线索的会话背景。
+CC Connect 自己接受的交互消息不进入 Todo 流水线。它在原生 Agent 执行前同步调用 `/internal/message-routing/claim`，按飞书 `message_id` 幂等保存当前消息并设置 `extraction_skipped=true`。该机器边界不携带历史、不创建 Task、不唤醒 M3，也不把会话自动改成 `related_group`；消息仍可作为后续普通线索的会话背景。CC 原生 Agent 所需的群聊历史直接从飞书实时读取，不从 Jarvis `message` 表重建：普通群按 chat，话题/回复按 thread，最多取当前消息之前 24 条。当前 `chat_id` 还用于读取群绑定的 Jarvis 世界上下文。
 
 ## 2. 机械职责
 
