@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-08-15
 > Code source: `internal/capture/`, `internal/domain/capture.go`
 
 M2 把外部事实可靠写入 SQLite，并按 chat 唤醒 M3。它不分类、不下结论、不决定重试策略。
@@ -23,6 +23,8 @@ message -> factengine（旁路）-> fact
 
 Jarvis Bot 的事件连接由 CC Connect 独占；`jarvis-server` 不启动 `lark-cli event consume`。M2 依赖会话发现与增量轮询，按 checkpoint 推进恢复水位；未来若需要实时事件，只能由 CC Connect 通过明确的本机 fan-out 接口转发。
 
+CC Connect 自己接受的交互消息不进入 Todo 流水线。它在原生 Agent 执行前同步调用 `/internal/message-routing/claim`，按飞书 `message_id` 幂等保存当前消息并设置 `extraction_skipped=true`。该机器边界不抓历史、不创建 Task、不唤醒 M3，也不把会话自动改成 `related_group`；消息仍可作为后续普通线索的会话背景。
+
 ## 2. 机械职责
 
 - 全量发现会话，但首次只从当前时刻建立 checkpoint，不回溯历史。
@@ -41,7 +43,7 @@ Jarvis Bot 的事件连接由 CC Connect 独占；`jarvis-server` 不启动 `lar
 | `feishu_group` | 会话目录、related 标记、项目归属和展示字段 |
 | `chat_checkpoint` | 每会话增量扫描水位 |
 | `principal_activity_checkpoint` | principal activity 搜索水位 |
-| `message` | 原始消息/线索真源 |
+| `message` | 原始消息/线索真源；`extraction_skipped` 表示该消息已由其它执行入口认领 |
 | `resource` | 附件、文档、妙记等引用元数据 |
 | `scan_record` | 采集尝试的追加审计 |
 

@@ -19,18 +19,15 @@ import (
 // background. RequestContext is preserved as data; it never replaces common
 // context. ChatID and GroupID are consumed only by AssembleConversation.
 type AssembleOptions struct {
-	ProjectID              *uint64
-	ChatID                 string
-	GroupID                *uint64
-	AnchorMessageID        string
-	ConversationLimit      int
-	ConversationMessageIDs []string
-	RequestContext         json.RawMessage
+	ProjectID      *uint64
+	ChatID         string
+	GroupID        *uint64
+	RequestContext json.RawMessage
 }
 
 // Assembler builds one canonical background shape. Assemble serves ordinary
-// Task creation; AssembleConversation adds live scope for CC Connect, backend
-// chat and ScheduledTask wake-ups without duplicating lookup logic.
+// Task creation; AssembleConversation adds conversation scope for backend chat
+// and ScheduledTask wake-ups without duplicating lookup logic.
 type Assembler struct {
 	db              *gorm.DB
 	principalOpenID string
@@ -52,9 +49,9 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 	return a.assemble(ctx, options, false)
 }
 
-// AssembleConversation adds live conversation scope and current work to the
-// common background. It is intentionally reserved for interactive entrypoints
-// and ScheduledTask wake-ups; ordinary Task execution keeps its frozen context.
+// AssembleConversation adds conversation scope to the common background. It is
+// intentionally reserved for backend chat and ScheduledTask wake-ups; ordinary
+// Task execution keeps its frozen context.
 func (a *Assembler) AssembleConversation(ctx context.Context, options AssembleOptions) (json.RawMessage, error) {
 	return a.assemble(ctx, options, true)
 }
@@ -105,23 +102,12 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 	if err != nil {
 		return nil, err
 	}
-	var messages []Message
-	var conversation []Message
-	if includeLiveContext {
-		messages, conversation, err = a.loadConversation(ctx, group, options.AnchorMessageID, options.ConversationLimit, options.ConversationMessageIDs)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	snapshot := Snapshot{
 		SnapshotVersion:  SnapshotVersion,
 		CapturedAt:       a.now().UTC().Format(time.RFC3339),
 		Principal:        principal,
 		Project:          project,
 		Group:            group,
-		Messages:         messages,
-		Conversation:     conversation,
 		OtherProjects:    otherProjects,
 		ManagedResources: managedResources,
 		Memories:         make([]map[string]any, 0),
@@ -132,112 +118,6 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 		return nil, fmt.Errorf("assemble context snapshot: %w", err)
 	}
 	return raw, nil
-}
-
-func (a *Assembler) loadConversation(ctx context.Context, group *Group, anchorMessageID string, limit int, messageIDs []string) ([]Message, []Message, error) {
-	anchorMessageID = strings.TrimSpace(anchorMessageID)
-	if limit < 0 {
-		return nil, nil, fmt.Errorf("assemble context snapshot: conversation_limit must not be negative")
-	}
-	if anchorMessageID == "" && limit == 0 {
-		return nil, nil, nil
-	}
-	if anchorMessageID == "" || limit <= 0 {
-		return nil, nil, fmt.Errorf("assemble context snapshot: anchor_message_id and positive conversation_limit must be set together")
-	}
-	if group == nil || strings.TrimSpace(group.ChatID) == "" {
-		return nil, nil, fmt.Errorf("assemble context snapshot: conversation requires a configured group")
-	}
-	if len(messageIDs) > 0 {
-		return a.loadSelectedConversation(ctx, group, anchorMessageID, limit, messageIDs)
-	}
-	var anchor domain.Message
-	if err := a.db.WithContext(ctx).
-		Where("chat_id = ? AND message_id = ?", group.ChatID, anchorMessageID).
-		Take(&anchor).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, fmt.Errorf("assemble context snapshot: anchor message_id=%s is not captured in chat_id=%s", anchorMessageID, group.ChatID)
-		}
-		return nil, nil, fmt.Errorf("assemble context snapshot: load anchor message_id=%s: %w", anchorMessageID, err)
-	}
-	query := a.db.WithContext(ctx).Where("chat_id = ?", group.ChatID).
-		Where("render_ok = ?", true).
-		Where("create_time < ? OR (create_time = ? AND id <= ?)", anchor.CreateTime, anchor.CreateTime, anchor.ID)
-	topicID := strings.TrimSpace(stringValue(anchor.ThreadID))
-	if topicID == "" {
-		topicID = strings.TrimSpace(stringValue(anchor.RootID))
-	}
-	if topicID == "" {
-		query = query.Where("(root_id IS NULL OR root_id = '') AND (thread_id IS NULL OR thread_id = '')")
-	} else {
-		query = query.Where("(COALESCE(NULLIF(thread_id, ''), NULLIF(root_id, '')) = ? OR message_id = ?)", topicID, topicID)
-	}
-	var rows []domain.Message
-	if err := query.Order("create_time DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
-		return nil, nil, fmt.Errorf("assemble context snapshot: load conversation chat_id=%s: %w", group.ChatID, err)
-	}
-	conversation := make([]Message, len(rows))
-	for i := range rows {
-		conversation[len(rows)-1-i] = snapshotMessage(&rows[i])
-	}
-	return []Message{snapshotMessage(&anchor)}, conversation, nil
-}
-
-func (a *Assembler) loadSelectedConversation(ctx context.Context, group *Group, anchorMessageID string, limit int, messageIDs []string) ([]Message, []Message, error) {
-	if len(messageIDs) > limit {
-		return nil, nil, fmt.Errorf("assemble context snapshot: selected conversation has %d messages, limit is %d", len(messageIDs), limit)
-	}
-	normalized := make([]string, 0, len(messageIDs))
-	seen := make(map[string]struct{}, len(messageIDs))
-	anchorFound := false
-	for _, raw := range messageIDs {
-		messageID := strings.TrimSpace(raw)
-		if messageID == "" {
-			return nil, nil, fmt.Errorf("assemble context snapshot: selected conversation contains blank message_id")
-		}
-		if _, exists := seen[messageID]; exists {
-			return nil, nil, fmt.Errorf("assemble context snapshot: selected conversation contains duplicate message_id=%s", messageID)
-		}
-		seen[messageID] = struct{}{}
-		normalized = append(normalized, messageID)
-		anchorFound = anchorFound || messageID == anchorMessageID
-	}
-	if !anchorFound {
-		return nil, nil, fmt.Errorf("assemble context snapshot: selected conversation does not contain anchor message_id=%s", anchorMessageID)
-	}
-	var rows []domain.Message
-	if err := a.db.WithContext(ctx).Where("chat_id = ? AND message_id IN ?", group.ChatID, normalized).Find(&rows).Error; err != nil {
-		return nil, nil, fmt.Errorf("assemble context snapshot: load selected conversation chat_id=%s: %w", group.ChatID, err)
-	}
-	byID := make(map[string]*domain.Message, len(rows))
-	for index := range rows {
-		byID[rows[index].MessageID] = &rows[index]
-	}
-	conversation := make([]Message, 0, len(normalized))
-	for _, messageID := range normalized {
-		row := byID[messageID]
-		if row == nil {
-			return nil, nil, fmt.Errorf("assemble context snapshot: selected message_id=%s is not captured in chat_id=%s", messageID, group.ChatID)
-		}
-		conversation = append(conversation, snapshotMessage(row))
-	}
-	anchor := byID[anchorMessageID]
-	return []Message{snapshotMessage(anchor)}, conversation, nil
-}
-
-func snapshotMessage(row *domain.Message) Message {
-	return Message{
-		MessageID: row.MessageID, ChatID: row.ChatID, ChatMode: row.ChatMode, SenderOpenID: row.SenderOpenID,
-		SenderName: row.SenderName, Content: row.Content,
-		RootID: stringValue(row.RootID), ThreadID: stringValue(row.ThreadID), CreateTime: row.CreateTime,
-	}
-}
-
-func stringValue(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
 }
 
 func (a *Assembler) loadGroup(ctx context.Context, chatID string, groupID *uint64) (*Group, error) {

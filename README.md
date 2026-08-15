@@ -14,8 +14,11 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 ## 当前链路
 
 ```text
-飞书 IM 事件 ───────────────┐
-飞书 IM 轮询补偿 ───────────┤
+飞书 Bot WebSocket ─> CC Connect
+                       ├─ 接受的私聊/@消息 ─> route claim ─> CC 原生 Agent/session
+                       └─ 未接受的普通群消息（等待 M2 轮询）
+
+飞书 IM 轮询补偿 ───────────┐
                            ├─> M2 capture ─> message ─> M3 extract
 外部 Skill / 定时任务 ─> /api/clues ────────┘             │
                                                             ├─ observing：保留观察，不创建 Task

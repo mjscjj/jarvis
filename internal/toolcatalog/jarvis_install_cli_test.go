@@ -121,7 +121,7 @@ func TestJarvisInstallPinsPatchedCCConnectWithoutStartingIt(t *testing.T) {
 	manifest := string(manifestContent)
 	for _, want := range []string{
 		`CC_CONNECT_BASE_COMMIT="5d4c96dd12774574369e75b60084140101c9a59a"`,
-		`CC_CONNECT_PATCH_COMMIT="7d4d0b21aa8285ad021b62939cadd64197eba289"`,
+		`CC_CONNECT_PATCH_COMMIT="97b4bed5e0cf2a2320519208a6c22bc9edf109ee"`,
 		`CC_CONNECT_PATCH_RELATIVE_PATH="integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch"`,
 	} {
 		if !strings.Contains(manifest, want) {
@@ -246,7 +246,11 @@ exit 9
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `app_id = "cli_app_ready"`, `scripts/jarvis-tools get-context`, `--profile cli_ready`} {
+	for _, want := range []string{
+		`name = "keep-me"`, `name = "jarvis-codex"`, `app_id = "cli_app_ready"`,
+		`scripts/jarvis-tools get-context`, `--profile cli_ready`,
+		`jarvis_route_claim_url = "http://127.0.0.1:18800/internal/message-routing/claim"`,
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CC config missing %q:\n%s", want, text)
 		}

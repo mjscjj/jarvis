@@ -13,7 +13,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
-const cardApprovalRelaySecretHeader = "X-Jarvis-Relay-Secret"
+const jarvisRelaySecretHeader = "X-Jarvis-Relay-Secret"
 
 // CardApprovalProcessor is the strict machine boundary behind the CC Connect
 // relay. The implementation still owns all task/proposal/version
@@ -41,7 +41,7 @@ func RelayCardApproval(processor CardApprovalProcessor, secret string) app.Handl
 			writeAPIError(c, consts.StatusServiceUnavailable, 50322, fmt.Errorf("card approval relay is unavailable"))
 			return
 		}
-		gotSecret := strings.TrimSpace(string(c.Request.Header.Peek(cardApprovalRelaySecretHeader)))
+		gotSecret := strings.TrimSpace(string(c.Request.Header.Peek(jarvisRelaySecretHeader)))
 		wantSecret := strings.TrimSpace(secret)
 		if wantSecret == "" || subtle.ConstantTimeCompare([]byte(gotSecret), []byte(wantSecret)) != 1 {
 			writeAPIError(c, consts.StatusUnauthorized, 40122, fmt.Errorf("card approval relay authentication failed"))

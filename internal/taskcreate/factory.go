@@ -20,12 +20,10 @@ import (
 )
 
 const (
-	SourceTodo                   = "todo"
-	SourceScheduledTask          = "scheduled_task"
-	SourceManual                 = "manual"
-	SourceProactive              = "proactive"
-	SourceInteractive            = "interactive"
-	InteractiveConversationLimit = 25
+	SourceTodo          = "todo"
+	SourceScheduledTask = "scheduled_task"
+	SourceManual        = "manual"
+	SourceProactive     = "proactive"
 )
 
 var (
@@ -34,23 +32,19 @@ var (
 )
 
 type Input struct {
-	TodoID                 *uint64
-	Title                  string
-	ActionType             string
-	Target                 string
-	Background             json.RawMessage
-	SourcePayload          json.RawMessage
-	ProjectID              *uint64
-	RepoPath               *string
-	SourceType             string
-	SourceID               *uint64
-	OccurrenceKey          *string
-	ActorType              string
-	EventDetail            map[string]any
-	ChatID                 string
-	AnchorMessageID        string
-	ConversationLimit      int
-	ConversationMessageIDs []string
+	TodoID        *uint64
+	Title         string
+	ActionType    string
+	Target        string
+	Background    json.RawMessage
+	SourcePayload json.RawMessage
+	ProjectID     *uint64
+	RepoPath      *string
+	SourceType    string
+	SourceID      *uint64
+	OccurrenceKey *string
+	ActorType     string
+	EventDetail   map[string]any
 }
 
 type Factory struct {
@@ -93,42 +87,22 @@ func (f *Factory) Create(ctx context.Context, input Input) (*domain.Task, error)
 	return task, err
 }
 
-func (f *Factory) FindOccurrence(ctx context.Context, sourceType string, sourceID uint64, occurrenceKey string) (*domain.Task, error) {
-	sourceType = strings.TrimSpace(sourceType)
-	occurrenceKey = strings.TrimSpace(occurrenceKey)
-	if sourceType == "" || sourceID == 0 || occurrenceKey == "" {
-		return nil, fmt.Errorf("%w: source_type, source_id and occurrence_key are required", ErrInvalidInput)
-	}
-	var task domain.Task
-	if err := f.db.WithContext(ctx).
-		Where("source_type = ? AND source_id = ? AND occurrence_key = ?", sourceType, sourceID, occurrenceKey).
-		Take(&task).Error; err != nil {
-		return nil, fmt.Errorf("load Task source=%s/%d occurrence=%s: %w", sourceType, sourceID, occurrenceKey, err)
-	}
-	return &task, nil
-}
-
 func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, error) {
 	if input.SourceType == SourceTodo {
 		return input, nil
 	}
 	switch input.SourceType {
-	case SourceManual, SourceScheduledTask, SourceProactive, SourceInteractive:
+	case SourceManual, SourceScheduledTask, SourceProactive:
 	default:
 		return input, nil
 	}
 	if f.assembler == nil {
 		return Input{}, fmt.Errorf("assemble %s Task background: context snapshot assembler is not configured", input.SourceType)
 	}
-	options := contextsnap.AssembleOptions{
-		ProjectID: input.ProjectID, ChatID: input.ChatID,
-		AnchorMessageID: input.AnchorMessageID, ConversationLimit: input.ConversationLimit,
-		ConversationMessageIDs: input.ConversationMessageIDs,
-		RequestContext:         input.Background,
-	}
+	options := contextsnap.AssembleOptions{ProjectID: input.ProjectID, RequestContext: input.Background}
 	var background json.RawMessage
 	var err error
-	if input.SourceType == SourceScheduledTask || input.SourceType == SourceInteractive {
+	if input.SourceType == SourceScheduledTask {
 		background, err = f.assembler.AssembleConversation(ctx, options)
 	} else {
 		background, err = f.assembler.Assemble(ctx, options)
@@ -211,9 +185,9 @@ func normalizeInput(input Input) (Input, error) {
 		return Input{}, fmt.Errorf("%w: title, action_type and target are required", ErrInvalidInput)
 	}
 	switch input.SourceType {
-	case SourceTodo, SourceScheduledTask, SourceManual, SourceProactive, SourceInteractive:
+	case SourceTodo, SourceScheduledTask, SourceManual, SourceProactive:
 	default:
-		return Input{}, fmt.Errorf("%w: source_type must be todo, scheduled_task, manual, proactive or interactive", ErrInvalidInput)
+		return Input{}, fmt.Errorf("%w: source_type must be todo, scheduled_task, manual or proactive", ErrInvalidInput)
 	}
 	if input.SourceType == SourceTodo {
 		if input.TodoID == nil || *input.TodoID == 0 {
@@ -226,17 +200,6 @@ func normalizeInput(input Input) (Input, error) {
 	if input.SourceType == SourceScheduledTask {
 		if input.SourceID == nil || *input.SourceID == 0 || input.OccurrenceKey == nil || strings.TrimSpace(*input.OccurrenceKey) == "" {
 			return Input{}, fmt.Errorf("%w: scheduled_task source requires source_id and occurrence_key", ErrInvalidInput)
-		}
-	}
-	if input.SourceType == SourceInteractive {
-		if input.SourceID == nil || *input.SourceID == 0 || input.OccurrenceKey == nil || strings.TrimSpace(*input.OccurrenceKey) == "" {
-			return Input{}, fmt.Errorf("%w: interactive source requires source_id and occurrence_key", ErrInvalidInput)
-		}
-		if strings.TrimSpace(input.ChatID) == "" || strings.TrimSpace(input.AnchorMessageID) == "" {
-			return Input{}, fmt.Errorf("%w: interactive source requires chat_id and anchor_message_id", ErrInvalidInput)
-		}
-		if input.ConversationLimit <= 0 {
-			return Input{}, fmt.Errorf("%w: interactive source requires positive conversation_limit", ErrInvalidInput)
 		}
 	}
 	if input.SourceID != nil && *input.SourceID == 0 {

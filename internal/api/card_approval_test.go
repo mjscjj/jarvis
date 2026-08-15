@@ -41,7 +41,7 @@ func TestRelayCardApprovalAuthenticatesAndMapsNamespace(t *testing.T) {
 	response := ut.PerformRequest(
 		h.Engine, "POST", "/internal/card-approval/callback",
 		&ut.Body{Body: bytes.NewReader(body), Len: len(body)},
-		ut.Header{Key: cardApprovalRelaySecretHeader, Value: "relay-secret"},
+		ut.Header{Key: jarvisRelaySecretHeader, Value: "relay-secret"},
 	).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
@@ -67,7 +67,7 @@ func TestRelayCardApprovalRejectsBadSecret(t *testing.T) {
 	response := ut.PerformRequest(
 		h.Engine, "POST", "/internal/card-approval/callback",
 		&ut.Body{Body: bytes.NewReader(body), Len: len(body)},
-		ut.Header{Key: cardApprovalRelaySecretHeader, Value: "wrong"},
+		ut.Header{Key: jarvisRelaySecretHeader, Value: "wrong"},
 	).Result()
 	if response.StatusCode() != consts.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
@@ -85,7 +85,7 @@ func TestRelayCardApprovalRejectsWrongNamespace(t *testing.T) {
 	response := ut.PerformRequest(
 		h.Engine, "POST", "/internal/card-approval/callback",
 		&ut.Body{Body: bytes.NewReader(body), Len: len(body)},
-		ut.Header{Key: cardApprovalRelaySecretHeader, Value: "relay-secret"},
+		ut.Header{Key: jarvisRelaySecretHeader, Value: "relay-secret"},
 	).Result()
 	if response.StatusCode() != consts.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
@@ -100,7 +100,7 @@ func TestRelayCardApprovalMapsExecutionConflict(t *testing.T) {
 	response := ut.PerformRequest(
 		h.Engine, "POST", "/internal/card-approval/callback",
 		&ut.Body{Body: bytes.NewReader(body), Len: len(body)},
-		ut.Header{Key: cardApprovalRelaySecretHeader, Value: "relay-secret"},
+		ut.Header{Key: jarvisRelaySecretHeader, Value: "relay-secret"},
 	).Result()
 	if response.StatusCode() != consts.StatusConflict || !errors.Is(processor.err, execute.ErrInvalidTransition) {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
