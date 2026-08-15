@@ -27,7 +27,11 @@ type Message struct {
 	UpdateTime   *int64         `gorm:"column:update_time"`
 	Source       string         `gorm:"column:source;not null;default:poll"`
 	RenderOK     bool           `gorm:"column:render_ok;not null;default:1"`
-	CreatedAt    time.Time      `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	// ExtractionSkipped is a transport-level routing fact. A message already
+	// materialized as a direct interactive Task remains available as context,
+	// but M3 must not independently turn the same request into a second Task.
+	ExtractionSkipped bool      `gorm:"column:extraction_skipped;not null;default:0"`
+	CreatedAt         time.Time `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
 
 	Group *Group `gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL"`
 }

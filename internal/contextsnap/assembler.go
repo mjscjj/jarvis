@@ -19,10 +19,12 @@ import (
 // background. RequestContext is preserved as data; it never replaces common
 // context. ChatID and GroupID are consumed only by AssembleConversation.
 type AssembleOptions struct {
-	ProjectID      *uint64
-	ChatID         string
-	GroupID        *uint64
-	RequestContext json.RawMessage
+	ProjectID         *uint64
+	ChatID            string
+	GroupID           *uint64
+	AnchorMessageID   string
+	ConversationLimit int
+	RequestContext    json.RawMessage
 }
 
 // Assembler builds one canonical background shape. Assemble serves ordinary
@@ -108,12 +110,18 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 	}
 	var openTodos []OpenTodo
 	var recentTasks []RecentTask
+	var messages []Message
+	var conversation []Message
 	if includeLiveContext {
 		openTodos, err = a.loadOpenTodos(ctx, projectID, group)
 		if err != nil {
 			return nil, err
 		}
 		recentTasks, err = a.loadRecentTasks(ctx, projectID, group)
+		if err != nil {
+			return nil, err
+		}
+		messages, conversation, err = a.loadConversation(ctx, group, options.AnchorMessageID, options.ConversationLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -125,6 +133,8 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 		Principal:        principal,
 		Project:          project,
 		Group:            group,
+		Messages:         messages,
+		Conversation:     conversation,
 		OtherProjects:    otherProjects,
 		ManagedResources: managedResources,
 		Facts:            facts,
@@ -138,6 +148,66 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 		return nil, fmt.Errorf("assemble context snapshot: %w", err)
 	}
 	return raw, nil
+}
+
+func (a *Assembler) loadConversation(ctx context.Context, group *Group, anchorMessageID string, limit int) ([]Message, []Message, error) {
+	anchorMessageID = strings.TrimSpace(anchorMessageID)
+	if limit < 0 {
+		return nil, nil, fmt.Errorf("assemble context snapshot: conversation_limit must not be negative")
+	}
+	if anchorMessageID == "" && limit == 0 {
+		return nil, nil, nil
+	}
+	if anchorMessageID == "" || limit <= 0 {
+		return nil, nil, fmt.Errorf("assemble context snapshot: anchor_message_id and positive conversation_limit must be set together")
+	}
+	if group == nil || strings.TrimSpace(group.ChatID) == "" {
+		return nil, nil, fmt.Errorf("assemble context snapshot: conversation requires a configured group")
+	}
+	var anchor domain.Message
+	if err := a.db.WithContext(ctx).
+		Where("chat_id = ? AND message_id = ?", group.ChatID, anchorMessageID).
+		Take(&anchor).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, fmt.Errorf("assemble context snapshot: anchor message_id=%s is not captured in chat_id=%s", anchorMessageID, group.ChatID)
+		}
+		return nil, nil, fmt.Errorf("assemble context snapshot: load anchor message_id=%s: %w", anchorMessageID, err)
+	}
+	query := a.db.WithContext(ctx).Where("chat_id = ?", group.ChatID).
+		Where("render_ok = ?", true).
+		Where("create_time < ? OR (create_time = ? AND id <= ?)", anchor.CreateTime, anchor.CreateTime, anchor.ID)
+	topicID := strings.TrimSpace(stringValue(anchor.ThreadID))
+	if topicID == "" {
+		topicID = strings.TrimSpace(stringValue(anchor.RootID))
+	}
+	if topicID == "" {
+		query = query.Where("(root_id IS NULL OR root_id = '') AND (thread_id IS NULL OR thread_id = '')")
+	} else {
+		query = query.Where("(COALESCE(NULLIF(thread_id, ''), NULLIF(root_id, '')) = ? OR message_id = ?)", topicID, topicID)
+	}
+	var rows []domain.Message
+	if err := query.Order("create_time DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, nil, fmt.Errorf("assemble context snapshot: load conversation chat_id=%s: %w", group.ChatID, err)
+	}
+	conversation := make([]Message, len(rows))
+	for i := range rows {
+		conversation[len(rows)-1-i] = snapshotMessage(&rows[i])
+	}
+	return []Message{snapshotMessage(&anchor)}, conversation, nil
+}
+
+func snapshotMessage(row *domain.Message) Message {
+	return Message{
+		MessageID: row.MessageID, ChatID: row.ChatID, SenderOpenID: row.SenderOpenID,
+		SenderName: row.SenderName, Content: row.Content, CreateTime: row.CreateTime,
+	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (a *Assembler) loadGroup(ctx context.Context, chatID string, groupID *uint64) (*Group, error) {

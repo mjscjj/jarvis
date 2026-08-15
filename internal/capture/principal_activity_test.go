@@ -306,26 +306,27 @@ type activityTestGroup struct {
 func (activityTestGroup) TableName() string { return "feishu_group" }
 
 type activityTestMessage struct {
-	ID           uint64         `gorm:"column:id;primaryKey;autoIncrement"`
-	MessageID    string         `gorm:"column:message_id;uniqueIndex"`
-	ChatID       string         `gorm:"column:chat_id"`
-	GroupID      *uint64        `gorm:"column:group_id"`
-	ChatMode     string         `gorm:"column:chat_mode"`
-	SenderOpenID string         `gorm:"column:sender_open_id"`
-	SenderName   string         `gorm:"column:sender_name"`
-	SenderType   string         `gorm:"column:sender_type"`
-	MessageType  string         `gorm:"column:message_type"`
-	Content      string         `gorm:"column:content"`
-	ContentRaw   *string        `gorm:"column:content_raw"`
-	MentionsJSON datatypes.JSON `gorm:"column:mentions_json"`
-	ReplyTo      *string        `gorm:"column:reply_to"`
-	RootID       *string        `gorm:"column:root_id"`
-	ThreadID     *string        `gorm:"column:thread_id"`
-	CreateTime   int64          `gorm:"column:create_time"`
-	UpdateTime   *int64         `gorm:"column:update_time"`
-	Source       string         `gorm:"column:source"`
-	RenderOK     bool           `gorm:"column:render_ok"`
-	CreatedAt    time.Time      `gorm:"column:created_at"`
+	ID                uint64         `gorm:"column:id;primaryKey;autoIncrement"`
+	MessageID         string         `gorm:"column:message_id;uniqueIndex"`
+	ChatID            string         `gorm:"column:chat_id"`
+	GroupID           *uint64        `gorm:"column:group_id"`
+	ChatMode          string         `gorm:"column:chat_mode"`
+	SenderOpenID      string         `gorm:"column:sender_open_id"`
+	SenderName        string         `gorm:"column:sender_name"`
+	SenderType        string         `gorm:"column:sender_type"`
+	MessageType       string         `gorm:"column:message_type"`
+	Content           string         `gorm:"column:content"`
+	ContentRaw        *string        `gorm:"column:content_raw"`
+	MentionsJSON      datatypes.JSON `gorm:"column:mentions_json"`
+	ReplyTo           *string        `gorm:"column:reply_to"`
+	RootID            *string        `gorm:"column:root_id"`
+	ThreadID          *string        `gorm:"column:thread_id"`
+	CreateTime        int64          `gorm:"column:create_time"`
+	UpdateTime        *int64         `gorm:"column:update_time"`
+	Source            string         `gorm:"column:source"`
+	RenderOK          bool           `gorm:"column:render_ok"`
+	ExtractionSkipped bool           `gorm:"column:extraction_skipped"`
+	CreatedAt         time.Time      `gorm:"column:created_at"`
 }
 
 func (activityTestMessage) TableName() string { return "message" }

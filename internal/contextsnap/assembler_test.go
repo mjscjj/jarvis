@@ -191,6 +191,43 @@ func TestAssemblerRejectsUnknownChat(t *testing.T) {
 	}
 }
 
+func TestAssemblerFreezesTwentyFiveMessagesThroughAnchor(t *testing.T) {
+	db := openAssemblerTestDB(t)
+	if err := db.Create(&domain.PrincipalProfile{OpenID: "ou_me", Name: "我"}).Error; err != nil {
+		t.Fatalf("create principal: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO feishu_group(id, chat_id, name, is_key_group) VALUES (7, 'oc_direct', '直达群', 0)`).Error; err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	for index := 1; index <= 30; index++ {
+		if err := db.Exec(`INSERT INTO message(id, message_id, chat_id, group_id, sender_open_id, sender_name, content, create_time, render_ok)
+			VALUES (?, ?, 'oc_direct', 7, 'ou_sender', '发起人', ?, ?, 1)`,
+			index, fmt.Sprintf("om_%02d", index), fmt.Sprintf("第 %d 条", index), int64(index)).Error; err != nil {
+			t.Fatalf("create message %d: %v", index, err)
+		}
+	}
+	assembler, err := NewAssembler(db, "ou_me")
+	if err != nil {
+		t.Fatalf("NewAssembler() error = %v", err)
+	}
+	raw, err := assembler.AssembleConversation(t.Context(), AssembleOptions{
+		ChatID: "oc_direct", AnchorMessageID: "om_30", ConversationLimit: 25,
+	})
+	if err != nil {
+		t.Fatalf("AssembleConversation() error = %v", err)
+	}
+	snapshot, err := Decode(raw)
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if len(snapshot.Messages) != 1 || snapshot.Messages[0].MessageID != "om_30" {
+		t.Fatalf("messages = %#v", snapshot.Messages)
+	}
+	if len(snapshot.Conversation) != 25 || snapshot.Conversation[0].MessageID != "om_06" || snapshot.Conversation[24].MessageID != "om_30" {
+		t.Fatalf("conversation bounds = len:%d first:%#v last:%#v", len(snapshot.Conversation), snapshot.Conversation[0], snapshot.Conversation[len(snapshot.Conversation)-1])
+	}
+}
+
 func openAssemblerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
@@ -240,6 +277,12 @@ func createAssemblerTables(t *testing.T, db *gorm.DB) {
 			id INTEGER PRIMARY KEY AUTOINCREMENT, todo_id INTEGER, title TEXT NOT NULL,
 			status TEXT NOT NULL, summary TEXT, project_id INTEGER,
 			last_progress_at DATETIME, created_at DATETIME
+		)`,
+		`CREATE TABLE message (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT NOT NULL UNIQUE,
+			chat_id TEXT NOT NULL, group_id INTEGER, sender_open_id TEXT NOT NULL,
+			sender_name TEXT NOT NULL, content TEXT NOT NULL, root_id TEXT, thread_id TEXT,
+			create_time INTEGER NOT NULL, render_ok INTEGER NOT NULL DEFAULT 1
 		)`,
 	}
 	for _, statement := range statements {

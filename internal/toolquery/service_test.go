@@ -93,7 +93,8 @@ func openTestDB(t *testing.T) *gorm.DB {
 			message_type TEXT NOT NULL, content TEXT NOT NULL, content_raw TEXT,
 			mentions_json TEXT, reply_to TEXT, root_id TEXT, thread_id TEXT,
 			create_time INTEGER NOT NULL, update_time INTEGER, source TEXT NOT NULL,
-			render_ok INTEGER NOT NULL DEFAULT 1, created_at DATETIME
+			render_ok INTEGER NOT NULL DEFAULT 1,
+			extraction_skipped INTEGER NOT NULL DEFAULT 0, created_at DATETIME
 		)`,
 		`CREATE TABLE resource (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, resource_type TEXT NOT NULL,

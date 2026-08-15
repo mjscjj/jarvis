@@ -506,7 +506,7 @@ func messageContext(message *domain.Message, isNew bool) MessageContext {
 }
 
 func extractableMessage(message *domain.Message) bool {
-	if !message.RenderOK {
+	if !message.RenderOK || message.ExtractionSkipped {
 		return false
 	}
 	senderType := strings.ToLower(strings.TrimSpace(message.SenderType))

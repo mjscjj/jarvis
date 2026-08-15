@@ -3,6 +3,7 @@ package api
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"jarvis/internal/agentconfig"
@@ -204,6 +205,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.CardApprovals != nil {
 		h.POST("/internal/card-approval/callback", RelayCardApproval(deps.CardApprovals, deps.CardApprovalSecret))
+	}
+	if deps.Capture != nil && strings.TrimSpace(deps.CardApprovalSecret) != "" {
+		h.POST("/internal/interactive-task", RelayInteractiveTask(deps.Capture, deps.TaskSubmitter, deps.CardApprovalSecret))
 	}
 	// M1 背景管理：Project/Person 全量 CRUD；Group 只可改人工背景字段（采集字段归 M2）。
 	h.GET("/api/projects", ListProjects(deps.Projects))
