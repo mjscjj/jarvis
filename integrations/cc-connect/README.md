@@ -7,9 +7,9 @@ This directory is the product-owned integration between Jarvis and CC Connect. I
 - `manage.sh`: creates or validates the `jarvis-codex` project binding. `scripts/jarvis-install` is its public orchestration entry.
 - `../../scripts/install-cc-connect.sh`: builds, tests and installs `bin/cc-connect-jarvis`.
 
-The integration has one topology rule: CC Connect is the only Feishu Bot WebSocket owner for the selected App. Jarvis uses the same lark-cli Profile for user reads and Bot operations, while M2 reads work messages through its normal polling path.
+The integration has one topology rule: CC Connect is the only Feishu Bot WebSocket owner for the selected App. Explicit group `@Jarvis` messages are relayed to `/internal/interactive-task`, frozen with the latest 25 conversation messages and sent straight to M5. Messages without an explicit mention continue through Jarvis's normal M2 polling and M3 admission path.
 
-The `jarvis-codex` Agent must run `scripts/jarvis-tools get-context` at the beginning of each Feishu user turn. This makes CC Connect an interactive entry into Jarvis's current world model instead of a standalone Codex process in the same checkout.
+The `jarvis-codex` Agent still loads `scripts/jarvis-tools get-context` for CC Connect turns that are not handled by the explicit-mention relay (for example, configured p2p interactions). The explicit group mention path does not run a second CC agent; M5 is its sole business executor.
 
 Build and binding are separate operations:
 
