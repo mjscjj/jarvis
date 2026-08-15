@@ -57,6 +57,24 @@ func TestNotifierFailsWithoutMessageID(t *testing.T) {
 	}
 }
 
+func TestNotifierShowsCompactFormOnlyWhenFollowupIsExplicit(t *testing.T) {
+	without := approvalCard(execute.ApprovalNotification{TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c"}, "http://example.com")
+	withoutJSON, _ := json.Marshal(without)
+	if strings.Contains(string(withoutJSON), `"tag":"form"`) || strings.Contains(string(withoutJSON), `"tag":"input"`) {
+		t.Fatalf("card without followup unexpectedly has form: %s", withoutJSON)
+	}
+	with := approvalCard(execute.ApprovalNotification{
+		TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c",
+		NeedsFollowup: "请指定灰度范围",
+	}, "http://example.com")
+	withJSON, _ := json.Marshal(with)
+	for _, want := range []string{`"tag":"form"`, `"tag":"input"`, `"name":"approval_note"`, `"form_action_type":"submit"`, "请指定灰度范围"} {
+		if !strings.Contains(string(withJSON), want) {
+			t.Fatalf("card with followup missing %q: %s", want, withJSON)
+		}
+	}
+}
+
 func TestNewNotifierFailsWithoutServerAddress(t *testing.T) {
 	_, err := NewNotifier(&fakeLarkRunner{}, "ou_principal", "")
 	if err == nil || !strings.Contains(err.Error(), "server address") {

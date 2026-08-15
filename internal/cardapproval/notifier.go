@@ -149,6 +149,42 @@ func approvalCard(notice execute.ApprovalNotification, detailURL string) map[str
 	if summary := strings.TrimSpace(notice.Summary); summary != "" {
 		body += "\n\n**判断**\n" + summary
 	}
+	decisions := map[string]any{
+		"tag": "column_set", "flex_mode": "flow", "horizontal_spacing": "medium",
+		"columns": []any{column(approve), column(button("拒绝", "danger", "reject")), column(details)},
+	}
+	elements := []any{map[string]any{"tag": "markdown", "content": body}}
+	if followup := strings.TrimSpace(notice.NeedsFollowup); followup != "" {
+		markFormSubmit := func(control map[string]any, name string) {
+			behaviors, _ := control["behaviors"].([]any)
+			if len(behaviors) == 1 {
+				if callback, ok := behaviors[0].(map[string]any); ok {
+					control["value"] = callback["value"]
+				}
+			}
+			delete(control, "behaviors")
+			control["name"] = name
+			control["form_action_type"] = "submit"
+		}
+		columns := decisions["columns"].([]any)
+		approveButton := columns[0].(map[string]any)["elements"].([]any)[0].(map[string]any)
+		rejectButton := columns[1].(map[string]any)["elements"].([]any)[0].(map[string]any)
+		markFormSubmit(approveButton, "jarvis_approval_approve")
+		markFormSubmit(rejectButton, "jarvis_approval_reject")
+		elements = append(elements, map[string]any{
+			"tag": "form", "name": "jarvis_approval_form",
+			"elements": []any{
+				map[string]any{"tag": "markdown", "content": "**需要你补充**\n" + followup},
+				map[string]any{
+					"tag": "input", "name": "approval_note", "width": "fill", "max_length": 500,
+					"placeholder": map[string]any{"tag": "plain_text", "content": "可填写补充说明或驳回原因"},
+				},
+				decisions,
+			},
+		})
+	} else {
+		elements = append(elements, decisions)
+	}
 	return map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{"wide_screen_mode": true},
@@ -159,13 +195,7 @@ func approvalCard(notice execute.ApprovalNotification, detailURL string) map[str
 		},
 		"body": map[string]any{
 			"direction": "vertical", "padding": "12px 12px 20px 12px",
-			"elements": []any{
-				map[string]any{"tag": "markdown", "content": body},
-				map[string]any{
-					"tag": "column_set", "flex_mode": "flow", "horizontal_spacing": "medium",
-					"columns": []any{column(approve), column(button("拒绝", "danger", "reject")), column(details)},
-				},
-			},
+			"elements": elements,
 		},
 	}
 }

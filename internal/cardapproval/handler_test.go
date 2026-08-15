@@ -40,6 +40,35 @@ func TestProcessCardActionRejectUsesCardVersion(t *testing.T) {
 	}
 }
 
+func TestProcessCardActionApproveAppendsFormNoteBeforeApproval(t *testing.T) {
+	approver := &fakeApprover{}
+	handler := newTestHandler(t, approver)
+	event := approvalEvent(t, "approve", 7, 4)
+	event.FormValue = map[string]any{"approval_note": "按灰度方案执行"}
+	if _, err := handler.ProcessCardAction(context.Background(), event); err != nil {
+		t.Fatalf("ProcessCardAction() error = %v", err)
+	}
+	if approver.supplementNote != "按灰度方案执行" || approver.supplementVersion != 4 {
+		t.Fatalf("supplement = %#v", approver)
+	}
+	if approver.approvedVersion != 5 {
+		t.Fatalf("approved version = %d, want supplemented version 5", approver.approvedVersion)
+	}
+}
+
+func TestProcessCardActionRejectUsesFormNoteAsReason(t *testing.T) {
+	approver := &fakeApprover{}
+	handler := newTestHandler(t, approver)
+	event := approvalEvent(t, "reject", 3, 9)
+	event.FormValue = map[string]any{"approval_note": "范围太大"}
+	if _, err := handler.ProcessCardAction(context.Background(), event); err != nil {
+		t.Fatalf("ProcessCardAction() error = %v", err)
+	}
+	if approver.rejectReason != "范围太大" {
+		t.Fatalf("reject reason = %q", approver.rejectReason)
+	}
+}
+
 func TestProcessCardActionRejectsMissingVersion(t *testing.T) {
 	approver := &fakeApprover{}
 	handler := newTestHandler(t, approver)
@@ -95,12 +124,19 @@ func approvalEvent(t *testing.T, action string, taskID uint64, version int32) Ca
 }
 
 type fakeApprover struct {
-	approvedTask    uint64
-	approvedVersion int32
-	rejectedTask    uint64
-	rejectedVersion int32
-	rejectReason    string
-	approveErr      error
+	approvedTask      uint64
+	approvedVersion   int32
+	rejectedTask      uint64
+	rejectedVersion   int32
+	rejectReason      string
+	approveErr        error
+	supplementNote    string
+	supplementVersion int32
+}
+
+func (f *fakeApprover) Supplement(_ context.Context, input execute.SupplementInput) (*execute.TaskView, error) {
+	f.supplementNote, f.supplementVersion = input.Note, input.ExpectedVersion
+	return &execute.TaskView{ID: input.TaskID, Version: input.ExpectedVersion + 1}, nil
 }
 
 func (f *fakeApprover) KickApprove(_ context.Context, taskID uint64, version int32) (*execute.ExecuteResult, error) {

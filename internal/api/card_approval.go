@@ -29,6 +29,7 @@ type cardApprovalRelayRequest struct {
 	ChatID      string         `json:"chat_id"`
 	ActionTag   string         `json:"action_tag"`
 	ActionValue map[string]any `json:"action_value"`
+	FormValue   map[string]any `json:"form_value"`
 }
 
 // RelayCardApproval accepts only authenticated localhost traffic registered by
@@ -73,6 +74,7 @@ func RelayCardApproval(processor CardApprovalProcessor, secret string) app.Handl
 			ChatID:      request.ChatID,
 			ActionTag:   request.ActionTag,
 			ActionValue: string(actionValue),
+			FormValue:   request.FormValue,
 		})
 		if err != nil {
 			writeExecutionError(c, err)

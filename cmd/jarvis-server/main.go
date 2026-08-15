@@ -43,6 +43,7 @@ import (
 	"jarvis/internal/skill"
 	"jarvis/internal/store"
 	"jarvis/internal/taskcreate"
+	"jarvis/internal/taskfeedback"
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
 
@@ -369,6 +370,13 @@ func main() {
 	)
 	if err != nil {
 		fatalf("initialize agent executor failed: %v", err)
+	}
+	feedbackNotifier, err := taskfeedback.NewNotifier(larkClient)
+	if err != nil {
+		fatalf("initialize Task feedback notifier failed: %v", err)
+	}
+	if err := agentExecutor.SetTaskFeedbackNotifier(feedbackNotifier); err != nil {
+		fatalf("wire Task feedback notifier failed: %v", err)
 	}
 	scheduledTaskService, err := scheduledtask.NewService(
 		db, taskSubmitter, agentExecutor, cfg.ScheduledTask.BatchLimit,

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentusage"
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 	"jarvis/internal/observability"
@@ -50,14 +51,15 @@ type ExecuteResult struct {
 // ApprovalNotification is the durable proposal projected into a user-facing
 // card only after Task.status has become awaiting_approval.
 type ApprovalNotification struct {
-	TaskID   uint64
-	RunID    uint64
-	Version  int32
-	Title    string
-	Summary  string
-	Action   string
-	Target   string
-	Artifact string
+	TaskID        uint64
+	RunID         uint64
+	Version       int32
+	Title         string
+	Summary       string
+	Action        string
+	Target        string
+	Artifact      string
+	NeedsFollowup string
 }
 
 type ApprovalDelivery struct {
@@ -69,6 +71,18 @@ type ApprovalDelivery struct {
 
 type ApprovalNotifier interface {
 	SendApproval(context.Context, ApprovalNotification) (*ApprovalDelivery, error)
+}
+
+type TaskFeedbackDelivery struct {
+	MessageID string
+}
+
+// TaskFeedbackNotifier owns the Feishu transport for one replace-in-place M5
+// status message. M5 owns when execution starts/ends; the notifier only replies
+// to the source message and updates the bot message it created.
+type TaskFeedbackNotifier interface {
+	ReplyProcessing(context.Context, uint64, string) (*TaskFeedbackDelivery, error)
+	Update(context.Context, string, string, string) error
 }
 
 // AgentExecutor is the execution core. It does not hard-code a per-action
@@ -84,11 +98,23 @@ type AgentExecutor struct {
 	textStore textstore.Reader
 	skills    skill.Reader
 	approvals ApprovalNotifier
+	feedback  TaskFeedbackNotifier
 	repoRoot  string
 	runsDir   string
 	now       func() time.Time
 	activeMu  sync.Mutex
 	active    map[uint64]*activeExecution
+}
+
+func (e *AgentExecutor) SetTaskFeedbackNotifier(notifier TaskFeedbackNotifier) error {
+	if notifier == nil {
+		return fmt.Errorf("agent executor Task feedback notifier is nil")
+	}
+	if e.feedback != nil {
+		return fmt.Errorf("agent executor Task feedback notifier is already set")
+	}
+	e.feedback = notifier
+	return nil
 }
 
 type activeExecution struct {
@@ -174,6 +200,11 @@ func (e *AgentExecutor) runInBackground(taskID uint64, runCtx context.Context, a
 		// then claim the same Task immediately instead of racing the active slot.
 		e.endExecution(taskID, active)
 		ended = true
+		if result != nil {
+			if feedbackErr := e.notifyTaskFeedback(context.WithoutCancel(runCtx), result); feedbackErr != nil {
+				hlog.CtxErrorf(runCtx, "Task feedback update failed task_id=%d error=%+v", taskID, feedbackErr)
+			}
+		}
 		if err != nil {
 			hlog.CtxErrorf(runCtx, "background execution failed task_id=%d error=%+v", taskID, err)
 			return
@@ -440,6 +471,13 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 	if err := e.markRunStarted(ctx, run); err != nil {
 		return nil, err
 	}
+	if err := e.startTaskFeedback(ctx, task, run); err != nil {
+		e.failRun(run, startedAt, err)
+		if writeErr := e.persistRun(ctx, run); writeErr != nil {
+			return nil, fmt.Errorf("persist failed resumed feedback run task_id=%d: %w", task.ID, writeErr)
+		}
+		return e.finishRun(ctx, task, execVersion, run, err)
+	}
 	if errors.Is(context.Cause(ctx), ErrExecutionInterrupted) {
 		e.failRun(run, startedAt, ErrExecutionInterrupted)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
@@ -638,6 +676,9 @@ func (e *AgentExecutor) Approve(ctx context.Context, taskID uint64, expectedVers
 	if err != nil {
 		return nil, err
 	}
+	if err := e.notifyTaskFeedback(context.WithoutCancel(ctx), result); err != nil {
+		return result, err
+	}
 	if err := e.notifyAwaitingApproval(context.WithoutCancel(ctx), result); err != nil {
 		return nil, err
 	}
@@ -706,7 +747,11 @@ func (e *AgentExecutor) Reject(ctx context.Context, taskID uint64, expectedVersi
 	if _, err := e.store.RejectAwaitingApproval(ctx, task.ID, task.Version, resultJSON); err != nil {
 		return nil, err
 	}
-	return &ExecuteResult{TaskID: task.ID, Status: "failed", Summary: "已驳回外部写入方案"}, nil
+	result := &ExecuteResult{TaskID: task.ID, Status: "failed", Summary: "已驳回外部写入方案"}
+	if err := e.notifyTaskFeedback(context.WithoutCancel(ctx), result); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*ExecuteResult, error) {
@@ -737,8 +782,16 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	result, err := e.executeClaimed(runCtx, task.ID, execVersion)
 	e.endExecution(task.ID, active)
 	ended = true
+	if result != nil {
+		if feedbackErr := e.notifyTaskFeedback(context.WithoutCancel(ctx), result); feedbackErr != nil {
+			if err == nil {
+				return result, feedbackErr
+			}
+			hlog.CtxErrorf(ctx, "Task feedback update failed task_id=%d error=%+v", task.ID, feedbackErr)
+		}
+	}
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	if err := e.notifyAwaitingApproval(context.WithoutCancel(ctx), result); err != nil {
 		return nil, err
@@ -822,6 +875,7 @@ func (e *AgentExecutor) notifyAwaitingApproval(ctx context.Context, result *Exec
 		TaskID: task.ID, RunID: result.RunID, Version: task.Version,
 		Title: task.Title, Summary: result.Summary,
 		Action: proposal.Action, Target: proposal.Target, Artifact: proposal.Artifact,
+		NeedsFollowup: approvalNeedsFollowup(task.ExecutionResult),
 	})
 	if err != nil {
 		return err
@@ -844,6 +898,22 @@ func (e *AgentExecutor) notifyAwaitingApproval(ctx context.Context, result *Exec
 	return nil
 }
 
+func approvalNeedsFollowup(raw []byte) string {
+	var payload struct {
+		NeedsFollowup string `json:"needs_followup"`
+	}
+	if json.Unmarshal(raw, &payload) != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.NeedsFollowup)
+}
+
+// Supplement exposes the same M5-only clarification append used by the web
+// Task detail so Feishu approval form input follows one versioned contract.
+func (e *AgentExecutor) Supplement(ctx context.Context, input SupplementInput) (*TaskView, error) {
+	return e.store.Supplement(ctx, input)
+}
+
 func appendApprovalCardEffect(raw []byte, delivery *ApprovalDelivery) ([]byte, error) {
 	var effects []map[string]any
 	if len(raw) > 0 {
@@ -859,6 +929,122 @@ func appendApprovalCardEffect(raw []byte, delivery *ApprovalDelivery) ([]byte, e
 		"kind": "feishu_message", "title": "审批卡片", "url": delivery.URL,
 		"target": delivery.Target, "preview": delivery.Preview, "extra": string(extra),
 		"message_id": delivery.MessageID,
+	})
+	return json.Marshal(effects)
+}
+
+func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task, run *domain.ExecutionRun) error {
+	if e.feedback == nil || task == nil || run == nil {
+		return nil
+	}
+	sourceMessageID, err := taskFeedbackSourceMessageID(task.Background)
+	if err != nil {
+		return fmt.Errorf("resolve Task feedback source task_id=%d: %w", task.ID, err)
+	}
+	if sourceMessageID == "" {
+		return nil
+	}
+	existingMessageID, err := e.findTaskFeedbackMessage(ctx, task.ID)
+	if err != nil {
+		return err
+	}
+	if existingMessageID != "" {
+		return e.feedback.Update(ctx, existingMessageID, "executing", "")
+	}
+	delivery, err := e.feedback.ReplyProcessing(ctx, task.ID, sourceMessageID)
+	if err != nil {
+		return err
+	}
+	if delivery == nil || strings.TrimSpace(delivery.MessageID) == "" {
+		return fmt.Errorf("Task feedback notifier returned no message_id for task_id=%d", task.ID)
+	}
+	effects, err := appendTaskFeedbackEffect(run.Effects, delivery.MessageID, sourceMessageID)
+	if err != nil {
+		return fmt.Errorf("record Task feedback effect run_id=%d: %w", run.ID, err)
+	}
+	run.Effects = datatypes.JSON(effects)
+	if err := e.persistRun(ctx, run); err != nil {
+		return fmt.Errorf("save Task feedback effect run_id=%d: %w", run.ID, err)
+	}
+	return nil
+}
+
+func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteResult) error {
+	if e.feedback == nil || result == nil {
+		return nil
+	}
+	task, err := e.store.LoadTask(ctx, result.TaskID)
+	if err != nil {
+		return fmt.Errorf("load Task for feedback task_id=%d: %w", result.TaskID, err)
+	}
+	sourceMessageID, err := taskFeedbackSourceMessageID(task.Background)
+	if err != nil {
+		return fmt.Errorf("resolve Task feedback source task_id=%d: %w", task.ID, err)
+	}
+	if sourceMessageID == "" {
+		return nil
+	}
+	messageID, err := e.findTaskFeedbackMessage(ctx, task.ID)
+	if err != nil {
+		return err
+	}
+	if messageID == "" {
+		return fmt.Errorf("Task feedback message is missing for task_id=%d", task.ID)
+	}
+	return e.feedback.Update(ctx, messageID, result.Status, result.Summary)
+}
+
+func taskFeedbackSourceMessageID(raw []byte) (string, error) {
+	snapshot, err := contextsnap.Decode(raw)
+	if err != nil {
+		return "", err
+	}
+	var selected contextsnap.Message
+	for _, message := range snapshot.Messages {
+		if !strings.HasPrefix(strings.TrimSpace(message.MessageID), "om_") {
+			continue
+		}
+		if selected.MessageID == "" || message.CreateTime > selected.CreateTime {
+			selected = message
+		}
+	}
+	return strings.TrimSpace(selected.MessageID), nil
+}
+
+func (e *AgentExecutor) findTaskFeedbackMessage(ctx context.Context, taskID uint64) (string, error) {
+	runs, err := e.store.ListRuns(ctx, taskID)
+	if err != nil {
+		return "", fmt.Errorf("list Task feedback runs task_id=%d: %w", taskID, err)
+	}
+	for _, run := range runs.Items {
+		if len(run.Effects) == 0 {
+			continue
+		}
+		var effects []map[string]any
+		if err := json.Unmarshal(run.Effects, &effects); err != nil {
+			return "", fmt.Errorf("decode Task feedback effects run_id=%d: %w", run.ID, err)
+		}
+		for _, effect := range effects {
+			purpose, _ := effect["purpose"].(string)
+			messageID, _ := effect["message_id"].(string)
+			if purpose == "task_progress" && strings.TrimSpace(messageID) != "" {
+				return strings.TrimSpace(messageID), nil
+			}
+		}
+	}
+	return "", nil
+}
+
+func appendTaskFeedbackEffect(raw []byte, messageID, sourceMessageID string) ([]byte, error) {
+	var effects []map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &effects); err != nil {
+			return nil, fmt.Errorf("decode existing effects: %w", err)
+		}
+	}
+	effects = append(effects, map[string]any{
+		"kind": "feishu_message", "title": "M5 处理进度", "preview": "正在处理中",
+		"purpose": "task_progress", "message_id": messageID, "source_message_id": sourceMessageID,
 	})
 	return json.Marshal(effects)
 }
@@ -967,6 +1153,9 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 	if err := e.markRunStarted(ctx, run); err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
+	if err := e.startTaskFeedback(ctx, task, run); err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
 
 	repoPath, err := e.resolveRepo(task)
 	if err != nil {
@@ -1069,6 +1258,9 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposa
 		Status: "running", StartedAt: startedAt,
 	}
 	if err := e.markRunStarted(ctx, run); err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	if err := e.startTaskFeedback(ctx, task, run); err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
 
@@ -1299,7 +1491,19 @@ func assignDeclaredEffects(run *domain.ExecutionRun, effects []codexEffect) {
 	if err != nil {
 		return
 	}
-	run.Effects = encoded
+	if len(run.Effects) == 0 {
+		run.Effects = encoded
+		return
+	}
+	var existing []json.RawMessage
+	var declared []json.RawMessage
+	if json.Unmarshal(run.Effects, &existing) != nil || json.Unmarshal(encoded, &declared) != nil {
+		return
+	}
+	merged, err := json.Marshal(append(existing, declared...))
+	if err == nil {
+		run.Effects = merged
+	}
 }
 
 func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
