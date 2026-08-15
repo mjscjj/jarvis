@@ -14,7 +14,7 @@ import (
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
-const ExecutionPromptVersion = "task-exec-v11-task-state-evidence"
+const ExecutionPromptVersion = "task-exec-v12-user-message"
 
 // maxPriorRunsInPrompt caps how many previous execution_run rows ride into the
 // next M5 prompt. Newest runs are kept; older ones are dropped to bound size.
@@ -61,11 +61,12 @@ type priorRunSummary struct {
 const executionResultSchema = `{
   "type":"object",
   "additionalProperties":false,
-  "required":["needs_approval","outcome","summary","progress_summary","failure_reason","needs_followup","enrichments","effects","proposal","waiting"],
+  "required":["needs_approval","outcome","summary","user_message","progress_summary","failure_reason","needs_followup","enrichments","effects","proposal","waiting"],
   "properties":{
     "needs_approval":{"type":"boolean","description":"Approval verdict for the next controlled side effect; criteria are defined by APPROVAL_POLICY."},
     "outcome":{"type":"string","enum":["completed","observing","waiting","needs_human","failed"]},
     "summary":{"type":"string","minLength":1},
+    "user_message":{"type":"string","description":"The concise natural-language result for the user at the Task's source message. Jarvis replaces its existing processing reply with this text. Exclude internal reasoning, tool steps, message IDs, self-check notes and audit detail. Leave empty only when the Task has no source conversation or no source-facing message is appropriate."},
     "progress_summary":{"type":"string","maxLength":1000,"description":"Where this whole matter now stands, in a few sentences, written for someone reading it cold weeks later: what is settled, what is still open, what happens next. This spans all runs of the Task, unlike summary which covers only this run. Rewrite it in full each time, within 1000 characters: when you run out of room, compact finished detail into one conclusion rather than dropping the tail. Leave it an empty string only when this run changed nothing about where the matter stands."},
     "failure_reason":{"type":"string"},
     "needs_followup":{"type":"string"},

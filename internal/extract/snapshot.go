@@ -163,7 +163,7 @@ func snapshotMessages(unit ConversationUnit, candidate Candidate) []contextsnap.
 			continue
 		}
 		messages = append(messages, contextsnap.Message{
-			MessageID: message.MessageID, ChatID: message.ChatID,
+			MessageID: message.MessageID, ChatID: message.ChatID, ChatMode: message.ChatMode,
 			SenderOpenID: message.SenderOpenID, SenderName: message.SenderName,
 			Content: message.Content, RootID: message.RootID, ThreadID: message.ThreadID, CreateTime: message.CreateTime,
 		})
@@ -191,7 +191,7 @@ func snapshotConversation(unit ConversationUnit) []contextsnap.Message {
 	conversation := make([]contextsnap.Message, 0, len(messages))
 	for _, message := range messages {
 		conversation = append(conversation, contextsnap.Message{
-			MessageID: message.MessageID, ChatID: message.ChatID,
+			MessageID: message.MessageID, ChatID: message.ChatID, ChatMode: message.ChatMode,
 			SenderOpenID: message.SenderOpenID, SenderName: message.SenderName,
 			Content: message.Content, RootID: message.RootID, ThreadID: message.ThreadID, CreateTime: message.CreateTime,
 		})

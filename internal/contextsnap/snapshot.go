@@ -155,6 +155,7 @@ type ManagedResource struct {
 type Message struct {
 	MessageID    string `json:"message_id"`
 	ChatID       string `json:"chat_id"`
+	ChatMode     string `json:"chat_mode,omitempty"`
 	SenderOpenID string `json:"sender_open_id"`
 	SenderName   string `json:"sender_name"`
 	Content      string `json:"content"`

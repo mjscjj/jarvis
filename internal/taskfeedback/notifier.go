@@ -51,12 +51,12 @@ func (n *Notifier) ReplyProcessing(ctx context.Context, taskID uint64, target ex
 	return &execute.TaskFeedbackDelivery{MessageID: messageIDs[0]}, nil
 }
 
-func (n *Notifier) Update(ctx context.Context, messageID, status, summary string) error {
+func (n *Notifier) Update(ctx context.Context, messageID, status, userMessage string) error {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return fmt.Errorf("Task feedback update message_id is empty")
 	}
-	text, err := render(status, summary)
+	text, err := render(status, userMessage)
 	if err != nil {
 		return err
 	}
@@ -78,37 +78,37 @@ func (n *Notifier) Update(ctx context.Context, messageID, status, summary string
 	return nil
 }
 
-func render(status, summary string) (string, error) {
+func render(status, userMessage string) (string, error) {
 	status = strings.TrimSpace(status)
-	summary = strings.TrimSpace(summary)
+	userMessage = strings.TrimSpace(userMessage)
 	switch status {
 	case "executing":
 		return "正在处理中", nil
 	case "awaiting_approval":
-		if summary == "" {
+		if userMessage == "" {
 			return "等待你的确认后继续处理。", nil
 		}
-		return summary + "\n\n等待你的确认后继续处理。", nil
+		return userMessage + "\n\n等待你的确认后继续处理。", nil
 	case "needs_human":
-		if summary == "" {
+		if userMessage == "" {
 			return "需要你补充信息后继续处理。", nil
 		}
-		return summary, nil
+		return userMessage, nil
 	case "waiting":
-		if summary == "" {
+		if userMessage == "" {
 			return "正在等待外部条件，满足后会继续处理。", nil
 		}
-		return summary, nil
+		return userMessage, nil
 	case "done", "observing":
-		if summary == "" {
+		if userMessage == "" {
 			return "处理完成。", nil
 		}
-		return summary, nil
+		return userMessage, nil
 	case "failed":
-		if summary == "" {
+		if userMessage == "" {
 			return "处理失败，请到任务详情查看原因。", nil
 		}
-		return "处理失败：" + summary, nil
+		return userMessage, nil
 	default:
 		return "", fmt.Errorf("unsupported Task feedback status %q", status)
 	}

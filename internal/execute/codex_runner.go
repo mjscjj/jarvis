@@ -70,6 +70,9 @@ type codexResult struct {
 	Proposal      *codexProposal `json:"proposal"`
 	Outcome       string         `json:"outcome"`
 	Summary       string         `json:"summary"`
+	// UserMessage is the only text projected back to the Task's source
+	// conversation. Summary remains internal execution/audit detail.
+	UserMessage string `json:"user_message"`
 	// ProgressSummary is where the whole matter stands, spanning every run of the
 	// Task, whereas Summary covers only this run. Empty means "this run moved
 	// nothing", and the stored Task.Summary is left as it was.

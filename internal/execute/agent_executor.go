@@ -42,10 +42,11 @@ type ExecuteInput struct {
 // awaiting_approval, codex identified a required mutation and produced a
 // proposal without performing it; the Task is parked for human approval.
 type ExecuteResult struct {
-	TaskID  uint64 `json:"task_id"`
-	RunID   uint64 `json:"run_id"`
-	Status  string `json:"status"`
-	Summary string `json:"summary,omitempty"`
+	TaskID      uint64 `json:"task_id"`
+	RunID       uint64 `json:"run_id"`
+	Status      string `json:"status"`
+	Summary     string `json:"summary,omitempty"`
+	UserMessage string `json:"user_message,omitempty"`
 }
 
 // ApprovalNotification is the durable proposal projected into a user-facing
@@ -556,7 +557,10 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		if _, err := e.store.MarkAwaitingApproval(ctx, task.ID, execVersion, run.ID, proposalJSON); err != nil {
 			return nil, err
 		}
-		return &ExecuteResult{TaskID: task.ID, RunID: run.ID, Status: "awaiting_approval", Summary: result.Summary}, nil
+		return &ExecuteResult{
+			TaskID: task.ID, RunID: run.ID, Status: "awaiting_approval",
+			Summary: result.Summary, UserMessage: strings.TrimSpace(result.UserMessage),
+		}, nil
 	}
 	return e.finishRun(ctx, task, execVersion, run, nil)
 }
@@ -752,7 +756,10 @@ func (e *AgentExecutor) Reject(ctx context.Context, taskID uint64, expectedVersi
 	if _, err := e.store.RejectAwaitingApproval(ctx, task.ID, task.Version, resultJSON); err != nil {
 		return nil, err
 	}
-	result := &ExecuteResult{TaskID: task.ID, Status: "failed", Summary: "已驳回外部写入方案"}
+	result := &ExecuteResult{
+		TaskID: task.ID, Status: "failed", Summary: "已驳回外部写入方案",
+		UserMessage: "已按你的选择停止执行。",
+	}
 	if err := e.notifyTaskFeedback(context.WithoutCancel(ctx), result); err != nil {
 		return result, err
 	}
@@ -852,7 +859,7 @@ func (e *AgentExecutor) routeRun(ctx context.Context, task *domain.Task, execVer
 		}
 		return &ExecuteResult{
 			TaskID: task.ID, RunID: run.ID, Status: "awaiting_approval",
-			Summary: derefString(run.Summary),
+			Summary: derefString(run.Summary), UserMessage: runUserMessage(run),
 		}, nil
 	}
 	return e.finishRun(ctx, task, execVersion, run, nil)
@@ -996,7 +1003,7 @@ func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteR
 	if messageID == "" {
 		return fmt.Errorf("Task feedback message is missing for task_id=%d", task.ID)
 	}
-	return e.feedback.Update(ctx, messageID, result.Status, result.Summary)
+	return e.feedback.Update(ctx, messageID, result.Status, result.UserMessage)
 }
 
 func taskFeedbackTarget(raw []byte) (TaskFeedbackTarget, error) {
@@ -1015,7 +1022,9 @@ func taskFeedbackTarget(raw []byte) (TaskFeedbackTarget, error) {
 	}
 	return TaskFeedbackTarget{
 		SourceMessageID: strings.TrimSpace(selected.MessageID),
-		ReplyInThread:   strings.TrimSpace(selected.ThreadID) != "",
+		ReplyInThread: strings.TrimSpace(selected.ThreadID) != "" ||
+			strings.TrimSpace(selected.RootID) != "" ||
+			selected.ChatMode == "group" || selected.ChatMode == "topic",
 	}, nil
 }
 
@@ -1101,7 +1110,8 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 			return nil, fmt.Errorf("park Task id=%d waiting: %w", task.ID, err)
 		}
 		return &ExecuteResult{
-			TaskID: task.ID, RunID: run.ID, Status: "waiting", Summary: derefString(run.Summary),
+			TaskID: task.ID, RunID: run.ID, Status: "waiting",
+			Summary: derefString(run.Summary), UserMessage: runUserMessage(run),
 		}, nil
 	}
 	if execErr == nil && run.Status == "needs_human" {
@@ -1113,7 +1123,8 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 			return nil, fmt.Errorf("park Task id=%d needs_human: %w", task.ID, err)
 		}
 		return &ExecuteResult{
-			TaskID: task.ID, RunID: run.ID, Status: "needs_human", Summary: derefString(run.Summary),
+			TaskID: task.ID, RunID: run.ID, Status: "needs_human",
+			Summary: derefString(run.Summary), UserMessage: runUserMessage(run),
 		}, nil
 	}
 	finishStatus := "done"
@@ -1138,7 +1149,7 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 	}
 	result := &ExecuteResult{
 		TaskID: task.ID, RunID: run.ID, Status: finishStatus,
-		Summary: derefString(run.Summary),
+		Summary: derefString(run.Summary), UserMessage: runUserMessage(run),
 	}
 	if execErr != nil {
 		return result, fmt.Errorf("execute Task id=%d: %w", task.ID, execErr)
@@ -1562,6 +1573,9 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 		var structured codexResult
 		if err := json.Unmarshal(run.Output, &structured); err == nil {
 			payload["outcome"] = structured.Outcome
+			if strings.TrimSpace(structured.UserMessage) != "" {
+				payload["user_message"] = strings.TrimSpace(structured.UserMessage)
+			}
 			if strings.TrimSpace(structured.NeedsFollowup) != "" {
 				payload["needs_followup"] = structured.NeedsFollowup
 			}
@@ -1577,6 +1591,22 @@ func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {
 		payload["error"] = execErr.Error()
 	}
 	return payload
+}
+
+// runUserMessage projects only the source-conversation reply from the model's
+// structured output. It deliberately never falls back to run.Summary: Summary
+// contains internal reasoning and audit detail that must stay inside the Task.
+func runUserMessage(run *domain.ExecutionRun) string {
+	if run == nil || len(run.Output) == 0 {
+		return ""
+	}
+	var structured struct {
+		UserMessage string `json:"user_message"`
+	}
+	if err := json.Unmarshal(run.Output, &structured); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(structured.UserMessage)
 }
 
 func resultHasStage(raw []byte, stage string) bool {
@@ -1601,6 +1631,9 @@ func proposalPayload(run *domain.ExecutionRun, result *codexResult) map[string]a
 			"target":   result.Proposal.Target,
 			"artifact": result.Proposal.Artifact,
 		},
+	}
+	if strings.TrimSpace(result.UserMessage) != "" {
+		payload["user_message"] = strings.TrimSpace(result.UserMessage)
 	}
 	if strings.TrimSpace(result.NeedsFollowup) != "" {
 		payload["needs_followup"] = result.NeedsFollowup

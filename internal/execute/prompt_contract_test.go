@@ -1,6 +1,7 @@
 package execute
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -92,5 +93,46 @@ func TestExecutionSchemaDoesNotOwnApprovalBehavior(t *testing.T) {
 	}
 	if !strings.Contains(executionResultSchema, "criteria are defined by APPROVAL_POLICY") {
 		t.Fatal("execution schema does not delegate approval criteria to APPROVAL_POLICY")
+	}
+}
+
+func TestM5SourceReplyHasOneOwner(t *testing.T) {
+	systemRaw, err := os.ReadFile("../../conf/prompts/m5-system-prompt.md")
+	if err != nil {
+		t.Fatalf("read M5 system prompt: %v", err)
+	}
+	rulesRaw, err := os.ReadFile("../../conf/rules/m5.md")
+	if err != nil {
+		t.Fatalf("read M5 work rules: %v", err)
+	}
+	effective := string(systemRaw) + "\n" + string(rulesRaw)
+	for _, want := range []string{
+		"`user_message` 是 Task 来源会话里唯一面向用户的最终文案",
+		"不要再调用 `feishu-send-message` 向这个来源会话发送同一 Task 的答案",
+		"`summary`、`progress_summary`、工具调用、消息 ID、自查依据和审计过程只留在 Task 内部",
+	} {
+		if !strings.Contains(effective, want) {
+			t.Fatalf("effective M5 instructions missing source-reply ownership %q", want)
+		}
+	}
+	if strings.Contains(effective, "任务做完了，成功或失败等状态需要同步") {
+		t.Fatal("effective M5 instructions still contain the old direct-send rule")
+	}
+
+	var schema struct {
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal([]byte(executionResultSchema), &schema); err != nil {
+		t.Fatalf("decode executionResultSchema: %v", err)
+	}
+	found := false
+	for _, field := range schema.Required {
+		if field == "user_message" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("execution result schema does not require user_message")
 	}
 }

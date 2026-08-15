@@ -227,7 +227,7 @@ func (a *Assembler) loadSelectedConversation(ctx context.Context, group *Group, 
 
 func snapshotMessage(row *domain.Message) Message {
 	return Message{
-		MessageID: row.MessageID, ChatID: row.ChatID, SenderOpenID: row.SenderOpenID,
+		MessageID: row.MessageID, ChatID: row.ChatID, ChatMode: row.ChatMode, SenderOpenID: row.SenderOpenID,
 		SenderName: row.SenderName, Content: row.Content,
 		RootID: stringValue(row.RootID), ThreadID: stringValue(row.ThreadID), CreateTime: row.CreateTime,
 	}

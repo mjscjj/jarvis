@@ -83,6 +83,7 @@ type MessageContext struct {
 	DatabaseID   uint64
 	MessageID    string
 	ChatID       string
+	ChatMode     string
 	SenderOpenID string
 	SenderName   string
 	SenderType   string

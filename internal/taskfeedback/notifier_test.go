@@ -82,7 +82,8 @@ func TestRenderStatus(t *testing.T) {
 		{"executing", "ignored", "正在处理中"},
 		{"awaiting_approval", "方案已准备", "等待你的确认"},
 		{"done", "一百万", "一百万"},
-		{"failed", "调用失败", "处理失败：调用失败"},
+		{"failed", "没能取得模型配置，请到任务详情查看错误。", "没能取得模型配置"},
+		{"failed", "", "处理失败，请到任务详情查看原因。"},
 	} {
 		got, err := render(test.status, test.summary)
 		if err != nil || !strings.Contains(got, test.want) {
