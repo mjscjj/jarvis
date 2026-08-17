@@ -156,15 +156,8 @@ func approvalCard(notice execute.ApprovalNotification, detailURL string) map[str
 	elements := []any{map[string]any{"tag": "markdown", "content": body}}
 	if followup := strings.TrimSpace(notice.NeedsFollowup); followup != "" {
 		markFormSubmit := func(control map[string]any, name string) {
-			behaviors, _ := control["behaviors"].([]any)
-			if len(behaviors) == 1 {
-				if callback, ok := behaviors[0].(map[string]any); ok {
-					control["value"] = callback["value"]
-				}
-			}
-			delete(control, "behaviors")
 			control["name"] = name
-			control["form_action_type"] = "submit"
+			control["action_type"] = "form_submit"
 		}
 		columns := decisions["columns"].([]any)
 		approveButton := columns[0].(map[string]any)["elements"].([]any)[0].(map[string]any)

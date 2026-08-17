@@ -68,9 +68,36 @@ func TestNotifierShowsCompactFormOnlyWhenFollowupIsExplicit(t *testing.T) {
 		NeedsFollowup: "请指定灰度范围",
 	}, "http://example.com")
 	withJSON, _ := json.Marshal(with)
-	for _, want := range []string{`"tag":"form"`, `"tag":"input"`, `"name":"approval_note"`, `"form_action_type":"submit"`, "请指定灰度范围"} {
+	for _, want := range []string{
+		`"tag":"form"`, `"tag":"input"`, `"name":"approval_note"`,
+		`"action_type":"form_submit"`, `"type":"callback"`,
+		`"action":"jarvis_approval"`, `"decision":"approve"`, `"decision":"reject"`,
+		"请指定灰度范围",
+	} {
 		if !strings.Contains(string(withJSON), want) {
 			t.Fatalf("card with followup missing %q: %s", want, withJSON)
+		}
+	}
+	body := with["body"].(map[string]any)
+	form := body["elements"].([]any)[1].(map[string]any)
+	decisions := form["elements"].([]any)[2].(map[string]any)
+	for index, decision := range []string{"approve", "reject"} {
+		column := decisions["columns"].([]any)[index].(map[string]any)
+		button := column["elements"].([]any)[0].(map[string]any)
+		if button["action_type"] != "form_submit" {
+			t.Fatalf("%s button action_type = %#v", decision, button["action_type"])
+		}
+		if _, ok := button["form_action_type"]; ok {
+			t.Fatalf("%s button still has obsolete form_action_type: %#v", decision, button)
+		}
+		if _, ok := button["value"]; ok {
+			t.Fatalf("%s button moved callback into obsolete top-level value: %#v", decision, button)
+		}
+		behaviors := button["behaviors"].([]any)
+		callback := behaviors[0].(map[string]any)
+		value := callback["value"].(map[string]any)
+		if callback["type"] != "callback" || value["action"] != "jarvis_approval" || value["decision"] != decision {
+			t.Fatalf("%s button callback = %#v", decision, callback)
 		}
 	}
 }
