@@ -85,7 +85,9 @@ type TaskFeedbackTarget struct {
 
 // TaskFeedbackNotifier owns the Feishu transport for one replace-in-place M5
 // status message. M5 owns when execution starts/ends; the notifier only replies
-// to the source message and updates the bot message it created.
+// to the source message and updates the bot message it created. Delivery is a
+// best-effort projection: capture can see human P2P chats and groups where the
+// Bot is not a member, so transport failure must not change Task execution.
 type TaskFeedbackNotifier interface {
 	ReplyProcessing(context.Context, uint64, TaskFeedbackTarget) (*TaskFeedbackDelivery, error)
 	Update(context.Context, string, string, string) error
@@ -207,9 +209,7 @@ func (e *AgentExecutor) runInBackground(taskID uint64, runCtx context.Context, a
 		e.endExecution(taskID, active)
 		ended = true
 		if result != nil {
-			if feedbackErr := e.notifyTaskFeedback(context.WithoutCancel(runCtx), result); feedbackErr != nil {
-				hlog.CtxErrorf(runCtx, "Task feedback update failed task_id=%d error=%+v", taskID, feedbackErr)
-			}
+			e.tryNotifyTaskFeedback(context.WithoutCancel(runCtx), result)
 		}
 		if err != nil {
 			hlog.CtxErrorf(runCtx, "background execution failed task_id=%d error=%+v", taskID, err)
@@ -685,9 +685,7 @@ func (e *AgentExecutor) Approve(ctx context.Context, taskID uint64, expectedVers
 	if err != nil {
 		return nil, err
 	}
-	if err := e.notifyTaskFeedback(context.WithoutCancel(ctx), result); err != nil {
-		return result, err
-	}
+	e.tryNotifyTaskFeedback(context.WithoutCancel(ctx), result)
 	if err := e.notifyAwaitingApproval(context.WithoutCancel(ctx), result); err != nil {
 		return nil, err
 	}
@@ -760,9 +758,7 @@ func (e *AgentExecutor) Reject(ctx context.Context, taskID uint64, expectedVersi
 		TaskID: task.ID, Status: "failed", Summary: "已驳回外部写入方案",
 		UserMessage: "已按你的选择停止执行。",
 	}
-	if err := e.notifyTaskFeedback(context.WithoutCancel(ctx), result); err != nil {
-		return result, err
-	}
+	e.tryNotifyTaskFeedback(context.WithoutCancel(ctx), result)
 	return result, nil
 }
 
@@ -795,12 +791,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	e.endExecution(task.ID, active)
 	ended = true
 	if result != nil {
-		if feedbackErr := e.notifyTaskFeedback(context.WithoutCancel(ctx), result); feedbackErr != nil {
-			if err == nil {
-				return result, feedbackErr
-			}
-			hlog.CtxErrorf(ctx, "Task feedback update failed task_id=%d error=%+v", task.ID, feedbackErr)
-		}
+		e.tryNotifyTaskFeedback(context.WithoutCancel(ctx), result)
 	}
 	if err != nil {
 		return result, err
@@ -945,6 +936,11 @@ func appendApprovalCardEffect(raw []byte, delivery *ApprovalDelivery) ([]byte, e
 	return json.Marshal(effects)
 }
 
+// startTaskFeedback records a progress message when the Bot can reach the
+// source conversation. Poll capture legitimately includes human P2P chats and
+// groups without this Bot; those reply/update failures are expected and only
+// logged. Do not fall back to sending as the principal, and never fail M5 for
+// an unavailable progress projection.
 func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task, run *domain.ExecutionRun) error {
 	if e.feedback == nil || task == nil || run == nil {
 		return nil
@@ -961,11 +957,15 @@ func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task
 		return err
 	}
 	if existingMessageID != "" {
-		return e.feedback.Update(ctx, existingMessageID, "executing", "")
+		if err := e.feedback.Update(ctx, existingMessageID, "executing", ""); err != nil {
+			hlog.CtxWarnf(ctx, "Task feedback unavailable; continuing execution task_id=%d error=%+v", task.ID, err)
+		}
+		return nil
 	}
 	delivery, err := e.feedback.ReplyProcessing(ctx, task.ID, target)
 	if err != nil {
-		return err
+		hlog.CtxWarnf(ctx, "Task feedback unavailable; continuing execution task_id=%d error=%+v", task.ID, err)
+		return nil
 	}
 	if delivery == nil || strings.TrimSpace(delivery.MessageID) == "" {
 		return fmt.Errorf("Task feedback notifier returned no message_id for task_id=%d", task.ID)
@@ -1001,9 +1001,17 @@ func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteR
 		return err
 	}
 	if messageID == "" {
-		return fmt.Errorf("Task feedback message is missing for task_id=%d", task.ID)
+		// The initial best-effort reply was unavailable, so there is no Bot
+		// message to update. The Task result remains authoritative.
+		return nil
 	}
 	return e.feedback.Update(ctx, messageID, result.Status, result.UserMessage)
+}
+
+func (e *AgentExecutor) tryNotifyTaskFeedback(ctx context.Context, result *ExecuteResult) {
+	if err := e.notifyTaskFeedback(ctx, result); err != nil {
+		hlog.CtxWarnf(ctx, "Task feedback update failed; preserving Task result task_id=%d error=%+v", result.TaskID, err)
+	}
 }
 
 func taskFeedbackTarget(raw []byte) (TaskFeedbackTarget, error) {

@@ -1,13 +1,64 @@
 package execute
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
+
+type unavailableTaskFeedback struct {
+	replyCalls  int
+	updateCalls int
+}
+
+func (f *unavailableTaskFeedback) ReplyProcessing(context.Context, uint64, TaskFeedbackTarget) (*TaskFeedbackDelivery, error) {
+	f.replyCalls++
+	return nil, errors.New("230002 Bot/User can NOT be out of the chat")
+}
+
+func (f *unavailableTaskFeedback) Update(context.Context, string, string, string) error {
+	f.updateCalls++
+	return errors.New("230002 Bot/User can NOT be out of the chat")
+}
+
+func newTaskFeedbackTestStore(t *testing.T) *Store {
+	t.Helper()
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE task (id INTEGER PRIMARY KEY, background JSON NOT NULL)`,
+		`CREATE TABLE execution_run (
+			id INTEGER PRIMARY KEY,
+			task_id INTEGER NOT NULL,
+			status TEXT,
+			effects JSON,
+			started_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create Task feedback test table: %v", err)
+		}
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	return store
+}
 
 func TestTaskFeedbackTargetUsesNewestFeishuEvidenceAndThread(t *testing.T) {
 	raw, err := (contextsnap.Snapshot{
@@ -59,6 +110,58 @@ func TestTaskFeedbackTargetKeepsP2PInConversation(t *testing.T) {
 	got, err := taskFeedbackTarget(raw)
 	if err != nil || got.SourceMessageID != "om_p2p_root" || got.ReplyInThread {
 		t.Fatalf("taskFeedbackTarget() = %#v, %v", got, err)
+	}
+}
+
+func TestStartTaskFeedbackIgnoresUnavailableSourceConversation(t *testing.T) {
+	raw, err := (contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
+		Messages: []contextsnap.Message{{
+			MessageID: "om_human_p2p", ChatMode: "p2p", CreateTime: 20,
+		}},
+	}).Encode()
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	feedback := &unavailableTaskFeedback{}
+	executor := &AgentExecutor{store: newTaskFeedbackTestStore(t), feedback: feedback}
+	run := &domain.ExecutionRun{TaskID: 453, Status: "running"}
+
+	if err := executor.startTaskFeedback(t.Context(), &domain.Task{ID: 453, Background: datatypes.JSON(raw)}, run); err != nil {
+		t.Fatalf("startTaskFeedback() error = %v, want unavailable source ignored", err)
+	}
+	if feedback.replyCalls != 1 || feedback.updateCalls != 0 {
+		t.Fatalf("feedback calls = reply:%d update:%d", feedback.replyCalls, feedback.updateCalls)
+	}
+	if run.Status != "running" || len(run.Effects) != 0 {
+		t.Fatalf("run changed by unavailable feedback: status=%s effects=%s", run.Status, run.Effects)
+	}
+}
+
+func TestNotifyTaskFeedbackSkipsWhenInitialReplyWasUnavailable(t *testing.T) {
+	raw, err := (contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
+		Messages: []contextsnap.Message{{
+			MessageID: "om_human_p2p", ChatMode: "p2p", CreateTime: 20,
+		}},
+	}).Encode()
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	store := newTaskFeedbackTestStore(t)
+	if err := store.db.Exec("INSERT INTO task(id, background) VALUES (?, ?)", 453, raw).Error; err != nil {
+		t.Fatalf("insert Task: %v", err)
+	}
+	feedback := &unavailableTaskFeedback{}
+	executor := &AgentExecutor{store: store, feedback: feedback}
+
+	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{TaskID: 453, Status: "done", UserMessage: "完成"}); err != nil {
+		t.Fatalf("notifyTaskFeedback() error = %v, want missing progress message ignored", err)
+	}
+	if feedback.updateCalls != 0 {
+		t.Fatalf("Update() calls = %d, want 0 without an initial progress message", feedback.updateCalls)
 	}
 }
 
