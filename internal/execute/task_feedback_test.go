@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/datatypes"
@@ -16,18 +17,45 @@ import (
 )
 
 type unavailableTaskFeedback struct {
-	replyCalls  int
-	updateCalls int
+	reactionCalls int
+	replyCalls    int
+	updateCalls   int
 }
 
-func (f *unavailableTaskFeedback) ReplyProcessing(context.Context, uint64, TaskFeedbackTarget) (*TaskFeedbackDelivery, error) {
+type successfulTaskFeedback struct {
+	reactionCalls int
+	replyCalls    int
+	updateCalls   int
+}
+
+func (f *successfulTaskFeedback) AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error) {
+	f.reactionCalls++
+	return &TaskFeedbackReaction{ReactionID: "reaction_on_it"}, nil
+}
+
+func (f *successfulTaskFeedback) ReplyResult(_ context.Context, _ uint64, _ TaskFeedbackTarget, _ string, userMessage string) (*TaskFeedbackDelivery, error) {
+	f.replyCalls++
+	return &TaskFeedbackDelivery{MessageID: "om_result", Preview: userMessage}, nil
+}
+
+func (f *successfulTaskFeedback) UpdateResult(_ context.Context, _ string, _ string, userMessage string) (string, error) {
+	f.updateCalls++
+	return userMessage, nil
+}
+
+func (f *unavailableTaskFeedback) AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error) {
+	f.reactionCalls++
+	return nil, errors.New("230002 Bot/User can NOT be out of the chat")
+}
+
+func (f *unavailableTaskFeedback) ReplyResult(context.Context, uint64, TaskFeedbackTarget, string, string) (*TaskFeedbackDelivery, error) {
 	f.replyCalls++
 	return nil, errors.New("230002 Bot/User can NOT be out of the chat")
 }
 
-func (f *unavailableTaskFeedback) Update(context.Context, string, string, string) error {
+func (f *unavailableTaskFeedback) UpdateResult(context.Context, string, string, string) (string, error) {
 	f.updateCalls++
-	return errors.New("230002 Bot/User can NOT be out of the chat")
+	return "", errors.New("230002 Bot/User can NOT be out of the chat")
 }
 
 func newTaskFeedbackTestStore(t *testing.T) *Store {
@@ -44,9 +72,25 @@ func newTaskFeedbackTestStore(t *testing.T) *Store {
 		`CREATE TABLE execution_run (
 			id INTEGER PRIMARY KEY,
 			task_id INTEGER NOT NULL,
-			status TEXT,
+			action_type TEXT NOT NULL,
+			stage TEXT NOT NULL,
+			sandbox TEXT NOT NULL,
+			status TEXT NOT NULL,
+			prompt TEXT NOT NULL,
+			codex_session_id TEXT,
+			summary TEXT,
+			output JSON,
 			effects JSON,
-			started_at DATETIME
+			error_detail TEXT,
+			input_tokens INTEGER,
+			cached_input_tokens INTEGER,
+			output_tokens INTEGER,
+			reasoning_output_tokens INTEGER,
+			repo_path TEXT,
+			started_at DATETIME NOT NULL,
+			finished_at DATETIME,
+			duration_ms INTEGER,
+			created_at DATETIME
 		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
@@ -131,15 +175,15 @@ func TestStartTaskFeedbackIgnoresUnavailableSourceConversation(t *testing.T) {
 	if err := executor.startTaskFeedback(t.Context(), &domain.Task{ID: 453, Background: datatypes.JSON(raw)}, run); err != nil {
 		t.Fatalf("startTaskFeedback() error = %v, want unavailable source ignored", err)
 	}
-	if feedback.replyCalls != 1 || feedback.updateCalls != 0 {
-		t.Fatalf("feedback calls = reply:%d update:%d", feedback.replyCalls, feedback.updateCalls)
+	if feedback.reactionCalls != 1 || feedback.replyCalls != 0 || feedback.updateCalls != 0 {
+		t.Fatalf("feedback calls = reaction:%d reply:%d update:%d", feedback.reactionCalls, feedback.replyCalls, feedback.updateCalls)
 	}
 	if run.Status != "running" || len(run.Effects) != 0 {
 		t.Fatalf("run changed by unavailable feedback: status=%s effects=%s", run.Status, run.Effects)
 	}
 }
 
-func TestNotifyTaskFeedbackSkipsWhenInitialReplyWasUnavailable(t *testing.T) {
+func TestTryNotifyTaskFeedbackAttemptsResultAfterReactionWasUnavailable(t *testing.T) {
 	raw, err := (contextsnap.Snapshot{
 		SnapshotVersion: contextsnap.SnapshotVersion,
 		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
@@ -157,16 +201,78 @@ func TestNotifyTaskFeedbackSkipsWhenInitialReplyWasUnavailable(t *testing.T) {
 	feedback := &unavailableTaskFeedback{}
 	executor := &AgentExecutor{store: store, feedback: feedback}
 
-	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{TaskID: 453, Status: "done", UserMessage: "完成"}); err != nil {
-		t.Fatalf("notifyTaskFeedback() error = %v, want missing progress message ignored", err)
+	executor.tryNotifyTaskFeedback(t.Context(), &ExecuteResult{TaskID: 453, Status: "done", UserMessage: "完成"})
+	if feedback.replyCalls != 1 || feedback.updateCalls != 0 {
+		t.Fatalf("result feedback calls = reply:%d update:%d", feedback.replyCalls, feedback.updateCalls)
 	}
-	if feedback.updateCalls != 0 {
-		t.Fatalf("Update() calls = %d, want 0 without an initial progress message", feedback.updateCalls)
+}
+
+func TestTaskFeedbackKeepsOnItAndReusesOneResultReply(t *testing.T) {
+	raw, err := (contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
+		Messages: []contextsnap.Message{{
+			MessageID: "om_source", ChatMode: "group", CreateTime: 20,
+		}},
+	}).Encode()
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	store := newTaskFeedbackTestStore(t)
+	if err := store.db.Exec("INSERT INTO task(id, background) VALUES (?, ?)", 453, raw).Error; err != nil {
+		t.Fatalf("insert Task: %v", err)
+	}
+	run := &domain.ExecutionRun{
+		TaskID: 453, ActionType: "investigate", Stage: "execute", Sandbox: "danger-full-access",
+		Status: "running", Prompt: "test", StartedAt: time.Now().UTC(),
+	}
+	if err := store.SaveRun(t.Context(), run); err != nil {
+		t.Fatalf("SaveRun() error = %v", err)
+	}
+	feedback := &successfulTaskFeedback{}
+	executor := &AgentExecutor{store: store, feedback: feedback}
+	task := &domain.Task{ID: 453, Background: datatypes.JSON(raw)}
+
+	if err := executor.startTaskFeedback(t.Context(), task, run); err != nil {
+		t.Fatalf("startTaskFeedback() error = %v", err)
+	}
+	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{
+		TaskID: 453, RunID: run.ID, Status: "waiting", UserMessage: "等待外部结果",
+	}); err != nil {
+		t.Fatalf("first notifyTaskFeedback() error = %v", err)
+	}
+	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{
+		TaskID: 453, RunID: run.ID, Status: "done", UserMessage: "已经完成",
+	}); err != nil {
+		t.Fatalf("second notifyTaskFeedback() error = %v", err)
+	}
+	if feedback.reactionCalls != 1 || feedback.replyCalls != 1 || feedback.updateCalls != 1 {
+		t.Fatalf("feedback calls = reaction:%d reply:%d update:%d", feedback.reactionCalls, feedback.replyCalls, feedback.updateCalls)
+	}
+
+	stored, err := store.LoadRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatalf("LoadRun() error = %v", err)
+	}
+	var effects []map[string]any
+	if err := json.Unmarshal(stored.Effects, &effects); err != nil {
+		t.Fatalf("decode effects: %v", err)
+	}
+	if len(effects) != 3 || effects[0]["purpose"] != "task_processing" || effects[1]["purpose"] != "task_result" || effects[2]["purpose"] != "task_result_update" {
+		t.Fatalf("effects = %#v", effects)
+	}
+	if effects[0]["emoji_type"] != "OnIt" || effects[0]["operation"] != "add" {
+		t.Fatalf("processing reaction effect = %#v", effects[0])
+	}
+	for _, effect := range effects {
+		if effect["operation"] == "delete" {
+			t.Fatalf("OnIt reaction was deleted: %#v", effects)
+		}
 	}
 }
 
 func TestRecordAgentVerdictPreservesRuntimeFeedbackEffect(t *testing.T) {
-	run := &domain.ExecutionRun{Effects: datatypes.JSON(json.RawMessage(`[{"kind":"feishu_message","purpose":"task_progress","message_id":"om_progress"}]`))}
+	run := &domain.ExecutionRun{Effects: datatypes.JSON(json.RawMessage(`[{"kind":"feishu_reaction","purpose":"task_processing","reaction_id":"reaction_on_it"}]`))}
 	if err := recordAgentVerdict(run, "done", &codexResult{}, []codexEffect{{Kind: "file", Title: "产物"}}); err != nil {
 		t.Fatalf("recordAgentVerdict() error = %v", err)
 	}
@@ -174,7 +280,7 @@ func TestRecordAgentVerdictPreservesRuntimeFeedbackEffect(t *testing.T) {
 	if err := json.Unmarshal(run.Effects, &effects); err != nil {
 		t.Fatalf("decode effects: %v", err)
 	}
-	if len(effects) != 2 || effects[0]["message_id"] != "om_progress" || effects[1]["kind"] != "file" {
+	if len(effects) != 2 || effects[0]["reaction_id"] != "reaction_on_it" || effects[1]["kind"] != "file" {
 		t.Fatalf("effects = %#v", effects)
 	}
 }

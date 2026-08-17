@@ -25,50 +25,64 @@ func (f *fakeRunner) Run(_ context.Context, out any, args ...string) error {
 	return json.Unmarshal(raw, out)
 }
 
-func TestNotifierRepliesOnceThenUpdatesSameMessage(t *testing.T) {
+func TestNotifierAddsOnItThenRepliesAndUpdatesResult(t *testing.T) {
 	runner := &fakeRunner{responses: []any{
-		map[string]any{"data": map[string]any{"message_id": "om_progress"}},
+		map[string]any{"data": map[string]any{"reaction_id": "reaction_on_it"}},
+		map[string]any{"data": map[string]any{"message_id": "om_result"}},
 		map[string]any{"data": map[string]any{}},
 	}}
 	notifier, err := NewNotifier(runner)
 	if err != nil {
 		t.Fatalf("NewNotifier() error = %v", err)
 	}
-	delivery, err := notifier.ReplyProcessing(t.Context(), 17, execute.TaskFeedbackTarget{SourceMessageID: "om_source", ReplyInThread: true})
+	reaction, err := notifier.AddProcessingReaction(t.Context(), execute.TaskFeedbackTarget{SourceMessageID: "om_source", ReplyInThread: true})
 	if err != nil {
-		t.Fatalf("ReplyProcessing() error = %v", err)
+		t.Fatalf("AddProcessingReaction() error = %v", err)
 	}
-	if delivery.MessageID != "om_progress" {
+	if reaction.ReactionID != "reaction_on_it" {
+		t.Fatalf("reaction = %#v", reaction)
+	}
+	delivery, err := notifier.ReplyResult(t.Context(), 17, execute.TaskFeedbackTarget{SourceMessageID: "om_source", ReplyInThread: true}, "done", "已经处理完成")
+	if err != nil {
+		t.Fatalf("ReplyResult() error = %v", err)
+	}
+	if delivery.MessageID != "om_result" || delivery.Preview != "已经处理完成" {
 		t.Fatalf("delivery = %#v", delivery)
 	}
-	if err := notifier.Update(t.Context(), delivery.MessageID, "done", "已经处理完成"); err != nil {
-		t.Fatalf("Update() error = %v", err)
+	if preview, err := notifier.UpdateResult(t.Context(), delivery.MessageID, "done", "已经更新结果"); err != nil || preview != "已经更新结果" {
+		t.Fatalf("UpdateResult() = %q, %v", preview, err)
 	}
-	if len(runner.calls) != 2 {
-		t.Fatalf("calls = %d, want 2", len(runner.calls))
+	if len(runner.calls) != 3 {
+		t.Fatalf("calls = %d, want 3", len(runner.calls))
 	}
-	first := strings.Join(runner.calls[0], "\n")
-	for _, want := range []string{"+messages-reply", "om_source", "正在处理中", "jarvis-task-17-progress", "--reply-in-thread"} {
-		if !strings.Contains(first, want) {
-			t.Fatalf("reply args missing %q: %s", want, first)
+	reactionCall := strings.Join(runner.calls[0], "\n")
+	for _, want := range []string{"im\nreactions\ncreate", `"message_id":"om_source"`, `"emoji_type":"OnIt"`, "--as\nbot"} {
+		if !strings.Contains(reactionCall, want) {
+			t.Fatalf("reaction args missing %q: %s", want, reactionCall)
 		}
 	}
-	second := strings.Join(runner.calls[1], "\n")
-	for _, want := range []string{"api\nPUT", "/open-apis/im/v1/messages/om_progress", "已经处理完成"} {
-		if !strings.Contains(second, want) {
-			t.Fatalf("update args missing %q: %s", want, second)
+	replyCall := strings.Join(runner.calls[1], "\n")
+	for _, want := range []string{"+messages-reply", "om_source", "已经处理完成", "jarvis-task-17-result", "--reply-in-thread"} {
+		if !strings.Contains(replyCall, want) {
+			t.Fatalf("reply args missing %q: %s", want, replyCall)
+		}
+	}
+	updateCall := strings.Join(runner.calls[2], "\n")
+	for _, want := range []string{"api\nPUT", "/open-apis/im/v1/messages/om_result", "已经更新结果"} {
+		if !strings.Contains(updateCall, want) {
+			t.Fatalf("update args missing %q: %s", want, updateCall)
 		}
 	}
 }
 
-func TestNotifierMainChatReplyDoesNotForceThread(t *testing.T) {
-	runner := &fakeRunner{responses: []any{map[string]any{"data": map[string]any{"message_id": "om_progress"}}}}
+func TestNotifierMainChatResultDoesNotForceThread(t *testing.T) {
+	runner := &fakeRunner{responses: []any{map[string]any{"data": map[string]any{"message_id": "om_result"}}}}
 	notifier, err := NewNotifier(runner)
 	if err != nil {
 		t.Fatalf("NewNotifier() error = %v", err)
 	}
-	if _, err := notifier.ReplyProcessing(t.Context(), 18, execute.TaskFeedbackTarget{SourceMessageID: "om_source"}); err != nil {
-		t.Fatalf("ReplyProcessing() error = %v", err)
+	if _, err := notifier.ReplyResult(t.Context(), 18, execute.TaskFeedbackTarget{SourceMessageID: "om_source"}, "done", "完成"); err != nil {
+		t.Fatalf("ReplyResult() error = %v", err)
 	}
 	if got := strings.Join(runner.calls[0], "\n"); strings.Contains(got, "--reply-in-thread") {
 		t.Fatalf("main-chat reply unexpectedly forced into thread: %s", got)
@@ -79,7 +93,6 @@ func TestRenderStatus(t *testing.T) {
 	for _, test := range []struct {
 		status, summary, want string
 	}{
-		{"executing", "ignored", "正在处理中"},
 		{"awaiting_approval", "方案已准备", "等待你的确认"},
 		{"done", "一百万", "一百万"},
 		{"failed", "没能取得模型配置，请到任务详情查看错误。", "没能取得模型配置"},
@@ -89,5 +102,8 @@ func TestRenderStatus(t *testing.T) {
 		if err != nil || !strings.Contains(got, test.want) {
 			t.Fatalf("render(%s) = %q, %v; want %q", test.status, got, err, test.want)
 		}
+	}
+	if _, err := render("executing", "ignored"); err == nil {
+		t.Fatal("render(executing) error = nil, want unsupported status")
 	}
 }

@@ -76,6 +76,11 @@ type ApprovalNotifier interface {
 
 type TaskFeedbackDelivery struct {
 	MessageID string
+	Preview   string
+}
+
+type TaskFeedbackReaction struct {
+	ReactionID string
 }
 
 type TaskFeedbackTarget struct {
@@ -83,14 +88,14 @@ type TaskFeedbackTarget struct {
 	ReplyInThread   bool
 }
 
-// TaskFeedbackNotifier owns the Feishu transport for one replace-in-place M5
-// status message. M5 owns when execution starts/ends; the notifier only replies
-// to the source message and updates the bot message it created. Delivery is a
-// best-effort projection: capture can see human P2P chats and groups where the
-// Bot is not a member, so transport failure must not change Task execution.
+// TaskFeedbackNotifier owns the Feishu transport for M5 feedback. The OnIt
+// reaction is a best-effort start acknowledgement. Results use one idempotent
+// reply per Task and update that reply on later runs. Delivery remains a
+// best-effort projection: transport failure must not change Task execution.
 type TaskFeedbackNotifier interface {
-	ReplyProcessing(context.Context, uint64, TaskFeedbackTarget) (*TaskFeedbackDelivery, error)
-	Update(context.Context, string, string, string) error
+	AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error)
+	ReplyResult(context.Context, uint64, TaskFeedbackTarget, string, string) (*TaskFeedbackDelivery, error)
+	UpdateResult(context.Context, string, string, string) (string, error)
 }
 
 // AgentExecutor is the execution core. It does not hard-code a per-action
@@ -936,11 +941,11 @@ func appendApprovalCardEffect(raw []byte, delivery *ApprovalDelivery) ([]byte, e
 	return json.Marshal(effects)
 }
 
-// startTaskFeedback records a progress message when the Bot can reach the
+// startTaskFeedback adds a best-effort OnIt reaction when the Bot can reach the
 // source conversation. Poll capture legitimately includes human P2P chats and
-// groups without this Bot; those reply/update failures are expected and only
-// logged. Do not fall back to sending as the principal, and never fail M5 for
-// an unavailable progress projection.
+// groups without this Bot; those reaction failures are expected and only
+// logged. Do not send a text fallback and never fail M5 for an unavailable
+// start acknowledgement.
 func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task, run *domain.ExecutionRun) error {
 	if e.feedback == nil || task == nil || run == nil {
 		return nil
@@ -952,31 +957,28 @@ func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task
 	if target.SourceMessageID == "" {
 		return nil
 	}
-	existingMessageID, err := e.findTaskFeedbackMessage(ctx, task.ID)
+	reaction, err := e.feedback.AddProcessingReaction(ctx, target)
 	if err != nil {
-		return err
-	}
-	if existingMessageID != "" {
-		if err := e.feedback.Update(ctx, existingMessageID, "executing", ""); err != nil {
-			hlog.CtxWarnf(ctx, "Task feedback unavailable; continuing execution task_id=%d error=%+v", task.ID, err)
-		}
+		hlog.CtxWarnf(ctx, "Task processing reaction unavailable; continuing execution task_id=%d source_message_id=%s error=%+v",
+			task.ID, target.SourceMessageID, err)
 		return nil
 	}
-	delivery, err := e.feedback.ReplyProcessing(ctx, task.ID, target)
-	if err != nil {
-		hlog.CtxWarnf(ctx, "Task feedback unavailable; continuing execution task_id=%d error=%+v", task.ID, err)
+	if reaction == nil || strings.TrimSpace(reaction.ReactionID) == "" {
+		hlog.CtxWarnf(ctx, "Task processing reaction returned no reaction_id; continuing execution task_id=%d source_message_id=%s",
+			task.ID, target.SourceMessageID)
 		return nil
 	}
-	if delivery == nil || strings.TrimSpace(delivery.MessageID) == "" {
-		return fmt.Errorf("Task feedback notifier returned no message_id for task_id=%d", task.ID)
-	}
-	effects, err := appendTaskFeedbackEffect(run.Effects, delivery.MessageID, target.SourceMessageID)
+	effects, err := appendTaskFeedbackEffect(run.Effects, map[string]any{
+		"kind": "feishu_reaction", "title": "M5 正在处理", "purpose": "task_processing",
+		"reaction_id": strings.TrimSpace(reaction.ReactionID), "source_message_id": target.SourceMessageID,
+		"emoji_type": "OnIt", "operation": "add",
+	})
 	if err != nil {
-		return fmt.Errorf("record Task feedback effect run_id=%d: %w", run.ID, err)
+		return fmt.Errorf("record Task processing reaction effect run_id=%d: %w", run.ID, err)
 	}
 	run.Effects = datatypes.JSON(effects)
 	if err := e.persistRun(ctx, run); err != nil {
-		return fmt.Errorf("save Task feedback effect run_id=%d: %w", run.ID, err)
+		return fmt.Errorf("save Task processing reaction effect run_id=%d: %w", run.ID, err)
 	}
 	return nil
 }
@@ -996,16 +998,33 @@ func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteR
 	if target.SourceMessageID == "" {
 		return nil
 	}
-	messageID, err := e.findTaskFeedbackMessage(ctx, task.ID)
+	messageID, err := e.findTaskResultMessage(ctx, task.ID)
 	if err != nil {
 		return err
 	}
 	if messageID == "" {
-		// The initial best-effort reply was unavailable, so there is no Bot
-		// message to update. The Task result remains authoritative.
-		return nil
+		delivery, err := e.feedback.ReplyResult(ctx, task.ID, target, result.Status, result.UserMessage)
+		if err != nil {
+			return err
+		}
+		if delivery == nil || strings.TrimSpace(delivery.MessageID) == "" {
+			return fmt.Errorf("Task result reply returned no message_id for task_id=%d", task.ID)
+		}
+		return e.recordTaskFeedbackEffect(ctx, result, map[string]any{
+			"kind": "feishu_message", "title": "M5 任务结果", "purpose": "task_result",
+			"message_id": strings.TrimSpace(delivery.MessageID), "source_message_id": target.SourceMessageID,
+			"preview": strings.TrimSpace(delivery.Preview), "status": result.Status, "operation": "reply",
+		})
 	}
-	return e.feedback.Update(ctx, messageID, result.Status, result.UserMessage)
+	preview, err := e.feedback.UpdateResult(ctx, messageID, result.Status, result.UserMessage)
+	if err != nil {
+		return err
+	}
+	return e.recordTaskFeedbackEffect(ctx, result, map[string]any{
+		"kind": "feishu_message", "title": "M5 任务结果更新", "purpose": "task_result_update",
+		"message_id": messageID, "source_message_id": target.SourceMessageID,
+		"preview": strings.TrimSpace(preview), "status": result.Status, "operation": "update",
+	})
 }
 
 func (e *AgentExecutor) tryNotifyTaskFeedback(ctx context.Context, result *ExecuteResult) {
@@ -1036,10 +1055,10 @@ func taskFeedbackTarget(raw []byte) (TaskFeedbackTarget, error) {
 	}, nil
 }
 
-func (e *AgentExecutor) findTaskFeedbackMessage(ctx context.Context, taskID uint64) (string, error) {
+func (e *AgentExecutor) findTaskResultMessage(ctx context.Context, taskID uint64) (string, error) {
 	runs, err := e.store.ListRuns(ctx, taskID)
 	if err != nil {
-		return "", fmt.Errorf("list Task feedback runs task_id=%d: %w", taskID, err)
+		return "", fmt.Errorf("list Task result runs task_id=%d: %w", taskID, err)
 	}
 	for _, run := range runs.Items {
 		if len(run.Effects) == 0 {
@@ -1047,12 +1066,12 @@ func (e *AgentExecutor) findTaskFeedbackMessage(ctx context.Context, taskID uint
 		}
 		var effects []map[string]any
 		if err := json.Unmarshal(run.Effects, &effects); err != nil {
-			return "", fmt.Errorf("decode Task feedback effects run_id=%d: %w", run.ID, err)
+			return "", fmt.Errorf("decode Task result effects run_id=%d: %w", run.ID, err)
 		}
 		for _, effect := range effects {
 			purpose, _ := effect["purpose"].(string)
 			messageID, _ := effect["message_id"].(string)
-			if purpose == "task_progress" && strings.TrimSpace(messageID) != "" {
+			if purpose == "task_result" && strings.TrimSpace(messageID) != "" {
 				return strings.TrimSpace(messageID), nil
 			}
 		}
@@ -1060,17 +1079,44 @@ func (e *AgentExecutor) findTaskFeedbackMessage(ctx context.Context, taskID uint
 	return "", nil
 }
 
-func appendTaskFeedbackEffect(raw []byte, messageID, sourceMessageID string) ([]byte, error) {
+func (e *AgentExecutor) recordTaskFeedbackEffect(ctx context.Context, result *ExecuteResult, effect map[string]any) error {
+	if result == nil {
+		return fmt.Errorf("record Task feedback effect result is nil")
+	}
+	runID := result.RunID
+	if runID == 0 {
+		runs, err := e.store.ListRuns(ctx, result.TaskID)
+		if err != nil {
+			return err
+		}
+		if len(runs.Items) == 0 {
+			return fmt.Errorf("record Task feedback effect task_id=%d has no execution run", result.TaskID)
+		}
+		runID = runs.Items[0].ID
+	}
+	run, err := e.store.LoadRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+	effects, err := appendTaskFeedbackEffect(run.Effects, effect)
+	if err != nil {
+		return fmt.Errorf("record Task feedback effect run_id=%d: %w", run.ID, err)
+	}
+	run.Effects = datatypes.JSON(effects)
+	if err := e.store.SaveRun(ctx, run); err != nil {
+		return fmt.Errorf("save Task feedback effect run_id=%d: %w", run.ID, err)
+	}
+	return nil
+}
+
+func appendTaskFeedbackEffect(raw []byte, effect map[string]any) ([]byte, error) {
 	var effects []map[string]any
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &effects); err != nil {
 			return nil, fmt.Errorf("decode existing effects: %w", err)
 		}
 	}
-	effects = append(effects, map[string]any{
-		"kind": "feishu_message", "title": "M5 处理进度", "preview": "正在处理中",
-		"purpose": "task_progress", "message_id": messageID, "source_message_id": sourceMessageID,
-	})
+	effects = append(effects, effect)
 	return json.Marshal(effects)
 }
 
