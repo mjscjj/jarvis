@@ -138,7 +138,7 @@ morning_brief:
   model: "gpt-5.6-sol"       # 与 execute 同级；一天一次，取舍质量优先
   sandbox: "danger-full-access"
   reasoning_effort: "medium"
-  timeout_seconds: 600
+  timeout_seconds: 1800
 
 # M5 任务执行：独立于上面的 codex 段。这里用更强模型真正落地。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron。
