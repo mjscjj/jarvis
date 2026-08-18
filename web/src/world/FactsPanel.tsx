@@ -110,7 +110,7 @@ export default function FactsPanel() {
             options={['project', 'key_matter', 'person', 'group', 'task', 'todo', 'resource', 'managed_resource', 'principal'].map((value) => ({ value, label: value }))}
           />
           <InputNumber min={1} placeholder="主体 ID" value={subjectId} onChange={setSubjectId} style={{ width: 110 }} />
-          <Select allowClear placeholder="来源" value={sourceKind} onChange={setSourceKind} style={{ width: 130 }} options={['manual', 'm3', 'm5', 'message', 'background', 'factengine', 'todo', 'task', 'page_revision'].map((value) => ({ value, label: value }))} />
+          <Select allowClear placeholder="来源" value={sourceKind} onChange={setSourceKind} style={{ width: 130 }} options={['manual', 'm3', 'm5', 'message', 'background', 'factengine', 'todo', 'task'].map((value) => ({ value, label: value }))} />
           <Button type="primary" onClick={() => void runSearch()} loading={searching}>搜索</Button>
           {result && <Button onClick={clearSearch}>回到时间线</Button>}
         </Flex>
@@ -127,7 +127,7 @@ export default function FactsPanel() {
                   <Flex gap={8} align="center" wrap>
                     <Text strong>{fact.subject_label}</Text>
                     <Tag>{fact.subject_type}/{fact.subject_id}</Tag>
-                    <Tag color={fact.source_kind === 'page_revision' ? 'green' : undefined}>{fact.source_kind === 'page_revision' ? '页面旧版' : fact.source_kind || '未知来源'}</Tag>
+                    <Tag>{fact.source_kind || '未知来源'}</Tag>
                     <Text type="secondary">{dayjs(fact.occurred_at).format('YYYY-MM-DD HH:mm')}</Text>
                   </Flex>
                   <div className="fact-description">{fact.description}</div>

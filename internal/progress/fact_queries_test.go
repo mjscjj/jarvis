@@ -14,13 +14,11 @@ func TestFactTimelineSeparatesTodayFromEarlierSubjectDays(t *testing.T) {
 	service.now = func() time.Time { return time.Date(2026, 8, 8, 12, 0, 0, 0, location) }
 	yesterday := time.Date(2026, 8, 7, 0, 0, 0, 0, location)
 	today := yesterday.AddDate(0, 0, 1)
-	pageRevision := FactSourcePageRevision
 	rows := []domain.Fact{
 		{SubjectType: "topic", SubjectID: 1, Description: "today detail", OccurredAt: today.Add(9 * time.Hour), CreatedAt: today.Add(9 * time.Hour)},
 		{SubjectType: "topic", SubjectID: 1, Description: "yesterday detail", OccurredAt: yesterday.Add(9 * time.Hour), CreatedAt: yesterday.Add(10 * time.Hour)},
 		{SubjectType: "topic", SubjectID: 1, Description: "older yesterday detail", OccurredAt: yesterday.Add(8 * time.Hour), CreatedAt: yesterday.Add(8 * time.Hour)},
 		{SubjectType: "topic", SubjectID: 2, Description: "other subject", OccurredAt: yesterday.Add(10 * time.Hour), CreatedAt: today.Add(time.Hour)},
-		{SubjectType: "topic", SubjectID: 1, Description: "页面旧版全文", OccurredAt: yesterday.Add(11 * time.Hour), SourceKind: &pageRevision, CreatedAt: yesterday.Add(11 * time.Hour)},
 	}
 	if err := service.db.Create(&rows).Error; err != nil {
 		t.Fatalf("seed facts: %v", err)
@@ -41,7 +39,7 @@ func TestFactTimelineSeparatesTodayFromEarlierSubjectDays(t *testing.T) {
 		states[subject.SubjectID] = subject
 	}
 	if states[1].DetailCount != 2 || !states[1].LatestOccurredAt.Equal(yesterday.Add(9*time.Hour)) {
-		t.Fatalf("subject 1 = %#v, want two details latest 09:00 without the archived page revision", states[1])
+		t.Fatalf("subject 1 = %#v, want two details latest 09:00", states[1])
 	}
 	if states[2].DetailCount != 1 {
 		t.Fatalf("subject 2 = %#v, want one detail", states[2])

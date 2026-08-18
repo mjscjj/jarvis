@@ -91,8 +91,7 @@ func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (
 	from := today.AddDate(0, 0, -(filter.Days - 1))
 	until := today.AddDate(0, 0, 1)
 	query := s.db.WithContext(ctx).
-		Where("occurred_at >= ? AND occurred_at < ?", from.UTC(), until.UTC()).
-		Where("source_kind IS NULL OR source_kind <> ?", FactSourcePageRevision)
+		Where("occurred_at >= ? AND occurred_at < ?", from.UTC(), until.UTC())
 	if filter.SubjectType != "" {
 		query = query.Where("subject_type = ? AND subject_id = ?", filter.SubjectType, filter.SubjectID)
 	}

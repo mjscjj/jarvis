@@ -20,11 +20,6 @@ var (
 	ErrNotFound     = errors.New("progress event parent not found")
 )
 
-// FactSourcePageRevision marks a fact that archives one entity summary page's
-// previous text. It is a page version, not something that happened, so readers
-// that count or list events exclude it via ExcludeSourceKind.
-const FactSourcePageRevision = "page_revision"
-
 var taskEventTypes = map[string]struct{}{
 	"created": {}, "execution_started": {}, "approval_requested": {},
 	"approval_granted": {}, "approval_rejected": {}, "rerun_requested": {},
@@ -70,18 +65,14 @@ type FactInput struct {
 // FactFilter selects facts for one subject, optionally narrowed to a half-open
 // time window. Callers own the timezone: to read a natural day, pass that day's
 // local midnight and the next one. Limit caps the newest-first result.
-//
-// SourceKind restricts to facts written by one producer; ExcludeSourceKind
-// removes one, which is how callers that count real events drop archived page
-// revisions.
+// SourceKind restricts to facts written by one producer.
 type FactFilter struct {
-	SubjectType       string
-	SubjectID         uint64
-	From              *time.Time
-	Until             *time.Time
-	Limit             int
-	SourceKind        *string
-	ExcludeSourceKind *string
+	SubjectType string
+	SubjectID   uint64
+	From        *time.Time
+	Until       *time.Time
+	Limit       int
+	SourceKind  *string
 }
 
 type TaskEventView struct {
@@ -226,10 +217,6 @@ func (s *Service) ListFacts(ctx context.Context, filter FactFilter) ([]FactView,
 	if filter.SourceKind != nil {
 		query = query.Where("source_kind = ?", strings.TrimSpace(*filter.SourceKind))
 	}
-	if filter.ExcludeSourceKind != nil {
-		// source_kind is nullable; excluding a value must still return NULL rows.
-		query = query.Where("(source_kind IS NULL OR source_kind <> ?)", strings.TrimSpace(*filter.ExcludeSourceKind))
-	}
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
 	}
@@ -258,9 +245,6 @@ func (s *Service) CountFacts(ctx context.Context, filter FactFilter) (int, error
 	}
 	if filter.SourceKind != nil {
 		query = query.Where("source_kind = ?", strings.TrimSpace(*filter.SourceKind))
-	}
-	if filter.ExcludeSourceKind != nil {
-		query = query.Where("(source_kind IS NULL OR source_kind <> ?)", strings.TrimSpace(*filter.ExcludeSourceKind))
 	}
 	var n int64
 	if err := query.Count(&n).Error; err != nil {

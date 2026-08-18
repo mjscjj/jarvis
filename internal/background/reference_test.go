@@ -1,6 +1,7 @@
 package background
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,6 +25,21 @@ func TestParseReferences(t *testing.T) {
 	}
 	if got := ParseReferences(`[重复](person:12) 再提 [同一人](person:12)`); len(got) != 1 || got[0].ID != 12 {
 		t.Fatalf("dedup = %#v", got)
+	}
+}
+
+// The maintenance prompt is the only place the reference write form is stated,
+// and ParseReferences is its only reader. An example the parser cannot read
+// leaves every page link invisible without any error, so assert the round trip
+// against the prompt file itself instead of against a copy of its wording.
+func TestFactEnginePromptExampleParsesAsAReference(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "fact-extract-system-prompt.md"))
+	if err != nil {
+		t.Fatalf("read FactEngine system prompt: %v", err)
+	}
+	if refs := ParseReferences(string(raw)); len(refs) == 0 {
+		t.Fatal("prompt shows no reference example ParseReferences accepts; a bare person:12 example makes page links silently invisible")
 	}
 }
 

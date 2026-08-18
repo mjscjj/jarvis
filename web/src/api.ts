@@ -305,7 +305,6 @@ export function listSubjectFacts(subjectType: string, id: number, signal?: Abort
   from?: string
   until?: string
   sourceKind?: string
-  excludeSourceKind?: string
   limit?: number
 } = {}): Promise<{ items: Fact[] }> {
   const params = new URLSearchParams({
@@ -316,7 +315,6 @@ export function listSubjectFacts(subjectType: string, id: number, signal?: Abort
   if (options.from) params.set('from', options.from)
   if (options.until) params.set('until', options.until)
   if (options.sourceKind) params.set('source_kind', options.sourceKind)
-  if (options.excludeSourceKind) params.set('exclude_source_kind', options.excludeSourceKind)
   return request<{ items: Fact[] }>(`/api/facts?${params.toString()}`, { signal })
 }
 

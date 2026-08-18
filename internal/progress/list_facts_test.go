@@ -51,49 +51,33 @@ func insertFact(t *testing.T, service *Service, subjectType string, subjectID ui
 	}
 }
 
-func TestListFactsSourceKindEqualityAndExclusion(t *testing.T) {
+func TestListFactsSourceKindEquality(t *testing.T) {
 	t.Parallel()
 	service := newFactTestService(t)
 	ctx := context.Background()
 	day := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
-	pageRevision := FactSourcePageRevision
 	m3 := "m3"
+	m5 := "m5"
 	insertFact(t, service, "group", 7, "明细 A", day, &m3)
 	insertFact(t, service, "group", 7, "明细 NULL source", day.Add(time.Hour), nil)
-	insertFact(t, service, "group", 7, "页面旧版全文", day.Add(2*time.Hour), &pageRevision)
+	insertFact(t, service, "group", 7, "M5 写的明细", day.Add(2*time.Hour), &m5)
 
 	equal, err := service.ListFacts(ctx, FactFilter{
-		SubjectType: "group", SubjectID: 7, SourceKind: &pageRevision,
+		SubjectType: "group", SubjectID: 7, SourceKind: &m5,
 	})
 	if err != nil {
-		t.Fatalf("ListFacts SourceKind=page_revision: %v", err)
+		t.Fatalf("ListFacts SourceKind=m5: %v", err)
 	}
-	if len(equal) != 1 || equal[0].Description != "页面旧版全文" {
-		t.Fatalf("SourceKind equality = %#v, want only the page revision", equal)
+	if len(equal) != 1 || equal[0].Description != "M5 写的明细" {
+		t.Fatalf("SourceKind equality = %#v, want only the m5 fact", equal)
 	}
 
-	excluded, err := service.ListFacts(ctx, FactFilter{
-		SubjectType: "group", SubjectID: 7, ExcludeSourceKind: &pageRevision,
-	})
+	all, err := service.ListFacts(ctx, FactFilter{SubjectType: "group", SubjectID: 7})
 	if err != nil {
-		t.Fatalf("ListFacts ExcludeSourceKind=page_revision: %v", err)
+		t.Fatalf("ListFacts without source filter: %v", err)
 	}
-	if len(excluded) != 2 {
-		t.Fatalf("ExcludeSourceKind count = %d, want 2 (NULL must pass): %#v", len(excluded), excluded)
-	}
-	for _, fact := range excluded {
-		if fact.SourceKind != nil && *fact.SourceKind == FactSourcePageRevision {
-			t.Fatalf("excluded set still contains a page revision: %#v", fact)
-		}
-	}
-	var sawNil bool
-	for _, fact := range excluded {
-		if fact.SourceKind == nil {
-			sawNil = true
-		}
-	}
-	if !sawNil {
-		t.Fatalf("ExcludeSourceKind must keep NULL source_kind rows: %#v", excluded)
+	if len(all) != 3 {
+		t.Fatalf("unfiltered count = %d, want 3 (NULL source_kind must pass): %#v", len(all), all)
 	}
 }
 

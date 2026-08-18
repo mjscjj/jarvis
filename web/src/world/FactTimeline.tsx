@@ -73,7 +73,7 @@ export default function FactTimeline({
     try {
       const from = dayjs(`${date}T00:00:00`).toISOString()
       const until = dayjs(`${date}T00:00:00`).add(1, 'day').toISOString()
-      const result = await listSubjectFacts(item.subject_type, item.subject_id, undefined, { from, until, excludeSourceKind: 'page_revision' })
+      const result = await listSubjectFacts(item.subject_type, item.subject_id, undefined, { from, until })
       setDetails((current) => ({ ...current, [key]: result.items }))
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))

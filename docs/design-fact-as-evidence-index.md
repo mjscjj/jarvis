@@ -192,8 +192,8 @@ description 有 N 字，上限 200。事实是索引项不是知识条目：写�
 保留它的理由是页面按设计有损——压缩会主动扔掉细节，旧版是唯一记录被扔掉了什么的地方，
 而压缩每天都在发生。
 
-`internal/background/page.go:170-183` 的归档改写成写这张表。库里那 2 条历史 `page_revision`
-fact 直接删，不迁移。
+`internal/background/page.go` 的归档改写成写这张表。库里的历史 `page_revision` fact 按同一理由
+迁进新表（实际迁移时 210 条 / 423KB），再从 `fact` 删除。
 
 搬走之后 `page_revision` 的过滤逻辑整条链一起删，四个消费者各删一处：
 
