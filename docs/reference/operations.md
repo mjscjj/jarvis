@@ -127,7 +127,7 @@ jarvis_approval_secret = "<同一个本机共享密钥>"
 jarvis_approval_timeout_ms = 2500
 ```
 
-M5 返回 proposal 后，Jarvis 先持久化 `awaiting_approval`，再由当前 Jarvis Bot 立即发送审批卡；按钮值使用 `action=jarvis_approval` 命名空间，并携带 `task_id` 和已持久化的 Task `version`。CC Connect 的现有 `OnP2CardActionTrigger` 收到点击后，通过带共享密钥的 localhost HTTP 请求转给 Jarvis，再把处理结果追加到原卡片并移除确认/拒绝按钮。Jarvis 不启动 `card.action.trigger` 连接，因此普通消息、文档评论和既有 CC Connect 卡片链路不会被抢占。
+M5 返回 proposal 后，Jarvis 先持久化 `awaiting_approval`，再由当前 Jarvis Bot 立即发送审批卡；按钮值使用 `action=jarvis_approval` 命名空间，并携带 `task_id` 和已持久化的 Task `version`。CC Connect 的现有 `OnP2CardActionTrigger` 收到点击后，通过带共享密钥的 localhost HTTP 请求转给 Jarvis；Jarvis 原子认领审批并异步启动 M5 后立即返回，CC Connect 随即结束按钮回调，再在卡片动作锁释放后异步把“已确认，正在执行”追加到原卡片并移除确认/拒绝按钮。Jarvis 不启动 `card.action.trigger` 连接，因此普通消息、文档评论和既有 CC Connect 卡片链路不会被抢占。
 
 Jarvis 端校验 Principal open_id，并用卡片携带的 Task version 原子认领当前 `awaiting_approval` proposal；旧卡片或重复点击会因 version/status 冲突被拒绝。CC Connect 只负责机械传输和保留原卡片展示，不持有审批状态。URL 必须是 loopback，密钥只写进 Git 忽略的 `conf/config.runtime.yaml` 和本机 `~/.cc-connect/config.toml`。
 

@@ -24,7 +24,7 @@ func TestProcessCardActionApproveUsesCardVersion(t *testing.T) {
 	if approver.approvedTask != 7 || approver.approvedVersion != 4 {
 		t.Fatalf("approve called with task=%d version=%d", approver.approvedTask, approver.approvedVersion)
 	}
-	if !strings.Contains(string(card), "已同意") {
+	if !strings.Contains(string(card), "已确认，正在执行") {
 		t.Fatalf("outcome card = %s", card)
 	}
 }

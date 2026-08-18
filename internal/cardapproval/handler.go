@@ -102,9 +102,9 @@ func (h *Handler) ProcessCardAction(ctx context.Context, event CardActionEvent) 
 	}
 	if action.Action == "approve" {
 		if note != "" {
-			return cardNoticeText("✅ 已同意并提交补充，正在处理。\n\n补充：" + note), nil
+			return cardNoticeText("✅ 已确认并提交补充，正在执行。\n\n补充：" + note), nil
 		}
-		return cardNoticeText("✅ 已同意，正在处理。"), nil
+		return cardNoticeText("✅ 已确认，正在执行。"), nil
 	}
 	if note != "" {
 		return cardNoticeText("已驳回，不会执行。\n\n原因：" + note), nil
