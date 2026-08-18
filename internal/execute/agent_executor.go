@@ -94,8 +94,8 @@ type TaskFeedbackTarget struct {
 // best-effort projection: transport failure must not change Task execution.
 type TaskFeedbackNotifier interface {
 	AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error)
-	ReplyResult(context.Context, uint64, TaskFeedbackTarget, string, string) (*TaskFeedbackDelivery, error)
-	UpdateResult(context.Context, string, string, string) (string, error)
+	ReplyResult(context.Context, uint64, TaskFeedbackTarget, string) (*TaskFeedbackDelivery, error)
+	UpdateResult(context.Context, string, string) (string, error)
 }
 
 // AgentExecutor is the execution core. It does not hard-code a per-action
@@ -759,12 +759,12 @@ func (e *AgentExecutor) Reject(ctx context.Context, taskID uint64, expectedVersi
 	if _, err := e.store.RejectAwaitingApproval(ctx, task.ID, task.Version, resultJSON); err != nil {
 		return nil, err
 	}
-	result := &ExecuteResult{
+	// Rejection is a decision the principal just made in the approval card, so
+	// the source conversation learns nothing from an acknowledgement it never
+	// asked for.
+	return &ExecuteResult{
 		TaskID: task.ID, Status: "failed", Summary: "已驳回外部写入方案",
-		UserMessage: "已按你的选择停止执行。",
-	}
-	e.tryNotifyTaskFeedback(context.WithoutCancel(ctx), result)
-	return result, nil
+	}, nil
 }
 
 func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*ExecuteResult, error) {
@@ -983,6 +983,13 @@ func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task
 	return nil
 }
 
+// notifyTaskFeedback delivers the model's own user_message to the source
+// conversation, verbatim. Whether this conversation should hear anything, and
+// what it should hear, is the model's judgment alone: it says nothing by leaving
+// user_message empty, which is also what happens when a run times out or crashes
+// before returning anything. So an empty text sends nothing and leaves an
+// existing reply on the last words the model actually wrote. Execution status
+// never becomes a sentence of its own — the Task detail carries internal state.
 func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteResult) error {
 	if e.feedback == nil || result == nil {
 		return nil
@@ -998,12 +1005,16 @@ func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteR
 	if target.SourceMessageID == "" {
 		return nil
 	}
+	userMessage := strings.TrimSpace(result.UserMessage)
+	if userMessage == "" {
+		return nil
+	}
 	messageID, err := e.findTaskResultMessage(ctx, task.ID)
 	if err != nil {
 		return err
 	}
 	if messageID == "" {
-		delivery, err := e.feedback.ReplyResult(ctx, task.ID, target, result.Status, result.UserMessage)
+		delivery, err := e.feedback.ReplyResult(ctx, task.ID, target, userMessage)
 		if err != nil {
 			return err
 		}
@@ -1016,7 +1027,7 @@ func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteR
 			"preview": strings.TrimSpace(delivery.Preview), "status": result.Status, "operation": "reply",
 		})
 	}
-	preview, err := e.feedback.UpdateResult(ctx, messageID, result.Status, result.UserMessage)
+	preview, err := e.feedback.UpdateResult(ctx, messageID, userMessage)
 	if err != nil {
 		return err
 	}
@@ -1071,9 +1082,15 @@ func (e *AgentExecutor) findTaskResultMessage(ctx context.Context, taskID uint64
 		for _, effect := range effects {
 			purpose, _ := effect["purpose"].(string)
 			messageID, _ := effect["message_id"].(string)
-			if purpose == "task_result" && strings.TrimSpace(messageID) != "" {
-				return strings.TrimSpace(messageID), nil
+			if purpose != "task_result" || strings.TrimSpace(messageID) == "" {
+				continue
 			}
+			// A recalled reply no longer exists in Feishu, so editing it would
+			// silently drop every later result. Fall back to a fresh reply.
+			if recalledAt, _ := effect["recalled_at"].(string); strings.TrimSpace(recalledAt) != "" {
+				continue
+			}
+			return strings.TrimSpace(messageID), nil
 		}
 	}
 	return "", nil

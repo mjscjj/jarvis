@@ -42,14 +42,14 @@ func TestNotifierAddsOnItThenRepliesAndUpdatesResult(t *testing.T) {
 	if reaction.ReactionID != "reaction_on_it" {
 		t.Fatalf("reaction = %#v", reaction)
 	}
-	delivery, err := notifier.ReplyResult(t.Context(), 17, execute.TaskFeedbackTarget{SourceMessageID: "om_source", ReplyInThread: true}, "done", "已经处理完成")
+	delivery, err := notifier.ReplyResult(t.Context(), 17, execute.TaskFeedbackTarget{SourceMessageID: "om_source", ReplyInThread: true}, "已经处理完成")
 	if err != nil {
 		t.Fatalf("ReplyResult() error = %v", err)
 	}
 	if delivery.MessageID != "om_result" || delivery.Preview != "已经处理完成" {
 		t.Fatalf("delivery = %#v", delivery)
 	}
-	if preview, err := notifier.UpdateResult(t.Context(), delivery.MessageID, "done", "已经更新结果"); err != nil || preview != "已经更新结果" {
+	if preview, err := notifier.UpdateResult(t.Context(), delivery.MessageID, "已经更新结果"); err != nil || preview != "已经更新结果" {
 		t.Fatalf("UpdateResult() = %q, %v", preview, err)
 	}
 	if len(runner.calls) != 3 {
@@ -81,7 +81,7 @@ func TestNotifierMainChatResultDoesNotForceThread(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewNotifier() error = %v", err)
 	}
-	if _, err := notifier.ReplyResult(t.Context(), 18, execute.TaskFeedbackTarget{SourceMessageID: "om_source"}, "done", "完成"); err != nil {
+	if _, err := notifier.ReplyResult(t.Context(), 18, execute.TaskFeedbackTarget{SourceMessageID: "om_source"}, "完成"); err != nil {
 		t.Fatalf("ReplyResult() error = %v", err)
 	}
 	if got := strings.Join(runner.calls[0], "\n"); strings.Contains(got, "--reply-in-thread") {
@@ -89,21 +89,21 @@ func TestNotifierMainChatResultDoesNotForceThread(t *testing.T) {
 	}
 }
 
-func TestRenderStatus(t *testing.T) {
-	for _, test := range []struct {
-		status, summary, want string
-	}{
-		{"awaiting_approval", "方案已准备", "等待你的确认"},
-		{"done", "一百万", "一百万"},
-		{"failed", "没能取得模型配置，请到任务详情查看错误。", "没能取得模型配置"},
-		{"failed", "", "处理失败，请到任务详情查看原因。"},
-	} {
-		got, err := render(test.status, test.summary)
-		if err != nil || !strings.Contains(got, test.want) {
-			t.Fatalf("render(%s) = %q, %v; want %q", test.status, got, err, test.want)
-		}
+// The notifier never invents text of its own: an empty user_message must reach
+// Feishu as no call at all, not as a status placeholder like "处理完成。".
+func TestNotifierRefusesEmptyUserMessage(t *testing.T) {
+	runner := &fakeRunner{}
+	notifier, err := NewNotifier(runner)
+	if err != nil {
+		t.Fatalf("NewNotifier() error = %v", err)
 	}
-	if _, err := render("executing", "ignored"); err == nil {
-		t.Fatal("render(executing) error = nil, want unsupported status")
+	if _, err := notifier.ReplyResult(t.Context(), 19, execute.TaskFeedbackTarget{SourceMessageID: "om_source"}, "  "); err == nil {
+		t.Fatal("ReplyResult() error = nil, want empty text rejected")
+	}
+	if _, err := notifier.UpdateResult(t.Context(), "om_result", ""); err == nil {
+		t.Fatal("UpdateResult() error = nil, want empty text rejected")
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("empty user_message reached Feishu: %#v", runner.calls)
 	}
 }

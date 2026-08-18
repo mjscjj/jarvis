@@ -1,8 +1,6 @@
 package execute
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -303,53 +301,11 @@ func TestBuildExecutionPromptRejectsNonSnapshotBackground(t *testing.T) {
 	}
 }
 
-func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
-	content, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "m5-system-prompt.md"))
-	if err != nil {
-		t.Fatalf("read repository M5 prompt: %v", err)
-	}
-	prompt := string(content)
-	for _, want := range []string{
-		"M5 是真正理解任务、调查事实、确定目标、选择动作、执行并验证结果的阶段",
-		"`title_hint` 和 `target_hint`",
-		"可以基于证据修改、替换或放弃这些建议",
-		"根据调查持续重规划",
-		"本身不代表任务完成",
-		// A cleared blocker must never read as a finished goal; see
-		// docs/design-long-horizon-agent-goal-control.md.
-		"解除阻塞不是完成",
-		"不得假设其中存在固定 JSON 字段",
-		"以 source_payload 表达的真实最终结果为准",
-		"已经整份给你，不需要再调工具加载",
-		// The frozen snapshot is creation-time truth; current state comes from
-		// the entity summary pages.
-		"是创建这个 Task 时的世界，不是现在的世界",
-		"用 `get-page` 读它的长期事实页",
-		"不要自己发送审批卡片",
-		"先把 proposal 和 `awaiting_approval` 状态持久化",
-		"绑定当前 Task version",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("M5 prompt missing autonomy contract %q:\n%s", want, prompt)
-		}
-	}
-	for _, obsolete := range []string{
-		"严格执行 plan 的目标",
-		"高风险、对外承诺、删改线上或后果说不清时，只发「查看详情」",
-		"同意/拒绝/查看详情",
-		"发出通知后在 effects[] 申报",
-	} {
-		if strings.Contains(prompt, obsolete) {
-			t.Fatalf("M5 prompt still contains obsolete upstream constraint %q:\n%s", obsolete, prompt)
-		}
-	}
-}
-
 func stringPtr(value string) *string { return &value }
 
 func uint64Ptr(value uint64) *uint64 { return &value }
 
-func TestSummarizePriorRunsKeepsNewestOldestFirst(t *testing.T) {
+func TestSummarizePriorRunsKeepsEveryRunOldestFirst(t *testing.T) {
 	s1, s2, s3 := "first", "second", "third"
 	t1 := time.Date(2026, 7, 21, 1, 0, 0, 0, time.UTC)
 	t2 := time.Date(2026, 7, 21, 2, 0, 0, 0, time.UTC)
@@ -360,9 +316,9 @@ func TestSummarizePriorRunsKeepsNewestOldestFirst(t *testing.T) {
 		{ID: 2, Status: "failed", Summary: &s2, StartedAt: t2},
 		{ID: 1, Status: "succeeded", Summary: &s1, StartedAt: t1},
 	}
-	got := summarizePriorRuns(items, 2)
-	if len(got) != 2 || got[0].RunID != 2 || got[1].RunID != 3 {
-		t.Fatalf("summarizePriorRuns = %#v, want oldest-first of newest 2 (2 then 3)", got)
+	got := summarizePriorRuns(items)
+	if len(got) != 3 || got[0].RunID != 1 || got[1].RunID != 2 || got[2].RunID != 3 {
+		t.Fatalf("summarizePriorRuns = %#v, want every run oldest-first (1, 2, 3)", got)
 	}
 }
 

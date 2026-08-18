@@ -33,12 +33,12 @@ func (f *successfulTaskFeedback) AddProcessingReaction(context.Context, TaskFeed
 	return &TaskFeedbackReaction{ReactionID: "reaction_on_it"}, nil
 }
 
-func (f *successfulTaskFeedback) ReplyResult(_ context.Context, _ uint64, _ TaskFeedbackTarget, _ string, userMessage string) (*TaskFeedbackDelivery, error) {
+func (f *successfulTaskFeedback) ReplyResult(_ context.Context, _ uint64, _ TaskFeedbackTarget, userMessage string) (*TaskFeedbackDelivery, error) {
 	f.replyCalls++
 	return &TaskFeedbackDelivery{MessageID: "om_result", Preview: userMessage}, nil
 }
 
-func (f *successfulTaskFeedback) UpdateResult(_ context.Context, _ string, _ string, userMessage string) (string, error) {
+func (f *successfulTaskFeedback) UpdateResult(_ context.Context, _ string, userMessage string) (string, error) {
 	f.updateCalls++
 	return userMessage, nil
 }
@@ -48,12 +48,12 @@ func (f *unavailableTaskFeedback) AddProcessingReaction(context.Context, TaskFee
 	return nil, errors.New("230002 Bot/User can NOT be out of the chat")
 }
 
-func (f *unavailableTaskFeedback) ReplyResult(context.Context, uint64, TaskFeedbackTarget, string, string) (*TaskFeedbackDelivery, error) {
+func (f *unavailableTaskFeedback) ReplyResult(context.Context, uint64, TaskFeedbackTarget, string) (*TaskFeedbackDelivery, error) {
 	f.replyCalls++
 	return nil, errors.New("230002 Bot/User can NOT be out of the chat")
 }
 
-func (f *unavailableTaskFeedback) UpdateResult(context.Context, string, string, string) (string, error) {
+func (f *unavailableTaskFeedback) UpdateResult(context.Context, string, string) (string, error) {
 	f.updateCalls++
 	return "", errors.New("230002 Bot/User can NOT be out of the chat")
 }
@@ -268,6 +268,102 @@ func TestTaskFeedbackKeepsOnItAndReusesOneResultReply(t *testing.T) {
 		if effect["operation"] == "delete" {
 			t.Fatalf("OnIt reaction was deleted: %#v", effects)
 		}
+	}
+}
+
+// An empty user_message is the model's decision to stay silent in the source
+// conversation, whatever the execution status is. No status — not observing, not
+// waiting, not a crashed run that returned nothing — may become a placeholder
+// reply such as "处理完成。", and none of them may overwrite an answer the model
+// already delivered there.
+func TestNotifyTaskFeedbackStaysSilentWithoutUserMessage(t *testing.T) {
+	raw, err := (contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
+		Messages: []contextsnap.Message{{
+			MessageID: "om_source", ChatMode: "group", CreateTime: 20,
+		}},
+	}).Encode()
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	store := newTaskFeedbackTestStore(t)
+	if err := store.db.Exec("INSERT INTO task(id, background) VALUES (?, ?)", 453, raw).Error; err != nil {
+		t.Fatalf("insert Task: %v", err)
+	}
+	run := &domain.ExecutionRun{
+		TaskID: 453, ActionType: "investigate", Stage: "execute", Sandbox: "danger-full-access",
+		Status: "running", Prompt: "test", StartedAt: time.Now().UTC(),
+	}
+	if err := store.SaveRun(t.Context(), run); err != nil {
+		t.Fatalf("SaveRun() error = %v", err)
+	}
+	feedback := &successfulTaskFeedback{}
+	executor := &AgentExecutor{store: store, feedback: feedback}
+
+	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{
+		TaskID: 453, RunID: run.ID, Status: "observing", UserMessage: "",
+	}); err != nil {
+		t.Fatalf("notifyTaskFeedback() error = %v", err)
+	}
+	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{
+		TaskID: 453, RunID: run.ID, Status: "done", UserMessage: "答案是 42",
+	}); err != nil {
+		t.Fatalf("notifyTaskFeedback() error = %v", err)
+	}
+	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{
+		TaskID: 453, RunID: run.ID, Status: "waiting", UserMessage: "   ",
+	}); err != nil {
+		t.Fatalf("notifyTaskFeedback() error = %v", err)
+	}
+	// A run killed by a timeout or a restart returns no structured result at
+	// all, so silence must fall out of the empty text rather than a status check.
+	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{
+		TaskID: 453, RunID: run.ID, Status: "failed",
+	}); err != nil {
+		t.Fatalf("notifyTaskFeedback() error = %v", err)
+	}
+	if feedback.replyCalls != 1 || feedback.updateCalls != 0 {
+		t.Fatalf("feedback calls = reply:%d update:%d, want the single real answer only", feedback.replyCalls, feedback.updateCalls)
+	}
+}
+
+// Once a result reply has been recalled it is gone from Feishu, so the next
+// result must open a fresh reply instead of editing the vanished message.
+func TestNotifyTaskFeedbackRepliesAgainAfterResultWasRecalled(t *testing.T) {
+	raw, err := (contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
+		Messages: []contextsnap.Message{{
+			MessageID: "om_source", ChatMode: "group", CreateTime: 20,
+		}},
+	}).Encode()
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	store := newTaskFeedbackTestStore(t)
+	if err := store.db.Exec("INSERT INTO task(id, background) VALUES (?, ?)", 453, raw).Error; err != nil {
+		t.Fatalf("insert Task: %v", err)
+	}
+	run := &domain.ExecutionRun{
+		TaskID: 453, ActionType: "investigate", Stage: "execute", Sandbox: "danger-full-access",
+		Status: "running", Prompt: "test", StartedAt: time.Now().UTC(),
+		Effects: datatypes.JSON(json.RawMessage(
+			`[{"kind":"feishu_message","purpose":"task_result","message_id":"om_recalled","recalled_at":"2026-08-17T08:00:00Z"}]`)),
+	}
+	if err := store.SaveRun(t.Context(), run); err != nil {
+		t.Fatalf("SaveRun() error = %v", err)
+	}
+	feedback := &successfulTaskFeedback{}
+	executor := &AgentExecutor{store: store, feedback: feedback}
+
+	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{
+		TaskID: 453, RunID: run.ID, Status: "done", UserMessage: "答案是 42",
+	}); err != nil {
+		t.Fatalf("notifyTaskFeedback() error = %v", err)
+	}
+	if feedback.replyCalls != 1 || feedback.updateCalls != 0 {
+		t.Fatalf("feedback calls = reply:%d update:%d, want a fresh reply", feedback.replyCalls, feedback.updateCalls)
 	}
 }
 

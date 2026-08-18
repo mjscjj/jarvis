@@ -8,11 +8,11 @@ import (
 	"time"
 )
 
-// loadPriorRunSummaries returns up to maxPriorRunsInPrompt earlier execution_run
-// rows for a Task, oldest-first, for injection into the next M5 prompt. The run
-// being started is already persisted as running by the time this is called, so
-// currentRunID is excluded — the agent must not read its own empty row back as
-// a prior attempt. Fail-fast on DB errors.
+// loadPriorRunSummaries returns every earlier execution_run row for a Task,
+// oldest-first, for injection into the next M5 prompt. The run being started is
+// already persisted as running by the time this is called, so currentRunID is
+// excluded — the agent must not read its own empty row back as a prior attempt.
+// Fail-fast on DB errors.
 func (e *AgentExecutor) loadPriorRunSummaries(ctx context.Context, taskID, currentRunID uint64) ([]priorRunSummary, error) {
 	if taskID == 0 {
 		return nil, fmt.Errorf("load prior runs: task_id must be positive")
@@ -27,17 +27,15 @@ func (e *AgentExecutor) loadPriorRunSummaries(ctx context.Context, taskID, curre
 			items = append(items, item)
 		}
 	}
-	return summarizePriorRuns(items, maxPriorRunsInPrompt), nil
+	return summarizePriorRuns(items), nil
 }
 
 // summarizePriorRuns converts RunView rows (newest-first from ListRuns) into
-// prompt-facing summaries, keeping the newest `limit` and returning oldest-first.
-func summarizePriorRuns(items []RunView, limit int) []priorRunSummary {
-	if limit <= 0 || len(items) == 0 {
+// prompt-facing summaries, oldest-first. How much of its own history matters is
+// the agent's judgment, so no row is dropped here.
+func summarizePriorRuns(items []RunView) []priorRunSummary {
+	if len(items) == 0 {
 		return nil
-	}
-	if len(items) > limit {
-		items = items[:limit]
 	}
 	out := make([]priorRunSummary, 0, len(items))
 	for i := len(items) - 1; i >= 0; i-- {

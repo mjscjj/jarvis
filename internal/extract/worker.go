@@ -262,29 +262,26 @@ func (w *Worker) loadFactCounts(ctx context.Context, batch ChatBatch, now time.T
 	tomorrowStart := todayStart.AddDate(0, 0, 1)
 	weekStart := todayStart.AddDate(0, 0, -6)
 
-	pageRevision := progress.FactSourcePageRevision
 	counts := make([]FactCount, 0, len(subjects))
 	for _, subject := range subjects {
 		if subject.subjectID == 0 {
 			continue
 		}
 		today, err := w.facts.CountFacts(ctx, progress.FactFilter{
-			SubjectType:       subject.subjectType,
-			SubjectID:         subject.subjectID,
-			From:              &todayStart,
-			Until:             &tomorrowStart,
-			ExcludeSourceKind: &pageRevision,
+			SubjectType: subject.subjectType,
+			SubjectID:   subject.subjectID,
+			From:        &todayStart,
+			Until:       &tomorrowStart,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("count today facts chat_id=%s subject=%s/%d: %w",
 				batch.Group.ChatID, subject.subjectType, subject.subjectID, err)
 		}
 		week, err := w.facts.CountFacts(ctx, progress.FactFilter{
-			SubjectType:       subject.subjectType,
-			SubjectID:         subject.subjectID,
-			From:              &weekStart,
-			Until:             &tomorrowStart,
-			ExcludeSourceKind: &pageRevision,
+			SubjectType: subject.subjectType,
+			SubjectID:   subject.subjectID,
+			From:        &weekStart,
+			Until:       &tomorrowStart,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("count week facts chat_id=%s subject=%s/%d: %w",
