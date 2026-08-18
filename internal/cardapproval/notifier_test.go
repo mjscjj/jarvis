@@ -70,7 +70,7 @@ func TestNotifierShowsCompactFormOnlyWhenFollowupIsExplicit(t *testing.T) {
 	withJSON, _ := json.Marshal(with)
 	for _, want := range []string{
 		`"tag":"form"`, `"tag":"input"`, `"name":"approval_note"`,
-		`"action_type":"form_submit"`, `"type":"callback"`,
+		`"action_type":"form_submit"`,
 		`"action":"jarvis_approval"`, `"decision":"approve"`, `"decision":"reject"`,
 		"请指定灰度范围",
 	} {
@@ -80,23 +80,56 @@ func TestNotifierShowsCompactFormOnlyWhenFollowupIsExplicit(t *testing.T) {
 	}
 	body := with["body"].(map[string]any)
 	form := body["elements"].([]any)[1].(map[string]any)
-	decisions := form["elements"].([]any)[2].(map[string]any)
+	formElements := form["elements"].([]any)
+	// Feishu rejects the whole card with 300123 unless a submit button is a
+	// direct child of the form container, so assert the exact position.
+	for _, element := range formElements {
+		if node, ok := element.(map[string]any); ok && node["tag"] == "column_set" {
+			t.Fatalf("form buttons nested in a column_set are invisible to Feishu: %#v", form)
+		}
+	}
 	for index, decision := range []string{"approve", "reject"} {
-		column := decisions["columns"].([]any)[index].(map[string]any)
-		button := column["elements"].([]any)[0].(map[string]any)
+		button := formElements[2+index].(map[string]any)
 		if button["action_type"] != "form_submit" {
 			t.Fatalf("%s button action_type = %#v", decision, button["action_type"])
 		}
-		if _, ok := button["form_action_type"]; ok {
-			t.Fatalf("%s button still has obsolete form_action_type: %#v", decision, button)
+		if strings.TrimSpace(button["name"].(string)) == "" {
+			t.Fatalf("%s button inside a form has no name: %#v", decision, button)
 		}
-		if _, ok := button["value"]; ok {
-			t.Fatalf("%s button moved callback into obsolete top-level value: %#v", decision, button)
+		// A submit button carrying behaviors also trips 300123: Feishu stops
+		// treating it as a submit button, so the payload must live in value.
+		if _, ok := button["behaviors"]; ok {
+			t.Fatalf("%s submit button still carries behaviors: %#v", decision, button)
 		}
-		behaviors := button["behaviors"].([]any)
-		callback := behaviors[0].(map[string]any)
+		value := button["value"].(map[string]any)
+		if value["action"] != "jarvis_approval" || value["decision"] != decision {
+			t.Fatalf("%s submit button value = %#v", decision, value)
+		}
+	}
+	// The detail link shares the form container, so it needs a name and a
+	// non-submit action_type of its own or Feishu drops the form's data.
+	detailsButton := formElements[4].(map[string]any)
+	if detailsButton["action_type"] != "link" || strings.TrimSpace(detailsButton["name"].(string)) == "" {
+		t.Fatalf("detail button inside form = %#v", detailsButton)
+	}
+}
+
+// Without a followup there is no form container, so the decision buttons keep
+// the ordinary card 2.0 callback transport instead of a form submission.
+func TestNotifierKeepsCallbackBehaviorsOutsideForm(t *testing.T) {
+	card := approvalCard(execute.ApprovalNotification{
+		TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c",
+	}, "http://example.com")
+	decisions := card["body"].(map[string]any)["elements"].([]any)[1].(map[string]any)
+	for index, decision := range []string{"approve", "reject"} {
+		column := decisions["columns"].([]any)[index].(map[string]any)
+		button := column["elements"].([]any)[0].(map[string]any)
+		if _, ok := button["action_type"]; ok {
+			t.Fatalf("%s button outside a form must not declare action_type: %#v", decision, button)
+		}
+		callback := button["behaviors"].([]any)[0].(map[string]any)
 		value := callback["value"].(map[string]any)
-		if callback["type"] != "callback" || value["action"] != "jarvis_approval" || value["decision"] != decision {
+		if callback["type"] != "callback" || value["decision"] != decision {
 			t.Fatalf("%s button callback = %#v", decision, callback)
 		}
 	}
