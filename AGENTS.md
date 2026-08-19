@@ -160,3 +160,4 @@ M2 → M3 → M5 是一条通用流水线，每段只有一套协议。M3 用 `e
 - 写组件/代码前优先复用已有官方包和仓库内已有实现。
 - 让大模型填写的语义字段尽量使用自然语言或宽松 JSON，不用枚举限制模型发挥；Jarvis 的目标不是通用 Agent 平台。
 - 构建或重启主服务必须执行 `./scripts/rebuild-server.sh`；禁止裸 `go build` 覆盖 `bin/jarvis-server` 后直接 `launchctl kickstart`，否则会破坏 macOS TCC 稳定签名。  
+- 重要架构图、绘制说明、可编辑源文件、导出图片和文章写作统一放在 `docs/summery/`，不再散落到 `docs/` 根目录或临时目录；该目录用于表达与交付，架构事实真源仍是 `goal.md`、`docs/00-overview.md` 和当前代码。
