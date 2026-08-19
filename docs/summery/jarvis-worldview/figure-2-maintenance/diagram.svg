@@ -1,0 +1,227 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect x="0" y="0" width="1920" height="1080" fill="#FFFFFF"/>
+
+  <!-- ambient geometry -->
+  <circle cx="1740" cy="110" r="170" fill="#EFF6FF"/>
+  <circle cx="1815" cy="165" r="92" fill="#ECFDF5"/>
+  <circle cx="90" cy="995" r="145" fill="#F5F3FF"/>
+  <path d="M80 190 H1840" stroke="#E2E8F0" stroke-width="2"/>
+
+  <!-- title -->
+  <text x="80" y="88" font-family="Noto Sans SC, sans-serif" font-size="42" font-weight="700" fill="#0F172A">Jarvis 怎么维护自己的世界观</text>
+  <text x="80" y="136" font-family="Noto Sans SC, sans-serif" font-size="21" fill="#475569">新证据进入后，更新的是对实体的认知；事实只追加，旧认知可追溯</text>
+
+  <!-- legend -->
+  <circle cx="1375" cy="91" r="7" fill="#2563EB"/>
+  <text x="1392" y="98" font-family="Noto Sans SC, sans-serif" font-size="17" fill="#334155">事实证据</text>
+  <circle cx="1490" cy="91" r="7" fill="#0F9F78"/>
+  <text x="1507" y="98" font-family="Noto Sans SC, sans-serif" font-size="17" fill="#334155">当前认知</text>
+  <circle cx="1622" cy="91" r="7" fill="#7C3AED"/>
+  <text x="1639" y="98" font-family="Noto Sans SC, sans-serif" font-size="17" fill="#334155">历史版本</text>
+
+  <!-- top owner rail -->
+  <path d="M816 235 C878 194, 989 194, 1054 235" fill="none" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="7 8"/>
+  <rect x="718" y="202" width="360" height="56" rx="28" fill="#0F172A"/>
+  <circle cx="754" cy="230" r="14" fill="#38BDF8"/>
+  <path d="M747 230 L752 235 L762 224" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="782" y="237" font-family="Noto Sans SC, sans-serif" font-size="18" font-weight="600" fill="#FFFFFF">FactEngine · 主要维护者</text>
+
+  <!-- stage numbers -->
+  <g font-family="Noto Sans SC, sans-serif">
+    <circle cx="110" cy="239" r="18" fill="#2563EB"/>
+    <text x="104" y="247" font-size="18" font-weight="700" fill="#FFFFFF">1</text>
+    <text x="140" y="247" font-size="20" font-weight="650" fill="#1E3A8A">证据进入</text>
+
+    <circle cx="458" cy="239" r="18" fill="#0F9F78"/>
+    <text x="452" y="247" font-size="18" font-weight="700" fill="#FFFFFF">2</text>
+    <text x="488" y="247" font-size="20" font-weight="650" fill="#065F46">锁定同一实体</text>
+
+    <circle cx="870" cy="302" r="18" fill="#F59E0B"/>
+    <text x="864" y="310" font-size="18" font-weight="700" fill="#FFFFFF">3</text>
+    <text x="900" y="310" font-size="20" font-weight="650" fill="#92400E">重新理解变化</text>
+
+    <circle cx="1115" cy="239" r="18" fill="#7C3AED"/>
+    <text x="1109" y="247" font-size="18" font-weight="700" fill="#FFFFFF">4</text>
+    <text x="1145" y="247" font-size="20" font-weight="650" fill="#5B21B6">语义分流</text>
+
+    <circle cx="1564" cy="239" r="18" fill="#0F9F78"/>
+    <text x="1558" y="247" font-size="18" font-weight="700" fill="#FFFFFF">5</text>
+    <text x="1594" y="247" font-size="20" font-weight="650" fill="#065F46">写回当前世界</text>
+  </g>
+
+  <!-- evidence river -->
+  <path d="M82 286 C130 270, 304 270, 352 286 L352 774 C304 790, 130 790, 82 774 Z" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="2"/>
+  <path d="M105 317 C167 303, 267 303, 329 317" fill="none" stroke="#60A5FA" stroke-width="3" stroke-linecap="round"/>
+
+  <g font-family="Noto Sans SC, sans-serif">
+    <path d="M118 345 H286 C304 345, 319 360, 319 378 C319 396, 304 411, 286 411 H118 C100 411, 85 396, 85 378 C85 360, 100 345, 118 345 Z" fill="#FFFFFF" stroke="#93C5FD" stroke-width="2"/>
+    <circle cx="119" cy="378" r="17" fill="#DBEAFE"/>
+    <path d="M109 370 H129 V383 H119 L113 389 V383 H109 Z" fill="#2563EB"/>
+    <text x="151" y="385" font-size="20" font-weight="600" fill="#1E3A8A">消息</text>
+
+    <path d="M118 430 H286 C304 430, 319 445, 319 463 C319 481, 304 496, 286 496 H118 C100 496, 85 481, 85 463 C85 445, 100 430, 118 430 Z" fill="#FFFFFF" stroke="#93C5FD" stroke-width="2"/>
+    <circle cx="119" cy="463" r="17" fill="#DBEAFE"/>
+    <path d="M111 454 H127 V472 H111 Z M114 450 H124 V457 H114 Z" fill="#2563EB"/>
+    <text x="151" y="470" font-size="20" font-weight="600" fill="#1E3A8A">TodoEvent</text>
+
+    <path d="M118 515 H286 C304 515, 319 530, 319 548 C319 566, 304 581, 286 581 H118 C100 581, 85 566, 85 548 C85 530, 100 515, 118 515 Z" fill="#FFFFFF" stroke="#93C5FD" stroke-width="2"/>
+    <circle cx="119" cy="548" r="17" fill="#DBEAFE"/>
+    <path d="M109 548 L116 555 L130 540" fill="none" stroke="#2563EB" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="151" y="555" font-size="20" font-weight="600" fill="#1E3A8A">TaskEvent</text>
+
+    <path d="M118 616 H286 C304 616, 319 631, 319 649 C319 667, 304 682, 286 682 H118 C100 682, 85 667, 85 649 C85 631, 100 616, 118 616 Z" fill="#FFFFFF" stroke="#93C5FD" stroke-width="2"/>
+    <circle cx="119" cy="649" r="17" fill="#DBEAFE"/>
+    <path d="M110 654 L119 645 L125 651 L132 641" fill="none" stroke="#2563EB" stroke-width="3" stroke-linecap="round"/>
+    <text x="151" y="644" font-size="19" font-weight="600" fill="#1E3A8A">执行结果 / effects</text>
+    <text x="151" y="668" font-size="15" fill="#64748B">经 TaskEvent 进入</text>
+  </g>
+
+  <path d="M244 716 C277 716, 289 695, 289 681" fill="none" stroke="#60A5FA" stroke-width="2" stroke-dasharray="5 6"/>
+  <polygon points="283,689 289,679 295,689" fill="#60A5FA"/>
+  <text x="111" y="746" font-family="Noto Sans SC, sans-serif" font-size="16" fill="#64748B">原始证据进入后保持可追溯</text>
+
+  <!-- arrow evidence to entity -->
+  <path d="M352 530 H411" fill="none" stroke="#2563EB" stroke-width="4" stroke-linecap="round"/>
+  <polygon points="411,530 398,522 398,538" fill="#2563EB"/>
+
+  <!-- entity cognition workbench -->
+  <path d="M425 286 Q425 270 441 270 H749 Q765 270 765 286 V774 Q765 790 749 790 H441 Q425 790 425 774 Z" fill="#F0FDF9" stroke="#99E2CF" stroke-width="2"/>
+  <rect x="446" y="296" width="158" height="42" rx="21" fill="#D1FAE5"/>
+  <text x="464" y="324" font-family="Noto Sans SC, sans-serif" font-size="17" font-weight="600" fill="#065F46">受影响的实体</text>
+
+  <!-- entity orbit -->
+  <circle cx="595" cy="418" r="63" fill="#FFFFFF" stroke="#34D399" stroke-width="3"/>
+  <circle cx="595" cy="418" r="47" fill="#ECFDF5"/>
+  <path d="M570 430 C578 408, 612 408, 620 430" fill="none" stroke="#0F9F78" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="595" cy="397" r="11" fill="#0F9F78"/>
+  <text x="568" y="459" font-family="Noto Sans SC, sans-serif" font-size="14" font-weight="650" fill="#065F46">同一实体</text>
+
+  <path d="M595 355 C533 337, 491 357, 475 392" fill="none" stroke="#A7F3D0" stroke-width="2"/>
+  <path d="M653 375 C698 353, 731 377, 733 413" fill="none" stroke="#A7F3D0" stroke-width="2"/>
+  <path d="M654 459 C700 483, 720 464, 734 444" fill="none" stroke="#A7F3D0" stroke-width="2"/>
+  <path d="M536 458 C494 477, 468 457, 463 428" fill="none" stroke="#A7F3D0" stroke-width="2"/>
+
+  <g font-family="Noto Sans SC, sans-serif" font-size="15" font-weight="600" fill="#047857">
+    <rect x="447" y="359" width="78" height="38" rx="19" fill="#D1FAE5"/>
+    <text x="470" y="384">人物</text>
+    <rect x="668" y="350" width="78" height="38" rx="19" fill="#D1FAE5"/>
+    <text x="691" y="375">项目</text>
+    <rect x="672" y="445" width="78" height="38" rx="19" fill="#D1FAE5"/>
+    <text x="695" y="470">群聊</text>
+    <rect x="444" y="446" width="92" height="38" rx="19" fill="#D1FAE5"/>
+    <text x="459" y="471">关键事项</text>
+    <rect x="548" y="490" width="94" height="38" rx="19" fill="#D1FAE5"/>
+    <text x="579" y="515">资源</text>
+  </g>
+
+  <!-- cognition layers -->
+  <text x="456" y="568" font-family="Noto Sans SC, sans-serif" font-size="17" font-weight="600" fill="#065F46">读取现有认知</text>
+  <path d="M463 597 H728 V648 H463 Z" fill="#FFFFFF" stroke="#6EE7B7" stroke-width="2"/>
+  <path d="M463 597 H476 V648 H463 Z" fill="#0F9F78"/>
+  <text x="494" y="621" font-family="Noto Sans SC, sans-serif" font-size="18" font-weight="700" fill="#065F46">Summary</text>
+  <text x="600" y="621" font-family="Noto Sans SC, sans-serif" font-size="16" fill="#475569">现在如何理解它</text>
+  <path d="M463 666 H728 V717 H463 Z" fill="#FFFFFF" stroke="#93C5FD" stroke-width="2"/>
+  <path d="M463 666 H476 V717 H463 Z" fill="#2563EB"/>
+  <text x="494" y="690" font-family="Noto Sans SC, sans-serif" font-size="18" font-weight="700" fill="#1E3A8A">Fact</text>
+  <text x="600" y="690" font-family="Noto Sans SC, sans-serif" font-size="16" fill="#475569">现实发生过什么</text>
+  <text x="464" y="755" font-family="Noto Sans SC, sans-serif" font-size="15" fill="#64748B">先读旧认知，再判断新证据改变了什么</text>
+
+  <!-- arrow to semantic core -->
+  <path d="M765 530 H828" fill="none" stroke="#0F9F78" stroke-width="4" stroke-linecap="round"/>
+  <polygon points="828,530 815,522 815,538" fill="#0F9F78"/>
+
+  <!-- semantic understanding core -->
+  <circle cx="938" cy="530" r="94" fill="#FFFBEB" stroke="#FBBF24" stroke-width="3"/>
+  <circle cx="938" cy="530" r="73" fill="#FEF3C7"/>
+  <path d="M901 513 C917 486, 948 483, 970 501 C990 518, 988 551, 967 568 C946 585, 914 579, 900 555" fill="none" stroke="#D97706" stroke-width="5" stroke-linecap="round"/>
+  <path d="M907 522 H928 L941 507 L955 541 L969 523" fill="none" stroke="#D97706" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="886" y="590" font-family="Noto Sans SC, sans-serif" font-size="16" font-weight="700" fill="#92400E">对照 · 归因</text>
+  <text x="891" y="642" font-family="Noto Sans SC, sans-serif" font-size="15" fill="#78716C">这条证据是否改变认知？</text>
+
+  <!-- branch paths -->
+  <path d="M1032 510 H1063 V319 H1092" fill="none" stroke="#94A3B8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="1092,319 1080,312 1080,326" fill="#94A3B8"/>
+  <path d="M1032 520 H1071 V442 H1092" fill="none" stroke="#2563EB" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="1092,442 1080,435 1080,449" fill="#2563EB"/>
+  <path d="M1032 540 H1071 V565 H1092" fill="none" stroke="#0F9F78" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="1092,565 1080,558 1080,572" fill="#0F9F78"/>
+  <path d="M1020 575 H1055 V688 H1092" fill="none" stroke="#7C3AED" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="1092,688 1080,681 1080,695" fill="#7C3AED"/>
+
+  <!-- four semantic outcomes -->
+  <g font-family="Noto Sans SC, sans-serif">
+    <path d="M1092 270 H1448 Q1464 270 1464 286 V352 Q1464 368 1448 368 H1092 Z" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="2"/>
+    <circle cx="1132" cy="319" r="19" fill="#E2E8F0"/>
+    <path d="M1123 319 H1141" stroke="#64748B" stroke-width="4" stroke-linecap="round"/>
+    <text x="1170" y="308" font-size="18" font-weight="700" fill="#334155">A · 无新增认知</text>
+    <text x="1170" y="337" font-size="16" fill="#64748B">不写入，保持当前状态</text>
+
+    <path d="M1092 393 H1448 Q1464 393 1464 409 V475 Q1464 491 1448 491 H1092 Z" fill="#EFF6FF" stroke="#93C5FD" stroke-width="2"/>
+    <circle cx="1132" cy="442" r="19" fill="#DBEAFE"/>
+    <path d="M1123 442 H1141 M1132 433 V451" stroke="#2563EB" stroke-width="4" stroke-linecap="round"/>
+    <text x="1170" y="431" font-size="18" font-weight="700" fill="#1E3A8A">B · 新事实</text>
+    <text x="1170" y="460" font-size="16" fill="#475569">只追加 Fact</text>
+
+    <path d="M1092 516 H1448 Q1464 516 1464 532 V598 Q1464 614 1448 614 H1092 Z" fill="#ECFDF5" stroke="#6EE7B7" stroke-width="2"/>
+    <circle cx="1132" cy="565" r="19" fill="#D1FAE5"/>
+    <path d="M1123 566 L1129 572 L1142 558" fill="none" stroke="#0F9F78" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1170" y="554" font-size="18" font-weight="700" fill="#065F46">C · 认知前进</text>
+    <text x="1170" y="583" font-size="16" fill="#475569">追加 Fact，并改写 Summary</text>
+
+    <path d="M1092 639 H1448 Q1464 639 1464 655 V721 Q1464 737 1448 737 H1092 Z" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="2"/>
+    <circle cx="1132" cy="688" r="19" fill="#EDE9FE"/>
+    <path d="M1123 679 L1141 697 M1141 679 L1123 697" stroke="#7C3AED" stroke-width="4" stroke-linecap="round"/>
+    <text x="1170" y="677" font-size="18" font-weight="700" fill="#5B21B6">D · 新旧认知冲突</text>
+    <text x="1170" y="706" font-size="16" fill="#475569">改写 Summary，旧版留作 PageRevision</text>
+  </g>
+
+  <!-- outcome convergence -->
+  <path d="M1464 319 H1490 M1464 442 H1490 M1464 565 H1490 M1464 688 H1490 M1490 319 V688" fill="none" stroke="#94A3B8" stroke-width="2"/>
+  <path d="M1490 530 H1530" fill="none" stroke="#0F9F78" stroke-width="4" stroke-linecap="round"/>
+  <polygon points="1530,530 1517,522 1517,538" fill="#0F9F78"/>
+
+  <!-- persistent world: layered organic card -->
+  <path d="M1561 292 C1640 268, 1769 282, 1826 337 C1878 388, 1878 664, 1825 715 C1769 769, 1639 783, 1561 756 C1538 748, 1530 728, 1530 704 V343 C1530 319, 1539 300, 1561 292 Z" fill="#F0FDF9" stroke="#34D399" stroke-width="3"/>
+  <circle cx="1700" cy="381" r="63" fill="#FFFFFF" stroke="#6EE7B7" stroke-width="3"/>
+  <circle cx="1700" cy="381" r="46" fill="#D1FAE5"/>
+  <circle cx="1700" cy="364" r="11" fill="#0F9F78"/>
+  <path d="M1676 397 C1683 377, 1717 377, 1724 397" fill="none" stroke="#0F9F78" stroke-width="4" stroke-linecap="round"/>
+  <rect x="1597" y="438" width="256" height="44" rx="22" fill="#D1FAE5"/>
+  <text x="1623" y="467" font-family="Noto Sans SC, sans-serif" font-size="20" font-weight="700" fill="#065F46">下一轮的当前世界</text>
+
+  <path d="M1584 500 H1816 V556 H1584 Z" fill="#FFFFFF" stroke="#6EE7B7" stroke-width="2"/>
+  <path d="M1584 500 H1597 V556 H1584 Z" fill="#0F9F78"/>
+  <text x="1616" y="525" font-family="Noto Sans SC, sans-serif" font-size="17" font-weight="700" fill="#065F46">Summary</text>
+  <text x="1714" y="525" font-family="Noto Sans SC, sans-serif" font-size="15" fill="#475569">最新认知</text>
+
+  <path d="M1584 574 H1816 V630 H1584 Z" fill="#FFFFFF" stroke="#93C5FD" stroke-width="2"/>
+  <path d="M1584 574 H1597 V630 H1584 Z" fill="#2563EB"/>
+  <text x="1616" y="599" font-family="Noto Sans SC, sans-serif" font-size="17" font-weight="700" fill="#1E3A8A">Fact</text>
+  <text x="1714" y="599" font-family="Noto Sans SC, sans-serif" font-size="15" fill="#475569">证据累积</text>
+
+  <path d="M1584 648 H1816 V704 H1584 Z" fill="#FFFFFF" stroke="#C4B5FD" stroke-width="2"/>
+  <path d="M1584 648 H1597 V704 H1584 Z" fill="#7C3AED"/>
+  <text x="1616" y="673" font-family="Noto Sans SC, sans-serif" font-size="17" font-weight="700" fill="#5B21B6">PageRevision</text>
+  <text x="1740" y="673" font-family="Noto Sans SC, sans-serif" font-size="15" fill="#475569">旧认知</text>
+
+  <path d="M1812 748 C1849 807, 1797 851, 1721 841 C1662 833, 1610 816, 1562 835" fill="none" stroke="#34D399" stroke-width="3" stroke-dasharray="7 8" stroke-linecap="round"/>
+  <polygon points="1562,835 1575,825 1577,842" fill="#34D399"/>
+  <text x="1636" y="873" font-family="Noto Sans SC, sans-serif" font-size="16" fill="#047857">继续接收下一批现实变化</text>
+
+  <!-- role boundary / secondary correction -->
+  <path d="M455 915 H1465" stroke="#E2E8F0" stroke-width="2"/>
+  <circle cx="517" cy="915" r="23" fill="#0F172A"/>
+  <path d="M507 915 L514 922 L528 907" fill="none" stroke="#38BDF8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="553" y="908" font-family="Noto Sans SC, sans-serif" font-size="18" font-weight="700" fill="#0F172A">边界</text>
+  <text x="553" y="938" font-family="Noto Sans SC, sans-serif" font-size="17" fill="#475569">FactEngine 只维护世界认知，不创建或执行 Task</text>
+
+  <circle cx="1011" cy="915" r="23" fill="#EDE9FE"/>
+  <path d="M1002 915 H1020 M1011 906 V924" stroke="#7C3AED" stroke-width="3" stroke-linecap="round"/>
+  <text x="1048" y="908" font-family="Noto Sans SC, sans-serif" font-size="18" font-weight="700" fill="#5B21B6">补充维护者</text>
+  <text x="1048" y="938" font-family="Noto Sans SC, sans-serif" font-size="17" fill="#475569">M5 / 主动巡视拿到可靠新证据后，也可修正世界模型</text>
+
+  <!-- bottom thesis -->
+  <path d="M580 990 C694 962, 1227 962, 1341 990" fill="none" stroke="#CBD5E1" stroke-width="2"/>
+  <circle cx="960" cy="990" r="8" fill="#0F9F78"/>
+  <text x="679" y="1035" font-family="Noto Sans SC, sans-serif" font-size="22" font-weight="700" fill="#0F172A">事实不被覆盖 · 认知持续修正 · 历史始终可追溯</text>
+</svg>

@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect x="0" y="0" width="1920" height="1080" fill="#FFFFFF"/>
+
+  <!-- quiet editorial background -->
+  <path d="M 80 190 C 360 125 650 140 880 175" fill="none" stroke="#DCE8FF" stroke-width="3"/>
+
+  <!-- editorial title -->
+  <text x="92" y="86" fill="#15213A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="42" font-weight="700">世界观如何进入完整闭环</text>
+  <text x="94" y="126" fill="#66748E" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="20">认知驱动行动，行动改变现实；新的现实再塑造认知</text>
+  <rect x="1520" y="72" width="316" height="48" rx="24" fill="#F0FAF7" stroke="#BDE8D8" stroke-width="2"/>
+  <circle cx="1550" cy="96" r="7" fill="#16A678"/>
+  <text x="1570" y="103" fill="#16765B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="16" font-weight="600">闭环，而不是线性流水线</text>
+
+  <!-- the continuous loop track -->
+  <path d="M 180 385 H 1725 V 850 H 410 V 500" fill="none" stroke="#E7EEF9" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 180 385 H 1725" fill="none" stroke="#3D73F1" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 1725 485 V 850 H 410 V 500" fill="none" stroke="#16A678" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- arrow heads on the top rail -->
+  <polygon points="360,385 340,374 340,396" fill="#3D73F1"/>
+  <polygon points="580,385 560,374 560,396" fill="#3D73F1"/>
+  <polygon points="900,385 880,374 880,396" fill="#3D73F1"/>
+  <polygon points="1240,385 1220,374 1220,396" fill="#3D73F1"/>
+  <polygon points="1535,385 1515,374 1515,396" fill="#3D73F1"/>
+  <!-- arrow heads on return rail -->
+  <polygon points="1725,690 1714,670 1736,670" fill="#16A678"/>
+  <polygon points="1310,850 1330,839 1330,861" fill="#16A678"/>
+  <polygon points="760,850 780,839 780,861" fill="#16A678"/>
+  <polygon points="410,560 399,580 421,580" fill="#16A678"/>
+
+  <!-- 01 external world -->
+  <circle cx="180" cy="385" r="112" fill="#F8FAFD" stroke="#D7DFEC" stroke-width="3"/>
+  <circle cx="180" cy="385" r="75" fill="#FFFFFF" stroke="#C8D4E6" stroke-width="2" stroke-dasharray="7 7"/>
+  <circle cx="180" cy="345" r="9" fill="#F2A93B"/>
+  <circle cx="140" cy="404" r="7" fill="#7C5CE0"/>
+  <circle cx="220" cy="412" r="7" fill="#16A678"/>
+  <polyline points="180,354 180,375 145,399" fill="none" stroke="#95A3B9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="180,375 215,407" fill="none" stroke="#95A3B9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="180" y="451" text-anchor="middle" fill="#15213A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="22" font-weight="700">外部世界</text>
+  <text x="180" y="480" text-anchor="middle" fill="#6C7B94" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15">工作持续发生</text>
+  <rect x="116" y="238" width="128" height="34" rx="17" fill="#FFF6E7" stroke="#F4D49B" stroke-width="1.5"/>
+  <text x="180" y="261" text-anchor="middle" fill="#A66A09" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" font-weight="700">01 · 现实变化</text>
+
+  <!-- 02 evidence sensor -->
+  <polygon points="410,318 477,385 410,452 343,385" fill="#FFFFFF" stroke="#8AB0FF" stroke-width="3"/>
+  <circle cx="410" cy="385" r="28" fill="#EAF1FF"/>
+  <text x="410" y="392" text-anchor="middle" fill="#356CF6" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18" font-weight="800">E</text>
+  <rect x="310" y="454" width="200" height="68" rx="18" fill="#FFFFFF"/>
+  <text x="410" y="481" text-anchor="middle" fill="#15213A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18" font-weight="700">感知 / 采集证据</text>
+  <text x="410" y="509" text-anchor="middle" fill="#6C7B94" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15">消息 · 事件 · 结果</text>
+  <rect x="346" y="238" width="128" height="34" rx="17" fill="#EAF1FF" stroke="#B8CEFF" stroke-width="1.5"/>
+  <text x="410" y="261" text-anchor="middle" fill="#2B63D9" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" font-weight="700">02 · 获得证据</text>
+
+  <!-- 03 persistent world model -->
+  <ellipse cx="705" cy="385" rx="145" ry="132" fill="#17233C"/>
+  <ellipse cx="705" cy="385" rx="119" ry="107" fill="#213256" stroke="#6D96F6" stroke-width="2"/>
+  <ellipse cx="705" cy="385" rx="93" ry="82" fill="#2A4070" stroke="#81A5FC" stroke-width="2" stroke-dasharray="6 6"/>
+  <circle cx="705" cy="337" r="17" fill="#79A1FF"/>
+  <text x="705" y="342" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="11" font-weight="800">WM</text>
+  <text x="705" y="384" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="25" font-weight="700">长期世界模型</text>
+  <text x="705" y="417" text-anchor="middle" fill="#C7D7FF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="16">同一份 · 持久演化</text>
+  <text x="705" y="446" text-anchor="middle" fill="#9FB8F2" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">由新证据持续校正</text>
+  <rect x="625" y="238" width="160" height="34" rx="17" fill="#E8EEFB" stroke="#C5D2EB" stroke-width="1.5"/>
+  <text x="705" y="261" text-anchor="middle" fill="#31476F" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" font-weight="700">03 · 维护同一模型</text>
+
+  <!-- model-to-view beam -->
+  <polygon points="825,337 993,300 993,470 825,433" fill="#EDF2FF" stroke="#AFC6FF" stroke-width="2"/>
+  <line x1="840" y1="385" x2="982" y2="385" stroke="#6F96F4" stroke-width="3" stroke-dasharray="8 7"/>
+  <text x="913" y="351" text-anchor="middle" fill="#5A76B6" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" font-weight="600">围绕当前目标</text>
+
+  <!-- 04 runtime worldview lens -->
+  <ellipse cx="1075" cy="385" rx="104" ry="148" fill="#F5F0FF" stroke="#A98AF1" stroke-width="3"/>
+  <ellipse cx="1075" cy="385" rx="72" ry="114" fill="#FFFFFF" stroke="#D2C3F6" stroke-width="2"/>
+  <circle cx="1075" cy="330" r="24" fill="#7C5CE0"/>
+  <text x="1075" y="335" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="10" font-weight="800">VIEW</text>
+  <text x="1075" y="385" text-anchor="middle" fill="#352366" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="23" font-weight="700">运行时世界观</text>
+  <text x="1075" y="418" text-anchor="middle" fill="#7154B1" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15">目标相关的认知切面</text>
+  <text x="1075" y="446" text-anchor="middle" fill="#8E78BF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">不是第二份模型</text>
+  <rect x="995" y="208" width="160" height="34" rx="17" fill="#F1EBFF" stroke="#D2C3F6" stroke-width="1.5"/>
+  <text x="1075" y="231" text-anchor="middle" fill="#6745AF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" font-weight="700">04 · 构造认知切面</text>
+
+  <!-- 05 decision -->
+  <polygon points="1400,270 1490,322 1490,448 1400,500 1310,448 1310,322" fill="#FBF9FF" stroke="#8D6AE5" stroke-width="3"/>
+  <circle cx="1400" cy="344" r="27" fill="#7C5CE0"/>
+  <text x="1400" y="352" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="21" font-weight="800">D</text>
+  <text x="1400" y="395" text-anchor="middle" fill="#302050" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="23" font-weight="700">自主决策</text>
+  <text x="1400" y="426" text-anchor="middle" fill="#725CA3" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">现在最值得做什么？</text>
+  <rect x="1336" y="208" width="128" height="34" rx="17" fill="#F1EBFF" stroke="#D2C3F6" stroke-width="1.5"/>
+  <text x="1400" y="231" text-anchor="middle" fill="#6745AF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" font-weight="700">05 · 选择动作</text>
+
+  <!-- action vocabulary around decision -->
+  <rect x="1280" y="528" width="74" height="34" rx="17" fill="#EEE9FC"/>
+  <text x="1317" y="550" text-anchor="middle" fill="#5C42A1" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13" font-weight="700">ACT</text>
+  <rect x="1362" y="528" width="112" height="34" rx="17" fill="#EEE9FC"/>
+  <text x="1418" y="550" text-anchor="middle" fill="#5C42A1" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13" font-weight="700">INVESTIGATE</text>
+  <rect x="1482" y="528" width="66" height="34" rx="17" fill="#EEE9FC"/>
+  <text x="1515" y="550" text-anchor="middle" fill="#5C42A1" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13" font-weight="700">WAIT</text>
+  <rect x="1320" y="572" width="72" height="34" rx="17" fill="#F5F2FC"/>
+  <text x="1356" y="594" text-anchor="middle" fill="#776795" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13" font-weight="700">ASK</text>
+  <rect x="1400" y="572" width="96" height="34" rx="17" fill="#F5F2FC"/>
+  <text x="1448" y="594" text-anchor="middle" fill="#776795" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13" font-weight="700">NOTHING</text>
+
+  <!-- 06 execute and verify -->
+  <ellipse cx="1725" cy="385" rx="120" ry="102" fill="#EBFAF5" stroke="#68C8A9" stroke-width="3"/>
+  <circle cx="1725" cy="342" r="25" fill="#16A678"/>
+  <text x="1725" y="349" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="800">OK</text>
+  <text x="1725" y="395" text-anchor="middle" fill="#134F3E" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="22" font-weight="700">执行与验证</text>
+  <text x="1725" y="426" text-anchor="middle" fill="#46816E" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">改变现实 · 检查结果</text>
+  <rect x="1661" y="238" width="128" height="34" rx="17" fill="#E7F8F2" stroke="#BDE8D8" stroke-width="1.5"/>
+  <text x="1725" y="261" text-anchor="middle" fill="#16765B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" font-weight="700">06 · 真实作用</text>
+
+  <!-- one model, three thin projections -->
+  <path d="M 1075 533 V 653" fill="none" stroke="#B7A5E6" stroke-width="3" stroke-dasharray="6 6"/>
+  <polyline points="1075,636 775,636 775,683" fill="none" stroke="#B7A5E6" stroke-width="2"/>
+  <polyline points="1075,636 1075,683" fill="none" stroke="#B7A5E6" stroke-width="2"/>
+  <polyline points="1075,636 1375,636 1375,683" fill="none" stroke="#B7A5E6" stroke-width="2"/>
+  <rect x="890" y="610" width="370" height="48" rx="24" fill="#FFFFFF" stroke="#D8CFF0" stroke-width="2"/>
+  <text x="1075" y="640" text-anchor="middle" fill="#594578" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="16" font-weight="700">一份世界模型 · 三个职责观察窗口</text>
+
+  <rect x="625" y="683" width="300" height="108" rx="26" fill="#F7FAFF" stroke="#AFC8FF" stroke-width="2"/>
+  <circle cx="667" cy="721" r="17" fill="#356CF6"/>
+  <text x="667" y="727" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13" font-weight="700">M3</text>
+  <text x="698" y="727" fill="#234D9A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18" font-weight="700">线索准入</text>
+  <text x="667" y="759" fill="#607597" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">只取判断准入所需的最短证据</text>
+
+  <rect x="935" y="683" width="300" height="108" rx="26" fill="#FBF8FF" stroke="#C6B4F2" stroke-width="2"/>
+  <circle cx="977" cy="721" r="17" fill="#7C5CE0"/>
+  <text x="977" y="727" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="11" font-weight="700">P</text>
+  <text x="1008" y="727" fill="#6541A8" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18" font-weight="700">Proactive 巡视</text>
+  <text x="977" y="759" fill="#786697" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">关注开放事项、变化、风险与机会</text>
+
+  <rect x="1245" y="683" width="350" height="108" rx="26" fill="#F3FBF8" stroke="#9DDDC7" stroke-width="2"/>
+  <circle cx="1287" cy="721" r="17" fill="#16A678"/>
+  <text x="1287" y="727" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12" font-weight="700">M5</text>
+  <text x="1318" y="727" fill="#17664F" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18" font-weight="700">执行 Agent</text>
+  <text x="1287" y="756" fill="#557F71" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">冻结背景（审计基线）+ 当前世界</text>
+  <text x="1287" y="777" fill="#557F71" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">按需深挖，真实执行并验证</text>
+
+  <!-- reality-changing feedback packet -->
+  <rect x="1508" y="811" width="260" height="78" rx="24" fill="#FFFFFF" stroke="#8BD1BA" stroke-width="2"/>
+  <circle cx="1544" cy="850" r="18" fill="#16A678"/>
+  <text x="1544" y="855" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="10" font-weight="800">FX</text>
+  <text x="1576" y="844" fill="#17664F" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">行动改变现实</text>
+  <text x="1576" y="870" fill="#648779" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">外部 effects 随结果回流</text>
+
+  <rect x="700" y="811" width="520" height="78" rx="24" fill="#FFFFFF" stroke="#AFC4E4" stroke-width="2"/>
+  <circle cx="746" cy="850" r="7" fill="#16A678"/>
+  <circle cx="774" cy="850" r="7" fill="#E25555"/>
+  <circle cx="802" cy="850" r="7" fill="#F2A93B"/>
+  <text x="832" y="844" fill="#273956" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">成功 · 失败 · 等待状态 · 外部 effects</text>
+  <text x="832" y="870" fill="#6B7D98" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">都成为下一轮可追溯的新证据</text>
+
+  <rect x="278" y="811" width="286" height="78" rx="24" fill="#FFFFFF" stroke="#9DDDC7" stroke-width="2"/>
+  <circle cx="320" cy="850" r="18" fill="#E7F8F2" stroke="#56B99A" stroke-width="2"/>
+  <text x="320" y="856" text-anchor="middle" fill="#16A678" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15" font-weight="800">E</text>
+  <text x="350" y="844" fill="#17664F" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">新证据再次入模</text>
+  <text x="350" y="870" fill="#648779" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">认知随现实持续演化</text>
+
+  <!-- closing statement -->
+  <rect x="80" y="944" width="1760" height="64" rx="22" fill="#F8FAFD" stroke="#DFE6F1" stroke-width="1.5"/>
+  <text x="110" y="984" fill="#15213A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="23" font-weight="700">Jarvis 的主动性，不是多做一次判断；而是让每次判断与行动，都能回到同一份可演化的认知中。</text>
+  <line x1="96" y1="1026" x2="1824" y2="1026" stroke="#DFE6F1" stroke-width="2"/>
+  <text x="96" y="1052" fill="#8090A8" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">PERSISTENT WORLD MODEL</text>
+  <text x="1824" y="1052" text-anchor="end" fill="#8090A8" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">PERCEIVE → MODEL → VIEW → DECIDE → ACT → VERIFY → LEARN</text>
+</svg>
