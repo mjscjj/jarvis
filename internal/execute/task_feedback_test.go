@@ -28,6 +28,11 @@ type successfulTaskFeedback struct {
 	updateCalls   int
 }
 
+type statusCheckingTaskFeedback struct {
+	store         *Store
+	statusAtReply string
+}
+
 func (f *successfulTaskFeedback) AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error) {
 	f.reactionCalls++
 	return &TaskFeedbackReaction{ReactionID: "reaction_on_it"}, nil
@@ -58,6 +63,23 @@ func (f *unavailableTaskFeedback) UpdateResult(context.Context, string, string) 
 	return "", errors.New("230002 Bot/User can NOT be out of the chat")
 }
 
+func (f *statusCheckingTaskFeedback) AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error) {
+	return &TaskFeedbackReaction{ReactionID: "reaction_on_it"}, nil
+}
+
+func (f *statusCheckingTaskFeedback) ReplyResult(ctx context.Context, _ uint64, _ TaskFeedbackTarget, userMessage string) (*TaskFeedbackDelivery, error) {
+	task, err := f.store.LoadTask(ctx, 453)
+	if err != nil {
+		return nil, err
+	}
+	f.statusAtReply = task.Status
+	return &TaskFeedbackDelivery{MessageID: "om_result", Preview: userMessage}, nil
+}
+
+func (f *statusCheckingTaskFeedback) UpdateResult(context.Context, string, string) (string, error) {
+	return "", errors.New("unexpected Task feedback update")
+}
+
 func newTaskFeedbackTestStore(t *testing.T) *Store {
 	t.Helper()
 	db, err := gorm.Open(
@@ -68,7 +90,28 @@ func newTaskFeedbackTestStore(t *testing.T) *Store {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE task (id INTEGER PRIMARY KEY, background JSON NOT NULL)`,
+		`CREATE TABLE task (
+			id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT NOT NULL DEFAULT '',
+			action_type TEXT NOT NULL DEFAULT '', target TEXT NOT NULL DEFAULT '',
+			background JSON NOT NULL DEFAULT '{}', source_payload JSON NOT NULL DEFAULT '{}',
+			source_type TEXT NOT NULL DEFAULT 'manual', source_id INTEGER, occurrence_key TEXT,
+			status TEXT NOT NULL DEFAULT 'executing', execution_result JSON,
+			execution_supplements JSON, summary TEXT, last_progress_at DATETIME,
+			project_id INTEGER, repo_path TEXT, version INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE task_event (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL,
+			task_version INTEGER NOT NULL, event_type TEXT NOT NULL, from_status TEXT,
+			to_status TEXT NOT NULL, actor_type TEXT NOT NULL, actor_ref TEXT, run_id INTEGER,
+			detail JSON, occurred_at DATETIME NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(task_id, task_version)
+		)`,
+		`CREATE TABLE scheduled_task (
+			id INTEGER PRIMARY KEY, dispatch_kind TEXT, subject_type TEXT, subject_id INTEGER,
+			source_run_id INTEGER, status TEXT, last_run_status TEXT, last_error_detail TEXT,
+			last_finished_at DATETIME, updated_at DATETIME
+		)`,
 		`CREATE TABLE execution_run (
 			id INTEGER PRIMARY KEY,
 			task_id INTEGER NOT NULL,
@@ -102,6 +145,46 @@ func newTaskFeedbackTestStore(t *testing.T) *Store {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 	return store
+}
+
+func insertTaskFeedbackRouteFixture(t *testing.T, store *Store) (*domain.Task, *domain.ExecutionRun, *codexResult) {
+	t.Helper()
+	raw, err := (contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
+		Messages: []contextsnap.Message{{
+			MessageID: "om_source", ChatMode: "group", CreateTime: 20,
+		}},
+	}).Encode()
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	if err := store.db.Exec(
+		`INSERT INTO task(id, title, action_type, background, source_payload, status, version)
+		 VALUES (?, ?, ?, ?, '{}', 'executing', 0)`,
+		453, "回复来源会话", "reply_message", raw,
+	).Error; err != nil {
+		t.Fatalf("insert Task: %v", err)
+	}
+	task, err := store.LoadTask(t.Context(), 453)
+	if err != nil {
+		t.Fatalf("LoadTask() error = %v", err)
+	}
+	verdict := &codexResult{
+		Outcome: "completed", Summary: "已经准备好回复", UserMessage: "答案是 42",
+	}
+	startedAt := time.Now().UTC().Add(-time.Second)
+	finishedAt := time.Now().UTC()
+	durationMs := finishedAt.Sub(startedAt).Milliseconds()
+	run := &domain.ExecutionRun{
+		TaskID: task.ID, ActionType: task.ActionType, Stage: "execute",
+		Sandbox: "danger-full-access", Status: "succeeded", Prompt: "test",
+		StartedAt: startedAt, FinishedAt: &finishedAt, DurationMs: &durationMs,
+	}
+	if err := recordAgentVerdict(run, verdict.Summary, verdict, nil); err != nil {
+		t.Fatalf("recordAgentVerdict() error = %v", err)
+	}
+	return task, run, verdict
 }
 
 func TestTaskFeedbackTargetUsesNewestFeishuEvidenceAndThread(t *testing.T) {
@@ -183,7 +266,7 @@ func TestStartTaskFeedbackIgnoresUnavailableSourceConversation(t *testing.T) {
 	}
 }
 
-func TestTryNotifyTaskFeedbackAttemptsResultAfterReactionWasUnavailable(t *testing.T) {
+func TestNotifyTaskFeedbackReturnsUnavailableResultError(t *testing.T) {
 	raw, err := (contextsnap.Snapshot{
 		SnapshotVersion: contextsnap.SnapshotVersion,
 		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
@@ -201,9 +284,91 @@ func TestTryNotifyTaskFeedbackAttemptsResultAfterReactionWasUnavailable(t *testi
 	feedback := &unavailableTaskFeedback{}
 	executor := &AgentExecutor{store: store, feedback: feedback}
 
-	executor.tryNotifyTaskFeedback(t.Context(), &ExecuteResult{TaskID: 453, Status: "done", UserMessage: "完成"})
+	if err := executor.notifyTaskFeedback(t.Context(), &ExecuteResult{
+		TaskID: 453, Status: "done", UserMessage: "完成",
+	}); err == nil {
+		t.Fatal("notifyTaskFeedback() succeeded for an unavailable result conversation")
+	}
 	if feedback.replyCalls != 1 || feedback.updateCalls != 0 {
 		t.Fatalf("result feedback calls = reply:%d update:%d", feedback.replyCalls, feedback.updateCalls)
+	}
+}
+
+func TestRouteRunFailsTaskWhenResultDeliveryFails(t *testing.T) {
+	store := newTaskFeedbackTestStore(t)
+	task, run, verdict := insertTaskFeedbackRouteFixture(t, store)
+	executor := &AgentExecutor{store: store, feedback: &unavailableTaskFeedback{}, now: time.Now}
+
+	result, err := executor.routeRun(t.Context(), task, task.Version, run, verdict, nil)
+	if err == nil {
+		t.Fatal("routeRun() succeeded when the required result delivery failed")
+	}
+	if result == nil || result.Status != "failed" {
+		t.Fatalf("routeRun() result = %#v, want failed", result)
+	}
+	storedTask, loadErr := store.LoadTask(t.Context(), task.ID)
+	if loadErr != nil {
+		t.Fatalf("LoadTask() error = %v", loadErr)
+	}
+	if storedTask.Status != "failed" {
+		t.Fatalf("Task status = %q, want failed", storedTask.Status)
+	}
+	storedRun, loadErr := store.LoadRun(t.Context(), run.ID)
+	if loadErr != nil {
+		t.Fatalf("LoadRun() error = %v", loadErr)
+	}
+	if storedRun.Status != "failed" || storedRun.ErrorDetail == nil {
+		t.Fatalf("ExecutionRun = %#v, want failed delivery error", storedRun)
+	}
+	var event domain.TaskEvent
+	if loadErr := store.db.Where("task_id = ?", task.ID).Take(&event).Error; loadErr != nil {
+		t.Fatalf("load Task event: %v", loadErr)
+	}
+	if event.EventType != "execution_failed" || event.ToStatus != "failed" {
+		t.Fatalf("Task event = %#v, want execution_failed", event)
+	}
+}
+
+func TestRouteRunDeliversResultBeforeMarkingTaskDone(t *testing.T) {
+	store := newTaskFeedbackTestStore(t)
+	task, run, verdict := insertTaskFeedbackRouteFixture(t, store)
+	feedback := &statusCheckingTaskFeedback{store: store}
+	executor := &AgentExecutor{store: store, feedback: feedback, now: time.Now}
+
+	result, err := executor.routeRun(t.Context(), task, task.Version, run, verdict, nil)
+	if err != nil {
+		t.Fatalf("routeRun() error = %v", err)
+	}
+	if feedback.statusAtReply != "executing" {
+		t.Fatalf("Task status during reply = %q, want executing", feedback.statusAtReply)
+	}
+	if result == nil || result.Status != "done" {
+		t.Fatalf("routeRun() result = %#v, want done", result)
+	}
+	storedTask, loadErr := store.LoadTask(t.Context(), task.ID)
+	if loadErr != nil {
+		t.Fatalf("LoadTask() error = %v", loadErr)
+	}
+	if storedTask.Status != "done" {
+		t.Fatalf("Task status = %q, want done", storedTask.Status)
+	}
+	storedRun, loadErr := store.LoadRun(t.Context(), run.ID)
+	if loadErr != nil {
+		t.Fatalf("LoadRun() error = %v", loadErr)
+	}
+	var effects []map[string]any
+	if err := json.Unmarshal(storedRun.Effects, &effects); err != nil {
+		t.Fatalf("decode effects: %v", err)
+	}
+	if len(effects) != 1 || effects[0]["message_id"] != "om_result" || effects[0]["purpose"] != "task_result" {
+		t.Fatalf("delivery effects = %#v", effects)
+	}
+	var executionResult map[string]any
+	if err := json.Unmarshal(storedTask.ExecutionResult, &executionResult); err != nil {
+		t.Fatalf("decode Task execution_result: %v", err)
+	}
+	if delivered, ok := executionResult["effects"].([]any); !ok || len(delivered) != 1 {
+		t.Fatalf("Task execution_result effects = %#v", executionResult["effects"])
 	}
 }
 

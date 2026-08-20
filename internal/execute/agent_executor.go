@@ -89,9 +89,9 @@ type TaskFeedbackTarget struct {
 }
 
 // TaskFeedbackNotifier owns the Feishu transport for M5 feedback. The OnIt
-// reaction is a best-effort start acknowledgement. Results use one idempotent
-// reply per Task and update that reply on later runs. Delivery remains a
-// best-effort projection: transport failure must not change Task execution.
+// reaction is a best-effort start acknowledgement. A non-empty final result is
+// part of Task completion: it uses one idempotent reply per Task, updates that
+// reply on later runs, and must be delivered before the Task leaves executing.
 type TaskFeedbackNotifier interface {
 	AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error)
 	ReplyResult(context.Context, uint64, TaskFeedbackTarget, string) (*TaskFeedbackDelivery, error)
@@ -209,13 +209,11 @@ func (e *AgentExecutor) runInBackground(taskID uint64, runCtx context.Context, a
 			}
 		}()
 		result, err := run(runCtx)
-		// Release the old run before publishing its approval card. A click can
-		// then claim the same Task immediately instead of racing the active slot.
+		// routeRun delivers any source-conversation result before it publishes a
+		// terminal/parked Task state. Release the old run before publishing a
+		// subsequent approval card so a click can claim the Task immediately.
 		e.endExecution(taskID, active)
 		ended = true
-		if result != nil {
-			e.tryNotifyTaskFeedback(context.WithoutCancel(runCtx), result)
-		}
 		if err != nil {
 			hlog.CtxErrorf(runCtx, "background execution failed task_id=%d error=%+v", taskID, err)
 			return
@@ -547,27 +545,7 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		execErr = fmt.Errorf("task not completed: %s", result.FailureReason)
 		e.failRun(run, startedAt, execErr)
 	}
-	if writeErr := e.persistRun(ctx, run); writeErr != nil {
-		return nil, fmt.Errorf("persist resumed run task_id=%d: %w", task.ID, writeErr)
-	}
-	if execErr != nil {
-		return e.finishRun(ctx, task, execVersion, run, execErr)
-	}
-	if result.NeedsApproval {
-		proposalJSON, err := json.Marshal(proposalPayload(run, result))
-		if err != nil {
-			return nil, fmt.Errorf("encode resumed proposal task_id=%d: %w", task.ID, err)
-		}
-		e.recordRunProgress(ctx, task, run)
-		if _, err := e.store.MarkAwaitingApproval(ctx, task.ID, execVersion, run.ID, proposalJSON); err != nil {
-			return nil, err
-		}
-		return &ExecuteResult{
-			TaskID: task.ID, RunID: run.ID, Status: "awaiting_approval",
-			Summary: result.Summary, UserMessage: strings.TrimSpace(result.UserMessage),
-		}, nil
-	}
-	return e.finishRun(ctx, task, execVersion, run, nil)
+	return e.routeRun(ctx, task, execVersion, run, result, execErr)
 }
 
 // buildScheduledResumePrompt builds the prompt for a woken-up waiting Task. It
@@ -690,7 +668,6 @@ func (e *AgentExecutor) Approve(ctx context.Context, taskID uint64, expectedVers
 	if err != nil {
 		return nil, err
 	}
-	e.tryNotifyTaskFeedback(context.WithoutCancel(ctx), result)
 	if err := e.notifyAwaitingApproval(context.WithoutCancel(ctx), result); err != nil {
 		return nil, err
 	}
@@ -795,9 +772,6 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	result, err := e.executeClaimed(runCtx, task.ID, execVersion)
 	e.endExecution(task.ID, active)
 	ended = true
-	if result != nil {
-		e.tryNotifyTaskFeedback(context.WithoutCancel(ctx), result)
-	}
 	if err != nil {
 		return result, err
 	}
@@ -839,6 +813,24 @@ func (e *AgentExecutor) routeRun(ctx context.Context, task *domain.Task, execVer
 	if writeErr := e.persistRun(ctx, run); writeErr != nil {
 		return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
 	}
+	if execErr == nil {
+		feedbackResult := taskFeedbackResult(task.ID, run, result)
+		if feedbackErr := e.notifyTaskFeedback(context.WithoutCancel(ctx), feedbackResult); feedbackErr != nil {
+			execErr = fmt.Errorf("deliver Task result task_id=%d: %w", task.ID, feedbackErr)
+			e.failRun(run, run.StartedAt, execErr)
+			if writeErr := e.persistRun(ctx, run); writeErr != nil {
+				return nil, fmt.Errorf("persist Task result delivery failure task_id=%d: %w", task.ID, writeErr)
+			}
+		} else if strings.TrimSpace(feedbackResult.UserMessage) != "" {
+			// notifyTaskFeedback records the trusted send receipt on the persisted
+			// run. Reload it so the terminal Task result carries that same effect.
+			persisted, loadErr := e.store.LoadRun(ctx, run.ID)
+			if loadErr != nil {
+				return nil, fmt.Errorf("reload delivered Task result run_id=%d: %w", run.ID, loadErr)
+			}
+			*run = *persisted
+		}
+	}
 	if execErr != nil {
 		return e.finishRun(ctx, task, execVersion, run, execErr)
 	}
@@ -859,6 +851,24 @@ func (e *AgentExecutor) routeRun(ctx context.Context, task *domain.Task, execVer
 		}, nil
 	}
 	return e.finishRun(ctx, task, execVersion, run, nil)
+}
+
+func taskFeedbackResult(taskID uint64, run *domain.ExecutionRun, result *codexResult) *ExecuteResult {
+	status := "done"
+	switch {
+	case result != nil && result.NeedsApproval:
+		status = "awaiting_approval"
+	case run != nil && run.Status == "waiting":
+		status = "waiting"
+	case run != nil && run.Status == "needs_human":
+		status = "needs_human"
+	case run != nil && run.Status == "observing":
+		status = "observing"
+	}
+	return &ExecuteResult{
+		TaskID: taskID, RunID: run.ID, Status: status,
+		Summary: derefString(run.Summary), UserMessage: runUserMessage(run),
+	}
 }
 
 // notifyAwaitingApproval projects an already-persisted proposal into Feishu.
@@ -986,13 +996,20 @@ func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task
 // notifyTaskFeedback delivers the model's own user_message to the source
 // conversation, verbatim. Whether this conversation should hear anything, and
 // what it should hear, is the model's judgment alone: it says nothing by leaving
-// user_message empty, which is also what happens when a run times out or crashes
-// before returning anything. So an empty text sends nothing and leaves an
-// existing reply on the last words the model actually wrote. Execution status
-// never becomes a sentence of its own — the Task detail carries internal state.
+// user_message empty. Once it returns non-empty text, delivery is required and a
+// missing notifier/source or transport failure is an execution error. Execution
+// status never becomes a sentence of its own — the Task detail carries internal
+// state.
 func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteResult) error {
-	if e.feedback == nil || result == nil {
+	if result == nil {
 		return nil
+	}
+	userMessage := strings.TrimSpace(result.UserMessage)
+	if userMessage == "" {
+		return nil
+	}
+	if e.feedback == nil {
+		return fmt.Errorf("Task feedback notifier is nil for non-empty user_message")
 	}
 	task, err := e.store.LoadTask(ctx, result.TaskID)
 	if err != nil {
@@ -1003,11 +1020,7 @@ func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteR
 		return fmt.Errorf("resolve Task feedback source task_id=%d: %w", task.ID, err)
 	}
 	if target.SourceMessageID == "" {
-		return nil
-	}
-	userMessage := strings.TrimSpace(result.UserMessage)
-	if userMessage == "" {
-		return nil
+		return fmt.Errorf("Task feedback source message is missing for non-empty user_message task_id=%d", task.ID)
 	}
 	messageID, err := e.findTaskResultMessage(ctx, task.ID)
 	if err != nil {
@@ -1036,12 +1049,6 @@ func (e *AgentExecutor) notifyTaskFeedback(ctx context.Context, result *ExecuteR
 		"message_id": messageID, "source_message_id": target.SourceMessageID,
 		"preview": strings.TrimSpace(preview), "status": result.Status, "operation": "update",
 	})
-}
-
-func (e *AgentExecutor) tryNotifyTaskFeedback(ctx context.Context, result *ExecuteResult) {
-	if err := e.notifyTaskFeedback(ctx, result); err != nil {
-		hlog.CtxWarnf(ctx, "Task feedback update failed; preserving Task result task_id=%d error=%+v", result.TaskID, err)
-	}
 }
 
 func taskFeedbackTarget(raw []byte) (TaskFeedbackTarget, error) {
