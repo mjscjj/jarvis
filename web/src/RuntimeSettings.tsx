@@ -397,7 +397,7 @@ export default function RuntimeSettings() {
             <TextField name="capture_scan_schedule" label="扫描消息周期" placeholder="@every 5m" />
             <NumberField name="capture_page_size" label="飞书单页消息数" min={1} max={50} />
             <NumberField name="capture_scan_workers" label="并发扫描会话数" min={1} max={32} />
-            <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按近期活跃度自动纳入采集的私聊数量；0 表示关闭。" />
+            <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按当前活跃度轮换采集的真人私聊数量；固定私聊不占名额，0 表示关闭自动关注。" />
           </Section>
           <Section title="持续世界建模" description="在主流水线之外增量阅读消息、Todo 和 Task，由 Agent 自主维护人物、项目、群、资料、关系与历史事实；并按天压缩事实阅读层。">
             <SwitchField name="fact_engine_enabled" label="自动世界建模" />

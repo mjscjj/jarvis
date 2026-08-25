@@ -83,8 +83,8 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 15s"
-  # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
-  # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
+  # discover 时按 active_time 轮换自动监听的内部真人私聊：保留当前最活跃的前 N 个。
+  # pinned 私聊作为人工固定项额外保留；服务号私聊不参与。0=不自动开任何私聊。
   auto_related_p2p_top_n: 30
 
 # 飞书卡片内审批回调。CC Connect 持有当前 Jarvis Bot 的唯一长连接，

@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,7 +10,178 @@ import (
 
 	"jarvis/internal/domain"
 	"jarvis/internal/larkcli"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
+
+func TestDiscoverChatsRotatesCurrentActiveP2PTopN(t *testing.T) {
+	db := newDiscoverTestDB(t)
+	fixture := &discoverRotationFixture{}
+	service := newDiscoverTestService(t, db, fixture, 2)
+	first := time.Date(2026, 8, 25, 20, 0, 0, 0, service.opts.Location)
+	service.now = func() time.Time { return first }
+	fixture.pages = map[string]discoverPage{
+		"": {chats: discoverP2PChats("oc_first", "oc_second", "oc_third")},
+	}
+	if err := service.DiscoverChats(context.Background()); err != nil {
+		t.Fatalf("first DiscoverChats() error = %v", err)
+	}
+	assertDiscoverRelated(t, db, "oc_first", true)
+	assertDiscoverRelated(t, db, "oc_second", true)
+	assertDiscoverRelated(t, db, "oc_third", false)
+
+	second := first.Add(time.Hour)
+	service.now = func() time.Time { return second }
+	fixture.pages = map[string]discoverPage{
+		"": {chats: discoverP2PChats("oc_third", "oc_first", "oc_second")},
+	}
+	if err := service.DiscoverChats(context.Background()); err != nil {
+		t.Fatalf("rotating DiscoverChats() error = %v", err)
+	}
+	assertDiscoverRelated(t, db, "oc_third", true)
+	assertDiscoverRelated(t, db, "oc_first", true)
+	assertDiscoverRelated(t, db, "oc_second", false)
+	var thirdCheckpoint domain.Checkpoint
+	if err := db.Where("chat_id = ?", "oc_third").Take(&thirdCheckpoint).Error; err != nil {
+		t.Fatalf("load newly monitored checkpoint: %v", err)
+	}
+	if thirdCheckpoint.HighWaterCreateTime != second.UnixMilli() {
+		t.Fatalf("newly monitored checkpoint = %d, want %d", thirdCheckpoint.HighWaterCreateTime, second.UnixMilli())
+	}
+
+	if err := db.Model(&domain.Group{}).Where("chat_id = ?", "oc_second").
+		Updates(map[string]any{"related_group": true, "pinned": true}).Error; err != nil {
+		t.Fatalf("pin second p2p: %v", err)
+	}
+	fixture.pages = map[string]discoverPage{
+		"": {chats: discoverP2PChats("oc_second", "oc_third", "oc_first")},
+	}
+	if err := service.DiscoverChats(context.Background()); err != nil {
+		t.Fatalf("pinned DiscoverChats() error = %v", err)
+	}
+	assertDiscoverRelated(t, db, "oc_second", true)
+	assertDiscoverRelated(t, db, "oc_third", true)
+	assertDiscoverRelated(t, db, "oc_first", true)
+	var autoCount int64
+	if err := db.Model(&domain.Group{}).
+		Where("chat_mode = ? AND p2p_target_type = ? AND pinned = ? AND related_group = ?", "p2p", "user", false, true).
+		Count(&autoCount).Error; err != nil {
+		t.Fatalf("count automatic p2p monitoring set: %v", err)
+	}
+	if autoCount != 2 {
+		t.Fatalf("automatic p2p monitoring count = %d, want 2", autoCount)
+	}
+}
+
+func TestDiscoverChatsDoesNotRotateFromPartialListing(t *testing.T) {
+	db := newDiscoverTestDB(t)
+	fixture := &discoverRotationFixture{}
+	service := newDiscoverTestService(t, db, fixture, 2)
+	service.now = func() time.Time {
+		return time.Date(2026, 8, 25, 20, 0, 0, 0, service.opts.Location)
+	}
+	fixture.pages = map[string]discoverPage{
+		"": {chats: discoverP2PChats("oc_first", "oc_second", "oc_third")},
+	}
+	if err := service.DiscoverChats(context.Background()); err != nil {
+		t.Fatalf("initial DiscoverChats() error = %v", err)
+	}
+
+	fixture.pages = map[string]discoverPage{
+		"":     {chats: discoverP2PChats("oc_third"), hasMore: true, pageToken: "next"},
+		"next": {err: errors.New("page failed")},
+	}
+	if err := service.DiscoverChats(context.Background()); err == nil || !strings.Contains(err.Error(), "page failed") {
+		t.Fatalf("partial DiscoverChats() error = %v, want page failure", err)
+	}
+	assertDiscoverRelated(t, db, "oc_first", true)
+	assertDiscoverRelated(t, db, "oc_second", true)
+	assertDiscoverRelated(t, db, "oc_third", false)
+}
+
+type discoverPage struct {
+	chats     []CLIChat
+	hasMore   bool
+	pageToken string
+	err       error
+}
+
+type discoverRotationFixture struct {
+	pages map[string]discoverPage
+}
+
+func (f *discoverRotationFixture) Run(_ context.Context, out any, args ...string) error {
+	if !strings.Contains(strings.Join(args, " "), "+chat-list") {
+		return nil
+	}
+	page, ok := f.pages[argValue(args, "--page-token")]
+	if !ok {
+		return fmt.Errorf("unexpected discover page token %q", argValue(args, "--page-token"))
+	}
+	if page.err != nil {
+		return page.err
+	}
+	response := out.(*ChatListResponse)
+	response.OK = true
+	response.Data.Chats = append([]CLIChat(nil), page.chats...)
+	response.Data.HasMore = page.hasMore
+	response.Data.PageToken = page.pageToken
+	return nil
+}
+
+func discoverP2PChats(chatIDs ...string) []CLIChat {
+	chats := make([]CLIChat, 0, len(chatIDs))
+	for _, chatID := range chatIDs {
+		chats = append(chats, CLIChat{ChatID: chatID, ChatMode: "p2p", Name: chatID, P2PTargetType: "user"})
+	}
+	return chats
+}
+
+func newDiscoverTestService(t *testing.T, db *gorm.DB, runner runner, topN int) *Service {
+	t.Helper()
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("LoadLocation() error = %v", err)
+	}
+	service, err := NewService(db, runner, Options{
+		PageSize: 50, ScanWorkers: 1, HotAge: 6 * time.Hour, WarmAge: 7 * 24 * time.Hour,
+		Location: location, PrincipalOpenID: "ou_principal", SearchOverlap: 10 * time.Minute,
+		ActivationContext: 2 * time.Hour, AutoRelatedP2PTopN: topN,
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	return service
+}
+
+func newDiscoverTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		DisableForeignKeyConstraintWhenMigrating: true,
+		Logger:                                   logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&domain.Group{}, &domain.Checkpoint{}, &domain.ScanRecord{}); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+	return db
+}
+
+func assertDiscoverRelated(t *testing.T, db *gorm.DB, chatID string, want bool) {
+	t.Helper()
+	var group domain.Group
+	if err := db.Select("related_group").Where("chat_id = ?", chatID).Take(&group).Error; err != nil {
+		t.Fatalf("load group %s: %v", chatID, err)
+	}
+	if group.RelatedGroup != want {
+		t.Fatalf("group %s related_group = %t, want %t", chatID, group.RelatedGroup, want)
+	}
+}
 
 func TestNormalizeChatIDs(t *testing.T) {
 	got, err := normalizeChatIDs([]string{" oc_one ", "oc_two"})

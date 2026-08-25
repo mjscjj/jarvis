@@ -41,3 +41,37 @@ func TestGroupListKeyOnly(t *testing.T) {
 		t.Fatalf("List() = total=%d items=%+v", result.Total, result.Items)
 	}
 }
+
+func TestGroupManualP2PMonitoringPinsTheConversation(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:group-manual-p2p?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&domain.Project{}, &domain.Group{}, &domain.Message{}, &domain.Checkpoint{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	service, err := NewGroupBackgroundService(db, nil)
+	if err != nil {
+		t.Fatalf("NewGroupBackgroundService() error = %v", err)
+	}
+	name := "手工固定私聊"
+	group := domain.Group{
+		ChatID: "oc_manual_p2p", ChatMode: "p2p", Name: &name, P2PTargetType: stringPointer("user"), Tier: "cold",
+	}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatalf("create p2p: %v", err)
+	}
+	updated, err := service.UpdateBackground(context.Background(), group.ID, GroupBackgroundInput{
+		RelatedGroup: true, IncludeInMemory: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateBackground() error = %v", err)
+	}
+	if !updated.RelatedGroup || !updated.Pinned {
+		t.Fatalf("manual p2p flags = related:%t pinned:%t, want true/true", updated.RelatedGroup, updated.Pinned)
+	}
+}
+
+func stringPointer(value string) *string {
+	return &value
+}

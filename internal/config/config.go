@@ -191,8 +191,8 @@ type CaptureConfig struct {
 	Timezone         string `yaml:"timezone"`
 	DiscoverSchedule string `yaml:"discover_schedule"`
 	ScanSchedule     string `yaml:"scan_schedule"`
-	// AutoRelatedP2PTopN：discover 时按 active_time 自动纳入监听的内部真人私聊
-	// 上限。只开最活跃的前 N 个，僵尸老私聊与服务号私聊不开。
+	// AutoRelatedP2PTopN：discover 时按 active_time 轮换自动监听的内部真人私聊。
+	// 保留当前最活跃的前 N 个；pinned 私聊额外保留，服务号私聊不参与。
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
 }
 
