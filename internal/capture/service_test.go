@@ -32,7 +32,7 @@ func TestDiscoverChatsRotatesCurrentActiveP2PTopN(t *testing.T) {
 	assertDiscoverRelated(t, db, "oc_second", true)
 	assertDiscoverRelated(t, db, "oc_third", false)
 
-	second := first.Add(time.Hour)
+	second := first.Add(4 * time.Hour)
 	service.now = func() time.Time { return second }
 	fixture.pages = map[string]discoverPage{
 		"": {chats: discoverP2PChats("oc_third", "oc_first", "oc_second")},
@@ -47,8 +47,9 @@ func TestDiscoverChatsRotatesCurrentActiveP2PTopN(t *testing.T) {
 	if err := db.Where("chat_id = ?", "oc_third").Take(&thirdCheckpoint).Error; err != nil {
 		t.Fatalf("load newly monitored checkpoint: %v", err)
 	}
-	if thirdCheckpoint.HighWaterCreateTime != second.UnixMilli() {
-		t.Fatalf("newly monitored checkpoint = %d, want %d", thirdCheckpoint.HighWaterCreateTime, second.UnixMilli())
+	wantActivationStart := second.Add(-service.opts.ActivationContext).UnixMilli()
+	if thirdCheckpoint.HighWaterCreateTime != wantActivationStart {
+		t.Fatalf("newly monitored checkpoint = %d, want activation start %d", thirdCheckpoint.HighWaterCreateTime, wantActivationStart)
 	}
 
 	if err := db.Model(&domain.Group{}).Where("chat_id = ?", "oc_second").

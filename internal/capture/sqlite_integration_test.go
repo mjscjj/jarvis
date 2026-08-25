@@ -91,8 +91,9 @@ func TestCaptureSQLite(t *testing.T) {
 	if err := db.First(&reopenedCheckpoint, "chat_id = ?", "oc_p2p_internal").Error; err != nil {
 		t.Fatalf("load reopened p2p checkpoint: %v", err)
 	}
-	if reopenedCheckpoint.HighWaterCreateTime != discoveredAt.UnixMilli() {
-		t.Fatalf("reopened p2p high water = %d, want preserved %d", reopenedCheckpoint.HighWaterCreateTime, discoveredAt.UnixMilli())
+	wantReopenedHighWater := discoveredAt.Add(-service.opts.ActivationContext).UnixMilli()
+	if reopenedCheckpoint.HighWaterCreateTime != wantReopenedHighWater {
+		t.Fatalf("reopened p2p high water = %d, want preserved %d", reopenedCheckpoint.HighWaterCreateTime, wantReopenedHighWater)
 	}
 	service.now = func() time.Time { return discoveredAt }
 
@@ -140,7 +141,7 @@ func TestCaptureSQLite(t *testing.T) {
 	}
 
 	// 存量私聊回填：先把内部私聊关掉模拟历史数据，再用 OpenInternalP2P 一次性开启。
-	// 其 checkpoint 水位停在发现时刻(discoveredAt)，模拟"很久以后才纳入监听"，
+	// 其 checkpoint 水位停在首次发现的有界激活窗口，模拟"很久以后才纳入监听"，
 	// 把 now 前移，验证打开监听后水位被抬到 now、只增量不回捞历史。
 	if err := db.Model(&domain.Group{}).Where("chat_id = ?", "oc_p2p_internal").Update("related_group", false).Error; err != nil {
 		t.Fatalf("reset internal p2p related flag: %v", err)

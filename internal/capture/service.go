@@ -230,10 +230,11 @@ func normalizeChatIDs(chatIDs []string) ([]string, error) {
 	return normalized, nil
 }
 
-// DiscoverChats enumerates every user-visible chat. New chats start at now and
-// therefore never backfill history. Automatic p2p monitoring is reconciled only
-// after the complete active_time-sorted list has been fetched successfully, so
-// a failed partial listing can never evict a currently monitored conversation.
+// DiscoverChats enumerates every user-visible chat. Automatic p2p monitoring is
+// reconciled only after the complete active_time-sorted list has been fetched
+// successfully, so a failed partial listing can never evict a currently
+// monitored conversation. A newly activated p2p receives only the bounded
+// ActivationContext window needed to capture the message that made it active.
 func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 	record, err := s.beginScan("discover", nil, nil, nil, nil)
 	if err != nil {
@@ -382,18 +383,12 @@ func (s *Service) reconcileAutoRelatedP2P(rankedChatIDs []string) error {
 		desired = append(desired, chatID)
 	}
 
-	toOpen := make([]string, 0, len(desired))
-	for _, chatID := range desired {
-		if !byChatID[chatID].RelatedGroup {
-			toOpen = append(toOpen, chatID)
-		}
-	}
-	if len(toOpen) > 0 {
-		nowMS := s.now().UnixMilli()
+	if len(desired) > 0 {
+		activationStart := s.now().Add(-s.opts.ActivationContext).UnixMilli()
 		if err := s.db.Model(&domain.Checkpoint{}).
-			Where("chat_id IN ? AND last_scan_at IS NULL AND high_water_create_time < ?", toOpen, nowMS).
-			Update("high_water_create_time", nowMS).Error; err != nil {
-			return fmt.Errorf("advance newly monitored p2p scan windows: %w", err)
+			Where("chat_id IN ? AND last_scan_at IS NULL", desired).
+			Update("high_water_create_time", activationStart).Error; err != nil {
+			return fmt.Errorf("set newly monitored p2p activation windows: %w", err)
 		}
 	}
 
@@ -446,22 +441,24 @@ func (s *Service) ScanChatNow(ctx context.Context, chatID string) error {
 	return s.ScanChat(ctx, chatID)
 }
 
-// ensureScanWindow moves the high-water forward to now when a chat has never
-// captured a message (last_active_at is NULL). This keeps the first scan of a
-// newly related group cheap (only messages from now on) and avoids replaying
-// the discovery-time window that may lie far in the past.
+// ensureScanWindow bounds the first scan of a manually related chat. Groups
+// start at now; p2p chats receive the short ActivationContext window so the
+// message that prompted manual monitoring is not skipped.
 func (s *Service) ensureScanWindow(chatID string) error {
 	var group domain.Group
-	if err := s.db.Select("id", "last_active_at").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
+	if err := s.db.Select("id", "chat_mode", "last_active_at").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
 		return fmt.Errorf("load group chat_id=%s: %w", chatID, err)
 	}
 	if group.LastActiveAt != nil {
 		return nil
 	}
-	nowMS := s.now().UnixMilli()
+	windowStart := s.now().UnixMilli()
+	if group.ChatMode == "p2p" {
+		windowStart = s.now().Add(-s.opts.ActivationContext).UnixMilli()
+	}
 	if err := s.db.Model(&domain.Checkpoint{}).
-		Where("chat_id = ? AND high_water_create_time < ?", chatID, nowMS).
-		Update("high_water_create_time", nowMS).Error; err != nil {
+		Where("chat_id = ?", chatID).
+		Update("high_water_create_time", windowStart).Error; err != nil {
 		return fmt.Errorf("initialize scan window chat_id=%s: %w", chatID, err)
 	}
 	return nil
