@@ -3,8 +3,8 @@
 | 语义 | 唯一所有者 / 写入入口 | 初始化阶段的做法 | 禁止做法 |
 |---|---|---|---|
 | Principal 的 app-scoped open_id | `extract.principal_open_id`，本机 `conf/config.runtime.yaml` | `$install-jarvis` 已配置；初始化只读 | 写进 Profile payload 或共享记忆冒充配置 |
-| lark-cli 用户 profile | `lark_cli.profile`，本机 `conf/config.runtime.yaml` | `$install-jarvis` 已配置；所有读取显式使用 | 依赖机器默认 profile |
-| Jarvis Bot App/Profile 绑定 | `$install-jarvis` + `integrations/cc-connect/` | 初始化只验证运行底座已经通过 | 初始化阶段再选择 Bot、配置或重启 CC |
+| lark-cli 用户身份 | lark-cli 当前默认身份 | `$install-jarvis` 已登录；所有读取直接使用 | 初始化阶段再选择第二个 profile |
+| Jarvis Bot App 绑定 | `$install-jarvis` + `integrations/cc-connect/` | 初始化只验证运行底座已经通过 | 初始化阶段再选择 Bot、配置或重启 CC |
 | Bot 飞书长连接 | CC Connect `jarvis-codex` | 补丁版 CC Connect 独占连接，向 Jarvis 转发 localhost 审批回调 | Jarvis 与 CC Connect 同时消费相同 App 长连接 |
 | Principal 的 Git author 模式 | `dailydigest.git_author`，本机 `conf/config.runtime.yaml` | `$install-jarvis` 已配置；初始化用于证据关联 | 写死用户名，或写入 Profile 冒充程序配置 |
 | Principal 身份与简介 | M1 `PrincipalProfile` | `update-principal` | 写进 rules、prompt 或 Skill 正文 |

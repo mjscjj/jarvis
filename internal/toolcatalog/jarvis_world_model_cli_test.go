@@ -66,7 +66,7 @@ func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *test
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
   "run ./cmd/jarvis-config show-principal --config conf/config.yaml")
-    printf '%s' '{"principal_open_id":"ou_ready","lark_profile":"cli_ready","git_author":"ready@example.com"}' ;;
+    printf '%s' '{"principal_open_id":"ou_ready","git_author":"ready@example.com"}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
 esac
 `)
@@ -78,7 +78,7 @@ fi
 printf '%s\n' "unexpected lark-cli args: $*" >&2
 exit 9
 `)
-	out, err := runJarvisWorldModel(t, server.URL, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "validate", "--profile", "cli_ready")
+	out, err := runJarvisWorldModel(t, server.URL, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "validate")
 	if err != nil {
 		t.Fatal(err)
 	}

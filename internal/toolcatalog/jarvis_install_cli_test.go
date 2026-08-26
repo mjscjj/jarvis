@@ -57,7 +57,7 @@ func TestJarvisInstallCreatesOneAuditableProjectChecklist(t *testing.T) {
 	}
 	runDir := filepath.Join(repoRoot, "var", "install", fmt.Sprintf("test-%d", time.Now().UnixNano()))
 	defer os.RemoveAll(runDir)
-	out, err := runJarvisInstall(t, nil, "start", "--profile", "cli_ready", "--run-dir", runDir)
+	out, err := runJarvisInstall(t, nil, "start", "--run-dir", runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestJarvisInstallCreatesOneAuditableProjectChecklist(t *testing.T) {
 		"## E. 世界模型建立",
 		"## F. 真实端到端验收",
 		"## 未完成、未做或不适用",
-		"cli_ready",
+		"lark-cli 身份：当前默认身份",
 		"- [ ]",
 	} {
 		if !strings.Contains(text, want) {
@@ -180,13 +180,13 @@ func TestJarvisInstallConfiguresIdentityThroughMachineBoundary(t *testing.T) {
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
-  *"run ./cmd/jarvis-config configure-principal"*"--open-id ou_ready --profile cli_ready --git-author ready@example.com")
-    printf '%s' '{"principal_open_id":"ou_ready","lark_profile":"cli_ready","git_author":"ready@example.com"}' ;;
+  *"run ./cmd/jarvis-config configure-principal"*"--open-id ou_ready --git-author ready@example.com")
+    printf '%s' '{"principal_open_id":"ou_ready","git_author":"ready@example.com"}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
 esac
 `)
 	out, err := runJarvisInstall(t, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")},
-		"configure-identity", "--open-id", "ou_ready", "--profile", "cli_ready", "--git-author", "ready@example.com")
+		"configure-identity", "--open-id", "ou_ready", "--git-author", "ready@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,17 +206,17 @@ func TestJarvisInstallBindsCCAndBootstrapsJarvisContext(t *testing.T) {
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
   *"run ./cmd/jarvis-config show-principal"*)
-    printf '%s' '{"principal_open_id":"ou_ready","lark_profile":"cli_ready","git_author":"ready@example.com","card_approval_enabled":true,"card_approval_profile":"cli_ready","card_approval_principal_open_id":"ou_ready","relay_secret":"`+relaySecret+`","relay_secret_sha256":"`+relayHash+`"}' ;;
+    printf '%s' '{"principal_open_id":"ou_ready","git_author":"ready@example.com","card_approval_enabled":true,"card_approval_principal_open_id":"ou_ready","relay_secret":"`+relaySecret+`","relay_secret_sha256":"`+relayHash+`"}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
 esac
 `)
 	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
-if [ "$1" = "config" ] && [ "$2" = "show" ]; then
+if [ "$*" = "config show" ]; then
   printf '%s\n' 'resolved profile:'
   printf '%s' '{"profile":"cli_ready","appId":"cli_app_ready","appSecret":"****"}'
   exit 0
 fi
-if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+if [ "$*" = "auth status --json --verify" ]; then
   printf '%s' '{"verified":true,"identities":{"bot":{"status":"ready","verified":true},"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready"}}}'
   exit 0
 fi
@@ -225,7 +225,7 @@ exit 9
 `)
 	out, err := runJarvisInstallWithInput(t, "app-secret-ready\n", []string{
 		"PATH=" + binDir + ":" + os.Getenv("PATH"),
-	}, "bind-cc", "--profile", "cli_ready", "--cc-config", ccConfigPath)
+	}, "bind-cc", "--cc-config", ccConfigPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ exit 9
 		} `json:"checks"`
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decode bind-cc output %q: %v", out, err)
 	}
 	if !result.Ready || !result.Checks.Context {
 		t.Fatalf("binding result = %#v", result)
@@ -246,10 +246,13 @@ exit 9
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `app_id = "cli_app_ready"`, `scripts/jarvis-tools get-context`, `--profile cli_ready`} {
+	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `app_id = "cli_app_ready"`, `scripts/jarvis-tools get-context`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CC config missing %q:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "--profile") {
+		t.Fatalf("CC config must use the default lark-cli identity:\n%s", text)
 	}
 }
 

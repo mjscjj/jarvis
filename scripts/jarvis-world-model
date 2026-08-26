@@ -14,7 +14,6 @@ command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_PATH="conf/config.yaml"
-PROFILE=""
 CHAT_ID=""
 
 usage() {
@@ -40,9 +39,6 @@ consume_flags() {
       --config)
         (( $# >= 2 )) || fail "--config requires a value"
         CONFIG_PATH="$2"; shift 2 ;;
-      --profile)
-        (( $# >= 2 )) || fail "--profile requires a value"
-        PROFILE="$2"; shift 2 ;;
       --chat-id)
         (( $# >= 2 )) || fail "--chat-id requires a value"
         CHAT_ID="$2"; shift 2 ;;
@@ -128,12 +124,11 @@ cmd_scan() {
 }
 
 cmd_validate() {
-  [[ -n "$PROFILE" ]] || fail "validate requires --profile"
   command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
   command -v go >/dev/null 2>&1 || fail "go is required but not found in PATH"
   API_BASE="$(resolve_api_base)"
   local auth configured principal projects persons matters resources relations groups result
-  auth="$(LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 lark-cli auth status --profile "$PROFILE" --json --verify)" || fail "lark-cli auth failed"
+  auth="$(LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 lark-cli auth status --json --verify)" || fail "lark-cli auth failed"
   configured="$(cd "$REPO_ROOT" && go run ./cmd/jarvis-config show-principal --config "$CONFIG_PATH")" || fail "load machine identity failed"
   principal="$(api_call GET /api/profile | jq -c '.data')"
   projects="$(api_call GET '/api/projects?page=1&page_size=1' | jq -c '.data')"
@@ -142,13 +137,13 @@ cmd_validate() {
   resources="$(api_call GET '/api/resources?page=1&page_size=1' | jq -c '.data')"
   relations="$(api_call GET '/api/relation-facts?page=1&page_size=1' | jq -c '.data')"
   groups="$(api_call GET '/api/groups?page=1&page_size=100' | jq -c '.data')"
-  result="$(jq -nc --arg profile "$PROFILE" --argjson auth "$auth" --argjson configured "$configured" \
+  result="$(jq -nc --argjson auth "$auth" --argjson configured "$configured" \
     --argjson principal "$principal" --argjson projects "$projects" --argjson persons "$persons" \
     --argjson matters "$matters" --argjson resources "$resources" --argjson relations "$relations" --argjson groups "$groups" '
       ($auth.identities.user // {}) as $user |
       (($auth.verified == true) and ($user.status == "ready") and ($user.verified == true) and ($user.tokenStatus == "valid")) as $auth_ok |
       (($principal.saved == true) and ((($principal.open_id // "") | length) > 0) and ((($principal.name // "") | length) > 0)) as $principal_ok |
-      ($auth_ok and $principal_ok and ($user.openId == $configured.principal_open_id) and ($user.openId == $principal.open_id) and ($profile == $configured.lark_profile)) as $identity_ok |
+      ($auth_ok and $principal_ok and ($user.openId == $configured.principal_open_id) and ($user.openId == $principal.open_id)) as $identity_ok |
       ([($groups.items // [])[] | select(.last_scan_status == "ok")] | length) as $scans |
       {
         ready: ($auth_ok and $principal_ok and $identity_ok),

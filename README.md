@@ -81,7 +81,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 文件按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。
 
-**改本机运行参数改 `conf/config.runtime.yaml`，不要改 `conf/config.yaml`。** 后台设置页保存时会把整份可调参数快照写进 runtime 文件，此后基线里的同名 key 永久失效——这是「改了 `conf/config.yaml` 没有任何效果」的典型原因。基线只负责仓库默认值和 runtime 未覆盖的键（`sqlite.path`、`server.*`、`capture.hot_age_hours` 等）；身份与密钥（`extract.principal_open_id`、`lark_cli.profile`、`card_approval.relay_secret`）只写 runtime 文件，它不进 Git、权限保持 `600`。
+**改本机运行参数改 `conf/config.runtime.yaml`，不要改 `conf/config.yaml`。** 后台设置页保存时会把整份可调参数快照写进 runtime 文件，此后基线里的同名 key 永久失效——这是「改了 `conf/config.yaml` 没有任何效果」的典型原因。基线只负责仓库默认值和 runtime 未覆盖的键（`sqlite.path`、`server.*`、`capture.hot_age_hours` 等）；身份与密钥（`extract.principal_open_id`、`card_approval.relay_secret`）只写 runtime 文件，它不进 Git、权限保持 `600`。飞书身份直接使用 lark-cli 当前默认身份。
 
 后台保存 runtime settings 后需要重启服务；文档中的配置数值只代表仓库基线，不代表当前进程一定正在使用该值。
 
@@ -113,7 +113,7 @@ cd jarvis_bot
 使用 $install-jarvis 检查这台机器并完成 Jarvis 首次安装和验收。
 ```
 
-`$install-jarvis` 是整个项目安装流程：先创建 `var/install/<run-id>/INSTALL_CHECKLIST.md`，再报告机器、配置、旧实例和服务事实，由用户的 Agent 选择依赖安装方式、飞书 App/Profile 和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把同一个 App/Profile 绑定到 Jarvis 与 CC Connect，启动并验收运行底座；服务就绪后转入 `$bootstrap-jarvis-world-model` 建立人物、项目、资料、重点事项和监听群，最后完成消息与 CC 对话的真实端到端验收。
+`$install-jarvis` 是整个项目安装流程：先创建 `var/install/<run-id>/INSTALL_CHECKLIST.md`，再报告机器、配置、旧实例和服务事实，由用户的 Agent 选择依赖安装方式和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把 lark-cli 当前默认 App 绑定到 CC Connect，启动并验收运行底座；服务就绪后转入 `$bootstrap-jarvis-world-model` 建立人物、项目、资料、重点事项和监听群，最后完成消息与 CC 对话的真实端到端验收。
 
 repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills 和仓库基线使用的 traex：
 
@@ -165,10 +165,10 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ./scripts/jarvis-install install-qdrant
 ./scripts/jarvis-install validate-dependencies
 
-# 依赖门通过后选择并登录一个 lark-cli Profile，再写本机 identity、绑定 CC：
-./scripts/jarvis-install configure-identity --open-id <open_id> --profile <profile> --git-author <author>
-./scripts/jarvis-install bind-cc --profile <profile>
-./scripts/jarvis-install validate-binding --profile <profile>
+# 依赖门通过后登录 lark-cli 当前默认身份，再写本机 identity、绑定 CC：
+./scripts/jarvis-install configure-identity --open-id <open_id> --git-author <author>
+./scripts/jarvis-install bind-cc
+./scripts/jarvis-install validate-binding
 
 # 启动补丁版 CC Connect 后，fresh clone 安装主服务：
 ./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"
