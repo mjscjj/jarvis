@@ -1,16 +1,34 @@
 package scheduledtask
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"jarvis/internal/config"
 	"jarvis/internal/domain"
+	"jarvis/internal/store"
 	"jarvis/internal/taskcreate"
 )
+
+type okrProgressSubmitter struct {
+	inputs []taskcreate.Input
+}
+
+func (s *okrProgressSubmitter) Submit(_ context.Context, input taskcreate.Input) (*domain.Task, error) {
+	s.inputs = append(s.inputs, input)
+	return &domain.Task{ID: 77}, nil
+}
+
+type okrProgressResumer struct{}
+
+func (okrProgressResumer) ResumeTask(context.Context, uint64, uint64, string) error { return nil }
 
 func TestNormalizeInput(t *testing.T) {
 	t.Parallel()
@@ -190,6 +208,62 @@ func TestTaskInputUsesStandardM5ApprovalEntry(t *testing.T) {
 	}
 	if string(input.SourcePayload) != `{"instruction":"加入指定会议并完成记录"}` {
 		t.Fatalf("source_payload = %s", input.SourcePayload)
+	}
+}
+
+func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
+	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
+	if err != nil {
+		t.Fatalf("OpenSQLite() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close(db) })
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	submitter := &okrProgressSubmitter{}
+	service, err := NewService(db, submitter, okrProgressResumer{}, 10)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	now := time.Date(2026, 8, 27, 4, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	interval := 360
+	enabled := true
+	schedule, err := service.Create(t.Context(), Input{
+		Title: "OKR 只读进展巡检", ActionType: "agent_task",
+		Instruction:     "读取 okr-progress-sync Skill；只读 Meego 和已采集消息，更新 Page/Fact；不发送消息。",
+		ContextSnapshot: json.RawMessage(`{"skill":"okr-progress-sync","mode":"read_only"}`),
+		ScheduleType:    "interval", IntervalMinutes: &interval, Enabled: &enabled,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	triggered, err := service.Trigger(t.Context(), schedule.ID)
+	if err != nil {
+		t.Fatalf("Trigger() error = %v", err)
+	}
+	if len(submitter.inputs) != 1 {
+		t.Fatalf("submitted tasks = %d, want 1", len(submitter.inputs))
+	}
+	input := submitter.inputs[0]
+	if input.SourceType != taskcreate.SourceScheduledTask || input.SourceID == nil || *input.SourceID != schedule.ID {
+		t.Fatalf("Task source = %s/%v, want scheduled_task/%d", input.SourceType, input.SourceID, schedule.ID)
+	}
+	if string(input.Background) != `{"mode":"read_only","skill":"okr-progress-sync"}` {
+		t.Fatalf("Task background = %s", input.Background)
+	}
+	if strings.Contains(string(input.Background), "okr_id") || strings.Contains(string(input.SourcePayload), "okr_id") {
+		t.Fatalf("scheduled Task leaked an OKR relation: background=%s payload=%s", input.Background, input.SourcePayload)
+	}
+	if triggered.Status != "active" || triggered.LastTaskID == nil || *triggered.LastTaskID != 77 {
+		t.Fatalf("triggered schedule = %#v, want active with Task #77", triggered)
+	}
+	var taskCount int64
+	if err := db.Model(&domain.Task{}).Count(&taskCount).Error; err != nil {
+		t.Fatalf("count Tasks: %v", err)
+	}
+	if taskCount != 0 {
+		t.Fatalf("stubbed schedule persisted %d unexpected Tasks", taskCount)
 	}
 }
 

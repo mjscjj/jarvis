@@ -22,6 +22,9 @@ import type {
   KeyMatter,
   KeyMatterInput,
   KeyMatterList,
+  OKR,
+  OKRInput,
+  OKRWeeklyView,
   Overview,
   Paged,
   Person,
@@ -254,6 +257,33 @@ export async function updatePage(type: PageType, id: number, body: PageUpdateInp
 }
 
 // --- M1 background management ---
+
+export function listOKRs(page = 1, pageSize = 100, includeClosed = false, signal?: AbortSignal): Promise<Paged<OKR>> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  if (includeClosed) params.set('include_closed', 'true')
+  return request<Paged<OKR>>(`/api/okrs?${params.toString()}`, { signal })
+}
+
+export function createOKR(body: OKRInput): Promise<OKR> {
+  return request<OKR>('/api/okrs', { method: 'POST', body })
+}
+
+export function getOKR(id: number, signal?: AbortSignal): Promise<OKR> {
+  return request<OKR>(`/api/okrs/${id}`, { signal })
+}
+
+export function getOKRWeeklyView(id: number, from: string, until: string, signal?: AbortSignal): Promise<OKRWeeklyView> {
+  const params = new URLSearchParams({ from, until })
+  return request<OKRWeeklyView>(`/api/okrs/${id}/weekly-view?${params.toString()}`, { signal })
+}
+
+export function updateOKR(id: number, body: OKRInput): Promise<OKR> {
+  return request<OKR>(`/api/okrs/${id}`, { method: 'PUT', body })
+}
+
+export function closeOKR(id: number): Promise<{ id: number; closed: boolean }> {
+  return request(`/api/okrs/${id}`, { method: 'DELETE' })
+}
 
 export function listProjects(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Project>> {
   return request<Paged<Project>>(`/api/projects?page=${page}&page_size=${pageSize}`, { signal })

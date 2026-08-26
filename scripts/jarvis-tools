@@ -28,6 +28,12 @@ principles:
   object. Large prompts, run outputs and captured resource text are opt-in.
 
 subcommands:
+  list-okrs              List active OKRs with their project hierarchy
+  get-okr                Get one OKR with projects and key matters
+  get-okr-weekly-view    Read one OKR's hierarchy and progress for a local day
+  create-okr             Create an OKR from a JSON payload
+  update-okr             Replace an OKR's control fields
+  close-okr              Close an OKR
   list-projects          List projects
   get-project            Get one project
   create-project         Create a project from a JSON payload
@@ -64,6 +70,8 @@ subcommands:
   get-skill              Read one locally managed Skill
   append-shared-memory   Append one entry to shared memory
   append-clue            Hand M2 one observed fact as evidence for M3
+  list-unassociated-okr-evidence List captured messages not yet linked to OKR progress
+  apply-okr-evidence     Associate one captured message with OKR progress and CAS-update its Page
   get-page               Read one entity's long-term fact page
   update-page            Replace one entity's long-term fact page
   list-pages             List long-term fact page indexes
@@ -99,6 +107,27 @@ usage_error() {
 
 print_subcommand_help() {
   case "$1" in
+    list-okrs) cat <<'EOF'
+usage: jarvis-tools list-okrs [--keyword TEXT] [--limit N] [--config PATH]
+List compact active OKR summaries. Use get-okr for the complete project and key-matter hierarchy.
+EOF
+      ;;
+    get-okr) cat <<'EOF'
+usage: jarvis-tools get-okr --id ID [--config PATH]
+Get one OKR with its owner, projects and open key matters. Long-term progress is
+on get-page; use list-facts for chronological progress evidence.
+EOF
+      ;;
+    get-okr-weekly-view) cat <<'EOF'
+usage: jarvis-tools get-okr-weekly-view --id ID [--date YYYY-MM-DD] [--config PATH]
+Read one OKR's hierarchy and progress changes for a local calendar day. When
+--date is omitted, the command uses today's local day. This is read-only and
+never creates a Task.
+EOF
+      ;;
+    create-okr) payload_help "create-okr" "Create one OKR." ;;
+    update-okr) payload_id_help "update-okr" "Replace one OKR's control fields. Long-term progress is written with update-page; this payload does not accept summary." ;;
+    close-okr) delete_id_help "close-okr" "Close one OKR; linked projects, key matters and history remain intact." ;;
     list-projects) cat <<'EOF'
 usage: jarvis-tools list-projects [--keyword TEXT] [--limit N] [--config PATH]
 List compact project summaries. Use get-project for full project background.
@@ -223,6 +252,18 @@ usage: jarvis-tools append-shared-memory [--note TEXT|-] [--config PATH]
 Atomically append one non-empty entry. Use --note - or omit it to read stdin.
 EOF
       ;;
+    list-unassociated-okr-evidence) cat <<'EOF'
+usage: jarvis-tools list-unassociated-okr-evidence [--source SOURCE]
+                                                    [--date YYYY-MM-DD]
+                                                    [--anchor TEXT] [--limit N]
+                                                    [--config PATH]
+List captured clue/message evidence that is not yet the source of an OKR,
+Project or KeyMatter Fact. SOURCE is a clue source such as meego, or message for
+ordinary captured messages. The literal anchor searches content and stable
+message/chat identity. Select the smallest entity, then call apply-okr-evidence;
+this command never guesses a target and never creates a Task.
+EOF
+      ;;
     append-fact) cat <<'EOF'
 usage: jarvis-tools append-fact --subject-type TYPE --subject-id ID
                               [--description TEXT|-] [--occurred-at RFC3339]
@@ -292,7 +333,7 @@ EOF
       ;;
     get-page) cat <<'EOF'
 usage: jarvis-tools get-page --type TYPE --id N [--config PATH]
-Read one entity's long-term fact page. TYPE is principal, person, project,
+Read one entity's long-term fact page. TYPE is principal, person, okr, project,
 key_matter, group or resource. Returns the full summary, character count and
 limit, updated_at for CAS, outbound and back links, and the subject's fact
 count without fact content. Use list-facts for history detail.
@@ -301,7 +342,7 @@ EOF
     update-page) cat <<'EOF'
 usage: jarvis-tools update-page --type TYPE --id N --content -|TEXT
                                --if-unchanged-since TS [--config PATH]
-Replace one entity's long-term fact page. TYPE is principal, person, project,
+Replace one entity's long-term fact page. TYPE is principal, person, okr, project,
 key_matter, group or resource. --content - reads stdin. --if-unchanged-since is
 the updated_at from get-page; a 409 response returns the current page so the
 caller can re-merge.
@@ -310,14 +351,14 @@ EOF
     list-pages) cat <<'EOF'
 usage: jarvis-tools list-pages [--type TYPE] [--all] [--stale-days N]
                               [--over-limit] [--config PATH]
-List long-term fact page indexes. TYPE is principal, person, project,
+List long-term fact page indexes. TYPE is principal, person, okr, project,
 key_matter, group or resource. Default is active entities only; --all includes
 inactive ones. --stale-days and --over-limit are inspection filters.
 EOF
       ;;
     list-backlinks) cat <<'EOF'
 usage: jarvis-tools list-backlinks --type TYPE --id N [--config PATH]
-List pages that reference this entity. TYPE is principal, person, project,
+List pages that reference this entity. TYPE is principal, person, okr, project,
 key_matter, group or resource.
 EOF
       ;;
@@ -428,6 +469,21 @@ example:
   时间：2026-07-27 11:45 ~ 14:01
   参会人：...
   TXT
+EOF
+      ;;
+    apply-okr-evidence) cat <<'EOF'
+usage: jarvis-tools apply-okr-evidence --payload JSON|- [--config PATH]
+
+Associate one already captured Meego clue or Feishu message with an OKR,
+Project or KeyMatter, append one source-traceable Fact, and CAS-update that
+entity's complete current Page conclusion. The payload fields are:
+
+  subject_type, subject_id, evidence_message_id, description, occurred_at,
+  content, if_unchanged_since
+
+On replay, the same evidence/description returns the existing Fact and does not
+rewrite an already-equal Page. On HTTP 409 the Fact remains recorded and the
+response contains the current Page; merge it and retry with its updated_at.
 EOF
       ;;
     list-scheduled-tasks) cat <<'EOF'
@@ -706,6 +762,7 @@ ALL="false"
 STALE_DAYS=""
 OVER_LIMIT="false"
 IF_UNCHANGED_SINCE=""
+ANCHOR=""
 
 reset_flags() {
   CONFIG_PATH="$CONFIG_DEFAULT"
@@ -743,6 +800,7 @@ reset_flags() {
   STALE_DAYS=""
   OVER_LIMIT="false"
   IF_UNCHANGED_SINCE=""
+  ANCHOR=""
   RUN_LIMIT="3"
   EVENT_LIMIT="20"
   INCLUDE_RUN_OUTPUT="false"
@@ -758,12 +816,13 @@ require_command_flag() {
   local cmd="$1" flag="$2"
   local allowed="--config"
   case "$cmd" in
-    list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
+    list-okrs | list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
     get-project) allowed+=" --id --code" ;;
-    get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
-    create-project | create-key-matter | update-principal | create-person | create-resource | create-task) allowed+=" --payload" ;;
-    update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
-    archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
+    get-okr | get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
+    get-okr-weekly-view) allowed+=" --id --date" ;;
+    create-okr | create-project | create-key-matter | update-principal | create-person | create-resource | create-task) allowed+=" --payload" ;;
+    update-okr | update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
+    close-okr | archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
     get-group) allowed+=" --chat-id" ;;
     get-context) allowed+=" --chat-id --project-id" ;;
@@ -779,6 +838,8 @@ require_command_flag() {
     get-skill) allowed+=" --name" ;;
     append-shared-memory) allowed+=" --note" ;;
     append-clue) allowed+=" --source --external-id --title --content --occurred-at" ;;
+    list-unassociated-okr-evidence) allowed+=" --source --date --anchor --limit" ;;
+    apply-okr-evidence) allowed+=" --payload" ;;
     append-fact) allowed+=" --subject-type --subject-id --description --occurred-at --source --source-id" ;;
     append-facts-batch) allowed+=" --payload" ;;
     list-facts) allowed+=" --subject-type --subject-id --date --limit" ;;
@@ -817,8 +878,8 @@ require_limit() {
 require_page_type() {
   local cmd="$1" value="$2"
   case "$value" in
-    principal|person|project|key_matter|group|resource) ;;
-    *) fail "${cmd} --type must be principal, person, project, key_matter, group or resource" ;;
+    principal|person|okr|project|key_matter|group|resource) ;;
+    *) fail "${cmd} --type must be principal, person, okr, project, key_matter, group or resource" ;;
   esac
 }
 
@@ -913,6 +974,15 @@ consume_flags() {
         ;;
       --keyword=*)
         KEYWORD="${1#--keyword=}"
+        shift
+        ;;
+      --anchor)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        ANCHOR="$2"
+        shift 2
+        ;;
+      --anchor=*)
+        ANCHOR="${1#--anchor=}"
         shift
         ;;
       --note)
@@ -1195,6 +1265,52 @@ consume_flags() {
 
 # --- subcommands ------------------------------------------------------------
 
+cmd_list_okrs() {
+  reset_flags
+  LIMIT="20"
+  consume_flags "$@"
+  require_limit list-okrs "$LIMIT" 100
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local items total
+  if [[ -z "$KEYWORD" ]]; then
+    local body
+    body="$(api_get "/api/okrs?page=1&page_size=${LIMIT}")"
+    items="$(printf '%s' "$body" | jq -c '.data.items')"
+    total="$(printf '%s' "$body" | jq -er '.data.total')"
+  else
+    local all
+    all="$(fetch_all_items /api/okrs)"
+    items="$(printf '%s' "$all" | jq -c --arg keyword "$KEYWORD" --argjson limit "$LIMIT" '
+      [.[] | select((([.title,.cycle,.status,.summary,.owner.name] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase)))][: $limit]')"
+    total="$(printf '%s' "$all" | jq -r --arg keyword "$KEYWORD" '
+      [.[] | select((([.title,.cycle,.status,.summary,.owner.name] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase)))] | length')"
+  fi
+  items="$(printf '%s' "$items" | jq -c '[.[] | {id,title,cycle,status,owner:(if .owner == null then null else {id:.owner.id,name:.owner.name,open_id:.owner.open_id} end),project_count:(.projects | length),last_progress_at,updated_at}]')"
+  emit "$(jq -cn --argjson total "$total" --argjson okrs "$items" '{total:$total,okrs:$okrs}')"
+}
+
+cmd_get_okr() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-okr requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local body
+  body="$(api_get "/api/okrs/${ID}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_get_okr_weekly_view() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-okr-weekly-view requires positive --id"
+  local target_date="${DATE:-$(date +%Y-%m-%d)}" from until
+  read -r from until <<<"$(local_day_bounds "$target_date" get-okr-weekly-view)"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local query
+  query="from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
+  emit "$(api_get "/api/okrs/${ID}/weekly-view?${query}" | jq -c '.data')"
+}
+
 cmd_list_projects() {
   reset_flags
   LIMIT="20"
@@ -1312,7 +1428,7 @@ cmd_payload_by_id() {
   local payload body
   payload="$(read_payload_object "$command_name")"
   case "$command_name" in
-    update-project|update-key-matter|update-group|update-person|update-resource)
+    update-okr|update-project|update-key-matter|update-group|update-person|update-resource)
       forbid_summary_payload "$command_name" "$payload"
       ;;
   esac
@@ -1659,6 +1775,45 @@ cmd_append_clue() {
     --arg title "$TITLE" --arg content "$content" --arg occurred_at "$occurred_at" \
     '{source:$source,external_id:$external_id,title:$title,content:$content,occurred_at:$occurred_at}')"
   body="$(api_write POST /api/clues "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_list_unassociated_okr_evidence() {
+  reset_flags
+  LIMIT="20"
+  consume_flags "$@"
+  require_limit list-unassociated-okr-evidence "$LIMIT" 100
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local query="limit=${LIMIT}" value
+  if [[ -n "$SOURCE" ]]; then
+    value="$(jq -rn --arg s "$SOURCE" '$s|@uri')"
+    query="${query}&source=${value}"
+  fi
+  if [[ -n "$ANCHOR" ]]; then
+    value="$(jq -rn --arg s "$ANCHOR" '$s|@uri')"
+    query="${query}&anchor=${value}"
+  fi
+  if [[ -n "$DATE" ]]; then
+    local from until
+    read -r from until <<<"$(local_day_bounds "$DATE" list-unassociated-okr-evidence)"
+    query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
+  fi
+  emit "$(api_get "/api/okr-evidence/unassociated?${query}" | jq -c '.data')"
+}
+
+cmd_apply_okr_evidence() {
+  reset_flags
+  consume_flags "$@"
+  local payload body
+  payload="$(read_payload_object apply-okr-evidence)"
+  printf '%s' "$payload" | jq -e '
+    ((keys_unsorted - ["subject_type","subject_id","evidence_message_id","description","occurred_at","content","if_unchanged_since"]) | length) == 0
+    and (.subject_type == "okr" or .subject_type == "project" or .subject_type == "key_matter")
+    and (.subject_id | type == "number" and . > 0 and floor == .)
+    and ([.evidence_message_id,.description,.occurred_at,.content,.if_unchanged_since] | all(type == "string" and test("[^[:space:]]")))
+  ' >/dev/null 2>&1 || fail "apply-okr-evidence payload is invalid"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  body="$(api_write POST /api/okr-evidence/apply "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
@@ -2209,6 +2364,12 @@ if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]; then
 fi
 
 case "$SUBCOMMAND" in
+  list-okrs)      cmd_list_okrs "$@" ;;
+  get-okr)        cmd_get_okr "$@" ;;
+  get-okr-weekly-view) cmd_get_okr_weekly_view "$@" ;;
+  create-okr)     cmd_payload_create create-okr POST /api/okrs "$@" ;;
+  update-okr)     cmd_payload_by_id update-okr PUT /api/okrs "$@" ;;
+  close-okr)      cmd_delete_by_id close-okr /api/okrs "$@" ;;
   list-projects)  cmd_list_projects "$@" ;;
   get-project)    cmd_get_project "$@" ;;
   create-project) cmd_payload_create create-project POST /api/projects "$@" ;;
@@ -2245,6 +2406,8 @@ case "$SUBCOMMAND" in
   get-skill)            cmd_get_skill "$@" ;;
   append-shared-memory) cmd_append_shared_memory "$@" ;;
   append-clue)          cmd_append_clue "$@" ;;
+  list-unassociated-okr-evidence) cmd_list_unassociated_okr_evidence "$@" ;;
+  apply-okr-evidence)   cmd_apply_okr_evidence "$@" ;;
   append-fact)          cmd_append_fact "$@" ;;
   append-facts-batch)   cmd_append_facts_batch "$@" ;;
   list-facts)           cmd_list_facts "$@" ;;

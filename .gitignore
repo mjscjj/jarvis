@@ -34,6 +34,10 @@ lark-auth-*.png
 tmp-*.png
 /conf/config.runtime.yaml
 
+# LoopX local control plane
+/.loopx/
+/.codex/goals/
+
 # 操作系统 / IDE
 .DS_Store
 .idea/

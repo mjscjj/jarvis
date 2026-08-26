@@ -152,7 +152,7 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 		)`,
 		`CREATE TABLE project (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, name TEXT NOT NULL, role TEXT NOT NULL,
-			status TEXT NOT NULL, priority INTEGER NOT NULL, summary TEXT, last_progress_at DATETIME,
+			status TEXT NOT NULL, priority INTEGER NOT NULL, summary TEXT, last_progress_at DATETIME, okr_id INTEGER,
 			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE managed_resource (

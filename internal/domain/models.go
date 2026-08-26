@@ -12,6 +12,27 @@ import (
 	"jarvis/internal/datatypes"
 )
 
+// OKR is the top-level outcome in the world model. Projects and KeyMatters
+// carry the delivery hierarchy; executable Task remains deliberately separate.
+type OKR struct {
+	ID      uint64  `gorm:"column:id;primaryKey;autoIncrement"`
+	Title   string  `gorm:"column:title;not null"`
+	Cycle   string  `gorm:"column:cycle;not null;index:idx_okr_cycle"`
+	Status  string  `gorm:"column:status;not null;default:''"`
+	Summary *string `gorm:"column:summary"`
+
+	OwnerPersonID  *uint64    `gorm:"column:owner_person_id;index:idx_okr_owner"`
+	ClosedAt       *time.Time `gorm:"column:closed_at;index:idx_okr_closed"`
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_okr_last_progress"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+
+	Owner    *Person   `gorm:"foreignKey:OwnerPersonID;constraint:OnDelete:SET NULL"`
+	Projects []Project `gorm:"foreignKey:OKRID"`
+}
+
+func (OKR) TableName() string { return "okr" }
+
 // Project is the long-lived background for a project the owner participates in.
 type Project struct {
 	ID       uint64  `gorm:"column:id;primaryKey;autoIncrement"`
@@ -26,8 +47,12 @@ type Project struct {
 	Summary *string `gorm:"column:summary"`
 	// LastProgressAt moves only when Summary actually changes.
 	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_project_last_progress"`
+	OKRID          *uint64    `gorm:"column:okr_id;index:idx_project_okr"`
 	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
 	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+
+	OKR        *OKR        `gorm:"foreignKey:OKRID;constraint:OnDelete:SET NULL"`
+	KeyMatters []KeyMatter `gorm:"foreignKey:ProjectID"`
 }
 
 func (Project) TableName() string { return "project" }
@@ -364,6 +389,7 @@ func (ScheduledTask) TableName() string { return "scheduled_task" }
 // CoreModels returns the canonical dependency-ordered migration list.
 func CoreModels() []any {
 	return []any{
+		&OKR{},
 		&Project{},
 		&KeyMatter{},
 		&Group{},

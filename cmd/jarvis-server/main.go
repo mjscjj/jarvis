@@ -374,6 +374,10 @@ func main() {
 	if err != nil {
 		fatalf("initialize scheduled task service failed: %v", err)
 	}
+	okrService, err := background.NewOKRService(db)
+	if err != nil {
+		fatalf("initialize okr service failed: %v", err)
+	}
 	projectService, err := background.NewProjectService(db)
 	if err != nil {
 		fatalf("initialize project service failed: %v", err)
@@ -891,7 +895,7 @@ func main() {
 		DB: db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,
-		Projects:        projectService, KeyMatters: keyMatterService,
+		OKRs:            okrService, Projects: projectService, KeyMatters: keyMatterService,
 		Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		Pages:          pageService,

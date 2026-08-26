@@ -12,16 +12,35 @@ import (
 
 // ProjectView is the API representation of a Project.
 type ProjectView struct {
-	ID             uint64     `json:"id"`
-	Code           *string    `json:"code"`
-	Name           string     `json:"name"`
-	Role           string     `json:"role"`
-	Status         string     `json:"status"`
-	Priority       uint8      `json:"priority"`
-	Summary        *string    `json:"summary"`
-	LastProgressAt *time.Time `json:"last_progress_at"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID             uint64          `json:"id"`
+	Code           *string         `json:"code"`
+	Name           string          `json:"name"`
+	Role           string          `json:"role"`
+	Status         string          `json:"status"`
+	Priority       uint8           `json:"priority"`
+	Summary        *string         `json:"summary"`
+	LastProgressAt *time.Time      `json:"last_progress_at"`
+	OKRID          *uint64         `json:"okr_id"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+	KeyMatters     []KeyMatterView `json:"key_matters,omitempty"`
+}
+
+// OKRView is the top-level read model. Its nested projects and key matters
+// expose the durable hierarchy without coupling any executable Task to it.
+type OKRView struct {
+	ID             uint64        `json:"id"`
+	Title          string        `json:"title"`
+	Cycle          string        `json:"cycle"`
+	Status         string        `json:"status"`
+	Summary        *string       `json:"summary"`
+	OwnerPersonID  *uint64       `json:"owner_person_id"`
+	ClosedAt       *time.Time    `json:"closed_at"`
+	LastProgressAt *time.Time    `json:"last_progress_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+	Owner          *PersonView   `json:"owner"`
+	Projects       []ProjectView `json:"projects"`
 }
 
 // KeyMatterView is the API representation of a KeyMatter.
@@ -90,17 +109,43 @@ type GroupView struct {
 }
 
 func toProjectView(p *domain.Project) ProjectView {
-	return ProjectView{
+	view := ProjectView{
 		ID: p.ID, Code: p.Code, Name: p.Name, Role: p.Role, Status: p.Status,
 		Priority: p.Priority, Summary: p.Summary, LastProgressAt: p.LastProgressAt,
-		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+		OKRID: p.OKRID, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
+	if p.KeyMatters != nil {
+		view.KeyMatters = toKeyMatterViews(p.KeyMatters)
+	}
+	return view
 }
 
 func toProjectViews(items []domain.Project) []ProjectView {
 	views := make([]ProjectView, len(items))
 	for i := range items {
 		views[i] = toProjectView(&items[i])
+	}
+	return views
+}
+
+func toOKRView(okr *domain.OKR) OKRView {
+	view := OKRView{
+		ID: okr.ID, Title: okr.Title, Cycle: okr.Cycle, Status: okr.Status,
+		Summary: okr.Summary, OwnerPersonID: okr.OwnerPersonID, ClosedAt: okr.ClosedAt,
+		LastProgressAt: okr.LastProgressAt, CreatedAt: okr.CreatedAt, UpdatedAt: okr.UpdatedAt,
+		Projects: toProjectViews(okr.Projects),
+	}
+	if okr.Owner != nil {
+		owner := toPersonView(okr.Owner)
+		view.Owner = &owner
+	}
+	return view
+}
+
+func toOKRViews(items []domain.OKR) []OKRView {
+	views := make([]OKRView, len(items))
+	for i := range items {
+		views[i] = toOKRView(&items[i])
 	}
 	return views
 }

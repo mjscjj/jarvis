@@ -6,12 +6,134 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"jarvis/internal/background"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
+
+// --- OKR handlers ---
+
+func ListOKRs(svc *background.OKRService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		base, err := backgroundListFilter(c)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40020, err)
+			return
+		}
+		filter := background.OKRFilter{ListFilter: base}
+		if raw := strings.TrimSpace(c.Query("include_closed")); raw != "" {
+			value, err := strconv.ParseBool(raw)
+			if err != nil {
+				writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("include_closed must be true or false"))
+				return
+			}
+			filter.IncludeClosed = value
+		}
+		result, err := svc.List(ctx, filter)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func CreateOKR(svc *background.OKRService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var in background.OKRInput
+		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
+		result, err := svc.Create(ctx, in)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func GetOKR(svc *background.OKRService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "okr_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		result, err := svc.Get(ctx, id)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func GetOKRWeeklyView(svc *background.OKRService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "okr_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		from, err := time.Parse(time.RFC3339, strings.TrimSpace(c.Query("from")))
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("from must be RFC3339"))
+			return
+		}
+		until, err := time.Parse(time.RFC3339, strings.TrimSpace(c.Query("until")))
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("until must be RFC3339"))
+			return
+		}
+		result, err := svc.WeeklyView(ctx, id, from, until)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func UpdateOKR(svc *background.OKRService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "okr_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		var in background.OKRInput
+		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
+		result, err := svc.Update(ctx, id, in)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func DeleteOKR(svc *background.OKRService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := backgroundID(c, "okr_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		if err := svc.Delete(ctx, id); err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": id, "closed": true}})
+	}
+}
 
 // --- Project handlers ---
 

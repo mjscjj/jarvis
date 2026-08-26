@@ -360,7 +360,7 @@ export interface FactSearchQuery {
   pageSize?: number
 }
 
-export type PageType = 'principal' | 'person' | 'project' | 'key_matter' | 'group' | 'resource'
+export type PageType = 'principal' | 'person' | 'okr' | 'project' | 'key_matter' | 'group' | 'resource'
 
 export interface PageLink {
   type: string
@@ -399,8 +399,55 @@ export interface Project {
   priority: number
   summary: string | null
   last_progress_at: string | null
+  okr_id: number | null
   created_at: string
   updated_at: string
+  key_matters?: KeyMatter[]
+}
+
+export interface OKR {
+  id: number
+  title: string
+  cycle: string
+  status: string
+  summary: string | null
+  owner_person_id: number | null
+  closed_at: string | null
+  last_progress_at: string | null
+  created_at: string
+  updated_at: string
+  owner: Person | null
+  projects: Project[]
+}
+
+export type OKRWeeklySignal = 'steady' | 'risk' | 'stalled' | 'complete'
+
+export interface OKRWeeklyItem {
+  subject_type: 'okr' | 'project' | 'key_matter'
+  subject_id: number
+  parent_type: string | null
+  parent_id: number | null
+  title: string
+  status: string
+  summary: string | null
+  last_progress_at: string | null
+  signal: OKRWeeklySignal
+  signal_reason: string
+  facts: Fact[]
+  change_count: number
+  created_at: string
+  due_at: string | null
+  closed_at: string | null
+}
+
+export interface OKRWeeklyView {
+  okr: OKR
+  from: string
+  until: string
+  change_count: number
+  risk_count: number
+  stalled_count: number
+  items: OKRWeeklyItem[]
 }
 
 export interface KeyMatter {
@@ -502,6 +549,14 @@ export interface ProjectInput {
   role: ProjectRole
   status: ProjectStatus
   priority: number
+  okr_id: number | null
+}
+
+export interface OKRInput {
+  title: string
+  cycle: string
+  status: string
+  owner_person_id: number | null
 }
 
 export interface KeyMatterInput {

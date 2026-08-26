@@ -3,10 +3,27 @@ package proactive
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestProactiveSystemPromptOwnsOKRWatchPolicy(t *testing.T) {
+	raw, err := os.ReadFile("../../conf/prompts/proactive-system-prompt.md")
+	if err != nil {
+		t.Fatalf("read proactive system prompt: %v", err)
+	}
+	system := string(raw)
+	for _, want := range []string{
+		"维护未闭环 OKR", "OKR 是结果层", "局部项目或关键事项完成不等于 OKR 完成",
+		"另建独立 Task", "OKR 只读取进行中的有界集合",
+	} {
+		if !strings.Contains(system, want) {
+			t.Fatalf("proactive system prompt missing owned OKR policy %q", want)
+		}
+	}
+}
 
 type fakeRunner struct {
 	prompt, sandbox, root, stage string

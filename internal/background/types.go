@@ -65,6 +65,26 @@ type ProjectInput struct {
 	Role     string  `json:"role"`
 	Status   string  `json:"status"`
 	Priority uint8   `json:"priority"`
+	OKRID    *uint64 `json:"okr_id"`
+}
+
+// OKRInput carries the small set of machine-queryable control fields. The
+// evolving progress narrative remains the entity page summary and Fact stream.
+type OKRInput struct {
+	Title         string  `json:"title"`
+	Cycle         string  `json:"cycle"`
+	Status        string  `json:"status"`
+	OwnerPersonID *uint64 `json:"owner_person_id"`
+}
+
+func (in *OKRInput) validate() error {
+	if strings.TrimSpace(in.Title) == "" {
+		return fmt.Errorf("okr title must not be blank")
+	}
+	if strings.TrimSpace(in.Cycle) == "" {
+		return fmt.Errorf("okr cycle must not be blank")
+	}
+	return nil
 }
 
 func (in *ProjectInput) validate() error {

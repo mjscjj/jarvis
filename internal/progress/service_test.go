@@ -203,3 +203,29 @@ func TestServiceAcceptsKeyMatterSubject(t *testing.T) {
 		t.Fatalf("AppendFact() missing key matter error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestServiceAcceptsOKRSubject(t *testing.T) {
+	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
+	if err != nil {
+		t.Fatalf("OpenSQLite() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close(db) })
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	okr := domain.OKR{Title: "区域交付", Cycle: "2026-Q3", Status: "推进中"}
+	if err := db.Create(&okr).Error; err != nil {
+		t.Fatalf("create okr: %v", err)
+	}
+	service, _ := NewService(db)
+	if _, err := service.AppendFact(t.Context(), FactInput{
+		SubjectType: "okr", SubjectID: okr.ID, Description: "本周完成目标拆解。",
+	}); err != nil {
+		t.Fatalf("AppendFact() error = %v", err)
+	}
+	if _, err := service.AppendFact(t.Context(), FactInput{
+		SubjectType: "okr", SubjectID: okr.ID + 99, Description: "孤儿事实。",
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("AppendFact() missing okr error = %v, want ErrNotFound", err)
+	}
+}

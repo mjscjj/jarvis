@@ -19,15 +19,23 @@
 
 ## 背景与世界状态
 
+- OKRs：`GET/POST /api/okrs`、`GET/PUT/DELETE /api/okrs/:okr_id`、`GET /api/okrs/:okr_id/weekly-view?from=<RFC3339>&until=<RFC3339>`
 - Projects：`GET/POST /api/projects`、`GET/PUT/DELETE /api/projects/:project_id`
+- Key matters：`GET/POST /api/key-matters`、`GET/PUT/DELETE /api/key-matters/:key_matter_id`、`POST .../touch`
 - Persons：`GET/POST /api/persons`、`POST /api/persons/resolve`、`GET/PUT/DELETE /api/persons/:person_id`
 - Groups：`GET /api/groups`、`PUT /api/groups/:group_id`
 - Principal：`GET/PUT /api/profile`
 - Managed resources：`GET/POST /api/resources`、`GET/PUT/DELETE /api/resources/:resource_id`
 - Facts：`GET/POST /api/facts`
+- OKR evidence：`GET /api/okr-evidence/unassociated?source=&from=&until=&anchor=&limit=` 按来源、采集时间半开区间和文字锚点读取尚未关联的 Message；`POST /api/okr-evidence/apply` 将 Agent 明确选择的 Message 幂等关联为 OKR/Project/KeyMatter Fact，并按 `if_unchanged_since` CAS 更新当前 Page
 - Relation facts：`GET/POST /api/relation-facts`、`PUT/DELETE /api/relation-facts/:fact_id`
 
-`DELETE /api/projects/:project_id` 的业务语义是归档，不是物理删除。
+`DELETE /api/okrs/:okr_id` 与 `DELETE /api/key-matters/:key_matter_id` 的业务语义是闭环，`DELETE /api/projects/:project_id` 的业务语义是归档；都不是物理删除。
+
+OKR 周视图接受不超过 8 天的半开时间窗，按 OKR → Project → KeyMatter 返回当前 Page 结论、本周 Fact 和确定性风险/失速信号。它是纯读模型，不创建 Task，也不复制一套进展存储。
+Agent 可用 `jarvis-tools get-okr-weekly-view --id <id> [--date YYYY-MM-DD]` 把本地自然日转换为该半开区间并回读同一视图。
+
+未关联证据列表只排除已经作为 OKR、Project 或 KeyMatter Fact 来源的消息；用于 Group 等其他世界实体的同一条 Message 仍可被 Agent 审阅。列表不返回推荐实体，也不自动建立关系或创建 Task。
 
 ## Agent 配置面
 

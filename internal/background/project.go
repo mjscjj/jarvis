@@ -66,12 +66,16 @@ func (s *ProjectService) Create(ctx context.Context, in ProjectInput) (*ProjectV
 	if err := in.validate(); err != nil {
 		return nil, invalid(err)
 	}
+	if err := s.requireOKR(ctx, in.OKRID); err != nil {
+		return nil, err
+	}
 	project := domain.Project{
 		Code:     in.Code,
 		Name:     in.Name,
 		Role:     in.Role,
 		Status:   in.Status,
 		Priority: in.Priority,
+		OKRID:    in.OKRID,
 	}
 	if err := s.db.WithContext(ctx).Create(&project).Error; err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
@@ -141,8 +145,16 @@ func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput)
 		}
 		return nil, fmt.Errorf("load project id=%d before update: %w", id, err)
 	}
+	// Closing an OKR preserves its linked projects and their independent
+	// lifecycle. Keep allowing ordinary edits while the existing association
+	// is unchanged, but reject new links (or moves) to a closed OKR.
+	if !sameOptionalUint64(before.OKRID, in.OKRID) {
+		if err := s.requireOKR(ctx, in.OKRID); err != nil {
+			return nil, err
+		}
+	}
 	if sameOptionalString(before.Code, in.Code) && before.Name == in.Name && before.Role == in.Role &&
-		before.Status == in.Status && before.Priority == in.Priority {
+		before.Status == in.Status && before.Priority == in.Priority && sameOptionalUint64(before.OKRID, in.OKRID) {
 		view := toProjectView(&before)
 		return &view, nil
 	}
@@ -152,6 +164,7 @@ func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput)
 		"role":     in.Role,
 		"status":   in.Status,
 		"priority": in.Priority,
+		"okr_id":   in.OKRID,
 	}
 	result := s.db.WithContext(ctx).Model(&domain.Project{}).Where("id = ?", id).Updates(updates)
 	if result.Error != nil {
@@ -173,6 +186,20 @@ func (s *ProjectService) Update(ctx context.Context, id uint64, in ProjectInput)
 		}
 	}
 	return s.Get(ctx, id)
+}
+
+func (s *ProjectService) requireOKR(ctx context.Context, okrID *uint64) error {
+	if okrID == nil {
+		return nil
+	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&domain.OKR{}).Where("id = ? AND closed_at IS NULL", *okrID).Count(&count).Error; err != nil {
+		return fmt.Errorf("verify okr id=%d: %w", *okrID, err)
+	}
+	if count != 1 {
+		return invalid(fmt.Errorf("project okr_id=%d does not exist or is closed", *okrID))
+	}
+	return nil
 }
 
 func (s *ProjectService) Delete(ctx context.Context, id uint64) error {

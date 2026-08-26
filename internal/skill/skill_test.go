@@ -179,6 +179,52 @@ func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 	}
 }
 
+func TestRepositoryOKRProgressSyncSkillKeepsReadOnlyTaskBoundary(t *testing.T) {
+	service, err := NewService(
+		filepath.Join("..", "..", ".agents", "skills"),
+		filepath.Join("..", "..", "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatalf("extract Catalog() error = %v", err)
+	}
+	if strings.Contains(extractCatalog, "okr-progress-sync") {
+		t.Fatalf("extract catalog exposes execution-only OKR sync skill:\n%s", extractCatalog)
+	}
+	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatalf("execute Catalog() error = %v", err)
+	}
+	if !strings.Contains(executeCatalog, "okr-progress-sync") {
+		t.Fatalf("execute catalog is missing okr-progress-sync:\n%s", executeCatalog)
+	}
+
+	content, err := service.Content(t.Context(), "okr-progress-sync")
+	if err != nil {
+		t.Fatalf("load okr-progress-sync: %v", err)
+	}
+	for _, want := range []string{
+		"只读 Meego 和已采集消息",
+		"jarvis-tools append-clue",
+		"jarvis-tools append-fact",
+		"jarvis-tools list-unassociated-okr-evidence",
+		"jarvis-tools apply-okr-evidence",
+		"不会推荐目标实体",
+		"Page CAS",
+		"ScheduledTask",
+		"每次触发只创建一个普通 Task",
+		"不发送消息",
+		"不调用 `create-task`",
+	} {
+		if !strings.Contains(content.Content, want) {
+			t.Fatalf("OKR progress sync skill missing boundary %q:\n%s", want, content.Content)
+		}
+	}
+}
+
 func TestBootstrapJarvisWorldModelUsesUserAuthoredDocumentsInsteadOfOKRAPI(t *testing.T) {
 	worldModelPath := filepath.Join("..", "..", ".agents", "skills", "bootstrap-jarvis-world-model")
 	worldModelSkill, err := os.ReadFile(filepath.Join(worldModelPath, "SKILL.md"))

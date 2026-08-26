@@ -37,6 +37,7 @@ type Dependencies struct {
 	TaskSubmitter      *taskcreate.Submitter
 	Executor           *execute.AgentExecutor
 	MessageRecaller    *effectops.MessageRecaller // 撤回任务已发出的飞书消息
+	OKRs               *background.OKRService
 	Projects           *background.ProjectService
 	KeyMatters         *background.KeyMatterService
 	Persons            *background.PersonService
@@ -98,6 +99,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.Projects == nil {
 		return fmt.Errorf("api project service dependency is nil")
+	}
+	if deps.OKRs == nil {
+		return fmt.Errorf("api okr service dependency is nil")
 	}
 	if deps.KeyMatters == nil {
 		return fmt.Errorf("api key matter service dependency is nil")
@@ -205,7 +209,13 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.CardApprovals != nil {
 		h.POST("/internal/card-approval/callback", RelayCardApproval(deps.CardApprovals, deps.CardApprovalSecret))
 	}
-	// M1 背景管理：Project/Person 全量 CRUD；Group 只可改人工背景字段（采集字段归 M2）。
+	// M1 背景管理：OKR/Project/Person 全量 CRUD；Group 只可改人工背景字段（采集字段归 M2）。
+	h.GET("/api/okrs", ListOKRs(deps.OKRs))
+	h.POST("/api/okrs", CreateOKR(deps.OKRs))
+	h.GET("/api/okrs/:okr_id", GetOKR(deps.OKRs))
+	h.GET("/api/okrs/:okr_id/weekly-view", GetOKRWeeklyView(deps.OKRs))
+	h.PUT("/api/okrs/:okr_id", UpdateOKR(deps.OKRs))
+	h.DELETE("/api/okrs/:okr_id", DeleteOKR(deps.OKRs))
 	h.GET("/api/projects", ListProjects(deps.Projects))
 	h.POST("/api/projects", CreateProject(deps.Projects))
 	h.GET("/api/projects/:project_id", GetProject(deps.Projects))
@@ -234,6 +244,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/pages", ListPages(deps.Pages))
 	h.GET("/api/pages/:type/:id", GetPage(deps.Pages))
 	h.PUT("/api/pages/:type/:id", UpdatePage(deps.Pages))
+	h.GET("/api/okr-evidence/unassociated", ListUnassociatedOKREvidence(deps.Pages))
+	h.POST("/api/okr-evidence/apply", ApplyOKREvidence(deps.Pages))
 	h.GET("/api/pages/:type/:id/backlinks", ListPageBacklinks(deps.Pages))
 	// Principal（“我”）：单例 profile，读取 + upsert。
 	h.GET("/api/profile", GetProfile(deps.Profile))

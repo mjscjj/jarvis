@@ -16,7 +16,7 @@ func TestEveryStageExposesTheSameMachineCapabilities(t *testing.T) {
 			t.Fatalf("Block(%q): %v", stage, err)
 		}
 		for _, required := range []string{
-			"同一套工具能力", "参数、环境和权限硬校验",
+			"同一套工具能力", "参数、环境和权限硬校验", "OKR", "关键事项",
 			"query-messages", "query-captured-resources", "get-captured-resource",
 			"list-facts", "get-page", "update-page", "list-pages", "yield-until", "JARVIS_TASK_ID",
 			"JARVIS_AGENT_STAGE=proactive",

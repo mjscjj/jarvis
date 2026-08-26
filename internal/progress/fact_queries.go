@@ -282,6 +282,12 @@ func (s *Service) factSubjectLabel(ctx context.Context, key factSubjectKey) (str
 	db := s.db.WithContext(ctx)
 	var err error
 	switch key.Type {
+	case "okr":
+		var row domain.OKR
+		err = db.Select("id", "title").First(&row, key.ID).Error
+		if err == nil {
+			return row.Title, nil
+		}
 	case "project":
 		var row domain.Project
 		err = db.Select("id", "name").First(&row, key.ID).Error

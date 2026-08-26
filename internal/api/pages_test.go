@@ -28,6 +28,16 @@ func TestUpdateProjectRejectsSummaryField(t *testing.T) {
 	}
 }
 
+func TestCreateOKRRejectsSummaryField(t *testing.T) {
+	h := server.New()
+	h.POST("/api/okrs", CreateOKR(nil))
+	body := []byte(`{"title":"大会落地","cycle":"2026-Q3","status":"推进中","summary":"不应从控制字段接口写"}`)
+	response := ut.PerformRequest(h.Engine, "POST", "/api/okrs", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+}
+
 func TestUpdatePageConflictReturns409WithCurrentContent(t *testing.T) {
 	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
 	if err != nil {
