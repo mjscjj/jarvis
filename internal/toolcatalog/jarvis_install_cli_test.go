@@ -121,7 +121,7 @@ func TestJarvisInstallPinsPatchedCCConnectWithoutStartingIt(t *testing.T) {
 	manifest := string(manifestContent)
 	for _, want := range []string{
 		`CC_CONNECT_BASE_COMMIT="5d4c96dd12774574369e75b60084140101c9a59a"`,
-		`CC_CONNECT_PATCH_COMMIT="bb1a49954684318f817f0e7a11f33c3d18ce150a"`,
+		`CC_CONNECT_PATCH_COMMIT="cf3f10e5b543b2c477a469cca1f1b558a09156d7"`,
 		`CC_CONNECT_PATCH_RELATIVE_PATH="integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch"`,
 	} {
 		if !strings.Contains(manifest, want) {
@@ -232,13 +232,14 @@ exit 9
 	var result struct {
 		Ready  bool `json:"ready"`
 		Checks struct {
-			Context bool `json:"agent_loads_jarvis_context_each_turn"`
+			Context       bool `json:"agent_loads_jarvis_context_each_turn"`
+			TrustedChatID bool `json:"cc_connect_injects_trusted_chat_id"`
 		} `json:"checks"`
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("decode bind-cc output %q: %v", out, err)
 	}
-	if !result.Ready || !result.Checks.Context {
+	if !result.Ready || !result.Checks.Context || !result.Checks.TrustedChatID {
 		t.Fatalf("binding result = %#v", result)
 	}
 	content, err := os.ReadFile(ccConfigPath)
@@ -246,13 +247,38 @@ exit 9
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `app_id = "cli_app_ready"`, `scripts/jarvis-tools get-context`} {
+	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`, `scripts/jarvis-tools get-context --chat-id`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CC config missing %q:\n%s", want, text)
 		}
 	}
 	if strings.Contains(text, "--profile") {
 		t.Fatalf("CC config must use the default lark-cli identity:\n%s", text)
+	}
+
+	// Existing installations may have the old global-context prompt and no
+	// trusted chat coordinate. Rebinding must migrate that same project in
+	// place instead of requiring users to delete or duplicate it.
+	legacyText := strings.Replace(text, "inject_sender = true", "inject_sender = false", 1)
+	legacyText = strings.Replace(legacyText, "get-context --chat-id", "get-context", 1)
+	if err := os.WriteFile(ccConfigPath, []byte(legacyText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runJarvisInstallWithInput(t, "app-secret-ready\n", []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+	}, "bind-cc", "--cc-config", ccConfigPath); err != nil {
+		t.Fatalf("rebind legacy CC config: %v", err)
+	}
+	migrated, err := os.ReadFile(ccConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migratedText := string(migrated)
+	if strings.Count(migratedText, "inject_sender = true") != 1 || strings.Contains(migratedText, "inject_sender = false") {
+		t.Fatalf("legacy CC config did not migrate inject_sender exactly once:\n%s", migratedText)
+	}
+	if !strings.Contains(migratedText, "scripts/jarvis-tools get-context --chat-id") {
+		t.Fatalf("legacy CC config did not migrate to chat-scoped context:\n%s", migratedText)
 	}
 }
 
