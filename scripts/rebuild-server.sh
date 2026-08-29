@@ -57,9 +57,38 @@ running_task_count() {
   fi
 }
 
+wait_for_health() {
+  for attempt in {1..10}; do
+    if curl --fail --silent --show-error --max-time 2 -o /dev/null http://127.0.0.1:18800/healthz; then
+      echo "backend health HTTP 200"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "backend did not become reachable within 10 seconds; check var/log/jarvis-server.error.log" >&2
+  return 1
+}
+
 mkdir -p "$repo_dir/bin" "$repo_dir/var/log"
 cd "$repo_dir"
 trap 'rm -f "$next_bin"' EXIT
+
+if ! launchctl print "$service_target" >/dev/null 2>&1; then
+  echo "launchd service not loaded; rebuilding and registering the current checkout"
+  "$script_dir/install-launchd.sh"
+  wait_for_health
+  exit 0
+fi
+
+running_tasks=$(running_task_count)
+if (( running_tasks > 0 )); then
+  if [[ $force_interrupt_running_tasks != true ]]; then
+    echo "refusing to restart $service_target: $running_tasks Task(s) are executing" >&2
+    echo "wait for them to finish, or rerun with --force-interrupt-running-tasks to intentionally stop them" >&2
+    exit 1
+  fi
+  echo "forcing restart: intentionally interrupting $running_tasks executing Task(s)" >&2
+fi
 
 echo "building $next_bin"
 "$script_dir/check-build-toolchain.sh"
@@ -67,30 +96,7 @@ go build -o "$next_bin" ./cmd/jarvis-server
 "$script_dir/sign-jarvis-server.sh" "$next_bin"
 "$script_dir/verify-server-signature.sh" "$next_bin"
 
-if launchctl print "$service_target" >/dev/null 2>&1; then
-  running_tasks=$(running_task_count)
-  if (( running_tasks > 0 )); then
-    if [[ $force_interrupt_running_tasks != true ]]; then
-      echo "refusing to restart $service_target: $running_tasks Task(s) are executing" >&2
-      echo "wait for them to finish, or rerun with --force-interrupt-running-tasks to intentionally stop them" >&2
-      exit 1
-    fi
-    echo "forcing restart: intentionally interrupting $running_tasks executing Task(s)" >&2
-  fi
-  mv "$next_bin" "$bin"
-  echo "restarting $service_target"
-  launchctl kickstart -k "$service_target"
-else
-  mv "$next_bin" "$bin"
-  echo "launchd service not loaded; run ./scripts/install-launchd.sh if needed"
-fi
-
-for attempt in {1..10}; do
-  if curl --fail --silent --show-error --max-time 2 -o /dev/null http://127.0.0.1:18800/healthz; then
-    echo "backend health HTTP 200"
-    exit 0
-  fi
-  sleep 1
-done
-echo "backend did not become reachable within 10 seconds; check var/log/jarvis-server.error.log" >&2
-exit 1
+mv "$next_bin" "$bin"
+echo "restarting $service_target"
+launchctl kickstart -k "$service_target"
+wait_for_health

@@ -75,8 +75,8 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 - CC daemon 未注册：`./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"`。
 - CC daemon 已属于当前 binary：安全 restart；属于其他 binary/checkout：先取得用户是否替换的决定。
-- Jarvis 主服务未注册：`./scripts/jarvis-install install-server`。
-- Jarvis 已属于当前 checkout：使用 `./scripts/rebuild-server.sh`。
+- fresh clone 的 Jarvis 主服务未注册：`./scripts/jarvis-install install-server`，保留完整依赖与绑定门禁。
+- 用户已确认复用当前 checkout 和既有数据时，无论 Jarvis 服务仍在运行还是 launchd label 已丢失，都使用 `./scripts/rebuild-server.sh`；label 缺失时脚本直接复用签名安装动作恢复注册，不重新进入完整安装或升级 CC Connect。
 - 主服务属于其他 checkout：停止并询问，不自动 bootout。
 
 先启动 CC Connect，再启动 Jarvis。禁止裸 `go build` 覆盖服务 binary。

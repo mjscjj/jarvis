@@ -13,7 +13,7 @@
 | Jarvis Bot WebSocket | CC Connect | 只启动补丁版 CC Connect；Jarvis 不再连接同一个 App |
 | Qdrant 下载版本、校验和、launchd 安装 | `scripts/install-qdrant.sh` | 通过 `jarvis-install install-qdrant` 调用 |
 | 主服务构建、签名、launchd 注册 | `scripts/install-launchd.sh` | 配置完成后通过 `install-server` 调用 |
-| 已注册主服务的安全重建 | `scripts/rebuild-server.sh` | 确认属于当前 checkout 后调用 |
+| 既有 checkout 的主服务安全重建或 launchd 恢复 | `scripts/rebuild-server.sh` | 确认复用决定和 checkout 归属后调用；label 缺失时复用签名安装动作，不重新执行完整安装 |
 | 飞书默认身份登录和本机 identity | `$install-jarvis` | 在服务启动前配置并读回 |
 | 飞书初始化能力与权限缺口 | `$install-jarvis` + `feishu-capability-audit.md` | 对 lark-cli 当前默认身份做只读探针并分为核心、可选增强、条件能力和不使用；不发起权限申请 |
 | 近 7 天业务证据与世界模型工作稿 | `$bootstrap-jarvis-world-model` | 服务就绪后转交同一个 install run；世界模型 Skill 只更新清单 E 区 |
@@ -34,6 +34,7 @@
 - Qdrant 不健康时不得注册主服务。
 - 飞书默认 App 绑定和首次启动主服务前必须先运行 `validate-dependencies`；它只验收依赖，不启动 Jarvis。
 - `install-server` 必须在调用 `install-launchd.sh` 前再次通过依赖门，不能依赖 Agent 口头声明或之前的旧结果。
+- `rebuild-server.sh` 只服务已经确认复用的 checkout；label 缺失时直接恢复当前主服务，不把 CC Connect 构建、飞书能力审计或世界模型初始化变成恢复前置条件。
 - 同一 launchd label 已被其他 checkout 占用时不得自动替换。
 - 即使 program 属于当前 checkout，只要 CC Connect/Jarvis 已在运行，也属于已有实例事实；fresh-install Agent 先报告现状并让用户确认复用或重建，不能把“路径一致”当成重启授权。
 - 系统验收以真实 `/healthz`、`/readyz` 和 Qdrant health 为准，不以进程存在或构建成功代替。

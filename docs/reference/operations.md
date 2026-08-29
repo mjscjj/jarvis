@@ -75,10 +75,10 @@ launchctl bootstrap "gui/$uid" "$plist"
 
 该脚本会：
 
-1. 构建临时二进制；
-2. 用固定 identity 签名并校验；
-3. 若主服务已注册，查询 `/api/tasks?status=executing`；
-4. 没有活跃 Task 才替换二进制并 `kickstart`；
+1. 主服务已注册时，先查询 `/api/tasks?status=executing`，有活跃 Task 就停止；
+2. 构建临时二进制，用固定 identity 签名并校验；
+3. 替换二进制并 `kickstart`；
+4. 既有 checkout 的 launchd label 丢失时，复用 `install-launchd.sh` 重建生产前端和后端并恢复注册，不重新执行完整安装；
 5. 等待 `/healthz` 返回 200。
 
 服务已注册但 18800 API 不可达时，脚本会拒绝重启。`--force-interrupt-running-tasks` 只允许明确中断已查到的执行任务，不能绕过 API 查询失败。
@@ -140,8 +140,7 @@ Jarvis 端校验 Principal open_id，并用卡片携带的 Task version 原子�
 1. 先用进程、日志和 `launchctl` 确认没有仍在执行的 Agent 子进程；
 2. 查看 `var/log/jarvis-server.error.log`，确认配置/迁移/签名失败原因；
 3. 必要时 `launchctl bootout` 旧服务；
-4. 运行 `./scripts/rebuild-server.sh` 构建和签名；服务未注册时脚本只替换二进制；
-5. 从 `~/Library/LaunchAgents/com.bytedance.jarvis.server.plist` 重新 bootstrap；
-6. 验证 `/healthz`、任务 API 和首页。
+4. 运行 `./scripts/rebuild-server.sh`；服务未注册时脚本会重建生产前端和后端、签名并恢复 launchd 注册；
+5. 验证 `/healthz`、任务 API 和首页。
 
 不要在不知道是否有活跃执行时强制重启；它会终止 Agent 子进程。

@@ -176,6 +176,62 @@ func TestJarvisInstallGatesServerStartOnDependencyValidation(t *testing.T) {
 	}
 }
 
+func TestRebuildServerRecoversMissingLaunchdWithoutFullInstall(t *testing.T) {
+	scriptPath, err := filepath.Abs(filepath.Join("..", "..", "scripts", "rebuild-server.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(content)
+	recoverService := strings.Index(script, `"$script_dir/install-launchd.sh"`)
+	taskGate := strings.Index(script, `running_tasks=$(running_task_count)`)
+	buildServer := strings.Index(script, `go build -o "$next_bin"`)
+	if recoverService < 0 {
+		t.Fatal("rebuild-server must recover a missing launchd service through the signed install script")
+	}
+	if taskGate < 0 || buildServer < 0 || taskGate >= buildServer {
+		t.Fatal("rebuild-server must check executing Tasks before spending time on a loaded-service build")
+	}
+	for _, forbidden := range []string{"jarvis-install install-server", "install-cc-connect"} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("rebuild-server recovery unexpectedly enters the full installation flow: %q", forbidden)
+		}
+	}
+
+	testRepo := t.TempDir()
+	testScripts := filepath.Join(testRepo, "scripts")
+	if err := os.MkdirAll(testScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	testScript := filepath.Join(testScripts, "rebuild-server.sh")
+	if err := os.WriteFile(testScript, content, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(testRepo, "install-launchd.called")
+	writeExecutable(t, filepath.Join(testScripts, "install-launchd.sh"), `#!/bin/sh
+touch "$RECOVERY_MARKER"
+`)
+	binDir := t.TempDir()
+	writeExecutable(t, filepath.Join(binDir, "launchctl"), "#!/bin/sh\nexit 1\n")
+	writeExecutable(t, filepath.Join(binDir, "curl"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(binDir, "go"), "#!/bin/sh\nexit 97\n")
+	cmd := exec.Command("zsh", testScript)
+	cmd.Env = append(os.Environ(), "PATH="+binDir+":"+os.Getenv("PATH"), "RECOVERY_MARKER="+marker)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("missing-service recovery failed: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("missing-service recovery did not call install-launchd.sh: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "backend health HTTP 200") {
+		t.Fatalf("missing-service recovery did not verify health:\n%s", out)
+	}
+}
+
 func TestJarvisInstallConfiguresIdentityThroughMachineBoundary(t *testing.T) {
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh

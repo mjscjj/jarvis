@@ -181,7 +181,8 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 # 再完成监听群新消息和绑定 Bot 对话的真实端到端验收，最后读回总状态
 ./scripts/jarvis-install status --run-dir <run_dir>
 
-# 日常后端修改后重建、稳定签名并重启
+# 日常后端修改后重建、稳定签名并重启；既有 checkout 的 launchd label
+# 丢失时，同一命令会重建生产前端和后端并恢复服务注册
 ./scripts/rebuild-server.sh
 
 curl http://127.0.0.1:18800/healthz
@@ -194,7 +195,7 @@ curl -s http://127.0.0.1:18800/readyz | jq
 
 不要裸 `go build` 覆盖 `bin/jarvis-server` 后直接重启，否则会破坏 macOS TCC 的稳定签名。
 
-`rebuild-server.sh` 会先查询正在执行的 Task；服务已注册但 API 不可达时会 fail-fast，`--force-interrupt-running-tasks` 也不会绕过这项检查。先确认没有活跃执行，再做故障恢复。
+`rebuild-server.sh` 在服务已注册时先查询正在执行的 Task，再开始构建；API 不可达时会 fail-fast，`--force-interrupt-running-tasks` 也不会绕过这项检查。对于已经确认复用的 checkout，若 launchd label 丢失，它会直接复用签名安装脚本恢复生产前端、后端和服务注册，不重新执行完整安装，也不升级 CC Connect。fresh clone 仍必须走上面的 `install-server` 流程。
 
 ### 服务与端口
 
