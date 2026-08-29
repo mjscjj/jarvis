@@ -67,7 +67,7 @@ func startOKRProductServer(t *testing.T, h *server.Hertz, addr string) string {
 	base := "http://" + addr
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		response, err := http.Get(base + "/api/okr-evidence/unassociated?limit=1")
+		response, err := http.Get(base + "/healthz")
 		if err == nil {
 			_ = response.Body.Close()
 			if response.StatusCode == http.StatusOK {
@@ -137,10 +137,11 @@ func TestOKRProductPathThroughRealHTTPAndJarvisTools(t *testing.T) {
 	h.GET("/api/okrs/:okr_id/weekly-view", GetOKRWeeklyView(okrService))
 	h.POST("/api/projects", CreateProject(projectService))
 	h.POST("/api/key-matters", CreateKeyMatter(matterService))
+	h.GET("/healthz", Health(db))
 	h.GET("/api/pages/:type/:id", GetPage(pageService))
-	h.GET("/api/okr-evidence/unassociated", ListUnassociatedOKREvidence(pageService))
-	h.POST("/api/okr-evidence/apply", ApplyOKREvidence(pageService))
+	h.PUT("/api/pages/:type/:id", UpdatePage(pageService))
 	h.GET("/api/facts", ListFacts(progressService))
+	h.POST("/api/facts", AppendFact(progressService))
 	h.POST("/api/clues", AppendClue(captureService))
 	apiBase := startOKRProductServer(t, h, addr)
 
@@ -165,31 +166,26 @@ func TestOKRProductPathThroughRealHTTPAndJarvisTools(t *testing.T) {
 	if evidenceMessageID == "" {
 		t.Fatalf("clue lacks message_id: %#v", clue)
 	}
-	queue := runOKRProductCLI(t, apiBase, "list-unassociated-okr-evidence", "--source", "meego", "--date", now.Format("2006-01-02"), "--anchor", "灰度验证", "--limit", "20")
-	if count, _ := queue["count"].(float64); count != 1 {
-		t.Fatalf("unassociated evidence queue = %#v, want one item", queue)
-	}
-
 	page := runOKRProductCLI(t, apiBase, "get-page", "--type", "key_matter", "--id", fmt.Sprint(matterID))
 	updatedAt, _ := page["updated_at"].(string)
 	if updatedAt == "" {
 		t.Fatalf("key-matter page lacks updated_at: %#v", page)
 	}
-	payload, err := json.Marshal(map[string]any{
-		"subject_type": "key_matter", "subject_id": matterID, "evidence_message_id": evidenceMessageID,
-		"description": "Meego 灰度工作项进入验证阶段。", "occurred_at": occurredAt,
-		"content": "当前结论：灰度工作项已进入验证阶段。", "if_unchanged_since": updatedAt,
-	})
-	if err != nil {
-		t.Fatal(err)
+	var clueMessage domain.Message
+	if err := db.Where("message_id = ?", evidenceMessageID).Take(&clueMessage).Error; err != nil {
+		t.Fatalf("load clue message: %v", err)
 	}
-	applied := runOKRProductCLI(t, apiBase, "apply-okr-evidence", "--payload", string(payload))
-	if applied["fact"] == nil || applied["page"] == nil {
-		t.Fatalf("applied evidence = %#v, want Fact and Page", applied)
+	appliedFact := runOKRProductCLI(t, apiBase, "append-fact",
+		"--subject-type", "key_matter", "--subject-id", fmt.Sprint(matterID),
+		"--description", "Meego 灰度工作项进入验证阶段。", "--occurred-at", occurredAt,
+		"--source", "meego", "--source-id", fmt.Sprint(clueMessage.ID))
+	if appliedFact["id"] == nil || appliedFact["source_kind"] != "meego" {
+		t.Fatalf("generic evidence Fact = %#v", appliedFact)
 	}
-	queue = runOKRProductCLI(t, apiBase, "list-unassociated-okr-evidence", "--source", "meego", "--date", now.Format("2006-01-02"), "--anchor", "灰度验证", "--limit", "20")
-	if count, _ := queue["count"].(float64); count != 0 {
-		t.Fatalf("associated evidence remained queued: %#v", queue)
+	updatedPage := runOKRProductCLI(t, apiBase, "update-page", "--type", "key_matter", "--id", fmt.Sprint(matterID),
+		"--content", "当前结论：灰度工作项已进入验证阶段。", "--if-unchanged-since", updatedAt)
+	if summary, _ := updatedPage["summary"].(string); summary == "" {
+		t.Fatalf("updated key-matter Page = %#v", updatedPage)
 	}
 	page = runOKRProductCLI(t, apiBase, "get-page", "--type", "key_matter", "--id", fmt.Sprint(matterID))
 	if summary, _ := page["summary"].(string); summary == "" {

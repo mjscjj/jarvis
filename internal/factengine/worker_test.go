@@ -242,7 +242,7 @@ func TestFactEngineSystemPromptOwnsWorldWriteAndExternalQueryPolicy(t *testing.T
 	for _, want := range []string{
 		"写入前读取现值", "写入后立即读回", "不得改用逐条写入",
 		"不创建、启动、更新或关闭 Todo、Task", "原则上不查询外部系统补证据",
-		"OKR 是结果层", "不要把每条项目流水复制到 OKR", "Task 始终是一次独立执行单元",
+		"可选业务模块的语义只能从当前已启用的 Skill 获取", "不要在全局阶段提示词里臆造模块层级",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("FactEngine system prompt missing owned policy %q", want)

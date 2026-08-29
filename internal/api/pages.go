@@ -66,61 +66,6 @@ func UpdatePage(svc *background.PageService) app.HandlerFunc {
 	}
 }
 
-func ApplyOKREvidence(svc *background.PageService) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		var in background.OKREvidenceInput
-		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40025, err)
-			return
-		}
-		result, err := svc.ApplyOKREvidence(ctx, in)
-		if err != nil {
-			var conflict *background.OKREvidenceConflictError
-			if errors.As(err, &conflict) {
-				c.JSON(consts.StatusConflict, map[string]any{
-					"code": 40925, "msg": err.Error(), "data": conflict.Result,
-				})
-				return
-			}
-			writeBackgroundError(c, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
-	}
-}
-
-func ListUnassociatedOKREvidence(svc *background.PageService) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		limit, err := positiveQueryInt(c.Query("limit"), 20, "limit")
-		if err != nil || limit > 100 {
-			if err == nil {
-				err = fmt.Errorf("limit must not exceed 100")
-			}
-			writeAPIError(c, consts.StatusBadRequest, 40026, err)
-			return
-		}
-		from, err := optionalRFC3339(c.Query("from"), "from")
-		if err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40026, err)
-			return
-		}
-		until, err := optionalRFC3339(c.Query("until"), "until")
-		if err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40026, err)
-			return
-		}
-		result, err := svc.ListUnassociatedOKREvidence(ctx, background.UnassociatedOKREvidenceFilter{
-			Source: c.Query("source"), Anchor: c.Query("anchor"),
-			From: from, Until: until, Limit: limit,
-		})
-		if err != nil {
-			writeBackgroundError(c, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
-	}
-}
-
 func ListPageBacklinks(svc *background.PageService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		pageType, id, err := pageIdentity(c)

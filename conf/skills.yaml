@@ -23,7 +23,19 @@ skills:
       enabled: false # 独立仓库 Skill；只供用户的 Agent 首次安装，不注入 M3/M5
       stages:
         - execute
-    - name: okr-progress-sync
+    - name: weekly-report-progress-sync
+      enabled: true
+      stages:
+        - execute
+    - name: weekly-report-reminder
+      enabled: true
+      stages:
+        - execute
+    - name: weekly-report-materials
+      enabled: true
+      stages:
+        - execute
+    - name: okr-world-projector
       enabled: true
       stages:
         - execute

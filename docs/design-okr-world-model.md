@@ -1,43 +1,47 @@
-# OKR 世界模型模块
+# OKR 模块与世界模型
 
-> Status: MVP implementation
-> Scope: MVP
+> Status: current
+> Authority: normative
+> Last verified: 2026-08-28 @ uncommitted worktree
 
-人工复核入口与未提交改动清单见 [OKR MVP 验收与交接](okr-mvp-handoff.md)。
+## 1. 两份状态，各自负责一件事
 
-## 1. 语义边界
+OKR 模块保存稳定定义：季度、Objective、KR、核心指标、负责人、优先级和标签。周报模块保存按周变化的进展、评论、Meego 观察、催填批次和材料草稿，并显式依赖 OKR。
 
-OKR 是世界模型中最大的结果对象，固定层级为 `OKR → Project → KeyMatter`：
+Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter、当前 Page、历史 Fact 和它们之间的关系。Task 只是一轮执行单元，不属于任何 OKR 层级。
 
-- `OKR` 表达一个周期内希望达成的结果，关联一个负责人；
-- `Project` 是交付容器，通过可空 `okr_id` 归属于一个 OKR；
-- `KeyMatter` 是项目中持续跟进的重要事项，继续通过 `project_id` 归属；
-- `Task` 仍然只表示一次执行单元，不增加 `okr_id`、`project_id` 之外的新耦合，也不因 OKR 更新而自动物化。
+两者不共享业务表、不互存外键，也不在保存页面时同步写入。需要连接时使用通用 `entity_relation`：模块实体 ID 和世界实体 ID 都以字符串保存，关系类型由 Skill 解释。
 
-OKR、Project 和 KeyMatter 的当前认知写在各自的 summary page；发生过的变化追加为 Fact。状态正文由人和 Agent 自由维护，程序只把 `closed_at` 当作闭环硬边界。
+## 2. 投影由 Agent 完成
 
-## 2. MVP 数据骨架
+`okr-world-projector` Skill 负责把模块层级映射到世界实体：
 
-`okr` 只保存程序需要查询的字段：标题、周期、自由状态、负责人、闭环时间、当前 summary 与最后进展时间。负责人引用既有 Person；相关群、资料和其他人使用 summary 中的实体引用，不另建关系表。
+1. 用 `scripts/okr-module-tools board` 读取模块真源；
+2. 用 `jarvis-tools` 查找或创建 Person、Project、KeyMatter；
+3. 用 `create-relation` 保存已确认映射及证据；
+4. 用 `list-relations` 回读验证。
 
-`GET /api/okrs/:id` 返回完整 `OKR → Project → KeyMatter` 树，供后续页面直接渲染。控制字段由 `/api/okrs` CRUD 维护；进度正文复用 `/api/pages/okr/:id` 的 CAS 写入和 `/api/facts?subject_type=okr` 的历史流。
+没有证据时不建立关系；标题相似不能单独作为自动关联依据。投影只读取稳定的 OKR 定义，不读取周报内容。投影失败不会阻塞周报填写，世界模型失败也不能回滚模块表写入。
 
-## 3. 进度来源
+## 3. 周进展闭环
 
-不为消息、Meego 或定时器新建 Go 专用流水线：
+`weekly-report-progress-sync` Skill 执行一次只读巡检：
 
-1. 消息仍由 M2 进入统一 `message → factengine` 世界维护链路；Agent 识别到确定的 OKR 变化后更新 page、追加 Fact。
-2. Meego 由外围 Skill 调用 `bytedcli` 读取原始状态，完整证据通过 `POST /api/clues` 投递；M3/M5/factengine 按现有职责判断和沉淀。
-3. 周期轮询和周报催办由既有 ScheduledTask 触发，每次只创建独立 Task；Task 使用工具读取 OKR、Person、Meego，完成一次动作后把结果写回世界模型。
+1. 读取 `/api/weekly-report/board` 与已确认关系；
+2. 通过 `bytedcli` 或本地已采集消息读取证据；
+3. 原始证据用 `append-clue` 幂等进入统一证据流；
+4. 客观变化用 `append-fact` 写入最小世界实体；
+5. 当前结论用 `get-page` + `update-page` CAS 更新。
 
-这样新增来源只增加 Skill、定时任务和 `source`，不会把 OKR 变成第二条执行流水线。
+不存在 OKR 专用 evidence API，也不为某个来源增加 Go 流水线。新增来源通常只需要工具和 Skill；只有必须机器强制的可靠性约束才进入代码。
 
-## 4. 已完成与后续切片
+## 4. 兼容面
 
-- 已给 `jarvis-tools` 增加 OKR CRUD 与完整层级读取；page/fact 通用命令支持 `type=okr`；
-- 已增加简洁的 OKR 页面，按负责人展示进度并可展开 Project 与 KeyMatter；
-- 已在 factengine 与 proactive 的正确提示词所有者补充 OKR 识别、向上汇总、失速看护以及 Task 独立边界；
-- 已用临时 SQLite、真实本地 HTTP listener 和 `jarvis-tools` 全链路验证 `OKR → Project → KeyMatter`、未关联 Meego 证据发现、最小实体写回、Fact/Page/周视图回读、关联后退出队列与零 Task 副作用；外部 runner 在测试中 fail-closed，未发送真实飞书消息。接入真实方向数据留给部署后的受控配置。
-- 已增加 execute 阶段的 `okr-progress-sync` Skill：按未闭环 OKR 收窄查询范围，只读 Meego 与已采集消息，把原始版本化证据投递到 clue，再按最小实体写入 Fact/Page；Page 更新使用 CAS，外部系统保持只读。
-- 已增加未关联证据只读入口：按 clue 来源或普通消息、采集时间和稳定文字锚点检索尚未成为 OKR/Project/KeyMatter Fact 来源的 Message；Agent 明确选择最小实体后再调用统一写回，系统不根据相似度自动猜关联。
-- 周期巡检复用 ScheduledTask，每次触发一个独立 Task；Skill 提供 interval 配置模板和重复任务检查，不在 OKR/Project/KeyMatter 上增加 scheduler 或 Task 耦合字段。真实方向、查询锚点和巡检频率仍由部署后的受控配置提供。
+早期 Jarvis 世界模型仍有 `domain.OKR`、`Project.OKRID` 和 `/api/okrs`。它们是存量兼容面，不是新模块的存储或同步目标：
+
+- OKR 模块不调用这些接口；
+- 模块表不保存这些 ID；
+- 模块 Skills 使用通用关系、Fact 和 Page；
+- 核心 prompt 不再描述 OKR 专用策略。
+
+后续删除兼容面需要单独的数据迁移和前端清理；在此之前禁止新增依赖。

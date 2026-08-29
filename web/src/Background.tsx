@@ -27,12 +27,9 @@ import type { TableColumnsType } from 'antd'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
 import {
-  appendFact,
   appendProjectFact,
-  closeOKR,
   closeKeyMatter,
   createKeyMatter,
-  createOKR,
   createPerson,
   createProject,
   createResource,
@@ -40,7 +37,6 @@ import {
   deleteProject,
   deleteResource,
   getProfile,
-  getOKRWeeklyView,
   getSkillContent,
   listGroups,
   listKeyMatters,
@@ -55,7 +51,6 @@ import {
   touchResource,
   updateGroupBackground,
   updateKeyMatter,
-  updateOKR,
   updatePerson,
   updateProfile,
   updateProject,
@@ -65,6 +60,7 @@ import {
 import { keyMatterToInput, replaceKeyMatter } from './keyMatters'
 import { personToUpdateInput } from './persons'
 import SharedMemory from './SharedMemory'
+import AppModules from './AppModules'
 import RuntimeSettings from './RuntimeSettings'
 import SystemTasks from './SystemTasks'
 import PageHeader from './components/PageHeader'
@@ -81,9 +77,6 @@ import type {
   KeyMatter,
   KeyMatterInput,
   OKR,
-  OKRInput,
-  OKRWeeklySignal,
-  OKRWeeklyView,
   Person,
   PersonUpdateInput,
   PersonRole,
@@ -120,247 +113,6 @@ const workRuleStageLabels: Record<WorkRuleStage, string> = {
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
-}
-
-// --- OKRs ---
-
-function currentQuarter(): string {
-  const now = dayjs()
-  return `${now.year()} Q${Math.floor(now.month() / 3) + 1}`
-}
-
-function mondayStart(value: Dayjs): Dayjs {
-  return value.startOf('day').subtract((value.day() + 6) % 7, 'day')
-}
-
-const weeklySignalPresentation: Record<OKRWeeklySignal, { label: string; color: string }> = {
-  steady: { label: '有进展', color: 'green' },
-  risk: { label: '风险', color: 'red' },
-  stalled: { label: '失速', color: 'orange' },
-  complete: { label: '已完成', color: 'default' },
-}
-
-function OKRWeeklyPanel({ okrID, refreshToken }: { okrID: number; refreshToken: number }) {
-  const [week, setWeek] = useState<Dayjs>(() => mondayStart(dayjs()))
-  const [view, setView] = useState<OKRWeeklyView>()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string>()
-
-  useEffect(() => {
-    const controller = new AbortController()
-    const from = mondayStart(week)
-    setLoading(true)
-    getOKRWeeklyView(okrID, from.toISOString(), from.add(7, 'day').toISOString(), controller.signal)
-      .then((result) => { setView(result); setError(undefined) })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setError(errorText(cause))
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    return () => controller.abort()
-  }, [okrID, refreshToken, week])
-
-  return <Card
-    className="okr-weekly-card"
-    loading={loading}
-    title={<div><Text strong>周变化与风险</Text><Text type="secondary" className="okr-weekly-subtitle">Page 是当前结论，Fact 是本周变化</Text></div>}
-    extra={<DatePicker picker="week" allowClear={false} value={week} onChange={(value) => value && setWeek(mondayStart(value))} />}
-  >
-    {error && <Alert type="error" showIcon title="周视图加载失败" description={error} />}
-    {!error && view && <>
-      <Flex gap={8} wrap className="okr-weekly-stats">
-        <Tag>{view.change_count} 条变化</Tag>
-        <Tag color={view.risk_count > 0 ? 'red' : 'default'}>{view.risk_count} 个风险</Tag>
-        <Tag color={view.stalled_count > 0 ? 'orange' : 'default'}>{view.stalled_count} 个失速</Tag>
-        <Text type="secondary">{dayjs(view.from).format('MM.DD')} — {dayjs(view.until).subtract(1, 'day').format('MM.DD')}</Text>
-      </Flex>
-      <div className="okr-weekly-list">
-        {view.items.map((item) => {
-          const signal = weeklySignalPresentation[item.signal]
-          return <div key={`${item.subject_type}-${item.subject_id}`} className={`okr-weekly-item okr-weekly-item-${item.subject_type}`}>
-            <div className="okr-weekly-item-head">
-              <div>
-                <Text type="secondary" className="okr-weekly-kind">{item.subject_type === 'okr' ? 'O' : item.subject_type === 'project' ? '项目' : '事项'}</Text>
-                <Text strong>{item.title}</Text>
-              </div>
-              <Space size={4}><Tag>{item.status || '未填写状态'}</Tag><Tag color={signal.color}>{signal.label}</Tag></Space>
-            </div>
-            <Text type="secondary" className="okr-weekly-reason">{item.signal_reason}</Text>
-            <div className="okr-weekly-current"><Text type="secondary">当前结论</Text><Text>{summaryIndexLine(item.summary) || '尚未形成 Page 结论'}</Text></div>
-            {item.facts.length > 0
-              ? <div className="okr-weekly-facts">{item.facts.slice(0, 3).map((fact) => <div key={fact.id}><Text type="secondary">{dayjs(fact.occurred_at).format('MM.DD')}</Text><Text>{fact.description}</Text></div>)}</div>
-              : <Text type="secondary" className="okr-weekly-no-fact">本周没有 Fact</Text>}
-          </div>
-        })}
-      </div>
-    </>}
-  </Card>
-}
-
-function OKRsPanel() {
-  const [items, setItems] = useState<OKR[]>([])
-  const [persons, setPersons] = useState<Person[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string>()
-  const [editing, setEditing] = useState<OKR | null>(null)
-  const [selected, setSelected] = useState<OKR>()
-  const [open, setOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [eventOpen, setEventOpen] = useState(false)
-  const [eventDescription, setEventDescription] = useState('')
-  const [eventSubmitting, setEventSubmitting] = useState(false)
-  const [eventRefresh, setEventRefresh] = useState(0)
-  const [form] = Form.useForm<OKRInput>()
-
-  const reload = useCallback(() => {
-    setLoading(true)
-    Promise.all([listOKRs(), listPersons()])
-      .then(([result, personResult]) => {
-        setItems(result.items)
-        setPersons(personResult.items)
-        setError(undefined)
-      })
-      .catch((cause: unknown) => setError(errorText(cause)))
-      .finally(() => setLoading(false))
-  }, [])
-  useEffect(reload, [reload])
-
-  const openCreate = () => {
-    setEditing(null)
-    form.setFieldsValue({ title: '', cycle: currentQuarter(), status: '进行中', owner_person_id: null })
-    setOpen(true)
-  }
-  const openEdit = (okr: OKR) => {
-    setEditing(okr)
-    form.setFieldsValue({
-      title: okr.title,
-      cycle: okr.cycle,
-      status: okr.status,
-      owner_person_id: okr.owner_person_id,
-    })
-    setOpen(true)
-  }
-  const submit = async () => {
-    const values = await form.validateFields()
-    setSubmitting(true)
-    try {
-      const input = { ...values, owner_person_id: values.owner_person_id ?? null }
-      const saved = editing ? await updateOKR(editing.id, input) : await createOKR(input)
-      setSelected((current) => current?.id === saved.id ? saved : current)
-      setOpen(false)
-      reload()
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-  const close = async (okr: OKR) => {
-    try {
-      await closeOKR(okr.id)
-      setItems((current) => current.filter((item) => item.id !== okr.id))
-      if (selected?.id === okr.id) setSelected(undefined)
-      setError(undefined)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    }
-  }
-  const recordEvent = async () => {
-    if (!selected || !eventDescription.trim()) return
-    setEventSubmitting(true)
-    try {
-      await appendFact({ subject_type: 'okr', subject_id: selected.id, description: eventDescription.trim() })
-      setEventDescription('')
-      setEventOpen(false)
-      setEventRefresh((value) => value + 1)
-      setError(undefined)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setEventSubmitting(false)
-    }
-  }
-
-  return <>
-    <Flex justify="space-between" align="center" className="section-heading">
-      <Text type="secondary">{items.length} 个进行中的 OKR，项目和关键事项保持独立执行边界</Text>
-      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建 OKR</Button></Flex>
-    </Flex>
-    {error && <Alert type="error" showIcon title="OKR 操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <div className="okr-world-grid">
-      {items.map((okr) => (
-        <Card
-          key={okr.id}
-          className="okr-world-card"
-          title={<div className="okr-world-title"><Text type="secondary">{okr.cycle}</Text><Text strong>{okr.title}</Text></div>}
-          extra={<Space size={4}>
-            <Button size="small" onClick={() => setSelected(okr)}>详情</Button>
-            <Button size="small" onClick={() => openEdit(okr)}>编辑</Button>
-            <Popconfirm title="闭环该 OKR？项目和关键事项会保留。" onConfirm={() => close(okr)} okText="闭环" cancelText="取消">
-              <Button size="small" danger>闭环</Button>
-            </Popconfirm>
-          </Space>}
-        >
-          <Flex gap={8} align="center" wrap className="okr-world-meta">
-            <Tag color="green">{okr.status || '未填写状态'}</Tag>
-            <Text type="secondary">负责人：{okr.owner?.name || '未指定'}</Text>
-            <Text type="secondary">{okr.projects.length} 个项目</Text>
-          </Flex>
-          <Text className="okr-world-summary" type={summaryIndexLine(okr.summary) ? undefined : 'secondary'}>
-            {summaryIndexLine(okr.summary) || '还没有长期进展摘要'}
-          </Text>
-          {okr.projects.length > 0 ? (
-            <Collapse
-              ghost
-              size="small"
-              className="okr-project-tree"
-              items={okr.projects.map((project) => ({
-                key: project.id,
-                label: <Flex justify="space-between" gap={12}><Text>{project.name}</Text><Tag>{projectStatusLabels[project.status]}</Tag></Flex>,
-                children: project.key_matters && project.key_matters.length > 0
-                  ? <div className="okr-matter-list">{project.key_matters.map((matter) => <div key={matter.id}><span className="okr-tree-dot" /><Text>{matter.title}</Text><Text type="secondary">{matter.status || '未填写状态'}</Text></div>)}</div>
-                  : <Text type="secondary">暂无关键事项</Text>,
-              }))}
-            />
-          ) : <div className="okr-world-empty">暂无关联项目，可在“项目”页进行关联</div>}
-        </Card>
-      ))}
-      {!loading && items.length === 0 && <div className="okr-world-empty okr-world-empty-list">还没有 OKR，从一个季度目标开始。</div>}
-    </div>
-    <Modal title={editing ? '编辑 OKR' : '新建 OKR'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
-      <Form form={form} layout="vertical">
-        <Form.Item name="title" label="目标" rules={[{ required: true, message: '请输入目标' }]}><Input placeholder="一句话说明要达成什么" /></Form.Item>
-        <Flex gap={16}>
-          <Form.Item name="cycle" label="周期" rules={[{ required: true, message: '请输入周期' }]} style={{ flex: 1 }}><Input placeholder="例如 2026 Q3" /></Form.Item>
-          <Form.Item name="status" label="当前状态" style={{ flex: 1 }}><Input placeholder="例如 进行中 / 有风险" /></Form.Item>
-        </Flex>
-        <Form.Item name="owner_person_id" label="负责人（可选）">
-          <Select allowClear showSearch optionFilterProp="label" options={persons.map((person) => ({ value: person.id, label: person.name }))} />
-        </Form.Item>
-      </Form>
-    </Modal>
-    <Drawer title={selected?.title || 'OKR 详情'} open={Boolean(selected)} size={760} onClose={() => setSelected(undefined)}>
-      {selected && <Space orientation="vertical" size={20} style={{ width: '100%' }}>
-        <Descriptions column={2} size="small">
-          <Descriptions.Item label="周期">{selected.cycle}</Descriptions.Item>
-          <Descriptions.Item label="状态"><Tag color="green">{selected.status || '—'}</Tag></Descriptions.Item>
-          <Descriptions.Item label="负责人">{selected.owner?.name || '未指定'}</Descriptions.Item>
-          <Descriptions.Item label="项目数">{selected.projects.length}</Descriptions.Item>
-          <Descriptions.Item label="最近实质进展" span={2}>{selected.last_progress_at ? dayjs(selected.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
-        </Descriptions>
-        <OKRWeeklyPanel okrID={selected.id} refreshToken={eventRefresh} />
-        <SummaryPageEditor type="okr" id={selected.id} />
-        <FactTimeline
-          subject={{ type: 'okr', id: selected.id }}
-          title="OKR 进展事实"
-          refreshToken={eventRefresh}
-          extra={<Button size="small" type="primary" onClick={() => setEventOpen(true)}>记录进展</Button>}
-        />
-      </Space>}
-    </Drawer>
-    <Modal title="记录 OKR 进展" open={eventOpen} confirmLoading={eventSubmitting} onOk={recordEvent} onCancel={() => setEventOpen(false)} okText="记录">
-      <Input.TextArea rows={6} value={eventDescription} onChange={(event) => setEventDescription(event.target.value)} placeholder="记录结果、风险或需要跟进的变化。" />
-    </Modal>
-  </>
 }
 
 // --- Projects ---
@@ -1917,12 +1669,12 @@ function SkillsPanel() {
   </>
 }
 
-type MemoryView = 'okrs' | 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'facts' | 'profile'
+type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'facts' | 'profile'
 
 export default function Background() {
   const { context, setViewState } = usePageContext()
   const memoryView = (value: string | undefined): MemoryView => (
-    value === 'okrs' || value === 'projects' || value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'facts' || value === 'profile'
+    value === 'projects' || value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'facts' || value === 'profile'
       ? value
       : 'profile'
   )
@@ -1950,7 +1702,6 @@ export default function Background() {
               </div>
             ),
           },
-          { key: 'okrs', label: 'OKR', children: <OKRsPanel /> },
           { key: 'projects', label: '项目', children: <ProjectsPanel /> },
           { key: 'persons', label: '人物', children: <PersonsPanel /> },
           { key: 'groups', label: '会话', children: <GroupsPanel /> },
@@ -1981,7 +1732,11 @@ export function Settings() {
           { key: 'runtime', label: '运行', children: <RuntimeSettings /> },
           { key: 'scheduling', label: '调度', children: <SystemTasks /> },
           { key: 'memory', label: '共享记忆', children: <SharedMemory /> },
-          { key: 'extensions', label: '扩展', children: <SkillsPanel /> },
+          {
+            key: 'extensions',
+            label: '扩展',
+            children: <Space orientation="vertical" size={24} style={{ width: '100%' }}><AppModules /><SkillsPanel /></Space>,
+          },
         ]}
       />
     </div>

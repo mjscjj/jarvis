@@ -14,6 +14,7 @@ import (
 
 	"jarvis/internal/agentconfig"
 	"jarvis/internal/api"
+	"jarvis/internal/appmodule"
 	"jarvis/internal/ark"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
@@ -34,6 +35,9 @@ import (
 	"jarvis/internal/meetingsweep"
 	"jarvis/internal/morningbrief"
 	"jarvis/internal/observability"
+	"jarvis/internal/okrworkspace"
+	okrAuth "jarvis/internal/okrworkspace/auth"
+	"jarvis/internal/okrworkspace/moduleconfig"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/proactive"
 	"jarvis/internal/progress"
@@ -122,7 +126,23 @@ func main() {
 	if err != nil {
 		fatalf("initialize agent config service failed: %v", err)
 	}
-	skillService, err := skill.NewService(cfg.Skills.Root, filepath.Join(filepath.Dir(configPathAbsolute), "skills.yaml"))
+	appModuleService, err := appmodule.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "modules.yaml"))
+	if err != nil {
+		fatalf("initialize app module service failed: %v", err)
+	}
+	okrModuleEnabled, err := appModuleService.Enabled(startupCtx, "okr")
+	if err != nil {
+		fatalf("read OKR module enablement failed: %v", err)
+	}
+	weeklyReportModuleEnabled, err := appModuleService.Enabled(startupCtx, "weekly-report")
+	if err != nil {
+		fatalf("read weekly report module enablement failed: %v", err)
+	}
+	skillService, err := skill.NewService(
+		cfg.Skills.Root,
+		filepath.Join(filepath.Dir(configPathAbsolute), "skills.yaml"),
+		skill.WithModuleGate(appModuleService.Enabled),
+	)
 	if err != nil {
 		fatalf("initialize agent skill service failed: %v", err)
 	}
@@ -141,6 +161,24 @@ func main() {
 
 	if err := store.Migrate(db); err != nil {
 		fatalf("migrate sqlite failed: %v", err)
+	}
+	if okrModuleEnabled {
+		if err := okrworkspace.MigrateCore(db); err != nil {
+			fatalf("migrate OKR module failed: %v", err)
+		}
+	}
+	if weeklyReportModuleEnabled {
+		if err := okrworkspace.MigrateWeeklyReport(db); err != nil {
+			fatalf("migrate weekly report module failed: %v", err)
+		}
+	}
+	if migrated, err := scheduledtask.MigrateSkillBindings(startupCtx, db, []scheduledtask.SkillBindingMigration{
+		{FromSkill: "okr-progress-sync", ToSkill: "weekly-report-progress-sync", FromModule: "okr", ToModule: "weekly-report"},
+		{FromSkill: "okr-weekly-reminder", ToSkill: "weekly-report-reminder", FromModule: "okr", ToModule: "weekly-report"},
+	}); err != nil {
+		fatalf("migrate weekly report scheduled task bindings failed: %v", err)
+	} else if migrated > 0 {
+		infof("migrated weekly report scheduled task bindings: count=%d", migrated)
 	}
 	if *migrateOnly {
 		infof("sqlite schema migration completed")
@@ -374,9 +412,45 @@ func main() {
 	if err != nil {
 		fatalf("initialize scheduled task service failed: %v", err)
 	}
+	scheduledTaskService.SetModuleGate(appModuleService.Enabled)
 	okrService, err := background.NewOKRService(db)
 	if err != nil {
 		fatalf("initialize okr service failed: %v", err)
+	}
+	var okrWorkspaceService *okrworkspace.Service
+	var okrImageStore *okrworkspace.ImageStore
+	var okrIdentityService *okrAuth.Service
+	if okrModuleEnabled {
+		moduleConfig, err := moduleconfig.Load(filepath.Join(filepath.Dir(configPathAbsolute), "okr-module.yaml"))
+		if err != nil {
+			fatalf("load OKR module config failed: %v", err)
+		}
+		okrWorkspaceService, err = okrworkspace.NewService(db)
+		if err != nil {
+			fatalf("initialize OKR workspace service failed: %v", err)
+		}
+		okrImageStore, err = okrworkspace.NewImageStore(moduleConfig.UploadDir, moduleConfig.MaxImageBytes)
+		if err != nil {
+			fatalf("initialize OKR image store failed: %v", err)
+		}
+		var okrIdentityProvider okrAuth.Provider
+		if moduleConfig.Identity.Enabled {
+			okrIdentityProvider, err = okrAuth.NewFeishuProvider(
+				moduleConfig.Identity.AppID,
+				moduleConfig.Identity.AppSecret(),
+				moduleConfig.Identity.RedirectURL,
+				moduleConfig.Identity.FeishuBaseURL,
+				moduleConfig.Identity.FeishuAccountURL,
+				nil,
+			)
+			if err != nil {
+				fatalf("initialize OKR Feishu identity provider failed: %v", err)
+			}
+		}
+		okrIdentityService, err = okrAuth.NewService(db, moduleConfig.Identity, okrIdentityProvider)
+		if err != nil {
+			fatalf("initialize OKR identity service failed: %v", err)
+		}
 	}
 	projectService, err := background.NewProjectService(db)
 	if err != nil {
@@ -409,6 +483,10 @@ func main() {
 	pageService, err := background.NewPageService(db)
 	if err != nil {
 		fatalf("initialize page service failed: %v", err)
+	}
+	relationService, err := background.NewRelationService(db)
+	if err != nil {
+		fatalf("initialize entity relation service failed: %v", err)
 	}
 	overviewService, err := insight.NewOverviewService(db)
 	if err != nil {
@@ -891,6 +969,21 @@ func main() {
 	if semanticIndex != nil {
 		readinessTargets.VectorIndex = semanticIndex
 	}
+	var okrModuleDeps *api.OKRModuleDependencies
+	var weeklyReportModuleDeps *api.WeeklyReportModuleDependencies
+	if okrModuleEnabled {
+		okrModuleDeps = &api.OKRModuleDependencies{
+			DB: db, Workspace: okrWorkspaceService, Images: okrImageStore,
+			Identity: okrIdentityService, Documents: larkClient,
+			Enabled: func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "okr") },
+		}
+	}
+	if weeklyReportModuleEnabled {
+		weeklyReportModuleDeps = &api.WeeklyReportModuleDependencies{
+			Workspace: okrWorkspaceService, Identity: okrIdentityService, Documents: larkClient,
+			Enabled: func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "weekly-report") },
+		}
+	}
 	if err := api.Register(h, api.Dependencies{
 		DB: db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
@@ -898,16 +991,20 @@ func main() {
 		OKRs:            okrService, Projects: projectService, KeyMatters: keyMatterService,
 		Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
-		Pages:          pageService,
-		SharedMemory:   sharedMemoryService,
-		WorkRules:      workRuleService,
-		TextFiles:      textFileService,
-		AgentConfig:    agentConfigService,
-		ScheduledTasks: scheduledTaskService,
-		Skills:         skillService,
-		Progress:       progressService,
-		FactQueries:    progressService,
-		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
+		Pages:              pageService,
+		Relations:          relationService,
+		SharedMemory:       sharedMemoryService,
+		WorkRules:          workRuleService,
+		TextFiles:          textFileService,
+		AgentConfig:        agentConfigService,
+		AppModules:         appModuleService,
+		OKRModule:          okrModuleDeps,
+		WeeklyReportModule: weeklyReportModuleDeps,
+		ScheduledTasks:     scheduledTaskService,
+		Skills:             skillService,
+		Progress:           progressService,
+		FactQueries:        progressService,
+		Overview:           overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		MeetingReviews: meetingReviewService,
 		DailyDigests:   dailyDigestService,
 		MorningBriefs:  morningBriefReader,
@@ -929,6 +1026,9 @@ func main() {
 	}
 	if !webInfo.IsDir() {
 		fatalf("web build root is not a directory: %s", cfg.Server.WebRoot)
+	}
+	if okrModuleEnabled {
+		h.StaticFS("/okr-assets", &app.FS{Root: okrImageStore.Root(), PathRewrite: app.NewPathSlashesStripper(1), AcceptByteRange: true})
 	}
 	h.StaticFS("/", &app.FS{Root: cfg.Server.WebRoot, IndexNames: []string{"index.html"}})
 

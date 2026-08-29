@@ -1,7 +1,18 @@
 .review-page,
 .memory-page,
+.okr-module-page,
 .settings-page {
   width: 100%;
+}
+
+.app-module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.app-module-card {
+  border: 1px solid var(--color-border);
 }
 
 .review-page {
@@ -555,7 +566,8 @@
   font-weight: 500;
 }
 
-.memory-page .section-heading {
+.memory-page .section-heading,
+.okr-module-page .section-heading {
   margin-top: 0;
 }
 

@@ -1,9 +1,10 @@
 ---
-name: okr-progress-sync
-description: 只读巡检 OKR 相关的 Meego 工作项和已采集飞书消息，把可追溯证据写回 OKR、Project、KeyMatter 的 Page/Fact。用于 OKR 进度同步、Meego 轮询、周报取数和定时进展巡检；不发送消息，也不把 OKR 物化成 Task。
+name: weekly-report-progress-sync
+description: 只读巡检已启用周报模块相关的 Meego 工作项和已采集飞书消息，经通用关系与 Page/Fact 工具写回世界模型。用于周进度同步和定时巡检；不发送消息，也不把 OKR 物化成 Task。
+module: weekly-report
 ---
 
-# OKR 进度巡检
+# 周报进度巡检
 
 这项工作是一次独立执行单元：读取现状、收集证据、更新世界模型，然后结束。`Task` 只承载本次执行，不给 Task 增加 OKR/Project/KeyMatter 外键，也不为每个 OKR 自动创建常驻 Task。
 
@@ -17,17 +18,16 @@ description: 只读巡检 OKR 相关的 Meego 工作项和已采集飞书消息�
 
 ## 1. 建立本轮范围
 
-先读取未闭环 OKR，再对候选项读取完整树和当前事实，避免重复扫描无关对象：
+先读取页面可编辑的周报周期配置，再从模块工具读取本周产品真源，最后从通用关系读取已经确认的世界映射。周期配置只决定业务节奏，不能放宽本 Skill 的只读外部边界和证据要求：
 
 ```bash
-jarvis-tools list-okrs --limit 100
-jarvis-tools get-okr --id <okr_id>
-jarvis-tools get-okr-weekly-view --id <okr_id> --date <YYYY-MM-DD>
-jarvis-tools get-page --type okr --id <okr_id>
-jarvis-tools list-facts --subject-type okr --subject-id <okr_id> --limit 50
+scripts/weekly-report-tools text-config --key weekly_report_cycle
+scripts/okr-module-tools scope
+scripts/weekly-report-tools board --quarter <quarter> --week <week>
+jarvis-tools list-relations --source-type okr_kr --source-id <kr_id> --limit 100
 ```
 
-从 OKR、负责人、Project、KeyMatter 的标题、代号、summary 引用和已知链接中提取查询锚点。锚点不明确时跳过该来源并报告，不做全租户宽泛搜索。
+没有已确认关系时，读取 `okr-world-projector` Skill 建立或审阅映射；锚点不明确时跳过并报告，不做全租户宽泛搜索。
 
 ## 2. 读取 Meego 证据
 
@@ -38,6 +38,23 @@ bytedcli --json --all-help | rg -i 'meego|work.?item'
 ```
 
 只运行查询/list/get/search 类命令。每条候选证据至少保留：工作项稳定 ID、标题、当前状态、负责人、最近更新时间、来源链接（若返回）以及本轮查询时间。不要只凭标题相似就关联；至少还要有 Project 代号、明确的 OKR/项目引用、负责人一致或已有 summary 链接之一。
+
+每个页面已明确绑定的工作项，都把本轮只读结果写成模块观察快照。查询失败也要写 `fetch_error`，但不要编造 remote 字段：
+
+```bash
+scripts/weekly-report-tools record-meego-observation --payload - <<'JSON'
+{
+  "point_id": "<具体 KR 点 ID>",
+  "work_item_id": "<Meego 工作项 ID>",
+  "week": "<YYYY-Www>",
+  "observed_at": "<RFC3339>",
+  "remote": {"title":"<标题>","status":"<状态>","progress":"<进展>","updated_at":"<RFC3339 或空>"},
+  "fetch_error": ""
+}
+JSON
+```
+
+这个接口只保存工具已经读到的观察值并生成 UI 差异，不会自己调用 bytedcli。未在页面绑定的候选工作项不写模块快照。
 
 把每个确认相关的工作项作为幂等原始线索投递，`external-id` 使用“工作项稳定 ID + 最近更新时间”的短哈希或稳定短串；同一版本重复执行必须返回 `inserted=false`：
 
@@ -66,17 +83,7 @@ TXT
 jarvis-tools query-messages --sender-open-id <owner_open_id> --keyword '<项目代号或唯一关键词>' --date <YYYY-MM-DD> --limit 100
 ```
 
-进入关联步骤前，先从尚未写入任何 OKR/Project/KeyMatter Fact 的证据队列收窄候选。`source` 使用 `meego` 等 clue 来源，普通飞书消息使用 `message`；`anchor` 必须来自已读取的 OKR 标题、项目代号、事项名或稳定 ID：
-
-```bash
-jarvis-tools list-unassociated-okr-evidence \
-  --source meego \
-  --date <YYYY-MM-DD> \
-  --anchor '<项目代号、事项名或稳定 ID>' \
-  --limit 100
-```
-
-列表只证明“这条已采集消息尚未被关联”，不会推荐目标实体。Agent 必须回读 OKR 树与 Page，明确选择最小的 OKR、Project 或 KeyMatter 后再调用 `apply-okr-evidence`；标题相似、同负责人或同一群都不能单独作为自动关联依据。
+进入关联步骤前先读取目标关系和实体 Page。标题相似、同负责人或同一群都不能单独作为自动关联依据；新的映射必须使用 `create-relation` 保存来源证据。
 
 消息只有在明确提及结果、风险、决定、交付物或下一里程碑时才构成进展证据。闲聊、转述、自动机器人通知和仅有“收到/在看”的消息不更新 OKR。
 
@@ -84,24 +91,8 @@ jarvis-tools list-unassociated-okr-evidence \
 
 先判断证据属于哪个最小实体：KeyMatter 优先，其次 Project，最后才是 OKR。向上汇总时引用下级实体，不复制整段明细。
 
-1. 仅当“当前结论”发生变化时写回。先 `get-page`，再用统一证据边界把已采集消息关联为 Fact，并把返回的 `updated_at` 作为 Page CAS 条件：
-
-   ```bash
-   jarvis-tools apply-okr-evidence --payload - <<'JSON'
-   {
-     "subject_type": "<okr|project|key_matter>",
-     "subject_id": <id>,
-     "evidence_message_id": "<append-clue 或 query-messages 返回的 message_id>",
-     "description": "<这次发生的客观变化>",
-     "occurred_at": "<RFC3339>",
-     "content": "<合并后的完整当前结论>",
-     "if_unchanged_since": "<get-page.updated_at>"
-   }
-   JSON
-   ```
-
-   这个边界只接受已进入本地 Message 表的证据，并自动保存数值型来源行 ID。重复相同 payload 不会重复 Fact；Page CAS 冲突时 Fact 已安全记录，响应会带当前 Page，重新合并后用新的 `updated_at` 重试，绝不覆盖远端新内容。没有改变当前结论时，只用 `jarvis-tools append-fact` 记录新事实。
-2. OKR Page 第一行保持一句话结论，后续写当前状态、风险、下一检查点，并用 `[名称](project:<id>)` / `[名称](key_matter:<id>)` 引用下级实体。
+1. 仅当“当前结论”发生变化时写回。先 `jarvis-tools get-page`，用 `jarvis-tools append-fact` 保存客观证据，再以 `updated_at` 调用 `jarvis-tools update-page`。CAS 冲突时重新读取并合并，绝不覆盖新内容。
+2. 世界 Page 第一行保持一句话结论，后续写当前状态、风险、下一检查点，并引用已确认的下级实体。
 3. 不调用 `create-task`、`start-task` 或任何消息发送命令。
 
 ## 5. 定时巡检
@@ -113,8 +104,8 @@ jarvis-tools create-scheduled-task --payload - <<'JSON'
 {
   "title": "OKR 只读进展巡检",
   "action_type": "agent_task",
-  "instruction": "读取 okr-progress-sync Skill 并执行一次。只读 Meego 和已采集消息，更新 Page/Fact；不发送消息，不修改外部系统。",
-  "context_snapshot": {"skill": "okr-progress-sync", "mode": "read_only"},
+  "instruction": "读取 weekly-report-progress-sync Skill 并执行一次。",
+  "context_snapshot": {"skill": "weekly-report-progress-sync", "module": "weekly-report", "mode": "read_only"},
   "schedule_type": "interval",
   "interval_minutes": 360,
   "enabled": true
@@ -127,8 +118,8 @@ JSON
 ## 完成检查
 
 - 每个写入都能回读到对应实体和来源；重复执行不会重复投递同一版本证据。
-- 已用 `get-okr-weekly-view` 回读目标日期的完整层级与变更计数，且该读取没有创建 Task。
-- 已通过 `list-unassociated-okr-evidence` 按来源、日期和稳定锚点收窄候选；关联后的同一消息不再出现在列表。
+- 已用模块工具回读目标周的完整层级，且读取没有创建 Task。
+- 所有跨模块映射都能通过 `list-relations` 回读，且带来源证据。
 - Page CAS 冲突已经重新读取并合并；没有把历史明细覆盖掉。
 - 没有产生 OKR 专用 Task 关系，也没有发送消息或修改外部系统。
 - 明确列出证据覆盖时间窗、查询锚点、更新项、未确认关联和失败来源。

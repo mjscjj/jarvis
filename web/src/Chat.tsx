@@ -22,6 +22,7 @@ const PAGE_LABELS: Record<string, string> = {
   progress: '回顾',
   memory: '世界',
   background: '世界',
+  okr: 'OKR',
   automation: '自动化',
   'scheduled-tasks': '自动化',
   clues: '线索',

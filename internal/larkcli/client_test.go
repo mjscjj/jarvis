@@ -184,6 +184,34 @@ esac`)
 	}
 }
 
+func TestCreateMarkdownDocumentUsesUserIdentityAndStdin(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	bin := writeScript(t, `
+input=$(cat)
+if [ "$*" != "docs +create --title Weekly --doc-format markdown --content - --as user --format json" ]; then
+  printf '%s' "unexpected args: $*" >&2
+  exit 9
+fi
+if [ "$input" != "# Progress" ]; then
+  printf '%s' "unexpected stdin: $input" >&2
+  exit 8
+fi
+printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"},"warnings":["one warning"]}}'`)
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	document, err := client.CreateMarkdownDocument(context.Background(), " Weekly ", " # Progress ")
+	if err != nil {
+		t.Fatalf("CreateMarkdownDocument() error = %v", err)
+	}
+	if document.DocumentID != "docx_1" || document.URL != "https://example.test/docx_1" || len(document.Warnings) != 1 {
+		t.Fatalf("CreateMarkdownDocument() = %+v", document)
+	}
+}
+
 func writeScript(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "fake-lark-cli")

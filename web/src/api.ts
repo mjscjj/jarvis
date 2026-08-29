@@ -68,6 +68,8 @@ import type {
   ScheduledTaskInput,
   RuntimeSettings,
   RuntimeSettingsView,
+  AppModule,
+  AppModuleInput,
   ProactiveRun,
   ProactiveRunDetail,
   MonitoringSnapshot,
@@ -646,4 +648,12 @@ export function getRuntimeSettings(signal?: AbortSignal): Promise<RuntimeSetting
 
 export function updateRuntimeSettings(body: RuntimeSettings): Promise<RuntimeSettingsView> {
   return request<RuntimeSettingsView>('/api/runtime-settings', { method: 'PUT', body })
+}
+
+export function listAppModules(signal?: AbortSignal): Promise<{ items: AppModule[] }> {
+  return request<{ items: AppModule[] }>('/api/app-modules', { signal })
+}
+
+export function updateAppModule(key: string, body: AppModuleInput): Promise<AppModule> {
+  return request<AppModule>(`/api/app-modules/${encodeURIComponent(key)}`, { method: 'PUT', body })
 }

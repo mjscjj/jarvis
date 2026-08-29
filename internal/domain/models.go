@@ -386,6 +386,25 @@ type ScheduledTask struct {
 
 func (ScheduledTask) TableName() string { return "scheduled_task" }
 
+// EntityRelation is the generic cross-module edge store. String IDs allow an
+// optional module entity (for example okr:kr-123) to link to a Jarvis world
+// entity without either side importing the other's database model.
+type EntityRelation struct {
+	ID           uint64         `gorm:"column:id;primaryKey;autoIncrement"`
+	SourceType   string         `gorm:"column:source_type;not null;size:64;uniqueIndex:uk_entity_relation,priority:1;index:idx_relation_source,priority:1"`
+	SourceID     string         `gorm:"column:source_id;not null;size:128;uniqueIndex:uk_entity_relation,priority:2;index:idx_relation_source,priority:2"`
+	RelationType string         `gorm:"column:relation_type;not null;size:64;uniqueIndex:uk_entity_relation,priority:3"`
+	TargetType   string         `gorm:"column:target_type;not null;size:64;uniqueIndex:uk_entity_relation,priority:4;index:idx_relation_target,priority:1"`
+	TargetID     string         `gorm:"column:target_id;not null;size:128;uniqueIndex:uk_entity_relation,priority:5;index:idx_relation_target,priority:2"`
+	Evidence     datatypes.JSON `gorm:"column:evidence;not null;type:text"`
+	Confidence   *float64       `gorm:"column:confidence"`
+	ConfirmedAt  *time.Time     `gorm:"column:confirmed_at"`
+	CreatedAt    time.Time      `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt    time.Time      `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+}
+
+func (EntityRelation) TableName() string { return "entity_relation" }
+
 // CoreModels returns the canonical dependency-ordered migration list.
 func CoreModels() []any {
 	return []any{
@@ -402,5 +421,6 @@ func CoreModels() []any {
 		&ManagedResource{},
 		&DailyDigest{},
 		&ScheduledTask{},
+		&EntityRelation{},
 	}
 }

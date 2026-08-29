@@ -99,6 +99,14 @@ type Service struct {
 	batchLimit int
 	now        func() time.Time
 	location   *time.Location
+	moduleGate func(context.Context, string) (bool, error)
+}
+
+// SetModuleGate makes module-owned schedules dormant while their module is
+// disabled. ContextSnapshot opts in with a top-level `module` string; ordinary
+// schedules remain unaffected.
+func (s *Service) SetModuleGate(gate func(context.Context, string) (bool, error)) {
+	s.moduleGate = gate
 }
 
 // NewCRUDService constructs the storage-only surface used by jarvis-tools.
@@ -444,6 +452,21 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 		s.fail(ctx, row.ID, err)
 		return err
 	}
+	moduleKey, err := scheduledModuleKey(row.ContextSnapshot)
+	if err != nil {
+		s.fail(ctx, row.ID, err)
+		return err
+	}
+	if moduleKey != "" && s.moduleGate != nil {
+		enabled, err := s.moduleGate(ctx, moduleKey)
+		if err != nil {
+			s.fail(ctx, row.ID, err)
+			return err
+		}
+		if !enabled {
+			return s.skipDisabledModule(ctx, row, moduleKey)
+		}
+	}
 	input, err := taskInput(row, occurrenceKey)
 	if err != nil {
 		s.fail(ctx, row.ID, err)
@@ -472,6 +495,40 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 	if update.Error != nil {
 		s.fail(ctx, row.ID, fmt.Errorf("store scheduled task trigger result: %w", update.Error))
 		return update.Error
+	}
+	return nil
+}
+
+func scheduledModuleKey(raw []byte) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
+	}
+	var snapshot map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return "", fmt.Errorf("decode scheduled task module context: %w", err)
+	}
+	encoded, ok := snapshot["module"]
+	if !ok {
+		return "", nil
+	}
+	var key string
+	if err := json.Unmarshal(encoded, &key); err != nil {
+		return "", fmt.Errorf("scheduled task module must be a string")
+	}
+	return strings.TrimSpace(key), nil
+}
+
+func (s *Service) skipDisabledModule(ctx context.Context, row *domain.ScheduledTask, moduleKey string) error {
+	finishedAt := s.now().UTC()
+	result := fmt.Sprintf("模块 %s 已关闭，本轮未创建 Task", moduleKey)
+	update := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("id = ? AND status = ?", row.ID, "running").
+		Updates(map[string]any{
+			"status": finalTaskStatus(row.ScheduleType), "last_run_status": "done",
+			"last_result": result, "last_error_detail": nil, "last_finished_at": finishedAt,
+		})
+	if update.Error != nil {
+		return fmt.Errorf("store disabled-module schedule result: %w", update.Error)
 	}
 	return nil
 }

@@ -39,8 +39,10 @@ type View struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	FilePath    string   `json:"file_path"`
+	Module      string   `json:"module,omitempty"`
 	Stages      []string `json:"stages"`
 	IsEnabled   bool     `json:"is_enabled"`
+	IsAvailable bool     `json:"is_available"`
 }
 
 type ContentView struct {
@@ -56,7 +58,16 @@ type Reader interface {
 type Service struct {
 	root       string
 	configPath string
+	moduleGate func(context.Context, string) (bool, error)
 	mu         sync.Mutex
+}
+
+type Option func(*Service)
+
+// WithModuleGate keeps module-owned Skills out of every Agent catalog and
+// content endpoint while their module is disabled. Files remain on disk.
+func WithModuleGate(gate func(context.Context, string) (bool, error)) Option {
+	return func(service *Service) { service.moduleGate = gate }
 }
 
 type configFile struct {
@@ -72,10 +83,11 @@ type setting struct {
 type metadata struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
+	Module      string `yaml:"module"`
 	FilePath    string
 }
 
-func NewService(root, configPath string) (*Service, error) {
+func NewService(root, configPath string, options ...Option) (*Service, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return nil, fmt.Errorf("agent skill root is empty")
@@ -93,6 +105,9 @@ func NewService(root, configPath string) (*Service, error) {
 		return nil, fmt.Errorf("resolve agent skill config %q: %w", configPath, err)
 	}
 	service := &Service{root: rootAbsolute, configPath: configAbsolute}
+	for _, option := range options {
+		option(service)
+	}
 	if _, err := service.List(context.Background()); err != nil {
 		return nil, fmt.Errorf("validate agent skill files: %w", err)
 	}
@@ -117,7 +132,14 @@ func (s *Service) List(ctx context.Context) ([]View, error) {
 	if err != nil {
 		return nil, err
 	}
-	return join(metadataByName, cfg)
+	views, err := join(metadataByName, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyAvailability(ctx, views); err != nil {
+		return nil, err
+	}
+	return views, nil
 }
 
 func (s *Service) Update(ctx context.Context, name string, input Input) (*View, error) {
@@ -174,12 +196,30 @@ func (s *Service) Update(ctx context.Context, name string, input Input) (*View, 
 	if err != nil {
 		return nil, err
 	}
+	if err := s.applyAvailability(ctx, views); err != nil {
+		return nil, err
+	}
 	for i := range views {
 		if views[i].Name == name {
 			return &views[i], nil
 		}
 	}
 	return nil, fmt.Errorf("%w: name=%s", ErrNotFound, name)
+}
+
+func (s *Service) applyAvailability(ctx context.Context, views []View) error {
+	for i := range views {
+		views[i].IsAvailable = true
+		if views[i].Module == "" || s.moduleGate == nil {
+			continue
+		}
+		enabled, err := s.moduleGate(ctx, views[i].Module)
+		if err != nil {
+			return fmt.Errorf("check module %q for skill %q: %w", views[i].Module, views[i].Name, err)
+		}
+		views[i].IsAvailable = enabled
+	}
+	return nil
 }
 
 func (s *Service) Content(ctx context.Context, name string) (*ContentView, error) {
@@ -197,6 +237,15 @@ func (s *Service) Content(ctx context.Context, name string) (*ContentView, error
 	item, ok := items[name]
 	if !ok {
 		return nil, fmt.Errorf("%w: name=%s", ErrNotFound, name)
+	}
+	if item.Module != "" && s.moduleGate != nil {
+		enabled, err := s.moduleGate(ctx, item.Module)
+		if err != nil {
+			return nil, fmt.Errorf("check module %q for skill %q: %w", item.Module, name, err)
+		}
+		if !enabled {
+			return nil, fmt.Errorf("%w: skill %s is unavailable because module %s is disabled", ErrNotFound, name, item.Module)
+		}
 	}
 	path := filepath.Join(s.root, filepath.FromSlash(item.FilePath))
 	raw, err := fileconfig.Read(path)
@@ -216,7 +265,7 @@ func (s *Service) Catalog(ctx context.Context, stage string) (string, error) {
 	}
 	lines := make([]string, 0)
 	for _, item := range views {
-		if !item.IsEnabled || !contains(item.Stages, stage) {
+		if !item.IsEnabled || !item.IsAvailable || !contains(item.Stages, stage) {
 			continue
 		}
 		lines = append(lines, fmt.Sprintf("- %s：%s\n  读取：jarvis-tools get-skill --name %s", item.Name, item.Description, item.Name))
@@ -306,8 +355,8 @@ func join(metadataByName map[string]metadata, cfg configFile) ([]View, error) {
 			return nil, fmt.Errorf("%w: skill %q is missing from skills.yaml", ErrInvalidInput, name)
 		}
 		views = append(views, View{
-			Name: name, Description: item.Description, FilePath: item.FilePath,
-			Stages: append([]string(nil), control.Stages...), IsEnabled: control.IsEnabled,
+			Name: name, Description: item.Description, FilePath: item.FilePath, Module: item.Module,
+			Stages: append([]string(nil), control.Stages...), IsEnabled: control.IsEnabled, IsAvailable: true,
 		})
 	}
 	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
@@ -329,8 +378,12 @@ func parseMetadata(raw []byte) (metadata, error) {
 	}
 	item.Name = strings.TrimSpace(item.Name)
 	item.Description = strings.TrimSpace(item.Description)
+	item.Module = strings.TrimSpace(item.Module)
 	if !skillName.MatchString(item.Name) || item.Description == "" {
 		return metadata{}, fmt.Errorf("frontmatter requires a valid name and non-empty description")
+	}
+	if item.Module != "" && !skillName.MatchString(item.Module) {
+		return metadata{}, fmt.Errorf("frontmatter module must be a valid module key")
 	}
 	return item, nil
 }

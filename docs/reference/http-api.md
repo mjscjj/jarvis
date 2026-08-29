@@ -27,7 +27,7 @@
 - Principal：`GET/PUT /api/profile`
 - Managed resources：`GET/POST /api/resources`、`GET/PUT/DELETE /api/resources/:resource_id`
 - Facts：`GET/POST /api/facts`
-- OKR evidence：`GET /api/okr-evidence/unassociated?source=&from=&until=&anchor=&limit=` 按来源、采集时间半开区间和文字锚点读取尚未关联的 Message；`POST /api/okr-evidence/apply` 将 Agent 明确选择的 Message 幂等关联为 OKR/Project/KeyMatter Fact，并按 `if_unchanged_since` CAS 更新当前 Page
+- Entity relations：`GET/POST /api/relations`、`DELETE /api/relations/:relation_id`，保存带证据的通用跨模块实体映射
 - Relation facts：`GET/POST /api/relation-facts`、`PUT/DELETE /api/relation-facts/:fact_id`
 
 `DELETE /api/okrs/:okr_id` 与 `DELETE /api/key-matters/:key_matter_id` 的业务语义是闭环，`DELETE /api/projects/:project_id` 的业务语义是归档；都不是物理删除。
@@ -35,7 +35,7 @@
 OKR 周视图接受不超过 8 天的半开时间窗，按 OKR → Project → KeyMatter 返回当前 Page 结论、本周 Fact 和确定性风险/失速信号。它是纯读模型，不创建 Task，也不复制一套进展存储。
 Agent 可用 `jarvis-tools get-okr-weekly-view --id <id> [--date YYYY-MM-DD]` 把本地自然日转换为该半开区间并回读同一视图。
 
-未关联证据列表只排除已经作为 OKR、Project 或 KeyMatter Fact 来源的消息；用于 Group 等其他世界实体的同一条 Message 仍可被 Agent 审阅。列表不返回推荐实体，也不自动建立关系或创建 Task。
+来源证据使用通用 Message/Clue 查询、Fact 和 Page CAS；核心层不提供 OKR 专用证据队列或合并接口。
 
 ## Agent 配置面
 
@@ -44,8 +44,15 @@ Agent 可用 `jarvis-tools get-okr-weekly-view --id <id> [--date YYYY-MM-DD]` �
 - Work rules：`GET /api/work-rules`、`GET/PUT /api/work-rules/:work_rule_key`
 - Text files：`GET /api/text-files`、`GET/PUT /api/text-files/:text_file_key`
 - Skills：`GET /api/skills`、`POST /api/skills/scan`、`PUT /api/skills/:skill_name`、`GET /api/skills/:skill_name/content`
+- App modules：`GET /api/app-modules`、`PUT /api/app-modules/:module_key`
+- OKR 定义：`GET /api/okr/scope|enums|board|quarterly-okr-draft`，身份、人员、图片与 KR CRUD 位于 `/api/okr/*`。`PUT /api/okr/krs/:id` 只修改稳定定义，不改周进展。
+- 周报：`GET /api/weekly-report/board|comments|reminder-preview|reminder-batches|pmo-digest|region-sync-draft|meego-preview`；评论、所选周进展、报告草稿、Meego 确认和催办批次的写接口位于 `/api/weekly-report/*`。
+- Meego observation：`POST /api/weekly-report/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
+- OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后经 `/api/okr/auth/feishu/login|callback` 建立 HttpOnly session，写接口只识别操作者，不做行级权限或可见性过滤。
+- OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。
+- 文档导出：`POST /api/weekly-report/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。
 
-Runtime settings 写入后需要重启进程生效；prompts/rules/Skills 按各自 reader 的行为读取。
+Runtime settings 写入后需要重启进程生效；模块开关保存后也需要重启，下一次启动会统一决定迁移、路由、静态资源、Skill 与调度边界。prompts、rules、Skills 按各自 reader 的行为读取。
 
 ## 调度、线索与总结
 

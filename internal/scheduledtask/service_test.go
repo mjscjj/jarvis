@@ -231,8 +231,8 @@ func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
 	enabled := true
 	schedule, err := service.Create(t.Context(), Input{
 		Title: "OKR 只读进展巡检", ActionType: "agent_task",
-		Instruction:     "读取 okr-progress-sync Skill；只读 Meego 和已采集消息，更新 Page/Fact；不发送消息。",
-		ContextSnapshot: json.RawMessage(`{"skill":"okr-progress-sync","mode":"read_only"}`),
+		Instruction:     "读取 weekly-report-progress-sync Skill；只读 Meego 和已采集消息，更新 Page/Fact；不发送消息。",
+		ContextSnapshot: json.RawMessage(`{"skill":"weekly-report-progress-sync","module":"weekly-report","mode":"read_only"}`),
 		ScheduleType:    "interval", IntervalMinutes: &interval, Enabled: &enabled,
 	})
 	if err != nil {
@@ -249,7 +249,7 @@ func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
 	if input.SourceType != taskcreate.SourceScheduledTask || input.SourceID == nil || *input.SourceID != schedule.ID {
 		t.Fatalf("Task source = %s/%v, want scheduled_task/%d", input.SourceType, input.SourceID, schedule.ID)
 	}
-	if string(input.Background) != `{"mode":"read_only","skill":"okr-progress-sync"}` {
+	if string(input.Background) != `{"mode":"read_only","module":"weekly-report","skill":"weekly-report-progress-sync"}` {
 		t.Fatalf("Task background = %s", input.Background)
 	}
 	if strings.Contains(string(input.Background), "okr_id") || strings.Contains(string(input.SourcePayload), "okr_id") {
@@ -264,6 +264,22 @@ func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
 	}
 	if taskCount != 0 {
 		t.Fatalf("stubbed schedule persisted %d unexpected Tasks", taskCount)
+	}
+	service.SetModuleGate(func(context.Context, string) (bool, error) { return false, nil })
+	disabledSchedule, err := service.Create(t.Context(), Input{
+		Title: "disabled OKR schedule", ActionType: "agent_task", Instruction: "read Skill",
+		ContextSnapshot: json.RawMessage(`{"skill":"weekly-report-progress-sync","module":"weekly-report"}`),
+		ScheduleType:    "interval", IntervalMinutes: &interval, Enabled: &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabledResult, err := service.Trigger(t.Context(), disabledSchedule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(submitter.inputs) != 1 || disabledResult.LastTaskID != nil || disabledResult.LastResult == nil || !strings.Contains(*disabledResult.LastResult, "模块 weekly-report 已关闭") {
+		t.Fatalf("disabled module schedule dispatched: submit=%d result=%+v", len(submitter.inputs), disabledResult)
 	}
 }
 

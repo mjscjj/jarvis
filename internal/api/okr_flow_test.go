@@ -102,8 +102,6 @@ func TestOKRHTTPFlowKeepsHierarchyProgressAndTaskBoundary(t *testing.T) {
 	h.POST("/api/key-matters", CreateKeyMatter(matterService))
 	h.GET("/api/pages/:type/:id", GetPage(pageService))
 	h.PUT("/api/pages/:type/:id", UpdatePage(pageService))
-	h.GET("/api/okr-evidence/unassociated", ListUnassociatedOKREvidence(pageService))
-	h.POST("/api/okr-evidence/apply", ApplyOKREvidence(pageService))
 	h.POST("/api/facts", AppendFact(progressService))
 	h.GET("/api/facts", ListFacts(progressService))
 	h.POST("/api/clues", AppendClue(captureService))
@@ -157,32 +155,32 @@ func TestOKRHTTPFlowKeepsHierarchyProgressAndTaskBoundary(t *testing.T) {
 	if clueMessage.ChatMode != capture.ClueChatMode || clueMessage.Source != "clue" {
 		t.Fatalf("Meego clue message = %#v, want neutral extractable evidence", clueMessage)
 	}
-	unassociated := performOKRFlowRequest[background.UnassociatedOKREvidenceResult](t, h, "GET",
-		"/api/okr-evidence/unassociated?source=meego&anchor="+url.QueryEscape("灰度验证")+"&limit=20", "")
-	if unassociated.Count != 1 || len(unassociated.Items) != 1 || unassociated.Items[0].EvidenceMessageID != clue.MessageID ||
-		unassociated.Items[0].SourceKind != "meego" {
-		t.Fatalf("unassociated evidence = %#v, want captured Meego clue", unassociated)
-	}
 	matterPage := performOKRFlowRequest[background.PageView](t, h, "GET", fmt.Sprintf("/api/pages/key_matter/%d", matter.ID), "")
-	evidenceBody, err := json.Marshal(map[string]any{
+	evidenceFactBody, err := json.Marshal(map[string]any{
 		"subject_type": "key_matter", "subject_id": matter.ID,
-		"evidence_message_id": clue.MessageID,
-		"description":         "Meego 灰度工作项进入验证阶段。",
-		"occurred_at":         "2026-08-27T02:00:00Z",
-		"content":             "当前结论：灰度工作项已进入验证阶段。",
-		"if_unchanged_since":  matterPage.UpdatedAt,
+		"description": "Meego 灰度工作项进入验证阶段。",
+		"occurred_at": "2026-08-27T02:00:00Z", "source_kind": "meego", "source_id": clueMessage.ID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	applied := performOKRFlowRequest[background.OKREvidenceResult](t, h, "POST", "/api/okr-evidence/apply", string(evidenceBody))
-	if applied.SourceKind != "meego" || applied.EvidenceRowID != clueMessage.ID || applied.Fact.SourceID == nil ||
-		*applied.Fact.SourceID != clueMessage.ID || applied.Page == nil || applied.Page.Summary == "" {
-		t.Fatalf("applied OKR evidence = %#v, want traceable Fact and updated Page", applied)
+	evidenceFact := performOKRFlowRequest[progress.FactView](t, h, "POST", "/api/facts", string(evidenceFactBody))
+	if evidenceFact.SourceKind == nil || *evidenceFact.SourceKind != "meego" || evidenceFact.SourceID == nil || *evidenceFact.SourceID != clueMessage.ID {
+		t.Fatalf("generic evidence Fact = %#v, want source-traceable Fact", evidenceFact)
 	}
-	replayedEvidence := performOKRFlowRequest[background.OKREvidenceResult](t, h, "POST", "/api/okr-evidence/apply", string(evidenceBody))
-	if replayedEvidence.Fact.ID != applied.Fact.ID || replayedEvidence.Page == nil || replayedEvidence.Page.Summary != applied.Page.Summary {
-		t.Fatalf("replayed OKR evidence = %#v, want idempotent Fact/Page result %#v", replayedEvidence, applied)
+	replayedEvidenceFact := performOKRFlowRequest[progress.FactView](t, h, "POST", "/api/facts", string(evidenceFactBody))
+	if replayedEvidenceFact.ID != evidenceFact.ID {
+		t.Fatalf("replayed generic evidence Fact = %#v, want idempotent Fact %#v", replayedEvidenceFact, evidenceFact)
+	}
+	matterPageBody, err := json.Marshal(map[string]any{
+		"content": "当前结论：灰度工作项已进入验证阶段。", "if_unchanged_since": matterPage.UpdatedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedMatterPage := performOKRFlowRequest[background.PageView](t, h, "PUT", fmt.Sprintf("/api/pages/key_matter/%d", matter.ID), string(matterPageBody))
+	if updatedMatterPage.Summary == "" {
+		t.Fatalf("updated key-matter Page = %#v", updatedMatterPage)
 	}
 	var associatedFactCount int64
 	if err := db.Model(&domain.Fact{}).Where(
@@ -194,12 +192,6 @@ func TestOKRHTTPFlowKeepsHierarchyProgressAndTaskBoundary(t *testing.T) {
 	if associatedFactCount != 1 {
 		t.Fatalf("associated evidence Fact count = %d, want 1 after replay", associatedFactCount)
 	}
-	unassociated = performOKRFlowRequest[background.UnassociatedOKREvidenceResult](t, h, "GET",
-		"/api/okr-evidence/unassociated?source=meego&anchor="+url.QueryEscape("灰度验证")+"&limit=20", "")
-	if unassociated.Count != 0 || len(unassociated.Items) != 0 {
-		t.Fatalf("unassociated evidence after apply = %#v, want source removed from queue", unassociated)
-	}
-
 	fact := performOKRFlowRequest[progress.FactView](t, h, "POST", "/api/facts", fmt.Sprintf(
 		`{"subject_type":"okr","subject_id":%d,"description":"Meego 灰度工作项进入验证阶段。","source_kind":"meego"}`, okr.ID,
 	))

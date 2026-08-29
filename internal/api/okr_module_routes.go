@@ -1,0 +1,119 @@
+package api
+
+import (
+	"context"
+	"fmt"
+
+	"jarvis/internal/okrworkspace"
+	okrAuth "jarvis/internal/okrworkspace/auth"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"gorm.io/gorm"
+)
+
+// OKRModuleDependencies is the single adapter between the optional OKR module
+// and Jarvis HTTP hosting. Core route registration does not require it.
+type OKRModuleDependencies struct {
+	DB        *gorm.DB
+	Workspace *okrworkspace.Service
+	Images    *okrworkspace.ImageStore
+	Identity  *okrAuth.Service
+	Documents MarkdownDocumentCreator
+	Enabled   func(context.Context) (bool, error)
+}
+
+// WeeklyReportModuleDependencies keeps the weekly collaboration surface behind
+// its own module gate. Workspace is currently the compatibility adapter over
+// the preserved Emily tables; callers only reach it through weekly routes.
+type WeeklyReportModuleDependencies struct {
+	Workspace *okrworkspace.Service
+	Identity  *okrAuth.Service
+	Documents MarkdownDocumentCreator
+	Enabled   func(context.Context) (bool, error)
+}
+
+func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error {
+	if h == nil || deps.DB == nil || deps.Workspace == nil || deps.Images == nil || deps.Identity == nil {
+		return fmt.Errorf("register OKR module routes: required dependency is nil")
+	}
+	if deps.Enabled == nil {
+		return fmt.Errorf("register OKR module routes: enablement gate is nil")
+	}
+	requireEnabled := func(ctx context.Context, c *app.RequestContext) {
+		enabled, err := deps.Enabled(ctx)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50089, err)
+			c.Abort()
+			return
+		}
+		if !enabled {
+			writeAPIError(c, consts.StatusNotFound, 40489, fmt.Errorf("OKR module is disabled"))
+			c.Abort()
+			return
+		}
+		c.Next(ctx)
+	}
+	h.GET("/api/okr/enums", requireEnabled, Enums())
+	h.GET("/api/okr/me", requireEnabled, GetOKRCurrentUser(deps.Identity))
+	h.GET("/api/okr/auth/feishu/login", requireEnabled, BeginOKRFeishuLogin(deps.Identity))
+	h.GET("/api/okr/auth/feishu/callback", requireEnabled, CompleteOKRFeishuLogin(deps.Identity))
+	h.POST("/api/okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity))
+	requireIdentity := RequireOKRIdentity(deps.Identity)
+	h.GET("/api/okr/scope", requireEnabled, GetOKRWorkspaceScope(deps.Workspace))
+	h.GET("/api/okr/people/search", requireEnabled, SearchWorkspacePeople(deps.DB))
+	h.GET("/api/okr/board", requireEnabled, GetCoreBoard(deps.Workspace))
+	h.POST("/api/okr/images", requireEnabled, requireIdentity, UploadOKRImage(deps.Images))
+	h.GET("/api/okr/quarterly-okr-draft", requireEnabled, GetQuarterlyOKRDraft(deps.Workspace))
+	h.POST("/api/okr/feishu-documents", requireEnabled, requireIdentity, CreateOKRDocument(deps.Documents))
+	h.POST("/api/okr/objectives/:objective_id/krs", requireEnabled, requireIdentity, CreateKR(deps.Workspace))
+	h.PUT("/api/okr/krs/:kr_id", requireEnabled, requireIdentity, ReplaceCoreKR(deps.Workspace))
+	h.DELETE("/api/okr/krs/:kr_id", requireEnabled, requireIdentity, DeleteKR(deps.Workspace))
+	return nil
+}
+
+func RegisterWeeklyReportModuleRoutes(h *server.Hertz, deps WeeklyReportModuleDependencies) error {
+	if h == nil || deps.Workspace == nil || deps.Identity == nil || deps.Documents == nil {
+		return fmt.Errorf("register weekly report module routes: required dependency is nil")
+	}
+	if deps.Enabled == nil {
+		return fmt.Errorf("register weekly report module routes: enablement gate is nil")
+	}
+	requireEnabled := func(ctx context.Context, c *app.RequestContext) {
+		enabled, err := deps.Enabled(ctx)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50088, err)
+			c.Abort()
+			return
+		}
+		if !enabled {
+			writeAPIError(c, consts.StatusNotFound, 40488, fmt.Errorf("weekly report module is disabled"))
+			c.Abort()
+			return
+		}
+		c.Next(ctx)
+	}
+	requireIdentity := RequireOKRIdentity(deps.Identity)
+	h.GET("/api/weekly-report/board", requireEnabled, GetBoard(deps.Workspace))
+	h.GET("/api/weekly-report/comments", requireEnabled, GetComments(deps.Workspace))
+	h.POST("/api/weekly-report/comments", requireEnabled, requireIdentity, CreateComment(deps.Workspace))
+	h.PUT("/api/weekly-report/comments/:comment_id", requireEnabled, requireIdentity, UpdateComment(deps.Workspace))
+	h.DELETE("/api/weekly-report/comments/:comment_id", requireEnabled, requireIdentity, DeleteComment(deps.Workspace))
+	h.GET("/api/weekly-report/reminder-preview", requireEnabled, GetReminderPreview(deps.Workspace))
+	h.GET("/api/weekly-report/reminder-batches", requireEnabled, GetReminderBatches(deps.Workspace))
+	h.POST("/api/weekly-report/reminder-batches/generate", requireEnabled, requireIdentity, GenerateReminderBatch(deps.Workspace))
+	h.GET("/api/weekly-report/pmo-digest", requireEnabled, GetPMODigest(deps.Workspace))
+	h.GET("/api/weekly-report/region-sync-draft", requireEnabled, GetRegionSyncDraft(deps.Workspace))
+	h.POST("/api/weekly-report/report-drafts/generate", requireEnabled, requireIdentity, GenerateReportDraft(deps.Workspace))
+	h.PUT("/api/weekly-report/report-drafts/:draft_id", requireEnabled, requireIdentity, SaveReportDraft(deps.Workspace))
+	h.GET("/api/weekly-report/report-drafts/:draft_id/history", requireEnabled, GetReportDraftHistory(deps.Workspace))
+	h.POST("/api/weekly-report/report-drafts/:draft_id/restore", requireEnabled, requireIdentity, RestoreReportDraft(deps.Workspace))
+	h.POST("/api/weekly-report/feishu-documents", requireEnabled, requireIdentity, CreateOKRDocument(deps.Documents))
+	h.GET("/api/weekly-report/points/:point_id/meego-preview", requireEnabled, GetMeegoPreview(deps.Workspace))
+	h.GET("/api/weekly-report/meego-preview", requireEnabled, GetMeegoBatchPreview(deps.Workspace))
+	h.POST("/api/weekly-report/meego-observations", requireEnabled, StoreMeegoObservation(deps.Workspace))
+	h.POST("/api/weekly-report/points/:point_id/meego-confirm", requireEnabled, requireIdentity, ConfirmMeegoProgress(deps.Workspace))
+	h.PUT("/api/weekly-report/krs/:kr_id", requireEnabled, requireIdentity, ReplaceWeeklyReportKR(deps.Workspace))
+	return nil
+}

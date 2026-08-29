@@ -1,0 +1,5 @@
+modules:
+  - key: okr
+    enabled: true
+  - key: weekly-report
+    enabled: true

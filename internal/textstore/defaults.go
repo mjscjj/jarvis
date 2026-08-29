@@ -24,6 +24,14 @@ const (
 	// SystemPromptFactRollupKey drives the daily compression that turns one
 	// subject's detail facts for a day into a single rollup fact.
 	SystemPromptFactRollupKey = "fact_rollup_system_prompt"
+	// WeeklyReportCycleKey defines the product-level weekly cadence shared by
+	// the reminder, progress-sync and materials Skills. The individual Skills
+	// still own their tool instructions and hard execution boundaries.
+	WeeklyReportCycleKey                  = "weekly_report_cycle"
+	WeeklyReportReminderTemplateKey       = "weekly_report_reminder_template"
+	WeeklyReportMeetingTemplateKey        = "weekly_report_meeting_template"
+	WeeklyReportMiddlePlatformTemplateKey = "weekly_report_middle_platform_template"
+	WeeklyReportBiweeklyTemplateKey       = "weekly_report_biweekly_template"
 )
 
 // definition also carries the editor-facing description. The admin UI renders
@@ -79,6 +87,31 @@ func definitions() []definition {
 			key: SystemPromptFactRollupKey, name: "事实日压缩提示词", filename: "fact-rollup-system-prompt.md",
 			description: "定义把一个主体一天的明细事实压缩成单条日事实的口径。",
 			kind:        "system_prompt", stage: "fact_rollup",
+		},
+		{
+			key: WeeklyReportCycleKey, name: "周报周期流程", filename: "weekly-report-cycle.md",
+			description: "定义一周从开放填写、催填、冻结会议版本、生成材料到关闭归档的业务步骤。",
+			kind:        "workflow", stage: "weekly_report",
+		},
+		{
+			key: WeeklyReportReminderTemplateKey, name: "催填消息模板", filename: "weekly-report-reminder-template.md",
+			description: "定义按负责人聚合后的周报催填消息；收件人、缺失项和链接由运行时提供。",
+			kind:        "message_template", stage: "weekly_report",
+		},
+		{
+			key: WeeklyReportMeetingTemplateKey, name: "会议材料模板", filename: "weekly-report-meeting-template.md",
+			description: "定义周报会议版本的章节、风险、变化、缺失和来源展示方式。",
+			kind:        "report_template", stage: "weekly_report",
+		},
+		{
+			key: WeeklyReportMiddlePlatformTemplateKey, name: "中台周报模板", filename: "weekly-report-middle-platform-template.md",
+			description: "定义提交给中台周报的精简结构；只作用于材料生成，不决定发布目标。",
+			kind:        "report_template", stage: "weekly_report",
+		},
+		{
+			key: WeeklyReportBiweeklyTemplateKey, name: "双周会材料模板", filename: "weekly-report-biweekly-template.md",
+			description: "定义双周会材料的变化、成果、风险、决策和下一步结构。",
+			kind:        "report_template", stage: "weekly_report",
 		},
 	}
 }

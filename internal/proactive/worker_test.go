@@ -9,18 +9,18 @@ import (
 	"time"
 )
 
-func TestProactiveSystemPromptOwnsOKRWatchPolicy(t *testing.T) {
+func TestProactiveSystemPromptDefersOptionalModuleSemanticsToSkills(t *testing.T) {
 	raw, err := os.ReadFile("../../conf/prompts/proactive-system-prompt.md")
 	if err != nil {
 		t.Fatalf("read proactive system prompt: %v", err)
 	}
 	system := string(raw)
 	for _, want := range []string{
-		"维护未闭环 OKR", "OKR 是结果层", "局部项目或关键事项完成不等于 OKR 完成",
-		"另建独立 Task", "OKR 只读取进行中的有界集合",
+		"可选业务模块的层级、状态和汇总规则只来自当前已启用的 Skill",
+		"没有对应 Skill 时，不猜测模块语义", "另建独立 Task",
 	} {
 		if !strings.Contains(system, want) {
-			t.Fatalf("proactive system prompt missing owned OKR policy %q", want)
+			t.Fatalf("proactive system prompt missing optional-module boundary %q", want)
 		}
 	}
 }

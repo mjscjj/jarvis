@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentconfig"
+	"jarvis/internal/appmodule"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
 	"jarvis/internal/chat"
@@ -46,10 +47,14 @@ type Dependencies struct {
 	Profile            *background.ProfileService
 	Resources          *background.ResourceService
 	Pages              *background.PageService
+	Relations          *background.RelationService
 	SharedMemory       *sharedmem.SharedMemoryService
 	WorkRules          *workrule.Service
 	TextFiles          *textstore.Service
 	AgentConfig        *agentconfig.Service
+	AppModules         *appmodule.Service
+	OKRModule          *OKRModuleDependencies
+	WeeklyReportModule *WeeklyReportModuleDependencies
 	ScheduledTasks     *scheduledtask.Service
 	Skills             *skill.Service
 	Progress           progress.EventService
@@ -112,6 +117,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Groups == nil {
 		return fmt.Errorf("api group service dependency is nil")
 	}
+	if deps.Relations == nil {
+		return fmt.Errorf("api relation service dependency is nil")
+	}
 	if deps.Resolve == nil {
 		return fmt.Errorf("api resolve service dependency is nil")
 	}
@@ -168,6 +176,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.RuntimeSettings == nil {
 		return fmt.Errorf("api runtime settings dependency is nil")
+	}
+	if deps.AppModules == nil {
+		return fmt.Errorf("api app module service dependency is nil")
 	}
 	if deps.ContextAssembler == nil {
 		return fmt.Errorf("api context assembler dependency is nil")
@@ -244,9 +255,10 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/pages", ListPages(deps.Pages))
 	h.GET("/api/pages/:type/:id", GetPage(deps.Pages))
 	h.PUT("/api/pages/:type/:id", UpdatePage(deps.Pages))
-	h.GET("/api/okr-evidence/unassociated", ListUnassociatedOKREvidence(deps.Pages))
-	h.POST("/api/okr-evidence/apply", ApplyOKREvidence(deps.Pages))
 	h.GET("/api/pages/:type/:id/backlinks", ListPageBacklinks(deps.Pages))
+	h.GET("/api/relations", ListRelations(deps.Relations))
+	h.POST("/api/relations", UpsertRelation(deps.Relations))
+	h.DELETE("/api/relations/:relation_id", DeleteRelation(deps.Relations))
 	// Principal（“我”）：单例 profile，读取 + upsert。
 	h.GET("/api/profile", GetProfile(deps.Profile))
 	h.PUT("/api/profile", UpdateProfile(deps.Profile))
@@ -268,6 +280,19 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/text-files/:text_file_key", UpdateTextFile(deps.TextFiles))
 	// Agent 设置：按线索发现/任务执行展示与运行时同源的稳定系统指令预览。
 	h.GET("/api/agent-config/stages/:agent_stage/preview", GetAgentConfigPreview(deps.AgentConfig))
+	// 内置功能模块：代码静态注册，conf/modules.yaml 控制下一次启动时的迁移、路由、Skill 和调度边界。
+	h.GET("/api/app-modules", ListAppModules(deps.AppModules))
+	h.PUT("/api/app-modules/:module_key", UpdateAppModule(deps.AppModules))
+	if deps.OKRModule != nil {
+		if err := RegisterOKRModuleRoutes(h, *deps.OKRModule); err != nil {
+			return err
+		}
+	}
+	if deps.WeeklyReportModule != nil {
+		if err := RegisterWeeklyReportModuleRoutes(h, *deps.WeeklyReportModule); err != nil {
+			return err
+		}
+	}
 	// 周期定时任务：独立 CRUD、手动触发；自动执行由进程内每分钟 scheduler 负责。
 	h.GET("/api/scheduled-tasks", ListScheduledTasks(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks", CreateScheduledTask(deps.ScheduledTasks))

@@ -1,6 +1,8 @@
 package skill
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -84,6 +86,42 @@ func TestServiceFailsWhenSkillConfigurationDoesNotMatchFiles(t *testing.T) {
 	}
 	if _, err := NewService(root, configPath); err == nil {
 		t.Fatal("stale configured skill must fail")
+	}
+}
+
+func TestModuleOwnedSkillIsNotInjectedWhileModuleDisabled(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "okr-world-projector")
+	if err := os.Mkdir(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: okr-world-projector\ndescription: project OKR\nmodule: okr\n---\n\n# Body\n"
+	if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte("skills:\n  - name: okr-world-projector\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(root, configPath, WithModuleGate(func(_ context.Context, key string) (bool, error) {
+		return key != "okr", nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := service.List(t.Context())
+	if err != nil || len(items) != 1 || items[0].IsAvailable {
+		t.Fatalf("List() = %#v, %v", items, err)
+	}
+	catalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(catalog, "okr-world-projector") {
+		t.Fatalf("disabled module skill leaked into catalog: %s", catalog)
+	}
+	if _, err := service.Content(t.Context(), "okr-world-projector"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("disabled module skill content error = %v, want ErrNotFound", err)
 	}
 }
 
@@ -179,7 +217,7 @@ func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 	}
 }
 
-func TestRepositoryOKRProgressSyncSkillKeepsReadOnlyTaskBoundary(t *testing.T) {
+func TestRepositoryWeeklyReportProgressSyncSkillKeepsReadOnlyTaskBoundary(t *testing.T) {
 	service, err := NewService(
 		filepath.Join("..", "..", ".agents", "skills"),
 		filepath.Join("..", "..", "conf", "skills.yaml"),
@@ -191,28 +229,30 @@ func TestRepositoryOKRProgressSyncSkillKeepsReadOnlyTaskBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract Catalog() error = %v", err)
 	}
-	if strings.Contains(extractCatalog, "okr-progress-sync") {
+	if strings.Contains(extractCatalog, "weekly-report-progress-sync") {
 		t.Fatalf("extract catalog exposes execution-only OKR sync skill:\n%s", extractCatalog)
 	}
 	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
 	if err != nil {
 		t.Fatalf("execute Catalog() error = %v", err)
 	}
-	if !strings.Contains(executeCatalog, "okr-progress-sync") {
-		t.Fatalf("execute catalog is missing okr-progress-sync:\n%s", executeCatalog)
+	if !strings.Contains(executeCatalog, "weekly-report-progress-sync") {
+		t.Fatalf("execute catalog is missing weekly-report-progress-sync:\n%s", executeCatalog)
 	}
 
-	content, err := service.Content(t.Context(), "okr-progress-sync")
+	content, err := service.Content(t.Context(), "weekly-report-progress-sync")
 	if err != nil {
-		t.Fatalf("load okr-progress-sync: %v", err)
+		t.Fatalf("load weekly-report-progress-sync: %v", err)
 	}
 	for _, want := range []string{
-		"只读 Meego 和已采集消息",
+		"外部系统只读",
+		"scripts/weekly-report-tools board",
+		"scripts/weekly-report-tools record-meego-observation",
 		"jarvis-tools append-clue",
 		"jarvis-tools append-fact",
-		"jarvis-tools list-unassociated-okr-evidence",
-		"jarvis-tools apply-okr-evidence",
-		"不会推荐目标实体",
+		"jarvis-tools list-relations",
+		"create-relation",
+		"标题相似、同负责人或同一群都不能单独作为自动关联依据",
 		"Page CAS",
 		"ScheduledTask",
 		"每次触发只创建一个普通 Task",

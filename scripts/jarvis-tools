@@ -70,12 +70,13 @@ subcommands:
   get-skill              Read one locally managed Skill
   append-shared-memory   Append one entry to shared memory
   append-clue            Hand M2 one observed fact as evidence for M3
-  list-unassociated-okr-evidence List captured messages not yet linked to OKR progress
-  apply-okr-evidence     Associate one captured message with OKR progress and CAS-update its Page
   get-page               Read one entity's long-term fact page
   update-page            Replace one entity's long-term fact page
   list-pages             List long-term fact page indexes
   list-backlinks         List pages that reference an entity
+  list-relations         List generic cross-module entity relations
+  create-relation       Create or refresh one generic entity relation
+  delete-relation       Delete one generic entity relation
   append-fact            Record one fact about a project, group, person or other subject
   append-facts-batch     Record multiple facts from one JSON array
   list-facts             Read a subject's recorded facts, optionally for one day
@@ -155,6 +156,16 @@ EOF
     update-key-matter) payload_id_help "update-key-matter" "Replace one key matter's control fields. Long-term facts are written with update-page; this payload does not accept summary." ;;
     touch-key-matter) delete_id_help "touch-key-matter" "Mark one open key matter as freshly active without changing its content." ;;
     close-key-matter) delete_id_help "close-key-matter" "Close one key matter; this does not hard-delete it." ;;
+    list-relations) cat <<'EOF'
+usage: jarvis-tools list-relations [--source-type TYPE] [--source-id ID]
+                                   [--target-type TYPE] [--target-id ID]
+                                   [--limit N] [--config PATH]
+List generic cross-module relation edges. At least one source or target filter
+is recommended; the command never infers a relation.
+EOF
+      ;;
+    create-relation) payload_help "create-relation" "Create or refresh one evidence-backed generic relation edge." ;;
+    delete-relation) delete_id_help "delete-relation" "Delete one generic relation edge." ;;
     list-groups) cat <<'EOF'
 usage: jarvis-tools list-groups [--keyword TEXT] [--limit N] [--config PATH]
 Search compact Feishu group summaries. Use get-group for full background.
@@ -250,18 +261,6 @@ EOF
     append-shared-memory) cat <<'EOF'
 usage: jarvis-tools append-shared-memory [--note TEXT|-] [--config PATH]
 Atomically append one non-empty entry. Use --note - or omit it to read stdin.
-EOF
-      ;;
-    list-unassociated-okr-evidence) cat <<'EOF'
-usage: jarvis-tools list-unassociated-okr-evidence [--source SOURCE]
-                                                    [--date YYYY-MM-DD]
-                                                    [--anchor TEXT] [--limit N]
-                                                    [--config PATH]
-List captured clue/message evidence that is not yet the source of an OKR,
-Project or KeyMatter Fact. SOURCE is a clue source such as meego, or message for
-ordinary captured messages. The literal anchor searches content and stable
-message/chat identity. Select the smallest entity, then call apply-okr-evidence;
-this command never guesses a target and never creates a Task.
 EOF
       ;;
     append-fact) cat <<'EOF'
@@ -469,21 +468,6 @@ example:
   时间：2026-07-27 11:45 ~ 14:01
   参会人：...
   TXT
-EOF
-      ;;
-    apply-okr-evidence) cat <<'EOF'
-usage: jarvis-tools apply-okr-evidence --payload JSON|- [--config PATH]
-
-Associate one already captured Meego clue or Feishu message with an OKR,
-Project or KeyMatter, append one source-traceable Fact, and CAS-update that
-entity's complete current Page conclusion. The payload fields are:
-
-  subject_type, subject_id, evidence_message_id, description, occurred_at,
-  content, if_unchanged_since
-
-On replay, the same evidence/description returns the existing Fact and does not
-rewrite an already-equal Page. On HTTP 409 the Fact remains recorded and the
-response contains the current Page; merge it and retry with its updated_at.
 EOF
       ;;
     list-scheduled-tasks) cat <<'EOF'
@@ -743,6 +727,9 @@ AT=""
 REASON="-"
 SOURCE=""
 SOURCE_ID=""
+SOURCE_TYPE=""
+TARGET_TYPE=""
+TARGET_ID=""
 ACTOR=""
 EXTERNAL_ID=""
 TITLE=""
@@ -784,6 +771,9 @@ reset_flags() {
   REASON="-"
   SOURCE=""
   SOURCE_ID=""
+  SOURCE_TYPE=""
+  TARGET_TYPE=""
+  TARGET_ID=""
   ACTOR=""
   EXTERNAL_ID=""
   TITLE=""
@@ -820,7 +810,7 @@ require_command_flag() {
     get-project) allowed+=" --id --code" ;;
     get-okr | get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
     get-okr-weekly-view) allowed+=" --id --date" ;;
-    create-okr | create-project | create-key-matter | update-principal | create-person | create-resource | create-task) allowed+=" --payload" ;;
+    create-okr | create-project | create-key-matter | update-principal | create-person | create-resource | create-task | create-relation) allowed+=" --payload" ;;
     update-okr | update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
     close-okr | archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
@@ -838,14 +828,14 @@ require_command_flag() {
     get-skill) allowed+=" --name" ;;
     append-shared-memory) allowed+=" --note" ;;
     append-clue) allowed+=" --source --external-id --title --content --occurred-at" ;;
-    list-unassociated-okr-evidence) allowed+=" --source --date --anchor --limit" ;;
-    apply-okr-evidence) allowed+=" --payload" ;;
     append-fact) allowed+=" --subject-type --subject-id --description --occurred-at --source --source-id" ;;
     append-facts-batch) allowed+=" --payload" ;;
     list-facts) allowed+=" --subject-type --subject-id --date --limit" ;;
     get-page | list-backlinks) allowed+=" --type --id" ;;
     update-page) allowed+=" --type --id --content --if-unchanged-since" ;;
     list-pages) allowed+=" --type --all --stale-days --over-limit" ;;
+    list-relations) allowed+=" --source-type --source-id --target-type --target-id --limit" ;;
+    delete-relation) allowed+=" --id" ;;
     list-todos) allowed+=" --date --status --limit" ;;
     get-todo) allowed+=" --id" ;;
     list-tasks) allowed+=" --date --status --limit" ;;
@@ -1064,6 +1054,33 @@ consume_flags() {
         ;;
       --source-id=*)
         SOURCE_ID="${1#--source-id=}"
+        shift
+        ;;
+      --source-type)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        SOURCE_TYPE="$2"
+        shift 2
+        ;;
+      --source-type=*)
+        SOURCE_TYPE="${1#--source-type=}"
+        shift
+        ;;
+      --target-type)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        TARGET_TYPE="$2"
+        shift 2
+        ;;
+      --target-type=*)
+        TARGET_TYPE="${1#--target-type=}"
+        shift
+        ;;
+      --target-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        TARGET_ID="$2"
+        shift 2
+        ;;
+      --target-id=*)
+        TARGET_ID="${1#--target-id=}"
         shift
         ;;
       --actor)
@@ -1778,45 +1795,6 @@ cmd_append_clue() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
-cmd_list_unassociated_okr_evidence() {
-  reset_flags
-  LIMIT="20"
-  consume_flags "$@"
-  require_limit list-unassociated-okr-evidence "$LIMIT" 100
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local query="limit=${LIMIT}" value
-  if [[ -n "$SOURCE" ]]; then
-    value="$(jq -rn --arg s "$SOURCE" '$s|@uri')"
-    query="${query}&source=${value}"
-  fi
-  if [[ -n "$ANCHOR" ]]; then
-    value="$(jq -rn --arg s "$ANCHOR" '$s|@uri')"
-    query="${query}&anchor=${value}"
-  fi
-  if [[ -n "$DATE" ]]; then
-    local from until
-    read -r from until <<<"$(local_day_bounds "$DATE" list-unassociated-okr-evidence)"
-    query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
-  fi
-  emit "$(api_get "/api/okr-evidence/unassociated?${query}" | jq -c '.data')"
-}
-
-cmd_apply_okr_evidence() {
-  reset_flags
-  consume_flags "$@"
-  local payload body
-  payload="$(read_payload_object apply-okr-evidence)"
-  printf '%s' "$payload" | jq -e '
-    ((keys_unsorted - ["subject_type","subject_id","evidence_message_id","description","occurred_at","content","if_unchanged_since"]) | length) == 0
-    and (.subject_type == "okr" or .subject_type == "project" or .subject_type == "key_matter")
-    and (.subject_id | type == "number" and . > 0 and floor == .)
-    and ([.evidence_message_id,.description,.occurred_at,.content,.if_unchanged_since] | all(type == "string" and test("[^[:space:]]")))
-  ' >/dev/null 2>&1 || fail "apply-okr-evidence payload is invalid"
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  body="$(api_write POST /api/okr-evidence/apply "$payload")"
-  emit "$(printf '%s' "$body" | jq -c '.data')"
-}
-
 # append-fact records one thing that happened about a subject.
 cmd_append_fact() {
   reset_flags
@@ -2061,6 +2039,33 @@ cmd_list_backlinks() {
   local body
   body="$(api_get "/api/pages/${TYPE}/${ID}/backlinks")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_list_relations() {
+  reset_flags
+  LIMIT="100"
+  consume_flags "$@"
+  require_limit list-relations "$LIMIT" 200
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local query="limit=${LIMIT}" value body
+  if [[ -n "$SOURCE_TYPE" ]]; then
+    value="$(jq -rn --arg s "$SOURCE_TYPE" '$s|@uri')"
+    query="${query}&source_type=${value}"
+  fi
+  if [[ -n "$SOURCE_ID" ]]; then
+    value="$(jq -rn --arg s "$SOURCE_ID" '$s|@uri')"
+    query="${query}&source_id=${value}"
+  fi
+  if [[ -n "$TARGET_TYPE" ]]; then
+    value="$(jq -rn --arg s "$TARGET_TYPE" '$s|@uri')"
+    query="${query}&target_type=${value}"
+  fi
+  if [[ -n "$TARGET_ID" ]]; then
+    value="$(jq -rn --arg s "$TARGET_ID" '$s|@uri')"
+    query="${query}&target_id=${value}"
+  fi
+  body="$(api_get "/api/relations?${query}")"
+  emit "$(printf '%s' "$body" | jq -c '.data.items')"
 }
 
 cmd_list_todos() {
@@ -2406,8 +2411,6 @@ case "$SUBCOMMAND" in
   get-skill)            cmd_get_skill "$@" ;;
   append-shared-memory) cmd_append_shared_memory "$@" ;;
   append-clue)          cmd_append_clue "$@" ;;
-  list-unassociated-okr-evidence) cmd_list_unassociated_okr_evidence "$@" ;;
-  apply-okr-evidence)   cmd_apply_okr_evidence "$@" ;;
   append-fact)          cmd_append_fact "$@" ;;
   append-facts-batch)   cmd_append_facts_batch "$@" ;;
   list-facts)           cmd_list_facts "$@" ;;
@@ -2415,6 +2418,9 @@ case "$SUBCOMMAND" in
   update-page)          cmd_update_page "$@" ;;
   list-pages)           cmd_list_pages "$@" ;;
   list-backlinks)       cmd_list_backlinks "$@" ;;
+  list-relations)       cmd_list_relations "$@" ;;
+  create-relation)      cmd_payload_create create-relation POST /api/relations "$@" ;;
+  delete-relation)      cmd_delete_by_id delete-relation /api/relations "$@" ;;
   list-todos)           cmd_list_todos "$@" ;;
   get-todo)             cmd_get_todo "$@" ;;
   list-tasks)           cmd_list_tasks "$@" ;;

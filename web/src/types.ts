@@ -1013,7 +1013,7 @@ export interface TextFile {
   key: string
   name: string
   description: string
-  kind: 'system_prompt' | 'approval_policy'
+  kind: 'system_prompt' | 'approval_policy' | 'workflow' | 'message_template' | 'report_template'
   stage: string
   path: string
   content: string
@@ -1190,12 +1190,26 @@ export interface RuntimeSettingsView {
   override_path: string
 }
 
+export interface AppModule {
+  key: string
+  name: string
+  description: string
+  is_enabled: boolean
+  configured_enabled: boolean
+	restart_required: boolean
+	requires: string[]
+}
+
+export interface AppModuleInput {
+  is_enabled: boolean
+}
+
 // --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---
 
 // PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。
 // 由各页面写入 PageContext（React Context），发送对话时随请求带给后端注入 prompt。
 export interface PageContext {
-  // 当前左侧导航 key：overview/todos/tasks/scheduled-tasks/background/settings/progress/debug
+  // 当前左侧导航 key：overview/todos/tasks/scheduled-tasks/background/okr/settings/progress/debug
   active_key: string
   // 当前选中项的可读摘要（如 "Todo #12 修复登录超时"）；无选中则 null
   selection: PageSelection | null

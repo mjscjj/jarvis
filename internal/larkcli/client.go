@@ -186,6 +186,17 @@ func (c *Client) RecallMessage(ctx context.Context, messageID string) error {
 // Run executes a lark-cli command and unmarshals its successful JSON envelope.
 // Callers must not pass --format; this boundary always forces JSON.
 func (c *Client) Run(ctx context.Context, out any, args ...string) error {
+	return c.run(ctx, out, "", args...)
+}
+
+// RunInput is Run with explicit stdin. It is used by shortcuts such as
+// `docs +create --content -`, keeping long user-authored content out of argv
+// and avoiding shell escaping entirely.
+func (c *Client) RunInput(ctx context.Context, out any, input string, args ...string) error {
+	return c.run(ctx, out, input, args...)
+}
+
+func (c *Client) run(ctx context.Context, out any, input string, args ...string) error {
 	if c == nil {
 		return fmt.Errorf("lark-cli client is nil")
 	}
@@ -212,6 +223,9 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 	commandArgs := append([]string(nil), args...)
 	commandArgs = append(commandArgs, "--format", "json")
 	cmd := exec.CommandContext(commandCtx, c.bin, commandArgs...)
+	if input != "" {
+		cmd.Stdin = strings.NewReader(input)
+	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -260,4 +274,46 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 		return meta.Error
 	}
 	return nil
+}
+
+// MarkdownDocument is the stable subset returned by `docs +create` that the
+// product UI needs after a user explicitly clicks export.
+type MarkdownDocument struct {
+	DocumentID string
+	URL        string
+	Warnings   []string
+}
+
+// CreateMarkdownDocument creates one document with the current lark-cli user
+// identity. It is intentionally a user-triggered effect; schedulers and OKR
+// projection never call it implicitly.
+func (c *Client) CreateMarkdownDocument(ctx context.Context, title, content string) (MarkdownDocument, error) {
+	title = strings.TrimSpace(title)
+	content = strings.TrimSpace(content)
+	if title == "" {
+		return MarkdownDocument{}, fmt.Errorf("lark-cli create document title is empty")
+	}
+	if content == "" {
+		return MarkdownDocument{}, fmt.Errorf("lark-cli create document content is empty")
+	}
+	var response struct {
+		Data struct {
+			Document struct {
+				DocumentID string `json:"document_id"`
+				URL        string `json:"url"`
+			} `json:"document"`
+			Warnings []string `json:"warnings"`
+		} `json:"data"`
+	}
+	if err := c.RunInput(ctx, &response, content, "docs", "+create", "--title", title, "--doc-format", "markdown", "--content", "-", "--as", "user"); err != nil {
+		return MarkdownDocument{}, fmt.Errorf("lark-cli create Markdown document: %w", err)
+	}
+	if strings.TrimSpace(response.Data.Document.DocumentID) == "" || strings.TrimSpace(response.Data.Document.URL) == "" {
+		return MarkdownDocument{}, fmt.Errorf("lark-cli create Markdown document returned no document id or url")
+	}
+	return MarkdownDocument{
+		DocumentID: response.Data.Document.DocumentID,
+		URL:        response.Data.Document.URL,
+		Warnings:   response.Data.Warnings,
+	}, nil
 }

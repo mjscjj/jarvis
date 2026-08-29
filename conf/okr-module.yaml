@@ -1,0 +1,14 @@
+# Optional OKR module configuration. It is loaded only while modules.yaml
+# enables `okr`; Jarvis core has no OKR-specific config fields.
+upload_dir: "var/okr-assets"
+max_image_bytes: 10485760
+
+identity:
+  enabled: false
+  app_id: ""
+  app_secret_env: "JARVIS_OKR_FEISHU_APP_SECRET"
+  redirect_url: ""
+  session_ttl_hours: 168
+  cookie_secure: false
+  feishu_base_url: "https://open.feishu.cn"
+  feishu_account_url: "https://accounts.feishu.cn"

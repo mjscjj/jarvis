@@ -40,6 +40,29 @@ func TestEveryDefinitionCarriesEditorLabels(t *testing.T) {
 	}
 }
 
+func TestWeeklyReportDefinitionsAreEditableMarkdown(t *testing.T) {
+	service := newTestService(t)
+	want := []string{
+		WeeklyReportCycleKey,
+		WeeklyReportReminderTemplateKey,
+		WeeklyReportMeetingTemplateKey,
+		WeeklyReportMiddlePlatformTemplateKey,
+		WeeklyReportBiweeklyTemplateKey,
+	}
+	for _, key := range want {
+		item, err := service.Get(t.Context(), key)
+		if err != nil {
+			t.Fatalf("Get(%q) error = %v", key, err)
+		}
+		if item.Stage != "weekly_report" {
+			t.Errorf("Get(%q).Stage = %q, want weekly_report", key, item.Stage)
+		}
+		if item.Kind != "workflow" && item.Kind != "message_template" && item.Kind != "report_template" {
+			t.Errorf("Get(%q).Kind = %q", key, item.Kind)
+		}
+	}
+}
+
 func TestServiceUpdateAtomicallyReplacesContent(t *testing.T) {
 	service := newTestService(t)
 	updated, err := service.Update(t.Context(), SystemPromptM5Key, Input{Content: " 第一行\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}\n第二行 "})

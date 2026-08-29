@@ -43,7 +43,8 @@
 | [文件化文本配置](design-file-backed-text-config.md) | current | prompts、rules 与后台编辑边界 |
 | [实体关系与进度历史](design-temporal-relations-and-progress.md) | current，部分段落待继续校准 | RelationFact、TaskEvent、Fact |
 | [KeyMatter 关键事项实体](design-key-matter.md) | implemented-history | 已落地；当前实体边界见总纲，字段与接口以代码真源为准 |
-| [OKR MVP 验收与交接](okr-mvp-handoff.md) | current | `OKR → Project → KeyMatter`、只读证据写回、人工验收入口与未提交改动清单 |
+| [Jarvis 内置功能模块](design-app-modules.md) | current | 顶层模块注册、启停配置，以及 OKR 产品模块与世界模型的所有权边界 |
+| [OKR 模块解耦验收](okr-mvp-handoff.md) | current | 可选模块生命周期、通用关系、Skill 编排与兼容面 |
 | [HTTP API](reference/http-api.md) | current | 路由分组；`router.go` 仍为真源 |
 | [运行与部署](reference/operations.md) | current | launchd、端口、签名和重建 |
 | [Lark / bytedcli 指南](guide-lark-byted-cli.md) | guide | 当前 CLI 用法，版本变化时需复核 help |

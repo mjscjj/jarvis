@@ -1,0 +1,42 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+}
+
+#okr-workspace-root {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-slate-800);
+  background: #f4f6f8;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 紧凑输入控件：去掉浏览器默认的高度和描边 */
+#okr-workspace-root input,
+#okr-workspace-root textarea,
+#okr-workspace-root select,
+#okr-workspace-root button {
+  font: inherit;
+}
+
+#okr-workspace-root .status-select-button {
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* 高度跟内容走，不用 JS 量；核心数据那行还靠它把宽度收到文字实际长度，灯才能紧贴 */
+#okr-workspace-root textarea {
+  field-sizing: content;
+}
+
+#okr-workspace-root ::placeholder {
+  color: var(--color-slate-400);
+}
+
+/* 细滚动条，避免在密集列表里抢视觉 */
+#okr-workspace-root * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-300) transparent;
+}

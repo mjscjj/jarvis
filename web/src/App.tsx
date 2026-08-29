@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { Badge, Button, Drawer, Layout, Menu, Spin, Tooltip, Typography } from 'antd'
+import { Alert, Badge, Button, Drawer, Layout, Menu, Spin, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   HomeOutlined,
@@ -20,6 +20,8 @@ import Overview from './Overview'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
+import { listAppModules } from './api'
+import { appModuleRegistry } from './modules/registry'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -48,6 +50,7 @@ const pageLabels: Record<string, string> = {
   'scheduled-tasks': '自动化',
   settings: '系统设置',
   debug: '运行状态',
+  ...Object.fromEntries(appModuleRegistry.map((module) => [module.key, module.label])),
 }
 
 function AppShell() {
@@ -58,6 +61,8 @@ function AppShell() {
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const [managementOpen, setManagementOpen] = useState(true)
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
+  const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean>>()
+  const [moduleLoadError, setModuleLoadError] = useState<string>()
   const chatRef = useRef<HTMLElement>(null)
   const chatToggleRef = useRef<HTMLButtonElement>(null)
   const chatWasOpen = useRef(chatOpen)
@@ -69,10 +74,13 @@ function AppShell() {
     managementIcon = <Tooltip title={`运行状态读取失败：${runtimeFailures.error}`}><Badge status="error" dot>{managementIcon}</Badge></Tooltip>
   }
 
+  const enabledModules = appModuleRegistry.filter((module) => moduleEnablement?.[module.key])
+
   const menuProps: MenuProps['items'] = [
     { key: 'overview', label: '今日', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
+    ...enabledModules.map((module) => ({ key: module.key, label: module.label, icon: module.icon })),
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
     { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
@@ -99,7 +107,38 @@ function AppShell() {
     settings: <Settings />,
     progress: <Progress />,
     debug: <Debug />,
+    ...Object.fromEntries(enabledModules.map((module) => [module.key, <module.Page key={module.key} />])),
   }
+
+  useEffect(() => {
+    let controller = new AbortController()
+    const reload = () => {
+      controller.abort()
+      controller = new AbortController()
+      listAppModules(controller.signal)
+        .then((result) => {
+          setModuleEnablement(Object.fromEntries(result.items.map((item) => [item.key, item.is_enabled])))
+          setModuleLoadError(undefined)
+        })
+        .catch((cause: unknown) => {
+          if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
+            setModuleLoadError(cause instanceof Error ? cause.message : String(cause))
+          }
+        })
+    }
+    reload()
+    window.addEventListener('jarvis:app-modules-changed', reload)
+    return () => {
+      controller.abort()
+      window.removeEventListener('jarvis:app-modules-changed', reload)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!moduleEnablement) return
+    const activeModule = appModuleRegistry.find((module) => module.key === context.active_key)
+    if (activeModule && !moduleEnablement[activeModule.key]) navigate('overview')
+  }, [context.active_key, moduleEnablement, navigate])
 
   useEffect(() => {
     if (chatOpen) setChatLoaded(true)
@@ -185,6 +224,7 @@ function AppShell() {
       <Layout>
         <div className="app-main">
           <Content className="app-content">
+            {moduleLoadError && <Alert className="app-module-load-error" type="error" showIcon title="功能模块配置读取失败" description={moduleLoadError} />}
             <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在加载…</span></div>}>
               {pages[context.active_key]}
             </Suspense>
@@ -221,6 +261,7 @@ function AppShell() {
           { key: 'overview', label: '今日', icon: <HomeOutlined /> },
           { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
           { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
+          ...enabledModules.map((module) => ({ key: module.key, label: module.label, icon: module.icon })),
           { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
           { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
           { key: 'agents', label: 'Agent', icon: <RobotOutlined /> },

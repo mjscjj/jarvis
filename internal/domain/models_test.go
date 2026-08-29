@@ -16,8 +16,8 @@ func TestMigrationModelRegistries(t *testing.T) {
 	}{
 		{
 			"core", CoreModels(),
-			[]any{&OKR{}, &Project{}, &KeyMatter{}, &Group{}, &Person{}, &Todo{}, &Task{}, &Resource{}, &ScanRecord{}, &PrincipalProfile{}, &ManagedResource{}, &DailyDigest{}, &ScheduledTask{}},
-			[]string{"okr", "project", "key_matter", "feishu_group", "person", "todo", "task", "resource", "scan_record", "principal_profile", "managed_resource", "daily_digest", "scheduled_task"},
+			[]any{&OKR{}, &Project{}, &KeyMatter{}, &Group{}, &Person{}, &Todo{}, &Task{}, &Resource{}, &ScanRecord{}, &PrincipalProfile{}, &ManagedResource{}, &DailyDigest{}, &ScheduledTask{}, &EntityRelation{}},
+			[]string{"okr", "project", "key_matter", "feishu_group", "person", "todo", "task", "resource", "scan_record", "principal_profile", "managed_resource", "daily_digest", "scheduled_task", "entity_relation"},
 		},
 		{
 			"capture", CaptureModels(),

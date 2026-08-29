@@ -1,0 +1,367 @@
+import { useMemo, useRef, useState } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
+import { createFeishuDocument } from '../api'
+import { useBoard } from '../board'
+import { commentTargetFromThread, commentTargetKey } from '../comments'
+import { useCommentInteraction } from '../commenting'
+import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
+import { hasOwner, splitOwnerNames } from '../people'
+import { KINDS } from '../rows'
+import { buildMeetingMarkdown } from '../meetingMarkdown'
+import { KIND_LABEL, isDone } from '../template'
+import type { CommentTarget, Entry, Kr, KrTag, Point, PointKind, TextSelection } from '../types'
+import { Images, LightPicker, Links, StatusSelect } from './ui'
+
+function FoldButton({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => { event.stopPropagation(); onToggle() }}
+      title={open ? `折叠${label}` : `展开${label}`}
+      aria-label={open ? `折叠${label}` : `展开${label}`}
+      aria-expanded={open}
+      className="flex size-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+    >
+      <svg viewBox="0 0 12 12" aria-hidden className={`size-3 transition-transform ${open ? 'rotate-90' : ''}`}>
+        <path d="M4 2.2 L8.8 6 L4 9.8 Z" fill="currentColor" />
+      </svg>
+    </button>
+  )
+}
+
+function tagText(tag: KrTag) {
+  if (tag.type === 'management_focus' || tag.type === 'biweekly' || tag.type === 'platform_report') return TAG_TYPE_LABEL[tag.type]
+  return TAG_VALUE_LABEL[tag.value] ?? tag.value
+}
+
+function tagTone(tag: KrTag) {
+  if (tag.type === 'management_focus') return 'border-amber-200 bg-amber-50 text-amber-700'
+  if (tag.type === 'region') return 'border-indigo-200 bg-indigo-50 text-indigo-700'
+  return 'border-slate-200 bg-slate-100 text-slate-600'
+}
+
+function priorityTone(priority?: Kr['priority']) {
+  if (priority === 'p0') return 'border-red-200 bg-red-50 text-red-700'
+  if (priority === 'p1') return 'border-amber-200 bg-amber-50 text-amber-700'
+  return 'border-slate-200 bg-white text-slate-500'
+}
+
+function priorityRail(priority?: Kr['priority']) {
+  if (priority === 'p0') return 'border-l-red-500'
+  if (priority === 'p1') return 'border-l-amber-400'
+  return 'border-l-slate-300'
+}
+
+function compactTitle(value: string, length = 90) {
+  const clean = value.replace(/\s+/g, ' ').trim()
+  return clean.length > length ? `${clean.slice(0, length)}…` : clean
+}
+
+function Commentable({ target, children, className = '' }: { target: CommentTarget; children: ReactNode; className?: string }) {
+  const interaction = useCommentInteraction()
+  const count = interaction.counts[commentTargetKey(target)] ?? 0
+  const selected = interaction.selected && commentTargetKey(interaction.selected) === commentTargetKey(target)
+  const select = () => {
+    interaction.select(target)
+  }
+  return (
+    <div
+      onClick={(event) => {
+        event.stopPropagation()
+        if (window.getSelection()?.toString().trim()) return
+        select()
+      }}
+      className={`group/commentable relative cursor-pointer transition-[background-color,box-shadow] hover:bg-indigo-50/70 ${selected ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''} ${className}`}
+    >
+      {children}
+      {count > 0 && <span className="ml-auto shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600">{count} 条评论</span>}
+      {count === 0 && <span className="ml-auto shrink-0 text-[9px] font-medium text-indigo-400 opacity-0 transition-opacity group-hover/commentable:opacity-100">点击评论</span>}
+    </div>
+  )
+}
+
+function selectionWithin(root: HTMLElement, event: MouseEvent<HTMLElement>, text: string): TextSelection | undefined {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return undefined
+  const range = selection.getRangeAt(0)
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return undefined
+  const before = document.createRange()
+  before.selectNodeContents(root)
+  before.setEnd(range.startContainer, range.startOffset)
+  let start = before.toString().length
+  let end = start + range.toString().length
+  const raw = text.slice(start, end)
+  const leading = raw.match(/^\s*/)?.[0].length ?? 0
+  const trailing = raw.match(/\s*$/)?.[0].length ?? 0
+  start += leading
+  end -= trailing
+  if (end <= start) return undefined
+  event.stopPropagation()
+  return {
+    text: text.slice(start, end),
+    start,
+    end,
+    prefix: text.slice(Math.max(0, start - 48), start),
+    suffix: text.slice(end, Math.min(text.length, end + 48)),
+  }
+}
+
+function HighlightedText({ target, text }: { target: CommentTarget; text: string }) {
+  const interaction = useCommentInteraction()
+  const ref = useRef<HTMLSpanElement>(null)
+  const [pending, setPending] = useState<TextSelection>()
+  const ranges = useMemo(() => interaction.comments
+    .filter((comment) => commentTargetKey(comment) === commentTargetKey(target) && comment.selectedText)
+    .map((comment) => {
+      let start = comment.selectionStart ?? -1
+      let end = comment.selectionEnd ?? -1
+      if (start < 0 || end <= start || text.slice(start, end) !== comment.selectedText) {
+        start = text.indexOf(comment.selectedText ?? '')
+        end = start + (comment.selectedText?.length ?? 0)
+      }
+      return { comment, start, end }
+    })
+    .filter((item) => item.start >= 0 && item.end > item.start)
+    .sort((left, right) => left.start - right.start || left.end - right.end)
+    .filter((item, index, items) => index === 0 || item.start >= items[index - 1].end), [interaction.comments, target, text])
+
+  const parts: ReactNode[] = []
+  let cursor = 0
+  for (const range of ranges) {
+    if (range.start > cursor) parts.push(text.slice(cursor, range.start))
+    parts.push(
+      <mark
+        key={range.comment.id}
+        title={`${1 + range.comment.replies.length} 条讨论`}
+        onClick={(event) => { event.stopPropagation(); interaction.select(commentTargetFromThread(range.comment)) }}
+        className="cursor-pointer rounded-sm bg-amber-100 px-0.5 text-inherit ring-1 ring-amber-200 hover:bg-amber-200"
+      >{text.slice(range.start, range.end)}</mark>,
+    )
+    cursor = range.end
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor))
+
+  return (
+    <span
+      className="relative cursor-text"
+      ref={ref}
+      onClick={(event) => event.stopPropagation()}
+      onMouseUp={(event) => {
+        const next = ref.current ? selectionWithin(ref.current, event, text) : undefined
+        if (next) setPending(next)
+      }}
+    >
+      {parts.length > 0 ? parts : text}
+      {pending && (
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => {
+            event.stopPropagation()
+            interaction.select({ ...target, selection: pending })
+            setPending(undefined)
+            window.getSelection()?.removeAllRanges()
+          }}
+          className="absolute -top-8 right-0 z-20 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium text-white shadow-lg hover:bg-indigo-700"
+        >评论选中文字</button>
+      )}
+    </span>
+  )
+}
+
+function MeetingEntry({ entry }: { entry: Entry }) {
+  const target: CommentTarget = { type: 'entry', id: entry.id, title: compactTitle(entry.text) }
+  return (
+    <Commentable target={target} className="flex items-start gap-2 px-2.5 py-1.5">
+      <span className="pt-px"><StatusSelect value={entry.status} onChange={() => undefined} readOnly /></span>
+      <div className="min-w-0 flex-1 text-[13px] leading-[19px] text-slate-700">
+        <div><HighlightedText target={target} text={entry.text} /></div>
+        {(entry.docs.length > 0 || entry.images.length > 0) && (
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            <Links value={entry.docs} onChange={() => undefined} readOnly />
+            <Images value={entry.images} onChange={() => undefined} readOnly maxDisplayWidth={280} />
+          </div>
+        )}
+      </div>
+    </Commentable>
+  )
+}
+
+function MeetingLane({ entries }: { entries: Entry[] }) {
+  return (
+    <section className="min-w-0">
+      <div className="divide-y divide-slate-100">
+        {entries.map((entry) => <MeetingEntry key={entry.id} entry={entry} />)}
+        {entries.length === 0 && <div className="px-2.5 py-2 text-[11px] text-slate-300">暂无</div>}
+      </div>
+    </section>
+  )
+}
+
+function MeetingPoint({ point, index, open, onToggle }: { point: Point; index: number; open: boolean; onToggle: () => void }) {
+  const doing = point.entries.filter((entry) => !isDone(entry.status))
+  const done = point.entries.filter((entry) => isDone(entry.status))
+  const target: CommentTarget = { type: 'point', id: point.id, title: point.title }
+  return (
+    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <header className={`${open ? 'border-b border-slate-100' : ''} flex items-start bg-slate-50/70 pl-1.5`}>
+        <span className="pt-1.5"><FoldButton open={open} onToggle={onToggle} label="具体 KR" /></span>
+        <Commentable target={target} className="flex min-w-0 flex-1 items-start gap-2 px-1.5 py-1.5 pr-2.5">
+          <span className="mt-px shrink-0 rounded border border-blue-200 bg-blue-50 px-1.5 py-px text-[10px] font-semibold text-blue-600">KR{index + 1}</span>
+          <h4 className="min-w-0 flex-1 text-[13px] font-semibold leading-[19px] text-slate-800"><HighlightedText target={target} text={point.title} /></h4>
+          <span className="shrink-0 pt-0.5 text-[10px] text-slate-400">{doing.length} 进展 · {done.length} 完成</span>
+        </Commentable>
+      </header>
+      {open && <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0">
+        <MeetingLane entries={doing} />
+        <MeetingLane entries={done} />
+      </div>}
+    </article>
+  )
+}
+
+function KindGroup({ kind, points, closed, toggle }: { kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void }) {
+  const tone = kind === 'strategy' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-violet-200 bg-violet-50 text-violet-700'
+  return (
+    <section>
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${tone}`}>{KIND_LABEL[kind]}</span>
+        <span className="text-[10px] text-slate-400">{points.length} 项</span>
+        <span className="h-px flex-1 bg-slate-100" />
+      </div>
+      <div className="space-y-1.5">{points.map((point, index) => <MeetingPoint key={point.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} />)}</div>
+    </section>
+  )
+}
+
+export function MeetingView() {
+  const { objectives, quarter, week } = useBoard()
+  const [ownerFilter, setOwnerFilter] = useState('')
+  const [showTags, setShowTags] = useState(false)
+  const [closed, setClosed] = useState<Set<string>>(new Set())
+  const [exporting, setExporting] = useState(false)
+  const [exportResult, setExportResult] = useState<{ url?: string; message?: string }>({})
+  const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
+  const visible = useMemo(() => objectives.map((objective) => ({
+    ...objective,
+    krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)),
+  })).filter((objective) => objective.krs.length > 0), [objectives, ownerFilter])
+  const krCount = visible.reduce((sum, objective) => sum + objective.krs.length, 0)
+  const riskCount = visible.flatMap((objective) => objective.krs).filter((kr) => kr.priority === 'p0' || kr.metrics.some((metric) => metric.light === 'red' || metric.light === 'yellow')).length
+  const toggle = (id: string) => setClosed((previous) => {
+    const next = new Set(previous)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  const collapseAll = () => setClosed(new Set(visible.flatMap((objective) => [objective.id, ...objective.krs.flatMap((kr) => [kr.id, ...kr.points.map((point) => point.id)])])))
+  const exportToFeishu = async () => {
+    if (visible.length === 0 || exporting) return
+    setExporting(true)
+    setExportResult({})
+    try {
+      const output = buildMeetingMarkdown(visible, quarter, week)
+      const result = await createFeishuDocument(output.title, output.content)
+      setExportResult({ url: result.url, message: result.warnings.length > 0 ? `已生成，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成。' })
+    } catch (error) {
+      setExportResult({ message: error instanceof Error ? error.message : '飞书文档生成失败。' })
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+        <span className="font-semibold text-slate-700">会议概览</span>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{krCount} 个 KR</span>
+        {riskCount > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">{riskCount} 个需关注</span>}
+        <button type="button" onClick={() => setShowTags((value) => !value)} className={`rounded-md border px-2 py-1 text-[11px] font-medium ${showTags ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>{showTags ? '隐藏打标' : '显示打标'}</button>
+        <span className="ml-1 text-[11px] text-slate-400">层级</span>
+        <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white text-[11px]">
+          <button type="button" onClick={() => setClosed(new Set())} className="px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部展开</button>
+          <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部折叠</button>
+        </div>
+        <span className="ml-auto text-[11px] text-slate-400">负责人</span>
+        <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 outline-none focus:border-blue-400">
+          <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
+        </select>
+        <span className="h-4 w-px bg-slate-200" />
+        <button type="button" disabled={exporting || visible.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : '导出飞书文档'}</button>
+        {exportResult.url && <a href={exportResult.url} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline">打开文档</a>}
+        {exportResult.message && <span className={`max-w-56 truncate text-[10px] ${exportResult.url ? 'text-emerald-600' : 'text-red-500'}`} title={exportResult.message}>{exportResult.message}</span>}
+      </div>
+
+      {visible.map((objective) => {
+        const objectiveOpen = !closed.has(objective.id)
+        return <section key={objective.id} className="space-y-2">
+          <div className="flex items-center gap-2 border-l-[3px] border-slate-800 px-2 py-0.5">
+            <FoldButton open={objectiveOpen} onToggle={() => toggle(objective.id)} label="目标" />
+            <h2 className="text-[15px] font-bold text-slate-900">{objective.title}</h2>
+            <span className="text-[10px] text-slate-400">{objective.krs.length} 个 KR</span>
+          </div>
+
+          {objectiveOpen && <div className="space-y-2">
+            {objective.krs.map((kr) => {
+              const krTarget: CommentTarget = { type: 'kr', id: kr.id, title: kr.title }
+              const krOpen = !closed.has(kr.id)
+              return (
+                <article key={kr.id} className={`overflow-hidden rounded-xl border border-l-4 border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)] ${priorityRail(kr.priority)}`}>
+                  <header className={`${krOpen ? 'border-b border-slate-100' : ''} flex items-start bg-slate-50/50 pl-2`}>
+                    <span className="pt-2"><FoldButton open={krOpen} onToggle={() => toggle(kr.id)} label="KR" /></span>
+                    <Commentable target={krTarget} className="flex min-w-0 flex-1 items-start gap-2 px-1.5 py-2 pr-3">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-[14px] font-bold leading-5 text-slate-900"><HighlightedText target={krTarget} text={kr.title} /></h3>
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          {splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="rounded-full border border-slate-200 bg-white px-1.5 py-px text-[10px] text-slate-600">{person}</span>)}
+                          {kr.priority && <span className={`rounded border px-1.5 py-px text-[10px] font-semibold uppercase ${priorityTone(kr.priority)}`}>{kr.priority}</span>}
+                          {showTags && (kr.tags ?? []).map((tag) => <span key={`${tag.type}:${tag.value}`} className={`rounded border px-1.5 py-px text-[10px] ${tagTone(tag)}`}>{tagText(tag)}</span>)}
+                        </div>
+                      </div>
+                    </Commentable>
+                  </header>
+
+                  {krOpen && <div className="space-y-2.5 px-3 py-2.5">
+                    {kr.metrics.length > 0 && (
+                      <section className="overflow-hidden rounded-lg border border-emerald-100 bg-emerald-50/25">
+                        <div className="flex items-center gap-2 border-b border-emerald-100/80 px-2.5 py-1">
+                          <span className="text-[10px] font-bold text-emerald-800">核心数据</span>
+                          {kr.metricNote && <span className="truncate text-[10px] text-slate-400">{kr.metricNote}</span>}
+                        </div>
+                        <div className="divide-y divide-emerald-100/70">
+                          {kr.metrics.map((metric) => {
+                            const target: CommentTarget = { type: 'metric', id: metric.id, title: compactTitle(metric.text) }
+                            return (
+                              <Commentable key={metric.id} target={target} className="flex min-h-8 items-start gap-2 px-2.5 py-1 text-[12px] leading-[18px] text-slate-800">
+                                <div className="min-w-0 flex-1 font-medium">
+                                  <HighlightedText target={target} text={metric.text} />
+                                  <span className="ml-2 inline-flex translate-y-px align-middle">
+                                    <LightPicker value={metric.light ?? 'green'} onChange={() => undefined} readOnly />
+                                  </span>
+                                </div>
+                                {(metric.images?.length ?? 0) > 0 && (
+                                  <div className="mt-1.5">
+                                    <Images value={metric.images ?? []} onChange={() => undefined} readOnly maxDisplayWidth={360} />
+                                  </div>
+                                )}
+                              </Commentable>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    )}
+
+                    {KINDS.map((kind) => {
+                      const points = kr.points.filter((point) => point.kind === kind)
+                      return points.length > 0 ? <KindGroup key={kind} kind={kind} points={points} closed={closed} toggle={toggle} /> : null
+                    })}
+                  </div>}
+                </article>
+              )
+            })}
+          </div>}
+        </section>
+      })}
+    </div>
+  )
+}

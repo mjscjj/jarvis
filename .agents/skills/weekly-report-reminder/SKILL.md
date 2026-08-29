@@ -1,0 +1,72 @@
+---
+name: weekly-report-reminder
+description: 每周检查周报模块本周未填写项，生成可审计催办快照，并通过 Jarvis Bot 给有真实 open_id 的缺失负责人发送一条幂等提醒。仅用于已显式启用的周报催填 ScheduledTask。
+module: weekly-report
+---
+
+# 周报每周催填
+
+这是一项有外部消息副作用的定时执行。每轮先确定时间和缺失范围，再逐个发送，最后回读批次；不得根据姓名猜 open_id，不得给已填写完成的人发消息。
+
+## 1. 日期门禁
+
+读取 Task 背景中的 `action_config.timezone` 和 `action_config.weekday`。时区必须为 `Asia/Shanghai`；weekday 缺失时兼容旧任务并使用周一（1）。由调度器正常触发且当前星期不匹配时直接成功结束，结果写明 `no_op=weekday_gate`，不生成批次、不发送消息。只有当前 Task 的 `occurrence_key` 明确以 `manual:` 开头时，才视为用户点击“立即运行”并绕过日期门禁。
+
+先读取页面可编辑的周报周期和催填模板；两份配置都必须返回 `code=0` 且正文非空。它们决定本轮业务步骤和消息正文，但不能放宽本 Skill 的身份、审批、幂等和回执边界：
+
+```bash
+scripts/weekly-report-tools text-config --key weekly_report_cycle
+scripts/weekly-report-tools text-config --key weekly_report_reminder_template
+```
+
+## 2. 读取当前范围和预览
+
+通过模块自有工具读取，不在指令里硬编码季度、周次或 HTTP 路由：
+
+```bash
+scripts/okr-module-tools scope
+scripts/weekly-report-tools reminder-preview
+```
+
+如果运行端口不是默认值，设置 `JARVIS_BASE_URL`。必须验证响应 `code=0`，并记录 `quarter`、`week`、待提醒人数、缺失 KR 数。预览失败就结束为失败，不能绕过模块工具查询数据库或自行猜测。
+
+## 3. 生成审计批次
+
+仅在至少一名负责人需要提醒时创建一次批次：
+
+```bash
+scripts/weekly-report-tools create-reminder-batch --quarter '<quarter>' --week '<week>'
+```
+
+批次是本轮预览的不可变快照，不代表已经送达。
+
+## 4. 逐人发送
+
+先读取 `action_config.approval`；旧任务没有 action_config 时兼容读取顶层 `mode`。仅当结果是 `review_then_send` 且本次执行已经通过 Jarvis 的外部动作审批策略时，才进入真实发送；否则只保留批次并返回 `needs_human`，不得发送。
+
+只处理同时满足以下条件的 recipient：
+
+- `needs_reminder=true`；
+- `can_remind=true`；
+- `owner_open_id` 以 `ou_` 开头；
+- `message` 非空。
+
+发送前读取 `feishu-send-message` Skill，使用 Jarvis Bot 身份。消息内容以 `weekly_report_reminder_template` 为模板，以预览返回的负责人、缺失项、截止时间和填写地址替换变量；模板中不存在的事实不得补猜：
+
+```bash
+lark-cli im +messages-send \
+  --user-id '<owner_open_id>' \
+  --text '<message>' \
+  --idempotency-key 'okr-reminder-<week>-<owner_open_id>' \
+  --as bot
+```
+
+幂等键不得超过 50 字符；超长时把 open_id 部分换成稳定短哈希。同一周同一负责人重跑必须复用同一键。单人发送失败不重发已经成功的收件人；继续处理其余人，并在最终结果逐项保留失败原因。
+
+## 完成检查
+
+- 输出范围、应提醒、成功、失败、跳过四个计数和对应人员；
+- 用 `scripts/weekly-report-tools reminder-batches` 回读并确认本轮批次存在；
+- 没有给无 open_id、未分配、已填完或重复收件人发送；
+- 没有修改 OKR、Meego 或飞书文档；
+- 所有真实发送都有 lark-cli 成功回执，部分失败必须如实标记 `partial`。

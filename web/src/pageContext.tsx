@@ -20,6 +20,7 @@ const pageHashes: Record<string, string> = {
   overview: '/today',
   tasks: '/work',
   progress: '/review',
+  okr: '/okr',
   background: '/memory',
   agents: '/agents',
   todos: '/manage/clues',
@@ -51,6 +52,11 @@ function routeFromHash(initialKey: string): HashRoute {
   if (todoMatch) {
     const id = Number(todoMatch[1])
     return { key: 'todos', selection: { kind: 'todo', id, label: `线索 #${id}` }, viewState }
+  }
+  // Compatibility for the short-lived standalone weekly-report page. Weekly
+  // reporting is a child view of the OKR module, not a Jarvis top-level page.
+  if (path === '/weekly-report') {
+    return { key: 'okr', selection: null, viewState: { ...viewState, tab: viewState.tab || 'weekly-fill' } }
   }
   return { key: pageKeysByHash[path] || initialKey, selection: null, viewState }
 }
