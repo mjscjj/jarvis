@@ -18,9 +18,14 @@ func TestStoreMeegoObservationUsesSuppliedSnapshotWithoutExternalReader(t *testi
 	if err := Migrate(db); err != nil {
 		t.Fatal(err)
 	}
-	point := domain.KRPoint{ID: "point-1", KRID: "kr-1", Kind: domain.PointKindStrategy, Title: "发布", MeegoWorkItemID: "wi-42"}
-	if err := db.Create(&point).Error; err != nil {
-		t.Fatal(err)
+	objective := domain.Objective{ID: "objective-1", Quarter: "2026-Q3", Title: "增长"}
+	kr := domain.KR{ID: "kr-1", ObjectiveID: objective.ID, Title: "发布"}
+	point := domain.KRPoint{ID: "point-1", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "发布", MeegoWorkItemID: "wi-42"}
+	week := domain.WeeklyReportWeek{Quarter: objective.Quarter, Week: "2026-W35", OpenedBy: "test"}
+	for _, value := range []any{&objective, &kr, &point, &week} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	now := time.Date(2026, 8, 28, 6, 0, 0, 0, time.UTC)
 	progress := domain.KRProgress{

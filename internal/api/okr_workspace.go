@@ -416,6 +416,118 @@ func ConfirmMeegoProgress(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func CreateWeeklyProgressEntry(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		pointID := strings.TrimSpace(c.Param("point_id"))
+		if pointID == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40037, fmt.Errorf("point_id is required"))
+			return
+		}
+		var input okrworkspace.ProgressEntryInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40037, err)
+			return
+		}
+		input.UpdatedBy = currentOKRIdentity(c).OpenID
+		result, err := service.CreateProgressEntry(ctx, pointID, input)
+		if writeProgressEntryError(ctx, c, service, pointID, input.Week, 37, err) {
+			return
+		}
+		c.JSON(consts.StatusCreated, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func UpdateWeeklyProgressEntry(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		progressID := strings.TrimSpace(c.Param("progress_id"))
+		if progressID == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40038, fmt.Errorf("progress_id is required"))
+			return
+		}
+		var input okrworkspace.ProgressEntryInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40038, err)
+			return
+		}
+		input.UpdatedBy = currentOKRIdentity(c).OpenID
+		result, err := service.UpdateProgressEntry(ctx, progressID, input)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			current, currentErr := service.GetKRByProgress(ctx, progressID)
+			if currentErr != nil {
+				writeAPIError(c, consts.StatusInternalServerError, 50038, currentErr)
+				return
+			}
+			writeAPIConflict(c, 40938, err, current)
+			return
+		}
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40438, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40038, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func DeleteWeeklyProgressEntry(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		progressID := strings.TrimSpace(c.Param("progress_id"))
+		if progressID == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40039, fmt.Errorf("progress_id is required"))
+			return
+		}
+		var input okrworkspace.DeleteProgressEntryInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40039, err)
+			return
+		}
+		input.UpdatedBy = currentOKRIdentity(c).OpenID
+		result, err := service.DeleteProgressEntry(ctx, progressID, input)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			current, currentErr := service.GetKRByProgress(ctx, progressID)
+			if currentErr != nil {
+				writeAPIError(c, consts.StatusInternalServerError, 50039, currentErr)
+				return
+			}
+			writeAPIConflict(c, 40939, err, current)
+			return
+		}
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40439, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40039, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func writeProgressEntryError(ctx context.Context, c *app.RequestContext, service *okrworkspace.Service, pointID, week string, suffix int, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, okrworkspace.ErrConflict) {
+		current, currentErr := service.GetKRByPoint(ctx, pointID, week)
+		if currentErr != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50000+suffix, currentErr)
+			return true
+		}
+		writeAPIConflict(c, 40900+suffix, err, current)
+		return true
+	}
+	if errors.Is(err, okrworkspace.ErrNotFound) {
+		writeAPIError(c, consts.StatusNotFound, 40400+suffix, err)
+		return true
+	}
+	writeAPIError(c, consts.StatusBadRequest, 40000+suffix, err)
+	return true
+}
+
 func ReplaceCoreKR(service *okrworkspace.Service) app.HandlerFunc {
 	return replaceKRWith(service.ReplaceKRCore, func(ctx context.Context, id string, _ okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error) {
 		return service.GetCoreKR(ctx, id)

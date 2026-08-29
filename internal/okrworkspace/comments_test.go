@@ -2,8 +2,13 @@ package okrworkspace
 
 import "testing"
 
+import "jarvis/internal/okrworkspace/domain"
+
 func TestCommentTodoAndResolutionAreIndependentRootActions(t *testing.T) {
 	db := openWorkspaceTestDB(t)
+	if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "test"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	service, err := NewService(db)
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +61,9 @@ func TestCommentTodoAndResolutionAreIndependentRootActions(t *testing.T) {
 
 func TestCommentContentPatchStillValidatesText(t *testing.T) {
 	db := openWorkspaceTestDB(t)
+	if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "test"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	service, err := NewService(db)
 	if err != nil {
 		t.Fatal(err)

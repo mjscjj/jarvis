@@ -35,6 +35,11 @@ function currentISOWeek(): string {
   return `${date.getUTCFullYear()}-W${String(number).padStart(2, '0')}`
 }
 
+function currentQuarter(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`
+}
+
 function SyncNotice() {
   const { syncState, retry, resolveConflict } = useBoard()
 
@@ -80,6 +85,7 @@ export default function App({
   const [commentTarget, setCommentTarget] = useState<CommentTarget>()
   const [pendingCommentSelection, setPendingCommentSelection] = useState<PendingCommentSelection>()
   const [openingWeek, setOpeningWeek] = useState(false)
+  const [newQuarter, setNewQuarter] = useState(currentQuarter)
   const [newWeek, setNewWeek] = useState(currentISOWeek)
   const [weekNotice, setWeekNotice] = useState('')
   const busy = syncState.kind === 'loading'
@@ -87,10 +93,11 @@ export default function App({
 
   const submitWeek = async () => {
     const target = newWeek.trim()
-    if (!quarter || !target) return
+    const targetQuarter = newQuarter.trim()
+    if (!targetQuarter || !target) return
     setWeekNotice('')
     try {
-      const result = await openWeeklyReportWeek({ quarter, week: target })
+      const result = await openWeeklyReportWeek({ quarter: targetQuarter, week: target })
       setOpeningWeek(false)
       setWeekNotice(result.created ? `${target} 已开启` : `${target} 已经开启`)
       reset()
@@ -172,7 +179,7 @@ export default function App({
               {availableWeeks.map((item) => <option key={item} value={item}>{weekLabel(item)}</option>)}
             </select>
 	          </div>
-	          {mode === 'fill' && <button type="button" onClick={() => { setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
+	          {mode === 'fill' && <button type="button" onClick={() => { setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
 
           <span className={`hidden min-w-16 text-[10px] sm:inline ${tone}`} aria-live="polite">{syncState.message}</span>
 
@@ -206,9 +213,9 @@ export default function App({
 			<main className={`mx-auto max-w-[1320px] px-4 py-4 transition-[padding] sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
 				{openingWeek && <section className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
 					<div className="mr-2"><div className="text-xs font-semibold text-slate-700">开启周报周次</div><div className="mt-0.5 text-[10px] text-slate-400">只创建空周，不复制进展，也不会立即发送提醒。</div></div>
-					<input value={quarter} readOnly aria-label="季度" className="h-9 w-28 rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs text-slate-500" />
+					<input value={newQuarter} onChange={(event) => setNewQuarter(event.target.value)} placeholder="2026-Q3" aria-label="季度" className="h-9 w-28 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-400" />
 					<input value={newWeek} onChange={(event) => setNewWeek(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitWeek() }} placeholder="2026-W36" aria-label="新周次" className="h-9 w-32 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-400" />
-					<button type="button" onClick={() => void submitWeek()} disabled={!newWeek.trim()} className="h-9 rounded-lg bg-blue-600 px-4 text-xs font-medium text-white disabled:opacity-40">确认开启</button>
+					<button type="button" onClick={() => void submitWeek()} disabled={!newQuarter.trim() || !newWeek.trim()} className="h-9 rounded-lg bg-blue-600 px-4 text-xs font-medium text-white disabled:opacity-40">确认开启</button>
 					<button type="button" onClick={() => setOpeningWeek(false)} className="h-9 px-2 text-xs text-slate-400">取消</button>
 				</section>}
 				{weekNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{weekNotice}</div>}

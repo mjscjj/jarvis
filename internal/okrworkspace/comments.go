@@ -80,6 +80,9 @@ func (service *Service) Comments(ctx context.Context, quarter, week string) (Com
 	if !weekPattern.MatchString(week) {
 		return CommentList{}, fmt.Errorf("week must use YYYY-Www")
 	}
+	if err := service.requireOpenWeek(ctx, quarter, week); err != nil {
+		return CommentList{}, err
+	}
 	var rows []domain.PageComment
 	if err := service.db.WithContext(ctx).
 		Where("quarter = ? AND week = ?", quarter, week).
@@ -106,6 +109,9 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	}
 	if !weekPattern.MatchString(input.Week) {
 		return CommentView{}, fmt.Errorf("week must use YYYY-Www")
+	}
+	if err := service.requireOpenWeek(ctx, input.Quarter, input.Week); err != nil {
+		return CommentView{}, err
 	}
 	if input.Content == "" {
 		return CommentView{}, fmt.Errorf("comment content is required")

@@ -506,10 +506,11 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 
 	for _, owner := range owners {
 		missingCount := len(owner.missing)
+		canRemind := strings.HasPrefix(owner.openID, "ou_")
 		recipient := ReminderRecipient{
 			OwnerOpenID: owner.openID, OwnerName: owner.name, DueCount: owner.due,
 			FilledCount: owner.filled, MissingCount: missingCount,
-			NeedsReminder: missingCount > 0, CanRemind: owner.openID != "" || owner.name != "未分配",
+			NeedsReminder: missingCount > 0, CanRemind: canRemind,
 			MissingKRs: owner.missing,
 		}
 		if missingCount > 0 {
@@ -517,8 +518,10 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 			for _, item := range owner.missing {
 				titles = append(titles, item.Title)
 			}
-			if recipient.CanRemind {
+			if canRemind {
 				recipient.Message = fmt.Sprintf("%s，你好。本周（%s）KR 进展还有 %d 条待填写：%s。请在周会前打开 Emily 完成更新，谢谢。", owner.name, week, missingCount, strings.Join(titles, "；"))
+			} else if owner.name != "未分配" {
+				recipient.Message = fmt.Sprintf("负责人%s缺少有效 open_id，暂时无法催办：%s。请先由人完善负责人身份。", owner.name, strings.Join(titles, "；"))
 			} else {
 				recipient.Message = fmt.Sprintf("以下 KR 尚未分配负责人：%s。请先补充负责人，再发起催办。", strings.Join(titles, "；"))
 			}
@@ -905,7 +908,14 @@ func (s *Service) ReplaceWeeklyProgress(ctx context.Context, id string, input Re
 	if err := validateReplaceInput(id, input, true); err != nil {
 		return KRView{}, err
 	}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	_, objective, err := s.krObjective(ctx, id)
+	if err != nil {
+		return KRView{}, err
+	}
+	if err := s.requireOpenWeek(ctx, objective.Quarter, input.Week); err != nil {
+		return KRView{}, err
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := updateKRVersion(tx, id, input.ExpectedVersion, map[string]any{"updated_by": input.UpdatedBy}); err != nil {
 			return err
 		}
@@ -1121,6 +1131,13 @@ func (s *Service) MeegoPreview(ctx context.Context, pointID, week string) (Meego
 	if strings.TrimSpace(point.MeegoWorkItemID) == "" {
 		return MeegoPreview{}, fmt.Errorf("point has no Meego work item")
 	}
+	_, objective, err := s.krObjective(ctx, point.KRID)
+	if err != nil {
+		return MeegoPreview{}, err
+	}
+	if err := s.requireOpenWeek(ctx, objective.Quarter, week); err != nil {
+		return MeegoPreview{}, err
+	}
 	preview, _, err := s.cachedMeegoPreview(ctx, point, week)
 	if err != nil {
 		return MeegoPreview{}, err
@@ -1170,8 +1187,15 @@ func (s *Service) StoreMeegoObservation(ctx context.Context, input MeegoObservat
 	if strings.TrimSpace(point.MeegoWorkItemID) != input.WorkItemID {
 		return MeegoObservationResult{}, fmt.Errorf("work item does not match the point's current Meego link")
 	}
+	_, objective, err := s.krObjective(ctx, point.KRID)
+	if err != nil {
+		return MeegoObservationResult{}, err
+	}
+	if err := s.requireOpenWeek(ctx, objective.Quarter, input.Week); err != nil {
+		return MeegoObservationResult{}, err
+	}
 	var snapshot domain.MeegoSyncSnapshot
-	err := s.db.WithContext(ctx).First(&snapshot, "point_id = ?", point.ID).Error
+	err = s.db.WithContext(ctx).First(&snapshot, "point_id = ?", point.ID).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return MeegoObservationResult{}, fmt.Errorf("load Meego observation: %w", err)
 	}
@@ -1220,9 +1244,16 @@ func (s *Service) ConfirmMeegoProgress(ctx context.Context, pointID string, inpu
 	if pointID == "" || input.ExpectedVersion < 0 || !weekPattern.MatchString(input.Week) || input.MeegoWorkItemID == "" || input.Text == "" || input.UpdatedBy == "" || !domain.ValidStatus(input.Status) {
 		return KRView{}, fmt.Errorf("point_id, expected_version, week, updater, linked work item, status, and text are required")
 	}
+	_, _, objective, err := s.progressPointOwner(ctx, pointID)
+	if err != nil {
+		return KRView{}, err
+	}
+	if err := s.requireOpenWeek(ctx, objective.Quarter, input.Week); err != nil {
+		return KRView{}, err
+	}
 
 	var krID string
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var point domain.KRPoint
 		if err := tx.First(&point, "id = ?", pointID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
