@@ -1046,6 +1046,7 @@ export type AgentCLI = 'codex' | 'traex'
 export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 export interface RuntimeSettings {
+  agent_display_name: string
   analysis_cli: AgentCLI
   analysis_model: string
   analysis_timeout_seconds: number
@@ -1133,6 +1134,10 @@ export interface RuntimeSettingsView {
   settings: RuntimeSettings
   restart_required: boolean
   override_path: string
+}
+
+export interface AgentIdentity {
+  display_name: string
 }
 
 // --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---

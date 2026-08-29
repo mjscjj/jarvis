@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative architecture
-> Last verified: 2026-08-06
+> Last verified: 2026-08-29
 
 本文只描述当前实现的稳定边界，不复制字段级 DDL、完整路由或本机运行值。文档入口与提案/历史分类见 [docs/README.md](README.md)。
 
@@ -111,14 +111,14 @@ Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执�
 
 执行 outcome 与状态映射：
 
-| Agent outcome | Task 状态/动作 |
-|---|---|
-| `completed` | `done` |
-| `observing` | `observing`；Todo 来源存在时同步回 observing |
-| `waiting` | `waiting`，绑定 ScheduledTask 和 Codex Session，到期续跑 |
-| `needs_human` | `needs_human`，principal 回复后续跑同一 Session |
-| `failed` | `failed` |
-| `needs_approval=true` | `awaiting_approval`，批准后进入 fresh apply run |
+| Agent outcome         | Task 状态/动作                                           |
+| --------------------- | -------------------------------------------------------- |
+| `completed`           | `done`                                                   |
+| `observing`           | `observing`；Todo 来源存在时同步回 observing             |
+| `waiting`             | `waiting`，绑定 ScheduledTask 和 Codex Session，到期续跑 |
+| `needs_human`         | `needs_human`，principal 回复后续跑同一 Session          |
+| `failed`              | `failed`                                                 |
+| `needs_approval=true` | `awaiting_approval`，批准后进入 fresh apply run          |
 
 审批由模型根据具体副作用判断，不按 `action_type` 分流。代码提供状态、批准/驳回入口和审计载体。`effects` 的 `kind` 是开放字符串，外部后果按 Agent 声明留痕；当前不是独立 receipt verifier。
 
@@ -159,15 +159,17 @@ RelationFact 表示两个既有实体之间的自然语言关系和有效期；�
 
 ## 6. 文件化 Agent 配置
 
-| 类型 | 真源 | 读取语义 |
-|---|---|---|
-| 系统 prompts | `conf/prompts/*.md`，在 `internal/textstore/defaults.go` 注册 | 缺失/空正文 fail-fast |
-| 工作 rules | `conf/rules/m3.md`、`conf/rules/m5.md` | M3、M5 分阶段读取；正文允许为空 |
-| Skills | `.agents/skills/*/SKILL.md` + `conf/skills.yaml` | 正文与启用阶段分离 |
-| Shared memory | `data/shared-memory.md` | 作为可信指令块注入 |
-| Runtime settings | `conf/config.runtime.yaml` | 覆盖基线配置；重启后生效 |
+| 类型             | 真源                                                          | 读取语义                        |
+| ---------------- | ------------------------------------------------------------- | ------------------------------- |
+| 系统 prompts     | `conf/prompts/*.md`，在 `internal/textstore/defaults.go` 注册 | 缺失/空正文 fail-fast           |
+| 工作 rules       | `conf/rules/m3.md`、`conf/rules/m5.md`                        | M3、M5 分阶段读取；正文允许为空 |
+| Skills           | `.agents/skills/*/SKILL.md` + `conf/skills.yaml`              | 正文与启用阶段分离              |
+| Shared memory    | `data/shared-memory.md`                                       | 作为可信指令块注入              |
+| Runtime settings | `conf/config.runtime.yaml`                                    | 覆盖基线配置；重启后生效        |
 
 工具说明由 `internal/toolcatalog` 和 Skills 维护，不复制到每个 prompt。
+
+`identity.display_name` 是本机助手名称的唯一真源。初始化必须把用户选择显式写入 runtime overlay；设置页改名同样写该字段并在重启后生效。系统 Prompt、rules 和运行时 Skills 只保留 `{{AGENT_NAME}}`，由 `internal/agentidentity` 的只读装饰器在可信指令进入各 Agent 前统一渲染。事件、Task、Fact 和历史产物不保存或回写名称。`jarvis-tools`、API header、进程 label、路径和数据库键仍是稳定技术标识，不参与改名。
 
 ## 7. 状态真源
 

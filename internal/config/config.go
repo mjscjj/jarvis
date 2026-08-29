@@ -11,12 +11,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"jarvis/internal/agentidentity"
+
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 )
 
 // Config 是全局配置的根。各子结构对应总纲 §1 技术栈里的外部依赖。
 type Config struct {
+	Identity      IdentityConfig      `yaml:"identity"`
 	Server        ServerConfig        `yaml:"server"`
 	SQLite        SQLiteConfig        `yaml:"sqlite"`
 	Model         ModelConfig         `yaml:"model"`
@@ -34,6 +37,12 @@ type Config struct {
 	Skills        SkillsConfig        `yaml:"skills"`
 	DailyDigest   DailyDigestConfig   `yaml:"dailydigest"`
 	ScheduledTask ScheduledTaskConfig `yaml:"scheduled_task"`
+}
+
+// IdentityConfig is the user-selected assistant identity. It is machine-local
+// presentation and prompt context, not principal or world-model data.
+type IdentityConfig struct {
+	DisplayName string `yaml:"display_name"`
 }
 
 // ServerConfig Hertz 监听配置。
@@ -332,6 +341,9 @@ func decodeKnownYAML(raw []byte, target any) error {
 // validate 校验当前已启用模块的全部启动条件。model/codex 会在各自
 // 里程碑启用时加入对应校验。
 func (c *Config) validate() error {
+	if err := agentidentity.ValidateName(c.Identity.DisplayName); err != nil {
+		return fmt.Errorf("identity.display_name 无效: %w", err)
+	}
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")
 	}

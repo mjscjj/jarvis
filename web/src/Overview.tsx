@@ -19,6 +19,7 @@ import {
 } from './api'
 import PageHeader from './components/PageHeader'
 import MorningBriefPanel from './components/MorningBriefPanel'
+import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
 import { taskStatusMeta } from './status'
 import { proposalOf, strField } from './tasks/taskPresentation'
@@ -130,6 +131,7 @@ function EmptyPanel({ text }: { text: string }) {
 }
 
 export default function Overview() {
+  const { name: agentName } = useAgentIdentity()
   const { navigate, setSelection } = usePageContext()
   const todayDate = dayjs().format('YYYY-MM-DD')
   const [overview, setOverview] = useState<OverviewData>()
@@ -222,7 +224,7 @@ export default function Overview() {
         setAgentIssue(undefined)
       } catch (cause: unknown) {
         if (!stopped && !isAbortError(cause)) {
-          setAgentIssue({ label: 'Jarvis 运行状态', detail: errorText(cause) })
+          setAgentIssue({ label: `${agentName} 运行状态`, detail: errorText(cause) })
         }
       } finally {
         inFlight = false
@@ -240,7 +242,7 @@ export default function Overview() {
       controller.abort()
       window.clearInterval(timer)
     }
-  }, [refreshVersion])
+  }, [agentName, refreshVersion])
 
   const todayDigest = digest?.mine.find((item) => item.date === todayDate)
   const personDigest = dailyItems.find((item) => item.scope === 'person')
@@ -278,7 +280,7 @@ export default function Overview() {
         <Space size={12}>
           <Badge
             status={healthPending ? 'processing' : hasHealthConcern ? 'warning' : 'success'}
-            text={healthPending ? '正在同步' : hasHealthConcern ? '有事项需关注' : 'Jarvis 正常'}
+            text={healthPending ? '正在同步' : hasHealthConcern ? '有事项需关注' : `${agentName} 正常`}
           />
           <Button
             size="small"
@@ -320,7 +322,7 @@ export default function Overview() {
         <div className="today-handoff-rail" aria-label="任务接力轨">
           <span className={(attention?.total ?? 0) > 0 ? 'is-human' : ''}><strong>{attention?.total ?? '—'}</strong> 等你处理</span>
           <i aria-hidden="true" />
-          <span className={activeTaskCount > 0 ? 'is-agent' : ''}><strong>{activeTaskCount}</strong> Jarvis 执行</span>
+          <span className={activeTaskCount > 0 ? 'is-agent' : ''}><strong>{activeTaskCount}</strong> {agentName} 执行</span>
           <i aria-hidden="true" />
           <span className={waitingTaskCount > 0 ? 'is-waiting' : ''}><strong>{waitingTaskCount}</strong> 等待外部</span>
           <i aria-hidden="true" />
@@ -466,7 +468,7 @@ export default function Overview() {
             {agentIssue && (
               <button type="button" onClick={() => navigate('debug')}>
                 <span className="today-risk-icon"><ClockCircleOutlined /></span>
-                <span><strong>暂时无法确认 Jarvis 运行状态</strong><small>任务仍可查看，执行状态需要到运行页面确认。</small></span>
+                <span><strong>暂时无法确认 {agentName} 运行状态</strong><small>任务仍可查看，执行状态需要到运行页面确认。</small></span>
                 <ArrowRightOutlined />
               </button>
             )}

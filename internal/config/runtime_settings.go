@@ -17,10 +17,11 @@ const runtimeOverrideFilename = "config.runtime.yaml"
 
 var ErrInvalidRuntimeSettings = errors.New("invalid runtime settings")
 
-// RuntimeSettings is the user-editable runtime-tuning subset of config.
-// Secrets, identities, service endpoints and infrastructure paths remain in
-// the main config file instead of being exposed through the settings page.
+// RuntimeSettings is the user-editable runtime subset of config. The assistant
+// display name is editable here; principal identity, secrets, service endpoints,
+// and infrastructure paths remain outside the settings page.
 type RuntimeSettings struct {
+	AgentDisplayName       string `json:"agent_display_name"`
 	AnalysisCLI            string `json:"analysis_cli"`
 	AnalysisModel          string `json:"analysis_model"`
 	AnalysisTimeoutSeconds int    `json:"analysis_timeout_seconds"`
@@ -185,6 +186,7 @@ func (s *RuntimeSettingsService) getLocked() (*RuntimeSettingsView, error) {
 
 func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 	return RuntimeSettings{
+		AgentDisplayName:             cfg.Identity.DisplayName,
 		AnalysisCLI:                  cfg.Codex.Bin,
 		AnalysisModel:                cfg.Codex.Model,
 		AnalysisTimeoutSeconds:       cfg.Codex.TimeoutSeconds,
@@ -261,6 +263,7 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 }
 
 func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
+	cfg.Identity.DisplayName = strings.TrimSpace(input.AgentDisplayName)
 	cfg.Codex.Bin = strings.TrimSpace(input.AnalysisCLI)
 	cfg.Codex.Model = strings.TrimSpace(input.AnalysisModel)
 	cfg.Codex.TimeoutSeconds = input.AnalysisTimeoutSeconds
@@ -336,7 +339,8 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 }
 
 type runtimeOverride struct {
-	Extract struct {
+	Identity IdentityConfig `yaml:"identity"`
+	Extract  struct {
 		PrincipalOpenID       string  `yaml:"principal_open_id"`
 		Enabled               bool    `yaml:"enabled"`
 		Engine                string  `yaml:"engine"`
@@ -441,6 +445,7 @@ type runtimeOverride struct {
 
 func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	var override runtimeOverride
+	override.Identity.DisplayName = strings.TrimSpace(input.AgentDisplayName)
 	override.Extract.Enabled = input.ExtractEnabled
 	override.Extract.Engine = strings.TrimSpace(input.ExtractEngine)
 	override.Extract.Schedule = strings.TrimSpace(input.ExtractSchedule)

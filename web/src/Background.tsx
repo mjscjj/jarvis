@@ -26,6 +26,7 @@ import {
 import type { TableColumnsType } from 'antd'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
+import { useAgentIdentity } from './agentIdentity'
 import {
   appendProjectFact,
   closeKeyMatter,
@@ -1217,6 +1218,7 @@ function resourceActiveLabel(value: string): string {
 }
 
 function ResourcePanel() {
+  const { name: agentName } = useAgentIdentity()
   const [items, setItems] = useState<Resource[]>([])
   const [total, setTotal] = useState(0)
   const [activeTotal, setActiveTotal] = useState(0)
@@ -1454,7 +1456,7 @@ function ResourcePanel() {
     <section className="resource-overview">
       <div className="resource-overview-copy">
         <Text strong className="resource-overview-title">长期资源</Text>
-        <Text type="secondary">Jarvis 会按人物、项目和你的个人背景调用这些资料。</Text>
+        <Text type="secondary">{agentName} 会按人物、项目和你的个人背景调用这些资料。</Text>
       </div>
       <div className="resource-stats" aria-label="资源统计">
         <div><Text type="secondary">全部</Text><Text strong>{total}</Text></div>
@@ -1658,6 +1660,7 @@ function SkillsPanel() {
 type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'facts' | 'profile'
 
 export default function Background() {
+  const { name: agentName } = useAgentIdentity()
   const { context, setViewState } = usePageContext()
   const memoryView = (value: string | undefined): MemoryView => (
     value === 'projects' || value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'facts' || value === 'profile'
@@ -1672,7 +1675,7 @@ export default function Background() {
 
   return (
     <div className="memory-page">
-      <PageHeader title="世界" subtitle="浏览 Jarvis 用来理解你、项目和协作关系的长期背景" />
+      <PageHeader title="世界" subtitle={`浏览 ${agentName} 用来理解你、项目和协作关系的长期背景`} />
 
       <Tabs
         activeKey={activeView}
@@ -1701,6 +1704,7 @@ export default function Background() {
 }
 
 export function Settings() {
+  const { name: agentName } = useAgentIdentity()
   const { context, setViewState } = usePageContext()
   type SettingsView = 'runtime' | 'scheduling' | 'memory' | 'extensions'
   const settingsView = (value: string | undefined): SettingsView => (
@@ -1710,7 +1714,7 @@ export function Settings() {
 
   return (
     <div className="settings-page">
-      <PageHeader title="系统设置" subtitle="配置 Jarvis 的运行、调度、共享记忆和扩展能力" />
+      <PageHeader title="系统设置" subtitle={`配置 ${agentName} 的运行、调度、共享记忆和扩展能力`} />
       <Tabs
         activeKey={activeView}
         onChange={(view) => setViewState({ view })}

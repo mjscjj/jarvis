@@ -17,6 +17,7 @@ import {
 import type { TableColumnsType } from 'antd'
 import { getTodo, listTodos, setTodoStatus } from './api'
 import { usePageContext } from './pageContext'
+import { useAgentIdentity } from './agentIdentity'
 import { TodoContextPanel } from './slots'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -65,6 +66,7 @@ function formatDate(value: string | null): string {
 }
 
 export default function Todos({ refreshKey }: { refreshKey: number }) {
+  const { name: agentName } = useAgentIdentity()
   const { context, setSelection, setViewState } = usePageContext()
   const routeScope = context.view_state.view in scopeStatuses ? context.view_state.view as ClueScope : 'actionable'
   const routePage = Math.max(1, Number(context.view_state.page) || 1)
@@ -286,7 +288,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
 
   return (
     <>
-      <PageHeader title="线索" subtitle="Jarvis 从会话中发现的行动信号，需要做事的会转成 Task" />
+      <PageHeader title="线索" subtitle={`${agentName} 从会话中发现的行动信号，需要做事的会转成 Task`} />
       <Card className="filter-card" variant="borderless">
         <div className="clue-scope-row">
           <Segmented<ClueScope>

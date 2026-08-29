@@ -18,7 +18,6 @@ import (
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
 	"jarvis/internal/sharedmem"
-	"jarvis/internal/skill"
 	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
 	"jarvis/internal/toolquery"
@@ -30,6 +29,7 @@ import (
 
 // Dependencies are process-level dependencies shared by API handlers.
 type Dependencies struct {
+	AgentDisplayName   string
 	DB                 *gorm.DB
 	Todos              extract.TodoReader
 	TodoStatus         extract.TodoStatusWriter
@@ -50,7 +50,7 @@ type Dependencies struct {
 	TextFiles          *textstore.Service
 	AgentConfig        *agentconfig.Service
 	ScheduledTasks     *scheduledtask.Service
-	Skills             *skill.Service
+	Skills             SkillService
 	Progress           progress.EventService
 	FactQueries        progress.FactQueryService
 	Overview           *insight.OverviewService
@@ -77,6 +77,9 @@ type Dependencies struct {
 func Register(h *server.Hertz, deps Dependencies) error {
 	if h == nil {
 		return fmt.Errorf("api hertz server is nil")
+	}
+	if deps.AgentDisplayName == "" {
+		return fmt.Errorf("api agent display name is empty")
 	}
 	if deps.DB == nil {
 		return fmt.Errorf("api database dependency is nil")
@@ -174,6 +177,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/readyz", Readiness(deps.DB, deps.Readiness))
+	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName))
 	h.GET("/api/messages", ListToolMessages(toolQueries))
 	h.GET("/api/captured-resources", ListCapturedResources(toolQueries))
 	h.GET("/api/captured-resources/:resource_id", GetCapturedResource(toolQueries))

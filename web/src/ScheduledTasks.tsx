@@ -29,6 +29,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { createScheduledTask, deleteScheduledTask, listScheduledTasks, triggerScheduledTask, updateScheduledTask } from './api'
 import PageHeader from './components/PageHeader'
 import { usePageContext } from './pageContext'
+import { useAgentIdentity } from './agentIdentity'
 import type { ScheduledTask, ScheduledTaskInput, ScheduledTaskScheduleType, ScheduledTaskStatus } from './types'
 import './styles/clues-automation.css'
 
@@ -124,6 +125,7 @@ function lastRunText(task: ScheduledTask): string {
 }
 
 export default function ScheduledTasks() {
+  const { name: agentName } = useAgentIdentity()
   const { context, setViewState } = usePageContext()
   const routeView: ScheduleView = context.view_state.view === 'wakeups' ? 'wakeups' : 'automations'
   const routeStatus = context.view_state.status || ''
@@ -401,7 +403,7 @@ export default function ScheduledTasks() {
           type="info"
           showIcon
           title="这些是任务执行中产生的等待点"
-          description="到时后 Jarvis 会回到原 Task 继续执行。它们由系统管理，在这里只读展示，不作为普通自动化编辑。"
+          description={`到时后 ${agentName} 会回到原 Task 继续执行。它们由系统管理，在这里只读展示，不作为普通自动化编辑。`}
         />
       )}
 
@@ -508,7 +510,7 @@ export default function ScheduledTasks() {
             <Switch />
           </Form.Item>
           <Form.Item name="instruction" label="到时后做什么" rules={[{ required: true, whitespace: true, message: '请输入任务指令' }]}>
-            <Input.TextArea autoSize={{ minRows: 5, maxRows: 12 }} placeholder="描述每次到点后要交给 Jarvis 完成的事" />
+            <Input.TextArea autoSize={{ minRows: 5, maxRows: 12 }} placeholder={`描述每次到点后要交给 ${agentName} 完成的事`} />
           </Form.Item>
           <details className="automation-context-editor">
             <summary>高级设置 · 冻结上下文</summary>

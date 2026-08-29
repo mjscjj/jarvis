@@ -236,17 +236,17 @@ func TestJarvisInstallConfiguresIdentityThroughMachineBoundary(t *testing.T) {
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
-  *"run ./cmd/jarvis-config configure-principal"*"--open-id ou_ready --git-author ready@example.com")
-    printf '%s' '{"principal_open_id":"ou_ready","git_author":"ready@example.com"}' ;;
+  *"run ./cmd/jarvis-config configure-principal"*"--agent-name 小贾 --open-id ou_ready --git-author ready@example.com")
+    printf '%s' '{"agent_display_name":"小贾","principal_open_id":"ou_ready","git_author":"ready@example.com"}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
 esac
 `)
 	out, err := runJarvisInstall(t, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")},
-		"configure-identity", "--open-id", "ou_ready", "--git-author", "ready@example.com")
+		"configure-identity", "--agent-name", "小贾", "--open-id", "ou_ready", "--git-author", "ready@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `"principal_open_id":"ou_ready"`) {
+	if !strings.Contains(out, `"agent_display_name":"小贾"`) || !strings.Contains(out, `"principal_open_id":"ou_ready"`) {
 		t.Fatalf("configure-identity output = %s", out)
 	}
 }
@@ -303,7 +303,7 @@ exit 9
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`, `mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`} {
+	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`, `mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`, `agent_identity.display_name`, `overrides any different name in prior session history`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CC config missing %q:\n%s", want, text)
 		}

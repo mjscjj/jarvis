@@ -148,9 +148,9 @@ func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
 		"payload",
 		// 语义边界一：M3 只做准入，不越界到执行阶段。
 		"不制定执行方案",
-		// 语义边界二：principal 直接给 Jarvis 的指令必须绕过价值判断。少了这条，
-		// 强模型会把「让 jarvis 说句话」判成测试信息并丢弃。
-		"principal 直接要求 Jarvis",
+		// 语义边界二：principal 直接给当前助手的指令必须绕过价值判断。名称由
+		// agentidentity 在运行时渲染，原始提示词必须保留统一占位符。
+		"principal 直接要求 {{AGENT_NAME}}",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q", want)

@@ -54,8 +54,9 @@ func TestValidate(t *testing.T) {
 	t.Parallel()
 
 	valid := Config{
-		Server: ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
-		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
+		Identity: IdentityConfig{DisplayName: "Jarvis"},
+		Server:   ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
+		SQLite:   SQLiteConfig{Path: "var/jarvis.db"},
 		Extract: ExtractConfig{
 			Schedule:              "@every 10m",
 			Concurrency:           2,
@@ -111,6 +112,7 @@ func TestValidate(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid"},
+		{name: "agent display name", mutate: func(c *Config) { c.Identity.DisplayName = "" }, wantErr: "identity.display_name"},
 		{name: "server address", mutate: func(c *Config) { c.Server.Addr = "" }, wantErr: "server.addr"},
 		{name: "server web root", mutate: func(c *Config) { c.Server.WebRoot = "" }, wantErr: "server.web_root"},
 		{name: "sqlite path", mutate: func(c *Config) { c.SQLite.Path = "" }, wantErr: "sqlite.path"},
@@ -245,8 +247,9 @@ func TestValidate(t *testing.T) {
 
 func TestValidateExtractEnabled(t *testing.T) {
 	cfg := Config{
-		Server: ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
-		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
+		Identity: IdentityConfig{DisplayName: "Jarvis"},
+		Server:   ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
+		SQLite:   SQLiteConfig{Path: "var/jarvis.db"},
 		Model: ModelConfig{
 			Model: "model", TimeoutSec: 60,
 		},

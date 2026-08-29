@@ -29,7 +29,7 @@ export const todoStatusMeta: Record<TodoStatus, StatusMeta> = {
 
 export const taskStatusMeta: Record<TaskStatus, StatusMeta> = {
   pending: { label: '待执行', color: C.info },
-  executing: { label: 'Jarvis 执行中', color: C.processing },
+  executing: { label: '执行中', color: C.processing },
   waiting: { label: '等待外部', color: C.waiting },
   needs_human: { label: '待我回复', color: C.warning },
   awaiting_approval: { label: '待我审批', color: C.warning },

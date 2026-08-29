@@ -58,7 +58,7 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 ```bash
 ./scripts/jarvis-install configure-identity \
-  --open-id <open_id> --git-author <author>
+  --agent-name <name> --open-id <open_id> --git-author <author>
 
 ./scripts/jarvis-install bind-cc
 # 已有且已验证 secret 时才可显式复用：

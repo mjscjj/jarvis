@@ -26,7 +26,7 @@ install-traex    Install the stable ByteDance internal TRAE CLI.
 install-cc-connect Build the pinned Jarvis-patched CC Connect binary. It does not configure or start the daemon.
 install-qdrant  Install the pinned macOS arm64 Qdrant service for this checkout.
 validate-dependencies Verify every install-time dependency without starting Jarvis.
-configure-identity Save principal open_id and Git author for the current default lark-cli identity.
+configure-identity Save the assistant name, principal open_id, and Git author for the current machine.
 bind-cc          Bind CC Connect jarvis-codex to the current default lark-cli App and checkout.
 validate-binding Validate the one-App Jarvis/lark-cli/CC Connect binding.
 install-server  Build and register Jarvis only after dependencies and configuration are ready.
@@ -226,21 +226,24 @@ integrated_binding_validation() {
 }
 
 configure_identity() {
-  local open_id="" git_author="" config_path="$CONFIG_PATH"
+  local agent_name="" open_id="" git_author="" config_path="$CONFIG_PATH"
   while (( $# > 0 )); do
     case "$1" in
+      --agent-name) (( $# >= 2 )) || fail "--agent-name requires a value"; agent_name="$2"; shift 2 ;;
       --open-id) (( $# >= 2 )) || fail "--open-id requires a value"; open_id="$2"; shift 2 ;;
       --git-author) (( $# >= 2 )) || fail "--git-author requires a value"; git_author="$2"; shift 2 ;;
       --config) (( $# >= 2 )) || fail "--config requires a value"; config_path="$2"; shift 2 ;;
       *) fail "configure-identity unknown argument: $1" ;;
     esac
   done
+  [[ -n "$agent_name" ]] || fail "configure-identity requires --agent-name"
   [[ "$open_id" == ou_* && "$open_id" != "ou_" ]] || fail "configure-identity requires a non-empty ou_ --open-id"
   [[ -n "$git_author" ]] || fail "configure-identity requires --git-author"
   [[ "$config_path" == /* ]] || config_path="${REPO_ROOT}/${config_path}"
   (
     cd "$REPO_ROOT"
-    go run ./cmd/jarvis-config configure-principal --config "$config_path" --open-id "$open_id" --git-author "$git_author"
+    go run ./cmd/jarvis-config configure-principal \
+      --config "$config_path" --agent-name "$agent_name" --open-id "$open_id" --git-author "$git_author"
   ) | jq -c .
 }
 

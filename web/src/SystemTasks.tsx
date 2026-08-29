@@ -19,6 +19,7 @@ import {
 import type { TableColumnsType } from 'antd'
 import { EditOutlined, HistoryOutlined, ReloadOutlined } from '@ant-design/icons'
 import { getRuntimeSettings, getSystemTaskRuns, updateRuntimeSettings } from './api'
+import { useAgentIdentity } from './agentIdentity'
 import type { RuntimeSettings, RuntimeSettingsView, SystemTaskRun, SystemTaskRunList } from './types'
 
 const { Text, Title } = Typography
@@ -183,6 +184,7 @@ function formatRunDuration(value: number | null): string {
 }
 
 export default function SystemTasks() {
+  const { name: agentName } = useAgentIdentity()
   const [view, setView] = useState<RuntimeSettingsView>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
@@ -342,7 +344,7 @@ export default function SystemTasks() {
       <Flex className="system-tasks-header" justify="space-between" align="flex-start" gap={16}>
         <div>
           <Title level={4}>系统任务</Title>
-          <Text type="secondary">集中配置 Jarvis 后台调度。配置写入本机 YAML 覆盖文件，执行记录直接读取服务日志。</Text>
+          <Text type="secondary">集中配置 {agentName} 后台调度。配置写入本机 YAML 覆盖文件，执行记录直接读取服务日志。</Text>
         </div>
         <Button icon={<ReloadOutlined />} onClick={reload} loading={loading}>刷新</Button>
       </Flex>

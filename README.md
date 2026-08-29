@@ -166,7 +166,7 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ./scripts/jarvis-install validate-dependencies
 
 # 依赖门通过后登录 lark-cli 当前默认身份，再写本机 identity、绑定 CC：
-./scripts/jarvis-install configure-identity --open-id <open_id> --git-author <author>
+./scripts/jarvis-install configure-identity --agent-name <name> --open-id <open_id> --git-author <author>
 ./scripts/jarvis-install bind-cc
 ./scripts/jarvis-install validate-binding
 

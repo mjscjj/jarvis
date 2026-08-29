@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"jarvis/internal/agentidentity"
 	"jarvis/internal/execute"
 )
 
@@ -21,18 +22,23 @@ type larkRunner interface {
 // path is needed for this local single-user runtime.
 type Notifier struct {
 	lark           larkRunner
+	agentName      string
 	principal      string
 	serverPort     string
 	resolveLANIPv4 func() (net.IP, error)
 }
 
-func NewNotifier(lark larkRunner, principalOpenID, serverAddr string) (*Notifier, error) {
-	return newNotifier(lark, principalOpenID, serverAddr, currentLANIPv4)
+func NewNotifier(lark larkRunner, agentName, principalOpenID, serverAddr string) (*Notifier, error) {
+	return newNotifier(lark, agentName, principalOpenID, serverAddr, currentLANIPv4)
 }
 
-func newNotifier(lark larkRunner, principalOpenID, serverAddr string, resolveLANIPv4 func() (net.IP, error)) (*Notifier, error) {
+func newNotifier(lark larkRunner, agentName, principalOpenID, serverAddr string, resolveLANIPv4 func() (net.IP, error)) (*Notifier, error) {
 	if lark == nil {
 		return nil, fmt.Errorf("card approval lark client is nil")
+	}
+	agentName = strings.TrimSpace(agentName)
+	if err := agentidentity.ValidateName(agentName); err != nil {
+		return nil, fmt.Errorf("card approval agent name: %w", err)
 	}
 	principalOpenID = strings.TrimSpace(principalOpenID)
 	if principalOpenID == "" {
@@ -45,7 +51,7 @@ func newNotifier(lark larkRunner, principalOpenID, serverAddr string, resolveLAN
 	if resolveLANIPv4 == nil {
 		return nil, fmt.Errorf("card approval LAN IPv4 resolver is nil")
 	}
-	return &Notifier{lark: lark, principal: principalOpenID, serverPort: port, resolveLANIPv4: resolveLANIPv4}, nil
+	return &Notifier{lark: lark, agentName: agentName, principal: principalOpenID, serverPort: port, resolveLANIPv4: resolveLANIPv4}, nil
 }
 
 func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNotification) (*execute.ApprovalDelivery, error) {
@@ -63,7 +69,7 @@ func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNoti
 	if err != nil {
 		return nil, err
 	}
-	card := approvalCard(notice, detailURL)
+	card := approvalCard(notice, detailURL, n.agentName)
 	content, err := json.Marshal(card)
 	if err != nil {
 		return nil, fmt.Errorf("encode approval card task_id=%d: %w", notice.TaskID, err)
@@ -116,7 +122,7 @@ func currentLANIPv4() (net.IP, error) {
 	return address.IP, nil
 }
 
-func approvalCard(notice execute.ApprovalNotification, detailURL string) map[string]any {
+func approvalCard(notice execute.ApprovalNotification, detailURL, agentName string) map[string]any {
 	callback := func(decision string) map[string]any {
 		return map[string]any{
 			"type": "callback",
@@ -135,7 +141,7 @@ func approvalCard(notice execute.ApprovalNotification, detailURL string) map[str
 	approve := button("确认", "primary_filled", "approve")
 	approve["confirm"] = map[string]any{
 		"title": map[string]any{"tag": "plain_text", "content": "确认执行？"},
-		"text":  map[string]any{"tag": "plain_text", "content": "确认后 Jarvis 会按卡片中的方案继续执行。"},
+		"text":  map[string]any{"tag": "plain_text", "content": fmt.Sprintf("确认后 %s 会按卡片中的方案继续执行。", agentName)},
 	}
 	column := func(element map[string]any) map[string]any {
 		return map[string]any{"tag": "column", "width": "weighted", "weight": 1, "elements": []any{element}}

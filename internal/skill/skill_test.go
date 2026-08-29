@@ -76,6 +76,50 @@ func TestServiceReadsAndUpdatesYAMLConfiguration(t *testing.T) {
 	}
 }
 
+func TestRenderingServiceRendersCatalogAndContentWithoutChangingSource(t *testing.T) {
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "example-skill")
+	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillText := "---\nname: example-skill\ndescription: \"{{AGENT_NAME}} 可用能力\"\n---\n\n# {{AGENT_NAME}} 正文\n"
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte("skills:\n  - name: example-skill\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	source, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewRenderingService(source, func(value string) string {
+		return strings.ReplaceAll(value, "{{AGENT_NAME}}", "小贾")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := service.Content(t.Context(), "example-skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(catalog, "小贾 可用能力") || !strings.Contains(content.Content, "# 小贾 正文") {
+		t.Fatalf("catalog=%q content=%q", catalog, content.Content)
+	}
+	raw, err := source.Content(t.Context(), "example-skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.Content, "{{AGENT_NAME}}") {
+		t.Fatalf("source content was mutated: %q", raw.Content)
+	}
+}
+
 func TestServiceFailsWhenSkillConfigurationDoesNotMatchFiles(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(t.TempDir(), "skills.yaml")

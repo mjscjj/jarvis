@@ -9,7 +9,7 @@ This directory is the product-owned integration between Jarvis and CC Connect. I
 
 The integration has one topology rule: CC Connect is the only Feishu Bot WebSocket owner for the current default lark-cli App. Jarvis uses that default identity for user reads and Bot operations, while M2 reads work messages through its normal polling path.
 
-The `jarvis-codex` project enables `inject_sender` so every Feishu turn carries a trusted `chat_id`. The Agent must first run `scripts/jarvis-tools get-context --chat-id <chat_id>` and use unscoped `get-context` only when that chat is unconfigured, including P2P. The current Feishu message and any injected thread-root content remain the primary evidence; Jarvis context is background. This makes CC Connect an interactive entry into the correctly scoped Jarvis world model instead of a standalone Codex process in the same checkout.
+The `jarvis-codex` project enables `inject_sender` so every Feishu turn carries a trusted `chat_id`. The Agent must first run `scripts/jarvis-tools get-context --chat-id <chat_id>` and use unscoped `get-context` only when that chat is unconfigured, including P2P. That response also carries the live `agent_identity.display_name`; it is the current assistant name and overrides stale names in resumed session history. The current Feishu message and any injected thread-root content remain the primary evidence; Jarvis context is background. This makes CC Connect an interactive entry into the correctly scoped Jarvis world model instead of a standalone Codex process in the same checkout.
 
 Build and binding are separate operations:
 

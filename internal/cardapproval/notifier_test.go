@@ -13,7 +13,7 @@ import (
 
 func TestNotifierSendsVersionBoundApprovalCard(t *testing.T) {
 	runner := &fakeLarkRunner{response: `{"data":{"message_id":"om_card_1"}}`}
-	notifier, err := newNotifier(runner, "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
+	notifier, err := newNotifier(runner, "小贾", "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
 		return net.ParseIP("192.168.3.91"), nil
 	})
 	if err != nil {
@@ -42,7 +42,7 @@ func TestNotifierSendsVersionBoundApprovalCard(t *testing.T) {
 
 func TestNotifierFailsWithoutMessageID(t *testing.T) {
 	runner := &fakeLarkRunner{response: `{"data":{}}`}
-	notifier, err := newNotifier(runner, "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
+	notifier, err := newNotifier(runner, "小贾", "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
 		return net.ParseIP("192.168.3.91"), nil
 	})
 	if err != nil {
@@ -58,7 +58,7 @@ func TestNotifierFailsWithoutMessageID(t *testing.T) {
 }
 
 func TestNewNotifierFailsWithoutServerAddress(t *testing.T) {
-	_, err := NewNotifier(&fakeLarkRunner{}, "ou_principal", "")
+	_, err := NewNotifier(&fakeLarkRunner{}, "小贾", "ou_principal", "")
 	if err == nil || !strings.Contains(err.Error(), "server address") {
 		t.Fatalf("NewNotifier() error = %v", err)
 	}
@@ -68,7 +68,7 @@ func TestNotifierResolvesLANAddressForEveryCard(t *testing.T) {
 	runner := &fakeLarkRunner{response: `{"data":{"message_id":"om_card_1"}}`}
 	addresses := []net.IP{net.ParseIP("192.168.1.10"), net.ParseIP("192.168.1.11")}
 	resolveCalls := 0
-	notifier, err := newNotifier(runner, "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
+	notifier, err := newNotifier(runner, "小贾", "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
 		address := addresses[resolveCalls]
 		resolveCalls++
 		return address, nil
@@ -98,7 +98,7 @@ func TestNotifierResolvesLANAddressForEveryCard(t *testing.T) {
 
 func TestNotifierFailsBeforeSendingWhenLANAddressCannotBeResolved(t *testing.T) {
 	runner := &fakeLarkRunner{response: `{"data":{"message_id":"om_card_1"}}`}
-	notifier, err := newNotifier(runner, "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
+	notifier, err := newNotifier(runner, "小贾", "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
 		return nil, errors.New("no default route")
 	})
 	if err != nil {

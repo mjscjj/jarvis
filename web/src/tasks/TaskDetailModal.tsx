@@ -34,6 +34,7 @@ import {
 import type { Effect, ExecutionRun, RunEnrichment, Task, TaskEvent, TaskRunOutput } from '../types'
 import { getTaskRunOutput } from '../api'
 import StatusBadge from '../components/StatusBadge'
+import { useAgentIdentity } from '../agentIdentity'
 import { actionLabels, taskStatusMeta as statusMeta } from '../status'
 import {
   failureKindOf,
@@ -917,13 +918,14 @@ function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) 
 }
 
 function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
+  const { name: agentName } = useAgentIdentity()
   const result = task.execution_result
   const summary = task.summary?.trim() || strField(result, 'summary')
   const error = strField(result, 'error')
   const rejectReason = strField(result, 'reject_reason')
   const followup = strField(result, 'needs_followup')
   const enrichments = enrichmentItems(result?.enrichments)
-  const stateCopy = taskStateCopy(task)
+  const stateCopy = taskStateCopy(task, agentName)
   const closedByModel = task.resolution?.actor_type === 'proactive'
     && task.resolution.event_type === 'closed'
   const closeReason = modelCloseReason(task)
@@ -979,7 +981,7 @@ function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
   )
 }
 
-function taskStateCopy(task: Task): { current: string; next: string } {
+function taskStateCopy(task: Task, agentName: string): { current: string; next: string } {
   const result = task.execution_result
   const summary = task.summary?.trim() || strField(result, 'summary')
   const followup = strField(result, 'needs_followup')
@@ -994,7 +996,7 @@ function taskStateCopy(task: Task): { current: string; next: string } {
   if (task.status === 'awaiting_approval') {
     return {
       current: summary || '已生成完整产出物，尚未执行外部写入。',
-      next: followup || '请审阅产出物。批准后，Jarvis 将执行写入并验证结果。',
+      next: followup || `请审阅产出物。批准后，${agentName} 将执行写入并验证结果。`,
     }
   }
   if (task.status === 'done') {
@@ -1022,7 +1024,7 @@ function taskStateCopy(task: Task): { current: string; next: string } {
   }
   if (task.status === 'executing') {
     return {
-      current: 'Jarvis 正在执行任务。',
+      current: `${agentName} 正在执行任务。`,
       next: '可以等待执行完成；如需停止，可使用“打断执行”。',
     }
   }
@@ -1039,13 +1041,13 @@ function taskStateCopy(task: Task): { current: string; next: string } {
   }
   if (task.status === 'needs_human') {
     return {
-      current: summary || 'Jarvis 已暂停当前执行会话。',
+      current: summary || `${agentName} 已暂停当前执行会话。`,
       next: followup || '回复后将继续同一个执行会话，不会重跑任务。',
     }
   }
   return {
     current: task.target || task.title,
-    next: '开始执行后，Jarvis 将使用完整任务上下文完成工作。',
+    next: `开始执行后，${agentName} 将使用完整任务上下文完成工作。`,
   }
 }
 

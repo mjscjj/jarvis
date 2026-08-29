@@ -11,6 +11,8 @@ import (
 )
 
 const runtimeSettingsTestYAML = `
+identity:
+  display_name: "Jarvis"
 server:
   addr: "0.0.0.0:18800"
   web_root: "web/dist"
@@ -170,6 +172,7 @@ dailydigest:
 	}
 
 	input := view.Settings
+	input.AgentDisplayName = "小贾"
 	input.AnalysisCLI = "codex"
 	input.AnalysisModel = "new-analysis-model"
 	input.ExecuteCLI = "traex"
@@ -193,7 +196,7 @@ dailydigest:
 	if !reflect.DeepEqual(updated.Settings, input) {
 		t.Fatalf("round-trip settings mismatch:\nupdated=%#v\ninput=%#v", updated.Settings, input)
 	}
-	if updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
+	if updated.Settings.AgentDisplayName != "小贾" || updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
 		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
 		updated.Settings.ProactiveSchedule != "@every 2h" || updated.Settings.ProactiveStartupDelaySeconds != 180 ||
@@ -215,7 +218,7 @@ dailydigest:
 	if err != nil {
 		t.Fatalf("Load() after update error = %v", err)
 	}
-	if reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
+	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
 		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||

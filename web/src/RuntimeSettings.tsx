@@ -62,16 +62,18 @@ function TextField({
   label,
   placeholder,
   help,
+  maxLength,
 }: {
   name: FieldName
   label: string
   placeholder?: string
   help?: string
+  maxLength?: number
 }) {
   return (
     <SettingCol>
       <Form.Item name={name} label={<FieldLabel label={label} help={help} />} rules={[{ required: true, whitespace: true }]}>
-        <Input placeholder={placeholder} />
+        <Input placeholder={placeholder} maxLength={maxLength} showCount={Boolean(maxLength)} />
       </Form.Item>
     </SettingCol>
   )
@@ -272,11 +274,14 @@ export default function RuntimeSettings() {
       label: <PanelLabel title="常用设置" description="总开关、CLI 和模型归属" />,
       children: (
         <>
+          <Section title="助手身份" description="用于界面显示和所有 Agent 提示词；保存后需重启主服务。">
+            <TextField name="agent_display_name" label="机器人名称" help="1–32 个字符，不能包含换行或模板符号。" maxLength={32} />
+          </Section>
           <Section title="阶段开关" description="控制后台自动运行；保存后需重启主服务。">
             <SwitchField name="extract_enabled" label="M3 自动提取" help="从新消息中识别行动线索并生成 Todo。" />
             <SwitchField name="execute_auto_enabled" label="M5 自动执行" help="自动固化 extracted Todo 并执行 Task；关闭后仍可手动执行 Task。" />
             <SwitchField name="proactive_enabled" label="主动巡视" help="启动两分钟后先巡视一次，之后按周期整理世界模型并发现可做之事。" />
-            <SwitchField name="chat_enabled" label="右侧对话" help="启用页面右侧的 Jarvis 对话入口。" />
+            <SwitchField name="chat_enabled" label="右侧对话" help="启用页面右侧的机器人对话入口。" />
           </Section>
           <Section title="M3 Agent" description="M3 选择 Agent CLI 时使用这组 CLI、模型和超时。">
             <SelectField name="analysis_cli" label="M3 CLI" options={cliOptions} help="M3 提取启动的命令行执行器。" />

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentconfig"
+	"jarvis/internal/agentidentity"
 	"jarvis/internal/api"
 	"jarvis/internal/ark"
 	"jarvis/internal/background"
@@ -106,6 +107,14 @@ func main() {
 	if err != nil {
 		fatalf("initialize text file service failed: %v", err)
 	}
+	identityRenderer, err := agentidentity.NewRenderer(cfg.Identity.DisplayName)
+	if err != nil {
+		fatalf("initialize agent identity renderer failed: %v", err)
+	}
+	runtimePrompts, err := agentidentity.NewContentReader(textFileService, identityRenderer)
+	if err != nil {
+		fatalf("initialize rendered prompt reader failed: %v", err)
+	}
 	sharedMemoryPath, err := sharedmem.PathForConfig(configPathAbsolute)
 	if err != nil {
 		fatalf("resolve shared memory path failed: %v", err)
@@ -118,13 +127,21 @@ func main() {
 	if err != nil {
 		fatalf("initialize work rule service failed: %v", err)
 	}
-	agentConfigService, err := agentconfig.NewService(textFileService, workRuleService)
+	runtimeWorkRules, err := agentidentity.NewBlockReader(workRuleService, identityRenderer)
+	if err != nil {
+		fatalf("initialize rendered work rule reader failed: %v", err)
+	}
+	agentConfigService, err := agentconfig.NewService(runtimePrompts, runtimeWorkRules)
 	if err != nil {
 		fatalf("initialize agent config service failed: %v", err)
 	}
 	skillService, err := skill.NewService(cfg.Skills.Root, filepath.Join(filepath.Dir(configPathAbsolute), "skills.yaml"))
 	if err != nil {
 		fatalf("initialize agent skill service failed: %v", err)
+	}
+	runtimeSkills, err := skill.NewRenderingService(skillService, identityRenderer.Render)
+	if err != nil {
+		fatalf("initialize rendered skill reader failed: %v", err)
 	}
 
 	connectCtx, cancel := context.WithTimeout(startupCtx, 10*time.Second)
@@ -223,7 +240,7 @@ func main() {
 			MaxMessages: cfg.FactEngine.WindowMaxMessages,
 			Location:    location,
 		},
-		Prompts: textFileService,
+		Prompts: runtimePrompts,
 	})
 	if err != nil {
 		fatalf("initialize fact engine worker failed: %v", err)
@@ -250,7 +267,7 @@ func main() {
 	if err != nil {
 		fatalf("initialize common context snapshot assembler failed: %v", err)
 	}
-	factRollupWorker, err := factengine.NewRollupWorker(db, factRollupExtractor, progressService, textFileService, contextAssembler, location)
+	factRollupWorker, err := factengine.NewRollupWorker(db, factRollupExtractor, progressService, runtimePrompts, contextAssembler, location)
 	if err != nil {
 		fatalf("initialize fact rollup worker failed: %v", err)
 	}
@@ -294,7 +311,7 @@ func main() {
 	proactiveWorker, err := proactive.NewWorker(proactive.Options{
 		Runner:        proactiveRunner,
 		Recorder:      proactiveStore,
-		Prompts:       textFileService,
+		Prompts:       runtimePrompts,
 		SharedMemory:  sharedMemoryService,
 		Sandbox:       cfg.Proactive.Sandbox,
 		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
@@ -314,7 +331,7 @@ func main() {
 	}
 	meetingSweepWorker, err := meetingsweep.NewWorker(meetingsweep.Options{
 		Runner:        meetingSweepRunner,
-		Prompts:       textFileService,
+		Prompts:       runtimePrompts,
 		Sandbox:       cfg.MeetingSweep.Sandbox,
 		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
 		Location:      location,
@@ -333,7 +350,7 @@ func main() {
 	}
 	morningBriefWorker, err := morningbrief.NewWorker(morningbrief.Options{
 		Runner:        morningBriefRunner,
-		Prompts:       textFileService,
+		Prompts:       runtimePrompts,
 		Sandbox:       cfg.MorningBrief.Sandbox,
 		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
 		Location:      location,
@@ -357,13 +374,13 @@ func main() {
 		if err != nil {
 			fatalf("initialize approval lark-cli failed: %v", err)
 		}
-		approvalNotifier, err = cardapproval.NewNotifier(approvalClient, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
+		approvalNotifier, err = cardapproval.NewNotifier(approvalClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
 		if err != nil {
 			fatalf("initialize approval notifier failed: %v", err)
 		}
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
-		taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, approvalNotifier, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		taskService, codexRunner, sharedMemoryService, runtimeWorkRules, runtimePrompts, runtimeSkills, approvalNotifier, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
 		fatalf("initialize agent executor failed: %v", err)
@@ -430,6 +447,7 @@ func main() {
 	// 每日进度总结：个人与关键群统一复用 execute 段的官方 codex runner，
 	// danger-full-access + 联网自跑 lark-cli/bytedcli/git，并分别注入对应 Skill。
 	dailyDigestService, err := dailydigest.NewService(dailydigest.Options{
+		AgentName:       cfg.Identity.DisplayName,
 		DB:              db,
 		Location:        location,
 		Runner:          dailyDigestRunner,
@@ -533,9 +551,9 @@ func main() {
 			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 			EvidenceRetryMax: cfg.Extract.EvidenceRetryMax,
 			AgentToolCatalog: agentToolCatalog,
-			WorkRules:        workRuleService,
-			Skills:           skillService,
-			SystemPrompts:    textFileService,
+			WorkRules:        runtimeWorkRules,
+			Skills:           runtimeSkills,
+			SystemPrompts:    runtimePrompts,
 		})
 		if err != nil {
 			fatalf("initialize extraction worker failed: %v", err)
@@ -857,6 +875,7 @@ func main() {
 	var chatService *chat.Service
 	if cfg.Chat.Enabled {
 		chatService, err = chat.NewService(chat.Options{
+			AgentName:        cfg.Identity.DisplayName,
 			Bin:              cfg.Execute.Bin,
 			Model:            cfg.Chat.Model,
 			Sandbox:          cfg.Chat.Sandbox,
@@ -888,7 +907,8 @@ func main() {
 		readinessTargets.VectorIndex = semanticIndex
 	}
 	if err := api.Register(h, api.Dependencies{
-		DB: db, Todos: todoStore, TodoStatus: todoStore,
+		AgentDisplayName: cfg.Identity.DisplayName,
+		DB:               db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,
 		Projects:        projectService, KeyMatters: keyMatterService,
@@ -900,7 +920,7 @@ func main() {
 		TextFiles:      textFileService,
 		AgentConfig:    agentConfigService,
 		ScheduledTasks: scheduledTaskService,
-		Skills:         skillService,
+		Skills:         runtimeSkills,
 		Progress:       progressService,
 		FactQueries:    progressService,
 		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,

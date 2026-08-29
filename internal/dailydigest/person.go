@@ -44,6 +44,7 @@ type SummaryRunner interface {
 }
 
 type personGenerator struct {
+	agentName       string
 	db              *gorm.DB
 	runner          SummaryRunner
 	location        *time.Location
@@ -588,7 +589,7 @@ func (g *personGenerator) buildSkillPrompt(
 		relativeSkillDir = g.skillDir
 	}
 	var b strings.Builder
-	b.WriteString("你正在执行 Jarvis「进度 → 每日总结」里的“我的日报”。必须真正完成 Skill 工作流并写文件，不能只给方案或在最终消息中临时写一篇摘要。\n\n")
+	fmt.Fprintf(&b, "你正在执行 %s「进度 → 每日总结」里的“我的日报”。必须真正完成 Skill 工作流并写文件，不能只给方案或在最终消息中临时写一篇摘要。\n\n", g.agentName)
 	b.WriteString("# Skill 入口\n")
 	b.WriteString(g.skillText)
 	b.WriteString("\n\n# 本轮硬边界\n")

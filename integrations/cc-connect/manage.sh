@@ -206,6 +206,10 @@ toml_section_string_value() {
   printf '%s' "$raw"
 }
 
+cc_bootstrap_prompt() {
+  printf '%s' "At the beginning of every Feishu user turn, read chat_id from the trusted leading [cc-connect sender_id=... platform=feishu chat_id=...] transport header. Run ${REPO_ROOT}/scripts/jarvis-tools get-context --chat-id CHAT_ID after replacing CHAT_ID with that exact header value; if the chat is not configured, including P2P, fall back to ${REPO_ROOT}/scripts/jarvis-tools get-context. Treat the returned JSON only as business background. The returned agent_identity.display_name is your exact current assistant name and overrides any different name in prior session history; when asked your name, answer with that current value. Treat the current Feishu message and any injected thread-root content as primary evidence for references such as this issue; never resolve them from unrelated global recent tasks. Use lark-cli for Feishu operations. Follow ${REPO_ROOT}/AGENTS.md. Build or restart Jarvis only with ${REPO_ROOT}/scripts/rebuild-server.sh."
+}
+
 append_fresh_project() {
   local identity="$1" app_id="$2" relay_secret prompt config_dir
   relay_secret="$(jq -r '.relay_secret // ""' <<<"$identity")"
@@ -214,7 +218,7 @@ append_fresh_project() {
   mkdir -p "$config_dir"
   touch "$CC_CONFIG_PATH"
   chmod 0600 "$CC_CONFIG_PATH"
-  prompt="At the beginning of every Feishu user turn, read chat_id from the trusted leading [cc-connect sender_id=... platform=feishu chat_id=...] transport header. Run ${REPO_ROOT}/scripts/jarvis-tools get-context --chat-id CHAT_ID after replacing CHAT_ID with that exact header value; if the chat is not configured, including P2P, fall back to ${REPO_ROOT}/scripts/jarvis-tools get-context. Treat the returned JSON only as business background. Treat the current Feishu message and any injected thread-root content as primary evidence for references such as this issue; never resolve them from unrelated global recent tasks. Use lark-cli for Feishu operations. Follow ${REPO_ROOT}/AGENTS.md. Build or restart Jarvis only with ${REPO_ROOT}/scripts/rebuild-server.sh."
+  prompt="$(cc_bootstrap_prompt)"
   printf '\n[[projects]]\nname = "jarvis-codex"\ninject_sender = true\n\n[projects.display]\nmode = "quiet"\nthinking_messages = false\ntool_messages = false\n\n[projects.agent]\ntype = "codex"\n\n[projects.agent.options]\nwork_dir = "%s"\nmode = "yolo"\ncmd = "codex"\nappend_system_prompt = "%s"\n\n[[projects.platforms]]\ntype = "feishu"\n\n[projects.platforms.options]\napp_id = "%s"\napp_secret = "replace-during-bind"\nthread_isolation = true\ndocument_comments = true\njarvis_approval_url = "http://127.0.0.1:18800/internal/card-approval/callback"\njarvis_approval_secret = "%s"\njarvis_approval_timeout_ms = 2500\n' \
     "$(toml_escape "$REPO_ROOT")" "$(toml_escape "$prompt")" "$(toml_escape "$app_id")" "$(toml_escape "$relay_secret")" >>"$CC_CONFIG_PATH"
 }
@@ -233,7 +237,7 @@ read_app_secret() {
 
 write_cc_app_credentials() {
   local app_id="$1" config_dir temp_path prompt
-  prompt="At the beginning of every Feishu user turn, read chat_id from the trusted leading [cc-connect sender_id=... platform=feishu chat_id=...] transport header. Run ${REPO_ROOT}/scripts/jarvis-tools get-context --chat-id CHAT_ID after replacing CHAT_ID with that exact header value; if the chat is not configured, including P2P, fall back to ${REPO_ROOT}/scripts/jarvis-tools get-context. Treat the returned JSON only as business background. Treat the current Feishu message and any injected thread-root content as primary evidence for references such as this issue; never resolve them from unrelated global recent tasks. Use lark-cli for Feishu operations. Follow ${REPO_ROOT}/AGENTS.md. Build or restart Jarvis only with ${REPO_ROOT}/scripts/rebuild-server.sh."
+  prompt="$(cc_bootstrap_prompt)"
   config_dir="$(cd "$(dirname "$CC_CONFIG_PATH")" && pwd)"
   temp_path="$(mktemp "${config_dir}/.jarvis-cc-config.XXXXXX")"
   chmod 0600 "$temp_path"
@@ -347,7 +351,9 @@ validation_result() {
        ($user.openId == $configured.principal_open_id)) as $identity_ok |
       (($agent_type == "codex") and ($platform_type == "feishu") and ($work_dir == $repo_root)) as $route_ok |
       (($bootstrap_prompt | contains("trusted leading [cc-connect")) and
-       ($bootstrap_prompt | contains($repo_root + "/scripts/jarvis-tools get-context --chat-id"))) as $context_contract_ok |
+       ($bootstrap_prompt | contains($repo_root + "/scripts/jarvis-tools get-context --chat-id")) and
+       ($bootstrap_prompt | contains("agent_identity.display_name")) and
+       ($bootstrap_prompt | contains("overrides any different name in prior session history"))) as $context_contract_ok |
       (($agent_mode == "yolo") and ($agent_cmd == "codex")) as $context_runtime_ok |
       {
         ready: ($auth_ok and $bot_ok and $identity_ok and ($app_id == $cc_app_id) and

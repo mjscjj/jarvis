@@ -13,7 +13,7 @@
 
    ```bash
    ./scripts/jarvis-install configure-identity \
-     --open-id <open_id> --git-author <author>
+     --agent-name <name> --open-id <open_id> --git-author <author>
    ```
 
 3. 绑定 CC Connect。`bind-cc` 在 `jarvis-codex` 不存在时创建最小项目块；已有项目块时保留 model、reasoning、allow/admin 和回复策略，只更新当前默认 App 的身份。需要复用已有有效 secret 时必须显式指定。
@@ -28,7 +28,7 @@
 
    - `projects.agent.type = "codex"`
    - `projects.agent.options.work_dir = <当前 Jarvis checkout>`
-   - `append_system_prompt` 要求每个飞书用户 turn 先运行当前 checkout 的 `scripts/jarvis-tools get-context`
+   - `append_system_prompt` 要求每个飞书用户 turn 先运行当前 checkout 的 `scripts/jarvis-tools get-context`，并以返回的 `agent_identity.display_name` 作为当前机器人名称，覆盖旧 Session 记忆
    - Feishu `app_id` 来自 lark-cli 当前默认身份
    - `thread_isolation = true`
    - `document_comments = true`

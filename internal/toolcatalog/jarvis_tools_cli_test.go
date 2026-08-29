@@ -140,6 +140,11 @@ func TestJarvisToolsGetScheduledTaskUsesExactEndpoint(t *testing.T) {
 
 func TestJarvisToolsGetContextPassesChatAndProjectScope(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/agent-identity" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"code":0,"data":{"display_name":"Silver"}}`)
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/api/context" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
@@ -158,7 +163,8 @@ func TestJarvisToolsGetContextPassesChatAndProjectScope(t *testing.T) {
 	}))
 	defer server.Close()
 	out, err := runJarvisTools(t, server.URL, nil, "get-context", "--chat-id", "oc_runtime", "--project-id", "45")
-	if err != nil || !strings.Contains(out, `"snapshot_version":"v1"`) {
+	if err != nil || !strings.Contains(out, `"snapshot_version":"v1"`) ||
+		!strings.Contains(out, `"agent_identity":{"display_name":"Silver"}`) {
 		t.Fatalf("output = %s, error = %v", out, err)
 	}
 }

@@ -8,6 +8,7 @@ import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
 import { usePageContext } from './pageContext'
 import TaskDetailModal from './tasks/TaskDetailModal'
+import { useAgentIdentity } from './agentIdentity'
 import {
   failureKindOf,
   failureMeta,
@@ -59,14 +60,6 @@ const tabStatuses: Record<TaskTab, TaskStatus[]> = {
   failed: ['failed'],
 }
 
-const tabLabels: Record<TaskTab, string> = {
-  needs_me: '需要我',
-  running: 'Jarvis 处理中',
-  waiting: '等待外部',
-  completed: '已完成',
-  failed: '异常',
-}
-
 function taskTab(value: string | undefined): TaskTab {
   return value && value in tabStatuses ? value as TaskTab : 'needs_me'
 }
@@ -83,7 +76,15 @@ interface CreateTaskFields {
 }
 
 export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
+  const { name: agentName } = useAgentIdentity()
   const { context, setSelection, setViewState } = usePageContext()
+  const tabLabels: Record<TaskTab, string> = {
+    needs_me: '需要我',
+    running: `${agentName} 处理中`,
+    waiting: '等待外部',
+    completed: '已完成',
+    failed: '异常',
+  }
   const [activeTab, setActiveTab] = useState<TaskTab>(() => taskTab(context.view_state.view))
   const [page, setPage] = useState(() => positivePage(context.view_state.page))
   const [total, setTotal] = useState(0)
@@ -271,7 +272,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       setPage(1)
       setViewState({ view: 'running', page: 1 })
       setRefreshKey((value) => value + 1)
-      message.success('任务已创建，Jarvis 正在处理')
+      message.success(`任务已创建，${agentName} 正在处理`)
     } catch (cause: unknown) {
       setCreateError(errorText(cause))
     } finally {
@@ -507,7 +508,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   ]
 
   return <>
-    <PageHeader title="任务" subtitle="先处理需要你决定的事项，再查看 Jarvis 的推进、等待和历史结果">
+    <PageHeader title="任务" subtitle={`先处理需要你决定的事项，再查看 ${agentName} 的推进、等待和历史结果`}>
       <Button type="primary" onClick={openCreate}>新建任务</Button>
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
@@ -573,14 +574,14 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       maskClosable={!createSubmitting}
     >
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-        <Alert type="info" showIcon title="创建后立即交给 Jarvis 执行；需要审批的外部操作仍会等待你确认。" />
+        <Alert type="info" showIcon title={`创建后立即交给 ${agentName} 执行；需要审批的外部操作仍会等待你确认。`} />
         {createError && <Alert type="error" showIcon title="任务创建失败" description={createError} />}
         <Form form={createForm} layout="vertical" requiredMark={false}>
           <Form.Item name="title" label="任务名称" rules={[{ required: true, whitespace: true, message: '请输入任务名称' }]}>
             <Input autoFocus placeholder="例如：检查 FactEngine 最近失败原因" />
           </Form.Item>
           <Form.Item name="instruction" label="任务要求" rules={[{ required: true, whitespace: true, message: '请输入完整任务要求' }]}>
-            <Input.TextArea rows={6} placeholder="说清楚希望 Jarvis 完成什么；相关背景和验收要求也可以直接写在这里。" />
+            <Input.TextArea rows={6} placeholder={`说清楚希望 ${agentName} 完成什么；相关背景和验收要求也可以直接写在这里。`} />
           </Form.Item>
           <Form.Item
             name="project_id"
@@ -591,7 +592,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
               allowClear
               showSearch
               loading={projectsLoading}
-              placeholder="不选择则由 Jarvis 根据任务内容判断"
+              placeholder={`不选择则由 ${agentName} 根据任务内容判断`}
               optionFilterProp="label"
               options={projects.map((project) => ({ value: project.id, label: project.name }))}
             />
@@ -638,7 +639,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         <Alert
           type="warning"
           showIcon
-          title="Jarvis 正在等待你的回应"
+          title={`${agentName} 正在等待你的回应`}
           description={resumeTarget ? strField(resumeTarget.execution_result, 'needs_followup') || '请确认或补充所需信息。' : undefined}
         />
         <Text type="secondary">提交后会继续原执行会话，不会重跑任务，也不会重新生成已批准产物。</Text>
@@ -655,7 +656,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       okText="确认批准并落地"
     >
       <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-        <Alert type="warning" showIcon title="对外写入将真正落地" description="批准后 Jarvis 会按已审阅的方案真实写出或发送。可在下方追加落地时的补充指示（可不填）。" />
+        <Alert type="warning" showIcon title="对外写入将真正落地" description={`批准后 ${agentName} 会按已审阅的方案真实写出或发送。可在下方追加落地时的补充指示（可不填）。`} />
         <Text type="secondary">可选填写补充信息/指示；留空则直接按已批准方案落地。填写后会持久保存到执行阶段补充，落地与之后重跑都会带上。</Text>
         <Input.TextArea rows={4} value={approveNote} onChange={(event) => setApproveNote(event.target.value)} placeholder="例如：标题加上【紧急】；抄送给 B；文档先放草稿区不要直接发公告等（可不填）" />
       </Space>

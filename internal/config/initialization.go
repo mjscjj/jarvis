@@ -13,15 +13,17 @@ import (
 	"sort"
 	"strings"
 
+	"jarvis/internal/agentidentity"
 	"jarvis/internal/ark"
 
 	"gopkg.in/yaml.v3"
 )
 
 // PrincipalConfiguration is the machine-readable result of initializing the
-// machine-consumed identity settings Jarvis needs before its first real run.
+// assistant and principal identity settings needed before the first real run.
 type PrincipalConfiguration struct {
 	RuntimeConfigPath      string `json:"runtime_config_path"`
+	AgentDisplayName       string `json:"agent_display_name"`
 	PrincipalOpenID        string `json:"principal_open_id"`
 	GitAuthor              string `json:"git_author"`
 	CardApprovalConfigured bool   `json:"card_approval_configured"`
@@ -39,6 +41,7 @@ type InitializationStatus struct {
 	RuntimeConfigExists       bool     `json:"runtime_config_exists"`
 	BaseConfigMode            string   `json:"base_config_mode"`
 	RuntimeConfigMode         string   `json:"runtime_config_mode,omitempty"`
+	AgentNameConfigured       bool     `json:"agent_name_configured"`
 	PrincipalOpenIDConfigured bool     `json:"principal_open_id_configured"`
 	GitAuthorConfigured       bool     `json:"git_author_configured"`
 	CardApprovalConfigured    bool     `json:"card_approval_configured"`
@@ -80,11 +83,19 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 	overridePath := RuntimeOverridePath(absoluteConfigPath)
 	overrideExists := false
 	overrideMode := ""
+	runtimeAgentName := ""
 	if overrideRaw, readErr := os.ReadFile(overridePath); readErr == nil {
 		overrideExists = true
 		if err := decodeKnownYAML(overrideRaw, &cfg); err != nil {
 			return nil, fmt.Errorf("parse runtime config override %q: %w", overridePath, err)
 		}
+		var identityOnly struct {
+			Identity IdentityConfig `yaml:"identity"`
+		}
+		if err := yaml.Unmarshal(overrideRaw, &identityOnly); err != nil {
+			return nil, fmt.Errorf("parse runtime identity %q: %w", overridePath, err)
+		}
+		runtimeAgentName = identityOnly.Identity.DisplayName
 		overrideInfo, err := os.Stat(overridePath)
 		if err != nil {
 			return nil, fmt.Errorf("stat runtime config override %q: %w", overridePath, err)
@@ -100,6 +111,7 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 		RuntimeConfigExists:       overrideExists,
 		BaseConfigMode:            fmt.Sprintf("%04o", baseInfo.Mode().Perm()),
 		RuntimeConfigMode:         overrideMode,
+		AgentNameConfigured:       agentidentity.ValidateName(runtimeAgentName) == nil,
 		PrincipalOpenIDConfigured: strings.HasPrefix(strings.TrimSpace(cfg.Extract.PrincipalOpenID), "ou_") && len(strings.TrimSpace(cfg.Extract.PrincipalOpenID)) > len("ou_"),
 		GitAuthorConfigured:       strings.TrimSpace(cfg.DailyDigest.GitAuthor) != "",
 		CardApprovalConfigured: cfg.CardApproval.Enabled &&
@@ -114,7 +126,7 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 		TrackedModelAPIKeyPresent: strings.TrimSpace(ark.APIKey) != "",
 		RuntimeBinaries:           initializationRuntimeBinaries(cfg),
 	}
-	status.MachineConfigurationReady = status.PrincipalOpenIDConfigured &&
+	status.MachineConfigurationReady = status.AgentNameConfigured && status.PrincipalOpenIDConfigured &&
 		status.GitAuthorConfigured && status.CardApprovalConfigured &&
 		status.ModelBaseURLConfigured && status.ModelAPIKeyConfigured &&
 		status.ModelNameConfigured && status.EmbeddingModelConfigured &&
@@ -151,19 +163,23 @@ func initializationRuntimeBinaries(cfg Config) []string {
 	return result
 }
 
-// ConfigurePrincipal writes the app-scoped principal open_id, its matching
-// card-approval identity, and the principal's Git author pattern to the ignored
-// runtime overlay. lark-cli identity remains owned by the machine's current
-// default profile. The relay secret is
+// ConfigurePrincipal writes the user-selected assistant name, app-scoped
+// principal open_id, matching card-approval identity, and principal Git author
+// pattern to the ignored runtime overlay. lark-cli identity remains owned by
+// the machine's current default profile. The relay secret is
 // generated once and preserved across reruns; install-jarvis copies the same
 // value into CC Connect's jarvis-codex project. It intentionally does not
 // touch the tracked base config or any M1 business data.
-func ConfigurePrincipal(configPath, principalOpenID, gitAuthor string) (*PrincipalConfiguration, error) {
+func ConfigurePrincipal(configPath, agentDisplayName, principalOpenID, gitAuthor string) (*PrincipalConfiguration, error) {
 	configPath = strings.TrimSpace(configPath)
+	agentDisplayName = strings.TrimSpace(agentDisplayName)
 	principalOpenID = strings.TrimSpace(principalOpenID)
 	gitAuthor = strings.TrimSpace(gitAuthor)
 	if configPath == "" {
 		return nil, fmt.Errorf("config path is empty")
+	}
+	if err := agentidentity.ValidateName(agentDisplayName); err != nil {
+		return nil, err
 	}
 	if !strings.HasPrefix(principalOpenID, "ou_") || len(principalOpenID) == len("ou_") {
 		return nil, fmt.Errorf("principal open_id %q must start with ou_ and contain an id", principalOpenID)
@@ -199,6 +215,7 @@ func ConfigurePrincipal(configPath, principalOpenID, gitAuthor string) (*Princip
 			return nil, err
 		}
 	}
+	setYAMLScalar(root, "identity", "display_name", agentDisplayName)
 	setYAMLScalar(root, "extract", "principal_open_id", principalOpenID)
 	setYAMLScalar(root, "dailydigest", "git_author", gitAuthor)
 	setYAMLBool(root, "card_approval", "enabled", true)
@@ -222,6 +239,7 @@ func ConfigurePrincipal(configPath, principalOpenID, gitAuthor string) (*Princip
 	}
 	return &PrincipalConfiguration{
 		RuntimeConfigPath:      overridePath,
+		AgentDisplayName:       agentDisplayName,
 		PrincipalOpenID:        principalOpenID,
 		GitAuthor:              gitAuthor,
 		CardApprovalConfigured: true,

@@ -17,6 +17,7 @@ import {
   RobotOutlined,
 } from '@ant-design/icons'
 import Overview from './Overview'
+import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
@@ -51,6 +52,7 @@ const pageLabels: Record<string, string> = {
 }
 
 function AppShell() {
+  const { name: agentName, shortName: agentShortName } = useAgentIdentity()
   const { context, navigate } = usePageContext()
   const runtimeFailures = useRuntimeFailureCount()
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
@@ -157,7 +159,7 @@ function AppShell() {
       <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className="sider-brand">
           {!siderCollapsed && <div className="sider-tagline">主动式任务分身</div>}
-          <Title level={4}>{siderCollapsed ? 'J' : 'Jarvis'}</Title>
+          <Title level={4}>{siderCollapsed ? agentShortName : agentName}</Title>
         </div>
         <Menu
           mode="inline"
@@ -179,7 +181,7 @@ function AppShell() {
         </Tooltip>
       </Sider>
       <header className="mobile-topbar">
-        <strong>{pageLabels[context.active_key] || 'Jarvis'}</strong>
+        <strong>{pageLabels[context.active_key] || agentName}</strong>
         <Button type="text" icon={<MoreOutlined />} aria-label="打开系统导航" onClick={() => setMobileSystemOpen(true)} />
       </header>
       <Layout>
@@ -212,7 +214,7 @@ function AppShell() {
           icon={<MessageOutlined />}
           className={`chat-toggle ${chatOpen ? 'chat-open' : ''}`}
           ref={chatToggleRef}
-          aria-label={chatOpen ? '关闭 Jarvis 对话' : '打开 Jarvis 对话'}
+          aria-label={chatOpen ? `关闭 ${agentName} 对话` : `打开 ${agentName} 对话`}
           onClick={() => setChatOpen((open) => !open)}
         />
       </Tooltip>
@@ -256,8 +258,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <PageContextProvider initialKey={DEFAULT_KEY}>
-      <AppShell />
-    </PageContextProvider>
+    <AgentIdentityProvider>
+      <PageContextProvider initialKey={DEFAULT_KEY}>
+        <AppShell />
+      </PageContextProvider>
+    </AgentIdentityProvider>
   )
 }

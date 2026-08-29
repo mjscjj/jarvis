@@ -1,6 +1,11 @@
 # Jarvis 本地基线配置（本地可信环境，明文存储密钥）。
 # 主要配置段均已投入运行并在启动时校验；同目录 config.runtime.yaml 会覆盖本文件，保存后需重启生效。
 
+# 本机助手身份。正式安装时由用户显式选择并写入 runtime overlay；
+# 这里的默认值只保证既有开发环境升级后仍可启动。
+identity:
+  display_name: "Jarvis"
+
 server:
   addr: "0.0.0.0:18800"
   web_root: "web/dist"

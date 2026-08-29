@@ -65,6 +65,7 @@ import type {
   ScheduledTaskInput,
   RuntimeSettings,
   RuntimeSettingsView,
+  AgentIdentity,
   ProactiveRun,
   ProactiveRunDetail,
   MonitoringSnapshot,
@@ -612,6 +613,10 @@ export function getSkillContent(name: string): Promise<AgentSkillContent> {
 
 export function getRuntimeSettings(signal?: AbortSignal): Promise<RuntimeSettingsView> {
   return request<RuntimeSettingsView>('/api/runtime-settings', { signal })
+}
+
+export function getAgentIdentity(signal?: AbortSignal): Promise<AgentIdentity> {
+  return request<AgentIdentity>('/api/agent-identity', { signal })
 }
 
 export function updateRuntimeSettings(body: RuntimeSettings): Promise<RuntimeSettingsView> {

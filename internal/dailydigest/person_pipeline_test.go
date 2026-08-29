@@ -96,7 +96,8 @@ func TestPersonGenerateRunsOneWorkspaceRootedSkillAndReadsCanonicalMarkdown(t *t
 	workspaceRoot := t.TempDir()
 	runner := &workspacePersonRunner{t: t}
 	generator := &personGenerator{
-		db: db, runner: runner, location: location,
+		agentName: "小贾",
+		db:        db, runner: runner, location: location,
 		principalOpenID: "ou_me", gitAuthor: "me@example.com",
 		repoRoot: "/workspace", workspaceRoot: workspaceRoot,
 		skillDir: skillDir, skillText: "LEAN SKILL ENTRY",
@@ -215,7 +216,7 @@ func TestLoadBaselineUsesDayEventsAndIgnoresHistoricalOpenRows(t *testing.T) {
 	).Error; err != nil {
 		t.Fatalf("insert execution run: %v", err)
 	}
-	generator := &personGenerator{db: db, location: location, principalOpenID: "ou_me"}
+	generator := &personGenerator{agentName: "小贾", db: db, location: location, principalOpenID: "ou_me"}
 	baseline, err := generator.loadBaseline(context.Background(), start, start.Add(18*time.Hour))
 	if err != nil {
 		t.Fatalf("load baseline: %v", err)

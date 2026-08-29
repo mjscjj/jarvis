@@ -1398,13 +1398,15 @@ cmd_get_context() {
     fail "get-context --project-id must be a positive integer"
   fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local payload body
+  local payload body identity_body identity
   payload="$(jq -nc --arg chat_id "$CHAT_ID" --arg project_id "$PROJECT_ID" '{
     chat_id: $chat_id,
     project_id: (if $project_id == "" then null else ($project_id | tonumber) end)
   }')"
   body="$(api_write POST /api/context "$payload")"
-  emit "$(printf '%s' "$body" | jq -c '.data')"
+  identity_body="$(api_get /api/agent-identity)"
+  identity="$(printf '%s' "$identity_body" | jq -c '.data')"
+  emit "$(printf '%s' "$body" | jq -c --argjson identity "$identity" '.data + {agent_identity:$identity}')"
 }
 
 cmd_get_principal() {
