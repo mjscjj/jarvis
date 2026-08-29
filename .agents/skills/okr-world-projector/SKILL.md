@@ -14,10 +14,10 @@ module: okr
 
 ```bash
 scripts/okr-module-tools scope
-scripts/okr-module-tools board --quarter <quarter> --week <week>
+scripts/okr-module-tools board --quarter <quarter>
 ```
 
-只使用返回的 O、KR、结构化负责人和核心指标；忽略其中为了兼容旧客户端保留的周次与进展字段。接口失败时停止，不直接查询 `okr_workspace_*` 表。周进展由 `weekly-report-progress-sync` 负责。
+只使用返回的 O、KR、结构化负责人和核心指标。接口失败时停止，不直接查询 `okr_workspace_*` 表。周进展由 `weekly-report-progress-sync` 负责。
 
 ## 读取世界模型
 

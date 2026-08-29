@@ -166,8 +166,8 @@ function NewKrRow({ objectiveId, onClose }: { objectiveId: string; onClose: () =
   )
 }
 
-export function ManagementView({ onOpenPoint }: { onOpenPoint: (pointId: string) => void }) {
-  const { objectives, quarter, week } = useBoard()
+export function ManagementView({ weeklyEnabled, onOpenPoint }: { weeklyEnabled: boolean; onOpenPoint: (pointId: string) => void }) {
+  const { objectives, quarter } = useBoard()
   const [tool, setTool] = useState<Tool>()
   const [materialsOpen, setMaterialsOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -175,6 +175,7 @@ export function ManagementView({ onOpenPoint }: { onOpenPoint: (pointId: string)
   const [priority, setPriority] = useState('')
   const [tag, setTag] = useState('')
   const [creatingObjectiveId, setCreatingObjectiveId] = useState('')
+  const hasFilters = Boolean(query.trim() || owner || priority || tag)
   const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
   const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => (kr.tags ?? []).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
   const groups = useMemo(() => objectives.map((objective) => ({
@@ -183,7 +184,7 @@ export function ManagementView({ onOpenPoint }: { onOpenPoint: (pointId: string)
       const matchesQuery = !query.trim() || `${objective.title} ${kr.title}`.toLowerCase().includes(query.trim().toLowerCase())
       return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!priority || (kr.priority ?? 'p1') === priority) && (!tag || (kr.tags ?? []).some((item) => `${item.type}:${item.value}` === tag))
     }),
-  })).filter((objective) => objective.krs.length > 0), [objectives, owner, priority, query, tag])
+  })).filter((objective) => !hasFilters || objective.krs.length > 0), [hasFilters, objectives, owner, priority, query, tag])
   const resultCount = groups.reduce((total, objective) => total + objective.krs.length, 0)
   const tagCount = objectives.reduce((total, objective) => total + objective.krs.reduce((sum, kr) => sum + (kr.tags?.length ?? 0), 0), 0)
 
@@ -191,7 +192,6 @@ export function ManagementView({ onOpenPoint }: { onOpenPoint: (pointId: string)
     setMaterialsOpen(true)
     setTool((current) => current === next ? undefined : next)
   }
-  const hasFilters = Boolean(query.trim() || owner || priority || tag)
   const clearFilters = () => {
     setQuery('')
     setOwner('')
@@ -201,7 +201,7 @@ export function ManagementView({ onOpenPoint }: { onOpenPoint: (pointId: string)
 
   return (
     <div className="flex flex-col gap-3">
-      <section className="order-2 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      {weeklyEnabled && <section className="order-2 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <button type="button" onClick={() => { setMaterialsOpen((current) => !current); if (materialsOpen) setTool(undefined) }} className={`flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-slate-50 ${materialsOpen ? 'border-b border-slate-100' : ''}`}>
           <div>
 			<h2 className="text-xs font-semibold text-slate-800">OKR 材料</h2>
@@ -222,10 +222,10 @@ export function ManagementView({ onOpenPoint }: { onOpenPoint: (pointId: string)
         </div>}
         {materialsOpen && tool && (
           <div className="border-t border-slate-100 p-3">
-			{tool === 'quarterly' && <QuarterlyOKRDraft quarter={quarter} week={week} onClose={() => setTool(undefined)} onOpenPoint={onOpenPoint} />}
+			{tool === 'quarterly' && <QuarterlyOKRDraft quarter={quarter} onClose={() => setTool(undefined)} onOpenPoint={onOpenPoint} />}
           </div>
         )}
-      </section>
+      </section>}
 
       <section className="order-1 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="border-b border-slate-100 px-3.5 py-3">

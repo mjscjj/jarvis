@@ -22,6 +22,7 @@ var (
 	ErrConflict         = errors.New("kr version conflict")
 	ErrMeegoUnavailable = errors.New("Meego preview unavailable")
 	weekPattern         = regexp.MustCompile(`^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$`)
+	quarterPattern      = regexp.MustCompile(`^\d{4}-Q[1-4]$`)
 )
 
 type Service struct{ db *gorm.DB }
@@ -46,32 +47,39 @@ type Scope struct {
 	Week    string `json:"week"`
 }
 
-// LatestScope returns the newest product scope that actually has data. It is
-// the stable discovery entry point for schedulers, so automation never bakes a
-// quarter or ISO week into its instruction.
-func (s *Service) LatestScope(ctx context.Context) (Scope, error) {
+type CoreScope struct {
+	Quarter string `json:"quarter"`
+}
+
+func (s *Service) LatestCoreScope(ctx context.Context) (CoreScope, error) {
 	var quarter string
 	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Select("quarter").Where("quarter <> ''").Order("quarter DESC").Limit(1).Scan(&quarter).Error; err != nil {
-		return Scope{}, fmt.Errorf("find latest OKR quarter: %w", err)
+		return CoreScope{}, fmt.Errorf("find latest OKR quarter: %w", err)
 	}
-	if strings.TrimSpace(quarter) == "" {
-		return Scope{}, fmt.Errorf("no OKR quarter is available")
+	if !quarterPattern.MatchString(quarter) {
+		return CoreScope{}, fmt.Errorf("no valid OKR quarter is available")
 	}
-	var week string
+	return CoreScope{Quarter: quarter}, nil
+}
+
+// LatestWeeklyScope returns the newest quarter/week pair that has progress.
+// It is the discovery entry point for weekly-report automation.
+func (s *Service) LatestWeeklyScope(ctx context.Context) (Scope, error) {
+	var scope Scope
 	err := s.db.WithContext(ctx).Table("okr_workspace_progress AS progress").
-		Select("progress.week").
+		Select("objective.quarter, progress.week").
 		Joins("JOIN okr_workspace_point AS point ON point.id = progress.point_id").
 		Joins("JOIN okr_workspace_kr AS kr ON kr.id = point.kr_id").
 		Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
-		Where("objective.quarter = ? AND progress.week <> ''", quarter).
-		Order("progress.week DESC").Limit(1).Scan(&week).Error
+		Where("objective.quarter <> '' AND progress.week <> ''").
+		Order("objective.quarter DESC, progress.week DESC").Limit(1).Scan(&scope).Error
 	if err != nil {
-		return Scope{}, fmt.Errorf("find latest OKR week: %w", err)
+		return Scope{}, fmt.Errorf("find latest weekly report scope: %w", err)
 	}
-	if !weekPattern.MatchString(week) {
-		return Scope{}, fmt.Errorf("no valid OKR week is available for %s", quarter)
+	if !quarterPattern.MatchString(scope.Quarter) || !weekPattern.MatchString(scope.Week) {
+		return Scope{}, fmt.Errorf("no valid weekly report scope is available")
 	}
-	return Scope{Quarter: quarter, Week: week}, nil
+	return scope, nil
 }
 
 type ReminderPreview struct {
@@ -306,11 +314,15 @@ type ReplaceKRInput struct {
 }
 
 type CreateKRInput struct {
-	Week      string `json:"week"`
 	Title     string `json:"title"`
 	OwnerName string `json:"owner_name"`
 	Priority  string `json:"priority"`
 	CreatedBy string `json:"created_by"`
+}
+
+type CreateObjectiveInput struct {
+	Quarter string `json:"quarter"`
+	Title   string `json:"title"`
 }
 
 type DeleteKRInput struct {
@@ -321,7 +333,7 @@ func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error
 	quarter = strings.TrimSpace(quarter)
 	week = strings.TrimSpace(week)
 	if quarter == "" || week == "" {
-		scope, err := s.LatestScope(ctx)
+		scope, err := s.LatestWeeklyScope(ctx)
 		if err != nil {
 			return Board{}, err
 		}
@@ -365,20 +377,36 @@ func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error
 // CoreBoard is the stable OKR projection. It intentionally carries no weekly
 // entries or history, even though the compatibility DTO is shared with Board.
 func (s *Service) CoreBoard(ctx context.Context, quarter string) (Board, error) {
-	result, err := s.Board(ctx, quarter, "")
-	if err != nil {
-		return Board{}, err
-	}
-	result.PreviousWeek = ""
-	result.AvailableWeeks = []string{result.Week}
-	for objectiveIndex := range result.Objectives {
-		for krIndex := range result.Objectives[objectiveIndex].KRs {
-			for pointIndex := range result.Objectives[objectiveIndex].KRs[krIndex].Points {
-				point := &result.Objectives[objectiveIndex].KRs[krIndex].Points[pointIndex]
-				point.Entries = []ProgressView{}
-				point.PreviousEntries = []ProgressView{}
-			}
+	quarter = strings.TrimSpace(quarter)
+	if quarter == "" {
+		scope, err := s.LatestCoreScope(ctx)
+		if err != nil {
+			return Board{}, err
 		}
+		quarter = scope.Quarter
+	}
+	if !quarterPattern.MatchString(quarter) {
+		return Board{}, fmt.Errorf("quarter must use YYYY-Qn")
+	}
+	var objectives []domain.Objective
+	if err := s.db.WithContext(ctx).Where("quarter = ?", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
+		return Board{}, fmt.Errorf("list objectives: %w", err)
+	}
+	result := Board{Quarter: quarter, Week: "", AvailableWeeks: []string{}, Objectives: make([]ObjectiveView, 0, len(objectives))}
+	for _, objective := range objectives {
+		var records []domain.KR
+		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
+			return Board{}, fmt.Errorf("list krs: %w", err)
+		}
+		view := ObjectiveView{ID: objective.ID, Title: objective.Title, KRs: make([]KRView, 0, len(records))}
+		for _, record := range records {
+			krView, err := s.loadKRDefinition(ctx, record)
+			if err != nil {
+				return Board{}, err
+			}
+			view.KRs = append(view.KRs, krView)
+		}
+		result.Objectives = append(result.Objectives, view)
 	}
 	return result, nil
 }
@@ -390,7 +418,7 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 	quarter = strings.TrimSpace(quarter)
 	week = strings.TrimSpace(week)
 	if quarter == "" || week == "" {
-		scope, err := s.LatestScope(ctx)
+		scope, err := s.LatestWeeklyScope(ctx)
 		if err != nil {
 			return ReminderPreview{}, err
 		}
@@ -737,7 +765,18 @@ func (s *Service) GetKR(ctx context.Context, id, week string) (KRView, error) {
 	return s.loadKR(ctx, record, week, previousWeek)
 }
 
-func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWeek string) (KRView, error) {
+func (s *Service) GetCoreKR(ctx context.Context, id string) (KRView, error) {
+	var record domain.KR
+	if err := s.db.WithContext(ctx).First(&record, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return KRView{}, ErrNotFound
+		}
+		return KRView{}, fmt.Errorf("get kr: %w", err)
+	}
+	return s.loadKRDefinition(ctx, record)
+}
+
+func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRView, error) {
 	var metrics []domain.KRMetric
 	var points []domain.KRPoint
 	var tags []domain.KRTag
@@ -778,23 +817,7 @@ func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWe
 		view.Metrics = append(view.Metrics, MetricView{ID: metric.ID, Text: metric.Text, Light: light, Images: nonNilImages(metric.Images)})
 	}
 	for _, point := range points {
-		var progress []domain.KRProgress
-		if err := s.db.WithContext(ctx).Where("point_id = ? AND week = ?", point.ID, week).Order("sort_order, id").Find(&progress).Error; err != nil {
-			return KRView{}, fmt.Errorf("list progress: %w", err)
-		}
 		pointView := PointView{ID: point.ID, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: point.MeegoWorkItemID, MeegoURL: point.MeegoURL, Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
-		for _, entry := range progress {
-			pointView.Entries = append(pointView.Entries, ProgressView{ID: entry.ID, Status: entry.Status, Text: entry.Text, Docs: nonNilDocs(entry.Docs), Images: nonNilImages(entry.Images), Source: entry.Source, NeedsReview: entry.NeedsReview})
-		}
-		if previousWeek != "" {
-			var previous []domain.KRProgress
-			if err := s.db.WithContext(ctx).Where("point_id = ? AND week = ?", point.ID, previousWeek).Order("sort_order, id").Find(&previous).Error; err != nil {
-				return KRView{}, fmt.Errorf("list previous progress: %w", err)
-			}
-			for _, entry := range previous {
-				pointView.PreviousEntries = append(pointView.PreviousEntries, ProgressView{ID: entry.ID, Status: entry.Status, Text: entry.Text, Docs: nonNilDocs(entry.Docs), Images: nonNilImages(entry.Images), Source: entry.Source, NeedsReview: entry.NeedsReview})
-			}
-		}
 		view.Points = append(view.Points, pointView)
 	}
 	for _, tag := range tags {
@@ -803,8 +826,36 @@ func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWe
 	return view, nil
 }
 
+func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWeek string) (KRView, error) {
+	view, err := s.loadKRDefinition(ctx, record)
+	if err != nil {
+		return KRView{}, err
+	}
+	for index := range view.Points {
+		point := &view.Points[index]
+		var progress []domain.KRProgress
+		if err := s.db.WithContext(ctx).Where("point_id = ? AND week = ?", point.ID, week).Order("sort_order, id").Find(&progress).Error; err != nil {
+			return KRView{}, fmt.Errorf("list progress: %w", err)
+		}
+		for _, entry := range progress {
+			point.Entries = append(point.Entries, ProgressView{ID: entry.ID, Status: entry.Status, Text: entry.Text, Docs: nonNilDocs(entry.Docs), Images: nonNilImages(entry.Images), Source: entry.Source, NeedsReview: entry.NeedsReview})
+		}
+		if previousWeek == "" {
+			continue
+		}
+		var previous []domain.KRProgress
+		if err := s.db.WithContext(ctx).Where("point_id = ? AND week = ?", point.ID, previousWeek).Order("sort_order, id").Find(&previous).Error; err != nil {
+			return KRView{}, fmt.Errorf("list previous progress: %w", err)
+		}
+		for _, entry := range previous {
+			point.PreviousEntries = append(point.PreviousEntries, ProgressView{ID: entry.ID, Status: entry.Status, Text: entry.Text, Docs: nonNilDocs(entry.Docs), Images: nonNilImages(entry.Images), Source: entry.Source, NeedsReview: entry.NeedsReview})
+		}
+	}
+	return view, nil
+}
+
 func (s *Service) ReplaceKR(ctx context.Context, id string, input ReplaceKRInput) (KRView, error) {
-	if err := validateReplaceInput(id, input); err != nil {
+	if err := validateReplaceInput(id, input, true); err != nil {
 		return KRView{}, err
 	}
 	owners := normalizeOwners(input.Owners, input.OwnerName, input.OwnerOpenID)
@@ -969,7 +1020,7 @@ func (s *Service) ReplaceKR(ctx context.Context, id string, input ReplaceKRInput
 // are deliberately outside this transaction, so tagging or reassigning an OKR
 // can never rewrite a historical/current weekly report as a side effect.
 func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRInput) (KRView, error) {
-	if err := validateReplaceInput(id, input); err != nil {
+	if err := validateReplaceInput(id, input, false); err != nil {
 		return KRView{}, err
 	}
 	owners := normalizeOwners(input.Owners, input.OwnerName, input.OwnerOpenID)
@@ -992,26 +1043,12 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 			return err
 		}
 
-		var oldMetricIDs []string
-		if err := tx.Model(&domain.KRMetric{}).Where("kr_id = ?", id).Pluck("id", &oldMetricIDs).Error; err != nil {
-			return fmt.Errorf("list old metrics: %w", err)
-		}
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRMetric{}).Error; err != nil {
 			return fmt.Errorf("replace metrics: %w", err)
 		}
-		keptMetrics := make(map[string]struct{}, len(input.Metrics))
 		for index, metric := range input.Metrics {
-			keptMetrics[metric.ID] = struct{}{}
 			if err := tx.Create(&domain.KRMetric{ID: metric.ID, KRID: id, Text: metric.Text, Light: metric.Light, Images: metric.Images, SortOrder: index}).Error; err != nil {
 				return fmt.Errorf("create metric: %w", err)
-			}
-		}
-		for _, metricID := range oldMetricIDs {
-			if _, kept := keptMetrics[metricID]; kept {
-				continue
-			}
-			if err := tx.Where("target_id = ?", metricID).Delete(&domain.PageComment{}).Error; err != nil {
-				return fmt.Errorf("delete removed metric comments: %w", err)
 			}
 		}
 
@@ -1027,17 +1064,12 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 		for index, point := range input.Points {
 			incomingPointIDs[point.ID] = struct{}{}
 			linkedID := strings.TrimSpace(point.MeegoWorkItemID)
-			if previous, exists := oldPointByID[point.ID]; exists {
+			if _, exists := oldPointByID[point.ID]; exists {
 				if err := tx.Model(&domain.KRPoint{}).Where("id = ? AND kr_id = ?", point.ID, id).Updates(map[string]any{
 					"kind": point.Kind, "title": point.Title, "meego_work_item_id": linkedID,
 					"meego_url": strings.TrimSpace(point.MeegoURL), "sort_order": index,
 				}).Error; err != nil {
 					return fmt.Errorf("update point definition: %w", err)
-				}
-				if previous.MeegoWorkItemID != linkedID {
-					if err := tx.Where("point_id = ?", point.ID).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
-						return fmt.Errorf("reset changed Meego snapshot: %w", err)
-					}
 				}
 			} else if err := tx.Create(&domain.KRPoint{ID: point.ID, KRID: id, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: linkedID, MeegoURL: strings.TrimSpace(point.MeegoURL), SortOrder: index}).Error; err != nil {
 				return fmt.Errorf("create point definition: %w", err)
@@ -1046,19 +1078,6 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 		for _, point := range oldPoints {
 			if _, kept := incomingPointIDs[point.ID]; kept {
 				continue
-			}
-			var progressCount int64
-			if err := tx.Model(&domain.KRProgress{}).Where("point_id = ?", point.ID).Count(&progressCount).Error; err != nil {
-				return fmt.Errorf("check point progress: %w", err)
-			}
-			if progressCount > 0 {
-				return fmt.Errorf("point %s has weekly progress history and cannot be removed", point.ID)
-			}
-			if err := tx.Where("point_id = ?", point.ID).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
-				return fmt.Errorf("delete removed point snapshot: %w", err)
-			}
-			if err := tx.Where("target_id = ?", point.ID).Delete(&domain.PageComment{}).Error; err != nil {
-				return fmt.Errorf("delete removed point comments: %w", err)
 			}
 			if err := tx.Where("id = ? AND kr_id = ?", point.ID, id).Delete(&domain.KRPoint{}).Error; err != nil {
 				return fmt.Errorf("delete removed point: %w", err)
@@ -1078,13 +1097,13 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 	if err != nil {
 		return KRView{}, err
 	}
-	return s.GetKR(ctx, id, input.Week)
+	return s.GetCoreKR(ctx, id)
 }
 
 // ReplaceWeeklyProgress changes only progress entries for the selected week.
 // KR titles, metrics, tags, owners and point definitions remain owned by OKR.
 func (s *Service) ReplaceWeeklyProgress(ctx context.Context, id string, input ReplaceKRInput) (KRView, error) {
-	if err := validateReplaceInput(id, input); err != nil {
+	if err := validateReplaceInput(id, input, true); err != nil {
 		return KRView{}, err
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1186,9 +1205,6 @@ func (s *Service) CreateKR(ctx context.Context, objectiveID string, input Create
 	if objectiveID == "" || input.Title == "" {
 		return KRView{}, fmt.Errorf("objective id and kr title are required")
 	}
-	if !weekPattern.MatchString(input.Week) {
-		return KRView{}, fmt.Errorf("week must use YYYY-Www")
-	}
 	if input.Priority != "p0" && input.Priority != "p1" && input.Priority != "p2" {
 		return KRView{}, fmt.Errorf("priority must be p0, p1, or p2")
 	}
@@ -1202,24 +1218,40 @@ func (s *Service) CreateKR(ctx context.Context, objectiveID string, input Create
 	now := time.Now().UTC()
 	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", objectiveID, input.Title, now.UnixNano())))
 	id := fmt.Sprintf("kr-%x", digest[:10])
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var maxSort int
-		if err := tx.Model(&domain.KR{}).Where("objective_id = ?", objectiveID).Select("COALESCE(MAX(sort_order), -1)").Scan(&maxSort).Error; err != nil {
-			return fmt.Errorf("get kr sort order: %w", err)
-		}
-		record := domain.KR{
-			ID: id, ObjectiveID: objectiveID, Title: input.Title, OwnerName: input.OwnerName,
-			Priority: input.Priority, SortOrder: maxSort + 1, CreatedBy: input.CreatedBy, UpdatedBy: input.CreatedBy,
-		}
-		if err := tx.Create(&record).Error; err != nil {
-			return fmt.Errorf("create kr: %w", err)
-		}
-		return nil
-	})
-	if err != nil {
-		return KRView{}, err
+	var maxSort int
+	if err := s.db.WithContext(ctx).Model(&domain.KR{}).Where("objective_id = ?", objectiveID).Select("COALESCE(MAX(sort_order), -1)").Scan(&maxSort).Error; err != nil {
+		return KRView{}, fmt.Errorf("get kr sort order: %w", err)
 	}
-	return s.GetKR(ctx, id, input.Week)
+	record := domain.KR{
+		ID: id, ObjectiveID: objectiveID, Title: input.Title, OwnerName: input.OwnerName,
+		Priority: input.Priority, SortOrder: maxSort + 1, CreatedBy: input.CreatedBy, UpdatedBy: input.CreatedBy,
+	}
+	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
+		return KRView{}, fmt.Errorf("create kr: %w", err)
+	}
+	return s.GetCoreKR(ctx, id)
+}
+
+func (s *Service) CreateObjective(ctx context.Context, input CreateObjectiveInput) (ObjectiveView, error) {
+	input.Quarter = strings.TrimSpace(input.Quarter)
+	input.Title = strings.TrimSpace(input.Title)
+	if !quarterPattern.MatchString(input.Quarter) {
+		return ObjectiveView{}, fmt.Errorf("quarter must use YYYY-Qn")
+	}
+	if input.Title == "" {
+		return ObjectiveView{}, fmt.Errorf("objective title is required")
+	}
+	var maxSort int
+	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("quarter = ?", input.Quarter).Select("COALESCE(MAX(sort_order), -1)").Scan(&maxSort).Error; err != nil {
+		return ObjectiveView{}, fmt.Errorf("get objective sort order: %w", err)
+	}
+	now := time.Now().UTC()
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", input.Quarter, input.Title, now.UnixNano())))
+	record := domain.Objective{ID: fmt.Sprintf("objective-%x", digest[:10]), Quarter: input.Quarter, Title: input.Title, SortOrder: maxSort + 1}
+	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
+		return ObjectiveView{}, fmt.Errorf("create objective: %w", err)
+	}
+	return ObjectiveView{ID: record.ID, Title: record.Title, KRs: []KRView{}}, nil
 }
 
 func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) error {
@@ -1245,32 +1277,8 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 			}
 			return ErrNotFound
 		}
-		var pointIDs []string
-		var metricIDs []string
-		if err := tx.Model(&domain.KRPoint{}).Where("kr_id = ?", id).Pluck("id", &pointIDs).Error; err != nil {
-			return fmt.Errorf("list points for delete: %w", err)
-		}
-		if err := tx.Model(&domain.KRMetric{}).Where("kr_id = ?", id).Pluck("id", &metricIDs).Error; err != nil {
-			return fmt.Errorf("list metrics for delete: %w", err)
-		}
-		var entryIDs []string
-		if len(pointIDs) > 0 {
-			if err := tx.Model(&domain.KRProgress{}).Where("point_id IN ?", pointIDs).Pluck("id", &entryIDs).Error; err != nil {
-				return fmt.Errorf("list progress for delete: %w", err)
-			}
-			if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
-				return fmt.Errorf("delete meego snapshots: %w", err)
-			}
-			if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.KRProgress{}).Error; err != nil {
-				return fmt.Errorf("delete progress: %w", err)
-			}
-		}
-		targetIDs := append([]string{id}, pointIDs...)
-		targetIDs = append(targetIDs, metricIDs...)
-		targetIDs = append(targetIDs, entryIDs...)
-		if err := tx.Where("target_id IN ?", targetIDs).Delete(&domain.PageComment{}).Error; err != nil {
-			return fmt.Errorf("delete kr comments: %w", err)
-		}
+		// Weekly-report rows are a separate module's history. Core deletion only
+		// removes the stable definition and deliberately leaves that history intact.
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRTag{}).Error; err != nil {
 			return fmt.Errorf("delete tags: %w", err)
 		}
@@ -1658,14 +1666,14 @@ func meegoBatchRank(item MeegoBatchPreviewItem) int {
 	return 3
 }
 
-func validateReplaceInput(id string, input ReplaceKRInput) error {
+func validateReplaceInput(id string, input ReplaceKRInput, requireWeek bool) error {
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(input.Title) == "" {
 		return fmt.Errorf("kr id and title are required")
 	}
 	if input.ExpectedVersion < 0 {
 		return fmt.Errorf("expected_version must be non-negative")
 	}
-	if !weekPattern.MatchString(input.Week) {
+	if requireWeek && !weekPattern.MatchString(input.Week) {
 		return fmt.Errorf("week must use YYYY-Www")
 	}
 	if input.Priority != "p0" && input.Priority != "p1" && input.Priority != "p2" {

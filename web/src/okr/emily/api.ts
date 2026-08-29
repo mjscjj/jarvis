@@ -359,6 +359,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type BoardSurface = 'okr' | 'weekly-report'
 
+export async function getWeeklyReportScope(): Promise<{ quarter: string; week: string }> {
+  return request<{ quarter: string; week: string }>('/api/weekly-report/scope')
+}
+
 export async function uploadImage(file: File): Promise<ImageRef> {
   const body = new FormData()
   body.append('image', file, file.name || '截图.png')
@@ -414,7 +418,9 @@ export interface BoardData {
 }
 
 export async function getBoard(quarter: string, week: string, surface: BoardSurface = 'okr'): Promise<BoardData> {
-  const params = new URLSearchParams({ quarter, week })
+  const params = new URLSearchParams()
+  if (quarter) params.set('quarter', quarter)
+  if (surface === 'weekly-report' && week) params.set('week', week)
   const board = await request<APIBoard>(`/api/${surface}/board?${params}`)
   return {
     quarter: board.quarter,
@@ -674,7 +680,7 @@ export async function getRegionSyncDraft(quarter: string, week: string, region: 
 
 export async function getQuarterlyOKRDraft(quarter: string, week: string): Promise<QuarterlyOKRDraft> {
   const params = new URLSearchParams({ quarter, week })
-  const value = await request<APIQuarterlyOKRDraft>(`/api/okr/quarterly-okr-draft?${params}`)
+  const value = await request<APIQuarterlyOKRDraft>(`/api/weekly-report/quarterly-okr-draft?${params}`)
   return {
     quarter: value.quarter,
     week: value.week,
@@ -928,11 +934,8 @@ export async function confirmMeegoProgress(input: {
 
 export async function replaceKR(kr: Kr, week: string, surface: BoardSurface = 'okr'): Promise<Kr> {
   try {
-    const value = await request<APIKr>(`/api/${surface}/krs/${encodeURIComponent(kr.id)}`, {
-      method: 'PUT',
-      body: JSON.stringify({
+    const body = {
       expected_version: kr.version ?? 0,
-      week,
       title: kr.title,
       owner_open_id: kr.ownerOpenId ?? '',
       owner_name: kr.ownerName ?? '',
@@ -946,18 +949,24 @@ export async function replaceKR(kr: Kr, week: string, surface: BoardSurface = 'o
         title: point.title,
         meego_work_item_id: point.meegoWorkItemId ?? '',
         meego_url: point.meegoUrl ?? '',
-        entries: point.entries.map((entry) => ({
-          id: entry.id,
-          status: entry.status,
-          text: entry.text,
-          docs: entry.docs,
-          images: entry.images,
-          source: entry.source ?? 'manual',
-          needs_review: entry.needsReview ?? false,
-        })),
+        ...(surface === 'weekly-report' ? {
+          entries: point.entries.map((entry) => ({
+            id: entry.id,
+            status: entry.status,
+            text: entry.text,
+            docs: entry.docs,
+            images: entry.images,
+            source: entry.source ?? 'manual',
+            needs_review: entry.needsReview ?? false,
+          })),
+        } : {}),
       })),
       tags: kr.tags ?? [],
-      }),
+      ...(surface === 'weekly-report' ? { week } : {}),
+    }
+    const value = await request<APIKr>(`/api/${surface}/krs/${encodeURIComponent(kr.id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
     })
     return fromAPIKr(value)
   } catch (error) {
@@ -976,11 +985,18 @@ export async function searchPeople(query: string, signal?: AbortSignal): Promise
   }
 }
 
-export async function createKR(objectiveId: string, input: { week: string; title: string; ownerName?: string; priority?: NonNullable<Kr['priority']> }): Promise<Kr> {
+export async function createObjective(input: { quarter: string; title: string }): Promise<Objective> {
+  const value = await request<{ id: string; title: string; krs: APIKr[] }>('/api/okr/objectives', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return { id: value.id, title: value.title, krs: value.krs.map(fromAPIKr) }
+}
+
+export async function createKR(objectiveId: string, input: { title: string; ownerName?: string; priority?: NonNullable<Kr['priority']> }): Promise<Kr> {
   const value = await request<APIKr>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {
     method: 'POST',
     body: JSON.stringify({
-      week: input.week,
       title: input.title,
       owner_name: input.ownerName ?? '',
       priority: input.priority ?? 'p1',

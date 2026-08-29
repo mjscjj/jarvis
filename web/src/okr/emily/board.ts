@@ -21,6 +21,7 @@ export interface BoardApi {
   setKrTitle: (objId: string, krId: string, title: string) => void
   setKrOwner: (krId: string, ownerName: string, ownerOpenId?: string, owners?: KrOwner[]) => void
   setKrPriority: (krId: string, priority: NonNullable<Kr['priority']>) => void
+  createObjective: (input: { quarter: string; title: string }) => Promise<void>
   createKr: (objectiveId: string, input: { title: string; ownerName?: string; priority?: NonNullable<Kr['priority']> }) => Promise<void>
   deleteKr: (krId: string) => Promise<void>
   addTag: (krId: string, value: string, type?: string) => void

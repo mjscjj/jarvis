@@ -84,6 +84,7 @@ function Workspace({ auth, logoutUser }: { auth: AuthStatus; logoutUser: () => P
             auth={auth}
             onLogout={() => void logoutUser()}
             view={visibleTab === 'manage' ? 'manage' : 'structure'}
+            weeklyEnabled={weeklyEnabled}
             moduleTabs={moduleTabs}
             onOpenPoint={openWeeklyPoint}
           />

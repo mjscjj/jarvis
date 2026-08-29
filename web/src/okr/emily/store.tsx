@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, deleteKR, getBoard, getEnums, replaceKR, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, deleteKR, getBoard, getEnums, replaceKR, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
-import { OBJECTIVES } from './seed'
 import { LIGHTS, STATUSES } from './template'
 import type { EnumValues, Kr, Objective, Point } from './types'
 
@@ -51,7 +50,7 @@ function loadCache(): Objective[] {
   } catch {
     localStorage.removeItem(STORAGE_KEY)
   }
-  return clone(OBJECTIVES)
+  return []
 }
 
 function clone<T>(value: T): T {
@@ -217,10 +216,22 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
     enums,
     syncState,
 
+    createObjective: async (input) => {
+      setSyncState({ kind: 'saving', message: '正在创建目标…' })
+      try {
+        await createObjectiveRequest(input)
+        quarterRef.current = input.quarter
+        await loadRemote()
+      } catch (error) {
+        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '创建目标失败。' })
+        throw error
+      }
+    },
+
     createKr: async (objectiveId, input) => {
       setSyncState({ kind: 'saving', message: '正在创建 KR…' })
       try {
-        const created = await createKR(objectiveId, { ...input, week: weekRef.current })
+        const created = await createKR(objectiveId, input)
         const next = clone(objectivesRef.current)
         const objective = next.find((item) => item.id === objectiveId)
         if (!objective) throw new Error('目标分组不存在，请重新载入。')

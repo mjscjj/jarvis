@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
-import { buildBusinessNavigation, businessKrCount, krCount } from '../hierarchy'
+import { buildBusinessNavigation, krCount } from '../hierarchy'
 import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
 import { hasOwner, joinOwnerNames, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
@@ -407,9 +407,9 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   const [activeSubgroupId, setActiveSubgroupId] = useState('')
   const [activeObjectiveId, setActiveObjectiveId] = useState('')
   const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
-  const visibleObjectives = useMemo(() => objectives.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)) })).filter((objective) => objective.krs.length > 0), [objectives, ownerFilter])
+  const visibleObjectives = useMemo(() => objectives.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)) })).filter((objective) => !ownerFilter || objective.krs.length > 0), [objectives, ownerFilter])
   const navigation = useMemo(() => buildBusinessNavigation(visibleObjectives), [visibleObjectives])
-  const firstBusiness = navigation.find((business) => businessKrCount(business) > 0) ?? navigation[0]
+  const firstBusiness = navigation.find((business) => business.subgroups.some((subgroup) => subgroup.objectives.length > 0)) ?? navigation[0]
   const activeBusiness = navigation.find((business) => business.id === activeBusinessId) ?? firstBusiness
   const firstSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.objectives.length > 0) ?? activeBusiness?.subgroups[0]
   const activeSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.id === activeSubgroupId) ?? firstSubgroup

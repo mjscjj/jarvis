@@ -11,6 +11,7 @@ usage: weekly-report-tools [--base-url URL] COMMAND [ARGS]
 
 commands:
   text-config --key KEY
+  scope
   board [--quarter Q] [--week YYYY-Www]
   reminder-preview [--quarter Q] [--week YYYY-Www]
   reminder-batches [--quarter Q] [--week YYYY-Www]
@@ -68,6 +69,9 @@ case "$COMMAND" in
   text-config)
     [[ "$KEY" =~ ^weekly_report_[a-z_]+$ ]] || { echo "text-config requires a weekly_report_* --key" >&2; exit 2; }
     request_get "/api/text-files/${KEY}"
+    ;;
+  scope)
+    request_get /api/weekly-report/scope
     ;;
   board|reminder-preview|reminder-batches|pmo-digest)
     args=()

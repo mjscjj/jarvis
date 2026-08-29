@@ -24,7 +24,7 @@ scripts/weekly-report-tools text-config --key weekly_report_reminder_template
 通过模块自有工具读取，不在指令里硬编码季度、周次或 HTTP 路由：
 
 ```bash
-scripts/okr-module-tools scope
+scripts/weekly-report-tools scope
 scripts/weekly-report-tools reminder-preview
 ```
 

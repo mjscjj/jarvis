@@ -11,7 +11,7 @@ usage: okr-module-tools [--base-url URL] COMMAND [ARGS]
 
 commands:
   scope
-  board [--quarter Q] [--week YYYY-Www]
+  board [--quarter Q]
 
 Set JARVIS_BASE_URL when Jarvis does not listen on 127.0.0.1:18800.
 EOF
@@ -28,11 +28,9 @@ COMMAND="${1:-}"
 shift
 
 QUARTER=""
-WEEK=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --quarter) QUARTER="${2:-}"; shift 2 ;;
-    --week) WEEK="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -51,7 +49,6 @@ case "$COMMAND" in
   board)
     args=()
     [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
-    [[ -z "$WEEK" ]] || args+=(--data-urlencode "week=$WEEK")
     request_get /api/okr/board "${args[@]}"
     ;;
   *)

@@ -47,7 +47,7 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	}
 
 	core, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
-		ExpectedVersion: 0, Week: "2026-W35", Title: "新 OKR 标题", Priority: "p0", MetricNote: "季度口径",
+		ExpectedVersion: 0, Title: "新 OKR 标题", Priority: "p0", MetricNote: "季度口径",
 		Owners:  []OwnerView{{OpenID: "ou_a", Name: "甲"}, {OpenID: "ou_b", Name: "乙"}},
 		Metrics: []MetricView{{ID: metric.ID, Text: "新核心指标", Light: domain.LightYellow}},
 		Points:  []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title}},
@@ -91,6 +91,70 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	}
 	if preview.Summary.OwnerCount != 2 || len(preview.Recipients) != 2 {
 		t.Fatalf("multi-owner reminder preview = %+v", preview)
+	}
+	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: weekly.Version}); err != nil {
+		t.Fatal(err)
+	}
+	var preservedProgress int64
+	if err := db.Model(&domain.KRProgress{}).Where("point_id = ?", point.ID).Count(&preservedProgress).Error; err != nil {
+		t.Fatal(err)
+	}
+	if preservedProgress != 2 {
+		t.Fatalf("core delete removed weekly history: count=%d", preservedProgress)
+	}
+}
+
+func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateCore(db); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objective, err := service.CreateObjective(t.Context(), CreateObjectiveInput{Quarter: "2026-Q3", Title: "建立通用 OKR 能力"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateKR(t.Context(), objective.ID, CreateKRInput{Title: "核心模块不依赖周报", Priority: "p0", CreatedBy: "ou_owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Title != "核心模块不依赖周报" || created.Version != 0 {
+		t.Fatalf("created KR = %+v", created)
+	}
+	scope, err := service.LatestCoreScope(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope.Quarter != "2026-Q3" {
+		t.Fatalf("core scope = %+v", scope)
+	}
+	board, err := service.CoreBoard(t.Context(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Quarter != "2026-Q3" || board.Week != "" || len(board.AvailableWeeks) != 0 || len(board.Objectives) != 1 || len(board.Objectives[0].KRs) != 1 {
+		t.Fatalf("core board = %+v", board)
+	}
+	updated, err := service.ReplaceKRCore(t.Context(), created.ID, ReplaceKRInput{
+		ExpectedVersion: 0, Title: created.Title, Priority: "p0",
+		Metrics: []MetricView{{ID: "metric-1", Text: "核心指标", Light: domain.LightGreen}},
+		Points:  []PointView{{ID: "point-1", Kind: domain.PointKindStrategy, Title: "关键路径"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err = service.ReplaceKRCore(t.Context(), created.ID, ReplaceKRInput{ExpectedVersion: updated.Version, Title: created.Title, Priority: "p0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteKR(t.Context(), created.ID, DeleteKRInput{ExpectedVersion: updated.Version}); err != nil {
+		t.Fatal(err)
 	}
 }
 

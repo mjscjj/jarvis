@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getQuarterlyOKRDraft } from '../api'
+import { getQuarterlyOKRDraft, getWeeklyReportScope } from '../api'
 import type { QuarterlyOKRDraft as QuarterlyOKRDraftData } from '../types'
 
 type State =
@@ -10,19 +10,20 @@ type State =
 const statusLabel: Record<string, string> = { not_started: '未开始', in_progress: '进行中', done: '已完成', at_risk: '有风险', delayed: 'Delay', blocked: '阻塞' }
 const statusTone: Record<string, string> = { not_started: 'bg-slate-100 text-slate-500', in_progress: 'bg-blue-50 text-blue-600', done: 'bg-emerald-50 text-emerald-600', at_risk: 'bg-amber-50 text-amber-700', delayed: 'bg-orange-50 text-orange-700', blocked: 'bg-red-50 text-red-700' }
 
-export function QuarterlyOKRDraft({ quarter, week, onClose, onOpenPoint }: { quarter: string; week: string; onClose: () => void; onOpenPoint: (pointId: string) => void }) {
+export function QuarterlyOKRDraft({ quarter, onClose, onOpenPoint }: { quarter: string; onClose: () => void; onOpenPoint: (pointId: string) => void }) {
   const [density, setDensity] = useState<'team' | 'management'>('management')
-  const key = `${quarter}:${week}`
+	const key = quarter
   const [state, setState] = useState<State>({ kind: 'loading', key })
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
     let active = true
-    void getQuarterlyOKRDraft(quarter, week)
+	void getWeeklyReportScope()
+	  .then((scope) => getQuarterlyOKRDraft(quarter || scope.quarter, scope.week))
       .then((data) => { if (active) setState({ kind: 'ready', key, data }) })
       .catch((error: unknown) => { if (active) setState({ kind: 'error', key, message: error instanceof Error ? error.message : '季度材料加载失败。' }) })
     return () => { active = false }
-  }, [key, quarter, reload, week])
+  }, [key, quarter, reload])
 
   const visible = state.key === key ? state : { kind: 'loading' as const, key }
   return (

@@ -22,7 +22,7 @@ module: weekly-report
 
 ```bash
 scripts/weekly-report-tools text-config --key weekly_report_cycle
-scripts/okr-module-tools scope
+scripts/weekly-report-tools scope
 scripts/weekly-report-tools board --quarter <quarter> --week <week>
 jarvis-tools list-relations --source-type okr_kr --source-id <kr_id> --limit 100
 ```

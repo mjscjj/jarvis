@@ -89,9 +89,20 @@ func Enums() app.HandlerFunc {
 
 func GetOKRWorkspaceScope(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		result, err := service.LatestScope(ctx)
+		result, err := service.LatestCoreScope(ctx)
 		if err != nil {
 			writeAPIError(c, consts.StatusNotFound, 40411, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func GetWeeklyReportScope(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		result, err := service.LatestWeeklyScope(ctx)
+		if err != nil {
+			writeAPIError(c, consts.StatusNotFound, 40412, err)
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
@@ -468,19 +479,19 @@ func ConfirmMeegoProgress(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
-func ReplaceKR(service *okrworkspace.Service) app.HandlerFunc {
-	return replaceKRWith(service, service.ReplaceKR)
-}
-
 func ReplaceCoreKR(service *okrworkspace.Service) app.HandlerFunc {
-	return replaceKRWith(service, service.ReplaceKRCore)
+	return replaceKRWith(service.ReplaceKRCore, func(ctx context.Context, id string, _ okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error) {
+		return service.GetCoreKR(ctx, id)
+	})
 }
 
 func ReplaceWeeklyReportKR(service *okrworkspace.Service) app.HandlerFunc {
-	return replaceKRWith(service, service.ReplaceWeeklyProgress)
+	return replaceKRWith(service.ReplaceWeeklyProgress, func(ctx context.Context, id string, input okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error) {
+		return service.GetKR(ctx, id, input.Week)
+	})
 }
 
-func replaceKRWith(service *okrworkspace.Service, replace func(context.Context, string, okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error)) app.HandlerFunc {
+func replaceKRWith(replace func(context.Context, string, okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error), current func(context.Context, string, okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error)) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		id := strings.TrimSpace(c.Param("kr_id"))
 		if id == "" {
@@ -495,12 +506,12 @@ func replaceKRWith(service *okrworkspace.Service, replace func(context.Context, 
 		input.UpdatedBy = currentOKRIdentity(c).OpenID
 		result, err := replace(ctx, id, input)
 		if errors.Is(err, okrworkspace.ErrConflict) {
-			current, currentErr := service.GetKR(ctx, id, input.Week)
+			currentValue, currentErr := current(ctx, id, input)
 			if currentErr != nil {
 				writeAPIError(c, consts.StatusInternalServerError, 50021, currentErr)
 				return
 			}
-			writeAPIConflict(c, 40920, err, current)
+			writeAPIConflict(c, 40920, err, currentValue)
 			return
 		}
 		if errors.Is(err, okrworkspace.ErrNotFound) {
@@ -512,6 +523,22 @@ func replaceKRWith(service *okrworkspace.Service, replace func(context.Context, 
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func CreateObjective(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var input okrworkspace.CreateObjectiveInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40027, err)
+			return
+		}
+		result, err := service.CreateObjective(ctx, input)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40028, err)
+			return
+		}
+		c.JSON(consts.StatusCreated, map[string]any{"code": 0, "data": result})
 	}
 }
 
