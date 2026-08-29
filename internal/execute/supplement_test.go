@@ -1,14 +1,17 @@
 package execute
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"jarvis/internal/contextsnap"
-	"jarvis/internal/domain"
-
 	"jarvis/internal/datatypes"
+	"jarvis/internal/domain"
+	"jarvis/internal/skill"
+	"jarvis/internal/workrule"
 )
 
 func testExecutionPromptInput(systemPrompt, approvalPolicy string, task *domain.Task, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) executionPromptInput {
@@ -23,6 +26,72 @@ const (
 	testToolCatalog    = "BEGIN_AVAILABLE_TOOLS\n- fixture-tool\nEND_AVAILABLE_TOOLS"
 	testM5SystemPrompt = "test M5 system prompt\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}"
 )
+
+func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	read := func(relative string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join(repoRoot, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		return string(content)
+	}
+	rules, err := workrule.NewService(filepath.Join(repoRoot, "conf", "rules"))
+	if err != nil {
+		t.Fatalf("load repository work rules: %v", err)
+	}
+	ruleBlock, err := rules.Block(t.Context(), workrule.StageExecute)
+	if err != nil {
+		t.Fatalf("render repository M5 rules: %v", err)
+	}
+	skills, err := skill.NewService(
+		filepath.Join(repoRoot, ".agents", "skills"),
+		filepath.Join(repoRoot, "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	skillCatalog, err := skills.Catalog(t.Context(), skill.StageExecute)
+	if err != nil {
+		t.Fatalf("render repository execute skills: %v", err)
+	}
+	background, err := (contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
+	}).Encode()
+	if err != nil {
+		t.Fatalf("encode prompt fixture: %v", err)
+	}
+	prompt, err := buildExecutionPrompt(executionPromptInput{
+		SystemPrompt:   read("conf/prompts/m5-system-prompt.md"),
+		ApprovalPolicy: read("conf/prompts/m5-approval-policy.md"),
+		Task: &domain.Task{
+			ID: 1, Title: "通知相关人", ActionType: "agent_task",
+			SourcePayload: datatypes.JSON([]byte(`{"request":"通知相关人"}`)),
+			Background:    datatypes.JSON(background),
+		},
+		ToolCatalog: testToolCatalog,
+		WorkRules:   ruleBlock,
+		Skills:      skillCatalog,
+	})
+	if err != nil {
+		t.Fatalf("build repository M5 prompt: %v", err)
+	}
+	for _, want := range []string{
+		"普通业务消息：显式工具动作",
+		"先完整确定受众、会话位置或原消息锚点",
+		"所有普通业务消息都通过 `feishu-send-message` Skill",
+		"feishu-send-message",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("effective M5 prompt missing message-tool contract %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "user_message") {
+		t.Fatalf("effective M5 prompt still contains legacy implicit message field:\n%s", prompt)
+	}
+}
 
 func TestAppendExecutionSupplement(t *testing.T) {
 	at1 := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)

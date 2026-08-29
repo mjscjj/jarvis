@@ -19,3 +19,4 @@
 - [PNG 预览图](jarvis-proactive-digital-twin-architecture.png)
 - [Jarvis 主动式任务数字分身演示](jarvis-proactive-digital-twin/README.md)
 - [演示配套技术产品方案](jarvis-proactive-digital-twin/proposal.md)
+- [M5 飞书消息工具化与结果协议解耦方案](m5-message-delivery-ownership.md)

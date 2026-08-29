@@ -14,7 +14,15 @@ fail() {
 command -v curl >/dev/null 2>&1 || fail "curl is required but not found in PATH"
 command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE_PATH" ]]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+  SOURCE_PATH="$(readlink "$SOURCE_PATH")"
+  if [[ "$SOURCE_PATH" != /* ]]; then
+    SOURCE_PATH="${SOURCE_DIR}/${SOURCE_PATH}"
+  fi
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 print_usage() {

@@ -764,3 +764,21 @@ func TestExecutionResultSchemaCapsProgressSummaryAtStoreCeiling(t *testing.T) {
 		t.Fatalf("schema progress_summary.maxLength = %d, want TaskSummaryMaxChars = %d", got, TaskSummaryMaxChars)
 	}
 }
+
+func TestExecutionResultSchemaHasNoImplicitMessageCommand(t *testing.T) {
+	var schema struct {
+		Required   []string                   `json:"required"`
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(executionResultSchema), &schema); err != nil {
+		t.Fatalf("decode executionResultSchema: %v", err)
+	}
+	if _, exists := schema.Properties["user_message"]; exists {
+		t.Fatal("execution result schema still exposes user_message as an implicit send command")
+	}
+	for _, field := range schema.Required {
+		if field == "user_message" {
+			t.Fatal("execution result schema still requires user_message")
+		}
+	}
+}

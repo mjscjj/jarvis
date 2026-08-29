@@ -1,5 +1,9 @@
 # M5 提示词整理方案
 
+> Status: superseded
+>
+> 本文记录旧版 M5 输出协议的整理思路，其中普通消息仍依赖 `user_message`。现行设计已经改为 M5 显式调用消息 Skill，见 [`docs/summery/m5-message-delivery-ownership.md`](summery/m5-message-delivery-ownership.md)；本文不再作为实现依据。
+
 ## 现状
 
 M5 的指令由三份文件拼成一份，模型只看到拼接结果。按 AGENTS.md §1.2，它们的所有权是：

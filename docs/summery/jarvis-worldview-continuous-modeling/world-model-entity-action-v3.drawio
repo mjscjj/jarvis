@@ -1,0 +1,144 @@
+<mxfile host="app.diagrams.net" version="29.6.6">
+  <diagram name="外部世界的实体建模" id="world_model_entity_action_v3">
+    <mxGraphModel dx="1536" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1536" pageHeight="900" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Large-area backgrounds first -->
+        <mxCell id="external_container" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDF2F7;strokeColor=#95A5B9;strokeWidth=1.2;arcSize=14;" parent="1" vertex="1">
+          <mxGeometry x="40" y="120" width="1456" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="entity_container" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2FAF5;strokeColor=#5BA87C;strokeWidth=1.5;arcSize=14;" parent="1" vertex="1">
+          <mxGeometry x="40" y="240" width="1456" height="390" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_container" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F3FA;strokeColor=#8B7EC4;strokeWidth=1.2;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1120" y="285" width="330" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="action_container" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBF5F1;strokeColor=#CC9C2F;strokeWidth=1.5;arcSize=14;" parent="1" vertex="1">
+          <mxGeometry x="40" y="660" width="1456" height="180" as="geometry" />
+        </mxCell>
+
+        <!-- Title and subtitle -->
+        <mxCell id="title_main" value="&lt;b&gt;外部世界的实体建模&lt;/b&gt;" style="text;html=1;fontSize=32;fontColor=#2D3748;align=left;verticalAlign=middle;fontStyle=1;fontFamily=Inter;" parent="1" vertex="1">
+          <mxGeometry x="40" y="20" width="1456" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="长期实体描述世界，行动状态描述世界里正在发生的工作" style="text;html=1;fontSize=15;fontColor=#68778D;align=left;verticalAlign=middle;fontFamily=Inter;" parent="1" vertex="1">
+          <mxGeometry x="40" y="70" width="1456" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- External world strip -->
+        <mxCell id="external_title" value="&lt;b&gt;外部世界持续变化&lt;/b&gt;" style="text;html=1;fontSize=18;fontColor=#2D3748;align=left;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="72" y="137" width="230" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="external_sources" value="消息 · 文档 · 系统变化 · 真实工作结果" style="text;html=1;fontSize=18;fontColor=#2D3748;align=left;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="320" y="137" width="650" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="external_note" value="变化进入系统，也被行动结果持续改写" style="text;html=1;fontSize=12;fontColor=#68778D;align=right;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="1120" y="139" width="320" height="32" as="geometry" />
+        </mxCell>
+
+        <!-- Entity layer headings -->
+        <mxCell id="entity_title" value="&lt;b&gt;主体一：实体模型&lt;/b&gt;｜世界里有什么" style="text;html=1;fontSize=19;fontColor=#45815F;align=left;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="72" y="258" width="500" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="entity_note" value="长期存在，并持续被新的事实和行动结果更新" style="text;html=1;fontSize=11;fontColor=#68778D;align=left;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="580" y="260" width="440" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- Entity hub and nodes -->
+        <mxCell id="principal" value="&lt;font style=&quot;font-size:11px;color:#3F72D9&quot;&gt;认知坐标&lt;/font&gt;&lt;br&gt;&lt;b&gt;Principal（我）&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:15px;color:#3F72D9&quot;&gt;&lt;b&gt;Jarvis&lt;/b&gt;&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#E8F0FE;strokeColor=#5B8DEF;strokeWidth=2.5;fontSize=20;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="500" y="360" width="210" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="person" value="&lt;b&gt;Person（人）&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;color:#68778D&quot;&gt;角色与协作对象&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F5EC;strokeColor=#5BA87C;strokeWidth=1.2;arcSize=12;fontSize=15;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="130" y="325" width="260" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="resource" value="&lt;b&gt;Resource（物）&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;color:#68778D&quot;&gt;文档、产物与引用&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F5EC;strokeColor=#5BA87C;strokeWidth=1.2;arcSize=12;fontSize=15;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="130" y="478" width="260" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="project" value="&lt;b&gt;Project / KeyMatter（事）&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;color:#68778D&quot;&gt;目标、事项与上下文&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F5EC;strokeColor=#5BA87C;strokeWidth=1.2;arcSize=12;fontSize=15;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="820" y="325" width="260" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="group" value="&lt;b&gt;Group（场）&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;color:#68778D&quot;&gt;群组、组织与语境&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F5EC;strokeColor=#5BA87C;strokeWidth=1.2;arcSize=12;fontSize=15;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="820" y="478" width="260" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="relations" value="关系：角色 · 归属 · 协作 · 引用 · 语境" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#5BA87C;strokeWidth=1.0;arcSize=12;fontSize=13;fontColor=#45815F;align=center;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="390" y="570" width="430" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- Cognition record legend, embedded inside entity layer -->
+        <mxCell id="legend_title" value="&lt;b&gt;认知记录图例&lt;/b&gt;" style="text;html=1;fontSize=17;fontColor=#3F72D9;align=left;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1142" y="300" width="180" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_example" value="以 Project「Jarvis」为例" style="text;html=1;fontSize=11;fontColor=#68778D;align=right;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="1260" y="302" width="165" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="summary_card" value="&lt;b&gt;Summary｜现在是什么&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#68778D&quot;&gt;当前正在打磨世界模型章节&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE8F5;strokeColor=#8B7EC4;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;align=left;verticalAlign=middle;spacingLeft=12;" parent="1" vertex="1">
+          <mxGeometry x="1145" y="342" width="280" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="fact_card" value="&lt;b&gt;Fact｜发生过什么&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#68778D&quot;&gt;8 月 20 日完成第一版架构图&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE8F5;strokeColor=#8B7EC4;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;align=left;verticalAlign=middle;spacingLeft=12;" parent="1" vertex="1">
+          <mxGeometry x="1145" y="414" width="280" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="revision_card" value="&lt;b&gt;PageRevision｜以前如何认识&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#68778D&quot;&gt;上一版认知：章节仍在搭建框架&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE8F5;strokeColor=#8B7EC4;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;align=left;verticalAlign=middle;spacingLeft=12;" parent="1" vertex="1">
+          <mxGeometry x="1145" y="486" width="280" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_note" value="三种记录附着于实体，不是独立实体" style="text;html=1;fontSize=10;fontColor=#3F72D9;align=center;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1145" y="552" width="280" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Action layer -->
+        <mxCell id="action_title" value="&lt;b&gt;主体二：行动模型&lt;/b&gt;｜世界里正在发生什么" style="text;html=1;fontSize=19;fontColor=#2D3748;align=left;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="72" y="678" width="540" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="action_note" value="行动记录，不是长期实体" style="text;html=1;fontSize=11;fontColor=#68778D;align=right;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1210" y="680" width="220" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="todo" value="&lt;b&gt;Todo&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;color:#68778D&quot;&gt;发现新变化&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#CC9C2F;strokeWidth=1.3;arcSize=12;fontSize=17;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="230" y="730" width="260" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="task" value="&lt;b&gt;Task&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;color:#68778D&quot;&gt;承接明确目标&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#CC9C2F;strokeWidth=1.3;arcSize=12;fontSize=17;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="640" y="730" width="260" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="execution" value="&lt;b&gt;ExecutionRun&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;color:#68778D&quot;&gt;一次执行及其结果&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#CC9C2F;strokeWidth=1.3;arcSize=12;fontSize=17;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="730" width="290" height="76" as="geometry" />
+        </mxCell>
+
+        <!-- Hub rays -->
+        <mxCell id="ray_person" style="endArrow=none;strokeColor=#5BA87C;strokeWidth=1.2;exitX=0;exitY=0.3;exitDx=0;exitDy=0;entryX=1;entryY=0.6;entryDx=0;entryDy=0;" parent="1" source="principal" target="person" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ray_resource" style="endArrow=none;strokeColor=#5BA87C;strokeWidth=1.2;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.4;entryDx=0;entryDy=0;" parent="1" source="principal" target="resource" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ray_project" style="endArrow=none;strokeColor=#5BA87C;strokeWidth=1.2;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.6;entryDx=0;entryDy=0;" parent="1" source="principal" target="project" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ray_group" style="endArrow=none;strokeColor=#5BA87C;strokeWidth=1.2;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.4;entryDx=0;entryDy=0;" parent="1" source="principal" target="group" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Primary narrative arrows -->
+        <mxCell id="arr_external_entity" value="&lt;span style=&quot;font-size:11px;color:#3F72D9&quot;&gt;沉淀到实体&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#5B8DEF;strokeWidth=1.6;endSize=7;html=1;exitX=0.45;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="external_container" target="principal" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_entity_task" value="&lt;span style=&quot;font-size:11px;color:#68778D&quot;&gt;提供目标、背景与当前状态&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#CC9C2F;strokeWidth=1.5;endSize=7;html=1;exitX=0.88;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="relations" target="task" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_todo_task" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#CC9C2F;strokeWidth=1.6;endSize=7;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="todo" target="task" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_task_execution" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#CC9C2F;strokeWidth=1.6;endSize=7;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="task" target="execution" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_execution_external" value="&lt;span style=&quot;font-size:11px;color:#3F72D9&quot;&gt;结果改写现实&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#5B8DEF;strokeWidth=1.8;endSize=7;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.94;entryY=1;entryDx=0;entryDy=0;" parent="1" source="execution" target="external_container" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1458" y="768" />
+              <mxPoint x="1458" y="220" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

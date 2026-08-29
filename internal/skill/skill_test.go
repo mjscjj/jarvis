@@ -114,6 +114,49 @@ func TestRepositoryFeishuApprovalCardIsOwnedByServer(t *testing.T) {
 	}
 }
 
+func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-send-message", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read repository Feishu message skill: %v", err)
+	}
+	skill := string(content)
+	for _, want := range []string{
+		"所有 M5 普通业务消息都使用本 Skill",
+		"不执行本 Skill 的任何写命令",
+		"jarvis-config show-principal",
+		"不能改读 Task 仓库里的同名文件",
+		"lark-cli auth status --profile",
+		"user `openId` 与 principal `open_id` 完全相同",
+		"+chat-search",
+		"--page-token",
+		"+chat-members-list",
+		"--page-all --page-limit 0",
+		"多个候选、成员不完整或用途不确定时停止",
+		"不要自动创建群、改用 user 身份或更换目标",
+		"JARVIS_TASK_ID",
+		"飞书幂等窗口只有一小时",
+		"+messages-mget",
+		"message_id",
+		"anchor_message_id",
+		"idempotency_key",
+		"effects 是 M5 根据已核验工具结果作出的展示申报",
+		`at user_id="<principal open_id>"`,
+		"同时真实 `@` 对方和 principal",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("Feishu message skill missing send contract %q:\n%s", want, skill)
+		}
+	}
+	for _, forbidden := range []string{
+		"如果 `--user-id` 直发失败（极少见，说明还没建立私聊关系），再按下面",
+		"user_message",
+	} {
+		if strings.Contains(skill, forbidden) {
+			t.Fatalf("Feishu message skill still contains obsolete send rule %q:\n%s", forbidden, skill)
+		}
+	}
+}
+
 func TestRepositoryFeishuMessageSkillIsNotExposedToExtract(t *testing.T) {
 	service, err := NewService(
 		filepath.Join("..", "..", ".agents", "skills"),

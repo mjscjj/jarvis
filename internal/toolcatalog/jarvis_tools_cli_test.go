@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,54 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestJarvisToolsResolvesRepositoryThroughSymlinkOutsideWorkingDirectory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/profile" {
+			t.Fatalf("request path = %s, want /api/profile", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"open_id":"ou_principal"}}`)
+	}))
+	defer server.Close()
+
+	repoRoot := t.TempDir()
+	scriptsDir := filepath.Join(repoRoot, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sourceScript, err := os.ReadFile(filepath.Join("..", "..", "scripts", "jarvis-tools"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetScript := filepath.Join(scriptsDir, "jarvis-tools")
+	if err := os.WriteFile(targetScript, sourceScript, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configDir := filepath.Join(repoRoot, "conf")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	addr := strings.TrimPrefix(server.URL, "http://")
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("server:\n  addr: "+addr+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	linkDir := t.TempDir()
+	link := filepath.Join(linkDir, "jarvis-tools")
+	if err := os.Symlink(targetScript, link); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("bash", link, "get-principal")
+	command.Dir = t.TempDir()
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("jarvis-tools through symlink: %v: %s", err, output)
+	}
+	if !strings.Contains(string(output), `"open_id":"ou_principal"`) {
+		t.Fatalf("output = %s", output)
 	}
 }
 
