@@ -192,23 +192,27 @@ func (KROwner) TableName() string { return "okr_workspace_kr_owner" }
 // PageComment for a reply. Target fields leave room for comments anchored to a
 // KR or point without coupling the discussion lifecycle to those aggregates.
 type PageComment struct {
-	ID              string    `gorm:"primaryKey;size:64"`
-	Quarter         string    `gorm:"not null;index:idx_page_comment_scope,priority:1"`
-	Week            string    `gorm:"not null;index:idx_page_comment_scope,priority:2"`
-	ParentID        string    `gorm:"not null;default:'';index"`
-	TargetType      string    `gorm:"not null;size:24;default:'page'"`
-	TargetID        string    `gorm:"not null;size:96;default:''"`
-	TargetTitle     string    `gorm:"not null;default:''"`
-	SelectedText    string    `gorm:"not null;type:text;default:''"`
-	SelectionStart  int       `gorm:"not null;default:0"`
-	SelectionEnd    int       `gorm:"not null;default:0"`
-	SelectionPrefix string    `gorm:"not null;type:text;default:''"`
-	SelectionSuffix string    `gorm:"not null;type:text;default:''"`
-	AuthorOpenID    string    `gorm:"not null;default:'';index"`
-	AuthorName      string    `gorm:"not null;default:''"`
-	Content         string    `gorm:"not null;type:text"`
-	CreatedAt       time.Time `gorm:"not null;index"`
-	UpdatedAt       time.Time `gorm:"not null"`
+	ID              string `gorm:"primaryKey;size:64"`
+	Quarter         string `gorm:"not null;index:idx_page_comment_scope,priority:1"`
+	Week            string `gorm:"not null;index:idx_page_comment_scope,priority:2"`
+	ParentID        string `gorm:"not null;default:'';index"`
+	TargetType      string `gorm:"not null;size:24;default:'page'"`
+	TargetID        string `gorm:"not null;size:96;default:''"`
+	TargetTitle     string `gorm:"not null;default:''"`
+	SelectedText    string `gorm:"not null;type:text;default:''"`
+	SelectionStart  int    `gorm:"not null;default:0"`
+	SelectionEnd    int    `gorm:"not null;default:0"`
+	SelectionPrefix string `gorm:"not null;type:text;default:''"`
+	SelectionSuffix string `gorm:"not null;type:text;default:''"`
+	AuthorOpenID    string `gorm:"not null;default:'';index"`
+	AuthorName      string `gorm:"not null;default:''"`
+	Content         string `gorm:"not null;type:text"`
+	// Todo promotes a meeting comment into the weekly follow-up summary. It
+	// remains a comment attribute so there is only one source of truth.
+	Todo      bool      `gorm:"not null;default:false"`
+	Resolved  bool      `gorm:"not null;default:false"`
+	CreatedAt time.Time `gorm:"not null;index"`
+	UpdatedAt time.Time `gorm:"not null"`
 }
 
 func (PageComment) TableName() string { return "okr_workspace_comment" }

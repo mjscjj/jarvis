@@ -32,6 +32,8 @@ type CommentView struct {
 	AuthorOpenID    string        `json:"author_open_id,omitempty"`
 	AuthorName      string        `json:"author_name"`
 	Content         string        `json:"content"`
+	Todo            bool          `json:"todo"`
+	Resolved        bool          `json:"resolved"`
 	CreatedAt       time.Time     `json:"created_at"`
 	UpdatedAt       time.Time     `json:"updated_at"`
 	Replies         []CommentView `json:"replies"`
@@ -62,7 +64,11 @@ type CreateCommentInput struct {
 }
 
 type UpdateCommentInput struct {
-	Content string `json:"content"`
+	// Pointers distinguish an omitted field from an explicit false value. Text
+	// edits, To do toggles and resolution are independent comment actions.
+	Content  *string `json:"content"`
+	Todo     *bool   `json:"todo"`
+	Resolved *bool   `json:"resolved"`
 }
 
 func (service *Service) Comments(ctx context.Context, quarter, week string) (CommentList, error) {
@@ -190,15 +196,11 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 
 func (service *Service) UpdateComment(ctx context.Context, id string, input UpdateCommentInput) (CommentView, error) {
 	id = strings.TrimSpace(id)
-	input.Content = strings.TrimSpace(input.Content)
 	if id == "" {
 		return CommentView{}, fmt.Errorf("comment_id is required")
 	}
-	if input.Content == "" {
-		return CommentView{}, fmt.Errorf("comment content is required")
-	}
-	if len([]rune(input.Content)) > maxCommentLength {
-		return CommentView{}, fmt.Errorf("comment content exceeds %d characters", maxCommentLength)
+	if input.Content == nil && input.Todo == nil && input.Resolved == nil {
+		return CommentView{}, fmt.Errorf("content, todo or resolved is required")
 	}
 
 	var row domain.PageComment
@@ -209,11 +211,35 @@ func (service *Service) UpdateComment(ctx context.Context, id string, input Upda
 			}
 			return err
 		}
-		row.Content = input.Content
+		updates := map[string]any{}
+		if input.Content != nil {
+			content := strings.TrimSpace(*input.Content)
+			if content == "" {
+				return fmt.Errorf("comment content is required")
+			}
+			if len([]rune(content)) > maxCommentLength {
+				return fmt.Errorf("comment content exceeds %d characters", maxCommentLength)
+			}
+			row.Content = content
+			updates["content"] = content
+		}
+		if input.Todo != nil {
+			if row.ParentID != "" {
+				return fmt.Errorf("only a top-level comment can be marked as todo")
+			}
+			row.Todo = *input.Todo
+			updates["todo"] = row.Todo
+		}
+		if input.Resolved != nil {
+			if row.ParentID != "" {
+				return fmt.Errorf("only a top-level comment can be resolved")
+			}
+			row.Resolved = *input.Resolved
+			updates["resolved"] = row.Resolved
+		}
 		row.UpdatedAt = time.Now().UTC()
-		return tx.Model(&domain.PageComment{}).Where("id = ?", id).Updates(map[string]any{
-			"content": row.Content, "updated_at": row.UpdatedAt,
-		}).Error
+		updates["updated_at"] = row.UpdatedAt
+		return tx.Model(&domain.PageComment{}).Where("id = ?", id).Updates(updates).Error
 	})
 	if err != nil {
 		return CommentView{}, fmt.Errorf("update page comment: %w", err)
@@ -274,7 +300,8 @@ func commentView(row domain.PageComment) CommentView {
 		SelectedText: row.SelectedText, SelectionStart: row.SelectionStart, SelectionEnd: row.SelectionEnd,
 		SelectionPrefix: row.SelectionPrefix, SelectionSuffix: row.SelectionSuffix,
 		AuthorOpenID: row.AuthorOpenID, AuthorName: row.AuthorName,
-		Content: row.Content, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Replies: []CommentView{},
+		Content: row.Content, Todo: row.Todo, Resolved: row.Resolved,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Replies: []CommentView{},
 	}
 }
 
