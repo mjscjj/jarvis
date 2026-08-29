@@ -53,6 +53,8 @@ interface APIPageComment {
   author_open_id?: string
   author_name: string
   content: string
+  todo?: boolean
+  resolved?: boolean
   created_at: string
   updated_at: string
   replies: APIPageComment[]
@@ -438,6 +440,8 @@ function fromAPIComment(value: APIPageComment): PageComment {
     authorOpenId: value.author_open_id,
     authorName: value.author_name,
     content: value.content,
+    todo: value.todo ?? false,
+    resolved: value.resolved ?? false,
     createdAt: value.created_at,
     updatedAt: value.updated_at,
     replies: (value.replies ?? []).map(fromAPIComment),
@@ -507,10 +511,10 @@ export async function logout(): Promise<void> {
   await request<{ logged_out: boolean }>('/api/okr/auth/logout', { method: 'POST' })
 }
 
-export async function updateComment(id: string, content: string): Promise<PageComment> {
+export async function updateComment(id: string, patch: { content?: string; todo?: boolean; resolved?: boolean }): Promise<PageComment> {
   const value = await request<APIPageComment>(`/api/weekly-report/comments/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(patch),
   })
   return fromAPIComment(value)
 }

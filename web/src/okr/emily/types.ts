@@ -186,6 +186,8 @@ export interface PageComment {
   authorOpenId?: string
   authorName: string
   content: string
+  todo: boolean
+  resolved: boolean
   createdAt: string
   updatedAt: string
   replies: PageComment[]

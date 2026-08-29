@@ -10,7 +10,7 @@ import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
 import { useCommentInteraction } from '../commenting'
 import { DOT_CLASS, LIGHTS, TONE_CLASS, TONE_TEXT_CLASS, lightOf, statusOf } from '../template'
-import type { CommentTarget, DocLink, ImageRef, Light, Status, TextSelection } from '../types'
+import type { CommentTarget, DocLink, ImageRef, Light, Status } from '../types'
 
 function Popover({
   open,
@@ -219,8 +219,9 @@ export function Text({
 }) {
   const [local, setLocal] = useDebounced(value, onChange)
   const ref = useRef<HTMLTextAreaElement>(null)
-  const [pendingSelection, setPendingSelection] = useState<TextSelection>()
   const commentInteraction = useCommentInteraction()
+  const selectionTargetKey = commentTarget ? commentTargetKey(commentTarget) : ''
+  const pendingSelection = commentInteraction.pendingSelection?.targetKey === selectionTargetKey ? commentInteraction.pendingSelection.selection : undefined
   const selectionThreads = commentTarget ? commentInteraction.comments.filter((comment) => comment.selectedText && commentTargetKey(comment) === commentTargetKey(commentTarget)) : []
 
   useLayoutEffect(() => {
@@ -232,7 +233,11 @@ export function Text({
 
   const captureSelection = () => {
     const element = ref.current
-    if (!element || !commentTarget || element.selectionStart === element.selectionEnd) return
+    if (!element || !commentTarget) return
+    if (element.selectionStart === element.selectionEnd) {
+      if (commentInteraction.pendingSelection?.targetKey === selectionTargetKey) commentInteraction.setPendingSelection(undefined)
+      return
+    }
     let start = element.selectionStart
     let end = element.selectionEnd
     const raw = local.slice(start, end)
@@ -241,12 +246,15 @@ export function Text({
     start += leading
     end -= trailing
     if (end <= start) return
-    setPendingSelection({
-      text: local.slice(start, end),
-      start,
-      end,
-      prefix: local.slice(Math.max(0, start - 48), start),
-      suffix: local.slice(end, Math.min(local.length, end + 48)),
+    commentInteraction.setPendingSelection({
+      targetKey: selectionTargetKey,
+      selection: {
+        text: local.slice(start, end),
+        start,
+        end,
+        prefix: local.slice(Math.max(0, start - 48), start),
+        suffix: local.slice(end, Math.min(local.length, end + 48)),
+      },
     })
   }
 
@@ -259,6 +267,11 @@ export function Text({
       placeholder={placeholder}
       onChange={(e) => setLocal(e.target.value)}
       onSelect={captureSelection}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || event.currentTarget.selectionStart === event.currentTarget.selectionEnd) return
+        const end = event.currentTarget.selectionEnd
+        event.currentTarget.setSelectionRange(end, end)
+      }}
       className={`resize-none rounded border border-transparent bg-transparent px-1 py-0.5 leading-relaxed outline-none transition-colors ${readOnly ? 'cursor-default' : 'hover:border-slate-200 focus:border-blue-400 focus:bg-white'} ${
         fit ? 'w-auto max-w-full min-w-24' : 'w-full'
       } ${className}`}
@@ -266,10 +279,12 @@ export function Text({
     {pendingSelection && commentTarget && (
       <button
         type="button"
+        data-comment-selection-trigger
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
           commentInteraction.select({ ...commentTarget, title: local, selection: pendingSelection })
-          setPendingSelection(undefined)
+          commentInteraction.setPendingSelection(undefined)
+          ref.current?.setSelectionRange(pendingSelection.end, pendingSelection.end)
         }}
         className="shrink-0 self-start whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium text-white shadow-sm hover:bg-indigo-700"
       >评论选中文字</button>

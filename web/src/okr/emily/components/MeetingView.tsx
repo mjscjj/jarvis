@@ -4,12 +4,14 @@ import { createFeishuDocument } from '../api'
 import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
 import { useCommentInteraction } from '../commenting'
+import { buildBusinessNavigation, businessKrCount, subgroupTone } from '../hierarchy'
 import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
 import { buildMeetingMarkdown } from '../meetingMarkdown'
 import { KIND_LABEL, isDone } from '../template'
-import type { CommentTarget, Entry, Kr, KrTag, Point, PointKind, TextSelection } from '../types'
+import type { CommentTarget, Entry, Kr, KrTag, Objective, Point, PointKind, TextSelection } from '../types'
+import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect } from './ui'
 
 function FoldButton({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
@@ -109,7 +111,8 @@ function selectionWithin(root: HTMLElement, event: MouseEvent<HTMLElement>, text
 function HighlightedText({ target, text }: { target: CommentTarget; text: string }) {
   const interaction = useCommentInteraction()
   const ref = useRef<HTMLSpanElement>(null)
-  const [pending, setPending] = useState<TextSelection>()
+  const selectionTargetKey = commentTargetKey(target)
+  const pending = interaction.pendingSelection?.targetKey === selectionTargetKey ? interaction.pendingSelection.selection : undefined
   const ranges = useMemo(() => interaction.comments
     .filter((comment) => commentTargetKey(comment) === commentTargetKey(target) && comment.selectedText)
     .map((comment) => {
@@ -148,18 +151,20 @@ function HighlightedText({ target, text }: { target: CommentTarget; text: string
       onClick={(event) => event.stopPropagation()}
       onMouseUp={(event) => {
         const next = ref.current ? selectionWithin(ref.current, event, text) : undefined
-        if (next) setPending(next)
+        if (next) interaction.setPendingSelection({ targetKey: selectionTargetKey, selection: next })
+        else if (interaction.pendingSelection?.targetKey === selectionTargetKey) interaction.setPendingSelection(undefined)
       }}
     >
       {parts.length > 0 ? parts : text}
       {pending && (
         <button
           type="button"
+          data-comment-selection-trigger
           onMouseDown={(event) => event.preventDefault()}
           onClick={(event) => {
             event.stopPropagation()
             interaction.select({ ...target, selection: pending })
-            setPending(undefined)
+            interaction.setPendingSelection(undefined)
             window.getSelection()?.removeAllRanges()
           }}
           className="absolute -top-8 right-0 z-20 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium text-white shadow-lg hover:bg-indigo-700"
@@ -203,8 +208,8 @@ function MeetingPoint({ point, index, open, onToggle }: { point: Point; index: n
   const done = point.entries.filter((entry) => isDone(entry.status))
   const target: CommentTarget = { type: 'point', id: point.id, title: point.title }
   return (
-    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <header className={`${open ? 'border-b border-slate-100' : ''} flex items-start bg-slate-50/70 pl-1.5`}>
+    <article className="border-l border-slate-200 pl-2">
+      <header className="flex items-start">
         <span className="pt-1.5"><FoldButton open={open} onToggle={onToggle} label="具体 KR" /></span>
         <Commentable target={target} className="flex min-w-0 flex-1 items-start gap-2 px-1.5 py-1.5 pr-2.5">
           <span className="mt-px shrink-0 rounded border border-blue-200 bg-blue-50 px-1.5 py-px text-[10px] font-semibold text-blue-600">KR{index + 1}</span>
@@ -212,7 +217,7 @@ function MeetingPoint({ point, index, open, onToggle }: { point: Point; index: n
           <span className="shrink-0 pt-0.5 text-[10px] text-slate-400">{doing.length} 进展 · {done.length} 完成</span>
         </Commentable>
       </header>
-      {open && <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0">
+      {open && <div className="ml-6 grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0">
         <MeetingLane entries={doing} />
         <MeetingLane entries={done} />
       </div>}
@@ -221,15 +226,80 @@ function MeetingPoint({ point, index, open, onToggle }: { point: Point; index: n
 }
 
 function KindGroup({ kind, points, closed, toggle }: { kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void }) {
-  const tone = kind === 'strategy' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-violet-200 bg-violet-50 text-violet-700'
+  const tone = kind === 'strategy' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-teal-200 bg-teal-50 text-teal-700'
   return (
-    <section>
+    <section className={`border-l-[3px] pl-2.5 ${kind === 'strategy' ? 'border-violet-500' : 'border-teal-500'}`}>
       <div className="mb-1.5 flex items-center gap-2">
         <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${tone}`}>{KIND_LABEL[kind]}</span>
         <span className="text-[10px] text-slate-400">{points.length} 项</span>
         <span className="h-px flex-1 bg-slate-100" />
       </div>
-      <div className="space-y-1.5">{points.map((point, index) => <MeetingPoint key={point.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} />)}</div>
+      <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} />)}</div>
+    </section>
+  )
+}
+
+function MeetingObjectiveSection({ objective, closed, toggle, showTags }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; showTags: boolean }) {
+  const objectiveOpen = !closed.has(objective.id)
+  return (
+    <section className="space-y-1.5">
+      <div className="flex items-center gap-2 rounded-r-lg border-l-4 border-blue-600 bg-blue-50 px-2.5 py-1.5">
+        <FoldButton open={objectiveOpen} onToggle={() => toggle(objective.id)} label="目标" />
+        <h2 className="min-w-0 flex-1 text-[14px] font-bold text-blue-800">{objective.title}</h2>
+        <span className="rounded-full border border-blue-100 bg-white/80 px-2 py-0.5 text-[10px] text-blue-600">{objective.krs.length} 条 KR</span>
+      </div>
+
+      {objectiveOpen && <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        {objective.krs.map((kr) => {
+          const krTarget: CommentTarget = { type: 'kr', id: kr.id, title: kr.title }
+          const krOpen = !closed.has(kr.id)
+          return (
+            <article key={kr.id} className={`border-b border-l-[3px] border-b-slate-100 bg-white last:border-b-0 ${priorityRail(kr.priority)}`}>
+              <header className="flex items-start pl-1.5">
+                <span className="pt-1.5"><FoldButton open={krOpen} onToggle={() => toggle(kr.id)} label="KR" /></span>
+                <Commentable target={krTarget} className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1 px-1.5 py-1.5 pr-3">
+                  <h3 className="min-w-0 text-[13px] font-bold leading-5 text-slate-900"><HighlightedText target={krTarget} text={kr.title} /></h3>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="text-[10px] text-slate-500">{person}</span>)}
+                    {kr.priority && <span className={`rounded border px-1.5 py-px text-[9px] font-semibold uppercase ${priorityTone(kr.priority)}`}>{kr.priority}</span>}
+                    <span className="inline-flex gap-0.5">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>
+                    {showTags && (kr.tags ?? []).map((tag) => <span key={`${tag.type}:${tag.value}`} className={`rounded border px-1.5 py-px text-[9px] ${tagTone(tag)}`}>{tagText(tag)}</span>)}
+                  </div>
+                </Commentable>
+              </header>
+
+              {krOpen && <div className="space-y-2 px-3 pb-2.5">
+                {kr.metrics.length > 0 && (
+                  <section className="rounded-lg border-l-[3px] border-blue-400 bg-blue-50/70 px-2.5 py-2">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-blue-700">核心数据</span>
+                      {kr.metricNote && <span className="truncate text-[10px] text-slate-400">{kr.metricNote}</span>}
+                    </div>
+                    <div className="grid gap-x-4 gap-y-0.5 md:grid-cols-2">
+                      {kr.metrics.map((metric) => {
+                        const target: CommentTarget = { type: 'metric', id: metric.id, title: compactTitle(metric.text) }
+                        return (
+                          <Commentable key={metric.id} target={target} className="flex min-h-7 items-start gap-2 px-1.5 py-0.5 text-[12px] leading-[18px] text-slate-800">
+                            <div className="min-w-0 flex-1 font-medium">
+                              <HighlightedText target={target} text={metric.text} />
+                              <span className="ml-2 inline-flex translate-y-px align-middle"><LightPicker value={metric.light ?? 'green'} onChange={() => undefined} readOnly /></span>
+                            </div>
+                            {(metric.images?.length ?? 0) > 0 && <Images value={metric.images ?? []} onChange={() => undefined} readOnly maxDisplayWidth={360} />}
+                          </Commentable>
+                        )
+                      })}
+                    </div>
+                  </section>
+                )}
+                {KINDS.map((kind) => {
+                  const points = kr.points.filter((point) => point.kind === kind)
+                  return points.length > 0 ? <KindGroup key={kind} kind={kind} points={points} closed={closed} toggle={toggle} /> : null
+                })}
+              </div>}
+            </article>
+          )
+        })}
+      </div>}
     </section>
   )
 }
@@ -239,15 +309,26 @@ export function MeetingView() {
   const [ownerFilter, setOwnerFilter] = useState('')
   const [showTags, setShowTags] = useState(false)
   const [closed, setClosed] = useState<Set<string>>(new Set())
+  const [activeBusinessId, setActiveBusinessId] = useState('')
+  const [activeSubgroupId, setActiveSubgroupId] = useState('')
+  const [activeObjectiveId, setActiveObjectiveId] = useState('')
   const [exporting, setExporting] = useState(false)
   const [exportResult, setExportResult] = useState<{ url?: string; message?: string }>({})
   const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
-  const visible = useMemo(() => objectives.map((objective) => ({
+  const filteredObjectives = useMemo(() => objectives.map((objective) => ({
     ...objective,
     krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)),
   })).filter((objective) => objective.krs.length > 0), [objectives, ownerFilter])
-  const krCount = visible.reduce((sum, objective) => sum + objective.krs.length, 0)
-  const riskCount = visible.flatMap((objective) => objective.krs).filter((kr) => kr.priority === 'p0' || kr.metrics.some((metric) => metric.light === 'red' || metric.light === 'yellow')).length
+  const navigation = useMemo(() => buildBusinessNavigation(filteredObjectives), [filteredObjectives])
+  const meetingOverview = activeBusinessId === ''
+  const firstBusiness = navigation.find((business) => businessKrCount(business) > 0) ?? navigation[0]
+  const activeBusiness = navigation.find((business) => business.id === activeBusinessId) ?? firstBusiness
+  const firstSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.objectives.length > 0) ?? activeBusiness?.subgroups[0]
+  const activeSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.id === activeSubgroupId) ?? firstSubgroup
+  const activeObjective = activeSubgroup?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activeSubgroup?.objectives[0]
+  const visible = meetingOverview ? filteredObjectives : activeObjective ? [activeObjective] : []
+  const totalKrCount = filteredObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
+  const riskCount = filteredObjectives.flatMap((objective) => objective.krs).filter((kr) => kr.priority === 'p0' || kr.metrics.some((metric) => metric.light === 'red' || metric.light === 'yellow')).length
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
     if (next.has(id)) next.delete(id)
@@ -272,9 +353,8 @@ export function MeetingView() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-        <span className="font-semibold text-slate-700">会议概览</span>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{krCount} 个 KR</span>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500">只读投屏 · {totalKrCount} 条 KR</span>
         {riskCount > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">{riskCount} 个需关注</span>}
         <button type="button" onClick={() => setShowTags((value) => !value)} className={`rounded-md border px-2 py-1 text-[11px] font-medium ${showTags ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>{showTags ? '隐藏打标' : '显示打标'}</button>
         <span className="ml-1 text-[11px] text-slate-400">层级</span>
@@ -283,85 +363,54 @@ export function MeetingView() {
           <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部折叠</button>
         </div>
         <span className="ml-auto text-[11px] text-slate-400">负责人</span>
-        <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 outline-none focus:border-blue-400">
+        <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessId(''); setActiveSubgroupId(''); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 outline-none focus:border-blue-400">
           <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
         </select>
         <span className="h-4 w-px bg-slate-200" />
-        <button type="button" disabled={exporting || visible.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : '导出飞书文档'}</button>
+        <button type="button" disabled={exporting || visible.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : '导出当前视图'}</button>
         {exportResult.url && <a href={exportResult.url} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline">打开文档</a>}
         {exportResult.message && <span className={`max-w-56 truncate text-[10px] ${exportResult.url ? 'text-emerald-600' : 'text-red-500'}`} title={exportResult.message}>{exportResult.message}</span>}
       </div>
 
-      {visible.map((objective) => {
-        const objectiveOpen = !closed.has(objective.id)
-        return <section key={objective.id} className="space-y-2">
-          <div className="flex items-center gap-2 border-l-[3px] border-slate-800 px-2 py-0.5">
-            <FoldButton open={objectiveOpen} onToggle={() => toggle(objective.id)} label="目标" />
-            <h2 className="text-[15px] font-bold text-slate-900">{objective.title}</h2>
-            <span className="text-[10px] text-slate-400">{objective.krs.length} 个 KR</span>
-          </div>
+      <HierarchyNav
+        navigation={navigation}
+        activeBusiness={activeBusiness}
+        activeSubgroup={activeSubgroup}
+        activeObjectiveId={activeObjective?.id}
+        overview={meetingOverview}
+        showOverview
+        onBusiness={(id) => { setActiveBusinessId(id); setActiveSubgroupId(''); setActiveObjectiveId('') }}
+        onSubgroup={(id) => { setActiveSubgroupId(id); setActiveObjectiveId('') }}
+        onObjective={setActiveObjectiveId}
+      />
 
-          {objectiveOpen && <div className="space-y-2">
-            {objective.krs.map((kr) => {
-              const krTarget: CommentTarget = { type: 'kr', id: kr.id, title: kr.title }
-              const krOpen = !closed.has(kr.id)
-              return (
-                <article key={kr.id} className={`overflow-hidden rounded-xl border border-l-4 border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)] ${priorityRail(kr.priority)}`}>
-                  <header className={`${krOpen ? 'border-b border-slate-100' : ''} flex items-start bg-slate-50/50 pl-2`}>
-                    <span className="pt-2"><FoldButton open={krOpen} onToggle={() => toggle(kr.id)} label="KR" /></span>
-                    <Commentable target={krTarget} className="flex min-w-0 flex-1 items-start gap-2 px-1.5 py-2 pr-3">
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-[14px] font-bold leading-5 text-slate-900"><HighlightedText target={krTarget} text={kr.title} /></h3>
-                        <div className="mt-1 flex flex-wrap items-center gap-1">
-                          {splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="rounded-full border border-slate-200 bg-white px-1.5 py-px text-[10px] text-slate-600">{person}</span>)}
-                          {kr.priority && <span className={`rounded border px-1.5 py-px text-[10px] font-semibold uppercase ${priorityTone(kr.priority)}`}>{kr.priority}</span>}
-                          {showTags && (kr.tags ?? []).map((tag) => <span key={`${tag.type}:${tag.value}`} className={`rounded border px-1.5 py-px text-[10px] ${tagTone(tag)}`}>{tagText(tag)}</span>)}
-                        </div>
-                      </div>
-                    </Commentable>
-                  </header>
-
-                  {krOpen && <div className="space-y-2.5 px-3 py-2.5">
-                    {kr.metrics.length > 0 && (
-                      <section className="overflow-hidden rounded-lg border border-emerald-100 bg-emerald-50/25">
-                        <div className="flex items-center gap-2 border-b border-emerald-100/80 px-2.5 py-1">
-                          <span className="text-[10px] font-bold text-emerald-800">核心数据</span>
-                          {kr.metricNote && <span className="truncate text-[10px] text-slate-400">{kr.metricNote}</span>}
-                        </div>
-                        <div className="divide-y divide-emerald-100/70">
-                          {kr.metrics.map((metric) => {
-                            const target: CommentTarget = { type: 'metric', id: metric.id, title: compactTitle(metric.text) }
-                            return (
-                              <Commentable key={metric.id} target={target} className="flex min-h-8 items-start gap-2 px-2.5 py-1 text-[12px] leading-[18px] text-slate-800">
-                                <div className="min-w-0 flex-1 font-medium">
-                                  <HighlightedText target={target} text={metric.text} />
-                                  <span className="ml-2 inline-flex translate-y-px align-middle">
-                                    <LightPicker value={metric.light ?? 'green'} onChange={() => undefined} readOnly />
-                                  </span>
-                                </div>
-                                {(metric.images?.length ?? 0) > 0 && (
-                                  <div className="mt-1.5">
-                                    <Images value={metric.images ?? []} onChange={() => undefined} readOnly maxDisplayWidth={360} />
-                                  </div>
-                                )}
-                              </Commentable>
-                            )
-                          })}
-                        </div>
-                      </section>
-                    )}
-
-                    {KINDS.map((kind) => {
-                      const points = kr.points.filter((point) => point.kind === kind)
-                      return points.length > 0 ? <KindGroup key={kind} kind={kind} points={points} closed={closed} toggle={toggle} /> : null
-                    })}
-                  </div>}
-                </article>
-              )
-            })}
-          </div>}
-        </section>
-      })}
+      {meetingOverview ? (
+        <div className="space-y-5">
+          {navigation.map((business) => {
+            const count = businessKrCount(business)
+            if (count === 0) return null
+            return (
+              <section key={business.id} className="space-y-2.5">
+                <div className="flex items-center justify-between rounded-r-lg border-l-4 border-blue-600 bg-blue-50 px-3 py-1.5">
+                  <h2 className="text-[14px] font-bold text-blue-700">{business.label}</h2>
+                  <b className="rounded-full border border-blue-100 bg-white/80 px-2 py-0.5 text-[10px] text-blue-600">{count} 条 KR</b>
+                </div>
+                {business.subgroups.flatMap((subgroup) => subgroup.objectives.map((objective) => {
+                  const tone = subgroupTone(subgroup.label)
+                  return (
+                    <div key={objective.id} className="space-y-1">
+                      {business.subgroups.length > 1 && <span className={`ml-2 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone === 'focus' ? 'border-orange-200 bg-orange-50 text-orange-700' : tone === 'p1' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>{subgroup.label}</span>}
+                      <MeetingObjectiveSection objective={objective} closed={closed} toggle={toggle} showTags={showTags} />
+                    </div>
+                  )
+                }))}
+              </section>
+            )
+          })}
+        </div>
+      ) : activeObjective ? (
+        <MeetingObjectiveSection objective={activeObjective} closed={closed} toggle={toggle} showTags={showTags} />
+      ) : <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-xs text-slate-400">当前分类尚无已接入的方向</div>}
     </div>
   )
 }

@@ -136,18 +136,34 @@ function ReplyComposer({ comment, quarter, week, onCreated, onCancel }: { commen
   )
 }
 
-function CommentThread({ comment, quarter, week, showTarget, onReply, onEdit, onDelete }: {
+function CommentThread({ comment, quarter, week, showTarget, meetingMode, onReply, onEdit, onPatch, onDelete }: {
   comment: PageComment
   quarter: string
   week: string
   showTarget: boolean
+  meetingMode: boolean
   onReply: (rootId: string, reply: PageComment) => void
   onEdit: (id: string, content: string) => Promise<void>
+  onPatch: (id: string, patch: { todo?: boolean; resolved?: boolean }) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }) {
   const [replying, setReplying] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const [actionSaving, setActionSaving] = useState(false)
+  const patch = async (value: { todo?: boolean; resolved?: boolean }) => {
+    if (actionSaving) return
+    setActionSaving(true)
+    setActionError('')
+    try {
+      await onPatch(comment.id, value)
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : '评论状态更新失败')
+    } finally {
+      setActionSaving(false)
+    }
+  }
   return (
-    <article className="border-b border-slate-100 px-4 py-3.5 last:border-b-0">
+    <article className={`border-b border-slate-100 px-4 py-3.5 last:border-b-0 ${comment.resolved ? 'bg-slate-50/60' : ''}`}>
       {showTarget && comment.targetTitle && (
         <div className="mb-2 flex items-start gap-1.5 rounded-md bg-slate-50 px-2 py-1.5 text-[11px] text-slate-500">
           <span className="shrink-0 font-medium text-slate-400">{targetLabel(comment.targetType)}</span>
@@ -162,8 +178,18 @@ function CommentThread({ comment, quarter, week, showTarget, onReply, onEdit, on
       <div className="flex items-start gap-2.5">
         <Avatar name={comment.authorName} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2"><span className="text-[12px] font-semibold text-slate-700">{comment.authorName}</span><time className="text-[10px] text-slate-400">{displayTime(comment.createdAt)}</time>{wasEdited(comment) && <span className="text-[9px] text-slate-300">已编辑</span>}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[12px] font-semibold text-slate-700">{comment.authorName}</span>
+            <time className="text-[10px] text-slate-400">{displayTime(comment.createdAt)}</time>
+            {wasEdited(comment) && <span className="text-[9px] text-slate-300">已编辑</span>}
+            {comment.todo && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">To do</span>}
+            {comment.resolved && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-600">已解决</span>}
+            <span className="min-w-1 flex-1" />
+            {meetingMode && <button type="button" disabled={actionSaving} aria-pressed={comment.todo} onClick={() => void patch({ todo: !comment.todo })} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-medium disabled:opacity-50 ${comment.todo ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-amber-200 hover:text-amber-700'}`}>{comment.todo ? '取消 To do' : '标记 To do'}</button>}
+            <button type="button" disabled={actionSaving} onClick={() => void patch({ resolved: !comment.resolved })} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-medium disabled:opacity-50 ${comment.resolved ? 'border-slate-200 text-slate-500' : 'border-indigo-200 bg-indigo-50 text-indigo-600'}`}>{comment.resolved ? '重新打开' : '标记解决'}</button>
+          </div>
           <EditableCommentBody comment={comment} onEdit={onEdit} onDelete={onDelete} footer={<button type="button" onClick={() => setReplying((value) => !value)} className="font-medium text-slate-400 hover:text-indigo-600">回复{comment.replies.length > 0 ? ` · ${comment.replies.length}` : ''}</button>} />
+          {actionError && <div className="mt-1 text-[10px] text-red-600">{actionError}</div>}
 
           {comment.replies.length > 0 && (
             <div className="mt-2 space-y-2.5 border-l-2 border-slate-100 pl-3">
@@ -191,6 +217,7 @@ interface CommentDrawerProps {
   quarter: string
   week: string
   target?: CommentTarget
+  meetingMode: boolean
   canComment: boolean
   onSignIn: () => void
   onShowAll: () => void
@@ -200,7 +227,7 @@ interface CommentDrawerProps {
   onCommentsChange: (comments: PageComment[]) => void
 }
 
-export function CommentDrawer({ open, quarter, week, target, canComment, onSignIn, onShowAll, onClose, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
+export function CommentDrawer({ open, quarter, week, target, meetingMode, canComment, onSignIn, onShowAll, onClose, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
   const [comments, setComments] = useState<PageComment[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -274,7 +301,15 @@ export function CommentDrawer({ open, quarter, week, target, canComment, onSignI
   }
 
   const editExistingComment = async (id: string, content: string) => {
-    const updated = await updateComment(id, content)
+    const updated = await updateComment(id, { content })
+    setComments((current) => current.map((comment) => {
+      if (comment.id === id) return { ...updated, replies: comment.replies }
+      return { ...comment, replies: comment.replies.map((reply) => reply.id === id ? { ...updated, replies: [] } : reply) }
+    }))
+  }
+
+  const patchExistingComment = async (id: string, patch: { todo?: boolean; resolved?: boolean }) => {
+    const updated = await updateComment(id, patch)
     setComments((current) => current.map((comment) => {
       if (comment.id === id) return { ...updated, replies: comment.replies }
       return { ...comment, replies: comment.replies.map((reply) => reply.id === id ? { ...updated, replies: [] } : reply) }
@@ -327,7 +362,7 @@ export function CommentDrawer({ open, quarter, week, target, canComment, onSignI
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loading ? <div className="px-4 py-10 text-center text-xs text-slate-400">正在读取评论…</div> : visibleComments.length === 0 ? (
             <div className="px-8 py-16 text-center"><div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-400">💬</div><p className="text-[13px] font-medium text-slate-600">{target ? '这段内容还没有评论' : '还没有评论'}</p><p className="mt-1 text-[11px] text-slate-400">提出问题、补充背景或回复讨论</p></div>
-          ) : visibleComments.map((comment) => <CommentThread key={comment.id} comment={comment} quarter={quarter} week={week} showTarget={!target} onReply={addReply} onEdit={editExistingComment} onDelete={removeExistingComment} />)}
+          ) : visibleComments.map((comment) => <CommentThread key={comment.id} comment={comment} quarter={quarter} week={week} showTarget={!target} meetingMode={meetingMode} onReply={addReply} onEdit={editExistingComment} onPatch={patchExistingComment} onDelete={removeExistingComment} />)}
         </div>
       </aside>
     </>

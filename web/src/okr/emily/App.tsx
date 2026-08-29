@@ -3,10 +3,26 @@ import { useBoard } from './board'
 import { MeetingView } from './components/MeetingView'
 import { KrTable } from './components/Table'
 import { CommentDrawer } from './components/CommentDrawer'
+import { WeeklyFocus } from './components/WeeklyFocus'
 import { WeeklyTools } from './components/WeeklyTools'
 import { PAGE_TITLE } from './seed'
 import { CommentInteractionProvider } from './commenting'
+import type { PendingCommentSelection } from './commenting'
+import { commentTargetFromThread } from './comments'
 import type { AuthStatus, CommentTarget, PageComment } from './types'
+
+function weekLabel(week: string): string {
+  const matched = /^(\d{4})-W(\d{2})$/.exec(week)
+  if (!matched) return week
+  const [, yearText, weekText] = matched
+  const jan4 = new Date(Date.UTC(Number(yearText), 0, 4))
+  const monday = new Date(jan4)
+  monday.setUTCDate(jan4.getUTCDate() - (jan4.getUTCDay() || 7) + 1 + (Number(weekText) - 1) * 7)
+  const sunday = new Date(monday)
+  sunday.setUTCDate(monday.getUTCDate() + 6)
+  const short = (date: Date) => `${date.getUTCMonth() + 1}.${date.getUTCDate()}`
+  return `W${weekText} · ${short(monday)} – ${short(sunday)}`
+}
 
 function SyncNotice() {
   const { syncState, retry, resolveConflict } = useBoard()
@@ -51,6 +67,7 @@ export default function App({
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
   const [comments, setComments] = useState<PageComment[]>([])
   const [commentTarget, setCommentTarget] = useState<CommentTarget>()
+  const [pendingCommentSelection, setPendingCommentSelection] = useState<PendingCommentSelection>()
   const busy = syncState.kind === 'loading'
   const tone = syncState.kind === 'saving' ? 'text-blue-600' : syncState.kind === 'saved' ? 'text-emerald-600' : 'text-slate-400'
 
@@ -58,7 +75,30 @@ export default function App({
 		if (mode !== 'meeting') {
 			setCommentTarget(undefined)
 		}
+		setPendingCommentSelection(undefined)
 	}, [mode])
+
+  useEffect(() => {
+    const clearPendingSelection = (event: Event) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('[data-comment-selection-trigger]')) return
+      setPendingCommentSelection(undefined)
+    }
+    const clearOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPendingCommentSelection(undefined)
+    }
+    const clearOnBlur = () => setPendingCommentSelection(undefined)
+    document.addEventListener('pointerdown', clearPendingSelection)
+    document.addEventListener('focusin', clearPendingSelection)
+    document.addEventListener('keydown', clearOnEscape)
+    window.addEventListener('blur', clearOnBlur)
+    return () => {
+      document.removeEventListener('pointerdown', clearPendingSelection)
+      document.removeEventListener('focusin', clearPendingSelection)
+      document.removeEventListener('keydown', clearOnEscape)
+      window.removeEventListener('blur', clearOnBlur)
+    }
+  }, [])
 
 	const openPoint = (pointId: string) => {
 		sessionStorage.setItem('jarvis.weekly-report.focus-point', pointId)
@@ -73,6 +113,8 @@ export default function App({
 	}, [busy, mode])
 
   const openComments = (target?: CommentTarget) => {
+    setPendingCommentSelection(undefined)
+    window.getSelection()?.removeAllRanges()
     setCommentTarget(target)
     setCommentsOpen(true)
   }
@@ -84,10 +126,10 @@ export default function App({
 
   return (
     <div className="min-h-full">
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
-			<div className={`mx-auto flex min-h-14 max-w-[1580px] flex-wrap items-center gap-2 px-4 py-2 transition-[padding] sm:flex-nowrap sm:gap-3 sm:px-6 lg:px-8 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
-          <div className="mr-1 flex min-w-fit items-center gap-2.5">
-					<span className="flex size-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-semibold text-white shadow-sm">周</span>
+      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-md">
+			<div className={`mx-auto flex min-h-14 max-w-[1320px] flex-wrap items-center gap-2.5 px-4 py-2 transition-[padding] sm:flex-nowrap sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
+          <div className="mr-1 flex min-w-fit items-center gap-2">
+					<span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-[11px] font-bold text-white shadow-sm">E</span>
             <div className="leading-tight">
 						<h1 className="text-[14px] font-semibold tracking-tight text-slate-900">{PAGE_TITLE.replace('OKR 协作台', '周报协作台')}</h1>
               <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">
@@ -97,10 +139,9 @@ export default function App({
             </div>
           </div>
 
-          <div className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <span className="text-slate-400">周次</span>
-            <select value={week} onChange={(event) => setWeek(event.target.value)} className="bg-transparent font-medium text-slate-700 outline-none">
-              {availableWeeks.map((item) => <option key={item} value={item}>{item}</option>)}
+          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <select aria-label="周次" value={week} onChange={(event) => setWeek(event.target.value)} className="bg-transparent font-medium text-slate-600 outline-none">
+              {availableWeeks.map((item) => <option key={item} value={item}>{weekLabel(item)}</option>)}
             </select>
           </div>
 
@@ -133,22 +174,23 @@ export default function App({
         </div>
       </header>
 
-		<main className={`mx-auto max-w-[1580px] px-4 py-3 transition-[padding] sm:px-6 sm:py-4 lg:px-8 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
+		<main className={`mx-auto max-w-[1320px] px-4 py-4 transition-[padding] sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
 			<SyncNotice />
 			<WeeklyTools onOpenPoint={openPoint} />
 			<>
-            <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, select: openComments }}>
+            <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
+              <WeeklyFocus comments={comments} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
               <div className={`transition-opacity ${busy ? 'pointer-events-none opacity-55' : ''}`}>
                 {mode === 'meeting' ? <MeetingView /> : <KrTable definitionsReadOnly />}
               </div>
             </CommentInteractionProvider>
             <div className="mt-3 px-1 text-[11px] text-slate-400">
-              {mode === 'fill' ? '停止输入后自动保存；多人修改同一条 KR 时会先请你确认。' : '会议模式使用同一份数据，以紧凑只读方式展示。'}
+              {mode === 'fill' ? '停止输入后自动保存；多人修改同一条 KR 时会先请你确认。' : '会议模式沿用同一份数据，只读投屏并保留评论与飞书导出。'}
               <button type="button" onClick={reset} className="ml-1 underline hover:text-slate-600">重新载入</button>
             </div>
 			</>
 		</main>
-		<CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} canComment onSignIn={() => undefined} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />
+		<CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={mode === 'meeting'} canComment onSignIn={() => undefined} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />
     </div>
   )
 }

@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
 import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
+import { buildBusinessNavigation, businessKrCount, krCount } from '../hierarchy'
 import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
 import { hasOwner, joinOwnerNames, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
 import type { Entry, Kr, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
+import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
 
 function Caret({ open, onToggle }: { open: boolean; onToggle: () => void }) {
@@ -155,16 +157,16 @@ function MetricBox({ kr, readOnly }: { kr: Kr; readOnly: boolean }) {
   const { setMetricNote, patchMetric, addMetric, removeMetric } = useBoard()
 
   return (
-    <section>
+    <section className="rounded-xl border border-blue-100 bg-blue-50/55 p-2.5">
       <div className="mb-2 flex items-center gap-3">
-        <h3 className="text-[13px] font-semibold text-slate-600">核心数据</h3>
+        <h3 className="border-l-[3px] border-blue-500 pl-2 text-[12px] font-semibold text-blue-700">核心数据</h3>
         {kr.metricNote && (
           <span className="min-w-0 flex-1 text-right text-[11px] text-slate-400">
             <Text value={kr.metricNote} onChange={(value) => setMetricNote(kr.id, value)} className="text-right text-[11px] text-slate-400" readOnly={readOnly} />
           </span>
         )}
       </div>
-      <div className="group/metrics overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="group/metrics overflow-hidden rounded-lg border border-blue-100 bg-white/90">
         {kr.metrics.map((metric) => (
           <div key={metric.id} className="group/metric flex min-h-12 items-start gap-3 border-b border-slate-100 px-4 py-2.5">
             <div className="min-w-0 flex-1">
@@ -234,12 +236,12 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
   const { setKrTitle, setKrPriority } = useBoard()
 
   return (
-    <header className="group/kr border-b border-slate-100 px-4 py-3.5">
+    <header className="group/kr border-b border-slate-100 px-3.5 py-2.5">
       <div className="flex items-start gap-2">
         <Caret open={open} onToggle={onToggle} />
         <div className="min-w-0 flex-1">
-          <Text value={kr.title} onChange={(value) => setKrTitle(objectiveId, kr.id, value)} placeholder="KR 标题" className="text-[16px] font-semibold leading-6 text-slate-800" readOnly={readOnly} commentTarget={{ type: 'kr', id: kr.id, title: kr.title }} />
-          <div className="mt-2 flex flex-wrap items-center gap-2 pl-1">
+          <Text value={kr.title} onChange={(value) => setKrTitle(objectiveId, kr.id, value)} placeholder="KR 标题" className="text-[14px] font-semibold leading-5 text-slate-900" readOnly={readOnly} commentTarget={{ type: 'kr', id: kr.id, title: kr.title }} />
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1">
             {!readOnly && <PersonPicker kr={kr} />}
             {readOnly && splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">{person}</span>)}
             {!readOnly ? (
@@ -250,6 +252,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
             {(kr.tags ?? []).filter((tag) => tag.type !== 'custom').map((tag) => (
               <span key={`${tag.type}:${tag.value}`} className={`rounded-md border px-2 py-1 text-xs ${tagClass(tag)}`}>{tagText(tag)}</span>
             ))}
+            {kr.metrics.length > 0 && <span className="inline-flex items-center gap-1" title="核心数据红黄绿灯">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>}
           </div>
         </div>
       </div>
@@ -351,9 +354,11 @@ function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly,
   if (points.length === 0 && definitionReadOnly) return null
 
   return (
-    <section>
+    <section className={`rounded-xl border-l-[3px] p-2.5 ${kind === 'strategy' ? 'border-l-violet-500 bg-violet-50/35' : 'border-l-teal-500 bg-teal-50/35'}`}>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-[13px] font-semibold text-slate-600">{KIND_LABEL[kind]}</h3>
+        <span className={`flex size-5 items-center justify-center rounded text-[10px] font-bold text-white ${kind === 'strategy' ? 'bg-violet-500' : 'bg-teal-500'}`}>{kind === 'strategy' ? '策' : '产'}</span>
+        <h3 className={`text-[12px] font-semibold ${kind === 'strategy' ? 'text-violet-700' : 'text-teal-700'}`}>{KIND_LABEL[kind]}</h3>
+        <span className="rounded-full bg-white/80 px-1.5 text-[10px] text-slate-400">{points.length} 条</span>
         {!definitionReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
       </div>
       <div className="space-y-4">
@@ -368,7 +373,7 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
   const open = !closed.has(kr.id)
   const definitionLocked = readOnly || definitionsReadOnly
   return (
-    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
       <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} />
       {open && (
         <div className="space-y-5 px-4 py-4">
@@ -380,15 +385,15 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
   )
 }
 
-function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsReadOnly, progressReadOnly, showProgress }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean }) {
-  const open = !closed.has(objective.id)
+function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsReadOnly, progressReadOnly, showProgress, showTitle = true }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; showTitle?: boolean }) {
+  const open = showTitle ? !closed.has(objective.id) : true
   return (
     <section>
-      <div className="mb-3 flex items-center gap-2 px-1">
+      {showTitle && <div className="mb-3 flex items-center gap-2 px-1">
         <Caret open={open} onToggle={() => toggle(objective.id)} />
         <h2 className="text-[17px] font-semibold text-slate-800">{objective.title}</h2>
         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-400">{objective.krs.length} 个 KR</span>
-      </div>
+      </div>}
       {open && <div className="space-y-3">{objective.krs.map((kr) => <KrCard key={kr.id} objectiveId={objective.id} kr={kr} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} />)}</div>}
     </section>
   )
@@ -398,8 +403,17 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   const { objectives } = useBoard()
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const [ownerFilter, setOwnerFilter] = useState('')
+  const [activeBusinessId, setActiveBusinessId] = useState('')
+  const [activeSubgroupId, setActiveSubgroupId] = useState('')
+  const [activeObjectiveId, setActiveObjectiveId] = useState('')
   const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
   const visibleObjectives = useMemo(() => objectives.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)) })).filter((objective) => objective.krs.length > 0), [objectives, ownerFilter])
+  const navigation = useMemo(() => buildBusinessNavigation(visibleObjectives), [visibleObjectives])
+  const firstBusiness = navigation.find((business) => businessKrCount(business) > 0) ?? navigation[0]
+  const activeBusiness = navigation.find((business) => business.id === activeBusinessId) ?? firstBusiness
+  const firstSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.objectives.length > 0) ?? activeBusiness?.subgroups[0]
+  const activeSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.id === activeSubgroupId) ?? firstSubgroup
+  const activeObjective = activeSubgroup?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activeSubgroup?.objectives[0]
 
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -407,24 +421,34 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
     else next.add(id)
     return next
   })
-  const collapseAll = () => setClosed(new Set(visibleObjectives.flatMap((objective) => [objective.id, ...objective.krs.flatMap((kr) => [kr.id, ...kr.points.map((point) => point.id)])])))
+  const collapseAll = () => setClosed(new Set(activeObjective?.krs.flatMap((kr) => [kr.id, ...kr.points.map((point) => point.id)]) ?? []))
 
   return (
-    <div className={`p-1 sm:p-2 ${readOnly ? 'kr-table-readonly' : ''}`}>
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+    <div className={readOnly ? 'kr-table-readonly' : ''}>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {krCount(objectives)} 条 KR，当前显示 {krCount(visibleObjectives)} 条</span>
+        <span className="ml-auto text-slate-400">负责人</span>
+        <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessId(''); setActiveSubgroupId(''); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
+          <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
+        </select>
         <span className="font-medium text-slate-500">层级</span>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white">
           <button type="button" onClick={() => setClosed(new Set())} className="px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部展开</button>
           <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部折叠</button>
         </div>
-        <span className="ml-auto text-slate-400">负责人</span>
-        <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
-          <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
-        </select>
       </div>
-      <div className="space-y-5">
-        {visibleObjectives.map((objective) => <ObjectiveSection key={objective.id} objective={objective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} />)}
-        {visibleObjectives.length === 0 && <Empty>没有符合筛选条件的 KR</Empty>}
+      <HierarchyNav
+        navigation={navigation}
+        activeBusiness={activeBusiness}
+        activeSubgroup={activeSubgroup}
+        activeObjectiveId={activeObjective?.id}
+        onBusiness={(id) => { setActiveBusinessId(id); setActiveSubgroupId(''); setActiveObjectiveId('') }}
+        onSubgroup={(id) => { setActiveSubgroupId(id); setActiveObjectiveId('') }}
+        onObjective={setActiveObjectiveId}
+      />
+      <div>
+        {activeObjective && <ObjectiveSection key={activeObjective.id} objective={activeObjective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} showTitle={false} />}
+        {!activeObjective && <Empty>没有符合筛选条件的 KR</Empty>}
       </div>
     </div>
   )
