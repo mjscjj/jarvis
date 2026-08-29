@@ -247,7 +247,7 @@ exit 9
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`, `scripts/jarvis-tools get-context --chat-id`} {
+	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`, `mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CC config missing %q:\n%s", want, text)
 		}

@@ -52,8 +52,6 @@ func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *test
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"items":[]}}`)
 		case "/api/resources":
 			fmt.Fprint(w, `{"code":0,"data":{"total":4,"active_total":3,"items":[]}}`)
-		case "/api/relation-facts":
-			fmt.Fprint(w, `{"code":0,"data":{"total":5,"items":[]}}`)
 		case "/api/groups":
 			fmt.Fprint(w, `{"code":0,"data":{"total":0,"items":[]}}`)
 		default:
@@ -90,13 +88,12 @@ exit 9
 		Counts struct {
 			Projects  int `json:"projects"`
 			Resources int `json:"resources"`
-			Relations int `json:"relations"`
 		} `json:"counts"`
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("decode output %q: %v", out, err)
 	}
-	if !result.Ready || result.Observations.RelatedGroup || result.Counts.Projects != 2 || result.Counts.Resources != 4 || result.Counts.Relations != 5 {
+	if !result.Ready || result.Observations.RelatedGroup || result.Counts.Projects != 2 || result.Counts.Resources != 4 {
 		t.Fatalf("validation result = %#v", result)
 	}
 }
