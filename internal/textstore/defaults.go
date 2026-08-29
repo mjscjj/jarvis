@@ -32,6 +32,8 @@ const (
 	OKRAgentReportAKey              = "okr_agent_report_a"
 	OKRAgentReportBKey              = "okr_agent_report_b"
 	OKRAgentReportCKey              = "okr_agent_report_c"
+	OKRAgentWeeklyReminderKey       = "okr_agent_weekly_reminder"
+	OKRAgentProgressSyncKey         = "okr_agent_progress_sync"
 )
 
 // definition also carries the editor-facing description. The admin UI renders
@@ -126,6 +128,16 @@ func definitions() []definition {
 		{
 			key: OKRAgentReportCKey, name: "双周会 Report C", filename: "okr-agent-report-c.md",
 			description: "合并最近两周 Report A，形成 Focus item、on track 判断和 Key Progress。",
+			kind:        "agent_prompt", stage: "okr_agent",
+		},
+		{
+			key: OKRAgentWeeklyReminderKey, name: "周报催填", filename: "okr-agent-weekly-reminder.md",
+			description: "检查当前周未填写项，按行动对象给真实负责人发送可审计提醒。",
+			kind:        "agent_prompt", stage: "okr_agent",
+		},
+		{
+			key: OKRAgentProgressSyncKey, name: "进展巡检", filename: "okr-agent-progress-sync.md",
+			description: "只读检查 Meego 和已采集消息，把有证据的变化写回世界模型。",
 			kind:        "agent_prompt", stage: "okr_agent",
 		},
 	}

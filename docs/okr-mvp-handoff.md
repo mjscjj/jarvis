@@ -11,10 +11,10 @@
 - 模块配置：`conf/modules.yaml` 分别控制 `okr` 和 `weekly-report`；周报显式依赖 OKR，业务配置独立在 `conf/okr-module.yaml`。
 - 生命周期：重启后按模块执行迁移、注册 `/api/okr/*` 或 `/api/weekly-report/*`、暴露对应 Skill；关闭模块不会删除 SQLite 数据。
 - 存储：`MigrateCore` 与 `MigrateWeeklyReport` 分开拥有 schema 集合，同时保留既有表名和多人负责人旧表主键，避免数据重写。
-- 产品：单一 OKR 入口内包含稳定定义、可选周报和 Agent 流程。OKR 负责 KR CRUD、负责人、优先级、标签与业务 Prompt；周报负责填写、会议、评论、历史、图片、Meego 和催填。
+- 产品：单一 OKR 入口内包含稳定定义、可选周报和 Agent 流程。OKR 负责 KR CRUD、负责人、优先级、标签，以及绑定在一起的 Agent 行动与业务 Prompt；行动明确做什么、何时做、范围和结果给谁，Prompt 决定怎么调查、判断和执行。周报负责填写、会议、评论、历史、图片、Meego 和催填事实。
 - 写入：OKR PUT 不改周进展；周报 PUT 只改所选周进展，不改稳定定义；CAS 仍在 KR 版本上防止并发覆盖。
 - 世界关系：模块不保存 `world_*_id`，也不在保存时同步世界模型；跨模块映射使用通用 `entity_relation` 和 `/api/relations`。
-- 编排：启动时不投影世界模型、不安装定时任务。`okr-agent-orchestrator` 实时读取业务 Prompt 并动态组合原子工具；`okr-world-projector` 只拥有稳定实体投影；`weekly-report-progress-sync`、`weekly-report-reminder` 分别拥有同步和催办语义；后端不直接调用 Meego CLI。
+- 编排：启动时不投影世界模型、不安装默认定时任务。用户在 Agent 流程页创建行动并绑定 Prompt；通用 ScheduledTask 只保证一次、每天、每周或间隔触发，`okr-agent-orchestrator` 实时读取业务 Prompt 并动态组合原子工具。`okr-world-projector` 只拥有稳定实体投影；`weekly-report-progress-sync`、`weekly-report-reminder` 分别拥有同步和催办操作边界；后端不直接调用 Meego CLI。
 - 证据：已移除 OKR 专用 evidence API/CLI；同步使用通用 `append-clue`、`append-fact`、`get-page`、`update-page` 和关系工具。
 - 执行边界：Task 仍只表示一次执行；任何模块保存、关系投影或证据写回都不会隐式创建 Task。
 
@@ -30,6 +30,7 @@
 | 调度关闭后不派发 | `scheduledtask.SetModuleGate` | disabled module dispatch 单测 |
 | 通用关系 | `domain.EntityRelation`, `background.RelationService`, `/api/relations` | service 与 CLI endpoint 单测 |
 | 通用证据写回 | clue + Fact + Page CAS | HTTP/真实本地 CLI 产品路径测试 |
+| 行动与 Prompt 结合 | ScheduledTask + `prompt_key` + 自然语言目标/范围/对象 | weekly 调度单测、前端 typecheck 与 API CRUD |
 | 前端仍可构建 | `web/src/okr/**`, module registry | typecheck、Vitest、Vite build |
 
 ## 人工验收

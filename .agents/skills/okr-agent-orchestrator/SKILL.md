@@ -1,6 +1,6 @@
 ---
 name: okr-agent-orchestrator
-description: 根据 OKR 模块中可编辑的业务 Prompt，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成一次目标。用于季度 OKR 草稿、区域或研发对齐、Report A 汇总、中台周报 Report B、双周会 Report C，以及由通用 ScheduledTask 触发的同类 OKR Agent 流程。
+description: 根据 OKR 模块中可编辑的业务 Prompt 和绑定的 Agent 行动，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成一次目标。用于季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填、进展巡检，以及配置行动的时间、范围和对象后由通用 ScheduledTask 触发执行。
 module: okr
 ---
 
@@ -24,6 +24,8 @@ scripts/okr-agent-tools prompt --key '<okr_agent_*>'
 
 没有 `prompt_key` 时，只能使用用户或 Task 目标中明确指定的 Prompt key；不得按标题猜一个流程。Prompt 缺失或为空时 fail-fast，不改走数据库或旧生成接口。
 
+ScheduledTask 触发时，把 Task instruction 作为本次行动目标，并读取冻结上下文里的 `action_scope` 和 `action_recipient`。它们是自然语言约束，不是固定 workflow 参数：结合实时事实解析实际范围和对象，无法确认时保留缺口，不自行猜测 ID。
+
 ## 选择原子工具
 
 按本次目标选择最小工具集合，不要求固定顺序：
@@ -44,6 +46,7 @@ scripts/okr-agent-tools prompt --key '<okr_agent_*>'
 - 草稿默认留在 Task 结果中。创建文档、发送消息、修改 Meego 或正式 OKR 属于具体副作用，由 M5 按统一审批策略判断，不读取业务 Prompt 中的 `approval` 字段替代判断。
 - 不调用固定报告生成器来替代 Agent 判断；只读取原子 board、证据和已保存事实。
 - 不创建 OKR 专用 Task 状态机。定时触发只承载本次目标，完成后结束。
+- 不根据日期文字决定本次是否应该运行；一次 Task 已经代表调度器确认到点，weekly/daily/interval 由通用 ScheduledTask 保证。
 
 ## 完成回执
 

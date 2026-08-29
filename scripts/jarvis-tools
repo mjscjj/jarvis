@@ -490,6 +490,8 @@ once example:
   {"title":"明早检查进展","instruction":"查询项目最新进展","context_snapshot":{},"schedule_type":"once","run_at":"2026-07-25T09:00:00+08:00"}
 daily example:
   {"title":"每日汇总","instruction":"汇总今日进展","context_snapshot":{},"schedule_type":"daily","daily_time":"18:00"}
+weekly example (weekday uses ISO 1=Monday ... 7=Sunday):
+  {"title":"每周检查","instruction":"检查本周目标进展","context_snapshot":{},"schedule_type":"weekly","weekday":1,"daily_time":"09:00"}
 interval example:
   {"title":"轮询状态","instruction":"检查任务是否完成","context_snapshot":{},"schedule_type":"interval","interval_minutes":60}
 EOF
@@ -2163,7 +2165,7 @@ cmd_list_scheduled_tasks() {
   local body
   body="$(api_get "/api/scheduled-tasks${query}")"
   emit "$(printf '%s' "$body" | jq -c '.data | {
-    items:[.items[] | {id,title,action_type,dispatch_kind,subject_type,subject_id,schedule_type,daily_time,interval_minutes,run_at,next_run_at,enabled,status,last_run_status,last_task_id,last_started_at,last_finished_at,updated_at}]
+    items:[.items[] | {id,title,action_type,dispatch_kind,subject_type,subject_id,schedule_type,daily_time,weekday,interval_minutes,run_at,next_run_at,enabled,status,last_run_status,last_task_id,last_started_at,last_finished_at,updated_at}]
   }')"
 }
 

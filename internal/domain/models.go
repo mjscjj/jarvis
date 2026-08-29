@@ -367,8 +367,9 @@ type ScheduledTask struct {
 	ActionType      string         `gorm:"column:action_type;not null;default:agent_task"`
 	Instruction     string         `gorm:"column:instruction;not null"`
 	ContextSnapshot datatypes.JSON `gorm:"column:context_snapshot;not null"`
-	ScheduleType    string         `gorm:"column:schedule_type;not null"` // once / daily / interval
+	ScheduleType    string         `gorm:"column:schedule_type;not null"` // once / daily / weekly / interval
 	DailyTime       *string        `gorm:"column:daily_time"`             // HH:mm in server local timezone
+	Weekday         *int           `gorm:"column:weekday"`                // ISO weekday 1=Monday ... 7=Sunday
 	IntervalMinutes *int           `gorm:"column:interval_minutes"`
 	RunAt           *time.Time     `gorm:"column:run_at"`
 	NextRunAt       time.Time      `gorm:"column:next_run_at;not null;index:idx_scheduled_task_due,priority:3"`

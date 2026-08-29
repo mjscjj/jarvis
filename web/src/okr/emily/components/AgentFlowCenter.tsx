@@ -3,6 +3,7 @@ import MarkdownReport from '../../../components/MarkdownReport'
 import { listTextFiles, updateTextFile } from '../../../api'
 import { usePageContext } from '../../../pageContext'
 import type { TextFile } from '../../../types'
+import { AgentActionCenter } from './AgentActionCenter'
 
 function errorText(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause)
@@ -41,7 +42,8 @@ export function AgentFlowCenter() {
   const selected = useMemo(() => items.find((item) => item.key === selectedKey), [items, selectedKey])
   const draft = drafts[selectedKey] ?? ''
   const dirty = Boolean(selected && draft !== selected.content)
-  const flowCount = items.filter((item) => item.kind === 'agent_prompt').length
+  const prompts = useMemo(() => items.filter((item) => item.kind === 'agent_prompt'), [items])
+  const flowCount = prompts.length
 
   const save = async () => {
     if (!selected || !draft.trim()) return
@@ -61,16 +63,18 @@ export function AgentFlowCenter() {
   return (
     <div className="space-y-3">
       <section className="grid gap-2 sm:grid-cols-3">
-        <article className="rounded-xl border border-slate-200 bg-white p-3.5"><div className="text-[10px] text-slate-400">业务 Prompt</div><div className="mt-1 text-xl font-semibold text-slate-800">{flowCount}</div><p className="mt-1 text-[10px] text-slate-400">季度规划、对齐与 Report A/B/C</p></article>
+        <article className="rounded-xl border border-slate-200 bg-white p-3.5"><div className="text-[10px] text-slate-400">业务 Prompt</div><div className="mt-1 text-xl font-semibold text-slate-800">{flowCount}</div><p className="mt-1 text-[10px] text-slate-400">规划、对齐、报告、催填与巡检</p></article>
         <article className="rounded-xl border border-slate-200 bg-white p-3.5"><div className="text-[10px] text-slate-400">统一执行 Skill</div><div className="mt-1 text-sm font-semibold text-cyan-700">okr-agent-orchestrator</div><p className="mt-1 text-[10px] text-slate-400">每次按实时事实动态规划，不走固定 workflow</p></article>
         <article className="rounded-xl border border-slate-200 bg-white p-3.5"><div className="text-[10px] text-slate-400">工具边界</div><div className="mt-1 text-sm font-semibold text-slate-800">原子读写 + 通用调度</div><p className="mt-1 text-[10px] text-slate-400">业务判断由 Agent 完成；代码只守机器边界</p></article>
       </section>
 
       {notice && <div className={`rounded-lg border px-3 py-2 text-xs ${notice.kind === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`}>{notice.text}</div>}
 
+      <AgentActionCenter prompts={prompts} selectedPromptKey={selected?.kind === 'agent_prompt' ? selected.key : ''} onSelectPrompt={setSelectedKey} />
+
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
-          <div><h2 className="text-xs font-semibold text-slate-800">Agent Prompt 模块</h2><p className="mt-0.5 text-[10px] text-slate-400">Prompt 只定义目标、输入、判断口径和验收；Agent 自己组合工具。</p></div>
+          <div><h2 className="text-xs font-semibold text-slate-800">行动使用的 Prompt</h2><p className="mt-0.5 text-[10px] text-slate-400">修改后，所有绑定该 Prompt 的行动会在下一次触发时读取新版本。</p></div>
           <button type="button" onClick={() => navigate('scheduled-tasks')} className="ml-auto rounded-md border border-slate-200 px-3 py-1.5 text-[10px] text-slate-600 hover:border-cyan-200 hover:text-cyan-700">通用自动化</button>
           <button type="button" disabled={loading} onClick={() => void load()} className="rounded-md border border-slate-200 px-3 py-1.5 text-[10px] text-slate-600 disabled:opacity-40">刷新</button>
         </div>

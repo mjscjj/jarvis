@@ -54,13 +54,13 @@ okr_kr:<module id>
 
 启动过程不导入 Emily 数据、不自动投影世界模型，也不自动创建定时任务。业务流程不在 Go 或前端组装，统一由 Agent 读取 Prompt 后动态选择原子工具：
 
-- `okr-agent-orchestrator`：读取一份业务 Prompt，完成季度草稿、区域/研发对齐或 Report A/B/C；
+- `okr-agent-orchestrator`：读取行动绑定的业务 Prompt，完成季度草稿、区域/研发对齐、Report A/B/C、周报催填或进展巡检；
 - `okr-world-projector`：建立或复核跨模块实体关系。
 - `weekly-report-reminder`：生成催填批次并在授权后发送；
 - `weekly-report-progress-sync`：只读检查 Meego/消息证据并写回通用 Fact/Page。
 
-共用原则和六份业务 Prompt 使用受控 Markdown 文件作为唯一真源，注册在 `internal/textstore/defaults.go`，正文位于 `conf/prompts/okr-agent-*.md`。OKR 的“Agent 流程”页面通过通用 `/api/text-files` 读写；Skill 使用 `scripts/okr-agent-tools prompt --key ...` 实时读取。催填消息仍使用独立的 `weekly-report-reminder-template.md`。
+共用原则和八份业务 Prompt 使用受控 Markdown 文件作为唯一真源，注册在 `internal/textstore/defaults.go`，正文位于 `conf/prompts/okr-agent-*.md`。OKR 的“Agent 流程”页面把行动管理与 Prompt 编辑放在一起：行动选择 Prompt，并配置自然语言目标、范围、结果对象和触发时间；Prompt 通过通用 `/api/text-files` 读写，Skill 使用 `scripts/okr-agent-tools prompt --key ...` 实时读取。催填消息仍使用独立的 `weekly-report-reminder-template.md`。
 
-ScheduledTask 只持有调度、Skill、Prompt key 和自然语言目标，不保存 workflow 类型、业务审批策略或步骤状态。审批由 M5 按统一策略结合具体副作用判断；Task/effects 负责留痕。Jarvis 的通用“自动化”页面承担定时配置，OKR 页面只提供 Prompt 编辑入口。
+行动不另建 OKR 专用表，而是复用 ScheduledTask。ScheduledTask 只持有一次、每天、每周或间隔调度，以及 Skill、Prompt key、自然语言目标、范围和结果对象；它不保存 workflow 类型、业务审批策略或步骤状态。到点后只创建一个普通 Task，由 `okr-agent-orchestrator` 读取绑定 Prompt 和实时事实决定怎么行动；审批由 M5 按统一策略结合具体副作用判断，Task/effects 负责留痕。Jarvis 的通用“自动化”页面仍可管理全部调度，OKR 页面提供聚焦于 OKR Agent 行动与 Prompt 的组合入口。
 
 Meego 页面只读取 Agent 通过 `record-meego-observation` 保存的快照；后端不直接调用 `bytedcli`。固定的季度草稿、区域同步、风险聚合和 Report 草稿 API/DTO/页面已移除；已有历史草稿表不主动 DROP，但运行时不再迁移或读取。只有身份会话、图片存储、结构化 CRUD、快照持久化、CAS、模块生命周期等必须稳定执行的约束留在 Go 代码中。

@@ -97,6 +97,50 @@ func TestDailyAndIntervalNextOccurrence(t *testing.T) {
 	}
 }
 
+func TestWeeklyNextOccurrence(t *testing.T) {
+	t.Parallel()
+	location := time.FixedZone("CST", 8*60*60)
+	weekday := 1
+	dailyTime := "09:00"
+
+	friday := time.Date(2026, 7, 24, 10, 0, 0, 0, location)
+	input, next, err := normalizeInput(Input{
+		Title: "weekly", Instruction: "run", ScheduleType: "weekly",
+		Weekday: &weekday, DailyTime: &dailyTime,
+	}, friday, location)
+	if err != nil {
+		t.Fatalf("normalize weekly input: %v", err)
+	}
+	want := time.Date(2026, 7, 27, 9, 0, 0, 0, location).UTC()
+	if !next.Equal(want) || input.Weekday == nil || *input.Weekday != weekday {
+		t.Fatalf("weekly next=%s weekday=%v, want %s/%d", next, input.Weekday, want, weekday)
+	}
+
+	mondayBefore := time.Date(2026, 7, 27, 8, 30, 0, 0, location)
+	_, sameDay, err := normalizeInput(Input{
+		Title: "weekly", Instruction: "run", ScheduleType: "weekly",
+		Weekday: &weekday, DailyTime: &dailyTime,
+	}, mondayBefore, location)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameDay.Equal(want) {
+		t.Fatalf("same-day weekly next=%s, want %s", sameDay, want)
+	}
+
+	mondayAfter := time.Date(2026, 7, 27, 9, 30, 0, 0, location)
+	weeklyNext, err := nextOccurrence(&domain.ScheduledTask{
+		ScheduleType: "weekly", Weekday: &weekday, DailyTime: &dailyTime, NextRunAt: want,
+	}, mondayAfter, location)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantNextWeek := time.Date(2026, 8, 3, 9, 0, 0, 0, location).UTC()
+	if !weeklyNext.Equal(wantNextWeek) {
+		t.Fatalf("next weekly occurrence=%s, want %s", weeklyNext, wantNextWeek)
+	}
+}
+
 func TestOneTimeNextOccurrenceAndFinalStatus(t *testing.T) {
 	t.Parallel()
 	location := time.FixedZone("CST", 8*60*60)
@@ -127,10 +171,14 @@ func TestNormalizeInputRejectsInvalidSchedule(t *testing.T) {
 	now := time.Now()
 	badTime := "9:00"
 	zero := 0
+	badWeekday := 8
 	for _, input := range []Input{
 		{Title: "x", Instruction: "y", ScheduleType: "once"},
 		{Title: "x", Instruction: "y", ScheduleType: "daily"},
 		{Title: "x", Instruction: "y", ScheduleType: "daily", DailyTime: &badTime},
+		{Title: "x", Instruction: "y", ScheduleType: "weekly", DailyTime: &badTime},
+		{Title: "x", Instruction: "y", ScheduleType: "weekly", DailyTime: stringPointer("09:00")},
+		{Title: "x", Instruction: "y", ScheduleType: "weekly", DailyTime: stringPointer("09:00"), Weekday: &badWeekday},
 		{Title: "x", Instruction: "y", ScheduleType: "interval", IntervalMinutes: &zero},
 		{Title: "x", Instruction: "y", ScheduleType: "cron"},
 	} {
@@ -139,6 +187,8 @@ func TestNormalizeInputRejectsInvalidSchedule(t *testing.T) {
 		}
 	}
 }
+
+func stringPointer(value string) *string { return &value }
 
 func TestNormalizeInputDefaultsAgentTaskActionType(t *testing.T) {
 	t.Parallel()
