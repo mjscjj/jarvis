@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative
-> Last verified: 2026-08-29 @ uncommitted worktree
+> Last verified: 2026-08-30 @ uncommitted worktree
 
 ## 1. MVP 形态
 
@@ -24,7 +24,7 @@ Jarvis 是通用宿主，不是 OKR 产品本身。当前采用随 Jarvis 编译
 - `okr` 拥有 Objective、KR、核心指标、结构化多人负责人、优先级、标签、可编辑业务 Prompt 和世界关系投影。接口位于 `/api/okr/*`，Skills 为 `okr-agent-orchestrator`、`okr-world-projector`，工具入口为 `scripts/okr-agent-tools`、`scripts/okr-module-tools`。
 - `weekly-report` 拥有按周进展、历史对比、填写/会议视图、评论、催填和 Meego 观察。接口位于 `/api/weekly-report/*`，Skills 为 `weekly-report-progress-sync`、`weekly-report-reminder`，工具入口为 `scripts/weekly-report-tools`。
 
-`weekly-report` 显式依赖 `okr`：可以只启用 OKR，不能在关闭 OKR 时单独启用周报。两者暂时复用 `internal/okrworkspace/**` 兼容适配层和既有 `okr_workspace_*` SQLite 表名，避免为拆分重写历史数据；迁移、HTTP 写入、前端入口、Skill 和工具已经按所有权分开。
+`weekly-report` 显式依赖 `okr`：可以只启用 OKR，不能在关闭 OKR 时单独启用周报。两者复用 `internal/okrworkspace/**` 包和 `okr_workspace_*` 表名前缀，但迁移集合、HTTP 写入、前端入口、Skill 和工具按所有权分开。
 
 Jarvis 核心拥有通用机制：
 
@@ -36,7 +36,11 @@ Jarvis 核心拥有通用机制：
 
 ## 3. 产品数据与世界状态
 
-OKR 定义和周报产品数据保留在模块表中。OKR 写接口不修改任何周进展；周报写接口只替换所选周的进展，不修改 KR 标题、负责人、核心指标、标签或拆解定义。历史周数据不会因本周保存被覆盖。
+OKR 定义和周报产品事实保存在仓库内独立数据库 `data/okr/okr.db`，图片保存在 `data/okr/assets/`，两者随代码提交。该数据库使用 DELETE journal，成功写入直接落主文件，不依赖未提交的 WAL。Prompt、策略和模板正文仍以 `conf/prompts/*.md` 为唯一真源，不复制进数据库。
+
+Jarvis 通用 Task、Fact、Page、ScheduledTask 以及 OKR OAuth/session 等机器运行态仍保存在 `var/` 下的本机运行库，不进入 Git。模块库只包含结构化产品事实：Objective、KR、指标、拆解点、结构化负责人、标签，以及启用周报后产生的周次、进展、评论、Meego 快照和催填批次。
+
+OKR 写接口不修改任何周进展；周报使用单条进展的 create/update/delete 原子接口，每条进展持有自己的 `version`，不修改 KR 定义版本。核心接口拒绝夹带周进展。存在周报历史的拆解点或 KR 不允许删除，避免把历史变成孤儿数据。
 
 需要把某个 KR 映射到 Project、KeyMatter 或 Person 时，Agent 读取 `okr-world-projector` Skill，并通过通用关系写入：
 
@@ -63,4 +67,4 @@ okr_kr:<module id>
 
 行动不另建 OKR 专用表，而是复用 ScheduledTask。前端固定行动目录只把 `action_key`、Skill、Prompt key 和执行时间投影到 ScheduledTask，不保存自由目标、范围、结果对象、业务审批策略或步骤状态。到点后只创建一个普通 Task，由 `okr-agent-orchestrator` 读取绑定 Prompt 和实时事实决定怎么行动；审批由 M5 按统一策略结合具体副作用判断，Task/effects 负责留痕。Jarvis 的通用“自动化”页面仍可管理全部调度，OKR 页面提供四个业务行动的聚焦入口。
 
-Meego 页面只读取 Agent 通过 `record-meego-observation` 保存的快照；后端不直接调用 `bytedcli`。固定的季度草稿、区域同步、风险聚合和 Report 草稿 API/DTO/页面已移除；已有历史草稿表不主动 DROP，但运行时不再迁移或读取。只有身份会话、图片存储、结构化 CRUD、快照持久化、CAS、模块生命周期等必须稳定执行的约束留在 Go 代码中。
+Meego 页面只读取 Agent 通过 `record-meego-observation` 保存的快照；后端不直接调用 `bytedcli`。固定的季度草稿、区域同步、风险聚合和 Report 草稿 API/DTO/页面已移除；迁入仓库的模块数据库不包含已废弃的草稿表。只有身份会话、图片存储、结构化 CRUD、快照持久化、CAS、模块生命周期等必须稳定执行的约束留在 Go 代码中。

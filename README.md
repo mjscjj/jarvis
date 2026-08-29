@@ -129,7 +129,7 @@ lark-cli 使用 larksuite 官方 npm installer；traex 使用其 updater 公布�
 
 ## 本地运行
 
-要求 Go 1.26.4 或更高版本、C 编译器（macOS 装 Xcode Command Line Tools）、满足 Vite engines 的 Node（`^20.19.0` 或 `>=22.12.0`）/npm、`jq`、`git`、`lark-cli`、配置中实际选择的 Agent CLI（仓库基线是 `traex`，可改成其他兼容 CLI）和 Qdrant。doctor 会从合并后的配置读取应检查的 binary，不把 `traex` 写死成安装协议。`conf/config.yaml` 使用本机明文密钥，权限保持 `600`；请注意仓库配置可能包含真实凭证。SQLite 文件及父目录会在启动时自动创建，无需单独安装或建库。
+要求 Go 1.26.4 或更高版本、C 编译器（macOS 装 Xcode Command Line Tools）、满足 Vite engines 的 Node（`^20.19.0` 或 `>=22.12.0`）/npm、`jq`、`git`、`lark-cli`、配置中实际选择的 Agent CLI（仓库基线是 `traex`，可改成其他兼容 CLI）和 Qdrant。doctor 会从合并后的配置读取应检查的 binary，不把 `traex` 写死成安装协议。`conf/config.yaml` 使用本机明文密钥，权限保持 `600`；请注意仓库配置可能包含真实凭证。本机运行 SQLite 会自动创建；可选 OKR 模块的产品数据库随仓库位于 `data/okr/okr.db`。
 
 C 编译器是硬依赖：持久层用 `gorm.io/driver/sqlite`，它包装 `mattn/go-sqlite3` 走 CGO。缺了它 `go build` 仍会成功并链接一个 stub，直到启动打开数据库才报 `go-sqlite3 requires cgo to work`，所以两个构建脚本都先跑 `scripts/check-build-toolchain.sh` 把问题挡在构建前。`jq` 供 `scripts/jarvis-tools` 和构建脚本解析 API 响应。
 
@@ -255,7 +255,7 @@ conf/                基线配置、prompts、rules、Skills 配置
 deploy/              launchd plist
 scripts/             安装、签名、重建、jarvis-tools
 docs/                当前架构、模块文档、提案、研究和历史索引
-data/                生成的日报/周报等本地数据
+data/                生成的日报/周报，以及随仓库提交的 OKR 模块数据库与资源
 runs/                Agent 执行产物
 var/                 日志、数据库侧车数据和运行时文件
 ```

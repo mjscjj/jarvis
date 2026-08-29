@@ -2,11 +2,11 @@
 
 > Status: current
 > Authority: normative
-> Last verified: 2026-08-28 @ uncommitted worktree
+> Last verified: 2026-08-30 @ uncommitted worktree
 
 ## 1. 两份状态，各自负责一件事
 
-OKR 模块保存稳定定义：季度、Objective、KR、核心指标、负责人、优先级和标签。周报模块保存按周变化的进展、评论、Meego 观察、催填批次和材料草稿，并显式依赖 OKR。
+OKR 模块保存稳定定义：季度、Objective、KR、核心指标、负责人、优先级和标签。周报模块保存按周变化的进展、评论、Meego 观察和催填批次，并显式依赖 OKR。固定材料流程由 Agent Prompt 组装，不另存专用草稿状态机。
 
 Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter、当前 Page、历史 Fact 和它们之间的关系。Task 只是一轮执行单元，不属于任何 OKR 层级。
 

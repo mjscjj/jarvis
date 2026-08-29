@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative architecture
-> Last verified: 2026-08-06
+> Last verified: 2026-08-30
 
 本文只描述当前实现的稳定边界，不复制字段级 DDL、完整路由或本机运行值。文档入口与提案/历史分类见 [docs/README.md](README.md)。
 
@@ -24,7 +24,8 @@ Jarvis 是单用户、本地、低频运行的主动式任务数字分身。它�
 ```mermaid
 flowchart LR
     UI["React 管理后台"] --> API["jarvis-server\nGo / Hertz"]
-    API --> SQLITE[("SQLite")]
+    API --> SQLITE[("本机 SQLite\n通用运行状态")]
+    API --> OKRDB[("data/okr/okr.db\n可选模块产品事实")]
     API --> QDRANT[("Qdrant\nTodo 去重")]
     API --> LARK["lark-cli"]
     API --> AGENT["traex Agent CLI"]
@@ -32,7 +33,7 @@ flowchart LR
 ```
 
 - `jarvis-server` 是主进程：HTTP、静态前端、M2/M3/M5、实时协调和补偿 cron 都在同一进程。
-- SQLite 是结构化状态真源，服务使用单连接串行化数据库操作。
+- 本机 SQLite 是 Jarvis 通用运行状态真源；启用 OKR 时，模块产品事实使用随仓库提交的独立 SQLite。两个连接都限制为单连接，串行化各自的数据库操作。
 - Qdrant 当前只服务 Todo 语义去重，不是长期事实真源。
 - `traex` 运行 M3 默认引擎、M5 执行、对话、持续世界建模和主动巡视；各阶段的模型和超时独立读取有效配置。
 - `lark-cli` 负责飞书读写；`bytedcli`、`git` 和 `jarvis-tools` 由 Agent 按需调用。
