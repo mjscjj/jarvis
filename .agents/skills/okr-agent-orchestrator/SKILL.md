@@ -1,6 +1,6 @@
 ---
 name: okr-agent-orchestrator
-description: 根据 OKR 模块中可编辑的业务 Prompt 和绑定的 Agent 行动，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成一次目标。用于季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填、进展巡检，以及配置行动的时间、范围和对象后由通用 ScheduledTask 触发执行。
+description: 根据 OKR 模块中可编辑的业务 Prompt，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成固定 Agent 行动或一次性目标。用于季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填和进展巡检。
 module: okr
 ---
 
@@ -24,7 +24,7 @@ scripts/okr-agent-tools prompt --key '<okr_agent_*>'
 
 没有 `prompt_key` 时，只能使用用户或 Task 目标中明确指定的 Prompt key；不得按标题猜一个流程。Prompt 缺失或为空时 fail-fast，不改走数据库或旧生成接口。
 
-ScheduledTask 触发时，把 Task instruction 作为本次行动目标，并读取冻结上下文里的 `action_scope` 和 `action_recipient`。它们是自然语言约束，不是固定 workflow 参数：结合实时事实解析实际范围和对象，无法确认时保留缺口，不自行猜测 ID。
+ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prompt_key` 指向完整业务语义。范围、对象、产出和验收标准全部从 Prompt 读取，不从行动配置拼装第二份语义；无法确认稳定 ID 时保留缺口，不自行猜测。
 
 ## 选择原子工具
 
