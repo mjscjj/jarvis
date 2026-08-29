@@ -157,6 +157,41 @@ func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
 	}
 }
 
+func TestMigrateWeeklyReportBackfillsHistoricalProgressScopes(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-history", Title: "增长", Quarter: "2026-Q3"}
+	kr := domain.KR{ID: "kr-history", ObjectiveID: objective.ID, Title: "历史 KR"}
+	point := domain.KRPoint{ID: "point-history", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "历史拆解"}
+	progress := domain.KRProgress{ID: "progress-history", PointID: point.ID, Week: "2026-W34", Status: domain.StatusDone, Text: "历史进展"}
+	for _, value := range []any{&objective, &kr, &point, &progress} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := MigrateWeeklyReport(db); err != nil {
+		t.Fatal(err)
+	}
+	var week domain.WeeklyReportWeek
+	if err := db.First(&week, "quarter = ? AND week = ?", objective.Quarter, progress.Week).Error; err != nil {
+		t.Fatal(err)
+	}
+	if week.OpenedBy != "migration" || week.OpenedAt.IsZero() {
+		t.Fatalf("backfilled week = %+v", week)
+	}
+
+	if err := MigrateWeeklyReport(db); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Model(&domain.WeeklyReportWeek{}).Where("quarter = ? AND week = ?", objective.Quarter, progress.Week).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("backfill was not idempotent: count=%d", count)
+	}
+}
+
 func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

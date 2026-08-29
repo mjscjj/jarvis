@@ -40,13 +40,12 @@ func MigrateWeeklyReport(db *gorm.DB) error {
 	// Existing progress rows predate the explicit week lifecycle. Materialize
 	// their scopes once during migration; runtime reads use the week table only.
 	type historicalWeek struct {
-		Quarter  string
-		Week     string
-		OpenedAt time.Time
+		Quarter string
+		Week    string
 	}
 	var historical []historicalWeek
 	if err := db.Table("okr_workspace_progress AS progress").
-		Select("objective.quarter, progress.week, MIN(progress.created_at) AS opened_at").
+		Select("objective.quarter, progress.week").
 		Joins("JOIN okr_workspace_point AS point ON point.id = progress.point_id").
 		Joins("JOIN okr_workspace_kr AS kr ON kr.id = point.kr_id").
 		Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
@@ -55,11 +54,10 @@ func MigrateWeeklyReport(db *gorm.DB) error {
 		return fmt.Errorf("list historical weekly report scopes: %w", err)
 	}
 	for _, item := range historical {
-		openedAt := item.OpenedAt
-		if openedAt.IsZero() {
-			openedAt = time.Now().UTC()
-		}
-		row := domain.WeeklyReportWeek{Quarter: item.Quarter, Week: item.Week, OpenedBy: "migration", OpenedAt: openedAt.UTC()}
+		// Historical progress proves the scope existed, but it does not prove when
+		// somebody explicitly opened it. Record the migration time instead of
+		// manufacturing that product event from a progress timestamp.
+		row := domain.WeeklyReportWeek{Quarter: item.Quarter, Week: item.Week, OpenedBy: "migration", OpenedAt: time.Now().UTC()}
 		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 			return fmt.Errorf("backfill weekly report scope %s/%s: %w", item.Quarter, item.Week, err)
 		}
