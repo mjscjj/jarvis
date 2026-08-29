@@ -10,6 +10,7 @@ import { CommentInteractionProvider } from './commenting'
 import type { PendingCommentSelection } from './commenting'
 import { commentTargetFromThread } from './comments'
 import type { AuthStatus, CommentTarget, PageComment } from './types'
+import { openWeeklyReportWeek } from './api'
 
 function weekLabel(week: string): string {
   const matched = /^(\d{4})-W(\d{2})$/.exec(week)
@@ -22,6 +23,16 @@ function weekLabel(week: string): string {
   sunday.setUTCDate(monday.getUTCDate() + 6)
   const short = (date: Date) => `${date.getUTCMonth() + 1}.${date.getUTCDate()}`
   return `W${weekText} · ${short(monday)} – ${short(sunday)}`
+}
+
+function currentISOWeek(): string {
+  const now = new Date()
+  const date = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
+  const weekday = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - weekday)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  const number = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+  return `${date.getUTCFullYear()}-W${String(number).padStart(2, '0')}`
 }
 
 function SyncNotice() {
@@ -68,8 +79,25 @@ export default function App({
   const [comments, setComments] = useState<PageComment[]>([])
   const [commentTarget, setCommentTarget] = useState<CommentTarget>()
   const [pendingCommentSelection, setPendingCommentSelection] = useState<PendingCommentSelection>()
+  const [openingWeek, setOpeningWeek] = useState(false)
+  const [newWeek, setNewWeek] = useState(currentISOWeek)
+  const [weekNotice, setWeekNotice] = useState('')
   const busy = syncState.kind === 'loading'
   const tone = syncState.kind === 'saving' ? 'text-blue-600' : syncState.kind === 'saved' ? 'text-emerald-600' : 'text-slate-400'
+
+  const submitWeek = async () => {
+    const target = newWeek.trim()
+    if (!quarter || !target) return
+    setWeekNotice('')
+    try {
+      const result = await openWeeklyReportWeek({ quarter, week: target })
+      setOpeningWeek(false)
+      setWeekNotice(result.created ? `${target} 已开启` : `${target} 已经开启`)
+      reset()
+    } catch (cause) {
+      setWeekNotice(cause instanceof Error ? cause.message : '开启周次失败。')
+    }
+  }
 
   useEffect(() => {
 		if (mode !== 'meeting') {
@@ -139,11 +167,12 @@ export default function App({
             </div>
           </div>
 
-          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+	          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <select aria-label="周次" value={week} onChange={(event) => setWeek(event.target.value)} className="bg-transparent font-medium text-slate-600 outline-none">
               {availableWeeks.map((item) => <option key={item} value={item}>{weekLabel(item)}</option>)}
             </select>
-          </div>
+	          </div>
+	          {mode === 'fill' && <button type="button" onClick={() => { setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
 
           <span className={`hidden min-w-16 text-[10px] sm:inline ${tone}`} aria-live="polite">{syncState.message}</span>
 
@@ -174,8 +203,16 @@ export default function App({
         </div>
       </header>
 
-		<main className={`mx-auto max-w-[1320px] px-4 py-4 transition-[padding] sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
-			<SyncNotice />
+			<main className={`mx-auto max-w-[1320px] px-4 py-4 transition-[padding] sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
+				{openingWeek && <section className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+					<div className="mr-2"><div className="text-xs font-semibold text-slate-700">开启周报周次</div><div className="mt-0.5 text-[10px] text-slate-400">只创建空周，不复制进展，也不会立即发送提醒。</div></div>
+					<input value={quarter} readOnly aria-label="季度" className="h-9 w-28 rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs text-slate-500" />
+					<input value={newWeek} onChange={(event) => setNewWeek(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitWeek() }} placeholder="2026-W36" aria-label="新周次" className="h-9 w-32 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-400" />
+					<button type="button" onClick={() => void submitWeek()} disabled={!newWeek.trim()} className="h-9 rounded-lg bg-blue-600 px-4 text-xs font-medium text-white disabled:opacity-40">确认开启</button>
+					<button type="button" onClick={() => setOpeningWeek(false)} className="h-9 px-2 text-xs text-slate-400">取消</button>
+				</section>}
+				{weekNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{weekNotice}</div>}
+				<SyncNotice />
 			<WeeklyTools onOpenPoint={openPoint} />
 			<>
             <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>

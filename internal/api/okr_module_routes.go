@@ -64,6 +64,7 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	h.GET("/api/okr/scope", requireEnabled, GetOKRWorkspaceScope(deps.Workspace))
 	h.GET("/api/okr/people/search", requireEnabled, SearchWorkspacePeople(deps.DB))
 	h.GET("/api/okr/board", requireEnabled, GetCoreBoard(deps.Workspace))
+	h.GET("/api/okr/krs/:kr_id", requireEnabled, GetCoreKR(deps.Workspace))
 	h.POST("/api/okr/images", requireEnabled, requireIdentity, UploadOKRImage(deps.Images))
 	h.POST("/api/okr/feishu-documents", requireEnabled, requireIdentity, CreateOKRDocument(deps.Documents))
 	h.POST("/api/okr/objectives", requireEnabled, requireIdentity, CreateObjective(deps.Workspace))
@@ -96,6 +97,8 @@ func RegisterWeeklyReportModuleRoutes(h *server.Hertz, deps WeeklyReportModuleDe
 	}
 	requireIdentity := RequireOKRIdentity(deps.Identity)
 	h.GET("/api/weekly-report/scope", requireEnabled, GetWeeklyReportScope(deps.Workspace))
+	h.GET("/api/weekly-report/weeks", requireEnabled, GetWeeklyReportWeeks(deps.Workspace))
+	h.POST("/api/weekly-report/weeks", requireEnabled, requireIdentity, OpenWeeklyReportWeek(deps.Workspace))
 	h.GET("/api/weekly-report/board", requireEnabled, GetBoard(deps.Workspace))
 	h.GET("/api/weekly-report/comments", requireEnabled, GetComments(deps.Workspace))
 	h.POST("/api/weekly-report/comments", requireEnabled, requireIdentity, CreateComment(deps.Workspace))

@@ -39,6 +39,13 @@ interface APIBoard {
   objectives: Array<{ id: string; title: string; krs: APIKr[] }>
 }
 
+interface APIWeek {
+  quarter: string
+  week: string
+  opened_by: string
+  opened_at: string
+}
+
 interface APIPageComment {
   id: string
   parent_id?: string
@@ -281,6 +288,32 @@ export interface BoardData {
   previousWeek?: string
   availableWeeks: string[]
   objectives: Objective[]
+}
+
+export interface OpenWeekResult {
+  week: {
+    quarter: string
+    week: string
+    openedBy: string
+    openedAt: string
+  }
+  created: boolean
+}
+
+export async function openWeeklyReportWeek(input: { quarter: string; week: string }): Promise<OpenWeekResult> {
+  const value = await request<{ week: APIWeek; created: boolean }>('/api/weekly-report/weeks', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return {
+    created: value.created,
+    week: {
+      quarter: value.week.quarter,
+      week: value.week.week,
+      openedBy: value.week.opened_by,
+      openedAt: value.week.opened_at,
+    },
+  }
 }
 
 export async function getBoard(quarter: string, week: string, surface: BoardSurface = 'okr'): Promise<BoardData> {

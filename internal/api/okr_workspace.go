@@ -133,6 +133,67 @@ func GetCoreBoard(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func GetCoreKR(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id := strings.TrimSpace(c.Param("kr_id"))
+		if id == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40013, fmt.Errorf("kr_id is required"))
+			return
+		}
+		result, err := service.GetCoreKR(ctx, id)
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40413, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40013, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func GetWeeklyReportWeeks(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		quarter := strings.TrimSpace(c.Query("quarter"))
+		if quarter == "" {
+			scope, err := service.LatestCoreScope(ctx)
+			if err != nil {
+				writeAPIError(c, consts.StatusNotFound, 40414, err)
+				return
+			}
+			quarter = scope.Quarter
+		}
+		result, err := service.ListWeeks(ctx, quarter)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40014, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func OpenWeeklyReportWeek(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var input okrworkspace.OpenWeekInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40015, err)
+			return
+		}
+		input.OpenedBy = currentOKRIdentity(c).OpenID
+		result, err := service.OpenWeek(ctx, input)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40015, err)
+			return
+		}
+		status := consts.StatusOK
+		if result.Created {
+			status = consts.StatusCreated
+		}
+		c.JSON(status, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func GetComments(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		result, err := service.Comments(ctx, strings.TrimSpace(c.Query("quarter")), strings.TrimSpace(c.Query("week")))

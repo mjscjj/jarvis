@@ -34,6 +34,11 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for _, week := range []string{"2026-W34", "2026-W35"} {
+		if err := db.Create(&domain.WeeklyReportWeek{Quarter: objective.Quarter, Week: week, OpenedBy: "test"}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	service, err := NewService(db)
 	if err != nil {
 		t.Fatal(err)
@@ -101,6 +106,54 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	}
 	if preservedProgress != 2 {
 		t.Fatalf("core delete removed weekly history: count=%d", preservedProgress)
+	}
+}
+
+func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-week", Title: "增长", Quarter: "2026-Q3"}
+	if err := db.Create(&objective).Error; err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opened, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: objective.Quarter, Week: "2026-W36", OpenedBy: "ou_owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opened.Created || opened.Week.Week != "2026-W36" || opened.Week.OpenedBy != "ou_owner" {
+		t.Fatalf("opened week = %+v", opened)
+	}
+	again, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: objective.Quarter, Week: "2026-W36", OpenedBy: "ou_other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Created || again.Week.OpenedBy != "ou_owner" {
+		t.Fatalf("idempotent open = %+v", again)
+	}
+	scope, err := service.LatestWeeklyScope(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope.Quarter != objective.Quarter || scope.Week != "2026-W36" {
+		t.Fatalf("scope = %+v", scope)
+	}
+	board, err := service.Board(t.Context(), objective.Quarter, "2026-W36")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(board.AvailableWeeks) != 1 || board.AvailableWeeks[0] != "2026-W36" || len(board.Objectives) != 1 {
+		t.Fatalf("board = %+v", board)
+	}
+	var progressCount int64
+	if err := db.Model(&domain.KRProgress{}).Count(&progressCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if progressCount != 0 {
+		t.Fatalf("opening week created %d progress rows", progressCount)
 	}
 }
 

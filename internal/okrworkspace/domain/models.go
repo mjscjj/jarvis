@@ -128,6 +128,18 @@ type KRProgress struct {
 
 func (KRProgress) TableName() string { return "okr_workspace_progress" }
 
+// WeeklyReportWeek is the explicit lifecycle anchor for one reporting week.
+// Opening a week only makes the empty time bucket discoverable; it does not
+// copy progress, send reminders or trigger another workflow.
+type WeeklyReportWeek struct {
+	Quarter  string    `gorm:"primaryKey;size:16"`
+	Week     string    `gorm:"primaryKey;size:16"`
+	OpenedBy string    `gorm:"not null;default:''"`
+	OpenedAt time.Time `gorm:"not null"`
+}
+
+func (WeeklyReportWeek) TableName() string { return "okr_workspace_week" }
+
 // MeegoSyncSnapshot is a read-only observation cache. It records what Emily
 // last saw in Meego and the poll health without changing KR or progress rows.
 type MeegoSyncSnapshot struct {
@@ -279,5 +291,5 @@ func CoreModels() []any {
 // names are intentionally preserved so enabling the split never rewrites or
 // loses Emily's historical data.
 func WeeklyReportModels() []any {
-	return []any{&KRProgress{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+	return []any{&WeeklyReportWeek{}, &KRProgress{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

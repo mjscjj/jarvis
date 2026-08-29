@@ -62,17 +62,12 @@ func (s *Service) LatestCoreScope(ctx context.Context) (CoreScope, error) {
 	return CoreScope{Quarter: quarter}, nil
 }
 
-// LatestWeeklyScope returns the newest quarter/week pair that has progress.
-// It is the discovery entry point for weekly-report automation.
+// LatestWeeklyScope returns the newest explicitly opened reporting week. An
+// empty week is therefore discoverable before anybody has filled progress.
 func (s *Service) LatestWeeklyScope(ctx context.Context) (Scope, error) {
 	var scope Scope
-	err := s.db.WithContext(ctx).Table("okr_workspace_progress AS progress").
-		Select("objective.quarter, progress.week").
-		Joins("JOIN okr_workspace_point AS point ON point.id = progress.point_id").
-		Joins("JOIN okr_workspace_kr AS kr ON kr.id = point.kr_id").
-		Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
-		Where("objective.quarter <> '' AND progress.week <> ''").
-		Order("objective.quarter DESC, progress.week DESC").Limit(1).Scan(&scope).Error
+	err := s.db.WithContext(ctx).Model(&domain.WeeklyReportWeek{}).
+		Select("quarter, week").Order("quarter DESC, week DESC").Limit(1).Scan(&scope).Error
 	if err != nil {
 		return Scope{}, fmt.Errorf("find latest weekly report scope: %w", err)
 	}
@@ -311,6 +306,9 @@ func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error
 	if !weekPattern.MatchString(week) {
 		return Board{}, fmt.Errorf("week must use YYYY-Www")
 	}
+	if err := s.requireOpenWeek(ctx, quarter, week); err != nil {
+		return Board{}, err
+	}
 	var objectives []domain.Objective
 	if err := s.db.WithContext(ctx).Where("quarter = ?", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
 		return Board{}, fmt.Errorf("list objectives: %w", err)
@@ -395,6 +393,9 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 	}
 	if !weekPattern.MatchString(week) {
 		return ReminderPreview{}, fmt.Errorf("week must use YYYY-Www")
+	}
+	if err := s.requireOpenWeek(ctx, quarter, week); err != nil {
+		return ReminderPreview{}, err
 	}
 
 	result := ReminderPreview{
@@ -1580,27 +1581,16 @@ func nonNilImages(value []domain.ImageRef) []domain.ImageRef {
 
 func (s *Service) weeks(ctx context.Context, quarter, selected string) ([]string, string, error) {
 	var weeks []string
-	err := s.db.WithContext(ctx).Table("okr_workspace_progress AS progress").Distinct("progress.week").
-		Joins("JOIN okr_workspace_point AS point ON point.id = progress.point_id").
-		Joins("JOIN okr_workspace_kr AS kr ON kr.id = point.kr_id").
-		Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
-		Where("objective.quarter = ?", quarter).Order("progress.week DESC").Pluck("progress.week", &weeks).Error
+	err := s.db.WithContext(ctx).Model(&domain.WeeklyReportWeek{}).
+		Where("quarter = ?", quarter).Order("week DESC").Pluck("week", &weeks).Error
 	if err != nil {
 		return nil, "", fmt.Errorf("list available weeks: %w", err)
 	}
-	foundSelected := false
 	previous := ""
 	for _, week := range weeks {
-		if week == selected {
-			foundSelected = true
-		}
 		if previous == "" && week < selected {
 			previous = week
 		}
-	}
-	if !foundSelected {
-		weeks = append(weeks, selected)
-		sort.Sort(sort.Reverse(sort.StringSlice(weeks)))
 	}
 	return weeks, previous, nil
 }
