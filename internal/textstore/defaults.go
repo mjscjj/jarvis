@@ -23,15 +23,15 @@ const (
 	SystemPromptFactExtractKey = "fact_extract_system_prompt"
 	// SystemPromptFactRollupKey drives the daily compression that turns one
 	// subject's detail facts for a day into a single rollup fact.
-	SystemPromptFactRollupKey = "fact_rollup_system_prompt"
-	// WeeklyReportCycleKey defines the product-level weekly cadence shared by
-	// the reminder, progress-sync and materials Skills. The individual Skills
-	// still own their tool instructions and hard execution boundaries.
-	WeeklyReportCycleKey                  = "weekly_report_cycle"
-	WeeklyReportReminderTemplateKey       = "weekly_report_reminder_template"
-	WeeklyReportMeetingTemplateKey        = "weekly_report_meeting_template"
-	WeeklyReportMiddlePlatformTemplateKey = "weekly_report_middle_platform_template"
-	WeeklyReportBiweeklyTemplateKey       = "weekly_report_biweekly_template"
+	SystemPromptFactRollupKey       = "fact_rollup_system_prompt"
+	WeeklyReportReminderTemplateKey = "weekly_report_reminder_template"
+	OKRAgentPrinciplesKey           = "okr_agent_principles"
+	OKRAgentQuarterlyDraftKey       = "okr_agent_quarterly_draft"
+	OKRAgentRegionAlignmentKey      = "okr_agent_region_alignment"
+	OKRAgentMeegoAlignmentKey       = "okr_agent_meego_alignment"
+	OKRAgentReportAKey              = "okr_agent_report_a"
+	OKRAgentReportBKey              = "okr_agent_report_b"
+	OKRAgentReportCKey              = "okr_agent_report_c"
 )
 
 // definition also carries the editor-facing description. The admin UI renders
@@ -89,29 +89,44 @@ func definitions() []definition {
 			kind:        "system_prompt", stage: "fact_rollup",
 		},
 		{
-			key: WeeklyReportCycleKey, name: "周报周期流程", filename: "weekly-report-cycle.md",
-			description: "定义一周从开放填写、催填、冻结会议版本、生成材料到关闭归档的业务步骤。",
-			kind:        "workflow", stage: "weekly_report",
-		},
-		{
 			key: WeeklyReportReminderTemplateKey, name: "催填消息模板", filename: "weekly-report-reminder-template.md",
 			description: "定义按负责人聚合后的周报催填消息；收件人、缺失项和链接由运行时提供。",
 			kind:        "message_template", stage: "weekly_report",
 		},
 		{
-			key: WeeklyReportMeetingTemplateKey, name: "会议材料模板", filename: "weekly-report-meeting-template.md",
-			description: "定义周报会议版本的章节、风险、变化、缺失和来源展示方式。",
-			kind:        "report_template", stage: "weekly_report",
+			key: OKRAgentPrinciplesKey, name: "Agent 实现原则", filename: "okr-agent-principles.md",
+			description: "定义所有 OKR Agent 流程共用的原子工具、动态规划、证据和副作用边界。",
+			kind:        "agent_policy", stage: "okr_agent",
 		},
 		{
-			key: WeeklyReportMiddlePlatformTemplateKey, name: "中台周报模板", filename: "weekly-report-middle-platform-template.md",
-			description: "定义提交给中台周报的精简结构；只作用于材料生成，不决定发布目标。",
-			kind:        "report_template", stage: "weekly_report",
+			key: OKRAgentQuarterlyDraftKey, name: "季度 OKR A 草稿", filename: "okr-agent-quarterly-draft.md",
+			description: "从历史遗留、区域新需求和管理要求生成季度 OKR A 候选草稿。",
+			kind:        "agent_prompt", stage: "okr_agent",
 		},
 		{
-			key: WeeklyReportBiweeklyTemplateKey, name: "双周会材料模板", filename: "weekly-report-biweekly-template.md",
-			description: "定义双周会材料的变化、成果、风险、决策和下一步结构。",
-			kind:        "report_template", stage: "weekly_report",
+			key: OKRAgentRegionAlignmentKey, name: "区域对齐与 OKR C", filename: "okr-agent-region-alignment.md",
+			description: "对齐平台 OKR A 与各区域 OKR B，给出证据化匹配和 P0/P1/P2 建议。",
+			kind:        "agent_prompt", stage: "okr_agent",
+		},
+		{
+			key: OKRAgentMeegoAlignmentKey, name: "研发对齐与 Meego", filename: "okr-agent-meego-alignment.md",
+			description: "对齐 OKR C 与研发 OKR D，在确认范围内提出或执行 Meego 建项。",
+			kind:        "agent_prompt", stage: "okr_agent",
+		},
+		{
+			key: OKRAgentReportAKey, name: "Report A 周报汇总", filename: "okr-agent-report-a.md",
+			description: "从 Meego、策略 Leader 周报和方向汇总中整理有来源的当周进展。",
+			kind:        "agent_prompt", stage: "okr_agent",
+		},
+		{
+			key: OKRAgentReportBKey, name: "中台周报 Report B", filename: "okr-agent-report-b.md",
+			description: "把 Report A 转换为方向、Key imperatives 和月度进展口径的精简周报。",
+			kind:        "agent_prompt", stage: "okr_agent",
+		},
+		{
+			key: OKRAgentReportCKey, name: "双周会 Report C", filename: "okr-agent-report-c.md",
+			description: "合并最近两周 Report A，形成 Focus item、on track 判断和 Key Progress。",
+			kind:        "agent_prompt", stage: "okr_agent",
 		},
 	}
 }

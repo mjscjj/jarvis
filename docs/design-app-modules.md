@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative
-> Last verified: 2026-08-28 @ uncommitted worktree
+> Last verified: 2026-08-29 @ uncommitted worktree
 
 ## 1. MVP 形态
 
@@ -21,8 +21,8 @@ Jarvis 是通用宿主，不是 OKR 产品本身。当前采用随 Jarvis 编译
 
 当前有两个可独立展示的内置模块：
 
-- `okr` 拥有 Objective、KR、核心指标、结构化多人负责人、优先级、标签、季度材料和世界关系投影。接口位于 `/api/okr/*`，Skill 为 `okr-world-projector`，工具入口为 `scripts/okr-module-tools`。
-- `weekly-report` 拥有按周进展、历史对比、填写/会议视图、评论、催填、Meego 观察与周报材料。接口位于 `/api/weekly-report/*`，Skills 为 `weekly-report-progress-sync`、`weekly-report-reminder`，工具入口为 `scripts/weekly-report-tools`。
+- `okr` 拥有 Objective、KR、核心指标、结构化多人负责人、优先级、标签、可编辑业务 Prompt 和世界关系投影。接口位于 `/api/okr/*`，Skills 为 `okr-agent-orchestrator`、`okr-world-projector`，工具入口为 `scripts/okr-agent-tools`、`scripts/okr-module-tools`。
+- `weekly-report` 拥有按周进展、历史对比、填写/会议视图、评论、催填和 Meego 观察。接口位于 `/api/weekly-report/*`，Skills 为 `weekly-report-progress-sync`、`weekly-report-reminder`，工具入口为 `scripts/weekly-report-tools`。
 
 `weekly-report` 显式依赖 `okr`：可以只启用 OKR，不能在关闭 OKR 时单独启用周报。两者暂时复用 `internal/okrworkspace/**` 兼容适配层和既有 `okr_workspace_*` SQLite 表名，避免为拆分重写历史数据；迁移、HTTP 写入、前端入口、Skill 和工具已经按所有权分开。
 
@@ -52,15 +52,15 @@ okr_kr:<module id>
 
 ## 4. 自动化
 
-启动过程不导入 Emily 数据、不自动投影世界模型，也不自动创建定时任务。管理员需要自动化时，显式读取模块 Skill 并创建 ScheduledTask：
+启动过程不导入 Emily 数据、不自动投影世界模型，也不自动创建定时任务。业务流程不在 Go 或前端组装，统一由 Agent 读取 Prompt 后动态选择原子工具：
 
+- `okr-agent-orchestrator`：读取一份业务 Prompt，完成季度草稿、区域/研发对齐或 Report A/B/C；
 - `okr-world-projector`：建立或复核跨模块实体关系。
 - `weekly-report-reminder`：生成催填批次并在授权后发送；
 - `weekly-report-progress-sync`：只读检查 Meego/消息证据并写回通用 Fact/Page。
-- `weekly-report-materials`：生成会议/汇报草稿；对外提交必须有已保存草稿、明确目标和审批。
 
-周报的周期流程和消息/材料模板使用受控 Markdown 文件作为唯一真源，注册在 `internal/textstore/defaults.go`，正文位于 `conf/prompts/weekly-report-*.md`。动作管理页面通过通用 `/api/text-files` 读写这些文件；Skills 使用 `scripts/weekly-report-tools text-config --key ...` 实时读取。调度参数继续由 `ScheduledTask` 持有，不把 Markdown 正文复制进数据库或前端常量。
+共用原则和六份业务 Prompt 使用受控 Markdown 文件作为唯一真源，注册在 `internal/textstore/defaults.go`，正文位于 `conf/prompts/okr-agent-*.md`。OKR 的“Agent 流程”页面通过通用 `/api/text-files` 读写；Skill 使用 `scripts/okr-agent-tools prompt --key ...` 实时读取。催填消息仍使用独立的 `weekly-report-reminder-template.md`。
 
-前端在 Jarvis 的单一 `OKR` 一级入口内提供“动作管理”子页。它把上述 Skill 映射为催填、进展巡检、会议材料和对外提交四种业务动作，并复用 `ScheduledTask` 做启停与时间触发、复用 `Task` 展示真实执行状态。这里不创建第二张动作表；Jarvis 的通用“自动化”页面继续承担高级技术配置。
+ScheduledTask 只持有调度、Skill、Prompt key 和自然语言目标，不保存 workflow 类型、业务审批策略或步骤状态。审批由 M5 按统一策略结合具体副作用判断；Task/effects 负责留痕。Jarvis 的通用“自动化”页面承担定时配置，OKR 页面只提供 Prompt 编辑入口。
 
-Meego 页面只读取 Agent 通过 `record-meego-observation` 保存的快照；后端不直接调用 `bytedcli`。这使“工具 + 提示词”成为业务编排层。只有身份会话、图片存储、结构化 CRUD、快照持久化、CAS、模块生命周期等必须稳定执行的约束留在 Go 代码中。
+Meego 页面只读取 Agent 通过 `record-meego-observation` 保存的快照；后端不直接调用 `bytedcli`。固定的季度草稿、区域同步、风险聚合和 Report 草稿 API/DTO/页面已移除；已有历史草稿表不主动 DROP，但运行时不再迁移或读取。只有身份会话、图片存储、结构化 CRUD、快照持久化、CAS、模块生命周期等必须稳定执行的约束留在 Go 代码中。

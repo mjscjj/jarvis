@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Atomic reader for editable OKR Agent prompts. Business orchestration belongs
+# to the Agent and the selected Skill, not this script.
+set -euo pipefail
+
+BASE_URL="${JARVIS_BASE_URL:-http://127.0.0.1:18800}"
+
+usage() {
+  cat <<'EOF'
+usage: okr-agent-tools [--base-url URL] prompt --key okr_agent_*
+
+Reads one registered OKR Agent prompt. It does not execute a workflow.
+EOF
+}
+
+if [[ "${1:-}" == "--base-url" ]]; then
+  [[ $# -ge 3 ]] || { usage >&2; exit 2; }
+  BASE_URL="$2"
+  shift 2
+fi
+BASE_URL="${BASE_URL%/}"
+COMMAND="${1:-}"
+shift || true
+
+KEY=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --key) KEY="${2:-}"; shift 2 ;;
+    --help|-h) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+[[ "$COMMAND" == "prompt" ]] || { echo "unknown command: $COMMAND" >&2; usage >&2; exit 2; }
+[[ "$KEY" =~ ^okr_agent_[a-z_]+$ ]] || { echo "prompt requires an okr_agent_* --key" >&2; exit 2; }
+curl -fsS "${BASE_URL}/api/text-files/${KEY}" | jq -er '
+  if .code == 0 and (.data.content | type == "string") and (.data.content | length > 0)
+  then .data.content
+  else error(.msg // "invalid text-file response")
+  end
+'

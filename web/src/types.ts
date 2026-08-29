@@ -1013,7 +1013,7 @@ export interface TextFile {
   key: string
   name: string
   description: string
-  kind: 'system_prompt' | 'approval_policy' | 'workflow' | 'message_template' | 'report_template'
+  kind: 'system_prompt' | 'approval_policy' | 'message_template' | 'agent_policy' | 'agent_prompt'
   stage: string
   path: string
   content: string

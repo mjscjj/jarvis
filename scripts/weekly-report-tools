@@ -16,8 +16,6 @@ commands:
   reminder-preview [--quarter Q] [--week YYYY-Www]
   reminder-batches [--quarter Q] [--week YYYY-Www]
   create-reminder-batch --quarter Q --week YYYY-Www
-  pmo-digest [--quarter Q] [--week YYYY-Www]
-  generate-report-draft --quarter Q --week YYYY-Www --report-type TYPE [--tag-type TYPE --tag-value VALUE]
   create-feishu-document --payload JSON|-
   record-meego-observation --payload JSON|-
 EOF
@@ -36,18 +34,12 @@ shift
 QUARTER=""
 WEEK=""
 PAYLOAD=""
-REPORT_TYPE=""
-TAG_TYPE=""
-TAG_VALUE=""
 KEY=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --quarter) QUARTER="${2:-}"; shift 2 ;;
     --week) WEEK="${2:-}"; shift 2 ;;
     --payload) PAYLOAD="${2:-}"; shift 2 ;;
-    --report-type) REPORT_TYPE="${2:-}"; shift 2 ;;
-    --tag-type) TAG_TYPE="${2:-}"; shift 2 ;;
-    --tag-value) TAG_VALUE="${2:-}"; shift 2 ;;
     --key) KEY="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -73,7 +65,7 @@ case "$COMMAND" in
   scope)
     request_get /api/weekly-report/scope
     ;;
-  board|reminder-preview|reminder-batches|pmo-digest)
+  board|reminder-preview|reminder-batches)
     args=()
     [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
     [[ -z "$WEEK" ]] || args+=(--data-urlencode "week=$WEEK")
@@ -83,13 +75,6 @@ case "$COMMAND" in
     [[ -n "$QUARTER" && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "create-reminder-batch requires --quarter and --week YYYY-Www" >&2; exit 2; }
     payload=$(printf '{"quarter":"%s","week":"%s"}' "$QUARTER" "$WEEK")
     request_post /api/weekly-report/reminder-batches/generate "$payload"
-    ;;
-  generate-report-draft)
-    [[ -n "$QUARTER" && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "generate-report-draft requires --quarter and --week YYYY-Www" >&2; exit 2; }
-    [[ "$REPORT_TYPE" == "middle_platform_weekly" || "$REPORT_TYPE" == "biweekly_review" ]] || { echo "generate-report-draft requires --report-type middle_platform_weekly|biweekly_review" >&2; exit 2; }
-    [[ -z "$TAG_TYPE" && -z "$TAG_VALUE" || -n "$TAG_TYPE" && -n "$TAG_VALUE" ]] || { echo "--tag-type and --tag-value must be provided together" >&2; exit 2; }
-    payload=$(jq -cn --arg quarter "$QUARTER" --arg week "$WEEK" --arg report_type "$REPORT_TYPE" --arg tag_type "$TAG_TYPE" --arg tag_value "$TAG_VALUE" '{quarter:$quarter,week:$week,report_type:$report_type,tag_type:$tag_type,tag_value:$tag_value}')
-    request_post /api/weekly-report/report-drafts/generate "$payload"
     ;;
   create-feishu-document)
     [[ -n "$PAYLOAD" ]] || { echo "create-feishu-document requires --payload JSON|-" >&2; exit 2; }

@@ -8,16 +8,12 @@ export default function CoreApp({
   auth,
   onLogout,
   view,
-  weeklyEnabled,
   moduleTabs,
-  onOpenPoint,
 }: {
   auth: AuthStatus
   onLogout: () => void
   view: 'structure' | 'manage'
-  weeklyEnabled: boolean
   moduleTabs: ReactNode
-  onOpenPoint: (pointId: string) => void
 }) {
   const { quarter, syncState, reset, createObjective } = useBoard()
   const [creating, setCreating] = useState(false)
@@ -58,7 +54,7 @@ export default function CoreApp({
           <button type="button" onClick={() => void submitObjective()} disabled={!objectiveTitle.trim() || syncState.kind === 'saving'} className="h-9 rounded-lg bg-indigo-600 px-4 text-xs font-medium text-white disabled:opacity-40">创建目标</button>
           <button type="button" onClick={() => setCreating(false)} className="h-9 px-2 text-xs text-slate-400">取消</button>
         </div>}
-        {view === 'structure' ? <KrTable progressReadOnly showProgress={false} /> : <ManagementView weeklyEnabled={weeklyEnabled} onOpenPoint={onOpenPoint} />}
+        {view === 'structure' ? <KrTable progressReadOnly showProgress={false} /> : <ManagementView />}
       </main>
     </div>
   )

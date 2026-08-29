@@ -47,7 +47,7 @@ Agent 可用 `jarvis-tools get-okr-weekly-view --id <id> [--date YYYY-MM-DD]` �
 - App modules：`GET /api/app-modules`、`PUT /api/app-modules/:module_key`
 - OKR 定义：`GET /api/okr/scope|enums|board`，身份、人员、图片、Objective/KR 创建与 KR 编辑位于 `/api/okr/*`。核心 board 和写接口不读取周报表。
 - 删除 KR 或稳定拆解只删除 OKR 模块定义，不级联删除周报进展、评论或 Meego 观察历史。
-- 周报：`GET /api/weekly-report/scope|board|comments|reminder-preview|reminder-batches|pmo-digest|region-sync-draft|quarterly-okr-draft|meego-preview`；评论、所选周进展、报告草稿、Meego 确认和催办批次的写接口位于 `/api/weekly-report/*`。
+- 周报：`GET /api/weekly-report/scope|board|comments|reminder-preview|reminder-batches|meego-preview`；评论、所选周进展、Meego 观察和催办批次的写接口位于 `/api/weekly-report/*`。季度草稿、区域对齐和 Report A/B/C 由 `okr-agent-orchestrator` 读取可编辑 Prompt 后动态组合原子工具，不提供固定生成 API。
 - Meego observation：`POST /api/weekly-report/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
 - OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后经 `/api/okr/auth/feishu/login|callback` 建立 HttpOnly session，写接口只识别操作者，不做行级权限或可见性过滤。
 - OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。

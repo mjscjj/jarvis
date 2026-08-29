@@ -243,58 +243,6 @@ type AuthSession struct {
 
 func (AuthSession) TableName() string { return "okr_workspace_auth_session" }
 
-// ReportDraft stores only the human-edited reporting projection. KR progress
-// remains the fact source and is never overwritten by draft edits.
-type ReportDraft struct {
-	ID         string               `gorm:"primaryKey;size:64"`
-	Quarter    string               `gorm:"not null;index"`
-	Week       string               `gorm:"not null;index"`
-	ReportType string               `gorm:"not null;index"`
-	TagType    string               `gorm:"not null;default:''"`
-	TagValue   string               `gorm:"not null;default:''"`
-	Title      string               `gorm:"not null"`
-	Sections   []ReportDraftSection `gorm:"serializer:json;type:text"`
-	Version    int32                `gorm:"not null;default:0"`
-	UpdatedBy  string               `gorm:"not null;default:''"`
-	CreatedAt  time.Time            `gorm:"not null"`
-	UpdatedAt  time.Time            `gorm:"not null"`
-}
-
-func (ReportDraft) TableName() string { return "okr_workspace_report_draft" }
-
-type ReportDraftSection struct {
-	Kind  string            `json:"kind"`
-	Title string            `json:"title"`
-	Items []ReportDraftItem `json:"items"`
-}
-
-type ReportDraftItem struct {
-	ID             string `json:"id"`
-	ObjectiveID    string `json:"objective_id"`
-	ObjectiveTitle string `json:"objective_title"`
-	KRID           string `json:"kr_id"`
-	KRTitle        string `json:"kr_title"`
-	OwnerName      string `json:"owner_name"`
-	PointID        string `json:"point_id"`
-	PointTitle     string `json:"point_title"`
-	Week           string `json:"week"`
-	Status         string `json:"status,omitempty"`
-	Source         string `json:"source"`
-	Detail         string `json:"detail"`
-}
-
-type ReportDraftRevision struct {
-	ID        string               `gorm:"primaryKey;size:96"`
-	DraftID   string               `gorm:"not null;index:idx_report_revision,priority:1"`
-	Version   int32                `gorm:"not null;index:idx_report_revision,priority:2"`
-	Title     string               `gorm:"not null"`
-	Sections  []ReportDraftSection `gorm:"serializer:json;type:text"`
-	UpdatedBy string               `gorm:"not null;default:''"`
-	CreatedAt time.Time            `gorm:"not null"`
-}
-
-func (ReportDraftRevision) TableName() string { return "okr_workspace_report_revision" }
-
 // ReminderBatch is an immutable, review-only snapshot produced by either the
 // Monday scheduler or an explicit preview refresh. It deliberately contains no
 // delivery state: Emily cannot send a batch from this model.
@@ -331,5 +279,5 @@ func CoreModels() []any {
 // names are intentionally preserved so enabling the split never rewrites or
 // loses Emily's historical data.
 func WeeklyReportModels() []any {
-	return []any{&KRProgress{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReportDraft{}, &ReportDraftRevision{}, &ReminderBatch{}}
+	return []any{&KRProgress{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

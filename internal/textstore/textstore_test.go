@@ -43,11 +43,7 @@ func TestEveryDefinitionCarriesEditorLabels(t *testing.T) {
 func TestWeeklyReportDefinitionsAreEditableMarkdown(t *testing.T) {
 	service := newTestService(t)
 	want := []string{
-		WeeklyReportCycleKey,
 		WeeklyReportReminderTemplateKey,
-		WeeklyReportMeetingTemplateKey,
-		WeeklyReportMiddlePlatformTemplateKey,
-		WeeklyReportBiweeklyTemplateKey,
 	}
 	for _, key := range want {
 		item, err := service.Get(t.Context(), key)
@@ -57,7 +53,32 @@ func TestWeeklyReportDefinitionsAreEditableMarkdown(t *testing.T) {
 		if item.Stage != "weekly_report" {
 			t.Errorf("Get(%q).Stage = %q, want weekly_report", key, item.Stage)
 		}
-		if item.Kind != "workflow" && item.Kind != "message_template" && item.Kind != "report_template" {
+		if item.Kind != "message_template" {
+			t.Errorf("Get(%q).Kind = %q", key, item.Kind)
+		}
+	}
+}
+
+func TestOKRAgentDefinitionsAreEditableMarkdown(t *testing.T) {
+	service := newTestService(t)
+	want := []string{
+		OKRAgentPrinciplesKey,
+		OKRAgentQuarterlyDraftKey,
+		OKRAgentRegionAlignmentKey,
+		OKRAgentMeegoAlignmentKey,
+		OKRAgentReportAKey,
+		OKRAgentReportBKey,
+		OKRAgentReportCKey,
+	}
+	for _, key := range want {
+		item, err := service.Get(t.Context(), key)
+		if err != nil {
+			t.Fatalf("Get(%q) error = %v", key, err)
+		}
+		if item.Stage != "okr_agent" {
+			t.Errorf("Get(%q).Stage = %q, want okr_agent", key, item.Stage)
+		}
+		if item.Kind != "agent_policy" && item.Kind != "agent_prompt" {
 			t.Errorf("Get(%q).Kind = %q", key, item.Kind)
 		}
 	}

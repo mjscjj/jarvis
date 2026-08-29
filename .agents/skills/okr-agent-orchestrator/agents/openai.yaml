@@ -1,0 +1,4 @@
+interface:
+  display_name: "OKR Agent 流程"
+  short_description: "用原子工具和可编辑 Prompt 执行 OKR 小流程"
+  default_prompt: "使用 $okr-agent-orchestrator 按指定 Prompt 完成一次 OKR Agent 流程。"

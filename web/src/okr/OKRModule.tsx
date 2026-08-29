@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { listAppModules } from '../api'
 import { usePageContext } from '../pageContext'
-import ActionWorkspace from './emily/ActionApp'
+import AgentFlowsWorkspace from './emily/AgentFlowsApp'
 import CoreWorkspace from './emily/CoreApp'
 import WeeklyReportWorkspace from './emily/App'
 import { BoardProvider } from './emily/store'
@@ -9,18 +9,18 @@ import type { AuthStatus } from './emily/types'
 import IdentityBoundary from './IdentityBoundary'
 import './emily/index.css'
 
-type OKRTab = 'structure' | 'manage' | 'weekly-fill' | 'weekly-meeting' | 'actions'
+type OKRTab = 'structure' | 'manage' | 'agent-flows' | 'weekly-fill' | 'weekly-meeting'
 
-const validTabs = new Set<OKRTab>(['structure', 'manage', 'weekly-fill', 'weekly-meeting', 'actions'])
+const validTabs = new Set<OKRTab>(['structure', 'manage', 'agent-flows', 'weekly-fill', 'weekly-meeting'])
 
 function ModuleTabs({ active, weeklyEnabled, onChange }: { active: OKRTab; weeklyEnabled: boolean; onChange: (tab: OKRTab) => void }) {
-  const items: Array<{ key: OKRTab; label: string; group: 'okr' | 'weekly' | 'actions' }> = [
+  const items: Array<{ key: OKRTab; label: string; group: 'okr' | 'weekly' }> = [
     { key: 'structure', label: 'OKR 结构', group: 'okr' },
     { key: 'manage', label: '管理与打标', group: 'okr' },
+    { key: 'agent-flows', label: 'Agent 流程', group: 'okr' },
     ...(weeklyEnabled ? [
       { key: 'weekly-fill' as const, label: '周报填写', group: 'weekly' as const },
       { key: 'weekly-meeting' as const, label: '周报会议', group: 'weekly' as const },
-      { key: 'actions' as const, label: '动作管理', group: 'actions' as const },
     ] : []),
   ]
 
@@ -48,7 +48,7 @@ function Workspace({ auth, logoutUser }: { auth: AuthStatus; logoutUser: () => P
   const [weeklyEnabled, setWeeklyEnabled] = useState(true)
   const requestedTab = context.view_state.tab
   const active = validTabs.has(requestedTab as OKRTab) ? requestedTab as OKRTab : 'structure'
-  const visibleTab = !weeklyEnabled && (active.startsWith('weekly-') || active === 'actions') ? 'structure' : active
+  const visibleTab = !weeklyEnabled && active.startsWith('weekly-') ? 'structure' : active
 
   useEffect(() => {
     const controller = new AbortController()
@@ -70,28 +70,22 @@ function Workspace({ auth, logoutUser }: { auth: AuthStatus; logoutUser: () => P
     <ModuleTabs active={visibleTab} weeklyEnabled={weeklyEnabled} onChange={changeTab} />
   ), [visibleTab, weeklyEnabled, context.view_state])
 
-  const openWeeklyPoint = (pointId: string) => {
-    sessionStorage.setItem('jarvis.weekly-report.focus-point', pointId)
-    changeTab('weekly-fill')
-  }
-  const surface = visibleTab.startsWith('weekly-') || visibleTab === 'actions' ? 'weekly-report' : 'okr'
+  const surface = visibleTab.startsWith('weekly-') ? 'weekly-report' : 'okr'
 
   return (
     <div id="okr-workspace-root" className="okr-workspace-root">
       <BoardProvider key={surface} surface={surface}>
-        {surface === 'okr' ? (
+        {visibleTab === 'agent-flows' ? (
+          <AgentFlowsWorkspace
+            auth={auth}
+            onLogout={() => void logoutUser()}
+            moduleTabs={moduleTabs}
+          />
+        ) : surface === 'okr' ? (
           <CoreWorkspace
             auth={auth}
             onLogout={() => void logoutUser()}
             view={visibleTab === 'manage' ? 'manage' : 'structure'}
-            weeklyEnabled={weeklyEnabled}
-            moduleTabs={moduleTabs}
-            onOpenPoint={openWeeklyPoint}
-          />
-        ) : visibleTab === 'actions' ? (
-          <ActionWorkspace
-            auth={auth}
-            onLogout={() => void logoutUser()}
             moduleTabs={moduleTabs}
           />
         ) : (

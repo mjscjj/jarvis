@@ -18,10 +18,9 @@ module: weekly-report
 
 ## 1. 建立本轮范围
 
-先读取页面可编辑的周报周期配置，再从模块工具读取本周产品真源，最后从通用关系读取已经确认的世界映射。周期配置只决定业务节奏，不能放宽本 Skill 的只读外部边界和证据要求：
+从模块工具读取本周产品真源，再从通用关系读取已经确认的世界映射：
 
 ```bash
-scripts/weekly-report-tools text-config --key weekly_report_cycle
 scripts/weekly-report-tools scope
 scripts/weekly-report-tools board --quarter <quarter> --week <week>
 jarvis-tools list-relations --source-type okr_kr --source-id <kr_id> --limit 100

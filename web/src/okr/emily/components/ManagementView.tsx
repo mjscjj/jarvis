@@ -4,9 +4,6 @@ import { tagLabel } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import type { Kr, KrTag } from '../types'
 import { FeishuPeoplePicker } from './FeishuPeoplePicker'
-import { QuarterlyOKRDraft } from './QuarterlyOKRDraft'
-
-type Tool = 'quarterly'
 
 const TAG_TYPES = [
   { value: 'custom', label: '自定义' },
@@ -14,10 +11,6 @@ const TAG_TYPES = [
   { value: 'biweekly', label: '双周会' },
   { value: 'platform_report', label: '中台周报' },
   { value: 'region', label: '区域' },
-]
-
-const TOOLS: Array<{ value: Tool; mark: string; label: string; description: string }> = [
-	{ value: 'quarterly', mark: '季', label: '季度材料', description: '按 O / KR 汇总' },
 ]
 
 function tagTone(type: string) {
@@ -166,10 +159,8 @@ function NewKrRow({ objectiveId, onClose }: { objectiveId: string; onClose: () =
   )
 }
 
-export function ManagementView({ weeklyEnabled, onOpenPoint }: { weeklyEnabled: boolean; onOpenPoint: (pointId: string) => void }) {
-  const { objectives, quarter } = useBoard()
-  const [tool, setTool] = useState<Tool>()
-  const [materialsOpen, setMaterialsOpen] = useState(false)
+export function ManagementView() {
+  const { objectives } = useBoard()
   const [query, setQuery] = useState('')
   const [owner, setOwner] = useState('')
   const [priority, setPriority] = useState('')
@@ -188,10 +179,6 @@ export function ManagementView({ weeklyEnabled, onOpenPoint }: { weeklyEnabled: 
   const resultCount = groups.reduce((total, objective) => total + objective.krs.length, 0)
   const tagCount = objectives.reduce((total, objective) => total + objective.krs.reduce((sum, kr) => sum + (kr.tags?.length ?? 0), 0), 0)
 
-  const toggleTool = (next: Tool) => {
-    setMaterialsOpen(true)
-    setTool((current) => current === next ? undefined : next)
-  }
   const clearFilters = () => {
     setQuery('')
     setOwner('')
@@ -201,33 +188,7 @@ export function ManagementView({ weeklyEnabled, onOpenPoint }: { weeklyEnabled: 
 
   return (
     <div className="flex flex-col gap-3">
-      {weeklyEnabled && <section className="order-2 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-        <button type="button" onClick={() => { setMaterialsOpen((current) => !current); if (materialsOpen) setTool(undefined) }} className={`flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-slate-50 ${materialsOpen ? 'border-b border-slate-100' : ''}`}>
-          <div>
-			<h2 className="text-xs font-semibold text-slate-800">OKR 材料</h2>
-			<p className="mt-0.5 text-[10px] text-slate-400">按季度汇总 O / KR · 需要时再展开</p>
-          </div>
-          <span className={`ml-auto text-xs text-slate-400 transition-transform ${materialsOpen ? 'rotate-180' : ''}`}>⌄</span>
-        </button>
-		{materialsOpen && <div className="grid grid-cols-1 gap-px bg-slate-100 sm:max-w-xs">
-          {TOOLS.map((item) => (
-            <button key={item.value} type="button" onClick={() => toggleTool(item.value)} className={`group flex min-w-0 items-center gap-2 bg-white px-3 py-2.5 text-left transition-colors hover:bg-slate-50 ${tool === item.value ? 'relative z-10 bg-blue-50/70 ring-1 ring-inset ring-blue-200' : ''}`}>
-              <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold ${tool === item.value ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'}`}>{item.mark}</span>
-              <span className="min-w-0">
-                <span className={`block truncate text-[11px] font-medium ${tool === item.value ? 'text-blue-700' : 'text-slate-700'}`}>{item.label}</span>
-                <span className="block truncate text-[9px] text-slate-400">{item.description}</span>
-              </span>
-            </button>
-          ))}
-        </div>}
-        {materialsOpen && tool && (
-          <div className="border-t border-slate-100 p-3">
-			{tool === 'quarterly' && <QuarterlyOKRDraft quarter={quarter} onClose={() => setTool(undefined)} onOpenPoint={onOpenPoint} />}
-          </div>
-        )}
-      </section>}
-
-      <section className="order-1 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="border-b border-slate-100 px-3.5 py-3">
           <div className="flex flex-wrap items-center gap-2">
           <div className="mr-2">

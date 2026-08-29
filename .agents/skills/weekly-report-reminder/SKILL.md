@@ -8,14 +8,11 @@ module: weekly-report
 
 这是一项有外部消息副作用的定时执行。每轮先确定时间和缺失范围，再逐个发送，最后回读批次；不得根据姓名猜 open_id，不得给已填写完成的人发消息。
 
-## 1. 日期门禁
+## 1. 读取消息模板
 
-读取 Task 背景中的 `action_config.timezone` 和 `action_config.weekday`。时区必须为 `Asia/Shanghai`；weekday 缺失时兼容旧任务并使用周一（1）。由调度器正常触发且当前星期不匹配时直接成功结束，结果写明 `no_op=weekday_gate`，不生成批次、不发送消息。只有当前 Task 的 `occurrence_key` 明确以 `manual:` 开头时，才视为用户点击“立即运行”并绕过日期门禁。
-
-先读取页面可编辑的周报周期和催填模板；两份配置都必须返回 `code=0` 且正文非空。它们决定本轮业务步骤和消息正文，但不能放宽本 Skill 的身份、审批、幂等和回执边界：
+定时节奏由通用 ScheduledTask 负责，本 Skill 不实现星期门禁或补偿调度。读取催填模板并验证响应 `code=0` 且正文非空：
 
 ```bash
-scripts/weekly-report-tools text-config --key weekly_report_cycle
 scripts/weekly-report-tools text-config --key weekly_report_reminder_template
 ```
 
@@ -42,7 +39,7 @@ scripts/weekly-report-tools create-reminder-batch --quarter '<quarter>' --week '
 
 ## 4. 逐人发送
 
-先读取 `action_config.approval`；旧任务没有 action_config 时兼容读取顶层 `mode`。仅当结果是 `review_then_send` 且本次执行已经通过 Jarvis 的外部动作审批策略时，才进入真实发送；否则只保留批次并返回 `needs_human`，不得发送。
+发送飞书消息是具体外部副作用，由 M5 根据统一审批策略和当前任务上下文判断是否需要先请示。不得读取业务配置中的 `approval` 或 `mode` 字段替代该判断；尚未获准时保留批次并等待，不得发送。
 
 只处理同时满足以下条件的 recipient：
 

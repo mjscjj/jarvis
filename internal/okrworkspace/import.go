@@ -64,10 +64,6 @@ func ImportLegacyIfEmpty(ctx context.Context, db *gorm.DB, source string) (Impor
 		 SELECT id,quarter,week,parent_id,target_type,target_id,target_title,selected_text,selection_start,selection_end,selection_prefix,selection_suffix,author_open_id,author_name,content,created_at,updated_at FROM legacy_emily.page_comment`,
 		`INSERT INTO okr_workspace_meego_snapshot (point_id,work_item_id,week,local_status,local_progress,remote_title,remote_status,remote_progress,remote_updated_at,status_changed,progress_changed,needs_review,risk,last_attempt_at,last_success_at,last_error,created_at,updated_at)
 		 SELECT point_id,work_item_id,week,local_status,local_progress,remote_title,remote_status,remote_progress,remote_updated_at,status_changed,progress_changed,needs_review,risk,last_attempt_at,last_success_at,last_error,created_at,updated_at FROM legacy_emily.meego_sync_snapshot`,
-		`INSERT INTO okr_workspace_report_draft (id,quarter,week,report_type,tag_type,tag_value,title,sections,version,updated_by,created_at,updated_at)
-		 SELECT id,quarter,week,report_type,tag_type,tag_value,title,sections,version,updated_by,created_at,updated_at FROM legacy_emily.report_draft`,
-		`INSERT INTO okr_workspace_report_revision (id,draft_id,version,title,sections,updated_by,created_at)
-		 SELECT id,draft_id,version,title,sections,updated_by,created_at FROM legacy_emily.report_draft_revision`,
 		`INSERT INTO okr_workspace_reminder_batch (id,quarter,week,trigger,status,recipient_count,missing_count,summary_json,recipients_json,last_error,started_at,finished_at,created_at,updated_at)
 		 SELECT id,quarter,week,trigger,status,recipient_count,missing_count,summary_json,recipients_json,last_error,started_at,finished_at,created_at,updated_at FROM legacy_emily.reminder_batch`,
 	}
