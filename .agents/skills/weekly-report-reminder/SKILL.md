@@ -27,6 +27,8 @@ scripts/weekly-report-tools reminder-preview
 
 如果运行端口不是默认值，设置 `JARVIS_BASE_URL`。必须验证响应 `code=0`，并记录 `quarter`、`week`、待提醒人数、缺失 KR 数。预览失败就结束为失败，不能绕过模块工具查询数据库或自行猜测。
 
+`open-week` 虽然是可用原子工具，但本催填行动不隐式开启新周。没有已开启周时报告缺口；只有本次 Task 或绑定 Prompt 明确要求开周，才单独调用 `open-week`，并在开周后重新读取范围。
+
 ## 3. 生成审计批次
 
 仅在至少一名负责人需要提醒时创建一次批次：

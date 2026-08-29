@@ -12,15 +12,31 @@ usage: weekly-report-tools [--base-url URL] COMMAND [ARGS]
 commands:
   text-config --key KEY
   scope
+  weeks [--quarter Q]
+  open-week --quarter Q --week YYYY-Www
   board [--quarter Q] [--week YYYY-Www]
+  comments --quarter Q --week YYYY-Www
+  create-comment --payload JSON|-
+  update-comment --id COMMENT_ID --payload JSON|-
+  delete-comment --id COMMENT_ID
+  create-progress --point-id POINT_ID --payload JSON|-
+  update-progress --id PROGRESS_ID --payload JSON|-
+  delete-progress --id PROGRESS_ID --payload JSON|-
   reminder-preview [--quarter Q] [--week YYYY-Www]
   reminder-batches [--quarter Q] [--week YYYY-Www]
   create-reminder-batch --quarter Q --week YYYY-Www
   create-feishu-document --payload JSON|-
+  meego-preview --quarter Q --week YYYY-Www
+  point-meego-preview --point-id POINT_ID --week YYYY-Www
   record-meego-observation --payload JSON|-
+  confirm-meego-progress --point-id POINT_ID --payload JSON|-
 EOF
 }
 
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
 if [[ "${1:-}" == "--base-url" ]]; then
   [[ $# -ge 3 ]] || { usage >&2; exit 2; }
   BASE_URL="$2"
@@ -35,12 +51,16 @@ QUARTER=""
 WEEK=""
 PAYLOAD=""
 KEY=""
+ID=""
+POINT_ID=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --quarter) QUARTER="${2:-}"; shift 2 ;;
     --week) WEEK="${2:-}"; shift 2 ;;
     --payload) PAYLOAD="${2:-}"; shift 2 ;;
     --key) KEY="${2:-}"; shift 2 ;;
+    --id) ID="${2:-}"; shift 2 ;;
+    --point-id) POINT_ID="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -57,6 +77,22 @@ request_post() {
   curl -fsS -X POST "${BASE_URL}${path}" -H 'content-type: application/json' --data "$payload"
 }
 
+request_write() {
+  local method="$1" path="$2" payload="$3"
+  curl -fsS -X "$method" "${BASE_URL}${path}" -H 'content-type: application/json' --data "$payload"
+}
+
+read_payload() {
+  [[ -n "$PAYLOAD" ]] || { echo "$COMMAND requires --payload JSON|-" >&2; exit 2; }
+  [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
+  printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null || { echo "$COMMAND payload must be a JSON object" >&2; exit 2; }
+  printf '%s' "$PAYLOAD"
+}
+
+encoded() {
+  printf '%s' "$1" | jq -sRr @uri
+}
+
 case "$COMMAND" in
   text-config)
     [[ "$KEY" =~ ^weekly_report_[a-z_]+$ ]] || { echo "text-config requires a weekly_report_* --key" >&2; exit 2; }
@@ -65,11 +101,62 @@ case "$COMMAND" in
   scope)
     request_get /api/weekly-report/scope
     ;;
-  board|reminder-preview|reminder-batches)
+  weeks)
+    args=()
+    [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
+    request_get /api/weekly-report/weeks "${args[@]}"
+    ;;
+  open-week)
+    [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "open-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
+    request_post /api/weekly-report/weeks "$(jq -cn --arg quarter "$QUARTER" --arg week "$WEEK" '{quarter:$quarter,week:$week}')"
+    ;;
+  board|comments|reminder-preview|reminder-batches|meego-preview)
     args=()
     [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
     [[ -z "$WEEK" ]] || args+=(--data-urlencode "week=$WEEK")
     request_get "/api/weekly-report/${COMMAND}" "${args[@]}"
+    ;;
+  create-comment)
+    payload="$(read_payload)"
+    request_post /api/weekly-report/comments "$payload"
+    ;;
+  update-comment)
+    [[ -n "$ID" ]] || { echo "update-comment requires --id" >&2; exit 2; }
+    payload="$(read_payload)"
+    request_write PUT "/api/weekly-report/comments/$(encoded "$ID")" "$payload"
+    ;;
+  delete-comment)
+    [[ -n "$ID" ]] || { echo "delete-comment requires --id" >&2; exit 2; }
+    curl -fsS -X DELETE "${BASE_URL}/api/weekly-report/comments/$(encoded "$ID")"
+    ;;
+  create-progress)
+    [[ -n "$POINT_ID" ]] || { echo "create-progress requires --point-id" >&2; exit 2; }
+    payload="$(read_payload)"
+    printf '%s' "$payload" | jq -e '
+      (.id | type == "string" and length > 0)
+      and (.expected_version | type == "number")
+      and (.week | type == "string" and test("^[0-9]{4}-W[0-9]{2}$"))
+      and (.status | type == "string" and length > 0)
+      and (.text | type == "string" and length > 0)
+    ' >/dev/null || { echo "create-progress payload is invalid" >&2; exit 2; }
+    request_post "/api/weekly-report/points/$(encoded "$POINT_ID")/progress" "$payload"
+    ;;
+  update-progress)
+    [[ -n "$ID" ]] || { echo "update-progress requires --id" >&2; exit 2; }
+    payload="$(read_payload)"
+    printf '%s' "$payload" | jq -e '
+      (.expected_version | type == "number")
+      and (.week | type == "string" and test("^[0-9]{4}-W[0-9]{2}$"))
+      and (.status | type == "string" and length > 0)
+      and (.text | type == "string" and length > 0)
+    ' >/dev/null || { echo "update-progress payload is invalid" >&2; exit 2; }
+    request_write PUT "/api/weekly-report/progress/$(encoded "$ID")" "$payload"
+    ;;
+  delete-progress)
+    [[ -n "$ID" ]] || { echo "delete-progress requires --id" >&2; exit 2; }
+    payload="$(read_payload)"
+    printf '%s' "$payload" | jq -e '(.expected_version | type == "number")' >/dev/null || { echo "delete-progress payload is invalid" >&2; exit 2; }
+    request_write DELETE "/api/weekly-report/progress/$(encoded "$ID")" "$payload"
     ;;
   create-reminder-batch)
     [[ -n "$QUARTER" && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "create-reminder-batch requires --quarter and --week YYYY-Www" >&2; exit 2; }
@@ -77,8 +164,7 @@ case "$COMMAND" in
     request_post /api/weekly-report/reminder-batches/generate "$payload"
     ;;
   create-feishu-document)
-    [[ -n "$PAYLOAD" ]] || { echo "create-feishu-document requires --payload JSON|-" >&2; exit 2; }
-    [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
+	PAYLOAD="$(read_payload)"
     printf '%s' "$PAYLOAD" | jq -e '
       type == "object"
       and (.title | type == "string" and length > 0)
@@ -87,8 +173,7 @@ case "$COMMAND" in
     request_post /api/weekly-report/feishu-documents "$PAYLOAD"
     ;;
   record-meego-observation)
-    [[ -n "$PAYLOAD" ]] || { echo "record-meego-observation requires --payload JSON|-" >&2; exit 2; }
-    [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
+	PAYLOAD="$(read_payload)"
     printf '%s' "$PAYLOAD" | jq -e '
       type == "object"
       and (.point_id | type == "string" and length > 0)
@@ -98,7 +183,16 @@ case "$COMMAND" in
       and ((.remote // {}) | type == "object")
       and ((.fetch_error // "") | type == "string")
     ' >/dev/null || { echo "record-meego-observation payload is invalid" >&2; exit 2; }
-    request_post /api/weekly-report/meego-observations "$PAYLOAD"
+	request_post /api/weekly-report/meego-observations "$PAYLOAD"
+	;;
+  point-meego-preview)
+    [[ -n "$POINT_ID" && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "point-meego-preview requires --point-id and --week YYYY-Www" >&2; exit 2; }
+    request_get "/api/weekly-report/points/$(encoded "$POINT_ID")/meego-preview" --data-urlencode "week=$WEEK"
+    ;;
+  confirm-meego-progress)
+    [[ -n "$POINT_ID" ]] || { echo "confirm-meego-progress requires --point-id" >&2; exit 2; }
+    payload="$(read_payload)"
+    request_post "/api/weekly-report/points/$(encoded "$POINT_ID")/meego-confirm" "$payload"
     ;;
   *) echo "unknown command: $COMMAND" >&2; usage >&2; exit 2 ;;
 esac

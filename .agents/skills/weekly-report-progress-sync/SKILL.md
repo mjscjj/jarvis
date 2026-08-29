@@ -15,6 +15,7 @@ module: weekly-report
 - 不为来源新建 Go 专用流水线。原始 Meego 证据通过 `jarvis-tools append-clue` 进入统一证据流；确定的实体进展通过 `update-page` 和 `append-fact` 写回。
 - 没有直接证据就不更新状态。工具输出不完整时记录覆盖缺口，不把“查不到”写成“没有进展”。
 - 只处理未闭环 OKR。已闭环 OKR 的项目仍可独立维护，但不得新建或移动项目到已闭环 OKR。
+- 本固定行动的 Prompt 只要求写通用 Clue、Fact、Page 和 Meego 观察快照，因此本轮不调用 `open-week`、周进展增删改或 `confirm-meego-progress`。这些工具可供其它明确要求写周报的 Prompt 使用，不能因为工具存在就扩张本轮目标。
 
 ## 1. 建立本轮范围
 

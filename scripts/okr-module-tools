@@ -12,11 +12,18 @@ usage: okr-module-tools [--base-url URL] COMMAND [ARGS]
 commands:
   scope
   board [--quarter Q]
+  get-kr --id KR_ID
+  people-search --query TEXT
+  upload-image --file PATH
 
 Set JARVIS_BASE_URL when Jarvis does not listen on 127.0.0.1:18800.
 EOF
 }
 
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
 if [[ "${1:-}" == "--base-url" ]]; then
   [[ $# -ge 3 ]] || { usage >&2; exit 2; }
   BASE_URL="$2"
@@ -28,9 +35,15 @@ COMMAND="${1:-}"
 shift
 
 QUARTER=""
+ID=""
+QUERY=""
+FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --quarter) QUARTER="${2:-}"; shift 2 ;;
+    --id) ID="${2:-}"; shift 2 ;;
+    --query) QUERY="${2:-}"; shift 2 ;;
+    --file) FILE="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -50,6 +63,18 @@ case "$COMMAND" in
     args=()
     [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
     request_get /api/okr/board "${args[@]}"
+    ;;
+  get-kr)
+    [[ -n "$ID" ]] || { echo "get-kr requires --id" >&2; exit 2; }
+    curl -fsS "${BASE_URL}/api/okr/krs/$(printf '%s' "$ID" | jq -sRr @uri)"
+    ;;
+  people-search)
+    [[ -n "$QUERY" ]] || { echo "people-search requires --query" >&2; exit 2; }
+    request_get /api/okr/people/search --data-urlencode "q=$QUERY"
+    ;;
+  upload-image)
+    [[ -f "$FILE" ]] || { echo "upload-image requires an existing --file" >&2; exit 2; }
+    curl -fsS -X POST "${BASE_URL}/api/okr/images" -F "image=@${FILE}"
     ;;
   *)
     echo "unknown command: $COMMAND" >&2
