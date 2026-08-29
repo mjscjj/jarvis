@@ -9,6 +9,7 @@ interface Envelope<T> {
 
 interface APIEntry {
   id: string
+	version: number
   status: Status
   text: string
   docs: Entry['docs']
@@ -170,7 +171,7 @@ interface APIMeegoBatchPreview {
     objective_title: string
     kr_id: string
     kr_title: string
-    kr_version: number
+	progress_version: number
     owner_name: string
     point_id: string
     point_title: string
@@ -261,6 +262,7 @@ function fromAPIKr(value: APIKr): Kr {
       meegoUrl: point.meego_url ?? '',
       entries: point.entries.map((entry) => ({
         id: entry.id,
+		version: entry.version,
         status: entry.status,
         text: entry.text,
         docs: entry.docs ?? [],
@@ -270,6 +272,7 @@ function fromAPIKr(value: APIKr): Kr {
       })),
       previousEntries: (point.previous_entries ?? []).map((entry) => ({
         id: entry.id,
+		version: entry.version,
         status: entry.status,
         text: entry.text,
         docs: entry.docs ?? [],
@@ -575,7 +578,7 @@ function fromAPIMeegoBatchPreview(value: APIMeegoBatchPreview): MeegoBatchPrevie
       objectiveTitle: item.objective_title,
       krId: item.kr_id,
       krTitle: item.kr_title,
-      krVersion: item.kr_version,
+		progressVersion: item.progress_version,
       ownerName: item.owner_name,
       pointId: item.point_id,
       pointTitle: item.point_title,
@@ -621,13 +624,57 @@ export async function confirmMeegoProgress(input: {
   }
 }
 
-export async function replaceKR(kr: Kr, week: string, surface: BoardSurface = 'okr'): Promise<Kr> {
+function progressPayload(entry: Entry, week: string) {
+	return {
+		id: entry.id,
+		expected_version: entry.version ?? 0,
+		week,
+		status: entry.status,
+		text: entry.text,
+		docs: entry.docs,
+		images: entry.images,
+		source: entry.source ?? 'manual',
+		needs_review: entry.needsReview ?? false,
+	}
+}
+
+export async function createProgress(pointId: string, entry: Entry, week: string): Promise<Kr> {
+	return progressRequest(`/api/weekly-report/points/${encodeURIComponent(pointId)}/progress`, {
+		method: 'POST',
+		body: JSON.stringify(progressPayload(entry, week)),
+	})
+}
+
+export async function updateProgress(entry: Entry, week: string): Promise<Kr> {
+	return progressRequest(`/api/weekly-report/progress/${encodeURIComponent(entry.id)}`, {
+		method: 'PUT',
+		body: JSON.stringify(progressPayload(entry, week)),
+	})
+}
+
+export async function deleteProgress(entry: Entry): Promise<Kr> {
+	return progressRequest(`/api/weekly-report/progress/${encodeURIComponent(entry.id)}`, {
+		method: 'DELETE',
+		body: JSON.stringify({ expected_version: entry.version ?? 0 }),
+	})
+}
+
+async function progressRequest(path: string, init: RequestInit): Promise<Kr> {
+	try {
+		return fromAPIKr(await request<APIKr>(path, init))
+	} catch (error) {
+		if (error instanceof APIError && error.status === 409 && error.data) {
+			throw new APIError(error.message, error.status, error.code, fromAPIKr(error.data as APIKr), error.logid)
+		}
+		throw error
+	}
+}
+
+export async function replaceKR(kr: Kr): Promise<Kr> {
   try {
     const body = {
       expected_version: kr.version ?? 0,
       title: kr.title,
-      owner_open_id: kr.ownerOpenId ?? '',
-      owner_name: kr.ownerName ?? '',
       owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
       priority: kr.priority ?? 'p1',
       metric_note: kr.metricNote,
@@ -638,22 +685,10 @@ export async function replaceKR(kr: Kr, week: string, surface: BoardSurface = 'o
         title: point.title,
         meego_work_item_id: point.meegoWorkItemId ?? '',
         meego_url: point.meegoUrl ?? '',
-        ...(surface === 'weekly-report' ? {
-          entries: point.entries.map((entry) => ({
-            id: entry.id,
-            status: entry.status,
-            text: entry.text,
-            docs: entry.docs,
-            images: entry.images,
-            source: entry.source ?? 'manual',
-            needs_review: entry.needsReview ?? false,
-          })),
-        } : {}),
       })),
       tags: kr.tags ?? [],
-      ...(surface === 'weekly-report' ? { week } : {}),
     }
-    const value = await request<APIKr>(`/api/${surface}/krs/${encodeURIComponent(kr.id)}`, {
+	const value = await request<APIKr>(`/api/okr/krs/${encodeURIComponent(kr.id)}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     })
@@ -683,11 +718,12 @@ export async function createObjective(input: { quarter: string; title: string })
 }
 
 export async function createKR(objectiveId: string, input: { title: string; ownerName?: string; priority?: NonNullable<Kr['priority']> }): Promise<Kr> {
+	const ownerNames = (input.ownerName ?? '').split(/[、,，;；]/).map((name) => name.trim()).filter(Boolean)
   const value = await request<APIKr>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {
     method: 'POST',
     body: JSON.stringify({
       title: input.title,
-      owner_name: input.ownerName ?? '',
+	  owners: ownerNames.map((name) => ({ open_id: '', name })),
       priority: input.priority ?? 'p1',
     }),
   })

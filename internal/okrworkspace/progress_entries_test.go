@@ -30,7 +30,7 @@ func TestProgressEntryCRUDChangesOnlyOneWeeklyRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Version != 1 || len(created.Points[0].Entries) != 1 || created.Points[0].Entries[0].Text != "完成第一阶段" {
+	if created.Version != 0 || len(created.Points[0].Entries) != 1 || created.Points[0].Entries[0].Version != 0 || created.Points[0].Entries[0].Text != "完成第一阶段" {
 		t.Fatalf("created = %+v", created)
 	}
 	idempotent, err := service.CreateProgressEntry(t.Context(), point.ID, ProgressEntryInput{
@@ -41,31 +41,31 @@ func TestProgressEntryCRUDChangesOnlyOneWeeklyRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if idempotent.Version != 1 {
+	if idempotent.Version != 0 {
 		t.Fatalf("idempotent create changed version: %+v", idempotent)
 	}
 
 	updated, err := service.UpdateProgressEntry(t.Context(), "agent-progress-1", ProgressEntryInput{
-		ExpectedVersion: 1, Week: week.Week, Status: domain.StatusDone, Text: "第一阶段已完成",
+		ExpectedVersion: 0, Week: week.Week, Status: domain.StatusDone, Text: "第一阶段已完成",
 		Docs: []domain.DocLink{}, Images: []domain.ImageRef{}, Source: "agent", UpdatedBy: "agent:task-1",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Version != 2 || updated.Points[0].Entries[0].Status != domain.StatusDone || updated.Points[0].Entries[0].NeedsReview {
+	if updated.Version != 0 || updated.Points[0].Entries[0].Version != 1 || updated.Points[0].Entries[0].Status != domain.StatusDone || updated.Points[0].Entries[0].NeedsReview {
 		t.Fatalf("updated = %+v", updated)
 	}
 	if _, err := service.UpdateProgressEntry(t.Context(), "agent-progress-1", ProgressEntryInput{
-		ExpectedVersion: 1, Week: week.Week, Status: domain.StatusDone, Text: "旧版本覆盖", Source: "agent", UpdatedBy: "agent:task-1",
+		ExpectedVersion: 0, Week: week.Week, Status: domain.StatusDone, Text: "旧版本覆盖", Source: "agent", UpdatedBy: "agent:task-1",
 	}); err != ErrConflict {
 		t.Fatalf("stale update error = %v, want ErrConflict", err)
 	}
 
-	deleted, err := service.DeleteProgressEntry(t.Context(), "agent-progress-1", DeleteProgressEntryInput{ExpectedVersion: 2, UpdatedBy: "agent:task-1"})
+	deleted, err := service.DeleteProgressEntry(t.Context(), "agent-progress-1", DeleteProgressEntryInput{ExpectedVersion: 1, UpdatedBy: "agent:task-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleted.Version != 3 || len(deleted.Points[0].Entries) != 0 {
+	if deleted.Version != 0 || len(deleted.Points[0].Entries) != 0 {
 		t.Fatalf("deleted = %+v", deleted)
 	}
 }

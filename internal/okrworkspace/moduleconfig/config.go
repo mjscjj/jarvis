@@ -14,6 +14,7 @@ import (
 )
 
 type Config struct {
+	DatabasePath  string         `yaml:"database_path"`
 	UploadDir     string         `yaml:"upload_dir"`
 	MaxImageBytes int64          `yaml:"max_image_bytes"`
 	Identity      IdentityConfig `yaml:"identity"`
@@ -52,6 +53,9 @@ func Load(path string) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if strings.TrimSpace(c.DatabasePath) == "" {
+		return fmt.Errorf("database_path is required")
+	}
 	if strings.TrimSpace(c.UploadDir) == "" {
 		return fmt.Errorf("upload_dir is required")
 	}

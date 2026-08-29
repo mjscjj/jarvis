@@ -115,6 +115,5 @@ func RegisterWeeklyReportModuleRoutes(h *server.Hertz, deps WeeklyReportModuleDe
 	h.POST("/api/weekly-report/points/:point_id/progress", requireEnabled, requireIdentity, CreateWeeklyProgressEntry(deps.Workspace))
 	h.PUT("/api/weekly-report/progress/:progress_id", requireEnabled, requireIdentity, UpdateWeeklyProgressEntry(deps.Workspace))
 	h.DELETE("/api/weekly-report/progress/:progress_id", requireEnabled, requireIdentity, DeleteWeeklyProgressEntry(deps.Workspace))
-	h.PUT("/api/weekly-report/krs/:kr_id", requireEnabled, requireIdentity, ReplaceWeeklyReportKR(deps.Workspace))
 	return nil
 }

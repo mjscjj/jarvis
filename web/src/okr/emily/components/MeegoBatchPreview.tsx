@@ -82,7 +82,7 @@ export function MeegoBatchPreview({ quarter, week, onClose, onOpenPoint }: { qua
     try {
       const saved = await confirmMeegoProgress({
         pointId: item.pointId,
-        expectedVersion: item.krVersion,
+		expectedVersion: item.progressVersion,
         week,
         meegoWorkItemId: item.preview.workItemId,
         status: draft.status,

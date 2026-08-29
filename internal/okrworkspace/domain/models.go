@@ -72,8 +72,6 @@ type KR struct {
 	ID          string    `gorm:"primaryKey;size:64"`
 	ObjectiveID string    `gorm:"not null;index"`
 	Title       string    `gorm:"not null"`
-	OwnerOpenID string    `gorm:"not null;default:'';index"`
-	OwnerName   string    `gorm:"not null;default:'';index"`
 	Priority    string    `gorm:"not null;default:'p1'"`
 	MetricNote  string    `gorm:"not null;default:''"`
 	SortOrder   int       `gorm:"not null;default:0"`
@@ -113,6 +111,7 @@ type KRProgress struct {
 	ID          string     `gorm:"primaryKey;size:64"`
 	PointID     string     `gorm:"not null;index;index:idx_progress_point_week"`
 	Week        string     `gorm:"not null;index;index:idx_progress_point_week"`
+	Version     int32      `gorm:"not null;default:0"`
 	Status      Status     `gorm:"not null"`
 	Text        string     `gorm:"not null"`
 	Docs        []DocLink  `gorm:"serializer:json;type:text"`
@@ -186,8 +185,8 @@ type KRTag struct {
 
 func (KRTag) TableName() string { return "okr_workspace_tag" }
 
-// KROwner preserves Emily's multi-owner assignment and links it to Jarvis's
-// Person entity. OwnerName/OwnerOpenID on KR remain the compact UI projection.
+// KROwner is the only persisted owner source. PersonID is a stable local key;
+// OpenID stays empty until a human or Agent resolves a real Feishu identity.
 type KROwner struct {
 	KRID      string `gorm:"primaryKey;size:64"`
 	PersonID  uint64 `gorm:"primaryKey;index:idx_okr_workspace_kr_owner_person_id"`
@@ -284,7 +283,13 @@ func Models() []any {
 // CoreModels are owned by the OKR module. KRPoint is the stable decomposition
 // definition; its week-specific updates are owned by WeeklyReportModels.
 func CoreModels() []any {
-	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &KROwner{}, &OAuthState{}, &AuthSession{}}
+	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &KROwner{}}
+}
+
+// IdentityModels are machine-local OAuth and login state. They belong to the
+// runtime database and must never be committed with OKR product data.
+func IdentityModels() []any {
+	return []any{&OAuthState{}, &AuthSession{}}
 }
 
 // WeeklyReportModels are owned by the weekly-report module. Existing table

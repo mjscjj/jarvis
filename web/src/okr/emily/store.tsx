@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, createObjective as createObjectiveRequest, deleteKR, getBoard, getEnums, replaceKR, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteProgress, getBoard, getEnums, replaceKR, updateProgress, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { LIGHTS, STATUSES } from './template'
-import type { EnumValues, Kr, Objective, Point } from './types'
+import type { Entry, EnumValues, Kr, Objective, Point } from './types'
 
 const STORAGE_KEY = 'emily-kr-table-v3'
 const LEGACY_KEYS = ['emily-kr-board-v1', 'emily-kr-table-v1', 'emily-kr-table-v2']
@@ -85,6 +85,50 @@ function replaceKrIn(objectives: Objective[], krId: string, replacement: Kr): Ob
   return next
 }
 
+function entriesById(kr: Kr): Map<string, { pointId: string; entry: Entry }> {
+	const result = new Map<string, { pointId: string; entry: Entry }>()
+	for (const point of kr.points) {
+		for (const entry of point.entries) result.set(entry.id, { pointId: point.id, entry })
+	}
+	return result
+}
+
+function sameEntry(left: Entry, right: Entry): boolean {
+	return left.status === right.status && left.text === right.text &&
+		JSON.stringify(left.docs ?? []) === JSON.stringify(right.docs ?? []) &&
+		JSON.stringify(left.images ?? []) === JSON.stringify(right.images ?? []) &&
+		(left.source ?? 'manual') === (right.source ?? 'manual') &&
+		(left.needsReview ?? false) === (right.needsReview ?? false)
+}
+
+function applyEntryVersions(local: Kr, remote: Kr): Kr {
+	const merged = clone(local)
+	const remoteEntries = entriesById(remote)
+	merged.version = remote.version
+	for (const point of merged.points) {
+		for (const entry of point.entries) {
+			const current = remoteEntries.get(entry.id)
+			if (current) entry.version = current.entry.version
+		}
+	}
+	return merged
+}
+
+async function syncWeeklyProgress(remote: Kr, local: Kr, week: string): Promise<Kr> {
+	const before = entriesById(remote)
+	const after = entriesById(local)
+	let saved = remote
+	for (const [id, current] of before) {
+		if (!after.has(id)) saved = await deleteProgress(current.entry)
+	}
+	for (const [id, current] of after) {
+		const previous = before.get(id)
+		if (!previous) saved = await createProgress(current.pointId, current.entry, week)
+		else if (!sameEntry(previous.entry, current.entry)) saved = await updateProgress(current.entry, week)
+	}
+	return saved
+}
+
 export function BoardProvider({ children, surface = 'okr' }: { children: ReactNode; surface?: BoardSurface }) {
   const [objectives, setObjectives] = useState<Objective[]>(loadCache)
   const [enums, setEnums] = useState<EnumValues>(DEFAULT_ENUMS)
@@ -96,7 +140,8 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
   const objectivesRef = useRef(objectives)
   const weekRef = useRef(DEFAULT_WEEK)
 	const quarterRef = useRef('')
-  const remoteReady = useRef(false)
+	  const remoteReady = useRef(false)
+	  const serverKrs = useRef(new Map<string, Kr>())
   const revisions = useRef(new Map<string, number>())
   const timers = useRef(new Map<string, number>())
   const lastFailedKr = useRef<string | null>(null)
@@ -117,15 +162,19 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
     const revision = revisions.current.get(krId) ?? 0
     setSyncState({ kind: 'saving', message: '正在保存…' })
     try {
-	      const saved = await replaceKR(snapshot, weekRef.current, surface)
+		      const baseline = serverKrs.current.get(krId)
+		      if (!baseline) throw new Error('缺少服务端 KR 基线，请重新载入。')
+		      const saved = surface === 'weekly-report'
+		        ? await syncWeeklyProgress(baseline, snapshot, weekRef.current)
+		        : await replaceKR(snapshot)
+		      serverKrs.current.set(krId, clone(saved))
       lastFailedKr.current = null
       if ((revisions.current.get(krId) ?? 0) === revision) {
         publish(replaceKrIn(objectivesRef.current, krId, saved))
         setSyncState({ kind: 'saved', message: '已自动保存' })
       } else {
-        const latest = findKr(objectivesRef.current, krId)
-        if (latest) latest.version = saved.version
-        publish(clone(objectivesRef.current))
+	        const latest = findKr(objectivesRef.current, krId)
+	        if (latest) publish(replaceKrIn(objectivesRef.current, krId, applyEntryVersions(latest, saved)))
         scheduleSaveRef.current(krId)
       }
     } catch (error) {
@@ -157,7 +206,8 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
     setSyncState({ kind: 'loading', message: '正在读取本周进展…' })
     try {
 	      const [board, remoteEnums] = await Promise.all([getBoard(quarterRef.current, targetWeek ?? '', surface), getEnums()])
-      publish(board.objectives)
+	      publish(board.objectives)
+	      serverKrs.current = new Map(board.objectives.flatMap((objective) => objective.krs).map((kr) => [kr.id, clone(kr)]))
 	  quarterRef.current = board.quarter
 	  setQuarter(board.quarter)
       weekRef.current = board.week
@@ -191,7 +241,8 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
 
   const resolveConflict = useCallback((choice: 'remote' | 'local') => {
     if (syncState.kind !== 'conflict') return
-    const selected = choice === 'remote' ? syncState.remote : { ...syncState.local, version: syncState.remote.version }
+	    const selected = choice === 'remote' ? syncState.remote : applyEntryVersions(syncState.local, syncState.remote)
+	    serverKrs.current.set(syncState.krId, clone(syncState.remote))
     publish(replaceKrIn(objectivesRef.current, syncState.krId, selected))
     if (choice === 'remote') {
       setSyncState({ kind: 'saved', message: '已载入他人更新' })

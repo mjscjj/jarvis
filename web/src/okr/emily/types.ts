@@ -25,6 +25,7 @@ export interface ImageRef {
 /** 进展列里的一条 bullet */
 export interface Entry {
   id: string
+	version?: number
   status: Status
   text: string
   docs: DocLink[]
@@ -95,7 +96,7 @@ export interface MeegoBatchPreviewItem {
   objectiveTitle: string
   krId: string
   krTitle: string
-  krVersion: number
+	progressVersion: number
   ownerName: string
   pointId: string
   pointTitle: string

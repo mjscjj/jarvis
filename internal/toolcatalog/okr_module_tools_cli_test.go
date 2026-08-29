@@ -82,7 +82,7 @@ func TestWeeklyReportToolsExposeAtomicWrites(t *testing.T) {
 		{[]string{"create-comment", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","content":"建议"}`}, http.MethodPost, "/api/weekly-report/comments"},
 		{[]string{"update-comment", "--id", "comment-1", "--payload", `{"todo":true}`}, http.MethodPut, "/api/weekly-report/comments/comment-1"},
 		{[]string{"delete-comment", "--id", "comment-1"}, http.MethodDelete, "/api/weekly-report/comments/comment-1"},
-		{[]string{"create-progress", "--point-id", "point-1", "--payload", `{"id":"agent-1","expected_version":1,"week":"2026-W36","status":"in_progress","text":"进展"}`}, http.MethodPost, "/api/weekly-report/points/point-1/progress"},
+		{[]string{"create-progress", "--point-id", "point-1", "--payload", `{"id":"agent-1","expected_version":0,"week":"2026-W36","status":"in_progress","text":"进展"}`}, http.MethodPost, "/api/weekly-report/points/point-1/progress"},
 		{[]string{"update-progress", "--id", "agent-1", "--payload", `{"expected_version":2,"week":"2026-W36","status":"done","text":"完成"}`}, http.MethodPut, "/api/weekly-report/progress/agent-1"},
 		{[]string{"delete-progress", "--id", "agent-1", "--payload", `{"expected_version":3}`}, http.MethodDelete, "/api/weekly-report/progress/agent-1"},
 		{[]string{"meego-preview", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/meego-preview"},

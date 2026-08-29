@@ -9,7 +9,8 @@ import (
 
 func TestLoadOwnsStrictOKRModuleConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "okr.yaml")
-	raw := `upload_dir: var/okr-assets
+	raw := `database_path: data/okr/okr.db
+upload_dir: data/okr/assets
 max_image_bytes: 1024
 identity:
   enabled: false
@@ -25,7 +26,7 @@ identity:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.UploadDir != "var/okr-assets" || cfg.MaxImageBytes != 1024 {
+	if cfg.DatabasePath != "data/okr/okr.db" || cfg.UploadDir != "data/okr/assets" || cfg.MaxImageBytes != 1024 {
 		t.Fatalf("Load() = %+v", cfg)
 	}
 	if err := os.WriteFile(path, []byte(raw+"unknown: true\n"), 0o644); err != nil {

@@ -24,7 +24,7 @@ func openWorkspaceTestDB(t *testing.T) *gorm.DB {
 func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-1", Title: "增长", Quarter: "2026-Q3"}
-	kr := domain.KR{ID: "kr-1", ObjectiveID: objective.ID, Title: "旧标题", OwnerName: "旧负责人", Priority: "p1"}
+	kr := domain.KR{ID: "kr-1", ObjectiveID: objective.ID, Title: "旧标题", Priority: "p1"}
 	metric := domain.KRMetric{ID: "metric-1", KRID: kr.ID, Text: "旧指标", Light: domain.LightGreen}
 	point := domain.KRPoint{ID: "point-1", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "稳定拆解"}
 	current := domain.KRProgress{ID: "progress-current", PointID: point.ID, Week: "2026-W35", Status: domain.StatusInProgress, Text: "旧本周进展"}
@@ -50,6 +50,12 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	if len(coreBoard.Objectives[0].KRs[0].Points[0].Entries) != 0 || len(coreBoard.Objectives[0].KRs[0].Points[0].PreviousEntries) != 0 {
 		t.Fatalf("core board leaked weekly progress: %+v", coreBoard)
 	}
+	if _, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
+		ExpectedVersion: 0, Title: kr.Title, Priority: "p1",
+		Points: []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title, Entries: []ProgressView{{ID: "forbidden", Status: domain.StatusDone, Text: "不应进入核心写接口"}}}},
+	}); err == nil {
+		t.Fatal("ReplaceKRCore() accepted weekly progress")
+	}
 
 	core, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0, Title: "新 OKR 标题", Priority: "p0", MetricNote: "季度口径",
@@ -71,10 +77,8 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 		t.Fatalf("core write changed weekly progress: %+v", progressAfterCore)
 	}
 
-	weekly, err := service.ReplaceWeeklyProgress(t.Context(), kr.ID, ReplaceKRInput{
-		ExpectedVersion: 1, Week: "2026-W35", Title: "不应覆盖", OwnerName: "不应覆盖", Priority: "p2",
-		Metrics: []MetricView{{ID: metric.ID, Text: "不应覆盖", Light: domain.LightRed}},
-		Points:  []PointView{{ID: point.ID, Kind: point.Kind, Title: "不应覆盖", Entries: []ProgressView{{ID: current.ID, Status: domain.StatusDone, Text: "新本周进展"}}}},
+	weekly, err := service.UpdateProgressEntry(t.Context(), current.ID, ProgressEntryInput{
+		ExpectedVersion: 0, Week: "2026-W35", Status: domain.StatusDone, Text: "新本周进展", Source: "manual", UpdatedBy: "ou_editor",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -97,15 +101,22 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	if preview.Summary.OwnerCount != 2 || len(preview.Recipients) != 2 {
 		t.Fatalf("multi-owner reminder preview = %+v", preview)
 	}
-	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: weekly.Version}); err != nil {
-		t.Fatal(err)
+	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: core.Version}); err == nil {
+		t.Fatal("DeleteKR() succeeded despite weekly history")
 	}
 	var preservedProgress int64
 	if err := db.Model(&domain.KRProgress{}).Where("point_id = ?", point.ID).Count(&preservedProgress).Error; err != nil {
 		t.Fatal(err)
 	}
 	if preservedProgress != 2 {
-		t.Fatalf("core delete removed weekly history: count=%d", preservedProgress)
+		t.Fatalf("rejected core delete changed weekly history: count=%d", preservedProgress)
+	}
+	var preservedKR int64
+	if err := db.Model(&domain.KR{}).Where("id = ?", kr.ID).Count(&preservedKR).Error; err != nil {
+		t.Fatal(err)
+	}
+	if preservedKR != 1 {
+		t.Fatalf("rejected core delete removed KR: count=%d", preservedKR)
 	}
 }
 
@@ -273,5 +284,44 @@ func TestMigrateCorePreservesLegacyOwnerRows(t *testing.T) {
 	}
 	if !db.Migrator().HasColumn(&domain.KROwner{}, "owner_key") || !db.Migrator().HasColumn(&domain.KROwner{}, "sort_order") {
 		t.Fatal("owner compatibility columns were not added")
+	}
+}
+
+func TestMigrateCoreMovesLegacyOwnerProjectionToOwnerTable(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := []string{
+		`CREATE TABLE okr_workspace_kr (
+			id text, objective_id text NOT NULL, title text NOT NULL,
+			owner_open_id text NOT NULL DEFAULT "", owner_name text NOT NULL DEFAULT "",
+			priority text NOT NULL DEFAULT "p1", metric_note text NOT NULL DEFAULT "", sort_order integer NOT NULL DEFAULT 0,
+			version integer NOT NULL DEFAULT 0, created_by text NOT NULL DEFAULT "", updated_by text NOT NULL DEFAULT "",
+			created_at datetime NOT NULL, updated_at datetime NOT NULL, PRIMARY KEY (id)
+		)`,
+		`CREATE INDEX idx_okr_workspace_kr_objective_id ON okr_workspace_kr(objective_id)`,
+		`CREATE INDEX idx_okr_workspace_kr_owner_open_id ON okr_workspace_kr(owner_open_id)`,
+		`CREATE INDEX idx_okr_workspace_kr_owner_name ON okr_workspace_kr(owner_name)`,
+		`INSERT INTO okr_workspace_kr (id, objective_id, title, owner_name, created_at, updated_at)
+		 VALUES ('kr-legacy', 'o-1', '目标', '甲、乙', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+	}
+	for _, statement := range legacy {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := MigrateCore(db); err != nil {
+		t.Fatal(err)
+	}
+	var owners []domain.KROwner
+	if err := db.Where("kr_id = ?", "kr-legacy").Order("sort_order").Find(&owners).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(owners) != 2 || owners[0].Name != "甲" || owners[1].Name != "乙" {
+		t.Fatalf("migrated owners = %+v", owners)
+	}
+	if db.Migrator().HasColumn(&domain.KR{}, "owner_name") || db.Migrator().HasColumn(&domain.KR{}, "owner_open_id") {
+		t.Fatal("legacy owner projection columns still exist")
 	}
 }

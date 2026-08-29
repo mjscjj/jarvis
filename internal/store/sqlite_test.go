@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -54,6 +55,29 @@ func TestOpenSQLiteAndMigrate(t *testing.T) {
 		if !db.Migrator().HasTable(model) {
 			t.Errorf("missing migrated table %T", model)
 		}
+	}
+}
+
+func TestOpenTrackedSQLiteWritesDirectlyToMainFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tracked", "okr.db")
+	db, err := OpenTrackedSQLite(t.Context(), config.SQLiteConfig{Path: path})
+	if err != nil {
+		t.Fatalf("OpenTrackedSQLite() error = %v", err)
+	}
+	t.Cleanup(func() { _ = Close(db) })
+
+	var journalMode string
+	if err := db.Raw("PRAGMA journal_mode").Scan(&journalMode).Error; err != nil {
+		t.Fatalf("read journal_mode pragma: %v", err)
+	}
+	if journalMode != "delete" {
+		t.Fatalf("journal_mode = %q, want delete", journalMode)
+	}
+	if err := db.Exec("CREATE TABLE tracked_write (id INTEGER PRIMARY KEY)").Error; err != nil {
+		t.Fatalf("create tracked table: %v", err)
+	}
+	if _, err := os.Stat(path + "-wal"); !os.IsNotExist(err) {
+		t.Fatalf("tracked database WAL exists or cannot be checked: %v", err)
 	}
 }
 

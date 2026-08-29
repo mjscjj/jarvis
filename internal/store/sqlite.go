@@ -22,6 +22,17 @@ import (
 // single-user scale and avoids adding lock retries around SQLite's one-writer
 // model. Agent access goes through jarvis-tools instead of opening this file.
 func OpenSQLite(ctx context.Context, cfg config.SQLiteConfig) (*gorm.DB, error) {
+	return openSQLite(ctx, cfg, "WAL", "NORMAL")
+}
+
+// OpenTrackedSQLite opens a SQLite database whose main file is committed with
+// the repository. DELETE journaling makes every successful write visible in
+// that file instead of leaving the latest state in an untracked WAL sidecar.
+func OpenTrackedSQLite(ctx context.Context, cfg config.SQLiteConfig) (*gorm.DB, error) {
+	return openSQLite(ctx, cfg, "DELETE", "FULL")
+}
+
+func openSQLite(ctx context.Context, cfg config.SQLiteConfig, journalMode, synchronous string) (*gorm.DB, error) {
 	path := strings.TrimSpace(cfg.Path)
 	if path == "" {
 		return nil, fmt.Errorf("open sqlite: path is empty")
@@ -39,8 +50,8 @@ func OpenSQLite(ctx context.Context, cfg config.SQLiteConfig) (*gorm.DB, error) 
 		RawQuery: url.Values{
 			"_busy_timeout": []string{"5000"},
 			"_foreign_keys": []string{"on"},
-			"_journal_mode": []string{"WAL"},
-			"_synchronous":  []string{"NORMAL"},
+			"_journal_mode": []string{journalMode},
+			"_synchronous":  []string{synchronous},
 		}.Encode(),
 	}).String()
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{

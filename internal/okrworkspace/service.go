@@ -185,18 +185,18 @@ type MeegoBatchSummary struct {
 }
 
 type MeegoBatchPreviewItem struct {
-	ObjectiveID    string          `json:"objective_id"`
-	ObjectiveTitle string          `json:"objective_title"`
-	KRID           string          `json:"kr_id"`
-	KRTitle        string          `json:"kr_title"`
-	KRVersion      int32           `json:"kr_version"`
-	OwnerName      string          `json:"owner_name"`
-	PointID        string          `json:"point_id"`
-	PointTitle     string          `json:"point_title"`
-	Risk           bool            `json:"risk"`
-	Preview        *MeegoPreview   `json:"preview,omitempty"`
-	Sync           *MeegoSyncState `json:"sync,omitempty"`
-	Error          string          `json:"error,omitempty"`
+	ObjectiveID     string          `json:"objective_id"`
+	ObjectiveTitle  string          `json:"objective_title"`
+	KRID            string          `json:"kr_id"`
+	KRTitle         string          `json:"kr_title"`
+	ProgressVersion int32           `json:"progress_version"`
+	OwnerName       string          `json:"owner_name"`
+	PointID         string          `json:"point_id"`
+	PointTitle      string          `json:"point_title"`
+	Risk            bool            `json:"risk"`
+	Preview         *MeegoPreview   `json:"preview,omitempty"`
+	Sync            *MeegoSyncState `json:"sync,omitempty"`
+	Error           string          `json:"error,omitempty"`
 }
 
 type MeegoSyncState struct {
@@ -244,6 +244,7 @@ type ConfirmMeegoProgressInput struct {
 
 type ProgressView struct {
 	ID          string            `json:"id"`
+	Version     int32             `json:"version"`
 	Status      domain.Status     `json:"status"`
 	Text        string            `json:"text"`
 	Docs        []domain.DocLink  `json:"docs"`
@@ -259,11 +260,8 @@ type TagView struct {
 
 type ReplaceKRInput struct {
 	ExpectedVersion int32        `json:"expected_version"`
-	Week            string       `json:"week"`
 	UpdatedBy       string       `json:"updated_by"`
 	Title           string       `json:"title"`
-	OwnerOpenID     string       `json:"owner_open_id"`
-	OwnerName       string       `json:"owner_name"`
 	Priority        string       `json:"priority"`
 	MetricNote      string       `json:"metric_note"`
 	Metrics         []MetricView `json:"metrics"`
@@ -273,10 +271,10 @@ type ReplaceKRInput struct {
 }
 
 type CreateKRInput struct {
-	Title     string `json:"title"`
-	OwnerName string `json:"owner_name"`
-	Priority  string `json:"priority"`
-	CreatedBy string `json:"created_by"`
+	Title     string      `json:"title"`
+	Owners    []OwnerView `json:"owners"`
+	Priority  string      `json:"priority"`
+	CreatedBy string      `json:"created_by"`
 }
 
 type CreateObjectiveInput struct {
@@ -470,9 +468,6 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 	for _, record := range records {
 		recordOwners := ownersByKR[record.ID]
 		if len(recordOwners) == 0 {
-			recordOwners = normalizeOwners(nil, record.OwnerName, record.OwnerOpenID)
-		}
-		if len(recordOwners) == 0 {
 			recordOwners = []OwnerView{{Name: "未分配"}}
 		}
 		pointCount := pointCountByKR[record.ID]
@@ -595,22 +590,18 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRVie
 	if err := s.db.WithContext(ctx).Where("kr_id = ?", record.ID).Order("sort_order, owner_key, person_id").Find(&owners).Error; err != nil {
 		return KRView{}, fmt.Errorf("list owners: %w", err)
 	}
-	view := KRView{ID: record.ID, Title: record.Title, OwnerOpenID: record.OwnerOpenID, OwnerName: record.OwnerName, Priority: record.Priority, MetricNote: record.MetricNote, Version: record.Version, Metrics: []MetricView{}, Points: []PointView{}, Tags: []TagView{}, Owners: []OwnerView{}}
+	view := KRView{ID: record.ID, Title: record.Title, Priority: record.Priority, MetricNote: record.MetricNote, Version: record.Version, Metrics: []MetricView{}, Points: []PointView{}, Tags: []TagView{}, Owners: []OwnerView{}}
 	for _, owner := range owners {
 		view.Owners = append(view.Owners, OwnerView{OpenID: owner.OpenID, Name: owner.Name})
-	}
-	if len(view.Owners) == 0 && strings.TrimSpace(record.OwnerName) != "" {
-		names := strings.FieldsFunc(record.OwnerName, func(r rune) bool { return r == '、' || r == ',' || r == '，' || r == ';' || r == '；' })
-		for i, name := range names {
-			owner := OwnerView{Name: strings.TrimSpace(name)}
-			if i == 0 {
-				owner.OpenID = record.OwnerOpenID
-			}
-			if owner.Name != "" {
-				view.Owners = append(view.Owners, owner)
-			}
+		if view.OwnerOpenID == "" && strings.TrimSpace(owner.OpenID) != "" {
+			view.OwnerOpenID = owner.OpenID
 		}
 	}
+	ownerNames := make([]string, 0, len(view.Owners))
+	for _, owner := range view.Owners {
+		ownerNames = append(ownerNames, owner.Name)
+	}
+	view.OwnerName = strings.Join(ownerNames, "、")
 	for _, metric := range metrics {
 		light := metric.Light
 		if light == "" {
@@ -640,7 +631,7 @@ func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWe
 			return KRView{}, fmt.Errorf("list progress: %w", err)
 		}
 		for _, entry := range progress {
-			point.Entries = append(point.Entries, ProgressView{ID: entry.ID, Status: entry.Status, Text: entry.Text, Docs: nonNilDocs(entry.Docs), Images: nonNilImages(entry.Images), Source: entry.Source, NeedsReview: entry.NeedsReview})
+			point.Entries = append(point.Entries, ProgressView{ID: entry.ID, Version: entry.Version, Status: entry.Status, Text: entry.Text, Docs: nonNilDocs(entry.Docs), Images: nonNilImages(entry.Images), Source: entry.Source, NeedsReview: entry.NeedsReview})
 		}
 		if previousWeek == "" {
 			continue
@@ -650,194 +641,24 @@ func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWe
 			return KRView{}, fmt.Errorf("list previous progress: %w", err)
 		}
 		for _, entry := range previous {
-			point.PreviousEntries = append(point.PreviousEntries, ProgressView{ID: entry.ID, Status: entry.Status, Text: entry.Text, Docs: nonNilDocs(entry.Docs), Images: nonNilImages(entry.Images), Source: entry.Source, NeedsReview: entry.NeedsReview})
+			point.PreviousEntries = append(point.PreviousEntries, ProgressView{ID: entry.ID, Version: entry.Version, Status: entry.Status, Text: entry.Text, Docs: nonNilDocs(entry.Docs), Images: nonNilImages(entry.Images), Source: entry.Source, NeedsReview: entry.NeedsReview})
 		}
 	}
 	return view, nil
-}
-
-func (s *Service) ReplaceKR(ctx context.Context, id string, input ReplaceKRInput) (KRView, error) {
-	if err := validateReplaceInput(id, input, true); err != nil {
-		return KRView{}, err
-	}
-	owners := normalizeOwners(input.Owners, input.OwnerName, input.OwnerOpenID)
-	ownerNames := make([]string, 0, len(owners))
-	firstOwnerOpenID := ""
-	for _, owner := range owners {
-		ownerNames = append(ownerNames, owner.Name)
-		if firstOwnerOpenID == "" && owner.OpenID != "" {
-			firstOwnerOpenID = owner.OpenID
-		}
-	}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&domain.KR{}).Where("id = ? AND version = ?", id, input.ExpectedVersion).Updates(map[string]any{
-			"title": input.Title, "owner_open_id": firstOwnerOpenID, "owner_name": strings.Join(ownerNames, "、"), "priority": input.Priority,
-			"metric_note": input.MetricNote, "updated_by": input.UpdatedBy, "version": gorm.Expr("version + 1"),
-		})
-		if result.Error != nil {
-			return fmt.Errorf("update kr: %w", result.Error)
-		}
-		if result.RowsAffected == 0 {
-			var count int64
-			if err := tx.Model(&domain.KR{}).Where("id = ?", id).Count(&count).Error; err != nil {
-				return fmt.Errorf("check kr conflict: %w", err)
-			}
-			if count == 0 {
-				return ErrNotFound
-			}
-			return ErrConflict
-		}
-		if err := tx.Where("kr_id = ?", id).Delete(&domain.KROwner{}).Error; err != nil {
-			return fmt.Errorf("replace owners: %w", err)
-		}
-		for index, owner := range owners {
-			if err := tx.Create(&domain.KROwner{KRID: id, PersonID: ownerPersonID(owner), OwnerKey: ownerKey(owner), OpenID: owner.OpenID, Name: owner.Name, SortOrder: index}).Error; err != nil {
-				return fmt.Errorf("create owner: %w", err)
-			}
-		}
-		var oldMetricIDs []string
-		if err := tx.Model(&domain.KRMetric{}).Where("kr_id = ?", id).Pluck("id", &oldMetricIDs).Error; err != nil {
-			return fmt.Errorf("list old metrics: %w", err)
-		}
-		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRMetric{}).Error; err != nil {
-			return fmt.Errorf("replace metrics: %w", err)
-		}
-		newMetricIDs := make(map[string]struct{}, len(input.Metrics))
-		for i, item := range input.Metrics {
-			newMetricIDs[item.ID] = struct{}{}
-			if err := tx.Create(&domain.KRMetric{ID: item.ID, KRID: id, Text: item.Text, Light: item.Light, Images: item.Images, SortOrder: i}).Error; err != nil {
-				return fmt.Errorf("create metric: %w", err)
-			}
-		}
-		for _, metricID := range oldMetricIDs {
-			if _, kept := newMetricIDs[metricID]; kept {
-				continue
-			}
-			if err := tx.Where("target_id = ?", metricID).Delete(&domain.PageComment{}).Error; err != nil {
-				return fmt.Errorf("delete removed metric comments: %w", err)
-			}
-		}
-		var oldPoints []domain.KRPoint
-		if err := tx.Where("kr_id = ?", id).Find(&oldPoints).Error; err != nil {
-			return fmt.Errorf("list old points: %w", err)
-		}
-		oldPointIDs := make([]string, 0, len(oldPoints))
-		oldPointByID := make(map[string]domain.KRPoint, len(oldPoints))
-		for _, oldPoint := range oldPoints {
-			oldPointIDs = append(oldPointIDs, oldPoint.ID)
-			oldPointByID[oldPoint.ID] = oldPoint
-		}
-		incomingPointIDs := make(map[string]struct{}, len(input.Points))
-		incomingEntryIDs := make(map[string]struct{})
-		for _, point := range input.Points {
-			incomingPointIDs[point.ID] = struct{}{}
-			for _, entry := range point.Entries {
-				incomingEntryIDs[entry.ID] = struct{}{}
-			}
-		}
-		for _, oldPoint := range oldPoints {
-			if _, kept := incomingPointIDs[oldPoint.ID]; kept {
-				continue
-			}
-			var historicalCount int64
-			if err := tx.Model(&domain.KRProgress{}).Where("point_id = ? AND week <> ?", oldPoint.ID, input.Week).Count(&historicalCount).Error; err != nil {
-				return fmt.Errorf("check point history: %w", err)
-			}
-			if historicalCount > 0 {
-				return fmt.Errorf("point %s has progress history in another week and cannot be removed", oldPoint.ID)
-			}
-		}
-		var replacedEntryIDs []string
-		if len(oldPointIDs) > 0 {
-			if err := tx.Model(&domain.KRProgress{}).Where("point_id IN ? AND week = ?", oldPointIDs, input.Week).Pluck("id", &replacedEntryIDs).Error; err != nil {
-				return fmt.Errorf("list weekly progress for replacement: %w", err)
-			}
-			if err := tx.Where("point_id IN ? AND week = ?", oldPointIDs, input.Week).Delete(&domain.KRProgress{}).Error; err != nil {
-				return fmt.Errorf("replace weekly progress: %w", err)
-			}
-		}
-		removedEntryIDs := make([]string, 0, len(replacedEntryIDs))
-		for _, entryID := range replacedEntryIDs {
-			if _, kept := incomingEntryIDs[entryID]; !kept {
-				removedEntryIDs = append(removedEntryIDs, entryID)
-			}
-		}
-		if len(removedEntryIDs) > 0 {
-			if err := tx.Where("target_id IN ?", removedEntryIDs).Delete(&domain.PageComment{}).Error; err != nil {
-				return fmt.Errorf("delete replaced progress comments: %w", err)
-			}
-		}
-		for pointIndex, point := range input.Points {
-			linkedID := strings.TrimSpace(point.MeegoWorkItemID)
-			if oldPoint, exists := oldPointByID[point.ID]; exists {
-				if err := tx.Model(&domain.KRPoint{}).Where("id = ? AND kr_id = ?", point.ID, id).Updates(map[string]any{"kind": point.Kind, "title": point.Title, "meego_work_item_id": linkedID, "meego_url": strings.TrimSpace(point.MeegoURL), "sort_order": pointIndex}).Error; err != nil {
-					return fmt.Errorf("update point: %w", err)
-				}
-				if oldPoint.MeegoWorkItemID != linkedID {
-					if err := tx.Where("point_id = ?", point.ID).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
-						return fmt.Errorf("reset changed Meego snapshot: %w", err)
-					}
-				}
-			} else if err := tx.Create(&domain.KRPoint{ID: point.ID, KRID: id, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: linkedID, MeegoURL: strings.TrimSpace(point.MeegoURL), SortOrder: pointIndex}).Error; err != nil {
-				return fmt.Errorf("create point: %w", err)
-			}
-			for entryIndex, entry := range point.Entries {
-				progress := domain.KRProgress{ID: entry.ID, PointID: point.ID, Week: input.Week, Status: entry.Status, Text: entry.Text, Docs: entry.Docs, Images: entry.Images, Source: normalizedSource(entry.Source), NeedsReview: entry.NeedsReview, SortOrder: entryIndex, CreatedBy: input.UpdatedBy, UpdatedBy: input.UpdatedBy}
-				if err := tx.Create(&progress).Error; err != nil {
-					return fmt.Errorf("create progress: %w", err)
-				}
-			}
-		}
-		for _, oldPoint := range oldPoints {
-			if _, kept := incomingPointIDs[oldPoint.ID]; kept {
-				continue
-			}
-			if err := tx.Where("point_id = ?", oldPoint.ID).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
-				return fmt.Errorf("delete removed point snapshot: %w", err)
-			}
-			if err := tx.Where("target_id = ?", oldPoint.ID).Delete(&domain.PageComment{}).Error; err != nil {
-				return fmt.Errorf("delete removed point comments: %w", err)
-			}
-			if err := tx.Where("id = ? AND kr_id = ?", oldPoint.ID, id).Delete(&domain.KRPoint{}).Error; err != nil {
-				return fmt.Errorf("delete removed point: %w", err)
-			}
-		}
-		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRTag{}).Error; err != nil {
-			return fmt.Errorf("replace tags: %w", err)
-		}
-		for _, tag := range input.Tags {
-			if err := tx.Create(&domain.KRTag{KRID: id, Type: tag.Type, Value: tag.Value}).Error; err != nil {
-				return fmt.Errorf("create tag: %w", err)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return KRView{}, err
-	}
-	return s.GetKR(ctx, id, input.Week)
 }
 
 // ReplaceKRCore changes only the stable OKR definition. Weekly progress rows
 // are deliberately outside this transaction, so tagging or reassigning an OKR
 // can never rewrite a historical/current weekly report as a side effect.
 func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRInput) (KRView, error) {
-	if err := validateReplaceInput(id, input, false); err != nil {
+	if err := validateReplaceInput(id, input); err != nil {
 		return KRView{}, err
 	}
-	owners := normalizeOwners(input.Owners, input.OwnerName, input.OwnerOpenID)
-	ownerNames := make([]string, 0, len(owners))
-	firstOwnerOpenID := ""
-	for _, owner := range owners {
-		ownerNames = append(ownerNames, owner.Name)
-		if firstOwnerOpenID == "" && owner.OpenID != "" {
-			firstOwnerOpenID = owner.OpenID
-		}
-	}
+	owners := normalizeOwners(input.Owners)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		weeklySchemaPresent := tx.Migrator().HasTable(&domain.KRProgress{})
 		if err := updateKRVersion(tx, id, input.ExpectedVersion, map[string]any{
-			"title": input.Title, "owner_open_id": firstOwnerOpenID, "owner_name": strings.Join(ownerNames, "、"),
-			"priority": input.Priority, "metric_note": input.MetricNote, "updated_by": input.UpdatedBy,
+			"title": input.Title, "priority": input.Priority, "metric_note": input.MetricNote, "updated_by": input.UpdatedBy,
 		}); err != nil {
 			return err
 		}
@@ -845,12 +666,28 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 			return err
 		}
 
+		var oldMetricIDs []string
+		if err := tx.Model(&domain.KRMetric{}).Where("kr_id = ?", id).Pluck("id", &oldMetricIDs).Error; err != nil {
+			return fmt.Errorf("list old metrics: %w", err)
+		}
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRMetric{}).Error; err != nil {
 			return fmt.Errorf("replace metrics: %w", err)
 		}
+		incomingMetricIDs := make(map[string]struct{}, len(input.Metrics))
 		for index, metric := range input.Metrics {
+			incomingMetricIDs[metric.ID] = struct{}{}
 			if err := tx.Create(&domain.KRMetric{ID: metric.ID, KRID: id, Text: metric.Text, Light: metric.Light, Images: metric.Images, SortOrder: index}).Error; err != nil {
 				return fmt.Errorf("create metric: %w", err)
+			}
+		}
+		for _, metricID := range oldMetricIDs {
+			if _, kept := incomingMetricIDs[metricID]; kept {
+				continue
+			}
+			if weeklySchemaPresent && tx.Migrator().HasTable(&domain.PageComment{}) {
+				if err := tx.Where("target_id = ?", metricID).Delete(&domain.PageComment{}).Error; err != nil {
+					return fmt.Errorf("delete removed metric comments: %w", err)
+				}
 			}
 		}
 
@@ -873,6 +710,11 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 				}).Error; err != nil {
 					return fmt.Errorf("update point definition: %w", err)
 				}
+				if weeklySchemaPresent && oldPointByID[point.ID].MeegoWorkItemID != linkedID {
+					if err := tx.Where("point_id = ?", point.ID).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
+						return fmt.Errorf("reset changed Meego snapshot: %w", err)
+					}
+				}
 			} else if err := tx.Create(&domain.KRPoint{ID: point.ID, KRID: id, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: linkedID, MeegoURL: strings.TrimSpace(point.MeegoURL), SortOrder: index}).Error; err != nil {
 				return fmt.Errorf("create point definition: %w", err)
 			}
@@ -880,6 +722,21 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 		for _, point := range oldPoints {
 			if _, kept := incomingPointIDs[point.ID]; kept {
 				continue
+			}
+			if weeklySchemaPresent {
+				var historyCount int64
+				if err := tx.Model(&domain.KRProgress{}).Where("point_id = ?", point.ID).Count(&historyCount).Error; err != nil {
+					return fmt.Errorf("check point progress history: %w", err)
+				}
+				if historyCount > 0 {
+					return fmt.Errorf("point %s has weekly progress history and cannot be removed", point.ID)
+				}
+				if err := tx.Where("point_id = ?", point.ID).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
+					return fmt.Errorf("delete removed point snapshot: %w", err)
+				}
+				if err := tx.Where("target_id = ?", point.ID).Delete(&domain.PageComment{}).Error; err != nil {
+					return fmt.Errorf("delete removed point comments: %w", err)
+				}
 			}
 			if err := tx.Where("id = ? AND kr_id = ?", point.ID, id).Delete(&domain.KRPoint{}).Error; err != nil {
 				return fmt.Errorf("delete removed point: %w", err)
@@ -900,78 +757,6 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 		return KRView{}, err
 	}
 	return s.GetCoreKR(ctx, id)
-}
-
-// ReplaceWeeklyProgress changes only progress entries for the selected week.
-// KR titles, metrics, tags, owners and point definitions remain owned by OKR.
-func (s *Service) ReplaceWeeklyProgress(ctx context.Context, id string, input ReplaceKRInput) (KRView, error) {
-	if err := validateReplaceInput(id, input, true); err != nil {
-		return KRView{}, err
-	}
-	_, objective, err := s.krObjective(ctx, id)
-	if err != nil {
-		return KRView{}, err
-	}
-	if err := s.requireOpenWeek(ctx, objective.Quarter, input.Week); err != nil {
-		return KRView{}, err
-	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := updateKRVersion(tx, id, input.ExpectedVersion, map[string]any{"updated_by": input.UpdatedBy}); err != nil {
-			return err
-		}
-		var existingPoints []domain.KRPoint
-		if err := tx.Where("kr_id = ?", id).Find(&existingPoints).Error; err != nil {
-			return fmt.Errorf("list weekly report points: %w", err)
-		}
-		existing := make(map[string]struct{}, len(existingPoints))
-		for _, point := range existingPoints {
-			existing[point.ID] = struct{}{}
-		}
-		pointIDs := make([]string, 0, len(input.Points))
-		incomingEntryIDs := make(map[string]struct{})
-		for _, point := range input.Points {
-			if _, ok := existing[point.ID]; !ok {
-				return fmt.Errorf("weekly report point %s does not belong to kr %s", point.ID, id)
-			}
-			pointIDs = append(pointIDs, point.ID)
-			for _, entry := range point.Entries {
-				incomingEntryIDs[entry.ID] = struct{}{}
-			}
-		}
-		var replacedEntryIDs []string
-		if len(pointIDs) > 0 {
-			if err := tx.Model(&domain.KRProgress{}).Where("point_id IN ? AND week = ?", pointIDs, input.Week).Pluck("id", &replacedEntryIDs).Error; err != nil {
-				return fmt.Errorf("list weekly progress for replacement: %w", err)
-			}
-			if err := tx.Where("point_id IN ? AND week = ?", pointIDs, input.Week).Delete(&domain.KRProgress{}).Error; err != nil {
-				return fmt.Errorf("replace weekly progress: %w", err)
-			}
-		}
-		removedEntryIDs := make([]string, 0, len(replacedEntryIDs))
-		for _, entryID := range replacedEntryIDs {
-			if _, kept := incomingEntryIDs[entryID]; !kept {
-				removedEntryIDs = append(removedEntryIDs, entryID)
-			}
-		}
-		if len(removedEntryIDs) > 0 {
-			if err := tx.Where("target_id IN ?", removedEntryIDs).Delete(&domain.PageComment{}).Error; err != nil {
-				return fmt.Errorf("delete replaced progress comments: %w", err)
-			}
-		}
-		for _, point := range input.Points {
-			for index, entry := range point.Entries {
-				progress := domain.KRProgress{ID: entry.ID, PointID: point.ID, Week: input.Week, Status: entry.Status, Text: entry.Text, Docs: entry.Docs, Images: entry.Images, Source: normalizedSource(entry.Source), NeedsReview: entry.NeedsReview, SortOrder: index, CreatedBy: input.UpdatedBy, UpdatedBy: input.UpdatedBy}
-				if err := tx.Create(&progress).Error; err != nil {
-					return fmt.Errorf("create weekly progress: %w", err)
-				}
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return KRView{}, err
-	}
-	return s.GetKR(ctx, id, input.Week)
 }
 
 func updateKRVersion(tx *gorm.DB, id string, expectedVersion int32, values map[string]any) error {
@@ -1008,7 +793,6 @@ func replaceKROwners(tx *gorm.DB, id string, owners []OwnerView) error {
 func (s *Service) CreateKR(ctx context.Context, objectiveID string, input CreateKRInput) (KRView, error) {
 	objectiveID = strings.TrimSpace(objectiveID)
 	input.Title = strings.TrimSpace(input.Title)
-	input.OwnerName = strings.TrimSpace(input.OwnerName)
 	input.Priority = strings.TrimSpace(input.Priority)
 	input.CreatedBy = strings.TrimSpace(input.CreatedBy)
 	if objectiveID == "" || input.Title == "" {
@@ -1032,11 +816,14 @@ func (s *Service) CreateKR(ctx context.Context, objectiveID string, input Create
 		return KRView{}, fmt.Errorf("get kr sort order: %w", err)
 	}
 	record := domain.KR{
-		ID: id, ObjectiveID: objectiveID, Title: input.Title, OwnerName: input.OwnerName,
+		ID: id, ObjectiveID: objectiveID, Title: input.Title,
 		Priority: input.Priority, SortOrder: maxSort + 1, CreatedBy: input.CreatedBy, UpdatedBy: input.CreatedBy,
 	}
 	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return KRView{}, fmt.Errorf("create kr: %w", err)
+	}
+	if err := replaceKROwners(s.db.WithContext(ctx), id, normalizeOwners(input.Owners)); err != nil {
+		return KRView{}, err
 	}
 	return s.GetCoreKR(ctx, id)
 }
@@ -1072,6 +859,7 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 		return fmt.Errorf("expected_version must be non-negative")
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		weeklySchemaPresent := tx.Migrator().HasTable(&domain.KRProgress{})
 		var record domain.KR
 		if err := tx.Where("id = ? AND version = ?", id, input.ExpectedVersion).First(&record).Error; err != nil {
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1086,8 +874,37 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 			}
 			return ErrNotFound
 		}
-		// Weekly-report rows are a separate module's history. Core deletion only
-		// removes the stable definition and deliberately leaves that history intact.
+		var points []domain.KRPoint
+		if err := tx.Where("kr_id = ?", id).Find(&points).Error; err != nil {
+			return fmt.Errorf("list KR points for delete: %w", err)
+		}
+		pointIDs := make([]string, 0, len(points))
+		for _, point := range points {
+			pointIDs = append(pointIDs, point.ID)
+		}
+		if weeklySchemaPresent && len(pointIDs) > 0 {
+			var historyCount int64
+			if err := tx.Model(&domain.KRProgress{}).Where("point_id IN ?", pointIDs).Count(&historyCount).Error; err != nil {
+				return fmt.Errorf("check KR progress history: %w", err)
+			}
+			if historyCount > 0 {
+				return fmt.Errorf("KR %s has weekly progress history and cannot be deleted", id)
+			}
+			if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
+				return fmt.Errorf("delete point snapshots: %w", err)
+			}
+		}
+		var metricIDs []string
+		if err := tx.Model(&domain.KRMetric{}).Where("kr_id = ?", id).Pluck("id", &metricIDs).Error; err != nil {
+			return fmt.Errorf("list KR metrics for delete: %w", err)
+		}
+		if weeklySchemaPresent && tx.Migrator().HasTable(&domain.PageComment{}) {
+			commentTargetIDs := append([]string{id}, pointIDs...)
+			commentTargetIDs = append(commentTargetIDs, metricIDs...)
+			if err := tx.Where("target_id IN ?", commentTargetIDs).Delete(&domain.PageComment{}).Error; err != nil {
+				return fmt.Errorf("delete KR comments: %w", err)
+			}
+		}
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRTag{}).Error; err != nil {
 			return fmt.Errorf("delete tags: %w", err)
 		}
@@ -1265,24 +1082,6 @@ func (s *Service) ConfirmMeegoProgress(ctx context.Context, pointID string, inpu
 		if strings.TrimSpace(point.MeegoWorkItemID) != input.MeegoWorkItemID {
 			return fmt.Errorf("Meego work item link changed; refresh the preview before confirming")
 		}
-		result := tx.Model(&domain.KR{}).Where("id = ? AND version = ?", point.KRID, input.ExpectedVersion).Updates(map[string]any{
-			"updated_by": input.UpdatedBy,
-			"version":    gorm.Expr("version + 1"),
-		})
-		if result.Error != nil {
-			return fmt.Errorf("confirm Meego progress version: %w", result.Error)
-		}
-		if result.RowsAffected == 0 {
-			var count int64
-			if err := tx.Model(&domain.KR{}).Where("id = ?", point.KRID).Count(&count).Error; err != nil {
-				return fmt.Errorf("check Meego confirmation conflict: %w", err)
-			}
-			if count == 0 {
-				return ErrNotFound
-			}
-			return ErrConflict
-		}
-
 		docs := []domain.DocLink{}
 		if strings.TrimSpace(point.MeegoURL) != "" {
 			docs = append(docs, domain.DocLink{ID: "meego-" + input.MeegoWorkItemID, Title: "Meego " + input.MeegoWorkItemID, URL: point.MeegoURL})
@@ -1290,18 +1089,23 @@ func (s *Service) ConfirmMeegoProgress(ctx context.Context, pointID string, inpu
 		var existing domain.KRProgress
 		err := tx.Where("point_id = ? AND week = ? AND source = ?", point.ID, input.Week, "meego").Order("sort_order, id").First(&existing).Error
 		if err == nil {
-			existing.Status = input.Status
-			existing.Text = input.Text
-			existing.Docs = docs
-			existing.NeedsReview = false
-			existing.UpdatedBy = input.UpdatedBy
-			if err := tx.Save(&existing).Error; err != nil {
-				return fmt.Errorf("update confirmed Meego progress: %w", err)
+			result := tx.Model(&domain.KRProgress{}).Where("id = ? AND version = ?", existing.ID, input.ExpectedVersion).Updates(map[string]any{
+				"status": input.Status, "text": input.Text, "docs": docs, "needs_review": false,
+				"updated_by": input.UpdatedBy, "version": gorm.Expr("version + 1"),
+			})
+			if result.Error != nil {
+				return fmt.Errorf("update confirmed Meego progress: %w", result.Error)
+			}
+			if result.RowsAffected == 0 {
+				return ErrConflict
 			}
 			return nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("find confirmed Meego progress: %w", err)
+		}
+		if input.ExpectedVersion != 0 {
+			return ErrConflict
 		}
 		var maxSort int
 		if err := tx.Model(&domain.KRProgress{}).Where("point_id = ? AND week = ?", point.ID, input.Week).Select("COALESCE(MAX(sort_order), -1)").Scan(&maxSort).Error; err != nil {
@@ -1377,10 +1181,21 @@ func (s *Service) MeegoBatchPreview(ctx context.Context, quarter, week string) (
 				return MeegoBatchPreview{}, fmt.Errorf("list linked Meego points: %w", err)
 			}
 			for _, point := range points {
+				ownerName, err := s.krOwnerName(ctx, record.ID)
+				if err != nil {
+					return MeegoBatchPreview{}, err
+				}
 				item := MeegoBatchPreviewItem{
 					ObjectiveID: objective.ID, ObjectiveTitle: objective.Title,
-					KRID: record.ID, KRTitle: record.Title, KRVersion: record.Version, OwnerName: record.OwnerName,
+					KRID: record.ID, KRTitle: record.Title, OwnerName: ownerName,
 					PointID: point.ID, PointTitle: point.Title,
+				}
+				var confirmed domain.KRProgress
+				confirmedErr := s.db.WithContext(ctx).Where("point_id = ? AND week = ? AND source = ?", point.ID, week, "meego").Order("sort_order, id").First(&confirmed).Error
+				if confirmedErr == nil {
+					item.ProgressVersion = confirmed.Version
+				} else if !errors.Is(confirmedErr, gorm.ErrRecordNotFound) {
+					return MeegoBatchPreview{}, fmt.Errorf("read confirmed Meego progress version: %w", confirmedErr)
 				}
 				result.Summary.LinkedCount++
 				preview, syncState, err := s.cachedMeegoPreview(ctx, point, week)
@@ -1496,15 +1311,12 @@ func meegoBatchRank(item MeegoBatchPreviewItem) int {
 	return 3
 }
 
-func validateReplaceInput(id string, input ReplaceKRInput, requireWeek bool) error {
+func validateReplaceInput(id string, input ReplaceKRInput) error {
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(input.Title) == "" {
 		return fmt.Errorf("kr id and title are required")
 	}
 	if input.ExpectedVersion < 0 {
 		return fmt.Errorf("expected_version must be non-negative")
-	}
-	if requireWeek && !weekPattern.MatchString(input.Week) {
-		return fmt.Errorf("week must use YYYY-Www")
 	}
 	if input.Priority != "p0" && input.Priority != "p1" && input.Priority != "p2" {
 		return fmt.Errorf("priority must be p0, p1, or p2")
@@ -1521,11 +1333,8 @@ func validateReplaceInput(id string, input ReplaceKRInput, requireWeek bool) err
 			return fmt.Errorf("points require unique ids, title, and a valid kind")
 		}
 		seen[point.ID] = true
-		for _, entry := range point.Entries {
-			if strings.TrimSpace(entry.ID) == "" || strings.TrimSpace(entry.Text) == "" || !domain.ValidStatus(entry.Status) || seen[entry.ID] {
-				return fmt.Errorf("progress entries require unique ids, text, and a valid status")
-			}
-			seen[entry.ID] = true
+		if len(point.Entries) > 0 || len(point.PreviousEntries) > 0 {
+			return fmt.Errorf("weekly progress cannot be written through the OKR definition endpoint")
 		}
 	}
 	seenTags := map[string]bool{}
@@ -1539,22 +1348,9 @@ func validateReplaceInput(id string, input ReplaceKRInput, requireWeek bool) err
 	return nil
 }
 
-func normalizeOwners(input []OwnerView, legacyName, legacyOpenID string) []OwnerView {
+func normalizeOwners(input []OwnerView) []OwnerView {
 	owners := make([]OwnerView, 0, len(input))
-	if len(input) > 0 {
-		owners = append(owners, input...)
-	} else {
-		names := strings.FieldsFunc(legacyName, func(r rune) bool {
-			return r == '、' || r == ',' || r == '，' || r == ';' || r == '；'
-		})
-		for index, name := range names {
-			owner := OwnerView{Name: strings.TrimSpace(name)}
-			if index == 0 {
-				owner.OpenID = strings.TrimSpace(legacyOpenID)
-			}
-			owners = append(owners, owner)
-		}
-	}
+	owners = append(owners, input...)
 
 	result := make([]OwnerView, 0, len(owners))
 	seen := map[string]struct{}{}
@@ -1577,6 +1373,18 @@ func normalizeOwners(input []OwnerView, legacyName, legacyOpenID string) []Owner
 	return result
 }
 
+func (s *Service) krOwnerName(ctx context.Context, krID string) (string, error) {
+	var owners []domain.KROwner
+	if err := s.db.WithContext(ctx).Where("kr_id = ?", krID).Order("sort_order, owner_key, person_id").Find(&owners).Error; err != nil {
+		return "", fmt.Errorf("list KR owners: %w", err)
+	}
+	names := make([]string, 0, len(owners))
+	for _, owner := range owners {
+		names = append(names, owner.Name)
+	}
+	return strings.Join(names, "、"), nil
+}
+
 func ownerKey(owner OwnerView) string {
 	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(owner.OpenID)) + "\x00" + strings.ToLower(strings.TrimSpace(owner.Name))))
 	return fmt.Sprintf("owner-%x", sum[:12])
@@ -1584,7 +1392,9 @@ func ownerKey(owner OwnerView) string {
 
 func ownerPersonID(owner OwnerView) uint64 {
 	sum := sha256.Sum256([]byte(ownerKey(owner)))
-	value := binary.BigEndian.Uint64(sum[:8])
+	// SQLite INTEGER is signed; keep the deterministic local identity in its
+	// positive range instead of depending on driver-specific uint64 handling.
+	value := binary.BigEndian.Uint64(sum[:8]) & ((uint64(1) << 63) - 1)
 	if value == 0 {
 		return 1
 	}

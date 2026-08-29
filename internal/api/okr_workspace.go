@@ -534,12 +534,6 @@ func ReplaceCoreKR(service *okrworkspace.Service) app.HandlerFunc {
 	})
 }
 
-func ReplaceWeeklyReportKR(service *okrworkspace.Service) app.HandlerFunc {
-	return replaceKRWith(service.ReplaceWeeklyProgress, func(ctx context.Context, id string, input okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error) {
-		return service.GetKR(ctx, id, input.Week)
-	})
-}
-
 func replaceKRWith(replace func(context.Context, string, okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error), current func(context.Context, string, okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error)) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		id := strings.TrimSpace(c.Param("kr_id"))

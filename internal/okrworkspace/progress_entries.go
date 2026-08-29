@@ -49,6 +49,9 @@ func (s *Service) CreateProgressEntry(ctx context.Context, pointID string, input
 	if err := validateProgressEntryInput(input); err != nil {
 		return KRView{}, err
 	}
+	if input.ExpectedVersion != 0 {
+		return KRView{}, fmt.Errorf("expected_version must be zero when creating progress")
+	}
 	point, kr, objective, err := s.progressPointOwner(ctx, pointID)
 	if err != nil {
 		return KRView{}, err
@@ -69,9 +72,6 @@ func (s *Service) CreateProgressEntry(ctx context.Context, pointID string, input
 		return KRView{}, fmt.Errorf("check progress id: %w", err)
 	}
 
-	if err := updateKRVersion(s.db.WithContext(ctx), kr.ID, input.ExpectedVersion, map[string]any{"updated_by": input.UpdatedBy}); err != nil {
-		return KRView{}, err
-	}
 	var maxSort int
 	if err := s.db.WithContext(ctx).Model(&domain.KRProgress{}).Where("point_id = ? AND week = ?", point.ID, input.Week).
 		Select("COALESCE(MAX(sort_order), -1)").Scan(&maxSort).Error; err != nil {
@@ -110,20 +110,17 @@ func (s *Service) UpdateProgressEntry(ctx context.Context, progressID string, in
 	if err := s.requireOpenWeek(ctx, objective.Quarter, input.Week); err != nil {
 		return KRView{}, err
 	}
-	if err := updateKRVersion(s.db.WithContext(ctx), kr.ID, input.ExpectedVersion, map[string]any{"updated_by": input.UpdatedBy}); err != nil {
-		return KRView{}, err
-	}
 	updates := map[string]any{
 		"status": input.Status, "text": strings.TrimSpace(input.Text), "docs": nonNilDocs(input.Docs),
 		"images": nonNilImages(input.Images), "source": normalizedSource(input.Source),
-		"needs_review": input.NeedsReview, "updated_by": input.UpdatedBy,
+		"needs_review": input.NeedsReview, "updated_by": input.UpdatedBy, "version": gorm.Expr("version + 1"),
 	}
-	result := s.db.WithContext(ctx).Model(&domain.KRProgress{}).Where("id = ? AND point_id = ?", progressID, point.ID).Updates(updates)
+	result := s.db.WithContext(ctx).Model(&domain.KRProgress{}).Where("id = ? AND point_id = ? AND version = ?", progressID, point.ID, input.ExpectedVersion).Updates(updates)
 	if result.Error != nil {
 		return KRView{}, fmt.Errorf("update progress entry: %w", result.Error)
 	}
 	if result.RowsAffected != 1 {
-		return KRView{}, ErrNotFound
+		return KRView{}, progressWriteConflict(s.db.WithContext(ctx), progressID)
 	}
 	return s.GetKR(ctx, kr.ID, input.Week)
 }
@@ -143,20 +140,28 @@ func (s *Service) DeleteProgressEntry(ctx context.Context, progressID string, in
 	if err := s.requireOpenWeek(ctx, objective.Quarter, row.Week); err != nil {
 		return KRView{}, err
 	}
-	if err := updateKRVersion(s.db.WithContext(ctx), kr.ID, input.ExpectedVersion, map[string]any{"updated_by": input.UpdatedBy}); err != nil {
-		return KRView{}, err
-	}
-	if err := s.db.WithContext(ctx).Where("target_id = ?", progressID).Delete(&domain.PageComment{}).Error; err != nil {
-		return KRView{}, fmt.Errorf("delete progress comments: %w", err)
-	}
-	result := s.db.WithContext(ctx).Where("id = ?", progressID).Delete(&domain.KRProgress{})
+	result := s.db.WithContext(ctx).Where("id = ? AND version = ?", progressID, input.ExpectedVersion).Delete(&domain.KRProgress{})
 	if result.Error != nil {
 		return KRView{}, fmt.Errorf("delete progress entry: %w", result.Error)
 	}
 	if result.RowsAffected != 1 {
-		return KRView{}, ErrNotFound
+		return KRView{}, progressWriteConflict(s.db.WithContext(ctx), progressID)
+	}
+	if err := s.db.WithContext(ctx).Where("target_id = ?", progressID).Delete(&domain.PageComment{}).Error; err != nil {
+		return KRView{}, fmt.Errorf("delete progress comments: %w", err)
 	}
 	return s.GetKR(ctx, kr.ID, row.Week)
+}
+
+func progressWriteConflict(db *gorm.DB, progressID string) error {
+	var count int64
+	if err := db.Model(&domain.KRProgress{}).Where("id = ?", progressID).Count(&count).Error; err != nil {
+		return fmt.Errorf("check progress conflict: %w", err)
+	}
+	if count == 0 {
+		return ErrNotFound
+	}
+	return ErrConflict
 }
 
 func validateProgressEntryInput(input ProgressEntryInput) error {

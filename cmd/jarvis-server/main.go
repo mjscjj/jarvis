@@ -53,6 +53,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -138,6 +139,13 @@ func main() {
 	if err != nil {
 		fatalf("read weekly report module enablement failed: %v", err)
 	}
+	var okrModuleConfig moduleconfig.Config
+	if okrModuleEnabled {
+		okrModuleConfig, err = moduleconfig.Load(filepath.Join(filepath.Dir(configPathAbsolute), "okr-module.yaml"))
+		if err != nil {
+			fatalf("load OKR module config failed: %v", err)
+		}
+	}
 	skillService, err := skill.NewService(
 		cfg.Skills.Root,
 		filepath.Join(filepath.Dir(configPathAbsolute), "skills.yaml"),
@@ -162,13 +170,29 @@ func main() {
 	if err := store.Migrate(db); err != nil {
 		fatalf("migrate sqlite failed: %v", err)
 	}
+	var okrDB *gorm.DB
 	if okrModuleEnabled {
-		if err := okrworkspace.MigrateCore(db); err != nil {
+		okrDB, err = store.OpenTrackedSQLite(connectCtx, config.SQLiteConfig{Path: okrModuleConfig.DatabasePath})
+		if err != nil {
+			fatalf("connect OKR module sqlite failed: %v", err)
+		}
+		defer func() {
+			if err := store.Close(okrDB); err != nil {
+				errorf("close OKR module sqlite failed: %v", err)
+			}
+		}()
+		if err := okrworkspace.MigrateCore(okrDB); err != nil {
 			fatalf("migrate OKR module failed: %v", err)
+		}
+		if err := okrworkspace.MigrateIdentity(db); err != nil {
+			fatalf("migrate OKR identity state failed: %v", err)
 		}
 	}
 	if weeklyReportModuleEnabled {
-		if err := okrworkspace.MigrateWeeklyReport(db); err != nil {
+		if okrDB == nil {
+			fatalf("migrate weekly report module failed: OKR module database is nil")
+		}
+		if err := okrworkspace.MigrateWeeklyReport(okrDB); err != nil {
 			fatalf("migrate weekly report module failed: %v", err)
 		}
 	}
@@ -421,33 +445,29 @@ func main() {
 	var okrImageStore *okrworkspace.ImageStore
 	var okrIdentityService *okrAuth.Service
 	if okrModuleEnabled {
-		moduleConfig, err := moduleconfig.Load(filepath.Join(filepath.Dir(configPathAbsolute), "okr-module.yaml"))
-		if err != nil {
-			fatalf("load OKR module config failed: %v", err)
-		}
-		okrWorkspaceService, err = okrworkspace.NewService(db)
+		okrWorkspaceService, err = okrworkspace.NewService(okrDB)
 		if err != nil {
 			fatalf("initialize OKR workspace service failed: %v", err)
 		}
-		okrImageStore, err = okrworkspace.NewImageStore(moduleConfig.UploadDir, moduleConfig.MaxImageBytes)
+		okrImageStore, err = okrworkspace.NewImageStore(okrModuleConfig.UploadDir, okrModuleConfig.MaxImageBytes)
 		if err != nil {
 			fatalf("initialize OKR image store failed: %v", err)
 		}
 		var okrIdentityProvider okrAuth.Provider
-		if moduleConfig.Identity.Enabled {
+		if okrModuleConfig.Identity.Enabled {
 			okrIdentityProvider, err = okrAuth.NewFeishuProvider(
-				moduleConfig.Identity.AppID,
-				moduleConfig.Identity.AppSecret(),
-				moduleConfig.Identity.RedirectURL,
-				moduleConfig.Identity.FeishuBaseURL,
-				moduleConfig.Identity.FeishuAccountURL,
+				okrModuleConfig.Identity.AppID,
+				okrModuleConfig.Identity.AppSecret(),
+				okrModuleConfig.Identity.RedirectURL,
+				okrModuleConfig.Identity.FeishuBaseURL,
+				okrModuleConfig.Identity.FeishuAccountURL,
 				nil,
 			)
 			if err != nil {
 				fatalf("initialize OKR Feishu identity provider failed: %v", err)
 			}
 		}
-		okrIdentityService, err = okrAuth.NewService(db, moduleConfig.Identity, okrIdentityProvider)
+		okrIdentityService, err = okrAuth.NewService(db, okrModuleConfig.Identity, okrIdentityProvider)
 		if err != nil {
 			fatalf("initialize OKR identity service failed: %v", err)
 		}

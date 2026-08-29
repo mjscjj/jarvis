@@ -16,7 +16,12 @@ __pycache__/
 /.worktrees/
 
 # 本地运行时数据
-/data/
+/data/*
+!/data/okr/
+/data/okr/*
+!/data/okr/okr.db
+!/data/okr/assets/
+!/data/okr/assets/**
 /var/
 /runs/
 /tmp/
