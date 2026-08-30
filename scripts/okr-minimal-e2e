@@ -195,20 +195,19 @@ seed() {
 
   objective_response="$(api_write POST /api/okr/objectives '{"quarter":"2026-Q3","title":"E2E：跑通单人季度 OKR"}' | require_code_zero)"
   objective_id="$(jq -er '.data.id' <<<"$objective_response")"
-  kr_response="$(api_write POST "/api/okr/objectives/$objective_id/krs" "$(jq -cn --arg open_id "$OWNER_OPEN_ID" --arg name "$OWNER_NAME" '{title:"E2E：验证一周填写到双周汇总",priority:"p1",owners:[{open_id:$open_id,name:$name}]}')" | require_code_zero)"
+	kr_response="$(api_write POST "/api/okr/objectives/$objective_id/krs" "$(jq -cn --arg open_id "$OWNER_OPEN_ID" --arg name "$OWNER_NAME" '{title:"E2E：验证一周填写到双周汇总",owners:[{open_id:$open_id,name:$name}],tags:[{type:"business_category",value:"E2E 测试"},{type:"priority",value:"p1"}]}')" | require_code_zero)"
   kr_id="$(jq -er '.data.id' <<<"$kr_response")"
 
   api_write PUT "/api/okr/krs/$kr_id" "$(jq -cn --arg open_id "$OWNER_OPEN_ID" --arg name "$OWNER_NAME" --arg kr_id "$kr_id" '{
     expected_version:0,
     title:"E2E：验证一周填写到双周汇总",
-    priority:"p1",
-    metric_note:"测试口径：两个拆解点均有周进展即视为当周填写完成。",
+		metric_note:"测试口径：两个拆解点均有周进展即视为当周填写完成。",
     metrics:[{id:($kr_id+"-metric-1"),text:"W36 完成最小周报闭环",light:"green",images:[]}],
     points:[
       {id:($kr_id+"-strategy"),kind:"strategy",title:"策略：确认本周重点与风险",meego_work_item_id:"",meego_url:""},
       {id:($kr_id+"-product"),kind:"product",title:"产品：交付一个可回读结果",meego_work_item_id:"",meego_url:""}
     ],
-    tags:[{type:"scenario",value:"minimal-e2e"}],
+		tags:[{type:"business_category",value:"E2E 测试"},{type:"priority",value:"p1"},{type:"scenario",value:"minimal-e2e"}],
     owners:[{open_id:$open_id,name:$name}]
   }')" | require_code_zero >/dev/null
 

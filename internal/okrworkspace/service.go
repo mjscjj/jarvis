@@ -175,7 +175,6 @@ type KRView struct {
 	Title       string       `json:"title"`
 	OwnerOpenID string       `json:"owner_open_id"`
 	OwnerName   string       `json:"owner_name"`
-	Priority    string       `json:"priority"`
 	MetricNote  string       `json:"metric_note"`
 	Version     int32        `json:"version"`
 	Metrics     []MetricView `json:"metrics"`
@@ -315,7 +314,6 @@ type ReplaceKRInput struct {
 	ExpectedVersion int32        `json:"expected_version"`
 	UpdatedBy       string       `json:"updated_by"`
 	Title           string       `json:"title"`
-	Priority        string       `json:"priority"`
 	MetricNote      string       `json:"metric_note"`
 	Metrics         []MetricView `json:"metrics"`
 	Points          []PointView  `json:"points"`
@@ -326,7 +324,7 @@ type ReplaceKRInput struct {
 type CreateKRInput struct {
 	Title     string      `json:"title"`
 	Owners    []OwnerView `json:"owners"`
-	Priority  string      `json:"priority"`
+	Tags      []TagView   `json:"tags"`
 	CreatedBy string      `json:"created_by"`
 }
 
@@ -635,7 +633,7 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRVie
 	if err := s.db.WithContext(ctx).Where("kr_id = ?", record.ID).Order("sort_order, owner_key, person_id").Find(&owners).Error; err != nil {
 		return KRView{}, fmt.Errorf("list owners: %w", err)
 	}
-	view := KRView{ID: record.ID, Title: record.Title, Priority: record.Priority, MetricNote: record.MetricNote, Version: record.Version, Metrics: []MetricView{}, Points: []PointView{}, Tags: []TagView{}, Owners: []OwnerView{}}
+	view := KRView{ID: record.ID, Title: record.Title, MetricNote: record.MetricNote, Version: record.Version, Metrics: []MetricView{}, Points: []PointView{}, Tags: []TagView{}, Owners: []OwnerView{}}
 	for _, owner := range owners {
 		view.Owners = append(view.Owners, OwnerView{OpenID: owner.OpenID, Name: owner.Name})
 		if view.OwnerOpenID == "" && strings.TrimSpace(owner.OpenID) != "" {
@@ -660,6 +658,9 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRVie
 	}
 	for _, tag := range tags {
 		view.Tags = append(view.Tags, TagView{Type: tag.Type, Value: tag.Value})
+	}
+	if err := validateTags(view.Tags); err != nil {
+		return KRView{}, fmt.Errorf("invalid tags for KR %s: %w", record.ID, err)
 	}
 	return view, nil
 }
@@ -696,6 +697,7 @@ func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWe
 // are deliberately outside this transaction, so tagging or reassigning an OKR
 // can never rewrite a historical/current weekly report as a side effect.
 func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRInput) (KRView, error) {
+	input.Tags = normalizeTags(input.Tags)
 	if err := validateReplaceInput(id, input); err != nil {
 		return KRView{}, err
 	}
@@ -703,7 +705,7 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		weeklySchemaPresent := tx.Migrator().HasTable(&domain.KRProgress{})
 		if err := updateKRVersion(tx, id, input.ExpectedVersion, map[string]any{
-			"title": input.Title, "priority": input.Priority, "metric_note": input.MetricNote, "updated_by": input.UpdatedBy,
+			"title": input.Title, "metric_note": input.MetricNote, "updated_by": input.UpdatedBy,
 		}); err != nil {
 			return err
 		}
@@ -838,13 +840,13 @@ func replaceKROwners(tx *gorm.DB, id string, owners []OwnerView) error {
 func (s *Service) CreateKR(ctx context.Context, objectiveID string, input CreateKRInput) (KRView, error) {
 	objectiveID = strings.TrimSpace(objectiveID)
 	input.Title = strings.TrimSpace(input.Title)
-	input.Priority = strings.TrimSpace(input.Priority)
+	input.Tags = normalizeTags(input.Tags)
 	input.CreatedBy = strings.TrimSpace(input.CreatedBy)
 	if objectiveID == "" || input.Title == "" {
 		return KRView{}, fmt.Errorf("objective id and kr title are required")
 	}
-	if input.Priority != "p0" && input.Priority != "p1" && input.Priority != "p2" {
-		return KRView{}, fmt.Errorf("priority must be p0, p1, or p2")
+	if err := validateTags(input.Tags); err != nil {
+		return KRView{}, err
 	}
 	var objective domain.Objective
 	if err := s.db.WithContext(ctx).First(&objective, "id = ?", objectiveID).Error; err != nil {
@@ -862,13 +864,18 @@ func (s *Service) CreateKR(ctx context.Context, objectiveID string, input Create
 	}
 	record := domain.KR{
 		ID: id, ObjectiveID: objectiveID, Title: input.Title,
-		Priority: input.Priority, SortOrder: maxSort + 1, CreatedBy: input.CreatedBy, UpdatedBy: input.CreatedBy,
+		SortOrder: maxSort + 1, CreatedBy: input.CreatedBy, UpdatedBy: input.CreatedBy,
 	}
 	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return KRView{}, fmt.Errorf("create kr: %w", err)
 	}
 	if err := replaceKROwners(s.db.WithContext(ctx), id, normalizeOwners(input.Owners)); err != nil {
 		return KRView{}, err
+	}
+	for _, tag := range input.Tags {
+		if err := s.db.WithContext(ctx).Create(&domain.KRTag{KRID: id, Type: tag.Type, Value: tag.Value}).Error; err != nil {
+			return KRView{}, fmt.Errorf("create KR tag: %w", err)
+		}
 	}
 	return s.GetCoreKR(ctx, id)
 }
@@ -1356,15 +1363,46 @@ func meegoBatchRank(item MeegoBatchPreviewItem) int {
 	return 3
 }
 
+func normalizeTags(tags []TagView) []TagView {
+	result := make([]TagView, 0, len(tags))
+	for _, tag := range tags {
+		result = append(result, TagView{Type: strings.TrimSpace(tag.Type), Value: strings.TrimSpace(tag.Value)})
+	}
+	return result
+}
+
+func validateTags(tags []TagView) error {
+	seen := map[string]bool{}
+	structural := map[string]string{}
+	for _, tag := range tags {
+		if tag.Type == "" || tag.Value == "" {
+			return fmt.Errorf("tags require a type and value")
+		}
+		key := tag.Type + "\x00" + tag.Value
+		if seen[key] {
+			return fmt.Errorf("tags require unique type and value pairs")
+		}
+		seen[key] = true
+		if tag.Type != domain.TagTypeBusinessCategory && tag.Type != domain.TagTypePriority {
+			continue
+		}
+		if previous := structural[tag.Type]; previous != "" {
+			return fmt.Errorf("tag type %s must have at most one value", tag.Type)
+		}
+		structural[tag.Type] = tag.Value
+	}
+	if priority := structural[domain.TagTypePriority]; priority != "" && !domain.ValidPriorityTag(priority) {
+		return fmt.Errorf("priority tag must be p0, p1, or p2")
+	}
+	return nil
+}
+
 func validateReplaceInput(id string, input ReplaceKRInput) error {
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(input.Title) == "" {
 		return fmt.Errorf("kr id and title are required")
 	}
 	if input.ExpectedVersion < 0 {
 		return fmt.Errorf("expected_version must be non-negative")
-	}
-	if input.Priority != "p0" && input.Priority != "p1" && input.Priority != "p2" {
-		return fmt.Errorf("priority must be p0, p1, or p2")
 	}
 	seen := map[string]bool{}
 	for _, metric := range input.Metrics {
@@ -1382,13 +1420,8 @@ func validateReplaceInput(id string, input ReplaceKRInput) error {
 			return fmt.Errorf("weekly progress cannot be written through the OKR definition endpoint")
 		}
 	}
-	seenTags := map[string]bool{}
-	for _, tag := range input.Tags {
-		key := tag.Type + "\x00" + tag.Value
-		if strings.TrimSpace(tag.Type) == "" || strings.TrimSpace(tag.Value) == "" || seenTags[key] {
-			return fmt.Errorf("tags require a type and unique value")
-		}
-		seenTags[key] = true
+	if err := validateTags(input.Tags); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1482,5 +1515,5 @@ func (s *Service) weeks(ctx context.Context, quarter, selected string) ([]string
 }
 
 func EnumValues() map[string]any {
-	return map[string]any{"statuses": domain.Statuses, "point_kinds": domain.PointKinds, "lights": domain.Lights, "priorities": []string{"p0", "p1", "p2"}}
+	return map[string]any{"statuses": domain.Statuses, "point_kinds": domain.PointKinds, "lights": domain.Lights}
 }

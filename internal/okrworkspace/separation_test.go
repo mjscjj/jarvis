@@ -24,12 +24,14 @@ func openWorkspaceTestDB(t *testing.T) *gorm.DB {
 func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-1", Title: "增长", Quarter: "2026-Q3"}
-	kr := domain.KR{ID: "kr-1", ObjectiveID: objective.ID, Title: "旧标题", Priority: "p1"}
+	kr := domain.KR{ID: "kr-1", ObjectiveID: objective.ID, Title: "旧标题"}
 	metric := domain.KRMetric{ID: "metric-1", KRID: kr.ID, Text: "旧指标", Light: domain.LightGreen}
 	point := domain.KRPoint{ID: "point-1", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "稳定拆解"}
 	current := domain.KRProgress{ID: "progress-current", PointID: point.ID, Week: "2026-W35", Status: domain.StatusInProgress, Text: "旧本周进展"}
 	history := domain.KRProgress{ID: "progress-history", PointID: point.ID, Week: "2026-W34", Status: domain.StatusDone, Text: "历史进展"}
-	for _, value := range []any{&objective, &kr, &metric, &point, &current, &history} {
+	businessTag := domain.KRTag{KRID: kr.ID, Type: domain.TagTypeBusinessCategory, Value: "公会业务"}
+	priorityTag := domain.KRTag{KRID: kr.ID, Type: domain.TagTypePriority, Value: "p1"}
+	for _, value := range []any{&objective, &kr, &metric, &point, &current, &history, &businessTag, &priorityTag} {
 		if err := db.Create(value).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -51,23 +53,28 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 		t.Fatalf("core board leaked weekly progress: %+v", coreBoard)
 	}
 	if _, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
-		ExpectedVersion: 0, Title: kr.Title, Priority: "p1",
+		ExpectedVersion: 0, Title: kr.Title,
 		Points: []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title, Entries: []ProgressView{{ID: "forbidden", Status: domain.StatusDone, Text: "不应进入核心写接口"}}}},
+		Tags:   []TagView{{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypePriority, Value: "p1"}},
 	}); err == nil {
 		t.Fatal("ReplaceKRCore() accepted weekly progress")
 	}
 
 	core, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
-		ExpectedVersion: 0, Title: "新 OKR 标题", Priority: "p0", MetricNote: "季度口径",
+		ExpectedVersion: 0, Title: "新 OKR 标题", MetricNote: "季度口径",
 		Owners:  []OwnerView{{OpenID: "ou_a", Name: "甲"}, {OpenID: "ou_b", Name: "乙"}},
 		Metrics: []MetricView{{ID: metric.ID, Text: "新核心指标", Light: domain.LightYellow}},
 		Points:  []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title}},
+		Tags:    []TagView{{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypePriority, Value: "p0"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if core.Version != 1 || len(core.Owners) != 2 {
 		t.Fatalf("core result = %+v", core)
+	}
+	if len(core.Tags) != 2 || core.Tags[0].Type != domain.TagTypeBusinessCategory || core.Tags[1].Value != "p0" {
+		t.Fatalf("structural tags = %+v", core.Tags)
 	}
 	var progressAfterCore []domain.KRProgress
 	if err := db.Order("week").Find(&progressAfterCore).Error; err != nil {
@@ -268,6 +275,9 @@ func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
 	if err := MigrateCore(db); err != nil {
 		t.Fatal(err)
 	}
+	if db.Migrator().HasColumn(&domain.KR{}, "priority") {
+		t.Fatal("fresh KR schema still has duplicate priority column")
+	}
 	service, err := NewService(db)
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +286,10 @@ func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateKR(t.Context(), objective.ID, CreateKRInput{Title: "核心模块不依赖周报", Priority: "p0", CreatedBy: "ou_owner"})
+	created, err := service.CreateKR(t.Context(), objective.ID, CreateKRInput{
+		Title: "核心模块不依赖周报", CreatedBy: "ou_owner",
+		Tags: []TagView{{Type: domain.TagTypeBusinessCategory, Value: "测试业务"}, {Type: domain.TagTypePriority, Value: "p0"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,19 +311,36 @@ func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
 		t.Fatalf("core board = %+v", board)
 	}
 	updated, err := service.ReplaceKRCore(t.Context(), created.ID, ReplaceKRInput{
-		ExpectedVersion: 0, Title: created.Title, Priority: "p0",
+		ExpectedVersion: 0, Title: created.Title, Tags: created.Tags,
 		Metrics: []MetricView{{ID: "metric-1", Text: "核心指标", Light: domain.LightGreen}},
 		Points:  []PointView{{ID: "point-1", Kind: domain.PointKindStrategy, Title: "关键路径"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err = service.ReplaceKRCore(t.Context(), created.ID, ReplaceKRInput{ExpectedVersion: updated.Version, Title: created.Title, Priority: "p0"})
+	updated, err = service.ReplaceKRCore(t.Context(), created.ID, ReplaceKRInput{ExpectedVersion: updated.Version, Title: created.Title, Tags: updated.Tags})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := service.DeleteKR(t.Context(), created.ID, DeleteKRInput{ExpectedVersion: updated.Version}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStructuralTagsRejectConflictingValues(t *testing.T) {
+	for name, tags := range map[string][]TagView{
+		"multiple businesses": {{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypeBusinessCategory, Value: "运营效率"}},
+		"multiple priorities": {{Type: domain.TagTypePriority, Value: "p0"}, {Type: domain.TagTypePriority, Value: "p1"}},
+		"invalid priority":    {{Type: domain.TagTypePriority, Value: "focus"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateTags(tags); err == nil {
+				t.Fatalf("validateTags(%+v) succeeded", tags)
+			}
+		})
+	}
+	if err := validateTags([]TagView{{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypePriority, Value: "p0"}}); err != nil {
+		t.Fatalf("valid structural tags: %v", err)
 	}
 }
 
@@ -353,7 +383,7 @@ func TestMigrateCoreMovesLegacyOwnerProjectionToOwnerTable(t *testing.T) {
 		`CREATE TABLE okr_workspace_kr (
 			id text, objective_id text NOT NULL, title text NOT NULL,
 			owner_open_id text NOT NULL DEFAULT "", owner_name text NOT NULL DEFAULT "",
-			priority text NOT NULL DEFAULT "p1", metric_note text NOT NULL DEFAULT "", sort_order integer NOT NULL DEFAULT 0,
+			metric_note text NOT NULL DEFAULT "", sort_order integer NOT NULL DEFAULT 0,
 			version integer NOT NULL DEFAULT 0, created_by text NOT NULL DEFAULT "", updated_by text NOT NULL DEFAULT "",
 			created_at datetime NOT NULL, updated_at datetime NOT NULL, PRIMARY KEY (id)
 		)`,

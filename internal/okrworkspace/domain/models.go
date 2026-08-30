@@ -57,6 +57,15 @@ func ValidLight(value Light) bool {
 	return value == "" || value == LightGreen || value == LightYellow || value == LightRed
 }
 
+const (
+	TagTypeBusinessCategory = "business_category"
+	TagTypePriority         = "priority"
+)
+
+func ValidPriorityTag(value string) bool {
+	return value == "p0" || value == "p1" || value == "p2"
+}
+
 type Objective struct {
 	ID        string    `gorm:"primaryKey;size:64"`
 	Title     string    `gorm:"not null"`
@@ -72,7 +81,6 @@ type KR struct {
 	ID          string    `gorm:"primaryKey;size:64"`
 	ObjectiveID string    `gorm:"not null;index"`
 	Title       string    `gorm:"not null"`
-	Priority    string    `gorm:"not null;default:'p1'"`
 	MetricNote  string    `gorm:"not null;default:''"`
 	SortOrder   int       `gorm:"not null;default:0"`
 	Version     int32     `gorm:"not null;default:0"`

@@ -25,6 +25,9 @@ func MigrateCore(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("migrate OKR core module: database is nil")
 	}
+	if db.Migrator().HasColumn(&domain.KR{}, "priority") {
+		return fmt.Errorf("migrate OKR core module: legacy KR priority column must be migrated to tags before startup")
+	}
 	// The old KR row carried a duplicate owner projection. Create the owner
 	// table and move that data before GORM reconciles the current KR schema.
 	if err := db.AutoMigrate(&domain.KROwner{}); err != nil {
