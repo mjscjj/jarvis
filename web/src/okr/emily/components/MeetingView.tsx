@@ -322,10 +322,12 @@ export function MeetingView() {
   })).filter((objective) => objective.krs.length > 0), [objectives, ownerFilter])
   const navigation = useMemo(() => buildKRHierarchy(filteredObjectives), [filteredObjectives])
   const meetingOverview = activeBusinessValue === undefined
+  const overviewObjectives = useMemo(() => activePriorityValue === undefined ? filteredObjectives : filteredObjectives.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => priorityOf(kr) === activePriorityValue) })).filter((objective) => objective.krs.length > 0), [activePriorityValue, filteredObjectives])
+  const overviewNavigation = useMemo(() => buildKRHierarchy(overviewObjectives), [overviewObjectives])
   const activeBusiness = meetingOverview ? undefined : navigation.find((business) => business.value === activeBusinessValue) ?? navigation[0]
   const activePriority = activeBusiness?.priorities.find((priority) => priority.value === activePriorityValue) ?? activeBusiness?.priorities[0]
 	const activeObjective = activePriority?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activePriority?.objectives[0]
-	const visible = meetingOverview ? filteredObjectives : activeObjective ? [activeObjective] : []
+	const visible = meetingOverview ? overviewObjectives : activeObjective ? [activeObjective] : []
 	const totalKrCount = objectives.reduce((sum, objective) => sum + objective.krs.length, 0)
 	const filteredKrCount = filteredObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
 	const activeKrs = visible.flatMap((objective) => objective.krs)
@@ -380,7 +382,9 @@ export function MeetingView() {
         activeObjectiveId={activeObjective?.id}
         overview={meetingOverview}
         showOverview
+        overviewPriorityValue={activePriorityValue}
         onOverview={() => { setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
+        onOverviewPriority={(value) => { setActivePriorityValue(value); setActiveObjectiveId('') }}
         onBusiness={(value) => { setActiveBusinessValue(value); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
         onPriority={(value) => { setActivePriorityValue(value); setActiveObjectiveId('') }}
         onObjective={setActiveObjectiveId}
@@ -388,7 +392,7 @@ export function MeetingView() {
 
       {meetingOverview ? (
         <div className="space-y-5">
-          {navigation.map((business) => <section key={business.value || '__untagged__'} className="space-y-2.5">
+          {overviewNavigation.map((business) => <section key={business.value || '__untagged__'} className="space-y-2.5">
             <div className="flex items-center justify-between rounded-r-lg border-l-4 border-blue-600 bg-blue-50 px-3 py-1.5"><h2 className="text-[14px] font-bold text-blue-700">{business.label}</h2><b className="rounded-full border border-blue-100 bg-white/80 px-2 py-0.5 text-[10px] text-blue-600">{hierarchyKRCount(business)} 条 KR</b></div>
             {business.priorities.map((priority) => <div key={priority.value || '__untagged__'} className="space-y-2"><div className="ml-2 flex items-center gap-2"><span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${priority.value === 'p0' ? 'border-orange-200 bg-orange-50 text-orange-700' : priority.value === 'p1' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>{priority.label}</span><span className="text-[9px] text-slate-400">{priorityKRCount(priority)} 条</span></div>{priority.objectives.map((objective) => <MeetingObjectiveSection key={`${priority.value}:${objective.id}`} objective={objective} closed={closed} toggle={toggle} showTags={showTags} />)}</div>)}
           </section>)}

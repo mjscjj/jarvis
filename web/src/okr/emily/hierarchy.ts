@@ -97,6 +97,18 @@ export function buildKRHierarchy(objectives: Objective[]): BusinessNavigation[] 
     }))
 }
 
+export function buildGlobalPriorityNavigation(navigation: BusinessNavigation[]): PriorityNavigation[] {
+  const priorities = new Map<KrPriority | '', PriorityNavigation>()
+  for (const business of navigation) {
+    for (const priority of business.priorities) {
+      const current = priorities.get(priority.value)
+      if (current) current.objectives.push(...priority.objectives)
+      else priorities.set(priority.value, { ...priority, objectives: [...priority.objectives] })
+    }
+  }
+  return [...priorities.values()].sort((left, right) => priorityOrder(left.value) - priorityOrder(right.value))
+}
+
 export function hierarchyKRCount(business: BusinessNavigation): number {
   return business.priorities.reduce((sum, priority) => sum + priority.objectives.reduce((subtotal, objective) => subtotal + objective.krs.length, 0), 0)
 }
