@@ -110,8 +110,10 @@ function KrEditorRow({ objectiveId, kr, peopleOptions, tagSuggestions, businessC
             className="h-7 min-w-64 flex-[1_1_32rem] rounded-md border border-transparent bg-transparent px-1.5 text-[11px] font-medium text-slate-700 outline-none transition-colors hover:border-slate-200 hover:bg-white focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-50"
 				/>
 				<FeishuPeoplePicker kr={kr} options={peopleOptions} />
-				<input list={`business-categories-${kr.id}`} value={businessCategoryOf(kr)} onChange={(event) => setKrBusinessCategory(kr.id, event.target.value)} placeholder="业务分类" aria-label="业务分类" className="h-6 w-28 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />
-				<datalist id={`business-categories-${kr.id}`}>{businessCategories.map((category) => <option key={category} value={category} />)}</datalist>
+				<select value={businessCategoryOf(kr)} onChange={(event) => setKrBusinessCategory(kr.id, event.target.value)} aria-label="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400">
+					<option value="">未标注业务</option>
+					{businessCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+				</select>
 				<select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}>
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
 				</select>
@@ -155,7 +157,10 @@ function NewKrRow({ objective, businessCategories, onClose }: { objective: Objec
 		<div className="grid gap-1.5 bg-blue-50/50 px-3.5 py-2 md:grid-cols-[minmax(18rem,1.3fr)_minmax(9rem,0.5fr)_minmax(9rem,0.5fr)_5.5rem_auto] md:items-center md:gap-2">
 			<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submit(); if (event.key === 'Escape') onClose() }} placeholder="填写新 KR 内容" className="h-8 min-w-0 rounded-md border border-blue-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
 			<input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submit() }} placeholder="负责人，可用、分隔多人" className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none focus:border-blue-400" />
-			<div><input list={`new-business-${objective.id}`} value={businessCategory} onChange={(event) => setBusinessCategory(event.target.value)} placeholder="业务分类" aria-label="新 KR 业务分类" className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none focus:border-blue-400" /><datalist id={`new-business-${objective.id}`}>{businessCategories.map((category) => <option key={category} value={category} />)}</datalist></div>
+			<select value={businessCategory} onChange={(event) => setBusinessCategory(event.target.value)} aria-label="新 KR 业务分类" className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none focus:border-blue-400">
+				<option value="" disabled>选择业务分类</option>
+				{businessCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+			</select>
 			<select value={priority} onChange={(event) => setPriority(event.target.value as KrPriority)} aria-label="新 KR 优先级标签" className={`h-8 rounded-md border px-2 text-[10px] outline-none ${priorityTone(priority)}`}><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>
 			<div className="flex justify-end gap-1">
 				<button type="button" onClick={() => void submit()} disabled={!title.trim() || !businessCategory.trim() || creating} className="h-7 rounded-md bg-blue-600 px-2.5 text-[10px] font-medium !text-white hover:bg-blue-700 disabled:opacity-40">{creating ? '创建中…' : '创建'}</button>
