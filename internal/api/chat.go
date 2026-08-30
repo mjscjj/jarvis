@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"jarvis/internal/chat"
@@ -11,6 +12,24 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
+
+func GetChatHistory(svc *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		history, err := svc.History(c.Param("thread_id"))
+		if err != nil {
+			switch {
+			case errors.Is(err, chat.ErrInvalidThreadID):
+				writeAPIError(c, 400, 40061, err)
+			case errors.Is(err, chat.ErrHistoryNotFound):
+				writeAPIError(c, 404, 40461, err)
+			default:
+				writeAPIError(c, 500, 50061, err)
+			}
+			return
+		}
+		c.JSON(200, map[string]any{"code": 0, "data": history})
+	}
+}
 
 // chatRequestBody 是 POST /api/chat 的请求体，字段严格对齐前端冻结契约
 // （web/src/types.ts 的 ChatRequest）。用指针区分「字段缺失」与「显式 null」。

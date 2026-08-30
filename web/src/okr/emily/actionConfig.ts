@@ -1,4 +1,4 @@
-import type { ScheduledTask, ScheduledTaskInput } from '../../types'
+import type { CreateTaskInput, ScheduledTask, ScheduledTaskInput } from '../../types'
 
 export type OKRActionKey = 'remind_missing' | 'progress_sync' | 'meeting_summary' | 'publish_report'
 
@@ -125,6 +125,25 @@ export function scheduledTaskInput(definition: OKRActionDefinition, value: OKRAc
     interval_minutes: weekly ? null : value.intervalMinutes,
     run_at: null,
     enabled: value.enabled,
+  }
+}
+
+export function manualTaskInput(definition: OKRActionDefinition): CreateTaskInput {
+  const context = {
+    module: 'weekly-report',
+    skill: 'okr-agent-orchestrator',
+    action_key: definition.key,
+    prompt_key: definition.promptKey,
+  }
+  return {
+    title: `OKR · ${definition.title}`,
+    action_type: 'agent_task',
+    target: `执行固定行动“${definition.title}”；范围、对象、产出和验收标准以绑定 Prompt 为准。`,
+    background: context,
+    source_payload: {
+      instruction: `执行固定行动“${definition.title}”；范围、对象、产出和验收标准以绑定 Prompt 为准。`,
+      ...context,
+    },
   }
 }
 

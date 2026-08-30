@@ -57,3 +57,10 @@ func (s *Submitter) Submit(ctx context.Context, input Input) (*domain.Task, erro
 	}
 	return task, nil
 }
+
+// Create persists a manual Task without notifying the automatic execution
+// pipeline. Explicit user-triggered flows call the execution API themselves,
+// so execute.enabled can remain false without silently enabling background M5.
+func (s *Submitter) Create(ctx context.Context, input Input) (*domain.Task, error) {
+	return s.factory.Create(ctx, input)
+}

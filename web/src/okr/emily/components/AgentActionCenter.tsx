@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createScheduledTask, deleteScheduledTask, getTask, listScheduledTasks, triggerScheduledTask, updateScheduledTask } from '../../../api'
+import { createScheduledTask, createTask, deleteScheduledTask, executeTask, getTask, listScheduledTasks, updateScheduledTask } from '../../../api'
 import type { ScheduledTask, Task, TextFile } from '../../../types'
 import {
   OKR_ACTIONS,
@@ -7,6 +7,7 @@ import {
   actionKeyForSchedule,
   actionScheduleText,
   formValueForAction,
+  manualTaskInput,
   scheduledTaskInput,
   type OKRActionDefinition,
   type OKRActionFormValue,
@@ -50,13 +51,15 @@ function taskSummary(task?: Task): string {
   return summary || task.summary || followup || taskStatusMeta[task.status].label
 }
 
-export function AgentActionCenter({ prompts, onSelectPrompt }: {
+export function AgentActionCenter({ prompts, selectedPromptKey, onSelectPrompt }: {
   prompts: TextFile[]
   selectedPromptKey: string
-  onSelectPrompt: (key: string) => void
+  onSelectPrompt: (key: string, action?: OKRActionDefinition) => void
 }) {
   const [schedules, setSchedules] = useState<ScheduledTask[]>([])
   const [lastTasks, setLastTasks] = useState<Record<number, Task>>({})
+  const [manualTaskIds, setManualTaskIds] = useState<Partial<Record<OKRActionKey, number>>>({})
+  const [manualTasks, setManualTasks] = useState<Partial<Record<OKRActionKey, Task>>>({})
   const [loading, setLoading] = useState(true)
   const [busyKey, setBusyKey] = useState<OKRActionKey>()
   const [editing, setEditing] = useState<OKRActionDefinition>()
@@ -103,6 +106,29 @@ export function AgentActionCenter({ prompts, onSelectPrompt }: {
     return () => window.clearInterval(timer)
   }, [lastTasks, load, schedules])
 
+  useEffect(() => {
+    const entries = Object.entries(manualTaskIds) as Array<[OKRActionKey, number]>
+    if (entries.length === 0) return
+    const controller = new AbortController()
+    let timer: number | undefined
+    const refresh = async () => {
+      try {
+        const pairs = await Promise.all(entries.map(async ([key, id]) => [key, await getTask(id, controller.signal)] as const))
+        setManualTasks(Object.fromEntries(pairs))
+        if (pairs.some(([, task]) => ['pending', 'executing', 'waiting'].includes(task.status))) {
+          timer = window.setTimeout(() => void refresh(), 3500)
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted) setNotice({ kind: 'error', text: `手动行动状态读取失败：${errorText(cause)}` })
+      }
+    }
+    void refresh()
+    return () => {
+      controller.abort()
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [manualTaskIds])
+
   const openEditor = (definition: OKRActionDefinition) => {
     setEditing(definition)
     setForm(formValueForAction(definition, scheduleByKey.get(definition.key)))
@@ -145,14 +171,18 @@ export function AgentActionCenter({ prompts, onSelectPrompt }: {
     }
   }
 
-  const trigger = async (definition: OKRActionDefinition, schedule: ScheduledTask) => {
+  const trigger = async (definition: OKRActionDefinition) => {
     setBusyKey(definition.key)
+    onSelectPrompt(definition.promptKey, definition)
     try {
-      await triggerScheduledTask(schedule.id)
-      setNotice({ kind: 'success', text: `${definition.title}已创建一次普通 Task。` })
-      await load()
+      const created = await createTask(manualTaskInput(definition))
+      await executeTask(created.id)
+      const task = await getTask(created.id)
+      setManualTaskIds((current) => ({ ...current, [definition.key]: created.id }))
+      setManualTasks((current) => ({ ...current, [definition.key]: task }))
+      setNotice({ kind: 'success', text: `${definition.title}已启动手动 Agent Task #${created.id}。` })
     } catch (cause) {
-      setNotice({ kind: 'error', text: `立即运行失败：${errorText(cause)}` })
+      setNotice({ kind: 'error', text: `手动执行失败：${errorText(cause)}` })
     } finally {
       setBusyKey(undefined)
     }
@@ -185,13 +215,15 @@ export function AgentActionCenter({ prompts, onSelectPrompt }: {
 
   return (
     <div className="space-y-3">
-      <section className="grid gap-2 sm:grid-cols-4">
+      <section aria-label="自动化概览" className="flex min-h-14 items-center overflow-x-auto rounded-xl border border-slate-200 bg-white px-2 shadow-sm">
         {[
-          { label: '固定行动', value: '4', note: '不支持自由新增' },
-          { label: '已配置', value: `${configured}/4`, note: `${enabled} 个已启用` },
-          { label: '下次行动', value: nextAction ? formatDateTime(nextAction.schedule.next_run_at) : '暂无', note: nextAction?.definition.title || '尚未启用' },
-          { label: '需要处理', value: String(attention), note: '失败、人工或审批' },
-        ].map((item) => <article key={item.label} className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm"><div className="text-[10px] font-medium text-slate-400">{item.label}</div><div className="mt-1 text-lg font-semibold text-slate-800">{item.value}</div><div className="mt-0.5 truncate text-[10px] text-slate-400">{item.note}</div></article>)}
+          { label: '业务 Prompt', value: String(prompts.length) },
+          { label: '固定行动', value: '4' },
+          { label: '已配置', value: `${configured}/4`, note: `${enabled} 启用` },
+          { label: '下次行动', value: nextAction ? formatDateTime(nextAction.schedule.next_run_at) : '暂无' },
+          { label: '需处理', value: String(attention) },
+          { label: '执行方式', value: 'Prompt + 原子工具' },
+        ].map((item) => <article key={item.label} className="flex shrink-0 items-baseline gap-2 border-r border-slate-100 px-3.5 last:border-r-0"><span className="text-[9px] text-slate-400">{item.label}</span><b className="text-[12px] font-semibold text-slate-800">{item.value}</b>{item.note && <span className="text-[9px] text-slate-400">{item.note}</span>}</article>)}
       </section>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -204,15 +236,15 @@ export function AgentActionCenter({ prompts, onSelectPrompt }: {
 
         {loading ? <div className="py-12 text-center text-xs text-slate-400">正在读取行动…</div> : <div className="divide-y divide-slate-100">{OKR_ACTIONS.map((definition) => {
           const schedule = scheduleByKey.get(definition.key)
-          const lastTask = schedule ? lastTasks[schedule.id] : undefined
+          const lastTask = manualTasks[definition.key] ?? (schedule ? lastTasks[schedule.id] : undefined)
           const taskMeta = lastTask ? taskStatusMeta[lastTask.status] : undefined
           const prompt = promptByKey.get(definition.promptKey)
           const busy = busyKey === definition.key
-          return <article key={definition.key} className="grid items-center gap-3 px-4 py-3 lg:grid-cols-[minmax(250px,1.1fr)_minmax(190px,.8fr)_minmax(220px,1fr)_auto]">
+          return <article key={definition.key} className={`grid items-center gap-3 px-4 py-3 lg:grid-cols-[minmax(250px,1.1fr)_minmax(190px,.8fr)_minmax(220px,1fr)_auto] ${selectedPromptKey === definition.promptKey ? 'bg-cyan-50/20' : ''}`}>
             <div className="flex min-w-0 items-start gap-3"><span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold ring-1 ${actionTones[definition.tone]}`}>{definition.shortLabel}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><h3 className="text-[12px] font-semibold text-slate-800">{definition.title}</h3><span className={`rounded-full px-2 py-0.5 text-[9px] ${schedule?.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{schedule ? schedule.enabled ? '已启用' : '已停用' : '未配置'}</span></div><p className="mt-1 text-[10px] leading-4 text-slate-500">{definition.description}</p></div></div>
-            <div className="text-[10px] leading-5 text-slate-500"><div><span className="text-slate-400">计划：</span><b className="font-medium text-slate-700">{actionScheduleText(definition, schedule)}</b></div><button type="button" onClick={() => onSelectPrompt(definition.promptKey)} className="max-w-full truncate text-left text-cyan-700 hover:underline">Prompt · {prompt?.name ?? definition.promptKey}</button><div><span className="text-slate-400">下次：</span>{schedule?.enabled ? formatDateTime(schedule.next_run_at) : '—'}</div></div>
+            <div className="text-[10px] leading-5 text-slate-500"><div><span className="text-slate-400">计划：</span><b className="font-medium text-slate-700">{actionScheduleText(definition, schedule)}</b></div><button type="button" onClick={() => onSelectPrompt(definition.promptKey, definition)} className="max-w-full truncate text-left text-cyan-700 hover:underline">Prompt · {prompt?.name ?? definition.promptKey}</button><div><span className="text-slate-400">下次：</span>{schedule?.enabled ? formatDateTime(schedule.next_run_at) : '—'}</div></div>
             <div className="min-w-0 text-[10px] leading-5 text-slate-500"><div className="flex items-center gap-1.5"><span className="text-slate-400">最近：</span>{taskMeta ? <span className={`rounded-full px-2 py-0.5 text-[9px] ${taskMeta.tone}`}>{taskMeta.label}</span> : <span>尚未执行</span>}</div><p className="line-clamp-2" title={schedule?.last_error_detail || taskSummary(lastTask)}>{schedule?.last_error_detail || taskSummary(lastTask)}</p></div>
-            <div className="flex flex-wrap justify-end gap-1"><button type="button" onClick={() => onSelectPrompt(definition.promptKey)} className="rounded-md border border-cyan-100 px-2 py-1 text-[9px] text-cyan-700">Prompt</button><button type="button" disabled={busy || schedule?.status === 'running'} onClick={() => openEditor(definition)} className="rounded-md border border-slate-200 px-2 py-1 text-[9px] text-slate-600 disabled:opacity-40">配置</button>{schedule && <><button type="button" disabled={busy || schedule.status === 'running'} onClick={() => void toggle(definition, schedule)} className="rounded-md border border-slate-200 px-2 py-1 text-[9px] text-slate-600 disabled:opacity-40">{schedule.enabled ? '停用' : '启用'}</button><button type="button" disabled={busy || schedule.status === 'running'} onClick={() => void trigger(definition, schedule)} className="rounded-md bg-slate-800 px-2 py-1 text-[9px] text-white disabled:opacity-40">立即运行</button><button type="button" disabled={busy || schedule.status === 'running'} onClick={() => void remove(definition, schedule)} className="rounded-md px-2 py-1 text-[9px] text-red-500 disabled:opacity-40">删除配置</button></>}</div>
+            <div className="flex flex-wrap justify-end gap-1"><button type="button" onClick={() => onSelectPrompt(definition.promptKey, definition)} className="rounded-md border border-cyan-100 px-2 py-1 text-[9px] text-cyan-700">Prompt</button><button type="button" disabled={busy || schedule?.status === 'running'} onClick={() => openEditor(definition)} className="rounded-md border border-slate-200 px-2 py-1 text-[9px] text-slate-600 disabled:opacity-40">配置</button>{schedule && <><button type="button" disabled={busy || schedule.status === 'running'} onClick={() => void toggle(definition, schedule)} className="rounded-md border border-slate-200 px-2 py-1 text-[9px] text-slate-600 disabled:opacity-40">{schedule.enabled ? '停用' : '启用'}</button><button type="button" disabled={busy || schedule.status === 'running'} onClick={() => void remove(definition, schedule)} className="rounded-md px-2 py-1 text-[9px] text-red-500 disabled:opacity-40">删除配置</button></>}<button type="button" disabled={busy || ['pending', 'executing', 'waiting'].includes(manualTasks[definition.key]?.status ?? '')} onClick={() => void trigger(definition)} className="rounded-md bg-slate-800 px-2 py-1 text-[9px] text-white disabled:opacity-40">手动执行</button></div>
           </article>
         })}</div>}
       </section>

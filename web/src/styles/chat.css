@@ -82,6 +82,12 @@
   overscroll-behavior: contain;
 }
 
+.chat-history-loading {
+  margin: auto;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
 .jarvis-chat .chat-empty {
   display: flex;
   flex-direction: column;

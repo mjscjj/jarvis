@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CloseOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
+import { getChatHistory } from './api'
 import { usePageContext } from './pageContext'
-import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent } from './types'
+import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, PageContext } from './types'
 import './styles/chat.css'
 
 const { Text } = Typography
@@ -12,6 +13,8 @@ interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
 }
+
+const CHAT_THREAD_STORAGE_KEY = 'jarvis.chat.threadId'
 
 const PAGE_LABELS: Record<string, string> = {
   today: '今日',
@@ -56,14 +59,21 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
-function pageLabel(activeKey: string): string {
-  return PAGE_LABELS[activeKey] ?? '当前页面'
+function pageLabel(context: PageContext): string {
+  if (context.active_key === 'okr') {
+    if (context.view_state.tab === 'agent-flows') return 'OKR · 自动化流程'
+    if (context.view_state.tab === 'weekly-fill') return 'OKR · 周报填写'
+    if (context.view_state.tab === 'weekly-meeting') return 'OKR · 周报会议'
+    return 'OKR · 管理与打标'
+  }
+  return PAGE_LABELS[context.active_key] ?? '当前页面'
 }
 
-function pageGroup(activeKey: string): string {
-  if (['management', 'settings', 'debug', 'system-tasks'].includes(activeKey)) return 'system'
-  const label = pageLabel(activeKey)
-  return Object.keys(PAGE_SUGGESTIONS).find((key) => pageLabel(key) === label) ?? 'today'
+function pageGroup(context: PageContext): string {
+  if (context.active_key === 'okr' && context.view_state.tab === 'agent-flows') return 'automation'
+  if (['management', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
+  const label = pageLabel(context)
+  return Object.keys(PAGE_SUGGESTIONS).find((key) => PAGE_LABELS[key] === label) ?? 'today'
 }
 
 // parseSSEBlock turns one `event:\ndata:` block into {event, data}. SSE allows
@@ -90,8 +100,11 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [stopping, setStopping] = useState(false)
+  const [paused, setPaused] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [error, setError] = useState<string>()
-  const threadId = useRef<string | null>(null)
+  const [threadId, setThreadId] = useState<string | null>(() => window.localStorage.getItem(CHAT_THREAD_STORAGE_KEY))
+  const initialThreadId = useRef(threadId).current
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<TextAreaRef>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -104,6 +117,24 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   useEffect(() => () => abortRef.current?.abort(), [])
 
   useEffect(() => {
+    if (!initialThreadId) return
+    const controller = new AbortController()
+    setHistoryLoading(true)
+    getChatHistory(initialThreadId, controller.signal)
+      .then((history) => {
+        setMessages(history.messages.map((message) => ({ role: message.role, text: message.text })))
+        setError(undefined)
+      })
+      .catch((cause: unknown) => {
+        if (!isAbortError(cause)) setError(`恢复本地会话失败：${errorText(cause)}`)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setHistoryLoading(false)
+      })
+    return () => controller.abort()
+  }, [initialThreadId])
+
+  useEffect(() => {
     if (open) inputRef.current?.focus()
   }, [open])
 
@@ -111,13 +142,25 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     if (!sending && messages.length > 0) inputRef.current?.focus()
   }, [sending, messages.length])
 
-  const currentPageLabel = pageLabel(context.active_key)
+  const currentPageLabel = pageLabel(context)
   const currentSelectionLabel = context.selection?.label
+  const currentActionLabel = context.active_key === 'okr' && context.view_state.tab === 'agent-flows'
+    ? context.view_state.action_label
+    : undefined
+  const currentQuarter = context.active_key === 'okr' ? context.view_state.quarter : undefined
   const currentSelectionType = context.selection
     ? SELECTION_LABELS[context.selection.kind] ?? '对象'
     : null
 
   const suggestions = useMemo(() => {
+    if (context.active_key === 'okr' && context.view_state.tab === 'agent-flows') {
+      const action = currentActionLabel ? `“${currentActionLabel}”` : '当前自动化流程'
+      return [
+        `检查${action}的配置和最近执行情况`,
+        `手动执行${action}`,
+        `解释${action}会使用哪些 Prompt 和工具`,
+      ]
+    }
     if (context.selection) {
       return [
         `总结「${context.selection.label}」的当前情况`,
@@ -125,8 +168,8 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         `检查这个${currentSelectionType}有没有风险或遗漏`,
       ]
     }
-    return PAGE_SUGGESTIONS[pageGroup(context.active_key)] ?? PAGE_SUGGESTIONS.today
-  }, [context.active_key, context.selection, currentSelectionType])
+    return PAGE_SUGGESTIONS[pageGroup(context)] ?? PAGE_SUGGESTIONS.today
+  }, [context, currentActionLabel, currentSelectionType])
 
   const stop = useCallback(() => {
     if (!abortRef.current || stopping) return
@@ -145,6 +188,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     setInput('')
     setError(undefined)
     setStopping(false)
+    setPaused(false)
     setSending(true)
     // Append the user bubble and an empty assistant bubble that delta events grow.
     setMessages((prev) => [...prev, { role: 'user', text: message }, { role: 'assistant', text: '' }])
@@ -159,7 +203,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      const req: ChatRequest = { message, thread_id: threadId.current, page_context: context }
+      const req: ChatRequest = { message, thread_id: threadId, page_context: context }
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -187,7 +231,8 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
           const { event, data } = parseSSEBlock(block)
           if (event === 'thread') {
             const parsed = JSON.parse(data) as ChatThreadEvent
-            threadId.current = parsed.thread_id
+            setThreadId(parsed.thread_id)
+            window.localStorage.setItem(CHAT_THREAD_STORAGE_KEY, parsed.thread_id)
           } else if (event === 'delta') {
             const parsed = JSON.parse(data) as ChatDeltaEvent
             appendDelta(parsed.text)
@@ -202,6 +247,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
       if (streamError) throw new Error(streamError)
     } catch (cause: unknown) {
       if (isAbortError(cause)) {
+        setPaused(true)
         // Keep any partial reply; drop only a still-empty assistant bubble.
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -224,7 +270,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
       setStopping(false)
       setSending(false)
     }
-  }, [input, sending, context])
+  }, [input, sending, context, threadId])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -237,7 +283,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     <header className="chat-header">
       <div className="chat-title-row">
         <Text strong className="chat-title">Jarvis 对话</Text>
-        <span className="chat-ready" aria-label="对话将使用当前页面上下文"><span aria-hidden="true" />随当前页面</span>
+        <span className="chat-ready" aria-label="对话使用当前页面上下文并保存在本地"><span aria-hidden="true" />页面联动 · 本地记忆</span>
         <Button type="text" size="small" className="chat-close" icon={<CloseOutlined />} aria-label="关闭 Jarvis 对话" onClick={onClose} />
       </div>
       <div className="chat-context" aria-label="当前对话上下文">
@@ -246,8 +292,16 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
           <span className="chat-context-separator" aria-hidden="true">·</span>
           <span className="chat-context-selection">{currentSelectionType}：{currentSelectionLabel}</span>
         </>}
+        {currentActionLabel && <>
+          <span className="chat-context-separator" aria-hidden="true">·</span>
+          <span className="chat-context-selection">流程：{currentActionLabel}</span>
+        </>}
+        {currentQuarter && <>
+          <span className="chat-context-separator" aria-hidden="true">·</span>
+          <span className="chat-context-selection">{currentQuarter.replace('-', ' ')}</span>
+        </>}
       </div>
-      <Text type="secondary" className="chat-context-note">Jarvis 会结合这些上下文回答</Text>
+      <Text type="secondary" className="chat-context-note">同一浏览器恢复同一 Agent 会话；对话记录保存在本地 Markdown</Text>
     </header>
     <div
       className="chat-messages"
@@ -257,7 +311,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
       aria-relevant="additions text"
       aria-label="对话记录"
     >
-      {messages.length === 0 && <div className="chat-empty">
+      {historyLoading ? <div className="chat-history-loading">正在恢复本地会话…</div> : messages.length === 0 && <div className="chat-empty">
         <div className="chat-empty-mark" aria-hidden="true">J</div>
         <Text strong className="chat-empty-title">从当前页面开始</Text>
         <Text type="secondary" className="chat-empty-description">你可以直接询问，也可以选一个建议填入输入框。</Text>
@@ -297,7 +351,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         value={input}
         onChange={(event) => setInput(event.target.value)}
         onKeyDown={onKeyDown}
-        disabled={sending}
+        disabled={sending || historyLoading}
         autoSize={{ minRows: 1, maxRows: 6 }}
         maxLength={4000}
         aria-label="发送给 Jarvis 的消息"
@@ -306,13 +360,13 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
       />
       <div className="chat-composer-footer">
         <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite">
-          {stopping ? '正在停止回复…' : sending ? 'Jarvis 正在回复，你可以随时停止' : 'Enter 发送 · Shift + Enter 换行'}
+          {stopping ? '正在暂停回复…' : sending ? 'Jarvis 正在回复，你可以随时暂停' : paused ? '已暂停；继续发送会恢复同一 Agent 会话' : 'Enter 发送 · Shift + Enter 换行'}
         </Text>
         {sending
-          ? <Button danger icon={<StopOutlined />} disabled={stopping} aria-label="停止 Jarvis 回复" onClick={stop}>
-            {stopping ? '正在停止' : '停止生成'}
+          ? <Button danger icon={<StopOutlined />} disabled={stopping} aria-label="暂停 Jarvis 回复" onClick={stop}>
+            {stopping ? '正在暂停' : '暂停生成'}
           </Button>
-          : <Button type="primary" icon={<SendOutlined />} disabled={!input.trim()} aria-label="发送消息" onClick={() => void send()}>发送</Button>}
+          : <Button type="primary" icon={<SendOutlined />} disabled={historyLoading || !input.trim()} aria-label="发送消息" onClick={() => void send()}>发送</Button>}
       </div>
     </div>
   </section>

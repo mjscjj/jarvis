@@ -50,6 +50,7 @@ func newTestServiceWithDependencies(t *testing.T, reader fakeSharedMemoryReader,
 		Sandbox:          "danger-full-access",
 		ReasoningEffort:  "medium",
 		Timeout:          600 * 1e9,
+		HistoryDir:       t.TempDir(),
 		SharedMemory:     reader,
 		ContextAssembler: assembler,
 	})

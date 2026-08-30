@@ -18,6 +18,8 @@ __pycache__/
 
 # 本地运行时数据
 /data/*
+# Jarvis 对话会话只保存在本机 Markdown，不进入 Git。
+/data/chat/
 !/data/okr/
 /data/okr/*
 !/data/okr/okr.db

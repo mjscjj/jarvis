@@ -1199,3 +1199,14 @@ export interface ChatDeltaEvent {
 export interface ChatErrorEvent {
   message: string
 }
+
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant'
+  text: string
+  at: string
+}
+
+export interface ChatHistory {
+  thread_id: string
+  messages: ChatHistoryMessage[]
+}

@@ -118,6 +118,7 @@ chat:
   timeout_seconds: 600
   sandbox: "danger-full-access"
   reasoning_effort: "medium"
+  history_dir: "/tmp/chat-history"
 skills:
   root: ".agents/skills"
 dailydigest:

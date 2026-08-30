@@ -13,6 +13,7 @@ func TestLoadExpandsRelativeExecutePaths(t *testing.T) {
 	source := strings.NewReplacer(
 		`repo_root: "/tmp/repos"`, `repo_root: ".."`,
 		`runs_dir: "/tmp/runs"`, `runs_dir: "runs"`,
+		`history_dir: "/tmp/chat-history"`, `history_dir: "data/chat"`,
 	).Replace(runtimeSettingsTestYAML)
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
@@ -33,6 +34,9 @@ func TestLoadExpandsRelativeExecutePaths(t *testing.T) {
 	if want := filepath.Join(workingDir, "runs"); cfg.Execute.RunsDir != want {
 		t.Fatalf("execute.runs_dir = %q, want %q", cfg.Execute.RunsDir, want)
 	}
+	if want := filepath.Join(workingDir, "data/chat"); cfg.Chat.HistoryDir != want {
+		t.Fatalf("chat.history_dir = %q, want %q", cfg.Chat.HistoryDir, want)
+	}
 }
 
 func TestLoadKeepsAbsoluteExecutePaths(t *testing.T) {
@@ -47,6 +51,9 @@ func TestLoadKeepsAbsoluteExecutePaths(t *testing.T) {
 	}
 	if cfg.Execute.RepoRoot != "/tmp/repos" || cfg.Execute.RunsDir != "/tmp/runs" {
 		t.Fatalf("execute paths = %q / %q, want them untouched", cfg.Execute.RepoRoot, cfg.Execute.RunsDir)
+	}
+	if cfg.Chat.HistoryDir != "/tmp/chat-history" {
+		t.Fatalf("chat.history_dir = %q, want it untouched", cfg.Chat.HistoryDir)
 	}
 }
 
@@ -301,7 +308,7 @@ func validCodexConfig() CodexConfig {
 func validChatConfig() ChatConfig {
 	return ChatConfig{
 		Enabled: true, Model: "fixture-model", TimeoutSeconds: 600,
-		Sandbox: "danger-full-access", ReasoningEffort: "medium",
+		Sandbox: "danger-full-access", ReasoningEffort: "medium", HistoryDir: "/tmp/chat-history",
 	}
 }
 

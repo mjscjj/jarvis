@@ -6,6 +6,7 @@ import {
   actionDefinition,
   actionKeyForSchedule,
   formValueForAction,
+  manualTaskInput,
   scheduledTaskInput,
 } from '../src/okr/emily/actionConfig.ts'
 
@@ -47,6 +48,19 @@ test('keeps the original four actions and binds each to one current prompt', () 
   ])
   assert.equal(new Set(OKR_ACTIONS.map((item) => item.promptKey)).size, 4)
   assert.ok(OKR_ACTIONS.every((item) => item.promptKey.startsWith('okr_agent_')))
+})
+
+test('manual action creates an ordinary Agent Task without requiring a schedule', () => {
+  const input = manualTaskInput(actionDefinition('remind_missing'))
+  assert.equal(input.title, 'OKR · 周报催填')
+  assert.equal(input.action_type, 'agent_task')
+  assert.deepEqual(input.background, {
+    module: 'weekly-report',
+    skill: 'okr-agent-orchestrator',
+    action_key: 'remind_missing',
+    prompt_key: 'okr_agent_weekly_reminder',
+  })
+  assert.equal((input.source_payload as Record<string, unknown>).prompt_key, 'okr_agent_weekly_reminder')
 })
 
 test('stores only fixed action identity and prompt binding in scheduler context', () => {

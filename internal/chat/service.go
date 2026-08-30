@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -49,6 +50,7 @@ type Options struct {
 	Sandbox         string
 	ReasoningEffort string
 	Timeout         time.Duration
+	HistoryDir      string
 	// SharedMemory 提供可信共享记忆文本，首轮系统指引末尾注入（见 internal/sharedmem）。
 	SharedMemory sharedmem.SharedMemoryReader
 	// ContextAssembler provides fresh principal/project/work context on every turn.
@@ -61,6 +63,7 @@ type Service struct {
 	runner    *runner
 	sharedMem sharedmem.SharedMemoryReader
 	context   ContextAssembler
+	history   *HistoryStore
 }
 
 // NewService 构造对话 Service。fail-fast：任一必填项缺失或非法直接返回 error。
@@ -75,7 +78,11 @@ func NewService(opts Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{runner: r, sharedMem: opts.SharedMemory, context: opts.ContextAssembler}, nil
+	history, err := NewHistoryStore(opts.HistoryDir)
+	if err != nil {
+		return nil, err
+	}
+	return &Service{runner: r, sharedMem: opts.SharedMemory, context: opts.ContextAssembler, history: history}, nil
 }
 
 // Stream 执行一轮对话。emit 逐条收到 thread/delta 事件；正常结束返回 nil
@@ -102,7 +109,34 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 		}
 		prompt = built
 	}
-	return s.runner.Stream(ctx, prompt, strings.TrimSpace(req.ThreadID), emit)
+	activeThreadID := strings.TrimSpace(req.ThreadID)
+	var assistant strings.Builder
+	streamErr := s.runner.Stream(ctx, prompt, activeThreadID, func(event Event) error {
+		switch event.Kind {
+		case EventThread:
+			threadID := strings.TrimSpace(event.ThreadID)
+			if activeThreadID != "" && threadID != activeThreadID {
+				return fmt.Errorf("resumed chat returned different thread_id: got %q want %q", threadID, activeThreadID)
+			}
+			activeThreadID = threadID
+		case EventDelta:
+			assistant.WriteString(event.Text)
+		}
+		return emit(event)
+	})
+	if activeThreadID != "" {
+		if historyErr := s.history.AppendTurn(activeThreadID, message, assistant.String()); historyErr != nil {
+			if streamErr != nil {
+				return errors.Join(streamErr, historyErr)
+			}
+			return historyErr
+		}
+	}
+	return streamErr
+}
+
+func (s *Service) History(threadID string) (History, error) {
+	return s.history.Read(threadID)
 }
 
 // buildPrompt 组装首轮 prompt：系统指引（末尾追加可信共享记忆）+ page_context + 用户消息。

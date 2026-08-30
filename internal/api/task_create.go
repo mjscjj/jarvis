@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"jarvis/internal/domain"
 	"jarvis/internal/taskcreate"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -35,7 +36,12 @@ func CreateTask(submitter *taskcreate.Submitter) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40029, err)
 			return
 		}
-		task, err := submitter.Submit(ctx, input)
+		var task *domain.Task
+		if input.SourceType == taskcreate.SourceManual {
+			task, err = submitter.Create(ctx, input)
+		} else {
+			task, err = submitter.Submit(ctx, input)
+		}
 		if err != nil {
 			if errors.Is(err, taskcreate.ErrInvalidInput) {
 				writeAPIError(c, consts.StatusBadRequest, 40029, err)

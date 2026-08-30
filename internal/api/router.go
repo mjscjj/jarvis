@@ -342,6 +342,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 基于 codex CLI 的流式对话（SSE）。与 execute 一致：未启用（nil）则不注册路由。
 	if deps.Chat != nil {
 		h.POST("/api/chat", Chat(deps.Chat))
+		h.GET("/api/chat/:thread_id", GetChatHistory(deps.Chat))
 	}
 	// 精确 API 路由优先于这个兜底。必须在进程注册根 StaticFS 之前拦住
 	// 未知 /api/*，否则 Hertz 会把它当作 web/dist 下的静态文件并返回

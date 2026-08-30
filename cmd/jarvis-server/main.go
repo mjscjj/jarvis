@@ -960,6 +960,7 @@ func main() {
 			Sandbox:          cfg.Chat.Sandbox,
 			ReasoningEffort:  cfg.Chat.ReasoningEffort,
 			Timeout:          time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,
+			HistoryDir:       cfg.Chat.HistoryDir,
 			SharedMemory:     sharedMemoryService,
 			ContextAssembler: contextAssembler,
 		})
@@ -1004,7 +1005,7 @@ func main() {
 		DB: db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,
-		Projects: projectService, KeyMatters: keyMatterService,
+		Projects:        projectService, KeyMatters: keyMatterService,
 		Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		Pages:              pageService,
