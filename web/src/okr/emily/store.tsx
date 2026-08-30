@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteProgress, getBoard, getEnums, replaceKR, updateProgress, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, getBoard, getEnums, replaceKR, updateObjective as updateObjectiveRequest, updateProgress, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { LIGHTS, STATUSES } from './template'
@@ -274,6 +274,32 @@ export function BoardProvider({
         await loadRemote('', input.quarter)
       } catch (error) {
         setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '创建目标失败。' })
+        throw error
+      }
+    },
+
+    updateObjective: async (id, title) => {
+      const clean = title.trim()
+      if (!clean) throw new Error('目标名称不能为空。')
+      setSyncState({ kind: 'saving', message: '正在更新目标…' })
+      try {
+        await updateObjectiveRequest(id, clean)
+        publish(objectivesRef.current.map((objective) => objective.id === id ? { ...objective, title: clean } : objective))
+        setSyncState({ kind: 'saved', message: '目标已更新' })
+      } catch (error) {
+        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '更新目标失败。' })
+        throw error
+      }
+    },
+
+    deleteObjective: async (id) => {
+      setSyncState({ kind: 'saving', message: '正在删除空目标…' })
+      try {
+        await deleteObjectiveRequest(id)
+        publish(objectivesRef.current.filter((objective) => objective.id !== id))
+        setSyncState({ kind: 'saved', message: '空目标已删除' })
+      } catch (error) {
+        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '删除目标失败。' })
         throw error
       }
     },

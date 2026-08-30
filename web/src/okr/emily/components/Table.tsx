@@ -400,7 +400,59 @@ function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsRead
   )
 }
 
-export function KrTable({ readOnly = false, definitionsReadOnly = false, progressReadOnly = false, showProgress = true }: { readOnly?: boolean; definitionsReadOnly?: boolean; progressReadOnly?: boolean; showProgress?: boolean }) {
+function ObjectiveControls({ objective }: { objective: Objective }) {
+	const { updateObjective, deleteObjective } = useBoard()
+	const [editing, setEditing] = useState(false)
+	const [title, setTitle] = useState(objective.title)
+	const [busy, setBusy] = useState(false)
+	const [confirmDelete, setConfirmDelete] = useState(false)
+	const save = async () => {
+		const clean = title.trim()
+		if (!clean || clean === objective.title) {
+			setTitle(objective.title)
+			setEditing(false)
+			return
+		}
+		setBusy(true)
+		try {
+			await updateObjective(objective.id, clean)
+			setEditing(false)
+		} catch {
+			// BoardProvider exposes the failure in the shared sync notice.
+		} finally {
+			setBusy(false)
+		}
+	}
+	const remove = async () => {
+		setBusy(true)
+		try {
+			await deleteObjective(objective.id)
+		} catch {
+			// BoardProvider exposes the failure in the shared sync notice.
+		} finally {
+			setBusy(false)
+			setConfirmDelete(false)
+		}
+	}
+
+	return <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px]">
+		<span className="text-slate-400">当前方向</span>
+		{editing ? <>
+			<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void save(); if (event.key === 'Escape') { setTitle(objective.title); setEditing(false) } }} className="h-7 min-w-64 flex-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-blue-400" />
+			<button type="button" disabled={busy || !title.trim()} onClick={() => void save()} className="h-7 rounded-md bg-blue-600 px-2.5 font-medium text-white disabled:opacity-40">保存</button>
+			<button type="button" disabled={busy} onClick={() => { setTitle(objective.title); setEditing(false) }} className="h-7 px-1.5 text-slate-400">取消</button>
+		</> : <>
+			<strong className="min-w-0 flex-1 truncate text-[11px] text-slate-700">{objective.title}</strong>
+			<button type="button" onClick={() => { setTitle(objective.title); setEditing(true) }} className="h-7 rounded-md border border-slate-200 px-2.5 text-slate-600 hover:border-blue-200 hover:text-blue-600">重命名</button>
+			{objective.krs.length === 0 && (confirmDelete ? <>
+				<button type="button" disabled={busy} onClick={() => void remove()} className="h-7 rounded-md bg-red-600 px-2.5 text-white disabled:opacity-40">确认删除</button>
+				<button type="button" disabled={busy} onClick={() => setConfirmDelete(false)} className="h-7 px-1.5 text-slate-400">取消</button>
+			</> : <button type="button" onClick={() => setConfirmDelete(true)} className="h-7 rounded-md px-2 text-red-500 hover:bg-red-50">删除空方向</button>)}
+		</>}
+	</div>
+}
+
+export function KrTable({ readOnly = false, definitionsReadOnly = false, progressReadOnly = false, showProgress = true, manageObjectives = false }: { readOnly?: boolean; definitionsReadOnly?: boolean; progressReadOnly?: boolean; showProgress?: boolean; manageObjectives?: boolean }) {
   const { objectives } = useBoard()
 	const [closed, setClosed] = useState<Set<string>>(new Set())
 	const [ownerFilter, setOwnerFilter] = useState('')
@@ -445,8 +497,9 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
 			activeObjectiveId={activeObjective?.id}
 			onBusiness={(value) => { setActiveBusinessValue(value); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
 			onPriority={(value) => { setActivePriorityValue(value); setActiveObjectiveId('') }}
-			onObjective={setActiveObjectiveId}
+				onObjective={setActiveObjectiveId}
       />
+		{manageObjectives && activeObjective && <ObjectiveControls key={activeObjective.id} objective={activeObjective} />}
       <div>
         {activeObjective && <ObjectiveSection key={activeObjective.id} objective={activeObjective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} showTitle={false} />}
         {!activeObjective && <Empty>没有符合筛选条件的 KR</Empty>}

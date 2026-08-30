@@ -333,6 +333,10 @@ type CreateObjectiveInput struct {
 	Title   string `json:"title"`
 }
 
+type UpdateObjectiveInput struct {
+	Title string `json:"title"`
+}
+
 type DeleteKRInput struct {
 	ExpectedVersion int32 `json:"expected_version"`
 }
@@ -900,6 +904,55 @@ func (s *Service) CreateObjective(ctx context.Context, input CreateObjectiveInpu
 		return ObjectiveView{}, fmt.Errorf("create objective: %w", err)
 	}
 	return ObjectiveView{ID: record.ID, Title: record.Title, KRs: []KRView{}}, nil
+}
+
+func (s *Service) UpdateObjective(ctx context.Context, id string, input UpdateObjectiveInput) (ObjectiveView, error) {
+	id = strings.TrimSpace(id)
+	input.Title = strings.TrimSpace(input.Title)
+	if id == "" || input.Title == "" {
+		return ObjectiveView{}, fmt.Errorf("objective id and title are required")
+	}
+	result := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("id = ?", id).Update("title", input.Title)
+	if result.Error != nil {
+		return ObjectiveView{}, fmt.Errorf("update objective: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return ObjectiveView{}, ErrNotFound
+	}
+	var record domain.Objective
+	if err := s.db.WithContext(ctx).First(&record, "id = ?", id).Error; err != nil {
+		return ObjectiveView{}, fmt.Errorf("read updated objective: %w", err)
+	}
+	return ObjectiveView{ID: record.ID, Title: record.Title, KRs: []KRView{}}, nil
+}
+
+func (s *Service) DeleteObjective(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("objective id is required")
+	}
+	var record domain.Objective
+	if err := s.db.WithContext(ctx).First(&record, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get objective for delete: %w", err)
+	}
+	var krCount int64
+	if err := s.db.WithContext(ctx).Model(&domain.KR{}).Where("objective_id = ?", id).Count(&krCount).Error; err != nil {
+		return fmt.Errorf("count objective KRs: %w", err)
+	}
+	if krCount > 0 {
+		return fmt.Errorf("objective %s still has %d KRs and cannot be deleted", id, krCount)
+	}
+	result := s.db.WithContext(ctx).Delete(&domain.Objective{}, "id = ?", id)
+	if result.Error != nil {
+		return fmt.Errorf("delete objective: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) error {

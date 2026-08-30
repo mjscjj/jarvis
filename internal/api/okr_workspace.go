@@ -585,6 +585,49 @@ func CreateObjective(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func UpdateObjective(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id := strings.TrimSpace(c.Param("objective_id"))
+		if id == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40029, fmt.Errorf("objective_id is required"))
+			return
+		}
+		var input okrworkspace.UpdateObjectiveInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40030, err)
+			return
+		}
+		result, err := service.UpdateObjective(ctx, id, input)
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40429, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40031, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func DeleteObjective(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id := strings.TrimSpace(c.Param("objective_id"))
+		if id == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("objective_id is required"))
+			return
+		}
+		if err := service.DeleteObjective(ctx, id); errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40432, err)
+			return
+		} else if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40033, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]string{"id": id}})
+	}
+}
+
 func CreateKR(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		objectiveID := strings.TrimSpace(c.Param("objective_id"))

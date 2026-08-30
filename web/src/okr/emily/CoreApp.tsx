@@ -60,7 +60,7 @@ export default function CoreApp({
             <button type="button" onClick={() => void submitObjective()} disabled={!objectiveTitle.trim() || syncState.kind === 'saving'} className="h-9 rounded-lg bg-indigo-600 px-4 text-xs font-medium text-white disabled:opacity-40">创建目标</button>
             <button type="button" onClick={() => setCreating(false)} className="h-9 px-2 text-xs text-slate-400">取消</button>
           </div>}
-          <KrTable progressReadOnly showProgress={false} />
+	          <KrTable progressReadOnly showProgress={false} manageObjectives />
         </div> : <ManagementView />}
       </main>
     </div>

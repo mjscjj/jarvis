@@ -716,6 +716,17 @@ export async function createObjective(input: { quarter: string; title: string })
   return { id: value.id, title: value.title, krs: value.krs.map(fromAPIKr) }
 }
 
+export async function updateObjective(id: string, title: string): Promise<void> {
+  await request<{ id: string; title: string; krs: APIKr[] }>(`/api/okr/objectives/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ title }),
+  })
+}
+
+export async function deleteObjective(id: string): Promise<void> {
+  await request<{ id: string }>(`/api/okr/objectives/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
 export async function createKR(objectiveId: string, input: { title: string; ownerName?: string; businessCategory: string; priority: KrPriority }): Promise<Kr> {
 	const ownerNames = (input.ownerName ?? '').split(/[、,，;；]/).map((name) => name.trim()).filter(Boolean)
 	const value = await request<APIKr>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {

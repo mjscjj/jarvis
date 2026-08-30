@@ -41,6 +41,46 @@ function priorityTone(priority: KrPriority | '') {
   return 'border-slate-200 bg-white text-slate-500'
 }
 
+function BusinessCategoryField({ value, categories, onChange, allowEmpty = false, ariaLabel, className }: {
+	value: string
+	categories: string[]
+	onChange: (value: string) => void
+	allowEmpty?: boolean
+	ariaLabel: string
+	className: string
+}) {
+	const [creating, setCreating] = useState(categories.length === 0 && !value)
+	const [draft, setDraft] = useState('')
+	const options = value && !categories.includes(value) ? [value, ...categories] : categories
+	const commit = () => {
+		const clean = draft.trim()
+		if (!clean) return
+		onChange(clean)
+		setDraft('')
+		setCreating(false)
+	}
+
+	if (creating) {
+		return <span className="inline-flex min-w-0 items-center gap-1">
+			<input autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') commit(); if (event.key === 'Escape' && categories.length > 0) setCreating(false) }} placeholder="新业务分类" aria-label={ariaLabel} className={className} />
+			<button type="button" disabled={!draft.trim()} onClick={commit} className="h-6 rounded bg-blue-600 px-1.5 text-[9px] text-white disabled:opacity-30">确定</button>
+			{categories.length > 0 && <button type="button" onClick={() => setCreating(false)} className="h-6 px-1 text-[9px] text-slate-400">取消</button>}
+		</span>
+	}
+
+	return <select value={value} onChange={(event) => {
+		if (event.target.value === '__new__') {
+			setCreating(true)
+			return
+		}
+		onChange(event.target.value)
+	}} aria-label={ariaLabel} className={className}>
+		{allowEmpty ? <option value="">未标注业务</option> : <option value="" disabled>选择业务分类</option>}
+		{options.map((category) => <option key={category} value={category}>{category}</option>)}
+		<option value="__new__">+ 新业务分类…</option>
+	</select>
+}
+
 function TagEditor({ kr, suggestions }: { kr: Kr; suggestions: KrTag[] }) {
   const { addTag, removeTag } = useBoard()
   const [editing, setEditing] = useState(false)
@@ -110,10 +150,7 @@ function KrEditorRow({ objectiveId, kr, peopleOptions, tagSuggestions, businessC
             className="h-7 min-w-64 flex-[1_1_32rem] rounded-md border border-transparent bg-transparent px-1.5 text-[11px] font-medium text-slate-700 outline-none transition-colors hover:border-slate-200 hover:bg-white focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-50"
 				/>
 				<FeishuPeoplePicker kr={kr} options={peopleOptions} />
-				<select value={businessCategoryOf(kr)} onChange={(event) => setKrBusinessCategory(kr.id, event.target.value)} aria-label="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400">
-					<option value="">未标注业务</option>
-					{businessCategories.map((category) => <option key={category} value={category}>{category}</option>)}
-				</select>
+					<BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />
 				<select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}>
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
 				</select>
@@ -157,10 +194,7 @@ function NewKrRow({ objective, businessCategories, onClose }: { objective: Objec
 		<div className="grid gap-1.5 bg-blue-50/50 px-3.5 py-2 md:grid-cols-[minmax(18rem,1.3fr)_minmax(9rem,0.5fr)_minmax(9rem,0.5fr)_5.5rem_auto] md:items-center md:gap-2">
 			<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submit(); if (event.key === 'Escape') onClose() }} placeholder="填写新 KR 内容" className="h-8 min-w-0 rounded-md border border-blue-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
 			<input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submit() }} placeholder="负责人，可用、分隔多人" className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none focus:border-blue-400" />
-			<select value={businessCategory} onChange={(event) => setBusinessCategory(event.target.value)} aria-label="新 KR 业务分类" className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none focus:border-blue-400">
-				<option value="" disabled>选择业务分类</option>
-				{businessCategories.map((category) => <option key={category} value={category}>{category}</option>)}
-			</select>
+				<BusinessCategoryField value={businessCategory} categories={businessCategories} onChange={setBusinessCategory} ariaLabel="新 KR 业务分类" className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none focus:border-blue-400" />
 			<select value={priority} onChange={(event) => setPriority(event.target.value as KrPriority)} aria-label="新 KR 优先级标签" className={`h-8 rounded-md border px-2 text-[10px] outline-none ${priorityTone(priority)}`}><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>
 			<div className="flex justify-end gap-1">
 				<button type="button" onClick={() => void submit()} disabled={!title.trim() || !businessCategory.trim() || creating} className="h-7 rounded-md bg-blue-600 px-2.5 text-[10px] font-medium !text-white hover:bg-blue-700 disabled:opacity-40">{creating ? '创建中…' : '创建'}</button>
@@ -180,7 +214,7 @@ export function ManagementView() {
   const hasFilters = Boolean(query.trim() || owner || priority || tag)
   const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
 	const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => (kr.tags ?? []).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
-	const businessCategories = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.map(businessCategoryOf)).filter(Boolean))], [objectives])
+	const businessCategories = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.map(businessCategoryOf)).filter(Boolean))].sort(), [objectives])
   const groups = useMemo(() => objectives.map((objective) => ({
     ...objective,
     krs: objective.krs.filter((kr) => {

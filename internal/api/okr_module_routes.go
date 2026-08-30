@@ -68,6 +68,8 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	h.POST("/api/okr/images", requireEnabled, requireIdentity, UploadOKRImage(deps.Images))
 	h.POST("/api/okr/feishu-documents", requireEnabled, requireIdentity, CreateOKRDocument(deps.Documents))
 	h.POST("/api/okr/objectives", requireEnabled, requireIdentity, CreateObjective(deps.Workspace))
+	h.PUT("/api/okr/objectives/:objective_id", requireEnabled, requireIdentity, UpdateObjective(deps.Workspace))
+	h.DELETE("/api/okr/objectives/:objective_id", requireEnabled, requireIdentity, DeleteObjective(deps.Workspace))
 	h.POST("/api/okr/objectives/:objective_id/krs", requireEnabled, requireIdentity, CreateKR(deps.Workspace))
 	h.PUT("/api/okr/krs/:kr_id", requireEnabled, requireIdentity, ReplaceCoreKR(deps.Workspace))
 	h.DELETE("/api/okr/krs/:kr_id", requireEnabled, requireIdentity, DeleteKR(deps.Workspace))

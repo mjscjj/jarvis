@@ -327,6 +327,38 @@ func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
 	}
 }
 
+func TestObjectiveCanBeRenamedAndOnlyDeletedWhenEmpty(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objective, err := service.CreateObjective(t.Context(), CreateObjectiveInput{Quarter: "2026-Q3", Title: "旧方向"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := service.UpdateObjective(t.Context(), objective.ID, UpdateObjectiveInput{Title: "新方向"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Title != "新方向" {
+		t.Fatalf("updated objective = %+v", updated)
+	}
+	kr, err := service.CreateKR(t.Context(), objective.ID, CreateKRInput{Title: "仍有关联 KR"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteObjective(t.Context(), objective.ID); err == nil {
+		t.Fatal("DeleteObjective() succeeded while KRs still exist")
+	}
+	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: kr.Version}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteObjective(t.Context(), objective.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStructuralTagsRejectConflictingValues(t *testing.T) {
 	for name, tags := range map[string][]TagView{
 		"multiple businesses": {{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypeBusinessCategory, Value: "运营效率"}},

@@ -25,6 +25,8 @@ export interface BoardApi {
 	setKrBusinessCategory: (krId: string, category: string) => void
 	setKrPriority: (krId: string, priority: KrPriority | '') => void
 	createObjective: (input: { quarter: string; title: string }) => Promise<void>
+	updateObjective: (id: string, title: string) => Promise<void>
+	deleteObjective: (id: string) => Promise<void>
 	createKr: (objectiveId: string, input: { title: string; ownerName?: string; businessCategory: string; priority: KrPriority }) => Promise<void>
   deleteKr: (krId: string) => Promise<void>
   addTag: (krId: string, value: string, type?: string) => void
