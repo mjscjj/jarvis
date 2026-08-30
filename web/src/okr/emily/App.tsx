@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { useBoard } from './board'
 import { MeetingView } from './components/MeetingView'
 import { KrTable } from './components/Table'
@@ -70,13 +70,11 @@ export default function App({
   onLogout,
   mode,
   onModeChange,
-  moduleTabs,
 }: {
   auth: AuthStatus
   onLogout: () => void
   mode: 'fill' | 'meeting'
   onModeChange: (mode: 'fill' | 'meeting') => void
-  moduleTabs: ReactNode
 }) {
 	const { reset, syncState, quarter, week, availableWeeks, setWeek, setWeeklyScope } = useBoard()
   const [commentsOpen, setCommentsOpen] = useState(false)
@@ -187,23 +185,19 @@ export default function App({
           <span className={`hidden min-w-16 text-[10px] sm:inline ${tone}`} aria-live="polite">{syncState.message}</span>
 
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
-			{moduleTabs}
-
-			<>
-                <span aria-hidden className="hidden h-5 w-px bg-slate-200 sm:block" />
-                <button
-                  type="button"
-                  onClick={toggleComments}
-                  aria-label={commentsOpen ? '关闭评论' : '打开全部评论'}
-                  className={`relative flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-medium transition-colors ${commentsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50'}`}
-                >
-                  <svg aria-hidden viewBox="0 0 20 20" className="size-4 fill-none stroke-current" strokeWidth="1.6">
-                    <path d="M4.25 3.75h11.5A1.75 1.75 0 0 1 17.5 5.5v6.25a1.75 1.75 0 0 1-1.75 1.75H9l-4.5 3v-3h-.25a1.75 1.75 0 0 1-1.75-1.75V5.5a1.75 1.75 0 0 1 1.75-1.75Z" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <span>评论</span>
-                  {commentCount > 0 && <span className="min-w-4 rounded-full bg-indigo-600 px-1 text-center text-[9px] leading-4 text-white">{commentCount}</span>}
-                </button>
-			</>
+              <span aria-hidden className="hidden h-5 w-px bg-slate-200 sm:block" />
+              <button
+                type="button"
+                onClick={toggleComments}
+                aria-label={commentsOpen ? '关闭评论' : '打开全部评论'}
+                className={`relative flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-medium transition-colors ${commentsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50'}`}
+              >
+                <svg aria-hidden viewBox="0 0 20 20" className="size-4 fill-none stroke-current" strokeWidth="1.6">
+                  <path d="M4.25 3.75h11.5A1.75 1.75 0 0 1 17.5 5.5v6.25a1.75 1.75 0 0 1-1.75 1.75H9l-4.5 3v-3h-.25a1.75 1.75 0 0 1-1.75-1.75V5.5a1.75 1.75 0 0 1 1.75-1.75Z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span>评论</span>
+                {commentCount > 0 && <span className="min-w-4 rounded-full bg-indigo-600 px-1 text-center text-[9px] leading-4 text-white">{commentCount}</span>}
+              </button>
           </div>
           {auth.user && <div className="hidden items-center gap-1.5 text-[11px] text-slate-500 xl:flex">
             {auth.user.avatarUrl ? <img src={auth.user.avatarUrl} alt="" className="size-6 rounded-full" /> : <span className="flex size-6 items-center justify-center rounded-full bg-slate-100 text-[10px]">{auth.user.name.slice(0, 1)}</span>}

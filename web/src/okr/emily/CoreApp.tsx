@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { ManagementView } from './components/ManagementView'
 import { QuarterSelect } from './components/QuarterSelect'
 import { KrTable } from './components/Table'
@@ -9,12 +9,10 @@ export default function CoreApp({
   auth,
   onLogout,
   view,
-  moduleTabs,
 }: {
   auth: AuthStatus
   onLogout: () => void
   view: 'structure' | 'manage'
-  moduleTabs: ReactNode
 }) {
   const { quarter, syncState, reset, createObjective } = useBoard()
   const [creating, setCreating] = useState(false)
@@ -41,7 +39,6 @@ export default function CoreApp({
           <span className={`ml-3 text-[10px] ${tone}`} aria-live="polite">{syncState.message}</span>
           <div className="ml-auto flex items-center gap-2">
             <QuarterSelect />
-            {moduleTabs}
             <button type="button" onClick={reset} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] text-slate-500 hover:bg-slate-50">重新载入</button>
             {auth.user && <div className="hidden items-center gap-1.5 text-[11px] text-slate-500 sm:flex">{auth.user.avatarUrl ? <img src={auth.user.avatarUrl} alt="" className="size-6 rounded-full" /> : <span className="flex size-6 items-center justify-center rounded-full bg-slate-100 text-[10px]">{auth.user.name.slice(0, 1)}</span>}<span>{auth.user.name}</span>{auth.configured && <button type="button" onClick={onLogout} className="ml-1 text-slate-400 hover:text-slate-700">退出</button>}</div>}
           </div>

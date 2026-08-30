@@ -22,6 +22,7 @@ import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
 import { listAppModules } from './api'
 import { appModuleRegistry } from './modules/registry'
+import type { AppModuleChildDefinition, AppModuleDefinition } from './modules/registry'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -40,6 +41,19 @@ const DEFAULT_KEY = 'overview'
 
 const SIDER_WIDTH = 184
 const SIDER_COLLAPSED_WIDTH = 64
+const EMPTY_MODULE_ENABLEMENT: Readonly<Record<string, boolean>> = {}
+
+function moduleChildMenuKey(moduleKey: string, childKey: string): string {
+  return `${moduleKey}:${childKey}`
+}
+
+function enabledModuleChildren(
+  module: AppModuleDefinition,
+  moduleEnablement: Readonly<Record<string, boolean>>,
+): readonly AppModuleChildDefinition[] {
+  return module.children?.filter((child) => !child.requiresModule || moduleEnablement[child.requiresModule] === true) ?? []
+}
+
 const pageLabels: Record<string, string> = {
   overview: '今日',
   tasks: '任务',
@@ -59,8 +73,9 @@ function AppShell() {
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
   const [chatLoaded, setChatLoaded] = useState(chatOpen)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
-  const [managementOpen, setManagementOpen] = useState(true)
+  const [openMenuKeys, setOpenMenuKeys] = useState<string[]>(['management'])
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
+  const [mobileModuleKey, setMobileModuleKey] = useState<string>()
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean>>()
   const [moduleLoadError, setModuleLoadError] = useState<string>()
   const chatRef = useRef<HTMLElement>(null)
@@ -75,12 +90,44 @@ function AppShell() {
   }
 
   const enabledModules = appModuleRegistry.filter((module) => moduleEnablement?.[module.key])
+  const resolvedModuleEnablement = moduleEnablement ?? EMPTY_MODULE_ENABLEMENT
+  const moduleNavigationTargets = enabledModules.flatMap((module) => (
+    enabledModuleChildren(module, resolvedModuleEnablement).map((child) => ({
+      menuKey: moduleChildMenuKey(module.key, child.key),
+      module,
+      child,
+    }))
+  ))
+  const activeModule = enabledModules.find((module) => module.key === context.active_key)
+  const activeModuleChildren = activeModule ? enabledModuleChildren(activeModule, resolvedModuleEnablement) : []
+  const activeModuleChild = activeModuleChildren.find((child) => (
+    Object.entries(child.viewState).every(([key, value]) => context.view_state[key] === value)
+  )) ?? activeModuleChildren[0]
+  const selectedMenuKey = activeModule && activeModuleChild
+    ? moduleChildMenuKey(activeModule.key, activeModuleChild.key)
+    : context.active_key
+  const currentPageLabel = activeModule && activeModuleChild
+    ? `${activeModule.label} · ${activeModuleChild.label}`
+    : pageLabels[context.active_key] || 'Jarvis'
 
   const menuProps: MenuProps['items'] = [
     { key: 'overview', label: '今日', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
-    ...enabledModules.map((module) => ({ key: module.key, label: module.label, icon: module.icon })),
+    ...enabledModules.map((module) => {
+      const children = enabledModuleChildren(module, resolvedModuleEnablement)
+      if (children.length === 0) return { key: module.key, label: module.label, icon: module.icon }
+      return {
+        key: module.key,
+        label: module.label,
+        icon: module.icon,
+        children: children.map((child, index) => ({
+          key: moduleChildMenuKey(module.key, child.key),
+          label: child.label,
+          className: index > 0 && children[index - 1].group !== child.group ? 'app-menu-child-group-start' : undefined,
+        })),
+      }
+    }),
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
     { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
@@ -107,7 +154,10 @@ function AppShell() {
     settings: <Settings />,
     progress: <Progress />,
     debug: <Debug />,
-    ...Object.fromEntries(enabledModules.map((module) => [module.key, <module.Page key={module.key} />])),
+    ...Object.fromEntries(enabledModules.map((module) => [
+      module.key,
+      <module.Page key={module.key} moduleEnablement={resolvedModuleEnablement} />,
+    ])),
   }
 
   useEffect(() => {
@@ -136,9 +186,14 @@ function AppShell() {
 
   useEffect(() => {
     if (!moduleEnablement) return
-    const activeModule = appModuleRegistry.find((module) => module.key === context.active_key)
-    if (activeModule && !moduleEnablement[activeModule.key]) navigate('overview')
+    const registeredActiveModule = appModuleRegistry.find((module) => module.key === context.active_key)
+    if (registeredActiveModule && !moduleEnablement[registeredActiveModule.key]) navigate('overview')
   }, [context.active_key, moduleEnablement, navigate])
+
+  useEffect(() => {
+    if (!activeModule || activeModuleChildren.length === 0) return
+    setOpenMenuKeys((keys) => keys.includes(activeModule.key) ? keys : [...keys, activeModule.key])
+  }, [activeModule, activeModuleChildren.length])
 
   useEffect(() => {
     if (chatOpen) setChatLoaded(true)
@@ -183,10 +238,34 @@ function AppShell() {
 
   const goTo = (key: string) => {
     setMobileSystemOpen(false)
-    navigate(key)
+    setMobileModuleKey(undefined)
+    const target = moduleNavigationTargets.find((item) => item.menuKey === key)
+    if (target) navigate(target.module.key, target.child.viewState)
+    else navigate(key)
   }
 
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
+  const mobileModule = enabledModules.find((module) => module.key === mobileModuleKey)
+  const mobileModuleChildren = mobileModule ? enabledModuleChildren(mobileModule, resolvedModuleEnablement) : []
+  const mobileNavItems: Array<{
+    key: string
+    label: string
+    icon: React.ReactNode
+    children?: readonly AppModuleChildDefinition[]
+  }> = [
+    { key: 'overview', label: '今日', icon: <HomeOutlined /> },
+    { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
+    { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
+    ...enabledModules.map((module) => ({
+      key: module.key,
+      label: module.label,
+      icon: module.icon,
+      children: enabledModuleChildren(module, resolvedModuleEnablement),
+    })),
+    { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
+    { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
+    { key: 'agents', label: 'Agent', icon: <RobotOutlined /> },
+  ]
 
   return (
     <Layout
@@ -201,9 +280,9 @@ function AppShell() {
         <Menu
           mode="inline"
           inlineCollapsed={siderCollapsed}
-          selectedKeys={[context.active_key]}
-          openKeys={siderCollapsed || !managementOpen ? [] : ['management']}
-          onOpenChange={(keys) => setManagementOpen(keys.includes('management'))}
+          selectedKeys={[selectedMenuKey]}
+          openKeys={openMenuKeys}
+          onOpenChange={(keys) => setOpenMenuKeys(keys.map(String))}
           items={menuProps}
           onClick={({ key }) => goTo(key)}
           className="app-menu"
@@ -218,7 +297,7 @@ function AppShell() {
         </Tooltip>
       </Sider>
       <header className="mobile-topbar">
-        <strong>{pageLabels[context.active_key] || 'Jarvis'}</strong>
+        <strong>{currentPageLabel}</strong>
         <Button type="text" icon={<MoreOutlined />} aria-label="打开系统导航" onClick={() => setMobileSystemOpen(true)} />
       </header>
       <Layout>
@@ -257,20 +336,36 @@ function AppShell() {
         />
       </Tooltip>
       <nav className="mobile-bottom-nav" aria-label="主要导航">
-        {[
-          { key: 'overview', label: '今日', icon: <HomeOutlined /> },
-          { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
-          { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
-          ...enabledModules.map((module) => ({ key: module.key, label: module.label, icon: module.icon })),
-          { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
-          { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
-          { key: 'agents', label: 'Agent', icon: <RobotOutlined /> },
-        ].map((item) => (
-          <button key={item.key} type="button" className={context.active_key === item.key ? 'is-active' : ''} onClick={() => goTo(item.key)}>
+        {mobileNavItems.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={context.active_key === item.key ? 'is-active' : ''}
+            onClick={() => item.children?.length ? setMobileModuleKey(item.key) : goTo(item.key)}
+          >
             {item.icon}<span>{item.label}</span>
           </button>
         ))}
       </nav>
+      <Drawer
+        className="mobile-module-drawer"
+        title={mobileModule?.label}
+        placement="bottom"
+        height="auto"
+        open={Boolean(mobileModule)}
+        onClose={() => setMobileModuleKey(undefined)}
+      >
+        <div className="mobile-system-links">
+          {mobileModuleChildren.map((child) => {
+            const menuKey = moduleChildMenuKey(mobileModule!.key, child.key)
+            return (
+              <Button key={child.key} type={selectedMenuKey === menuKey ? 'primary' : 'text'} onClick={() => goTo(menuKey)}>
+                {child.label}
+              </Button>
+            )
+          })}
+        </div>
+      </Drawer>
       <Drawer
         className="mobile-system-drawer"
         title="系统"

@@ -10,8 +10,9 @@ export interface PageContextValue {
   setActiveKey: (key: string) => void
   setSelection: (selection: PageSelection | null) => void
   setViewState: (state: Record<string, string | number | boolean | null | undefined>, replace?: boolean) => void
-  // navigate switches to a page and clears the previous page's selection.
-  navigate: (key: string) => void
+  // navigate switches to a page and clears the previous page's selection. A
+  // module child can provide its complete initial view state in the same write.
+  navigate: (key: string, viewState?: Record<string, string | number | boolean | null | undefined>) => void
 }
 
 const Context = createContext<PageContextValue | null>(null)
@@ -135,11 +136,16 @@ export function PageContextProvider({
     writePageHash(activeKey, selection, normalized, replace)
   }, [activeKey, selection])
 
-  const navigate = useCallback((key: string) => {
+  const navigate = useCallback((key: string, nextViewState: Record<string, string | number | boolean | null | undefined> = {}) => {
+    const normalized = Object.fromEntries(
+      Object.entries(nextViewState)
+        .filter(([, value]) => value !== null && value !== undefined && value !== '')
+        .map(([viewKey, value]) => [viewKey, String(value)]),
+    )
     setActiveKeyState(key)
     setSelectionState(null)
-    setViewStateState({})
-    writePageHash(key, null, {})
+    setViewStateState(normalized)
+    writePageHash(key, null, normalized)
   }, [])
 
   const value = useMemo<PageContextValue>(
