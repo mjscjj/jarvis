@@ -143,6 +143,36 @@ body {
   letter-spacing: -0.02em;
 }
 
+.plugin-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 960px;
+  padding-top: var(--space-2);
+}
+
+.plugin-detail-heading,
+.plugin-config-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.plugin-detail-heading .ant-typography,
+.plugin-config-heading .ant-typography {
+  margin: 0;
+}
+
+.plugin-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
 /* Jarvis 对话覆盖在页面之上，不再挤压表格和详情布局。 */
 .chat-overlay {
   position: fixed;

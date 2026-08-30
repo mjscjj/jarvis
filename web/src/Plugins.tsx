@@ -7,6 +7,7 @@ import {
   Space,
   Switch,
   Table,
+  Tabs,
   Tag,
   Typography,
   message,
@@ -28,7 +29,7 @@ import {
 import PageHeader from './components/PageHeader'
 import type { Plugin, PluginAuthorization, PluginState } from './types'
 
-const { Text } = Typography
+const { Text, Title } = Typography
 
 const stateLabels: Record<PluginState, string> = {
   disabled: '已关闭',
@@ -96,13 +97,23 @@ function OncallSearchConfig({
   }
 
   return (
-    <Space.Compact block>
+    <section className="plugin-config-section">
+      <div className="plugin-config-heading">
+        <div>
+          <Title level={4}>群名检索规则</Title>
+          <Text type="secondary">匹配群名称或描述，用于发现你已加入的 Oncall 群。</Text>
+        </div>
+        <Button type="primary" icon={<SaveOutlined />} loading={saving} disabled={!dirty} onClick={() => void save()}>
+          保存规则
+        </Button>
+      </div>
       <Select
         mode="tags"
         value={terms}
         tokenSeparators={[',', '，']}
         placeholder="输入群名关键词，如 SRE 告警"
         maxCount={20}
+        style={{ width: '100%' }}
         onChange={(values) => {
           const normalized = values
             .map((value) => value.trim().slice(0, 60))
@@ -110,10 +121,7 @@ function OncallSearchConfig({
           setTerms(normalized)
         }}
       />
-      <Button icon={<SaveOutlined />} loading={saving} disabled={!dirty} onClick={() => void save()}>
-        保存规则
-      </Button>
-    </Space.Compact>
+    </section>
   )
 }
 
@@ -123,6 +131,7 @@ export default function Plugins() {
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string>()
   const [flows, setFlows] = useState<Record<string, PluginAuthorization>>({})
+  const [activeTab, setActiveTab] = useState('manage')
   const [messageApi, messageContext] = message.useMessage()
 
   const load = useCallback(async () => {
@@ -141,6 +150,12 @@ export default function Plugins() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (activeTab !== 'manage' && !items.some((item) => item.id === activeTab && item.enabled)) {
+      setActiveTab('manage')
+    }
+  }, [activeTab, items])
 
   useEffect(() => {
     const active = Object.entries(flows).filter(([, flow]) => flow.status === 'pending' && flow.flow_id)
@@ -169,6 +184,8 @@ export default function Plugins() {
     try {
       const updated = await updatePlugin(item.id, enabled, item.revision)
       setItems((current) => current.map((entry) => entry.id === updated.id ? updated : entry))
+      if (enabled) setActiveTab(updated.id)
+      else if (activeTab === updated.id) setActiveTab('manage')
       if (enabled && updated.state === 'needs_auth') messageApi.info(`${updated.name} 已开启，完成授权后开始同步`)
       else messageApi.success(`${updated.name} 已${enabled ? '开启' : '关闭'}`)
       setError(undefined)
@@ -287,6 +304,71 @@ export default function Plugins() {
     },
   ], [busy])
 
+  const managementTable = (
+    <Table<Plugin>
+      rowKey="id"
+      loading={loading}
+      dataSource={items}
+      columns={columns}
+      pagination={false}
+      scroll={{ x: 900 }}
+    />
+  )
+
+  const pluginTab = (item: Plugin) => (
+    <div className="plugin-detail">
+      <div className="plugin-detail-heading">
+        <div>
+          <Title level={3}>{item.name}</Title>
+          <Text type="secondary">{item.description}</Text>
+        </div>
+        <Space>
+          <Tag color={stateColors[item.state]}>{stateLabels[item.state]}</Tag>
+          {item.authorization.status !== 'authorized' && (
+            <Button icon={<SafetyCertificateOutlined />} loading={busy === item.id} onClick={() => void authorize(item)}>
+              授权
+            </Button>
+          )}
+          <Button
+            icon={<SyncOutlined />}
+            disabled={item.authorization.status !== 'authorized'}
+            loading={busy === item.id}
+            onClick={() => void trigger(item)}
+          >
+            立即同步
+          </Button>
+        </Space>
+      </div>
+      {item.last_error && <Alert type="error" showIcon message={item.last_error} />}
+      {item.id === 'oncall' && (
+        <OncallSearchConfig
+          item={item}
+          onUpdated={applyUpdate}
+          onError={(message) => {
+            setError(message)
+            void load()
+          }}
+        />
+      )}
+      <Descriptions size="small" column={2}>
+        <Descriptions.Item label="数据来源">{item.source}</Descriptions.Item>
+        <Descriptions.Item label="采集周期">每 {item.interval_minutes} 分钟</Descriptions.Item>
+        <Descriptions.Item label="Skill">{item.collector_skill}</Descriptions.Item>
+        <Descriptions.Item label="下次同步">{formatTime(item.next_run_at)}</Descriptions.Item>
+        <Descriptions.Item label="权限" span={2}>{item.permissions.join('、')}</Descriptions.Item>
+      </Descriptions>
+    </div>
+  )
+
+  const tabs = [
+    { key: 'manage', label: '插件管理', children: managementTable },
+    ...items.filter((item) => item.enabled).map((item) => ({
+      key: item.id,
+      label: item.name,
+      children: pluginTab(item),
+    })),
+  ]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {messageContext}
@@ -311,38 +393,7 @@ export default function Plugins() {
           }
         />
       ))}
-      <Table<Plugin>
-        rowKey="id"
-        loading={loading}
-        dataSource={items}
-        columns={columns}
-        pagination={false}
-        scroll={{ x: 900 }}
-        expandable={{
-          expandedRowRender: (item) => (
-            <Descriptions size="small" column={2}>
-              <Descriptions.Item label="数据来源">{item.source}</Descriptions.Item>
-              <Descriptions.Item label="采集周期">每 {item.interval_minutes} 分钟</Descriptions.Item>
-              <Descriptions.Item label="Skill">{item.collector_skill}</Descriptions.Item>
-              <Descriptions.Item label="下次同步">{formatTime(item.next_run_at)}</Descriptions.Item>
-              <Descriptions.Item label="权限" span={2}>{item.permissions.join('、')}</Descriptions.Item>
-              {item.id === 'oncall' && (
-                <Descriptions.Item label="群名检索规则" span={2}>
-                  <OncallSearchConfig
-                    item={item}
-                    onUpdated={applyUpdate}
-                    onError={(message) => {
-                      setError(message)
-                      void load()
-                    }}
-                  />
-                </Descriptions.Item>
-              )}
-              {item.last_error && <Descriptions.Item label="最近错误" span={2}>{item.last_error}</Descriptions.Item>}
-            </Descriptions>
-          ),
-        }}
-      />
+      <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabs} />
     </div>
   )
 }
