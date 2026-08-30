@@ -40,7 +40,6 @@ import {
   getSkillContent,
   listGroups,
   listKeyMatters,
-  listOKRs,
   listPersons,
   listProjects,
   listResources,
@@ -76,7 +75,6 @@ import type {
   GroupBackgroundInput,
   KeyMatter,
   KeyMatterInput,
-  OKR,
   Person,
   PersonUpdateInput,
   PersonRole,
@@ -119,7 +117,6 @@ function errorText(cause: unknown): string {
 
 function ProjectsPanel() {
   const [items, setItems] = useState<Project[]>([])
-  const [okrs, setOKRs] = useState<OKR[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
   const [editing, setEditing] = useState<Project | null>(null)
@@ -140,22 +137,16 @@ function ProjectsPanel() {
       .finally(() => setLoading(false))
   }, [])
   useEffect(reload, [reload])
-  useEffect(() => {
-    listOKRs()
-      .then((result) => setOKRs(result.items))
-      .catch((cause: unknown) => setError(errorText(cause)))
-  }, [])
-
   const openCreate = () => {
     setEditing(null)
-    form.setFieldsValue({ name: '', role: 'participant', status: 'active', priority: 3, code: null, okr_id: null })
+    form.setFieldsValue({ name: '', role: 'participant', status: 'active', priority: 3, code: null })
     setOpen(true)
   }
   const openEdit = (project: Project) => {
     setEditing(project)
     form.setFieldsValue({
       name: project.name, role: project.role, status: project.status, priority: project.priority,
-      code: project.code, okr_id: project.okr_id,
+      code: project.code,
     })
     setOpen(true)
   }
@@ -204,7 +195,6 @@ function ProjectsPanel() {
     { title: '角色', dataIndex: 'role', width: 100, render: (r: ProjectRole) => projectRoleLabels[r] },
     { title: '状态', dataIndex: 'status', width: 100, render: (s: ProjectStatus) => <Tag>{projectStatusLabels[s]}</Tag> },
     { title: '优先级', dataIndex: 'priority', width: 90 },
-    { title: '所属 OKR', dataIndex: 'okr_id', width: 180, render: (id: number | null) => okrs.find((okr) => okr.id === id)?.title || '—' },
     { title: '长期事实', dataIndex: 'summary', ellipsis: true, render: (v: string | null) => summaryIndexLine(v) || '—' },
     {
       title: '操作', width: 200, render: (_, p) => (
@@ -241,9 +231,6 @@ function ProjectsPanel() {
           </Form.Item>
         </Flex>
         <Form.Item name="code" label="项目代号(可选)"><Input allowClear /></Form.Item>
-        <Form.Item name="okr_id" label="所属 OKR（可选）">
-          <Select allowClear showSearch optionFilterProp="label" options={okrs.map((okr) => ({ value: okr.id, label: `${okr.cycle} · ${okr.title}` }))} />
-        </Form.Item>
       </Form>
     </Modal>
     <Drawer title={detail?.name || '项目详情'} open={Boolean(detail)} size={720} onClose={() => setDetail(undefined)}>
@@ -253,7 +240,6 @@ function ProjectsPanel() {
           <Descriptions.Item label="我的角色">{projectRoleLabels[detail.role]}</Descriptions.Item>
           <Descriptions.Item label="优先级">{detail.priority}</Descriptions.Item>
           <Descriptions.Item label="项目代号">{detail.code || '—'}</Descriptions.Item>
-          <Descriptions.Item label="所属 OKR" span={2}>{okrs.find((okr) => okr.id === detail.okr_id)?.title || '—'}</Descriptions.Item>
           <Descriptions.Item label="最近实质进展" span={2}>{detail.last_progress_at ? dayjs(detail.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
         </Descriptions>
         <SummaryPageEditor type="project" id={detail.id} />

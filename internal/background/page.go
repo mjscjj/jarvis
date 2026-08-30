@@ -119,7 +119,7 @@ func (s *PageService) ListPages(ctx context.Context, filter ListPagesFilter) ([]
 		return nil, invalid(fmt.Errorf("stale_days must be a positive integer"))
 	}
 	types := []string{
-		PageTypePrincipal, PageTypePerson, PageTypeOKR, PageTypeProject,
+		PageTypePrincipal, PageTypePerson, PageTypeProject,
 		PageTypeKeyMatter, PageTypeGroup, PageTypeResource,
 	}
 	if filter.Type != "" {
@@ -213,10 +213,6 @@ func (s *PageService) loadPage(ctx context.Context, pageType string, id uint64) 
 	row := &pageRow{Type: pageType, ID: id}
 	var err error
 	switch pageType {
-	case PageTypeOKR:
-		var item domain.OKR
-		err = s.db.WithContext(ctx).Where("id = ?", id).Take(&item).Error
-		row.Name, row.Summary, row.UpdatedAt, row.LastProgressAt = item.Title, item.Summary, item.UpdatedAt, item.LastProgressAt
 	case PageTypeProject:
 		var item domain.Project
 		err = s.db.WithContext(ctx).Where("id = ?", id).Take(&item).Error
@@ -255,8 +251,6 @@ func (s *PageService) loadPage(ctx context.Context, pageType string, id uint64) 
 func (s *PageService) writeSummary(ctx context.Context, pageType string, id uint64, updates map[string]any) error {
 	var model any
 	switch pageType {
-	case PageTypeOKR:
-		model = &domain.OKR{}
 	case PageTypeProject:
 		model = &domain.Project{}
 	case PageTypePerson:
@@ -312,11 +306,6 @@ func (s *PageService) pageView(ctx context.Context, row *pageRow) (*PageView, er
 func (s *PageService) listType(ctx context.Context, pageType string, filter ListPagesFilter) ([]PageIndexItem, error) {
 	query := s.db.WithContext(ctx)
 	switch pageType {
-	case PageTypeOKR:
-		query = query.Model(&domain.OKR{})
-		if !filter.All {
-			query = query.Where("closed_at IS NULL")
-		}
 	case PageTypeProject:
 		query = query.Model(&domain.Project{})
 		if !filter.All {
@@ -371,7 +360,7 @@ func (s *PageService) listType(ctx context.Context, pageType string, filter List
 			continue
 		}
 		name := row.Name
-		if pageType == PageTypeOKR || pageType == PageTypeKeyMatter {
+		if pageType == PageTypeKeyMatter {
 			name = row.Title
 		}
 		if pageType == PageTypeGroup && name == "" {
@@ -391,7 +380,7 @@ func (s *PageService) listType(ctx context.Context, pageType string, filter List
 
 func listSelect(pageType string) string {
 	switch pageType {
-	case PageTypeOKR, PageTypeKeyMatter:
+	case PageTypeKeyMatter:
 		return "id, title, summary, last_progress_at"
 	case PageTypeGroup:
 		return "id, name, chat_id, summary, last_progress_at"

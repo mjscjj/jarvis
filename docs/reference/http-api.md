@@ -19,7 +19,6 @@
 
 ## 背景与世界状态
 
-- OKRs：`GET/POST /api/okrs`、`GET/PUT/DELETE /api/okrs/:okr_id`、`GET /api/okrs/:okr_id/weekly-view?from=<RFC3339>&until=<RFC3339>`
 - Projects：`GET/POST /api/projects`、`GET/PUT/DELETE /api/projects/:project_id`
 - Key matters：`GET/POST /api/key-matters`、`GET/PUT/DELETE /api/key-matters/:key_matter_id`、`POST .../touch`
 - Persons：`GET/POST /api/persons`、`POST /api/persons/resolve`、`GET/PUT/DELETE /api/persons/:person_id`
@@ -30,10 +29,7 @@
 - Entity relations：`GET/POST /api/relations`、`DELETE /api/relations/:relation_id`，保存带证据的通用跨模块实体映射
 - Relation facts：`GET/POST /api/relation-facts`、`PUT/DELETE /api/relation-facts/:fact_id`
 
-`DELETE /api/okrs/:okr_id` 与 `DELETE /api/key-matters/:key_matter_id` 的业务语义是闭环，`DELETE /api/projects/:project_id` 的业务语义是归档；都不是物理删除。
-
-OKR 周视图接受不超过 8 天的半开时间窗，按 OKR → Project → KeyMatter 返回当前 Page 结论、本周 Fact 和确定性风险/失速信号。它是纯读模型，不创建 Task，也不复制一套进展存储。
-Agent 可用 `jarvis-tools get-okr-weekly-view --id <id> [--date YYYY-MM-DD]` 把本地自然日转换为该半开区间并回读同一视图。
+`DELETE /api/key-matters/:key_matter_id` 的业务语义是闭环，`DELETE /api/projects/:project_id` 的业务语义是归档；都不是物理删除。
 
 来源证据使用通用 Message/Clue 查询、Fact 和 Page CAS；核心层不提供 OKR 专用证据队列或合并接口。
 
@@ -46,7 +42,7 @@ Agent 可用 `jarvis-tools get-okr-weekly-view --id <id> [--date YYYY-MM-DD]` �
 - Skills：`GET /api/skills`、`POST /api/skills/scan`、`PUT /api/skills/:skill_name`、`GET /api/skills/:skill_name/content`
 - App modules：`GET /api/app-modules`、`PUT /api/app-modules/:module_key`
 - OKR 定义：`GET /api/okr/scope|enums|board`，身份、人员、图片、Objective/KR 创建与 KR 编辑位于 `/api/okr/*`。核心 board 和写接口不读取周报表。
-- 删除 KR 或稳定拆解只删除 OKR 模块定义，不级联删除周报进展、评论或 Meego 观察历史。
+- 存在周报历史的 KR 或稳定拆解不允许删除，避免留下孤儿历史。
 - 周报：`GET /api/weekly-report/scope|board|comments|reminder-preview|reminder-batches|meego-preview`；评论、所选周进展、Meego 观察和催办批次的写接口位于 `/api/weekly-report/*`。产品固定提供催填、进展巡检、会议材料和对外提交四个 Agent 行动，并固定绑定可编辑 Prompt；季度草稿、区域对齐和其它 Report Prompt 可由普通 Agent Task 使用。执行统一由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
 - Meego observation：`POST /api/weekly-report/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
 - OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后经 `/api/okr/auth/feishu/login|callback` 建立 HttpOnly session，写接口只识别操作者，不做行级权限或可见性过滤。

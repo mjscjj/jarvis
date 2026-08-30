@@ -302,9 +302,6 @@ func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
 	if string(input.Background) != `{"mode":"read_only","module":"weekly-report","skill":"weekly-report-progress-sync"}` {
 		t.Fatalf("Task background = %s", input.Background)
 	}
-	if strings.Contains(string(input.Background), "okr_id") || strings.Contains(string(input.SourcePayload), "okr_id") {
-		t.Fatalf("scheduled Task leaked an OKR relation: background=%s payload=%s", input.Background, input.SourcePayload)
-	}
 	if triggered.Status != "active" || triggered.LastTaskID == nil || *triggered.LastTaskID != 77 {
 		t.Fatalf("triggered schedule = %#v, want active with Task #77", triggered)
 	}

@@ -437,10 +437,6 @@ func main() {
 		fatalf("initialize scheduled task service failed: %v", err)
 	}
 	scheduledTaskService.SetModuleGate(appModuleService.Enabled)
-	okrService, err := background.NewOKRService(db)
-	if err != nil {
-		fatalf("initialize okr service failed: %v", err)
-	}
 	var okrWorkspaceService *okrworkspace.Service
 	var okrImageStore *okrworkspace.ImageStore
 	var okrIdentityService *okrAuth.Service
@@ -1008,7 +1004,7 @@ func main() {
 		DB: db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,
-		OKRs:            okrService, Projects: projectService, KeyMatters: keyMatterService,
+		Projects: projectService, KeyMatters: keyMatterService,
 		Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		Pages:              pageService,

@@ -44,8 +44,6 @@ func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *test
 		switch r.URL.Path {
 		case "/api/profile":
 			fmt.Fprint(w, `{"code":0,"data":{"open_id":"ou_ready","name":"Ready User","leader_open_id":"ou_leader","saved":true}}`)
-		case "/api/okrs":
-			fmt.Fprint(w, `{"code":0,"data":{"total":1,"items":[]}}`)
 		case "/api/projects":
 			fmt.Fprint(w, `{"code":0,"data":{"total":2,"items":[]}}`)
 		case "/api/persons":
@@ -90,7 +88,6 @@ exit 9
 			RelatedGroup bool `json:"related_group_configured"`
 		} `json:"observations"`
 		Counts struct {
-			OKRs      int `json:"okrs"`
 			Projects  int `json:"projects"`
 			Resources int `json:"resources"`
 			Relations int `json:"relations"`
@@ -99,7 +96,7 @@ exit 9
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("decode output %q: %v", out, err)
 	}
-	if !result.Ready || result.Observations.RelatedGroup || result.Counts.OKRs != 1 || result.Counts.Projects != 2 || result.Counts.Resources != 4 || result.Counts.Relations != 5 {
+	if !result.Ready || result.Observations.RelatedGroup || result.Counts.Projects != 2 || result.Counts.Resources != 4 || result.Counts.Relations != 5 {
 		t.Fatalf("validation result = %#v", result)
 	}
 }

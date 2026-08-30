@@ -13,7 +13,6 @@ import (
 
 const (
 	PageTypePrincipal = "principal"
-	PageTypeOKR       = "okr"
 	PageTypePerson    = "person"
 	PageTypeProject   = "project"
 	PageTypeKeyMatter = "key_matter"
@@ -25,17 +24,17 @@ const (
 )
 
 var pageTypes = map[string]struct{}{
-	PageTypePrincipal: {}, PageTypeOKR: {}, PageTypePerson: {}, PageTypeProject: {},
+	PageTypePrincipal: {}, PageTypePerson: {}, PageTypeProject: {},
 	PageTypeKeyMatter: {}, PageTypeGroup: {}, PageTypeResource: {},
 }
 
 var referenceSchemes = map[string]struct{}{
-	PageTypePrincipal: {}, PageTypeOKR: {}, PageTypePerson: {}, PageTypeProject: {},
+	PageTypePrincipal: {}, PageTypePerson: {}, PageTypeProject: {},
 	PageTypeKeyMatter: {}, PageTypeGroup: {}, PageTypeResource: {},
 	RefTypeTask: {}, RefTypeTodo: {}, RefTypeFact: {},
 }
 
-var referencePattern = regexp.MustCompile(`\[[^\]\n]*\]\((principal|okr|person|project|key_matter|group|resource|task|todo|fact):(\d+)\)`)
+var referencePattern = regexp.MustCompile(`\[[^\]\n]*\]\((principal|person|project|key_matter|group|resource|task|todo|fact):(\d+)\)`)
 
 // Reference is one Markdown entity link extracted from page text.
 type Reference struct {
@@ -135,9 +134,6 @@ func FindBacklinks(ctx context.Context, db *gorm.DB, pageType string, id uint64)
 	if err := scan(PageTypeProject, "project", "name"); err != nil {
 		return nil, err
 	}
-	if err := scan(PageTypeOKR, "okr", "title"); err != nil {
-		return nil, err
-	}
 	if err := scan(PageTypePerson, "person", "name"); err != nil {
 		return nil, err
 	}
@@ -165,8 +161,6 @@ func referenceExists(ctx context.Context, db *gorm.DB, ref Reference) (bool, err
 		model = &domain.Person{}
 	case PageTypeProject:
 		model = &domain.Project{}
-	case PageTypeOKR:
-		model = &domain.OKR{}
 	case PageTypeKeyMatter:
 		model = &domain.KeyMatter{}
 	case PageTypeGroup:

@@ -327,8 +327,6 @@ func prepareFact(input FactInput) (*domain.Fact, error) {
 // A miss is not an error; see AppendFact.
 func factSubjectModel(subjectType string) (any, bool) {
 	switch subjectType {
-	case "okr":
-		return &domain.OKR{}, true
 	case "project":
 		return &domain.Project{}, true
 	case "key_matter":

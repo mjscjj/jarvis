@@ -18,29 +18,10 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Simple first", "Progressive loading", "list-okrs", "get-okr", "get-okr-weekly-view", "create-okr", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "update-page", "list-pages", "list-backlinks", "list-relations", "create-relation"} {
+	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "update-page", "list-pages", "list-backlinks", "list-relations", "create-relation"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
-	}
-}
-
-func TestJarvisToolsGetsOKRWeeklyViewForExplicitLocalDay(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/okrs/8/weekly-view" {
-			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
-		}
-		from, until := r.URL.Query().Get("from"), r.URL.Query().Get("until")
-		if !strings.HasPrefix(from, "2026-08-27T00:00:00") || !strings.HasPrefix(until, "2026-08-28T00:00:00") {
-			t.Fatalf("bounds = [%q, %q)", from, until)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"code":0,"data":{"okr":{"id":8},"items":[],"change_count":3}}`)
-	}))
-	defer server.Close()
-	out, err := runJarvisTools(t, server.URL, nil, "get-okr-weekly-view", "--id", "8", "--date", "2026-08-27")
-	if err != nil || !strings.Contains(out, `"change_count":3`) {
-		t.Fatalf("output = %s, error = %v", out, err)
 	}
 }
 
@@ -72,8 +53,6 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/okrs":
-			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":8,"title":"growth","cycle":"2026 Q3","status":"active","summary":"current","owner":{"id":2,"name":"Alice","open_id":"ou_a"},"projects":[{"id":3,"name":"large project","key_matters":[{"id":4,"title":"large matter"}]}],"last_progress_at":null,"updated_at":"2026-08-07T10:00:00Z"}]}}`)
 		case "/api/key-matters":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":4,"title":"matter","status":"跟进中","summary":"current","project_id":1,"due_at":null,"last_progress_at":null,"last_active_at":"2026-08-07T10:00:00Z","closed_at":null,"project":{"large":true}}]}}`)
 		case "/api/todos":
@@ -92,7 +71,6 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 		command   string
 		forbidden []string
 	}{
-		{"list-okrs", []string{"projects", "summary"}},
 		{"list-key-matters", []string{"closed_at", "project"}},
 		{"list-todos", []string{"description", "context_snapshot"}},
 		{"list-tasks", []string{"background", "source_payload", "execution_result"}},
@@ -193,9 +171,6 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		path    string
 	}{
 		{"create-project", []string{"--payload", `{"name":"p"}`}, http.MethodPost, "/api/projects"},
-		{"create-okr", []string{"--payload", `{"title":"o"}`}, http.MethodPost, "/api/okrs"},
-		{"update-okr", []string{"--id", "6", "--payload", `{"title":"o"}`}, http.MethodPut, "/api/okrs/6"},
-		{"close-okr", []string{"--id", "6"}, http.MethodDelete, "/api/okrs/6"},
 		{"update-project", []string{"--id", "7", "--payload", `{"name":"p"}`}, http.MethodPut, "/api/projects/7"},
 		{"archive-project", []string{"--id", "7"}, http.MethodDelete, "/api/projects/7"},
 		{"create-key-matter", []string{"--payload", `{"title":"m"}`}, http.MethodPost, "/api/key-matters"},
@@ -312,21 +287,6 @@ func TestJarvisToolsGetKeyMatterUsesExactEndpoint(t *testing.T) {
 	defer server.Close()
 	out, err := runJarvisTools(t, server.URL, nil, "get-key-matter", "--id", "17")
 	if err != nil || !strings.Contains(out, `"id":17`) {
-		t.Fatalf("output = %s, error = %v", out, err)
-	}
-}
-
-func TestJarvisToolsGetOKRPreservesHierarchy(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/okrs/8" {
-			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"code":0,"data":{"id":8,"title":"增长","projects":[{"id":3,"name":"发布","key_matters":[{"id":5,"title":"灰度"}]}]}}`)
-	}))
-	defer server.Close()
-	out, err := runJarvisTools(t, server.URL, nil, "get-okr", "--id", "8")
-	if err != nil || !strings.Contains(out, `"key_matters":[{"id":5`) {
 		t.Fatalf("output = %s, error = %v", out, err)
 	}
 }

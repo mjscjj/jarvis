@@ -50,7 +50,6 @@ func TestFindBacklinksHitsWorldEntityTables(t *testing.T) {
 	token := "[某人](person:12)"
 	summary := token + " 被引用"
 	project := domain.Project{Name: "P", Role: "owner", Status: "active", Priority: 1, Summary: &summary}
-	okr := domain.OKR{Title: "O", Cycle: "2026-Q3", Status: "推进中", Summary: &summary}
 	person := domain.Person{OpenID: "ou_a", Name: "A", Role: "leader", PriorityWeight: 1, IsActive: true, Summary: &summary}
 	matter := domain.KeyMatter{Title: "M", Status: "open", Summary: &summary}
 	groupName := "G"
@@ -59,9 +58,6 @@ func TestFindBacklinksHitsWorldEntityTables(t *testing.T) {
 	principal := domain.PrincipalProfile{OpenID: "ou_me", Name: "我", Summary: &summary}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
-	}
-	if err := db.Create(&okr).Error; err != nil {
-		t.Fatalf("create okr: %v", err)
 	}
 	if err := db.Create(&person).Error; err != nil {
 		t.Fatalf("create person: %v", err)
@@ -90,13 +86,13 @@ func TestFindBacklinksHitsWorldEntityTables(t *testing.T) {
 	for _, link := range links {
 		got[link.Type] = true
 	}
-	for _, want := range []string{"okr", "project", "person", "key_matter", "group", "resource", "principal"} {
+	for _, want := range []string{"project", "person", "key_matter", "group", "resource", "principal"} {
 		if !got[want] {
 			t.Fatalf("backlinks missing %s: %#v", want, links)
 		}
 	}
-	if len(links) != 7 {
-		t.Fatalf("backlinks = %#v, want 7", links)
+	if len(links) != 6 {
+		t.Fatalf("backlinks = %#v, want 6", links)
 	}
 }
 

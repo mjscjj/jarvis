@@ -4,7 +4,7 @@
 > Authority: non-normative verification snapshot
 > Last verified: 2026-08-30 @ uncommitted worktree
 
-本轮目标是把 Emily 拆成 Jarvis 的 `okr` 与 `weekly-report` 两个内置模块，同时把拆解、同步和催办语义移到工具与 Skill。当前改动未提交、未推送，也未访问真实外部系统。
+本轮目标是把 OKR 与周报拆成 Jarvis 的两个内置模块，同时把拆解、同步和催办语义移到工具与 Skill。
 
 ## 已落地边界
 
@@ -29,7 +29,7 @@
 | Skill 不泄漏 | `skill.WithModuleGate` + 各 Skill 的 `module` frontmatter | catalog/content 单测 |
 | 调度关闭后不派发 | `scheduledtask.SetModuleGate` | disabled module dispatch 单测 |
 | 通用关系 | `domain.EntityRelation`, `background.RelationService`, `/api/relations` | service 与 CLI endpoint 单测 |
-| 通用证据写回 | clue + Fact + Page CAS | HTTP/真实本地 CLI 产品路径测试 |
+| 通用证据写回 | clue + Fact + Page CAS | 模块 API、关系服务与 CLI endpoint 单测 |
 | 行动与 Prompt 结合 | 固定 `action_key → prompt_key` + ScheduledTask 时间配置 | actionConfig 与 weekly 调度单测、前端 typecheck、API CRUD |
 | 前端仍可构建 | `web/src/okr/**`, module registry | typecheck、Vitest、Vite build |
 
@@ -40,10 +40,6 @@
 3. 关闭 `okr` 时若周报仍启用，配置更新必须被拒绝；先关闭周报后可关闭 OKR。
 4. 读取 `okr-world-projector` Skill，为一个 KR 建立 Project/Person 关系，再用 `list-relations` 回读证据。
 5. 创建带 `{"module":"weekly-report","skill":"weekly-report-progress-sync"}` context 的 ScheduledTask；关闭周报后触发应记录空跑且 Task 数不增加。
-
-## 暂留兼容面
-
-早期 `/api/okrs`、`domain.OKR` 与 `Project.OKRID` 尚未物理删除。新模块完全不依赖它们；后续应在独立迁移中清理，避免本次同时承担存量数据迁移风险。
 
 ## 验证命令
 

@@ -35,13 +35,6 @@ Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter
 
 不存在 OKR 专用 evidence API，也不为某个来源增加 Go 流水线。新增来源通常只需要工具和 Skill；只有必须机器强制的可靠性约束才进入代码。
 
-## 4. 兼容面
+## 4. 单一产品入口
 
-早期 Jarvis 世界模型仍有 `domain.OKR`、`Project.OKRID` 和 `/api/okrs`。它们是存量兼容面，不是新模块的存储或同步目标：
-
-- OKR 模块不调用这些接口；
-- 模块表不保存这些 ID；
-- 模块 Skills 使用通用关系、Fact 和 Page；
-- 核心 prompt 不再描述 OKR 专用策略。
-
-后续删除兼容面需要单独的数据迁移和前端清理；在此之前禁止新增依赖。
+OKR 只由可选产品模块拥有。Jarvis 核心没有第二套 OKR 表、领域模型、Project 外键、Page 类型或 CRUD API；模块 Skills 统一使用通用关系、Fact 和 Page 连接世界状态。

@@ -28,12 +28,6 @@ principles:
   object. Large prompts, run outputs and captured resource text are opt-in.
 
 subcommands:
-  list-okrs              List active OKRs with their project hierarchy
-  get-okr                Get one OKR with projects and key matters
-  get-okr-weekly-view    Read one OKR's hierarchy and progress for a local day
-  create-okr             Create an OKR from a JSON payload
-  update-okr             Replace an OKR's control fields
-  close-okr              Close an OKR
   list-projects          List projects
   get-project            Get one project
   create-project         Create a project from a JSON payload
@@ -108,27 +102,6 @@ usage_error() {
 
 print_subcommand_help() {
   case "$1" in
-    list-okrs) cat <<'EOF'
-usage: jarvis-tools list-okrs [--keyword TEXT] [--limit N] [--config PATH]
-List compact active OKR summaries. Use get-okr for the complete project and key-matter hierarchy.
-EOF
-      ;;
-    get-okr) cat <<'EOF'
-usage: jarvis-tools get-okr --id ID [--config PATH]
-Get one OKR with its owner, projects and open key matters. Long-term progress is
-on get-page; use list-facts for chronological progress evidence.
-EOF
-      ;;
-    get-okr-weekly-view) cat <<'EOF'
-usage: jarvis-tools get-okr-weekly-view --id ID [--date YYYY-MM-DD] [--config PATH]
-Read one OKR's hierarchy and progress changes for a local calendar day. When
---date is omitted, the command uses today's local day. This is read-only and
-never creates a Task.
-EOF
-      ;;
-    create-okr) payload_help "create-okr" "Create one OKR." ;;
-    update-okr) payload_id_help "update-okr" "Replace one OKR's control fields. Long-term progress is written with update-page; this payload does not accept summary." ;;
-    close-okr) delete_id_help "close-okr" "Close one OKR; linked projects, key matters and history remain intact." ;;
     list-projects) cat <<'EOF'
 usage: jarvis-tools list-projects [--keyword TEXT] [--limit N] [--config PATH]
 List compact project summaries. Use get-project for full project background.
@@ -808,13 +781,12 @@ require_command_flag() {
   local cmd="$1" flag="$2"
   local allowed="--config"
   case "$cmd" in
-    list-okrs | list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
+    list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
     get-project) allowed+=" --id --code" ;;
-    get-okr | get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
-    get-okr-weekly-view) allowed+=" --id --date" ;;
-    create-okr | create-project | create-key-matter | update-principal | create-person | create-resource | create-task | create-relation) allowed+=" --payload" ;;
-    update-okr | update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
-    close-okr | archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
+    get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
+    create-project | create-key-matter | update-principal | create-person | create-resource | create-task | create-relation) allowed+=" --payload" ;;
+    update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
+    archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
     get-group) allowed+=" --chat-id" ;;
     get-context) allowed+=" --chat-id --project-id" ;;
@@ -1284,52 +1256,6 @@ consume_flags() {
 
 # --- subcommands ------------------------------------------------------------
 
-cmd_list_okrs() {
-  reset_flags
-  LIMIT="20"
-  consume_flags "$@"
-  require_limit list-okrs "$LIMIT" 100
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local items total
-  if [[ -z "$KEYWORD" ]]; then
-    local body
-    body="$(api_get "/api/okrs?page=1&page_size=${LIMIT}")"
-    items="$(printf '%s' "$body" | jq -c '.data.items')"
-    total="$(printf '%s' "$body" | jq -er '.data.total')"
-  else
-    local all
-    all="$(fetch_all_items /api/okrs)"
-    items="$(printf '%s' "$all" | jq -c --arg keyword "$KEYWORD" --argjson limit "$LIMIT" '
-      [.[] | select((([.title,.cycle,.status,.summary,.owner.name] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase)))][: $limit]')"
-    total="$(printf '%s' "$all" | jq -r --arg keyword "$KEYWORD" '
-      [.[] | select((([.title,.cycle,.status,.summary,.owner.name] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase)))] | length')"
-  fi
-  items="$(printf '%s' "$items" | jq -c '[.[] | {id,title,cycle,status,owner:(if .owner == null then null else {id:.owner.id,name:.owner.name,open_id:.owner.open_id} end),project_count:(.projects | length),last_progress_at,updated_at}]')"
-  emit "$(jq -cn --argjson total "$total" --argjson okrs "$items" '{total:$total,okrs:$okrs}')"
-}
-
-cmd_get_okr() {
-  reset_flags
-  consume_flags "$@"
-  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-okr requires positive --id"
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local body
-  body="$(api_get "/api/okrs/${ID}")"
-  emit "$(printf '%s' "$body" | jq -c '.data')"
-}
-
-cmd_get_okr_weekly_view() {
-  reset_flags
-  consume_flags "$@"
-  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-okr-weekly-view requires positive --id"
-  local target_date="${DATE:-$(date +%Y-%m-%d)}" from until
-  read -r from until <<<"$(local_day_bounds "$target_date" get-okr-weekly-view)"
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local query
-  query="from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
-  emit "$(api_get "/api/okrs/${ID}/weekly-view?${query}" | jq -c '.data')"
-}
-
 cmd_list_projects() {
   reset_flags
   LIMIT="20"
@@ -1447,7 +1373,7 @@ cmd_payload_by_id() {
   local payload body
   payload="$(read_payload_object "$command_name")"
   case "$command_name" in
-    update-okr|update-project|update-key-matter|update-group|update-person|update-resource)
+    update-project|update-key-matter|update-group|update-person|update-resource)
       forbid_summary_payload "$command_name" "$payload"
       ;;
   esac
@@ -2371,12 +2297,6 @@ if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]; then
 fi
 
 case "$SUBCOMMAND" in
-  list-okrs)      cmd_list_okrs "$@" ;;
-  get-okr)        cmd_get_okr "$@" ;;
-  get-okr-weekly-view) cmd_get_okr_weekly_view "$@" ;;
-  create-okr)     cmd_payload_create create-okr POST /api/okrs "$@" ;;
-  update-okr)     cmd_payload_by_id update-okr PUT /api/okrs "$@" ;;
-  close-okr)      cmd_delete_by_id close-okr /api/okrs "$@" ;;
   list-projects)  cmd_list_projects "$@" ;;
   get-project)    cmd_get_project "$@" ;;
   create-project) cmd_payload_create create-project POST /api/projects "$@" ;;
