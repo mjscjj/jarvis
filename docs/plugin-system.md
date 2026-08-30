@@ -33,6 +33,7 @@ M2 → M3 → M5 流水线。
 - `plugin_id`
 - `enabled`
 - `revision`
+- `config`（插件自有的宽松 JSON）
 - `scheduled_task_id`
 - 创建和更新时间
 
@@ -44,7 +45,11 @@ Manifest 和 Skill 文件是仓库真源；外部原始事实保存在现有 clu
 
 - Codebase：`bytedcli` SSO Session
 - Meego：Meego 官方设备授权
-- Oncall：`bytedcli lark-oncall` 使用的飞书 Session
+- Oncall：`lark-cli` 当前默认用户的飞书 IM 授权
 
 启用与授权是两个独立状态。插件可以处于“已开启、待授权”，但此时不会创建
 可运行的采集计划。
+
+Oncall 默认按 `oncall`、`值班` 匹配当前用户可见群的名称和描述。用户可以在
+插件页面增删 `config.search_terms`；保存后配置进入同一个定时 Task 的自然语言
+指令，由 `oncall-clue-collector` 解释并通过通用 clue 入口投递原始群消息。

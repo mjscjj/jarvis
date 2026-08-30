@@ -1161,6 +1161,7 @@ export interface Plugin {
   interval_minutes: number
   enabled: boolean
   revision: number
+  config: Record<string, unknown>
   state: PluginState
   authorization: PluginAuthorization
   scheduled_task_id: number | null

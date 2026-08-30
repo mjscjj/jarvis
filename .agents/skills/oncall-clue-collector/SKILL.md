@@ -1,48 +1,85 @@
 ---
 name: "oncall-clue-collector"
-description: "Collects current-user Oncall ticket evidence into Jarvis clues. Invoke only for an enabled Oncall Plugin collection Task."
+description: "Collects current-user Oncall group evidence into Jarvis clues. Invoke only for an enabled Oncall Plugin collection Task."
 ---
 
 # Oncall Clue Collector
 
-Collect provider evidence without triaging incidents in this Task.
+Collect raw evidence from matching Feishu Oncall groups without triaging it in
+this Task.
 
 1. Confirm the current Task explicitly requests Oncall Plugin collection.
-2. Read the current username from `bytedcli --json auth status`.
-3. Collect the last 30 days of non-closed tickets twice, once with that username
-   as assignee and once as reporter:
+2. Read `search_terms` from the plugin configuration embedded in the Task
+   instruction. Use `["oncall", "值班"]` only when that key is absent.
+3. For every search term, search group names and descriptions visible to the
+   current user:
 
 ```bash
-bytedcli --json lark-oncall ticket collect \
-  --assignee "$USERNAME" --status "TO跟进中,TO待处理,RD跟进中,RD待处理" \
-  --range 30d --page-size 100 --max-pages 50
-
-bytedcli --json lark-oncall ticket collect \
-  --reporter "$USERNAME" --status "TO跟进中,TO待处理,RD跟进中,RD待处理" \
-  --range 30d --page-size 100 --max-pages 50
+lark-cli im +chat-search \
+  --as user \
+  --query "$SEARCH_TERM" \
+  --disable-search-by-user \
+  --chat-modes "group,topic" \
+  --search-types "private,public_joined" \
+  --sort update_time \
+  --page-size 100 \
+  --page-all \
+  --page-limit 20 \
+  --format json
 ```
 
-4. Do not add a hardcoded business, service, severity, team, or ticket type.
-5. Preserve the provider's raw ticket and included
-   group-message data.
-6. Submit one clue for each ticket version, deduplicating tickets returned by
-   both queries:
+4. Merge results by `chat_id`. Keep only active group/topic chats whose name or
+   description contains at least one configured term, case-insensitively. Do
+   not add hardcoded business, service, severity, or team names.
+5. For each candidate group, read up to eight earliest messages and require
+   evidence that `ByteOncall` created, invited users to, or sent the initial
+   system/card content in that group:
 
 ```bash
-printf '%s' "$RAW_TICKET_JSON" |
+lark-cli im +chat-messages-list \
+  --as user \
+  --chat-id "$CHAT_ID" \
+  --order asc \
+  --page-size 8 \
+  --no-reactions \
+  --format json
+```
+
+6. For every qualifying group, read all messages from the last 30 days. Follow
+   all pages; an incomplete page sequence is a collection failure, not partial
+   success:
+
+```bash
+lark-cli im +chat-messages-list \
+  --as user \
+  --chat-id "$CHAT_ID" \
+  --order asc \
+  --start "$THIRTY_DAYS_AGO_ISO" \
+  --page-size 50 \
+  --page-all \
+  --page-limit 20 \
+  --no-reactions \
+  --format json
+```
+
+7. Submit one clue for each group version. Preserve the raw group metadata,
+   matching terms, initiation evidence, and complete returned message data:
+
+```bash
+printf '%s' "$RAW_GROUP_AND_MESSAGES_JSON" |
   jarvis-tools append-clue \
     --source oncall \
     --external-id "$STABLE_VERSION_ID" \
-    --title "$TICKET_TITLE" \
-    --occurred-at "$UPDATED_AT" \
+    --title "$GROUP_NAME" \
+    --occurred-at "$LATEST_MESSAGE_AT" \
     --content -
 ```
 
-7. Derive `STABLE_VERSION_ID` from ticket identity and provider update time;
-   hash when necessary to stay within the clue ID limit. Repeated collection of
-   an unchanged ticket must remain idempotent.
-8. Do not decide severity, ownership, escalation, or whether intervention is
+8. Derive `STABLE_VERSION_ID` from `chat_id` and the latest message identity or
+   update time; hash when necessary to stay within the clue ID limit. Repeated
+   collection of an unchanged group must remain idempotent.
+9. Do not decide severity, ownership, escalation, or whether intervention is
    needed. M3 and M5 own those judgments.
-9. Do not send messages or alter tickets. Preserve complete authorization and
-   provider errors in the Task result, then report queried, inserted, duplicate,
-   and failed counts.
+10. Do not send messages or alter groups. Preserve complete authorization and
+    provider errors in the Task result, then report queried, matched, inserted,
+    duplicate, and failed counts.

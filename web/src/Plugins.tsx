@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   Descriptions,
+  Select,
   Space,
   Switch,
   Table,
@@ -14,6 +15,7 @@ import {
   ApiOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
+  SaveOutlined,
   SyncOutlined,
 } from '@ant-design/icons'
 import {
@@ -50,6 +52,69 @@ function formatTime(value: string | null): string {
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
+}
+
+const defaultOncallSearchTerms = ['oncall', '值班']
+
+function oncallSearchTerms(item: Plugin): string[] {
+  const configured = item.config.search_terms
+  if (!Array.isArray(configured)) return defaultOncallSearchTerms
+  return configured.filter((value): value is string => typeof value === 'string')
+}
+
+function OncallSearchConfig({
+  item,
+  onUpdated,
+  onError,
+}: {
+  item: Plugin
+  onUpdated: (plugin: Plugin) => void
+  onError: (error: string) => void
+}) {
+  const [terms, setTerms] = useState(() => oncallSearchTerms(item))
+  const [saving, setSaving] = useState(false)
+  const savedTerms = oncallSearchTerms(item)
+  const dirty = JSON.stringify(terms) !== JSON.stringify(savedTerms)
+
+  useEffect(() => {
+    setTerms(oncallSearchTerms(item))
+  }, [item.revision])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const updated = await updatePlugin(item.id, item.enabled, item.revision, {
+        ...item.config,
+        search_terms: terms,
+      })
+      onUpdated(updated)
+    } catch (cause) {
+      onError(errorText(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Space.Compact block>
+      <Select
+        mode="tags"
+        value={terms}
+        tokenSeparators={[',', '，']}
+        placeholder="输入群名关键词，如 SRE 告警"
+        maxCount={20}
+        onChange={(values) => {
+          const normalized = values
+            .map((value) => value.trim().slice(0, 60))
+            .filter((value, index, all) => value && all.findIndex((candidate) => candidate.toLocaleLowerCase() === value.toLocaleLowerCase()) === index)
+          setTerms(normalized)
+        }}
+      />
+      <Button icon={<SaveOutlined />} loading={saving} disabled={!dirty} onClick={() => void save()}>
+        保存规则
+      </Button>
+    </Space.Compact>
+  )
 }
 
 export default function Plugins() {
@@ -147,6 +212,16 @@ export default function Plugins() {
     } finally {
       setBusy(undefined)
     }
+  }
+
+  const applyUpdate = (updated: Plugin) => {
+    setItems((current) => current.map((entry) => entry.id === updated.id ? updated : entry))
+    setError(undefined)
+    messageApi.success(
+      updated.enabled && updated.authorization.status === 'authorized'
+        ? `${updated.name} 规则已保存并提交同步`
+        : `${updated.name} 规则已保存`,
+    )
   }
 
   const columns = useMemo(() => [
@@ -251,6 +326,18 @@ export default function Plugins() {
               <Descriptions.Item label="Skill">{item.collector_skill}</Descriptions.Item>
               <Descriptions.Item label="下次同步">{formatTime(item.next_run_at)}</Descriptions.Item>
               <Descriptions.Item label="权限" span={2}>{item.permissions.join('、')}</Descriptions.Item>
+              {item.id === 'oncall' && (
+                <Descriptions.Item label="群名检索规则" span={2}>
+                  <OncallSearchConfig
+                    item={item}
+                    onUpdated={applyUpdate}
+                    onError={(message) => {
+                      setError(message)
+                      void load()
+                    }}
+                  />
+                </Descriptions.Item>
+              )}
               {item.last_error && <Descriptions.Item label="最近错误" span={2}>{item.last_error}</Descriptions.Item>}
             </Descriptions>
           ),

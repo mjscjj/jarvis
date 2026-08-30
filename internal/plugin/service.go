@@ -22,28 +22,30 @@ var (
 )
 
 type UpdateInput struct {
-	Enabled          bool   `json:"enabled"`
-	ExpectedRevision uint64 `json:"expected_revision"`
+	Enabled          bool             `json:"enabled"`
+	ExpectedRevision uint64           `json:"expected_revision"`
+	Config           *json.RawMessage `json:"config,omitempty"`
 }
 
 type View struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	Description     string     `json:"description"`
-	Source          string     `json:"source"`
-	CollectorSkill  string     `json:"collector_skill"`
-	Permissions     []string   `json:"permissions"`
-	IntervalMinutes int        `json:"interval_minutes"`
-	Enabled         bool       `json:"enabled"`
-	Revision        uint64     `json:"revision"`
-	State           string     `json:"state"`
-	Authorization   AuthStatus `json:"authorization"`
-	ScheduledTaskID *uint64    `json:"scheduled_task_id"`
-	LastRunStatus   *string    `json:"last_run_status"`
-	LastError       *string    `json:"last_error"`
-	LastFinishedAt  *time.Time `json:"last_finished_at"`
-	NextRunAt       *time.Time `json:"next_run_at"`
-	ClueCount       int64      `json:"clue_count"`
+	ID              string          `json:"id"`
+	Name            string          `json:"name"`
+	Description     string          `json:"description"`
+	Source          string          `json:"source"`
+	CollectorSkill  string          `json:"collector_skill"`
+	Permissions     []string        `json:"permissions"`
+	IntervalMinutes int             `json:"interval_minutes"`
+	Enabled         bool            `json:"enabled"`
+	Revision        uint64          `json:"revision"`
+	State           string          `json:"state"`
+	Authorization   AuthStatus      `json:"authorization"`
+	ScheduledTaskID *uint64         `json:"scheduled_task_id"`
+	LastRunStatus   *string         `json:"last_run_status"`
+	LastError       *string         `json:"last_error"`
+	LastFinishedAt  *time.Time      `json:"last_finished_at"`
+	NextRunAt       *time.Time      `json:"next_run_at"`
+	ClueCount       int64           `json:"clue_count"`
+	Config          json.RawMessage `json:"config"`
 }
 
 type Scheduler interface {
@@ -108,9 +110,17 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (*Vi
 	if !ok {
 		return nil, fmt.Errorf("%w: id=%s", ErrNotFound, id)
 	}
+	updates := map[string]any{"enabled": input.Enabled, "revision": gorm.Expr("revision + 1")}
+	if input.Config != nil {
+		config, err := normalizeConfig(*input.Config)
+		if err != nil {
+			return nil, fmt.Errorf("invalid plugin config: %w", err)
+		}
+		updates["config"] = string(config)
+	}
 	result := s.db.WithContext(ctx).Model(&domain.PluginInstallation{}).
 		Where("plugin_id = ? AND revision = ?", manifest.ID, input.ExpectedRevision).
-		Updates(map[string]any{"enabled": input.Enabled, "revision": gorm.Expr("revision + 1")})
+		Updates(updates)
 	if result.Error != nil {
 		return nil, fmt.Errorf("update plugin %s: %w", manifest.ID, result.Error)
 	}
@@ -207,13 +217,17 @@ func (s *Service) view(ctx context.Context, manifest Manifest) (*View, error) {
 		return nil, fmt.Errorf("load plugin %s: %w", manifest.ID, err)
 	}
 	authorization := s.authorizer.Probe(ctx, manifest.Provider)
+	config, err := effectiveConfig(manifest, json.RawMessage(installation.Config))
+	if err != nil {
+		return nil, fmt.Errorf("load plugin %s config: %w", manifest.ID, err)
+	}
 	view := &View{
 		ID: manifest.ID, Name: manifest.Name, Description: manifest.Description,
 		Source: manifest.Source, CollectorSkill: manifest.CollectorSkill,
 		Permissions:     append([]string(nil), manifest.Permissions...),
 		IntervalMinutes: manifest.IntervalMinutes, Enabled: installation.Enabled,
 		Revision: installation.Revision, ScheduledTaskID: installation.ScheduledTaskID,
-		Authorization: authorization, State: "disabled",
+		Authorization: authorization, State: "disabled", Config: config,
 	}
 	if installation.Enabled {
 		if authorization.Status != AuthAuthorized {
@@ -272,7 +286,11 @@ func (s *Service) reconcile(ctx context.Context, manifest Manifest, authorizatio
 		return fmt.Errorf("load plugin %s for reconcile: %w", manifest.ID, err)
 	}
 	operational := installation.Enabled && authorization.Status == AuthAuthorized
-	input := scheduleInput(manifest, operational)
+	config, err := effectiveConfig(manifest, json.RawMessage(installation.Config))
+	if err != nil {
+		return fmt.Errorf("load plugin %s config: %w", manifest.ID, err)
+	}
+	input := scheduleInput(manifest, config, operational)
 	if installation.ScheduledTaskID == nil {
 		if !operational {
 			return nil
@@ -306,10 +324,10 @@ func (s *Service) reconcile(ctx context.Context, manifest Manifest, authorizatio
 	return nil
 }
 
-func scheduleInput(manifest Manifest, enabled bool) scheduledtask.Input {
+func scheduleInput(manifest Manifest, config json.RawMessage, enabled bool) scheduledtask.Input {
 	instruction := fmt.Sprintf(
-		"执行插件 %s 的采集。先读取 Skill `%s` 并严格按其步骤操作；只采集原始事实，通过 jarvis-tools append-clue 投递，不在本 Task 内判断是否值得行动。",
-		manifest.Name, manifest.CollectorSkill,
+		"执行插件 %s 的采集。先读取 Skill `%s` 并严格按其步骤操作；插件配置为 %s。只采集原始事实，通过 jarvis-tools append-clue 投递，不在本 Task 内判断是否值得行动。",
+		manifest.Name, manifest.CollectorSkill, config,
 	)
 	interval := manifest.IntervalMinutes
 	return scheduledtask.Input{
@@ -318,4 +336,37 @@ func scheduleInput(manifest Manifest, enabled bool) scheduledtask.Input {
 		Instruction: instruction, ContextSnapshot: json.RawMessage(`{}`),
 		ScheduleType: "interval", IntervalMinutes: &interval, Enabled: &enabled,
 	}
+}
+
+func normalizeConfig(raw json.RawMessage) (json.RawMessage, error) {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
+	if len(raw) == 0 {
+		return json.RawMessage(`{}`), nil
+	}
+	if len(raw) > 16*1024 {
+		return nil, fmt.Errorf("must not exceed 16384 bytes")
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, fmt.Errorf("must be a JSON object: %w", err)
+	}
+	if object == nil {
+		return nil, fmt.Errorf("must be a JSON object")
+	}
+	normalized, err := json.Marshal(object)
+	if err != nil {
+		return nil, fmt.Errorf("encode JSON object: %w", err)
+	}
+	return normalized, nil
+}
+
+func effectiveConfig(manifest Manifest, stored json.RawMessage) (json.RawMessage, error) {
+	config, err := normalizeConfig(stored)
+	if err != nil {
+		return nil, err
+	}
+	if string(config) != "{}" {
+		return config, nil
+	}
+	return append(json.RawMessage(nil), manifest.DefaultConfig...), nil
 }

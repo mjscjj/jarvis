@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -15,6 +16,7 @@ type Manifest struct {
 	Provider        string
 	Permissions     []string
 	IntervalMinutes int
+	DefaultConfig   json.RawMessage
 }
 
 type Registry struct {
@@ -37,6 +39,14 @@ func NewRegistry(manifests []Manifest) (*Registry, error) {
 			manifest.IntervalMinutes <= 0 {
 			return nil, fmt.Errorf("plugin manifest %q is incomplete", manifest.ID)
 		}
+		if len(manifest.DefaultConfig) == 0 {
+			manifest.DefaultConfig = json.RawMessage(`{}`)
+		}
+		defaultConfig, err := normalizeConfig(manifest.DefaultConfig)
+		if err != nil {
+			return nil, fmt.Errorf("plugin manifest %q default config: %w", manifest.ID, err)
+		}
+		manifest.DefaultConfig = defaultConfig
 		if _, exists := entries[manifest.ID]; exists {
 			return nil, fmt.Errorf("duplicate plugin id %q", manifest.ID)
 		}
@@ -47,6 +57,7 @@ func NewRegistry(manifests []Manifest) (*Registry, error) {
 			return nil, fmt.Errorf("plugin skill %q is owned by both %s and %s", manifest.CollectorSkill, owner, manifest.ID)
 		}
 		manifest.Permissions = append([]string(nil), manifest.Permissions...)
+		manifest.DefaultConfig = append(json.RawMessage(nil), manifest.DefaultConfig...)
 		entries[manifest.ID] = manifest
 		sources[manifest.Source] = manifest.ID
 		skills[manifest.CollectorSkill] = manifest.ID
@@ -72,10 +83,10 @@ func BuiltinRegistry() (*Registry, error) {
 		},
 		{
 			ID: "oncall", Name: "Oncall",
-			Description: "采集与你相关的值班工单、告警和处置进展。",
+			Description: "按群名规则采集你已加入的 Oncall 群和处置进展。",
 			Source:      "oncall", CollectorSkill: "oncall-clue-collector",
-			Provider: "lark-oncall", Permissions: []string{"lark:im.read", "bytedcli:lark-oncall.read"},
-			IntervalMinutes: 15,
+			Provider: "lark-cli-im", Permissions: []string{"lark:im.read"},
+			IntervalMinutes: 15, DefaultConfig: json.RawMessage(`{"search_terms":["oncall","值班"]}`),
 		},
 	})
 }
@@ -95,6 +106,7 @@ func (r *Registry) List() []Manifest {
 	items := make([]Manifest, 0, len(r.entries))
 	for _, manifest := range r.entries {
 		manifest.Permissions = append([]string(nil), manifest.Permissions...)
+		manifest.DefaultConfig = append(json.RawMessage(nil), manifest.DefaultConfig...)
 		items = append(items, manifest)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })

@@ -2,13 +2,13 @@ package domain
 
 import "time"
 
-// PluginInstallation stores only the machine-owned lifecycle of one installed
-// integration. Plugin metadata and collection semantics stay in the registry
-// and its Skill; collected evidence continues through the generic clue stream.
+// PluginInstallation stores machine-owned lifecycle state plus opaque,
+// plugin-owned user configuration. Collection semantics stay in the Skill.
 type PluginInstallation struct {
 	PluginID        string    `gorm:"column:plugin_id;primaryKey"`
 	Enabled         bool      `gorm:"column:enabled;not null;default:false"`
 	Revision        uint64    `gorm:"column:revision;not null;default:0"`
+	Config          string    `gorm:"column:config;type:TEXT;not null;default:'{}'"`
 	ScheduledTaskID *uint64   `gorm:"column:scheduled_task_id;uniqueIndex:uk_plugin_schedule"`
 	CreatedAt       time.Time `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`

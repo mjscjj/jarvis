@@ -601,10 +601,10 @@ export function listPlugins(signal?: AbortSignal): Promise<{ items: Plugin[] }> 
   return request<{ items: Plugin[] }>('/api/plugins', { signal })
 }
 
-export function updatePlugin(id: string, enabled: boolean, expectedRevision: number): Promise<Plugin> {
+export function updatePlugin(id: string, enabled: boolean, expectedRevision: number, config?: Record<string, unknown>): Promise<Plugin> {
   return request<Plugin>(`/api/plugins/${encodeURIComponent(id)}`, {
     method: 'PATCH',
-    body: { enabled, expected_revision: expectedRevision },
+    body: { enabled, expected_revision: expectedRevision, ...(config === undefined ? {} : { config }) },
   })
 }
 

@@ -169,6 +169,65 @@ func TestEnableAuthorizedPluginCreatesAndTriggersSchedule(t *testing.T) {
 	}
 }
 
+func TestUpdateConfigPersistsAndRefreshesScheduleInstruction(t *testing.T) {
+	db := openPluginDB(t)
+	registry, err := NewRegistry([]Manifest{{
+		ID: "oncall", Name: "Oncall", Description: "groups",
+		Source: "oncall", CollectorSkill: "oncall-clue-collector",
+		Provider: "lark-cli-im", IntervalMinutes: 15,
+		DefaultConfig: json.RawMessage(`{"search_terms":["oncall","值班"]}`),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		return []byte(`{"data":{"chats":[]}}`), nil
+	}})
+	scheduler := newFakeScheduler()
+	service, err := NewService(db, registry, authorizer, scheduler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := service.Get(t.Context(), "oncall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(initial.Config) != `{"search_terms":["oncall","值班"]}` {
+		t.Fatalf("default config = %s", initial.Config)
+	}
+	config := json.RawMessage(`{"search_terms":["SRE 告警","线上事故"]}`)
+	updated, err := service.Update(t.Context(), "oncall", UpdateInput{
+		Enabled: true, ExpectedRevision: initial.Revision, Config: &config,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(updated.Config) != string(config) {
+		t.Fatalf("updated config = %s", updated.Config)
+	}
+	instruction := scheduler.items[*updated.ScheduledTaskID].Instruction
+	if !strings.Contains(instruction, `"SRE 告警"`) || !strings.Contains(instruction, `"线上事故"`) {
+		t.Fatalf("schedule instruction = %q", instruction)
+	}
+}
+
+func TestUpdateRejectsNonObjectConfig(t *testing.T) {
+	db := openPluginDB(t)
+	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		return []byte(`{"status":"success","data":{"authenticated":true}}`), nil
+	}})
+	service, err := NewService(db, onePluginRegistry(t), authorizer, newFakeScheduler())
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := json.RawMessage(`["not","an","object"]`)
+	if _, err := service.Update(t.Context(), "codebase", UpdateInput{
+		ExpectedRevision: 0, Config: &config,
+	}); err == nil || !strings.Contains(err.Error(), "JSON object") {
+		t.Fatalf("Update() error = %v", err)
+	}
+}
+
 func TestEnableUnauthorizedPluginWaitsWithoutSchedule(t *testing.T) {
 	db := openPluginDB(t)
 	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
@@ -249,7 +308,7 @@ func TestAuthorizerRejectsFlowForDifferentProvider(t *testing.T) {
 	if begin.FlowID == nil {
 		t.Fatalf("begin = %#v", begin)
 	}
-	complete := authorizer.Complete(t.Context(), "lark-oncall", *begin.FlowID)
+	complete := authorizer.Complete(t.Context(), "lark-cli-im", *begin.FlowID)
 	if complete.Status != AuthFailed {
 		t.Fatalf("complete = %#v", complete)
 	}
@@ -260,8 +319,8 @@ func TestProbeReadsStructuredAuthorizationState(t *testing.T) {
 		switch strings.Join(args, " ") {
 		case "--json meego status":
 			return []byte(`{"status":"success","data":{"authenticated":false}}`), nil
-		case "--json lark-oncall meta types":
-			return []byte("{\"event\":\"action_required\",\"data\":{\"code\":\"LARK_ONCALL_AUTH_REQUIRED\"}}\n"), errors.New("exit 1")
+		case "im +chat-search --as user --query oncall --disable-search-by-user --chat-modes group,topic --search-types private,public_joined --page-size 1 --page-limit 1 --format json":
+			return []byte(`{"data":{"chats":[]}}`), nil
 		default:
 			return nil, errors.New("unexpected command")
 		}
@@ -269,8 +328,38 @@ func TestProbeReadsStructuredAuthorizationState(t *testing.T) {
 	if status := authorizer.Probe(t.Context(), "meego"); status.Status != AuthRequired {
 		t.Fatalf("meego Probe() = %#v", status)
 	}
-	if status := authorizer.Probe(t.Context(), "lark-oncall"); status.Status != AuthRequired {
+	if status := authorizer.Probe(t.Context(), "lark-cli-im"); status.Status != AuthAuthorized {
 		t.Fatalf("oncall Probe() = %#v", status)
+	}
+}
+
+func TestLarkIMAuthorizationUsesDeviceFlow(t *testing.T) {
+	var commands []string
+	authorizer := newAuthorizer(fakeRunner{run: func(bin string, args []string) ([]byte, error) {
+		command := bin + " " + strings.Join(args, " ")
+		commands = append(commands, command)
+		switch {
+		case strings.Contains(command, "im +chat-search"):
+			return []byte(`{"error":{"code":"AUTH_REQUIRED","message":"login required"}}`), errors.New("exit 1")
+		case strings.Contains(command, "--no-wait"):
+			return []byte(`{"data":{"device_code":"device-1","verification_uri":"https://example.test/login","user_code":"ABCD"}}`), nil
+		case strings.Contains(command, "--device-code"):
+			return []byte(`{"status":"success"}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected command: %s", command)
+		}
+	}})
+	begin := authorizer.Begin(t.Context(), "lark-cli-im")
+	if begin.Status != AuthPending || begin.FlowID == nil {
+		t.Fatalf("begin = %#v", begin)
+	}
+	complete := authorizer.Complete(t.Context(), "lark-cli-im", *begin.FlowID)
+	if complete.Status != AuthAuthorized {
+		t.Fatalf("complete = %#v", complete)
+	}
+	if len(commands) != 3 || !strings.HasPrefix(commands[1], "lark-cli auth login") ||
+		!strings.Contains(commands[2], "--device-code device-1") {
+		t.Fatalf("commands = %#v", commands)
 	}
 }
 
