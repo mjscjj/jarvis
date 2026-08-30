@@ -88,7 +88,6 @@ export default function App({
   const [newWeek, setNewWeek] = useState(currentISOWeek)
   const [weekNotice, setWeekNotice] = useState('')
   const busy = syncState.kind === 'loading'
-  const tone = syncState.kind === 'saving' ? 'text-blue-600' : syncState.kind === 'saved' ? 'text-emerald-600' : 'text-slate-400'
 
   const submitWeek = async () => {
     const target = newWeek.trim()
@@ -165,13 +164,7 @@ export default function App({
 			<div className={`mx-auto flex min-h-14 max-w-[1320px] flex-wrap items-center gap-2.5 px-4 py-2 transition-[padding] sm:flex-nowrap sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
           <div className="mr-1 flex min-w-fit items-center gap-2">
 					<span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-[11px] font-bold text-white shadow-sm">E</span>
-            <div className="leading-tight">
-						<h1 className="text-[14px] font-semibold tracking-tight text-slate-900">{PAGE_TITLE.replace('OKR 协作台', '周报协作台')}</h1>
-              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">
-                <span>{quarter ? quarter.replace('-', ' ') : 'OKR'}</span><span className="text-slate-300">·</span>
-							<span>{mode === 'fill' ? '周报填写' : '周报会议'}</span>
-              </div>
-            </div>
+					<h1 className="text-[14px] font-semibold tracking-tight text-slate-900">{PAGE_TITLE.replace('OKR 协作台', '周报协作台')}</h1>
           </div>
 
 		          <QuarterSelect />
@@ -181,9 +174,6 @@ export default function App({
             </select>
 	          </div>
 	          {mode === 'fill' && <button type="button" onClick={() => { setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
-
-          <span className={`hidden min-w-16 text-[10px] sm:inline ${tone}`} aria-live="polite">{syncState.message}</span>
-
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
               <span aria-hidden className="hidden h-5 w-px bg-slate-200 sm:block" />
               <button

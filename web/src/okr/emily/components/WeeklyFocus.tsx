@@ -34,12 +34,11 @@ export function WeeklyFocus({ comments, onOpenComment }: { comments: PageComment
 
   return (
     <section aria-label="本周重点关注" className="mb-4 rounded-xl border border-blue-100 bg-gradient-to-br from-white to-blue-50/35 p-3.5 shadow-[0_3px_12px_rgba(31,35,40,0.035)]">
-      <header className="mb-2.5 flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
+      <header className="mb-2.5 border-b border-slate-100 pb-2">
         <div>
           <span className="block text-[9px] font-bold tracking-[0.12em] text-blue-600">WEEKLY FOCUS</span>
           <h2 className="text-[16px] font-semibold text-slate-900">本周重点关注</h2>
         </div>
-        <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-400">{incomplete.length} 人待补充 · {todos.length} 项待跟进</span>
       </header>
       <div className="space-y-2.5">
         <div className="min-w-0 rounded-lg border border-slate-200 bg-white/85 p-2.5">
