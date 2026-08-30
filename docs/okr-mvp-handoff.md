@@ -11,7 +11,7 @@
 - 模块配置：`conf/modules.yaml` 分别控制 `okr` 和 `weekly-report`；周报显式依赖 OKR，业务配置独立在 `conf/okr-module.yaml`。
 - 生命周期：重启后按模块执行迁移、注册 `/api/okr/*` 或 `/api/weekly-report/*`、暴露对应 Skill；关闭模块不会删除仓库内模块数据。
 - 存储：OKR/周报产品事实位于随仓库提交的 `data/okr/okr.db`，资源位于 `data/okr/assets/`；OAuth/session 和 Jarvis 通用状态仍在本机运行库。`MigrateCore` 与 `MigrateWeeklyReport` 分开拥有 schema 集合。
-- 产品：单一 OKR 入口内包含稳定定义、可选周报和 Agent 流程。OKR 负责 KR CRUD、负责人、优先级、标签，以及四个固定 Agent 行动与可编辑业务 Prompt；行动只管理启停和时间，范围、对象、产出与验收由绑定 Prompt 完整定义。周报负责填写、会议、评论、历史、图片、Meego 和催填事实。
+- 产品：单一 OKR 入口内包含稳定定义、可选周报和 Agent 流程。OKR 负责按季度维护 Objective 方向、KR CRUD、负责人和标签；业务分类与 Focus/P1/P2 优先级均为 KR 的单值结构标签，页面按“业务分类 → 优先级 → 方向 → KR”组织。OKR 同时提供四个固定 Agent 行动与可编辑业务 Prompt；行动只管理启停和时间，范围、对象、产出与验收由绑定 Prompt 完整定义。周报负责填写、会议、评论、历史、图片、Meego 和催填事实。
 - 写入：OKR PUT 不改周进展；周报按单条进展 create/update/delete，进展与 KR 定义各自 CAS，不再共享版本。
 - 世界关系：模块不保存 `world_*_id`，也不在保存时同步世界模型；跨模块映射使用通用 `entity_relation` 和 `/api/relations`。
 - 编排：启动时不投影世界模型、不安装默认定时任务。用户在 Agent 流程页配置四个固定行动的启停和时间；通用 ScheduledTask 只保证每周或间隔触发，`okr-agent-orchestrator` 实时读取行动固定绑定的业务 Prompt 并动态组合原子工具。`okr-world-projector` 只拥有稳定实体投影；`weekly-report-progress-sync`、`weekly-report-reminder` 分别拥有同步和催办操作边界；后端不直接调用 Meego CLI。
@@ -31,6 +31,7 @@
 | 通用关系 | `domain.EntityRelation`, `background.RelationService`, `/api/relations` | service 与 CLI endpoint 单测 |
 | 通用证据写回 | clue + Fact + Page CAS | 模块 API、关系服务与 CLI endpoint 单测 |
 | 行动与 Prompt 结合 | 固定 `action_key → prompt_key` + ScheduledTask 时间配置 | actionConfig 与 weekly 调度单测、前端 typecheck、API CRUD |
+| 标签层级单一真源 | `business_category`、`priority` 标签 + Objective | schema、服务校验、层级组装单测、季度数据核对 |
 | 前端仍可构建 | `web/src/okr/**`, module registry | typecheck、Vitest、Vite build |
 
 ## 人工验收

@@ -1,4 +1,4 @@
-import type { AuthStatus, Entry, EnumValues, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status } from './types'
+import type { AuthStatus, Entry, EnumValues, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status } from './types'
 
 interface Envelope<T> {
   code: number
@@ -22,10 +22,9 @@ interface APIKr {
   id: string
   title: string
   owner_open_id: string
-  owner_name: string
-  owners: Array<{ open_id: string; name: string }>
-  priority: NonNullable<Kr['priority']>
-  metric_note: string
+	owner_name: string
+	owners: Array<{ open_id: string; name: string }>
+	metric_note: string
   version: number
   metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
   points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; entries: APIEntry[]; previous_entries: APIEntry[] }>
@@ -88,10 +87,9 @@ interface APIAuthStatus {
 }
 
 interface APIEnums {
-  statuses: Status[]
-  point_kinds: PointKind[]
-  lights: Light[]
-  priorities: Array<NonNullable<Kr['priority']>>
+	statuses: Status[]
+	point_kinds: PointKind[]
+	lights: Light[]
 }
 
 interface APIReminderPreview {
@@ -251,8 +249,7 @@ function fromAPIKr(value: APIKr): Kr {
     ownerOpenId: value.owner_open_id,
     ownerName: value.owner_name,
     owners: (value.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
-    priority: value.priority,
-    metricNote: value.metric_note,
+		metricNote: value.metric_note,
     version: value.version,
     metrics: value.metrics.map((metric) => ({ ...metric, images: metric.images ?? [] })),
     points: value.points.map((point) => ({
@@ -435,8 +432,8 @@ export async function deleteComment(id: string): Promise<void> {
 }
 
 export async function getEnums(): Promise<EnumValues> {
-  const value = await request<APIEnums>('/api/okr/enums')
-  return { statuses: value.statuses, pointKinds: value.point_kinds, lights: value.lights, priorities: value.priorities }
+	const value = await request<APIEnums>('/api/okr/enums')
+	return { statuses: value.statuses, pointKinds: value.point_kinds, lights: value.lights }
 }
 
 export async function getReminderPreview(quarter: string, week: string): Promise<ReminderPreview> {
@@ -675,12 +672,11 @@ async function progressRequest(path: string, init: RequestInit): Promise<Kr> {
 
 export async function replaceKR(kr: Kr): Promise<Kr> {
   try {
-    const body = {
-      expected_version: kr.version ?? 0,
-      title: kr.title,
-      owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
-      priority: kr.priority ?? 'p1',
-      metric_note: kr.metricNote,
+		const body = {
+			expected_version: kr.version ?? 0,
+			title: kr.title,
+			owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+			metric_note: kr.metricNote,
       metrics: kr.metrics,
       points: kr.points.map((point) => ({
         id: point.id,
@@ -720,15 +716,18 @@ export async function createObjective(input: { quarter: string; title: string })
   return { id: value.id, title: value.title, krs: value.krs.map(fromAPIKr) }
 }
 
-export async function createKR(objectiveId: string, input: { title: string; ownerName?: string; priority?: NonNullable<Kr['priority']> }): Promise<Kr> {
+export async function createKR(objectiveId: string, input: { title: string; ownerName?: string; businessCategory: string; priority: KrPriority }): Promise<Kr> {
 	const ownerNames = (input.ownerName ?? '').split(/[、,，;；]/).map((name) => name.trim()).filter(Boolean)
-  const value = await request<APIKr>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {
-    method: 'POST',
-    body: JSON.stringify({
-      title: input.title,
-	  owners: ownerNames.map((name) => ({ open_id: '', name })),
-      priority: input.priority ?? 'p1',
-    }),
+	const value = await request<APIKr>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {
+		method: 'POST',
+		body: JSON.stringify({
+			title: input.title,
+			owners: ownerNames.map((name) => ({ open_id: '', name })),
+			tags: [
+				{ type: 'business_category', value: input.businessCategory },
+				{ type: 'priority', value: input.priority },
+			],
+		}),
   })
   return fromAPIKr(value)
 }

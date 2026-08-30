@@ -21,7 +21,7 @@ Jarvis 是通用宿主，不是 OKR 产品本身。当前采用随 Jarvis 编译
 
 当前有两个可独立展示的内置模块：
 
-- `okr` 拥有 Objective、KR、核心指标、结构化多人负责人、优先级、标签、可编辑业务 Prompt 和世界关系投影。接口位于 `/api/okr/*`，Skills 为 `okr-agent-orchestrator`、`okr-world-projector`，工具入口为 `scripts/okr-agent-tools`、`scripts/okr-module-tools`。
+- `okr` 拥有季度、Objective 方向、KR、核心指标、结构化多人负责人、标签、可编辑业务 Prompt 和世界关系投影。业务分类和 Focus/P1/P2 优先级都是 KR 的单值结构标签，不在 KR 表里复制独立字段。接口位于 `/api/okr/*`，Skills 为 `okr-agent-orchestrator`、`okr-world-projector`，工具入口为 `scripts/okr-agent-tools`、`scripts/okr-module-tools`。
 - `weekly-report` 拥有按周进展、历史对比、填写/会议视图、评论、催填和 Meego 观察。接口位于 `/api/weekly-report/*`，Skills 为 `weekly-report-progress-sync`、`weekly-report-reminder`，工具入口为 `scripts/weekly-report-tools`。
 
 `weekly-report` 显式依赖 `okr`：可以只启用 OKR，不能在关闭 OKR 时单独启用周报。两者复用 `internal/okrworkspace/**` 包和 `okr_workspace_*` 表名前缀，但迁移集合、HTTP 写入、前端入口、Skill 和工具按所有权分开。
@@ -38,7 +38,7 @@ Jarvis 核心拥有通用机制：
 
 OKR 定义和周报产品事实保存在仓库内独立数据库 `data/okr/okr.db`，图片保存在 `data/okr/assets/`，两者随代码提交。该数据库使用 DELETE journal，成功写入直接落主文件，不依赖未提交的 WAL。Prompt、策略和模板正文仍以 `conf/prompts/*.md` 为唯一真源，不复制进数据库。
 
-Jarvis 通用 Task、Fact、Page、ScheduledTask 以及 OKR OAuth/session 等机器运行态仍保存在 `var/` 下的本机运行库，不进入 Git。模块库只包含结构化产品事实：Objective、KR、指标、拆解点、结构化负责人、标签，以及启用周报后产生的周次、进展、评论、Meego 快照和催填批次。
+Jarvis 通用 Task、Fact、Page、ScheduledTask 以及 OKR OAuth/session 等机器运行态仍保存在 `var/` 下的本机运行库，不进入 Git。模块库只包含结构化产品事实：季度、Objective 方向、KR、指标、拆解点、结构化负责人、标签，以及启用周报后产生的周次、进展、评论、Meego 快照和催填批次。页面导航从同一份事实动态组装为“业务分类标签 → 优先级标签 → Objective 方向 → KR”，不按标题匹配或保存第二套层级。
 
 OKR 写接口不修改任何周进展；周报使用单条进展的 create/update/delete 原子接口，每条进展持有自己的 `version`，不修改 KR 定义版本。核心接口拒绝夹带周进展。存在周报历史的拆解点或 KR 不允许删除，避免把历史变成孤儿数据。
 

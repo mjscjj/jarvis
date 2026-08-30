@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
 import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
+import { buildKRHierarchy, priorityOf } from '../hierarchy'
 import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
 import { hasOwner, joinOwnerNames, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
-import type { Entry, Kr, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
-import { ObjectiveNav } from './ObjectiveNav'
+import type { Entry, Kr, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
+import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
 
 function Caret({ open, onToggle }: { open: boolean; onToggle: () => void }) {
@@ -30,7 +31,7 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <div className="rounded-lg border border-dashed border-slate-200 px-3 py-5 text-center text-xs text-slate-400">{children}</div>
 }
 
-function priorityTone(priority?: Kr['priority']) {
+function priorityTone(priority: KrPriority | '') {
   if (priority === 'p0') return 'border-red-200 bg-red-50 font-semibold text-red-700'
   if (priority === 'p1') return 'border-amber-200 bg-amber-50 font-semibold text-amber-700'
   return 'border-slate-200 bg-white text-slate-500'
@@ -232,7 +233,8 @@ function tagClass(tag: KrTag) {
 }
 
 function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean }) {
-  const { setKrTitle, setKrPriority } = useBoard()
+	const { setKrTitle, setKrPriority } = useBoard()
+	const priority = priorityOf(kr)
 
   return (
     <header className="group/kr border-b border-slate-100 px-3.5 py-2.5">
@@ -243,12 +245,12 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1">
             {!readOnly && <PersonPicker kr={kr} />}
             {readOnly && splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">{person}</span>)}
-            {!readOnly ? (
-              <select value={kr.priority ?? 'p1'} onChange={(event) => setKrPriority(kr.id, event.target.value as NonNullable<Kr['priority']>)} className={`rounded-md border px-2 py-1 text-xs outline-none focus:border-blue-400 ${priorityTone(kr.priority)}`}>
-                <option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option>
-              </select>
-            ) : kr.priority && <span className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(kr.priority)}`}>{kr.priority}</span>}
-            {(kr.tags ?? []).filter((tag) => tag.type !== 'custom').map((tag) => (
+			{!readOnly ? (
+				<select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} className={`rounded-md border px-2 py-1 text-xs outline-none focus:border-blue-400 ${priorityTone(priority)}`}>
+					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
+				</select>
+			) : <span className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priority || '未标注'}</span>}
+			{(kr.tags ?? []).filter((tag) => tag.type !== 'custom' && tag.type !== 'priority').map((tag) => (
               <span key={`${tag.type}:${tag.value}`} className={`rounded-md border px-2 py-1 text-xs ${tagClass(tag)}`}>{tagText(tag)}</span>
             ))}
             {kr.metrics.length > 0 && <span className="inline-flex items-center gap-1" title="核心数据红黄绿灯">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>}
@@ -400,12 +402,17 @@ function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsRead
 
 export function KrTable({ readOnly = false, definitionsReadOnly = false, progressReadOnly = false, showProgress = true }: { readOnly?: boolean; definitionsReadOnly?: boolean; progressReadOnly?: boolean; showProgress?: boolean }) {
   const { objectives } = useBoard()
-  const [closed, setClosed] = useState<Set<string>>(new Set())
-  const [ownerFilter, setOwnerFilter] = useState('')
-  const [activeObjectiveId, setActiveObjectiveId] = useState('')
+	const [closed, setClosed] = useState<Set<string>>(new Set())
+	const [ownerFilter, setOwnerFilter] = useState('')
+	const [activeBusinessValue, setActiveBusinessValue] = useState<string>()
+	const [activePriorityValue, setActivePriorityValue] = useState<string>()
+	const [activeObjectiveId, setActiveObjectiveId] = useState('')
   const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
   const visibleObjectives = useMemo(() => objectives.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)) })).filter((objective) => !ownerFilter || objective.krs.length > 0), [objectives, ownerFilter])
-  const activeObjective = visibleObjectives.find((objective) => objective.id === activeObjectiveId) ?? visibleObjectives[0]
+	const navigation = useMemo(() => buildKRHierarchy(visibleObjectives), [visibleObjectives])
+	const activeBusiness = navigation.find((business) => business.value === activeBusinessValue) ?? navigation[0]
+	const activePriority = activeBusiness?.priorities.find((priority) => priority.value === activePriorityValue) ?? activeBusiness?.priorities[0]
+	const activeObjective = activePriority?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activePriority?.objectives[0]
   const totalKRCount = objectives.reduce((sum, objective) => sum + objective.krs.length, 0)
   const visibleKRCount = visibleObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
 
@@ -422,7 +429,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR，当前显示 {visibleKRCount} 条</span>
         <span className="ml-auto text-slate-400">负责人</span>
-        <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
+		<select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
           <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
         </select>
         <span className="font-medium text-slate-500">层级</span>
@@ -431,10 +438,14 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
           <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部折叠</button>
         </div>
       </div>
-      <ObjectiveNav
-        objectives={visibleObjectives}
-        activeObjectiveId={activeObjective?.id}
-        onObjective={setActiveObjectiveId}
+		<HierarchyNav
+			navigation={navigation}
+			activeBusiness={activeBusiness}
+			activePriority={activePriority}
+			activeObjectiveId={activeObjective?.id}
+			onBusiness={(value) => { setActiveBusinessValue(value); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
+			onPriority={(value) => { setActivePriorityValue(value); setActiveObjectiveId('') }}
+			onObjective={setActiveObjectiveId}
       />
       <div>
         {activeObjective && <ObjectiveSection key={activeObjective.id} objective={activeObjective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} showTitle={false} />}

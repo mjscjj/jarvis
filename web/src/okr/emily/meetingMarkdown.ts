@@ -1,4 +1,5 @@
 import { isDone, statusOf } from './template'
+import { priorityLabel, priorityOf } from './hierarchy'
 import type { DocLink, ImageRef, Objective } from './types'
 
 export interface MeetingMarkdownExport {
@@ -35,7 +36,7 @@ export function buildMeetingMarkdown(objectives: Objective[], quarter: string, w
 		lines.push(`## ${escapeInline(objective.title)}`, '')
 		for (const kr of objective.krs) {
 			lines.push(`### ${escapeInline(kr.title)}`, '')
-			const meta = [kr.ownerName && `负责人：${escapeInline(kr.ownerName)}`, kr.priority && `优先级：${kr.priority.toUpperCase()}`].filter(Boolean)
+			const meta = [kr.ownerName && `负责人：${escapeInline(kr.ownerName)}`, `优先级：${priorityLabel(priorityOf(kr))}`].filter(Boolean)
 			if (meta.length > 0) lines.push(meta.join(' · '), '')
 			if (kr.metrics.length > 0) {
 				lines.push('#### 核心数据', '')

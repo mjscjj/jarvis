@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { Entry, EnumValues, Kr, KrOwner, MetricLine, Objective, Point } from './types'
+import type { Entry, EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, Point } from './types'
 
 export type SyncState =
   | { kind: 'loading'; message: string }
@@ -20,11 +20,12 @@ export interface BoardApi {
   setWeek: (week: string) => void
   enums: EnumValues
   syncState: SyncState
-  setKrTitle: (objId: string, krId: string, title: string) => void
-  setKrOwner: (krId: string, ownerName: string, ownerOpenId?: string, owners?: KrOwner[]) => void
-  setKrPriority: (krId: string, priority: NonNullable<Kr['priority']>) => void
-  createObjective: (input: { quarter: string; title: string }) => Promise<void>
-  createKr: (objectiveId: string, input: { title: string; ownerName?: string; priority?: NonNullable<Kr['priority']> }) => Promise<void>
+	setKrTitle: (objId: string, krId: string, title: string) => void
+	setKrOwner: (krId: string, ownerName: string, ownerOpenId?: string, owners?: KrOwner[]) => void
+	setKrBusinessCategory: (krId: string, category: string) => void
+	setKrPriority: (krId: string, priority: KrPriority | '') => void
+	createObjective: (input: { quarter: string; title: string }) => Promise<void>
+	createKr: (objectiveId: string, input: { title: string; ownerName?: string; businessCategory: string; priority: KrPriority }) => Promise<void>
   deleteKr: (krId: string) => Promise<void>
   addTag: (krId: string, value: string, type?: string) => void
   removeTag: (krId: string, type: string, value: string) => void

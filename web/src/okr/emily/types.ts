@@ -35,6 +35,7 @@ export interface Entry {
 }
 
 export type Light = 'green' | 'yellow' | 'red'
+export type KrPriority = 'p0' | 'p1' | 'p2'
 
 /** 核心数据里的一条，内容自由填写，灯可选可不选 */
 export interface MetricLine {
@@ -122,8 +123,7 @@ export interface Kr {
   ownerOpenId?: string
   ownerName?: string
   owners?: KrOwner[]
-  priority?: 'p0' | 'p1' | 'p2'
-  version?: number
+	version?: number
   tags?: KrTag[]
 }
 
@@ -218,10 +218,9 @@ export interface TextSelection {
 }
 
 export interface EnumValues {
-  statuses: Status[]
-  pointKinds: PointKind[]
-  lights: Light[]
-  priorities: Array<NonNullable<Kr['priority']>>
+	statuses: Status[]
+	pointKinds: PointKind[]
+	lights: Light[]
 }
 
 export interface ReminderPreview {

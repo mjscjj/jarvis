@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteProgress, getBoard, getEnums, replaceKR, updateProgress, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
+import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { LIGHTS, STATUSES } from './template'
 import type { Entry, EnumValues, Kr, Objective, Point } from './types'
 
@@ -18,10 +19,9 @@ function currentISOWeek(now = new Date()): string {
 const DEFAULT_WEEK = currentISOWeek()
 
 const DEFAULT_ENUMS: EnumValues = {
-  statuses: STATUSES.map((item) => item.value),
-  pointKinds: ['strategy', 'product'],
-  lights: LIGHTS.map((item) => item.value),
-  priorities: ['p0', 'p1', 'p2'],
+	statuses: STATUSES.map((item) => item.value),
+	pointKinds: ['strategy', 'product'],
+	lights: LIGHTS.map((item) => item.value),
 }
 
 function clone<T>(value: T): T {
@@ -337,10 +337,14 @@ export function BoardProvider({
         }
       }
     }),
-    setKrPriority: (krId, priority) => mutate(krId, (draft) => {
-      const kr = findKr(draft, krId)
-      if (kr) kr.priority = priority
-    }),
+		setKrBusinessCategory: (krId, category) => mutate(krId, (draft) => {
+			const kr = findKr(draft, krId)
+			if (kr) kr.tags = replaceSingleTag(kr.tags, BUSINESS_CATEGORY_TAG, category)
+		}),
+		setKrPriority: (krId, priority) => mutate(krId, (draft) => {
+			const kr = findKr(draft, krId)
+			if (kr) kr.tags = replaceSingleTag(kr.tags, PRIORITY_TAG, priority)
+		}),
     addTag: (krId, value, type = 'custom') => mutate(krId, (draft) => {
       const kr = findKr(draft, krId)
       const clean = value.trim()
