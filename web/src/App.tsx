@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { Badge, Button, Drawer, Layout, Menu, Modal, Result, Spin, Tooltip, Typography, message } from 'antd'
+import { Badge, Button, Drawer, Input, Layout, Menu, Modal, Result, Spin, Tooltip, Typography, message } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   HomeOutlined,
@@ -17,6 +17,9 @@ import {
   PoweroffOutlined,
   RobotOutlined,
   ApiOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  EditOutlined,
 } from '@ant-design/icons'
 import Overview from './Overview'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
@@ -58,7 +61,7 @@ const pageLabels: Record<string, string> = {
 }
 
 function AppShell() {
-  const { name: agentName, shortName: agentShortName } = useAgentIdentity()
+  const { name: agentName, shortName: agentShortName, rename: renameAgent } = useAgentIdentity()
   const { context, navigate } = usePageContext()
   const runtimeFailures = useRuntimeFailureCount()
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
@@ -69,6 +72,9 @@ function AppShell() {
   const [enabledPlugins, setEnabledPlugins] = useState<Plugin[]>([])
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
   const [shuttingDown, setShuttingDown] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState(agentName)
+  const [savingName, setSavingName] = useState(false)
   const [modal, modalContext] = Modal.useModal()
   const [messageApi, messageContext] = message.useMessage()
   const chatRef = useRef<HTMLElement>(null)
@@ -217,6 +223,29 @@ function AppShell() {
     })
   }
 
+  const cancelNameEdit = () => {
+    setNameDraft(agentName)
+    setEditingName(false)
+  }
+
+  const saveName = async () => {
+    const next = nameDraft.trim()
+    if (!next || next === agentName) {
+      cancelNameEdit()
+      return
+    }
+    setSavingName(true)
+    try {
+      const result = await renameAgent(next)
+      setEditingName(false)
+      messageApi.success(result.restartRequired ? '名称已保存，重启服务后将应用到所有 Agent' : '名称已更新')
+    } catch (cause) {
+      messageApi.error(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSavingName(false)
+    }
+  }
+
   if (shuttingDown) {
     return (
       <>
@@ -243,7 +272,55 @@ function AppShell() {
       <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className="sider-brand">
           {!siderCollapsed && <div className="sider-tagline">主动式任务分身</div>}
-          <Title level={4}>{siderCollapsed ? agentShortName : agentName}</Title>
+          {siderCollapsed ? (
+            <Title level={4}>{agentShortName}</Title>
+          ) : (
+            <>
+              <div className="sider-name-row">
+                {editingName ? (
+                  <>
+                    <Input
+                      size="small"
+                      value={nameDraft}
+                      maxLength={32}
+                      autoFocus
+                      aria-label="机器人名称"
+                      onChange={(event) => setNameDraft(event.target.value)}
+                      onPressEnter={() => void saveName()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') cancelNameEdit()
+                      }}
+                    />
+                    <Tooltip title="保存名称">
+                      <Button type="text" size="small" icon={<CheckOutlined />} loading={savingName} onClick={() => void saveName()} />
+                    </Tooltip>
+                    <Tooltip title="取消">
+                      <Button type="text" size="small" icon={<CloseOutlined />} disabled={savingName} onClick={cancelNameEdit} />
+                    </Tooltip>
+                  </>
+                ) : (
+                  <>
+                    <Tooltip title={agentName}>
+                      <Title level={4}>{agentName}</Title>
+                    </Tooltip>
+                    <Tooltip title="修改机器人名称">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<EditOutlined />}
+                        aria-label="修改机器人名称"
+                        onClick={() => {
+                          setNameDraft(agentName)
+                          setEditingName(true)
+                        }}
+                      />
+                    </Tooltip>
+                  </>
+                )}
+              </div>
+              <div className="sider-agent-caption">你的主动式 Agent</div>
+            </>
+          )}
         </div>
         <Menu
           mode="inline"

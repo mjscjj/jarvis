@@ -1,4 +1,4 @@
-@import './styles/tokens.css';
+@import "./styles/tokens.css";
 
 :root {
   color: var(--color-text);
@@ -39,7 +39,11 @@ body {
   z-index: 100;
   display: flex;
   flex-direction: column;
-  transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease, flex-basis 0.2s ease;
+  transition:
+    width 0.2s ease,
+    min-width 0.2s ease,
+    max-width 0.2s ease,
+    flex-basis 0.2s ease;
 }
 
 .sider-footer {
@@ -76,6 +80,38 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--color-text);
+}
+
+.sider-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  margin-top: var(--space-2);
+}
+
+.sider-name-row > .ant-typography {
+  min-width: 0;
+  margin: 0 !important;
+  overflow: hidden;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sider-name-row > .ant-btn {
+  flex: 0 0 auto;
+}
+
+.sider-name-row > .ant-input {
+  min-width: 0;
+}
+
+.sider-agent-caption {
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .sider-tagline {
@@ -296,7 +332,8 @@ body {
     height: 68px;
     display: grid;
     grid-template-columns: repeat(6, 1fr);
-    padding: 6px max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    padding: 6px max(8px, env(safe-area-inset-right))
+      max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
     border-top: 1px solid var(--color-border);
     background: rgba(255, 255, 255, 0.97);
     backdrop-filter: blur(12px);
@@ -878,7 +915,7 @@ body {
   bottom: 0;
   width: 1px;
   background: var(--color-border-strong);
-  content: '';
+  content: "";
 }
 
 .task-history-marker {
@@ -1036,7 +1073,13 @@ body {
   border-radius: var(--radius-md);
   background: #0f172a;
   color: #e2e8f0;
-  font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font:
+    12px/1.65 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1063,7 +1106,7 @@ body {
   left: 13px;
   width: 1px;
   background: var(--color-border);
-  content: '';
+  content: "";
 }
 
 .task-output-run-marker {
@@ -1145,9 +1188,18 @@ body {
   gap: 1px;
 }
 
-.task-output-step > header > div:first-child > .ant-typography:last-child:not(:first-child) {
+.task-output-step
+  > header
+  > div:first-child
+  > .ant-typography:last-child:not(:first-child) {
   overflow: hidden;
-  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font:
+    11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1166,7 +1218,13 @@ body {
   border-radius: var(--radius-sm);
   background: #0f172a;
   color: #e2e8f0;
-  font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font:
+    11px/1.6 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

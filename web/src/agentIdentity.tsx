@@ -1,10 +1,11 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { getAgentIdentity } from './api'
+import { getAgentIdentity, getRuntimeSettings, updateRuntimeSettings } from './api'
 
 interface AgentIdentityContextValue {
   name: string
   shortName: string
+  rename: (name: string) => Promise<{ restartRequired: boolean }>
 }
 
 const AgentIdentityContext = createContext<AgentIdentityContextValue | null>(null)
@@ -24,10 +25,21 @@ export function AgentIdentityProvider({ children }: { children: ReactNode }) {
     document.title = name
   }, [name])
 
+  const rename = useCallback(async (displayName: string) => {
+    const current = await getRuntimeSettings()
+    const updated = await updateRuntimeSettings({
+      ...current.settings,
+      agent_display_name: displayName.trim(),
+    })
+    setName(updated.settings.agent_display_name)
+    return { restartRequired: updated.restart_required }
+  }, [])
+
   const value = useMemo(() => ({
     name,
     shortName: Array.from(name)[0] || 'J',
-  }), [name])
+    rename,
+  }), [name, rename])
 
   return <AgentIdentityContext.Provider value={value}>{children}</AgentIdentityContext.Provider>
 }
