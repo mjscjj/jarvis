@@ -331,6 +331,35 @@ function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly,
   )
 }
 
+export function KrDefinitionDetails({ objectiveId, kr }: { objectiveId: string; kr: Kr }) {
+  const [closed, setClosed] = useState<Set<string>>(new Set())
+  const toggle = (id: string) => setClosed((previous) => {
+    const next = new Set(previous)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+
+  return (
+    <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/55 p-3">
+      <MetricBox kr={kr} readOnly={false} />
+      {KINDS.map((kind) => (
+        <PointGroup
+          key={kind}
+          objectiveId={objectiveId}
+          kr={kr}
+          kind={kind}
+          closed={closed}
+          toggle={toggle}
+          definitionReadOnly={false}
+          progressReadOnly
+          showProgress={false}
+        />
+      ))}
+    </div>
+  )
+}
+
 function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly, progressReadOnly, showProgress }: { objectiveId: string; kr: Kr; closed: Set<string>; toggle: (id: string) => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean }) {
   const open = !closed.has(kr.id)
   const definitionLocked = readOnly || definitionsReadOnly

@@ -5,6 +5,7 @@ import { tagLabel } from '../labels'
 import { hasOwner, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
 import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
+import { KrDefinitionDetails } from './Table'
 
 const TAG_TYPES = [
   { value: 'custom', label: '自定义' },
@@ -126,7 +127,9 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { 
 	const { setKrTitle, setKrBusinessCategory, setKrPriority, deleteKr } = useBoard()
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const [deleting, setDeleting] = useState(false)
+	const [detailsOpen, setDetailsOpen] = useState(false)
 	const priority = priorityOf(kr)
+	const definitionCount = kr.metrics.length + kr.points.length
 
   const remove = async () => {
     setDeleting(true)
@@ -155,8 +158,16 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { 
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
 				</select>
         </div>
-        <div className="mt-1 px-1.5">
-          <TagEditor kr={kr} suggestions={tagSuggestions} />
+        <div className="mt-1 flex items-start gap-2 px-1.5">
+          <div className="min-w-0 flex-1"><TagEditor kr={kr} suggestions={tagSuggestions} /></div>
+          <button
+            type="button"
+            aria-expanded={detailsOpen}
+            onClick={() => setDetailsOpen((open) => !open)}
+            className={`h-6 shrink-0 rounded-md border px-2 text-[10px] font-medium transition-colors ${detailsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-600'}`}
+          >
+            指标与拆解{definitionCount > 0 ? ` · ${definitionCount}` : ''}
+          </button>
         </div>
       </div>
       <div className="flex min-w-12 items-center justify-end gap-1">
@@ -167,6 +178,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { 
           </>
         ) : <button type="button" onClick={() => setConfirmDelete(true)} title="删除 KR" className="h-6 rounded-md px-1.5 text-[10px] text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600">删除</button>}
       </div>
+		{detailsOpen && <div className="col-span-2 px-1.5 pb-1"><KrDefinitionDetails objectiveId={objectiveId} kr={kr} /></div>}
     </div>
   )
 }
@@ -204,13 +216,87 @@ function NewKrRow({ objective, businessCategories, peopleOptions, onClose }: { o
   )
 }
 
+function ObjectiveEditorHeader({
+	objective,
+	visibleKrCount,
+	totalKrCount,
+	creatingKr,
+	onToggleCreateKr,
+}: {
+	objective: Objective
+	visibleKrCount: number
+	totalKrCount: number
+	creatingKr: boolean
+	onToggleCreateKr: () => void
+}) {
+	const { updateObjective, deleteObjective } = useBoard()
+	const [editing, setEditing] = useState(false)
+	const [title, setTitle] = useState(objective.title)
+	const [busy, setBusy] = useState(false)
+	const [confirmDelete, setConfirmDelete] = useState(false)
+
+	const cancel = () => {
+		setTitle(objective.title)
+		setEditing(false)
+	}
+	const save = async () => {
+		const clean = title.trim()
+		if (!clean || clean === objective.title) {
+			cancel()
+			return
+		}
+		setBusy(true)
+		try {
+			await updateObjective(objective.id, clean)
+			setEditing(false)
+		} catch {
+			// BoardProvider exposes the failure through the shared sync notice.
+		} finally {
+			setBusy(false)
+		}
+	}
+	const remove = async () => {
+		setBusy(true)
+		try {
+			await deleteObjective(objective.id)
+		} catch {
+			// BoardProvider exposes the failure through the shared sync notice.
+		} finally {
+			setBusy(false)
+			setConfirmDelete(false)
+		}
+	}
+
+	return (
+		<div className="flex min-h-9 flex-wrap items-center gap-1.5 border-y border-slate-100 bg-slate-50/80 px-3.5 py-1.5 first:border-t-0">
+			{editing ? <>
+				<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void save(); if (event.key === 'Escape') cancel() }} aria-label="O 标题" className="h-7 min-w-64 flex-1 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-blue-400" />
+				<button type="button" disabled={busy || !title.trim()} onClick={() => void save()} className="h-6 rounded-md bg-blue-600 px-2 text-[9px] font-medium text-white disabled:opacity-40">保存</button>
+				<button type="button" disabled={busy} onClick={cancel} className="h-6 px-1 text-[9px] text-slate-400">取消</button>
+			</> : <>
+				<h3 className="min-w-0 flex-1 truncate text-[10px] font-semibold text-slate-500">{objective.title}</h3>
+				<span className="text-[9px] tabular-nums text-slate-400">{visibleKrCount}{visibleKrCount !== totalKrCount ? ` / ${totalKrCount}` : ''} 条</span>
+				<button type="button" onClick={() => { setTitle(objective.title); setEditing(true) }} className="h-5 rounded-md px-1.5 text-[9px] text-slate-500 hover:bg-white hover:text-blue-600">重命名 O</button>
+				{totalKrCount === 0 && (confirmDelete ? <>
+					<button type="button" disabled={busy} onClick={() => void remove()} className="h-5 rounded-md bg-red-600 px-1.5 text-[9px] font-medium text-white disabled:opacity-40">确认删除</button>
+					<button type="button" disabled={busy} onClick={() => setConfirmDelete(false)} className="h-5 px-1 text-[9px] text-slate-400">取消</button>
+				</> : <button type="button" onClick={() => setConfirmDelete(true)} className="h-5 rounded-md px-1.5 text-[9px] text-red-400 hover:bg-red-50 hover:text-red-600">删除空 O</button>)}
+				<button type="button" onClick={onToggleCreateKr} className={`h-5 rounded-md px-1.5 text-[9px] font-medium ${creatingKr ? 'bg-blue-50 text-blue-700' : 'text-blue-600 hover:bg-blue-50'}`}>{creatingKr ? '收起新建' : '+ 新建 KR'}</button>
+			</>}
+		</div>
+	)
+}
+
 export function ManagementView() {
-  const { objectives } = useBoard()
+  const { objectives, quarter, syncState, createObjective } = useBoard()
   const [query, setQuery] = useState('')
   const [owner, setOwner] = useState('')
   const [priority, setPriority] = useState('')
   const [tag, setTag] = useState('')
   const [creatingObjectiveId, setCreatingObjectiveId] = useState('')
+  const [creatingObjective, setCreatingObjective] = useState(false)
+  const [objectiveTitle, setObjectiveTitle] = useState('')
+  const [objectiveQuarter, setObjectiveQuarter] = useState(quarter)
   const hasFilters = Boolean(query.trim() || owner || priority || tag)
 	const peopleOptions = useMemo(() => ownerOptions(objectives), [objectives])
 	const owners = useMemo(() => peopleOptions.map((person) => person.name), [peopleOptions])
@@ -218,6 +304,7 @@ export function ManagementView() {
 	const businessCategories = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.map(businessCategoryOf)).filter(Boolean))].sort(), [objectives])
   const groups = useMemo(() => objectives.map((objective) => ({
     ...objective,
+		totalKrCount: objective.krs.length,
     krs: objective.krs.filter((kr) => {
       const matchesQuery = !query.trim() || `${objective.title} ${kr.title}`.toLowerCase().includes(query.trim().toLowerCase())
 				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!priority || priorityOf(kr) === priority) && (!tag || (kr.tags ?? []).some((item) => `${item.type}:${item.value}` === tag))
@@ -225,6 +312,20 @@ export function ManagementView() {
   })).filter((objective) => !hasFilters || objective.krs.length > 0), [hasFilters, objectives, owner, priority, query, tag])
   const resultCount = groups.reduce((total, objective) => total + objective.krs.length, 0)
   const tagCount = objectives.reduce((total, objective) => total + objective.krs.reduce((sum, kr) => sum + (kr.tags?.length ?? 0), 0), 0)
+	const defaultQuarter = quarter || `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth() / 3) + 1}`
+
+	const submitObjective = async () => {
+		const title = objectiveTitle.trim()
+		const targetQuarter = objectiveQuarter.trim()
+		if (!title || !targetQuarter) return
+		try {
+			await createObjective({ quarter: targetQuarter, title })
+			setObjectiveTitle('')
+			setCreatingObjective(false)
+		} catch {
+			// BoardProvider exposes the failure through the shared sync notice.
+		}
+	}
 
   const clearFilters = () => {
     setQuery('')
@@ -243,12 +344,19 @@ export function ManagementView() {
               <h2 className="text-[13px] font-semibold text-slate-800">OKR 管理</h2>
               <span className="text-[9px] tabular-nums text-slate-400">{resultCount} KR · {tagCount} 标签</span>
             </div>
-            <p className="mt-0.5 text-[10px] text-slate-400">维护稳定的 KR 定义、多人负责人、优先级与标签；周进展独立填写</p>
+            <p className="mt-0.5 text-[10px] text-slate-400">统一维护 O、KR、负责人、标签、核心数据与策略/产品拆解；周进展独立填写</p>
           </div>
           <div className="ml-auto rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
             <span className="font-medium text-slate-700">{resultCount}</span> / {objectives.reduce((total, objective) => total + objective.krs.length, 0)} 条
           </div>
+			<button type="button" onClick={() => { setObjectiveQuarter(defaultQuarter); setCreatingObjective((value) => !value) }} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-medium text-white hover:bg-indigo-700">+ 新建 O</button>
           </div>
+		  {creatingObjective && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 p-2">
+			<input value={objectiveQuarter} onChange={(event) => setObjectiveQuarter(event.target.value)} placeholder="2026-Q3" aria-label="季度" className="h-8 w-28 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] outline-none focus:border-indigo-400" />
+			<input value={objectiveTitle} onChange={(event) => setObjectiveTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitObjective() }} placeholder="目标名称" aria-label="目标名称" autoFocus className="h-8 min-w-64 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] outline-none focus:border-indigo-400" />
+			<button type="button" onClick={() => void submitObjective()} disabled={!objectiveTitle.trim() || !objectiveQuarter.trim() || syncState.kind === 'saving'} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-medium text-white disabled:opacity-40">创建目标</button>
+			<button type="button" onClick={() => setCreatingObjective(false)} className="h-8 px-2 text-[10px] text-slate-400">取消</button>
+		  </div>}
           <div className="mt-3 flex flex-wrap gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 p-2">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 O / KR 内容" className="h-8 min-w-48 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-50 sm:max-w-72" />
             <select value={owner} onChange={(event) => setOwner(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部负责人</option>{owners.map((item) => <option key={item} value={item}>{item}</option>)}</select>
@@ -261,11 +369,7 @@ export function ManagementView() {
         <div>
           {groups.map((objective) => (
             <section key={objective.id}>
-              <div className="flex items-center border-y border-slate-100 bg-slate-50/80 px-3.5 py-1.5 first:border-t-0">
-                <h3 className="min-w-0 truncate text-[10px] font-semibold text-slate-500">{objective.title}</h3>
-                <span className="ml-auto text-[9px] tabular-nums text-slate-400">{objective.krs.length} 条</span>
-                <button type="button" onClick={() => setCreatingObjectiveId((current) => current === objective.id ? '' : objective.id)} className="ml-2 h-5 rounded-md px-1.5 text-[9px] font-medium text-blue-600 hover:bg-blue-50">+ 新建 KR</button>
-              </div>
+              <ObjectiveEditorHeader objective={objective} visibleKrCount={objective.krs.length} totalKrCount={objective.totalKrCount} creatingKr={creatingObjectiveId === objective.id} onToggleCreateKr={() => setCreatingObjectiveId((current) => current === objective.id ? '' : objective.id)} />
               <div className="divide-y divide-slate-100">
 						{creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} onClose={() => setCreatingObjectiveId('')} />}
 						{objective.krs.map((kr) => <KrEditorRow key={kr.id} objectiveId={objective.id} kr={kr} tagSuggestions={tags} businessCategories={businessCategories} />)}

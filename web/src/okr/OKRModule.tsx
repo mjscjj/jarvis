@@ -47,7 +47,6 @@ function Workspace({
           <CoreWorkspace
             auth={auth}
             onLogout={() => void logoutUser()}
-            view={visibleTab === 'manage' ? 'manage' : 'structure'}
           />
         ) : (
           <WeeklyReportWorkspace

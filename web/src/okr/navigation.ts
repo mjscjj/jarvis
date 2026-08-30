@@ -1,7 +1,6 @@
-export const DEFAULT_OKR_TAB = 'structure'
+export const DEFAULT_OKR_TAB = 'manage'
 
 export const OKR_TAB_DEFINITIONS = [
-  { key: 'structure', label: 'OKR 结构', group: 'okr' },
   { key: 'manage', label: '管理与打标', group: 'okr' },
   { key: 'agent-flows', label: 'Agent 流程', group: 'okr' },
   { key: 'weekly-fill', label: '周报填写', group: 'weekly', requiresModule: 'weekly-report' },
