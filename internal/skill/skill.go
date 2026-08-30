@@ -53,10 +53,15 @@ type Reader interface {
 	Catalog(ctx context.Context, stage string) (string, error)
 }
 
+type Availability interface {
+	SkillEnabled(ctx context.Context, name string) (bool, error)
+}
+
 type Service struct {
-	root       string
-	configPath string
-	mu         sync.Mutex
+	root         string
+	configPath   string
+	availability Availability
+	mu           sync.Mutex
 }
 
 type configFile struct {
@@ -105,6 +110,13 @@ func (s *Service) Scan(ctx context.Context) ([]View, error) {
 	return s.List(ctx)
 }
 
+// SetAvailability adds an external capability gate without making the Skill
+// package depend on the owner of that capability. It must be called at startup
+// before the service is exposed to concurrent requests.
+func (s *Service) SetAvailability(availability Availability) {
+	s.availability = availability
+}
+
 func (s *Service) List(ctx context.Context) ([]View, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -117,7 +129,18 @@ func (s *Service) List(ctx context.Context) ([]View, error) {
 	if err != nil {
 		return nil, err
 	}
-	return join(metadataByName, cfg)
+	views, err := join(metadataByName, cfg)
+	if err != nil {
+		return nil, err
+	}
+	for i := range views {
+		available, err := s.available(ctx, views[i].Name)
+		if err != nil {
+			return nil, err
+		}
+		views[i].IsEnabled = views[i].IsEnabled && available
+	}
+	return views, nil
 }
 
 func (s *Service) Update(ctx context.Context, name string, input Input) (*View, error) {
@@ -190,6 +213,13 @@ func (s *Service) Content(ctx context.Context, name string) (*ContentView, error
 	if !skillName.MatchString(name) {
 		return nil, fmt.Errorf("%w: invalid skill name %q", ErrInvalidInput, name)
 	}
+	available, err := s.available(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if !available {
+		return nil, fmt.Errorf("%w: skill %s is unavailable while its plugin is disabled", ErrNotFound, name)
+	}
 	items, err := s.scanMetadata()
 	if err != nil {
 		return nil, err
@@ -204,6 +234,17 @@ func (s *Service) Content(ctx context.Context, name string) (*ContentView, error
 		return nil, err
 	}
 	return &ContentView{Name: name, Path: path, Content: string(raw)}, nil
+}
+
+func (s *Service) available(ctx context.Context, name string) (bool, error) {
+	if s.availability == nil {
+		return true, nil
+	}
+	available, err := s.availability.SkillEnabled(ctx, name)
+	if err != nil {
+		return false, fmt.Errorf("check skill %s availability: %w", name, err)
+	}
+	return available, nil
 }
 
 func (s *Service) Catalog(ctx context.Context, stage string) (string, error) {

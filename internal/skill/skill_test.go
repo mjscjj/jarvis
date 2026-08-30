@@ -1,12 +1,24 @@
 package skill
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+type testAvailability map[string]bool
+
+func (a testAvailability) SkillEnabled(_ context.Context, name string) (bool, error) {
+	enabled, owned := a[name]
+	if !owned {
+		return true, nil
+	}
+	return enabled, nil
+}
 
 func TestParseMetadata(t *testing.T) {
 	meta, err := parseMetadata([]byte("---\nname: feishu-send-message\ndescription: 发送飞书消息\n---\n\n# 正文\n"))
@@ -73,6 +85,40 @@ func TestServiceReadsAndUpdatesYAMLConfiguration(t *testing.T) {
 	items, err = reloaded.List(t.Context())
 	if err != nil || items[0].IsEnabled {
 		t.Fatalf("reloaded List() = %#v err=%v", items, err)
+	}
+}
+
+func TestServiceAvailabilityGateHidesPluginSkill(t *testing.T) {
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "plugin-collector")
+	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(
+		"---\nname: plugin-collector\ndescription: collect plugin clues\n---\n\n# Collector\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte(
+		"skills:\n  - name: plugin-collector\n    enabled: true\n    stages: [execute]\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetAvailability(testAvailability{"plugin-collector": false})
+	items, err := service.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].IsEnabled {
+		t.Fatalf("items = %#v", items)
+	}
+	if _, err := service.Content(t.Context(), "plugin-collector"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Content() error = %v, want ErrNotFound", err)
 	}
 }
 

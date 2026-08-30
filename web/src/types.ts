@@ -1140,12 +1140,43 @@ export interface AgentIdentity {
   display_name: string
 }
 
+export type PluginState = 'disabled' | 'needs_auth' | 'ready' | 'running' | 'failed'
+export type PluginAuthorizationState = 'authorized' | 'required' | 'unavailable' | 'pending' | 'failed'
+
+export interface PluginAuthorization {
+  status: PluginAuthorizationState
+  verification_url: string | null
+  user_code: string | null
+  flow_id: string | null
+  error: string | null
+}
+
+export interface Plugin {
+  id: string
+  name: string
+  description: string
+  source: string
+  collector_skill: string
+  permissions: string[]
+  interval_minutes: number
+  enabled: boolean
+  revision: number
+  state: PluginState
+  authorization: PluginAuthorization
+  scheduled_task_id: number | null
+  last_run_status: string | null
+  last_error: string | null
+  last_finished_at: string | null
+  next_run_at: string | null
+  clue_count: number
+}
+
 // --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---
 
 // PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。
 // 由各页面写入 PageContext（React Context），发送对话时随请求带给后端注入 prompt。
 export interface PageContext {
-  // 当前左侧导航 key：overview/todos/tasks/scheduled-tasks/background/settings/progress/debug
+  // 当前左侧导航 key：overview/todos/tasks/scheduled-tasks/plugins/background/settings/progress/debug
   active_key: string
   // 当前选中项的可读摘要（如 "Todo #12 修复登录超时"）；无选中则 null
   selection: PageSelection | null

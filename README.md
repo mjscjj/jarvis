@@ -50,6 +50,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | 会议巡扫 | 采集已结束会议和未来 24 小时日程，分别触发会后整理与逐场处理判断 | `internal/meetingsweep/` |
 | 晨间简报 | 工作日开工对齐：Skill 取证写稿，定时/手动触发，产物在本地 Markdown | `internal/morningbrief/` |
 | 定时任务 | 周期/单次 Task，以及等待 Session 的未来唤醒 | `internal/scheduledtask/`, `internal/taskcreate/` |
+| 插件 | 按需启用和授权外部来源，以定时任务 + Skill 向通用 clue 入口投递原始证据 | `internal/plugin/`, [`docs/plugin-system.md`](docs/plugin-system.md) |
 | 实时协调 | 按持久化 ID/version 推进 M3→M5，cron 负责补偿 | `internal/pipeline/` |
 | 背景事实 | 自然语言 Fact、实体间自然语言 RelationFact | `internal/progress/`, `internal/knowledge/` |
 | 后台与观测 | Overview、日报、worklog、运行状态、日志 | `internal/insight/`, `internal/dailydigest/`, `internal/observability/` |

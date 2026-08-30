@@ -15,6 +15,7 @@ import (
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
+	"jarvis/internal/plugin"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
 	"jarvis/internal/sharedmem"
@@ -50,6 +51,7 @@ type Dependencies struct {
 	TextFiles          *textstore.Service
 	AgentConfig        *agentconfig.Service
 	ScheduledTasks     *scheduledtask.Service
+	Plugins            *plugin.Service
 	Skills             SkillService
 	Progress           progress.EventService
 	FactQueries        progress.FactQueryService
@@ -137,6 +139,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.ScheduledTasks == nil {
 		return fmt.Errorf("api scheduled task service dependency is nil")
+	}
+	if deps.Plugins == nil {
+		return fmt.Errorf("api plugin service dependency is nil")
 	}
 	if deps.Skills == nil {
 		return fmt.Errorf("api skill service dependency is nil")
@@ -268,6 +273,13 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/scheduled-tasks/:scheduled_task_id", UpdateScheduledTask(deps.ScheduledTasks))
 	h.DELETE("/api/scheduled-tasks/:scheduled_task_id", DeleteScheduledTask(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks/:scheduled_task_id/trigger", TriggerScheduledTask(deps.ScheduledTasks))
+	// 插件只管理外部能力的启停、授权和采集调度；采集结果仍走统一 clue 流水线。
+	h.GET("/api/plugins", ListPlugins(deps.Plugins))
+	h.GET("/api/plugins/:plugin_id", GetPlugin(deps.Plugins))
+	h.PATCH("/api/plugins/:plugin_id", UpdatePlugin(deps.Plugins))
+	h.POST("/api/plugins/:plugin_id/authorize", AuthorizePlugin(deps.Plugins))
+	h.POST("/api/plugins/:plugin_id/authorize/complete", CompletePluginAuthorization(deps.Plugins))
+	h.POST("/api/plugins/:plugin_id/trigger", TriggerPlugin(deps.Plugins))
 	// Skills：扫描仓库 SKILL.md，后台控制启用状态和 M3/M5 生效范围。
 	h.GET("/api/skills", ListSkills(deps.Skills))
 	h.POST("/api/skills/scan", ScanSkills(deps.Skills))

@@ -25,6 +25,7 @@ const PAGE_LABELS: Record<string, string> = {
   background: '世界',
   automation: '自动化',
   'scheduled-tasks': '自动化',
+  plugins: '插件',
   clues: '线索',
   todos: '线索',
   management: '系统设置',

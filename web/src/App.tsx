@@ -15,6 +15,7 @@ import {
   CalendarOutlined,
   MoreOutlined,
   RobotOutlined,
+  ApiOutlined,
 } from '@ant-design/icons'
 import Overview from './Overview'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
@@ -34,6 +35,7 @@ const Todos = lazy(() => import('./Todos'))
 const ScheduledTasks = lazy(() => import('./ScheduledTasks'))
 const Debug = lazy(() => import('./Debug'))
 const Chat = lazy(() => import('./Chat'))
+const Plugins = lazy(() => import('./Plugins'))
 
 const DEFAULT_KEY = 'overview'
 
@@ -47,6 +49,7 @@ const pageLabels: Record<string, string> = {
   agents: 'Agent 设置',
   todos: '线索',
   'scheduled-tasks': '自动化',
+  plugins: '插件',
   settings: '系统设置',
   debug: '运行状态',
 }
@@ -77,6 +80,7 @@ function AppShell() {
     { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
+    { key: 'plugins', label: '插件', icon: <ApiOutlined /> },
     { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
     { type: 'divider' },
     {
@@ -96,6 +100,7 @@ function AppShell() {
     todos: <Todos refreshKey={0} />,
     tasks: <Tasks />,
     'scheduled-tasks': <ScheduledTasks />,
+    plugins: <Plugins />,
     background: <Background />,
     agents: <AgentSettings />,
     settings: <Settings />,

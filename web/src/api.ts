@@ -66,6 +66,8 @@ import type {
   RuntimeSettings,
   RuntimeSettingsView,
   AgentIdentity,
+  Plugin,
+  PluginAuthorization,
   ProactiveRun,
   ProactiveRunDetail,
   MonitoringSnapshot,
@@ -593,6 +595,35 @@ export function deleteScheduledTask(id: number): Promise<{ id: number; deleted: 
 
 export function triggerScheduledTask(id: number): Promise<ScheduledTask> {
   return request<ScheduledTask>(`/api/scheduled-tasks/${id}/trigger`, { method: 'POST' })
+}
+
+export function listPlugins(signal?: AbortSignal): Promise<{ items: Plugin[] }> {
+  return request<{ items: Plugin[] }>('/api/plugins', { signal })
+}
+
+export function updatePlugin(id: string, enabled: boolean, expectedRevision: number): Promise<Plugin> {
+  return request<Plugin>(`/api/plugins/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { enabled, expected_revision: expectedRevision },
+  })
+}
+
+export function authorizePlugin(id: string): Promise<PluginAuthorization> {
+  return request<PluginAuthorization>(`/api/plugins/${encodeURIComponent(id)}/authorize`, { method: 'POST' })
+}
+
+export function completePluginAuthorization(
+  id: string,
+  flowId: string,
+): Promise<{ authorization: PluginAuthorization; plugin: Plugin | null }> {
+  return request<{ authorization: PluginAuthorization; plugin: Plugin | null }>(
+    `/api/plugins/${encodeURIComponent(id)}/authorize/complete`,
+    { method: 'POST', body: { flow_id: flowId } },
+  )
+}
+
+export function triggerPlugin(id: string): Promise<Plugin> {
+  return request<Plugin>(`/api/plugins/${encodeURIComponent(id)}/trigger`, { method: 'POST' })
 }
 
 export function listSkills(signal?: AbortSignal): Promise<{ items: AgentSkill[] }> {

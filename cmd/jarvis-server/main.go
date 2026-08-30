@@ -36,6 +36,7 @@ import (
 	"jarvis/internal/morningbrief"
 	"jarvis/internal/observability"
 	"jarvis/internal/pipeline"
+	"jarvis/internal/plugin"
 	"jarvis/internal/proactive"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
@@ -391,6 +392,15 @@ func main() {
 	if err != nil {
 		fatalf("initialize scheduled task service failed: %v", err)
 	}
+	pluginRegistry, err := plugin.BuiltinRegistry()
+	if err != nil {
+		fatalf("initialize plugin registry failed: %v", err)
+	}
+	pluginService, err := plugin.NewService(db, pluginRegistry, plugin.NewAuthorizer(), scheduledTaskService)
+	if err != nil {
+		fatalf("initialize plugin service failed: %v", err)
+	}
+	skillService.SetAvailability(pluginService)
 	projectService, err := background.NewProjectService(db)
 	if err != nil {
 		fatalf("initialize project service failed: %v", err)
@@ -920,6 +930,7 @@ func main() {
 		TextFiles:      textFileService,
 		AgentConfig:    agentConfigService,
 		ScheduledTasks: scheduledTaskService,
+		Plugins:        pluginService,
 		Skills:         runtimeSkills,
 		Progress:       progressService,
 		FactQueries:    progressService,

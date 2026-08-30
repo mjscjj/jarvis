@@ -19,8 +19,20 @@ skills:
       enabled: false # 独立仓库 Skill；不注入 M3/M5 runtime catalog
       stages:
         - execute
+    - name: codebase-clue-collector
+      enabled: true # 实际可见性由 Codebase Plugin 启停状态控制
+      stages:
+        - execute
     - name: install-jarvis
       enabled: false # 独立仓库 Skill；只供用户的 Agent 首次安装，不注入 M3/M5
+      stages:
+        - execute
+    - name: meego-clue-collector
+      enabled: true # 实际可见性由 Meego Plugin 启停状态控制
+      stages:
+        - execute
+    - name: oncall-clue-collector
+      enabled: true # 实际可见性由 Oncall Plugin 启停状态控制
       stages:
         - execute
     - name: summarize-morning-brief
