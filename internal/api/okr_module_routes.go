@@ -114,6 +114,7 @@ func RegisterWeeklyReportModuleRoutes(h *server.Hertz, deps WeeklyReportModuleDe
 	h.GET("/api/weekly-report/meego-preview", requireEnabled, GetMeegoBatchPreview(deps.Workspace))
 	h.POST("/api/weekly-report/meego-observations", requireEnabled, StoreMeegoObservation(deps.Workspace))
 	h.POST("/api/weekly-report/points/:point_id/meego-confirm", requireEnabled, requireIdentity, ConfirmMeegoProgress(deps.Workspace))
+	h.PUT("/api/weekly-report/krs/:kr_id/core", requireEnabled, requireIdentity, ReplaceWeeklyKRCore(deps.Workspace))
 	h.POST("/api/weekly-report/points/:point_id/progress", requireEnabled, requireIdentity, CreateWeeklyProgressEntry(deps.Workspace))
 	h.PUT("/api/weekly-report/progress/:progress_id", requireEnabled, requireIdentity, UpdateWeeklyProgressEntry(deps.Workspace))
 	h.DELETE("/api/weekly-report/progress/:progress_id", requireEnabled, requireIdentity, DeleteWeeklyProgressEntry(deps.Workspace))

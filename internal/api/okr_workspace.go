@@ -472,6 +472,41 @@ func UpdateWeeklyProgressEntry(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func ReplaceWeeklyKRCore(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		krID := strings.TrimSpace(c.Param("kr_id"))
+		if krID == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40040, fmt.Errorf("kr_id is required"))
+			return
+		}
+		var input okrworkspace.WeeklyKRCoreInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40040, err)
+			return
+		}
+		input.UpdatedBy = currentOKRIdentity(c).OpenID
+		result, err := service.ReplaceWeeklyKRCore(ctx, krID, input)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			current, currentErr := service.GetKR(ctx, krID, input.Week)
+			if currentErr != nil {
+				writeAPIError(c, consts.StatusInternalServerError, 50040, currentErr)
+				return
+			}
+			writeAPIConflict(c, 40940, err, current)
+			return
+		}
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40440, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40040, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func DeleteWeeklyProgressEntry(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		progressID := strings.TrimSpace(c.Param("progress_id"))

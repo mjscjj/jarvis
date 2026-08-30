@@ -171,16 +171,17 @@ type ObjectiveView struct {
 }
 
 type KRView struct {
-	ID          string       `json:"id"`
-	Title       string       `json:"title"`
-	OwnerOpenID string       `json:"owner_open_id"`
-	OwnerName   string       `json:"owner_name"`
-	MetricNote  string       `json:"metric_note"`
-	Version     int32        `json:"version"`
-	Metrics     []MetricView `json:"metrics"`
-	Points      []PointView  `json:"points"`
-	Tags        []TagView    `json:"tags"`
-	Owners      []OwnerView  `json:"owners"`
+	ID                string       `json:"id"`
+	Title             string       `json:"title"`
+	OwnerOpenID       string       `json:"owner_open_id"`
+	OwnerName         string       `json:"owner_name"`
+	MetricNote        string       `json:"metric_note"`
+	Version           int32        `json:"version"`
+	WeeklyCoreVersion int32        `json:"weekly_core_version"`
+	Metrics           []MetricView `json:"metrics"`
+	Points            []PointView  `json:"points"`
+	Tags              []TagView    `json:"tags"`
+	Owners            []OwnerView  `json:"owners"`
 }
 
 type OwnerView struct {
@@ -673,6 +674,17 @@ func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWe
 	view, err := s.loadKRDefinition(ctx, record)
 	if err != nil {
 		return KRView{}, err
+	}
+	var weeklyCore domain.WeeklyKRCore
+	if err := s.db.WithContext(ctx).First(&weeklyCore, "kr_id = ? AND week = ?", record.ID, week).Error; err == nil {
+		view.MetricNote = weeklyCore.MetricNote
+		view.WeeklyCoreVersion = weeklyCore.Version
+		view.Metrics = make([]MetricView, 0, len(weeklyCore.Metrics))
+		for _, metric := range weeklyCore.Metrics {
+			view.Metrics = append(view.Metrics, MetricView{ID: metric.ID, Text: metric.Text, Light: metric.Light, Images: nonNilImages(metric.Images)})
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return KRView{}, fmt.Errorf("load weekly core data: %w", err)
 	}
 	for index := range view.Points {
 		point := &view.Points[index]

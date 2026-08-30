@@ -127,6 +127,73 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	}
 }
 
+func TestWeeklyCoreDataIsIsolatedByWeek(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-weekly-core", Title: "增长", Quarter: "2026-Q3"}
+	kr := domain.KR{ID: "kr-weekly-core", ObjectiveID: objective.ID, Title: "提升转化", MetricNote: "季度模板"}
+	metric := domain.KRMetric{ID: "metric-weekly-core", KRID: kr.ID, Text: "季度累计 100", Light: domain.LightGreen}
+	for _, value := range []any{&objective, &kr, &metric} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, week := range []string{"2026-W35", "2026-W36"} {
+		if err := db.Create(&domain.WeeklyReportWeek{Quarter: objective.Quarter, Week: week, OpenedBy: "test"}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w35, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+		Week: "2026-W35", MetricNote: "W35 数据", UpdatedBy: "ou_editor",
+		Metrics: []MetricView{{ID: metric.ID, Text: "本周累计 120", Light: domain.LightYellow}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w35.MetricNote != "W35 数据" || w35.Metrics[0].Text != "本周累计 120" || w35.Metrics[0].Light != domain.LightYellow {
+		t.Fatalf("W35 weekly core = %+v", w35)
+	}
+
+	w36Board, err := service.Board(t.Context(), objective.Quarter, "2026-W36")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w36 := w36Board.Objectives[0].KRs[0]
+	if w36.MetricNote != "季度模板" || w36.Metrics[0].Text != "季度累计 100" || w36.WeeklyCoreVersion != 0 {
+		t.Fatalf("W36 inherited another week's edit: %+v", w36)
+	}
+
+	coreBoard, err := service.CoreBoard(t.Context(), objective.Quarter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	core := coreBoard.Objectives[0].KRs[0]
+	if core.MetricNote != "季度模板" || core.Metrics[0].Text != "季度累计 100" {
+		t.Fatalf("weekly write changed OKR core: %+v", core)
+	}
+
+	updated, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+		ExpectedVersion: w35.WeeklyCoreVersion, Week: "2026-W35", MetricNote: "W35 复盘", UpdatedBy: "ou_editor",
+		Metrics: []MetricView{{ID: metric.ID, Text: "本周累计 125", Light: domain.LightRed}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.WeeklyCoreVersion != 1 || updated.MetricNote != "W35 复盘" || updated.Metrics[0].Text != "本周累计 125" {
+		t.Fatalf("updated W35 weekly core = %+v", updated)
+	}
+	if _, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+		ExpectedVersion: 0, Week: "2026-W35", MetricNote: "stale",
+		Metrics: []MetricView{{ID: metric.ID, Text: "stale", Light: domain.LightGreen}},
+	}); err != ErrConflict {
+		t.Fatalf("stale weekly core write error = %v, want conflict", err)
+	}
+}
+
 func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-week", Title: "增长", Quarter: "2026-Q3"}

@@ -147,6 +147,30 @@ type WeeklyReportWeek struct {
 
 func (WeeklyReportWeek) TableName() string { return "okr_workspace_week" }
 
+// WeeklyKRCore stores the editable core-data presentation for one KR in one
+// reporting week. The stable metric definitions still belong to the OKR
+// module; this row is created only after somebody edits the weekly values.
+type WeeklyKRCore struct {
+	KRID       string         `gorm:"primaryKey;size:64"`
+	Week       string         `gorm:"primaryKey;size:16"`
+	Version    int32          `gorm:"not null;default:0"`
+	MetricNote string         `gorm:"not null;default:''"`
+	Metrics    []WeeklyMetric `gorm:"serializer:json;type:text"`
+	CreatedBy  string         `gorm:"not null;default:''"`
+	UpdatedBy  string         `gorm:"not null;default:''"`
+	CreatedAt  time.Time      `gorm:"not null"`
+	UpdatedAt  time.Time      `gorm:"not null"`
+}
+
+func (WeeklyKRCore) TableName() string { return "okr_workspace_weekly_kr_core" }
+
+type WeeklyMetric struct {
+	ID     string     `json:"id"`
+	Text   string     `json:"text"`
+	Light  Light      `json:"light,omitempty"`
+	Images []ImageRef `json:"images"`
+}
+
 // MeegoSyncSnapshot is a read-only observation cache. It records what Emily
 // last saw in Meego and the poll health without changing KR or progress rows.
 type MeegoSyncSnapshot struct {
@@ -304,5 +328,5 @@ func IdentityModels() []any {
 // names are intentionally preserved so enabling the split never rewrites or
 // loses Emily's historical data.
 func WeeklyReportModels() []any {
-	return []any{&WeeklyReportWeek{}, &KRProgress{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+	return []any{&WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }
