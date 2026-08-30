@@ -78,7 +78,7 @@ export default function App({
   onModeChange: (mode: 'fill' | 'meeting') => void
   moduleTabs: ReactNode
 }) {
-  const { reset, syncState, quarter, setQuarter, week, availableWeeks, setWeek } = useBoard()
+	const { reset, syncState, quarter, week, availableWeeks, setWeek, setWeeklyScope } = useBoard()
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentCount, setCommentCount] = useState(0)
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
@@ -100,9 +100,9 @@ export default function App({
     try {
       const result = await openWeeklyReportWeek({ quarter: targetQuarter, week: target })
       setOpeningWeek(false)
-      setWeekNotice(result.created ? `${target} 已开启` : `${target} 已经开启`)
-      if (targetQuarter === quarter) setWeek(target)
-      else setQuarter(targetQuarter)
+			const switched = setWeeklyScope(targetQuarter, target)
+			const opened = result.created ? `${target} 已开启` : `${target} 已经开启`
+			setWeekNotice(switched ? opened : `${opened}；当前修改保存后请重新选择该周。`)
     } catch (cause) {
       setWeekNotice(cause instanceof Error ? cause.message : '开启周次失败。')
     }

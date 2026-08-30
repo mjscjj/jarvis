@@ -3,10 +3,11 @@ import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
 import { buildKRHierarchy, priorityOf } from '../hierarchy'
 import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
-import { hasOwner, joinOwnerNames, splitOwnerNames } from '../people'
+import { hasOwner, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
 import type { Entry, Kr, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
+import { FeishuPeoplePicker } from './FeishuPeoplePicker'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
 
@@ -35,46 +36,6 @@ function priorityTone(priority: KrPriority | '') {
   if (priority === 'p0') return 'border-red-200 bg-red-50 font-semibold text-red-700'
   if (priority === 'p1') return 'border-amber-200 bg-amber-50 font-semibold text-amber-700'
   return 'border-slate-200 bg-white text-slate-500'
-}
-
-function PersonPicker({ kr }: { kr: Kr }) {
-  const { objectives, setKrOwner } = useBoard()
-  const [draft, setDraft] = useState('')
-  const people = splitOwnerNames(kr.ownerName)
-  const options = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((item) => splitOwnerNames(item.ownerName))))].filter((item) => !people.includes(item)).sort(), [objectives, people])
-  const commit = (value: string) => {
-    const clean = value.trim()
-    if (!clean) return
-    setKrOwner(kr.id, joinOwnerNames([...people, clean]))
-    setDraft('')
-  }
-
-  return (
-    <div className="flex min-h-7 flex-wrap items-center gap-1.5">
-      {people.map((person) => (
-        <span key={person} className="group/person inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pr-1.5 pl-1 text-[11px] text-slate-600">
-          <span className="flex size-4 items-center justify-center rounded-full bg-slate-300 text-[9px] font-semibold text-white">{person.slice(0, 1)}</span>
-          {person}
-          <button type="button" onClick={() => setKrOwner(kr.id, joinOwnerNames(people.filter((item) => item !== person)))} className="text-slate-300 hover:text-red-500" title="移除人员">×</button>
-        </span>
-      ))}
-      <input
-        list={`owner-options-${kr.id}`}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => commit(draft)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === '、' || event.key === ',') {
-            event.preventDefault()
-            commit(draft)
-          }
-        }}
-        placeholder={people.length === 0 ? '添加人员' : '+ 人员'}
-        className="h-6 w-20 rounded border border-dashed border-slate-200 bg-white px-1.5 text-[11px] text-slate-500 outline-none placeholder:text-slate-300 focus:w-28 focus:border-blue-300"
-      />
-      <datalist id={`owner-options-${kr.id}`}>{options.map((person) => <option key={person} value={person} />)}</datalist>
-    </div>
-  )
 }
 
 function EntryRow({ pointId, entry, readOnly }: { pointId: string; entry: Entry; readOnly: boolean }) {
@@ -243,7 +204,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
         <div className="min-w-0 flex-1">
           <Text value={kr.title} onChange={(value) => setKrTitle(objectiveId, kr.id, value)} placeholder="KR 标题" className="text-[14px] font-semibold leading-5 text-slate-900" readOnly={readOnly} commentTarget={{ type: 'kr', id: kr.id, title: kr.title }} />
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1">
-            {!readOnly && <PersonPicker kr={kr} />}
+			{!readOnly && <FeishuPeoplePicker kr={kr} />}
             {readOnly && splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">{person}</span>)}
 			{!readOnly ? (
 				<select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} className={`rounded-md border px-2 py-1 text-xs outline-none focus:border-blue-400 ${priorityTone(priority)}`}>

@@ -1,27 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { searchPeople } from '../api'
 import { useBoard } from '../board'
-import { joinOwnerNames, splitOwnerNames } from '../people'
+import { joinOwnerNames, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, PersonSearchItem } from '../types'
 
-export function FeishuPeoplePicker({ kr, options }: { kr: Kr; options: string[] }) {
-  const { setKrOwner } = useBoard()
+export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void }) {
   const root = useRef<HTMLSpanElement>(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<PersonSearchItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const people = useMemo(() => splitOwnerNames(kr.ownerName), [kr.ownerName])
-  const structuredOwners = useMemo<KrOwner[]>(() => {
-    if (kr.owners?.length) return kr.owners
-    return people.map((name, index) => ({ name, openId: index === 0 ? (kr.ownerOpenId ?? '') : '' }))
-  }, [kr.ownerOpenId, kr.owners, people])
+	const people = useMemo(() => owners.map((owner) => owner.name), [owners])
 
   const localResults = useMemo(() => options
-    .filter((item) => !people.includes(item) && (!query.trim() || item.toLowerCase().includes(query.trim().toLowerCase())))
-    .slice(0, 6)
-    .map((name) => ({ openId: '', name, department: '当前 OKR 负责人' })), [options, people, query])
+		.filter((item) => !people.includes(item.name) && (!query.trim() || item.name.toLowerCase().includes(query.trim().toLowerCase())))
+		.slice(0, 6)
+		.map((owner) => ({ openId: owner.openId, name: owner.name, department: owner.openId ? '当前 OKR 负责人' : '身份未解析' })), [options, people, query])
 
   useEffect(() => {
     if (!open) return
@@ -60,16 +55,14 @@ export function FeishuPeoplePicker({ kr, options }: { kr: Kr; options: string[] 
   }, [open, people, query])
 
   const add = (person: PersonSearchItem) => {
-    const nextOwners = [...structuredOwners, { openId: person.openId, name: person.name }]
-    const nextNames = joinOwnerNames(nextOwners.map((owner) => owner.name))
-    setKrOwner(kr.id, nextNames, nextOwners[0]?.openId ?? '', nextOwners)
+		const nextOwners = [...owners, { openId: person.openId, name: person.name }]
+		onChange(nextOwners)
     setQuery('')
     setOpen(false)
   }
 
   const remove = (person: string) => {
-    const nextOwners = structuredOwners.filter((owner) => owner.name !== person)
-    setKrOwner(kr.id, joinOwnerNames(nextOwners.map((owner) => owner.name)), nextOwners[0]?.openId ?? '', nextOwners)
+		onChange(owners.filter((owner) => owner.name !== person))
   }
 
   const addManual = () => {
@@ -116,4 +109,18 @@ export function FeishuPeoplePicker({ kr, options }: { kr: Kr; options: string[] 
       )}
     </span>
   )
+}
+
+export function FeishuPeoplePicker({ kr }: { kr: Kr }) {
+	const { objectives, setKrOwner } = useBoard()
+	const options = useMemo(() => ownerOptions(objectives), [objectives])
+	const people = useMemo(() => splitOwnerNames(kr.ownerName), [kr.ownerName])
+	const owners = useMemo<KrOwner[]>(() => {
+		if (kr.owners?.length) return kr.owners
+		return people.map((name, index) => ({ name, openId: index === 0 ? (kr.ownerOpenId ?? '') : '' }))
+	}, [kr.ownerOpenId, kr.owners, people])
+	return <FeishuPeoplePickerInput owners={owners} options={options} onChange={(nextOwners) => {
+		const nextNames = joinOwnerNames(nextOwners.map((owner) => owner.name))
+		setKrOwner(kr.id, nextNames, nextOwners[0]?.openId ?? '', nextOwners)
+	}} />
 }

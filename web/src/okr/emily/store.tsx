@@ -253,17 +253,28 @@ export function BoardProvider({
     week,
     previousWeek,
     availableWeeks,
-    setWeek: (nextWeek) => {
+		setWeek: (nextWeek) => {
       if (nextWeek === weekRef.current) return
       if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
         setSyncState({ kind: 'error', message: '请等待当前修改保存后再切换周次。' })
         return
       }
       weekRef.current = nextWeek
-      setWeekState(nextWeek)
-      void loadRemote(nextWeek)
-    },
-    enums,
+			setWeekState(nextWeek)
+			void loadRemote(nextWeek)
+		},
+		setWeeklyScope: (nextQuarter, nextWeek) => {
+			if (nextQuarter === quarterRef.current && nextWeek === weekRef.current) return true
+			if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
+				setSyncState({ kind: 'error', message: '周次已开启；请等待当前修改保存后再切换。' })
+				return false
+			}
+			quarterRef.current = nextQuarter
+			weekRef.current = nextWeek
+			void loadRemote(nextWeek, nextQuarter)
+			return true
+		},
+		enums,
     syncState,
 
     createObjective: async (input) => {

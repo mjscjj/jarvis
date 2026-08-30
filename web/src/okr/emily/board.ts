@@ -18,6 +18,7 @@ export interface BoardApi {
   previousWeek?: string
   availableWeeks: string[]
   setWeek: (week: string) => void
+	setWeeklyScope: (quarter: string, week: string) => boolean
   enums: EnumValues
   syncState: SyncState
 	setKrTitle: (objId: string, krId: string, title: string) => void
@@ -27,7 +28,7 @@ export interface BoardApi {
 	createObjective: (input: { quarter: string; title: string }) => Promise<void>
 	updateObjective: (id: string, title: string) => Promise<void>
 	deleteObjective: (id: string) => Promise<void>
-	createKr: (objectiveId: string, input: { title: string; ownerName?: string; businessCategory: string; priority: KrPriority }) => Promise<void>
+	createKr: (objectiveId: string, input: { title: string; owners?: KrOwner[]; businessCategory: string; priority: KrPriority }) => Promise<void>
   deleteKr: (krId: string) => Promise<void>
   addTag: (krId: string, value: string, type?: string) => void
   removeTag: (krId: string, type: string, value: string) => void

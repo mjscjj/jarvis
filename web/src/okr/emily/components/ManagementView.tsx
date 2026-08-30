@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react'
 import { useBoard } from '../board'
 import { businessCategoryOf, isStructuralTag, priorityOf } from '../hierarchy'
 import { tagLabel } from '../labels'
-import { hasOwner, splitOwnerNames } from '../people'
-import type { Kr, KrPriority, KrTag, Objective } from '../types'
-import { FeishuPeoplePicker } from './FeishuPeoplePicker'
+import { hasOwner, ownerOptions, splitOwnerNames } from '../people'
+import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
+import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
 
 const TAG_TYPES = [
   { value: 'custom', label: '自定义' },
@@ -122,7 +122,7 @@ function TagEditor({ kr, suggestions }: { kr: Kr; suggestions: KrTag[] }) {
   )
 }
 
-function KrEditorRow({ objectiveId, kr, peopleOptions, tagSuggestions, businessCategories }: { objectiveId: string; kr: Kr; peopleOptions: string[]; tagSuggestions: KrTag[]; businessCategories: string[] }) {
+function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[] }) {
 	const { setKrTitle, setKrBusinessCategory, setKrPriority, deleteKr } = useBoard()
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const [deleting, setDeleting] = useState(false)
@@ -149,7 +149,7 @@ function KrEditorRow({ objectiveId, kr, peopleOptions, tagSuggestions, businessC
             aria-label="KR 内容"
             className="h-7 min-w-64 flex-[1_1_32rem] rounded-md border border-transparent bg-transparent px-1.5 text-[11px] font-medium text-slate-700 outline-none transition-colors hover:border-slate-200 hover:bg-white focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-50"
 				/>
-				<FeishuPeoplePicker kr={kr} options={peopleOptions} />
+					<FeishuPeoplePicker kr={kr} />
 					<BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />
 				<select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}>
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
@@ -171,10 +171,10 @@ function KrEditorRow({ objectiveId, kr, peopleOptions, tagSuggestions, businessC
   )
 }
 
-function NewKrRow({ objective, businessCategories, onClose }: { objective: Objective; businessCategories: string[]; onClose: () => void }) {
-	const { createKr } = useBoard()
-	const [title, setTitle] = useState('')
-	const [ownerName, setOwnerName] = useState('')
+function NewKrRow({ objective, businessCategories, peopleOptions, onClose }: { objective: Objective; businessCategories: string[]; peopleOptions: KrOwner[]; onClose: () => void }) {
+		const { createKr } = useBoard()
+		const [title, setTitle] = useState('')
+		const [owners, setOwners] = useState<KrOwner[]>([])
 	const [businessCategory, setBusinessCategory] = useState(() => (objective.krs[0] ? businessCategoryOf(objective.krs[0]) : '') || businessCategories[0] || '')
 	const [priority, setPriority] = useState<KrPriority>('p1')
 	const [creating, setCreating] = useState(false)
@@ -183,7 +183,7 @@ function NewKrRow({ objective, businessCategories, onClose }: { objective: Objec
 		if (!title.trim() || !businessCategory.trim() || creating) return
     setCreating(true)
     try {
-			await createKr(objective.id, { title: title.trim(), ownerName: ownerName.trim(), businessCategory: businessCategory.trim(), priority })
+				await createKr(objective.id, { title: title.trim(), owners, businessCategory: businessCategory.trim(), priority })
       onClose()
     } catch {
       setCreating(false)
@@ -191,9 +191,9 @@ function NewKrRow({ objective, businessCategories, onClose }: { objective: Objec
   }
 
   return (
-		<div className="grid gap-1.5 bg-blue-50/50 px-3.5 py-2 md:grid-cols-[minmax(18rem,1.3fr)_minmax(9rem,0.5fr)_minmax(9rem,0.5fr)_5.5rem_auto] md:items-center md:gap-2">
-			<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submit(); if (event.key === 'Escape') onClose() }} placeholder="填写新 KR 内容" className="h-8 min-w-0 rounded-md border border-blue-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
-			<input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submit() }} placeholder="负责人，可用、分隔多人" className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none focus:border-blue-400" />
+			<div className="grid gap-1.5 bg-blue-50/50 px-3.5 py-2 md:grid-cols-[minmax(18rem,1.3fr)_minmax(9rem,0.5fr)_minmax(9rem,0.5fr)_5.5rem_auto] md:items-center md:gap-2">
+				<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submit(); if (event.key === 'Escape') onClose() }} placeholder="填写新 KR 内容" className="h-8 min-w-0 rounded-md border border-blue-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+				<div className="flex min-h-8 items-center rounded-md border border-slate-200 bg-white px-2"><FeishuPeoplePickerInput owners={owners} options={peopleOptions} onChange={setOwners} /></div>
 				<BusinessCategoryField value={businessCategory} categories={businessCategories} onChange={setBusinessCategory} ariaLabel="新 KR 业务分类" className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none focus:border-blue-400" />
 			<select value={priority} onChange={(event) => setPriority(event.target.value as KrPriority)} aria-label="新 KR 优先级标签" className={`h-8 rounded-md border px-2 text-[10px] outline-none ${priorityTone(priority)}`}><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>
 			<div className="flex justify-end gap-1">
@@ -212,7 +212,8 @@ export function ManagementView() {
   const [tag, setTag] = useState('')
   const [creatingObjectiveId, setCreatingObjectiveId] = useState('')
   const hasFilters = Boolean(query.trim() || owner || priority || tag)
-  const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
+	const peopleOptions = useMemo(() => ownerOptions(objectives), [objectives])
+	const owners = useMemo(() => peopleOptions.map((person) => person.name), [peopleOptions])
 	const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => (kr.tags ?? []).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
 	const businessCategories = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.map(businessCategoryOf)).filter(Boolean))].sort(), [objectives])
   const groups = useMemo(() => objectives.map((objective) => ({
@@ -266,8 +267,8 @@ export function ManagementView() {
                 <button type="button" onClick={() => setCreatingObjectiveId((current) => current === objective.id ? '' : objective.id)} className="ml-2 h-5 rounded-md px-1.5 text-[9px] font-medium text-blue-600 hover:bg-blue-50">+ 新建 KR</button>
               </div>
               <div className="divide-y divide-slate-100">
-					{creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} onClose={() => setCreatingObjectiveId('')} />}
-					{objective.krs.map((kr) => <KrEditorRow key={kr.id} objectiveId={objective.id} kr={kr} peopleOptions={owners} tagSuggestions={tags} businessCategories={businessCategories} />)}
+						{creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} onClose={() => setCreatingObjectiveId('')} />}
+						{objective.krs.map((kr) => <KrEditorRow key={kr.id} objectiveId={objective.id} kr={kr} tagSuggestions={tags} businessCategories={businessCategories} />)}
               </div>
             </section>
           ))}

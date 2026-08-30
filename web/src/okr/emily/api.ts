@@ -727,13 +727,12 @@ export async function deleteObjective(id: string): Promise<void> {
   await request<{ id: string }>(`/api/okr/objectives/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-export async function createKR(objectiveId: string, input: { title: string; ownerName?: string; businessCategory: string; priority: KrPriority }): Promise<Kr> {
-	const ownerNames = (input.ownerName ?? '').split(/[、,，;；]/).map((name) => name.trim()).filter(Boolean)
-	const value = await request<APIKr>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {
-		method: 'POST',
-		body: JSON.stringify({
-			title: input.title,
-			owners: ownerNames.map((name) => ({ open_id: '', name })),
+export async function createKR(objectiveId: string, input: { title: string; owners?: KrOwner[]; businessCategory: string; priority: KrPriority }): Promise<Kr> {
+		const value = await request<APIKr>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {
+			method: 'POST',
+			body: JSON.stringify({
+				title: input.title,
+				owners: (input.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
 			tags: [
 				{ type: 'business_category', value: input.businessCategory },
 				{ type: 'priority', value: input.priority },
