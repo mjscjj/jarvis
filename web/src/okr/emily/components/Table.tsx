@@ -76,7 +76,16 @@ function EntryRow({ pointId, entry, readOnly }: { pointId: string; entry: Entry;
 
 function EntryList({ point, done, readOnly }: { point: Point; done: boolean; readOnly: boolean }) {
   const { addEntry } = useBoard()
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState('')
   const list = point.entries.filter((entry) => isDone(entry.status) === done)
+  const commitDraft = () => {
+    const clean = draft.trim()
+    if (!clean) return
+    addEntry(point.id, clean)
+    setDraft('')
+    setAdding(false)
+  }
 
   return (
     <div className="space-y-1.5">
@@ -87,7 +96,10 @@ function EntryList({ point, done, readOnly }: { point: Point; done: boolean; rea
         </div>
       )}
       {!readOnly && !done && (
-        <button type="button" onClick={() => addEntry(point.id)} className="text-xs text-slate-400 hover:text-blue-600">
+        adding ? <div className="rounded-lg border border-blue-200 bg-white p-2">
+          <textarea autoFocus rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') commitDraft(); if (event.key === 'Escape') { setDraft(''); setAdding(false) } }} placeholder="填写本周进展" className="w-full resize-none rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-400" />
+          <div className="mt-1.5 flex items-center gap-2"><button type="button" disabled={!draft.trim()} onClick={commitDraft} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-40">添加</button><button type="button" onClick={() => { setDraft(''); setAdding(false) }} className="px-1 text-[11px] text-slate-400">取消</button><span className="ml-auto text-[10px] text-slate-300">⌘ Enter 添加</span></div>
+        </div> : <button type="button" onClick={() => setAdding(true)} className="text-xs text-slate-400 hover:text-blue-600">
           + 一条进展
         </button>
       )}
@@ -114,16 +126,16 @@ function HistoryPreview({ point }: { point: Point }) {
   )
 }
 
-function MetricBox({ kr, readOnly }: { kr: Kr; readOnly: boolean }) {
+function MetricBox({ kr, readOnly, structureReadOnly = readOnly }: { kr: Kr; readOnly: boolean; structureReadOnly?: boolean }) {
   const { setMetricNote, patchMetric, addMetric, removeMetric } = useBoard()
 
   return (
     <section className="rounded-xl border border-blue-100 bg-blue-50/55 p-2.5">
       <div className="mb-2 flex items-center gap-3">
         <h3 className="border-l-[3px] border-blue-500 pl-2 text-[12px] font-semibold text-blue-700">核心数据</h3>
-        {kr.metricNote && (
+        {(!readOnly || kr.metricNote) && (
           <span className="min-w-0 flex-1 text-right text-[11px] text-slate-400">
-            <Text value={kr.metricNote} onChange={(value) => setMetricNote(kr.id, value)} className="text-right text-[11px] text-slate-400" readOnly={readOnly} />
+            <Text value={kr.metricNote} onChange={(value) => setMetricNote(kr.id, value)} placeholder="本周数据口径或更新时间" className="text-right text-[11px] text-slate-400" readOnly={readOnly} />
           </span>
         )}
       </div>
@@ -145,13 +157,13 @@ function MetricBox({ kr, readOnly }: { kr: Kr; readOnly: boolean }) {
                   <LightPicker value={metric.light ?? 'green'} onChange={(light) => patchMetric(kr.id, metric.id, { light })} readOnly={readOnly} />
                 </span>
               </div>
-              {(metric.images?.length ?? 0) > 0 && (
+              {(!readOnly || (metric.images?.length ?? 0) > 0) && (
                 <div className="mt-2">
                   <Images value={metric.images ?? []} onChange={(images) => patchMetric(kr.id, metric.id, { images })} readOnly={readOnly} />
                 </div>
               )}
             </div>
-            {!readOnly && (
+            {!structureReadOnly && (
               <button
                 type="button"
                 onClick={() => removeMetric(kr.id, metric.id)}
@@ -166,7 +178,7 @@ function MetricBox({ kr, readOnly }: { kr: Kr; readOnly: boolean }) {
         {kr.metrics.length === 0 && (
           <button
             type="button"
-            disabled={readOnly}
+            disabled={structureReadOnly}
             onClick={() => addMetric(kr.id)}
             className="flex min-h-12 w-full items-center gap-3 border-b border-slate-100 px-4 py-2.5 text-left text-[16px] leading-6 tracking-[0.005em] text-slate-400 last:border-b-0 enabled:hover:bg-slate-50 enabled:hover:text-slate-500"
           >
@@ -174,7 +186,7 @@ function MetricBox({ kr, readOnly }: { kr: Kr; readOnly: boolean }) {
             <span title="默认绿灯" className="size-4 shrink-0 rounded-full bg-emerald-500 ring-4 ring-emerald-50" />
           </button>
         )}
-        {!readOnly && kr.metrics.length > 0 && (
+        {!structureReadOnly && kr.metrics.length > 0 && (
           <button type="button" onClick={() => addMetric(kr.id)} className="w-full border-t border-slate-100 px-4 py-2 text-left text-xs text-slate-400 hover:bg-slate-50 hover:text-blue-600">+ 一条核心数据</button>
         )}
       </div>
@@ -368,7 +380,7 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
       <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} />
       {open && (
         <div className="space-y-5 px-4 py-4">
-          <MetricBox kr={kr} readOnly={definitionLocked} />
+          <MetricBox kr={kr} readOnly={readOnly} structureReadOnly={definitionLocked} />
           {KINDS.map((kind) => <PointGroup key={kind} objectiveId={objectiveId} kr={kr} kind={kind} closed={closed} toggle={toggle} definitionReadOnly={definitionLocked} progressReadOnly={readOnly || progressReadOnly} showProgress={showProgress} />)}
         </div>
       )}

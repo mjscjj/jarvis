@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, getBoard, getEnums, replaceKR, updateObjective as updateObjectiveRequest, updateProgress, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, getBoard, getEnums, replaceKR, replaceWeeklyKRCore, updateObjective as updateObjectiveRequest, updateProgress, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { LIGHTS, STATUSES } from './template'
@@ -76,6 +76,7 @@ function applyEntryVersions(local: Kr, remote: Kr): Kr {
   const merged = clone(local)
   const remoteEntries = entriesById(remote)
   merged.version = remote.version
+  merged.weeklyCoreVersion = remote.weeklyCoreVersion
   for (const point of merged.points) {
     for (const entry of point.entries) {
       const current = remoteEntries.get(entry.id)
@@ -85,10 +86,14 @@ function applyEntryVersions(local: Kr, remote: Kr): Kr {
   return merged
 }
 
+function sameWeeklyCore(left: Kr, right: Kr): boolean {
+  return left.metricNote === right.metricNote && JSON.stringify(left.metrics) === JSON.stringify(right.metrics)
+}
+
 async function syncWeeklyProgress(remote: Kr, local: Kr, week: string): Promise<Kr> {
   const before = entriesById(remote)
   const after = entriesById(local)
-  let saved = remote
+  let saved = sameWeeklyCore(remote, local) ? remote : await replaceWeeklyKRCore(local, week)
   for (const [id, current] of before) {
     if (!after.has(id)) saved = await deleteProgress(current.entry)
   }
@@ -436,10 +441,12 @@ export function BoardProvider({
         if (entry) Object.assign(entry, patch)
       })
     },
-    addEntry: (pointId) => {
+    addEntry: (pointId, text) => {
+      const clean = text.trim()
+      if (!clean) return
       const owner = objectivesRef.current.flatMap((item) => item.krs).find((kr) => kr.points.some((point) => point.id === pointId))
       if (!owner) return
-      mutate(owner.id, (draft) => findPoint(draft, pointId)?.entries.push({ id: uid('e'), status: 'in_progress', text: '', docs: [], images: [] }))
+      mutate(owner.id, (draft) => findPoint(draft, pointId)?.entries.push({ id: uid('e'), status: 'in_progress', text: clean, docs: [], images: [] }))
     },
     removeEntry: (pointId, entryId) => {
       const owner = objectivesRef.current.flatMap((item) => item.krs).find((kr) => kr.points.some((point) => point.id === pointId))

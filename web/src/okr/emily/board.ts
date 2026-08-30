@@ -41,7 +41,7 @@ export interface BoardApi {
   addPoint: (objId: string, krId: string, kind: Point['kind']) => void
   removePoint: (objId: string, krId: string, pointId: string) => void
   patchEntry: (pointId: string, entryId: string, patch: Partial<Entry>) => void
-  addEntry: (pointId: string) => void
+  addEntry: (pointId: string, text: string) => void
   removeEntry: (pointId: string, entryId: string) => void
   reset: () => void
   retry: () => void

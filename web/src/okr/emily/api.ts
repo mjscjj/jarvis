@@ -26,6 +26,7 @@ interface APIKr {
 	owners: Array<{ open_id: string; name: string }>
 	metric_note: string
   version: number
+	weekly_core_version: number
   metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
   points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; entries: APIEntry[]; previous_entries: APIEntry[] }>
   tags: KrTag[]
@@ -251,6 +252,7 @@ function fromAPIKr(value: APIKr): Kr {
     owners: (value.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
 		metricNote: value.metric_note,
     version: value.version,
+		weeklyCoreVersion: value.weekly_core_version,
     metrics: value.metrics.map((metric) => ({ ...metric, images: metric.images ?? [] })),
     points: value.points.map((point) => ({
       id: point.id,
@@ -657,6 +659,26 @@ export async function deleteProgress(entry: Entry): Promise<Kr> {
 		method: 'DELETE',
 		body: JSON.stringify({ expected_version: entry.version ?? 0 }),
 	})
+}
+
+export async function replaceWeeklyKRCore(kr: Kr, week: string): Promise<Kr> {
+	try {
+		const value = await request<APIKr>(`/api/weekly-report/krs/${encodeURIComponent(kr.id)}/core`, {
+			method: 'PUT',
+			body: JSON.stringify({
+				expected_version: kr.weeklyCoreVersion ?? 0,
+				week,
+				metric_note: kr.metricNote,
+				metrics: kr.metrics,
+			}),
+		})
+		return fromAPIKr(value)
+	} catch (error) {
+		if (error instanceof APIError && error.status === 409 && error.data) {
+			throw new APIError(error.message, error.status, error.code, fromAPIKr(error.data as APIKr), error.logid)
+		}
+		throw error
+	}
 }
 
 async function progressRequest(path: string, init: RequestInit): Promise<Kr> {

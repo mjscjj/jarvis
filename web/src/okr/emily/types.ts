@@ -122,8 +122,9 @@ export interface Kr {
   points: Point[]
   ownerOpenId?: string
   ownerName?: string
-  owners?: KrOwner[]
+	owners?: KrOwner[]
 	version?: number
+	weeklyCoreVersion?: number
   tags?: KrTag[]
 }
 
