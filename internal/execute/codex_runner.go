@@ -522,7 +522,11 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 		case runCtx.Err() == context.DeadlineExceeded:
 			runErr = fmt.Errorf("codex exec timed out after %s", r.timeout)
 		default:
-			runErr = fmt.Errorf("codex exec failed: %w: %s", commandErr, limitedText(stderr.Bytes(), 4096))
+			detail := codexFailureDetail(stdout.Bytes())
+			if detail == "" {
+				detail = limitedText(stderr.Bytes(), 4096)
+			}
+			runErr = fmt.Errorf("codex exec failed: %w: %s", commandErr, detail)
 		}
 		if usageErr != nil {
 			runErr = errors.Join(runErr, fmt.Errorf("parse failed codex exec usage: %w", usageErr))
@@ -555,6 +559,29 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 		run.Result = result
 	}
 	return run, nil
+}
+
+func codexFailureDetail(stdout []byte) string {
+	var detail string
+	for _, line := range bytes.Split(stdout, []byte{'\n'}) {
+		var event struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+			Error   *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(line, &event) != nil {
+			continue
+		}
+		if event.Type == "error" && strings.TrimSpace(event.Message) != "" {
+			detail = strings.TrimSpace(event.Message)
+		}
+		if event.Type == "turn.failed" && event.Error != nil && strings.TrimSpace(event.Error.Message) != "" {
+			detail = strings.TrimSpace(event.Error.Message)
+		}
+	}
+	return detail
 }
 
 // codexEnvironment removes Jarvis invocation metadata inherited from the

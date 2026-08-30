@@ -7,7 +7,6 @@ import {
   Space,
   Switch,
   Table,
-  Tabs,
   Tag,
   Typography,
   message,
@@ -27,6 +26,7 @@ import {
   updatePlugin,
 } from './api'
 import PageHeader from './components/PageHeader'
+import { usePageContext } from './pageContext'
 import type { Plugin, PluginAuthorization, PluginState } from './types'
 
 const { Text, Title } = Typography
@@ -126,12 +126,12 @@ function OncallSearchConfig({
 }
 
 export default function Plugins() {
+  const { context, setViewState } = usePageContext()
   const [items, setItems] = useState<Plugin[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string>()
   const [flows, setFlows] = useState<Record<string, PluginAuthorization>>({})
-  const [activeTab, setActiveTab] = useState('manage')
   const [messageApi, messageContext] = message.useMessage()
 
   const load = useCallback(async () => {
@@ -151,11 +151,13 @@ export default function Plugins() {
     void load()
   }, [load])
 
+  const selectedPlugin = items.find(
+    (item) => item.enabled && item.id === context.view_state.plugin,
+  )
+
   useEffect(() => {
-    if (activeTab !== 'manage' && !items.some((item) => item.id === activeTab && item.enabled)) {
-      setActiveTab('manage')
-    }
-  }, [activeTab, items])
+    if (!loading && context.view_state.plugin && !selectedPlugin) setViewState({})
+  }, [context.view_state.plugin, loading, selectedPlugin, setViewState])
 
   useEffect(() => {
     const active = Object.entries(flows).filter(([, flow]) => flow.status === 'pending' && flow.flow_id)
@@ -184,8 +186,9 @@ export default function Plugins() {
     try {
       const updated = await updatePlugin(item.id, enabled, item.revision)
       setItems((current) => current.map((entry) => entry.id === updated.id ? updated : entry))
-      if (enabled) setActiveTab(updated.id)
-      else if (activeTab === updated.id) setActiveTab('manage')
+      window.dispatchEvent(new Event('jarvis:plugins-changed'))
+      if (enabled) setViewState({ plugin: updated.id })
+      else if (context.view_state.plugin === updated.id) setViewState({})
       if (enabled && updated.state === 'needs_auth') messageApi.info(`${updated.name} 已开启，完成授权后开始同步`)
       else messageApi.success(`${updated.name} 已${enabled ? '开启' : '关闭'}`)
       setError(undefined)
@@ -360,15 +363,6 @@ export default function Plugins() {
     </div>
   )
 
-  const tabs = [
-    { key: 'manage', label: '插件管理', children: managementTable },
-    ...items.filter((item) => item.enabled).map((item) => ({
-      key: item.id,
-      label: item.name,
-      children: pluginTab(item),
-    })),
-  ]
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {messageContext}
@@ -393,7 +387,7 @@ export default function Plugins() {
           }
         />
       ))}
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabs} />
+      {selectedPlugin ? pluginTab(selectedPlugin) : managementTable}
     </div>
   )
 }

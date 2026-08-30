@@ -40,6 +40,7 @@ type View struct {
 	State           string          `json:"state"`
 	Authorization   AuthStatus      `json:"authorization"`
 	ScheduledTaskID *uint64         `json:"scheduled_task_id"`
+	LastTaskID      *uint64         `json:"last_task_id"`
 	LastRunStatus   *string         `json:"last_run_status"`
 	LastError       *string         `json:"last_error"`
 	LastFinishedAt  *time.Time      `json:"last_finished_at"`
@@ -245,6 +246,7 @@ func (s *Service) view(ctx context.Context, manifest Manifest) (*View, error) {
 			next := schedule.NextRunAt
 			view.NextRunAt = &next
 			if schedule.LastTaskID != nil {
+				view.LastTaskID = schedule.LastTaskID
 				var task domain.Task
 				if found := s.db.WithContext(ctx).First(&task, *schedule.LastTaskID); found.Error == nil {
 					taskStatus := task.Status
@@ -263,6 +265,8 @@ func (s *Service) view(ctx context.Context, manifest Manifest) (*View, error) {
 						if task.Summary != nil && strings.TrimSpace(*task.Summary) != "" {
 							summary := *task.Summary
 							view.LastError = &summary
+						} else if detail := taskExecutionError(task.ExecutionResult); detail != "" {
+							view.LastError = &detail
 						}
 					}
 				}
@@ -278,6 +282,16 @@ func (s *Service) view(ctx context.Context, manifest Manifest) (*View, error) {
 		return nil, fmt.Errorf("count plugin %s clues: %w", manifest.ID, err)
 	}
 	return view, nil
+}
+
+func taskExecutionError(result []byte) string {
+	var payload struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(result, &payload) != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Error)
 }
 
 func (s *Service) reconcile(ctx context.Context, manifest Manifest, authorization AuthStatus, trigger bool) error {

@@ -165,6 +165,15 @@ printf '%s\n' 'diagnostic stderr' >&2
 	}
 }
 
+func TestCodexFailureDetailReadsStructuredError(t *testing.T) {
+	stdout := []byte("{\"type\":\"thread.started\",\"thread_id\":\"session-42\"}\n" +
+		"{\"type\":\"error\",\"message\":\"Your requests have exceeded the quota.\"}\n" +
+		"{\"type\":\"turn.failed\",\"error\":{\"message\":\"Your requests have exceeded the quota.\"}}\n")
+	if got := codexFailureDetail(stdout); got != "Your requests have exceeded the quota." {
+		t.Fatalf("codexFailureDetail() = %q", got)
+	}
+}
+
 func TestCodexRunnerInterruptKillsRunningProcess(t *testing.T) {
 	dir := t.TempDir()
 	startedPath := filepath.Join(dir, "started")

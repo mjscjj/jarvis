@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Badge, Button, Drawer, Layout, Menu, Modal, Result, Spin, Tooltip, Typography, message } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -23,7 +23,8 @@ import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
-import { shutdownJarvis } from './api'
+import { listPlugins, shutdownJarvis } from './api'
+import type { Plugin } from './types'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -64,6 +65,8 @@ function AppShell() {
   const [chatLoaded, setChatLoaded] = useState(chatOpen)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const [managementOpen, setManagementOpen] = useState(true)
+  const [pluginsOpen, setPluginsOpen] = useState(true)
+  const [enabledPlugins, setEnabledPlugins] = useState<Plugin[]>([])
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
   const [shuttingDown, setShuttingDown] = useState(false)
   const [modal, modalContext] = Modal.useModal()
@@ -79,13 +82,44 @@ function AppShell() {
     managementIcon = <Tooltip title={`运行状态读取失败：${runtimeFailures.error}`}><Badge status="error" dot>{managementIcon}</Badge></Tooltip>
   }
 
+  const refreshPlugins = useCallback(async () => {
+    try {
+      const result = await listPlugins()
+      setEnabledPlugins(result.items.filter((item) => item.enabled))
+    } catch {
+      // The plugin page owns visible API errors; navigation keeps its last good state.
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshPlugins()
+    const onChanged = () => {
+      setPluginsOpen(true)
+      void refreshPlugins()
+    }
+    window.addEventListener('jarvis:plugins-changed', onChanged)
+    return () => window.removeEventListener('jarvis:plugins-changed', onChanged)
+  }, [refreshPlugins])
+
+  const pluginMenu: NonNullable<MenuProps['items']>[number] = enabledPlugins.length > 0
+    ? {
+        key: 'plugin-group',
+        label: '插件',
+        icon: <ApiOutlined />,
+        children: [
+          { key: 'plugins', label: '插件管理' },
+          ...enabledPlugins.map((plugin) => ({ key: `plugin:${plugin.id}`, label: plugin.name })),
+        ],
+      }
+    : { key: 'plugins', label: '插件', icon: <ApiOutlined /> }
+
   const menuProps: MenuProps['items'] = [
     { key: 'overview', label: '今日', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
-    { key: 'plugins', label: '插件', icon: <ApiOutlined /> },
+    pluginMenu,
     { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
     { type: 'divider' },
     {
@@ -156,6 +190,10 @@ function AppShell() {
 
   const goTo = (key: string) => {
     setMobileSystemOpen(false)
+    if (key.startsWith('plugin:')) {
+      navigate('plugins', { plugin: key.slice('plugin:'.length) })
+      return
+    }
     navigate(key)
   }
 
@@ -210,9 +248,19 @@ function AppShell() {
         <Menu
           mode="inline"
           inlineCollapsed={siderCollapsed}
-          selectedKeys={[context.active_key]}
-          openKeys={siderCollapsed || !managementOpen ? [] : ['management']}
-          onOpenChange={(keys) => setManagementOpen(keys.includes('management'))}
+          selectedKeys={[
+            context.active_key === 'plugins' && context.view_state.plugin
+              ? `plugin:${context.view_state.plugin}`
+              : context.active_key,
+          ]}
+          openKeys={siderCollapsed ? [] : [
+            ...(managementOpen ? ['management'] : []),
+            ...(pluginsOpen && enabledPlugins.length > 0 ? ['plugin-group'] : []),
+          ]}
+          onOpenChange={(keys) => {
+            setManagementOpen(keys.includes('management'))
+            setPluginsOpen(keys.includes('plugin-group'))
+          }}
           items={menuProps}
           onClick={({ key }) => goTo(key)}
           className="app-menu"

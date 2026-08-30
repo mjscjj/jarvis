@@ -1165,6 +1165,7 @@ export interface Plugin {
   state: PluginState
   authorization: PluginAuthorization
   scheduled_task_id: number | null
+  last_task_id: number | null
   last_run_status: string | null
   last_error: string | null
   last_finished_at: string | null

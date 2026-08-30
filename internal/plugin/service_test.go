@@ -228,6 +228,13 @@ func TestUpdateRejectsNonObjectConfig(t *testing.T) {
 	}
 }
 
+func TestTaskExecutionError(t *testing.T) {
+	got := taskExecutionError([]byte(`{"stage":"executed","error":"Your requests have exceeded the quota."}`))
+	if got != "Your requests have exceeded the quota." {
+		t.Fatalf("taskExecutionError() = %q", got)
+	}
+}
+
 func TestEnableUnauthorizedPluginWaitsWithoutSchedule(t *testing.T) {
 	db := openPluginDB(t)
 	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
