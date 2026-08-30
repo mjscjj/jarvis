@@ -8,7 +8,7 @@ import { buildAllBusinessNavigation, buildKRHierarchy, priorityLabel, priorityOf
 import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
-import { buildMeetingMarkdown } from '../meetingMarkdown'
+import { buildFullMeetingMarkdown } from '../meetingMarkdown'
 import { KIND_LABEL, isDone } from '../template'
 import type { CommentTarget, Entry, KrPriority, KrTag, Objective, Point, PointKind, TextSelection } from '../types'
 import { HierarchyNav } from './HierarchyNav'
@@ -335,11 +335,11 @@ export function MeetingView() {
   })
   const collapseAll = () => setClosed(new Set(visible.flatMap((objective) => [objective.id, ...objective.krs.flatMap((kr) => [kr.id, ...kr.points.map((point) => point.id)])])))
   const exportToFeishu = async () => {
-    if (visible.length === 0 || exporting) return
+    if (objectives.length === 0 || exporting) return
     setExporting(true)
     setExportResult({})
     try {
-      const output = buildMeetingMarkdown(visible, quarter, week)
+      const output = buildFullMeetingMarkdown(objectives, quarter, week)
       const result = await createFeishuDocument(output.title, output.content)
       setExportResult({ url: result.url, message: result.warnings.length > 0 ? `已生成，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成。' })
     } catch (error) {
@@ -363,7 +363,7 @@ export function MeetingView() {
           <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
         </select>
         <span className="h-4 w-px bg-slate-200" />
-        <button type="button" disabled={exporting || visible.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : '导出当前视图'}</button>
+        <button type="button" disabled={exporting || objectives.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : '导出全部 OKR'}</button>
         {exportResult.url && <a href={exportResult.url} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline">打开文档</a>}
         {exportResult.message && <span className={`max-w-56 truncate text-[10px] ${exportResult.url ? 'text-emerald-600' : 'text-red-500'}`} title={exportResult.message}>{exportResult.message}</span>}
       </div>

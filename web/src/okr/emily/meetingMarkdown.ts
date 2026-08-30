@@ -1,5 +1,5 @@
-import { isDone, statusOf } from './template'
-import { priorityLabel, priorityOf } from './hierarchy'
+import { isDone, statusOf } from './template.ts'
+import { priorityLabel, priorityOf } from './hierarchy.ts'
 import type { DocLink, ImageRef, Objective } from './types'
 
 export interface MeetingMarkdownExport {
@@ -27,7 +27,7 @@ function appendAssets(lines: string[], docs: DocLink[], images: ImageRef[]) {
 	}
 }
 
-export function buildMeetingMarkdown(objectives: Objective[], quarter: string, week: string): MeetingMarkdownExport {
+export function buildFullMeetingMarkdown(objectives: Objective[], quarter: string, week: string): MeetingMarkdownExport {
 	const title = `${week} OKR 周报会议`
 	const lines = [`# ${escapeInline(title)}`, '', `> ${escapeInline(quarter)} · ${escapeInline(week)}`, '']
 	const lights = { green: '🟢', yellow: '🟡', red: '🔴' } as const
