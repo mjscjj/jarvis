@@ -93,9 +93,10 @@ body {
   padding: var(--space-3) var(--space-2);
 }
 
-.app-menu .ant-menu-item {
+.app-menu .ant-menu-item,
+.app-menu .ant-menu-submenu-title {
   border-radius: var(--radius-md);
-  margin-inline: 0;
+  margin-inline: 0 !important;
   margin-block: var(--space-1);
   color: var(--color-text-secondary);
   font-weight: 500;
@@ -107,7 +108,8 @@ body {
   font-weight: 600;
 }
 
-.app-menu .ant-menu-item:hover {
+.app-menu .ant-menu-item:hover,
+.app-menu .ant-menu-submenu-title:hover {
   color: var(--color-primary);
 }
 
