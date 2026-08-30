@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildGlobalPriorityNavigation, buildKRHierarchy, businessCategoryOf, hierarchyKRCount, priorityKRCount, priorityOf, replaceSingleTag } from '../src/okr/emily/hierarchy.ts'
+import { buildAllBusinessNavigation, buildGlobalPriorityNavigation, buildKRHierarchy, businessCategoryOf, hierarchyKRCount, priorityKRCount, priorityOf, replaceSingleTag } from '../src/okr/emily/hierarchy.ts'
 import type { Kr, Objective } from '../src/okr/emily/types.ts'
 
 function kr(id: string, business?: string, priority?: string): Kr {
@@ -31,6 +31,16 @@ test('标签按业务、优先级和 Objective 方向组装三级导航', () => 
   const globalPriorities = buildGlobalPriorityNavigation(navigation)
   assert.deepEqual(globalPriorities.map((item) => item.label), ['Focus', 'P1', '未标注'])
   assert.deepEqual(globalPriorities.map(priorityKRCount), [2, 1, 1])
+  assert.deepEqual(buildAllBusinessNavigation(navigation), { value: '__all__', label: '全部 OKR', priorities: globalPriorities })
+})
+
+test('全部 OKR 按优先级合并同一方向，而不是复制方向选项', () => {
+  const navigation = buildKRHierarchy([
+    { id: 'o-shared', title: '共享方向', krs: [kr('kr-a', '业务 A', 'p0'), kr('kr-b', '业务 B', 'p0')] },
+  ])
+  const globalPriorities = buildGlobalPriorityNavigation(navigation)
+  assert.equal(globalPriorities[0].objectives.length, 1)
+  assert.deepEqual(globalPriorities[0].objectives[0].krs.map((item) => item.id), ['kr-a', 'kr-b'])
 })
 
 test('结构标签保持单值且优先级不再依赖 KR 独立字段', () => {

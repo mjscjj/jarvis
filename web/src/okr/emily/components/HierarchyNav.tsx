@@ -1,4 +1,4 @@
-import { buildGlobalPriorityNavigation, hierarchyKRCount, priorityKRCount, type BusinessNavigation, type PriorityNavigation } from '../hierarchy'
+import { hierarchyKRCount, priorityKRCount, type BusinessNavigation, type PriorityNavigation } from '../hierarchy'
 
 interface HierarchyNavProps {
   navigation: BusinessNavigation[]
@@ -7,9 +7,7 @@ interface HierarchyNavProps {
   activeObjectiveId?: string
   overview?: boolean
   showOverview?: boolean
-  overviewPriorityValue?: string
   onOverview?: () => void
-  onOverviewPriority?: (value: string | undefined) => void
   onBusiness: (value: string) => void
   onPriority: (value: string) => void
   onObjective: (id: string) => void
@@ -26,11 +24,10 @@ function priorityTone(value: string, selected: boolean) {
 }
 
 export function HierarchyNav({
-  navigation, activeBusiness, activePriority, activeObjectiveId, overview = false, showOverview = false, overviewPriorityValue,
-  onOverview, onOverviewPriority, onBusiness, onPriority, onObjective,
+  navigation, activeBusiness, activePriority, activeObjectiveId, overview = false, showOverview = false,
+  onOverview, onBusiness, onPriority, onObjective,
 }: HierarchyNavProps) {
   const total = navigation.reduce((sum, item) => sum + hierarchyKRCount(item), 0)
-  const overviewPriorities = buildGlobalPriorityNavigation(navigation)
   return (
     <section aria-label="KR 分类导航" className="mb-3 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50/90 to-slate-100/65 p-3 shadow-[0_3px_12px_rgba(31,35,40,0.035)]">
       <div className="grid gap-1.5 lg:grid-cols-[5.25rem_minmax(0,1fr)] lg:gap-2.5">
@@ -44,18 +41,7 @@ export function HierarchyNav({
         </nav>
       </div>
 
-      {overview && <div className="mt-2.5 grid gap-1.5 border-t border-slate-200/80 pt-2.5 lg:grid-cols-[5.25rem_minmax(0,1fr)] lg:gap-2.5">
-        <span className="flex items-center text-[10px] font-bold tracking-[0.04em] text-slate-400">优先级</span>
-        <nav aria-label="全部 OKR 优先级" role="tablist" className="inline-flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-slate-200/60 p-1">
-          <button type="button" role="tab" aria-selected={overviewPriorityValue === undefined} onClick={() => onOverviewPriority?.(undefined)} className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-semibold transition-colors ${overviewPriorityValue === undefined ? 'border-blue-200 bg-white text-blue-700 shadow-sm' : 'border-transparent text-slate-600 hover:bg-white'}`}>全部<b className="rounded-full bg-slate-200/70 px-1.5 text-[10px]">{total}</b></button>
-          {overviewPriorities.map((priority) => {
-            const selected = priority.value === overviewPriorityValue
-            return <button key={priority.value || '__untagged__'} type="button" role="tab" aria-selected={selected} onClick={() => onOverviewPriority?.(priority.value)} className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-semibold transition-colors ${priorityTone(priority.value, selected)}`}>{priority.label}<b className="rounded-full bg-slate-200/70 px-1.5 text-[10px]">{priorityKRCount(priority)}</b></button>
-          })}
-        </nav>
-      </div>}
-
-      {!overview && activeBusiness && <div className="mt-2.5 grid gap-1.5 border-t border-slate-200/80 pt-2.5 lg:grid-cols-[5.25rem_minmax(0,1fr)] lg:gap-2.5">
+      {activeBusiness && <div className="mt-2.5 grid gap-1.5 border-t border-slate-200/80 pt-2.5 lg:grid-cols-[5.25rem_minmax(0,1fr)] lg:gap-2.5">
         <span className="flex items-center text-[10px] font-bold tracking-[0.04em] text-slate-400">Focus / P1 / P2</span>
         <nav aria-label={`${activeBusiness.label}优先级`} role="tablist" className="inline-flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-slate-200/60 p-1">
           {activeBusiness.priorities.map((priority) => {
@@ -65,7 +51,7 @@ export function HierarchyNav({
         </nav>
       </div>}
 
-      {!overview && activePriority && <div className="mt-2.5 grid gap-1.5 border-t border-slate-200/80 pt-2.5 lg:grid-cols-[5.25rem_minmax(0,1fr)] lg:gap-2.5">
+      {activePriority && <div className="mt-2.5 grid gap-1.5 border-t border-slate-200/80 pt-2.5 lg:grid-cols-[5.25rem_minmax(0,1fr)] lg:gap-2.5">
         <span className="flex items-center text-[10px] font-bold tracking-[0.04em] text-slate-400">方向</span>
         <nav aria-label="方向" role="tablist" className="flex gap-1.5 overflow-x-auto pb-0.5">
           {activePriority.objectives.map((objective) => {

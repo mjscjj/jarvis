@@ -98,15 +98,28 @@ export function buildKRHierarchy(objectives: Objective[]): BusinessNavigation[] 
 }
 
 export function buildGlobalPriorityNavigation(navigation: BusinessNavigation[]): PriorityNavigation[] {
-  const priorities = new Map<KrPriority | '', PriorityNavigation>()
+  const priorities = new Map<KrPriority | '', { label: string; objectives: Map<string, Objective> }>()
   for (const business of navigation) {
     for (const priority of business.priorities) {
-      const current = priorities.get(priority.value)
-      if (current) current.objectives.push(...priority.objectives)
-      else priorities.set(priority.value, { ...priority, objectives: [...priority.objectives] })
+      let current = priorities.get(priority.value)
+      if (!current) {
+        current = { label: priority.label, objectives: new Map() }
+        priorities.set(priority.value, current)
+      }
+      for (const objective of priority.objectives) {
+        const existing = current.objectives.get(objective.id)
+        if (existing) existing.krs.push(...objective.krs)
+        else current.objectives.set(objective.id, { ...objective, krs: [...objective.krs] })
+      }
     }
   }
-  return [...priorities.values()].sort((left, right) => priorityOrder(left.value) - priorityOrder(right.value))
+  return [...priorities.entries()]
+    .sort(([left], [right]) => priorityOrder(left) - priorityOrder(right))
+    .map(([value, priority]) => ({ value, label: priority.label, objectives: [...priority.objectives.values()] }))
+}
+
+export function buildAllBusinessNavigation(navigation: BusinessNavigation[]): BusinessNavigation {
+  return { value: '__all__', label: '全部 OKR', priorities: buildGlobalPriorityNavigation(navigation) }
 }
 
 export function hierarchyKRCount(business: BusinessNavigation): number {
