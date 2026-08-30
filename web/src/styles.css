@@ -42,8 +42,23 @@ body {
   transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease, flex-basis 0.2s ease;
 }
 
+.sider-footer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.sider-footer > .ant-btn {
+  min-width: 0;
+}
+
+.sider-footer.is-collapsed {
+  grid-template-columns: 1fr;
+}
+
 .sider-collapse-btn {
-  margin: var(--space-2);
   color: var(--color-text-secondary);
 }
 

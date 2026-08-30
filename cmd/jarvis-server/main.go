@@ -44,6 +44,7 @@ import (
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/store"
+	"jarvis/internal/systemcontrol"
 	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
@@ -907,6 +908,11 @@ func main() {
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
+	repoRoot := filepath.Dir(filepath.Dir(configPathAbsolute))
+	systemControlService, err := systemcontrol.NewService(filepath.Join(repoRoot, "scripts", "stop-jarvis.sh"), os.Getpid())
+	if err != nil {
+		fatalf("initialize system control service failed: %v", err)
+	}
 	readinessTargets := api.ReadinessTargets{
 		LarkCLIBin:  cfg.LarkCLI.Bin,
 		AgentCLIBin: cfg.Execute.Bin,
@@ -947,6 +953,7 @@ func main() {
 		CardApprovals:      cardApprovalProcessor,
 		CardApprovalSecret: cfg.CardApproval.RelaySecret,
 		Readiness:          readinessTargets,
+		SystemControl:      systemControlService,
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)
 	}

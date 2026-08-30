@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { Badge, Button, Drawer, Layout, Menu, Spin, Tooltip, Typography } from 'antd'
+import { Badge, Button, Drawer, Layout, Menu, Modal, Result, Spin, Tooltip, Typography, message } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   HomeOutlined,
@@ -14,6 +14,7 @@ import {
   DatabaseOutlined,
   CalendarOutlined,
   MoreOutlined,
+  PoweroffOutlined,
   RobotOutlined,
   ApiOutlined,
 } from '@ant-design/icons'
@@ -22,6 +23,7 @@ import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
+import { shutdownJarvis } from './api'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -63,6 +65,9 @@ function AppShell() {
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const [managementOpen, setManagementOpen] = useState(true)
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
+  const [shuttingDown, setShuttingDown] = useState(false)
+  const [modal, modalContext] = Modal.useModal()
+  const [messageApi, messageContext] = message.useMessage()
   const chatRef = useRef<HTMLElement>(null)
   const chatToggleRef = useRef<HTMLButtonElement>(null)
   const chatWasOpen = useRef(chatOpen)
@@ -154,6 +159,40 @@ function AppShell() {
     navigate(key)
   }
 
+  const confirmShutdown = () => {
+    modal.confirm({
+      title: `退出 ${agentName}？`,
+      content: '这会停止 Jarvis Server、Qdrant、CC Connect 和开发 Web 服务，正在执行的任务也会被中断。',
+      okText: '退出并停止服务',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await shutdownJarvis()
+          setMobileSystemOpen(false)
+          setShuttingDown(true)
+        } catch (cause) {
+          messageApi.error(cause instanceof Error ? cause.message : String(cause))
+          throw cause
+        }
+      },
+    })
+  }
+
+  if (shuttingDown) {
+    return (
+      <>
+        {modalContext}
+        {messageContext}
+        <Result
+          status="success"
+          title={`${agentName} 已退出`}
+          subTitle="Jarvis Server、Qdrant、CC Connect 和开发 Web 服务正在停止，可以关闭此页面。"
+        />
+      </>
+    )
+  }
+
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
 
   return (
@@ -161,6 +200,8 @@ function AppShell() {
       className={`app-shell ${chatOpen ? 'chat-is-open' : ''}`}
       style={{ '--sider-width': `${siderWidth}px` } as React.CSSProperties}
     >
+      {modalContext}
+      {messageContext}
       <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className="sider-brand">
           {!siderCollapsed && <div className="sider-tagline">主动式任务分身</div>}
@@ -176,14 +217,21 @@ function AppShell() {
           onClick={({ key }) => goTo(key)}
           className="app-menu"
         />
-        <Tooltip title={siderCollapsed ? '展开侧边栏' : '收起侧边栏'} placement="right">
-          <Button
-            type="text"
-            className="sider-collapse-btn"
-            icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setSiderCollapsed((value) => !value)}
-          />
-        </Tooltip>
+        <div className={`sider-footer ${siderCollapsed ? 'is-collapsed' : ''}`}>
+          <Tooltip title="退出并停止所有服务" placement="right">
+            <Button type="text" danger icon={<PoweroffOutlined />} aria-label={`退出 ${agentName}`} onClick={confirmShutdown}>
+              {!siderCollapsed && '退出'}
+            </Button>
+          </Tooltip>
+          <Tooltip title={siderCollapsed ? '展开侧边栏' : '收起侧边栏'} placement="right">
+            <Button
+              type="text"
+              className="sider-collapse-btn"
+              icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setSiderCollapsed((value) => !value)}
+            />
+          </Tooltip>
+        </div>
       </Sider>
       <header className="mobile-topbar">
         <strong>{pageLabels[context.active_key] || agentName}</strong>
@@ -255,6 +303,7 @@ function AppShell() {
               {item.label}
             </Button>
           ))}
+          <Button danger icon={<PoweroffOutlined />} onClick={confirmShutdown}>退出并停止服务</Button>
         </div>
       </Drawer>
     </Layout>

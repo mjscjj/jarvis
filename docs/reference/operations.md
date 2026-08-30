@@ -85,6 +85,18 @@ launchctl bootstrap "gui/$uid" "$plist"
 
 不要裸 `go build` 覆盖 `bin/jarvis-server`；否则会改变签名身份，导致完全磁盘访问权限不稳定。
 
+## 完整退出
+
+后台“退出”会先返回确认结果，再调用固定脚本停止本 checkout 的全部运行组件：
+
+```bash
+./scripts/stop-jarvis.sh
+```
+
+脚本会卸载 Jarvis Server、可选 Vite Web、Qdrant 和 CC Connect 的 launchd
+服务，并停止同名 `screen` 会话及仍占用对应服务端口的残留进程。退出不会删除
+配置、数据库、日志或任何业务数据；下次按正常安装/启动流程重新注册服务即可。
+
 ## 状态与日志
 
 ```bash

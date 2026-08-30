@@ -73,6 +73,7 @@ type Dependencies struct {
 	CardApprovals      CardApprovalProcessor
 	CardApprovalSecret string
 	Readiness          ReadinessTargets // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
+	SystemControl      SystemShutdowner
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -176,12 +177,16 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.ContextAssembler == nil {
 		return fmt.Errorf("api context assembler dependency is nil")
 	}
+	if deps.SystemControl == nil {
+		return fmt.Errorf("api system control dependency is nil")
+	}
 	toolQueries, err := toolquery.NewService(deps.DB)
 	if err != nil {
 		return fmt.Errorf("create tool query service: %w", err)
 	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/readyz", Readiness(deps.DB, deps.Readiness))
+	h.POST("/api/system/shutdown", ShutdownSystem(deps.SystemControl))
 	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName))
 	h.GET("/api/messages", ListToolMessages(toolQueries))
 	h.GET("/api/captured-resources", ListCapturedResources(toolQueries))

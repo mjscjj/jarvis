@@ -626,6 +626,10 @@ export function triggerPlugin(id: string): Promise<Plugin> {
   return request<Plugin>(`/api/plugins/${encodeURIComponent(id)}/trigger`, { method: 'POST' })
 }
 
+export function shutdownJarvis(): Promise<{ stopping: boolean }> {
+  return request<{ stopping: boolean }>('/api/system/shutdown', { method: 'POST' })
+}
+
 export function listSkills(signal?: AbortSignal): Promise<{ items: AgentSkill[] }> {
   return request<{ items: AgentSkill[] }>('/api/skills', { signal })
 }
