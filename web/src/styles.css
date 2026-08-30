@@ -58,6 +58,16 @@ body {
   min-width: 0;
 }
 
+.sider-shutdown-btn {
+  justify-content: flex-start;
+  padding-inline: var(--space-6);
+}
+
+.sider-footer.is-collapsed .sider-shutdown-btn {
+  justify-content: center;
+  padding-inline: 0;
+}
+
 .sider-footer.is-collapsed {
   grid-template-columns: 1fr;
 }

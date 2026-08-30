@@ -344,7 +344,7 @@ function AppShell() {
         />
         <div className={`sider-footer ${siderCollapsed ? 'is-collapsed' : ''}`}>
           <Tooltip title="退出并停止所有服务" placement="right">
-            <Button type="text" danger icon={<PoweroffOutlined />} aria-label={`退出 ${agentName}`} onClick={confirmShutdown}>
+            <Button className="sider-shutdown-btn" type="text" danger icon={<PoweroffOutlined />} aria-label={`退出 ${agentName}`} onClick={confirmShutdown}>
               {!siderCollapsed && '退出'}
             </Button>
           </Tooltip>
