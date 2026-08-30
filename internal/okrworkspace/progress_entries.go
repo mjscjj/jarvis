@@ -2,6 +2,7 @@ package okrworkspace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -110,9 +111,17 @@ func (s *Service) UpdateProgressEntry(ctx context.Context, progressID string, in
 	if err := s.requireOpenWeek(ctx, objective.Quarter, input.Week); err != nil {
 		return KRView{}, err
 	}
+	docsJSON, err := encodeJSONColumn("progress docs", nonNilDocs(input.Docs))
+	if err != nil {
+		return KRView{}, err
+	}
+	imagesJSON, err := encodeJSONColumn("progress images", nonNilImages(input.Images))
+	if err != nil {
+		return KRView{}, err
+	}
 	updates := map[string]any{
-		"status": input.Status, "text": strings.TrimSpace(input.Text), "docs": nonNilDocs(input.Docs),
-		"images": nonNilImages(input.Images), "source": normalizedSource(input.Source),
+		"status": input.Status, "text": strings.TrimSpace(input.Text), "docs": docsJSON,
+		"images": imagesJSON, "source": normalizedSource(input.Source),
 		"needs_review": input.NeedsReview, "updated_by": input.UpdatedBy, "version": gorm.Expr("version + 1"),
 	}
 	result := s.db.WithContext(ctx).Model(&domain.KRProgress{}).Where("id = ? AND point_id = ? AND version = ?", progressID, point.ID, input.ExpectedVersion).Updates(updates)
@@ -175,6 +184,14 @@ func validateProgressEntryInput(input ProgressEntryInput) error {
 		return fmt.Errorf("progress status and text are required")
 	}
 	return nil
+}
+
+func encodeJSONColumn(name string, value any) (string, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("encode %s: %w", name, err)
+	}
+	return string(encoded), nil
 }
 
 func (s *Service) progressPointOwner(ctx context.Context, pointID string) (domain.KRPoint, domain.KR, domain.Objective, error) {

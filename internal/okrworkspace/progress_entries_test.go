@@ -47,13 +47,19 @@ func TestProgressEntryCRUDChangesOnlyOneWeeklyRecord(t *testing.T) {
 
 	updated, err := service.UpdateProgressEntry(t.Context(), "agent-progress-1", ProgressEntryInput{
 		ExpectedVersion: 0, Week: week.Week, Status: domain.StatusDone, Text: "第一阶段已完成",
-		Docs: []domain.DocLink{}, Images: []domain.ImageRef{}, Source: "agent", UpdatedBy: "agent:task-1",
+		Docs:   []domain.DocLink{{ID: "doc-2", Title: "验收证据", URL: "https://example.com/acceptance"}},
+		Images: []domain.ImageRef{{ID: "image-1", Name: "验收截图.png", URL: "/okr-assets/image-1.png", Width: 640}},
+		Source: "agent", UpdatedBy: "agent:task-1",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.Version != 0 || updated.Points[0].Entries[0].Version != 1 || updated.Points[0].Entries[0].Status != domain.StatusDone || updated.Points[0].Entries[0].NeedsReview {
 		t.Fatalf("updated = %+v", updated)
+	}
+	entry := updated.Points[0].Entries[0]
+	if len(entry.Docs) != 1 || entry.Docs[0].ID != "doc-2" || len(entry.Images) != 1 || entry.Images[0].ID != "image-1" || entry.Images[0].Width != 640 {
+		t.Fatalf("updated attachments = docs:%+v images:%+v", entry.Docs, entry.Images)
 	}
 	if _, err := service.UpdateProgressEntry(t.Context(), "agent-progress-1", ProgressEntryInput{
 		ExpectedVersion: 0, Week: week.Week, Status: domain.StatusDone, Text: "旧版本覆盖", Source: "agent", UpdatedBy: "agent:task-1",

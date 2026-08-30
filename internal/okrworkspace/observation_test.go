@@ -20,7 +20,10 @@ func TestStoreMeegoObservationUsesSuppliedSnapshotWithoutExternalReader(t *testi
 	}
 	objective := domain.Objective{ID: "objective-1", Quarter: "2026-Q3", Title: "增长"}
 	kr := domain.KR{ID: "kr-1", ObjectiveID: objective.ID, Title: "发布"}
-	point := domain.KRPoint{ID: "point-1", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "发布", MeegoWorkItemID: "wi-42"}
+	point := domain.KRPoint{
+		ID: "point-1", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "发布",
+		MeegoWorkItemID: "wi-42", MeegoURL: "https://meego.example.com/wi-42",
+	}
 	week := domain.WeeklyReportWeek{Quarter: objective.Quarter, Week: "2026-W35", OpenedBy: "test"}
 	for _, value := range []any{&objective, &kr, &point, &week} {
 		if err := db.Create(value).Error; err != nil {
@@ -52,5 +55,23 @@ func TestStoreMeegoObservationUsesSuppliedSnapshotWithoutExternalReader(t *testi
 	preview, err := service.MeegoPreview(t.Context(), point.ID, "2026-W35")
 	if err != nil || preview.Remote.Progress != "远端已完成" {
 		t.Fatalf("MeegoPreview() = %+v, %v", preview, err)
+	}
+	confirmed, err := service.ConfirmMeegoProgress(t.Context(), point.ID, ConfirmMeegoProgressInput{
+		ExpectedVersion: 0, Week: week.Week, UpdatedBy: "agent:task-1", MeegoWorkItemID: point.MeegoWorkItemID,
+		Status: domain.StatusInProgress, Text: "Meego 进展已确认",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err = service.ConfirmMeegoProgress(t.Context(), point.ID, ConfirmMeegoProgressInput{
+		ExpectedVersion: 0, Week: week.Week, UpdatedBy: "agent:task-1", MeegoWorkItemID: point.MeegoWorkItemID,
+		Status: domain.StatusDone, Text: "Meego 进展已完成",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := confirmed.Points[0].Entries
+	if len(entries) != 2 || entries[1].Version != 1 || entries[1].Status != domain.StatusDone || len(entries[1].Docs) != 1 || entries[1].Docs[0].URL != point.MeegoURL {
+		t.Fatalf("confirmed Meego progress = %+v", entries)
 	}
 }

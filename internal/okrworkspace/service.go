@@ -1203,11 +1203,15 @@ func (s *Service) ConfirmMeegoProgress(ctx context.Context, pointID string, inpu
 		if strings.TrimSpace(point.MeegoURL) != "" {
 			docs = append(docs, domain.DocLink{ID: "meego-" + input.MeegoWorkItemID, Title: "Meego " + input.MeegoWorkItemID, URL: point.MeegoURL})
 		}
+		docsJSON, err := encodeJSONColumn("confirmed Meego progress docs", docs)
+		if err != nil {
+			return err
+		}
 		var existing domain.KRProgress
-		err := tx.Where("point_id = ? AND week = ? AND source = ?", point.ID, input.Week, "meego").Order("sort_order, id").First(&existing).Error
+		err = tx.Where("point_id = ? AND week = ? AND source = ?", point.ID, input.Week, "meego").Order("sort_order, id").First(&existing).Error
 		if err == nil {
 			result := tx.Model(&domain.KRProgress{}).Where("id = ? AND version = ?", existing.ID, input.ExpectedVersion).Updates(map[string]any{
-				"status": input.Status, "text": input.Text, "docs": docs, "needs_review": false,
+				"status": input.Status, "text": input.Text, "docs": docsJSON, "needs_review": false,
 				"updated_by": input.UpdatedBy, "version": gorm.Expr("version + 1"),
 			})
 			if result.Error != nil {
