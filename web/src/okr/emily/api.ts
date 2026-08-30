@@ -36,6 +36,7 @@ interface APIBoard {
   quarter: string
   week: string
   previous_week?: string
+  available_quarters: string[]
   available_weeks: string[]
   objectives: Array<{ id: string; title: string; krs: APIKr[] }>
 }
@@ -289,6 +290,7 @@ export interface BoardData {
   quarter: string
   week: string
   previousWeek?: string
+  availableQuarters: string[]
   availableWeeks: string[]
   objectives: Objective[]
 }
@@ -328,6 +330,7 @@ export async function getBoard(quarter: string, week: string, surface: BoardSurf
     quarter: board.quarter,
     week: board.week,
     previousWeek: board.previous_week,
+    availableQuarters: board.available_quarters,
     availableWeeks: board.available_weeks,
     objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, krs: objective.krs.map(fromAPIKr) })),
   }

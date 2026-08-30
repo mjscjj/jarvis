@@ -100,17 +100,28 @@ async function syncWeeklyProgress(remote: Kr, local: Kr, week: string): Promise<
   return saved
 }
 
-export function BoardProvider({ children, surface = 'okr' }: { children: ReactNode; surface?: BoardSurface }) {
+export function BoardProvider({
+  children,
+  surface = 'okr',
+  initialQuarter = '',
+  onQuarterChange,
+}: {
+  children: ReactNode
+  surface?: BoardSurface
+  initialQuarter?: string
+  onQuarterChange?: (quarter: string) => void
+}) {
   const [objectives, setObjectives] = useState<Objective[]>([])
   const [enums, setEnums] = useState<EnumValues>(DEFAULT_ENUMS)
   const [week, setWeekState] = useState(DEFAULT_WEEK)
-  const [quarter, setQuarter] = useState('')
+  const [quarter, setQuarterState] = useState(initialQuarter)
+  const [availableQuarters, setAvailableQuarters] = useState<string[]>(initialQuarter ? [initialQuarter] : [])
   const [previousWeek, setPreviousWeek] = useState<string>()
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([DEFAULT_WEEK])
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'loading', message: '正在读取本周进展…' })
   const objectivesRef = useRef(objectives)
   const weekRef = useRef(DEFAULT_WEEK)
-  const quarterRef = useRef('')
+  const quarterRef = useRef(initialQuarter)
   const remoteReady = useRef(false)
   const serverKrs = useRef(new Map<string, Kr>())
   const revisions = useRef(new Map<string, number>())
@@ -160,22 +171,30 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
   const scheduleSave = useCallback((krId: string) => {
     const previous = timers.current.get(krId)
     if (previous) window.clearTimeout(previous)
-    timers.current.set(krId, window.setTimeout(() => void saveNow(krId), SAVE_DELAY_MS))
+    const timer = window.setTimeout(() => {
+      timers.current.delete(krId)
+      void saveNow(krId)
+    }, SAVE_DELAY_MS)
+    timers.current.set(krId, timer)
   }, [saveNow])
 
   useEffect(() => {
     scheduleSaveRef.current = scheduleSave
   }, [scheduleSave])
 
-  const loadRemote = useCallback(async (targetWeek?: string) => {
+  const loadRemote = useCallback(async (targetWeek?: string, targetQuarter?: string) => {
     remoteReady.current = false
     setSyncState({ kind: 'loading', message: '正在读取本周进展…' })
     try {
-      const [board, remoteEnums] = await Promise.all([getBoard(quarterRef.current, targetWeek ?? '', surface), getEnums()])
+      const [board, remoteEnums] = await Promise.all([getBoard(targetQuarter ?? quarterRef.current, targetWeek ?? '', surface), getEnums()])
       publish(board.objectives)
       serverKrs.current = new Map(board.objectives.flatMap((objective) => objective.krs).map((kr) => [kr.id, clone(kr)]))
+      revisions.current.clear()
+      lastFailedKr.current = null
       quarterRef.current = board.quarter
-      setQuarter(board.quarter)
+      setQuarterState(board.quarter)
+      setAvailableQuarters(board.availableQuarters)
+      onQuarterChange?.(board.quarter)
       weekRef.current = board.week
       setWeekState(board.week)
       setPreviousWeek(board.previousWeek)
@@ -186,7 +205,7 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
     } catch (error) {
       setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '加载失败，请稍后重试。' })
     }
-  }, [publish, surface])
+  }, [onQuarterChange, publish, surface])
 
   useEffect(() => {
     const activeTimers = timers.current
@@ -221,11 +240,25 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
   const api = useMemo<BoardApi>(() => ({
     objectives,
     quarter,
+    availableQuarters,
+    setQuarter: (nextQuarter) => {
+      if (nextQuarter === quarterRef.current) return
+      if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
+        setSyncState({ kind: 'error', message: '请等待当前修改保存后再切换季度。' })
+        return
+      }
+      quarterRef.current = nextQuarter
+      void loadRemote('', nextQuarter)
+    },
     week,
     previousWeek,
     availableWeeks,
     setWeek: (nextWeek) => {
       if (nextWeek === weekRef.current) return
+      if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
+        setSyncState({ kind: 'error', message: '请等待当前修改保存后再切换周次。' })
+        return
+      }
       weekRef.current = nextWeek
       setWeekState(nextWeek)
       void loadRemote(nextWeek)
@@ -238,7 +271,7 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
       try {
         await createObjectiveRequest(input)
         quarterRef.current = input.quarter
-        await loadRemote()
+        await loadRemote('', input.quarter)
       } catch (error) {
         setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '创建目标失败。' })
         throw error
@@ -382,7 +415,7 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
     },
     resolveConflict,
     applySavedKr: (kr) => publish(replaceKrIn(objectivesRef.current, kr.id, kr)),
-  }), [availableWeeks, enums, loadRemote, mutate, objectives, previousWeek, publish, quarter, resolveConflict, saveNow, syncState, week])
+  }), [availableQuarters, availableWeeks, enums, loadRemote, mutate, objectives, previousWeek, publish, quarter, resolveConflict, saveNow, syncState, week])
 
   return <BoardContext.Provider value={api}>{children}</BoardContext.Provider>
 }

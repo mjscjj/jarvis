@@ -46,6 +46,7 @@ function ModuleTabs({ active, weeklyEnabled, onChange }: { active: OKRTab; weekl
 function Workspace({ auth, logoutUser }: { auth: AuthStatus; logoutUser: () => Promise<void> }) {
   const { context, setViewState } = usePageContext()
   const [weeklyEnabled, setWeeklyEnabled] = useState(true)
+  const [selectedQuarter, setSelectedQuarter] = useState('')
   const requestedTab = context.view_state.tab
   const active = validTabs.has(requestedTab as OKRTab) ? requestedTab as OKRTab : 'structure'
   const visibleTab = !weeklyEnabled && active.startsWith('weekly-') ? 'structure' : active
@@ -74,7 +75,7 @@ function Workspace({ auth, logoutUser }: { auth: AuthStatus; logoutUser: () => P
 
   return (
     <div id="okr-workspace-root" className="okr-workspace-root">
-      <BoardProvider key={surface} surface={surface}>
+      <BoardProvider key={surface} surface={surface} initialQuarter={selectedQuarter} onQuarterChange={setSelectedQuarter}>
         {visibleTab === 'agent-flows' ? (
           <AgentFlowsWorkspace
             auth={auth}

@@ -5,6 +5,7 @@ import { KrTable } from './components/Table'
 import { CommentDrawer } from './components/CommentDrawer'
 import { WeeklyFocus } from './components/WeeklyFocus'
 import { WeeklyTools } from './components/WeeklyTools'
+import { QuarterSelect } from './components/QuarterSelect'
 import { PAGE_TITLE } from './seed'
 import { CommentInteractionProvider } from './commenting'
 import type { PendingCommentSelection } from './commenting'
@@ -77,7 +78,7 @@ export default function App({
   onModeChange: (mode: 'fill' | 'meeting') => void
   moduleTabs: ReactNode
 }) {
-  const { reset, syncState, quarter, week, availableWeeks, setWeek } = useBoard()
+  const { reset, syncState, quarter, setQuarter, week, availableWeeks, setWeek } = useBoard()
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentCount, setCommentCount] = useState(0)
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
@@ -100,7 +101,8 @@ export default function App({
       const result = await openWeeklyReportWeek({ quarter: targetQuarter, week: target })
       setOpeningWeek(false)
       setWeekNotice(result.created ? `${target} 已开启` : `${target} 已经开启`)
-      reset()
+      if (targetQuarter === quarter) setWeek(target)
+      else setQuarter(targetQuarter)
     } catch (cause) {
       setWeekNotice(cause instanceof Error ? cause.message : '开启周次失败。')
     }
@@ -174,7 +176,8 @@ export default function App({
             </div>
           </div>
 
-	          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+		          <QuarterSelect />
+		          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <select aria-label="周次" value={week} onChange={(event) => setWeek(event.target.value)} className="bg-transparent font-medium text-slate-600 outline-none">
               {availableWeeks.map((item) => <option key={item} value={item}>{weekLabel(item)}</option>)}
             </select>

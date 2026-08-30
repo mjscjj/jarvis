@@ -12,6 +12,8 @@ export type SyncState =
 export interface BoardApi {
   objectives: Objective[]
   quarter: string
+  availableQuarters: string[]
+  setQuarter: (quarter: string) => void
   week: string
   previousWeek?: string
   availableWeeks: string[]

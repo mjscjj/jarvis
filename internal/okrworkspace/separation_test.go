@@ -168,6 +168,63 @@ func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
 	}
 }
 
+func TestBoardsSwitchQuarterWithoutMixingWeeklyScopes(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objectives := []domain.Objective{
+		{ID: "o-q2", Title: "测试季度", Quarter: "2026-Q2"},
+		{ID: "o-q3", Title: "正式季度", Quarter: "2026-Q3"},
+	}
+	for index := range objectives {
+		if err := db.Create(&objectives[index]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	weeks := []domain.WeeklyReportWeek{
+		{Quarter: "2026-Q2", Week: "2026-W14", OpenedBy: "test"},
+		{Quarter: "2026-Q2", Week: "2026-W15", OpenedBy: "test"},
+		{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "test"},
+	}
+	for index := range weeks {
+		if err := db.Create(&weeks[index]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	core, err := service.CoreBoard(t.Context(), "2026-Q2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if core.Quarter != "2026-Q2" || len(core.Objectives) != 1 || core.Objectives[0].ID != "o-q2" {
+		t.Fatalf("Q2 core board = %+v", core)
+	}
+	if len(core.AvailableQuarters) != 2 || core.AvailableQuarters[0] != "2026-Q3" || core.AvailableQuarters[1] != "2026-Q2" {
+		t.Fatalf("available quarters = %+v", core.AvailableQuarters)
+	}
+
+	weekly, err := service.Board(t.Context(), "2026-Q2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if weekly.Quarter != "2026-Q2" || weekly.Week != "2026-W15" || len(weekly.Objectives) != 1 || weekly.Objectives[0].ID != "o-q2" {
+		t.Fatalf("Q2 weekly board mixed another quarter: %+v", weekly)
+	}
+	if len(weekly.AvailableWeeks) != 2 || weekly.AvailableWeeks[0] != "2026-W15" || weekly.AvailableWeeks[1] != "2026-W14" {
+		t.Fatalf("Q2 available weeks = %+v", weekly.AvailableWeeks)
+	}
+
+	latest, err := service.CoreBoard(t.Context(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.Quarter != "2026-Q3" || len(latest.Objectives) != 1 || latest.Objectives[0].ID != "o-q3" {
+		t.Fatalf("latest core board = %+v", latest)
+	}
+}
+
 func TestMigrateWeeklyReportBackfillsHistoricalProgressScopes(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-history", Title: "增长", Quarter: "2026-Q3"}

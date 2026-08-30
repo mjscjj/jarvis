@@ -35,11 +35,12 @@ func NewService(db *gorm.DB) (*Service, error) {
 }
 
 type Board struct {
-	Quarter        string          `json:"quarter"`
-	Week           string          `json:"week"`
-	PreviousWeek   string          `json:"previous_week,omitempty"`
-	AvailableWeeks []string        `json:"available_weeks"`
-	Objectives     []ObjectiveView `json:"objectives"`
+	Quarter           string          `json:"quarter"`
+	Week              string          `json:"week"`
+	PreviousWeek      string          `json:"previous_week,omitempty"`
+	AvailableQuarters []string        `json:"available_quarters"`
+	AvailableWeeks    []string        `json:"available_weeks"`
+	Objectives        []ObjectiveView `json:"objectives"`
 }
 
 type Scope struct {
@@ -52,14 +53,27 @@ type CoreScope struct {
 }
 
 func (s *Service) LatestCoreScope(ctx context.Context) (CoreScope, error) {
-	var quarter string
-	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Select("quarter").Where("quarter <> ''").Order("quarter DESC").Limit(1).Scan(&quarter).Error; err != nil {
-		return CoreScope{}, fmt.Errorf("find latest OKR quarter: %w", err)
+	quarters, err := s.ListQuarters(ctx)
+	if err != nil {
+		return CoreScope{}, err
 	}
-	if !quarterPattern.MatchString(quarter) {
+	if len(quarters) == 0 {
 		return CoreScope{}, fmt.Errorf("no valid OKR quarter is available")
 	}
-	return CoreScope{Quarter: quarter}, nil
+	return CoreScope{Quarter: quarters[0]}, nil
+}
+
+func (s *Service) ListQuarters(ctx context.Context) ([]string, error) {
+	var quarters []string
+	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Distinct().Where("quarter <> ''").Order("quarter DESC").Pluck("quarter", &quarters).Error; err != nil {
+		return nil, fmt.Errorf("list OKR quarters: %w", err)
+	}
+	for _, quarter := range quarters {
+		if !quarterPattern.MatchString(quarter) {
+			return nil, fmt.Errorf("invalid OKR quarter in storage: %q", quarter)
+		}
+	}
+	return quarters, nil
 }
 
 // LatestWeeklyScope returns the newest explicitly opened reporting week. An
@@ -75,6 +89,45 @@ func (s *Service) LatestWeeklyScope(ctx context.Context) (Scope, error) {
 		return Scope{}, fmt.Errorf("no valid weekly report scope is available")
 	}
 	return scope, nil
+}
+
+func (s *Service) latestWeeklyScopeForQuarter(ctx context.Context, quarter string) (Scope, error) {
+	quarter = strings.TrimSpace(quarter)
+	if !quarterPattern.MatchString(quarter) {
+		return Scope{}, fmt.Errorf("quarter must use YYYY-Qn")
+	}
+	var scope Scope
+	err := s.db.WithContext(ctx).Model(&domain.WeeklyReportWeek{}).
+		Select("quarter, week").Where("quarter = ?", quarter).Order("week DESC").Limit(1).Scan(&scope).Error
+	if err != nil {
+		return Scope{}, fmt.Errorf("find latest weekly report scope for %s: %w", quarter, err)
+	}
+	if scope.Quarter != quarter || !weekPattern.MatchString(scope.Week) {
+		return Scope{}, fmt.Errorf("no valid weekly report scope is available for %s", quarter)
+	}
+	return scope, nil
+}
+
+func (s *Service) resolveWeeklyScope(ctx context.Context, quarter, week string) (Scope, error) {
+	quarter = strings.TrimSpace(quarter)
+	week = strings.TrimSpace(week)
+	if quarter == "" {
+		scope, err := s.LatestWeeklyScope(ctx)
+		if err != nil {
+			return Scope{}, err
+		}
+		quarter = scope.Quarter
+		if week == "" {
+			week = scope.Week
+		}
+	} else if week == "" {
+		scope, err := s.latestWeeklyScopeForQuarter(ctx, quarter)
+		if err != nil {
+			return Scope{}, err
+		}
+		week = scope.Week
+	}
+	return Scope{Quarter: quarter, Week: week}, nil
 }
 
 type ReminderPreview struct {
@@ -287,20 +340,12 @@ type DeleteKRInput struct {
 }
 
 func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error) {
-	quarter = strings.TrimSpace(quarter)
-	week = strings.TrimSpace(week)
-	if quarter == "" || week == "" {
-		scope, err := s.LatestWeeklyScope(ctx)
-		if err != nil {
-			return Board{}, err
-		}
-		if quarter == "" {
-			quarter = scope.Quarter
-		}
-		if week == "" {
-			week = scope.Week
-		}
+	scope, err := s.resolveWeeklyScope(ctx, quarter, week)
+	if err != nil {
+		return Board{}, err
 	}
+	quarter = scope.Quarter
+	week = scope.Week
 	if !weekPattern.MatchString(week) {
 		return Board{}, fmt.Errorf("week must use YYYY-Www")
 	}
@@ -315,7 +360,11 @@ func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error
 	if err != nil {
 		return Board{}, err
 	}
-	result := Board{Quarter: quarter, Week: week, PreviousWeek: previousWeek, AvailableWeeks: weeks, Objectives: make([]ObjectiveView, 0, len(objectives))}
+	quarters, err := s.ListQuarters(ctx)
+	if err != nil {
+		return Board{}, err
+	}
+	result := Board{Quarter: quarter, Week: week, PreviousWeek: previousWeek, AvailableQuarters: quarters, AvailableWeeks: weeks, Objectives: make([]ObjectiveView, 0, len(objectives))}
 	for _, objective := range objectives {
 		var records []domain.KR
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
@@ -348,11 +397,15 @@ func (s *Service) CoreBoard(ctx context.Context, quarter string) (Board, error) 
 	if !quarterPattern.MatchString(quarter) {
 		return Board{}, fmt.Errorf("quarter must use YYYY-Qn")
 	}
+	quarters, err := s.ListQuarters(ctx)
+	if err != nil {
+		return Board{}, err
+	}
 	var objectives []domain.Objective
 	if err := s.db.WithContext(ctx).Where("quarter = ?", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
 		return Board{}, fmt.Errorf("list objectives: %w", err)
 	}
-	result := Board{Quarter: quarter, Week: "", AvailableWeeks: []string{}, Objectives: make([]ObjectiveView, 0, len(objectives))}
+	result := Board{Quarter: quarter, Week: "", AvailableQuarters: quarters, AvailableWeeks: []string{}, Objectives: make([]ObjectiveView, 0, len(objectives))}
 	for _, objective := range objectives {
 		var records []domain.KR
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
@@ -375,20 +428,12 @@ func (s *Service) CoreBoard(ctx context.Context, quarter string) (Board, error) 
 // any external send. A KR is filled only when every one of its points has at
 // least one non-empty progress entry for the selected week.
 func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (ReminderPreview, error) {
-	quarter = strings.TrimSpace(quarter)
-	week = strings.TrimSpace(week)
-	if quarter == "" || week == "" {
-		scope, err := s.LatestWeeklyScope(ctx)
-		if err != nil {
-			return ReminderPreview{}, err
-		}
-		if quarter == "" {
-			quarter = scope.Quarter
-		}
-		if week == "" {
-			week = scope.Week
-		}
+	scope, err := s.resolveWeeklyScope(ctx, quarter, week)
+	if err != nil {
+		return ReminderPreview{}, err
 	}
+	quarter = scope.Quarter
+	week = scope.Week
 	if !weekPattern.MatchString(week) {
 		return ReminderPreview{}, fmt.Errorf("week must use YYYY-Www")
 	}
