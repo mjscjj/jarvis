@@ -4,8 +4,6 @@ import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { LIGHTS, STATUSES } from './template'
 import type { Entry, EnumValues, Kr, Objective, Point } from './types'
 
-const STORAGE_KEY = 'emily-kr-table-v3'
-const LEGACY_KEYS = ['emily-kr-board-v1', 'emily-kr-table-v1', 'emily-kr-table-v2']
 const SAVE_DELAY_MS = 700
 
 function currentISOWeek(now = new Date()): string {
@@ -24,33 +22,6 @@ const DEFAULT_ENUMS: EnumValues = {
   pointKinds: ['strategy', 'product'],
   lights: LIGHTS.map((item) => item.value),
   priorities: ['p0', 'p1', 'p2'],
-}
-
-function isValidShape(data: unknown): data is Objective[] {
-  return Array.isArray(data) && data.every((obj) =>
-    typeof obj?.id === 'string' && typeof obj?.title === 'string' && Array.isArray(obj?.krs) &&
-    obj.krs.every((kr: unknown) =>
-      typeof (kr as { id?: unknown })?.id === 'string' &&
-      typeof (kr as { metricNote?: unknown })?.metricNote === 'string' &&
-      Array.isArray((kr as { metrics?: unknown })?.metrics) &&
-      Array.isArray((kr as { points?: unknown })?.points),
-    ),
-  )
-}
-
-function loadCache(): Objective[] {
-  for (const key of LEGACY_KEYS) localStorage.removeItem(key)
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed: unknown = JSON.parse(raw)
-      if (isValidShape(parsed)) return parsed
-      localStorage.removeItem(STORAGE_KEY)
-    }
-  } catch {
-    localStorage.removeItem(STORAGE_KEY)
-  }
-  return []
 }
 
 function clone<T>(value: T): T {
@@ -86,62 +57,62 @@ function replaceKrIn(objectives: Objective[], krId: string, replacement: Kr): Ob
 }
 
 function entriesById(kr: Kr): Map<string, { pointId: string; entry: Entry }> {
-	const result = new Map<string, { pointId: string; entry: Entry }>()
-	for (const point of kr.points) {
-		for (const entry of point.entries) result.set(entry.id, { pointId: point.id, entry })
-	}
-	return result
+  const result = new Map<string, { pointId: string; entry: Entry }>()
+  for (const point of kr.points) {
+    for (const entry of point.entries) result.set(entry.id, { pointId: point.id, entry })
+  }
+  return result
 }
 
 function sameEntry(left: Entry, right: Entry): boolean {
-	return left.status === right.status && left.text === right.text &&
-		JSON.stringify(left.docs ?? []) === JSON.stringify(right.docs ?? []) &&
-		JSON.stringify(left.images ?? []) === JSON.stringify(right.images ?? []) &&
-		(left.source ?? 'manual') === (right.source ?? 'manual') &&
-		(left.needsReview ?? false) === (right.needsReview ?? false)
+  return left.status === right.status && left.text === right.text &&
+    JSON.stringify(left.docs ?? []) === JSON.stringify(right.docs ?? []) &&
+    JSON.stringify(left.images ?? []) === JSON.stringify(right.images ?? []) &&
+    (left.source ?? 'manual') === (right.source ?? 'manual') &&
+    (left.needsReview ?? false) === (right.needsReview ?? false)
 }
 
 function applyEntryVersions(local: Kr, remote: Kr): Kr {
-	const merged = clone(local)
-	const remoteEntries = entriesById(remote)
-	merged.version = remote.version
-	for (const point of merged.points) {
-		for (const entry of point.entries) {
-			const current = remoteEntries.get(entry.id)
-			if (current) entry.version = current.entry.version
-		}
-	}
-	return merged
+  const merged = clone(local)
+  const remoteEntries = entriesById(remote)
+  merged.version = remote.version
+  for (const point of merged.points) {
+    for (const entry of point.entries) {
+      const current = remoteEntries.get(entry.id)
+      if (current) entry.version = current.entry.version
+    }
+  }
+  return merged
 }
 
 async function syncWeeklyProgress(remote: Kr, local: Kr, week: string): Promise<Kr> {
-	const before = entriesById(remote)
-	const after = entriesById(local)
-	let saved = remote
-	for (const [id, current] of before) {
-		if (!after.has(id)) saved = await deleteProgress(current.entry)
-	}
-	for (const [id, current] of after) {
-		const previous = before.get(id)
-		if (!previous) saved = await createProgress(current.pointId, current.entry, week)
-		else if (!sameEntry(previous.entry, current.entry)) saved = await updateProgress(current.entry, week)
-	}
-	return saved
+  const before = entriesById(remote)
+  const after = entriesById(local)
+  let saved = remote
+  for (const [id, current] of before) {
+    if (!after.has(id)) saved = await deleteProgress(current.entry)
+  }
+  for (const [id, current] of after) {
+    const previous = before.get(id)
+    if (!previous) saved = await createProgress(current.pointId, current.entry, week)
+    else if (!sameEntry(previous.entry, current.entry)) saved = await updateProgress(current.entry, week)
+  }
+  return saved
 }
 
 export function BoardProvider({ children, surface = 'okr' }: { children: ReactNode; surface?: BoardSurface }) {
-  const [objectives, setObjectives] = useState<Objective[]>(loadCache)
+  const [objectives, setObjectives] = useState<Objective[]>([])
   const [enums, setEnums] = useState<EnumValues>(DEFAULT_ENUMS)
   const [week, setWeekState] = useState(DEFAULT_WEEK)
-	const [quarter, setQuarter] = useState('')
+  const [quarter, setQuarter] = useState('')
   const [previousWeek, setPreviousWeek] = useState<string>()
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([DEFAULT_WEEK])
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'loading', message: '正在读取本周进展…' })
   const objectivesRef = useRef(objectives)
   const weekRef = useRef(DEFAULT_WEEK)
-	const quarterRef = useRef('')
-	  const remoteReady = useRef(false)
-	  const serverKrs = useRef(new Map<string, Kr>())
+  const quarterRef = useRef('')
+  const remoteReady = useRef(false)
+  const serverKrs = useRef(new Map<string, Kr>())
   const revisions = useRef(new Map<string, number>())
   const timers = useRef(new Map<string, number>())
   const lastFailedKr = useRef<string | null>(null)
@@ -149,7 +120,6 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
   const publish = useCallback((next: Objective[]) => {
     objectivesRef.current = next
     setObjectives(next)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   }, [])
 
   const scheduleSaveRef = useRef<(krId: string) => void>(() => undefined)
@@ -162,19 +132,19 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
     const revision = revisions.current.get(krId) ?? 0
     setSyncState({ kind: 'saving', message: '正在保存…' })
     try {
-		      const baseline = serverKrs.current.get(krId)
-		      if (!baseline) throw new Error('缺少服务端 KR 基线，请重新载入。')
-		      const saved = surface === 'weekly-report'
-		        ? await syncWeeklyProgress(baseline, snapshot, weekRef.current)
-		        : await replaceKR(snapshot)
-		      serverKrs.current.set(krId, clone(saved))
+      const baseline = serverKrs.current.get(krId)
+      if (!baseline) throw new Error('缺少服务端 KR 基线，请重新载入。')
+      const saved = surface === 'weekly-report'
+        ? await syncWeeklyProgress(baseline, snapshot, weekRef.current)
+        : await replaceKR(snapshot)
+      serverKrs.current.set(krId, clone(saved))
       lastFailedKr.current = null
       if ((revisions.current.get(krId) ?? 0) === revision) {
         publish(replaceKrIn(objectivesRef.current, krId, saved))
         setSyncState({ kind: 'saved', message: '已自动保存' })
       } else {
-	        const latest = findKr(objectivesRef.current, krId)
-	        if (latest) publish(replaceKrIn(objectivesRef.current, krId, applyEntryVersions(latest, saved)))
+        const latest = findKr(objectivesRef.current, krId)
+        if (latest) publish(replaceKrIn(objectivesRef.current, krId, applyEntryVersions(latest, saved)))
         scheduleSaveRef.current(krId)
       }
     } catch (error) {
@@ -185,7 +155,7 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
       }
       setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '保存失败，请稍后重试。' })
     }
-	  }, [publish, surface])
+  }, [publish, surface])
 
   const scheduleSave = useCallback((krId: string) => {
     const previous = timers.current.get(krId)
@@ -198,18 +168,14 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
   }, [scheduleSave])
 
   const loadRemote = useCallback(async (targetWeek?: string) => {
-    if (typeof window.fetch !== 'function') {
-      setSyncState({ kind: 'ready', message: '本地预览' })
-      return
-    }
     remoteReady.current = false
     setSyncState({ kind: 'loading', message: '正在读取本周进展…' })
     try {
-	      const [board, remoteEnums] = await Promise.all([getBoard(quarterRef.current, targetWeek ?? '', surface), getEnums()])
-	      publish(board.objectives)
-	      serverKrs.current = new Map(board.objectives.flatMap((objective) => objective.krs).map((kr) => [kr.id, clone(kr)]))
-	  quarterRef.current = board.quarter
-	  setQuarter(board.quarter)
+      const [board, remoteEnums] = await Promise.all([getBoard(quarterRef.current, targetWeek ?? '', surface), getEnums()])
+      publish(board.objectives)
+      serverKrs.current = new Map(board.objectives.flatMap((objective) => objective.krs).map((kr) => [kr.id, clone(kr)]))
+      quarterRef.current = board.quarter
+      setQuarter(board.quarter)
       weekRef.current = board.week
       setWeekState(board.week)
       setPreviousWeek(board.previousWeek)
@@ -220,7 +186,7 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
     } catch (error) {
       setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '加载失败，请稍后重试。' })
     }
-	  }, [publish, surface])
+  }, [publish, surface])
 
   useEffect(() => {
     const activeTimers = timers.current
@@ -241,8 +207,8 @@ export function BoardProvider({ children, surface = 'okr' }: { children: ReactNo
 
   const resolveConflict = useCallback((choice: 'remote' | 'local') => {
     if (syncState.kind !== 'conflict') return
-	    const selected = choice === 'remote' ? syncState.remote : applyEntryVersions(syncState.local, syncState.remote)
-	    serverKrs.current.set(syncState.krId, clone(syncState.remote))
+    const selected = choice === 'remote' ? syncState.remote : applyEntryVersions(syncState.local, syncState.remote)
+    serverKrs.current.set(syncState.krId, clone(syncState.remote))
     publish(replaceKrIn(objectivesRef.current, syncState.krId, selected))
     if (choice === 'remote') {
       setSyncState({ kind: 'saved', message: '已载入他人更新' })

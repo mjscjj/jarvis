@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react'
 import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
-import { buildBusinessNavigation, krCount } from '../hierarchy'
 import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
 import { hasOwner, joinOwnerNames, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
 import type { Entry, Kr, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
-import { HierarchyNav } from './HierarchyNav'
+import { ObjectiveNav } from './ObjectiveNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
 
 function Caret({ open, onToggle }: { open: boolean; onToggle: () => void }) {
@@ -403,17 +402,12 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   const { objectives } = useBoard()
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const [ownerFilter, setOwnerFilter] = useState('')
-  const [activeBusinessId, setActiveBusinessId] = useState('')
-  const [activeSubgroupId, setActiveSubgroupId] = useState('')
   const [activeObjectiveId, setActiveObjectiveId] = useState('')
   const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
   const visibleObjectives = useMemo(() => objectives.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)) })).filter((objective) => !ownerFilter || objective.krs.length > 0), [objectives, ownerFilter])
-  const navigation = useMemo(() => buildBusinessNavigation(visibleObjectives), [visibleObjectives])
-  const firstBusiness = navigation.find((business) => business.subgroups.some((subgroup) => subgroup.objectives.length > 0)) ?? navigation[0]
-  const activeBusiness = navigation.find((business) => business.id === activeBusinessId) ?? firstBusiness
-  const firstSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.objectives.length > 0) ?? activeBusiness?.subgroups[0]
-  const activeSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.id === activeSubgroupId) ?? firstSubgroup
-  const activeObjective = activeSubgroup?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activeSubgroup?.objectives[0]
+  const activeObjective = visibleObjectives.find((objective) => objective.id === activeObjectiveId) ?? visibleObjectives[0]
+  const totalKRCount = objectives.reduce((sum, objective) => sum + objective.krs.length, 0)
+  const visibleKRCount = visibleObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
 
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -426,9 +420,9 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   return (
     <div className={readOnly ? 'kr-table-readonly' : ''}>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {krCount(objectives)} 条 KR，当前显示 {krCount(visibleObjectives)} 条</span>
+        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR，当前显示 {visibleKRCount} 条</span>
         <span className="ml-auto text-slate-400">负责人</span>
-        <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessId(''); setActiveSubgroupId(''); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
+        <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
           <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
         </select>
         <span className="font-medium text-slate-500">层级</span>
@@ -437,13 +431,9 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
           <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部折叠</button>
         </div>
       </div>
-      <HierarchyNav
-        navigation={navigation}
-        activeBusiness={activeBusiness}
-        activeSubgroup={activeSubgroup}
+      <ObjectiveNav
+        objectives={visibleObjectives}
         activeObjectiveId={activeObjective?.id}
-        onBusiness={(id) => { setActiveBusinessId(id); setActiveSubgroupId(''); setActiveObjectiveId('') }}
-        onSubgroup={(id) => { setActiveSubgroupId(id); setActiveObjectiveId('') }}
         onObjective={setActiveObjectiveId}
       />
       <div>

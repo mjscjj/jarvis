@@ -4,14 +4,13 @@ import { createFeishuDocument } from '../api'
 import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
 import { useCommentInteraction } from '../commenting'
-import { buildBusinessNavigation, businessKrCount, subgroupTone } from '../hierarchy'
 import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
 import { buildMeetingMarkdown } from '../meetingMarkdown'
 import { KIND_LABEL, isDone } from '../template'
 import type { CommentTarget, Entry, Kr, KrTag, Objective, Point, PointKind, TextSelection } from '../types'
-import { HierarchyNav } from './HierarchyNav'
+import { ObjectiveNav } from './ObjectiveNav'
 import { Images, LightPicker, Links, StatusSelect } from './ui'
 
 function FoldButton({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
@@ -309,8 +308,6 @@ export function MeetingView() {
   const [ownerFilter, setOwnerFilter] = useState('')
   const [showTags, setShowTags] = useState(false)
   const [closed, setClosed] = useState<Set<string>>(new Set())
-  const [activeBusinessId, setActiveBusinessId] = useState('')
-  const [activeSubgroupId, setActiveSubgroupId] = useState('')
   const [activeObjectiveId, setActiveObjectiveId] = useState('')
   const [exporting, setExporting] = useState(false)
   const [exportResult, setExportResult] = useState<{ url?: string; message?: string }>({})
@@ -319,13 +316,8 @@ export function MeetingView() {
     ...objective,
     krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)),
   })).filter((objective) => objective.krs.length > 0), [objectives, ownerFilter])
-  const navigation = useMemo(() => buildBusinessNavigation(filteredObjectives), [filteredObjectives])
-  const meetingOverview = activeBusinessId === ''
-  const firstBusiness = navigation.find((business) => businessKrCount(business) > 0) ?? navigation[0]
-  const activeBusiness = navigation.find((business) => business.id === activeBusinessId) ?? firstBusiness
-  const firstSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.objectives.length > 0) ?? activeBusiness?.subgroups[0]
-  const activeSubgroup = activeBusiness?.subgroups.find((subgroup) => subgroup.id === activeSubgroupId) ?? firstSubgroup
-  const activeObjective = activeSubgroup?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activeSubgroup?.objectives[0]
+  const meetingOverview = activeObjectiveId === ''
+  const activeObjective = filteredObjectives.find((objective) => objective.id === activeObjectiveId) ?? filteredObjectives[0]
   const visible = meetingOverview ? filteredObjectives : activeObjective ? [activeObjective] : []
   const totalKrCount = filteredObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
   const riskCount = filteredObjectives.flatMap((objective) => objective.krs).filter((kr) => kr.priority === 'p0' || kr.metrics.some((metric) => metric.light === 'red' || metric.light === 'yellow')).length
@@ -363,7 +355,7 @@ export function MeetingView() {
           <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部折叠</button>
         </div>
         <span className="ml-auto text-[11px] text-slate-400">负责人</span>
-        <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessId(''); setActiveSubgroupId(''); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 outline-none focus:border-blue-400">
+        <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 outline-none focus:border-blue-400">
           <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
         </select>
         <span className="h-4 w-px bg-slate-200" />
@@ -372,41 +364,18 @@ export function MeetingView() {
         {exportResult.message && <span className={`max-w-56 truncate text-[10px] ${exportResult.url ? 'text-emerald-600' : 'text-red-500'}`} title={exportResult.message}>{exportResult.message}</span>}
       </div>
 
-      <HierarchyNav
-        navigation={navigation}
-        activeBusiness={activeBusiness}
-        activeSubgroup={activeSubgroup}
+      <ObjectiveNav
+        objectives={filteredObjectives}
         activeObjectiveId={activeObjective?.id}
         overview={meetingOverview}
         showOverview
-        onBusiness={(id) => { setActiveBusinessId(id); setActiveSubgroupId(''); setActiveObjectiveId('') }}
-        onSubgroup={(id) => { setActiveSubgroupId(id); setActiveObjectiveId('') }}
+        onOverview={() => setActiveObjectiveId('')}
         onObjective={setActiveObjectiveId}
       />
 
       {meetingOverview ? (
         <div className="space-y-5">
-          {navigation.map((business) => {
-            const count = businessKrCount(business)
-            if (count === 0) return null
-            return (
-              <section key={business.id} className="space-y-2.5">
-                <div className="flex items-center justify-between rounded-r-lg border-l-4 border-blue-600 bg-blue-50 px-3 py-1.5">
-                  <h2 className="text-[14px] font-bold text-blue-700">{business.label}</h2>
-                  <b className="rounded-full border border-blue-100 bg-white/80 px-2 py-0.5 text-[10px] text-blue-600">{count} 条 KR</b>
-                </div>
-                {business.subgroups.flatMap((subgroup) => subgroup.objectives.map((objective) => {
-                  const tone = subgroupTone(subgroup.label)
-                  return (
-                    <div key={objective.id} className="space-y-1">
-                      {business.subgroups.length > 1 && <span className={`ml-2 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone === 'focus' ? 'border-orange-200 bg-orange-50 text-orange-700' : tone === 'p1' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>{subgroup.label}</span>}
-                      <MeetingObjectiveSection objective={objective} closed={closed} toggle={toggle} showTags={showTags} />
-                    </div>
-                  )
-                }))}
-              </section>
-            )
-          })}
+          {filteredObjectives.map((objective) => <MeetingObjectiveSection key={objective.id} objective={objective} closed={closed} toggle={toggle} showTags={showTags} />)}
         </div>
       ) : activeObjective ? (
         <MeetingObjectiveSection objective={activeObjective} closed={closed} toggle={toggle} showTags={showTags} />
