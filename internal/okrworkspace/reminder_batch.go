@@ -84,8 +84,14 @@ func (s *Service) GenerateReminderBatch(ctx context.Context, quarter, week, trig
 	if err != nil {
 		return ReminderBatchView{}, fmt.Errorf("encode reminder recipients: %w", err)
 	}
+	remindableCount := 0
+	for _, recipient := range preview.Recipients {
+		if recipient.NeedsReminder && recipient.CanRemind {
+			remindableCount++
+		}
+	}
 	updates["status"] = reminderBatchSucceeded
-	updates["recipient_count"] = preview.Summary.NeedsReminderOwnerCount
+	updates["recipient_count"] = remindableCount
 	updates["missing_count"] = preview.Summary.MissingCount
 	updates["summary_json"] = string(summaryJSON)
 	updates["recipients_json"] = string(recipientsJSON)

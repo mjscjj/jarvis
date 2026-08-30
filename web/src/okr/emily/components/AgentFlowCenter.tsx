@@ -9,7 +9,7 @@ function errorText(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
-export function AgentFlowCenter() {
+export function AgentFlowCenter({ weeklyEnabled }: { weeklyEnabled: boolean }) {
   const { navigate } = usePageContext()
   const [items, setItems] = useState<TextFile[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -64,13 +64,13 @@ export function AgentFlowCenter() {
     <div className="space-y-3">
       <section className="grid gap-2 sm:grid-cols-3">
         <article className="rounded-xl border border-slate-200 bg-white p-3.5"><div className="text-[10px] text-slate-400">业务 Prompt</div><div className="mt-1 text-xl font-semibold text-slate-800">{flowCount}</div><p className="mt-1 text-[10px] text-slate-400">规划、对齐、报告、催填与巡检</p></article>
-        <article className="rounded-xl border border-slate-200 bg-white p-3.5"><div className="text-[10px] text-slate-400">固定行动</div><div className="mt-1 text-xl font-semibold text-cyan-700">4</div><p className="mt-1 text-[10px] text-slate-400">催填、巡检、会议材料、对外提交</p></article>
+		<article className="rounded-xl border border-slate-200 bg-white p-3.5"><div className="text-[10px] text-slate-400">固定行动</div><div className="mt-1 text-xl font-semibold text-cyan-700">{weeklyEnabled ? 4 : 0}</div><p className="mt-1 text-[10px] text-slate-400">{weeklyEnabled ? '催填、巡检、会议材料、对外提交' : '周报模块未启用'}</p></article>
         <article className="rounded-xl border border-slate-200 bg-white p-3.5"><div className="text-[10px] text-slate-400">执行方式</div><div className="mt-1 text-sm font-semibold text-slate-800">Prompt + 原子工具</div><p className="mt-1 text-[10px] text-slate-400">行动只管时间；完整业务语义都在 Prompt</p></article>
       </section>
 
       {notice && <div className={`rounded-lg border px-3 py-2 text-xs ${notice.kind === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`}>{notice.text}</div>}
 
-      <AgentActionCenter prompts={prompts} selectedPromptKey={selected?.kind === 'agent_prompt' ? selected.key : ''} onSelectPrompt={setSelectedKey} />
+		{weeklyEnabled ? <AgentActionCenter prompts={prompts} selectedPromptKey={selected?.kind === 'agent_prompt' ? selected.key : ''} onSelectPrompt={setSelectedKey} /> : <section className="rounded-xl border border-slate-200 bg-white px-4 py-5 text-xs text-slate-500">周报模块未启用，相关固定行动已隐藏；OKR Prompt 仍可查看和编辑。</section>}
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">

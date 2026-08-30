@@ -45,7 +45,7 @@ const STATUS_OPTIONS: Array<{ value: Status; label: string }> = [
   { value: 'blocked', label: '阻塞' },
 ]
 
-export function MeegoBatchPreview({ quarter, week, onClose, onOpenPoint }: { quarter: string; week: string; onClose: () => void; onOpenPoint: (pointId: string) => void }) {
+export function MeegoBatchPreview({ quarter, week, onClose, onOpenPoint, readOnly = false }: { quarter: string; week: string; onClose: () => void; onOpenPoint: (pointId: string) => void; readOnly?: boolean }) {
   const { applySavedKr } = useBoard()
   const [reloadKey, setReloadKey] = useState(0)
   const requestKey = `${quarter}:${week}:${reloadKey}`
@@ -155,7 +155,7 @@ export function MeegoBatchPreview({ quarter, week, onClose, onOpenPoint }: { qua
                         <div className="mt-0.5 truncate text-[10px] text-slate-400">{item.ownerName || '未分配'} · {item.krTitle}</div>
                         <div className={`mt-0.5 text-[10px] ${sync.className}`} title={item.sync?.lastError}>{sync.text}</div>
                       </div>
-                      {item.preview?.needsReview && <button type="button" onClick={() => beginConfirm(item)} className="rounded-md border border-blue-200 bg-white px-2 py-1 text-[10px] text-blue-600 hover:bg-blue-50">确认进展</button>}
+							{!readOnly && item.preview?.needsReview && <button type="button" onClick={() => beginConfirm(item)} className="rounded-md border border-blue-200 bg-white px-2 py-1 text-[10px] text-blue-600 hover:bg-blue-50">确认进展</button>}
                       <button type="button" onClick={() => onOpenPoint(item.pointId)} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-500 hover:border-blue-200 hover:text-blue-600">查看事项</button>
                     </div>
                     {item.error ? (
@@ -166,7 +166,7 @@ export function MeegoBatchPreview({ quarter, week, onClose, onOpenPoint }: { qua
                         <span className="text-slate-400">Meego</span><span>{item.preview.remote.status || '无状态'} · {item.preview.remote.progress || item.preview.remote.title || '暂无进展'}</span>
                       </div>
                     )}
-                    {draft?.pointId === item.pointId && item.preview && (
+					{!readOnly && draft?.pointId === item.pointId && item.preview && (
                       <div className="mt-3 rounded-md border border-blue-100 bg-white p-2.5">
                         <div className="mb-2 flex items-center justify-between gap-2">
                           <span className="text-[11px] font-medium text-slate-700">确认写入本周进展</span>

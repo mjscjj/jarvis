@@ -10,7 +10,7 @@ const TOOLS: Array<{ value: Tool; mark: string; label: string; description: stri
   { value: 'reminder', mark: '催', label: '催办预览', description: '检查未填写项' },
 ]
 
-export function WeeklyTools({ onOpenPoint }: { onOpenPoint: (pointId: string) => void }) {
+export function WeeklyTools({ onOpenPoint, readOnly = false }: { onOpenPoint: (pointId: string) => void; readOnly?: boolean }) {
   const { quarter, week } = useBoard()
   const [open, setOpen] = useState(false)
   const [tool, setTool] = useState<Tool>()
@@ -29,8 +29,8 @@ export function WeeklyTools({ onOpenPoint }: { onOpenPoint: (pointId: string) =>
         {TOOLS.map((item) => <button key={item.value} type="button" onClick={() => toggleTool(item.value)} className={`group flex min-w-0 items-center gap-2 bg-white px-3 py-2 text-left hover:bg-slate-50 ${tool === item.value ? 'relative z-10 bg-blue-50/70 ring-1 ring-inset ring-blue-200' : ''}`}><span className={`flex size-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold ${tool === item.value ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{item.mark}</span><span className="min-w-0"><span className="block truncate text-[11px] font-medium text-slate-700">{item.label}</span><span className="block truncate text-[9px] text-slate-400">{item.description}</span></span></button>)}
       </div>}
       {open && tool && <div className="border-t border-slate-100 p-3">
-        {tool === 'meego' && <MeegoBatchPreview quarter={quarter} week={week} onClose={() => setTool(undefined)} onOpenPoint={onOpenPoint} />}
-        {tool === 'reminder' && <ReminderPreview quarter={quarter} week={week} onClose={() => setTool(undefined)} />}
+			{tool === 'meego' && <MeegoBatchPreview quarter={quarter} week={week} onClose={() => setTool(undefined)} onOpenPoint={onOpenPoint} readOnly={readOnly} />}
+			{tool === 'reminder' && <ReminderPreview quarter={quarter} week={week} onClose={() => setTool(undefined)} readOnly={readOnly} />}
       </div>}
     </section>
   )

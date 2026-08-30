@@ -223,7 +223,7 @@ export default function App({
 				</section>}
 				{weekNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{weekNotice}</div>}
 				<SyncNotice />
-			<WeeklyTools onOpenPoint={openPoint} />
+				<WeeklyTools onOpenPoint={openPoint} readOnly={mode === 'meeting'} />
 			<>
             <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
               <WeeklyFocus comments={comments} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />

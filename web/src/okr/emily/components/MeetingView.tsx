@@ -323,10 +323,12 @@ export function MeetingView() {
   const navigation = useMemo(() => buildKRHierarchy(filteredObjectives), [filteredObjectives])
   const activeBusiness = navigation.find((business) => business.value === activeBusinessValue) ?? navigation[0]
   const activePriority = activeBusiness?.priorities.find((priority) => priority.value === activePriorityValue) ?? activeBusiness?.priorities[0]
-  const activeObjective = activePriority?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activePriority?.objectives[0]
-  const visible = activeObjective ? [activeObjective] : []
-  const totalKrCount = filteredObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
-  const riskCount = filteredObjectives.flatMap((objective) => objective.krs).filter((kr) => priorityOf(kr) === 'p0' || kr.metrics.some((metric) => metric.light === 'red' || metric.light === 'yellow')).length
+	const activeObjective = activePriority?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activePriority?.objectives[0]
+	const visible = activeObjective ? [activeObjective] : []
+	const totalKrCount = objectives.reduce((sum, objective) => sum + objective.krs.length, 0)
+	const filteredKrCount = filteredObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
+	const activeKrs = activeObjective?.krs ?? []
+	const riskCount = activeKrs.filter((kr) => priorityOf(kr) === 'p0' || kr.metrics.some((metric) => metric.light === 'red' || metric.light === 'yellow')).length
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
     if (next.has(id)) next.delete(id)
@@ -352,8 +354,8 @@ export function MeetingView() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500">只读投屏 · {totalKrCount} 条 KR</span>
-        {riskCount > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">{riskCount} 个需关注</span>}
+		<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500">只读投屏 · 共 {totalKrCount} 条{ownerFilter ? ` · 筛选后 ${filteredKrCount} 条` : ''} · 当前方向 {activeKrs.length} 条</span>
+		{riskCount > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">当前方向 {riskCount} 个需关注</span>}
         <button type="button" onClick={() => setShowTags((value) => !value)} className={`rounded-md border px-2 py-1 text-[11px] font-medium ${showTags ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>{showTags ? '隐藏打标' : '显示打标'}</button>
         <span className="ml-1 text-[11px] text-slate-400">层级</span>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white text-[11px]">

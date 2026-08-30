@@ -428,6 +428,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
 	const activeObjective = activePriority?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activePriority?.objectives[0]
   const totalKRCount = objectives.reduce((sum, objective) => sum + objective.krs.length, 0)
   const visibleKRCount = visibleObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
+	const activeKRCount = activeObjective?.krs.length ?? 0
 
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -440,7 +441,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   return (
     <div className={readOnly ? 'kr-table-readonly' : ''}>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR，当前显示 {visibleKRCount} 条</span>
+		<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{ownerFilter ? `，负责人筛选后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
         <span className="ml-auto text-slate-400">负责人</span>
 		<select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
           <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}

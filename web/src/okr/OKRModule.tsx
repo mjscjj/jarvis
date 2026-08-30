@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { listAppModules } from '../api'
 import { usePageContext } from '../pageContext'
 import AgentFlowsWorkspace from './emily/AgentFlowsApp'
@@ -46,20 +46,27 @@ function ModuleTabs({ active, weeklyEnabled, onChange }: { active: OKRTab; weekl
 function Workspace({ auth, logoutUser }: { auth: AuthStatus; logoutUser: () => Promise<void> }) {
   const { context, setViewState } = usePageContext()
   const [weeklyEnabled, setWeeklyEnabled] = useState(true)
+	const [moduleError, setModuleError] = useState('')
   const [selectedQuarter, setSelectedQuarter] = useState('')
   const requestedTab = context.view_state.tab
   const active = validTabs.has(requestedTab as OKRTab) ? requestedTab as OKRTab : 'structure'
   const visibleTab = !weeklyEnabled && active.startsWith('weekly-') ? 'structure' : active
 
-  useEffect(() => {
+	const loadModules = useCallback((signal?: AbortSignal) => {
+		setModuleError('')
+		return listAppModules(signal)
+			.then(({ items }) => setWeeklyEnabled(items.find((item) => item.key === 'weekly-report')?.is_enabled ?? false))
+			.catch((cause: unknown) => {
+				if (cause instanceof DOMException && cause.name === 'AbortError') return
+				setModuleError(cause instanceof Error ? cause.message : '周报模块状态读取失败。')
+			})
+	}, [])
+
+	useEffect(() => {
     const controller = new AbortController()
-    listAppModules(controller.signal)
-      .then(({ items }) => setWeeklyEnabled(items.find((item) => item.key === 'weekly-report')?.is_enabled ?? false))
-      .catch((cause: unknown) => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setWeeklyEnabled(false)
-      })
+		void loadModules(controller.signal)
     return () => controller.abort()
-  }, [])
+	}, [loadModules])
 
   useEffect(() => {
     if (requestedTab === visibleTab) return
@@ -73,14 +80,16 @@ function Workspace({ auth, logoutUser }: { auth: AuthStatus; logoutUser: () => P
 
   const surface = visibleTab.startsWith('weekly-') ? 'weekly-report' : 'okr'
 
-  return (
-    <div id="okr-workspace-root" className="okr-workspace-root">
-      <BoardProvider key={surface} surface={surface} initialQuarter={selectedQuarter} onQuarterChange={setSelectedQuarter}>
-        {visibleTab === 'agent-flows' ? (
-          <AgentFlowsWorkspace
-            auth={auth}
-            onLogout={() => void logoutUser()}
-            moduleTabs={moduleTabs}
+	return (
+		<div id="okr-workspace-root" className="okr-workspace-root">
+			{moduleError && <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-[11px] text-amber-700">周报模块状态读取失败，已保留当前页面。{moduleError}<button type="button" onClick={() => void loadModules()} className="ml-2 font-medium underline">重试</button></div>}
+			<BoardProvider key={surface} surface={surface} initialQuarter={selectedQuarter} onQuarterChange={setSelectedQuarter}>
+				{visibleTab === 'agent-flows' ? (
+					<AgentFlowsWorkspace
+						auth={auth}
+						onLogout={() => void logoutUser()}
+						moduleTabs={moduleTabs}
+						weeklyEnabled={weeklyEnabled}
           />
         ) : surface === 'okr' ? (
           <CoreWorkspace
