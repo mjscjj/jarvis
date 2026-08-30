@@ -21,6 +21,7 @@ func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
 		"start",
 		"doctor",
 		"install-lark-cli",
+		"install-bytedcli",
 		"install-traex",
 		"install-cc-connect",
 		"install-qdrant",
@@ -511,6 +512,58 @@ esac
 	}
 	if !traexResult.Changed || traexResult.LoginReady || !traexResult.ShellRefreshRequired {
 		t.Fatalf("traex install result = %#v", traexResult)
+	}
+}
+
+func TestJarvisInstallExposesBytedCLIToLaunchd(t *testing.T) {
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	jqPath, err := exec.LookPath("jq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(jqPath, filepath.Join(binDir, "jq")); err != nil {
+		t.Fatal(err)
+	}
+	bytedCLIPath := filepath.Join(binDir, "bytedcli")
+	writeExecutable(t, bytedCLIPath, `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '%s\n' '0.137.0'
+  exit 0
+fi
+if [ "$*" = "--json auth status" ]; then
+  printf '%s\n' '{"data":{"authenticated":true}}'
+  exit 0
+fi
+exit 9
+`)
+	writeExecutable(t, filepath.Join(binDir, "npm"), "#!/bin/sh\necho unexpected npm invocation >&2\nexit 99\n")
+
+	output, err := runJarvisInstall(t, []string{
+		"PATH=" + binDir + ":/usr/bin:/bin",
+		"HOME=" + homeDir,
+	}, "install-bytedcli")
+	if err != nil {
+		t.Fatalf("install-bytedcli: %v: %s", err, output)
+	}
+	var result struct {
+		Path       string `json:"path"`
+		Version    string `json:"version"`
+		LoginReady bool   `json:"login_ready"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatal(err)
+	}
+	stablePath := filepath.Join(homeDir, ".local", "bin", "bytedcli")
+	if result.Path != stablePath || result.Version != "0.137.0" || !result.LoginReady {
+		t.Fatalf("bytedcli install result = %#v", result)
+	}
+	target, err := os.Readlink(stablePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != bytedCLIPath {
+		t.Fatalf("stable bytedcli symlink = %q, want %q", target, bytedCLIPath)
 	}
 }
 

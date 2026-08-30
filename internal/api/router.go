@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentconfig"
+	"jarvis/internal/authn"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
 	"jarvis/internal/chat"
@@ -31,6 +32,7 @@ import (
 // Dependencies are process-level dependencies shared by API handlers.
 type Dependencies struct {
 	AgentDisplayName   string
+	Auth               *authn.Service
 	DB                 *gorm.DB
 	Todos              extract.TodoReader
 	TodoStatus         extract.TodoStatusWriter
@@ -83,6 +85,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.AgentDisplayName == "" {
 		return fmt.Errorf("api agent display name is empty")
+	}
+	if deps.Auth == nil {
+		return fmt.Errorf("api auth dependency is nil")
 	}
 	if deps.DB == nil {
 		return fmt.Errorf("api database dependency is nil")
@@ -186,6 +191,10 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/readyz", Readiness(deps.DB, deps.Readiness))
+	h.GET("/api/auth/status", GetAuthStatus(deps.Auth))
+	h.POST("/api/auth/login", LoginWithByteDance(deps.Auth))
+	h.POST("/api/auth/login/complete", CompleteByteDanceLogin(deps.Auth))
+	h.POST("/api/auth/logout", LogoutFromJarvis(deps.Auth))
 	h.POST("/api/system/shutdown", ShutdownSystem(deps.SystemControl))
 	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName))
 	h.GET("/api/messages", ListToolMessages(toolQueries))

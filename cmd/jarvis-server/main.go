@@ -16,6 +16,7 @@ import (
 	"jarvis/internal/agentidentity"
 	"jarvis/internal/api"
 	"jarvis/internal/ark"
+	"jarvis/internal/authn"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
 	"jarvis/internal/cardapproval"
@@ -904,6 +905,11 @@ func main() {
 		server.WithHostPorts(cfg.Server.Addr),
 	)
 	h.Use(observability.Middleware())
+	authService, err := authn.NewService("bytedcli", 12*time.Hour)
+	if err != nil {
+		fatalf("initialize ByteDance SSO service failed: %v", err)
+	}
+	h.Use(authn.BrowserMiddleware(authService))
 	runtimeSettingsService, err := config.NewRuntimeSettingsService(*configPath, cfg)
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
@@ -915,6 +921,7 @@ func main() {
 	}
 	readinessTargets := api.ReadinessTargets{
 		LarkCLIBin:  cfg.LarkCLI.Bin,
+		BytedCLIBin: "bytedcli",
 		AgentCLIBin: cfg.Execute.Bin,
 	}
 	// 语义去重关闭时 semanticIndex 是 nil 指针；直接赋进接口字段会得到一个非 nil
@@ -924,6 +931,7 @@ func main() {
 	}
 	if err := api.Register(h, api.Dependencies{
 		AgentDisplayName: cfg.Identity.DisplayName,
+		Auth:             authService,
 		DB:               db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,

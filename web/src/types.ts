@@ -1140,6 +1140,19 @@ export interface AgentIdentity {
   display_name: string
 }
 
+export interface AuthUser {
+  username: string
+  email: string
+}
+
+export interface AuthView {
+  status: 'authenticated' | 'unauthenticated' | 'pending'
+  user?: AuthUser
+  verification_url?: string
+  user_code?: string
+  flow_id?: string
+}
+
 export type PluginState = 'disabled' | 'needs_auth' | 'ready' | 'running' | 'failed'
 export type PluginAuthorizationState = 'authorized' | 'required' | 'unavailable' | 'pending' | 'failed'
 

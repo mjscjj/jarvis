@@ -23,6 +23,57 @@ body {
   line-height: 1.55;
 }
 
+.auth-loading,
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-loading {
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.auth-page {
+  padding: var(--space-6);
+  background: var(--color-bg-elevated);
+}
+
+.auth-panel {
+  width: min(100%, 360px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-left: var(--space-5);
+  border-left: 3px solid var(--color-primary);
+}
+
+.auth-panel .ant-typography {
+  margin: 0 !important;
+}
+
+.auth-panel h1.ant-typography {
+  font-size: 32px;
+  letter-spacing: 0;
+}
+
+.auth-mark {
+  color: var(--color-primary);
+  font-size: 28px;
+}
+
+.auth-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.auth-panel .ant-result {
+  padding: var(--space-3) 0 0;
+  text-align: left;
+}
+
 /* App shell */
 .app-shell {
   min-height: 100vh;
@@ -56,6 +107,76 @@ body {
 
 .sider-footer > .ant-btn {
   min-width: 0;
+}
+
+.sider-account {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2) var(--space-2) var(--space-6);
+  color: var(--color-text-secondary);
+}
+
+.sider-account-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.sider-account-copy strong,
+.sider-account-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sider-account-copy strong {
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.sider-account-copy span {
+  font-size: 10px;
+}
+
+.sider-account > .ant-btn {
+  flex: 0 0 auto;
+}
+
+.sider-footer.is-collapsed .sider-account {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.mobile-account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mobile-account > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-account strong,
+.mobile-account span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-account span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
 .sider-shutdown-btn {

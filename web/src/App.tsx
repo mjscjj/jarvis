@@ -20,9 +20,12 @@ import {
   CheckOutlined,
   CloseOutlined,
   EditOutlined,
+  LogoutOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
 import Overview from './Overview'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
+import { AuthGate, AuthProvider, useAuth } from './auth'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
@@ -62,6 +65,7 @@ const pageLabels: Record<string, string> = {
 
 function AppShell() {
   const { name: agentName, shortName: agentShortName, rename: renameAgent } = useAgentIdentity()
+  const { user, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const runtimeFailures = useRuntimeFailureCount()
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
@@ -246,6 +250,14 @@ function AppShell() {
     }
   }
 
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } catch (cause) {
+      messageApi.error(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   if (shuttingDown) {
     return (
       <>
@@ -343,9 +355,23 @@ function AppShell() {
           className="app-menu"
         />
         <div className={`sider-footer ${siderCollapsed ? 'is-collapsed' : ''}`}>
+          <div className="sider-account">
+            {!siderCollapsed && (
+              <>
+                <UserOutlined />
+                <div className="sider-account-copy">
+                  <strong>{user?.username}</strong>
+                  <span>{user?.email}</span>
+                </div>
+              </>
+            )}
+            <Tooltip title={siderCollapsed ? `${user?.username ?? '当前用户'} · 退出登录` : '退出登录'} placement="right">
+              <Button type="text" icon={<LogoutOutlined />} aria-label="退出登录" onClick={() => void handleLogout()} />
+            </Tooltip>
+          </div>
           <Tooltip title="退出并停止所有服务" placement="right">
             <Button className="sider-shutdown-btn" type="text" danger icon={<PoweroffOutlined />} aria-label={`退出 ${agentName}`} onClick={confirmShutdown}>
-              {!siderCollapsed && '退出'}
+              {!siderCollapsed && '停止服务'}
             </Button>
           </Tooltip>
           <Tooltip title={siderCollapsed ? '展开侧边栏' : '收起侧边栏'} placement="right">
@@ -419,6 +445,13 @@ function AppShell() {
         onClose={() => setMobileSystemOpen(false)}
       >
         <div className="mobile-system-links">
+          <div className="mobile-account">
+            <UserOutlined />
+            <div>
+              <strong>{user?.username}</strong>
+              <span>{user?.email}</span>
+            </div>
+          </div>
           {[
             { key: 'todos', label: '线索', icon: <CheckCircleOutlined /> },
             { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
@@ -428,6 +461,7 @@ function AppShell() {
               {item.label}
             </Button>
           ))}
+          <Button icon={<LogoutOutlined />} onClick={() => void handleLogout()}>退出登录</Button>
           <Button danger icon={<PoweroffOutlined />} onClick={confirmShutdown}>退出并停止服务</Button>
         </div>
       </Drawer>
@@ -438,9 +472,20 @@ function AppShell() {
 export default function App() {
   return (
     <AgentIdentityProvider>
+      <AuthProvider>
+        <AuthenticatedApp />
+      </AuthProvider>
+    </AgentIdentityProvider>
+  )
+}
+
+function AuthenticatedApp() {
+  const { name } = useAgentIdentity()
+  return (
+    <AuthGate agentName={name}>
       <PageContextProvider initialKey={DEFAULT_KEY}>
         <AppShell />
       </PageContextProvider>
-    </AgentIdentityProvider>
+    </AuthGate>
   )
 }

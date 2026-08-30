@@ -72,6 +72,7 @@ import type {
   ProactiveRunDetail,
   MonitoringSnapshot,
   SystemTaskRunList,
+  AuthView,
 } from './types'
 
 interface APIResponse<T> {
@@ -98,6 +99,25 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
   }
   return payload.data
+}
+
+export function getAuthStatus(signal?: AbortSignal): Promise<AuthView> {
+  return request<AuthView>('/api/auth/status', { signal })
+}
+
+export function loginWithByteDance(): Promise<AuthView> {
+  return request<AuthView>('/api/auth/login', { method: 'POST' })
+}
+
+export function completeByteDanceLogin(flowId: string): Promise<AuthView> {
+  return request<AuthView>('/api/auth/login/complete', {
+    method: 'POST',
+    body: { flow_id: flowId },
+  })
+}
+
+export function logoutFromJarvis(): Promise<AuthView> {
+  return request<AuthView>('/api/auth/logout', { method: 'POST' })
 }
 
 export function listTodos(query: TodoQuery, signal?: AbortSignal): Promise<TodoList> {

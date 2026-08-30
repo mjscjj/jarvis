@@ -38,6 +38,7 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 ```bash
 ./scripts/jarvis-install install-lark-cli
+./scripts/jarvis-install install-bytedcli
 ./scripts/jarvis-install install-traex
 ./scripts/jarvis-install install-cc-connect
 ./scripts/jarvis-install install-qdrant
@@ -46,7 +47,7 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 只有 `validate-dependencies` 返回 `ok=true` 才继续。`install-cc-connect` 从固定 upstream 应用仓库补丁，只构建并验收 binary，不配置或启动 daemon。Qdrant 是依赖服务，可以在这一阶段启动。
 
-如果当前 Agent 没有 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，用官方 lark-cli installer 补齐并重新加载 Agent 能力。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
+如果当前 Agent 没有 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，用官方 lark-cli installer 补齐并重新加载 Agent 能力。安装 bytedcli 后读回版本；其 SSO 登录可在 Jarvis Web 登录页完成，不作为服务启动前置条件。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
 
 ## 3. 使用默认飞书身份、审计能力并绑定 CC Connect
 
