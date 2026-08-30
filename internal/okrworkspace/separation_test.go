@@ -242,6 +242,88 @@ func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
 	}
 }
 
+func TestDeleteWeekRemovesOnlySelectedWeeklyReportScope(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	q2Objective := domain.Objective{ID: "o-delete-q2", Title: "测试季度", Quarter: "2026-Q2"}
+	q3Objective := domain.Objective{ID: "o-delete-q3", Title: "正式季度", Quarter: "2026-Q3"}
+	q2KR := domain.KR{ID: "kr-delete-q2", ObjectiveID: q2Objective.ID, Title: "测试 KR"}
+	q3KR := domain.KR{ID: "kr-delete-q3", ObjectiveID: q3Objective.ID, Title: "正式 KR"}
+	q2Point := domain.KRPoint{ID: "point-delete-q2", KRID: q2KR.ID, Kind: domain.PointKindStrategy, Title: "测试拆解"}
+	q3Point := domain.KRPoint{ID: "point-delete-q3", KRID: q3KR.ID, Kind: domain.PointKindProduct, Title: "正式拆解"}
+	for _, value := range []any{&q2Objective, &q3Objective, &q2KR, &q3KR, &q2Point, &q3Point} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, value := range []any{
+		&domain.WeeklyReportWeek{Quarter: "2026-Q2", Week: "2026-W14", OpenedBy: "test"},
+		&domain.WeeklyReportWeek{Quarter: "2026-Q2", Week: "2026-W15", OpenedBy: "test"},
+		&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "owner"},
+		&domain.WeeklyKRCore{KRID: q2KR.ID, Week: "2026-W14", MetricNote: "保留"},
+		&domain.WeeklyKRCore{KRID: q2KR.ID, Week: "2026-W15", MetricNote: "删除"},
+		&domain.KRProgress{ID: "progress-q2-w14", PointID: q2Point.ID, Week: "2026-W14", Status: domain.StatusDone, Text: "保留"},
+		&domain.KRProgress{ID: "progress-q2-w15", PointID: q2Point.ID, Week: "2026-W15", Status: domain.StatusInProgress, Text: "删除"},
+		&domain.KRProgress{ID: "progress-q3-w35", PointID: q3Point.ID, Week: "2026-W35", Status: domain.StatusInProgress, Text: "保留正式数据"},
+		&domain.PageComment{ID: "comment-q2-w14", Quarter: "2026-Q2", Week: "2026-W14", Content: "保留"},
+		&domain.PageComment{ID: "comment-q2-w15", Quarter: "2026-Q2", Week: "2026-W15", Content: "删除"},
+		&domain.PageComment{ID: "comment-q3-w35", Quarter: "2026-Q3", Week: "2026-W35", Content: "保留正式评论"},
+		&domain.MeegoSyncSnapshot{PointID: q2Point.ID, Week: "2026-W15"},
+		&domain.MeegoSyncSnapshot{PointID: q3Point.ID, Week: "2026-W35"},
+		&domain.ReminderBatch{ID: "batch-q2-w14", Quarter: "2026-Q2", Week: "2026-W14"},
+		&domain.ReminderBatch{ID: "batch-q2-w15", Quarter: "2026-Q2", Week: "2026-W15"},
+		&domain.ReminderBatch{ID: "batch-q3-w35", Quarter: "2026-Q3", Week: "2026-W35"},
+	} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := service.DeleteWeek(t.Context(), "2026-Q2", "2026-W15")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.NextWeek != "2026-W14" {
+		t.Fatalf("next week = %q, want 2026-W14", deleted.NextWeek)
+	}
+	if deleted.Deleted.WeeklyCores != 1 || deleted.Deleted.Progress != 1 || deleted.Deleted.Comments != 1 || deleted.Deleted.MeegoSnapshots != 1 || deleted.Deleted.ReminderBatches != 1 {
+		t.Fatalf("deleted counts = %+v", deleted.Deleted)
+	}
+
+	assertCount := func(model any, query string, args []any, want int64) {
+		t.Helper()
+		var got int64
+		if err := db.Model(model).Where(query, args...).Count(&got).Error; err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("%T count for %q = %d, want %d", model, query, got, want)
+		}
+	}
+	assertCount(&domain.WeeklyReportWeek{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W15"}, 0)
+	assertCount(&domain.WeeklyKRCore{}, "kr_id = ? AND week = ?", []any{q2KR.ID, "2026-W15"}, 0)
+	assertCount(&domain.KRProgress{}, "point_id = ? AND week = ?", []any{q2Point.ID, "2026-W15"}, 0)
+	assertCount(&domain.PageComment{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W15"}, 0)
+	assertCount(&domain.MeegoSyncSnapshot{}, "point_id = ? AND week = ?", []any{q2Point.ID, "2026-W15"}, 0)
+	assertCount(&domain.ReminderBatch{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W15"}, 0)
+
+	assertCount(&domain.WeeklyReportWeek{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W14"}, 1)
+	assertCount(&domain.KRProgress{}, "point_id = ? AND week = ?", []any{q2Point.ID, "2026-W14"}, 1)
+	assertCount(&domain.WeeklyReportWeek{}, "quarter = ? AND week = ?", []any{"2026-Q3", "2026-W35"}, 1)
+	assertCount(&domain.KRProgress{}, "point_id = ? AND week = ?", []any{q3Point.ID, "2026-W35"}, 1)
+	assertCount(&domain.PageComment{}, "quarter = ? AND week = ?", []any{"2026-Q3", "2026-W35"}, 1)
+	assertCount(&domain.Objective{}, "id IN ?", []any{[]string{q2Objective.ID, q3Objective.ID}}, 2)
+	assertCount(&domain.KR{}, "id IN ?", []any{[]string{q2KR.ID, q3KR.ID}}, 2)
+	assertCount(&domain.KRPoint{}, "id IN ?", []any{[]string{q2Point.ID, q3Point.ID}}, 2)
+
+	if _, err := service.DeleteWeek(t.Context(), "2026-Q2", "2026-W15"); err != ErrWeekNotFound {
+		t.Fatalf("delete missing week error = %v, want ErrWeekNotFound", err)
+	}
+}
+
 func TestBoardsSwitchQuarterWithoutMixingWeeklyScopes(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objectives := []domain.Objective{

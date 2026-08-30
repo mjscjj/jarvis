@@ -194,6 +194,21 @@ func OpenWeeklyReportWeek(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func DeleteWeeklyReportWeek(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		result, err := service.DeleteWeek(ctx, strings.TrimSpace(c.Query("quarter")), strings.TrimSpace(c.Param("week")))
+		if errors.Is(err, okrworkspace.ErrWeekNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40416, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40016, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func GetComments(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		result, err := service.Comments(ctx, strings.TrimSpace(c.Query("quarter")), strings.TrimSpace(c.Query("week")))

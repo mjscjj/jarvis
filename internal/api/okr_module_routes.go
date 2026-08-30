@@ -101,6 +101,7 @@ func RegisterWeeklyReportModuleRoutes(h *server.Hertz, deps WeeklyReportModuleDe
 	h.GET("/api/weekly-report/scope", requireEnabled, GetWeeklyReportScope(deps.Workspace))
 	h.GET("/api/weekly-report/weeks", requireEnabled, GetWeeklyReportWeeks(deps.Workspace))
 	h.POST("/api/weekly-report/weeks", requireEnabled, requireIdentity, OpenWeeklyReportWeek(deps.Workspace))
+	h.DELETE("/api/weekly-report/weeks/:week", requireEnabled, requireIdentity, DeleteWeeklyReportWeek(deps.Workspace))
 	h.GET("/api/weekly-report/board", requireEnabled, GetBoard(deps.Workspace))
 	h.GET("/api/weekly-report/comments", requireEnabled, GetComments(deps.Workspace))
 	h.POST("/api/weekly-report/comments", requireEnabled, requireIdentity, CreateComment(deps.Workspace))
