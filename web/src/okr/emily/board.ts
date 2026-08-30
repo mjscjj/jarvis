@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { DeleteWeekResult } from './api'
 import type { Entry, EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, Point } from './types'
 
 export type SyncState =
@@ -19,6 +20,7 @@ export interface BoardApi {
   availableWeeks: string[]
   setWeek: (week: string) => void
 	setWeeklyScope: (quarter: string, week: string) => boolean
+  deleteWeeklyScope: () => Promise<DeleteWeekResult>
   enums: EnumValues
   syncState: SyncState
 	setKrTitle: (objId: string, krId: string, title: string) => void

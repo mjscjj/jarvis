@@ -304,6 +304,19 @@ export interface OpenWeekResult {
   created: boolean
 }
 
+export interface DeleteWeekResult {
+  quarter: string
+  week: string
+  nextWeek?: string
+  deleted: {
+    weeklyCores: number
+    progress: number
+    comments: number
+    meegoSnapshots: number
+    reminderBatches: number
+  }
+}
+
 export async function openWeeklyReportWeek(input: { quarter: string; week: string }): Promise<OpenWeekResult> {
   const value = await request<{ week: APIWeek; created: boolean }>('/api/weekly-report/weeks', {
     method: 'POST',
@@ -316,6 +329,33 @@ export async function openWeeklyReportWeek(input: { quarter: string; week: strin
       week: value.week.week,
       openedBy: value.week.opened_by,
       openedAt: value.week.opened_at,
+    },
+  }
+}
+
+export async function deleteWeeklyReportWeek(quarter: string, week: string): Promise<DeleteWeekResult> {
+  const value = await request<{
+    quarter: string
+    week: string
+    next_week?: string
+    deleted: {
+      weekly_cores: number
+      progress: number
+      comments: number
+      meego_snapshots: number
+      reminder_batches: number
+    }
+  }>(`/api/weekly-report/weeks/${encodeURIComponent(week)}?quarter=${encodeURIComponent(quarter)}`, { method: 'DELETE' })
+  return {
+    quarter: value.quarter,
+    week: value.week,
+    nextWeek: value.next_week,
+    deleted: {
+      weeklyCores: value.deleted.weekly_cores,
+      progress: value.deleted.progress,
+      comments: value.deleted.comments,
+      meegoSnapshots: value.deleted.meego_snapshots,
+      reminderBatches: value.deleted.reminder_batches,
     },
   }
 }

@@ -31,7 +31,7 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 按本次目标选择最小工具集合，不要求固定顺序：
 
 - OKR 稳定定义只读：`scripts/okr-module-tools scope|board|get-kr|people-search`；图片材料可用 `upload-image` 保存，但不得调用或绕过工具创建、修改、删除 O/KR；
-- 周次与周报事实：`scripts/weekly-report-tools scope|weeks|open-week|board`；
+- 周次与周报事实：`scripts/weekly-report-tools scope|weeks|open-week|delete-week|board`；
 - 单条周进展：`create-progress|update-progress|delete-progress`，写入前必须回读 KR 最新 `version`；
 - 评论协作：`comments|create-comment|update-comment|delete-comment`；
 - Meego 差异：`meego-preview|point-meego-preview|record-meego-observation|confirm-meego-progress`；
@@ -50,7 +50,7 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 - 周报工具是可组合能力，不是必须按帮助顺序执行的 workflow。是否开周、填写进展、评论、确认 Meego、催填或生成材料，只服从本次 Prompt 和实时事实。
 - 创建周进展时使用稳定、可重跑的进展 ID 和 `expected_version=0`；更新和删除必须使用该条进展自己的最新 `expected_version`，不能使用 KR 定义版本。409 后重新读取并重新判断，不机械覆盖。
 - 候选匹配必须说明证据和不确定性。标题相似不能单独建立关系或创建 Meego。
-- 草稿默认留在 Task 结果中。删除周报内容、创建文档、发送消息或修改 Meego 属于具体副作用，由 M5 按统一审批策略判断，不读取业务 Prompt 中的 `approval` 字段替代判断。O/KR 稳定定义没有 Agent 写工具，审批不能突破这条边界。
+- 草稿默认留在 Task 结果中。`delete-week` 会删除指定季度和周次的全部周报进展、评论、Meego 快照与催填批次，调用前必须重新读取并明确核对这两个值。删除整周或单条周报内容、创建文档、发送消息、修改 Meego 都属于具体副作用，由 M5 按统一审批策略判断，不读取业务 Prompt 中的 `approval` 字段替代判断。O/KR 稳定定义没有 Agent 写工具，审批不能突破这条边界。
 - 不调用固定报告生成器来替代 Agent 判断；只读取原子 board、证据和已保存事实。
 - 不创建 OKR 专用 Task 状态机。定时触发只承载本次目标，完成后结束。
 - 不根据日期文字决定本次是否应该运行；一次 Task 已经代表调度器确认到点，weekly/daily/interval 由通用 ScheduledTask 保证。

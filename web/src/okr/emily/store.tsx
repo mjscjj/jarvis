@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, getBoard, getEnums, replaceKR, replaceWeeklyKRCore, updateObjective as updateObjectiveRequest, updateProgress, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, getBoard, getEnums, replaceKR, replaceWeeklyKRCore, updateObjective as updateObjectiveRequest, updateProgress, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { LIGHTS, STATUSES } from './template'
@@ -278,6 +278,38 @@ export function BoardProvider({
 			weekRef.current = nextWeek
 			void loadRemote(nextWeek, nextQuarter)
 			return true
+		},
+		deleteWeeklyScope: async () => {
+			const selectedQuarter = quarterRef.current
+			const selectedWeek = weekRef.current
+			if (!selectedQuarter || !selectedWeek) throw new Error('当前没有可删除的周报。')
+			if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'loading' || syncState.kind === 'conflict') {
+				throw new Error('请等待当前修改保存后再删除本周。')
+			}
+			remoteReady.current = false
+			setSyncState({ kind: 'saving', message: `正在删除 ${selectedWeek} 周报…` })
+			try {
+				const result = await deleteWeeklyReportWeek(selectedQuarter, selectedWeek)
+				if (result.nextWeek) {
+					weekRef.current = result.nextWeek
+					await loadRemote(result.nextWeek, selectedQuarter)
+					return result
+				}
+				publish([])
+				serverKrs.current.clear()
+				revisions.current.clear()
+				lastFailedKr.current = null
+				weekRef.current = ''
+				setWeekState('')
+				setPreviousWeek(undefined)
+				setAvailableWeeks([])
+				setSyncState({ kind: 'ready', message: '当前季度暂无周报，请先开启新周' })
+				return result
+			} catch (error) {
+				remoteReady.current = true
+				setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '删除本周失败。' })
+				throw error
+			}
 		},
 		enums,
     syncState,

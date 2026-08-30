@@ -76,24 +76,29 @@ func TestWeeklyReportToolsExposeAtomicWrites(t *testing.T) {
 		args   []string
 		method string
 		path   string
+		query  string
 	}{
-		{[]string{"open-week", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodPost, "/api/weekly-report/weeks"},
-		{[]string{"comments", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/comments"},
-		{[]string{"create-comment", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","content":"建议"}`}, http.MethodPost, "/api/weekly-report/comments"},
-		{[]string{"update-comment", "--id", "comment-1", "--payload", `{"todo":true}`}, http.MethodPut, "/api/weekly-report/comments/comment-1"},
-		{[]string{"delete-comment", "--id", "comment-1"}, http.MethodDelete, "/api/weekly-report/comments/comment-1"},
-		{[]string{"create-progress", "--point-id", "point-1", "--payload", `{"id":"agent-1","expected_version":0,"week":"2026-W36","status":"in_progress","text":"进展"}`}, http.MethodPost, "/api/weekly-report/points/point-1/progress"},
-		{[]string{"update-progress", "--id", "agent-1", "--payload", `{"expected_version":2,"week":"2026-W36","status":"done","text":"完成"}`}, http.MethodPut, "/api/weekly-report/progress/agent-1"},
-		{[]string{"delete-progress", "--id", "agent-1", "--payload", `{"expected_version":3}`}, http.MethodDelete, "/api/weekly-report/progress/agent-1"},
-		{[]string{"meego-preview", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/meego-preview"},
-		{[]string{"point-meego-preview", "--point-id", "point-1", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/points/point-1/meego-preview"},
-		{[]string{"confirm-meego-progress", "--point-id", "point-1", "--payload", `{"expected_version":3,"week":"2026-W36","meego_work_item_id":"wi-1","status":"done","text":"完成"}`}, http.MethodPost, "/api/weekly-report/points/point-1/meego-confirm"},
+		{[]string{"open-week", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodPost, "/api/weekly-report/weeks", ""},
+		{[]string{"delete-week", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodDelete, "/api/weekly-report/weeks/2026-W36", "quarter=2026-Q3"},
+		{[]string{"comments", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/comments", ""},
+		{[]string{"create-comment", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","content":"建议"}`}, http.MethodPost, "/api/weekly-report/comments", ""},
+		{[]string{"update-comment", "--id", "comment-1", "--payload", `{"todo":true}`}, http.MethodPut, "/api/weekly-report/comments/comment-1", ""},
+		{[]string{"delete-comment", "--id", "comment-1"}, http.MethodDelete, "/api/weekly-report/comments/comment-1", ""},
+		{[]string{"create-progress", "--point-id", "point-1", "--payload", `{"id":"agent-1","expected_version":0,"week":"2026-W36","status":"in_progress","text":"进展"}`}, http.MethodPost, "/api/weekly-report/points/point-1/progress", ""},
+		{[]string{"update-progress", "--id", "agent-1", "--payload", `{"expected_version":2,"week":"2026-W36","status":"done","text":"完成"}`}, http.MethodPut, "/api/weekly-report/progress/agent-1", ""},
+		{[]string{"delete-progress", "--id", "agent-1", "--payload", `{"expected_version":3}`}, http.MethodDelete, "/api/weekly-report/progress/agent-1", ""},
+		{[]string{"meego-preview", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/meego-preview", ""},
+		{[]string{"point-meego-preview", "--point-id", "point-1", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/points/point-1/meego-preview", ""},
+		{[]string{"confirm-meego-progress", "--point-id", "point-1", "--payload", `{"expected_version":3,"week":"2026-W36","meego_work_item_id":"wi-1","status":"done","text":"完成"}`}, http.MethodPost, "/api/weekly-report/points/point-1/meego-confirm", ""},
 	}
 	for _, test := range tests {
 		runModuleTool(t, "weekly-report-tools", server.URL, test.args...)
 		request := <-requests
 		if request.Method != test.method || request.Path != test.path {
 			t.Fatalf("%v request = %+v, want %s %s", test.args, request, test.method, test.path)
+		}
+		if test.query != "" && !strings.Contains(request.Query, test.query) {
+			t.Fatalf("%v query = %q, want to contain %q", test.args, request.Query, test.query)
 		}
 		if request.Method != http.MethodGet && request.Method != http.MethodDelete || strings.Contains(strings.Join(test.args, " "), "delete-progress") {
 			if request.Body != "" && !json.Valid([]byte(request.Body)) {

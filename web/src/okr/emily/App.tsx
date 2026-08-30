@@ -76,7 +76,7 @@ export default function App({
   mode: 'fill' | 'meeting'
   onModeChange: (mode: 'fill' | 'meeting') => void
 }) {
-	const { reset, syncState, quarter, week, availableWeeks, setWeek, setWeeklyScope } = useBoard()
+	const { reset, syncState, quarter, week, availableWeeks, setWeek, setWeeklyScope, deleteWeeklyScope } = useBoard()
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentCount, setCommentCount] = useState(0)
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
@@ -87,7 +87,10 @@ export default function App({
   const [newQuarter, setNewQuarter] = useState(currentQuarter)
   const [newWeek, setNewWeek] = useState(currentISOWeek)
   const [weekNotice, setWeekNotice] = useState('')
+	const [confirmDeleteWeek, setConfirmDeleteWeek] = useState(false)
+	const [deletingWeek, setDeletingWeek] = useState(false)
   const busy = syncState.kind === 'loading'
+	const deleteBlocked = deletingWeek || syncState.kind === 'loading' || syncState.kind === 'saving' || syncState.kind === 'conflict'
 
   const submitWeek = async () => {
     const target = newWeek.trim()
@@ -105,12 +108,36 @@ export default function App({
     }
   }
 
+	const removeWeek = async () => {
+		if (!week) return
+		setDeletingWeek(true)
+		setWeekNotice('')
+		try {
+			const deletedWeek = week
+			const result = await deleteWeeklyScope()
+			setConfirmDeleteWeek(false)
+			setCommentsOpen(false)
+			setComments([])
+			setCommentCount(0)
+			setCommentCounts({})
+			setWeekNotice(result.nextWeek
+				? `${deletedWeek} 已删除，已切换到 ${result.nextWeek}。`
+				: `${deletedWeek} 已删除；当前季度暂无周报，请先开启新周。`)
+		} catch (cause) {
+			setWeekNotice(cause instanceof Error ? cause.message : '删除本周失败。')
+		} finally {
+			setDeletingWeek(false)
+		}
+	}
+
   useEffect(() => {
 		if (mode !== 'meeting') {
 			setCommentTarget(undefined)
 		}
 		setPendingCommentSelection(undefined)
 	}, [mode])
+
+	useEffect(() => setConfirmDeleteWeek(false), [quarter, week])
 
   useEffect(() => {
     const clearPendingSelection = (event: Event) => {
@@ -169,18 +196,21 @@ export default function App({
 
 		          <QuarterSelect />
 		          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <select aria-label="周次" value={week} onChange={(event) => setWeek(event.target.value)} className="bg-transparent font-medium text-slate-600 outline-none">
+            <select aria-label="周次" value={week} disabled={availableWeeks.length === 0} onChange={(event) => { setConfirmDeleteWeek(false); setWeek(event.target.value) }} className="bg-transparent font-medium text-slate-600 outline-none disabled:text-slate-400">
+						{availableWeeks.length === 0 && <option value="">暂无周次</option>}
               {availableWeeks.map((item) => <option key={item} value={item}>{weekLabel(item)}</option>)}
             </select>
 	          </div>
-	          {mode === 'fill' && <button type="button" onClick={() => { setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
+	          {mode === 'fill' && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
+	          {mode === 'fill' && <button type="button" disabled={!week || deleteBlocked} onClick={() => { setConfirmDeleteWeek(true); setOpeningWeek(false); setWeekNotice('') }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除本周</button>}
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
               <span aria-hidden className="hidden h-5 w-px bg-slate-200 sm:block" />
               <button
                 type="button"
                 onClick={toggleComments}
+				disabled={!week}
                 aria-label={commentsOpen ? '关闭评论' : '打开全部评论'}
-                className={`relative flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-medium transition-colors ${commentsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50'}`}
+				className={`relative flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${commentsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50'}`}
               >
                 <svg aria-hidden viewBox="0 0 20 20" className="size-4 fill-none stroke-current" strokeWidth="1.6">
                   <path d="M4.25 3.75h11.5A1.75 1.75 0 0 1 17.5 5.5v6.25a1.75 1.75 0 0 1-1.75 1.75H9l-4.5 3v-3h-.25a1.75 1.75 0 0 1-1.75-1.75V5.5a1.75 1.75 0 0 1 1.75-1.75Z" strokeLinecap="round" strokeLinejoin="round" />
@@ -205,10 +235,15 @@ export default function App({
 					<button type="button" onClick={() => void submitWeek()} disabled={!newQuarter.trim() || !newWeek.trim()} className="h-9 rounded-lg bg-blue-600 px-4 text-xs font-medium text-white disabled:opacity-40">确认开启</button>
 					<button type="button" onClick={() => setOpeningWeek(false)} className="h-9 px-2 text-xs text-slate-400">取消</button>
 				</section>}
+				{confirmDeleteWeek && week && <section className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3">
+					<div className="mr-2 flex-1"><div className="text-xs font-semibold text-red-800">确认删除 {quarter} / {week} 的整周周报？</div><div className="mt-0.5 text-[10px] text-red-600">会删除本周进展、周度指标、评论、Meego 快照和催填批次；不会删除 O、KR、指标定义和拆解，也不会影响其他周。</div></div>
+					<button type="button" onClick={() => void removeWeek()} disabled={deletingWeek} className="h-9 rounded-lg bg-red-600 px-4 text-xs font-medium text-white disabled:opacity-40">{deletingWeek ? '正在删除…' : `确认删除 ${week}`}</button>
+					<button type="button" onClick={() => setConfirmDeleteWeek(false)} disabled={deletingWeek} className="h-9 px-2 text-xs text-slate-500 disabled:opacity-40">取消</button>
+				</section>}
 				{weekNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{weekNotice}</div>}
 				<SyncNotice />
+				{week ? <>
 				<WeeklyTools onOpenPoint={openPoint} readOnly={mode === 'meeting'} />
-			<>
             <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
               <WeeklyFocus comments={comments} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
               <div className={`transition-opacity ${busy ? 'pointer-events-none opacity-55' : ''}`}>
@@ -219,9 +254,9 @@ export default function App({
               {mode === 'fill' ? '停止输入后自动保存；多人修改同一条 KR 时会先请你确认。' : '会议模式沿用同一份数据，只读投屏并保留评论与飞书导出。'}
               <button type="button" onClick={reset} className="ml-1 underline hover:text-slate-600">重新载入</button>
             </div>
-			</>
+			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无周报</div><div className="mt-1 text-xs text-slate-400">点击顶部“开启新周”创建一个空周后即可开始填写。</div></section>}
 		</main>
-		<CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={mode === 'meeting'} canComment onSignIn={() => undefined} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />
+		{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={mode === 'meeting'} canComment onSignIn={() => undefined} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
     </div>
   )
 }
