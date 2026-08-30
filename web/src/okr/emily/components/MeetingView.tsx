@@ -4,7 +4,7 @@ import { createFeishuDocument } from '../api'
 import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
 import { useCommentInteraction } from '../commenting'
-import { buildKRHierarchy, priorityLabel, priorityOf } from '../hierarchy'
+import { buildKRHierarchy, hierarchyKRCount, priorityKRCount, priorityLabel, priorityOf } from '../hierarchy'
 import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
@@ -321,13 +321,14 @@ export function MeetingView() {
     krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)),
   })).filter((objective) => objective.krs.length > 0), [objectives, ownerFilter])
   const navigation = useMemo(() => buildKRHierarchy(filteredObjectives), [filteredObjectives])
-  const activeBusiness = navigation.find((business) => business.value === activeBusinessValue) ?? navigation[0]
+  const meetingOverview = activeBusinessValue === undefined
+  const activeBusiness = meetingOverview ? undefined : navigation.find((business) => business.value === activeBusinessValue) ?? navigation[0]
   const activePriority = activeBusiness?.priorities.find((priority) => priority.value === activePriorityValue) ?? activeBusiness?.priorities[0]
 	const activeObjective = activePriority?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activePriority?.objectives[0]
-	const visible = activeObjective ? [activeObjective] : []
+	const visible = meetingOverview ? filteredObjectives : activeObjective ? [activeObjective] : []
 	const totalKrCount = objectives.reduce((sum, objective) => sum + objective.krs.length, 0)
 	const filteredKrCount = filteredObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
-	const activeKrs = activeObjective?.krs ?? []
+	const activeKrs = visible.flatMap((objective) => objective.krs)
 	const riskCount = activeKrs.filter((kr) => priorityOf(kr) === 'p0' || kr.metrics.some((metric) => metric.light === 'red' || metric.light === 'yellow')).length
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -354,8 +355,8 @@ export function MeetingView() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-		<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500">只读投屏 · 共 {totalKrCount} 条{ownerFilter ? ` · 筛选后 ${filteredKrCount} 条` : ''} · 当前方向 {activeKrs.length} 条</span>
-		{riskCount > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">当前方向 {riskCount} 个需关注</span>}
+		<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500">只读投屏 · 共 {totalKrCount} 条{ownerFilter ? ` · 筛选后 ${filteredKrCount} 条` : ''} · {meetingOverview ? '当前视图' : '当前方向'} {activeKrs.length} 条</span>
+		{riskCount > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">{meetingOverview ? '当前视图' : '当前方向'} {riskCount} 个需关注</span>}
         <button type="button" onClick={() => setShowTags((value) => !value)} className={`rounded-md border px-2 py-1 text-[11px] font-medium ${showTags ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>{showTags ? '隐藏打标' : '显示打标'}</button>
         <span className="ml-1 text-[11px] text-slate-400">层级</span>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white text-[11px]">
@@ -377,12 +378,22 @@ export function MeetingView() {
         activeBusiness={activeBusiness}
         activePriority={activePriority}
         activeObjectiveId={activeObjective?.id}
+        overview={meetingOverview}
+        showOverview
+        onOverview={() => { setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
         onBusiness={(value) => { setActiveBusinessValue(value); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
         onPriority={(value) => { setActivePriorityValue(value); setActiveObjectiveId('') }}
         onObjective={setActiveObjectiveId}
       />
 
-      {activeObjective ? (
+      {meetingOverview ? (
+        <div className="space-y-5">
+          {navigation.map((business) => <section key={business.value || '__untagged__'} className="space-y-2.5">
+            <div className="flex items-center justify-between rounded-r-lg border-l-4 border-blue-600 bg-blue-50 px-3 py-1.5"><h2 className="text-[14px] font-bold text-blue-700">{business.label}</h2><b className="rounded-full border border-blue-100 bg-white/80 px-2 py-0.5 text-[10px] text-blue-600">{hierarchyKRCount(business)} 条 KR</b></div>
+            {business.priorities.map((priority) => <div key={priority.value || '__untagged__'} className="space-y-2"><div className="ml-2 flex items-center gap-2"><span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${priority.value === 'p0' ? 'border-orange-200 bg-orange-50 text-orange-700' : priority.value === 'p1' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>{priority.label}</span><span className="text-[9px] text-slate-400">{priorityKRCount(priority)} 条</span></div>{priority.objectives.map((objective) => <MeetingObjectiveSection key={`${priority.value}:${objective.id}`} objective={objective} closed={closed} toggle={toggle} showTags={showTags} />)}</div>)}
+          </section>)}
+        </div>
+      ) : activeObjective ? (
         <MeetingObjectiveSection objective={activeObjective} closed={closed} toggle={toggle} showTags={showTags} />
       ) : <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-xs text-slate-400">当前分类尚无已接入的方向</div>}
     </div>

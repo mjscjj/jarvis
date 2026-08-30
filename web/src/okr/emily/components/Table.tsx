@@ -464,12 +464,13 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
   const visibleObjectives = useMemo(() => objectives.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)) })).filter((objective) => !ownerFilter || objective.krs.length > 0), [objectives, ownerFilter])
 	const navigation = useMemo(() => buildKRHierarchy(visibleObjectives), [visibleObjectives])
-	const activeBusiness = navigation.find((business) => business.value === activeBusinessValue) ?? navigation[0]
+	const overview = activeBusinessValue === undefined
+	const activeBusiness = overview ? undefined : navigation.find((business) => business.value === activeBusinessValue) ?? navigation[0]
 	const activePriority = activeBusiness?.priorities.find((priority) => priority.value === activePriorityValue) ?? activeBusiness?.priorities[0]
 	const activeObjective = activePriority?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activePriority?.objectives[0]
   const totalKRCount = objectives.reduce((sum, objective) => sum + objective.krs.length, 0)
   const visibleKRCount = visibleObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
-	const activeKRCount = activeObjective?.krs.length ?? 0
+	const activeKRCount = overview ? visibleKRCount : activeObjective?.krs.length ?? 0
 
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -477,12 +478,16 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
     else next.add(id)
     return next
   })
-  const collapseAll = () => setClosed(new Set(activeObjective?.krs.flatMap((kr) => [kr.id, ...kr.points.map((point) => point.id)]) ?? []))
+  const collapseAll = () => setClosed(new Set(
+    overview
+      ? visibleObjectives.flatMap((objective) => [objective.id, ...objective.krs.flatMap((kr) => [kr.id, ...kr.points.map((point) => point.id)])])
+      : activeObjective?.krs.flatMap((kr) => [kr.id, ...kr.points.map((point) => point.id)]) ?? [],
+  ))
 
   return (
     <div className={readOnly ? 'kr-table-readonly' : ''}>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-		<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{ownerFilter ? `，负责人筛选后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
+		<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{ownerFilter ? `，负责人筛选后 ${visibleKRCount} 条` : ''}，{overview ? '当前视图' : '当前方向'} {activeKRCount} 条</span>
         <span className="ml-auto text-slate-400">负责人</span>
 		<select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
           <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
@@ -498,14 +503,17 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
 			activeBusiness={activeBusiness}
 			activePriority={activePriority}
 			activeObjectiveId={activeObjective?.id}
+			overview={overview}
+			showOverview
+			onOverview={() => { setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
 			onBusiness={(value) => { setActiveBusinessValue(value); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
 			onPriority={(value) => { setActivePriorityValue(value); setActiveObjectiveId('') }}
 				onObjective={setActiveObjectiveId}
       />
 		{manageObjectives && activeObjective && <ObjectiveControls key={activeObjective.id} objective={activeObjective} />}
       <div>
-        {activeObjective && <ObjectiveSection key={activeObjective.id} objective={activeObjective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} showTitle={false} />}
-        {!activeObjective && <Empty>没有符合筛选条件的 KR</Empty>}
+        {overview ? <div className="space-y-5">{visibleObjectives.map((objective) => <ObjectiveSection key={objective.id} objective={objective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} />)}</div> : activeObjective && <ObjectiveSection key={activeObjective.id} objective={activeObjective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} showTitle={false} />}
+        {(overview ? visibleObjectives.length === 0 : !activeObjective) && <Empty>没有符合筛选条件的 KR</Empty>}
       </div>
     </div>
   )
