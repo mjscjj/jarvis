@@ -14,6 +14,7 @@ test('defines the OKR directory children in their visible order', () => {
     'weekly-fill',
     'weekly-meeting',
   ])
+  assert.equal(OKR_TAB_DEFINITIONS.find((item) => item.key === 'agent-flows')?.label, '自动化流程')
   assert.equal(DEFAULT_OKR_TAB, 'manage')
 })
 
