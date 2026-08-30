@@ -59,6 +59,24 @@ func TestWeeklyReportDefinitionsAreEditableMarkdown(t *testing.T) {
 	}
 }
 
+func TestRepositoryWeeklyReportReminderTemplateUsesAvailablePreviewFacts(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "weekly-report-reminder-template.md"))
+	if err != nil {
+		t.Fatalf("read reminder template: %v", err)
+	}
+	template := string(content)
+	for _, placeholder := range []string{"{{week}}", "{{owner_name}}", "{{missing_items}}"} {
+		if !strings.Contains(template, placeholder) {
+			t.Errorf("reminder template missing supported placeholder %s", placeholder)
+		}
+	}
+	for _, unavailable := range []string{"{{due_at}}", "{{fill_url}}"} {
+		if strings.Contains(template, unavailable) {
+			t.Errorf("reminder template requires unavailable preview fact %s", unavailable)
+		}
+	}
+}
+
 func TestOKRAgentDefinitionsAreEditableMarkdown(t *testing.T) {
 	service := newTestService(t)
 	want := []string{

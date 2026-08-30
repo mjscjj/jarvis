@@ -50,7 +50,7 @@ scripts/weekly-report-tools create-reminder-batch --quarter '<quarter>' --week '
 - `owner_open_id` 以 `ou_` 开头；
 - `message` 非空。
 
-发送前读取 `feishu-send-message` Skill，使用 Jarvis Bot 身份。消息内容以 `weekly_report_reminder_template` 为模板，以预览返回的负责人、缺失项、截止时间和填写地址替换变量；模板中不存在的事实不得补猜：
+发送前读取 `feishu-send-message` Skill，使用 Jarvis Bot 身份。消息内容以 `weekly_report_reminder_template` 为模板，只替换预览能够直接提供的 `owner_name`、`week` 和 `missing_items`；模板中不存在的事实不得补猜。`missing_items` 使用 `missing_krs` 的真实标题逐行生成，不添加链接或截止时间：
 
 ```bash
 lark-cli im +messages-send \
