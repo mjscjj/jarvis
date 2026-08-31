@@ -53,6 +53,11 @@ func TestOKRModuleToolsExposeReadsAndOnlyTagDefinitionWrites(t *testing.T) {
 	if request.Method != http.MethodGet || request.Path != "/api/okr/people/search" || !strings.Contains(request.Query, "q=") {
 		t.Fatalf("people-search request = %+v", request)
 	}
+	runModuleTool(t, "okr-module-tools", server.URL, "board")
+	request = <-requests
+	if request.Method != http.MethodGet || request.Path != "/api/okr/board" {
+		t.Fatalf("default board request = %+v", request)
+	}
 
 	help := runModuleTool(t, "okr-module-tools", server.URL, "--help")
 	for _, forbidden := range []string{"create-objective", "create-kr", "replace-kr", "delete-kr"} {
@@ -112,6 +117,8 @@ func TestWeeklyReportToolsExposeAtomicWrites(t *testing.T) {
 	}{
 		{[]string{"open-week", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodPost, "/api/weekly-report/weeks", ""},
 		{[]string{"delete-week", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodDelete, "/api/weekly-report/weeks/2026-W36", "quarter=2026-Q3"},
+		{[]string{"get-weekly-kr", "--id", "kr-1", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/krs/kr-1", "week=2026-W36"},
+		{[]string{"replace-weekly-core", "--id", "kr-1", "--payload", `{"expected_version":0,"week":"2026-W36","metric_note":"测试","metrics":[]}`}, http.MethodPut, "/api/weekly-report/krs/kr-1/core", ""},
 		{[]string{"comments", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/comments", ""},
 		{[]string{"create-comment", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","content":"建议"}`}, http.MethodPost, "/api/weekly-report/comments", ""},
 		{[]string{"update-comment", "--id", "comment-1", "--payload", `{"todo":true}`}, http.MethodPut, "/api/weekly-report/comments/comment-1", ""},
@@ -136,6 +143,32 @@ func TestWeeklyReportToolsExposeAtomicWrites(t *testing.T) {
 			if request.Body != "" && !json.Valid([]byte(request.Body)) {
 				t.Fatalf("%v sent invalid JSON: %s", test.args, request.Body)
 			}
+		}
+	}
+}
+
+func TestModuleToolsAllowDefaultScopedReads(t *testing.T) {
+	requests := make(chan moduleToolRequest, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests <- moduleToolRequest{Method: request.Method, Path: request.URL.Path, Query: request.URL.RawQuery}
+		response.Header().Set("content-type", "application/json")
+		_, _ = response.Write([]byte(`{"code":0,"data":{"objectives":[]}}`))
+	}))
+	defer server.Close()
+
+	for _, call := range []struct {
+		script string
+		args   []string
+		path   string
+	}{
+		{"okr-module-tools", []string{"board"}, "/api/okr/board"},
+		{"weekly-report-tools", []string{"weeks"}, "/api/weekly-report/weeks"},
+		{"weekly-report-tools", []string{"board"}, "/api/weekly-report/board"},
+	} {
+		runModuleTool(t, call.script, server.URL, call.args...)
+		request := <-requests
+		if request.Method != http.MethodGet || request.Path != call.path {
+			t.Fatalf("%s %v request = %+v", call.script, call.args, request)
 		}
 	}
 }

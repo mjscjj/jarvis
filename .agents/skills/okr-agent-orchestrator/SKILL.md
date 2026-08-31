@@ -30,9 +30,10 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 
 按本次目标选择最小工具集合，不要求固定顺序：
 
-- OKR 定义查询：`scripts/okr-module-tools scope|board|get-kr|people-search`；图片材料可用 `upload-image` 保存；
+- OKR 定义查询：`scripts/okr-module-tools scope|board|find-krs|get-kr|people-search`；已知关键词时先用 `find-krs` 缩小范围，不为查一个 KR 把整个季度 board 灌进上下文；图片材料可用 `upload-image` 保存；
 - KR 标签：`scripts/okr-module-tools replace-kr-tags --id KR_ID --payload JSON|-`，先用 `get-kr` 读取最新 `version` 与全部 `tags`，仅调整本次目标涉及的标签，再提交 `{"expected_version":最新版本,"tags":[{"type":"custom","value":"标签值"}]}`。`tags` 是完整替换列表，保留无关标签；显式 `[]` 清空全部标签。工具只改标签，返回最新 KR；
-- 周次与周报事实：`scripts/weekly-report-tools scope|weeks|open-week|delete-week|board`；
+- 周次与周报事实：`scripts/weekly-report-tools scope|weeks|open-week|delete-week|board|get-weekly-kr`；已知 KR ID 时优先读取该 KR 的指定周事实；
+- 周度核心数据：`replace-weekly-core` 只写指定周的指标值、红绿灯、图片与说明，不得借此改变稳定指标 ID 或定义；先用 `get-weekly-kr` 读取 `weekly_core_version` 和完整指标数组，保留本次目标之外的值；
 - 单条周进展：`create-progress|update-progress|delete-progress`，写入前必须回读 KR 最新 `version`；
 - 评论协作：`comments|create-comment|update-comment|delete-comment`；
 - Meego 差异：`meego-preview|point-meego-preview|record-meego-observation|confirm-meego-progress`；
@@ -47,7 +48,7 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 
 - 读取 API 响应后验证成功字段；失败时保留原始错误并停止依赖该事实的动作。
 - 先回读再写入；关系和外部对象使用稳定来源 ID，重复执行不得制造副本。
-- OKR 定义的可写范围遵循共用原则。标签写入使用 KR 的最新 `version`，409 后重新读取并重新判断，不机械覆盖；批量打标逐个 KR 调用，写后回读核对标签和版本。
+- OKR 定义的可写范围遵循共用原则。标签写入使用 KR 的最新 `version`，409 后重新读取并重新判断，不机械覆盖；批量打标逐个 KR 调用，写后回读核对标签和版本。周度核心数据使用独立的 `weekly_core_version`，不能拿 KR 定义版本代替。
 - 周报工具是可组合能力，不是必须按帮助顺序执行的 workflow。是否开周、填写进展、评论、确认 Meego、催填或生成材料，只服从本次 Prompt 和实时事实。
 - 创建周进展时使用稳定、可重跑的进展 ID 和 `expected_version=0`；更新和删除必须使用该条进展自己的最新 `expected_version`，不能使用 KR 定义版本。409 后重新读取并重新判断，不机械覆盖。
 - 候选匹配必须说明证据和不确定性。标题相似不能单独建立关系或创建 Meego。

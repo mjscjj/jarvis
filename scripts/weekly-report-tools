@@ -17,6 +17,8 @@ commands:
   open-week --quarter Q --week YYYY-Www
   delete-week --quarter Q --week YYYY-Www
   board [--quarter Q] [--week YYYY-Www]
+  get-weekly-kr --id KR_ID --week YYYY-Www
+  replace-weekly-core --id KR_ID --payload JSON|-
   comments --quarter Q --week YYYY-Www
   create-comment --payload JSON|-
   update-comment --id COMMENT_ID --payload JSON|-
@@ -32,6 +34,12 @@ commands:
   point-meego-preview --point-id POINT_ID --week YYYY-Www
   record-meego-observation --payload JSON|-
   confirm-meego-progress --point-id POINT_ID --payload JSON|-
+
+replace-weekly-core payload:
+  {"expected_version":0,"week":"2026-W15","metric_note":"本周说明","metrics":[]}
+Read get-weekly-kr first. metrics is the complete weekly value array and may not
+add or remove stable metric IDs. A stale weekly_core_version returns HTTP 409
+with current data.
 EOF
 }
 
@@ -78,12 +86,12 @@ request_get() {
 
 request_post() {
   local path="$1" payload="$2"
-  curl -fsS -X POST "${BASE_URL}${path}" -H 'content-type: application/json' --data "$payload"
+  curl --fail-with-body -sS -X POST "${BASE_URL}${path}" -H 'content-type: application/json' --data-binary "$payload"
 }
 
 request_write() {
   local method="$1" path="$2" payload="$3"
-  curl -fsS -X "$method" "${BASE_URL}${path}" -H 'content-type: application/json' --data "$payload"
+  curl --fail-with-body -sS -X "$method" "${BASE_URL}${path}" -H 'content-type: application/json' --data-binary "$payload"
 }
 
 read_payload() {
@@ -108,7 +116,11 @@ case "$COMMAND" in
   weeks)
     args=()
     [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
-    request_get /api/weekly-report/weeks "${args[@]}"
+    if [[ ${#args[@]} -eq 0 ]]; then
+      request_get /api/weekly-report/weeks
+    else
+      request_get /api/weekly-report/weeks "${args[@]}"
+    fi
     ;;
   open-week)
     [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "open-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
@@ -116,13 +128,32 @@ case "$COMMAND" in
     ;;
   delete-week)
     [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "delete-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
-    curl -fsS -X DELETE -G "${BASE_URL}/api/weekly-report/weeks/$(encoded "$WEEK")" --data-urlencode "quarter=$QUARTER"
+    curl --fail-with-body -sS -X DELETE -G "${BASE_URL}/api/weekly-report/weeks/$(encoded "$WEEK")" --data-urlencode "quarter=$QUARTER"
     ;;
   board|comments|reminder-preview|reminder-batches|meego-preview)
     args=()
     [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
     [[ -z "$WEEK" ]] || args+=(--data-urlencode "week=$WEEK")
-    request_get "/api/weekly-report/${COMMAND}" "${args[@]}"
+    if [[ ${#args[@]} -eq 0 ]]; then
+      request_get "/api/weekly-report/${COMMAND}"
+    else
+      request_get "/api/weekly-report/${COMMAND}" "${args[@]}"
+    fi
+    ;;
+  get-weekly-kr)
+    [[ -n "$ID" && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "get-weekly-kr requires --id and --week YYYY-Www" >&2; exit 2; }
+    request_get "/api/weekly-report/krs/$(encoded "$ID")" --data-urlencode "week=$WEEK"
+    ;;
+  replace-weekly-core)
+    [[ -n "$ID" ]] || { echo "replace-weekly-core requires --id" >&2; exit 2; }
+    payload="$(read_payload)"
+    printf '%s' "$payload" | jq -e '
+      (.expected_version | type == "number")
+      and (.week | type == "string" and test("^[0-9]{4}-W[0-9]{2}$"))
+      and (.metric_note | type == "string")
+      and (.metrics | type == "array")
+    ' >/dev/null || { echo "replace-weekly-core payload is invalid" >&2; exit 2; }
+    request_write PUT "/api/weekly-report/krs/$(encoded "$ID")/core" "$payload"
     ;;
   create-comment)
     payload="$(read_payload)"
@@ -135,7 +166,7 @@ case "$COMMAND" in
     ;;
   delete-comment)
     [[ -n "$ID" ]] || { echo "delete-comment requires --id" >&2; exit 2; }
-    curl -fsS -X DELETE "${BASE_URL}/api/weekly-report/comments/$(encoded "$ID")"
+    curl --fail-with-body -sS -X DELETE "${BASE_URL}/api/weekly-report/comments/$(encoded "$ID")"
     ;;
   create-progress)
     [[ -n "$POINT_ID" ]] || { echo "create-progress requires --point-id" >&2; exit 2; }

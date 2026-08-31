@@ -153,6 +153,31 @@ func GetCoreKR(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func GetWeeklyReportKR(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id := strings.TrimSpace(c.Param("kr_id"))
+		week := strings.TrimSpace(c.Query("week"))
+		if id == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40041, fmt.Errorf("kr_id is required"))
+			return
+		}
+		if week == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40041, fmt.Errorf("week is required"))
+			return
+		}
+		result, err := service.GetKR(ctx, id, week)
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40441, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40041, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func GetWeeklyReportWeeks(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		quarter := strings.TrimSpace(c.Query("quarter"))

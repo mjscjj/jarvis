@@ -13,6 +13,7 @@ usage: okr-module-tools [--base-url URL] COMMAND [ARGS]
 commands:
   scope
   board [--quarter Q]
+  find-krs --query TEXT [--quarter Q]
   get-kr --id KR_ID
   replace-kr-tags --id KR_ID --payload JSON|-
   people-search --query TEXT
@@ -74,7 +75,34 @@ case "$COMMAND" in
   board)
     args=()
     [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
-    request_get /api/okr/board "${args[@]}"
+    if [[ ${#args[@]} -eq 0 ]]; then
+      request_get /api/okr/board
+    else
+      request_get /api/okr/board "${args[@]}"
+    fi
+    ;;
+  find-krs)
+    [[ -n "$QUERY" ]] || { echo "find-krs requires --query" >&2; exit 2; }
+    args=()
+    [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
+    if [[ ${#args[@]} -eq 0 ]]; then
+      board="$(request_get /api/okr/board)"
+    else
+      board="$(request_get /api/okr/board "${args[@]}")"
+    fi
+    printf '%s' "$board" | jq --arg query "$QUERY" '
+      ($query | ascii_downcase) as $needle
+      | {code, data: {quarter: .data.quarter, matches: [
+          .data.objectives[] as $objective
+          | $objective.krs[]
+          | select(([
+              .id, .title, (.owner_name // ""),
+              ($objective.title // ""),
+              ([.points[]?.title] | join(" "))
+            ] | join(" ") | ascii_downcase | contains($needle)))
+          | . + {objective_id: $objective.id, objective_title: $objective.title}
+        ]}}
+    '
     ;;
   get-kr)
     [[ -n "$ID" ]] || { echo "get-kr requires --id" >&2; exit 2; }
