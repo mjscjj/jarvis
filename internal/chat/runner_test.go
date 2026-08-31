@@ -1,9 +1,36 @@
 package chat
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestRunnerPreservesStartupError(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "codex")
+	const detail = "Error: thread/resume failed: no rollout found for thread id old-traex-thread"
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' '"+detail+"' >&2\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := newRunner(bin, "fixture-model", "read-only", "medium", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = runner.Stream(context.Background(), "你好", "old-traex-thread", func(Event) error {
+		t.Fatal("failed startup must not emit a chat event")
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), detail) {
+		t.Fatalf("error = %v, want original CLI startup error", err)
+	}
+	if strings.Contains(err.Error(), "missing thread.started") {
+		t.Fatalf("startup failure was masked by JSONL validation: %v", err)
+	}
+}
 
 // realCodexJSONL 是实跑 codex `exec --json`（gpt-5.5）灌一句 prompt 后的真实
 // stdout 样本（见包注释）。用它锚定解析：thread_id 来自 thread.started，

@@ -152,11 +152,11 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, emit func(
 	if runCtx.Err() == context.DeadlineExceeded {
 		return fmt.Errorf("codex chat timed out after %s: %s", r.timeout, stderr.text())
 	}
-	if parseErr != nil {
-		return parseErr
-	}
 	if waitErr != nil {
 		return fmt.Errorf("codex chat exited abnormally: %w: %s", waitErr, stderr.text())
+	}
+	if parseErr != nil {
+		return parseErr
 	}
 	return nil
 }

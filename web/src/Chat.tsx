@@ -182,6 +182,15 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [])
 
+  const startNewChat = useCallback(() => {
+    window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY)
+    setThreadId(null)
+    setMessages([])
+    setError(undefined)
+    setPaused(false)
+    inputRef.current?.focus()
+  }, [])
+
   const send = useCallback(async () => {
     const message = input.trim()
     if (!message || sending) return
@@ -301,7 +310,10 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
           <span className="chat-context-selection">{currentQuarter.replace('-', ' ')}</span>
         </>}
       </div>
-      <Text type="secondary" className="chat-context-note">同一浏览器恢复同一 Agent 会话；对话记录保存在本地 Markdown</Text>
+      <div className="chat-history-actions">
+        <Text type="secondary" className="chat-context-note">对话记录保存在本地 Markdown；切换执行 CLI 后请新建对话。</Text>
+        <Button size="small" disabled={sending || historyLoading} onClick={startNewChat} title="开始新的 Agent 会话，保留旧的本地记录">新建对话</Button>
+      </div>
     </header>
     <div
       className="chat-messages"

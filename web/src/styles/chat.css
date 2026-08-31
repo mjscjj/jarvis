@@ -76,6 +76,17 @@
   line-height: 18px;
 }
 
+.chat-history-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.chat-history-actions > .ant-btn {
+  flex: none;
+}
+
 .jarvis-chat .chat-messages {
   min-height: 0;
   padding: 20px;
