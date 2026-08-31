@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Resolve only the configured API destination; never probe or guess a port.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CONFIG_PATH="${1:-${REPO_ROOT}/conf/config.yaml}"
+[[ $# -le 1 ]] || { echo 'usage: jarvis-api-base [CONFIG_PATH]' >&2; exit 2; }
+
+# Preserve jarvis-tools --config paths relative to the caller, otherwise resolve
+# them against this checkout. Parsing and runtime merging belong to Go config.
+if [[ -f "$CONFIG_PATH" ]]; then
+  CONFIG_PATH="$(cd "$(dirname "$CONFIG_PATH")" && pwd)/$(basename "$CONFIG_PATH")"
+elif [[ "$CONFIG_PATH" != /* ]]; then
+  CONFIG_PATH="${REPO_ROOT}/${CONFIG_PATH}"
+fi
+cd "$REPO_ROOT"
+exec go run ./cmd/jarvis-config api-base --config "$CONFIG_PATH"

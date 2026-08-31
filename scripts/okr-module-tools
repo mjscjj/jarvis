@@ -3,7 +3,8 @@
 # observations are intentionally owned by scripts/weekly-report-tools.
 set -euo pipefail
 
-BASE_URL="${JARVIS_BASE_URL:-http://127.0.0.1:18800}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_URL="${JARVIS_BASE_URL:-}"
 
 usage() {
   cat <<'EOF'
@@ -16,7 +17,8 @@ commands:
   people-search --query TEXT
   upload-image --file PATH
 
-Set JARVIS_BASE_URL when Jarvis does not listen on 127.0.0.1:18800.
+Uses server.addr from conf/config.yaml plus conf/config.runtime.yaml.
+JARVIS_BASE_URL or --base-url explicitly selects another instance.
 EOF
 }
 
@@ -29,7 +31,6 @@ if [[ "${1:-}" == "--base-url" ]]; then
   BASE_URL="$2"
   shift 2
 fi
-BASE_URL="${BASE_URL%/}"
 COMMAND="${1:-}"
 [[ -n "$COMMAND" ]] || { usage >&2; exit 2; }
 shift
@@ -48,6 +49,9 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+[[ -n "$BASE_URL" ]] || BASE_URL="$("${SCRIPT_DIR}/jarvis-api-base")"
+BASE_URL="${BASE_URL%/}"
 
 request_get() {
   local path="$1"

@@ -85,6 +85,8 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 后台保存 runtime settings 后需要重启服务；文档中的配置数值只代表仓库基线，不代表当前进程一定正在使用该值。
 
+`jarvis-tools`、`okr-module-tools`、`weekly-report-tools`、`okr-agent-tools` 默认通过 `scripts/jarvis-api-base` 读取同一份合并配置的 `server.addr`，不猜测端口。该入口复用 `go run ./cmd/jarvis-config api-base` 的配置加载，因此运行工具也需要 Go。跨实例操作可显式设置 `jarvis-tools` 的 `JARVIS_API_BASE`，或模块工具的 `JARVIS_BASE_URL` / `--base-url`；配置读取失败直接报错，不切换到其它实例。
+
 ## 常见修改入口
 
 - 改 M3 抽取口径：`conf/prompts/m3-system-prompt.md`；改上下文组装：`internal/extract/prompt.go`、`internal/extract/snapshot.go`

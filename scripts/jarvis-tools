@@ -533,28 +533,14 @@ delete_id_help() {
 }
 
 # resolve_api_base CONFIG_PATH
-# Prefer JARVIS_API_BASE; otherwise require and read server.addr from config.
+# Prefer JARVIS_API_BASE; otherwise use the server's merged configuration.
 resolve_api_base() {
   local config_path="$1"
   if [[ -n "${JARVIS_API_BASE:-}" ]]; then
     echo "${JARVIS_API_BASE%/}"
     return
   fi
-  local resolved=""
-  if [[ -f "$config_path" ]]; then
-    resolved="$config_path"
-  elif [[ "$config_path" != /* && -f "${REPO_ROOT}/${config_path}" ]]; then
-    resolved="${REPO_ROOT}/${config_path}"
-  fi
-  if [[ -z "$resolved" ]]; then
-    fail "config file not found: ${config_path}"
-  fi
-  local addr
-  addr="$(grep -E '^\s*addr:\s*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
-  if [[ -z "$addr" ]]; then
-    fail "could not parse server.addr from ${resolved}"
-  fi
-  echo "http://${addr}"
+  "${SCRIPT_DIR}/jarvis-api-base" "$config_path"
 }
 
 # api_get PATH_AND_QUERY → prints response body to stdout; fails on HTTP/API error.

@@ -5,10 +5,68 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"jarvis/internal/config"
+
+	"gopkg.in/yaml.v3"
 )
+
+func TestRunAPIBaseUsesServerRuntimeConfig(t *testing.T) {
+	base, err := os.ReadFile(filepath.Join("..", "..", "conf", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var baseline config.Config
+	if err := yaml.Unmarshal(base, &baseline); err != nil {
+		t.Fatal(err)
+	}
+	baseline.Extract.PrincipalOpenID = "ou_api_base_test"
+	baseline.DailyDigest.GitAuthor = "api-base-test@example.com"
+	base, err = yaml.Marshal(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		runtime string
+		want    string
+		wantErr string
+	}{
+		{name: "baseline", want: "http://127.0.0.1:18800\n"},
+		{name: "runtime port", runtime: "server:\n  addr: 0.0.0.0:18802\n", want: "http://127.0.0.1:18802\n"},
+		{name: "other runtime setting", runtime: "server:\n  web_root: other-web\n", want: "http://127.0.0.1:18800\n"},
+		{name: "ipv6", runtime: "server:\n  addr: '[::]:18803'\n", want: "http://[::1]:18803\n"},
+		{name: "explicit host", runtime: "server:\n  addr: '192.168.1.2:18804'\n", want: "http://192.168.1.2:18804\n"},
+		{name: "empty address", runtime: "server:\n  addr: ''\n", wantErr: "server.addr"},
+		{name: "invalid address", runtime: "server:\n  addr: invalid\n", wantErr: "invalid server.addr"},
+		{name: "unknown runtime key", runtime: "server:\n  unknown: 18802\n", wantErr: "parse runtime config override"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(configPath, base, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if tc.runtime != "" {
+				if err := os.WriteFile(config.RuntimeOverridePath(configPath), []byte(tc.runtime), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var output bytes.Buffer
+			err := run([]string{"api-base", "--config", configPath}, &output)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) || output.Len() != 0 {
+					t.Fatalf("output = %q, error = %v, want error containing %q and no URL", output.String(), err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || output.String() != tc.want {
+				t.Fatalf("output = %q, error = %v, want %q", output.String(), err, tc.want)
+			}
+		})
+	}
+}
 
 func TestRunConfigurePrincipal(t *testing.T) {
 	repoConfig := filepath.Join("..", "..", "conf", "config.yaml")
