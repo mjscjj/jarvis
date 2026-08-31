@@ -307,7 +307,7 @@ func validCodexConfig() CodexConfig {
 
 func validChatConfig() ChatConfig {
 	return ChatConfig{
-		Enabled: true, Model: "fixture-model", TimeoutSeconds: 600,
+		Enabled: true, Bin: "codex", Addr: "127.0.0.1:18801", Model: "fixture-model", TimeoutSeconds: 600,
 		Sandbox: "danger-full-access", ReasoningEffort: "medium", HistoryDir: "/tmp/chat-history",
 	}
 }

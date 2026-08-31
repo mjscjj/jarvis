@@ -287,8 +287,8 @@ export default function RuntimeSettings() {
             <TextField name="model_api_model" label="去重 / 备用提取模型" help="当前使用火山 Ark 模型，不会替代 M5 执行或对话模型。" />
             <NumberField name="model_api_timeout_seconds" label="API 请求超时（秒）" min={10} max={600} step={10} help="Ark Model API 和向量 API 的 HTTP 请求超时。" />
           </Section>
-          <Section title="M5 执行器" description="M5 使用独立 CLI；右侧对话复用该 CLI，但可另选模型。">
-            <SelectField name="execute_cli" label="执行 CLI" options={cliOptions} help="M5 执行任务及右侧对话使用的命令行执行器。" />
+          <Section title="M5 执行器" description="M5 使用独立 CLI 和模型。">
+            <SelectField name="execute_cli" label="执行 CLI" options={cliOptions} help="仅用于 M5 执行任务。" />
             <TextField name="execute_model" label="M5 执行模型" />
             <SelectField name="execute_reasoning_effort" label="M5 推理档位" options={reasoningOptions} />
           </Section>
@@ -378,7 +378,8 @@ export default function RuntimeSettings() {
               </Form.Item>
             </SettingCol>
           </Section>
-          <Section title="右侧对话" description="复用 M5 的执行 CLI，但模型、权限和超时独立配置。">
+          <Section title="右侧对话" description="CLI、模型、权限和超时均与 M5 独立。">
+            <SelectField name="chat_cli" label="对话 CLI" options={cliOptions} help="仅用于右侧对话。" />
             <TextField name="chat_model" label="对话模型" />
             <SelectField name="chat_reasoning_effort" label="推理档位" options={reasoningOptions} />
             <SelectField name="chat_sandbox" label="文件权限" options={sandboxOptions} />
@@ -511,7 +512,7 @@ export default function RuntimeSettings() {
           stage="CHAT"
           title="右侧对话"
           enabled={liveSettings.chat_enabled}
-          primary={`${liveSettings.execute_cli} · ${liveSettings.chat_model}`}
+          primary={`${liveSettings.chat_cli} · ${liveSettings.chat_model}`}
           secondary={`${liveSettings.chat_reasoning_effort} · ${liveSettings.chat_timeout_seconds}s 超时`}
         />
         <RuntimeStep

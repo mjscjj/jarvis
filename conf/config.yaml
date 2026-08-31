@@ -156,10 +156,12 @@ execute:
   stale_executing_minute: 45                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
 
 # 右侧流式对话（SSE /api/chat）。enabled=false 时不注册路由。
-# CLI 与模型与 M5 执行对齐（execute.bin/model）；本地可信环境固定 danger-full-access + 联网。
+# 独立 Chat sidecar；CLI、模型和生命周期均不再复用 M5。
 chat:
   enabled: true
-  model: "gpt-5.6-sol"                 # 与 execute.model 一致
+  bin: "codex"
+  addr: "0.0.0.0:18801"
+  model: "gpt-5.6-sol"
   timeout_seconds: 600                 # 单轮对话超时（可能自跑工具，放宽）
   sandbox: "danger-full-access"        # 对话场景最大权限
   reasoning_effort: "medium"           # 与 execute.reasoning_effort 一致

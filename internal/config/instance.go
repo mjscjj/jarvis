@@ -19,13 +19,21 @@ type Instance struct {
 }
 
 func (s ServerConfig) APIBase() (string, error) {
-	host, port, err := net.SplitHostPort(s.Addr)
+	return apiBaseForAddr("server.addr", s.Addr)
+}
+
+func (c ChatConfig) APIBase() (string, error) {
+	return apiBaseForAddr("chat.addr", c.Addr)
+}
+
+func apiBaseForAddr(name, addr string) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return "", fmt.Errorf("invalid server.addr: %w", err)
+		return "", fmt.Errorf("invalid %s: %w", name, err)
 	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
-		return "", fmt.Errorf("invalid server.addr port %q", port)
+		return "", fmt.Errorf("invalid %s port %q", name, port)
 	}
 	switch host {
 	case "", "0.0.0.0":

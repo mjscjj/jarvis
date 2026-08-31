@@ -57,6 +57,7 @@ type RuntimeSettings struct {
 	ExecuteConcurrency     int    `json:"execute_concurrency"`
 
 	ChatEnabled         bool   `json:"chat_enabled"`
+	ChatCLI             string `json:"chat_cli"`
 	ChatModel           string `json:"chat_model"`
 	ChatSandbox         string `json:"chat_sandbox"`
 	ChatReasoningEffort string `json:"chat_reasoning_effort"`
@@ -218,6 +219,7 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExecuteStaleMinutes:          cfg.Execute.StaleExecutingMinute,
 		ExecuteConcurrency:           cfg.Execute.Concurrency,
 		ChatEnabled:                  cfg.Chat.Enabled,
+		ChatCLI:                      cfg.Chat.Bin,
 		ChatModel:                    cfg.Chat.Model,
 		ChatSandbox:                  cfg.Chat.Sandbox,
 		ChatReasoningEffort:          cfg.Chat.ReasoningEffort,
@@ -294,6 +296,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Execute.StaleExecutingMinute = input.ExecuteStaleMinutes
 	cfg.Execute.Concurrency = input.ExecuteConcurrency
 	cfg.Chat.Enabled = input.ChatEnabled
+	cfg.Chat.Bin = strings.TrimSpace(input.ChatCLI)
 	cfg.Chat.Model = strings.TrimSpace(input.ChatModel)
 	cfg.Chat.Sandbox = strings.TrimSpace(input.ChatSandbox)
 	cfg.Chat.ReasoningEffort = strings.TrimSpace(input.ChatReasoningEffort)
@@ -379,6 +382,7 @@ type runtimeOverride struct {
 	} `yaml:"execute"`
 	Chat struct {
 		Enabled         bool   `yaml:"enabled"`
+		Bin             string `yaml:"bin"`
 		Model           string `yaml:"model"`
 		Sandbox         string `yaml:"sandbox"`
 		ReasoningEffort string `yaml:"reasoning_effort"`
@@ -474,6 +478,7 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Execute.StaleExecutingMinute = input.ExecuteStaleMinutes
 	override.Execute.Concurrency = input.ExecuteConcurrency
 	override.Chat.Enabled = input.ChatEnabled
+	override.Chat.Bin = strings.TrimSpace(input.ChatCLI)
 	override.Chat.Model = strings.TrimSpace(input.ChatModel)
 	override.Chat.Sandbox = strings.TrimSpace(input.ChatSandbox)
 	override.Chat.ReasoningEffort = strings.TrimSpace(input.ChatReasoningEffort)
@@ -517,9 +522,18 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 }
 
 func writeRuntimeOverride(path string, override runtimeOverride) error {
-	data, err := yaml.Marshal(&override)
+	patch, err := yaml.Marshal(&override)
 	if err != nil {
 		return fmt.Errorf("marshal runtime config override: %w", err)
+	}
+	data := patch
+	if current, readErr := os.ReadFile(path); readErr == nil {
+		data, err = mergeRuntimeOverrideYAML(current, patch)
+		if err != nil {
+			return fmt.Errorf("merge runtime config override: %w", err)
+		}
+	} else if !os.IsNotExist(readErr) {
+		return fmt.Errorf("read runtime config override %q: %w", path, readErr)
 	}
 	dir := filepath.Dir(path)
 	temp, err := os.CreateTemp(dir, ".config.runtime-*.yaml")
@@ -543,4 +557,44 @@ func writeRuntimeOverride(path string, override runtimeOverride) error {
 		return fmt.Errorf("replace runtime config override %q: %w", path, err)
 	}
 	return nil
+}
+
+// mergeRuntimeOverrideYAML updates only settings-owned leaves. Deployment
+// fields such as server/sqlite, chat.addr/history_dir and execute paths remain
+// owned by installation configuration and survive a settings-page save.
+func mergeRuntimeOverrideYAML(current, patch []byte) ([]byte, error) {
+	var existingNode, patchNode yaml.Node
+	if err := yaml.Unmarshal(current, &existingNode); err != nil {
+		return nil, err
+	}
+	if err := yaml.Unmarshal(patch, &patchNode); err != nil {
+		return nil, err
+	}
+	if len(existingNode.Content) != 1 || len(patchNode.Content) != 1 {
+		return nil, fmt.Errorf("runtime override must contain one YAML document")
+	}
+	mergeYAMLMapping(existingNode.Content[0], patchNode.Content[0])
+	return yaml.Marshal(&existingNode)
+}
+
+func mergeYAMLMapping(dst, src *yaml.Node) {
+	if dst.Kind != yaml.MappingNode || src.Kind != yaml.MappingNode {
+		*dst = *src
+		return
+	}
+	for index := 0; index < len(src.Content); index += 2 {
+		key, value := src.Content[index], src.Content[index+1]
+		matched := false
+		for current := 0; current < len(dst.Content); current += 2 {
+			if dst.Content[current].Value != key.Value {
+				continue
+			}
+			mergeYAMLMapping(dst.Content[current+1], value)
+			matched = true
+			break
+		}
+		if !matched {
+			dst.Content = append(dst.Content, key, value)
+		}
+	}
 }

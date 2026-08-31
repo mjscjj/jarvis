@@ -114,6 +114,8 @@ execute:
   stale_executing_minute: 45
 chat:
   enabled: true
+  bin: "codex"
+  addr: "127.0.0.1:18801"
   model: "chat-model"
   timeout_seconds: 600
   sandbox: "danger-full-access"
@@ -137,6 +139,10 @@ scheduled_task:
 func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	configPath := writeRuntimeSettingsTestConfig(t)
 	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
+server:
+  addr: 0.0.0.0:19902
+sqlite:
+  path: preview.db
 card_approval:
   enabled: true
   principal_open_id: ou_principal
@@ -147,6 +153,9 @@ lark_cli:
   bin: custom-lark-cli
 dailydigest:
   git_author: initialized@example.com
+chat:
+  addr: 0.0.0.0:19903
+  history_dir: /tmp/preserved-chat-history
 `), 0o600); err != nil {
 		t.Fatalf("write card approval runtime override: %v", err)
 	}
@@ -174,6 +183,7 @@ dailydigest:
 	input.AnalysisCLI = "codex"
 	input.AnalysisModel = "new-analysis-model"
 	input.ExecuteCLI = "traex"
+	input.ChatCLI = "traex"
 	input.ExecuteConcurrency = 4
 	input.ExtractSchedule = "@every 2m"
 	input.ExtractConcurrency = 4
@@ -194,7 +204,7 @@ dailydigest:
 	if !reflect.DeepEqual(updated.Settings, input) {
 		t.Fatalf("round-trip settings mismatch:\nupdated=%#v\ninput=%#v", updated.Settings, input)
 	}
-	if updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
+	if updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" || updated.Settings.ChatCLI != "traex" ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
 		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
 		updated.Settings.ProactiveSchedule != "@every 2h" || updated.Settings.ProactiveStartupDelaySeconds != 180 ||
@@ -216,7 +226,7 @@ dailydigest:
 	if err != nil {
 		t.Fatalf("Load() after update error = %v", err)
 	}
-	if reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
+	if reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" || reloaded.Chat.Bin != "traex" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
 		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
@@ -232,6 +242,10 @@ dailydigest:
 		reloaded.LarkCLI.Bin != "custom-lark-cli" ||
 		reloaded.DailyDigest.GitAuthor != "initialized@example.com" {
 		t.Fatalf("initialization identity config was not preserved: extract=%q lark=%#v dailydigest=%#v", reloaded.Extract.PrincipalOpenID, reloaded.LarkCLI, reloaded.DailyDigest)
+	}
+	if reloaded.Server.Addr != "0.0.0.0:19902" || reloaded.SQLite.Path != "preview.db" ||
+		reloaded.Chat.Addr != "0.0.0.0:19903" || reloaded.Chat.HistoryDir != "/tmp/preserved-chat-history" {
+		t.Fatalf("deployment config was not preserved: server=%#v sqlite=%#v chat=%#v", reloaded.Server, reloaded.SQLite, reloaded.Chat)
 	}
 	restartedService, err := NewRuntimeSettingsService(configPath, reloaded)
 	if err != nil {

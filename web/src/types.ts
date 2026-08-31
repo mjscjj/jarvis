@@ -1087,6 +1087,7 @@ export interface RuntimeSettings {
   execute_concurrency: number
 
   chat_enabled: boolean
+  chat_cli: AgentCLI
   chat_model: string
   chat_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
   chat_reasoning_effort: ReasoningEffort

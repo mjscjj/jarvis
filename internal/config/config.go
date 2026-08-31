@@ -234,11 +234,12 @@ type ExecuteConfig struct {
 	StaleExecutingMinute int    `yaml:"stale_executing_minute"` // executing 超过此时长仍未结束 → 标 failed（防重启僵尸）
 }
 
-// ChatConfig 控制「基于 agent CLI 的流式对话服务」（/api/chat，SSE）。
-// Enabled=false 时不注册路由。CLI 二进制复用 execute.bin（与 M5 同引擎）；
-// 沙箱固定为对话场景的 danger-full-access + 联网（本地可信环境），reasoning_effort 可调。
+// ChatConfig controls the independent local chat sidecar. It deliberately owns
+// its CLI and listener instead of inheriting M5 execute settings or lifecycle.
 type ChatConfig struct {
 	Enabled         bool   `yaml:"enabled"`
+	Bin             string `yaml:"bin"`
+	Addr            string `yaml:"addr"`
 	Model           string `yaml:"model"`
 	TimeoutSeconds  int    `yaml:"timeout_seconds"`
 	Sandbox         string `yaml:"sandbox"`
@@ -525,6 +526,15 @@ func (c *Config) validate() error {
 		if c.Execute.Concurrency <= 0 {
 			return fmt.Errorf("execute.concurrency 必须大于 0")
 		}
+	}
+	if strings.TrimSpace(c.Chat.Bin) == "" {
+		return fmt.Errorf("chat.bin 不能为空")
+	}
+	if _, err := apiBaseForAddr("chat.addr", c.Chat.Addr); err != nil {
+		return err
+	}
+	if c.Chat.Addr == c.Server.Addr {
+		return fmt.Errorf("chat.addr 不能与 server.addr 相同")
 	}
 	if err := validateCodexSandbox("chat.sandbox", c.Chat.Sandbox); err != nil {
 		return err

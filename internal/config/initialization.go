@@ -124,6 +124,9 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 
 func initializationRuntimeBinaries(cfg Config) []string {
 	configured := []string{cfg.LarkCLI.Bin, cfg.Codex.Bin, cfg.Execute.Bin}
+	if cfg.Chat.Enabled {
+		configured = append(configured, cfg.Chat.Bin)
+	}
 	if cfg.FactEngine.Enabled {
 		configured = append(configured, cfg.FactEngine.Bin)
 	}
