@@ -56,7 +56,7 @@ export function HierarchyNav({
         <nav aria-label="方向" role="tablist" className="flex gap-1.5 overflow-x-auto pb-0.5">
           {activePriority.objectives.map((objective) => {
             const selected = objective.id === activeObjectiveId
-            return <button key={objective.id} type="button" role="tab" aria-selected={selected} title={objective.title} onClick={() => onObjective(objective.id)} className={`inline-flex max-w-64 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${selected ? 'border-blue-300 bg-white text-blue-700 shadow-[inset_0_-3px_0_#2563eb,0_2px_6px_rgba(37,99,235,0.07)]' : 'border-slate-200 bg-white/60 text-slate-600 hover:border-slate-300 hover:bg-white'}`}><span className="truncate">{objective.title || '未命名方向'}</span><b className="rounded-full bg-slate-200/70 px-1.5 text-[10px]">{objective.krs.length}</b></button>
+            return <button key={objective.id} type="button" role="tab" aria-selected={selected} title={objective.title} data-okr-target-kind="objective" data-okr-objective-id={objective.id} onClick={() => onObjective(objective.id)} className={`inline-flex max-w-64 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${selected ? 'border-blue-300 bg-white text-blue-700 shadow-[inset_0_-3px_0_#2563eb,0_2px_6px_rgba(37,99,235,0.07)]' : 'border-slate-200 bg-white/60 text-slate-600 hover:border-slate-300 hover:bg-white'}`}><span className="truncate">{objective.title || '未命名方向'}</span><b className="rounded-full bg-slate-200/70 px-1.5 text-[10px]">{objective.krs.length}</b></button>
           })}
         </nav>
       </div>}

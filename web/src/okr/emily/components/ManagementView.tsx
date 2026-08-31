@@ -142,7 +142,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { 
   }
 
   return (
-    <div className="group/kr grid grid-cols-[minmax(0,1fr)_auto] gap-2 px-3.5 py-2 transition-colors hover:bg-slate-50/70">
+    <div data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className="group/kr grid grid-cols-[minmax(0,1fr)_auto] gap-2 px-3.5 py-2 transition-colors hover:bg-slate-50/70">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
           <input
@@ -268,7 +268,7 @@ function ObjectiveEditorHeader({
 	}
 
 	return (
-		<div className="flex min-h-9 flex-wrap items-center gap-1.5 border-y border-slate-100 bg-slate-50/80 px-3.5 py-1.5 first:border-t-0">
+		<div data-okr-target-kind="objective" data-okr-objective-id={objective.id} className="flex min-h-9 flex-wrap items-center gap-1.5 border-y border-slate-100 bg-slate-50/80 px-3.5 py-1.5 first:border-t-0">
 			{editing ? <>
 				<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void save(); if (event.key === 'Escape') cancel() }} aria-label="O 标题" className="h-7 min-w-64 flex-1 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-blue-400" />
 				<button type="button" disabled={busy || !title.trim()} onClick={() => void save()} className="h-6 rounded-md bg-blue-600 px-2 text-[9px] font-medium text-white disabled:opacity-40">保存</button>

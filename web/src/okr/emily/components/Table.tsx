@@ -38,11 +38,11 @@ function priorityTone(priority: KrPriority | '') {
   return 'border-slate-200 bg-white text-slate-500'
 }
 
-function EntryRow({ pointId, entry, readOnly }: { pointId: string; entry: Entry; readOnly: boolean }) {
+function EntryRow({ objectiveId, krId, pointId, entry, readOnly }: { objectiveId: string; krId: string; pointId: string; entry: Entry; readOnly: boolean }) {
   const { patchEntry, removeEntry } = useBoard()
 
   return (
-    <div className="group/entry flex items-start gap-2.5 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2.5">
+    <div data-okr-target-kind="progress" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={pointId} data-okr-progress-id={entry.id} className="group/entry flex items-start gap-2.5 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2.5">
       <span className="pt-0.5">
         <StatusSelect value={entry.status} onChange={(status) => patchEntry(pointId, entry.id, { status })} readOnly={readOnly} />
       </span>
@@ -74,7 +74,7 @@ function EntryRow({ pointId, entry, readOnly }: { pointId: string; entry: Entry;
   )
 }
 
-function EntryList({ point, done, readOnly }: { point: Point; done: boolean; readOnly: boolean }) {
+function EntryList({ objectiveId, krId, point, done, readOnly }: { objectiveId: string; krId: string; point: Point; done: boolean; readOnly: boolean }) {
   const { addEntry } = useBoard()
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
@@ -89,7 +89,7 @@ function EntryList({ point, done, readOnly }: { point: Point; done: boolean; rea
 
   return (
     <div className="space-y-1.5">
-      {list.map((entry) => <EntryRow key={entry.id} pointId={point.id} entry={entry} readOnly={readOnly} />)}
+      {list.map((entry) => <EntryRow key={entry.id} objectiveId={objectiveId} krId={krId} pointId={point.id} entry={entry} readOnly={readOnly} />)}
       {list.length === 0 && (
         <div className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-xs text-slate-400">
           {done ? '状态改为「已完成」的条目会自动移到这里' : '暂无进展'}
@@ -303,18 +303,18 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
 
 function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, progressReadOnly, showProgress }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean }) {
   return (
-    <article id={`point-${point.id}`} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
+    <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
       <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} />
       {open && showProgress && (
         <div className="mt-2 grid grid-cols-1 gap-2 pl-7 md:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-2.5">
             <h4 className="mb-2 text-xs font-semibold text-slate-500">进展</h4>
-            <EntryList point={point} done={false} readOnly={progressReadOnly} />
+            <EntryList objectiveId={objectiveId} krId={krId} point={point} done={false} readOnly={progressReadOnly} />
             <HistoryPreview point={point} />
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-2.5">
             <h4 className="mb-2 text-xs font-semibold text-slate-500">已完成</h4>
-            <EntryList point={point} done readOnly={progressReadOnly} />
+            <EntryList objectiveId={objectiveId} krId={krId} point={point} done readOnly={progressReadOnly} />
           </section>
         </div>
       )}
@@ -376,7 +376,7 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
   const open = !closed.has(kr.id)
   const definitionLocked = readOnly || definitionsReadOnly
   return (
-    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
+    <article data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
       <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} />
       {open && (
         <div className="space-y-5 px-4 py-4">

@@ -168,6 +168,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     ? context.view_state.action_label
     : undefined
   const currentQuarter = context.active_key === 'okr' ? context.view_state.quarter : undefined
+  const currentWeek = context.active_key === 'okr' ? context.view_state.week : undefined
   const currentSelectionType = context.selection
     ? SELECTION_LABELS[context.selection.kind] ?? '对象'
     : null
@@ -278,6 +279,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         }
       }
       if (streamError) throw new Error(streamError)
+      window.dispatchEvent(new Event('jarvis:chat-completed'))
     } catch (cause: unknown) {
       if (isAbortError(cause)) {
         setPaused(true)
@@ -338,6 +340,10 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         {currentQuarter && <>
           <span className="chat-context-separator" aria-hidden="true">·</span>
           <span className="chat-context-selection">{currentQuarter.replace('-', ' ')}</span>
+        </>}
+        {currentWeek && <>
+          <span className="chat-context-separator" aria-hidden="true">·</span>
+          <span className="chat-context-selection">{currentWeek}</span>
         </>}
       </div>
       <div className="chat-history-actions">
