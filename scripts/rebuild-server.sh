@@ -11,14 +11,16 @@ bin=$repo_dir/bin/jarvis-server
 next_bin=$repo_dir/bin/jarvis-server.next
 tasks_api="http://127.0.0.1:18800/api/tasks?status=executing&page=1&page_size=1"
 force_interrupt_running_tasks=false
+build_only=false
 
 usage() {
   cat >&2 <<'EOF'
-Usage: ./scripts/rebuild-server.sh [--force-interrupt-running-tasks]
+Usage: ./scripts/rebuild-server.sh [--force-interrupt-running-tasks | --build-only]
 
 The normal rebuild refuses to restart Jarvis while Tasks are executing because
 launchctl kickstart terminates their Codex child processes. Use the force flag
 only when intentionally interrupting those Tasks.
+Use --build-only to build and verify the signed binary without restarting any service.
 EOF
 }
 
@@ -28,6 +30,9 @@ case $# in
     case $1 in
       --force-interrupt-running-tasks)
         force_interrupt_running_tasks=true
+        ;;
+      --build-only)
+        build_only=true
         ;;
       --help|-h)
         usage
@@ -66,6 +71,12 @@ echo "building $next_bin"
 go build -o "$next_bin" ./cmd/jarvis-server
 "$script_dir/sign-jarvis-server.sh" "$next_bin"
 "$script_dir/verify-server-signature.sh" "$next_bin"
+
+if [[ $build_only == true ]]; then
+  mv "$next_bin" "$bin"
+  echo "signed backend built at $bin; no service restarted"
+  exit 0
+fi
 
 if launchctl print "$service_target" >/dev/null 2>&1; then
   running_tasks=$(running_task_count)

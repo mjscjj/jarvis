@@ -83,6 +83,8 @@ launchctl bootstrap "gui/$uid" "$plist"
 
 服务已注册但 18800 API 不可达时，脚本会拒绝重启。`--force-interrupt-running-tasks` 只允许明确中断已查到的执行任务，不能绕过 API 查询失败。
 
+独立预览实例使用 `./scripts/rebuild-server.sh --build-only` 只构建并校验签名，不重启已注册的主服务；随后确认预览进程与配置归属，再替换预览二进制并重启该实例。
+
 不要裸 `go build` 覆盖 `bin/jarvis-server`；否则会改变签名身份，导致完全磁盘访问权限不稳定。
 
 ## 状态与日志
