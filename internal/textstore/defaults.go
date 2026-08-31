@@ -3,8 +3,9 @@ package textstore
 import "jarvis/internal/prompttemplate"
 
 const (
-	SystemPromptM3Key = "m3_system_prompt"
-	SystemPromptM5Key = "m5_system_prompt"
+	SystemPromptM3Key   = "m3_system_prompt"
+	SystemPromptM5Key   = "m5_system_prompt"
+	SystemPromptChatKey = "chat_system_prompt"
 	// SystemPromptProactiveKey drives the low-cost heartbeat agent that curates
 	// Jarvis's internal world model and creates Tasks for M5 without performing
 	// external business effects itself.
@@ -59,6 +60,11 @@ func definitions() []definition {
 			key: SystemPromptM5Key, name: "任务执行系统提示词", filename: "m5-system-prompt.md",
 			description: "execute、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。",
 			kind:        "system_prompt", stage: prompttemplate.StageM5,
+		},
+		{
+			key: SystemPromptChatKey, name: "页面对话系统提示词", filename: "chat-system-prompt.md",
+			description: "定义右下角独立 Chat 的角色、直接用户授权、页面上下文和副作用边界。",
+			kind:        "system_prompt", stage: "chat",
 		},
 		{
 			key: SystemPromptProactiveKey, name: "主动巡视系统提示词", filename: "proactive-system-prompt.md",

@@ -16,6 +16,7 @@ import (
 	"jarvis/internal/observability"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/store"
+	"jarvis/internal/textstore"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
@@ -48,6 +49,10 @@ func main() {
 	}
 	if err := cfg.ExportToolEnvironment(absoluteConfig, repoRoot); err != nil {
 		fatalf("configure main service tool environment failed: %v", err)
+	}
+	textFileService, err := textstore.NewService(filepath.Join(filepath.Dir(absoluteConfig), "prompts"))
+	if err != nil {
+		fatalf("initialize chat system prompts failed: %v", err)
 	}
 
 	sharedMemoryPath, err := sharedmem.PathForConfig(absoluteConfig)
@@ -82,6 +87,7 @@ func main() {
 		HistoryDir:       cfg.Chat.HistoryDir,
 		SharedMemory:     sharedMemoryService,
 		ContextAssembler: contextAssembler,
+		SystemPrompts:    textFileService,
 	})
 	if err != nil {
 		fatalf("initialize chat service failed: %v", err)

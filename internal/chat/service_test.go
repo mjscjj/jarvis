@@ -10,12 +10,31 @@ import (
 	"time"
 
 	"jarvis/internal/contextsnap"
+	"jarvis/internal/textstore"
 )
 
 // fakeSharedMemoryReader 是共享记忆读取打桩：text 为要注入的文本，err 非空模拟读表失败。
 type fakeSharedMemoryReader struct {
 	text string
 	err  error
+}
+
+type fakeSystemPromptReader struct {
+	err error
+}
+
+func (f fakeSystemPromptReader) Content(_ context.Context, key string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	switch key {
+	case textstore.SystemPromptChatKey:
+		return "Chat 系统提示词\n安全约束", nil
+	case textstore.OKRAgentPrinciplesKey:
+		return "OKR 原子工具与权限原则", nil
+	default:
+		return "", textstore.ErrNotFound
+	}
 }
 
 func (f fakeSharedMemoryReader) Text(context.Context) (string, error) {
@@ -56,6 +75,7 @@ func newTestServiceWithDependencies(t *testing.T, reader fakeSharedMemoryReader,
 		HistoryDir:       t.TempDir(),
 		SharedMemory:     reader,
 		ContextAssembler: assembler,
+		SystemPrompts:    fakeSystemPromptReader{},
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -94,6 +114,34 @@ func TestBuildPromptInjectsToolsAndContext(t *testing.T) {
 	}
 	if strings.Contains(prompt, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block\n%s", prompt)
+	}
+}
+
+func TestBuildPromptInjectsLatestOKRPrinciplesOnlyOnOKRPage(t *testing.T) {
+	t.Parallel()
+	svc := newTestService(t)
+	prompt, err := svc.buildPrompt(t.Context(), Request{
+		Message: "填写当前拆解",
+		PageContext: &PageContext{
+			ActiveKey: "okr",
+			ViewState: json.RawMessage(`{"tab":"weekly-fill","quarter":"2026-Q2","week":"2026-W15","point_id":"point-1"}`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"BEGIN_OKR_AGENT_PRINCIPLES", "OKR 原子工具与权限原则", `"point_id":"point-1"`} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("OKR prompt missing %q\n%s", expected, prompt)
+		}
+	}
+
+	nonOKR, err := svc.buildPrompt(t.Context(), Request{Message: "看看任务", PageContext: &PageContext{ActiveKey: "tasks"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(nonOKR, "BEGIN_OKR_AGENT_PRINCIPLES") {
+		t.Fatalf("non-OKR prompt leaked OKR principles\n%s", nonOKR)
 	}
 }
 
@@ -212,6 +260,7 @@ func TestStreamStartsNewSessionWhenResumeHasNoRollout(t *testing.T) {
 		HistoryDir:       t.TempDir(),
 		SharedMemory:     fakeSharedMemoryReader{},
 		ContextAssembler: &fakeContextAssembler{},
+		SystemPrompts:    fakeSystemPromptReader{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -252,6 +301,7 @@ func TestStreamDoesNotRetryOtherResumeFailures(t *testing.T) {
 		HistoryDir:       t.TempDir(),
 		SharedMemory:     fakeSharedMemoryReader{},
 		ContextAssembler: &fakeContextAssembler{},
+		SystemPrompts:    fakeSystemPromptReader{},
 	})
 	if err != nil {
 		t.Fatal(err)

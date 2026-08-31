@@ -174,7 +174,7 @@ func TestRepositoryPromptsDoNotEmbedToolManuals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService(repository prompts) error = %v", err)
 	}
-	for _, key := range []string{SystemPromptM3Key, SystemPromptM5Key, SystemPromptProactiveKey} {
+	for _, key := range []string{SystemPromptM3Key, SystemPromptM5Key, SystemPromptChatKey, SystemPromptProactiveKey} {
 		content, err := service.Content(t.Context(), key)
 		if err != nil {
 			t.Fatalf("Content(%q) error = %v", key, err)
