@@ -23,7 +23,6 @@ import (
 type PrincipalConfiguration struct {
 	RuntimeConfigPath      string `json:"runtime_config_path"`
 	PrincipalOpenID        string `json:"principal_open_id"`
-	LarkProfile            string `json:"lark_profile"`
 	GitAuthor              string `json:"git_author"`
 	CardApprovalConfigured bool   `json:"card_approval_configured"`
 	RelaySecretConfigured  bool   `json:"relay_secret_configured"`
@@ -41,7 +40,6 @@ type InitializationStatus struct {
 	BaseConfigMode            string   `json:"base_config_mode"`
 	RuntimeConfigMode         string   `json:"runtime_config_mode,omitempty"`
 	PrincipalOpenIDConfigured bool     `json:"principal_open_id_configured"`
-	LarkProfileConfigured     bool     `json:"lark_profile_configured"`
 	GitAuthorConfigured       bool     `json:"git_author_configured"`
 	CardApprovalConfigured    bool     `json:"card_approval_configured"`
 	ModelBaseURLConfigured    bool     `json:"model_base_url_configured"`
@@ -103,13 +101,10 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 		BaseConfigMode:            fmt.Sprintf("%04o", baseInfo.Mode().Perm()),
 		RuntimeConfigMode:         overrideMode,
 		PrincipalOpenIDConfigured: strings.HasPrefix(strings.TrimSpace(cfg.Extract.PrincipalOpenID), "ou_") && len(strings.TrimSpace(cfg.Extract.PrincipalOpenID)) > len("ou_"),
-		LarkProfileConfigured:     strings.TrimSpace(cfg.LarkCLI.Profile) != "",
 		GitAuthorConfigured:       strings.TrimSpace(cfg.DailyDigest.GitAuthor) != "",
 		CardApprovalConfigured: cfg.CardApproval.Enabled &&
-			strings.TrimSpace(cfg.CardApproval.Profile) != "" &&
 			strings.TrimSpace(cfg.CardApproval.PrincipalOpenID) != "" &&
 			strings.TrimSpace(cfg.CardApproval.RelaySecret) != "" &&
-			cfg.CardApproval.Profile == cfg.LarkCLI.Profile &&
 			cfg.CardApproval.PrincipalOpenID == cfg.Extract.PrincipalOpenID,
 		ModelBaseURLConfigured:    strings.TrimSpace(ark.BaseURL) != "",
 		ModelAPIKeyConfigured:     strings.TrimSpace(ark.APIKey) != "",
@@ -120,7 +115,7 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 		RuntimeBinaries:           initializationRuntimeBinaries(cfg),
 	}
 	status.MachineConfigurationReady = status.PrincipalOpenIDConfigured &&
-		status.LarkProfileConfigured && status.GitAuthorConfigured && status.CardApprovalConfigured &&
+		status.GitAuthorConfigured && status.CardApprovalConfigured &&
 		status.ModelBaseURLConfigured && status.ModelAPIKeyConfigured &&
 		status.ModelNameConfigured && status.EmbeddingModelConfigured &&
 		status.EmbeddingDimensionsReady
@@ -156,25 +151,22 @@ func initializationRuntimeBinaries(cfg Config) []string {
 	return result
 }
 
-// ConfigurePrincipal writes the app-scoped principal open_id, the one selected
-// lark-cli profile, its matching card-approval identity, and the principal's
-// Git author pattern to the ignored runtime overlay. The relay secret is
+// ConfigurePrincipal writes the app-scoped principal open_id, its matching
+// card-approval identity, and the principal's Git author pattern to the ignored
+// runtime overlay. lark-cli identity remains owned by the machine's current
+// default profile. The relay secret is
 // generated once and preserved across reruns; install-jarvis copies the same
 // value into CC Connect's jarvis-codex project. It intentionally does not
 // touch the tracked base config or any M1 business data.
-func ConfigurePrincipal(configPath, principalOpenID, larkProfile, gitAuthor string) (*PrincipalConfiguration, error) {
+func ConfigurePrincipal(configPath, principalOpenID, gitAuthor string) (*PrincipalConfiguration, error) {
 	configPath = strings.TrimSpace(configPath)
 	principalOpenID = strings.TrimSpace(principalOpenID)
-	larkProfile = strings.TrimSpace(larkProfile)
 	gitAuthor = strings.TrimSpace(gitAuthor)
 	if configPath == "" {
 		return nil, fmt.Errorf("config path is empty")
 	}
 	if !strings.HasPrefix(principalOpenID, "ou_") || len(principalOpenID) == len("ou_") {
 		return nil, fmt.Errorf("principal open_id %q must start with ou_ and contain an id", principalOpenID)
-	}
-	if larkProfile == "" {
-		return nil, fmt.Errorf("lark profile is empty")
 	}
 	if gitAuthor == "" {
 		return nil, fmt.Errorf("git author is empty")
@@ -208,10 +200,8 @@ func ConfigurePrincipal(configPath, principalOpenID, larkProfile, gitAuthor stri
 		}
 	}
 	setYAMLScalar(root, "extract", "principal_open_id", principalOpenID)
-	setYAMLScalar(root, "lark_cli", "profile", larkProfile)
 	setYAMLScalar(root, "dailydigest", "git_author", gitAuthor)
 	setYAMLBool(root, "card_approval", "enabled", true)
-	setYAMLScalar(root, "card_approval", "profile", larkProfile)
 	setYAMLScalar(root, "card_approval", "principal_open_id", principalOpenID)
 	setYAMLScalar(root, "card_approval", "relay_secret", relaySecret)
 
@@ -233,7 +223,6 @@ func ConfigurePrincipal(configPath, principalOpenID, larkProfile, gitAuthor stri
 	return &PrincipalConfiguration{
 		RuntimeConfigPath:      overridePath,
 		PrincipalOpenID:        principalOpenID,
-		LarkProfile:            larkProfile,
 		GitAuthor:              gitAuthor,
 		CardApprovalConfigured: true,
 		RelaySecretConfigured:  true,

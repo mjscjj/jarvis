@@ -557,6 +557,12 @@ resolve_api_base() {
   if [[ -z "$addr" ]]; then
     fail "could not parse server.addr from ${resolved}"
   fi
+  # 0.0.0.0 is a bind address, not a stable client destination. Local tools
+  # should connect through loopback even when the server listens on all IPv4
+  # interfaces.
+  if [[ "$addr" == 0.0.0.0:* ]]; then
+    addr="127.0.0.1:${addr#*:}"
+  fi
   echo "http://${addr}"
 }
 

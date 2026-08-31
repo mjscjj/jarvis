@@ -125,7 +125,8 @@ func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
 		"不执行本 Skill 的任何写命令",
 		"jarvis-config show-principal",
 		"不能改读 Task 仓库里的同名文件",
-		"lark-cli auth status --profile",
+		"lark-cli auth status --json --verify",
+		"lark-cli 当前默认身份",
 		"user `openId` 与 principal `open_id` 完全相同",
 		"+chat-search",
 		"--page-token",
@@ -150,6 +151,8 @@ func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
 	for _, forbidden := range []string{
 		"如果 `--user-id` 直发失败（极少见，说明还没建立私聊关系），再按下面",
 		"user_message",
+		"lark_profile",
+		"--profile",
 	} {
 		if strings.Contains(skill, forbidden) {
 			t.Fatalf("Feishu message skill still contains obsolete send rule %q:\n%s", forbidden, skill)
@@ -290,6 +293,7 @@ func TestBootstrapJarvisBuildsAReadBackWorldModel(t *testing.T) {
 		"高影响歧义",
 		"update-page",
 		"list-backlinks",
+		"[名称](type:id)",
 		"append-fact",
 		"list-facts",
 		"--source initialization",

@@ -26,16 +26,17 @@ install-traex    Install the stable ByteDance internal TRAE CLI.
 install-cc-connect Build the pinned Jarvis-patched CC Connect binary. It does not configure or start the daemon.
 install-qdrant  Install the pinned macOS arm64 Qdrant service for this checkout.
 validate-dependencies Verify every install-time dependency without starting Jarvis.
-configure-identity Save principal open_id, selected lark-cli Profile and Git author.
-bind-cc          Bind CC Connect jarvis-codex to that Profile and checkout.
+configure-identity Save principal open_id and Git author for the current default lark-cli identity.
+bind-cc          Bind CC Connect jarvis-codex to the current default lark-cli App and checkout.
 validate-binding Validate the one-App Jarvis/lark-cli/CC Connect binding.
 install-server  Build and register Jarvis only after dependencies and configuration are ready.
 validate        Verify configuration permissions and end-to-end service readiness.
 status          Summarize completed and pending items in an installation checklist.
 
 The tool performs machine-owned checks and atomic actions only. The calling
-Agent decides how to install missing dependencies, which Feishu app/profile to
-use, and whether an existing Jarvis installation may be changed.
+Agent decides how to install missing dependencies and whether an existing
+Jarvis installation may be changed. Feishu commands use lark-cli's current
+default identity.
 EOF
 }
 
@@ -57,10 +58,9 @@ resolve_install_run_dir() {
 
 start_installation() {
   require_command jq
-  local run_dir="" profile="待选择" run_id started_at checklist_path
+  local run_dir="" run_id started_at checklist_path
   while (( $# > 0 )); do
     case "$1" in
-      --profile) (( $# >= 2 )) || fail "--profile requires a value"; profile="$2"; shift 2 ;;
       --run-dir) (( $# >= 2 )) || fail "--run-dir requires a value"; run_dir="$2"; shift 2 ;;
       --help|-h) usage; exit 0 ;;
       *) fail "start unknown argument: $1" ;;
@@ -78,8 +78,8 @@ start_installation() {
   [[ -f "$INSTALL_CHECKLIST_TEMPLATE" ]] || fail "installation checklist template is missing: ${INSTALL_CHECKLIST_TEMPLATE}"
   mkdir -p "${run_dir}/evidence"
   checklist_path="${run_dir}/INSTALL_CHECKLIST.md"
-  awk -v run_id="$run_id" -v started_at="$started_at" -v repo_root="$REPO_ROOT" -v profile="$profile" '
-    { gsub(/\{\{RUN_ID\}\}/, run_id); gsub(/\{\{STARTED_AT\}\}/, started_at); gsub(/\{\{REPO_ROOT\}\}/, repo_root); gsub(/\{\{PROFILE\}\}/, profile); print }
+  awk -v run_id="$run_id" -v started_at="$started_at" -v repo_root="$REPO_ROOT" '
+    { gsub(/\{\{RUN_ID\}\}/, run_id); gsub(/\{\{STARTED_AT\}\}/, started_at); gsub(/\{\{REPO_ROOT\}\}/, repo_root); print }
   ' "$INSTALL_CHECKLIST_TEMPLATE" >"$checklist_path"
   jq -nc --arg run_dir "$run_dir" --arg checklist "$checklist_path" --arg evidence_dir "${run_dir}/evidence" \
     '{ok:true,run_dir:$run_dir,checklist:$checklist,evidence_dir:$evidence_dir}'
@@ -221,35 +221,26 @@ initialization_status() {
 }
 
 integrated_binding_validation() {
-  local identity profile
-  identity="$(
-    cd "$REPO_ROOT"
-    go run ./cmd/jarvis-config show-principal --config "$CONFIG_PATH"
-  )"
-  profile="$(jq -r '.lark_profile // ""' <<<"$identity")"
-  [[ -n "$profile" ]] || fail "Jarvis lark-cli profile is empty; run configure-identity first"
   "${REPO_ROOT}/integrations/cc-connect/manage.sh" \
-    validate --config "$CONFIG_PATH" --profile "$profile"
+    validate --config "$CONFIG_PATH"
 }
 
 configure_identity() {
-  local open_id="" profile="" git_author="" config_path="$CONFIG_PATH"
+  local open_id="" git_author="" config_path="$CONFIG_PATH"
   while (( $# > 0 )); do
     case "$1" in
       --open-id) (( $# >= 2 )) || fail "--open-id requires a value"; open_id="$2"; shift 2 ;;
-      --profile) (( $# >= 2 )) || fail "--profile requires a value"; profile="$2"; shift 2 ;;
       --git-author) (( $# >= 2 )) || fail "--git-author requires a value"; git_author="$2"; shift 2 ;;
       --config) (( $# >= 2 )) || fail "--config requires a value"; config_path="$2"; shift 2 ;;
       *) fail "configure-identity unknown argument: $1" ;;
     esac
   done
   [[ "$open_id" == ou_* && "$open_id" != "ou_" ]] || fail "configure-identity requires a non-empty ou_ --open-id"
-  [[ -n "$profile" ]] || fail "configure-identity requires --profile"
   [[ -n "$git_author" ]] || fail "configure-identity requires --git-author"
   [[ "$config_path" == /* ]] || config_path="${REPO_ROOT}/${config_path}"
   (
     cd "$REPO_ROOT"
-    go run ./cmd/jarvis-config configure-principal --config "$config_path" --open-id "$open_id" --profile "$profile" --git-author "$git_author"
+    go run ./cmd/jarvis-config configure-principal --config "$config_path" --open-id "$open_id" --git-author "$git_author"
   ) | jq -c .
 }
 
@@ -707,7 +698,7 @@ install_server() {
   local binding_validation
   if ! binding_validation="$(integrated_binding_validation)"; then
     printf '%s\n' "$binding_validation" >&2
-    fail "the lark-cli Profile, Jarvis, and CC Connect Bot binding is not ready"
+    fail "the default lark-cli identity and CC Connect Bot binding are not ready"
   fi
   curl -fsS --max-time 2 "${QDRANT_URL}/healthz" -o /dev/null || \
     fail "Qdrant is not healthy; install or select the vector service first"

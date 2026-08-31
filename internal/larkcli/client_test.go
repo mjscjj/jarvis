@@ -162,16 +162,16 @@ func TestRunRejectsCallerFormat(t *testing.T) {
 	}
 }
 
-func TestRunUsesConfiguredProfile(t *testing.T) {
+func TestRunUsesDefaultProfile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-only")
 	}
 	bin := writeScript(t, `
 case "$*" in
-  *"--profile cli_onboarding --format json"*) printf '%s' '{"ok":true,"data":{"value":"profile-used"}}' ;;
+  "im +chat-list --format json") printf '%s' '{"ok":true,"data":{"value":"default-profile"}}' ;;
   *) printf '%s' "unexpected args: $*" >&2; exit 9 ;;
 esac`)
-	client, err := New(Options{Bin: bin, Profile: "cli_onboarding", RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -179,16 +179,8 @@ esac`)
 	if err := client.Run(context.Background(), &got, "im", "+chat-list"); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got.Data.Value != "profile-used" {
-		t.Fatalf("Run() value = %q, want profile-used", got.Data.Value)
-	}
-}
-
-func TestRunRejectsCallerProfile(t *testing.T) {
-	client := &Client{}
-	err := client.Run(context.Background(), &testResponse{}, "im", "+chat-list", "--profile", "other")
-	if err == nil || !strings.Contains(err.Error(), "profile is owned by the client") {
-		t.Fatalf("Run() error = %v", err)
+	if got.Data.Value != "default-profile" {
+		t.Fatalf("Run() value = %q, want default-profile", got.Data.Value)
 	}
 }
 

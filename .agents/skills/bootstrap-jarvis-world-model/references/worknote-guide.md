@@ -24,6 +24,6 @@
 
 ## 应用与恢复
 
-按 `Principal → Project → Person → KeyMatter/ManagedResource → Group → RelationFact → baseline Fact` 的依赖顺序逐项处理。每次写入后立即使用对应 get/list/query 命令读回，并把真实 ID 和结果写到工作稿；属于整体安装时同步更新 `INSTALL_CHECKLIST.md` 的世界模型 E 区。
+按 `Principal → Project → Person → KeyMatter/ManagedResource → Group → 实体长期事实页 → baseline Fact` 的依赖顺序逐项处理。每次写入后立即使用对应 get/list/query 命令读回，并把真实 ID 和结果写到工作稿；属于整体安装时同步更新 `INSTALL_CHECKLIST.md` 的世界模型 E 区。
 
 中断恢复时先按业务键查询当前世界模型：Person 用同 App 的 open_id，Group 用 chat_id，资料用规范化 URL/token，Project 用明确 repo/code/稳定名称，Fact 用主体、发生时间、完整事件和 `source_kind=initialization`。确认不存在才创建；有歧义就停止，不靠事务、回滚或重复追加解决。

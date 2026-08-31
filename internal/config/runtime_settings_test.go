@@ -136,14 +136,12 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
 card_approval:
   enabled: true
-  profile: cli_jarvis
   principal_open_id: ou_principal
   relay_secret: relay-secret
 extract:
   principal_open_id: ou_initialized
 lark_cli:
   bin: custom-lark-cli
-  profile: cli_initialized
 dailydigest:
   git_author: initialized@example.com
 `), 0o600); err != nil {
@@ -223,12 +221,12 @@ dailydigest:
 		t.Fatalf("reloaded config = %#v", reloaded)
 	}
 	if got := reloaded.CardApproval; !got.Enabled ||
-		got.Profile != "cli_jarvis" || got.PrincipalOpenID != "ou_principal" ||
+		got.PrincipalOpenID != "ou_principal" ||
 		got.RelaySecret != "relay-secret" {
 		t.Fatalf("card approval config was not preserved: %#v", got)
 	}
 	if reloaded.Extract.PrincipalOpenID != "ou_initialized" ||
-		reloaded.LarkCLI.Bin != "custom-lark-cli" || reloaded.LarkCLI.Profile != "cli_initialized" ||
+		reloaded.LarkCLI.Bin != "custom-lark-cli" ||
 		reloaded.DailyDigest.GitAuthor != "initialized@example.com" {
 		t.Fatalf("initialization identity config was not preserved: extract=%q lark=%#v dailydigest=%#v", reloaded.Extract.PrincipalOpenID, reloaded.LarkCLI, reloaded.DailyDigest)
 	}

@@ -32,16 +32,14 @@ jarvis-tools get-principal
 JARVIS_TOOLS_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$(command -v jarvis-tools)")"
 JARVIS_REPO_ROOT="$(cd "$(dirname "$JARVIS_TOOLS_REAL")/.." && pwd)"
 (cd "$JARVIS_REPO_ROOT" && go run ./cmd/jarvis-config show-principal --config conf/config.yaml) \
-  | jq -c '{principal_open_id,lark_profile}'
+  | jq -c '{principal_open_id}'
 ```
 
-这个结果的 `principal_open_id` 必须与 `jarvis-tools get-principal` 完全相同；`lark_profile` 就是当前合并配置的 `lark_cli.profile`。命令缺失、配置读取失败或两个 principal 不一致都停止，不能改读 Task 仓库里的同名文件。配置值非空时显式核验并在后续命令中始终传入：
+这个结果的 `principal_open_id` 必须与 `jarvis-tools get-principal` 完全相同。命令缺失、配置读取失败或两个 principal 不一致都停止，不能改读 Task 仓库里的同名文件。所有飞书命令使用 lark-cli 当前默认身份，先显式核验：
 
 ```bash
-lark-cli auth status --profile "<lark_profile>" --json --verify
+lark-cli auth status --json --verify
 ```
-
-如果 runtime 配置明确把 `lark_cli.profile` 留空，表示使用 lark-cli 当前默认 profile；此时运行 `lark-cli auth status --json --verify` 并做同样核验，后续命令省略 `--profile`。这不是发送失败后的 fallback，而是配置本身选择的身份。
 
 只有同时满足以下条件才继续：
 
@@ -49,7 +47,7 @@ lark-cli auth status --profile "<lark_profile>" --json --verify
 - `identities.bot.status=ready`，Bot 是 Jarvis Bot；
 - 顶层 `appId` 是当前 Jarvis App，后续建群时把它作为 `--bots` 参数。
 
-任一项缺失或不一致都停止并把原始结果交回 M5，不能用错误身份查群、建群或发送。下面示例按 profile 非空展示 `--profile "<lark_profile>"`。
+任一项缺失或不一致都停止并把原始结果交回 M5，不能用错误身份查群、建群或发送，也不能临时切换到另一个 profile。
 
 ## 2. 解析目标，不猜人
 
@@ -58,8 +56,7 @@ lark-cli auth status --profile "<lark_profile>" --json --verify
 ```bash
 lark-cli contact +search-user \
   --query "<姓名或邮箱>" \
-  --as user \
-  --profile "<lark_profile>"
+  --as user
 ```
 
 搜索结果必须唯一且身份信息与上下文一致。重名、多匹配、没有匹配或身份仍不确定时 fail-fast，不猜 `open_id`、不发送。
@@ -77,8 +74,7 @@ lark-cli im +messages-send \
   --user-id "<principal open_id>" \
   --markdown "<消息内容>" \
   --idempotency-key "<稳定幂等键>" \
-  --as bot \
-  --profile "<lark_profile>"
+  --as bot
 ```
 
 如果 `--user-id` 直发失败，把原始错误交回 M5；不要自动创建群、改用 user 身份或更换目标。
@@ -96,8 +92,7 @@ lark-cli im +chat-search \
   --chat-modes group \
   --is-manager \
   --page-size 100 \
-  --as user \
-  --profile "<lark_profile>"
+  --as user
 ```
 
 若响应的 `page_token` 非空，就把它作为下一次相同查询的 `--page-token`，直到返回空 token；不得只检查第一页。
@@ -109,8 +104,7 @@ lark-cli im +chat-members-list \
   --chat-id "<candidate chat_id>" \
   --member-types user --member-types bot \
   --page-all --page-limit 0 \
-  --as user \
-  --profile "<lark_profile>"
+  --as user
 ```
 
 只有 `users` 恰好是 principal 与对方、`bots` 恰好是当前 Jarvis App、没有 `truncations`，且群用途确实是该助手群时才算合格。唯一合格候选才复用；多个候选、成员不完整或用途不确定时停止，不能猜。
@@ -124,8 +118,7 @@ lark-cli im +chat-create \
   --bots "<Jarvis app_id>" \
   --type private \
   --chat-mode group \
-  --as user \
-  --profile "<lark_profile>"
+  --as user
 ```
 
 创建后必须再次用 `+chat-members-list --page-all --page-limit 0` 做同样的完整核验。建群是已经发生的独立副作用：成功后在最终结果申报一条 `feishu_chat` effect；即使随后发消息失败，也不能把已建群写成没有发生。重跑时先搜索并复用这个群。
@@ -137,8 +130,7 @@ lark-cli im +messages-send \
   --chat-id "<chat_id>" \
   --markdown '<at user_id="<target open_id>"><对方姓名></at> <at user_id="<principal open_id>"><principal 姓名></at> <消息内容>' \
   --idempotency-key "<稳定幂等键>" \
-  --as bot \
-  --profile "<lark_profile>"
+  --as bot
 ```
 
 ### 在群聊里给某个人发消息
@@ -151,8 +143,7 @@ lark-cli im +messages-reply \
   --markdown '<at user_id="<target open_id>"><对方姓名></at> <at user_id="<principal open_id>"><principal 姓名></at> <消息内容>' \
   --reply-in-thread \
   --idempotency-key "<稳定幂等键>" \
-  --as bot \
-  --profile "<lark_profile>"
+  --as bot
 ```
 
 ### 给整个群发消息
@@ -164,8 +155,7 @@ lark-cli im +messages-send \
   --chat-id "<chat_id>" \
   --markdown '<at user_id="<principal open_id>"><principal 姓名></at> <消息内容>' \
   --idempotency-key "<稳定幂等键>" \
-  --as bot \
-  --profile "<lark_profile>"
+  --as bot
 ```
 
 ## 4. 查重与稳定幂等键
@@ -189,8 +179,7 @@ jv-t<JARVIS_TASK_ID>-<不超过8字符的稳定语义槽>-<12位内容哈希>
 ```bash
 lark-cli im +messages-mget \
   --message-ids "<message_id>" \
-  --as bot \
-  --profile "<lark_profile>"
+  --as bot
 ```
 
 4. 读回必须确认消息真实存在，目标会话和内容与本次动作一致。

@@ -3,7 +3,7 @@
 ## 时间与身份边界
 
 - 默认窗口：当前时区最近 7 个自然日，报告准确起止时间。
-- 所有飞书读取都显式使用本次 `--profile` 和 `--as user`（命令不支持 `--as` 时以 lark-cli schema 为准）。
+- 所有飞书读取都使用 lark-cli 当前默认身份，并显式使用 `--as user`（命令不支持 `--as` 时以 lark-cli schema 为准）。
 - 先保存命令的原始成功 JSON，再做派生摘要。错误也单独保存原文，但必须去除 token、device_code 和授权 URL。
 - 每个推断引用 `evidence/<file>#<JSON path 或简短定位>`，不要只写“来自飞书”。
 
@@ -49,6 +49,7 @@
 
 - 本初始化阶段覆盖 `lark-shared` 的通用缺失 scope 恢复动作：只做只读审计，不运行 `auth login`、不发起增量授权、不修改开发者后台。错误中的 `missing_scopes` 和后台链接只作为证据与下一步记录。
 - 核心读取能力缺失时保留原始错误，整体安装场景返回 `$install-jarvis` 保持对应项未勾选；独立重建场景在工作稿中标阻塞。不要用其它来源假装该能力已经通过。
+- 文档搜索依赖 `search:docs:read`；它属于核心只读能力，缺失时只记录审计结果，不在本阶段发起授权。
 - `contact:user.department:readonly`、`contact:user.employee:readonly`、`contact:user.department_path:readonly` 是可选组织信息增强。缺失时继续初始化，把直属上级、职务或部门路径写成有来源的未知项；多源业务证据足够时可以写推断和置信度，但不得冒充通讯录事实。
 - 企业策略不支持 OKR 权限；初始化不得加载 `lark-okr`、调用 OKR API 或申请 OKR scope。OKR 证据的唯一来源是本人撰写且当前身份可读的文档；文档搜不到时保留未知，不得改走 OKR API。
 - 文档搜索依赖 `search:docs:read`。搜索为空、搜索分页未覆盖完整、候选正文不可读和确实没有匹配文档，是不同结论。单份文档无权是资源边界，不自动上升为全局 scope 缺失，也不发起文档权限申请。

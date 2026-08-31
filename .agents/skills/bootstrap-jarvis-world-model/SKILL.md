@@ -5,7 +5,7 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 
 # 建立 Jarvis 世界模型
 
-初始化只负责“Jarvis 如何理解这个用户的世界”。依赖、App/Profile、CC Connect 和主服务归 `$install-jarvis`；本 Skill 不安装或重启 daemon，也不配置 CC。它不进入 Jarvis M3/M5 Skill catalog。
+初始化只负责“Jarvis 如何理解这个用户的世界”。依赖、lark-cli 默认 App、CC Connect 和主服务归 `$install-jarvis`；本 Skill 不安装或重启 daemon，也不配置 CC。它不进入 Jarvis M3/M5 Skill catalog。
 
 先完整读取 [ownership-map.md](references/ownership-map.md)、[evidence-sources.md](references/evidence-sources.md)、[modeling-guide.md](references/modeling-guide.md)、[worknote-guide.md](references/worknote-guide.md) 和安装 Skill 的 [feishu-capability-audit.md](../install-jarvis/references/feishu-capability-audit.md)。
 
@@ -32,12 +32,12 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 
 ## 2. 读取证据
 
-加载并遵循 `lark-contact`、`lark-drive`、`lark-doc`、`lark-im`。所有飞书读取显式使用安装时选定的 `--profile` 和 user 身份。默认读取最近 7 个自然日，证据足够后停止；候选仍不确定时可以围绕它扩展关键词、章节、会话或时间范围并记录理由。
+加载并遵循 `lark-contact`、`lark-drive`、`lark-doc`、`lark-im`。所有飞书读取使用 lark-cli 当前默认身份，需要访问 principal 资源时显式使用 user 身份。默认读取最近 7 个自然日，证据足够后停止；候选仍不确定时可以围绕它扩展关键词、章节、会话或时间范围并记录理由。
 
 至少覆盖：
 
 1. 本人基础身份和当前可见的部门信息；职务、直属上级和完整部门路径属于可选增强，尝试读取但缺失时记录原因并继续，不申请对应高级权限。
-2. 本人原始创建的当前 OKR 文档。企业策略不支持 OKR 权限，不加载 `lark-okr`、不调用 OKR API。
+2. 本人原始创建的当前 OKR 文档。企业策略不支持 OKR 权限，不加载 `lark-okr`，不得改走 OKR API。
 3. 最近 7 天本人创建或参与编辑的文档，保存分页和正文读取覆盖。
 4. 最近 7 天必要的本人消息、@、线程回复、活跃群、候选群元数据和成员。
 5. 本机 Git 身份及已确认项目仓库的近期提交，只用于确认 Git author 和项目线索。
@@ -64,7 +64,7 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 2. Project、Person、KeyMatter、ManagedResource 逐项查询业务键、创建实体、立即读回；拿到真实 ID 后再处理引用。
 3. 每个实体的长期事实（它是什么、现在到哪一步）用 `update-page` 单独写入，立即 `get-page` 读回。控制位入口不接受这段内容。
 4. `./scripts/jarvis-world-model discover` 触发正常 M2 群发现。按证据中的 `chat_id` 精确选择群，用 `update-group` 写监听标记、`update-page` 写群背景，再 `./scripts/jarvis-world-model scan --chat-id ...` 走正常 checkpoint。
-5. 实体之间的重要关系写在各自的长期事实页正文里，用页内引用互相指向，随后 `list-backlinks` 读回确认引用解析正确。
+5. 结构化字段表达不了的重要关系写在相关实体的长期事实页正文里，用 `[名称](type:id)` 链接目标实体，随后 `list-backlinks` 读回确认引用解析正确；不要制造重复关系记录。
 6. 只有真实发生时间的决策、交付、阻塞或方向变化才 `append-fact --source initialization`，随后 `list-facts`。
 
 属于整体安装时，每项成功后立刻更新清单 E 区。中途失败就停止，保留已经读回的结果和原始错误；恢复时先查当前世界模型，确认对象不存在再写，不靠事务、回滚或隐藏 fallback。
@@ -72,7 +72,7 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 ## 5. 验收与交付
 
 ```bash
-./scripts/jarvis-world-model validate --profile <profile>
+./scripts/jarvis-world-model validate
 ```
 
 再按对象逐项语义抽查。项目、人物、资料、重点事项或监听群都没有固定数量下限；为零时说明这是证据结论、覆盖不足、权限缺口还是尚未决定。

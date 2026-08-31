@@ -173,7 +173,6 @@ type ExtractConfig struct {
 // LarkCLIConfig lark-cli 子进程封装（总纲 §4）。
 type LarkCLIConfig struct {
 	Bin        string  `yaml:"bin"`         // lark-cli 绝对路径
-	Profile    string  `yaml:"profile"`     // 可选；为空时使用 lark-cli 当前默认 profile
 	RateLimit  float64 `yaml:"rate_limit"`  // 令牌桶补充速率 tokens/s
 	Burst      int     `yaml:"burst"`       // 令牌桶容量
 	Concurrent int     `yaml:"concurrent"`  // 并发子进程上限
@@ -200,7 +199,6 @@ type CaptureConfig struct {
 // CC Connect, which remains the sole owner of the Jarvis Bot Feishu connection.
 type CardApprovalConfig struct {
 	Enabled         bool   `yaml:"enabled"`
-	Profile         string `yaml:"profile"`
 	PrincipalOpenID string `yaml:"principal_open_id"`
 	RelaySecret     string `yaml:"relay_secret"`
 }
@@ -456,9 +454,6 @@ func (c *Config) validate() error {
 		return fmt.Errorf("capture 的 discover/scan schedule 均不能为空")
 	}
 	if c.CardApproval.Enabled {
-		if c.CardApproval.Profile == "" {
-			return fmt.Errorf("card_approval.enabled=true 时 profile 不能为空")
-		}
 		if c.CardApproval.PrincipalOpenID == "" {
 			return fmt.Errorf("card_approval.enabled=true 时 principal_open_id 不能为空")
 		}

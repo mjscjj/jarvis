@@ -170,7 +170,6 @@ func main() {
 
 	larkClient, err := larkcli.New(larkcli.Options{
 		Bin:         cfg.LarkCLI.Bin,
-		Profile:     cfg.LarkCLI.Profile,
 		RateLimit:   cfg.LarkCLI.RateLimit,
 		Burst:       cfg.LarkCLI.Burst,
 		Concurrency: cfg.LarkCLI.Concurrent,
@@ -337,7 +336,6 @@ func main() {
 	if cfg.CardApproval.Enabled {
 		approvalClient, err := larkcli.New(larkcli.Options{
 			Bin:         cfg.LarkCLI.Bin,
-			Profile:     cfg.CardApproval.Profile,
 			RateLimit:   cfg.LarkCLI.RateLimit,
 			Burst:       cfg.LarkCLI.Burst,
 			Concurrency: cfg.LarkCLI.Concurrent,

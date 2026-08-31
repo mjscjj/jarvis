@@ -67,7 +67,6 @@ extract:
 # lark-cli 子进程封装（总纲 §4）
 lark_cli:
   bin: "lark-cli"                         # 走 PATH 查找，与 traex 同一风格
-  profile: ""                              # 初始化后写入 conf/config.runtime.yaml；为空时使用 CLI 默认 profile
   rate_limit: 5
   burst: 10
   concurrent: 2
@@ -91,7 +90,6 @@ capture:
 # 把审批按钮点击经带共享密钥的 localhost HTTP 转发给 Jarvis。
 card_approval:
   enabled: false
-  profile: ""
   principal_open_id: ""
   relay_secret: ""  # 只写进 Git 忽略的 config.runtime.yaml
 
