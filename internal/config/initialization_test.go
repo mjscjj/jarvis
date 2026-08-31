@@ -16,9 +16,11 @@ func TestConfigurePrincipalPreservesRuntimeOverride(t *testing.T) {
 	if err := os.WriteFile(overridePath, []byte(`# keep this local configuration
 card_approval:
   enabled: true
+  profile: cli_legacy
   principal_open_id: ou_bot_scope
   relay_secret: secret
 lark_cli:
+  profile: cli_legacy
   rate_limit: 7
 `), 0o600); err != nil {
 		t.Fatal(err)
@@ -51,6 +53,9 @@ lark_cli:
 	}
 	if !strings.Contains(string(raw), "# keep this local configuration") {
 		t.Fatalf("runtime comment was not preserved:\n%s", raw)
+	}
+	if strings.Contains(string(raw), "profile:") || strings.Contains(string(raw), "cli_legacy") {
+		t.Fatalf("legacy lark-cli profile fields were not removed:\n%s", raw)
 	}
 	info, err := os.Stat(overridePath)
 	if err != nil {
