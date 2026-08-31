@@ -18,24 +18,30 @@ import (
 // Health reports process and database readiness. Once a dependency is part of the
 // startup contract it must be checked here instead of reporting a false green.
 func Health(db *gorm.DB) app.HandlerFunc {
+	return HealthForService(db, "jarvis-server")
+}
+
+func HealthForService(db *gorm.DB, service string) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		ctx = observability.FromRequestContext(ctx, c)
 		if db == nil {
-			writeHealthError(ctx, c, fmt.Errorf("database dependency is nil"))
+			writeHealthError(ctx, c, service, fmt.Errorf("database dependency is nil"))
 			return
 		}
 		sqlDB, err := db.DB()
 		if err != nil {
-			writeHealthError(ctx, c, fmt.Errorf("get database connection: %w", err))
+			writeHealthError(ctx, c, service, fmt.Errorf("get database connection: %w", err))
 			return
 		}
 		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		if err := sqlDB.PingContext(pingCtx); err != nil {
-			writeHealthError(ctx, c, fmt.Errorf("ping database: %w", err))
+			writeHealthError(ctx, c, service, fmt.Errorf("ping database: %w", err))
 			return
 		}
-		c.JSON(consts.StatusOK, healthPayload("ok", ""))
+		payload := healthPayload("ok", "")
+		payload["service"] = service
+		c.JSON(consts.StatusOK, payload)
 	}
 }
 
@@ -151,9 +157,10 @@ func probeFailure(err error) map[string]any {
 	return map[string]any{"status": "error", "error": err.Error()}
 }
 
-func writeHealthError(ctx context.Context, c *app.RequestContext, err error) {
+func writeHealthError(ctx context.Context, c *app.RequestContext, service string, err error) {
 	hlog.CtxErrorf(ctx, "health check failed dependency=database error=%+v", err)
 	payload := healthPayload("error", err.Error())
+	payload["service"] = service
 	payload["logid"] = observability.LogID(ctx)
 	c.JSON(consts.StatusServiceUnavailable, payload)
 }

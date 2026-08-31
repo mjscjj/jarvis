@@ -47,7 +47,7 @@ func RegisterChatSidecar(h *server.Hertz, svc *chat.Service, db *gorm.DB, mainAd
 		return fmt.Errorf("invalid main server address: %w", err)
 	}
 	h.Use(observability.Middleware(), chatSameHostCORS(mainPort))
-	h.GET("/healthz", Health(db))
+	h.GET("/healthz", HealthForService(db, "jarvis-chat-server"))
 	h.POST("/api/chat", Chat(svc))
 	h.GET("/api/chat/:thread_id", GetChatHistory(svc))
 	h.OPTIONS("/api/chat", func(_ context.Context, c *app.RequestContext) {
