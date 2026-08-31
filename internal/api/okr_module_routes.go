@@ -72,6 +72,7 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	h.DELETE("/api/okr/objectives/:objective_id", requireEnabled, requireIdentity, DeleteObjective(deps.Workspace))
 	h.POST("/api/okr/objectives/:objective_id/krs", requireEnabled, requireIdentity, CreateKR(deps.Workspace))
 	h.PUT("/api/okr/krs/:kr_id", requireEnabled, requireIdentity, ReplaceCoreKR(deps.Workspace))
+	h.PUT("/api/okr/krs/:kr_id/tags", requireEnabled, requireIdentity, ReplaceKRTags(deps.Workspace))
 	h.DELETE("/api/okr/krs/:kr_id", requireEnabled, requireIdentity, DeleteKR(deps.Workspace))
 	return nil
 }

@@ -14,8 +14,14 @@ commands:
   scope
   board [--quarter Q]
   get-kr --id KR_ID
+  replace-kr-tags --id KR_ID --payload JSON|-
   people-search --query TEXT
   upload-image --file PATH
+
+replace-kr-tags accepts {"expected_version":N,"tags":[{"type":"custom","value":"双周报-官网SEO"}]}.
+Read get-kr first and preserve unrelated tags; tags is the complete replacement
+list ([] clears all tags). A stale KR version returns HTTP 409 with current data.
+Only tags are written; O/KR text, owners, metrics, points and weekly data stay unchanged.
 
 Uses server.addr from conf/config.yaml plus conf/config.runtime.yaml.
 JARVIS_API_BASE or --base-url explicitly selects another instance.
@@ -39,12 +45,14 @@ QUARTER=""
 ID=""
 QUERY=""
 FILE=""
+PAYLOAD=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --quarter) QUARTER="${2:-}"; shift 2 ;;
     --id) ID="${2:-}"; shift 2 ;;
     --query) QUERY="${2:-}"; shift 2 ;;
     --file) FILE="${2:-}"; shift 2 ;;
+    --payload) PAYLOAD="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -71,6 +79,13 @@ case "$COMMAND" in
   get-kr)
     [[ -n "$ID" ]] || { echo "get-kr requires --id" >&2; exit 2; }
     curl -fsS "${BASE_URL}/api/okr/krs/$(printf '%s' "$ID" | jq -sRr @uri)"
+    ;;
+  replace-kr-tags)
+    [[ -n "$ID" && -n "$PAYLOAD" ]] || { echo "replace-kr-tags requires --id and --payload JSON|-" >&2; exit 2; }
+    [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
+    printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null || { echo "replace-kr-tags payload must be a JSON object" >&2; exit 2; }
+    curl --fail-with-body -sS -X PUT "${BASE_URL}/api/okr/krs/$(printf '%s' "$ID" | jq -sRr @uri)/tags" \
+      -H 'content-type: application/json' --data-binary "$PAYLOAD"
     ;;
   people-search)
     [[ -n "$QUERY" ]] || { echo "people-search requires --query" >&2; exit 2; }

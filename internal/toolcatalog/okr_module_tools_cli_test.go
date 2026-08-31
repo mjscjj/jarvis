@@ -33,7 +33,7 @@ func runModuleTool(t *testing.T, script string, apiBase string, args ...string) 
 	return string(output)
 }
 
-func TestOKRModuleToolsExposeReadsButNoDefinitionWrites(t *testing.T) {
+func TestOKRModuleToolsExposeReadsAndOnlyTagDefinitionWrites(t *testing.T) {
 	requests := make(chan moduleToolRequest, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		body, _ := io.ReadAll(request.Body)
@@ -56,8 +56,40 @@ func TestOKRModuleToolsExposeReadsButNoDefinitionWrites(t *testing.T) {
 
 	help := runModuleTool(t, "okr-module-tools", server.URL, "--help")
 	for _, forbidden := range []string{"create-objective", "create-kr", "replace-kr", "delete-kr"} {
-		if strings.Contains(help, forbidden) {
+		if strings.Contains(help, "\n  "+forbidden+" ") {
 			t.Fatalf("OKR Agent help exposed %q: %s", forbidden, help)
+		}
+	}
+}
+
+func TestOKRTagToolPreservesPayloadAndSurfacesConflicts(t *testing.T) {
+	const payload = `{"expected_version":7,"tags":[{"type":"custom","value":"双周报-官网SEO"},{"type":"region","value":"eu"}]}`
+	requests := make(chan moduleToolRequest, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		requests <- moduleToolRequest{Method: request.Method, Path: request.URL.Path, Body: string(body)}
+		response.Header().Set("content-type", "application/json")
+		response.WriteHeader(http.StatusConflict)
+		_, _ = response.Write([]byte(`{"code":40923,"msg":"version conflict","data":{"version":8}}`))
+	}))
+	defer server.Close()
+	path, err := filepath.Abs(filepath.Join("..", "..", "scripts", "okr-module-tools"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []string{payload, "-"} {
+		command := exec.CommandContext(t.Context(), "bash", path, "--base-url", server.URL, "replace-kr-tags", "--id", "kr 标签", "--payload", input)
+		command.Stdin = strings.NewReader(payload)
+		output, err := command.CombinedOutput()
+		if err == nil || !strings.Contains(string(output), `"version":8`) {
+			t.Fatalf("conflict must exit nonzero and preserve response: err=%v output=%s", err, output)
+		}
+		request := <-requests
+		if request.Method != http.MethodPut || request.Path != "/api/okr/krs/kr 标签/tags" || request.Body != payload {
+			t.Fatalf("tag request = %+v", request)
 		}
 	}
 }

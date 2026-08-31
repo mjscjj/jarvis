@@ -1,6 +1,6 @@
 ---
 name: okr-agent-orchestrator
-description: 根据 OKR 模块中可编辑的业务 Prompt，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成固定 Agent 行动或一次性目标。用于季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填和进展巡检。
+description: 根据 OKR 模块中可编辑的业务 Prompt，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成固定 Agent 行动或一次性目标。用于 KR 标签维护与批量打标、季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填和进展巡检。
 module: okr
 ---
 
@@ -30,7 +30,8 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 
 按本次目标选择最小工具集合，不要求固定顺序：
 
-- OKR 稳定定义只读：`scripts/okr-module-tools scope|board|get-kr|people-search`；图片材料可用 `upload-image` 保存，但不得调用或绕过工具创建、修改、删除 O/KR；
+- OKR 定义查询：`scripts/okr-module-tools scope|board|get-kr|people-search`；图片材料可用 `upload-image` 保存；
+- KR 标签：`scripts/okr-module-tools replace-kr-tags --id KR_ID --payload JSON|-`，先用 `get-kr` 读取最新 `version` 与全部 `tags`，仅调整本次目标涉及的标签，再提交 `{"expected_version":最新版本,"tags":[{"type":"custom","value":"标签值"}]}`。`tags` 是完整替换列表，保留无关标签；显式 `[]` 清空全部标签。工具只改标签，返回最新 KR；
 - 周次与周报事实：`scripts/weekly-report-tools scope|weeks|open-week|delete-week|board`；
 - 单条周进展：`create-progress|update-progress|delete-progress`，写入前必须回读 KR 最新 `version`；
 - 评论协作：`comments|create-comment|update-comment|delete-comment`；
@@ -46,11 +47,11 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 
 - 读取 API 响应后验证成功字段；失败时保留原始错误并停止依赖该事实的动作。
 - 先回读再写入；关系和外部对象使用稳定来源 ID，重复执行不得制造副本。
-- O/KR 标题、负责人、优先级、指标、拆解、标签和 Meego 绑定是人的稳定定义。即使本次目标要求优化 OKR，Agent 也只输出候选建议，不直接调用 `/api/okr` 写接口或操作模块数据库。
+- OKR 定义的可写范围遵循共用原则。标签写入使用 KR 的最新 `version`，409 后重新读取并重新判断，不机械覆盖；批量打标逐个 KR 调用，写后回读核对标签和版本。
 - 周报工具是可组合能力，不是必须按帮助顺序执行的 workflow。是否开周、填写进展、评论、确认 Meego、催填或生成材料，只服从本次 Prompt 和实时事实。
 - 创建周进展时使用稳定、可重跑的进展 ID 和 `expected_version=0`；更新和删除必须使用该条进展自己的最新 `expected_version`，不能使用 KR 定义版本。409 后重新读取并重新判断，不机械覆盖。
 - 候选匹配必须说明证据和不确定性。标题相似不能单独建立关系或创建 Meego。
-- 草稿默认留在 Task 结果中。`delete-week` 会删除指定季度和周次的全部周报进展、评论、Meego 快照与催填批次，调用前必须重新读取并明确核对这两个值。删除整周或单条周报内容、创建文档、发送消息、修改 Meego 都属于具体副作用，由 M5 按统一审批策略判断，不读取业务 Prompt 中的 `approval` 字段替代判断。O/KR 稳定定义没有 Agent 写工具，审批不能突破这条边界。
+- 草稿默认留在 Task 结果中。`delete-week` 会删除指定季度和周次的全部周报进展、评论、Meego 快照与催填批次，调用前必须重新读取并明确核对这两个值。修改 KR 标签、删除整周或单条周报内容、创建文档、发送消息、修改 Meego 都属于具体副作用，由 M5 按统一审批策略判断，不读取业务 Prompt 中的 `approval` 字段替代判断。
 - 不调用固定报告生成器来替代 Agent 判断；只读取原子 board、证据和已保存事实。
 - 不创建 OKR 专用 Task 状态机。定时触发只承载本次目标，完成后结束。
 - 不根据日期文字决定本次是否应该运行；一次 Task 已经代表调度器确认到点，weekly/daily/interval 由通用 ScheduledTask 保证。

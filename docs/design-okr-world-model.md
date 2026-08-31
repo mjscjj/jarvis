@@ -8,6 +8,8 @@
 
 OKR 模块保存稳定定义：季度、Objective 方向、KR、核心指标、负责人和标签。业务分类与 Focus/P1/P2 优先级都是 KR 的结构标签；页面按“业务分类标签 → 优先级标签 → Objective 方向 → KR”动态组织，不复制优先级字段，也不按 Objective 标题推断分类。周报模块保存按周变化的进展、评论、Meego 观察和催填批次，并显式依赖 OKR。固定材料流程由 Agent Prompt 组装，不另存专用草稿状态机。
 
+Agent 通过 `okr-module-tools replace-kr-tags` 调用 `PUT /api/okr/krs/:kr_id/tags` 维护标签，使用 KR 当前版本和完整标签列表；接口仅更新标签及 KR 版本/编辑者，不改其它定义或周报事实。标签的增删、分类映射和批量编排由 Agent 判断，沿用现有标签表及结构标签校验。O 不独立存标签，需要按子 KR 表达。
+
 Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter、当前 Page、历史 Fact 和它们之间的关系。Task 只是一轮执行单元，不属于任何 OKR 层级。
 
 两者不共享业务表、不互存外键，也不在保存页面时同步写入。需要连接时使用通用 `entity_relation`：模块实体 ID 和世界实体 ID 都以字符串保存，关系类型由 Skill 解释。
