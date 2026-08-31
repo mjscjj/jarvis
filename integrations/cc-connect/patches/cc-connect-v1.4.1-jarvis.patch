@@ -1145,11 +1145,17 @@ index 0000000..be492ed
 +	}
 +}
 diff --git a/platform/feishu/feishu.go b/platform/feishu/feishu.go
-index bafedee..ded774d 100644
+index bafedee..3495322 100644
 --- a/platform/feishu/feishu.go
 +++ b/platform/feishu/feishu.go
-@@ -112,6 +112,8 @@ type replyContext struct {
- 	sessionKey string
+@@ -110,8 +110,11 @@ type replyContext struct {
+-	messageID  string
+-	chatID     string
+-	sessionKey string
++	messageID       string
++	chatID          string
++	sessionKey      string
++	bootstrapThread bool
  }
  
 +const jarvisApprovalCardUpdateDelay = time.Second
@@ -1176,7 +1182,7 @@ index bafedee..ded774d 100644
  	// noReplyToTrigger: when true, send via Create instead of Im.Message.Reply (no quote to the user's message).
  	noReplyToTrigger bool
  	resolveMentions  bool
-@@ -158,15 +172,10 @@ type Platform struct {
+@@ -158,15 +173,14 @@ type Platform struct {
  	isWSPrimary  bool           // true if this platform owns the shared WebSocket connection
  	// cardActionMessageIDs tracks the most recent card-action messageID per
  	// session key, enabling async card refreshes via the Patch API.
@@ -1193,6 +1199,10 @@ index bafedee..ded774d 100644
 +	cardActionMsgIDs    map[string]string // sessionKey → messageID
 +	unsupportedComments sync.Map          // commentID -> struct{}
 +	commentRetryDelay   time.Duration
++	// bootstrappedThreadSessions tracks thread sessions whose first accepted
++	// message has already loaded the pre-existing root text and attachments.
++	// It is separate from admission: unmentioned messages never reach this path.
++	bootstrappedThreadSessions sync.Map // sessionKey -> struct{}
  
  	richCardImageMu         sync.Mutex
  	richCardImageResolved   map[string]string
@@ -1791,7 +1801,7 @@ index bafedee..ded774d 100644
  				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)
  				return nil
  			}
-@@ -1356,6 +1863,8 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+@@ -1356,6 +1868,8 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
  	}
  	mentions := msg.Mentions
  	parentID := stringValue(msg.ParentId)
@@ -1800,7 +1810,7 @@ index bafedee..ded774d 100644
  
  	rctx := replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey}
  	slog.Debug(p.tag()+": routed inbound message",
-@@ -1364,15 +1873,14 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+@@ -1364,15 +1878,14 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
  		"reply_in_thread", p.shouldReplyInThread(rctx),
  	)
  
@@ -1820,7 +1830,7 @@ index bafedee..ded774d 100644
  
  	return nil
  }
-@@ -1390,6 +1898,10 @@ func (p *Platform) replyUnauthorizedAccess(ctx context.Context, rctx replyContex
+@@ -1390,6 +1903,10 @@ func (p *Platform) replyUnauthorizedAccess(ctx context.Context, rctx replyContex
  // handler invocation. It runs in its own goroutine so that onMessage returns
  // quickly and does not block the SDK event loop.
  func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID string, rctx replyContext, parentID string, createTimeMs int64) {
@@ -1831,7 +1841,7 @@ index bafedee..ded774d 100644
  	if p.isMessageRecalled(messageID) {
  		slog.Debug(p.tag()+": recalled message ignored in async dispatch", "message_id", messageID)
  		return
-@@ -1401,6 +1913,25 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
+@@ -1401,16 +1918,74 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
  		userName = p.resolveUserName(userID)
  	}
  	chatName := p.resolveChatName(chatID)
@@ -1854,13 +1864,8 @@ index bafedee..ded774d 100644
 +			return
 +		}
 +	}
- 
- 	// If this message is a reply to another message, fetch the quoted content
- 	// and prepend it so the agent has full context.
-@@ -1411,6 +1942,33 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
- 	if parentID != "" && !(p.threadIsolation && isThreadSessionKey(sessionKey)) {
- 		quoted = p.fetchQuotedMessage(ctx, parentID)
- 	}
++
++	transportContext := ""
 +	if claimRoute {
 +		contextThreadID := strings.TrimSpace(threadID)
 +		if contextThreadID == "" && p.threadIsolation {
@@ -1878,7 +1883,8 @@ index bafedee..ded774d 100644
 +				return
 +			}
 +		}
-+		transportContext, err := renderFeishuTransportContext(feishuTransportContext{
++		var err error
++		transportContext, err = renderFeishuTransportContext(feishuTransportContext{
 +			ChatID: chatID, ChatType: chatType, ChatName: chatName, MessageID: messageID,
 +			RootID: rootID, ThreadID: contextThreadID, PriorMessages: priorMessages,
 +		})
@@ -1886,12 +1892,36 @@ index bafedee..ded774d 100644
 +			slog.Error(p.tag()+": render Feishu transport context failed", "message_id", messageID, "err", err)
 +			return
 +		}
++	}
++
++	// Mark the thread only after route claim and live-context prerequisites have
++	// succeeded. A transient prerequisite failure must not consume the one-time
++	// root attachment bootstrap for the user's retry.
++	rctx.bootstrapThread = p.markThreadSessionBootstrapped(sessionKey)
++	if rctx.bootstrapThread && rootID != "" {
++		parentID = rootID
++	}
+ 
+ 	// If this message is a reply to another message, fetch the quoted content
+-	// and prepend it so the agent has full context.
+-	// Skip quote injection when thread_isolation is enabled and the message is
+-	// inside a thread — the thread already provides conversational context, and
+-	// long quoted prefixes can drown out the user's actual text (issue #764).
++	// and prepend it so the agent has full context. Once a thread is bootstrapped,
++	// its Agent session owns that root context and later turns do not redownload
++	// the same attachments.
+ 	var quoted quotedMessage
+-	if parentID != "" && !(p.threadIsolation && isThreadSessionKey(sessionKey)) {
++	if parentID != "" && (!p.threadIsolation || !isThreadSessionKey(sessionKey) || rctx.bootstrapThread) {
+ 		quoted = p.fetchQuotedMessage(ctx, parentID)
+ 	}
++	if transportContext != "" {
 +		quoted.text = joinFeishuExtraContext(transportContext, quoted.text)
 +	}
  
  	switch msgType {
  	case "text":
-@@ -1655,6 +2213,49 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
+@@ -1655,6 +2230,49 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
  	}
  }
  
@@ -2029,6 +2059,24 @@ index bafedee..ded774d 100644
  // stripMentions processes @mention placeholders (e.g. @_user_1) in text.
  // The bot's own mention is removed; other user mentions are replaced with
  // their display name so the agent can see who was referenced.
+@@ -3325,6 +3914,17 @@ func (p *Platform) makeSessionKey(msg *larkim.EventMessage, chatID, userID strin
+ 	return fmt.Sprintf("%s:%s:%s", p.tag(), chatID, userID)
+ }
+ 
++// markThreadSessionBootstrapped records the first message that passed all
++// admission checks for a thread session. The caller invokes it only after the
++// normal group @bot filter, so it never relaxes the mention boundary.
++func (p *Platform) markThreadSessionBootstrapped(sessionKey string) bool {
++	if !p.threadIsolation || !isThreadSessionKey(sessionKey) {
++		return false
++	}
++	_, loaded := p.bootstrappedThreadSessions.LoadOrStore(sessionKey, struct{}{})
++	return !loaded
++}
++
+ func (p *Platform) sessionKeyFromCardAction(chatID, userID string, value map[string]any) string {
+ 	if value != nil {
+ 		if sessionKey, _ := value["session_key"].(string); sessionKey != "" {
 @@ -6251,10 +6827,9 @@ func buildRichCardJSONBytes(status core.CardStatus, steps []core.ToolStep, markd
  				continue
  			}
@@ -2044,10 +2092,192 @@ index bafedee..ded774d 100644
  		}
  	}
 diff --git a/platform/feishu/feishu_test.go b/platform/feishu/feishu_test.go
-index 8c0eae9..9aa044d 100644
+index 8c0eae9..56776d1 100644
 --- a/platform/feishu/feishu_test.go
 +++ b/platform/feishu/feishu_test.go
-@@ -1007,68 +1007,12 @@ func TestResolveBotSenderName_NilMap(t *testing.T) {
+@@ -303,6 +303,181 @@ func TestDispatchMessageKeepsMentionOnlyQuotedText(t *testing.T) {
+ 	}
+ }
+ 
++// The first accepted @bot reply in a pre-existing thread must load the root
++// text and image once, while every accepted turn still receives live context.
++func TestOnMessageThreadIsolationBootstrapsExistingThreadContext(t *testing.T) {
++	const (
++		appID        = "cli_thread_bootstrap"
++		appSecret    = "secret-thread-bootstrap"
++		botOpenID    = "ou_bot"
++		userOpenID   = "ou_user"
++		chatID       = "oc_chat"
++		rootMsgID    = "om_root"
++		parentMsgID  = "om_parent"
++		rootImageKey = "img_root"
++		firstMsgID   = "om_trigger_first"
++		secondMsgID  = "om_trigger_second"
++	)
++
++	imageData := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
++	rootFetchCount := 0
++	liveContextFetchCount := 0
++	got := make(chan *core.Message, 2)
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Content-Type", "application/json")
++		switch {
++		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
++			writeJSON(t, w, map[string]any{
++				"code":                0,
++				"msg":                 "success",
++				"expire":              7200,
++				"tenant_access_token": "tenant-token",
++			})
++		case r.URL.Path == "/claim":
++			body, err := io.ReadAll(r.Body)
++			if err != nil {
++				t.Fatalf("read route claim body: %v", err)
++			}
++			messageID := firstMsgID
++			if strings.Contains(string(body), secondMsgID) {
++				messageID = secondMsgID
++			}
++			writeJSON(t, w, map[string]any{"code": 0, "data": map[string]any{"message_id": messageID, "claimed": true}})
++		case r.URL.Path == "/open-apis/im/v1/messages/"+rootMsgID:
++			rootFetchCount++
++			writeJSON(t, w, map[string]any{
++				"code": 0,
++				"msg":  "success",
++				"data": map[string]any{
++					"items": []map[string]any{{
++						"msg_type":  "post",
++						"parent_id": "",
++						"sender": map[string]any{
++							"id":          "ou_root_author",
++							"sender_type": "user",
++						},
++						"body": map[string]any{
++							"content": `{"title":"问题反馈","content":[[{"tag":"text","text":"高价值公会分析进入循环对话"},{"tag":"img","image_key":"` + rootImageKey + `"}]]}`,
++						},
++					}},
++				},
++			})
++		case r.URL.Path == "/open-apis/im/v1/messages/"+rootMsgID+"/resources/"+rootImageKey:
++			w.Header().Set("Content-Type", "image/png")
++			if _, err := w.Write(imageData); err != nil {
++				t.Fatalf("write image: %v", err)
++			}
++		case strings.HasPrefix(r.URL.Path, "/open-apis/contact/v3/users/"):
++			writeJSON(t, w, map[string]any{"code": 0, "msg": "success"})
++		case strings.HasPrefix(r.URL.Path, "/open-apis/im/v1/chats/"):
++			writeJSON(t, w, map[string]any{"code": 0, "msg": "success"})
++		default:
++			t.Fatalf("unexpected path %s", r.URL.Path)
++		}
++	}))
++	defer srv.Close()
++
++	p := &Platform{
++		platformName:            "feishu",
++		domain:                  srv.URL,
++		appID:                   appID,
++		appSecret:               appSecret,
++		botOpenID:               botOpenID,
++		threadIsolation:         true,
++		jarvisRouteClaimURL:     srv.URL + "/claim",
++		jarvisRouteClaimSecret:  "claim-secret",
++		jarvisRouteClaimTimeout: time.Second,
++		dedup:                   &core.MessageDedup{},
++		client: lark.NewClient(appID, appSecret,
++			lark.WithOpenBaseUrl(srv.URL),
++			lark.WithHttpClient(srv.Client()),
++		),
++		handler: func(_ core.Platform, msg *core.Message) {
++			got <- msg
++		},
++	}
++	p.liveContextFetch = func(_ context.Context, gotChatID, gotThreadID string, _ int64, _ string) ([]feishuLiveContextMessage, error) {
++		liveContextFetchCount++
++		if gotChatID != chatID || gotThreadID != "omt_thread" {
++			t.Fatalf("live context scope = %s/%s", gotChatID, gotThreadID)
++		}
++		return []feishuLiveContextMessage{{MessageID: "om_previous", Content: "上一条实时消息", CreateTime: 1}}, nil
++	}
++
++	chatType := "group"
++	senderType := "user"
++	msgType := "text"
++	threadID := "omt_thread"
++	botMention := []*larkim.MentionEvent{
++		{Key: strPtr("@_user_1"), Id: &larkim.UserId{OpenId: strPtr(botOpenID)}, Name: strPtr("Bot")},
++	}
++	buildEvent := func(messageID, text string) *larkim.P2MessageReceiveV1 {
++		content := `{"text":"@_user_1 ` + text + `"}`
++		createTime := strconv.FormatInt(time.Now().UnixMilli(), 10)
++		return &larkim.P2MessageReceiveV1{
++			Event: &larkim.P2MessageReceiveV1Data{
++				Sender: &larkim.EventSender{
++					SenderId:   &larkim.UserId{OpenId: strPtr(userOpenID)},
++					SenderType: &senderType,
++				},
++				Message: &larkim.EventMessage{
++					MessageId:   strPtr(messageID),
++					ParentId:    strPtr(parentMsgID),
++					RootId:      strPtr(rootMsgID),
++					ThreadId:    &threadID,
++					ChatId:      strPtr(chatID),
++					ChatType:    &chatType,
++					MessageType: &msgType,
++					Content:     &content,
++					CreateTime:  &createTime,
++					Mentions:    botMention,
++				},
++			},
++		}
++	}
++
++	if err := p.onMessage(context.Background(), buildEvent(firstMsgID, "详细排查下这个问题")); err != nil {
++		t.Fatalf("first onMessage() error = %v", err)
++	}
++	select {
++	case msg := <-got:
++		if msg.SessionKey != "feishu:"+chatID+":root:"+rootMsgID {
++			t.Fatalf("SessionKey = %q, want thread root session", msg.SessionKey)
++		}
++		if msg.Content != "详细排查下这个问题" {
++			t.Fatalf("Content = %q, want trigger text", msg.Content)
++		}
++		for _, want := range []string{"高价值公会分析进入循环对话", "上一条实时消息"} {
++			if !strings.Contains(msg.ExtraContent, want) {
++				t.Fatalf("ExtraContent = %q, want %q", msg.ExtraContent, want)
++			}
++		}
++		if len(msg.Images) != 1 || string(msg.Images[0].Data) != string(imageData) {
++			t.Fatalf("Images = %#v, want one root image", msg.Images)
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("timed out waiting for bootstrapped thread message")
++	}
++
++	if err := p.onMessage(context.Background(), buildEvent(secondMsgID, "继续")); err != nil {
++		t.Fatalf("second onMessage() error = %v", err)
++	}
++	select {
++	case msg := <-got:
++		if !strings.Contains(msg.ExtraContent, "上一条实时消息") {
++			t.Fatalf("second message lost live context: %q", msg.ExtraContent)
++		}
++		if strings.Contains(msg.ExtraContent, "高价值公会分析进入循环对话") || len(msg.Images) != 0 {
++			t.Fatalf("second message repeated root context: extra=%q images=%d", msg.ExtraContent, len(msg.Images))
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("timed out waiting for second thread message")
++	}
++	if rootFetchCount != 1 || liveContextFetchCount != 2 {
++		t.Fatalf("fetch counts = root:%d live:%d, want 1/2", rootFetchCount, liveContextFetchCount)
++	}
++}
++
+ func TestOnMessageRepliesToUnauthorizedMention(t *testing.T) {
+ 	const appID = "cli_unauthorized"
+ 	const appSecret = "secret-unauthorized"
+@@ -1007,68 +1182,12 @@ func TestResolveBotSenderName_NilMap(t *testing.T) {
  	}
  }
  
@@ -2122,7 +2352,7 @@ index 8c0eae9..9aa044d 100644
  	const botOpenID = "ou_bot"
  	const userOpenID = "ou_user"
  	const chatID = "oc_chat"
-@@ -1160,59 +1104,42 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
+@@ -1160,59 +1279,42 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
  		},
  	}
  
