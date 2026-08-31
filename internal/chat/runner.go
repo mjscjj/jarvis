@@ -161,6 +161,16 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, emit func(
 	return nil
 }
 
+// isUnresumableThread reports that the stored Agent session cannot be continued
+// by the current CLI. Official Codex says this when the thread ID belongs to
+// another engine (for example a previous TraeX session) or the rollout file is gone.
+func isUnresumableThread(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "no rollout found for thread id")
+}
+
 // parseCodexStream 逐事件解析 codex 的 JSONL stdout，把 thread/delta 通过 emit 吐出。
 //
 // 用 json.Decoder 而非行扫描：单条 JSONL 事件（如命令捕获的输出）可能超过任何

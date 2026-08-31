@@ -3,8 +3,11 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"jarvis/internal/contextsnap"
 )
@@ -182,5 +185,82 @@ func TestStreamRejectsBlankMessage(t *testing.T) {
 	err := svc.Stream(t.Context(), Request{Message: "   "}, func(Event) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "message is required") {
 		t.Fatalf("Stream() error = %v, want message required", err)
+	}
+}
+
+func TestStreamStartsNewSessionWhenResumeHasNoRollout(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "codex")
+	script := "#!/bin/sh\n" +
+		"for a in \"$@\"; do\n" +
+		"  if [ \"$a\" = resume ]; then\n" +
+		"    printf '%s\\n' 'Error: thread/resume: thread/resume failed: no rollout found for thread id old-id (code -32600)' >&2\n" +
+		"    exit 1\n" +
+		"  fi\n" +
+		"done\n" +
+		"printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"new-tid\"}'\n" +
+		"printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"你好\"}}'\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewService(Options{
+		Bin:              bin,
+		Model:            "fixture-model",
+		Sandbox:          "read-only",
+		ReasoningEffort:  "medium",
+		Timeout:          5 * time.Second,
+		HistoryDir:       t.TempDir(),
+		SharedMemory:     fakeSharedMemoryReader{},
+		ContextAssembler: &fakeContextAssembler{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var threadID string
+	var deltas []string
+	if err := svc.Stream(t.Context(), Request{Message: "你好", ThreadID: "old-id"}, func(event Event) error {
+		switch event.Kind {
+		case EventThread:
+			threadID = event.ThreadID
+		case EventDelta:
+			deltas = append(deltas, event.Text)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if threadID != "new-tid" {
+		t.Fatalf("thread_id = %q, want new-tid", threadID)
+	}
+	if len(deltas) != 1 || deltas[0] != "你好" {
+		t.Fatalf("deltas = %v, want [你好]", deltas)
+	}
+}
+
+func TestStreamDoesNotRetryOtherResumeFailures(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "codex")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' 'auth failed' >&2\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewService(Options{
+		Bin:              bin,
+		Model:            "fixture-model",
+		Sandbox:          "read-only",
+		ReasoningEffort:  "medium",
+		Timeout:          5 * time.Second,
+		HistoryDir:       t.TempDir(),
+		SharedMemory:     fakeSharedMemoryReader{},
+		ContextAssembler: &fakeContextAssembler{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.Stream(t.Context(), Request{Message: "你好", ThreadID: "old-id"}, func(Event) error {
+		t.Fatal("failed resume must not emit a chat event")
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "auth failed") {
+		t.Fatalf("error = %v, want original auth failure", err)
 	}
 }

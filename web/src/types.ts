@@ -1211,3 +1211,7 @@ export interface ChatHistory {
   thread_id: string
   messages: ChatHistoryMessage[]
 }
+
+export interface ChatRuntimeConfig {
+  port: number
+}

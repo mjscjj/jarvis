@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bytedance.jarvis.chat</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__JARVIS_ROOT__/scripts/run-signed-chat-server.sh</string>
+        <string>-config</string>
+        <string>__JARVIS_ROOT__/conf/config.yaml</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__JARVIS_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:__HOME__/.local/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>__JARVIS_ROOT__/var/log/jarvis-chat.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__JARVIS_ROOT__/var/log/jarvis-chat.error.log</string>
+</dict>
+</plist>

@@ -67,6 +67,7 @@ Runtime settings 写入后需要重启进程生效；模块开关保存后也需
 - System task runs：`GET /api/system-tasks/runs`
 - 主动巡视运行记录：`GET /api/debug/proactive-runs`、`GET /api/debug/proactive-runs/:run_id`
 - 手工采集：`POST /api/debug/capture/discover|scan-related|scan-chat`
-- 对话：`POST /api/chat`（SSE）
+- 主服务对话发现：`GET /api/chat-config`
+- 独立 Chat sidecar：`POST /api/chat`（SSE）、`GET /api/chat/:thread_id`
 
 对话只在 `chat.enabled=true` 且依赖构造成功时注册。

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,19 @@ func TestRunnerPreservesStartupError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "missing thread.started") {
 		t.Fatalf("startup failure was masked by JSONL validation: %v", err)
+	}
+}
+
+func TestIsUnresumableThread(t *testing.T) {
+	t.Parallel()
+	if !isUnresumableThread(fmt.Errorf("codex chat exited abnormally: exit status 1: Error: thread/resume: thread/resume failed: no rollout found for thread id old-id (code -32600)")) {
+		t.Fatal("want unresumable for missing Codex rollout")
+	}
+	if isUnresumableThread(fmt.Errorf("codex chat exited abnormally: exit status 1: auth failed")) {
+		t.Fatal("auth failure must not be treated as a missing thread")
+	}
+	if isUnresumableThread(nil) {
+		t.Fatal("nil error is not unresumable")
 	}
 }
 

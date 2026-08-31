@@ -9,7 +9,6 @@ import (
 	"jarvis/internal/appmodule"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
-	"jarvis/internal/chat"
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/effectops"
@@ -69,7 +68,7 @@ type Dependencies struct {
 	FactRollupLoc      *time.Location      // 手动触发时解析 YYYY-MM-DD 的时区
 	Debug              *insight.DebugService
 	Logs               *insight.LogReader
-	Chat               *chat.Service    // 可选：chat 未启用时为 nil，此时不注册 /api/chat 路由
+	ChatAddr           string           // 独立 Chat sidecar 地址；主进程只向前端公开端口
 	Capture            *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
 	RuntimeSettings    *config.RuntimeSettingsService
 	ContextAssembler   *contextsnap.Assembler
@@ -339,10 +338,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/resources/:resource_id", UpdateResource(deps.Resources))
 	h.POST("/api/resources/:resource_id/touch", TouchResource(deps.Resources))
 	h.DELETE("/api/resources/:resource_id", DeleteResource(deps.Resources))
-	// 基于 codex CLI 的流式对话（SSE）。与 execute 一致：未启用（nil）则不注册路由。
-	if deps.Chat != nil {
-		h.POST("/api/chat", Chat(deps.Chat))
-		h.GET("/api/chat/:thread_id", GetChatHistory(deps.Chat))
+	if deps.ChatAddr != "" {
+		h.GET("/api/chat-config", GetChatRuntimeConfig(deps.ChatAddr))
 	}
 	// 精确 API 路由优先于这个兜底。必须在进程注册根 StaticFS 之前拦住
 	// 未知 /api/*，否则 Hertz 会把它当作 web/dist 下的静态文件并返回

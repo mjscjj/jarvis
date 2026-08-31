@@ -72,6 +72,7 @@ import type {
   MonitoringSnapshot,
   SystemTaskRunList,
   ChatHistory,
+  ChatRuntimeConfig,
 } from './types'
 
 interface APIResponse<T> {
@@ -136,8 +137,12 @@ export function createTask(body: CreateTaskInput): Promise<CreateTaskResult> {
   return request<CreateTaskResult>('/api/tasks', { method: 'POST', body })
 }
 
-export function getChatHistory(threadID: string, signal?: AbortSignal): Promise<ChatHistory> {
-  return request<ChatHistory>(`/api/chat/${encodeURIComponent(threadID)}`, { signal })
+export function getChatRuntimeConfig(signal?: AbortSignal): Promise<ChatRuntimeConfig> {
+  return request<ChatRuntimeConfig>('/api/chat-config', { signal })
+}
+
+export function getChatHistory(baseURL: string, threadID: string, signal?: AbortSignal): Promise<ChatHistory> {
+  return request<ChatHistory>(`${baseURL}/api/chat/${encodeURIComponent(threadID)}`, { signal })
 }
 
 export function finishTask(id: number, expectedVersion: number, status: 'done' | 'failed', result: Record<string, unknown>): Promise<Task> {

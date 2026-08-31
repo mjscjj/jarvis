@@ -111,7 +111,7 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 	}
 	activeThreadID := strings.TrimSpace(req.ThreadID)
 	var assistant strings.Builder
-	streamErr := s.runner.Stream(ctx, prompt, activeThreadID, func(event Event) error {
+	handle := func(event Event) error {
 		switch event.Kind {
 		case EventThread:
 			threadID := strings.TrimSpace(event.ThreadID)
@@ -123,7 +123,19 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 			assistant.WriteString(event.Text)
 		}
 		return emit(event)
-	})
+	}
+	streamErr := s.runner.Stream(ctx, prompt, activeThreadID, handle)
+	if activeThreadID != "" && isUnresumableThread(streamErr) {
+		// CLI 换引擎或会话文件丢失时，旧 thread 无法 resume。开新会话并灌入首轮指引，
+		// 不把这条 Codex 错误伪装成 JSONL 缺字段。
+		built, err := s.buildPrompt(ctx, req)
+		if err != nil {
+			return err
+		}
+		activeThreadID = ""
+		assistant.Reset()
+		streamErr = s.runner.Stream(ctx, built, "", handle)
+	}
 	if activeThreadID != "" {
 		if historyErr := s.history.AppendTurn(activeThreadID, message, assistant.String()); historyErr != nil {
 			if streamErr != nil {

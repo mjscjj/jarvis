@@ -29,7 +29,7 @@ func TestToolsInheritOwningInstanceAcrossWorkingDirectories(t *testing.T) {
 			defer server.Close()
 			configPath := filepath.Join(t.TempDir(), "config.yaml")
 			addr := strings.TrimPrefix(server.URL, "http://")
-			if err := os.WriteFile(configPath, []byte("server:\n  addr: "+addr+"\n"), 0600); err != nil {
+			if err := os.WriteFile(configPath, []byte("server:\n  addr: "+addr+"\nchat:\n  addr: 127.0.0.1:18801\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			for _, inherited := range []bool{false, true} {

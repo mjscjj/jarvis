@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CloseOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
-import { getChatHistory } from './api'
+import { getChatHistory, getChatRuntimeConfig } from './api'
 import { usePageContext } from './pageContext'
 import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, PageContext } from './types'
 import './styles/chat.css'
@@ -94,6 +94,11 @@ function isAbortError(cause: unknown): boolean {
     || (cause instanceof Error && cause.name === 'AbortError')
 }
 
+function isStaleThreadError(text: string): boolean {
+  return text.includes('no rollout found for thread id')
+    || text.includes('missing thread.started')
+}
+
 export default function Chat({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -103,6 +108,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   const [paused, setPaused] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [error, setError] = useState<string>()
+  const [chatBaseURL, setChatBaseURL] = useState<string>()
   const [threadId, setThreadId] = useState<string | null>(() => window.localStorage.getItem(CHAT_THREAD_STORAGE_KEY))
   const initialThreadId = useRef(threadId).current
   const listRef = useRef<HTMLDivElement>(null)
@@ -117,10 +123,24 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   useEffect(() => () => abortRef.current?.abort(), [])
 
   useEffect(() => {
-    if (!initialThreadId) return
+    const controller = new AbortController()
+    getChatRuntimeConfig(controller.signal)
+      .then(({ port }) => {
+        const endpoint = new URL(window.location.origin)
+        endpoint.port = String(port)
+        setChatBaseURL(endpoint.origin)
+      })
+      .catch((cause: unknown) => {
+        if (!isAbortError(cause)) setError(`读取对话服务配置失败：${errorText(cause)}`)
+      })
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    if (!initialThreadId || !chatBaseURL) return
     const controller = new AbortController()
     setHistoryLoading(true)
-    getChatHistory(initialThreadId, controller.signal)
+    getChatHistory(chatBaseURL, initialThreadId, controller.signal)
       .then((history) => {
         setMessages(history.messages.map((message) => ({ role: message.role, text: message.text })))
         setError(undefined)
@@ -132,7 +152,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         if (!controller.signal.aborted) setHistoryLoading(false)
       })
     return () => controller.abort()
-  }, [initialThreadId])
+  }, [chatBaseURL, initialThreadId])
 
   useEffect(() => {
     if (open) inputRef.current?.focus()
@@ -194,6 +214,10 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   const send = useCallback(async () => {
     const message = input.trim()
     if (!message || sending) return
+    if (!chatBaseURL) {
+      setError('独立对话服务地址尚未加载')
+      return
+    }
     setInput('')
     setError(undefined)
     setStopping(false)
@@ -213,7 +237,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     abortRef.current = controller
     try {
       const req: ChatRequest = { message, thread_id: threadId, page_context: context }
-      const response = await fetch('/api/chat', {
+      const response = await fetch(`${chatBaseURL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
@@ -266,7 +290,13 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         return
       }
       const text = errorText(cause)
-      setError(text)
+      if (isStaleThreadError(text) && threadId) {
+        window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY)
+        setThreadId(null)
+        setError('上一会话属于旧的 Agent CLI，已经清空。请再发送一次，会开启新的 Codex 对话。')
+      } else {
+        setError(text)
+      }
       setInput((current) => current.trim() ? current : message)
       // Drop the trailing empty assistant bubble so a failed round leaves no blank.
       setMessages((prev) => {
@@ -279,7 +309,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
       setStopping(false)
       setSending(false)
     }
-  }, [input, sending, context, threadId])
+  }, [input, sending, context, threadId, chatBaseURL])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
