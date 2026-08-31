@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"os"
 
 	"jarvis/internal/config"
@@ -24,7 +23,9 @@ func run(args []string, stdout io.Writer) error {
 	}
 	switch args[0] {
 	case "api-base":
-		return runAPIBase(args[1:], stdout)
+		return runInstance(args[1:], stdout, true)
+	case "instance":
+		return runInstance(args[1:], stdout, false)
 	case "configure-principal":
 		return runConfigurePrincipal(args[1:], stdout)
 	case "show-principal":
@@ -38,7 +39,7 @@ func run(args []string, stdout io.Writer) error {
 
 // Use the same validated base + runtime overlay as jarvis-server. Wildcard
 // listen addresses must become loopback destinations for local Agent tools.
-func runAPIBase(args []string, stdout io.Writer) error {
+func runInstance(args []string, stdout io.Writer, urlOnly bool) error {
 	flags := flag.NewFlagSet("api-base", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	configPath := flags.String("config", "conf/config.yaml", "base config path")
@@ -48,22 +49,15 @@ func runAPIBase(args []string, stdout io.Writer) error {
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
 	}
-	cfg, err := config.Load(*configPath)
+	instance, err := config.InspectInstance(*configPath)
 	if err != nil {
 		return err
 	}
-	host, port, err := net.SplitHostPort(cfg.Server.Addr)
-	if err != nil {
-		return fmt.Errorf("invalid server.addr: %w", err)
+	if urlOnly {
+		_, err = fmt.Fprintln(stdout, instance.APIBase)
+		return err
 	}
-	switch host {
-	case "", "0.0.0.0":
-		host = "127.0.0.1"
-	case "::":
-		host = "::1"
-	}
-	_, err = fmt.Fprintln(stdout, "http://"+net.JoinHostPort(host, port))
-	return err
+	return json.NewEncoder(stdout).Encode(instance)
 }
 
 func runInitializationStatus(args []string, stdout io.Writer) error {

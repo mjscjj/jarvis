@@ -13,7 +13,7 @@ command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONFIG_PATH="conf/config.yaml"
+CONFIG_PATH="${JARVIS_CONFIG:-${REPO_ROOT}/conf/config.yaml}"
 CHAT_ID=""
 
 usage() {
@@ -77,24 +77,7 @@ cmd_preflight() {
 }
 
 resolve_api_base() {
-  if [[ -n "${JARVIS_API_BASE:-}" ]]; then printf '%s\n' "${JARVIS_API_BASE%/}"; return; fi
-  local resolved="$CONFIG_PATH"
-  [[ "$resolved" == /* ]] || resolved="${REPO_ROOT}/${resolved}"
-  [[ -f "$resolved" ]] || fail "config file not found: ${resolved}"
-  local server_addr port default_interface lan_ip
-  server_addr="$(grep -E '^[[:space:]]*addr:[[:space:]]*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
-  [[ -n "$server_addr" ]] || fail "could not parse server.addr from ${resolved}"
-  port="${server_addr##*:}"
-  [[ "$port" =~ ^[0-9]+$ ]] || fail "server.addr has invalid port: ${server_addr}"
-  default_interface="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
-  [[ -n "$default_interface" ]] || fail "could not resolve the default network interface"
-  lan_ip="$(ipconfig getifaddr "$default_interface" 2>/dev/null || true)"
-  [[ -n "$lan_ip" ]] || fail "could not resolve LAN IPv4 for interface ${default_interface}"
-  case "$lan_ip" in
-    10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) ;;
-    *) fail "resolved address is not a private LAN IPv4: ${lan_ip}" ;;
-  esac
-  printf 'http://%s:%s\n' "$lan_ip" "$port"
+  "${SCRIPT_DIR}/jarvis-api-base" "$CONFIG_PATH"
 }
 
 api_call() {

@@ -107,6 +107,13 @@ func main() {
 	if err != nil {
 		fatalf("resolve config path failed: %v", err)
 	}
+	repoRoot, err := os.Getwd()
+	if err != nil {
+		fatalf("resolve server working directory: %v", err)
+	}
+	if err := cfg.ExportToolEnvironment(configPathAbsolute, repoRoot); err != nil {
+		fatalf("configure instance tool environment: %v", err)
+	}
 	textFileService, err := textstore.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "prompts"))
 	if err != nil {
 		fatalf("initialize text file service failed: %v", err)

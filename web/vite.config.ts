@@ -1,15 +1,18 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
-export default defineConfig({
+function developmentServer() {
+  const script = fileURLToPath(new URL('../scripts/jarvis-instance', import.meta.url))
+  const { api_base: apiBase } = JSON.parse(execFileSync(script, { encoding: 'utf8' })) as { api_base: string }
+  const port = Number(new URL(apiBase).port) + 1
+  if (port > 65535) throw new Error('server.addr leaves no adjacent frontend development port')
+  return { port, strictPort: true, proxy: { '/api': apiBase, '/healthz': apiBase } }
+}
+
+export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss()],
-  server: {
-    port: 18801,
-    strictPort: true,
-    proxy: {
-      '/api': 'http://127.0.0.1:18800',
-      '/healthz': 'http://127.0.0.1:18800',
-    },
-  },
-})
+  server: command === 'serve' ? developmentServer() : undefined,
+}))

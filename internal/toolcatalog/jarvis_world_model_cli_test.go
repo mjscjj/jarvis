@@ -65,7 +65,7 @@ func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *test
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
-  "run ./cmd/jarvis-config show-principal --config conf/config.yaml")
+  "run ./cmd/jarvis-config show-principal --config "*)
     printf '%s' '{"principal_open_id":"ou_ready","git_author":"ready@example.com"}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
 esac

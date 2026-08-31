@@ -14,7 +14,13 @@ fail() {
 command -v curl >/dev/null 2>&1 || fail "curl is required but not found in PATH"
 command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE_PATH" ]]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+  SOURCE_PATH="$(readlink "$SOURCE_PATH")"
+  [[ "$SOURCE_PATH" == /* ]] || SOURCE_PATH="${SOURCE_DIR}/${SOURCE_PATH}"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 print_usage() {
@@ -536,10 +542,6 @@ delete_id_help() {
 # Prefer JARVIS_API_BASE; otherwise use the server's merged configuration.
 resolve_api_base() {
   local config_path="$1"
-  if [[ -n "${JARVIS_API_BASE:-}" ]]; then
-    echo "${JARVIS_API_BASE%/}"
-    return
-  fi
   "${SCRIPT_DIR}/jarvis-api-base" "$config_path"
 }
 
@@ -668,7 +670,7 @@ fetch_all_items() {
 
 # --- flag helpers -----------------------------------------------------------
 
-CONFIG_DEFAULT="conf/config.yaml"
+CONFIG_DEFAULT="${JARVIS_CONFIG:-${REPO_ROOT}/conf/config.yaml}"
 CONFIG_PATH="$CONFIG_DEFAULT"
 ID=""
 CODE=""

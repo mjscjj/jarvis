@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_URL="${JARVIS_BASE_URL:-}"
+BASE_URL="${JARVIS_API_BASE:-}"
 
 usage() {
   cat <<'EOF'
@@ -18,7 +18,7 @@ commands:
   upload-image --file PATH
 
 Uses server.addr from conf/config.yaml plus conf/config.runtime.yaml.
-JARVIS_BASE_URL or --base-url explicitly selects another instance.
+JARVIS_API_BASE or --base-url explicitly selects another instance.
 EOF
 }
 

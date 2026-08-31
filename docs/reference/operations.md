@@ -2,18 +2,18 @@
 
 > Status: current
 > Authority: reference; scripts and plist files are source of truth
-> Last verified: 2026-08-07
+> Last verified: 2026-08-31
 
 ## 服务
 
 | Label | 端口 | 安装方式 | 日志 |
 |---|---:|---|---|
-| `com.bytedance.jarvis.server` | 18800 | `./scripts/install-launchd.sh` | `var/log/jarvis-server.log`, `var/log/jarvis-server.error.log` |
-| `com.bytedance.jarvis.web` | 18801 | 手工 link + `launchctl bootstrap` | `var/log/vite.log`, `var/log/vite.error.log` |
+| `com.bytedance.jarvis.server.<配置路径摘要>` | `server.addr` | `./scripts/install-launchd.sh` | `var/log/jarvis-server.log`, `var/log/jarvis-server.error.log` |
+| `<实例服务名>.web` | 后端端口 + 1 | 手工 link + `launchctl bootstrap` | `var/log/vite.log`, `var/log/vite.error.log` |
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | `./scripts/install-qdrant.sh` | `var/log/jarvis-qdrant.log`, `var/log/jarvis-qdrant.error.log` |
 | `com.cc-connect.service` | 9810/9820 | `./bin/cc-connect-jarvis daemon install` | `~/.cc-connect/logs/cc-connect.log` |
 
-18800 同时托管生产 `web/dist`；18801 只用于 Vite 开发热更。
+`server.addr` 同时托管 API 和生产 `web/dist`（基线 18800）；Vite 使用后端端口加一，只用于开发热更。两者均从基础配置与 runtime 覆盖读取，不在脚本中复制端口。
 
 三份 plist 由 `deploy/*.plist.template` 渲染，`conf/qdrant.yaml` 用相对 `WorkingDirectory` 的路径。移动仓库或换用户后重新渲染即可，不必改仓库文件。
 
@@ -46,11 +46,11 @@
 # 完成监听群新消息和绑定 Bot 对话的真实端到端验收后读回总状态
 ./scripts/jarvis-install status --run-dir <run_dir>
 
-curl --fail http://127.0.0.1:18800/healthz
+curl --fail "$(./scripts/jarvis-api-base)/healthz"
 curl --fail http://127.0.0.1:6333/healthz
 
 # 逐项确认外部依赖；status=degraded 时看 dependencies 里哪一项是 error
-curl -s http://127.0.0.1:18800/readyz | jq
+curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
 ```
 
 顺序是硬边界：创建整体安装清单 → 基础工具链、lark-cli/Lark Skills、traex 登录、补丁版 CC Connect binary 和 Qdrant → `validate-dependencies` → 完成 lark-cli 默认飞书用户登录 → 写 Jarvis runtime identity 与 CC Connect `jarvis-codex` → `validate-binding` → 启动补丁版 CC Connect → 主服务注册 → `$bootstrap-jarvis-world-model` → 真实端到端验收 → `status`。Qdrant 是依赖服务，可以在依赖阶段启动；CC Connect/Jarvis 不能在依赖门前启动。`install-server` 会再次强制通过依赖门和一体化绑定门。
@@ -77,13 +77,17 @@ launchctl bootstrap "gui/$uid" "$plist"
 
 1. 构建临时二进制；
 2. 用固定 identity 签名并校验；
-3. 若主服务已注册，查询 `/api/tasks?status=executing`；
+3. 根据配置文件定位唯一 launchd 服务，再按其 PID 的实际监听地址查询 `/api/tasks?status=executing`（配置刚改端口时仍先检查旧进程）；
 4. 没有活跃 Task 才替换二进制并 `kickstart`；
 5. 等待 `/healthz` 返回 200。
 
-服务已注册但 18800 API 不可达时，脚本会拒绝重启。`--force-interrupt-running-tasks` 只允许明确中断已查到的执行任务，不能绕过 API 查询失败。
+服务已注册但该实例 API 不可达时，脚本会拒绝重启。`--force-interrupt-running-tasks` 只允许明确中断已查到的执行任务，不能绕过 API 查询失败。
 
-独立预览实例使用 `./scripts/rebuild-server.sh --build-only` 只构建并校验签名，不重启已注册的主服务；随后确认预览进程与配置归属，再替换预览二进制并重启该实例。
+每个实例都使用 `./scripts/rebuild-server.sh [--config PATH]`，它仅重启该配置对应的服务；`--build-only` 只构建和签名。服务名由配置文件路径确定，修改 `server.addr` 后不需要更换服务名。服务未注册时，普通重建报错，使用安装入口注册后再重建。
+
+已有旧版固定名称或手工注册的 job 不会自动迁移。先核对其进程、工作目录、数据库与活跃执行，确认归属后停止该旧 job，再用 `render-launchd-plist.sh com.bytedance.jarvis.server [CONFIG_PATH]` 渲染并 bootstrap 当前实例；不要同时保留两个指向同一配置的 KeepAlive job，也不要停止其它配置的实例。
+
+多实例只隔离默认寻址与服务管理。SQLite、上传、执行产物等按各自配置与工作目录分开；外部账号、同名 Qdrant collection、Bot 长连接不会自动隔离。
 
 不要裸 `go build` 覆盖 `bin/jarvis-server`；否则会改变签名身份，导致完全磁盘访问权限不稳定。
 
@@ -91,8 +95,9 @@ launchctl bootstrap "gui/$uid" "$plist"
 
 ```bash
 uid=$(id -u)
-launchctl print "gui/$uid/com.bytedance.jarvis.server"
-launchctl print "gui/$uid/com.bytedance.jarvis.web"
+label=$(./scripts/jarvis-instance | jq -er .launchd_label)
+launchctl print "gui/$uid/$label"
+launchctl print "gui/$uid/$label.web"
 launchctl print "gui/$uid/com.bytedance.jarvis.qdrant"
 
 tail -f var/log/jarvis-server.log var/log/jarvis-server.error.log
@@ -121,10 +126,10 @@ card_approval:
   relay_secret: "<与 CC Connect 相同的本机共享密钥>"
 ```
 
-对应的 `jarvis-codex` Feishu platform 配置：
+对应的 `jarvis-codex` Feishu platform 配置由绑定工具按实例地址生成；改端口后需重新绑定以刷新 CC Connect 保存的回调地址，校验工具会暴露旧地址。绑定仍只操作已确认的唯一 Bot，不自动复制多个 Bot 连接：
 
 ```toml
-jarvis_approval_url = "http://127.0.0.1:18800/internal/card-approval/callback"
+jarvis_approval_url = "<实例 API 地址>/internal/card-approval/callback"
 jarvis_approval_secret = "<同一个本机共享密钥>"
 jarvis_approval_timeout_ms = 2500
 ```
@@ -142,8 +147,8 @@ Jarvis 端校验 Principal open_id，并用卡片携带的 Task version 原子�
 1. 先用进程、日志和 `launchctl` 确认没有仍在执行的 Agent 子进程；
 2. 查看 `var/log/jarvis-server.error.log`，确认配置/迁移/签名失败原因；
 3. 必要时 `launchctl bootout` 旧服务；
-4. 运行 `./scripts/rebuild-server.sh` 构建和签名；服务未注册时脚本只替换二进制；
-5. 从 `~/Library/LaunchAgents/com.bytedance.jarvis.server.plist` 重新 bootstrap；
+4. 运行 `./scripts/rebuild-server.sh --build-only` 构建和签名；
+5. 渲染当前实例 plist 并从返回的路径重新 bootstrap；
 6. 验证 `/healthz`、任务 API 和首页。
 
 不要在不知道是否有活跃执行时强制重启；它会终止 Agent 子进程。

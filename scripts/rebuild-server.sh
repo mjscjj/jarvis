@@ -5,17 +5,15 @@ set -euo pipefail
 
 script_dir=${0:A:h}
 repo_dir=${script_dir:h}
-label=com.bytedance.jarvis.server
-service_target="gui/$UID/$label"
+config_path="$repo_dir/conf/config.yaml"
 bin=$repo_dir/bin/jarvis-server
 next_bin=$repo_dir/bin/jarvis-server.next
-tasks_api="http://127.0.0.1:18800/api/tasks?status=executing&page=1&page_size=1"
 force_interrupt_running_tasks=false
 build_only=false
 
 usage() {
   cat >&2 <<'EOF'
-Usage: ./scripts/rebuild-server.sh [--force-interrupt-running-tasks | --build-only]
+Usage: ./scripts/rebuild-server.sh [--config PATH] [--force-interrupt-running-tasks | --build-only]
 
 The normal rebuild refuses to restart Jarvis while Tasks are executing because
 launchctl kickstart terminates their Codex child processes. Use the force flag
@@ -24,10 +22,12 @@ Use --build-only to build and verify the signed binary without restarting any se
 EOF
 }
 
-case $# in
-  0) ;;
-  1)
+while (( $# > 0 )); do
     case $1 in
+      --config)
+        (( $# >= 2 )) || { usage; exit 2; }
+        config_path=$2; shift
+        ;;
       --force-interrupt-running-tasks)
         force_interrupt_running_tasks=true
         ;;
@@ -43,17 +43,23 @@ case $# in
         exit 2
         ;;
     esac
-    ;;
-  *)
-    usage
-    exit 2
-    ;;
-esac
+    shift
+done
 
 running_task_count() {
-  local response
-  if ! response=$(curl --fail --silent --show-error --max-time 5 "$tasks_api"); then
-    echo "cannot query executing Tasks at $tasks_api; refusing to restart Jarvis" >&2
+  local response running_pid running_address running_api
+  # The config may already contain a new port. Inspect this exact launchd
+  # process for the old listening address before checking its active Tasks.
+  running_pid=$(launchctl print "$service_target" | awk '/^[[:space:]]*pid = / {print $3; exit}')
+  [[ -n $running_pid ]] || { echo "no running PID for $service_target" >&2; return 1; }
+  running_address=$(lsof -nP -a -p "$running_pid" -iTCP -sTCP:LISTEN -Fn | awk '/^n/ {print substr($0,2)}' | sort -u)
+  [[ -n $running_address && $running_address != *$'\n'* ]] || { echo "expected one HTTP listener for $service_target" >&2; return 1; }
+  case "$running_address" in
+    \*:*) running_address="127.0.0.1:${running_address##*:}" ;;
+  esac
+  running_api="http://$running_address/api/tasks?status=executing&page=1&page_size=1"
+  if ! response=$(curl --fail --silent --show-error --max-time 5 "$running_api"); then
+    echo "cannot query executing Tasks at $running_api; refusing to restart Jarvis" >&2
     return 1
   fi
   if ! jq -er 'if .code == 0 and (.data.total | type == "number") then .data.total else error("unexpected task-list response") end' <<<"$response"; then
@@ -64,6 +70,10 @@ running_task_count() {
 
 mkdir -p "$repo_dir/bin" "$repo_dir/var/log"
 cd "$repo_dir"
+instance=$("$script_dir/jarvis-instance" "$config_path")
+label=$(jq -er .launchd_label <<<"$instance")
+api_base=$(jq -er .api_base <<<"$instance")
+service_target="gui/$UID/$label"
 trap 'rm -f "$next_bin"' EXIT
 
 echo "building $next_bin"
@@ -93,11 +103,12 @@ if launchctl print "$service_target" >/dev/null 2>&1; then
   launchctl kickstart -k "$service_target"
 else
   mv "$next_bin" "$bin"
-  echo "launchd service not loaded; run ./scripts/install-launchd.sh if needed"
+  echo "instance service $label is not loaded; run ./scripts/install-launchd.sh --config $config_path" >&2
+  exit 1
 fi
 
 for attempt in {1..10}; do
-  if curl --fail --silent --show-error --max-time 2 -o /dev/null http://127.0.0.1:18800/healthz; then
+  if curl --fail --silent --show-error --max-time 2 -o /dev/null "$api_base/healthz"; then
     echo "backend health HTTP 200"
     exit 0
   fi

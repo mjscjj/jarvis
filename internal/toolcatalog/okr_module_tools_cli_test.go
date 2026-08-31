@@ -25,7 +25,7 @@ func runModuleTool(t *testing.T, script string, apiBase string, args ...string) 
 		t.Fatal(err)
 	}
 	command := exec.CommandContext(t.Context(), "bash", append([]string{path}, args...)...)
-	command.Env = append(command.Environ(), "JARVIS_BASE_URL="+apiBase)
+	command.Env = append(command.Environ(), "JARVIS_API_BASE="+apiBase)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %s: %v: %s", script, strings.Join(args, " "), err, output)

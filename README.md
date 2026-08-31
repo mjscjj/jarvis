@@ -85,7 +85,9 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 后台保存 runtime settings 后需要重启服务；文档中的配置数值只代表仓库基线，不代表当前进程一定正在使用该值。
 
-`jarvis-tools`、`okr-module-tools`、`weekly-report-tools`、`okr-agent-tools` 默认通过 `scripts/jarvis-api-base` 读取同一份合并配置的 `server.addr`，不猜测端口。该入口复用 `go run ./cmd/jarvis-config api-base` 的配置加载，因此运行工具也需要 Go。跨实例操作可显式设置 `jarvis-tools` 的 `JARVIS_API_BASE`，或模块工具的 `JARVIS_BASE_URL` / `--base-url`；配置读取失败直接报错，不切换到其它实例。
+`server.addr` 是本实例后端地址的唯一配置。`jarvis-server` 启动时把实际地址、绝对配置路径和本仓库工具目录导出为 `JARVIS_API_BASE`、`JARVIS_CONFIG`、`PATH`，所有 Agent 子进程继承；切换工作目录不会切换实例。通用工具、世界模型工具、OKR/周报工具统一使用 `scripts/jarvis-api-base`：先用继承的 API 地址，否则通过 `scripts/jarvis-instance` 读取选定配置（默认本仓库 `conf/config.yaml` 加运行时覆盖）。配置错误直接失败，不扫描端口。工具需要 Go 和 jq；模块工具的显式 `--base-url` 可以指定其它实例。环境变量统一为 `JARVIS_API_BASE`，不再使用 `JARVIS_BASE_URL`。
+
+启动、重建、健康检查和开发代理也读取同一配置。`scripts/jarvis-instance [CONFIG_PATH]` 输出地址与服务名；服务名按配置文件绝对路径生成，改端口不改服务名，不同配置不会共用 launchd job。Vite 默认使用后端端口加一，并代理到该后端；端口占用直接报错。两实例仍需分别配置数据库/产物路径，飞书账号、Qdrant collection 等外部资源不会因更换 HTTP 端口自动隔离。
 
 ## 常见修改入口
 
@@ -186,10 +188,10 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 # 日常后端修改后重建、稳定签名并重启
 ./scripts/rebuild-server.sh
 
-curl http://127.0.0.1:18800/healthz
+curl "$(./scripts/jarvis-api-base)/healthz"
 
 # 逐项检查外部依赖（SQLite / Qdrant / lark-cli / agent CLI）
-curl -s http://127.0.0.1:18800/readyz | jq
+curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
 ```
 
 不要在 fresh clone 上提前运行 `install-launchd.sh`、`rebuild-server.sh` 或 `install-server`：必须先通过 `validate-dependencies`，再完成 identity 与 CC 绑定。世界模型初始化在服务就绪后执行，不是启动前置条件，但属于整体项目安装的一部分。`var/install/<run-id>/INSTALL_CHECKLIST.md` 从 checkout 一直记录到端到端验收，逐项标记完成、未做、阻塞或不适用及其原因。
@@ -202,8 +204,8 @@ curl -s http://127.0.0.1:18800/readyz | jq
 
 | 服务 | 端口 | 用途 |
 |---|---:|---|
-| `com.bytedance.jarvis.server` | 18800 | Hertz API + 生产 `web/dist` + 流水线与 cron |
-| `com.bytedance.jarvis.web` | 18801 | Vite 开发热更；生产不依赖 |
+| `com.bytedance.jarvis.server.<配置路径摘要>` | `server.addr`（基线 18800） | Hertz API + 生产 `web/dist` + 流水线与 cron |
+| `<实例服务名>.web` | 后端端口 + 1 | Vite 开发热更；生产不依赖 |
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | HTTP / gRPC，当前只用于 Todo 语义去重 |
 | `com.cc-connect.service` | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与审批 relay |
 
@@ -233,7 +235,7 @@ git diff --check
 
 ## 管理后台
 
-生产访问 `http://127.0.0.1:18800/`。当前 9 个主入口：
+生产访问 `scripts/jarvis-api-base` 输出的地址（仓库基线为 `http://127.0.0.1:18800/`）。当前 9 个主入口：
 
 - Overview
 - 任务

@@ -274,6 +274,22 @@ type ScheduledTaskConfig struct {
 
 // Load 从指定路径读取并解析 YAML 配置。fail-fast：任何错误直接返回。
 func Load(path string) (*Config, error) {
+	cfg, err := readConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("invalid config %q: %w", path, err)
+	}
+	if err := cfg.resolvePaths(); err != nil {
+		return nil, fmt.Errorf("invalid config %q: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// readConfig owns strict YAML decoding and leaf overrides. Endpoint inspection
+// also uses it before a fresh installation has initialized business identity.
+func readConfig(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config %q: %w", path, err)
@@ -290,12 +306,6 @@ func Load(path string) (*Config, error) {
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("read runtime config override %q: %w", overridePath, err)
-	}
-	if err := cfg.validate(); err != nil {
-		return nil, fmt.Errorf("invalid config %q: %w", path, err)
-	}
-	if err := cfg.resolvePaths(); err != nil {
-		return nil, fmt.Errorf("invalid config %q: %w", path, err)
 	}
 	return &cfg, nil
 }

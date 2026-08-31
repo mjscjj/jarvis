@@ -4,10 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_PATH="${REPO_ROOT}/conf/config.yaml"
-SERVER_LABEL="com.bytedance.jarvis.server"
+SERVER_LABEL=""
 QDRANT_LABEL="com.bytedance.jarvis.qdrant"
 CC_CONNECT_LABEL="com.cc-connect.service"
-SERVER_URL="http://127.0.0.1:18800"
+SERVER_URL=""
 QDRANT_URL="http://127.0.0.1:6333"
 TRAEX_INSTALLER_URL="https://code.byted.org/api/tos-proxy/download/traex_install.sh"
 source "${REPO_ROOT}/integrations/cc-connect/manifest.sh"
@@ -220,6 +220,13 @@ initialization_status() {
   )
 }
 
+load_server_instance() {
+  local instance
+  instance="$("${REPO_ROOT}/scripts/jarvis-instance" "$CONFIG_PATH")"
+  SERVER_LABEL="$(jq -er '.launchd_label' <<<"$instance")"
+  SERVER_URL="$(jq -er '.api_base' <<<"$instance")"
+}
+
 integrated_binding_validation() {
   "${REPO_ROOT}/integrations/cc-connect/manage.sh" \
     validate --config "$CONFIG_PATH"
@@ -391,6 +398,7 @@ doctor() {
   fi
 
   local qdrant_healthy server_healthy readiness_json
+  load_server_instance
   qdrant_healthy="$(bool_json curl -fsS --max-time 2 "${QDRANT_URL}/healthz" -o /dev/null)"
   server_healthy="$(bool_json curl -fsS --max-time 2 "${SERVER_URL}/healthz" -o /dev/null)"
   readiness_json='null'
@@ -676,6 +684,7 @@ install_server() {
   require_command launchctl
   require_command npm
   require_command plutil
+  load_server_instance
 
   if service_loaded "$SERVER_LABEL"; then
     local current_program
@@ -715,7 +724,7 @@ install_server() {
   [[ -f "$runtime_path" ]] || fail "runtime configuration was reported ready but is missing: $runtime_path"
   chmod 0600 "$runtime_path"
 
-  "${REPO_ROOT}/scripts/install-launchd.sh" >&2
+  "${REPO_ROOT}/scripts/install-launchd.sh" --config "$CONFIG_PATH" >&2
   local validation
   if ! validation="$(validate_installation)"; then
     printf '%s\n' "$validation" >&2
@@ -728,6 +737,7 @@ validate_installation() {
   require_command jq
   require_command curl
   require_command go
+  load_server_instance
 
   local status binding binding_ok qdrant_healthy server_healthy cc_connect_running cc_connect_program cc_connect_program_ok readiness readiness_ok permissions_ok agent_cli_auth_ready ok
   status="$(initialization_status)"

@@ -176,10 +176,7 @@ serve() {
   [[ -f "$CONFIG_PATH" && -f "$CONFIG_DIR/config.runtime.yaml" && -f "$CONFIG_DIR/okr-module.yaml" ]] || fail "isolated config is missing; run prepare first"
   [[ -x "$SERVER_BIN" ]] || fail "isolated server binary is missing; run build first"
   "$SCRIPT_DIR/verify-server-signature.sh" "$SERVER_BIN"
-  exec env \
-    JARVIS_BASE_URL="$BASE_URL" \
-    JARVIS_API_BASE="$BASE_URL" \
-    "$SERVER_BIN" -config "$CONFIG_PATH"
+  exec "$SERVER_BIN" -config "$CONFIG_PATH"
 }
 
 seed() {

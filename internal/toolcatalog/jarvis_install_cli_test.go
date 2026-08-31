@@ -205,6 +205,8 @@ func TestJarvisInstallBindsCCAndBootstrapsJarvisContext(t *testing.T) {
 	relayHash := fmt.Sprintf("%x", sha256.Sum256([]byte(relaySecret)))
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
+  *"run ./cmd/jarvis-config instance"*)
+    printf '%s' '{"api_base":"http://127.0.0.1:19452","launchd_label":"com.bytedance.jarvis.server.test"}' ;;
   *"run ./cmd/jarvis-config show-principal"*)
     printf '%s' '{"principal_open_id":"ou_ready","git_author":"ready@example.com","card_approval_enabled":true,"card_approval_principal_open_id":"ou_ready","relay_secret":"`+relaySecret+`","relay_secret_sha256":"`+relayHash+`"}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
@@ -246,7 +248,7 @@ exit 9
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `app_id = "cli_app_ready"`, `scripts/jarvis-tools get-context`} {
+	for _, want := range []string{`jarvis_approval_url = "http://127.0.0.1:19452/internal/card-approval/callback"`, `name = "keep-me"`, `name = "jarvis-codex"`, `app_id = "cli_app_ready"`, `scripts/jarvis-tools get-context`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CC config missing %q:\n%s", want, text)
 		}
@@ -434,9 +436,10 @@ esac
 
 func TestJarvisInstallRefusesToReplaceLoadedServer(t *testing.T) {
 	binDir := t.TempDir()
-	for _, commandName := range []string{"curl", "go", "npm", "lark-cli", "traex"} {
+	for _, commandName := range []string{"curl", "npm", "lark-cli", "traex"} {
 		writeExecutable(t, filepath.Join(binDir, commandName), "#!/bin/sh\nexit 0\n")
 	}
+	writeExecutable(t, filepath.Join(binDir, "go"), "#!/bin/sh\nprintf '%s\\n' '{\"api_base\":\"http://127.0.0.1:19452\",\"launchd_label\":\"com.bytedance.jarvis.server.test\"}'\n")
 	writeExecutable(t, filepath.Join(binDir, "launchctl"), "#!/bin/sh\nexit 0\n")
 
 	output, err := runJarvisInstall(t, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "install-server")
@@ -452,7 +455,11 @@ func TestJarvisInstallRefusesServerInstallWhenTraexIsNotLoggedIn(t *testing.T) {
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "launchctl"), "#!/bin/sh\nexit 1\n")
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
-printf '%s\n' '{"machine_configuration_ready":true,"runtime_binaries":["traex"],"runtime_config_path":"/unused/config.runtime.yaml"}'
+case "$*" in
+  *"run ./cmd/jarvis-config instance"*) printf '%s' '{"api_base":"http://127.0.0.1:19452","launchd_label":"com.bytedance.jarvis.server.test"}' ;;
+  *"run ./cmd/jarvis-config initialization-status"*) printf '%s' '{"machine_configuration_ready":true,"runtime_binaries":["traex"],"runtime_config_path":"/unused/config.runtime.yaml"}' ;;
+  *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
+esac
 `)
 	writeExecutable(t, filepath.Join(binDir, "traex"), `#!/bin/sh
 if [ "$1" = "login" ] && [ "$2" = "status" ]; then
