@@ -98,6 +98,38 @@ exit 9
 	}
 }
 
+func TestJarvisWorldModelValidateDoesNotPassAPIResponsesAsArguments(t *testing.T) {
+	largeFact := strings.Repeat("x", 300_000)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/profile":
+			fmt.Fprintf(w, `{"code":0,"data":{"open_id":"ou_ready","name":"Ready User","saved":true,"large_fact":%q}}`, largeFact)
+		case "/api/projects", "/api/persons", "/api/key-matters", "/api/resources", "/api/groups":
+			fmt.Fprint(w, `{"code":0,"data":{"total":0,"items":[]}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	binDir := t.TempDir()
+	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
+printf '%s' '{"principal_open_id":"ou_ready"}'
+`)
+	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
+printf '%s' '{"verified":true,"identities":{"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready"}}}'
+`)
+
+	out, err := runJarvisWorldModel(t, server.URL, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "validate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"ready":true`) {
+		t.Fatalf("validate output = %q", out)
+	}
+}
+
 func TestJarvisWorldModelCaptureCommandsReuseM2Endpoints(t *testing.T) {
 	requests := make([]string, 0, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

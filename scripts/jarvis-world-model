@@ -134,9 +134,15 @@ cmd_validate() {
   matters="$(api_call GET '/api/key-matters?page=1&page_size=1' | jq -c '.data')"
   resources="$(api_call GET '/api/resources?page=1&page_size=1' | jq -c '.data')"
   groups="$(api_call GET '/api/groups?page=1&page_size=100' | jq -c '.data')"
-  result="$(jq -nc --argjson auth "$auth" --argjson configured "$configured" \
-    --argjson principal "$principal" --argjson projects "$projects" --argjson persons "$persons" \
-    --argjson matters "$matters" --argjson resources "$resources" --argjson groups "$groups" '
+  result="$(printf '%s\n' "$auth" "$configured" "$principal" "$projects" "$persons" "$matters" "$resources" "$groups" | jq -sc '
+      .[0] as $auth |
+      .[1] as $configured |
+      .[2] as $principal |
+      .[3] as $projects |
+      .[4] as $persons |
+      .[5] as $matters |
+      .[6] as $resources |
+      .[7] as $groups |
       ($auth.identities.user // {}) as $user |
       (($auth.verified == true) and ($user.status == "ready") and ($user.verified == true) and ($user.tokenStatus == "valid")) as $auth_ok |
       (($principal.saved == true) and ((($principal.open_id // "") | length) > 0) and ((($principal.name // "") | length) > 0)) as $principal_ok |
