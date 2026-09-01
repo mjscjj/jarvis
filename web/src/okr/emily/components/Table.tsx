@@ -4,7 +4,7 @@ import { useBoard } from '../board'
 import { buildAllBusinessNavigation, buildKRHierarchy, priorityOf } from '../hierarchy'
 import { tagLabel } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
-import { KINDS } from '../rows'
+import { collapseAllIds, KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
 import type { Entry, Kr, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
 import { TagChip, TagEditor } from './TagEditor'
@@ -499,7 +499,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
     else next.add(id)
     return next
   })
-  const collapseAll = () => setClosed(new Set(activeObjective?.krs.flatMap((kr) => [kr.id, ...kr.points.map((point) => point.id)]) ?? []))
+  const collapseAll = () => setClosed(collapseAllIds(activeObjective ? [activeObjective] : []))
 
   return (
     <div className={readOnly ? 'kr-table-readonly' : ''}>
@@ -513,7 +513,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
         <span className="font-medium text-slate-500">层级</span>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white">
           <button type="button" onClick={() => setClosed(new Set())} className="px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部展开</button>
-          <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部折叠</button>
+          <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
         </div>
       </div>
 		{templateKey === 'okr_weekly_preview_v1' && <PreviewReviewPanel target={{ kind: 'all', title: '全部 OKR' }} className="mb-3" />}
