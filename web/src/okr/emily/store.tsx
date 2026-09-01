@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, replaceKR, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, listWeeklyReportWeeks, replaceKR, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardData, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { findKrDraftIssue } from './draftValidation'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { LIGHTS, STATUSES } from './template'
 import type { Entry, EnumValues, Kr, Objective, Point, WeekTemplateKey, WeeklyScore } from './types'
+import { filterWeekCatalog, previousWeekInCatalog } from './weekCatalog'
 
 const SAVE_DELAY_MS = 700
 
@@ -109,11 +110,13 @@ async function syncWeeklyProgress(remote: Kr, local: Kr, week: string): Promise<
 export function BoardProvider({
   children,
   surface = 'okr',
+  weekTemplateKey = 'classic',
   initialQuarter = '',
   onQuarterChange,
 }: {
   children: ReactNode
   surface?: BoardSurface
+  weekTemplateKey?: WeekTemplateKey
   initialQuarter?: string
   onQuarterChange?: (quarter: string) => void
 }) {
@@ -195,11 +198,39 @@ export function BoardProvider({
     scheduleSaveRef.current = scheduleSave
   }, [scheduleSave])
 
-  const loadRemote = useCallback(async (targetWeek?: string, targetQuarter?: string) => {
+  const loadRemote = useCallback(async (targetWeek?: string, targetQuarter?: string): Promise<BoardData | undefined> => {
     remoteReady.current = false
     setSyncState({ kind: 'loading', message: '正在读取本周进展…' })
     try {
-      const [board, remoteEnums] = await Promise.all([getBoard(targetQuarter ?? quarterRef.current, targetWeek ?? '', surface), getEnums()])
+      let board: BoardData
+      if (surface === 'weekly-report') {
+        const catalog = await listWeeklyReportWeeks(targetQuarter ?? quarterRef.current)
+        const filteredWeeks = filterWeekCatalog(catalog.weeks, weekTemplateKey)
+        const requestedWeek = targetWeek?.trim() ?? ''
+        const selectedWeek = requestedWeek && filteredWeeks.includes(requestedWeek) ? requestedWeek : filteredWeeks[0] ?? ''
+        if (selectedWeek) {
+          const loaded = await getBoard(catalog.quarter, selectedWeek, surface)
+          board = {
+            ...loaded,
+            templateKey: weekTemplateKey,
+            previousWeek: previousWeekInCatalog(filteredWeeks, selectedWeek),
+            availableWeeks: filteredWeeks,
+          }
+        } else {
+          const core = await getBoard(catalog.quarter, '', 'okr')
+          board = {
+            ...core,
+            week: '',
+            templateKey: weekTemplateKey,
+            previousWeek: undefined,
+            availableWeeks: [],
+            objectives: [],
+          }
+        }
+      } else {
+        board = await getBoard(targetQuarter ?? quarterRef.current, targetWeek ?? '', surface)
+      }
+      const remoteEnums = await getEnums()
       publish(board.objectives)
       serverKrs.current = new Map(board.objectives.flatMap((objective) => objective.krs).map((kr) => [kr.id, clone(kr)]))
       revisions.current.clear()
@@ -215,11 +246,12 @@ export function BoardProvider({
       setAvailableWeeks(board.availableWeeks)
       setEnums(remoteEnums)
       remoteReady.current = true
-      setSyncState({ kind: 'ready', message: '本周进展已加载' })
+      setSyncState({ kind: 'ready', message: board.week ? '本周进展已加载' : '当前季度暂无对应周次' })
+      return board
     } catch (error) {
       setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '加载失败，请稍后重试。' })
     }
-  }, [onQuarterChange, publish, surface])
+  }, [onQuarterChange, publish, surface, weekTemplateKey])
 
   useEffect(() => {
     const activeTimers = timers.current
@@ -322,30 +354,17 @@ export function BoardProvider({
 		deleteWeeklyScope: async () => {
 			const selectedQuarter = quarterRef.current
 			const selectedWeek = weekRef.current
-			if (!selectedQuarter || !selectedWeek) throw new Error('当前没有可删除的周报。')
+			const lifecycleName = weekTemplateKey === 'okr_weekly_preview_v1' ? 'Review' : '周报'
+			if (!selectedQuarter || !selectedWeek) throw new Error(`当前没有可删除的${lifecycleName}。`)
 			if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'loading' || syncState.kind === 'conflict') {
 				throw new Error('请等待当前修改保存后再删除本周。')
 			}
 			remoteReady.current = false
-			setSyncState({ kind: 'saving', message: `正在删除 ${selectedWeek} 周报…` })
+			setSyncState({ kind: 'saving', message: `正在删除 ${selectedWeek} ${lifecycleName}…` })
 			try {
 				const result = await deleteWeeklyReportWeek(selectedQuarter, selectedWeek)
-				if (result.nextWeek) {
-					weekRef.current = result.nextWeek
-					await loadRemote(result.nextWeek, selectedQuarter)
-					return result
-				}
-				publish([])
-				serverKrs.current.clear()
-				revisions.current.clear()
-				lastFailedKr.current = null
-				weekRef.current = ''
-				setWeekState('')
-				setTemplateKey('classic')
-				setPreviousWeek(undefined)
-				setAvailableWeeks([])
-				setSyncState({ kind: 'ready', message: '当前季度暂无周报，请先开启新周' })
-				return result
+				const loaded = await loadRemote('', selectedQuarter)
+				return { ...result, nextWeek: loaded?.week || undefined }
 			} catch (error) {
 				remoteReady.current = true
 				setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '删除本周失败。' })
@@ -557,7 +576,7 @@ export function BoardProvider({
     },
     resolveConflict,
     applySavedKr: (kr) => publish(replaceKrIn(objectivesRef.current, kr.id, kr)),
-  }), [availableQuarters, availableWeeks, enums, loadRemote, mutate, objectives, previousWeek, publish, quarter, resolveConflict, saveNow, saveWeeklyScore, syncState, templateKey, week])
+  }), [availableQuarters, availableWeeks, enums, loadRemote, mutate, objectives, previousWeek, publish, quarter, resolveConflict, saveNow, saveWeeklyScore, syncState, templateKey, week, weekTemplateKey])
 
   return <BoardContext.Provider value={api}>{children}</BoardContext.Provider>
 }

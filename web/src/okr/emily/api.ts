@@ -52,6 +52,19 @@ interface APIWeek {
   opened_at: string
 }
 
+export interface WeeklyReportWeek {
+  quarter: string
+  week: string
+  templateKey: WeekTemplateKey
+  openedBy: string
+  openedAt: string
+}
+
+export interface WeeklyReportWeekList {
+  quarter: string
+  weeks: WeeklyReportWeek[]
+}
+
 interface APIPageComment {
   id: string
   parent_id?: string
@@ -303,13 +316,7 @@ export interface BoardData {
 }
 
 export interface OpenWeekResult {
-  week: {
-    quarter: string
-    week: string
-    templateKey: WeekTemplateKey
-    openedBy: string
-    openedAt: string
-  }
+  week: WeeklyReportWeek
   created: boolean
 }
 
@@ -341,6 +348,22 @@ export async function openWeeklyReportWeek(input: { quarter: string; week: strin
       openedBy: value.week.opened_by,
       openedAt: value.week.opened_at,
     },
+  }
+}
+
+export async function listWeeklyReportWeeks(quarter = ''): Promise<WeeklyReportWeekList> {
+  const params = new URLSearchParams()
+  if (quarter) params.set('quarter', quarter)
+  const value = await request<{ quarter: string; weeks: APIWeek[] }>(`/api/weekly-report/weeks?${params}`)
+  return {
+    quarter: value.quarter,
+    weeks: value.weeks.map((week) => ({
+      quarter: week.quarter,
+      week: week.week,
+      templateKey: week.template_key,
+      openedBy: week.opened_by,
+      openedAt: week.opened_at,
+    })),
   }
 }
 

@@ -12,6 +12,7 @@ import IdentityBoundary from './IdentityBoundary'
 import { isWeeklyWorkspaceTab, okrTabForWeeklyMode, resolveOKRTab, weeklyWorkspaceMode, type OKRTab } from './navigation'
 import { withOKRScope, withOKRTarget } from './chatContext'
 import { isWeeklyShareViewState, weeklyShareTab } from './emily/share'
+import { templateKeyForWeeklyMode } from './emily/weekCatalog'
 import './emily/index.css'
 
 function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
@@ -78,10 +79,13 @@ function Workspace({
   const changeTab = (tab: OKRTab) => setViewState({ ...context.view_state, tab }, false)
 
 	const surface = isWeeklyWorkspaceTab(visibleTab) ? 'weekly-report' : 'okr'
+	const weeklyMode = isWeeklyWorkspaceTab(visibleTab) ? weeklyWorkspaceMode(visibleTab) : undefined
+	const weekTemplateKey = weeklyMode ? templateKeyForWeeklyMode(weeklyMode) : undefined
+	const boardKey = weekTemplateKey ? `${surface}:${weekTemplateKey}` : surface
 
 	return (
 		<div id="okr-workspace-root" className="okr-workspace-root">
-			<BoardProvider key={surface} surface={surface} initialQuarter={selectedQuarter} onQuarterChange={setSelectedQuarter}>
+			<BoardProvider key={boardKey} surface={surface} weekTemplateKey={weekTemplateKey} initialQuarter={selectedQuarter} onQuarterChange={setSelectedQuarter}>
 				<PageContextSync surface={surface} />
 				{visibleTab === 'agent-flows' ? (
 					<AgentFlowsWorkspace
@@ -99,7 +103,7 @@ function Workspace({
 				<WeeklyReportWorkspace
 					auth={auth}
 					onLogout={() => void logoutUser()}
-						mode={weeklyWorkspaceMode(visibleTab)}
+						mode={weeklyMode!}
 						onModeChange={(mode) => changeTab(okrTabForWeeklyMode(mode))}
 					shared={weeklyShare}
 				/>
