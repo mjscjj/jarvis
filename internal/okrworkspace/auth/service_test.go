@@ -84,6 +84,9 @@ func TestServiceCompletesDeviceIdentitySession(t *testing.T) {
 	if err != nil || current.User.Name != "Alice" {
 		t.Fatalf("Current() = %+v, %v", current, err)
 	}
+	if want := now.Add(24 * time.Hour); !current.ExpiresAt.Equal(want) {
+		t.Fatalf("session expiry = %s, want %s", current.ExpiresAt, want)
+	}
 	if _, _, err := service.PollDeviceLogin(context.Background(), login.ID); !errors.Is(err, ErrDeviceLoginNotFound) {
 		t.Fatalf("completed login was reusable: %v", err)
 	}

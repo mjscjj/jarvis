@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
@@ -21,6 +22,7 @@ var jarvisOKRUser = okrAuth.User{OpenID: "jarvis", Name: "Jarvis"}
 type okrCurrentUserResponse struct {
 	Authenticated bool          `json:"authenticated"`
 	Configured    bool          `json:"configured"`
+	ExpiresAt     *time.Time    `json:"expires_at,omitempty"`
 	User          *okrAuth.User `json:"user,omitempty"`
 }
 
@@ -40,7 +42,7 @@ func GetOKRCurrentUser(service *okrAuth.Service) app.HandlerFunc {
 			writeAPIError(c, consts.StatusInternalServerError, 50080, err)
 			return
 		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: true, User: &session.User}})
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: true, ExpiresAt: &session.ExpiresAt, User: &session.User}})
 	}
 }
 

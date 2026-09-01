@@ -10,7 +10,7 @@ import { PAGE_TITLE } from './seed'
 import { CommentInteractionProvider } from './commenting'
 import type { PendingCommentSelection } from './commenting'
 import { commentTargetFromThread } from './comments'
-import type { AuthStatus, CommentTarget, PageComment } from './types'
+import type { CommentTarget, PageComment } from './types'
 import { openWeeklyReportWeek } from './api'
 import { weeklyShareURL } from './share'
 import type { WeeklyWorkspaceMode } from '../navigation'
@@ -69,16 +69,10 @@ function SyncNotice() {
 }
 
 export default function App({
-  auth,
-  onLogout,
-  onLogin,
   mode,
   onModeChange,
   shared = false,
 }: {
-  auth: AuthStatus
-  onLogout: () => void
-	onLogin: () => void
 	mode: WeeklyWorkspaceMode
 	onModeChange: (mode: WeeklyWorkspaceMode) => void
   shared?: boolean
@@ -261,11 +255,6 @@ export default function App({
                 {commentCount > 0 && <span className="min-w-4 rounded-full bg-indigo-600 px-1 text-center text-[9px] leading-4 text-white">{commentCount}</span>}
               </button>
           </div>
-          {auth.user && <div className="hidden items-center gap-1.5 text-[11px] text-slate-500 xl:flex">
-            {auth.user.avatarUrl ? <img src={auth.user.avatarUrl} alt="" className="size-6 rounded-full" /> : <span className="flex size-6 items-center justify-center rounded-full bg-slate-100 text-[10px]">{auth.user.name.slice(0, 1)}</span>}
-            <span>{auth.user.name}</span>
-            {auth.configured && <button type="button" onClick={onLogout} className="ml-1 text-slate-400 hover:text-slate-700">退出</button>}
-          </div>}
         </div>
       </header>
 
@@ -310,7 +299,7 @@ export default function App({
             </div>
 			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无{lifecycleName}</div><div className="mt-1 text-xs text-slate-400">{managesWeeks ? `点击顶部“新建${lifecycleName}”创建一个空周。` : '请先在“周报填写”中新建普通周报。'}</div></section>}
 		</main>
-			{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={meetingLike} canComment={!auth.configured || auth.authenticated} onSignIn={onLogin} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+			{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={meetingLike} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
     </div>
   )
 }

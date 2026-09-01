@@ -96,6 +96,7 @@ interface APIPageCommentList {
 interface APIAuthStatus {
   authenticated: boolean
   configured: boolean
+  expires_at?: string
   user?: {
     open_id: string
     name: string
@@ -494,6 +495,7 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   return {
     authenticated: value.authenticated,
     configured: value.configured,
+    expiresAt: value.expires_at,
     user: value.user ? {
       openId: value.user.open_id,
       name: value.user.name,

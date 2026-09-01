@@ -136,14 +136,12 @@ function ReplyComposer({ comment, quarter, week, onCreated, onCancel }: { commen
   )
 }
 
-function CommentThread({ comment, quarter, week, showTarget, meetingMode, canComment, onSignIn, onReply, onEdit, onPatch, onDelete }: {
+function CommentThread({ comment, quarter, week, showTarget, meetingMode, onReply, onEdit, onPatch, onDelete }: {
   comment: PageComment
   quarter: string
   week: string
   showTarget: boolean
   meetingMode: boolean
-  canComment: boolean
-  onSignIn: () => void
   onReply: (rootId: string, reply: PageComment) => void
   onEdit: (id: string, content: string) => Promise<void>
   onPatch: (id: string, patch: { todo?: boolean; resolved?: boolean }) => Promise<void>
@@ -190,7 +188,7 @@ function CommentThread({ comment, quarter, week, showTarget, meetingMode, canCom
             {meetingMode && <button type="button" disabled={actionSaving} aria-pressed={comment.todo} onClick={() => void patch({ todo: !comment.todo })} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-medium disabled:opacity-50 ${comment.todo ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-amber-200 hover:text-amber-700'}`}>{comment.todo ? '取消 To do' : '标记 To do'}</button>}
             <button type="button" disabled={actionSaving} onClick={() => void patch({ resolved: !comment.resolved })} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-medium disabled:opacity-50 ${comment.resolved ? 'border-slate-200 text-slate-500' : 'border-indigo-200 bg-indigo-50 text-indigo-600'}`}>{comment.resolved ? '重新打开' : '标记解决'}</button>
           </div>
-          <EditableCommentBody comment={comment} onEdit={onEdit} onDelete={onDelete} footer={<button type="button" onClick={() => canComment ? setReplying((value) => !value) : onSignIn()} className="font-medium text-slate-400 hover:text-indigo-600">回复{comment.replies.length > 0 ? ` · ${comment.replies.length}` : ''}</button>} />
+          <EditableCommentBody comment={comment} onEdit={onEdit} onDelete={onDelete} footer={<button type="button" onClick={() => setReplying((value) => !value)} className="font-medium text-slate-400 hover:text-indigo-600">回复{comment.replies.length > 0 ? ` · ${comment.replies.length}` : ''}</button>} />
           {actionError && <div className="mt-1 text-[10px] text-red-600">{actionError}</div>}
 
           {comment.replies.length > 0 && (
@@ -207,7 +205,7 @@ function CommentThread({ comment, quarter, week, showTarget, meetingMode, canCom
             </div>
           )}
 
-          {replying && canComment && <ReplyComposer comment={comment} quarter={quarter} week={week} onCreated={(reply) => onReply(comment.id, reply)} onCancel={() => setReplying(false)} />}
+          {replying && <ReplyComposer comment={comment} quarter={quarter} week={week} onCreated={(reply) => onReply(comment.id, reply)} onCancel={() => setReplying(false)} />}
         </div>
       </div>
     </article>
@@ -220,8 +218,6 @@ interface CommentDrawerProps {
   week: string
   target?: CommentTarget
   meetingMode: boolean
-  canComment: boolean
-  onSignIn: () => void
   onShowAll: () => void
   onClose: () => void
   onCountChange: (count: number) => void
@@ -229,7 +225,7 @@ interface CommentDrawerProps {
   onCommentsChange: (comments: PageComment[]) => void
 }
 
-export function CommentDrawer({ open, quarter, week, target, meetingMode, canComment, onSignIn, onShowAll, onClose, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
+export function CommentDrawer({ open, quarter, week, target, meetingMode, onShowAll, onClose, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
   const [comments, setComments] = useState<PageComment[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -348,23 +344,20 @@ export function CommentDrawer({ open, quarter, week, target, meetingMode, canCom
               ) : <div className="mt-0.5 line-clamp-3 text-[12px] leading-[18px] text-slate-700">{target.title}</div>}
             </div>
           )}
-          {canComment ? <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
               <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void addRoot() }} placeholder={target ? '针对这段内容发表评论…' : '对本周页面发表评论…'} rows={3} maxLength={2000} className="w-full resize-none bg-transparent text-[13px] leading-5 text-slate-700 outline-none placeholder:text-slate-400" />
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-[10px] text-slate-300">⌘ + Enter 发布</span>
                 <button type="button" onClick={() => void addRoot()} disabled={!draft.trim() || saving} className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '发布中…' : '发布评论'}</button>
               </div>
-            </div> : <div className="rounded-xl border border-blue-100 bg-white p-3 text-center shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-              <p className="text-[11px] text-slate-500">登录后使用真实身份发表评论</p>
-              <button type="button" onClick={onSignIn} className="mt-2 rounded-md bg-blue-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-blue-700">飞书登录</button>
-            </div>}
+            </div>
           {error && <div className="mt-2 text-[11px] text-red-600">{error}</div>}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loading ? <div className="px-4 py-10 text-center text-xs text-slate-400">正在读取评论…</div> : visibleComments.length === 0 ? (
             <div className="px-8 py-16 text-center"><div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-400">💬</div><p className="text-[13px] font-medium text-slate-600">{target ? '这段内容还没有评论' : '还没有评论'}</p><p className="mt-1 text-[11px] text-slate-400">提出问题、补充背景或回复讨论</p></div>
-          ) : visibleComments.map((comment) => <CommentThread key={comment.id} comment={comment} quarter={quarter} week={week} showTarget={!target} meetingMode={meetingMode} canComment={canComment} onSignIn={onSignIn} onReply={addReply} onEdit={editExistingComment} onPatch={patchExistingComment} onDelete={removeExistingComment} />)}
+          ) : visibleComments.map((comment) => <CommentThread key={comment.id} comment={comment} quarter={quarter} week={week} showTarget={!target} meetingMode={meetingMode} onReply={addReply} onEdit={editExistingComment} onPatch={patchExistingComment} onDelete={removeExistingComment} />)}
         </div>
       </aside>
     </>

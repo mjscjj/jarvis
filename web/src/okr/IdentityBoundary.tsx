@@ -6,13 +6,8 @@ interface ActiveLogin extends FeishuDeviceLogin {
   retryAfterSeconds: number
 }
 
-const initialAuth: AuthStatus = { authenticated: false, configured: true }
-
-export default function IdentityBoundary({ children }: {
-  children: (auth: AuthStatus, logoutUser: () => Promise<void>, loginUser: () => Promise<void>) => ReactNode
-}) {
-  const [auth, setAuth] = useState<AuthStatus>(initialAuth)
-  const [loginOpen, setLoginOpen] = useState(false)
+export default function IdentityBoundary({ children }: { children: ReactNode }) {
+  const [auth, setAuth] = useState<AuthStatus>()
   const [activeLogin, setActiveLogin] = useState<ActiveLogin>()
   const [startingLogin, setStartingLogin] = useState(false)
   const [error, setError] = useState('')
@@ -22,11 +17,29 @@ export default function IdentityBoundary({ children }: {
     try {
       setAuth(await getAuthStatus())
     } catch (reason) {
+      setAuth(undefined)
       setError(reason instanceof Error ? reason.message : '无法读取登录状态')
     }
   }
 
   useEffect(() => { void loadIdentity() }, [])
+
+  useEffect(() => {
+    if (!auth?.authenticated || !auth.expiresAt) return
+    const expiresAt = new Date(auth.expiresAt).getTime()
+    if (!Number.isFinite(expiresAt)) {
+      setAuth(undefined)
+      setError('登录到期时间无效')
+      return
+    }
+    const delay = expiresAt - Date.now() + 1000
+    if (delay <= 0) {
+      void loadIdentity()
+      return
+    }
+    const timer = window.setTimeout(() => void loadIdentity(), delay)
+    return () => window.clearTimeout(timer)
+  }, [auth?.authenticated, auth?.expiresAt])
 
   useEffect(() => {
     if (!activeLogin) return
@@ -36,7 +49,6 @@ export default function IdentityBoundary({ children }: {
           const result = await pollFeishuLogin(activeLogin.loginId)
           if (result.status === 'completed') {
             setActiveLogin(undefined)
-            setLoginOpen(false)
             await loadIdentity()
             return
           }
@@ -64,7 +76,6 @@ export default function IdentityBoundary({ children }: {
   }, [activeLogin])
 
   const startLogin = async () => {
-    setLoginOpen(true)
     setError('')
     setStartingLogin(true)
     const popup = window.open('', '_blank')
@@ -88,36 +99,37 @@ export default function IdentityBoundary({ children }: {
     await loadIdentity()
   }
 
+  if (!auth) {
+    return <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-400">{error || '正在确认身份…'}{error && <button type="button" onClick={() => void loadIdentity()} className="ml-2 text-indigo-600 hover:underline">重试</button>}</div>
+  }
+
+  if (auth.configured && !auth.authenticated) {
+    return (
+      <div className="flex min-h-[520px] items-center justify-center px-6">
+        <section className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white px-8 py-9 text-center shadow-sm">
+          <span className="mx-auto flex size-11 items-center justify-center rounded-xl bg-indigo-600 text-base font-semibold text-white">O</span>
+          <h1 className="mt-4 text-lg font-semibold text-slate-900">登录 OKR 模块</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">完成一次飞书登录后即可使用 OKR、周报和 Review。</p>
+          {activeLogin ? (
+            <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-4 text-left">
+              <p className="text-sm font-medium text-slate-800">请在飞书授权页确认登录</p>
+              {activeLogin.userCode && <p className="mt-2 text-xs text-slate-500">验证码：<span className="font-mono font-semibold text-slate-800">{activeLogin.userCode}</span></p>}
+              <a href={activeLogin.verificationUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-sm font-medium text-indigo-600 hover:underline">打开飞书授权页</a>
+              <p className="mt-3 text-xs text-slate-400">正在等待授权结果…</p>
+            </div>
+          ) : (
+            <button type="button" onClick={() => void startLogin()} disabled={startingLogin} className="mt-6 h-10 w-full rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-60">{startingLogin ? '正在发起登录…' : '使用飞书登录'}</button>
+          )}
+          {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
+        </section>
+      </div>
+    )
+  }
+
   return (
-    <>
-      {children(auth, logoutUser, startLogin)}
-      {error && !loginOpen && (
-        <div className="fixed bottom-4 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs text-rose-600 shadow-lg">
-          <span>{error}</span>
-          <button type="button" onClick={() => void loadIdentity()} className="text-indigo-600 hover:underline">重试</button>
-        </div>
-      )}
-      {loginOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/30 px-6" role="dialog" aria-modal="true" aria-label="飞书登录">
-          <section className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white px-8 py-8 text-center shadow-xl">
-            <span className="mx-auto flex size-11 items-center justify-center rounded-xl bg-indigo-600 text-base font-semibold text-white">E</span>
-            <h1 className="mt-4 text-lg font-semibold text-slate-900">用飞书发表评论</h1>
-            <p className="mt-2 text-sm leading-6 text-slate-500">登录只用于记录评论人，不影响 OKR、周报和 Review 的其他操作。</p>
-            {activeLogin ? (
-              <div className="mt-5 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-4 text-left">
-                <p className="text-sm font-medium text-slate-800">请在飞书授权页确认登录</p>
-                {activeLogin.userCode && <p className="mt-2 text-xs text-slate-500">验证码：<span className="font-mono font-semibold text-slate-800">{activeLogin.userCode}</span></p>}
-                <a href={activeLogin.verificationUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-sm font-medium text-indigo-600 hover:underline">打开飞书授权页</a>
-                <p className="mt-3 text-xs text-slate-400">正在等待授权结果…</p>
-              </div>
-            ) : (
-              <button type="button" onClick={() => void startLogin()} disabled={startingLogin} className="mt-5 h-10 w-full rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-60">{startingLogin ? '正在发起登录…' : '重新发起飞书登录'}</button>
-            )}
-            {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
-            <button type="button" onClick={() => setLoginOpen(false)} className="mt-4 text-sm text-slate-400 hover:text-slate-700">暂不登录</button>
-          </section>
-        </div>
-      )}
-    </>
+    <div className="relative">
+      {children}
+      {auth.configured && <div className="fixed bottom-5 right-20 z-[60] flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-500 shadow-md"><span>{auth.user?.name}</span><button type="button" onClick={() => void logoutUser()} className="text-slate-400 hover:text-slate-700">退出</button></div>}
+    </div>
   )
 }
