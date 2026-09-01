@@ -129,7 +129,7 @@ repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills 和�
 ./scripts/jarvis-install validate-dependencies
 ```
 
-lark-cli 使用 larksuite 官方 npm installer；traex 使用其 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装目前验收 macOS arm64。
+lark-cli 使用 larksuite 官方 npm installer；traex 使用其 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装支持 macOS arm64 与 Linux x86_64。
 
 ## 本地运行
 
@@ -174,7 +174,8 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ./scripts/jarvis-install bind-cc
 ./scripts/jarvis-install validate-binding
 
-# 启动补丁版 CC Connect 后，fresh clone 安装主服务：
+# 启动补丁版 CC Connect 后，fresh clone 安装主服务（Linux 可用
+# scripts/install-cc-systemd.sh <独立配置路径> 避免覆盖别的 CC 项目）：
 ./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"
 ./scripts/jarvis-install install-server
 
@@ -185,8 +186,7 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 # 再完成监听群新消息和绑定 Bot 对话的真实端到端验收，最后读回总状态
 ./scripts/jarvis-install status --run-dir <run_dir>
 
-# 日常后端修改后重建、稳定签名并重启；既有 checkout 的 launchd label
-# 丢失时，同一命令会重建生产前端和后端并恢复服务注册
+# 日常后端修改后重建并重启；macOS 保持稳定签名，Linux 使用 systemd
 ./scripts/rebuild-server.sh
 
 curl http://127.0.0.1:18800/healthz
@@ -195,11 +195,11 @@ curl http://127.0.0.1:18800/healthz
 curl -s http://127.0.0.1:18800/readyz | jq
 ```
 
-不要在 fresh clone 上提前运行 `install-launchd.sh`、`rebuild-server.sh` 或 `install-server`：必须先通过 `validate-dependencies`，再完成 identity 与 CC 绑定。世界模型初始化在服务就绪后执行，不是启动前置条件，但属于整体项目安装的一部分。`var/install/<run-id>/INSTALL_CHECKLIST.md` 从 checkout 一直记录到端到端验收，逐项标记完成、未做、阻塞或不适用及其原因。
+不要在 fresh clone 上提前运行底层服务安装脚本、`rebuild-server.sh` 或 `install-server`：必须先通过 `validate-dependencies`，再完成 identity 与 CC 绑定。世界模型初始化在服务就绪后执行，不是启动前置条件，但属于整体项目安装的一部分。`var/install/<run-id>/INSTALL_CHECKLIST.md` 从 checkout 一直记录到端到端验收，逐项标记完成、未做、阻塞或不适用及其原因。
 
 不要裸 `go build` 覆盖 `bin/jarvis-server` 后直接重启，否则会破坏 macOS TCC 的稳定签名。
 
-`rebuild-server.sh` 在服务已注册时先查询正在执行的 Task，再开始构建；API 不可达时会 fail-fast，`--force-interrupt-running-tasks` 也不会绕过这项检查。对于已经确认复用的 checkout，若 launchd label 丢失，它会直接复用签名安装脚本恢复生产前端、后端和服务注册，不重新执行完整安装，也不升级 CC Connect。fresh clone 仍必须走上面的 `install-server` 流程。
+`rebuild-server.sh` 在服务已注册时先查询正在执行的 Task，再开始构建；API 不可达时会 fail-fast，`--force-interrupt-running-tasks` 也不会绕过这项检查。对于已经确认复用的 checkout，若服务注册丢失，它会按当前平台恢复生产前端、后端和服务注册，不重新执行完整安装，也不升级 CC Connect。fresh clone 仍必须走上面的 `install-server` 流程。
 
 ### 服务与端口
 
@@ -208,11 +208,11 @@ curl -s http://127.0.0.1:18800/readyz | jq
 | `com.bytedance.jarvis.server` | 18800 | Hertz API + 生产 `web/dist` + 流水线与 cron |
 | `com.bytedance.jarvis.web` | 18801 | Vite 开发热更；生产不依赖 |
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | HTTP / gRPC，当前只用于 Todo 语义去重 |
-| `com.cc-connect.service` | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与审批 relay |
+| `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与审批 relay |
 
 仓库没有 Web launchd 安装脚本。首次启用 18801 时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。
 
-launchd 不接受相对路径，所以 `deploy/` 只存 `*.plist.template`，安装脚本用 `scripts/render-launchd-plist.sh` 把 `__JARVIS_ROOT__` 和 `__HOME__` 展开到 `~/Library/LaunchAgents/`。仓库换目录或换用户后重新渲染即可，不需要改仓库文件。
+`deploy/` 同时保存 launchd 与 systemd 模板；渲染脚本把当前仓库和用户目录写入本机服务定义。仓库换目录或换用户后重新安装服务即可，不需要改仓库文件。
 
 详细运维说明见 [docs/reference/operations.md](docs/reference/operations.md)。
 
@@ -257,7 +257,7 @@ cmd/jarvis-server/   主入口与一次性 CLI
 internal/            后端模块
 web/                 React + Vite 管理后台
 conf/                基线配置、prompts、rules、Skills 配置
-deploy/              launchd plist
+deploy/              launchd / systemd 服务模板
 scripts/             安装、签名、重建、jarvis-tools
 docs/                当前架构、模块文档、提案、研究和历史索引
 data/                生成的日报/周报等本地数据

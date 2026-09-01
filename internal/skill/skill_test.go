@@ -433,7 +433,7 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		"依赖门通过前不得启动 CC Connect 或 Jarvis",
 		"世界模型不是服务启动前置条件",
 		"Qdrant 是依赖服务",
-		"`install-server` 必须在调用 `install-launchd.sh` 前再次通过依赖门",
+		"`install-server` 必须在调用平台服务安装脚本前再次通过依赖门",
 		"install-cc-connect",
 		"一个飞书 App/Bot 是身份根",
 		"CC Connect 是该 Bot WebSocket 的唯一所有者",

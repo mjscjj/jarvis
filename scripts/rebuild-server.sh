@@ -4,6 +4,9 @@
 set -euo pipefail
 
 script_dir=${0:A:h}
+if [[ $(uname -s) == Linux ]]; then
+  exec "$script_dir/rebuild-server-linux.sh" "$@"
+fi
 repo_dir=${script_dir:h}
 label=com.bytedance.jarvis.server
 service_target="gui/$UID/$label"

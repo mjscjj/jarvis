@@ -16,7 +16,12 @@ fail() {
 for command_name in git go install jq npm; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: ${command_name}"
 done
-[[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] || fail "the Jarvis CC Connect build currently supports macOS arm64 only"
+platform="$(uname -s)"
+arch="$(uname -m)"
+if [[ ! ( "$platform" == "Darwin" && "$arch" == "arm64" ) && \
+      ! ( "$platform" == "Linux" && ( "$arch" == "x86_64" || "$arch" == "amd64" ) ) ]]; then
+  fail "the Jarvis CC Connect build supports macOS arm64 and Linux x86_64 only (got ${platform}/${arch})"
+fi
 [[ -s "$PATCH_PATH" ]] || fail "CC Connect patch is missing or empty: ${PATCH_PATH}"
 
 version_output=""

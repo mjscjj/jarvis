@@ -32,8 +32,8 @@
 
 ## D. 服务启动与运行底座验收（`$install-jarvis`）
 
-- [ ] <!-- id:install.cc-service --> 补丁版 CC Connect daemon 已从当前 checkout 启动，9810/9820 和实际 launchd program 已验收。
-- [ ] <!-- id:install.server --> Jarvis 主服务已通过签名安装脚本从当前 checkout 启动；没有裸 `go build` 覆盖运行 binary。
+- [ ] <!-- id:install.cc-service --> 补丁版 CC Connect 已从当前 checkout 启动，9810/9820 和服务管理器的实际 program 已验收。
+- [ ] <!-- id:install.server --> Jarvis 主服务已通过平台安装脚本从当前 checkout 启动；macOS 使用稳定签名，没有裸 `go build` 覆盖运行 binary。
 - [ ] <!-- id:install.runtime --> `jarvis-install validate` 已通过；Qdrant、Jarvis `/healthz`、`/readyz`、配置权限和默认 lark-cli App 绑定均正常。
 
 ## E. 世界模型建立（`$bootstrap-jarvis-world-model`）

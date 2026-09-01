@@ -1,0 +1,14 @@
+[Unit]
+Description=Jarvis Qdrant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__JARVIS_ROOT__/var/qdrant
+ExecStart=__JARVIS_ROOT__/bin/qdrant --config-path __JARVIS_ROOT__/conf/qdrant.yaml --disable-telemetry
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

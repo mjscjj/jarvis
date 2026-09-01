@@ -76,6 +76,16 @@ toml_escape() {
   printf '%s' "$value"
 }
 
+sha256_text() {
+  if command -v shasum >/dev/null 2>&1; then
+    LC_ALL=C LANG=C shasum -a 256 | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    LC_ALL=C LANG=C sha256sum | awk '{print $1}'
+  else
+    fail "shasum or sha256sum is required but not found in PATH"
+  fi
+}
+
 lark_default_config() {
   command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
   local output json
@@ -307,7 +317,6 @@ write_cc_app_credentials() {
 
 validation_result() {
   command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
-  command -v shasum >/dev/null 2>&1 || fail "shasum is required but not found in PATH"
   local default_config auth_status configured block app_id cc_app_id cc_app_secret
   local relay_url cc_relay_secret route_claim_url cc_route_claim_secret agent_type platform_type work_dir agent_mode agent_cmd bootstrap_prompt
   local inject_sender document_comments thread_isolation relay_hash cc_relay_hash cc_route_claim_hash
@@ -334,8 +343,8 @@ validation_result() {
   bootstrap_prompt="$(toml_section_string_value "$block" '[projects.agent.options]' append_system_prompt)"
   platform_type="$(toml_section_string_value "$block" '[[projects.platforms]]' type)"
   relay_hash="$(jq -r '.relay_secret_sha256 // ""' <<<"$configured")"
-  cc_relay_hash="$(printf '%s' "$cc_relay_secret" | LC_ALL=C LANG=C shasum -a 256 | awk '{print $1}')"
-  cc_route_claim_hash="$(printf '%s' "$cc_route_claim_secret" | LC_ALL=C LANG=C shasum -a 256 | awk '{print $1}')"
+  cc_relay_hash="$(printf '%s' "$cc_relay_secret" | sha256_text)"
+  cc_route_claim_hash="$(printf '%s' "$cc_route_claim_secret" | sha256_text)"
   jq -nc \
     --arg app_id "$app_id" --arg cc_app_id "$cc_app_id" \
     --arg relay_url "$relay_url" --arg route_claim_url "$route_claim_url" --arg agent_type "$agent_type" --arg platform_type "$platform_type" \

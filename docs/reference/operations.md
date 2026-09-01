@@ -2,20 +2,20 @@
 
 > Status: current
 > Authority: reference; scripts and plist files are source of truth
-> Last verified: 2026-08-07
+> Last verified: 2026-09-01
 
 ## 服务
 
 | Label | 端口 | 安装方式 | 日志 |
 |---|---:|---|---|
-| `com.bytedance.jarvis.server` | 18800 | `./scripts/install-launchd.sh` | `var/log/jarvis-server.log`, `var/log/jarvis-server.error.log` |
+| `com.bytedance.jarvis.server` | 18800 | `jarvis-install install-server` | launchd 文件或 `journalctl --user` |
 | `com.bytedance.jarvis.web` | 18801 | 手工 link + `launchctl bootstrap` | `var/log/vite.log`, `var/log/vite.error.log` |
-| `com.bytedance.jarvis.qdrant` | 6333/6334 | `./scripts/install-qdrant.sh` | `var/log/jarvis-qdrant.log`, `var/log/jarvis-qdrant.error.log` |
-| `com.cc-connect.service` | 9810/9820 | `./bin/cc-connect-jarvis daemon install` | `~/.cc-connect/logs/cc-connect.log` |
+| `com.bytedance.jarvis.qdrant` | 6333/6334 | `./scripts/install-qdrant.sh` | launchd 文件或 `journalctl --user` |
+| `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | CC daemon / `install-cc-systemd.sh` | CC 日志或 `journalctl --user` |
 
 18800 同时托管生产 `web/dist`；18801 只用于 Vite 开发热更。
 
-三份 plist 由 `deploy/*.plist.template` 渲染，`conf/qdrant.yaml` 用相对 `WorkingDirectory` 的路径。移动仓库或换用户后重新渲染即可，不必改仓库文件。
+服务定义由 `deploy/*.plist.template` 或 `deploy/*.service.template` 渲染，`conf/qdrant.yaml` 用相对 `WorkingDirectory` 的路径。移动仓库或换用户后重新安装服务即可，不必改仓库文件。
 
 `conf/config.yaml` 与 `conf/config.runtime.yaml` 都存明文密钥，权限保持 `600`。`config.yaml` 由 git 跟踪，而 git 只记录可执行位，重新 clone 后要再 `chmod 600`。
 
@@ -55,7 +55,7 @@ curl -s http://127.0.0.1:18800/readyz | jq
 
 顺序是硬边界：创建整体安装清单 → 基础工具链、lark-cli/Lark Skills、traex 登录、补丁版 CC Connect binary 和 Qdrant → `validate-dependencies` → 完成 lark-cli 默认飞书用户登录 → 写 Jarvis runtime identity 与 CC Connect `jarvis-codex` → `validate-binding` → 启动补丁版 CC Connect → 主服务注册 → `$bootstrap-jarvis-world-model` → 真实端到端验收 → `status`。Qdrant 是依赖服务，可以在依赖阶段启动；CC Connect/Jarvis 不能在依赖门前启动。`install-server` 会再次强制通过依赖门和一体化绑定门。
 
-当前内置 Qdrant 安装器只支持 macOS arm64。doctor 会按 `go.mod`、Vite engines、CGO/Xcode 工具链、Lark Skills、已有数据库与 launchd program 报告当前状态。若 label 属于其他 checkout 或发现旧业务数据，Agent 必须先请用户决定复用、迁移或替换。
+内置安装器支持 macOS arm64 与 Linux x86_64。doctor 会按 `go.mod`、Vite engines、CGO/C 工具链、Lark Skills、已有数据库与实际服务 program 报告当前状态。若服务属于其他 checkout 或发现旧业务数据，Agent 必须先请用户决定复用、迁移或替换。
 
 launchd 不接受相对路径，所以 `deploy/` 里只有占位符模板；`scripts/render-launchd-plist.sh <label>` 按当前仓库位置和 `$HOME` 展开成 `~/Library/LaunchAgents/<label>.plist` 实体文件。改了模板要重新渲染才生效。
 
@@ -76,9 +76,9 @@ launchctl bootstrap "gui/$uid" "$plist"
 该脚本会：
 
 1. 主服务已注册时，先查询 `/api/tasks?status=executing`，有活跃 Task 就停止；
-2. 构建临时二进制，用固定 identity 签名并校验；
-3. 替换二进制并 `kickstart`；
-4. 既有 checkout 的 launchd label 丢失时，复用 `install-launchd.sh` 重建生产前端和后端并恢复注册，不重新执行完整安装；
+2. 构建临时二进制；macOS 用固定 identity 签名并校验；
+3. 替换二进制并通过 launchd 或 systemd 重启；
+4. 既有 checkout 的服务注册丢失时，按当前平台重建生产前端和后端并恢复注册，不重新执行完整安装；
 5. 等待 `/healthz` 返回 200。
 
 服务已注册但 18800 API 不可达时，脚本会拒绝重启。`--force-interrupt-running-tasks` 只允许明确中断已查到的执行任务，不能绕过 API 查询失败。
@@ -93,8 +93,8 @@ launchctl bootstrap "gui/$uid" "$plist"
 ./scripts/stop-jarvis.sh
 ```
 
-脚本会卸载 Jarvis Server、可选 Vite Web、Qdrant 和 CC Connect 的 launchd
-服务，并停止同名 `screen` 会话及仍占用对应服务端口的残留进程。退出不会删除
+脚本会停止 Jarvis Server、Qdrant 和 CC Connect 的 launchd/systemd
+服务；macOS 还停止可选 Vite Web、同名 `screen` 会话及对应端口残留进程。退出不会删除
 配置、数据库、日志或任何业务数据；下次按正常安装/启动流程重新注册服务即可。
 
 ## 状态与日志

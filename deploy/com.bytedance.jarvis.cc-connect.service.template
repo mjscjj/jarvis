@@ -1,0 +1,15 @@
+[Unit]
+Description=Jarvis CC Connect
+After=network-online.target com.bytedance.jarvis.server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__JARVIS_ROOT__
+Environment=PATH=__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=__JARVIS_ROOT__/bin/cc-connect-jarvis --config __CC_CONFIG__
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

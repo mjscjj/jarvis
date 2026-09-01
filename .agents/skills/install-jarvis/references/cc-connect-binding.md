@@ -36,6 +36,6 @@
 
    model、reasoning、display、allow/admin 和群回复策略不属于身份绑定，由 Agent 根据使用者和现状决定。
 
-5. `validate-binding ready=true` 后才启动 CC Connect。启动后还要检查 daemon、launchd Program、9810/9820，以及一次真实 Bot 对话；配置校验不等于端到端成功。
+5. `validate-binding ready=true` 后才启动 CC Connect。启动后还要检查服务管理器的实际 Program、9810/9820，以及一次真实 Bot 对话；配置校验不等于端到端成功。
 
 如果已有 daemon 指向另一 binary/checkout，或同一个 App 曾部署到其他机器，展示事实并让用户决定是否接管。不要从本机进程推断外部消费者已经停止。

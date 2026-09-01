@@ -3,6 +3,9 @@
 set -u
 
 script_dir=${0:A:h}
+if [[ $(uname -s) == Linux ]]; then
+  exec "$script_dir/stop-jarvis-linux.sh" "$@"
+fi
 repo_dir=${script_dir:h}
 delay_seconds=0
 server_pid=""
