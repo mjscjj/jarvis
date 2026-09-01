@@ -130,8 +130,9 @@ export function PreviewReviewPanel({ target, className = '' }: { target: Preview
   if (!review) return null
   const running = review.status === 'pending' || review.status === 'executing'
 
-  return <details open className={`rounded-xl border border-violet-200 bg-violet-50/45 px-3 py-2.5 [&>summary]:list-none ${className}`}>
+  return <details open className={`group rounded-xl border border-violet-200 bg-violet-50/45 px-3 py-2.5 [&>summary]:list-none ${className}`}>
 		<summary className="flex cursor-pointer flex-wrap items-center gap-2 text-[11px]">
+			<span aria-hidden className="text-sm leading-none text-violet-400 transition-transform group-open:rotate-90">›</span>
       <strong className={review.error ? 'text-red-700' : running ? 'text-violet-700' : 'text-slate-700'}>{reviewStatusText(review)}</strong>
       {review.taskId && <a href={`#/work/task/${review.taskId}`} className="text-slate-400 hover:text-violet-700">Task #{review.taskId}</a>}
       <span className="ml-auto text-[10px] text-slate-400">只读建议 · 不修改人工评分</span>
