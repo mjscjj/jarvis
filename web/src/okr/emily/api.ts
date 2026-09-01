@@ -1,3 +1,4 @@
+import { normalizeKRTitle } from './krTitle'
 import type { AuthStatus, Entry, EnumValues, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
@@ -249,7 +250,7 @@ export async function uploadImage(file: File): Promise<ImageRef> {
 function fromAPIKr(value: APIKr): Kr {
   return {
     id: value.id,
-    title: value.title,
+    title: normalizeKRTitle(value.title),
     ownerOpenId: value.owner_open_id,
     ownerName: value.owner_name,
     owners: (value.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
@@ -828,7 +829,7 @@ export async function createKR(objectiveId: string, input: { title: string; owne
 		const value = await request<APIKr>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {
 			method: 'POST',
 			body: JSON.stringify({
-				title: input.title,
+				title: normalizeKRTitle(input.title),
 				owners: (input.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
 			tags: [
 				{ type: 'business_category', value: input.businessCategory },
