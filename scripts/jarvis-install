@@ -665,7 +665,9 @@ install_bytedcli() {
   fi
 
   [[ -n "$bytedcli_path" && -x "$bytedcli_path" ]] || fail "bytedcli is not executable after installation"
-  stable_path="${HOME}/.local/bin/bytedcli"
+  local physical_home
+  physical_home="$(cd "$HOME" && pwd -P)"
+  stable_path="${physical_home}/.local/bin/bytedcli"
   if [[ "$bytedcli_path" != "$stable_path" && "$bytedcli_path" != "/usr/local/bin/bytedcli" && "$bytedcli_path" != "/opt/homebrew/bin/bytedcli" ]]; then
     mkdir -p "${HOME}/.local/bin"
     if [[ -e "$stable_path" && ! -L "$stable_path" ]]; then

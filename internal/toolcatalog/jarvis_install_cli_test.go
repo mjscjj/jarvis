@@ -559,7 +559,11 @@ exit 9
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatal(err)
 	}
-	stablePath := filepath.Join(homeDir, ".local", "bin", "bytedcli")
+	physicalHome, err := filepath.EvalSymlinks(homeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stablePath := filepath.Join(physicalHome, ".local", "bin", "bytedcli")
 	if result.Path != stablePath || result.Version != "0.137.0" || !result.LoginReady {
 		t.Fatalf("bytedcli install result = %#v", result)
 	}
