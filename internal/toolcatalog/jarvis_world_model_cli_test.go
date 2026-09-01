@@ -135,6 +135,36 @@ func TestJarvisWorldModelCaptureCommandsReuseM2Endpoints(t *testing.T) {
 	}
 }
 
+func TestJarvisWorldModelResolvesWildcardServerAddressLocally(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/debug/capture/discover" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"action":"discover","ok":true}}`)
+	}))
+	defer server.Close()
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	addr := strings.TrimPrefix(server.URL, "http://")
+	_, port, ok := strings.Cut(addr, ":")
+	if !ok || port == "" {
+		t.Fatalf("test server address = %q", addr)
+	}
+	if err := os.WriteFile(configPath, []byte("server:\n  addr: \"0.0.0.0:"+port+"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runJarvisWorldModel(t, "", nil, "discover", "--config", configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"action":"discover"`) {
+		t.Fatalf("discover output = %q", out)
+	}
+}
+
 func TestJarvisWorldModelCaptureFailureIsNotSwallowed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
