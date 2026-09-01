@@ -460,7 +460,6 @@ func main() {
 			okrIdentityProvider, err = okrAuth.NewFeishuProvider(
 				okrModuleConfig.Identity.AppID,
 				okrModuleConfig.Identity.AppSecret(),
-				okrModuleConfig.Identity.RedirectURL,
 				okrModuleConfig.Identity.FeishuBaseURL,
 				okrModuleConfig.Identity.FeishuAccountURL,
 				nil,

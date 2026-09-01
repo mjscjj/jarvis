@@ -99,7 +99,6 @@ identity:
   enabled: false
   app_id: ""
   app_secret_env: "JARVIS_OKR_FEISHU_APP_SECRET"
-  redirect_url: ""
   session_ttl_hours: 168
   cookie_secure: false
   feishu_base_url: "https://open.feishu.cn"

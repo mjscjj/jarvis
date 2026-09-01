@@ -5,12 +5,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+)
+
+const deviceIdentityScope = "offline_access"
+
+var (
+	ErrDeviceAuthorizationPending  = errors.New("Feishu device authorization is pending")
+	ErrDeviceAuthorizationSlowDown = errors.New("Feishu device authorization polling is too frequent")
+	ErrDeviceAuthorizationDenied   = errors.New("Feishu device authorization was denied")
+	ErrDeviceAuthorizationExpired  = errors.New("Feishu device authorization expired")
 )
 
 type User struct {
@@ -20,68 +30,144 @@ type User struct {
 	Email     string `json:"email,omitempty"`
 }
 
+type DeviceAuthorization struct {
+	DeviceCode      string
+	UserCode        string
+	VerificationURL string
+	ExpiresIn       time.Duration
+	PollInterval    time.Duration
+}
+
 type Provider interface {
-	AuthorizationURL(state string) string
-	ExchangeCode(ctx context.Context, code string) (User, error)
+	RequestDeviceAuthorization(ctx context.Context) (DeviceAuthorization, error)
+	PollDeviceAuthorization(ctx context.Context, deviceCode string) (User, error)
 }
 
-// FeishuProvider uses the documented Web OAuth flow. User tokens exist only
-// during ExchangeCode and are never persisted by Jarvis.
+// FeishuProvider uses Feishu's OAuth device flow. The user access token exists
+// only long enough to read /authen/v1/user_info and is never persisted by
+// Jarvis. Unlike Web OAuth, this flow does not require a redirect URL.
 type FeishuProvider struct {
-	appID       string
-	appSecret   string
-	redirectURL string
-	apiBaseURL  string
-	accountURL  string
-	httpClient  *http.Client
+	appID      string
+	appSecret  string
+	apiBaseURL string
+	accountURL string
+	httpClient *http.Client
 }
 
-func NewFeishuProvider(appID, appSecret, redirectURL, apiBaseURL, accountURL string, client *http.Client) (*FeishuProvider, error) {
+func NewFeishuProvider(appID, appSecret, apiBaseURL, accountURL string, client *http.Client) (*FeishuProvider, error) {
 	appID = strings.TrimSpace(appID)
 	appSecret = strings.TrimSpace(appSecret)
-	redirectURL = strings.TrimSpace(redirectURL)
 	apiBaseURL = strings.TrimRight(strings.TrimSpace(apiBaseURL), "/")
 	accountURL = strings.TrimRight(strings.TrimSpace(accountURL), "/")
-	if appID == "" || appSecret == "" || redirectURL == "" || apiBaseURL == "" || accountURL == "" {
-		return nil, fmt.Errorf("create Feishu provider: app id, app secret, redirect URL and base URLs are required")
+	if appID == "" || appSecret == "" || apiBaseURL == "" || accountURL == "" {
+		return nil, fmt.Errorf("create Feishu provider: app id, app secret and base URLs are required")
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &FeishuProvider{appID: appID, appSecret: appSecret, redirectURL: redirectURL, apiBaseURL: apiBaseURL, accountURL: accountURL, httpClient: client}, nil
+	return &FeishuProvider{appID: appID, appSecret: appSecret, apiBaseURL: apiBaseURL, accountURL: accountURL, httpClient: client}, nil
 }
 
-func (p *FeishuProvider) AuthorizationURL(state string) string {
-	values := url.Values{"app_id": {p.appID}, "redirect_uri": {p.redirectURL}, "state": {state}}
-	return p.accountURL + "/open-apis/authen/v1/authorize?" + values.Encode()
-}
-
-func (p *FeishuProvider) ExchangeCode(ctx context.Context, code string) (User, error) {
-	code = strings.TrimSpace(code)
-	if code == "" {
-		return User{}, fmt.Errorf("exchange Feishu code: code is required")
-	}
-	appToken, err := p.appAccessToken(ctx)
+func (p *FeishuProvider) RequestDeviceAuthorization(ctx context.Context) (DeviceAuthorization, error) {
+	form := url.Values{"client_id": {p.appID}, "scope": {deviceIdentityScope}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.accountURL+"/oauth/v1/device_authorization", strings.NewReader(form.Encode()))
 	if err != nil {
-		return User{}, err
+		return DeviceAuthorization{}, fmt.Errorf("create Feishu device authorization request: %w", err)
 	}
-	var tokenResponse struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(p.appID, p.appSecret)
+	var response struct {
+		DeviceCode              string `json:"device_code"`
+		UserCode                string `json:"user_code"`
+		VerificationURI         string `json:"verification_uri"`
+		VerificationURIComplete string `json:"verification_uri_complete"`
+		ExpiresIn               int    `json:"expires_in"`
+		Interval                int    `json:"interval"`
+		Error                   string `json:"error"`
+		ErrorDescription        string `json:"error_description"`
 	}
-	if err := p.requestJSON(ctx, http.MethodPost, p.apiBaseURL+"/open-apis/authen/v1/access_token", map[string]string{
-		"grant_type": "authorization_code", "code": code,
-	}, appToken, &tokenResponse); err != nil {
-		return User{}, fmt.Errorf("exchange Feishu user token: %w", err)
+	status, err := p.doJSON(req, &response)
+	if err != nil {
+		return DeviceAuthorization{}, fmt.Errorf("request Feishu device authorization: %w", err)
 	}
-	if tokenResponse.Code != 0 || strings.TrimSpace(tokenResponse.Data.AccessToken) == "" {
-		return User{}, fmt.Errorf("exchange Feishu user token: code=%d msg=%s", tokenResponse.Code, safeMessage(tokenResponse.Msg))
+	if strings.TrimSpace(response.Error) != "" {
+		return DeviceAuthorization{}, fmt.Errorf("request Feishu device authorization: %s", oauthErrorMessage(response.Error, response.ErrorDescription))
 	}
+	if status < 200 || status >= 300 {
+		return DeviceAuthorization{}, fmt.Errorf("request Feishu device authorization: unexpected HTTP status %d", status)
+	}
+	verificationURL := strings.TrimSpace(response.VerificationURIComplete)
+	if verificationURL == "" {
+		verificationURL = strings.TrimSpace(response.VerificationURI)
+	}
+	if strings.TrimSpace(response.DeviceCode) == "" || verificationURL == "" || response.ExpiresIn <= 0 || response.Interval <= 0 {
+		return DeviceAuthorization{}, fmt.Errorf("request Feishu device authorization: response is missing device_code, verification URL, expires_in or interval")
+	}
+	return DeviceAuthorization{
+		DeviceCode:      strings.TrimSpace(response.DeviceCode),
+		UserCode:        strings.TrimSpace(response.UserCode),
+		VerificationURL: verificationURL,
+		ExpiresIn:       time.Duration(response.ExpiresIn) * time.Second,
+		PollInterval:    time.Duration(response.Interval) * time.Second,
+	}, nil
+}
 
-	var userResponse struct {
+func (p *FeishuProvider) PollDeviceAuthorization(ctx context.Context, deviceCode string) (User, error) {
+	deviceCode = strings.TrimSpace(deviceCode)
+	if deviceCode == "" {
+		return User{}, fmt.Errorf("poll Feishu device authorization: device code is required")
+	}
+	form := url.Values{
+		"grant_type":    {"urn:ietf:params:oauth:grant-type:device_code"},
+		"device_code":   {deviceCode},
+		"client_id":     {p.appID},
+		"client_secret": {p.appSecret},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.apiBaseURL+"/open-apis/authen/v2/oauth/token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return User{}, fmt.Errorf("create Feishu device token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	var response struct {
+		AccessToken      string `json:"access_token"`
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description"`
+	}
+	status, err := p.doJSON(req, &response)
+	if err != nil {
+		return User{}, fmt.Errorf("poll Feishu device authorization: %w", err)
+	}
+	switch strings.TrimSpace(response.Error) {
+	case "authorization_pending":
+		return User{}, ErrDeviceAuthorizationPending
+	case "slow_down":
+		return User{}, ErrDeviceAuthorizationSlowDown
+	case "access_denied":
+		return User{}, fmt.Errorf("%w: %s", ErrDeviceAuthorizationDenied, oauthErrorMessage(response.Error, response.ErrorDescription))
+	case "expired_token", "invalid_grant":
+		return User{}, fmt.Errorf("%w: %s", ErrDeviceAuthorizationExpired, oauthErrorMessage(response.Error, response.ErrorDescription))
+	case "":
+		// Continue below.
+	default:
+		return User{}, fmt.Errorf("poll Feishu device authorization: %s", oauthErrorMessage(response.Error, response.ErrorDescription))
+	}
+	if status < 200 || status >= 300 {
+		return User{}, fmt.Errorf("poll Feishu device authorization: unexpected HTTP status %d", status)
+	}
+	accessToken := strings.TrimSpace(response.AccessToken)
+	if accessToken == "" {
+		return User{}, fmt.Errorf("poll Feishu device authorization: response has no access_token or error")
+	}
+	return p.userInfo(ctx, accessToken)
+}
+
+func (p *FeishuProvider) userInfo(ctx context.Context, accessToken string) (User, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.apiBaseURL+"/open-apis/authen/v1/user_info", nil)
+	if err != nil {
+		return User{}, fmt.Errorf("create Feishu user info request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	var response struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 		Data struct {
@@ -91,69 +177,42 @@ func (p *FeishuProvider) ExchangeCode(ctx context.Context, code string) (User, e
 			Email     string `json:"email"`
 		} `json:"data"`
 	}
-	if err := p.requestJSON(ctx, http.MethodGet, p.apiBaseURL+"/open-apis/authen/v1/user_info", nil, tokenResponse.Data.AccessToken, &userResponse); err != nil {
+	status, err := p.doJSON(req, &response)
+	if err != nil {
 		return User{}, fmt.Errorf("get Feishu user info: %w", err)
 	}
-	if userResponse.Code != 0 || strings.TrimSpace(userResponse.Data.OpenID) == "" {
-		return User{}, fmt.Errorf("get Feishu user info: code=%d msg=%s", userResponse.Code, safeMessage(userResponse.Msg))
+	if status < 200 || status >= 300 || response.Code != 0 || strings.TrimSpace(response.Data.OpenID) == "" {
+		return User{}, fmt.Errorf("get Feishu user info: code=%d msg=%s", response.Code, safeMessage(response.Msg))
 	}
-	name := strings.TrimSpace(userResponse.Data.Name)
+	name := strings.TrimSpace(response.Data.Name)
 	if name == "" {
 		name = "飞书用户"
 	}
-	return User{OpenID: strings.TrimSpace(userResponse.Data.OpenID), Name: name, AvatarURL: strings.TrimSpace(userResponse.Data.AvatarURL), Email: strings.TrimSpace(userResponse.Data.Email)}, nil
+	return User{OpenID: strings.TrimSpace(response.Data.OpenID), Name: name, AvatarURL: strings.TrimSpace(response.Data.AvatarURL), Email: strings.TrimSpace(response.Data.Email)}, nil
 }
 
-func (p *FeishuProvider) appAccessToken(ctx context.Context) (string, error) {
-	var response struct {
-		Code           int    `json:"code"`
-		Msg            string `json:"msg"`
-		AppAccessToken string `json:"app_access_token"`
-	}
-	if err := p.requestJSON(ctx, http.MethodPost, p.apiBaseURL+"/open-apis/auth/v3/app_access_token/internal", map[string]string{
-		"app_id": p.appID, "app_secret": p.appSecret,
-	}, "", &response); err != nil {
-		return "", fmt.Errorf("get Feishu app token: %w", err)
-	}
-	if response.Code != 0 || strings.TrimSpace(response.AppAccessToken) == "" {
-		return "", fmt.Errorf("get Feishu app token: code=%d msg=%s", response.Code, safeMessage(response.Msg))
-	}
-	return response.AppAccessToken, nil
-}
-
-func (p *FeishuProvider) requestJSON(ctx context.Context, method, endpoint string, body any, bearer string, target any) error {
-	var reader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		reader = bytes.NewReader(data)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
-	if err != nil {
-		return err
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	}
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
+func (p *FeishuProvider) doJSON(req *http.Request, target any) (int, error) {
 	res, err := p.httpClient.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 4096))
-		return fmt.Errorf("unexpected HTTP status %d", res.StatusCode)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return res.StatusCode, fmt.Errorf("read response: %w", err)
 	}
-	decoder := json.NewDecoder(io.LimitReader(res.Body, 1<<20))
-	if err := decoder.Decode(target); err != nil {
-		return fmt.Errorf("decode response: %w", err)
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(target); err != nil {
+		return res.StatusCode, fmt.Errorf("decode HTTP %d response: %w", res.StatusCode, err)
 	}
-	return nil
+	return res.StatusCode, nil
+}
+
+func oauthErrorMessage(code, description string) string {
+	description = strings.TrimSpace(description)
+	if description != "" {
+		return safeMessage(description)
+	}
+	return safeMessage(code)
 }
 
 func safeMessage(value string) string {

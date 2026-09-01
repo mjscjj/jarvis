@@ -8,12 +8,14 @@ import (
 )
 
 func TestLoadOwnsStrictOKRModuleConfig(t *testing.T) {
+	t.Setenv("TEST_OKR_SECRET", "test-secret")
 	path := filepath.Join(t.TempDir(), "okr.yaml")
 	raw := `database_path: data/okr/okr.db
 upload_dir: data/okr/assets
 max_image_bytes: 1024
 identity:
-  enabled: false
+  enabled: true
+  app_id: cli_test
   app_secret_env: TEST_OKR_SECRET
   session_ttl_hours: 24
   feishu_base_url: https://open.feishu.cn

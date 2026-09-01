@@ -309,17 +309,6 @@ type PageComment struct {
 
 func (PageComment) TableName() string { return "okr_workspace_comment" }
 
-// OAuthState is a short-lived, single-use CSRF token for the browser login
-// round-trip. Only a hash is persisted.
-type OAuthState struct {
-	StateHash string    `gorm:"primaryKey;size:64"`
-	ReturnTo  string    `gorm:"not null;default:'/#/okr'"`
-	ExpiresAt time.Time `gorm:"not null;index"`
-	CreatedAt time.Time `gorm:"not null"`
-}
-
-func (OAuthState) TableName() string { return "okr_workspace_oauth_state" }
-
 // AuthSession stores an opaque browser session. Feishu access and refresh
 // tokens are deliberately not retained because Emily only needs identity.
 type AuthSession struct {
@@ -367,10 +356,10 @@ func CoreModels() []any {
 	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &PointTag{}, &KROwner{}}
 }
 
-// IdentityModels are machine-local OAuth and login state. They belong to the
-// runtime database and must never be committed with OKR product data.
+// IdentityModels are machine-local browser sessions. Pending device grants and
+// Feishu user tokens stay in process memory and never enter either database.
 func IdentityModels() []any {
-	return []any{&OAuthState{}, &AuthSession{}}
+	return []any{&AuthSession{}}
 }
 
 // WeeklyReportModels are owned by the weekly-report module. Existing table

@@ -44,30 +44,32 @@ func GetOKRCurrentUser(service *okrAuth.Service) app.HandlerFunc {
 	}
 }
 
-func BeginOKRFeishuLogin(service *okrAuth.Service) app.HandlerFunc {
+func BeginOKRFeishuDeviceLogin(service *okrAuth.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		location, err := service.BeginLogin(ctx, strings.TrimSpace(c.Query("return_to")))
+		login, err := service.BeginDeviceLogin(ctx)
 		if err != nil {
 			writeAPIError(c, consts.StatusServiceUnavailable, 50380, err)
 			return
 		}
-		c.Redirect(consts.StatusFound, []byte(location))
+		c.JSON(consts.StatusCreated, map[string]any{"code": 0, "data": login})
 	}
 }
 
-func CompleteOKRFeishuLogin(service *okrAuth.Service) app.HandlerFunc {
+func PollOKRFeishuDeviceLogin(service *okrAuth.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		if oauthError := strings.TrimSpace(c.Query("error")); oauthError != "" {
-			writeAPIError(c, consts.StatusBadRequest, 40080, fmt.Errorf("Feishu login was not completed: %s", oauthError))
+		poll, token, err := service.PollDeviceLogin(ctx, c.Param("login_id"))
+		if errors.Is(err, okrAuth.ErrDeviceLoginNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40480, err)
 			return
 		}
-		_, token, returnTo, err := service.CompleteLogin(ctx, strings.TrimSpace(c.Query("code")), strings.TrimSpace(c.Query("state")))
 		if err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40081, err)
+			writeAPIError(c, consts.StatusBadGateway, 50280, err)
 			return
 		}
-		c.SetCookie(okrAuth.CookieName, token, service.SessionMaxAge(), "/", "", protocol.CookieSameSiteLaxMode, service.CookieSecure(), true)
-		c.Redirect(consts.StatusFound, []byte(returnTo))
+		if poll.Status == okrAuth.DeviceLoginCompleted {
+			c.SetCookie(okrAuth.CookieName, token, service.SessionMaxAge(), "/", "", protocol.CookieSameSiteLaxMode, service.CookieSecure(), true)
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": poll})
 	}
 }
 

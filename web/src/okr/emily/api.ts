@@ -1,5 +1,5 @@
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, Entry, EnumValues, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -102,6 +102,20 @@ interface APIAuthStatus {
     avatar_url?: string
     email?: string
   }
+}
+
+interface APIFeishuDeviceLogin {
+  login_id: string
+  verification_url: string
+  user_code?: string
+  expires_at: string
+  poll_interval_seconds: number
+}
+
+interface APIFeishuDeviceLoginPoll {
+  status: 'pending' | 'completed' | 'denied' | 'expired'
+  retry_after_seconds?: number
+  user?: APIAuthStatus['user']
 }
 
 interface APIEnums {
@@ -489,9 +503,29 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   }
 }
 
-export function beginFeishuLogin() {
-  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
-  window.location.assign(`/api/okr/auth/feishu/login?return_to=${encodeURIComponent(returnTo)}`)
+export async function beginFeishuLogin(): Promise<FeishuDeviceLogin> {
+  const value = await request<APIFeishuDeviceLogin>('/api/okr/auth/feishu/device', { method: 'POST' })
+  return {
+    loginId: value.login_id,
+    verificationUrl: value.verification_url,
+    userCode: value.user_code,
+    expiresAt: value.expires_at,
+    pollIntervalSeconds: value.poll_interval_seconds,
+  }
+}
+
+export async function pollFeishuLogin(loginId: string): Promise<FeishuDeviceLoginPoll> {
+  const value = await request<APIFeishuDeviceLoginPoll>(`/api/okr/auth/feishu/device/${encodeURIComponent(loginId)}/poll`, { method: 'POST' })
+  return {
+    status: value.status,
+    retryAfterSeconds: value.retry_after_seconds,
+    user: value.user ? {
+      openId: value.user.open_id,
+      name: value.user.name,
+      avatarUrl: value.user.avatar_url,
+      email: value.user.email,
+    } : undefined,
+  }
 }
 
 export async function logout(): Promise<void> {

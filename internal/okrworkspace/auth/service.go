@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"jarvis/internal/okrworkspace/domain"
@@ -17,17 +19,44 @@ import (
 	"gorm.io/gorm"
 )
 
+const CookieName = "jarvis_okr_session"
+
 const (
-	CookieName      = "jarvis_okr_session"
-	oauthStateTTL   = 10 * time.Minute
-	defaultReturnTo = "/#/okr"
+	DeviceLoginPending   = "pending"
+	DeviceLoginCompleted = "completed"
+	DeviceLoginDenied    = "denied"
+	DeviceLoginExpired   = "expired"
 )
 
-var ErrUnauthenticated = errors.New("not signed in")
+var (
+	ErrUnauthenticated     = errors.New("not signed in")
+	ErrDeviceLoginNotFound = errors.New("device login is invalid or already completed")
+)
 
 type Session struct {
 	User      User      `json:"user"`
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type DeviceLogin struct {
+	ID                  string    `json:"login_id"`
+	VerificationURL     string    `json:"verification_url"`
+	UserCode            string    `json:"user_code,omitempty"`
+	ExpiresAt           time.Time `json:"expires_at"`
+	PollIntervalSeconds int       `json:"poll_interval_seconds"`
+}
+
+type DeviceLoginPoll struct {
+	Status            string `json:"status"`
+	RetryAfterSeconds int    `json:"retry_after_seconds,omitempty"`
+	User              *User  `json:"user,omitempty"`
+}
+
+type pendingDeviceLogin struct {
+	deviceCode   string
+	expiresAt    time.Time
+	nextPollAt   time.Time
+	pollInterval time.Duration
 }
 
 type Service struct {
@@ -35,6 +64,9 @@ type Service struct {
 	cfg      moduleconfig.IdentityConfig
 	provider Provider
 	now      func() time.Time
+
+	deviceMu     sync.Mutex
+	deviceLogins map[string]pendingDeviceLogin
 }
 
 func NewService(db *gorm.DB, cfg moduleconfig.IdentityConfig, provider Provider) (*Service, error) {
@@ -44,7 +76,7 @@ func NewService(db *gorm.DB, cfg moduleconfig.IdentityConfig, provider Provider)
 	if cfg.Enabled && provider == nil {
 		return nil, fmt.Errorf("create OKR auth service: provider is required when enabled")
 	}
-	return &Service{db: db, cfg: cfg, provider: provider, now: time.Now}, nil
+	return &Service{db: db, cfg: cfg, provider: provider, now: time.Now, deviceLogins: make(map[string]pendingDeviceLogin)}, nil
 }
 
 func (s *Service) Enabled() bool      { return s.cfg.Enabled }
@@ -56,62 +88,119 @@ func (s *Service) SessionMaxAge() int {
 	return int((time.Duration(s.cfg.SessionTTLHours) * time.Hour) / time.Second)
 }
 
-func (s *Service) BeginLogin(ctx context.Context, returnTo string) (string, error) {
+func (s *Service) BeginDeviceLogin(ctx context.Context) (DeviceLogin, error) {
 	if !s.Enabled() {
-		return "", fmt.Errorf("Feishu login is not configured")
+		return DeviceLogin{}, fmt.Errorf("Feishu login is not configured")
 	}
-	state, err := randomToken()
+	authorization, err := s.provider.RequestDeviceAuthorization(ctx)
 	if err != nil {
-		return "", fmt.Errorf("generate OAuth state: %w", err)
+		return DeviceLogin{}, err
+	}
+	loginID, err := randomToken()
+	if err != nil {
+		return DeviceLogin{}, fmt.Errorf("generate device login id: %w", err)
 	}
 	now := s.now().UTC()
-	row := domain.OAuthState{StateHash: digest(state), ReturnTo: safeReturnTo(returnTo), ExpiresAt: now.Add(oauthStateTTL), CreatedAt: now}
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("expires_at < ?", now).Delete(&domain.OAuthState{}).Error; err != nil {
-			return err
-		}
-		return tx.Create(&row).Error
-	}); err != nil {
-		return "", fmt.Errorf("store OAuth state: %w", err)
+	expiresAt := now.Add(authorization.ExpiresIn)
+	pollInterval := authorization.PollInterval
+	if pollInterval < time.Second {
+		return DeviceLogin{}, fmt.Errorf("Feishu device authorization returned invalid poll interval %s", pollInterval)
 	}
-	return s.provider.AuthorizationURL(state), nil
+
+	s.deviceMu.Lock()
+	for id, pending := range s.deviceLogins {
+		if !pending.expiresAt.After(now) {
+			delete(s.deviceLogins, id)
+		}
+	}
+	s.deviceLogins[loginID] = pendingDeviceLogin{
+		deviceCode:   authorization.DeviceCode,
+		expiresAt:    expiresAt,
+		nextPollAt:   now.Add(pollInterval),
+		pollInterval: pollInterval,
+	}
+	s.deviceMu.Unlock()
+
+	return DeviceLogin{
+		ID:                  loginID,
+		VerificationURL:     authorization.VerificationURL,
+		UserCode:            authorization.UserCode,
+		ExpiresAt:           expiresAt,
+		PollIntervalSeconds: durationSeconds(pollInterval),
+	}, nil
 }
 
-func (s *Service) CompleteLogin(ctx context.Context, code, state string) (Session, string, string, error) {
+func (s *Service) PollDeviceLogin(ctx context.Context, loginID string) (DeviceLoginPoll, string, error) {
 	if !s.Enabled() {
-		return Session{}, "", "", fmt.Errorf("Feishu login is not configured")
+		return DeviceLoginPoll{}, "", fmt.Errorf("Feishu login is not configured")
 	}
-	code, state = strings.TrimSpace(code), strings.TrimSpace(state)
-	if code == "" || state == "" {
-		return Session{}, "", "", fmt.Errorf("OAuth code and state are required")
+	loginID = strings.TrimSpace(loginID)
+	if loginID == "" {
+		return DeviceLoginPoll{}, "", ErrDeviceLoginNotFound
 	}
 	now := s.now().UTC()
-	var stateRow domain.OAuthState
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&stateRow, "state_hash = ?", digest(state)).Error; err != nil {
-			return err
+
+	s.deviceMu.Lock()
+	pending, ok := s.deviceLogins[loginID]
+	if !ok {
+		s.deviceMu.Unlock()
+		return DeviceLoginPoll{}, "", ErrDeviceLoginNotFound
+	}
+	if !pending.expiresAt.After(now) {
+		delete(s.deviceLogins, loginID)
+		s.deviceMu.Unlock()
+		return DeviceLoginPoll{Status: DeviceLoginExpired}, "", nil
+	}
+	if pending.nextPollAt.After(now) {
+		retryAfter := durationSeconds(pending.nextPollAt.Sub(now))
+		s.deviceMu.Unlock()
+		return DeviceLoginPoll{Status: DeviceLoginPending, RetryAfterSeconds: retryAfter}, "", nil
+	}
+	pending.nextPollAt = now.Add(pending.pollInterval)
+	s.deviceLogins[loginID] = pending
+	s.deviceMu.Unlock()
+
+	user, err := s.provider.PollDeviceAuthorization(ctx, pending.deviceCode)
+	switch {
+	case errors.Is(err, ErrDeviceAuthorizationPending):
+		return DeviceLoginPoll{Status: DeviceLoginPending, RetryAfterSeconds: durationSeconds(pending.pollInterval)}, "", nil
+	case errors.Is(err, ErrDeviceAuthorizationSlowDown):
+		pending.pollInterval += 5 * time.Second
+		if pending.pollInterval > time.Minute {
+			pending.pollInterval = time.Minute
 		}
-		if err := tx.Delete(&domain.OAuthState{}, "state_hash = ?", stateRow.StateHash).Error; err != nil {
-			return err
+		pending.nextPollAt = now.Add(pending.pollInterval)
+		s.deviceMu.Lock()
+		if _, exists := s.deviceLogins[loginID]; exists {
+			s.deviceLogins[loginID] = pending
 		}
-		if !stateRow.ExpiresAt.After(now) {
-			return fmt.Errorf("OAuth state expired")
-		}
-		return nil
-	}); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return Session{}, "", "", fmt.Errorf("OAuth state is invalid or already used")
-		}
-		return Session{}, "", "", err
+		s.deviceMu.Unlock()
+		return DeviceLoginPoll{Status: DeviceLoginPending, RetryAfterSeconds: durationSeconds(pending.pollInterval)}, "", nil
+	case errors.Is(err, ErrDeviceAuthorizationDenied):
+		s.deleteDeviceLogin(loginID)
+		return DeviceLoginPoll{Status: DeviceLoginDenied}, "", nil
+	case errors.Is(err, ErrDeviceAuthorizationExpired):
+		s.deleteDeviceLogin(loginID)
+		return DeviceLoginPoll{Status: DeviceLoginExpired}, "", nil
+	case err != nil:
+		return DeviceLoginPoll{}, "", err
 	}
 
-	user, err := s.provider.ExchangeCode(ctx, code)
+	s.deleteDeviceLogin(loginID)
+	session, token, err := s.createSession(ctx, user, now)
 	if err != nil {
-		return Session{}, "", "", err
+		return DeviceLoginPoll{}, "", err
+	}
+	return DeviceLoginPoll{Status: DeviceLoginCompleted, User: &session.User}, token, nil
+}
+
+func (s *Service) createSession(ctx context.Context, user User, now time.Time) (Session, string, error) {
+	if strings.TrimSpace(user.OpenID) == "" {
+		return Session{}, "", fmt.Errorf("create session: Feishu user open_id is empty")
 	}
 	token, err := randomToken()
 	if err != nil {
-		return Session{}, "", "", fmt.Errorf("generate session: %w", err)
+		return Session{}, "", fmt.Errorf("generate session: %w", err)
 	}
 	expiresAt := now.Add(time.Duration(s.cfg.SessionTTLHours) * time.Hour)
 	row := domain.AuthSession{TokenHash: digest(token), OpenID: user.OpenID, Name: user.Name, AvatarURL: user.AvatarURL, Email: user.Email, ExpiresAt: expiresAt, CreatedAt: now, LastSeenAt: now}
@@ -121,9 +210,15 @@ func (s *Service) CompleteLogin(ctx context.Context, code, state string) (Sessio
 		}
 		return tx.Create(&row).Error
 	}); err != nil {
-		return Session{}, "", "", fmt.Errorf("create session: %w", err)
+		return Session{}, "", fmt.Errorf("create session: %w", err)
 	}
-	return Session{User: user, ExpiresAt: expiresAt}, token, safeReturnTo(stateRow.ReturnTo), nil
+	return Session{User: user, ExpiresAt: expiresAt}, token, nil
+}
+
+func (s *Service) deleteDeviceLogin(loginID string) {
+	s.deviceMu.Lock()
+	delete(s.deviceLogins, loginID)
+	s.deviceMu.Unlock()
 }
 
 func (s *Service) Current(ctx context.Context, token string) (Session, error) {
@@ -163,6 +258,10 @@ func (s *Service) Logout(ctx context.Context, token string) error {
 	return nil
 }
 
+func durationSeconds(value time.Duration) int {
+	return max(1, int(math.Ceil(value.Seconds())))
+}
+
 func randomToken() (string, error) {
 	data := make([]byte, 32)
 	if _, err := rand.Read(data); err != nil {
@@ -174,12 +273,4 @@ func randomToken() (string, error) {
 func digest(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
-}
-
-func safeReturnTo(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.ContainsAny(value, "\r\n") {
-		return defaultReturnTo
-	}
-	return value
 }

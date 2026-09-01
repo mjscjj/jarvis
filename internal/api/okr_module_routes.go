@@ -57,8 +57,8 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	}
 	h.GET("/api/okr/enums", requireEnabled, Enums())
 	h.GET("/api/okr/me", requireEnabled, GetOKRCurrentUser(deps.Identity))
-	h.GET("/api/okr/auth/feishu/login", requireEnabled, BeginOKRFeishuLogin(deps.Identity))
-	h.GET("/api/okr/auth/feishu/callback", requireEnabled, CompleteOKRFeishuLogin(deps.Identity))
+	h.POST("/api/okr/auth/feishu/device", requireEnabled, BeginOKRFeishuDeviceLogin(deps.Identity))
+	h.POST("/api/okr/auth/feishu/device/:login_id/poll", requireEnabled, PollOKRFeishuDeviceLogin(deps.Identity))
 	h.POST("/api/okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity))
 	requireIdentity := RequireOKRIdentity(deps.Identity)
 	h.GET("/api/okr/scope", requireEnabled, GetOKRWorkspaceScope(deps.Workspace))

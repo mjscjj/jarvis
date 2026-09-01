@@ -5,10 +5,9 @@ upload_dir: "data/okr/assets"
 max_image_bytes: 10485760
 
 identity:
-  enabled: false
-  app_id: ""
+  enabled: true
+  app_id: "cli_a96a0c8d82b85cb1"
   app_secret_env: "JARVIS_OKR_FEISHU_APP_SECRET"
-  redirect_url: ""
   session_ttl_hours: 168
   cookie_secure: false
   feishu_base_url: "https://open.feishu.cn"

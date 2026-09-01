@@ -174,6 +174,20 @@ export interface AuthStatus {
   user?: AuthUser
 }
 
+export interface FeishuDeviceLogin {
+  loginId: string
+  verificationUrl: string
+  userCode?: string
+  expiresAt: string
+  pollIntervalSeconds: number
+}
+
+export interface FeishuDeviceLoginPoll {
+  status: 'pending' | 'completed' | 'denied' | 'expired'
+  retryAfterSeconds?: number
+  user?: AuthUser
+}
+
 export interface FeishuDocumentResult {
 	documentId: string
 	url: string

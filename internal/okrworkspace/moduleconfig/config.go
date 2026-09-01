@@ -24,7 +24,6 @@ type IdentityConfig struct {
 	Enabled          bool   `yaml:"enabled"`
 	AppID            string `yaml:"app_id"`
 	AppSecretEnv     string `yaml:"app_secret_env"`
-	RedirectURL      string `yaml:"redirect_url"`
 	SessionTTLHours  int    `yaml:"session_ttl_hours"`
 	CookieSecure     bool   `yaml:"cookie_secure"`
 	FeishuBaseURL    string `yaml:"feishu_base_url"`
@@ -65,8 +64,8 @@ func (c Config) Validate() error {
 	if !c.Identity.Enabled {
 		return nil
 	}
-	if strings.TrimSpace(c.Identity.AppID) == "" || strings.TrimSpace(c.Identity.AppSecretEnv) == "" || strings.TrimSpace(c.Identity.RedirectURL) == "" {
-		return fmt.Errorf("identity app_id, app_secret_env and redirect_url are required when enabled")
+	if strings.TrimSpace(c.Identity.AppID) == "" || strings.TrimSpace(c.Identity.AppSecretEnv) == "" {
+		return fmt.Errorf("identity app_id and app_secret_env are required when enabled")
 	}
 	if c.Identity.AppSecret() == "" {
 		return fmt.Errorf("identity secret environment variable %s is empty", c.Identity.AppSecretEnv)
