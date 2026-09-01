@@ -130,17 +130,17 @@ export function PreviewReviewPanel({ target, className = '' }: { target: Preview
   if (!review) return null
   const running = review.status === 'pending' || review.status === 'executing'
 
-  return <details open className={`group rounded-xl border border-violet-200 bg-violet-50/45 px-3 py-2.5 [&>summary]:list-none ${className}`}>
-		<summary className="flex cursor-pointer flex-wrap items-center gap-2 text-[11px]">
-			<span aria-hidden className="text-sm leading-none text-violet-400 transition-transform group-open:rotate-90">›</span>
+  return <details open className={`group rounded-lg border border-violet-200 bg-violet-50/45 px-2.5 py-2 [&>summary]:list-none ${className}`}>
+    <summary className="flex cursor-pointer flex-wrap items-center gap-1.5 text-[10px] leading-4">
+      <span aria-hidden className="text-xs leading-none text-violet-400 transition-transform group-open:rotate-90">›</span>
       <strong className={review.error ? 'text-red-700' : running ? 'text-violet-700' : 'text-slate-700'}>{reviewStatusText(review)}</strong>
       {review.taskId && <a href={`#/work/task/${review.taskId}`} className="text-slate-400 hover:text-violet-700">Task #{review.taskId}</a>}
       <span className="ml-auto text-[10px] text-slate-400">只读建议 · 不修改人工评分</span>
-		</summary>
-		<div className="mt-1.5 border-t border-violet-100 pt-2">
-			{review.error && <div className="text-xs leading-5 text-red-700">{review.error}</div>}
-			{!review.error && running && <div className="text-xs text-violet-600">正在读取当前周的最新 OKR 和进展，完成后会自动显示结果。</div>}
-			{!review.error && !running && review.content && <MarkdownReport className="daily-digest-markdown text-xs" content={review.content} />}
-		</div>
-	</details>
+    </summary>
+    <div className="mt-1 border-t border-violet-100 pt-1.5">
+      {review.error && <div className="text-[11px] leading-4 text-red-700">{review.error}</div>}
+      {!review.error && running && <div className="text-[11px] leading-4 text-violet-600">正在读取当前周的最新 OKR 和进展，完成后会自动显示结果。</div>}
+      {!review.error && !running && review.content && <MarkdownReport className="daily-digest-markdown okr-preview-review-markdown" content={review.content} />}
+    </div>
+  </details>
 }

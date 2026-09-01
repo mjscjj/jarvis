@@ -26,6 +26,76 @@
   line-height: 16px;
 }
 
+/* Preview 评审嵌在密集表格中，单独压缩日报 Markdown 的阅读间距。 */
+#okr-workspace-root .okr-preview-review-markdown {
+  max-width: none;
+  margin-bottom: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+#okr-workspace-root .okr-preview-review-markdown h1,
+#okr-workspace-root .okr-preview-review-markdown h2,
+#okr-workspace-root .okr-preview-review-markdown h3,
+#okr-workspace-root .okr-preview-review-markdown h4 {
+  padding-top: 0;
+  border-top: 0;
+  line-height: 1.35;
+}
+
+#okr-workspace-root .okr-preview-review-markdown h1 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+#okr-workspace-root .okr-preview-review-markdown h2 {
+  margin: 7px 0 3px;
+  font-size: 12px;
+}
+
+#okr-workspace-root .okr-preview-review-markdown h3,
+#okr-workspace-root .okr-preview-review-markdown h4 {
+  margin: 5px 0 2px;
+  font-size: 11px;
+}
+
+#okr-workspace-root .okr-preview-review-markdown p,
+#okr-workspace-root .okr-preview-review-markdown ul,
+#okr-workspace-root .okr-preview-review-markdown ol,
+#okr-workspace-root .okr-preview-review-markdown blockquote,
+#okr-workspace-root .okr-preview-review-markdown pre,
+#okr-workspace-root .okr-preview-review-markdown table {
+  margin: 0 0 4px;
+}
+
+#okr-workspace-root .okr-preview-review-markdown ul,
+#okr-workspace-root .okr-preview-review-markdown ol {
+  padding-left: 16px;
+}
+
+#okr-workspace-root .okr-preview-review-markdown li + li {
+  margin-top: 1px;
+}
+
+#okr-workspace-root .okr-preview-review-markdown blockquote {
+  padding: 3px 7px;
+  border-left-width: 2px;
+  border-radius: 0 4px 4px 0;
+}
+
+#okr-workspace-root .okr-preview-review-markdown pre {
+  padding: 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+#okr-workspace-root .okr-preview-review-markdown th,
+#okr-workspace-root .okr-preview-review-markdown td {
+  min-width: 80px;
+  padding: 3px 5px;
+}
+
 /* 高度跟内容走，不用 JS 量；核心数据那行还靠它把宽度收到文字实际长度，灯才能紧贴 */
 #okr-workspace-root textarea {
   field-sizing: content;

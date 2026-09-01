@@ -56,8 +56,11 @@ export function previewReviewContent(task: Task): string | undefined {
     const content = textField(item.content)
     if (!content) return []
     const label = textField(item.label)
-    return [label ? `### ${label}\n\n${content}` : content]
+    return [{ label, content }]
   })
-  if (reports.length > 0) return reports.join('\n\n')
+  if (reports.length === 1) return reports[0].content
+  if (reports.length > 1) {
+    return reports.map(({ label, content }) => label ? `### ${label}\n\n${content}` : content).join('\n\n')
+  }
   return task.summary?.trim() || textField(result?.summary)
 }

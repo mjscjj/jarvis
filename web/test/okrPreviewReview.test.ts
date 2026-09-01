@@ -48,5 +48,5 @@ test('Preview review renders the full open semantic report instead of only the s
 			enrichments: [{ kind: 'context', label: 'OKR Preview 评审报告', content: '## 详细评审\n\n需要补充业务结果。' }],
 		},
 	} as Task
-	assert.equal(previewReviewContent(task), '### OKR Preview 评审报告\n\n## 详细评审\n\n需要补充业务结果。')
+	assert.equal(previewReviewContent(task), '## 详细评审\n\n需要补充业务结果。')
 })
