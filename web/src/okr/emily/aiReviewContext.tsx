@@ -117,7 +117,7 @@ export function PreviewReviewButton({ target, label, className = '' }: { target:
   }
 
   return <span className="inline-flex flex-col items-end">
-    <button type="button" disabled={!ready || running} onClick={() => void start()} className={`rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-45 ${className}`}>
+    <button type="button" disabled={!ready || running} onClick={() => void start()} className={`rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-medium text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-45 ${className}`}>
       {running ? '评审中…' : review?.content ? `重新${label}` : label}
     </button>
     {clickError && <span className="mt-1 max-w-64 text-right text-[10px] text-red-600">{clickError}</span>}
@@ -130,16 +130,16 @@ export function PreviewReviewPanel({ target, className = '' }: { target: Preview
   if (!review) return null
   const running = review.status === 'pending' || review.status === 'executing'
 
-  return <details open className={`group rounded-lg border border-violet-200 bg-violet-50/45 px-2.5 py-2 [&>summary]:list-none ${className}`}>
+  return <details open className={`group rounded-lg border border-sky-200 bg-sky-50/45 px-2.5 py-2 [&>summary]:list-none ${className}`}>
     <summary className="flex cursor-pointer flex-wrap items-center gap-1.5 text-[10px] leading-4">
-      <span aria-hidden className="text-xs leading-none text-violet-400 transition-transform group-open:rotate-90">›</span>
-      <strong className={review.error ? 'text-red-700' : running ? 'text-violet-700' : 'text-slate-700'}>{reviewStatusText(review)}</strong>
-      {review.taskId && <a href={`#/work/task/${review.taskId}`} className="text-slate-400 hover:text-violet-700">Task #{review.taskId}</a>}
+      <span aria-hidden className="text-xs leading-none text-sky-400 transition-transform group-open:rotate-90">›</span>
+      <strong className={review.error ? 'text-red-700' : running ? 'text-sky-700' : 'text-slate-700'}>{reviewStatusText(review)}</strong>
+      {review.taskId && <a href={`#/work/task/${review.taskId}`} className="text-slate-400 hover:text-sky-700">Task #{review.taskId}</a>}
       <span className="ml-auto text-[10px] text-slate-400">只读建议 · 不修改人工评分</span>
     </summary>
-    <div className="mt-1 border-t border-violet-100 pt-1.5">
+    <div className="mt-1 border-t border-sky-100 pt-1.5">
       {review.error && <div className="text-[11px] leading-4 text-red-700">{review.error}</div>}
-      {!review.error && running && <div className="text-[11px] leading-4 text-violet-600">正在读取当前周的最新 OKR 和进展，完成后会自动显示结果。</div>}
+      {!review.error && running && <div className="text-[11px] leading-4 text-sky-600">正在读取当前周的最新 OKR 和进展，完成后会自动显示结果。</div>}
       {!review.error && !running && review.content && <MarkdownReport className="daily-digest-markdown okr-preview-review-markdown" content={review.content} />}
     </div>
   </details>
