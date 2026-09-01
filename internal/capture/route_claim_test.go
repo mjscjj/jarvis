@@ -88,6 +88,41 @@ func TestCaptureRouteClaimMarksAndEnrichesExistingPolledMessage(t *testing.T) {
 	}
 }
 
+func TestCaptureRouteClaimSurvivesLaterPollingUpsert(t *testing.T) {
+	db := openRouteClaimTestDB(t)
+	service := &Service{db: db, now: time.Now}
+	claimed, err := service.CaptureRouteClaim(t.Context(), RouteClaimMessage{
+		MessageID: "om_cc_first", ChatID: "oc_group", ChatMode: "group", ChatName: "项目群",
+		SenderOpenID: "ou_user", SenderName: "发起人", MessageType: "text",
+		Content: "帮我查一下", ContentRaw: `{"text":"@_user_1 帮我查一下"}`,
+		CreateTime: 1786752000000,
+	})
+	if err != nil {
+		t.Fatalf("CaptureRouteClaim() error = %v", err)
+	}
+
+	inserted, err := upsertMessage(db, &domain.Message{
+		MessageID: claimed.MessageID, ChatID: claimed.ChatID, GroupID: claimed.GroupID, ChatMode: claimed.ChatMode,
+		SenderOpenID: claimed.SenderOpenID, SenderName: claimed.SenderName, SenderType: "user",
+		MessageType: "text", Content: "帮我查一下", CreateTime: claimed.CreateTime,
+		Source: "poll", RenderOK: true,
+	})
+	if err != nil {
+		t.Fatalf("upsertMessage(later poll) error = %v", err)
+	}
+	if inserted {
+		t.Fatal("later poll inserted a duplicate claimed message")
+	}
+
+	var persisted domain.Message
+	if err := db.Where("message_id = ?", claimed.MessageID).Take(&persisted).Error; err != nil {
+		t.Fatalf("reload claimed message: %v", err)
+	}
+	if !persisted.ExtractionSkipped || persisted.Source != "cc_connect" {
+		t.Fatalf("later poll overwrote route ownership: %#v", persisted)
+	}
+}
+
 func openRouteClaimTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})

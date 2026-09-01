@@ -100,6 +100,11 @@ func TestExtractableMessage(t *testing.T) {
 	if extractableMessage(nilMessage("bot", "请处理", true)) {
 		t.Fatal("extractableMessage() accepted a bot message")
 	}
+	claimed := nilMessage("user", "请处理 123", true)
+	claimed.ExtractionSkipped = true
+	if extractableMessage(claimed) {
+		t.Fatal("extractableMessage() accepted a route-claimed message")
+	}
 	if extractableMessage(nilMessage("user", "[图片]", true)) {
 		t.Fatal("extractableMessage() accepted image placeholder")
 	}
