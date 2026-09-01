@@ -67,9 +67,9 @@ func TestOKRModuleToolsExposeReadsAndOnlyTagDefinitionWrites(t *testing.T) {
 	}
 }
 
-func TestOKRTagToolPreservesPayloadAndSurfacesConflicts(t *testing.T) {
+func TestOKRTagToolsPreservePayloadAndSurfaceConflicts(t *testing.T) {
 	const payload = `{"expected_version":7,"tags":[{"type":"custom","value":"双周报-官网SEO"},{"type":"region","value":"eu"}]}`
-	requests := make(chan moduleToolRequest, 2)
+	requests := make(chan moduleToolRequest, 3)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)
 		if err != nil {
@@ -96,6 +96,15 @@ func TestOKRTagToolPreservesPayloadAndSurfacesConflicts(t *testing.T) {
 		if request.Method != http.MethodPut || request.Path != "/api/okr/krs/kr 标签/tags" || request.Body != payload {
 			t.Fatalf("tag request = %+v", request)
 		}
+	}
+	command := exec.CommandContext(t.Context(), "bash", path, "--base-url", server.URL, "replace-point-tags", "--id", "策略 要点", "--payload", payload)
+	output, err := command.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), `"version":8`) {
+		t.Fatalf("point conflict must exit nonzero and preserve response: err=%v output=%s", err, output)
+	}
+	request := <-requests
+	if request.Method != http.MethodPut || request.Path != "/api/okr/points/策略 要点/tags" || request.Body != payload {
+		t.Fatalf("point tag request = %+v", request)
 	}
 }
 

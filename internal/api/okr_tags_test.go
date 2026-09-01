@@ -91,3 +91,70 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 		t.Fatalf("disabled module status=%d body=%s", response.StatusCode(), response.Body())
 	}
 }
+
+func TestPointTagsRouteTargetsOnlyStrategyOrProductPoint(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := okrworkspace.MigrateCore(db); err != nil {
+		t.Fatal(err)
+	}
+	kr := domain.KR{ID: "kr-point-route", Title: "保留 KR"}
+	point := domain.KRPoint{ID: "point-1", KRID: kr.ID, Kind: domain.PointKindProduct, Title: "具体产品 KR"}
+	for _, row := range []any{&kr, &point} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	workspace, err := okrworkspace.NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	images, err := okrworkspace.NewImageStore(t.TempDir(), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := server.New()
+	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{
+		DB: db, Workspace: workspace, Images: images, Identity: identity,
+		Enabled: func(context.Context) (bool, error) { return true, nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	validBody := `{"expected_version":0,"tags":[{"type":"management_focus","value":"这是一条需要完整展示的要点标签"}]}`
+	response := ut.PerformRequest(h.Engine, "PUT", "/api/okr/points/point-1/tags", &ut.Body{Body: strings.NewReader(validBody), Len: len(validBody)}).Result()
+	if response.StatusCode() != 200 {
+		t.Fatalf("point tags status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	var payload struct {
+		Data okrworkspace.KRView `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data.Version != 1 || len(payload.Data.Points) != 1 || len(payload.Data.Points[0].Tags) != 1 || payload.Data.Title != kr.Title {
+		t.Fatalf("point tag response = %+v", payload.Data)
+	}
+
+	for _, test := range []struct {
+		id     string
+		body   string
+		status int
+	}{
+		{"point-1", `{"expected_version":1,"tags":[],"title":"禁止改标题"}`, 400},
+		{"point-1", `{"expected_version":1,"tags":[{"type":"priority","value":"p0"}]}`, 400},
+		{"point-1", `{"expected_version":0,"tags":[]}`, 409},
+		{"missing", `{"expected_version":1,"tags":[]}`, 404},
+	} {
+		response := ut.PerformRequest(h.Engine, "PUT", "/api/okr/points/"+test.id+"/tags", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
+		if response.StatusCode() != test.status {
+			t.Fatalf("point request %s: status=%d body=%s", test.body, response.StatusCode(), response.Body())
+		}
+	}
+}

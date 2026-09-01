@@ -217,6 +217,16 @@ type KRTag struct {
 
 func (KRTag) TableName() string { return "okr_workspace_tag" }
 
+// PointTag labels one concrete strategy/product decomposition. Structural
+// business and priority tags remain on the parent KR.
+type PointTag struct {
+	PointID string `gorm:"primaryKey;size:64"`
+	Type    string `gorm:"primaryKey;size:32"`
+	Value   string `gorm:"primaryKey;size:64"`
+}
+
+func (PointTag) TableName() string { return "okr_workspace_point_tag" }
+
 // KROwner is the only persisted owner source. PersonID is a stable local key;
 // OpenID stays empty until a human or Agent resolves a real Feishu identity.
 type KROwner struct {
@@ -315,7 +325,7 @@ func Models() []any {
 // CoreModels are owned by the OKR module. KRPoint is the stable decomposition
 // definition; its week-specific updates are owned by WeeklyReportModels.
 func CoreModels() []any {
-	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &KROwner{}}
+	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &PointTag{}, &KROwner{}}
 }
 
 // IdentityModels are machine-local OAuth and login state. They belong to the

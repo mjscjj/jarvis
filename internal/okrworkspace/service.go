@@ -202,6 +202,7 @@ type PointView struct {
 	Title           string           `json:"title"`
 	MeegoWorkItemID string           `json:"meego_work_item_id"`
 	MeegoURL        string           `json:"meego_url"`
+	Tags            []TagView        `json:"tags"`
 	Entries         []ProgressView   `json:"entries"`
 	PreviousEntries []ProgressView   `json:"previous_entries"`
 }
@@ -625,12 +626,22 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRVie
 	var metrics []domain.KRMetric
 	var points []domain.KRPoint
 	var tags []domain.KRTag
+	var pointTags []domain.PointTag
 	var owners []domain.KROwner
 	if err := s.db.WithContext(ctx).Where("kr_id = ?", record.ID).Order("sort_order, id").Find(&metrics).Error; err != nil {
 		return KRView{}, fmt.Errorf("list metrics: %w", err)
 	}
 	if err := s.db.WithContext(ctx).Where("kr_id = ?", record.ID).Order("sort_order, id").Find(&points).Error; err != nil {
 		return KRView{}, fmt.Errorf("list points: %w", err)
+	}
+	pointIDs := make([]string, 0, len(points))
+	for _, point := range points {
+		pointIDs = append(pointIDs, point.ID)
+	}
+	if len(pointIDs) > 0 {
+		if err := s.db.WithContext(ctx).Where("point_id IN ?", pointIDs).Order("point_id, type, value").Find(&pointTags).Error; err != nil {
+			return KRView{}, fmt.Errorf("list point tags: %w", err)
+		}
 	}
 	if err := s.db.WithContext(ctx).Where("kr_id = ?", record.ID).Order("type, value").Find(&tags).Error; err != nil {
 		return KRView{}, fmt.Errorf("list tags: %w", err)
@@ -657,8 +668,18 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRVie
 		}
 		view.Metrics = append(view.Metrics, MetricView{ID: metric.ID, Text: metric.Text, Light: light, Images: nonNilImages(metric.Images)})
 	}
+	pointTagsByID := make(map[string][]TagView, len(points))
+	for _, tag := range pointTags {
+		pointTagsByID[tag.PointID] = append(pointTagsByID[tag.PointID], TagView{Type: tag.Type, Value: tag.Value})
+	}
 	for _, point := range points {
-		pointView := PointView{ID: point.ID, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: point.MeegoWorkItemID, MeegoURL: point.MeegoURL, Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
+		pointView := PointView{ID: point.ID, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: point.MeegoWorkItemID, MeegoURL: point.MeegoURL, Tags: pointTagsByID[point.ID], Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
+		if pointView.Tags == nil {
+			pointView.Tags = []TagView{}
+		}
+		if err := validatePointTags(pointView.Tags); err != nil {
+			return KRView{}, fmt.Errorf("invalid tags for point %s: %w", point.ID, err)
+		}
 		view.Points = append(view.Points, pointView)
 	}
 	for _, tag := range tags {
@@ -714,6 +735,11 @@ func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWe
 // can never rewrite a historical/current weekly report as a side effect.
 func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRInput) (KRView, error) {
 	input.Tags = normalizeTags(input.Tags)
+	for index := range input.Points {
+		if input.Points[index].Tags != nil {
+			input.Points[index].Tags = normalizeTags(input.Points[index].Tags)
+		}
+	}
 	if err := validateReplaceInput(id, input); err != nil {
 		return KRView{}, err
 	}
@@ -781,6 +807,14 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 			} else if err := tx.Create(&domain.KRPoint{ID: point.ID, KRID: id, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: linkedID, MeegoURL: strings.TrimSpace(point.MeegoURL), SortOrder: index}).Error; err != nil {
 				return fmt.Errorf("create point definition: %w", err)
 			}
+			if err := tx.Where("point_id = ?", point.ID).Delete(&domain.PointTag{}).Error; err != nil {
+				return fmt.Errorf("replace point tags: %w", err)
+			}
+			for _, tag := range point.Tags {
+				if err := tx.Create(&domain.PointTag{PointID: point.ID, Type: tag.Type, Value: tag.Value}).Error; err != nil {
+					return fmt.Errorf("create point tag: %w", err)
+				}
+			}
 		}
 		for _, point := range oldPoints {
 			if _, kept := incomingPointIDs[point.ID]; kept {
@@ -800,6 +834,9 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 				if err := tx.Where("target_id = ?", point.ID).Delete(&domain.PageComment{}).Error; err != nil {
 					return fmt.Errorf("delete removed point comments: %w", err)
 				}
+			}
+			if err := tx.Where("point_id = ?", point.ID).Delete(&domain.PointTag{}).Error; err != nil {
+				return fmt.Errorf("delete removed point tags: %w", err)
 			}
 			if err := tx.Where("id = ? AND kr_id = ?", point.ID, id).Delete(&domain.KRPoint{}).Error; err != nil {
 				return fmt.Errorf("delete removed point: %w", err)
@@ -1027,6 +1064,11 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 		}
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRMetric{}).Error; err != nil {
 			return fmt.Errorf("delete metrics: %w", err)
+		}
+		if len(pointIDs) > 0 {
+			if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.PointTag{}).Error; err != nil {
+				return fmt.Errorf("delete point tags: %w", err)
+			}
 		}
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRPoint{}).Error; err != nil {
 			return fmt.Errorf("delete points: %w", err)
@@ -1466,6 +1508,18 @@ func validateTags(tags []TagView) error {
 	return nil
 }
 
+func validatePointTags(tags []TagView) error {
+	if err := validateTags(tags); err != nil {
+		return err
+	}
+	for _, tag := range tags {
+		if tag.Type == domain.TagTypeBusinessCategory || tag.Type == domain.TagTypePriority {
+			return fmt.Errorf("point tags cannot use structural tag type %s", tag.Type)
+		}
+	}
+	return nil
+}
+
 func validateReplaceInput(id string, input ReplaceKRInput) error {
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(input.Title) == "" {
 		return fmt.Errorf("kr id and title are required")
@@ -1487,6 +1541,12 @@ func validateReplaceInput(id string, input ReplaceKRInput) error {
 		seen[point.ID] = true
 		if len(point.Entries) > 0 || len(point.PreviousEntries) > 0 {
 			return fmt.Errorf("weekly progress cannot be written through the OKR definition endpoint")
+		}
+		if point.Tags == nil {
+			return fmt.Errorf("point tags are required; use [] for no tags")
+		}
+		if err := validatePointTags(point.Tags); err != nil {
+			return fmt.Errorf("invalid tags for point %s: %w", point.ID, err)
 		}
 	}
 	if err := validateTags(input.Tags); err != nil {

@@ -1,6 +1,7 @@
 package okrworkspace
 
 import (
+	"reflect"
 	"testing"
 
 	"jarvis/internal/okrworkspace/domain"
@@ -54,17 +55,24 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	}
 	if _, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0, Title: kr.Title,
-		Points: []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title, Entries: []ProgressView{{ID: "forbidden", Status: domain.StatusDone, Text: "不应进入核心写接口"}}}},
+		Points: []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title, Tags: []TagView{}, Entries: []ProgressView{{ID: "forbidden", Status: domain.StatusDone, Text: "不应进入核心写接口"}}}},
 		Tags:   []TagView{{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypePriority, Value: "p1"}},
 	}); err == nil {
 		t.Fatal("ReplaceKRCore() accepted weekly progress")
+	}
+	if _, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
+		ExpectedVersion: 0, Title: kr.Title,
+		Points: []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title}},
+		Tags:   []TagView{{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypePriority, Value: "p1"}},
+	}); err == nil {
+		t.Fatal("ReplaceKRCore() accepted a point without explicit tags")
 	}
 
 	core, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0, Title: "新 OKR 标题", MetricNote: "季度口径",
 		Owners:  []OwnerView{{OpenID: "ou_a", Name: "甲"}, {OpenID: "ou_b", Name: "乙"}},
 		Metrics: []MetricView{{ID: metric.ID, Text: "新核心指标", Light: domain.LightYellow}},
-		Points:  []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title}},
+		Points:  []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title, Tags: []TagView{{Type: "management_focus", Value: "策略要点"}}}},
 		Tags:    []TagView{{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypePriority, Value: "p0"}},
 	})
 	if err != nil {
@@ -75,6 +83,9 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	}
 	if len(core.Tags) != 2 || core.Tags[0].Type != domain.TagTypeBusinessCategory || core.Tags[1].Value != "p0" {
 		t.Fatalf("structural tags = %+v", core.Tags)
+	}
+	if !reflect.DeepEqual(core.Points[0].Tags, []TagView{{Type: "management_focus", Value: "策略要点"}}) {
+		t.Fatalf("point tags = %+v", core.Points[0].Tags)
 	}
 	var progressAfterCore []domain.KRProgress
 	if err := db.Order("week").Find(&progressAfterCore).Error; err != nil {
@@ -462,7 +473,7 @@ func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
 	updated, err := service.ReplaceKRCore(t.Context(), created.ID, ReplaceKRInput{
 		ExpectedVersion: 0, Title: created.Title, Tags: created.Tags,
 		Metrics: []MetricView{{ID: "metric-1", Text: "核心指标", Light: domain.LightGreen}},
-		Points:  []PointView{{ID: "point-1", Kind: domain.PointKindStrategy, Title: "关键路径"}},
+		Points:  []PointView{{ID: "point-1", Kind: domain.PointKindStrategy, Title: "关键路径", Tags: []TagView{}}},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -16,13 +16,16 @@ commands:
   find-krs --query TEXT [--quarter Q]
   get-kr --id KR_ID
   replace-kr-tags --id KR_ID --payload JSON|-
+  replace-point-tags --id POINT_ID --payload JSON|-
   people-search --query TEXT
   upload-image --file PATH
 
 replace-kr-tags accepts {"expected_version":N,"tags":[{"type":"custom","value":"双周报-官网SEO"}]}.
-Read get-kr first and preserve unrelated tags; tags is the complete replacement
-list ([] clears all tags). A stale KR version returns HTTP 409 with current data.
-Only tags are written; O/KR text, owners, metrics, points and weekly data stay unchanged.
+replace-point-tags uses the same payload and the parent KR's latest version.
+Read get-kr first and preserve unrelated tags on the selected KR or point; tags
+is the complete replacement list ([] clears all tags). A stale KR version returns
+HTTP 409 with current data. Point tags cannot use business_category or priority.
+Only selected tags are written; definitions and weekly data stay unchanged.
 
 Uses server.addr from conf/config.yaml plus conf/config.runtime.yaml.
 JARVIS_API_BASE or --base-url explicitly selects another instance.
@@ -113,6 +116,13 @@ case "$COMMAND" in
     [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
     printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null || { echo "replace-kr-tags payload must be a JSON object" >&2; exit 2; }
     curl --fail-with-body -sS -X PUT "${BASE_URL}/api/okr/krs/$(printf '%s' "$ID" | jq -sRr @uri)/tags" \
+      -H 'content-type: application/json' --data-binary "$PAYLOAD"
+    ;;
+  replace-point-tags)
+    [[ -n "$ID" && -n "$PAYLOAD" ]] || { echo "replace-point-tags requires --id and --payload JSON|-" >&2; exit 2; }
+    [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
+    printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null || { echo "replace-point-tags payload must be a JSON object" >&2; exit 2; }
+    curl --fail-with-body -sS -X PUT "${BASE_URL}/api/okr/points/$(printf '%s' "$ID" | jq -sRr @uri)/tags" \
       -H 'content-type: application/json' --data-binary "$PAYLOAD"
     ;;
   people-search)
