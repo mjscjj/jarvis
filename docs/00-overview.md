@@ -204,7 +204,6 @@ pending -> executing -> done | observing | failed
 
 这些是代码事实，不是自动授权的实施计划：
 
-- 尚无独立 Goal Store / Supervisor / Verifier；长任务控制仍是提案。
 - `context_snapshot` 是冻结证据，不是版本化 live world state。
 - factengine 已消费 message、Todo 和 Task lifecycle event；其它原料来源尚需按同一投影协议接入。
 - effects 是 Agent 声明，不是外部系统 receipt 的独立验证。

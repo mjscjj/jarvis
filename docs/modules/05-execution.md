@@ -83,7 +83,6 @@ Task 执行接口包括：runs、events、output、execute、interrupt、rerun�
 
 ## 8. 当前缺口
 
-- 没有独立 Verifier；`done` 仍主要来自同一执行 Agent 的 completion claim。
 - effects 未对外部系统 receipt 做独立核验。
 - Task 背景和可选计划缺更新 API/tool 与事件留痕。
 - ExecutionRun 尚未作为独立 factengine 来源。
