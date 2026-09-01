@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import MarkdownReport from '../../../components/MarkdownReport'
 import { listTextFiles, updateTextFile } from '../../../api'
 import { usePageContext } from '../../../pageContext'
 import type { TextFile } from '../../../types'
@@ -95,7 +94,14 @@ export function AgentFlowCenter({ weeklyEnabled, quarter }: { weeklyEnabled: boo
           </aside>
           {selected ? <div className="flex min-w-0 flex-col">
             <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3"><div className="min-w-0"><h3 className="truncate text-xs font-semibold text-slate-800">{selected.name}</h3><code className="text-[9px] text-slate-400">{selected.key}</code></div><button type="button" disabled={!dirty} onClick={() => setDrafts((current) => ({ ...current, [selected.key]: selected.content }))} className="ml-auto rounded-md border border-slate-200 px-2.5 py-1.5 text-[10px] text-slate-500 disabled:opacity-40">撤销</button><button type="button" disabled={!dirty || saving || !draft.trim()} onClick={() => void save()} className="rounded-md bg-cyan-600 px-3 py-1.5 text-[10px] font-medium text-white disabled:opacity-40">{saving ? '保存中…' : '保存并生效'}</button></div>
-            <div className="grid min-h-0 flex-1 xl:grid-cols-2"><div className="flex min-h-0 flex-col border-b border-slate-100 p-4 xl:border-r xl:border-b-0"><div className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400">Markdown 编辑</div><textarea value={draft} onChange={(event) => setDrafts((current) => ({ ...current, [selected.key]: event.target.value }))} spellCheck={false} className="min-h-96 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50/40 p-3 font-mono text-[11px] leading-5 text-slate-700 outline-none focus:border-cyan-300 focus:bg-white" /></div><div className="min-h-0 overflow-auto p-4"><div className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400">Agent 看到的内容</div><MarkdownReport className="daily-digest-markdown" content={draft} /><div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[10px] leading-5 text-slate-500">固定行动只保存行动标识、Prompt key 和执行时间；范围、对象、产出与验收由这份 Prompt 完整定义。审批、状态和回执继续走 Jarvis 通用能力。</div></div></div>
+            <div className="flex min-h-0 flex-1 flex-col p-4">
+              <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">Prompt 内容（Markdown）</span>
+                <span className="text-[9px] text-slate-400">保存后的内容就是 Agent 实际读取的内容</span>
+              </div>
+              <textarea value={draft} onChange={(event) => setDrafts((current) => ({ ...current, [selected.key]: event.target.value }))} spellCheck={false} className="min-h-[520px] flex-1 resize-y rounded-xl border border-slate-200 bg-slate-50/40 p-4 font-mono text-[11px] leading-5 text-slate-700 outline-none focus:border-cyan-300 focus:bg-white" />
+              <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[10px] leading-5 text-slate-500">固定行动只保存行动标识、Prompt key 和执行时间；范围、对象、产出与验收由这份 Prompt 完整定义。审批、状态和回执继续走 Jarvis 通用能力。</div>
+            </div>
           </div> : <div className="py-16 text-center text-xs text-slate-400">没有注册的 OKR Agent Prompt</div>}
         </div>}
       </section>
