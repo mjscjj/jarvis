@@ -14,11 +14,13 @@ commands:
   text-config --key KEY
   scope
   weeks [--quarter Q]
-  open-week --quarter Q --week YYYY-Www
+  open-week --quarter Q --week YYYY-Www [--template classic|okr_weekly_preview_v1]
   delete-week --quarter Q --week YYYY-Www
   board [--quarter Q] [--week YYYY-Www]
   get-weekly-kr --id KR_ID --week YYYY-Www
   replace-weekly-core --id KR_ID --payload JSON|-
+  replace-score --target-kind kr|point --id TARGET_ID --payload JSON|-
+  delete-score --target-kind kr|point --id TARGET_ID --payload JSON|-
   comments --quarter Q --week YYYY-Www
   create-comment --payload JSON|-
   update-comment --id COMMENT_ID --payload JSON|-
@@ -62,6 +64,8 @@ PAYLOAD=""
 KEY=""
 ID=""
 POINT_ID=""
+TEMPLATE="classic"
+TARGET_KIND=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --quarter) QUARTER="${2:-}"; shift 2 ;;
@@ -70,6 +74,8 @@ while [[ $# -gt 0 ]]; do
     --key) KEY="${2:-}"; shift 2 ;;
     --id) ID="${2:-}"; shift 2 ;;
     --point-id) POINT_ID="${2:-}"; shift 2 ;;
+    --template) TEMPLATE="${2:-}"; shift 2 ;;
+    --target-kind) TARGET_KIND="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -124,7 +130,8 @@ case "$COMMAND" in
     ;;
   open-week)
     [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "open-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
-    request_post /api/weekly-report/weeks "$(jq -cn --arg quarter "$QUARTER" --arg week "$WEEK" '{quarter:$quarter,week:$week}')"
+    [[ "$TEMPLATE" == "classic" || "$TEMPLATE" == "okr_weekly_preview_v1" ]] || { echo "open-week --template must be classic or okr_weekly_preview_v1" >&2; exit 2; }
+    request_post /api/weekly-report/weeks "$(jq -cn --arg quarter "$QUARTER" --arg week "$WEEK" --arg template "$TEMPLATE" '{quarter:$quarter,week:$week,template_key:$template}')"
     ;;
   delete-week)
     [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "delete-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
@@ -154,6 +161,22 @@ case "$COMMAND" in
       and (.metrics | type == "array")
     ' >/dev/null || { echo "replace-weekly-core payload is invalid" >&2; exit 2; }
     request_write PUT "/api/weekly-report/krs/$(encoded "$ID")/core" "$payload"
+    ;;
+  replace-score|delete-score)
+    [[ "$TARGET_KIND" == "kr" || "$TARGET_KIND" == "point" ]] || { echo "$COMMAND requires --target-kind kr|point" >&2; exit 2; }
+    [[ -n "$ID" ]] || { echo "$COMMAND requires --id" >&2; exit 2; }
+    payload="$(read_payload)"
+    score_check='true'
+    [[ "$COMMAND" == "delete-score" ]] || score_check='(.score | type == "number" and . >= 0 and . <= 1 and ((. * 10) | floor) == (. * 10))'
+    printf '%s' "$payload" | jq -e "
+      (.quarter | type == \"string\" and test(\"^[0-9]{4}-Q[1-4]$\"))
+      and (.week | type == \"string\" and test(\"^[0-9]{4}-W[0-9]{2}$\"))
+      and (.expected_version | type == \"number\" and . >= 0)
+      and ($score_check)
+    " >/dev/null || { echo "$COMMAND payload is invalid" >&2; exit 2; }
+    method=PUT
+    [[ "$COMMAND" == "replace-score" ]] || method=DELETE
+    request_write "$method" "/api/weekly-report/scores/${TARGET_KIND}/$(encoded "$ID")" "$payload"
     ;;
   create-comment)
     payload="$(read_payload)"

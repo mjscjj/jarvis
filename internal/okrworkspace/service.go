@@ -35,12 +35,13 @@ func NewService(db *gorm.DB) (*Service, error) {
 }
 
 type Board struct {
-	Quarter           string          `json:"quarter"`
-	Week              string          `json:"week"`
-	PreviousWeek      string          `json:"previous_week,omitempty"`
-	AvailableQuarters []string        `json:"available_quarters"`
-	AvailableWeeks    []string        `json:"available_weeks"`
-	Objectives        []ObjectiveView `json:"objectives"`
+	Quarter           string                 `json:"quarter"`
+	Week              string                 `json:"week"`
+	TemplateKey       domain.WeekTemplateKey `json:"template_key"`
+	PreviousWeek      string                 `json:"previous_week,omitempty"`
+	AvailableQuarters []string               `json:"available_quarters"`
+	AvailableWeeks    []string               `json:"available_weeks"`
+	Objectives        []ObjectiveView        `json:"objectives"`
 }
 
 type Scope struct {
@@ -182,6 +183,12 @@ type KRView struct {
 	Points            []PointView  `json:"points"`
 	Tags              []TagView    `json:"tags"`
 	Owners            []OwnerView  `json:"owners"`
+	Score             *ScoreView   `json:"score,omitempty"`
+}
+
+type ScoreView struct {
+	Value   float64 `json:"value"`
+	Version int32   `json:"version"`
 }
 
 type OwnerView struct {
@@ -205,6 +212,7 @@ type PointView struct {
 	Tags            []TagView        `json:"tags"`
 	Entries         []ProgressView   `json:"entries"`
 	PreviousEntries []ProgressView   `json:"previous_entries"`
+	Score           *ScoreView       `json:"score,omitempty"`
 }
 
 type MeegoPreview struct {
@@ -353,7 +361,8 @@ func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error
 	if !weekPattern.MatchString(week) {
 		return Board{}, fmt.Errorf("week must use YYYY-Www")
 	}
-	if err := s.requireOpenWeek(ctx, quarter, week); err != nil {
+	openedWeek, err := s.openedWeek(ctx, quarter, week)
+	if err != nil {
 		return Board{}, err
 	}
 	var objectives []domain.Objective
@@ -368,7 +377,7 @@ func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error
 	if err != nil {
 		return Board{}, err
 	}
-	result := Board{Quarter: quarter, Week: week, PreviousWeek: previousWeek, AvailableQuarters: quarters, AvailableWeeks: weeks, Objectives: make([]ObjectiveView, 0, len(objectives))}
+	result := Board{Quarter: quarter, Week: week, TemplateKey: openedWeek.TemplateKey, PreviousWeek: previousWeek, AvailableQuarters: quarters, AvailableWeeks: weeks, Objectives: make([]ObjectiveView, 0, len(objectives))}
 	for _, objective := range objectives {
 		var records []domain.KR
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
@@ -376,7 +385,7 @@ func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error
 		}
 		view := ObjectiveView{ID: objective.ID, Title: objective.Title, KRs: make([]KRView, 0, len(records))}
 		for _, record := range records {
-			krView, err := s.loadKR(ctx, record, week, previousWeek)
+			krView, err := s.loadKR(ctx, record, quarter, week, previousWeek)
 			if err != nil {
 				return Board{}, err
 			}
@@ -409,7 +418,7 @@ func (s *Service) CoreBoard(ctx context.Context, quarter string) (Board, error) 
 	if err := s.db.WithContext(ctx).Where("quarter = ?", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
 		return Board{}, fmt.Errorf("list objectives: %w", err)
 	}
-	result := Board{Quarter: quarter, Week: "", AvailableQuarters: quarters, AvailableWeeks: []string{}, Objectives: make([]ObjectiveView, 0, len(objectives))}
+	result := Board{Quarter: quarter, Week: "", TemplateKey: domain.WeekTemplateClassic, AvailableQuarters: quarters, AvailableWeeks: []string{}, Objectives: make([]ObjectiveView, 0, len(objectives))}
 	for _, objective := range objectives {
 		var records []domain.KR
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
@@ -608,7 +617,7 @@ func (s *Service) GetKR(ctx context.Context, id, week string) (KRView, error) {
 	if err != nil {
 		return KRView{}, err
 	}
-	return s.loadKR(ctx, record, week, previousWeek)
+	return s.loadKR(ctx, record, objective.Quarter, week, previousWeek)
 }
 
 func (s *Service) GetCoreKR(ctx context.Context, id string) (KRView, error) {
@@ -691,7 +700,7 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRVie
 	return view, nil
 }
 
-func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWeek string) (KRView, error) {
+func (s *Service) loadKR(ctx context.Context, record domain.KR, quarter, week, previousWeek string) (KRView, error) {
 	view, err := s.loadKRDefinition(ctx, record)
 	if err != nil {
 		return KRView{}, err
@@ -707,8 +716,36 @@ func (s *Service) loadKR(ctx context.Context, record domain.KR, week, previousWe
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return KRView{}, fmt.Errorf("load weekly core data: %w", err)
 	}
+	targetIDs := make([]string, 0, len(view.Points)+1)
+	targetIDs = append(targetIDs, record.ID)
+	for _, point := range view.Points {
+		targetIDs = append(targetIDs, point.ID)
+	}
+	var scores []domain.WeeklyScore
+	if err := s.db.WithContext(ctx).
+		Where("quarter = ? AND week = ? AND target_id IN ?", quarter, week, targetIDs).
+		Find(&scores).Error; err != nil {
+		return KRView{}, fmt.Errorf("list weekly scores: %w", err)
+	}
+	pointScores := make(map[string]*ScoreView, len(scores))
+	for _, score := range scores {
+		if err := validateStoredWeeklyScore(score); err != nil {
+			return KRView{}, err
+		}
+		scoreView := &ScoreView{Value: score.Score, Version: score.Version}
+		switch score.TargetKind {
+		case domain.WeeklyScoreTargetKR:
+			if score.TargetID != record.ID {
+				return KRView{}, fmt.Errorf("weekly score target %s is not KR %s", score.TargetID, record.ID)
+			}
+			view.Score = scoreView
+		case domain.WeeklyScoreTargetPoint:
+			pointScores[score.TargetID] = scoreView
+		}
+	}
 	for index := range view.Points {
 		point := &view.Points[index]
+		point.Score = pointScores[point.ID]
 		var progress []domain.KRProgress
 		if err := s.db.WithContext(ctx).Where("point_id = ? AND week = ?", point.ID, week).Order("sort_order, id").Find(&progress).Error; err != nil {
 			return KRView{}, fmt.Errorf("list progress: %w", err)

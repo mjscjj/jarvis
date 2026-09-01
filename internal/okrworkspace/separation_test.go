@@ -1,6 +1,7 @@
 package okrworkspace
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -216,19 +217,22 @@ func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	opened, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: objective.Quarter, Week: "2026-W36", OpenedBy: "ou_owner"})
+	opened, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: objective.Quarter, Week: "2026-W36", TemplateKey: domain.WeekTemplateClassic, OpenedBy: "ou_owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !opened.Created || opened.Week.Week != "2026-W36" || opened.Week.OpenedBy != "ou_owner" {
+	if !opened.Created || opened.Week.Week != "2026-W36" || opened.Week.TemplateKey != domain.WeekTemplateClassic || opened.Week.OpenedBy != "ou_owner" {
 		t.Fatalf("opened week = %+v", opened)
 	}
-	again, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: objective.Quarter, Week: "2026-W36", OpenedBy: "ou_other"})
+	again, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: objective.Quarter, Week: "2026-W36", TemplateKey: domain.WeekTemplateClassic, OpenedBy: "ou_other"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if again.Created || again.Week.OpenedBy != "ou_owner" {
 		t.Fatalf("idempotent open = %+v", again)
+	}
+	if _, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: objective.Quarter, Week: "2026-W36", TemplateKey: domain.WeekTemplateOKRPreview, OpenedBy: "ou_other"}); !errors.Is(err, ErrWeekTemplateConflict) {
+		t.Fatalf("template-changing open error = %v, want ErrWeekTemplateConflict", err)
 	}
 	scope, err := service.LatestWeeklyScope(t.Context())
 	if err != nil {
@@ -241,7 +245,7 @@ func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(board.AvailableWeeks) != 1 || board.AvailableWeeks[0] != "2026-W36" || len(board.Objectives) != 1 {
+	if board.TemplateKey != domain.WeekTemplateClassic || len(board.AvailableWeeks) != 1 || board.AvailableWeeks[0] != "2026-W36" || len(board.Objectives) != 1 {
 		t.Fatalf("board = %+v", board)
 	}
 	var progressCount int64

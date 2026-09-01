@@ -32,7 +32,7 @@ func TestReminderBatchCountsOnlySendableRecipients(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: objective.Quarter, Week: "2026-W36", OpenedBy: "ou_owner"}); err != nil {
+	if _, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: objective.Quarter, Week: "2026-W36", TemplateKey: domain.WeekTemplateClassic, OpenedBy: "ou_owner"}); err != nil {
 		t.Fatal(err)
 	}
 	batch, err := service.GenerateReminderBatch(t.Context(), objective.Quarter, "2026-W36", "manual")

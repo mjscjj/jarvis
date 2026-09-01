@@ -128,6 +128,8 @@ func TestWeeklyReportToolsExposeAtomicWrites(t *testing.T) {
 		{[]string{"delete-week", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodDelete, "/api/weekly-report/weeks/2026-W36", "quarter=2026-Q3"},
 		{[]string{"get-weekly-kr", "--id", "kr-1", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/krs/kr-1", "week=2026-W36"},
 		{[]string{"replace-weekly-core", "--id", "kr-1", "--payload", `{"expected_version":0,"week":"2026-W36","metric_note":"测试","metrics":[]}`}, http.MethodPut, "/api/weekly-report/krs/kr-1/core", ""},
+		{[]string{"replace-score", "--target-kind", "kr", "--id", "kr-1", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","score":0.7,"expected_version":0}`}, http.MethodPut, "/api/weekly-report/scores/kr/kr-1", ""},
+		{[]string{"delete-score", "--target-kind", "point", "--id", "point-1", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","expected_version":1}`}, http.MethodDelete, "/api/weekly-report/scores/point/point-1", ""},
 		{[]string{"comments", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/weekly-report/comments", ""},
 		{[]string{"create-comment", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","content":"建议"}`}, http.MethodPost, "/api/weekly-report/comments", ""},
 		{[]string{"update-comment", "--id", "comment-1", "--payload", `{"todo":true}`}, http.MethodPut, "/api/weekly-report/comments/comment-1", ""},

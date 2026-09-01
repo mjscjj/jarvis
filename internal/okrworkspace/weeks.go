@@ -14,10 +14,11 @@ import (
 )
 
 type WeekView struct {
-	Quarter  string    `json:"quarter"`
-	Week     string    `json:"week"`
-	OpenedBy string    `json:"opened_by"`
-	OpenedAt time.Time `json:"opened_at"`
+	Quarter     string                 `json:"quarter"`
+	Week        string                 `json:"week"`
+	TemplateKey domain.WeekTemplateKey `json:"template_key"`
+	OpenedBy    string                 `json:"opened_by"`
+	OpenedAt    time.Time              `json:"opened_at"`
 }
 
 type WeekList struct {
@@ -26,9 +27,10 @@ type WeekList struct {
 }
 
 type OpenWeekInput struct {
-	Quarter  string `json:"quarter"`
-	Week     string `json:"week"`
-	OpenedBy string `json:"opened_by"`
+	Quarter     string                 `json:"quarter"`
+	Week        string                 `json:"week"`
+	TemplateKey domain.WeekTemplateKey `json:"template_key"`
+	OpenedBy    string                 `json:"opened_by"`
 }
 
 type OpenWeekResult struct {
@@ -36,11 +38,15 @@ type OpenWeekResult struct {
 	Created bool     `json:"created"`
 }
 
-var ErrWeekNotFound = errors.New("weekly report week not found")
+var (
+	ErrWeekNotFound         = errors.New("weekly report week not found")
+	ErrWeekTemplateConflict = errors.New("weekly report week template conflict")
+)
 
 type DeleteWeekCounts struct {
 	WeeklyCores     int64 `json:"weekly_cores"`
 	Progress        int64 `json:"progress"`
+	Scores          int64 `json:"scores"`
 	Comments        int64 `json:"comments"`
 	MeegoSnapshots  int64 `json:"meego_snapshots"`
 	ReminderBatches int64 `json:"reminder_batches"`
@@ -79,6 +85,9 @@ func (s *Service) OpenWeek(ctx context.Context, input OpenWeekInput) (OpenWeekRe
 	if !weekPattern.MatchString(input.Week) {
 		return OpenWeekResult{}, fmt.Errorf("week must use YYYY-Www")
 	}
+	if !domain.ValidWeekTemplateKey(input.TemplateKey) {
+		return OpenWeekResult{}, fmt.Errorf("template_key must be %q or %q", domain.WeekTemplateClassic, domain.WeekTemplateOKRPreview)
+	}
 	var objectiveCount int64
 	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("quarter = ?", input.Quarter).Count(&objectiveCount).Error; err != nil {
 		return OpenWeekResult{}, fmt.Errorf("check weekly report quarter: %w", err)
@@ -86,7 +95,7 @@ func (s *Service) OpenWeek(ctx context.Context, input OpenWeekInput) (OpenWeekRe
 	if objectiveCount == 0 {
 		return OpenWeekResult{}, fmt.Errorf("quarter %s has no OKR objectives", input.Quarter)
 	}
-	row := domain.WeeklyReportWeek{Quarter: input.Quarter, Week: input.Week, OpenedBy: input.OpenedBy, OpenedAt: time.Now().UTC()}
+	row := domain.WeeklyReportWeek{Quarter: input.Quarter, Week: input.Week, TemplateKey: input.TemplateKey, OpenedBy: input.OpenedBy, OpenedAt: time.Now().UTC()}
 	created := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
 	if created.Error != nil {
 		return OpenWeekResult{}, fmt.Errorf("open weekly report week: %w", created.Error)
@@ -94,6 +103,9 @@ func (s *Service) OpenWeek(ctx context.Context, input OpenWeekInput) (OpenWeekRe
 	if created.RowsAffected == 0 {
 		if err := s.db.WithContext(ctx).First(&row, "quarter = ? AND week = ?", input.Quarter, input.Week).Error; err != nil {
 			return OpenWeekResult{}, fmt.Errorf("read opened weekly report week: %w", err)
+		}
+		if row.TemplateKey != input.TemplateKey {
+			return OpenWeekResult{}, fmt.Errorf("%w: %s/%s is %q, requested %q", ErrWeekTemplateConflict, input.Quarter, input.Week, row.TemplateKey, input.TemplateKey)
 		}
 	}
 	return OpenWeekResult{Week: weekView(row), Created: created.RowsAffected == 1}, nil
@@ -153,6 +165,12 @@ func (s *Service) DeleteWeek(ctx context.Context, quarter, week string) (DeleteW
 		result.Deleted.MeegoSnapshots = snapshots.RowsAffected
 	}
 
+	scores := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.WeeklyScore{})
+	if scores.Error != nil {
+		return DeleteWeekResult{}, fmt.Errorf("delete weekly report scores: %w", scores.Error)
+	}
+	result.Deleted.Scores = scores.RowsAffected
+
 	if len(krIDs) > 0 {
 		cores := s.db.WithContext(ctx).Where("kr_id IN ? AND week = ?", krIDs, week).Delete(&domain.WeeklyKRCore{})
 		if cores.Error != nil {
@@ -185,22 +203,30 @@ func (s *Service) DeleteWeek(ctx context.Context, quarter, week string) (DeleteW
 }
 
 func (s *Service) requireOpenWeek(ctx context.Context, quarter, week string) error {
+	_, err := s.openedWeek(ctx, quarter, week)
+	return err
+}
+
+func (s *Service) openedWeek(ctx context.Context, quarter, week string) (domain.WeeklyReportWeek, error) {
 	if !quarterPattern.MatchString(quarter) {
-		return fmt.Errorf("quarter must use YYYY-Qn")
+		return domain.WeeklyReportWeek{}, fmt.Errorf("quarter must use YYYY-Qn")
 	}
 	if !weekPattern.MatchString(week) {
-		return fmt.Errorf("week must use YYYY-Www")
+		return domain.WeeklyReportWeek{}, fmt.Errorf("week must use YYYY-Www")
 	}
 	var row domain.WeeklyReportWeek
 	if err := s.db.WithContext(ctx).First(&row, "quarter = ? AND week = ?", quarter, week).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return fmt.Errorf("weekly report week %s/%s is not open", quarter, week)
+			return domain.WeeklyReportWeek{}, fmt.Errorf("weekly report week %s/%s is not open", quarter, week)
 		}
-		return fmt.Errorf("check weekly report week: %w", err)
+		return domain.WeeklyReportWeek{}, fmt.Errorf("check weekly report week: %w", err)
 	}
-	return nil
+	if !domain.ValidWeekTemplateKey(row.TemplateKey) {
+		return domain.WeeklyReportWeek{}, fmt.Errorf("weekly report week %s/%s has invalid template_key %q", quarter, week, row.TemplateKey)
+	}
+	return row, nil
 }
 
 func weekView(row domain.WeeklyReportWeek) WeekView {
-	return WeekView{Quarter: row.Quarter, Week: row.Week, OpenedBy: row.OpenedBy, OpenedAt: row.OpenedAt.UTC()}
+	return WeekView{Quarter: row.Quarter, Week: row.Week, TemplateKey: row.TemplateKey, OpenedBy: row.OpenedBy, OpenedAt: row.OpenedAt.UTC()}
 }

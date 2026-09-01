@@ -135,17 +135,56 @@ type KRProgress struct {
 
 func (KRProgress) TableName() string { return "okr_workspace_progress" }
 
+type WeekTemplateKey string
+
+const (
+	WeekTemplateClassic    WeekTemplateKey = "classic"
+	WeekTemplateOKRPreview WeekTemplateKey = "okr_weekly_preview_v1"
+)
+
+func ValidWeekTemplateKey(value WeekTemplateKey) bool {
+	return value == WeekTemplateClassic || value == WeekTemplateOKRPreview
+}
+
 // WeeklyReportWeek is the explicit lifecycle anchor for one reporting week.
 // Opening a week only makes the empty time bucket discoverable; it does not
 // copy progress, send reminders or trigger another workflow.
 type WeeklyReportWeek struct {
-	Quarter  string    `gorm:"primaryKey;size:16"`
-	Week     string    `gorm:"primaryKey;size:16"`
-	OpenedBy string    `gorm:"not null;default:''"`
-	OpenedAt time.Time `gorm:"not null"`
+	Quarter     string          `gorm:"primaryKey;size:16"`
+	Week        string          `gorm:"primaryKey;size:16"`
+	TemplateKey WeekTemplateKey `gorm:"not null;default:'classic'"`
+	OpenedBy    string          `gorm:"not null;default:''"`
+	OpenedAt    time.Time       `gorm:"not null"`
 }
 
 func (WeeklyReportWeek) TableName() string { return "okr_workspace_week" }
+
+type WeeklyScoreTargetKind string
+
+const (
+	WeeklyScoreTargetKR    WeeklyScoreTargetKind = "kr"
+	WeeklyScoreTargetPoint WeeklyScoreTargetKind = "point"
+)
+
+func ValidWeeklyScoreTargetKind(value WeeklyScoreTargetKind) bool {
+	return value == WeeklyScoreTargetKR || value == WeeklyScoreTargetPoint
+}
+
+// WeeklyScore is one manually assigned score for a stable KR or one of its
+// strategy/product points in an explicitly opened preview week.
+type WeeklyScore struct {
+	Quarter    string                `gorm:"primaryKey;size:16"`
+	Week       string                `gorm:"primaryKey;size:16"`
+	TargetKind WeeklyScoreTargetKind `gorm:"primaryKey;size:16"`
+	TargetID   string                `gorm:"primaryKey;size:64"`
+	Score      float64               `gorm:"not null"`
+	Version    int32                 `gorm:"not null;default:0"`
+	UpdatedBy  string                `gorm:"not null"`
+	CreatedAt  time.Time             `gorm:"not null"`
+	UpdatedAt  time.Time             `gorm:"not null"`
+}
+
+func (WeeklyScore) TableName() string { return "okr_workspace_weekly_score" }
 
 // WeeklyKRCore stores the editable core-data presentation for one KR in one
 // reporting week. The stable metric definitions still belong to the OKR
@@ -338,5 +377,5 @@ func IdentityModels() []any {
 // names are intentionally preserved so enabling the split never rewrites or
 // loses Emily's historical data.
 func WeeklyReportModels() []any {
-	return []any{&WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+	return []any{&WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}, &WeeklyScore{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

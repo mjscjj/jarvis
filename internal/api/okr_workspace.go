@@ -207,6 +207,10 @@ func OpenWeeklyReportWeek(service *okrworkspace.Service) app.HandlerFunc {
 		}
 		input.OpenedBy = currentOKRIdentity(c).OpenID
 		result, err := service.OpenWeek(ctx, input)
+		if errors.Is(err, okrworkspace.ErrWeekTemplateConflict) {
+			writeAPIConflict(c, 40915, err, nil)
+			return
+		}
 		if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40015, err)
 			return

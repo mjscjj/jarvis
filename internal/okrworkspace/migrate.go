@@ -127,6 +127,20 @@ func MigrateWeeklyReport(db *gorm.DB) error {
 	if err := db.AutoMigrate(domain.WeeklyReportModels()...); err != nil {
 		return fmt.Errorf("migrate weekly report module schema: %w", err)
 	}
+	if err := db.Model(&domain.WeeklyReportWeek{}).
+		Where("template_key IS NULL OR template_key = ''").
+		Update("template_key", domain.WeekTemplateClassic).Error; err != nil {
+		return fmt.Errorf("mark historical weekly report templates as classic: %w", err)
+	}
+	var invalidTemplateCount int64
+	if err := db.Model(&domain.WeeklyReportWeek{}).
+		Where("template_key NOT IN ?", []domain.WeekTemplateKey{domain.WeekTemplateClassic, domain.WeekTemplateOKRPreview}).
+		Count(&invalidTemplateCount).Error; err != nil {
+		return fmt.Errorf("validate weekly report templates: %w", err)
+	}
+	if invalidTemplateCount > 0 {
+		return fmt.Errorf("validate weekly report templates: found %d unsupported rows", invalidTemplateCount)
+	}
 	// Existing progress rows predate the explicit week lifecycle. Materialize
 	// their scopes once during migration; runtime reads use the week table only.
 	type historicalWeek struct {
@@ -147,7 +161,7 @@ func MigrateWeeklyReport(db *gorm.DB) error {
 		// Historical progress proves the scope existed, but it does not prove when
 		// somebody explicitly opened it. Record the migration time instead of
 		// manufacturing that product event from a progress timestamp.
-		row := domain.WeeklyReportWeek{Quarter: item.Quarter, Week: item.Week, OpenedBy: "migration", OpenedAt: time.Now().UTC()}
+		row := domain.WeeklyReportWeek{Quarter: item.Quarter, Week: item.Week, TemplateKey: domain.WeekTemplateClassic, OpenedBy: "migration", OpenedAt: time.Now().UTC()}
 		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 			return fmt.Errorf("backfill weekly report scope %s/%s: %w", item.Quarter, item.Week, err)
 		}
