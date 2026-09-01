@@ -14,8 +14,7 @@ import (
 
 const maxExtractorOutputBytes = 1 << 20
 
-// ExtractorOptions configures the Agent CLI used by world maintenance and the
-// daily rollup. Each caller owns its own Extractor so their models can differ.
+// ExtractorOptions configures the Agent CLI used by world maintenance.
 type ExtractorOptions struct {
 	Bin             string
 	Model           string

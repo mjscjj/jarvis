@@ -70,4 +70,24 @@ type Fact struct {
 
 func (Fact) TableName() string { return "fact" }
 
-func ProgressModels() []any { return []any{&TaskEvent{}, &Fact{}} }
+// PageRevision archives one entity summary page's previous text. Pages are
+// lossy by design — compression drops detail on purpose, and this is the only
+// record of what was dropped. It is deliberately not a Fact: a Fact answers
+// "what happened in the world", a revision answers "our own note was edited",
+// and mixing the two put stale page text back in front of the maintenance
+// Agent as if it were evidence.
+type PageRevision struct {
+	ID uint64 `gorm:"column:id;primaryKey;autoIncrement"`
+
+	PageType string `gorm:"column:page_type;not null;index:idx_page_revision_page,priority:1"`
+	PageID   uint64 `gorm:"column:page_id;not null;index:idx_page_revision_page,priority:2"`
+
+	// OldText is the whole previous page, never a truncated copy.
+	OldText string `gorm:"column:old_text;not null"`
+
+	ChangedAt time.Time `gorm:"column:changed_at;not null;index:idx_page_revision_page,priority:3"`
+}
+
+func (PageRevision) TableName() string { return "page_revision" }
+
+func ProgressModels() []any { return []any{&TaskEvent{}, &Fact{}, &PageRevision{}} }

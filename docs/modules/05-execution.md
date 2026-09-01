@@ -15,7 +15,7 @@ Task 可来自：
 - `scheduled_task`：到期物化；
 - `manual`：通过 API 创建。
 
-执行 prompt 包含：完整 `source_payload`、冻结 `background` 的小投影（当前项目、群、交办人、引用消息 ID）、完整背景查询命令、execution supplements、最近 5 次 runs、shared memory、rules、Skills、工具目录和审批政策。conversation、facts、其它 Todo/Task、participants、resources 与其它项目不在首轮加载，需要时通过任务查询读取完整冻结背景。所有来源统一使用宽松 `source_payload`，Go 和前端都不把它解释成固定计划结构。调用方明确选定仓库时，M5 消费 `repo_path`；否则继承 Jarvis 当前工作目录并自行定位，不从 background 的仓库列表猜默认值。
+执行 prompt 包含：完整 `source_payload`、整份冻结 `background`、执行时实时装配的 `current_world`、execution supplements、该 Task 的全部历史 runs、shared memory、rules、Skills、工具目录和审批政策。背景快照是创建时的世界，需要实体当前状态时由 M5 自己读 `summary` 页。`current_world` 则是每次 run 开始时查的最近 20 个 Task 与 20 条未闭环 Todo 摘要，用于避免重复执行；Task 不按状态过滤，因为最可能被重做的就是刚 `done` 的那些。要详情用 `get-task` / `get-todo`，要更大范围用 `list-tasks` / `list-todos` 配 `--group-id` 或 `--project-id`。所有来源统一使用宽松 `source_payload`，Go 和前端都不把它解释成固定计划结构。调用方明确选定仓库时，M5 消费 `repo_path`；否则继承 Jarvis 当前工作目录并自行定位，不从 background 的仓库列表猜默认值。
 
 执行进程可以自行派生只读的子 agent 去做素材密集的调查，只把带出处的结论收回主上下文；派生规则写在 `m5-system-prompt.md`，Go 侧不感知也不调度。审批判断、终态裁决、`effects` 申报、`progress_summary` 和 `yield-until` 不下放——可恢复的 Session 属于主进程。
 
@@ -71,6 +71,10 @@ pending -> executing
 - effects 使用严格外壳 `kind/title/url/target/preview/extra`，其中 `kind` 开放；未知 kind 保留。它是 Agent 声明，不是独立 verifier 的 receipt。
 - 代码分支、commit、push、MR 等交付结果写进 effects，不再有专用 Git 列或 Go 编排。
 
+普通飞书业务消息同样是 M5 显式选择并执行的工具动作：M5 先确定目标、会话位置、mention 和完整文案，按审批策略判断具体发送，再读取 `feishu-send-message` Skill 调用 `lark-cli`。发送成功以唯一真实 `message_id` 和读回结果为准，由 M5 在 effects 中申报；runtime 不根据来源会话、outcome 或 execution output 字段自动发送、回复或更新普通消息。
+
+`internal/taskfeedback` 只负责在 execute、resume 和 apply 开始时，尝试给来源飞书消息添加 `OnIt` reaction。它是 best-effort 的开始确认：Bot 不在来源会话时失败只记日志，不影响 M5；它不承载业务结果，也不提供文字 fallback。审批卡片是另一条机器协议，仍由 runtime 在 proposal、`awaiting_approval` 和 Task version 持久化后投递。
+
 factengine 从 `message`、TodoEvent 和 TaskEvent 三类材料蒸馏 Fact；来源清单由服务启动层显式装配，Worker 不依赖 GORM Store 提供注册表。ExecutionRun 本身仍不作为独立来源。
 
 ## 7. 接口与运维
@@ -85,5 +89,6 @@ Task 执行接口包括：runs、events、output、execute、interrupt、rerun�
 
 - 没有独立 Verifier；`done` 仍主要来自同一执行 Agent 的 completion claim。
 - effects 未对外部系统 receipt 做独立核验。
+- M5 直接发送普通消息后、最终 effects 落盘前仍有崩溃窗口；Skill 的查重、稳定幂等键和读回只能降低重复概率，不是 exactly-once outbox。
 - Task 背景和可选计划缺更新 API/tool 与事件留痕。
 - ExecutionRun 尚未作为独立 factengine 来源。

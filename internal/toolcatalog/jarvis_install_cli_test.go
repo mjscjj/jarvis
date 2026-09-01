@@ -122,7 +122,7 @@ func TestJarvisInstallPinsPatchedCCConnectWithoutStartingIt(t *testing.T) {
 	manifest := string(manifestContent)
 	for _, want := range []string{
 		`CC_CONNECT_BASE_COMMIT="5d4c96dd12774574369e75b60084140101c9a59a"`,
-		`CC_CONNECT_PATCH_COMMIT="cf3f10e5b543b2c477a469cca1f1b558a09156d7"`,
+		`CC_CONNECT_PATCH_COMMIT="a814bdb19091603ae092dd75a863d31fcc044e65"`,
 		`CC_CONNECT_PATCH_RELATIVE_PATH="integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch"`,
 	} {
 		if !strings.Contains(manifest, want) {
@@ -304,7 +304,12 @@ exit 9
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, want := range []string{`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`, `mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`, `agent_identity.display_name`, `overrides any different name in prior session history`} {
+	for _, want := range []string{
+		`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`,
+		`mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`,
+		`agent_identity.display_name`, `overrides any different name in prior session history`, `prior_messages`,
+		`jarvis_route_claim_url = "http://127.0.0.1:18800/internal/message-routing/claim"`,
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CC config missing %q:\n%s", want, text)
 		}

@@ -2,6 +2,7 @@ package execute
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -667,5 +668,117 @@ func TestRecordProgressMovesTimestampOnlyOnChange(t *testing.T) {
 	}
 	if got := load(); got.LastProgressAt == nil || !got.LastProgressAt.Equal(third) {
 		t.Fatalf("last_progress_at = %v, want %v after real movement", got.LastProgressAt, third)
+	}
+}
+
+// TestTaskSummaryCeilingRejectsInsteadOfTruncating pins that the cap is enforced
+// where the write happens rather than only advertised to the model, that it
+// counts characters and not bytes, and that a rejected write leaves the previous
+// standing readable instead of storing a sentence cut in half.
+func TestTaskSummaryCeilingRejectsInsteadOfTruncating(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE task (
+		id INTEGER PRIMARY KEY,
+		status TEXT NOT NULL,
+		summary TEXT,
+		last_progress_at DATETIME,
+		version INTEGER NOT NULL,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create test table: %v", err)
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	const taskID = uint64(11)
+	// pending rather than executing so the same fixture can exercise UpdateTask,
+	// which refuses to touch a Task mid-run.
+	if err := db.Exec("INSERT INTO task(id, status, version) VALUES (?, ?, ?)", taskID, "pending", 1).Error; err != nil {
+		t.Fatalf("create Task: %v", err)
+	}
+
+	// Multi-byte runes: the ceiling counts characters, so this is exactly at the
+	// limit even though it is 3x that many bytes.
+	atLimit := strings.Repeat("界", TaskSummaryMaxChars)
+	accepted := time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC)
+	if err := store.RecordProgress(context.Background(), taskID, atLimit, accepted); err != nil {
+		t.Fatalf("RecordProgress() at the ceiling error = %v, want it accepted", err)
+	}
+
+	over := strings.Repeat("超", TaskSummaryMaxChars+1)
+	err = store.RecordProgress(context.Background(), taskID, over, accepted.Add(time.Hour))
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("RecordProgress() over the ceiling error = %v, want ErrInvalidInput", err)
+	}
+	// The error is the model's only chance to fix itself, so it must name both
+	// counts and say what to do, not just refuse.
+	for _, want := range []string{"1001", "1000", "压缩"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want it to mention %q", err, want)
+		}
+	}
+
+	var task domain.Task
+	if err := db.First(&task, taskID).Error; err != nil {
+		t.Fatalf("load Task: %v", err)
+	}
+	if task.Summary == nil || *task.Summary != atLimit {
+		t.Fatal("summary was overwritten by the rejected write, want the previous standing kept intact")
+	}
+	if task.LastProgressAt == nil || !task.LastProgressAt.Equal(accepted) {
+		t.Fatalf("last_progress_at = %v, want %v: a rejected write must not look like progress", task.LastProgressAt, accepted)
+	}
+
+	if _, err := store.UpdateTask(context.Background(), TaskUpdateInput{
+		TaskID: taskID, ExpectedVersion: 1, ActorType: "proactive_agent",
+		Reason: "compact standing", Summary: &over,
+	}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("UpdateTask() over the ceiling error = %v, want ErrInvalidInput", err)
+	}
+}
+
+// TestExecutionResultSchemaCapsProgressSummaryAtStoreCeiling keeps the two halves
+// of the cap from drifting: the schema is what actually stops an over-limit
+// summary from being produced, and the store check only catches a model that
+// broke the contract. If the schema silently lost the cap, every over-limit run
+// would quietly lose its progress instead.
+func TestExecutionResultSchemaCapsProgressSummaryAtStoreCeiling(t *testing.T) {
+	var schema struct {
+		Properties struct {
+			ProgressSummary struct {
+				MaxLength int `json:"maxLength"`
+			} `json:"progress_summary"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(executionResultSchema), &schema); err != nil {
+		t.Fatalf("decode executionResultSchema: %v", err)
+	}
+	if got := schema.Properties.ProgressSummary.MaxLength; got != TaskSummaryMaxChars {
+		t.Fatalf("schema progress_summary.maxLength = %d, want TaskSummaryMaxChars = %d", got, TaskSummaryMaxChars)
+	}
+}
+
+func TestExecutionResultSchemaHasNoImplicitMessageCommand(t *testing.T) {
+	var schema struct {
+		Required   []string                   `json:"required"`
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(executionResultSchema), &schema); err != nil {
+		t.Fatalf("decode executionResultSchema: %v", err)
+	}
+	if _, exists := schema.Properties["user_message"]; exists {
+		t.Fatal("execution result schema still exposes user_message as an implicit send command")
+	}
+	for _, field := range schema.Required {
+		if field == "user_message" {
+			t.Fatal("execution result schema still requires user_message")
+		}
 	}
 }

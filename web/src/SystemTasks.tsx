@@ -30,7 +30,6 @@ type ScheduleField =
   | 'extract_schedule'
   | 'execute_schedule'
   | 'fact_engine_schedule'
-  | 'fact_engine_rollup_schedule'
   | 'proactive_schedule'
   | 'scheduled_task_schedule'
   | 'daily_digest_schedule'
@@ -102,16 +101,6 @@ const systemTasks: SystemTaskDefinition[] = [
     scheduleField: 'fact_engine_schedule',
     enabledField: 'fact_engine_enabled',
     parameters: (s) => `${s.fact_engine_model} · 单次最多 ${s.fact_engine_max_material_chars} 字符`,
-  },
-  {
-    key: 'rollup-facts',
-    name: '事实日压缩',
-    category: '事实引擎',
-    description: '每天组装一次共享背景，每个 Agent 一次处理最多 5 个主体并各产出一条摘要。',
-    job: 'fact_rollup',
-    scheduleField: 'fact_engine_rollup_schedule',
-    enabledField: 'fact_engine_enabled',
-    parameters: (s) => `模型 ${s.fact_engine_rollup_model}`,
   },
   {
     key: 'proactive-heartbeat',

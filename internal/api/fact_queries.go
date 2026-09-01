@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"jarvis/internal/progress"
@@ -51,7 +50,6 @@ func SearchFacts(service progress.FactQueryService) app.HandlerFunc {
 			Query:       string(c.Query("q")),
 			SubjectType: string(c.Query("subject_type")),
 			SourceKind:  string(c.Query("source_kind")),
-			Layer:       string(c.Query("layer")),
 			Page:        1,
 			PageSize:    50,
 		}
@@ -93,7 +91,6 @@ func SearchFacts(service progress.FactQueryService) app.HandlerFunc {
 				return
 			}
 		}
-		filter.Layer = strings.TrimSpace(filter.Layer)
 		result, err := service.SearchFacts(ctx, filter)
 		if err != nil {
 			writeProgressError(c, err)

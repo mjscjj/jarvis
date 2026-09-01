@@ -21,11 +21,9 @@ sqlite:
 factengine:
   enabled: true
   schedule: "@every 15m"
-  rollup_schedule: "0 2 * * *"
   bin: "traex"
   model: "fixture-fact-model"
   reasoning_effort: "medium"
-  rollup_model: "fixture-rollup-model"
   sandbox: "danger-full-access"
   timeout_sec: 300
   batch_limit: 200

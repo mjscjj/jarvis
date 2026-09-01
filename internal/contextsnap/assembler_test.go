@@ -3,6 +3,7 @@ package contextsnap
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,11 +70,13 @@ func TestAssemblerLoadsCommonContextAndPreservesRequestContext(t *testing.T) {
 	if len(snapshot.OtherProjects) != 1 || snapshot.OtherProjects[0].ID != other.ID {
 		t.Fatalf("other_projects = %#v", snapshot.OtherProjects)
 	}
-	if len(snapshot.ManagedResources) != 1 || len(snapshot.Facts) != 1 {
-		t.Fatalf("resources/facts = %#v / %#v", snapshot.ManagedResources, snapshot.Facts)
+	if len(snapshot.ManagedResources) != 1 {
+		t.Fatalf("resources = %#v", snapshot.ManagedResources)
 	}
-	if snapshot.Facts[0].SubjectType != "project" || snapshot.Facts[0].SubjectID != project.ID {
-		t.Fatalf("fact subject = %#v", snapshot.Facts[0])
+	// The project fact seeded above must not ride along: entity Summary answers
+	// "what is this now", fact history is drilled into with list-facts.
+	if strings.Contains(string(raw), "完成上下文链路") {
+		t.Fatalf("snapshot pushed fact detail:\n%s", raw)
 	}
 	if string(snapshot.RequestContext) != `{"instruction_context":"只改后端"}` {
 		t.Fatalf("request_context = %s", snapshot.RequestContext)
@@ -166,14 +169,16 @@ func TestAssemblerResolvesChatBackgroundAndCurrentWork(t *testing.T) {
 	if snapshot.Project == nil || snapshot.Project.ID != project.ID {
 		t.Fatalf("project = %#v", snapshot.Project)
 	}
-	if len(snapshot.OpenTodos) != 1 || snapshot.OpenTodos[0].ID != 11 {
-		t.Fatalf("open_todos = %#v", snapshot.OpenTodos)
+	// The todos and tasks seeded above must not be frozen here. They are world
+	// state, so M5 loads them fresh on every run; a frozen copy would only tell
+	// it what was true when the snapshot was taken.
+	for _, stale := range []string{"open_todos", "recent_tasks", "排查上下文", "等待下一轮验证"} {
+		if strings.Contains(string(raw), stale) {
+			t.Fatalf("conversation snapshot froze live world state %q:\n%s", stale, raw)
+		}
 	}
-	if len(snapshot.RecentTasks) != 1 || snapshot.RecentTasks[0].ID != 21 || snapshot.RecentTasks[0].Summary != "等待下一轮验证" {
-		t.Fatalf("recent_tasks = %#v", snapshot.RecentTasks)
-	}
-	if len(snapshot.Facts) != 1 || snapshot.Facts[0].SubjectType != "group" {
-		t.Fatalf("facts = %#v", snapshot.Facts)
+	if strings.Contains(string(raw), "群内要求先验证再上线") {
+		t.Fatalf("conversation snapshot pushed fact detail:\n%s", raw)
 	}
 }
 
@@ -240,6 +245,12 @@ func createAssemblerTables(t *testing.T, db *gorm.DB) {
 			id INTEGER PRIMARY KEY AUTOINCREMENT, todo_id INTEGER, title TEXT NOT NULL,
 			status TEXT NOT NULL, summary TEXT, project_id INTEGER,
 			last_progress_at DATETIME, created_at DATETIME
+		)`,
+		`CREATE TABLE message (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT NOT NULL UNIQUE,
+			chat_id TEXT NOT NULL, group_id INTEGER, sender_open_id TEXT NOT NULL,
+			sender_name TEXT NOT NULL, content TEXT NOT NULL, root_id TEXT, thread_id TEXT,
+			create_time INTEGER NOT NULL, render_ok INTEGER NOT NULL DEFAULT 1
 		)`,
 	}
 	for _, statement := range statements {

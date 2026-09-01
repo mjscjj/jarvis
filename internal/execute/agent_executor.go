@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentusage"
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 	"jarvis/internal/observability"
@@ -50,14 +51,15 @@ type ExecuteResult struct {
 // ApprovalNotification is the durable proposal projected into a user-facing
 // card only after Task.status has become awaiting_approval.
 type ApprovalNotification struct {
-	TaskID   uint64
-	RunID    uint64
-	Version  int32
-	Title    string
-	Summary  string
-	Action   string
-	Target   string
-	Artifact string
+	TaskID        uint64
+	RunID         uint64
+	Version       int32
+	Title         string
+	Summary       string
+	Action        string
+	Target        string
+	Artifact      string
+	NeedsFollowup string
 }
 
 type ApprovalDelivery struct {
@@ -69,6 +71,21 @@ type ApprovalDelivery struct {
 
 type ApprovalNotifier interface {
 	SendApproval(context.Context, ApprovalNotification) (*ApprovalDelivery, error)
+}
+
+type TaskFeedbackReaction struct {
+	ReactionID string
+}
+
+type TaskFeedbackTarget struct {
+	SourceMessageID string
+}
+
+// TaskFeedbackNotifier owns only the best-effort OnIt start acknowledgement.
+// M5 sends ordinary business messages explicitly through its message Skill;
+// execution output never asks this transport to infer or deliver a result.
+type TaskFeedbackNotifier interface {
+	AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error)
 }
 
 // AgentExecutor is the execution core. It does not hard-code a per-action
@@ -84,11 +101,23 @@ type AgentExecutor struct {
 	textStore textstore.Reader
 	skills    skill.Reader
 	approvals ApprovalNotifier
+	feedback  TaskFeedbackNotifier
 	repoRoot  string
 	runsDir   string
 	now       func() time.Time
 	activeMu  sync.Mutex
 	active    map[uint64]*activeExecution
+}
+
+func (e *AgentExecutor) SetTaskFeedbackNotifier(notifier TaskFeedbackNotifier) error {
+	if notifier == nil {
+		return fmt.Errorf("agent executor Task feedback notifier is nil")
+	}
+	if e.feedback != nil {
+		return fmt.Errorf("agent executor Task feedback notifier is already set")
+	}
+	e.feedback = notifier
+	return nil
 }
 
 type activeExecution struct {
@@ -170,8 +199,8 @@ func (e *AgentExecutor) runInBackground(taskID uint64, runCtx context.Context, a
 			}
 		}()
 		result, err := run(runCtx)
-		// Release the old run before publishing its approval card. A click can
-		// then claim the same Task immediately instead of racing the active slot.
+		// Release the old run before publishing a subsequent approval card so a
+		// click can claim the Task immediately.
 		e.endExecution(taskID, active)
 		ended = true
 		if err != nil {
@@ -440,6 +469,13 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 	if err := e.markRunStarted(ctx, run); err != nil {
 		return nil, err
 	}
+	if err := e.startTaskFeedback(ctx, task, run); err != nil {
+		e.failRun(run, startedAt, err)
+		if writeErr := e.persistRun(ctx, run); writeErr != nil {
+			return nil, fmt.Errorf("persist failed resumed feedback run task_id=%d: %w", task.ID, writeErr)
+		}
+		return e.finishRun(ctx, task, execVersion, run, err)
+	}
 	if errors.Is(context.Cause(ctx), ErrExecutionInterrupted) {
 		e.failRun(run, startedAt, ErrExecutionInterrupted)
 		if writeErr := e.persistRun(ctx, run); writeErr != nil {
@@ -498,24 +534,7 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		execErr = fmt.Errorf("task not completed: %s", result.FailureReason)
 		e.failRun(run, startedAt, execErr)
 	}
-	if writeErr := e.persistRun(ctx, run); writeErr != nil {
-		return nil, fmt.Errorf("persist resumed run task_id=%d: %w", task.ID, writeErr)
-	}
-	if execErr != nil {
-		return e.finishRun(ctx, task, execVersion, run, execErr)
-	}
-	if result.NeedsApproval {
-		proposalJSON, err := json.Marshal(proposalPayload(run, result))
-		if err != nil {
-			return nil, fmt.Errorf("encode resumed proposal task_id=%d: %w", task.ID, err)
-		}
-		e.recordRunProgress(ctx, task, run)
-		if _, err := e.store.MarkAwaitingApproval(ctx, task.ID, execVersion, run.ID, proposalJSON); err != nil {
-			return nil, err
-		}
-		return &ExecuteResult{TaskID: task.ID, RunID: run.ID, Status: "awaiting_approval", Summary: result.Summary}, nil
-	}
-	return e.finishRun(ctx, task, execVersion, run, nil)
+	return e.routeRun(ctx, task, execVersion, run, result, execErr)
 }
 
 // buildScheduledResumePrompt builds the prompt for a woken-up waiting Task. It
@@ -706,7 +725,12 @@ func (e *AgentExecutor) Reject(ctx context.Context, taskID uint64, expectedVersi
 	if _, err := e.store.RejectAwaitingApproval(ctx, task.ID, task.Version, resultJSON); err != nil {
 		return nil, err
 	}
-	return &ExecuteResult{TaskID: task.ID, Status: "failed", Summary: "已驳回外部写入方案"}, nil
+	// Rejection is a decision the principal just made in the approval card, so
+	// the source conversation learns nothing from an acknowledgement it never
+	// asked for.
+	return &ExecuteResult{
+		TaskID: task.ID, Status: "failed", Summary: "已驳回外部写入方案",
+	}, nil
 }
 
 func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*ExecuteResult, error) {
@@ -738,7 +762,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	e.endExecution(task.ID, active)
 	ended = true
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	if err := e.notifyAwaitingApproval(context.WithoutCancel(ctx), result); err != nil {
 		return nil, err
@@ -822,6 +846,7 @@ func (e *AgentExecutor) notifyAwaitingApproval(ctx context.Context, result *Exec
 		TaskID: task.ID, RunID: result.RunID, Version: task.Version,
 		Title: task.Title, Summary: result.Summary,
 		Action: proposal.Action, Target: proposal.Target, Artifact: proposal.Artifact,
+		NeedsFollowup: approvalNeedsFollowup(task.ExecutionResult),
 	})
 	if err != nil {
 		return err
@@ -844,6 +869,22 @@ func (e *AgentExecutor) notifyAwaitingApproval(ctx context.Context, result *Exec
 	return nil
 }
 
+func approvalNeedsFollowup(raw []byte) string {
+	var payload struct {
+		NeedsFollowup string `json:"needs_followup"`
+	}
+	if json.Unmarshal(raw, &payload) != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.NeedsFollowup)
+}
+
+// Supplement exposes the same M5-only clarification append used by the web
+// Task detail so Feishu approval form input follows one versioned contract.
+func (e *AgentExecutor) Supplement(ctx context.Context, input SupplementInput) (*TaskView, error) {
+	return e.store.Supplement(ctx, input)
+}
+
 func appendApprovalCardEffect(raw []byte, delivery *ApprovalDelivery) ([]byte, error) {
 	var effects []map[string]any
 	if len(raw) > 0 {
@@ -860,6 +901,76 @@ func appendApprovalCardEffect(raw []byte, delivery *ApprovalDelivery) ([]byte, e
 		"target": delivery.Target, "preview": delivery.Preview, "extra": string(extra),
 		"message_id": delivery.MessageID,
 	})
+	return json.Marshal(effects)
+}
+
+// startTaskFeedback adds a best-effort OnIt reaction when the Bot can reach the
+// source conversation. Poll capture legitimately includes human P2P chats and
+// groups without this Bot; those reaction failures are expected and only
+// logged. Do not send a text fallback and never fail M5 for an unavailable
+// start acknowledgement.
+func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task, run *domain.ExecutionRun) error {
+	if e.feedback == nil || task == nil || run == nil {
+		return nil
+	}
+	target, err := taskFeedbackTarget(task.Background)
+	if err != nil {
+		return fmt.Errorf("resolve Task feedback source task_id=%d: %w", task.ID, err)
+	}
+	if target.SourceMessageID == "" {
+		return nil
+	}
+	reaction, err := e.feedback.AddProcessingReaction(ctx, target)
+	if err != nil {
+		hlog.CtxWarnf(ctx, "Task processing reaction unavailable; continuing execution task_id=%d source_message_id=%s error=%+v",
+			task.ID, target.SourceMessageID, err)
+		return nil
+	}
+	if reaction == nil || strings.TrimSpace(reaction.ReactionID) == "" {
+		hlog.CtxWarnf(ctx, "Task processing reaction returned no reaction_id; continuing execution task_id=%d source_message_id=%s",
+			task.ID, target.SourceMessageID)
+		return nil
+	}
+	effects, err := appendTaskFeedbackEffect(run.Effects, map[string]any{
+		"kind": "feishu_reaction", "title": "M5 正在处理", "purpose": "task_processing",
+		"reaction_id": strings.TrimSpace(reaction.ReactionID), "source_message_id": target.SourceMessageID,
+		"emoji_type": "OnIt", "operation": "add",
+	})
+	if err != nil {
+		return fmt.Errorf("record Task processing reaction effect run_id=%d: %w", run.ID, err)
+	}
+	run.Effects = datatypes.JSON(effects)
+	if err := e.persistRun(ctx, run); err != nil {
+		return fmt.Errorf("save Task processing reaction effect run_id=%d: %w", run.ID, err)
+	}
+	return nil
+}
+
+func taskFeedbackTarget(raw []byte) (TaskFeedbackTarget, error) {
+	snapshot, err := contextsnap.Decode(raw)
+	if err != nil {
+		return TaskFeedbackTarget{}, err
+	}
+	var selected contextsnap.Message
+	for _, message := range snapshot.Messages {
+		if !strings.HasPrefix(strings.TrimSpace(message.MessageID), "om_") {
+			continue
+		}
+		if selected.MessageID == "" || message.CreateTime > selected.CreateTime {
+			selected = message
+		}
+	}
+	return TaskFeedbackTarget{SourceMessageID: strings.TrimSpace(selected.MessageID)}, nil
+}
+
+func appendTaskFeedbackEffect(raw []byte, effect map[string]any) ([]byte, error) {
+	var effects []map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &effects); err != nil {
+			return nil, fmt.Errorf("decode existing effects: %w", err)
+		}
+	}
+	effects = append(effects, effect)
 	return json.Marshal(effects)
 }
 
@@ -907,7 +1018,8 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 			return nil, fmt.Errorf("park Task id=%d waiting: %w", task.ID, err)
 		}
 		return &ExecuteResult{
-			TaskID: task.ID, RunID: run.ID, Status: "waiting", Summary: derefString(run.Summary),
+			TaskID: task.ID, RunID: run.ID, Status: "waiting",
+			Summary: derefString(run.Summary),
 		}, nil
 	}
 	if execErr == nil && run.Status == "needs_human" {
@@ -919,7 +1031,8 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 			return nil, fmt.Errorf("park Task id=%d needs_human: %w", task.ID, err)
 		}
 		return &ExecuteResult{
-			TaskID: task.ID, RunID: run.ID, Status: "needs_human", Summary: derefString(run.Summary),
+			TaskID: task.ID, RunID: run.ID, Status: "needs_human",
+			Summary: derefString(run.Summary),
 		}, nil
 	}
 	finishStatus := "done"
@@ -967,6 +1080,9 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 	if err := e.markRunStarted(ctx, run); err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
+	if err := e.startTaskFeedback(ctx, task, run); err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
 
 	repoPath, err := e.resolveRepo(task)
 	if err != nil {
@@ -1007,7 +1123,16 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	prompt, err := buildExecutionPrompt(systemPrompt, approvalPolicy, task, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	world, err := e.loadCurrentWorld(ctx, task.ID)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	prompt, err := buildExecutionPrompt(executionPromptInput{
+		SystemPrompt: systemPrompt, ApprovalPolicy: approvalPolicy, Task: task,
+		RepoPath: repoPath, ToolCatalog: toolCatalog, SharedMemory: sharedMemory,
+		WorkRules: workRules, Skills: skills,
+		PreviousRuns: previousRuns, CurrentWorld: world,
+	})
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1071,6 +1196,9 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposa
 	if err := e.markRunStarted(ctx, run); err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
+	if err := e.startTaskFeedback(ctx, task, run); err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
 
 	repoPath, err := e.resolveRepo(task)
 	if err != nil {
@@ -1110,7 +1238,16 @@ func (e *AgentExecutor) runApply(ctx context.Context, task *domain.Task, proposa
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
-	prompt, err := buildApplyPrompt(systemPrompt, approvalPolicy, task, proposal, repoPath, toolCatalog, sharedMemory, workRules, skills, previousRuns)
+	world, err := e.loadCurrentWorld(ctx, task.ID)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
+	prompt, err := buildApplyPrompt(executionPromptInput{
+		SystemPrompt: systemPrompt, ApprovalPolicy: approvalPolicy, Task: task,
+		RepoPath: repoPath, ToolCatalog: toolCatalog, SharedMemory: sharedMemory,
+		WorkRules: workRules, Skills: skills,
+		PreviousRuns: previousRuns, CurrentWorld: world,
+	}, proposal)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -1299,7 +1436,19 @@ func assignDeclaredEffects(run *domain.ExecutionRun, effects []codexEffect) {
 	if err != nil {
 		return
 	}
-	run.Effects = encoded
+	if len(run.Effects) == 0 {
+		run.Effects = encoded
+		return
+	}
+	var existing []json.RawMessage
+	var declared []json.RawMessage
+	if json.Unmarshal(run.Effects, &existing) != nil || json.Unmarshal(encoded, &declared) != nil {
+		return
+	}
+	merged, err := json.Marshal(append(existing, declared...))
+	if err == nil {
+		run.Effects = merged
+	}
 }
 
 func runResultPayload(run *domain.ExecutionRun, execErr error) map[string]any {

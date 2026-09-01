@@ -57,6 +57,84 @@ func TestNotifierFailsWithoutMessageID(t *testing.T) {
 	}
 }
 
+func TestNotifierShowsCompactFormOnlyWhenFollowupIsExplicit(t *testing.T) {
+	without := approvalCard(execute.ApprovalNotification{TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c"}, "http://example.com", "小贾")
+	withoutJSON, _ := json.Marshal(without)
+	if strings.Contains(string(withoutJSON), `"tag":"form"`) || strings.Contains(string(withoutJSON), `"tag":"input"`) {
+		t.Fatalf("card without followup unexpectedly has form: %s", withoutJSON)
+	}
+	with := approvalCard(execute.ApprovalNotification{
+		TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c",
+		NeedsFollowup: "请指定灰度范围",
+	}, "http://example.com", "小贾")
+	withJSON, _ := json.Marshal(with)
+	for _, want := range []string{
+		`"tag":"form"`, `"tag":"input"`, `"name":"approval_note"`,
+		`"action_type":"form_submit"`,
+		`"action":"jarvis_approval"`, `"decision":"approve"`, `"decision":"reject"`,
+		"请指定灰度范围",
+	} {
+		if !strings.Contains(string(withJSON), want) {
+			t.Fatalf("card with followup missing %q: %s", want, withJSON)
+		}
+	}
+	body := with["body"].(map[string]any)
+	form := body["elements"].([]any)[1].(map[string]any)
+	formElements := form["elements"].([]any)
+	// Feishu rejects the whole card with 300123 unless a submit button is a
+	// direct child of the form container, so assert the exact position.
+	for _, element := range formElements {
+		if node, ok := element.(map[string]any); ok && node["tag"] == "column_set" {
+			t.Fatalf("form buttons nested in a column_set are invisible to Feishu: %#v", form)
+		}
+	}
+	for index, decision := range []string{"approve", "reject"} {
+		button := formElements[2+index].(map[string]any)
+		if button["action_type"] != "form_submit" {
+			t.Fatalf("%s button action_type = %#v", decision, button["action_type"])
+		}
+		if strings.TrimSpace(button["name"].(string)) == "" {
+			t.Fatalf("%s button inside a form has no name: %#v", decision, button)
+		}
+		// A submit button carrying behaviors also trips 300123: Feishu stops
+		// treating it as a submit button, so the payload must live in value.
+		if _, ok := button["behaviors"]; ok {
+			t.Fatalf("%s submit button still carries behaviors: %#v", decision, button)
+		}
+		value := button["value"].(map[string]any)
+		if value["action"] != "jarvis_approval" || value["decision"] != decision {
+			t.Fatalf("%s submit button value = %#v", decision, value)
+		}
+	}
+	// The detail link shares the form container, so it needs a name and a
+	// non-submit action_type of its own or Feishu drops the form's data.
+	detailsButton := formElements[4].(map[string]any)
+	if detailsButton["action_type"] != "link" || strings.TrimSpace(detailsButton["name"].(string)) == "" {
+		t.Fatalf("detail button inside form = %#v", detailsButton)
+	}
+}
+
+// Without a followup there is no form container, so the decision buttons keep
+// the ordinary card 2.0 callback transport instead of a form submission.
+func TestNotifierKeepsCallbackBehaviorsOutsideForm(t *testing.T) {
+	card := approvalCard(execute.ApprovalNotification{
+		TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c",
+	}, "http://example.com", "小贾")
+	decisions := card["body"].(map[string]any)["elements"].([]any)[1].(map[string]any)
+	for index, decision := range []string{"approve", "reject"} {
+		column := decisions["columns"].([]any)[index].(map[string]any)
+		button := column["elements"].([]any)[0].(map[string]any)
+		if _, ok := button["action_type"]; ok {
+			t.Fatalf("%s button outside a form must not declare action_type: %#v", decision, button)
+		}
+		callback := button["behaviors"].([]any)[0].(map[string]any)
+		value := callback["value"].(map[string]any)
+		if callback["type"] != "callback" || value["decision"] != decision {
+			t.Fatalf("%s button callback = %#v", decision, callback)
+		}
+	}
+}
+
 func TestNewNotifierFailsWithoutServerAddress(t *testing.T) {
 	_, err := NewNotifier(&fakeLarkRunner{}, "小贾", "ou_principal", "")
 	if err == nil || !strings.Contains(err.Error(), "server address") {

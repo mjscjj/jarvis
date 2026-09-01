@@ -39,7 +39,7 @@
 2. **索引不无条件注入上下文，只做工具。** 过滤后仍有约 91 个活跃实体，一行一个约 7000 字符，不值得每轮固定开销。M3 的主体范围本来就由当前 chat 决定。
 3. **fact 必须撤出默认上下文。** 这一条不做整个方案失效：只要 M3 还无条件推送几十条 fact，追加就仍是更省事的路径，summary 会和现在的画像一样饿死。
 4. **不迁移历史字段内容。** 废弃列直接删除，summary 从空开始。
-5. **旧版 summary 写进 fact 表，不建历史表。** `source_kind=page_revision`。fact 本就是无损历史的载体，正好落在职责分工上。
+5. **旧版 summary 写进独立的 `page_revision` 表。** 页面按设计有损，压缩会主动扔掉细节，旧版是唯一记录被扔掉了什么的地方。它不进 fact 表：fact 答「世界发生了什么」，旧版答「我们自己的笔记被改过」，混在一起会让上一轮写下的结论以证据身份回到维护 Agent 面前。见 [design-fact-as-evidence-index.md](design-fact-as-evidence-index.md) §5.4。
 6. **引用不建表。** 正文内 Markdown 链接 + 写入时校验目标存在 + `LIKE` 反查。全库实体几百行，够用。
 7. **`relation_fact` 整表废弃。** 页内引用取代它，25 条内容不迁移。
 8. **上限用常量不进 config。** 合适值需观察一周才知道，不为想象中的调优提前建配置项。
@@ -165,7 +165,7 @@ get-page --type TYPE --id N
 ```
 update-page --type TYPE --id N --content - --if-unchanged-since TS
 ```
-顺序执行：校验上限 → 校验引用目标存在 → CAS 比对 → 旧全文写成 `source_kind=page_revision` 的 fact → 更新 `summary` 与 `last_progress_at`。任一步失败整体不写。
+顺序执行：校验上限 → 校验引用目标存在 → CAS 比对 → 旧全文写进 `page_revision` 表 → 更新 `summary` 与 `last_progress_at`。任一步失败整体不写。
 
 ```
 list-pages [--type TYPE] [--all] [--stale-days N] [--over-limit]
@@ -229,7 +229,7 @@ factengine 每轮动作顺序固定：
 
 ### 8.2 删除 `changedFields`
 
-`internal/background/project.go:280-312` 及 person / key_matter 的同类逻辑，连同它们生成的「更新项目资料：status、repos。」审计 fact（现存 30 条）一并删除。单字段之后该函数的答案永远是 `summary`，真正的历史已由 `page_revision` fact 承担。
+`internal/background/project.go:280-312` 及 person / key_matter 的同类逻辑，连同它们生成的「更新项目资料：status、repos。」审计 fact（现存 30 条）一并删除。单字段之后该函数的答案永远是 `summary`，真正的历史已由 `page_revision` 表承担。
 
 ### 8.3 M5 的写入权
 
@@ -265,7 +265,7 @@ M5 执行完 Task 后可以更新相关实体的 summary——它掌握最新状
 - 引用校验：指向不存在实体时 fail-fast；
 - 反链查询命中六张表；
 - CAS：`--if-unchanged-since` 不匹配返回 409 且响应含当前全文；
-- `update-page` 把旧全文写成 `page_revision` fact，且 `last_progress_at` 只在内容实际变化时推进；
+- `update-page` 把旧全文写进 `page_revision` 表、不写 fact，且 `last_progress_at` 只在内容实际变化时推进；
 - `update-project` 等拒绝 `summary` 字段；
 - 提示词只渲染 summary 与 fact 条数，不含任何已删字段；
 - `list-pages` 的默认活跃过滤、`--stale-days`、`--over-limit`。

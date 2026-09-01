@@ -106,6 +106,30 @@ func TestListTasksDefaultsToPending(t *testing.T) {
 	}
 }
 
+// TestListTasksScopeFilters covers the scopes M5 uses when it needs a wider or
+// narrower view than the default current_world block.
+func TestListTasksScopeFilters(t *testing.T) {
+	service := &fakeTaskService{}
+	h := server.New()
+	h.GET("/api/tasks", ListTasks(service))
+
+	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks?group_id=7&project_id=44", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	if service.filter.GroupID == nil || *service.filter.GroupID != 7 {
+		t.Fatalf("group filter = %#v", service.filter.GroupID)
+	}
+	if service.filter.ProjectID == nil || *service.filter.ProjectID != 44 {
+		t.Fatalf("project filter = %#v", service.filter.ProjectID)
+	}
+
+	bad := ut.PerformRequest(h.Engine, "GET", "/api/tasks?project_id=abc", nil).Result()
+	if bad.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("project_id=abc status = %d body=%s", bad.StatusCode(), bad.Body())
+	}
+}
+
 func TestListTaskRuns(t *testing.T) {
 	service := &fakeTaskService{}
 	h := server.New()

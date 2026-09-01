@@ -123,19 +123,17 @@ func currentLANIPv4() (net.IP, error) {
 }
 
 func approvalCard(notice execute.ApprovalNotification, detailURL, agentName string) map[string]any {
-	callback := func(decision string) map[string]any {
+	decisionValue := func(decision string) map[string]any {
 		return map[string]any{
-			"type": "callback",
-			"value": map[string]any{
-				"action": "jarvis_approval", "decision": decision,
-				"task_id": notice.TaskID, "version": notice.Version,
-			},
+			"action": "jarvis_approval", "decision": decision,
+			"task_id": notice.TaskID, "version": notice.Version,
 		}
 	}
 	button := func(text, style, decision string) map[string]any {
 		return map[string]any{
 			"tag": "button", "text": map[string]any{"tag": "plain_text", "content": text},
-			"type": style, "width": "fill", "behaviors": []any{callback(decision)},
+			"type": style, "width": "fill",
+			"behaviors": []any{map[string]any{"type": "callback", "value": decisionValue(decision)}},
 		}
 	}
 	approve := button("确认", "primary_filled", "approve")
@@ -143,6 +141,7 @@ func approvalCard(notice execute.ApprovalNotification, detailURL, agentName stri
 		"title": map[string]any{"tag": "plain_text", "content": "确认执行？"},
 		"text":  map[string]any{"tag": "plain_text", "content": fmt.Sprintf("确认后 %s 会按卡片中的方案继续执行。", agentName)},
 	}
+	reject := button("拒绝", "danger", "reject")
 	column := func(element map[string]any) map[string]any {
 		return map[string]any{"tag": "column", "width": "weighted", "weight": 1, "elements": []any{element}}
 	}
@@ -155,6 +154,40 @@ func approvalCard(notice execute.ApprovalNotification, detailURL, agentName stri
 	if summary := strings.TrimSpace(notice.Summary); summary != "" {
 		body += "\n\n**判断**\n" + summary
 	}
+	elements := []any{map[string]any{"tag": "markdown", "content": body}}
+	if followup := strings.TrimSpace(notice.NeedsFollowup); followup != "" {
+		// Feishu recognises a submit button only among the form container's
+		// direct children and only when it carries no behaviors: either a
+		// column_set wrapper or a behaviors array makes card creation fail with
+		// 300123 "there is no submit button in the form container". So the
+		// buttons stack instead of sharing one row, and their callback payload
+		// moves to the top-level value the form submission returns.
+		markSubmit := func(control map[string]any, name, decision string) {
+			control["name"] = name
+			control["action_type"] = "form_submit"
+			delete(control, "behaviors")
+			control["value"] = decisionValue(decision)
+		}
+		markSubmit(approve, "jarvis_approval_approve", "approve")
+		markSubmit(reject, "jarvis_approval_reject", "reject")
+		details["name"], details["action_type"] = "jarvis_approval_details", "link"
+		elements = append(elements, map[string]any{
+			"tag": "form", "name": "jarvis_approval_form",
+			"elements": []any{
+				map[string]any{"tag": "markdown", "content": "**需要你补充**\n" + followup},
+				map[string]any{
+					"tag": "input", "name": "approval_note", "width": "fill", "max_length": 500,
+					"placeholder": map[string]any{"tag": "plain_text", "content": "可填写补充说明或驳回原因"},
+				},
+				approve, reject, details,
+			},
+		})
+	} else {
+		elements = append(elements, map[string]any{
+			"tag": "column_set", "flex_mode": "flow", "horizontal_spacing": "medium",
+			"columns": []any{column(approve), column(reject), column(details)},
+		})
+	}
 	return map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{"wide_screen_mode": true},
@@ -165,13 +198,7 @@ func approvalCard(notice execute.ApprovalNotification, detailURL, agentName stri
 		},
 		"body": map[string]any{
 			"direction": "vertical", "padding": "12px 12px 20px 12px",
-			"elements": []any{
-				map[string]any{"tag": "markdown", "content": body},
-				map[string]any{
-					"tag": "column_set", "flex_mode": "flow", "horizontal_spacing": "medium",
-					"columns": []any{column(approve), column(button("拒绝", "danger", "reject")), column(details)},
-				},
-			},
+			"elements": elements,
 		},
 	}
 }

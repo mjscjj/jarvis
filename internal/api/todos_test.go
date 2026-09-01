@@ -59,6 +59,31 @@ func TestListTodos(t *testing.T) {
 	}
 }
 
+// TestListTodosScopeFilters covers the two scopes M5 uses to narrow the clue
+// list. group_id is the sharper one: every clue comes from a chat, while
+// project_id is only set once that chat is bound to a project.
+func TestListTodosScopeFilters(t *testing.T) {
+	reader := &fakeTodoReader{}
+	h := server.New()
+	h.GET("/api/todos", ListTodos(reader))
+
+	response := ut.PerformRequest(h.Engine, "GET", "/api/todos?group_id=7&project_id=44", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	if reader.filter.GroupID == nil || *reader.filter.GroupID != 7 {
+		t.Fatalf("group filter = %#v", reader.filter.GroupID)
+	}
+	if reader.filter.ProjectID == nil || *reader.filter.ProjectID != 44 {
+		t.Fatalf("project filter = %#v", reader.filter.ProjectID)
+	}
+
+	bad := ut.PerformRequest(h.Engine, "GET", "/api/todos?group_id=0", nil).Result()
+	if bad.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("group_id=0 status = %d body=%s", bad.StatusCode(), bad.Body())
+	}
+}
+
 func TestListTodosRejectsInvalidQuery(t *testing.T) {
 	h := server.New()
 	h.Use(observability.Middleware())

@@ -71,10 +71,8 @@ type RuntimeSettings struct {
 
 	FactEngineEnabled           bool   `json:"fact_engine_enabled"`
 	FactEngineSchedule          string `json:"fact_engine_schedule"`
-	FactEngineRollupSchedule    string `json:"fact_engine_rollup_schedule"`
 	FactEngineModel             string `json:"fact_engine_model"`
 	FactEngineReasoningEffort   string `json:"fact_engine_reasoning_effort"`
-	FactEngineRollupModel       string `json:"fact_engine_rollup_model"`
 	FactEngineTimeoutSeconds    int    `json:"fact_engine_timeout_seconds"`
 	FactEngineBatchLimit        int    `json:"fact_engine_batch_limit"`
 	FactEngineMaxMaterialChars  int    `json:"fact_engine_max_material_chars"`
@@ -231,10 +229,8 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		CaptureAutoRelatedP2PTopN:    cfg.Capture.AutoRelatedP2PTopN,
 		FactEngineEnabled:            cfg.FactEngine.Enabled,
 		FactEngineSchedule:           cfg.FactEngine.Schedule,
-		FactEngineRollupSchedule:     cfg.FactEngine.RollupSchedule,
 		FactEngineModel:              cfg.FactEngine.Model,
 		FactEngineReasoningEffort:    cfg.FactEngine.ReasoningEffort,
-		FactEngineRollupModel:        cfg.FactEngine.RollupModel,
 		FactEngineTimeoutSeconds:     cfg.FactEngine.TimeoutSec,
 		FactEngineBatchLimit:         cfg.FactEngine.BatchLimit,
 		FactEngineMaxMaterialChars:   cfg.FactEngine.MaxMaterialChars,
@@ -308,10 +304,8 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	cfg.FactEngine.Enabled = input.FactEngineEnabled
 	cfg.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
-	cfg.FactEngine.RollupSchedule = strings.TrimSpace(input.FactEngineRollupSchedule)
 	cfg.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
 	cfg.FactEngine.ReasoningEffort = strings.TrimSpace(input.FactEngineReasoningEffort)
-	cfg.FactEngine.RollupModel = strings.TrimSpace(input.FactEngineRollupModel)
 	cfg.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
 	cfg.FactEngine.BatchLimit = input.FactEngineBatchLimit
 	cfg.FactEngine.MaxMaterialChars = input.FactEngineMaxMaterialChars
@@ -402,10 +396,8 @@ type runtimeOverride struct {
 	FactEngine   struct {
 		Enabled           bool   `yaml:"enabled"`
 		Schedule          string `yaml:"schedule"`
-		RollupSchedule    string `yaml:"rollup_schedule"`
 		Model             string `yaml:"model"`
 		ReasoningEffort   string `yaml:"reasoning_effort"`
-		RollupModel       string `yaml:"rollup_model"`
 		TimeoutSec        int    `yaml:"timeout_sec"`
 		BatchLimit        int    `yaml:"batch_limit"`
 		MaxMaterialChars  int    `yaml:"max_material_chars"`
@@ -490,10 +482,8 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	override.FactEngine.Enabled = input.FactEngineEnabled
 	override.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
-	override.FactEngine.RollupSchedule = strings.TrimSpace(input.FactEngineRollupSchedule)
 	override.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
 	override.FactEngine.ReasoningEffort = strings.TrimSpace(input.FactEngineReasoningEffort)
-	override.FactEngine.RollupModel = strings.TrimSpace(input.FactEngineRollupModel)
 	override.FactEngine.TimeoutSec = input.FactEngineTimeoutSeconds
 	override.FactEngine.BatchLimit = input.FactEngineBatchLimit
 	override.FactEngine.MaxMaterialChars = input.FactEngineMaxMaterialChars

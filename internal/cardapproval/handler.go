@@ -20,6 +20,7 @@ import (
 type Approver interface {
 	KickApprove(ctx context.Context, taskID uint64, expectedVersion int32) (*execute.ExecuteResult, error)
 	Reject(ctx context.Context, taskID uint64, expectedVersion int32, reason string) (*execute.ExecuteResult, error)
+	Supplement(ctx context.Context, input execute.SupplementInput) (*execute.TaskView, error)
 }
 
 // CardActionEvent is the strict relay payload needed to land one Feishu click.
@@ -31,7 +32,7 @@ type CardActionEvent struct {
 	ChatID      string
 	ActionTag   string
 	ActionValue string
-	FormValue   string
+	FormValue   map[string]any
 }
 
 type cardApprovalAction struct {
@@ -71,11 +72,28 @@ func (h *Handler) ProcessCardAction(ctx context.Context, event CardActionEvent) 
 		return nil, fmt.Errorf("%w: %v", execute.ErrInvalidInput, err)
 	}
 
+	note, err := approvalNote(event.FormValue)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", execute.ErrInvalidInput, err)
+	}
 	switch action.Action {
 	case "approve":
+		if note != "" {
+			updated, supplementErr := h.approver.Supplement(ctx, execute.SupplementInput{
+				TaskID: action.TaskID, ExpectedVersion: action.Version, Note: note, Channel: "feishu_card",
+			})
+			if supplementErr != nil {
+				return h.onLandFailed(action, supplementErr)
+			}
+			action.Version = updated.Version
+		}
 		_, err = h.approver.KickApprove(ctx, action.TaskID, action.Version)
 	case "reject":
-		_, err = h.approver.Reject(ctx, action.TaskID, action.Version, "委托人在飞书卡片上驳回")
+		reason := note
+		if reason == "" {
+			reason = "委托人在飞书卡片上驳回"
+		}
+		_, err = h.approver.Reject(ctx, action.TaskID, action.Version, reason)
 	default:
 		return nil, fmt.Errorf("%w: unsupported card approval action %q", execute.ErrInvalidInput, action.Action)
 	}
@@ -83,7 +101,13 @@ func (h *Handler) ProcessCardAction(ctx context.Context, event CardActionEvent) 
 		return h.onLandFailed(action, err)
 	}
 	if action.Action == "approve" {
-		return cardNoticeText("✅ 已同意，正在处理。"), nil
+		if note != "" {
+			return cardNoticeText("✅ 已确认并提交补充，正在执行。\n\n补充：" + note), nil
+		}
+		return cardNoticeText("✅ 已确认，正在执行。"), nil
+	}
+	if note != "" {
+		return cardNoticeText("已驳回，不会执行。\n\n原因：" + note), nil
 	}
 	return cardNoticeText("已驳回，不会执行。"), nil
 }
@@ -98,9 +122,6 @@ func authorizeCardApproval(event CardActionEvent, principalOpenID string) (cardA
 	}
 	if strings.TrimSpace(event.ActionTag) != "button" {
 		return cardApprovalAction{}, fmt.Errorf("card action tag=%q is not button", event.ActionTag)
-	}
-	if strings.TrimSpace(event.FormValue) != "" {
-		return cardApprovalAction{}, fmt.Errorf("card approval button must not submit a form")
 	}
 	raw := strings.TrimSpace(event.ActionValue)
 	if raw == "" {
@@ -121,6 +142,26 @@ func authorizeCardApproval(event CardActionEvent, principalOpenID string) (cardA
 		return cardApprovalAction{}, fmt.Errorf("card action version must be positive")
 	}
 	return action, nil
+}
+
+func approvalNote(form map[string]any) (string, error) {
+	if len(form) == 0 {
+		return "", nil
+	}
+	for key := range form {
+		if key != "approval_note" {
+			return "", fmt.Errorf("card approval form contains unsupported field %q", key)
+		}
+	}
+	raw, ok := form["approval_note"]
+	if !ok || raw == nil {
+		return "", nil
+	}
+	note, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("card approval form approval_note must be a string")
+	}
+	return strings.TrimSpace(note), nil
 }
 
 func (h *Handler) onLandFailed(action cardApprovalAction, err error) (json.RawMessage, error) {

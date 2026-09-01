@@ -1,17 +1,17 @@
 # 世界模型维护、日压缩与渐进式上下文
 
-> Status: mixed；§5 持续世界维护和 §6 事实日压缩为 current，其余章节保留原渐进式上下文方案状态
+> Status: mixed；§5 持续世界维护为 current，§6 事实日压缩已删除（2026-08-15），其余章节保留原渐进式上下文方案状态
 > Authority: `docs/00-overview.md` 是总纲；本文记录现行运行协议与后续上下文方案
 > Last verified baseline: 2026-08-08 @ `01ec2c4`
 
-本文同时记录两件事：已经落地的 factengine 世界维护与事实日压缩，以及世界建模数据（fact / task / todo）如何进入 M3/M5 上下文、如何从摘要下钻到细节的原方案。若旧描述与 §5、§6 或 `docs/00-overview.md` 冲突，以 current 章节和总纲为准。
+本文同时记录两件事：已经落地的 factengine 世界维护，以及世界建模数据（fact / task / todo）如何进入 M3/M5 上下文、如何从摘要下钻到细节的原方案。若旧描述与 §5 或 `docs/00-overview.md` 冲突，以 current 章节和总纲为准。事实日压缩（§6）已经整体删除，抗膨胀改由实体长期事实页在写入路径上完成，见 `docs/design-entity-summary.md`。
 
 ## 1. 原始问题（historical baseline）
 
 调查结论（代码事实，均已核实）：
 
 - M3 抽取阶段是唯一"推"世界数据的地方，`renderUserPrompt`（`internal/extract/prompt.go:74`）把 principal / project / group / participants / resources / facts / open_todos 渲染成 Markdown 段落。
-- M5 执行首轮只读取 M3 冻结 `Todo.ContextSnapshot` 的小投影；完整背景保存在 Task 上，通过 `get-task` 按需读取，没有独立的实时世界段落。
+- M5 执行读取 M3 冻结的整份 `Todo.ContextSnapshot`（经 `Task.background`），没有独立的实时世界段落。
 - `fact` 只装载 group 和 project 两个主体（`internal/extract/worker.go:239`），持续世界建模 Agent 产出的 person 主体事实没有任何读取点。
 - `task` 完全没进过任何提示词。`Task.Summary` / `Task.LastProgressAt` 是只写字段，全仓库无读取点。
 - `todo` 进上下文的是"未闭环"清单，按 status 过滤而不按时间，一条三周前的和今天的混排。
@@ -22,7 +22,7 @@
 
 实施时以此为准，不要另作取舍。
 
-1. **M5 侧保持冻结。** 首轮只投影当前项目、群、交办人和引用消息 ID，不新增"当前时刻世界切片"的装配。创建时完整背景与最新世界信息都由 M5 在确有需要时调工具获取。
+1. **M5 侧保持冻结。** 整份 `Todo.ContextSnapshot` 原样进 `Task.background` 并原样进提示词，不做投影，也不新增"当前时刻世界切片"的装配。需要最新世界状态时由 M5 调工具获取。
 2. **todo 不加摘要字段。** 进上下文只有 `todo_id` / `action_type` / `title` / `status`，细节靠新增的 `get-todo` 下钻。
 3. **`daily_digest` 完全不碰。** 它是给人看的日报，与本方案无关，也不进任何提示词。不要复用、不要改造、不要给它加 project scope。
 4. **推送层不设天窗。** "按天"是下钻维度（工具的 `--date`），不是推送维度。
@@ -162,36 +162,13 @@ Go 只负责以下机器边界：
 
 调度不要求固定 15 分钟。调整频率只需考虑平均材料到达量、单轮耗时和成本；不要为改变频率复制第二条处理链路。
 
-## 6. 事实日压缩（current，旁路）
+## 6. 事实日压缩（已删除）
 
-### 6.1 位置
+2026-08-15 删除。`internal/factengine/rollup.go`、`fact_rollup_system_prompt`、`factengine.rollup_schedule` / `rollup_model`、`POST /api/fact-rollups/generate` 和后台的「事实日压缩」卡片全部移除，不再产生 `source_kind=rollup` 事实。
 
-实现位于 `internal/factengine/rollup.go`，复用 factengine 的 db、提示词读取和调度模式。它与持续世界维护职责分开：世界维护理解增量材料并可用工具修改整个内部世界；Rollup 只把已经写入的明细 Fact 压成按主体、按日的一段话。
+原因：日压缩按自然日锚定，而事实是回填的（当天的事实常在次日才写入），结构性漏掉大部分内容；它压出来的那段话与实体长期事实页表达的是同一件事，两者并存导致同一件事在提示词里被数两遍。
 
-### 6.2 逻辑
-
-每天定时运行，处理前一个自然日（本地时区）：
-
-1. 找出前一天产出过明细事实的所有主体：`SELECT DISTINCT subject_type, subject_id FROM fact WHERE occurred_at >= ? AND occurred_at < ? AND (source_kind IS NULL OR source_kind <> 'rollup')`。
-2. 主体非空时，用现有 `contextsnap.Assembler.AssembleConversation(ctx, contextsnap.AssembleOptions{})` 组装一次全局当前背景。它与 `/api/context`、Task 创建复用同一份 Snapshot 语义；本轮所有 Agent 收到完全相同的背景 JSON 和 `captured_at`。背景读取失败整轮 fail-fast，不用空背景继续。
-3. 按 `subject_type / subject_id` 稳定排序，每五个主体切成一批。对批内每个主体读出那天全部明细事实并按时间正序排列，附上主体类型、ID 和名称；不要按字符数或事实条数继续切片。
-4. 每批启动一个独立的 `DeepSeek-V4-Pro` Agent。一次输入为「同一份全局背景 + 最多五个主体及其全部明细事实」，一次输出为 `{"rollups":[...]}`。Go 校验输入主体与输出主体一一对应、无重复、无额外主体且 description 非空；整批校验成功后才开始写入。
-5. 对每条结果，**先删除该主体该天已有的 rollup 记录，再写入新的一条**——这是重跑幂等的方式。不用事务，按顺序写，中途出错 fail-fast 报错退出、下次重跑（AGENTS.md §5）。
-6. 写入的 fact：`subject_type` / `subject_id` 保持原主体，`occurred_at` 取被压缩那天的本地 00:00，`source_kind = "rollup"`，`description` 为模型返回的那段话。
-
-原始明细一条都不删。压缩只是加了一层更粗的记录，`list-facts --date` 下钻时仍能看到那天的全部原文。
-
-一批模型失败或输出校验失败时，该批不写入并继续后续批次；整轮结束后汇总返回错误。成功批次保留，手动重跑同一天时按上述替换语义重新生成。不增加批次表、游标或自动重试状态机。
-
-### 6.3 提示词
-
-按 AGENTS.md §6：在 `internal/textstore/defaults.go` 注册稳定 key（如 `fact-rollup-system-prompt`），正文提交到 `conf/prompts/fact-rollup-system-prompt.md`，运行时通过注入的 `textstore.Reader` 实时读取，缺失或空正文直接报错。
-
-提示词只描述角色与稳定行为：分别把最多五个主体某一天的事实压成各自一段能独立读懂的话，讲清那天定了什么、推进到哪、留下什么没解决；不要罗列、不要评价、不要编造原文没有的内容。全局背景只用于理解 Principal、项目、当前事项和术语，目标日期发生了什么只能依据 `DETAIL_FACTS`，不得把背景里的后来状态倒灌进历史。压缩 Agent 不调用工具、不维护世界模型。
-
-### 6.4 配置与手动触发
-
-世界维护使用 `factengine.model=DeepSeek-V4-Flash` 和 `factengine.reasoning_effort=medium`，日压缩单独使用 `factengine.rollup_model=DeepSeek-V4-Pro`，两者不共享 Agent Session 或 sandbox。当前 Rollup 调度为每天本地时间 02:00，处理前一自然日；`POST /api/fact-rollups/generate` 接受 `date`，用于手动验证与补算。
+替代方案：抗膨胀移到写入路径上——每个实体一页长期事实（上限 8000 字），写满就必须在写入时压缩；覆盖率由 M5 的读时修正加每天一轮的巡检 Task（Skill `curate-world-model-pages`）保证。设计见 `docs/design-entity-summary.md`。
 
 ## 7. M3 推送层改造
 

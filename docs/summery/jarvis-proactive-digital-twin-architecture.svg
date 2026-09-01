@@ -1,0 +1,216 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#18243A" flood-opacity="0.10"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#18243A" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="worldGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#EEF5FF"/>
+      <stop offset="1" stop-color="#F8FBFF"/>
+    </linearGradient>
+    <linearGradient id="decisionGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F6F1FF"/>
+      <stop offset="1" stop-color="#FCFAFF"/>
+    </linearGradient>
+    <linearGradient id="actionGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ECFBF5"/>
+      <stop offset="1" stop-color="#F8FFFC"/>
+    </linearGradient>
+    <marker id="arrowDark" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#26354D"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#377DFF"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#1B9B6B"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#7B61C9"/>
+    </marker>
+    <style>
+      text { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+      .title { font-size: 43px; font-weight: 700; fill: #172238; letter-spacing: 0.5px; }
+      .subtitle { font-size: 21px; font-weight: 400; fill: #67748A; }
+      .sectionTitle { font-size: 25px; font-weight: 700; fill: #172238; }
+      .body { font-size: 19px; font-weight: 500; fill: #354158; }
+      .small { font-size: 16px; font-weight: 500; fill: #69758A; }
+      .tiny { font-size: 14px; font-weight: 600; fill: #768197; letter-spacing: 0.4px; }
+      .label { font-size: 16px; font-weight: 650; fill: #42506A; }
+      .badge { font-size: 14px; font-weight: 700; letter-spacing: 0.6px; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#F5F7FB"/>
+  <circle cx="1780" cy="30" r="270" fill="#EEF2FF" opacity="0.75"/>
+  <circle cx="40" cy="1040" r="240" fill="#EAF9F3" opacity="0.7"/>
+
+  <text x="76" y="72" class="title">Jarvis主动式数字分身：让 Agent 自己决定该做什么</text>
+  <text x="78" y="112" class="subtitle">持续演化的世界观  ×  自主决策  ×  可验证的行动闭环</text>
+  <rect x="1540" y="55" width="300" height="45" rx="22.5" fill="#FFFFFF" stroke="#DFE5EF"/>
+  <circle cx="1570" cy="77.5" r="6" fill="#1B9B6B"/>
+  <text x="1588" y="84" class="small">这是闭环，不是线性流水线</text>
+
+  <!-- Big loop: action changes the external world -->
+  <path d="M1692 300 L1692 170 L190 170 L190 270" fill="none" stroke="#1B9B6B" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+  <rect x="780" y="146" width="350" height="46" rx="23" fill="#E8F8F1"/>
+  <text x="955" y="176" text-anchor="middle" class="label" fill="#157A56">调用工具，真正改变外部现实</text>
+
+  <!-- External world -->
+  <rect x="62" y="270" width="276" height="508" rx="28" fill="#FFFFFF" stroke="#DCE3ED" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="86" y="297" width="91" height="30" rx="15" fill="#EDF0F5"/>
+  <text x="131.5" y="318" text-anchor="middle" class="badge" fill="#5C687A">外部世界</text>
+  <text x="88" y="373" class="sectionTitle">工作持续发生</text>
+  <text x="88" y="410" class="small">没有人先替 Agent</text>
+  <text x="88" y="435" class="small">整理成一个明确目标</text>
+
+  <rect x="86" y="474" width="228" height="55" rx="14" fill="#F6F8FB"/>
+  <circle cx="111" cy="501.5" r="7" fill="#8793A8"/>
+  <text x="132" y="508" class="body">消息 · 会议 · 日程</text>
+  <rect x="86" y="543" width="228" height="55" rx="14" fill="#F6F8FB"/>
+  <circle cx="111" cy="570.5" r="7" fill="#8793A8"/>
+  <text x="132" y="577" class="body">人 · 项目 · 协作关系</text>
+  <rect x="86" y="612" width="228" height="55" rx="14" fill="#F6F8FB"/>
+  <circle cx="111" cy="639.5" r="7" fill="#8793A8"/>
+  <text x="132" y="646" class="body">文档 · 代码 · 外部系统</text>
+  <rect x="86" y="693" width="228" height="54" rx="14" fill="#FFF7E8" stroke="#F3DFB8"/>
+  <text x="200" y="727" text-anchor="middle" class="label" fill="#9A6A16">新的事实不断出现</text>
+
+  <!-- Jarvis boundary -->
+  <rect x="424" y="224" width="1430" height="690" rx="34" fill="#FFFFFF" stroke="#D9E1EC" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="456" y="245" width="170" height="35" rx="17.5" fill="#172238"/>
+  <text x="541" y="269" text-anchor="middle" class="badge" fill="#FFFFFF">JARVIS AGENT 内核</text>
+  <text x="1805" y="269" text-anchor="end" class="tiny">状态只有一份 · 外部事实和行动结果共同写入</text>
+
+  <!-- Perception node -->
+  <rect x="352" y="412" width="124" height="118" rx="22" fill="#FFFFFF" stroke="#CDD6E4" stroke-width="2" filter="url(#softShadow)"/>
+  <circle cx="414" cy="440" r="16" fill="#E9EEF5"/>
+  <path d="M405 440 C410 432,418 432,423 440 C418 448,410 448,405 440 Z" fill="none" stroke="#4A596F" stroke-width="2"/>
+  <circle cx="414" cy="440" r="3" fill="#4A596F"/>
+  <text x="414" y="478" text-anchor="middle" class="label">感知事实</text>
+  <text x="414" y="504" text-anchor="middle" class="tiny">M2 / Skills</text>
+  <path d="M338 469 L352 469" fill="none" stroke="#26354D" stroke-width="4" marker-end="url(#arrowDark)"/>
+  <rect x="246" y="444" width="100" height="31" rx="15.5" fill="#FFFFFF"/>
+  <text x="296" y="466" text-anchor="middle" class="tiny">世界变了</text>
+
+  <!-- World model -->
+  <rect x="500" y="306" width="342" height="360" rx="26" fill="url(#worldGrad)" stroke="#BBD3FF" stroke-width="2"/>
+  <circle cx="541" cy="350" r="23" fill="#377DFF"/>
+  <text x="541" y="358" text-anchor="middle" font-size="22" font-weight="750" fill="#FFFFFF">1</text>
+  <text x="578" y="358" class="sectionTitle">持续演化的世界观</text>
+  <text x="530" y="403" class="small">不是聊天记忆，而是当前工作世界</text>
+
+  <rect x="526" y="434" width="290" height="56" rx="14" fill="#FFFFFF" stroke="#D5E3FF"/>
+  <circle cx="551" cy="462" r="7" fill="#377DFF"/>
+  <text x="572" y="459" class="body">实体摘要</text>
+  <text x="716" y="459" class="small">现在是什么</text>
+  <rect x="526" y="504" width="290" height="56" rx="14" fill="#FFFFFF" stroke="#D5E3FF"/>
+  <circle cx="551" cy="532" r="7" fill="#65A2FF"/>
+  <text x="572" y="529" class="body">Fact 事实流</text>
+  <text x="716" y="529" class="small">发生过什么</text>
+  <rect x="526" y="574" width="290" height="56" rx="14" fill="#FFFFFF" stroke="#D5E3FF"/>
+  <circle cx="551" cy="602" r="7" fill="#8BB9FF"/>
+  <text x="572" y="599" class="body">未闭环事项</text>
+  <text x="716" y="599" class="small">现在还欠什么</text>
+  <rect x="618" y="644" width="106" height="32" rx="16" fill="#DDEAFF"/>
+  <text x="671" y="666" text-anchor="middle" class="badge" fill="#2568D8">FactEngine</text>
+
+  <!-- Arrow observation to world model -->
+  <path d="M476 471 L500 471" fill="none" stroke="#377DFF" stroke-width="4" marker-end="url(#arrowBlue)"/>
+
+  <!-- Decision -->
+  <rect x="904" y="306" width="342" height="360" rx="26" fill="url(#decisionGrad)" stroke="#D8C8FA" stroke-width="2"/>
+  <circle cx="945" cy="350" r="23" fill="#7B61C9"/>
+  <text x="945" y="358" text-anchor="middle" font-size="22" font-weight="750" fill="#FFFFFF">2</text>
+  <text x="982" y="358" class="sectionTitle">自主决策</text>
+  <text x="934" y="403" class="small">基于世界状态，而不是等待人下单</text>
+
+  <rect x="930" y="434" width="137" height="54" rx="14" fill="#FFFFFF" stroke="#E0D6F8"/>
+  <text x="998.5" y="457" text-anchor="middle" class="label" fill="#654AAD">事件触发</text>
+  <text x="998.5" y="477" text-anchor="middle" class="tiny">新变化值不值得管</text>
+  <rect x="1081" y="434" width="139" height="54" rx="14" fill="#FFFFFF" stroke="#E0D6F8"/>
+  <text x="1150.5" y="457" text-anchor="middle" class="label" fill="#654AAD">心跳巡视</text>
+  <text x="1150.5" y="477" text-anchor="middle" class="tiny">现在有什么该推进</text>
+
+  <rect x="930" y="509" width="290" height="68" rx="16" fill="#7B61C9"/>
+  <text x="1075" y="537" text-anchor="middle" font-size="19" font-weight="700" fill="#FFFFFF">该不该做 · 做什么</text>
+  <text x="1075" y="562" text-anchor="middle" font-size="16" font-weight="550" fill="#ECE7FA">现在做，还是等待？</text>
+
+  <text x="1075" y="614" text-anchor="middle" class="small">行动　等待　询问　观察　NOTHING</text>
+  <rect x="1012" y="644" width="126" height="32" rx="16" fill="#E9E0FA"/>
+  <text x="1075" y="666" text-anchor="middle" class="badge" fill="#654AAD">M3 / Proactive</text>
+
+  <!-- World model to decision -->
+  <path d="M842 486 L904 486" fill="none" stroke="#26354D" stroke-width="4" marker-end="url(#arrowDark)"/>
+  <rect x="844" y="451" width="58" height="29" rx="14.5" fill="#FFFFFF"/>
+  <text x="873" y="472" text-anchor="middle" class="tiny">读取</text>
+
+  <!-- Task bridge -->
+  <rect x="1269" y="424" width="66" height="124" rx="23" fill="#FFF5DE" stroke="#EDC979" stroke-width="2" filter="url(#softShadow)"/>
+  <circle cx="1302" cy="453" r="14" fill="#E9A928"/>
+  <path d="M1296 447 h12 v13 h-12 z M1298 444 h8 v5 h-8 z" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+  <text x="1302" y="487" text-anchor="middle" class="badge" fill="#8A5A08">普通</text>
+  <text x="1302" y="508" text-anchor="middle" class="badge" fill="#8A5A08">Task</text>
+  <text x="1302" y="531" text-anchor="middle" class="tiny">证据</text>
+  <path d="M1246 486 L1269 486" fill="none" stroke="#E0A024" stroke-width="4" marker-end="url(#arrowDark)"/>
+  <path d="M1335 486 L1360 486" fill="none" stroke="#E0A024" stroke-width="4" marker-end="url(#arrowDark)"/>
+  <text x="1273" y="405" class="tiny" fill="#8A5A08">值得推进</text>
+
+  <!-- Execution -->
+  <rect x="1360" y="306" width="422" height="360" rx="26" fill="url(#actionGrad)" stroke="#A9DFC9" stroke-width="2"/>
+  <circle cx="1401" cy="350" r="23" fill="#1B9B6B"/>
+  <text x="1401" y="358" text-anchor="middle" font-size="22" font-weight="750" fill="#FFFFFF">3</text>
+  <text x="1438" y="358" class="sectionTitle">可验证的行动闭环</text>
+  <text x="1390" y="403" class="small">不以“模型说完成了”为完成</text>
+
+  <rect x="1390" y="438" width="82" height="59" rx="15" fill="#FFFFFF" stroke="#CFEBDD"/>
+  <text x="1431" y="466" text-anchor="middle" class="label" fill="#147851">调查</text>
+  <text x="1431" y="487" text-anchor="middle" class="tiny">真实状态</text>
+  <path d="M1474 468 L1492 468" stroke="#1B9B6B" stroke-width="3" marker-end="url(#arrowGreen)"/>
+  <rect x="1496" y="438" width="82" height="59" rx="15" fill="#FFFFFF" stroke="#CFEBDD"/>
+  <text x="1537" y="466" text-anchor="middle" class="label" fill="#147851">决策</text>
+  <text x="1537" y="487" text-anchor="middle" class="tiny">选择动作</text>
+  <path d="M1580 468 L1598 468" stroke="#1B9B6B" stroke-width="3" marker-end="url(#arrowGreen)"/>
+  <rect x="1602" y="438" width="66" height="59" rx="15" fill="#FFFFFF" stroke="#CFEBDD"/>
+  <text x="1635" y="476" text-anchor="middle" class="label" fill="#147851">执行</text>
+  <path d="M1670 468 L1688 468" stroke="#1B9B6B" stroke-width="3" marker-end="url(#arrowGreen)"/>
+  <rect x="1692" y="438" width="66" height="59" rx="15" fill="#FFFFFF" stroke="#CFEBDD"/>
+  <text x="1725" y="476" text-anchor="middle" class="label" fill="#147851">验证</text>
+
+  <path d="M1726 511 C1726 547 1698 559 1662 559 L1469 559 C1434 559 1413 545 1413 511" fill="none" stroke="#86CDB1" stroke-width="3" stroke-dasharray="7 7" marker-end="url(#arrowGreen)"/>
+  <text x="1570" y="586" text-anchor="middle" class="small" fill="#147851">结果不成立，就重新调查和规划</text>
+  <rect x="1517" y="644" width="106" height="32" rx="16" fill="#DDF4EA"/>
+  <text x="1570" y="666" text-anchor="middle" class="badge" fill="#147851">M5 Agent</text>
+
+  <!-- NOTHING branch -->
+  <path d="M1075 666 L1075 703" fill="none" stroke="#7B61C9" stroke-width="3" stroke-dasharray="7 6" marker-end="url(#arrowPurple)"/>
+  <rect x="930" y="711" width="290" height="78" rx="19" fill="#F5F3F9" stroke="#D9D3E6"/>
+  <text x="1075" y="742" text-anchor="middle" font-size="19" font-weight="700" fill="#554B68">NOTHING / 持续观察</text>
+  <text x="1075" y="769" text-anchor="middle" class="small">不行动也可以是正确决策</text>
+
+  <!-- Principal boundary -->
+  <rect x="1441" y="711" width="290" height="78" rx="19" fill="#FFF8EC" stroke="#F0D7A3"/>
+  <circle cx="1475" cy="750" r="17" fill="#E9A928"/>
+  <circle cx="1475" cy="745" r="6" fill="#FFFFFF"/>
+  <path d="M1465 759 C1467 751,1483 751,1485 759" fill="#FFFFFF"/>
+  <text x="1505" y="741" class="label" fill="#8A5A08">Principal</text>
+  <text x="1505" y="767" class="small">授权 · 补充 · 纠偏</text>
+  <path d="M1530 711 L1530 680" fill="none" stroke="#E0A024" stroke-width="3" marker-end="url(#arrowDark)"/>
+  <path d="M1638 680 L1638 711" fill="none" stroke="#E0A024" stroke-width="3" marker-end="url(#arrowDark)"/>
+  <text x="1582" y="701" text-anchor="middle" class="tiny" fill="#8A5A08">具体副作用</text>
+
+  <!-- Result returns to the one world model -->
+  <path d="M1570 666 L1570 826 L670 826 L670 666" fill="none" stroke="#377DFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowBlue)"/>
+  <rect x="924" y="801" width="360" height="49" rx="24.5" fill="#E6F0FF"/>
+  <text x="1104" y="832" text-anchor="middle" class="label" fill="#2568D8">执行结果与新认知，再次改写世界观</text>
+
+  <!-- Engineering base -->
+  <rect x="470" y="860" width="1338" height="39" rx="19.5" fill="#F0F3F8"/>
+  <text x="1139" y="886" text-anchor="middle" class="small">工程底座：持久化　·　幂等　·　调度　·　权限载体　·　审计　·　Tools / Skills</text>
+
+  <!-- Bottom caption -->
+  <text x="78" y="1005" class="sectionTitle">最重要的不是“能不能做”，而是能否持续回答：</text>
+  <text x="78" y="1041" font-size="24" font-weight="650" fill="#516078">世界现在是什么？现在该不该行动？行动以后，现实真的改变了吗？</text>
+</svg>

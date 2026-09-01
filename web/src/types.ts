@@ -315,16 +315,11 @@ export interface LabeledFact extends Fact {
   subject_label: string
 }
 
-export type FactRollupState = 'fresh' | 'stale' | 'missing'
-
 export interface FactSubjectDay {
   subject_type: string
   subject_id: number
   subject_label: string
-  rollup: LabeledFact | null
-  rollup_state: FactRollupState
   detail_count: number
-  late_detail_count: number
   latest_occurred_at: string
 }
 
@@ -355,7 +350,6 @@ export interface FactSearchQuery {
   subjectType?: string
   subjectId?: number
   sourceKind?: string
-  layer?: 'all' | 'detail' | 'rollup'
   page?: number
   pageSize?: number
 }
@@ -1098,10 +1092,8 @@ export interface RuntimeSettings {
 
   fact_engine_enabled: boolean
   fact_engine_schedule: string
-  fact_engine_rollup_schedule: string
   fact_engine_model: string
   fact_engine_reasoning_effort: ReasoningEffort
-  fact_engine_rollup_model: string
   fact_engine_timeout_seconds: number
   fact_engine_batch_limit: number
   fact_engine_max_material_chars: number

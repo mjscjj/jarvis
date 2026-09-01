@@ -8,15 +8,90 @@ import (
 	"time"
 
 	"jarvis/internal/contextsnap"
-	"jarvis/internal/domain"
-
 	"jarvis/internal/datatypes"
+	"jarvis/internal/domain"
+	"jarvis/internal/skill"
+	"jarvis/internal/workrule"
 )
+
+func testExecutionPromptInput(systemPrompt, approvalPolicy string, task *domain.Task, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) executionPromptInput {
+	return executionPromptInput{
+		SystemPrompt: systemPrompt, ApprovalPolicy: approvalPolicy, Task: task,
+		RepoPath: repoPath, ToolCatalog: toolCatalog, SharedMemory: sharedMemory,
+		WorkRules: workRules, Skills: skills, PreviousRuns: previousRuns,
+	}
+}
 
 const (
 	testToolCatalog    = "BEGIN_AVAILABLE_TOOLS\n- fixture-tool\nEND_AVAILABLE_TOOLS"
 	testM5SystemPrompt = "test M5 system prompt\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}"
 )
+
+func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	read := func(relative string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join(repoRoot, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		return string(content)
+	}
+	rules, err := workrule.NewService(filepath.Join(repoRoot, "conf", "rules"))
+	if err != nil {
+		t.Fatalf("load repository work rules: %v", err)
+	}
+	ruleBlock, err := rules.Block(t.Context(), workrule.StageExecute)
+	if err != nil {
+		t.Fatalf("render repository M5 rules: %v", err)
+	}
+	skills, err := skill.NewService(
+		filepath.Join(repoRoot, ".agents", "skills"),
+		filepath.Join(repoRoot, "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	skillCatalog, err := skills.Catalog(t.Context(), skill.StageExecute)
+	if err != nil {
+		t.Fatalf("render repository execute skills: %v", err)
+	}
+	background, err := (contextsnap.Snapshot{
+		SnapshotVersion: contextsnap.SnapshotVersion,
+		Principal:       &contextsnap.Principal{OpenID: "ou_me", Name: "我"},
+	}).Encode()
+	if err != nil {
+		t.Fatalf("encode prompt fixture: %v", err)
+	}
+	prompt, err := buildExecutionPrompt(executionPromptInput{
+		SystemPrompt:   read("conf/prompts/m5-system-prompt.md"),
+		ApprovalPolicy: read("conf/prompts/m5-approval-policy.md"),
+		Task: &domain.Task{
+			ID: 1, Title: "通知相关人", ActionType: "agent_task",
+			SourcePayload: datatypes.JSON([]byte(`{"request":"通知相关人"}`)),
+			Background:    datatypes.JSON(background),
+		},
+		ToolCatalog: testToolCatalog,
+		WorkRules:   ruleBlock,
+		Skills:      skillCatalog,
+	})
+	if err != nil {
+		t.Fatalf("build repository M5 prompt: %v", err)
+	}
+	for _, want := range []string{
+		"普通业务消息：显式工具动作",
+		"先完整确定受众、会话位置或原消息锚点",
+		"所有普通业务消息都通过 `feishu-send-message` Skill",
+		"feishu-send-message",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("effective M5 prompt missing message-tool contract %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "user_message") {
+		t.Fatalf("effective M5 prompt still contains legacy implicit message field:\n%s", prompt)
+	}
+}
 
 func TestAppendExecutionSupplement(t *testing.T) {
 	at1 := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
@@ -48,7 +123,7 @@ func TestBuildExecutionPromptIncludesExecutionSupplements(t *testing.T) {
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 		ExecutionSupplements: datatypes.JSON(supplements),
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil))
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -69,14 +144,14 @@ func TestBuildExecutionPromptInjectsSharedMemory(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	empty, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	empty, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil))
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
 	if strings.Contains(empty, "BEGIN_SHARED_MEMORY") {
 		t.Fatalf("empty shared memory must not inject block:\n%s", empty)
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "lark-cli 的 token 存在 ~/.lark 里", "", "", nil)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "lark-cli 的 token 存在 ~/.lark 里", "", "", nil))
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -95,7 +170,7 @@ func TestBuildExecutionPromptInjectsWorkRules(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "BEGIN_WORK_RULES\n- 禁止直接私聊\nEND_WORK_RULES", "", nil)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "BEGIN_WORK_RULES\n- 禁止直接私聊\nEND_WORK_RULES", "", nil))
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -114,7 +189,7 @@ func TestBuildExecutionPromptInjectsSkills(t *testing.T) {
 		ID: 9, Title: "发提醒", ActionType: "summary_post",
 		SourcePayload: datatypes.JSON(`{"steps":["send"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS", nil)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS", nil))
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -139,7 +214,7 @@ func TestBuildExecutionPromptIncludesPreviousRuns(t *testing.T) {
 		RunID: 3, Status: "succeeded", Summary: summary,
 		StartedAt: "2026-07-21T07:55:00Z", FinishedAt: finished.Format(time.RFC3339),
 	}}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", prior)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", prior))
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -157,7 +232,7 @@ func TestBuildExecutionPromptKeepsOnlyUsefulTaskHints(t *testing.T) {
 		ID: 12, Title: "评测截图", ActionType: "notify_principal", Target: "评测截图影响面",
 		Background: datatypes.JSON(`{"snapshot_version":"v1"}`), SourcePayload: datatypes.JSON(`{"request":"评测截图"}`),
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil))
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -176,7 +251,10 @@ func TestBuildExecutionPromptKeepsOnlyUsefulTaskHints(t *testing.T) {
 	}
 }
 
-func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
+// TestBuildExecutionPromptCarriesFrozenBackgroundWhole pins that the snapshot
+// M3 froze reaches M5 intact. Reshaping it here would hand M5 a different world
+// than the one the Todo was admitted against.
+func TestBuildExecutionPromptCarriesFrozenBackgroundWhole(t *testing.T) {
 	projectCode := "jarvis"
 	groupName := "公会 AI 突击群"
 	assignerName := "测试委托人"
@@ -184,21 +262,21 @@ func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
 	snapshot, err := (contextsnap.Snapshot{
 		SnapshotVersion: contextsnap.SnapshotVersion,
 		CapturedAt:      "2026-08-06T03:00:00Z",
-		Principal:       &contextsnap.Principal{OpenID: "ou_principal", Name: "principal", Summary: stringPtr("完整个人背景不应进执行简报")},
+		Principal:       &contextsnap.Principal{OpenID: "ou_principal", Name: "principal", Summary: stringPtr("principal 的长期事实页")},
 		Project: &contextsnap.Project{
 			ID: 7, Code: &projectCode, Name: "Jarvis", Role: "owner", Status: "active",
+			Summary: stringPtr("项目的长期事实页"),
 		},
-		Group:    &contextsnap.Group{ID: 9, ChatID: "oc_group", Name: &groupName, Description: stringPtr("完整群背景不应进执行简报")},
+		Group: &contextsnap.Group{
+			ID: 9, ChatID: "oc_group", Name: &groupName,
+			Description: stringPtr("群公告原文"), Summary: stringPtr("群的长期事实页"),
+		},
 		Assigner: &contextsnap.Assigner{OpenID: "ou_assigner", Name: &assignerName, Role: &assignerRole},
 		Messages: []contextsnap.Message{
 			{MessageID: "om_1", ChatID: "oc_group", SenderOpenID: "ou_sender_1", SenderName: "发送人一", Content: "完整源消息正文必须进入执行简报", CreateTime: 1785985200},
-			{MessageID: "om_1", Content: "重复引用也不应重复输出"},
 			{MessageID: "om_2", ChatID: "oc_group", SenderOpenID: "ou_sender_2", SenderName: "发送人二", Content: "另一条完整正文也必须进入", CreateTime: 1785985260},
 		},
-		Conversation: []contextsnap.Message{{MessageID: "om_context", Content: "完整 conversation 不应进执行简报"}},
-		Facts:        []contextsnap.Fact{{ID: 1, Description: "完整 fact 不应进执行简报"}},
-		OpenTodos:    []contextsnap.OpenTodo{{ID: 2, Title: "其它 Todo 不应进执行简报"}},
-		RecentTasks:  []contextsnap.RecentTask{{ID: 3, Summary: "其它 Task 摘要不应进执行简报"}},
+		Conversation: []contextsnap.Message{{MessageID: "om_context", Content: "周边对话也一起冻结"}},
 	}).Encode()
 	if err != nil {
 		t.Fatalf("encode snapshot: %v", err)
@@ -213,31 +291,43 @@ func TestBuildExecutionPromptProjectsFrozenBackground(t *testing.T) {
 		SourcePayload:  datatypes.JSON(`{"source_quote":"请压缩上下文","source_message_ids":["om_1","om_2"]}`),
 		Background:     datatypes.JSON(snapshot),
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil))
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
 	for _, want := range []string{
-		`"execution_context"`, `"current_status":"waiting"`, `"current_summary":"已经定位背景缺失，等待补齐 M5 首轮上下文"`,
-		`"last_progress_at":"2026-08-06T04:05:00Z"`, `"principal":{"open_id":"ou_principal","name":"principal"}`,
-		`"id":7`, `"code":"jarvis"`, `"name":"Jarvis"`, `"chat_id":"oc_group"`, `"open_id":"ou_assigner"`,
-		`"source_messages":[{"message_id":"om_1","chat_id":"oc_group","sender_open_id":"ou_sender_1","sender_name":"发送人一","content":"完整源消息正文必须进入执行简报","create_time":1785985200}`,
-		`{"message_id":"om_2","chat_id":"oc_group","sender_open_id":"ou_sender_2","sender_name":"发送人二","content":"另一条完整正文也必须进入","create_time":1785985260}`,
-		`"background_lookup":"jarvis-tools get-task --id 97"`, `"source_quote":"请压缩上下文"`,
+		`"current_status":"waiting"`, `"current_summary":"已经定位背景缺失，等待补齐 M5 首轮上下文"`,
+		`"last_progress_at":"2026-08-06T04:05:00Z"`, `"project_id":7`, `"source_quote":"请压缩上下文"`,
+		// The snapshot rides through whole, summaries and long tail included.
+		`"execution_context":{`, "principal 的长期事实页", "项目的长期事实页", "群的长期事实页",
+		"完整源消息正文必须进入执行简报", "另一条完整正文也必须进入",
+		"周边对话也一起冻结",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("execution prompt missing %q:\n%s", want, prompt)
 		}
 	}
-	for _, unwanted := range []string{
-		`"background":`, "完整个人背景不应进执行简报", "完整项目决策不应进执行简报",
-		"完整群背景不应进执行简报", "重复引用也不应重复输出",
-		"完整 conversation 不应进执行简报", "完整 fact 不应进执行简报",
-		"其它 Todo 不应进执行简报", "其它 Task 摘要不应进执行简报",
-	} {
-		if strings.Contains(prompt, unwanted) {
-			t.Fatalf("execution prompt leaked %q:\n%s", unwanted, prompt)
-		}
+	if strings.Contains(prompt, "background_lookup") {
+		t.Fatalf("execution prompt still points at a background lookup:\n%s", prompt)
+	}
+}
+
+// TestBuildExecutionPromptKeepsTaskProjectBindingWithoutSnapshotProject covers
+// the Task whose snapshot carries no project: the binding is a Task field, so it
+// has to survive on the task object.
+func TestBuildExecutionPromptKeepsTaskProjectBindingWithoutSnapshotProject(t *testing.T) {
+	task := &domain.Task{
+		ID: 21, Title: "无项目快照", ActionType: "manual_followup", Target: "目标",
+		ProjectID:     uint64Ptr(44),
+		SourcePayload: datatypes.JSON(`{"desired_outcome":"做完"}`),
+		Background:    datatypes.JSON(`{"snapshot_version":"v1"}`),
+	}
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil))
+	if err != nil {
+		t.Fatalf("build prompt: %v", err)
+	}
+	if !strings.Contains(prompt, `"project_id":44`) {
+		t.Fatalf("execution prompt lost the Task project binding:\n%s", prompt)
 	}
 }
 
@@ -251,7 +341,7 @@ func TestBuildExecutionPromptForwardsSourcePayloadVerbatim(t *testing.T) {
 		SourcePayload: datatypes.JSON(clue),
 		Background:    datatypes.JSON(`{"snapshot_version":"v1"}`),
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil))
 	if err != nil {
 		t.Fatalf("build prompt: %v", err)
 	}
@@ -265,62 +355,18 @@ func TestBuildExecutionPromptForwardsSourcePayloadVerbatim(t *testing.T) {
 	}
 }
 
-func TestBuildExecutionPromptForTodoTaskWithNonSnapshotBackground(t *testing.T) {
+func TestBuildExecutionPromptRejectsNonSnapshotBackground(t *testing.T) {
 	task := &domain.Task{
 		ID: 18, Title: "事实维护任务", ActionType: "fact_update", Target: "世界事实抽取",
 		SourcePayload: datatypes.JSON(`{"desired_outcome":"抽取这波事实并更新世界模型"}`),
 		Background:    datatypes.JSON(`{"desired_outcome":"抽取这波事实并更新世界模型"}`), SourceType: "todo",
 	}
-	prompt, err := buildExecutionPrompt(testM5SystemPrompt, "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil)
-	if err != nil {
-		t.Fatalf("build prompt: %v", err)
+	_, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "/workspace/jarvis", testToolCatalog, "", "", "", nil))
+	if err == nil {
+		t.Fatal("build prompt: expected todo Task without a context snapshot to fail")
 	}
-	for _, want := range []string{
-		`"source_payload":{"desired_outcome":"抽取这波事实并更新世界模型"}`,
-		`"background_lookup":"jarvis-tools get-task --id 18"`,
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("execution prompt missing %q:\n%s", want, prompt)
-		}
-	}
-}
-
-func TestRepositoryM5PromptOwnsGoalAndExecution(t *testing.T) {
-	content, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "m5-system-prompt.md"))
-	if err != nil {
-		t.Fatalf("read repository M5 prompt: %v", err)
-	}
-	prompt := string(content)
-	for _, want := range []string{
-		"M5 是真正理解任务、调查事实、确定目标、选择动作、执行并验证结果的阶段",
-		"`title_hint` 和 `target_hint`",
-		"可以基于证据修改、替换或放弃这些建议",
-		"根据调查持续重规划",
-		"本身不代表任务完成",
-		// A cleared blocker must never read as a finished goal; see
-		// docs/design-long-horizon-agent-goal-control.md.
-		"解除阻塞不是完成",
-		"不得假设其中存在固定 JSON 字段",
-		"以 source_payload 表达的真实最终结果为准",
-		"完整冻结背景仍保存在 Task.background",
-		"只有当前判断确实缺少某一类信息时才查",
-		"不要自己发送审批卡片",
-		"先把 proposal 和 `awaiting_approval` 状态持久化",
-		"绑定当前 Task version",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("M5 prompt missing autonomy contract %q:\n%s", want, prompt)
-		}
-	}
-	for _, obsolete := range []string{
-		"严格执行 plan 的目标",
-		"高风险、对外承诺、删改线上或后果说不清时，只发「查看详情」",
-		"同意/拒绝/查看详情",
-		"发出通知后在 effects[] 申报",
-	} {
-		if strings.Contains(prompt, obsolete) {
-			t.Fatalf("M5 prompt still contains obsolete upstream constraint %q:\n%s", obsolete, prompt)
-		}
+	if !strings.Contains(err.Error(), "background invalid") {
+		t.Fatalf("build prompt error = %v", err)
 	}
 }
 
@@ -328,7 +374,7 @@ func stringPtr(value string) *string { return &value }
 
 func uint64Ptr(value uint64) *uint64 { return &value }
 
-func TestSummarizePriorRunsKeepsNewestOldestFirst(t *testing.T) {
+func TestSummarizePriorRunsKeepsEveryRunOldestFirst(t *testing.T) {
 	s1, s2, s3 := "first", "second", "third"
 	t1 := time.Date(2026, 7, 21, 1, 0, 0, 0, time.UTC)
 	t2 := time.Date(2026, 7, 21, 2, 0, 0, 0, time.UTC)
@@ -339,9 +385,9 @@ func TestSummarizePriorRunsKeepsNewestOldestFirst(t *testing.T) {
 		{ID: 2, Status: "failed", Summary: &s2, StartedAt: t2},
 		{ID: 1, Status: "succeeded", Summary: &s1, StartedAt: t1},
 	}
-	got := summarizePriorRuns(items, 2)
-	if len(got) != 2 || got[0].RunID != 2 || got[1].RunID != 3 {
-		t.Fatalf("summarizePriorRuns = %#v, want oldest-first of newest 2 (2 then 3)", got)
+	got := summarizePriorRuns(items)
+	if len(got) != 3 || got[0].RunID != 1 || got[1].RunID != 2 || got[2].RunID != 3 {
+		t.Fatalf("summarizePriorRuns = %#v, want every run oldest-first (1, 2, 3)", got)
 	}
 }
 

@@ -1,0 +1,90 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="每个实体里实际会写什么" id="jarvis-entity-action-example-v3">
+    <mxGraphModel dx="0" dy="0" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1920" pageHeight="1080" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="lane_entity" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2FBF8;strokeColor=#B0D0C5;strokeWidth=1.2;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="60" y="135" width="1800" height="610" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_action" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBF7F1;strokeColor=#E3921F;strokeWidth=1.2;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="60" y="770" width="1800" height="250" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="title_main" value="一个完整例子：每个实体里实际会写什么" style="text;html=1;fontSize=28;fontColor=#1A3A3A;align=left;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="60" y="24" width="1800" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle_main" value="同一套 Jarvis 语境；卡片展示的是实体 Summary 示例，不是固定表单字段" style="text;html=1;fontSize=14;fontColor=#5A7A7A;align=left;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="60" y="76" width="1800" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_main" value="绿色：长期实体内容&amp;nbsp;&amp;nbsp;&amp;nbsp;橙色：实时行动内容" style="text;html=1;fontSize=11;fontColor=#5E7C76;align=right;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="1320" y="108" width="540" height="22" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="line_entity_label" style="endArrow=none;strokeColor=#B0D0C5;strokeWidth=1.2;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="255" y="155" as="sourcePoint"/>
+            <mxPoint x="255" y="725" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="line_action_label" style="endArrow=none;strokeColor=#E3921F;strokeWidth=1.2;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="255" y="790" as="sourcePoint"/>
+            <mxPoint x="255" y="1000" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="lane_entity_label" value="&lt;b&gt;长期实体层&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;持续维护的世界坐标&lt;/span&gt;" style="text;html=1;fontSize=18;fontColor=#1A3A3A;align=center;verticalAlign=middle;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="78" y="290" width="160" height="86" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_entity_question" value="每个实体是一段&lt;br&gt;可持续更新的当前认知" style="text;html=1;fontSize=11;fontColor=#238377;align=center;verticalAlign=middle;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="83" y="420" width="150" height="62" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_action_label" value="&lt;b&gt;实时行动层&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;一次工作的状态记录&lt;/span&gt;" style="text;html=1;fontSize=18;fontColor=#1A3A3A;align=center;verticalAlign=middle;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="78" y="835" width="160" height="86" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="node_principal" value="&lt;b style=&quot;font-size:16px&quot;&gt;Principal&lt;/b&gt;&lt;span style=&quot;font-size:11px;color:#238377&quot;&gt;　示例：我&lt;/span&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;长期目标：把 Jarvis 做成主动式数字分身&lt;br&gt;负责：项目方向与最终决策&lt;br&gt;偏好：先看预览，确认后再写回&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=13;fontColor=#1A3A3A;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;" parent="1" vertex="1">
+          <mxGeometry x="300" y="185" width="460" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_person" value="&lt;b style=&quot;font-size:16px&quot;&gt;Person&lt;/b&gt;&lt;span style=&quot;font-size:11px;color:#238377&quot;&gt;　示例：王磊（示例人物）&lt;/span&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;角色：Jarvis 项目协作者、文章评审人&lt;br&gt;关注：读者能否看懂世界模型&lt;br&gt;关系：协作于 Project / Jarvis&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=13;fontColor=#1A3A3A;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;" parent="1" vertex="1">
+          <mxGeometry x="805" y="185" width="460" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_project" value="&lt;b style=&quot;font-size:16px&quot;&gt;Project&lt;/b&gt;&lt;span style=&quot;font-size:11px;color:#238377&quot;&gt;　示例：Jarvis&lt;/span&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;目标：主动发现并完成有价值的工作&lt;br&gt;当前状态：世界模型章节完善中&lt;br&gt;资料：关联《主动式数字分身》文档&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCF0E8;strokeColor=#2A9D8F;strokeWidth=2;arcSize=14;fontSize=13;fontColor=#1A3A3A;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;" parent="1" vertex="1">
+          <mxGeometry x="1310" y="185" width="460" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_keymatter" value="&lt;b style=&quot;font-size:16px&quot;&gt;KeyMatter&lt;/b&gt;&lt;span style=&quot;font-size:11px;color:#238377&quot;&gt;　示例：讲清实体层与行动层&lt;/span&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;问题：现有图只展示类型，没有展示内容&lt;br&gt;进展：结构图已完成，正在补实例&lt;br&gt;归属：Project / Jarvis&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=13;fontColor=#1A3A3A;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;" parent="1" vertex="1">
+          <mxGeometry x="300" y="430" width="460" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_group" value="&lt;b style=&quot;font-size:16px&quot;&gt;Group&lt;/b&gt;&lt;span style=&quot;font-size:11px;color:#238377&quot;&gt;　示例：Jarvis 项目群&lt;/span&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;用途：方案讨论、评审与反馈&lt;br&gt;成员：Principal + 项目协作者&lt;br&gt;关系：围绕 Project / Jarvis&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=13;fontColor=#1A3A3A;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;" parent="1" vertex="1">
+          <mxGeometry x="805" y="430" width="460" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_resource" value="&lt;b style=&quot;font-size:16px&quot;&gt;Resource&lt;/b&gt;&lt;span style=&quot;font-size:11px;color:#238377&quot;&gt;　示例：《主动式数字分身》&lt;/span&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;类型：飞书 Wiki 文档&lt;br&gt;内容：世界建模章节与配图&lt;br&gt;归属：Project / Jarvis&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=13;fontColor=#1A3A3A;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;" parent="1" vertex="1">
+          <mxGeometry x="1310" y="430" width="460" height="200" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="note_relations" value="&lt;b&gt;关系示例：&lt;/b&gt;Principal 主导 Project　·　Person 协作 Project　·　KeyMatter 属于 Project　·　Group 围绕 Project　·　Resource 承载项目资料" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F7F5;strokeColor=#B0D0C5;strokeWidth=1;arcSize=12;fontSize=11;fontColor=#238377;align=center;verticalAlign=middle;spacing=6;" parent="1" vertex="1">
+          <mxGeometry x="300" y="665" width="1470" height="48" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="node_todo" value="&lt;b style=&quot;font-size:17px&quot;&gt;Todo&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;内容：当前图没有展示六类实体的具体内容&lt;br&gt;关联：KeyMatter / 讲清两层区别&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF4E6;strokeColor=#E3921F;strokeWidth=1.2;arcSize=14;fontSize=13;fontColor=#1A3A3A;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;" parent="1" vertex="1">
+          <mxGeometry x="300" y="815" width="430" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_task" value="&lt;b style=&quot;font-size:17px&quot;&gt;Task&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;目标：为六类实体补一套完整示例&lt;br&gt;背景：Project / Jarvis + Resource / 飞书文章&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF4E6;strokeColor=#E3921F;strokeWidth=1.6;arcSize=14;fontSize=13;fontColor=#1A3A3A;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;" parent="1" vertex="1">
+          <mxGeometry x="790" y="815" width="430" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_run" value="&lt;b style=&quot;font-size:17px&quot;&gt;ExecutionRun&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#368545&quot;&gt;过程：读取 v2 → 填写示例 → 生成 v3&lt;br&gt;结果：本地预览，等待确认后再写回&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4F0D8;strokeColor=#4AAE5C;strokeWidth=1.2;arcSize=14;fontSize=13;fontColor=#1A3A3A;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;" parent="1" vertex="1">
+          <mxGeometry x="1280" y="815" width="490" height="145" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="arr_todo_task" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E3921F;strokeWidth=1.8;endSize=6;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_todo" target="node_task" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_task_run" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E3921F;strokeWidth=1.8;endSize=6;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_task" target="node_run" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

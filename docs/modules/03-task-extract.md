@@ -13,7 +13,7 @@ M3 把新证据和工作背景转成经过准入判断的 Todo。它回答“这
 
 - 本轮新 message、受限会话上下文和工具补查消息；
 - Group、Project、Person、PrincipalProfile、Resource；
-- 既有 open Todos 和按群/项目加载的 Facts；
+- 既有 open Todos；各实体的长期事实页 `summary`，Fact 只给条数不给明细；
 - shared memory、rules、Skills 与工具目录。
 
 写入：
@@ -44,9 +44,9 @@ Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`
 2. 否则用 `project_hint` 对 code/name 精确匹配；
 3. 一次短查询仍无法确定则记录 unresolved resolution trace，交给 M5 在确有需要时继续调查。
 
-冻结快照包含 principal、group、project、由证据发送者机械推导的 assigner、引用消息、会话上下文、参与人、资源、open Todos、其他项目和 Facts。`extraction_result` 保留完整 Candidate，`resolution` 保留项目/仓库推算轨迹。
+冻结快照包含 principal、group、project、由证据发送者机械推导的 assigner、引用消息、会话上下文、参与人、资源和其他项目，各实体带自己的 `summary` 页。`extraction_result` 保留完整 Candidate，`resolution` 保留项目/仓库推算轨迹。
 
-当前快照不包含 shared memory，也未冻结 ManagedResource；它们可能进入运行时 prompt，但不能笼统写成快照已包含所有背景。
+快照不冻结 Fact 明细：`summary` 已经回答「这个实体现在是什么」，历史明细由下游按需用 `list-facts` 下钻。也不冻结 open Todos 和 recent Tasks——它们是世界状态不是证据，本轮实时加载后只进 M3 提示词做去重判断，M5 在执行那一刻另行实时装配（见 [M5 执行](05-execution.md)）。快照同样不包含 shared memory，未冻结 ManagedResource；它们可能进入运行时 prompt，但不能笼统写成快照已包含所有背景。
 
 ## 4. 去重与落库
 

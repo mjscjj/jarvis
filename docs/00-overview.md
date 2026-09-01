@@ -44,7 +44,10 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    EVENT["飞书 IM 事件"] --> M2["M2 capture"]
+    EVENT["飞书 Bot WebSocket"] --> CC["CC Connect 路由"]
+    CC -->|"接受私聊 / @消息"| CLAIM["route claim\nextraction_skipped"]
+    CLAIM --> CCA["CC 原生 Agent / session"]
+    CC -->|"不接受普通群消息"| POLL
     POLL["飞书 IM 轮询补偿"] --> M2
     EXT["外部 Skill / 定时任务"] --> CLUE["POST /api/clues"] --> M2
     M2 --> MSG[("message")]
@@ -78,7 +81,9 @@ M2 有两个事实入口：
 
 M2 保存原文、来源、外部幂等键和资源引用，成功后唤醒 M3。它不解释错误语义、不决定是否值得做、不创建 Todo、不为会议/邮件等来源增加专用状态机。
 
-Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。M2 按 `scan_schedule` 增量轮询已关联会话并按飞书 `message_id` 幂等落库；普通群和私聊按会话消息流增量读取，话题群按消息自身时间搜索，因此旧话题中的新回复不会受话题根消息水位影响。外部实时事件若要进入流水线只能由 CC Connect 经明确的本机 fan-out 接口转发，不能恢复第二条同 app 长连接。资源链路只稳定采集引用元数据；通用下载、正文回填和内容哈希复用尚未形成完整生产链路。
+Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。CC Connect 完成发送者、会话和 @ 过滤后，对自己接受的消息先同步调用 `/internal/message-routing/claim`：只把当前 `message_id` 标记为 `extraction_skipped`，再继续由 CC 原生 Agent/session 处理。claim 本身不携带历史、不创建 Task、不唤醒 M3，也不修改 `related_group`。群聊 Agent turn 的会话证据在传输层从飞书实时读取：普通群取 chat 中截至当前消息的最近记录，话题/回复取对应 thread，最多 14 条前序消息；这些历史不会写进 Jarvis `message` 表。传输上下文同时提供 `chat_id`，供 Agent 用 `get-context --chat-id` 读取当前群绑定的世界上下文。
+
+M2 按 `scan_schedule` 增量轮询已关联会话并按飞书 `message_id` 幂等落库；普通群和私聊按会话消息流增量读取，话题群按消息自身时间搜索，因此旧话题中的新回复不会受话题根消息水位影响。CC 未接受的普通群消息继续通过这条通用流水线；需要进入 M2 的其它实时外部事实仍只能经明确的本机 fan-out 接口转发，不能恢复第二条同 app 长连接。资源链路只稳定采集引用元数据；通用下载、正文回填和内容哈希复用尚未形成完整生产链路。
 
 ### 3.2 M3：Task 准入与快照
 
@@ -97,17 +102,17 @@ M3 可以产出：
 
 M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归属，但证据足够作出准入结论后立即停止。它不制定执行方案、不选择具体副作用、不判断审批，也不为丰富 payload 展开代码、commit、MR 或长文档调查。`payload` 是开放的准入简报，只说明相关性、未闭环状态、责任、已核验证据、准入依据和不确定性。
 
-`context_snapshot` 是审计快照，不是实时世界状态。M5 首轮只拿项目、群、交办人和引用消息 ID 等小投影；需要创建时细节再查询这份冻结快照，需要新事实则调用工具，不在下游重拼一份替代快照。
+`context_snapshot` 是创建时的世界，不是实时世界状态。它整份传给 M5，下游不做投影、裁剪或重拼。M5 需要某个实体**现在**的状态时读它的 `summary` 页，需要更细的历史时按主体和日期查 fact。
 
 ### 3.3 Todo 固化
 
 `extracted` Todo 一律通过无模型的固化步骤创建一个 `pending` Task，并把 Todo 置为 `materialized`。固化继续使用 Todo ID/version 乐观锁、`task.todo_id` 唯一键和同一事务；重复通知返回同一个 Task，陈旧版本 fail-fast。Task 只记录自己的来源与创建时间，不把这一机械步骤包装成判断或确认闸门。
 
-Task 只用一个宽松 `source_payload` 保存来源交来的完整原始语义；Todo 来源直接固化完整 `extraction_result`，定时、手工和主动来源保存各自原始指令。执行 Agent 首轮读取完整 `source_payload` 和冻结 `background` 的小投影，需要时再通过任务查询读取完整背景，不人为制造中间计划或判断上下文。
+Task 只用一个宽松 `source_payload` 保存来源交来的完整原始语义；Todo 来源直接固化完整 `extraction_result`，定时、手工和主动来源保存各自原始指令。执行 Agent 读取完整 `source_payload` 和整份冻结 `background`，不人为制造中间计划或判断上下文。
 
 ### 3.4 M5 执行：调查、动作与恢复
 
-Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执行 Agent 读取完整来源证据、冻结背景的小投影、人工 supplements 和最近运行记录；缺细节时再查询完整冻结背景。Todo 来源已经经过 M3 准入，M5 不从头重复泛化价值筛选；它先核验线索是否因新事实完成、失效或重复，准入仍成立时直接调查真实目标并执行。上游内容是线索，不是不可修改的最终计划。
+Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执行 Agent 读取完整来源证据、整份冻结背景、执行时实时装配的 `current_world`、人工 supplements 和最近运行记录；需要实体当前状态时再查 `summary` 页和 fact。`current_world` 是每次 run 开始时查的最近 20 个 Task 与 20 条未闭环 Todo 摘要，专门用来避免重复执行——冻结背景结构上答不了「此刻还有什么在做、刚做完了什么」。Todo 来源已经经过 M3 准入，M5 不从头重复泛化价值筛选；它先核验线索是否因新事实完成、失效或重复，准入仍成立时直接调查真实目标并执行。上游内容是线索，不是不可修改的最终计划。
 
 执行 outcome 与状态映射：
 
@@ -144,18 +149,18 @@ Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示�
 - 当前背景：PrincipalProfile、Project、KeyMatter、Person、Group、ManagedResource；
 - 原始证据：Message、Resource、ScanRecord；
 - 行动链路：Todo、Task、TodoEvent、TaskEvent、ExecutionRun；
-- 长期事实：Fact、RelationFact；
+- 长期事实：各实体的 `summary` 页、Fact；
 - 时间触发和总结：ScheduledTask、DailyDigest。
 
 factengine 不新增第二套世界状态表：它通过既有通用 CRUD 工具持续维护上述载体。主动巡视主要消费这些持久状态，也可以在调查过程中维护已经确认的变化；跨轮记忆来自世界模型和事实历史，而不是续跑无限对话 Session。
 
-KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是一次执行动作的事项。是否闭环只由 `closed_at` 表示；`status` 是模型和人维护的自由文本。关键事项本身不进入 Task 执行链路，需要行动时另建普通 Task，进展历史继续写入 Fact 和 RelationFact。
+KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是一次执行动作的事项。是否闭环只由 `closed_at` 表示；`status` 是模型和人维护的自由文本。关键事项本身不进入 Task 执行链路，需要行动时另建普通 Task，当前状态写在它的 `summary` 页，历史明细继续写入 Fact。
 
 `internal/domain/*.go` 和 `internal/store/sqlite.go` 是字段与迁移真源。不要在文档复制完整 DDL。
 
 持续 factengine 消费 `message`、`todo`、`task` 三种来源并保留独立游标。Message 提供原文，Todo/Task 只投影状态与最终产物，不重复携带已经持久化的背景、快照、来源 payload、计划和执行 prompt。每轮把各来源游标之后的材料合成一个世界变化批次，只启动一次 Agent；材料超过配置的粗粒度字符预算时减少候选行重新取批，降到每来源一行仍超限就把装不下的完整来源材料留到下轮，不截断单条材料；只有第一条完整材料自身超限时允许整条通过。Agent 在真实 Jarvis 工作区运行，使用同一套通用工具按需查询并直接维护当前实体、关系、资料和 Fact，最终自然语言只作审计，不承担机器协议。整次 Agent 会话成功后才推进本批来源游标，失败则保留游标供下次重放；Go 不按来源或实体类型编排语义写入。首次接入 Todo/Task 从事件 0 开始消费已有材料，Message 保留从当前时刻起步的历史边界。
 
-RelationFact 表示两个既有实体之间的自然语言关系和有效期；它没有 predicate/source/confidence/supersede 状态机。
+每个世界实体有一个 `summary` 页承载它的长期事实，整体读写、有字符上限、写入时 CAS 防覆盖。实体之间的关系用页内 Markdown 引用（形如 `[名字](person:12)`）表达，写入时校验目标存在，反查用 `list-backlinks`；不另建关系表。summary 答「现在是什么」，Fact 答「发生了什么」，详见 `docs/design-entity-summary.md`。
 
 ## 6. 文件化 Agent 配置
 

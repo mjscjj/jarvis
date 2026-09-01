@@ -621,6 +621,13 @@ func parseExecutionResult(lastMessage string) (*codexResult, error) {
 	if strings.TrimSpace(result.Summary) == "" {
 		return nil, fmt.Errorf("codex exec result summary is blank")
 	}
+	// Enforced here rather than only at the store because a violation caught
+	// here is recoverable: the session is asked to restate the same standing
+	// more compactly. Rejecting it later would leave the Task stuck on its
+	// previous summary with the new progress lost.
+	if err := validateTaskSummary(strings.TrimSpace(result.ProgressSummary)); err != nil {
+		return nil, fmt.Errorf("codex exec result progress_summary: %w", err)
+	}
 	result.Enrichments = dropStrippedCodexMemoryCitations(result.Enrichments)
 	if err := validateEnrichments(result.Enrichments); err != nil {
 		return nil, fmt.Errorf("codex exec result: %w", err)

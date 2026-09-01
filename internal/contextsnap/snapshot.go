@@ -1,6 +1,6 @@
 // Package contextsnap defines the canonical background snapshot that M3 freezes
-// onto a Todo at extraction time. M5 receives a small projection initially and
-// can query this unchanged snapshot when execution actually needs more detail.
+// onto a Todo at extraction time. It travels unchanged into Task.background and
+// is handed to M5 whole.
 //
 // Per docs/design-context-pipeline.md the context is assembled/inferred exactly
 // once in M3, persisted into Todo.context_snapshot, and reused for the whole
@@ -27,24 +27,30 @@ type Snapshot struct {
 	Group     *Group     `json:"group"`
 	Assigner  *Assigner  `json:"assigner"`
 	Messages  []Message  `json:"messages"`
-	// Participants/resources/open_todos/other_projects are part of the exact
-	// context M3 used to extract the clue. They stay frozen for audit and
-	// on-demand lookup instead of riding in every M5 initial prompt.
+	// Participants/resources/other_projects are part of the exact context M3
+	// used to extract the clue.
+	//
+	// Open Todos and recent Tasks deliberately do not ride here. They are world
+	// state, not evidence: a snapshot freezes what was true at creation time,
+	// but "what else is already being worked on" is only useful as of the moment
+	// someone acts on it. M5 loads that fresh on every run; see
+	// internal/execute/currentworld.go.
 	Participants  []Participant  `json:"participants,omitempty"`
 	Resources     []Resource     `json:"resources,omitempty"`
-	OpenTodos     []OpenTodo     `json:"open_todos,omitempty"`
-	RecentTasks   []RecentTask   `json:"recent_tasks,omitempty"`
 	OtherProjects []ProjectBrief `json:"other_projects,omitempty"`
 	// Conversation is the surrounding chat context (several rounds around the
 	// cited Messages). Messages stays the precise cited evidence; Conversation
-	// is broader background available through on-demand Task lookup.
+	// is the broader background around it.
 	Conversation []Message        `json:"conversation,omitempty"`
 	Memories     []map[string]any `json:"memories"`
-	// ManagedResources and Facts are loaded by the common context
-	// assembler for manual/scheduled tasks. M3 can leave them empty because its
-	// own captured resources are frozen in Resources above.
+	// ManagedResources is loaded by the common context assembler for
+	// manual/scheduled tasks. M3 leaves it empty because its own captured
+	// resources are frozen in Resources above.
+	//
+	// Fact detail deliberately does not ride here. A snapshot answers "what was
+	// the world when this was created"; the entity Summary fields above already
+	// carry that. Fact history is drilled into on demand with list-facts.
 	ManagedResources []ManagedResource `json:"managed_resources,omitempty"`
-	Facts            []Fact            `json:"facts,omitempty"`
 	// RequestContext preserves caller-supplied manual/scheduled background
 	// without allowing it to replace the authoritative common snapshot.
 	RequestContext json.RawMessage `json:"request_context,omitempty"`
@@ -125,24 +131,6 @@ type Resource struct {
 	ExtractedText *string `json:"extracted_text,omitempty"`
 }
 
-type OpenTodo struct {
-	ID         uint64 `json:"id"`
-	ActionType string `json:"action_type"`
-	Title      string `json:"title"`
-	Status     string `json:"status"`
-}
-
-// RecentTask freezes the thin progress projection M3 pushed into the prompt so
-// M5 sees the same task summaries even though it does not reassemble a live
-// world slice.
-type RecentTask struct {
-	ID             uint64 `json:"id"`
-	Title          string `json:"title"`
-	Status         string `json:"status"`
-	Summary        string `json:"summary,omitempty"`
-	LastProgressAt string `json:"last_progress_at,omitempty"`
-}
-
 type ProjectBrief struct {
 	ID       uint64  `json:"id"`
 	Code     *string `json:"code,omitempty"`
@@ -163,23 +151,16 @@ type ManagedResource struct {
 	LastActiveAt  string  `json:"last_active_at"`
 }
 
-// Fact is one recorded observation about a subject, carried into the snapshot so
-// the model sees what has already happened without querying for it.
-type Fact struct {
-	ID          uint64 `json:"id"`
-	SubjectType string `json:"subject_type"`
-	SubjectID   uint64 `json:"subject_id"`
-	Description string `json:"description"`
-	OccurredAt  string `json:"occurred_at"`
-}
-
 // Message is one piece of source evidence, copied verbatim at capture time.
 type Message struct {
 	MessageID    string `json:"message_id"`
 	ChatID       string `json:"chat_id"`
+	ChatMode     string `json:"chat_mode,omitempty"`
 	SenderOpenID string `json:"sender_open_id"`
 	SenderName   string `json:"sender_name"`
 	Content      string `json:"content"`
+	RootID       string `json:"root_id,omitempty"`
+	ThreadID     string `json:"thread_id,omitempty"`
 	CreateTime   int64  `json:"create_time"`
 }
 

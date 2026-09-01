@@ -497,7 +497,7 @@ func (s *PipelineStore) loadRecentTasks(ctx context.Context, group GroupContext,
 
 func messageContext(message *domain.Message, isNew bool) MessageContext {
 	return MessageContext{
-		DatabaseID: message.ID, MessageID: message.MessageID, ChatID: message.ChatID,
+		DatabaseID: message.ID, MessageID: message.MessageID, ChatID: message.ChatID, ChatMode: message.ChatMode,
 		SenderOpenID: message.SenderOpenID, SenderName: message.SenderName, SenderType: message.SenderType,
 		Source: message.Source, MessageType: message.MessageType, Content: message.Content,
 		RootID: stringValue(message.RootID), ThreadID: stringValue(message.ThreadID),
@@ -506,7 +506,7 @@ func messageContext(message *domain.Message, isNew bool) MessageContext {
 }
 
 func extractableMessage(message *domain.Message) bool {
-	if !message.RenderOK {
+	if !message.RenderOK || message.ExtractionSkipped {
 		return false
 	}
 	senderType := strings.ToLower(strings.TrimSpace(message.SenderType))

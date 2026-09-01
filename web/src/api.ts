@@ -328,7 +328,6 @@ export function listSubjectFacts(subjectType: string, id: number, signal?: Abort
   from?: string
   until?: string
   sourceKind?: string
-  excludeSourceKind?: string
   limit?: number
 } = {}): Promise<{ items: Fact[] }> {
   const params = new URLSearchParams({
@@ -339,7 +338,6 @@ export function listSubjectFacts(subjectType: string, id: number, signal?: Abort
   if (options.from) params.set('from', options.from)
   if (options.until) params.set('until', options.until)
   if (options.sourceKind) params.set('source_kind', options.sourceKind)
-  if (options.excludeSourceKind) params.set('exclude_source_kind', options.excludeSourceKind)
   return request<{ items: Fact[] }>(`/api/facts?${params.toString()}`, { signal })
 }
 
@@ -373,7 +371,6 @@ export function searchFacts(query: FactSearchQuery, signal?: AbortSignal): Promi
   const params = new URLSearchParams({
     page: String(query.page ?? 1),
     page_size: String(query.pageSize ?? 50),
-    layer: query.layer ?? 'all',
   })
   if (query.q) params.set('q', query.q)
   if (query.from) params.set('from', query.from)
@@ -382,20 +379,6 @@ export function searchFacts(query: FactSearchQuery, signal?: AbortSignal): Promi
   if (query.subjectId) params.set('subject_id', String(query.subjectId))
   if (query.sourceKind) params.set('source_kind', query.sourceKind)
   return request<FactSearchResult>(`/api/facts/search?${params.toString()}`, { signal })
-}
-
-export function generateFactRollup(date: string, subject?: { type: string; id: number }): Promise<{
-  Subjects: number
-  Batches: number
-  FailedBatches: number
-  Written: number
-  Skipped: number
-  Day: string
-}> {
-  return request('/api/fact-rollups/generate', {
-    method: 'POST',
-    body: subject ? { date, subject_type: subject.type, subject_id: subject.id } : { date },
-  })
 }
 
 export function listPersons(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Person>> {

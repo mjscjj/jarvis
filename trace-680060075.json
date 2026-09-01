@@ -1,0 +1,3297 @@
+{
+  "query": {
+    "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+    "region": "Singapore-Central",
+    "time_range_right_shift": 600
+  },
+  "root_info": {
+    "sampling_type": "probabilistic",
+    "total_cost_in_us": 36115794,
+    "__logid": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+    "_trace_id": "4b122aff0ceec83c0656e783462b23c8",
+    "start_time_in_us": 1786680086183206,
+    "end_time_in_us": 1786680122299000
+  },
+  "tree": [
+    {
+      "level": 1,
+      "label": "tikcast.platform.activity_material::GenerateImageEditingController_generateImageEditing",
+      "psm": "tikcast.platform.activity_material",
+      "duration_us": 36115794,
+      "duration_ms_text": "36115.794ms",
+      "start_time_us": 1786680086183206,
+      "is_merge_span": false,
+      "span_count": 1,
+      "min_duration_us": 36115794,
+      "max_duration_us": 36115794,
+      "avg_duration_us": 36115794,
+      "children": [
+        {
+          "level": 2,
+          "label": "tikcast.platform.activity_material->tikcast.agency.activity_manager::CheckPosterQuota",
+          "psm": "tikcast.platform.activity_material",
+          "duration_us": 66129,
+          "duration_ms_text": "66.129ms",
+          "start_time_us": 1786680086189871,
+          "is_merge_span": false,
+          "span_count": 1,
+          "min_duration_us": 66129,
+          "max_duration_us": 66129,
+          "avg_duration_us": 66129,
+          "children": [
+            {
+              "level": 3,
+              "label": "tikcast.agency.activity_manager::CheckPosterQuota",
+              "psm": "tikcast.agency.activity_manager",
+              "duration_us": 4079,
+              "duration_ms_text": "4.079ms",
+              "start_time_us": 1786680086223730,
+              "is_merge_span": false,
+              "span_count": 1,
+              "min_duration_us": 4079,
+              "max_duration_us": 4079,
+              "avg_duration_us": 4079,
+              "children": [],
+              "span_ids": [
+                "18af81d6b53e3d7b"
+              ],
+              "parent_ids": [
+                "4bf58125c739a"
+              ],
+              "source": "summary"
+            }
+          ],
+          "span_ids": [
+            "4bf58125c739a"
+          ],
+          "parent_ids": [
+            "4bf58125c7399"
+          ],
+          "source": "summary"
+        },
+        {
+          "level": 2,
+          "label": "tikcast.platform.activity_material->tikcast.opint.agent_moderation::Moderate",
+          "psm": "tikcast.platform.activity_material",
+          "duration_us": 483331,
+          "duration_ms_text": "483.331ms",
+          "start_time_us": 1786680086258669,
+          "is_merge_span": false,
+          "span_count": 1,
+          "min_duration_us": 483331,
+          "max_duration_us": 483331,
+          "avg_duration_us": 483331,
+          "children": [
+            {
+              "level": 3,
+              "label": "tikcast.opint.agent_moderation::Moderate",
+              "psm": "tikcast.opint.agent_moderation",
+              "duration_us": 431658,
+              "duration_ms_text": "431.658ms",
+              "start_time_us": 1786680086307703,
+              "is_merge_span": false,
+              "span_count": 1,
+              "min_duration_us": 431658,
+              "max_duration_us": 431658,
+              "avg_duration_us": 431658,
+              "children": [],
+              "span_ids": [
+                "401cc395a82968b"
+              ],
+              "parent_ids": [
+                "4bf58125c739b"
+              ],
+              "source": "summary"
+            }
+          ],
+          "span_ids": [
+            "4bf58125c739b"
+          ],
+          "parent_ids": [
+            "4bf58125c7399"
+          ],
+          "source": "summary"
+        },
+        {
+          "level": 2,
+          "label": "tikcast.platform.activity_material->tikcast.opint.agent_moderation::Moderate",
+          "psm": "tikcast.platform.activity_material",
+          "duration_us": 7144,
+          "duration_ms_text": "7.144ms",
+          "start_time_us": 1786680086742856,
+          "is_merge_span": false,
+          "span_count": 1,
+          "min_duration_us": 7144,
+          "max_duration_us": 7144,
+          "avg_duration_us": 7144,
+          "children": [
+            {
+              "level": 3,
+              "label": "tikcast.opint.agent_moderation::Moderate",
+              "psm": "tikcast.opint.agent_moderation",
+              "duration_us": 1474,
+              "duration_ms_text": "1.474ms",
+              "start_time_us": 1786680086747321,
+              "is_merge_span": false,
+              "span_count": 1,
+              "min_duration_us": 1474,
+              "max_duration_us": 1474,
+              "avg_duration_us": 1474,
+              "children": [],
+              "span_ids": [
+                "4fd3a2cba0840cb4"
+              ],
+              "parent_ids": [
+                "4bf58125c739c"
+              ],
+              "source": "summary"
+            }
+          ],
+          "span_ids": [
+            "4bf58125c739c"
+          ],
+          "parent_ids": [
+            "4bf58125c7399"
+          ],
+          "source": "summary"
+        },
+        {
+          "level": 2,
+          "label": "tikcast.platform.activity_material->tikcast.opint.agent_moderation::Moderate",
+          "psm": "tikcast.platform.activity_material",
+          "duration_us": 1293021,
+          "duration_ms_text": "1293.021ms",
+          "start_time_us": 1786680117763979,
+          "is_merge_span": false,
+          "span_count": 1,
+          "min_duration_us": 1293021,
+          "max_duration_us": 1293021,
+          "avg_duration_us": 1293021,
+          "children": [
+            {
+              "level": 3,
+              "label": "tikcast.opint.agent_moderation::Moderate",
+              "psm": "tikcast.opint.agent_moderation",
+              "duration_us": 1285930,
+              "duration_ms_text": "1285.930ms",
+              "start_time_us": 1786680117769050,
+              "is_merge_span": false,
+              "span_count": 1,
+              "min_duration_us": 1285930,
+              "max_duration_us": 1285930,
+              "avg_duration_us": 1285930,
+              "children": [],
+              "span_ids": [
+                "61c82c9c919bbe2e"
+              ],
+              "parent_ids": [
+                "4bf58125c739e"
+              ],
+              "source": "summary"
+            }
+          ],
+          "span_ids": [
+            "4bf58125c739e"
+          ],
+          "parent_ids": [
+            "4bf58125c7399"
+          ],
+          "source": "summary"
+        },
+        {
+          "level": 2,
+          "label": "tikcast.platform.activity_material->tikcast.opint.agent_moderation::Moderate",
+          "psm": "tikcast.platform.activity_material",
+          "duration_us": 1661951,
+          "duration_ms_text": "1661.951ms",
+          "start_time_us": 1786680119059049,
+          "is_merge_span": false,
+          "span_count": 1,
+          "min_duration_us": 1661951,
+          "max_duration_us": 1661951,
+          "avg_duration_us": 1661951,
+          "children": [
+            {
+              "level": 3,
+              "label": "tikcast.opint.agent_moderation::Moderate",
+              "psm": "tikcast.opint.agent_moderation",
+              "duration_us": 1655910,
+              "duration_ms_text": "1655.910ms",
+              "start_time_us": 1786680119063750,
+              "is_merge_span": false,
+              "span_count": 1,
+              "min_duration_us": 1655910,
+              "max_duration_us": 1655910,
+              "avg_duration_us": 1655910,
+              "children": [],
+              "span_ids": [
+                "4c458b05f5188b31"
+              ],
+              "parent_ids": [
+                "4bf58125c739f"
+              ],
+              "source": "summary"
+            }
+          ],
+          "span_ids": [
+            "4bf58125c739f"
+          ],
+          "parent_ids": [
+            "4bf58125c7399"
+          ],
+          "source": "summary"
+        }
+      ],
+      "span_ids": [
+        "4bf58125c7399"
+      ],
+      "parent_ids": [],
+      "source": "summary"
+    }
+  ],
+  "raw": {
+    "error_code": 0,
+    "error_type": "",
+    "error_message": "",
+    "data": {
+      "root_info": {
+        "sampling_type": "probabilistic",
+        "sampling_rate": 0.001,
+        "sampling_source": {
+          "psm": "tikcast.opint.agent_moderation",
+          "dc": "my3",
+          "ip": "127.0.0.1",
+          "method": "tiktok.ai_metadata.copyright_mitigation"
+        },
+        "total_cost_in_us": 36115794,
+        "__logid": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+        "_trace_id": "4b122aff0ceec83c0656e783462b23c8",
+        "start_time_in_us": 1786680086183206,
+        "end_time_in_us": 1786680122299000
+      },
+      "query_request": {
+        "start_at": 1786680000,
+        "end_at": 1786680660,
+        "time_range_right_shift": 600,
+        "keys": {
+          "_trace_id": "",
+          "__logid": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "_txn_id": ""
+        },
+        "limit": 5000,
+        "desc": false,
+        "regions": [
+          "Singapore-Central"
+        ],
+        "trace_format_options": [
+          "polish",
+          "group_low_level_trace",
+          "add_peer_info_in_rpc_span",
+          "add_span_ext_abstract"
+        ],
+        "trace_query_option": null,
+        "summary": true
+      },
+      "transactions": [
+        {
+          "trace_id": "0000000035cd4281000267cd73890afb",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "1705782286753717",
+          "version": 2,
+          "root_span_id": "4bf58125c7399",
+          "flags": 9,
+          "sampling_type": "lower_bound",
+          "sampling_rate": 0.001,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "4bf58125c7399",
+              "parent_id": "0",
+              "ref_type": "child_of",
+              "references": [],
+              "type": "server",
+              "name": "GenerateImageEditingController_generateImageEditing",
+              "component": "gulux",
+              "tags": [
+                {
+                  "key": "_method",
+                  "value": "GenerateImageEditingController_generateImageEditing"
+                },
+                {
+                  "key": "_component",
+                  "value": "gulux"
+                },
+                {
+                  "key": "_service_type",
+                  "value": "http"
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_from_service",
+                  "value": "-"
+                },
+                {
+                  "key": "_from_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_from_addr",
+                  "value": "-"
+                },
+                {
+                  "key": "_from_dc",
+                  "value": "-"
+                },
+                {
+                  "key": "_duration",
+                  "value": "36115.794 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "5.002 KB"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "2.388 KB"
+                },
+                {
+                  "key": "env",
+                  "value": "prod"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "from",
+                  "value": ""
+                },
+                {
+                  "key": "from_cluster",
+                  "value": ""
+                },
+                {
+                  "key": "from_idc",
+                  "value": ""
+                },
+                {
+                  "key": "_http_route",
+                  "value": "/api/open/activity/generate_image_editing"
+                },
+                {
+                  "key": "_http_method",
+                  "value": "POST"
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "client_ip",
+                  "value": "fdbd:dc53:0:457:1844:6f23:ab00:93"
+                },
+                {
+                  "key": "request.env",
+                  "value": "prod"
+                },
+                {
+                  "key": "http.status_code",
+                  "value": 200
+                },
+                {
+                  "key": "http.host",
+                  "value": "85c4oryj.sg-fn.bytedance.net",
+                  "shown_in_ext": true
+                },
+                {
+                  "key": "http.url",
+                  "value": "/api/open/activity/generate_image_editing",
+                  "shown_in_ext": true
+                },
+                {
+                  "key": "http.method",
+                  "value": "POST",
+                  "shown_in_ext": true
+                },
+                {
+                  "key": "_status_code",
+                  "value": 200,
+                  "shown_in_ext": true
+                },
+                {
+                  "key": "http.param",
+                  "value": "",
+                  "shown_in_ext": true
+                }
+              ],
+              "duration": 36115794,
+              "start_time": 1786680086183206,
+              "status_code": 200,
+              "service_type": "http",
+              "highlight_level": "normal",
+              "ext_info_abstract": "POST /api/open/activity/gene.."
+            },
+            {
+              "span_id": "4bf58125c739a",
+              "parent_id": "4bf58125c7399",
+              "ref_type": "child_of",
+              "references": [],
+              "type": "client",
+              "name": "tikcast.agency.activity_manager::CheckPosterQuota",
+              "component": "byted_service_rpc",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "tikcast.agency.activity_manager"
+                },
+                {
+                  "key": "_component",
+                  "value": "byted_service_rpc"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "CheckPosterQuota"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "[fdbd:dc55:d:732::12]:11055"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "66.129 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "1.982 KB"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "551 B"
+                },
+                {
+                  "key": "service",
+                  "value": "AgencyActivityManagerService"
+                },
+                {
+                  "key": "method",
+                  "value": "CheckPosterQuota"
+                },
+                {
+                  "key": "env",
+                  "value": "ppe_activity_ai_assistant"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "to",
+                  "value": "tikcast.agency.activity_manager"
+                },
+                {
+                  "key": "to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "to_idc",
+                  "value": "my3"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": 982
+                },
+                {
+                  "key": "read_cost",
+                  "value": 57460
+                },
+                {
+                  "key": "write_cost",
+                  "value": 2149
+                },
+                {
+                  "key": "retry",
+                  "value": 0
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_activity_ai_assistant"
+                }
+              ],
+              "duration": 66129,
+              "start_time": 1786680086189871,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.agency.activity_manager",
+                "service_type": "thrift",
+                "framework": "kitex",
+                "env": "ppe_activity_ai_assistant",
+                "cluster": "default",
+                "dc": "my3",
+                "deploy_stage": "all_dc",
+                "server_addr": "fdbd:dc55:d:732::12",
+                "method": "CheckPosterQuota"
+              }
+            },
+            {
+              "span_id": "4bf58125c739b",
+              "parent_id": "4bf58125c7399",
+              "ref_type": "child_of",
+              "references": [],
+              "type": "client",
+              "name": "tikcast.opint.agent_moderation::Moderate",
+              "component": "byted_service_rpc",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "tikcast.opint.agent_moderation"
+                },
+                {
+                  "key": "_component",
+                  "value": "byted_service_rpc"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "[fdbd:dc55:2:f24::49]:9506"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "483.331 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "2.265 KB"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "549 B"
+                },
+                {
+                  "key": "service",
+                  "value": "AgentModerationService"
+                },
+                {
+                  "key": "method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "to",
+                  "value": "tikcast.opint.agent_moderation"
+                },
+                {
+                  "key": "to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "to_idc",
+                  "value": "my3"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": 510
+                },
+                {
+                  "key": "read_cost",
+                  "value": 475596
+                },
+                {
+                  "key": "write_cost",
+                  "value": 3848
+                },
+                {
+                  "key": "retry",
+                  "value": 0
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                }
+              ],
+              "duration": 483331,
+              "start_time": 1786680086258669,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.opint.agent_moderation",
+                "service_type": "thrift",
+                "framework": "euler",
+                "env": "ppe_backstage_ai_agent",
+                "cluster": "default",
+                "dc": "my3",
+                "deploy_stage": "canary",
+                "server_addr": "127.0.0.1",
+                "method": "Moderate"
+              }
+            },
+            {
+              "span_id": "4bf58125c739c",
+              "parent_id": "4bf58125c7399",
+              "ref_type": "child_of",
+              "references": [],
+              "type": "client",
+              "name": "tikcast.opint.agent_moderation::Moderate",
+              "component": "byted_service_rpc",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "tikcast.opint.agent_moderation"
+                },
+                {
+                  "key": "_component",
+                  "value": "byted_service_rpc"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "[fdbd:dc55:2:f24::49]:11228"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "7.144 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "2.271 KB"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "555 B"
+                },
+                {
+                  "key": "service",
+                  "value": "AgentModerationService"
+                },
+                {
+                  "key": "method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "to",
+                  "value": "tikcast.opint.agent_moderation"
+                },
+                {
+                  "key": "to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "to_idc",
+                  "value": "my3"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": 49
+                },
+                {
+                  "key": "read_cost",
+                  "value": 5885
+                },
+                {
+                  "key": "write_cost",
+                  "value": 687
+                },
+                {
+                  "key": "retry",
+                  "value": 0
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                }
+              ],
+              "duration": 7144,
+              "start_time": 1786680086742856,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.opint.agent_moderation",
+                "service_type": "thrift",
+                "framework": "euler",
+                "env": "ppe_backstage_ai_agent",
+                "cluster": "default",
+                "dc": "my3",
+                "deploy_stage": "all_dc",
+                "server_addr": "127.0.0.1",
+                "method": "Moderate"
+              }
+            },
+            {
+              "span_id": "4bf58125c739e",
+              "parent_id": "4bf58125c7399",
+              "ref_type": "child_of",
+              "references": [],
+              "type": "client",
+              "name": "tikcast.opint.agent_moderation::Moderate",
+              "component": "byted_service_rpc",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "tikcast.opint.agent_moderation"
+                },
+                {
+                  "key": "_component",
+                  "value": "byted_service_rpc"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "[fdbd:dc55:2:f24::49]:9506"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1293.021 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "4.268 KB"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "549 B"
+                },
+                {
+                  "key": "service",
+                  "value": "AgentModerationService"
+                },
+                {
+                  "key": "method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "to",
+                  "value": "tikcast.opint.agent_moderation"
+                },
+                {
+                  "key": "to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "to_idc",
+                  "value": "my3"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": 63
+                },
+                {
+                  "key": "read_cost",
+                  "value": 1291084
+                },
+                {
+                  "key": "write_cost",
+                  "value": 855
+                },
+                {
+                  "key": "retry",
+                  "value": 0
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                }
+              ],
+              "duration": 1293021,
+              "start_time": 1786680117763979,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.opint.agent_moderation",
+                "service_type": "thrift",
+                "framework": "euler",
+                "env": "ppe_backstage_ai_agent",
+                "cluster": "default",
+                "dc": "my3",
+                "deploy_stage": "canary",
+                "server_addr": "127.0.0.1",
+                "method": "Moderate"
+              }
+            },
+            {
+              "span_id": "4bf58125c739f",
+              "parent_id": "4bf58125c7399",
+              "ref_type": "child_of",
+              "references": [],
+              "type": "client",
+              "name": "tikcast.opint.agent_moderation::Moderate",
+              "component": "byted_service_rpc",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "tikcast.opint.agent_moderation"
+                },
+                {
+                  "key": "_component",
+                  "value": "byted_service_rpc"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "[fdbd:dc55:2:f24::49]:11228"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1661.951 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "4.274 KB"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "559 B"
+                },
+                {
+                  "key": "service",
+                  "value": "AgentModerationService"
+                },
+                {
+                  "key": "method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "to",
+                  "value": "tikcast.opint.agent_moderation"
+                },
+                {
+                  "key": "to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "to_idc",
+                  "value": "my3"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": 63
+                },
+                {
+                  "key": "read_cost",
+                  "value": 1660780
+                },
+                {
+                  "key": "write_cost",
+                  "value": 734
+                },
+                {
+                  "key": "retry",
+                  "value": 0
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                }
+              ],
+              "duration": 1661951,
+              "start_time": 1786680119059049,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.opint.agent_moderation",
+                "service_type": "thrift",
+                "framework": "euler",
+                "env": "ppe_backstage_ai_agent",
+                "cluster": "default",
+                "dc": "my3",
+                "deploy_stage": "all_dc",
+                "server_addr": "127.0.0.1",
+                "method": "Moderate"
+              }
+            }
+          ],
+          "service": "tikcast.platform.activity_material",
+          "dc": "my3",
+          "cluster": "faas-sg",
+          "deploy_stage": "all_dc",
+          "env": "prod",
+          "pod_name": "85c4oryj-n8uvnz4oa6-reserved-99f76fdb7-zcv2s",
+          "language": "js",
+          "ip": "fdbd:dc55:d:742:0:37::",
+          "ipv6": "fdbd:dc55:d:742:0:37::",
+          "method": "GenerateImageEditingController_generateImageEditing",
+          "tags": [
+            {
+              "key": "_framework",
+              "value": "gulux"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0.001
+            }
+          ],
+          "region": "Singapore-Central"
+        },
+        {
+          "trace_id": "0000000035cd4281000267cd73890afb",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "72459921695460918",
+          "version": 2,
+          "root_span_id": "18af81d6b53e3d7b",
+          "flags": 9,
+          "sampling_type": "inheritance",
+          "sampling_rate": 0,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "18af81d6b53e3d7b",
+              "parent_id": "4bf58125c739a",
+              "ref_type": "child_of",
+              "references": [
+                {
+                  "trace_id": "0000000035cd4281000267cd73890afb",
+                  "parent_span_id": "6bf58125c739a",
+                  "ref_type": "child_of"
+                },
+                {
+                  "trace_id": "0000000035cd4281000267cd73890afb",
+                  "parent_span_id": "4bf58125c739a",
+                  "ref_type": "child_of"
+                }
+              ],
+              "type": "server",
+              "name": "CheckPosterQuota",
+              "component": "kitex",
+              "tags": [
+                {
+                  "key": "_method",
+                  "value": "CheckPosterQuota"
+                },
+                {
+                  "key": "_component",
+                  "value": "kitex"
+                },
+                {
+                  "key": "_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_from_service",
+                  "value": "tikcast.platform.activity_material"
+                },
+                {
+                  "key": "_from_cluster",
+                  "value": "faas-sg"
+                },
+                {
+                  "key": "_from_addr",
+                  "value": "fdbd:dc55:d:742:250c:648:3b00:fe"
+                },
+                {
+                  "key": "_from_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "4.079 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "117 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "2.334 KB"
+                },
+                {
+                  "key": "handler_cost",
+                  "value": "21 us"
+                },
+                {
+                  "key": "remote_closed",
+                  "value": "0"
+                },
+                {
+                  "key": "combine",
+                  "value": "0"
+                },
+                {
+                  "key": "transport",
+                  "value": "0"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_activity_ai_assistant"
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": ""
+                },
+                {
+                  "key": "idl_service_name",
+                  "value": "AgencyActivityManagerService"
+                },
+                {
+                  "key": "p_level",
+                  "value": "P4"
+                },
+                {
+                  "key": "read_cost",
+                  "value": "163 us"
+                },
+                {
+                  "key": "wait_read_cost",
+                  "value": "87 us"
+                },
+                {
+                  "key": "write_cost",
+                  "value": "64 us"
+                }
+              ],
+              "events": [
+                {
+                  "type": "perfT",
+                  "name": "ServerReadStart",
+                  "start_time": 1786680086223763,
+                  "highlight_level": "normal"
+                },
+                {
+                  "type": "perfT",
+                  "name": "ServerReadFinish",
+                  "start_time": 1786680086223926,
+                  "highlight_level": "normal"
+                },
+                {
+                  "type": "perfT",
+                  "name": "ServerWriteStart",
+                  "start_time": 1786680086227744,
+                  "highlight_level": "normal"
+                },
+                {
+                  "type": "perfT",
+                  "name": "ServerWriteFinish",
+                  "start_time": 1786680086227809,
+                  "highlight_level": "normal"
+                },
+                {
+                  "type": "perfT",
+                  "name": "ServerHandleStart",
+                  "start_time": 1786680086227460,
+                  "highlight_level": "normal"
+                },
+                {
+                  "type": "perfT",
+                  "name": "ServerHandleFinish",
+                  "start_time": 1786680086227482,
+                  "highlight_level": "normal"
+                },
+                {
+                  "type": "perfT",
+                  "name": "RPCStart",
+                  "start_time": 1786680086223730,
+                  "highlight_level": "normal"
+                },
+                {
+                  "type": "perfT",
+                  "name": "RPCFinish",
+                  "start_time": 1786680086227810,
+                  "highlight_level": "normal"
+                },
+                {
+                  "type": "perfT",
+                  "name": "ServerWaitReadStart",
+                  "start_time": 1786680086223837,
+                  "highlight_level": "normal"
+                },
+                {
+                  "type": "perfT",
+                  "name": "ServerWaitReadFinish",
+                  "start_time": 1786680086223924,
+                  "highlight_level": "normal"
+                }
+              ],
+              "duration": 4079,
+              "start_time": 1786680086223730,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.platform.activity_material",
+                "service_type": "http",
+                "framework": "gulux",
+                "env": "prod",
+                "cluster": "faas-sg",
+                "dc": "my3",
+                "deploy_stage": "all_dc",
+                "server_addr": "fdbd:dc55:d:742:0:37::",
+                "method": "GenerateImageEditingController_generateImageEditing"
+              }
+            }
+          ],
+          "service": "tikcast.agency.activity_manager",
+          "dc": "my3",
+          "cluster": "default",
+          "deploy_stage": "all_dc",
+          "env": "ppe_activity_ai_assistant",
+          "pod_name": "dp-0a02a4caff-76b558d57b-r8pf8",
+          "language": "go",
+          "ip": "fdbd:dc55:d:732::12",
+          "ipv6": "fdbd:dc55:d:732::12",
+          "method": "CheckPosterQuota",
+          "tags": [
+            {
+              "key": "_image_version",
+              "value": "e80454c2841ecc4445737908e797527b"
+            },
+            {
+              "key": "_framework",
+              "value": "eventbus"
+            },
+            {
+              "key": "_tce_node_level",
+              "value": "default"
+            },
+            {
+              "key": "_tce_physical_cluster",
+              "value": "PPE"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0
+            }
+          ],
+          "region": "Singapore-Central"
+        },
+        {
+          "trace_id": "0000000035cd4281000267cd73890afb",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "3452615641962117368",
+          "version": 2,
+          "root_span_id": "401cc395a82968b",
+          "flags": 9,
+          "sampling_type": "inheritance",
+          "sampling_rate": 0,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "401cc395a82968b",
+              "parent_id": "4bf58125c739b",
+              "ref_type": "child_of",
+              "references": [
+                {
+                  "trace_id": "0000000035cd4281000267cd73890afb",
+                  "parent_span_id": "0",
+                  "ref_type": "child_of"
+                }
+              ],
+              "type": "server",
+              "name": "Moderate",
+              "component": "euler",
+              "tags": [
+                {
+                  "key": "_method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "_component",
+                  "value": "euler"
+                },
+                {
+                  "key": "_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_from_service",
+                  "value": "tikcast.platform.activity_material"
+                },
+                {
+                  "key": "_from_cluster",
+                  "value": "faas-sg"
+                },
+                {
+                  "key": "_from_addr",
+                  "value": "[fdbd:dc55:d:742:250c:648:3b00:fe]:38862"
+                },
+                {
+                  "key": "_from_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "431.658 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": "-"
+                },
+                {
+                  "key": "p_level",
+                  "value": "P4"
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "mct",
+                  "value": "-"
+                },
+                {
+                  "key": "mrt",
+                  "value": "-"
+                },
+                {
+                  "key": "mtt",
+                  "value": "-"
+                },
+                {
+                  "key": "accept_wait_ms",
+                  "value": 78693710
+                }
+              ],
+              "duration": 431658,
+              "start_time": 1786680086307703,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.platform.activity_material",
+                "service_type": "http",
+                "framework": "gulux",
+                "env": "prod",
+                "cluster": "faas-sg",
+                "dc": "my3",
+                "deploy_stage": "all_dc",
+                "server_addr": "fdbd:dc55:d:742:0:37::",
+                "method": "GenerateImageEditingController_generateImageEditing"
+              }
+            }
+          ],
+          "service": "tikcast.opint.agent_moderation",
+          "dc": "my3",
+          "cluster": "default",
+          "deploy_stage": "canary",
+          "env": "ppe_backstage_ai_agent",
+          "pod_name": "dp-4c60448a22-697899d479-58qcg",
+          "language": "python",
+          "ip": "127.0.0.1",
+          "ipv4": "127.0.0.1",
+          "ipv6": "fdbd:dc55:2:f24::49",
+          "method": "Moderate",
+          "tags": [
+            {
+              "key": "_framework",
+              "value": "euler"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0
+            }
+          ],
+          "region": "Singapore-Central"
+        },
+        {
+          "trace_id": "4b122affbbd80f756b2dbfee39dcf454",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "1241652554914799526",
+          "version": 2,
+          "root_span_id": "42c783ae1ff90e28",
+          "flags": 1,
+          "sampling_type": "probabilistic",
+          "sampling_rate": 0.001,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "42c783ae1ff90e28",
+              "parent_id": "0",
+              "ref_type": "child_of",
+              "references": [],
+              "type": "client",
+              "name": "tns.eco_see.ai_excalibur::AIExcaliburModerate",
+              "component": "euler",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "tns.eco_see.ai_excalibur"
+                },
+                {
+                  "key": "_component",
+                  "value": "euler"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "AIExcaliburModerate"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "[fdbd:dc53:22:61e::15]:10481"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "my"
+                },
+                {
+                  "key": "_duration",
+                  "value": "428.954 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "label",
+                  "value": "success"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": "-"
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "mct",
+                  "value": "2000"
+                },
+                {
+                  "key": "mrt",
+                  "value": "-"
+                },
+                {
+                  "key": "mtt",
+                  "value": "426992"
+                }
+              ],
+              "duration": 428954,
+              "start_time": 1786680086308848,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tns.eco_see.ai_excalibur",
+                "service_type": "",
+                "framework": "",
+                "env": "",
+                "cluster": "default",
+                "dc": "my",
+                "deploy_stage": "",
+                "server_addr": "[fdbd:dc53:22:61e::15]:10481",
+                "method": "AIExcaliburModerate"
+              }
+            }
+          ],
+          "service": "tikcast.opint.agent_moderation",
+          "dc": "my3",
+          "cluster": "default",
+          "deploy_stage": "canary",
+          "env": "ppe_backstage_ai_agent",
+          "pod_name": "dp-4c60448a22-697899d479-58qcg",
+          "language": "python",
+          "ip": "127.0.0.1",
+          "ipv4": "127.0.0.1",
+          "ipv6": "fdbd:dc55:2:f24::49",
+          "method": "tns.eco_see.ai_excalibur",
+          "tags": [
+            {
+              "key": "_framework",
+              "value": "euler"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0.001
+            }
+          ],
+          "region": "Singapore-Central"
+        },
+        {
+          "trace_id": "0000000035cd4281000267cd73890afb",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "6143236095927190603",
+          "version": 2,
+          "root_span_id": "4fd3a2cba0840cb4",
+          "flags": 9,
+          "sampling_type": "inheritance",
+          "sampling_rate": 0,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "4fd3a2cba0840cb4",
+              "parent_id": "4bf58125c739c",
+              "ref_type": "child_of",
+              "references": [
+                {
+                  "trace_id": "0000000035cd4281000267cd73890afb",
+                  "parent_span_id": "0",
+                  "ref_type": "child_of"
+                }
+              ],
+              "type": "server",
+              "name": "Moderate",
+              "component": "euler",
+              "tags": [
+                {
+                  "key": "_method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "_component",
+                  "value": "euler"
+                },
+                {
+                  "key": "_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_from_service",
+                  "value": "tikcast.platform.activity_material"
+                },
+                {
+                  "key": "_from_cluster",
+                  "value": "faas-sg"
+                },
+                {
+                  "key": "_from_addr",
+                  "value": "[fdbd:dc55:d:742:250c:648:3b00:fe]:57182"
+                },
+                {
+                  "key": "_from_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1.474 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": "-"
+                },
+                {
+                  "key": "p_level",
+                  "value": "P4"
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "mct",
+                  "value": "-"
+                },
+                {
+                  "key": "mrt",
+                  "value": "-"
+                },
+                {
+                  "key": "mtt",
+                  "value": "-"
+                },
+                {
+                  "key": "accept_wait_ms",
+                  "value": 146255368
+                }
+              ],
+              "duration": 1474,
+              "start_time": 1786680086747321,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.platform.activity_material",
+                "service_type": "http",
+                "framework": "gulux",
+                "env": "prod",
+                "cluster": "faas-sg",
+                "dc": "my3",
+                "deploy_stage": "all_dc",
+                "server_addr": "fdbd:dc55:d:742:0:37::",
+                "method": "GenerateImageEditingController_generateImageEditing"
+              }
+            }
+          ],
+          "service": "tikcast.opint.agent_moderation",
+          "dc": "my3",
+          "cluster": "default",
+          "deploy_stage": "all_dc",
+          "env": "ppe_backstage_ai_agent",
+          "pod_name": "dp-7b3007e6c8-75fbdfdc-sh2vv",
+          "language": "python",
+          "ip": "127.0.0.1",
+          "ipv4": "127.0.0.1",
+          "ipv6": "fdbd:dc55:2:f24::49",
+          "method": "Moderate",
+          "tags": [
+            {
+              "key": "_framework",
+              "value": "euler"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0
+            }
+          ],
+          "region": "Singapore-Central"
+        },
+        {
+          "trace_id": "0000000035cd4281000267cd73890afb",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "5067949350548381099",
+          "version": 2,
+          "root_span_id": "61c82c9c919bbe2e",
+          "flags": 9,
+          "sampling_type": "inheritance",
+          "sampling_rate": 0,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "61c82c9c919bbe2e",
+              "parent_id": "4bf58125c739e",
+              "ref_type": "child_of",
+              "references": [
+                {
+                  "trace_id": "0000000035cd4281000267cd73890afb",
+                  "parent_span_id": "0",
+                  "ref_type": "child_of"
+                }
+              ],
+              "type": "server",
+              "name": "Moderate",
+              "component": "euler",
+              "tags": [
+                {
+                  "key": "_method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "_component",
+                  "value": "euler"
+                },
+                {
+                  "key": "_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_from_service",
+                  "value": "tikcast.platform.activity_material"
+                },
+                {
+                  "key": "_from_cluster",
+                  "value": "faas-sg"
+                },
+                {
+                  "key": "_from_addr",
+                  "value": "[fdbd:dc55:d:742:250c:648:3b00:fe]:47070"
+                },
+                {
+                  "key": "_from_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1285.93 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": "-"
+                },
+                {
+                  "key": "p_level",
+                  "value": "P4"
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "mct",
+                  "value": "-"
+                },
+                {
+                  "key": "mrt",
+                  "value": "-"
+                },
+                {
+                  "key": "mtt",
+                  "value": "-"
+                },
+                {
+                  "key": "accept_wait_ms",
+                  "value": 31461
+                }
+              ],
+              "duration": 1285930,
+              "start_time": 1786680117769050,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.platform.activity_material",
+                "service_type": "http",
+                "framework": "gulux",
+                "env": "prod",
+                "cluster": "faas-sg",
+                "dc": "my3",
+                "deploy_stage": "all_dc",
+                "server_addr": "fdbd:dc55:d:742:0:37::",
+                "method": "GenerateImageEditingController_generateImageEditing"
+              }
+            }
+          ],
+          "service": "tikcast.opint.agent_moderation",
+          "dc": "my3",
+          "cluster": "default",
+          "deploy_stage": "canary",
+          "env": "ppe_backstage_ai_agent",
+          "pod_name": "dp-4c60448a22-697899d479-58qcg",
+          "language": "python",
+          "ip": "127.0.0.1",
+          "ipv4": "127.0.0.1",
+          "ipv6": "fdbd:dc55:2:f24::49",
+          "method": "Moderate",
+          "tags": [
+            {
+              "key": "_framework",
+              "value": "euler"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0
+            }
+          ],
+          "region": "Singapore-Central"
+        },
+        {
+          "trace_id": "4b122aff60ec5938565916a7013e3e81",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "5451928831231078952",
+          "version": 2,
+          "root_span_id": "39deddfbb3b6a98c",
+          "flags": 1,
+          "sampling_type": "probabilistic",
+          "sampling_rate": 0.001,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "39deddfbb3b6a98c",
+              "parent_id": "0",
+              "ref_type": "child_of",
+              "references": [],
+              "type": "client",
+              "name": "tns.eco_see.ai_excalibur::AIExcaliburModerate",
+              "component": "euler",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "tns.eco_see.ai_excalibur"
+                },
+                {
+                  "key": "_component",
+                  "value": "euler"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "AIExcaliburModerate"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "[fdbd:dc53:5:599::25]:11088"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "my"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1283.432 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "label",
+                  "value": "success"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": "-"
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "mct",
+                  "value": "1000"
+                },
+                {
+                  "key": "mrt",
+                  "value": "-"
+                },
+                {
+                  "key": "mtt",
+                  "value": "1280975"
+                }
+              ],
+              "duration": 1283432,
+              "start_time": 1786680117770276,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tns.eco_see.ai_excalibur",
+                "service_type": "",
+                "framework": "",
+                "env": "",
+                "cluster": "default",
+                "dc": "my",
+                "deploy_stage": "",
+                "server_addr": "[fdbd:dc53:5:599::25]:11088",
+                "method": "AIExcaliburModerate"
+              }
+            }
+          ],
+          "service": "tikcast.opint.agent_moderation",
+          "dc": "my3",
+          "cluster": "default",
+          "deploy_stage": "canary",
+          "env": "ppe_backstage_ai_agent",
+          "pod_name": "dp-4c60448a22-697899d479-58qcg",
+          "language": "python",
+          "ip": "127.0.0.1",
+          "ipv4": "127.0.0.1",
+          "ipv6": "fdbd:dc55:2:f24::49",
+          "method": "tns.eco_see.ai_excalibur",
+          "tags": [
+            {
+              "key": "_framework",
+              "value": "euler"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0.001
+            }
+          ],
+          "region": "Singapore-Central"
+        },
+        {
+          "trace_id": "0000000035cd4281000267cd73890afb",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "4337814997495093859",
+          "version": 2,
+          "root_span_id": "4c458b05f5188b31",
+          "flags": 9,
+          "sampling_type": "inheritance",
+          "sampling_rate": 0,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "4c458b05f5188b31",
+              "parent_id": "4bf58125c739f",
+              "ref_type": "child_of",
+              "references": [
+                {
+                  "trace_id": "0000000035cd4281000267cd73890afb",
+                  "parent_span_id": "0",
+                  "ref_type": "child_of"
+                }
+              ],
+              "type": "server",
+              "name": "Moderate",
+              "component": "euler",
+              "tags": [
+                {
+                  "key": "_method",
+                  "value": "Moderate"
+                },
+                {
+                  "key": "_component",
+                  "value": "euler"
+                },
+                {
+                  "key": "_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_from_service",
+                  "value": "tikcast.platform.activity_material"
+                },
+                {
+                  "key": "_from_cluster",
+                  "value": "faas-sg"
+                },
+                {
+                  "key": "_from_addr",
+                  "value": "[fdbd:dc55:d:742:250c:648:3b00:fe]:40740"
+                },
+                {
+                  "key": "_from_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1655.91 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": "-"
+                },
+                {
+                  "key": "p_level",
+                  "value": "P4"
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "mct",
+                  "value": "-"
+                },
+                {
+                  "key": "mrt",
+                  "value": "-"
+                },
+                {
+                  "key": "mtt",
+                  "value": "-"
+                },
+                {
+                  "key": "accept_wait_ms",
+                  "value": 32316
+                }
+              ],
+              "duration": 1655910,
+              "start_time": 1786680119063750,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.platform.activity_material",
+                "service_type": "http",
+                "framework": "gulux",
+                "env": "prod",
+                "cluster": "faas-sg",
+                "dc": "my3",
+                "deploy_stage": "all_dc",
+                "server_addr": "fdbd:dc55:d:742:0:37::",
+                "method": "GenerateImageEditingController_generateImageEditing"
+              }
+            }
+          ],
+          "service": "tikcast.opint.agent_moderation",
+          "dc": "my3",
+          "cluster": "default",
+          "deploy_stage": "all_dc",
+          "env": "ppe_backstage_ai_agent",
+          "pod_name": "dp-7b3007e6c8-75fbdfdc-sh2vv",
+          "language": "python",
+          "ip": "127.0.0.1",
+          "ipv4": "127.0.0.1",
+          "ipv6": "fdbd:dc55:2:f24::49",
+          "method": "Moderate",
+          "tags": [
+            {
+              "key": "_framework",
+              "value": "euler"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0
+            }
+          ],
+          "region": "Singapore-Central"
+        },
+        {
+          "trace_id": "4b122aff0ceec83c0656e783462b23c8",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "5893977122430717040",
+          "version": 2,
+          "root_span_id": "2c94104256ae97e7",
+          "flags": 1,
+          "sampling_type": "probabilistic",
+          "sampling_rate": 0.001,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "2c94104256ae97e7",
+              "parent_id": "0",
+              "ref_type": "child_of",
+              "references": [],
+              "type": "client",
+              "name": "tiktok.ai_metadata.copyright_mitigation::DetectIPCompliance",
+              "component": "euler",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "tiktok.ai_metadata.copyright_mitigation"
+                },
+                {
+                  "key": "_component",
+                  "value": "euler"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "DetectIPCompliance"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "[fdbd:dc55:4:1420::12]:10711"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1653.503 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "label",
+                  "value": "success"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": "-"
+                },
+                {
+                  "key": "mesh",
+                  "value": "1"
+                },
+                {
+                  "key": "mct",
+                  "value": "1000"
+                },
+                {
+                  "key": "mrt",
+                  "value": "-"
+                },
+                {
+                  "key": "mtt",
+                  "value": "1650967"
+                }
+              ],
+              "duration": 1653503,
+              "start_time": 1786680119064736,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tiktok.ai_metadata.copyright_mitigation",
+                "service_type": "thrift",
+                "framework": "euler-server",
+                "env": "prod",
+                "cluster": "default",
+                "dc": "my3",
+                "deploy_stage": "single_dc",
+                "server_addr": "127.0.0.1",
+                "method": "DetectIPCompliance"
+              }
+            }
+          ],
+          "service": "tikcast.opint.agent_moderation",
+          "dc": "my3",
+          "cluster": "default",
+          "deploy_stage": "all_dc",
+          "env": "ppe_backstage_ai_agent",
+          "pod_name": "dp-7b3007e6c8-75fbdfdc-sh2vv",
+          "language": "python",
+          "ip": "127.0.0.1",
+          "ipv4": "127.0.0.1",
+          "ipv6": "fdbd:dc55:2:f24::49",
+          "method": "tiktok.ai_metadata.copyright_mitigation",
+          "tags": [
+            {
+              "key": "_framework",
+              "value": "euler"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0.001
+            }
+          ],
+          "region": "Singapore-Central"
+        },
+        {
+          "trace_id": "4b122aff0ceec83c0656e783462b23c8",
+          "log_id": "021786680060075fdbddc530022063021451d5d9e000082690fad",
+          "transaction_id": "3140565085136417199",
+          "version": 2,
+          "root_span_id": "5c9b96713692dcab",
+          "flags": 1,
+          "sampling_type": "inheritance",
+          "sampling_rate": 0,
+          "debug_info": "",
+          "spans": [
+            {
+              "span_id": "5c9b96713692dcab",
+              "parent_id": "2c94104256ae97e7",
+              "ref_type": "child_of",
+              "references": [
+                {
+                  "trace_id": "4b122aff0ceec83c0656e783462b23c8",
+                  "parent_span_id": "0",
+                  "ref_type": "child_of"
+                }
+              ],
+              "type": "server",
+              "name": "DetectIPCompliance",
+              "component": "euler-server",
+              "tags": [
+                {
+                  "key": "_method",
+                  "value": "DetectIPCompliance"
+                },
+                {
+                  "key": "_component",
+                  "value": "euler-server"
+                },
+                {
+                  "key": "_service_type",
+                  "value": "thrift"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_from_service",
+                  "value": "tikcast.opint.agent_moderation"
+                },
+                {
+                  "key": "_from_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_from_addr",
+                  "value": "[fdbd:dc55:2:f24:3144:293c:1e00:3a]:55392"
+                },
+                {
+                  "key": "_from_dc",
+                  "value": "my3"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1643.837 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "0 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "request.env",
+                  "value": "ppe_backstage_ai_agent"
+                },
+                {
+                  "key": "conn_cost",
+                  "value": "-"
+                },
+                {
+                  "key": "mesh",
+                  "value": "0"
+                },
+                {
+                  "key": "accept_wait_ms",
+                  "value": 662027
+                }
+              ],
+              "duration": 1643837,
+              "start_time": 1786680119069078,
+              "status_code": 0,
+              "service_type": "thrift",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "tikcast.opint.agent_moderation",
+                "service_type": "",
+                "framework": "",
+                "env": "",
+                "cluster": "default",
+                "dc": "my3",
+                "deploy_stage": "",
+                "server_addr": "[fdbd:dc55:2:f24:3144:293c:1e00:3a]:55392",
+                "method": ""
+              }
+            },
+            {
+              "span_id": "6846d8339e728ae0",
+              "parent_id": "5c9b96713692dcab",
+              "ref_type": "child_of",
+              "references": [
+                {
+                  "trace_id": "4b122aff0ceec83c0656e783462b23c8",
+                  "parent_span_id": "2c94104256ae97e7",
+                  "ref_type": "child_of"
+                }
+              ],
+              "type": "client",
+              "name": "toutiao.redis.copyright::INCRBY",
+              "component": "bytedredis",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "toutiao.redis.copyright"
+                },
+                {
+                  "key": "_component",
+                  "value": "bytedredis"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "redis"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "INCRBY"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "-"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "-"
+                },
+                {
+                  "key": "_duration",
+                  "value": "2.175 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "47 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "47 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "cmd_type",
+                  "value": "normal"
+                },
+                {
+                  "key": "db.statement",
+                  "value": "('INCRBY', 'qps:default:total')",
+                  "shown_in_ext": true
+                },
+                {
+                  "key": "status",
+                  "value": "succ",
+                  "shown_in_ext": true
+                }
+              ],
+              "duration": 2175,
+              "start_time": 1786680119070422,
+              "status_code": 0,
+              "service_type": "redis",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "toutiao.redis.copyright",
+                "service_type": "",
+                "framework": "",
+                "env": "",
+                "cluster": "default",
+                "dc": "-",
+                "deploy_stage": "",
+                "server_addr": "-",
+                "method": "INCRBY"
+              },
+              "ext_info_abstract": "('INCRBY', 'qps:default:tota.."
+            },
+            {
+              "span_id": "4a0cde9808056623",
+              "parent_id": "5c9b96713692dcab",
+              "ref_type": "child_of",
+              "references": [
+                {
+                  "trace_id": "4b122aff0ceec83c0656e783462b23c8",
+                  "parent_span_id": "2c94104256ae97e7",
+                  "ref_type": "child_of"
+                }
+              ],
+              "type": "client",
+              "name": "toutiao.redis.copyright::INCRBY",
+              "component": "bytedredis",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "toutiao.redis.copyright"
+                },
+                {
+                  "key": "_component",
+                  "value": "bytedredis"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "redis"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "INCRBY"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "-"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "-"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1.796 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "54 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "54 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "cmd_type",
+                  "value": "normal"
+                },
+                {
+                  "key": "db.statement",
+                  "value": "('INCRBY', 'qps:default:w:1786680119')",
+                  "shown_in_ext": true
+                },
+                {
+                  "key": "status",
+                  "value": "succ",
+                  "shown_in_ext": true
+                }
+              ],
+              "duration": 1796,
+              "start_time": 1786680119072751,
+              "status_code": 0,
+              "service_type": "redis",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "toutiao.redis.copyright",
+                "service_type": "",
+                "framework": "",
+                "env": "",
+                "cluster": "default",
+                "dc": "-",
+                "deploy_stage": "",
+                "server_addr": "-",
+                "method": "INCRBY"
+              },
+              "ext_info_abstract": "('INCRBY', 'qps:default:w:17.."
+            },
+            {
+              "span_id": "552690b2defcdbe9",
+              "parent_id": "5c9b96713692dcab",
+              "ref_type": "child_of",
+              "references": [
+                {
+                  "trace_id": "4b122aff0ceec83c0656e783462b23c8",
+                  "parent_span_id": "2c94104256ae97e7",
+                  "ref_type": "child_of"
+                }
+              ],
+              "type": "client",
+              "name": "toutiao.redis.copyright::EXPIRE",
+              "component": "bytedredis",
+              "tags": [
+                {
+                  "key": "_to_service",
+                  "value": "toutiao.redis.copyright"
+                },
+                {
+                  "key": "_component",
+                  "value": "bytedredis"
+                },
+                {
+                  "key": "_to_service_type",
+                  "value": "redis"
+                },
+                {
+                  "key": "_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_is_error",
+                  "value": false
+                },
+                {
+                  "key": "_biz_status_code",
+                  "value": 0
+                },
+                {
+                  "key": "_to_method",
+                  "value": "EXPIRE"
+                },
+                {
+                  "key": "_to_cluster",
+                  "value": "default"
+                },
+                {
+                  "key": "_to_addr",
+                  "value": "-"
+                },
+                {
+                  "key": "_to_dc",
+                  "value": "-"
+                },
+                {
+                  "key": "_duration",
+                  "value": "1.44 ms"
+                },
+                {
+                  "key": "_send_size",
+                  "value": "54 B"
+                },
+                {
+                  "key": "_recv_size",
+                  "value": "54 B"
+                },
+                {
+                  "key": "stress_tag",
+                  "value": "-"
+                },
+                {
+                  "key": "cmd_type",
+                  "value": "normal"
+                },
+                {
+                  "key": "db.statement",
+                  "value": "('EXPIRE', 'qps:default:w:1786680119')",
+                  "shown_in_ext": true
+                },
+                {
+                  "key": "status",
+                  "value": "succ",
+                  "shown_in_ext": true
+                }
+              ],
+              "duration": 1440,
+              "start_time": 1786680119074647,
+              "status_code": 0,
+              "service_type": "redis",
+              "highlight_level": "normal",
+              "peer_info": {
+                "psm": "toutiao.redis.copyright",
+                "service_type": "",
+                "framework": "",
+                "env": "",
+                "cluster": "default",
+                "dc": "-",
+                "deploy_stage": "",
+                "server_addr": "-",
+                "method": "EXPIRE"
+              },
+              "ext_info_abstract": "('EXPIRE', 'qps:default:w:17.."
+            }
+          ],
+          "service": "tiktok.ai_metadata.copyright_mitigation",
+          "dc": "my3",
+          "cluster": "default",
+          "deploy_stage": "single_dc",
+          "env": "prod",
+          "pod_name": "dp-8d6c87ecf4-5f7855fb6f-2xng2",
+          "language": "python",
+          "ip": "127.0.0.1",
+          "ipv4": "127.0.0.1",
+          "ipv6": "fdbd:dc55:4:1420::12",
+          "method": "DetectIPCompliance",
+          "tags": [
+            {
+              "key": "_framework",
+              "value": "euler"
+            },
+            {
+              "key": "_sampling_rate",
+              "value": 0
+            }
+          ],
+          "region": "Singapore-Central"
+        }
+      ],
+      "is_normal": false,
+      "summary": {
+        "span_summary": [
+          {
+            "level": 1,
+            "summary_span": [
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.platform.activity_material",
+                "psm_operation": "tikcast.platform.activity_material::GenerateImageEditingController_generateImageEditing",
+                "span_id": "4bf58125c7399",
+                "type": "server",
+                "component": "gulux",
+                "duration": 36115794,
+                "start_time": 1786680086183206,
+                "is_highlight_error": false,
+                "is_highlight_duration": true,
+                "min_duration": 36115794,
+                "max_duration": 36115794,
+                "total_duration": 36115794,
+                "span_count": 1,
+                "parent_id_list": [
+                  "0"
+                ],
+                "span_id_list": [
+                  "4bf58125c7399"
+                ],
+                "max_duration_span_id": "4bf58125c7399"
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "summary_span": [
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.platform.activity_material",
+                "psm_operation": "tikcast.platform.activity_material->tikcast.agency.activity_manager::CheckPosterQuota",
+                "span_id": "4bf58125c739a",
+                "type": "client",
+                "component": "byted_service_rpc",
+                "duration": 66129,
+                "start_time": 1786680086189871,
+                "is_highlight_error": false,
+                "is_highlight_duration": false,
+                "min_duration": 66129,
+                "max_duration": 66129,
+                "total_duration": 66129,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c7399"
+                ],
+                "span_id_list": [
+                  "4bf58125c739a"
+                ],
+                "max_duration_span_id": "4bf58125c739a"
+              },
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.platform.activity_material",
+                "psm_operation": "tikcast.platform.activity_material->tikcast.opint.agent_moderation::Moderate",
+                "span_id": "4bf58125c739b",
+                "type": "client",
+                "component": "byted_service_rpc",
+                "duration": 483331,
+                "start_time": 1786680086258669,
+                "is_highlight_error": false,
+                "is_highlight_duration": false,
+                "min_duration": 483331,
+                "max_duration": 483331,
+                "total_duration": 483331,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c7399"
+                ],
+                "span_id_list": [
+                  "4bf58125c739b"
+                ],
+                "max_duration_span_id": "4bf58125c739b"
+              },
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.platform.activity_material",
+                "psm_operation": "tikcast.platform.activity_material->tikcast.opint.agent_moderation::Moderate",
+                "span_id": "4bf58125c739c",
+                "type": "client",
+                "component": "byted_service_rpc",
+                "duration": 7144,
+                "start_time": 1786680086742856,
+                "is_highlight_error": false,
+                "is_highlight_duration": false,
+                "min_duration": 7144,
+                "max_duration": 7144,
+                "total_duration": 7144,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c7399"
+                ],
+                "span_id_list": [
+                  "4bf58125c739c"
+                ],
+                "max_duration_span_id": "4bf58125c739c"
+              },
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.platform.activity_material",
+                "psm_operation": "tikcast.platform.activity_material->tikcast.opint.agent_moderation::Moderate",
+                "span_id": "4bf58125c739e",
+                "type": "client",
+                "component": "byted_service_rpc",
+                "duration": 1293021,
+                "start_time": 1786680117763979,
+                "is_highlight_error": false,
+                "is_highlight_duration": false,
+                "min_duration": 1293021,
+                "max_duration": 1293021,
+                "total_duration": 1293021,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c7399"
+                ],
+                "span_id_list": [
+                  "4bf58125c739e"
+                ],
+                "max_duration_span_id": "4bf58125c739e"
+              },
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.platform.activity_material",
+                "psm_operation": "tikcast.platform.activity_material->tikcast.opint.agent_moderation::Moderate",
+                "span_id": "4bf58125c739f",
+                "type": "client",
+                "component": "byted_service_rpc",
+                "duration": 1661951,
+                "start_time": 1786680119059049,
+                "is_highlight_error": false,
+                "is_highlight_duration": true,
+                "min_duration": 1661951,
+                "max_duration": 1661951,
+                "total_duration": 1661951,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c7399"
+                ],
+                "span_id_list": [
+                  "4bf58125c739f"
+                ],
+                "max_duration_span_id": "4bf58125c739f"
+              }
+            ]
+          },
+          {
+            "level": 3,
+            "summary_span": [
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.agency.activity_manager",
+                "psm_operation": "tikcast.agency.activity_manager::CheckPosterQuota",
+                "span_id": "18af81d6b53e3d7b",
+                "type": "server",
+                "component": "kitex",
+                "duration": 4079,
+                "start_time": 1786680086223730,
+                "is_highlight_error": false,
+                "is_highlight_duration": false,
+                "min_duration": 4079,
+                "max_duration": 4079,
+                "total_duration": 4079,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c739a"
+                ],
+                "span_id_list": [
+                  "18af81d6b53e3d7b"
+                ],
+                "max_duration_span_id": "18af81d6b53e3d7b"
+              },
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.opint.agent_moderation",
+                "psm_operation": "tikcast.opint.agent_moderation::Moderate",
+                "span_id": "401cc395a82968b",
+                "type": "server",
+                "component": "euler",
+                "duration": 431658,
+                "start_time": 1786680086307703,
+                "is_highlight_error": false,
+                "is_highlight_duration": false,
+                "min_duration": 431658,
+                "max_duration": 431658,
+                "total_duration": 431658,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c739b"
+                ],
+                "span_id_list": [
+                  "401cc395a82968b"
+                ],
+                "max_duration_span_id": "401cc395a82968b"
+              },
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.opint.agent_moderation",
+                "psm_operation": "tikcast.opint.agent_moderation::Moderate",
+                "span_id": "4fd3a2cba0840cb4",
+                "type": "server",
+                "component": "euler",
+                "duration": 1474,
+                "start_time": 1786680086747321,
+                "is_highlight_error": false,
+                "is_highlight_duration": false,
+                "min_duration": 1474,
+                "max_duration": 1474,
+                "total_duration": 1474,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c739c"
+                ],
+                "span_id_list": [
+                  "4fd3a2cba0840cb4"
+                ],
+                "max_duration_span_id": "4fd3a2cba0840cb4"
+              },
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.opint.agent_moderation",
+                "psm_operation": "tikcast.opint.agent_moderation::Moderate",
+                "span_id": "61c82c9c919bbe2e",
+                "type": "server",
+                "component": "euler",
+                "duration": 1285930,
+                "start_time": 1786680117769050,
+                "is_highlight_error": false,
+                "is_highlight_duration": false,
+                "min_duration": 1285930,
+                "max_duration": 1285930,
+                "total_duration": 1285930,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c739e"
+                ],
+                "span_id_list": [
+                  "61c82c9c919bbe2e"
+                ],
+                "max_duration_span_id": "61c82c9c919bbe2e"
+              },
+              {
+                "is_merge_span": false,
+                "psm": "tikcast.opint.agent_moderation",
+                "psm_operation": "tikcast.opint.agent_moderation::Moderate",
+                "span_id": "4c458b05f5188b31",
+                "type": "server",
+                "component": "euler",
+                "duration": 1655910,
+                "start_time": 1786680119063750,
+                "is_highlight_error": false,
+                "is_highlight_duration": true,
+                "min_duration": 1655910,
+                "max_duration": 1655910,
+                "total_duration": 1655910,
+                "span_count": 1,
+                "parent_id_list": [
+                  "4bf58125c739f"
+                ],
+                "span_id_list": [
+                  "4c458b05f5188b31"
+                ],
+                "max_duration_span_id": "4c458b05f5188b31"
+              }
+            ]
+          }
+        ],
+        "span_filter_summary": [
+          {
+            "tag_key": "_component",
+            "tag_data_type": "STRING",
+            "tag_display_name": "组件",
+            "is_range_query_tag": false,
+            "tag_order": 10,
+            "values": [
+              "gulux",
+              "byted_service_rpc",
+              "kitex",
+              "euler",
+              "euler-server",
+              "bytedredis"
+            ],
+            "value_display_names": [
+              "gulux",
+              "byted_service_rpc",
+              "kitex",
+              "euler",
+              "euler-server",
+              "bytedredis"
+            ]
+          },
+          {
+            "tag_key": "_method",
+            "tag_data_type": "STRING",
+            "tag_display_name": "接口",
+            "is_range_query_tag": false,
+            "tag_order": 11,
+            "values": [
+              "GenerateImageEditingController_generateImageEditing",
+              "CheckPosterQuota",
+              "Moderate",
+              "tns.eco_see.ai_excalibur",
+              "tiktok.ai_metadata.copyright_mitigation",
+              "DetectIPCompliance"
+            ],
+            "value_display_names": [
+              "GenerateImageEditingController_generateImageEditing",
+              "CheckPosterQuota",
+              "Moderate",
+              "tns.eco_see.ai_excalibur",
+              "tiktok.ai_metadata.copyright_mitigation",
+              "DetectIPCompliance"
+            ]
+          },
+          {
+            "tag_key": "data_center",
+            "tag_data_type": "STRING",
+            "tag_display_name": "机房",
+            "is_range_query_tag": false,
+            "tag_order": 30,
+            "values": [
+              "my3"
+            ],
+            "value_display_names": [
+              "my3"
+            ]
+          },
+          {
+            "tag_key": "_is_error",
+            "tag_data_type": "BOOL",
+            "tag_display_name": "是否失败",
+            "is_range_query_tag": false,
+            "tag_order": 40,
+            "values": [
+              "false"
+            ],
+            "value_display_names": [
+              "false"
+            ]
+          },
+          {
+            "tag_key": "_status_code",
+            "tag_data_type": "INT",
+            "tag_display_name": "状态码",
+            "is_range_query_tag": false,
+            "tag_order": 50,
+            "values": [
+              "200",
+              "0"
+            ],
+            "value_display_names": [
+              "200",
+              "0"
+            ]
+          },
+          {
+            "tag_key": "_biz_status_code",
+            "tag_data_type": "INT",
+            "tag_display_name": "业务状态码",
+            "is_range_query_tag": false,
+            "tag_order": 60,
+            "values": [
+              "0"
+            ],
+            "value_display_names": [
+              "0"
+            ]
+          },
+          {
+            "tag_key": "_pod_name",
+            "tag_data_type": "STRING",
+            "tag_display_name": "Pod",
+            "is_range_query_tag": false,
+            "tag_order": 70,
+            "values": [
+              "85c4oryj-n8uvnz4oa6-reserved-99f76fdb7-zcv2s",
+              "dp-0a02a4caff-76b558d57b-r8pf8",
+              "dp-4c60448a22-697899d479-58qcg",
+              "dp-7b3007e6c8-75fbdfdc-sh2vv",
+              "dp-8d6c87ecf4-5f7855fb6f-2xng2"
+            ],
+            "value_display_names": [
+              "85c4oryj-n8uvnz4oa6-reserved-99f76fdb7-zcv2s",
+              "dp-0a02a4caff-76b558d57b-r8pf8",
+              "dp-4c60448a22-697899d479-58qcg",
+              "dp-7b3007e6c8-75fbdfdc-sh2vv",
+              "dp-8d6c87ecf4-5f7855fb6f-2xng2"
+            ]
+          },
+          {
+            "tag_key": "_duration",
+            "tag_data_type": "LONG",
+            "tag_display_name": "耗时",
+            "tag_display_option": {
+              "format": "us",
+              "filter_input_format": "ms"
+            },
+            "is_range_query_tag": true,
+            "tag_order": 100,
+            "values": [],
+            "value_display_names": []
+          }
+        ]
+      },
+      "scan_time_range": [
+        {
+          "start": 1786680000,
+          "end": 1786680660
+        }
+      ]
+    }
+  }
+}

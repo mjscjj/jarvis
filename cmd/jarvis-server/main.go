@@ -47,6 +47,7 @@ import (
 	"jarvis/internal/store"
 	"jarvis/internal/systemcontrol"
 	"jarvis/internal/taskcreate"
+	"jarvis/internal/taskfeedback"
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
 
@@ -248,16 +249,6 @@ func main() {
 	if err != nil {
 		fatalf("initialize fact engine worker failed: %v", err)
 	}
-	factRollupExtractor, err := factengine.NewExtractor(factengine.ExtractorOptions{
-		Bin:           cfg.FactEngine.Bin,
-		Model:         cfg.FactEngine.RollupModel,
-		Sandbox:       "read-only",
-		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
-		Timeout:       time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
-	})
-	if err != nil {
-		fatalf("initialize fact rollup extractor failed: %v", err)
-	}
 	todoStore, err := extract.NewTodoStore(db)
 	if err != nil {
 		fatalf("initialize todo store failed: %v", err)
@@ -269,10 +260,6 @@ func main() {
 	contextAssembler, err := contextsnap.NewAssembler(db, cfg.Extract.PrincipalOpenID)
 	if err != nil {
 		fatalf("initialize common context snapshot assembler failed: %v", err)
-	}
-	factRollupWorker, err := factengine.NewRollupWorker(db, factRollupExtractor, progressService, runtimePrompts, contextAssembler, location)
-	if err != nil {
-		fatalf("initialize fact rollup worker failed: %v", err)
 	}
 	taskFactory, err := taskcreate.NewFactory(db, contextAssembler)
 	if err != nil {
@@ -387,6 +374,13 @@ func main() {
 	)
 	if err != nil {
 		fatalf("initialize agent executor failed: %v", err)
+	}
+	feedbackNotifier, err := taskfeedback.NewNotifier(larkClient)
+	if err != nil {
+		fatalf("initialize Task feedback notifier failed: %v", err)
+	}
+	if err := agentExecutor.SetTaskFeedbackNotifier(feedbackNotifier); err != nil {
+		fatalf("wire Task feedback notifier failed: %v", err)
 	}
 	scheduledTaskService, err := scheduledtask.NewService(
 		db, taskSubmitter, agentExecutor, cfg.ScheduledTask.BatchLimit,
@@ -795,7 +789,6 @@ func main() {
 	}
 	// 持续世界建模 cron：跑在关键路径之外，disabled 时 -extract-facts-once 仍可手动跑一轮。
 	stopFactEngine := func() {}
-	stopFactRollup := func() {}
 	if cfg.FactEngine.Enabled {
 		factEngineScheduler, err := factengine.StartScheduler(
 			runtimeCtx, factEngineWorker, cfg.FactEngine.Schedule,
@@ -805,14 +798,6 @@ func main() {
 			fatalf("start fact engine scheduler failed: %v", err)
 		}
 		stopFactEngine = func() { <-factEngineScheduler.Stop().Done() }
-		factRollupScheduler, err := factengine.StartRollupScheduler(
-			runtimeCtx, factRollupWorker, cfg.FactEngine.RollupSchedule,
-			log.New(os.Stderr, "factrollup-cron ", log.LstdFlags|log.Lmicroseconds),
-		)
-		if err != nil {
-			fatalf("start fact rollup scheduler failed: %v", err)
-		}
-		stopFactRollup = func() { <-factRollupScheduler.Stop().Done() }
 	}
 	var cardApprovalProcessor api.CardApprovalProcessor
 	if cfg.CardApproval.Enabled {
@@ -873,7 +858,6 @@ func main() {
 		stopDailyDigest()
 		stopScheduledTasks()
 		stopFactEngine()
-		stopFactRollup()
 		stopProactive()
 		stopMeetingSweep()
 		stopMorningBrief()
@@ -949,13 +933,12 @@ func main() {
 		Progress:       progressService,
 		FactQueries:    progressService,
 		Overview:       overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
-		MeetingReviews: meetingReviewService,
-		DailyDigests:   dailyDigestService,
-		MorningBriefs:  morningBriefReader,
-		Worklog:        worklogService,
-		FactRollups:    factRollupWorker,
-		FactRollupLoc:  location,
-		Debug:          debugService, Logs: logReader, Chat: chatService, Capture: captureService,
+		MeetingReviews:  meetingReviewService,
+		DailyDigests:    dailyDigestService,
+		MorningBriefs:   morningBriefReader,
+		Worklog:         worklogService,
+		FactTimelineLoc: location,
+		Debug:           debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 		RuntimeSettings:    runtimeSettingsService,
 		ContextAssembler:   contextAssembler,
 		CardApprovals:      cardApprovalProcessor,

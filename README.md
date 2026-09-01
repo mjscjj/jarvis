@@ -14,8 +14,11 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 ## 当前链路
 
 ```text
-飞书 IM 事件 ───────────────┐
-飞书 IM 轮询补偿 ───────────┤
+飞书 Bot WebSocket ─> CC Connect
+                       ├─ 接受的私聊/@消息 ─> route claim ─> CC 原生 Agent/session
+                       └─ 未接受的普通群消息（等待 M2 轮询）
+
+飞书 IM 轮询补偿 ───────────┐
                            ├─> M2 capture ─> message ─> M3 extract
 外部 Skill / 定时任务 ─> /api/clues ────────┘             │
                                                             ├─ observing：保留观察，不创建 Task
@@ -52,7 +55,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | 定时任务 | 周期/单次 Task，以及等待 Session 的未来唤醒 | `internal/scheduledtask/`, `internal/taskcreate/` |
 | 插件 | 按需启用和授权外部来源，以定时任务 + Skill 向通用 clue 入口投递原始证据 | `internal/plugin/`, [`docs/plugin-system.md`](docs/plugin-system.md) |
 | 实时协调 | 按持久化 ID/version 推进 M3→M5，cron 负责补偿 | `internal/pipeline/` |
-| 背景事实 | 自然语言 Fact、实体间自然语言 RelationFact | `internal/progress/`, `internal/knowledge/` |
+| 背景事实 | 实体长期事实页 `summary`（整体读写、有上限、页内引用）与自然语言 Fact | `internal/background/`, `internal/progress/`, `internal/knowledge/` |
 | 后台与观测 | Overview、日报、worklog、运行状态、日志 | `internal/insight/`, `internal/dailydigest/`, `internal/observability/` |
 | Agent 配置面 | prompts、rules、Skills、shared memory、工具目录 | `internal/textstore/`, `internal/workrule/`, `internal/skill/`, `internal/sharedmem/`, `internal/toolcatalog/` |
 

@@ -230,8 +230,11 @@ func normalizeChatIDs(chatIDs []string) ([]string, error) {
 	return normalized, nil
 }
 
-// DiscoverChats enumerates every user-visible chat. New chats start at now and
-// therefore never backfill history.
+// DiscoverChats enumerates every user-visible chat. Automatic p2p monitoring is
+// reconciled only after the complete active_time-sorted list has been fetched
+// successfully, so a failed partial listing can never evict a currently
+// monitored conversation. A newly activated p2p receives only the bounded
+// ActivationContext window needed to capture the message that made it active.
 func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 	record, err := s.beginScan("discover", nil, nil, nil, nil)
 	if err != nil {
@@ -245,14 +248,8 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 		}
 	}()
 
-	// openedP2P 表示"当前已纳入监听的内部真人私聊总数"。以库里现存 related 的
-	// 内部 p2p 数为起点跨页累计，保证无论 discover 跑多少轮，被自动开启的内部
-	// 真人私聊总量都不超过 TopN（不会每轮重新叠加 TopN 个）。chat-list 以
-	// active_time 降序返回，最先遇到的最活跃，开满 TopN 后不再自动开。
-	openedP2P, err := s.countRelatedInternalP2P()
-	if err != nil {
-		return err
-	}
+	rankedP2P := make([]string, 0, s.opts.AutoRelatedP2PTopN)
+	seenP2P := make(map[string]struct{})
 	pageToken := ""
 	for {
 		var response ChatListResponse
@@ -266,8 +263,18 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 		if err = s.lark.Run(ctx, &response, args...); err != nil {
 			return fmt.Errorf("list chats page=%d: %w", record.PageCount+1, err)
 		}
-		if err = s.persistDiscoveredChats(response.Data.Chats, &openedP2P); err != nil {
+		if err = s.persistDiscoveredChats(response.Data.Chats); err != nil {
 			return fmt.Errorf("persist discovered chats page=%d: %w", record.PageCount+1, err)
+		}
+		for _, chat := range response.Data.Chats {
+			if !isAutoRelatedP2P(chat) {
+				continue
+			}
+			if _, duplicated := seenP2P[chat.ChatID]; duplicated {
+				return fmt.Errorf("chat list returned duplicated internal p2p chat_id=%s", chat.ChatID)
+			}
+			seenP2P[chat.ChatID] = struct{}{}
+			rankedP2P = append(rankedP2P, chat.ChatID)
 		}
 		record.FetchedCount += int32(len(response.Data.Chats))
 		record.PageCount++
@@ -278,6 +285,9 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 			return fmt.Errorf("chat list page=%d has_more=true with empty page_token", record.PageCount)
 		}
 		pageToken = response.Data.PageToken
+	}
+	if err = s.reconcileAutoRelatedP2P(rankedP2P); err != nil {
+		return err
 	}
 	if err = s.recomputeTiers(); err != nil {
 		return err
@@ -292,29 +302,10 @@ func isAutoRelatedP2P(chat CLIChat) bool {
 	return chat.ChatMode == "p2p" && !chat.External && chat.P2PTargetType == "user"
 }
 
-// countRelatedInternalP2P returns how many internal human p2p chats are already
-// monitored. It seeds the TopN budget so re-discovery never re-adds another N.
-func (s *Service) countRelatedInternalP2P() (int, error) {
-	var count int64
-	if err := s.db.Model(&domain.Group{}).
-		Where("chat_mode = ? AND external = ? AND related_group = ? AND p2p_target_type = ?", "p2p", false, true, "user").
-		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("count related internal p2p: %w", err)
-	}
-	return int(count), nil
-}
-
-// persistDiscoveredChats upserts one page of chat metadata. It only ever *opens*
-// monitoring for the most-active internal human p2p chats — up to a global TopN
-// budget tracked by openedP2P (current total across pages) — and never *closes*
-// any chat. Groups keep their manual allowlist, and less-active p2p keep whatever
-// related_group they already had, so a user's manual opt-in survives re-discovery
-// (update columns never include related_group; a fresh row's default carries the
-// auto-open decision). Fail-fast: unknown chat_mode aborts the page.
-func (s *Service) persistDiscoveredChats(chats []CLIChat, openedP2P *int) error {
-	if openedP2P == nil {
-		return fmt.Errorf("persistDiscoveredChats openedP2P counter is nil")
-	}
+// persistDiscoveredChats upserts one page of chat metadata without changing the
+// monitoring set. DiscoverChats owns that transition after every page succeeds.
+// Fail-fast: unknown chat_mode aborts the page.
+func (s *Service) persistDiscoveredChats(chats []CLIChat) error {
 	nowMS := s.now().UnixMilli()
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		for _, chat := range chats {
@@ -324,8 +315,6 @@ func (s *Service) persistDiscoveredChats(chats []CLIChat, openedP2P *int) error 
 			if chat.ChatMode != "group" && chat.ChatMode != "p2p" && chat.ChatMode != "topic" {
 				return fmt.Errorf("chat %s has unsupported chat_mode %q", chat.ChatID, chat.ChatMode)
 			}
-			// 是否本条应自动开启：内部真人私聊，且监听总量尚未达到 TopN。
-			openNow := isAutoRelatedP2P(chat) && *openedP2P < s.opts.AutoRelatedP2PTopN
 			group := domain.Group{
 				ChatID:        chat.ChatID,
 				ChatMode:      chat.ChatMode,
@@ -338,8 +327,7 @@ func (s *Service) persistDiscoveredChats(chats []CLIChat, openedP2P *int) error 
 				RelatedGroup:  false,
 				Tier:          "cold",
 			}
-			// 元数据 upsert 不含 related_group：discover 从不在这里改监听开关，
-			// 保住群的手动名单、以及用户手动开启的私聊。开启动作在下面单独做。
+			// 元数据 upsert 不含 related_group：分页期间不触碰监听集合。
 			updateColumns := []string{
 				"chat_mode", "name", "description", "owner_open_id", "external", "tenant_key", "p2p_target_type", "updated_at",
 			}
@@ -359,29 +347,63 @@ func (s *Service) persistDiscoveredChats(chats []CLIChat, openedP2P *int) error 
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&checkpoint).Error; err != nil {
 				return fmt.Errorf("initialize checkpoint chat_id=%s: %w", chat.ChatID, err)
 			}
-
-			if openNow {
-				opened := tx.Model(&domain.Group{}).
-					Where("chat_id = ? AND related_group = ?", chat.ChatID, false).
-					Update("related_group", true)
-				if opened.Error != nil {
-					return fmt.Errorf("open internal p2p chat_id=%s: %w", chat.ChatID, opened.Error)
-				}
-				if opened.RowsAffected == 1 {
-					// 从未扫描过的存量私聊从 now 起步，避免首次纳入时回捞历史；
-					// 曾扫描后因 5 天不活跃而关闭的私聊保留旧水位，重新活跃时
-					// 才能补到关闭期间的新消息。
-					if err := tx.Model(&domain.Checkpoint{}).
-						Where("chat_id = ? AND last_scan_at IS NULL AND high_water_create_time < ?", chat.ChatID, nowMS).
-						Update("high_water_create_time", nowMS).Error; err != nil {
-						return fmt.Errorf("advance scan window chat_id=%s: %w", chat.ChatID, err)
-					}
-					*openedP2P++
-				}
-			}
 		}
 		return nil
 	})
+}
+
+// reconcileAutoRelatedP2P makes the automatic set equal to the current
+// active_time Top-N. Pinned p2p chats are human-curated fixed monitoring entries:
+// they are preserved and do not consume the automatic budget. Unpinned internal
+// human p2p chats are the rotating set.
+func (s *Service) reconcileAutoRelatedP2P(rankedChatIDs []string) error {
+	var groups []domain.Group
+	if err := s.db.Select("chat_id", "related_group", "pinned").
+		Where("chat_mode = ? AND external = ? AND p2p_target_type = ?", "p2p", false, "user").
+		Find(&groups).Error; err != nil {
+		return fmt.Errorf("list internal p2p chats for monitoring reconciliation: %w", err)
+	}
+	byChatID := make(map[string]domain.Group, len(groups))
+	for _, group := range groups {
+		byChatID[group.ChatID] = group
+	}
+
+	desired := make([]string, 0, s.opts.AutoRelatedP2PTopN)
+	for _, chatID := range rankedChatIDs {
+		group, ok := byChatID[chatID]
+		if !ok {
+			return fmt.Errorf("ranked internal p2p chat_id=%s was not persisted", chatID)
+		}
+		if group.Pinned {
+			continue
+		}
+		if len(desired) == s.opts.AutoRelatedP2PTopN {
+			break
+		}
+		desired = append(desired, chatID)
+	}
+
+	if len(desired) > 0 {
+		activationStart := s.now().Add(-s.opts.ActivationContext).UnixMilli()
+		if err := s.db.Model(&domain.Checkpoint{}).
+			Where("chat_id IN ? AND last_scan_at IS NULL", desired).
+			Update("high_water_create_time", activationStart).Error; err != nil {
+			return fmt.Errorf("set newly monitored p2p activation windows: %w", err)
+		}
+	}
+
+	query := s.db.Model(&domain.Group{}).
+		Where("chat_mode = ? AND external = ? AND p2p_target_type = ? AND pinned = ?", "p2p", false, "user", false)
+	var result *gorm.DB
+	if len(desired) == 0 {
+		result = query.Update("related_group", false)
+	} else {
+		result = query.Update("related_group", gorm.Expr("CASE WHEN chat_id IN ? THEN ? ELSE ? END", desired, true, false))
+	}
+	if result.Error != nil {
+		return fmt.Errorf("reconcile automatic p2p monitoring set: %w", result.Error)
+	}
+	return nil
 }
 
 func (s *Service) recomputeTiers() error {
@@ -419,22 +441,24 @@ func (s *Service) ScanChatNow(ctx context.Context, chatID string) error {
 	return s.ScanChat(ctx, chatID)
 }
 
-// ensureScanWindow moves the high-water forward to now when a chat has never
-// captured a message (last_active_at is NULL). This keeps the first scan of a
-// newly related group cheap (only messages from now on) and avoids replaying
-// the discovery-time window that may lie far in the past.
+// ensureScanWindow bounds the first scan of a manually related chat. Groups
+// start at now; p2p chats receive the short ActivationContext window so the
+// message that prompted manual monitoring is not skipped.
 func (s *Service) ensureScanWindow(chatID string) error {
 	var group domain.Group
-	if err := s.db.Select("id", "last_active_at").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
+	if err := s.db.Select("id", "chat_mode", "last_active_at").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
 		return fmt.Errorf("load group chat_id=%s: %w", chatID, err)
 	}
 	if group.LastActiveAt != nil {
 		return nil
 	}
-	nowMS := s.now().UnixMilli()
+	windowStart := s.now().UnixMilli()
+	if group.ChatMode == "p2p" {
+		windowStart = s.now().Add(-s.opts.ActivationContext).UnixMilli()
+	}
 	if err := s.db.Model(&domain.Checkpoint{}).
-		Where("chat_id = ? AND high_water_create_time < ?", chatID, nowMS).
-		Update("high_water_create_time", nowMS).Error; err != nil {
+		Where("chat_id = ?", chatID).
+		Update("high_water_create_time", windowStart).Error; err != nil {
 		return fmt.Errorf("initialize scan window chat_id=%s: %w", chatID, err)
 	}
 	return nil
@@ -545,9 +569,9 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 		return err
 	}
 	committed = true
-	if currentHW <= s.now().Add(-inactiveChatAge).UnixMilli() {
+	if !group.Pinned && currentHW <= s.now().Add(-inactiveChatAge).UnixMilli() {
 		if err = s.db.Model(&domain.Group{}).
-			Where("id = ? AND related_group = ?", group.ID, true).
+			Where("id = ? AND related_group = ? AND pinned = ?", group.ID, true, false).
 			Update("related_group", false).Error; err != nil {
 			return fmt.Errorf("remove inactive chat from monitoring chat_id=%s: %w", chatID, err)
 		}

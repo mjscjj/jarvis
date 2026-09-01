@@ -972,32 +972,7 @@
   border-radius: 10px;
 }
 
-.fact-history-summary {
-  padding: 0 12px 10px;
-  background: #fafbf9;
-}
 
-.fact-rollup {
-  padding: 13px 15px;
-  border: 1px solid #d9e6dc;
-  border-radius: 10px;
-  background: #f6faf7;
-}
-
-.fact-rollup-stale {
-  border-color: #f0d7ad;
-  background: #fffaf0;
-}
-
-.fact-rollup-kicker {
-  display: block;
-  margin-bottom: 5px;
-  font-size: 12px;
-}
-
-.fact-rollup-description.ant-typography {
-  margin-bottom: 0;
-}
 
 .fact-raw-collapse > .ant-collapse-item {
   border-bottom: 0;

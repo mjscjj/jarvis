@@ -34,7 +34,7 @@
 - Principal：`GET/PUT /api/profile`
 - Managed resources：`GET/POST /api/resources`、`GET/PUT/DELETE /api/resources/:resource_id`
 - Facts：`GET/POST /api/facts`
-- Relation facts：`GET/POST /api/relation-facts`、`PUT/DELETE /api/relation-facts/:fact_id`
+- 实体长期事实页：`GET /api/pages`、`GET/PUT /api/pages/:type/:id`、`GET /api/pages/:type/:id/backlinks`。`PUT` 需带 `if_unchanged_since` 做 CAS，不匹配返回 409 并回带当前全文。
 
 `DELETE /api/projects/:project_id` 的业务语义是归档，不是物理删除。
 

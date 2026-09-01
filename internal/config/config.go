@@ -71,15 +71,10 @@ type ModelConfig struct {
 type FactEngineConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	Schedule string `yaml:"schedule"`
-	// RollupSchedule is the daily compression cron. It runs independently of
-	// Schedule (which drives detail extraction) and writes source_kind=rollup
-	// facts for the previous local day.
-	RollupSchedule string `yaml:"rollup_schedule"`
 
 	Bin             string `yaml:"bin"`
 	Model           string `yaml:"model"`
 	ReasoningEffort string `yaml:"reasoning_effort"`
-	RollupModel     string `yaml:"rollup_model"`
 	Sandbox         string `yaml:"sandbox"`
 	TimeoutSec      int    `yaml:"timeout_sec"`
 
@@ -204,8 +199,8 @@ type CaptureConfig struct {
 	Timezone         string `yaml:"timezone"`
 	DiscoverSchedule string `yaml:"discover_schedule"`
 	ScanSchedule     string `yaml:"scan_schedule"`
-	// AutoRelatedP2PTopN：discover 时按 active_time 自动纳入监听的内部真人私聊
-	// 上限。只开最活跃的前 N 个，僵尸老私聊与服务号私聊不开。
+	// AutoRelatedP2PTopN：discover 时按 active_time 轮换自动监听的内部真人私聊。
+	// 保留当前最活跃的前 N 个；pinned 私聊额外保留，服务号私聊不参与。
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
 }
 
@@ -570,7 +565,6 @@ func (c *Config) validate() error {
 		spec string
 	}{
 		{name: "factengine.schedule", spec: c.FactEngine.Schedule},
-		{name: "factengine.rollup_schedule", spec: c.FactEngine.RollupSchedule},
 		{name: "proactive.schedule", spec: c.Proactive.Schedule},
 		{name: "meeting_sweep.schedule", spec: c.MeetingSweep.Schedule},
 		{name: "morning_brief.schedule", spec: c.MorningBrief.Schedule},
@@ -677,9 +671,6 @@ func (c *Config) validateFactEngine() error {
 	if c.FactEngine.Schedule == "" {
 		return fmt.Errorf("factengine.schedule 不能为空")
 	}
-	if c.FactEngine.RollupSchedule == "" {
-		return fmt.Errorf("factengine.rollup_schedule 不能为空")
-	}
 	if c.FactEngine.Bin == "" {
 		return fmt.Errorf("factengine.bin 不能为空")
 	}
@@ -688,9 +679,6 @@ func (c *Config) validateFactEngine() error {
 	}
 	if err := validateReasoningEffort("factengine", c.FactEngine.ReasoningEffort); err != nil {
 		return err
-	}
-	if c.FactEngine.RollupModel == "" {
-		return fmt.Errorf("factengine.rollup_model 不能为空")
 	}
 	if err := validateCodexSandbox("factengine.sandbox", c.FactEngine.Sandbox); err != nil {
 		return err

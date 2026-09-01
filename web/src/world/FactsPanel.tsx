@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Button, Card, DatePicker, Empty, Flex, Form, Input, InputNumber, Modal, Pagination, Segmented, Select, Space, Spin, Tag, Typography } from 'antd'
+import { Alert, Button, Card, DatePicker, Empty, Flex, Form, Input, InputNumber, Modal, Pagination, Select, Space, Spin, Tag, Typography } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { appendFact, searchFacts } from '../api'
@@ -7,8 +7,6 @@ import type { FactSearchResult } from '../types'
 import FactTimeline from './FactTimeline'
 
 const { Text } = Typography
-
-type Layer = 'all' | 'detail' | 'rollup'
 
 interface FactInputFields {
   subject_type: string
@@ -23,7 +21,6 @@ export default function FactsPanel() {
   const [subjectType, setSubjectType] = useState<string>()
   const [subjectId, setSubjectId] = useState<number | null>(null)
   const [sourceKind, setSourceKind] = useState<string>()
-  const [layer, setLayer] = useState<Layer>('all')
   const [result, setResult] = useState<FactSearchResult>()
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string>()
@@ -46,7 +43,6 @@ export default function FactsPanel() {
         subjectType,
         subjectId: subjectId || undefined,
         sourceKind,
-        layer,
         page,
       })
       setResult(data)
@@ -64,7 +60,6 @@ export default function FactsPanel() {
     setSubjectType(undefined)
     setSubjectId(null)
     setSourceKind(undefined)
-    setLayer('all')
     setResult(undefined)
     setError(undefined)
   }
@@ -115,8 +110,7 @@ export default function FactsPanel() {
             options={['project', 'key_matter', 'person', 'group', 'task', 'todo', 'resource', 'managed_resource', 'principal'].map((value) => ({ value, label: value }))}
           />
           <InputNumber min={1} placeholder="主体 ID" value={subjectId} onChange={setSubjectId} style={{ width: 110 }} />
-          <Select allowClear placeholder="来源" value={sourceKind} onChange={setSourceKind} style={{ width: 130 }} options={['manual', 'm3', 'm5', 'message', 'background', 'rollup'].map((value) => ({ value, label: value }))} />
-          <Segmented<Layer> value={layer} onChange={setLayer} options={[{ value: 'all', label: '全部层' }, { value: 'detail', label: '原始' }, { value: 'rollup', label: '压缩' }]} />
+          <Select allowClear placeholder="来源" value={sourceKind} onChange={setSourceKind} style={{ width: 130 }} options={['manual', 'm3', 'm5', 'message', 'background', 'factengine', 'todo', 'task'].map((value) => ({ value, label: value }))} />
           <Button type="primary" onClick={() => void runSearch()} loading={searching}>搜索</Button>
           {result && <Button onClick={clearSearch}>回到时间线</Button>}
         </Flex>
@@ -133,7 +127,7 @@ export default function FactsPanel() {
                   <Flex gap={8} align="center" wrap>
                     <Text strong>{fact.subject_label}</Text>
                     <Tag>{fact.subject_type}/{fact.subject_id}</Tag>
-                    <Tag color={fact.source_kind === 'rollup' ? 'green' : undefined}>{fact.source_kind === 'rollup' ? '压缩' : fact.source_kind || '未知来源'}</Tag>
+                    <Tag>{fact.source_kind || '未知来源'}</Tag>
                     <Text type="secondary">{dayjs(fact.occurred_at).format('YYYY-MM-DD HH:mm')}</Text>
                   </Flex>
                   <div className="fact-description">{fact.description}</div>
