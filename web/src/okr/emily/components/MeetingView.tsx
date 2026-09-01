@@ -215,7 +215,13 @@ function MeetingPoint({ point, index, open, onToggle, showTags, preview }: { poi
           <span className="mt-px shrink-0 rounded border border-blue-200 bg-blue-50 px-1.5 py-px text-[10px] font-semibold text-blue-600">KR{index + 1}</span>
           <div className="min-w-0 flex-1">
             <h4 className="text-[13px] font-semibold leading-[19px] text-slate-800"><HighlightedText target={target} text={point.title} /></h4>
-            {showTags && (point.tags?.length ?? 0) > 0 && <div className="mt-1 flex min-w-0 flex-wrap items-start gap-1">{point.tags?.map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)}</div>}
+            {showTags && (
+              <div className="mt-1 flex min-w-0 flex-wrap items-start gap-1" aria-label="具体 KR 打标">
+                {(point.tags?.length ?? 0) > 0
+                  ? point.tags?.map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)
+                  : <span className="rounded border border-dashed border-slate-200 bg-slate-50 px-1.5 py-px text-[9px] leading-4 text-slate-400">未打标</span>}
+              </div>
+            )}
           </div>
           {preview && <WeeklyScoreControl score={point.score} readOnly label="具体 KR 评分" />}
           <span className="shrink-0 pt-0.5 text-[10px] text-slate-400">{doing.length} 进展 · {done.length} 完成</span>
