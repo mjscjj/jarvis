@@ -49,6 +49,7 @@ func RegisterChatSidecar(h *server.Hertz, svc *chat.Service, db *gorm.DB, mainAd
 	h.Use(observability.Middleware(), chatSameHostCORS(mainPort))
 	h.GET("/healthz", HealthForService(db, "jarvis-chat-server"))
 	h.POST("/api/chat", Chat(svc))
+	h.GET("/api/chat", GetChatHistory(svc))
 	h.GET("/api/chat/:thread_id", GetChatHistory(svc))
 	h.OPTIONS("/api/chat", func(_ context.Context, c *app.RequestContext) {
 		c.Status(consts.StatusNoContent)
@@ -75,12 +76,25 @@ func chatSameHostCORS(mainPort string) app.HandlerFunc {
 
 func allowedChatOrigin(origin, requestHost, mainPort string) bool {
 	parsed, err := url.Parse(origin)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Port() != mainPort {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return false
 	}
-	requestHostname, _, err := net.SplitHostPort(requestHost)
-	if err != nil {
+	requestURL, err := url.Parse("//" + requestHost)
+	if err != nil || requestURL.Hostname() == "" || !strings.EqualFold(parsed.Hostname(), requestURL.Hostname()) {
 		return false
 	}
-	return strings.EqualFold(parsed.Hostname(), requestHostname)
+	if parsed.Port() == mainPort {
+		return true
+	}
+	return effectiveHTTPPort(parsed.Scheme, parsed.Port()) == effectiveHTTPPort(parsed.Scheme, requestURL.Port())
+}
+
+func effectiveHTTPPort(scheme, port string) string {
+	if port != "" {
+		return port
+	}
+	if scheme == "https" {
+		return "443"
+	}
+	return "80"
 }

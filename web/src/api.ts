@@ -157,8 +157,15 @@ export function getChatRuntimeConfig(signal?: AbortSignal): Promise<ChatRuntimeC
   return request<ChatRuntimeConfig>('/api/chat-config', { signal })
 }
 
+export function resolveChatBaseURL(pageOrigin: string, chatPort: number): string {
+  const endpoint = new URL(pageOrigin)
+  if (endpoint.port !== '') endpoint.port = String(chatPort)
+  return endpoint.origin
+}
+
 export function getChatHistory(baseURL: string, threadID: string, signal?: AbortSignal): Promise<ChatHistory> {
-  return request<ChatHistory>(`${baseURL}/api/chat/${encodeURIComponent(threadID)}`, { signal })
+  const query = new URLSearchParams({ thread_id: threadID })
+  return request<ChatHistory>(`${baseURL}/api/chat?${query}`, { signal })
 }
 
 export function finishTask(id: number, expectedVersion: number, status: 'done' | 'failed', result: Record<string, unknown>): Promise<Task> {

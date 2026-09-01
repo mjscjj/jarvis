@@ -16,7 +16,11 @@ import (
 
 func GetChatHistory(svc *chat.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		history, err := svc.History(c.Param("thread_id"))
+		threadID := c.Param("thread_id")
+		if threadID == "" {
+			threadID = c.Query("thread_id")
+		}
+		history, err := svc.History(threadID)
 		if err != nil {
 			switch {
 			case errors.Is(err, chat.ErrInvalidThreadID):

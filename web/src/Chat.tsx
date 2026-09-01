@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CloseOutlined, PaperClipOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
-import { getChatHistory, getChatRuntimeConfig, isMissingChatHistoryError } from './api'
+import { getChatHistory, getChatRuntimeConfig, isMissingChatHistoryError, resolveChatBaseURL } from './api'
 import { usePageContext } from './pageContext'
 import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, PageContext } from './types'
 import './styles/chat.css'
@@ -147,9 +147,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     const controller = new AbortController()
     getChatRuntimeConfig(controller.signal)
       .then(({ port }) => {
-        const endpoint = new URL(window.location.origin)
-        endpoint.port = String(port)
-        setChatBaseURL(endpoint.origin)
+        setChatBaseURL(resolveChatBaseURL(window.location.origin, port))
       })
       .catch((cause: unknown) => {
         if (!isAbortError(cause)) setError(`读取对话服务配置失败：${errorText(cause)}`)
