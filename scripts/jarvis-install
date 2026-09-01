@@ -658,7 +658,8 @@ install_bytedcli() {
   changed=false
   bytedcli_path="$(command -v bytedcli 2>/dev/null || true)"
   if [[ -z "$bytedcli_path" ]]; then
-    npm install --global @bytedance-dev/bytedcli@latest >&2
+    NPM_CONFIG_REGISTRY=http://bnpm.byted.org \
+      npm install --global @bytedance-dev/bytedcli@latest >&2
     changed=true
     bytedcli_path="$(command -v bytedcli 2>/dev/null || true)"
   fi
