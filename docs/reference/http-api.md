@@ -68,6 +68,6 @@ Runtime settings 写入后需要重启进程生效；模块开关保存后也需
 - 主动巡视运行记录：`GET /api/debug/proactive-runs`、`GET /api/debug/proactive-runs/:run_id`
 - 手工采集：`POST /api/debug/capture/discover|scan-related|scan-chat`
 - 主服务对话发现：`GET /api/chat-config`
-- 独立 Chat sidecar：`POST /api/chat`（SSE）、`GET /api/chat/:thread_id`
+- 独立 Chat sidecar：`POST /api/chat`（multipart + SSE；`message` 必填，`thread_id`、JSON 字符串 `page_context`、单张 PNG/JPEG `image` 可选，图片上限 10 MB）、`GET /api/chat/:thread_id`
 
 对话只在 `chat.enabled=true` 且依赖构造成功时注册。

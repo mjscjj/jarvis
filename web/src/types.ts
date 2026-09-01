@@ -1175,11 +1175,12 @@ export interface PageSelection {
   label: string
 }
 
-// POST /api/chat 请求体。thread_id 为空表示新会话；非空表示 codex resume 多轮。
+// POST /api/chat multipart 请求。thread_id 为空表示新会话；非空表示 codex resume 多轮。
 export interface ChatRequest {
   message: string
   thread_id?: string | null
   page_context?: PageContext | null
+  image?: File | null
 }
 
 // SSE 事件类型（event 字段）：

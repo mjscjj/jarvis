@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CloseOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { CloseOutlined, PaperClipOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import { getChatHistory, getChatRuntimeConfig } from './api'
@@ -15,6 +15,8 @@ interface ChatMessage {
 }
 
 const CHAT_THREAD_STORAGE_KEY = 'jarvis.chat.threadId'
+const CHAT_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+const CHAT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg'])
 
 const PAGE_LABELS: Record<string, string> = {
   today: '今日',
@@ -99,10 +101,18 @@ function isStaleThreadError(text: string): boolean {
     || text.includes('missing thread.started')
 }
 
+function chatImageError(file: File): string | undefined {
+  if (!CHAT_IMAGE_TYPES.has(file.type)) return '截图只支持 PNG 或 JPEG'
+  if (file.size === 0) return '截图文件为空'
+  if (file.size > CHAT_IMAGE_MAX_BYTES) return '截图不能超过 10 MB'
+  return undefined
+}
+
 export default function Chat({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
+  const [image, setImage] = useState<File | null>(null)
   const [sending, setSending] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [paused, setPaused] = useState(false)
@@ -113,7 +123,14 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   const initialThreadId = useRef(threadId).current
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<TextAreaRef>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  const imagePreviewURL = useMemo(() => image ? URL.createObjectURL(image) : undefined, [image])
+
+  useEffect(() => () => {
+    if (imagePreviewURL) URL.revokeObjectURL(imagePreviewURL)
+  }, [imagePreviewURL])
 
   useEffect(() => {
     const el = listRef.current
@@ -207,9 +224,20 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY)
     setThreadId(null)
     setMessages([])
+    setImage(null)
     setError(undefined)
     setPaused(false)
     inputRef.current?.focus()
+  }, [])
+
+  const attachImage = useCallback((file: File) => {
+    const validationError = chatImageError(file)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+    setImage(file)
+    setError(undefined)
   }, [])
 
   const send = useCallback(async () => {
@@ -219,7 +247,9 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
       setError('独立对话服务地址尚未加载')
       return
     }
+    const imageToSend = image
     setInput('')
+    setImage(null)
     setError(undefined)
     setStopping(false)
     setPaused(false)
@@ -237,11 +267,15 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      const req: ChatRequest = { message, thread_id: threadId, page_context: context }
+      const req: ChatRequest = { message, thread_id: threadId, page_context: context, image: imageToSend }
+      const form = new FormData()
+      form.append('message', req.message)
+      if (req.thread_id) form.append('thread_id', req.thread_id)
+      if (req.page_context) form.append('page_context', JSON.stringify(req.page_context))
+      if (req.image) form.append('image', req.image, req.image.name)
       const response = await fetch(`${chatBaseURL}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req),
+        body: form,
         signal: controller.signal,
       })
       if (!response.ok) throw new Error(`对话请求失败：HTTP ${response.status}`)
@@ -300,6 +334,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         setError(text)
       }
       setInput((current) => current.trim() ? current : message)
+      if (imageToSend) setImage((current) => current ?? imageToSend)
       // Drop the trailing empty assistant bubble so a failed round leaves no blank.
       setMessages((prev) => {
         const last = prev[prev.length - 1]
@@ -311,13 +346,24 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
       setStopping(false)
       setSending(false)
     }
-  }, [input, sending, context, threadId, chatBaseURL])
+  }, [input, image, sending, context, threadId, chatBaseURL])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       if (!sending) void send()
     }
+  }
+
+  const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'))
+    if (images.length === 0) return
+    event.preventDefault()
+    if (images.length > 1) {
+      setError('每轮只能附一张截图')
+      return
+    }
+    attachImage(images[0])
   }
 
   return <section className="chat-panel jarvis-chat" aria-label="Jarvis 对话">
@@ -393,12 +439,30 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     </div>
     {error && <Alert className="chat-error" type="error" showIcon title="Jarvis 暂时无法回复" description={error} closable onClose={() => setError(undefined)} />}
     <div className="chat-composer">
+      <input
+        ref={imageInputRef}
+        className="chat-image-input"
+        type="file"
+        accept="image/png,image/jpeg"
+        aria-label="选择截图"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0]
+          if (file) attachImage(file)
+          event.currentTarget.value = ''
+        }}
+      />
+      {image && imagePreviewURL && <div className="chat-image-preview" aria-label={`已附加截图 ${image.name}`}>
+        <img src={imagePreviewURL} alt="待发送截图预览" />
+        <span title={image.name}>{image.name}</span>
+        <Button type="text" size="small" icon={<CloseOutlined />} aria-label="移除截图" onClick={() => setImage(null)} />
+      </div>}
       <Input.TextArea
         ref={inputRef}
         className="chat-textarea"
         value={input}
         onChange={(event) => setInput(event.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         disabled={sending || historyLoading}
         autoSize={{ minRows: 1, maxRows: 6 }}
         maxLength={4000}
@@ -407,9 +471,20 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         placeholder="询问 Jarvis，或者告诉它你想做什么…"
       />
       <div className="chat-composer-footer">
-        <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite">
-          {stopping ? '正在暂停回复…' : sending ? 'Jarvis 正在回复，你可以随时暂停' : paused ? '已暂停；继续发送会恢复同一 Agent 会话' : 'Enter 发送 · Shift + Enter 换行'}
-        </Text>
+        <div className="chat-composer-tools">
+          <Button
+            type="text"
+            size="small"
+            icon={<PaperClipOutlined />}
+            disabled={sending || historyLoading}
+            aria-label="附加截图"
+            title="附加 PNG/JPEG 截图（也可直接粘贴）"
+            onClick={() => imageInputRef.current?.click()}
+          >截图</Button>
+          <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite">
+            {stopping ? '正在暂停回复…' : sending ? 'Jarvis 正在回复，你可以随时暂停' : paused ? '已暂停；继续发送会恢复同一 Agent 会话' : 'Enter 发送 · 可粘贴截图'}
+          </Text>
+        </div>
         {sending
           ? <Button danger icon={<StopOutlined />} disabled={stopping} aria-label="暂停 Jarvis 回复" onClick={stop}>
             {stopping ? '正在暂停' : '暂停生成'}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func TestRunnerPreservesStartupError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = runner.Stream(context.Background(), "你好", "old-traex-thread", func(Event) error {
+	err = runner.Stream(context.Background(), "你好", "old-traex-thread", "", func(Event) error {
 		t.Fatal("failed startup must not emit a chat event")
 		return nil
 	})
@@ -30,6 +31,36 @@ func TestRunnerPreservesStartupError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "missing thread.started") {
 		t.Fatalf("startup failure was masked by JSONL validation: %v", err)
+	}
+}
+
+func TestRunnerArgsIncludeImageForNewAndResumedTurns(t *testing.T) {
+	t.Parallel()
+	runner := &runner{
+		model:           "fixture-model",
+		sandbox:         "read-only",
+		reasoningEffort: "high",
+	}
+	for _, test := range []struct {
+		name     string
+		threadID string
+	}{
+		{name: "new turn"},
+		{name: "resumed turn", threadID: "thread-1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			args := runner.args(test.threadID, "/tmp/screenshot.png")
+			joined := strings.Join(args, "\x00")
+			if !strings.Contains(joined, "--image\x00/tmp/screenshot.png") {
+				t.Fatalf("args = %q, want image path", args)
+			}
+			if args[len(args)-1] != "-" {
+				t.Fatalf("args = %q, stdin prompt marker must remain last", args)
+			}
+		})
+	}
+	if args := runner.args("", ""); slices.Contains(args, "--image") {
+		t.Fatalf("args = %q, image flag must be absent without an image", args)
 	}
 }
 

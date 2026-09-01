@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"jarvis/internal/chat"
 	"jarvis/internal/observability"
@@ -31,14 +32,6 @@ func GetChatHistory(svc *chat.Service) app.HandlerFunc {
 	}
 }
 
-// chatRequestBody 是 POST /api/chat 的请求体，字段严格对齐前端冻结契约
-// （web/src/types.ts 的 ChatRequest）。用指针区分「字段缺失」与「显式 null」。
-type chatRequestBody struct {
-	Message     string           `json:"message"`
-	ThreadID    *string          `json:"thread_id"`
-	PageContext *chatPageContext `json:"page_context"`
-}
-
 type chatPageContext struct {
 	ActiveKey string             `json:"active_key"`
 	Selection *chatPageSelection `json:"selection"`
@@ -63,12 +56,13 @@ type chatPageSelection struct {
 func Chat(svc *chat.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		ctx = observability.FromRequestContext(ctx, c)
-		var body chatRequestBody
-		if err := decodeStrictJSON(c.Request.Body(), &body); err != nil {
+		req, cleanup, err := decodeChatMultipart(c)
+		if err != nil {
 			// 尚未进入 SSE，正常返回 HTTP 400。
 			writeAPIError(c, 400, 40060, err)
 			return
 		}
+		defer cleanup()
 
 		w := newSSEWriter(c)
 		defer func() {
@@ -76,18 +70,6 @@ func Chat(svc *chat.Service) app.HandlerFunc {
 				hlog.CtxErrorf(ctx, "close chat stream failed error=%+v", err)
 			}
 		}()
-
-		req := chat.Request{Message: body.Message}
-		if body.ThreadID != nil {
-			req.ThreadID = *body.ThreadID
-		}
-		if body.PageContext != nil {
-			pc := &chat.PageContext{ActiveKey: body.PageContext.ActiveKey, ViewState: body.PageContext.ViewState}
-			if sel := body.PageContext.Selection; sel != nil {
-				pc.Selection = &chat.PageSelection{Kind: sel.Kind, ID: sel.ID, Label: sel.Label}
-			}
-			req.PageContext = pc
-		}
 
 		emit := func(ev chat.Event) error {
 			switch ev.Kind {
@@ -126,4 +108,83 @@ func Chat(svc *chat.Service) app.HandlerFunc {
 			hlog.CtxErrorf(ctx, "write chat done event failed error=%+v", err)
 		}
 	}
+}
+
+func decodeChatMultipart(c *app.RequestContext) (req chat.Request, cleanup func(), err error) {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return chat.Request{}, nil, fmt.Errorf("chat request must be multipart/form-data: %w", err)
+	}
+	cleanup = func() { c.Request.RemoveMultipartFormFiles() }
+	fail := func(cause error) (chat.Request, func(), error) {
+		cleanup()
+		return chat.Request{}, nil, cause
+	}
+
+	allowedValues := map[string]bool{"message": true, "thread_id": true, "page_context": true}
+	for key := range form.Value {
+		if !allowedValues[key] {
+			return fail(fmt.Errorf("unknown chat form field %q", key))
+		}
+	}
+	for key := range form.File {
+		if key != "image" {
+			return fail(fmt.Errorf("unknown chat file field %q", key))
+		}
+	}
+
+	messages := form.Value["message"]
+	if len(messages) != 1 || strings.TrimSpace(messages[0]) == "" {
+		return fail(fmt.Errorf("chat message is required exactly once"))
+	}
+	req.Message = messages[0]
+
+	if values := form.Value["thread_id"]; len(values) > 1 {
+		return fail(fmt.Errorf("chat thread_id must appear at most once"))
+	} else if len(values) == 1 {
+		req.ThreadID = values[0]
+	}
+
+	if values := form.Value["page_context"]; len(values) > 1 {
+		return fail(fmt.Errorf("chat page_context must appear at most once"))
+	} else if len(values) == 1 {
+		var body *chatPageContext
+		if err := decodeStrictJSON([]byte(values[0]), &body); err != nil {
+			return fail(fmt.Errorf("decode chat page_context: %w", err))
+		}
+		if body != nil {
+			pc := &chat.PageContext{ActiveKey: body.ActiveKey, ViewState: body.ViewState}
+			if sel := body.Selection; sel != nil {
+				pc.Selection = &chat.PageSelection{Kind: sel.Kind, ID: sel.ID, Label: sel.Label}
+			}
+			req.PageContext = pc
+		}
+	}
+
+	images := form.File["image"]
+	if len(images) > 1 {
+		return fail(fmt.Errorf("chat image must appear at most once"))
+	}
+	if len(images) == 1 {
+		file, err := images[0].Open()
+		if err != nil {
+			return fail(fmt.Errorf("open chat image: %w", err))
+		}
+		path, removeImage, saveErr := chat.SaveTemporaryImage(file)
+		closeErr := file.Close()
+		if saveErr != nil {
+			return fail(saveErr)
+		}
+		if closeErr != nil {
+			removeImage()
+			return fail(fmt.Errorf("close chat image upload: %w", closeErr))
+		}
+		req.ImagePath = path
+		removeMultipart := cleanup
+		cleanup = func() {
+			removeImage()
+			removeMultipart()
+		}
+	}
+	return req, cleanup, nil
 }

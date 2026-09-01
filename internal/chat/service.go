@@ -23,11 +23,13 @@ type ContextAssembler interface {
 
 // Request 是一轮对话请求。字段与前端冻结契约（web/src/types.ts 的 ChatRequest）
 // 一一对应：ThreadID 为空=新会话，非空=codex resume 多轮；PageContext 是右侧
-// 对话框对左侧页面的单向感知，注入 prompt 作上下文。
+// 对话框对左侧页面的单向感知，注入 prompt 作上下文；ImagePath 是 API 已验证并
+// 临时保存的单张截图，只透传给本轮 Codex。
 type Request struct {
 	Message     string
 	ThreadID    string
 	PageContext *PageContext
+	ImagePath   string
 }
 
 // PageContext 对应契约里的 page_context：当前 Tab + 选中项摘要。
@@ -131,7 +133,7 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 		}
 		return emit(event)
 	}
-	streamErr := s.runner.Stream(ctx, prompt, activeThreadID, handle)
+	streamErr := s.runner.Stream(ctx, prompt, activeThreadID, req.ImagePath, handle)
 	if activeThreadID != "" && isUnresumableThread(streamErr) {
 		// CLI 换引擎或会话文件丢失时，旧 thread 无法 resume。开新会话并灌入首轮指引，
 		// 不把这条 Codex 错误伪装成 JSONL 缺字段。
@@ -141,7 +143,7 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 		}
 		activeThreadID = ""
 		assistant.Reset()
-		streamErr = s.runner.Stream(ctx, built, "", handle)
+		streamErr = s.runner.Stream(ctx, built, "", req.ImagePath, handle)
 	}
 	if activeThreadID != "" {
 		if historyErr := s.history.AppendTurn(activeThreadID, message, assistant.String()); historyErr != nil {

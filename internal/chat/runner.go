@@ -90,7 +90,7 @@ func newRunner(bin, model, sandbox, reasoningEffort string, timeout time.Duratio
 //
 // 事实来自实跑 codex（见包测试样本）：resume 不接受 --color/--sandbox flag，
 // 沙箱只能经 -c sandbox_mode 覆盖，否则 codex 直接以 exit 2 报 unexpected argument。
-func (r *runner) args(threadID string) []string {
+func (r *runner) args(threadID, imagePath string) []string {
 	var args []string
 	if strings.TrimSpace(threadID) == "" {
 		args = []string{
@@ -100,8 +100,11 @@ func (r *runner) args(threadID string) []string {
 			"--skip-git-repo-check",
 			"-c", "model_reasoning_effort=" + r.reasoningEffort,
 			"--model", r.model,
-			"-",
 		}
+		if strings.TrimSpace(imagePath) != "" {
+			args = append(args, "--image", imagePath)
+		}
+		args = append(args, "-")
 		return args
 	}
 	args = []string{
@@ -111,8 +114,11 @@ func (r *runner) args(threadID string) []string {
 		"--skip-git-repo-check",
 		"-c", "model_reasoning_effort=" + r.reasoningEffort,
 		"--model", r.model,
-		"-",
 	}
+	if strings.TrimSpace(imagePath) != "" {
+		args = append(args, "--image", imagePath)
+	}
+	args = append(args, "-")
 	return args
 }
 
@@ -120,7 +126,7 @@ func (r *runner) args(threadID string) []string {
 // 每解析出一条 thread/delta 事件就回调 emit；emit 返回 error（如 SSE 写失败）
 // 会中止本轮并杀掉子进程。正常结束返回 nil（上游据此发 done）；任何异常
 // （非零退出、超时、JSON 解析失败、stderr 有内容而无输出）返回 error。
-func (r *runner) Stream(ctx context.Context, prompt, threadID string, emit func(Event) error) error {
+func (r *runner) Stream(ctx context.Context, prompt, threadID, imagePath string, emit func(Event) error) error {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return fmt.Errorf("chat prompt is required")
@@ -129,7 +135,7 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, emit func(
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	command := exec.CommandContext(runCtx, r.bin, r.args(threadID)...)
+	command := exec.CommandContext(runCtx, r.bin, r.args(threadID, imagePath)...)
 	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=chat")
 	command.Stdin = strings.NewReader(prompt)
 	stdout, err := command.StdoutPipe()

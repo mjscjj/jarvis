@@ -93,7 +93,10 @@ func main() {
 		fatalf("initialize chat service failed: %v", err)
 	}
 
-	h := server.Default(server.WithHostPorts(cfg.Chat.Addr))
+	h := server.Default(
+		server.WithHostPorts(cfg.Chat.Addr),
+		server.WithMaxRequestBodySize(chat.MaxRequestBodyBytes),
+	)
 	if err := api.RegisterChatSidecar(h, chatService, db, cfg.Server.Addr); err != nil {
 		fatalf("register chat sidecar routes failed: %v", err)
 	}
