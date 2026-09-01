@@ -206,7 +206,7 @@ function tagClass(tag: KrTag) {
   return 'border-slate-200 bg-slate-100 text-slate-600'
 }
 
-function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean }) {
+function KrHeader({ objectiveId, kr, open, onToggle, readOnly, scoreReadOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean; scoreReadOnly: boolean }) {
 	const { setKrTitle, setKrPriority, setKrScore, templateKey } = useBoard()
 	const priority = priorityOf(kr)
 
@@ -224,7 +224,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
 				</select>
 			) : <span className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priority || '未标注'}</span>}
-			{templateKey === 'okr_weekly_preview_v1' && <WeeklyScoreControl score={kr.score} onChange={(score) => setKrScore(kr.id, score)} readOnly={readOnly} label="一级 KR 评分" />}
+			{templateKey === 'okr_weekly_preview_v1' && <WeeklyScoreControl score={kr.score} onChange={(score) => setKrScore(kr.id, score)} readOnly={scoreReadOnly} label="一级 KR 评分" />}
 			{(kr.tags ?? []).filter((tag) => tag.type !== 'custom' && tag.type !== 'priority').map((tag) => (
               <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded-md border px-2 py-1 text-xs [overflow-wrap:anywhere] ${tagClass(tag)}`}>{tagText(tag)}</span>
             ))}
@@ -236,7 +236,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
   )
 }
 
-function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, showProgress = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; showProgress?: boolean; tagSuggestions?: KrTag[] }) {
+function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, scoreReadOnly, showProgress = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; scoreReadOnly: boolean; showProgress?: boolean; tagSuggestions?: KrTag[] }) {
   const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, templateKey, week } = useBoard()
   const [preview, setPreview] = useState<MeegoPreview>()
   const [previewError, setPreviewError] = useState('')
@@ -268,7 +268,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
             <span className="min-w-60 flex-1">
               <Text value={point.title} onChange={(value) => setPointTitle(objectiveId, krId, point.id, value)} placeholder="具体 KR 点" className="text-[15px] font-semibold leading-6 text-slate-800" readOnly={readOnly} commentTarget={{ type: 'point', id: point.id, title: point.title }} />
             </span>
-            {showProgress && templateKey === 'okr_weekly_preview_v1' && <WeeklyScoreControl score={point.score} onChange={(score) => setPointScore(krId, point.id, score)} readOnly={readOnly} label="具体 KR 评分" />}
+            {showProgress && templateKey === 'okr_weekly_preview_v1' && <WeeklyScoreControl score={point.score} onChange={(score) => setPointScore(krId, point.id, score)} readOnly={scoreReadOnly} label="具体 KR 评分" />}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
           {tagSuggestions && <div className="mt-1.5 min-w-0"><TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} /></div>}
@@ -311,7 +311,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitio
   const preview = templateKey === 'okr_weekly_preview_v1'
   return (
     <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} />
+      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} scoreReadOnly={progressReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} />
       {open && showProgress && preview && (
         <section className="mt-2 ml-7 rounded-xl border border-slate-200 bg-white p-2.5">
           <h4 className="mb-2 text-xs font-semibold text-slate-500">本周进展</h4>
@@ -392,7 +392,7 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
   const definitionLocked = readOnly || definitionsReadOnly
   return (
     <article data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
-      <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} />
+      <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} scoreReadOnly={readOnly || progressReadOnly} />
       {open && (
         <div className="space-y-5 px-4 py-4">
           <MetricBox kr={kr} readOnly={readOnly} structureReadOnly={definitionLocked} />
