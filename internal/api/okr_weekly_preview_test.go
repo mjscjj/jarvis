@@ -45,7 +45,7 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{}, nil)
+	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{Enabled: true}, unreachableOKRAuthProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,6 +63,9 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	}
 	if response := request("POST", "/api/weekly-report/weeks", `{"quarter":"2026-Q3","week":"2026-W37"}`); response.StatusCode() != 400 {
 		t.Fatalf("missing template status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	if response := request("POST", "/api/weekly-report/comments", `{}`); response.StatusCode() != 401 {
+		t.Fatalf("anonymous comment status=%d body=%s", response.StatusCode(), response.Body())
 	}
 	previewBody := `{"quarter":"2026-Q3","week":"2026-W37","template_key":"okr_weekly_preview_v1"}`
 	if response := request("POST", "/api/weekly-report/weeks", previewBody); response.StatusCode() != 201 {

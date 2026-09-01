@@ -58,10 +58,12 @@ function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
 function Workspace({
   auth,
   logoutUser,
+  loginUser,
   moduleEnablement,
 }: {
   auth: AuthStatus
   logoutUser: () => Promise<void>
+  loginUser: () => Promise<void>
   moduleEnablement: Readonly<Record<string, boolean>>
 }) {
   const { context, setViewState } = usePageContext()
@@ -89,20 +91,16 @@ function Workspace({
 				<PageContextSync surface={surface} />
 				{visibleTab === 'agent-flows' ? (
 					<AgentFlowsWorkspace
-						auth={auth}
-						onLogout={() => void logoutUser()}
 						weeklyEnabled={weeklyEnabled}
           />
         ) : surface === 'okr' ? (
-          <CoreWorkspace
-            auth={auth}
-            onLogout={() => void logoutUser()}
-          />
+			<CoreWorkspace />
 			) : (
 			<PreviewReviewProvider>
 				<WeeklyReportWorkspace
 					auth={auth}
 					onLogout={() => void logoutUser()}
+					onLogin={() => void loginUser()}
 						mode={weeklyMode!}
 						onModeChange={(mode) => changeTab(okrTabForWeeklyMode(mode))}
 					shared={weeklyShare}
@@ -118,8 +116,8 @@ function Workspace({
 // weekly reporting remain separate backend domains behind the same directory.
 export default function OKRModule({ moduleEnablement }: AppModulePageProps) {
 	return (
-		<IdentityBoundary>{(auth, logoutUser) => (
-			<Workspace auth={auth} logoutUser={logoutUser} moduleEnablement={moduleEnablement} />
+		<IdentityBoundary>{(auth, logoutUser, loginUser) => (
+			<Workspace auth={auth} logoutUser={logoutUser} loginUser={loginUser} moduleEnablement={moduleEnablement} />
 		)}</IdentityBoundary>
 	)
 }

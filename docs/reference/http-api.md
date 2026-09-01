@@ -45,7 +45,7 @@
 - 存在周报历史的 KR 或稳定拆解不允许删除，避免留下孤儿历史。
 - 周报：`GET /api/weekly-report/scope|board|weeks|comments|reminder-preview|reminder-batches|meego-preview`；`POST /api/weekly-report/weeks` 开启空周，`DELETE /api/weekly-report/weeks/:week?quarter=...` 删除该季度下整周的周报事实但保留 O/KR 稳定定义。评论、所选周进展、Meego 观察和催办批次的其它写接口位于 `/api/weekly-report/*`。产品固定提供催填、进展巡检、会议材料和对外提交四个 Agent 行动，并固定绑定可编辑 Prompt；季度草稿、区域对齐和其它 Report Prompt 可由普通 Agent Task 使用。执行统一由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
 - Meego observation：`POST /api/weekly-report/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
-- OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/okr/auth/feishu/device` 发起飞书设备授权、`POST /api/okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。流程不需要 OAuth 回调 URL，用户 access/refresh token 不落库；写接口只识别操作者，不做行级权限或可见性过滤。
+- OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/okr/auth/feishu/device` 发起飞书设备授权、`POST /api/okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。流程不需要 OAuth 回调 URL，用户 access/refresh token 不落库。只有新建评论需要飞书真人身份；其余 OKR/周报写操作按 `Jarvis` 记账，不做全局登录门禁、行级权限或可见性过滤。
 - OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。
 - 文档导出：`POST /api/weekly-report/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。
 

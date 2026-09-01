@@ -17,6 +17,16 @@ import (
 	"gorm.io/gorm"
 )
 
+type unreachableOKRAuthProvider struct{}
+
+func (unreachableOKRAuthProvider) RequestDeviceAuthorization(context.Context) (okrAuth.DeviceAuthorization, error) {
+	return okrAuth.DeviceAuthorization{}, context.Canceled
+}
+
+func (unreachableOKRAuthProvider) PollDeviceAuthorization(context.Context, string) (okrAuth.User, error) {
+	return okrAuth.User{}, context.Canceled
+}
+
 func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -32,7 +42,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{}, nil)
+	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{Enabled: true}, unreachableOKRAuthProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +91,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	if err := db.First(&stored, "id = ?", "kr-1").Error; err != nil {
 		t.Fatal(err)
 	}
-	if stored.UpdatedBy != "local" {
+	if stored.UpdatedBy != "jarvis" {
 		t.Fatalf("editor must come from identity: %+v", stored)
 	}
 	enabled = false

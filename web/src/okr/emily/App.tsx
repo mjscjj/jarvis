@@ -71,12 +71,14 @@ function SyncNotice() {
 export default function App({
   auth,
   onLogout,
+  onLogin,
   mode,
   onModeChange,
   shared = false,
 }: {
   auth: AuthStatus
   onLogout: () => void
+	onLogin: () => void
 	mode: WeeklyWorkspaceMode
 	onModeChange: (mode: WeeklyWorkspaceMode) => void
   shared?: boolean
@@ -308,7 +310,7 @@ export default function App({
             </div>
 			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无{lifecycleName}</div><div className="mt-1 text-xs text-slate-400">{managesWeeks ? `点击顶部“新建${lifecycleName}”创建一个空周。` : '请先在“周报填写”中新建普通周报。'}</div></section>}
 		</main>
-			{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={meetingLike} canComment onSignIn={() => undefined} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+			{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={meetingLike} canComment={!auth.configured || auth.authenticated} onSignIn={onLogin} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
     </div>
   )
 }

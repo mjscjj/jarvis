@@ -3,15 +3,8 @@ import { useEffect, useState } from 'react'
 import { ManagementView } from './components/ManagementView'
 import { QuarterSelect } from './components/QuarterSelect'
 import { useBoard } from './board'
-import type { AuthStatus } from './types'
 
-export default function CoreApp({
-  auth,
-  onLogout,
-}: {
-  auth: AuthStatus
-  onLogout: () => void
-}) {
+export default function CoreApp() {
   const { quarter, syncState, reset } = useBoard()
   const tone = syncState.kind === 'saving' ? 'text-blue-600' : syncState.kind === 'saved' ? 'text-emerald-600' : syncState.kind === 'error' || syncState.kind === 'conflict' ? 'text-red-600' : 'text-slate-400'
   const errorKey = syncState.kind === 'error' ? `${syncState.title ?? ''}\n${syncState.message}` : ''
@@ -33,7 +26,6 @@ export default function CoreApp({
           <div className="ml-auto flex items-center gap-2">
             <QuarterSelect />
             <button type="button" onClick={reset} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] text-slate-500 hover:bg-slate-50">重新载入</button>
-            {auth.user && <div className="hidden items-center gap-1.5 text-[11px] text-slate-500 sm:flex">{auth.user.avatarUrl ? <img src={auth.user.avatarUrl} alt="" className="size-6 rounded-full" /> : <span className="flex size-6 items-center justify-center rounded-full bg-slate-100 text-[10px]">{auth.user.name.slice(0, 1)}</span>}<span>{auth.user.name}</span>{auth.configured && <button type="button" onClick={onLogout} className="ml-1 text-slate-400 hover:text-slate-700">退出</button>}</div>}
           </div>
         </div>
       </header>

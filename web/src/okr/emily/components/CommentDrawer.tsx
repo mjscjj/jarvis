@@ -136,12 +136,14 @@ function ReplyComposer({ comment, quarter, week, onCreated, onCancel }: { commen
   )
 }
 
-function CommentThread({ comment, quarter, week, showTarget, meetingMode, onReply, onEdit, onPatch, onDelete }: {
+function CommentThread({ comment, quarter, week, showTarget, meetingMode, canComment, onSignIn, onReply, onEdit, onPatch, onDelete }: {
   comment: PageComment
   quarter: string
   week: string
   showTarget: boolean
   meetingMode: boolean
+  canComment: boolean
+  onSignIn: () => void
   onReply: (rootId: string, reply: PageComment) => void
   onEdit: (id: string, content: string) => Promise<void>
   onPatch: (id: string, patch: { todo?: boolean; resolved?: boolean }) => Promise<void>
@@ -188,7 +190,7 @@ function CommentThread({ comment, quarter, week, showTarget, meetingMode, onRepl
             {meetingMode && <button type="button" disabled={actionSaving} aria-pressed={comment.todo} onClick={() => void patch({ todo: !comment.todo })} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-medium disabled:opacity-50 ${comment.todo ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-amber-200 hover:text-amber-700'}`}>{comment.todo ? '取消 To do' : '标记 To do'}</button>}
             <button type="button" disabled={actionSaving} onClick={() => void patch({ resolved: !comment.resolved })} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-medium disabled:opacity-50 ${comment.resolved ? 'border-slate-200 text-slate-500' : 'border-indigo-200 bg-indigo-50 text-indigo-600'}`}>{comment.resolved ? '重新打开' : '标记解决'}</button>
           </div>
-          <EditableCommentBody comment={comment} onEdit={onEdit} onDelete={onDelete} footer={<button type="button" onClick={() => setReplying((value) => !value)} className="font-medium text-slate-400 hover:text-indigo-600">回复{comment.replies.length > 0 ? ` · ${comment.replies.length}` : ''}</button>} />
+          <EditableCommentBody comment={comment} onEdit={onEdit} onDelete={onDelete} footer={<button type="button" onClick={() => canComment ? setReplying((value) => !value) : onSignIn()} className="font-medium text-slate-400 hover:text-indigo-600">回复{comment.replies.length > 0 ? ` · ${comment.replies.length}` : ''}</button>} />
           {actionError && <div className="mt-1 text-[10px] text-red-600">{actionError}</div>}
 
           {comment.replies.length > 0 && (
@@ -205,7 +207,7 @@ function CommentThread({ comment, quarter, week, showTarget, meetingMode, onRepl
             </div>
           )}
 
-          {replying && <ReplyComposer comment={comment} quarter={quarter} week={week} onCreated={(reply) => onReply(comment.id, reply)} onCancel={() => setReplying(false)} />}
+          {replying && canComment && <ReplyComposer comment={comment} quarter={quarter} week={week} onCreated={(reply) => onReply(comment.id, reply)} onCancel={() => setReplying(false)} />}
         </div>
       </div>
     </article>
@@ -362,7 +364,7 @@ export function CommentDrawer({ open, quarter, week, target, meetingMode, canCom
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loading ? <div className="px-4 py-10 text-center text-xs text-slate-400">正在读取评论…</div> : visibleComments.length === 0 ? (
             <div className="px-8 py-16 text-center"><div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-400">💬</div><p className="text-[13px] font-medium text-slate-600">{target ? '这段内容还没有评论' : '还没有评论'}</p><p className="mt-1 text-[11px] text-slate-400">提出问题、补充背景或回复讨论</p></div>
-          ) : visibleComments.map((comment) => <CommentThread key={comment.id} comment={comment} quarter={quarter} week={week} showTarget={!target} meetingMode={meetingMode} onReply={addReply} onEdit={editExistingComment} onPatch={patchExistingComment} onDelete={removeExistingComment} />)}
+          ) : visibleComments.map((comment) => <CommentThread key={comment.id} comment={comment} quarter={quarter} week={week} showTarget={!target} meetingMode={meetingMode} canComment={canComment} onSignIn={onSignIn} onReply={addReply} onEdit={editExistingComment} onPatch={patchExistingComment} onDelete={removeExistingComment} />)}
         </div>
       </aside>
     </>

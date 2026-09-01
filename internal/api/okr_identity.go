@@ -16,7 +16,7 @@ import (
 
 const okrIdentityContextKey = "okr_identity"
 
-var localOKRUser = okrAuth.User{OpenID: "local", Name: "本机用户"}
+var jarvisOKRUser = okrAuth.User{OpenID: "jarvis", Name: "Jarvis"}
 
 type okrCurrentUserResponse struct {
 	Authenticated bool          `json:"authenticated"`
@@ -27,7 +27,7 @@ type okrCurrentUserResponse struct {
 func GetOKRCurrentUser(service *okrAuth.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		if !service.Enabled() {
-			user := localOKRUser
+			user := jarvisOKRUser
 			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: false, User: &user}})
 			return
 		}
@@ -86,7 +86,7 @@ func LogoutOKR(service *okrAuth.Service) app.HandlerFunc {
 
 func RequireOKRIdentity(service *okrAuth.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		user := localOKRUser
+		user := jarvisOKRUser
 		if service.Enabled() {
 			session, err := service.Current(ctx, string(c.Cookie(okrAuth.CookieName)))
 			if errors.Is(err, okrAuth.ErrUnauthenticated) {
@@ -109,11 +109,11 @@ func RequireOKRIdentity(service *okrAuth.Service) app.HandlerFunc {
 func currentOKRIdentity(c *app.RequestContext) okrAuth.User {
 	value, ok := c.Get(okrIdentityContextKey)
 	if !ok {
-		return localOKRUser
+		return jarvisOKRUser
 	}
 	user, ok := value.(okrAuth.User)
 	if !ok || strings.TrimSpace(user.OpenID) == "" {
-		return localOKRUser
+		return jarvisOKRUser
 	}
 	return user
 }
