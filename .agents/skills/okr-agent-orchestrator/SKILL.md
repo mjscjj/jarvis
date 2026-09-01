@@ -1,6 +1,6 @@
 ---
 name: okr-agent-orchestrator
-description: 根据 OKR 模块中可编辑的业务 Prompt，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成固定 Agent 行动或一次性目标。用于 KR 标签维护与批量打标、季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填和进展巡检。
+description: 根据 OKR 模块中可编辑的业务 Prompt，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成固定 Agent 行动或一次性目标。用于 KR 标签维护与批量打标、季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填、进展巡检和 OKR Preview 评审。
 module: okr
 ---
 

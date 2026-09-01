@@ -11,6 +11,7 @@ import { TagChip, TagEditor } from './TagEditor'
 import { FeishuPeoplePicker } from './FeishuPeoplePicker'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
+import { PreviewReviewButton, PreviewReviewPanel } from '../aiReviewContext'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
 
 function Caret({ open, onToggle }: { open: boolean; onToggle: () => void }) {
@@ -225,6 +226,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, scoreReadOnly }: 
 				</select>
 			) : <span className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priority || '未标注'}</span>}
 			{templateKey === 'okr_weekly_preview_v1' && <WeeklyScoreControl score={kr.score} onChange={(score) => setKrScore(kr.id, score)} readOnly={scoreReadOnly} label="一级 KR 评分" />}
+			{templateKey === 'okr_weekly_preview_v1' && <PreviewReviewButton target={{ kind: 'kr', objectiveId, krId: kr.id, title: kr.title }} label="AI评审" />}
 			{(kr.tags ?? []).filter((tag) => tag.type !== 'custom' && tag.type !== 'priority').map((tag) => (
               <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded-md border px-2 py-1 text-xs [overflow-wrap:anywhere] ${tagClass(tag)}`}>{tagText(tag)}</span>
             ))}
@@ -269,6 +271,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
               <Text value={point.title} onChange={(value) => setPointTitle(objectiveId, krId, point.id, value)} placeholder="具体 KR 点" className="text-[15px] font-semibold leading-6 text-slate-800" readOnly={readOnly} commentTarget={{ type: 'point', id: point.id, title: point.title }} />
             </span>
             {showProgress && templateKey === 'okr_weekly_preview_v1' && <WeeklyScoreControl score={point.score} onChange={(score) => setPointScore(krId, point.id, score)} readOnly={scoreReadOnly} label="具体 KR 评分" />}
+            {showProgress && templateKey === 'okr_weekly_preview_v1' && <PreviewReviewButton target={{ kind: 'point', objectiveId, krId, pointId: point.id, title: point.title }} label="AI建议" />}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
           {tagSuggestions && <div className="mt-1.5 min-w-0"><TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} /></div>}
@@ -302,6 +305,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
           )}
         </div>
       )}
+		{showProgress && templateKey === 'okr_weekly_preview_v1' && <PreviewReviewPanel target={{ kind: 'point', objectiveId, krId, pointId: point.id, title: point.title }} className="mt-2 ml-8" />}
     </div>
   )
 }
@@ -393,6 +397,7 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
   return (
     <article data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
       <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} scoreReadOnly={readOnly || progressReadOnly} />
+		<PreviewReviewPanel target={{ kind: 'kr', objectiveId, krId: kr.id, title: kr.title }} className="mx-3.5 my-2.5" />
       {open && (
         <div className="space-y-5 px-4 py-4">
           <MetricBox kr={kr} readOnly={readOnly} structureReadOnly={definitionLocked} />
@@ -470,7 +475,7 @@ function ObjectiveControls({ objective }: { objective: Objective }) {
 }
 
 export function KrTable({ readOnly = false, definitionsReadOnly = false, progressReadOnly = false, showProgress = true, manageObjectives = false }: { readOnly?: boolean; definitionsReadOnly?: boolean; progressReadOnly?: boolean; showProgress?: boolean; manageObjectives?: boolean }) {
-  const { objectives } = useBoard()
+	const { objectives, templateKey } = useBoard()
 	const [closed, setClosed] = useState<Set<string>>(new Set())
 	const [ownerFilter, setOwnerFilter] = useState('')
 	const [activeBusinessValue, setActiveBusinessValue] = useState<string>()
@@ -499,7 +504,8 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   return (
     <div className={readOnly ? 'kr-table-readonly' : ''}>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-		<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{ownerFilter ? `，负责人筛选后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
+			<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{ownerFilter ? `，负责人筛选后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
+			{templateKey === 'okr_weekly_preview_v1' && <PreviewReviewButton target={{ kind: 'all', title: '全部 OKR' }} label="评审全部" className="px-3" />}
         <span className="ml-auto text-slate-400">负责人</span>
 		<select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
           <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
@@ -510,6 +516,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
           <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部折叠</button>
         </div>
       </div>
+		{templateKey === 'okr_weekly_preview_v1' && <PreviewReviewPanel target={{ kind: 'all', title: '全部 OKR' }} className="mb-3" />}
 		<HierarchyNav
 			navigation={navigation}
 			activeBusiness={activeBusiness}

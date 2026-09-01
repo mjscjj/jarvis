@@ -6,6 +6,7 @@ import CoreWorkspace from './emily/CoreApp'
 import WeeklyReportWorkspace from './emily/App'
 import { useBoard } from './emily/board'
 import { BoardProvider } from './emily/store'
+import { PreviewReviewProvider } from './emily/aiReviewContext'
 import type { AuthStatus } from './emily/types'
 import IdentityBoundary from './IdentityBoundary'
 import { resolveOKRTab, type OKRTab } from './navigation'
@@ -91,14 +92,16 @@ function Workspace({
             auth={auth}
             onLogout={() => void logoutUser()}
           />
-        ) : (
-          <WeeklyReportWorkspace
-            auth={auth}
-            onLogout={() => void logoutUser()}
-            mode={visibleTab === 'weekly-meeting' ? 'meeting' : 'fill'}
-            onModeChange={(mode) => changeTab(mode === 'meeting' ? 'weekly-meeting' : 'weekly-fill')}
-          />
-        )}
+			) : (
+			<PreviewReviewProvider>
+				<WeeklyReportWorkspace
+					auth={auth}
+					onLogout={() => void logoutUser()}
+					mode={visibleTab === 'weekly-meeting' ? 'meeting' : 'fill'}
+					onModeChange={(mode) => changeTab(mode === 'meeting' ? 'weekly-meeting' : 'weekly-fill')}
+				/>
+			</PreviewReviewProvider>
+			)}
       </BoardProvider>
     </div>
   )

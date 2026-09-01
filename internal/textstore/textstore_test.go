@@ -89,6 +89,7 @@ func TestOKRAgentDefinitionsAreEditableMarkdown(t *testing.T) {
 		OKRAgentReportCKey,
 		OKRAgentWeeklyReminderKey,
 		OKRAgentProgressSyncKey,
+		OKRAgentPreviewReviewKey,
 	}
 	for _, key := range want {
 		item, err := service.Get(t.Context(), key)
