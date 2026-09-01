@@ -53,6 +53,7 @@ const PAGE_SUGGESTIONS: Record<string, string[]> = {
   review: ['总结今天真正完成的事', '哪些承诺还没有闭环？', '帮我找出值得复盘的问题'],
   memory: ['Jarvis 目前是怎么理解我的工作的？', '检查项目背景有没有过时信息', '帮我找到某个项目的关键上下文'],
   automation: ['哪些自动化即将运行？', '检查自动化之间是否有冲突', '帮我设计一个新的自动化'],
+  weekly: ['总结当前周报的重点进展和风险', '检查哪些 KR 还需要补充', '帮我准备本周会议要点'],
   clues: ['最近出现了哪些重要线索？', '哪些线索还在等待更多证据？', '帮我解释线索到任务的转换'],
   system: ['检查 Jarvis 当前的关键配置', '有哪些系统异常会影响任务？', '帮我定位最近的运行问题'],
 }
@@ -73,6 +74,7 @@ function pageLabel(context: PageContext): string {
 
 function pageGroup(context: PageContext): string {
   if (context.active_key === 'okr' && context.view_state.tab === 'agent-flows') return 'automation'
+  if (context.active_key === 'okr' && context.view_state.tab.startsWith('weekly-')) return 'weekly'
   if (['management', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
   const label = pageLabel(context)
   return Object.keys(PAGE_SUGGESTIONS).find((key) => PAGE_LABELS[key] === label) ?? 'today'

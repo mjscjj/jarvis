@@ -271,7 +271,7 @@ function AppShell() {
 
   return (
     <Layout
-      className={`app-shell ${chatOpen && !weeklyShare ? 'chat-is-open' : ''}`}
+      className={`app-shell ${chatOpen ? 'chat-is-open' : ''}`}
       style={{ '--sider-width': weeklyShare ? '0px' : `${siderWidth}px` } as React.CSSProperties}
     >
       {!weeklyShare && <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
@@ -310,7 +310,7 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
           </Content>
-          {!weeklyShare && <aside
+          <aside
             ref={chatRef}
             className={`chat-overlay ${chatOpen ? 'is-open' : ''}`}
             aria-hidden={!chatOpen}
@@ -322,10 +322,10 @@ function AppShell() {
                 <Chat open={chatOpen} onClose={() => setChatOpen(false)} />
               </Suspense>
             )}
-          </aside>}
+          </aside>
         </div>
       </Layout>
-      {!weeklyShare && <Tooltip title={chatOpen ? '收起对话' : '打开对话'}>
+      <Tooltip title={chatOpen ? '收起对话' : '打开对话'}>
         <Button
           type="primary"
           shape="circle"
@@ -336,7 +336,7 @@ function AppShell() {
           aria-label={chatOpen ? '关闭 Jarvis 对话' : '打开 Jarvis 对话'}
           onClick={() => setChatOpen((open) => !open)}
         />
-      </Tooltip>}
+      </Tooltip>
       {!weeklyShare && <nav className="mobile-bottom-nav" aria-label="主要导航">
         {mobileNavItems.map((item) => (
           <button
