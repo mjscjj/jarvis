@@ -15,8 +15,8 @@ case "${platform}/${arch}" in
     service_manager="launchd"
     ;;
   Linux/x86_64|Linux/amd64)
-    archive_name="qdrant-x86_64-unknown-linux-gnu.tar.gz"
-    archive_sha256="cd619c61d8d32dd176af88cf498714ecb765b7df9021d691862478d6ac35392c"
+    archive_name="qdrant-x86_64-unknown-linux-musl.tar.gz"
+    archive_sha256="40a6af44f8a496560c9d2352b6b2a0ada816aa48d0781c68f602582e67b3aea0"
     service_manager="systemd"
     ;;
   *)
