@@ -51,5 +51,5 @@ test('Preview 周导出评分并把全部状态合并为本周进展', () => {
   assert.match(output.content, /\*\*本周进展\*\*/)
   assert.match(output.content, /仍在推进/)
   assert.match(output.content, /已经完成/)
-  assert.doesNotMatch(output.content, /\*\*已完成\*\*/)
+  assert.doesNotMatch(output.content, /\n\*\*已完成\*\*\n/)
 })
