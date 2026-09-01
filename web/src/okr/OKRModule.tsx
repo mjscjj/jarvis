@@ -11,6 +11,7 @@ import type { AuthStatus } from './emily/types'
 import IdentityBoundary from './IdentityBoundary'
 import { resolveOKRTab, type OKRTab } from './navigation'
 import { withOKRScope, withOKRTarget } from './chatContext'
+import { isWeeklyShareViewState, weeklyShareTab } from './emily/share'
 import './emily/index.css'
 
 function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
@@ -65,7 +66,8 @@ function Workspace({
   const { context, setViewState } = usePageContext()
   const [selectedQuarter, setSelectedQuarter] = useState('')
   const requestedTab = context.view_state.tab
-  const visibleTab = resolveOKRTab(requestedTab, moduleEnablement)
+  const weeklyShare = isWeeklyShareViewState(context.view_state)
+  const visibleTab = weeklyShare ? weeklyShareTab(requestedTab) : resolveOKRTab(requestedTab, moduleEnablement)
   const weeklyEnabled = moduleEnablement['weekly-report'] === true
 
   useEffect(() => {
@@ -99,6 +101,7 @@ function Workspace({
 					onLogout={() => void logoutUser()}
 					mode={visibleTab === 'weekly-meeting' ? 'meeting' : 'fill'}
 					onModeChange={(mode) => changeTab(mode === 'meeting' ? 'weekly-meeting' : 'weekly-fill')}
+					shared={weeklyShare}
 				/>
 			</PreviewReviewProvider>
 			)}

@@ -71,11 +71,13 @@ export default function App({
   onLogout,
   mode,
   onModeChange,
+  shared = false,
 }: {
   auth: AuthStatus
   onLogout: () => void
   mode: 'fill' | 'meeting'
   onModeChange: (mode: 'fill' | 'meeting') => void
+  shared?: boolean
 }) {
 	const { reset, syncState, quarter, week, templateKey, availableWeeks, setWeek, setWeeklyScope, deleteWeeklyScope } = useBoard()
   const [commentsOpen, setCommentsOpen] = useState(false)
@@ -216,6 +218,10 @@ export default function App({
 					<h1 className="text-[14px] font-semibold tracking-tight text-slate-900">{PAGE_TITLE.replace('OKR 协作台', '周报协作台')}</h1>
           </div>
 
+		          {shared && <nav aria-label="周报页面" className="flex h-9 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
+					<button type="button" aria-current={mode === 'fill' ? 'page' : undefined} onClick={() => onModeChange('fill')} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${mode === 'fill' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>周报填写</button>
+					<button type="button" aria-current={mode === 'meeting' ? 'page' : undefined} onClick={() => onModeChange('meeting')} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${mode === 'meeting' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>周报会议</button>
+		          </nav>}
 		          <QuarterSelect />
 		          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <select aria-label="周次" value={week} disabled={availableWeeks.length === 0} onChange={(event) => { setConfirmDeleteWeek(false); setWeek(event.target.value) }} className="bg-transparent font-medium text-slate-600 outline-none disabled:text-slate-400">

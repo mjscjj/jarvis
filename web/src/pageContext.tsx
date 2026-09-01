@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PageContext, PageSelection } from './types'
+import { isWeeklyShareViewState, WEEKLY_SHARE_SCOPE } from './okr/emily/share'
 
 // PageContextValue exposes the readable PageContext (active_key + selection) plus
 // the setters left/right panels need: pages write `selection`, App drives
@@ -54,10 +55,10 @@ function routeFromHash(initialKey: string): HashRoute {
     const id = Number(todoMatch[1])
     return { key: 'todos', selection: { kind: 'todo', id, label: `线索 #${id}` }, viewState }
   }
-  // Compatibility for the short-lived standalone weekly-report page. Weekly
-  // reporting is a child view of the OKR module, not a Jarvis top-level page.
+  // Shared weekly-report links keep the OKR module data model while switching
+  // the application shell to the two-page weekly-only surface.
   if (path === '/weekly-report') {
-    return { key: 'okr', selection: null, viewState: { ...viewState, tab: viewState.tab || 'weekly-fill' } }
+    return { key: 'okr', selection: null, viewState: { ...viewState, share: WEEKLY_SHARE_SCOPE, tab: viewState.tab || 'weekly-fill' } }
   }
   return { key: pageKeysByHash[path] || initialKey, selection: null, viewState }
 }
@@ -68,13 +69,16 @@ function writePageHash(
   viewState: Record<string, string>,
   replace = false,
 ) {
-  const basePath = pageHashes[key]
+  const weeklyShare = key === 'okr' && isWeeklyShareViewState(viewState)
+  const basePath = weeklyShare ? '/weekly-report' : pageHashes[key]
   if (!basePath) throw new Error(`unknown page key: ${key}`)
   let path = basePath
   if (key === 'tasks' && selection?.kind === 'task') path = `/work/task/${selection.id}`
   if (key === 'todos' && selection?.kind === 'todo') path = `/manage/clues/${selection.id}`
   const query = new URLSearchParams(
-    Object.entries(viewState).sort(([left], [right]) => left.localeCompare(right)),
+    Object.entries(viewState)
+      .filter(([viewKey]) => !(weeklyShare && viewKey === 'share'))
+      .sort(([left], [right]) => left.localeCompare(right)),
   ).toString()
   const next = `#${path}${query ? `?${query}` : ''}`
   if (window.location.hash === next) return

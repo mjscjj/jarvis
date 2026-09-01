@@ -23,6 +23,7 @@ import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
 import { listAppModules } from './api'
 import { appModuleRegistry } from './modules/registry'
 import type { AppModuleChildDefinition, AppModuleDefinition } from './modules/registry'
+import { isWeeklyShareViewState } from './okr/emily/share'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -69,6 +70,7 @@ const pageLabels: Record<string, string> = {
 
 function AppShell() {
   const { context, navigate } = usePageContext()
+  const weeklyShare = context.active_key === 'okr' && isWeeklyShareViewState(context.view_state)
   const runtimeFailures = useRuntimeFailureCount()
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
   const [chatLoaded, setChatLoaded] = useState(chatOpen)
@@ -269,10 +271,10 @@ function AppShell() {
 
   return (
     <Layout
-      className={`app-shell ${chatOpen ? 'chat-is-open' : ''}`}
-      style={{ '--sider-width': `${siderWidth}px` } as React.CSSProperties}
+      className={`app-shell ${chatOpen && !weeklyShare ? 'chat-is-open' : ''}`}
+      style={{ '--sider-width': weeklyShare ? '0px' : `${siderWidth}px` } as React.CSSProperties}
     >
-      <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
+      {!weeklyShare && <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className="sider-brand">
           {!siderCollapsed && <div className="sider-tagline">主动式任务分身</div>}
           <Title level={4}>{siderCollapsed ? 'J' : 'Jarvis'}</Title>
@@ -295,11 +297,11 @@ function AppShell() {
             onClick={() => setSiderCollapsed((value) => !value)}
           />
         </Tooltip>
-      </Sider>
-      <header className="mobile-topbar">
+      </Sider>}
+      {!weeklyShare && <header className="mobile-topbar">
         <strong>{currentPageLabel}</strong>
         <Button type="text" icon={<MoreOutlined />} aria-label="打开系统导航" onClick={() => setMobileSystemOpen(true)} />
-      </header>
+      </header>}
       <Layout>
         <div className="app-main">
           <Content className="app-content">
@@ -308,7 +310,7 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
           </Content>
-          <aside
+          {!weeklyShare && <aside
             ref={chatRef}
             className={`chat-overlay ${chatOpen ? 'is-open' : ''}`}
             aria-hidden={!chatOpen}
@@ -320,10 +322,10 @@ function AppShell() {
                 <Chat open={chatOpen} onClose={() => setChatOpen(false)} />
               </Suspense>
             )}
-          </aside>
+          </aside>}
         </div>
       </Layout>
-      <Tooltip title={chatOpen ? '收起对话' : '打开对话'}>
+      {!weeklyShare && <Tooltip title={chatOpen ? '收起对话' : '打开对话'}>
         <Button
           type="primary"
           shape="circle"
@@ -334,8 +336,8 @@ function AppShell() {
           aria-label={chatOpen ? '关闭 Jarvis 对话' : '打开 Jarvis 对话'}
           onClick={() => setChatOpen((open) => !open)}
         />
-      </Tooltip>
-      <nav className="mobile-bottom-nav" aria-label="主要导航">
+      </Tooltip>}
+      {!weeklyShare && <nav className="mobile-bottom-nav" aria-label="主要导航">
         {mobileNavItems.map((item) => (
           <button
             key={item.key}
@@ -346,8 +348,8 @@ function AppShell() {
             {item.icon}<span>{item.label}</span>
           </button>
         ))}
-      </nav>
-      <Drawer
+      </nav>}
+      {!weeklyShare && <Drawer
         className="mobile-module-drawer"
         title={mobileModule?.label}
         placement="bottom"
@@ -365,8 +367,8 @@ function AppShell() {
             )
           })}
         </div>
-      </Drawer>
-      <Drawer
+      </Drawer>}
+      {!weeklyShare && <Drawer
         className="mobile-system-drawer"
         title="系统"
         placement="right"
@@ -385,7 +387,7 @@ function AppShell() {
             </Button>
           ))}
         </div>
-      </Drawer>
+      </Drawer>}
     </Layout>
   )
 }
