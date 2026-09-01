@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CloseOutlined, PaperClipOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
-import { getChatHistory, getChatRuntimeConfig } from './api'
+import { getChatHistory, getChatRuntimeConfig, isMissingChatHistoryError } from './api'
 import { usePageContext } from './pageContext'
 import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, PageContext } from './types'
 import './styles/chat.css'
@@ -121,6 +121,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   const [paused, setPaused] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [error, setError] = useState<string>()
+  const [notice, setNotice] = useState<string>()
   const [chatBaseURL, setChatBaseURL] = useState<string>()
   const [threadId, setThreadId] = useState<string | null>(() => window.localStorage.getItem(CHAT_THREAD_STORAGE_KEY))
   const initialThreadId = useRef(threadId).current
@@ -164,9 +165,19 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
       .then((history) => {
         setMessages(history.messages.map((message) => ({ role: message.role, text: message.text })))
         setError(undefined)
+        setNotice(undefined)
       })
       .catch((cause: unknown) => {
-        if (!isAbortError(cause)) setError(`恢复本地会话失败：${errorText(cause)}`)
+        if (isAbortError(cause)) return
+        if (isMissingChatHistoryError(cause)) {
+          window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY)
+          setThreadId(null)
+          setMessages([])
+          setError(undefined)
+          setNotice('上次会话已失效，已自动切换到新会话。')
+          return
+        }
+        setError(`恢复本地会话失败：${errorText(cause)}`)
       })
       .finally(() => {
         if (!controller.signal.aborted) setHistoryLoading(false)
@@ -229,6 +240,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     setMessages([])
     setImage(null)
     setError(undefined)
+    setNotice(undefined)
     setPaused(false)
     inputRef.current?.focus()
   }, [])
@@ -254,6 +266,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     setInput('')
     setImage(null)
     setError(undefined)
+    setNotice(undefined)
     setStopping(false)
     setPaused(false)
     setSending(true)
@@ -440,6 +453,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         </div>
       ))}
     </div>
+    {notice && <Alert className="chat-error" type="info" showIcon title="已开始新会话" description={notice} closable onClose={() => setNotice(undefined)} />}
     {error && <Alert className="chat-error" type="error" showIcon title="Jarvis 暂时无法回复" description={error} closable onClose={() => setError(undefined)} />}
     <div className="chat-composer">
       <input

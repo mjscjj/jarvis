@@ -87,6 +87,22 @@ interface RequestOptions {
   body?: unknown
 }
 
+export class APIRequestError extends Error {
+  readonly status: number
+  readonly code: number
+
+  constructor(message: string, status: number, code: number) {
+    super(message)
+    this.name = 'APIRequestError'
+    this.status = status
+    this.code = code
+  }
+}
+
+export function isMissingChatHistoryError(cause: unknown): boolean {
+  return cause instanceof APIRequestError && cause.status === 404 && cause.code === 40461
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const response = await fetch(path, {
     signal: options.signal,
@@ -96,7 +112,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   })
   const payload = (await response.json()) as APIResponse<T>
   if (!response.ok || payload.code !== 0 || payload.data === undefined) {
-    throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
+    throw new APIRequestError(payload.msg || `请求失败：HTTP ${response.status}`, response.status, payload.code)
   }
   return payload.data
 }
