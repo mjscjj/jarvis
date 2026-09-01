@@ -7,7 +7,7 @@ import { useCommentInteraction } from '../commenting'
 import { buildAllBusinessNavigation, buildKRHierarchy, priorityLabel, priorityOf } from '../hierarchy'
 import { tagLabel } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
-import { KINDS } from '../rows'
+import { collapseAllIds, KINDS } from '../rows'
 import { buildFullMeetingMarkdown } from '../meetingMarkdown'
 import { KIND_LABEL, isDone } from '../template'
 import type { CommentTarget, Entry, KrPriority, KrTag, Objective, Point, PointKind, TextSelection } from '../types'
@@ -337,7 +337,7 @@ export function MeetingView() {
     else next.add(id)
     return next
   })
-  const collapseAll = () => setClosed(new Set(visible.flatMap((objective) => [objective.id, ...objective.krs.flatMap((kr) => [kr.id, ...kr.points.map((point) => point.id)])])))
+  const collapseAll = () => setClosed(collapseAllIds(visible))
   const exportToFeishu = async () => {
     if (objectives.length === 0 || exporting) return
     setExporting(true)
@@ -360,7 +360,7 @@ export function MeetingView() {
         <span className="ml-1 text-[11px] text-slate-400">层级</span>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white text-[11px]">
           <button type="button" onClick={() => setClosed(new Set())} className="px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部展开</button>
-          <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部折叠</button>
+          <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
         </div>
         <span className="ml-auto text-[11px] text-slate-400">负责人</span>
         <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 outline-none focus:border-blue-400">
