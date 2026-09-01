@@ -9,7 +9,7 @@ import { BoardProvider } from './emily/store'
 import { PreviewReviewProvider } from './emily/aiReviewContext'
 import type { AuthStatus } from './emily/types'
 import IdentityBoundary from './IdentityBoundary'
-import { resolveOKRTab, type OKRTab } from './navigation'
+import { isWeeklyWorkspaceTab, okrTabForWeeklyMode, resolveOKRTab, weeklyWorkspaceMode, type OKRTab } from './navigation'
 import { withOKRScope, withOKRTarget } from './chatContext'
 import { isWeeklyShareViewState, weeklyShareTab } from './emily/share'
 import './emily/index.css'
@@ -77,7 +77,7 @@ function Workspace({
 
   const changeTab = (tab: OKRTab) => setViewState({ ...context.view_state, tab }, false)
 
-  const surface = visibleTab.startsWith('weekly-') ? 'weekly-report' : 'okr'
+	const surface = isWeeklyWorkspaceTab(visibleTab) ? 'weekly-report' : 'okr'
 
 	return (
 		<div id="okr-workspace-root" className="okr-workspace-root">
@@ -99,8 +99,8 @@ function Workspace({
 				<WeeklyReportWorkspace
 					auth={auth}
 					onLogout={() => void logoutUser()}
-					mode={visibleTab === 'weekly-meeting' ? 'meeting' : 'fill'}
-					onModeChange={(mode) => changeTab(mode === 'meeting' ? 'weekly-meeting' : 'weekly-fill')}
+						mode={weeklyWorkspaceMode(visibleTab)}
+						onModeChange={(mode) => changeTab(okrTabForWeeklyMode(mode))}
 					shared={weeklyShare}
 				/>
 			</PreviewReviewProvider>

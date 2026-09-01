@@ -28,10 +28,10 @@ function appendAssets(lines: string[], docs: DocLink[], images: ImageRef[]) {
 }
 
 export function buildFullMeetingMarkdown(objectives: Objective[], quarter: string, week: string, templateKey: WeekTemplateKey = 'classic'): MeetingMarkdownExport {
-	const title = `${week} OKR 周报会议`
+	const preview = templateKey === 'okr_weekly_preview_v1'
+	const title = preview ? `${week} OKR Review` : `${week} OKR 周报会议`
 	const lines = [`# ${escapeInline(title)}`, '', `> ${escapeInline(quarter)} · ${escapeInline(week)}`, '']
 	const lights = { green: '🟢', yellow: '🟡', red: '🔴' } as const
-	const preview = templateKey === 'okr_weekly_preview_v1'
 
 	for (const objective of objectives) {
 		lines.push(`## ${escapeInline(objective.title)}`, '')

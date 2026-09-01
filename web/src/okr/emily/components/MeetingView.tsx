@@ -14,6 +14,7 @@ import type { CommentTarget, Entry, KrPriority, KrTag, Objective, Point, PointKi
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect } from './ui'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
+import { PreviewReviewButton, PreviewReviewPanel } from '../aiReviewContext'
 
 function FoldButton({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
   return (
@@ -203,7 +204,8 @@ function MeetingLane({ entries }: { entries: Entry[] }) {
   )
 }
 
-function MeetingPoint({ point, index, open, onToggle, showTags, preview }: { point: Point; index: number; open: boolean; onToggle: () => void; showTags: boolean; preview: boolean }) {
+function MeetingPoint({ objectiveId, krId, point, index, open, onToggle, showTags, reviewMode }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; showTags: boolean; reviewMode: boolean }) {
+  const { setPointScore } = useBoard()
   const doing = point.entries.filter((entry) => !isDone(entry.status))
   const done = point.entries.filter((entry) => isDone(entry.status))
   const target: CommentTarget = { type: 'point', id: point.id, title: point.title }
@@ -223,17 +225,19 @@ function MeetingPoint({ point, index, open, onToggle, showTags, preview }: { poi
               </div>
             )}
           </div>
-          {preview && <WeeklyScoreControl score={point.score} readOnly label="具体 KR 评分" />}
+          {reviewMode && <WeeklyScoreControl score={point.score} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" />}
           <span className="shrink-0 pt-0.5 text-[10px] text-slate-400">{doing.length} 进展 · {done.length} 完成</span>
         </Commentable>
+		{reviewMode && <PreviewReviewButton target={{ kind: 'point', objectiveId, krId, pointId: point.id, title: point.title }} label="AI建议" />}
       </header>
-      {open && preview && <div className="ml-6"><MeetingLane entries={point.entries} /></div>}
-      {open && !preview && <div className="ml-6 grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0"><MeetingLane entries={doing} /><MeetingLane entries={done} /></div>}
+	  {reviewMode && <PreviewReviewPanel target={{ kind: 'point', objectiveId, krId, pointId: point.id, title: point.title }} className="mx-7 my-1.5" />}
+      {open && reviewMode && <div className="ml-6"><MeetingLane entries={point.entries} /></div>}
+      {open && !reviewMode && <div className="ml-6 grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0"><MeetingLane entries={doing} /><MeetingLane entries={done} /></div>}
     </article>
   )
 }
 
-function KindGroup({ kind, points, closed, toggle, showTags, preview }: { kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void; showTags: boolean; preview: boolean }) {
+function KindGroup({ objectiveId, krId, kind, points, closed, toggle, showTags, reviewMode }: { objectiveId: string; krId: string; kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void; showTags: boolean; reviewMode: boolean }) {
   const tone = kind === 'strategy' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-teal-200 bg-teal-50 text-teal-700'
   return (
     <section className={`border-l-[3px] pl-2.5 ${kind === 'strategy' ? 'border-violet-500' : 'border-teal-500'}`}>
@@ -242,12 +246,13 @@ function KindGroup({ kind, points, closed, toggle, showTags, preview }: { kind: 
         <span className="text-[10px] text-slate-400">{points.length} 项</span>
         <span className="h-px flex-1 bg-slate-100" />
       </div>
-      <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} showTags={showTags} preview={preview} />)}</div>
+	  <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} objectiveId={objectiveId} krId={krId} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} showTags={showTags} reviewMode={reviewMode} />)}</div>
     </section>
   )
 }
 
-function MeetingObjectiveSection({ objective, closed, toggle, showTags, preview }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; showTags: boolean; preview: boolean }) {
+function MeetingObjectiveSection({ objective, closed, toggle, showTags, reviewMode }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; showTags: boolean; reviewMode: boolean }) {
+  const { setKrScore } = useBoard()
   const objectiveOpen = !closed.has(objective.id)
   return (
     <section className="space-y-1.5">
@@ -271,12 +276,14 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags, preview 
                   <div className="flex flex-wrap items-center gap-1">
                     {splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="text-[10px] text-slate-500">{person}</span>)}
 						<span className={`rounded border px-1.5 py-px text-[9px] font-semibold ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priorityLabel(priority)}</span>
-                    {preview && <WeeklyScoreControl score={kr.score} readOnly label="一级 KR 评分" />}
+					{reviewMode && <WeeklyScoreControl score={kr.score} onChange={(score) => setKrScore(kr.id, score)} label="一级 KR 评分" />}
                     <span className="inline-flex gap-0.5">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>
 						{showTags && (kr.tags ?? []).filter((tag) => tag.type !== 'priority').map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)}
                   </div>
                 </Commentable>
+				{reviewMode && <PreviewReviewButton target={{ kind: 'kr', objectiveId: objective.id, krId: kr.id, title: kr.title }} label="AI评审" />}
               </header>
+			  {reviewMode && <PreviewReviewPanel target={{ kind: 'kr', objectiveId: objective.id, krId: kr.id, title: kr.title }} className="mx-3 my-1.5" />}
 
               {krOpen && <div className="space-y-2 px-3 pb-2.5">
                 {kr.metrics.length > 0 && (
@@ -303,7 +310,7 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags, preview 
                 )}
                 {KINDS.map((kind) => {
                   const points = kr.points.filter((point) => point.kind === kind)
-                  return points.length > 0 ? <KindGroup key={kind} kind={kind} points={points} closed={closed} toggle={toggle} showTags={showTags} preview={preview} /> : null
+				  return points.length > 0 ? <KindGroup key={kind} objectiveId={objective.id} krId={kr.id} kind={kind} points={points} closed={closed} toggle={toggle} showTags={showTags} reviewMode={reviewMode} /> : null
                 })}
               </div>}
             </article>
@@ -314,9 +321,8 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags, preview 
   )
 }
 
-export function MeetingView() {
+export function MeetingView({ reviewMode = false }: { reviewMode?: boolean }) {
   const { objectives, quarter, week, templateKey } = useBoard()
-  const preview = templateKey === 'okr_weekly_preview_v1'
   const [ownerFilter, setOwnerFilter] = useState('')
   const [showTags, setShowTags] = useState(false)
   const [closed, setClosed] = useState<Set<string>>(new Set())
@@ -349,7 +355,7 @@ export function MeetingView() {
     setExporting(true)
     setExportResult({})
     try {
-      const output = buildFullMeetingMarkdown(objectives, quarter, week, templateKey)
+	  const output = buildFullMeetingMarkdown(objectives, quarter, week, reviewMode ? templateKey : 'classic')
       const result = await createFeishuDocument(output.title, output.content)
       setExportResult({ url: result.url, message: result.warnings.length > 0 ? `已生成并设置为组织内获得链接的人可编辑，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成，组织内获得链接的人可编辑。' })
     } catch (error) {
@@ -362,6 +368,7 @@ export function MeetingView() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
+		{reviewMode && <PreviewReviewButton target={{ kind: 'all', title: '全部 OKR' }} label="评审全部" className="px-3" />}
         <button type="button" onClick={() => setShowTags((value) => !value)} className={`rounded-md border px-2 py-1 text-[11px] font-medium ${showTags ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>{showTags ? '隐藏打标' : '显示打标'}</button>
         <span className="ml-1 text-[11px] text-slate-400">层级</span>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white text-[11px]">
@@ -373,10 +380,11 @@ export function MeetingView() {
           <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
         </select>
         <span className="h-4 w-px bg-slate-200" />
-        <button type="button" disabled={exporting || objectives.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : '导出全部 OKR'}</button>
+		<button type="button" disabled={exporting || objectives.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : reviewMode ? '导出 OKR Review' : '导出全部 OKR'}</button>
         {exportResult.url && <a href={exportResult.url} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline">打开文档</a>}
         {exportResult.message && <span className={`max-w-56 truncate text-[10px] ${exportResult.url ? 'text-emerald-600' : 'text-red-500'}`} title={exportResult.message}>{exportResult.message}</span>}
       </div>
+	  {reviewMode && <PreviewReviewPanel target={{ kind: 'all', title: '全部 OKR' }} />}
 
       <HierarchyNav
         navigation={navigation}
@@ -392,7 +400,7 @@ export function MeetingView() {
       />
 
       {activeObjective ? (
-        <MeetingObjectiveSection objective={activeObjective} closed={closed} toggle={toggle} showTags={showTags} preview={preview} />
+		<MeetingObjectiveSection objective={activeObjective} closed={closed} toggle={toggle} showTags={showTags} reviewMode={reviewMode} />
       ) : <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-xs text-slate-400">当前分类尚无已接入的方向</div>}
     </div>
   )

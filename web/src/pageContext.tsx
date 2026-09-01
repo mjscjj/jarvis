@@ -56,7 +56,7 @@ function routeFromHash(initialKey: string): HashRoute {
     return { key: 'todos', selection: { kind: 'todo', id, label: `线索 #${id}` }, viewState }
   }
   // Shared weekly-report links keep the OKR module data model while switching
-  // the application shell to the two-page weekly-only surface.
+  // the application shell to the weekly fill, meeting, or Review surface.
   if (path === '/weekly-report') {
     return { key: 'okr', selection: null, viewState: { ...viewState, share: WEEKLY_SHARE_SCOPE, tab: viewState.tab || 'weekly-fill' } }
   }

@@ -46,6 +46,7 @@ test('Preview 周导出评分并把全部状态合并为本周进展', () => {
 
   const output = buildFullMeetingMarkdown([sample], '2026-Q3', '2026-W37', 'okr_weekly_preview_v1')
 
+	assert.equal(output.title, '2026-W37 OKR Review')
   assert.match(output.content, /优先级：未标注 · 评分：0\.7/)
   assert.match(output.content, /##### KR1 策略 KR\n\n评分：0\.5/)
   assert.match(output.content, /\*\*本周进展\*\*/)

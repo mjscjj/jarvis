@@ -67,6 +67,7 @@ function pageLabel(context: PageContext): string {
     if (context.view_state.tab === 'agent-flows') return 'OKR · 自动化流程'
     if (context.view_state.tab === 'weekly-fill') return 'OKR · 周报填写'
     if (context.view_state.tab === 'weekly-meeting') return 'OKR · 周报会议'
+    if (context.view_state.tab === 'okr-review') return 'OKR · OKR Review'
     return 'OKR · 管理与打标'
   }
   return PAGE_LABELS[context.active_key] ?? '当前页面'
@@ -74,7 +75,7 @@ function pageLabel(context: PageContext): string {
 
 function pageGroup(context: PageContext): string {
   if (context.active_key === 'okr' && context.view_state.tab === 'agent-flows') return 'automation'
-  if (context.active_key === 'okr' && context.view_state.tab.startsWith('weekly-')) return 'weekly'
+  if (context.active_key === 'okr' && (context.view_state.tab.startsWith('weekly-') || context.view_state.tab === 'okr-review')) return 'weekly'
   if (['management', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
   const label = pageLabel(context)
   return Object.keys(PAGE_SUGGESTIONS).find((key) => PAGE_LABELS[key] === label) ?? 'today'

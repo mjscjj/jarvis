@@ -13,6 +13,7 @@ import { commentTargetFromThread } from './comments'
 import type { AuthStatus, CommentTarget, PageComment } from './types'
 import { openWeeklyReportWeek } from './api'
 import { weeklyShareURL } from './share'
+import type { WeeklyWorkspaceMode } from '../navigation'
 
 function weekLabel(week: string): string {
   const matched = /^(\d{4})-W(\d{2})$/.exec(week)
@@ -75,8 +76,8 @@ export default function App({
 }: {
   auth: AuthStatus
   onLogout: () => void
-  mode: 'fill' | 'meeting'
-  onModeChange: (mode: 'fill' | 'meeting') => void
+	mode: WeeklyWorkspaceMode
+	onModeChange: (mode: WeeklyWorkspaceMode) => void
   shared?: boolean
 }) {
 	const { reset, syncState, quarter, week, templateKey, availableWeeks, setWeek, setWeeklyScope, deleteWeeklyScope } = useBoard()
@@ -97,6 +98,10 @@ export default function App({
 	const [deletingWeek, setDeletingWeek] = useState(false)
   const busy = syncState.kind === 'loading'
 	const deleteBlocked = deletingWeek || syncState.kind === 'loading' || syncState.kind === 'saving' || syncState.kind === 'conflict'
+	const previewWeek = templateKey === 'okr_weekly_preview_v1'
+	const meetingLike = mode === 'meeting' || mode === 'review'
+	const pageTitle = mode === 'review' ? PAGE_TITLE.replace('OKR 协作台', 'OKR Review') : PAGE_TITLE.replace('OKR 协作台', '周报协作台')
+	const shareLabel = mode === 'review' ? 'Review' : mode === 'meeting' ? '会议' : '填写'
 
   const submitWeek = async () => {
     const target = newWeek.trim()
@@ -137,11 +142,11 @@ export default function App({
 	}
 
   useEffect(() => {
-		if (mode !== 'meeting') {
-			setCommentTarget(undefined)
-		}
-		setPendingCommentSelection(undefined)
-	}, [mode])
+			if (!meetingLike) {
+				setCommentTarget(undefined)
+			}
+			setPendingCommentSelection(undefined)
+		}, [meetingLike])
 
 	useEffect(() => setConfirmDeleteWeek(false), [quarter, week])
 
@@ -215,12 +220,13 @@ export default function App({
 			<div className={`mx-auto flex min-h-14 max-w-[1320px] flex-wrap items-center gap-2.5 px-4 py-2 transition-[padding] sm:flex-nowrap sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
           <div className="mr-1 flex min-w-fit items-center gap-2">
 					<span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-[11px] font-bold text-white shadow-sm">E</span>
-					<h1 className="text-[14px] font-semibold tracking-tight text-slate-900">{PAGE_TITLE.replace('OKR 协作台', '周报协作台')}</h1>
+						<h1 className="text-[14px] font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
           </div>
 
 		          {shared && <nav aria-label="周报页面" className="flex h-9 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
 					<button type="button" aria-current={mode === 'fill' ? 'page' : undefined} onClick={() => onModeChange('fill')} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${mode === 'fill' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>周报填写</button>
-					<button type="button" aria-current={mode === 'meeting' ? 'page' : undefined} onClick={() => onModeChange('meeting')} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${mode === 'meeting' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>周报会议</button>
+						<button type="button" aria-current={mode === 'meeting' ? 'page' : undefined} onClick={() => onModeChange('meeting')} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${mode === 'meeting' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>周报会议</button>
+						<button type="button" aria-current={mode === 'review' ? 'page' : undefined} onClick={() => onModeChange('review')} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${mode === 'review' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>OKR Review</button>
 		          </nav>}
 		          <QuarterSelect />
 		          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
@@ -229,12 +235,12 @@ export default function App({
               {availableWeeks.map((item) => <option key={item} value={item}>{weekLabel(item)}</option>)}
             </select>
 	          </div>
-	          {templateKey === 'okr_weekly_preview_v1' && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-violet-700">Preview</span>}
+		          {mode === 'review' && previewWeek && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-violet-700">Preview</span>}
 	          {mode === 'fill' && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setNewWeekPreview(false); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
 	          {mode === 'fill' && <button type="button" disabled={!week || deleteBlocked} onClick={() => { setConfirmDeleteWeek(true); setOpeningWeek(false); setWeekNotice('') }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除本周</button>}
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
               <button type="button" onClick={() => void copyShareLink()} className="flex h-9 items-center rounded-xl border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50">
-                分享{mode === 'meeting' ? '会议' : '填写'}页
+                分享{shareLabel}页
               </button>
               <span aria-hidden className="hidden h-5 w-px bg-slate-200 sm:block" />
               <button
@@ -280,20 +286,30 @@ export default function App({
 				</div>}
 				<SyncNotice />
 				{week ? <>
-				<WeeklyTools onOpenPoint={openPoint} readOnly={mode === 'meeting'} />
+					<WeeklyTools onOpenPoint={openPoint} readOnly={mode !== 'fill'} />
             <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
               <WeeklyFocus comments={comments} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
               <div className={`transition-opacity ${busy ? 'pointer-events-none opacity-55' : ''}`}>
-                {mode === 'meeting' ? <MeetingView /> : <KrTable definitionsReadOnly showObjectiveHeader />}
+						{mode === 'review'
+							? previewWeek
+								? <MeetingView reviewMode />
+								: <section className="rounded-2xl border border-dashed border-violet-200 bg-violet-50/40 px-6 py-12 text-center"><div className="text-sm font-semibold text-violet-800">当前周次未开启 OKR Preview</div><div className="mt-1 text-xs text-violet-500">请在“周报填写”的“开启新周”中勾选 OKR 周度 Preview。</div></section>
+							: mode === 'meeting'
+								? <MeetingView />
+								: <KrTable definitionsReadOnly showObjectiveHeader />}
               </div>
             </CommentInteractionProvider>
             <div className="mt-3 px-1 text-[11px] text-slate-400">
-              {mode === 'fill' ? '停止输入后自动保存；多人修改同一条 KR 时会先请你确认。' : '会议模式沿用同一份数据，只读投屏并保留评论与飞书导出。'}
+							{mode === 'fill'
+								? '停止输入后自动保存；多人修改同一条 KR 时会先请你确认。'
+								: mode === 'review'
+									? 'Review 沿用同一份周报数据；评分独立保存，进度只读展示。'
+									: '会议模式沿用同一份数据，只读投屏并保留评论与飞书导出。'}
               <button type="button" onClick={reset} className="ml-1 underline hover:text-slate-600">重新载入</button>
             </div>
 			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无周报</div><div className="mt-1 text-xs text-slate-400">点击顶部“开启新周”创建一个空周后即可开始填写。</div></section>}
 		</main>
-		{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={mode === 'meeting'} canComment onSignIn={() => undefined} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+			{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={meetingLike} canComment onSignIn={() => undefined} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
     </div>
   )
 }
