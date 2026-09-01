@@ -117,7 +117,7 @@ export function PreviewReviewButton({ target, label, className = '' }: { target:
   }
 
   return <span className="inline-flex flex-col items-end">
-    <button type="button" disabled={!ready || running} onClick={() => void start()} className={`rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-medium text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-45 ${className}`}>
+    <button type="button" disabled={!ready || running} onClick={() => void start()} className={`rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-45 ${className}`}>
       {running ? '评审中…' : review?.content ? `重新${label}` : label}
     </button>
     {clickError && <span className="mt-1 max-w-64 text-right text-[10px] text-red-600">{clickError}</span>}
