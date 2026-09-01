@@ -153,6 +153,17 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 
 ### 安装与重建
 
+日常更新统一使用一个入口；它会拉取当前分支 upstream、构建前端，并按系统选择 macOS launchd 或 Linux user systemd，最后检查首页、`/healthz` 和 `/readyz`：
+
+```bash
+./scripts/jarvis-deploy
+
+# 当前机器明确以 Git 中的 OKR 数据库为准时：
+./scripts/jarvis-deploy --remote-okr-db
+```
+
+macOS 仍复用正式安装门、稳定签名和 launchd 脚本。Linux MVP 使用无需 root 的 user systemd；首次执行和以后更新使用同一条命令。开发未提交代码时可用 `--skip-pull` 只构建部署当前工作树。
+
 ```bash
 # clone 后的第一个项目动作：建立整个安装过程的状态页
 ./scripts/jarvis-install start

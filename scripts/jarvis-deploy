@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# One-command daily deployment: update, build, select launchd or user systemd,
+# restart, and verify the configured Jarvis instance.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CONFIG_PATH="${REPO_ROOT}/conf/config.yaml"
+SKIP_PULL=false
+REMOTE_OKR_DB=false
+FORCE_INTERRUPT=false
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: ./scripts/jarvis-deploy [options]
+
+Options:
+  --config PATH          Select the Jarvis configuration (default: conf/config.yaml).
+  --remote-okr-db        Discard the tracked OKR DB runtime diff before pulling.
+  --skip-pull            Build and deploy the current working tree without Git pull.
+  --force-interrupt-running-tasks
+                         Pass the explicit interruption flag to macOS rebuild.
+  -h, --help             Show this help.
+
+Darwin uses the existing signed launchd install/rebuild scripts. Linux builds
+the same main/chat binaries and registers config-scoped user systemd services.
+EOF
+}
+
+fail() {
+  printf 'jarvis-deploy: %s\n' "$*" >&2
+  exit 1
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --config) (( $# >= 2 )) || { usage; exit 2; }; CONFIG_PATH="$2"; shift 2 ;;
+    --remote-okr-db) REMOTE_OKR_DB=true; shift ;;
+    --skip-pull) SKIP_PULL=true; shift ;;
+    --force-interrupt-running-tasks) FORCE_INTERRUPT=true; shift ;;
+    --help|-h) usage; exit 0 ;;
+    *) usage; exit 2 ;;
+  esac
+done
+
+for command_name in git go jq curl npm; do
+  command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
+done
+
+cd "$REPO_ROOT"
+if [[ "$SKIP_PULL" != true ]]; then
+  if [[ "$REMOTE_OKR_DB" == true ]] && git ls-files --error-unmatch data/okr/okr.db >/dev/null 2>&1; then
+    git checkout-index --force -- data/okr/okr.db
+  fi
+  dirty="$(git status --porcelain --untracked-files=no)"
+  if [[ -n "$dirty" ]]; then
+    printf '%s\n%s\n' 'jarvis-deploy: tracked working tree changes must be committed or reverted before pull:' "$dirty" >&2
+    exit 1
+  fi
+  git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1 || fail "current branch has no upstream"
+  git pull --ff-only
+  next_args=(--skip-pull --config "$CONFIG_PATH")
+  [[ "$FORCE_INTERRUPT" != true ]] || next_args+=(--force-interrupt-running-tasks)
+  exec "$0" "${next_args[@]}"
+fi
+
+if [[ "$CONFIG_PATH" != /* ]]; then
+  CONFIG_PATH="${REPO_ROOT}/${CONFIG_PATH}"
+fi
+INSTANCE="$("${SCRIPT_DIR}/jarvis-instance" "$CONFIG_PATH")"
+CONFIG_PATH="$(jq -er '.config_path' <<<"$INSTANCE")"
+API_BASE="$(jq -er '.api_base' <<<"$INSTANCE")"
+CHAT_API_BASE="$(jq -er '.chat_api_base' <<<"$INSTANCE")"
+CHAT_ENABLED="$(jq -r '.chat_enabled' <<<"$INSTANCE")"
+
+npm --prefix "${REPO_ROOT}/web" ci
+npm --prefix "${REPO_ROOT}/web" run build
+
+deploy_darwin() {
+  command -v launchctl >/dev/null 2>&1 || fail "launchctl is required on macOS"
+  local label chat_label target chat_target fresh_install=false
+  label="$(jq -er '.launchd_label' <<<"$INSTANCE")"
+  chat_label="$(jq -er '.chat_launchd_label' <<<"$INSTANCE")"
+  target="gui/${UID}/${label}"
+  chat_target="gui/${UID}/${chat_label}"
+  if launchctl print "$target" >/dev/null 2>&1; then
+    rebuild_args=(--config "$CONFIG_PATH")
+    [[ "$FORCE_INTERRUPT" != true ]] || rebuild_args+=(--force-interrupt-running-tasks)
+    "${SCRIPT_DIR}/rebuild-server.sh" "${rebuild_args[@]}"
+  else
+    "${SCRIPT_DIR}/jarvis-install" install-server --config "$CONFIG_PATH"
+    fresh_install=true
+  fi
+  if [[ "$CHAT_ENABLED" == true && "$fresh_install" != true ]]; then
+    if launchctl print "$chat_target" >/dev/null 2>&1; then
+      "${SCRIPT_DIR}/rebuild-chat-server.sh" --config "$CONFIG_PATH"
+    else
+      "${SCRIPT_DIR}/install-chat-launchd.sh" --config "$CONFIG_PATH"
+    fi
+  fi
+}
+
+absolute_log_path() {
+  if [[ "$1" == /* ]]; then printf '%s\n' "$1"; else printf '%s/%s\n' "$REPO_ROOT" "$1"; fi
+}
+
+write_systemd_unit() {
+  local unit="$1" description="$2" binary="$3" stdout_path="$4" stderr_path="$5"
+  local unit_dir unit_path next_path service_path
+  unit_dir="${HOME}/.config/systemd/user"
+  unit_path="${unit_dir}/${unit}"
+  next_path="${unit_path}.next"
+  service_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${HOME}/.local/bin:${REPO_ROOT}/scripts"
+  case "$binary$stdout_path$stderr_path" in *[[:space:]%]*) fail "MVP systemd deployment does not support whitespace or % in binary/log paths" ;; esac
+  mkdir -p "$unit_dir" "$(dirname "$stdout_path")" "$(dirname "$stderr_path")"
+  {
+    printf '[Unit]\nDescription=%s\nAfter=network.target\n\n' "$description"
+    printf '[Service]\nType=simple\nWorkingDirectory=%s\n' "$REPO_ROOT"
+    printf 'ExecStart=%s -config %s\n' "$binary" "$CONFIG_PATH"
+    printf 'Environment="PATH=%s"\nRestart=on-failure\nRestartSec=5\n' "$service_path"
+    printf 'StandardOutput=append:%s\nStandardError=append:%s\n\n' "$stdout_path" "$stderr_path"
+    printf '[Install]\nWantedBy=default.target\n'
+  } >"$next_path"
+  chmod 0600 "$next_path"
+  mv "$next_path" "$unit_path"
+}
+
+wait_health() {
+  local name="$1" base="$2" attempt
+  for attempt in {1..15}; do
+    if curl --fail --silent --show-error --max-time 2 -o /dev/null "$base/healthz"; then
+      printf '%s health HTTP 200\n' "$name"
+      return 0
+    fi
+    sleep 1
+  done
+  fail "$name did not become healthy at $base"
+}
+
+deploy_linux() {
+  command -v systemctl >/dev/null 2>&1 || fail "systemctl is required on Linux"
+  systemctl --user show-environment >/dev/null 2>&1 || fail "the user systemd manager is not reachable"
+  case "$REPO_ROOT$CONFIG_PATH" in *[[:space:]%]*) fail "MVP systemd deployment does not support whitespace or % in repository/config paths" ;; esac
+  "${SCRIPT_DIR}/check-build-toolchain.sh"
+
+  local main_unit chat_unit main_bin chat_bin main_next chat_next main_stdout main_stderr
+  main_unit="$(jq -er '.launchd_label' <<<"$INSTANCE").service"
+  chat_unit="$(jq -er '.chat_launchd_label' <<<"$INSTANCE").service"
+  main_bin="${REPO_ROOT}/bin/jarvis-server"
+  chat_bin="${REPO_ROOT}/bin/jarvis-chat-server"
+  main_next="${main_bin}.next"
+  chat_next="${chat_bin}.next"
+  mkdir -p "${REPO_ROOT}/bin" "${REPO_ROOT}/var/log"
+  trap 'rm -f "${REPO_ROOT}/bin/jarvis-server.next" "${REPO_ROOT}/bin/jarvis-chat-server.next"' EXIT
+  go build -o "$main_next" ./cmd/jarvis-server
+  if [[ "$CHAT_ENABLED" == true ]]; then
+    go build -o "$chat_next" ./cmd/jarvis-chat-server
+  fi
+  mv "$main_next" "$main_bin"
+  if [[ "$CHAT_ENABLED" == true ]]; then mv "$chat_next" "$chat_bin"; fi
+
+  main_stdout="$(absolute_log_path "$(jq -er '.log_files[0]' <<<"$INSTANCE")")"
+  main_stderr="$(absolute_log_path "$(jq -er '.log_files[1]' <<<"$INSTANCE")")"
+  write_systemd_unit "$main_unit" "Jarvis main server" "$main_bin" "$main_stdout" "$main_stderr"
+  if [[ "$CHAT_ENABLED" == true ]]; then
+    write_systemd_unit "$chat_unit" "Jarvis chat sidecar" "$chat_bin" \
+      "${REPO_ROOT}/var/log/jarvis-chat.log" "${REPO_ROOT}/var/log/jarvis-chat.error.log"
+  fi
+  systemctl --user daemon-reload
+  systemctl --user enable "$main_unit"
+  systemctl --user restart "$main_unit"
+  if [[ "$CHAT_ENABLED" == true ]]; then
+    systemctl --user enable "$chat_unit"
+    systemctl --user restart "$chat_unit"
+  else
+    systemctl --user disable --now "$chat_unit" >/dev/null 2>&1 || true
+  fi
+}
+
+case "$(uname -s)" in
+  Darwin) deploy_darwin ;;
+  Linux) deploy_linux ;;
+  *) fail "unsupported operating system: $(uname -s)" ;;
+esac
+
+wait_health backend "$API_BASE"
+if [[ "$CHAT_ENABLED" == true ]]; then wait_health chat "$CHAT_API_BASE"; fi
+curl --fail --silent --show-error --max-time 5 -o /dev/null "$API_BASE/"
+readiness="$(curl --fail --silent --show-error --max-time 8 "$API_BASE/readyz")"
+jq -e '.status == "ok" and ([.dependencies[].status] | all(. == "ok" or . == "disabled"))' >/dev/null <<<"$readiness" || \
+  fail "Jarvis readiness check failed: $readiness"
+printf 'Jarvis deployment verified: %s\n' "$API_BASE"
+if [[ "$(uname -s)" == Linux ]] && command -v hostname >/dev/null 2>&1; then
+  lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  port="${API_BASE##*:}"
+  [[ -z "$lan_ip" ]] || printf 'LAN URL: http://%s:%s\n' "$lan_ip" "$port"
+fi

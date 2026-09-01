@@ -4,6 +4,18 @@
 > Authority: reference; scripts and plist files are source of truth
 > Last verified: 2026-08-31
 
+## 跨平台一键更新
+
+```bash
+./scripts/jarvis-deploy
+```
+
+脚本先 fast-forward pull 当前 upstream 并构建前端，再按 `uname` 分发：macOS 复用现有签名 build + launchd 链路；Linux 构建 main/chat binary 并注册到当前用户的 systemd manager。最后统一验证首页、主服务 readiness，以及启用时的 Chat health。
+
+本地运行会修改 Git 跟踪的 `data/okr/okr.db`。只有明确要丢弃该运行改动、使用 Git 版本时才运行 `./scripts/jarvis-deploy --remote-okr-db`；其它 tracked 修改会让 pull fail-fast。当前工作树尚未提交时使用 `--skip-pull`。
+
+Linux 日志仍写配置中的 `server.log_files` 和 `var/log/jarvis-chat*.log`；服务状态用 `systemctl --user status <unit>` 查看。unit 名沿用配置路径生成的 launchd label 并加 `.service`，不同配置保持隔离。
+
 ## 服务
 
 | Label | 端口 | 安装方式 | 日志 |
