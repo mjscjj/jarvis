@@ -284,7 +284,7 @@ export default function App({
             <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
               <WeeklyFocus comments={comments} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
               <div className={`transition-opacity ${busy ? 'pointer-events-none opacity-55' : ''}`}>
-                {mode === 'meeting' ? <MeetingView /> : <KrTable definitionsReadOnly />}
+                {mode === 'meeting' ? <MeetingView /> : <KrTable definitionsReadOnly showObjectiveHeader />}
               </div>
             </CommentInteractionProvider>
             <div className="mt-3 px-1 text-[11px] text-slate-400">

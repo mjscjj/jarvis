@@ -14,13 +14,13 @@ import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
 import { PreviewReviewButton, PreviewReviewPanel } from '../aiReviewContext'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
 
-function Caret({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+function Caret({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      title={open ? '收起' : '展开'}
-      aria-label={open ? '折叠当前层级' : '展开当前层级'}
+      title={open ? `折叠${label}` : `展开${label}`}
+      aria-label={open ? `折叠${label}` : `展开${label}`}
       aria-expanded={open}
       className="mt-0.5 shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
     >
@@ -214,7 +214,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, scoreReadOnly }: 
   return (
     <header className="group/kr border-b border-slate-100 px-3.5 py-2.5">
       <div className="flex items-start gap-2">
-        <Caret open={open} onToggle={onToggle} />
+        <Caret open={open} onToggle={onToggle} label="KR" />
         <div className="min-w-0 flex-1">
           <Text value={kr.title} onChange={(value) => setKrTitle(objectiveId, kr.id, value)} placeholder="KR 标题" className="text-[14px] font-semibold leading-5 text-slate-900" readOnly={readOnly} commentTarget={{ type: 'kr', id: kr.id, title: kr.title }} />
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1">
@@ -263,7 +263,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
   return (
     <div className="group/point">
       <div className="flex items-start gap-2">
-        {showProgress ? <Caret open={open} onToggle={onToggle} /> : <span className="w-4 shrink-0" />}
+        {showProgress ? <Caret open={open} onToggle={onToggle} label="具体 KR" /> : <span className="w-4 shrink-0" />}
         <span className="mt-0.5 shrink-0 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">KR{index + 1}</span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
@@ -413,7 +413,7 @@ function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsRead
   return (
     <section>
       {showTitle && <div className="mb-3 flex items-center gap-2 px-1">
-        <Caret open={open} onToggle={() => toggle(objective.id)} />
+        <Caret open={open} onToggle={() => toggle(objective.id)} label="目标" />
         <h2 className="text-[17px] font-semibold text-slate-800">{objective.title}</h2>
         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-400">{objective.krs.length} 个 KR</span>
       </div>}
@@ -474,7 +474,7 @@ function ObjectiveControls({ objective }: { objective: Objective }) {
 	</div>
 }
 
-export function KrTable({ readOnly = false, definitionsReadOnly = false, progressReadOnly = false, showProgress = true, manageObjectives = false }: { readOnly?: boolean; definitionsReadOnly?: boolean; progressReadOnly?: boolean; showProgress?: boolean; manageObjectives?: boolean }) {
+export function KrTable({ readOnly = false, definitionsReadOnly = false, progressReadOnly = false, showProgress = true, manageObjectives = false, showObjectiveHeader = false }: { readOnly?: boolean; definitionsReadOnly?: boolean; progressReadOnly?: boolean; showProgress?: boolean; manageObjectives?: boolean; showObjectiveHeader?: boolean }) {
 	const { objectives, templateKey } = useBoard()
 	const [closed, setClosed] = useState<Set<string>>(new Set())
 	const [ownerFilter, setOwnerFilter] = useState('')
@@ -531,7 +531,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
       />
 		{manageObjectives && activeObjective && <ObjectiveControls key={activeObjective.id} objective={activeObjective} />}
       <div>
-        {activeObjective && <ObjectiveSection key={activeObjective.id} objective={activeObjective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} showTitle={false} />}
+        {activeObjective && <ObjectiveSection key={activeObjective.id} objective={activeObjective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} showTitle={showObjectiveHeader} />}
         {!activeObjective && <Empty>没有符合筛选条件的 KR</Empty>}
       </div>
     </div>
