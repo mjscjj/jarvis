@@ -12,4 +12,8 @@ test('weekly share link keeps only the selected page mode', () => {
     weeklyShareURL('https://emily.example/path#/okr?quarter=2026-Q3&tab=weekly-fill&week=2026-W36', 'meeting'),
     'https://emily.example/path#/weekly-report?tab=weekly-meeting',
   )
+  assert.equal(
+    weeklyShareURL('http://10.78.205.9:18802/#/okr?quarter=2026-Q3&tab=weekly-meeting&week=2026-W36', 'meeting'),
+    'http://10.78.205.9:18802/#/weekly-report?tab=weekly-meeting',
+  )
 })

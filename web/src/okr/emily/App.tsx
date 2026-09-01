@@ -90,6 +90,7 @@ export default function App({
   const [newWeekPreview, setNewWeekPreview] = useState(false)
   const [weekNotice, setWeekNotice] = useState('')
   const [shareNotice, setShareNotice] = useState('')
+  const [shareLink, setShareLink] = useState('')
 	const [confirmDeleteWeek, setConfirmDeleteWeek] = useState(false)
 	const [deletingWeek, setDeletingWeek] = useState(false)
   const busy = syncState.kind === 'loading'
@@ -190,11 +191,19 @@ export default function App({
 
   const copyShareLink = async () => {
     setShareNotice('')
+    setShareLink('')
+    const link = weeklyShareURL(window.location.href, mode)
+    if (!navigator.clipboard) {
+      setShareLink(link)
+      setShareNotice('当前是 HTTP 页面，请复制下面的分享链接')
+      return
+    }
     try {
-      await navigator.clipboard.writeText(weeklyShareURL(window.location.href, mode))
+      await navigator.clipboard.writeText(link)
       setShareNotice(`${mode === 'meeting' ? '会议' : '填写'}页面链接已复制`)
     } catch (cause) {
-      setShareNotice(cause instanceof Error ? `复制失败：${cause.message}` : '复制分享链接失败')
+      setShareLink(link)
+      setShareNotice(cause instanceof Error ? `自动复制失败：${cause.message}；请复制下面的链接` : '自动复制失败，请复制下面的链接')
     }
   }
 
@@ -259,7 +268,10 @@ export default function App({
 					<button type="button" onClick={() => setConfirmDeleteWeek(false)} disabled={deletingWeek} className="h-9 px-2 text-xs text-slate-500 disabled:opacity-40">取消</button>
 				</section>}
 				{weekNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{weekNotice}</div>}
-				{shareNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{shareNotice}</div>}
+				{shareNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">
+					<div>{shareNotice}</div>
+					{shareLink && <input aria-label="分享链接" value={shareLink} readOnly autoFocus onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="mt-2 h-8 w-full rounded-md border border-blue-200 bg-white px-2 text-[11px] text-slate-700 outline-none" />}
+				</div>}
 				<SyncNotice />
 				{week ? <>
 				<WeeklyTools onOpenPoint={openPoint} readOnly={mode === 'meeting'} />
