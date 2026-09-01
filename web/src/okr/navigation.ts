@@ -3,9 +3,9 @@ export const DEFAULT_OKR_TAB = 'manage'
 export const OKR_TAB_DEFINITIONS = [
   { key: 'manage', label: '管理与打标', group: 'okr' },
   { key: 'agent-flows', label: '自动化流程', group: 'okr' },
+  { key: 'okr-review', label: 'OKR Review', group: 'weekly', requiresModule: 'weekly-report' },
   { key: 'weekly-fill', label: '周报填写', group: 'weekly', requiresModule: 'weekly-report' },
   { key: 'weekly-meeting', label: '周报会议', group: 'weekly', requiresModule: 'weekly-report' },
-  { key: 'okr-review', label: 'OKR Review', group: 'weekly', requiresModule: 'weekly-report' },
 ] as const
 
 export type OKRTab = typeof OKR_TAB_DEFINITIONS[number]['key']
