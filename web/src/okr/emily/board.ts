@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { DeleteWeekResult } from './api'
-import type { Entry, EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, Point } from './types'
+import type { Entry, EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, Point, WeekTemplateKey } from './types'
 
 export type SyncState =
   | { kind: 'loading'; message: string }
@@ -16,6 +16,7 @@ export interface BoardApi {
   availableQuarters: string[]
   setQuarter: (quarter: string) => void
   week: string
+  templateKey: WeekTemplateKey
   previousWeek?: string
   availableWeeks: string[]
   setWeek: (week: string) => void
@@ -47,6 +48,8 @@ export interface BoardApi {
   patchEntry: (pointId: string, entryId: string, patch: Partial<Entry>) => void
   addEntry: (pointId: string, text: string) => void
   removeEntry: (pointId: string, entryId: string) => void
+  setKrScore: (krId: string, score?: number) => Promise<void>
+  setPointScore: (krId: string, pointId: string, score?: number) => Promise<void>
   reset: () => void
   retry: () => void
   resolveConflict: (choice: 'remote' | 'local') => void

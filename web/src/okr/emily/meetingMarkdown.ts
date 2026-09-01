@@ -1,6 +1,6 @@
 import { isDone, statusOf } from './template.ts'
 import { priorityLabel, priorityOf } from './hierarchy.ts'
-import type { DocLink, ImageRef, Objective } from './types'
+import type { DocLink, ImageRef, Objective, WeekTemplateKey } from './types'
 
 export interface MeetingMarkdownExport {
 	title: string
@@ -27,16 +27,17 @@ function appendAssets(lines: string[], docs: DocLink[], images: ImageRef[]) {
 	}
 }
 
-export function buildFullMeetingMarkdown(objectives: Objective[], quarter: string, week: string): MeetingMarkdownExport {
+export function buildFullMeetingMarkdown(objectives: Objective[], quarter: string, week: string, templateKey: WeekTemplateKey = 'classic'): MeetingMarkdownExport {
 	const title = `${week} OKR 周报会议`
 	const lines = [`# ${escapeInline(title)}`, '', `> ${escapeInline(quarter)} · ${escapeInline(week)}`, '']
 	const lights = { green: '🟢', yellow: '🟡', red: '🔴' } as const
+	const preview = templateKey === 'okr_weekly_preview_v1'
 
 	for (const objective of objectives) {
 		lines.push(`## ${escapeInline(objective.title)}`, '')
 		for (const kr of objective.krs) {
 			lines.push(`### ${escapeInline(kr.title)}`, '')
-			const meta = [kr.ownerName && `负责人：${escapeInline(kr.ownerName)}`, `优先级：${priorityLabel(priorityOf(kr))}`].filter(Boolean)
+			const meta = [kr.ownerName && `负责人：${escapeInline(kr.ownerName)}`, `优先级：${priorityLabel(priorityOf(kr))}`, preview && `评分：${kr.score ? kr.score.value.toFixed(1) : '未评分'}`].filter(Boolean)
 			if (meta.length > 0) lines.push(meta.join(' · '), '')
 			if (kr.metrics.length > 0) {
 				lines.push('#### 核心数据', '')
@@ -54,10 +55,14 @@ export function buildFullMeetingMarkdown(objectives: Objective[], quarter: strin
 				lines.push(`#### ${kind === 'strategy' ? '策略具体 KR' : '产品具体 KR'}`, '')
 				for (const [index, point] of points.entries()) {
 					lines.push(`##### KR${index + 1} ${escapeInline(point.title)}`, '')
-					for (const group of [
-						{ title: '进展', entries: point.entries.filter((entry) => !isDone(entry.status)) },
-						{ title: '已完成', entries: point.entries.filter((entry) => isDone(entry.status)) },
-					]) {
+					if (preview) lines.push(`评分：${point.score ? point.score.value.toFixed(1) : '未评分'}`, '')
+					const groups = preview
+						? [{ title: '本周进展', entries: point.entries }]
+						: [
+							{ title: '进展', entries: point.entries.filter((entry) => !isDone(entry.status)) },
+							{ title: '已完成', entries: point.entries.filter((entry) => isDone(entry.status)) },
+						]
+					for (const group of groups) {
 						if (group.entries.length === 0) continue
 						lines.push(`**${group.title}**`, '')
 						for (const entry of group.entries) {

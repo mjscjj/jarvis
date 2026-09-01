@@ -13,6 +13,7 @@ import { KIND_LABEL, isDone } from '../template'
 import type { CommentTarget, Entry, KrPriority, KrTag, Objective, Point, PointKind, TextSelection } from '../types'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect } from './ui'
+import { WeeklyScoreControl } from './WeeklyScoreControl'
 
 function FoldButton({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
   return (
@@ -202,7 +203,7 @@ function MeetingLane({ entries }: { entries: Entry[] }) {
   )
 }
 
-function MeetingPoint({ point, index, open, onToggle, showTags }: { point: Point; index: number; open: boolean; onToggle: () => void; showTags: boolean }) {
+function MeetingPoint({ point, index, open, onToggle, showTags, preview }: { point: Point; index: number; open: boolean; onToggle: () => void; showTags: boolean; preview: boolean }) {
   const doing = point.entries.filter((entry) => !isDone(entry.status))
   const done = point.entries.filter((entry) => isDone(entry.status))
   const target: CommentTarget = { type: 'point', id: point.id, title: point.title }
@@ -216,18 +217,17 @@ function MeetingPoint({ point, index, open, onToggle, showTags }: { point: Point
             <h4 className="text-[13px] font-semibold leading-[19px] text-slate-800"><HighlightedText target={target} text={point.title} /></h4>
             {showTags && (point.tags?.length ?? 0) > 0 && <div className="mt-1 flex min-w-0 flex-wrap items-start gap-1">{point.tags?.map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)}</div>}
           </div>
+          {preview && <WeeklyScoreControl score={point.score} readOnly label="具体 KR 评分" />}
           <span className="shrink-0 pt-0.5 text-[10px] text-slate-400">{doing.length} 进展 · {done.length} 完成</span>
         </Commentable>
       </header>
-      {open && <div className="ml-6 grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0">
-        <MeetingLane entries={doing} />
-        <MeetingLane entries={done} />
-      </div>}
+      {open && preview && <div className="ml-6"><MeetingLane entries={point.entries} /></div>}
+      {open && !preview && <div className="ml-6 grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0"><MeetingLane entries={doing} /><MeetingLane entries={done} /></div>}
     </article>
   )
 }
 
-function KindGroup({ kind, points, closed, toggle, showTags }: { kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void; showTags: boolean }) {
+function KindGroup({ kind, points, closed, toggle, showTags, preview }: { kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void; showTags: boolean; preview: boolean }) {
   const tone = kind === 'strategy' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-teal-200 bg-teal-50 text-teal-700'
   return (
     <section className={`border-l-[3px] pl-2.5 ${kind === 'strategy' ? 'border-violet-500' : 'border-teal-500'}`}>
@@ -236,12 +236,12 @@ function KindGroup({ kind, points, closed, toggle, showTags }: { kind: PointKind
         <span className="text-[10px] text-slate-400">{points.length} 项</span>
         <span className="h-px flex-1 bg-slate-100" />
       </div>
-      <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} showTags={showTags} />)}</div>
+      <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} showTags={showTags} preview={preview} />)}</div>
     </section>
   )
 }
 
-function MeetingObjectiveSection({ objective, closed, toggle, showTags }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; showTags: boolean }) {
+function MeetingObjectiveSection({ objective, closed, toggle, showTags, preview }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; showTags: boolean; preview: boolean }) {
   const objectiveOpen = !closed.has(objective.id)
   return (
     <section className="space-y-1.5">
@@ -265,6 +265,7 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags }: { obje
                   <div className="flex flex-wrap items-center gap-1">
                     {splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="text-[10px] text-slate-500">{person}</span>)}
 						<span className={`rounded border px-1.5 py-px text-[9px] font-semibold ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priorityLabel(priority)}</span>
+                    {preview && <WeeklyScoreControl score={kr.score} readOnly label="一级 KR 评分" />}
                     <span className="inline-flex gap-0.5">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>
 						{showTags && (kr.tags ?? []).filter((tag) => tag.type !== 'priority').map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)}
                   </div>
@@ -296,7 +297,7 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags }: { obje
                 )}
                 {KINDS.map((kind) => {
                   const points = kr.points.filter((point) => point.kind === kind)
-				  return points.length > 0 ? <KindGroup key={kind} kind={kind} points={points} closed={closed} toggle={toggle} showTags={showTags} /> : null
+                  return points.length > 0 ? <KindGroup key={kind} kind={kind} points={points} closed={closed} toggle={toggle} showTags={showTags} preview={preview} /> : null
                 })}
               </div>}
             </article>
@@ -308,7 +309,8 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags }: { obje
 }
 
 export function MeetingView() {
-  const { objectives, quarter, week } = useBoard()
+  const { objectives, quarter, week, templateKey } = useBoard()
+  const preview = templateKey === 'okr_weekly_preview_v1'
   const [ownerFilter, setOwnerFilter] = useState('')
   const [showTags, setShowTags] = useState(false)
   const [closed, setClosed] = useState<Set<string>>(new Set())
@@ -341,7 +343,7 @@ export function MeetingView() {
     setExporting(true)
     setExportResult({})
     try {
-      const output = buildFullMeetingMarkdown(objectives, quarter, week)
+      const output = buildFullMeetingMarkdown(objectives, quarter, week, templateKey)
       const result = await createFeishuDocument(output.title, output.content)
       setExportResult({ url: result.url, message: result.warnings.length > 0 ? `已生成，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成。' })
     } catch (error) {
@@ -384,7 +386,7 @@ export function MeetingView() {
       />
 
       {activeObjective ? (
-        <MeetingObjectiveSection objective={activeObjective} closed={closed} toggle={toggle} showTags={showTags} />
+        <MeetingObjectiveSection objective={activeObjective} closed={closed} toggle={toggle} showTags={showTags} preview={preview} />
       ) : <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-xs text-slate-400">当前分类尚无已接入的方向</div>}
     </div>
   )

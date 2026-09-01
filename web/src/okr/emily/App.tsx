@@ -76,7 +76,7 @@ export default function App({
   mode: 'fill' | 'meeting'
   onModeChange: (mode: 'fill' | 'meeting') => void
 }) {
-	const { reset, syncState, quarter, week, availableWeeks, setWeek, setWeeklyScope, deleteWeeklyScope } = useBoard()
+	const { reset, syncState, quarter, week, templateKey, availableWeeks, setWeek, setWeeklyScope, deleteWeeklyScope } = useBoard()
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentCount, setCommentCount] = useState(0)
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
@@ -86,6 +86,7 @@ export default function App({
   const [openingWeek, setOpeningWeek] = useState(false)
   const [newQuarter, setNewQuarter] = useState(currentQuarter)
   const [newWeek, setNewWeek] = useState(currentISOWeek)
+  const [newWeekPreview, setNewWeekPreview] = useState(false)
   const [weekNotice, setWeekNotice] = useState('')
 	const [confirmDeleteWeek, setConfirmDeleteWeek] = useState(false)
 	const [deletingWeek, setDeletingWeek] = useState(false)
@@ -98,7 +99,7 @@ export default function App({
     if (!targetQuarter || !target) return
     setWeekNotice('')
     try {
-      const result = await openWeeklyReportWeek({ quarter: targetQuarter, week: target })
+      const result = await openWeeklyReportWeek({ quarter: targetQuarter, week: target, templateKey: newWeekPreview ? 'okr_weekly_preview_v1' : 'classic' })
       setOpeningWeek(false)
 			const switched = setWeeklyScope(targetQuarter, target)
 			const opened = result.created ? `${target} 已开启` : `${target} 已经开启`
@@ -201,7 +202,8 @@ export default function App({
               {availableWeeks.map((item) => <option key={item} value={item}>{weekLabel(item)}</option>)}
             </select>
 	          </div>
-	          {mode === 'fill' && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
+	          {templateKey === 'okr_weekly_preview_v1' && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-violet-700">Preview</span>}
+	          {mode === 'fill' && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setNewWeekPreview(false); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
 	          {mode === 'fill' && <button type="button" disabled={!week || deleteBlocked} onClick={() => { setConfirmDeleteWeek(true); setOpeningWeek(false); setWeekNotice('') }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除本周</button>}
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
               <span aria-hidden className="hidden h-5 w-px bg-slate-200 sm:block" />
@@ -232,6 +234,7 @@ export default function App({
 					<div className="mr-2"><div className="text-xs font-semibold text-slate-700">开启周报周次</div><div className="mt-0.5 text-[10px] text-slate-400">只创建空周，不复制进展，也不会立即发送提醒。</div></div>
 					<input value={newQuarter} onChange={(event) => setNewQuarter(event.target.value)} placeholder="2026-Q3" aria-label="季度" className="h-9 w-28 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-400" />
 					<input value={newWeek} onChange={(event) => setNewWeek(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitWeek() }} placeholder="2026-W36" aria-label="新周次" className="h-9 w-32 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-400" />
+					<label className="flex h-9 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3 text-[11px] text-slate-600"><input type="checkbox" checked={newWeekPreview} onChange={(event) => setNewWeekPreview(event.target.checked)} className="size-4 accent-violet-600" /><span><b className="font-medium text-violet-700">OKR 周度 Preview</b><span className="ml-1 text-[9px] text-slate-400">评分 + 合并进展</span></span></label>
 					<button type="button" onClick={() => void submitWeek()} disabled={!newQuarter.trim() || !newWeek.trim()} className="h-9 rounded-lg bg-blue-600 px-4 text-xs font-medium text-white disabled:opacity-40">确认开启</button>
 					<button type="button" onClick={() => setOpeningWeek(false)} className="h-9 px-2 text-xs text-slate-400">取消</button>
 				</section>}

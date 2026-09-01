@@ -11,6 +11,7 @@ import { TagChip, TagEditor } from './TagEditor'
 import { FeishuPeoplePicker } from './FeishuPeoplePicker'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
+import { WeeklyScoreControl } from './WeeklyScoreControl'
 
 function Caret({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
@@ -75,11 +76,11 @@ function EntryRow({ objectiveId, krId, pointId, entry, readOnly }: { objectiveId
   )
 }
 
-function EntryList({ objectiveId, krId, point, done, readOnly }: { objectiveId: string; krId: string; point: Point; done: boolean; readOnly: boolean }) {
+function EntryList({ objectiveId, krId, point, done, readOnly }: { objectiveId: string; krId: string; point: Point; done?: boolean; readOnly: boolean }) {
   const { addEntry } = useBoard()
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
-  const list = point.entries.filter((entry) => isDone(entry.status) === done)
+  const list = done === undefined ? point.entries : point.entries.filter((entry) => isDone(entry.status) === done)
   const commitDraft = () => {
     const clean = draft.trim()
     if (!clean) return
@@ -93,10 +94,10 @@ function EntryList({ objectiveId, krId, point, done, readOnly }: { objectiveId: 
       {list.map((entry) => <EntryRow key={entry.id} objectiveId={objectiveId} krId={krId} pointId={point.id} entry={entry} readOnly={readOnly} />)}
       {list.length === 0 && (
         <div className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-xs text-slate-400">
-          {done ? '状态改为「已完成」的条目会自动移到这里' : '暂无进展'}
+          {done === true ? '状态改为「已完成」的条目会自动移到这里' : '暂无进展'}
         </div>
       )}
-      {!readOnly && !done && (
+      {!readOnly && done !== true && (
         adding ? <div className="rounded-lg border border-blue-200 bg-white p-2">
           <textarea autoFocus rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') commitDraft(); if (event.key === 'Escape') { setDraft(''); setAdding(false) } }} placeholder="填写本周进展" className="w-full resize-none rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-400" />
           <div className="mt-1.5 flex items-center gap-2"><button type="button" disabled={!draft.trim()} onClick={commitDraft} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-40">添加</button><button type="button" onClick={() => { setDraft(''); setAdding(false) }} className="px-1 text-[11px] text-slate-400">取消</button><span className="ml-auto text-[10px] text-slate-300">⌘ Enter 添加</span></div>
@@ -206,7 +207,7 @@ function tagClass(tag: KrTag) {
 }
 
 function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean }) {
-	const { setKrTitle, setKrPriority } = useBoard()
+	const { setKrTitle, setKrPriority, setKrScore, templateKey } = useBoard()
 	const priority = priorityOf(kr)
 
   return (
@@ -223,6 +224,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
 				</select>
 			) : <span className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priority || '未标注'}</span>}
+			{templateKey === 'okr_weekly_preview_v1' && <WeeklyScoreControl score={kr.score} onChange={(score) => setKrScore(kr.id, score)} readOnly={readOnly} label="一级 KR 评分" />}
 			{(kr.tags ?? []).filter((tag) => tag.type !== 'custom' && tag.type !== 'priority').map((tag) => (
               <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded-md border px-2 py-1 text-xs [overflow-wrap:anywhere] ${tagClass(tag)}`}>{tagText(tag)}</span>
             ))}
@@ -235,7 +237,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
 }
 
 function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, showProgress = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; showProgress?: boolean; tagSuggestions?: KrTag[] }) {
-  const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, week } = useBoard()
+  const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, templateKey, week } = useBoard()
   const [preview, setPreview] = useState<MeegoPreview>()
   const [previewError, setPreviewError] = useState('')
   const [previewing, setPreviewing] = useState(false)
@@ -266,6 +268,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
             <span className="min-w-60 flex-1">
               <Text value={point.title} onChange={(value) => setPointTitle(objectiveId, krId, point.id, value)} placeholder="具体 KR 点" className="text-[15px] font-semibold leading-6 text-slate-800" readOnly={readOnly} commentTarget={{ type: 'point', id: point.id, title: point.title }} />
             </span>
+            {showProgress && templateKey === 'okr_weekly_preview_v1' && <WeeklyScoreControl score={point.score} onChange={(score) => setPointScore(krId, point.id, score)} readOnly={readOnly} label="具体 KR 评分" />}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
           {tagSuggestions && <div className="mt-1.5 min-w-0"><TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} /></div>}
@@ -304,10 +307,19 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
 }
 
 function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
+  const { templateKey } = useBoard()
+  const preview = templateKey === 'okr_weekly_preview_v1'
   return (
     <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
       <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} />
-      {open && showProgress && (
+      {open && showProgress && preview && (
+        <section className="mt-2 ml-7 rounded-xl border border-slate-200 bg-white p-2.5">
+          <h4 className="mb-2 text-xs font-semibold text-slate-500">本周进展</h4>
+          <EntryList objectiveId={objectiveId} krId={krId} point={point} readOnly={progressReadOnly} />
+          <HistoryPreview point={point} />
+        </section>
+      )}
+      {open && showProgress && !preview && (
         <div className="mt-2 grid grid-cols-1 gap-2 pl-7 md:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-2.5">
             <h4 className="mb-2 text-xs font-semibold text-slate-500">进展</h4>

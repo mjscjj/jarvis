@@ -7,6 +7,12 @@ export type Status =
   | 'blocked'
 
 export type PointKind = 'strategy' | 'product'
+export type WeekTemplateKey = 'classic' | 'okr_weekly_preview_v1'
+
+export interface WeeklyScore {
+  value: number
+  version: number
+}
 
 export interface DocLink {
   id: string
@@ -55,6 +61,7 @@ export interface Point {
   tags?: KrTag[]
   entries: Entry[]
   previousEntries?: Entry[]
+  score?: WeeklyScore
 }
 
 export interface MeegoPreview {
@@ -127,6 +134,7 @@ export interface Kr {
 	version?: number
 	weeklyCoreVersion?: number
   tags?: KrTag[]
+  score?: WeeklyScore
 }
 
 export interface KrOwner {

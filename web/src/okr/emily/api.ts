@@ -1,4 +1,4 @@
-import type { AuthStatus, Entry, EnumValues, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status } from './types'
+import type { AuthStatus, Entry, EnumValues, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -28,13 +28,15 @@ interface APIKr {
   version: number
 	weekly_core_version: number
   metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-  points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; entries: APIEntry[]; previous_entries: APIEntry[] }>
+  points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; entries: APIEntry[]; previous_entries: APIEntry[]; score?: WeeklyScore }>
   tags: KrTag[]
+  score?: WeeklyScore
 }
 
 interface APIBoard {
   quarter: string
   week: string
+  template_key: WeekTemplateKey
   previous_week?: string
   available_quarters: string[]
   available_weeks: string[]
@@ -44,6 +46,7 @@ interface APIBoard {
 interface APIWeek {
   quarter: string
   week: string
+  template_key: WeekTemplateKey
   opened_by: string
   opened_at: string
 }
@@ -261,6 +264,7 @@ function fromAPIKr(value: APIKr): Kr {
       meegoWorkItemId: point.meego_work_item_id ?? '',
       meegoUrl: point.meego_url ?? '',
       tags: point.tags ?? [],
+      score: point.score,
       entries: point.entries.map((entry) => ({
         id: entry.id,
 		version: entry.version,
@@ -283,12 +287,14 @@ function fromAPIKr(value: APIKr): Kr {
       })),
     })),
     tags: value.tags ?? [],
+    score: value.score,
   }
 }
 
 export interface BoardData {
   quarter: string
   week: string
+  templateKey: WeekTemplateKey
   previousWeek?: string
   availableQuarters: string[]
   availableWeeks: string[]
@@ -299,6 +305,7 @@ export interface OpenWeekResult {
   week: {
     quarter: string
     week: string
+    templateKey: WeekTemplateKey
     openedBy: string
     openedAt: string
   }
@@ -312,22 +319,24 @@ export interface DeleteWeekResult {
   deleted: {
     weeklyCores: number
     progress: number
+    scores: number
     comments: number
     meegoSnapshots: number
     reminderBatches: number
   }
 }
 
-export async function openWeeklyReportWeek(input: { quarter: string; week: string }): Promise<OpenWeekResult> {
+export async function openWeeklyReportWeek(input: { quarter: string; week: string; templateKey: WeekTemplateKey }): Promise<OpenWeekResult> {
   const value = await request<{ week: APIWeek; created: boolean }>('/api/weekly-report/weeks', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify({ quarter: input.quarter, week: input.week, template_key: input.templateKey }),
   })
   return {
     created: value.created,
     week: {
       quarter: value.week.quarter,
       week: value.week.week,
+      templateKey: value.week.template_key,
       openedBy: value.week.opened_by,
       openedAt: value.week.opened_at,
     },
@@ -342,6 +351,7 @@ export async function deleteWeeklyReportWeek(quarter: string, week: string): Pro
     deleted: {
       weekly_cores: number
       progress: number
+      scores: number
       comments: number
       meego_snapshots: number
       reminder_batches: number
@@ -354,6 +364,7 @@ export async function deleteWeeklyReportWeek(quarter: string, week: string): Pro
     deleted: {
       weeklyCores: value.deleted.weekly_cores,
       progress: value.deleted.progress,
+      scores: value.deleted.scores,
       comments: value.deleted.comments,
       meegoSnapshots: value.deleted.meego_snapshots,
       reminderBatches: value.deleted.reminder_batches,
@@ -369,6 +380,7 @@ export async function getBoard(quarter: string, week: string, surface: BoardSurf
   return {
     quarter: board.quarter,
     week: board.week,
+    templateKey: board.template_key,
     previousWeek: board.previous_week,
     availableQuarters: board.available_quarters,
     availableWeeks: board.available_weeks,
@@ -720,6 +732,20 @@ export async function replaceWeeklyKRCore(kr: Kr, week: string): Promise<Kr> {
 		}
 		throw error
 	}
+}
+
+export async function replaceWeeklyScore(input: { quarter: string; week: string; targetKind: 'kr' | 'point'; targetId: string; score: number; expectedVersion: number }): Promise<Kr> {
+	return progressRequest(`/api/weekly-report/scores/${encodeURIComponent(input.targetKind)}/${encodeURIComponent(input.targetId)}`, {
+		method: 'PUT',
+		body: JSON.stringify({ quarter: input.quarter, week: input.week, score: input.score, expected_version: input.expectedVersion }),
+	})
+}
+
+export async function deleteWeeklyScore(input: { quarter: string; week: string; targetKind: 'kr' | 'point'; targetId: string; expectedVersion: number }): Promise<Kr> {
+	return progressRequest(`/api/weekly-report/scores/${encodeURIComponent(input.targetKind)}/${encodeURIComponent(input.targetId)}`, {
+		method: 'DELETE',
+		body: JSON.stringify({ quarter: input.quarter, week: input.week, expected_version: input.expectedVersion }),
+	})
 }
 
 async function progressRequest(path: string, init: RequestInit): Promise<Kr> {

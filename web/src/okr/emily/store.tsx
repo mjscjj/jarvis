@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, getBoard, getEnums, replaceKR, replaceWeeklyKRCore, updateObjective as updateObjectiveRequest, updateProgress, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, replaceKR, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { LIGHTS, STATUSES } from './template'
-import type { Entry, EnumValues, Kr, Objective, Point } from './types'
+import type { Entry, EnumValues, Kr, Objective, Point, WeekTemplateKey, WeeklyScore } from './types'
 
 const SAVE_DELAY_MS = 700
 
@@ -119,6 +119,7 @@ export function BoardProvider({
   const [objectives, setObjectives] = useState<Objective[]>([])
   const [enums, setEnums] = useState<EnumValues>(DEFAULT_ENUMS)
   const [week, setWeekState] = useState(DEFAULT_WEEK)
+  const [templateKey, setTemplateKey] = useState<WeekTemplateKey>('classic')
   const [quarter, setQuarterState] = useState(initialQuarter)
   const [availableQuarters, setAvailableQuarters] = useState<string[]>(initialQuarter ? [initialQuarter] : [])
   const [previousWeek, setPreviousWeek] = useState<string>()
@@ -202,6 +203,7 @@ export function BoardProvider({
       onQuarterChange?.(board.quarter)
       weekRef.current = board.week
       setWeekState(board.week)
+      setTemplateKey(board.templateKey)
       setPreviousWeek(board.previousWeek)
       setAvailableWeeks(board.availableWeeks)
       setEnums(remoteEnums)
@@ -242,6 +244,36 @@ export function BoardProvider({
     scheduleSave(syncState.krId)
   }, [publish, scheduleSave, syncState])
 
+  const saveWeeklyScore = useCallback(async (krId: string, targetKind: 'kr' | 'point', targetId: string, currentScore: WeeklyScore | undefined, score?: number) => {
+    if (templateKey !== 'okr_weekly_preview_v1') throw new Error('当前周次不是 OKR 周度 Preview 模板。')
+    setSyncState({ kind: 'saving', message: '正在保存评分…' })
+    try {
+      const input = {
+        quarter: quarterRef.current,
+        week: weekRef.current,
+        targetKind,
+        targetId,
+        expectedVersion: currentScore?.version ?? 0,
+      }
+      const saved = score === undefined
+        ? await deleteWeeklyScore(input)
+        : await replaceWeeklyScore({ ...input, score })
+      serverKrs.current.set(krId, clone(saved))
+      publish(replaceKrIn(objectivesRef.current, krId, saved))
+      setSyncState({ kind: 'saved', message: '评分已保存' })
+    } catch (error) {
+      if (error instanceof APIError && error.status === 409 && error.data) {
+        const current = error.data as Kr
+        serverKrs.current.set(krId, clone(current))
+        publish(replaceKrIn(objectivesRef.current, krId, current))
+        setSyncState({ kind: 'error', message: '评分已被其他人更新，已载入最新值。' })
+        return
+      }
+      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '评分保存失败。' })
+      throw error
+    }
+  }, [publish, templateKey])
+
   const api = useMemo<BoardApi>(() => ({
     objectives,
     quarter,
@@ -256,6 +288,7 @@ export function BoardProvider({
       void loadRemote('', nextQuarter)
     },
     week,
+    templateKey,
     previousWeek,
     availableWeeks,
 		setWeek: (nextWeek) => {
@@ -301,6 +334,7 @@ export function BoardProvider({
 				lastFailedKr.current = null
 				weekRef.current = ''
 				setWeekState('')
+				setTemplateKey('classic')
 				setPreviousWeek(undefined)
 				setAvailableWeeks([])
 				setSyncState({ kind: 'ready', message: '当前季度暂无周报，请先开启新周' })
@@ -499,6 +533,16 @@ export function BoardProvider({
         if (point) point.entries = point.entries.filter((item) => item.id !== entryId)
       })
     },
+    setKrScore: async (krId, score) => {
+      const kr = findKr(objectivesRef.current, krId)
+      if (!kr || (score === undefined && !kr.score)) return
+      await saveWeeklyScore(krId, 'kr', krId, kr.score, score)
+    },
+    setPointScore: async (krId, pointId, score) => {
+      const point = findKr(objectivesRef.current, krId)?.points.find((item) => item.id === pointId)
+      if (!point || (score === undefined && !point.score)) return
+      await saveWeeklyScore(krId, 'point', pointId, point.score, score)
+    },
     reset: () => void loadRemote(),
     retry: () => {
       if (lastFailedKr.current && remoteReady.current) void saveNow(lastFailedKr.current)
@@ -506,7 +550,7 @@ export function BoardProvider({
     },
     resolveConflict,
     applySavedKr: (kr) => publish(replaceKrIn(objectivesRef.current, kr.id, kr)),
-  }), [availableQuarters, availableWeeks, enums, loadRemote, mutate, objectives, previousWeek, publish, quarter, resolveConflict, saveNow, syncState, week])
+  }), [availableQuarters, availableWeeks, enums, loadRemote, mutate, objectives, previousWeek, publish, quarter, resolveConflict, saveNow, saveWeeklyScore, syncState, templateKey, week])
 
   return <BoardContext.Provider value={api}>{children}</BoardContext.Provider>
 }
