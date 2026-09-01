@@ -279,14 +279,42 @@ func (c *Client) run(ctx context.Context, out any, input string, args ...string)
 // MarkdownDocument is the stable subset returned by `docs +create` that the
 // product UI needs after a user explicitly clicks export.
 type MarkdownDocument struct {
-	DocumentID string
-	URL        string
-	Warnings   []string
+	DocumentID      string
+	URL             string
+	Warnings        []string
+	LinkShareEntity string
+}
+
+const tenantEditableLinkShareEntity = "tenant_editable"
+
+type documentPermissionParams struct {
+	Token string `json:"token"`
+	Type  string `json:"type"`
+}
+
+type documentPermissionAuthParams struct {
+	Token  string `json:"token"`
+	Type   string `json:"type"`
+	Action string `json:"action"`
+}
+
+type documentPermissionPatch struct {
+	LinkShareEntity string `json:"link_share_entity"`
+}
+
+type documentPermissionResponse struct {
+	Data struct {
+		PermissionPublic struct {
+			LinkShareEntity string `json:"link_share_entity"`
+		} `json:"permission_public"`
+	} `json:"data"`
 }
 
 // CreateMarkdownDocument creates one document with the current lark-cli user
-// identity. It is intentionally a user-triggered effect; schedulers and OKR
-// projection never call it implicitly.
+// identity, makes it editable to organization members who have the link, and
+// reads the permission back before reporting success. It is intentionally a
+// user-triggered effect; schedulers and OKR projection never call it
+// implicitly.
 func (c *Client) CreateMarkdownDocument(ctx context.Context, title, content string) (MarkdownDocument, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
@@ -311,9 +339,58 @@ func (c *Client) CreateMarkdownDocument(ctx context.Context, title, content stri
 	if strings.TrimSpace(response.Data.Document.DocumentID) == "" || strings.TrimSpace(response.Data.Document.URL) == "" {
 		return MarkdownDocument{}, fmt.Errorf("lark-cli create Markdown document returned no document id or url")
 	}
+	documentID := strings.TrimSpace(response.Data.Document.DocumentID)
+	documentURL := strings.TrimSpace(response.Data.Document.URL)
+	if err := c.setTenantEditableDocumentPermission(ctx, documentID); err != nil {
+		return MarkdownDocument{}, fmt.Errorf("configure exported document permission document_id=%q url=%q: %w", documentID, documentURL, err)
+	}
 	return MarkdownDocument{
-		DocumentID: response.Data.Document.DocumentID,
-		URL:        response.Data.Document.URL,
-		Warnings:   response.Data.Warnings,
+		DocumentID:      documentID,
+		URL:             documentURL,
+		Warnings:        response.Data.Warnings,
+		LinkShareEntity: tenantEditableLinkShareEntity,
 	}, nil
+}
+
+func (c *Client) setTenantEditableDocumentPermission(ctx context.Context, documentID string) error {
+	paramsJSON, err := json.Marshal(documentPermissionParams{Token: documentID, Type: "docx"})
+	if err != nil {
+		return fmt.Errorf("encode document permission params: %w", err)
+	}
+	authParamsJSON, err := json.Marshal(documentPermissionAuthParams{Token: documentID, Type: "docx", Action: "manage_public"})
+	if err != nil {
+		return fmt.Errorf("encode document permission authorization params: %w", err)
+	}
+	patchJSON, err := json.Marshal(documentPermissionPatch{LinkShareEntity: tenantEditableLinkShareEntity})
+	if err != nil {
+		return fmt.Errorf("encode document permission patch: %w", err)
+	}
+
+	var authResponse struct {
+		Data struct {
+			AuthResult bool `json:"auth_result"`
+		} `json:"data"`
+	}
+	if err := c.Run(ctx, &authResponse, "drive", "permission.members", "auth", "--params", string(authParamsJSON), "--as", "user"); err != nil {
+		return fmt.Errorf("check manage_public authorization: %w", err)
+	}
+	if !authResponse.Data.AuthResult {
+		return fmt.Errorf("current Feishu user is not authorized to manage public permissions")
+	}
+
+	// lark-cli classifies public permission changes as high risk. The export
+	// button is the human confirmation for this exact newly-created document.
+	var patchResponse documentPermissionResponse
+	if err := c.Run(ctx, &patchResponse, "drive", "permission.public", "patch", "--params", string(paramsJSON), "--data", string(patchJSON), "--as", "user", "--yes"); err != nil {
+		return fmt.Errorf("set link_share_entity=%s: %w", tenantEditableLinkShareEntity, err)
+	}
+
+	var getResponse documentPermissionResponse
+	if err := c.Run(ctx, &getResponse, "drive", "permission.public", "get", "--params", string(paramsJSON), "--as", "user"); err != nil {
+		return fmt.Errorf("read back document public permission: %w", err)
+	}
+	if got := getResponse.Data.PermissionPublic.LinkShareEntity; got != tenantEditableLinkShareEntity {
+		return fmt.Errorf("document public permission verification failed: got link_share_entity=%q, want %q", got, tenantEditableLinkShareEntity)
+	}
+	return nil
 }

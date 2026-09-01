@@ -351,7 +351,7 @@ export function MeetingView() {
     try {
       const output = buildFullMeetingMarkdown(objectives, quarter, week, templateKey)
       const result = await createFeishuDocument(output.title, output.content)
-      setExportResult({ url: result.url, message: result.warnings.length > 0 ? `已生成，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成。' })
+      setExportResult({ url: result.url, message: result.warnings.length > 0 ? `已生成并设置为组织内获得链接的人可编辑，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成，组织内获得链接的人可编辑。' })
     } catch (error) {
       setExportResult({ message: error instanceof Error ? error.message : '飞书文档生成失败。' })
     } finally {

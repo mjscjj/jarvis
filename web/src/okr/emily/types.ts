@@ -178,6 +178,7 @@ export interface FeishuDocumentResult {
 	documentId: string
 	url: string
 	warnings: string[]
+	linkShareEntity: 'tenant_editable'
 }
 
 export interface Objective {

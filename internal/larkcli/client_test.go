@@ -189,16 +189,29 @@ func TestCreateMarkdownDocumentUsesUserIdentityAndStdin(t *testing.T) {
 		t.Skip("shell fixture is Unix-only")
 	}
 	bin := writeScript(t, `
-input=$(cat)
-if [ "$*" != "docs +create --title Weekly --doc-format markdown --content - --as user --format json" ]; then
-  printf '%s' "unexpected args: $*" >&2
-  exit 9
+if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as user --format json' ]; then
+  input=$(cat)
+  if [ "$input" != "# Progress" ]; then
+    printf '%s' "unexpected stdin: $input" >&2
+    exit 8
+  fi
+  printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"},"warnings":["one warning"]}}'
+  exit 0
 fi
-if [ "$input" != "# Progress" ]; then
-  printf '%s' "unexpected stdin: $input" >&2
-  exit 8
+if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"auth_result":true}}'
+  exit 0
 fi
-printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"},"warnings":["one warning"]}}'`)
+if [ "$*" = 'drive permission.public patch --params {"token":"docx_1","type":"docx"} --data {"link_share_entity":"tenant_editable"} --as user --yes --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_editable"}}}'
+  exit 0
+fi
+if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx"} --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_editable"}}}'
+  exit 0
+fi
+printf '%s' "unexpected args: $*" >&2
+exit 9`)
 	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -207,8 +220,66 @@ printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https:
 	if err != nil {
 		t.Fatalf("CreateMarkdownDocument() error = %v", err)
 	}
-	if document.DocumentID != "docx_1" || document.URL != "https://example.test/docx_1" || len(document.Warnings) != 1 {
+	if document.DocumentID != "docx_1" || document.URL != "https://example.test/docx_1" || len(document.Warnings) != 1 || document.LinkShareEntity != "tenant_editable" {
 		t.Fatalf("CreateMarkdownDocument() = %+v", document)
+	}
+}
+
+func TestCreateMarkdownDocumentFailsWhenManagePublicIsUnauthorized(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	bin := writeScript(t, `
+if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
+  exit 0
+fi
+if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"auth_result":false}}'
+  exit 0
+fi
+printf '%s' "unexpected args: $*" >&2
+exit 9`)
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = client.CreateMarkdownDocument(context.Background(), "Weekly", "# Progress")
+	if err == nil || !strings.Contains(err.Error(), "not authorized") || !strings.Contains(err.Error(), "https://example.test/docx_1") {
+		t.Fatalf("CreateMarkdownDocument() error = %v", err)
+	}
+}
+
+func TestCreateMarkdownDocumentFailsWhenPermissionReadBackDoesNotMatch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	bin := writeScript(t, `
+if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
+  exit 0
+fi
+if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"auth_result":true}}'
+  exit 0
+fi
+if [ "$*" = 'drive permission.public patch --params {"token":"docx_1","type":"docx"} --data {"link_share_entity":"tenant_editable"} --as user --yes --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_editable"}}}'
+  exit 0
+fi
+if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx"} --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_readable"}}}'
+  exit 0
+fi
+printf '%s' "unexpected args: $*" >&2
+exit 9`)
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = client.CreateMarkdownDocument(context.Background(), "Weekly", "# Progress")
+	if err == nil || !strings.Contains(err.Error(), `got link_share_entity="tenant_readable"`) || !strings.Contains(err.Error(), "https://example.test/docx_1") {
+		t.Fatalf("CreateMarkdownDocument() error = %v", err)
 	}
 }
 

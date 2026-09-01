@@ -42,9 +42,10 @@ func CreateOKRDocument(creator MarkdownDocumentCreator) app.HandlerFunc {
 			return
 		}
 		c.JSON(consts.StatusCreated, map[string]any{"code": 0, "data": map[string]any{
-			"document_id": result.DocumentID,
-			"url":         result.URL,
-			"warnings":    result.Warnings,
+			"document_id":       result.DocumentID,
+			"url":               result.URL,
+			"warnings":          result.Warnings,
+			"link_share_entity": result.LinkShareEntity,
 		}})
 	}
 }
