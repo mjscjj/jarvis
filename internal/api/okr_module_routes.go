@@ -4,23 +4,23 @@ import (
 	"context"
 	"fmt"
 
+	"jarvis/internal/background"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
-	"gorm.io/gorm"
 )
 
 // OKRModuleDependencies is the single adapter between the optional OKR module
 // and Jarvis HTTP hosting. Core route registration does not require it.
 type OKRModuleDependencies struct {
-	DB        *gorm.DB
 	Workspace *okrworkspace.Service
 	Images    *okrworkspace.ImageStore
 	Identity  *okrAuth.Service
 	Documents MarkdownDocumentCreator
+	People    *background.ResolveService
 	Enabled   func(context.Context) (bool, error)
 }
 
@@ -35,7 +35,7 @@ type WeeklyReportModuleDependencies struct {
 }
 
 func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error {
-	if h == nil || deps.DB == nil || deps.Workspace == nil || deps.Images == nil || deps.Identity == nil {
+	if h == nil || deps.Workspace == nil || deps.Images == nil || deps.Identity == nil || deps.People == nil {
 		return fmt.Errorf("register OKR module routes: required dependency is nil")
 	}
 	if deps.Enabled == nil {
@@ -62,7 +62,7 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	h.POST("/api/okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity))
 	requireIdentity := RequireOKRIdentity(deps.Identity)
 	h.GET("/api/okr/scope", requireEnabled, GetOKRWorkspaceScope(deps.Workspace))
-	h.GET("/api/okr/people/search", requireEnabled, SearchWorkspacePeople(deps.DB))
+	h.GET("/api/okr/people/search", requireEnabled, SearchWorkspacePeople(deps.People))
 	h.GET("/api/okr/board", requireEnabled, GetCoreBoard(deps.Workspace))
 	h.GET("/api/okr/krs/:kr_id", requireEnabled, GetCoreKR(deps.Workspace))
 	h.POST("/api/okr/images", requireEnabled, requireIdentity, UploadOKRImage(deps.Images))

@@ -976,8 +976,8 @@ func main() {
 	var weeklyReportModuleDeps *api.WeeklyReportModuleDependencies
 	if okrModuleEnabled {
 		okrModuleDeps = &api.OKRModuleDependencies{
-			DB: db, Workspace: okrWorkspaceService, Images: okrImageStore,
-			Identity: okrIdentityService, Documents: larkClient,
+			Workspace: okrWorkspaceService, Images: okrImageStore,
+			Identity: okrIdentityService, Documents: larkClient, People: resolveService,
 			Enabled: func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "okr") },
 		}
 	}

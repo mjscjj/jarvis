@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"jarvis/internal/domain"
+	"jarvis/internal/background"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/observability"
 	"jarvis/internal/okrworkspace"
@@ -14,7 +14,6 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
-	"gorm.io/gorm"
 )
 
 type MarkdownDocumentCreator interface {
@@ -56,28 +55,30 @@ func writeAPIConflict(c *app.RequestContext, code int, err error, current any) {
 	c.JSON(consts.StatusConflict, map[string]any{"code": code, "msg": err.Error(), "logid": observability.LogID(ctx), "data": current})
 }
 
-func SearchWorkspacePeople(db *gorm.DB) app.HandlerFunc {
+func SearchWorkspacePeople(svc *background.ResolveService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		query := strings.TrimSpace(c.Query("q"))
 		if query == "" {
 			writeAPIError(c, consts.StatusBadRequest, 40070, fmt.Errorf("q is required"))
 			return
 		}
-		var rows []domain.Person
-		like := "%" + query + "%"
-		if err := db.WithContext(ctx).Where("is_active = ? AND (name LIKE ? OR open_id LIKE ?)", true, like, like).Order("name ASC").Limit(10).Find(&rows).Error; err != nil {
-			writeAPIError(c, consts.StatusInternalServerError, 50070, err)
+		result, err := svc.Resolve(ctx, query)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadGateway, 50270, fmt.Errorf("search feishu people failed: %w", err))
 			return
 		}
-		users := make([]map[string]string, 0, len(rows))
-		for _, row := range rows {
-			department := ""
-			if row.Department != nil {
-				department = *row.Department
-			}
-			users = append(users, map[string]string{"open_id": row.OpenID, "name": row.Name, "department": department})
+		users := make([]map[string]any, 0, len(result.Candidates))
+		for _, candidate := range result.Candidates {
+			users = append(users, map[string]any{
+				"open_id":     candidate.OpenID,
+				"name":        candidate.Name,
+				"email":       candidate.Email,
+				"department":  candidate.Department,
+				"is_external": candidate.IsExternal,
+				"has_chatted": candidate.HasChatted,
+			})
 		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"users": users, "has_more": false}})
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"users": users, "has_more": result.HasMore}})
 	}
 }
 

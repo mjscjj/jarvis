@@ -43,7 +43,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	enabled := true
 	h := server.New()
 	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{
-		DB: db, Workspace: workspace, Images: images, Identity: identity,
+		Workspace: workspace, Images: images, Identity: identity, People: newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}),
 		Enabled: func(context.Context) (bool, error) { return enabled, nil },
 	}); err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestPointTagsRouteTargetsOnlyStrategyOrProductPoint(t *testing.T) {
 	}
 	h := server.New()
 	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{
-		DB: db, Workspace: workspace, Images: images, Identity: identity,
+		Workspace: workspace, Images: images, Identity: identity, People: newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}),
 		Enabled: func(context.Context) (bool, error) { return true, nil },
 	}); err != nil {
 		t.Fatal(err)
