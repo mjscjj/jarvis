@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, replaceKR, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
+import { findKrDraftIssue } from './draftValidation'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { LIGHTS, STATUSES } from './template'
 import type { Entry, EnumValues, Kr, Objective, Point, WeekTemplateKey, WeeklyScore } from './types'
@@ -147,6 +148,12 @@ export function BoardProvider({
     if (!current) return
     const snapshot = clone(current)
     const revision = revisions.current.get(krId) ?? 0
+    const draftIssue = findKrDraftIssue(snapshot)
+    if (draftIssue) {
+      lastFailedKr.current = krId
+      setSyncState({ kind: 'error', ...draftIssue })
+      return
+    }
     setSyncState({ kind: 'saving', message: '正在保存…' })
     try {
       const baseline = serverKrs.current.get(krId)

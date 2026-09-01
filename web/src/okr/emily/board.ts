@@ -7,7 +7,7 @@ export type SyncState =
   | { kind: 'ready'; message: string }
   | { kind: 'saving'; message: string }
   | { kind: 'saved'; message: string }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; title?: string }
   | { kind: 'conflict'; message: string; krId: string; local: Kr; remote: Kr }
 
 export interface BoardApi {
