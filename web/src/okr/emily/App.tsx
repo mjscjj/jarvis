@@ -12,6 +12,7 @@ import type { PendingCommentSelection } from './commenting'
 import { commentTargetFromThread } from './comments'
 import type { AuthStatus, CommentTarget, PageComment } from './types'
 import { openWeeklyReportWeek } from './api'
+import { weeklyShareURL } from './share'
 
 function weekLabel(week: string): string {
   const matched = /^(\d{4})-W(\d{2})$/.exec(week)
@@ -88,6 +89,7 @@ export default function App({
   const [newWeek, setNewWeek] = useState(currentISOWeek)
   const [newWeekPreview, setNewWeekPreview] = useState(false)
   const [weekNotice, setWeekNotice] = useState('')
+  const [shareNotice, setShareNotice] = useState('')
 	const [confirmDeleteWeek, setConfirmDeleteWeek] = useState(false)
 	const [deletingWeek, setDeletingWeek] = useState(false)
   const busy = syncState.kind === 'loading'
@@ -186,6 +188,16 @@ export default function App({
     else openComments()
   }
 
+  const copyShareLink = async () => {
+    setShareNotice('')
+    try {
+      await navigator.clipboard.writeText(weeklyShareURL(window.location.href, mode))
+      setShareNotice(`${mode === 'meeting' ? '会议' : '填写'}页面链接已复制`)
+    } catch (cause) {
+      setShareNotice(cause instanceof Error ? `复制失败：${cause.message}` : '复制分享链接失败')
+    }
+  }
+
   return (
     <div className="min-h-full">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-md">
@@ -206,6 +218,9 @@ export default function App({
 	          {mode === 'fill' && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setNewWeekPreview(false); setOpeningWeek((value) => !value); setWeekNotice('') }} className="h-8 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100">开启新周</button>}
 	          {mode === 'fill' && <button type="button" disabled={!week || deleteBlocked} onClick={() => { setConfirmDeleteWeek(true); setOpeningWeek(false); setWeekNotice('') }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除本周</button>}
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
+              <button type="button" onClick={() => void copyShareLink()} className="flex h-9 items-center rounded-xl border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50">
+                分享{mode === 'meeting' ? '会议' : '填写'}页
+              </button>
               <span aria-hidden className="hidden h-5 w-px bg-slate-200 sm:block" />
               <button
                 type="button"
@@ -244,6 +259,7 @@ export default function App({
 					<button type="button" onClick={() => setConfirmDeleteWeek(false)} disabled={deletingWeek} className="h-9 px-2 text-xs text-slate-500 disabled:opacity-40">取消</button>
 				</section>}
 				{weekNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{weekNotice}</div>}
+				{shareNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{shareNotice}</div>}
 				<SyncNotice />
 				{week ? <>
 				<WeeklyTools onOpenPoint={openPoint} readOnly={mode === 'meeting'} />
