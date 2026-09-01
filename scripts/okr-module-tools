@@ -71,6 +71,24 @@ request_get() {
   curl -fsS -G "${BASE_URL}${path}" "$@"
 }
 
+# curl 7.64 (the Linux server baseline) predates --fail-with-body. Preserve
+# the same contract ourselves: print the response body, but return curl's
+# conventional HTTP failure status when the server answers 4xx/5xx.
+request_with_error_body() {
+  local response curl_status=0 http_status body
+  response="$(curl -sS -w $'\n%{http_code}' "$@")" || curl_status=$?
+  if (( curl_status != 0 )); then
+    return "$curl_status"
+  fi
+  http_status="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  printf '%s' "$body"
+  [[ "$http_status" =~ ^[0-9]{3}$ ]] || return 22
+  if (( 10#$http_status >= 400 )); then
+    return 22
+  fi
+}
+
 case "$COMMAND" in
   scope)
     request_get /api/okr/scope
@@ -115,14 +133,14 @@ case "$COMMAND" in
     [[ -n "$ID" && -n "$PAYLOAD" ]] || { echo "replace-kr-tags requires --id and --payload JSON|-" >&2; exit 2; }
     [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
     printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null || { echo "replace-kr-tags payload must be a JSON object" >&2; exit 2; }
-    curl --fail-with-body -sS -X PUT "${BASE_URL}/api/okr/krs/$(printf '%s' "$ID" | jq -sRr @uri)/tags" \
+    request_with_error_body -X PUT "${BASE_URL}/api/okr/krs/$(printf '%s' "$ID" | jq -sRr @uri)/tags" \
       -H 'content-type: application/json' --data-binary "$PAYLOAD"
     ;;
   replace-point-tags)
     [[ -n "$ID" && -n "$PAYLOAD" ]] || { echo "replace-point-tags requires --id and --payload JSON|-" >&2; exit 2; }
     [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
     printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null || { echo "replace-point-tags payload must be a JSON object" >&2; exit 2; }
-    curl --fail-with-body -sS -X PUT "${BASE_URL}/api/okr/points/$(printf '%s' "$ID" | jq -sRr @uri)/tags" \
+    request_with_error_body -X PUT "${BASE_URL}/api/okr/points/$(printf '%s' "$ID" | jq -sRr @uri)/tags" \
       -H 'content-type: application/json' --data-binary "$PAYLOAD"
     ;;
   people-search)

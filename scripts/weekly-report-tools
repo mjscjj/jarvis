@@ -90,14 +90,32 @@ request_get() {
   curl -fsS -G "${BASE_URL}${path}" "$@"
 }
 
+# curl 7.64 (the Linux server baseline) predates --fail-with-body. Preserve
+# the same contract ourselves: print the response body, but return curl's
+# conventional HTTP failure status when the server answers 4xx/5xx.
+request_with_error_body() {
+  local response curl_status=0 http_status body
+  response="$(curl -sS -w $'\n%{http_code}' "$@")" || curl_status=$?
+  if (( curl_status != 0 )); then
+    return "$curl_status"
+  fi
+  http_status="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  printf '%s' "$body"
+  [[ "$http_status" =~ ^[0-9]{3}$ ]] || return 22
+  if (( 10#$http_status >= 400 )); then
+    return 22
+  fi
+}
+
 request_post() {
   local path="$1" payload="$2"
-  curl --fail-with-body -sS -X POST "${BASE_URL}${path}" -H 'content-type: application/json' --data-binary "$payload"
+  request_with_error_body -X POST "${BASE_URL}${path}" -H 'content-type: application/json' --data-binary "$payload"
 }
 
 request_write() {
   local method="$1" path="$2" payload="$3"
-  curl --fail-with-body -sS -X "$method" "${BASE_URL}${path}" -H 'content-type: application/json' --data-binary "$payload"
+  request_with_error_body -X "$method" "${BASE_URL}${path}" -H 'content-type: application/json' --data-binary "$payload"
 }
 
 read_payload() {
@@ -135,7 +153,7 @@ case "$COMMAND" in
     ;;
   delete-week)
     [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "delete-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
-    curl --fail-with-body -sS -X DELETE -G "${BASE_URL}/api/weekly-report/weeks/$(encoded "$WEEK")" --data-urlencode "quarter=$QUARTER"
+    request_with_error_body -X DELETE -G "${BASE_URL}/api/weekly-report/weeks/$(encoded "$WEEK")" --data-urlencode "quarter=$QUARTER"
     ;;
   board|comments|reminder-preview|reminder-batches|meego-preview)
     args=()
@@ -189,7 +207,7 @@ case "$COMMAND" in
     ;;
   delete-comment)
     [[ -n "$ID" ]] || { echo "delete-comment requires --id" >&2; exit 2; }
-    curl --fail-with-body -sS -X DELETE "${BASE_URL}/api/weekly-report/comments/$(encoded "$ID")"
+    request_with_error_body -X DELETE "${BASE_URL}/api/weekly-report/comments/$(encoded "$ID")"
     ;;
   create-progress)
     [[ -n "$POINT_ID" ]] || { echo "create-progress requires --point-id" >&2; exit 2; }
