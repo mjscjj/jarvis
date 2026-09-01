@@ -430,6 +430,17 @@ export function BoardProvider({
       const kr = findKr(draft, krId)
       if (kr) kr.tags = (kr.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value)
     }),
+    addPointTag: (krId, pointId, value, type = 'custom') => mutate(krId, (draft) => {
+      const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
+      const clean = value.trim()
+      if (!point || !clean) return
+      point.tags ??= []
+      if (!point.tags.some((tag) => tag.type === type && tag.value === clean)) point.tags.push({ type, value: clean })
+    }),
+    removePointTag: (krId, pointId, type, value) => mutate(krId, (draft) => {
+      const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
+      if (point) point.tags = (point.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value)
+    }),
     setMetricNote: (krId, note) => mutate(krId, (draft) => {
       const kr = findKr(draft, krId)
       if (kr) kr.metricNote = note
@@ -456,7 +467,7 @@ export function BoardProvider({
     addPoint: (_objId, krId, kind) => mutate(krId, (draft) => {
       const kr = findKr(draft, krId)
       if (!kr) return
-      const point: Point = { id: uid('p'), kind, title: '', entries: [{ id: uid('e'), status: 'in_progress', text: '', docs: [], images: [] }] }
+      const point: Point = { id: uid('p'), kind, title: '', tags: [], entries: [{ id: uid('e'), status: 'in_progress', text: '', docs: [], images: [] }] }
       const lastSameKind = kr.points.map((item) => item.kind).lastIndexOf(kind)
       if (lastSameKind === -1) kr.points.push(point)
       else kr.points.splice(lastSameKind + 1, 0, point)

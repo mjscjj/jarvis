@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react'
 import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
 import { buildAllBusinessNavigation, buildKRHierarchy, priorityOf } from '../hierarchy'
-import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
+import { tagLabel } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
 import type { Entry, Kr, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
+import { TagChip, TagEditor } from './TagEditor'
 import { FeishuPeoplePicker } from './FeishuPeoplePicker'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
@@ -195,8 +196,7 @@ function MetricBox({ kr, readOnly, structureReadOnly = readOnly }: { kr: Kr; rea
 }
 
 function tagText(tag: KrTag) {
-  if (tag.type === 'management_focus' || tag.type === 'biweekly' || tag.type === 'platform_report') return TAG_TYPE_LABEL[tag.type]
-  return TAG_VALUE_LABEL[tag.value] ?? tag.value
+  return tagLabel(tag.type, tag.value)
 }
 
 function tagClass(tag: KrTag) {
@@ -224,7 +224,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
 				</select>
 			) : <span className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priority || '未标注'}</span>}
 			{(kr.tags ?? []).filter((tag) => tag.type !== 'custom' && tag.type !== 'priority').map((tag) => (
-              <span key={`${tag.type}:${tag.value}`} className={`rounded-md border px-2 py-1 text-xs ${tagClass(tag)}`}>{tagText(tag)}</span>
+              <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded-md border px-2 py-1 text-xs [overflow-wrap:anywhere] ${tagClass(tag)}`}>{tagText(tag)}</span>
             ))}
             {kr.metrics.length > 0 && <span className="inline-flex items-center gap-1" title="核心数据红黄绿灯">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>}
           </div>
@@ -234,8 +234,8 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
   )
 }
 
-function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, showProgress = true }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; showProgress?: boolean }) {
-  const { setPointTitle, setPointMeegoLink, removePoint, week } = useBoard()
+function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, showProgress = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; showProgress?: boolean; tagSuggestions?: KrTag[] }) {
+  const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, week } = useBoard()
   const [preview, setPreview] = useState<MeegoPreview>()
   const [previewError, setPreviewError] = useState('')
   const [previewing, setPreviewing] = useState(false)
@@ -268,6 +268,8 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
             </span>
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
+          {tagSuggestions && <div className="mt-1.5 min-w-0"><TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} /></div>}
+          {!tagSuggestions && (point.tags?.length ?? 0) > 0 && <div className="mt-1.5 flex min-w-0 flex-wrap items-start gap-1">{point.tags?.map((tag) => <TagChip key={`${tag.type}:${tag.value}`} tag={tag} />)}</div>}
           {(point.meegoWorkItemId || editingMeego) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
               <span>Meego</span>
@@ -301,10 +303,10 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
   )
 }
 
-function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, progressReadOnly, showProgress }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean }) {
+function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
   return (
     <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} />
+      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} />
       {open && showProgress && (
         <div className="mt-2 grid grid-cols-1 gap-2 pl-7 md:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-2.5">
@@ -322,7 +324,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitio
   )
 }
 
-function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, progressReadOnly, showProgress }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean }) {
+function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
   const { addPoint } = useBoard()
   const points = kr.points.filter((point) => point.kind === kind)
   if (points.length === 0 && definitionReadOnly) return null
@@ -336,14 +338,14 @@ function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly,
         {!definitionReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
       </div>
       <div className="space-y-4">
-        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} definitionReadOnly={definitionReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} />)}
+        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} definitionReadOnly={definitionReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} />)}
         {points.length === 0 && <Empty>暂无{KIND_LABEL[kind]}</Empty>}
       </div>
     </section>
   )
 }
 
-export function KrDefinitionDetails({ objectiveId, kr }: { objectiveId: string; kr: Kr }) {
+export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[] }) {
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -366,6 +368,7 @@ export function KrDefinitionDetails({ objectiveId, kr }: { objectiveId: string; 
           definitionReadOnly={false}
           progressReadOnly
           showProgress={false}
+          tagSuggestions={tagSuggestions}
         />
       ))}
     </div>

@@ -34,6 +34,8 @@ export interface BoardApi {
   deleteKr: (krId: string) => Promise<void>
   addTag: (krId: string, value: string, type?: string) => void
   removeTag: (krId: string, type: string, value: string) => void
+  addPointTag: (krId: string, pointId: string, value: string, type?: string) => void
+  removePointTag: (krId: string, pointId: string, type: string, value: string) => void
   setMetricNote: (krId: string, note: string) => void
   patchMetric: (krId: string, metricId: string, patch: Partial<MetricLine>) => void
   addMetric: (krId: string) => void

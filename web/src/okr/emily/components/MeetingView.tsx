@@ -5,7 +5,7 @@ import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
 import { useCommentInteraction } from '../commenting'
 import { buildAllBusinessNavigation, buildKRHierarchy, priorityLabel, priorityOf } from '../hierarchy'
-import { TAG_TYPE_LABEL, TAG_VALUE_LABEL } from '../labels'
+import { tagLabel } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import { KINDS } from '../rows'
 import { buildFullMeetingMarkdown } from '../meetingMarkdown'
@@ -32,8 +32,7 @@ function FoldButton({ open, onToggle, label }: { open: boolean; onToggle: () => 
 }
 
 function tagText(tag: KrTag) {
-  if (tag.type === 'management_focus' || tag.type === 'biweekly' || tag.type === 'platform_report') return TAG_TYPE_LABEL[tag.type]
-  return TAG_VALUE_LABEL[tag.value] ?? tag.value
+  return tagLabel(tag.type, tag.value)
 }
 
 function tagTone(tag: KrTag) {
@@ -203,7 +202,7 @@ function MeetingLane({ entries }: { entries: Entry[] }) {
   )
 }
 
-function MeetingPoint({ point, index, open, onToggle }: { point: Point; index: number; open: boolean; onToggle: () => void }) {
+function MeetingPoint({ point, index, open, onToggle, showTags }: { point: Point; index: number; open: boolean; onToggle: () => void; showTags: boolean }) {
   const doing = point.entries.filter((entry) => !isDone(entry.status))
   const done = point.entries.filter((entry) => isDone(entry.status))
   const target: CommentTarget = { type: 'point', id: point.id, title: point.title }
@@ -213,7 +212,10 @@ function MeetingPoint({ point, index, open, onToggle }: { point: Point; index: n
         <span className="pt-1.5"><FoldButton open={open} onToggle={onToggle} label="具体 KR" /></span>
         <Commentable target={target} className="flex min-w-0 flex-1 items-start gap-2 px-1.5 py-1.5 pr-2.5">
           <span className="mt-px shrink-0 rounded border border-blue-200 bg-blue-50 px-1.5 py-px text-[10px] font-semibold text-blue-600">KR{index + 1}</span>
-          <h4 className="min-w-0 flex-1 text-[13px] font-semibold leading-[19px] text-slate-800"><HighlightedText target={target} text={point.title} /></h4>
+          <div className="min-w-0 flex-1">
+            <h4 className="text-[13px] font-semibold leading-[19px] text-slate-800"><HighlightedText target={target} text={point.title} /></h4>
+            {showTags && (point.tags?.length ?? 0) > 0 && <div className="mt-1 flex min-w-0 flex-wrap items-start gap-1">{point.tags?.map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)}</div>}
+          </div>
           <span className="shrink-0 pt-0.5 text-[10px] text-slate-400">{doing.length} 进展 · {done.length} 完成</span>
         </Commentable>
       </header>
@@ -225,7 +227,7 @@ function MeetingPoint({ point, index, open, onToggle }: { point: Point; index: n
   )
 }
 
-function KindGroup({ kind, points, closed, toggle }: { kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void }) {
+function KindGroup({ kind, points, closed, toggle, showTags }: { kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void; showTags: boolean }) {
   const tone = kind === 'strategy' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-teal-200 bg-teal-50 text-teal-700'
   return (
     <section className={`border-l-[3px] pl-2.5 ${kind === 'strategy' ? 'border-violet-500' : 'border-teal-500'}`}>
@@ -234,7 +236,7 @@ function KindGroup({ kind, points, closed, toggle }: { kind: PointKind; points: 
         <span className="text-[10px] text-slate-400">{points.length} 项</span>
         <span className="h-px flex-1 bg-slate-100" />
       </div>
-      <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} />)}</div>
+      <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} showTags={showTags} />)}</div>
     </section>
   )
 }
@@ -264,7 +266,7 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags }: { obje
                     {splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="text-[10px] text-slate-500">{person}</span>)}
 						<span className={`rounded border px-1.5 py-px text-[9px] font-semibold ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priorityLabel(priority)}</span>
                     <span className="inline-flex gap-0.5">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>
-						{showTags && (kr.tags ?? []).filter((tag) => tag.type !== 'priority').map((tag) => <span key={`${tag.type}:${tag.value}`} className={`rounded border px-1.5 py-px text-[9px] ${tagTone(tag)}`}>{tagText(tag)}</span>)}
+						{showTags && (kr.tags ?? []).filter((tag) => tag.type !== 'priority').map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)}
                   </div>
                 </Commentable>
               </header>
@@ -294,7 +296,7 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags }: { obje
                 )}
                 {KINDS.map((kind) => {
                   const points = kr.points.filter((point) => point.kind === kind)
-                  return points.length > 0 ? <KindGroup key={kind} kind={kind} points={points} closed={closed} toggle={toggle} /> : null
+				  return points.length > 0 ? <KindGroup key={kind} kind={kind} points={points} closed={closed} toggle={toggle} showTags={showTags} /> : null
                 })}
               </div>}
             </article>

@@ -28,7 +28,7 @@ interface APIKr {
   version: number
 	weekly_core_version: number
   metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-  points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; entries: APIEntry[]; previous_entries: APIEntry[] }>
+  points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; entries: APIEntry[]; previous_entries: APIEntry[] }>
   tags: KrTag[]
 }
 
@@ -260,6 +260,7 @@ function fromAPIKr(value: APIKr): Kr {
       title: point.title,
       meegoWorkItemId: point.meego_work_item_id ?? '',
       meegoUrl: point.meego_url ?? '',
+      tags: point.tags ?? [],
       entries: point.entries.map((entry) => ({
         id: entry.id,
 		version: entry.version,
@@ -746,6 +747,7 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
         title: point.title,
         meego_work_item_id: point.meegoWorkItemId ?? '',
         meego_url: point.meegoUrl ?? '',
+        tags: point.tags ?? [],
       })),
       tags: kr.tags ?? [],
     }

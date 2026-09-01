@@ -52,6 +52,7 @@ export interface Point {
   title: string
   meegoWorkItemId?: string
   meegoUrl?: string
+  tags?: KrTag[]
   entries: Entry[]
   previousEntries?: Entry[]
 }

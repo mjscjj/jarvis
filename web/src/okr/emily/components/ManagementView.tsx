@@ -6,34 +6,10 @@ import { hasOwner, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
 import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
 import { KrDefinitionDetails } from './Table'
+import { TagEditor } from './TagEditor'
 
-const TAG_TYPES = [
-  { value: 'custom', label: '自定义' },
-  { value: 'management_focus', label: '管理重点' },
-  { value: 'biweekly', label: '双周会' },
-  { value: 'platform_report', label: '中台周报' },
-  { value: 'region', label: '区域' },
-]
-
-function tagTone(type: string) {
-  switch (type) {
-    case 'management_focus': return 'bg-amber-50 text-amber-700 ring-amber-100'
-    case 'biweekly': return 'bg-violet-50 text-violet-700 ring-violet-100'
-    case 'platform_report': return 'bg-indigo-50 text-indigo-700 ring-indigo-100'
-    case 'region': return 'bg-sky-50 text-sky-700 ring-sky-100'
-		case 'business_category': return 'bg-blue-50 text-blue-700 ring-blue-100'
-		case 'priority': return 'bg-orange-50 text-orange-700 ring-orange-100'
-    default: return 'bg-emerald-50 text-emerald-700 ring-emerald-100'
-  }
-}
-
-function TagChip({ tag, onRemove }: { tag: KrTag; onRemove: () => void }) {
-  return (
-    <span className={`group/tag inline-flex h-5 items-center gap-1 rounded-md px-1.5 text-[10px] ring-1 ring-inset ${tagTone(tag.type)}`}>
-      <span className="max-w-28 truncate">{tagLabel(tag.type, tag.value)}</span>
-      <button type="button" onClick={onRemove} title="移除标签" className="-mr-0.5 text-current opacity-0 transition-opacity group-hover/tag:opacity-50 hover:!opacity-100">×</button>
-    </span>
-  )
+function allTagsOf(kr: Kr): KrTag[] {
+	return [...(kr.tags ?? []), ...kr.points.flatMap((point) => point.tags ?? [])]
 }
 
 function priorityTone(priority: KrPriority | '') {
@@ -82,45 +58,10 @@ function BusinessCategoryField({ value, categories, onChange, allowEmpty = false
 	</select>
 }
 
-function TagEditor({ kr, suggestions }: { kr: Kr; suggestions: KrTag[] }) {
+function KrTagEditor({ kr, suggestions }: { kr: Kr; suggestions: KrTag[] }) {
   const { addTag, removeTag } = useBoard()
-  const [editing, setEditing] = useState(false)
-  const [expanded, setExpanded] = useState(false)
-  const [type, setType] = useState('custom')
-  const [value, setValue] = useState('')
 	const allTags = (kr.tags ?? []).filter((tag) => !isStructuralTag(tag))
-	const values = [...new Set(suggestions.filter((item) => item.type === type && !isStructuralTag(item)).map((item) => item.value))].sort()
-  const visibleTags = expanded ? allTags : allTags.slice(0, 4)
-  const hiddenCount = allTags.length - visibleTags.length
-
-  const submit = () => {
-    if (!value.trim()) return
-    addTag(kr.id, value, type)
-    setValue('')
-    setEditing(false)
-  }
-
-  return (
-    <div className="min-w-0">
-      <div className="flex min-h-6 flex-wrap items-center gap-1">
-        {visibleTags.map((tag) => <TagChip key={`${tag.type}:${tag.value}`} tag={tag} onRemove={() => removeTag(kr.id, tag.type, tag.value)} />)}
-        {hiddenCount > 0 && <button type="button" onClick={() => setExpanded(true)} className="h-5 rounded-md bg-slate-50 px-1.5 text-[10px] text-slate-400 hover:bg-slate-100 hover:text-slate-600">+{hiddenCount}</button>}
-        {expanded && allTags.length > 4 && <button type="button" onClick={() => setExpanded(false)} className="h-5 px-1 text-[10px] text-slate-400 hover:text-slate-600">收起</button>}
-        {!editing && <button type="button" onClick={() => setEditing(true)} className="h-6 rounded-md border border-dashed border-slate-300 px-2 text-[10px] font-medium text-slate-500 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">+ 添加标签</button>}
-      </div>
-      {editing && (
-        <div className="mt-1.5 flex max-w-md items-center gap-1 rounded-md bg-slate-50 p-1">
-          <select value={type} onChange={(event) => setType(event.target.value)} className="h-7 rounded border border-slate-200 bg-white px-1.5 text-[10px] text-slate-600 outline-none focus:border-blue-400">
-            {TAG_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
-          <input list={`tag-options-${kr.id}-${type}`} autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submit(); if (event.key === 'Escape') setEditing(false) }} placeholder={type === 'region' ? '如 sea' : '标签值'} className="h-7 min-w-0 flex-1 rounded border border-slate-200 bg-white px-2 text-[10px] outline-none focus:border-blue-400" />
-          <datalist id={`tag-options-${kr.id}-${type}`}>{values.map((item) => <option key={item} value={item} />)}</datalist>
-          <button type="button" onClick={submit} disabled={!value.trim()} className="h-7 rounded bg-slate-800 px-2 text-[10px] font-medium text-white hover:bg-slate-700 disabled:opacity-30">添加</button>
-          <button type="button" onClick={() => setEditing(false)} className="h-7 px-1.5 text-[10px] text-slate-400 hover:text-slate-600">取消</button>
-        </div>
-      )}
-    </div>
-  )
+  return <TagEditor idPrefix={`tag-options-${kr.id}`} tags={allTags} suggestions={suggestions.filter((item) => !isStructuralTag(item))} onAdd={(value, type) => addTag(kr.id, value, type)} onRemove={(type, value) => removeTag(kr.id, type, value)} />
 }
 
 function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[] }) {
@@ -159,7 +100,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { 
 				</select>
         </div>
         <div className="mt-1 flex items-start gap-2 px-1.5">
-          <div className="min-w-0 flex-1"><TagEditor kr={kr} suggestions={tagSuggestions} /></div>
+          <div className="min-w-0 flex-1"><KrTagEditor kr={kr} suggestions={tagSuggestions} /></div>
           <button
             type="button"
             aria-expanded={detailsOpen}
@@ -178,7 +119,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { 
           </>
         ) : <button type="button" onClick={() => setConfirmDelete(true)} title="删除 KR" className="h-6 rounded-md px-1.5 text-[10px] text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600">删除</button>}
       </div>
-		{detailsOpen && <div className="col-span-2 px-1.5 pb-1"><KrDefinitionDetails objectiveId={objectiveId} kr={kr} /></div>}
+		{detailsOpen && <div className="col-span-2 px-1.5 pb-1"><KrDefinitionDetails objectiveId={objectiveId} kr={kr} tagSuggestions={tagSuggestions} /></div>}
     </div>
   )
 }
@@ -300,18 +241,18 @@ export function ManagementView() {
   const hasFilters = Boolean(query.trim() || owner || priority || tag)
 	const peopleOptions = useMemo(() => ownerOptions(objectives), [objectives])
 	const owners = useMemo(() => peopleOptions.map((person) => person.name), [peopleOptions])
-	const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => (kr.tags ?? []).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
+	const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => allTagsOf(kr).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
 	const businessCategories = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.map(businessCategoryOf)).filter(Boolean))].sort(), [objectives])
   const groups = useMemo(() => objectives.map((objective) => ({
     ...objective,
 		totalKrCount: objective.krs.length,
     krs: objective.krs.filter((kr) => {
-      const matchesQuery = !query.trim() || `${objective.title} ${kr.title}`.toLowerCase().includes(query.trim().toLowerCase())
-				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!priority || priorityOf(kr) === priority) && (!tag || (kr.tags ?? []).some((item) => `${item.type}:${item.value}` === tag))
+      const matchesQuery = !query.trim() || `${objective.title} ${kr.title} ${kr.points.map((point) => point.title).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase())
+				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!priority || priorityOf(kr) === priority) && (!tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
     }),
   })).filter((objective) => !hasFilters || objective.krs.length > 0), [hasFilters, objectives, owner, priority, query, tag])
   const resultCount = groups.reduce((total, objective) => total + objective.krs.length, 0)
-  const tagCount = objectives.reduce((total, objective) => total + objective.krs.reduce((sum, kr) => sum + (kr.tags?.length ?? 0), 0), 0)
+  const tagCount = objectives.reduce((total, objective) => total + objective.krs.reduce((sum, kr) => sum + allTagsOf(kr).length, 0), 0)
 	const defaultQuarter = quarter || `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth() / 3) + 1}`
 
 	const submitObjective = async () => {
@@ -344,7 +285,7 @@ export function ManagementView() {
               <h2 className="text-[13px] font-semibold text-slate-800">OKR 管理</h2>
               <span className="text-[9px] tabular-nums text-slate-400">{resultCount} KR · {tagCount} 标签</span>
             </div>
-            <p className="mt-0.5 text-[10px] text-slate-400">统一维护 O、KR、负责人、标签、核心数据与策略/产品拆解；周进展独立填写</p>
+            <p className="mt-0.5 text-[10px] text-slate-400">标签可标在整条 KR，也可下钻到策略/产品要点；长标签完整换行展示</p>
           </div>
           <div className="ml-auto rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
             <span className="font-medium text-slate-700">{resultCount}</span> / {objectives.reduce((total, objective) => total + objective.krs.length, 0)} 条
@@ -361,7 +302,7 @@ export function ManagementView() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 O / KR 内容" className="h-8 min-w-48 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-50 sm:max-w-72" />
             <select value={owner} onChange={(event) => setOwner(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部负责人</option>{owners.map((item) => <option key={item} value={item}>{item}</option>)}</select>
             <select value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部优先级</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option></select>
-            <select value={tag} onChange={(event) => setTag(event.target.value)} className="h-8 max-w-48 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部标签</option>{tags.map((item) => <option key={item.key} value={item.key}>{tagLabel(item.type, item.value)}</option>)}</select>
+            <select value={tag} onChange={(event) => setTag(event.target.value)} title={tags.find((item) => item.key === tag)?.value ?? '全部标签'} className="h-8 max-w-80 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部标签</option>{tags.map((item) => <option key={item.key} value={item.key}>{tagLabel(item.type, item.value)}</option>)}</select>
             {hasFilters && <button type="button" onClick={clearFilters} className="h-8 rounded-lg px-2.5 text-[10px] font-medium text-slate-500 hover:bg-white hover:text-slate-800">清空筛选</button>}
           </div>
         </div>
