@@ -151,6 +151,9 @@ export interface PersonSearchItem {
   openId: string
   name: string
   department: string
+	email: string
+	isExternal: boolean
+	hasChatted: boolean
 }
 
 export interface PersonSearchResult {

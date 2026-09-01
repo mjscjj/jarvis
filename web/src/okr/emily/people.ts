@@ -12,6 +12,19 @@ export function hasOwner(value: string | undefined, owner: string) {
   return splitOwnerNames(value).includes(owner)
 }
 
+export function ownerIdentityKey(owner: KrOwner) {
+	return owner.openId ? `open_id:${owner.openId}` : `name:${owner.name}`
+}
+
+export function addOrResolveOwner(owners: KrOwner[], candidate: KrOwner): KrOwner[] {
+	const normalized = { name: candidate.name.trim(), openId: candidate.openId.trim() }
+	if (!normalized.name || !normalized.openId) return owners
+	if (owners.some((owner) => owner.openId === normalized.openId)) return owners
+	const unresolvedIndex = owners.findIndex((owner) => !owner.openId && owner.name === normalized.name)
+	if (unresolvedIndex < 0) return [...owners, normalized]
+	return owners.map((owner, index) => index === unresolvedIndex ? normalized : owner)
+}
+
 export function ownerOptions(objectives: Objective[]): KrOwner[] {
 	const byName = new Map<string, KrOwner>()
 	for (const kr of objectives.flatMap((objective) => objective.krs)) {

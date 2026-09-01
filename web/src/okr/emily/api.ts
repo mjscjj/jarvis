@@ -791,9 +791,16 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
 }
 
 export async function searchPeople(query: string, signal?: AbortSignal): Promise<PersonSearchResult> {
-  const value = await request<{ users: Array<{ open_id: string; name: string; department: string }>; has_more: boolean }>(`/api/okr/people/search?q=${encodeURIComponent(query)}`, { signal })
+  const value = await request<{ users: Array<{ open_id: string; name: string; department: string; email: string; is_external: boolean; has_chatted: boolean }>; has_more: boolean }>(`/api/okr/people/search?q=${encodeURIComponent(query)}`, { signal })
   return {
-    users: value.users.map((item) => ({ openId: item.open_id, name: item.name, department: item.department })),
+    users: value.users.map((item) => ({
+			openId: item.open_id,
+			name: item.name,
+			department: item.department,
+			email: item.email,
+			isExternal: item.is_external,
+			hasChatted: item.has_chatted,
+		})),
     hasMore: value.has_more,
   }
 }
