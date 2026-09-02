@@ -14,7 +14,10 @@ preview_review:
   timeout_seconds: 300
 
 identity:
-  enabled: true
+  # 暂时关闭：Emily Pro 后台实际开通的权限仍含 im/mail/contact 等敏感域，
+  # 飞书 device flow 按后台全集签发 token（详见 docs/design-dual-app-identity.md），
+  # 在后台收敛权限之前不对外开放登录。
+  enabled: false
   # OKR 模块专用登录应用 Emily Pro。只签发登录用户自己的 user token，与
   # lark-cli 绑定的主应用无关：主应用凭证由 lark-cli 自己保管，不读这里。
   # 换应用后 open_id 会变（按应用隔离），union_id 不变，所以署名锚 union_id。
