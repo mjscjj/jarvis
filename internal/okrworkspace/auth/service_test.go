@@ -76,7 +76,7 @@ func TestServiceCompletesDeviceIdentitySession(t *testing.T) {
 			ExpiresIn: 10 * time.Minute, PollInterval: 5 * time.Second,
 		},
 		grant: Grant{
-			User:             User{OpenID: "ou_alice", Name: "Alice", Email: "alice@example.com"},
+			User:             User{OpenID: "ou_alice", UnionID: "on_alice", Name: "Alice", Email: "alice@example.com"},
 			AccessToken:      "u-alice",
 			RefreshToken:     "r-alice",
 			TokenType:        "Bearer",
@@ -116,6 +116,9 @@ func TestServiceCompletesDeviceIdentitySession(t *testing.T) {
 	if stored.AccessToken != "u-alice" || stored.RefreshToken != "r-alice" || stored.Name != "Alice" || stored.Email != "alice@example.com" {
 		t.Fatalf("stored token = %+v", stored)
 	}
+	if stored.UnionID != "on_alice" {
+		t.Fatalf("stored union_id = %q, want on_alice", stored.UnionID)
+	}
 	if stored.ExpiresAt == nil || !stored.ExpiresAt.Equal(now.Add(2*time.Hour)) {
 		t.Fatalf("stored access token expiry = %v, want %s", stored.ExpiresAt, now.Add(2*time.Hour))
 	}
@@ -123,7 +126,7 @@ func TestServiceCompletesDeviceIdentitySession(t *testing.T) {
 		t.Fatalf("stored refresh token expiry = %v, want %s", stored.RefreshExpiresAt, now.Add(60*24*time.Hour))
 	}
 	current, err := service.Current(context.Background(), token)
-	if err != nil || current.User.Name != "Alice" {
+	if err != nil || current.User.Name != "Alice" || current.User.UnionID != "on_alice" {
 		t.Fatalf("Current() = %+v, %v", current, err)
 	}
 	if want := now.Add(24 * time.Hour); !current.ExpiresAt.Equal(want) {

@@ -22,7 +22,10 @@ var (
 )
 
 type User struct {
-	OpenID    string `json:"open_id"`
+	OpenID string `json:"open_id"`
+	// UnionID identifies the same person across every app of one developer, so
+	// it survives a change of login app while open_id does not.
+	UnionID   string `json:"union_id"`
 	Name      string `json:"name"`
 	AvatarURL string `json:"avatar_url,omitempty"`
 	Email     string `json:"email,omitempty"`
@@ -261,6 +264,7 @@ func (p *FeishuProvider) userInfo(ctx context.Context, accessToken string) (User
 		Msg  string `json:"msg"`
 		Data struct {
 			OpenID    string `json:"open_id"`
+			UnionID   string `json:"union_id"`
 			Name      string `json:"name"`
 			AvatarURL string `json:"avatar_url"`
 			Email     string `json:"email"`
@@ -273,11 +277,23 @@ func (p *FeishuProvider) userInfo(ctx context.Context, accessToken string) (User
 	if status < 200 || status >= 300 || response.Code != 0 || strings.TrimSpace(response.Data.OpenID) == "" {
 		return User{}, fmt.Errorf("get Feishu user info: code=%d msg=%s", response.Code, safeMessage(response.Msg))
 	}
+	// union_id needs no extra scope and is what attribution is recorded
+	// against; a response without it means the identity contract changed, so
+	// fail rather than store a person nobody can recognize later.
+	if strings.TrimSpace(response.Data.UnionID) == "" {
+		return User{}, fmt.Errorf("get Feishu user info: response has no union_id for %s", strings.TrimSpace(response.Data.OpenID))
+	}
 	name := strings.TrimSpace(response.Data.Name)
 	if name == "" {
 		name = "飞书用户"
 	}
-	return User{OpenID: strings.TrimSpace(response.Data.OpenID), Name: name, AvatarURL: strings.TrimSpace(response.Data.AvatarURL), Email: strings.TrimSpace(response.Data.Email)}, nil
+	return User{
+		OpenID:    strings.TrimSpace(response.Data.OpenID),
+		UnionID:   strings.TrimSpace(response.Data.UnionID),
+		Name:      name,
+		AvatarURL: strings.TrimSpace(response.Data.AvatarURL),
+		Email:     strings.TrimSpace(response.Data.Email),
+	}, nil
 }
 
 func (p *FeishuProvider) doJSON(req *http.Request, target any) (int, error) {

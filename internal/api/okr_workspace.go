@@ -302,7 +302,7 @@ func CreateComment(service *okrworkspace.Service) app.HandlerFunc {
 			TargetType: request.TargetType, TargetID: request.TargetID, TargetTitle: request.TargetTitle,
 			SelectedText: request.SelectedText, SelectionStart: request.SelectionStart, SelectionEnd: request.SelectionEnd,
 			SelectionPrefix: request.SelectionPrefix, SelectionSuffix: request.SelectionSuffix,
-			AuthorOpenID: identity.OpenID, AuthorName: identity.Name, Content: request.Content,
+			AuthorOpenID: identity.OpenID, AuthorUnionID: identity.UnionID, AuthorName: identity.Name, Content: request.Content,
 		}
 		result, err := service.CreateComment(ctx, input)
 		if errors.Is(err, okrworkspace.ErrNotFound) {

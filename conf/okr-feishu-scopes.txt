@@ -11,8 +11,10 @@
 # offline_access 换取 refresh_token，缺它 token 两小时后无法续期；
 # profile:user_profile:read 用于登录后确认 token 属于谁。
 #
-# 只能申请 App cli_a96a0c8d82b85cb1 已开通的 scope（`lark-cli auth scopes`），
+# 只能申请 OKR 登录应用 cli_a96a2422f03bdbd7（Emily Pro）已开通的 scope，
 # 申请未开通的会导致授权失败。改动后所有人需要重新登录一次授权新范围。
+# 注意这里的范围属于 Emily Pro，不是 lark-cli 绑定的主应用；两者的已开通
+# 清单互不相干，用 `lark-cli auth scopes` 查到的是主应用的。
 
 offline_access
 profile:user_profile:read

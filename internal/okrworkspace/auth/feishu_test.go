@@ -10,6 +10,26 @@ import (
 	"time"
 )
 
+func TestFeishuProviderRejectsIdentityWithoutUnionID(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/open-apis/authen/v2/oauth/token", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"u-test","token_type":"Bearer","expires_in":7200}`))
+	})
+	mux.HandleFunc("/open-apis/authen/v1/user_info", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "msg": "ok", "data": map[string]string{"open_id": "ou_1", "name": "Emily"}})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	provider, err := NewFeishuProvider("cli_test", "secret", server.URL, server.URL, "offline_access", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.PollDeviceAuthorization(context.Background(), "device-1"); err == nil {
+		t.Fatal("PollDeviceAuthorization() accepted an identity without union_id")
+	}
+}
+
 func TestFeishuProviderDeviceFlow(t *testing.T) {
 	polls := 0
 	mux := http.NewServeMux()
@@ -39,7 +59,7 @@ func TestFeishuProviderDeviceFlow(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer u-test" {
 			t.Fatal("missing user access token")
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "msg": "ok", "data": map[string]string{"open_id": "ou_1", "name": "Emily", "avatar_url": "https://img.example/a.png", "email": "emily@example.com"}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "msg": "ok", "data": map[string]string{"open_id": "ou_1", "union_id": "on_1", "name": "Emily", "avatar_url": "https://img.example/a.png", "email": "emily@example.com"}})
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -62,7 +82,7 @@ func TestFeishuProviderDeviceFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if grant.User.OpenID != "ou_1" || grant.User.Name != "Emily" || grant.User.Email != "emily@example.com" {
+	if grant.User.OpenID != "ou_1" || grant.User.UnionID != "on_1" || grant.User.Name != "Emily" || grant.User.Email != "emily@example.com" {
 		t.Fatalf("user = %#v", grant.User)
 	}
 	if grant.AccessToken != "u-test" || grant.RefreshToken != "r-test" || grant.TokenType != "Bearer" || grant.Scope != "offline_access" {

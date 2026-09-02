@@ -205,12 +205,15 @@ func (s *Service) createSession(ctx context.Context, user User, now time.Time) (
 	if strings.TrimSpace(user.OpenID) == "" {
 		return Session{}, "", fmt.Errorf("create session: Feishu user open_id is empty")
 	}
+	if strings.TrimSpace(user.UnionID) == "" {
+		return Session{}, "", fmt.Errorf("create session: Feishu user union_id is empty")
+	}
 	token, err := randomToken()
 	if err != nil {
 		return Session{}, "", fmt.Errorf("generate session: %w", err)
 	}
 	expiresAt := now.Add(time.Duration(s.cfg.SessionTTLHours) * time.Hour)
-	row := domain.AuthSession{TokenHash: digest(token), OpenID: user.OpenID, Name: user.Name, AvatarURL: user.AvatarURL, Email: user.Email, ExpiresAt: expiresAt, CreatedAt: now, LastSeenAt: now}
+	row := domain.AuthSession{TokenHash: digest(token), OpenID: user.OpenID, UnionID: user.UnionID, Name: user.Name, AvatarURL: user.AvatarURL, Email: user.Email, ExpiresAt: expiresAt, CreatedAt: now, LastSeenAt: now}
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("expires_at < ?", now).Delete(&domain.AuthSession{}).Error; err != nil {
 			return err
@@ -251,7 +254,7 @@ func (s *Service) Current(ctx context.Context, token string) (Session, error) {
 	if now.Sub(row.LastSeenAt) >= 5*time.Minute {
 		_ = s.db.WithContext(ctx).Model(&domain.AuthSession{}).Where("token_hash = ?", row.TokenHash).Update("last_seen_at", now).Error
 	}
-	return Session{User: User{OpenID: row.OpenID, Name: row.Name, AvatarURL: row.AvatarURL, Email: row.Email}, ExpiresAt: row.ExpiresAt}, nil
+	return Session{User: User{OpenID: row.OpenID, UnionID: row.UnionID, Name: row.Name, AvatarURL: row.AvatarURL, Email: row.Email}, ExpiresAt: row.ExpiresAt}, nil
 }
 
 func (s *Service) Logout(ctx context.Context, token string) error {
