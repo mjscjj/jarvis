@@ -1,9 +1,13 @@
-import type { WeeklyWorkspaceMode } from '../navigation'
+import type { WeeklyDataset } from '../navigation'
 import type { WeeklyReportWeek } from './api'
 import type { WeekTemplateKey } from './types'
 
-export function templateKeyForWeeklyMode(mode: WeeklyWorkspaceMode): WeekTemplateKey {
-  return mode === 'review' ? 'okr_weekly_preview_v1' : 'classic'
+export function templateKeyForDataset(dataset: WeeklyDataset): WeekTemplateKey {
+  return dataset === 'review' ? 'okr_weekly_preview_v1' : 'classic'
+}
+
+export function isReviewTemplate(templateKey: WeekTemplateKey): boolean {
+  return templateKey === 'okr_weekly_preview_v1'
 }
 
 export function filterWeekCatalog(weeks: WeeklyReportWeek[], templateKey: WeekTemplateKey): string[] {

@@ -13,8 +13,8 @@ import { commentTargetFromThread } from './comments'
 import type { CommentTarget, PageComment } from './types'
 import { openWeeklyReportWeek } from './api'
 import { weeklyShareURL } from './share'
-import type { WeeklyWorkspaceMode } from '../navigation'
-import { templateKeyForWeeklyMode } from './weekCatalog'
+import { isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS, weeklyDatasetLabel, weeklyViewLabel, weeklyWorkspace, type WeeklyWorkspace } from '../navigation'
+import { templateKeyForDataset } from './weekCatalog'
 
 function weekLabel(week: string): string {
   const matched = /^(\d{4})-W(\d{2})$/.exec(week)
@@ -44,6 +44,12 @@ function currentQuarter(): string {
   return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`
 }
 
+// Order and labels stay owned by the tab definitions so the shared-link nav can
+// never drift from the sidebar.
+const WEEKLY_NAV = OKR_TAB_DEFINITIONS
+	.filter((item) => isWeeklyWorkspaceTab(item.key))
+	.map((item) => ({ key: item.key, label: item.label, workspace: weeklyWorkspace(item.key) }))
+
 function SyncNotice() {
   const { syncState, retry, resolveConflict } = useBoard()
 
@@ -69,14 +75,15 @@ function SyncNotice() {
 }
 
 export default function App({
-  mode,
-  onModeChange,
+  workspace,
+  onWorkspaceChange,
   shared = false,
 }: {
-	mode: WeeklyWorkspaceMode
-	onModeChange: (mode: WeeklyWorkspaceMode) => void
+	workspace: WeeklyWorkspace
+	onWorkspaceChange: (workspace: WeeklyWorkspace) => void
   shared?: boolean
 }) {
+	const { dataset, view } = workspace
 	const { reset, syncState, quarter, week, availableWeeks, setWeek, setWeeklyScope, deleteWeeklyScope } = useBoard()
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentCount, setCommentCount] = useState(0)
@@ -94,12 +101,16 @@ export default function App({
 	const [deletingWeek, setDeletingWeek] = useState(false)
   const busy = syncState.kind === 'loading'
 	const deleteBlocked = deletingWeek || syncState.kind === 'loading' || syncState.kind === 'saving' || syncState.kind === 'conflict'
-	const meetingLike = mode === 'meeting' || mode === 'review'
-	const managesWeeks = mode === 'fill' || mode === 'review'
-	const reviewMode = mode === 'review'
-	const lifecycleName = reviewMode ? 'Review' : '周报'
-	const pageTitle = mode === 'review' ? PAGE_TITLE.replace('OKR 协作台', 'OKR Review') : PAGE_TITLE.replace('OKR 协作台', '周报协作台')
-	const shareLabel = mode === 'review' ? 'Review' : mode === 'meeting' ? '会议' : '填写'
+	// The dataset drives page chrome; it cannot read the board's template key
+	// because an empty quarter has no board yet and would fall back to classic.
+	// Content format (score, AI review, single vs split progress lanes) reads the
+	// loaded week's template instead, inside the views that render it.
+	const reviewDataset = dataset === 'review'
+	const meetingLike = view === 'meeting'
+	const managesWeeks = view === 'fill'
+	const lifecycleName = weeklyDatasetLabel(dataset)
+	const pageTitle = reviewDataset ? PAGE_TITLE.replace('OKR 协作台', 'OKR Review') : PAGE_TITLE.replace('OKR 协作台', '周报协作台')
+	const shareLabel = `${lifecycleName}${weeklyViewLabel(view)}`
 
   const submitWeek = async () => {
     const target = newWeek.trim()
@@ -107,7 +118,7 @@ export default function App({
     if (!targetQuarter || !target) return
     setWeekNotice('')
     try {
-      const result = await openWeeklyReportWeek({ quarter: targetQuarter, week: target, templateKey: templateKeyForWeeklyMode(mode) })
+      const result = await openWeeklyReportWeek({ quarter: targetQuarter, week: target, templateKey: templateKeyForDataset(dataset) })
       setOpeningWeek(false)
 			const switched = setWeeklyScope(targetQuarter, target)
 			const opened = result.created ? `${target} 已开启` : `${target} 已经开启`
@@ -172,15 +183,15 @@ export default function App({
 
 	const openPoint = (pointId: string) => {
 		sessionStorage.setItem('jarvis.weekly-report.focus-point', pointId)
-		onModeChange('fill')
+		onWorkspaceChange({ dataset, view: 'fill' })
 	}
 
 	useEffect(() => {
 		const pointId = sessionStorage.getItem('jarvis.weekly-report.focus-point')
-		if (!pointId || busy || mode !== 'fill') return
+		if (!pointId || busy || view !== 'fill') return
 		sessionStorage.removeItem('jarvis.weekly-report.focus-point')
 		window.setTimeout(() => document.getElementById(`point-${pointId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0)
-	}, [busy, mode])
+	}, [busy, view])
 
   const openComments = (target?: CommentTarget) => {
     setPendingCommentSelection(undefined)
@@ -197,7 +208,7 @@ export default function App({
   const copyShareLink = async () => {
     setShareNotice('')
     setShareLink('')
-    const link = weeklyShareURL(window.location.href, mode)
+    const link = weeklyShareURL(window.location.href, workspace)
     if (!navigator.clipboard) {
       setShareLink(link)
       setShareNotice('当前是 HTTP 页面，请复制下面的分享链接')
@@ -222,9 +233,11 @@ export default function App({
           </div>
 
 		          {shared && <nav aria-label="周报页面" className="flex h-9 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
-					<button type="button" aria-current={mode === 'fill' ? 'page' : undefined} onClick={() => onModeChange('fill')} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${mode === 'fill' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>周报填写</button>
-						<button type="button" aria-current={mode === 'meeting' ? 'page' : undefined} onClick={() => onModeChange('meeting')} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${mode === 'meeting' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>周报会议</button>
-						<button type="button" aria-current={mode === 'review' ? 'page' : undefined} onClick={() => onModeChange('review')} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${mode === 'review' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>OKR Review</button>
+					{WEEKLY_NAV.map((item) => {
+						const active = item.workspace.dataset === dataset && item.workspace.view === view
+						const activeTone = item.workspace.dataset === 'review' ? 'bg-white text-violet-700 shadow-sm' : 'bg-white text-blue-700 shadow-sm'
+						return <button key={item.key} type="button" aria-current={active ? 'page' : undefined} onClick={() => onWorkspaceChange(item.workspace)} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${active ? activeTone : 'text-slate-500 hover:text-slate-700'}`}>{item.label}</button>
+					})}
 		          </nav>}
 		          <QuarterSelect />
 		          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
@@ -233,8 +246,8 @@ export default function App({
               {availableWeeks.map((item) => <option key={item} value={item}>{weekLabel(item)}</option>)}
             </select>
 	          </div>
-		          {reviewMode && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-violet-700">Preview</span>}
-	          {managesWeeks && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className={`h-8 rounded-lg border px-2.5 text-[10px] font-medium ${reviewMode ? 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100' : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>新建{lifecycleName}</button>}
+		          {reviewDataset && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-violet-700">Preview</span>}
+	          {managesWeeks && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className={`h-8 rounded-lg border px-2.5 text-[10px] font-medium ${reviewDataset ? 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100' : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>新建{lifecycleName}</button>}
 	          {managesWeeks && <button type="button" disabled={!week || deleteBlocked} onClick={() => { setConfirmDeleteWeek(true); setOpeningWeek(false); setWeekNotice('') }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除{lifecycleName}</button>}
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
               <button type="button" onClick={() => void copyShareLink()} className="flex h-9 items-center rounded-xl border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50">
@@ -259,11 +272,11 @@ export default function App({
       </header>
 
 			<main className={`mx-auto max-w-[1320px] px-4 py-4 transition-[padding] sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
-				{openingWeek && <section className={`mb-3 flex flex-wrap items-center gap-2 rounded-xl border p-3 ${reviewMode ? 'border-violet-100 bg-violet-50/60' : 'border-blue-100 bg-blue-50/60'}`}>
-					<div className="mr-2"><div className="text-xs font-semibold text-slate-700">新建{lifecycleName}周次</div><div className="mt-0.5 text-[10px] text-slate-400">{reviewMode ? '只创建空 Review 周，不会影响普通周报。' : '只创建空周，不复制进展，也不会立即发送提醒。'}</div></div>
+				{openingWeek && <section className={`mb-3 flex flex-wrap items-center gap-2 rounded-xl border p-3 ${reviewDataset ? 'border-violet-100 bg-violet-50/60' : 'border-blue-100 bg-blue-50/60'}`}>
+					<div className="mr-2"><div className="text-xs font-semibold text-slate-700">新建{lifecycleName}周次</div><div className="mt-0.5 text-[10px] text-slate-400">{reviewDataset ? '只创建空 Review 周，不会影响普通周报。' : '只创建空周，不复制进展，也不会立即发送提醒。'}</div></div>
 					<input value={newQuarter} onChange={(event) => setNewQuarter(event.target.value)} placeholder="2026-Q3" aria-label="季度" className="h-9 w-28 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-400" />
 					<input value={newWeek} onChange={(event) => setNewWeek(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitWeek() }} placeholder="2026-W36" aria-label="新周次" className="h-9 w-32 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-400" />
-					<button type="button" onClick={() => void submitWeek()} disabled={!newQuarter.trim() || !newWeek.trim()} className={`h-9 rounded-lg px-4 text-xs font-medium text-white disabled:opacity-40 ${reviewMode ? 'bg-violet-600' : 'bg-blue-600'}`}>确认新建</button>
+					<button type="button" onClick={() => void submitWeek()} disabled={!newQuarter.trim() || !newWeek.trim()} className={`h-9 rounded-lg px-4 text-xs font-medium text-white disabled:opacity-40 ${reviewDataset ? 'bg-violet-600' : 'bg-blue-600'}`}>确认新建</button>
 					<button type="button" onClick={() => setOpeningWeek(false)} className="h-9 px-2 text-xs text-slate-400">取消</button>
 				</section>}
 				{confirmDeleteWeek && week && <section className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3">
@@ -278,26 +291,22 @@ export default function App({
 				</div>}
 				<SyncNotice />
 				{week ? <>
-					<WeeklyTools onOpenPoint={openPoint} readOnly={mode !== 'fill'} />
+					<WeeklyTools onOpenPoint={openPoint} readOnly={view !== 'fill'} />
             <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
               <WeeklyFocus comments={comments} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
               <div className={`transition-opacity ${busy ? 'pointer-events-none opacity-55' : ''}`}>
-						{mode === 'review'
-							? <MeetingView reviewMode />
-							: mode === 'meeting'
-								? <MeetingView />
-								: <KrTable definitionsReadOnly showObjectiveHeader />}
+						{view === 'meeting' ? <MeetingView /> : <KrTable definitionsReadOnly showObjectiveHeader />}
               </div>
             </CommentInteractionProvider>
             <div className="mt-3 px-1 text-[11px] text-slate-400">
-							{mode === 'fill'
+							{view === 'fill'
 								? '停止输入后自动保存；多人修改同一条 KR 时会先请你确认。'
-								: mode === 'review'
-									? 'Review 沿用同一份周报数据；评分独立保存，进度只读展示。'
+								: reviewDataset
+									? 'Review 会议只读投屏；评分与 AI 评审可以直接在这里操作。'
 									: '会议模式沿用同一份数据，只读投屏并保留评论与飞书导出。'}
               <button type="button" onClick={reset} className="ml-1 underline hover:text-slate-600">重新载入</button>
             </div>
-			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无{lifecycleName}</div><div className="mt-1 text-xs text-slate-400">{managesWeeks ? `点击顶部“新建${lifecycleName}”创建一个空周。` : '请先在“周报填写”中新建普通周报。'}</div></section>}
+			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无{lifecycleName}</div><div className="mt-1 text-xs text-slate-400">{managesWeeks ? `点击顶部“新建${lifecycleName}”创建一个空周。` : `请先在“${lifecycleName}填写”中新建一个空周。`}</div></section>}
 		</main>
 			{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={meetingLike} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
     </div>

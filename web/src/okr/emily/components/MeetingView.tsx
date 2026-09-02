@@ -10,6 +10,7 @@ import { hasOwner, splitOwnerNames } from '../people'
 import { collapseAllIds, KINDS } from '../rows'
 import { buildFullMeetingMarkdown } from '../meetingMarkdown'
 import { KIND_LABEL, isDone } from '../template'
+import { isReviewTemplate } from '../weekCatalog'
 import type { CommentTarget, Entry, KrPriority, KrTag, Objective, Point, PointKind, TextSelection } from '../types'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect } from './ui'
@@ -321,8 +322,11 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags, reviewMo
   )
 }
 
-export function MeetingView({ reviewMode = false }: { reviewMode?: boolean }) {
+export function MeetingView() {
   const { objectives, quarter, week, templateKey } = useBoard()
+  // Review-only affordances follow the loaded week's template, not the tab, so
+  // a week can never be rendered in the other ceremony's format.
+  const reviewMode = isReviewTemplate(templateKey)
   const [ownerFilter, setOwnerFilter] = useState('')
   const [showTags, setShowTags] = useState(false)
   const [closed, setClosed] = useState<Set<string>>(new Set())
@@ -355,7 +359,7 @@ export function MeetingView({ reviewMode = false }: { reviewMode?: boolean }) {
     setExporting(true)
     setExportResult({})
     try {
-	  const output = buildFullMeetingMarkdown(objectives, quarter, week, reviewMode ? templateKey : 'classic')
+	  const output = buildFullMeetingMarkdown(objectives, quarter, week, templateKey)
       const result = await createFeishuDocument(output.title, output.content)
       setExportResult({ url: result.url, message: result.warnings.length > 0 ? `已生成并设置为组织内获得链接的人可编辑，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成，组织内获得链接的人可编辑。' })
     } catch (error) {

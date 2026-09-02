@@ -149,6 +149,12 @@ func ValidWeekTemplateKey(value WeekTemplateKey) bool {
 // WeeklyReportWeek is the explicit lifecycle anchor for one reporting week.
 // Opening a week only makes the empty time bucket discoverable; it does not
 // copy progress, send reminders or trigger another workflow.
+//
+// TemplateKey is deliberately outside the primary key: one week belongs to
+// exactly one template, so a given week is either a normal weekly report or an
+// OKR Review, never both. That is the intended product rule — the two ceremonies
+// do not run in the same week. It is also why KRProgress and WeeklyScore stay
+// keyed by week alone and carry no template dimension.
 type WeeklyReportWeek struct {
 	Quarter     string          `gorm:"primaryKey;size:16"`
 	Week        string          `gorm:"primaryKey;size:16"`

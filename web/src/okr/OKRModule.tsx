@@ -8,10 +8,10 @@ import { useBoard } from './emily/board'
 import { BoardProvider } from './emily/store'
 import { PreviewReviewProvider } from './emily/aiReviewContext'
 import IdentityBoundary from './IdentityBoundary'
-import { isWeeklyWorkspaceTab, okrTabForWeeklyMode, resolveOKRTab, weeklyWorkspaceMode, type OKRTab } from './navigation'
+import { isWeeklyWorkspaceTab, okrTabForWeeklyWorkspace, resolveOKRTab, weeklyWorkspace, type OKRTab } from './navigation'
 import { withOKRScope, withOKRTarget } from './chatContext'
 import { isWeeklyShareViewState, weeklyShareTab } from './emily/share'
-import { templateKeyForWeeklyMode } from './emily/weekCatalog'
+import { templateKeyForDataset } from './emily/weekCatalog'
 import './emily/index.css'
 
 function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
@@ -72,8 +72,8 @@ function Workspace({ moduleEnablement }: {
   const changeTab = (tab: OKRTab) => setViewState({ ...context.view_state, tab }, false)
 
 	const surface = isWeeklyWorkspaceTab(visibleTab) ? 'weekly-report' : 'okr'
-	const weeklyMode = isWeeklyWorkspaceTab(visibleTab) ? weeklyWorkspaceMode(visibleTab) : undefined
-	const weekTemplateKey = weeklyMode ? templateKeyForWeeklyMode(weeklyMode) : undefined
+	const workspace = isWeeklyWorkspaceTab(visibleTab) ? weeklyWorkspace(visibleTab) : undefined
+	const weekTemplateKey = workspace ? templateKeyForDataset(workspace.dataset) : undefined
 	const boardKey = weekTemplateKey ? `${surface}:${weekTemplateKey}` : surface
 
 	return (
@@ -89,8 +89,8 @@ function Workspace({ moduleEnablement }: {
 			) : (
 			<PreviewReviewProvider>
 				<WeeklyReportWorkspace
-						mode={weeklyMode!}
-						onModeChange={(mode) => changeTab(okrTabForWeeklyMode(mode))}
+						workspace={workspace!}
+						onWorkspaceChange={(next) => changeTab(okrTabForWeeklyWorkspace(next))}
 					shared={weeklyShare}
 				/>
 			</PreviewReviewProvider>

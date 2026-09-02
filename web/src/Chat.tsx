@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CloseOutlined, PaperClipOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
-import { getChatHistory, getChatRuntimeConfig, isMissingChatHistoryError, resolveChatBaseURL } from './api'
+import { getChatHistory, getChatRuntimeConfig, getSignedInOpenID, isMissingChatHistoryError, resolveChatBaseURL } from './api'
 import { usePageContext } from './pageContext'
+import { isOKRTab, isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS } from './okr/navigation'
 import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, PageContext } from './types'
 import './styles/chat.css'
 
@@ -64,18 +65,15 @@ function errorText(cause: unknown): string {
 
 function pageLabel(context: PageContext): string {
   if (context.active_key === 'okr') {
-    if (context.view_state.tab === 'agent-flows') return 'OKR · 自动化流程'
-    if (context.view_state.tab === 'weekly-fill') return 'OKR · 周报填写'
-    if (context.view_state.tab === 'weekly-meeting') return 'OKR · 周报会议'
-    if (context.view_state.tab === 'okr-review') return 'OKR · OKR Review'
-    return 'OKR · 管理与打标'
+    const definition = OKR_TAB_DEFINITIONS.find((item) => item.key === context.view_state.tab)
+    return `OKR · ${definition?.label ?? '管理与打标'}`
   }
   return PAGE_LABELS[context.active_key] ?? '当前页面'
 }
 
 function pageGroup(context: PageContext): string {
   if (context.active_key === 'okr' && context.view_state.tab === 'agent-flows') return 'automation'
-  if (context.active_key === 'okr' && (context.view_state.tab.startsWith('weekly-') || context.view_state.tab === 'okr-review')) return 'weekly'
+  if (context.active_key === 'okr' && isOKRTab(context.view_state.tab) && isWeeklyWorkspaceTab(context.view_state.tab)) return 'weekly'
   if (['management', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
   const label = pageLabel(context)
   return Object.keys(PAGE_SUGGESTIONS).find((key) => PAGE_LABELS[key] === label) ?? 'today'
@@ -281,10 +279,19 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      const req: ChatRequest = { message, thread_id: threadId, page_context: context, image: imageToSend }
+      // Read the signed-in identity per turn: the person can log in or out
+      // while the conversation stays open.
+      const req: ChatRequest = {
+        message,
+        thread_id: threadId,
+        page_context: context,
+        image: imageToSend,
+        user_open_id: await getSignedInOpenID(controller.signal),
+      }
       const form = new FormData()
       form.append('message', req.message)
       if (req.thread_id) form.append('thread_id', req.thread_id)
+      if (req.user_open_id) form.append('user_open_id', req.user_open_id)
       if (req.page_context) form.append('page_context', JSON.stringify(req.page_context))
       if (req.image) form.append('image', req.image, req.image.name)
       const response = await fetch(`${chatBaseURL}/api/chat`, {

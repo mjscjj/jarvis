@@ -8,7 +8,9 @@ import { collapseAllIds, KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
 import type { Entry, Kr, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
 import { TagChip, TagEditor } from './TagEditor'
+import { isReviewTemplate } from '../weekCatalog'
 import { FeishuPeoplePicker, PointPeoplePicker } from './FeishuPeoplePicker'
+import { WeeklyScoreControl } from './WeeklyScoreControl'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
 
@@ -205,8 +207,8 @@ function tagClass(tag: KrTag) {
   return 'border-slate-200 bg-slate-100 text-slate-600'
 }
 
-function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean }) {
-	const { setKrTitle, setKrPriority } = useBoard()
+function KrHeader({ objectiveId, kr, open, onToggle, readOnly, showScore, scoreReadOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean; showScore: boolean; scoreReadOnly: boolean }) {
+	const { setKrTitle, setKrPriority, setKrScore } = useBoard()
 	const priority = priorityOf(kr)
 
   return (
@@ -227,6 +229,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
               <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded-md border px-2 py-1 text-xs [overflow-wrap:anywhere] ${tagClass(tag)}`}>{tagText(tag)}</span>
             ))}
             {kr.metrics.length > 0 && <span className="inline-flex items-center gap-1" title="核心数据红黄绿灯">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>}
+			{showScore && <WeeklyScoreControl score={kr.score} readOnly={scoreReadOnly} onChange={(score) => setKrScore(kr.id, score)} label="一级 KR 评分" />}
           </div>
         </div>
       </div>
@@ -234,8 +237,8 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly }: { objectiveId: 
   )
 }
 
-function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, showProgress = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; showProgress?: boolean; tagSuggestions?: KrTag[] }) {
-  const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, week } = useBoard()
+function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[] }) {
+  const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
   const [preview, setPreview] = useState<MeegoPreview>()
   const [previewError, setPreviewError] = useState('')
   const [previewing, setPreviewing] = useState(false)
@@ -268,6 +271,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
             </span>
             {!readOnly && <span className="pt-0.5"><PointPeoplePicker krId={krId} point={point} /></span>}
             {readOnly && (point.owners?.length ?? 0) > 0 && <span className="pt-1 text-xs text-slate-500">{point.owners?.map((owner) => owner.name).join('、')}</span>}
+            {showScore && <span className="pt-0.5"><WeeklyScoreControl score={point.score} readOnly={scoreReadOnly} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" /></span>}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
           {tagSuggestions && <div className="mt-1.5 min-w-0"><TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} /></div>}
@@ -306,11 +310,22 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
 }
 
 function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
+  const { templateKey } = useBoard()
+  // Review reports one combined lane; the classic weekly report splits 进展 and
+  // 已完成. Both formats read the loaded week's template, never the tab.
+  const review = isReviewTemplate(templateKey)
   return (
     <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-	  <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} />
-      {open && showProgress && (
-        <div className="mt-2 grid grid-cols-1 gap-2 pl-7 md:grid-cols-2">
+      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} showScore={showProgress && review} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} />
+      {open && showProgress && (review
+        ? <div className="mt-2 pl-7">
+          <section className="rounded-xl border border-slate-200 bg-white p-2.5">
+            <h4 className="mb-2 text-xs font-semibold text-slate-500">本周进展</h4>
+            <EntryList objectiveId={objectiveId} krId={krId} point={point} readOnly={progressReadOnly} />
+            <HistoryPreview point={point} />
+          </section>
+        </div>
+        : <div className="mt-2 grid grid-cols-1 gap-2 pl-7 md:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-2.5">
             <h4 className="mb-2 text-xs font-semibold text-slate-500">进展</h4>
             <EntryList objectiveId={objectiveId} krId={krId} point={point} done={false} readOnly={progressReadOnly} />
@@ -378,11 +393,15 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions }: { objec
 }
 
 function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly, progressReadOnly, showProgress }: { objectiveId: string; kr: Kr; closed: Set<string>; toggle: (id: string) => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean }) {
+  const { templateKey } = useBoard()
   const open = !closed.has(kr.id)
   const definitionLocked = readOnly || definitionsReadOnly
+  // Scores belong to a reporting week, so they show wherever that week's
+  // progress shows, and only for the template that scores.
+  const showScore = showProgress && isReviewTemplate(templateKey)
   return (
     <article data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
-	  <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} />
+	  <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} showScore={showScore} scoreReadOnly={readOnly || progressReadOnly} />
       {open && (
         <div className="space-y-5 px-4 py-4">
           <MetricBox kr={kr} readOnly={readOnly} structureReadOnly={definitionLocked} />

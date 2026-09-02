@@ -1,23 +1,20 @@
-import type { WeeklyWorkspaceMode } from '../navigation.ts'
-
-export type WeeklyShareMode = WeeklyWorkspaceMode
-export type WeeklyShareTab = 'weekly-fill' | 'weekly-meeting' | 'okr-review'
+import { okrTabForWeeklyWorkspace, type WeeklyWorkspace, type WeeklyWorkspaceTab } from '../navigation.ts'
 
 export const WEEKLY_SHARE_SCOPE = 'weekly'
+
+const SHARE_TABS: WeeklyWorkspaceTab[] = ['review-fill', 'review-meeting', 'weekly-fill', 'weekly-meeting']
 
 export function isWeeklyShareViewState(viewState: Record<string, unknown>): boolean {
   return viewState.share === WEEKLY_SHARE_SCOPE
 }
 
-export function weeklyShareTab(requested: unknown): WeeklyShareTab {
-  if (requested === 'weekly-meeting') return 'weekly-meeting'
-  if (requested === 'okr-review') return 'okr-review'
-  return 'weekly-fill'
+export function weeklyShareTab(requested: unknown): WeeklyWorkspaceTab {
+  const tab = SHARE_TABS.find((value) => value === requested)
+  return tab ?? 'weekly-fill'
 }
 
-export function weeklyShareURL(currentURL: string, mode: WeeklyShareMode): string {
+export function weeklyShareURL(currentURL: string, workspace: WeeklyWorkspace): string {
   const url = new URL(currentURL)
-	const tab = mode === 'meeting' ? 'weekly-meeting' : mode === 'review' ? 'okr-review' : 'weekly-fill'
-	url.hash = `/weekly-report?tab=${tab}`
+  url.hash = `/weekly-report?tab=${okrTabForWeeklyWorkspace(workspace)}`
   return url.toString()
 }
