@@ -74,14 +74,14 @@ lark_cli:
   bin: "lark-cli"                         # 走 PATH 查找，与 traex 同一风格
   rate_limit: 5
   burst: 10
-  concurrent: 2
+  concurrent: 6                           # 须 >= capture.scan_workers，否则扫描并发被这里卡住
   timeout_sec: 60
 
 # M2 消息采集：首次发现从当前时刻起步，不回溯历史。
 # related 群不再按 tier 分档调度，统一 scan_schedule 采集；hot/warm_age_hours 仅用于展示 tier 标签。
 capture:
   page_size: 50
-  scan_workers: 2
+  scan_workers: 5
   hot_age_hours: 6
   warm_age_hours: 168
   timezone: "Asia/Shanghai"
@@ -89,7 +89,7 @@ capture:
   scan_schedule: "@every 15s"
   # discover 时按 active_time 轮换自动监听的内部真人私聊：保留当前最活跃的前 N 个。
   # pinned 私聊作为人工固定项额外保留；服务号私聊不参与。0=不自动开任何私聊。
-  auto_related_p2p_top_n: 30
+  auto_related_p2p_top_n: 20
 
 # 飞书卡片内审批回调。CC Connect 持有当前 Jarvis Bot 的唯一长连接，
 # 把审批按钮点击经带共享密钥的 localhost HTTP 转发给 Jarvis。
@@ -153,7 +153,7 @@ execute:
   repo_root: ".."                                  # code_change 的 repo_ref 基目录（相对仓库根，加载时展开成绝对路径）
   runs_dir: "runs"                                 # diff/产物落盘
   bin: "traex"                                     # 与 M3 使用同一个 CLI，但模型/超时独立（右侧对话与日报也复用本 bin）
-  model: "gpt-5.6-sol"                             # Latest frontier（无裸 gpt-5.6；luna/terra/sol 里 sol 最强）
+  model: "gpt-5.5"                                 # 执行质量足够且配额更稳；5.6-sol 曾整段打满配额把 Task 全判失败
   reasoning_effort: "medium"                       # 覆盖用户全局 xhigh，执行质量与耗时折中
   timeout_second: 1800                             # 单次执行超时：30 分钟（长任务需要查资料并调用外部工具）
   stale_executing_minute: 45                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
@@ -162,7 +162,7 @@ execute:
 # CLI 与模型与 M5 执行对齐（execute.bin/model）；本地可信环境固定 danger-full-access + 联网。
 chat:
   enabled: true
-  model: "gpt-5.6-sol"                 # 与 execute.model 一致
+  model: "gpt-5.5"                     # 与 execute.model 一致
   timeout_seconds: 600                 # 单轮对话超时（可能自跑工具，放宽）
   sandbox: "danger-full-access"        # 对话场景最大权限
   reasoning_effort: "medium"           # 与 execute.reasoning_effort 一致
