@@ -4,6 +4,39 @@ import "testing"
 
 import "jarvis/internal/okrworkspace/domain"
 
+func TestCommentRecordsAuthorUnionIDThroughReadBack(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "test"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateComment(t.Context(), CreateCommentInput{
+		Quarter: "2026-Q3", Week: "2026-W35", TargetType: "kr", TargetID: "kr1",
+		AuthorOpenID: "ou_alice", AuthorUnionID: "on_alice", AuthorName: "Alice",
+		Content: "这个 KR 的口径要对一下",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.AuthorUnionID != "on_alice" || created.AuthorOpenID != "ou_alice" || created.AuthorName != "Alice" {
+		t.Fatalf("created comment lost its author: %#v", created)
+	}
+
+	list, err := service.Comments(t.Context(), "2026-Q3", "2026-W35")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Comments) != 1 {
+		t.Fatalf("comments = %#v", list)
+	}
+	if got := list.Comments[0]; got.AuthorUnionID != "on_alice" || got.AuthorName != "Alice" {
+		t.Fatalf("author did not survive read back: %#v", got)
+	}
+}
+
 func TestCommentTodoAndResolutionAreIndependentRootActions(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "test"}).Error; err != nil {
