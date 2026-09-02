@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -89,6 +90,39 @@ func TestBuildPromptTrimsContextBeforeFailing(t *testing.T) {
 	}
 	if strings.Contains(prompt.User, "om_context") || !strings.Contains(prompt.User, "om_new") {
 		t.Fatalf("context trimming result is incorrect:\n%s", prompt.User)
+	}
+}
+
+func TestBuildPromptReportsOversizedNewEvidence(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID: "om_new", Content: strings.Repeat("新消息", 10_000), IsNew: true, Extractable: true,
+	}}}
+	_, err := BuildPrompt(
+		ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(),
+		PromptOptions{SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000},
+	)
+	if !errors.Is(err, ErrPromptTooLarge) {
+		t.Fatalf("BuildPrompt() error = %v, want ErrPromptTooLarge", err)
+	}
+}
+
+func TestBuildPromptKeepsOneCompleteNewMessageAtCoarseLimit(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{
+		{MessageID: "om_context", Content: strings.Repeat("旧背景", 5_000), Extractable: true},
+		{MessageID: "om_new", Content: strings.Repeat("新消息", 10_000), IsNew: true, Extractable: true},
+	}}
+	prompt, err := BuildPrompt(
+		ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(),
+		PromptOptions{
+			SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000,
+			AllowSingleNewOverLimit: true,
+		},
+	)
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	if strings.Contains(prompt.User, "om_context") || !strings.Contains(prompt.User, "om_new") {
+		t.Fatalf("single-message coarse limit result is incorrect")
 	}
 }
 
