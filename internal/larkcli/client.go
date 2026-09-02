@@ -23,14 +23,18 @@ type Options struct {
 	Burst       int
 	Concurrency int
 	Timeout     time.Duration
+	// ExportSecureLabel 是导出文档时打上的密级标签名，取值来自租户策略。
+	// 只有 CreateMarkdownDocument 用它，其它调用留空即可。
+	ExportSecureLabel string
 }
 
 // Client is safe for concurrent use by all capture jobs.
 type Client struct {
-	bin     string
-	limiter *rate.Limiter
-	sem     chan struct{}
-	timeout time.Duration
+	bin               string
+	limiter           *rate.Limiter
+	sem               chan struct{}
+	timeout           time.Duration
+	exportSecureLabel string
 }
 
 // APIError is the structured error returned in a lark-cli {ok:false} envelope.
@@ -90,10 +94,11 @@ func New(opts Options) (*Client, error) {
 		return nil, fmt.Errorf("resolve lark-cli binary %q: %w", opts.Bin, err)
 	}
 	return &Client{
-		bin:     bin,
-		limiter: rate.NewLimiter(rate.Limit(opts.RateLimit), opts.Burst),
-		sem:     make(chan struct{}, opts.Concurrency),
-		timeout: opts.Timeout,
+		bin:               bin,
+		limiter:           rate.NewLimiter(rate.Limit(opts.RateLimit), opts.Burst),
+		sem:               make(chan struct{}, opts.Concurrency),
+		timeout:           opts.Timeout,
+		exportSecureLabel: strings.TrimSpace(opts.ExportSecureLabel),
 	}, nil
 }
 
@@ -442,6 +447,9 @@ func (c *Client) CreateMarkdownDocument(ctx context.Context, title, content stri
 	}
 	documentID := strings.TrimSpace(response.Data.Document.DocumentID)
 	documentURL := strings.TrimSpace(response.Data.Document.URL)
+	if err := c.applyExportSecureLabel(ctx, documentID); err != nil {
+		return MarkdownDocument{}, fmt.Errorf("label exported document document_id=%q url=%q: %w", documentID, documentURL, err)
+	}
 	if err := c.setTenantEditableDocumentPermission(ctx, documentID); err != nil {
 		return MarkdownDocument{}, fmt.Errorf("configure exported document permission document_id=%q url=%q: %w", documentID, documentURL, err)
 	}
@@ -451,6 +459,43 @@ func (c *Client) CreateMarkdownDocument(ctx context.Context, title, content stri
 		Warnings:        response.Data.Warnings,
 		LinkShareEntity: tenantEditableLinkShareEntity,
 	}, nil
+}
+
+// applyExportSecureLabel stamps the new document with the tenant secure label
+// that allows organization-wide link sharing. A freshly created document
+// inherits the tenant default label, and Feishu rejects
+// link_share_entity=tenant_editable on it with code 91012.
+func (c *Client) applyExportSecureLabel(ctx context.Context, documentID string) error {
+	if c.exportSecureLabel == "" {
+		return fmt.Errorf("lark_cli.export_secure_label is not configured")
+	}
+	var listResponse struct {
+		Data struct {
+			Items []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := c.Run(ctx, &listResponse, "drive", "+secure-label-list", "--as", "user"); err != nil {
+		return fmt.Errorf("list secure labels: %w", err)
+	}
+	labelID := ""
+	available := make([]string, 0, len(listResponse.Data.Items))
+	for _, item := range listResponse.Data.Items {
+		available = append(available, item.Name)
+		if item.Name == c.exportSecureLabel {
+			labelID = item.ID
+		}
+	}
+	if labelID == "" {
+		return fmt.Errorf("secure label %q is not available to the current Feishu user; available labels: %s", c.exportSecureLabel, strings.Join(available, ", "))
+	}
+	var updateResponse struct{}
+	if err := c.Run(ctx, &updateResponse, "drive", "+secure-label-update", "--token", documentID, "--type", "docx", "--label-id", labelID, "--as", "user"); err != nil {
+		return fmt.Errorf("set secure label %q: %w", c.exportSecureLabel, err)
+	}
+	return nil
 }
 
 func (c *Client) setTenantEditableDocumentPermission(ctx context.Context, documentID string) error {

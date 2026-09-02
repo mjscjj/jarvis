@@ -236,11 +236,12 @@ func main() {
 	}
 
 	larkClient, err := larkcli.New(larkcli.Options{
-		Bin:         cfg.LarkCLI.Bin,
-		RateLimit:   cfg.LarkCLI.RateLimit,
-		Burst:       cfg.LarkCLI.Burst,
-		Concurrency: cfg.LarkCLI.Concurrent,
-		Timeout:     time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+		Bin:               cfg.LarkCLI.Bin,
+		RateLimit:         cfg.LarkCLI.RateLimit,
+		Burst:             cfg.LarkCLI.Burst,
+		Concurrency:       cfg.LarkCLI.Concurrent,
+		Timeout:           time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+		ExportSecureLabel: cfg.LarkCLI.ExportSecureLabel,
 	})
 	if err != nil {
 		fatalf("initialize lark-cli failed: %v", err)

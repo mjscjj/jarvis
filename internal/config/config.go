@@ -186,6 +186,9 @@ type LarkCLIConfig struct {
 	Burst      int     `yaml:"burst"`       // 令牌桶容量
 	Concurrent int     `yaml:"concurrent"`  // 并发子进程上限
 	TimeoutSec int     `yaml:"timeout_sec"` // 单次调用超时
+	// ExportSecureLabel 是导出飞书文档时打上的密级标签名（形如 L2-Internal）。
+	// 新建文档默认继承更严的租户密级，飞书会以 91012 拒绝把它设成组织内可编辑。
+	ExportSecureLabel string `yaml:"export_secure_label"`
 }
 
 // CaptureConfig controls M2 pagination, time parsing and chat tier thresholds.

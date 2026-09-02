@@ -265,6 +265,14 @@ if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as 
   printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"},"warnings":["one warning"]}}'
   exit 0
 fi
+if [ "$*" = 'drive +secure-label-list --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"items":[{"id":"7439268224199852036","name":"L1-Public"},{"id":"7439288234140483587","name":"L2-Internal"}]}}'
+  exit 0
+fi
+if [ "$*" = 'drive +secure-label-update --token docx_1 --type docx --label-id 7439288234140483587 --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{}}'
+  exit 0
+fi
 if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as user --format json' ]; then
   printf '%s' '{"ok":true,"data":{"auth_result":true}}'
   exit 0
@@ -279,7 +287,7 @@ if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx
 fi
 printf '%s' "unexpected args: $*" >&2
 exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal"})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -301,13 +309,21 @@ if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as 
   printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
   exit 0
 fi
+if [ "$*" = 'drive +secure-label-list --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"items":[{"id":"7439268224199852036","name":"L1-Public"},{"id":"7439288234140483587","name":"L2-Internal"}]}}'
+  exit 0
+fi
+if [ "$*" = 'drive +secure-label-update --token docx_1 --type docx --label-id 7439288234140483587 --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{}}'
+  exit 0
+fi
 if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as user --format json' ]; then
   printf '%s' '{"ok":true,"data":{"auth_result":false}}'
   exit 0
 fi
 printf '%s' "unexpected args: $*" >&2
 exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal"})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -326,6 +342,14 @@ if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as 
   printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
   exit 0
 fi
+if [ "$*" = 'drive +secure-label-list --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"items":[{"id":"7439268224199852036","name":"L1-Public"},{"id":"7439288234140483587","name":"L2-Internal"}]}}'
+  exit 0
+fi
+if [ "$*" = 'drive +secure-label-update --token docx_1 --type docx --label-id 7439288234140483587 --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{}}'
+  exit 0
+fi
 if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as user --format json' ]; then
   printf '%s' '{"ok":true,"data":{"auth_result":true}}'
   exit 0
@@ -340,12 +364,37 @@ if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx
 fi
 printf '%s' "unexpected args: $*" >&2
 exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal"})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	_, err = client.CreateMarkdownDocument(context.Background(), "Weekly", "# Progress")
 	if err == nil || !strings.Contains(err.Error(), `got link_share_entity="tenant_readable"`) || !strings.Contains(err.Error(), "https://example.test/docx_1") {
+		t.Fatalf("CreateMarkdownDocument() error = %v", err)
+	}
+}
+
+func TestCreateMarkdownDocumentFailsWhenSecureLabelIsMissing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	bin := writeScript(t, `
+if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
+  exit 0
+fi
+if [ "$*" = 'drive +secure-label-list --as user --format json' ]; then
+  printf '%s' '{"ok":true,"data":{"items":[{"id":"7439268224199852036","name":"L1-Public"}]}}'
+  exit 0
+fi
+printf '%s' "unexpected args: $*" >&2
+exit 9`)
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = client.CreateMarkdownDocument(context.Background(), "Weekly", "# Progress")
+	if err == nil || !strings.Contains(err.Error(), `secure label "L2-Internal" is not available`) || !strings.Contains(err.Error(), "L1-Public") {
 		t.Fatalf("CreateMarkdownDocument() error = %v", err)
 	}
 }
