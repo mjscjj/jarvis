@@ -14,9 +14,12 @@ preview_review:
   timeout_seconds: 300
 
 identity:
-  enabled: false
-  app_id: "cli_a96a0c8d82b85cb1"
-  app_secret_env: "JARVIS_OKR_FEISHU_APP_SECRET"
+  enabled: true
+  # OKR 模块专用登录应用 Emily Pro。只签发登录用户自己的 user token，与
+  # lark-cli 绑定的主应用无关：主应用凭证由 lark-cli 自己保管，不读这里。
+  # 换应用后 open_id 会变（按应用隔离），union_id 不变，所以署名锚 union_id。
+  app_id: "cli_a96a2422f03bdbd7"
+  app_secret_env: "JARVIS_OKR_EMILY_APP_SECRET"
   session_ttl_hours: 168
   cookie_secure: false
   feishu_base_url: "https://open.feishu.cn"
