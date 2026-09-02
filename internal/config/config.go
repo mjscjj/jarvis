@@ -7,6 +7,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -353,6 +354,13 @@ func (c *Config) validate() error {
 	}
 	if c.Server.WebRoot == "" {
 		return fmt.Errorf("server.web_root 不能为空")
+	}
+	if raw := strings.TrimSpace(c.Server.PublicBaseURL); raw != "" {
+		parsed, err := url.Parse(raw)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return fmt.Errorf("server.public_base_url 必须是 http(s) 绝对地址，当前为 %q", c.Server.PublicBaseURL)
+		}
+		c.Server.PublicBaseURL = raw
 	}
 	if len(c.Server.LogFiles) == 0 {
 		// stdout（路由/启动）与 stderr（各 cron 运行结果、报错）默认都读，否则 cron 日志漏看。
