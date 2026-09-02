@@ -58,11 +58,13 @@ function requestAvatar(name: string) {
   if (timer === undefined) timer = window.setTimeout(() => void flush(), 80)
 }
 
-export function usePersonAvatar(name: string, openId?: string) {
+export function usePersonAvatar(name: string, openId?: string, ownUrl?: string) {
   useSyncExternalStore(subscribe, () => version)
   useEffect(() => {
+    if (ownUrl !== undefined) return
     requestAvatar(name)
-  }, [name])
+  }, [name, ownUrl])
+  if (ownUrl !== undefined) return ownUrl
   if (openId) {
     const hit = byOpenId.get(openId)
     if (hit) return hit
@@ -71,13 +73,15 @@ export function usePersonAvatar(name: string, openId?: string) {
 }
 
 // PersonAvatar 在头像取到之前（以及取不到时）显示姓名首字母，尺寸和配色由调用方给。
-export function PersonAvatar({ name, openId, size = 'size-3.5 text-[8px]', tone = 'bg-slate-300' }: {
+// 传了 ownUrl（哪怕是空串）就表示调用方已经自己解析过头像，这里不再按姓名查一次。
+export function PersonAvatar({ name, openId, ownUrl, size = 'size-3.5 text-[8px]', tone = 'bg-slate-300' }: {
   name: string
   openId?: string
+  ownUrl?: string
   size?: string
   tone?: string
 }) {
-  const url = usePersonAvatar(name, openId)
+  const url = usePersonAvatar(name, openId, ownUrl)
   const shape = `inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full ${size}`
   if (url) return <img src={url} alt={name} title={name} loading="lazy" className={`${shape} object-cover`} />
   return <span className={`${shape} font-semibold text-white ${tone}`}>{name.trim().slice(0, 1) || '?'}</span>

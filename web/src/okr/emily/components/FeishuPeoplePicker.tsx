@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { searchPeople } from '../api'
+import { getPeopleAvatars, searchPeople } from '../api'
 import { useBoard } from '../board'
 import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, PersonSearchItem, Point } from '../types'
@@ -13,6 +13,7 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 	const [hasMore, setHasMore] = useState(false)
+	const [resultAvatars, setResultAvatars] = useState<Record<string, string>>({})
 	const selectedOpenIds = useMemo(() => new Set(owners.map((owner) => owner.openId).filter(Boolean)), [owners])
 
   const localResults = useMemo(() => options
@@ -41,13 +42,22 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
     const controller = new AbortController()
 		setResults([])
 		setHasMore(false)
+		setResultAvatars({})
     const timer = window.setTimeout(() => {
       setLoading(true)
       setError('')
       searchPeople(clean, controller.signal)
 			.then((value) => {
-				setResults(value.users.filter((item) => !selectedOpenIds.has(item.openId)))
+				setResults(value.users)
 				setHasMore(value.hasMore)
+				// 头像接口本身就是按 query 搜人，用这一次查询覆盖整屏结果；
+				// 逐个结果按姓名查会同时占满 lark-cli 仅有的两个并发槽，把下一次搜索堵死。
+				void getPeopleAvatars([clean])
+					.then((people) => {
+						if (controller.signal.aborted) return
+						setResultAvatars(Object.fromEntries(people.filter((item) => item.openId && item.avatarUrl).map((item) => [item.openId, item.avatarUrl])))
+					})
+					.catch((reason) => console.warn('飞书头像读取失败', clean, reason))
 			})
         .catch((reason) => {
 					if (!controller.signal.aborted) {
@@ -64,7 +74,9 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [open, query, selectedOpenIds])
+		// 已选中的人在渲染时过滤，不作为依赖：否则父组件每次重渲染（自动保存回写 board 就会）
+		// 都会重建 Set、打断进行中的搜索，而中断路径不会复位 loading，转圈就再也停不下来。
+  }, [open, query])
 
   const add = (person: PersonSearchItem) => {
 		onChange(addOrResolveOwner(owners, { openId: person.openId, name: person.name }))
@@ -76,7 +88,8 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
 		onChange(owners.filter((_, ownerIndex) => ownerIndex !== index))
   }
 
-  const visibleResults = query.trim() ? results : localResults
+  const searching = Boolean(query.trim())
+  const visibleResults = searching ? results.filter((item) => !selectedOpenIds.has(item.openId)) : localResults
 
   return (
     <span ref={root} className="relative inline-flex shrink-0 flex-wrap items-center gap-1">
@@ -100,7 +113,7 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
             {loading && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">正在搜索飞书联系人…</span>}
             {!loading && visibleResults.map((person) => (
               <button key={person.openId || person.name} type="button" onClick={() => add(person)} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-slate-50">
-                <PersonAvatar name={person.name} openId={person.openId} size="size-7 text-[10px]" tone="bg-slate-400" />
+                <PersonAvatar name={person.name} openId={person.openId} ownUrl={searching ? resultAvatars[person.openId] ?? '' : undefined} size="size-7 text-[10px]" tone="bg-slate-400" />
                 <span className="min-w-0">
 				  <span className="block text-[11px] font-medium text-slate-700">{person.name}{person.isExternal && <span className="ml-1 text-[9px] font-normal text-amber-600">外部</span>}</span>
 				  <span className="block truncate text-[9px] text-slate-400">{[person.department, person.email].filter(Boolean).join(' · ') || '飞书用户'}</span>
