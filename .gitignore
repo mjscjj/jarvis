@@ -40,11 +40,13 @@ __pycache__/
 .jarvis-task-*
 lark-auth-*.png
 tmp-*.png
+# Screenshots agents drop at the repo root while investigating.
+/.*.png
 /conf/config.runtime.yaml
 
 # LoopX local control plane
 /.loopx/
-/.codex/goals/
+/.codex/
 
 # 操作系统 / IDE
 .DS_Store
