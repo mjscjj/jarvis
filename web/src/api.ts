@@ -73,6 +73,7 @@ import type {
   SystemTaskRunList,
   ChatHistory,
   ChatRuntimeConfig,
+  WebConfig,
 } from './types'
 
 interface APIResponse<T> {
@@ -155,6 +156,10 @@ export function createTask(body: CreateTaskInput): Promise<CreateTaskResult> {
 
 export function getChatRuntimeConfig(signal?: AbortSignal): Promise<ChatRuntimeConfig> {
   return request<ChatRuntimeConfig>('/api/chat-config', { signal })
+}
+
+export function getWebConfig(signal?: AbortSignal): Promise<WebConfig> {
+  return request<WebConfig>('/api/web-config', { signal })
 }
 
 // getSignedInOpenID reports who is signed in through the OKR module's Feishu

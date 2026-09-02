@@ -1053,6 +1053,7 @@ func main() {
 			}
 			return ""
 		}(), Capture: captureService,
+		PublicBaseURL:      cfg.Server.PublicBaseURL,
 		RuntimeSettings:    runtimeSettingsService,
 		ContextAssembler:   contextAssembler,
 		CardApprovals:      cardApprovalProcessor,

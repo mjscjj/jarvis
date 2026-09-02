@@ -13,8 +13,11 @@ export function weeklyShareTab(requested: unknown): WeeklyWorkspaceTab {
   return tab ?? 'weekly-fill'
 }
 
-export function weeklyShareURL(currentURL: string, workspace: WeeklyWorkspace): string {
-  const url = new URL(currentURL)
+// A share link is for someone else's browser, so it starts from the address the
+// deployment publishes rather than the one this browser happens to be using.
+// Without a configured public address the current URL is all we know.
+export function weeklyShareURL(currentURL: string, workspace: WeeklyWorkspace, publicBaseURL: string): string {
+  const url = new URL(publicBaseURL.trim() || currentURL)
   url.hash = `/weekly-report?tab=${okrTabForWeeklyWorkspace(workspace)}`
   return url.toString()
 }

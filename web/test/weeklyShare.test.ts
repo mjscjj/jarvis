@@ -5,20 +5,31 @@ import { isWeeklyShareViewState, weeklyShareTab, weeklyShareURL } from '../src/o
 
 test('weekly share link keeps only the selected dataset and view', () => {
   assert.equal(
-    weeklyShareURL('https://emily.example/path#/okr?quarter=2026-Q3&tab=weekly-fill&week=2026-W36', { dataset: 'weekly', view: 'fill' }),
+    weeklyShareURL('https://emily.example/path#/okr?quarter=2026-Q3&tab=weekly-fill&week=2026-W36', { dataset: 'weekly', view: 'fill' }, ''),
     'https://emily.example/path#/weekly-report?tab=weekly-fill',
   )
   assert.equal(
-    weeklyShareURL('https://emily.example/path#/okr?quarter=2026-Q3&tab=weekly-fill&week=2026-W36', { dataset: 'weekly', view: 'meeting' }),
+    weeklyShareURL('https://emily.example/path#/okr?quarter=2026-Q3&tab=weekly-fill&week=2026-W36', { dataset: 'weekly', view: 'meeting' }, ''),
     'https://emily.example/path#/weekly-report?tab=weekly-meeting',
   )
   assert.equal(
-    weeklyShareURL('http://10.78.205.9:18802/#/okr?quarter=2026-Q3&tab=review-fill&week=2026-W36', { dataset: 'review', view: 'fill' }),
+    weeklyShareURL('http://10.78.205.9:18802/#/okr?quarter=2026-Q3&tab=review-fill&week=2026-W36', { dataset: 'review', view: 'fill' }, ''),
     'http://10.78.205.9:18802/#/weekly-report?tab=review-fill',
   )
   assert.equal(
-    weeklyShareURL('http://10.78.205.9:18802/#/okr?quarter=2026-Q3&tab=review-fill&week=2026-W36', { dataset: 'review', view: 'meeting' }),
+    weeklyShareURL('http://10.78.205.9:18802/#/okr?quarter=2026-Q3&tab=review-fill&week=2026-W36', { dataset: 'review', view: 'meeting' }, ''),
     'http://10.78.205.9:18802/#/weekly-report?tab=review-meeting',
+  )
+})
+
+test('a configured public address replaces the IP the author browsed in on', () => {
+  assert.equal(
+    weeklyShareURL('http://10.78.205.9:18802/#/okr?tab=review-fill', { dataset: 'review', view: 'fill' }, 'http://emily.example:18802'),
+    'http://emily.example:18802/#/weekly-report?tab=review-fill',
+  )
+  assert.equal(
+    weeklyShareURL('http://127.0.0.1:18802/#/weekly-report?tab=weekly-fill', { dataset: 'weekly', view: 'meeting' }, 'https://emily.example/'),
+    'https://emily.example/#/weekly-report?tab=weekly-meeting',
   )
 })
 

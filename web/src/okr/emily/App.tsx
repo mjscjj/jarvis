@@ -12,6 +12,7 @@ import type { PendingCommentSelection } from './commenting'
 import { commentTargetFromThread } from './comments'
 import type { CommentTarget, PageComment } from './types'
 import { openWeeklyReportWeek } from './api'
+import { getWebConfig } from '../../api'
 import { weeklyShareURL } from './share'
 import { isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS, weeklyDatasetLabel, weeklyViewLabel, weeklyWorkspace, type WeeklyWorkspace } from '../navigation'
 import { templateKeyForDataset } from './weekCatalog'
@@ -208,7 +209,14 @@ export default function App({
   const copyShareLink = async () => {
     setShareNotice('')
     setShareLink('')
-    const link = weeklyShareURL(window.location.href, workspace)
+    let link: string
+    try {
+      const config = await getWebConfig()
+      link = weeklyShareURL(window.location.href, workspace, config.public_base_url)
+    } catch (cause) {
+      setShareNotice(cause instanceof Error ? `读取分享地址失败：${cause.message}` : '读取分享地址失败')
+      return
+    }
     if (!navigator.clipboard) {
       setShareLink(link)
       setShareNotice('当前是 HTTP 页面，请复制下面的分享链接')
@@ -226,17 +234,19 @@ export default function App({
   return (
     <div className="min-h-full">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-md">
-			<div className={`mx-auto flex min-h-14 max-w-[1320px] flex-wrap items-center gap-2.5 px-4 py-2 transition-[padding] sm:flex-nowrap sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
+			{/* The chrome wraps onto a second row when it runs out of width; squeezing
+			    it onto one line instead breaks the button labels mid-word. */}
+			<div className={`mx-auto flex min-h-14 max-w-[1320px] flex-wrap items-center gap-2.5 px-4 py-2 transition-[padding] sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
           <div className="mr-1 flex min-w-fit items-center gap-2">
 					<span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-[11px] font-bold text-white shadow-sm">E</span>
 						<h1 className="text-[14px] font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
           </div>
 
-		          {shared && <nav aria-label="周报页面" className="flex h-9 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
+		          {shared && <nav aria-label="周报页面" className="flex h-9 shrink-0 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
 					{WEEKLY_NAV.map((item) => {
 						const active = item.workspace.dataset === dataset && item.workspace.view === view
 						const activeTone = item.workspace.dataset === 'review' ? 'bg-white text-violet-700 shadow-sm' : 'bg-white text-blue-700 shadow-sm'
-						return <button key={item.key} type="button" aria-current={active ? 'page' : undefined} onClick={() => onWorkspaceChange(item.workspace)} className={`h-7 rounded-lg px-3 text-[11px] font-medium ${active ? activeTone : 'text-slate-500 hover:text-slate-700'}`}>{item.label}</button>
+						return <button key={item.key} type="button" aria-current={active ? 'page' : undefined} onClick={() => onWorkspaceChange(item.workspace)} className={`h-7 whitespace-nowrap rounded-lg px-3 text-[11px] font-medium ${active ? activeTone : 'text-slate-500 hover:text-slate-700'}`}>{item.label}</button>
 					})}
 		          </nav>}
 		          <QuarterSelect />
@@ -247,10 +257,10 @@ export default function App({
             </select>
 	          </div>
 		          {reviewDataset && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-violet-700">Preview</span>}
-	          {managesWeeks && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className={`h-8 rounded-lg border px-2.5 text-[10px] font-medium ${reviewDataset ? 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100' : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>新建{lifecycleName}</button>}
-	          {managesWeeks && <button type="button" disabled={!week || deleteBlocked} onClick={() => { setConfirmDeleteWeek(true); setOpeningWeek(false); setWeekNotice('') }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除{lifecycleName}</button>}
+	          {managesWeeks && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className={`h-8 whitespace-nowrap rounded-lg border px-2.5 text-[10px] font-medium ${reviewDataset ? 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100' : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>新建{lifecycleName}</button>}
+	          {managesWeeks && <button type="button" disabled={!week || deleteBlocked} onClick={() => { setConfirmDeleteWeek(true); setOpeningWeek(false); setWeekNotice('') }} className="h-8 whitespace-nowrap rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除{lifecycleName}</button>}
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
-              <button type="button" onClick={() => void copyShareLink()} className="flex h-9 items-center rounded-xl border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50">
+              <button type="button" onClick={() => void copyShareLink()} className="flex h-9 items-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50">
                 分享{shareLabel}页
               </button>
               <span aria-hidden className="hidden h-5 w-px bg-slate-200 sm:block" />
@@ -302,7 +312,7 @@ export default function App({
 							{view === 'fill'
 								? '停止输入后自动保存；多人修改同一条 KR 时会先请你确认。'
 								: reviewDataset
-									? 'Review 会议只读投屏；评分与 AI 评审可以直接在这里操作。'
+									? 'Review 会议只读投屏；评分可以直接在这里改，AI 评审在“Review 填写”里。'
 									: '会议模式沿用同一份数据，只读投屏并保留评论与飞书导出。'}
               <button type="button" onClick={reset} className="ml-1 underline hover:text-slate-600">重新载入</button>
             </div>

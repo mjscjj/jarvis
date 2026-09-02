@@ -1218,3 +1218,7 @@ export interface ChatHistory {
 export interface ChatRuntimeConfig {
   port: number
 }
+
+export interface WebConfig {
+  public_base_url: string
+}

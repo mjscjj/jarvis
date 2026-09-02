@@ -69,6 +69,7 @@ type Dependencies struct {
 	Debug              *insight.DebugService
 	Logs               *insight.LogReader
 	ChatAddr           string           // 独立 Chat sidecar 地址；主进程只向前端公开端口
+	PublicBaseURL      string           // 这台部署对外可打开的根地址；分享链接用它替换浏览器地址栏里的 IP
 	Capture            *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
 	RuntimeSettings    *config.RuntimeSettingsService
 	ContextAssembler   *contextsnap.Assembler
@@ -341,6 +342,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.ChatAddr != "" {
 		h.GET("/api/chat-config", GetChatRuntimeConfig(deps.ChatAddr))
 	}
+	h.GET("/api/web-config", GetWebConfig(deps.PublicBaseURL))
 	// 精确 API 路由优先于这个兜底。必须在进程注册根 StaticFS 之前拦住
 	// 未知 /api/*，否则 Hertz 会把它当作 web/dist 下的静态文件并返回
 	// 非 JSON 404，调用方拿不到 logid，服务端也会打印误导性的文件错误。
