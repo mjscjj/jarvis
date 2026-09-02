@@ -78,10 +78,11 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | 本机运行时覆盖 | `conf/config.runtime.yaml` |
 | 页面入口 | `web/src/App.tsx` |
 | Agent 工具 | `internal/toolcatalog/`, `scripts/jarvis-tools` |
+| 飞书应用与登录身份 | [docs/design-dual-app-identity.md](docs/design-dual-app-identity.md)，配置真源是 `conf/okr-module.yaml` 与 `conf/okr-feishu-scopes.txt` |
 
 有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 文件按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。
 
-**改本机运行参数改 `conf/config.runtime.yaml`，不要改 `conf/config.yaml`。** 后台设置页保存时会把整份可调参数快照写进 runtime 文件，此后基线里的同名 key 永久失效——这是「改了 `conf/config.yaml` 没有任何效果」的典型原因。基线只负责仓库默认值和 runtime 未覆盖的键（`sqlite.path`、`server.*`、`capture.hot_age_hours` 等）；身份与密钥（`extract.principal_open_id`、`card_approval.relay_secret`）只写 runtime 文件，它不进 Git、权限保持 `600`。飞书身份直接使用 lark-cli 当前默认身份。
+**改本机运行参数改 `conf/config.runtime.yaml`，不要改 `conf/config.yaml`。** 后台设置页保存时会把整份可调参数快照写进 runtime 文件，此后基线里的同名 key 永久失效——这是「改了 `conf/config.yaml` 没有任何效果」的典型原因。基线只负责仓库默认值和 runtime 未覆盖的键（`sqlite.path`、`server.*`、`capture.hot_age_hours` 等）；身份与密钥（`extract.principal_open_id`、`card_approval.relay_secret`）只写 runtime 文件，它不进 Git、权限保持 `600`。Jarvis 本体的飞书身份直接使用 lark-cli 当前默认身份，也就是权限最大、只服务 principal 一人的主应用。OKR 模块的页面登录是**另一个**低敏应用，见 [双飞书应用身份设计](docs/design-dual-app-identity.md)。
 
 后台保存 runtime settings 后需要重启服务；文档中的配置数值只代表仓库基线，不代表当前进程一定正在使用该值。
 
@@ -263,7 +264,7 @@ macOS 的 `rebuild-server.sh` 会先查询正在执行的 Task；服务已注册
 
 macOS：仓库没有 Web launchd 安装脚本，首次启用 18801 时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。launchd 不接受相对路径，所以 `deploy/` 只存 `*.plist.template`，安装脚本用 `scripts/render-launchd-plist.sh` 把 `__JARVIS_ROOT__` 和 `__HOME__` 展开到 `~/Library/LaunchAgents/`。仓库换目录或换用户后重新渲染即可，不需要改仓库文件。
 
-Linux：unit 文件写在 `~/.config/systemd/user/<label>.service`，每次 `jarvis-deploy` 都会按当前仓库路径重新生成，所以不要手改它——要加环境变量（例如 OKR 模块 identity 用的 `JARVIS_OKR_FEISHU_APP_SECRET`）请放进同名 `.d/` 目录下的 drop-in，它不会被覆盖。仓库路径、配置路径和日志路径都不支持空格或 `%`。
+Linux：unit 文件写在 `~/.config/systemd/user/<label>.service`，每次 `jarvis-deploy` 都会按当前仓库路径重新生成，所以不要手改它——要加环境变量（例如 OKR 模块登录应用的 `JARVIS_OKR_EMILY_APP_SECRET`）请放进同名 `.d/` 目录下的 drop-in，它不会被覆盖。仓库路径、配置路径和日志路径都不支持空格或 `%`。
 
 详细运维说明见 [docs/reference/operations.md](docs/reference/operations.md)。
 

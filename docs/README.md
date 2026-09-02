@@ -40,6 +40,7 @@
 | [Codex Session 挂起与恢复](design-codex-session-continuation.md) | current，需按代码持续核对 | `waiting` / `needs_human` 的同 Session 续跑 |
 | [每日进度总结](design-daily-digest.md) | current | 个人/群日报及 Skill 取证 |
 | [文件化文本配置](design-file-backed-text-config.md) | current | prompts、rules 与后台编辑边界 |
+| [双飞书应用身份](design-dual-app-identity.md) | current | 主应用（owner 对等身份、最大权限）与 OKR 对外登录应用（低敏、每人自授权）的分工，以及为什么用 union_id 认人 |
 | [实体关系与进度历史](design-temporal-relations-and-progress.md) | current，部分段落待继续校准 | RelationFact、TaskEvent、Fact |
 | [Jarvis 内置功能模块](design-app-modules.md) | current | 顶层模块注册、启停配置，以及 OKR 产品模块与世界模型的所有权边界 |
 | [OKR 模块解耦验收](okr-mvp-handoff.md) | current | 可选模块生命周期、通用关系、Skill 编排与旧实现清理 |
