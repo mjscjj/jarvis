@@ -21,6 +21,7 @@ type TokenStore struct {
 // fields from Feishu can be added without a migration.
 type StoredToken struct {
 	OpenID           string     `json:"open_id"`
+	UnionID          string     `json:"union_id,omitempty"`
 	Name             string     `json:"name"`
 	Email            string     `json:"email,omitempty"`
 	AvatarURL        string     `json:"avatar_url,omitempty"`
@@ -64,6 +65,7 @@ func (s *TokenStore) Save(grant Grant, now time.Time) (StoredToken, error) {
 	now = now.UTC()
 	record := StoredToken{
 		OpenID:       grant.User.OpenID,
+		UnionID:      grant.User.UnionID,
 		Name:         grant.User.Name,
 		Email:        grant.User.Email,
 		AvatarURL:    grant.User.AvatarURL,

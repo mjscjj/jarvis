@@ -30,6 +30,7 @@ type CommentView struct {
 	SelectionPrefix string        `json:"selection_prefix,omitempty"`
 	SelectionSuffix string        `json:"selection_suffix,omitempty"`
 	AuthorOpenID    string        `json:"author_open_id,omitempty"`
+	AuthorUnionID   string        `json:"author_union_id,omitempty"`
 	AuthorName      string        `json:"author_name"`
 	Content         string        `json:"content"`
 	Todo            bool          `json:"todo"`
@@ -59,6 +60,7 @@ type CreateCommentInput struct {
 	SelectionPrefix string `json:"selection_prefix"`
 	SelectionSuffix string `json:"selection_suffix"`
 	AuthorOpenID    string `json:"author_open_id"`
+	AuthorUnionID   string `json:"author_union_id"`
 	AuthorName      string `json:"author_name"`
 	Content         string `json:"content"`
 }
@@ -102,6 +104,7 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	input.SelectionPrefix = strings.TrimSpace(input.SelectionPrefix)
 	input.SelectionSuffix = strings.TrimSpace(input.SelectionSuffix)
 	input.AuthorOpenID = strings.TrimSpace(input.AuthorOpenID)
+	input.AuthorUnionID = strings.TrimSpace(input.AuthorUnionID)
 	input.AuthorName = strings.TrimSpace(input.AuthorName)
 	input.Content = strings.TrimSpace(input.Content)
 	if input.Quarter == "" {
@@ -167,6 +170,7 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 		SelectionPrefix: input.SelectionPrefix,
 		SelectionSuffix: input.SelectionSuffix,
 		AuthorOpenID:    input.AuthorOpenID,
+		AuthorUnionID:   input.AuthorUnionID,
 		AuthorName:      input.AuthorName,
 		Content:         input.Content,
 		CreatedAt:       now,
@@ -305,7 +309,7 @@ func commentView(row domain.PageComment) CommentView {
 		TargetID: row.TargetID, TargetTitle: row.TargetTitle,
 		SelectedText: row.SelectedText, SelectionStart: row.SelectionStart, SelectionEnd: row.SelectionEnd,
 		SelectionPrefix: row.SelectionPrefix, SelectionSuffix: row.SelectionSuffix,
-		AuthorOpenID: row.AuthorOpenID, AuthorName: row.AuthorName,
+		AuthorOpenID: row.AuthorOpenID, AuthorUnionID: row.AuthorUnionID, AuthorName: row.AuthorName,
 		Content: row.Content, Todo: row.Todo, Resolved: row.Resolved,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Replies: []CommentView{},
 	}

@@ -317,6 +317,7 @@ type PageComment struct {
 	SelectionPrefix string `gorm:"not null;type:text;default:''"`
 	SelectionSuffix string `gorm:"not null;type:text;default:''"`
 	AuthorOpenID    string `gorm:"not null;default:'';index"`
+	AuthorUnionID   string `gorm:"not null;default:'';index"`
 	AuthorName      string `gorm:"not null;default:''"`
 	Content         string `gorm:"not null;type:text"`
 	// Todo promotes a meeting comment into the weekly follow-up summary. It
@@ -335,6 +336,7 @@ func (PageComment) TableName() string { return "okr_workspace_comment" }
 type AuthSession struct {
 	TokenHash  string    `gorm:"primaryKey;size:64"`
 	OpenID     string    `gorm:"not null;index"`
+	UnionID    string    `gorm:"not null;default:'';index"`
 	Name       string    `gorm:"not null"`
 	AvatarURL  string    `gorm:"not null;default:''"`
 	Email      string    `gorm:"not null;default:''"`
