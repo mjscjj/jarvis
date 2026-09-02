@@ -2,12 +2,11 @@ import { useMemo, useState } from 'react'
 import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
 import { buildAllBusinessNavigation, buildKRHierarchy, priorityOf } from '../hierarchy'
-import { tagLabel } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import { collapseAllIds, KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
 import type { Entry, Kr, KrOwner, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
-import { TagChip, TagEditor } from './TagEditor'
+import { TagEditor } from './TagEditor'
 import { PreviewReviewButton, PreviewReviewPanel } from '../aiReviewContext'
 import { isReviewTemplate } from '../weekCatalog'
 import { FeishuPeoplePicker, PointPeoplePicker } from './FeishuPeoplePicker'
@@ -199,16 +198,6 @@ function MetricBox({ kr, readOnly, structureReadOnly = readOnly }: { kr: Kr; rea
   )
 }
 
-function tagText(tag: KrTag) {
-  return tagLabel(tag.type, tag.value)
-}
-
-function tagClass(tag: KrTag) {
-  if (tag.type === 'management_focus') return 'border-amber-200 bg-amber-50 text-amber-700'
-  if (tag.type === 'region') return 'border-violet-200 bg-violet-50 text-violet-700'
-  return 'border-slate-200 bg-slate-100 text-slate-600'
-}
-
 const OWNER_TONES = [
   { badge: 'border-sky-200 bg-sky-50 text-sky-700', avatar: 'bg-sky-500' },
   { badge: 'border-violet-200 bg-violet-50 text-violet-700', avatar: 'bg-violet-500' },
@@ -267,9 +256,6 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, structureReadOnly
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
 				</select>
 			) : <span title="业务分类和优先级只在「管理与打标」里维护" className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priority || '未标注'}</span>}
-			{(kr.tags ?? []).filter((tag) => tag.type !== 'custom' && tag.type !== 'priority').map((tag) => (
-              <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded-md border px-2 py-1 text-xs [overflow-wrap:anywhere] ${tagClass(tag)}`}>{tagText(tag)}</span>
-            ))}
             {kr.metrics.length > 0 && <span className="inline-flex items-center gap-1" title="核心数据红黄绿灯">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>}
 			{showScore && <WeeklyScoreControl score={kr.score} readOnly={scoreReadOnly} onChange={(score) => setKrScore(kr.id, score)} label="一级 KR 评分" />}
           </div>
@@ -328,8 +314,8 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
             {showScore && <span className="pt-0.5"><WeeklyScoreControl score={point.score} readOnly={scoreReadOnly} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" /></span>}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
+          {/* 标签只在「管理与打标」里展示和维护，填写和会议视图不渲染。 */}
           {tagSuggestions && <div className="mt-1.5 min-w-0"><TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} /></div>}
-          {!tagSuggestions && (point.tags?.length ?? 0) > 0 && <div className="mt-1.5 flex min-w-0 flex-wrap items-start gap-1">{point.tags?.map((tag) => <TagChip key={`${tag.type}:${tag.value}`} tag={tag} />)}</div>}
           {(point.meegoWorkItemId || editingMeego) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
               <span>Meego</span>

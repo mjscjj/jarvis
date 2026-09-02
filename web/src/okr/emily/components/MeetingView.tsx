@@ -5,13 +5,12 @@ import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
 import { useCommentInteraction } from '../commenting'
 import { buildAllBusinessNavigation, buildKRHierarchy, priorityLabel, priorityOf } from '../hierarchy'
-import { tagLabel } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import { collapseAllIds, KINDS } from '../rows'
 import { buildFullMeetingMarkdown } from '../meetingMarkdown'
 import { KIND_LABEL, isDone } from '../template'
 import { isReviewTemplate } from '../weekCatalog'
-import type { CommentTarget, Entry, KrPriority, KrTag, Objective, Point, PointKind, TextSelection } from '../types'
+import type { CommentTarget, Entry, KrPriority, Objective, Point, PointKind, TextSelection } from '../types'
 import { HierarchyNav } from './HierarchyNav'
 import { PersonAvatar } from './PersonAvatar'
 import { Images, LightPicker, Links, StatusSelect } from './ui'
@@ -31,16 +30,6 @@ function FoldButton({ open, onToggle, label }: { open: boolean; onToggle: () => 
       </svg>
     </button>
   )
-}
-
-function tagText(tag: KrTag) {
-  return tagLabel(tag.type, tag.value)
-}
-
-function tagTone(tag: KrTag) {
-  if (tag.type === 'management_focus') return 'border-amber-200 bg-amber-50 text-amber-700'
-  if (tag.type === 'region') return 'border-indigo-200 bg-indigo-50 text-indigo-700'
-  return 'border-slate-200 bg-slate-100 text-slate-600'
 }
 
 function priorityTone(priority: KrPriority | '') {
@@ -204,7 +193,7 @@ function MeetingLane({ entries }: { entries: Entry[] }) {
   )
 }
 
-function MeetingPoint({ objectiveId, krId, point, index, open, onToggle, showTags, reviewMode }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; showTags: boolean; reviewMode: boolean }) {
+function MeetingPoint({ objectiveId, krId, point, index, open, onToggle, reviewMode }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; reviewMode: boolean }) {
   const { setPointScore } = useBoard()
   const doing = point.entries.filter((entry) => !isDone(entry.status))
   const done = point.entries.filter((entry) => isDone(entry.status))
@@ -217,13 +206,6 @@ function MeetingPoint({ objectiveId, krId, point, index, open, onToggle, showTag
           <span className="mt-px shrink-0 rounded border border-blue-200 bg-blue-50 px-1.5 py-px text-[10px] font-semibold text-blue-600">KR{index + 1}</span>
           <div className="min-w-0 flex-1">
             <h4 className="text-[13px] font-semibold leading-[19px] text-slate-800"><HighlightedText target={target} text={point.title} /></h4>
-            {showTags && (
-              <div className="mt-1 flex min-w-0 flex-wrap items-start gap-1" aria-label="具体 KR 打标">
-                {(point.tags?.length ?? 0) > 0
-                  ? point.tags?.map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)
-                  : <span className="rounded border border-dashed border-slate-200 bg-slate-50 px-1.5 py-px text-[9px] leading-4 text-slate-400">未打标</span>}
-              </div>
-            )}
           </div>
           {reviewMode && <WeeklyScoreControl score={point.score} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" />}
           <span className="shrink-0 pt-0.5 text-[10px] text-slate-400">{doing.length} 进展 · {done.length} 完成</span>
@@ -235,7 +217,7 @@ function MeetingPoint({ objectiveId, krId, point, index, open, onToggle, showTag
   )
 }
 
-function KindGroup({ objectiveId, krId, kind, points, closed, toggle, showTags, reviewMode }: { objectiveId: string; krId: string; kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void; showTags: boolean; reviewMode: boolean }) {
+function KindGroup({ objectiveId, krId, kind, points, closed, toggle, reviewMode }: { objectiveId: string; krId: string; kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void; reviewMode: boolean }) {
   const tone = kind === 'strategy' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-teal-200 bg-teal-50 text-teal-700'
   return (
     <section className={`border-l-[3px] pl-2.5 ${kind === 'strategy' ? 'border-violet-500' : 'border-teal-500'}`}>
@@ -244,12 +226,12 @@ function KindGroup({ objectiveId, krId, kind, points, closed, toggle, showTags, 
         <span className="text-[10px] text-slate-400">{points.length} 项</span>
         <span className="h-px flex-1 bg-slate-100" />
       </div>
-	  <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} objectiveId={objectiveId} krId={krId} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} showTags={showTags} reviewMode={reviewMode} />)}</div>
+	  <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} objectiveId={objectiveId} krId={krId} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} reviewMode={reviewMode} />)}</div>
     </section>
   )
 }
 
-function MeetingObjectiveSection({ objective, closed, toggle, showTags, reviewMode }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; showTags: boolean; reviewMode: boolean }) {
+function MeetingObjectiveSection({ objective, closed, toggle, reviewMode }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; reviewMode: boolean }) {
   const { setKrScore } = useBoard()
   const objectiveOpen = !closed.has(objective.id)
   return (
@@ -278,7 +260,6 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags, reviewMo
 						<span className={`rounded border px-1.5 py-px text-[9px] font-semibold ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priorityLabel(priority)}</span>
 					{reviewMode && <WeeklyScoreControl score={kr.score} onChange={(score) => setKrScore(kr.id, score)} label="一级 KR 评分" />}
                     <span className="inline-flex gap-0.5">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>
-						{showTags && (kr.tags ?? []).filter((tag) => tag.type !== 'priority').map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)}
                   </div>
                 </Commentable>
               </header>
@@ -308,7 +289,7 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags, reviewMo
                 )}
                 {KINDS.map((kind) => {
                   const points = kr.points.filter((point) => point.kind === kind)
-				  return points.length > 0 ? <KindGroup key={kind} objectiveId={objective.id} krId={kr.id} kind={kind} points={points} closed={closed} toggle={toggle} showTags={showTags} reviewMode={reviewMode} /> : null
+				  return points.length > 0 ? <KindGroup key={kind} objectiveId={objective.id} krId={kr.id} kind={kind} points={points} closed={closed} toggle={toggle} reviewMode={reviewMode} /> : null
                 })}
               </div>}
             </article>
@@ -325,7 +306,6 @@ export function MeetingView() {
   // a week can never be rendered in the other ceremony's format.
   const reviewMode = isReviewTemplate(templateKey)
   const [ownerFilter, setOwnerFilter] = useState('')
-  const [showTags, setShowTags] = useState(false)
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const [activeBusinessValue, setActiveBusinessValue] = useState<string>()
   const [activePriorityValue, setActivePriorityValue] = useState<string>()
@@ -369,7 +349,6 @@ export function MeetingView() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <button type="button" onClick={() => setShowTags((value) => !value)} className={`rounded-md border px-2 py-1 text-[11px] font-medium ${showTags ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>{showTags ? '隐藏打标' : '显示打标'}</button>
         <span className="ml-1 text-[11px] text-slate-400">层级</span>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white text-[11px]">
           <button type="button" onClick={() => setClosed(new Set())} className="px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部展开</button>
@@ -399,7 +378,7 @@ export function MeetingView() {
       />
 
       {activeObjective ? (
-		<MeetingObjectiveSection objective={activeObjective} closed={closed} toggle={toggle} showTags={showTags} reviewMode={reviewMode} />
+		<MeetingObjectiveSection objective={activeObjective} closed={closed} toggle={toggle} reviewMode={reviewMode} />
       ) : <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-xs text-slate-400">当前分类尚无已接入的方向</div>}
     </div>
   )
