@@ -86,7 +86,7 @@ export function buildKRHierarchy(objectives: Objective[]): BusinessNavigation[] 
     .sort(([left], [right]) => left === '' ? 1 : right === '' ? -1 : 0)
     .map(([business, priorities]) => ({
       value: business,
-      label: business || '未标注业务',
+      label: businessCategoryLabel(business),
       priorities: [...priorities.entries()]
         .sort(([left], [right]) => priorityOrder(left) - priorityOrder(right))
         .map(([priority, directions]) => ({
@@ -120,6 +120,31 @@ export function buildGlobalPriorityNavigation(navigation: BusinessNavigation[]):
 
 export function buildAllBusinessNavigation(navigation: BusinessNavigation[]): BusinessNavigation {
   return { value: '__all__', label: '全部 OKR', priorities: buildGlobalPriorityNavigation(navigation) }
+}
+
+export interface BusinessCategoryOption {
+  value: string
+  label: string
+  count: number
+}
+
+export function businessCategoryLabel(value: string): string {
+  return value || '未标注业务'
+}
+
+// Another filter can empty the category someone is standing in. Keeping its tab
+// visible at zero is what tells them why the list below went blank, instead of
+// silently dropping the tab or moving them to a category they did not pick.
+export function withSelectedBusinessCategory(options: BusinessCategoryOption[], selected?: string): BusinessCategoryOption[] {
+  if (selected === undefined || options.some((option) => option.value === selected)) return options
+  return [...options, { value: selected, label: businessCategoryLabel(selected), count: 0 }]
+}
+
+// The business-category strip is the one navigation level every OKR page shares,
+// so its options and ordering come from the same hierarchy the fill and meeting
+// pages drill through, not from a second pass over the tags.
+export function businessCategoryOptions(navigation: BusinessNavigation[]): BusinessCategoryOption[] {
+  return navigation.map((business) => ({ value: business.value, label: business.label, count: hierarchyKRCount(business) }))
 }
 
 export function hierarchyKRCount(business: BusinessNavigation): number {

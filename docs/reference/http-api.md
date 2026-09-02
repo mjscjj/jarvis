@@ -43,6 +43,8 @@
 - Skills：`GET /api/skills`、`POST /api/skills/scan`、`PUT /api/skills/:skill_name`、`GET /api/skills/:skill_name/content`
 - App modules：`GET /api/app-modules`、`PUT /api/app-modules/:module_key`
 - OKR 定义：`GET /api/okr/scope|enums|board`，身份、人员、图片、Objective/KR 创建与 KR 编辑位于 `/api/okr/*`。核心 board 和写接口不读取周报表。
+- 定义的窄接口：`PUT /api/okr/krs/:kr_id/definition` 只接受 KR 与已有要点的标题和负责人，收不到指标、灯、标签，也不能增删要点。周报和 Review 填写页手里的指标值属于当周副本，靠这个接口的字段边界保证它们到不了主干定义；改完由前端重新取一次周视图当基线。整条 KR 覆盖写仍走 `PUT /api/okr/krs/:kr_id`，标签走 `.../tags`。
+- 排序：`PUT /api/okr/objectives/order`（带 `quarter`）和 `PUT /api/okr/objectives/:objective_id/kr-order` 接收该范围内**全量**兄弟 id，写成 `sort_order` 0..n-1；少给、多给、重复或跨范围都拒绝。位置不是内容，所以不撞 `KR.version`，别处打开的页面不会因为有人调顺序而在下次保存时冲突。
 - 存在周报历史的 KR 或稳定拆解不允许删除，避免留下孤儿历史。
 - 周报：`GET /api/weekly-report/scope|board|weeks|comments|reminder-preview|reminder-batches|meego-preview`；`POST /api/weekly-report/weeks` 开启空周，`DELETE /api/weekly-report/weeks/:week?quarter=...` 删除该季度下整周的周报事实但保留 O/KR 稳定定义。评论、所选周进展、Meego 观察和催办批次的其它写接口位于 `/api/weekly-report/*`。产品固定提供催填、进展巡检、会议材料和对外提交四个 Agent 行动，并固定绑定可编辑 Prompt；季度草稿、区域对齐和其它 Report Prompt 可由普通 Agent Task 使用。执行统一由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
 - Meego observation：`POST /api/weekly-report/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。

@@ -243,7 +243,7 @@ function KrOwnerBadge({ owner }: { owner: KrOwner }) {
   )
 }
 
-function KrHeader({ objectiveId, kr, open, onToggle, readOnly, showScore, scoreReadOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean; showScore: boolean; scoreReadOnly: boolean }) {
+function KrHeader({ objectiveId, kr, open, onToggle, readOnly, structureReadOnly, showScore, scoreReadOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean; structureReadOnly: boolean; showScore: boolean; scoreReadOnly: boolean }) {
 	const { setKrTitle, setKrPriority, setKrScore } = useBoard()
 	const priority = priorityOf(kr)
 
@@ -262,11 +262,11 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, showScore, scoreR
             </div>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1">
-			{!readOnly ? (
+			{!structureReadOnly ? (
 				<select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} className={`rounded-md border px-2 py-1 text-xs outline-none focus:border-blue-400 ${priorityTone(priority)}`}>
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
 				</select>
-			) : <span className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priority || '未标注'}</span>}
+			) : <span title="业务分类和优先级只在「管理与打标」里维护" className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priority || '未标注'}</span>}
 			{(kr.tags ?? []).filter((tag) => tag.type !== 'custom' && tag.type !== 'priority').map((tag) => (
               <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded-md border px-2 py-1 text-xs [overflow-wrap:anywhere] ${tagClass(tag)}`}>{tagText(tag)}</span>
             ))}
@@ -279,7 +279,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, showScore, scoreR
   )
 }
 
-function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[] }) {
+function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[] }) {
   const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
   const [preview, setPreview] = useState<MeegoPreview>()
   const [previewError, setPreviewError] = useState('')
@@ -321,7 +321,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
           {(point.meegoWorkItemId || editingMeego) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
               <span>Meego</span>
-              {!readOnly ? (
+              {!structureReadOnly ? (
                 <>
                   <input value={point.meegoWorkItemId ?? ''} onChange={(event) => setPointMeegoLink(krId, point.id, { meegoWorkItemId: event.target.value, meegoUrl: point.meegoUrl })} placeholder="工作项 ID" className="w-24 rounded border border-slate-200 bg-white px-1.5 py-0.5 outline-none focus:border-blue-400" />
                   <input value={point.meegoUrl ?? ''} onChange={(event) => setPointMeegoLink(krId, point.id, { meegoWorkItemId: point.meegoWorkItemId, meegoUrl: event.target.value })} placeholder="链接（可选）" className="min-w-32 flex-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 outline-none focus:border-blue-400" />
@@ -331,11 +331,11 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
               {showProgress && point.meegoWorkItemId && <button type="button" onClick={() => void loadPreview()} disabled={previewing} className="rounded px-1.5 py-0.5 text-blue-500 hover:bg-blue-50 disabled:text-slate-300">{previewing ? '读取中' : '对比'}</button>}
             </div>
           )}
-          {!readOnly && !point.meegoWorkItemId && !editingMeego && (
+          {!structureReadOnly && !point.meegoWorkItemId && !editingMeego && (
             <button type="button" onClick={() => setEditingMeego(true)} className="mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100">+ 关联 Meego</button>
           )}
         </div>
-        {!readOnly && <button type="button" onClick={() => removePoint(objectiveId, krId, point.id)} title="删除这个 KR 点" className="text-slate-300 opacity-0 transition-opacity group-hover/point:opacity-100 hover:text-red-500">×</button>}
+        {!structureReadOnly && <button type="button" onClick={() => removePoint(objectiveId, krId, point.id)} title="删除这个 KR 点" className="text-slate-300 opacity-0 transition-opacity group-hover/point:opacity-100 hover:text-red-500">×</button>}
       </div>
       {showProgress && (preview || previewError) && (
         <div className="mt-2 ml-8 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
@@ -351,7 +351,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
   )
 }
 
-function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
+function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
   const { templateKey } = useBoard()
   // Review reports one combined lane; the classic weekly report splits 进展 and
   // 已完成. Both formats read the loaded week's template, never the tab.
@@ -361,7 +361,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitio
   const reviewTarget = { kind: 'point' as const, objectiveId, krId, pointId: point.id, title: point.title }
   return (
     <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} showScore={showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} />
+      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} />
       {showReview && <div className="mt-1.5 flex justify-end pl-7"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showReview && <PreviewReviewPanel target={reviewTarget} className="mt-1.5 ml-7" />}
       {open && showProgress && (review
@@ -388,10 +388,10 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitio
   )
 }
 
-function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
+function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
   const { addPoint } = useBoard()
   const points = kr.points.filter((point) => point.kind === kind)
-  if (points.length === 0 && definitionReadOnly) return null
+  if (points.length === 0 && structureReadOnly) return null
 
   return (
     <section className={`rounded-xl border-l-[3px] p-2.5 ${kind === 'strategy' ? 'border-l-violet-500 bg-violet-50/35' : 'border-l-teal-500 bg-teal-50/35'}`}>
@@ -399,10 +399,10 @@ function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly,
         <span className={`flex size-5 items-center justify-center rounded text-[10px] font-bold text-white ${kind === 'strategy' ? 'bg-violet-500' : 'bg-teal-500'}`}>{kind === 'strategy' ? '策' : '产'}</span>
         <h3 className={`text-[12px] font-semibold ${kind === 'strategy' ? 'text-violet-700' : 'text-teal-700'}`}>{KIND_LABEL[kind]}</h3>
         <span className="rounded-full bg-white/80 px-1.5 text-[10px] text-slate-400">{points.length} 条</span>
-        {!definitionReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
+        {!structureReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
       </div>
       <div className="space-y-4">
-        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} definitionReadOnly={definitionReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} />)}
+        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} />)}
         {points.length === 0 && <Empty>暂无{KIND_LABEL[kind]}</Empty>}
       </div>
     </section>
@@ -430,6 +430,7 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions }: { objec
           closed={closed}
           toggle={toggle}
           definitionReadOnly={false}
+          structureReadOnly={false}
           progressReadOnly
           showProgress={false}
           tagSuggestions={tagSuggestions}
@@ -442,20 +443,22 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions }: { objec
 function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly, progressReadOnly, showProgress }: { objectiveId: string; kr: Kr; closed: Set<string>; toggle: (id: string) => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean }) {
   const { templateKey } = useBoard()
   const open = !closed.has(kr.id)
-  const definitionLocked = readOnly || definitionsReadOnly
+  // Wording and people live on the shared definition but a filling week may
+  // edit them; adding or removing rows, and labelling, stay with 管理与打标.
+  const structureLocked = readOnly || definitionsReadOnly
   // Scores belong to a reporting week, so they show wherever that week's
   // progress shows, and only for the template that scores.
   const showScore = showProgress && isReviewTemplate(templateKey)
   const reviewTarget = { kind: 'kr' as const, objectiveId, krId: kr.id, title: kr.title }
   return (
     <article data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
-	  <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} showScore={showScore} scoreReadOnly={readOnly || progressReadOnly} />
+	  <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={readOnly} structureReadOnly={structureLocked} showScore={showScore} scoreReadOnly={readOnly || progressReadOnly} />
       {showScore && <div className="flex justify-end px-4 pt-2"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showScore && <PreviewReviewPanel target={reviewTarget} className="mx-4 mt-2" />}
       {open && (
         <div className="space-y-5 px-4 py-4">
-          <MetricBox kr={kr} readOnly={readOnly} structureReadOnly={definitionLocked} />
-          {KINDS.map((kind) => <PointGroup key={kind} objectiveId={objectiveId} kr={kr} kind={kind} closed={closed} toggle={toggle} definitionReadOnly={definitionLocked} progressReadOnly={readOnly || progressReadOnly} showProgress={showProgress} />)}
+          <MetricBox kr={kr} readOnly={readOnly} structureReadOnly={structureLocked} />
+          {KINDS.map((kind) => <PointGroup key={kind} objectiveId={objectiveId} kr={kr} kind={kind} closed={closed} toggle={toggle} definitionReadOnly={readOnly} structureReadOnly={structureLocked} progressReadOnly={readOnly || progressReadOnly} showProgress={showProgress} />)}
         </div>
       )}
     </article>

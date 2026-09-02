@@ -1,24 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, listWeeklyReportWeeks, replaceKR, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardData, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, getWeeklyKR, listWeeklyReportWeeks, reorderKRs, reorderObjectives, replaceKR, replaceKRDefinition, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardData, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
+import { definitionSignature } from './definition'
 import { findKrDraftIssue } from './draftValidation'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
+import { swappedOrder } from './ordering'
 import { LIGHTS, STATUSES } from './template'
 import type { Entry, EnumValues, Kr, Objective, Point, WeekTemplateKey, WeeklyScore } from './types'
 import { filterWeekCatalog, previousWeekInCatalog } from './weekCatalog'
 
 const SAVE_DELAY_MS = 700
-
-function currentISOWeek(now = new Date()): string {
-  const date = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
-  const day = date.getUTCDay() || 7
-  date.setUTCDate(date.getUTCDate() + 4 - day)
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
-  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7)
-  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
-}
-
-const DEFAULT_WEEK = currentISOWeek()
 
 const DEFAULT_ENUMS: EnumValues = {
 	statuses: STATUSES.map((item) => item.value),
@@ -92,6 +83,22 @@ function sameWeeklyCore(left: Kr, right: Kr): boolean {
   return left.metricNote === right.metricNote && JSON.stringify(left.metrics) === JSON.stringify(right.metrics)
 }
 
+// A filling week may reword a KR and move people, and that lands on the shared
+// definition. A definition conflict has to report the week's own view, or the
+// merge dialog would offer a remote copy with this week's progress missing.
+async function syncWeeklyDefinition(remote: Kr, local: Kr, week: string): Promise<boolean> {
+  if (definitionSignature(remote) === definitionSignature(local)) return false
+  try {
+    await replaceKRDefinition(local)
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409) {
+      throw new APIError(error.message, error.status, error.code, await getWeeklyKR(local.id, week), error.logid)
+    }
+    throw error
+  }
+  return true
+}
+
 async function syncWeeklyProgress(remote: Kr, local: Kr, week: string): Promise<Kr> {
   const before = entriesById(remote)
   const after = entriesById(local)
@@ -122,15 +129,17 @@ export function BoardProvider({
 }) {
   const [objectives, setObjectives] = useState<Objective[]>([])
   const [enums, setEnums] = useState<EnumValues>(DEFAULT_ENUMS)
-  const [week, setWeekState] = useState(DEFAULT_WEEK)
+  // No week until the server names one: guessing the current ISO week makes the
+  // page act on a scope the quarter may not have.
+  const [week, setWeekState] = useState('')
   const [templateKey, setTemplateKey] = useState<WeekTemplateKey>('classic')
   const [quarter, setQuarterState] = useState(initialQuarter)
   const [availableQuarters, setAvailableQuarters] = useState<string[]>(initialQuarter ? [initialQuarter] : [])
   const [previousWeek, setPreviousWeek] = useState<string>()
-  const [availableWeeks, setAvailableWeeks] = useState<string[]>([DEFAULT_WEEK])
+  const [availableWeeks, setAvailableWeeks] = useState<string[]>([])
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'loading', message: '正在读取本周进展…' })
   const objectivesRef = useRef(objectives)
-  const weekRef = useRef(DEFAULT_WEEK)
+  const weekRef = useRef('')
   const quarterRef = useRef(initialQuarter)
   const remoteReady = useRef(false)
   const serverKrs = useRef(new Map<string, Kr>())
@@ -161,9 +170,17 @@ export function BoardProvider({
     try {
       const baseline = serverKrs.current.get(krId)
       if (!baseline) throw new Error('缺少服务端 KR 基线，请重新载入。')
-      const saved = surface === 'weekly-report'
-        ? await syncWeeklyProgress(baseline, snapshot, weekRef.current)
-        : await replaceKR(snapshot)
+      let saved: Kr
+      if (surface === 'weekly-report') {
+        const definitionChanged = await syncWeeklyDefinition(baseline, snapshot, weekRef.current)
+        saved = await syncWeeklyProgress(baseline, snapshot, weekRef.current)
+        // The definition write answers with a core view, and the progress calls
+        // may not have run at all, so the week's own view is the only baseline
+        // that still carries this week's progress and scores.
+        if (definitionChanged) saved = await getWeeklyKR(krId, weekRef.current)
+      } else {
+        saved = await replaceKR(snapshot)
+      }
       serverKrs.current.set(krId, clone(saved))
       lastFailedKr.current = null
       if ((revisions.current.get(krId) ?? 0) === revision) {
@@ -246,7 +263,7 @@ export function BoardProvider({
       setAvailableWeeks(board.availableWeeks)
       setEnums(remoteEnums)
       remoteReady.current = true
-      setSyncState({ kind: 'ready', message: board.week ? '本周进展已加载' : '当前季度暂无对应周次' })
+      setSyncState({ kind: 'ready', message: board.week ? '本周进展已加载' : surface === 'weekly-report' ? '当前季度暂无对应周次' : 'OKR 已加载' })
       return board
     } catch (error) {
       setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '加载失败，请稍后重试。' })
@@ -408,6 +425,46 @@ export function BoardProvider({
         setSyncState({ kind: 'saved', message: '空目标已删除' })
       } catch (error) {
         setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '删除目标失败。' })
+        throw error
+      }
+    },
+
+    swapObjectives: async (id, targetId) => {
+      setSyncState({ kind: 'saving', message: '正在调整顺序…' })
+      try {
+        const order = await reorderObjectives(quarterRef.current, swappedOrder(objectivesRef.current.map((objective) => objective.id), id, targetId))
+        const byId = new Map(objectivesRef.current.map((objective) => [objective.id, objective]))
+        publish(order.map((objectiveId) => {
+          const objective = byId.get(objectiveId)
+          if (!objective) throw new Error('顺序里出现了页面上没有的目标，请重新载入。')
+          return objective
+        }))
+        setSyncState({ kind: 'saved', message: '顺序已保存' })
+      } catch (error) {
+        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '调整顺序失败。' })
+        throw error
+      }
+    },
+
+    swapKrs: async (objectiveId, krId, targetId) => {
+      const objective = objectivesRef.current.find((item) => item.id === objectiveId)
+      if (!objective) throw new Error('目标分组不存在，请重新载入。')
+      setSyncState({ kind: 'saving', message: '正在调整顺序…' })
+      try {
+        const order = await reorderKRs(objectiveId, swappedOrder(objective.krs.map((kr) => kr.id), krId, targetId))
+        const next = clone(objectivesRef.current)
+        const target = next.find((item) => item.id === objectiveId)
+        if (!target) throw new Error('目标分组不存在，请重新载入。')
+        const byId = new Map(target.krs.map((kr) => [kr.id, kr]))
+        target.krs = order.map((id) => {
+          const kr = byId.get(id)
+          if (!kr) throw new Error('顺序里出现了页面上没有的 KR，请重新载入。')
+          return kr
+        })
+        publish(next)
+        setSyncState({ kind: 'saved', message: '顺序已保存' })
+      } catch (error) {
+        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '调整顺序失败。' })
         throw error
       }
     },

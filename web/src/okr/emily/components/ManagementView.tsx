@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react'
 import { useBoard } from '../board'
-import { businessCategoryOf, isStructuralTag, priorityOf } from '../hierarchy'
+import { buildKRHierarchy, businessCategoryOf, businessCategoryOptions, isStructuralTag, priorityOf, withSelectedBusinessCategory } from '../hierarchy'
 import { tagLabel } from '../labels'
 import { hasOwner, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
+import { BusinessCategoryTabs } from './BusinessCategoryTabs'
 import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
 import { KrDefinitionDetails } from './Table'
 import { TagEditor } from './TagEditor'
 
+// 业务分类和优先级各自有专属控件（分类标签条、优先级下拉、每行的选择器），
+// 所以通用标签筛选和标签计数只涵盖其余标签，避免同一语义两个入口。
 function allTagsOf(kr: Kr): KrTag[] {
-	return [...(kr.tags ?? []), ...kr.points.flatMap((point) => point.tags ?? [])]
+	return [...(kr.tags ?? []), ...kr.points.flatMap((point) => point.tags ?? [])].filter((tag) => !isStructuralTag(tag))
 }
 
 function priorityTone(priority: KrPriority | '') {
@@ -58,13 +61,22 @@ function BusinessCategoryField({ value, categories, onChange, allowEmpty = false
 	</select>
 }
 
+// 上下移动只在这一页出现：填写和会议页按业务分类/优先级导航，顺序不是它们的语义。
+function MoveButtons({ label, onUp, onDown }: { label: string; onUp?: () => void; onDown?: () => void }) {
+	const style = 'h-5 w-5 rounded text-[10px] leading-none text-slate-400 transition-colors enabled:hover:bg-white enabled:hover:text-blue-600 disabled:opacity-25'
+	return <span className="inline-flex shrink-0 items-center">
+		<button type="button" disabled={!onUp} onClick={onUp} title={`上移这${label}`} aria-label={`上移这${label}`} className={style}>↑</button>
+		<button type="button" disabled={!onDown} onClick={onDown} title={`下移这${label}`} aria-label={`下移这${label}`} className={style}>↓</button>
+	</span>
+}
+
 function KrTagEditor({ kr, suggestions }: { kr: Kr; suggestions: KrTag[] }) {
   const { addTag, removeTag } = useBoard()
 	const allTags = (kr.tags ?? []).filter((tag) => !isStructuralTag(tag))
   return <TagEditor idPrefix={`tag-options-${kr.id}`} tags={allTags} suggestions={suggestions.filter((item) => !isStructuralTag(item))} onAdd={(value, type) => addTag(kr.id, value, type)} onRemove={(type, value) => removeTag(kr.id, type, value)} />
 }
 
-function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, onToggleDetails }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; onToggleDetails: () => void }) {
+function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, onToggleDetails, onMoveUp, onMoveDown }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; onToggleDetails: () => void; onMoveUp?: () => void; onMoveDown?: () => void }) {
 	const { setKrTitle, setKrBusinessCategory, setKrPriority, deleteKr } = useBoard()
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const [deleting, setDeleting] = useState(false)
@@ -111,6 +123,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
         </div>
       </div>
       <div className="flex min-w-12 items-center justify-end gap-1">
+        <MoveButtons label="条 KR" onUp={onMoveUp} onDown={onMoveDown} />
         {confirmDelete ? (
           <>
             <button type="button" onClick={() => void remove()} disabled={deleting} className="h-6 rounded-md bg-red-600 px-2 text-[9px] font-medium !text-white hover:bg-red-700 disabled:opacity-50">{deleting ? '删除中' : '确认'}</button>
@@ -164,6 +177,8 @@ function ObjectiveEditorHeader({
 	onToggleCreateKr,
 	open,
 	onToggleOpen,
+	onMoveUp,
+	onMoveDown,
 }: {
 	objective: Objective
 	visibleKrCount: number
@@ -172,6 +187,8 @@ function ObjectiveEditorHeader({
 	onToggleCreateKr: () => void
 	open: boolean
 	onToggleOpen: () => void
+	onMoveUp?: () => void
+	onMoveDown?: () => void
 }) {
 	const { updateObjective, deleteObjective } = useBoard()
 	const [editing, setEditing] = useState(false)
@@ -232,6 +249,7 @@ function ObjectiveEditorHeader({
 				</button>
 				<h3 className="min-w-0 flex-1 truncate text-[10px] font-semibold text-slate-500">{objective.title}</h3>
 				<span className="text-[9px] tabular-nums text-slate-400">{visibleKrCount}{visibleKrCount !== totalKrCount ? ` / ${totalKrCount}` : ''} 条</span>
+				<MoveButtons label="个 O" onUp={onMoveUp} onDown={onMoveDown} />
 				<button type="button" onClick={() => { setTitle(objective.title); setEditing(true) }} className="h-5 rounded-md px-1.5 text-[9px] text-slate-500 hover:bg-white hover:text-blue-600">重命名 O</button>
 				{totalKrCount === 0 && (confirmDelete ? <>
 					<button type="button" disabled={busy} onClick={() => void remove()} className="h-5 rounded-md bg-red-600 px-1.5 text-[9px] font-medium text-white disabled:opacity-40">确认删除</button>
@@ -244,11 +262,14 @@ function ObjectiveEditorHeader({
 }
 
 export function ManagementView() {
-  const { objectives, quarter, syncState, createObjective } = useBoard()
+  const { objectives, quarter, syncState, createObjective, swapObjectives, swapKrs } = useBoard()
   const [query, setQuery] = useState('')
   const [owner, setOwner] = useState('')
   const [priority, setPriority] = useState('')
   const [tag, setTag] = useState('')
+  // undefined means every category; '' is the untagged one, which is a real
+  // choice here because management is where those KRs get their category.
+  const [businessCategory, setBusinessCategory] = useState<string>()
   const [creatingObjectiveId, setCreatingObjectiveId] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   // 「指标与拆解」的展开态放在这里，工具栏的全部展开/折叠才管得到每一行。
@@ -256,19 +277,30 @@ export function ManagementView() {
   const [creatingObjective, setCreatingObjective] = useState(false)
   const [objectiveTitle, setObjectiveTitle] = useState('')
   const [objectiveQuarter, setObjectiveQuarter] = useState(quarter)
-  const hasFilters = Boolean(query.trim() || owner || priority || tag)
+  const hasFilters = Boolean(query.trim() || owner || priority || tag || businessCategory !== undefined)
 	const peopleOptions = useMemo(() => ownerOptions(objectives), [objectives])
 	const owners = useMemo(() => peopleOptions.map((person) => person.name), [peopleOptions])
 	const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => allTagsOf(kr).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
 	const businessCategories = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.map(businessCategoryOf)).filter(Boolean))].sort(), [objectives])
-  const groups = useMemo(() => objectives.map((objective) => ({
+  const filtered = useMemo(() => objectives.map((objective) => ({
     ...objective,
 		totalKrCount: objective.krs.length,
     krs: objective.krs.filter((kr) => {
       const matchesQuery = !query.trim() || `${objective.title} ${kr.title} ${kr.points.map((point) => point.title).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase())
 				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!priority || priorityOf(kr) === priority) && (!tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
     }),
-  })).filter((objective) => !hasFilters || objective.krs.length > 0), [hasFilters, objectives, owner, priority, query, tag])
+  })), [objectives, owner, priority, query, tag])
+  // Counts read every filter except the category itself, so each tab states how
+  // many rows picking it would leave. Objectives the other filters emptied
+  // contribute nothing rather than an untagged bucket of zero.
+  const categoryOptions = useMemo(
+    () => withSelectedBusinessCategory(businessCategoryOptions(buildKRHierarchy(filtered.filter((objective) => objective.krs.length > 0))), businessCategory),
+    [businessCategory, filtered],
+  )
+  const categoryTotal = useMemo(() => filtered.reduce((total, objective) => total + objective.krs.length, 0), [filtered])
+  const groups = useMemo(() => filtered
+    .map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => businessCategory === undefined || businessCategoryOf(kr) === businessCategory) }))
+    .filter((objective) => !hasFilters || objective.krs.length > 0), [businessCategory, filtered, hasFilters])
   const resultCount = groups.reduce((total, objective) => total + objective.krs.length, 0)
   const tagCount = objectives.reduce((total, objective) => total + objective.krs.reduce((sum, kr) => sum + allTagsOf(kr).length, 0), 0)
 	const defaultQuarter = quarter || `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth() / 3) + 1}`
@@ -320,6 +352,7 @@ export function ManagementView() {
     setOwner('')
     setPriority('')
     setTag('')
+    setBusinessCategory(undefined)
   }
 
   return (
@@ -357,10 +390,13 @@ export function ManagementView() {
               <button type="button" onClick={collapseToKr} className="h-full border-l border-slate-200 px-2.5 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
             </div>
           </div>
+          <div className="mt-2 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50/90 to-slate-100/65 p-2.5">
+            <BusinessCategoryTabs options={categoryOptions} activeValue={businessCategory} total={categoryTotal} showOverview onSelect={setBusinessCategory} />
+          </div>
         </div>
 
         <div>
-          {groups.map((objective) => (
+          {groups.map((objective, objectiveIndex) => (
             <section key={objective.id}>
               <ObjectiveEditorHeader
                 objective={objective}
@@ -370,10 +406,22 @@ export function ManagementView() {
                 onToggleCreateKr={() => { expand(objective.id); setCreatingObjectiveId((current) => current === objective.id ? '' : objective.id) }}
                 open={!collapsed.has(objective.id)}
                 onToggleOpen={() => toggleObjective(objective.id)}
+                onMoveUp={objectiveIndex > 0 ? () => void swapObjectives(objective.id, groups[objectiveIndex - 1].id) : undefined}
+                onMoveDown={objectiveIndex < groups.length - 1 ? () => void swapObjectives(objective.id, groups[objectiveIndex + 1].id) : undefined}
               />
               {!collapsed.has(objective.id) && <div className="divide-y divide-slate-100">
 						{creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} onClose={() => setCreatingObjectiveId('')} />}
-						{objective.krs.map((kr) => <KrEditorRow key={kr.id} objectiveId={objective.id} kr={kr} tagSuggestions={tags} businessCategories={businessCategories} detailsOpen={openDetails.has(kr.id)} onToggleDetails={() => toggleDetails(kr.id)} />)}
+						{objective.krs.map((kr, krIndex) => <KrEditorRow
+							key={kr.id}
+							objectiveId={objective.id}
+							kr={kr}
+							tagSuggestions={tags}
+							businessCategories={businessCategories}
+							detailsOpen={openDetails.has(kr.id)}
+							onToggleDetails={() => toggleDetails(kr.id)}
+							onMoveUp={krIndex > 0 ? () => void swapKrs(objective.id, kr.id, objective.krs[krIndex - 1].id) : undefined}
+							onMoveDown={krIndex < objective.krs.length - 1 ? () => void swapKrs(objective.id, kr.id, objective.krs[krIndex + 1].id) : undefined}
+						/>)}
               </div>}
             </section>
           ))}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildAllBusinessNavigation, buildGlobalPriorityNavigation, buildKRHierarchy, businessCategoryOf, hierarchyKRCount, priorityKRCount, priorityOf, replaceSingleTag } from '../src/okr/emily/hierarchy.ts'
+import { buildAllBusinessNavigation, buildGlobalPriorityNavigation, buildKRHierarchy, businessCategoryOf, businessCategoryOptions, hierarchyKRCount, priorityKRCount, priorityOf, replaceSingleTag, withSelectedBusinessCategory } from '../src/okr/emily/hierarchy.ts'
 import type { Kr, Objective } from '../src/okr/emily/types.ts'
 
 function kr(id: string, business?: string, priority?: string): Kr {
@@ -41,6 +41,40 @@ test('全部 OKR 按优先级合并同一方向，而不是复制方向选项', 
   const globalPriorities = buildGlobalPriorityNavigation(navigation)
   assert.equal(globalPriorities[0].objectives.length, 1)
   assert.deepEqual(globalPriorities[0].objectives[0].krs.map((item) => item.id), ['kr-a', 'kr-b'])
+})
+
+test('业务分类标签条的选项和计数与三级导航同源', () => {
+  const objectives: Objective[] = [
+    { id: 'o-1', title: '公会', krs: [kr('kr-a', '公会业务', 'p0'), kr('kr-b', '公会业务', 'p1')] },
+    { id: 'o-2', title: '运营', krs: [kr('kr-c', '运营效率', 'p0'), kr('kr-d')] },
+  ]
+  assert.deepEqual(businessCategoryOptions(buildKRHierarchy(objectives)), [
+    { value: '公会业务', label: '公会业务', count: 2 },
+    { value: '运营效率', label: '运营效率', count: 1 },
+    { value: '', label: '未标注业务', count: 1 },
+  ])
+})
+
+// A filter that leaves an objective without KRs must not invent an untagged
+// category, so management drops those objectives before building the strip.
+test('筛空的方向不产生 0 条的未标注业务选项', () => {
+  const emptied: Objective[] = [{ id: 'o-1', title: '被筛空', krs: [] }]
+  assert.deepEqual(businessCategoryOptions(buildKRHierarchy(emptied)), [{ value: '', label: '未标注业务', count: 0 }])
+  assert.deepEqual(businessCategoryOptions(buildKRHierarchy(emptied.filter((objective) => objective.krs.length > 0))), [])
+})
+
+test('被其它筛选清空的当前分类仍留在标签条上，计数为 0', () => {
+  const options = businessCategoryOptions(buildKRHierarchy([{ id: 'o-1', title: '公会', krs: [kr('kr-a', '公会业务', 'p1')] }]))
+  assert.deepEqual(withSelectedBusinessCategory(options, '算法进展'), [
+    { value: '公会业务', label: '公会业务', count: 1 },
+    { value: '算法进展', label: '算法进展', count: 0 },
+  ])
+  assert.deepEqual(withSelectedBusinessCategory(options, ''), [
+    { value: '公会业务', label: '公会业务', count: 1 },
+    { value: '', label: '未标注业务', count: 0 },
+  ])
+  assert.equal(withSelectedBusinessCategory(options, '公会业务'), options)
+  assert.equal(withSelectedBusinessCategory(options, undefined), options)
 })
 
 test('结构标签保持单值且优先级不再依赖 KR 独立字段', () => {

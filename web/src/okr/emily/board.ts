@@ -31,6 +31,9 @@ export interface BoardApi {
 	createObjective: (input: { quarter: string; title: string }) => Promise<void>
 	updateObjective: (id: string, title: string) => Promise<void>
 	deleteObjective: (id: string) => Promise<void>
+	// 交换相邻两行的位置；targetId 是调用方看得见的那一行。
+	swapObjectives: (id: string, targetId: string) => Promise<void>
+	swapKrs: (objectiveId: string, krId: string, targetId: string) => Promise<void>
 	createKr: (objectiveId: string, input: { title: string; owners?: KrOwner[]; businessCategory: string; priority: KrPriority }) => Promise<void>
   deleteKr: (krId: string) => Promise<void>
   addTag: (krId: string, value: string, type?: string) => void

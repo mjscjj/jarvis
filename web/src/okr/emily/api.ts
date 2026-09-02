@@ -820,6 +820,30 @@ async function progressRequest(path: string, init: RequestInit): Promise<Kr> {
 	}
 }
 
+// Writes only the wording and the people of the shared definition. The weekly
+// pages hold week-scoped metrics and lights, and this endpoint cannot receive
+// them, so filling a week can never overwrite the definition's own numbers.
+export async function replaceKRDefinition(kr: Kr): Promise<Kr> {
+	const body = {
+		expected_version: kr.version ?? 0,
+		title: kr.title,
+		owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+		points: kr.points.map((point) => ({
+			id: point.id,
+			title: point.title,
+			owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+		})),
+	}
+	return fromAPIKr(await request<APIKr>(`/api/okr/krs/${encodeURIComponent(kr.id)}/definition`, {
+		method: 'PUT',
+		body: JSON.stringify(body),
+	}))
+}
+
+export async function getWeeklyKR(krId: string, week: string): Promise<Kr> {
+	return fromAPIKr(await request<APIKr>(`/api/weekly-report/krs/${encodeURIComponent(krId)}?week=${encodeURIComponent(week)}`))
+}
+
 export async function replaceKR(kr: Kr): Promise<Kr> {
   try {
 		const body = {
@@ -885,6 +909,22 @@ export async function updateObjective(id: string, title: string): Promise<void> 
     method: 'PUT',
     body: JSON.stringify({ title }),
   })
+}
+
+export async function reorderObjectives(quarter: string, objectiveIds: string[]): Promise<string[]> {
+  const value = await request<{ order: string[] }>('/api/okr/objectives/order', {
+    method: 'PUT',
+    body: JSON.stringify({ quarter, objective_ids: objectiveIds }),
+  })
+  return value.order
+}
+
+export async function reorderKRs(objectiveId: string, krIds: string[]): Promise<string[]> {
+  const value = await request<{ order: string[] }>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/kr-order`, {
+    method: 'PUT',
+    body: JSON.stringify({ kr_ids: krIds }),
+  })
+  return value.order
 }
 
 export async function deleteObjective(id: string): Promise<void> {
