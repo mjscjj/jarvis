@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -23,14 +24,20 @@ type Options struct {
 	Burst       int
 	Concurrency int
 	Timeout     time.Duration
+	// Timezone fixes the process timezone used by lark-cli when it renders
+	// timestamps without an offset. Callers parsing those timestamps must use
+	// the same location; inheriting the host timezone makes persisted epochs
+	// change when the same Jarvis installation moves between machines.
+	Timezone string
 }
 
 // Client is safe for concurrent use by all capture jobs.
 type Client struct {
-	bin     string
-	limiter *rate.Limiter
-	sem     chan struct{}
-	timeout time.Duration
+	bin      string
+	limiter  *rate.Limiter
+	sem      chan struct{}
+	timeout  time.Duration
+	timezone string
 }
 
 // APIError is the structured error returned in a lark-cli {ok:false} envelope.
@@ -84,16 +91,23 @@ func New(opts Options) (*Client, error) {
 	if opts.Timeout <= 0 {
 		return nil, fmt.Errorf("lark-cli timeout must be positive")
 	}
+	if strings.TrimSpace(opts.Timezone) == "" {
+		return nil, fmt.Errorf("lark-cli timezone is empty")
+	}
+	if _, err := time.LoadLocation(opts.Timezone); err != nil {
+		return nil, fmt.Errorf("load lark-cli timezone %q: %w", opts.Timezone, err)
+	}
 
 	bin, err := exec.LookPath(opts.Bin)
 	if err != nil {
 		return nil, fmt.Errorf("resolve lark-cli binary %q: %w", opts.Bin, err)
 	}
 	return &Client{
-		bin:     bin,
-		limiter: rate.NewLimiter(rate.Limit(opts.RateLimit), opts.Burst),
-		sem:     make(chan struct{}, opts.Concurrency),
-		timeout: opts.Timeout,
+		bin:      bin,
+		limiter:  rate.NewLimiter(rate.Limit(opts.RateLimit), opts.Burst),
+		sem:      make(chan struct{}, opts.Concurrency),
+		timeout:  opts.Timeout,
+		timezone: opts.Timezone,
 	}, nil
 }
 
@@ -212,6 +226,7 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 	commandArgs := append([]string(nil), args...)
 	commandArgs = append(commandArgs, "--format", "json")
 	cmd := exec.CommandContext(commandCtx, c.bin, commandArgs...)
+	cmd.Env = environmentWithTimezone(c.timezone)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -260,4 +275,16 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 		return meta.Error
 	}
 	return nil
+}
+
+func environmentWithTimezone(timezone string) []string {
+	environment := os.Environ()
+	result := make([]string, 0, len(environment)+1)
+	for _, variable := range environment {
+		if strings.HasPrefix(variable, "TZ=") {
+			continue
+		}
+		result = append(result, variable)
+	}
+	return append(result, "TZ="+timezone)
 }

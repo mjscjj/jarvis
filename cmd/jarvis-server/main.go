@@ -188,19 +188,20 @@ func main() {
 		fatalf("initialize Todo materializer failed: %v", err)
 	}
 
+	location, err := time.LoadLocation(cfg.Capture.Timezone)
+	if err != nil {
+		fatalf("load capture timezone failed: %v", err)
+	}
 	larkClient, err := larkcli.New(larkcli.Options{
 		Bin:         cfg.LarkCLI.Bin,
 		RateLimit:   cfg.LarkCLI.RateLimit,
 		Burst:       cfg.LarkCLI.Burst,
 		Concurrency: cfg.LarkCLI.Concurrent,
 		Timeout:     time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+		Timezone:    location.String(),
 	})
 	if err != nil {
 		fatalf("initialize lark-cli failed: %v", err)
-	}
-	location, err := time.LoadLocation(cfg.Capture.Timezone)
-	if err != nil {
-		fatalf("load capture timezone failed: %v", err)
 	}
 	captureService, err := capture.NewService(db, larkClient, capture.Options{
 		PageSize:           cfg.Capture.PageSize,
@@ -360,6 +361,7 @@ func main() {
 			Burst:       cfg.LarkCLI.Burst,
 			Concurrency: cfg.LarkCLI.Concurrent,
 			Timeout:     time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+			Timezone:    location.String(),
 		})
 		if err != nil {
 			fatalf("initialize approval lark-cli failed: %v", err)
