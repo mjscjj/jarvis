@@ -1145,7 +1145,7 @@ index 0000000..be492ed
 +	}
 +}
 diff --git a/platform/feishu/feishu.go b/platform/feishu/feishu.go
-index bafedee..9d4a09c 100644
+index bafedee..d31d679 100644
 --- a/platform/feishu/feishu.go
 +++ b/platform/feishu/feishu.go
 @@ -107,11 +107,14 @@ func init() {
@@ -1661,10 +1661,10 @@ index bafedee..9d4a09c 100644
 +
 +	transportContext := ""
 +	if claimRoute {
++		// Feishu's thread container accepts thread ids only, so a message
++		// without one is read from its chat container: a reply root is a
++		// message id and the list API rejects it.
 +		contextThreadID := strings.TrimSpace(threadID)
-+		if contextThreadID == "" && p.threadIsolation {
-+			contextThreadID = strings.TrimSpace(rootID)
-+		}
 +		priorMessages := make([]feishuLiveContextMessage, 0)
 +		if chatType == "group" {
 +			var err error
@@ -2671,7 +2671,7 @@ index 0000000..9081517
 +	}
 +}
 diff --git a/platform/feishu/platform_test.go b/platform/feishu/platform_test.go
-index 0695550..f3ef5a6 100644
+index 0695550..f231828 100644
 --- a/platform/feishu/platform_test.go
 +++ b/platform/feishu/platform_test.go
 @@ -5,8 +5,12 @@ import (
@@ -2695,7 +2695,7 @@ index 0695550..f3ef5a6 100644
  
  	"github.com/chenhg5/cc-connect/core"
  	callback "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
-@@ -314,6 +319,370 @@ func TestInteractivePlatform_CardActionPassesCardSenderToHandler(t *testing.T) {
+@@ -314,6 +319,419 @@ func TestInteractivePlatform_CardActionPassesCardSenderToHandler(t *testing.T) {
  	}
  }
  
@@ -2893,6 +2893,55 @@ index 0695550..f3ef5a6 100644
 +	}
 +	if _, exists := gotBody["recent_messages"]; exists {
 +		t.Fatalf("route claim unexpectedly carried history: %#v", gotBody)
++	}
++}
++
++func TestLiveContextReadsChatContainerWhenEventCarriesNoThread(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++		w.Header().Set("Content-Type", "application/json")
++		_, _ = io.WriteString(w, `{"code":0,"data":{"message_id":"om_reply","claimed":true}}`)
++	}))
++	defer server.Close()
++
++	platformAny, err := New(map[string]any{
++		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true, "thread_isolation": true,
++		"jarvis_route_claim_url": server.URL, "jarvis_route_claim_secret": "claim-secret",
++	})
++	if err != nil {
++		t.Fatalf("New() error = %v", err)
++	}
++	ip := platformAny.(*interactivePlatform)
++	ip.userNameCache.Store("ou_user", "发起人")
++	ip.chatNameCache.Store("oc_group", "项目群")
++	containers := make(chan string, 1)
++	ip.liveContextFetch = func(_ context.Context, _, threadID string, _ int64, _ string) ([]feishuLiveContextMessage, error) {
++		containers <- threadID
++		return []feishuLiveContextMessage{}, nil
++	}
++	dispatched := make(chan *core.Message, 1)
++	ip.handler = func(_ core.Platform, message *core.Message) { dispatched <- message }
++
++	ip.dispatchMessageWithRoute(
++		context.Background(), "text", `{"text":"好的，谢谢你"}`, nil,
++		"om_reply", "feishu:oc_group:om_root", "ou_user", "oc_group", "group",
++		replyContext{messageID: "om_reply", chatID: "oc_group"}, "om_root", "om_root", "", 1786752000000, true,
++	)
++
++	select {
++	case threadID := <-containers:
++		if threadID != "" {
++			t.Fatalf("live context thread container = %q, want the chat container", threadID)
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("timed out waiting for the live context read")
++	}
++	select {
++	case message := <-dispatched:
++		if strings.Contains(message.ExtraContent, `"thread_id":"om_`) {
++			t.Fatalf("transport context reported a message id as thread_id: %s", message.ExtraContent)
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("timed out waiting for native Agent dispatch")
 +	}
 +}
 +
