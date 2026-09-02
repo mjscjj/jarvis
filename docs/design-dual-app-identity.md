@@ -1,8 +1,8 @@
 # 双飞书应用身份设计
 
-> Status: current
+> Status: current，但 Emily Pro 的后台授权范围尚未收敛到设计要求
 > Authority: normative design
-> Last verified: 2026-09-02 @ `68c8fa4`
+> Last verified: 2026-09-02 @ `3966d11`（端到端实测）
 
 ## 目标
 
@@ -21,13 +21,29 @@ Jarvis 同时承担两件性质完全不同的事，需要两个飞书应用分�
 | 定位 | Jarvis 本体，owner 的对等 Lark 身份 | OKR 页面对外分享时的登录入口 |
 | 受众 | 仅 principal 一人 | 所有被分享到页面的人 |
 | 凭证持有者 | `lark-cli`（本机登录态） | 主服务，密钥在 `JARVIS_OKR_EMILY_APP_SECRET` |
-| user scope 数 | 223，23 个域 | 85，7 个域 |
-| 敏感能力 | 有：消息、邮箱、通讯录、日历、任务、会议、妙记、审批 | 无 |
+| 后台开通的 user scope | 223，23 个域 | 167，20 个域（**应为 85，见下节**） |
+| 代码请求的 scope | 不适用，由 lark-cli 管理 | 85，7 个域 |
 | 授权方式 | 本机一次性登录，长期复用 | 每个访客用自己的账号走 device flow |
 
-OKR 应用的 85 个 scope 是主应用的**严格子集**，域分布为 `base` 39、`docs` 23、`wiki` 13、`drive` 5、`docx` 3、`profile` 1、`offline_access` 1。它完全没有 `im`、`mail`、`contact`、`calendar`、`task`、`approval`、`vc`、`minutes` —— 也就是说，即使这个应用的密钥泄露，也读不到任何人的消息、邮件或日程。
+设计意图是让 OKR 应用只拿 85 个低敏 scope：`base` 39、`docs` 23、`wiki` 13、`drive` 5、`docx` 3、`profile` 1、`offline_access` 1，完全不含 `im`、`mail`、`contact`、`calendar`、`task`、`approval`、`vc`、`minutes`。`conf/okr-feishu-scopes.txt` 就是按这个意图写的。
 
-主应用独有的敏感能力包括 `im:message`、`im:message.p2p_msg:get_as_user`、`mail:user_mailbox.message.body:read`、`contact:user:search`、`calendar:calendar.event:*`、`approval:instance:write`、`minutes:minutes.transcript:export` 等约 100 项，这些**不会**出现在 OKR 应用上。
+## 授权范围的真正生效点是开发者后台，不是 scopes 文件
+
+**实测结论：飞书 device flow 忽略请求里的 scope 子集，按应用后台已开通的全集签发 token。**
+
+2026-09-02 的实测证据：
+
+- 服务端按 `conf/okr-feishu-scopes.txt` 请求 85 个 scope，其中 `im`/`mail`/`contact`/`calendar`/`task`/`vc`/`minutes` 全部为零（加载同一份配置直接验证过）
+- 换回来的 token 的 `scope` 字段有 **167** 项，包含 `im:message`、`im:message.p2p_msg:get_as_user`、`mail:user_mailbox.message.body:read`、`contact:user:search`、`calendar:calendar.event:*`
+- 用该 token 实调 `GET /open-apis/im/v1/chats` 成功列出登录人的群；调邮箱接口返回的是参数校验错误 `4039` 而非权限错误，说明已通过鉴权
+
+所以 `conf/okr-feishu-scopes.txt` 只表达意图，**不构成任何约束**。唯一的强制点是 Emily Pro 在开发者后台实际勾选的权限列表。
+
+这条的直接后果：**在后台把敏感权限收掉之前，不能把 OKR 页面分享给其他人。** 否则每个登录的同事都会把一个能读他自己群消息和邮箱的 token 交给本机。当前只有 principal 本人登录过，风险尚未实际发生。
+
+需要在 Emily Pro 后台移除的域：`im`、`mail`、`contact`、`calendar`、`task`、`vc`、`minutes`、`search`、`approval`。保留 `base`、`docs`、`wiki`、`drive`、`docx`、`space`、`sheets`、`slides`、`board`、`profile`、`offline_access`。收掉之后所有人需要重新登录一次，旧 token 应当删除。
+
+主应用独有且**应当**只在主应用上出现的敏感能力包括 `im:message`、`im:message.p2p_msg:get_as_user`、`mail:user_mailbox.message.body:read`、`contact:user:search`、`calendar:calendar.event:*`、`approval:instance:write`、`minutes:minutes.transcript:export`。
 
 ## OKR 登录当前做什么、预留什么
 
@@ -70,7 +86,9 @@ OKR 应用的 85 个 scope 是主应用的**严格子集**，域分布为 `base`
 | 内容 | 权威来源 |
 |---|---|
 | OKR 登录应用 ID、开关、session TTL | `conf/okr-module.yaml` 的 `identity` |
-| OKR 登录申请的 scope 清单 | `conf/okr-feishu-scopes.txt` |
+| OKR 登录**请求**的 scope 清单（仅表达意图） | `conf/okr-feishu-scopes.txt` |
+| OKR 登录**实际生效**的授权范围 | Emily Pro 开发者后台的勾选项，仓库内无法约束 |
+| 会话表所在数据库 | 主库（`sqlite.path`），不是 `data/okr/okr.db`——会话是本机状态，不进 Git |
 | OKR 应用密钥 | 环境变量 `JARVIS_OKR_EMILY_APP_SECRET` |
 | 主应用凭证与身份 | `lark-cli` 自己的登录态，不在本仓库 |
 | device flow 与 user_info 解析 | `internal/okrworkspace/auth/feishu.go` |
@@ -86,3 +104,22 @@ OKR 应用的 85 个 scope 是主应用的**严格子集**，域分布为 `base`
 - `internal/okrworkspace/auth/feishu_test.go` 覆盖 device flow 正常路径，以及缺失 `union_id` 时拒绝建立身份
 - `internal/okrworkspace/auth/service_test.go` 覆盖 `union_id` 写入会话与 token 文件
 - `internal/okrworkspace/comments_test.go` 覆盖评论署名 `union_id` 的写入与读回
+
+2026-09-02 在部署实例上走过的完整链路，结果如下：
+
+| 环节 | 结果 |
+|---|---|
+| `GET /api/okr/me` 未登录 | `configured: true, authenticated: false` |
+| 未登录 `POST /api/weekly-report/comments` | 401 `40180 请先使用飞书登录` |
+| 只读 `GET /api/weekly-report/comments` | 200，不需要登录 |
+| device flow 发起与轮询 | 走通，`completed` |
+| 会话落库 | `open_id` 为 Emily Pro 命名空间，`union_id` 为跨应用稳定值 |
+| session cookie | `jarvis_okr_session`，HttpOnly，7 天 |
+| 已登录发评论 | 署名 `储节节` + `author_union_id`，落库并可读回 |
+| token 落盘 | `<新 open_id>.json`，含 `union_id` 与 refresh token |
+| `GET /api/okr/feishu-identity` | 返回 Emily Pro 的 `app_id` 与配对 token 路径 |
+| lark-cli 吃 Emily Pro 的 user token | 接受，成功读取云空间 338 个文件 |
+| 回归：人员搜索、头像 | 正常，返回的仍是主应用 open_id |
+| 主应用身份 | `lark-cli auth status` 仍为 `cli_a96a0c8d82b85cb1`，未受影响 |
+
+未通过的一项是授权范围：见上文「授权范围的真正生效点是开发者后台」。
