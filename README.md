@@ -151,18 +151,63 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 
 全部一次性 flags 以 `go run ./cmd/jarvis-server -h` 为准。
 
-### 安装与重建
+### 改完代码怎么生效（日常回路）
 
-日常更新统一使用一个入口；它会拉取当前分支 upstream、构建前端，并按系统选择 macOS launchd 或 Linux user systemd，最后检查首页、`/healthz` 和 `/readyz`：
+**改完任何代码，跑这一条就够，两个系统通用：**
 
 ```bash
-./scripts/jarvis-deploy
-
-# 当前机器明确以 Git 中的 OKR 数据库为准时：
-./scripts/jarvis-deploy --remote-okr-db
+./scripts/jarvis-deploy --skip-pull
 ```
 
-macOS 仍复用正式安装门、稳定签名和 launchd 脚本。Linux MVP 使用无需 root 的 user systemd；首次执行和以后更新使用同一条命令。开发未提交代码时可用 `--skip-pull` 只构建部署当前工作树。
+它做完整的一轮：`npm ci` + 构建 `web/dist`、编译 `bin/jarvis-server` 和 `bin/jarvis-chat-server`、按当前系统重启服务，最后验证首页、`/healthz` 和 `/readyz`（要求所有依赖为 `ok` 或 `disabled`），任何一步失败都直接退出。`--skip-pull` 表示部署当前工作树，不拉 upstream——本地开发几乎总是要带上它。
+
+不是所有改动都需要重新部署：
+
+| 改了什么 | 需要做什么 |
+|---|---|
+| Go 代码 | `./scripts/jarvis-deploy --skip-pull` |
+| 只改前端 | `npm --prefix web run build`，刷新页面即可，后端直接读 `web/dist` 目录 |
+| `conf/prompts/*.md`、`conf/rules/*.md` | 什么都不用做。`textstore` 和 `workrule` 每次调用都从磁盘读，下一次 Agent 运行就是新内容 |
+| `conf/*.yaml`（含 `config.runtime.yaml`、`okr-module.yaml`、`modules.yaml`） | 只需重启服务，不必重新编译，见下面的重启命令 |
+
+不带 `--skip-pull` 时它会先要求工作树干净、拉 `--ff-only`，然后用相同流程部署；`--remote-okr-db` 用于明确以 Git 中的 OKR 数据库覆盖本机改动。
+
+**不要按操作系统各自发挥。** 两个系统的差别 `jarvis-deploy` 已经处理掉了：
+
+| | macOS | Linux（本机） |
+|---|---|---|
+| 服务管理 | launchd（`launchctl`） | 无需 root 的 user systemd |
+| 底层重建脚本 | `scripts/rebuild-server.sh`（zsh + 稳定签名 + `launchctl kickstart`） | 无独立脚本，逻辑在 `jarvis-deploy` 的 `deploy_linux` 里 |
+| 单独重启 | `launchctl kickstart -k gui/$UID/<label>` | `systemctl --user restart <label>.service` |
+
+`scripts/rebuild-server.sh` 只在 macOS 可用（它依赖 zsh、`codesign`、`launchctl`、`plutil`），**在 Linux 上跑不通，不要试**。同理 `internal/toolcatalog` 里两个安装用例在 Linux 上必然因缺 `plutil` 失败，属于已知的平台差异，不是回归。
+
+实例的地址、服务名和日志路径都由配置派生，不要手写：
+
+```bash
+./scripts/jarvis-instance conf/config.yaml   # api_base / launchd_label / chat_* / log_files
+./scripts/jarvis-api-base                    # 只要后端地址
+```
+
+当前仓库这份配置解析出的是 `http://127.0.0.1:18802`、服务名 `com.bytedance.jarvis.server.462093b6e0bd71d9`，对话 sidecar 在 `18801`。换配置或换目录这些值都会变，所以脚本读一次比记住可靠。
+
+日常排查（把 `<label>` 换成上面查到的服务名）：
+
+```bash
+# 只重启，不重新编译（改了 conf/*.yaml 或 conf/prompts/*.md 之后）
+systemctl --user restart <label>.service            # Linux
+launchctl kickstart -k "gui/$UID/<label>"           # macOS
+
+systemctl --user status <label>.service --no-pager
+tail -f var/log/jarvis-server.error.log
+
+curl "$(./scripts/jarvis-api-base)/healthz"
+curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
+```
+
+对话 sidecar 是独立服务（`<label>.chat.service`），重建主服务不会打断正在进行的对话；只改对话配置时单独重启它即可。
+
+### 首次安装
 
 ```bash
 # clone 后的第一个项目动作：建立整个安装过程的状态页
@@ -195,21 +240,15 @@ macOS 仍复用正式安装门、稳定签名和 launchd 脚本。Linux MVP 使�
 # 把同一个 run_dir 交给 $bootstrap-jarvis-world-model 完成安装清单 E 区
 # 再完成监听群新消息和绑定 Bot 对话的真实端到端验收，最后读回总状态
 ./scripts/jarvis-install status --run-dir <run_dir>
-
-# 日常后端修改后重建、稳定签名并重启
-./scripts/rebuild-server.sh
-
-curl "$(./scripts/jarvis-api-base)/healthz"
-
-# 逐项检查外部依赖（SQLite / Qdrant / lark-cli / agent CLI）
-curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
 ```
+
+装完之后的日常回路回到上一节的 `./scripts/jarvis-deploy --skip-pull`。
 
 不要在 fresh clone 上提前运行 `install-launchd.sh`、`rebuild-server.sh` 或 `install-server`：必须先通过 `validate-dependencies`，再完成 identity 与 CC 绑定。世界模型初始化在服务就绪后执行，不是启动前置条件，但属于整体项目安装的一部分。`var/install/<run-id>/INSTALL_CHECKLIST.md` 从 checkout 一直记录到端到端验收，逐项标记完成、未做、阻塞或不适用及其原因。
 
-不要裸 `go build` 覆盖 `bin/jarvis-server` 后直接重启，否则会破坏 macOS TCC 的稳定签名。
+在 macOS 上不要裸 `go build` 覆盖 `bin/jarvis-server` 后直接重启，否则会破坏 TCC 的稳定签名——这正是那里必须走 `rebuild-server.sh` 的原因。Linux 没有签名要求，`jarvis-deploy` 直接构建再换二进制。
 
-`rebuild-server.sh` 会先查询正在执行的 Task；服务已注册但 API 不可达时会 fail-fast，`--force-interrupt-running-tasks` 也不会绕过这项检查。先确认没有活跃执行，再做故障恢复。
+macOS 的 `rebuild-server.sh` 会先查询正在执行的 Task；服务已注册但 API 不可达时会 fail-fast，`--force-interrupt-running-tasks` 也不会绕过这项检查。先确认没有活跃执行，再做故障恢复。Linux 路径没有这道 Task 检查，重启会打断正在执行的 Task 子进程，忙的时候先看一眼 `/api/tasks?status=executing`。
 
 ### 服务与端口
 
@@ -220,9 +259,11 @@ curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | HTTP / gRPC，当前只用于 Todo 语义去重 |
 | `com.cc-connect.service` | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与审批 relay |
 
-仓库没有 Web launchd 安装脚本。首次启用 18801 时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。
+服务名按配置文件绝对路径生成，所以同一台机器上多份配置各自独立，改端口不改服务名。
 
-launchd 不接受相对路径，所以 `deploy/` 只存 `*.plist.template`，安装脚本用 `scripts/render-launchd-plist.sh` 把 `__JARVIS_ROOT__` 和 `__HOME__` 展开到 `~/Library/LaunchAgents/`。仓库换目录或换用户后重新渲染即可，不需要改仓库文件。
+macOS：仓库没有 Web launchd 安装脚本，首次启用 18801 时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。launchd 不接受相对路径，所以 `deploy/` 只存 `*.plist.template`，安装脚本用 `scripts/render-launchd-plist.sh` 把 `__JARVIS_ROOT__` 和 `__HOME__` 展开到 `~/Library/LaunchAgents/`。仓库换目录或换用户后重新渲染即可，不需要改仓库文件。
+
+Linux：unit 文件写在 `~/.config/systemd/user/<label>.service`，每次 `jarvis-deploy` 都会按当前仓库路径重新生成，所以不要手改它——要加环境变量（例如 OKR 模块 identity 用的 `JARVIS_OKR_FEISHU_APP_SECRET`）请放进同名 `.d/` 目录下的 drop-in，它不会被覆盖。仓库路径、配置路径和日志路径都不支持空格或 `%`。
 
 详细运维说明见 [docs/reference/operations.md](docs/reference/operations.md)。
 

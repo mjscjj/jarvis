@@ -159,4 +159,4 @@ M2 → M3 → M5 是一条通用流水线，每段只有一套协议。M3 用 `e
 - 展示列表优先行内编辑，见 [.cursor/rules/list-inline-edit.mdc](.cursor/rules/list-inline-edit.mdc)。
 - 写组件/代码前优先复用已有官方包和仓库内已有实现。
 - 让大模型填写的语义字段尽量使用自然语言或宽松 JSON，不用枚举限制模型发挥；Jarvis 的目标不是通用 Agent 平台。
-- 构建或重启主服务必须执行 `./scripts/rebuild-server.sh`；禁止裸 `go build` 覆盖 `bin/jarvis-server` 后直接 `launchctl kickstart`，否则会破坏 macOS TCC 稳定签名。  
+- 构建或重启服务统一执行 `./scripts/jarvis-deploy --skip-pull`，它按当前系统选择 macOS launchd 或 Linux user systemd，并自带健康与就绪验证。不要自己拼 `go build` + 重启：在 macOS 上那会破坏 TCC 稳定签名，在 Linux 上会漏掉前端构建和 unit 刷新。`./scripts/rebuild-server.sh` 是 macOS 专用底层脚本（依赖 zsh、`codesign`、`launchctl`、`plutil`），在 Linux 上不可用。完整说明见 [README.md](README.md) 的「改完代码怎么生效」。  
