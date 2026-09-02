@@ -451,6 +451,30 @@ function fromAPIComment(value: APIPageComment): PageComment {
   }
 }
 
+// runPreviewReview asks the advisory review agent for one Markdown report. It
+// is synchronous on purpose: the review creates no Task, so there is nothing to
+// poll — the request stays open until the agent answers.
+export async function runPreviewReview(input: {
+  quarter: string
+  week: string
+  kind: 'all' | 'kr' | 'point'
+  krId?: string
+  pointId?: string
+}, signal?: AbortSignal): Promise<string> {
+  const value = await request<{ content: string }>('/api/weekly-report/preview-review', {
+    method: 'POST',
+    body: JSON.stringify({
+      quarter: input.quarter,
+      week: input.week,
+      kind: input.kind,
+      kr_id: input.krId ?? '',
+      point_id: input.pointId ?? '',
+    }),
+    signal,
+  })
+  return value.content
+}
+
 export async function getComments(quarter: string, week: string): Promise<PageCommentList> {
   const params = new URLSearchParams({ quarter, week })
   const value = await request<APIPageCommentList>(`/api/weekly-report/comments?${params}`)

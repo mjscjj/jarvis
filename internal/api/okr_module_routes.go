@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"jarvis/internal/background"
+	"jarvis/internal/okrreview"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
 
@@ -38,6 +39,8 @@ type WeeklyReportModuleDependencies struct {
 	Identity  *okrAuth.Service
 	Documents MarkdownDocumentCreator
 	Enabled   func(context.Context) (bool, error)
+	// PreviewReview runs the advisory OKR Preview review agent.
+	PreviewReview *okrreview.Service
 }
 
 func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error {
@@ -94,6 +97,9 @@ func RegisterWeeklyReportModuleRoutes(h *server.Hertz, deps WeeklyReportModuleDe
 	if h == nil || deps.Workspace == nil || deps.Identity == nil || deps.Documents == nil {
 		return fmt.Errorf("register weekly report module routes: required dependency is nil")
 	}
+	if deps.PreviewReview == nil {
+		return fmt.Errorf("register weekly report module routes: preview review service is nil")
+	}
 	if deps.Enabled == nil {
 		return fmt.Errorf("register weekly report module routes: enablement gate is nil")
 	}
@@ -117,6 +123,7 @@ func RegisterWeeklyReportModuleRoutes(h *server.Hertz, deps WeeklyReportModuleDe
 	h.POST("/api/weekly-report/weeks", requireEnabled, OpenWeeklyReportWeek(deps.Workspace))
 	h.DELETE("/api/weekly-report/weeks/:week", requireEnabled, DeleteWeeklyReportWeek(deps.Workspace))
 	h.GET("/api/weekly-report/board", requireEnabled, GetBoard(deps.Workspace))
+	h.POST("/api/weekly-report/preview-review", requireEnabled, RunPreviewReview(deps.PreviewReview))
 	h.GET("/api/weekly-report/comments", requireEnabled, GetComments(deps.Workspace))
 	h.POST("/api/weekly-report/comments", requireEnabled, requireIdentity, CreateComment(deps.Workspace))
 	h.PUT("/api/weekly-report/comments/:comment_id", requireEnabled, UpdateComment(deps.Workspace))

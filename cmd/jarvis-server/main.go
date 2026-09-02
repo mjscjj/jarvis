@@ -34,6 +34,7 @@ import (
 	"jarvis/internal/meetingsweep"
 	"jarvis/internal/morningbrief"
 	"jarvis/internal/observability"
+	"jarvis/internal/okrreview"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
 	"jarvis/internal/okrworkspace/moduleconfig"
@@ -1018,9 +1019,22 @@ func main() {
 		}
 	}
 	if weeklyReportModuleEnabled {
+		previewReviewService, err := okrreview.NewService(okrreview.Options{
+			Board:           okrWorkspaceService,
+			Prompts:         textFileService,
+			Bin:             okrModuleConfig.PreviewReview.Bin,
+			Model:           okrModuleConfig.PreviewReview.Model,
+			Sandbox:         okrModuleConfig.PreviewReview.Sandbox,
+			ReasoningEffort: okrModuleConfig.PreviewReview.ReasoningEffort,
+			Timeout:         okrModuleConfig.PreviewReview.Timeout(),
+		})
+		if err != nil {
+			fatalf("initialize OKR preview review service failed: %v", err)
+		}
 		weeklyReportModuleDeps = &api.WeeklyReportModuleDependencies{
 			Workspace: okrWorkspaceService, Identity: okrIdentityService, Documents: larkClient,
-			Enabled: func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "weekly-report") },
+			Enabled:       func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "weekly-report") },
+			PreviewReview: previewReviewService,
 		}
 	}
 	if err := api.Register(h, api.Dependencies{

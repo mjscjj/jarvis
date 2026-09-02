@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadOwnsStrictOKRModuleConfig(t *testing.T) {
@@ -17,6 +18,12 @@ func TestLoadOwnsStrictOKRModuleConfig(t *testing.T) {
 	raw := `database_path: data/okr/okr.db
 upload_dir: data/okr/assets
 max_image_bytes: 1024
+preview_review:
+  bin: traex
+  model: DeepSeek-V4-Pro
+  reasoning_effort: high
+  sandbox: workspace-write
+  timeout_seconds: 300
 identity:
   enabled: true
   app_id: cli_test
@@ -51,6 +58,37 @@ identity:
 	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "field unknown") {
 		t.Fatalf("Load() unknown field error = %v", err)
 	}
+	if cfg.PreviewReview.Model != "DeepSeek-V4-Pro" || cfg.PreviewReview.Timeout() != 300*time.Second {
+		t.Fatalf("Load() preview_review = %+v", cfg.PreviewReview)
+	}
+}
+
+// The review agent runs a real CLI with a real sandbox, so a config that cannot
+// describe one must not start the server.
+func TestPreviewReviewConfigRejectsUnusableAgentSettings(t *testing.T) {
+	valid := PreviewReviewConfig{
+		Bin: "traex", Model: "DeepSeek-V4-Pro", ReasoningEffort: "high",
+		Sandbox: "workspace-write", TimeoutSeconds: 300,
+	}
+	if err := valid.validate(); err != nil {
+		t.Fatalf("validate() error = %v", err)
+	}
+	for name, mutate := range map[string]func(*PreviewReviewConfig){
+		"preview_review.bin is required":              func(c *PreviewReviewConfig) { c.Bin = " " },
+		"preview_review.model is required":            func(c *PreviewReviewConfig) { c.Model = "" },
+		"preview_review.reasoning_effort is required": func(c *PreviewReviewConfig) { c.ReasoningEffort = "" },
+		"preview_review.sandbox must be":              func(c *PreviewReviewConfig) { c.Sandbox = "sandboxed" },
+		"preview_review.timeout_seconds must be":      func(c *PreviewReviewConfig) { c.TimeoutSeconds = 0 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			broken := valid
+			mutate(&broken)
+			err := broken.validate()
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("validate() error = %v, want containing %q", err, name)
+			}
+		})
+	}
 }
 
 func TestLoadFailsFastOnUnusableScopesFile(t *testing.T) {
@@ -60,6 +98,12 @@ func TestLoadFailsFastOnUnusableScopesFile(t *testing.T) {
 	raw := `database_path: data/okr/okr.db
 upload_dir: data/okr/assets
 max_image_bytes: 1024
+preview_review:
+  bin: traex
+  model: DeepSeek-V4-Pro
+  reasoning_effort: high
+  sandbox: workspace-write
+  timeout_seconds: 300
 identity:
   enabled: true
   app_id: cli_test

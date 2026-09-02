@@ -3,10 +3,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"jarvis/internal/larkcli"
+	"jarvis/internal/okrreview"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
 	"jarvis/internal/okrworkspace/domain"
@@ -23,6 +27,31 @@ type weeklyPreviewDocumentStub struct{}
 
 func (weeklyPreviewDocumentStub) CreateMarkdownDocument(context.Context, string, string) (larkcli.MarkdownDocument, error) {
 	return larkcli.MarkdownDocument{}, nil
+}
+
+type weeklyPreviewPromptStub struct{}
+
+func (weeklyPreviewPromptStub) Content(context.Context, string) (string, error) {
+	return "评审提示词", nil
+}
+
+// previewReviewServiceStub wires a real review service onto a CLI that is never
+// invoked by these route tests; the routes only require it to exist.
+func previewReviewServiceStub(t *testing.T, workspace *okrworkspace.Service) *okrreview.Service {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "review-cli")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	service, err := okrreview.NewService(okrreview.Options{
+		Board: workspace, Prompts: weeklyPreviewPromptStub{},
+		Bin: bin, Model: "stub-model", Sandbox: "read-only", ReasoningEffort: "high",
+		Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
 }
 
 func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T) {
@@ -52,7 +81,8 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	h := server.New()
 	if err := RegisterWeeklyReportModuleRoutes(h, WeeklyReportModuleDependencies{
 		Workspace: workspace, Identity: identity, Documents: weeklyPreviewDocumentStub{},
-		Enabled: func(context.Context) (bool, error) { return true, nil },
+		Enabled:       func(context.Context) (bool, error) { return true, nil },
+		PreviewReview: previewReviewServiceStub(t, workspace),
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -16,6 +16,7 @@ const (
 	StageProactive    = "proactive"
 	StageMeetingSweep = "meeting_sweep"
 	StageMorningBrief = "morning_brief"
+	StageOKRReview    = "okr_review"
 )
 
 // Block returns the trusted tool catalog for one agent stage. The catalog only
@@ -23,6 +24,10 @@ const (
 // stopping conditions and write policy belong to that stage's system prompt.
 func Block(stage string) (string, error) {
 	switch stage {
+	case StageOKRReview:
+		// The advisory review reaches only OKR data; it has no reason to touch
+		// Feishu, the world model or code, so it is not given that vocabulary.
+		return okrReviewBlock(), nil
 	case StageExtract, StageExecute, StageChat, StageFactEngine, StageProactive, StageMeetingSweep, StageMorningBrief:
 	default:
 		return "", fmt.Errorf("unknown tool catalog stage %q", stage)
@@ -46,4 +51,20 @@ func Block(stage string) (string, error) {
 	}
 	lines = append(lines, "END_AVAILABLE_TOOLS")
 	return strings.Join(lines, "\n"), nil
+}
+
+// okrReviewBlock lists the OKR read commands available to the Preview review
+// agent. Both scripts also carry write commands; they are deliberately left
+// undocumented here because the review only forms an opinion.
+func okrReviewBlock() string {
+	lines := []string{
+		"BEGIN_AVAILABLE_TOOLS（工具能力说明由工具层维护，不属于系统角色提示词。）",
+		"当前阶段：" + StageOKRReview,
+		"两个脚本都已在 PATH 中，服务地址由 `JARVIS_API_BASE` 环境变量提供，直接执行即可，不需要自己解析配置或构建任何东西。所有命令输出 JSON。",
+		"- okr-module-tools：季度 OKR 核心数据。`scope` 查当前季度；`board [--quarter Q]` 读整季 O/KR 结构；`find-krs --query TEXT [--quarter Q]` 按关键词跨 O 检索 KR，用于查关联和重叠；`get-kr --id KR_ID` 读单个 KR 详情；`people-search --query TEXT` 查人。",
+		"- weekly-report-tools：按周的进展与评分。`weeks [--quarter Q]` 列周次；`board [--quarter Q] [--week YYYY-Www]` 读某周看板（含 template_key）；`get-weekly-kr --id KR_ID --week YYYY-Www` 读单 KR 的周度核心数据与指标；`comments --quarter Q --week YYYY-Www` 读评论。",
+		"- `find-krs` 单次输出可能上千行。先用它定位 ID，再用 `get-kr` / `get-weekly-kr` 取需要的那一个，不要把整季数据全部读进来。",
+		"END_AVAILABLE_TOOLS",
+	}
+	return strings.Join(lines, "\n")
 }

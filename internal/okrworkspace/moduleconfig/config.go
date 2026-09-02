@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"jarvis/internal/fileconfig"
 
@@ -15,10 +16,27 @@ import (
 )
 
 type Config struct {
-	DatabasePath  string         `yaml:"database_path"`
-	UploadDir     string         `yaml:"upload_dir"`
-	MaxImageBytes int64          `yaml:"max_image_bytes"`
-	Identity      IdentityConfig `yaml:"identity"`
+	DatabasePath  string              `yaml:"database_path"`
+	UploadDir     string              `yaml:"upload_dir"`
+	MaxImageBytes int64               `yaml:"max_image_bytes"`
+	Identity      IdentityConfig      `yaml:"identity"`
+	PreviewReview PreviewReviewConfig `yaml:"preview_review"`
+}
+
+// PreviewReviewConfig drives the one-shot OKR Preview review agent. The review
+// is advisory and read-only, but it reaches the module's own data through
+// okr-module-tools / weekly-report-tools, which call the local API — hence a
+// sandbox that permits network access rather than read-only.
+type PreviewReviewConfig struct {
+	Bin             string `yaml:"bin"`
+	Model           string `yaml:"model"`
+	ReasoningEffort string `yaml:"reasoning_effort"`
+	Sandbox         string `yaml:"sandbox"`
+	TimeoutSeconds  int    `yaml:"timeout_seconds"`
+}
+
+func (c PreviewReviewConfig) Timeout() time.Duration {
+	return time.Duration(c.TimeoutSeconds) * time.Second
 }
 
 type IdentityConfig struct {
@@ -37,6 +55,27 @@ type IdentityConfig struct {
 	ScopesFile string `yaml:"scopes_file"`
 	// Scopes is read from ScopesFile while loading, never from YAML.
 	Scopes []string `yaml:"-"`
+}
+
+func (c PreviewReviewConfig) validate() error {
+	for name, value := range map[string]string{
+		"preview_review.bin":              c.Bin,
+		"preview_review.model":            c.Model,
+		"preview_review.reasoning_effort": c.ReasoningEffort,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required", name)
+		}
+	}
+	switch c.Sandbox {
+	case "read-only", "workspace-write", "danger-full-access":
+	default:
+		return fmt.Errorf("preview_review.sandbox must be read-only, workspace-write or danger-full-access, got %q", c.Sandbox)
+	}
+	if c.TimeoutSeconds <= 0 {
+		return fmt.Errorf("preview_review.timeout_seconds must be positive")
+	}
+	return nil
 }
 
 // ScopeParam renders the scopes the way Feishu's OAuth endpoints expect them.
@@ -110,6 +149,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxImageBytes <= 0 {
 		return fmt.Errorf("max_image_bytes must be positive")
+	}
+	if err := c.PreviewReview.validate(); err != nil {
+		return err
 	}
 	if !c.Identity.Enabled {
 		return nil
