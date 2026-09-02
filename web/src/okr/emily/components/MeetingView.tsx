@@ -272,7 +272,9 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags, reviewMo
                 <Commentable target={krTarget} className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1 px-1.5 py-1.5 pr-3">
                   <h3 className="min-w-0 text-[13px] font-bold leading-5 text-slate-900"><HighlightedText target={krTarget} text={kr.title} /></h3>
                   <div className="flex flex-wrap items-center gap-1">
-                    {splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="inline-flex items-center gap-1 text-[10px] text-slate-500"><PersonAvatar name={person} />{person}</span>)}
+                    {/* 用结构化的 owners 而不是拆 ownerName：头像按 open_id 命中，
+                        名字是英文别名（Hsiangfu Kuo 之于郭祥莆）时也能对上人。 */}
+                    {(kr.owners ?? []).map((owner) => <span key={owner.openId || owner.name} className="inline-flex items-center gap-1 text-[10px] text-slate-500"><PersonAvatar name={owner.name} openId={owner.openId} />{owner.name}</span>)}
 						<span className={`rounded border px-1.5 py-px text-[9px] font-semibold ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priorityLabel(priority)}</span>
 					{reviewMode && <WeeklyScoreControl score={kr.score} onChange={(score) => setKrScore(kr.id, score)} label="一级 KR 评分" />}
                     <span className="inline-flex gap-0.5">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>

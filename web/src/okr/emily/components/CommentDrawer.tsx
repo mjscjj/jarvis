@@ -19,8 +19,8 @@ function targetLabel(type: PageComment['targetType']) {
   return ({ page: '整页', kr: 'KR', metric: '核心数据', point: '具体 KR', entry: '进展条目' } as const)[type]
 }
 
-function Avatar({ name, small = false }: { name: string; small?: boolean }) {
-  return <PersonAvatar name={name} size={small ? 'size-6 text-[10px]' : 'size-7 text-[11px]'} tone="bg-indigo-400" />
+function Avatar({ name, openId, small = false }: { name: string; openId?: string; small?: boolean }) {
+  return <PersonAvatar name={name} openId={openId} size={small ? 'size-6 text-[10px]' : 'size-7 text-[11px]'} tone="bg-indigo-400" />
 }
 
 function wasEdited(comment: PageComment) {
@@ -177,7 +177,7 @@ function CommentThread({ comment, quarter, week, showTarget, meetingMode, onRepl
         </blockquote>
       )}
       <div className="flex items-start gap-2.5">
-        <Avatar name={comment.authorName} />
+        <Avatar name={comment.authorName} openId={comment.authorOpenId} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[12px] font-semibold text-slate-700">{comment.authorName}</span>
@@ -196,7 +196,7 @@ function CommentThread({ comment, quarter, week, showTarget, meetingMode, onRepl
             <div className="mt-2 space-y-2.5 border-l-2 border-slate-100 pl-3">
               {comment.replies.map((reply) => (
                 <div key={reply.id} className="flex items-start gap-2">
-                  <Avatar name={reply.authorName} small />
+                  <Avatar name={reply.authorName} openId={reply.authorOpenId} small />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-slate-600">{reply.authorName}</span><time className="text-[10px] text-slate-400">{displayTime(reply.createdAt)}</time>{wasEdited(reply) && <span className="text-[9px] text-slate-300">已编辑</span>}</div>
                     <EditableCommentBody comment={reply} compact onEdit={onEdit} onDelete={onDelete} />
