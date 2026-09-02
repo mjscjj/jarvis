@@ -47,6 +47,8 @@ async function flush() {
   } catch (error) {
     // 头像取不到就退回首字母，但原因要留在控制台，不静默吞掉。
     console.warn('飞书头像读取失败', names, error)
+    // 失败的名字要放回去，否则一次抖动就让它们整个会话都不再重试。
+    for (const name of names) requested.delete(name)
   }
 }
 
