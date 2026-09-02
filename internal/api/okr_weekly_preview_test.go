@@ -45,7 +45,7 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{Enabled: true}, unreachableOKRAuthProvider{})
+	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{Enabled: true}, unreachableOKRAuthProvider{}, okrAuthTestTokenStore(t))
 	if err != nil {
 		t.Fatal(err)
 	}

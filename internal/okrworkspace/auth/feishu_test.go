@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestFeishuProviderDeviceFlow(t *testing.T) {
@@ -32,7 +33,7 @@ func TestFeishuProviderDeviceFlow(t *testing.T) {
 			_, _ = w.Write([]byte(`{"error":"authorization_pending"}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"access_token":"u-test","expires_in":7200}`))
+		_, _ = w.Write([]byte(`{"access_token":"u-test","refresh_token":"r-test","token_type":"Bearer","scope":"offline_access","expires_in":7200,"refresh_token_expires_in":5184000}`))
 	})
 	mux.HandleFunc("/open-apis/authen/v1/user_info", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer u-test" {
@@ -57,11 +58,17 @@ func TestFeishuProviderDeviceFlow(t *testing.T) {
 	if _, err := provider.PollDeviceAuthorization(context.Background(), authorization.DeviceCode); !errors.Is(err, ErrDeviceAuthorizationPending) {
 		t.Fatalf("first poll error = %v", err)
 	}
-	user, err := provider.PollDeviceAuthorization(context.Background(), authorization.DeviceCode)
+	grant, err := provider.PollDeviceAuthorization(context.Background(), authorization.DeviceCode)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if user.OpenID != "ou_1" || user.Name != "Emily" || user.Email != "emily@example.com" {
-		t.Fatalf("user = %#v", user)
+	if grant.User.OpenID != "ou_1" || grant.User.Name != "Emily" || grant.User.Email != "emily@example.com" {
+		t.Fatalf("user = %#v", grant.User)
+	}
+	if grant.AccessToken != "u-test" || grant.RefreshToken != "r-test" || grant.TokenType != "Bearer" || grant.Scope != "offline_access" {
+		t.Fatalf("grant tokens = %#v", grant)
+	}
+	if grant.ExpiresIn != 2*time.Hour || grant.RefreshExpiresIn != 1440*time.Hour {
+		t.Fatalf("grant lifetimes = %s / %s", grant.ExpiresIn, grant.RefreshExpiresIn)
 	}
 }

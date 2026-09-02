@@ -20,6 +20,7 @@ identity:
   session_ttl_hours: 24
   feishu_base_url: https://open.feishu.cn
   feishu_account_url: https://accounts.feishu.cn
+  token_dir: data/okr/feishu-tokens
 `
 	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
@@ -30,6 +31,9 @@ identity:
 	}
 	if cfg.DatabasePath != "data/okr/okr.db" || cfg.UploadDir != "data/okr/assets" || cfg.MaxImageBytes != 1024 {
 		t.Fatalf("Load() = %+v", cfg)
+	}
+	if cfg.Identity.TokenDir != "data/okr/feishu-tokens" {
+		t.Fatalf("Load() identity = %+v", cfg.Identity)
 	}
 	if err := os.WriteFile(path, []byte(raw+"unknown: true\n"), 0o644); err != nil {
 		t.Fatal(err)

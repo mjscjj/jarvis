@@ -12,3 +12,4 @@ identity:
   cookie_secure: false
   feishu_base_url: "https://open.feishu.cn"
   feishu_account_url: "https://accounts.feishu.cn"
+  token_dir: "data/okr/feishu-tokens"

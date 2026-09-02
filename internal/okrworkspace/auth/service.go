@@ -63,20 +63,24 @@ type Service struct {
 	db       *gorm.DB
 	cfg      moduleconfig.IdentityConfig
 	provider Provider
+	tokens   *TokenStore
 	now      func() time.Time
 
 	deviceMu     sync.Mutex
 	deviceLogins map[string]pendingDeviceLogin
 }
 
-func NewService(db *gorm.DB, cfg moduleconfig.IdentityConfig, provider Provider) (*Service, error) {
+func NewService(db *gorm.DB, cfg moduleconfig.IdentityConfig, provider Provider, tokens *TokenStore) (*Service, error) {
 	if db == nil {
 		return nil, fmt.Errorf("create OKR auth service: database is required")
 	}
 	if cfg.Enabled && provider == nil {
 		return nil, fmt.Errorf("create OKR auth service: provider is required when enabled")
 	}
-	return &Service{db: db, cfg: cfg, provider: provider, now: time.Now, deviceLogins: make(map[string]pendingDeviceLogin)}, nil
+	if cfg.Enabled && tokens == nil {
+		return nil, fmt.Errorf("create OKR auth service: token store is required when enabled")
+	}
+	return &Service{db: db, cfg: cfg, provider: provider, tokens: tokens, now: time.Now, deviceLogins: make(map[string]pendingDeviceLogin)}, nil
 }
 
 func (s *Service) Enabled() bool      { return s.cfg.Enabled }
@@ -160,7 +164,7 @@ func (s *Service) PollDeviceLogin(ctx context.Context, loginID string) (DeviceLo
 	s.deviceLogins[loginID] = pending
 	s.deviceMu.Unlock()
 
-	user, err := s.provider.PollDeviceAuthorization(ctx, pending.deviceCode)
+	grant, err := s.provider.PollDeviceAuthorization(ctx, pending.deviceCode)
 	switch {
 	case errors.Is(err, ErrDeviceAuthorizationPending):
 		return DeviceLoginPoll{Status: DeviceLoginPending, RetryAfterSeconds: durationSeconds(pending.pollInterval)}, "", nil
@@ -187,7 +191,10 @@ func (s *Service) PollDeviceLogin(ctx context.Context, loginID string) (DeviceLo
 	}
 
 	s.deleteDeviceLogin(loginID)
-	session, token, err := s.createSession(ctx, user, now)
+	if _, err := s.tokens.Save(grant, now); err != nil {
+		return DeviceLoginPoll{}, "", err
+	}
+	session, token, err := s.createSession(ctx, grant.User, now)
 	if err != nil {
 		return DeviceLoginPoll{}, "", err
 	}

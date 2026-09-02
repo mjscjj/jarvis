@@ -13,6 +13,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"jarvis/internal/larkcli"
 	"jarvis/internal/observability"
 )
 
@@ -49,6 +50,15 @@ func (s stubVectorIndex) HealthCheck(context.Context) (string, error) {
 	return s.version, s.err
 }
 
+type stubLarkIdentity struct {
+	user *larkcli.UserIdentity
+	err  error
+}
+
+func (s stubLarkIdentity) VerifyUserIdentity(context.Context) (*larkcli.UserIdentity, error) {
+	return s.user, s.err
+}
+
 func openReadinessDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
@@ -65,6 +75,10 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 	// sh is executable on every supported host, so an "ok" here means the probe
 	// resolved a real binary rather than that the check was skipped.
 	resolvableBin := "sh"
+	healthyIdentity := stubLarkIdentity{user: &larkcli.UserIdentity{
+		Status: "ready", Available: true, Verified: true,
+		TokenStatus: "valid", UserName: "储节节", OpenID: "ou_principal",
+	}}
 
 	for _, testCase := range []struct {
 		name           string
@@ -77,7 +91,7 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "database down is an outage",
 			withDB:         false,
-			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin},
+			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusServiceUnavailable,
 			wantOverall:    "error",
 			wantStates:     map[string]string{"database": "error"},
@@ -85,7 +99,7 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "every dependency reachable",
 			withDB:         true,
-			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin},
+			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "ok",
 			wantStates:     map[string]string{"database": "ok", "vector_index": "ok", "lark_cli": "ok", "agent_cli": "ok"},
@@ -93,7 +107,7 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "unresolvable cli degrades",
 			withDB:         true,
-			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: "jarvis-absent-binary", AgentCLIBin: resolvableBin},
+			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: "jarvis-absent-binary", AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "degraded",
 			wantStates:     map[string]string{"database": "ok", "lark_cli": "error", "agent_cli": "ok"},
@@ -101,7 +115,7 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "unreachable vector store degrades",
 			withDB:         true,
-			targets:        ReadinessTargets{VectorIndex: stubVectorIndex{err: fmt.Errorf("connection refused")}, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin},
+			targets:        ReadinessTargets{VectorIndex: stubVectorIndex{err: fmt.Errorf("connection refused")}, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "degraded",
 			wantStates:     map[string]string{"database": "ok", "vector_index": "error"},
@@ -109,7 +123,7 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "disabled vector store is not degraded",
 			withDB:         true,
-			targets:        ReadinessTargets{LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin},
+			targets:        ReadinessTargets{LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "ok",
 			wantStates:     map[string]string{"vector_index": "disabled"},
@@ -117,10 +131,31 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "unconfigured cli degrades",
 			withDB:         true,
-			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: "  "},
+			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: "  ", LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "degraded",
 			wantStates:     map[string]string{"agent_cli": "error"},
+		},
+		{
+			// The failure this probe exists for: the binary is still exactly
+			// where it was, only the Feishu login died.
+			name:   "expired feishu login degrades a resolvable cli",
+			withDB: true,
+			targets: ReadinessTargets{
+				VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin,
+				LarkIdentity: stubLarkIdentity{err: fmt.Errorf("lark-cli user identity is unusable: status=\"missing\"")},
+			},
+			wantStatusCode: consts.StatusOK,
+			wantOverall:    "degraded",
+			wantStates:     map[string]string{"database": "ok", "lark_cli": "error", "agent_cli": "ok"},
+		},
+		{
+			name:           "unconfigured identity probe degrades",
+			withDB:         true,
+			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin},
+			wantStatusCode: consts.StatusOK,
+			wantOverall:    "degraded",
+			wantStates:     map[string]string{"lark_cli": "error"},
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {

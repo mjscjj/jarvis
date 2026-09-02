@@ -38,14 +38,26 @@ type DeviceAuthorization struct {
 	PollInterval    time.Duration
 }
 
-type Provider interface {
-	RequestDeviceAuthorization(ctx context.Context) (DeviceAuthorization, error)
-	PollDeviceAuthorization(ctx context.Context, deviceCode string) (User, error)
+// Grant is one completed device authorization: who authorized, plus the tokens
+// Feishu issued for them. The refresh token is why the device flow asks for the
+// offline_access scope.
+type Grant struct {
+	User             User
+	AccessToken      string
+	RefreshToken     string
+	TokenType        string
+	Scope            string
+	ExpiresIn        time.Duration
+	RefreshExpiresIn time.Duration
 }
 
-// FeishuProvider uses Feishu's OAuth device flow. The user access token exists
-// only long enough to read /authen/v1/user_info and is never persisted by
-// Jarvis. Unlike Web OAuth, this flow does not require a redirect URL.
+type Provider interface {
+	RequestDeviceAuthorization(ctx context.Context) (DeviceAuthorization, error)
+	PollDeviceAuthorization(ctx context.Context, deviceCode string) (Grant, error)
+}
+
+// FeishuProvider uses Feishu's OAuth device flow. Unlike Web OAuth, this flow
+// does not require a redirect URL.
 type FeishuProvider struct {
 	appID      string
 	appSecret  string
@@ -112,10 +124,10 @@ func (p *FeishuProvider) RequestDeviceAuthorization(ctx context.Context) (Device
 	}, nil
 }
 
-func (p *FeishuProvider) PollDeviceAuthorization(ctx context.Context, deviceCode string) (User, error) {
+func (p *FeishuProvider) PollDeviceAuthorization(ctx context.Context, deviceCode string) (Grant, error) {
 	deviceCode = strings.TrimSpace(deviceCode)
 	if deviceCode == "" {
-		return User{}, fmt.Errorf("poll Feishu device authorization: device code is required")
+		return Grant{}, fmt.Errorf("poll Feishu device authorization: device code is required")
 	}
 	form := url.Values{
 		"grant_type":    {"urn:ietf:params:oauth:grant-type:device_code"},
@@ -125,40 +137,57 @@ func (p *FeishuProvider) PollDeviceAuthorization(ctx context.Context, deviceCode
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.apiBaseURL+"/open-apis/authen/v2/oauth/token", strings.NewReader(form.Encode()))
 	if err != nil {
-		return User{}, fmt.Errorf("create Feishu device token request: %w", err)
+		return Grant{}, fmt.Errorf("create Feishu device token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	var response struct {
-		AccessToken      string `json:"access_token"`
-		Error            string `json:"error"`
-		ErrorDescription string `json:"error_description"`
+		AccessToken           string `json:"access_token"`
+		RefreshToken          string `json:"refresh_token"`
+		TokenType             string `json:"token_type"`
+		Scope                 string `json:"scope"`
+		ExpiresIn             int    `json:"expires_in"`
+		RefreshTokenExpiresIn int    `json:"refresh_token_expires_in"`
+		Error                 string `json:"error"`
+		ErrorDescription      string `json:"error_description"`
 	}
 	status, err := p.doJSON(req, &response)
 	if err != nil {
-		return User{}, fmt.Errorf("poll Feishu device authorization: %w", err)
+		return Grant{}, fmt.Errorf("poll Feishu device authorization: %w", err)
 	}
 	switch strings.TrimSpace(response.Error) {
 	case "authorization_pending":
-		return User{}, ErrDeviceAuthorizationPending
+		return Grant{}, ErrDeviceAuthorizationPending
 	case "slow_down":
-		return User{}, ErrDeviceAuthorizationSlowDown
+		return Grant{}, ErrDeviceAuthorizationSlowDown
 	case "access_denied":
-		return User{}, fmt.Errorf("%w: %s", ErrDeviceAuthorizationDenied, oauthErrorMessage(response.Error, response.ErrorDescription))
+		return Grant{}, fmt.Errorf("%w: %s", ErrDeviceAuthorizationDenied, oauthErrorMessage(response.Error, response.ErrorDescription))
 	case "expired_token", "invalid_grant":
-		return User{}, fmt.Errorf("%w: %s", ErrDeviceAuthorizationExpired, oauthErrorMessage(response.Error, response.ErrorDescription))
+		return Grant{}, fmt.Errorf("%w: %s", ErrDeviceAuthorizationExpired, oauthErrorMessage(response.Error, response.ErrorDescription))
 	case "":
 		// Continue below.
 	default:
-		return User{}, fmt.Errorf("poll Feishu device authorization: %s", oauthErrorMessage(response.Error, response.ErrorDescription))
+		return Grant{}, fmt.Errorf("poll Feishu device authorization: %s", oauthErrorMessage(response.Error, response.ErrorDescription))
 	}
 	if status < 200 || status >= 300 {
-		return User{}, fmt.Errorf("poll Feishu device authorization: unexpected HTTP status %d", status)
+		return Grant{}, fmt.Errorf("poll Feishu device authorization: unexpected HTTP status %d", status)
 	}
 	accessToken := strings.TrimSpace(response.AccessToken)
 	if accessToken == "" {
-		return User{}, fmt.Errorf("poll Feishu device authorization: response has no access_token or error")
+		return Grant{}, fmt.Errorf("poll Feishu device authorization: response has no access_token or error")
 	}
-	return p.userInfo(ctx, accessToken)
+	user, err := p.userInfo(ctx, accessToken)
+	if err != nil {
+		return Grant{}, err
+	}
+	return Grant{
+		User:             user,
+		AccessToken:      accessToken,
+		RefreshToken:     strings.TrimSpace(response.RefreshToken),
+		TokenType:        strings.TrimSpace(response.TokenType),
+		Scope:            strings.TrimSpace(response.Scope),
+		ExpiresIn:        time.Duration(response.ExpiresIn) * time.Second,
+		RefreshExpiresIn: time.Duration(response.RefreshTokenExpiresIn) * time.Second,
+	}, nil
 }
 
 func (p *FeishuProvider) userInfo(ctx context.Context, accessToken string) (User, error) {

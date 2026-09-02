@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/larkcli"
 	"jarvis/internal/observability"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -50,6 +51,14 @@ type VectorIndexProbe interface {
 	HealthCheck(ctx context.Context) (string, error)
 }
 
+// LarkIdentityProbe reports whether lark-cli still holds a usable Feishu user
+// login. It is checked on top of the binary lookup because the two fail
+// independently: the refresh token expires on its own schedule while the binary
+// stays exactly where it was.
+type LarkIdentityProbe interface {
+	VerifyUserIdentity(ctx context.Context) (*larkcli.UserIdentity, error)
+}
+
 // ReadinessTargets are the external dependencies /readyz probes on top of the
 // database.
 //
@@ -67,6 +76,8 @@ type ReadinessTargets struct {
 	// launchd shows up here instead of at the first Feishu call.
 	LarkCLIBin  string
 	AgentCLIBin string
+	// LarkIdentity verifies the Feishu user login behind LarkCLIBin.
+	LarkIdentity LarkIdentityProbe
 }
 
 // Readiness reports every dependency Jarvis needs to do useful work, so a fresh
@@ -83,7 +94,7 @@ func Readiness(db *gorm.DB, targets ReadinessTargets) app.HandlerFunc {
 		dependencies := map[string]any{
 			"database":     databaseState,
 			"vector_index": probeVectorIndex(probeCtx, targets.VectorIndex),
-			"lark_cli":     probeBinary(targets.LarkCLIBin),
+			"lark_cli":     probeLarkCLI(probeCtx, targets.LarkCLIBin, targets.LarkIdentity),
 			"agent_cli":    probeBinary(targets.AgentCLIBin),
 		}
 
@@ -139,6 +150,32 @@ func probeVectorIndex(ctx context.Context, index VectorIndexProbe) map[string]an
 	if version != "" {
 		state["version"] = version
 	}
+	return state
+}
+
+// probeLarkCLI answers "can Jarvis still act as the principal on Feishu", which
+// needs both a resolvable binary and a live user login. The identity result is
+// reported on the same dependency because a green lark_cli that only means
+// "the file exists" is what let an expired login go unnoticed for two days.
+func probeLarkCLI(ctx context.Context, bin string, identity LarkIdentityProbe) map[string]any {
+	state := probeBinary(bin)
+	if state["status"] != "ok" {
+		return state
+	}
+	if identity == nil {
+		state["status"] = "error"
+		state["error"] = "lark-cli identity probe is not configured"
+		return state
+	}
+	user, err := identity.VerifyUserIdentity(ctx)
+	if err != nil {
+		state["status"] = "error"
+		state["error"] = err.Error()
+		return state
+	}
+	state["user"] = user.UserName
+	state["user_open_id"] = user.OpenID
+	state["token_status"] = user.TokenStatus
 	return state
 }
 

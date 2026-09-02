@@ -456,6 +456,7 @@ func main() {
 			fatalf("initialize OKR image store failed: %v", err)
 		}
 		var okrIdentityProvider okrAuth.Provider
+		var okrTokenStore *okrAuth.TokenStore
 		if okrModuleConfig.Identity.Enabled {
 			okrIdentityProvider, err = okrAuth.NewFeishuProvider(
 				okrModuleConfig.Identity.AppID,
@@ -467,8 +468,12 @@ func main() {
 			if err != nil {
 				fatalf("initialize OKR Feishu identity provider failed: %v", err)
 			}
+			okrTokenStore, err = okrAuth.NewTokenStore(okrModuleConfig.Identity.TokenDir)
+			if err != nil {
+				fatalf("initialize OKR Feishu token store failed: %v", err)
+			}
 		}
-		okrIdentityService, err = okrAuth.NewService(db, okrModuleConfig.Identity, okrIdentityProvider)
+		okrIdentityService, err = okrAuth.NewService(db, okrModuleConfig.Identity, okrIdentityProvider, okrTokenStore)
 		if err != nil {
 			fatalf("initialize OKR identity service failed: %v", err)
 		}
@@ -962,9 +967,22 @@ func main() {
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
+	// 独立 client：/readyz 的身份探测不排在采集任务的限流和并发额度后面，
+	// 否则一次繁忙的采集就会让探针超时，报成假的身份失效。
+	readinessLarkClient, err := larkcli.New(larkcli.Options{
+		Bin:         cfg.LarkCLI.Bin,
+		RateLimit:   cfg.LarkCLI.RateLimit,
+		Burst:       cfg.LarkCLI.Burst,
+		Concurrency: cfg.LarkCLI.Concurrent,
+		Timeout:     time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+	})
+	if err != nil {
+		fatalf("initialize readiness lark-cli failed: %v", err)
+	}
 	readinessTargets := api.ReadinessTargets{
-		LarkCLIBin:  cfg.LarkCLI.Bin,
-		AgentCLIBin: cfg.Execute.Bin,
+		LarkCLIBin:   cfg.LarkCLI.Bin,
+		AgentCLIBin:  cfg.Execute.Bin,
+		LarkIdentity: readinessLarkClient,
 	}
 	// 语义去重关闭时 semanticIndex 是 nil 指针；直接赋进接口字段会得到一个非 nil
 	// 接口，探针就分不清「主动关掉」和「连不上 Qdrant」。

@@ -154,6 +154,73 @@ func TestSearchUser(t *testing.T) {
 	})
 }
 
+// auth status has no {ok:...} envelope, and a ready-looking user block is the
+// only thing that proves every `--as user` call will still work.
+func TestVerifyUserIdentity(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+
+	const ready = `{"identity":"user","verified":true,"identities":{"bot":{"status":"ready"},"user":{"status":"ready","available":true,"verified":true,"tokenStatus":"valid","userName":"储节节","openId":"ou_principal"}}}`
+	const cleared = `{"identity":"bot","identities":{"bot":{"status":"ready"},"user":{"status":"missing","available":false,"message":"User identity: missing (no token in keychain for ou_principal)","openId":"ou_principal"}}}`
+	const expired = `{"identity":"bot","identities":{"user":{"status":"missing","available":false,"tokenStatus":"expired","message":"User identity: missing (refresh token expired)"}}}`
+	// A token that is present but rejected upstream: --verify is what catches it.
+	const unverified = `{"identity":"user","identities":{"user":{"status":"ready","available":true,"verified":false,"tokenStatus":"invalid"}}}`
+
+	for _, test := range []struct {
+		name    string
+		script  string
+		wantErr string
+	}{
+		{name: "ready", script: `printf '%s' ` + shellQuote(ready)},
+		{name: "token cleared", script: `printf '%s' ` + shellQuote(cleared), wantErr: `status="missing"`},
+		{name: "refresh token expired", script: `printf '%s' ` + shellQuote(expired), wantErr: `token="expired"`},
+		{name: "present but not verified", script: `printf '%s' ` + shellQuote(unverified), wantErr: "verified=false"},
+		{name: "cli failure", script: `printf '%s' 'keychain locked' >&2; exit 3`, wantErr: "keychain locked"},
+		{name: "invalid json", script: `printf '%s' 'not-json'`, wantErr: "decode lark-cli auth status"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client, err := New(Options{Bin: writeScript(t, test.script), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			user, err := client.VerifyUserIdentity(context.Background())
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("VerifyUserIdentity() error = %v, want it to mention %q", err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("VerifyUserIdentity() error = %v", err)
+			}
+			if user.UserName != "储节节" || user.OpenID != "ou_principal" || user.TokenStatus != "valid" {
+				t.Fatalf("VerifyUserIdentity() user = %+v, unexpected", user)
+			}
+		})
+	}
+}
+
+// The real `auth status` prints JSON natively and rejects --format, so the argv
+// this builds must not carry the flag every other shortcut gets.
+func TestVerifyUserIdentityAsksForVerificationWithoutFormatFlag(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	bin := writeScript(t, `
+case "$*" in
+  "auth status --verify") printf '%s' '{"identities":{"user":{"status":"ready","available":true,"verified":true,"tokenStatus":"valid","userName":"储节节","openId":"ou_principal"}}}' ;;
+  *) printf '%s' "unexpected args: $*" >&2; exit 9 ;;
+esac`)
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := client.VerifyUserIdentity(context.Background()); err != nil {
+		t.Fatalf("VerifyUserIdentity() error = %v", err)
+	}
+}
+
 func TestRunRejectsCallerFormat(t *testing.T) {
 	client := &Client{}
 	err := client.Run(context.Background(), &testResponse{}, "im", "+chat-list", "--format", "pretty")

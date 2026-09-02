@@ -23,8 +23,17 @@ func (unreachableOKRAuthProvider) RequestDeviceAuthorization(context.Context) (o
 	return okrAuth.DeviceAuthorization{}, context.Canceled
 }
 
-func (unreachableOKRAuthProvider) PollDeviceAuthorization(context.Context, string) (okrAuth.User, error) {
-	return okrAuth.User{}, context.Canceled
+func (unreachableOKRAuthProvider) PollDeviceAuthorization(context.Context, string) (okrAuth.Grant, error) {
+	return okrAuth.Grant{}, context.Canceled
+}
+
+func okrAuthTestTokenStore(t *testing.T) *okrAuth.TokenStore {
+	t.Helper()
+	store, err := okrAuth.NewTokenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
 }
 
 func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
@@ -42,7 +51,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{Enabled: true}, unreachableOKRAuthProvider{})
+	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{Enabled: true}, unreachableOKRAuthProvider{}, okrAuthTestTokenStore(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +130,7 @@ func TestPointTagsRouteTargetsOnlyStrategyOrProductPoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{}, nil)
+	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

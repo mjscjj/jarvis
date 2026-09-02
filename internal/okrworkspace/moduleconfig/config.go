@@ -28,6 +28,9 @@ type IdentityConfig struct {
 	CookieSecure     bool   `yaml:"cookie_secure"`
 	FeishuBaseURL    string `yaml:"feishu_base_url"`
 	FeishuAccountURL string `yaml:"feishu_account_url"`
+	// TokenDir holds one JSON file per signed-in open_id with that person's
+	// Feishu access and refresh tokens.
+	TokenDir string `yaml:"token_dir"`
 }
 
 func (c IdentityConfig) AppSecret() string {
@@ -75,6 +78,9 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Identity.FeishuBaseURL) == "" || strings.TrimSpace(c.Identity.FeishuAccountURL) == "" {
 		return fmt.Errorf("identity Feishu URLs are required when enabled")
+	}
+	if strings.TrimSpace(c.Identity.TokenDir) == "" {
+		return fmt.Errorf("identity.token_dir is required when enabled")
 	}
 	return nil
 }

@@ -10,6 +10,7 @@
 
 - `GET /healthz`：存活探针，只 ping SQLite。`scripts/rebuild-server.sh` 靠它判断重启成功，所以外部依赖不进它的状态码。
 - `GET /readyz`：依赖全景，逐项报告 SQLite、Qdrant、`lark-cli`、agent CLI。只有 SQLite 不通才返 503；外部依赖不通返 200 且 `status=degraded`，主动关掉的报 `disabled`。
+  - `lark_cli` 同时校验二进制可解析和飞书 user 登录可用（`auth status --verify`），正常时附带 `user`、`user_open_id`、`token_status`。飞书 refresh token 会自行过期，过期后二进制仍在原地，只校验路径会一直报绿；所有 `--as user` 能力（群消息采集、建文档、人员搜索）都依赖这条。
 - Todo：`GET /api/todos`、`GET /api/todos/:todo_id`、`PATCH /api/todos/:todo_id/status`
 - Task：`GET/POST /api/tasks`、`GET /api/tasks/:task_id/runs|events|output`
 - Task 控制：`finish`、`supplement`、`execute`、`interrupt`、`rerun`、`reapply`、`resume`、`approve`、`reject`
@@ -45,7 +46,7 @@
 - 存在周报历史的 KR 或稳定拆解不允许删除，避免留下孤儿历史。
 - 周报：`GET /api/weekly-report/scope|board|weeks|comments|reminder-preview|reminder-batches|meego-preview`；`POST /api/weekly-report/weeks` 开启空周，`DELETE /api/weekly-report/weeks/:week?quarter=...` 删除该季度下整周的周报事实但保留 O/KR 稳定定义。评论、所选周进展、Meego 观察和催办批次的其它写接口位于 `/api/weekly-report/*`。产品固定提供催填、进展巡检、会议材料和对外提交四个 Agent 行动，并固定绑定可编辑 Prompt；季度草稿、区域对齐和其它 Report Prompt 可由普通 Agent Task 使用。执行统一由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
 - Meego observation：`POST /api/weekly-report/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
-- OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/okr/auth/feishu/device` 发起飞书设备授权、`POST /api/okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。流程不需要 OAuth 回调 URL，用户 access/refresh token 不落库。前端只在 OKR 模块入口做一次全局门禁，并按服务端返回的到期时间统一退出；内部页面不传递身份状态。新建评论由后端读取 session 记录真人作者，其余 OKR/周报写操作按 `Jarvis` 记账，不做行级权限或可见性过滤。
+- OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/okr/auth/feishu/device` 发起飞书设备授权、`POST /api/okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。流程不需要 OAuth 回调 URL。用户的 access/refresh token 不落库，而是按 open_id 写到 `identity.token_dir` 下的 `<open_id>.json`（含人名、邮箱、scope 和两个 token 的到期时间），同一人再登录一次即覆盖。前端只在 OKR 模块入口做一次全局门禁，并按服务端返回的到期时间统一退出；内部页面不传递身份状态。新建评论由后端读取 session 记录真人作者，其余 OKR/周报写操作按 `Jarvis` 记账，不做行级权限或可见性过滤。
 - OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。
 - 文档导出：`POST /api/weekly-report/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。
 

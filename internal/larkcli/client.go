@@ -197,31 +197,73 @@ func (c *Client) RunInput(ctx context.Context, out any, input string, args ...st
 }
 
 func (c *Client) run(ctx context.Context, out any, input string, args ...string) error {
-	if c == nil {
-		return fmt.Errorf("lark-cli client is nil")
-	}
 	if out == nil {
 		return fmt.Errorf("lark-cli output target is nil")
 	}
+	raw, err := c.runRaw(ctx, input, []string{"--format", "json"}, args...)
+	if err != nil {
+		// A few batch read shortcuts emit a useful structured response on
+		// stdout and still exit non-zero when every item failed. Preserve that
+		// payload for callers while keeping the process failure visible.
+		if len(raw) > 0 {
+			_ = json.Unmarshal(raw, out)
+		}
+		return err
+	}
+
+	var meta envelope
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return fmt.Errorf("decode lark-cli envelope for %q: %w", args, err)
+	}
+	// Decode the typed payload before checking ok. Some read shortcuts return
+	// ok=false with per-item errors in data (for example Minutes permission
+	// denial) and no top-level error. Callers need that item-level payload to
+	// classify and persist a retry state.
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("decode lark-cli response for %q: %w", args, err)
+	}
+	if !meta.OK {
+		if meta.Error == nil {
+			return fmt.Errorf("lark-cli %q returned ok=false without error", args)
+		}
+		return meta.Error
+	}
+	return nil
+}
+
+// runRaw executes lark-cli and returns stdout uninterpreted. Only commands that
+// do not speak the {ok:...} envelope call it directly (auth status is local CLI
+// state, not an OpenAPI response); everything else goes through run so the
+// envelope contract stays in one place. stdout is returned alongside a failure
+// because some shortcuts write a usable payload and still exit non-zero.
+//
+// formatArgs carries how this command is asked for JSON, because that is not
+// uniform across the CLI: API shortcuts take `--format json` while auth status
+// emits JSON natively and rejects the flag. It stays a caller argument rather
+// than a caller-supplied flag so args itself remains format-free.
+func (c *Client) runRaw(ctx context.Context, input string, formatArgs []string, args ...string) ([]byte, error) {
+	if c == nil {
+		return nil, fmt.Errorf("lark-cli client is nil")
+	}
 	for _, arg := range args {
 		if arg == "--format" || strings.HasPrefix(arg, "--format=") || arg == "--json" {
-			return fmt.Errorf("lark-cli output format is owned by the client")
+			return nil, fmt.Errorf("lark-cli output format is owned by the client")
 		}
 	}
 	if err := c.limiter.Wait(ctx); err != nil {
-		return fmt.Errorf("wait for lark-cli rate limit: %w", err)
+		return nil, fmt.Errorf("wait for lark-cli rate limit: %w", err)
 	}
 	select {
 	case c.sem <- struct{}{}:
 		defer func() { <-c.sem }()
 	case <-ctx.Done():
-		return fmt.Errorf("wait for lark-cli process slot: %w", ctx.Err())
+		return nil, fmt.Errorf("wait for lark-cli process slot: %w", ctx.Err())
 	}
 
 	commandCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	commandArgs := append([]string(nil), args...)
-	commandArgs = append(commandArgs, "--format", "json")
+	commandArgs = append(commandArgs, formatArgs...)
 	cmd := exec.CommandContext(commandCtx, c.bin, commandArgs...)
 	if input != "" {
 		cmd.Stdin = strings.NewReader(input)
@@ -230,14 +272,7 @@ func (c *Client) run(ctx context.Context, out any, input string, args ...string)
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err != nil {
-		// A few batch read shortcuts emit a useful structured response on
-		// stdout and still exit non-zero when every item failed. Preserve that
-		// payload for callers while keeping the process failure visible.
-		if stdout.Len() > 0 {
-			_ = json.Unmarshal(stdout.Bytes(), out)
-		}
+	if err := cmd.Run(); err != nil {
 		exitCode := -1
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -247,33 +282,60 @@ func (c *Client) run(ctx context.Context, out any, input string, args ...string)
 		if commandCtx.Err() != nil {
 			cause = commandCtx.Err()
 		}
-		return &CommandError{
+		return stdout.Bytes(), &CommandError{
 			Args:     commandArgs,
 			ExitCode: exitCode,
 			Stderr:   strings.TrimSpace(stderr.String()),
 			Cause:    cause,
 		}
 	}
+	return stdout.Bytes(), nil
+}
 
-	raw := stdout.Bytes()
-	var meta envelope
-	if err := json.Unmarshal(raw, &meta); err != nil {
-		return fmt.Errorf("decode lark-cli envelope for %q: %w", commandArgs, err)
+// UserIdentity is the user half of `auth status --verify`: who lark-cli is
+// logged in as and whether that login still works against Feishu.
+type UserIdentity struct {
+	Status      string `json:"status"`
+	Available   bool   `json:"available"`
+	Verified    bool   `json:"verified"`
+	TokenStatus string `json:"tokenStatus"`
+	UserName    string `json:"userName"`
+	OpenID      string `json:"openId"`
+	Message     string `json:"message"`
+}
+
+type authStatusResponse struct {
+	Identities struct {
+		User UserIdentity `json:"user"`
+	} `json:"identities"`
+}
+
+// VerifyUserIdentity reports the identity behind every `--as user` call. The
+// Feishu refresh token expires on its own and lark-cli then drops the stored
+// token, so a caller that only checks that the binary exists keeps reporting a
+// green state while chat capture, document creation and people search are all
+// failing. fail-fast: a CLI failure or an unusable identity is an error.
+//
+// `auth status` reports local CLI state, not an OpenAPI call: it has no
+// {ok:...} envelope and prints JSON without (in fact, rejecting) --format. So
+// it reads stdout directly instead of going through Run.
+func (c *Client) VerifyUserIdentity(ctx context.Context) (*UserIdentity, error) {
+	raw, err := c.runRaw(ctx, "", nil, "auth", "status", "--verify")
+	if err != nil {
+		return nil, fmt.Errorf("lark-cli auth status: %w", err)
 	}
-	// Decode the typed payload before checking ok. Some read shortcuts return
-	// ok=false with per-item errors in data (for example Minutes permission
-	// denial) and no top-level error. Callers need that item-level payload to
-	// classify and persist a retry state.
-	if err := json.Unmarshal(raw, out); err != nil {
-		return fmt.Errorf("decode lark-cli response for %q: %w", commandArgs, err)
+	var response authStatusResponse
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, fmt.Errorf("decode lark-cli auth status: %w", err)
 	}
-	if !meta.OK {
-		if meta.Error == nil {
-			return fmt.Errorf("lark-cli %q returned ok=false without error", commandArgs)
-		}
-		return meta.Error
+	user := response.Identities.User
+	if user.Status != "ready" || !user.Available || !user.Verified {
+		return nil, fmt.Errorf(
+			"lark-cli user identity is unusable: status=%q token=%q verified=%t: %s; run `lark-cli auth login --domain all` to re-authorize",
+			user.Status, user.TokenStatus, user.Verified, user.Message,
+		)
 	}
-	return nil
+	return &user, nil
 }
 
 // MarkdownDocument is the stable subset returned by `docs +create` that the
