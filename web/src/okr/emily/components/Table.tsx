@@ -13,7 +13,7 @@ import { FeishuPeoplePicker, PointPeoplePicker } from './FeishuPeoplePicker'
 import { PersonAvatar } from './PersonAvatar'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
 import { HierarchyNav } from './HierarchyNav'
-import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
+import { Images, Links, StatusSelect, Text } from './ui'
 
 function Caret({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
   return (
@@ -157,9 +157,6 @@ function MetricBox({ kr, readOnly, structureReadOnly = readOnly }: { kr: Kr; rea
                   readOnly={readOnly}
                   commentTarget={{ type: 'metric', id: metric.id, title: metric.text }}
                 />
-                <span className="pt-1 [&>span>button]:size-4 [&>span>span]:size-4">
-                  <LightPicker value={metric.light ?? 'green'} onChange={(light) => patchMetric(kr.id, metric.id, { light })} readOnly={readOnly} />
-                </span>
               </div>
               {(!readOnly || (metric.images?.length ?? 0) > 0) && (
                 <div className="mt-2">
@@ -187,7 +184,6 @@ function MetricBox({ kr, readOnly, structureReadOnly = readOnly }: { kr: Kr; rea
             className="flex min-h-12 w-full items-center gap-3 border-b border-slate-100 px-4 py-2.5 text-left text-[16px] leading-6 tracking-[0.005em] text-slate-400 last:border-b-0 enabled:hover:bg-slate-50 enabled:hover:text-slate-500"
           >
             <span>例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%</span>
-            <span title="默认绿灯" className="size-4 shrink-0 rounded-full bg-emerald-500 ring-4 ring-emerald-50" />
           </button>
         )}
         {!structureReadOnly && kr.metrics.length > 0 && (
@@ -256,7 +252,6 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, structureReadOnly
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
 				</select>
 			) : <span title="业务分类和优先级只在「管理与打标」里维护" className={`rounded-md border px-2 py-1 text-xs uppercase ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priority || '未标注'}</span>}
-            {kr.metrics.length > 0 && <span className="inline-flex items-center gap-1" title="核心数据红黄绿灯">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>}
 			{showScore && <WeeklyScoreControl score={kr.score} readOnly={scoreReadOnly} onChange={(score) => setKrScore(kr.id, score)} label="一级 KR 评分" />}
           </div>
         </div>

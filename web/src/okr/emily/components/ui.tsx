@@ -9,8 +9,8 @@ import { uid } from '../board'
 import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
 import { useCommentInteraction } from '../commenting'
-import { DOT_CLASS, LIGHTS, TONE_CLASS, TONE_TEXT_CLASS, lightOf, statusOf } from '../template'
-import type { CommentTarget, DocLink, ImageRef, Light, Status } from '../types'
+import { DOT_CLASS, TONE_CLASS, TONE_TEXT_CLASS, statusOf } from '../template'
+import type { CommentTarget, DocLink, ImageRef, Status } from '../types'
 
 function Popover({
   open,
@@ -107,66 +107,6 @@ export function StatusSelect({
             {s.label}
           </button>
         ))}
-      </Popover>
-    </span>
-  )
-}
-
-/** 红黄绿灯。未设置时按约定展示为绿色。 */
-export function LightPicker({
-  value,
-  onChange,
-  readOnly = false,
-}: {
-  value?: Light
-  onChange: (v: Light | undefined) => void
-  readOnly?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const current = lightOf(value ?? 'green')
-
-  if (readOnly) {
-    return current ? <span title={current.label} className={`inline-block size-3 rounded-full ${current.className}`} /> : null
-  }
-
-  return (
-    <span className="relative inline-block shrink-0 align-middle">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={current?.label ?? '标灯（可选）'}
-        className={`size-3 rounded-full transition-opacity ${
-          current
-            ? current.className
-            : `border border-dashed border-slate-300 ${open ? '' : 'opacity-0 group-hover/metric:opacity-100'}`
-        }`}
-      />
-      <Popover open={open} onClose={() => setOpen(false)} width={92}>
-        {LIGHTS.map((l) => (
-          <button
-            key={l.value}
-            type="button"
-            onClick={() => {
-              onChange(l.value)
-              setOpen(false)
-            }}
-            className="flex w-full items-center gap-2 whitespace-nowrap rounded px-2 py-1 text-left text-xs hover:bg-slate-50"
-          >
-            <span className={`size-2.5 rounded-full ${l.className}`} />
-            {l.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => {
-            onChange(undefined)
-            setOpen(false)
-          }}
-          className="mt-1 flex w-full items-center gap-2 whitespace-nowrap rounded border-t border-slate-100 px-2 py-1 text-left text-xs text-slate-400 hover:bg-slate-50"
-        >
-          <span className="size-2.5 rounded-full border border-dashed border-slate-300" />
-          不标
-        </button>
       </Popover>
     </span>
   )

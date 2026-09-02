@@ -13,7 +13,7 @@ import { isReviewTemplate } from '../weekCatalog'
 import type { CommentTarget, Entry, KrPriority, Objective, Point, PointKind, TextSelection } from '../types'
 import { HierarchyNav } from './HierarchyNav'
 import { PersonAvatar } from './PersonAvatar'
-import { Images, LightPicker, Links, StatusSelect } from './ui'
+import { Images, Links, StatusSelect } from './ui'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
 function FoldButton({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
   return (
@@ -259,7 +259,6 @@ function MeetingObjectiveSection({ objective, closed, toggle, reviewMode }: { ob
                     {(kr.owners ?? []).map((owner) => <span key={owner.openId || owner.name} className="inline-flex items-center gap-1 text-[10px] text-slate-500"><PersonAvatar name={owner.name} openId={owner.openId} />{owner.name}</span>)}
 						<span className={`rounded border px-1.5 py-px text-[9px] font-semibold ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priorityLabel(priority)}</span>
 					{reviewMode && <WeeklyScoreControl score={kr.score} onChange={(score) => setKrScore(kr.id, score)} label="一级 KR 评分" />}
-                    <span className="inline-flex gap-0.5">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>
                   </div>
                 </Commentable>
               </header>
@@ -278,7 +277,6 @@ function MeetingObjectiveSection({ objective, closed, toggle, reviewMode }: { ob
                           <Commentable key={metric.id} target={target} className="flex min-h-7 items-start gap-2 px-1.5 py-0.5 text-[12px] leading-[18px] text-slate-800">
                             <div className="min-w-0 flex-1 font-medium">
                               <HighlightedText target={target} text={metric.text} />
-                              <span className="ml-2 inline-flex translate-y-px align-middle"><LightPicker value={metric.light ?? 'green'} onChange={() => undefined} readOnly /></span>
                             </div>
                             {(metric.images?.length ?? 0) > 0 && <Images value={metric.images ?? []} onChange={() => undefined} readOnly maxDisplayWidth={360} />}
                           </Commentable>

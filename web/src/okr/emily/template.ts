@@ -75,13 +75,9 @@ export const KIND_LABEL = {
 
 export const METRIC_GROUP_LABEL = '核心数据'
 
-/** 核心数据每条后面的灯，可以不选 */
+// 红黄绿灯已从界面移除，这里只剩后端 EnumValues 的取值镜像，用于枚举兜底。
 export const LIGHTS: { value: Light; label: string; className: string }[] = [
   { value: 'green', label: '绿灯', className: 'bg-emerald-500' },
   { value: 'yellow', label: '黄灯', className: 'bg-amber-400' },
   { value: 'red', label: '红灯', className: 'bg-red-500' },
 ]
-
-export function lightOf(value: Light | undefined) {
-  return LIGHTS.find((l) => l.value === value)
-}
