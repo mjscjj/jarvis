@@ -6,7 +6,6 @@ import { CommentDrawer } from './components/CommentDrawer'
 import { WeeklyFocus } from './components/WeeklyFocus'
 import { WeeklyTools } from './components/WeeklyTools'
 import { QuarterSelect } from './components/QuarterSelect'
-import { PAGE_TITLE } from './seed'
 import { CommentInteractionProvider } from './commenting'
 import type { PendingCommentSelection } from './commenting'
 import { commentTargetFromThread } from './comments'
@@ -110,7 +109,7 @@ export default function App({
 	const meetingLike = view === 'meeting'
 	const managesWeeks = view === 'fill'
 	const lifecycleName = weeklyDatasetLabel(dataset)
-	const pageTitle = reviewDataset ? PAGE_TITLE.replace('OKR 协作台', 'OKR Review') : PAGE_TITLE.replace('OKR 协作台', '周报协作台')
+	const pageTitle = reviewDataset ? 'Emily · OKR Review' : 'Emily · 周报协作台'
 	const shareLabel = `${lifecycleName}${weeklyViewLabel(view)}`
 
   const submitWeek = async () => {
