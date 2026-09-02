@@ -128,7 +128,7 @@ write_systemd_unit() {
 wait_health() {
   local name="$1" base="$2" attempt
   for attempt in {1..15}; do
-    if curl --fail --silent --show-error --max-time 2 -o /dev/null "$base/healthz"; then
+    if curl --fail --silent --max-time 2 -o /dev/null "$base/healthz"; then
       printf '%s health HTTP 200\n' "$name"
       return 0
     fi
