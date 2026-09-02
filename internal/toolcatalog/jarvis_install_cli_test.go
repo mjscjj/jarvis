@@ -122,7 +122,7 @@ func TestJarvisInstallPinsPatchedCCConnectWithoutStartingIt(t *testing.T) {
 	manifest := string(manifestContent)
 	for _, want := range []string{
 		`CC_CONNECT_BASE_COMMIT="5d4c96dd12774574369e75b60084140101c9a59a"`,
-		`CC_CONNECT_PATCH_COMMIT="a814bdb19091603ae092dd75a863d31fcc044e65"`,
+		`CC_CONNECT_PATCH_COMMIT="1335e5b350c26636796e344a92cf9dfce2ed9cf9"`,
 		`CC_CONNECT_PATCH_RELATIVE_PATH="integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch"`,
 	} {
 		if !strings.Contains(manifest, want) {

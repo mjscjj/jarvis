@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"strings"
 	"testing"
 
@@ -24,8 +25,29 @@ func TestProcessCardActionApproveUsesCardVersion(t *testing.T) {
 	if approver.approvedTask != 7 || approver.approvedVersion != 4 {
 		t.Fatalf("approve called with task=%d version=%d", approver.approvedTask, approver.approvedVersion)
 	}
-	if !strings.Contains(string(card), "已确认，正在执行") {
-		t.Fatalf("outcome card = %s", card)
+	// CC Connect replaces the message with this card, so it has to carry the
+	// proposal the principal reviewed as well as the outcome.
+	for _, want := range []string{"已确认，正在执行", "完整消息正文", "只读核验已完成"} {
+		if !strings.Contains(string(card), want) {
+			t.Fatalf("outcome card missing %q: %s", want, card)
+		}
+	}
+	if strings.Contains(string(card), `"decision":"approve"`) {
+		t.Fatalf("outcome card still offers the decision buttons: %s", card)
+	}
+}
+
+// The snapshot must be read before the decision lands, so a task whose proposal
+// cannot be read fails without approving anything.
+func TestProcessCardActionFailsBeforeLandingWhenSnapshotIsUnavailable(t *testing.T) {
+	approver := &fakeApprover{}
+	handler := newTestHandler(t, approver)
+	handler.snapshots = &fakeSnapshots{err: errors.New("execution_result is empty")}
+	if _, err := handler.ProcessCardAction(context.Background(), approvalEvent(t, "approve", 7, 4)); err == nil {
+		t.Fatal("ProcessCardAction() accepted a card without a readable proposal")
+	}
+	if approver.approvedTask != 0 {
+		t.Fatalf("approver ran without a snapshot: %#v", approver)
 	}
 }
 
@@ -102,13 +124,38 @@ func TestProcessCardActionLostRaceIsAlreadyHandled(t *testing.T) {
 	}
 }
 
+// newTestHandler wires the real notifier as the renderer so these tests cover
+// the card the principal actually receives, not a stand-in fragment.
 func newTestHandler(t *testing.T, approver Approver) *Handler {
 	t.Helper()
-	handler, err := NewRelayHandler(approver, principalOpenID, log.New(io.Discard, "", 0))
+	notifier, err := newNotifier(&fakeLarkRunner{}, "小贾", principalOpenID, "0.0.0.0:18800", func() (net.IP, error) {
+		return net.ParseIP("192.168.3.91"), nil
+	})
+	if err != nil {
+		t.Fatalf("newNotifier() error = %v", err)
+	}
+	handler, err := NewRelayHandler(approver, &fakeSnapshots{}, notifier, principalOpenID, log.New(io.Discard, "", 0))
 	if err != nil {
 		t.Fatalf("NewRelayHandler() error = %v", err)
 	}
 	return handler
+}
+
+// fakeSnapshots stands in for the parked proposal the card was rendered from.
+type fakeSnapshots struct {
+	taskID uint64
+	err    error
+}
+
+func (f *fakeSnapshots) ApprovalSnapshot(_ context.Context, taskID uint64) (execute.ApprovalNotification, error) {
+	f.taskID = taskID
+	if f.err != nil {
+		return execute.ApprovalNotification{}, f.err
+	}
+	return execute.ApprovalNotification{
+		TaskID: taskID, RunID: 29, Version: 1, Title: "发布方案", Summary: "只读核验已完成",
+		Action: "发送方案", Target: "项目群", Artifact: "完整消息正文",
+	}, nil
 }
 
 func approvalEvent(t *testing.T, action string, taskID uint64, version int32) CardActionEvent {

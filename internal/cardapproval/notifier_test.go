@@ -58,7 +58,7 @@ func TestNotifierFailsWithoutMessageID(t *testing.T) {
 }
 
 func TestNotifierShowsCompactFormOnlyWhenFollowupIsExplicit(t *testing.T) {
-	without := approvalCard(execute.ApprovalNotification{TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c"}, "http://example.com", "小贾")
+	without := approvalCard(execute.ApprovalNotification{TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c"}, "http://example.com", "小贾", "")
 	withoutJSON, _ := json.Marshal(without)
 	if strings.Contains(string(withoutJSON), `"tag":"form"`) || strings.Contains(string(withoutJSON), `"tag":"input"`) {
 		t.Fatalf("card without followup unexpectedly has form: %s", withoutJSON)
@@ -66,7 +66,7 @@ func TestNotifierShowsCompactFormOnlyWhenFollowupIsExplicit(t *testing.T) {
 	with := approvalCard(execute.ApprovalNotification{
 		TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c",
 		NeedsFollowup: "请指定灰度范围",
-	}, "http://example.com", "小贾")
+	}, "http://example.com", "小贾", "")
 	withJSON, _ := json.Marshal(with)
 	for _, want := range []string{
 		`"tag":"form"`, `"tag":"input"`, `"name":"approval_note"`,
@@ -119,7 +119,7 @@ func TestNotifierShowsCompactFormOnlyWhenFollowupIsExplicit(t *testing.T) {
 func TestNotifierKeepsCallbackBehaviorsOutsideForm(t *testing.T) {
 	card := approvalCard(execute.ApprovalNotification{
 		TaskID: 1, Version: 1, Title: "t", Action: "a", Target: "b", Artifact: "c",
-	}, "http://example.com", "小贾")
+	}, "http://example.com", "小贾", "")
 	decisions := card["body"].(map[string]any)["elements"].([]any)[1].(map[string]any)
 	for index, decision := range []string{"approve", "reject"} {
 		column := decisions["columns"].([]any)[index].(map[string]any)
@@ -132,6 +132,65 @@ func TestNotifierKeepsCallbackBehaviorsOutsideForm(t *testing.T) {
 		if callback["type"] != "callback" || value["decision"] != decision {
 			t.Fatalf("%s button callback = %#v", decision, callback)
 		}
+	}
+}
+
+// A decided card is written back with card/update, which only accepts the card
+// 2.0 write format. Reading the original card back from Feishu returns an
+// internal node tree instead, so the decided card must be rendered here: it
+// repeats the proposal, states the outcome, and keeps only the detail link.
+func TestNotifierRendersDecidedCardWithoutDecisionControls(t *testing.T) {
+	notifier, err := newNotifier(&fakeLarkRunner{}, "小贾", "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
+		return net.ParseIP("192.168.3.91"), nil
+	})
+	if err != nil {
+		t.Fatalf("newNotifier() error = %v", err)
+	}
+	card, err := notifier.ResolvedCard(execute.ApprovalNotification{
+		TaskID: 17, RunID: 29, Version: 6, Title: "发布方案", Summary: "只读核验已完成",
+		Action: "发送方案", Target: "项目群", Artifact: "完整消息正文",
+		NeedsFollowup: "请指定灰度范围",
+	}, "✅ 已确认，正在执行。")
+	if err != nil {
+		t.Fatalf("ResolvedCard() error = %v", err)
+	}
+	for _, want := range []string{"完整消息正文", "只读核验已完成", "✅ 已确认，正在执行。", `"default_url":"http://192.168.3.91:18800/#/work/task/17"`} {
+		if !strings.Contains(string(card), want) {
+			t.Fatalf("decided card missing %q: %s", want, card)
+		}
+	}
+	for _, unwanted := range []string{`"tag":"form"`, `"tag":"input"`, "approval_note", `"decision":"approve"`, `"decision":"reject"`, "请指定灰度范围"} {
+		if strings.Contains(string(card), unwanted) {
+			t.Fatalf("decided card still carries %q: %s", unwanted, card)
+		}
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(card, &decoded); err != nil {
+		t.Fatalf("decided card is not valid JSON: %v", err)
+	}
+	// card/update rejects anything but the write format, so body must expose
+	// elements directly rather than Feishu's read-side property wrapper.
+	body, ok := decoded["body"].(map[string]any)
+	if !ok {
+		t.Fatalf("decided card has no body: %s", card)
+	}
+	if _, wrapped := body["property"]; wrapped {
+		t.Fatalf("decided card body uses the read-side property wrapper: %s", card)
+	}
+	if _, ok := body["elements"].([]any); !ok {
+		t.Fatalf("decided card body has no elements: %s", card)
+	}
+}
+
+func TestNotifierRejectsEmptyDecidedOutcome(t *testing.T) {
+	notifier, err := newNotifier(&fakeLarkRunner{}, "小贾", "ou_principal", "0.0.0.0:18800", func() (net.IP, error) {
+		return net.ParseIP("192.168.3.91"), nil
+	})
+	if err != nil {
+		t.Fatalf("newNotifier() error = %v", err)
+	}
+	if _, err := notifier.ResolvedCard(execute.ApprovalNotification{TaskID: 1, Title: "t", Action: "a", Target: "b", Artifact: "c"}, "  "); err == nil {
+		t.Fatal("ResolvedCard() accepted an empty outcome")
 	}
 }
 

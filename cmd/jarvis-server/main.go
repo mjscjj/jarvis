@@ -354,6 +354,9 @@ func main() {
 		fatalf("initialize morning brief reader failed: %v", err)
 	}
 	var approvalNotifier execute.ApprovalNotifier
+	// approvalCards keeps the concrete notifier so the relay handler can
+	// re-render a decided card, which the send-only interface does not expose.
+	var approvalCards *cardapproval.Notifier
 	if cfg.CardApproval.Enabled {
 		approvalClient, err := larkcli.New(larkcli.Options{
 			Bin:         cfg.LarkCLI.Bin,
@@ -366,10 +369,11 @@ func main() {
 		if err != nil {
 			fatalf("initialize approval lark-cli failed: %v", err)
 		}
-		approvalNotifier, err = cardapproval.NewNotifier(approvalClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
+		approvalCards, err = cardapproval.NewNotifier(approvalClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
 		if err != nil {
 			fatalf("initialize approval notifier failed: %v", err)
 		}
+		approvalNotifier = approvalCards
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
 		taskService, codexRunner, sharedMemoryService, runtimeWorkRules, runtimePrompts, runtimeSkills, approvalNotifier, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
@@ -805,7 +809,7 @@ func main() {
 	if cfg.CardApproval.Enabled {
 		cardLogger := log.New(os.Stderr, "card-approval ", log.LstdFlags|log.Lmicroseconds)
 		cardApprovalProcessor, err = cardapproval.NewRelayHandler(
-			agentExecutor, cfg.CardApproval.PrincipalOpenID, cardLogger,
+			agentExecutor, agentExecutor, approvalCards, cfg.CardApproval.PrincipalOpenID, cardLogger,
 		)
 		if err != nil {
 			fatalf("build CC Connect card approval handler failed: %v", err)

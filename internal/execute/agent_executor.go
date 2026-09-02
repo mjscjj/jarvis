@@ -838,16 +838,11 @@ func (e *AgentExecutor) notifyAwaitingApproval(ctx context.Context, result *Exec
 	if task.Status != "awaiting_approval" {
 		return fmt.Errorf("%w: task_id=%d status=%s changed before approval notification", ErrInvalidTransition, task.ID, task.Status)
 	}
-	proposal, err := decodeStoredProposal(task.ExecutionResult)
+	notice, err := approvalSnapshot(task)
 	if err != nil {
-		return fmt.Errorf("decode persisted approval task_id=%d: %w", task.ID, err)
+		return err
 	}
-	delivery, err := e.approvals.SendApproval(ctx, ApprovalNotification{
-		TaskID: task.ID, RunID: result.RunID, Version: task.Version,
-		Title: task.Title, Summary: result.Summary,
-		Action: proposal.Action, Target: proposal.Target, Artifact: proposal.Artifact,
-		NeedsFollowup: approvalNeedsFollowup(task.ExecutionResult),
-	})
+	delivery, err := e.approvals.SendApproval(ctx, notice)
 	if err != nil {
 		return err
 	}
@@ -867,6 +862,41 @@ func (e *AgentExecutor) notifyAwaitingApproval(ctx context.Context, result *Exec
 		return fmt.Errorf("save approval card effect run_id=%d: %w", run.ID, err)
 	}
 	return nil
+}
+
+// approvalSnapshot rebuilds the notification an approval card is rendered from.
+// execution_result is the only source, so the card can be re-rendered word for
+// word after the decision instead of being read back from Feishu, whose message
+// API returns an internal node tree that card/update refuses to accept.
+func approvalSnapshot(task *domain.Task) (ApprovalNotification, error) {
+	proposal, err := decodeStoredProposal(task.ExecutionResult)
+	if err != nil {
+		return ApprovalNotification{}, fmt.Errorf("decode persisted approval task_id=%d: %w", task.ID, err)
+	}
+	var stored struct {
+		Summary     string `json:"summary"`
+		SourceRunID uint64 `json:"source_run_id"`
+	}
+	if err := json.Unmarshal(task.ExecutionResult, &stored); err != nil {
+		return ApprovalNotification{}, fmt.Errorf("decode persisted approval summary task_id=%d: %w", task.ID, err)
+	}
+	return ApprovalNotification{
+		TaskID: task.ID, RunID: stored.SourceRunID, Version: task.Version,
+		Title: task.Title, Summary: stored.Summary,
+		Action: proposal.Action, Target: proposal.Target, Artifact: proposal.Artifact,
+		NeedsFollowup: approvalNeedsFollowup(task.ExecutionResult),
+	}, nil
+}
+
+// ApprovalSnapshot lets the approval-card relay re-render the decided card from
+// the parked proposal. It must be read before the decision lands, because
+// approving or rejecting replaces execution_result.
+func (e *AgentExecutor) ApprovalSnapshot(ctx context.Context, taskID uint64) (ApprovalNotification, error) {
+	task, err := e.store.LoadTask(ctx, taskID)
+	if err != nil {
+		return ApprovalNotification{}, fmt.Errorf("load approval task_id=%d: %w", taskID, err)
+	}
+	return approvalSnapshot(task)
 }
 
 func approvalNeedsFollowup(raw []byte) string {

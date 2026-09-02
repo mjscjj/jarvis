@@ -69,8 +69,7 @@ func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNoti
 	if err != nil {
 		return nil, err
 	}
-	card := approvalCard(notice, detailURL, n.agentName)
-	content, err := json.Marshal(card)
+	content, err := json.Marshal(approvalCard(notice, detailURL, n.agentName, ""))
 	if err != nil {
 		return nil, fmt.Errorf("encode approval card task_id=%d: %w", notice.TaskID, err)
 	}
@@ -95,6 +94,24 @@ func (n *Notifier) SendApproval(ctx context.Context, notice execute.ApprovalNoti
 		Preview:   truncateRunes(notice.Artifact, 160),
 		URL:       detailURL,
 	}, nil
+}
+
+// ResolvedCard re-renders the approval card in its decided state. CC Connect
+// replaces the original message with this card wholesale, so Jarvis owns the
+// card content end to end and never reads it back from Feishu.
+func (n *Notifier) ResolvedCard(notice execute.ApprovalNotification, outcome string) (json.RawMessage, error) {
+	if strings.TrimSpace(outcome) == "" {
+		return nil, fmt.Errorf("resolved approval card outcome is empty")
+	}
+	detailURL, err := n.detailURL(notice.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	content, err := json.Marshal(approvalCard(notice, detailURL, n.agentName, outcome))
+	if err != nil {
+		return nil, fmt.Errorf("encode resolved approval card task_id=%d: %w", notice.TaskID, err)
+	}
+	return content, nil
 }
 
 func (n *Notifier) detailURL(taskID uint64) (string, error) {
@@ -122,7 +139,11 @@ func currentLANIPv4() (net.IP, error) {
 	return address.IP, nil
 }
 
-func approvalCard(notice execute.ApprovalNotification, detailURL, agentName string) map[string]any {
+// approvalCard renders the pending proposal when outcome is empty and the
+// decided card once outcome carries the result. Both states are built from the
+// same persisted notification, so the decided card repeats the exact wording the
+// principal reviewed without Feishu having to hand the original card back.
+func approvalCard(notice execute.ApprovalNotification, detailURL, agentName, outcome string) map[string]any {
 	decisionValue := func(decision string) map[string]any {
 		return map[string]any{
 			"action": "jarvis_approval", "decision": decision,
@@ -155,6 +176,15 @@ func approvalCard(notice execute.ApprovalNotification, detailURL, agentName stri
 		body += "\n\n**判断**\n" + summary
 	}
 	elements := []any{map[string]any{"tag": "markdown", "content": body}}
+	if outcome = strings.TrimSpace(outcome); outcome != "" {
+		return card(append(elements,
+			map[string]any{"tag": "markdown", "content": outcome},
+			map[string]any{
+				"tag": "column_set", "flex_mode": "flow", "horizontal_spacing": "medium",
+				"columns": []any{column(details)},
+			},
+		), notice)
+	}
 	if followup := strings.TrimSpace(notice.NeedsFollowup); followup != "" {
 		// Feishu recognises a submit button only among the form container's
 		// direct children and only when it carries no behaviors: either a
@@ -188,6 +218,10 @@ func approvalCard(notice execute.ApprovalNotification, detailURL, agentName stri
 			"columns": []any{column(approve), column(reject), column(details)},
 		})
 	}
+	return card(elements, notice)
+}
+
+func card(elements []any, notice execute.ApprovalNotification) map[string]any {
 	return map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{"wide_screen_mode": true},

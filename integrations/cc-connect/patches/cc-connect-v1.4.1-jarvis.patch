@@ -28,7 +28,7 @@ index cc57caf..9e94a0d 100644
  #                           # 默认 true：用「回复消息」API（引用用户消息）。设为 false 则在会话里发普通消息、不引用触发消息。
  # progress_style = "legacy" # Progress rendering style: legacy | compact | card
 diff --git a/docs/feishu.md b/docs/feishu.md
-index b9e871b..991eee0 100644
+index b9e871b..015c41b 100644
 --- a/docs/feishu.md
 +++ b/docs/feishu.md
 @@ -110,13 +110,23 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
@@ -50,7 +50,7 @@ index b9e871b..991eee0 100644
  > 如果应用没有交互卡片权限，或后台未配置卡片回调，可将 `enable_feishu_card = false`，让所有命令统一走纯文本回复，避免卡片发送失败后用户看不到内容。
 -> 如果开启 `thread_isolation = true`，群聊里每个根消息 / reply thread 会对应一个独立 agent session；私聊行为保持原样。
 +> 如果开启 `thread_isolation = true`，群聊里每个根消息 / reply thread 会对应一个独立 agent session；私聊行为保持原样。该选项只改变会话边界，不放宽 @ 过滤：`group_reply_all = false` 时，每条群消息（包括图片、文件、音频和视频）仍须显式 @机器人。
-+> `jarvis_approval_url` 只接管按钮值中 `action="jarvis_approval"` 的卡片。CC Connect 仍是该飞书 app 的唯一 WebSocket 所有者，把点击通过带共享密钥的 localhost HTTP 请求转给 Jarvis；Jarvis 原子落地审批后，CC Connect 立即返回成功提示，并在本次卡片动作锁释放后异步读取原卡片、移除已失效的确认/拒绝按钮与补充输入、追加“已确认，正在执行”结果。标题、正文和“查看详情”保持不变；原卡片读取失败时不做整卡替换，避免审批正文消失。普通消息、权限卡片、卡片导航和文档评论不经过这条分支。URL 强制为 localhost，不能配置外网地址。
++> `jarvis_approval_url` 只接管按钮值中 `action="jarvis_approval"` 的卡片。CC Connect 仍是该飞书 app 的唯一 WebSocket 所有者，把点击通过带共享密钥的 localhost HTTP 请求转给 Jarvis；Jarvis 原子落地审批后，会连同结果一起返回决议后的完整卡片；CC Connect 立即返回成功提示，并在本次卡片动作锁释放后把这张卡片原样写回。卡片内容由 Jarvis 全权负责：它用落库的提案重新渲染同样的标题、正文和“查看详情”，不再保留确认/拒绝按钮和补充输入。CC Connect 不读取原卡片——飞书的消息接口返回的是内部节点树（每层都是 `{id, tag, property}`），`card/update` 不接受这种格式。写回失败只记日志，不影响已经落地的审批。普通消息、权限卡片、卡片导航和文档评论不经过这条分支。URL 强制为 localhost，不能配置外网地址。
 +> `jarvis_route_claim_url` 不接管 Agent 执行。CC Connect 完成白名单、群聊 @ 和会话过滤后，先同步把当前消息标记为已由交互链路接管，再继续走原生 CC Agent/session；失败时停止本条分发并明确回复错误。route claim 请求本身不携带历史、不创建 Jarvis Task，也不改变 Jarvis 的 M2 监听范围。URL 强制为 localhost，不能配置外网地址。
 +> 启用 `jarvis_route_claim_url` 后，群聊直接请求还会在进入 Agent 前从飞书实时读取最多 14 条前序消息，与当前消息组成最多 15 条会话证据。普通群使用 chat 容器，话题和回复使用 thread 容器；历史内容只注入当前 Agent turn，不随 route claim 写入 Jarvis。
  > `progress_style = "compact"` 会把思考/工具进度合并到一条可更新消息里，减少刷屏；`legacy` 保持原有逐条发送；`card` 会使用结构化卡片（标题 + 进度块）持续更新同一条消息，观感比纯文本更清晰。
@@ -1145,10 +1145,13 @@ index 0000000..be492ed
 +	}
 +}
 diff --git a/platform/feishu/feishu.go b/platform/feishu/feishu.go
-index bafedee..3495322 100644
+index bafedee..9d4a09c 100644
 --- a/platform/feishu/feishu.go
 +++ b/platform/feishu/feishu.go
-@@ -110,8 +110,11 @@ type replyContext struct {
+@@ -107,11 +107,14 @@ func init() {
+ }
+ 
+ type replyContext struct {
 -	messageID  string
 -	chatID     string
 -	sessionKey string
@@ -1163,7 +1166,7 @@ index bafedee..3495322 100644
  type Platform struct {
  	mu                         sync.RWMutex
  	platformName               string
-@@ -130,6 +132,18 @@ type Platform struct {
+@@ -130,6 +133,17 @@ type Platform struct {
  	respondToAtEveryoneAndHere bool
  	shareSessionInChannel      bool
  	threadIsolation            bool
@@ -1171,7 +1174,6 @@ index bafedee..3495322 100644
 +	jarvisApprovalURL          string
 +	jarvisApprovalSecret       string
 +	jarvisApprovalTimeout      time.Duration
-+	jarvisApprovalCardFetch    func(context.Context, string) (map[string]any, error)
 +	jarvisApprovalCardUpdate   func(context.Context, string, map[string]any) error
 +	jarvisApprovalCardSchedule func(time.Duration, func())
 +	jarvisRouteClaimURL        string
@@ -1182,7 +1184,7 @@ index bafedee..3495322 100644
  	// noReplyToTrigger: when true, send via Create instead of Im.Message.Reply (no quote to the user's message).
  	noReplyToTrigger bool
  	resolveMentions  bool
-@@ -158,15 +173,14 @@ type Platform struct {
+@@ -158,15 +172,14 @@ type Platform struct {
  	isWSPrimary  bool           // true if this platform owns the shared WebSocket connection
  	// cardActionMessageIDs tracks the most recent card-action messageID per
  	// session key, enabling async card refreshes via the Patch API.
@@ -1206,7 +1208,7 @@ index bafedee..3495322 100644
  
  	richCardImageMu         sync.Mutex
  	richCardImageResolved   map[string]string
-@@ -306,6 +315,37 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -306,6 +319,37 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  	respondToAtEveryoneAndHere, _ := opts["respond_to_at_everyone_and_here"].(bool)
  	shareSessionInChannel, _ := opts["share_session_in_channel"].(bool)
  	threadIsolation, _ := opts["thread_isolation"].(bool)
@@ -1244,7 +1246,7 @@ index bafedee..3495322 100644
  	resolveMentionsOpt, _ := opts["resolve_mentions"].(bool)
  	noReplyToTrigger := false
  	if v, ok := opts["reply_to_trigger"].(bool); ok && !v {
-@@ -381,6 +421,14 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -381,6 +425,14 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  		respondToAtEveryoneAndHere: respondToAtEveryoneAndHere,
  		shareSessionInChannel:      shareSessionInChannel,
  		threadIsolation:            threadIsolation,
@@ -1259,20 +1261,19 @@ index bafedee..3495322 100644
  		resolveMentions:            resolveMentionsOpt,
  		noReplyToTrigger:           noReplyToTrigger,
  		client:                     lark.NewClient(appID, appSecret, clientOpts...),
-@@ -392,6 +440,12 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -392,6 +444,11 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  		peerBots:                   peerBots,
  		imageBatch:                 make(map[string]*imageBatchEntry),
  		imageBatchWindow:           imageBatchWindow,
 +		commentRetryDelay:          time.Second,
 +	}
-+	base.jarvisApprovalCardFetch = base.fetchRawCard
 +	base.jarvisApprovalCardUpdate = base.updateJarvisApprovalCard
 +	base.jarvisApprovalCardSchedule = func(delay time.Duration, update func()) {
 +		time.AfterFunc(delay, update)
  	}
  	if !useInteractiveCard {
  		base.self = base
-@@ -402,6 +456,24 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
+@@ -402,6 +459,24 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
  	return wrapped, nil
  }
  
@@ -1297,7 +1298,7 @@ index bafedee..3495322 100644
  func (p *Platform) Name() string { return p.platformName }
  
  func (p *Platform) ProgressStyle() string { return p.progressStyle }
-@@ -469,7 +541,10 @@ func (p *Platform) Start(handler core.MessageHandler) error {
+@@ -469,7 +544,10 @@ func (p *Platform) Start(handler core.MessageHandler) error {
  	// Register for shared WebSocket: multiple projects using the same app_id
  	// share a single WebSocket connection to avoid Feishu's server-side
  	// load-balancing which randomly routes messages across connections.
@@ -1309,7 +1310,7 @@ index bafedee..3495322 100644
  	p.sharedGroup = group
  	p.isWSPrimary = isPrimary
  
-@@ -480,6 +555,17 @@ func (p *Platform) Start(handler core.MessageHandler) error {
+@@ -480,6 +558,17 @@ func (p *Platform) Start(handler core.MessageHandler) error {
  	}
  
  	p.eventHandler = dispatcher.NewEventDispatcher("", p.encryptKey).
@@ -1327,7 +1328,7 @@ index bafedee..3495322 100644
  		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
  			// Fan out to all platforms sharing this WebSocket connection.
  			// Each platform's onMessage applies its own allow_chat filter.
-@@ -649,6 +735,12 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
+@@ -649,6 +738,12 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
  	}
  
  	actionVal, _ := event.Event.Action.Value["action"].(string)
@@ -1340,7 +1341,7 @@ index bafedee..3495322 100644
  
  	// select_static callbacks put the chosen value in event.Event.Action.Option
  	if actionVal == "" && event.Event.Action.Option != "" {
-@@ -871,6 +963,431 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
+@@ -871,6 +966,224 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
  	return nil, nil
  }
  
@@ -1386,71 +1387,6 @@ index bafedee..3495322 100644
 +	} `json:"data"`
 +}
 +
-+func (p *Platform) fetchRawCard(ctx context.Context, messageID string) (map[string]any, error) {
-+	messageID = strings.TrimSpace(messageID)
-+	if messageID == "" {
-+		return nil, fmt.Errorf("Jarvis approval message_id is empty")
-+	}
-+	query := larkcore.QueryParams{}
-+	query.Set("card_msg_content_type", "raw_card_content")
-+	path := larkcore.PathParams{}
-+	path.Set("message_id", messageID)
-+	apiResp, err := p.client.Do(ctx, &larkcore.ApiReq{
-+		HttpMethod:                http.MethodGet,
-+		ApiPath:                   "/open-apis/im/v1/messages/:message_id",
-+		PathParams:                path,
-+		QueryParams:               query,
-+		SupportedAccessTokenTypes: []larkcore.AccessTokenType{larkcore.AccessTokenTypeTenant},
-+	})
-+	if err != nil {
-+		return nil, fmt.Errorf("get Jarvis approval card message_id=%s: %w", messageID, err)
-+	}
-+	var resp struct {
-+		larkcore.CodeError
-+		Data *larkim.GetMessageRespData `json:"data"`
-+	}
-+	if err := json.Unmarshal(apiResp.RawBody, &resp); err != nil {
-+		return nil, fmt.Errorf("decode Jarvis approval card response message_id=%s: %w", messageID, err)
-+	}
-+	if resp.Code != 0 {
-+		return nil, fmt.Errorf("get Jarvis approval card message_id=%s: code=%d msg=%s", messageID, resp.Code, resp.Msg)
-+	}
-+	itemCount := 0
-+	if resp.Data != nil {
-+		itemCount = len(resp.Data.Items)
-+	}
-+	if itemCount != 1 {
-+		return nil, fmt.Errorf("get Jarvis approval card message_id=%s: items=%d, want 1", messageID, itemCount)
-+	}
-+	message := resp.Data.Items[0]
-+	if message == nil || message.MsgType == nil || *message.MsgType != "interactive" || message.Body == nil || message.Body.Content == nil {
-+		return nil, fmt.Errorf("get Jarvis approval card message_id=%s: message is not an interactive card", messageID)
-+	}
-+	card, err := decodeRawCardContent(*message.Body.Content)
-+	if err != nil {
-+		return nil, fmt.Errorf("decode Jarvis approval card message_id=%s: %w", messageID, err)
-+	}
-+	return card, nil
-+}
-+
-+func decodeRawCardContent(content string) (map[string]any, error) {
-+	cardJSON := content
-+	var wrapper struct {
-+		JSONCard string `json:"json_card"`
-+	}
-+	if json.Unmarshal([]byte(cardJSON), &wrapper) == nil && wrapper.JSONCard != "" {
-+		cardJSON = wrapper.JSONCard
-+	}
-+	var card map[string]any
-+	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil {
-+		return nil, err
-+	}
-+	if len(card) == 0 {
-+		return nil, fmt.Errorf("card is empty")
-+	}
-+	return card, nil
-+}
-+
 +func (p *Platform) updateJarvisApprovalCard(ctx context.Context, token string, card map[string]any) error {
 +	token = strings.TrimSpace(token)
 +	if token == "" {
@@ -1483,9 +1419,11 @@ index bafedee..3495322 100644
 +
 +// scheduleJarvisApprovalCardUpdate keeps Feishu's action callback short. The
 +// delayed update endpoint rejects writes while the current card action is
-+// locked, so the external reads and write run only after the callback response
-+// has had time to leave this process.
-+func (p *Platform) scheduleJarvisApprovalCardUpdate(token, messageID string, notice map[string]any) error {
++// locked, so the write runs only after the callback response has had time to
++// leave this process. Jarvis returns the whole decided card because Feishu's
++// message API hands cards back as an internal node tree that card/update
++// refuses, making a read-then-merge here impossible.
++func (p *Platform) scheduleJarvisApprovalCardUpdate(token, messageID string, card map[string]any) error {
 +	token = strings.TrimSpace(token)
 +	messageID = strings.TrimSpace(messageID)
 +	switch {
@@ -1493,10 +1431,8 @@ index bafedee..3495322 100644
 +		return fmt.Errorf("Jarvis approval card update token is empty")
 +	case messageID == "":
 +		return fmt.Errorf("Jarvis approval message_id is empty")
-+	case len(notice) == 0:
++	case len(card) == 0:
 +		return fmt.Errorf("Jarvis approval result card is empty")
-+	case p.jarvisApprovalCardFetch == nil:
-+		return fmt.Errorf("Jarvis approval card fetcher is nil")
 +	case p.jarvisApprovalCardUpdate == nil:
 +		return fmt.Errorf("Jarvis approval card updater is nil")
 +	case p.jarvisApprovalCardSchedule == nil:
@@ -1504,156 +1440,14 @@ index bafedee..3495322 100644
 +	}
 +
 +	p.jarvisApprovalCardSchedule(jarvisApprovalCardUpdateDelay, func() {
-+		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), p.jarvisApprovalTimeout)
-+		original, err := p.jarvisApprovalCardFetch(fetchCtx, messageID)
-+		fetchCancel()
-+		if err != nil {
-+			slog.Error(p.tag()+": preserve Jarvis approval card failed", "message_id", messageID, "err", err)
-+			return
-+		}
-+		merged, err := mergeJarvisApprovalCard(original, notice)
-+		if err != nil {
-+			slog.Error(p.tag()+": merge Jarvis approval card failed", "message_id", messageID, "err", err)
-+			return
-+		}
 +		updateCtx, updateCancel := context.WithTimeout(context.Background(), p.jarvisApprovalTimeout)
-+		err = p.jarvisApprovalCardUpdate(updateCtx, token, merged)
++		err := p.jarvisApprovalCardUpdate(updateCtx, token, card)
 +		updateCancel()
 +		if err != nil {
 +			slog.Error(p.tag()+": update Jarvis approval card failed", "message_id", messageID, "err", err)
 +		}
 +	})
 +	return nil
-+}
-+
-+// mergeJarvisApprovalCard keeps the card the principal reviewed, removes only
-+// the resolved approve/reject controls, and adds Jarvis's outcome notice. The
-+// original message is the display source of truth; rebuilding it from Task
-+// fields would lose wording that the principal actually saw.
-+func mergeJarvisApprovalCard(original, notice map[string]any) (map[string]any, error) {
-+	raw, err := json.Marshal(original)
-+	if err != nil {
-+		return nil, fmt.Errorf("copy original Jarvis approval card: %w", err)
-+	}
-+	var merged map[string]any
-+	if err := json.Unmarshal(raw, &merged); err != nil {
-+		return nil, fmt.Errorf("copy original Jarvis approval card: %w", err)
-+	}
-+	body, key, elements, err := jarvisApprovalCardBodyElements(merged)
-+	if err != nil {
-+		return nil, err
-+	}
-+	noticeText, err := jarvisApprovalNoticeText(notice)
-+	if err != nil {
-+		return nil, err
-+	}
-+	kept := filterResolvedJarvisApprovalControls(elements)
-+	body[key] = append([]any{map[string]any{"tag": "markdown", "content": noticeText}}, kept...)
-+	return merged, nil
-+}
-+
-+func jarvisApprovalNoticeText(card map[string]any) (string, error) {
-+	_, _, elements, err := jarvisApprovalCardBodyElements(card)
-+	if err != nil {
-+		return "", fmt.Errorf("Jarvis approval result card: %w", err)
-+	}
-+	for _, element := range elements {
-+		item, ok := element.(map[string]any)
-+		if !ok || item["tag"] != "markdown" {
-+			continue
-+		}
-+		content, _ := item["content"].(string)
-+		if strings.TrimSpace(content) != "" {
-+			return content, nil
-+		}
-+	}
-+	return "", fmt.Errorf("Jarvis approval result card has no markdown notice")
-+}
-+
-+func jarvisApprovalCardBodyElements(card map[string]any) (map[string]any, string, []any, error) {
-+	body, ok := card["body"].(map[string]any)
-+	if !ok {
-+		return nil, "", nil, fmt.Errorf("Jarvis approval card has no body")
-+	}
-+	if elements, ok := body["elements"].([]any); ok {
-+		return body, "elements", elements, nil
-+	}
-+	property, ok := body["property"].(map[string]any)
-+	if !ok {
-+		return nil, "", nil, fmt.Errorf("Jarvis approval card body has no elements")
-+	}
-+	elements, ok := property["elements"].([]any)
-+	if !ok {
-+		return nil, "", nil, fmt.Errorf("Jarvis approval card body has no elements")
-+	}
-+	return property, "elements", elements, nil
-+}
-+
-+func filterResolvedJarvisApprovalControls(items []any) []any {
-+	filtered := make([]any, 0, len(items))
-+	for _, item := range items {
-+		kept, ok := filterResolvedJarvisApprovalControl(item)
-+		if ok {
-+			filtered = append(filtered, kept)
-+		}
-+	}
-+	return filtered
-+}
-+
-+func filterResolvedJarvisApprovalControl(value any) (any, bool) {
-+	item, ok := value.(map[string]any)
-+	if !ok {
-+		return value, true
-+	}
-+	if item["tag"] == "button" && isJarvisApprovalDecisionButton(item) {
-+		return nil, false
-+	}
-+	if item["tag"] == "input" && item["name"] == "approval_note" {
-+		return nil, false
-+	}
-+	for _, key := range []string{"elements", "columns"} {
-+		children, ok := item[key].([]any)
-+		if !ok {
-+			continue
-+		}
-+		item[key] = filterResolvedJarvisApprovalControls(children)
-+	}
-+	if item["tag"] == "column" {
-+		if children, ok := item["elements"].([]any); ok && len(children) == 0 {
-+			return nil, false
-+		}
-+	}
-+	if item["tag"] == "column_set" {
-+		if children, ok := item["columns"].([]any); ok && len(children) == 0 {
-+			return nil, false
-+		}
-+	}
-+	return item, true
-+}
-+
-+func isJarvisApprovalDecisionButton(button map[string]any) bool {
-+	if value, ok := button["value"].(map[string]any); ok && value["action"] == "jarvis_approval" {
-+		decision, _ := value["decision"].(string)
-+		if decision == "approve" || decision == "reject" {
-+			return true
-+		}
-+	}
-+	behaviors, _ := button["behaviors"].([]any)
-+	for _, rawBehavior := range behaviors {
-+		behavior, ok := rawBehavior.(map[string]any)
-+		if !ok || behavior["type"] != "callback" {
-+			continue
-+		}
-+		value, ok := behavior["value"].(map[string]any)
-+		if !ok || value["action"] != "jarvis_approval" {
-+			continue
-+		}
-+		decision, _ := value["decision"].(string)
-+		if decision == "approve" || decision == "reject" {
-+			return true
-+		}
-+	}
-+	return false
 +}
 +
 +func (p *Platform) forwardJarvisApproval(event *callback.CardActionTriggerEvent) (*callback.CardActionTriggerResponse, error) {
@@ -1772,7 +1566,7 @@ index bafedee..3495322 100644
  func (p *Platform) addReaction(messageID string) string {
  	return p.addReactionWithEmoji(messageID, p.reactionEmoji)
  }
-@@ -1304,25 +1821,15 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+@@ -1304,25 +1617,15 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
  		"thread_isolation", p.threadIsolation,
  	)
  
@@ -1801,7 +1595,7 @@ index bafedee..3495322 100644
  				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)
  				return nil
  			}
-@@ -1356,6 +1868,8 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+@@ -1356,6 +1659,8 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
  	}
  	mentions := msg.Mentions
  	parentID := stringValue(msg.ParentId)
@@ -1810,7 +1604,7 @@ index bafedee..3495322 100644
  
  	rctx := replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey}
  	slog.Debug(p.tag()+": routed inbound message",
-@@ -1364,15 +1878,14 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
+@@ -1364,15 +1669,14 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
  		"reply_in_thread", p.shouldReplyInThread(rctx),
  	)
  
@@ -1830,7 +1624,7 @@ index bafedee..3495322 100644
  
  	return nil
  }
-@@ -1390,6 +1903,10 @@ func (p *Platform) replyUnauthorizedAccess(ctx context.Context, rctx replyContex
+@@ -1390,6 +1694,10 @@ func (p *Platform) replyUnauthorizedAccess(ctx context.Context, rctx replyContex
  // handler invocation. It runs in its own goroutine so that onMessage returns
  // quickly and does not block the SDK event loop.
  func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID string, rctx replyContext, parentID string, createTimeMs int64) {
@@ -1841,7 +1635,7 @@ index bafedee..3495322 100644
  	if p.isMessageRecalled(messageID) {
  		slog.Debug(p.tag()+": recalled message ignored in async dispatch", "message_id", messageID)
  		return
-@@ -1401,16 +1918,74 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
+@@ -1401,16 +1709,74 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
  		userName = p.resolveUserName(userID)
  	}
  	chatName := p.resolveChatName(chatID)
@@ -1921,7 +1715,7 @@ index bafedee..3495322 100644
  
  	switch msgType {
  	case "text":
-@@ -1655,6 +2230,49 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
+@@ -1655,6 +2021,49 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
  	}
  }
  
@@ -1971,7 +1765,7 @@ index bafedee..3495322 100644
  // resolveUserName fetches a user's display name via the Contact API, with caching.
  func (p *Platform) resolveUserName(openID string) string {
  	if !isValidFeishuLookupID(openID) {
-@@ -2595,24 +3196,28 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
+@@ -2595,24 +3004,28 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
  }
  
  func (p *Platform) Reply(ctx context.Context, rctx any, content string) error {
@@ -2010,7 +1804,7 @@ index bafedee..3495322 100644
  	rc, ok := rctx.(replyContext)
  	if !ok {
  		return fmt.Errorf("%s: invalid reply context type %T", p.tag(), rctx)
-@@ -2632,6 +3237,9 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
+@@ -2632,6 +3045,9 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
  // the interactive card path so the footer can render with text_size:
  // "notation". Falls back to plain Send when the footer is empty.
  func (p *Platform) SendWithStatusFooter(ctx context.Context, rctx any, content, footer string) error {
@@ -2020,7 +1814,7 @@ index bafedee..3495322 100644
  	if strings.TrimSpace(footer) == "" {
  		return p.Send(ctx, rctx, content)
  	}
-@@ -3253,38 +3861,6 @@ func isBotMentioned(mentions []*larkim.MentionEvent, botOpenID string) bool {
+@@ -3253,38 +3669,6 @@ func isBotMentioned(mentions []*larkim.MentionEvent, botOpenID string) bool {
  	return false
  }
  
@@ -2059,7 +1853,7 @@ index bafedee..3495322 100644
  // stripMentions processes @mention placeholders (e.g. @_user_1) in text.
  // The bot's own mention is removed; other user mentions are replaced with
  // their display name so the agent can see who was referenced.
-@@ -3325,6 +3914,17 @@ func (p *Platform) makeSessionKey(msg *larkim.EventMessage, chatID, userID strin
+@@ -3325,6 +3709,17 @@ func (p *Platform) makeSessionKey(msg *larkim.EventMessage, chatID, userID strin
  	return fmt.Sprintf("%s:%s:%s", p.tag(), chatID, userID)
  }
  
@@ -2077,7 +1871,7 @@ index bafedee..3495322 100644
  func (p *Platform) sessionKeyFromCardAction(chatID, userID string, value map[string]any) string {
  	if value != nil {
  		if sessionKey, _ := value["session_key"].(string); sessionKey != "" {
-@@ -6251,10 +6827,9 @@ func buildRichCardJSONBytes(status core.CardStatus, steps []core.ToolStep, markd
+@@ -6251,10 +6646,9 @@ func buildRichCardJSONBytes(status core.CardStatus, steps []core.ToolStep, markd
  				continue
  			}
  			footerElements = append(footerElements, map[string]any{
@@ -2877,10 +2671,10 @@ index 0000000..9081517
 +	}
 +}
 diff --git a/platform/feishu/platform_test.go b/platform/feishu/platform_test.go
-index 0695550..0ead61b 100644
+index 0695550..f3ef5a6 100644
 --- a/platform/feishu/platform_test.go
 +++ b/platform/feishu/platform_test.go
-@@ -5,8 +5,11 @@ import (
+@@ -5,8 +5,12 @@ import (
  	"context"
  	"encoding/json"
  	"errors"
@@ -2889,10 +2683,11 @@ index 0695550..0ead61b 100644
  	"net"
 +	"net/http"
 +	"net/http/httptest"
++	"reflect"
  	"strconv"
  	"strings"
  	"sync"
-@@ -15,6 +18,7 @@ import (
+@@ -15,6 +19,7 @@ import (
  	"time"
  
  	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -2900,7 +2695,7 @@ index 0695550..0ead61b 100644
  
  	"github.com/chenhg5/cc-connect/core"
  	callback "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
-@@ -314,6 +318,401 @@ func TestInteractivePlatform_CardActionPassesCardSenderToHandler(t *testing.T) {
+@@ -314,6 +319,370 @@ func TestInteractivePlatform_CardActionPassesCardSenderToHandler(t *testing.T) {
  	}
  }
  
@@ -2908,19 +2703,29 @@ index 0695550..0ead61b 100644
 +	var (
 +		gotSecret      string
 +		gotBody        map[string]any
-+		fetchCalled    bool
 +		updatedToken   string
 +		updatedCard    map[string]any
 +		scheduledDelay time.Duration
 +		scheduled      func()
 +	)
++	// Jarvis owns the whole decided card: it repeats the proposal the principal
++	// reviewed, states the outcome, and keeps only the detail link.
++	decidedCard := `{"schema":"2.0",` +
++		`"header":{"title":{"tag":"plain_text","content":"需要你拍板：保留原文"}},` +
++		`"body":{"elements":[` +
++		`{"tag":"markdown","content":"**要做的事**\n发送原定消息\n\n**会产生的影响**\n对外回复"},` +
++		`{"tag":"markdown","content":"✅ 已确认，正在执行。"},` +
++		`{"tag":"column_set","columns":[{"tag":"column","elements":[` +
++		`{"tag":"button","text":{"tag":"plain_text","content":"查看详情"},` +
++		`"behaviors":[{"type":"open_url","default_url":"http://127.0.0.1:18800/#/work/task/7"}]}]}]}` +
++		`]}}`
 +	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 +		gotSecret = r.Header.Get("X-Jarvis-Relay-Secret")
 +		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 +			t.Fatalf("decode relay request: %v", err)
 +		}
 +		w.Header().Set("Content-Type", "application/json")
-+		_, _ = io.WriteString(w, `{"code":0,"card":{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"✅ 已确认，正在执行。"}]}}}`)
++		_, _ = io.WriteString(w, `{"code":0,"card":`+decidedCard+`}`)
 +	}))
 +	defer server.Close()
 +
@@ -2932,25 +2737,6 @@ index 0695550..0ead61b 100644
 +		t.Fatalf("New() error = %v", err)
 +	}
 +	ip := platformAny.(*interactivePlatform)
-+	ip.jarvisApprovalCardFetch = func(_ context.Context, messageID string) (map[string]any, error) {
-+		fetchCalled = true
-+		if messageID != "om_card" {
-+			t.Fatalf("fetch message_id = %q, want om_card", messageID)
-+		}
-+		return map[string]any{
-+			"schema": "2.0",
-+			"header": map[string]any{"title": map[string]any{"tag": "plain_text", "content": "需要你拍板：保留原文"}},
-+			"body": map[string]any{"elements": []any{
-+				map[string]any{"tag": "markdown", "content": "**要做的事**\n发送原定消息\n\n**会产生的影响**\n对外回复"},
-+				map[string]any{"tag": "input", "name": "approval_note", "placeholder": map[string]any{"tag": "plain_text", "content": "补充说明"}},
-+				map[string]any{"tag": "column_set", "columns": []any{
-+					jarvisApprovalTestColumn("确认", map[string]any{"type": "callback", "value": map[string]any{"action": "jarvis_approval", "decision": "approve", "task_id": float64(7)}}),
-+					jarvisApprovalTestColumn("拒绝", map[string]any{"type": "callback", "value": map[string]any{"action": "jarvis_approval", "decision": "reject", "task_id": float64(7)}}),
-+					jarvisApprovalTestColumn("查看详情", map[string]any{"type": "open_url", "default_url": "http://127.0.0.1:18800/#/work/task/7"}),
-+				}},
-+			}},
-+		}, nil
-+	}
 +	ip.jarvisApprovalCardUpdate = func(_ context.Context, token string, card map[string]any) error {
 +		updatedToken = token
 +		updatedCard = card
@@ -2980,8 +2766,8 @@ index 0695550..0ead61b 100644
 +	if resp == nil || resp.Card != nil || resp.Toast == nil || resp.Toast.Type != "success" {
 +		t.Fatalf("response = %#v, want an immediate success toast without a replacement card", resp)
 +	}
-+	if fetchCalled || updatedCard != nil {
-+		t.Fatal("card read or update ran inside the action callback")
++	if updatedCard != nil {
++		t.Fatal("card update ran inside the action callback")
 +	}
 +	if scheduled == nil {
 +		t.Fatal("card update was not scheduled")
@@ -2991,15 +2777,21 @@ index 0695550..0ead61b 100644
 +	}
 +
 +	scheduled()
-+	if !fetchCalled {
-+		t.Fatal("scheduled card update did not read the original card")
-+	}
 +	if updatedToken != "card-update-token" {
 +		t.Fatalf("card update token = %q, want card-update-token", updatedToken)
 +	}
 +	merged, err := json.Marshal(updatedCard)
 +	if err != nil {
 +		t.Fatalf("marshal delayed replacement card: %v", err)
++	}
++	// Feishu returns cards as an internal node tree that card/update refuses,
++	// so the card Jarvis sent must reach the API untouched.
++	var want map[string]any
++	if err := json.Unmarshal([]byte(decidedCard), &want); err != nil {
++		t.Fatalf("decode expected decided card: %v", err)
++	}
++	if !reflect.DeepEqual(updatedCard, want) {
++		t.Fatalf("card update altered Jarvis's card:\n got %s\nwant %s", merged, decidedCard)
 +	}
 +	for _, want := range []string{"需要你拍板：保留原文", "**要做的事**", "发送原定消息", "**会产生的影响**", "对外回复", "✅ 已确认，正在执行。", "查看详情"} {
 +		if !strings.Contains(string(merged), want) {
@@ -3114,32 +2906,6 @@ index 0695550..0ead61b 100644
 +	}
 +}
 +
-+func TestDecodeRawCardContentUnwrapsFeishuMessageBody(t *testing.T) {
-+	rawCard := `{"schema":"2.0","body":{"tag":"body","property":{"elements":[{"tag":"markdown","content":"原审批正文"}]}}}`
-+	wrapper, err := json.Marshal(map[string]any{"json_card": rawCard})
-+	if err != nil {
-+		t.Fatalf("marshal raw card wrapper: %v", err)
-+	}
-+	card, err := decodeRawCardContent(string(wrapper))
-+	if err != nil {
-+		t.Fatalf("decodeRawCardContent() error = %v", err)
-+	}
-+	notice := map[string]any{"body": map[string]any{"elements": []any{map[string]any{"tag": "markdown", "content": "已驳回，不会执行。"}}}}
-+	merged, err := mergeJarvisApprovalCard(card, notice)
-+	if err != nil {
-+		t.Fatalf("mergeJarvisApprovalCard() error = %v", err)
-+	}
-+	encoded, err := json.Marshal(merged)
-+	if err != nil {
-+		t.Fatalf("marshal merged card: %v", err)
-+	}
-+	for _, want := range []string{"原审批正文", "已驳回，不会执行。"} {
-+		if !strings.Contains(string(encoded), want) {
-+			t.Fatalf("merged card lost %q: %s", want, encoded)
-+		}
-+	}
-+}
-+
 +func TestJarvisApprovalCardDelayedUpdateAPI(t *testing.T) {
 +	const (
 +		appID     = "cli_approval_card"
@@ -3184,7 +2950,9 @@ index 0695550..0ead61b 100644
 +	}
 +}
 +
-+func TestCardActionJarvisApprovalReturnsBeforeDelayedCardReadFails(t *testing.T) {
++// The approval has already landed in Jarvis by the time the card is written,
++// so a failing delayed update must not change what the principal was told.
++func TestCardActionJarvisApprovalReturnsBeforeDelayedCardUpdateFails(t *testing.T) {
 +	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 +		w.Header().Set("Content-Type", "application/json")
 +		_, _ = io.WriteString(w, `{"code":0,"card":{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"已驳回，不会执行。"}]}}}`)
@@ -3200,12 +2968,10 @@ index 0695550..0ead61b 100644
 +	}
 +	ip := platformAny.(*interactivePlatform)
 +	var scheduled func()
-+	ip.jarvisApprovalCardFetch = func(context.Context, string) (map[string]any, error) {
-+		return nil, errors.New("card read failed")
-+	}
++	updateAttempts := 0
 +	ip.jarvisApprovalCardUpdate = func(context.Context, string, map[string]any) error {
-+		t.Fatal("card update must not run after the original card read fails")
-+		return nil
++		updateAttempts++
++		return errors.New("card update failed")
 +	}
 +	ip.jarvisApprovalCardSchedule = func(_ time.Duration, update func()) {
 +		scheduled = update
@@ -3225,19 +2991,17 @@ index 0695550..0ead61b 100644
 +		t.Fatalf("onCardAction() error = %v", err)
 +	}
 +	if resp == nil || resp.Card != nil || resp.Toast == nil || resp.Toast.Type != "success" {
-+		t.Fatalf("response = %#v, want success toast before the delayed card read", resp)
++		t.Fatalf("response = %#v, want success toast before the delayed card update", resp)
++	}
++	if updateAttempts != 0 {
++		t.Fatalf("card update ran inside the action callback: attempts=%d", updateAttempts)
 +	}
 +	if scheduled == nil {
 +		t.Fatal("card update was not scheduled")
 +	}
 +	scheduled()
-+}
-+
-+func jarvisApprovalTestColumn(text string, behavior map[string]any) map[string]any {
-+	return map[string]any{
-+		"tag": "column", "elements": []any{map[string]any{
-+			"tag": "button", "text": map[string]any{"tag": "plain_text", "content": text}, "behaviors": []any{behavior},
-+		}},
++	if updateAttempts != 1 {
++		t.Fatalf("delayed card update attempts = %d, want 1", updateAttempts)
 +	}
 +}
 +
