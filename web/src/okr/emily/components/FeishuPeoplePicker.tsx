@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { searchPeople } from '../api'
 import { useBoard } from '../board'
 import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, splitOwnerNames } from '../people'
-import type { Kr, KrOwner, PersonSearchItem } from '../types'
+import type { Kr, KrOwner, PersonSearchItem, Point } from '../types'
 
 export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void }) {
   const root = useRef<HTMLSpanElement>(null)
@@ -128,4 +128,10 @@ export function FeishuPeoplePicker({ kr }: { kr: Kr }) {
 		const nextNames = joinOwnerNames(nextOwners.map((owner) => owner.name))
 		setKrOwner(kr.id, nextNames, nextOwners[0]?.openId ?? '', nextOwners)
 	}} />
+}
+
+export function PointPeoplePicker({ krId, point }: { krId: string; point: Point }) {
+	const { objectives, setPointOwners } = useBoard()
+	const options = useMemo(() => ownerOptions(objectives), [objectives])
+	return <FeishuPeoplePickerInput owners={point.owners ?? []} options={options} onChange={(nextOwners) => setPointOwners(krId, point.id, nextOwners)} />
 }

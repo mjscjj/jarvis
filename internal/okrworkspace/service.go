@@ -210,6 +210,7 @@ type PointView struct {
 	MeegoWorkItemID string           `json:"meego_work_item_id"`
 	MeegoURL        string           `json:"meego_url"`
 	Tags            []TagView        `json:"tags"`
+	Owners          []OwnerView      `json:"owners"`
 	Entries         []ProgressView   `json:"entries"`
 	PreviousEntries []ProgressView   `json:"previous_entries"`
 	Score           *ScoreView       `json:"score,omitempty"`
@@ -636,6 +637,7 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRVie
 	var points []domain.KRPoint
 	var tags []domain.KRTag
 	var pointTags []domain.PointTag
+	var pointOwners []domain.PointOwner
 	var owners []domain.KROwner
 	if err := s.db.WithContext(ctx).Where("kr_id = ?", record.ID).Order("sort_order, id").Find(&metrics).Error; err != nil {
 		return KRView{}, fmt.Errorf("list metrics: %w", err)
@@ -650,6 +652,9 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRVie
 	if len(pointIDs) > 0 {
 		if err := s.db.WithContext(ctx).Where("point_id IN ?", pointIDs).Order("point_id, type, value").Find(&pointTags).Error; err != nil {
 			return KRView{}, fmt.Errorf("list point tags: %w", err)
+		}
+		if err := s.db.WithContext(ctx).Where("point_id IN ?", pointIDs).Order("point_id, sort_order, owner_key, person_id").Find(&pointOwners).Error; err != nil {
+			return KRView{}, fmt.Errorf("list point owners: %w", err)
 		}
 	}
 	if err := s.db.WithContext(ctx).Where("kr_id = ?", record.ID).Order("type, value").Find(&tags).Error; err != nil {
@@ -681,10 +686,17 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR) (KRVie
 	for _, tag := range pointTags {
 		pointTagsByID[tag.PointID] = append(pointTagsByID[tag.PointID], TagView{Type: tag.Type, Value: tag.Value})
 	}
+	pointOwnersByID := make(map[string][]OwnerView, len(points))
+	for _, owner := range pointOwners {
+		pointOwnersByID[owner.PointID] = append(pointOwnersByID[owner.PointID], OwnerView{OpenID: owner.OpenID, Name: owner.Name})
+	}
 	for _, point := range points {
-		pointView := PointView{ID: point.ID, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: point.MeegoWorkItemID, MeegoURL: point.MeegoURL, Tags: pointTagsByID[point.ID], Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
+		pointView := PointView{ID: point.ID, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: point.MeegoWorkItemID, MeegoURL: point.MeegoURL, Tags: pointTagsByID[point.ID], Owners: pointOwnersByID[point.ID], Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
 		if pointView.Tags == nil {
 			pointView.Tags = []TagView{}
+		}
+		if pointView.Owners == nil {
+			pointView.Owners = []OwnerView{}
 		}
 		if err := validatePointTags(pointView.Tags); err != nil {
 			return KRView{}, fmt.Errorf("invalid tags for point %s: %w", point.ID, err)
@@ -852,6 +864,9 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 					return fmt.Errorf("create point tag: %w", err)
 				}
 			}
+			if err := replacePointOwners(tx, point.ID, normalizeOwners(point.Owners)); err != nil {
+				return err
+			}
 		}
 		for _, point := range oldPoints {
 			if _, kept := incomingPointIDs[point.ID]; kept {
@@ -874,6 +889,9 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 			}
 			if err := tx.Where("point_id = ?", point.ID).Delete(&domain.PointTag{}).Error; err != nil {
 				return fmt.Errorf("delete removed point tags: %w", err)
+			}
+			if err := tx.Where("point_id = ?", point.ID).Delete(&domain.PointOwner{}).Error; err != nil {
+				return fmt.Errorf("delete removed point owners: %w", err)
 			}
 			if err := tx.Where("id = ? AND kr_id = ?", point.ID, id).Delete(&domain.KRPoint{}).Error; err != nil {
 				return fmt.Errorf("delete removed point: %w", err)
@@ -922,6 +940,18 @@ func replaceKROwners(tx *gorm.DB, id string, owners []OwnerView) error {
 	for index, owner := range owners {
 		if err := tx.Create(&domain.KROwner{KRID: id, PersonID: ownerPersonID(owner), OwnerKey: ownerKey(owner), OpenID: owner.OpenID, Name: owner.Name, SortOrder: index}).Error; err != nil {
 			return fmt.Errorf("create owner: %w", err)
+		}
+	}
+	return nil
+}
+
+func replacePointOwners(tx *gorm.DB, pointID string, owners []OwnerView) error {
+	if err := tx.Where("point_id = ?", pointID).Delete(&domain.PointOwner{}).Error; err != nil {
+		return fmt.Errorf("replace point owners: %w", err)
+	}
+	for index, owner := range owners {
+		if err := tx.Create(&domain.PointOwner{PointID: pointID, PersonID: ownerPersonID(owner), OwnerKey: ownerKey(owner), OpenID: owner.OpenID, Name: owner.Name, SortOrder: index}).Error; err != nil {
+			return fmt.Errorf("create point owner: %w", err)
 		}
 	}
 	return nil
@@ -1105,6 +1135,9 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 		if len(pointIDs) > 0 {
 			if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.PointTag{}).Error; err != nil {
 				return fmt.Errorf("delete point tags: %w", err)
+			}
+			if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.PointOwner{}).Error; err != nil {
+				return fmt.Errorf("delete point owners: %w", err)
 			}
 		}
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRPoint{}).Error; err != nil {

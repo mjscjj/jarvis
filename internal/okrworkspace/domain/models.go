@@ -266,6 +266,20 @@ type PointTag struct {
 
 func (PointTag) TableName() string { return "okr_workspace_point_tag" }
 
+// PointOwner is the persisted owner of one concrete strategy/product
+// decomposition. It mirrors KROwner so both levels resolve identities the same
+// way; OpenID stays empty until a human or Agent resolves a real Feishu user.
+type PointOwner struct {
+	PointID   string `gorm:"primaryKey;size:64"`
+	PersonID  uint64 `gorm:"primaryKey;index:idx_okr_workspace_point_owner_person_id"`
+	OwnerKey  string `gorm:"not null;default:'';size:64;index:idx_okr_workspace_point_owner_key"`
+	OpenID    string `gorm:"not null;default:'';index:idx_okr_workspace_point_owner_open_id"`
+	Name      string `gorm:"not null"`
+	SortOrder int    `gorm:"not null;default:0"`
+}
+
+func (PointOwner) TableName() string { return "okr_workspace_point_owner" }
+
 // KROwner is the only persisted owner source. PersonID is a stable local key;
 // OpenID stays empty until a human or Agent resolves a real Feishu identity.
 type KROwner struct {
@@ -309,8 +323,9 @@ type PageComment struct {
 
 func (PageComment) TableName() string { return "okr_workspace_comment" }
 
-// AuthSession stores an opaque browser session. Feishu access and refresh
-// tokens are deliberately not retained because Emily only needs identity.
+// AuthSession stores an opaque browser session. It carries identity only; the
+// Feishu tokens of that same login live in the auth package's on-disk token
+// store, not in this table.
 type AuthSession struct {
 	TokenHash  string    `gorm:"primaryKey;size:64"`
 	OpenID     string    `gorm:"not null;index"`
@@ -353,11 +368,12 @@ func Models() []any {
 // CoreModels are owned by the OKR module. KRPoint is the stable decomposition
 // definition; its week-specific updates are owned by WeeklyReportModels.
 func CoreModels() []any {
-	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &PointTag{}, &KROwner{}}
+	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &PointTag{}, &KROwner{}, &PointOwner{}}
 }
 
-// IdentityModels are machine-local browser sessions. Pending device grants and
-// Feishu user tokens stay in process memory and never enter either database.
+// IdentityModels are machine-local browser sessions. Pending device grants stay
+// in process memory, and issued Feishu tokens go to local files, so neither
+// enters either database.
 func IdentityModels() []any {
 	return []any{&AuthSession{}}
 }

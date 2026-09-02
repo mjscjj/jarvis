@@ -59,6 +59,7 @@ export interface Point {
   meegoWorkItemId?: string
   meegoUrl?: string
   tags?: KrTag[]
+  owners?: KrOwner[]
   entries: Entry[]
   previousEntries?: Entry[]
   score?: WeeklyScore

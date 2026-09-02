@@ -501,6 +501,10 @@ export function BoardProvider({
       const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
       if (point) point.tags = (point.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value)
     }),
+    setPointOwners: (krId, pointId, owners) => mutate(krId, (draft) => {
+      const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
+      if (point) point.owners = owners
+    }),
     setMetricNote: (krId, note) => mutate(krId, (draft) => {
       const kr = findKr(draft, krId)
       if (kr) kr.metricNote = note

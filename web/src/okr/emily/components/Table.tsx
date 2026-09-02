@@ -8,7 +8,7 @@ import { collapseAllIds, KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
 import type { Entry, Kr, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
 import { TagChip, TagEditor } from './TagEditor'
-import { FeishuPeoplePicker } from './FeishuPeoplePicker'
+import { FeishuPeoplePicker, PointPeoplePicker } from './FeishuPeoplePicker'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
 
@@ -266,6 +266,8 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
             <span className="min-w-60 flex-1">
               <Text value={point.title} onChange={(value) => setPointTitle(objectiveId, krId, point.id, value)} placeholder="具体 KR 点" className="text-[15px] font-semibold leading-6 text-slate-800" readOnly={readOnly} commentTarget={{ type: 'point', id: point.id, title: point.title }} />
             </span>
+            {!readOnly && <span className="pt-0.5"><PointPeoplePicker krId={krId} point={point} /></span>}
+            {readOnly && (point.owners?.length ?? 0) > 0 && <span className="pt-1 text-xs text-slate-500">{point.owners?.map((owner) => owner.name).join('、')}</span>}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
           {tagSuggestions && <div className="mt-1.5 min-w-0"><TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} /></div>}

@@ -28,9 +28,10 @@ export function addOrResolveOwner(owners: KrOwner[], candidate: KrOwner): KrOwne
 export function ownerOptions(objectives: Objective[]): KrOwner[] {
 	const byName = new Map<string, KrOwner>()
 	for (const kr of objectives.flatMap((objective) => objective.krs)) {
-		const structured = kr.owners?.length
+		const krOwners = kr.owners?.length
 			? kr.owners
 			: splitOwnerNames(kr.ownerName).map((name, index) => ({ name, openId: index === 0 ? (kr.ownerOpenId ?? '') : '' }))
+		const structured = [...krOwners, ...kr.points.flatMap((point) => point.owners ?? [])]
 		for (const owner of structured) {
 			const name = owner.name.trim()
 			if (!name) continue

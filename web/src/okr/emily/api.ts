@@ -29,7 +29,7 @@ interface APIKr {
   version: number
 	weekly_core_version: number
   metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-  points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; entries: APIEntry[]; previous_entries: APIEntry[]; score?: WeeklyScore }>
+  points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; owners?: Array<{ open_id: string; name: string }>; entries: APIEntry[]; previous_entries: APIEntry[]; score?: WeeklyScore }>
   tags: KrTag[]
   score?: WeeklyScore
 }
@@ -293,6 +293,7 @@ function fromAPIKr(value: APIKr): Kr {
       meegoWorkItemId: point.meego_work_item_id ?? '',
       meegoUrl: point.meego_url ?? '',
       tags: point.tags ?? [],
+      owners: (point.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
       score: point.score,
       entries: point.entries.map((entry) => ({
         id: entry.id,
@@ -834,6 +835,7 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
         meego_work_item_id: point.meegoWorkItemId ?? '',
         meego_url: point.meegoUrl ?? '',
         tags: point.tags ?? [],
+        owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
       })),
       tags: kr.tags ?? [],
     }
