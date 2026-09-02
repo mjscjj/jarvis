@@ -521,7 +521,9 @@ func main() {
 	if err != nil {
 		fatalf("initialize group background service failed: %v", err)
 	}
-	resolveService, err := background.NewResolveService(larkClient)
+	// 头像缓存和 SQLite 同目录：它是解析器的实现细节，不值得再开一个配置项。
+	avatarCache := filepath.Join(filepath.Dir(cfg.SQLite.Path), "feishu-avatars.json")
+	resolveService, err := background.NewResolveService(larkClient, avatarCache)
 	if err != nil {
 		fatalf("initialize person resolve service failed: %v", err)
 	}

@@ -3,6 +3,7 @@ import { searchPeople } from '../api'
 import { useBoard } from '../board'
 import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, PersonSearchItem, Point } from '../types'
+import { PersonAvatar } from './PersonAvatar'
 
 export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void }) {
   const root = useRef<HTMLSpanElement>(null)
@@ -81,7 +82,7 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
     <span ref={root} className="relative inline-flex shrink-0 flex-wrap items-center gap-1">
       {owners.map((owner, index) => (
 			<span key={`${ownerIdentityKey(owner)}:${index}`} title={owner.openId ? undefined : '身份未解析，请搜索飞书联系人后重新选择'} className={`group/person inline-flex h-5 items-center gap-1 rounded-full pr-1.5 pl-1 text-[10px] ring-1 ${owner.openId ? 'bg-slate-50 text-slate-600 ring-slate-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
-				<span className={`flex size-3.5 items-center justify-center rounded-full text-[8px] font-semibold text-white ${owner.openId ? 'bg-slate-300' : 'bg-amber-400'}`}>{owner.name.slice(0, 1)}</span>
+				<PersonAvatar name={owner.name} openId={owner.openId} tone={owner.openId ? 'bg-slate-300' : 'bg-amber-400'} />
 				{owner.name}
 				<button type="button" onClick={() => remove(index)} title="移除人员" className="text-slate-300 hover:text-red-500">×</button>
 			</span>
@@ -99,7 +100,7 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
             {loading && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">正在搜索飞书联系人…</span>}
             {!loading && visibleResults.map((person) => (
               <button key={person.openId || person.name} type="button" onClick={() => add(person)} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-slate-50">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">{person.name.slice(0, 1)}</span>
+                <PersonAvatar name={person.name} openId={person.openId} size="size-7 text-[10px]" tone="bg-slate-400" />
                 <span className="min-w-0">
 				  <span className="block text-[11px] font-medium text-slate-700">{person.name}{person.isExternal && <span className="ml-1 text-[9px] font-normal text-amber-600">外部</span>}</span>
 				  <span className="block truncate text-[9px] text-slate-400">{[person.department, person.email].filter(Boolean).join(' · ') || '飞书用户'}</span>

@@ -64,11 +64,10 @@ function KrTagEditor({ kr, suggestions }: { kr: Kr; suggestions: KrTag[] }) {
   return <TagEditor idPrefix={`tag-options-${kr.id}`} tags={allTags} suggestions={suggestions.filter((item) => !isStructuralTag(item))} onAdd={(value, type) => addTag(kr.id, value, type)} onRemove={(type, value) => removeTag(kr.id, type, value)} />
 }
 
-function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[] }) {
+function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, onToggleDetails }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; onToggleDetails: () => void }) {
 	const { setKrTitle, setKrBusinessCategory, setKrPriority, deleteKr } = useBoard()
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const [deleting, setDeleting] = useState(false)
-	const [detailsOpen, setDetailsOpen] = useState(false)
 	const priority = priorityOf(kr)
 	const definitionCount = kr.metrics.length + kr.points.length
 
@@ -104,7 +103,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories }: { 
           <button
             type="button"
             aria-expanded={detailsOpen}
-            onClick={() => setDetailsOpen((open) => !open)}
+            onClick={onToggleDetails}
             className={`h-6 shrink-0 rounded-md border px-2 text-[10px] font-medium transition-colors ${detailsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-600'}`}
           >
             指标与拆解{definitionCount > 0 ? ` · ${definitionCount}` : ''}
@@ -163,12 +162,16 @@ function ObjectiveEditorHeader({
 	totalKrCount,
 	creatingKr,
 	onToggleCreateKr,
+	open,
+	onToggleOpen,
 }: {
 	objective: Objective
 	visibleKrCount: number
 	totalKrCount: number
 	creatingKr: boolean
 	onToggleCreateKr: () => void
+	open: boolean
+	onToggleOpen: () => void
 }) {
 	const { updateObjective, deleteObjective } = useBoard()
 	const [editing, setEditing] = useState(false)
@@ -215,6 +218,18 @@ function ObjectiveEditorHeader({
 				<button type="button" disabled={busy || !title.trim()} onClick={() => void save()} className="h-6 rounded-md bg-blue-600 px-2 text-[9px] font-medium text-white disabled:opacity-40">保存</button>
 				<button type="button" disabled={busy} onClick={cancel} className="h-6 px-1 text-[9px] text-slate-400">取消</button>
 			</> : <>
+				<button
+					type="button"
+					onClick={onToggleOpen}
+					title={open ? '收起这个 O 的 KR' : '展开这个 O 的 KR'}
+					aria-label={open ? '收起这个 O 的 KR' : '展开这个 O 的 KR'}
+					aria-expanded={open}
+					className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-white hover:text-slate-700"
+				>
+					<svg viewBox="0 0 12 12" aria-hidden className={`size-2.5 transition-transform ${open ? 'rotate-90' : ''}`}>
+						<path d="M4 2.2 L8.8 6 L4 9.8 Z" fill="currentColor" />
+					</svg>
+				</button>
 				<h3 className="min-w-0 flex-1 truncate text-[10px] font-semibold text-slate-500">{objective.title}</h3>
 				<span className="text-[9px] tabular-nums text-slate-400">{visibleKrCount}{visibleKrCount !== totalKrCount ? ` / ${totalKrCount}` : ''} 条</span>
 				<button type="button" onClick={() => { setTitle(objective.title); setEditing(true) }} className="h-5 rounded-md px-1.5 text-[9px] text-slate-500 hover:bg-white hover:text-blue-600">重命名 O</button>
@@ -235,6 +250,9 @@ export function ManagementView() {
   const [priority, setPriority] = useState('')
   const [tag, setTag] = useState('')
   const [creatingObjectiveId, setCreatingObjectiveId] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // 「指标与拆解」的展开态放在这里，工具栏的全部展开/折叠才管得到每一行。
+  const [openDetails, setOpenDetails] = useState<Set<string>>(new Set())
   const [creatingObjective, setCreatingObjective] = useState(false)
   const [objectiveTitle, setObjectiveTitle] = useState('')
   const [objectiveQuarter, setObjectiveQuarter] = useState(quarter)
@@ -267,6 +285,35 @@ export function ManagementView() {
 			// BoardProvider exposes the failure through the shared sync notice.
 		}
 	}
+
+  const toggleObjective = (id: string) => setCollapsed((previous) => {
+    const next = new Set(previous)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  // 新建 KR 时先展开，否则新行会落在收起的区块里看不见。
+  const expand = (id: string) => setCollapsed((previous) => {
+    if (!previous.has(id)) return previous
+    const next = new Set(previous)
+    next.delete(id)
+    return next
+  })
+  const toggleDetails = (id: string) => setOpenDetails((previous) => {
+    const next = new Set(previous)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  // 和填写/会议页同一套语义：全部展开摊开到指标与拆解，折叠到 KR 只留 KR 行。
+  const expandAll = () => {
+    setCollapsed(new Set())
+    setOpenDetails(new Set(groups.flatMap((objective) => objective.krs.map((kr) => kr.id))))
+  }
+  const collapseToKr = () => {
+    setCollapsed(new Set())
+    setOpenDetails(new Set())
+  }
 
   const clearFilters = () => {
     setQuery('')
@@ -304,17 +351,30 @@ export function ManagementView() {
             <select value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部优先级</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option></select>
             <select value={tag} onChange={(event) => setTag(event.target.value)} title={tags.find((item) => item.key === tag)?.value ?? '全部标签'} className="h-8 max-w-80 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部标签</option>{tags.map((item) => <option key={item.key} value={item.key}>{tagLabel(item.type, item.value)}</option>)}</select>
             {hasFilters && <button type="button" onClick={clearFilters} className="h-8 rounded-lg px-2.5 text-[10px] font-medium text-slate-500 hover:bg-white hover:text-slate-800">清空筛选</button>}
+            <span className="ml-auto self-center text-[10px] text-slate-400">层级</span>
+            <div className="inline-flex h-8 items-center overflow-hidden rounded-lg border border-slate-200 bg-white text-[10px]">
+              <button type="button" onClick={expandAll} className="h-full px-2.5 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部展开</button>
+              <button type="button" onClick={collapseToKr} className="h-full border-l border-slate-200 px-2.5 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
+            </div>
           </div>
         </div>
 
         <div>
           {groups.map((objective) => (
             <section key={objective.id}>
-              <ObjectiveEditorHeader objective={objective} visibleKrCount={objective.krs.length} totalKrCount={objective.totalKrCount} creatingKr={creatingObjectiveId === objective.id} onToggleCreateKr={() => setCreatingObjectiveId((current) => current === objective.id ? '' : objective.id)} />
-              <div className="divide-y divide-slate-100">
+              <ObjectiveEditorHeader
+                objective={objective}
+                visibleKrCount={objective.krs.length}
+                totalKrCount={objective.totalKrCount}
+                creatingKr={creatingObjectiveId === objective.id}
+                onToggleCreateKr={() => { expand(objective.id); setCreatingObjectiveId((current) => current === objective.id ? '' : objective.id) }}
+                open={!collapsed.has(objective.id)}
+                onToggleOpen={() => toggleObjective(objective.id)}
+              />
+              {!collapsed.has(objective.id) && <div className="divide-y divide-slate-100">
 						{creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} onClose={() => setCreatingObjectiveId('')} />}
-						{objective.krs.map((kr) => <KrEditorRow key={kr.id} objectiveId={objective.id} kr={kr} tagSuggestions={tags} businessCategories={businessCategories} />)}
-              </div>
+						{objective.krs.map((kr) => <KrEditorRow key={kr.id} objectiveId={objective.id} kr={kr} tagSuggestions={tags} businessCategories={businessCategories} detailsOpen={openDetails.has(kr.id)} onToggleDetails={() => toggleDetails(kr.id)} />)}
+              </div>}
             </section>
           ))}
           {groups.length === 0 && <div className="py-12 text-center text-[11px] text-slate-400">没有符合条件的 KR</div>}

@@ -1,5 +1,5 @@
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -865,6 +865,11 @@ export async function searchPeople(query: string, signal?: AbortSignal): Promise
 		})),
     hasMore: value.has_more,
   }
+}
+
+export async function getPeopleAvatars(names: string[]): Promise<PersonAvatarItem[]> {
+  const value = await request<{ people: Array<{ open_id: string; name: string; avatar_url: string }> }>(`/api/okr/people/avatars?names=${encodeURIComponent(names.join(','))}`)
+  return value.people.map((item) => ({ openId: item.open_id, name: item.name, avatarUrl: item.avatar_url }))
 }
 
 export async function createObjective(input: { quarter: string; title: string }): Promise<Objective> {

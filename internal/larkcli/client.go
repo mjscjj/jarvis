@@ -133,6 +133,45 @@ func (c *Client) SearchUser(ctx context.Context, query string) ([]UserCandidate,
 	return resp.Data.Users, resp.Data.HasMore, nil
 }
 
+// UserAvatar is one match returned by the legacy people search endpoint
+// `/open-apis/search/v1/user`. It is the only people lookup this app's granted
+// user scopes cover that carries avatar images; `contact +search-user` and
+// `contact +get-user` return none, and `contact/v3/users` needs a scope the
+// current authorization does not include.
+type UserAvatar struct {
+	OpenID string `json:"open_id"`
+	Name   string `json:"name"`
+	Avatar struct {
+		Small  string `json:"avatar_72"`
+		Medium string `json:"avatar_240"`
+	} `json:"avatar"`
+}
+
+type searchUserAvatarResponse struct {
+	Data struct {
+		Users []UserAvatar `json:"users"`
+	} `json:"data"`
+}
+
+// SearchUserAvatars looks a name or email up and returns the matches with their
+// avatar URLs. The endpoint does not accept an open_id as the query, so callers
+// search by name and pick the match by open_id themselves.
+// fail-fast: an empty query is rejected and any CLI failure surfaces unchanged.
+func (c *Client) SearchUserAvatars(ctx context.Context, query string) ([]UserAvatar, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, fmt.Errorf("lark-cli avatar search query is empty")
+	}
+	params, err := json.Marshal(map[string]any{"query": query, "page_size": 20})
+	if err != nil {
+		return nil, fmt.Errorf("lark-cli avatar search params query=%q: %w", query, err)
+	}
+	var resp searchUserAvatarResponse
+	if err := c.Run(ctx, &resp, "api", "GET", "/open-apis/search/v1/user", "--params", string(params), "--as", "user"); err != nil {
+		return nil, fmt.Errorf("lark-cli avatar search query=%q: %w", query, err)
+	}
+	return resp.Data.Users, nil
+}
+
 // ChatMember is one human member of a chat as returned by
 // `im +chat-members-list`. member_id is the person's open_id; bots are returned
 // in a separate bucket and are intentionally not modeled here.

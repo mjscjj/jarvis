@@ -6,10 +6,12 @@ import { tagLabel } from '../labels'
 import { hasOwner, splitOwnerNames } from '../people'
 import { collapseAllIds, KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
-import type { Entry, Kr, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
+import type { Entry, Kr, KrOwner, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
 import { TagChip, TagEditor } from './TagEditor'
+import { PreviewReviewButton, PreviewReviewPanel } from '../aiReviewContext'
 import { isReviewTemplate } from '../weekCatalog'
 import { FeishuPeoplePicker, PointPeoplePicker } from './FeishuPeoplePicker'
+import { PersonAvatar } from './PersonAvatar'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, LightPicker, Links, StatusSelect, Text } from './ui'
@@ -207,6 +209,40 @@ function tagClass(tag: KrTag) {
   return 'border-slate-200 bg-slate-100 text-slate-600'
 }
 
+const OWNER_TONES = [
+  { badge: 'border-sky-200 bg-sky-50 text-sky-700', avatar: 'bg-sky-500' },
+  { badge: 'border-violet-200 bg-violet-50 text-violet-700', avatar: 'bg-violet-500' },
+  { badge: 'border-emerald-200 bg-emerald-50 text-emerald-700', avatar: 'bg-emerald-500' },
+  { badge: 'border-amber-200 bg-amber-50 text-amber-700', avatar: 'bg-amber-500' },
+  { badge: 'border-rose-200 bg-rose-50 text-rose-700', avatar: 'bg-rose-500' },
+  { badge: 'border-cyan-200 bg-cyan-50 text-cyan-700', avatar: 'bg-cyan-500' },
+] as const
+
+function krOwners(kr: Kr): KrOwner[] {
+  if (kr.owners?.length) return kr.owners.filter((owner) => owner.name.trim())
+  return splitOwnerNames(kr.ownerName).map((name, index) => ({
+    name,
+    openId: index === 0 ? (kr.ownerOpenId ?? '') : '',
+  }))
+}
+
+function ownerTone(owner: KrOwner) {
+  const identity = owner.openId || owner.name
+  let hash = 0
+  for (const character of identity) hash = ((hash << 5) - hash + character.codePointAt(0)!) | 0
+  return OWNER_TONES[(hash >>> 0) % OWNER_TONES.length]
+}
+
+function KrOwnerBadge({ owner }: { owner: KrOwner }) {
+  const tone = ownerTone(owner)
+  return (
+    <span title={`负责人：${owner.name}`} className={`inline-flex h-6 items-center gap-1 rounded-full border py-0.5 pr-2 pl-1 text-[10px] font-semibold shadow-sm ${tone.badge}`}>
+      <PersonAvatar name={owner.name} openId={owner.openId} size="size-4 text-[8px]" tone={tone.avatar} />
+      <span className="max-w-24 truncate">{owner.name}</span>
+    </span>
+  )
+}
+
 function KrHeader({ objectiveId, kr, open, onToggle, readOnly, showScore, scoreReadOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean; showScore: boolean; scoreReadOnly: boolean }) {
 	const { setKrTitle, setKrPriority, setKrScore } = useBoard()
 	const priority = priorityOf(kr)
@@ -216,10 +252,16 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, showScore, scoreR
       <div className="flex items-start gap-2">
         <Caret open={open} onToggle={onToggle} label="KR" />
         <div className="min-w-0 flex-1">
-          <Text value={kr.title} onChange={(value) => setKrTitle(objectiveId, kr.id, value)} placeholder="KR 标题" className="text-[14px] font-semibold leading-5 text-slate-900" readOnly={readOnly} commentTarget={{ type: 'kr', id: kr.id, title: kr.title }} />
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <Text value={kr.title} onChange={(value) => setKrTitle(objectiveId, kr.id, value)} placeholder="KR 标题" className="text-[14px] font-semibold leading-5 text-slate-900" readOnly={readOnly} commentTarget={{ type: 'kr', id: kr.id, title: kr.title }} />
+            </div>
+            <div aria-label="KR 负责人" className="flex max-w-[48%] shrink-0 flex-wrap items-center justify-end gap-1">
+              {!readOnly && <FeishuPeoplePicker kr={kr} />}
+              {readOnly && krOwners(kr).map((owner, index) => <KrOwnerBadge key={`${owner.openId || owner.name}:${index}`} owner={owner} />)}
+            </div>
+          </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1">
-			{!readOnly && <FeishuPeoplePicker kr={kr} />}
-            {readOnly && splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">{person}</span>)}
 			{!readOnly ? (
 				<select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} className={`rounded-md border px-2 py-1 text-xs outline-none focus:border-blue-400 ${priorityTone(priority)}`}>
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
@@ -270,7 +312,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
               <Text value={point.title} onChange={(value) => setPointTitle(objectiveId, krId, point.id, value)} placeholder="具体 KR 点" className="text-[15px] font-semibold leading-6 text-slate-800" readOnly={readOnly} commentTarget={{ type: 'point', id: point.id, title: point.title }} />
             </span>
             {!readOnly && <span className="pt-0.5"><PointPeoplePicker krId={krId} point={point} /></span>}
-            {readOnly && (point.owners?.length ?? 0) > 0 && <span className="pt-1 text-xs text-slate-500">{point.owners?.map((owner) => owner.name).join('、')}</span>}
+            {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className="flex flex-wrap items-center justify-end gap-1">{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} />)}</span>}
             {showScore && <span className="pt-0.5"><WeeklyScoreControl score={point.score} readOnly={scoreReadOnly} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" /></span>}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
@@ -314,9 +356,14 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitio
   // Review reports one combined lane; the classic weekly report splits 进展 and
   // 已完成. Both formats read the loaded week's template, never the tab.
   const review = isReviewTemplate(templateKey)
+  // AI 评审跟着评分走：属于某一周的 review 内容，只在那一周的进展可见时出现。
+  const showReview = showProgress && review
+  const reviewTarget = { kind: 'point' as const, objectiveId, krId, pointId: point.id, title: point.title }
   return (
     <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} showScore={showProgress && review} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} />
+      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} showProgress={showProgress} showScore={showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} />
+      {showReview && <div className="mt-1.5 flex justify-end pl-7"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
+      {showReview && <PreviewReviewPanel target={reviewTarget} className="mt-1.5 ml-7" />}
       {open && showProgress && (review
         ? <div className="mt-2 pl-7">
           <section className="rounded-xl border border-slate-200 bg-white p-2.5">
@@ -399,9 +446,12 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
   // Scores belong to a reporting week, so they show wherever that week's
   // progress shows, and only for the template that scores.
   const showScore = showProgress && isReviewTemplate(templateKey)
+  const reviewTarget = { kind: 'kr' as const, objectiveId, krId: kr.id, title: kr.title }
   return (
     <article data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
 	  <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={definitionLocked} showScore={showScore} scoreReadOnly={readOnly || progressReadOnly} />
+      {showScore && <div className="flex justify-end px-4 pt-2"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
+      {showScore && <PreviewReviewPanel target={reviewTarget} className="mx-4 mt-2" />}
       {open && (
         <div className="space-y-5 px-4 py-4">
           <MetricBox kr={kr} readOnly={readOnly} structureReadOnly={definitionLocked} />
@@ -479,7 +529,8 @@ function ObjectiveControls({ objective }: { objective: Objective }) {
 }
 
 export function KrTable({ readOnly = false, definitionsReadOnly = false, progressReadOnly = false, showProgress = true, manageObjectives = false, showObjectiveHeader = false }: { readOnly?: boolean; definitionsReadOnly?: boolean; progressReadOnly?: boolean; showProgress?: boolean; manageObjectives?: boolean; showObjectiveHeader?: boolean }) {
-	const { objectives } = useBoard()
+	const { objectives, templateKey } = useBoard()
+	const showReview = showProgress && isReviewTemplate(templateKey)
 	const [closed, setClosed] = useState<Set<string>>(new Set())
 	const [ownerFilter, setOwnerFilter] = useState('')
 	const [activeBusinessValue, setActiveBusinessValue] = useState<string>()
@@ -508,6 +559,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   return (
     <div className={readOnly ? 'kr-table-readonly' : ''}>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+			{showReview && <PreviewReviewButton target={{ kind: 'all', title: '全部 OKR' }} label="评审全部" className="px-3" />}
 			<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{ownerFilter ? `，负责人筛选后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
         <span className="ml-auto text-slate-400">负责人</span>
 		<select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
@@ -519,6 +571,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
           <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
         </div>
       </div>
+		{showReview && <PreviewReviewPanel target={{ kind: 'all', title: '全部 OKR' }} className="mb-3" />}
 		<HierarchyNav
 			navigation={navigation}
 			activeBusiness={activeBusiness}

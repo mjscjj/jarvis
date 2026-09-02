@@ -83,6 +83,29 @@ func SearchWorkspacePeople(svc *background.ResolveService) app.HandlerFunc {
 	}
 }
 
+// GetWorkspacePeopleAvatars resolves the avatars of the people already on the
+// board in one round trip, so the UI does not fire a lookup per owner chip.
+func GetWorkspacePeopleAvatars(svc *background.ResolveService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		names := make([]string, 0, 8)
+		for _, name := range strings.Split(c.Query("names"), ",") {
+			if clean := strings.TrimSpace(name); clean != "" {
+				names = append(names, clean)
+			}
+		}
+		if len(names) == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40071, fmt.Errorf("names is required"))
+			return
+		}
+		people, err := svc.Avatars(ctx, names)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadGateway, 50271, fmt.Errorf("resolve feishu avatars failed: %w", err))
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"people": people}})
+	}
+}
+
 func Enums() app.HandlerFunc {
 	return func(_ context.Context, c *app.RequestContext) {
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrworkspace.EnumValues()})

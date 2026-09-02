@@ -148,6 +148,12 @@ export interface KrTag {
   value: string
 }
 
+export interface PersonAvatarItem {
+  openId: string
+  name: string
+  avatarUrl: string
+}
+
 export interface PersonSearchItem {
   openId: string
   name: string

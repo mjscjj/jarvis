@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { createComment, deleteComment, getComments, updateComment } from '../api'
 import { commentCountsByTarget, commentMatchesTarget, commentMessageCount } from '../comments'
 import type { CommentTarget, PageComment } from '../types'
+import { PersonAvatar } from './PersonAvatar'
 
 function displayTime(value: string) {
   const date = new Date(value)
@@ -19,7 +20,7 @@ function targetLabel(type: PageComment['targetType']) {
 }
 
 function Avatar({ name, small = false }: { name: string; small?: boolean }) {
-  return <span className={`flex shrink-0 items-center justify-center rounded-full bg-indigo-50 font-semibold text-indigo-600 ${small ? 'size-6 text-[10px]' : 'size-7 text-[11px]'}`}>{name.trim().slice(0, 1) || '我'}</span>
+  return <PersonAvatar name={name} size={small ? 'size-6 text-[10px]' : 'size-7 text-[11px]'} tone="bg-indigo-400" />
 }
 
 function wasEdited(comment: PageComment) {

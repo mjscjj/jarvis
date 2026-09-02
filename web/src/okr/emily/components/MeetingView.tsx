@@ -13,10 +13,9 @@ import { KIND_LABEL, isDone } from '../template'
 import { isReviewTemplate } from '../weekCatalog'
 import type { CommentTarget, Entry, KrPriority, KrTag, Objective, Point, PointKind, TextSelection } from '../types'
 import { HierarchyNav } from './HierarchyNav'
+import { PersonAvatar } from './PersonAvatar'
 import { Images, LightPicker, Links, StatusSelect } from './ui'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
-import { PreviewReviewButton, PreviewReviewPanel } from '../aiReviewContext'
-
 function FoldButton({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
   return (
     <button
@@ -229,9 +228,7 @@ function MeetingPoint({ objectiveId, krId, point, index, open, onToggle, showTag
           {reviewMode && <WeeklyScoreControl score={point.score} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" />}
           <span className="shrink-0 pt-0.5 text-[10px] text-slate-400">{doing.length} 进展 · {done.length} 完成</span>
         </Commentable>
-		{reviewMode && <PreviewReviewButton target={{ kind: 'point', objectiveId, krId, pointId: point.id, title: point.title }} label="AI建议" />}
       </header>
-	  {reviewMode && <PreviewReviewPanel target={{ kind: 'point', objectiveId, krId, pointId: point.id, title: point.title }} className="mx-7 my-1.5" />}
       {open && reviewMode && <div className="ml-6"><MeetingLane entries={point.entries} /></div>}
       {open && !reviewMode && <div className="ml-6 grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0"><MeetingLane entries={doing} /><MeetingLane entries={done} /></div>}
     </article>
@@ -275,16 +272,14 @@ function MeetingObjectiveSection({ objective, closed, toggle, showTags, reviewMo
                 <Commentable target={krTarget} className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1 px-1.5 py-1.5 pr-3">
                   <h3 className="min-w-0 text-[13px] font-bold leading-5 text-slate-900"><HighlightedText target={krTarget} text={kr.title} /></h3>
                   <div className="flex flex-wrap items-center gap-1">
-                    {splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="text-[10px] text-slate-500">{person}</span>)}
+                    {splitOwnerNames(kr.ownerName).map((person) => <span key={person} className="inline-flex items-center gap-1 text-[10px] text-slate-500"><PersonAvatar name={person} />{person}</span>)}
 						<span className={`rounded border px-1.5 py-px text-[9px] font-semibold ${priorityTone(priority)}`}>{priority === 'p0' ? 'Focus · P0' : priorityLabel(priority)}</span>
 					{reviewMode && <WeeklyScoreControl score={kr.score} onChange={(score) => setKrScore(kr.id, score)} label="一级 KR 评分" />}
                     <span className="inline-flex gap-0.5">{kr.metrics.map((metric) => <i key={metric.id} className={`size-2 rounded-full ${metric.light === 'red' ? 'bg-red-500' : metric.light === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500'}`} />)}</span>
 						{showTags && (kr.tags ?? []).filter((tag) => tag.type !== 'priority').map((tag) => <span key={`${tag.type}:${tag.value}`} title={tagText(tag)} className={`max-w-full whitespace-normal break-words rounded border px-1.5 py-px text-[9px] leading-4 [overflow-wrap:anywhere] ${tagTone(tag)}`}>{tagText(tag)}</span>)}
                   </div>
                 </Commentable>
-				{reviewMode && <PreviewReviewButton target={{ kind: 'kr', objectiveId: objective.id, krId: kr.id, title: kr.title }} label="AI评审" />}
               </header>
-			  {reviewMode && <PreviewReviewPanel target={{ kind: 'kr', objectiveId: objective.id, krId: kr.id, title: kr.title }} className="mx-3 my-1.5" />}
 
               {krOpen && <div className="space-y-2 px-3 pb-2.5">
                 {kr.metrics.length > 0 && (
@@ -372,7 +367,6 @@ export function MeetingView() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-		{reviewMode && <PreviewReviewButton target={{ kind: 'all', title: '全部 OKR' }} label="评审全部" className="px-3" />}
         <button type="button" onClick={() => setShowTags((value) => !value)} className={`rounded-md border px-2 py-1 text-[11px] font-medium ${showTags ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>{showTags ? '隐藏打标' : '显示打标'}</button>
         <span className="ml-1 text-[11px] text-slate-400">层级</span>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white text-[11px]">
@@ -388,7 +382,6 @@ export function MeetingView() {
         {exportResult.url && <a href={exportResult.url} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline">打开文档</a>}
         {exportResult.message && <span className={`max-w-56 truncate text-[10px] ${exportResult.url ? 'text-emerald-600' : 'text-red-500'}`} title={exportResult.message}>{exportResult.message}</span>}
       </div>
-	  {reviewMode && <PreviewReviewPanel target={{ kind: 'all', title: '全部 OKR' }} />}
 
       <HierarchyNav
         navigation={navigation}

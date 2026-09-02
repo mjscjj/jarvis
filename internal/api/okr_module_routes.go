@@ -71,6 +71,7 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	}
 	h.GET("/api/okr/scope", requireEnabled, GetOKRWorkspaceScope(deps.Workspace))
 	h.GET("/api/okr/people/search", requireEnabled, SearchWorkspacePeople(deps.People))
+	h.GET("/api/okr/people/avatars", requireEnabled, GetWorkspacePeopleAvatars(deps.People))
 	h.GET("/api/okr/board", requireEnabled, GetCoreBoard(deps.Workspace))
 	h.GET("/api/okr/krs/:kr_id", requireEnabled, GetCoreKR(deps.Workspace))
 	h.POST("/api/okr/images", requireEnabled, UploadOKRImage(deps.Images))
