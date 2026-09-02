@@ -120,22 +120,23 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	if preview.Summary.OwnerCount != 2 || len(preview.Recipients) != 2 {
 		t.Fatalf("multi-owner reminder preview = %+v", preview)
 	}
-	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: core.Version}); err == nil {
-		t.Fatal("DeleteKR() succeeded despite weekly history")
-	}
-	var preservedProgress int64
-	if err := db.Model(&domain.KRProgress{}).Where("point_id = ?", point.ID).Count(&preservedProgress).Error; err != nil {
+	// Deleting a KR takes its weekly progress with it. Every week renders from
+	// the same point rows, so leaving the progress behind would only strand it.
+	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: core.Version}); err != nil {
 		t.Fatal(err)
 	}
-	if preservedProgress != 2 {
-		t.Fatalf("rejected core delete changed weekly history: count=%d", preservedProgress)
-	}
-	var preservedKR int64
-	if err := db.Model(&domain.KR{}).Where("id = ?", kr.ID).Count(&preservedKR).Error; err != nil {
+	var remainingProgress, remainingPoints, remainingKR int64
+	if err := db.Model(&domain.KRProgress{}).Where("point_id = ?", point.ID).Count(&remainingProgress).Error; err != nil {
 		t.Fatal(err)
 	}
-	if preservedKR != 1 {
-		t.Fatalf("rejected core delete removed KR: count=%d", preservedKR)
+	if err := db.Model(&domain.KRPoint{}).Where("kr_id = ?", kr.ID).Count(&remainingPoints).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&domain.KR{}).Where("id = ?", kr.ID).Count(&remainingKR).Error; err != nil {
+		t.Fatal(err)
+	}
+	if remainingProgress != 0 || remainingPoints != 0 || remainingKR != 0 {
+		t.Fatalf("core delete left rows behind: progress=%d points=%d kr=%d", remainingProgress, remainingPoints, remainingKR)
 	}
 }
 
@@ -606,5 +607,57 @@ func TestMigrateCoreMovesLegacyOwnerProjectionToOwnerTable(t *testing.T) {
 	}
 	if db.Migrator().HasColumn(&domain.KR{}, "owner_name") || db.Migrator().HasColumn(&domain.KR{}, "owner_open_id") {
 		t.Fatal("legacy owner projection columns still exist")
+	}
+}
+
+// Dropping a point from a KR takes its weekly rows with it. The board renders
+// every week from these same point rows, so progress and scores left behind
+// would belong to a point no week can show.
+func TestReplaceKRCoreDropsWeeklyRowsOfRemovedPoints(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-drop-weekly", Title: "增长", Quarter: "2026-Q3"}
+	kr := domain.KR{ID: "kr-drop-weekly", ObjectiveID: objective.ID, Title: "供给增长"}
+	kept := domain.KRPoint{ID: "point-kept", KRID: kr.ID, Kind: domain.PointKindProduct, Title: "保留"}
+	dropped := domain.KRPoint{ID: "point-dropped-weekly", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "移除"}
+	for _, row := range []any{
+		&objective, &kr, &kept, &dropped,
+		&domain.KRProgress{ID: "pg-kept", PointID: kept.ID, Week: "2026-W35", Status: domain.StatusDone, Text: "保留的进展"},
+		&domain.KRProgress{ID: "pg-drop-35", PointID: dropped.ID, Week: "2026-W35", Status: domain.StatusDone, Text: "上周"},
+		&domain.KRProgress{ID: "pg-drop-36", PointID: dropped.ID, Week: "2026-W36", Status: domain.StatusDone, Text: "本周"},
+		&domain.WeeklyScore{Quarter: objective.Quarter, Week: "2026-W36", TargetKind: domain.WeeklyScoreTargetPoint, TargetID: dropped.ID, Score: 0.8, UpdatedBy: "ou_editor"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
+		ExpectedVersion: 0,
+		Title:           kr.Title,
+		Points:          []PointView{{ID: kept.ID, Kind: kept.Kind, Title: kept.Title, Tags: []TagView{}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var droppedProgress, droppedScores, droppedPoints, keptProgress int64
+	if err := db.Model(&domain.KRProgress{}).Where("point_id = ?", dropped.ID).Count(&droppedProgress).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&domain.WeeklyScore{}).Where("target_id = ?", dropped.ID).Count(&droppedScores).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&domain.KRPoint{}).Where("id = ?", dropped.ID).Count(&droppedPoints).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&domain.KRProgress{}).Where("point_id = ?", kept.ID).Count(&keptProgress).Error; err != nil {
+		t.Fatal(err)
+	}
+	if droppedProgress != 0 || droppedScores != 0 || droppedPoints != 0 {
+		t.Fatalf("removed point left rows behind: progress=%d scores=%d points=%d", droppedProgress, droppedScores, droppedPoints)
+	}
+	if keptProgress != 1 {
+		t.Fatalf("removing one point disturbed another point's progress: count=%d", keptProgress)
 	}
 }

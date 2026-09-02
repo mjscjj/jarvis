@@ -48,6 +48,7 @@ export interface BoardApi {
   setPointTitle: (objId: string, krId: string, pointId: string, title: string) => void
   setPointMeegoLink: (krId: string, pointId: string, patch: Pick<Point, 'meegoWorkItemId' | 'meegoUrl'>) => void
   addPoint: (objId: string, krId: string, kind: Point['kind']) => void
+  setPointKind: (krId: string, pointId: string, kind: Point['kind']) => void
   removePoint: (objId: string, krId: string, pointId: string) => void
   patchEntry: (pointId: string, entryId: string, patch: Partial<Entry>) => void
   addEntry: (pointId: string, text: string) => void

@@ -868,34 +868,14 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 				return err
 			}
 		}
+		var removedPointIDs []string
 		for _, point := range oldPoints {
-			if _, kept := incomingPointIDs[point.ID]; kept {
-				continue
+			if _, kept := incomingPointIDs[point.ID]; !kept {
+				removedPointIDs = append(removedPointIDs, point.ID)
 			}
-			if weeklySchemaPresent {
-				var historyCount int64
-				if err := tx.Model(&domain.KRProgress{}).Where("point_id = ?", point.ID).Count(&historyCount).Error; err != nil {
-					return fmt.Errorf("check point progress history: %w", err)
-				}
-				if historyCount > 0 {
-					return fmt.Errorf("point %s has weekly progress history and cannot be removed", point.ID)
-				}
-				if err := tx.Where("point_id = ?", point.ID).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
-					return fmt.Errorf("delete removed point snapshot: %w", err)
-				}
-				if err := tx.Where("target_id = ?", point.ID).Delete(&domain.PageComment{}).Error; err != nil {
-					return fmt.Errorf("delete removed point comments: %w", err)
-				}
-			}
-			if err := tx.Where("point_id = ?", point.ID).Delete(&domain.PointTag{}).Error; err != nil {
-				return fmt.Errorf("delete removed point tags: %w", err)
-			}
-			if err := tx.Where("point_id = ?", point.ID).Delete(&domain.PointOwner{}).Error; err != nil {
-				return fmt.Errorf("delete removed point owners: %w", err)
-			}
-			if err := tx.Where("id = ? AND kr_id = ?", point.ID, id).Delete(&domain.KRPoint{}).Error; err != nil {
-				return fmt.Errorf("delete removed point: %w", err)
-			}
+		}
+		if err := purgePoints(tx, removedPointIDs, weeklySchemaPresent); err != nil {
+			return err
 		}
 
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRTag{}).Error; err != nil {
@@ -953,6 +933,39 @@ func replacePointOwners(tx *gorm.DB, pointID string, owners []OwnerView) error {
 		if err := tx.Create(&domain.PointOwner{PointID: pointID, PersonID: ownerPersonID(owner), OwnerKey: ownerKey(owner), OpenID: owner.OpenID, Name: owner.Name, SortOrder: index}).Error; err != nil {
 			return fmt.Errorf("create point owner: %w", err)
 		}
+	}
+	return nil
+}
+
+// purgePoints removes points and everything keyed to them, weekly progress and
+// scores included. Every week renders from these same point rows, so a removed
+// point has no week left to appear on and its progress would be unreachable.
+func purgePoints(tx *gorm.DB, pointIDs []string, weeklySchemaPresent bool) error {
+	if len(pointIDs) == 0 {
+		return nil
+	}
+	if weeklySchemaPresent {
+		if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.KRProgress{}).Error; err != nil {
+			return fmt.Errorf("delete point progress: %w", err)
+		}
+		if err := tx.Where("target_kind = ? AND target_id IN ?", domain.WeeklyScoreTargetPoint, pointIDs).Delete(&domain.WeeklyScore{}).Error; err != nil {
+			return fmt.Errorf("delete point weekly scores: %w", err)
+		}
+		if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
+			return fmt.Errorf("delete point snapshots: %w", err)
+		}
+		if err := tx.Where("target_id IN ?", pointIDs).Delete(&domain.PageComment{}).Error; err != nil {
+			return fmt.Errorf("delete point comments: %w", err)
+		}
+	}
+	if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.PointTag{}).Error; err != nil {
+		return fmt.Errorf("delete point tags: %w", err)
+	}
+	if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.PointOwner{}).Error; err != nil {
+		return fmt.Errorf("delete point owners: %w", err)
+	}
+	if err := tx.Where("id IN ?", pointIDs).Delete(&domain.KRPoint{}).Error; err != nil {
+		return fmt.Errorf("delete points: %w", err)
 	}
 	return nil
 }
@@ -1103,16 +1116,15 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 		for _, point := range points {
 			pointIDs = append(pointIDs, point.ID)
 		}
-		if weeklySchemaPresent && len(pointIDs) > 0 {
-			var historyCount int64
-			if err := tx.Model(&domain.KRProgress{}).Where("point_id IN ?", pointIDs).Count(&historyCount).Error; err != nil {
-				return fmt.Errorf("check KR progress history: %w", err)
+		if err := purgePoints(tx, pointIDs, weeklySchemaPresent); err != nil {
+			return err
+		}
+		if weeklySchemaPresent {
+			if err := tx.Where("kr_id = ?", id).Delete(&domain.WeeklyKRCore{}).Error; err != nil {
+				return fmt.Errorf("delete KR weekly core: %w", err)
 			}
-			if historyCount > 0 {
-				return fmt.Errorf("KR %s has weekly progress history and cannot be deleted", id)
-			}
-			if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
-				return fmt.Errorf("delete point snapshots: %w", err)
+			if err := tx.Where("target_kind = ? AND target_id = ?", domain.WeeklyScoreTargetKR, id).Delete(&domain.WeeklyScore{}).Error; err != nil {
+				return fmt.Errorf("delete KR weekly scores: %w", err)
 			}
 		}
 		var metricIDs []string
@@ -1120,8 +1132,7 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 			return fmt.Errorf("list KR metrics for delete: %w", err)
 		}
 		if weeklySchemaPresent && tx.Migrator().HasTable(&domain.PageComment{}) {
-			commentTargetIDs := append([]string{id}, pointIDs...)
-			commentTargetIDs = append(commentTargetIDs, metricIDs...)
+			commentTargetIDs := append([]string{id}, metricIDs...)
 			if err := tx.Where("target_id IN ?", commentTargetIDs).Delete(&domain.PageComment{}).Error; err != nil {
 				return fmt.Errorf("delete KR comments: %w", err)
 			}
@@ -1131,17 +1142,6 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 		}
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRMetric{}).Error; err != nil {
 			return fmt.Errorf("delete metrics: %w", err)
-		}
-		if len(pointIDs) > 0 {
-			if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.PointTag{}).Error; err != nil {
-				return fmt.Errorf("delete point tags: %w", err)
-			}
-			if err := tx.Where("point_id IN ?", pointIDs).Delete(&domain.PointOwner{}).Error; err != nil {
-				return fmt.Errorf("delete point owners: %w", err)
-			}
-		}
-		if err := tx.Where("kr_id = ?", id).Delete(&domain.KRPoint{}).Error; err != nil {
-			return fmt.Errorf("delete points: %w", err)
 		}
 		if err := tx.Where("kr_id = ?", id).Delete(&domain.KROwner{}).Error; err != nil {
 			return fmt.Errorf("delete owner links: %w", err)

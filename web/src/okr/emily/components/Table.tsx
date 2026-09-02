@@ -280,11 +280,12 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, structureReadOnly
 }
 
 function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[] }) {
-  const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
+  const { setPointTitle, setPointKind, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
   const [preview, setPreview] = useState<MeegoPreview>()
   const [previewError, setPreviewError] = useState('')
   const [previewing, setPreviewing] = useState(false)
   const [editingMeego, setEditingMeego] = useState(Boolean(point.meegoWorkItemId))
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const doing = point.entries.filter((entry) => !isDone(entry.status)).length
   const done = point.entries.length - doing
 
@@ -306,6 +307,17 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
       <div className="flex items-start gap-2">
         {showProgress ? <Caret open={open} onToggle={onToggle} label="具体 KR" /> : <span className="w-4 shrink-0" />}
         <span className="mt-0.5 shrink-0 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">KR{index + 1}</span>
+        {!structureReadOnly && (
+          <select
+            value={point.kind}
+            onChange={(event) => setPointKind(krId, point.id, event.target.value as PointKind)}
+            title="切换这条具体 KR 的分组"
+            aria-label="具体 KR 分组"
+            className="mt-0.5 h-6 shrink-0 rounded-md border border-slate-200 bg-white px-1.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"
+          >
+            {KINDS.map((item) => <option key={item} value={item}>{KIND_LABEL[item]}</option>)}
+          </select>
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
             <span className="min-w-60 flex-1">
@@ -335,7 +347,16 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
             <button type="button" onClick={() => setEditingMeego(true)} className="mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100">+ 关联 Meego</button>
           )}
         </div>
-        {!structureReadOnly && <button type="button" onClick={() => removePoint(objectiveId, krId, point.id)} title="删除这个 KR 点" className="text-slate-300 opacity-0 transition-opacity group-hover/point:opacity-100 hover:text-red-500">×</button>}
+        {/* 删除会连带清掉这条具体 KR 在各周的进展和评分，所以要过一道确认。 */}
+        {!structureReadOnly && (confirmDelete ? (
+          <span className="flex shrink-0 items-center gap-1">
+            <span className="text-[9px] leading-tight text-red-500">连同各周进展一起删除</span>
+            <button type="button" onClick={() => removePoint(objectiveId, krId, point.id)} className="h-6 rounded-md bg-red-600 px-2 text-[9px] font-medium !text-white hover:bg-red-700">确认</button>
+            <button type="button" onClick={() => setConfirmDelete(false)} className="h-6 px-1 text-[9px] text-slate-400 hover:text-slate-700">取消</button>
+          </span>
+        ) : (
+          <button type="button" onClick={() => setConfirmDelete(true)} title="删除这个具体 KR" className="shrink-0 text-slate-300 opacity-0 transition-opacity group-hover/point:opacity-100 hover:text-red-500">×</button>
+        ))}
       </div>
       {showProgress && (preview || previewError) && (
         <div className="mt-2 ml-8 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">

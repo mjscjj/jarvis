@@ -126,6 +126,8 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
         <MoveButtons label="条 KR" onUp={onMoveUp} onDown={onMoveDown} />
         {confirmDelete ? (
           <>
+            {/* 删除 KR 会连带清掉它所有具体 KR 在各周的进展和评分。 */}
+            <span className="text-[9px] leading-tight text-red-500">连同各周进展一起删除</span>
             <button type="button" onClick={() => void remove()} disabled={deleting} className="h-6 rounded-md bg-red-600 px-2 text-[9px] font-medium !text-white hover:bg-red-700 disabled:opacity-50">{deleting ? '删除中' : '确认'}</button>
             <button type="button" onClick={() => setConfirmDelete(false)} className="h-6 px-1 text-[9px] text-slate-400 hover:text-slate-700">取消</button>
           </>

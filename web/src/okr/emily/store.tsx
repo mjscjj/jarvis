@@ -593,6 +593,19 @@ export function BoardProvider({
       if (lastSameKind === -1) kr.points.push(point)
       else kr.points.splice(lastSameKind + 1, 0, point)
     }),
+    setPointKind: (krId, pointId, kind) => mutate(krId, (draft) => {
+      const kr = findKr(draft, krId)
+      const point = kr?.points.find((item) => item.id === pointId)
+      if (!kr || !point || point.kind === kind) return
+      point.kind = kind
+      // Points persist in array order, so the moved one has to land in its new
+      // group; left in place it would sort ahead of rows it now sits beside.
+      const others = kr.points.filter((item) => item.id !== pointId)
+      const lastSameKind = others.map((item) => item.kind).lastIndexOf(kind)
+      kr.points = lastSameKind === -1
+        ? [...others, point]
+        : [...others.slice(0, lastSameKind + 1), point, ...others.slice(lastSameKind + 1)]
+    }),
     removePoint: (_objId, krId, pointId) => mutate(krId, (draft) => {
       const kr = findKr(draft, krId)
       if (kr) kr.points = kr.points.filter((item) => item.id !== pointId)
