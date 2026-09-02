@@ -14,7 +14,7 @@ preview_review:
   timeout_seconds: 300
 
 identity:
-  enabled: true
+  enabled: false
   app_id: "cli_a96a0c8d82b85cb1"
   app_secret_env: "JARVIS_OKR_FEISHU_APP_SECRET"
   session_ttl_hours: 168
