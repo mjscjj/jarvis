@@ -27,6 +27,10 @@ func (unreachableOKRAuthProvider) PollDeviceAuthorization(context.Context, strin
 	return okrAuth.Grant{}, context.Canceled
 }
 
+func (unreachableOKRAuthProvider) RefreshGrant(context.Context, string) (okrAuth.Grant, error) {
+	return okrAuth.Grant{}, context.Canceled
+}
+
 func okrAuthTestTokenStore(t *testing.T) *okrAuth.TokenStore {
 	t.Helper()
 	store, err := okrAuth.NewTokenStore(t.TempDir())

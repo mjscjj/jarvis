@@ -46,7 +46,7 @@
 - 存在周报历史的 KR 或稳定拆解不允许删除，避免留下孤儿历史。
 - 周报：`GET /api/weekly-report/scope|board|weeks|comments|reminder-preview|reminder-batches|meego-preview`；`POST /api/weekly-report/weeks` 开启空周，`DELETE /api/weekly-report/weeks/:week?quarter=...` 删除该季度下整周的周报事实但保留 O/KR 稳定定义。评论、所选周进展、Meego 观察和催办批次的其它写接口位于 `/api/weekly-report/*`。产品固定提供催填、进展巡检、会议材料和对外提交四个 Agent 行动，并固定绑定可编辑 Prompt；季度草稿、区域对齐和其它 Report Prompt 可由普通 Agent Task 使用。执行统一由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
 - Meego observation：`POST /api/weekly-report/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
-- OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/okr/auth/feishu/device` 发起飞书设备授权、`POST /api/okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。流程不需要 OAuth 回调 URL。用户的 access/refresh token 不落库，而是按 open_id 写到 `identity.token_dir` 下的 `<open_id>.json`（含人名、邮箱、scope 和两个 token 的到期时间），同一人再登录一次即覆盖。前端只在 OKR 模块入口做一次全局门禁，并按服务端返回的到期时间统一退出；内部页面不传递身份状态。新建评论由后端读取 session 记录真人作者，其余 OKR/周报写操作按 `Jarvis` 记账，不做行级权限或可见性过滤。
+- OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/okr/auth/feishu/device` 发起飞书设备授权、`POST /api/okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。流程不需要 OAuth 回调 URL。用户的 access/refresh token 不落库，而是按 open_id 写到 `identity.token_dir` 下的 `<open_id>.json`（含人名、邮箱、scope 和两个 token 的到期时间），同一人再登录一次即覆盖。申请的 scope 由 `identity.scopes_file`（`conf/okr-feishu-scopes.txt`）逐行列出，只覆盖云文档、云空间、知识库和多维表格，`offline_access` 换取 refresh token；文件缺失或没有有效行时启动即失败。`GET /api/okr/feishu-identity?open_id=` 在需要时用 refresh token 续期该用户的 access token、回写同一文件，并返回 `open_id`、`name`、`app_id`、`token_path` 和到期时间——只给位置不给 token，因为只有主服务持有 app secret。凭证不存在或已无法续期返回 404。前端只在 OKR 模块入口做一次全局门禁，并按服务端返回的到期时间统一退出；内部页面不传递身份状态。新建评论由后端读取 session 记录真人作者，其余 OKR/周报写操作按 `Jarvis` 记账，不做行级权限或可见性过滤。
 - OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。
 - 文档导出：`POST /api/weekly-report/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。
 
@@ -69,6 +69,7 @@ Runtime settings 写入后需要重启进程生效；模块开关保存后也需
 - 主动巡视运行记录：`GET /api/debug/proactive-runs`、`GET /api/debug/proactive-runs/:run_id`
 - 手工采集：`POST /api/debug/capture/discover|scan-related|scan-chat`
 - 主服务对话发现：`GET /api/chat-config`
-- 独立 Chat sidecar：`POST /api/chat`（multipart + SSE；`message` 必填，`thread_id`、JSON 字符串 `page_context`、单张 PNG/JPEG `image` 可选，图片上限 10 MB）、`GET /api/chat/:thread_id`
+- 独立 Chat sidecar：`POST /api/chat`（multipart + SSE；`message` 必填，`thread_id`、JSON 字符串 `page_context`、单张 PNG/JPEG `image`、`user_open_id` 可选，图片上限 10 MB）、`GET /api/chat/:thread_id`
+- 带 `user_open_id` 时，sidecar 向主服务的 `/api/okr/feishu-identity` 取该登录用户的飞书凭证位置，并把「用谁的身份 + token 文件路径 + 单条命令注入用法」写进本轮 prompt，让 Agent 用用户自己的权限读他扔进来的文档；token 本身不进 prompt。凭证不可用时把原因写进同一段落，不中断对话。
 
 对话只在 `chat.enabled=true` 且依赖构造成功时注册。

@@ -1,0 +1,109 @@
+# OKR 模块飞书登录申请的 user scope，一行一个，`#` 起头为注释。
+#
+# 这些 scope 决定登录用户的 access_token 能做什么：Jarvis 用这个 token 以
+# 「该用户本人」的身份读他有权限的飞书文档、知识库和多维表格，不再依赖本机
+# lark-cli 里另一个人的凭证。
+#
+# 范围只覆盖「用户扔进来一个链接，Jarvis 替他打开」这件事所需的域：云文档、
+# 云空间文件读取、知识库、多维表格。消息、日历、会议、邮件、审批、任务等域
+# 不在这里——那些仍走 Jarvis 自己的身份。需要新域时在此显式添加。
+#
+# offline_access 换取 refresh_token，缺它 token 两小时后无法续期；
+# profile:user_profile:read 用于登录后确认 token 属于谁。
+#
+# 只能申请 App cli_a96a0c8d82b85cb1 已开通的 scope（`lark-cli auth scopes`），
+# 申请未开通的会导致授权失败。改动后所有人需要重新登录一次授权新范围。
+
+offline_access
+profile:user_profile:read
+
+# 云文档：正文、评论、导入导出、媒体、密级、权限申请
+docs:document.comment:create
+docs:document.comment:delete
+docs:document.comment:read
+docs:document.comment:update
+docs:document.comment:write_only
+docs:document.content:read
+docs:document.media:download
+docs:document.media:upload
+docs:document:copy
+docs:document:export
+docs:document:import
+docs:event:subscribe
+docs:permission.member:apply
+docs:permission.member:auth
+docs:permission.member:create
+docs:permission.member:delete
+docs:permission.member:retrieve
+docs:permission.member:transfer
+docs:permission.member:update
+docs:permission.setting:read
+docs:permission.setting:write_only
+docs:secure_label:readonly
+docs:secure_label:write_only
+docx:document:create
+docx:document:readonly
+docx:document:write_only
+
+# 云空间：读取文档所需的元数据与附件下载
+drive:drive.metadata:readonly
+drive:file:download
+drive:file:upload
+drive:file:view_record:readonly
+drive:quota_detail:read_one
+
+# 知识库
+wiki:member:create
+wiki:member:retrieve
+wiki:member:update
+wiki:node:copy
+wiki:node:create
+wiki:node:move
+wiki:node:read
+wiki:node:retrieve
+wiki:node:update
+wiki:space:read
+wiki:space:retrieve
+wiki:space:write_only
+wiki:wiki:readonly
+
+# 多维表格
+base:app:copy
+base:app:create
+base:app:read
+base:app:update
+base:block:create
+base:block:delete
+base:block:read
+base:block:update
+base:dashboard:create
+base:dashboard:delete
+base:dashboard:read
+base:dashboard:update
+base:field:create
+base:field:delete
+base:field:read
+base:field:update
+base:form:create
+base:form:delete
+base:form:read
+base:form:update
+base:history:read
+base:record:create
+base:record:delete
+base:record:read
+base:record:retrieve
+base:record:update
+base:role:create
+base:role:delete
+base:role:read
+base:role:update
+base:table:create
+base:table:delete
+base:table:read
+base:table:update
+base:template:read
+base:view:read
+base:view:write_only
+base:workspace:list
+base:workspace:read

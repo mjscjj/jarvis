@@ -44,7 +44,7 @@ func TestFeishuProviderDeviceFlow(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	provider, err := NewFeishuProvider("cli_test", "secret", server.URL, server.URL, server.Client())
+	provider, err := NewFeishuProvider("cli_test", "secret", server.URL, server.URL, "offline_access", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}

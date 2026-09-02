@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"jarvis/internal/fileconfig"
@@ -31,7 +32,15 @@ type IdentityConfig struct {
 	// TokenDir holds one JSON file per signed-in open_id with that person's
 	// Feishu access and refresh tokens.
 	TokenDir string `yaml:"token_dir"`
+	// ScopesFile lists the user scopes the device login asks for, resolved
+	// relative to this config file.
+	ScopesFile string `yaml:"scopes_file"`
+	// Scopes is read from ScopesFile while loading, never from YAML.
+	Scopes []string `yaml:"-"`
 }
+
+// ScopeParam renders the scopes the way Feishu's OAuth endpoints expect them.
+func (c IdentityConfig) ScopeParam() string { return strings.Join(c.Scopes, " ") }
 
 func (c IdentityConfig) AppSecret() string {
 	return strings.TrimSpace(os.Getenv(strings.TrimSpace(c.AppSecretEnv)))
@@ -51,7 +60,45 @@ func Load(path string) (Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate OKR module config %s: %w", path, err)
 	}
+	if cfg.Identity.Enabled {
+		scopesPath := filepath.Join(filepath.Dir(path), cfg.Identity.ScopesFile)
+		scopes, err := loadScopes(scopesPath)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.Identity.Scopes = scopes
+	}
 	return cfg, nil
+}
+
+// loadScopes reads the scope list, one per line, ignoring blanks and `#`
+// comments. fail-fast: a missing or effectively empty file is an error, because
+// logging in with no scopes yields a token that cannot call anything.
+func loadScopes(path string) ([]string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read OKR identity scopes %s: %w", path, err)
+	}
+	var scopes []string
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(string(raw), "\n") {
+		scope := strings.TrimSpace(line)
+		if scope == "" || strings.HasPrefix(scope, "#") {
+			continue
+		}
+		if strings.ContainsAny(scope, " \t") {
+			return nil, fmt.Errorf("OKR identity scopes %s: %q must be one scope per line", path, scope)
+		}
+		if seen[scope] {
+			continue
+		}
+		seen[scope] = true
+		scopes = append(scopes, scope)
+	}
+	if len(scopes) == 0 {
+		return nil, fmt.Errorf("OKR identity scopes %s has no scope", path)
+	}
+	return scopes, nil
 }
 
 func (c Config) Validate() error {
@@ -81,6 +128,9 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Identity.TokenDir) == "" {
 		return fmt.Errorf("identity.token_dir is required when enabled")
+	}
+	if strings.TrimSpace(c.Identity.ScopesFile) == "" {
+		return fmt.Errorf("identity.scopes_file is required when enabled")
 	}
 	return nil
 }

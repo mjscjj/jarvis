@@ -50,6 +50,10 @@ func NewTokenStore(dir string) (*TokenStore, error) {
 
 func (s *TokenStore) Dir() string { return s.dir }
 
+// Path reports where one person's tokens live, for callers that need to hand
+// that location to a tool instead of reading the file themselves.
+func (s *TokenStore) Path(openID string) (string, error) { return s.path(openID) }
+
 // Save writes one grant, replacing whatever that person had before. A second
 // login by the same person simply overwrites their file with fresher tokens.
 func (s *TokenStore) Save(grant Grant, now time.Time) (StoredToken, error) {

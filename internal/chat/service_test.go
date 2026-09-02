@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,11 @@ func newTestServiceWithSharedMemory(t *testing.T, reader fakeSharedMemoryReader)
 
 func newTestServiceWithDependencies(t *testing.T, reader fakeSharedMemoryReader, assembler ContextAssembler) *Service {
 	t.Helper()
+	return newTestServiceWithIdentities(t, reader, assembler, nil)
+}
+
+func newTestServiceWithIdentities(t *testing.T, reader fakeSharedMemoryReader, assembler ContextAssembler, identities FeishuIdentityResolver) *Service {
+	t.Helper()
 	svc, err := NewService(Options{
 		Bin:              "codex",
 		Model:            "gpt-5.5",
@@ -76,11 +82,103 @@ func newTestServiceWithDependencies(t *testing.T, reader fakeSharedMemoryReader,
 		SharedMemory:     reader,
 		ContextAssembler: assembler,
 		SystemPrompts:    fakeSystemPromptReader{},
+		FeishuIdentities: identities,
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	return svc
+}
+
+type fakeFeishuIdentities struct {
+	identity FeishuIdentity
+	err      error
+	openIDs  []string
+}
+
+func (f *fakeFeishuIdentities) Resolve(_ context.Context, openID string) (FeishuIdentity, error) {
+	f.openIDs = append(f.openIDs, openID)
+	if f.err != nil {
+		return FeishuIdentity{}, f.err
+	}
+	return f.identity, nil
+}
+
+func TestPromptsCarryTheSignedInUsersFeishuCredentials(t *testing.T) {
+	t.Parallel()
+	identities := &fakeFeishuIdentities{identity: FeishuIdentity{
+		OpenID:    "ou_alice",
+		Name:      "Alice",
+		AppID:     "cli_test",
+		TokenPath: "data/okr/feishu-tokens/ou_alice.json",
+	}}
+	svc := newTestServiceWithIdentities(t, fakeSharedMemoryReader{}, &fakeContextAssembler{}, identities)
+	req := Request{Message: "帮我读这篇文档", UserOpenID: "ou_alice"}
+
+	first, err := svc.buildPrompt(context.Background(), req)
+	if err != nil {
+		t.Fatalf("buildPrompt() error = %v", err)
+	}
+	// The follow-up prompt must repeat it: the token is refreshed every turn
+	// and a resumed conversation may have scrolled the first turn out.
+	followup, err := svc.buildFollowupPrompt(context.Background(), req)
+	if err != nil {
+		t.Fatalf("buildFollowupPrompt() error = %v", err)
+	}
+	for _, prompt := range []string{first, followup} {
+		for _, want := range []string{
+			"Alice",
+			"ou_alice",
+			"data/okr/feishu-tokens/ou_alice.json",
+			"LARKSUITE_CLI_USER_ACCESS_TOKEN",
+			"cli_test",
+		} {
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("prompt is missing %q:\n%s", want, prompt)
+			}
+		}
+	}
+	if len(identities.openIDs) != 2 {
+		t.Fatalf("resolved open ids = %v, want one per turn", identities.openIDs)
+	}
+}
+
+func TestPromptReportsUnusableFeishuCredentialsWithoutFailingTheTurn(t *testing.T) {
+	t.Parallel()
+	identities := &fakeFeishuIdentities{err: errors.New("token expired, sign in again")}
+	svc := newTestServiceWithIdentities(t, fakeSharedMemoryReader{}, &fakeContextAssembler{}, identities)
+
+	prompt, err := svc.buildPrompt(context.Background(), Request{Message: "在吗", UserOpenID: "ou_alice"})
+	if err != nil {
+		t.Fatalf("buildPrompt() error = %v", err)
+	}
+	for _, want := range []string{"ou_alice", "token expired, sign in again", "重新在 OKR 模块登录"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt is missing %q:\n%s", want, prompt)
+		}
+	}
+	// The tool catalog explains the env var in general; what must be absent is
+	// the concrete command pointing at a token file that does not work.
+	if strings.Contains(prompt, "jq -r .access_token") {
+		t.Fatalf("prompt offered a token it does not have:\n%s", prompt)
+	}
+}
+
+func TestPromptOmitsFeishuIdentityWhenNobodyIsSignedIn(t *testing.T) {
+	t.Parallel()
+	identities := &fakeFeishuIdentities{identity: FeishuIdentity{OpenID: "ou_alice", TokenPath: "x.json", AppID: "cli_test"}}
+	svc := newTestServiceWithIdentities(t, fakeSharedMemoryReader{}, &fakeContextAssembler{}, identities)
+
+	prompt, err := svc.buildPrompt(context.Background(), Request{Message: "在吗"})
+	if err != nil {
+		t.Fatalf("buildPrompt() error = %v", err)
+	}
+	if strings.Contains(prompt, "当前登录用户的飞书身份") {
+		t.Fatalf("prompt claimed an identity without an open_id:\n%s", prompt)
+	}
+	if len(identities.openIDs) != 0 {
+		t.Fatalf("resolver was called without an open_id: %v", identities.openIDs)
+	}
 }
 
 func TestBuildPromptInjectsToolsAndContext(t *testing.T) {

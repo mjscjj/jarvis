@@ -1181,6 +1181,8 @@ export interface ChatRequest {
   thread_id?: string | null
   page_context?: PageContext | null
   image?: File | null
+  // 当前通过飞书登录的用户，服务端据此取他自己的飞书凭证。
+  user_open_id?: string
 }
 
 // SSE 事件类型（event 字段）：

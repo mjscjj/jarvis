@@ -157,6 +157,22 @@ export function getChatRuntimeConfig(signal?: AbortSignal): Promise<ChatRuntimeC
   return request<ChatRuntimeConfig>('/api/chat-config', { signal })
 }
 
+// getSignedInOpenID reports who is signed in through the OKR module's Feishu
+// login, so a conversation can use that person's own Feishu credentials.
+// Returns undefined when the module is disabled or nobody is signed in.
+export async function getSignedInOpenID(signal?: AbortSignal): Promise<string | undefined> {
+  try {
+    const me = await request<{ authenticated: boolean; user?: { open_id: string } }>('/api/okr/me', { signal })
+    if (!me.authenticated) return undefined
+    const openID = me.user?.open_id?.trim()
+    // The placeholder identity used when login is not configured is not a real
+    // Feishu account and has no token of its own.
+    return openID && openID !== 'jarvis' ? openID : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function resolveChatBaseURL(pageOrigin: string, chatPort: number): string {
   const endpoint = new URL(pageOrigin)
   if (endpoint.port !== '') endpoint.port = String(chatPort)

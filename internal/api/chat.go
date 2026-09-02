@@ -125,7 +125,7 @@ func decodeChatMultipart(c *app.RequestContext) (req chat.Request, cleanup func(
 		return chat.Request{}, nil, cause
 	}
 
-	allowedValues := map[string]bool{"message": true, "thread_id": true, "page_context": true}
+	allowedValues := map[string]bool{"message": true, "thread_id": true, "page_context": true, "user_open_id": true}
 	for key := range form.Value {
 		if !allowedValues[key] {
 			return fail(fmt.Errorf("unknown chat form field %q", key))
@@ -147,6 +147,12 @@ func decodeChatMultipart(c *app.RequestContext) (req chat.Request, cleanup func(
 		return fail(fmt.Errorf("chat thread_id must appear at most once"))
 	} else if len(values) == 1 {
 		req.ThreadID = values[0]
+	}
+
+	if values := form.Value["user_open_id"]; len(values) > 1 {
+		return fail(fmt.Errorf("chat user_open_id must appear at most once"))
+	} else if len(values) == 1 {
+		req.UserOpenID = strings.TrimSpace(values[0])
 	}
 
 	if values := form.Value["page_context"]; len(values) > 1 {

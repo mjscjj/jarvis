@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-const deviceIdentityScope = "offline_access"
-
 var (
 	ErrDeviceAuthorizationPending  = errors.New("Feishu device authorization is pending")
 	ErrDeviceAuthorizationSlowDown = errors.New("Feishu device authorization polling is too frequent")
@@ -54,6 +52,7 @@ type Grant struct {
 type Provider interface {
 	RequestDeviceAuthorization(ctx context.Context) (DeviceAuthorization, error)
 	PollDeviceAuthorization(ctx context.Context, deviceCode string) (Grant, error)
+	RefreshGrant(ctx context.Context, refreshToken string) (Grant, error)
 }
 
 // FeishuProvider uses Feishu's OAuth device flow. Unlike Web OAuth, this flow
@@ -63,25 +62,34 @@ type FeishuProvider struct {
 	appSecret  string
 	apiBaseURL string
 	accountURL string
+	scope      string
 	httpClient *http.Client
 }
 
-func NewFeishuProvider(appID, appSecret, apiBaseURL, accountURL string, client *http.Client) (*FeishuProvider, error) {
+func NewFeishuProvider(appID, appSecret, apiBaseURL, accountURL, scope string, client *http.Client) (*FeishuProvider, error) {
 	appID = strings.TrimSpace(appID)
 	appSecret = strings.TrimSpace(appSecret)
 	apiBaseURL = strings.TrimRight(strings.TrimSpace(apiBaseURL), "/")
 	accountURL = strings.TrimRight(strings.TrimSpace(accountURL), "/")
+	scope = strings.TrimSpace(scope)
 	if appID == "" || appSecret == "" || apiBaseURL == "" || accountURL == "" {
 		return nil, fmt.Errorf("create Feishu provider: app id, app secret and base URLs are required")
 	}
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+	if scope == "" {
+		return nil, fmt.Errorf("create Feishu provider: scope is required")
 	}
-	return &FeishuProvider{appID: appID, appSecret: appSecret, apiBaseURL: apiBaseURL, accountURL: accountURL, httpClient: client}, nil
+	return &FeishuProvider{appID: appID, appSecret: appSecret, apiBaseURL: apiBaseURL, accountURL: accountURL, scope: scope, httpClient: providerHTTPClient(client)}, nil
+}
+
+func providerHTTPClient(client *http.Client) *http.Client {
+	if client == nil {
+		return &http.Client{Timeout: 10 * time.Second}
+	}
+	return client
 }
 
 func (p *FeishuProvider) RequestDeviceAuthorization(ctx context.Context) (DeviceAuthorization, error) {
-	form := url.Values{"client_id": {p.appID}, "scope": {deviceIdentityScope}}
+	form := url.Values{"client_id": {p.appID}, "scope": {p.scope}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.accountURL+"/oauth/v1/device_authorization", strings.NewReader(form.Encode()))
 	if err != nil {
 		return DeviceAuthorization{}, fmt.Errorf("create Feishu device authorization request: %w", err)
@@ -129,28 +137,12 @@ func (p *FeishuProvider) PollDeviceAuthorization(ctx context.Context, deviceCode
 	if deviceCode == "" {
 		return Grant{}, fmt.Errorf("poll Feishu device authorization: device code is required")
 	}
-	form := url.Values{
+	response, status, err := p.postToken(ctx, url.Values{
 		"grant_type":    {"urn:ietf:params:oauth:grant-type:device_code"},
 		"device_code":   {deviceCode},
 		"client_id":     {p.appID},
 		"client_secret": {p.appSecret},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.apiBaseURL+"/open-apis/authen/v2/oauth/token", strings.NewReader(form.Encode()))
-	if err != nil {
-		return Grant{}, fmt.Errorf("create Feishu device token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	var response struct {
-		AccessToken           string `json:"access_token"`
-		RefreshToken          string `json:"refresh_token"`
-		TokenType             string `json:"token_type"`
-		Scope                 string `json:"scope"`
-		ExpiresIn             int    `json:"expires_in"`
-		RefreshTokenExpiresIn int    `json:"refresh_token_expires_in"`
-		Error                 string `json:"error"`
-		ErrorDescription      string `json:"error_description"`
-	}
-	status, err := p.doJSON(req, &response)
+	})
 	if err != nil {
 		return Grant{}, fmt.Errorf("poll Feishu device authorization: %w", err)
 	}
@@ -171,10 +163,78 @@ func (p *FeishuProvider) PollDeviceAuthorization(ctx context.Context, deviceCode
 	if status < 200 || status >= 300 {
 		return Grant{}, fmt.Errorf("poll Feishu device authorization: unexpected HTTP status %d", status)
 	}
-	accessToken := strings.TrimSpace(response.AccessToken)
-	if accessToken == "" {
+	if strings.TrimSpace(response.AccessToken) == "" {
 		return Grant{}, fmt.Errorf("poll Feishu device authorization: response has no access_token or error")
 	}
+	return p.grantFrom(ctx, response)
+}
+
+// RefreshGrant trades a refresh token for a fresh access token. The scope is
+// deliberately not resent so the grant keeps exactly what the user approved.
+// fail-fast: a rejected refresh token surfaces as ErrDeviceAuthorizationExpired
+// so callers can tell "sign in again" apart from a transport failure.
+func (p *FeishuProvider) RefreshGrant(ctx context.Context, refreshToken string) (Grant, error) {
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return Grant{}, fmt.Errorf("refresh Feishu grant: refresh token is required")
+	}
+	response, status, err := p.postToken(ctx, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {p.appID},
+		"client_secret": {p.appSecret},
+	})
+	if err != nil {
+		return Grant{}, fmt.Errorf("refresh Feishu grant: %w", err)
+	}
+	switch strings.TrimSpace(response.Error) {
+	case "invalid_grant", "expired_token", "access_denied":
+		return Grant{}, fmt.Errorf("%w: %s", ErrDeviceAuthorizationExpired, oauthErrorMessage(response.Error, response.ErrorDescription))
+	case "":
+		// Continue below.
+	default:
+		return Grant{}, fmt.Errorf("refresh Feishu grant: %s", oauthErrorMessage(response.Error, response.ErrorDescription))
+	}
+	if status < 200 || status >= 300 {
+		return Grant{}, fmt.Errorf("refresh Feishu grant: unexpected HTTP status %d", status)
+	}
+	if strings.TrimSpace(response.AccessToken) == "" {
+		return Grant{}, fmt.Errorf("refresh Feishu grant: response has no access_token or error")
+	}
+	return p.grantFrom(ctx, response)
+}
+
+// tokenResponse covers both grant types of /authen/v2/oauth/token.
+type tokenResponse struct {
+	AccessToken           string `json:"access_token"`
+	RefreshToken          string `json:"refresh_token"`
+	TokenType             string `json:"token_type"`
+	Scope                 string `json:"scope"`
+	ExpiresIn             int    `json:"expires_in"`
+	RefreshTokenExpiresIn int    `json:"refresh_token_expires_in"`
+	Error                 string `json:"error"`
+	ErrorDescription      string `json:"error_description"`
+}
+
+func (p *FeishuProvider) postToken(ctx context.Context, form url.Values) (tokenResponse, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.apiBaseURL+"/open-apis/authen/v2/oauth/token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return tokenResponse{}, 0, fmt.Errorf("create Feishu token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	var response tokenResponse
+	status, err := p.doJSON(req, &response)
+	if err != nil {
+		return tokenResponse{}, status, err
+	}
+	return response, status, nil
+}
+
+// grantFrom resolves who the token belongs to. The identity comes from
+// /authen/v1/user_info rather than the caller, so a refreshed grant cannot be
+// written to the wrong person's file.
+func (p *FeishuProvider) grantFrom(ctx context.Context, response tokenResponse) (Grant, error) {
+	accessToken := strings.TrimSpace(response.AccessToken)
 	user, err := p.userInfo(ctx, accessToken)
 	if err != nil {
 		return Grant{}, err

@@ -22,6 +22,12 @@ type OKRModuleDependencies struct {
 	Documents MarkdownDocumentCreator
 	People    *background.ResolveService
 	Enabled   func(context.Context) (bool, error)
+	// UserTokens, Tokens and FeishuAppID serve the signed-in user's own Feishu
+	// credentials to the chat sidecar. Set together with Identity when the
+	// module's identity is configured.
+	UserTokens  *okrAuth.UserTokens
+	Tokens      *okrAuth.TokenStore
+	FeishuAppID string
 }
 
 // WeeklyReportModuleDependencies keeps the weekly collaboration surface behind
@@ -60,6 +66,9 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	h.POST("/api/okr/auth/feishu/device", requireEnabled, BeginOKRFeishuDeviceLogin(deps.Identity))
 	h.POST("/api/okr/auth/feishu/device/:login_id/poll", requireEnabled, PollOKRFeishuDeviceLogin(deps.Identity))
 	h.POST("/api/okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity))
+	if deps.UserTokens != nil {
+		h.GET("/api/okr/feishu-identity", requireEnabled, GetOKRFeishuIdentity(deps.UserTokens, deps.Tokens, deps.FeishuAppID))
+	}
 	h.GET("/api/okr/scope", requireEnabled, GetOKRWorkspaceScope(deps.Workspace))
 	h.GET("/api/okr/people/search", requireEnabled, SearchWorkspacePeople(deps.People))
 	h.GET("/api/okr/board", requireEnabled, GetCoreBoard(deps.Workspace))

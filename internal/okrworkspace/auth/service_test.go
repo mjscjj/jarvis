@@ -19,6 +19,9 @@ type fakeProvider struct {
 	grant         Grant
 	pollErrors    []error
 	pollCalls     int
+	refreshed     Grant
+	refreshErr    error
+	refreshCalls  int
 }
 
 func (f *fakeProvider) RequestDeviceAuthorization(context.Context) (DeviceAuthorization, error) {
@@ -33,6 +36,14 @@ func (f *fakeProvider) PollDeviceAuthorization(context.Context, string) (Grant, 
 		return Grant{}, err
 	}
 	return f.grant, nil
+}
+
+func (f *fakeProvider) RefreshGrant(context.Context, string) (Grant, error) {
+	f.refreshCalls++
+	if f.refreshErr != nil {
+		return Grant{}, f.refreshErr
+	}
+	return f.refreshed, nil
 }
 
 func authTestTokenStore(t *testing.T) *TokenStore {

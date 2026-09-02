@@ -78,6 +78,12 @@ func main() {
 	if err != nil {
 		fatalf("initialize chat context assembler failed: %v", err)
 	}
+	// 登录用户自己的飞书凭证由主服务维护（只有它持有 app secret）；这里只解析
+	// 位置，交给 Agent 按需使用。
+	feishuIdentities, err := chat.NewHTTPFeishuIdentities(cfg.Server.Addr, nil)
+	if err != nil {
+		fatalf("initialize chat Feishu identity resolver failed: %v", err)
+	}
 	chatService, err := chat.NewService(chat.Options{
 		Bin:              cfg.Chat.Bin,
 		Model:            cfg.Chat.Model,
@@ -88,6 +94,7 @@ func main() {
 		SharedMemory:     sharedMemoryService,
 		ContextAssembler: contextAssembler,
 		SystemPrompts:    textFileService,
+		FeishuIdentities: feishuIdentities,
 	})
 	if err != nil {
 		fatalf("initialize chat service failed: %v", err)
