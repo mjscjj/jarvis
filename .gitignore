@@ -32,6 +32,9 @@ __pycache__/
 /docs/summery/**/artifacts/
 /docs/summery/**/*.tsbuildinfo
 
+# cc-connect 把飞书消息里的图片和文件落在 agent 工作目录下
+/.cc-connect/
+
 # agent 在仓库根产生的临时工作目录
 /.tmp/
 /.tmp-*/
