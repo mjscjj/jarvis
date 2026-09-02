@@ -370,7 +370,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   }, [input, image, sending, context, threadId, chatBaseURL])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault()
       if (!sending) void send()
     }
@@ -504,7 +504,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
             onClick={() => imageInputRef.current?.click()}
           >截图</Button>
           <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite">
-            {stopping ? '正在暂停回复…' : sending ? 'Jarvis 正在回复，你可以随时暂停' : paused ? '已暂停；继续发送会恢复同一 Agent 会话' : 'Enter 发送 · 可粘贴截图'}
+            {stopping ? '正在暂停回复…' : sending ? 'Jarvis 正在回复，你可以随时暂停' : paused ? '已暂停；继续发送会恢复同一 Agent 会话' : 'Enter 换行 · ⌘/Ctrl + Enter 发送 · 可粘贴截图'}
           </Text>
         </div>
         {sending
