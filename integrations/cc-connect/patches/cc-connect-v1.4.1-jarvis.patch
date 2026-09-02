@@ -1,3 +1,95 @@
+diff --git a/agent/cursor/session.go b/agent/cursor/session.go
+index e6f65a9..aa56517 100644
+--- a/agent/cursor/session.go
++++ b/agent/cursor/session.go
+@@ -77,7 +77,25 @@ func newCursorSession(ctx context.Context, cmd string, extraArgs []string, workD
+ 
+ func (cs *cursorSession) Send(prompt string, images []core.ImageAttachment, files []core.FileAttachment) error {
+ 	if len(images) > 0 {
+-		slog.Warn("cursorSession: images not yet supported in CLI mode, ignoring")
++		// The Cursor Agent CLI has no image flag, but it can open image files
++		// from disk and see their content. So route images through the same
++		// on-disk channel as files instead of dropping them.
++		imgFiles := make([]core.FileAttachment, 0, len(images))
++		for i, im := range images {
++			name := im.FileName
++			if name == "" {
++				// Feishu image messages carry no filename — synthesise one so
++				// the file lands with a correct extension.
++				name = fmt.Sprintf("img_%d_%d%s", time.Now().UnixMilli(), i, core.ExtFromMime(im.MimeType))
++			}
++			imgFiles = append(imgFiles, core.FileAttachment{
++				MimeType: im.MimeType,
++				Data:     im.Data,
++				FileName: name,
++			})
++		}
++		imagePaths := core.SaveFilesToDisk(cs.workDir, imgFiles)
++		prompt = core.AppendImageRefs(prompt, imagePaths)
+ 	}
+ 	if len(files) > 0 {
+ 		filePaths := core.SaveFilesToDisk(cs.workDir, files)
+diff --git a/agent/cursor/session_image_test.go b/agent/cursor/session_image_test.go
+new file mode 100644
+index 0000000..c4f459c
+--- /dev/null
++++ b/agent/cursor/session_image_test.go
+@@ -0,0 +1,55 @@
++package cursor
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/chenhg5/cc-connect/core"
++)
++
++// Feishu image messages arrive as bytes plus a MIME type, with no text and no
++// filename. The Cursor CLI has no image flag, so staging them on disk and
++// referencing the paths from the prompt is the only way the agent can see
++// them; dropping the attachment leaves the agent with an empty turn.
++func TestSendStagesImagesForTheCursorCLI(t *testing.T) {
++	workDir := t.TempDir()
++	argsPath := filepath.Join(workDir, "args.txt")
++	stub := filepath.Join(workDir, "agent-stub")
++	if err := os.WriteFile(stub, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >"+argsPath+"\n"), 0o755); err != nil {
++		t.Fatalf("write CLI stub: %v", err)
++	}
++
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	cs := &cursorSession{cmd: stub, workDir: workDir, events: make(chan core.Event, 16), ctx: ctx, cancel: cancel}
++	cs.alive.Store(true)
++
++	if err := cs.Send("", []core.ImageAttachment{{MimeType: "image/jpeg", Data: []byte("jpeg-bytes")}}, nil); err != nil {
++		t.Fatalf("Send() error = %v", err)
++	}
++	cs.wg.Wait()
++
++	staged, err := filepath.Glob(filepath.Join(workDir, ".cc-connect", "attachments", "*.jpg"))
++	if err != nil {
++		t.Fatalf("glob staged images: %v", err)
++	}
++	if len(staged) != 1 {
++		t.Fatalf("staged images = %v, want exactly one .jpg", staged)
++	}
++	if data, err := os.ReadFile(staged[0]); err != nil || string(data) != "jpeg-bytes" {
++		t.Fatalf("staged image content = %q, err = %v", data, err)
++	}
++
++	rawArgs, err := os.ReadFile(argsPath)
++	if err != nil {
++		t.Fatalf("read CLI args: %v", err)
++	}
++	args := strings.Split(strings.TrimRight(string(rawArgs), "\n"), "\n")
++	prompt := args[len(args)-1]
++	if !strings.Contains(prompt, staged[0]) {
++		t.Fatalf("prompt does not reference the staged image: %q", prompt)
++	}
++}
 diff --git a/config.example.toml b/config.example.toml
 index cc57caf..9e94a0d 100644
 --- a/config.example.toml
@@ -27,6 +119,49 @@ index cc57caf..9e94a0d 100644
  # reply_to_trigger = true   # Default: bot uses “reply to message” API (quotes the user’s message). Set false to post plain chat messages instead.
  #                           # 默认 true：用「回复消息」API（引用用户消息）。设为 false 则在会话里发普通消息、不引用触发消息。
  # progress_style = "legacy" # Progress rendering style: legacy | compact | card
+diff --git a/core/message.go b/core/message.go
+index b852d9b..12e005d 100644
+--- a/core/message.go
++++ b/core/message.go
+@@ -147,6 +147,38 @@ func AppendFileRefs(prompt string, filePaths []string) string {
+ 	return prompt + "\n\n(Files saved locally, please read them: " + strings.Join(filePaths, ", ") + ")"
+ }
+ 
++// ExtFromMime maps an image MIME type to a file extension. Attachments that
++// arrive without a filename (Feishu image messages carry only bytes + MIME)
++// must still land on disk with a usable extension, otherwise downstream agents
++// have to guess the format from the bytes.
++func ExtFromMime(mime string) string {
++	switch mime {
++	case "image/jpeg":
++		return ".jpg"
++	case "image/gif":
++		return ".gif"
++	case "image/webp":
++		return ".webp"
++	case "image/bmp":
++		return ".bmp"
++	default:
++		return ".png"
++	}
++}
++
++// AppendImageRefs appends saved image paths to the prompt. Kept separate from
++// AppendFileRefs so the wording tells the agent these are images the user sent
++// and that it should open them to see the content.
++func AppendImageRefs(prompt string, imagePaths []string) string {
++	if len(imagePaths) == 0 {
++		return prompt
++	}
++	if prompt == "" {
++		prompt = "Please look at the attached image(s)."
++	}
++	return prompt + "\n\n(The user attached image(s), saved locally — read the file(s) to view them: " + strings.Join(imagePaths, ", ") + ")"
++}
++
+ // AudioAttachment represents a voice/audio message sent by the user.
+ type AudioAttachment struct {
+ 	MimeType string // e.g. "audio/amr", "audio/ogg", "audio/mp4"
 diff --git a/docs/feishu.md b/docs/feishu.md
 index b9e871b..015c41b 100644
 --- a/docs/feishu.md
