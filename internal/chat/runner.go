@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -136,6 +137,11 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID, imagePath string,
 	defer cancel()
 
 	command := exec.CommandContext(runCtx, r.bin, r.args(threadID, imagePath)...)
+	// 取消时先发 SIGTERM 而不是默认的 SIGKILL：CLI 要收到信号才会释放 thread-store
+	// 的写入者占用，被 SIGKILL 打死可能留下占用，让这个 thread 之后都 resume 不了。
+	// 迟迟不退再由 WaitDelay 强杀，避免卡住调用方。
+	command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
+	command.WaitDelay = 5 * time.Second
 	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=chat")
 	command.Stdin = strings.NewReader(prompt)
 	stdout, err := command.StdoutPipe()

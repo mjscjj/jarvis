@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"jarvis/internal/contextsnap"
@@ -94,7 +95,20 @@ type Service struct {
 	history    *HistoryStore
 	prompts    textstore.Reader
 	identities FeishuIdentityResolver
+
+	mu   sync.Mutex
+	runs map[string]*threadRun
 }
+
+// threadRun 是某个 thread 上正在跑的一轮，用来让新一轮把它打断。
+type threadRun struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// 打断上一轮后等它退出的上限。子进程收到 SIGTERM 通常亚秒级退出，等不到就说明
+// 真的卡死了，此时报错比让用户继续对着 thread-store 冲突发消息更有用。
+const threadTakeoverTimeout = 15 * time.Second
 
 // NewService 构造对话 Service。fail-fast：任一必填项缺失或非法直接返回 error。
 func NewService(opts Options) (*Service, error) {
@@ -122,6 +136,46 @@ func NewService(opts Options) (*Service, error) {
 		history:    history,
 		prompts:    opts.SystemPrompts,
 		identities: opts.FeishuIdentities,
+		runs:       map[string]*threadRun{},
+	}, nil
+}
+
+// takeOverThread 保证同一个 thread 上同时只有一轮在跑。
+//
+// codex 的 thread-store 只允许一个写入者：上一轮还没退出时，新一轮 resume 会被直接
+// 拒绝（already has an active writer）。上游模型卡住时旧进程要等满 600 秒超时才退，
+// 期间用户每发一条就报一次错，只能等超时或重启服务。所以新一轮先打断旧的再接管，
+// 这也是聊天界面通常的行为：发新消息就等于放弃上一轮。
+func (s *Service) takeOverThread(ctx context.Context, threadID string) (context.Context, func(), error) {
+	s.mu.Lock()
+	previous := s.runs[threadID]
+	s.mu.Unlock()
+
+	if previous != nil {
+		previous.cancel()
+		select {
+		case <-previous.done:
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case <-time.After(threadTakeoverTimeout):
+			return nil, nil, fmt.Errorf("previous chat turn on thread %s did not exit within %s", threadID, threadTakeoverTimeout)
+		}
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	current := &threadRun{cancel: cancel, done: make(chan struct{})}
+	s.mu.Lock()
+	s.runs[threadID] = current
+	s.mu.Unlock()
+
+	return runCtx, func() {
+		cancel()
+		close(current.done)
+		s.mu.Lock()
+		if s.runs[threadID] == current {
+			delete(s.runs, threadID)
+		}
+		s.mu.Unlock()
 	}, nil
 }
 
@@ -150,6 +204,15 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 		prompt = built
 	}
 	activeThreadID := strings.TrimSpace(req.ThreadID)
+	// 新会话由 codex 现取 thread_id，不可能撞车；只有 resume 需要接管。
+	if activeThreadID != "" {
+		runCtx, release, err := s.takeOverThread(ctx, activeThreadID)
+		if err != nil {
+			return err
+		}
+		defer release()
+		ctx = runCtx
+	}
 	var assistant strings.Builder
 	handle := func(event Event) error {
 		switch event.Kind {

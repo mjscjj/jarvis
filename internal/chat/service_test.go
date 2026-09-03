@@ -412,3 +412,76 @@ func TestStreamDoesNotRetryOtherResumeFailures(t *testing.T) {
 		t.Fatalf("error = %v, want original auth failure", err)
 	}
 }
+
+// 复现线上故障：上游卡住时旧进程占着 codex 的 thread-store 写入者，用户再发一条
+// 就撞 "already has an active writer"，只能干等 600 秒超时或重启服务。
+// 现在新一轮必须先打断旧一轮再接管，两条消息都不该卡住。
+func TestSecondTurnOnSameThreadInterruptsTheStuckOne(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "first-turn-started")
+	bin := filepath.Join(dir, "codex")
+	// 第一次调用挂住不返回（模拟上游卡死），之后的调用正常应答。
+	script := "#!/bin/sh\n" +
+		"if [ ! -f " + marker + " ]; then\n" +
+		"  : > " + marker + "\n" +
+		"  while true; do sleep 0.05; done\n" +
+		"fi\n" +
+		"printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"tid-1\"}'\n" +
+		"printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"第二轮\"}}'\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewService(Options{
+		Bin:              bin,
+		Model:            "fixture-model",
+		Sandbox:          "read-only",
+		ReasoningEffort:  "medium",
+		Timeout:          60 * time.Second, // 必须靠打断结束，不能靠单轮超时兜底
+		HistoryDir:       t.TempDir(),
+		SharedMemory:     fakeSharedMemoryReader{},
+		ContextAssembler: &fakeContextAssembler{},
+		SystemPrompts:    fakeSystemPromptReader{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- svc.Stream(t.Context(), Request{Message: "第一条", ThreadID: "tid-1"}, func(Event) error { return nil })
+	}()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first turn never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	var deltas []string
+	if err := svc.Stream(t.Context(), Request{Message: "第二条", ThreadID: "tid-1"}, func(event Event) error {
+		if event.Kind == EventDelta {
+			deltas = append(deltas, event.Text)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("second turn error = %v, want it to take over the thread", err)
+	}
+	if len(deltas) != 1 || deltas[0] != "第二轮" {
+		t.Fatalf("deltas = %v, want [第二轮]", deltas)
+	}
+
+	select {
+	case err := <-firstDone:
+		if err == nil {
+			t.Fatal("interrupted first turn must report an error, not report success")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("first turn was never interrupted")
+	}
+}
