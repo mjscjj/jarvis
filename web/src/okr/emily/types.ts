@@ -209,6 +209,38 @@ export interface Objective {
   krs: Kr[]
 }
 
+export interface OKRPlanContent {
+  objectives: Objective[]
+}
+
+export interface OKRPlan {
+  id: string
+  quarter: string
+  title: string
+  version: number
+  content: OKRPlanContent
+  createdBy: string
+  updatedBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OKRPlanSummary {
+  id: string
+  quarter: string
+  title: string
+  version: number
+  objectiveCount: number
+  krCount: number
+  updatedAt: string
+}
+
+export interface OKRPlanList {
+  quarter: string
+  availableQuarters: string[]
+  plans: OKRPlanSummary[]
+}
+
 export interface PageComment {
   id: string
   parentId?: string

@@ -13,23 +13,26 @@ import {
 test('defines the OKR directory children in their visible order', () => {
   assert.deepEqual(OKR_TAB_DEFINITIONS.map((item) => item.key), [
     'manage',
+    'okr-plan',
     'agent-flows',
     'review-fill',
     'review-meeting',
     'weekly-fill',
     'weekly-meeting',
   ])
+  assert.equal(OKR_TAB_DEFINITIONS.find((item) => item.key === 'okr-plan')?.label, 'OKR plan')
   assert.equal(OKR_TAB_DEFINITIONS.find((item) => item.key === 'agent-flows')?.label, '自动化流程')
   assert.equal(DEFAULT_OKR_TAB, 'manage')
 })
 
 test('separates Review and weekly report into their own sidebar groups', () => {
   const groups = OKR_TAB_DEFINITIONS.map((item) => item.group)
-  assert.deepEqual(groups, ['okr', 'okr', 'review', 'review', 'weekly', 'weekly'])
+  assert.deepEqual(groups, ['okr', 'okr', 'okr', 'review', 'review', 'weekly', 'weekly'])
 })
 
 test('resolves removed, invalid and disabled child routes to OKR management', () => {
   assert.equal(isOKRTab('manage'), true)
+  assert.equal(isOKRTab('okr-plan'), true)
   assert.equal(isOKRTab('structure'), false)
   assert.equal(isOKRTab('unknown'), false)
   // The single-page Review tab was replaced by the fill/meeting pair.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
 import { buildAllBusinessNavigation, buildKRHierarchy, priorityOf } from '../hierarchy'
@@ -533,7 +533,7 @@ function ObjectiveControls({ objective }: { objective: Objective }) {
 	</div>
 }
 
-export function KrTable({ readOnly = false, definitionsReadOnly = false, progressReadOnly = false, showProgress = true, manageObjectives = false, showObjectiveHeader = false }: { readOnly?: boolean; definitionsReadOnly?: boolean; progressReadOnly?: boolean; showProgress?: boolean; manageObjectives?: boolean; showObjectiveHeader?: boolean }) {
+export function KrTable({ readOnly = false, definitionsReadOnly = false, progressReadOnly = false, showProgress = true, manageObjectives = false, showObjectiveHeader = false, collapsedToKR = false }: { readOnly?: boolean; definitionsReadOnly?: boolean; progressReadOnly?: boolean; showProgress?: boolean; manageObjectives?: boolean; showObjectiveHeader?: boolean; collapsedToKR?: boolean }) {
 	const { objectives, templateKey } = useBoard()
 	const showReview = showProgress && isReviewTemplate(templateKey)
 	const [closed, setClosed] = useState<Set<string>>(new Set())
@@ -560,6 +560,14 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
     return next
   })
   const collapseAll = () => setClosed(collapseAllIds(activeObjective ? [activeObjective] : []))
+
+  useEffect(() => {
+    if (!collapsedToKR) {
+      setClosed(new Set())
+      return
+    }
+    setClosed(collapseAllIds(activeObjective ? [activeObjective] : []))
+  }, [activeObjective?.id, collapsedToKR])
 
   return (
     <div className={readOnly ? 'kr-table-readonly' : ''}>

@@ -3,6 +3,7 @@ import type { AppModulePageProps } from '../modules/registry'
 import { usePageContext } from '../pageContext'
 import AgentFlowsWorkspace from './emily/AgentFlowsApp'
 import CoreWorkspace from './emily/CoreApp'
+import PlanWorkspace from './emily/PlanApp'
 import WeeklyReportWorkspace from './emily/App'
 import { useBoard } from './emily/board'
 import { BoardProvider } from './emily/store'
@@ -75,6 +76,14 @@ function Workspace({ moduleEnablement }: {
 	const workspace = isWeeklyWorkspaceTab(visibleTab) ? weeklyWorkspace(visibleTab) : undefined
 	const weekTemplateKey = workspace ? templateKeyForDataset(workspace.dataset) : undefined
 	const boardKey = weekTemplateKey ? `${surface}:${weekTemplateKey}` : surface
+
+	if (visibleTab === 'okr-plan') {
+		return (
+			<div id="okr-workspace-root" className="okr-workspace-root">
+				<PlanWorkspace initialQuarter={selectedQuarter} onQuarterChange={setSelectedQuarter} />
+			</div>
+		)
+	}
 
 	return (
 		<div id="okr-workspace-root" className="okr-workspace-root">

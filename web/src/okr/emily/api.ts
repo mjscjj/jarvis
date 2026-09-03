@@ -1,5 +1,5 @@
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRPlan, OKRPlanContent, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -42,6 +42,50 @@ interface APIBoard {
   available_quarters: string[]
   available_weeks: string[]
   objectives: Array<{ id: string; title: string; krs: APIKr[] }>
+}
+
+interface APIPlanContent {
+  objectives: Array<{
+    id: string
+    title: string
+    krs: Array<{
+      id: string
+      title: string
+      owners: Array<{ open_id: string; name: string }>
+      metric_note: string
+      metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
+      points: Array<{ id: string; kind: PointKind; title: string; owners?: Array<{ open_id: string; name: string }>; tags: KrTag[] }>
+      tags: KrTag[]
+    }>
+  }>
+}
+
+interface APIPlan {
+  id: string
+  quarter: string
+  title: string
+  version: number
+  content: APIPlanContent
+  created_by: string
+  updated_by: string
+  created_at: string
+  updated_at: string
+}
+
+interface APIPlanSummary {
+  id: string
+  quarter: string
+  title: string
+  version: number
+  objective_count: number
+  kr_count: number
+  updated_at: string
+}
+
+interface APIPlanList {
+  quarter: string
+  available_quarters: string[]
+  plans: APIPlanSummary[]
 }
 
 interface APIWeek {
@@ -321,6 +365,86 @@ function fromAPIKr(value: APIKr): Kr {
   }
 }
 
+function fromAPIPlanContent(value: APIPlanContent): OKRPlanContent {
+  return {
+    objectives: (value.objectives ?? []).map((objective) => ({
+      id: objective.id,
+      title: objective.title,
+      krs: (objective.krs ?? []).map((kr) => ({
+        id: kr.id,
+        title: normalizeKRTitle(kr.title),
+        owners: (kr.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
+        ownerName: (kr.owners ?? []).map((owner) => owner.name).filter(Boolean).join('、'),
+        ownerOpenId: (kr.owners ?? []).find((owner) => owner.open_id)?.open_id ?? '',
+        metricNote: kr.metric_note,
+        version: 0,
+        weeklyCoreVersion: 0,
+        metrics: (kr.metrics ?? []).map((metric) => ({ ...metric, images: metric.images ?? [] })),
+        points: (kr.points ?? []).map((point) => ({
+          id: point.id,
+          kind: point.kind,
+          title: point.title,
+          tags: point.tags ?? [],
+          owners: (point.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
+          entries: [],
+          previousEntries: [],
+        })),
+        tags: kr.tags ?? [],
+      })),
+    })),
+  }
+}
+
+function toAPIPlanContent(value: OKRPlanContent): APIPlanContent {
+  return {
+    objectives: value.objectives.map((objective) => ({
+      id: objective.id,
+      title: objective.title,
+      krs: objective.krs.map((kr) => ({
+        id: kr.id,
+        title: normalizeKRTitle(kr.title),
+        owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+        metric_note: kr.metricNote ?? '',
+        metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
+        points: kr.points.map((point) => ({
+          id: point.id,
+          kind: point.kind,
+          title: point.title,
+          owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+          tags: point.tags ?? [],
+        })),
+        tags: kr.tags ?? [],
+      })),
+    })),
+  }
+}
+
+function fromAPIPlan(value: APIPlan): OKRPlan {
+  return {
+    id: value.id,
+    quarter: value.quarter,
+    title: value.title,
+    version: value.version,
+    content: fromAPIPlanContent(value.content),
+    createdBy: value.created_by,
+    updatedBy: value.updated_by,
+    createdAt: value.created_at,
+    updatedAt: value.updated_at,
+  }
+}
+
+function fromAPIPlanSummary(value: APIPlanSummary) {
+  return {
+    id: value.id,
+    quarter: value.quarter,
+    title: value.title,
+    version: value.version,
+    objectiveCount: value.objective_count,
+    krCount: value.kr_count,
+    updatedAt: value.updated_at,
+  }
+}
+
 export interface BoardData {
   quarter: string
   week: string
@@ -426,6 +550,54 @@ export async function getBoard(quarter: string, week: string, surface: BoardSurf
     availableWeeks: board.available_weeks,
     objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, krs: objective.krs.map(fromAPIKr) })),
   }
+}
+
+export async function listOKRPlans(quarter = ''): Promise<OKRPlanList> {
+  const params = new URLSearchParams()
+  if (quarter) params.set('quarter', quarter)
+  const value = await request<APIPlanList>(`/api/okr/plans?${params}`)
+  return {
+    quarter: value.quarter,
+    availableQuarters: value.available_quarters,
+    plans: value.plans.map(fromAPIPlanSummary),
+  }
+}
+
+export async function getOKRPlan(id: string): Promise<OKRPlan> {
+  return fromAPIPlan(await request<APIPlan>(`/api/okr/plans/${encodeURIComponent(id)}`))
+}
+
+export async function createOKRPlan(input: { quarter: string; title: string; content: OKRPlanContent }): Promise<OKRPlan> {
+  return fromAPIPlan(await request<APIPlan>('/api/okr/plans', {
+    method: 'POST',
+    body: JSON.stringify({
+      quarter: input.quarter,
+      title: input.title,
+      content: toAPIPlanContent(input.content),
+    }),
+  }))
+}
+
+export async function replaceOKRPlan(input: { id: string; expectedVersion: number; title: string; content: OKRPlanContent }): Promise<OKRPlan> {
+  try {
+    return fromAPIPlan(await request<APIPlan>(`/api/okr/plans/${encodeURIComponent(input.id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        expected_version: input.expectedVersion,
+        title: input.title,
+        content: toAPIPlanContent(input.content),
+      }),
+    }))
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409 && error.data) {
+      throw new APIError(error.message, error.status, error.code, fromAPIPlan(error.data as APIPlan), error.logid)
+    }
+    throw error
+  }
+}
+
+export async function deleteOKRPlan(id: string): Promise<void> {
+  await request<{ id: string }>(`/api/okr/plans/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 function fromAPIComment(value: APIPageComment): PageComment {

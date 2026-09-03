@@ -3,7 +3,11 @@
 // projection is Agent-owned and runs through generic tools.
 package domain
 
-import "time"
+import (
+	"time"
+
+	"jarvis/internal/datatypes"
+)
 
 type Status string
 
@@ -76,6 +80,23 @@ type Objective struct {
 }
 
 func (Objective) TableName() string { return "okr_workspace_objective" }
+
+// OKRPlan is a quarterly planning draft. Its structured content is consumed by
+// the OKR plan page, while the official Objective/KR tables remain the source
+// for committed OKR definitions.
+type OKRPlan struct {
+	ID        string         `gorm:"primaryKey;size:64"`
+	Quarter   string         `gorm:"not null;index"`
+	Title     string         `gorm:"not null"`
+	Content   datatypes.JSON `gorm:"not null;type:text"`
+	Version   int32          `gorm:"not null;default:0"`
+	CreatedBy string         `gorm:"not null;default:''"`
+	UpdatedBy string         `gorm:"not null;default:''"`
+	CreatedAt time.Time      `gorm:"not null"`
+	UpdatedAt time.Time      `gorm:"not null"`
+}
+
+func (OKRPlan) TableName() string { return "okr_workspace_plan" }
 
 type KR struct {
 	ID          string    `gorm:"primaryKey;size:64"`
@@ -376,7 +397,7 @@ func Models() []any {
 // CoreModels are owned by the OKR module. KRPoint is the stable decomposition
 // definition; its week-specific updates are owned by WeeklyReportModels.
 func CoreModels() []any {
-	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &PointTag{}, &KROwner{}, &PointOwner{}}
+	return []any{&Objective{}, &OKRPlan{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &PointTag{}, &KROwner{}, &PointOwner{}}
 }
 
 // IdentityModels are machine-local browser sessions. Pending device grants stay
