@@ -251,12 +251,12 @@ esac`)
 	}
 }
 
-func TestCreateMarkdownDocumentUsesUserIdentityAndStdin(t *testing.T) {
+func TestCreateMarkdownDocumentUsesApplicationIdentityAndStdin(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-only")
 	}
 	bin := writeScript(t, `
-if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as user --format json' ]; then
+if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as bot --format json' ]; then
   input=$(cat)
   if [ "$input" != "# Progress" ]; then
     printf '%s' "unexpected stdin: $input" >&2
@@ -273,15 +273,15 @@ if [ "$*" = 'drive +secure-label-update --token docx_1 --type docx --label-id 74
   printf '%s' '{"ok":true,"data":{}}'
   exit 0
 fi
-if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as user --format json' ]; then
+if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as bot --format json' ]; then
   printf '%s' '{"ok":true,"data":{"auth_result":true}}'
   exit 0
 fi
-if [ "$*" = 'drive permission.public patch --params {"token":"docx_1","type":"docx"} --data {"link_share_entity":"tenant_editable"} --as user --yes --format json' ]; then
+if [ "$*" = 'drive permission.public patch --params {"token":"docx_1","type":"docx"} --data {"link_share_entity":"tenant_editable"} --as bot --yes --format json' ]; then
   printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_editable"}}}'
   exit 0
 fi
-if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx"} --as user --format json' ]; then
+if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx"} --as bot --format json' ]; then
   printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_editable"}}}'
   exit 0
 fi
@@ -305,7 +305,7 @@ func TestCreateMarkdownDocumentFailsWhenManagePublicIsUnauthorized(t *testing.T)
 		t.Skip("shell fixture is Unix-only")
 	}
 	bin := writeScript(t, `
-if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as user --format json' ]; then
+if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as bot --format json' ]; then
   printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
   exit 0
 fi
@@ -317,7 +317,7 @@ if [ "$*" = 'drive +secure-label-update --token docx_1 --type docx --label-id 74
   printf '%s' '{"ok":true,"data":{}}'
   exit 0
 fi
-if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as user --format json' ]; then
+if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as bot --format json' ]; then
   printf '%s' '{"ok":true,"data":{"auth_result":false}}'
   exit 0
 fi
@@ -338,7 +338,7 @@ func TestCreateMarkdownDocumentFailsWhenPermissionReadBackDoesNotMatch(t *testin
 		t.Skip("shell fixture is Unix-only")
 	}
 	bin := writeScript(t, `
-if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as user --format json' ]; then
+if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as bot --format json' ]; then
   printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
   exit 0
 fi
@@ -350,15 +350,15 @@ if [ "$*" = 'drive +secure-label-update --token docx_1 --type docx --label-id 74
   printf '%s' '{"ok":true,"data":{}}'
   exit 0
 fi
-if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as user --format json' ]; then
+if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as bot --format json' ]; then
   printf '%s' '{"ok":true,"data":{"auth_result":true}}'
   exit 0
 fi
-if [ "$*" = 'drive permission.public patch --params {"token":"docx_1","type":"docx"} --data {"link_share_entity":"tenant_editable"} --as user --yes --format json' ]; then
+if [ "$*" = 'drive permission.public patch --params {"token":"docx_1","type":"docx"} --data {"link_share_entity":"tenant_editable"} --as bot --yes --format json' ]; then
   printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_editable"}}}'
   exit 0
 fi
-if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx"} --as user --format json' ]; then
+if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx"} --as bot --format json' ]; then
   printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_readable"}}}'
   exit 0
 fi
@@ -379,7 +379,7 @@ func TestCreateMarkdownDocumentFailsWhenSecureLabelIsMissing(t *testing.T) {
 		t.Skip("shell fixture is Unix-only")
 	}
 	bin := writeScript(t, `
-if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as user --format json' ]; then
+if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as bot --format json' ]; then
   printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
   exit 0
 fi

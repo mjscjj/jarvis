@@ -416,7 +416,7 @@ type documentPermissionResponse struct {
 	} `json:"data"`
 }
 
-// CreateMarkdownDocument creates one document with the current lark-cli user
+// CreateMarkdownDocument creates one document with the lark-cli application
 // identity, makes it editable to organization members who have the link, and
 // reads the permission back before reporting success. It is intentionally a
 // user-triggered effect; schedulers and OKR projection never call it
@@ -439,7 +439,7 @@ func (c *Client) CreateMarkdownDocument(ctx context.Context, title, content stri
 			Warnings []string `json:"warnings"`
 		} `json:"data"`
 	}
-	if err := c.RunInput(ctx, &response, content, "docs", "+create", "--title", title, "--doc-format", "markdown", "--content", "-", "--as", "user"); err != nil {
+	if err := c.RunInput(ctx, &response, content, "docs", "+create", "--title", title, "--doc-format", "markdown", "--content", "-", "--as", "bot"); err != nil {
 		return MarkdownDocument{}, fmt.Errorf("lark-cli create Markdown document: %w", err)
 	}
 	if strings.TrimSpace(response.Data.Document.DocumentID) == "" || strings.TrimSpace(response.Data.Document.URL) == "" {
@@ -517,22 +517,22 @@ func (c *Client) setTenantEditableDocumentPermission(ctx context.Context, docume
 			AuthResult bool `json:"auth_result"`
 		} `json:"data"`
 	}
-	if err := c.Run(ctx, &authResponse, "drive", "permission.members", "auth", "--params", string(authParamsJSON), "--as", "user"); err != nil {
+	if err := c.Run(ctx, &authResponse, "drive", "permission.members", "auth", "--params", string(authParamsJSON), "--as", "bot"); err != nil {
 		return fmt.Errorf("check manage_public authorization: %w", err)
 	}
 	if !authResponse.Data.AuthResult {
-		return fmt.Errorf("current Feishu user is not authorized to manage public permissions")
+		return fmt.Errorf("current Feishu application is not authorized to manage public permissions")
 	}
 
 	// lark-cli classifies public permission changes as high risk. The export
 	// button is the human confirmation for this exact newly-created document.
 	var patchResponse documentPermissionResponse
-	if err := c.Run(ctx, &patchResponse, "drive", "permission.public", "patch", "--params", string(paramsJSON), "--data", string(patchJSON), "--as", "user", "--yes"); err != nil {
+	if err := c.Run(ctx, &patchResponse, "drive", "permission.public", "patch", "--params", string(paramsJSON), "--data", string(patchJSON), "--as", "bot", "--yes"); err != nil {
 		return fmt.Errorf("set link_share_entity=%s: %w", tenantEditableLinkShareEntity, err)
 	}
 
 	var getResponse documentPermissionResponse
-	if err := c.Run(ctx, &getResponse, "drive", "permission.public", "get", "--params", string(paramsJSON), "--as", "user"); err != nil {
+	if err := c.Run(ctx, &getResponse, "drive", "permission.public", "get", "--params", string(paramsJSON), "--as", "bot"); err != nil {
 		return fmt.Errorf("read back document public permission: %w", err)
 	}
 	if got := getResponse.Data.PermissionPublic.LinkShareEntity; got != tenantEditableLinkShareEntity {
