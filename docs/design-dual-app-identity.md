@@ -1,8 +1,8 @@
 # 双飞书应用身份设计
 
-> Status: current，但 Emily Pro 的后台授权范围尚未收敛到设计要求
+> Status: current。登录开关已打开，但 Emily Pro 的后台授权范围仍未收敛到设计要求
 > Authority: normative design
-> Last verified: 2026-09-02 @ `3966d11`（端到端实测）
+> Last verified: 2026-09-03（端到端实测，含真实 device flow 登录与授权范围复测）
 
 ## 目标
 
@@ -21,7 +21,7 @@ Jarvis 同时承担两件性质完全不同的事，需要两个飞书应用分�
 | 定位 | Jarvis 本体，owner 的对等 Lark 身份 | OKR 页面对外分享时的登录入口 |
 | 受众 | 仅 principal 一人 | 所有被分享到页面的人 |
 | 凭证持有者 | `lark-cli`（本机登录态） | 主服务，密钥在 `JARVIS_OKR_EMILY_APP_SECRET` |
-| 后台开通的 user scope | 223，23 个域 | 167，20 个域（**应为 85，见下节**） |
+| 后台开通的 user scope | 223，23 个域 | 155，19 个域（**应为 85，见下节**） |
 | 代码请求的 scope | 不适用，由 lark-cli 管理 | 85，7 个域 |
 | 授权方式 | 本机一次性登录，长期复用 | 每个访客用自己的账号走 device flow |
 
@@ -31,17 +31,19 @@ Jarvis 同时承担两件性质完全不同的事，需要两个飞书应用分�
 
 **实测结论：飞书 device flow 忽略请求里的 scope 子集，按应用后台已开通的全集签发 token。**
 
-2026-09-02 的实测证据：
+2026-09-02 首次实测，2026-09-03 在 Emily Pro 后台调整权限后复测，结论不变：
 
 - 服务端按 `conf/okr-feishu-scopes.txt` 请求 85 个 scope，其中 `im`/`mail`/`contact`/`calendar`/`task`/`vc`/`minutes` 全部为零（加载同一份配置直接验证过）
-- 换回来的 token 的 `scope` 字段有 **167** 项，包含 `im:message`、`im:message.p2p_msg:get_as_user`、`mail:user_mailbox.message.body:read`、`contact:user:search`、`calendar:calendar.event:*`
+- 换回来的 token 的 `scope` 字段有 **155** 项（09-02 为 167），其中 **48 项属于敏感域**：`im` 16、`calendar` 10、`mail` 10、`minutes` 4、`vc` 4、`contact` 2、`search` 2，含 `im:message`、`im:message:readonly`、`mail:user_mailbox.message.body:read`、`search:message`
 - 用该 token 实调 `GET /open-apis/im/v1/chats` 成功列出登录人的群；调邮箱接口返回的是参数校验错误 `4039` 而非权限错误，说明已通过鉴权
+
+09-03 相比 09-02 的唯一实质改善是 `im:message.p2p_msg:get_as_user`（以该用户身份读私聊）已不再签发；`task` 与 `approval` 域也已清零。其余敏感域仍在。
 
 所以 `conf/okr-feishu-scopes.txt` 只表达意图，**不构成任何约束**。唯一的强制点是 Emily Pro 在开发者后台实际勾选的权限列表。
 
 这条的直接后果：**在后台把敏感权限收掉之前，不能把 OKR 页面分享给其他人。** 否则每个登录的同事都会把一个能读他自己群消息和邮箱的 token 交给本机。当前只有 principal 本人登录过，风险尚未实际发生。
 
-需要在 Emily Pro 后台移除的域：`im`、`mail`、`contact`、`calendar`、`task`、`vc`、`minutes`、`search`、`approval`。保留 `base`、`docs`、`wiki`、`drive`、`docx`、`space`、`sheets`、`slides`、`board`、`profile`、`offline_access`。收掉之后所有人需要重新登录一次，旧 token 应当删除。
+仍需在 Emily Pro 后台移除的域（`task` 与 `approval` 已清零）：`im`、`mail`、`contact`、`calendar`、`vc`、`minutes`、`search`。保留 `base`、`docs`、`wiki`、`drive`、`docx`、`space`、`sheets`、`slides`、`board`、`profile`、`offline_access`。收掉之后所有人需要重新登录一次，旧 token 应当删除。
 
 主应用独有且**应当**只在主应用上出现的敏感能力包括 `im:message`、`im:message.p2p_msg:get_as_user`、`mail:user_mailbox.message.body:read`、`contact:user:search`、`calendar:calendar.event:*`、`approval:instance:write`、`minutes:minutes.transcript:export`。
 
@@ -105,7 +107,7 @@ Jarvis 同时承担两件性质完全不同的事，需要两个飞书应用分�
 - `internal/okrworkspace/auth/service_test.go` 覆盖 `union_id` 写入会话与 token 文件
 - `internal/okrworkspace/comments_test.go` 覆盖评论署名 `union_id` 的写入与读回
 
-2026-09-02 在部署实例上走过的完整链路，结果如下：
+2026-09-03 在部署实例上重走的完整链路（登录开关打开后），结果如下：
 
 | 环节 | 结果 |
 |---|---|
@@ -118,8 +120,9 @@ Jarvis 同时承担两件性质完全不同的事，需要两个飞书应用分�
 | 已登录发评论 | 署名 `储节节` + `author_union_id`，落库并可读回 |
 | token 落盘 | `<新 open_id>.json`，含 `union_id` 与 refresh token |
 | `GET /api/okr/feishu-identity` | 返回 Emily Pro 的 `app_id` 与配对 token 路径 |
-| lark-cli 吃 Emily Pro 的 user token | 接受，成功读取云空间 338 个文件 |
+| lark-cli 吃 Emily Pro 的 user token | 接受，`identity: user`，读到云空间 341 个文件 |
 | 回归：人员搜索、头像 | 正常，返回的仍是主应用 open_id |
 | 主应用身份 | `lark-cli auth status` 仍为 `cli_a96a0c8d82b85cb1`，未受影响 |
+| `POST /api/okr/auth/logout` | 会话失效，`me` 回到未登录，写评论重新 401 |
 
 未通过的一项是授权范围：见上文「授权范围的真正生效点是开发者后台」。
