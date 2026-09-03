@@ -60,17 +60,21 @@ function Workspace({ moduleEnablement }: {
   moduleEnablement: Readonly<Record<string, boolean>>
 }) {
   const { context, setViewState } = usePageContext()
-  const [selectedQuarter, setSelectedQuarter] = useState(() => context.view_state.quarter ?? '')
   const requestedTab = context.view_state.tab
+  const [selectedQuarter, setSelectedQuarter] = useState(() => context.view_state.quarter ?? '')
   const weeklyShare = isWeeklyShareViewState(context.view_state)
   const visibleTab = weeklyShare ? weeklyShareTab(requestedTab) : resolveOKRTab(requestedTab, moduleEnablement)
   const weeklyEnabled = moduleEnablement['weekly-report'] === true
   const activeQuarter = activeQuarterForViewState(context.view_state, selectedQuarter)
 
+  // selectedQuarter 记的是「有数据的看板停在哪个季度」，切回 Review 时要还原成它。
+  // Plan 页显示的是下季度草稿，不能让它写进来，否则这份记忆就被覆盖了。
+  const planVisible = visibleTab === 'okr-plan'
   useEffect(() => {
+    if (planVisible) return
     if (!activeQuarter || activeQuarter === selectedQuarter) return
     setSelectedQuarter(activeQuarter)
-  }, [activeQuarter, selectedQuarter])
+  }, [activeQuarter, planVisible, selectedQuarter])
 
   useEffect(() => {
     if (requestedTab === visibleTab) return
@@ -82,8 +86,11 @@ function Workspace({ moduleEnablement }: {
       setViewState(withOKRScope({ ...context.view_state, tab }, 'okr', okrPlanDefaultQuarter(), ''), false)
       return
     }
-    setViewState({ ...context.view_state, tab }, false)
-  }, [context.view_state, setViewState])
+    const next = planVisible && selectedQuarter
+      ? withOKRScope({ ...context.view_state, tab }, 'okr', selectedQuarter, '')
+      : { ...context.view_state, tab }
+    setViewState(next, false)
+  }, [context.view_state, planVisible, selectedQuarter, setViewState])
   const changeShareTab = useCallback((tab: WeeklyShareTab) => {
     if (tab === 'okr-plan') {
       changeTab(tab)
@@ -92,8 +99,9 @@ function Workspace({ moduleEnablement }: {
     const workspace = weeklyShareWorkspaceTab(tab)
     if (workspace) changeTab(workspace)
   }, [changeTab])
+  // 只发布给 chat 上下文，不写 selectedQuarter：Plan 翻到哪个季度都不该改变
+  // Review 和周报回来时落在哪。
   const syncPlanQuarter = useCallback((quarter: string) => {
-    setSelectedQuarter(quarter)
     const next = withOKRScope(context.view_state, 'okr', quarter, '')
     if (JSON.stringify(next) !== JSON.stringify(context.view_state)) setViewState(next, true)
   }, [context.view_state, setViewState])
