@@ -2,7 +2,7 @@ export const DEFAULT_OKR_TAB = 'manage'
 
 export const OKR_TAB_DEFINITIONS = [
   { key: 'manage', label: '管理与打标', group: 'okr' },
-  { key: 'okr-plan', label: 'OKR plan', group: 'okr' },
+  { key: 'okr-plan', label: 'OKR Plan', group: 'okr' },
   { key: 'agent-flows', label: '自动化流程', group: 'okr' },
   { key: 'review-fill', label: 'Review 填写', group: 'review', requiresModule: 'weekly-report' },
   { key: 'review-meeting', label: 'Review 会议', group: 'review', requiresModule: 'weekly-report' },

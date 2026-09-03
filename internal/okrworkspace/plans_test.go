@@ -75,6 +75,38 @@ func TestPlanLifecycleKeepsOfficialOKRRowsUntouched(t *testing.T) {
 	}
 }
 
+func TestPlanAllowsDraftPlaceholders(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := service.CreatePlan(t.Context(), CreatePlanInput{
+		Quarter: "2026-Q3",
+		Title:   "draft placeholders",
+		Content: PlanContentView{Objectives: []PlanObjectiveView{{
+			ID: "plan-o-1", Title: "计划目标", KRs: []PlanKRView{{
+				ID: "plan-kr-1", Title: "计划 KR",
+				Tags:    []TagView{{Type: domain.TagTypeBusinessCategory, Value: "增长"}, {Type: domain.TagTypePriority, Value: "p1"}},
+				Metrics: []MetricView{{ID: "plan-m-1", Text: " ", Light: domain.LightGreen}},
+				Points: []PlanPointView{
+					{ID: "plan-p-1", Kind: domain.PointKindStrategy, Title: " "},
+					{ID: "plan-p-2", Kind: domain.PointKindProduct, Title: ""},
+				},
+			}},
+		}}},
+		CreatedBy: "ou_editor",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kr := created.Content.Objectives[0].KRs[0]
+	if kr.Metrics[0].Text != "" || kr.Points[0].Title != "" || kr.Points[1].Title != "" {
+		t.Fatalf("draft placeholders should be trimmed but preserved: %+v", kr)
+	}
+}
+
 func TestPlanValidationRejectsStructuralPointTags(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	service, err := NewService(db)

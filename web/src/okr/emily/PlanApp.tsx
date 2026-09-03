@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useBoard } from './board'
-import { BoardContext } from './board'
-import { buildAllBusinessNavigation, buildKRHierarchy } from './hierarchy'
-import { hasOwner, splitOwnerNames } from './people'
-import { PlanBoardContext, PlanBoardProvider, usePlanBoard } from './planStore'
-import type { Objective } from './types'
+import { PlanBoardProvider, usePlanBoard } from './planStore'
 import { QuarterSelect } from './components/QuarterSelect'
-import { KrTable } from './components/Table'
-import { HierarchyNav } from './components/HierarchyNav'
+import { ManagementView } from './components/ManagementView'
+import { WeeklyShareNav } from './components/WeeklyShareNav'
+import type { WeeklyShareTab } from './share'
 
 function SyncNotice() {
   const { syncState, retry } = useBoard()
@@ -50,44 +47,11 @@ function NewPlanPanel({ onClose }: { onClose: () => void }) {
   )
 }
 
-function PlanCanvas() {
-  const { plan, plans, quarter, syncState, selectPlan, createObjective, deleteCurrentPlan } = usePlanBoard()
-  const { objectives } = useBoard()
+function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; onShareTabChange?: (tab: WeeklyShareTab) => void }) {
+  const { plan, plans, quarter, syncState, selectPlan, deleteCurrentPlan } = usePlanBoard()
   const [creatingPlan, setCreatingPlan] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [creatingObjective, setCreatingObjective] = useState(false)
-  const [objectiveTitle, setObjectiveTitle] = useState('')
-  const [ownerFilter, setOwnerFilter] = useState('')
-  const [levelFilter, setLevelFilter] = useState('all')
-  const [activeBusinessValue, setActiveBusinessValue] = useState<string>()
-  const [activePriorityValue, setActivePriorityValue] = useState<string>()
-  const [activeObjectiveId, setActiveObjectiveId] = useState('')
   const saving = syncState.kind === 'saving' || syncState.kind === 'loading'
-  const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
-  const visibleObjectives = useMemo(() => filterObjectives(objectives, ownerFilter), [objectives, ownerFilter])
-  const navigation = useMemo(() => buildKRHierarchy(visibleObjectives), [visibleObjectives])
-  const overview = activeBusinessValue === undefined
-  const allBusiness = useMemo(() => buildAllBusinessNavigation(navigation), [navigation])
-  const activeBusiness = overview ? allBusiness : navigation.find((business) => business.value === activeBusinessValue) ?? navigation[0]
-  const activePriority = activeBusiness?.priorities.find((priority) => priority.value === activePriorityValue) ?? activeBusiness?.priorities[0]
-  const activeObjective = activePriority?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activePriority?.objectives[0]
-  const activeObjectives = activeObjective ? [activeObjective] : []
-  const totalKRCount = objectives.reduce((total, objective) => total + objective.krs.length, 0)
-  const visibleKRCount = visibleObjectives.reduce((total, objective) => total + objective.krs.length, 0)
-
-  useEffect(() => {
-    setActiveBusinessValue(undefined)
-    setActivePriorityValue(undefined)
-    setActiveObjectiveId('')
-  }, [plan?.id, ownerFilter])
-
-  const submitObjective = async () => {
-    const title = objectiveTitle.trim()
-    if (!title) return
-    await createObjective({ quarter, title })
-    setObjectiveTitle('')
-    setCreatingObjective(false)
-  }
 
   return (
     <>
@@ -98,6 +62,7 @@ function PlanCanvas() {
             <h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · OKR Plan</h1>
             <div className="mt-1 text-[10px] text-slate-400">{quarter.replace('-', ' ')} · 计划草稿</div>
           </div>
+          {shared && <WeeklyShareNav currentTab="okr-plan" onChange={(tab) => onShareTabChange?.(tab)} />}
           <span className={`text-[10px] ${syncState.kind === 'saving' ? 'text-blue-600' : syncState.kind === 'saved' ? 'text-emerald-600' : syncState.kind === 'error' ? 'text-red-600' : 'text-slate-400'}`} aria-live="polite">{syncState.message}</span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <QuarterSelect />
@@ -125,58 +90,12 @@ function PlanCanvas() {
         <SyncNotice />
         {plan ? (
           <div className={`transition-opacity ${saving ? 'pointer-events-none opacity-55' : ''}`}>
-            <section className="mb-3 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-              <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3.5 py-3">
-                <div className="mr-2">
-                  <div className="flex items-baseline gap-2">
-                    <h2 className="text-[13px] font-semibold text-slate-800">{plan.title}</h2>
-                    <span className="text-[9px] tabular-nums text-slate-400">v{plan.version} · {totalKRCount} KR</span>
-                  </div>
-                  <p className="mt-0.5 text-[10px] text-slate-400">Plan 草稿独立保存；正式 OKR 仍在“管理与打标”维护。</p>
-                </div>
-                <div className="ml-auto flex flex-wrap items-center gap-1.5">
-                  <span className="text-[10px] text-slate-400">负责人</span>
-                  <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400">
-                    <option value="">全部负责人</option>
-                    {owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
-                  </select>
-                  <span className="text-[10px] text-slate-400">层级</span>
-                  <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400">
-                    <option value="all">完整层级</option>
-                    <option value="kr">折叠到 KR</option>
-                  </select>
-                  <button type="button" onClick={() => setCreatingObjective((value) => !value)} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-medium text-white hover:bg-indigo-700">+ 新建 O</button>
-                </div>
-              </div>
-              {creatingObjective && (
-                <div className="flex flex-wrap items-center gap-2 border-b border-indigo-100 bg-indigo-50/60 px-3.5 py-2">
-                  <input autoFocus value={objectiveTitle} onChange={(event) => setObjectiveTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitObjective(); if (event.key === 'Escape') setCreatingObjective(false) }} placeholder="目标名称" className="h-8 min-w-64 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] outline-none focus:border-indigo-400" />
-                  <button type="button" onClick={() => void submitObjective()} disabled={!objectiveTitle.trim()} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-medium text-white disabled:opacity-40">创建目标</button>
-                  <button type="button" onClick={() => setCreatingObjective(false)} className="h-8 px-2 text-[10px] text-slate-400">取消</button>
-                </div>
-              )}
-              <div className="p-3">
-                <HierarchyNav
-                  navigation={navigation}
-                  activeBusiness={activeBusiness}
-                  activePriority={activePriority}
-                  activeObjectiveId={activeObjective?.id}
-                  overview={overview}
-                  showOverview
-                  onOverview={() => { setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
-                  onBusiness={(value) => { setActiveBusinessValue(value); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
-                  onPriority={(value) => { setActivePriorityValue(value); setActiveObjectiveId('') }}
-                  onObjective={setActiveObjectiveId}
-                />
-                <div className="mb-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] text-slate-500">
-                  <span><b className="text-slate-700">{visibleKRCount}</b> / {totalKRCount} 条 KR</span>
-                  <span className="h-3 w-px bg-slate-200" />
-                  <span>{levelFilter === 'kr' ? '当前折叠到 KR' : '当前展示完整层级'}</span>
-                  <span className="ml-auto">新增人员使用飞书联系人搜索，也可先保留草稿人员。</span>
-                </div>
-                <PlanBoardContextBridge objectives={activeObjectives} collapsedToKR={levelFilter === 'kr'} />
-              </div>
-            </section>
+            <ManagementView
+              title={plan.title}
+              subtitle={`OKR Plan 草稿独立保存，当前版本 v${plan.version}；结构编辑与“管理与打标”一致，不影响正式 OKR。`}
+              showTags
+              deleteKrWarning="只删除这个 Plan 草稿里的 KR"
+            />
           </div>
         ) : (
           <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
@@ -189,37 +108,20 @@ function PlanCanvas() {
   )
 }
 
-function PlanBoardContextBridge({ objectives, collapsedToKR }: { objectives: Objective[]; collapsedToKR: boolean }) {
-  const api = usePlanBoard()
-  const scoped = useMemo(() => ({ ...api, objectives }), [api, objectives])
-  return (
-    <PlanBoardContext.Provider value={scoped}>
-      <BoardContext.Provider value={scoped}>
-        <KrTable showProgress={false} showObjectiveHeader manageObjectives definitionsReadOnly={false} progressReadOnly collapsedToKR={collapsedToKR} />
-      </BoardContext.Provider>
-    </PlanBoardContext.Provider>
-  )
-}
-
-function filterObjectives(objectives: Objective[], ownerFilter: string): Objective[] {
-  if (!ownerFilter) return objectives
-  return objectives
-    .map((objective) => ({
-      ...objective,
-      krs: objective.krs
-        .map((kr) => ({
-          ...kr,
-          points: kr.points.filter((point) => hasOwner(kr.ownerName, ownerFilter) || (point.owners ?? []).some((owner) => owner.name === ownerFilter)),
-        }))
-        .filter((kr) => hasOwner(kr.ownerName, ownerFilter) || kr.points.length > 0),
-    }))
-    .filter((objective) => objective.krs.length > 0)
-}
-
-export default function PlanApp({ initialQuarter = '', onQuarterChange }: { initialQuarter?: string; onQuarterChange?: (quarter: string) => void }) {
+export default function PlanApp({
+  initialQuarter = '',
+  onQuarterChange,
+  shared = false,
+  onShareTabChange,
+}: {
+  initialQuarter?: string
+  onQuarterChange?: (quarter: string) => void
+  shared?: boolean
+  onShareTabChange?: (tab: WeeklyShareTab) => void
+}) {
   return (
     <PlanBoardProvider initialQuarter={initialQuarter} onQuarterChange={onQuarterChange}>
-      <PlanCanvas />
+      <PlanCanvas shared={shared} onShareTabChange={onShareTabChange} />
     </PlanBoardProvider>
   )
 }

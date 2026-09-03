@@ -28,3 +28,9 @@ test('OKR chat removes weekly scope and targets on stable definitions', () => {
     tab: 'structure', quarter: '2026-Q2', week: '2026-W15', progress_id: 'progress-1',
   }, 'okr', '2026-Q2', ''), { tab: 'structure', quarter: '2026-Q2' })
 })
+
+test('OKR Plan keeps the route quarter but does not keep weekly scope', () => {
+  assert.deepEqual(withOKRScope({
+    share: 'weekly', tab: 'okr-plan', quarter: '2026-Q4', week: '2026-W36', progress_id: 'progress-1',
+  }, 'okr', '2026-Q4', ''), { share: 'weekly', tab: 'okr-plan', quarter: '2026-Q4' })
+})

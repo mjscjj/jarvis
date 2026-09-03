@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { isWeeklyShareViewState, weeklyShareTab, weeklyShareURL } from '../src/okr/emily/share.ts'
+import { isWeeklyShareViewState, WEEKLY_SHARE_NAV, weeklyShareTab, weeklyShareURL, weeklyShareWorkspaceTab } from '../src/okr/emily/share.ts'
 
 test('weekly share link keeps only the selected dataset and view', () => {
   assert.equal(
@@ -33,9 +33,20 @@ test('a configured public address replaces the IP the author browsed in on', () 
   )
 })
 
-test('weekly share scope resolves all four weekly pages', () => {
+test('weekly share scope resolves OKR Plan and all four weekly pages', () => {
   assert.equal(isWeeklyShareViewState({ share: 'weekly' }), true)
   assert.equal(isWeeklyShareViewState({}), false)
+  assert.deepEqual(WEEKLY_SHARE_NAV.map((item) => item.key), [
+    'okr-plan',
+    'review-fill',
+    'review-meeting',
+    'weekly-fill',
+    'weekly-meeting',
+  ])
+  assert.equal(WEEKLY_SHARE_NAV[0].label, 'OKR Plan')
+  assert.equal(weeklyShareTab('okr-plan'), 'okr-plan')
+  assert.equal(weeklyShareWorkspaceTab('okr-plan'), undefined)
+  assert.equal(weeklyShareWorkspaceTab('review-fill'), 'review-fill')
   assert.equal(weeklyShareTab('weekly-meeting'), 'weekly-meeting')
   assert.equal(weeklyShareTab('weekly-fill'), 'weekly-fill')
   assert.equal(weeklyShareTab('review-fill'), 'review-fill')

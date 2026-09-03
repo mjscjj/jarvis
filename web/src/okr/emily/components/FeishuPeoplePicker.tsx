@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { getPeopleAvatars, searchPeople } from '../api'
 import { useBoard } from '../board'
 import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, splitOwnerNames } from '../people'
@@ -7,6 +8,7 @@ import { PersonAvatar } from './PersonAvatar'
 
 export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void }) {
   const root = useRef<HTMLSpanElement>(null)
+  const panel = useRef<HTMLSpanElement>(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<PersonSearchItem[]>([])
@@ -14,6 +16,7 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
   const [error, setError] = useState('')
 	const [hasMore, setHasMore] = useState(false)
 	const [resultAvatars, setResultAvatars] = useState<Record<string, string>>({})
+	const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({ top: 0, left: 0 })
 	const selectedOpenIds = useMemo(() => new Set(owners.map((owner) => owner.openId).filter(Boolean)), [owners])
 
   const localResults = useMemo(() => options
@@ -24,11 +27,42 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
   useEffect(() => {
     if (!open) return
     const onDown = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (!root.current?.contains(target) && !panel.current?.contains(target)) setOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
+
+	useEffect(() => {
+		if (!open) return
+		const updatePanelPosition = () => {
+			const rect = root.current?.getBoundingClientRect()
+			if (!rect) return
+			const width = 320
+			const margin = 8
+			const below = window.innerHeight - rect.bottom - margin
+			const above = rect.top - margin
+			const openAbove = below < 220 && above > below
+			const maxHeight = Math.max(180, Math.min(360, openAbove ? above : below))
+			const left = Math.min(Math.max(margin, rect.right - width), Math.max(margin, window.innerWidth - width - margin))
+			setPanelStyle({
+				position: 'fixed',
+				top: openAbove ? Math.max(margin, rect.top - maxHeight - 4) : rect.bottom + 4,
+				left,
+				width,
+				maxHeight,
+				zIndex: 1000,
+			})
+		}
+		updatePanelPosition()
+		window.addEventListener('resize', updatePanelPosition)
+		window.addEventListener('scroll', updatePanelPosition, true)
+		return () => {
+			window.removeEventListener('resize', updatePanelPosition)
+			window.removeEventListener('scroll', updatePanelPosition, true)
+		}
+	}, [open, owners.length])
 
   useEffect(() => {
     const clean = query.trim()
@@ -103,8 +137,8 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
       <button type="button" onClick={() => setOpen((value) => !value)} className="h-6 rounded-md border border-dashed border-slate-300 px-2 text-[10px] font-medium text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">
         + 人员
       </button>
-      {open && (
-        <span className="absolute top-[calc(100%+4px)] right-0 z-50 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-xl">
+      {open && createPortal(
+        <span ref={panel} style={panelStyle} className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-xl">
           <span className="block border-b border-slate-100 p-2">
             <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium text-slate-500"><span className="size-1.5 rounded-full bg-blue-500" />飞书联系人</span>
 			<input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }} placeholder="输入姓名或邮箱搜索" className="h-8 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 text-[11px] text-slate-700 outline-none focus:border-blue-400 focus:bg-white" />
@@ -124,7 +158,8 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
 			{!loading && hasMore && !error && <span className="block px-2 py-2 text-[10px] leading-4 text-amber-600">结果较多，请补全姓名或改用邮箱缩小范围</span>}
 			{!loading && error && <span className="block px-2 py-2 text-[10px] leading-4 text-red-600">{error}</span>}
           </span>
-        </span>
+        </span>,
+        document.body,
       )}
     </span>
   )

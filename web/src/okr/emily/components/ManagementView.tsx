@@ -76,7 +76,7 @@ function KrTagEditor({ kr, suggestions }: { kr: Kr; suggestions: KrTag[] }) {
   return <TagEditor idPrefix={`tag-options-${kr.id}`} tags={allTags} suggestions={suggestions.filter((item) => !isStructuralTag(item))} onAdd={(value, type) => addTag(kr.id, value, type)} onRemove={(type, value) => removeTag(kr.id, type, value)} />
 }
 
-function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, onToggleDetails, onMoveUp, onMoveDown }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; onToggleDetails: () => void; onMoveUp?: () => void; onMoveDown?: () => void }) {
+function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, onToggleDetails, onMoveUp, onMoveDown, showTags, deleteWarning }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; onToggleDetails: () => void; onMoveUp?: () => void; onMoveDown?: () => void; showTags: boolean; deleteWarning: string }) {
 	const { setKrTitle, setKrBusinessCategory, setKrPriority, deleteKr } = useBoard()
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const [deleting, setDeleting] = useState(false)
@@ -111,12 +111,12 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
 				</select>
         </div>
         <div className="mt-1 flex items-start gap-2 px-1.5">
-          <div className="min-w-0 flex-1"><KrTagEditor kr={kr} suggestions={tagSuggestions} /></div>
+          {showTags && <div className="min-w-0 flex-1"><KrTagEditor kr={kr} suggestions={tagSuggestions} /></div>}
           <button
             type="button"
             aria-expanded={detailsOpen}
             onClick={onToggleDetails}
-            className={`h-6 shrink-0 rounded-md border px-2 text-[10px] font-medium transition-colors ${detailsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-600'}`}
+            className={`h-6 shrink-0 rounded-md border px-2 text-[10px] font-medium transition-colors ${showTags ? '' : 'ml-auto'} ${detailsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-600'}`}
           >
             指标与拆解{definitionCount > 0 ? ` · ${definitionCount}` : ''}
           </button>
@@ -126,14 +126,13 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
         <MoveButtons label="条 KR" onUp={onMoveUp} onDown={onMoveDown} />
         {confirmDelete ? (
           <>
-            {/* 删除 KR 会连带清掉它所有具体 KR 在各周的进展和评分。 */}
-            <span className="text-[9px] leading-tight text-red-500">连同各周进展一起删除</span>
+            <span className="text-[9px] leading-tight text-red-500">{deleteWarning}</span>
             <button type="button" onClick={() => void remove()} disabled={deleting} className="h-6 rounded-md bg-red-600 px-2 text-[9px] font-medium !text-white hover:bg-red-700 disabled:opacity-50">{deleting ? '删除中' : '确认'}</button>
             <button type="button" onClick={() => setConfirmDelete(false)} className="h-6 px-1 text-[9px] text-slate-400 hover:text-slate-700">取消</button>
           </>
         ) : <button type="button" onClick={() => setConfirmDelete(true)} title="删除 KR" className="h-6 rounded-md px-1.5 text-[10px] text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600">删除</button>}
       </div>
-		{detailsOpen && <div className="col-span-2 px-1.5 pb-1"><KrDefinitionDetails objectiveId={objectiveId} kr={kr} tagSuggestions={tagSuggestions} /></div>}
+		{detailsOpen && <div className="col-span-2 px-1.5 pb-1"><KrDefinitionDetails objectiveId={objectiveId} kr={kr} tagSuggestions={showTags ? tagSuggestions : undefined} deletePointWarning={deleteWarning} /></div>}
     </div>
   )
 }
@@ -263,7 +262,7 @@ function ObjectiveEditorHeader({
 	)
 }
 
-export function ManagementView() {
+export function ManagementView({ title = 'OKR 管理', subtitle = '标签可标在整条 KR，也可下钻到策略/产品要点；长标签完整换行展示', showTags = true, deleteKrWarning = '连同各周进展一起删除' }: { title?: string; subtitle?: string; showTags?: boolean; deleteKrWarning?: string }) {
   const { objectives, quarter, syncState, createObjective, swapObjectives, swapKrs } = useBoard()
   const [query, setQuery] = useState('')
   const [owner, setOwner] = useState('')
@@ -279,7 +278,7 @@ export function ManagementView() {
   const [creatingObjective, setCreatingObjective] = useState(false)
   const [objectiveTitle, setObjectiveTitle] = useState('')
   const [objectiveQuarter, setObjectiveQuarter] = useState(quarter)
-  const hasFilters = Boolean(query.trim() || owner || priority || tag || businessCategory !== undefined)
+  const hasFilters = Boolean(query.trim() || owner || priority || (showTags && tag) || businessCategory !== undefined)
 	const peopleOptions = useMemo(() => ownerOptions(objectives), [objectives])
 	const owners = useMemo(() => peopleOptions.map((person) => person.name), [peopleOptions])
 	const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => allTagsOf(kr).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
@@ -289,9 +288,9 @@ export function ManagementView() {
 		totalKrCount: objective.krs.length,
     krs: objective.krs.filter((kr) => {
       const matchesQuery = !query.trim() || `${objective.title} ${kr.title} ${kr.points.map((point) => point.title).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase())
-				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!priority || priorityOf(kr) === priority) && (!tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
+				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!priority || priorityOf(kr) === priority) && (!showTags || !tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
     }),
-  })), [objectives, owner, priority, query, tag])
+  })), [objectives, owner, priority, query, showTags, tag])
   // Counts read every filter except the category itself, so each tab states how
   // many rows picking it would leave. Objectives the other filters emptied
   // contribute nothing rather than an untagged bucket of zero.
@@ -364,10 +363,10 @@ export function ManagementView() {
           <div className="flex flex-wrap items-center gap-2">
           <div className="mr-2">
             <div className="flex items-baseline gap-2">
-              <h2 className="text-[13px] font-semibold text-slate-800">OKR 管理</h2>
-              <span className="text-[9px] tabular-nums text-slate-400">{resultCount} KR · {tagCount} 标签</span>
+              <h2 className="text-[13px] font-semibold text-slate-800">{title}</h2>
+              <span className="text-[9px] tabular-nums text-slate-400">{resultCount} KR{showTags ? ` · ${tagCount} 标签` : ''}</span>
             </div>
-            <p className="mt-0.5 text-[10px] text-slate-400">标签可标在整条 KR，也可下钻到策略/产品要点；长标签完整换行展示</p>
+            <p className="mt-0.5 text-[10px] text-slate-400">{subtitle}</p>
           </div>
           <div className="ml-auto rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
             <span className="font-medium text-slate-700">{resultCount}</span> / {objectives.reduce((total, objective) => total + objective.krs.length, 0)} 条
@@ -384,7 +383,7 @@ export function ManagementView() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 O / KR 内容" className="h-8 min-w-48 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-50 sm:max-w-72" />
             <select value={owner} onChange={(event) => setOwner(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部负责人</option>{owners.map((item) => <option key={item} value={item}>{item}</option>)}</select>
             <select value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部优先级</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option></select>
-            <select value={tag} onChange={(event) => setTag(event.target.value)} title={tags.find((item) => item.key === tag)?.value ?? '全部标签'} className="h-8 max-w-80 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部标签</option>{tags.map((item) => <option key={item.key} value={item.key}>{tagLabel(item.type, item.value)}</option>)}</select>
+            {showTags && <select value={tag} onChange={(event) => setTag(event.target.value)} title={tags.find((item) => item.key === tag)?.value ?? '全部标签'} className="h-8 max-w-80 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部标签</option>{tags.map((item) => <option key={item.key} value={item.key}>{tagLabel(item.type, item.value)}</option>)}</select>}
             {hasFilters && <button type="button" onClick={clearFilters} className="h-8 rounded-lg px-2.5 text-[10px] font-medium text-slate-500 hover:bg-white hover:text-slate-800">清空筛选</button>}
             <span className="ml-auto self-center text-[10px] text-slate-400">层级</span>
             <div className="inline-flex h-8 items-center overflow-hidden rounded-lg border border-slate-200 bg-white text-[10px]">
@@ -423,6 +422,8 @@ export function ManagementView() {
 							onToggleDetails={() => toggleDetails(kr.id)}
 							onMoveUp={krIndex > 0 ? () => void swapKrs(objective.id, kr.id, objective.krs[krIndex - 1].id) : undefined}
 							onMoveDown={krIndex < objective.krs.length - 1 ? () => void swapKrs(objective.id, kr.id, objective.krs[krIndex + 1].id) : undefined}
+							showTags={showTags}
+							deleteWarning={deleteKrWarning}
 						/>)}
               </div>}
             </section>

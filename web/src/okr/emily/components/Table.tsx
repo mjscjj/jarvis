@@ -260,7 +260,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, structureReadOnly
   )
 }
 
-function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[] }) {
+function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { setPointTitle, setPointKind, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
   const [preview, setPreview] = useState<MeegoPreview>()
   const [previewError, setPreviewError] = useState('')
@@ -328,10 +328,9 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
             <button type="button" onClick={() => setEditingMeego(true)} className="mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100">+ 关联 Meego</button>
           )}
         </div>
-        {/* 删除会连带清掉这条具体 KR 在各周的进展和评分，所以要过一道确认。 */}
         {!structureReadOnly && (confirmDelete ? (
           <span className="flex shrink-0 items-center gap-1">
-            <span className="text-[9px] leading-tight text-red-500">连同各周进展一起删除</span>
+            <span className="text-[9px] leading-tight text-red-500">{deleteWarning}</span>
             <button type="button" onClick={() => removePoint(objectiveId, krId, point.id)} className="h-6 rounded-md bg-red-600 px-2 text-[9px] font-medium !text-white hover:bg-red-700">确认</button>
             <button type="button" onClick={() => setConfirmDelete(false)} className="h-6 px-1 text-[9px] text-slate-400 hover:text-slate-700">取消</button>
           </span>
@@ -353,7 +352,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
   )
 }
 
-function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
+function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { templateKey } = useBoard()
   // Review reports one combined lane; the classic weekly report splits 进展 and
   // 已完成. Both formats read the loaded week's template, never the tab.
@@ -363,7 +362,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitio
   const reviewTarget = { kind: 'point' as const, objectiveId, krId, pointId: point.id, title: point.title }
   return (
     <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} />
+      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
       {showReview && <div className="mt-1.5 flex justify-end pl-7"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showReview && <PreviewReviewPanel target={reviewTarget} className="mt-1.5 ml-7" />}
       {open && showProgress && (review
@@ -390,7 +389,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitio
   )
 }
 
-function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[] }) {
+function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions, deleteWarning }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { addPoint } = useBoard()
   const points = kr.points.filter((point) => point.kind === kind)
   if (points.length === 0 && structureReadOnly) return null
@@ -404,14 +403,14 @@ function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly,
         {!structureReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
       </div>
       <div className="space-y-4">
-        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} />)}
+        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />)}
         {points.length === 0 && <Empty>暂无{KIND_LABEL[kind]}</Empty>}
       </div>
     </section>
   )
 }
 
-export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[] }) {
+export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除' }: { objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string }) {
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -436,6 +435,7 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions }: { objec
           progressReadOnly
           showProgress={false}
           tagSuggestions={tagSuggestions}
+          deleteWarning={deletePointWarning}
         />
       ))}
     </div>
@@ -460,7 +460,7 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
       {open && (
         <div className="space-y-5 px-4 py-4">
           <MetricBox kr={kr} readOnly={readOnly} structureReadOnly={structureLocked} />
-          {KINDS.map((kind) => <PointGroup key={kind} objectiveId={objectiveId} kr={kr} kind={kind} closed={closed} toggle={toggle} definitionReadOnly={readOnly} structureReadOnly={structureLocked} progressReadOnly={readOnly || progressReadOnly} showProgress={showProgress} />)}
+          {KINDS.map((kind) => <PointGroup key={kind} objectiveId={objectiveId} kr={kr} kind={kind} closed={closed} toggle={toggle} definitionReadOnly={readOnly} structureReadOnly={structureLocked} progressReadOnly={readOnly || progressReadOnly} showProgress={showProgress} deleteWarning="连同各周进展一起删除" />)}
         </div>
       )}
     </article>

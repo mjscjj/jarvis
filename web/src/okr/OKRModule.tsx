@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { AppModulePageProps } from '../modules/registry'
 import { usePageContext } from '../pageContext'
 import AgentFlowsWorkspace from './emily/AgentFlowsApp'
@@ -11,8 +11,9 @@ import { PreviewReviewProvider } from './emily/aiReviewContext'
 import IdentityBoundary from './IdentityBoundary'
 import { isWeeklyWorkspaceTab, okrTabForWeeklyWorkspace, resolveOKRTab, weeklyWorkspace, type OKRTab } from './navigation'
 import { withOKRScope, withOKRTarget } from './chatContext'
-import { isWeeklyShareViewState, weeklyShareTab } from './emily/share'
+import { isWeeklyShareViewState, weeklyShareTab, weeklyShareWorkspaceTab, type WeeklyShareTab } from './emily/share'
 import { templateKeyForDataset } from './emily/weekCatalog'
+import { activeQuarterForViewState, okrPlanDefaultQuarter } from './routeState'
 import './emily/index.css'
 
 function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
@@ -59,18 +60,43 @@ function Workspace({ moduleEnablement }: {
   moduleEnablement: Readonly<Record<string, boolean>>
 }) {
   const { context, setViewState } = usePageContext()
-  const [selectedQuarter, setSelectedQuarter] = useState('')
+  const [selectedQuarter, setSelectedQuarter] = useState(() => context.view_state.quarter ?? '')
   const requestedTab = context.view_state.tab
   const weeklyShare = isWeeklyShareViewState(context.view_state)
   const visibleTab = weeklyShare ? weeklyShareTab(requestedTab) : resolveOKRTab(requestedTab, moduleEnablement)
   const weeklyEnabled = moduleEnablement['weekly-report'] === true
+  const activeQuarter = activeQuarterForViewState(context.view_state, selectedQuarter)
+
+  useEffect(() => {
+    if (!activeQuarter || activeQuarter === selectedQuarter) return
+    setSelectedQuarter(activeQuarter)
+  }, [activeQuarter, selectedQuarter])
 
   useEffect(() => {
     if (requestedTab === visibleTab) return
     setViewState({ ...context.view_state, tab: visibleTab }, true)
   }, [context.view_state, requestedTab, setViewState, visibleTab])
 
-  const changeTab = (tab: OKRTab) => setViewState({ ...context.view_state, tab }, false)
+  const changeTab = useCallback((tab: OKRTab) => {
+    if (tab === 'okr-plan') {
+      setViewState(withOKRScope({ ...context.view_state, tab }, 'okr', okrPlanDefaultQuarter(), ''), false)
+      return
+    }
+    setViewState({ ...context.view_state, tab }, false)
+  }, [context.view_state, setViewState])
+  const changeShareTab = useCallback((tab: WeeklyShareTab) => {
+    if (tab === 'okr-plan') {
+      changeTab(tab)
+      return
+    }
+    const workspace = weeklyShareWorkspaceTab(tab)
+    if (workspace) changeTab(workspace)
+  }, [changeTab])
+  const syncPlanQuarter = useCallback((quarter: string) => {
+    setSelectedQuarter(quarter)
+    const next = withOKRScope(context.view_state, 'okr', quarter, '')
+    if (JSON.stringify(next) !== JSON.stringify(context.view_state)) setViewState(next, true)
+  }, [context.view_state, setViewState])
 
 	const surface = isWeeklyWorkspaceTab(visibleTab) ? 'weekly-report' : 'okr'
 	const workspace = isWeeklyWorkspaceTab(visibleTab) ? weeklyWorkspace(visibleTab) : undefined
@@ -80,14 +106,14 @@ function Workspace({ moduleEnablement }: {
 	if (visibleTab === 'okr-plan') {
 		return (
 			<div id="okr-workspace-root" className="okr-workspace-root">
-				<PlanWorkspace initialQuarter={selectedQuarter} onQuarterChange={setSelectedQuarter} />
+				<PlanWorkspace initialQuarter={activeQuarter} onQuarterChange={syncPlanQuarter} shared={weeklyShare} onShareTabChange={changeShareTab} />
 			</div>
 		)
 	}
 
 	return (
 		<div id="okr-workspace-root" className="okr-workspace-root">
-			<BoardProvider key={boardKey} surface={surface} weekTemplateKey={weekTemplateKey} initialQuarter={selectedQuarter} onQuarterChange={setSelectedQuarter}>
+			<BoardProvider key={boardKey} surface={surface} weekTemplateKey={weekTemplateKey} initialQuarter={activeQuarter} onQuarterChange={setSelectedQuarter}>
 				<PageContextSync surface={surface} />
 				{visibleTab === 'agent-flows' ? (
 					<AgentFlowsWorkspace
@@ -100,6 +126,7 @@ function Workspace({ moduleEnablement }: {
 				<WeeklyReportWorkspace
 						workspace={workspace!}
 						onWorkspaceChange={(next) => changeTab(okrTabForWeeklyWorkspace(next))}
+						onShareTabChange={changeShareTab}
 					shared={weeklyShare}
 				/>
 			</PreviewReviewProvider>

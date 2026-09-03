@@ -107,6 +107,18 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     }
   }, [loadRemote])
 
+  useEffect(() => {
+    const nextQuarter = initialQuarter.trim()
+    if (!nextQuarter || nextQuarter === quarterRef.current) return
+    if (syncState.kind === 'saving') {
+      setSyncState({ kind: 'error', message: '请等待当前 Plan 保存后再切换季度。' })
+      return
+    }
+    window.clearTimeout(saveTimer.current)
+    quarterRef.current = nextQuarter
+    void loadRemote(nextQuarter)
+  }, [initialQuarter, loadRemote, syncState.kind])
+
   const saveNow = useCallback(async () => {
     if (!remoteReady.current || !planRef.current) return
     const snapshot: OKRPlan = { ...planRef.current, content: { objectives: clone(objectivesRef.current) } }

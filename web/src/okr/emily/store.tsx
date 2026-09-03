@@ -279,6 +279,17 @@ export function BoardProvider({
     }
   }, [loadRemote])
 
+  useEffect(() => {
+    const nextQuarter = initialQuarter.trim()
+    if (!nextQuarter || nextQuarter === quarterRef.current) return
+    if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
+      setSyncState({ kind: 'error', message: '请等待当前修改保存后再切换季度。' })
+      return
+    }
+    quarterRef.current = nextQuarter
+    void loadRemote('', nextQuarter)
+  }, [initialQuarter, loadRemote, syncState.kind])
+
   const mutate = useCallback((krId: string, fn: (draft: Objective[]) => void) => {
     const draft = clone(objectivesRef.current)
     fn(draft)

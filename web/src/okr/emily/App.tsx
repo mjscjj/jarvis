@@ -14,8 +14,9 @@ import { commentTargetFromThread } from './comments'
 import type { CommentTarget, PageComment } from './types'
 import { openWeeklyReportWeek } from './api'
 import { getWebConfig } from '../../api'
-import { weeklyShareURL } from './share'
-import { isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS, weeklyDatasetLabel, weeklyViewLabel, weeklyWorkspace, type WeeklyWorkspace } from '../navigation'
+import { weeklyShareURL, type WeeklyShareTab } from './share'
+import { okrTabForWeeklyWorkspace, weeklyDatasetLabel, weeklyViewLabel, weeklyWorkspace, type WeeklyWorkspace } from '../navigation'
+import { WeeklyShareNav } from './components/WeeklyShareNav'
 import { templateKeyForDataset } from './weekCatalog'
 
 function weekLabel(week: string): string {
@@ -46,12 +47,6 @@ function currentQuarter(): string {
   return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`
 }
 
-// Order and labels stay owned by the tab definitions so the shared-link nav can
-// never drift from the sidebar.
-const WEEKLY_NAV = OKR_TAB_DEFINITIONS
-	.filter((item) => isWeeklyWorkspaceTab(item.key))
-	.map((item) => ({ key: item.key, label: item.label, workspace: weeklyWorkspace(item.key) }))
-
 function SyncNotice() {
   const { syncState, retry, resolveConflict } = useBoard()
 
@@ -79,10 +74,12 @@ function SyncNotice() {
 export default function App({
   workspace,
   onWorkspaceChange,
+  onShareTabChange,
   shared = false,
 }: {
 	workspace: WeeklyWorkspace
 	onWorkspaceChange: (workspace: WeeklyWorkspace) => void
+	onShareTabChange?: (tab: WeeklyShareTab) => void
   shared?: boolean
 }) {
 	const { dataset, view } = workspace
@@ -243,13 +240,13 @@ export default function App({
 						<h1 className="text-[14px] font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
           </div>
 
-		          {shared && <nav aria-label="周报页面" className="flex h-9 shrink-0 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
-					{WEEKLY_NAV.map((item) => {
-						const active = item.workspace.dataset === dataset && item.workspace.view === view
-						const activeTone = item.workspace.dataset === 'review' ? 'bg-white text-violet-700 shadow-sm' : 'bg-white text-blue-700 shadow-sm'
-						return <button key={item.key} type="button" aria-current={active ? 'page' : undefined} onClick={() => onWorkspaceChange(item.workspace)} className={`h-7 whitespace-nowrap rounded-lg px-3 text-[11px] font-medium ${active ? activeTone : 'text-slate-500 hover:text-slate-700'}`}>{item.label}</button>
-					})}
-		          </nav>}
+		          {shared && <WeeklyShareNav currentTab={okrTabForWeeklyWorkspace(workspace)} onChange={(tab) => {
+					if (onShareTabChange) {
+						onShareTabChange(tab)
+						return
+					}
+					if (tab !== 'okr-plan') onWorkspaceChange(weeklyWorkspace(tab))
+				}} />}
 		          <QuarterSelect />
 		          <div className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-2.5 text-[11px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <select aria-label="周次" value={week} disabled={availableWeeks.length === 0} onChange={(event) => { setConfirmDeleteWeek(false); setWeek(event.target.value) }} className="bg-transparent font-medium text-slate-600 outline-none disabled:text-slate-400">
