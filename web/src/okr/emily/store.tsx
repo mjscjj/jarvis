@@ -221,12 +221,19 @@ export function BoardProvider({
     try {
       let board: BoardData
       if (surface === 'weekly-report') {
-        const catalog = await listWeeklyReportWeeks(targetQuarter ?? quarterRef.current)
-        const filteredWeeks = filterWeekCatalog(catalog.weeks, weekTemplateKey)
+        let catalog = await listWeeklyReportWeeks(targetQuarter ?? quarterRef.current)
+        let filteredWeeks = filterWeekCatalog(catalog.weeks, weekTemplateKey)
         const requestedWeek = targetWeek?.trim() ?? ''
-        const selectedWeek = requestedWeek && filteredWeeks.includes(requestedWeek) ? requestedWeek : filteredWeeks[0] ?? ''
+        let selectedWeek = requestedWeek && filteredWeeks.includes(requestedWeek) ? requestedWeek : filteredWeeks[0] ?? ''
         if (selectedWeek) {
-          const loaded = await getBoard(catalog.quarter, selectedWeek, surface)
+          let loaded = await getBoard(catalog.quarter, selectedWeek, surface)
+          const fallbackQuarter = loaded.availableQuarters[0]
+          if (fallbackQuarter && !loaded.availableQuarters.includes(loaded.quarter)) {
+            catalog = await listWeeklyReportWeeks(fallbackQuarter)
+            filteredWeeks = filterWeekCatalog(catalog.weeks, weekTemplateKey)
+            selectedWeek = requestedWeek && filteredWeeks.includes(requestedWeek) ? requestedWeek : filteredWeeks[0] ?? ''
+            loaded = await getBoard(catalog.quarter, selectedWeek, surface)
+          }
           board = {
             ...loaded,
             templateKey: weekTemplateKey,
