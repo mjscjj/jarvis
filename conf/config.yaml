@@ -86,7 +86,7 @@ capture:
   warm_age_hours: 168
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
-  scan_schedule: "@every 60s"
+  scan_schedule: "@every 2m"
   # discover 时按 active_time 轮换自动监听的内部真人私聊：保留当前最活跃的前 N 个。
   # pinned 私聊作为人工固定项额外保留；服务号私聊不参与。0=不自动开任何私聊。
   auto_related_p2p_top_n: 20
