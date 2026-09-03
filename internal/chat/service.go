@@ -101,9 +101,13 @@ type Service struct {
 }
 
 // threadRun 是某个 thread 上正在跑的一轮，用来让新一轮把它打断。
+//
+// keys 是本轮占用过的 thread：新会话在 thread.started 之前还不知道自己的 ID，要等
+// 拿到再补登记；旧 thread 不可 resume 而改开新会话时会再占一个。
 type threadRun struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	keys   []string
 }
 
 // 打断上一轮后等它退出的上限。子进程收到 SIGTERM 通常亚秒级退出，等不到就说明
@@ -146,37 +150,44 @@ func NewService(opts Options) (*Service, error) {
 // 拒绝（already has an active writer）。上游模型卡住时旧进程要等满 600 秒超时才退，
 // 期间用户每发一条就报一次错，只能等超时或重启服务。所以新一轮先打断旧的再接管，
 // 这也是聊天界面通常的行为：发新消息就等于放弃上一轮。
-func (s *Service) takeOverThread(ctx context.Context, threadID string) (context.Context, func(), error) {
+func (s *Service) takeOverThread(ctx context.Context, threadID string) error {
 	s.mu.Lock()
 	previous := s.runs[threadID]
 	s.mu.Unlock()
-
-	if previous != nil {
-		previous.cancel()
-		select {
-		case <-previous.done:
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
-		case <-time.After(threadTakeoverTimeout):
-			return nil, nil, fmt.Errorf("previous chat turn on thread %s did not exit within %s", threadID, threadTakeoverTimeout)
-		}
+	if previous == nil {
+		return nil
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	current := &threadRun{cancel: cancel, done: make(chan struct{})}
-	s.mu.Lock()
-	s.runs[threadID] = current
-	s.mu.Unlock()
+	previous.cancel()
+	select {
+	case <-previous.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(threadTakeoverTimeout):
+		return fmt.Errorf("previous chat turn on thread %s did not exit within %s", threadID, threadTakeoverTimeout)
+	}
+}
 
-	return runCtx, func() {
-		cancel()
-		close(current.done)
-		s.mu.Lock()
-		if s.runs[threadID] == current {
-			delete(s.runs, threadID)
+// occupyThread 登记本轮对 threadID 的占用，后续轮次据此找到并打断它。
+func (s *Service) occupyThread(threadID string, run *threadRun) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runs[threadID] = run
+	run.keys = append(run.keys, threadID)
+}
+
+// releaseRun 结束本轮：叫停子进程、放行正在等待接管的一轮，并交出占用的 thread。
+func (s *Service) releaseRun(run *threadRun) {
+	run.cancel()
+	close(run.done)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, key := range run.keys {
+		if s.runs[key] == run {
+			delete(s.runs, key)
 		}
-		s.mu.Unlock()
-	}, nil
+	}
 }
 
 // Stream 执行一轮对话。emit 逐条收到 thread/delta 事件；正常结束返回 nil
@@ -204,15 +215,22 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 		prompt = built
 	}
 	activeThreadID := strings.TrimSpace(req.ThreadID)
-	// 新会话由 codex 现取 thread_id，不可能撞车；只有 resume 需要接管。
+	// resume 前先打断该 thread 上还活着的一轮。新会话的 thread_id 要等 thread.started
+	// 才知道，占用在下面的回调里补登记——否则首轮还在跑时用户再发一条，一样会撞
+	// already has an active writer，而首轮恰恰是最容易被追发的一轮。
 	if activeThreadID != "" {
-		runCtx, release, err := s.takeOverThread(ctx, activeThreadID)
-		if err != nil {
+		if err := s.takeOverThread(ctx, activeThreadID); err != nil {
 			return err
 		}
-		defer release()
-		ctx = runCtx
 	}
+	runCtx, cancel := context.WithCancel(ctx)
+	run := &threadRun{cancel: cancel, done: make(chan struct{})}
+	defer s.releaseRun(run)
+	if activeThreadID != "" {
+		s.occupyThread(activeThreadID, run)
+	}
+	ctx = runCtx
+
 	var assistant strings.Builder
 	handle := func(event Event) error {
 		switch event.Kind {
@@ -220,6 +238,9 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 			threadID := strings.TrimSpace(event.ThreadID)
 			if activeThreadID != "" && threadID != activeThreadID {
 				return fmt.Errorf("resumed chat returned different thread_id: got %q want %q", threadID, activeThreadID)
+			}
+			if activeThreadID == "" {
+				s.occupyThread(threadID, run)
 			}
 			activeThreadID = threadID
 		case EventDelta:

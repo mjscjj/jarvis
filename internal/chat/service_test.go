@@ -485,3 +485,80 @@ func TestSecondTurnOnSameThreadInterruptsTheStuckOne(t *testing.T) {
 		t.Fatal("first turn was never interrupted")
 	}
 }
+
+// 首轮是新会话时，thread_id 要等 thread.started 才知道。如果只在 resume 时登记占用，
+// 首轮就无法被打断——而首轮恰恰最容易被用户追发，线上就是这么一直撞
+// already has an active writer 的。
+func TestFollowupInterruptsAStuckFirstTurnOfANewSession(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "first-turn-started")
+	bin := filepath.Join(dir, "codex")
+	// 首轮：报出 thread_id 后挂住不返回（模拟上游卡死）。之后的调用正常应答。
+	script := "#!/bin/sh\n" +
+		"if [ ! -f " + marker + " ]; then\n" +
+		"  : > " + marker + "\n" +
+		"  printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"tid-new\"}'\n" +
+		"  while true; do sleep 0.05; done\n" +
+		"fi\n" +
+		"printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"tid-new\"}'\n" +
+		"printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"第二轮\"}}'\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewService(Options{
+		Bin:              bin,
+		Model:            "fixture-model",
+		Sandbox:          "read-only",
+		ReasoningEffort:  "medium",
+		Timeout:          60 * time.Second,
+		HistoryDir:       t.TempDir(),
+		SharedMemory:     fakeSharedMemoryReader{},
+		ContextAssembler: &fakeContextAssembler{},
+		SystemPrompts:    fakeSystemPromptReader{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 首轮不带 thread_id，也就是新会话。
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- svc.Stream(t.Context(), Request{Message: "第一条"}, func(Event) error { return nil })
+	}()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first turn never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// 等首轮把 thread_id 报上来并登记占用。
+	time.Sleep(200 * time.Millisecond)
+
+	var deltas []string
+	if err := svc.Stream(t.Context(), Request{Message: "第二条", ThreadID: "tid-new"}, func(event Event) error {
+		if event.Kind == EventDelta {
+			deltas = append(deltas, event.Text)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("followup error = %v, want it to take over the new session's thread", err)
+	}
+	if len(deltas) != 1 || deltas[0] != "第二轮" {
+		t.Fatalf("deltas = %v, want [第二轮]", deltas)
+	}
+
+	select {
+	case err := <-firstDone:
+		if err == nil {
+			t.Fatal("interrupted first turn must report an error, not report success")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("stuck first turn of a new session was never interrupted")
+	}
+}
