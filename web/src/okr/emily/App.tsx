@@ -3,6 +3,7 @@ import { useBoard } from './board'
 import { MeetingView } from './components/MeetingView'
 import { KrTable } from './components/Table'
 import { CommentDrawer } from './components/CommentDrawer'
+import { HelpFab } from './components/HelpFab'
 import { WeeklyFocus } from './components/WeeklyFocus'
 import { WeeklyTools } from './components/WeeklyTools'
 import { QuarterSelect } from './components/QuarterSelect'
@@ -320,6 +321,7 @@ export default function App({
 			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无{lifecycleName}</div><div className="mt-1 text-xs text-slate-400">{managesWeeks ? `点击顶部“新建${lifecycleName}”创建一个空周。` : `请先在“${lifecycleName}填写”中新建一个空周。`}</div></section>}
 		</main>
 			{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={meetingLike} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+			<HelpFab />
     </div>
   )
 }

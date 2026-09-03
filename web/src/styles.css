@@ -189,6 +189,19 @@ body {
   right: calc(var(--chat-width) + var(--space-4));
 }
 
+/* 求助入口叠在对话 FAB 正上方：40px 的球 + 10px 间距 */
+.okr-help-fab {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + 50px);
+  z-index: 200;
+  transition: right 0.25s ease;
+}
+
+.app-shell.chat-is-open .okr-help-fab {
+  right: calc(var(--chat-width) + var(--space-4));
+}
+
 .chat-close {
   margin-inline-start: auto;
 }
@@ -314,6 +327,15 @@ body {
   }
 
   .chat-is-open .chat-toggle {
+    display: none;
+  }
+
+  .okr-help-fab {
+    right: var(--space-3);
+    bottom: 132px;
+  }
+
+  .chat-is-open .okr-help-fab {
     display: none;
   }
 
