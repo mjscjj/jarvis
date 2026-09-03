@@ -34,9 +34,9 @@ type History struct {
 	Messages []HistoryMessage `json:"messages"`
 }
 
-// HistoryStore keeps one human-readable Markdown transcript per Codex thread.
+// HistoryStore keeps one human-readable Markdown transcript per Agent CLI thread.
 // The browser owns the active thread ID; this store only persists and reloads
-// the visible conversation, while Codex remains the actual agent memory.
+// the visible conversation, while the selected Agent CLI remains the actual agent memory.
 type HistoryStore struct {
 	dir string
 	mu  sync.Mutex

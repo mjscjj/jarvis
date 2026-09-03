@@ -1,8 +1,8 @@
-// Package chat 提供「基于 codex CLI 的流式对话服务」。
+// Package chat 提供基于 Agent CLI 的流式对话服务。
 //
-// 与 internal/execute 的一次性 codex 封装不同，本包用 StdoutPipe + json.Decoder
-// 边读 codex 的 JSONL 事件边通过回调吐出，支撑 /api/chat 的 SSE 流式对话。
-// 本地可信环境：codex 跑 danger-full-access + 联网，能调用 jarvis-tools、
+// 与 internal/execute 的一次性 Agent 封装不同，本包用 StdoutPipe + json.Decoder
+// 边读 CLI 的 JSONL 事件边通过回调吐出，支撑 /api/chat 的 SSE 流式对话。
+// 本地可信环境：CLI 跑 danger-full-access + 联网，能调用 jarvis-tools、
 // 调用 jarvis-tools/lark-cli/git。fail-fast：非零退出、超时、JSON 解析失败都
 // 转成 error 事件并返回 error，绝不静默吞。
 package chat
@@ -11,10 +11,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -26,7 +28,7 @@ import (
 type EventKind string
 
 const (
-	// EventThread 携带 codex 的 thread_id（会话建立/恢复），尽早发一次。
+	// EventThread 携带 Agent CLI 的 thread_id（会话建立/恢复），尽早发一次。
 	EventThread EventKind = "thread"
 	// EventDelta 携带 codex 的增量文本，逐条发。
 	EventDelta EventKind = "delta"
@@ -42,42 +44,59 @@ type Event struct {
 	Text string
 }
 
-// runner 封装 codex CLI 的流式调用。它持有已解析的 bin 与固定的模型/沙箱/
+// runner 封装 Codex 兼容 CLI 或 Cursor CLI 的流式调用。它持有已解析的 bin 与固定的模型/沙箱/
 // reasoning_effort/超时，Service 组装好 prompt 后交给它执行。
 type runner struct {
 	bin             string
+	provider        string
 	model           string
 	sandbox         string
 	reasoningEffort string
 	timeout         time.Duration
 }
 
+const (
+	providerCodex      = "codex"
+	providerCursor     = "cursor"
+	cursorThreadPrefix = "cursor_"
+)
+
+var errUnresumableThread = errors.New("chat thread belongs to another CLI")
+
 func newRunner(bin, model, sandbox, reasoningEffort string, timeout time.Duration) (*runner, error) {
 	if strings.TrimSpace(bin) == "" {
-		return nil, fmt.Errorf("chat codex bin is required")
+		return nil, fmt.Errorf("chat CLI bin is required")
 	}
 	resolved, err := exec.LookPath(bin)
 	if err != nil {
-		return nil, fmt.Errorf("find chat codex binary %q: %w", bin, err)
+		return nil, fmt.Errorf("find chat CLI binary %q: %w", bin, err)
 	}
 	if strings.TrimSpace(model) == "" {
-		return nil, fmt.Errorf("chat codex model is required")
+		return nil, fmt.Errorf("chat CLI model is required")
 	}
 	switch sandbox {
 	case "read-only", "workspace-write", "danger-full-access":
 	default:
-		return nil, fmt.Errorf("chat codex sandbox must be read-only, workspace-write or danger-full-access, got %q", sandbox)
+		return nil, fmt.Errorf("chat CLI sandbox must be read-only, workspace-write or danger-full-access, got %q", sandbox)
 	}
 	switch reasoningEffort {
 	case "minimal", "low", "medium", "high", "xhigh":
 	default:
-		return nil, fmt.Errorf("chat codex reasoning_effort must be minimal/low/medium/high/xhigh, got %q", reasoningEffort)
+		return nil, fmt.Errorf("chat CLI reasoning_effort must be minimal/low/medium/high/xhigh, got %q", reasoningEffort)
 	}
 	if timeout <= 0 {
-		return nil, fmt.Errorf("chat codex timeout must be positive")
+		return nil, fmt.Errorf("chat CLI timeout must be positive")
+	}
+	provider := providerCodex
+	if filepath.Base(resolved) == "cursor-agent" {
+		provider = providerCursor
+		if sandbox != "danger-full-access" {
+			return nil, fmt.Errorf("Cursor chat currently requires danger-full-access sandbox")
+		}
 	}
 	return &runner{
 		bin:             resolved,
+		provider:        provider,
 		model:           model,
 		sandbox:         sandbox,
 		reasoningEffort: reasoningEffort,
@@ -92,6 +111,16 @@ func newRunner(bin, model, sandbox, reasoningEffort string, timeout time.Duratio
 // 事实来自实跑 codex（见包测试样本）：resume 不接受 --color/--sandbox flag，
 // 沙箱只能经 -c sandbox_mode 覆盖，否则 codex 直接以 exit 2 报 unexpected argument。
 func (r *runner) args(threadID, imagePath string) []string {
+	if r.provider == providerCursor {
+		args := []string{
+			"-p", "--output-format", "stream-json", "--stream-partial-output",
+			"--model", r.model, "--force", "--sandbox", "disabled", "--approve-mcps", "--trust",
+		}
+		if threadID != "" {
+			args = append(args, "--resume", strings.TrimPrefix(threadID, cursorThreadPrefix))
+		}
+		return args
+	}
 	var args []string
 	if strings.TrimSpace(threadID) == "" {
 		args = []string{
@@ -123,7 +152,7 @@ func (r *runner) args(threadID, imagePath string) []string {
 	return args
 }
 
-// Stream 执行一轮 codex 对话。prompt 从 stdin 灌入；threadID 非空则 resume。
+// Stream 执行一轮 Agent CLI 对话。prompt 从 stdin 灌入；threadID 非空则 resume。
 // 每解析出一条 thread/delta 事件就回调 emit；emit 返回 error（如 SSE 写失败）
 // 会中止本轮并杀掉子进程。正常结束返回 nil（上游据此发 done）；任何异常
 // （非零退出、超时、JSON 解析失败、stderr 有内容而无输出）返回 error。
@@ -131,6 +160,16 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID, imagePath string,
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return fmt.Errorf("chat prompt is required")
+	}
+
+	if threadID != "" {
+		isCursorThread := strings.HasPrefix(threadID, cursorThreadPrefix)
+		if (r.provider == providerCursor) != isCursorThread {
+			return errUnresumableThread
+		}
+	}
+	if r.provider == providerCursor && strings.TrimSpace(imagePath) != "" {
+		prompt = fmt.Sprintf("%s\n\n本轮附带了一张图片。请先使用图片读取工具查看这个本地文件，再回答：%s", prompt, imagePath)
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
@@ -148,26 +187,31 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID, imagePath string,
 	command.Stdin = strings.NewReader(prompt)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("open codex stdout pipe: %w", err)
+		return fmt.Errorf("open chat CLI stdout pipe: %w", err)
 	}
 	// stderr 单独收集：codex 的错误细节都在这里，用于失败时拼进 error。
 	var stderr stderrCollector
 	command.Stderr = &stderr
 
 	if err := command.Start(); err != nil {
-		return fmt.Errorf("start codex: %w", err)
+		return fmt.Errorf("start chat CLI: %w", err)
 	}
 
 	// 边读边解析 codex JSONL。parseErr 记录解析/回调阶段的第一个错误；
 	// 无论如何都要 Wait 回收子进程，避免僵尸与句柄泄漏。
-	parseErr := parseCodexStream(stdout, emit)
+	var parseErr error
+	if r.provider == providerCursor {
+		parseErr = parseCursorStream(stdout, emit)
+	} else {
+		parseErr = parseCodexStream(stdout, emit)
+	}
 	waitErr := command.Wait()
 
 	if runCtx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("codex chat timed out after %s: %s", r.timeout, stderr.text())
+		return fmt.Errorf("chat CLI timed out after %s: %s", r.timeout, stderr.text())
 	}
 	if waitErr != nil {
-		return fmt.Errorf("codex chat exited abnormally: %w: %s", waitErr, stderr.text())
+		return fmt.Errorf("chat CLI exited abnormally: %w: %s", waitErr, stderr.text())
 	}
 	if parseErr != nil {
 		return parseErr
@@ -182,7 +226,93 @@ func isUnresumableThread(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "no rollout found for thread id")
+	return errors.Is(err, errUnresumableThread) || strings.Contains(err.Error(), "no rollout found for thread id")
+}
+
+// parseCursorStream maps Cursor's stream-json protocol onto the stable
+// thread/delta events consumed by the chat service. With partial streaming,
+// Cursor emits timestamped text chunks followed by one untimestamped complete
+// assistant message; only the chunks are forwarded to avoid duplicate text.
+func parseCursorStream(stdout io.Reader, emit func(Event) error) error {
+	decoder := json.NewDecoder(bufio.NewReader(stdout))
+	sawThread := false
+	sawPartial := false
+	for {
+		var event cursorEvent
+		if err := decoder.Decode(&event); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("decode Cursor JSONL stream: %w", err)
+		}
+		switch event.Type {
+		case "system":
+			if event.Subtype != "init" {
+				continue
+			}
+			if strings.TrimSpace(event.SessionID) == "" {
+				return fmt.Errorf("Cursor init event is missing session_id")
+			}
+			sawThread = true
+			if err := emit(Event{Kind: EventThread, ThreadID: cursorThreadPrefix + event.SessionID}); err != nil {
+				return err
+			}
+		case "assistant":
+			text := event.assistantText()
+			if text == "" {
+				continue
+			}
+			if event.TimestampMS != nil {
+				sawPartial = true
+			} else if sawPartial {
+				continue
+			}
+			if err := emit(Event{Kind: EventDelta, Text: text}); err != nil {
+				return err
+			}
+		case "result":
+			if event.IsError {
+				return fmt.Errorf("Cursor agent failed: %s", strings.TrimSpace(event.Result))
+			}
+		}
+	}
+	if !sawThread {
+		return fmt.Errorf("Cursor JSONL output is missing system init event")
+	}
+	return nil
+}
+
+type cursorEvent struct {
+	Type        string         `json:"type"`
+	Subtype     string         `json:"subtype"`
+	SessionID   string         `json:"session_id"`
+	TimestampMS *int64         `json:"timestamp_ms"`
+	Message     *cursorMessage `json:"message"`
+	IsError     bool           `json:"is_error"`
+	Result      string         `json:"result"`
+}
+
+type cursorMessage struct {
+	Role    string          `json:"role"`
+	Content []cursorContent `json:"content"`
+}
+
+type cursorContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func (e cursorEvent) assistantText() string {
+	if e.Message == nil || e.Message.Role != "assistant" {
+		return ""
+	}
+	var b strings.Builder
+	for _, content := range e.Message.Content {
+		if content.Type == "text" {
+			b.WriteString(content.Text)
+		}
+	}
+	return b.String()
 }
 
 // parseCodexStream 逐事件解析 codex 的 JSONL stdout，把 thread/delta 通过 emit 吐出。

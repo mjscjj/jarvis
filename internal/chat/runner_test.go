@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -194,6 +195,79 @@ func TestParseCodexStreamMalformedJSON(t *testing.T) {
 	_, _, err := collect(t, jsonl)
 	if err == nil || !strings.Contains(err.Error(), "decode codex JSONL stream") {
 		t.Fatalf("err = %v, want decode error", err)
+	}
+}
+
+const realCursorJSONL = `{"type":"system","subtype":"init","session_id":"213a0df3-b9a4-4bc8-9eae-a5da002441d1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"CURSOR_"}]},"session_id":"213a0df3-b9a4-4bc8-9eae-a5da002441d1","timestamp_ms":1}
+{"type":"tool_call","subtype":"completed","session_id":"213a0df3-b9a4-4bc8-9eae-a5da002441d1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"OK"}]},"session_id":"213a0df3-b9a4-4bc8-9eae-a5da002441d1","timestamp_ms":2}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"CURSOR_OK"}]},"session_id":"213a0df3-b9a4-4bc8-9eae-a5da002441d1"}
+{"type":"result","subtype":"success","is_error":false,"result":"CURSOR_OK","session_id":"213a0df3-b9a4-4bc8-9eae-a5da002441d1"}
+`
+
+func TestParseCursorStreamRealSample(t *testing.T) {
+	t.Parallel()
+	var threadID string
+	var deltas []string
+	err := parseCursorStream(strings.NewReader(realCursorJSONL), func(event Event) error {
+		switch event.Kind {
+		case EventThread:
+			threadID = event.ThreadID
+		case EventDelta:
+			deltas = append(deltas, event.Text)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if threadID != "cursor_213a0df3-b9a4-4bc8-9eae-a5da002441d1" {
+		t.Fatalf("thread_id = %q", threadID)
+	}
+	if !slices.Equal(deltas, []string{"CURSOR_", "OK"}) {
+		t.Fatalf("deltas = %#v, want partial chunks without duplicate final text", deltas)
+	}
+}
+
+func TestCursorRunnerArgsAndChannelOwnership(t *testing.T) {
+	t.Parallel()
+	runner := &runner{provider: providerCursor, model: "claude-opus-5-high", timeout: time.Second}
+	args := runner.args("cursor_213a0df3-b9a4-4bc8-9eae-a5da002441d1", "/tmp/screenshot.png")
+	joined := strings.Join(args, "\x00")
+	for _, want := range []string{
+		"--model\x00claude-opus-5-high",
+		"--force\x00--sandbox\x00disabled",
+		"--approve-mcps\x00--trust",
+		"--resume\x00213a0df3-b9a4-4bc8-9eae-a5da002441d1",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("args = %q, missing %q", args, want)
+		}
+	}
+	if strings.Contains(joined, "/tmp/screenshot.png") {
+		t.Fatalf("Cursor image path belongs in the prompt, not args: %q", args)
+	}
+	if err := runner.Stream(context.Background(), "hello", "old-codex-thread", "", func(Event) error { return nil }); !errors.Is(err, errUnresumableThread) {
+		t.Fatalf("cross-channel Stream error = %v, want errUnresumableThread", err)
+	}
+}
+
+func TestParseCursorStreamWithoutPartialsUsesCompleteMessage(t *testing.T) {
+	t.Parallel()
+	jsonl := `{"type":"system","subtype":"init","session_id":"sid"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"完整答案"}]}}
+{"type":"result","is_error":false}
+`
+	var deltas []string
+	err := parseCursorStream(strings.NewReader(jsonl), func(event Event) error {
+		if event.Kind == EventDelta {
+			deltas = append(deltas, event.Text)
+		}
+		return nil
+	})
+	if err != nil || !slices.Equal(deltas, []string{"完整答案"}) {
+		t.Fatalf("deltas=%#v err=%v", deltas, err)
 	}
 }
 

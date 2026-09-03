@@ -1046,6 +1046,7 @@ export interface AgentSkillContent {
 }
 
 export type AgentCLI = 'codex' | 'traex'
+export type ChatCLI = AgentCLI | 'cursor-agent'
 export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 export interface RuntimeSettings {
@@ -1087,7 +1088,7 @@ export interface RuntimeSettings {
   execute_concurrency: number
 
   chat_enabled: boolean
-  chat_cli: AgentCLI
+  chat_cli: ChatCLI
   chat_model: string
   chat_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
   chat_reasoning_effort: ReasoningEffort
@@ -1175,7 +1176,7 @@ export interface PageSelection {
   label: string
 }
 
-// POST /api/chat multipart 请求。thread_id 为空表示新会话；非空表示 codex resume 多轮。
+// POST /api/chat multipart 请求。thread_id 为空表示新会话；非空表示当前 Agent CLI resume 多轮。
 export interface ChatRequest {
   message: string
   thread_id?: string | null
@@ -1187,7 +1188,7 @@ export interface ChatRequest {
 
 // SSE 事件类型（event 字段）：
 //   'thread'  data={thread_id}         —— 会话建立/恢复，前端记住以便多轮 resume
-//   'delta'   data={text}              —— codex 增量输出，前端追加渲染
+//   'delta'   data={text}              —— Agent CLI 增量输出，前端追加渲染
 //   'done'    data={}                  —— 本轮结束，可关闭流
 //   'error'   data={message}           —— 出错（fail-fast，前端直接展示）
 export type ChatEventType = 'thread' | 'delta' | 'done' | 'error'

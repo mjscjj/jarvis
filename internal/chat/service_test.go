@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -381,6 +382,44 @@ func TestStreamStartsNewSessionWhenResumeHasNoRollout(t *testing.T) {
 	}
 	if len(deltas) != 1 || deltas[0] != "你好" {
 		t.Fatalf("deltas = %v, want [你好]", deltas)
+	}
+}
+
+func TestStreamStartsNewCursorSessionWhenSwitchingCLI(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "cursor-agent")
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"cursor-session\"}'\n" +
+		"printf '%s\\n' '{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"已切换\"}]}}'\n" +
+		"printf '%s\\n' '{\"type\":\"result\",\"is_error\":false}'\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewService(Options{
+		Bin: bin, Model: "claude-opus-5-high", Sandbox: "danger-full-access",
+		ReasoningEffort: "high", Timeout: 5 * time.Second, HistoryDir: t.TempDir(),
+		SharedMemory: fakeSharedMemoryReader{}, ContextAssembler: &fakeContextAssembler{},
+		SystemPrompts: fakeSystemPromptReader{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var threadID string
+	var deltas []string
+	err = svc.Stream(t.Context(), Request{Message: "继续", ThreadID: "old-traex-thread"}, func(event Event) error {
+		switch event.Kind {
+		case EventThread:
+			threadID = event.ThreadID
+		case EventDelta:
+			deltas = append(deltas, event.Text)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if threadID != "cursor_cursor-session" || !slices.Equal(deltas, []string{"已切换"}) {
+		t.Fatalf("threadID=%q deltas=%#v", threadID, deltas)
 	}
 }
 

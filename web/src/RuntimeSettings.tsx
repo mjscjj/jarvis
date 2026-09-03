@@ -30,6 +30,10 @@ const cliOptions = [
   { value: 'codex', label: 'Codex CLI' },
   { value: 'traex', label: 'TraeX CLI' },
 ]
+const chatCLIOptions = [
+  ...cliOptions,
+  { value: 'cursor-agent', label: 'Cursor CLI' },
+]
 const reasoningOptions = ['minimal', 'low', 'medium', 'high', 'xhigh'].map((value) => ({ value, label: value }))
 const sandboxOptions = [
   { value: 'read-only', label: '只读' },
@@ -379,9 +383,9 @@ export default function RuntimeSettings() {
             </SettingCol>
           </Section>
           <Section title="右侧对话" description="CLI、模型、权限和超时均与 M5 独立。">
-            <SelectField name="chat_cli" label="对话 CLI" options={cliOptions} help="仅用于右侧对话。" />
-            <TextField name="chat_model" label="对话模型" />
-            <SelectField name="chat_reasoning_effort" label="推理档位" options={reasoningOptions} />
+            <SelectField name="chat_cli" label="对话 CLI" options={chatCLIOptions} help="仅用于右侧对话；切换 CLI 后旧会话会自动新建。" />
+            <TextField name="chat_model" label="对话模型" help="Cursor 的思考模式和档位由模型 ID 决定，例如 claude-opus-5-high 表示 High、No Thinking。" />
+            <SelectField name="chat_reasoning_effort" label="推理档位" options={reasoningOptions} help="Codex/TraeX 使用该值；Cursor 使用模型 ID 中的档位。" />
             <SelectField name="chat_sandbox" label="文件权限" options={sandboxOptions} />
             <NumberField name="chat_timeout_seconds" label="单轮超时（秒）" min={30} max={3600} step={30} />
           </Section>

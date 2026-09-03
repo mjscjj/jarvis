@@ -197,7 +197,7 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 	if message == "" {
 		return fmt.Errorf("chat message is required")
 	}
-	// 系统指引只在新会话（首轮）灌入；resume 时 codex 已持有会话历史，只需发用户消息，
+	// 系统指引只在新会话（首轮）灌入；resume 时 Agent CLI 已持有会话历史，只需发用户消息，
 	// 避免每轮重复灌系统指引膨胀上下文。
 	prompt := message
 	if strings.TrimSpace(req.ThreadID) == "" {
@@ -251,7 +251,7 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 	streamErr := s.runner.Stream(ctx, prompt, activeThreadID, req.ImagePath, handle)
 	if activeThreadID != "" && isUnresumableThread(streamErr) {
 		// CLI 换引擎或会话文件丢失时，旧 thread 无法 resume。开新会话并灌入首轮指引，
-		// 不把这条 Codex 错误伪装成 JSONL 缺字段。
+		// 不把底层 CLI 的会话错误伪装成 JSONL 缺字段。
 		built, err := s.buildPrompt(ctx, req)
 		if err != nil {
 			return err
