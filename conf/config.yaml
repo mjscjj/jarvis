@@ -128,7 +128,7 @@ meeting_sweep:
   model: "DeepSeek-V4-Flash"
   sandbox: "danger-full-access"
   reasoning_effort: "low"
-  timeout_seconds: 600
+  timeout_seconds: 1000              # 超过调度周期；叠跑由 cron.SkipIfStillRunning 兜住
 
 # 晨间作战简报：工作日开工前一次。Skill 自带取证/取舍/投递判断；Go 只做调度与
 # 产物新鲜度检查。默认只读，唯一预授权副作用是给 Principal 本人发一条飞书私聊。
