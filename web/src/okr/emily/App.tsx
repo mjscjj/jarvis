@@ -300,7 +300,9 @@ export default function App({
 				</div>}
 				<SyncNotice />
 				{week ? <>
-					<WeeklyTools onOpenPoint={openPoint} readOnly={view !== 'fill'} />
+					{/* Meego 差异和催办预览是维护动作，分享链接的收件人只负责填写，
+					    不该看到它们。 */}
+					{!shared && <WeeklyTools onOpenPoint={openPoint} readOnly={view !== 'fill'} />}
             <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
               <WeeklyFocus comments={comments} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
               <div className={`transition-opacity ${busy ? 'pointer-events-none opacity-55' : ''}`}>
