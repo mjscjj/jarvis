@@ -57,6 +57,20 @@ func (w *sseWriter) WriteEvent(eventType string, data []byte) error {
 	return w.writer.Flush()
 }
 
+// WriteComment 写一条 SSE 注释帧（": <text>"）。客户端按规范忽略它，服务端用它
+// 探测对端是否还在——没有输出的长轮次否则一个字节都不写，察觉不到浏览器已经走了。
+func (w *sseWriter) WriteComment(text string) error {
+	if strings.ContainsAny(text, "\r\n") {
+		return fmt.Errorf("SSE comment contains CR or LF")
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if _, err := w.writer.Write([]byte(": " + text + "\n\n")); err != nil {
+		return err
+	}
+	return w.writer.Flush()
+}
+
 func (w *sseWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

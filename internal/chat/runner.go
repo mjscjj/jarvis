@@ -139,7 +139,9 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID, imagePath string,
 	command := exec.CommandContext(runCtx, r.bin, r.args(threadID, imagePath)...)
 	// 取消时先发 SIGTERM 而不是默认的 SIGKILL：CLI 要收到信号才会释放 thread-store
 	// 的写入者占用，被 SIGKILL 打死可能留下占用，让这个 thread 之后都 resume 不了。
-	// 迟迟不退再由 WaitDelay 强杀，避免卡住调用方。
+	// WaitDelay 只兜住 Wait 里的等待；下面的 parseCodexStream 排在 Wait 之前，真遇到
+	// 孙子进程攥着 stdout 不放仍会卡在读上。等待接管的下一轮由 Service 侧的
+	// threadTakeoverTimeout 兜底，不指望这里。
 	command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
 	command.WaitDelay = 5 * time.Second
 	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=chat")

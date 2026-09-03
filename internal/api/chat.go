@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"jarvis/internal/chat"
 	"jarvis/internal/observability"
@@ -57,6 +58,10 @@ type chatPageSelection struct {
 //	error   data={"message":"..."}
 //
 // 一旦进入 SSE（响应头已发），出错只能通过 error 事件传达，不能再改 HTTP 状态码。
+// chatHeartbeatInterval 是探活间隔。对端关闭后的第一次写往往还能进 socket 缓冲，
+// 要到对方回 RST 之后的下一次写才报错，所以实际察觉最多要两个间隔。
+const chatHeartbeatInterval = 15 * time.Second
+
 func Chat(svc *chat.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		ctx = observability.FromRequestContext(ctx, c)
@@ -73,6 +78,33 @@ func Chat(svc *chat.Service) app.HandlerFunc {
 			if err := w.Close(); err != nil {
 				hlog.CtxErrorf(ctx, "close chat stream failed error=%+v", err)
 			}
+		}()
+
+		// 客户端断开时 Hertz 不会取消 ctx。浏览器一刷新，这一轮就没人接收了，却会
+		// 一直跑到单轮超时，白烧配额还占着 codex 的 thread，让刷新后的页面 resume
+		// 不上。定期写一条 SSE 注释探活：写不动说明对端已经走了，直接中止本轮。
+		streamCtx, cancelStream := context.WithCancel(ctx)
+		heartbeatStopped := make(chan struct{})
+		go func() {
+			defer close(heartbeatStopped)
+			ticker := time.NewTicker(chatHeartbeatInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-streamCtx.Done():
+					return
+				case <-ticker.C:
+					if err := w.WriteComment("ping"); err != nil {
+						hlog.CtxInfof(ctx, "chat client went away, aborting the turn error=%+v", err)
+						cancelStream()
+						return
+					}
+				}
+			}
+		}()
+		defer func() {
+			cancelStream()
+			<-heartbeatStopped
 		}()
 
 		emit := func(ev chat.Event) error {
@@ -94,7 +126,7 @@ func Chat(svc *chat.Service) app.HandlerFunc {
 			}
 		}
 
-		if err := svc.Stream(ctx, req, emit); err != nil {
+		if err := svc.Stream(streamCtx, req, emit); err != nil {
 			// fail-fast：把错误作为 error 事件发出（此时响应头已发，无法再改状态码）。
 			hlog.CtxErrorf(ctx, "chat stream failed error=%+v", err)
 			data, marshalErr := json.Marshal(map[string]string{"message": err.Error()})
