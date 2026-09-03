@@ -166,7 +166,7 @@ chat:
   bin: "codex"
   addr: "0.0.0.0:18801"
   model: "gpt-5.6-sol"
-  timeout_seconds: 600                 # 单轮对话超时（可能自跑工具，放宽）
+  timeout_seconds: 1800                # 单轮对话超时；会自跑工具做多跳调查，600s 会把正常长轮次打断
   sandbox: "danger-full-access"        # 对话场景最大权限
   reasoning_effort: "medium"           # 与 execute.reasoning_effort 一致
   history_dir: "data/chat"             # 本地 Markdown 会话记录；data/ 已被 Git 忽略
