@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_PATH="${REPO_ROOT}/conf/config.yaml"
 SKIP_PULL=false
+SKIP_CHAT_RESTART=false
 REMOTE_OKR_DB=false
 FORCE_INTERRUPT=false
 
@@ -18,6 +19,11 @@ Options:
   --config PATH          Select the Jarvis configuration (default: conf/config.yaml).
   --remote-okr-db        Discard the tracked OKR DB runtime diff before pulling.
   --skip-pull            Build and deploy the current working tree without Git pull.
+  --skip-chat-restart    Build and replace the chat binary but leave the running
+                         chat sidecar alone. An Agent running inside the chat
+                         sidecar is in that unit's cgroup, so restarting it
+                         terminates that Agent's current turn. The new chat
+                         binary only goes live on the next restart.
   --force-interrupt-running-tasks
                          Pass the explicit interruption flag to macOS rebuild.
   -h, --help             Show this help.
@@ -37,6 +43,7 @@ while (( $# > 0 )); do
     --config) (( $# >= 2 )) || { usage; exit 2; }; CONFIG_PATH="$2"; shift 2 ;;
     --remote-okr-db) REMOTE_OKR_DB=true; shift ;;
     --skip-pull) SKIP_PULL=true; shift ;;
+    --skip-chat-restart) SKIP_CHAT_RESTART=true; shift ;;
     --force-interrupt-running-tasks) FORCE_INTERRUPT=true; shift ;;
     --help|-h) usage; exit 0 ;;
     *) usage; exit 2 ;;
@@ -92,7 +99,9 @@ deploy_darwin() {
     fresh_install=true
   fi
   if [[ "$CHAT_ENABLED" == true && "$fresh_install" != true ]]; then
-    if launchctl print "$chat_target" >/dev/null 2>&1; then
+    if [[ "$SKIP_CHAT_RESTART" == true ]] && launchctl print "$chat_target" >/dev/null 2>&1; then
+      printf 'jarvis-deploy: left %s running as requested; the chat sidecar keeps the old build until it is rebuilt\n' "$chat_label" >&2
+    elif launchctl print "$chat_target" >/dev/null 2>&1; then
       "${SCRIPT_DIR}/rebuild-chat-server.sh" --config "$CONFIG_PATH"
     else
       "${SCRIPT_DIR}/install-chat-launchd.sh" --config "$CONFIG_PATH"
@@ -171,7 +180,11 @@ deploy_linux() {
   systemctl --user restart "$main_unit"
   if [[ "$CHAT_ENABLED" == true ]]; then
     systemctl --user enable "$chat_unit"
-    systemctl --user restart "$chat_unit"
+    if [[ "$SKIP_CHAT_RESTART" == true ]]; then
+      printf 'jarvis-deploy: left %s running as requested; the new chat binary goes live on the next restart\n' "$chat_unit" >&2
+    else
+      systemctl --user restart "$chat_unit"
+    fi
   else
     systemctl --user disable --now "$chat_unit" >/dev/null 2>&1 || true
   fi
