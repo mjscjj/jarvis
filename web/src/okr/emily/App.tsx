@@ -1,3 +1,4 @@
+import { Modal } from 'antd'
 import { useEffect, useState } from 'react'
 import { useBoard } from './board'
 import { MeetingView } from './components/MeetingView'
@@ -289,11 +290,25 @@ export default function App({
 					<button type="button" onClick={() => void submitWeek()} disabled={!newQuarter.trim() || !newWeek.trim()} className={`h-9 rounded-lg px-4 text-xs font-medium text-white disabled:opacity-40 ${reviewDataset ? 'bg-violet-600' : 'bg-blue-600'}`}>确认新建</button>
 					<button type="button" onClick={() => setOpeningWeek(false)} className="h-9 px-2 text-xs text-slate-400">取消</button>
 				</section>}
-				{confirmDeleteWeek && week && <section className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3">
-					<div className="mr-2 flex-1"><div className="text-xs font-semibold text-red-800">确认删除 {quarter} / {week} 的{lifecycleName}？</div><div className="mt-0.5 text-[10px] text-red-600">会删除这个周次的周度数据；不会删除 O、KR、指标定义和拆解，也不会影响其他周。</div></div>
-					<button type="button" onClick={() => void removeWeek()} disabled={deletingWeek} className="h-9 rounded-lg bg-red-600 px-4 text-xs font-medium text-white disabled:opacity-40">{deletingWeek ? '正在删除…' : `确认删除 ${week}`}</button>
-					<button type="button" onClick={() => setConfirmDeleteWeek(false)} disabled={deletingWeek} className="h-9 px-2 text-xs text-slate-500 disabled:opacity-40">取消</button>
-				</section>}
+				{/* 删除周次不可撤销，而分享链接的收件人也能点到这个按钮，所以确认
+				    走模态弹窗而不是行内提示条：弹窗挡住页面，点不穿过去。 */}
+				<Modal
+					title={`确认删除 ${quarter} / ${week} 的${lifecycleName}？`}
+					open={confirmDeleteWeek && Boolean(week)}
+					onCancel={() => setConfirmDeleteWeek(false)}
+					closable={!deletingWeek}
+					maskClosable={!deletingWeek}
+					keyboard={!deletingWeek}
+					footer={null}
+					centered
+					width={460}
+				>
+					<p className="mt-2 text-sm leading-6 text-slate-600">会删除这个周次的周度数据；不会删除 O、KR、指标定义和拆解，也不会影响其他周。删除后无法恢复。</p>
+					<div className="mt-4 flex justify-end gap-2">
+						<button type="button" onClick={() => setConfirmDeleteWeek(false)} disabled={deletingWeek} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-40">取消</button>
+						<button type="button" onClick={() => void removeWeek()} disabled={deletingWeek} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40">{deletingWeek ? '正在删除…' : `确认删除 ${week}`}</button>
+					</div>
+				</Modal>
 				{weekNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{weekNotice}</div>}
 				{shareNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">
 					<div>{shareNotice}</div>
