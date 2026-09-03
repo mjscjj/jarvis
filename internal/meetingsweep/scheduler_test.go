@@ -99,3 +99,21 @@ func TestSchedulerRejectsInvalidInput(t *testing.T) {
 		t.Fatal("expected error for non-positive startup delay")
 	}
 }
+
+func TestSchedulerTriggerNowRunsSweepOutOfBand(t *testing.T) {
+	worker := &countingWorker{called: make(chan struct{}, 1)}
+	scheduler, err := StartScheduler(t.Context(), worker, "@every 1h", time.Hour, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scheduler.Stop()
+	scheduler.TriggerNow()
+	select {
+	case <-worker.called:
+	case <-time.After(time.Second):
+		t.Fatal("triggered sweep did not run")
+	}
+	if got := worker.calls.Load(); got != 1 {
+		t.Fatalf("calls = %d, want 1", got)
+	}
+}

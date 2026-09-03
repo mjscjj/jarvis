@@ -15,6 +15,8 @@ The `jarvis-codex` project enables `inject_sender`, whose leading transport head
 
 Jarvis approval cards remain on the M2→M3→M5 Task path. CC Connect only transports their authenticated callbacks because it owns the Bot WebSocket connection.
 
+Owning the connection also makes CC Connect the only receiver of Feishu events that produce no chat message. `jarvis_event_relay_types` lists such event keys, and each matching event's raw envelope is posted to `jarvis_event_relay_url` with the shared secret and an `X-Jarvis-Event-Type` header. Today that URL is `/internal/meeting-sweep/wake`, so a meeting ending pulls the next meeting sweep forward instead of waiting for its schedule. The relay is transport only: it neither parses the event nor creates anything in Jarvis, and because the sweep's clues are idempotent per meeting, a lost event costs latency rather than evidence. Feishu events that need a server-side subscription — `vc.meeting.participant_meeting_ended_v1` is subscribed per user through `POST /open-apis/vc/v1/meetings/subscription` — can be silently unsubscribed by other tooling using the same identity, which is why the periodic sweep stays enabled.
+
 Build and binding are separate operations:
 
 ```bash

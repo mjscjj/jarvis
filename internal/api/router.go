@@ -74,6 +74,7 @@ type Dependencies struct {
 	ContextAssembler   *contextsnap.Assembler
 	CardApprovals      CardApprovalProcessor
 	CardApprovalSecret string
+	MeetingSweep       MeetingSweepWaker // 会议事件转发唤醒巡扫；巡扫未启用时为 nil，此时不注册 /internal/meeting-sweep/wake 路由
 	Readiness          ReadinessTargets // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
 	SystemControl      SystemShutdowner
 }
@@ -230,6 +231,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.Capture != nil && strings.TrimSpace(deps.CardApprovalSecret) != "" {
 		h.POST("/internal/message-routing/claim", ClaimMessageRoute(deps.Capture, deps.CardApprovalSecret))
+	}
+	if deps.MeetingSweep != nil && strings.TrimSpace(deps.CardApprovalSecret) != "" {
+		h.POST("/internal/meeting-sweep/wake", WakeMeetingSweep(deps.MeetingSweep, deps.CardApprovalSecret))
 	}
 	// M1 背景管理：Project/Person 全量 CRUD；Group 只可改人工背景字段（采集字段归 M2）。
 	h.GET("/api/projects", ListProjects(deps.Projects))

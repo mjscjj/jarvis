@@ -65,6 +65,8 @@ scripts/jarvis-tools append-clue
 | scan | `capture.scan_schedule` | principal activity + related 会话增量轮询 |
 | meeting sweep | `meeting_sweep.schedule` | 已结束会议 + 未来 24 小时会议日程，通过 clue 唤醒 M3 |
 
+会议结束不产生任何聊天消息，只能从 CC Connect 独占的 Bot 事件连接拿到。CC Connect 把配置列出的事件原样转发到 `POST /internal/meeting-sweep/wake`，该边界只把下一轮巡扫提前触发（与定时任务同一个 job，不会并行叠加），事件正文不参与判断。巡扫仍是唯一采集者：线索按会议幂等，事件丢了只损失时延，不损失证据。
+
 ```bash
 ./bin/jarvis-server -config conf/config.yaml -discover-once
 ./bin/jarvis-server -config conf/config.yaml -scan-chat <chat_id>

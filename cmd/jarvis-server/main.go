@@ -830,6 +830,7 @@ func main() {
 		stopProactive = proactiveScheduler.Stop
 	}
 	stopMeetingSweep := func() {}
+	var meetingSweepWaker api.MeetingSweepWaker
 	if cfg.MeetingSweep.Enabled {
 		meetingSweepScheduler, err := meetingsweep.StartScheduler(
 			runtimeCtx,
@@ -842,6 +843,7 @@ func main() {
 			fatalf("start meeting sweep scheduler failed: %v", err)
 		}
 		stopMeetingSweep = meetingSweepScheduler.Stop
+		meetingSweepWaker = meetingSweepScheduler
 	}
 	stopMorningBrief := func() {}
 	if cfg.MorningBrief.Enabled {
@@ -949,6 +951,7 @@ func main() {
 		ContextAssembler:   contextAssembler,
 		CardApprovals:      cardApprovalProcessor,
 		CardApprovalSecret: cfg.CardApproval.RelaySecret,
+		MeetingSweep:       meetingSweepWaker,
 		Readiness:          readinessTargets,
 		SystemControl:      systemControlService,
 	}); err != nil {
