@@ -78,7 +78,7 @@ export function HelpFab() {
         aria-expanded={open}
         aria-label={open ? '收起帮助' : '帮助与反馈'}
         title="帮助与反馈"
-        className={`flex size-9 items-center justify-center rounded-full border text-[15px] font-semibold shadow-[0_4px_12px_rgba(15,23,42,0.12)] transition-colors ${open ? 'border-blue-200 bg-blue-50 text-blue-600' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200 hover:text-blue-600'}`}
+        className={`flex size-9 items-center justify-center rounded-full text-[16px] font-bold text-white shadow-[0_4px_14px_rgba(37,99,235,0.45)] transition-colors ${open ? 'bg-blue-700' : 'bg-blue-600 hover:bg-blue-700'}`}
       >
         ?
       </button>
