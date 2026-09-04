@@ -117,26 +117,23 @@ export interface TodoQuery {
 // observing is terminal like done/failed: M5 investigated and found the matter
 // real but asking nothing of anyone, so it changed nothing and nothing went
 // wrong. The originating clue goes back to observing with it.
-export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'needs_human' | 'awaiting_approval' | 'done' | 'failed' | 'observing'
+export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'needs_human' | 'done' | 'failed' | 'observing'
 
-// TaskProposal is the controlled side effect Codex prepared during execution,
-// awaiting human approval. It is stored in execution_result while the Task sits
-// at awaiting_approval (stage="proposal").
-export interface TaskProposal {
-  action: string
-  target: string
-  artifact: string
-}
-
-// ProposalResult is the shape of execution_result while a Task is awaiting_approval.
-export interface ProposalResult {
-  stage: 'proposal'
-  action_type?: string
-  summary?: string
-  proposal: TaskProposal
-  needs_followup?: string
-  enrichments?: RunEnrichment[]
-  codex_session_id?: string
+// TaskQuestion is what M5 asked the principal before parking at needs_human,
+// including when it is asking permission for a side effect. It is stored in
+// execution_result and rendered as a Feishu card; the backend shows the same
+// text so an answer can also be given here.
+export interface TaskQuestion {
+  title: string
+  body?: string
+  fields?: Array<{
+    type: 'button' | 'select' | 'multi_select' | 'input' | 'link'
+    name: string
+    label: string
+    options?: string[]
+    url?: string
+    style?: string
+  }>
 }
 
 export interface Task {
@@ -230,12 +227,12 @@ export interface Effect {
 }
 
 // RunOutput 是 execution_run.output 的强类型：codex 执行结束时输出的结构化裁决。
-// summary 已单独存在 ExecutionRun.summary，这里主要用 needs_followup 与 enrichments。
+// summary 已单独存在 ExecutionRun.summary，这里主要用 question 与 enrichments。
 export interface RunOutput {
   outcome?: 'completed' | 'observing' | 'waiting' | 'needs_human' | 'failed'
   summary?: string
   failure_reason?: string
-  needs_followup?: string
+  question?: TaskQuestion | null
   enrichments?: RunEnrichment[]
   effects?: Effect[]
   waiting?: {

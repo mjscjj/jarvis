@@ -16,7 +16,7 @@ Jarvis 是单用户、本地、低频运行的主动式任务数字分身。它�
 - 新来源不新增专用 Go 流水线；
 - 模型语义使用完整原文或宽松 JSON；
 - 上下文一次冻结、全程复用；
-- M5 对任务理解可演进，审批针对具体副作用；
+- M5 对任务理解可演进，请示针对具体副作用；
 - 文件化 prompt/rule 是唯一正文真源。
 
 ## 2. 进程与依赖
@@ -63,7 +63,7 @@ flowchart TD
     EXEC --> FACT
     EXEC --> DONE["done"]
     EXEC --> OBS2["observing"]
-    EXEC --> WAIT["waiting / needs_human / awaiting_approval"]
+    EXEC --> WAIT["waiting / needs_human"]
     EXEC --> FAIL["failed"]
     WAIT --> EXEC
     CRON["启动延迟 + 每小时 cron"] --> PROACTIVE["主动巡视 Agent"]
@@ -100,7 +100,7 @@ M3 可以产出：
 - `extracted`：存在需要交给 M5 执行 Agent 调查和判断的动作线索；
 - `observing`：值得保留，但当前不需要任何人行动。
 
-M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归属，但证据足够作出准入结论后立即停止。它不制定执行方案、不选择具体副作用、不判断审批，也不为丰富 payload 展开代码、commit、MR 或长文档调查。`payload` 是开放的准入简报，只说明相关性、未闭环状态、责任、已核验证据、准入依据和不确定性。
+M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归属，但证据足够作出准入结论后立即停止。它不制定执行方案、不选择具体副作用、不判断要不要请示，也不为丰富 payload 展开代码、commit、MR 或长文档调查。`payload` 是开放的准入简报，只说明相关性、未闭环状态、责任、已核验证据、准入依据和不确定性。
 
 `context_snapshot` 是创建时的世界，不是实时世界状态。它整份传给 M5，下游不做投影、裁剪或重拼。M5 需要某个实体**现在**的状态时读它的 `summary` 页，需要更细的历史时按主体和日期查 fact。
 
@@ -121,11 +121,10 @@ Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执�
 | `completed`           | `done`                                                   |
 | `observing`           | `observing`；Todo 来源存在时同步回 observing             |
 | `waiting`             | `waiting`，绑定 ScheduledTask 和 Codex Session，到期续跑 |
-| `needs_human`         | `needs_human`，principal 回复后续跑同一 Session          |
+| `needs_human`         | `needs_human` + 一份 `question`，回答后续跑同一 Session   |
 | `failed`              | `failed`                                                 |
-| `needs_approval=true` | `awaiting_approval`，批准后进入 fresh apply run          |
 
-审批由模型根据具体副作用判断，不按 `action_type` 分流。代码提供状态、批准/驳回入口和审计载体。`effects` 的 `kind` 是开放字符串，外部后果按 Agent 声明留痕；当前不是独立 receipt verifier。
+要不要问 principal 由模型根据具体副作用判断，不按 `action_type` 分流。请示副作用和补充信息共用 `needs_human` 这一个出口：代码提供可停下的状态、渲染问题卡的通道、一个回答入口和审计载体，不解释答案，也没有单独的批准/驳回接口。`effects` 的 `kind` 是开放字符串，外部后果按 Agent 声明留痕；当前不是独立 receipt verifier。
 
 Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示本次运行。当前 Store 能更新 supplements、状态、结果和 summary。
 
@@ -192,8 +191,7 @@ fresh evidence 可使 observing 回到 extracted；materialized 不由 M3 随意
 ```text
 pending -> executing -> done | observing | failed
                     ├-> waiting -> executing
-                    ├-> needs_human -> executing
-                    └-> awaiting_approval -> executing(apply)
+                    └-> needs_human -> executing
 ```
 
 完整状态守卫以 `internal/execute/store.go` 为准。
@@ -204,7 +202,7 @@ pending -> executing -> done | observing | failed
 - 运行部署：[reference/operations.md](reference/operations.md)
 - 页面真源：`web/src/App.tsx`
 - 当前主导航：Overview、任务、定时任务、待办、背景、设置、进度、运行状态
-- 生产服务监听 `0.0.0.0:18800`；每次发送飞书审批卡片时实时解析当前局域网 IPv4，用于“查看详情”链接
+- 生产服务监听 `0.0.0.0:18800`；每次发送飞书问题卡片时实时解析当前局域网 IPv4，用于“查看详情”链接
 
 ## 9. 当前已知实现缺口
 

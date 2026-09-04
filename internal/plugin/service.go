@@ -254,7 +254,7 @@ func (s *Service) view(ctx context.Context, manifest Manifest) (*View, error) {
 					finishedAt := task.UpdatedAt
 					view.LastFinishedAt = &finishedAt
 					switch task.Status {
-					case "pending", "executing", "awaiting_approval", "waiting", "needs_human":
+					case "pending", "executing", "waiting", "needs_human":
 						if installation.Enabled {
 							view.State = "running"
 						}

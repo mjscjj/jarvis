@@ -44,7 +44,7 @@ type Overview struct {
 		Total   int64 `json:"total"`
 		Pending int64 `json:"pending"` // pending/executing/waiting/needs_human
 		// NeedsMe counts the only human gate left in the pipeline: M5 parked a Task
-		// because it wants the principal to approve a proposal or answer a question.
+		// on a question for the principal.
 		NeedsMe  int64         `json:"needs_me"`
 		Done     int64         `json:"done"`
 		Failed   int64         `json:"failed"`
@@ -90,7 +90,7 @@ func (s *OverviewService) Load(ctx context.Context) (*Overview, error) {
 		switch item.Status {
 		case "pending", "executing", "waiting":
 			overview.Tasks.Pending += item.Count
-		case "needs_human", "awaiting_approval":
+		case "needs_human":
 			overview.Tasks.Pending += item.Count
 			overview.Tasks.NeedsMe += item.Count
 		case "done":

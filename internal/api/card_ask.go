@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"jarvis/internal/cardapproval"
+	"jarvis/internal/cardask"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
@@ -15,14 +15,14 @@ import (
 
 const jarvisRelaySecretHeader = "X-Jarvis-Relay-Secret"
 
-// CardApprovalProcessor is the strict machine boundary behind the CC Connect
-// relay. The implementation still owns all task/proposal/version
-// validation; CC Connect only transports the authenticated Feishu callback.
-type CardApprovalProcessor interface {
-	ProcessCardAction(context.Context, cardapproval.CardActionEvent) (json.RawMessage, error)
+// CardAskProcessor is the strict machine boundary behind the CC Connect relay.
+// The implementation still owns all task/version validation; CC Connect only
+// transports the authenticated Feishu callback.
+type CardAskProcessor interface {
+	ProcessCardAction(context.Context, cardask.CardActionEvent) (json.RawMessage, error)
 }
 
-type cardApprovalRelayRequest struct {
+type cardAskRelayRequest struct {
 	EventID     string         `json:"event_id"`
 	OperatorID  string         `json:"operator_id"`
 	MessageID   string         `json:"message_id"`
@@ -32,42 +32,36 @@ type cardApprovalRelayRequest struct {
 	FormValue   map[string]any `json:"form_value"`
 }
 
-// RelayCardApproval accepts only authenticated localhost traffic registered by
-// CC Connect. It returns a Card 2.0 outcome fragment for CC Connect to merge
-// into the original card and answer Feishu synchronously.
-func RelayCardApproval(processor CardApprovalProcessor, secret string) app.HandlerFunc {
+// RelayCardAsk accepts only authenticated localhost traffic registered by CC
+// Connect. It returns a Card 2.0 card for CC Connect to replace the original
+// message with, answering Feishu synchronously.
+//
+// The route, the header and the action namespace all still say "approval":
+// they are the wire contract with an installed CC Connect build, and renaming
+// them would force a re-patch and reinstall on every machine for nothing.
+func RelayCardAsk(processor CardAskProcessor, secret string) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		if processor == nil {
-			writeAPIError(c, consts.StatusServiceUnavailable, 50322, fmt.Errorf("card approval relay is unavailable"))
+			writeAPIError(c, consts.StatusServiceUnavailable, 50322, fmt.Errorf("card ask relay is unavailable"))
 			return
 		}
 		gotSecret := strings.TrimSpace(string(c.Request.Header.Peek(jarvisRelaySecretHeader)))
 		wantSecret := strings.TrimSpace(secret)
 		if wantSecret == "" || subtle.ConstantTimeCompare([]byte(gotSecret), []byte(wantSecret)) != 1 {
-			writeAPIError(c, consts.StatusUnauthorized, 40122, fmt.Errorf("card approval relay authentication failed"))
+			writeAPIError(c, consts.StatusUnauthorized, 40122, fmt.Errorf("card ask relay authentication failed"))
 			return
 		}
-		var request cardApprovalRelayRequest
+		var request cardAskRelayRequest
 		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40032, err)
 			return
 		}
-		namespace, _ := request.ActionValue["action"].(string)
-		decision, _ := request.ActionValue["decision"].(string)
-		if strings.TrimSpace(namespace) != "jarvis_approval" {
-			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("action_value.action must be jarvis_approval"))
-			return
-		}
-		actionValue, err := json.Marshal(map[string]any{
-			"action":  decision,
-			"task_id": request.ActionValue["task_id"],
-			"version": request.ActionValue["version"],
-		})
+		actionValue, err := json.Marshal(request.ActionValue)
 		if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("encode action_value: %w", err))
 			return
 		}
-		card, err := processor.ProcessCardAction(ctx, cardapproval.CardActionEvent{
+		card, err := processor.ProcessCardAction(ctx, cardask.CardActionEvent{
 			EventID:     request.EventID,
 			OperatorID:  request.OperatorID,
 			MessageID:   request.MessageID,

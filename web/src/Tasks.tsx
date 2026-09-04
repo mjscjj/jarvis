@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Form, Input, message, Modal, Select, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
+import { createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Project, Task, TaskEvent, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -12,7 +12,7 @@ import { useAgentIdentity } from './agentIdentity'
 import {
   failureKindOf,
   failureMeta,
-  strField,
+  questionText,
   taskConclusion,
   taskConclusionLabel,
   taskHandlerMeta,
@@ -53,7 +53,7 @@ function HandlerTag({ task }: { task: Task }) {
 type TaskTab = 'needs_me' | 'running' | 'waiting' | 'completed' | 'failed'
 
 const tabStatuses: Record<TaskTab, TaskStatus[]> = {
-  needs_me: ['needs_human', 'awaiting_approval'],
+  needs_me: ['needs_human'],
   running: ['pending', 'executing'],
   waiting: ['waiting'],
   completed: ['done', 'observing'],
@@ -102,12 +102,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [interruptingId, setInterruptingId] = useState<number>()
   const [rerunTarget, setRerunTarget] = useState<Task>()
   const [rerunNote, setRerunNote] = useState('')
-  const [rejectTarget, setRejectTarget] = useState<Task>()
-  const [rejectReason, setRejectReason] = useState('')
   const [rerunSubmitting, setRerunSubmitting] = useState(false)
-  const [approveTarget, setApproveTarget] = useState<Task>()
-  const [approveNote, setApproveNote] = useState('')
-  const [approveSubmitting, setApproveSubmitting] = useState(false)
   const [resumeTarget, setResumeTarget] = useState<Task>()
   const [resumeResponse, setResumeResponse] = useState('')
   const [resumeSubmitting, setResumeSubmitting] = useState(false)
@@ -350,39 +345,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     }
   }
 
-  const openApprove = (task: Task) => {
-    setApproveTarget(task)
-    setApproveNote('')
-  }
-
-  const submitApprove = async () => {
-    if (!approveTarget) return
-    const task = approveTarget
-    setApproveSubmitting(true)
-    setError(undefined)
-    try {
-      let version = task.version
-      const note = approveNote.trim()
-      if (note) {
-        const updated = await supplementTask(task.id, task.version, note)
-        version = updated.version
-      }
-      await approveTask(task.id, version)
-      markLocalExecuting(task.id)
-      setApproveTarget(undefined)
-      closeDetail()
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setApproveSubmitting(false)
-    }
-  }
-
-  const openReject = (task: Task) => {
-    setRejectTarget(task)
-    setRejectReason('')
-  }
-
   const openResume = (task: Task) => {
     setResumeTarget(task)
     setResumeResponse('')
@@ -402,23 +364,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       setError(errorText(cause))
     } finally {
       setResumeSubmitting(false)
-    }
-  }
-
-  const submitReject = async () => {
-    if (!rejectTarget) return
-    const task = rejectTarget
-    setExecutingId(task.id)
-    setError(undefined)
-    try {
-      await rejectTask(task.id, task.version, rejectReason.trim())
-      setRejectTarget(undefined)
-      closeDetail()
-      setRefreshKey((value) => value + 1)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setExecutingId(undefined)
     }
   }
 
@@ -495,9 +440,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         }
         if (task.status === 'needs_human') {
           return <Button type="primary" size="small" loading={resumeSubmitting && resumeTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openResume(task) }}>回复并继续</Button>
-        }
-        if (task.status === 'awaiting_approval') {
-          return <Button type="primary" size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>审阅</Button>
         }
         if (task.status === 'done' || task.status === 'failed') {
           return <Button size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>{task.status === 'done' ? '查看结果' : '查看原因'}</Button>
@@ -609,7 +551,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       runsError={runsError}
       eventsError={eventsError}
       executing={detail ? executingId === detail.id : false}
-      approveSubmitting={detail ? approveSubmitting && approveTarget?.id === detail.id : false}
       resumeSubmitting={detail ? resumeSubmitting && resumeTarget?.id === detail.id : false}
       interrupting={detail ? interruptingId === detail.id : false}
       recallingMessageID={recallingMessageID}
@@ -617,8 +558,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       onRecallMessage={runRecallMessage}
       onClose={closeDetail}
       onExecute={runExecute}
-      onApprove={openApprove}
-      onReject={openReject}
       onRerun={openRerun}
       onResume={openResume}
       onInterrupt={runInterrupt}
@@ -640,25 +579,10 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
           type="warning"
           showIcon
           title={`${agentName} 正在等待你的回应`}
-          description={resumeTarget ? strField(resumeTarget.execution_result, 'needs_followup') || '请确认或补充所需信息。' : undefined}
+          description={resumeTarget ? questionText(resumeTarget) || '请确认或补充所需信息。' : undefined}
         />
-        <Text type="secondary">提交后会继续原执行会话，不会重跑任务，也不会重新生成已批准产物。</Text>
+        <Text type="secondary">提交后会继续原执行会话，不会重跑任务。</Text>
         <Input.TextArea rows={4} value={resumeResponse} onChange={(event) => setResumeResponse(event.target.value)} placeholder="确认操作，或补充 Agent 请求的信息" />
-      </Space>
-    </Modal>
-    <Modal
-      zIndex={taskActionModalZIndex}
-      title={approveTarget ? `批准落地「${approveTarget.title}」` : '批准落地'}
-      open={Boolean(approveTarget)}
-      confirmLoading={approveSubmitting}
-      onOk={submitApprove}
-      onCancel={() => setApproveTarget(undefined)}
-      okText="确认批准并落地"
-    >
-      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-        <Alert type="warning" showIcon title="对外写入将真正落地" description={`批准后 ${agentName} 会按已审阅的方案真实写出或发送。可在下方追加落地时的补充指示（可不填）。`} />
-        <Text type="secondary">可选填写补充信息/指示；留空则直接按已批准方案落地。填写后会持久保存到执行阶段补充，落地与之后重跑都会带上。</Text>
-        <Input.TextArea rows={4} value={approveNote} onChange={(event) => setApproveNote(event.target.value)} placeholder="例如：标题加上【紧急】；抄送给 B；文档先放草稿区不要直接发公告等（可不填）" />
       </Space>
     </Modal>
     <Modal
@@ -673,21 +597,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       <Space orientation="vertical" size={8} style={{ width: '100%' }}>
         <Text type="secondary">可选填写补充信息/指示；留空则直接重跑。填写后会持久保存，之后每次重跑都会带上。</Text>
         <Input.TextArea rows={4} value={rerunNote} onChange={(event) => setRerunNote(event.target.value)} placeholder="例如：这次改用 xxx 文档模板；标题要包含季度；只发给 A 不要发给 B 等（可不填）" />
-      </Space>
-    </Modal>
-    <Modal
-      zIndex={taskActionModalZIndex}
-      title={rejectTarget ? `驳回「${rejectTarget.title}」的方案` : '驳回方案'}
-      open={Boolean(rejectTarget)}
-      confirmLoading={Boolean(rejectTarget) && executingId === rejectTarget?.id}
-      onOk={submitReject}
-      onCancel={() => setRejectTarget(undefined)}
-      okText="确认驳回"
-      okButtonProps={{ danger: true }}
-    >
-      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-        <Text type="secondary">驳回后任务将标记为失败，不会真正写出任何内容。可填写驳回原因（可不填）；之后可重跑重新产出方案。</Text>
-        <Input.TextArea rows={4} value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} placeholder="例如：措辞不合适 / 目标群选错了 / 内容还需补充数据（可不填）" />
       </Space>
     </Modal>
   </>

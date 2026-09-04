@@ -29,7 +29,7 @@ var (
 )
 
 var taskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {}, "observing": {},
+	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "done": {}, "failed": {}, "observing": {},
 }
 
 // TaskSummaryMaxChars caps Task.summary. M5 rewrites the summary in full on
@@ -502,11 +502,11 @@ func (s *Store) UpdateTask(ctx context.Context, input TaskUpdateInput) (*TaskVie
 	if isTerminalTaskStatus(task.Status) || task.Status == "executing" {
 		return nil, fmt.Errorf("%w: task_id=%d status=%s cannot be updated", ErrInvalidTransition, task.ID, task.Status)
 	}
-	// An awaiting_approval Task carries a concrete proposal. Changing its goal or
-	// execution instruction behind the approval card would make approval unsafe;
-	// the proactive Agent may only refresh the visible standing while it waits.
-	if task.Status == "awaiting_approval" && (input.Title != nil || input.Target != nil || input.Instruction != nil) {
-		return nil, fmt.Errorf("%w: task_id=%d awaiting_approval only permits summary updates", ErrInvalidTransition, task.ID)
+	// A needs_human Task is showing the principal a question built from its
+	// current goal. Rewriting that goal behind the card would make the answer
+	// mean something else; only the visible standing may be refreshed.
+	if task.Status == "needs_human" && (input.Title != nil || input.Target != nil || input.Instruction != nil) {
+		return nil, fmt.Errorf("%w: task_id=%d needs_human only permits summary updates", ErrInvalidTransition, task.ID)
 	}
 
 	updates := map[string]any{}
@@ -630,7 +630,7 @@ func (s *Store) RecordProgress(ctx context.Context, taskID uint64, summary strin
 }
 
 var supplementableTaskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {}, "observing": {},
+	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "done": {}, "failed": {}, "observing": {},
 }
 
 // Supplement appends a human clarification/instruction to a Task's M5-only
@@ -737,63 +737,6 @@ func (s *Store) MarkExecuting(ctx context.Context, taskID uint64, expectedVersio
 			TaskID: task.ID, TaskVersion: newVersion, EventType: "execution_started",
 			FromStatus: &fromStatus, ToStatus: "executing", ActorType: "m5",
 			OccurredAt: time.Now().UTC(),
-		}); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return newVersion, nil
-}
-
-// MarkAwaitingApproval parks an executing Task at awaiting_approval after the
-// running agent decides the next external write needs review. It stores the approved-
-// pending proposal (the plan + full artifact codex produced without touching the
-// outside world) into execution_result so the UI can render it and the later
-// apply stage can replay it. It bumps the version and returns the new version.
-func (s *Store) MarkAwaitingApproval(ctx context.Context, taskID uint64, expectedVersion int32, runID uint64, proposal json.RawMessage) (int32, error) {
-	if taskID == 0 || expectedVersion < 0 || runID == 0 {
-		return 0, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
-	}
-	result, err := canonicalJSONObject(proposal)
-	if err != nil {
-		return 0, err
-	}
-	var newVersion int32
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task domain.Task
-		err := tx.First(&task, taskID).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
-		}
-		if err != nil {
-			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
-		}
-		if task.Version != expectedVersion {
-			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
-		}
-		if task.Status != "executing" {
-			return fmt.Errorf("%w: task_id=%d from=%s to=awaiting_approval", ErrInvalidTransition, task.ID, task.Status)
-		}
-		update := tx.Model(&domain.Task{}).
-			Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "executing").
-			Updates(map[string]any{
-				"status": "awaiting_approval", "execution_result": datatypes.JSON(result), "version": gorm.Expr("version + 1"),
-			})
-		if update.Error != nil {
-			return fmt.Errorf("mark awaiting approval Task id=%d: %w", task.ID, update.Error)
-		}
-		if update.RowsAffected != 1 {
-			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
-		}
-		newVersion = task.Version + 1
-		fromStatus := "executing"
-		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
-			TaskID: task.ID, TaskVersion: newVersion, EventType: "approval_requested",
-			FromStatus: &fromStatus, ToStatus: "awaiting_approval", ActorType: "m5",
-			RunID: &runID, OccurredAt: time.Now().UTC(),
 		}); err != nil {
 			return err
 		}
@@ -1097,116 +1040,6 @@ func needsHumanSourceRunID(raw []byte) (uint64, error) {
 	return stored.SourceRunID, nil
 }
 
-// MarkExecutingFromApproval claims an awaiting_approval Task for the apply stage
-// (awaiting_approval -> executing) under optimistic lock and returns the new
-// version. It is the concurrency guard for Approve, mirroring MarkExecuting for
-// the initial execution.
-func (s *Store) MarkExecutingFromApproval(ctx context.Context, taskID uint64, expectedVersion int32) (int32, error) {
-	if taskID == 0 || expectedVersion < 0 {
-		return 0, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
-	}
-	var newVersion int32
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task domain.Task
-		err := tx.First(&task, taskID).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
-		}
-		if err != nil {
-			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
-		}
-		if task.Version != expectedVersion {
-			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
-		}
-		if task.Status != "awaiting_approval" {
-			return fmt.Errorf("%w: task_id=%d from=%s to=executing", ErrInvalidTransition, task.ID, task.Status)
-		}
-		update := tx.Model(&domain.Task{}).
-			Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "awaiting_approval").
-			Updates(map[string]any{"status": "executing", "version": gorm.Expr("version + 1")})
-		if update.Error != nil {
-			return fmt.Errorf("mark executing (apply) Task id=%d: %w", task.ID, update.Error)
-		}
-		if update.RowsAffected != 1 {
-			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
-		}
-		newVersion = task.Version + 1
-		fromStatus := "awaiting_approval"
-		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
-			TaskID: task.ID, TaskVersion: newVersion, EventType: "approval_granted",
-			FromStatus: &fromStatus, ToStatus: "executing", ActorType: "user",
-			OccurredAt: time.Now().UTC(),
-		}); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return newVersion, nil
-}
-
-// RejectAwaitingApproval transitions an awaiting_approval Task to failed when the
-// human declines the proposed external write. It records the rejection reason in
-// execution_result (overwriting the proposal) so the UI shows why, and the Task
-// can later be rerun. It bumps the version and returns the reloaded Task.
-func (s *Store) RejectAwaitingApproval(ctx context.Context, taskID uint64, expectedVersion int32, result json.RawMessage) (*TaskView, error) {
-	if taskID == 0 || expectedVersion < 0 {
-		return nil, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
-	}
-	canonical, err := canonicalJSONObject(result)
-	if err != nil {
-		return nil, err
-	}
-	var rejected domain.Task
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task domain.Task
-		err := tx.First(&task, taskID).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
-		}
-		if err != nil {
-			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
-		}
-		if task.Version != expectedVersion {
-			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
-		}
-		if task.Status != "awaiting_approval" {
-			return fmt.Errorf("%w: task_id=%d from=%s to=failed (reject)", ErrInvalidTransition, task.ID, task.Status)
-		}
-		update := tx.Model(&domain.Task{}).
-			Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "awaiting_approval").
-			Updates(map[string]any{
-				"status": "failed", "execution_result": datatypes.JSON(canonical), "version": gorm.Expr("version + 1"),
-			})
-		if update.Error != nil {
-			return fmt.Errorf("reject execution Task id=%d: %w", task.ID, update.Error)
-		}
-		if update.RowsAffected != 1 {
-			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
-		}
-		newVersion := task.Version + 1
-		fromStatus := "awaiting_approval"
-		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
-			TaskID: task.ID, TaskVersion: newVersion, EventType: "approval_rejected",
-			FromStatus: &fromStatus, ToStatus: "failed", ActorType: "user",
-			OccurredAt: time.Now().UTC(),
-		}); err != nil {
-			return err
-		}
-		if err := tx.First(&rejected, taskID).Error; err != nil {
-			return fmt.Errorf("reload execution Task id=%d after reject: %w", task.ID, err)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	view := taskView(ctx, &rejected)
-	return &view, nil
-}
-
 // ResetForRerun transitions a terminal Task (done/failed/observing) back to pending so it
 // can be executed again, clearing the previous execution_result. It bumps the
 // version (optimistic lock) and returns the reloaded Task. A task that is not
@@ -1276,109 +1109,6 @@ func resetTaskForRerun(db *gorm.DB, task *domain.Task, actorType string, detail 
 		return nil, fmt.Errorf("reload execution Task id=%d after reset: %w", task.ID, err)
 	}
 	return &reloaded, nil
-}
-
-// ClaimForReapply claims a failed Task for a re-apply of its already-approved
-// proposal (failed -> executing) under optimistic lock, returning the new
-// version. Unlike rerun (which restarts execution and may request approval again), this
-// re-lands the SAME artifact a human already approved, so it only accepts a Task
-// whose last landing attempt (apply stage) failed — the caller verifies an
-// approved proposal is recoverable before invoking this. It does not clear the
-// old execution_result until the new run finishes (finishRun overwrites it).
-func (s *Store) ClaimForReapply(ctx context.Context, taskID uint64, expectedVersion int32) (int32, error) {
-	if taskID == 0 || expectedVersion < 0 {
-		return 0, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
-	}
-	var newVersion int32
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task domain.Task
-		err := tx.First(&task, taskID).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, taskID)
-		}
-		if err != nil {
-			return fmt.Errorf("lock execution Task id=%d: %w", taskID, err)
-		}
-		if task.Version != expectedVersion {
-			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, expectedVersion, task.Version)
-		}
-		if task.Status != "failed" {
-			return fmt.Errorf("%w: task_id=%d from=%s to=executing (only failed Tasks can re-apply)", ErrInvalidTransition, task.ID, task.Status)
-		}
-		update := tx.Model(&domain.Task{}).
-			Where("id = ? AND version = ? AND status = ?", task.ID, expectedVersion, "failed").
-			Updates(map[string]any{"status": "executing", "version": gorm.Expr("version + 1")})
-		if update.Error != nil {
-			return fmt.Errorf("claim execution Task id=%d for re-apply: %w", task.ID, update.Error)
-		}
-		if update.RowsAffected != 1 {
-			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, expectedVersion)
-		}
-		newVersion = task.Version + 1
-		fromStatus := "failed"
-		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
-			TaskID: task.ID, TaskVersion: newVersion, EventType: "reapply_started",
-			FromStatus: &fromStatus, ToStatus: "executing", ActorType: "user",
-			OccurredAt: time.Now().UTC(),
-		}); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return newVersion, nil
-}
-
-// LastApprovedProposal recovers the proposal a human approved for a Task by
-// reading its execution_run audit history: the execution that paused stored the full
-// proposal (needs_approval=true) in output. It returns the newest such proposal
-// so a re-apply lands exactly what was approved. Returns (nil, nil) when no
-// approved proposal exists (e.g. the Task never went through approval).
-func (s *Store) LastApprovedProposal(ctx context.Context, taskID uint64) (*codexProposal, error) {
-	if taskID == 0 {
-		return nil, fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
-	}
-	var rows []domain.ExecutionRun
-	if err := s.db.WithContext(ctx).
-		Where("task_id = ? AND status = ?", taskID, "succeeded").
-		Order("started_at DESC, id DESC").
-		Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("load runs for approved proposal task_id=%d: %w", taskID, err)
-	}
-	for i := range rows {
-		if proposal := proposalFromRunOutput(rows[i].Output); proposal != nil {
-			return proposal, nil
-		}
-	}
-	return nil, nil
-}
-
-// proposalFromRunOutput extracts a complete approved proposal from an execution
-// run's output (needs_approval=true + full proposal). It returns nil for any run
-// whose output is not an approvable proposal (missing/partial), so callers can
-// scan run history newest-first and take the first non-nil.
-func proposalFromRunOutput(output []byte) *codexProposal {
-	if len(output) == 0 {
-		return nil
-	}
-	var out struct {
-		NeedsApproval bool           `json:"needs_approval"`
-		Proposal      *codexProposal `json:"proposal"`
-	}
-	if err := json.Unmarshal(output, &out); err != nil {
-		return nil
-	}
-	if !out.NeedsApproval || out.Proposal == nil {
-		return nil
-	}
-	if strings.TrimSpace(out.Proposal.Action) == "" ||
-		strings.TrimSpace(out.Proposal.Target) == "" ||
-		strings.TrimSpace(out.Proposal.Artifact) == "" {
-		return nil
-	}
-	return out.Proposal
 }
 
 // ListRuns returns a Task's execution audit history, newest first. It is the

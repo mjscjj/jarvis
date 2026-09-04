@@ -1,6 +1,6 @@
 # Jarvis · 主动式任务数字分身
 
-Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞书消息和外部线索中保留原始证据，抽取 Todo，并由执行 Agent 判断是否值得推进、调用工具完成工作、处理等待与审批并留下结果。
+Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞书消息和外部线索中保留原始证据，抽取 Todo，并由执行 Agent 判断是否值得推进、调用工具完成工作、处理等待、需要时在飞书上问你一句，并留下结果。
 
 系统另有两类后台 Agent：factengine 以持续世界建模为主要任务；主动巡视默认每小时读取世界模型、看护未闭环工作，并可在调查过程中顺手维护明确变化。任何需要改变外部世界的动作都只创建 Task，交给强 M5 执行。
 
@@ -30,14 +30,15 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
                                                          ├─ completed -> Task=done
                                                          ├─ observing -> Task/Todo=observing
                                                          ├─ waiting   -> 到期续跑同一 Session
-                                                         ├─ needs_human
-                                                         ├─ needs_approval -> awaiting_approval
+                                                         ├─ needs_human -> 问题卡 -> 回答续跑同一 Session
                                                          └─ failed
 ```
 
 `extracted` Todo 不再经过模型判断，固化步骤只负责按 Todo ID/version 幂等创建 Task。M5 执行 Agent 持有全部语义判断权：调查真实状态、判断是否值得推进、选择动作并完成工作，或把来源 Todo 置回 `observing`。
 
-审批不是固定流水线阶段，也不由 `action_type` 决定。M5 根据即将发生的具体副作用和 [`conf/prompts/m5-approval-policy.md`](conf/prompts/m5-approval-policy.md) 判断：无需审批就直接完成，需要审批才返回完整 proposal 并停在 `awaiting_approval`。代码修改也没有类型级豁免。
+要不要先问 principal 不是固定流水线阶段，也不由 `action_type` 决定。M5 根据即将发生的具体副作用和 [`conf/prompts/m5-approval-policy.md`](conf/prompts/m5-approval-policy.md) 判断：不用问就直接完成，要问就返回 `needs_human` 加一份 `question`，停在 `needs_human` 等回答。代码修改也没有类型级豁免。
+
+请示副作用和补充信息用的是同一个机制：`question` 自带按钮、下拉、多选、输入框和链接，runtime 只负责把它渲染成飞书卡片、把回答原样交回同一个 Codex Session。答案怎么理解由那个 Session 判断，Jarvis 不解释、也没有单独的批准/驳回接口。
 
 ## 核心边界
 
@@ -47,7 +48,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | M2 采集 | 飞书消息事件、会话发现、增量轮询补偿、principal activity、通用 clue 落库 | `internal/capture/` |
 | M3 提取 | 证据校验、Todo 抽取/合并、上下文快照、语义去重 | `internal/extract/` |
 | Todo 固化 | extracted Todo 按 ID/version 幂等创建 Task，不调用模型 | `internal/execute/materializer.go` |
-| M5 执行 | 调查、执行、审批、等待/续跑、人工回复、结果留痕 | `internal/execute/` |
+| M5 执行 | 调查、执行、提问、等待/续跑、人工回答、结果留痕 | `internal/execute/`, `internal/cardask/` |
 | 事实引擎 | 在关键路径外从 `message`、Todo、Task 通用蒸馏长期事实，并通过通用工具按需维护当前实体、关系和资料 | `internal/factengine/` |
 | 主动巡视 | 周期读取世界模型、看护未闭环工作、按需维护内部认知、为外部行动创建普通 Task | `internal/proactive/` |
 | 会议巡扫 | 采集已结束会议和未来 24 小时日程，分别触发会后整理与逐场处理判断 | `internal/meetingsweep/` |
@@ -208,7 +209,7 @@ curl -s http://127.0.0.1:18800/readyz | jq
 | `com.bytedance.jarvis.server` | 18800 | Hertz API + 生产 `web/dist` + 流水线与 cron |
 | `com.bytedance.jarvis.web` | 18801 | Vite 开发热更；生产不依赖 |
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | HTTP / gRPC，当前只用于 Todo 语义去重 |
-| `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与审批 relay |
+| `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与问题卡 relay |
 
 仓库没有 Web launchd 安装脚本。首次启用 18801 时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。
 

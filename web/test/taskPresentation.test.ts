@@ -1,32 +1,30 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Task } from '../src/types.ts'
-import { proposalOf, structureProposalAction } from '../src/tasks/taskPresentation.ts'
+import { questionOf, questionText } from '../src/tasks/taskPresentation.ts'
 
-test('structures a free-form numbered proposal without dropping its parts', () => {
-  const result = structureProposalAction('在独立分支实施，不发布：1) 修改 core 并补测试。2) 修改 gateway。3) 运行 PPE 回归。')
-  assert.equal(result.introduction, '在独立分支实施，不发布')
-  assert.deepEqual(result.steps, ['修改 core 并补测试', '修改 gateway', '运行 PPE 回归'])
+const parked = (question: unknown) => ({
+  status: 'needs_human',
+  execution_result: { question },
+}) as Task
+
+test('reads the question a parked task is waiting on', () => {
+  const task = parked({
+    title: '要不要把这条发到群里？',
+    body: '文案已经写好，发出后无法撤回。',
+    fields: [{ type: 'button', name: 'decision', label: '发送' }],
+  })
+  assert.equal(questionOf(task)?.title, '要不要把这条发到群里？')
+  assert.equal(questionText(task), '要不要把这条发到群里？\n\n文案已经写好，发出后无法撤回。')
 })
 
-test('keeps ordinary proposal text intact', () => {
-  const text = '更新文档后发给 Principal 确认。'
-  assert.deepEqual(structureProposalAction(text), { introduction: text, steps: [] })
+test('falls back to the title alone when there is no body', () => {
+  assert.equal(questionText(parked({ title: '用哪个分支？' })), '用哪个分支？')
 })
 
-test('does not treat dates and metrics as numbered steps', () => {
-  const text = '8 月 10 日前完成，模型调用 17 次，耗时 206 秒。'
-  assert.deepEqual(structureProposalAction(text), { introduction: text, steps: [] })
-})
-
-test('treats a preserved proposal as active only while awaiting approval', () => {
-  const task = {
-    status: 'awaiting_approval',
-    execution_result: {
-      stage: 'proposal',
-      proposal: { action: '发消息', target: '群聊', artifact: '内容' },
-    },
-  } as Task
-  assert.equal(proposalOf(task)?.proposal.action, '发消息')
-  assert.equal(proposalOf({ ...task, status: 'done' }), null)
+test('ignores a question that cannot be rendered', () => {
+  assert.equal(questionOf(parked({ body: '只有正文' })), null)
+  assert.equal(questionOf(parked({ title: '   ' })), null)
+  assert.equal(questionOf(parked(null)), null)
+  assert.equal(questionOf({ status: 'needs_human' } as Task), null)
 })

@@ -195,22 +195,6 @@ export function resumeTask(id: number, expectedVersion: number, response: string
   })
 }
 
-// approveTask lands a proposal the user accepted: the awaiting_approval Task runs
-// the apply stage (a fresh codex run carrying the approved proposal) for real.
-export function approveTask(id: number, expectedVersion: number): Promise<ExecuteResult> {
-  return request<ExecuteResult>(`/api/tasks/${id}/approve`, {
-    method: 'POST', body: { expected_version: expectedVersion },
-  })
-}
-
-// rejectTask declines a proposed external write: the Task moves to failed with an
-// optional reason; it can later be rerun to investigate again and form a new proposal.
-export function rejectTask(id: number, expectedVersion: number, reason: string): Promise<ExecuteResult> {
-  return request<ExecuteResult>(`/api/tasks/${id}/reject`, {
-    method: 'POST', body: { expected_version: expectedVersion, reason },
-  })
-}
-
 // recallEffectMessage 撤回该任务「对外产出」里的一条飞书消息（真实调 lark-cli，
 // 不可恢复），并把「已撤回」标记写回对应 effect；返回更新后的任务。
 export function recallEffectMessage(id: number, messageID: string): Promise<Task> {

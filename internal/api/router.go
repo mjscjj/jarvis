@@ -72,10 +72,10 @@ type Dependencies struct {
 	Capture            *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
 	RuntimeSettings    *config.RuntimeSettingsService
 	ContextAssembler   *contextsnap.Assembler
-	CardApprovals      CardApprovalProcessor
+	CardAsks           CardAskProcessor
 	CardApprovalSecret string
 	MeetingSweep       MeetingSweepWaker // 会议事件转发唤醒巡扫；巡扫未启用时为 nil，此时不注册 /internal/meeting-sweep/wake 路由
-	Readiness          ReadinessTargets // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
+	Readiness          ReadinessTargets  // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
 	SystemControl      SystemShutdowner
 }
 
@@ -221,13 +221,10 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/interrupt", InterruptTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/rerun", RerunTask(deps.Executor))
-		h.POST("/api/tasks/:task_id/reapply", ReapplyTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/resume", ResumeTaskAfterHuman(deps.Executor))
-		h.POST("/api/tasks/:task_id/approve", ApproveTask(deps.Executor))
-		h.POST("/api/tasks/:task_id/reject", RejectTask(deps.Executor))
 	}
-	if deps.CardApprovals != nil {
-		h.POST("/internal/card-approval/callback", RelayCardApproval(deps.CardApprovals, deps.CardApprovalSecret))
+	if deps.CardAsks != nil {
+		h.POST("/internal/card-approval/callback", RelayCardAsk(deps.CardAsks, deps.CardApprovalSecret))
 	}
 	if deps.Capture != nil && strings.TrimSpace(deps.CardApprovalSecret) != "" {
 		h.POST("/internal/message-routing/claim", ClaimMessageRoute(deps.Capture, deps.CardApprovalSecret))

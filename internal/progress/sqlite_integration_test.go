@@ -112,18 +112,8 @@ func TestProgressEventsSQLite(t *testing.T) {
 	if err := db.Create(&run).Error; err != nil {
 		t.Fatalf("create ExecutionRun: %v", err)
 	}
-	approvalVersion, err := executionStore.MarkAwaitingApproval(
-		context.Background(), task.ID, executingVersion, run.ID, json.RawMessage(`{"proposal":{"action":"test"}}`),
-	)
-	if err != nil {
-		t.Fatalf("MarkAwaitingApproval() error = %v", err)
-	}
-	applyVersion, err := executionStore.MarkExecutingFromApproval(context.Background(), task.ID, approvalVersion)
-	if err != nil {
-		t.Fatalf("MarkExecutingFromApproval() error = %v", err)
-	}
 	if _, err := executionStore.Finish(context.Background(), execute.FinishInput{
-		TaskID: task.ID, ExpectedVersion: applyVersion, Status: "done",
+		TaskID: task.ID, ExpectedVersion: executingVersion, Status: "done",
 		Result: json.RawMessage(`{"summary":"done"}`), ActorType: "m5", RunID: &run.ID,
 	}); err != nil {
 		t.Fatalf("Finish() error = %v", err)
@@ -132,7 +122,7 @@ func TestProgressEventsSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTaskEvents() error = %v", err)
 	}
-	wantTypes := []string{"execution_succeeded", "approval_granted", "approval_requested", "execution_started", "created"}
+	wantTypes := []string{"execution_succeeded", "execution_started", "created"}
 	if len(taskEvents) != len(wantTypes) {
 		t.Fatalf("task events = %#v", taskEvents)
 	}

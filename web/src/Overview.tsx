@@ -22,7 +22,7 @@ import MorningBriefPanel from './components/MorningBriefPanel'
 import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
 import { taskStatusMeta } from './status'
-import { proposalOf, strField } from './tasks/taskPresentation'
+import { questionText, strField } from './tasks/taskPresentation'
 import type {
   AgentProcessSnapshot,
   DailyDigest,
@@ -38,7 +38,7 @@ import './styles/today.css'
 
 const { Text, Title } = Typography
 
-const ATTENTION_STATUSES: TaskStatus[] = ['needs_human', 'awaiting_approval']
+const ATTENTION_STATUSES: TaskStatus[] = ['needs_human']
 const ACTIVE_STATUSES: TaskStatus[] = ['pending', 'executing', 'waiting']
 const RESULT_STATUSES: TaskStatus[] = ['done', 'failed']
 
@@ -76,16 +76,8 @@ function weekdayLabel(): string {
 }
 
 function taskSupportingText(task: Task): string | null {
-  const proposal = proposalOf(task)
-  if (task.status === 'awaiting_approval') {
-    return proposal?.needs_followup
-      ?? proposal?.proposal.action
-      ?? strField(task.execution_result, 'needs_followup')
-      ?? strField(task.execution_result, 'action')
-  }
-  return task.summary
-    ?? strField(task.execution_result, 'summary')
-    ?? strField(task.execution_result, 'needs_followup')
+  if (task.status === 'needs_human') return questionText(task) ?? task.summary
+  return task.summary ?? strField(task.execution_result, 'summary')
 }
 
 function waitingWakeAt(task: Task): string | null {

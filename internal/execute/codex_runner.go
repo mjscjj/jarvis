@@ -62,23 +62,22 @@ type codexOutputCapture struct {
 // execution (see executionResultSchema). It lets M5 判 done/failed on a real
 // success bool instead of the process exit code.
 type codexResult struct {
-	// NeedsApproval is the agent's own verdict, under the injected approval
-	// policy, on the side effect it is about to cause. When true it performed no
-	// mutation and Proposal holds the plan + full artifact awaiting review; when
-	// false it was free to finish the work in place.
-	NeedsApproval bool           `json:"needs_approval"`
-	Proposal      *codexProposal `json:"proposal"`
-	Outcome       string         `json:"outcome"`
-	Summary       string         `json:"summary"`
+	Outcome string `json:"outcome"`
+	Summary string `json:"summary"`
 	// ProgressSummary is where the whole matter stands, spanning every run of the
 	// Task, whereas Summary covers only this run. Empty means "this run moved
 	// nothing", and the stored Task.Summary is left as it was.
-	ProgressSummary string            `json:"progress_summary"`
-	FailureReason   string            `json:"failure_reason"`
-	NeedsFollowup   string            `json:"needs_followup"`
-	Enrichments     []codexEnrichment `json:"enrichments"`
-	Effects         []codexEffect     `json:"effects"`
-	Waiting         *codexWaiting     `json:"waiting"`
+	ProgressSummary string `json:"progress_summary"`
+	FailureReason   string `json:"failure_reason"`
+	// Question is the card the principal is asked to answer, carried verbatim as
+	// written. It is the single way M5 stops for a human, whether it needs a
+	// decision, a missing fact, or permission for a gated side effect. Jarvis
+	// only projects it into Feishu and hands the answer back to this session, so
+	// it stays raw JSON here rather than a mirrored Go type.
+	Question    json.RawMessage   `json:"question"`
+	Enrichments []codexEnrichment `json:"enrichments"`
+	Effects     []codexEffect     `json:"effects"`
+	Waiting     *codexWaiting     `json:"waiting"`
 }
 
 type codexWaiting struct {
@@ -193,20 +192,11 @@ func (e codexEffect) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
-// codexProposal is the concrete mutation the agent wants a human to approve:
-// what it will do, which object it targets, and the complete artifact (file
-// content, changed document, exact message, meeting request, …).
-type codexProposal struct {
-	Action   string `json:"action"`
-	Target   string `json:"target"`
-	Artifact string `json:"artifact"`
-}
-
 // CodexRunner wraps the codex CLI for execution. On this trusted local host runs
 // use danger-full-access so external tools (lark-cli/bytedcli) can reach the
-// network and macOS Keychain; the safety boundary is M5's approval pause
-// (the agent declares needs_approval before any local or external mutation), not
-// the sandbox.
+// network and macOS Keychain; the safety boundary is M5 stopping to ask
+// (it parks on a question before a mutation the policy says to clear), not the
+// sandbox.
 type CodexRunner struct {
 	bin             string
 	model           string
@@ -605,9 +595,9 @@ func codexEnvironment(base []string, taskID uint64, agentStage string) []string 
 
 // parseExecutionResult decodes codex's schema-constrained final message, for
 // every stage. It is strict (fail-fast): a malformed or empty result is an
-// execution failure, not a silent success, and needs_approval=true MUST carry a
-// non-empty proposal (action + target + artifact) — a "please approve" verdict
-// with no artifact is useless and is treated as a failure, not a silent stop.
+// execution failure, not a silent success, and outcome=needs_human MUST carry an
+// answerable question — stopping for a human with nothing to answer would park
+// the Task forever.
 func parseExecutionResult(lastMessage string) (*codexResult, error) {
 	trimmed := strings.TrimSpace(lastMessage)
 	if trimmed == "" {
@@ -633,19 +623,7 @@ func parseExecutionResult(lastMessage string) (*codexResult, error) {
 		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
 	result.Effects = normalizeEffects(result.Effects)
-	if result.NeedsApproval {
-		if result.Outcome != "needs_human" {
-			return nil, fmt.Errorf("codex exec needs_approval=true requires outcome=needs_human")
-		}
-		if result.Proposal == nil {
-			return nil, fmt.Errorf("codex exec result needs_approval=true requires a proposal")
-		}
-		if strings.TrimSpace(result.Proposal.Action) == "" ||
-			strings.TrimSpace(result.Proposal.Target) == "" ||
-			strings.TrimSpace(result.Proposal.Artifact) == "" {
-			return nil, fmt.Errorf("codex exec result proposal must have non-empty action, target and artifact")
-		}
-	} else if err := validateOutcome(result.Outcome, result.FailureReason, result.NeedsFollowup, result.Waiting); err != nil {
+	if err := validateOutcome(result.Outcome, result.FailureReason, result.Question, result.Waiting); err != nil {
 		return nil, fmt.Errorf("codex exec result: %w", err)
 	}
 	return &result, nil
@@ -715,7 +693,7 @@ func validateEnrichments(items []codexEnrichment) error {
 	return nil
 }
 
-func validateOutcome(outcome, failureReason, needsFollowup string, waiting *codexWaiting) error {
+func validateOutcome(outcome, failureReason string, question json.RawMessage, waiting *codexWaiting) error {
 	switch strings.TrimSpace(outcome) {
 	case "completed":
 		if waiting != nil {
@@ -730,8 +708,8 @@ func validateOutcome(outcome, failureReason, needsFollowup string, waiting *code
 			return fmt.Errorf("outcome=waiting requires scheduled_task_id, wake_at and reason")
 		}
 	case "needs_human":
-		if strings.TrimSpace(needsFollowup) == "" {
-			return fmt.Errorf("outcome=needs_human requires needs_followup")
+		if _, err := ParseQuestion(question); err != nil {
+			return fmt.Errorf("outcome=needs_human requires an answerable question: %w", err)
 		}
 		if waiting != nil {
 			return fmt.Errorf("outcome=needs_human requires waiting=null")

@@ -14,14 +14,11 @@ import (
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
-const ExecutionPromptVersion = "task-exec-v13-message-tool"
+const ExecutionPromptVersion = "task-exec-v14-ask"
 
 const (
 	m5PhaseExecute = `BEGIN_M5_PHASE
 phase=execute
-END_M5_PHASE`
-	m5PhaseApply = `BEGIN_M5_PHASE
-phase=apply
 END_M5_PHASE`
 	m5PhaseResumeWaiting = `BEGIN_M5_PHASE
 phase=resume_waiting
@@ -47,9 +44,13 @@ type priorRunSummary struct {
 // executionResultSchema is the JSON schema codex MUST return as its final
 // message, in every stage. It distinguishes completion from a durable wait,
 // human input, failure, and "nobody needs to act" instead of inferring
-// completion from the process exit code, and it always carries the approval
-// verdict: whether a side effect needs review is the model's judgment about what
-// it is about to do, not a property of the Task's declared action_type.
+// completion from the process exit code.
+//
+// Asking the principal anything — including asking permission for a side effect
+// the APPROVAL_POLICY gates — is outcome=needs_human plus a question. There is
+// no separate approval verdict or approval stage: the answer resumes this exact
+// Codex session, so the agent decides what to do with it in context rather than
+// replaying a frozen artifact.
 //
 // outcome=observing exists because execution may discover after investigating
 // that the matter is real but asks nothing of anyone. Forcing that into completed
@@ -57,14 +58,40 @@ type priorRunSummary struct {
 const executionResultSchema = `{
   "type":"object",
   "additionalProperties":false,
-  "required":["needs_approval","outcome","summary","progress_summary","failure_reason","needs_followup","enrichments","effects","proposal","waiting"],
+  "required":["outcome","summary","progress_summary","failure_reason","question","enrichments","effects","waiting"],
   "properties":{
-    "needs_approval":{"type":"boolean","description":"Approval verdict for the next controlled side effect; criteria are defined by APPROVAL_POLICY."},
     "outcome":{"type":"string","enum":["completed","observing","waiting","needs_human","failed"]},
     "summary":{"type":"string","minLength":1},
     "progress_summary":{"type":"string","maxLength":1000,"description":"Where this whole matter now stands, in a few sentences, written for someone reading it cold weeks later: what is settled, what is still open, what happens next. This spans all runs of the Task, unlike summary which covers only this run. Rewrite it in full each time, within 1000 characters: when you run out of room, compact finished detail into one conclusion rather than dropping the tail. Leave it an empty string only when this run changed nothing about where the matter stands."},
     "failure_reason":{"type":"string"},
-    "needs_followup":{"type":"string"},
+    "question":{
+      "type":["object","null"],
+      "additionalProperties":false,
+      "description":"Required with outcome=needs_human, null otherwise. The card the principal sees. Put everything needed to decide in body; the answer comes back to this same session as JSON of the field names plus clicked.",
+      "required":["title","body","fields"],
+      "properties":{
+        "title":{"type":"string","minLength":1},
+        "body":{"type":"string","description":"Markdown. Full context and, when you are asking permission, the exact content you would write or send."},
+        "fields":{
+          "type":"array",
+          "minItems":1,
+          "description":"At least one button is required; without it the principal cannot answer.",
+          "items":{
+            "type":"object",
+            "additionalProperties":false,
+            "required":["type","name","label","options","url","style"],
+            "properties":{
+              "type":{"type":"string","enum":["button","select","multi_select","input","link"]},
+              "name":{"type":"string","description":"Key this field answers under. Empty only for link."},
+              "label":{"type":"string","minLength":1},
+              "options":{"type":"array","items":{"type":"string"},"description":"Choices for select/multi_select; empty array otherwise."},
+              "url":{"type":"string","description":"Target for link; empty string otherwise."},
+              "style":{"type":"string","description":"Button emphasis: primary, danger, or empty."}
+            }
+          }
+        }
+      }
+    },
     "enrichments":{
       "type":"array",
       "items":{
@@ -93,16 +120,6 @@ const executionResultSchema = `{
           "preview":{"type":"string"},
           "extra":{"type":"string","description":"Free-form metadata as JSON text (e.g. {\"message_id\":\"om_…\",\"chat_name\":\"…\"}); use empty string when none. Do not invent top-level fields."}
         }
-      }
-    },
-    "proposal":{
-      "type":["object","null"],
-      "additionalProperties":false,
-      "required":["action","target","artifact"],
-      "properties":{
-        "action":{"type":"string"},
-        "target":{"type":"string"},
-        "artifact":{"type":"string"}
       }
     },
     "waiting":{
@@ -301,37 +318,4 @@ func repoInstruction(repoPath string) string {
 		return ""
 	}
 	return "\n\n当前工作目录已切到 repo：" + repoPath + "。"
-}
-
-// buildApplyPrompt assembles the apply-stage prompt after a human approved a
-// proposal. The approved action + full artifact is embedded verbatim and codex is
-// told to land it faithfully for real. Its final message must satisfy
-// executionResultSchema.
-func buildApplyPrompt(in executionPromptInput, proposal *codexProposal) (string, error) {
-	if proposal == nil {
-		return "", fmt.Errorf("apply prompt Task id=%d has no approved proposal", in.Task.ID)
-	}
-	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, in.SystemPrompt, in.WorkRules, in.ApprovalPolicy)
-	if err != nil {
-		return "", fmt.Errorf("render M5 apply system prompt: %w", err)
-	}
-	supplements, encoded, err := buildTaskContext(in.Task, in.RepoPath, in.PreviousRuns, in.CurrentWorld)
-	if err != nil {
-		return "", err
-	}
-	approved, err := json.Marshal(map[string]string{
-		"action":   proposal.Action,
-		"target":   proposal.Target,
-		"artifact": proposal.Artifact,
-	})
-	if err != nil {
-		return "", fmt.Errorf("encode approved proposal task_id=%d: %w", in.Task.ID, err)
-	}
-
-	instructions := renderedSystemPrompt + "\n\n" + m5PhaseApply + `
-
-APPROVED_PROPOSAL=` + string(approved)
-	instructions += repoInstruction(in.RepoPath)
-
-	return renderPrompt(instructions, in.ToolCatalog, in.SharedMemory, in.Skills, supplements, encoded), nil
 }

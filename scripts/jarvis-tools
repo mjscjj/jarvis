@@ -402,9 +402,9 @@ Update the mutable current surface of one non-terminal Task. This command is
 only available when JARVIS_AGENT_STAGE=proactive. The payload requires
 expected_version, reason, and at least one of title, target, summary or
 instruction. source_payload/background remain frozen. instruction is appended
-for M5 rather than rewriting source evidence. An awaiting_approval Task only
-accepts summary updates so an Agent cannot silently alter a proposal awaiting
-human approval.
+for M5 rather than rewriting source evidence. A needs_human Task only accepts
+summary updates so an Agent cannot silently change the goal behind a question
+the principal is already looking at.
 
 example:
   jarvis-tools update-task --id 42 --payload '{"expected_version":2,"summary":"权限申请仍有效，等待 owner 审批","instruction":"恢复后先重新核验权限，再继续转换文档","reason":"跨日后等待条件仍有效，补充最新状态而不是关闭"}'
@@ -2003,7 +2003,7 @@ cmd_list_tasks() {
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local query="?page=1&page_size=${LIMIT}"
   if [[ -z "$STATUS" ]]; then
-    STATUS="pending,executing,waiting,needs_human,awaiting_approval,done,failed,observing"
+    STATUS="pending,executing,waiting,needs_human,done,failed,observing"
   fi
   query="${query}&status=$(jq -rn --arg s "$STATUS" '$s|@uri')"
   if [[ -n "$PROJECT_ID" ]]; then

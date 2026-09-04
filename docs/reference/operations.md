@@ -121,7 +121,7 @@ conf/config.yaml
 
 Jarvis Bot 的飞书长连接由 CC Connect 独占。`jarvis-server` 不启动 Feishu event consumer，M2 按 `capture.scan_schedule` 增量轮询工作消息；不要为同一个 app 恢复第二条连接。Jarvis 的飞书读写直接使用 lark-cli 当前默认身份，CC Connect `jarvis-codex` 绑定该默认 App；机器校验入口是 `./scripts/jarvis-install validate-binding`。
 
-飞书卡片内审批使用独立配置，不复用消息采集的事件开关。推荐让 CC Connect 继续持有当前 Jarvis Bot 的唯一长连接：
+飞书卡片内回答 M5 的提问（含请示副作用）使用独立配置，不复用消息采集的事件开关。推荐让 CC Connect 继续持有当前 Jarvis Bot 的唯一长连接：
 
 ```yaml
 card_approval:
@@ -139,11 +139,11 @@ jarvis_approval_secret = "<同一个本机共享密钥>"
 jarvis_approval_timeout_ms = 2500
 ```
 
-M5 返回 proposal 后，Jarvis 先持久化 `awaiting_approval`，再由当前 Jarvis Bot 立即发送审批卡；按钮值使用 `action=jarvis_approval` 命名空间，并携带 `task_id` 和已持久化的 Task `version`。CC Connect 的现有 `OnP2CardActionTrigger` 收到点击后，通过带共享密钥的 localhost HTTP 请求转给 Jarvis；Jarvis 原子认领审批并异步启动 M5 后立即返回，CC Connect 随即结束按钮回调，再在卡片动作锁释放后异步把“已确认，正在执行”追加到原卡片并移除确认/拒绝按钮。Jarvis 不启动 `card.action.trigger` 连接，因此普通消息、文档评论和既有 CC Connect 卡片链路不会被抢占。
+M5 返回 `question` 后，Jarvis 先持久化 `needs_human`，再由当前 Jarvis Bot 立即发送问题卡；按钮值沿用 `action=jarvis_approval` 命名空间（这是与已安装 CC Connect 的线上契约，改名要重打补丁重装，收益为零），并携带 `task_id`、已持久化的 Task `version` 和被点按钮的名字。CC Connect 的现有 `OnP2CardActionTrigger` 收到点击后，通过带共享密钥的 localhost HTTP 请求转给 Jarvis；Jarvis 认领并异步续跑原 Session 后立即返回，CC Connect 随即结束按钮回调，再在卡片动作锁释放后把 Jarvis 返回的整张“已回答”卡替换上去。Jarvis 不启动 `card.action.trigger` 连接，因此普通消息、文档评论和既有 CC Connect 卡片链路不会被抢占。
 
-Jarvis 端校验 Principal open_id，并用卡片携带的 Task version 原子认领当前 `awaiting_approval` proposal；旧卡片或重复点击会因 version/status 冲突被拒绝。CC Connect 只负责机械传输和保留原卡片展示，不持有审批状态。URL 必须是 loopback，密钥只写进 Git 忽略的 `conf/config.runtime.yaml` 和本机 `~/.cc-connect/config.toml`。
+Jarvis 端校验 Principal open_id，并用卡片携带的 Task version 认领当前 `needs_human` Task；旧卡片或重复点击会因 version/status 冲突被拒绝。CC Connect 只负责机械传输和替换卡片展示，不持有任何状态。URL 必须是 loopback，密钥只写进 Git 忽略的 `conf/config.runtime.yaml` 和本机 `~/.cc-connect/config.toml`。
 
-当前 Jarvis Bot 对应的飞书 app 必须在开发者后台开启机器人、授予消息权限，并在「事件与回调 → 回调配置」中启用 callback。回调落地日志前缀为 `job=card-approval`；只有 Principal 本人的按钮点击会进入审批，版本冲突/状态已变会记为 `skipped=already-handled`，不会重复执行。
+当前 Jarvis Bot 对应的飞书 app 必须在开发者后台开启机器人、授予消息权限，并在「事件与回调 → 回调配置」中启用 callback。回调落地日志前缀为 `job=card-ask`；只有 Principal 本人的按钮点击会被接受，版本冲突/状态已变会记为 `skipped=already-answered`，不会重复执行。
 
 ## 故障恢复
 

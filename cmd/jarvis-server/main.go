@@ -19,7 +19,7 @@ import (
 	"jarvis/internal/authn"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
-	"jarvis/internal/cardapproval"
+	"jarvis/internal/cardask"
 	"jarvis/internal/chat"
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
@@ -353,12 +353,12 @@ func main() {
 	if err != nil {
 		fatalf("initialize morning brief reader failed: %v", err)
 	}
-	var approvalNotifier execute.ApprovalNotifier
-	// approvalCards keeps the concrete notifier so the relay handler can
-	// re-render a decided card, which the send-only interface does not expose.
-	var approvalCards *cardapproval.Notifier
+	var questionNotifier execute.QuestionNotifier
+	// questionCards keeps the concrete notifier so the relay handler can
+	// re-render an answered card, which the send-only interface does not expose.
+	var questionCards *cardask.Notifier
 	if cfg.CardApproval.Enabled {
-		approvalClient, err := larkcli.New(larkcli.Options{
+		questionClient, err := larkcli.New(larkcli.Options{
 			Bin:         cfg.LarkCLI.Bin,
 			RateLimit:   cfg.LarkCLI.RateLimit,
 			Burst:       cfg.LarkCLI.Burst,
@@ -367,16 +367,16 @@ func main() {
 			Timezone:    location.String(),
 		})
 		if err != nil {
-			fatalf("initialize approval lark-cli failed: %v", err)
+			fatalf("initialize question card lark-cli failed: %v", err)
 		}
-		approvalCards, err = cardapproval.NewNotifier(approvalClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
+		questionCards, err = cardask.NewNotifier(questionClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
 		if err != nil {
-			fatalf("initialize approval notifier failed: %v", err)
+			fatalf("initialize question notifier failed: %v", err)
 		}
-		approvalNotifier = approvalCards
+		questionNotifier = questionCards
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
-		taskService, codexRunner, sharedMemoryService, runtimeWorkRules, runtimePrompts, runtimeSkills, approvalNotifier, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		taskService, codexRunner, sharedMemoryService, runtimeWorkRules, runtimePrompts, runtimeSkills, questionNotifier, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
 		fatalf("initialize agent executor failed: %v", err)
@@ -805,14 +805,14 @@ func main() {
 		}
 		stopFactEngine = func() { <-factEngineScheduler.Stop().Done() }
 	}
-	var cardApprovalProcessor api.CardApprovalProcessor
+	var cardAskProcessor api.CardAskProcessor
 	if cfg.CardApproval.Enabled {
-		cardLogger := log.New(os.Stderr, "card-approval ", log.LstdFlags|log.Lmicroseconds)
-		cardApprovalProcessor, err = cardapproval.NewRelayHandler(
-			agentExecutor, agentExecutor, approvalCards, cfg.CardApproval.PrincipalOpenID, cardLogger,
+		cardLogger := log.New(os.Stderr, "card-ask ", log.LstdFlags|log.Lmicroseconds)
+		cardAskProcessor, err = cardask.NewRelayHandler(
+			agentExecutor, agentExecutor, questionCards, cfg.CardApproval.PrincipalOpenID, cardLogger,
 		)
 		if err != nil {
-			fatalf("build CC Connect card approval handler failed: %v", err)
+			fatalf("build CC Connect card ask handler failed: %v", err)
 		}
 	}
 	stopProactive := func() {}
@@ -949,7 +949,7 @@ func main() {
 		Debug:           debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 		RuntimeSettings:    runtimeSettingsService,
 		ContextAssembler:   contextAssembler,
-		CardApprovals:      cardApprovalProcessor,
+		CardAsks:           cardAskProcessor,
 		CardApprovalSecret: cfg.CardApproval.RelaySecret,
 		MeetingSweep:       meetingSweepWaker,
 		Readiness:          readinessTargets,

@@ -17,7 +17,7 @@ import (
 
 func TestValidateTaskFilter(t *testing.T) {
 	if err := ValidateTaskFilter(TaskFilter{
-		Statuses: []string{"pending", "executing", "waiting", "needs_human", "awaiting_approval", "done", "failed"},
+		Statuses: []string{"pending", "executing", "waiting", "needs_human", "done", "failed"},
 		Page:     1, PageSize: 20,
 	}); err != nil {
 		t.Fatalf("ValidateTaskFilter() error = %v", err)
@@ -34,11 +34,11 @@ func TestValidateTaskFilter(t *testing.T) {
 }
 
 func TestParseStatuses(t *testing.T) {
-	statuses, err := ParseStatuses("pending,waiting,needs_human,awaiting_approval,done,pending")
+	statuses, err := ParseStatuses("pending,waiting,needs_human,done,pending")
 	if err != nil {
 		t.Fatalf("ParseStatuses() error = %v", err)
 	}
-	want := []string{"pending", "waiting", "needs_human", "awaiting_approval", "done"}
+	want := []string{"pending", "waiting", "needs_human", "done"}
 	if len(statuses) != len(want) {
 		t.Fatalf("statuses = %v", statuses)
 	}
@@ -295,7 +295,7 @@ func TestCloseResolvesTaskAndProjectsProactiveActor(t *testing.T) {
 			last_error_detail TEXT, last_finished_at DATETIME, updated_at DATETIME
 		)`,
 		`INSERT INTO task(id, status, execution_result, version, created_at, updated_at)
-		 VALUES (7, 'waiting', '{"stage":"proposal","summary":"原执行结论","proposal":{"action":"发消息"}}', 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		 VALUES (7, 'waiting', '{"stage":"executed","summary":"原执行结论"}', 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		`INSERT INTO scheduled_task(id, subject_type, subject_id, dispatch_kind, status)
 		 VALUES (9, 'task', 7, 'resume_task', 'binding')`,
 	} {
@@ -317,7 +317,7 @@ func TestCloseResolvesTaskAndProjectsProactiveActor(t *testing.T) {
 	if view.Status != "done" || view.Version != 4 || view.Resolution == nil || view.Resolution.ActorType != "proactive" {
 		t.Fatalf("closed view = %#v", view)
 	}
-	if !strings.Contains(string(view.ExecutionResult), `"stage":"proposal"`) {
+	if !strings.Contains(string(view.ExecutionResult), `"summary":"原执行结论"`) {
 		t.Fatalf("close replaced execution_result: %s", view.ExecutionResult)
 	}
 	if view.Summary == nil || *view.Summary != "昨日任务已过期" {
@@ -330,7 +330,7 @@ func TestCloseResolvesTaskAndProjectsProactiveActor(t *testing.T) {
 	if loaded.Resolution == nil || loaded.Resolution.EventType != "closed" || loaded.Resolution.ActorType != "proactive" {
 		t.Fatalf("loaded resolution = %#v", loaded.Resolution)
 	}
-	if !strings.Contains(string(loaded.ExecutionResult), `"stage":"proposal"`) {
+	if !strings.Contains(string(loaded.ExecutionResult), `"summary":"原执行结论"`) {
 		t.Fatalf("persisted execution_result was replaced: %s", loaded.ExecutionResult)
 	}
 	var closeDetail string
@@ -376,7 +376,7 @@ func TestUpdateTaskMaintainsMutableSurfaceAndFrozenEvidence(t *testing.T) {
 		`INSERT INTO task(id,title,action_type,target,background,source_payload,status,execution_supplements,version,created_at,updated_at)
 		 VALUES (8,'旧标题','agent_task','旧目标','{"snapshot":"frozen"}','{"clue":"frozen"}','waiting','[]',2,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
 		`INSERT INTO task(id,title,action_type,target,background,source_payload,status,execution_supplements,version,created_at,updated_at)
-		 VALUES (9,'待审批','agent_task','待审目标','{}','{}','awaiting_approval','[]',4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+		 VALUES (9,'待我回答','agent_task','待答目标','{}','{}','needs_human','[]',4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("fixture statement failed: %v", err)
@@ -414,9 +414,9 @@ func TestUpdateTaskMaintainsMutableSurfaceAndFrozenEvidence(t *testing.T) {
 	}
 	if _, err := store.UpdateTask(t.Context(), TaskUpdateInput{
 		TaskID: 9, ExpectedVersion: 4, Instruction: &instruction,
-		Reason: "不能暗改待审批方案", ActorType: "proactive",
+		Reason: "不能暗改已经摆到委托人面前的问题", ActorType: "proactive",
 	}); !errors.Is(err, ErrInvalidTransition) {
-		t.Fatalf("awaiting_approval instruction update error = %v", err)
+		t.Fatalf("needs_human instruction update error = %v", err)
 	}
 }
 

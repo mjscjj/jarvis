@@ -731,11 +731,6 @@ body {
   background: var(--color-bg-elevated);
 }
 
-.task-state-awaiting_approval {
-  border-left-color: var(--color-warning);
-  background: var(--color-warning-bg);
-}
-
 .task-state-executing,
 .task-state-pending {
   border-left-color: var(--color-info);

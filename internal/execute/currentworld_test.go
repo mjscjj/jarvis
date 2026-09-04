@@ -220,26 +220,3 @@ func TestListTasksScopesByGroupThroughSourceTodo(t *testing.T) {
 		t.Fatalf("project scope total = %d, want all three", byProject.Total)
 	}
 }
-
-// TestApplyPromptCarriesCurrentWorld covers the second entry point: an approved
-// proposal can land long after the approval, so the apply pass needs the same
-// duplicate-work guard as the first pass.
-func TestApplyPromptCarriesCurrentWorld(t *testing.T) {
-	task := &domain.Task{
-		ID: 11, Title: "更新周报", ActionType: "doc_write",
-		SourcePayload: datatypes.JSON(`{"steps":["update"]}`),
-		Background:    datatypes.JSON(`{"snapshot_version":"v1"}`),
-	}
-	in := testExecutionPromptInput(testM5SystemPrompt, "只读不审批。", task, "", testToolCatalog, "", "", "", nil)
-	in.CurrentWorld = &currentWorld{
-		LoadedAt:    "2026-08-15T09:00:00Z",
-		RecentTasks: []taskBrief{{ID: 10, Title: "别人已经更新过周报", Status: "done"}},
-	}
-	prompt, err := buildApplyPrompt(in, &codexProposal{Action: "doc_write", Target: "周报", Artifact: "正文"})
-	if err != nil {
-		t.Fatalf("build apply prompt: %v", err)
-	}
-	if !strings.Contains(prompt, "别人已经更新过周报") {
-		t.Fatalf("apply prompt dropped current_world:\n%s", prompt)
-	}
-}

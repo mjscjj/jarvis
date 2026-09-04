@@ -32,7 +32,6 @@ export const taskStatusMeta: Record<TaskStatus, StatusMeta> = {
   executing: { label: '执行中', color: C.processing },
   waiting: { label: '等待外部', color: C.waiting },
   needs_human: { label: '待我回复', color: C.warning },
-  awaiting_approval: { label: '待我审批', color: C.warning },
   done: { label: '已交付', color: C.success },
   failed: { label: '失败', color: C.error },
   observing: { label: '无需动手', color: C.default },
