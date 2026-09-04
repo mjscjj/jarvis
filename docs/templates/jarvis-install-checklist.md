@@ -26,9 +26,10 @@
 ## C. 飞书身份与一体化绑定（`$install-jarvis`）
 
 - [ ] <!-- id:install.lark-identity --> lark-cli 当前默认身份的用户 OAuth、Bot 和 token 均验证成功。
+- [ ] <!-- id:install.card-callback --> 当前 App 的权限申请包含 `im:message:readonly`，`card.action.trigger` 已发布，Bot dry-run 验证通过。
 - [ ] <!-- id:install.feishu-capabilities --> 已完成飞书能力只读审计；核心文档、消息、群和 Bot 读取 API 已验收，无候选数据时已记录覆盖边界，已启用的条件能力已检查；高级组织字段缺失已记录为非阻塞未知项，过程中没有发起权限申请。
 - [ ] <!-- id:install.identity --> Principal open_id 和 Git author 已写入本机 runtime config 并读回。
-- [ ] <!-- id:install.cc-binding --> CC Connect `jarvis-codex` 已绑定同一个 App/Bot；Agent 每轮先读取 Jarvis context；`validate-binding` 通过。
+- [ ] <!-- id:install.cc-binding --> CC Connect `jarvis-codex` 已绑定同一个 App/Bot；Feishu `allow_from` 只允许 Principal 本人；Agent 每轮先读取 Jarvis context；`validate-binding` 通过。
 
 ## D. 服务启动与运行底座验收（`$install-jarvis`）
 

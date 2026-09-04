@@ -47,9 +47,9 @@ func TestLoginCompletesDeviceFlow(t *testing.T) {
 				return []byte(`{"status":"success","data":{"authenticated":false}}`), nil
 			}
 			return []byte(`{"status":"success","data":{"authenticated":true,"bytecloud_auth":{"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
-		case strings.Contains(command, "--begin"):
+		case command == "--json auth login --begin":
 			return []byte(`{"event":"qr_image_ready","data":{"complete_token":"resume-1","verification_uri_complete":"https://sso.example/login","user_code":"ABCD"}}`), nil
-		case strings.Contains(command, "--complete resume-1"):
+		case command == "--json auth login --complete resume-1":
 			return []byte(`{"status":"success","data":{"authenticated":true}}`), nil
 		default:
 			return nil, errors.New("unexpected command")
@@ -78,9 +78,9 @@ func TestCompleteKeepsPendingFlow(t *testing.T) {
 		switch {
 		case command == "--json auth status":
 			return []byte(`{"status":"success","data":{"authenticated":false}}`), nil
-		case strings.Contains(command, "--begin"):
+		case command == "--json auth login --begin":
 			return []byte(`{"data":{"complete_token":"resume-1","verification_url":"https://sso.example/login"}}`), nil
-		case strings.Contains(command, "--complete"):
+		case command == "--json auth login --complete resume-1":
 			return []byte(`{"status":"error","error":{"code":"AUTHORIZATION_PENDING","message":"pending"}}`), errors.New("exit 1")
 		default:
 			return nil, errors.New("unexpected command")

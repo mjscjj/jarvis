@@ -51,7 +51,7 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 ## 3. 使用默认飞书身份、审计能力并绑定 CC Connect
 
-加载并遵循 `lark-shared`。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置或未登录时才初始化和登录该默认身份。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。
+加载并遵循 `lark-shared`。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置或未登录时才初始化和登录该默认身份。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。首次登录的 App 权限申请必须在推荐权限外显式包含卡片回调所需的 `im:message:readonly`：Agent 使用 split-flow 运行 `lark-cli auth login --recommend --scope "im:message:readonly" --no-wait --json`，用户确认后再用同一 `device_code` 完成授权。
 
 一个飞书 App/Bot 是身份根。Jarvis 直接使用 lark-cli 当前默认 App，CC Connect 绑定该 App，不再为 Jarvis 选择第二个 Bot。
 
@@ -68,7 +68,8 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 ./scripts/jarvis-install validate-binding
 ```
 
-绑定校验还必须确认 CC 托管的 Agent 每轮先运行 `scripts/jarvis-tools get-context`，否则 CC 只是进入仓库的普通 Codex，不算和 Jarvis 世界模型一体化。逐项更新清单 C 区；能力审计与默认 App 绑定是两个独立验收项，不能互相代替。
+绑定校验还必须确认 CC 托管的 Agent 每轮先运行 `scripts/jarvis-tools get-context`，否则 CC 只是进入仓库的普通 Codex，不算和 Jarvis 世界模型一体化；并通过 `card.action.trigger` 的 Bot dry-run 验证 App 已申请 `im:message:readonly`、已发布该回调事件。逐项更新清单 C 区；能力审计与默认 App 绑定是两个独立验收项，不能互相代替。
+`bind-cc` 会把 Feishu `allow_from` 收紧为 Principal 本人的 open_id；`validate-binding` 未通过这项检查时不能启动 CC Connect。
 
 ## 4. 启动并验收运行底座
 

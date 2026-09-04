@@ -100,6 +100,27 @@ lark_default_config() {
   printf '%s' "$json"
 }
 
+card_callback_preflight() {
+  local output json
+  if ! output="$(
+    LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 \
+    LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 \
+      lark-cli event consume card.action.trigger --as bot --dry-run 2>&1
+  )"; then
+    fail "card.action.trigger App permission/event preflight failed: ${output}"
+  fi
+  json="$(printf '%s\n' "$output" | sed -n '/^{/,$p')"
+  printf '%s' "$json" | jq -e '
+    .ok == true and
+    .data.decision.event_key == "card.action.trigger" and
+    .data.decision.identity == "bot" and
+    .data.decision.status == "ready" and
+    ([.data.decision.preconditions[]? | select(.name == "console_event_published" and .status == "ok")] | length == 1) and
+    ([.data.decision.preconditions[]? | select(.name == "scopes_granted" and .status == "ok")] | length == 1)
+  ' >/dev/null 2>&1 || fail "card.action.trigger App permission/event preflight was not ready: ${output}"
+  printf '%s' "$json"
+}
+
 configured_identity() {
   command -v go >/dev/null 2>&1 || fail "go is required but not found in PATH"
   (
@@ -221,16 +242,18 @@ cc_bootstrap_prompt() {
 }
 
 append_fresh_project() {
-  local identity="$1" app_id="$2" relay_secret prompt config_dir
+  local identity="$1" app_id="$2" relay_secret principal_open_id prompt config_dir
   relay_secret="$(jq -r '.relay_secret // ""' <<<"$identity")"
   [[ -n "$relay_secret" ]] || fail "Jarvis relay secret is empty; configure machine identity first"
+  principal_open_id="$(jq -r '.principal_open_id // ""' <<<"$identity")"
+  [[ -n "$principal_open_id" && "$principal_open_id" != "null" ]] || fail "Jarvis principal open_id is empty; configure machine identity first"
   config_dir="$(dirname "$CC_CONFIG_PATH")"
   mkdir -p "$config_dir"
   touch "$CC_CONFIG_PATH"
   chmod 0600 "$CC_CONFIG_PATH"
   prompt="$(cc_bootstrap_prompt)"
-  printf '\n[[projects]]\nname = "jarvis-codex"\ninject_sender = true\n\n[projects.display]\nmode = "quiet"\nthinking_messages = false\ntool_messages = false\n\n[projects.agent]\ntype = "codex"\n\n[projects.agent.options]\nwork_dir = "%s"\nmode = "yolo"\ncmd = "codex"\nappend_system_prompt = "%s"\n\n[[projects.platforms]]\ntype = "feishu"\n\n[projects.platforms.options]\napp_id = "%s"\napp_secret = "replace-during-bind"\nthread_isolation = true\ndocument_comments = true\njarvis_approval_url = "http://127.0.0.1:18800/internal/card-approval/callback"\njarvis_approval_secret = "%s"\njarvis_approval_timeout_ms = 2500\njarvis_route_claim_url = "http://127.0.0.1:18800/internal/message-routing/claim"\njarvis_route_claim_secret = "%s"\njarvis_route_claim_timeout_ms = 2500\njarvis_event_relay_url = "http://127.0.0.1:18800/internal/meeting-sweep/wake"\njarvis_event_relay_secret = "%s"\njarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"\n' \
-    "$(toml_escape "$REPO_ROOT")" "$(toml_escape "$prompt")" "$(toml_escape "$app_id")" "$(toml_escape "$relay_secret")" "$(toml_escape "$relay_secret")" "$(toml_escape "$relay_secret")" >>"$CC_CONFIG_PATH"
+  printf '\n[[projects]]\nname = "jarvis-codex"\ninject_sender = true\n\n[projects.display]\nmode = "quiet"\nthinking_messages = false\ntool_messages = false\n\n[projects.agent]\ntype = "codex"\n\n[projects.agent.options]\nwork_dir = "%s"\nmode = "yolo"\ncmd = "codex"\nappend_system_prompt = "%s"\n\n[[projects.platforms]]\ntype = "feishu"\n\n[projects.platforms.options]\napp_id = "%s"\napp_secret = "replace-during-bind"\nallow_from = "%s"\nthread_isolation = true\ndocument_comments = true\njarvis_approval_url = "http://127.0.0.1:18800/internal/card-approval/callback"\njarvis_approval_secret = "%s"\njarvis_approval_timeout_ms = 2500\njarvis_route_claim_url = "http://127.0.0.1:18800/internal/message-routing/claim"\njarvis_route_claim_secret = "%s"\njarvis_route_claim_timeout_ms = 2500\njarvis_event_relay_url = "http://127.0.0.1:18800/internal/meeting-sweep/wake"\njarvis_event_relay_secret = "%s"\njarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"\n' \
+    "$(toml_escape "$REPO_ROOT")" "$(toml_escape "$prompt")" "$(toml_escape "$app_id")" "$(toml_escape "$principal_open_id")" "$(toml_escape "$relay_secret")" "$(toml_escape "$relay_secret")" "$(toml_escape "$relay_secret")" >>"$CC_CONFIG_PATH"
 }
 
 read_app_secret() {
@@ -246,13 +269,15 @@ read_app_secret() {
 }
 
 write_cc_app_credentials() {
-  local app_id="$1" config_dir temp_path prompt
+  local app_id="$1" identity="$2" config_dir temp_path prompt principal_open_id
   prompt="$(cc_bootstrap_prompt)"
+  principal_open_id="$(jq -r '.principal_open_id // ""' <<<"$identity")"
+  [[ -n "$principal_open_id" && "$principal_open_id" != "null" ]] || fail "Jarvis principal open_id is empty; configure machine identity first"
   config_dir="$(cd "$(dirname "$CC_CONFIG_PATH")" && pwd)"
   temp_path="$(mktemp "${config_dir}/.jarvis-cc-config.XXXXXX")"
   chmod 0600 "$temp_path"
   local inside=false target=false in_agent_options=false project_count=0 inject_sender_count=0 app_id_count=0 app_secret_count=0
-  local mode_count=0 cmd_count=0 prompt_count=0 line value escaped_secret
+  local mode_count=0 cmd_count=0 prompt_count=0 allow_from_count=0 line value escaped_secret
   while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" =~ ^[[:space:]]*\[\[projects\]\][[:space:]]*$ ]]; then
       if [[ "$in_agent_options" == "true" ]]; then
@@ -289,7 +314,14 @@ write_cc_app_credentials() {
     elif [[ "$target" == "true" && "$line" =~ ^[[:space:]]*app_secret[[:space:]]*= ]]; then
       escaped_secret="$(toml_escape "$APP_SECRET")"
       printf 'app_secret = "%s"\n' "$escaped_secret" >>"$temp_path"
-      ((app_secret_count += 1)); continue
+      ((app_secret_count += 1))
+      if [[ "$allow_from_count" -eq 0 ]]; then
+        printf 'allow_from = "%s"\n' "$(toml_escape "$principal_open_id")" >>"$temp_path"
+        ((allow_from_count += 1))
+      fi
+      continue
+    elif [[ "$target" == "true" && "$line" =~ ^[[:space:]]*allow_from[[:space:]]*= ]]; then
+      continue
     elif [[ "$in_agent_options" == "true" && "$line" =~ ^[[:space:]]*mode[[:space:]]*= ]]; then
       printf '%s\n' 'mode = "yolo"' >>"$temp_path"
       ((mode_count += 1)); continue
@@ -307,9 +339,9 @@ write_cc_app_credentials() {
     [[ "$cmd_count" -gt 0 ]] || { printf '%s\n' 'cmd = "codex"' >>"$temp_path"; ((cmd_count += 1)); }
     [[ "$prompt_count" -gt 0 ]] || { printf 'append_system_prompt = "%s"\n' "$(toml_escape "$prompt")" >>"$temp_path"; ((prompt_count += 1)); }
   fi
-  if [[ "$project_count" -ne 1 || "$inject_sender_count" -ne 1 || "$app_id_count" -ne 1 || "$app_secret_count" -ne 1 || "$mode_count" -ne 1 || "$cmd_count" -ne 1 || "$prompt_count" -ne 1 ]]; then
+  if [[ "$project_count" -ne 1 || "$inject_sender_count" -ne 1 || "$app_id_count" -ne 1 || "$app_secret_count" -ne 1 || "$allow_from_count" -ne 1 || "$mode_count" -ne 1 || "$cmd_count" -ne 1 || "$prompt_count" -ne 1 ]]; then
     rm -f "$temp_path"
-    fail "CC Connect config must contain exactly one jarvis-codex project with inject_sender, app_id, app_secret, mode, cmd, and append_system_prompt"
+    fail "CC Connect config must contain exactly one jarvis-codex project with inject_sender, app_id, app_secret, allow_from, mode, cmd, and append_system_prompt"
   fi
   mv "$temp_path" "$CC_CONFIG_PATH"
   chmod 0600 "$CC_CONFIG_PATH"
@@ -317,19 +349,22 @@ write_cc_app_credentials() {
 
 validation_result() {
   command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
-  local default_config auth_status configured block app_id cc_app_id cc_app_secret
+  local default_config auth_status card_callback configured block app_id cc_app_id cc_app_secret
   local relay_url cc_relay_secret route_claim_url cc_route_claim_secret agent_type platform_type work_dir agent_mode agent_cmd bootstrap_prompt
+  local allow_from principal_open_id
   local inject_sender document_comments thread_isolation relay_hash cc_relay_hash cc_route_claim_hash
   local event_relay_url event_relay_types cc_event_relay_secret cc_event_relay_hash
   default_config="$(lark_default_config)"
   auth_status="$(LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 lark-cli auth status --json --verify)" || \
     fail "lark-cli auth is not ready for the current default identity"
   printf '%s' "$auth_status" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "lark-cli auth status did not return JSON"
+  card_callback="$(card_callback_preflight)"
   configured="$(configured_identity)"
   block="$(cc_jarvis_project_block)"
   app_id="$(jq -r '.appId' <<<"$default_config")"
   cc_app_id="$(toml_string_value "$block" app_id)"
   cc_app_secret="$(toml_string_value "$block" app_secret)"
+  allow_from="$(toml_section_string_value "$block" '[projects.platforms.options]' allow_from)"
   relay_url="$(toml_string_value "$block" jarvis_approval_url)"
   cc_relay_secret="$(toml_string_value "$block" jarvis_approval_secret)"
   route_claim_url="$(toml_string_value "$block" jarvis_route_claim_url)"
@@ -346,6 +381,7 @@ validation_result() {
   agent_cmd="$(toml_section_string_value "$block" '[projects.agent.options]' cmd)"
   bootstrap_prompt="$(toml_section_string_value "$block" '[projects.agent.options]' append_system_prompt)"
   platform_type="$(toml_section_string_value "$block" '[[projects.platforms]]' type)"
+  principal_open_id="$(jq -r '.principal_open_id // ""' <<<"$configured")"
   relay_hash="$(jq -r '.relay_secret_sha256 // ""' <<<"$configured")"
   cc_relay_hash="$(printf '%s' "$cc_relay_secret" | sha256_text)"
   cc_route_claim_hash="$(printf '%s' "$cc_route_claim_secret" | sha256_text)"
@@ -356,7 +392,8 @@ validation_result() {
     --arg event_relay_url "$event_relay_url" --arg event_relay_types "$event_relay_types" \
     --arg work_dir "$work_dir" --arg agent_mode "$agent_mode" --arg agent_cmd "$agent_cmd" \
     --arg repo_root "$REPO_ROOT" --arg bootstrap_prompt "$bootstrap_prompt" \
-    --argjson auth "$auth_status" --argjson configured "$configured" \
+    --arg allow_from "$allow_from" --arg principal_open_id "$principal_open_id" \
+    --argjson auth "$auth_status" --argjson card_callback "$card_callback" --argjson configured "$configured" \
     --argjson cc_app_secret_configured "$([[ -n "$cc_app_secret" && "$cc_app_secret" != "replace-during-bind" ]] && printf true || printf false)" \
     --argjson relay_secret_matches "$([[ -n "$relay_hash" && "$relay_hash" == "$cc_relay_hash" ]] && printf true || printf false)" \
     --argjson route_claim_secret_matches "$([[ -n "$relay_hash" && "$relay_hash" == "$cc_route_claim_hash" ]] && printf true || printf false)" \
@@ -376,6 +413,8 @@ validation_result() {
        ($bootstrap_prompt | contains("overrides any different name in prior session history")) and
        ($bootstrap_prompt | contains("prior_messages"))) as $context_contract_ok |
       (($agent_mode == "yolo") and ($agent_cmd == "codex")) as $context_runtime_ok |
+      (($card_callback.ok == true) and ($card_callback.data.decision.status == "ready")) as $card_callback_ok |
+      (($principal_open_id != "") and ($allow_from == $principal_open_id)) as $feishu_access_ok |
       (($event_relay_url == "http://127.0.0.1:18800/internal/meeting-sweep/wake") and
        ($event_relay_types | contains("vc.meeting.participant_meeting_ended_v1")) and
        $event_relay_secret_matches) as $meeting_event_relay_ok |
@@ -385,7 +424,7 @@ validation_result() {
           ($relay_url == "http://127.0.0.1:18800/internal/card-approval/callback") and
           ($route_claim_url == "http://127.0.0.1:18800/internal/message-routing/claim") and
           $route_ok and $inject_sender and $context_contract_ok and $context_runtime_ok and $document_comments and $thread_isolation and
-          $meeting_event_relay_ok),
+          $feishu_access_ok and $card_callback_ok and $meeting_event_relay_ok),
         checks: {
           lark_user_authenticated: $auth_ok,
           lark_default_bot_authenticated: $bot_ok,
@@ -397,6 +436,8 @@ validation_result() {
           route_claim_secret_matches: $route_claim_secret_matches,
           route_claim_url_is_local: ($route_claim_url == "http://127.0.0.1:18800/internal/message-routing/claim"),
           meeting_event_relay_configured: $meeting_event_relay_ok,
+          card_callback_app_permission_and_event_ready: $card_callback_ok,
+          feishu_allow_from_is_principal_only: $feishu_access_ok,
           jarvis_project_routes_to_current_checkout: $route_ok,
           cc_connect_injects_trusted_chat_id: $inject_sender,
           agent_loads_jarvis_context_each_turn: $context_contract_ok,
@@ -405,7 +446,8 @@ validation_result() {
           thread_isolation_enabled: $thread_isolation,
           cc_connect_is_sole_bot_websocket_owner: true
         },
-        identity: {app_id:$app_id,principal_open_id:($configured.principal_open_id // null),cc_connect_project:"jarvis-codex"}
+        identity: {app_id:$app_id,principal_open_id:($configured.principal_open_id // null),cc_connect_project:"jarvis-codex"},
+        card_callback_preflight: $card_callback
       }'
 }
 
@@ -428,7 +470,7 @@ cmd_bind() {
   else
     read_app_secret
   fi
-  write_cc_app_credentials "$app_id"
+  write_cc_app_credentials "$app_id" "$configured"
   APP_SECRET=""
   result="$(validation_result)"
   emit "$result"

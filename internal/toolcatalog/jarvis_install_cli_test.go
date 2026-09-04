@@ -228,6 +228,7 @@ func TestRebuildServerRecoversMissingLaunchdWithoutFullInstall(t *testing.T) {
 touch "$RECOVERY_MARKER"
 `)
 	binDir := t.TempDir()
+	writeExecutable(t, filepath.Join(binDir, "uname"), "#!/bin/sh\nprintf '%s\\n' Darwin\n")
 	writeExecutable(t, filepath.Join(binDir, "launchctl"), "#!/bin/sh\nexit 1\n")
 	writeExecutable(t, filepath.Join(binDir, "curl"), "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, filepath.Join(binDir, "go"), "#!/bin/sh\nexit 97\n")
@@ -289,6 +290,10 @@ if [ "$*" = "auth status --json --verify" ]; then
   printf '%s' '{"verified":true,"identities":{"bot":{"status":"ready","verified":true},"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready"}}}'
   exit 0
 fi
+if [ "$*" = "event consume card.action.trigger --as bot --dry-run" ]; then
+  printf '%s' '{"ok":true,"identity":"bot","dry_run":true,"data":{"decision":{"event_key":"card.action.trigger","identity":"bot","status":"ready","preconditions":[{"name":"credentials_available","status":"ok"},{"name":"console_event_published","status":"ok"},{"name":"scopes_granted","status":"ok"}]}}}'
+  exit 0
+fi
 printf '%s' "unexpected lark-cli args: $*" >&2
 exit 9
 `)
@@ -303,12 +308,14 @@ exit 9
 		Checks struct {
 			Context       bool `json:"agent_loads_jarvis_context_each_turn"`
 			TrustedChatID bool `json:"cc_connect_injects_trusted_chat_id"`
+			CardCallback  bool `json:"card_callback_app_permission_and_event_ready"`
+			Access        bool `json:"feishu_allow_from_is_principal_only"`
 		} `json:"checks"`
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("decode bind-cc output %q: %v", out, err)
 	}
-	if !result.Ready || !result.Checks.Context || !result.Checks.TrustedChatID {
+	if !result.Ready || !result.Checks.Context || !result.Checks.TrustedChatID || !result.Checks.CardCallback || !result.Checks.Access {
 		t.Fatalf("binding result = %#v", result)
 	}
 	content, err := os.ReadFile(ccConfigPath)
@@ -318,6 +325,7 @@ exit 9
 	text := string(content)
 	for _, want := range []string{
 		`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`,
+		`allow_from = "ou_ready"`,
 		`mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`,
 		`agent_identity.display_name`, `overrides any different name in prior session history`, `prior_messages`,
 		`jarvis_route_claim_url = "http://127.0.0.1:18800/internal/message-routing/claim"`,
@@ -335,6 +343,7 @@ exit 9
 	// place instead of requiring users to delete or duplicate it.
 	legacyText := strings.Replace(text, "inject_sender = true", "inject_sender = false", 1)
 	legacyText = strings.Replace(legacyText, "get-context --chat-id", "get-context", 1)
+	legacyText = strings.Replace(legacyText, `allow_from = "ou_ready"`, `allow_from = "*"`, 1)
 	if err := os.WriteFile(ccConfigPath, []byte(legacyText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -353,6 +362,27 @@ exit 9
 	}
 	if !strings.Contains(migratedText, "scripts/jarvis-tools get-context --chat-id") {
 		t.Fatalf("legacy CC config did not migrate to chat-scoped context:\n%s", migratedText)
+	}
+	if strings.Count(migratedText, `allow_from = "ou_ready"`) != 1 || strings.Contains(migratedText, `allow_from = "*"`) {
+		t.Fatalf("legacy CC config did not migrate allow_from to principal-only exactly once:\n%s", migratedText)
+	}
+
+	missingAllowFromText := strings.Replace(migratedText, "allow_from = \"ou_ready\"\n", "", 1)
+	if err := os.WriteFile(ccConfigPath, []byte(missingAllowFromText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runJarvisInstallWithInput(t, "app-secret-ready\n", []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+	}, "bind-cc", "--cc-config", ccConfigPath); err != nil {
+		t.Fatalf("rebind CC config without allow_from: %v", err)
+	}
+	completed, err := os.ReadFile(ccConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedText := string(completed)
+	if strings.Count(completedText, `allow_from = "ou_ready"`) != 1 {
+		t.Fatalf("CC config without allow_from was not completed with principal-only access exactly once:\n%s", completedText)
 	}
 }
 
@@ -607,6 +637,7 @@ func TestJarvisInstallRefusesToReplaceLoadedServer(t *testing.T) {
 func TestJarvisInstallRefusesServerInstallWhenTraexIsNotLoggedIn(t *testing.T) {
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "launchctl"), "#!/bin/sh\nexit 1\n")
+	writeExecutable(t, filepath.Join(binDir, "systemctl"), "#!/bin/sh\nexit 1\n")
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 printf '%s\n' '{"machine_configuration_ready":true,"runtime_binaries":["traex"],"runtime_config_path":"/unused/config.runtime.yaml"}'
 `)

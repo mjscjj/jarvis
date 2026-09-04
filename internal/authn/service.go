@@ -118,7 +118,12 @@ func (s *Service) Login(ctx context.Context) (LoginResult, error) {
 		return s.startSession(user)
 	}
 
-	raw, err := s.run(ctx, "--json", "auth", "login", "--begin", "--session")
+	// Jarvis consumes bytedcli's resumable ByteCloud device-flow contract:
+	// --begin returns a completion token and verification URL, then --complete
+	// finishes the same flow. --session is a different browser-session flow and
+	// may legitimately return success without either value when it reuses an
+	// existing session.
+	raw, err := s.run(ctx, "--json", "auth", "login", "--begin")
 	if err != nil {
 		return LoginResult{}, commandError("start ByteDance SSO", raw, err)
 	}
