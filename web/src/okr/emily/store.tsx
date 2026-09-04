@@ -220,8 +220,13 @@ export function BoardProvider({
     setSyncState({ kind: 'loading', message: '正在读取本周进展…' })
     try {
       let board: BoardData
+      let remoteEnums: EnumValues
       if (surface === 'weekly-report') {
-        let catalog = await listWeeklyReportWeeks(targetQuarter ?? quarterRef.current)
+        let [catalog, loadedEnums] = await Promise.all([
+          listWeeklyReportWeeks(targetQuarter ?? quarterRef.current),
+          getEnums(),
+        ])
+        remoteEnums = loadedEnums
         let filteredWeeks = filterWeekCatalog(catalog.weeks, weekTemplateKey)
         const requestedWeek = targetWeek?.trim() ?? ''
         let selectedWeek = requestedWeek && filteredWeeks.includes(requestedWeek) ? requestedWeek : filteredWeeks[0] ?? ''
@@ -252,9 +257,11 @@ export function BoardProvider({
           }
         }
       } else {
-        board = await getBoard(targetQuarter ?? quarterRef.current, targetWeek ?? '', surface)
+        [board, remoteEnums] = await Promise.all([
+          getBoard(targetQuarter ?? quarterRef.current, targetWeek ?? '', surface),
+          getEnums(),
+        ])
       }
-      const remoteEnums = await getEnums()
       publish(board.objectives)
       serverKrs.current = new Map(board.objectives.flatMap((objective) => objective.krs).map((kr) => [kr.id, clone(kr)]))
       revisions.current.clear()

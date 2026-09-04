@@ -994,6 +994,7 @@ func main() {
 		server.WithHostPorts(cfg.Server.Addr),
 	)
 	h.Use(observability.Middleware())
+	h.Use(api.StaticAssetCacheHeaders())
 	runtimeSettingsService, err := config.NewRuntimeSettingsService(*configPath, cfg)
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
