@@ -15,4 +15,7 @@ function developmentServer() {
 export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss()],
   server: command === 'serve' ? developmentServer() : undefined,
+  // Cached entry chunks can still request an older lazy chunk after a deploy.
+  // Keep content-hashed assets so those in-flight clients do not receive 404s.
+  build: { emptyOutDir: false },
 }))

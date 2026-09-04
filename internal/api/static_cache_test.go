@@ -12,7 +12,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
-func TestStaticAssetCacheHeadersOnlyCachesHashedAssets(t *testing.T) {
+func TestStaticAssetCacheHeadersSeparatesDocumentsAndHashedAssets(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "assets"), 0o755); err != nil {
 		t.Fatal(err)
@@ -36,8 +36,12 @@ func TestStaticAssetCacheHeadersOnlyCachesHashedAssets(t *testing.T) {
 		t.Fatalf("asset Cache-Control = %q, want %q", got, immutableAssetCacheControl)
 	}
 	index := ut.PerformRequest(h.Engine, "GET", "/", nil).Result()
-	if got := string(index.Header.Peek("Cache-Control")); got != "" {
-		t.Fatalf("index Cache-Control = %q, want empty", got)
+	if got := string(index.Header.Peek("Cache-Control")); got != webDocumentCacheControl {
+		t.Fatalf("index Cache-Control = %q, want %q", got, webDocumentCacheControl)
+	}
+	indexFile := ut.PerformRequest(h.Engine, "GET", "/index.html", nil).Result()
+	if got := string(indexFile.Header.Peek("Cache-Control")); got != webDocumentCacheControl {
+		t.Fatalf("index.html Cache-Control = %q, want %q", got, webDocumentCacheControl)
 	}
 	api := ut.PerformRequest(h.Engine, "GET", "/api/ping", nil).Result()
 	if got := string(api.Header.Peek("Cache-Control")); got != "" {
