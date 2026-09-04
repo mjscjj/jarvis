@@ -1,6 +1,7 @@
 package toolcatalog
 
 import (
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -122,12 +123,23 @@ func TestJarvisInstallPinsPatchedCCConnectWithoutStartingIt(t *testing.T) {
 	manifest := string(manifestContent)
 	for _, want := range []string{
 		`CC_CONNECT_BASE_COMMIT="5d4c96dd12774574369e75b60084140101c9a59a"`,
-		`CC_CONNECT_PATCH_COMMIT="8326383d66895b0698e2829ddf808de512d2e5fe"`,
 		`CC_CONNECT_PATCH_RELATIVE_PATH="integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch"`,
 	} {
 		if !strings.Contains(manifest, want) {
 			t.Fatalf("CC Connect manifest missing %q", want)
 		}
+	}
+	// CC_CONNECT_PATCH_COMMIT is stamped into the binary as main.commit, so it
+	// is how a running CC Connect reports which patch it was built from. Check
+	// the invariant instead of pinning a literal: a regenerated patch left the
+	// two out of sync once, and the stamp then named a patch nobody shipped.
+	patch, err := os.ReadFile(filepath.Join(repoRoot, "integrations", "cc-connect", "patches", "cc-connect-v1.4.1-jarvis.patch"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantStamp := fmt.Sprintf(`CC_CONNECT_PATCH_COMMIT="%x"`, sha1.Sum(patch))
+	if !strings.Contains(manifest, wantStamp) {
+		t.Fatalf("CC Connect manifest missing %q; the pinned stamp does not match the shipped patch", wantStamp)
 	}
 	builderContent, err := os.ReadFile(filepath.Join(repoRoot, "scripts", "install-cc-connect.sh"))
 	if err != nil {

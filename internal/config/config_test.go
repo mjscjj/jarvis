@@ -349,3 +349,36 @@ func validMorningBriefConfig() MorningBriefConfig {
 		ReasoningEffort: "medium", TimeoutSeconds: 600,
 	}
 }
+
+// 运行时 overlay 是本机文件，安装器、设置页和 agent 都会改写。dev2 上曾被写入
+// 一行 sqlite.path，进程从此连到一个空库：所有 Task 和消息看起来凭空消失，
+// 而空库和首次安装无法区分，故障静默了十小时。这段必须只由基线配置决定。
+func TestLoadRejectsDatabasePathInRuntimeOverride(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("sqlite:\n  path: data/jarvis.db\n"), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	if _, err := Load(configPath); err == nil {
+		t.Fatal("Load() 接受了改写数据库位置的 runtime overlay")
+	} else if !strings.Contains(err.Error(), "sqlite") {
+		t.Fatalf("Load() error = %v, 应指出被拒绝的段名", err)
+	}
+}
+
+// 拒绝只针对基线独占的段，overlay 本来承载的本机身份和设置页字段不受影响。
+func TestLoadAcceptsRuntimeOverrideWithoutBaseOnlySections(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("identity:\n  display_name: Friday\n"), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Identity.DisplayName != "Friday" {
+		t.Fatalf("identity.display_name = %q, want overlay value", cfg.Identity.DisplayName)
+	}
+	if cfg.SQLite.Path != "var/jarvis.db" {
+		t.Fatalf("sqlite.path = %q, want base config value", cfg.SQLite.Path)
+	}
+}

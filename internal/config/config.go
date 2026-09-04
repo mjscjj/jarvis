@@ -288,6 +288,9 @@ func Load(path string) (*Config, error) {
 	overridePath := RuntimeOverridePath(path)
 	overrideRaw, err := os.ReadFile(overridePath)
 	if err == nil {
+		if err := rejectRuntimeOverrideBaseOnlySections(overrideRaw, overridePath, path); err != nil {
+			return nil, err
+		}
 		if err := decodeKnownYAML(overrideRaw, &cfg); err != nil {
 			return nil, fmt.Errorf("parse runtime config override %q: %w", overridePath, err)
 		}
@@ -323,6 +326,28 @@ func (c *Config) resolvePaths() error {
 			return fmt.Errorf("展开 %s %q 失败: %w", item.name, *item.value, err)
 		}
 		*item.value = absolute
+	}
+	return nil
+}
+
+// runtimeOverrideBaseOnlySections 列出只能由跟踪的基线配置决定的段。运行时
+// overlay 是本机文件，安装器、设置页和 agent 都会改写它；而 sqlite.path 一旦
+// 被写进去，进程就会静默连到另一个库，空库看起来和首次安装完全一样，全部
+// Task 和消息就此失联。启动时直接拒绝，别让它无声生效。
+var runtimeOverrideBaseOnlySections = []string{"sqlite"}
+
+func rejectRuntimeOverrideBaseOnlySections(raw []byte, overridePath, basePath string) error {
+	var document yaml.Node
+	if err := yaml.Unmarshal(raw, &document); err != nil {
+		return fmt.Errorf("parse runtime config override %q: %w", overridePath, err)
+	}
+	if len(document.Content) == 0 {
+		return nil
+	}
+	for _, section := range runtimeOverrideBaseOnlySections {
+		if mappingValue(document.Content[0], section) != nil {
+			return fmt.Errorf("runtime config override %q must not set %q: that section is owned by the base config %q", overridePath, section, basePath)
+		}
 	}
 	return nil
 }
