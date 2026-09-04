@@ -133,6 +133,29 @@ lark-cli im +messages-send \
   --as bot
 ```
 
+### 群聊前置：确认 {{AGENT_NAME}} Bot 在这个群里
+
+下面两种群聊发送都要求 Bot 已是群成员。先用 principal 的 user 身份读回 bot 成员：
+
+```bash
+lark-cli im +chat-members-list \
+  --chat-id "<chat_id>" \
+  --member-types bot \
+  --page-all --page-limit 0 \
+  --as user
+```
+
+`bots` 不含第 1 步核验过的 {{AGENT_NAME}} `appId` 时，用 principal 的 user 身份把 Bot 拉进这个群：
+
+```bash
+lark-cli im chat.members create \
+  --params '{"chat_id":"<chat_id>","member_id_type":"app_id"}' \
+  --data '{"id_list":["<{{AGENT_NAME}} app_id>"]}' \
+  --as user
+```
+
+拉群后重新执行上面的成员读回确认成功，再用 Bot 发送。入群是已经发生的独立副作用，成功后申报一条 `feishu_chat` effect。失败（群限制只有群主/管理员可加人、principal 不在群里等）把原始错误交回 M5，不改用 user 身份发送、不换目标会话、不放弃发送。
+
 ### 在群聊里给某个人发消息
 
 由 M5 根据语义选择准确的原消息锚点，不使用“最新一条消息”替代判断。在相关消息下面创建话题，并同时真实 `@` 对方和 principal：
