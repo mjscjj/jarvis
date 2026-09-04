@@ -59,6 +59,7 @@
 | [晨间作战简报](design-morning-brief.md) | implementation-in-progress | Skill + `internal/morningbrief` 定时器已接线；无表无接口；用 `-morning-brief-once` 手动跑（只写文件）、`-morning-brief-deliver` 连投递一起验；产物在 `data/morning-brief/` |
 | [第一阶段产品方案](design-product-stage-1.md) | proposal | 单人本地协作主干的产品主线：飞书触达与就地处置、收件箱对称、项目工作台、阻塞恢复、世界模型卫生；全部未实现，S0 复用晨报投递路径 |
 | [CC Connect 支持飞书文档评论](design-cc-connect-feishu-document-comments.md) | proposal | cc-connect 复用现有 Feishu 长连接接收 `@Bot` 评论，并把 Agent 最终答案写回原评论卡片；尚未实现 |
+| [处理中标记的收尾](design-task-processing-marker.md) | proposal | M5 终态时由 runtime 撤回 `OnIt` reaction；当前只加不撤。含跨轮残留待实测项，以及「撤干净 vs 留结论表情」待 principal 决策 |
 
 [上下文链路重设计](design-context-pipeline.md) 是已实施的历史设计稿。当前稳定结论已经写入总纲和模块文档，正文里的“待实施”步骤不作为当前实现说明。
 
