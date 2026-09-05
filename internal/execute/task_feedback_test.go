@@ -48,7 +48,7 @@ func newTaskFeedbackTestStore(t *testing.T) *Store {
 		`CREATE TABLE task (
 			id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT NOT NULL DEFAULT '',
 			action_type TEXT NOT NULL DEFAULT '', target TEXT NOT NULL DEFAULT '',
-			background JSON NOT NULL DEFAULT '{}', source_payload JSON NOT NULL DEFAULT '{}',
+			source_payload JSON NOT NULL DEFAULT '{}',
 			source_type TEXT NOT NULL DEFAULT 'manual', source_id INTEGER, occurrence_key TEXT,
 			status TEXT NOT NULL DEFAULT 'executing', execution_result JSON,
 			execution_supplements JSON, summary TEXT, last_progress_at DATETIME,
@@ -191,8 +191,8 @@ func TestStartTaskFeedbackRecordsOnItEffect(t *testing.T) {
 func TestRouteRunTreatsLegacyOutputFieldsAsAuditOnly(t *testing.T) {
 	store := newTaskFeedbackTestStore(t)
 	if err := store.db.Exec(
-		`INSERT INTO task(id, title, action_type, background, source_payload, status, version)
-		 VALUES (?, ?, ?, '{}', '{}', 'executing', 0)`,
+		`INSERT INTO task(id, title, action_type, source_payload, status, version)
+		 VALUES (?, ?, ?, '{}', 'executing', 0)`,
 		453, "完成任务", "investigate",
 	).Error; err != nil {
 		t.Fatalf("insert Task: %v", err)

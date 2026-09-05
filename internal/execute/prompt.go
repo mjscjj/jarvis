@@ -174,8 +174,8 @@ type executionTask struct {
 
 // buildTaskContext assembles the shared TASK_CONTEXT block. M3 output is a clue,
 // not a confirmed contract; M5 owns the actual goal, scope, action selection,
-// and execution. Source semantics and the frozen background both ride through
-// verbatim. Validation is fail-fast.
+// and execution. The overview projects direct evidence and reading entrypoints
+// from the frozen source payload. Validation is fail-fast.
 func buildTaskContext(task *domain.Task, repoPath string, history *runHistory) ([]ExecutionSupplement, []byte, error) {
 	if task == nil || task.ID == 0 {
 		return nil, nil, fmt.Errorf("execution prompt Task is invalid")
@@ -257,8 +257,8 @@ type executionPromptInput struct {
 // action_type takes this one path: codex investigates, decides the real goal and
 // action, and then judges against the editable approvalPolicy whether the side
 // effect it is about to cause needs human review — code changes included. It
-// gives codex trigger evidence, scene/background indexes, current Task state,
-// history availability and the resolved repo.
+// gives codex direct evidence, scene and background reading entrypoints, current
+// Task state, history availability and the resolved repo.
 // task.execution_supplements (M5-only) are injected as high-priority directives.
 func buildExecutionPrompt(in executionPromptInput) (string, error) {
 	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, in.SystemPrompt, in.WorkRules, in.ApprovalPolicy)

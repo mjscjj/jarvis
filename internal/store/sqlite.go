@@ -114,17 +114,10 @@ func openSQLite(ctx context.Context, cfg config.SQLiteConfig, journalMode, synch
 	return db, nil
 }
 
-// Migrate creates or updates the current schema. The explicit activity-column
-// steps are a one-time migration for the pre-activity local database; SQLite
-// cannot add a column with CURRENT_TIMESTAMP as its default, so the column gets
-// a stable non-null sentinel before existing rows are backfilled from their
-// actual historical timestamps.
+// Migrate creates or updates the current schema.
 func Migrate(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("migrate schema: db is nil")
-	}
-	if err := migrateActivityColumns(db); err != nil {
-		return err
 	}
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
@@ -135,28 +128,6 @@ func Migrate(db *gorm.DB) error {
 	models = append(models, domain.PluginModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
-	}
-	return migrateContextContent(db)
-}
-
-func migrateActivityColumns(db *gorm.DB) error {
-	hadKeyMatterActivity := db.Migrator().HasColumn(&domain.KeyMatter{}, "LastActiveAt")
-	hadResourceActivity := db.Migrator().HasColumn(&domain.ManagedResource{}, "LastActiveAt")
-	if db.Migrator().HasTable(&domain.KeyMatter{}) && !hadKeyMatterActivity {
-		if err := db.Exec(`ALTER TABLE key_matter ADD COLUMN last_active_at datetime NOT NULL DEFAULT '1970-01-01 00:00:00'`).Error; err != nil {
-			return fmt.Errorf("add key matter last_active_at: %w", err)
-		}
-		if err := db.Exec(`UPDATE key_matter SET last_active_at = COALESCE(last_progress_at, updated_at, created_at)`).Error; err != nil {
-			return fmt.Errorf("backfill key matter last_active_at: %w", err)
-		}
-	}
-	if db.Migrator().HasTable(&domain.ManagedResource{}) && !hadResourceActivity {
-		if err := db.Exec(`ALTER TABLE managed_resource ADD COLUMN last_active_at datetime NOT NULL DEFAULT '1970-01-01 00:00:00'`).Error; err != nil {
-			return fmt.Errorf("add managed resource last_active_at: %w", err)
-		}
-		if err := db.Exec(`UPDATE managed_resource SET last_active_at = COALESCE(updated_at, created_at)`).Error; err != nil {
-			return fmt.Errorf("backfill managed resource last_active_at: %w", err)
-		}
 	}
 	return nil
 }

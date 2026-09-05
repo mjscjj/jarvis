@@ -52,6 +52,90 @@ func TestParseStatuses(t *testing.T) {
 	}
 }
 
+// TestListTasksScopesByGroupThroughSourceTodo covers the subquery behind
+// `list-tasks --group-id`. A Task carries no group of its own, so the scope has
+// to travel through todo_id. Tasks without a source Todo correctly fall outside
+// any group.
+func TestListTasksScopesByGroupThroughSourceTodo(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE task (
+			id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT NOT NULL DEFAULT '',
+			action_type TEXT NOT NULL DEFAULT '', target TEXT NOT NULL DEFAULT '',
+			source_payload TEXT NOT NULL DEFAULT '{}',
+			source_type TEXT NOT NULL DEFAULT 'manual', source_id INTEGER, occurrence_key TEXT,
+			status TEXT NOT NULL, summary TEXT, execution_result TEXT, execution_supplements TEXT,
+			project_id INTEGER, version INTEGER NOT NULL DEFAULT 0,
+			last_progress_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE todo (
+			id INTEGER PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '', action_type TEXT NOT NULL DEFAULT '',
+			target TEXT NOT NULL DEFAULT '', context TEXT NOT NULL DEFAULT '',
+			open_questions TEXT NOT NULL DEFAULT '[]', commitment_strength TEXT NOT NULL DEFAULT '',
+			source_message_ids TEXT NOT NULL DEFAULT '[]', source_quote TEXT NOT NULL DEFAULT '',
+			group_id INTEGER, project_id INTEGER, assigner_open_id TEXT,
+			is_leader_assigned INTEGER NOT NULL DEFAULT 0, due_at DATETIME,
+			status TEXT NOT NULL, dedup_fingerprint TEXT NOT NULL DEFAULT '',
+			content TEXT, resolution TEXT,
+			revision INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 0,
+			first_seen_at DATETIME NOT NULL, last_evidence_at DATETIME NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+
+	now := time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC)
+	if err := db.Exec(`INSERT INTO todo(id, title, status, group_id, project_id, first_seen_at, last_evidence_at)
+		VALUES (100, '群 7 的线索', 'materialized', 7, 44, ?, ?),
+		       (200, '群 9 的线索', 'materialized', 9, 44, ?, ?)`,
+		now, now, now, now).Error; err != nil {
+		t.Fatalf("insert todos: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO task(id, todo_id, title, status, project_id, created_at)
+		VALUES (1, 100, '群 7 的任务', 'pending', 44, ?),
+		       (2, 200, '群 9 的任务', 'pending', 44, ?),
+		       (3, NULL, '手工任务无群', 'pending', 44, ?)`, now, now, now).Error; err != nil {
+		t.Fatalf("insert tasks: %v", err)
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+
+	groupID := uint64(7)
+	scoped, err := store.ListTasks(t.Context(), TaskFilter{
+		Statuses: []string{"pending"}, GroupID: &groupID, Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListTasks(group) error = %v", err)
+	}
+	if scoped.Total != 1 || len(scoped.Items) != 1 || scoped.Items[0].ID != 1 {
+		t.Fatalf("group scope = total %d items %#v", scoped.Total, scoped.Items)
+	}
+
+	projectID := uint64(44)
+	byProject, err := store.ListTasks(t.Context(), TaskFilter{
+		Statuses: []string{"pending"}, ProjectID: &projectID, Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListTasks(project) error = %v", err)
+	}
+	if byProject.Total != 3 {
+		t.Fatalf("project scope total = %d, want all three", byProject.Total)
+	}
+}
+
 func TestRunViewIncludesFullPrompt(t *testing.T) {
 	prompt := strings.Repeat("完整原始提示词\n", 10_000)
 	view := runView(&domain.ExecutionRun{ID: 1, Prompt: prompt})
@@ -360,7 +444,7 @@ func TestUpdateTaskMaintainsMutableSurfaceAndFrozenEvidence(t *testing.T) {
 	for _, statement := range []string{
 		`CREATE TABLE task (
 			id INTEGER PRIMARY KEY, title TEXT NOT NULL, action_type TEXT NOT NULL,
-			target TEXT NOT NULL, background TEXT NOT NULL, source_payload TEXT NOT NULL,
+			target TEXT NOT NULL, source_payload TEXT NOT NULL,
 			status TEXT NOT NULL, summary TEXT, last_progress_at DATETIME,
 			execution_supplements TEXT, version INTEGER NOT NULL,
 			created_at DATETIME, updated_at DATETIME
@@ -373,10 +457,10 @@ func TestUpdateTaskMaintainsMutableSurfaceAndFrozenEvidence(t *testing.T) {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(task_id, task_version)
 		)`,
-		`INSERT INTO task(id,title,action_type,target,background,source_payload,status,execution_supplements,version,created_at,updated_at)
-		 VALUES (8,'旧标题','agent_task','旧目标','{"snapshot":"frozen"}','{"clue":"frozen"}','waiting','[]',2,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
-		`INSERT INTO task(id,title,action_type,target,background,source_payload,status,execution_supplements,version,created_at,updated_at)
-		 VALUES (9,'待我回答','agent_task','待答目标','{}','{}','needs_human','[]',4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+		`INSERT INTO task(id,title,action_type,target,source_payload,status,execution_supplements,version,created_at,updated_at)
+		 VALUES (8,'旧标题','agent_task','旧目标','{"clue":"frozen"}','waiting','[]',2,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+		`INSERT INTO task(id,title,action_type,target,source_payload,status,execution_supplements,version,created_at,updated_at)
+		 VALUES (9,'待我回答','agent_task','待答目标','{}','needs_human','[]',4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("fixture statement failed: %v", err)

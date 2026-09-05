@@ -105,8 +105,8 @@ func TestListTasksDefaultsToPending(t *testing.T) {
 	}
 }
 
-// TestListTasksScopeFilters covers the scopes M5 uses when it needs a wider or
-// narrower view than the default current_world block.
+// TestListTasksScopeFilters covers the scopes M5 uses to find related work on
+// demand without eagerly injecting it into every execution prompt.
 func TestListTasksScopeFilters(t *testing.T) {
 	service := &fakeTaskService{}
 	h := server.New()

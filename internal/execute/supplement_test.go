@@ -222,10 +222,6 @@ func TestBuildExecutionPromptKeepsOnlyUsefulTaskHints(t *testing.T) {
 	}
 }
 
-// TestBuildExecutionPromptCarriesFrozenBackgroundWhole pins that the snapshot
-// M3 froze reaches M5 intact. Reshaping it here would hand M5 a different world
-// than the one the Todo was admitted against.
-
 func TestBuildExecutionPromptKeepsTaskProjectBindingWithoutSnapshotProject(t *testing.T) {
 	task := &domain.Task{
 		ID: 21, Title: "无项目快照", ActionType: "manual_followup", Target: "目标",

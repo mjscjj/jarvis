@@ -130,8 +130,8 @@ type CloseInput struct {
 }
 
 // TaskUpdateInput changes the mutable, current execution surface of a Task.
-// SourcePayload and Background are deliberately absent: they are frozen source
-// evidence and must never be rewritten as the Agent's understanding evolves.
+// SourcePayload is deliberately absent: it is frozen source evidence and must
+// never be rewritten as the Agent's understanding evolves.
 type TaskUpdateInput struct {
 	TaskID          uint64
 	ExpectedVersion int32
@@ -656,7 +656,7 @@ var supplementableTaskStatuses = map[string]struct{}{
 
 // Supplement appends a human clarification/instruction to a Task's M5-only
 // execution_supplements. It does not touch Todo.content or the Task's
-// frozen source_payload/background evidence.
+// frozen source_payload evidence.
 func (s *Store) Supplement(ctx context.Context, input SupplementInput) (*TaskView, error) {
 	if input.TaskID == 0 || input.ExpectedVersion < 0 {
 		return nil, fmt.Errorf("%w: Task ID/version is invalid", ErrInvalidInput)
@@ -1095,8 +1095,8 @@ func (s *Store) ResetForRerun(ctx context.Context, taskID uint64) (*domain.Task,
 
 // resetTaskForRerun is the shared persistence boundary for both a principal
 // rerun and an automatic rerun caused by fresh evidence on an observing Todo.
-// The Task's source_payload/background stay frozen; prior runs plus live tools
-// give M5 the history and current-world lookup path for the new run.
+// The Task's source_payload stays frozen; prior runs plus live tools give M5
+// the history and current-world lookup path for the new run.
 func resetTaskForRerun(db *gorm.DB, task *domain.Task, actorType string, detail any, occurredAt time.Time) (*domain.Task, error) {
 	if db == nil || task == nil || task.ID == 0 || occurredAt.IsZero() {
 		return nil, fmt.Errorf("%w: rerun Task, db and occurred_at are required", ErrInvalidInput)

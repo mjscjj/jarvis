@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-09-05
 > Code source: `internal/execute/`, `internal/taskcreate/`, `internal/scheduledtask/`, `internal/effectops/`
 
 执行环节接管 `pending` Task：调查真实状态、确定目标和动作、判断具体副作用要不要先问 principal，并把事项推进到真实结果、等待或明确阻塞。
@@ -15,11 +15,24 @@ Task 可来自：
 - `scheduled_task`：到期物化；
 - `manual`：通过 API 创建。
 
-执行 prompt 包含：完整 `source_payload`、整份冻结 `background`、执行时实时装配的 `current_world`、execution supplements、该 Task 的全部历史 runs、shared memory、rules、Skills、工具目录和审批政策。背景快照是创建时的世界，需要实体当前状态时由 M5 自己读 `summary` 页。`current_world` 则是每次 run 开始时查的最近 20 个 Task 与 20 条未闭环 Todo 摘要，用于避免重复执行；Task 不按状态过滤，因为最可能被重做的就是刚 `done` 的那些。要详情用 `get-task` / `get-todo`，要更大范围用 `list-tasks` / `list-todos` 配 `--group-id` 或 `--project-id`。所有来源统一使用宽松 `source_payload`，Go 和前端都不把它解释成固定计划结构。调用方明确选定仓库时，M5 消费 `repo_path`；否则继承 Jarvis 当前工作目录并自行定位，不从 background 的仓库列表猜默认值。
+所有来源都把原始语义和创建时事实冻结在同一个宽松 `source_payload`，结构为 `source + capture + annotation`。Todo 来源机械复制 `Todo.content`；scheduled、manual 和 proactive 来源在创建 Task 时由程序组装同一外壳。Go 和前端都不把 `source` 或 `annotation` 解释成固定执行计划。
+
+首轮执行 prompt 默认只放：
+
+- Task ID、来源、标题/目标 hint、当前状态、当前 summary、项目绑定和显式 `repo_path`；
+- `annotation.brief`、`annotation.scene`、直接来源消息原文；没有消息来源时放原始 `source`；
+- 可展开的 capture 区块、会话消息数和读取命令；
+- execution supplements；
+- 历史 run 数量及最近一次 ID/状态，不放 run 正文；
+- shared memory、M5 rules、Skills、工具目录和审批政策。
+
+完整 Candidate、周边会话、实体背景、相关 Todo/Task 和历史 run 正文都按需读取。`get-task --context ...` 展开冻结区块，`--message-id` 读取单条冻结消息；`list-tasks` / `list-todos` 可按关键词、来源消息、项目或群筛选；`list-task-runs` 返回分页概要，`get-task-run` 再读完整结果、错误和 effects，只有 `--include-prompt` 才展开 prompt。需要实体当前状态时由 M5 读取 summary 页或 Fact，而不是在启动时重新拼一个 `current_world`。
+
+调用方明确选定仓库时，M5 消费 `repo_path`；否则继承 Jarvis 当前工作目录并自行定位，不从 capture 的项目资料猜默认值。
 
 执行进程可以自行派生只读的子 agent 去做素材密集的调查，只把带出处的结论收回主上下文；派生规则写在 `m5-system-prompt.md`，Go 侧不感知也不调度。要不要问 principal、终态裁决、`effects` 申报、`progress_summary` 和 `yield-until` 不下放——可恢复的 Session 属于主进程。
 
-上游的 `source_payload` 和 `background` 是冻结证据，不是最终执行契约。M5 可根据调查调整目标与动作，变化通过 supplements、运行记录、状态、结果和 Task summary 留痕，不回写来源证据。
+上游 `source_payload` 中的来源和 capture 是冻结证据，不是最终执行契约。M5 可根据调查调整目标与动作，变化通过 supplements、运行记录、状态、结果和 Task summary 留痕，不回写来源证据。
 
 ## 2. 执行 phases
 
@@ -86,5 +99,4 @@ Task 执行接口包括：runs、events、output、execute、interrupt、rerun�
 
 - effects 未对外部系统 receipt 做独立核验。
 - M5 直接发送普通消息后、最终 effects 落盘前仍有崩溃窗口；Skill 的查重、稳定幂等键和读回只能降低重复概率，不是 exactly-once outbox。
-- Task 背景和可选计划缺更新 API/tool 与事件留痕。
 - ExecutionRun 尚未作为独立 factengine 来源。

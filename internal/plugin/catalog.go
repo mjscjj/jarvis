@@ -76,10 +76,10 @@ func BuiltinRegistry() (*Registry, error) {
 		},
 		{
 			ID: "meego", Name: "Meego",
-			Description: "采集由你负责且尚未完成的需求、缺陷和状态变化。",
+			Description: "采集由你负责、在配置时间范围内创建且尚未完成的需求和缺陷。",
 			Source:      "meego", CollectorSkill: "meego-clue-collector",
 			Provider: "meego", Permissions: []string{"bytedcli:meego.read"},
-			IntervalMinutes: 60,
+			IntervalMinutes: 60, DefaultConfig: json.RawMessage(`{"lookback_days":30}`),
 		},
 		{
 			ID: "oncall", Name: "Oncall",

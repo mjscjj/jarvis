@@ -205,7 +205,7 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 	for _, statement := range []string{
 		`CREATE TABLE todo (id INTEGER PRIMARY KEY, title TEXT, description TEXT, action_type TEXT, target TEXT, context TEXT, open_questions JSON, commitment_strength TEXT, source_message_ids JSON, source_quote TEXT, group_id INTEGER, project_id INTEGER, status TEXT, dedup_fingerprint TEXT, content JSON, resolution JSON, revision INTEGER, first_seen_at DATETIME, last_evidence_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE todo_event (id INTEGER PRIMARY KEY, todo_id INTEGER, from_status TEXT, to_status TEXT, actor TEXT, detail JSON, snapshot JSON, created_at DATETIME)`,
-		`CREATE TABLE task (id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT, action_type TEXT, target TEXT, background JSON, source_payload JSON, source_type TEXT, status TEXT, execution_result JSON, summary TEXT, project_id INTEGER, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE task (id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT, action_type TEXT, target TEXT, source_payload JSON, source_type TEXT, status TEXT, execution_result JSON, summary TEXT, project_id INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE execution_run (id INTEGER PRIMARY KEY, task_id INTEGER, action_type TEXT, stage TEXT, sandbox TEXT, status TEXT, prompt TEXT, summary TEXT, output JSON, effects JSON, error_detail TEXT, started_at DATETIME, finished_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE task_event (id INTEGER PRIMARY KEY, task_id INTEGER, task_version INTEGER, event_type TEXT, from_status TEXT, to_status TEXT, actor_type TEXT, actor_ref TEXT, run_id INTEGER, detail JSON, occurred_at DATETIME, created_at DATETIME)`,
 	} {

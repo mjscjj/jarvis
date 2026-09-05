@@ -211,6 +211,24 @@ func TestUpdateConfigPersistsAndRefreshesScheduleInstruction(t *testing.T) {
 	}
 }
 
+func TestBuiltinMeegoDefaultsToThirtyDayLookback(t *testing.T) {
+	registry, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, ok := registry.Get("meego")
+	if !ok {
+		t.Fatal("Meego manifest is missing")
+	}
+	if string(manifest.DefaultConfig) != `{"lookback_days":30}` {
+		t.Fatalf("Meego default config = %s", manifest.DefaultConfig)
+	}
+	instruction := scheduleInput(manifest, manifest.DefaultConfig, true).Instruction
+	if !strings.Contains(instruction, `"lookback_days":30`) {
+		t.Fatalf("Meego schedule instruction = %q", instruction)
+	}
+}
+
 func TestUpdateRejectsNonObjectConfig(t *testing.T) {
 	db := openPluginDB(t)
 	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {

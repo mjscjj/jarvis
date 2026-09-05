@@ -86,7 +86,7 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		if todo.Status != "extracted" {
 			return transitionError(todo.ID, todo.Status, "materialized")
 		}
-		content, err := requireContextSnapshot(&todo)
+		content, err := requireTodoContent(&todo)
 		if err != nil {
 			return err
 		}
@@ -153,7 +153,7 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 	return &result, nil
 }
 
-func requireContextSnapshot(todo *domain.Todo) (json.RawMessage, error) {
+func requireTodoContent(todo *domain.Todo) (json.RawMessage, error) {
 	raw := []byte(todo.Content)
 	if err := contextpack.Validate(raw); err != nil {
 		return nil, fmt.Errorf("%w: todo_id=%d content invalid: %v", ErrInvalidInput, todo.ID, err)

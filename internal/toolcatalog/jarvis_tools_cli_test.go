@@ -113,9 +113,9 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 		case "/api/key-matters":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":4,"title":"matter","status":"跟进中","summary":"current","project_id":1,"due_at":null,"last_progress_at":null,"last_active_at":"2026-08-07T10:00:00Z","closed_at":null,"project":{"large":true}}]}}`)
 		case "/api/todos":
-			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":1,"title":"todo","description":"large","context_snapshot":{"large":true},"status":"extracted"}]}}`)
+			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":1,"title":"todo","description":"large","content":{"large":true},"status":"extracted"}]}}`)
 		case "/api/tasks":
-			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":2,"title":"task","background":"large","source_payload":{"large":true},"execution_result":"large","status":"done"}]}}`)
+			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":2,"title":"task","source_payload":{"large":true},"execution_result":"large","status":"done"}]}}`)
 		case "/api/scheduled-tasks":
 			fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":3,"title":"timer","instruction":"large","dispatch_payload":{"large":true},"context_snapshot":{"large":true},"status":"active"}]}}`)
 		default:
@@ -129,8 +129,8 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 		forbidden []string
 	}{
 		{"list-key-matters", []string{"closed_at", "project"}},
-		{"list-todos", []string{"description", "context_snapshot"}},
-		{"list-tasks", []string{"background", "source_payload", "execution_result"}},
+		{"list-todos", []string{"description", "content"}},
+		{"list-tasks", []string{"source_payload", "execution_result"}},
 		{"list-scheduled-tasks", []string{"instruction", "dispatch_payload", "context_snapshot"}},
 	}
 	for _, check := range checks {

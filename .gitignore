@@ -31,6 +31,9 @@ __pycache__/
 /.world/
 /minutes/
 /lark-im-resources/
+/doc-fetch-resources/
+/subagent_outputs/
+/trace-*.json
 
 # docs/summery 下各演示项目的本地依赖、构建和测试产物
 /docs/summery/**/node_modules/

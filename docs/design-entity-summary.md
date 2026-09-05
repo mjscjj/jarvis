@@ -1,7 +1,7 @@
 # 实体长期事实：summary 单页化
 
 > Status: proposed
-> Authority: `docs/00-overview.md` 是总纲；本文取代 `docs/design-world-context-progressive.md` §7、§8 的推送与降级方案
+> Authority: `docs/00-overview.md` 是总纲；本文只提议实体长期事实页的收敛方式
 > Baseline: 2026-08-15
 
 ## 1. 问题
@@ -209,9 +209,9 @@ project:44「公会 Agent 基建」今日 23 条、近 7 天 187 条 —— 需�
 
 `Snapshot` 中实体字段收敛为 `summary`，`buildContextSnapshot` 一并冻结。
 
-### 7.3 降级逻辑删除
+### 7.3 降级边界
 
-`docs/design-world-context-progressive.md` §8「超长降级顺序反转」整段作废。页面自带上限后世界数据体量有界，不需要运行时逐级收紧。`BuildPrompt` 超 `MaxChars` 时恢复为只丢会话消息，仍然 fail-fast 不静默截断。
+页面自带上限后世界数据体量有界，不再增加按实体类型逐级收紧的降级协议。`BuildPrompt` 超 `MaxChars` 时只裁减可舍弃的会话上下文，仍然 fail-fast，不静默截断冻结证据。
 
 ## 8. 维护层
 

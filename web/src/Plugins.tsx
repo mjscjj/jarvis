@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   Descriptions,
+  InputNumber,
   Select,
   Space,
   Switch,
@@ -56,6 +57,69 @@ function errorText(cause: unknown): string {
 }
 
 const defaultOncallSearchTerms = ['oncall', '值班']
+const defaultMeegoLookbackDays = 30
+
+function meegoLookbackDays(item: Plugin): number {
+  const configured = item.config.lookback_days
+  return typeof configured === 'number' && Number.isInteger(configured) && configured > 0
+    ? configured
+    : defaultMeegoLookbackDays
+}
+
+function MeegoLookbackConfig({
+  item,
+  onUpdated,
+  onError,
+}: {
+  item: Plugin
+  onUpdated: (plugin: Plugin) => void
+  onError: (error: string) => void
+}) {
+  const [days, setDays] = useState(() => meegoLookbackDays(item))
+  const [saving, setSaving] = useState(false)
+  const savedDays = meegoLookbackDays(item)
+
+  useEffect(() => {
+    setDays(meegoLookbackDays(item))
+  }, [item.revision])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const updated = await updatePlugin(item.id, item.enabled, item.revision, {
+        ...item.config,
+        lookback_days: days,
+      })
+      onUpdated(updated)
+    } catch (cause) {
+      onError(errorText(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="plugin-config-section">
+      <div className="plugin-config-heading">
+        <div>
+          <Title level={4}>创建时间范围</Title>
+          <Text type="secondary">只采集最近这些天内创建、且仍未完成的 Meego 工作项。</Text>
+        </div>
+        <Button type="primary" icon={<SaveOutlined />} loading={saving} disabled={days === savedDays} onClick={() => void save()}>
+          保存规则
+        </Button>
+      </div>
+      <InputNumber
+        min={1}
+        max={3650}
+        precision={0}
+        value={days}
+        addonAfter="天"
+        onChange={(value) => setDays(value ?? defaultMeegoLookbackDays)}
+      />
+    </section>
+  )
+}
 
 function oncallSearchTerms(item: Plugin): string[] {
   const configured = item.config.search_terms
@@ -343,6 +407,16 @@ export default function Plugins() {
         </Space>
       </div>
       {item.last_error && <Alert type="error" showIcon message={item.last_error} />}
+      {item.id === 'meego' && (
+        <MeegoLookbackConfig
+          item={item}
+          onUpdated={applyUpdate}
+          onError={(message) => {
+            setError(message)
+            void load()
+          }}
+        />
+      )}
       {item.id === 'oncall' && (
         <OncallSearchConfig
           item={item}

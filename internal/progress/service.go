@@ -24,14 +24,14 @@ var taskEventTypes = map[string]struct{}{
 	"created": {}, "execution_started": {}, "rerun_requested": {},
 	"supplemented": {}, "execution_succeeded": {},
 	"execution_failed": {}, "execution_observing": {}, "execution_interrupted": {},
-	"stale_failed": {}, "stale_requeued": {}, "snapshot_imported": {}, "updated": {}, "closed": {},
+	"stale_failed": {}, "stale_requeued": {}, "updated": {}, "closed": {},
 	"feishu_message_recalled": {},
 	"waiting_scheduled":       {}, "resumed": {}, "human_input_requested": {},
 	"human_response_received": {},
 }
 
 var actorTypes = map[string]struct{}{
-	"user": {}, "m5": {}, "proactive": {}, "scheduled_task": {}, "system": {}, "seed": {}, "migration": {},
+	"user": {}, "m5": {}, "proactive": {}, "scheduled_task": {}, "system": {}, "seed": {},
 }
 
 var taskStatuses = map[string]struct{}{
