@@ -78,7 +78,6 @@ export interface Todo {
   description: string
   action_type: ActionType
   target: string
-  context: string
   open_questions: string[] | null
   commitment_strength: 'firm' | 'tentative' | 'mentioned'
   source_message_ids: string[]
@@ -96,7 +95,7 @@ export interface Todo {
   group: TodoGroup | null
   project: TodoProject | null
   resolution: Resolution | null
-  context_snapshot: ContextSnapshot | null
+  content: Record<string, unknown> | null
 }
 
 export interface TodoList {
@@ -142,7 +141,6 @@ export interface Task {
   title: string
   action_type: ActionType
   target: string
-  background: Record<string, unknown>
   source_payload: unknown
   status: TaskStatus
   execution_result: Record<string, unknown> | null
@@ -265,6 +263,9 @@ export interface ExecutionRun {
 }
 
 export interface ExecutionRunList {
+  total: number
+  page: number
+  page_size: number
   items: ExecutionRun[]
 }
 

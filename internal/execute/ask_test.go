@@ -353,7 +353,7 @@ func TestBuildHumanResumePrompt(t *testing.T) {
 func TestBuildExecutionPrompt(t *testing.T) {
 	task := &domain.Task{
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
-		SourcePayload: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: frozenTestContent(`{"steps":["update"]}`, `{}`),
 	}
 	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil))
 	if err != nil {
@@ -376,7 +376,7 @@ func TestBuildExecutionPrompt(t *testing.T) {
 func TestBuildExecutionPromptIncludesSharedMemory(t *testing.T) {
 	task := &domain.Task{
 		ID: 11, Title: "更新周报", ActionType: "doc_write",
-		SourcePayload: datatypes.JSON(`{"steps":["update"]}`), Background: datatypes.JSON(`{"snapshot_version":"v1"}`),
+		SourcePayload: frozenTestContent(`{"steps":["update"]}`, `{}`),
 	}
 	empty, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "只读不审批。", task, "", testToolCatalog, "", "", "", nil))
 	if err != nil {
@@ -400,7 +400,7 @@ func TestBuildExecutionPromptIncludesSharedMemory(t *testing.T) {
 }
 
 func TestBuildExecutionPromptRequiresApprovalPolicy(t *testing.T) {
-	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", SourcePayload: datatypes.JSON(`{}`), Background: datatypes.JSON(`{}`)}
+	task := &domain.Task{ID: 14, Title: "x", ActionType: "doc_write", SourcePayload: frozenTestContent(`{}`, `{}`)}
 	if _, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "", task, "", testToolCatalog, "", "", "", nil)); err == nil {
 		t.Fatal("empty approval policy must fail")
 	}

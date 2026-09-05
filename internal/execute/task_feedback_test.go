@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"jarvis/internal/contextpack"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
@@ -114,7 +115,7 @@ func TestTaskFeedbackTargetUsesNewestFeishuEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode() error = %v", err)
 	}
-	got, err := taskFeedbackTarget(raw)
+	got, err := taskFeedbackTarget(frozenTestContent(`{"source_message_ids":["om_old","om_new","meeting:1"]}`, string(raw)))
 	if err != nil || got.SourceMessageID != "om_new" {
 		t.Fatalf("taskFeedbackTarget() = %#v, %v", got, err)
 	}
@@ -135,7 +136,7 @@ func TestStartTaskFeedbackIgnoresUnavailableSourceConversation(t *testing.T) {
 	executor := &AgentExecutor{store: newTaskFeedbackTestStore(t), feedback: feedback}
 	run := &domain.ExecutionRun{TaskID: 453, Status: "running"}
 
-	if err := executor.startTaskFeedback(t.Context(), &domain.Task{ID: 453, Background: datatypes.JSON(raw)}, run); err != nil {
+	if err := executor.startTaskFeedback(t.Context(), &domain.Task{ID: 453, SourcePayload: frozenTestContent(`{"source_message_ids":["om_human_p2p"]}`, string(raw))}, run); err != nil {
 		t.Fatalf("startTaskFeedback() error = %v, want unavailable source ignored", err)
 	}
 	if feedback.reactionCalls != 1 {
@@ -168,7 +169,7 @@ func TestStartTaskFeedbackRecordsOnItEffect(t *testing.T) {
 	feedback := &successfulTaskFeedback{}
 	executor := &AgentExecutor{store: store, feedback: feedback}
 
-	if err := executor.startTaskFeedback(t.Context(), &domain.Task{ID: 453, Background: datatypes.JSON(raw)}, run); err != nil {
+	if err := executor.startTaskFeedback(t.Context(), &domain.Task{ID: 453, SourcePayload: frozenTestContent(`{"source_message_ids":["om_source"]}`, string(raw))}, run); err != nil {
 		t.Fatalf("startTaskFeedback() error = %v", err)
 	}
 	if feedback.reactionCalls != 1 {
@@ -246,5 +247,19 @@ func TestRecordAgentVerdictPreservesRuntimeFeedbackEffect(t *testing.T) {
 	}
 	if len(effects) != 2 || effects[0]["reaction_id"] != "reaction_on_it" || effects[1]["kind"] != "file" {
 		t.Fatalf("effects = %#v", effects)
+	}
+}
+
+func TestTaskFeedbackIgnoresAnnotationAndUncitedConversation(t *testing.T) {
+	raw, err := contextpack.Freeze(
+		[]byte(`{"source_message_ids":["om_source"]}`),
+		[]byte(`{"messages":[{"message_id":"om_source","create_time":10},{"message_id":"om_unrelated","create_time":100}]}`),
+		"brief", []byte(`{"source_message_ids":["om_unrelated"],"messages":[{"message_id":"om_invented","create_time":999}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := taskFeedbackTarget(raw)
+	if err != nil || target.SourceMessageID != "om_source" {
+		t.Fatalf("feedback used unvalidated target: %#v %v", target, err)
 	}
 }

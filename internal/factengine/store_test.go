@@ -203,7 +203,7 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE todo (id INTEGER PRIMARY KEY, title TEXT, description TEXT, action_type TEXT, target TEXT, context TEXT, open_questions JSON, commitment_strength TEXT, source_message_ids JSON, source_quote TEXT, group_id INTEGER, project_id INTEGER, status TEXT, dedup_fingerprint TEXT, context_snapshot JSON, extraction_result JSON, resolution JSON, revision INTEGER, first_seen_at DATETIME, last_evidence_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE todo (id INTEGER PRIMARY KEY, title TEXT, description TEXT, action_type TEXT, target TEXT, context TEXT, open_questions JSON, commitment_strength TEXT, source_message_ids JSON, source_quote TEXT, group_id INTEGER, project_id INTEGER, status TEXT, dedup_fingerprint TEXT, content JSON, resolution JSON, revision INTEGER, first_seen_at DATETIME, last_evidence_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE todo_event (id INTEGER PRIMARY KEY, todo_id INTEGER, from_status TEXT, to_status TEXT, actor TEXT, detail JSON, snapshot JSON, created_at DATETIME)`,
 		`CREATE TABLE task (id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT, action_type TEXT, target TEXT, background JSON, source_payload JSON, source_type TEXT, status TEXT, execution_result JSON, summary TEXT, project_id INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE execution_run (id INTEGER PRIMARY KEY, task_id INTEGER, action_type TEXT, stage TEXT, sandbox TEXT, status TEXT, prompt TEXT, summary TEXT, output JSON, effects JSON, error_detail TEXT, started_at DATETIME, finished_at DATETIME, created_at DATETIME)`,
@@ -217,20 +217,19 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 	groupID, projectID := uint64(3), uint64(7)
 	todo := domain.Todo{
 		ID: 11, Title: "接入通用事实源", Description: "把材料直接交给 Agent", ActionType: "agent_task",
-		Target: "factengine", Context: "完整背景", OpenQuestions: []byte(`[]`), CommitmentStrength: "firm",
+		Target:           "factengine",
 		SourceMessageIDs: []byte(`["om_1"]`), SourceQuote: "全都扔进去", GroupID: &groupID, ProjectID: &projectID,
 		Status: "extracted", DedupFingerprint: strings.Repeat("a", 64),
-		ContextSnapshot:  []byte(`{"background":"不要进入世界维护材料"}`),
-		ExtractionResult: []byte(`{"decision":"extracted"}`), Resolution: []byte(`{"project":"jarvis"}`), Revision: 1,
+		Content: []byte(`{"source":{"decision":"extracted"},"capture":{},"annotation":{}}`), Resolution: []byte(`{"project":"jarvis"}`), Revision: 1,
 		FirstSeenAt: now, LastEvidenceAt: now, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.Table("todo").Create(map[string]any{
 		"id": todo.ID, "title": todo.Title, "description": todo.Description, "action_type": todo.ActionType,
-		"target": todo.Target, "context": todo.Context, "open_questions": todo.OpenQuestions,
-		"commitment_strength": todo.CommitmentStrength, "source_message_ids": todo.SourceMessageIDs,
-		"source_quote": todo.SourceQuote, "group_id": todo.GroupID, "project_id": todo.ProjectID,
+		"target":             todo.Target,
+		"source_message_ids": todo.SourceMessageIDs,
+		"source_quote":       todo.SourceQuote, "group_id": todo.GroupID, "project_id": todo.ProjectID,
 		"status": todo.Status, "dedup_fingerprint": todo.DedupFingerprint,
-		"context_snapshot": todo.ContextSnapshot, "extraction_result": todo.ExtractionResult, "resolution": todo.Resolution,
+		"content": todo.Content, "resolution": todo.Resolution,
 		"revision":      todo.Revision,
 		"first_seen_at": todo.FirstSeenAt, "last_evidence_at": todo.LastEvidenceAt,
 		"created_at": todo.CreatedAt, "updated_at": todo.UpdatedAt,
@@ -247,14 +246,14 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 	summary := "实现并验证完成"
 	task := domain.Task{
 		ID: 31, TodoID: &todo.ID, Title: "实现通用事实源", ActionType: "agent_task", Target: "factengine",
-		Background: []byte(`{"context":"不要进入的任务背景"}`), SourcePayload: []byte(`{"steps":["不要进入的来源步骤"]}`),
-		SourceType: "todo",
-		Status:     "succeeded", ExecutionResult: []byte(`{"summary":"已经完成"}`), Summary: &summary, ProjectID: &projectID,
+		SourcePayload: []byte(`{"steps":["不要进入的来源步骤"]}`),
+		SourceType:    "todo",
+		Status:        "succeeded", ExecutionResult: []byte(`{"summary":"已经完成"}`), Summary: &summary, ProjectID: &projectID,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.Table("task").Create(map[string]any{
 		"id": task.ID, "todo_id": task.TodoID, "title": task.Title, "action_type": task.ActionType,
-		"target": task.Target, "background": task.Background, "source_payload": task.SourcePayload,
+		"target": task.Target, "source_payload": task.SourcePayload,
 		"source_type": task.SourceType,
 		"status":      task.Status, "execution_result": task.ExecutionResult, "summary": task.Summary, "project_id": task.ProjectID,
 		"created_at": task.CreatedAt, "updated_at": task.UpdatedAt,

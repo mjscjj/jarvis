@@ -923,7 +923,7 @@ func (g *personGenerator) loadBaseline(
 			}
 			item.SourceQuote = capRunes(snapshot.SourceQuote, 300)
 			item.Context = capRunes(snapshot.Context, 300)
-			item.ContextSnapshot = capRunes(string(snapshot.ContextSnapshot), 400)
+			item.ContextSnapshot = capRunes(string(snapshot.Content), 400)
 			item.Resolution = capRunes(string(snapshot.Resolution), 300)
 		}
 		baseline.TodoEvents = append(baseline.TodoEvents, item)
@@ -960,7 +960,7 @@ func (g *personGenerator) loadBaseline(
 		}
 		if event.Task != nil {
 			item.Title = event.Task.Title
-			item.Background = capRunes(string(event.Task.Background), 400)
+			item.Background = capRunes(string(event.Task.SourcePayload), 400)
 			if event.Task.Project != nil {
 				item.Project = event.Task.Project.Name
 			}

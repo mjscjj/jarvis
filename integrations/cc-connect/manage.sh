@@ -25,9 +25,11 @@ scripts/jarvis-install and is not exposed to Jarvis M3/M5.
 commands:
   bind      Create the jarvis-codex project when absent and bind it to the
             current default lark-cli App. Reads one App Secret from stdin/TTY,
-            unless --reuse-existing-secret is explicitly selected.
+            unless --reuse-existing-secret is explicitly selected. Sets Feishu
+            allow_from to the configured principal open_id.
   validate  Validate the default lark-cli identity, CC project route,
-            context bootstrap contract and localhost approval relay.
+            principal-only Feishu access, context bootstrap contract and
+            localhost approval relay.
 
 flags:
   --config PATH

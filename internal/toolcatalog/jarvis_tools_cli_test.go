@@ -146,8 +146,8 @@ func TestJarvisToolsGetTaskLoadsLargeRunFieldsOnlyWhenRequested(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/tasks/9":
 			fmt.Fprint(w, `{"code":0,"data":{"id":9,"title":"task"}}`)
-		case "/api/tasks/9/runs":
-			fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":1,"prompt":"secret prompt","output":"large output","status":"done"}]}}`)
+		case "/api/task-runs/1":
+			fmt.Fprint(w, `{"code":0,"data":{"id":1,"prompt":"secret prompt","output":"large output","status":"done"}}`)
 		case "/api/tasks/9/events", "/api/facts":
 			fmt.Fprint(w, `{"code":0,"data":{"items":[]}}`)
 		default:
@@ -163,7 +163,7 @@ func TestJarvisToolsGetTaskLoadsLargeRunFieldsOnlyWhenRequested(t *testing.T) {
 	if strings.Contains(out, "secret prompt") || strings.Contains(out, "large output") {
 		t.Fatalf("default get-task leaked large fields: %s", out)
 	}
-	out, err = runJarvisTools(t, server.URL, nil, "get-task", "--id", "9", "--include-prompt", "--include-run-output")
+	out, err = runJarvisTools(t, server.URL, nil, "get-task-run", "--id", "1", "--include-prompt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,6 +184,30 @@ func TestJarvisToolsGetScheduledTaskUsesExactEndpoint(t *testing.T) {
 	out, err := runJarvisTools(t, server.URL, nil, "get-scheduled-task", "--id", "17")
 	if err != nil || !strings.Contains(out, `"id":17`) {
 		t.Fatalf("output = %s, error = %v", out, err)
+	}
+}
+
+func TestJarvisToolsContextReadsPreserveNumericEvidence(t *testing.T) {
+	// Envelope key order and escaped text must not affect exact data reads.
+	const data = `{"id":9,"context":{"body":{"id":9007199254740993,"decimal":0.123456789012345678901,"text":"a } , \\\"data\\\": b","new_field":[true,null,{"value":1e400}]}},"prompt":""}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"meta":{"text":"data"},"data":`+data+`,"code":0}`)
+	}))
+	defer server.Close()
+	for _, args := range [][]string{
+		{"get-task", "--id", "9"},
+		{"get-task", "--id", "9", "--context", "source"},
+		{"get-todo", "--id", "9", "--context", "full"},
+		{"get-task-run", "--id", "9", "--include-prompt"},
+	} {
+		out, err := runJarvisTools(t, server.URL, nil, args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.TrimSpace(out) != data {
+			t.Fatalf("%v changed evidence:\n%s\nwant:\n%s", args, out, data)
+		}
 	}
 }
 
@@ -582,7 +606,8 @@ func runJarvisTools(t *testing.T, apiBase string, extraEnv []string, args ...str
 		t.Fatal(err)
 	}
 	command := exec.Command("bash", append([]string{script}, args...)...)
-	command.Env = append(command.Environ(), extraEnv...)
+	command.Env = sanitizedEnv(command.Environ(), "JARVIS_TASK_ID", "JARVIS_AGENT_STAGE")
+	command.Env = append(command.Env, extraEnv...)
 	if apiBase != "" {
 		command.Env = append(command.Env, "JARVIS_API_BASE="+apiBase)
 	}
@@ -591,4 +616,51 @@ func runJarvisTools(t *testing.T, apiBase string, extraEnv []string, args ...str
 		return string(output), fmt.Errorf("jarvis-tools %s: %w: %s", strings.Join(args, " "), err, output)
 	}
 	return string(output), nil
+}
+
+func sanitizedEnv(env []string, names ...string) []string {
+	blocked := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		blocked[name] = struct{}{}
+	}
+	clean := env[:0]
+	for _, item := range env {
+		name, _, ok := strings.Cut(item, "=")
+		if ok {
+			if _, exists := blocked[name]; exists {
+				continue
+			}
+		}
+		clean = append(clean, item)
+	}
+	return clean
+}
+
+func TestFrozenContextCLIUsesNativeMessageIDs(t *testing.T) {
+	for _, test := range []struct {
+		args             []string
+		path, key, value string
+	}{
+		{[]string{"get-task", "--id", "9", "--message-id", "om_a/b"}, "/api/tasks/9", "message_id", "om_a/b"},
+		{[]string{"get-todo", "--id", "9", "--context", "conversation"}, "/api/todos/9", "context", "conversation"},
+		{[]string{"list-tasks", "--source-message-id", "om_source"}, "/api/tasks", "source_message_id", "om_source"},
+		{[]string{"list-todos", "--source-message-id", "om_source"}, "/api/todos", "source_message_id", "om_source"},
+	} {
+		t.Run(strings.Join(test.args, "_"), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != test.path || r.URL.Query().Get(test.key) != test.value {
+					t.Errorf("unexpected URL: %s", r.URL)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"code":0,"data":{"items":[],"context":{}}}`)
+			}))
+			defer server.Close()
+			if _, err := runJarvisTools(t, server.URL, nil, test.args...); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	if _, err := runJarvisTools(t, "", nil, "get-task", "--id", "9", "--material", "source"); err == nil {
+		t.Fatal("retired material flag accepted")
+	}
 }

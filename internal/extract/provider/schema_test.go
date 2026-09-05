@@ -28,6 +28,10 @@ func TestTodoExtractionJSONSchemaIsStrict(t *testing.T) {
 	if _, ok := candidate["properties"].(map[string]any)["payload"]; !ok {
 		t.Fatal("candidate schema is missing payload")
 	}
+	content, ok := candidate["properties"].(map[string]any)["annotation"].(map[string]any)
+	if !ok || content["type"] != "string" || content["properties"] != nil {
+		t.Fatal("schema must accept open JSON content through string transport")
+	}
 	if _, ok := candidate["properties"].(map[string]any)["open_questions"]; ok {
 		t.Fatal("candidate schema still exposes semantic projection open_questions")
 	}

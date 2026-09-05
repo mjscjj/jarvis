@@ -222,7 +222,7 @@ func (s *Service) CreateYield(ctx context.Context, input YieldInput) (*View, err
 		DispatchKind: "resume_task", SubjectType: &subjectType, SubjectID: &input.TaskID,
 		DispatchPayload: payload,
 		Title:           fmt.Sprintf("继续 Task #%d：%s", task.ID, task.Title), ActionType: task.ActionType,
-		Instruction: input.Reason, ContextSnapshot: json.RawMessage(task.Background),
+		Instruction: input.Reason, ContextSnapshot: json.RawMessage(`{}`),
 		ScheduleType: "once", RunAt: &runAt, Enabled: &enabled, initialStatus: "binding",
 	})
 }

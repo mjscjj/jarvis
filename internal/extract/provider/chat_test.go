@@ -5,12 +5,46 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/tools"
 )
+
+func TestExtractWithToolsCarriesOpenContent(t *testing.T) {
+	client, err := NewClient("https://model.test/v1", "test-key", "model", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.http.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		var body struct {
+			ResponseFormat struct {
+				JSONSchema struct {
+					Schema map[string]any `json:"schema"`
+				} `json:"json_schema"`
+			} `json:"response_format"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		candidate := body.ResponseFormat.JSONSchema.Schema["properties"].(map[string]any)["candidates"].(map[string]any)["items"].(map[string]any)
+		if candidate["properties"].(map[string]any)["annotation"].(map[string]any)["type"] != "string" {
+			t.Fatal("wire schema excludes open content")
+		}
+		output := `{"candidates":[{"action_type":"investigate","status":"extracted","title":"排查","target":"网关","project_hint":"","source_message_ids":["om_1"],"source_quote":"请排查","payload":"明确交办","annotation":"{\"brief\":\"现场摘要\",\"new_field\":{\"id\":9007199254740993}}"}]}`
+		response, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]any{"content": output}}}})
+		return jsonResponse(http.StatusOK, string(response)), nil
+	})
+	result, err := client.ExtractWithTools(t.Context(), extract.Prompt{System: "system", User: "user"}, &stubToolBox{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Candidates) != 1 || !strings.Contains(string(result.Candidates[0].Annotation), `"new_field":{"id":9007199254740993}`) {
+		t.Fatalf("lost content: %#v", result)
+	}
+}
 
 // stubToolBox exposes one tool spec and records the tool calls it dispatches.
 type stubToolBox struct {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"jarvis/internal/contextsnap"
+	"jarvis/internal/contextpack"
 	"jarvis/internal/domain"
 	"jarvis/internal/taskcreate"
 
@@ -86,7 +86,7 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		if todo.Status != "extracted" {
 			return transitionError(todo.ID, todo.Status, "materialized")
 		}
-		background, err := requireContextSnapshot(&todo)
+		content, err := requireContextSnapshot(&todo)
 		if err != nil {
 			return err
 		}
@@ -133,9 +133,9 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		}
 		task, err := factory.CreateWithDB(ctx, tx, taskcreate.Input{
 			TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
-			Background: background, SourcePayload: json.RawMessage(todo.ExtractionResult),
-			ProjectID:  copyUint64(todo.ProjectID),
-			SourceType: taskcreate.SourceTodo, SourceID: &todo.ID,
+			SourcePayload: content,
+			ProjectID:     copyUint64(todo.ProjectID),
+			SourceType:    taskcreate.SourceTodo, SourceID: &todo.ID,
 			ActorType: "system",
 		})
 		if errors.Is(err, taskcreate.ErrExists) {
@@ -154,9 +154,9 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 }
 
 func requireContextSnapshot(todo *domain.Todo) (json.RawMessage, error) {
-	raw := []byte(todo.ContextSnapshot)
-	if _, err := contextsnap.Decode(raw); err != nil {
-		return nil, fmt.Errorf("%w: todo_id=%d context_snapshot invalid: %v", ErrInvalidInput, todo.ID, err)
+	raw := []byte(todo.Content)
+	if err := contextpack.Validate(raw); err != nil {
+		return nil, fmt.Errorf("%w: todo_id=%d content invalid: %v", ErrInvalidInput, todo.ID, err)
 	}
 	return json.RawMessage(append([]byte(nil), raw...)), nil
 }

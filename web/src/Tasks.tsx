@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Form, Input, message, Modal, Select, Space, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Form, Input, message, Modal, Select, Space, Spin, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Project, Task, TaskEvent, TaskStatus } from './types'
@@ -94,6 +94,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [error, setError] = useState<string>()
   const [refreshKey, setRefreshKey] = useState(0)
   const [detail, setDetail] = useState<Task>()
+  const [detailError, setDetailError] = useState<string>()
   const [selected, setSelected] = useState<Task>()
   const [finishStatus, setFinishStatus] = useState<'done' | 'failed'>('done')
   const [summary, setSummary] = useState('')
@@ -108,6 +109,8 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [resumeSubmitting, setResumeSubmitting] = useState(false)
   const [recallingMessageID, setRecallingMessageID] = useState<string>()
   const [recallError, setRecallError] = useState<string>()
+  const [runsPage, setRunsPage] = useState(1)
+  const [runsTotal, setRunsTotal] = useState(0)
   const [runs, setRuns] = useState<ExecutionRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runsError, setRunsError] = useState<string>()
@@ -151,18 +154,19 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       setDetail(undefined)
       return
     }
-    if (detail?.id === routedTaskID) return
+    setDetailError(undefined)
     const controller = new AbortController()
     getTask(routedTaskID, controller.signal)
       .then((task) => {
+        if (controller.signal.aborted) return
         setDetail(task)
         setRecallError(undefined)
       })
       .catch((cause: unknown) => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setDetailError(errorText(cause))
       })
     return () => controller.abort()
-  }, [detail?.id, routedTaskID])
+  }, [routedTaskID, refreshKey])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -188,25 +192,31 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     return () => window.clearInterval(timer)
   }, [hasExecuting, page, statuses])
 
-  // 打开详情抽屉时拉该 Task 的执行历史。detail 关闭（undefined）时清空。
+  useEffect(() => { setRunsPage(1) }, [routedTaskID])
+
+  // 历史只取当前页的索引，单次运行正文由展开操作读取。
   useEffect(() => {
-    if (!detail) { setRuns([]); setRunsError(undefined); return }
+    if (routedTaskID === null) { setRuns([]); setRunsTotal(0); setRunsError(undefined); return }
     const controller = new AbortController()
     setRunsLoading(true)
     setRunsError(undefined)
-    listTaskRuns(detail.id, controller.signal)
-      .then((result) => setRuns(result.items))
+    listTaskRuns(routedTaskID, runsPage, 20, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return
+        setRuns(result.items)
+        setRunsTotal(result.total)
+      })
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRunsError(errorText(cause))
       })
       .finally(() => { if (!controller.signal.aborted) setRunsLoading(false) })
     return () => controller.abort()
-  }, [detail, refreshKey])
+  }, [routedTaskID, runsPage, refreshKey])
 
   const openDetail = (task: Task) => {
     onDetailOpen?.()
     setRecallError(undefined)
-    setDetail(task)
+    setDetail(undefined)
     setSelection({
       kind: 'task',
       id: task.id,
@@ -439,7 +449,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
           return <Button size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>查看等待</Button>
         }
         if (task.status === 'needs_human') {
-          return <Button type="primary" size="small" loading={resumeSubmitting && resumeTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openResume(task) }}>回复并继续</Button>
+          return <Button type="primary" size="small" loading={resumeSubmitting && resumeTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openDetail(task) }}>回复并继续</Button>
         }
         if (task.status === 'done' || task.status === 'failed') {
           return <Button size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>{task.status === 'done' ? '查看结果' : '查看原因'}</Button>
@@ -542,9 +552,15 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         </Form>
       </Space>
     </Modal>
+    <Modal title={`Task #${routedTaskID}`} open={routedTaskID !== null && detail?.id !== routedTaskID} footer={null} onCancel={closeDetail}>
+      {detailError ? <Alert type="error" title="详情加载失败" description={detailError} action={<Button onClick={() => setRefreshKey((value) => value + 1)}>重试</Button>} /> : <Spin />}
+    </Modal>
     <TaskDetailModal
-      task={detail}
+      task={detail?.id === routedTaskID ? detail : undefined}
       runs={runs}
+      runsPage={runsPage}
+      runsTotal={runsTotal}
+      onRunsPageChange={setRunsPage}
       events={events}
       runsLoading={runsLoading}
       eventsLoading={eventsLoading}

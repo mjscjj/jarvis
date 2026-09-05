@@ -61,14 +61,14 @@ running_task_count() {
 }
 
 wait_for_health() {
-  for attempt in {1..10}; do
+  for attempt in {1..30}; do
     if curl --fail --silent --show-error --max-time 2 -o /dev/null http://127.0.0.1:18800/healthz; then
       echo "backend health HTTP 200"
       return 0
     fi
     sleep 1
   done
-  echo "backend did not become reachable within 10 seconds; check var/log/jarvis-server.error.log" >&2
+  echo "backend did not become reachable within 30 seconds; check var/log/jarvis-server.error.log" >&2
   return 1
 }
 

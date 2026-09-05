@@ -27,14 +27,14 @@ case $# in
 esac
 
 wait_for_health() {
-  for _ in {1..10}; do
+  for _ in {1..30}; do
     if curl --fail --silent --show-error --max-time 2 -o /dev/null http://127.0.0.1:18800/healthz; then
       printf 'backend health HTTP 200\n'
       return 0
     fi
     sleep 1
   done
-  printf 'backend did not become reachable within 10 seconds; inspect journalctl --user -u %s\n' "$UNIT" >&2
+  printf 'backend did not become reachable within 30 seconds; inspect journalctl --user -u %s\n' "$UNIT" >&2
   return 1
 }
 

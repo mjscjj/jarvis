@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentusage"
+	"jarvis/internal/contextpack"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
@@ -419,6 +420,11 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 	if source.TaskID != task.ID || source.CodexSessionID == nil || strings.TrimSpace(*source.CodexSessionID) == "" {
 		return nil, fmt.Errorf("%w: source_run_id=%d has no persisted Codex session for task_id=%d", ErrInvalidInput, sourceRunID, taskID)
 	}
+	state, err := json.Marshal(map[string]any{"id": task.ID, "status": task.Status, "version": task.Version, "title": task.Title, "target": task.Target, "summary": task.Summary, "execution_supplements": rawJSON(task.ExecutionSupplements)})
+	if err != nil {
+		return nil, err
+	}
+	prompt += "\nBEGIN_CURRENT_TASK_STATE\n" + string(state) + "\nEND_CURRENT_TASK_STATE"
 	stage := source.Stage
 	if stage == "" {
 		stage = "execute"
@@ -757,7 +763,7 @@ func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task
 	if e.feedback == nil || task == nil || run == nil {
 		return nil
 	}
-	target, err := taskFeedbackTarget(task.Background)
+	target, err := taskFeedbackTarget(task.SourcePayload)
 	if err != nil {
 		return fmt.Errorf("resolve Task feedback source task_id=%d: %w", task.ID, err)
 	}
@@ -791,12 +797,20 @@ func (e *AgentExecutor) startTaskFeedback(ctx context.Context, task *domain.Task
 }
 
 func taskFeedbackTarget(raw []byte) (TaskFeedbackTarget, error) {
-	snapshot, err := contextsnap.Decode(raw)
+	bodies, err := contextpack.SourceMessages(raw)
 	if err != nil {
 		return TaskFeedbackTarget{}, err
 	}
+	var messages []contextsnap.Message
+	for _, body := range bodies {
+		var message contextsnap.Message
+		if err := json.Unmarshal(body, &message); err != nil {
+			return TaskFeedbackTarget{}, err
+		}
+		messages = append(messages, message)
+	}
 	var selected contextsnap.Message
-	for _, message := range snapshot.Messages {
+	for _, message := range messages {
 		if !strings.HasPrefix(strings.TrimSpace(message.MessageID), "om_") {
 			continue
 		}
@@ -935,7 +949,7 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 		run.RepoPath = &repoPath
 	}
 
-	previousRuns, err := e.loadPriorRunSummaries(ctx, task.ID, run.ID)
+	history, err := e.loadRunHistory(ctx, task.ID, run.ID)
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err
 	}
@@ -966,15 +980,11 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	world, err := e.loadCurrentWorld(ctx, task.ID)
-	if err != nil {
-		return e.failRun(run, startedAt, err), nil, err
-	}
 	prompt, err := buildExecutionPrompt(executionPromptInput{
 		SystemPrompt: systemPrompt, ApprovalPolicy: approvalPolicy, Task: task,
 		RepoPath: repoPath, ToolCatalog: toolCatalog, SharedMemory: sharedMemory,
 		WorkRules: workRules, Skills: skills,
-		PreviousRuns: previousRuns, CurrentWorld: world,
+		History: history,
 	})
 	if err != nil {
 		return e.failRun(run, startedAt, err), nil, err

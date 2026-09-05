@@ -25,11 +25,10 @@ func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatc
 		CapturedAt:      s.now().UTC().Format(time.RFC3339),
 		Principal:       snapshotPrincipal(batch.Principal),
 		Group:           snapshotGroup(batch.Group),
-		Messages:        snapshotMessages(unit, candidate),
-		Conversation:    snapshotConversation(unit),
+		Messages:        snapshotConversation(unit),
 		Participants:    snapshotParticipants(unit.Participants),
 		Resources:       snapshotResources(unit.Resources),
-		OtherProjects:   snapshotOtherProjects(batch.OtherProjects, projectID),
+		OtherProjects:   snapshotOtherProjects(batch.OtherProjects),
 	}
 
 	project, err := s.snapshotProject(ctx, batch, projectID)
@@ -135,12 +134,11 @@ func snapshotResources(resources []ResourceContext) []contextsnap.Resource {
 	return result
 }
 
-func snapshotOtherProjects(projects []OtherProjectContext, selectedID *uint64) []contextsnap.ProjectBrief {
+// Preserve the catalog M3 saw even when one entry becomes the resolved project.
+// Its advertised material key and contents must survive inference unchanged.
+func snapshotOtherProjects(projects []OtherProjectContext) []contextsnap.ProjectBrief {
 	result := make([]contextsnap.ProjectBrief, 0, len(projects))
 	for i := range projects {
-		if selectedID != nil && projects[i].ID == *selectedID {
-			continue
-		}
 		result = append(result, contextsnap.ProjectBrief{
 			ID: projects[i].ID, Code: nonEmptyPtr(projects[i].Code), Name: projects[i].Name,
 			Role: projects[i].Role, Status: projects[i].Status, Priority: projects[i].Priority,
@@ -149,44 +147,11 @@ func snapshotOtherProjects(projects []OtherProjectContext, selectedID *uint64) [
 	return result
 }
 
-// snapshotMessages returns the candidate's cited source evidence messages, in
-// the order the candidate cited them, copied verbatim from the unit.
-func snapshotMessages(unit ConversationUnit, candidate Candidate) []contextsnap.Message {
-	byID := make(map[string]MessageContext, len(unit.Messages))
-	for _, message := range unit.Messages {
-		byID[message.MessageID] = message
-	}
-	messages := make([]contextsnap.Message, 0, len(candidate.SourceMessageIDs))
-	for _, id := range candidate.SourceMessageIDs {
-		message, ok := byID[id]
-		if !ok {
-			continue
-		}
-		messages = append(messages, contextsnap.Message{
-			MessageID: message.MessageID, ChatID: message.ChatID, ChatMode: message.ChatMode,
-			SenderOpenID: message.SenderOpenID, SenderName: message.SenderName,
-			Content: message.Content, RootID: message.RootID, ThreadID: message.ThreadID, CreateTime: message.CreateTime,
-		})
-	}
-	return messages
-}
-
-// maxConversationMessages bounds how many surrounding messages we freeze into
-// the snapshot's conversation context. Enough for several rounds of背景, small
-// enough to keep the snapshot from bloating.
-const maxConversationMessages = 25
-
-// snapshotConversation freezes the surrounding chat thread (the whole
-// conversation unit, capped) so M5 read more than the single cited message.
-// It keeps the most recent messages (chronological order preserved) when the
-// unit exceeds the cap, since recent context is the most relevant.
+// snapshotConversation preserves the entire admitted unit for later reads.
 func snapshotConversation(unit ConversationUnit) []contextsnap.Message {
 	messages := unit.Messages
 	if len(messages) == 0 {
 		return nil
-	}
-	if len(messages) > maxConversationMessages {
-		messages = messages[len(messages)-maxConversationMessages:]
 	}
 	conversation := make([]contextsnap.Message, 0, len(messages))
 	for _, message := range messages {

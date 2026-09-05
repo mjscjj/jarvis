@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/contextpack"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/progress"
@@ -145,11 +146,22 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 			return nil, fmt.Errorf("%w: task_id=%d", ErrExists, existing.ID)
 		}
 	}
+	content := normalized.SourcePayload
+	if normalized.SourceType == SourceTodo {
+		if err := contextpack.Validate(content); err != nil {
+			return nil, fmt.Errorf("Task source content: %w", err)
+		}
+	} else {
+		content, err = contextpack.Freeze(normalized.SourcePayload, normalized.Background, normalized.Title, nil)
+		if err != nil {
+			return nil, fmt.Errorf("freeze Task source content: %w", err)
+		}
+	}
 	now := f.now().UTC()
 	row := domain.Task{
 		TodoID: normalized.TodoID, Title: normalized.Title, ActionType: normalized.ActionType,
-		Target: normalized.Target, Background: datatypes.JSON(normalized.Background),
-		SourcePayload: datatypes.JSON(normalized.SourcePayload),
+		Target:        normalized.Target,
+		SourcePayload: datatypes.JSON(content),
 		SourceType:    normalized.SourceType, SourceID: normalized.SourceID, OccurrenceKey: normalized.OccurrenceKey,
 		Status:    "pending",
 		ProjectID: normalized.ProjectID, RepoPath: normalized.RepoPath,
@@ -205,9 +217,11 @@ func normalizeInput(input Input) (Input, error) {
 	if input.SourceID != nil && *input.SourceID == 0 {
 		return Input{}, fmt.Errorf("%w: source_id must be positive", ErrInvalidInput)
 	}
-	input.Background = mustJSONObject(input.Background, true)
-	if input.Background == nil {
-		return Input{}, fmt.Errorf("%w: background must be a JSON object", ErrInvalidInput)
+	if input.SourceType != SourceTodo {
+		input.Background = mustJSONObject(input.Background, true)
+		if input.Background == nil {
+			return Input{}, fmt.Errorf("%w: background must be a JSON object", ErrInvalidInput)
+		}
 	}
 	input.SourcePayload = mustJSONValue(input.SourcePayload, true)
 	if input.SourcePayload == nil {

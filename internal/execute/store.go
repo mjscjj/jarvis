@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"jarvis/internal/contextpack"
 	"jarvis/internal/domain"
 	"jarvis/internal/observability"
 	"jarvis/internal/progress"
@@ -23,6 +24,7 @@ import (
 
 var (
 	ErrTaskNotFound      = errors.New("execution Task not found")
+	ErrRunNotFound       = errors.New("execution run not found")
 	ErrVersionConflict   = errors.New("execution version conflict")
 	ErrInvalidTransition = errors.New("invalid execution transition")
 	ErrInvalidInput      = errors.New("invalid execution input")
@@ -33,8 +35,7 @@ var taskStatuses = map[string]struct{}{
 }
 
 // TaskSummaryMaxChars caps Task.summary. M5 rewrites the summary in full on
-// every run, and every Task's summary is injected into every other Task's
-// current_world, so an uncapped summary leaks into every future prompt. The
+// every run and it is used in compact list results. The
 // ceiling is the mechanism: without one the agent keeps appending instead of
 // restating where the matter stands.
 const TaskSummaryMaxChars = 1000
@@ -52,8 +53,10 @@ func validateTaskSummary(summary string) error {
 }
 
 type TaskFilter struct {
-	Statuses  []string
-	ProjectID *uint64
+	Query           string
+	SourceMessageID string
+	Statuses        []string
+	ProjectID       *uint64
 	// GroupID matches through the source Todo: a Task has no group of its own,
 	// and manual/scheduled/proactive Tasks legitimately belong to no group.
 	GroupID *uint64
@@ -73,12 +76,12 @@ type TaskList struct {
 }
 
 type TaskView struct {
+	SourceMessageIDs     json.RawMessage       `json:"source_message_ids,omitempty"`
 	ID                   uint64                `json:"id"`
 	TodoID               *uint64               `json:"todo_id"`
 	Title                string                `json:"title"`
 	ActionType           string                `json:"action_type"`
 	Target               string                `json:"target"`
-	Background           json.RawMessage       `json:"background"`
 	SourcePayload        json.RawMessage       `json:"source_payload"`
 	SourceType           string                `json:"source_type"`
 	SourceID             *uint64               `json:"source_id"`
@@ -177,7 +180,10 @@ type RunView struct {
 }
 
 type RunList struct {
-	Items []RunView `json:"items"`
+	Total    int64     `json:"total"`
+	Page     int       `json:"page"`
+	PageSize int       `json:"page_size"`
+	Items    []RunView `json:"items"`
 }
 
 type TaskService interface {
@@ -187,7 +193,8 @@ type TaskService interface {
 	Close(context.Context, CloseInput) (*TaskView, error)
 	UpdateTask(context.Context, TaskUpdateInput) (*TaskView, error)
 	Supplement(context.Context, SupplementInput) (*TaskView, error)
-	ListRuns(context.Context, uint64) (*RunList, error)
+	ListRuns(context.Context, uint64, RunFilter) (*RunList, error)
+	GetRun(context.Context, uint64) (*RunView, error)
 }
 
 type Store struct {
@@ -224,6 +231,9 @@ func (s *Store) LoadRun(ctx context.Context, runID uint64) (*domain.ExecutionRun
 	}
 	var run domain.ExecutionRun
 	if err := s.db.WithContext(ctx).First(&run, runID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: run_id=%d", ErrRunNotFound, runID)
+		}
 		return nil, fmt.Errorf("load execution run id=%d: %w", runID, err)
 	}
 	return &run, nil
@@ -266,6 +276,13 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 	if filter.Until != nil {
 		query = query.Where("COALESCE(last_progress_at, created_at) < ?", filter.Until.UTC())
 	}
+	if filter.Query != "" {
+		term := "%" + filter.Query + "%"
+		query = query.Where("(title LIKE ? OR target LIKE ? OR summary LIKE ? OR json_extract(source_payload, '$.source') LIKE ? OR json_extract(source_payload, '$.annotation.brief') LIKE ? OR json_extract(source_payload, '$.capture.messages') LIKE ?)", term, term, term, term, term, term)
+	}
+	if filter.SourceMessageID != "" {
+		query = query.Where("EXISTS (SELECT 1 FROM json_each(task.source_payload, '$.source.source_message_ids') WHERE value = ?)", filter.SourceMessageID)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("count execution Tasks: %w", err)
@@ -278,6 +295,10 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 	items := make([]TaskView, len(rows))
 	for i := range rows {
 		items[i] = taskView(ctx, &rows[i])
+		items[i].SourceMessageIDs = contextpack.SourceMessageIDs(rows[i].SourcePayload)
+		if err := projectTaskListItem(&items[i]); err != nil {
+			return nil, fmt.Errorf("project Task id=%d: %w", rows[i].ID, err)
+		}
 	}
 	if err := s.attachTaskResolutions(ctx, items); err != nil {
 		return nil, err
@@ -634,7 +655,7 @@ var supplementableTaskStatuses = map[string]struct{}{
 }
 
 // Supplement appends a human clarification/instruction to a Task's M5-only
-// execution_supplements. It does not touch Todo.context_snapshot or the Task's
+// execution_supplements. It does not touch Todo.content or the Task's
 // frozen source_payload/background evidence.
 func (s *Store) Supplement(ctx context.Context, input SupplementInput) (*TaskView, error) {
 	if input.TaskID == 0 || input.ExpectedVersion < 0 {
@@ -1114,22 +1135,37 @@ func resetTaskForRerun(db *gorm.DB, task *domain.Task, actorType string, detail 
 // ListRuns returns a Task's execution audit history, newest first. It is the
 // read path over execution_run (previously write-only) that powers the task
 // detail drawer. An unknown task_id simply yields an empty list.
-func (s *Store) ListRuns(ctx context.Context, taskID uint64) (*RunList, error) {
-	if taskID == 0 {
-		return nil, fmt.Errorf("%w: Task ID is invalid", ErrInvalidInput)
+type RunFilter struct{ Page, PageSize int }
+
+func (s *Store) GetRun(ctx context.Context, id uint64) (*RunView, error) {
+	row, err := s.LoadRun(ctx, id)
+	if err != nil {
+		return nil, err
 	}
+	view := runView(row)
+	return &view, nil
+}
+func (s *Store) ListRuns(ctx context.Context, taskID uint64, f RunFilter) (*RunList, error) {
+	if taskID == 0 || f.Page < 1 || f.PageSize < 1 || f.PageSize > 100 {
+		return nil, fmt.Errorf("%w: invalid Task ID or run pagination", ErrInvalidInput)
+	}
+	q := s.db.WithContext(ctx).Model(&domain.ExecutionRun{}).Where("task_id = ?", taskID)
+	result := &RunList{}
+	if err := q.Count(&result.Total).Error; err != nil {
+		return nil, err
+	}
+	result.Page = f.Page
+	result.PageSize = f.PageSize
+	q = q.Omit("prompt", "output", "effects", "error_detail").Offset((f.Page - 1) * f.PageSize).Limit(f.PageSize)
 	var rows []domain.ExecutionRun
-	if err := s.db.WithContext(ctx).
-		Where("task_id = ?", taskID).
-		Order("started_at DESC, id DESC").
-		Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list execution runs task_id=%d: %w", taskID, err)
+	if err := q.Order("started_at DESC,id DESC").Find(&rows).Error; err != nil {
+		return nil, err
 	}
-	items := make([]RunView, len(rows))
+	result.Items = make([]RunView, len(rows))
 	for i := range rows {
-		items[i] = runView(&rows[i])
+		result.Items[i] = runView(&rows[i])
 	}
-	return &RunList{Items: items}, nil
+	return result, nil
 }
 
 // LoadPending returns pending Tasks for the scheduled executor, oldest first.
@@ -1384,7 +1420,6 @@ func taskView(ctx context.Context, task *domain.Task) TaskView {
 	return TaskView{
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
 		Target:        task.Target,
-		Background:    rawJSON(task.Background),
 		SourcePayload: rawJSON(task.SourcePayload),
 		SourceType:    task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
 		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult),

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/contextpack"
 	"jarvis/internal/extract"
 	"jarvis/internal/observability"
 
@@ -55,6 +56,21 @@ func GetTodo(reader extract.TodoReader) app.HandlerFunc {
 			writeAPIError(c, consts.StatusInternalServerError, 50002, err)
 			return
 		}
+		if revision := c.Query("revision"); revision != "" && revision != strconv.FormatInt(int64(result.Revision), 10) {
+			writeAPIError(c, consts.StatusConflict, 40901, fmt.Errorf("Todo revision changed; read its overview again"))
+			return
+		}
+		section, messageID := c.Query("context"), c.Query("message_id")
+		view, err := contextpack.Read(result.Content, section, messageID)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40020, err)
+			return
+		}
+		if messageID != "" || (section != "" && section != "full" && section != "overview") {
+			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": result.ID, "version": result.Version, "revision": result.Revision, "context": view}})
+			return
+		}
+		result.Content = view
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
 	}
 }
@@ -108,7 +124,8 @@ func todoListFilter(c *app.RequestContext) (extract.TodoListFilter, error) {
 		return extract.TodoListFilter{}, err
 	}
 	filter := extract.TodoListFilter{
-		Statuses:   statuses,
+		Statuses: statuses,
+		Query:    c.Query("query"), SourceMessageID: c.Query("source_message_id"),
 		ActionType: strings.TrimSpace(c.Query("action_type")),
 		Page:       page,
 		PageSize:   pageSize,

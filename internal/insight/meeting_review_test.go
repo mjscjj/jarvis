@@ -68,9 +68,9 @@ func TestMeetingReviewProjectsExplicitMeetingSummary(t *testing.T) {
 	now := time.Now()
 	todo := domain.Todo{
 		Title: "整理架构评审", Description: "整理会议结果", ActionType: "summary_post",
-		Target: "架构评审（meeting_id=meeting-1）", Context: "", OpenQuestions: datatypes.JSON(`[]`),
-		CommitmentStrength: "explicit", SourceMessageIDs: datatypes.JSON(`["` + first.MessageID + `"]`),
-		SourceQuote: "会议结束", GroupID: &group.ID, Status: "materialized", DedupFingerprint: "meeting-review-1",
+		Target:           "架构评审（meeting_id=meeting-1）",
+		SourceMessageIDs: datatypes.JSON(`["` + first.MessageID + `"]`),
+		SourceQuote:      "会议结束", GroupID: &group.ID, Status: "materialized", DedupFingerprint: "meeting-review-1",
 		FirstSeenAt: now, LastEvidenceAt: now,
 	}
 	if err := db.Create(&todo).Error; err != nil {
@@ -78,7 +78,7 @@ func TestMeetingReviewProjectsExplicitMeetingSummary(t *testing.T) {
 	}
 	task := domain.Task{
 		TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType, Target: todo.Target,
-		Background: datatypes.JSON(`{}`), SourcePayload: datatypes.JSON(`{}`), SourceType: "todo",
+		SourcePayload: datatypes.JSON(`{}`), SourceType: "todo",
 		Status: "done",
 	}
 	if err := db.Create(&task).Error; err != nil {

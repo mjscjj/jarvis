@@ -621,32 +621,148 @@
   align-items: center;
 }
 
+.key-matter-list-card > .ant-card-body {
+  padding: 0;
+}
+
 .key-matter-table .ant-table-cell {
   overflow: hidden;
 }
 
-.key-matter-title,
+.key-matter-table .ant-table-thead > tr > th {
+  padding: 10px 16px;
+  background: #f5f7f6;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.key-matter-table .ant-table-tbody > tr > td {
+  padding: 14px 16px;
+  vertical-align: middle;
+}
+
+.key-matter-primary,
+.key-matter-timeline {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.key-matter-primary {
+  gap: 5px;
+}
+
+.key-matter-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.key-matter-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.key-matter-project.ant-tag {
+  max-width: 156px;
+  margin: 0;
+  overflow: hidden;
+  flex: 0 1 auto;
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 11px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.key-matter-summary,
 .key-matter-edit-trigger > span {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-height: 1.5;
   overflow-wrap: anywhere;
   white-space: normal;
 }
 
-.key-matter-edit-trigger.ant-btn {
+.key-matter-summary {
+  -webkit-line-clamp: 2;
+  max-width: 720px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.key-matter-summary.is-empty,
+.key-matter-edit-trigger.is-empty,
+.key-matter-due-trigger.is-empty {
+  color: var(--color-text-tertiary);
+}
+
+.key-matter-edit-trigger.ant-btn,
+.key-matter-due-trigger.ant-btn {
   width: 100%;
   height: auto;
-  min-height: 24px;
-  padding-inline: 0;
+  min-height: 26px;
+  justify-content: flex-start;
+  padding: 2px 7px;
   text-align: left;
   white-space: normal;
 }
 
+.key-matter-edit-trigger.ant-btn {
+  margin-left: -7px;
+}
+
 .key-matter-edit-trigger.ant-btn > span {
   width: 100%;
+  -webkit-line-clamp: 2;
+  line-height: 1.5;
+}
+
+.key-matter-timeline {
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.key-matter-due-trigger.ant-btn {
+  width: auto;
+  margin-left: -7px;
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.key-matter-due-trigger.is-overdue {
+  color: var(--color-error);
+}
+
+.key-matter-due-trigger strong {
+  font-weight: 650;
+}
+
+.key-matter-due-editor,
+.key-matter-due-editor .ant-picker {
+  width: 100%;
+}
+
+.key-matter-active-time {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.key-matter-actions {
+  margin-left: -4px;
+}
+
+.key-matter-actions .ant-btn {
+  padding-inline: 4px;
 }
 
 .memory-view-heading {

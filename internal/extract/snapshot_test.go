@@ -1,8 +1,12 @@
 package extract
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
+
+	"jarvis/internal/contextpack"
 )
 
 func TestBuildContextSnapshotFreezesSummary(t *testing.T) {
@@ -35,17 +39,44 @@ func TestBuildContextSnapshotFreezesSummary(t *testing.T) {
 	}
 }
 
-func TestSnapshotConversationKeepsLatestTwentyFiveMessages(t *testing.T) {
+func TestFrozenMaterialsKeepAdvertisedProjectCatalog(t *testing.T) {
+	projectID := uint64(44)
+	batch := ChatBatch{
+		Group:         GroupContext{ID: 7, ChatID: "oc_1"},
+		Project:       &ProjectContext{ID: projectID, Name: "唯一项目"},
+		OtherProjects: []OtherProjectContext{{ID: projectID, Name: "唯一项目"}},
+	}
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{MessageID: "om_1", Content: "请处理"}}}
+	candidate := Candidate{SourceMessageIDs: []string{"om_1"}, Annotation: json.RawMessage(`{"background":"相关项目"}`)}
+	snapshot, err := (&PipelineStore{}).buildContextSnapshot(t.Context(), batch, unit, candidate, &projectID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture, err := snapshot.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet, err := contextpack.Freeze([]byte(`{}`), capture, "brief", candidate.Annotation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	material, err := contextpack.Read(packet, "other_projects", "")
+	if err != nil || !strings.Contains(string(material), "唯一项目") {
+		t.Fatalf("advertised material lost: %s %v", material, err)
+	}
+}
+
+func TestSnapshotConversationKeepsEntireAdmittedUnit(t *testing.T) {
 	messages := make([]MessageContext, 30)
 	for i := range messages {
 		messages[i] = MessageContext{MessageID: fmt.Sprintf("om_%02d", i+1)}
 	}
 
 	got := snapshotConversation(ConversationUnit{Messages: messages})
-	if len(got) != 25 {
-		t.Fatalf("snapshot conversation length = %d, want 25", len(got))
+	if len(got) != 30 {
+		t.Fatalf("snapshot conversation length = %d, want 30", len(got))
 	}
-	if got[0].MessageID != "om_06" || got[len(got)-1].MessageID != "om_30" {
-		t.Fatalf("snapshot conversation range = %s..%s, want om_06..om_30", got[0].MessageID, got[len(got)-1].MessageID)
+	if got[0].MessageID != "om_01" || got[len(got)-1].MessageID != "om_30" {
+		t.Fatalf("snapshot conversation range = %s..%s, want om_01..om_30", got[0].MessageID, got[len(got)-1].MessageID)
 	}
 }

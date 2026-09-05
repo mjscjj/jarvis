@@ -399,8 +399,8 @@ func TestUpdateTaskMaintainsMutableSurfaceAndFrozenEvidence(t *testing.T) {
 	if view.Status != "waiting" || view.Version != 3 || view.Title != title || view.Target != target || view.Summary == nil || *view.Summary != summary {
 		t.Fatalf("updated view = %#v", view)
 	}
-	if string(view.Background) != `{"snapshot":"frozen"}` || string(view.SourcePayload) != `{"clue":"frozen"}` {
-		t.Fatalf("frozen evidence changed: background=%s source_payload=%s", view.Background, view.SourcePayload)
+	if string(view.SourcePayload) != `{"clue":"frozen"}` {
+		t.Fatalf("frozen evidence changed: source_payload=%s", view.SourcePayload)
 	}
 	if len(view.ExecutionSupplements) != 1 || view.ExecutionSupplements[0].Note != instruction || view.ExecutionSupplements[0].Channel != "proactive_agent" {
 		t.Fatalf("execution supplements = %#v", view.ExecutionSupplements)

@@ -2,12 +2,8 @@ package execute
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 	"time"
-
-	"jarvis/internal/datatypes"
-	"jarvis/internal/domain"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -42,7 +38,7 @@ func openCurrentWorldTestDB(t *testing.T) *gorm.DB {
 			group_id INTEGER, project_id INTEGER, assigner_open_id TEXT,
 			is_leader_assigned INTEGER NOT NULL DEFAULT 0, due_at DATETIME,
 			status TEXT NOT NULL, dedup_fingerprint TEXT NOT NULL DEFAULT '',
-			context_snapshot TEXT, extraction_result TEXT, resolution TEXT,
+			content TEXT, resolution TEXT,
 			revision INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 0,
 			first_seen_at DATETIME NOT NULL, last_evidence_at DATETIME NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -64,106 +60,6 @@ func newCurrentWorldExecutor(t *testing.T, db *gorm.DB) *AgentExecutor {
 	return &AgentExecutor{store: store, now: func() time.Time {
 		return time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC)
 	}}
-}
-
-// TestLoadCurrentWorldKeepsFinishedTasksAndDropsSelf pins the two rules that
-// make this block worth its tokens: a Task that just finished is exactly what
-// M5 must see to avoid redoing it, and the Task being executed is already in
-// the prompt so it must not appear again as "other work".
-func TestLoadCurrentWorldKeepsFinishedTasksAndDropsSelf(t *testing.T) {
-	db := openCurrentWorldTestDB(t)
-	base := time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC)
-	if err := db.Exec(`INSERT INTO task(id, title, status, summary, project_id, last_progress_at, created_at)
-		VALUES (1, '正在执行的自己', 'executing', '本轮', 44, ?, ?),
-		       (2, '刚刚做完的同类事', 'done', '已经发过飞书通知', 44, ?, ?),
-		       (3, '失败过一次', 'failed', '权限不足', NULL, ?, ?)`,
-		base, base, base.Add(-time.Minute), base, base.Add(-2*time.Minute), base).Error; err != nil {
-		t.Fatalf("insert tasks: %v", err)
-	}
-
-	executor := newCurrentWorldExecutor(t, db)
-	world, err := executor.loadCurrentWorld(t.Context(), 1)
-	if err != nil {
-		t.Fatalf("loadCurrentWorld() error = %v", err)
-	}
-	if world.LoadedAt != "2026-08-15T09:00:00Z" {
-		t.Fatalf("loaded_at = %q, want the run's own clock", world.LoadedAt)
-	}
-	statuses := map[string]string{}
-	for _, task := range world.RecentTasks {
-		if task.ID == 1 {
-			t.Fatalf("current Task leaked into its own current_world: %#v", world.RecentTasks)
-		}
-		statuses[task.Status] = task.Title
-	}
-	if statuses["done"] != "刚刚做完的同类事" || statuses["failed"] != "失败过一次" {
-		t.Fatalf("finished Tasks must stay visible, got %#v", world.RecentTasks)
-	}
-	if world.RecentTasks[0].Summary != "已经发过飞书通知" {
-		t.Fatalf("newest-progress-first ordering broke: %#v", world.RecentTasks)
-	}
-}
-
-func TestLoadCurrentWorldOnlyReturnsOpenTodos(t *testing.T) {
-	db := openCurrentWorldTestDB(t)
-	now := time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC)
-	if err := db.Exec(`INSERT INTO todo(id, title, target, status, group_id, first_seen_at, last_evidence_at)
-		VALUES (1, '待办线索', '目标一', 'extracted', 7, ?, ?),
-		       (2, '观察中的线索', '目标二', 'observing', 7, ?, ?),
-		       (3, '已固化', '目标三', 'materialized', 7, ?, ?)`,
-		now, now, now, now.Add(-time.Minute), now, now).Error; err != nil {
-		t.Fatalf("insert todos: %v", err)
-	}
-
-	executor := newCurrentWorldExecutor(t, db)
-	world, err := executor.loadCurrentWorld(t.Context(), 0)
-	if err != nil {
-		t.Fatalf("loadCurrentWorld() error = %v", err)
-	}
-	if len(world.OpenTodos) != 2 {
-		t.Fatalf("open_todos = %#v, want the extracted and observing rows only", world.OpenTodos)
-	}
-	for _, todo := range world.OpenTodos {
-		if todo.Status == "materialized" {
-			t.Fatalf("materialized Todo leaked in: %#v", world.OpenTodos)
-		}
-		if todo.GroupID == nil || *todo.GroupID != 7 {
-			t.Fatalf("group binding lost: %#v", todo)
-		}
-	}
-}
-
-// TestExecutionPromptSeparatesFrozenBackgroundFromCurrentWorld pins that the
-// two context blocks stay distinguishable. If they merged, M5 could not tell
-// which parts are creation-time evidence and which are true right now.
-func TestExecutionPromptSeparatesFrozenBackgroundFromCurrentWorld(t *testing.T) {
-	task := &domain.Task{
-		ID: 9, Title: "发提醒", ActionType: "summary_post",
-		SourcePayload: datatypes.JSON(`{"steps":["send"]}`),
-		Background:    datatypes.JSON(`{"snapshot_version":"v1","captured_at":"2026-08-01T00:00:00Z"}`),
-	}
-	in := testExecutionPromptInput(testM5SystemPrompt, "修改文件需要审批。", task, "", testToolCatalog, "", "", "", nil)
-	in.CurrentWorld = &currentWorld{
-		LoadedAt:    "2026-08-15T09:00:00Z",
-		RecentTasks: []taskBrief{{ID: 8, Title: "同一个群的提醒", Status: "done", Summary: "昨天已经发过"}},
-		OpenTodos:   []todoBrief{{ID: 5, Title: "还没处理的线索", Status: "observing"}},
-	}
-	prompt, err := buildExecutionPrompt(in)
-	if err != nil {
-		t.Fatalf("build prompt: %v", err)
-	}
-	for _, want := range []string{
-		`"execution_context":{`, `"captured_at":"2026-08-01T00:00:00Z"`,
-		`"current_world":{`, `"loaded_at":"2026-08-15T09:00:00Z"`,
-		"昨天已经发过", "还没处理的线索",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("execution prompt missing %q:\n%s", want, prompt)
-		}
-	}
-	if strings.Index(prompt, `"execution_context"`) == strings.Index(prompt, `"current_world"`) {
-		t.Fatal("execution prompt merged the frozen and live context blocks")
-	}
 }
 
 // TestListTasksScopesByGroupThroughSourceTodo covers the subquery behind

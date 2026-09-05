@@ -1,6 +1,8 @@
+import { FrozenContextPanel } from './slots'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
+  Button,
   Card,
   Descriptions,
   Drawer,
@@ -18,7 +20,6 @@ import type { TableColumnsType } from 'antd'
 import { getTodo, listTodos, setTodoStatus } from './api'
 import { usePageContext } from './pageContext'
 import { useAgentIdentity } from './agentIdentity'
-import { TodoContextPanel } from './slots'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { actionLabels, leaderColor, todoStatusMeta as statusMeta } from './status'
@@ -88,6 +89,8 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
   const [error, setError] = useState<string>()
   const [selected, setSelected] = useState<Todo>()
   const [drawerLoading, setDrawerLoading] = useState(false)
+  const [drawerError, setDrawerError] = useState<string>()
+  const [detailRetry, setDetailRetry] = useState(0)
   const [savingStatusID, setSavingStatusID] = useState<number>()
 
   const routedTodoID = context.active_key === 'todos' && context.selection?.kind === 'todo'
@@ -126,25 +129,26 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
   }, [routeActionType, routeLeaderOnly, routePage, routePageSize, routeScope])
 
   useEffect(() => {
+    setSelected(undefined)
+    setDrawerError(undefined)
     if (routedTodoID === null) {
-      setSelected(undefined)
+      setDrawerLoading(false)
       return
     }
-    if (selected?.id === routedTodoID) return
     const controller = new AbortController()
     setDrawerLoading(true)
     getTodo(routedTodoID, controller.signal)
-      .then(setSelected)
+      .then((todo) => { if (!controller.signal.aborted) setSelected(todo) })
       .catch((cause: unknown) => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
-          setError(cause instanceof Error ? cause.message : String(cause))
+        if (!controller.signal.aborted) {
+          setDrawerError(cause instanceof Error ? cause.message : String(cause))
         }
       })
       .finally(() => {
         if (!controller.signal.aborted) setDrawerLoading(false)
       })
     return () => controller.abort()
-  }, [routedTodoID, selected?.id])
+  }, [routedTodoID, refreshKey, detailRetry])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -167,13 +171,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
 
   const openTodo = useCallback(
     (todo: Todo) => {
-      setSelected(todo)
       setSelection({ kind: 'todo', id: todo.id, label: todo.title })
-      setDrawerLoading(true)
-      getTodo(todo.id)
-        .then(setSelected)
-        .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
-        .finally(() => setDrawerLoading(false))
     },
     [setSelection],
   )
@@ -223,9 +221,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
             </Paragraph>
             <Space size={8} wrap className="clue-meta-line">
               <Text type="secondary">{actionLabels[todo.action_type] || todo.action_type}</Text>
-              {todo.open_questions?.length ? (
-                <Text type="warning">{todo.open_questions.length} 项待补充</Text>
-              ) : null}
+
             </Space>
           </div>
         ),
@@ -386,13 +382,14 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
       </Card>
 
       <Drawer
-        title={selected?.title || '线索详情'}
-        open={Boolean(selected)}
+        title={selected?.id === routedTodoID ? selected.title : '线索详情'}
+        open={routedTodoID !== null}
         loading={drawerLoading}
         size={640}
         onClose={closeTodo}
       >
-        {selected && (
+        {drawerError && <Alert type="error" title="线索加载失败" description={drawerError} action={<Button onClick={() => setDetailRetry((value) => value + 1)}>重试</Button>} />}
+        {selected && selected.id === routedTodoID && (
           <Space orientation="vertical" size={24} className="drawer-content">
             <Space wrap>
               <StatusBadge label={statusMeta[selected.status].label} color={statusMeta[selected.status].color} />
@@ -406,7 +403,6 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
             <Descriptions column={2} size="small">
               <Descriptions.Item label="项目">{selected.project?.name || '未关联'}</Descriptions.Item>
               <Descriptions.Item label="会话">{selected.group?.name || selected.group?.chat_id || '未知'}</Descriptions.Item>
-              <Descriptions.Item label="承诺强度">{selected.commitment_strength}</Descriptions.Item>
               <Descriptions.Item label="截止时间">{formatDate(selected.due_at)}</Descriptions.Item>
               <Descriptions.Item label="版本">rev {selected.revision} / v{selected.version}</Descriptions.Item>
               <Descriptions.Item label="证据数">{selected.source_message_ids.length}</Descriptions.Item>
@@ -418,8 +414,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
               <blockquote>{selected.source_quote}</blockquote>
             </section>
             <section className="clue-detail-section">
-              <Text type="secondary">目标、背景与待补充</Text>
-              <TodoContextPanel target={selected.target} context={selected.context} openQuestions={selected.open_questions} />
+              <FrozenContextPanel content={selected.content} />
             </section>
             {selected.resolution && (
               <section className="clue-detail-section">

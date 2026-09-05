@@ -64,7 +64,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 - M2 只记录事实。错误原文也是事实，错误语义和下一步交给模型判断。
 - 新来源通过 `source + Skill/定时任务 + POST /api/clues` 接入，不在 Go 中新增来源专用流水线。
-- M3 冻结 `context_snapshot`，Todo→Task→执行复用同一份；下游可补证据，但不重建一份“看起来等价”的背景。
+- M3 冻结 `Todo.content`（原始来源、冻结事实和模型说明），固化到 `Task.source_payload`；M5 默认读触发原文与现场摘要，其余按需下钻；下游可补证据，但不重建一份“看起来等价”的背景。
 - factengine 是持续世界建模的主要 Agent；主动巡视以看护和推进为主，但调查中可直接维护明确、有用的内部认知，也可把原始证据送入统一线索入口。外部行动统一创建 `source_type=proactive` 的 Task 交给 M5。
 
 各模块的当前实现详见 [`docs/modules/`](docs/README.md#当前实现)。
@@ -174,6 +174,8 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ./scripts/jarvis-install configure-identity --agent-name <name> --open-id <open_id> --git-author <author>
 ./scripts/jarvis-install bind-cc
 ./scripts/jarvis-install validate-binding
+
+`bind-cc` 会把 CC Connect Feishu `allow_from` 收紧为 Principal 本人；`validate-binding` 会拒绝缺失或通配的访问白名单。需要临时开放给其他人时，应作为当前机器的显式运行决策处理。
 
 # 启动补丁版 CC Connect 后，fresh clone 安装主服务（Linux 可用
 # scripts/install-cc-systemd.sh <独立配置路径> 避免覆盖别的 CC 项目）：

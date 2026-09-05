@@ -71,7 +71,7 @@ type TodoEventSnapshot struct {
 	DueAt              *time.Time     `json:"due_at,omitempty"`
 	SourceQuote        string         `json:"source_quote"`
 	Context            string         `json:"context"`
-	ContextSnapshot    datatypes.JSON `json:"context_snapshot,omitempty"`
+	Content            datatypes.JSON `json:"content,omitempty"`
 	Resolution         datatypes.JSON `json:"resolution,omitempty"`
 }
 
@@ -81,13 +81,11 @@ func EncodeTodoEventSnapshot(todo *Todo) (datatypes.JSON, error) {
 	}
 	encoded, err := json.Marshal(TodoEventSnapshot{
 		Title: todo.Title, Target: todo.Target, ProjectID: todo.ProjectID,
-		CommitmentStrength: todo.CommitmentStrength,
-		LeaderAssigned:     todo.IsLeaderAssigned,
-		DueAt:              todo.DueAt,
-		SourceQuote:        todo.SourceQuote,
-		Context:            todo.Context,
-		ContextSnapshot:    todo.ContextSnapshot,
-		Resolution:         todo.Resolution,
+		LeaderAssigned: todo.IsLeaderAssigned,
+		DueAt:          todo.DueAt,
+		SourceQuote:    todo.SourceQuote,
+		Content:        todo.Content,
+		Resolution:     todo.Resolution,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode todo event snapshot todo_id=%d: %w", todo.ID, err)

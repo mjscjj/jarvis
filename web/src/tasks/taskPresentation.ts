@@ -71,13 +71,13 @@ function textValue(value: unknown): string | null {
 }
 
 export function taskProjectName(task: Task): string {
-  const project = objectField(task.background, 'project')
+  const project = objectField(taskCapture(task), 'project')
   return textValue(project?.name) || (task.project_id != null ? `项目 #${task.project_id}` : '未关联项目')
 }
 
 export function taskSourceName(task: Task): string {
-  const group = objectField(task.background, 'group')
-  const assigner = objectField(task.background, 'assigner')
+  const group = objectField(taskCapture(task), 'group')
+  const assigner = objectField(taskCapture(task), 'assigner')
   const groupName = textValue(group?.name)
   const assignerName = textValue(assigner?.name)
   if (groupName && assignerName) return `${groupName} · ${assignerName}`
@@ -122,4 +122,10 @@ export function taskConclusionLabel(task: Task): string {
     case 'observing': return '调查结论'
     case 'failed': return '异常原因'
   }
+}
+
+function taskCapture(task: Task): Record<string, unknown> {
+ const value = task.source_payload && typeof task.source_payload === 'object' && !Array.isArray(task.source_payload)
+   ? (task.source_payload as Record<string, unknown>).capture : null
+ return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }

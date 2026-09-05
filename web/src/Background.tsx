@@ -421,9 +421,9 @@ function KeyMattersPanel() {
     if (editing?.id !== matter.id || editing.field !== 'status') {
       return (
         <Button
-          type="link"
+          type="text"
           size="small"
-          className="key-matter-edit-trigger"
+          className={`key-matter-edit-trigger${matter.status ? '' : ' is-empty'}`}
           title={matter.status || '点击填写'}
           onClick={(event) => { event.stopPropagation(); beginEdit(matter, 'status') }}
         >
@@ -444,11 +444,23 @@ function KeyMattersPanel() {
 
   const dueAtEditor = (matter: KeyMatter) => {
     if (editing?.id !== matter.id || editing.field !== 'due_at') {
-      return <Button type="link" size="small" onClick={(event) => { event.stopPropagation(); beginEdit(matter, 'due_at') }}>{matter.due_at ? dayjs(matter.due_at).format('YYYY-MM-DD HH:mm') : '点击填写'}</Button>
+      const dueAt = matter.due_at ? dayjs(matter.due_at) : null
+      const overdue = dueAt?.isBefore(dayjs()) ?? false
+      return (
+        <Button
+          type="text"
+          size="small"
+          className={`key-matter-due-trigger${overdue ? ' is-overdue' : ''}${dueAt ? '' : ' is-empty'}`}
+          title={dueAt ? `截止 ${dueAt.format('YYYY-MM-DD HH:mm')}` : '点击设置截止时间'}
+          onClick={(event) => { event.stopPropagation(); beginEdit(matter, 'due_at') }}
+        >
+          {dueAt ? <>截止 <strong>{dueAt.format('MM-DD HH:mm')}</strong></> : '设置截止时间'}
+        </Button>
+      )
     }
     return (
-      <Space orientation="vertical" size={4} onClick={(event) => event.stopPropagation()}>
-        <DatePicker showTime value={draftDueAt} onChange={setDraftDueAt} format="YYYY-MM-DD HH:mm" autoFocus />
+      <Space orientation="vertical" size={4} className="key-matter-due-editor" onClick={(event) => event.stopPropagation()}>
+        <DatePicker size="small" showTime value={draftDueAt} onChange={setDraftDueAt} format="YYYY-MM-DD HH:mm" autoFocus />
         <Space size={4}>
           <Button size="small" type="primary" loading={saving} onClick={() => saveEdit(matter)}>保存</Button>
           <Button size="small" disabled={saving} onClick={cancelEdit}>取消</Button>
@@ -458,19 +470,49 @@ function KeyMattersPanel() {
   }
 
   const columns: TableColumnsType<KeyMatter> = [
-    { title: '关键事项', dataIndex: 'title', width: 170, render: (value: string) => <Text strong className="key-matter-title" title={value}>{value}</Text> },
-    { title: '状态', dataIndex: 'status', width: 170, render: (_, matter) => textEditor(matter) },
-    { title: '长期事实', dataIndex: 'summary', width: 220, render: (value: string | null) => summaryIndexLine(value) || '—' },
-    { title: '截止时间', dataIndex: 'due_at', width: 150, render: (_, matter) => dueAtEditor(matter) },
-    { title: '最近活跃', dataIndex: 'last_active_at', width: 150, render: (value: string) => dayjs(value).format('MM-DD HH:mm') },
-    { title: '关联项目', dataIndex: 'project_id', width: 120, render: (_, matter) => matter.project?.name || '—' },
     {
-      title: '操作', width: 220, render: (_, matter) => (
-        <Flex gap={6} wrap>
-          <Button size="small" loading={touchingId === matter.id} onClick={(event) => { event.stopPropagation(); touch(matter) }}>活跃</Button>
-          <Button size="small" onClick={(event) => { event.stopPropagation(); openDetail(matter) }}>详情</Button>
+      title: '关键事项',
+      dataIndex: 'title',
+      render: (_, matter) => {
+        const summary = summaryIndexLine(matter.summary)
+        return (
+          <div className="key-matter-primary">
+            <div className="key-matter-title-row">
+              <Text strong className="key-matter-title" title={matter.title}>{matter.title}</Text>
+              {matter.project && <Tag bordered={false} className="key-matter-project" title={matter.project.name}>{matter.project.name}</Tag>}
+            </div>
+            <Text
+              type="secondary"
+              className={`key-matter-summary${summary ? '' : ' is-empty'}`}
+              title={summary || '暂无长期事实'}
+            >
+              {summary || '暂无长期事实'}
+            </Text>
+          </div>
+        )
+      },
+    },
+    { title: '当前状态', dataIndex: 'status', width: 220, render: (_, matter) => textEditor(matter) },
+    {
+      title: '时间节点',
+      dataIndex: 'due_at',
+      width: 172,
+      render: (_, matter) => (
+        <div className="key-matter-timeline">
+          {dueAtEditor(matter)}
+          <Text type="secondary" className="key-matter-active-time">
+            活跃于 {dayjs(matter.last_active_at).format('MM-DD HH:mm')}
+          </Text>
+        </div>
+      ),
+    },
+    {
+      title: '操作', width: 144, render: (_, matter) => (
+        <Flex gap={0} wrap={false} className="key-matter-actions">
+          <Button type="link" size="small" loading={touchingId === matter.id} onClick={(event) => { event.stopPropagation(); touch(matter) }}>活跃</Button>
+          <Button type="link" size="small" onClick={(event) => { event.stopPropagation(); openDetail(matter) }}>查看</Button>
           <Popconfirm title="闭环该关键事项？" onConfirm={() => close(matter)} okText="闭环" cancelText="取消">
-            <Button size="small" danger onClick={(event) => event.stopPropagation()}>闭环</Button>
+            <Button type="link" size="small" danger onClick={(event) => event.stopPropagation()}>闭环</Button>
           </Popconfirm>
         </Flex>
       ),
@@ -483,7 +525,7 @@ function KeyMattersPanel() {
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate} disabled={total >= maxOpen}>新建关键事项</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="关键事项操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless">
+    <Card className="table-card key-matter-list-card" variant="borderless">
       <Table<KeyMatter>
         className="key-matter-table"
         rowKey="id"
@@ -492,7 +534,7 @@ function KeyMattersPanel() {
         loading={loading}
         pagination={false}
         tableLayout="fixed"
-        scroll={{ x: 1210 }}
+        scroll={{ x: 820 }}
         onRow={(matter) => ({
           onClick: () => openDetail(matter),
           onKeyDown: (event) => { if (event.key === 'Enter') openDetail(matter) },

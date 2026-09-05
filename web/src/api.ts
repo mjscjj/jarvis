@@ -45,6 +45,7 @@ import type {
   TaskList,
   TaskStatus,
   ExecutionRunList,
+  ExecutionRun,
   TaskRunOutput,
   Fact,
   FactSearchQuery,
@@ -132,7 +133,7 @@ export function listTodos(query: TodoQuery, signal?: AbortSignal): Promise<TodoL
 }
 
 export function getTodo(id: number, signal?: AbortSignal): Promise<Todo> {
-  return request<Todo>(`/api/todos/${id}`, { signal })
+  return request<Todo>(`/api/todos/${id}?context=full`, { signal })
 }
 
 // 只在 observing 和 extracted 之间搬动：把线索按下不表，或重新交给 Task 固化与执行流水线。
@@ -149,7 +150,7 @@ export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signa
 }
 
 export function getTask(id: number, signal?: AbortSignal): Promise<Task> {
-  return request<Task>(`/api/tasks/${id}`, { signal })
+  return request<Task>(`/api/tasks/${id}?context=full`, { signal })
 }
 
 export function createTask(body: CreateTaskInput): Promise<CreateTaskResult> {
@@ -211,8 +212,12 @@ export function supplementTask(id: number, expectedVersion: number, note: string
 }
 
 // listTaskRuns 拉某个 Task 的执行审计历史（ExecutionRun 列表），最新在前。
-export function listTaskRuns(id: number, signal?: AbortSignal): Promise<ExecutionRunList> {
-  return request<ExecutionRunList>(`/api/tasks/${id}/runs`, { signal })
+export function listTaskRuns(id: number, page = 1, pageSize = 20, signal?: AbortSignal): Promise<ExecutionRunList> {
+  return request<ExecutionRunList>(`/api/tasks/${id}/runs?page=${page}&page_size=${pageSize}`, { signal })
+}
+
+export function getTaskRun(id: number, signal?: AbortSignal): Promise<ExecutionRun> {
+  return request<ExecutionRun>(`/api/task-runs/${id}`, { signal })
 }
 
 export function getTaskRunOutput(id: number, signal?: AbortSignal): Promise<TaskRunOutput> {

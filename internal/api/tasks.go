@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/contextpack"
 	"jarvis/internal/effectops"
 	"jarvis/internal/execute"
 
@@ -56,7 +57,7 @@ func ListTasks(service execute.TaskService) app.HandlerFunc {
 		if len(statuses) == 0 {
 			statuses = []string{"pending"}
 		}
-		filter := execute.TaskFilter{Statuses: statuses, Page: page, PageSize: pageSize}
+		filter := execute.TaskFilter{Statuses: statuses, Page: page, PageSize: pageSize, Query: c.Query("query"), SourceMessageID: c.Query("source_message_id")}
 		if raw := strings.TrimSpace(c.Query("project_id")); raw != "" {
 			value, err := strconv.ParseUint(raw, 10, 64)
 			if err != nil || value == 0 {
@@ -122,6 +123,20 @@ func GetTask(service execute.TaskService) app.HandlerFunc {
 			}
 			return
 		}
+		section, messageID := c.Query("context"), c.Query("message_id")
+		view, err := contextpack.Read(result.SourcePayload, section, messageID)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40020, err)
+			return
+		}
+		if messageID != "" || (section != "" && section != "full" && section != "overview") {
+			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": result.ID, "version": result.Version, "context": view}})
+			return
+		}
+		result.SourcePayload = view
+		if section != "full" {
+			result.ExecutionResult = nil
+		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
 	}
 }
@@ -135,7 +150,17 @@ func ListTaskRuns(service execute.TaskService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40025, fmt.Errorf("task_id must be a positive integer"))
 			return
 		}
-		result, err := service.ListRuns(ctx, taskID)
+		page, err := positiveQueryInt(c.Query("page"), 1, "page")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40025, err)
+			return
+		}
+		size, err := positiveQueryInt(c.Query("page_size"), 20, "page_size")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40025, err)
+			return
+		}
+		result, err := service.ListRuns(ctx, taskID, execute.RunFilter{Page: page, PageSize: size})
 		if err != nil {
 			if errors.Is(err, execute.ErrInvalidInput) {
 				writeAPIError(c, consts.StatusBadRequest, 40025, err)
@@ -511,5 +536,31 @@ func writeExecutionError(c *app.RequestContext, err error) {
 		writeAPIError(c, consts.StatusConflict, 40920, err)
 	default:
 		writeAPIError(c, consts.StatusInternalServerError, 50021, fmt.Errorf("execute Task failed: %s", strings.TrimSpace(err.Error())))
+	}
+}
+
+func GetTaskRun(service execute.TaskService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := strconv.ParseUint(c.Param("run_id"), 10, 64)
+		if err != nil || id == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40025, fmt.Errorf("invalid run_id"))
+			return
+		}
+		result, err := service.GetRun(ctx, id)
+		if err != nil {
+			switch {
+			case errors.Is(err, execute.ErrRunNotFound):
+				writeAPIError(c, consts.StatusNotFound, 40425, err)
+			case errors.Is(err, execute.ErrInvalidInput):
+				writeAPIError(c, consts.StatusBadRequest, 40025, err)
+			default:
+				writeAPIError(c, consts.StatusInternalServerError, 50025, err)
+			}
+			return
+		}
+		if c.Query("include_prompt") != "true" {
+			result.Prompt = ""
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
 	}
 }

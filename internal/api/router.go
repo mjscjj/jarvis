@@ -209,6 +209,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/tasks", CreateTask(deps.TaskSubmitter))
 	h.GET("/api/tasks/:task_id", GetTask(deps.Tasks))
 	h.GET("/api/tasks/:task_id/runs", ListTaskRuns(deps.Tasks))
+	h.GET("/api/task-runs/:run_id", GetTaskRun(deps.Tasks))
 	h.GET("/api/tasks/:task_id/events", ListTaskEvents(deps.Progress))
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
 	h.POST("/api/tasks/:task_id/close", CloseTask(deps.Tasks))

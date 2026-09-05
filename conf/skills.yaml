@@ -35,6 +35,10 @@ skills:
       enabled: true # 实际可见性由 Oncall Plugin 启停状态控制
       stages:
         - execute
+    - name: bax-feedback-analysis
+      enabled: true
+      stages:
+        - execute
     - name: curate-world-model-pages
       enabled: true
       stages:

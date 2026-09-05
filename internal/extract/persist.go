@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/contextpack"
 	"jarvis/internal/domain"
 	"jarvis/internal/semantic"
 
@@ -28,12 +29,9 @@ type preparedCandidate struct {
 	// ProjectID is the resolved project (group-bound has priority, else matched
 	// from project_hint). It is authoritative for both the Todo column and the
 	// dedup fingerprint so the same clue dedups stably across runs.
-	ProjectID       *uint64
-	Resolution      datatypes.JSON
-	ContextSnapshot datatypes.JSON
-	// ExtractionResult 是抽取吐出的完整结论原文（整个 Candidate 的 JSON），随 Todo
-	// 落库并随 Task 固化，供 M5 执行整块复用，避免下游逐字段拷贝抽取结构造成耦合。
-	ExtractionResult datatypes.JSON
+	ProjectID  *uint64
+	Resolution datatypes.JSON
+	Content    datatypes.JSON
 }
 
 func (s *PipelineStore) PersistChat(ctx context.Context, batch ChatBatch, results []UnitExtraction, modelName string) (PersistStats, error) {
@@ -204,19 +202,20 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 	if err != nil {
 		return nil, fmt.Errorf("encode context snapshot: %w", err)
 	}
-	snapshotJSON := datatypes.JSON(snapshotRaw)
 
 	extractionRaw, err := json.Marshal(candidate)
 	if err != nil {
 		return nil, fmt.Errorf("encode extraction result: %w", err)
 	}
-	extractionJSON := datatypes.JSON(extractionRaw)
+	content, err := contextpack.Freeze(extractionRaw, snapshotRaw, candidate.Payload, candidate.Annotation)
+	if err != nil {
+		return nil, fmt.Errorf("freeze candidate content: %w", err)
+	}
 
 	return &preparedCandidate{
 		Candidate: candidate, Fingerprint: fingerprint, AssignerOpenID: assigner,
 		LeaderAssigned: len(leaders) > 0, FirstEvidenceAt: first, LastEvidenceAt: last,
-		ProjectID: projectID, Resolution: resolutionJSON, ContextSnapshot: snapshotJSON,
-		ExtractionResult: extractionJSON,
+		ProjectID: projectID, Resolution: resolutionJSON, Content: datatypes.JSON(content),
 	}, nil
 }
 
@@ -266,15 +265,13 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 	todo := domain.Todo{
 		Title: prepared.Candidate.Title, Description: prepared.Candidate.Payload,
 		ActionType: prepared.Candidate.ActionType, Target: prepared.Candidate.Target,
-		Context: "", OpenQuestions: datatypes.JSON(`[]`), CommitmentStrength: "",
 		SourceMessageIDs: datatypes.JSON(sourceIDs), SourceQuote: prepared.Candidate.SourceQuote,
 		GroupID: &batch.Group.ID, ProjectID: prepared.ProjectID,
 		AssignerOpenID: prepared.AssignerOpenID, IsLeaderAssigned: prepared.LeaderAssigned,
 		Status:           prepared.Candidate.Status,
 		DedupFingerprint: prepared.Fingerprint,
-		Resolution:       prepared.Resolution, ContextSnapshot: prepared.ContextSnapshot,
-		ExtractionResult: prepared.ExtractionResult,
-		Revision:         1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
+		Resolution:       prepared.Resolution, Content: prepared.Content,
+		Revision: 1, Version: 0, FirstSeenAt: prepared.FirstEvidenceAt, LastEvidenceAt: prepared.LastEvidenceAt,
 	}
 	if err := tx.Create(&todo).Error; err != nil {
 		return false, nil, fmt.Errorf("create todo fingerprint=%s: %w", prepared.Fingerprint, err)
@@ -302,12 +299,7 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		return fmt.Errorf("validate merged todo todo_id=%d: %w", existing.ID, err)
 	}
 
-	var existingIDs []string
-	if err := json.Unmarshal(existing.SourceMessageIDs, &existingIDs); err != nil {
-		return fmt.Errorf("decode existing source IDs todo_id=%d: %w", existing.ID, err)
-	}
-	mergedIDs := mergeStrings(existingIDs, prepared.Candidate.SourceMessageIDs)
-	sourceIDs, err := json.Marshal(mergedIDs)
+	sourceIDs, err := json.Marshal(prepared.Candidate.SourceMessageIDs)
 	if err != nil {
 		return fmt.Errorf("encode merged source IDs todo_id=%d: %w", existing.ID, err)
 	}
@@ -315,8 +307,7 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 	// latest opaque payload replaces the previous semantic body verbatim.
 	updates := map[string]any{
 		"title": prepared.Candidate.Title, "description": prepared.Candidate.Payload,
-		"target": prepared.Candidate.Target, "context": "",
-		"open_questions": datatypes.JSON(`[]`), "commitment_strength": "",
+		"target":             prepared.Candidate.Target,
 		"source_message_ids": datatypes.JSON(sourceIDs), "source_quote": prepared.Candidate.SourceQuote,
 		"is_leader_assigned": existing.IsLeaderAssigned || prepared.LeaderAssigned,
 		"revision":           existing.Revision + 1,
@@ -324,9 +315,8 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 		"version":            gorm.Expr("version + 1"),
 		// Refresh the frozen snapshot/resolution/extraction on new evidence so
 		// M5 can query the latest creation-time evidence for this clue.
-		"context_snapshot":  prepared.ContextSnapshot,
-		"extraction_result": prepared.ExtractionResult,
-		"resolution":        prepared.Resolution,
+		"content":    prepared.Content,
+		"resolution": prepared.Resolution,
 	}
 	if prepared.AssignerOpenID != nil {
 		updates["assigner_open_id"] = *prepared.AssignerOpenID

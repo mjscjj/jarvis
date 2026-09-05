@@ -85,7 +85,7 @@ func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
-	return nil
+	return migrateContextContent(db)
 }
 
 func migrateActivityColumns(db *gorm.DB) error {

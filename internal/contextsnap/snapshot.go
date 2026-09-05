@@ -1,11 +1,6 @@
-// Package contextsnap defines the canonical background snapshot that M3 freezes
-// onto a Todo at extraction time. It travels unchanged into Task.background and
-// is handed to M5 whole.
-//
-// Per docs/design-context-pipeline.md the context is assembled/inferred exactly
-// once in M3, persisted into Todo.context_snapshot, and reused for the whole
-// M3→M5 chain. Owning the struct here prevents the two ends from drifting into
-// incompatible shapes.
+// Package contextsnap assembles creation-time captures for M3 and direct Task
+// producers, and live context for interactive readers. Persistence retains the
+// capture as open JSON rather than a shared DTO.
 package contextsnap
 
 import (
@@ -14,8 +9,8 @@ import (
 	"strings"
 )
 
-// Snapshot is the frozen background for a single Todo. Every consumer decodes
-// this exact shape; fields are pointers/slices so "absent" is explicit.
+// Snapshot is the capture assembler's local projection. It is frozen directly
+// inside Todo/Task content; messages contain both primary and surrounding facts.
 type Snapshot struct {
 	// SnapshotVersion lets consumers fail-fast on an unexpected shape instead of
 	// silently mis-reading an old snapshot.
@@ -33,16 +28,11 @@ type Snapshot struct {
 	// Open Todos and recent Tasks deliberately do not ride here. They are world
 	// state, not evidence: a snapshot freezes what was true at creation time,
 	// but "what else is already being worked on" is only useful as of the moment
-	// someone acts on it. M5 loads that fresh on every run; see
-	// internal/execute/currentworld.go.
-	Participants  []Participant  `json:"participants,omitempty"`
-	Resources     []Resource     `json:"resources,omitempty"`
-	OtherProjects []ProjectBrief `json:"other_projects,omitempty"`
-	// Conversation is the surrounding chat context (several rounds around the
-	// cited Messages). Messages stays the precise cited evidence; Conversation
-	// is the broader background around it.
-	Conversation []Message        `json:"conversation,omitempty"`
-	Memories     []map[string]any `json:"memories"`
+	// someone acts on it. M5 queries related work on demand at execution time.
+	Participants  []Participant    `json:"participants,omitempty"`
+	Resources     []Resource       `json:"resources,omitempty"`
+	OtherProjects []ProjectBrief   `json:"other_projects,omitempty"`
+	Memories      []map[string]any `json:"memories"`
 	// ManagedResources is loaded by the common context assembler for
 	// manual/scheduled tasks. M3 leaves it empty because its own captured
 	// resources are frozen in Resources above.

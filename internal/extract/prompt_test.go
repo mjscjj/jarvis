@@ -172,7 +172,7 @@ func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
 	// 模型必须填的机器契约字段，以及两条曾经真的回归过的语义边界。散文表述
 	// 不做断言——之前逐句断言的版本被一次正常的措辞调整弄红过。
 	for _, want := range []string{
-		// 机器契约：status 枚举与 schema 要求的八个字段必须出现在提示词里。
+		// 机器契约：准入控制字段与 status 枚举必须出现在系统提示词里；完整输出协议另行验证。
 		"status=extracted",
 		"status=observing",
 		"action_type",

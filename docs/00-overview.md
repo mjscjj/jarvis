@@ -93,7 +93,7 @@ M3 默认使用 Agent CLI，model API 是可选引擎。它只调查到足以决
 - 校验 source message / quote；
 - 精确、向量和模型辅助去重；
 - 在群绑定、原文或短查询能够确认时推算项目归属和仓库提示，保存 `resolution`；
-- 冻结 `context_snapshot` 和完整 `extraction_result`。
+- 输出宽松 `annotation`，由程序冻结 `Todo.content`：完整 `source`、创建时 `capture` 和模型说明。
 
 M3 可以产出：
 
@@ -102,17 +102,17 @@ M3 可以产出：
 
 M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归属，但证据足够作出准入结论后立即停止。它不制定执行方案、不选择具体副作用、不判断要不要请示，也不为丰富 payload 展开代码、commit、MR 或长文档调查。`payload` 是开放的准入简报，只说明相关性、未闭环状态、责任、已核验证据、准入依据和不确定性。
 
-`context_snapshot` 是创建时的世界，不是实时世界状态。它整份传给 M5，下游不做投影、裁剪或重拼。M5 需要某个实体**现在**的状态时读它的 `summary` 页，需要更细的历史时按主体和日期查 fact。
+`Todo.content` 保存创建时证据。消息只保存在 `capture.messages` 一次，不依照提示词长度截断。M5 默认只读经过校验的 `source_message_ids` 对应原文与简短说明，其余按会话、背景或原始消息 ID 读取；实体当前状态仍通过事实页和 fact 查询，不能替代冻结证据。
 
 ### 3.3 Todo 固化
 
 `extracted` Todo 一律通过无模型的固化步骤创建一个 `pending` Task，并把 Todo 置为 `materialized`。固化继续使用 Todo ID/version 乐观锁、`task.todo_id` 唯一键和同一事务；重复通知返回同一个 Task，陈旧版本 fail-fast。Task 只记录自己的来源与创建时间，不把这一机械步骤包装成判断或确认闸门。
 
-Task 只用一个宽松 `source_payload` 保存来源交来的完整原始语义；Todo 来源直接固化完整 `extraction_result`，定时、手工和主动来源保存各自原始指令。执行 Agent 读取完整 `source_payload` 和整份冻结 `background`，不人为制造中间计划或判断上下文。
+Task 用一个宽松 `source_payload` 保存来源、冻结事实与模型说明，Todo 来源原样复制 `Todo.content`；定时、手工和主动来源在创建时将原始指令与捕获背景放进同一 `source + capture + annotation` 结构。Task 不再保存独立 `background`，也不在 M5 重新拼背景。
 
 ### 3.4 M5 执行：调查、动作与恢复
 
-Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。执行 Agent 读取完整来源证据、整份冻结背景、执行时实时装配的 `current_world`、人工 supplements 和最近运行记录；需要实体当前状态时再查 `summary` 页和 fact。`current_world` 是每次 run 开始时查的最近 20 个 Task 与 20 条未闭环 Todo 摘要，专门用来避免重复执行——冻结背景结构上答不了「此刻还有什么在做、刚做完了什么」。Todo 来源已经经过 M3 准入，M5 不从头重复泛化价值筛选；它先核验线索是否因新事实完成、失效或重复，准入仍成立时直接调查真实目标并执行。上游内容是线索，不是不可修改的最终计划。
+Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。初次执行默认读取当前 Task 状态、触发原文、简报、现场说明和可读区块目录、人工 supplements、运行历史数量与最新状态。相关 Todo / Task 通过搜索、来源消息 ID、原文关键词、项目和分页查询；历史结果与 effects 按 run 读取，包括失败尝试。不再默认注入全局最近 20 条线索 / 任务和全部历史输出。同会话恢复补充当前 Task 状态与人工指示。Todo 来源已经经过 M3 准入，M5 不从头重复泛化价值筛选；它先核验线索是否因新事实完成、失效或重复，准入仍成立时直接调查真实目标并执行。上游内容是线索，不是不可修改的最终计划。
 
 执行 outcome 与状态映射：
 
@@ -209,7 +209,7 @@ pending -> executing -> done | observing | failed
 这些是代码事实，不是自动授权的实施计划：
 
 - 尚无独立 Goal Store / Supervisor / Verifier；长任务控制仍是提案。
-- `context_snapshot` 是冻结证据，不是版本化 live world state。
+- `Todo.content` / `Task.source_payload` 是冻结证据，不是版本化 live world state。
 - factengine 已消费 message、Todo 和 Task lifecycle event；其它原料来源尚需按同一投影协议接入。
 - effects 是 Agent 声明，不是外部系统 receipt 的独立验证。
 - Task 的背景和可选计划缺通用更新 API/tool 与审计写入。

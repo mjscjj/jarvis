@@ -1,3 +1,4 @@
+import { FrozenContextPanel } from '../slots'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -7,6 +8,7 @@ import {
   Descriptions,
   Empty,
   Modal,
+  Pagination,
   Space,
   Spin,
   Tabs,
@@ -32,7 +34,7 @@ import {
   UndoOutlined,
 } from '@ant-design/icons'
 import type { Effect, ExecutionRun, RunEnrichment, Task, TaskEvent, TaskRunOutput } from '../types'
-import { getTaskRunOutput } from '../api'
+import { getTaskRun, getTaskRunOutput } from '../api'
 import StatusBadge from '../components/StatusBadge'
 import { useAgentIdentity } from '../agentIdentity'
 import { actionLabels, taskStatusMeta as statusMeta } from '../status'
@@ -96,6 +98,9 @@ interface EffectRecall {
 interface TaskDetailModalProps {
   task?: Task
   runs: ExecutionRun[]
+  runsPage: number
+  runsTotal: number
+  onRunsPageChange: (page: number) => void
   events: TaskEvent[]
   runsLoading: boolean
   eventsLoading: boolean
@@ -783,53 +788,77 @@ function EffectsCard({ effects, recall }: { effects: Effect[]; recall: EffectRec
   )
 }
 
-function RunDetails({ run, latest, recall }: { run: ExecutionRun; latest: boolean; recall: EffectRecall }) {
+function RunDetails({ runID, index, recall }: { runID: number; index?: ExecutionRun; recall: EffectRecall }) {
+  const [open, setOpen] = useState(false)
+  const [run, setRun] = useState<ExecutionRun>()
+  const [error, setError] = useState<string>()
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    if (!open) return
+    const controller = new AbortController()
+    setRun(undefined)
+    setError(undefined)
+    getTaskRun(runID, controller.signal)
+      .then((value) => { if (!controller.signal.aborted) setRun(value) })
+      .catch((cause: unknown) => { if (!controller.signal.aborted) setError(outputErrorText(cause)) })
+    return () => controller.abort()
+  }, [open, runID, index?.status, index?.finished_at, retry])
+  return (
+    <details className="task-run-details" open={open} onToggle={(event) => {
+      if (event.target === event.currentTarget) setOpen(event.currentTarget.open)
+    }}>
+      <summary>
+        <span className="task-run-summary-main">
+          {index && <span className="task-history-dot" style={{ background: runStatusColor(index.status) }} />}
+          Run #{runID}{index ? ` · ${index.status}` : ''}
+        </span>
+        {index && <Text type="secondary">{formatDuration(index.duration_ms)}</Text>}
+      </summary>
+      {open && (error
+        ? <Alert type="error" title="执行记录加载失败" description={error} action={<Button onClick={() => setRetry((value) => value + 1)}>重试</Button>} />
+        : run ? <RunContent run={run} recall={recall} /> : <Spin />)}
+    </details>
+  )
+}
+
+function RunContent({ run, recall }: { run: ExecutionRun; recall: EffectRecall }) {
   const enrichments = run.output?.enrichments ?? []
   const runEffects = effectItems(run.effects ?? run.output?.effects)
   const question = run.output?.question
   return (
-    <details className="task-run-details" open={latest}>
-      <summary>
-        <span className="task-run-summary-main">
-          <span className="task-history-dot" style={{ background: runStatusColor(run.status) }} />
-          Run #{run.id} · {run.status}
-        </span>
-        <Text type="secondary">{formatDuration(run.duration_ms)}</Text>
-      </summary>
-      <div className="task-run-body">
-        <Space size={8} wrap>
-          <Tag>{actionLabels[run.action_type] || run.action_type}</Tag>
-          <Text type="secondary">沙箱 {run.sandbox}</Text>
-          {run.codex_session_id && <Text type="secondary">session {run.codex_session_id.slice(0, 12)}…</Text>}
-          {run.repo_path && (
-            <Text type="secondary" className="mono">
-              {run.repo_path}
-            </Text>
-          )}
-        </Space>
-        {run.summary && <Paragraph className="task-readable-text">{run.summary}</Paragraph>}
-        {enrichments.length > 0 && (
-          <div className="task-enrichment-list">
-            {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
-          </div>
+    <div className="task-run-body">
+      <Space size={8} wrap>
+        <Tag>{actionLabels[run.action_type] || run.action_type}</Tag>
+        <Text type="secondary">沙箱 {run.sandbox}</Text>
+        {run.codex_session_id && <Text type="secondary">session {run.codex_session_id.slice(0, 12)}…</Text>}
+        {run.repo_path && (
+          <Text type="secondary" className="mono">
+            {run.repo_path}
+          </Text>
         )}
-        {runEffects.length > 0 && (
-          <div className="task-effect-list task-run-effect-list">
-            {runEffects.map((effect, index) => <EffectCard key={index} effect={effect} recall={recall} />)}
-          </div>
-        )}
-        {question?.title && (
-          <Alert type="info" showIcon title="向我提出的问题" description={[question.title, question.body].filter(Boolean).join('\n\n')} />
-        )}
-        {run.error_detail && <Alert type="error" showIcon title="执行错误" description={<Text className="mono">{run.error_detail}</Text>} />}
-        {run.output && Object.keys(run.output).length > 0 && (
-          <details className="task-raw-details">
-            <summary>Codex 原始输出</summary>
-            <pre className="inline-json">{JSON.stringify(run.output, null, 2)}</pre>
-          </details>
-        )}
-      </div>
-    </details>
+      </Space>
+      {run.summary && <Paragraph className="task-readable-text">{run.summary}</Paragraph>}
+      {enrichments.length > 0 && (
+        <div className="task-enrichment-list">
+          {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+        </div>
+      )}
+      {runEffects.length > 0 && (
+        <div className="task-effect-list task-run-effect-list">
+          {runEffects.map((effect, index) => <EffectCard key={index} effect={effect} recall={recall} />)}
+        </div>
+      )}
+      {question?.title && (
+        <Alert type="info" showIcon title="向我提出的问题" description={[question.title, question.body].filter(Boolean).join('\n\n')} />
+      )}
+      {run.error_detail && <Alert type="error" showIcon title="执行错误" description={<Text className="mono">{run.error_detail}</Text>} />}
+      {run.output && Object.keys(run.output).length > 0 && (
+        <details className="task-raw-details">
+          <summary>Codex 原始输出</summary>
+          <pre className="inline-json">{JSON.stringify(run.output, null, 2)}</pre>
+        </details>
+      )}
+    </div>
   )
 }
 
@@ -1065,7 +1094,6 @@ function TaskHistory({
   recall: EffectRecall
 }) {
   const history = useMemo(() => buildHistory(task, events, runs), [task, events, runs])
-  const latestRunID = runs[0]?.id
   if (loading) return <div className="task-detail-loading"><Spin /></div>
   return (
     <div className="task-history">
@@ -1097,7 +1125,7 @@ function TaskHistory({
                   <Text strong>执行记录</Text>
                   <Text type="secondary">{formatTime(item.at)}</Text>
                 </div>
-                <RunDetails run={item.run} latest={item.run.id === latestRunID} recall={recall} />
+                <RunDetails runID={item.run.id} index={item.run} recall={recall} />
               </div>
             </article>
           )
@@ -1125,7 +1153,7 @@ function TaskHistory({
                 {actorLabels[event.actor_type] || event.actor_type} · v{event.task_version}
                 {event.from_status ? ` · ${event.from_status} → ${event.to_status}` : ` · ${event.to_status}`}
               </Text>
-              {run && <RunDetails run={run} latest={run.id === latestRunID} recall={recall} />}
+              {event.run_id && <RunDetails runID={event.run_id} index={run} recall={recall} />}
             </div>
           </article>
         )
@@ -1146,9 +1174,9 @@ function stringValue(value: unknown): string | null {
 }
 
 function TaskMeta({ task }: { task: Task }) {
-  const group = objectField(task.background, 'group')
-  const project = objectField(task.background, 'project')
-  const assigner = objectField(task.background, 'assigner')
+  const group = objectField(taskCapture(task), 'group')
+  const project = objectField(taskCapture(task), 'project')
+  const assigner = objectField(taskCapture(task), 'assigner')
   const handler = taskHandlerMeta(task)
   return (
     <aside className="task-meta-card">
@@ -1168,55 +1196,15 @@ function TaskMeta({ task }: { task: Task }) {
 }
 
 function ContextPanel({ task }: { task: Task }) {
-  const conversationValue = task.background.conversation
-  const messagesValue = task.background.messages
-  const conversation = Array.isArray(conversationValue)
-    ? conversationValue
-    : Array.isArray(messagesValue) ? messagesValue : []
-  const memories = Array.isArray(task.background.memories) ? task.background.memories : []
-  return (
-    <div className="task-readable-panel">
-      <section>
-        <Title level={5}>原始会话</Title>
-        {conversation.length === 0 ? (
-          <Text type="secondary">没有记录原始会话。</Text>
-        ) : (
-          <div className="task-conversation">
-            {conversation.map((item, index) => {
-              const record = item && typeof item === 'object' ? item as Record<string, unknown> : {}
-              return (
-                <div key={index} className="task-conversation-item">
-                  <div>
-                    <Text strong>{stringValue(record.sender_name) || '未知发送人'}</Text>
-                    {typeof record.create_time === 'number' && (
-                      <Text type="secondary">{new Date(record.create_time * 1000).toLocaleString()}</Text>
-                    )}
-                  </div>
-                  <Paragraph>{stringValue(record.content) || '—'}</Paragraph>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
-      {memories.length > 0 && (
-        <section>
-          <Title level={5}>相关记忆</Title>
-          <div className="task-memory-list">
-            {memories.map((item, index) => {
-              const record = item && typeof item === 'object' ? item as Record<string, unknown> : {}
-              return <Paragraph key={index}>{stringValue(record.memory) || '—'}</Paragraph>
-            })}
-          </div>
-        </section>
-      )}
-    </div>
-  )
+  return <FrozenContextPanel content={task.source_payload} />
 }
 
 export default function TaskDetailModal({
   task,
   runs,
+  runsPage,
+  runsTotal,
+  onRunsPageChange,
   events,
   runsLoading,
   eventsLoading,
@@ -1344,15 +1332,18 @@ export default function TaskDetailModal({
                 key: 'history',
                 label: '任务历史',
                 children: (
-                  <TaskHistory
-                    task={task}
-                    events={events}
-                    runs={runs}
-                    loading={eventsLoading || runsLoading}
-                    eventsError={eventsError}
-                    runsError={runsError}
-                    recall={recall}
-                  />
+                  <>
+                    <Pagination current={runsPage} total={runsTotal} pageSize={20} showSizeChanger={false} onChange={onRunsPageChange} showTotal={(total) => `共 ${total} 次执行`} />
+                    <TaskHistory
+                      task={task}
+                      events={events}
+                      runs={runs}
+                      loading={eventsLoading || runsLoading}
+                      eventsError={eventsError}
+                      runsError={runsError}
+                      recall={recall}
+                    />
+                  </>
                 ),
               },
               {
@@ -1379,4 +1370,11 @@ export default function TaskDetailModal({
         <ContextPanel task={task} />
       </Modal>
     </>)
+}
+
+
+function taskCapture(task: Task): Record<string, unknown> {
+ const value = task.source_payload && typeof task.source_payload === 'object' && !Array.isArray(task.source_payload)
+   ? (task.source_payload as Record<string, unknown>).capture : null
+ return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }

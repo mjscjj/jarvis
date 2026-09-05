@@ -30,9 +30,11 @@ var allowedTodoStatuses = map[string]struct{}{
 var m3OwnedTodoStatuses = map[string]bool{"extracted": true, "observing": true}
 
 type TodoListFilter struct {
-	Statuses   []string
-	ActionType string
-	ProjectID  *uint64
+	Query           string
+	SourceMessageID string
+	Statuses        []string
+	ActionType      string
+	ProjectID       *uint64
 	// GroupID is the sharper of the two scopes: every Todo comes from a chat, so
 	// group_id is always set, while project_id is only present once a group is
 	// bound to a project.
@@ -54,33 +56,30 @@ type TodoList struct {
 }
 
 type TodoView struct {
-	ID                 uint64           `json:"id"`
-	Title              string           `json:"title"`
-	Description        string           `json:"description"`
-	ActionType         string           `json:"action_type"`
-	Target             string           `json:"target"`
-	Context            string           `json:"context"`
-	OpenQuestions      json.RawMessage  `json:"open_questions"`
-	CommitmentStrength string           `json:"commitment_strength"`
-	SourceMessageIDs   json.RawMessage  `json:"source_message_ids"`
-	SourceQuote        string           `json:"source_quote"`
-	AssignerOpenID     *string          `json:"assigner_open_id"`
-	IsLeaderAssigned   bool             `json:"is_leader_assigned"`
-	DueAt              *time.Time       `json:"due_at"`
-	Status             string           `json:"status"`
-	Revision           int32            `json:"revision"`
-	Version            int32            `json:"version"`
-	FirstSeenAt        time.Time        `json:"first_seen_at"`
-	LastEvidenceAt     time.Time        `json:"last_evidence_at"`
-	CreatedAt          time.Time        `json:"created_at"`
-	UpdatedAt          time.Time        `json:"updated_at"`
-	Group              *TodoGroupView   `json:"group"`
-	Project            *TodoProjectView `json:"project"`
-	// Resolution / ContextSnapshot are the M3-frozen project inference trace and
+	ID               uint64           `json:"id"`
+	Title            string           `json:"title"`
+	Description      string           `json:"description"`
+	ActionType       string           `json:"action_type"`
+	Target           string           `json:"target"`
+	SourceMessageIDs json.RawMessage  `json:"source_message_ids"`
+	SourceQuote      string           `json:"source_quote"`
+	AssignerOpenID   *string          `json:"assigner_open_id"`
+	IsLeaderAssigned bool             `json:"is_leader_assigned"`
+	DueAt            *time.Time       `json:"due_at"`
+	Status           string           `json:"status"`
+	Revision         int32            `json:"revision"`
+	Version          int32            `json:"version"`
+	FirstSeenAt      time.Time        `json:"first_seen_at"`
+	LastEvidenceAt   time.Time        `json:"last_evidence_at"`
+	CreatedAt        time.Time        `json:"created_at"`
+	UpdatedAt        time.Time        `json:"updated_at"`
+	Group            *TodoGroupView   `json:"group"`
+	Project          *TodoProjectView `json:"project"`
+	// Resolution / Content are the M3-frozen project inference trace and
 	// background, so the UI can show "why this project/repo" and M5 can query the
 	// full creation-time context on demand (docs/design-context-pipeline.md §5/§6).
-	Resolution      json.RawMessage `json:"resolution"`
-	ContextSnapshot json.RawMessage `json:"context_snapshot"`
+	Resolution json.RawMessage `json:"resolution"`
+	Content    json.RawMessage `json:"content"`
 }
 
 type TodoGroupView struct {
@@ -142,6 +141,13 @@ func (s *TodoStore) ListTodos(ctx context.Context, filter TodoListFilter) (*Todo
 		query = query.Where("last_evidence_at < ?", filter.Until.UTC())
 	}
 
+	if filter.Query != "" {
+		term := "%" + filter.Query + "%"
+		query = query.Where("(title LIKE ? OR target LIKE ? OR description LIKE ? OR source_quote LIKE ? OR json_extract(content, '$.source') LIKE ? OR json_extract(content, '$.capture.messages') LIKE ?)", term, term, term, term, term, term)
+	}
+	if filter.SourceMessageID != "" {
+		query = query.Where("EXISTS (SELECT 1 FROM json_each(todo.source_message_ids) WHERE value = ?)", filter.SourceMessageID)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("count todos: %w", err)
@@ -156,6 +162,7 @@ func (s *TodoStore) ListTodos(ctx context.Context, filter TodoListFilter) (*Todo
 	items := make([]TodoView, len(todos))
 	for i := range todos {
 		items[i] = todoView(&todos[i])
+		items[i].Content = nil
 	}
 	return &TodoList{Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
 }
@@ -286,15 +293,13 @@ func ValidateTodoFilter(filter TodoListFilter) error {
 func todoView(todo *domain.Todo) TodoView {
 	view := TodoView{
 		ID: todo.ID, Title: todo.Title, Description: todo.Description,
-		ActionType: todo.ActionType, Target: todo.Target, Context: todo.Context,
-		OpenQuestions:      rawJSON(todo.OpenQuestions),
-		CommitmentStrength: todo.CommitmentStrength,
-		SourceMessageIDs:   rawJSON(todo.SourceMessageIDs), SourceQuote: todo.SourceQuote,
+		ActionType: todo.ActionType, Target: todo.Target,
+		SourceMessageIDs: rawJSON(todo.SourceMessageIDs), SourceQuote: todo.SourceQuote,
 		AssignerOpenID: todo.AssignerOpenID, IsLeaderAssigned: todo.IsLeaderAssigned,
 		DueAt: todo.DueAt, Status: todo.Status,
 		Revision: todo.Revision, Version: todo.Version, FirstSeenAt: todo.FirstSeenAt,
 		LastEvidenceAt: todo.LastEvidenceAt, CreatedAt: todo.CreatedAt, UpdatedAt: todo.UpdatedAt,
-		Resolution: rawJSON(todo.Resolution), ContextSnapshot: rawJSON(todo.ContextSnapshot),
+		Resolution: rawJSON(todo.Resolution), Content: rawJSON(todo.Content),
 	}
 	if todo.Group != nil {
 		view.Group = &TodoGroupView{ID: todo.Group.ID, ChatID: todo.Group.ChatID, Name: todo.Group.Name}

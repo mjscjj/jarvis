@@ -1,7 +1,7 @@
 package provider
 
 // TodoExtractionJSONSchema is the provider-facing strict machine envelope.
-// Model semantics stay in payload as opaque text; adding a semantic concept
+// Model semantics stay in payload and JSON-encoded annotation as opaque text; adding a semantic concept
 // must not require changing this schema or the downstream Go pipeline.
 func TodoExtractionJSONSchema() map[string]any {
 	candidate := map[string]any{
@@ -38,10 +38,14 @@ func TodoExtractionJSONSchema() map[string]any {
 				"type":        "string",
 				"description": "原样交给下游的开放文本；程序不解析或重写。",
 			},
+			"annotation": map[string]any{
+				"type":        "string",
+				"description": "开放 JSON 对象编码成的字符串；对象内字段可自由扩展，无补充时使用字符串 {}。",
+			},
 		},
 		"required": []string{
 			"action_type", "status", "title", "target", "project_hint",
-			"source_message_ids", "source_quote", "payload",
+			"source_message_ids", "source_quote", "payload", "annotation",
 		},
 	}
 	return map[string]any{
