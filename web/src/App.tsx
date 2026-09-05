@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { Alert, Badge, Button, Drawer, Layout, Menu, Spin, Tooltip, Typography } from 'antd'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Alert, Badge, Button, Drawer, Input, Layout, Menu, Modal, Result, Spin, Tooltip, Typography, message } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   HomeOutlined,
@@ -14,9 +14,18 @@ import {
   DatabaseOutlined,
   CalendarOutlined,
   MoreOutlined,
+  PoweroffOutlined,
   RobotOutlined,
+  ApiOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  EditOutlined,
+  LogoutOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
 import Overview from './Overview'
+import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
+import { AuthGate, AuthProvider, useAuth } from './auth'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
@@ -24,6 +33,8 @@ import { listAppModules } from './api'
 import { appModuleRegistry } from './modules/registry'
 import type { AppModuleChildDefinition, AppModuleDefinition } from './modules/registry'
 import { isWeeklyShareViewState } from './okr/emily/share'
+import { listPlugins, shutdownJarvis } from './api'
+import type { Plugin } from './types'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -37,6 +48,7 @@ const Todos = lazy(() => import('./Todos'))
 const ScheduledTasks = lazy(() => import('./ScheduledTasks'))
 const Debug = lazy(() => import('./Debug'))
 const Chat = lazy(() => import('./Chat'))
+const Plugins = lazy(() => import('./Plugins'))
 
 const DEFAULT_KEY = 'overview'
 
@@ -63,23 +75,33 @@ const pageLabels: Record<string, string> = {
   agents: 'Agent 设置',
   todos: '线索',
   'scheduled-tasks': '自动化',
+  plugins: '插件',
   settings: '系统设置',
   debug: '运行状态',
   ...Object.fromEntries(appModuleRegistry.map((module) => [module.key, module.label])),
 }
 
 function AppShell() {
+  const { name: agentName, shortName: agentShortName, rename: renameAgent } = useAgentIdentity()
+  const { user, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'okr' && isWeeklyShareViewState(context.view_state)
   const runtimeFailures = useRuntimeFailureCount()
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
   const [chatLoaded, setChatLoaded] = useState(chatOpen)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
-  const [openMenuKeys, setOpenMenuKeys] = useState<string[]>(['management'])
+  const [openMenuKeys, setOpenMenuKeys] = useState<string[]>(['management', 'plugin-group'])
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
   const [mobileModuleKey, setMobileModuleKey] = useState<string>()
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean>>()
   const [moduleLoadError, setModuleLoadError] = useState<string>()
+  const [enabledPlugins, setEnabledPlugins] = useState<Plugin[]>([])
+  const [shuttingDown, setShuttingDown] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState(agentName)
+  const [savingName, setSavingName] = useState(false)
+  const [modal, modalContext] = Modal.useModal()
+  const [messageApi, messageContext] = message.useMessage()
   const chatRef = useRef<HTMLElement>(null)
   const chatToggleRef = useRef<HTMLButtonElement>(null)
   const chatWasOpen = useRef(chatOpen)
@@ -112,6 +134,37 @@ function AppShell() {
     ? `${activeModule.label} · ${activeModuleChild.label}`
     : pageLabels[context.active_key] || 'Jarvis'
 
+  const refreshPlugins = useCallback(async () => {
+    try {
+      const result = await listPlugins()
+      setEnabledPlugins(result.items.filter((item) => item.enabled))
+    } catch {
+      // The plugin page owns visible API errors; navigation keeps its last good state.
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshPlugins()
+    const onChanged = () => {
+      setOpenMenuKeys((keys) => keys.includes('plugin-group') ? keys : [...keys, 'plugin-group'])
+      void refreshPlugins()
+    }
+    window.addEventListener('jarvis:plugins-changed', onChanged)
+    return () => window.removeEventListener('jarvis:plugins-changed', onChanged)
+  }, [refreshPlugins])
+
+  const pluginMenu: NonNullable<MenuProps['items']>[number] = enabledPlugins.length > 0
+    ? {
+        key: 'plugin-group',
+        label: '插件',
+        icon: <ApiOutlined />,
+        children: [
+          { key: 'plugins', label: '插件管理' },
+          ...enabledPlugins.map((plugin) => ({ key: `plugin:${plugin.id}`, label: plugin.name })),
+        ],
+      }
+    : { key: 'plugins', label: '插件', icon: <ApiOutlined /> }
+
   const menuProps: MenuProps['items'] = [
     { key: 'overview', label: '今日', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
@@ -132,6 +185,7 @@ function AppShell() {
     }),
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
+    pluginMenu,
     { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
     { type: 'divider' },
     {
@@ -151,6 +205,7 @@ function AppShell() {
     todos: <Todos refreshKey={0} />,
     tasks: <Tasks />,
     'scheduled-tasks': <ScheduledTasks />,
+    plugins: <Plugins />,
     background: <Background />,
     agents: <AgentSettings />,
     settings: <Settings />,
@@ -242,8 +297,80 @@ function AppShell() {
     setMobileSystemOpen(false)
     setMobileModuleKey(undefined)
     const target = moduleNavigationTargets.find((item) => item.menuKey === key)
-    if (target) navigate(target.module.key, target.child.viewState)
-    else navigate(key)
+    if (target) {
+      navigate(target.module.key, target.child.viewState)
+      return
+    }
+    if (key.startsWith('plugin:')) {
+      navigate('plugins', { plugin: key.slice('plugin:'.length) })
+      return
+    }
+    navigate(key)
+  }
+
+  const confirmShutdown = () => {
+    modal.confirm({
+      title: `退出 ${agentName}？`,
+      content: '这会停止当前 Jarvis 实例的主服务和 Chat sidecar，正在执行的任务也会被中断。',
+      okText: '退出当前实例',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await shutdownJarvis()
+          setMobileSystemOpen(false)
+          setShuttingDown(true)
+        } catch (cause) {
+          messageApi.error(cause instanceof Error ? cause.message : String(cause))
+          throw cause
+        }
+      },
+    })
+  }
+
+  const cancelNameEdit = () => {
+    setNameDraft(agentName)
+    setEditingName(false)
+  }
+
+  const saveName = async () => {
+    const next = nameDraft.trim()
+    if (!next || next === agentName) {
+      cancelNameEdit()
+      return
+    }
+    setSavingName(true)
+    try {
+      const result = await renameAgent(next)
+      setEditingName(false)
+      messageApi.success(result.restartRequired ? '名称已保存，重启服务后将应用到所有 Agent' : '名称已更新')
+    } catch (cause) {
+      messageApi.error(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } catch (cause) {
+      messageApi.error(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  if (shuttingDown) {
+    return (
+      <>
+        {modalContext}
+        {messageContext}
+        <Result
+          status="success"
+          title={`${agentName} 已退出`}
+          subTitle="当前 Jarvis 实例正在停止，可以关闭此页面。"
+        />
+      </>
+    )
   }
 
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
@@ -274,29 +401,104 @@ function AppShell() {
       className={`app-shell ${chatOpen ? 'chat-is-open' : ''}`}
       style={{ '--sider-width': weeklyShare ? '0px' : `${siderWidth}px` } as React.CSSProperties}
     >
+      {modalContext}
+      {messageContext}
       {!weeklyShare && <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className="sider-brand">
           {!siderCollapsed && <div className="sider-tagline">主动式任务分身</div>}
-          <Title level={4}>{siderCollapsed ? 'J' : 'Jarvis'}</Title>
+          {siderCollapsed ? (
+            <Title level={4}>{agentShortName}</Title>
+          ) : (
+            <>
+              <div className="sider-name-row">
+                {editingName ? (
+                  <>
+                    <Input
+                      size="small"
+                      value={nameDraft}
+                      maxLength={32}
+                      autoFocus
+                      aria-label="机器人名称"
+                      onChange={(event) => setNameDraft(event.target.value)}
+                      onPressEnter={() => void saveName()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') cancelNameEdit()
+                      }}
+                    />
+                    <Tooltip title="保存名称">
+                      <Button type="text" size="small" icon={<CheckOutlined />} loading={savingName} onClick={() => void saveName()} />
+                    </Tooltip>
+                    <Tooltip title="取消">
+                      <Button type="text" size="small" icon={<CloseOutlined />} disabled={savingName} onClick={cancelNameEdit} />
+                    </Tooltip>
+                  </>
+                ) : (
+                  <>
+                    <Tooltip title={agentName}>
+                      <Title level={4}>{agentName}</Title>
+                    </Tooltip>
+                    <Tooltip title="修改机器人名称">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<EditOutlined />}
+                        aria-label="修改机器人名称"
+                        onClick={() => {
+                          setNameDraft(agentName)
+                          setEditingName(true)
+                        }}
+                      />
+                    </Tooltip>
+                  </>
+                )}
+              </div>
+              <div className="sider-agent-caption">你的主动式 Agent</div>
+            </>
+          )}
         </div>
         <Menu
           mode="inline"
           inlineCollapsed={siderCollapsed}
-          selectedKeys={[selectedMenuKey]}
+          selectedKeys={[
+            context.active_key === 'plugins' && context.view_state.plugin
+              ? `plugin:${context.view_state.plugin}`
+              : selectedMenuKey,
+          ]}
           openKeys={openMenuKeys}
           onOpenChange={(keys) => setOpenMenuKeys(keys.map(String))}
           items={menuProps}
           onClick={({ key }) => goTo(key)}
           className="app-menu"
         />
-        <Tooltip title={siderCollapsed ? '展开侧边栏' : '收起侧边栏'} placement="right">
-          <Button
-            type="text"
-            className="sider-collapse-btn"
-            icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setSiderCollapsed((value) => !value)}
-          />
-        </Tooltip>
+        <div className={`sider-footer ${siderCollapsed ? 'is-collapsed' : ''}`}>
+          <div className="sider-account">
+            {!siderCollapsed && (
+              <>
+                <UserOutlined />
+                <div className="sider-account-copy">
+                  <strong>{user?.username}</strong>
+                  <span>{user?.email}</span>
+                </div>
+              </>
+            )}
+            <Tooltip title={siderCollapsed ? `${user?.username ?? '当前用户'} · 退出登录` : '退出登录'} placement="right">
+              <Button type="text" icon={<LogoutOutlined />} aria-label="退出登录" onClick={() => void handleLogout()} />
+            </Tooltip>
+          </div>
+          <Tooltip title="退出当前实例" placement="right">
+            <Button className="sider-shutdown-btn" type="text" danger icon={<PoweroffOutlined />} aria-label={`退出 ${agentName}`} onClick={confirmShutdown}>
+              {!siderCollapsed && '停止服务'}
+            </Button>
+          </Tooltip>
+          <Tooltip title={siderCollapsed ? '展开侧边栏' : '收起侧边栏'} placement="right">
+            <Button
+              type="text"
+              className="sider-collapse-btn"
+              icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setSiderCollapsed((value) => !value)}
+            />
+          </Tooltip>
+        </div>
       </Sider>}
       {!weeklyShare && <header className="mobile-topbar">
         <strong>{currentPageLabel}</strong>
@@ -333,7 +535,7 @@ function AppShell() {
           icon={<MessageOutlined />}
           className={`chat-toggle ${chatOpen ? 'chat-open' : ''}`}
           ref={chatToggleRef}
-          aria-label={chatOpen ? '关闭 Jarvis 对话' : '打开 Jarvis 对话'}
+          aria-label={chatOpen ? `关闭 ${agentName} 对话` : `打开 ${agentName} 对话`}
           onClick={() => setChatOpen((open) => !open)}
         />
       </Tooltip>
@@ -377,6 +579,13 @@ function AppShell() {
         onClose={() => setMobileSystemOpen(false)}
       >
         <div className="mobile-system-links">
+          <div className="mobile-account">
+            <UserOutlined />
+            <div>
+              <strong>{user?.username}</strong>
+              <span>{user?.email}</span>
+            </div>
+          </div>
           {[
             { key: 'todos', label: '线索', icon: <CheckCircleOutlined /> },
             { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
@@ -386,6 +595,8 @@ function AppShell() {
               {item.label}
             </Button>
           ))}
+          <Button icon={<LogoutOutlined />} onClick={() => void handleLogout()}>退出登录</Button>
+          <Button danger icon={<PoweroffOutlined />} onClick={confirmShutdown}>退出并停止服务</Button>
         </div>
       </Drawer>}
     </Layout>
@@ -394,8 +605,21 @@ function AppShell() {
 
 export default function App() {
   return (
-    <PageContextProvider initialKey={DEFAULT_KEY}>
-      <AppShell />
-    </PageContextProvider>
+    <AgentIdentityProvider>
+      <AuthProvider>
+        <AuthenticatedApp />
+      </AuthProvider>
+    </AgentIdentityProvider>
+  )
+}
+
+function AuthenticatedApp() {
+  const { name } = useAgentIdentity()
+  return (
+    <AuthGate agentName={name}>
+      <PageContextProvider initialKey={DEFAULT_KEY}>
+        <AppShell />
+      </PageContextProvider>
+    </AuthGate>
   )
 }

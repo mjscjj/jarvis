@@ -87,7 +87,7 @@ func TestRun(t *testing.T) {
 			if timeout == 0 {
 				timeout = fixtureCommandTimeout
 			}
-			client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: timeout})
+			client, err := New(testOptions(bin, timeout))
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -127,7 +127,7 @@ func TestSearchUser(t *testing.T) {
 
 	t.Run("parses candidates and has_more", func(t *testing.T) {
 		body := `printf '%s' '{"ok":true,"data":{"users":[{"open_id":"ou_abc","localized_name":"测试用户","email":"c@x.com","department":"公会","p2p_chat_id":"oc_1","is_cross_tenant":false,"has_chatted":true}],"has_more":true}}'`
-		client, err := New(Options{Bin: writeScript(t, body), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+		client, err := New(testOptions(writeScript(t, body), fixtureCommandTimeout))
 		if err != nil {
 			t.Fatalf("New() error = %v", err)
 		}
@@ -144,7 +144,7 @@ func TestSearchUser(t *testing.T) {
 	})
 
 	t.Run("rejects empty query without calling CLI", func(t *testing.T) {
-		client, err := New(Options{Bin: writeScript(t, `exit 1`), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+		client, err := New(testOptions(writeScript(t, `exit 1`), fixtureCommandTimeout))
 		if err != nil {
 			t.Fatalf("New() error = %v", err)
 		}
@@ -180,7 +180,7 @@ func TestVerifyUserIdentity(t *testing.T) {
 		{name: "invalid json", script: `printf '%s' 'not-json'`, wantErr: "decode lark-cli auth status"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			client, err := New(Options{Bin: writeScript(t, test.script), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+			client, err := New(Options{Bin: writeScript(t, test.script), RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, Timezone: "Asia/Shanghai"})
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -212,7 +212,7 @@ case "$*" in
   "auth status --verify") printf '%s' '{"identities":{"user":{"status":"ready","available":true,"verified":true,"tokenStatus":"valid","userName":"储节节","openId":"ou_principal"}}}' ;;
   *) printf '%s' "unexpected args: $*" >&2; exit 9 ;;
 esac`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, Timezone: "Asia/Shanghai"})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -238,7 +238,7 @@ case "$*" in
   "im +chat-list --format json") printf '%s' '{"ok":true,"data":{"value":"default-profile"}}' ;;
   *) printf '%s' "unexpected args: $*" >&2; exit 9 ;;
 esac`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout})
+	client, err := New(testOptions(bin, fixtureCommandTimeout))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -287,7 +287,7 @@ if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx
 fi
 printf '%s' "unexpected args: $*" >&2
 exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal"})
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal", Timezone: "Asia/Shanghai"})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -323,7 +323,7 @@ if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"do
 fi
 printf '%s' "unexpected args: $*" >&2
 exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal"})
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal", Timezone: "Asia/Shanghai"})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -364,7 +364,7 @@ if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx
 fi
 printf '%s' "unexpected args: $*" >&2
 exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal"})
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal", Timezone: "Asia/Shanghai"})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -389,13 +389,40 @@ if [ "$*" = 'drive +secure-label-list --as user --format json' ]; then
 fi
 printf '%s' "unexpected args: $*" >&2
 exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal"})
+	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal", Timezone: "Asia/Shanghai"})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	_, err = client.CreateMarkdownDocument(context.Background(), "Weekly", "# Progress")
 	if err == nil || !strings.Contains(err.Error(), `secure label "L2-Internal" is not available`) || !strings.Contains(err.Error(), "L1-Public") {
 		t.Fatalf("CreateMarkdownDocument() error = %v", err)
+	}
+}
+
+func TestRunUsesConfiguredTimezoneInsteadOfHostTimezone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	t.Setenv("TZ", "UTC")
+	bin := writeScript(t, `printf '{"ok":true,"data":{"value":"%s"}}' "$TZ"`)
+	client, err := New(testOptions(bin, fixtureCommandTimeout))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	var got testResponse
+	if err := client.Run(context.Background(), &got, "im", "+chat-list"); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got.Data.Value != "Asia/Shanghai" {
+		t.Fatalf("Run() TZ = %q, want Asia/Shanghai", got.Data.Value)
+	}
+}
+
+func TestNewRejectsMissingTimezone(t *testing.T) {
+	opts := testOptions(writeScript(t, `exit 0`), fixtureCommandTimeout)
+	opts.Timezone = ""
+	if _, err := New(opts); err == nil || !strings.Contains(err.Error(), "timezone is empty") {
+		t.Fatalf("New() error = %v, want timezone is empty", err)
 	}
 }
 
@@ -407,6 +434,13 @@ func writeScript(t *testing.T, body string) string {
 		t.Fatalf("write fake lark-cli: %v", err)
 	}
 	return path
+}
+
+func testOptions(bin string, timeout time.Duration) Options {
+	return Options{
+		Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: timeout,
+		Timezone: "Asia/Shanghai",
+	}
 }
 
 func shellQuote(value string) string {

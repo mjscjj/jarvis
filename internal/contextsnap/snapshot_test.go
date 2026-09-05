@@ -12,7 +12,7 @@ func TestSnapshotEncodeDecodeRoundTrip(t *testing.T) {
 		CapturedAt:      "2026-07-19T00:00:00Z",
 		Principal:       &Principal{OpenID: "ou_me", Name: "principal"},
 		Group:           &Group{ID: 1, ChatID: "oc_x", Name: &name},
-		Messages:        []Message{{MessageID: "m1", ChatID: "oc_x", Content: "读下 agent loop 代码"}},
+		Messages:        []Message{{MessageID: "m1", ChatID: "oc_x", ChatMode: "group", Content: "读下 agent loop 代码"}},
 	}
 	raw, err := snap.Encode()
 	if err != nil {
@@ -25,7 +25,7 @@ func TestSnapshotEncodeDecodeRoundTrip(t *testing.T) {
 	if got.Principal == nil || got.Principal.OpenID != "ou_me" {
 		t.Fatalf("principal round-trip mismatch: %+v", got.Principal)
 	}
-	if len(got.Messages) != 1 || got.Messages[0].MessageID != "m1" {
+	if len(got.Messages) != 1 || got.Messages[0].MessageID != "m1" || got.Messages[0].ChatMode != "group" {
 		t.Fatalf("messages round-trip mismatch: %+v", got.Messages)
 	}
 }

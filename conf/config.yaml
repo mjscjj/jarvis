@@ -1,6 +1,11 @@
 # Jarvis 本地基线配置（本地可信环境，明文存储密钥）。
 # 主要配置段均已投入运行并在启动时校验；同目录 config.runtime.yaml 会覆盖本文件，保存后需重启生效。
 
+# 本机助手身份。正式安装时由用户显式选择并写入 runtime overlay；
+# 这里的默认值只保证既有开发环境升级后仍可启动。
+identity:
+  display_name: "Jarvis"
+
 server:
   addr: "0.0.0.0:18800"
   public_base_url: ""                     # 对外可打开的根地址（形如 https://emily.example/）；分享链接用它替换浏览器地址栏里的 IP，留空表示沿用当前地址
@@ -27,11 +32,9 @@ model:
 factengine:
   enabled: true
   schedule: "@every 15m"
-  rollup_schedule: "0 2 * * *"   # 每天本地 02:00 压缩前一自然日的明细事实
   bin: "traex"
   model: "DeepSeek-V4-Flash"
   reasoning_effort: "medium"     # 兼顾 Flash 速度与 Fact 判断质量
-  rollup_model: "DeepSeek-V4-Pro"
   sandbox: "danger-full-access"   # 本地可信环境；抽取时可自跑 jarvis-tools 查已有事实避免重复
   timeout_sec: 1200              # 一次完整世界维护 Agent 会话最多 20 分钟
   batch_limit: 50                # 每个来源参与粗粒度缩批的候选行上限
@@ -72,7 +75,7 @@ lark_cli:
   bin: "lark-cli"                         # 走 PATH 查找，与 traex 同一风格
   rate_limit: 5
   burst: 10
-  concurrent: 2
+  concurrent: 6                           # 须 >= capture.scan_workers，否则扫描并发被这里卡住
   timeout_sec: 60
   # 导出文档时打的密级标签名，来自 `lark-cli drive +secure-label-list`。
   # 新建文档继承的默认密级不允许组织内链接分享，导出会被飞书以 91012 拒绝。
@@ -82,15 +85,15 @@ lark_cli:
 # related 群不再按 tier 分档调度，统一 scan_schedule 采集；hot/warm_age_hours 仅用于展示 tier 标签。
 capture:
   page_size: 50
-  scan_workers: 2
+  scan_workers: 5
   hot_age_hours: 6
   warm_age_hours: 168
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
-  scan_schedule: "@every 15s"
-  # discover 时按 active_time 自动纳入监听的内部真人私聊上限：只开最活跃的前 N 个，
-  # 服务号私聊(p2p_target_type=bot)与僵尸老私聊不开。0=不自动开任何私聊。
-  auto_related_p2p_top_n: 30
+  scan_schedule: "@every 2m"
+  # discover 时按 active_time 轮换自动监听的内部真人私聊：保留当前最活跃的前 N 个。
+  # pinned 私聊作为人工固定项额外保留；服务号私聊不参与。0=不自动开任何私聊。
+  auto_related_p2p_top_n: 20
 
 # 飞书卡片内审批回调。CC Connect 持有当前 Jarvis Bot 的唯一长连接，
 # 把审批按钮点击经带共享密钥的 localhost HTTP 转发给 Jarvis。
@@ -129,7 +132,7 @@ meeting_sweep:
   model: "DeepSeek-V4-Flash"
   sandbox: "danger-full-access"
   reasoning_effort: "low"
-  timeout_seconds: 600
+  timeout_seconds: 1000              # 超过调度周期；叠跑由 cron.SkipIfStillRunning 兜住
 
 # 晨间作战简报：工作日开工前一次。Skill 自带取证/取舍/投递判断；Go 只做调度与
 # 产物新鲜度检查。默认只读，唯一预授权副作用是给 Principal 本人发一条飞书私聊。
@@ -142,7 +145,7 @@ morning_brief:
   model: "gpt-5.6-sol"       # 与 execute 同级；一天一次，取舍质量优先
   sandbox: "danger-full-access"
   reasoning_effort: "medium"
-  timeout_seconds: 600
+  timeout_seconds: 1800
 
 # M5 任务执行：独立于上面的 codex 段。这里用更强模型真正落地。
 # 手动执行始终可用（POST /api/tasks/:id/execute）；enabled 仅控制自动 cron。
@@ -154,7 +157,7 @@ execute:
   repo_root: ".."                                  # code_change 的 repo_ref 基目录（相对仓库根，加载时展开成绝对路径）
   runs_dir: "runs"                                 # diff/产物落盘
   bin: "traex"                                     # 与 M3 可不同；仅供 M5 与依赖 M5 的日报使用
-  model: "gpt-5.6-sol"                             # Latest frontier（无裸 gpt-5.6；luna/terra/sol 里 sol 最强）
+  model: "gpt-5.5"                                 # 执行质量足够且配额更稳；5.6-sol 曾整段打满配额把 Task 全判失败
   reasoning_effort: "medium"                       # 覆盖用户全局 xhigh，执行质量与耗时折中
   timeout_second: 1800                             # 单次执行超时：30 分钟（长任务需要查资料并调用外部工具）
   stale_executing_minute: 45                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）

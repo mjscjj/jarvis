@@ -19,7 +19,6 @@ const taskStatusMeta: Record<Task['status'], { label: string; tone: string }> = 
   executing: { label: '执行中', tone: 'bg-blue-50 text-blue-700' },
   waiting: { label: '等待继续', tone: 'bg-amber-50 text-amber-700' },
   needs_human: { label: '需要处理', tone: 'bg-red-50 text-red-700' },
-  awaiting_approval: { label: '等待审批', tone: 'bg-violet-50 text-violet-700' },
   done: { label: '已完成', tone: 'bg-emerald-50 text-emerald-700' },
   failed: { label: '失败', tone: 'bg-red-50 text-red-700' },
   observing: { label: '已检查', tone: 'bg-slate-100 text-slate-600' },
@@ -206,7 +205,7 @@ export function AgentActionCenter({ prompts, selectedPromptKey, onSelectPrompt }
   const attention = OKR_ACTIONS.filter((item) => {
     const schedule = scheduleByKey.get(item.key)
     const task = schedule ? lastTasks[schedule.id] : undefined
-    return Boolean(schedule?.last_error_detail || task && ['failed', 'needs_human', 'awaiting_approval'].includes(task.status))
+    return Boolean(schedule?.last_error_detail || task && ['failed', 'needs_human'].includes(task.status))
   }).length
   const nextAction = OKR_ACTIONS
     .map((definition) => ({ definition, schedule: scheduleByKey.get(definition.key) }))

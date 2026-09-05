@@ -1,9 +1,68 @@
 package extract
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+
+	"jarvis/internal/contextpack"
 )
+
+func TestAnnotationTransportPreservesOpenSemantics(t *testing.T) {
+	content := `{"brief":"新的分层内容","scene":"现场","new_concept":{"id":9007199254740993}}`
+	for _, wire := range []any{content, json.RawMessage(content)} {
+		candidate, _ := json.Marshal(validCandidate())
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(candidate, &fields); err != nil {
+			t.Fatal(err)
+		}
+		fields["annotation"], _ = json.Marshal(wire)
+		raw, _ := json.Marshal(map[string]any{"candidates": []any{fields}})
+		result, err := DecodeExtractionResult(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded := result.Candidates[0]
+		if string(decoded.Annotation) != content {
+			t.Fatalf("content changed: %s", decoded.Annotation)
+		}
+		source, _ := json.Marshal(decoded)
+		packet, err := contextpack.Freeze(source, []byte(`{"messages":[{"message_id":"om_1","content":"原文"}],"project":{"name":"项目"}}`), "default", decoded.Annotation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{`"brief":"新的分层内容"`, `"new_concept":{"id":9007199254740993}`} {
+			if !strings.Contains(string(packet), want) {
+				t.Fatalf("lost semantics: %s", packet)
+			}
+		}
+	}
+	for _, content := range []any{"not JSON", "[]", "null", "", []any{1}, nil} {
+		raw, _ := json.Marshal(map[string]any{"annotation": content})
+		var candidate Candidate
+		if err := json.Unmarshal(raw, &candidate); err == nil {
+			t.Fatalf("accepted invalid content: %s", raw)
+		}
+	}
+}
+
+func TestOutputContractExamplesDecode(t *testing.T) {
+	start := strings.Index(outputContract, "{\n  \"candidates\"")
+	end := strings.LastIndex(outputContract, "\n}") + 2
+	if start < 0 || end <= start {
+		t.Fatal("missing output example")
+	}
+	result, err := DecodeExtractionResult([]byte(outputContract[start:end]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range result.Candidates {
+		if len(candidate.Annotation) == 0 {
+			t.Fatal("example missing content")
+		}
+	}
+}
 
 // TestDecodeExtractionResultToleratesPresentationNoise pins that the shapes a
 // model gets wrong without losing meaning — an invented key, a markdown fence,
@@ -148,5 +207,34 @@ func validCandidate() Candidate {
 		Payload:          "最终完成鉴权重构并合入主干；归属 jarvis 项目，仓库 jarvis。",
 		SourceMessageIDs: []string{"om_1"},
 		SourceQuote:      "请修改鉴权逻辑",
+	}
+}
+
+func TestCandidatePreservesUnknownSemanticFields(t *testing.T) {
+	candidate := strictCandidate()
+	raw, err := json.Marshal(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	fields["new_semantics"] = json.RawMessage(`{"id":9007199254740993,"reason":["one","two"]}`)
+	fields["annotation"] = json.RawMessage(`{"brief":"摘要","scene":"现场","unfamiliar":true}`)
+	raw, err = json.Marshal(map[string]any{"candidates": []any{fields}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := DecodeExtractionResult(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(result.Candidates[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `9007199254740993`) || !strings.Contains(string(encoded), `"unfamiliar":true`) {
+		t.Fatalf("semantic fields lost: %s", encoded)
 	}
 }

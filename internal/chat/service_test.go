@@ -31,7 +31,7 @@ func (f fakeSystemPromptReader) Content(_ context.Context, key string) (string, 
 	}
 	switch key {
 	case textstore.SystemPromptChatKey:
-		return "Chat 系统提示词\n安全约束", nil
+		return "你是 小贾 的对话助手。安全约束：先直接回答，不要复述 Skill、工具、权限或流程；简单问题用一到四句话，不为结构化硬凑分点，结论说清后立即停止。", nil
 	case textstore.OKRAgentPrinciplesKey:
 		return "OKR 原子工具与权限原则", nil
 	default:
@@ -74,6 +74,7 @@ func newTestServiceWithDependencies(t *testing.T, reader fakeSharedMemoryReader,
 func newTestServiceWithIdentities(t *testing.T, reader fakeSharedMemoryReader, assembler ContextAssembler, identities FeishuIdentityResolver) *Service {
 	t.Helper()
 	svc, err := NewService(Options{
+		AgentName:        "小贾",
 		Bin:              "codex",
 		Model:            "gpt-5.5",
 		Sandbox:          "danger-full-access",
@@ -244,6 +245,35 @@ func TestBuildPromptInjectsLatestOKRPrinciplesOnlyOnOKRPage(t *testing.T) {
 	}
 }
 
+// TestBuildPromptSystemGuidanceKeepsAnswerFirstStyle 锁定 Chat 系统指引里的答复风格约束：
+// 先直接回答、不复述 Skill/权限/流程、简单问题短答、不硬凑结构化。防止 Chat 再退化成工具说明腔。
+func TestBuildPromptSystemGuidanceKeepsAnswerFirstStyle(t *testing.T) {
+	t.Parallel()
+	svc := newTestService(t)
+	prompt, err := svc.buildPrompt(context.Background(), Request{Message: "在忙吗？"})
+	if err != nil {
+		t.Fatalf("buildPrompt() error = %v", err)
+	}
+	for _, want := range []string{
+		"你是 小贾 的对话助手",
+		"先直接回答",
+		"不要复述",
+		"一到四句",
+		"不为结构化硬凑分点",
+		"立即停止",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("system guidance missing answer-first rule %q\n---\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "一定一定要用结构化表达") {
+		t.Fatalf("system guidance must not force rigid structured output\n%s", prompt)
+	}
+	if strings.Contains(prompt, "你是 Jarvis 的对话助手") {
+		t.Fatalf("system guidance still contains the fixed assistant name\n%s", prompt)
+	}
+}
+
 // 首轮 prompt 注入非空共享记忆：包含 BEGIN_SHARED_MEMORY 标记、内容与「可信」字样。
 func TestBuildPromptInjectsSharedMemory(t *testing.T) {
 	t.Parallel()
@@ -351,6 +381,7 @@ func TestStreamStartsNewSessionWhenResumeHasNoRollout(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, err := NewService(Options{
+		AgentName:        "小贾",
 		Bin:              bin,
 		Model:            "fixture-model",
 		Sandbox:          "read-only",
@@ -396,7 +427,8 @@ func TestStreamStartsNewCursorSessionWhenSwitchingCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, err := NewService(Options{
-		Bin: bin, Model: "claude-opus-5-high", Sandbox: "danger-full-access",
+		AgentName: "小贾",
+		Bin:       bin, Model: "claude-opus-5-high", Sandbox: "danger-full-access",
 		ReasoningEffort: "high", Timeout: 5 * time.Second, HistoryDir: t.TempDir(),
 		SharedMemory: fakeSharedMemoryReader{}, ContextAssembler: &fakeContextAssembler{},
 		SystemPrompts: fakeSystemPromptReader{},
@@ -430,6 +462,7 @@ func TestStreamDoesNotRetryOtherResumeFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, err := NewService(Options{
+		AgentName:        "小贾",
 		Bin:              bin,
 		Model:            "fixture-model",
 		Sandbox:          "read-only",
@@ -472,6 +505,7 @@ func TestSecondTurnOnSameThreadInterruptsTheStuckOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, err := NewService(Options{
+		AgentName:        "小贾",
 		Bin:              bin,
 		Model:            "fixture-model",
 		Sandbox:          "read-only",
@@ -546,6 +580,7 @@ func TestFollowupInterruptsAStuckFirstTurnOfANewSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, err := NewService(Options{
+		AgentName:        "小贾",
 		Bin:              bin,
 		Model:            "fixture-model",
 		Sandbox:          "read-only",

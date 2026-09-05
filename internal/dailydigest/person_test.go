@@ -119,6 +119,7 @@ func TestBuildSkillPromptCarriesWorkspaceAndParallelContract(t *testing.T) {
 		t.Fatalf("parse day: %v", err)
 	}
 	generator := &personGenerator{
+		agentName:       "小贾",
 		location:        loc,
 		principalOpenID: "ou_me",
 		gitAuthor:       "me@example.com",
@@ -195,7 +196,7 @@ func TestRenderJarvisEvidenceCollapsesRepeatedTodoAndTaskEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse day: %v", err)
 	}
-	generator := &personGenerator{location: location, principalOpenID: "ou_me"}
+	generator := &personGenerator{agentName: "小贾", location: location, principalOpenID: "ou_me"}
 	baseline := &personBaseline{
 		TodoEvents: []baselineTodoEvent{
 			{EventID: 1, TodoID: 9, OccurredAt: "2026-07-25T09:00:00+08:00", FromStatus: "extracted", ToStatus: "materialized", Actor: "materializer", Title: "同一事项", ContextSnapshot: "same large context"},

@@ -1,0 +1,223 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1350" viewBox="0 0 2400 1350">
+  <g font-family="Noto Sans SC, Inter, Arial, sans-serif">
+    <!-- Header -->
+    <g id="header">
+      <text x="60" y="78" font-size="52" font-weight="700" fill="#1F2329">Jarvis 世界模型</text>
+      <text x="60" y="122" font-size="20" font-weight="400" fill="#4E5969">以 Principal 为坐标，持续理解「我、人、事、场、物」</text>
+
+      <text x="720" y="78" font-size="24" font-weight="700" fill="#1F2329">世界模型</text>
+      <text x="864" y="78" font-size="28" font-weight="700" fill="#4E5969">=</text>
+
+      <rect x="910" y="44" width="248" height="52" rx="26" fill="#DFF5E5"/>
+      <text x="1034" y="78" text-anchor="middle" font-size="20" font-weight="700" fill="#1F2329">实体与关系</text>
+      <text x="1184" y="79" font-size="28" font-weight="700" fill="#4E5969">+</text>
+
+      <rect x="1224" y="44" width="224" height="52" rx="26" fill="#EAE2FE"/>
+      <text x="1336" y="78" text-anchor="middle" font-size="20" font-weight="700" fill="#1F2329">当前认知</text>
+      <text x="1474" y="79" font-size="28" font-weight="700" fill="#4E5969">+</text>
+
+      <rect x="1514" y="44" width="248" height="52" rx="26" fill="#F0F4FC"/>
+      <text x="1638" y="78" text-anchor="middle" font-size="20" font-weight="700" fill="#1F2329">时间化证据</text>
+      <text x="1788" y="79" font-size="28" font-weight="700" fill="#4E5969">+</text>
+
+      <rect x="1828" y="44" width="224" height="52" rx="26" fill="#FEF1CE"/>
+      <text x="1940" y="78" text-anchor="middle" font-size="20" font-weight="700" fill="#1F2329">行动状态</text>
+      <path d="M 60 162 H 2340" fill="none" stroke="#DEE0E3" stroke-width="2"/>
+    </g>
+
+    <!-- Section labels -->
+    <g id="section-labels">
+      <circle cx="76" cy="218" r="9" fill="#509863"/>
+      <text x="102" y="227" font-size="26" font-weight="700" fill="#1F2329">01  长期实体与关系</text>
+      <text x="1390" y="225" text-anchor="end" font-size="18" font-weight="400" fill="#4E5969">稳定坐标系</text>
+
+      <circle cx="1612" cy="218" r="9" fill="#8569CB"/>
+      <text x="1638" y="227" font-size="26" font-weight="700" fill="#1F2329">02  认知记录层</text>
+      <text x="2340" y="225" text-anchor="end" font-size="18" font-weight="400" fill="#4E5969">每个长期实体均附带</text>
+    </g>
+
+    <!-- Long-term world: orbital field and relation lines -->
+    <g id="entity-world">
+      <ellipse cx="792" cy="615" rx="665" ry="342" fill="none" stroke="#DFF5E5" stroke-width="4" stroke-dasharray="14 14"/>
+      <path d="M 508 386 C 596 418 642 458 684 500" fill="none" stroke="#509863" stroke-width="5" stroke-linecap="round"/>
+      <path d="M 1062 378 C 985 414 938 456 900 504" fill="none" stroke="#509863" stroke-width="5" stroke-linecap="round"/>
+      <path d="M 1090 592 C 1002 596 972 600 958 604" fill="none" stroke="#509863" stroke-width="5" stroke-linecap="round"/>
+      <path d="M 1038 818 C 964 772 930 744 902 720" fill="none" stroke="#509863" stroke-width="5" stroke-linecap="round"/>
+      <path d="M 522 824 C 614 778 646 748 680 714" fill="none" stroke="#509863" stroke-width="5" stroke-linecap="round"/>
+
+      <!-- Person -->
+      <g id="entity-person">
+        <rect x="126" y="300" width="382" height="172" rx="24" fill="#FFFFFF" stroke="#509863" stroke-width="3"/>
+        <rect x="126" y="300" width="12" height="172" rx="6" fill="#509863"/>
+        <circle cx="186" cy="358" r="32" fill="#DFF5E5"/>
+        <circle cx="186" cy="348" r="10" fill="#509863"/>
+        <path d="M 166 377 C 171 358 201 358 206 377" fill="none" stroke="#509863" stroke-width="6" stroke-linecap="round"/>
+        <text x="236" y="366" font-size="30" font-weight="700" fill="#1F2329">Person</text>
+        <rect x="430" y="328" width="54" height="38" rx="19" fill="#DFF5E5"/>
+        <text x="457" y="354" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">人</text>
+        <text x="166" y="424" font-size="19" font-weight="400" fill="#4E5969">角色、协作对象与关系</text>
+      </g>
+
+      <!-- Project -->
+      <g id="entity-project">
+        <rect x="1062" y="292" width="382" height="172" rx="24" fill="#FFFFFF" stroke="#509863" stroke-width="3"/>
+        <rect x="1432" y="292" width="12" height="172" rx="6" fill="#509863"/>
+        <circle cx="1122" cy="350" r="32" fill="#DFF5E5"/>
+        <path d="M 1107 351 L 1118 362 L 1138 337" fill="none" stroke="#509863" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="1172" y="358" font-size="30" font-weight="700" fill="#1F2329">Project</text>
+        <rect x="1366" y="320" width="54" height="38" rx="19" fill="#DFF5E5"/>
+        <text x="1393" y="346" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">事</text>
+        <text x="1102" y="416" font-size="19" font-weight="400" fill="#4E5969">长期目标与工作上下文</text>
+      </g>
+
+      <!-- KeyMatter -->
+      <g id="entity-key-matter">
+        <rect x="1090" y="516" width="402" height="172" rx="24" fill="#FFFFFF" stroke="#509863" stroke-width="3"/>
+        <rect x="1480" y="516" width="12" height="172" rx="6" fill="#509863"/>
+        <circle cx="1150" cy="574" r="32" fill="#DFF5E5"/>
+        <polygon points="1150,552 1172,574 1150,596 1128,574" fill="#509863"/>
+        <text x="1200" y="582" font-size="30" font-weight="700" fill="#1F2329">KeyMatter</text>
+        <rect x="1414" y="544" width="54" height="38" rx="19" fill="#DFF5E5"/>
+        <text x="1441" y="570" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">事</text>
+        <text x="1130" y="640" font-size="19" font-weight="400" fill="#4E5969">当下重点与关键事项</text>
+      </g>
+
+      <!-- Group -->
+      <g id="entity-group">
+        <rect x="1038" y="740" width="406" height="172" rx="24" fill="#FFFFFF" stroke="#509863" stroke-width="3"/>
+        <rect x="1432" y="740" width="12" height="172" rx="6" fill="#509863"/>
+        <circle cx="1098" cy="798" r="32" fill="#DFF5E5"/>
+        <circle cx="1087" cy="789" r="8" fill="#509863"/>
+        <circle cx="1109" cy="789" r="8" fill="#509863"/>
+        <path d="M 1076 813 C 1080 800 1093 800 1098 812 C 1103 800 1116 800 1120 813" fill="none" stroke="#509863" stroke-width="5" stroke-linecap="round"/>
+        <text x="1148" y="806" font-size="30" font-weight="700" fill="#1F2329">Group</text>
+        <rect x="1366" y="768" width="54" height="38" rx="19" fill="#DFF5E5"/>
+        <text x="1393" y="794" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">场</text>
+        <text x="1078" y="864" font-size="19" font-weight="400" fill="#4E5969">群组、组织与沟通语境</text>
+      </g>
+
+      <!-- Resource -->
+      <g id="entity-resource">
+        <rect x="126" y="740" width="396" height="172" rx="24" fill="#FFFFFF" stroke="#509863" stroke-width="3"/>
+        <rect x="126" y="740" width="12" height="172" rx="6" fill="#509863"/>
+        <circle cx="186" cy="798" r="32" fill="#DFF5E5"/>
+        <path d="M 172 776 H 192 L 202 786 V 820 H 172 Z M 192 776 V 786 H 202" fill="none" stroke="#509863" stroke-width="5" stroke-linejoin="round"/>
+        <text x="236" y="806" font-size="30" font-weight="700" fill="#1F2329">Resource</text>
+        <rect x="448" y="768" width="50" height="38" rx="19" fill="#DFF5E5"/>
+        <text x="473" y="794" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">物</text>
+        <text x="166" y="864" font-size="19" font-weight="400" fill="#4E5969">文档、产物与可引用资料</text>
+      </g>
+
+      <!-- Principal: the only visual focal point -->
+      <g id="entity-principal">
+        <circle cx="792" cy="614" r="188" fill="none" stroke="#F0F4FC" stroke-width="22"/>
+        <circle cx="792" cy="614" r="166" fill="#FFFFFF" stroke="#5178C6" stroke-width="8"/>
+        <circle cx="792" cy="508" r="20" fill="#5178C6"/>
+        <text x="792" y="590" text-anchor="middle" font-size="46" font-weight="700" fill="#1F2329">Principal</text>
+        <text x="792" y="636" text-anchor="middle" font-size="22" font-weight="700" fill="#5178C6">我 · 认知坐标系</text>
+        <text x="792" y="684" text-anchor="middle" font-size="19" font-weight="400" fill="#4E5969">关系围绕我组织</text>
+      </g>
+
+      <rect x="526" y="936" width="532" height="52" rx="26" fill="#DFF5E5"/>
+      <text x="792" y="970" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">关系：角色 · 归属 · 协作 · 引用 · 语境</text>
+    </g>
+
+    <!-- A single bridge from the relation world to the attached cognition records -->
+    <g id="world-to-cognition">
+      <path d="M 1508 387 H 1570" fill="none" stroke="#8569CB" stroke-width="5" stroke-dasharray="10 9" stroke-linecap="round"/>
+      <polygon points="1592,387 1568,373 1568,401" fill="#8569CB"/>
+    </g>
+
+    <!-- Cognition records -->
+    <g id="cognition-records">
+      <g id="summary-card">
+        <rect x="1596" y="286" width="744" height="202" rx="28" fill="#8569CB" stroke="#8569CB" stroke-width="3"/>
+        <circle cx="1680" cy="387" r="46" fill="#FFFFFF" fill-opacity="0.18"/>
+        <path d="M 1658 388 L 1674 404 L 1704 368" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="1750" y="322" width="150" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.18"/>
+        <text x="1825" y="348" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">当前认知</text>
+        <text x="1750" y="407" font-size="38" font-weight="700" fill="#FFFFFF">Summary</text>
+        <text x="1750" y="450" font-size="21" font-weight="400" fill="#FFFFFF">现在是什么</text>
+      </g>
+
+      <g id="fact-card">
+        <rect x="1596" y="520" width="356" height="382" rx="28" fill="#F0F4FC" stroke="#5178C6" stroke-width="3"/>
+        <circle cx="1654" cy="580" r="30" fill="#FFFFFF"/>
+        <path d="M 1639 580 H 1669 M 1654 565 V 595" fill="none" stroke="#5178C6" stroke-width="5" stroke-linecap="round"/>
+        <text x="1704" y="590" font-size="30" font-weight="700" fill="#1F2329">Fact</text>
+        <text x="1636" y="652" font-size="22" font-weight="700" fill="#1F2329">发生过什么</text>
+        <text x="1636" y="694" font-size="19" font-weight="400" fill="#4E5969">带时间与来源的现实证据</text>
+        <path d="M 1644 758 H 1904" fill="none" stroke="#5178C6" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="1662" cy="758" r="9" fill="#5178C6"/>
+        <circle cx="1774" cy="758" r="9" fill="#5178C6"/>
+        <circle cx="1886" cy="758" r="9" fill="#5178C6"/>
+        <text x="1662" y="803" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">时间</text>
+        <text x="1774" y="803" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">事件</text>
+        <text x="1886" y="803" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">来源</text>
+        <rect x="1636" y="834" width="154" height="40" rx="20" fill="#FFFFFF"/>
+        <text x="1713" y="861" text-anchor="middle" font-size="18" font-weight="700" fill="#5178C6">时间化证据</text>
+      </g>
+
+      <g id="revision-card">
+        <rect x="1984" y="520" width="356" height="382" rx="28" fill="#FFFFFF" stroke="#8569CB" stroke-width="3"/>
+        <circle cx="2042" cy="580" r="30" fill="#EAE2FE"/>
+        <circle cx="2042" cy="580" r="13" fill="none" stroke="#8569CB" stroke-width="5"/>
+        <text x="2092" y="590" font-size="28" font-weight="700" fill="#1F2329">PageRevision</text>
+        <text x="2024" y="652" font-size="22" font-weight="700" fill="#1F2329">旧版 Summary</text>
+        <text x="2024" y="694" font-size="19" font-weight="400" fill="#4E5969">保存认知如何被改写</text>
+        <path d="M 2026 752 H 2298" fill="none" stroke="#EAE2FE" stroke-width="8" stroke-linecap="round"/>
+        <circle cx="2050" cy="752" r="11" fill="#8569CB"/>
+        <circle cx="2158" cy="752" r="11" fill="#8569CB"/>
+        <circle cx="2266" cy="752" r="11" fill="#8569CB"/>
+        <text x="2050" y="803" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">旧认知</text>
+        <text x="2158" y="803" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">改写</text>
+        <text x="2266" y="803" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">审计</text>
+        <rect x="2024" y="834" width="154" height="40" rx="20" fill="#FEE3E2"/>
+        <text x="2101" y="861" text-anchor="middle" font-size="18" font-weight="700" fill="#D25D5A">不是 Fact</text>
+      </g>
+    </g>
+
+    <!-- Real-time action state: deliberately independent from long-term entities -->
+    <g id="action-state">
+      <rect x="60" y="1034" width="2280" height="246" rx="28" fill="#FEF1CE" stroke="#D4B45B" stroke-width="3"/>
+      <circle cx="104" cy="1082" r="9" fill="#D4B45B"/>
+      <text x="130" y="1091" font-size="26" font-weight="700" fill="#1F2329">03  实时行动状态</text>
+      <text x="102" y="1135" font-size="19" font-weight="400" fill="#4E5969">描述正在发生的工作</text>
+      <rect x="102" y="1170" width="190" height="40" rx="20" fill="#FFFFFF" stroke="#D4B45B" stroke-width="2"/>
+      <text x="197" y="1197" text-anchor="middle" font-size="18" font-weight="700" fill="#1F2329">不是长期实体</text>
+      <path d="M 520 1066 V 1248" fill="none" stroke="#D4B45B" stroke-width="2"/>
+
+      <g id="todo-card">
+        <rect x="612" y="1076" width="392" height="158" rx="24" fill="#FFFFFF" stroke="#D4B45B" stroke-width="3"/>
+        <circle cx="668" cy="1132" r="28" fill="#FEF1CE"/>
+        <text x="668" y="1141" text-anchor="middle" font-size="24" font-weight="700" fill="#1F2329">1</text>
+        <text x="718" y="1138" font-size="30" font-weight="700" fill="#1F2329">Todo</text>
+        <text x="660" y="1190" font-size="19" font-weight="400" fill="#4E5969">发现了什么</text>
+      </g>
+
+      <path d="M 1022 1155 H 1100" fill="none" stroke="#D4B45B" stroke-width="6" stroke-linecap="round"/>
+      <polygon points="1124,1155 1098,1140 1098,1170" fill="#D4B45B"/>
+
+      <g id="task-card">
+        <rect x="1142" y="1076" width="392" height="158" rx="24" fill="#FFFFFF" stroke="#D4B45B" stroke-width="3"/>
+        <circle cx="1198" cy="1132" r="28" fill="#FEF1CE"/>
+        <text x="1198" y="1141" text-anchor="middle" font-size="24" font-weight="700" fill="#1F2329">2</text>
+        <text x="1248" y="1138" font-size="30" font-weight="700" fill="#1F2329">Task</text>
+        <text x="1190" y="1190" font-size="19" font-weight="400" fill="#4E5969">正在承接什么目标</text>
+      </g>
+
+      <path d="M 1552 1155 H 1630" fill="none" stroke="#D4B45B" stroke-width="6" stroke-linecap="round"/>
+      <polygon points="1654,1155 1628,1140 1628,1170" fill="#D4B45B"/>
+
+      <g id="execution-card">
+        <rect x="1672" y="1076" width="578" height="158" rx="24" fill="#FFFFFF" stroke="#D4B45B" stroke-width="3"/>
+        <circle cx="1728" cy="1132" r="28" fill="#FEF1CE"/>
+        <text x="1728" y="1141" text-anchor="middle" font-size="24" font-weight="700" fill="#1F2329">3</text>
+        <text x="1778" y="1138" font-size="30" font-weight="700" fill="#1F2329">ExecutionRun</text>
+        <text x="1720" y="1190" font-size="19" font-weight="400" fill="#4E5969">这次执行产生了什么结果</text>
+      </g>
+    </g>
+
+    <text x="60" y="1322" font-size="18" font-weight="400" fill="#4E5969">世界模型 = 实体与关系 + 当前认知 + 时间化证据 + 行动状态</text>
+  </g>
+</svg>

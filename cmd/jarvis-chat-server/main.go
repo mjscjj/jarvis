@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"jarvis/internal/agentidentity"
 	"jarvis/internal/api"
 	"jarvis/internal/chat"
 	"jarvis/internal/config"
@@ -54,6 +55,14 @@ func main() {
 	if err != nil {
 		fatalf("initialize chat system prompts failed: %v", err)
 	}
+	identityRenderer, err := agentidentity.NewRenderer(cfg.Identity.DisplayName)
+	if err != nil {
+		fatalf("initialize chat identity renderer failed: %v", err)
+	}
+	runtimePrompts, err := agentidentity.NewContentReader(textFileService, identityRenderer)
+	if err != nil {
+		fatalf("initialize rendered chat prompts failed: %v", err)
+	}
 
 	sharedMemoryPath, err := sharedmem.PathForConfig(absoluteConfig)
 	if err != nil {
@@ -85,6 +94,7 @@ func main() {
 		fatalf("initialize chat Feishu identity resolver failed: %v", err)
 	}
 	chatService, err := chat.NewService(chat.Options{
+		AgentName:        cfg.Identity.DisplayName,
 		Bin:              cfg.Chat.Bin,
 		Model:            cfg.Chat.Model,
 		Sandbox:          cfg.Chat.Sandbox,
@@ -93,7 +103,7 @@ func main() {
 		HistoryDir:       cfg.Chat.HistoryDir,
 		SharedMemory:     sharedMemoryService,
 		ContextAssembler: contextAssembler,
-		SystemPrompts:    textFileService,
+		SystemPrompts:    runtimePrompts,
 		FeishuIdentities: feishuIdentities,
 	})
 	if err != nil {

@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-08-15
 > Code source: `internal/capture/`, `internal/domain/capture.go`
 
 M2 把外部事实可靠写入 SQLite，并按 chat 唤醒 M3。它不分类、不下结论、不决定重试策略。
@@ -23,12 +23,14 @@ message -> factengine（旁路）-> fact
 
 Jarvis Bot 的事件连接由 CC Connect 独占；`jarvis-server` 不启动 `lark-cli event consume`。M2 依赖会话发现与增量轮询，按 checkpoint 推进恢复水位；未来若需要实时事件，只能由 CC Connect 通过明确的本机 fan-out 接口转发。
 
+CC Connect 自己接受的交互消息不进入 Todo 流水线。它在原生 Agent 执行前同步调用 `/internal/message-routing/claim`，按飞书 `message_id` 幂等保存当前消息并设置 `extraction_skipped=true`。该机器边界不携带历史、不创建 Task、不唤醒 M3，也不把会话自动改成 `related_group`；消息仍可作为后续普通线索的会话背景。CC 原生 Agent 所需的群聊历史直接从飞书实时读取，不从 Jarvis `message` 表重建：普通群按 chat，话题/回复按 thread，最多取当前消息之前 14 条。当前 `chat_id` 还用于读取群绑定的 Jarvis 世界上下文。
+
 ## 2. 机械职责
 
-- 全量发现会话，但首次只从当前时刻建立 checkpoint，不回溯历史。
+- 全量发现会话；普通群首次从当前时刻建立 checkpoint，新激活的 P2P 只回看有界的 2 小时上下文，用来捕获让它进入活跃 Top-N 的消息，不做无界历史回灌。
 - 扫描 `related_group=1` 会话并在新增消息后唤醒 M3；tier 只用于展示。
-- 每次成功扫描后，连续 5 天没有新消息的会话退出监听；扫描失败时保留监听状态。
-- 按活跃度自动纳入内部真人 P2P Top-N，排除服务号 P2P。
+- 每次成功扫描后，连续 5 天没有新消息且未固定的会话退出监听；扫描失败时保留监听状态。
+- 每次完整 discover 后，把未固定的内部真人 P2P 自动监听集合轮换为当前活跃度 Top-N；服务号 P2P 排除，`pinned` 私聊作为人工固定项额外保留。从后台手工开启一个未监听 P2P 时会同时固定它，之后可单独取消固定并交回自动轮换。
 - 搜索 principal activity，发现本人发言的群聊/话题并维护独立 checkpoint。
 - 原样保存消息和外部 clue；资源只登记引用元数据，不通用下载正文。
 - 成功新增后推进 checkpoint 并唤醒 M3。
@@ -41,7 +43,7 @@ Jarvis Bot 的事件连接由 CC Connect 独占；`jarvis-server` 不启动 `lar
 | `feishu_group` | 会话目录、related 标记、项目归属和展示字段 |
 | `chat_checkpoint` | 每会话增量扫描水位 |
 | `principal_activity_checkpoint` | principal activity 搜索水位 |
-| `message` | 原始消息/线索真源 |
+| `message` | 原始消息/线索真源；`extraction_skipped` 表示该消息已由其它执行入口认领 |
 | `resource` | 附件、文档、妙记等引用元数据 |
 | `scan_record` | 采集尝试的追加审计 |
 
@@ -62,6 +64,8 @@ scripts/jarvis-tools append-clue
 | discover | `capture.discover_schedule` | 会话元数据、内部 P2P Top-N |
 | scan | `capture.scan_schedule` | principal activity + related 会话增量轮询 |
 | meeting sweep | `meeting_sweep.schedule` | 已结束会议 + 未来 24 小时会议日程，通过 clue 唤醒 M3 |
+
+会议结束不产生任何聊天消息，只能从 CC Connect 独占的 Bot 事件连接拿到。CC Connect 把配置列出的事件原样转发到 `POST /internal/meeting-sweep/wake`，该边界只把下一轮巡扫提前触发（与定时任务同一个 job，不会并行叠加），事件正文不参与判断。巡扫仍是唯一采集者：线索按会议幂等，事件丢了只损失时延，不损失证据。
 
 ```bash
 ./bin/jarvis-server -config conf/config.yaml -discover-once

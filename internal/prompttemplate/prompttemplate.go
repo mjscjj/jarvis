@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"jarvis/internal/agentidentity"
 )
 
 const (
@@ -35,7 +37,8 @@ func Validate(stage, template string) error {
 	if err != nil {
 		return err
 	}
-	allowed := make(map[string]struct{}, len(required))
+	allowed := make(map[string]struct{}, len(required)+1)
+	allowed[agentidentity.Placeholder] = struct{}{}
 	for _, placeholder := range required {
 		allowed[placeholder] = struct{}{}
 		if count := strings.Count(template, placeholder); count != 1 {

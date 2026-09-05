@@ -11,11 +11,11 @@
 | Jarvis 补丁版 CC Connect binary | `integrations/cc-connect/manifest.sh`、`patches/` 与 `scripts/install-cc-connect.sh` | 通过 `install-cc-connect` 构建验收；此动作不配置、不启动 |
 | lark-cli 默认 App 与 Jarvis Bot 绑定 | `$install-jarvis` + `cc-connect-binding.md` | 将 lark-cli 当前默认 App 绑定到 CC Connect `jarvis-codex`，再跑 `validate-binding` |
 | Jarvis Bot WebSocket | CC Connect | 只启动补丁版 CC Connect；Jarvis 不再连接同一个 App |
-| Qdrant 下载版本、校验和、launchd 安装 | `scripts/install-qdrant.sh` | 通过 `jarvis-install install-qdrant` 调用 |
-| 主服务构建、签名、launchd 注册 | `scripts/install-launchd.sh` | 配置完成后通过 `install-server` 调用 |
-| 已注册主服务的安全重建 | `scripts/rebuild-server.sh` | 确认属于当前 checkout 后调用 |
+| Qdrant 下载版本、校验和、服务安装 | `scripts/install-qdrant.sh` | 通过 `jarvis-install install-qdrant` 调用 |
+| 主服务构建与注册 | `scripts/install-launchd.sh` / `scripts/install-systemd.sh` | 配置完成后通过 `install-server` 按平台调用 |
+| 既有 checkout 的主服务安全重建或服务恢复 | `scripts/rebuild-server.sh` | 确认复用决定和 checkout 归属后调用；注册缺失时按平台恢复，不重新执行完整安装 |
 | 飞书默认身份登录和本机 identity | `$install-jarvis` | 在服务启动前配置并读回 |
-| 飞书初始化能力与权限缺口 | `$install-jarvis` + `feishu-capability-audit.md` | 对 lark-cli 当前默认身份做只读探针并分为核心、可选增强、条件能力和不使用；不发起权限申请 |
+| 飞书初始化能力与权限缺口 | `$install-jarvis` + `feishu-capability-audit.md` | 首次 App 登录申请推荐权限及卡片回调必需的 `im:message:readonly`；随后只读审计核心、可选增强、条件能力和不使用，不在审计中追加权限 |
 | 近 7 天业务证据与世界模型工作稿 | `$bootstrap-jarvis-world-model` | 服务就绪后转交同一个 install run；世界模型 Skill 只更新清单 E 区 |
 | PrincipalProfile、项目、人物、重点事项、群监听 | M1/M2 现有接口 | 只由 `$bootstrap-jarvis-world-model` 编排 |
 | 缺失依赖的具体安装方式 | 用户的 Agent | 按机器选择，不在脚本写死包管理器 |
@@ -24,7 +24,7 @@
 
 ## 必须由机器保证的边界
 
-- 当前内置 Qdrant 安装器只支持 Darwin arm64；其他平台 fail-fast。
+- 当前内置安装器只支持 Darwin arm64 与 Linux x86_64；其他平台 fail-fast。
 - Go 版本不得低于 `go.mod`，Node 满足当前 Vite engines，CGO 和 C toolchain 可用。
 - 配置引用的 runtime binary 必须存在；引用 `traex` 时必须已登录。
 - `bin/cc-connect-jarvis` 必须报告固定 Jarvis patch commit；官方未打补丁 binary 不满足依赖门。
@@ -33,18 +33,19 @@
 - principal open_id、lark-cli 当前默认 App、CC Connect `jarvis-codex` App 和 relay secret 必须形成可用绑定；不完整时不得注册主服务。
 - Qdrant 不健康时不得注册主服务。
 - 飞书默认 App 绑定和首次启动主服务前必须先运行 `validate-dependencies`；它只验收依赖，不启动 Jarvis。
-- `install-server` 必须在调用 `install-launchd.sh` 前再次通过依赖门，不能依赖 Agent 口头声明或之前的旧结果。
-- 同一 launchd label 已被其他 checkout 占用时不得自动替换。
+- `install-server` 必须在调用平台服务安装脚本前再次通过依赖门，不能依赖 Agent 口头声明或之前的旧结果。
+- `rebuild-server.sh` 只服务已经确认复用的 checkout；label 缺失时直接恢复当前主服务，不把 CC Connect 构建、飞书能力审计或世界模型初始化变成恢复前置条件。
+- 同一服务 label 已被其他 checkout 占用时不得自动替换。
 - 即使 program 属于当前 checkout，只要 CC Connect/Jarvis 已在运行，也属于已有实例事实；fresh-install Agent 先报告现状并让用户确认复用或重建，不能把“路径一致”当成重启授权。
 - 系统验收以真实 `/healthz`、`/readyz` 和 Qdrant health 为准，不以进程存在或构建成功代替。
-- 系统验收还要确认 launchd 实际运行当前 checkout 的补丁版 CC Connect；另一条同 App WebSocket 不得并存。
+- 系统验收还要确认服务管理器实际运行当前 checkout 的补丁版 CC Connect；另一条同 App WebSocket 不得并存。
 
 ## 应保留给 Agent 的灵活度
 
 - 依赖可能已由 Homebrew、npm、公司环境管理器或手工安装提供；只验证能力，不强制来源。
 - lark-cli 可以存在多个 profile，但 Jarvis 只消费当前默认身份，不在项目内建立第二套 profile 选择。
-- 安装初始化只审计当前飞书能力，不自动申请缺失 scope；核心能力缺失如实阻塞相关阶段，可选高级通讯录字段缺失则记录未知并继续。
-- CC Connect 的 model、display、allow/admin 和群回复策略仍由 Agent 与用户按场景决定；App 身份和 relay 绑定不可自由漂移。
+- 首次 App 登录只申请推荐权限和 Jarvis 卡片回调必需的 `im:message:readonly`；之后只审计当前飞书能力，不自动追加其它缺失 scope。核心能力缺失如实阻塞相关阶段，可选高级通讯录字段缺失则记录未知并继续。
+- CC Connect 的 model、display、admin 和群回复策略仍由 Agent 与用户按场景决定；`allow_from` 必须只允许 Principal 本人，App 身份和 relay 绑定不可自由漂移。
 - 初始化证据不足时可继续调查或保留未知，不为填满字段编造内容。
 - 项目、关键人物、重点事项和监听群数量没有固定下限；由证据决定，高影响歧义再交给用户。
 - 系统已有健康 Qdrant 时可以复用，不要求重新安装。

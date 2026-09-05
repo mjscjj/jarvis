@@ -1,3 +1,4 @@
+import { FrozenContextPanel } from '../slots'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -7,6 +8,7 @@ import {
   Descriptions,
   Empty,
   Modal,
+  Pagination,
   Space,
   Spin,
   Tabs,
@@ -32,16 +34,16 @@ import {
   UndoOutlined,
 } from '@ant-design/icons'
 import type { Effect, ExecutionRun, RunEnrichment, Task, TaskEvent, TaskRunOutput } from '../types'
-import { getTaskRunOutput } from '../api'
+import { getTaskRun, getTaskRunOutput } from '../api'
 import StatusBadge from '../components/StatusBadge'
+import { useAgentIdentity } from '../agentIdentity'
 import { actionLabels, taskStatusMeta as statusMeta } from '../status'
 import {
   failureKindOf,
   failureMeta,
   modelCloseReason,
-  proposalOf,
-  proposalArtifactLabel,
-  structureProposalAction,
+  questionOf,
+  questionText,
   strField,
   taskHandlerMeta,
   taskProjectName,
@@ -53,11 +55,12 @@ const { Link, Paragraph, Text, Title } = Typography
 const taskEventLabels: Record<string, string> = {
   created: '任务已创建',
   execution_started: '开始执行',
+  rerun_requested: '请求重跑',
+  updated: '主动维护',
+  // Retired with the approval stage; kept so历史事件仍读得懂。
   approval_requested: '等待审批',
   approval_granted: '已批准执行',
   approval_rejected: '已驳回',
-  rerun_requested: '请求重跑',
-  updated: '主动维护',
   reapply_started: '重新落地',
   human_input_requested: '等待我的回应',
   human_response_received: '已回复并继续',
@@ -95,13 +98,15 @@ interface EffectRecall {
 interface TaskDetailModalProps {
   task?: Task
   runs: ExecutionRun[]
+  runsPage: number
+  runsTotal: number
+  onRunsPageChange: (page: number) => void
   events: TaskEvent[]
   runsLoading: boolean
   eventsLoading: boolean
   runsError?: string
   eventsError?: string
   executing: boolean
-  approveSubmitting: boolean
   resumeSubmitting: boolean
   interrupting: boolean
   recallingMessageID?: string
@@ -109,8 +114,6 @@ interface TaskDetailModalProps {
   onRecallMessage: (task: Task, messageID: string) => void
   onClose: () => void
   onExecute: (task: Task) => void
-  onApprove: (task: Task) => void
-  onReject: (task: Task) => void
   onRerun: (task: Task) => void
   onResume: (task: Task) => void
   onInterrupt: (task: Task) => void
@@ -578,7 +581,6 @@ function taskEventColor(event: TaskEvent): string {
   if (event.actor_type === 'user' || event.event_type === 'supplemented') return 'var(--color-warning)'
   if (event.to_status === 'done') return 'var(--color-success)'
   if (event.to_status === 'failed') return 'var(--color-error)'
-  if (event.to_status === 'awaiting_approval') return 'var(--color-warning)'
   if (event.to_status === 'waiting' || event.to_status === 'needs_human') return 'var(--color-warning)'
   if (event.to_status === 'executing') return 'var(--color-info)'
   return 'var(--color-text-tertiary)'
@@ -786,51 +788,77 @@ function EffectsCard({ effects, recall }: { effects: Effect[]; recall: EffectRec
   )
 }
 
-function RunDetails({ run, latest, recall }: { run: ExecutionRun; latest: boolean; recall: EffectRecall }) {
-  const enrichments = run.output?.enrichments ?? []
-  const runEffects = effectItems(run.effects ?? run.output?.effects)
-  const followup = run.output?.needs_followup?.trim()
+function RunDetails({ runID, index, recall }: { runID: number; index?: ExecutionRun; recall: EffectRecall }) {
+  const [open, setOpen] = useState(false)
+  const [run, setRun] = useState<ExecutionRun>()
+  const [error, setError] = useState<string>()
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    if (!open) return
+    const controller = new AbortController()
+    setRun(undefined)
+    setError(undefined)
+    getTaskRun(runID, controller.signal)
+      .then((value) => { if (!controller.signal.aborted) setRun(value) })
+      .catch((cause: unknown) => { if (!controller.signal.aborted) setError(outputErrorText(cause)) })
+    return () => controller.abort()
+  }, [open, runID, index?.status, index?.finished_at, retry])
   return (
-    <details className="task-run-details" open={latest}>
+    <details className="task-run-details" open={open} onToggle={(event) => {
+      if (event.target === event.currentTarget) setOpen(event.currentTarget.open)
+    }}>
       <summary>
         <span className="task-run-summary-main">
-          <span className="task-history-dot" style={{ background: runStatusColor(run.status) }} />
-          Run #{run.id} · {run.status}
+          {index && <span className="task-history-dot" style={{ background: runStatusColor(index.status) }} />}
+          Run #{runID}{index ? ` · ${index.status}` : ''}
         </span>
-        <Text type="secondary">{formatDuration(run.duration_ms)}</Text>
+        {index && <Text type="secondary">{formatDuration(index.duration_ms)}</Text>}
       </summary>
-      <div className="task-run-body">
-        <Space size={8} wrap>
-          <Tag>{actionLabels[run.action_type] || run.action_type}</Tag>
-          <Text type="secondary">沙箱 {run.sandbox}</Text>
-          {run.codex_session_id && <Text type="secondary">session {run.codex_session_id.slice(0, 12)}…</Text>}
-          {run.repo_path && (
-            <Text type="secondary" className="mono">
-              {run.repo_path}
-            </Text>
-          )}
-        </Space>
-        {run.summary && <Paragraph className="task-readable-text">{run.summary}</Paragraph>}
-        {enrichments.length > 0 && (
-          <div className="task-enrichment-list">
-            {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
-          </div>
-        )}
-        {runEffects.length > 0 && (
-          <div className="task-effect-list task-run-effect-list">
-            {runEffects.map((effect, index) => <EffectCard key={index} effect={effect} recall={recall} />)}
-          </div>
-        )}
-        {followup && <Alert type="info" showIcon title="待你拍板 / 后续" description={followup} />}
-        {run.error_detail && <Alert type="error" showIcon title="执行错误" description={<Text className="mono">{run.error_detail}</Text>} />}
-        {run.output && Object.keys(run.output).length > 0 && (
-          <details className="task-raw-details">
-            <summary>Codex 原始输出</summary>
-            <pre className="inline-json">{JSON.stringify(run.output, null, 2)}</pre>
-          </details>
-        )}
-      </div>
+      {open && (error
+        ? <Alert type="error" title="执行记录加载失败" description={error} action={<Button onClick={() => setRetry((value) => value + 1)}>重试</Button>} />
+        : run ? <RunContent run={run} recall={recall} /> : <Spin />)}
     </details>
+  )
+}
+
+function RunContent({ run, recall }: { run: ExecutionRun; recall: EffectRecall }) {
+  const enrichments = run.output?.enrichments ?? []
+  const runEffects = effectItems(run.effects ?? run.output?.effects)
+  const question = run.output?.question
+  return (
+    <div className="task-run-body">
+      <Space size={8} wrap>
+        <Tag>{actionLabels[run.action_type] || run.action_type}</Tag>
+        <Text type="secondary">沙箱 {run.sandbox}</Text>
+        {run.codex_session_id && <Text type="secondary">session {run.codex_session_id.slice(0, 12)}…</Text>}
+        {run.repo_path && (
+          <Text type="secondary" className="mono">
+            {run.repo_path}
+          </Text>
+        )}
+      </Space>
+      {run.summary && <Paragraph className="task-readable-text">{run.summary}</Paragraph>}
+      {enrichments.length > 0 && (
+        <div className="task-enrichment-list">
+          {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
+        </div>
+      )}
+      {runEffects.length > 0 && (
+        <div className="task-effect-list task-run-effect-list">
+          {runEffects.map((effect, index) => <EffectCard key={index} effect={effect} recall={recall} />)}
+        </div>
+      )}
+      {question?.title && (
+        <Alert type="info" showIcon title="向我提出的问题" description={[question.title, question.body].filter(Boolean).join('\n\n')} />
+      )}
+      {run.error_detail && <Alert type="error" showIcon title="执行错误" description={<Text className="mono">{run.error_detail}</Text>} />}
+      {run.output && Object.keys(run.output).length > 0 && (
+        <details className="task-raw-details">
+          <summary>Codex 原始输出</summary>
+          <pre className="inline-json">{JSON.stringify(run.output, null, 2)}</pre>
+        </details>
+      )}
+    </div>
   )
 }
 
@@ -842,88 +870,14 @@ function InlineCodeText({ text }: { text: string }) {
   ))}</>
 }
 
-function ProposalContent({ task, actions }: { task: Task; actions: ReactNode }) {
-  const result = proposalOf(task)
-  if (!result) return null
-  const { proposal } = result
-  const currentProgress = task.summary?.trim()
-  const structuredAction = structureProposalAction(proposal.action)
-  const evidenceCount = result.enrichments?.length ?? 0
-  return (
-    <div className="task-decision-card">
-      <div className="task-decision-heading task-decision-heading-actions-only">
-        <Space wrap>{actions}</Space>
-      </div>
-
-      <section className="task-decision-plan">
-        <div className="task-decision-section-title">批准后会做什么</div>
-        <Text className="task-decision-plan-intro">
-          <InlineCodeText text={structuredAction.introduction || proposal.action} />
-        </Text>
-        {structuredAction.steps.length > 0 && (
-          <details className="task-plan-details">
-            <summary>
-              <span>查看完整实施步骤</span>
-              <Tag>{structuredAction.steps.length} 步</Tag>
-            </summary>
-            <ol>
-              {structuredAction.steps.map((step, index) => (
-                <li key={index}>
-                  <span>{index + 1}</span>
-                  <div><InlineCodeText text={step} /></div>
-                </li>
-              ))}
-            </ol>
-          </details>
-        )}
-      </section>
-
-      <div className="task-decision-scope">
-        <div>
-          <Text type="secondary">操作范围</Text>
-          <Text><InlineCodeText text={proposal.target} /></Text>
-        </div>
-        <div>
-          <Text type="secondary">{proposalArtifactLabel(task)}</Text>
-          <Text><InlineCodeText text={proposal.artifact} /></Text>
-        </div>
-      </div>
-
-      {(result.summary || evidenceCount > 0) && (
-        <section className="task-decision-evidence">
-          <div className="task-decision-evidence-heading">
-            <span>为什么这样建议</span>
-            <Text type="secondary">调查结论{evidenceCount > 0 ? ` · ${evidenceCount} 条依据` : ''}</Text>
-          </div>
-          <div className="task-decision-evidence-body">
-            {result.summary && <Paragraph className="task-readable-text">{result.summary}</Paragraph>}
-            {result.enrichments && result.enrichments.length > 0 && (
-              <div className="task-enrichment-list">
-                {result.enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {currentProgress && (
-        <section className="task-decision-progress">
-          <div className="task-decision-section-title">当前进展</div>
-          <Paragraph className="task-readable-text">{currentProgress}</Paragraph>
-        </section>
-      )}
-    </div>
-  )
-}
-
 function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
+  const { name: agentName } = useAgentIdentity()
   const result = task.execution_result
   const summary = task.summary?.trim() || strField(result, 'summary')
   const error = strField(result, 'error')
-  const rejectReason = strField(result, 'reject_reason')
-  const followup = strField(result, 'needs_followup')
+  const question = questionText(task)
   const enrichments = enrichmentItems(result?.enrichments)
-  const stateCopy = taskStateCopy(task)
+  const stateCopy = taskStateCopy(task, agentName)
   const closedByModel = task.resolution?.actor_type === 'proactive'
     && task.resolution.event_type === 'closed'
   const closeReason = modelCloseReason(task)
@@ -944,10 +898,10 @@ function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
       <div className="task-section-kicker">{sectionTitle}</div>
       {task.status === 'failed' && (
         <Alert
-          type={failureKindOf(task) === 'rejected' || failureKindOf(task) === 'manual' || failureKindOf(task) === 'interrupted' ? 'warning' : 'error'}
+          type={failureKindOf(task) === 'manual' || failureKindOf(task) === 'interrupted' ? 'warning' : 'error'}
           showIcon
           title={failureMeta[failureKindOf(task) || 'unknown'].label}
-          description={rejectReason || error || summary || '任务没有记录失败详情。'}
+          description={error || summary || '任务没有记录失败详情。'}
         />
       )}
       {closedByModel && (
@@ -962,7 +916,7 @@ function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
         <Paragraph className="task-readable-text task-primary-summary">{stateCopy.current}</Paragraph>
       )}
       {task.status === 'needs_human' ? (
-        <Alert type="warning" showIcon title="Agent 的问题" description={followup || stateCopy.next} />
+        <Alert type="warning" showIcon title="Agent 的问题" description={question || stateCopy.next} />
       ) : (
         <Text type="secondary"><strong>接下来：</strong>{stateCopy.next}</Text>
       )}
@@ -971,58 +925,45 @@ function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {
           {enrichments.map((item, index) => <EnrichmentBlock key={index} item={item} />)}
         </div>
       )}
-      {followup && task.status !== 'needs_human' && task.status !== 'done' && (
-        <Alert type="info" showIcon title="后续事项" description={followup} />
-      )}
       <Space className="task-decision-actions" wrap>{actions}</Space>
     </div>
   )
 }
 
-function taskStateCopy(task: Task): { current: string; next: string } {
+function taskStateCopy(task: Task, agentName: string): { current: string; next: string } {
   const result = task.execution_result
   const summary = task.summary?.trim() || strField(result, 'summary')
-  const followup = strField(result, 'needs_followup')
   const error = strField(result, 'error')
-  const rejectReason = strField(result, 'reject_reason')
   if (task.resolution?.actor_type === 'proactive' && task.resolution.event_type === 'closed') {
     return {
       current: modelCloseReason(task) || '数据异常：这次模型关闭没有记录理由。',
       next: '当前任务已由主动 Agent 停止追踪；如果判断有误，可以重跑任务。',
     }
   }
-  if (task.status === 'awaiting_approval') {
-    return {
-      current: summary || '已生成完整产出物，尚未执行外部写入。',
-      next: followup || '请审阅产出物。批准后，Jarvis 将执行写入并验证结果。',
-    }
-  }
   if (task.status === 'done') {
     return {
       current: summary || '任务已完成。',
-      next: followup || '当前任务不需要继续操作。',
+      next: '当前任务不需要继续操作。',
     }
   }
   if (task.status === 'observing') {
     return {
       current: summary || task.summary || '调查已经完成，当前没有需要执行的动作。',
-      next: followup || '无需继续处理；后续出现新变化时会形成新的工作事项。',
+      next: '无需继续处理；后续出现新变化时会形成新的工作事项。',
     }
   }
   if (task.status === 'failed') {
     const kind = failureKindOf(task)
     return {
-      current: rejectReason || error || summary || '任务执行失败。',
-      next: kind === 'rejected'
-        ? '可重跑任务，重新生成审批方案。'
-        : kind === 'manual'
-          ? '这是你手动标记的失败；需要时可以重跑任务。'
-          : '检查失败原因后重跑任务。',
+      current: error || summary || '任务执行失败。',
+      next: kind === 'manual'
+        ? '这是你手动标记的失败；需要时可以重跑任务。'
+        : '检查失败原因后重跑任务。',
     }
   }
   if (task.status === 'executing') {
     return {
-      current: 'Jarvis 正在执行任务。',
+      current: `${agentName} 正在执行任务。`,
       next: '可以等待执行完成；如需停止，可使用“打断执行”。',
     }
   }
@@ -1039,13 +980,13 @@ function taskStateCopy(task: Task): { current: string; next: string } {
   }
   if (task.status === 'needs_human') {
     return {
-      current: summary || 'Jarvis 已暂停当前执行会话。',
-      next: followup || '回复后将继续同一个执行会话，不会重跑任务。',
+      current: summary || `${agentName} 已暂停当前执行会话。`,
+      next: questionText(task) || '回复后将继续同一个执行会话，不会重跑任务。',
     }
   }
   return {
     current: task.target || task.title,
-    next: '开始执行后，Jarvis 将使用完整任务上下文完成工作。',
+    next: `开始执行后，${agentName} 将使用完整任务上下文完成工作。`,
   }
 }
 
@@ -1153,7 +1094,6 @@ function TaskHistory({
   recall: EffectRecall
 }) {
   const history = useMemo(() => buildHistory(task, events, runs), [task, events, runs])
-  const latestRunID = runs[0]?.id
   if (loading) return <div className="task-detail-loading"><Spin /></div>
   return (
     <div className="task-history">
@@ -1185,7 +1125,7 @@ function TaskHistory({
                   <Text strong>执行记录</Text>
                   <Text type="secondary">{formatTime(item.at)}</Text>
                 </div>
-                <RunDetails run={item.run} latest={item.run.id === latestRunID} recall={recall} />
+                <RunDetails runID={item.run.id} index={item.run} recall={recall} />
               </div>
             </article>
           )
@@ -1213,7 +1153,7 @@ function TaskHistory({
                 {actorLabels[event.actor_type] || event.actor_type} · v{event.task_version}
                 {event.from_status ? ` · ${event.from_status} → ${event.to_status}` : ` · ${event.to_status}`}
               </Text>
-              {run && <RunDetails run={run} latest={run.id === latestRunID} recall={recall} />}
+              {event.run_id && <RunDetails runID={event.run_id} index={run} recall={recall} />}
             </div>
           </article>
         )
@@ -1234,9 +1174,9 @@ function stringValue(value: unknown): string | null {
 }
 
 function TaskMeta({ task }: { task: Task }) {
-  const group = objectField(task.background, 'group')
-  const project = objectField(task.background, 'project')
-  const assigner = objectField(task.background, 'assigner')
+  const group = objectField(taskCapture(task), 'group')
+  const project = objectField(taskCapture(task), 'project')
+  const assigner = objectField(taskCapture(task), 'assigner')
   const handler = taskHandlerMeta(task)
   return (
     <aside className="task-meta-card">
@@ -1256,62 +1196,21 @@ function TaskMeta({ task }: { task: Task }) {
 }
 
 function ContextPanel({ task }: { task: Task }) {
-  const conversationValue = task.background.conversation
-  const messagesValue = task.background.messages
-  const conversation = Array.isArray(conversationValue)
-    ? conversationValue
-    : Array.isArray(messagesValue) ? messagesValue : []
-  const memories = Array.isArray(task.background.memories) ? task.background.memories : []
-  return (
-    <div className="task-readable-panel">
-      <section>
-        <Title level={5}>原始会话</Title>
-        {conversation.length === 0 ? (
-          <Text type="secondary">没有记录原始会话。</Text>
-        ) : (
-          <div className="task-conversation">
-            {conversation.map((item, index) => {
-              const record = item && typeof item === 'object' ? item as Record<string, unknown> : {}
-              return (
-                <div key={index} className="task-conversation-item">
-                  <div>
-                    <Text strong>{stringValue(record.sender_name) || '未知发送人'}</Text>
-                    {typeof record.create_time === 'number' && (
-                      <Text type="secondary">{new Date(record.create_time * 1000).toLocaleString()}</Text>
-                    )}
-                  </div>
-                  <Paragraph>{stringValue(record.content) || '—'}</Paragraph>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
-      {memories.length > 0 && (
-        <section>
-          <Title level={5}>相关记忆</Title>
-          <div className="task-memory-list">
-            {memories.map((item, index) => {
-              const record = item && typeof item === 'object' ? item as Record<string, unknown> : {}
-              return <Paragraph key={index}>{stringValue(record.memory) || '—'}</Paragraph>
-            })}
-          </div>
-        </section>
-      )}
-    </div>
-  )
+  return <FrozenContextPanel content={task.source_payload} />
 }
 
 export default function TaskDetailModal({
   task,
   runs,
+  runsPage,
+  runsTotal,
+  onRunsPageChange,
   events,
   runsLoading,
   eventsLoading,
   runsError,
   eventsError,
   executing,
-  approveSubmitting,
   resumeSubmitting,
   interrupting,
   recallingMessageID,
@@ -1319,8 +1218,6 @@ export default function TaskDetailModal({
   onRecallMessage,
   onClose,
   onExecute,
-  onApprove,
-  onReject,
   onRerun,
   onResume,
   onInterrupt,
@@ -1352,12 +1249,6 @@ export default function TaskDetailModal({
   const actions = (() => {
     if (task.status === 'pending') {
       return <Button type="primary" loading={executing} onClick={() => onExecute(task)}>开始执行</Button>
-    }
-    if (task.status === 'awaiting_approval') {
-      return <>
-        <Button type="primary" loading={approveSubmitting} onClick={() => onApprove(task)}>批准方案</Button>
-        <Button danger onClick={() => onReject(task)}>驳回</Button>
-      </>
     }
     if (task.status === 'done' || task.status === 'failed' || task.status === 'observing') {
       return <Button onClick={() => onRerun(task)}>重跑</Button>
@@ -1413,9 +1304,7 @@ export default function TaskDetailModal({
 
           <div className="task-detail-main-grid task-detail-main-single">
             <section aria-label="任务结论与产出">
-              {proposalOf(task)
-                ? <ProposalContent task={task} actions={actions} />
-                : <ResultContent task={task} actions={actions} />}
+              <ResultContent task={task} actions={actions} />
               <EffectsCard effects={effectItems(task.execution_result?.effects)} recall={recall} />
             </section>
           </div>
@@ -1443,15 +1332,18 @@ export default function TaskDetailModal({
                 key: 'history',
                 label: '任务历史',
                 children: (
-                  <TaskHistory
-                    task={task}
-                    events={events}
-                    runs={runs}
-                    loading={eventsLoading || runsLoading}
-                    eventsError={eventsError}
-                    runsError={runsError}
-                    recall={recall}
-                  />
+                  <>
+                    <Pagination current={runsPage} total={runsTotal} pageSize={20} showSizeChanger={false} onChange={onRunsPageChange} showTotal={(total) => `共 ${total} 次执行`} />
+                    <TaskHistory
+                      task={task}
+                      events={events}
+                      runs={runs}
+                      loading={eventsLoading || runsLoading}
+                      eventsError={eventsError}
+                      runsError={runsError}
+                      recall={recall}
+                    />
+                  </>
                 ),
               },
               {
@@ -1478,4 +1370,11 @@ export default function TaskDetailModal({
         <ContextPanel task={task} />
       </Modal>
     </>)
+}
+
+
+function taskCapture(task: Task): Record<string, unknown> {
+ const value = task.source_payload && typeof task.source_payload === 'object' && !Array.isArray(task.source_payload)
+   ? (task.source_payload as Record<string, unknown>).capture : null
+ return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }

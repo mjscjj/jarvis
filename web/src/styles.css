@@ -1,4 +1,4 @@
-@import './styles/tokens.css';
+@import "./styles/tokens.css";
 
 :root {
   color: var(--color-text);
@@ -23,6 +23,57 @@ body {
   line-height: 1.55;
 }
 
+.auth-loading,
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-loading {
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.auth-page {
+  padding: var(--space-6);
+  background: var(--color-bg-elevated);
+}
+
+.auth-panel {
+  width: min(100%, 360px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-left: var(--space-5);
+  border-left: 3px solid var(--color-primary);
+}
+
+.auth-panel .ant-typography {
+  margin: 0 !important;
+}
+
+.auth-panel h1.ant-typography {
+  font-size: 32px;
+  letter-spacing: 0;
+}
+
+.auth-mark {
+  color: var(--color-primary);
+  font-size: 28px;
+}
+
+.auth-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.auth-panel .ant-result {
+  padding: var(--space-3) 0 0;
+  text-align: left;
+}
+
 /* App shell */
 .app-shell {
   min-height: 100vh;
@@ -39,11 +90,110 @@ body {
   z-index: 100;
   display: flex;
   flex-direction: column;
-  transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease, flex-basis 0.2s ease;
+  transition:
+    width 0.2s ease,
+    min-width 0.2s ease,
+    max-width 0.2s ease,
+    flex-basis 0.2s ease;
+}
+
+.sider-footer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.sider-footer > .ant-btn {
+  min-width: 0;
+}
+
+.sider-account {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2) var(--space-2) var(--space-6);
+  color: var(--color-text-secondary);
+}
+
+.sider-account-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.sider-account-copy strong,
+.sider-account-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sider-account-copy strong {
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.sider-account-copy span {
+  font-size: 10px;
+}
+
+.sider-account > .ant-btn {
+  flex: 0 0 auto;
+}
+
+.sider-footer.is-collapsed .sider-account {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.mobile-account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mobile-account > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-account strong,
+.mobile-account span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-account span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.sider-shutdown-btn {
+  justify-content: flex-start;
+  padding-inline: var(--space-6);
+}
+
+.sider-footer.is-collapsed .sider-shutdown-btn {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.sider-footer.is-collapsed {
+  grid-template-columns: 1fr;
 }
 
 .sider-collapse-btn {
-  margin: var(--space-2);
   color: var(--color-text-secondary);
 }
 
@@ -63,6 +213,38 @@ body {
   color: var(--color-text);
 }
 
+.sider-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  margin-top: var(--space-2);
+}
+
+.sider-name-row > .ant-typography {
+  min-width: 0;
+  margin: 0 !important;
+  overflow: hidden;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sider-name-row > .ant-btn {
+  flex: 0 0 auto;
+}
+
+.sider-name-row > .ant-input {
+  min-width: 0;
+}
+
+.sider-agent-caption {
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .sider-tagline {
   color: var(--color-primary);
   font-size: 10px;
@@ -78,9 +260,10 @@ body {
   padding: var(--space-3) var(--space-2);
 }
 
-.app-menu .ant-menu-item {
+.app-menu .ant-menu-item,
+.app-menu .ant-menu-submenu-title {
   border-radius: var(--radius-md);
-  margin-inline: 0;
+  margin-inline: 0 !important;
   margin-block: var(--space-1);
   color: var(--color-text-secondary);
   font-weight: 500;
@@ -92,7 +275,8 @@ body {
   font-weight: 600;
 }
 
-.app-menu .ant-menu-item:hover {
+.app-menu .ant-menu-item:hover,
+.app-menu .ant-menu-submenu-title:hover {
   color: var(--color-primary);
 }
 
@@ -138,6 +322,36 @@ body {
   font-weight: 650;
   line-height: 1.3;
   letter-spacing: -0.02em;
+}
+
+.plugin-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+  padding-top: var(--space-2);
+}
+
+.plugin-detail-heading,
+.plugin-config-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.plugin-detail-heading .ant-typography,
+.plugin-config-heading .ant-typography {
+  margin: 0;
+}
+
+.plugin-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 /* Jarvis 对话覆盖在页面之上，不再挤压表格和详情布局。 */
@@ -274,7 +488,8 @@ body {
     height: 68px;
     display: grid;
     grid-template-columns: repeat(6, 1fr);
-    padding: 6px max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    padding: 6px max(8px, env(safe-area-inset-right))
+      max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
     border-top: 1px solid var(--color-border);
     background: rgba(255, 255, 255, 0.97);
     backdrop-filter: blur(12px);
@@ -548,11 +763,6 @@ body {
   border-left-width: 4px;
   border-radius: var(--radius-lg);
   background: var(--color-bg-elevated);
-}
-
-.task-state-awaiting_approval {
-  border-left-color: var(--color-warning);
-  background: var(--color-warning-bg);
 }
 
 .task-state-executing,
@@ -865,7 +1075,7 @@ body {
   bottom: 0;
   width: 1px;
   background: var(--color-border-strong);
-  content: '';
+  content: "";
 }
 
 .task-history-marker {
@@ -1023,7 +1233,13 @@ body {
   border-radius: var(--radius-md);
   background: #0f172a;
   color: #e2e8f0;
-  font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font:
+    12px/1.65 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1050,7 +1266,7 @@ body {
   left: 13px;
   width: 1px;
   background: var(--color-border);
-  content: '';
+  content: "";
 }
 
 .task-output-run-marker {
@@ -1132,9 +1348,18 @@ body {
   gap: 1px;
 }
 
-.task-output-step > header > div:first-child > .ant-typography:last-child:not(:first-child) {
+.task-output-step
+  > header
+  > div:first-child
+  > .ant-typography:last-child:not(:first-child) {
   overflow: hidden;
-  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font:
+    11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1153,7 +1378,13 @@ body {
   border-radius: var(--radius-sm);
   background: #0f172a;
   color: #e2e8f0;
-  font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font:
+    11px/1.6 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

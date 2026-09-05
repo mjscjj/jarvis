@@ -1,0 +1,128 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="同一件事如何存在于实体层与行动层" id="jarvis-entity-action-example-v1">
+    <mxGraphModel dx="0" dy="0" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1760" pageHeight="980" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="lane_entity" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2FBF8;strokeColor=#B0D0C5;strokeWidth=1.2;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="80" y="155" width="1600" height="430" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_action" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBF7F1;strokeColor=#E3921F;strokeWidth=1.2;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="80" y="620" width="1600" height="300" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="title_main" value="同一件事，如何同时存在于实体层和行动层" style="text;html=1;fontSize=26;fontColor=#1A3A3A;align=left;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="80" y="28" width="1600" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle_main" value="实体层提供长期坐标；行动层记录此刻正在发生的变化" style="text;html=1;fontSize=14;fontColor=#5A7A7A;align=left;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="80" y="78" width="1600" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_main" value="绿色：长期实体&amp;nbsp;&amp;nbsp;&amp;nbsp;橙色：实时行动&amp;nbsp;&amp;nbsp;&amp;nbsp;蓝色虚线：行动引用实体" style="text;html=1;fontSize=11;fontColor=#5E7C76;align=right;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="1080" y="112" width="600" height="24" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="line_entity_label" style="endArrow=none;strokeColor=#B0D0C5;strokeWidth=1.2;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="265" y="175" as="sourcePoint"/>
+            <mxPoint x="265" y="565" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="line_action_label" style="endArrow=none;strokeColor=#E3921F;strokeWidth=1.2;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="265" y="640" as="sourcePoint"/>
+            <mxPoint x="265" y="900" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="lane_entity_label" value="&lt;b&gt;长期实体层&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;稳定坐标 · 持续存在&lt;/span&gt;" style="text;html=1;fontSize=17;fontColor=#1A3A3A;align=center;verticalAlign=middle;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="95" y="225" width="150" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_entity_question" value="回答：这个世界里&lt;br&gt;长期存在什么？" style="text;html=1;fontSize=11;fontColor=#238377;align=center;verticalAlign=middle;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="100" y="335" width="140" height="58" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_action_label" value="&lt;b&gt;实时行动层&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;短暂轨迹 · 完成后归档&lt;/span&gt;" style="text;html=1;fontSize=17;fontColor=#1A3A3A;align=center;verticalAlign=middle;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="95" y="670" width="150" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_action_question" value="回答：此刻正在&lt;br&gt;改变什么？" style="text;html=1;fontSize=11;fontColor=#238377;align=center;verticalAlign=middle;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="100" y="775" width="140" height="58" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="node_principal" value="&lt;b&gt;Principal · 我&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;世界模型的坐标原点&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=14;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="330" y="275" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_person" value="&lt;b&gt;Person · 项目负责人&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;项目中的协作者&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=14;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="610" y="175" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_group" value="&lt;b&gt;Group · Jarvis 核心群&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;讨论发生的语境&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=14;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="330" y="425" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_keymatter" value="&lt;b&gt;KeyMatter · 项目评审&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;明天下午的重点事项&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=14;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="610" y="425" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_project" value="&lt;b&gt;Project · Jarvis&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;人物、事项与资料&lt;br&gt;共同围绕的长期项目&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCF0E8;strokeColor=#2A9D8F;strokeWidth=2;arcSize=14;fontSize=16;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="930" y="285" width="230" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_resource" value="&lt;b&gt;Resource · 世界模型方案&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;承载方案与实例图的资料&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F5F0;strokeColor=#54B49D;strokeWidth=1.2;arcSize=14;fontSize=14;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="1270" y="295" width="280" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="node_trigger" value="&lt;b&gt;现实变化&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;“明天评审，方案还缺实例图”&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F0ED;strokeColor=#71AF9D;strokeWidth=1.2;arcSize=14;fontSize=14;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="300" y="680" width="250" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_todo" value="&lt;b&gt;Todo&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;值得处理：会前补图&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF4E6;strokeColor=#E3921F;strokeWidth=1.2;arcSize=14;fontSize=16;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="620" y="680" width="240" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_task" value="&lt;b&gt;Task&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#5A7A7A&quot;&gt;补齐实例图&lt;br&gt;更新方案并通知评审人&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF4E6;strokeColor=#E3921F;strokeWidth=1.6;arcSize=14;fontSize=16;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="930" y="680" width="270" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_run" value="&lt;b&gt;ExecutionRun&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:11px;color:#368545&quot;&gt;查资料 → 出预览 → 确认后写回&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4F0D8;strokeColor=#4AAE5C;strokeWidth=1.2;arcSize=14;fontSize=16;fontColor=#1A3A3A;align=center;verticalAlign=middle;spacing=8;" parent="1" vertex="1">
+          <mxGeometry x="1270" y="680" width="320" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="arr_principal_project" value="负责" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#6A9F91;strokeWidth=1.1;endSize=5;html=1;fontSize=10;fontColor=#238377;labelBackgroundColor=#F2FBF8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.35;entryDx=0;entryDy=0;" parent="1" source="node_principal" target="node_project" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_person_project" value="协作" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#6A9F91;strokeWidth=1.1;endSize=5;html=1;fontSize=10;fontColor=#238377;labelBackgroundColor=#F2FBF8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_person" target="node_project" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_group_project" value="讨论" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#6A9F91;strokeWidth=1.1;endSize=5;html=1;fontSize=10;fontColor=#238377;labelBackgroundColor=#F2FBF8;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=1;entryDx=0;entryDy=0;" parent="1" source="node_group" target="node_project" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_keymatter_project" value="推进" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#6A9F91;strokeWidth=1.1;endSize=5;html=1;fontSize=10;fontColor=#238377;labelBackgroundColor=#F2FBF8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.78;entryDx=0;entryDy=0;" parent="1" source="node_keymatter" target="node_project" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_project_resource" value="沉淀于" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#6A9F91;strokeWidth=1.1;endSize=5;html=1;fontSize=10;fontColor=#238377;labelBackgroundColor=#F2FBF8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_project" target="node_resource" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="arr_group_trigger" value="来源" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;dashed=1;dashPattern=6 6;strokeColor=#7AA0C0;strokeWidth=1.1;endSize=5;html=1;fontSize=10;fontColor=#5E7C76;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_group" target="node_trigger" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_keymatter_todo" value="价值" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;dashed=1;dashPattern=6 6;strokeColor=#7AA0C0;strokeWidth=1.1;endSize=5;html=1;fontSize=10;fontColor=#5E7C76;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_keymatter" target="node_todo" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_project_task" value="目标" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;dashed=1;dashPattern=6 6;strokeColor=#7AA0C0;strokeWidth=1.1;endSize=5;html=1;fontSize=10;fontColor=#5E7C76;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_project" target="node_task" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_resource_run" value="操作对象" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;dashed=1;dashPattern=6 6;strokeColor=#7AA0C0;strokeWidth=1.1;endSize=5;html=1;fontSize=10;fontColor=#5E7C76;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_resource" target="node_run" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="arr_trigger_todo" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E3921F;strokeWidth=1.5;endSize=6;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_trigger" target="node_todo" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_todo_task" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E3921F;strokeWidth=1.5;endSize=6;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_todo" target="node_task" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_task_run" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E3921F;strokeWidth=1.5;endSize=6;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_task" target="node_run" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="note_completion" value="&lt;b&gt;完成后：&lt;/b&gt;ExecutionRun 的结果可以成为 Fact，并更新相关实体的 Summary；实体继续存在，行动进入历史。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2FAF3;strokeColor=#4AAE5C;strokeWidth=1;arcSize=12;fontSize=12;fontColor=#368545;align=center;verticalAlign=middle;spacing=6;" parent="1" vertex="1">
+          <mxGeometry x="300" y="840" width="1290" height="48" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

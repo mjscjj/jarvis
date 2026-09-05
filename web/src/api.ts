@@ -45,6 +45,7 @@ import type {
   TaskList,
   TaskStatus,
   ExecutionRunList,
+  ExecutionRun,
   TaskRunOutput,
   Fact,
   FactSearchQuery,
@@ -67,6 +68,9 @@ import type {
   RuntimeSettingsView,
   AppModule,
   AppModuleInput,
+  AgentIdentity,
+  Plugin,
+  PluginAuthorization,
   ProactiveRun,
   ProactiveRunDetail,
   MonitoringSnapshot,
@@ -74,6 +78,7 @@ import type {
   ChatHistory,
   ChatRuntimeConfig,
   WebConfig,
+  AuthView,
 } from './types'
 
 interface APIResponse<T> {
@@ -118,6 +123,25 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return payload.data
 }
 
+export function getAuthStatus(signal?: AbortSignal): Promise<AuthView> {
+  return request<AuthView>('/api/auth/status', { signal })
+}
+
+export function loginWithByteDance(): Promise<AuthView> {
+  return request<AuthView>('/api/auth/login', { method: 'POST' })
+}
+
+export function completeByteDanceLogin(flowId: string): Promise<AuthView> {
+  return request<AuthView>('/api/auth/login/complete', {
+    method: 'POST',
+    body: { flow_id: flowId },
+  })
+}
+
+export function logoutFromJarvis(): Promise<AuthView> {
+  return request<AuthView>('/api/auth/logout', { method: 'POST' })
+}
+
 export function listTodos(query: TodoQuery, signal?: AbortSignal): Promise<TodoList> {
   const params = new URLSearchParams({
     page: String(query.page),
@@ -130,7 +154,7 @@ export function listTodos(query: TodoQuery, signal?: AbortSignal): Promise<TodoL
 }
 
 export function getTodo(id: number, signal?: AbortSignal): Promise<Todo> {
-  return request<Todo>(`/api/todos/${id}`, { signal })
+  return request<Todo>(`/api/todos/${id}?context=full`, { signal })
 }
 
 // 只在 observing 和 extracted 之间搬动：把线索按下不表，或重新交给 Task 固化与执行流水线。
@@ -147,7 +171,7 @@ export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signa
 }
 
 export function getTask(id: number, signal?: AbortSignal): Promise<Task> {
-  return request<Task>(`/api/tasks/${id}`, { signal })
+  return request<Task>(`/api/tasks/${id}?context=full`, { signal })
 }
 
 export function createTask(body: CreateTaskInput): Promise<CreateTaskResult> {
@@ -228,22 +252,6 @@ export function resumeTask(id: number, expectedVersion: number, response: string
   })
 }
 
-// approveTask lands a proposal the user accepted: the awaiting_approval Task runs
-// the apply stage (a fresh codex run carrying the approved proposal) for real.
-export function approveTask(id: number, expectedVersion: number): Promise<ExecuteResult> {
-  return request<ExecuteResult>(`/api/tasks/${id}/approve`, {
-    method: 'POST', body: { expected_version: expectedVersion },
-  })
-}
-
-// rejectTask declines a proposed external write: the Task moves to failed with an
-// optional reason; it can later be rerun to investigate again and form a new proposal.
-export function rejectTask(id: number, expectedVersion: number, reason: string): Promise<ExecuteResult> {
-  return request<ExecuteResult>(`/api/tasks/${id}/reject`, {
-    method: 'POST', body: { expected_version: expectedVersion, reason },
-  })
-}
-
 // recallEffectMessage 撤回该任务「对外产出」里的一条飞书消息（真实调 lark-cli，
 // 不可恢复），并把「已撤回」标记写回对应 effect；返回更新后的任务。
 export function recallEffectMessage(id: number, messageID: string): Promise<Task> {
@@ -260,8 +268,12 @@ export function supplementTask(id: number, expectedVersion: number, note: string
 }
 
 // listTaskRuns 拉某个 Task 的执行审计历史（ExecutionRun 列表），最新在前。
-export function listTaskRuns(id: number, signal?: AbortSignal): Promise<ExecutionRunList> {
-  return request<ExecutionRunList>(`/api/tasks/${id}/runs`, { signal })
+export function listTaskRuns(id: number, page = 1, pageSize = 20, signal?: AbortSignal): Promise<ExecutionRunList> {
+  return request<ExecutionRunList>(`/api/tasks/${id}/runs?page=${page}&page_size=${pageSize}`, { signal })
+}
+
+export function getTaskRun(id: number, signal?: AbortSignal): Promise<ExecutionRun> {
+  return request<ExecutionRun>(`/api/task-runs/${id}`, { signal })
 }
 
 export function getTaskRunOutput(id: number, signal?: AbortSignal): Promise<TaskRunOutput> {
@@ -361,7 +373,6 @@ export function listSubjectFacts(subjectType: string, id: number, signal?: Abort
   from?: string
   until?: string
   sourceKind?: string
-  excludeSourceKind?: string
   limit?: number
 } = {}): Promise<{ items: Fact[] }> {
   const params = new URLSearchParams({
@@ -372,7 +383,6 @@ export function listSubjectFacts(subjectType: string, id: number, signal?: Abort
   if (options.from) params.set('from', options.from)
   if (options.until) params.set('until', options.until)
   if (options.sourceKind) params.set('source_kind', options.sourceKind)
-  if (options.excludeSourceKind) params.set('exclude_source_kind', options.excludeSourceKind)
   return request<{ items: Fact[] }>(`/api/facts?${params.toString()}`, { signal })
 }
 
@@ -406,7 +416,6 @@ export function searchFacts(query: FactSearchQuery, signal?: AbortSignal): Promi
   const params = new URLSearchParams({
     page: String(query.page ?? 1),
     page_size: String(query.pageSize ?? 50),
-    layer: query.layer ?? 'all',
   })
   if (query.q) params.set('q', query.q)
   if (query.from) params.set('from', query.from)
@@ -415,20 +424,6 @@ export function searchFacts(query: FactSearchQuery, signal?: AbortSignal): Promi
   if (query.subjectId) params.set('subject_id', String(query.subjectId))
   if (query.sourceKind) params.set('source_kind', query.sourceKind)
   return request<FactSearchResult>(`/api/facts/search?${params.toString()}`, { signal })
-}
-
-export function generateFactRollup(date: string, subject?: { type: string; id: number }): Promise<{
-  Subjects: number
-  Batches: number
-  FailedBatches: number
-  Written: number
-  Skipped: number
-  Day: string
-}> {
-  return request('/api/fact-rollups/generate', {
-    method: 'POST',
-    body: subject ? { date, subject_type: subject.type, subject_id: subject.id } : { date },
-  })
 }
 
 export function listPersons(page = 1, pageSize = 100, signal?: AbortSignal): Promise<Paged<Person>> {
@@ -650,6 +645,39 @@ export function triggerScheduledTask(id: number): Promise<ScheduledTask> {
   return request<ScheduledTask>(`/api/scheduled-tasks/${id}/trigger`, { method: 'POST' })
 }
 
+export function listPlugins(signal?: AbortSignal): Promise<{ items: Plugin[] }> {
+  return request<{ items: Plugin[] }>('/api/plugins', { signal })
+}
+
+export function updatePlugin(id: string, enabled: boolean, expectedRevision: number, config?: Record<string, unknown>): Promise<Plugin> {
+  return request<Plugin>(`/api/plugins/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { enabled, expected_revision: expectedRevision, ...(config === undefined ? {} : { config }) },
+  })
+}
+
+export function authorizePlugin(id: string): Promise<PluginAuthorization> {
+  return request<PluginAuthorization>(`/api/plugins/${encodeURIComponent(id)}/authorize`, { method: 'POST' })
+}
+
+export function completePluginAuthorization(
+  id: string,
+  flowId: string,
+): Promise<{ authorization: PluginAuthorization; plugin: Plugin | null }> {
+  return request<{ authorization: PluginAuthorization; plugin: Plugin | null }>(
+    `/api/plugins/${encodeURIComponent(id)}/authorize/complete`,
+    { method: 'POST', body: { flow_id: flowId } },
+  )
+}
+
+export function triggerPlugin(id: string): Promise<Plugin> {
+  return request<Plugin>(`/api/plugins/${encodeURIComponent(id)}/trigger`, { method: 'POST' })
+}
+
+export function shutdownJarvis(): Promise<{ stopping: boolean }> {
+  return request<{ stopping: boolean }>('/api/system/shutdown', { method: 'POST' })
+}
+
 export function listSkills(signal?: AbortSignal): Promise<{ items: AgentSkill[] }> {
   return request<{ items: AgentSkill[] }>('/api/skills', { signal })
 }
@@ -668,6 +696,10 @@ export function getSkillContent(name: string): Promise<AgentSkillContent> {
 
 export function getRuntimeSettings(signal?: AbortSignal): Promise<RuntimeSettingsView> {
   return request<RuntimeSettingsView>('/api/runtime-settings', { signal })
+}
+
+export function getAgentIdentity(signal?: AbortSignal): Promise<AgentIdentity> {
+  return request<AgentIdentity>('/api/agent-identity', { signal })
 }
 
 export function updateRuntimeSettings(body: RuntimeSettings): Promise<RuntimeSettingsView> {

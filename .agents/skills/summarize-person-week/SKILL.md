@@ -1,6 +1,6 @@
 ---
 name: summarize-person-week
-description: Build and persist an evidence-backed, principal-centered weekly panorama. Use when the user asks for 周报、个人周报、我的本周全景、what I did this week, a weekly recap, or regeneration of one week. Creates a Markdown workspace under data/personal-weekly/<Monday>, collects Jarvis, Feishu, and engineering evidence in parallel across the week, permits later targeted evidence waves during analysis, reconciles self-collected evidence, and writes the final Chinese report.
+description: Build and persist an evidence-backed, principal-centered weekly panorama. Use when the user asks for 周报、个人周报、我的本周全景、what I did this week, a weekly recap, or regeneration of one week. Creates a Markdown workspace under data/personal-weekly/<Monday>, collects {{AGENT_NAME}}, Feishu, and engineering evidence in parallel across the week, permits later targeted evidence waves during analysis, reconciles self-collected evidence, and writes the final Chinese report.
 ---
 
 # Build the Principal's Weekly Panorama

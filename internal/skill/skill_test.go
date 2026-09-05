@@ -10,6 +10,16 @@ import (
 	"testing"
 )
 
+type testAvailability map[string]bool
+
+func (a testAvailability) SkillEnabled(_ context.Context, name string) (bool, error) {
+	enabled, owned := a[name]
+	if !owned {
+		return true, nil
+	}
+	return enabled, nil
+}
+
 func TestParseMetadata(t *testing.T) {
 	meta, err := parseMetadata([]byte("---\nname: feishu-send-message\ndescription: 发送飞书消息\n---\n\n# 正文\n"))
 	if err != nil {
@@ -75,6 +85,84 @@ func TestServiceReadsAndUpdatesYAMLConfiguration(t *testing.T) {
 	items, err = reloaded.List(t.Context())
 	if err != nil || items[0].IsEnabled {
 		t.Fatalf("reloaded List() = %#v err=%v", items, err)
+	}
+}
+
+func TestServiceAvailabilityGateHidesPluginSkill(t *testing.T) {
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "plugin-collector")
+	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(
+		"---\nname: plugin-collector\ndescription: collect plugin clues\n---\n\n# Collector\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte(
+		"skills:\n  - name: plugin-collector\n    enabled: true\n    stages: [execute]\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetAvailability(testAvailability{"plugin-collector": false})
+	items, err := service.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || !items[0].IsEnabled || items[0].IsAvailable {
+		t.Fatalf("items = %#v", items)
+	}
+	if _, err := service.Content(t.Context(), "plugin-collector"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Content() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRenderingServiceRendersCatalogAndContentWithoutChangingSource(t *testing.T) {
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "example-skill")
+	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillText := "---\nname: example-skill\ndescription: \"{{AGENT_NAME}} 可用能力\"\n---\n\n# {{AGENT_NAME}} 正文\n"
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte("skills:\n  - name: example-skill\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	source, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewRenderingService(source, func(value string) string {
+		return strings.ReplaceAll(value, "{{AGENT_NAME}}", "小贾")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := service.Content(t.Context(), "example-skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(catalog, "小贾 可用能力") || !strings.Contains(content.Content, "# 小贾 正文") {
+		t.Fatalf("catalog=%q content=%q", catalog, content.Content)
+	}
+	raw, err := source.Content(t.Context(), "example-skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.Content, "{{AGENT_NAME}}") {
+		t.Fatalf("source content was mutated: %q", raw.Content)
 	}
 }
 
@@ -148,6 +236,52 @@ func TestRepositoryFeishuApprovalCardIsOwnedByServer(t *testing.T) {
 	} {
 		if strings.Contains(skill, obsolete) {
 			t.Fatalf("Feishu message skill still contains obsolete approval-card rule %q:\n%s", obsolete, skill)
+		}
+	}
+}
+
+func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-send-message", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read repository Feishu message skill: %v", err)
+	}
+	skill := string(content)
+	for _, want := range []string{
+		"所有 M5 普通业务消息都使用本 Skill",
+		"不执行本 Skill 的任何写命令",
+		"jarvis-config show-principal",
+		"不能改读 Task 仓库里的同名文件",
+		"lark-cli auth status --json --verify",
+		"lark-cli 当前默认身份",
+		"user `openId` 与 principal `open_id` 完全相同",
+		"+chat-search",
+		"--page-token",
+		"+chat-members-list",
+		"--page-all --page-limit 0",
+		"多个候选、成员不完整或用途不确定时停止",
+		"不要自动创建群、改用 user 身份或更换目标",
+		"JARVIS_TASK_ID",
+		"飞书幂等窗口只有一小时",
+		"+messages-mget",
+		"message_id",
+		"anchor_message_id",
+		"idempotency_key",
+		"effects 是 M5 根据已核验工具结果作出的展示申报",
+		`at user_id="<principal open_id>"`,
+		"同时真实 `@` 对方和 principal",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("Feishu message skill missing send contract %q:\n%s", want, skill)
+		}
+	}
+	for _, forbidden := range []string{
+		"如果 `--user-id` 直发失败（极少见，说明还没建立私聊关系），再按下面",
+		"user_message",
+		"lark_profile",
+		"--profile",
+	} {
+		if strings.Contains(skill, forbidden) {
+			t.Fatalf("Feishu message skill still contains obsolete send rule %q:\n%s", forbidden, skill)
 		}
 	}
 }
@@ -331,8 +465,9 @@ func TestBootstrapJarvisBuildsAReadBackWorldModel(t *testing.T) {
 		"INSTALL_CHECKLIST.md",
 		"高置信且不会覆盖存量的事实可以直接应用",
 		"高影响歧义",
-		"create-relation",
-		"list-relations",
+		"update-page",
+		"list-backlinks",
+		"[名称](type:id)",
 		"append-fact",
 		"list-facts",
 		"--source initialization",
@@ -382,7 +517,7 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		"依赖门通过前不得启动 CC Connect 或 Jarvis",
 		"世界模型不是服务启动前置条件",
 		"Qdrant 是依赖服务",
-		"`install-server` 必须在调用 `install-launchd.sh` 前再次通过依赖门",
+		"`install-server` 必须在调用平台服务安装脚本前再次通过依赖门",
 		"install-cc-connect",
 		"一个飞书 App/Bot 是身份根",
 		"CC Connect 是该 Bot WebSocket 的唯一所有者",

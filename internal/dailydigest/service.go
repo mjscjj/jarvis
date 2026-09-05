@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"jarvis/internal/agentidentity"
 	"jarvis/internal/observability"
 
 	"gorm.io/gorm"
@@ -18,6 +19,7 @@ import (
 
 // Options 是 Service 的构造参数。
 type Options struct {
+	AgentName       string
 	DB              *gorm.DB
 	Location        *time.Location
 	Runner          SummaryRunner // 个人/群共用官方 codex（danger-full-access + 联网）
@@ -54,6 +56,10 @@ func NewService(opts Options) (*Service, error) {
 	}
 	if opts.Runner == nil {
 		return nil, fmt.Errorf("daily digest service summary runner is nil")
+	}
+	identityRenderer, err := agentidentity.NewRenderer(opts.AgentName)
+	if err != nil {
+		return nil, fmt.Errorf("daily digest service agent name: %w", err)
 	}
 	if strings.TrimSpace(opts.PrincipalOpenID) == "" {
 		return nil, fmt.Errorf("daily digest service principal_open_id is required")
@@ -106,6 +112,7 @@ func NewService(opts Options) (*Service, error) {
 	return &Service{
 		store: store,
 		person: &personGenerator{
+			agentName:       identityRenderer.Name(),
 			db:              opts.DB,
 			runner:          opts.Runner,
 			location:        opts.Location,
@@ -114,15 +121,16 @@ func NewService(opts Options) (*Service, error) {
 			repoRoot:        opts.RepoRoot,
 			workspaceRoot:   workspaceRoot,
 			skillDir:        personSkillDir,
-			skillText:       skillText,
+			skillText:       identityRenderer.Render(skillText),
 			sandbox:         opts.SummarySandbox,
 		},
 		group: &groupGenerator{
+			agentName:    identityRenderer.Name(),
 			db:           opts.DB,
 			runner:       opts.Runner,
 			location:     opts.Location,
 			messageLimit: opts.GroupMsgLimit,
-			skillText:    groupSkillText,
+			skillText:    identityRenderer.Render(groupSkillText),
 			sandbox:      opts.SummarySandbox,
 		},
 		db:              opts.DB,

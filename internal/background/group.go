@@ -236,7 +236,7 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 	}
 
 	var previous domain.Group
-	err := s.db.WithContext(ctx).Select("id", "chat_id", "related_group").Where("id = ?", id).Take(&previous).Error
+	err := s.db.WithContext(ctx).Select("id", "chat_id", "chat_mode", "related_group").Where("id = ?", id).Take(&previous).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
@@ -244,10 +244,17 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 		return nil, fmt.Errorf("load group id=%d: %w", id, err)
 	}
 
+	pinned := in.Pinned
+	// Enabling an unmonitored p2p from the human-curated background UI is an
+	// explicit fixed choice, not an automatic Top-N decision. The user can later
+	// clear pinned while keeping it related to hand it back to automatic rotation.
+	if previous.ChatMode == "p2p" && !previous.RelatedGroup && in.RelatedGroup {
+		pinned = true
+	}
 	updates := map[string]any{
 		"project_id":        in.ProjectID,
 		"related_group":     in.RelatedGroup,
-		"pinned":            in.Pinned,
+		"pinned":            pinned,
 		"include_in_memory": in.IncludeInMemory,
 		"is_key_group":      in.IsKeyGroup,
 	}

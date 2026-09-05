@@ -25,9 +25,10 @@ func TestMigrationModelRegistries(t *testing.T) {
 			[]string{"message", "chat_checkpoint", "principal_activity_checkpoint"},
 		},
 		{"extract", ExtractModels(), []any{&TodoExtractWatermark{}, &TodoEvent{}, &ExtractionRun{}}, []string{"todo_extract_watermark", "todo_event", "extraction_run"}},
-		{"progress", ProgressModels(), []any{&TaskEvent{}, &Fact{}}, []string{"task_event", "fact"}},
+		{"progress", ProgressModels(), []any{&TaskEvent{}, &Fact{}, &PageRevision{}}, []string{"task_event", "fact", "page_revision"}},
 		{"factengine", FactEngineModels(), []any{&FactSourceCursor{}}, []string{"fact_source_cursor"}},
 		{"proactive", ProactiveModels(), []any{&ProactiveRun{}}, []string{"proactive_run"}},
+		{"plugin", PluginModels(), []any{&PluginInstallation{}}, []string{"plugin_installation"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

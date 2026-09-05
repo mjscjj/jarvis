@@ -14,12 +14,12 @@ import (
 // TestParseExecutionResultObserving accepts the verdict "I investigated and
 // nobody needs to act". It carries no failure_reason and no waiting.
 func TestParseExecutionResultObserving(t *testing.T) {
-	msg := `{"needs_approval":false,"outcome":"observing","progress_summary":"群里已就口径达成一致，无人需要动手","summary":"核验后确认结论已达成","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":null}`
+	msg := `{"outcome":"observing","progress_summary":"群里已就口径达成一致，无人需要动手","summary":"核验后确认结论已达成","failure_reason":"","enrichments":[],"question":null,"effects":[],"waiting":null}`
 	result, err := parseExecutionResult(msg)
 	if err != nil {
 		t.Fatalf("parseExecutionResult() error = %v", err)
 	}
-	if result.Outcome != "observing" || result.NeedsApproval {
+	if result.Outcome != "observing" {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -27,7 +27,7 @@ func TestParseExecutionResultObserving(t *testing.T) {
 // TestParseExecutionResultObservingRejectsWaiting keeps observing and waiting
 // distinct: observing means there is no condition to wait on.
 func TestParseExecutionResultObservingRejectsWaiting(t *testing.T) {
-	msg := `{"needs_approval":false,"outcome":"observing","progress_summary":"","summary":"无人需要动手","failure_reason":"","needs_followup":"","enrichments":[],"proposal":null,"effects":[],"waiting":{"scheduled_task_id":42,"wake_at":"2026-08-03T10:00:00+08:00","reason":"稍后再看"}}`
+	msg := `{"outcome":"observing","progress_summary":"","summary":"无人需要动手","failure_reason":"","enrichments":[],"question":null,"effects":[],"waiting":{"scheduled_task_id":42,"wake_at":"2026-08-03T10:00:00+08:00","reason":"稍后再看"}}`
 	if _, err := parseExecutionResult(msg); err == nil {
 		t.Fatal("outcome=observing with a waiting block must fail")
 	}

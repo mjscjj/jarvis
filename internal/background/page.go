@@ -9,12 +9,9 @@ import (
 	"unicode/utf8"
 
 	"jarvis/internal/domain"
-	"jarvis/internal/progress"
 
 	"gorm.io/gorm"
 )
-
-var factSourcePageRevision = "page_revision"
 
 // PageView is the whole-page read model for one world entity.
 type PageView struct {
@@ -68,20 +65,15 @@ func (e *PageConflictError) Unwrap() error { return ErrConflict }
 
 // PageService reads and writes the world entity summary pages.
 type PageService struct {
-	db     *gorm.DB
-	events *progress.Service
-	now    func() time.Time
+	db  *gorm.DB
+	now func() time.Time
 }
 
 func NewPageService(db *gorm.DB) (*PageService, error) {
 	if db == nil {
 		return nil, fmt.Errorf("page service db is nil")
 	}
-	events, err := progress.NewService(db)
-	if err != nil {
-		return nil, err
-	}
-	return &PageService{db: db, events: events, now: time.Now}, nil
+	return &PageService{db: db, now: time.Now}, nil
 }
 
 func (s *PageService) GetPage(ctx context.Context, pageType string, id uint64) (*PageView, error) {
@@ -168,25 +160,17 @@ func (s *PageService) UpdatePage(ctx context.Context, pageType string, id uint64
 		return nil, &PageConflictError{Current: view}
 	}
 	oldText := stringValue(current.Summary)
-	changed := oldText != in.Content
-	if changed {
+	if oldText != in.Content {
+		now := s.now().UTC()
 		if oldText != "" {
-			occurredAt := s.now().UTC()
-			if _, err := s.events.AppendFact(ctx, progress.FactInput{
-				SubjectType: pageType,
-				SubjectID:   id,
-				Description: oldText,
-				OccurredAt:  &occurredAt,
-				SourceKind:  &factSourcePageRevision,
-			}); err != nil {
-				return nil, err
+			revision := domain.PageRevision{
+				PageType: pageType, PageID: id, OldText: oldText, ChangedAt: now,
+			}
+			if err := s.db.WithContext(ctx).Create(&revision).Error; err != nil {
+				return nil, fmt.Errorf("archive page revision %s:%d: %w", pageType, id, err)
 			}
 		}
-		updates := map[string]any{"summary": in.Content}
-		if changed {
-			now := s.now().UTC()
-			updates["last_progress_at"] = now
-		}
+		updates := map[string]any{"summary": in.Content, "last_progress_at": now}
 		if err := s.writeSummary(ctx, pageType, id, updates); err != nil {
 			return nil, err
 		}

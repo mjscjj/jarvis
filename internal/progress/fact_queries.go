@@ -13,12 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	RollupStateFresh   = "fresh"
-	RollupStateStale   = "stale"
-	RollupStateMissing = "missing"
-)
-
 type FactTimelineFilter struct {
 	Days        int
 	Location    *time.Location
@@ -33,7 +27,6 @@ type FactSearchFilter struct {
 	SubjectType string
 	SubjectID   uint64
 	SourceKind  string
-	Layer       string
 	Page        int
 	PageSize    int
 }
@@ -44,14 +37,11 @@ type LabeledFactView struct {
 }
 
 type FactSubjectDayView struct {
-	SubjectType      string           `json:"subject_type"`
-	SubjectID        uint64           `json:"subject_id"`
-	SubjectLabel     string           `json:"subject_label"`
-	Rollup           *LabeledFactView `json:"rollup"`
-	RollupState      string           `json:"rollup_state"`
-	DetailCount      int              `json:"detail_count"`
-	LateDetailCount  int              `json:"late_detail_count"`
-	LatestOccurredAt time.Time        `json:"latest_occurred_at"`
+	SubjectType      string    `json:"subject_type"`
+	SubjectID        uint64    `json:"subject_id"`
+	SubjectLabel     string    `json:"subject_label"`
+	DetailCount      int       `json:"detail_count"`
+	LatestOccurredAt time.Time `json:"latest_occurred_at"`
 }
 
 type FactTimelineDayView struct {
@@ -84,11 +74,6 @@ type factSubjectKey struct {
 	ID   uint64
 }
 
-type timelineSubjectAccumulator struct {
-	details []domain.Fact
-	rollups []domain.Fact
-}
-
 func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (FactTimelineView, error) {
 	if filter.Location == nil {
 		return FactTimelineView{}, fmt.Errorf("%w: fact timeline location is nil", ErrInvalidInput)
@@ -105,7 +90,8 @@ func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, filter.Location)
 	from := today.AddDate(0, 0, -(filter.Days - 1))
 	until := today.AddDate(0, 0, 1)
-	query := s.db.WithContext(ctx).Where("occurred_at >= ? AND occurred_at < ?", from.UTC(), until.UTC())
+	query := s.db.WithContext(ctx).
+		Where("occurred_at >= ? AND occurred_at < ?", from.UTC(), until.UTC())
 	if filter.SubjectType != "" {
 		query = query.Where("subject_type = ? AND subject_id = ?", filter.SubjectType, filter.SubjectID)
 	}
@@ -119,12 +105,12 @@ func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (
 	}
 
 	result := FactTimelineView{Timezone: filter.Location.String(), Days: make([]FactTimelineDayView, filter.Days)}
-	daySubjects := make([]map[factSubjectKey]*timelineSubjectAccumulator, filter.Days)
+	daySubjects := make([]map[factSubjectKey][]domain.Fact, filter.Days)
 	dayIndexByDate := make(map[string]int, filter.Days)
 	for index := 0; index < filter.Days; index++ {
 		day := today.AddDate(0, 0, -index)
 		result.Days[index] = FactTimelineDayView{Date: day.Format("2006-01-02"), IsToday: index == 0, Details: []LabeledFactView{}, Subjects: []FactSubjectDayView{}}
-		daySubjects[index] = make(map[factSubjectKey]*timelineSubjectAccumulator)
+		daySubjects[index] = make(map[factSubjectKey][]domain.Fact)
 		dayIndexByDate[day.Format("2006-01-02")] = index
 	}
 	for i := range rows {
@@ -135,42 +121,20 @@ func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (
 			continue
 		}
 		key := factSubjectKey{Type: row.SubjectType, ID: row.SubjectID}
-		if dayIndex == 0 && !isRollupFact(row) {
+		if dayIndex == 0 {
 			result.Days[0].Details = append(result.Days[0].Details, labeledFactView(row, labels[key]))
 			result.Days[0].DetailCount++
 			continue
 		}
-		bucket := daySubjects[dayIndex][key]
-		if bucket == nil {
-			bucket = &timelineSubjectAccumulator{}
-			daySubjects[dayIndex][key] = bucket
-		}
-		if isRollupFact(row) {
-			bucket.rollups = append(bucket.rollups, row)
-		} else {
-			bucket.details = append(bucket.details, row)
-			result.Days[dayIndex].DetailCount++
-		}
+		daySubjects[dayIndex][key] = append(daySubjects[dayIndex][key], row)
+		result.Days[dayIndex].DetailCount++
 	}
 
 	for dayIndex := 1; dayIndex < filter.Days; dayIndex++ {
-		for key, bucket := range daySubjects[dayIndex] {
-			entry := FactSubjectDayView{SubjectType: key.Type, SubjectID: key.ID, SubjectLabel: labels[key], DetailCount: len(bucket.details), RollupState: RollupStateMissing}
-			if len(bucket.details) > 0 {
-				entry.LatestOccurredAt = bucket.details[0].OccurredAt
-			}
-			if len(bucket.rollups) > 0 {
-				rollup := labeledFactView(bucket.rollups[0], labels[key])
-				entry.Rollup = &rollup
-				entry.RollupState = RollupStateFresh
-				for _, detail := range bucket.details {
-					if detail.CreatedAt.After(bucket.rollups[0].CreatedAt) {
-						entry.LateDetailCount++
-					}
-				}
-				if entry.LateDetailCount > 0 {
-					entry.RollupState = RollupStateStale
-				}
+		for key, details := range daySubjects[dayIndex] {
+			entry := FactSubjectDayView{SubjectType: key.Type, SubjectID: key.ID, SubjectLabel: labels[key], DetailCount: len(details)}
+			if len(details) > 0 {
+				entry.LatestOccurredAt = details[0].OccurredAt
 			}
 			result.Days[dayIndex].Subjects = append(result.Days[dayIndex].Subjects, entry)
 		}
@@ -188,13 +152,6 @@ func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (
 func (s *Service) SearchFacts(ctx context.Context, filter FactSearchFilter) (FactSearchView, error) {
 	filter.SubjectType = strings.TrimSpace(strings.ToLower(filter.SubjectType))
 	filter.SourceKind = strings.TrimSpace(filter.SourceKind)
-	filter.Layer = strings.TrimSpace(strings.ToLower(filter.Layer))
-	if filter.Layer == "" {
-		filter.Layer = "all"
-	}
-	if filter.Layer != "all" && filter.Layer != "detail" && filter.Layer != "rollup" {
-		return FactSearchView{}, fmt.Errorf("%w: layer must be all, detail or rollup", ErrInvalidInput)
-	}
 	if filter.Page <= 0 || filter.PageSize <= 0 || filter.PageSize > 200 {
 		return FactSearchView{}, fmt.Errorf("%w: page must be positive and page_size must be between 1 and 200", ErrInvalidInput)
 	}
@@ -217,11 +174,6 @@ func (s *Service) SearchFacts(ctx context.Context, filter FactSearchFilter) (Fac
 	}
 	if filter.SourceKind != "" {
 		query = query.Where("source_kind = ?", filter.SourceKind)
-	}
-	if filter.Layer == "detail" {
-		query = query.Where("source_kind IS NULL OR source_kind <> ?", FactSourceRollup)
-	} else if filter.Layer == "rollup" {
-		query = query.Where("source_kind = ?", FactSourceRollup)
 	}
 	var rows []domain.Fact
 	if err := query.Order("occurred_at DESC, id DESC").Find(&rows).Error; err != nil {
@@ -251,10 +203,6 @@ func (s *Service) SearchFacts(ctx context.Context, filter FactSearchFilter) (Fac
 		items = matches[start:end]
 	}
 	return FactSearchView{Items: items, Total: len(matches), Page: filter.Page, PageSize: filter.PageSize}, nil
-}
-
-func isRollupFact(fact domain.Fact) bool {
-	return fact.SourceKind != nil && *fact.SourceKind == FactSourceRollup
 }
 
 func labeledFactView(fact domain.Fact, label string) LabeledFactView {

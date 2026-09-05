@@ -6,6 +6,15 @@
 
 本文只按能力分组，不复制 handler 的完整请求/响应结构。新增或删除接口时先改 `internal/api/router.go`，再更新本页。
 
+## 字节身份
+
+- `GET /api/auth/status`：读取当前 Jarvis 浏览器会话。
+- `POST /api/auth/login`：复用本机 BytedCLI 字节身份；未登录时启动非阻塞 SSO Device Flow。
+- `POST /api/auth/login/complete`：轮询并完成 SSO 登录。
+- `POST /api/auth/logout`：只清除 Jarvis 浏览器会话，不清除全机 BytedCLI 授权。
+
+浏览器发起的管理 API 请求需要 Jarvis 会话；健康检查、认证接口、`POST /api/clues`、卡片回调和无浏览器 Fetch Metadata 的本机 Agent/CLI 请求不经过该门禁。
+
 ## 健康与工作项
 
 - `GET /healthz`：存活探针，只 ping SQLite。`scripts/rebuild-server.sh` 靠它判断重启成功，所以外部依赖不进它的状态码。
@@ -13,7 +22,7 @@
   - `lark_cli` 同时校验二进制可解析和飞书 user 登录可用（`auth status --verify`），正常时附带 `user`、`user_open_id`、`token_status`。飞书 refresh token 会自行过期，过期后二进制仍在原地，只校验路径会一直报绿；所有 `--as user` 能力（群消息采集、建文档、人员搜索）都依赖这条。
 - Todo：`GET /api/todos`、`GET /api/todos/:todo_id`、`PATCH /api/todos/:todo_id/status`
 - Task：`GET/POST /api/tasks`、`GET /api/tasks/:task_id/runs|events|output`
-- Task 控制：`finish`、`supplement`、`execute`、`interrupt`、`rerun`、`reapply`、`resume`、`approve`、`reject`
+- Task 控制：`finish`、`supplement`、`execute`、`interrupt`、`rerun`、`resume`
 - 外部效果：`POST /api/tasks/:task_id/effects/recall-message`
 
 `output` 和执行控制接口只有在 Executor 注入时注册。
@@ -28,7 +37,7 @@
 - Managed resources：`GET/POST /api/resources`、`GET/PUT/DELETE /api/resources/:resource_id`
 - Facts：`GET/POST /api/facts`
 - Entity relations：`GET/POST /api/relations`、`DELETE /api/relations/:relation_id`，保存带证据的通用跨模块实体映射
-- Relation facts：`GET/POST /api/relation-facts`、`PUT/DELETE /api/relation-facts/:fact_id`
+- 实体长期事实页：`GET /api/pages`、`GET/PUT /api/pages/:type/:id`、`GET /api/pages/:type/:id/backlinks`。`PUT` 需带 `if_unchanged_since` 做 CAS，不匹配返回 409 并回带当前全文。
 
 `DELETE /api/key-matters/:key_matter_id` 的业务语义是闭环，`DELETE /api/projects/:project_id` 的业务语义是归档；都不是物理删除。
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # jarvis-tools: canonical Jarvis query/controlled-write CLI for agents.
-# All data access goes through jarvis-server HTTP API (curl + jq).
+# All data access goes through jarvis-server HTTP API (curl + jq; Node for exact JSON reads).
 #
 # Output contract: data commands → compact JSON on stdout only; help → text on
 # stdout; errors → stderr + exit 1.
@@ -83,7 +83,9 @@ subcommands:
   list-todos             List action clues, optionally for one day
   get-todo               Get one clue with the details omitted from summaries
   list-tasks             List tasks, optionally for one day
-  get-task               Get one task with bounded execution history
+  get-task               Read task overview or a frozen context section
+  list-task-runs         Page through a task’s execution history
+  get-task-run           Read one run’s output and effects
   create-task            Create a normal Task for strong M5 (proactive agent only)
   start-task             Start one pending Task with strong M5 (proactive agent only)
   update-task            Update one non-terminal Task (proactive agent only)
@@ -341,42 +343,56 @@ key_matter, group or resource.
 EOF
       ;;
     list-todos) cat <<'EOF'
-usage: jarvis-tools list-todos [--date YYYY-MM-DD] [--status S] [--limit N] [--config PATH]
+usage: jarvis-tools list-todos [--date YYYY-MM-DD] [--status S] [--limit N]
+                              [--project-id N] [--group-id N] [--page N] [--query TEXT]
+                              [--source-message-id MESSAGE_ID] [--config PATH]
 
 List compact action-clue summaries newest-evidence first. --date narrows by
 last_evidence_at to one local natural day. --limit defaults to 20. Use get-todo
 for description, context, source evidence, resolution and the frozen snapshot.
 
+--group-id is the sharper scope: every clue comes from a chat, while
+--project-id only matches once that chat is bound to a project.
+
 example:
   jarvis-tools list-todos --date 2026-08-02 --status extracted
-EOF
-      ;;
-    get-todo) cat <<'EOF'
-usage: jarvis-tools get-todo --id ID [--config PATH]
-
-Get one clue including description, context, open_questions and resolution —
-the fields omitted from the summary list in prompts.
+  jarvis-tools list-todos --group-id 7 --status observing
 EOF
       ;;
     list-tasks) cat <<'EOF'
-usage: jarvis-tools list-tasks [--date YYYY-MM-DD] [--status S] [--limit N] [--config PATH]
+usage: jarvis-tools list-tasks [--date YYYY-MM-DD] [--status S] [--limit N]
+                              [--project-id N] [--group-id N] [--page N] [--query TEXT]
+                              [--source-message-id MESSAGE_ID] [--config PATH]
 
 List compact task summaries. --date narrows by COALESCE(last_progress_at,
 created_at) to one local natural day. --limit defaults to 20. Without --status,
 all task statuses are queried. Use get-task for details and recent history.
 
+--group-id matches through the source clue, so manual, scheduled and proactive
+tasks belong to no group and are excluded by it.
+
 example:
   jarvis-tools list-tasks --date 2026-08-02 --status done,executing
+  jarvis-tools list-tasks --project-id 44 --status done
 EOF
       ;;
-    get-task) cat <<'EOF'
-usage: jarvis-tools get-task --id ID [--run-limit N] [--event-limit N]
-                             [--include-run-output] [--include-prompt]
-                             [--config PATH]
-
-Get one task with bounded recent run summaries, effects, events and task facts.
-Defaults: 3 runs and 20 events. Full run output and prompts are excluded unless
-explicitly requested.
+    get-task | get-todo) cat <<'EOF'
+usage: jarvis-tools get-task|get-todo --id ID [--context conversation|background|SECTION|full]
+                                    [--message-id MESSAGE_ID] [--config PATH]
+Default: brief, scene, complete source messages, and available context sections.
+Use --context to read a frozen section, or --message-id for one frozen message.
+These options are mutually exclusive. get-todo also accepts --revision N to
+reject a read if the clue has been re-extracted since you read its overview.
+EOF
+      ;;
+    list-task-runs) cat <<'EOF'
+usage: jarvis-tools list-task-runs --id TASK_ID [--page N] [--limit N] [--config PATH]
+Read paginated run summaries (default page 1, 20 per page), including failures.
+EOF
+      ;;
+    get-task-run) cat <<'EOF'
+usage: jarvis-tools get-task-run --id RUN_ID [--include-prompt] [--config PATH]
+Read complete output, effects and failure details for one execution attempt.
 EOF
       ;;
     create-task) cat <<'EOF'
@@ -403,9 +419,9 @@ Update the mutable current surface of one non-terminal Task. This command is
 only available when JARVIS_AGENT_STAGE=proactive. The payload requires
 expected_version, reason, and at least one of title, target, summary or
 instruction. source_payload/background remain frozen. instruction is appended
-for M5 rather than rewriting source evidence. An awaiting_approval Task only
-accepts summary updates so an Agent cannot silently alter a proposal awaiting
-human approval.
+for M5 rather than rewriting source evidence. A needs_human Task only accepts
+summary updates so an Agent cannot silently change the goal behind a question
+the principal is already looking at.
 
 example:
   jarvis-tools update-task --id 42 --payload '{"expected_version":2,"summary":"权限申请仍有效，等待 owner 审批","instruction":"恢复后先重新核验权限，再继续转换文档","reason":"跨日后等待条件仍有效，补充最新状态而不是关闭"}'
@@ -636,9 +652,17 @@ forbid_summary_payload() {
   fi
 }
 
-# emit compact JSON (+ newline) to stdout — the ONLY successful stdout write.
+# Emit compact projected JSON (+ newline) to stdout.
 emit() {
   printf '%s\n' "$1" | jq -c .
+}
+
+# Frozen evidence and run results must bypass jq's floating-point conversion.
+emit_api_data() {
+  command -v node >/dev/null 2>&1 || fail "node is required for exact JSON evidence reads"
+  local body
+  body="$(api_get "$1")" || return
+  printf '%s' "$body" | node "${SCRIPT_DIR}/json-api-data.mjs"
 }
 
 # fetch_all_items PATH_PREFIX [QUERY] → prints all items across pages. QUERY is
@@ -722,6 +746,7 @@ reset_flags() {
   OPEN_ID=""
   ROLE=""
   PROJECT_ID=""
+  GROUP_ID=""
   PERSON_OPEN_ID=""
   PRINCIPAL_ONLY="false"
   KEYWORD=""
@@ -761,6 +786,11 @@ reset_flags() {
   MESSAGE_ID=""
   RESOURCE_TYPE=""
   SENDER_OPEN_ID=""
+  PAGE="1"
+  QUERY=""
+  SOURCE_MESSAGE_ID=""
+  CONTEXT_SECTION=""
+  REVISION=""
 }
 
 # Each command declares its own accepted flags. The parser is shared, but a flag
@@ -798,10 +828,12 @@ require_command_flag() {
     list-pages) allowed+=" --type --all --stale-days --over-limit" ;;
     list-relations) allowed+=" --source-type --source-id --target-type --target-id --limit" ;;
     delete-relation) allowed+=" --id" ;;
-    list-todos) allowed+=" --date --status --limit" ;;
-    get-todo) allowed+=" --id" ;;
-    list-tasks) allowed+=" --date --status --limit" ;;
-    get-task) allowed+=" --id --run-limit --event-limit --include-run-output --include-prompt" ;;
+    list-todos) allowed+=" --date --status --limit --project-id --group-id --page --query --source-message-id" ;;
+    get-todo) allowed+=" --id --context --message-id --revision" ;;
+    list-tasks) allowed+=" --date --status --limit --project-id --group-id --page --query --source-message-id" ;;
+    get-task) allowed+=" --id --context --message-id" ;;
+    list-task-runs) allowed+=" --id --page --limit" ;;
+    get-task-run) allowed+=" --id --include-prompt" ;;
     start-task) allowed+=" --id" ;;
     update-task) allowed+=" --id --payload" ;;
     close-task) allowed+=" --id --payload" ;;
@@ -906,6 +938,15 @@ consume_flags() {
         PROJECT_ID="${1#--project-id=}"
         shift
         ;;
+      --group-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        GROUP_ID="$2"
+        shift 2
+        ;;
+      --group-id=*)
+        GROUP_ID="${1#--group-id=}"
+        shift
+        ;;
       --person-open-id)
         [[ $# -ge 2 ]] || fail "$1 requires a value"
         PERSON_OPEN_ID="$2"
@@ -917,6 +958,51 @@ consume_flags() {
         ;;
       --principal-only)
         PRINCIPAL_ONLY="true"
+        shift
+        ;;
+      --page)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        PAGE="$2"
+        shift 2
+        ;;
+      --page=*)
+        PAGE="${1#--page=}"
+        shift
+        ;;
+      --query)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        QUERY="$2"
+        shift 2
+        ;;
+      --query=*)
+        QUERY="${1#--query=}"
+        shift
+        ;;
+      --source-message-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        SOURCE_MESSAGE_ID="$2"
+        shift 2
+        ;;
+      --source-message-id=*)
+        SOURCE_MESSAGE_ID="${1#--source-message-id=}"
+        shift
+        ;;
+      --context)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        CONTEXT_SECTION="$2"
+        shift 2
+        ;;
+      --context=*)
+        CONTEXT_SECTION="${1#--context=}"
+        shift
+        ;;
+      --revision)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        REVISION="$2"
+        shift 2
+        ;;
+      --revision=*)
+        REVISION="${1#--revision=}"
         shift
         ;;
       --keyword)
@@ -1441,13 +1527,15 @@ cmd_get_context() {
     fail "get-context --project-id must be a positive integer"
   fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local payload body
+  local payload body identity_body identity
   payload="$(jq -nc --arg chat_id "$CHAT_ID" --arg project_id "$PROJECT_ID" '{
     chat_id: $chat_id,
     project_id: (if $project_id == "" then null else ($project_id | tonumber) end)
   }')"
   body="$(api_write POST /api/context "$payload")"
-  emit "$(printf '%s' "$body" | jq -c '.data')"
+  identity_body="$(api_get /api/agent-identity)"
+  identity="$(printf '%s' "$identity_body" | jq -c '.data')"
+  emit "$(printf '%s' "$body" | jq -c --argjson identity "$identity" '.data + {agent_identity:$identity}')"
 }
 
 cmd_get_principal() {
@@ -1989,10 +2077,24 @@ cmd_list_todos() {
   LIMIT="20"
   consume_flags "$@"
   require_limit list-todos "$LIMIT" 100
+  if [[ -n "$PROJECT_ID" && ! "$PROJECT_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "list-todos --project-id must be a positive integer"
+  fi
+  if [[ -n "$GROUP_ID" && ! "$GROUP_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "list-todos --group-id must be a positive integer"
+  fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local query="?page=1&page_size=${LIMIT}"
+  [[ "$PAGE" =~ ^[1-9][0-9]*$ ]] || fail "--page must be positive"
+  local query="?page=${PAGE}&page_size=${LIMIT}"
+  query="${query}&query=$(jq -rn --arg s "$QUERY" '$s|@uri')&source_message_id=$(jq -rn --arg s "$SOURCE_MESSAGE_ID" '$s|@uri')"
   if [[ -n "$STATUS" ]]; then
     query="${query}&status=$(jq -rn --arg s "$STATUS" '$s|@uri')"
+  fi
+  if [[ -n "$PROJECT_ID" ]]; then
+    query="${query}&project_id=${PROJECT_ID}"
+  fi
+  if [[ -n "$GROUP_ID" ]]; then
+    query="${query}&group_id=${GROUP_ID}"
   fi
   if [[ -n "$DATE" ]]; then
     local from until
@@ -2003,18 +2105,24 @@ cmd_list_todos() {
   body="$(api_get "/api/todos${query}")"
   emit "$(printf '%s' "$body" | jq -c '.data | {
     total,page,page_size,
-    items:[.items[] | {id,title,action_type,target,commitment_strength,assigner_open_id,is_leader_assigned,due_at,status,revision,version,first_seen_at,last_evidence_at,group,project}]
+    items:[.items[] | {id,title,source_message_ids,source_quote,action_type,target,assigner_open_id,is_leader_assigned,due_at,status,revision,version,first_seen_at,last_evidence_at,group,project}]
   }')"
 }
 
+context_read_query() {
+ [[ -z "$CONTEXT_SECTION" || -z "$MESSAGE_ID" ]] || fail "--context and --message-id are mutually exclusive"
+ [[ -z "$REVISION" || "$REVISION" =~ ^[1-9][0-9]*$ ]] || fail "--revision must be positive"
+ jq -rn --arg context "$CONTEXT_SECTION" --arg message_id "$MESSAGE_ID" --arg revision "$REVISION" '"?context="+($context|@uri)+"&message_id="+($message_id|@uri)+"&revision="+($revision|@uri)'
+}
+
 cmd_get_todo() {
-  reset_flags
-  consume_flags "$@"
-  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-todo requires positive --id"
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local body
-  body="$(api_get "/api/todos/${ID}")"
-  emit "$(printf '%s' "$body" | jq -c '.data')"
+ reset_flags
+ consume_flags "$@"
+ [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-todo requires positive --id"
+ API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+ local query
+ query="$(context_read_query)"
+ emit_api_data "/api/todos/${ID}${query}"
 }
 
 cmd_list_tasks() {
@@ -2022,12 +2130,26 @@ cmd_list_tasks() {
   LIMIT="20"
   consume_flags "$@"
   require_limit list-tasks "$LIMIT" 100
+  if [[ -n "$PROJECT_ID" && ! "$PROJECT_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "list-tasks --project-id must be a positive integer"
+  fi
+  if [[ -n "$GROUP_ID" && ! "$GROUP_ID" =~ ^[1-9][0-9]*$ ]]; then
+    fail "list-tasks --group-id must be a positive integer"
+  fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local query="?page=1&page_size=${LIMIT}"
+  [[ "$PAGE" =~ ^[1-9][0-9]*$ ]] || fail "--page must be positive"
+  local query="?page=${PAGE}&page_size=${LIMIT}"
+  query="${query}&query=$(jq -rn --arg s "$QUERY" '$s|@uri')&source_message_id=$(jq -rn --arg s "$SOURCE_MESSAGE_ID" '$s|@uri')"
   if [[ -z "$STATUS" ]]; then
-    STATUS="pending,executing,waiting,needs_human,awaiting_approval,done,failed,observing"
+    STATUS="pending,executing,waiting,needs_human,done,failed,observing"
   fi
   query="${query}&status=$(jq -rn --arg s "$STATUS" '$s|@uri')"
+  if [[ -n "$PROJECT_ID" ]]; then
+    query="${query}&project_id=${PROJECT_ID}"
+  fi
+  if [[ -n "$GROUP_ID" ]]; then
+    query="${query}&group_id=${GROUP_ID}"
+  fi
   if [[ -n "$DATE" ]]; then
     local from until
     read -r from until <<<"$(local_day_bounds "$DATE" list-tasks)"
@@ -2037,31 +2159,36 @@ cmd_list_tasks() {
   body="$(api_get "/api/tasks${query}")"
   emit "$(printf '%s' "$body" | jq -c '.data | {
     total,page,page_size,
-    items:[.items[] | {id,todo_id,title,action_type,target,status,summary,project_id,source_type,source_id,created_at,last_progress_at,version,updated_at,resolution}]
+    items:[.items[] | {id,todo_id,title,source_message_ids,action_type,target,status,summary,project_id,source_type,source_id,created_at,last_progress_at,version,updated_at,resolution}]
   }')"
 }
 
-# get-task merges task detail, recent runs, the event timeline and task-scoped
-# facts into one JSON object — the pieces a summary line omits.
 cmd_get_task() {
-  reset_flags
-  consume_flags "$@"
-  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-task requires positive --id"
-  require_limit "get-task --run-limit" "$RUN_LIMIT" 20
-  require_limit "get-task --event-limit" "$EVENT_LIMIT" 100
-  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local task runs events facts
-  task="$(api_get "/api/tasks/${ID}" | jq -c '.data')"
-  runs="$(api_get "/api/tasks/${ID}/runs" | jq -c --argjson limit "$RUN_LIMIT" --argjson include_output "$INCLUDE_RUN_OUTPUT" --argjson include_prompt "$INCLUDE_PROMPT" '
-    [.data.items[:$limit][]
-      | {id,task_id,action_type,stage,sandbox,status,summary,effects,error_detail,repo_path,started_at,finished_at,duration_ms}
-      + (if $include_output then {output:.output} else {} end)
-      + (if $include_prompt then {prompt:.prompt} else {} end)
-    ]')"
-  events="$(api_get "/api/tasks/${ID}/events" | jq -c --argjson limit "$EVENT_LIMIT" '.data.items[:$limit]')"
-  facts="$(api_get "/api/facts?subject_type=task&subject_id=${ID}&limit=20" | jq -c '.data.items')"
-  emit "$(jq -cn --argjson task "$task" --argjson runs "$runs" --argjson events "$events" --argjson facts "$facts" \
-    '{task:$task,runs:$runs,events:$events,facts:$facts}')"
+ reset_flags
+ consume_flags "$@"
+ [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-task requires positive --id"
+ API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+ local query
+ query="$(context_read_query)"
+ emit_api_data "/api/tasks/${ID}${query}"
+}
+
+cmd_list_task_runs() {
+ reset_flags
+ LIMIT="20"
+ consume_flags "$@"
+ [[ "$ID" =~ ^[1-9][0-9]*$ && "$PAGE" =~ ^[1-9][0-9]*$ ]] || fail "list-task-runs requires positive --id and --page"
+ require_limit list-task-runs "$LIMIT" 100
+ API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+ emit "$(api_get "/api/tasks/${ID}/runs?page=${PAGE}&page_size=${LIMIT}" | jq -c '.data | {total,page,page_size,items:[.items[]|{id,task_id,status,summary,started_at,finished_at}]}')"
+}
+
+cmd_get_task_run() {
+ reset_flags
+ consume_flags "$@"
+ [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-task-run requires positive --id"
+ API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+ emit_api_data "/api/task-runs/${ID}?include_prompt=${INCLUDE_PROMPT}"
 }
 
 cmd_list_scheduled_tasks() {
@@ -2335,6 +2462,8 @@ case "$SUBCOMMAND" in
   get-todo)             cmd_get_todo "$@" ;;
   list-tasks)           cmd_list_tasks "$@" ;;
   get-task)             cmd_get_task "$@" ;;
+  list-task-runs) cmd_list_task_runs "$@" ;;
+  get-task-run) cmd_get_task_run "$@" ;;
   create-task)          cmd_create_task "$@" ;;
   start-task)           cmd_start_task "$@" ;;
   update-task)          cmd_update_task "$@" ;;

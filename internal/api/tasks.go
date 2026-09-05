@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/contextpack"
 	"jarvis/internal/effectops"
 	"jarvis/internal/execute"
 
@@ -56,7 +57,23 @@ func ListTasks(service execute.TaskService) app.HandlerFunc {
 		if len(statuses) == 0 {
 			statuses = []string{"pending"}
 		}
-		filter := execute.TaskFilter{Statuses: statuses, Page: page, PageSize: pageSize}
+		filter := execute.TaskFilter{Statuses: statuses, Page: page, PageSize: pageSize, Query: c.Query("query"), SourceMessageID: c.Query("source_message_id")}
+		if raw := strings.TrimSpace(c.Query("project_id")); raw != "" {
+			value, err := strconv.ParseUint(raw, 10, 64)
+			if err != nil || value == 0 {
+				writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("project_id must be a positive integer"))
+				return
+			}
+			filter.ProjectID = &value
+		}
+		if raw := strings.TrimSpace(c.Query("group_id")); raw != "" {
+			value, err := strconv.ParseUint(raw, 10, 64)
+			if err != nil || value == 0 {
+				writeAPIError(c, consts.StatusBadRequest, 40020, fmt.Errorf("group_id must be a positive integer"))
+				return
+			}
+			filter.GroupID = &value
+		}
 		if raw := strings.TrimSpace(c.Query("from")); raw != "" {
 			from, err := time.Parse(time.RFC3339, raw)
 			if err != nil {
@@ -106,6 +123,20 @@ func GetTask(service execute.TaskService) app.HandlerFunc {
 			}
 			return
 		}
+		section, messageID := c.Query("context"), c.Query("message_id")
+		view, err := contextpack.Read(result.SourcePayload, section, messageID)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40020, err)
+			return
+		}
+		if messageID != "" || (section != "" && section != "full" && section != "overview") {
+			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": result.ID, "version": result.Version, "context": view}})
+			return
+		}
+		result.SourcePayload = view
+		if section != "full" {
+			result.ExecutionResult = nil
+		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
 	}
 }
@@ -119,7 +150,17 @@ func ListTaskRuns(service execute.TaskService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40025, fmt.Errorf("task_id must be a positive integer"))
 			return
 		}
-		result, err := service.ListRuns(ctx, taskID)
+		page, err := positiveQueryInt(c.Query("page"), 1, "page")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40025, err)
+			return
+		}
+		size, err := positiveQueryInt(c.Query("page_size"), 20, "page_size")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40025, err)
+			return
+		}
+		result, err := service.ListRuns(ctx, taskID, execute.RunFilter{Page: page, PageSize: size})
 		if err != nil {
 			if errors.Is(err, execute.ErrInvalidInput) {
 				writeAPIError(c, consts.StatusBadRequest, 40025, err)
@@ -263,11 +304,10 @@ func UpdateTask(service execute.TaskService) app.HandlerFunc {
 	}
 }
 
-// ExecuteTask triggers agent-driven execution of a Task. The agent investigates,
-// judges risk, and either finishes the work or produces a proposal before the
-// controlled side effect, then
-// parks the Task at awaiting_approval for a human to approve (ApproveTask) or
-// reject (RejectTask). The click no longer directly lands external writes.
+// ExecuteTask triggers agent-driven execution of a Task. The agent investigates
+// and either finishes the work or, when it needs the principal to decide or to
+// permit a gated side effect, parks the Task at needs_human behind a question
+// card. The click itself does not authorize external writes.
 func ExecuteTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
@@ -316,74 +356,8 @@ func InterruptTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	}
 }
 
-type approveTaskRequest struct {
-	ExpectedVersion *int32 `json:"expected_version"`
-}
-
-// ApproveTask lands a proposal a human accepted: the awaiting_approval Task is
-// claimed synchronously (-> executing) and the apply stage (a fresh codex
-// invocation carrying the approved proposal) runs in the background. The handler
-// returns as soon as the claim succeeds; poll Task status for the final verdict.
-func ApproveTask(executor *execute.AgentExecutor) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
-		if err != nil || taskID == 0 {
-			writeAPIError(c, consts.StatusBadRequest, 40027, fmt.Errorf("task_id must be a positive integer"))
-			return
-		}
-		var request approveTaskRequest
-		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40027, err)
-			return
-		}
-		if request.ExpectedVersion == nil {
-			writeAPIError(c, consts.StatusBadRequest, 40027, fmt.Errorf("expected_version is required"))
-			return
-		}
-		result, err := executor.KickApprove(ctx, taskID, *request.ExpectedVersion)
-		if err != nil {
-			writeExecutionError(c, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
-	}
-}
-
-type rejectTaskRequest struct {
-	ExpectedVersion *int32 `json:"expected_version"`
-	Reason          string `json:"reason"`
-}
-
-// RejectTask declines a proposed external write: the awaiting_approval Task moves
-// to failed with the rejection reason recorded; it can later be rerun.
-func RejectTask(executor *execute.AgentExecutor) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
-		if err != nil || taskID == 0 {
-			writeAPIError(c, consts.StatusBadRequest, 40028, fmt.Errorf("task_id must be a positive integer"))
-			return
-		}
-		var request rejectTaskRequest
-		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40028, err)
-			return
-		}
-		if request.ExpectedVersion == nil {
-			writeAPIError(c, consts.StatusBadRequest, 40028, fmt.Errorf("expected_version is required"))
-			return
-		}
-		result, err := executor.Reject(ctx, taskID, *request.ExpectedVersion, request.Reason)
-		if err != nil {
-			writeExecutionError(c, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
-	}
-}
-
-// RerunTask re-executes a finished (done/failed) Task. The manual click counts
-// as approval for external-side-effect actions. Persisted execution_supplements
-// are included automatically on every run.
+// RerunTask re-executes a finished (done/failed) Task. Persisted
+// execution_supplements are included automatically on every run.
 func RerunTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
@@ -400,34 +374,14 @@ func RerunTask(executor *execute.AgentExecutor) app.HandlerFunc {
 	}
 }
 
-// ReapplyTask re-lands the same human-approved proposal for a Task whose apply
-// stage previously failed, WITHOUT restarting execution/approval again. It is
-// the "用同一已批准方案重试落地" shortcut, distinct from RerunTask (which restarts
-// execution and may request approval again).
-func ReapplyTask(executor *execute.AgentExecutor) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
-		if err != nil || taskID == 0 {
-			writeAPIError(c, consts.StatusBadRequest, 40029, fmt.Errorf("task_id must be a positive integer"))
-			return
-		}
-		result, err := executor.KickReapply(ctx, taskID)
-		if err != nil {
-			writeExecutionError(c, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
-	}
-}
-
 type resumeTaskRequest struct {
 	ExpectedVersion *int32 `json:"expected_version"`
 	Response        string `json:"response"`
 }
 
-// ResumeTaskAfterHuman continues the exact Codex session that asked for human
-// input. It is deliberately distinct from rerun/reapply: no Task plan or
-// approved artifact is regenerated.
+// ResumeTaskAfterHuman answers the question the Codex session stopped on, from
+// the backend rather than the Feishu card. It is deliberately distinct from
+// rerun: the session continues where it paused instead of starting over.
 func ResumeTaskAfterHuman(executor *execute.AgentExecutor) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
@@ -444,7 +398,7 @@ func ResumeTaskAfterHuman(executor *execute.AgentExecutor) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40030, fmt.Errorf("expected_version is required"))
 			return
 		}
-		result, err := executor.KickResumeAfterHuman(ctx, taskID, *request.ExpectedVersion, request.Response)
+		result, err := executor.KickResumeAfterHuman(ctx, taskID, *request.ExpectedVersion, request.Response, "backend")
 		if err != nil {
 			writeExecutionError(c, err)
 			return
@@ -582,5 +536,31 @@ func writeExecutionError(c *app.RequestContext, err error) {
 		writeAPIError(c, consts.StatusConflict, 40920, err)
 	default:
 		writeAPIError(c, consts.StatusInternalServerError, 50021, fmt.Errorf("execute Task failed: %s", strings.TrimSpace(err.Error())))
+	}
+}
+
+func GetTaskRun(service execute.TaskService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := strconv.ParseUint(c.Param("run_id"), 10, 64)
+		if err != nil || id == 0 {
+			writeAPIError(c, consts.StatusBadRequest, 40025, fmt.Errorf("invalid run_id"))
+			return
+		}
+		result, err := service.GetRun(ctx, id)
+		if err != nil {
+			switch {
+			case errors.Is(err, execute.ErrRunNotFound):
+				writeAPIError(c, consts.StatusNotFound, 40425, err)
+			case errors.Is(err, execute.ErrInvalidInput):
+				writeAPIError(c, consts.StatusBadRequest, 40025, err)
+			default:
+				writeAPIError(c, consts.StatusInternalServerError, 50025, err)
+			}
+			return
+		}
+		if c.Query("include_prompt") != "true" {
+			result.Prompt = ""
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
 	}
 }

@@ -21,10 +21,7 @@ const (
 	ApprovalPolicyKey           = "m5_approval_policy"
 	// SystemPromptFactExtractKey drives the offline fact engine, which distils
 	// long-lived facts out of material the pipeline already produced.
-	SystemPromptFactExtractKey = "fact_extract_system_prompt"
-	// SystemPromptFactRollupKey drives the daily compression that turns one
-	// subject's detail facts for a day into a single rollup fact.
-	SystemPromptFactRollupKey       = "fact_rollup_system_prompt"
+	SystemPromptFactExtractKey      = "fact_extract_system_prompt"
 	WeeklyReportReminderTemplateKey = "weekly_report_reminder_template"
 	OKRAgentPrinciplesKey           = "okr_agent_principles"
 	OKRAgentQuarterlyDraftKey       = "okr_agent_quarterly_draft"
@@ -91,11 +88,6 @@ func definitions() []definition {
 			key: SystemPromptFactExtractKey, name: "持续世界建模提示词", filename: "fact-extract-system-prompt.md",
 			description: "定义哪些认知值得沉淀成实体、关键事项、事实和关系，以及哪些不写。",
 			kind:        "system_prompt", stage: "fact_extract",
-		},
-		{
-			key: SystemPromptFactRollupKey, name: "事实日压缩提示词", filename: "fact-rollup-system-prompt.md",
-			description: "定义把一个主体一天的明细事实压缩成单条日事实的口径。",
-			kind:        "system_prompt", stage: "fact_rollup",
 		},
 		{
 			key: WeeklyReportReminderTemplateKey, name: "催填消息模板", filename: "weekly-report-reminder-template.md",

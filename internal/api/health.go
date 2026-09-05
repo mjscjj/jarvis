@@ -75,6 +75,7 @@ type ReadinessTargets struct {
 	// wrappers resolve them, so a PATH that works for this process but not for
 	// launchd shows up here instead of at the first Feishu call.
 	LarkCLIBin  string
+	BytedCLIBin string
 	AgentCLIBin string
 	// LarkIdentity verifies the Feishu user login behind LarkCLIBin.
 	LarkIdentity LarkIdentityProbe
@@ -95,6 +96,7 @@ func Readiness(db *gorm.DB, targets ReadinessTargets) app.HandlerFunc {
 			"database":     databaseState,
 			"vector_index": probeVectorIndex(probeCtx, targets.VectorIndex),
 			"lark_cli":     probeLarkCLI(probeCtx, targets.LarkCLIBin, targets.LarkIdentity),
+			"bytedcli":     probeBinary(targets.BytedCLIBin),
 			"agent_cli":    probeBinary(targets.AgentCLIBin),
 		}
 

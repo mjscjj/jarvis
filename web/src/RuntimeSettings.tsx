@@ -66,16 +66,18 @@ function TextField({
   label,
   placeholder,
   help,
+  maxLength,
 }: {
   name: FieldName
   label: string
   placeholder?: string
   help?: string
+  maxLength?: number
 }) {
   return (
     <SettingCol>
       <Form.Item name={name} label={<FieldLabel label={label} help={help} />} rules={[{ required: true, whitespace: true }]}>
-        <Input placeholder={placeholder} />
+        <Input placeholder={placeholder} maxLength={maxLength} showCount={Boolean(maxLength)} />
       </Form.Item>
     </SettingCol>
   )
@@ -276,11 +278,14 @@ export default function RuntimeSettings() {
       label: <PanelLabel title="常用设置" description="总开关、CLI 和模型归属" />,
       children: (
         <>
+          <Section title="助手身份" description="用于界面显示和所有 Agent 提示词；保存后需重启主服务。">
+            <TextField name="agent_display_name" label="机器人名称" help="1–32 个字符，不能包含换行或模板符号。" maxLength={32} />
+          </Section>
           <Section title="阶段开关" description="控制后台自动运行；保存后需重启主服务。">
             <SwitchField name="extract_enabled" label="M3 自动提取" help="从新消息中识别行动线索并生成 Todo。" />
             <SwitchField name="execute_auto_enabled" label="M5 自动执行" help="自动固化 extracted Todo 并执行 Task；关闭后仍可手动执行 Task。" />
             <SwitchField name="proactive_enabled" label="主动巡视" help="启动两分钟后先巡视一次，之后按周期整理世界模型并发现可做之事。" />
-            <SwitchField name="chat_enabled" label="右侧对话" help="启用页面右侧的 Jarvis 对话入口。" />
+            <SwitchField name="chat_enabled" label="右侧对话" help="启用页面右侧的机器人对话入口。" />
           </Section>
           <Section title="M3 Agent" description="M3 选择 Agent CLI 时使用这组 CLI、模型和超时。">
             <SelectField name="analysis_cli" label="M3 CLI" options={cliOptions} help="M3 提取启动的命令行执行器。" />
@@ -402,15 +407,13 @@ export default function RuntimeSettings() {
             <TextField name="capture_scan_schedule" label="扫描消息周期" placeholder="@every 5m" />
             <NumberField name="capture_page_size" label="飞书单页消息数" min={1} max={50} />
             <NumberField name="capture_scan_workers" label="并发扫描会话数" min={1} max={32} />
-            <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按近期活跃度自动纳入采集的私聊数量；0 表示关闭。" />
+            <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按当前活跃度轮换采集的真人私聊数量；固定私聊不占名额，0 表示关闭自动关注。" />
           </Section>
           <Section title="持续世界建模" description="在主流水线之外增量阅读消息、Todo 和 Task，由 Agent 自主维护人物、项目、群、资料、关系与历史事实；并按天压缩事实阅读层。">
             <SwitchField name="fact_engine_enabled" label="自动世界建模" />
             <TextField name="fact_engine_schedule" label="建模周期" placeholder="@every 15m" />
-            <TextField name="fact_engine_rollup_schedule" label="日压缩周期" placeholder="0 2 * * *" help="每天把前一个自然日每个主体的明细事实压成一条摘要，供 M3 提示词使用。" />
             <TextField name="fact_engine_model" label="世界维护模型" />
             <SelectField name="fact_engine_reasoning_effort" label="世界维护推理档位" options={reasoningOptions} />
-            <TextField name="fact_engine_rollup_model" label="事实日压缩模型" />
             <NumberField name="fact_engine_timeout_seconds" label="单轮超时（秒）" min={1} max={3600} />
             <NumberField name="fact_engine_batch_limit" label="每来源候选行上限" min={1} max={5000} />
             <NumberField name="fact_engine_max_material_chars" label="单次材料字符上限" min={1} max={900000} />

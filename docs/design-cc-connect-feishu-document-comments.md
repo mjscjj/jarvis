@@ -293,8 +293,7 @@ event_id
 一次性订阅可用当前 CLI 明确执行：
 
 ```bash
-lark-cli --profile <jarvis_lark_profile> \
-  drive user subscription \
+lark-cli drive user subscription \
   --data '{"event_type":"drive.notice.comment_add_v1"}' \
   --as bot --format json
 ```

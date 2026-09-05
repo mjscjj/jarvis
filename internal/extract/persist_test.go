@@ -3,9 +3,12 @@ package extract
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"encoding/json"
+	"jarvis/internal/contextpack"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 )
@@ -49,7 +52,14 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 	if prepared[0].Fingerprint == "" || prepared[0].FirstEvidenceAt.IsZero() || prepared[0].LastEvidenceAt.IsZero() {
 		t.Fatalf("prepared identity/evidence timestamps = %#v", prepared[0])
 	}
-	snapshot, err := contextsnap.Decode(prepared[0].ContextSnapshot)
+	material, err := contextpack.Read(prepared[0].Content, "full", "")
+	var packet struct {
+		Capture json.RawMessage `json:"capture"`
+	}
+	if err := json.Unmarshal(material, &packet); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := contextsnap.Decode(packet.Capture)
 	if err != nil {
 		t.Fatalf("decode prepared context snapshot: %v", err)
 	}
@@ -59,8 +69,13 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 	if snapshot.Assigner.Summary == nil || *snapshot.Assigner.Summary != "直属领导，常用简短交办" {
 		t.Fatalf("snapshot assigner.summary = %#v", snapshot.Assigner.Summary)
 	}
-	if len(snapshot.Participants) != 1 || len(snapshot.Resources) != 1 || len(snapshot.OpenTodos) != 1 || len(snapshot.OtherProjects) != 1 {
+	if len(snapshot.Participants) != 1 || len(snapshot.Resources) != 1 || len(snapshot.OtherProjects) != 1 {
 		t.Fatalf("snapshot did not freeze full M3 context: %#v", snapshot)
+	}
+	// batch.OpenTodos feeds the M3 dedup prompt but must not be frozen: M5 reads
+	// live Todos and Tasks at execution time instead.
+	if strings.Contains(string(prepared[0].Content), "旧鉴权任务") {
+		t.Fatalf("snapshot froze open todos:\n%s", prepared[0].Content)
 	}
 }
 
@@ -93,6 +108,11 @@ func TestPrepareResultsRequiresEveryConversationUnit(t *testing.T) {
 func TestExtractableMessage(t *testing.T) {
 	if extractableMessage(nilMessage("bot", "请处理", true)) {
 		t.Fatal("extractableMessage() accepted a bot message")
+	}
+	claimed := nilMessage("user", "请处理 123", true)
+	claimed.ExtractionSkipped = true
+	if extractableMessage(claimed) {
+		t.Fatal("extractableMessage() accepted a route-claimed message")
 	}
 	if extractableMessage(nilMessage("user", "[图片]", true)) {
 		t.Fatal("extractableMessage() accepted image placeholder")

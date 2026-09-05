@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,62 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestJarvisToolsResolvesRepositoryThroughSymlinkOutsideWorkingDirectory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/profile" {
+			t.Fatalf("request path = %s, want /api/profile", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"open_id":"ou_principal"}}`)
+	}))
+	defer server.Close()
+
+	repoRoot := t.TempDir()
+	scriptsDir := filepath.Join(repoRoot, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sourceScript, err := os.ReadFile(filepath.Join("..", "..", "scripts", "jarvis-tools"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetScript := filepath.Join(scriptsDir, "jarvis-tools")
+	if err := os.WriteFile(targetScript, sourceScript, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	apiBaseScript, err := os.ReadFile(filepath.Join("..", "..", "scripts", "jarvis-api-base"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scriptsDir, "jarvis-api-base"), apiBaseScript, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configDir := filepath.Join(repoRoot, "conf")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	addr := strings.TrimPrefix(server.URL, "http://")
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("server:\n  addr: "+addr+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	linkDir := t.TempDir()
+	link := filepath.Join(linkDir, "jarvis-tools")
+	if err := os.Symlink(targetScript, link); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("bash", link, "get-principal")
+	command.Dir = t.TempDir()
+	command.Env = append(command.Environ(), "JARVIS_API_BASE="+server.URL)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("jarvis-tools through symlink: %v: %s", err, output)
+	}
+	if !strings.Contains(string(output), `"open_id":"ou_principal"`) {
+		t.Fatalf("output = %s", output)
 	}
 }
 
@@ -97,8 +154,8 @@ func TestJarvisToolsGetTaskLoadsLargeRunFieldsOnlyWhenRequested(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/tasks/9":
 			fmt.Fprint(w, `{"code":0,"data":{"id":9,"title":"task"}}`)
-		case "/api/tasks/9/runs":
-			fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":1,"prompt":"secret prompt","output":"large output","status":"done"}]}}`)
+		case "/api/task-runs/1":
+			fmt.Fprint(w, `{"code":0,"data":{"id":1,"prompt":"secret prompt","output":"large output","status":"done"}}`)
 		case "/api/tasks/9/events", "/api/facts":
 			fmt.Fprint(w, `{"code":0,"data":{"items":[]}}`)
 		default:
@@ -114,7 +171,7 @@ func TestJarvisToolsGetTaskLoadsLargeRunFieldsOnlyWhenRequested(t *testing.T) {
 	if strings.Contains(out, "secret prompt") || strings.Contains(out, "large output") {
 		t.Fatalf("default get-task leaked large fields: %s", out)
 	}
-	out, err = runJarvisTools(t, server.URL, nil, "get-task", "--id", "9", "--include-prompt", "--include-run-output")
+	out, err = runJarvisTools(t, server.URL, nil, "get-task-run", "--id", "1", "--include-prompt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +195,37 @@ func TestJarvisToolsGetScheduledTaskUsesExactEndpoint(t *testing.T) {
 	}
 }
 
+func TestJarvisToolsContextReadsPreserveNumericEvidence(t *testing.T) {
+	// Envelope key order and escaped text must not affect exact data reads.
+	const data = `{"id":9,"context":{"body":{"id":9007199254740993,"decimal":0.123456789012345678901,"text":"a } , \\\"data\\\": b","new_field":[true,null,{"value":1e400}]}},"prompt":""}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"meta":{"text":"data"},"data":`+data+`,"code":0}`)
+	}))
+	defer server.Close()
+	for _, args := range [][]string{
+		{"get-task", "--id", "9"},
+		{"get-task", "--id", "9", "--context", "source"},
+		{"get-todo", "--id", "9", "--context", "full"},
+		{"get-task-run", "--id", "9", "--include-prompt"},
+	} {
+		out, err := runJarvisTools(t, server.URL, nil, args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.TrimSpace(out) != data {
+			t.Fatalf("%v changed evidence:\n%s\nwant:\n%s", args, out, data)
+		}
+	}
+}
+
 func TestJarvisToolsGetContextPassesChatAndProjectScope(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/agent-identity" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"code":0,"data":{"display_name":"Silver"}}`)
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/api/context" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
@@ -158,7 +244,8 @@ func TestJarvisToolsGetContextPassesChatAndProjectScope(t *testing.T) {
 	}))
 	defer server.Close()
 	out, err := runJarvisTools(t, server.URL, nil, "get-context", "--chat-id", "oc_runtime", "--project-id", "45")
-	if err != nil || !strings.Contains(out, `"snapshot_version":"v1"`) {
+	if err != nil || !strings.Contains(out, `"snapshot_version":"v1"`) ||
+		!strings.Contains(out, `"agent_identity":{"display_name":"Silver"}`) {
 		t.Fatalf("output = %s, error = %v", out, err)
 	}
 }
@@ -534,7 +621,8 @@ func runJarvisTools(t *testing.T, apiBase string, extraEnv []string, args ...str
 		t.Fatal(err)
 	}
 	command := exec.Command("bash", append([]string{script}, args...)...)
-	command.Env = append(command.Environ(), extraEnv...)
+	command.Env = sanitizedEnv(command.Environ(), "JARVIS_TASK_ID", "JARVIS_AGENT_STAGE")
+	command.Env = append(command.Env, extraEnv...)
 	if apiBase != "" {
 		command.Env = append(command.Env, "JARVIS_API_BASE="+apiBase)
 	}
@@ -543,4 +631,51 @@ func runJarvisTools(t *testing.T, apiBase string, extraEnv []string, args ...str
 		return string(output), fmt.Errorf("jarvis-tools %s: %w: %s", strings.Join(args, " "), err, output)
 	}
 	return string(output), nil
+}
+
+func sanitizedEnv(env []string, names ...string) []string {
+	blocked := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		blocked[name] = struct{}{}
+	}
+	clean := env[:0]
+	for _, item := range env {
+		name, _, ok := strings.Cut(item, "=")
+		if ok {
+			if _, exists := blocked[name]; exists {
+				continue
+			}
+		}
+		clean = append(clean, item)
+	}
+	return clean
+}
+
+func TestFrozenContextCLIUsesNativeMessageIDs(t *testing.T) {
+	for _, test := range []struct {
+		args             []string
+		path, key, value string
+	}{
+		{[]string{"get-task", "--id", "9", "--message-id", "om_a/b"}, "/api/tasks/9", "message_id", "om_a/b"},
+		{[]string{"get-todo", "--id", "9", "--context", "conversation"}, "/api/todos/9", "context", "conversation"},
+		{[]string{"list-tasks", "--source-message-id", "om_source"}, "/api/tasks", "source_message_id", "om_source"},
+		{[]string{"list-todos", "--source-message-id", "om_source"}, "/api/todos", "source_message_id", "om_source"},
+	} {
+		t.Run(strings.Join(test.args, "_"), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != test.path || r.URL.Query().Get(test.key) != test.value {
+					t.Errorf("unexpected URL: %s", r.URL)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"code":0,"data":{"items":[],"context":{}}}`)
+			}))
+			defer server.Close()
+			if _, err := runJarvisTools(t, server.URL, nil, test.args...); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	if _, err := runJarvisTools(t, "", nil, "get-task", "--id", "9", "--material", "source"); err == nil {
+		t.Fatal("retired material flag accepted")
+	}
 }

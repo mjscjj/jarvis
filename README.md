@@ -1,6 +1,6 @@
 # Jarvis · 主动式任务数字分身
 
-Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞书消息和外部线索中保留原始证据，抽取 Todo，并由执行 Agent 判断是否值得推进、调用工具完成工作、处理等待与审批并留下结果。
+Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞书消息和外部线索中保留原始证据，抽取 Todo，并由执行 Agent 判断是否值得推进、调用工具完成工作、处理等待、需要时在飞书上问你一句，并留下结果。
 
 系统另有两类后台 Agent：factengine 以持续世界建模为主要任务；主动巡视默认每小时读取世界模型、看护未闭环工作，并可在调查过程中顺手维护明确变化。任何需要改变外部世界的动作都只创建 Task，交给强 M5 执行。
 
@@ -14,8 +14,11 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 ## 当前链路
 
 ```text
-飞书 IM 事件 ───────────────┐
-飞书 IM 轮询补偿 ───────────┤
+飞书 Bot WebSocket ─> CC Connect
+                       ├─ 接受的私聊/@消息 ─> route claim ─> CC 原生 Agent/session
+                       └─ 未接受的普通群消息（等待 M2 轮询）
+
+飞书 IM 轮询补偿 ───────────┐
                            ├─> M2 capture ─> message ─> M3 extract
 外部 Skill / 定时任务 ─> /api/clues ────────┘             │
                                                             ├─ observing：保留观察，不创建 Task
@@ -27,14 +30,15 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
                                                          ├─ completed -> Task=done
                                                          ├─ observing -> Task/Todo=observing
                                                          ├─ waiting   -> 到期续跑同一 Session
-                                                         ├─ needs_human
-                                                         ├─ needs_approval -> awaiting_approval
+                                                         ├─ needs_human -> 问题卡 -> 回答续跑同一 Session
                                                          └─ failed
 ```
 
 `extracted` Todo 不再经过模型判断，固化步骤只负责按 Todo ID/version 幂等创建 Task。M5 执行 Agent 持有全部语义判断权：调查真实状态、判断是否值得推进、选择动作并完成工作，或把来源 Todo 置回 `observing`。
 
-审批不是固定流水线阶段，也不由 `action_type` 决定。M5 根据即将发生的具体副作用和 [`conf/prompts/m5-approval-policy.md`](conf/prompts/m5-approval-policy.md) 判断：无需审批就直接完成，需要审批才返回完整 proposal 并停在 `awaiting_approval`。代码修改也没有类型级豁免。
+要不要先问 principal 不是固定流水线阶段，也不由 `action_type` 决定。M5 根据即将发生的具体副作用和 [`conf/prompts/m5-approval-policy.md`](conf/prompts/m5-approval-policy.md) 判断：不用问就直接完成，要问就返回 `needs_human` 加一份 `question`，停在 `needs_human` 等回答。代码修改也没有类型级豁免。
+
+请示副作用和补充信息用的是同一个机制：`question` 自带按钮、下拉、多选、输入框和链接，runtime 只负责把它渲染成飞书卡片、把回答原样交回同一个 Codex Session。答案怎么理解由那个 Session 判断，Jarvis 不解释、也没有单独的批准/驳回接口。
 
 ## 核心边界
 
@@ -44,14 +48,15 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | M2 采集 | 飞书消息事件、会话发现、增量轮询补偿、principal activity、通用 clue 落库 | `internal/capture/` |
 | M3 提取 | 证据校验、Todo 抽取/合并、上下文快照、语义去重 | `internal/extract/` |
 | Todo 固化 | extracted Todo 按 ID/version 幂等创建 Task，不调用模型 | `internal/execute/materializer.go` |
-| M5 执行 | 调查、执行、审批、等待/续跑、人工回复、结果留痕 | `internal/execute/` |
+| M5 执行 | 调查、执行、提问、等待/续跑、人工回答、结果留痕 | `internal/execute/`, `internal/cardask/` |
 | 事实引擎 | 在关键路径外从 `message`、Todo、Task 通用蒸馏长期事实，并通过通用工具按需维护当前实体、关系和资料 | `internal/factengine/` |
 | 主动巡视 | 周期读取世界模型、看护未闭环工作、按需维护内部认知、为外部行动创建普通 Task | `internal/proactive/` |
 | 会议巡扫 | 采集已结束会议和未来 24 小时日程，分别触发会后整理与逐场处理判断 | `internal/meetingsweep/` |
 | 晨间简报 | 工作日开工对齐：Skill 取证写稿，定时/手动触发，产物在本地 Markdown | `internal/morningbrief/` |
 | 定时任务 | 周期/单次 Task，以及等待 Session 的未来唤醒 | `internal/scheduledtask/`, `internal/taskcreate/` |
+| 插件 | 按需启用和授权外部来源，以定时任务 + Skill 向通用 clue 入口投递原始证据 | `internal/plugin/`, [`docs/plugin-system.md`](docs/plugin-system.md) |
 | 实时协调 | 按持久化 ID/version 推进 M3→M5，cron 负责补偿 | `internal/pipeline/` |
-| 背景事实 | 自然语言 Fact、实体间自然语言 RelationFact | `internal/progress/`, `internal/knowledge/` |
+| 背景事实 | 实体长期事实页 `summary`（整体读写、有上限、页内引用）与自然语言 Fact | `internal/background/`, `internal/progress/`, `internal/knowledge/` |
 | 后台与观测 | Overview、日报、worklog、运行状态、日志 | `internal/insight/`, `internal/dailydigest/`, `internal/observability/` |
 | Agent 配置面 | prompts、rules、Skills、shared memory、工具目录 | `internal/textstore/`, `internal/workrule/`, `internal/skill/`, `internal/sharedmem/`, `internal/toolcatalog/` |
 
@@ -59,7 +64,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 - M2 只记录事实。错误原文也是事实，错误语义和下一步交给模型判断。
 - 新来源通过 `source + Skill/定时任务 + POST /api/clues` 接入，不在 Go 中新增来源专用流水线。
-- M3 冻结 `context_snapshot`，Todo→Task→执行复用同一份；下游可补证据，但不重建一份“看起来等价”的背景。
+- M3 冻结 `Todo.content`（原始来源、冻结事实和模型说明），固化到 `Task.source_payload`；M5 默认读触发原文与现场摘要，其余按需下钻；下游可补证据，但不重建一份“看起来等价”的背景。
 - factengine 是持续世界建模的主要 Agent；主动巡视以看护和推进为主，但调查中可直接维护明确、有用的内部认知，也可把原始证据送入统一线索入口。外部行动统一创建 `source_type=proactive` 的 Task 交给 M5。
 
 各模块的当前实现详见 [`docs/modules/`](docs/README.md#当前实现)。
@@ -88,7 +93,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 `server.addr` 是本实例后端地址的唯一配置。`jarvis-server` 启动时把实际地址、绝对配置路径和本仓库工具目录导出为 `JARVIS_API_BASE`、`JARVIS_CONFIG`、`PATH`，所有 Agent 子进程继承；切换工作目录不会切换实例。通用工具、世界模型工具、OKR/周报工具统一使用 `scripts/jarvis-api-base`：先用继承的 API 地址，否则通过 `scripts/jarvis-instance` 读取选定配置（默认本仓库 `conf/config.yaml` 加运行时覆盖）。配置错误直接失败，不扫描端口。工具需要 Go 和 jq；模块工具的显式 `--base-url` 可以指定其它实例。环境变量统一为 `JARVIS_API_BASE`，不再使用 `JARVIS_BASE_URL`。
 
-启动、重建、健康检查和开发代理也读取同一配置。`scripts/jarvis-instance [CONFIG_PATH]` 输出地址与服务名；服务名按配置文件绝对路径生成，改端口不改服务名，不同配置不会共用 launchd job。Vite 默认使用后端端口加一，并代理到该后端；端口占用直接报错。两实例仍需分别配置数据库/产物路径，飞书账号、Qdrant collection 等外部资源不会因更换 HTTP 端口自动隔离。
+启动、重建、健康检查和开发代理也读取同一配置。`scripts/jarvis-instance [CONFIG_PATH]` 输出地址与服务名；服务名按配置文件绝对路径生成，改端口不改服务名，不同配置不会共用 launchd job。Vite 默认从后端相邻端口开始，并在它与 `chat.addr` 相同时再顺延一个端口；端口占用直接报错。两实例仍需分别配置数据库/产物路径，飞书账号、Qdrant collection 等外部资源不会因更换 HTTP 端口自动隔离。
 
 ## 常见修改入口
 
@@ -130,7 +135,7 @@ repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills 和�
 ./scripts/jarvis-install validate-dependencies
 ```
 
-lark-cli 使用 larksuite 官方 npm installer；traex 使用其 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装目前验收 macOS arm64。
+lark-cli 使用 larksuite 官方 npm installer；traex 使用其 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装支持 macOS arm64 与 Linux x86_64。
 
 ## 本地运行
 
@@ -227,11 +232,14 @@ curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
 ./scripts/jarvis-install validate-dependencies
 
 # 依赖门通过后登录 lark-cli 当前默认身份，再写本机 identity、绑定 CC：
-./scripts/jarvis-install configure-identity --open-id <open_id> --git-author <author>
+./scripts/jarvis-install configure-identity --agent-name <name> --open-id <open_id> --git-author <author>
 ./scripts/jarvis-install bind-cc
 ./scripts/jarvis-install validate-binding
 
-# 启动补丁版 CC Connect 后，fresh clone 安装主服务：
+`bind-cc` 会把 CC Connect Feishu `allow_from` 收紧为 Principal 本人；`validate-binding` 会拒绝缺失或通配的访问白名单。需要临时开放给其他人时，应作为当前机器的显式运行决策处理。
+
+# 启动补丁版 CC Connect 后，fresh clone 安装主服务（Linux 可用
+# scripts/install-cc-systemd.sh <独立配置路径> 避免覆盖别的 CC 项目）：
 ./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"
 ./scripts/jarvis-install install-server
 
@@ -256,13 +264,13 @@ macOS 的 `rebuild-server.sh` 会先查询正在执行的 Task；服务已注册
 | 服务 | 端口 | 用途 |
 |---|---:|---|
 | `com.bytedance.jarvis.server.<配置路径摘要>` | `server.addr`（基线 18800） | Hertz API + 生产 `web/dist` + 流水线与 cron |
-| `<实例服务名>.web` | 后端端口 + 1 | Vite 开发热更；生产不依赖 |
+| `<实例服务名>.web` | 后端相邻且避开 Chat 的端口 | Vite 开发热更；生产不依赖 |
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | HTTP / gRPC，当前只用于 Todo 语义去重 |
-| `com.cc-connect.service` | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与审批 relay |
+| `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与问题卡 relay |
 
 服务名按配置文件绝对路径生成，所以同一台机器上多份配置各自独立，改端口不改服务名。
 
-macOS：仓库没有 Web launchd 安装脚本，首次启用 18801 时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。launchd 不接受相对路径，所以 `deploy/` 只存 `*.plist.template`，安装脚本用 `scripts/render-launchd-plist.sh` 把 `__JARVIS_ROOT__` 和 `__HOME__` 展开到 `~/Library/LaunchAgents/`。仓库换目录或换用户后重新渲染即可，不需要改仓库文件。
+macOS：仓库没有 Web launchd 安装脚本，首次启用当前实例的 Vite 开发服务时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。launchd 不接受相对路径，所以 `deploy/` 只存 `*.plist.template`，安装脚本用 `scripts/render-launchd-plist.sh` 把 `__JARVIS_ROOT__` 和 `__HOME__` 展开到 `~/Library/LaunchAgents/`。仓库换目录或换用户后重新渲染即可，不需要改仓库文件。
 
 Linux：unit 文件写在 `~/.config/systemd/user/<label>.service`，每次 `jarvis-deploy` 都会按当前仓库路径重新生成，所以不要手改它——要加环境变量（例如 OKR 模块登录应用的 `JARVIS_OKR_EMILY_APP_SECRET`）请放进同名 `.d/` 目录下的 drop-in，它不会被覆盖。仓库路径、配置路径和日志路径都不支持空格或 `%`。
 
@@ -309,7 +317,7 @@ cmd/jarvis-server/   主入口与一次性 CLI
 internal/            后端模块
 web/                 React + Vite 管理后台
 conf/                基线配置、prompts、rules、Skills 配置
-deploy/              launchd plist
+deploy/              launchd / systemd 服务模板
 scripts/             安装、签名、重建、jarvis-tools
 docs/                当前架构、模块文档、提案、研究和历史索引
 data/                生成的日报/周报，以及随仓库提交的 OKR 模块数据库与资源

@@ -72,6 +72,16 @@ func StartScheduler(ctx context.Context, worker RunOnce, spec string, startupDel
 	return scheduler, nil
 }
 
+// TriggerNow pulls the next sweep forward, for example when a Feishu meeting
+// event arrives. It runs the scheduled job itself, so an in-flight sweep is
+// never doubled and the outcome is logged like any other run.
+func (s *Scheduler) TriggerNow() {
+	if s == nil {
+		return
+	}
+	go s.job.Run()
+}
+
 func (s *Scheduler) startAfter(ctx context.Context, delay time.Duration) {
 	defer close(s.started)
 	timer := time.NewTimer(delay)

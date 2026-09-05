@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Form, Input, message, Modal, Select, Space, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Form, Input, message, Modal, Select, Space, Spin, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { approveTask, createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rejectTask, rerunTask, resumeTask, supplementTask } from './api'
+import { createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Project, Task, TaskEvent, TaskStatus } from './types'
 import PageHeader from './components/PageHeader'
 import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
 import { usePageContext } from './pageContext'
 import TaskDetailModal from './tasks/TaskDetailModal'
+import { useAgentIdentity } from './agentIdentity'
 import {
   failureKindOf,
   failureMeta,
-  strField,
+  questionText,
   taskConclusion,
   taskConclusionLabel,
   taskHandlerMeta,
@@ -52,19 +53,11 @@ function HandlerTag({ task }: { task: Task }) {
 type TaskTab = 'needs_me' | 'running' | 'waiting' | 'completed' | 'failed'
 
 const tabStatuses: Record<TaskTab, TaskStatus[]> = {
-  needs_me: ['needs_human', 'awaiting_approval'],
+  needs_me: ['needs_human'],
   running: ['pending', 'executing'],
   waiting: ['waiting'],
   completed: ['done', 'observing'],
   failed: ['failed'],
-}
-
-const tabLabels: Record<TaskTab, string> = {
-  needs_me: '需要我',
-  running: 'Jarvis 处理中',
-  waiting: '等待外部',
-  completed: '已完成',
-  failed: '异常',
 }
 
 function taskTab(value: string | undefined): TaskTab {
@@ -83,7 +76,15 @@ interface CreateTaskFields {
 }
 
 export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
+  const { name: agentName } = useAgentIdentity()
   const { context, setSelection, setViewState } = usePageContext()
+  const tabLabels: Record<TaskTab, string> = {
+    needs_me: '需要我',
+    running: `${agentName} 处理中`,
+    waiting: '等待外部',
+    completed: '已完成',
+    failed: '异常',
+  }
   const [activeTab, setActiveTab] = useState<TaskTab>(() => taskTab(context.view_state.view))
   const [page, setPage] = useState(() => positivePage(context.view_state.page))
   const [total, setTotal] = useState(0)
@@ -93,6 +94,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [error, setError] = useState<string>()
   const [refreshKey, setRefreshKey] = useState(0)
   const [detail, setDetail] = useState<Task>()
+  const [detailError, setDetailError] = useState<string>()
   const [selected, setSelected] = useState<Task>()
   const [finishStatus, setFinishStatus] = useState<'done' | 'failed'>('done')
   const [summary, setSummary] = useState('')
@@ -101,17 +103,14 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [interruptingId, setInterruptingId] = useState<number>()
   const [rerunTarget, setRerunTarget] = useState<Task>()
   const [rerunNote, setRerunNote] = useState('')
-  const [rejectTarget, setRejectTarget] = useState<Task>()
-  const [rejectReason, setRejectReason] = useState('')
   const [rerunSubmitting, setRerunSubmitting] = useState(false)
-  const [approveTarget, setApproveTarget] = useState<Task>()
-  const [approveNote, setApproveNote] = useState('')
-  const [approveSubmitting, setApproveSubmitting] = useState(false)
   const [resumeTarget, setResumeTarget] = useState<Task>()
   const [resumeResponse, setResumeResponse] = useState('')
   const [resumeSubmitting, setResumeSubmitting] = useState(false)
   const [recallingMessageID, setRecallingMessageID] = useState<string>()
   const [recallError, setRecallError] = useState<string>()
+  const [runsPage, setRunsPage] = useState(1)
+  const [runsTotal, setRunsTotal] = useState(0)
   const [runs, setRuns] = useState<ExecutionRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runsError, setRunsError] = useState<string>()
@@ -155,18 +154,19 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       setDetail(undefined)
       return
     }
-    if (detail?.id === routedTaskID) return
+    setDetailError(undefined)
     const controller = new AbortController()
     getTask(routedTaskID, controller.signal)
       .then((task) => {
+        if (controller.signal.aborted) return
         setDetail(task)
         setRecallError(undefined)
       })
       .catch((cause: unknown) => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setDetailError(errorText(cause))
       })
     return () => controller.abort()
-  }, [detail?.id, routedTaskID])
+  }, [routedTaskID, refreshKey])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -192,25 +192,31 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     return () => window.clearInterval(timer)
   }, [hasExecuting, page, statuses])
 
-  // 打开详情抽屉时拉该 Task 的执行历史。detail 关闭（undefined）时清空。
+  useEffect(() => { setRunsPage(1) }, [routedTaskID])
+
+  // 历史只取当前页的索引，单次运行正文由展开操作读取。
   useEffect(() => {
-    if (!detail) { setRuns([]); setRunsError(undefined); return }
+    if (routedTaskID === null) { setRuns([]); setRunsTotal(0); setRunsError(undefined); return }
     const controller = new AbortController()
     setRunsLoading(true)
     setRunsError(undefined)
-    listTaskRuns(detail.id, controller.signal)
-      .then((result) => setRuns(result.items))
+    listTaskRuns(routedTaskID, runsPage, 20, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return
+        setRuns(result.items)
+        setRunsTotal(result.total)
+      })
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRunsError(errorText(cause))
       })
       .finally(() => { if (!controller.signal.aborted) setRunsLoading(false) })
     return () => controller.abort()
-  }, [detail, refreshKey])
+  }, [routedTaskID, runsPage, refreshKey])
 
   const openDetail = (task: Task) => {
     onDetailOpen?.()
     setRecallError(undefined)
-    setDetail(task)
+    setDetail(undefined)
     setSelection({
       kind: 'task',
       id: task.id,
@@ -271,7 +277,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       setPage(1)
       setViewState({ view: 'running', page: 1 })
       setRefreshKey((value) => value + 1)
-      message.success('任务已创建，Jarvis 正在处理')
+      message.success(`任务已创建，${agentName} 正在处理`)
     } catch (cause: unknown) {
       setCreateError(errorText(cause))
     } finally {
@@ -349,39 +355,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
     }
   }
 
-  const openApprove = (task: Task) => {
-    setApproveTarget(task)
-    setApproveNote('')
-  }
-
-  const submitApprove = async () => {
-    if (!approveTarget) return
-    const task = approveTarget
-    setApproveSubmitting(true)
-    setError(undefined)
-    try {
-      let version = task.version
-      const note = approveNote.trim()
-      if (note) {
-        const updated = await supplementTask(task.id, task.version, note)
-        version = updated.version
-      }
-      await approveTask(task.id, version)
-      markLocalExecuting(task.id)
-      setApproveTarget(undefined)
-      closeDetail()
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setApproveSubmitting(false)
-    }
-  }
-
-  const openReject = (task: Task) => {
-    setRejectTarget(task)
-    setRejectReason('')
-  }
-
   const openResume = (task: Task) => {
     setResumeTarget(task)
     setResumeResponse('')
@@ -401,23 +374,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       setError(errorText(cause))
     } finally {
       setResumeSubmitting(false)
-    }
-  }
-
-  const submitReject = async () => {
-    if (!rejectTarget) return
-    const task = rejectTarget
-    setExecutingId(task.id)
-    setError(undefined)
-    try {
-      await rejectTask(task.id, task.version, rejectReason.trim())
-      setRejectTarget(undefined)
-      closeDetail()
-      setRefreshKey((value) => value + 1)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setExecutingId(undefined)
     }
   }
 
@@ -493,10 +449,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
           return <Button size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>查看等待</Button>
         }
         if (task.status === 'needs_human') {
-          return <Button type="primary" size="small" loading={resumeSubmitting && resumeTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openResume(task) }}>回复并继续</Button>
-        }
-        if (task.status === 'awaiting_approval') {
-          return <Button type="primary" size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>审阅</Button>
+          return <Button type="primary" size="small" loading={resumeSubmitting && resumeTarget?.id === task.id} onClick={(e) => { e.stopPropagation(); openDetail(task) }}>回复并继续</Button>
         }
         if (task.status === 'done' || task.status === 'failed') {
           return <Button size="small" onClick={(e) => { e.stopPropagation(); openDetail(task) }}>{task.status === 'done' ? '查看结果' : '查看原因'}</Button>
@@ -507,7 +460,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   ]
 
   return <>
-    <PageHeader title="任务" subtitle="先处理需要你决定的事项，再查看 Jarvis 的推进、等待和历史结果">
+    <PageHeader title="任务" subtitle={`先处理需要你决定的事项，再查看 ${agentName} 的推进、等待和历史结果`}>
       <Button type="primary" onClick={openCreate}>新建任务</Button>
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
     </PageHeader>
@@ -573,14 +526,14 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       maskClosable={!createSubmitting}
     >
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-        <Alert type="info" showIcon title="创建后立即交给 Jarvis 执行；需要审批的外部操作仍会等待你确认。" />
+        <Alert type="info" showIcon title={`创建后立即交给 ${agentName} 执行；需要审批的外部操作仍会等待你确认。`} />
         {createError && <Alert type="error" showIcon title="任务创建失败" description={createError} />}
         <Form form={createForm} layout="vertical" requiredMark={false}>
           <Form.Item name="title" label="任务名称" rules={[{ required: true, whitespace: true, message: '请输入任务名称' }]}>
             <Input autoFocus placeholder="例如：检查 FactEngine 最近失败原因" />
           </Form.Item>
           <Form.Item name="instruction" label="任务要求" rules={[{ required: true, whitespace: true, message: '请输入完整任务要求' }]}>
-            <Input.TextArea rows={6} placeholder="说清楚希望 Jarvis 完成什么；相关背景和验收要求也可以直接写在这里。" />
+            <Input.TextArea rows={6} placeholder={`说清楚希望 ${agentName} 完成什么；相关背景和验收要求也可以直接写在这里。`} />
           </Form.Item>
           <Form.Item
             name="project_id"
@@ -591,7 +544,7 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
               allowClear
               showSearch
               loading={projectsLoading}
-              placeholder="不选择则由 Jarvis 根据任务内容判断"
+              placeholder={`不选择则由 ${agentName} 根据任务内容判断`}
               optionFilterProp="label"
               options={projects.map((project) => ({ value: project.id, label: project.name }))}
             />
@@ -599,16 +552,21 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         </Form>
       </Space>
     </Modal>
+    <Modal title={`Task #${routedTaskID}`} open={routedTaskID !== null && detail?.id !== routedTaskID} footer={null} onCancel={closeDetail}>
+      {detailError ? <Alert type="error" title="详情加载失败" description={detailError} action={<Button onClick={() => setRefreshKey((value) => value + 1)}>重试</Button>} /> : <Spin />}
+    </Modal>
     <TaskDetailModal
-      task={detail}
+      task={detail?.id === routedTaskID ? detail : undefined}
       runs={runs}
+      runsPage={runsPage}
+      runsTotal={runsTotal}
+      onRunsPageChange={setRunsPage}
       events={events}
       runsLoading={runsLoading}
       eventsLoading={eventsLoading}
       runsError={runsError}
       eventsError={eventsError}
       executing={detail ? executingId === detail.id : false}
-      approveSubmitting={detail ? approveSubmitting && approveTarget?.id === detail.id : false}
       resumeSubmitting={detail ? resumeSubmitting && resumeTarget?.id === detail.id : false}
       interrupting={detail ? interruptingId === detail.id : false}
       recallingMessageID={recallingMessageID}
@@ -616,8 +574,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       onRecallMessage={runRecallMessage}
       onClose={closeDetail}
       onExecute={runExecute}
-      onApprove={openApprove}
-      onReject={openReject}
       onRerun={openRerun}
       onResume={openResume}
       onInterrupt={runInterrupt}
@@ -638,26 +594,11 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
         <Alert
           type="warning"
           showIcon
-          title="Jarvis 正在等待你的回应"
-          description={resumeTarget ? strField(resumeTarget.execution_result, 'needs_followup') || '请确认或补充所需信息。' : undefined}
+          title={`${agentName} 正在等待你的回应`}
+          description={resumeTarget ? questionText(resumeTarget) || '请确认或补充所需信息。' : undefined}
         />
-        <Text type="secondary">提交后会继续原执行会话，不会重跑任务，也不会重新生成已批准产物。</Text>
+        <Text type="secondary">提交后会继续原执行会话，不会重跑任务。</Text>
         <Input.TextArea rows={4} value={resumeResponse} onChange={(event) => setResumeResponse(event.target.value)} placeholder="确认操作，或补充 Agent 请求的信息" />
-      </Space>
-    </Modal>
-    <Modal
-      zIndex={taskActionModalZIndex}
-      title={approveTarget ? `批准落地「${approveTarget.title}」` : '批准落地'}
-      open={Boolean(approveTarget)}
-      confirmLoading={approveSubmitting}
-      onOk={submitApprove}
-      onCancel={() => setApproveTarget(undefined)}
-      okText="确认批准并落地"
-    >
-      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-        <Alert type="warning" showIcon title="对外写入将真正落地" description="批准后 Jarvis 会按已审阅的方案真实写出或发送。可在下方追加落地时的补充指示（可不填）。" />
-        <Text type="secondary">可选填写补充信息/指示；留空则直接按已批准方案落地。填写后会持久保存到执行阶段补充，落地与之后重跑都会带上。</Text>
-        <Input.TextArea rows={4} value={approveNote} onChange={(event) => setApproveNote(event.target.value)} placeholder="例如：标题加上【紧急】；抄送给 B；文档先放草稿区不要直接发公告等（可不填）" />
       </Space>
     </Modal>
     <Modal
@@ -672,21 +613,6 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       <Space orientation="vertical" size={8} style={{ width: '100%' }}>
         <Text type="secondary">可选填写补充信息/指示；留空则直接重跑。填写后会持久保存，之后每次重跑都会带上。</Text>
         <Input.TextArea rows={4} value={rerunNote} onChange={(event) => setRerunNote(event.target.value)} placeholder="例如：这次改用 xxx 文档模板；标题要包含季度；只发给 A 不要发给 B 等（可不填）" />
-      </Space>
-    </Modal>
-    <Modal
-      zIndex={taskActionModalZIndex}
-      title={rejectTarget ? `驳回「${rejectTarget.title}」的方案` : '驳回方案'}
-      open={Boolean(rejectTarget)}
-      confirmLoading={Boolean(rejectTarget) && executingId === rejectTarget?.id}
-      onOk={submitReject}
-      onCancel={() => setRejectTarget(undefined)}
-      okText="确认驳回"
-      okButtonProps={{ danger: true }}
-    >
-      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-        <Text type="secondary">驳回后任务将标记为失败，不会真正写出任何内容。可填写驳回原因（可不填）；之后可重跑重新产出方案。</Text>
-        <Input.TextArea rows={4} value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} placeholder="例如：措辞不合适 / 目标群选错了 / 内容还需补充数据（可不填）" />
       </Space>
     </Modal>
   </>

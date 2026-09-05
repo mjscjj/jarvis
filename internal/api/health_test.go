@@ -91,7 +91,7 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "database down is an outage",
 			withDB:         false,
-			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
+			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, BytedCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusServiceUnavailable,
 			wantOverall:    "error",
 			wantStates:     map[string]string{"database": "error"},
@@ -99,15 +99,15 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "every dependency reachable",
 			withDB:         true,
-			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
+			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, BytedCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "ok",
-			wantStates:     map[string]string{"database": "ok", "vector_index": "ok", "lark_cli": "ok", "agent_cli": "ok"},
+			wantStates:     map[string]string{"database": "ok", "vector_index": "ok", "lark_cli": "ok", "bytedcli": "ok", "agent_cli": "ok"},
 		},
 		{
 			name:           "unresolvable cli degrades",
 			withDB:         true,
-			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: "jarvis-absent-binary", AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
+			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: "jarvis-absent-binary", BytedCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "degraded",
 			wantStates:     map[string]string{"database": "ok", "lark_cli": "error", "agent_cli": "ok"},
@@ -115,7 +115,7 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "unreachable vector store degrades",
 			withDB:         true,
-			targets:        ReadinessTargets{VectorIndex: stubVectorIndex{err: fmt.Errorf("connection refused")}, LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
+			targets:        ReadinessTargets{VectorIndex: stubVectorIndex{err: fmt.Errorf("connection refused")}, LarkCLIBin: resolvableBin, BytedCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "degraded",
 			wantStates:     map[string]string{"database": "ok", "vector_index": "error"},
@@ -123,7 +123,7 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "disabled vector store is not degraded",
 			withDB:         true,
-			targets:        ReadinessTargets{LarkCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
+			targets:        ReadinessTargets{LarkCLIBin: resolvableBin, BytedCLIBin: resolvableBin, AgentCLIBin: resolvableBin, LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "ok",
 			wantStates:     map[string]string{"vector_index": "disabled"},
@@ -131,7 +131,7 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 		{
 			name:           "unconfigured cli degrades",
 			withDB:         true,
-			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, AgentCLIBin: "  ", LarkIdentity: healthyIdentity},
+			targets:        ReadinessTargets{VectorIndex: healthyIndex, LarkCLIBin: resolvableBin, BytedCLIBin: resolvableBin, AgentCLIBin: "  ", LarkIdentity: healthyIdentity},
 			wantStatusCode: consts.StatusOK,
 			wantOverall:    "degraded",
 			wantStates:     map[string]string{"agent_cli": "error"},
@@ -217,7 +217,7 @@ func TestHealthIgnoresExternalDependencies(t *testing.T) {
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
 	}
-	if regexp.MustCompile(`vector_index|lark_cli|agent_cli`).Match(response.Body()) {
+	if regexp.MustCompile(`vector_index|lark_cli|bytedcli|agent_cli`).Match(response.Body()) {
 		t.Fatalf("/healthz leaked an external dependency into the liveness contract: %s", response.Body())
 	}
 }

@@ -13,7 +13,7 @@ import (
 // rejected), and the round-trip JSON stays one flat object per effect for the UI.
 func TestParseEffectsOpenPayload(t *testing.T) {
 	msg := `{
-	  "outcome":"completed","summary":"done","failure_reason":"","needs_followup":"",
+	  "outcome":"completed","summary":"done","failure_reason":"",
 	  "enrichments":[],
 	  "effects":[
 	    {"kind":"feishu_message","title":"已通知张三","url":"https://feishu.cn/x","target":"研发群","message_id":"om_123"},
@@ -49,7 +49,7 @@ func TestParseEffectsOpenPayload(t *testing.T) {
 // metadata travels in the "extra" string as JSON text and is expanded into Extra.
 func TestParseEffectsExtraJSONString(t *testing.T) {
 	msg := `{
-	  "outcome":"completed","summary":"done","failure_reason":"","needs_followup":"",
+	  "outcome":"completed","summary":"done","failure_reason":"",
 	  "enrichments":[],
 	  "effects":[
 	    {"kind":"feishu_message","title":"已通知","extra":"{\"message_id\":\"om_123\",\"chat_name\":\"研发群\"}"}
@@ -108,7 +108,7 @@ func TestEffectsSchemaForbidsAdditionalProperties(t *testing.T) {
 // dedupe against and pinged the group again (Task #82).
 func TestRecordAgentVerdictKeepsEffectsWithOutput(t *testing.T) {
 	verdict, err := parseExecutionResult(`{
-	  "outcome":"waiting","summary":"已在群里发布收口结论","failure_reason":"","needs_followup":"",
+	  "outcome":"waiting","summary":"已在群里发布收口结论","failure_reason":"",
 	  "enrichments":[],
 	  "effects":[{"kind":"feishu_message","title":"收口结论","extra":"{\"message_id\":\"om_123\"}"}],
 	  "waiting":{"wake_at":"2026-07-27T17:15:00+08:00","reason":"等证据","scheduled_task_id":11}

@@ -93,13 +93,61 @@ type Candidate struct {
 	// is entitled to pick between: extracted (needs an action, so it becomes a
 	// Task) and observing (worth remembering, nobody acts on it). M3 must never
 	// be able to reach downstream statuses directly.
-	Status           string   `json:"status"`
-	Title            string   `json:"title"`
-	Target           string   `json:"target"`
-	ProjectHint      *string  `json:"project_hint"`
-	SourceMessageIDs []string `json:"source_message_ids"`
-	SourceQuote      string   `json:"source_quote"`
-	Payload          string   `json:"payload"`
+	Status           string          `json:"status"`
+	Title            string          `json:"title"`
+	Target           string          `json:"target"`
+	ProjectHint      *string         `json:"project_hint"`
+	SourceMessageIDs []string        `json:"source_message_ids"`
+	SourceQuote      string          `json:"source_quote"`
+	Payload          string          `json:"payload"`
+	Annotation       json.RawMessage `json:"annotation,omitempty"`
+	raw              map[string]json.RawMessage
+}
+
+// Preserve unknown model semantics while projecting only admission controls.
+func (c *Candidate) UnmarshalJSON(raw []byte) error {
+	type projection Candidate
+	var p projection
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return err
+	}
+	// Strict provider schemas carry open semantic JSON as a string. Decode the
+	// transport once; internal candidates and persisted packets use the object.
+	if len(p.Annotation) > 0 {
+		content := bytes.TrimSpace(p.Annotation)
+		if len(content) > 0 && content[0] == '"' {
+			var text string
+			if err := json.Unmarshal(content, &text); err != nil {
+				return err
+			}
+			content = bytes.TrimSpace([]byte(text))
+		}
+		if len(content) == 0 || content[0] != '{' || !json.Valid(content) {
+			return fmt.Errorf("%w: annotation must encode a JSON object", ErrInvalidCandidate)
+		}
+		p.Annotation = content
+	}
+	*c = Candidate(p)
+	return json.Unmarshal(raw, &c.raw)
+}
+func (c Candidate) MarshalJSON() ([]byte, error) {
+	type projection Candidate
+	b, err := json.Marshal(projection(c))
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]json.RawMessage{}
+	for k, v := range c.raw {
+		result[k] = v
+	}
+	var projected map[string]json.RawMessage
+	if err := json.Unmarshal(b, &projected); err != nil {
+		return nil, err
+	}
+	for k, v := range projected {
+		result[k] = v
+	}
+	return json.Marshal(result)
 }
 
 type ExtractionResult struct {

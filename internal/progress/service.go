@@ -20,15 +20,9 @@ var (
 	ErrNotFound     = errors.New("progress event parent not found")
 )
 
-// FactSourceRollup marks a fact written by the daily compression job. Detail
-// facts keep their original source_kind (or NULL); the prompt loads the two
-// layers separately via SourceKind / ExcludeSourceKind.
-const FactSourceRollup = "rollup"
-
 var taskEventTypes = map[string]struct{}{
-	"created": {}, "execution_started": {}, "approval_requested": {},
-	"approval_granted": {}, "approval_rejected": {}, "rerun_requested": {},
-	"reapply_started": {}, "supplemented": {}, "execution_succeeded": {},
+	"created": {}, "execution_started": {}, "rerun_requested": {},
+	"supplemented": {}, "execution_succeeded": {},
 	"execution_failed": {}, "execution_observing": {}, "execution_interrupted": {},
 	"stale_failed": {}, "stale_requeued": {}, "snapshot_imported": {}, "updated": {}, "closed": {},
 	"feishu_message_recalled": {},
@@ -41,7 +35,7 @@ var actorTypes = map[string]struct{}{
 }
 
 var taskStatuses = map[string]struct{}{
-	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "awaiting_approval": {}, "done": {}, "failed": {}, "observing": {},
+	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "done": {}, "failed": {}, "observing": {},
 }
 
 type TaskEventInput struct {
@@ -70,19 +64,14 @@ type FactInput struct {
 // FactFilter selects facts for one subject, optionally narrowed to a half-open
 // time window. Callers own the timezone: to read a natural day, pass that day's
 // local midnight and the next one. Limit caps the newest-first result.
-//
-// SourceKind restricts to facts written by one producer; ExcludeSourceKind
-// removes one. They exist because the prompt needs the two layers separately:
-// today's detail is "everything except the rollup", the previous day is
-// "the rollup only".
+// SourceKind restricts to facts written by one producer.
 type FactFilter struct {
-	SubjectType       string
-	SubjectID         uint64
-	From              *time.Time
-	Until             *time.Time
-	Limit             int
-	SourceKind        *string
-	ExcludeSourceKind *string
+	SubjectType string
+	SubjectID   uint64
+	From        *time.Time
+	Until       *time.Time
+	Limit       int
+	SourceKind  *string
 }
 
 type TaskEventView struct {
@@ -227,10 +216,6 @@ func (s *Service) ListFacts(ctx context.Context, filter FactFilter) ([]FactView,
 	if filter.SourceKind != nil {
 		query = query.Where("source_kind = ?", strings.TrimSpace(*filter.SourceKind))
 	}
-	if filter.ExcludeSourceKind != nil {
-		// source_kind is nullable; excluding a value must still return NULL rows.
-		query = query.Where("(source_kind IS NULL OR source_kind <> ?)", strings.TrimSpace(*filter.ExcludeSourceKind))
-	}
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
 	}
@@ -259,9 +244,6 @@ func (s *Service) CountFacts(ctx context.Context, filter FactFilter) (int, error
 	}
 	if filter.SourceKind != nil {
 		query = query.Where("source_kind = ?", strings.TrimSpace(*filter.SourceKind))
-	}
-	if filter.ExcludeSourceKind != nil {
-		query = query.Where("(source_kind IS NULL OR source_kind <> ?)", strings.TrimSpace(*filter.ExcludeSourceKind))
 	}
 	var n int64
 	if err := query.Count(&n).Error; err != nil {

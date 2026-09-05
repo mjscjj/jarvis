@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -26,6 +27,11 @@ type Options struct {
 	// ExportSecureLabel 是导出文档时打上的密级标签名，取值来自租户策略。
 	// 只有 CreateMarkdownDocument 用它，其它调用留空即可。
 	ExportSecureLabel string
+	// Timezone fixes the process timezone used by lark-cli when it renders
+	// timestamps without an offset. Callers parsing those timestamps must use
+	// the same location; inheriting the host timezone makes persisted epochs
+	// change when the same Jarvis installation moves between machines.
+	Timezone string
 }
 
 // Client is safe for concurrent use by all capture jobs.
@@ -35,6 +41,7 @@ type Client struct {
 	sem               chan struct{}
 	timeout           time.Duration
 	exportSecureLabel string
+	timezone          string
 }
 
 // APIError is the structured error returned in a lark-cli {ok:false} envelope.
@@ -88,6 +95,12 @@ func New(opts Options) (*Client, error) {
 	if opts.Timeout <= 0 {
 		return nil, fmt.Errorf("lark-cli timeout must be positive")
 	}
+	if strings.TrimSpace(opts.Timezone) == "" {
+		return nil, fmt.Errorf("lark-cli timezone is empty")
+	}
+	if _, err := time.LoadLocation(opts.Timezone); err != nil {
+		return nil, fmt.Errorf("load lark-cli timezone %q: %w", opts.Timezone, err)
+	}
 
 	bin, err := exec.LookPath(opts.Bin)
 	if err != nil {
@@ -99,6 +112,7 @@ func New(opts Options) (*Client, error) {
 		sem:               make(chan struct{}, opts.Concurrency),
 		timeout:           opts.Timeout,
 		exportSecureLabel: strings.TrimSpace(opts.ExportSecureLabel),
+		timezone:          opts.Timezone,
 	}, nil
 }
 
@@ -312,6 +326,7 @@ func (c *Client) runRaw(ctx context.Context, input string, formatArgs []string, 
 	if input != "" {
 		cmd.Stdin = strings.NewReader(input)
 	}
+	cmd.Env = environmentWithTimezone(c.timezone)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -539,4 +554,16 @@ func (c *Client) setTenantEditableDocumentPermission(ctx context.Context, docume
 		return fmt.Errorf("document public permission verification failed: got link_share_entity=%q, want %q", got, tenantEditableLinkShareEntity)
 	}
 	return nil
+}
+
+func environmentWithTimezone(timezone string) []string {
+	environment := os.Environ()
+	result := make([]string, 0, len(environment)+1)
+	for _, variable := range environment {
+		if strings.HasPrefix(variable, "TZ=") {
+			continue
+		}
+		result = append(result, variable)
+	}
+	return append(result, "TZ="+timezone)
 }

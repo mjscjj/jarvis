@@ -11,6 +11,8 @@ import (
 )
 
 const runtimeSettingsTestYAML = `
+identity:
+  display_name: "Jarvis"
 server:
   addr: "0.0.0.0:18800"
   web_root: "web/dist"
@@ -19,11 +21,9 @@ sqlite:
 factengine:
   enabled: true
   schedule: "@every 15m"
-  rollup_schedule: "0 2 * * *"
   bin: "traex"
   model: "fixture-fact-model"
   reasoning_effort: "medium"
-  rollup_model: "fixture-rollup-model"
   sandbox: "danger-full-access"
   timeout_sec: 300
   batch_limit: 200
@@ -141,8 +141,6 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
 server:
   addr: 0.0.0.0:19902
-sqlite:
-  path: preview.db
 card_approval:
   enabled: true
   principal_open_id: ou_principal
@@ -180,6 +178,7 @@ chat:
 	}
 
 	input := view.Settings
+	input.AgentDisplayName = "小贾"
 	input.AnalysisCLI = "codex"
 	input.AnalysisModel = "new-analysis-model"
 	input.ExecuteCLI = "traex"
@@ -204,7 +203,7 @@ chat:
 	if !reflect.DeepEqual(updated.Settings, input) {
 		t.Fatalf("round-trip settings mismatch:\nupdated=%#v\ninput=%#v", updated.Settings, input)
 	}
-	if updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" || updated.Settings.ChatCLI != "traex" ||
+	if updated.Settings.AgentDisplayName != "小贾" || updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" || updated.Settings.ChatCLI != "traex" ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
 		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
 		updated.Settings.ProactiveSchedule != "@every 2h" || updated.Settings.ProactiveStartupDelaySeconds != 180 ||
@@ -226,7 +225,7 @@ chat:
 	if err != nil {
 		t.Fatalf("Load() after update error = %v", err)
 	}
-	if reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" || reloaded.Chat.Bin != "traex" ||
+	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" || reloaded.Chat.Bin != "traex" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
 		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
@@ -243,7 +242,7 @@ chat:
 		reloaded.DailyDigest.GitAuthor != "initialized@example.com" {
 		t.Fatalf("initialization identity config was not preserved: extract=%q lark=%#v dailydigest=%#v", reloaded.Extract.PrincipalOpenID, reloaded.LarkCLI, reloaded.DailyDigest)
 	}
-	if reloaded.Server.Addr != "0.0.0.0:19902" || reloaded.SQLite.Path != "preview.db" ||
+	if reloaded.Server.Addr != "0.0.0.0:19902" || reloaded.SQLite.Path != "var/jarvis.db" ||
 		reloaded.Chat.Addr != "0.0.0.0:19903" || reloaded.Chat.HistoryDir != "/tmp/preserved-chat-history" {
 		t.Fatalf("deployment config was not preserved: server=%#v sqlite=%#v chat=%#v", reloaded.Server, reloaded.SQLite, reloaded.Chat)
 	}

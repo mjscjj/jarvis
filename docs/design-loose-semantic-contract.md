@@ -134,9 +134,9 @@ M3 的 `payload` 当前定义为非空文本，自然语言或 JSON 文本均可
 
 - `outcome`: `completed | observing | waiting | needs_human | failed`
 - `waiting`: 只有等待唤醒时使用，必须严格。
-- `proposal`: 只有外部写入审批时使用，`action/target/artifact` 必须严格。
+- `question`: 只有停下来问 principal 时使用，`title` 和至少一个按钮必须存在，其余由模型自由填写。
 
-`awaiting_approval` 是 Task 状态，不是 Codex `outcome`；它由执行结果中的 `needs_approval=true` 和合法 proposal 推导。
+`needs_human` 既是 Codex `outcome` 也是 Task 状态；它必须携带一份可回答的 `question`，请示副作用和补充信息共用这一个出口。
 
 宽松字段：
 
@@ -196,7 +196,7 @@ TodoEvent / TaskEvent：
 
 - 事件只记录状态变化、actor、时间和宽松 detail。
 - 状态事件不重复复制完整 context snapshot。
-- Observation、Proposal 等模型产物必须落在不可变 artifact/event 中并保存该次完整 payload。
+- Observation、Question 等模型产物必须落在不可变 artifact/event 中并保存该次完整 payload。
 - 工具调用 trace 单独保存为运行观测数据，不混入语义 payload；需要给后续模型时，以 `evidence` block 投影必要结论和引用。
 
 ## 实施顺序

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/contextpack"
 	"jarvis/internal/domain"
 
 	"gorm.io/gorm"
@@ -237,9 +238,13 @@ func (s *GORMStore) TodoUnits(ctx context.Context, cursor uint64, limit int, opt
 		if row.Todo == nil {
 			return nil, 0, fmt.Errorf("todo event id=%d references missing todo id=%d", row.ID, row.TodoID)
 		}
+		source, err := contextpack.Source(row.Todo.Content)
+		if err != nil {
+			return nil, 0, fmt.Errorf("read Todo %d admission: %w", row.Todo.ID, err)
+		}
 		material := todoMaterial{
 			Event:    projectTodoEvent(row),
-			Result:   projectTodoResult(row.Todo),
+			Result:   projectTodoResult(row.Todo, source),
 			subjects: todoSubjects(row.Todo),
 		}
 		size, err := jsonMaterialSize(material)
@@ -344,14 +349,14 @@ type todoEventMaterial struct {
 }
 
 type todoResultMaterial struct {
-	ID               uint64          `json:"id"`
-	Title            string          `json:"title"`
-	Status           string          `json:"status"`
-	ExtractionResult json.RawMessage `json:"extraction_result,omitempty"`
-	Resolution       json.RawMessage `json:"resolution,omitempty"`
-	ProjectID        *uint64         `json:"project_id,omitempty"`
-	GroupID          *uint64         `json:"group_id,omitempty"`
-	UpdatedAt        time.Time       `json:"updated_at"`
+	ID         uint64          `json:"id"`
+	Title      string          `json:"title"`
+	Status     string          `json:"status"`
+	Content    json.RawMessage `json:"content,omitempty"`
+	Resolution json.RawMessage `json:"resolution,omitempty"`
+	ProjectID  *uint64         `json:"project_id,omitempty"`
+	GroupID    *uint64         `json:"group_id,omitempty"`
+	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
 type taskMaterial struct {
@@ -400,12 +405,12 @@ func projectTodoEvent(event domain.TodoEvent) todoEventMaterial {
 	}
 }
 
-func projectTodoResult(todo *domain.Todo) todoResultMaterial {
+func projectTodoResult(todo *domain.Todo, source json.RawMessage) todoResultMaterial {
 	return todoResultMaterial{
 		ID: todo.ID, Title: todo.Title, Status: todo.Status,
-		ExtractionResult: json.RawMessage(todo.ExtractionResult),
-		Resolution:       json.RawMessage(todo.Resolution),
-		ProjectID:        todo.ProjectID, GroupID: todo.GroupID, UpdatedAt: todo.UpdatedAt,
+		Content:    source,
+		Resolution: json.RawMessage(todo.Resolution),
+		ProjectID:  todo.ProjectID, GroupID: todo.GroupID, UpdatedAt: todo.UpdatedAt,
 	}
 }
 

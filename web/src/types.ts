@@ -78,7 +78,6 @@ export interface Todo {
   description: string
   action_type: ActionType
   target: string
-  context: string
   open_questions: string[] | null
   commitment_strength: 'firm' | 'tentative' | 'mentioned'
   source_message_ids: string[]
@@ -96,7 +95,7 @@ export interface Todo {
   group: TodoGroup | null
   project: TodoProject | null
   resolution: Resolution | null
-  context_snapshot: ContextSnapshot | null
+  content: Record<string, unknown> | null
 }
 
 export interface TodoList {
@@ -117,26 +116,23 @@ export interface TodoQuery {
 // observing is terminal like done/failed: M5 investigated and found the matter
 // real but asking nothing of anyone, so it changed nothing and nothing went
 // wrong. The originating clue goes back to observing with it.
-export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'needs_human' | 'awaiting_approval' | 'done' | 'failed' | 'observing'
+export type TaskStatus = 'pending' | 'executing' | 'waiting' | 'needs_human' | 'done' | 'failed' | 'observing'
 
-// TaskProposal is the controlled side effect Codex prepared during execution,
-// awaiting human approval. It is stored in execution_result while the Task sits
-// at awaiting_approval (stage="proposal").
-export interface TaskProposal {
-  action: string
-  target: string
-  artifact: string
-}
-
-// ProposalResult is the shape of execution_result while a Task is awaiting_approval.
-export interface ProposalResult {
-  stage: 'proposal'
-  action_type?: string
-  summary?: string
-  proposal: TaskProposal
-  needs_followup?: string
-  enrichments?: RunEnrichment[]
-  codex_session_id?: string
+// TaskQuestion is what M5 asked the principal before parking at needs_human,
+// including when it is asking permission for a side effect. It is stored in
+// execution_result and rendered as a Feishu card; the backend shows the same
+// text so an answer can also be given here.
+export interface TaskQuestion {
+  title: string
+  body?: string
+  fields?: Array<{
+    type: 'button' | 'select' | 'multi_select' | 'input' | 'link'
+    name: string
+    label: string
+    options?: string[]
+    url?: string
+    style?: string
+  }>
 }
 
 export interface Task {
@@ -145,7 +141,6 @@ export interface Task {
   title: string
   action_type: ActionType
   target: string
-  background: Record<string, unknown>
   source_payload: unknown
   status: TaskStatus
   execution_result: Record<string, unknown> | null
@@ -230,12 +225,12 @@ export interface Effect {
 }
 
 // RunOutput 是 execution_run.output 的强类型：codex 执行结束时输出的结构化裁决。
-// summary 已单独存在 ExecutionRun.summary，这里主要用 needs_followup 与 enrichments。
+// summary 已单独存在 ExecutionRun.summary，这里主要用 question 与 enrichments。
 export interface RunOutput {
   outcome?: 'completed' | 'observing' | 'waiting' | 'needs_human' | 'failed'
   summary?: string
   failure_reason?: string
-  needs_followup?: string
+  question?: TaskQuestion | null
   enrichments?: RunEnrichment[]
   effects?: Effect[]
   waiting?: {
@@ -268,6 +263,9 @@ export interface ExecutionRun {
 }
 
 export interface ExecutionRunList {
+  total: number
+  page: number
+  page_size: number
   items: ExecutionRun[]
 }
 
@@ -315,16 +313,11 @@ export interface LabeledFact extends Fact {
   subject_label: string
 }
 
-export type FactRollupState = 'fresh' | 'stale' | 'missing'
-
 export interface FactSubjectDay {
   subject_type: string
   subject_id: number
   subject_label: string
-  rollup: LabeledFact | null
-  rollup_state: FactRollupState
   detail_count: number
-  late_detail_count: number
   latest_occurred_at: string
 }
 
@@ -355,7 +348,6 @@ export interface FactSearchQuery {
   subjectType?: string
   subjectId?: number
   sourceKind?: string
-  layer?: 'all' | 'detail' | 'rollup'
   page?: number
   pageSize?: number
 }
@@ -1050,6 +1042,7 @@ export type ChatCLI = AgentCLI | 'cursor-agent'
 export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 export interface RuntimeSettings {
+  agent_display_name: string
   analysis_cli: AgentCLI
   analysis_model: string
   analysis_timeout_seconds: number
@@ -1102,10 +1095,8 @@ export interface RuntimeSettings {
 
   fact_engine_enabled: boolean
   fact_engine_schedule: string
-  fact_engine_rollup_schedule: string
   fact_engine_model: string
   fact_engine_reasoning_effort: ReasoningEffort
-  fact_engine_rollup_model: string
   fact_engine_timeout_seconds: number
   fact_engine_batch_limit: number
   fact_engine_max_material_chars: number
@@ -1154,12 +1145,62 @@ export interface AppModuleInput {
   is_enabled: boolean
 }
 
+export interface AgentIdentity {
+  display_name: string
+}
+
+export interface AuthUser {
+  username: string
+  email: string
+}
+
+export interface AuthView {
+  status: 'authenticated' | 'unauthenticated' | 'pending'
+  user?: AuthUser
+  verification_url?: string
+  user_code?: string
+  flow_id?: string
+}
+
+export type PluginState = 'disabled' | 'needs_auth' | 'ready' | 'running' | 'failed'
+export type PluginAuthorizationState = 'authorized' | 'required' | 'unavailable' | 'pending' | 'failed'
+
+export interface PluginAuthorization {
+  status: PluginAuthorizationState
+  verification_url: string | null
+  user_code: string | null
+  flow_id: string | null
+  error: string | null
+}
+
+export interface Plugin {
+  id: string
+  name: string
+  description: string
+  source: string
+  collector_skill: string
+  permissions: string[]
+  interval_minutes: number
+  enabled: boolean
+  revision: number
+  config: Record<string, unknown>
+  state: PluginState
+  authorization: PluginAuthorization
+  scheduled_task_id: number | null
+  last_task_id: number | null
+  last_run_status: string | null
+  last_error: string | null
+  last_finished_at: string | null
+  next_run_at: string | null
+  clue_count: number
+}
+
 // --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---
 
 // PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。
 // 由各页面写入 PageContext（React Context），发送对话时随请求带给后端注入 prompt。
 export interface PageContext {
-  // 当前左侧导航 key：overview/todos/tasks/scheduled-tasks/background/okr/settings/progress/debug
+  // 当前左侧导航 key；内置模块（如 okr）与插件页也使用同一上下文协议。
   active_key: string
   // 当前选中项的可读摘要（如 "Todo #12 修复登录超时"）；无选中则 null
   selection: PageSelection | null

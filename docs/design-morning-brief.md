@@ -268,7 +268,7 @@ Agent 综合以下信号判断今日结果，不把它们固化成 Go 枚举或�
 `get-principal`、`list-projects`、`list-tasks --status ...`、`list-todos`、`get-task`、
 `list-scheduled-tasks`、`list-facts`、`list-relations`、`query-messages`、`get-context`。
 
-重点查当前未闭环状态：`awaiting_approval`、`needs_human`、`waiting`、`executing`，以及
+重点查当前未闭环状态：`needs_human`、`waiting`、`executing`，以及
 已到恢复时间的等待项。必须读当前状态，不能拿历史失败当成今天仍然有效的风险。
 
 ### 5.2 飞书（`lark-cli`）

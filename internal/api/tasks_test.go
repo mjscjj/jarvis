@@ -51,13 +51,12 @@ func (f *fakeTaskService) GetTask(_ context.Context, taskID uint64) (*execute.Ta
 	return &execute.TaskView{ID: taskID, Status: "pending"}, nil
 }
 
-func (f *fakeTaskService) ListRuns(_ context.Context, taskID uint64) (*execute.RunList, error) {
+func (f *fakeTaskService) ListRuns(_ context.Context, taskID uint64, filter execute.RunFilter) (*execute.RunList, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &execute.RunList{Items: []execute.RunView{{
+	return &execute.RunList{Page: filter.Page, PageSize: filter.PageSize, Items: []execute.RunView{{
 		ID: 3, TaskID: taskID, ActionType: "code_change", Status: "succeeded",
-		Prompt: "FULL\nPROMPT",
 	}}}, nil
 }
 
@@ -106,6 +105,30 @@ func TestListTasksDefaultsToPending(t *testing.T) {
 	}
 }
 
+// TestListTasksScopeFilters covers the scopes M5 uses when it needs a wider or
+// narrower view than the default current_world block.
+func TestListTasksScopeFilters(t *testing.T) {
+	service := &fakeTaskService{}
+	h := server.New()
+	h.GET("/api/tasks", ListTasks(service))
+
+	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks?group_id=7&project_id=44", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	if service.filter.GroupID == nil || *service.filter.GroupID != 7 {
+		t.Fatalf("group filter = %#v", service.filter.GroupID)
+	}
+	if service.filter.ProjectID == nil || *service.filter.ProjectID != 44 {
+		t.Fatalf("project filter = %#v", service.filter.ProjectID)
+	}
+
+	bad := ut.PerformRequest(h.Engine, "GET", "/api/tasks?project_id=abc", nil).Result()
+	if bad.StatusCode() != consts.StatusBadRequest {
+		t.Fatalf("project_id=abc status = %d body=%s", bad.StatusCode(), bad.Body())
+	}
+}
+
 func TestListTaskRuns(t *testing.T) {
 	service := &fakeTaskService{}
 	h := server.New()
@@ -114,9 +137,37 @@ func TestListTaskRuns(t *testing.T) {
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status = %d, want 200", response.StatusCode())
 	}
-	for _, want := range []string{`"action_type":"code_change"`, `"prompt":"FULL\nPROMPT"`} {
+	for _, want := range []string{`"action_type":"code_change"`, `"page":1`, `"page_size":20`} {
 		if !bytes.Contains(response.Body(), []byte(want)) {
 			t.Fatalf("body missing %s: %s", want, response.Body())
+		}
+	}
+}
+
+func TestTaskRunReadErrors(t *testing.T) {
+	for _, tc := range []struct {
+		path   string
+		err    error
+		status int
+	}{
+		{"/api/task-runs/999", fmt.Errorf("load: %w", execute.ErrRunNotFound), 404},
+		{"/api/task-runs/0", nil, 400},
+		{"/api/task-runs/bad", nil, 400},
+		{"/api/task-runs/1", fmt.Errorf("database failed"), 500},
+	} {
+		h := server.New()
+		h.GET("/api/task-runs/:run_id", GetTaskRun(&fakeTaskService{err: tc.err}))
+		response := ut.PerformRequest(h.Engine, "GET", tc.path, nil).Result()
+		if response.StatusCode() != tc.status {
+			t.Fatalf("%s: %d %s", tc.path, response.StatusCode(), response.Body())
+		}
+	}
+	h := server.New()
+	h.GET("/api/task-runs/:run_id", GetTaskRun(&fakeTaskService{}))
+	for _, include := range []bool{false, true} {
+		response := ut.PerformRequest(h.Engine, "GET", fmt.Sprintf("/api/task-runs/1?include_prompt=%t", include), nil).Result()
+		if response.StatusCode() != 200 || bytes.Contains(response.Body(), []byte("full prompt")) != include {
+			t.Fatalf("prompt read: %s", response.Body())
 		}
 	}
 }
@@ -304,4 +355,8 @@ func TestSupplementTask(t *testing.T) {
 	if service.supplement.TaskID != 8 || service.supplement.ExpectedVersion != 1 || service.supplement.Note != "优先用季度模板" {
 		t.Fatalf("supplement input = %#v", service.supplement)
 	}
+}
+
+func (f *fakeTaskService) GetRun(_ context.Context, id uint64) (*execute.RunView, error) {
+	return &execute.RunView{ID: id, Prompt: "full prompt"}, f.err
 }

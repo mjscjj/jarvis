@@ -27,7 +27,9 @@ type fakePipelineStore struct {
 	persistedBatch ChatBatch
 	// chatMessages is the chat's full message history keyed by message_id, used
 	// to answer LoadChatMessages when the model cites evidence outside the unit.
-	chatMessages map[string]MessageContext
+	chatMessages  map[string]MessageContext
+	loadLimits    []int
+	batchForLimit func(int) *ChatBatch
 }
 
 type fakeSystemPromptReader struct{}
@@ -67,9 +69,13 @@ func extractAllChats(ctx context.Context, w *Worker) (WorkerStats, error) {
 	return stats, firstErr
 }
 
-func (f *fakePipelineStore) LoadPendingChat(_ context.Context, chatID string, _ LoadOptions) (*ChatBatch, error) {
+func (f *fakePipelineStore) LoadPendingChat(_ context.Context, chatID string, opts LoadOptions) (*ChatBatch, error) {
 	if f.loadErr != nil {
 		return nil, f.loadErr
+	}
+	f.loadLimits = append(f.loadLimits, opts.BatchMessages)
+	if f.batchForLimit != nil {
+		return f.batchForLimit(opts.BatchMessages), nil
 	}
 	for i := range f.batches {
 		if f.batches[i].Group.ChatID == chatID {
@@ -78,6 +84,50 @@ func (f *fakePipelineStore) LoadPendingChat(_ context.Context, chatID string, _ 
 		}
 	}
 	return nil, nil
+}
+
+func TestWorkerHalvesOversizedNewEvidenceBeforeCallingModel(t *testing.T) {
+	messages := make([]MessageContext, 4)
+	for i := range messages {
+		messages[i] = MessageContext{
+			DatabaseID: uint64(i + 1), MessageID: fmt.Sprintf("om_%d", i+1), ChatID: "oc_large",
+			Content: strings.Repeat("新消息", 1_500), CreateTime: int64(i + 1), IsNew: true, Extractable: true,
+		}
+	}
+	store := &fakePipelineStore{}
+	store.batchForLimit = func(limit int) *ChatBatch {
+		count := min(limit, len(messages))
+		selected := append([]MessageContext(nil), messages[:count]...)
+		return &ChatBatch{
+			Group:   GroupContext{ID: 1, ChatID: "oc_large"},
+			Units:   []ConversationUnit{{Key: "chat", Messages: selected}},
+			LastNew: selected[len(selected)-1], NewMessageCount: len(selected),
+		}
+	}
+	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{}}}
+	opts := validWorkerOptions()
+	opts.Load.BatchMessages = 4
+	opts.MaxPromptChars = 7_000
+	worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	if err != nil {
+		t.Fatalf("NewWorker() error = %v", err)
+	}
+	stats, _, err := worker.ExtractChat(context.Background(), "oc_large")
+	if err != nil {
+		t.Fatalf("ExtractChat() error = %v", err)
+	}
+	if got, want := fmt.Sprint(store.loadLimits), "[4 2 1]"; got != want {
+		t.Fatalf("load limits = %s, want %s", got, want)
+	}
+	if stats.ChatsProcessed != 1 || len(model.prompts) != 1 || store.persistCalls != 1 {
+		t.Fatalf("stats=%#v prompts=%d persists=%d", stats, len(model.prompts), store.persistCalls)
+	}
+	if store.persistedBatch.LastNew.MessageID != "om_1" || store.persistedBatch.NewMessageCount != 1 {
+		t.Fatalf("persisted batch boundary = last=%s count=%d", store.persistedBatch.LastNew.MessageID, store.persistedBatch.NewMessageCount)
+	}
+	if len(store.runFinishes) != 1 || store.runFinishes[0].MessageCount != 1 {
+		t.Fatalf("run finishes = %#v, want one-message bounded run", store.runFinishes)
+	}
 }
 
 func (f *fakePipelineStore) LoadChatMessages(_ context.Context, _ string, messageIDs []string) ([]MessageContext, error) {

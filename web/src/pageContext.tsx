@@ -27,6 +27,7 @@ const pageHashes: Record<string, string> = {
   agents: '/agents',
   todos: '/manage/clues',
   'scheduled-tasks': '/manage/automations',
+  plugins: '/plugins',
   settings: '/manage/settings',
   debug: '/manage/runtime',
 }

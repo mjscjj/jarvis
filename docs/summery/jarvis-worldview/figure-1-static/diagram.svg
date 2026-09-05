@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1050" viewBox="0 0 1920 1050">
+  <!-- White document canvas -->
+  <rect x="0" y="0" width="1920" height="1050" fill="#FFFFFF"/>
+
+  <!-- Title -->
+  <text x="74" y="42" fill="#2563EB" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12" font-weight="700" letter-spacing="2">FIG. 01</text>
+  <text x="74" y="82" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="34" font-weight="700">Jarvis 的世界观</text>
+  <text x="74" y="120" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17">世界模型是长期维护的现实投影；世界观是 Agent 在具体时刻、围绕具体目标构造出的认知切面。</text>
+  <line x1="74" y1="139" x2="1846" y2="139" stroke="#E2E8F0" stroke-width="2"/>
+
+  <!-- Left field: persistent world model -->
+  <rect x="70" y="166" width="1010" height="620" rx="28" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="2"/>
+  <text x="110" y="211" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="23" font-weight="700">长期维护的世界模型</text>
+  <text x="110" y="240" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">以 Principal 为坐标，组织真实工作世界中的人、事、物。</text>
+
+  <!-- Relationship is a dimension, not a node -->
+  <line x1="110" y1="276" x2="128" y2="276" stroke="#2563EB" stroke-width="3" stroke-linecap="round"/>
+  <text x="140" y="281" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13" font-weight="600">关系维度</text>
+  <text x="215" y="281" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">职责 · 归属 · 协作 · 引用</text>
+
+  <!-- Clean hub-and-spoke relations; no dense knowledge graph -->
+  <line x1="535" y1="490" x2="255" y2="388" stroke="#CBD5E1" stroke-width="2"/>
+  <line x1="535" y1="490" x2="535" y2="350" stroke="#CBD5E1" stroke-width="2"/>
+  <line x1="535" y1="490" x2="846" y2="388" stroke="#CBD5E1" stroke-width="2"/>
+  <line x1="535" y1="490" x2="300" y2="632" stroke="#CBD5E1" stroke-width="2"/>
+  <line x1="535" y1="490" x2="810" y2="632" stroke="#CBD5E1" stroke-width="2"/>
+
+  <!-- Person -->
+  <rect x="145" y="348" width="220" height="80" rx="18" fill="#FFFFFF" stroke="#BFDBFE" stroke-width="2"/>
+  <circle cx="176" cy="377" r="11" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/>
+  <text x="202" y="382" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">Person</text>
+  <text x="176" y="411" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">角色 · 职责 · 承诺</text>
+
+  <!-- Project, visually selected only to explain the shared cognition structure -->
+  <rect x="425" y="302" width="220" height="96" rx="20" fill="#EFF6FF" stroke="#2563EB" stroke-width="2.5"/>
+  <rect x="451" y="329" width="22" height="22" rx="5" fill="#FFFFFF" stroke="#2563EB" stroke-width="2"/>
+  <text x="493" y="346" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18" font-weight="700">Project</text>
+  <text x="451" y="377" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">目标 · 进展 · 风险</text>
+  <rect x="555" y="315" width="72" height="22" rx="11" fill="#DBEAFE"/>
+  <text x="591" y="331" text-anchor="middle" fill="#2563EB" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="11" font-weight="700">任一实体</text>
+
+  <!-- Key Matter -->
+  <rect x="730" y="348" width="232" height="80" rx="18" fill="#FFFFFF" stroke="#BFDBFE" stroke-width="2"/>
+  <circle cx="761" cy="377" r="11" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/>
+  <text x="787" y="382" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">Key Matter</text>
+  <text x="761" y="411" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">长期关注 · 尚待闭环</text>
+
+  <!-- Group -->
+  <rect x="190" y="592" width="220" height="80" rx="18" fill="#FFFFFF" stroke="#BFDBFE" stroke-width="2"/>
+  <circle cx="221" cy="621" r="11" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/>
+  <circle cx="221" cy="621" r="3" fill="#2563EB"/>
+  <text x="247" y="626" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">Group</text>
+  <text x="221" y="655" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">协作场 · 群上下文</text>
+
+  <!-- Resource -->
+  <rect x="695" y="592" width="230" height="80" rx="18" fill="#FFFFFF" stroke="#BFDBFE" stroke-width="2"/>
+  <rect x="721" y="609" width="24" height="28" rx="5" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/>
+  <line x1="727" y1="617" x2="739" y2="617" stroke="#2563EB" stroke-width="2"/>
+  <line x1="727" y1="625" x2="739" y2="625" stroke="#2563EB" stroke-width="2"/>
+  <text x="763" y="626" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">Resource</text>
+  <text x="721" y="655" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">文档 · 仓库 · 系统入口</text>
+
+  <!-- Principal is the coordinate origin, not a peer entity -->
+  <circle cx="535" cy="490" r="106" fill="#EFF6FF" stroke="#93C5FD" stroke-width="2"/>
+  <circle cx="535" cy="490" r="82" fill="#2563EB"/>
+  <circle cx="535" cy="448" r="18" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+  <path d="M498 493 C503 465 567 465 572 493" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <text x="535" y="531" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="20" font-weight="700">Principal / 我</text>
+  <text x="535" y="558" text-anchor="middle" fill="#DBEAFE" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">观察 · 价值 · 责任坐标</text>
+  <rect x="405" y="690" width="260" height="34" rx="17" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1"/>
+  <text x="535" y="712" text-anchor="middle" fill="#2563EB" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13" font-weight="600">坐标原点，不是普通实体节点</text>
+
+  <!-- Time is a dimension, not a node -->
+  <line x1="110" y1="754" x2="950" y2="754" stroke="#CBD5E1" stroke-width="1.5"/>
+  <circle cx="110" cy="754" r="5" fill="#D97706"/>
+  <circle cx="535" cy="754" r="5" fill="#2563EB"/>
+  <circle cx="950" cy="754" r="5" fill="#059669"/>
+  <text x="110" y="742" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12">过去的证据</text>
+  <text x="535" y="742" text-anchor="middle" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12">当前认知</text>
+  <text x="950" y="742" text-anchor="end" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12">未闭环行动</text>
+  <text x="535" y="776" text-anchor="middle" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13" font-weight="600">时间维度贯穿所有实体与关系</text>
+
+  <!-- Bridge: the selected entity is viewed through the same cognition structure -->
+  <polyline points="645,322 1088,322" fill="none" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="7 6"/>
+  <polygon points="1098,322 1084,314 1084,330" fill="#94A3B8"/>
+  <rect x="852" y="290" width="160" height="28" rx="14" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="932" y="309" text-anchor="middle" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12">统一认知结构</text>
+
+  <!-- Right field: target-specific cognitive slice -->
+  <rect x="1100" y="166" width="750" height="620" rx="28" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="2"/>
+  <rect x="1140" y="192" width="168" height="30" rx="15" fill="#F5F3FF" stroke="#DDD6FE" stroke-width="1"/>
+  <text x="1224" y="212" text-anchor="middle" fill="#7C3AED" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12" font-weight="700">具体时刻 · 具体目标</text>
+  <text x="1140" y="255" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="23" font-weight="700">Agent 此刻的认知切面</text>
+  <text x="1140" y="284" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">每个实体都使用同一套可解释、可追溯的认知结构。</text>
+
+  <!-- Summary: dominant current cognition -->
+  <rect x="1140" y="316" width="670" height="210" rx="22" fill="#FFFFFF" stroke="#93C5FD" stroke-width="2"/>
+  <rect x="1140" y="316" width="9" height="210" rx="4.5" fill="#2563EB"/>
+  <rect x="1178" y="350" width="50" height="50" rx="14" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <line x1="1191" y1="365" x2="1215" y2="365" stroke="#2563EB" stroke-width="2"/>
+  <line x1="1191" y1="375" x2="1215" y2="375" stroke="#2563EB" stroke-width="2"/>
+  <line x1="1191" y1="385" x2="1208" y2="385" stroke="#2563EB" stroke-width="2"/>
+  <text x="1260" y="372" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="26" font-weight="700">Summary</text>
+  <text x="1260" y="406" fill="#2563EB" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">当前认知｜现在是什么</text>
+  <line x1="1178" y1="432" x2="1770" y2="432" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="1178" y="465" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">对实体当前状态的压缩结论，是 Jarvis 此刻判断与行动的直接依据。</text>
+  <text x="1178" y="493" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">它不是材料堆积，而是基于现有证据形成的当前最佳认知。</text>
+
+  <!-- Fact: evidence shelf supporting/correcting Summary -->
+  <rect x="1140" y="592" width="420" height="132" rx="18" fill="#FFFBEB" stroke="#F59E0B" stroke-width="2"/>
+  <rect x="1140" y="592" width="8" height="132" rx="4" fill="#D97706"/>
+  <text x="1175" y="629" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="22" font-weight="700">Fact</text>
+  <text x="1175" y="659" fill="#D97706" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15" font-weight="700">现实发生过什么｜历史证据</text>
+  <text x="1175" y="687" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">按时间保留事实，支撑或纠正 Summary</text>
+  <line x1="1350" y1="592" x2="1350" y2="544" stroke="#D97706" stroke-width="2.5"/>
+  <polygon points="1350,534 1342,547 1358,547" fill="#D97706"/>
+  <text x="1367" y="565" fill="#D97706" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12">支撑 / 纠正</text>
+
+  <!-- PageRevision: intentionally secondary -->
+  <rect x="1590" y="610" width="220" height="96" rx="14" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="1612" y="641" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15" font-weight="700">PageRevision</text>
+  <text x="1612" y="666" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12">旧版 Summary · 认知如何变化</text>
+  <text x="1612" y="688" fill="#94A3B8" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="12">次级记录，不是现实事实</text>
+  <line x1="1700" y1="610" x2="1700" y2="544" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="5 5"/>
+
+  <!-- Action state: narrow and clearly outside long-lived entities -->
+  <rect x="70" y="816" width="1780" height="104" rx="22" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1.5"/>
+  <text x="108" y="853" fill="#059669" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18" font-weight="700">正在发生的行动状态</text>
+  <text x="108" y="882" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">不属于长期实体，但属于 Jarvis 对当前世界的理解</text>
+
+  <rect x="590" y="838" width="180" height="56" rx="16" fill="#FFFFFF" stroke="#34D399" stroke-width="2"/>
+  <text x="680" y="873" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">Todo</text>
+  <line x1="770" y1="866" x2="824" y2="866" stroke="#059669" stroke-width="2.5"/>
+  <polygon points="836,866 820,857 820,875" fill="#059669"/>
+  <rect x="836" y="838" width="180" height="56" rx="16" fill="#FFFFFF" stroke="#34D399" stroke-width="2"/>
+  <text x="926" y="873" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">Task</text>
+  <line x1="1016" y1="866" x2="1070" y2="866" stroke="#059669" stroke-width="2.5"/>
+  <polygon points="1082,866 1066,857 1066,875" fill="#059669"/>
+  <rect x="1082" y="838" width="240" height="56" rx="16" fill="#FFFFFF" stroke="#34D399" stroke-width="2"/>
+  <text x="1202" y="873" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">ExecutionRun</text>
+  <text x="1390" y="856" fill="#059669" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" font-weight="700">线索、任务与执行结果</text>
+  <text x="1390" y="883" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">共同描述尚未闭环的现实</text>
+
+  <!-- Definition banner: the whole point in one glance -->
+  <rect x="210" y="952" width="1500" height="62" rx="20" fill="#0F172A"/>
+  <circle cx="258" cy="983" r="8" fill="#2563EB"/>
+  <text x="286" y="990" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">实体网络</text>
+  <text x="400" y="990" fill="#94A3B8" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18">+</text>
+  <circle cx="442" cy="983" r="8" fill="#2563EB"/>
+  <text x="470" y="990" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">当前认知</text>
+  <text x="584" y="990" fill="#94A3B8" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18">+</text>
+  <circle cx="626" cy="983" r="8" fill="#D97706"/>
+  <text x="654" y="990" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">历史事实</text>
+  <text x="768" y="990" fill="#94A3B8" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18">+</text>
+  <circle cx="810" cy="983" r="8" fill="#059669"/>
+  <text x="838" y="990" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">行动状态</text>
+  <text x="966" y="990" fill="#94A3B8" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="20">=</text>
+  <text x="1010" y="990" fill="#DBEAFE" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="20" font-weight="700">Jarvis 对当前世界的可计算理解</text>
+</svg>

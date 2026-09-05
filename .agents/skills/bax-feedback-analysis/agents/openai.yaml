@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bax 反馈分析"
+  short_description: "分析 Bax 问题反馈群并生成分类清晰、可追溯的飞书报告"
+  default_prompt: "Use $bax-feedback-analysis to analyze Bax feedback topics for a specified time range and create a Feishu report."

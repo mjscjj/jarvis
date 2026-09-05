@@ -1,0 +1,207 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1200" viewBox="0 0 1920 1200">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="56%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="principal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="engine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="action" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#14B8A6"/>
+      <stop offset="100%" stop-color="#34D399"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Canvas -->
+  <rect x="0" y="0" width="1920" height="1200" fill="#FFFFFF"/>
+  <circle cx="98" cy="84" r="3" fill="#8B5CF6" fill-opacity="0.24"/>
+  <circle cx="170" cy="166" r="2" fill="#22D3EE" fill-opacity="0.28"/>
+  <circle cx="1815" cy="114" r="3" fill="#34D399" fill-opacity="0.24"/>
+  <circle cx="1770" cy="1010" r="2" fill="#8B5CF6" fill-opacity="0.24"/>
+  <circle cx="106" cy="1082" r="3" fill="#F59E0B" fill-opacity="0.24"/>
+  <path d="M70 178 H1850" stroke="#CBD5E1" stroke-width="1"/>
+
+  <!-- Header -->
+  <text x="748" y="72" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="38" font-weight="700">Jarvis</text>
+  <text x="874" y="72" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="38" font-weight="700">的持续演化世界观</text>
+  <text x="960" y="116" text-anchor="middle" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18">不是知识库，而是站在 Principal 坐标系中，对人、事、物、场及其变化形成的当前最佳认知</text>
+  <rect x="732" y="138" width="456" height="34" rx="17" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1"/>
+  <circle cx="764" cy="155" r="6" fill="#34D399"/>
+  <text x="782" y="161" fill="#334155" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">世界变化 → 更新认知 → 自主决策 → 行动 → 回写世界</text>
+
+  <!-- Section labels -->
+  <text x="205" y="230" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="22" font-weight="700">世界变化</text>
+  <text x="205" y="258" text-anchor="middle" fill="#F59E0B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" letter-spacing="2">增量证据输入</text>
+  <text x="960" y="218" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="24" font-weight="700">Agent 世界观</text>
+  <text x="960" y="246" text-anchor="middle" fill="#6366F1" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" letter-spacing="1">PRINCIPAL-CENTERED WORLD MODEL</text>
+  <text x="1690" y="230" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="22" font-weight="700">决策消费</text>
+  <text x="1690" y="258" text-anchor="middle" fill="#059669" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14" letter-spacing="2">不同阶段，不同深度</text>
+
+  <!-- Left evidence bus -->
+  <path d="M430 372 V752" stroke="#F59E0B" stroke-width="3" stroke-linecap="round" stroke-opacity="0.72"/>
+  <circle cx="430" cy="372" r="6" fill="#F59E0B"/>
+  <circle cx="430" cy="562" r="6" fill="#F59E0B"/>
+  <circle cx="430" cy="752" r="6" fill="#F59E0B"/>
+  <path d="M350 372 H430 M350 562 H430 M350 752 H430" stroke="#F59E0B" stroke-width="2" stroke-opacity="0.72"/>
+  <path d="M430 570 H514" stroke="#F59E0B" stroke-width="4"/>
+  <polygon points="514,570 498,560 498,580" fill="#F59E0B"/>
+  <text x="472" y="550" text-anchor="middle" fill="#B45309" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">新事实</text>
+
+  <!-- Evidence nodes: signal-shaped, not a grid -->
+  <circle cx="116" cy="372" r="34" fill="#FFF7ED" stroke="#F97316" stroke-width="2"/>
+  <path d="M101 362 H131 V381 H116 L107 389 V381 H101 Z" fill="none" stroke="#EA580C" stroke-width="3" stroke-linejoin="round"/>
+  <text x="166" y="367" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">Message</text>
+  <text x="166" y="393" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">消息、会议等外部世界线索</text>
+
+  <circle cx="116" cy="562" r="34" fill="#FFF7ED" stroke="#F97316" stroke-width="2"/>
+  <path d="M102 549 H130 V574 H102 Z M108 557 H124 M108 565 H119" fill="none" stroke="#EA580C" stroke-width="3" stroke-linecap="round"/>
+  <text x="166" y="557" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">Todo Event</text>
+  <text x="166" y="583" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">线索判断、观察与状态变化</text>
+
+  <circle cx="116" cy="752" r="34" fill="#FFF7ED" stroke="#F97316" stroke-width="2"/>
+  <path d="M101 741 H125 L133 752 L125 763 H101 Z" fill="none" stroke="#EA580C" stroke-width="3" stroke-linejoin="round"/>
+  <text x="166" y="739" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">Task Event</text>
+  <text x="166" y="765" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">任务进展、ExecutionRun 结果与 effects</text>
+  <text x="166" y="788" fill="#64748B" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">执行结果随 Task Event 作为证据进入</text>
+
+  <!-- World model field -->
+  <ellipse cx="960" cy="580" rx="438" ry="332" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="2"/>
+  <ellipse cx="960" cy="580" rx="394" ry="295" fill="none" stroke="#F59E0B" stroke-width="3" stroke-dasharray="10 12" stroke-opacity="0.86"/>
+  <ellipse cx="960" cy="580" rx="282" ry="206" fill="#F5F3FF" fill-opacity="0.72" stroke="#8B5CF6" stroke-width="3" stroke-opacity="0.92"/>
+  <ellipse cx="960" cy="580" rx="218" ry="154" fill="none" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="4 9"/>
+
+  <!-- Orbit labels -->
+  <rect x="556" y="278" width="286" height="38" rx="19" fill="#FFF7ED" stroke="#F59E0B" stroke-width="1.5"/>
+  <circle cx="580" cy="297" r="6" fill="#F59E0B"/>
+  <text x="596" y="303" fill="#B45309" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15" font-weight="600">Fact｜事实、证据与变化流</text>
+  <rect x="834" y="334" width="264" height="38" rx="19" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <circle cx="858" cy="353" r="6" fill="#A78BFA"/>
+  <text x="874" y="359" fill="#6D28D9" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15" font-weight="600">summary｜当前最佳认知</text>
+
+  <!-- Relation spokes -->
+  <path d="M960 580 L720 430 M960 580 L1000 320 M960 580 L1250 430 M960 580 L1270 690 M960 580 L1000 812 M960 580 L690 690" stroke="#94A3B8" stroke-width="2" stroke-dasharray="5 8"/>
+
+  <!-- Six world dimensions / long-lived entities -->
+  <polygon points="720,372 770,401 770,459 720,488 670,459 670,401" fill="#EFF6FF" stroke="#60A5FA" stroke-width="2"/>
+  <circle cx="720" cy="402" r="11" fill="none" stroke="#2563EB" stroke-width="2"/>
+  <path d="M698 432 C703 416 737 416 742 432" fill="none" stroke="#2563EB" stroke-width="2"/>
+  <text x="720" y="454" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">人</text>
+  <text x="720" y="477" text-anchor="middle" fill="#2563EB" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">Person</text>
+
+  <polygon points="1000,263 1050,292 1050,350 1000,379 950,350 950,292" fill="#F5F3FF" stroke="#A78BFA" stroke-width="2"/>
+  <path d="M981 310 H1019 V338 H981 Z M990 300 H1010" fill="none" stroke="#7C3AED" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="1000" y="357" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">事</text>
+  <text x="1000" y="396" text-anchor="middle" fill="#7C3AED" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">Project · KeyMatter</text>
+
+  <polygon points="1250,372 1300,401 1300,459 1250,488 1200,459 1200,401" fill="#ECFEFF" stroke="#22D3EE" stroke-width="2"/>
+  <path d="M1233 399 L1250 389 L1267 399 V420 L1250 430 L1233 420 Z M1250 389 V410 M1233 399 L1250 410 L1267 399" fill="none" stroke="#0891B2" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="1250" y="454" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">物</text>
+  <text x="1250" y="477" text-anchor="middle" fill="#0891B2" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">Resource</text>
+
+  <polygon points="1270,632 1320,661 1320,719 1270,748 1220,719 1220,661" fill="#ECFDF5" stroke="#34D399" stroke-width="2"/>
+  <circle cx="1270" cy="660" r="15" fill="none" stroke="#059669" stroke-width="2.5"/>
+  <circle cx="1270" cy="660" r="5" fill="#059669"/>
+  <line x1="1270" y1="675" x2="1270" y2="690" stroke="#059669" stroke-width="2.5" stroke-linecap="round"/>
+  <polygon points="1263,682 1270,694 1277,682" fill="#059669"/>
+  <text x="1270" y="721" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">场</text>
+  <text x="1270" y="742" text-anchor="middle" fill="#059669" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">Group</text>
+
+  <polygon points="1000,754 1050,783 1050,841 1000,870 950,841 950,783" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="2"/>
+  <circle cx="983" cy="792" r="9" fill="none" stroke="#7C3AED" stroke-width="2.5"/>
+  <circle cx="1017" cy="792" r="9" fill="none" stroke="#7C3AED" stroke-width="2.5"/>
+  <path d="M992 792 H1008" stroke="#7C3AED" stroke-width="3"/>
+  <text x="1000" y="827" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">关系</text>
+  <text x="1000" y="850" text-anchor="middle" fill="#7C3AED" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">引用 · 反链</text>
+
+  <polygon points="690,632 740,661 740,719 690,748 640,719 640,661" fill="#FFF7ED" stroke="#F59E0B" stroke-width="2"/>
+  <circle cx="690" cy="670" r="19" fill="none" stroke="#D97706" stroke-width="2.5"/>
+  <path d="M690 670 V658 M690 670 L701 677" stroke="#D97706" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="690" y="716" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">时间</text>
+  <text x="690" y="739" text-anchor="middle" fill="#B45309" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">Fact 时序</text>
+
+  <!-- Principal core -->
+  <circle cx="960" cy="580" r="126" fill="#2563EB" fill-opacity="0.11" stroke="#3B82F6" stroke-width="1"/>
+  <circle cx="960" cy="580" r="105" fill="url(#principal)" stroke="#C4B5FD" stroke-width="3"/>
+  <circle cx="960" cy="535" r="23" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+  <path d="M916 594 C922 559 998 559 1004 594" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <text x="960" y="628" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="24" font-weight="700">Principal</text>
+  <text x="960" y="653" text-anchor="middle" fill="#E0E7FF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">世界的中心与判断坐标系</text>
+
+  <!-- Dynamic action state -->
+  <rect x="800" y="700" width="320" height="48" rx="24" fill="#ECFDF5" stroke="#34D399" stroke-width="2"/>
+  <circle cx="826" cy="724" r="7" fill="#34D399"/>
+  <text x="844" y="730" fill="#047857" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15" font-weight="600">动态行动状态 · Todo / Task</text>
+
+  <!-- Long-lived entity index -->
+  <rect x="690" y="888" width="540" height="36" rx="18" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1"/>
+  <text x="960" y="912" text-anchor="middle" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">长期实体：principal · person · project · key_matter · group · resource</text>
+
+  <!-- FactEngine: world maintenance gate -->
+  <polygon points="838,942 868,894 1052,894 1082,942 1052,1018 868,1018" fill="url(#engine)" stroke="#FED7AA" stroke-width="2"/>
+  <rect x="881" y="905" width="158" height="34" rx="10" fill="#F97316"/>
+  <text x="960" y="929" text-anchor="middle" fill="#FFFFFF" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="20" font-weight="700">FactEngine</text>
+  <text x="960" y="960" text-anchor="middle" fill="#FFF7ED" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">新增 · 更新 · 改判 · 不写</text>
+  <text x="960" y="987" text-anchor="middle" fill="#FFEDD5" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">周期增量运行</text>
+  <path d="M960 908 V886" stroke="#F59E0B" stroke-width="3"/>
+  <polygon points="960,878 952,890 968,890" fill="#F59E0B"/>
+
+  <!-- PageRevision is explicitly separated -->
+  <rect x="526" y="924" width="286" height="76" rx="16" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="2" stroke-dasharray="7 6"/>
+  <path d="M550 949 H570 V975 H550 Z M554 943 H574 V969" fill="none" stroke="#7C3AED" stroke-width="2"/>
+  <text x="590" y="953" fill="#6D28D9" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="16" font-weight="700">PageRevision</text>
+  <text x="590" y="979" fill="#6366F1" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">认知版本轨迹，不是世界事实</text>
+  <path d="M812 962 H850" stroke="#8B5CF6" stroke-width="2" stroke-dasharray="6 6"/>
+
+  <!-- Decision bus and consumers -->
+  <path d="M1400 580 H1482" stroke="#8B5CF6" stroke-width="4"/>
+  <polygon points="1482,580 1466,570 1466,590" fill="#8B5CF6"/>
+  <path d="M1490 360 V778" stroke="#94A3B8" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="1490" cy="374" r="6" fill="#8B5CF6"/>
+  <circle cx="1490" cy="570" r="7" fill="#8B5CF6"/>
+  <circle cx="1490" cy="752" r="6" fill="#34D399"/>
+  <path d="M1490 374 H1540 M1490 570 H1540 M1490 752 H1540" stroke="#94A3B8" stroke-width="2"/>
+
+  <polygon points="1540,316 1860,316 1888,374 1860,432 1540,432 1512,374" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="2"/>
+  <circle cx="1594" cy="374" r="22" fill="#EDE9FE" stroke="#A78BFA" stroke-width="2"/>
+  <text x="1594" y="381" text-anchor="middle" fill="#6D28D9" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">M3</text>
+  <text x="1632" y="363" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">准入判断</text>
+  <text x="1632" y="391" fill="#6366F1" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">最短证据，决定准入 / 观察 / 放弃</text>
+
+  <polygon points="1540,496 1860,496 1888,570 1860,644 1540,644 1512,570" fill="#ECFDF5" stroke="#34D399" stroke-width="2"/>
+  <circle cx="1594" cy="570" r="22" fill="#D1FAE5" stroke="#34D399" stroke-width="2"/>
+  <text x="1594" y="577" text-anchor="middle" fill="#047857" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="17" font-weight="700">M5</text>
+  <text x="1632" y="535" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">深入执行</text>
+  <text x="1632" y="562" fill="#047857" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">current_world 自动上下文：</text>
+  <text x="1632" y="584" fill="#047857" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">近期 Task + 未闭环 Todo</text>
+  <text x="1632" y="610" fill="#059669" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="13">实体 summary / Fact 按需下钻</text>
+
+  <polygon points="1540,694 1860,694 1888,752 1860,810 1540,810 1512,752" fill="#ECFEFF" stroke="#22D3EE" stroke-width="2"/>
+  <circle cx="1594" cy="752" r="22" fill="#CFFAFE" stroke="#22D3EE" stroke-width="2"/>
+  <path d="M1582 752 H1606 M1594 740 V764" stroke="#0891B2" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="1632" y="741" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="19" font-weight="700">Proactive 巡视</text>
+  <text x="1632" y="769" fill="#0E7490" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">发现目标，也允许选择 NOTHING</text>
+
+  <!-- Feedback loop: action changes reality -->
+  <path d="M1680 644 V1048 H1090" fill="none" stroke="#34D399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M1090 1048 H960 V1012" fill="none" stroke="#34D399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="960,1004 950,1022 970,1022" fill="#34D399"/>
+  <rect x="1200" y="1028" width="342" height="40" rx="20" fill="#ECFDF5" stroke="#34D399" stroke-width="1.5"/>
+  <text x="1371" y="1054" text-anchor="middle" fill="#047857" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="15" font-weight="600">行动改变现实 · 结果回写世界观</text>
+
+  <!-- Bottom principle -->
+  <path d="M118 1114 H1802" stroke="#CBD5E1" stroke-width="1"/>
+  <circle cx="496" cy="1150" r="6" fill="#F59E0B"/>
+  <text x="512" y="1156" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">橙色：世界事实与变化</text>
+  <circle cx="810" cy="1150" r="6" fill="#8B5CF6"/>
+  <text x="826" y="1156" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">紫色：当前认知与判断</text>
+  <circle cx="1118" cy="1150" r="6" fill="#34D399"/>
+  <text x="1134" y="1156" fill="#475569" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="14">青绿：行动状态与闭环</text>
+  <text x="960" y="1101" text-anchor="middle" fill="#0F172A" font-family="Noto Sans SC, PingFang SC, sans-serif" font-size="18" font-weight="600">世界塑造认知，认知产生决策，决策通过行动再次改变世界</text>
+</svg>

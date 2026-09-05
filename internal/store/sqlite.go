@@ -132,10 +132,11 @@ func Migrate(db *gorm.DB) error {
 	models = append(models, domain.ProgressModels()...)
 	models = append(models, domain.FactEngineModels()...)
 	models = append(models, domain.ProactiveModels()...)
+	models = append(models, domain.PluginModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
-	return nil
+	return migrateContextContent(db)
 }
 
 func migrateActivityColumns(db *gorm.DB) error {

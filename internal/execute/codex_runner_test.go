@@ -35,7 +35,7 @@ for arg in "$@"; do
   previous="$arg"
 done
 [ -n "$output" ]
-printf '%s' '{"outcome":"completed","summary":"done","failure_reason":"","needs_followup":"","enrichments":[],"waiting":null}' > "$output"
+printf '%s' '{"outcome":"completed","summary":"done","failure_reason":"","enrichments":[],"waiting":null}' > "$output"
 printf '%s\n' '{"type":"thread.started","thread_id":"session-42"}'
 printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":20,"output_tokens":30,"reasoning_output_tokens":10}}'
 printf '%s\n' 'diagnostic stderr' >&2
@@ -165,6 +165,15 @@ printf '%s\n' 'diagnostic stderr' >&2
 	}
 }
 
+func TestCodexFailureDetailReadsStructuredError(t *testing.T) {
+	stdout := []byte("{\"type\":\"thread.started\",\"thread_id\":\"session-42\"}\n" +
+		"{\"type\":\"error\",\"message\":\"Your requests have exceeded the quota.\"}\n" +
+		"{\"type\":\"turn.failed\",\"error\":{\"message\":\"Your requests have exceeded the quota.\"}}\n")
+	if got := codexFailureDetail(stdout); got != "Your requests have exceeded the quota." {
+		t.Fatalf("codexFailureDetail() = %q", got)
+	}
+}
+
 func TestCodexRunnerInterruptKillsRunningProcess(t *testing.T) {
 	dir := t.TempDir()
 	startedPath := filepath.Join(dir, "started")
@@ -251,7 +260,7 @@ printf '%s\n' '{"type":"thread.started","thread_id":"session-7"}'
 	return binPath
 }
 
-const validExecutionResult = `{"outcome":"completed","summary":"done","failure_reason":"","needs_followup":"","enrichments":[],"effects":[],"waiting":null}`
+const validExecutionResult = `{"outcome":"completed","summary":"done","failure_reason":"","enrichments":[],"effects":[],"waiting":null}`
 
 func TestCodexRunnerResumeRewritesInvalidResultWhenSchemaFlagUnsupported(t *testing.T) {
 	dir := t.TempDir()

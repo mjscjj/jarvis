@@ -1,6 +1,7 @@
 package toolcatalog
 
 import (
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -21,6 +22,7 @@ func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
 		"start",
 		"doctor",
 		"install-lark-cli",
+		"install-bytedcli",
 		"install-traex",
 		"install-cc-connect",
 		"install-qdrant",
@@ -121,12 +123,23 @@ func TestJarvisInstallPinsPatchedCCConnectWithoutStartingIt(t *testing.T) {
 	manifest := string(manifestContent)
 	for _, want := range []string{
 		`CC_CONNECT_BASE_COMMIT="5d4c96dd12774574369e75b60084140101c9a59a"`,
-		`CC_CONNECT_PATCH_COMMIT="bb1a49954684318f817f0e7a11f33c3d18ce150a"`,
 		`CC_CONNECT_PATCH_RELATIVE_PATH="integrations/cc-connect/patches/cc-connect-v1.4.1-jarvis.patch"`,
 	} {
 		if !strings.Contains(manifest, want) {
 			t.Fatalf("CC Connect manifest missing %q", want)
 		}
+	}
+	// CC_CONNECT_PATCH_COMMIT is stamped into the binary as main.commit, so it
+	// is how a running CC Connect reports which patch it was built from. Check
+	// the invariant instead of pinning a literal: a regenerated patch left the
+	// two out of sync once, and the stamp then named a patch nobody shipped.
+	patch, err := os.ReadFile(filepath.Join(repoRoot, "integrations", "cc-connect", "patches", "cc-connect-v1.4.1-jarvis.patch"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantStamp := fmt.Sprintf(`CC_CONNECT_PATCH_COMMIT="%x"`, sha1.Sum(patch))
+	if !strings.Contains(manifest, wantStamp) {
+		t.Fatalf("CC Connect manifest missing %q; the pinned stamp does not match the shipped patch", wantStamp)
 	}
 	builderContent, err := os.ReadFile(filepath.Join(repoRoot, "scripts", "install-cc-connect.sh"))
 	if err != nil {
@@ -176,21 +189,46 @@ func TestJarvisInstallGatesServerStartOnDependencyValidation(t *testing.T) {
 	}
 }
 
+func TestRebuildServerKeepsRegistrationOwnedByDeploy(t *testing.T) {
+	scriptPath, err := filepath.Abs(filepath.Join("..", "..", "scripts", "rebuild-server.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(content)
+	taskGate := strings.Index(script, `running_tasks=$(running_task_count)`)
+	buildServer := strings.Index(script, `go build -o "$next_bin"`)
+	if taskGate < 0 || buildServer < 0 {
+		t.Fatal("rebuild-server must retain its build and executing-Task guard")
+	}
+	if !strings.Contains(script, "instance service $label is not loaded") {
+		t.Fatal("rebuild-server must direct an unregistered instance back to the deployment owner")
+	}
+	for _, forbidden := range []string{`"$script_dir/install-launchd.sh"`, "jarvis-install install-server", "install-cc-connect"} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("rebuild-server unexpectedly takes over service registration: %q", forbidden)
+		}
+	}
+}
+
 func TestJarvisInstallConfiguresIdentityThroughMachineBoundary(t *testing.T) {
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
-  *"run ./cmd/jarvis-config configure-principal"*"--open-id ou_ready --git-author ready@example.com")
-    printf '%s' '{"principal_open_id":"ou_ready","git_author":"ready@example.com"}' ;;
+  *"run ./cmd/jarvis-config configure-principal"*"--agent-name 小贾 --open-id ou_ready --git-author ready@example.com")
+    printf '%s' '{"agent_display_name":"小贾","principal_open_id":"ou_ready","git_author":"ready@example.com"}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
 esac
 `)
 	out, err := runJarvisInstall(t, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")},
-		"configure-identity", "--open-id", "ou_ready", "--git-author", "ready@example.com")
+		"configure-identity", "--agent-name", "小贾", "--open-id", "ou_ready", "--git-author", "ready@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `"principal_open_id":"ou_ready"`) {
+	if !strings.Contains(out, `"agent_display_name":"小贾"`) || !strings.Contains(out, `"principal_open_id":"ou_ready"`) {
 		t.Fatalf("configure-identity output = %s", out)
 	}
 }
@@ -222,6 +260,10 @@ if [ "$*" = "auth status --json --verify" ]; then
   printf '%s' '{"verified":true,"identities":{"bot":{"status":"ready","verified":true},"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready"}}}'
   exit 0
 fi
+if [ "$*" = "event consume card.action.trigger --as bot --dry-run" ]; then
+  printf '%s' '{"ok":true,"identity":"bot","dry_run":true,"data":{"decision":{"event_key":"card.action.trigger","identity":"bot","status":"ready","preconditions":[{"name":"credentials_available","status":"ok"},{"name":"console_event_published","status":"ok"},{"name":"scopes_granted","status":"ok"}]}}}'
+  exit 0
+fi
 printf '%s' "unexpected lark-cli args: $*" >&2
 exit 9
 `)
@@ -234,13 +276,16 @@ exit 9
 	var result struct {
 		Ready  bool `json:"ready"`
 		Checks struct {
-			Context bool `json:"agent_loads_jarvis_context_each_turn"`
+			Context       bool `json:"agent_loads_jarvis_context_each_turn"`
+			TrustedChatID bool `json:"cc_connect_injects_trusted_chat_id"`
+			CardCallback  bool `json:"card_callback_app_permission_and_event_ready"`
+			Access        bool `json:"feishu_allow_from_is_principal_only"`
 		} `json:"checks"`
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("decode bind-cc output %q: %v", out, err)
 	}
-	if !result.Ready || !result.Checks.Context {
+	if !result.Ready || !result.Checks.Context || !result.Checks.TrustedChatID || !result.Checks.CardCallback || !result.Checks.Access {
 		t.Fatalf("binding result = %#v", result)
 	}
 	content, err := os.ReadFile(ccConfigPath)
@@ -248,13 +293,68 @@ exit 9
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, want := range []string{`jarvis_approval_url = "http://127.0.0.1:19452/internal/card-approval/callback"`, `name = "keep-me"`, `name = "jarvis-codex"`, `app_id = "cli_app_ready"`, `scripts/jarvis-tools get-context`} {
+	for _, want := range []string{
+		`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`,
+		`allow_from = "ou_ready"`,
+		`mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`,
+		`agent_identity.display_name`, `overrides any different name in prior session history`, `prior_messages`,
+		`jarvis_approval_url = "http://127.0.0.1:19452/internal/card-approval/callback"`,
+		`jarvis_route_claim_url = "http://127.0.0.1:19452/internal/message-routing/claim"`,
+		`jarvis_event_relay_url = "http://127.0.0.1:19452/internal/meeting-sweep/wake"`,
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CC config missing %q:\n%s", want, text)
 		}
 	}
 	if strings.Contains(text, "--profile") {
 		t.Fatalf("CC config must use the default lark-cli identity:\n%s", text)
+	}
+
+	// Existing installations may have the old global-context prompt and no
+	// trusted chat coordinate. Rebinding must migrate that same project in
+	// place instead of requiring users to delete or duplicate it.
+	legacyText := strings.Replace(text, "inject_sender = true", "inject_sender = false", 1)
+	legacyText = strings.Replace(legacyText, "get-context --chat-id", "get-context", 1)
+	legacyText = strings.Replace(legacyText, `allow_from = "ou_ready"`, `allow_from = "*"`, 1)
+	if err := os.WriteFile(ccConfigPath, []byte(legacyText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runJarvisInstallWithInput(t, "app-secret-ready\n", []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+	}, "bind-cc", "--cc-config", ccConfigPath); err != nil {
+		t.Fatalf("rebind legacy CC config: %v", err)
+	}
+	migrated, err := os.ReadFile(ccConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migratedText := string(migrated)
+	if strings.Count(migratedText, "inject_sender = true") != 1 || strings.Contains(migratedText, "inject_sender = false") {
+		t.Fatalf("legacy CC config did not migrate inject_sender exactly once:\n%s", migratedText)
+	}
+	if !strings.Contains(migratedText, "scripts/jarvis-tools get-context --chat-id") {
+		t.Fatalf("legacy CC config did not migrate to chat-scoped context:\n%s", migratedText)
+	}
+	if strings.Count(migratedText, `allow_from = "ou_ready"`) != 1 || strings.Contains(migratedText, `allow_from = "*"`) {
+		t.Fatalf("legacy CC config did not migrate allow_from to principal-only exactly once:\n%s", migratedText)
+	}
+
+	missingAllowFromText := strings.Replace(migratedText, "allow_from = \"ou_ready\"\n", "", 1)
+	if err := os.WriteFile(ccConfigPath, []byte(missingAllowFromText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runJarvisInstallWithInput(t, "app-secret-ready\n", []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+	}, "bind-cc", "--cc-config", ccConfigPath); err != nil {
+		t.Fatalf("rebind CC config without allow_from: %v", err)
+	}
+	completed, err := os.ReadFile(ccConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedText := string(completed)
+	if strings.Count(completedText, `allow_from = "ou_ready"`) != 1 {
+		t.Fatalf("CC config without allow_from was not completed with principal-only access exactly once:\n%s", completedText)
 	}
 }
 
@@ -434,11 +534,68 @@ esac
 	}
 }
 
+func TestJarvisInstallExposesBytedCLIToLaunchd(t *testing.T) {
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	jqPath, err := exec.LookPath("jq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(jqPath, filepath.Join(binDir, "jq")); err != nil {
+		t.Fatal(err)
+	}
+	bytedCLIPath := filepath.Join(binDir, "bytedcli")
+	writeExecutable(t, bytedCLIPath, `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '%s\n' '0.137.0'
+  exit 0
+fi
+if [ "$*" = "--json auth status" ]; then
+  printf '%s\n' '{"data":{"authenticated":true}}'
+  exit 0
+fi
+exit 9
+`)
+	writeExecutable(t, filepath.Join(binDir, "npm"), "#!/bin/sh\necho unexpected npm invocation >&2\nexit 99\n")
+
+	output, err := runJarvisInstall(t, []string{
+		"PATH=" + binDir + ":/usr/bin:/bin",
+		"HOME=" + homeDir,
+	}, "install-bytedcli")
+	if err != nil {
+		t.Fatalf("install-bytedcli: %v: %s", err, output)
+	}
+	var result struct {
+		Path       string `json:"path"`
+		Version    string `json:"version"`
+		LoginReady bool   `json:"login_ready"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatal(err)
+	}
+	physicalHome, err := filepath.EvalSymlinks(homeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stablePath := filepath.Join(physicalHome, ".local", "bin", "bytedcli")
+	if result.Path != stablePath || result.Version != "0.137.0" || !result.LoginReady {
+		t.Fatalf("bytedcli install result = %#v", result)
+	}
+	target, err := os.Readlink(stablePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != bytedCLIPath {
+		t.Fatalf("stable bytedcli symlink = %q, want %q", target, bytedCLIPath)
+	}
+}
+
 func TestJarvisInstallRefusesToReplaceLoadedServer(t *testing.T) {
 	binDir := t.TempDir()
-	for _, commandName := range []string{"curl", "npm", "lark-cli", "traex"} {
+	for _, commandName := range []string{"curl", "npm", "lark-cli", "traex", "plutil"} {
 		writeExecutable(t, filepath.Join(binDir, commandName), "#!/bin/sh\nexit 0\n")
 	}
+	writeExecutable(t, filepath.Join(binDir, "uname"), "#!/bin/sh\nprintf '%s\\n' Darwin\n")
 	writeExecutable(t, filepath.Join(binDir, "go"), "#!/bin/sh\nprintf '%s\\n' '{\"api_base\":\"http://127.0.0.1:19452\",\"launchd_label\":\"com.bytedance.jarvis.server.test\"}'\n")
 	writeExecutable(t, filepath.Join(binDir, "launchctl"), "#!/bin/sh\nexit 0\n")
 
@@ -454,6 +611,7 @@ func TestJarvisInstallRefusesToReplaceLoadedServer(t *testing.T) {
 func TestJarvisInstallRefusesServerInstallWhenTraexIsNotLoggedIn(t *testing.T) {
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "launchctl"), "#!/bin/sh\nexit 1\n")
+	writeExecutable(t, filepath.Join(binDir, "systemctl"), "#!/bin/sh\nexit 1\n")
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
   *"run ./cmd/jarvis-config instance"*) printf '%s' '{"api_base":"http://127.0.0.1:19452","launchd_label":"com.bytedance.jarvis.server.test"}' ;;

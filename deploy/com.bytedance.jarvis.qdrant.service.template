@@ -1,0 +1,16 @@
+[Unit]
+Description=Jarvis Qdrant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__JARVIS_ROOT__/var/qdrant
+ExecStart=__JARVIS_ROOT__/bin/qdrant --config-path __JARVIS_ROOT__/conf/qdrant.yaml --disable-telemetry
+# always, not on-failure: an external SIGTERM exits cleanly, which on-failure
+# treats as a finished service. Stop it with systemctl, not kill.
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -61,8 +61,9 @@ func TestValidate(t *testing.T) {
 	t.Parallel()
 
 	valid := Config{
-		Server: ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
-		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
+		Identity: IdentityConfig{DisplayName: "Jarvis"},
+		Server:   ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
+		SQLite:   SQLiteConfig{Path: "var/jarvis.db"},
 		Extract: ExtractConfig{
 			Schedule:              "@every 10m",
 			Concurrency:           2,
@@ -118,6 +119,7 @@ func TestValidate(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid"},
+		{name: "agent display name", mutate: func(c *Config) { c.Identity.DisplayName = "" }, wantErr: "identity.display_name"},
 		{name: "server address", mutate: func(c *Config) { c.Server.Addr = "" }, wantErr: "server.addr"},
 		{name: "server web root", mutate: func(c *Config) { c.Server.WebRoot = "" }, wantErr: "server.web_root"},
 		{name: "server public base url host only", mutate: func(c *Config) { c.Server.PublicBaseURL = "emily.example:18802" }, wantErr: "server.public_base_url"},
@@ -190,7 +192,6 @@ func TestValidate(t *testing.T) {
 		{name: "factengine bin", mutate: func(c *Config) { c.FactEngine.Bin = "" }, wantErr: "factengine.bin"},
 		{name: "factengine model", mutate: func(c *Config) { c.FactEngine.Model = "" }, wantErr: "factengine.model"},
 		{name: "factengine reasoning", mutate: func(c *Config) { c.FactEngine.ReasoningEffort = "ultra" }, wantErr: "factengine.codex_reasoning_effort"},
-		{name: "factengine rollup model", mutate: func(c *Config) { c.FactEngine.RollupModel = "" }, wantErr: "factengine.rollup_model"},
 		{name: "factengine sandbox", mutate: func(c *Config) { c.FactEngine.Sandbox = "yolo" }, wantErr: "factengine.sandbox"},
 		{name: "factengine timeout", mutate: func(c *Config) { c.FactEngine.TimeoutSec = 0 }, wantErr: "factengine.timeout_sec"},
 		{name: "factengine batch", mutate: func(c *Config) { c.FactEngine.BatchLimit = 0 }, wantErr: "factengine.batch_limit"},
@@ -256,8 +257,9 @@ func TestValidate(t *testing.T) {
 
 func TestValidateExtractEnabled(t *testing.T) {
 	cfg := Config{
-		Server: ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
-		SQLite: SQLiteConfig{Path: "var/jarvis.db"},
+		Identity: IdentityConfig{DisplayName: "Jarvis"},
+		Server:   ServerConfig{Addr: "0.0.0.0:18800", WebRoot: "web/dist"},
+		SQLite:   SQLiteConfig{Path: "var/jarvis.db"},
 		Model: ModelConfig{
 			Model: "model", TimeoutSec: 60,
 		},
@@ -329,8 +331,8 @@ func validScheduledTaskConfig() ScheduledTaskConfig {
 
 func validFactEngineConfig() FactEngineConfig {
 	return FactEngineConfig{
-		Enabled: true, Schedule: "@every 15m", RollupSchedule: "0 2 * * *",
-		Bin: "traex", Model: "fixture-fact-model", ReasoningEffort: "medium", RollupModel: "fixture-rollup-model", Sandbox: "danger-full-access", TimeoutSec: 300,
+		Enabled: true, Schedule: "@every 15m",
+		Bin: "traex", Model: "fixture-fact-model", ReasoningEffort: "medium", Sandbox: "danger-full-access", TimeoutSec: 300,
 		BatchLimit: 200, MaxMaterialChars: 100000, WindowGapMinutes: 30, WindowMaxMessages: 40,
 	}
 }
@@ -356,5 +358,38 @@ func validMorningBriefConfig() MorningBriefConfig {
 		Enabled: true, Schedule: "30 8 * * 1-5", StartupDelaySeconds: 180,
 		Bin: "traex", Model: "gpt-5.6-sol", Sandbox: "danger-full-access",
 		ReasoningEffort: "medium", TimeoutSeconds: 600,
+	}
+}
+
+// 运行时 overlay 是本机文件，安装器、设置页和 agent 都会改写。dev2 上曾被写入
+// 一行 sqlite.path，进程从此连到一个空库：所有 Task 和消息看起来凭空消失，
+// 而空库和首次安装无法区分，故障静默了十小时。这段必须只由基线配置决定。
+func TestLoadRejectsDatabasePathInRuntimeOverride(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("sqlite:\n  path: data/jarvis.db\n"), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	if _, err := Load(configPath); err == nil {
+		t.Fatal("Load() 接受了改写数据库位置的 runtime overlay")
+	} else if !strings.Contains(err.Error(), "sqlite") {
+		t.Fatalf("Load() error = %v, 应指出被拒绝的段名", err)
+	}
+}
+
+// 拒绝只针对基线独占的段，overlay 本来承载的本机身份和设置页字段不受影响。
+func TestLoadAcceptsRuntimeOverrideWithoutBaseOnlySections(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("identity:\n  display_name: Friday\n"), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Identity.DisplayName != "Friday" {
+		t.Fatalf("identity.display_name = %q, want overlay value", cfg.Identity.DisplayName)
+	}
+	if cfg.SQLite.Path != "var/jarvis.db" {
+		t.Fatalf("sqlite.path = %q, want base config value", cfg.SQLite.Path)
 	}
 }

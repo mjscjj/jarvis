@@ -3,6 +3,7 @@ import { CloseOutlined, PaperClipOutlined, SendOutlined, StopOutlined } from '@a
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import { getChatHistory, getChatRuntimeConfig, getSignedInOpenID, isMissingChatHistoryError, resolveChatBaseURL } from './api'
+import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
 import { isOKRTab, isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS } from './okr/navigation'
 import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, PageContext } from './types'
@@ -31,6 +32,7 @@ const PAGE_LABELS: Record<string, string> = {
   okr: 'OKR',
   automation: '自动化',
   'scheduled-tasks': '自动化',
+  plugins: '插件',
   clues: '线索',
   todos: '线索',
   management: '系统设置',
@@ -48,15 +50,17 @@ const SELECTION_LABELS: Record<string, string> = {
   resource: '资料',
 }
 
-const PAGE_SUGGESTIONS: Record<string, string[]> = {
-  today: ['我现在最需要关注什么？', '帮我排一下今天的优先级', '有哪些事项正在等我决定？'],
-  workbench: ['哪些任务最需要我处理？', '帮我梳理当前的阻塞', '检查进行中的任务是否偏离目标'],
-  review: ['总结今天真正完成的事', '哪些承诺还没有闭环？', '帮我找出值得复盘的问题'],
-  memory: ['Jarvis 目前是怎么理解我的工作的？', '检查项目背景有没有过时信息', '帮我找到某个项目的关键上下文'],
-  automation: ['哪些自动化即将运行？', '检查自动化之间是否有冲突', '帮我设计一个新的自动化'],
-  weekly: ['总结当前周报的重点进展和风险', '检查哪些 KR 还需要补充', '帮我准备本周会议要点'],
-  clues: ['最近出现了哪些重要线索？', '哪些线索还在等待更多证据？', '帮我解释线索到任务的转换'],
-  system: ['检查 Jarvis 当前的关键配置', '有哪些系统异常会影响任务？', '帮我定位最近的运行问题'],
+function pageSuggestions(agentName: string): Record<string, string[]> {
+  return {
+    today: ['我现在最需要关注什么？', '帮我排一下今天的优先级', '有哪些事项正在等我决定？'],
+    workbench: ['哪些任务最需要我处理？', '帮我梳理当前的阻塞', '检查进行中的任务是否偏离目标'],
+    review: ['总结今天真正完成的事', '哪些承诺还没有闭环？', '帮我找出值得复盘的问题'],
+    memory: [`${agentName} 目前是怎么理解我的工作的？`, '检查项目背景有没有过时信息', '帮我找到某个项目的关键上下文'],
+    automation: ['哪些自动化即将运行？', '检查自动化之间是否有冲突', '帮我设计一个新的自动化'],
+    weekly: ['总结当前周报的重点进展和风险', '检查哪些 KR 还需要补充', '帮我准备本周会议要点'],
+    clues: ['最近出现了哪些重要线索？', '哪些线索还在等待更多证据？', '帮我解释线索到任务的转换'],
+    system: [`检查 ${agentName} 当前的关键配置`, '有哪些系统异常会影响任务？', '帮我定位最近的运行问题'],
+  }
 }
 
 function errorText(cause: unknown): string {
@@ -76,7 +80,7 @@ function pageGroup(context: PageContext): string {
   if (context.active_key === 'okr' && isOKRTab(context.view_state.tab) && isWeeklyWorkspaceTab(context.view_state.tab)) return 'weekly'
   if (['management', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
   const label = pageLabel(context)
-  return Object.keys(PAGE_SUGGESTIONS).find((key) => PAGE_LABELS[key] === label) ?? 'today'
+  return Object.keys(pageSuggestions('')).find((key) => PAGE_LABELS[key] === label) ?? 'today'
 }
 
 // parseSSEBlock turns one `event:\ndata:` block into {event, data}. SSE allows
@@ -110,6 +114,7 @@ function chatImageError(file: File): string | undefined {
 }
 
 export default function Chat({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { name: agentName, shortName: agentShortName } = useAgentIdentity()
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -216,8 +221,9 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         `检查这个${currentSelectionType}有没有风险或遗漏`,
       ]
     }
-    return PAGE_SUGGESTIONS[pageGroup(context)] ?? PAGE_SUGGESTIONS.today
-  }, [context, currentActionLabel, currentSelectionType])
+    const defaults = pageSuggestions(agentName)
+    return defaults[pageGroup(context)] ?? defaults.today
+  }, [agentName, context, currentActionLabel, currentSelectionType])
 
   const stop = useCallback(() => {
     if (!abortRef.current || stopping) return
@@ -387,12 +393,12 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     attachImage(images[0])
   }
 
-  return <section className="chat-panel jarvis-chat" aria-label="Jarvis 对话">
+  return <section className="chat-panel jarvis-chat" aria-label={`${agentName} 对话`}>
     <header className="chat-header">
       <div className="chat-title-row">
-        <Text strong className="chat-title">Jarvis 对话</Text>
+        <Text strong className="chat-title">{agentName} 对话</Text>
         <span className="chat-ready" aria-label="对话使用当前页面上下文并保存在本地"><span aria-hidden="true" />页面联动 · 本地记忆</span>
-        <Button type="text" size="small" className="chat-close" icon={<CloseOutlined />} aria-label="关闭 Jarvis 对话" onClick={onClose} />
+        <Button type="text" size="small" className="chat-close" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
       </div>
       <div className="chat-context" aria-label="当前对话上下文">
         <span className="chat-context-page">正在查看「{currentPageLabel}」</span>
@@ -427,7 +433,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
       aria-label="对话记录"
     >
       {historyLoading ? <div className="chat-history-loading">正在恢复本地会话…</div> : messages.length === 0 && <div className="chat-empty">
-        <div className="chat-empty-mark" aria-hidden="true">J</div>
+        <div className="chat-empty-mark" aria-hidden="true">{agentShortName}</div>
         <Text strong className="chat-empty-title">从当前页面开始</Text>
         <Text type="secondary" className="chat-empty-description">你可以直接询问，也可以选一个建议填入输入框。</Text>
         <div className="chat-suggestions" aria-label="建议问题">
@@ -448,18 +454,18 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         <div
           key={index}
           className={`chat-bubble-row ${msg.role}`}
-          aria-label={msg.role === 'assistant' ? 'Jarvis 的回复' : '你的消息'}
+          aria-label={msg.role === 'assistant' ? `${agentName} 的回复` : '你的消息'}
         >
           <div className={`chat-bubble ${msg.role}`}>
             {msg.role === 'assistant' && msg.text === '' && sending
-              ? <span className="chat-typing"><span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>Jarvis 正在思考</span>
+              ? <span className="chat-typing"><span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>{agentName} 正在思考</span>
               : msg.text}
           </div>
         </div>
       ))}
     </div>
     {notice && <Alert className="chat-error" type="info" showIcon title="已开始新会话" description={notice} closable onClose={() => setNotice(undefined)} />}
-    {error && <Alert className="chat-error" type="error" showIcon title="Jarvis 暂时无法回复" description={error} closable onClose={() => setError(undefined)} />}
+    {error && <Alert className="chat-error" type="error" showIcon title={`${agentName} 暂时无法回复`} description={error} closable onClose={() => setError(undefined)} />}
     <div className="chat-composer">
       <input
         ref={imageInputRef}
@@ -488,9 +494,9 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         disabled={sending || historyLoading}
         autoSize={{ minRows: 1, maxRows: 6 }}
         maxLength={4000}
-        aria-label="发送给 Jarvis 的消息"
+        aria-label={`发送给 ${agentName} 的消息`}
         aria-describedby="chat-composer-hint"
-        placeholder="询问 Jarvis，或者告诉它你想做什么…"
+        placeholder={`询问 ${agentName}，或者告诉它你想做什么…`}
       />
       <div className="chat-composer-footer">
         <div className="chat-composer-tools">
@@ -504,11 +510,11 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
             onClick={() => imageInputRef.current?.click()}
           >截图</Button>
           <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite">
-            {stopping ? '正在暂停回复…' : sending ? 'Jarvis 正在回复，你可以随时暂停' : paused ? '已暂停；继续发送会恢复同一 Agent 会话' : 'Enter 换行 · ⌘/Ctrl + Enter 发送 · 可粘贴截图'}
+            {stopping ? '正在暂停回复…' : sending ? `${agentName} 正在回复，你可以随时暂停` : paused ? '已暂停；继续发送会恢复同一 Agent 会话' : 'Enter 换行 · ⌘/Ctrl + Enter 发送 · 可粘贴截图'}
           </Text>
         </div>
         {sending
-          ? <Button danger icon={<StopOutlined />} disabled={stopping} aria-label="暂停 Jarvis 回复" onClick={stop}>
+          ? <Button danger icon={<StopOutlined />} disabled={stopping} aria-label={`暂停 ${agentName} 回复`} onClick={stop}>
             {stopping ? '正在暂停' : '暂停生成'}
           </Button>
           : <Button type="primary" icon={<SendOutlined />} disabled={historyLoading || !input.trim()} aria-label="发送消息" onClick={() => void send()}>发送</Button>}

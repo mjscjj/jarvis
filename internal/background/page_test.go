@@ -103,7 +103,7 @@ func TestUpdatePageWritesRevisionAndAdvancesProgressOnlyOnChange(t *testing.T) {
 		t.Fatalf("first last_progress_at = %v, want %s", written.LastProgressAt, firstAt)
 	}
 	if countPageRevisions(t, db, project.ID) != 0 {
-		t.Fatal("empty-to-content write created a page_revision fact")
+		t.Fatal("empty-to-content write archived a revision")
 	}
 
 	later := firstAt.Add(time.Hour)
@@ -118,7 +118,7 @@ func TestUpdatePageWritesRevisionAndAdvancesProgressOnlyOnChange(t *testing.T) {
 		t.Fatalf("unchanged last_progress_at = %v, want %s", unchanged.LastProgressAt, firstAt)
 	}
 	if countPageRevisions(t, db, project.ID) != 0 {
-		t.Fatal("unchanged write created a page_revision fact")
+		t.Fatal("unchanged write archived a revision")
 	}
 
 	changedAt := later.Add(time.Hour)
@@ -135,13 +135,22 @@ func TestUpdatePageWritesRevisionAndAdvancesProgressOnlyOnChange(t *testing.T) {
 	if changed.Summary != "第二版全文" {
 		t.Fatalf("changed summary = %q", changed.Summary)
 	}
-	var facts []domain.Fact
-	if err := db.Where("subject_type = ? AND subject_id = ? AND source_kind = ?", PageTypeProject, project.ID, factSourcePageRevision).
-		Find(&facts).Error; err != nil {
-		t.Fatalf("list page_revision facts: %v", err)
+	var revisions []domain.PageRevision
+	if err := db.Where("page_type = ? AND page_id = ?", PageTypeProject, project.ID).Find(&revisions).Error; err != nil {
+		t.Fatalf("list page revisions: %v", err)
 	}
-	if len(facts) != 1 || facts[0].Description != "第一版全文" {
-		t.Fatalf("page_revision facts = %#v", facts)
+	if len(revisions) != 1 || revisions[0].OldText != "第一版全文" || !revisions[0].ChangedAt.Equal(changedAt) {
+		t.Fatalf("page revisions = %#v", revisions)
+	}
+	// Revisions must stay out of the fact stream: a fact answers what happened
+	// in the world, and archived page text coming back as evidence let the
+	// maintenance Agent cite its own previous conclusions.
+	var factCount int64
+	if err := db.Model(&domain.Fact{}).Where("subject_type = ? AND subject_id = ?", PageTypeProject, project.ID).Count(&factCount).Error; err != nil {
+		t.Fatalf("count facts: %v", err)
+	}
+	if factCount != 0 {
+		t.Fatalf("page rewrite wrote %d facts, want 0", factCount)
 	}
 }
 
@@ -323,10 +332,10 @@ func createTestProject(t *testing.T, db *gorm.DB, name, status string) domain.Pr
 func countPageRevisions(t *testing.T, db *gorm.DB, projectID uint64) int {
 	t.Helper()
 	var count int64
-	if err := db.Model(&domain.Fact{}).
-		Where("subject_type = ? AND subject_id = ? AND source_kind = ?", PageTypeProject, projectID, factSourcePageRevision).
+	if err := db.Model(&domain.PageRevision{}).
+		Where("page_type = ? AND page_id = ?", PageTypeProject, projectID).
 		Count(&count).Error; err != nil {
-		t.Fatalf("count page_revision facts: %v", err)
+		t.Fatalf("count page revisions: %v", err)
 	}
 	return int(count)
 }

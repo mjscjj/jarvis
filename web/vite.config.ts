@@ -6,8 +6,12 @@ import { fileURLToPath } from 'node:url'
 
 function developmentServer() {
   const script = fileURLToPath(new URL('../scripts/jarvis-instance', import.meta.url))
-  const { api_base: apiBase } = JSON.parse(execFileSync(script, { encoding: 'utf8' })) as { api_base: string }
-  const port = Number(new URL(apiBase).port) + 1
+  const { api_base: apiBase, chat_api_base: chatAPIBase } = JSON.parse(execFileSync(script, { encoding: 'utf8' })) as {
+    api_base: string
+    chat_api_base: string
+  }
+  const adjacentPort = Number(new URL(apiBase).port) + 1
+  const port = adjacentPort === Number(new URL(chatAPIBase).port) ? adjacentPort + 1 : adjacentPort
   if (port > 65535) throw new Error('server.addr leaves no adjacent frontend development port')
   return { port, strictPort: true, proxy: { '/api': apiBase, '/healthz': apiBase } }
 }

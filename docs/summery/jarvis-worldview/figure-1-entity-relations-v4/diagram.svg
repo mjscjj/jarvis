@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect x="0" y="0" width="1920" height="1080" fill="#FFFFFF"/>
+
+  <!-- Header -->
+  <text x="108" y="72" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="16" font-weight="700" fill="#3A6FD8" letter-spacing="2">FIG. 01 · WORLD MODEL</text>
+  <text x="108" y="136" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="48" font-weight="760" fill="#12233F">Jarvis 世界模型：核心实体关系</text>
+  <text x="108" y="180" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="21" fill="#5F6F85">人通过协作场推进事，事依赖资源；所有实体都从 Principal 的责任与目标出发被理解。</text>
+
+  <!-- Legend -->
+  <line x1="1320" y1="166" x2="1380" y2="166" stroke="#7F8DA3" stroke-width="4" stroke-linecap="round"/>
+  <text x="1396" y="173" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="15" font-weight="650" fill="#59687D">直接归属 / 绑定</text>
+  <line x1="1568" y1="166" x2="1628" y2="166" stroke="#8BA1C1" stroke-width="3" stroke-dasharray="10 9" stroke-linecap="round"/>
+  <text x="1644" y="173" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="15" font-weight="650" fill="#59687D">可演化语义关系</text>
+  <line x1="108" y1="214" x2="1812" y2="214" stroke="#DDE4ED" stroke-width="2"/>
+
+  <!-- Relationship graph: draw all links before nodes -->
+  <!-- Principal -> Project: dynamic responsibility / participation -->
+  <line x1="960" y1="398" x2="960" y2="440" stroke="#8BA1C1" stroke-width="3" stroke-dasharray="10 9" stroke-linecap="round"/>
+
+  <!-- Principal -> Person: dynamic collaboration / decision relationship -->
+  <polyline points="780,336 634,336 634,456 506,456 506,493" fill="none" stroke="#8BA1C1" stroke-width="3" stroke-dasharray="10 9" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Person -> Project: dynamic participation -->
+  <line x1="532" y1="590" x2="810" y2="590" stroke="#8BA1C1" stroke-width="3" stroke-dasharray="10 9" stroke-linecap="round"/>
+
+  <!-- Person -> Group: dynamic collaboration context -->
+  <line x1="420" y1="702" x2="420" y2="790" stroke="#8BA1C1" stroke-width="3" stroke-dasharray="10 9" stroke-linecap="round"/>
+
+  <!-- Group -> Project: direct project binding -->
+  <polyline points="590,853 688,853 688,684 832,684" fill="none" stroke="#7F8DA3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Project -> Key Matter: direct project binding -->
+  <line x1="1110" y1="590" x2="1420" y2="590" stroke="#7F8DA3" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Project -> Resource: direct project binding -->
+  <line x1="960" y1="740" x2="960" y2="800" stroke="#7F8DA3" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Relationship labels -->
+  <rect x="650" y="309" width="126" height="34" rx="17" fill="#FFFFFF" stroke="#D7E0EC"/>
+  <text x="713" y="332" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="650" fill="#677A96">协作 / 决策</text>
+
+  <rect x="983" y="405" width="126" height="34" rx="17" fill="#FFFFFF" stroke="#D7E0EC"/>
+  <text x="1046" y="428" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="650" fill="#677A96">负责 / 参与</text>
+
+  <rect x="622" y="565" width="112" height="34" rx="17" fill="#FFFFFF" stroke="#D7E0EC"/>
+  <text x="678" y="588" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="650" fill="#677A96">共同推进</text>
+
+  <rect x="440" y="730" width="126" height="34" rx="17" fill="#FFFFFF" stroke="#D7E0EC"/>
+  <text x="503" y="753" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="650" fill="#677A96">沟通发生在</text>
+
+  <rect x="602" y="812" width="126" height="34" rx="17" fill="#FFFFFF" stroke="#D7E0EC"/>
+  <text x="665" y="835" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="650" fill="#59687D">围绕 / 归属</text>
+
+  <rect x="1212" y="565" width="94" height="34" rx="17" fill="#FFFFFF" stroke="#D7E0EC"/>
+  <text x="1259" y="588" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="650" fill="#59687D">承载</text>
+
+  <rect x="984" y="756" width="126" height="34" rx="17" fill="#FFFFFF" stroke="#D7E0EC"/>
+  <text x="1047" y="779" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="650" fill="#59687D">关联资源</text>
+
+  <!-- Principal: the coordinate, not an ordinary peer node -->
+  <rect x="780" y="274" width="360" height="124" rx="62" fill="#173B6C" stroke="#0F2E57" stroke-width="3"/>
+  <circle cx="836" cy="336" r="25" fill="#FFFFFF" fill-opacity="0.12" stroke="#D9E8FF" stroke-width="2"/>
+  <circle cx="836" cy="329" r="8" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+  <path d="M821 350 C825 338 847 338 851 350" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <text x="882" y="324" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="24" font-weight="760" fill="#FFFFFF">Principal / 我</text>
+  <text x="882" y="355" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="15" fill="#D9E8FF">世界的坐标：责任 · 目标 · 价值边界</text>
+
+  <!-- Person -->
+  <circle cx="420" cy="590" r="112" fill="#F2F7FF" stroke="#4D83E6" stroke-width="3"/>
+  <circle cx="420" cy="590" r="91" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <circle cx="420" cy="539" r="18" fill="none" stroke="#356FD4" stroke-width="3"/>
+  <path d="M386 577 C393 552 447 552 454 577" fill="none" stroke="#356FD4" stroke-width="3" stroke-linecap="round"/>
+  <text x="420" y="621" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="32" font-weight="780" fill="#244B86">Person</text>
+  <text x="420" y="651" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="16" font-weight="650" fill="#61769A">关键协作者</text>
+  <rect x="376" y="466" width="88" height="30" rx="15" fill="#E8F1FF" stroke="#BED4F7"/>
+  <text x="420" y="487" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="700" fill="#356FD4">人</text>
+
+  <!-- Project: relationship hub -->
+  <circle cx="960" cy="590" r="150" fill="#FFF7E8" stroke="#EDAD3D" stroke-width="4"/>
+  <circle cx="960" cy="590" r="126" fill="#FFFFFF" stroke="#F4D49A" stroke-width="2"/>
+  <circle cx="960" cy="525" r="24" fill="#FFF0CF" stroke="#C77B0B" stroke-width="2"/>
+  <path d="M948 525 L957 534 L974 515" fill="none" stroke="#B96A05" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="960" y="585" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="38" font-weight="800" fill="#9A5707">Project</text>
+  <text x="960" y="620" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="19" font-weight="700" fill="#B36A10">长期目标与进展</text>
+  <text x="960" y="652" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" fill="#8C7655">实体关系的主要汇聚点</text>
+  <rect x="916" y="426" width="88" height="30" rx="15" fill="#FFF0CF" stroke="#F2CF8D"/>
+  <text x="960" y="447" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="700" fill="#B36A10">事</text>
+
+  <!-- Key Matter -->
+  <rect x="1420" y="520" width="360" height="140" rx="70" fill="#FFF9EF" stroke="#D99829" stroke-width="3"/>
+  <polygon points="1474,590 1494,570 1514,590 1494,610" fill="#FBE9C1" stroke="#C77B0B" stroke-width="2"/>
+  <text x="1544" y="577" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="28" font-weight="770" fill="#965608">Key Matter</text>
+  <text x="1544" y="612" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="16" font-weight="650" fill="#A36E2E">需要持续记住和看护的事项</text>
+  <rect x="1556" y="498" width="88" height="30" rx="15" fill="#FFF0CF" stroke="#F2CF8D"/>
+  <text x="1600" y="519" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="700" fill="#B36A10">事</text>
+
+  <!-- Group -->
+  <rect x="250" y="790" width="340" height="126" rx="40" fill="#F6F2FF" stroke="#8C6BD6" stroke-width="3"/>
+  <circle cx="304" cy="843" r="12" fill="#E4D9FF" stroke="#6D4CB8" stroke-width="2"/>
+  <circle cx="336" cy="843" r="12" fill="#E4D9FF" stroke="#6D4CB8" stroke-width="2"/>
+  <circle cx="320" cy="872" r="12" fill="#E4D9FF" stroke="#6D4CB8" stroke-width="2"/>
+  <line x1="313" y1="851" x2="317" y2="860" stroke="#6D4CB8" stroke-width="2"/>
+  <line x1="327" y1="851" x2="323" y2="860" stroke="#6D4CB8" stroke-width="2"/>
+  <text x="372" y="843" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="28" font-weight="770" fill="#5D429C">Group</text>
+  <text x="372" y="876" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="16" font-weight="650" fill="#746492">协作发生的场</text>
+  <rect x="376" y="775" width="88" height="30" rx="15" fill="#EEE7FF" stroke="#D3C5F3"/>
+  <text x="420" y="796" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="700" fill="#6D4CB8">场</text>
+
+  <!-- Resource -->
+  <rect x="790" y="800" width="340" height="140" rx="30" fill="#EEFBF7" stroke="#36A68A" stroke-width="3"/>
+  <polygon points="1072,800 1130,800 1130,858" fill="#D6F4EA" stroke="#36A68A" stroke-width="2"/>
+  <rect x="828" y="830" width="52" height="62" rx="10" fill="#FFFFFF" stroke="#13846D" stroke-width="2"/>
+  <line x1="840" y1="849" x2="868" y2="849" stroke="#13846D" stroke-width="2"/>
+  <line x1="840" y1="861" x2="868" y2="861" stroke="#13846D" stroke-width="2"/>
+  <line x1="840" y1="873" x2="860" y2="873" stroke="#13846D" stroke-width="2"/>
+  <text x="908" y="848" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="28" font-weight="770" fill="#116C5A">Resource</text>
+  <text x="908" y="878" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="16" font-weight="650" fill="#4B7F74">文档 · 仓库 · 系统入口</text>
+  <text x="908" y="908" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" fill="#5C746F">可关联：我 · 人 · 项目</text>
+  <rect x="916" y="785" width="88" height="30" rx="15" fill="#DCF6ED" stroke="#B9E7D8"/>
+  <text x="960" y="806" text-anchor="middle" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="14" font-weight="700" fill="#13846D">物</text>
+
+  <!-- Footer principle -->
+  <line x1="108" y1="986" x2="1812" y2="986" stroke="#DDE4ED" stroke-width="2"/>
+  <circle cx="116" cy="1024" r="6" fill="#3A6FD8"/>
+  <text x="138" y="1031" font-family="Noto Sans SC, PingFang SC, Arial, sans-serif" font-size="17" font-weight="650" fill="#43536A">直接归属用字段绑定；职责、协作、依赖等动态关系由 Summary 中的实体引用表达，不建立固定成员关系表。</text>
+</svg>

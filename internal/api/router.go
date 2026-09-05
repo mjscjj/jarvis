@@ -3,10 +3,12 @@ package api
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"jarvis/internal/agentconfig"
 	"jarvis/internal/appmodule"
+	"jarvis/internal/authn"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
 	"jarvis/internal/config"
@@ -15,10 +17,10 @@ import (
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
+	"jarvis/internal/plugin"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
 	"jarvis/internal/sharedmem"
-	"jarvis/internal/skill"
 	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
 	"jarvis/internal/toolquery"
@@ -30,6 +32,8 @@ import (
 
 // Dependencies are process-level dependencies shared by API handlers.
 type Dependencies struct {
+	AgentDisplayName   string
+	Auth               *authn.Service
 	DB                 *gorm.DB
 	Todos              extract.TodoReader
 	TodoStatus         extract.TodoStatusWriter
@@ -54,7 +58,8 @@ type Dependencies struct {
 	OKRModule          *OKRModuleDependencies
 	WeeklyReportModule *WeeklyReportModuleDependencies
 	ScheduledTasks     *scheduledtask.Service
-	Skills             *skill.Service
+	Plugins            *plugin.Service
+	Skills             SkillService
 	Progress           progress.EventService
 	FactQueries        progress.FactQueryService
 	Overview           *insight.OverviewService
@@ -64,8 +69,7 @@ type Dependencies struct {
 	Worklog            *insight.WorklogService // 进度页「今天的文档」「项目代码」两个 Tab
 	MeetingReviews     *insight.MeetingReviewService
 	DigestSummarizer   *insight.Summarizer // 可选：codex 未启用时为 nil，总结接口返回 503
-	FactRollups        FactRollupGenerator // 事实日压缩手动触发；nil 则接口返回 503
-	FactRollupLoc      *time.Location      // 手动触发时解析 YYYY-MM-DD 的时区
+	FactTimelineLoc    *time.Location      // 事实时间线按自然日分组的时区
 	Debug              *insight.DebugService
 	Logs               *insight.LogReader
 	ChatAddr           string           // 独立 Chat sidecar 地址；主进程只向前端公开端口
@@ -73,15 +77,23 @@ type Dependencies struct {
 	Capture            *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
 	RuntimeSettings    *config.RuntimeSettingsService
 	ContextAssembler   *contextsnap.Assembler
-	CardApprovals      CardApprovalProcessor
+	CardAsks           CardAskProcessor
 	CardApprovalSecret string
-	Readiness          ReadinessTargets // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
+	MeetingSweep       MeetingSweepWaker // 会议事件转发唤醒巡扫；巡扫未启用时为 nil，此时不注册 /internal/meeting-sweep/wake 路由
+	Readiness          ReadinessTargets  // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
+	SystemControl      SystemShutdowner
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
 func Register(h *server.Hertz, deps Dependencies) error {
 	if h == nil {
 		return fmt.Errorf("api hertz server is nil")
+	}
+	if deps.AgentDisplayName == "" {
+		return fmt.Errorf("api agent display name is empty")
+	}
+	if deps.Auth == nil {
+		return fmt.Errorf("api auth dependency is nil")
 	}
 	if deps.DB == nil {
 		return fmt.Errorf("api database dependency is nil")
@@ -143,6 +155,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.ScheduledTasks == nil {
 		return fmt.Errorf("api scheduled task service dependency is nil")
 	}
+	if deps.Plugins == nil {
+		return fmt.Errorf("api plugin service dependency is nil")
+	}
 	if deps.Skills == nil {
 		return fmt.Errorf("api skill service dependency is nil")
 	}
@@ -179,12 +194,21 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.ContextAssembler == nil {
 		return fmt.Errorf("api context assembler dependency is nil")
 	}
+	if deps.SystemControl == nil {
+		return fmt.Errorf("api system control dependency is nil")
+	}
 	toolQueries, err := toolquery.NewService(deps.DB)
 	if err != nil {
 		return fmt.Errorf("create tool query service: %w", err)
 	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/readyz", Readiness(deps.DB, deps.Readiness))
+	h.GET("/api/auth/status", GetAuthStatus(deps.Auth))
+	h.POST("/api/auth/login", LoginWithByteDance(deps.Auth))
+	h.POST("/api/auth/login/complete", CompleteByteDanceLogin(deps.Auth))
+	h.POST("/api/auth/logout", LogoutFromJarvis(deps.Auth))
+	h.POST("/api/system/shutdown", ShutdownSystem(deps.SystemControl))
+	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName))
 	h.GET("/api/messages", ListToolMessages(toolQueries))
 	h.GET("/api/captured-resources", ListCapturedResources(toolQueries))
 	h.GET("/api/captured-resources/:resource_id", GetCapturedResource(toolQueries))
@@ -196,6 +220,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/tasks", CreateTask(deps.TaskSubmitter))
 	h.GET("/api/tasks/:task_id", GetTask(deps.Tasks))
 	h.GET("/api/tasks/:task_id/runs", ListTaskRuns(deps.Tasks))
+	h.GET("/api/task-runs/:run_id", GetTaskRun(deps.Tasks))
 	h.GET("/api/tasks/:task_id/events", ListTaskEvents(deps.Progress))
 	h.POST("/api/tasks/:task_id/finish", FinishTask(deps.Tasks))
 	h.POST("/api/tasks/:task_id/close", CloseTask(deps.Tasks))
@@ -208,13 +233,16 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/interrupt", InterruptTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/rerun", RerunTask(deps.Executor))
-		h.POST("/api/tasks/:task_id/reapply", ReapplyTask(deps.Executor))
 		h.POST("/api/tasks/:task_id/resume", ResumeTaskAfterHuman(deps.Executor))
-		h.POST("/api/tasks/:task_id/approve", ApproveTask(deps.Executor))
-		h.POST("/api/tasks/:task_id/reject", RejectTask(deps.Executor))
 	}
-	if deps.CardApprovals != nil {
-		h.POST("/internal/card-approval/callback", RelayCardApproval(deps.CardApprovals, deps.CardApprovalSecret))
+	if deps.CardAsks != nil {
+		h.POST("/internal/card-approval/callback", RelayCardAsk(deps.CardAsks, deps.CardApprovalSecret))
+	}
+	if deps.Capture != nil && strings.TrimSpace(deps.CardApprovalSecret) != "" {
+		h.POST("/internal/message-routing/claim", ClaimMessageRoute(deps.Capture, deps.CardApprovalSecret))
+	}
+	if deps.MeetingSweep != nil && strings.TrimSpace(deps.CardApprovalSecret) != "" {
+		h.POST("/internal/meeting-sweep/wake", WakeMeetingSweep(deps.MeetingSweep, deps.CardApprovalSecret))
 	}
 	// M1 背景管理：Project/Person 全量 CRUD；Group 只可改人工背景字段（采集字段归 M2）。
 	h.GET("/api/projects", ListProjects(deps.Projects))
@@ -231,9 +259,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/facts", ListFacts(deps.Progress))
 	h.POST("/api/facts", AppendFact(deps.Progress))
 	h.POST("/api/facts/batch", AppendFacts(deps.Progress))
-	h.GET("/api/facts/timeline", FactTimeline(deps.FactQueries, deps.FactRollupLoc))
+	h.GET("/api/facts/timeline", FactTimeline(deps.FactQueries, deps.FactTimelineLoc))
 	h.GET("/api/facts/search", SearchFacts(deps.FactQueries))
-	h.POST("/api/fact-rollups/generate", GenerateFactRollups(deps.FactRollups, deps.FactRollupLoc))
 	h.GET("/api/persons", ListPersons(deps.Persons))
 	h.POST("/api/persons/resolve", ResolvePerson(deps.Resolve))
 	h.POST("/api/persons", CreatePerson(deps.Persons))
@@ -291,6 +318,13 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/scheduled-tasks/:scheduled_task_id", UpdateScheduledTask(deps.ScheduledTasks))
 	h.DELETE("/api/scheduled-tasks/:scheduled_task_id", DeleteScheduledTask(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks/:scheduled_task_id/trigger", TriggerScheduledTask(deps.ScheduledTasks))
+	// 插件只管理外部能力的启停、授权和采集调度；采集结果仍走统一 clue 流水线。
+	h.GET("/api/plugins", ListPlugins(deps.Plugins))
+	h.GET("/api/plugins/:plugin_id", GetPlugin(deps.Plugins))
+	h.PATCH("/api/plugins/:plugin_id", UpdatePlugin(deps.Plugins))
+	h.POST("/api/plugins/:plugin_id/authorize", AuthorizePlugin(deps.Plugins))
+	h.POST("/api/plugins/:plugin_id/authorize/complete", CompletePluginAuthorization(deps.Plugins))
+	h.POST("/api/plugins/:plugin_id/trigger", TriggerPlugin(deps.Plugins))
 	// Skills：扫描仓库 SKILL.md，后台控制启用状态和 M3/M5 生效范围。
 	h.GET("/api/skills", ListSkills(deps.Skills))
 	h.POST("/api/skills/scan", ScanSkills(deps.Skills))

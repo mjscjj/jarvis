@@ -65,16 +65,24 @@ func TestCaptureSQLite(t *testing.T) {
 	}
 	// 内部真人私聊发现即自动监听；服务号私聊、外部私聊与话题群不自动开。
 	assertRelated(t, db, "oc_p2p_internal", true)
+	assertRelated(t, db, "oc_p2p_pinned", true)
 	assertRelated(t, db, "oc_p2p_bot", false)
 	assertRelated(t, db, "oc_p2p_external", false)
 	assertRelated(t, db, "oc_fixture", false)
+	if err := db.Model(&domain.Group{}).Where("chat_id = ?", "oc_p2p_pinned").Update("pinned", true).Error; err != nil {
+		t.Fatalf("pin p2p: %v", err)
+	}
 	// 成功扫描后，水位连续 5 天没有推进的会话退出监听；后续 discover 会把
 	// 重新活跃并排进 TopN 的私聊打开，同时保留旧水位以补到关闭期间的新消息。
 	service.now = func() time.Time { return discoveredAt.Add(6 * 24 * time.Hour) }
 	if err := service.ScanChat(context.Background(), "oc_p2p_internal"); err != nil {
 		t.Fatalf("inactive p2p ScanChat() error = %v", err)
 	}
+	if err := service.ScanChat(context.Background(), "oc_p2p_pinned"); err != nil {
+		t.Fatalf("inactive pinned p2p ScanChat() error = %v", err)
+	}
 	assertRelated(t, db, "oc_p2p_internal", false)
+	assertRelated(t, db, "oc_p2p_pinned", true)
 	if err := service.DiscoverChats(context.Background()); err != nil {
 		t.Fatalf("DiscoverChats() after inactive removal error = %v", err)
 	}
@@ -83,8 +91,9 @@ func TestCaptureSQLite(t *testing.T) {
 	if err := db.First(&reopenedCheckpoint, "chat_id = ?", "oc_p2p_internal").Error; err != nil {
 		t.Fatalf("load reopened p2p checkpoint: %v", err)
 	}
-	if reopenedCheckpoint.HighWaterCreateTime != discoveredAt.UnixMilli() {
-		t.Fatalf("reopened p2p high water = %d, want preserved %d", reopenedCheckpoint.HighWaterCreateTime, discoveredAt.UnixMilli())
+	wantReopenedHighWater := discoveredAt.Add(-service.opts.ActivationContext).UnixMilli()
+	if reopenedCheckpoint.HighWaterCreateTime != wantReopenedHighWater {
+		t.Fatalf("reopened p2p high water = %d, want preserved %d", reopenedCheckpoint.HighWaterCreateTime, wantReopenedHighWater)
 	}
 	service.now = func() time.Time { return discoveredAt }
 
@@ -132,7 +141,7 @@ func TestCaptureSQLite(t *testing.T) {
 	}
 
 	// 存量私聊回填：先把内部私聊关掉模拟历史数据，再用 OpenInternalP2P 一次性开启。
-	// 其 checkpoint 水位停在发现时刻(discoveredAt)，模拟"很久以后才纳入监听"，
+	// 其 checkpoint 水位停在首次发现的有界激活窗口，模拟"很久以后才纳入监听"，
 	// 把 now 前移，验证打开监听后水位被抬到 now、只增量不回捞历史。
 	if err := db.Model(&domain.Group{}).Where("chat_id = ?", "oc_p2p_internal").Update("related_group", false).Error; err != nil {
 		t.Fatalf("reset internal p2p related flag: %v", err)
@@ -143,8 +152,8 @@ func TestCaptureSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenInternalP2P() error = %v", err)
 	}
-	if opened != 1 {
-		t.Fatalf("OpenInternalP2P() opened = %d, want 1", opened)
+	if opened != 2 {
+		t.Fatalf("OpenInternalP2P() opened = %d, want 2", opened)
 	}
 	assertRelated(t, db, "oc_p2p_internal", true)
 	assertRelated(t, db, "oc_p2p_external", false)
@@ -190,6 +199,7 @@ func (f *captureFixture) Run(_ context.Context, out any, args ...string) error {
 			{ChatID: "oc_fixture", ChatMode: "topic", Name: "fixture"},
 			// 内部真人私聊：在 TopN 预算内应被自动纳入监听。
 			{ChatID: "oc_p2p_internal", ChatMode: "p2p", Name: "内部同事", P2PTargetType: "user"},
+			{ChatID: "oc_p2p_pinned", ChatMode: "p2p", Name: "固定同事", P2PTargetType: "user"},
 			// 内部服务号私聊：target_type=bot，即便 external=false 也不自动开。
 			{ChatID: "oc_p2p_bot", ChatMode: "p2p", Name: "审批助手", P2PTargetType: "bot"},
 			// 外部私聊：不监听，related_group 必须为 0。

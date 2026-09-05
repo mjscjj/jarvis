@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -92,6 +93,39 @@ func TestBuildPromptTrimsContextBeforeFailing(t *testing.T) {
 	}
 }
 
+func TestBuildPromptReportsOversizedNewEvidence(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID: "om_new", Content: strings.Repeat("新消息", 10_000), IsNew: true, Extractable: true,
+	}}}
+	_, err := BuildPrompt(
+		ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(),
+		PromptOptions{SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000},
+	)
+	if !errors.Is(err, ErrPromptTooLarge) {
+		t.Fatalf("BuildPrompt() error = %v, want ErrPromptTooLarge", err)
+	}
+}
+
+func TestBuildPromptKeepsOneCompleteNewMessageAtCoarseLimit(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{
+		{MessageID: "om_context", Content: strings.Repeat("旧背景", 5_000), Extractable: true},
+		{MessageID: "om_new", Content: strings.Repeat("新消息", 10_000), IsNew: true, Extractable: true},
+	}}
+	prompt, err := BuildPrompt(
+		ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(),
+		PromptOptions{
+			SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000,
+			AllowSingleNewOverLimit: true,
+		},
+	)
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	if strings.Contains(prompt.User, "om_context") || !strings.Contains(prompt.User, "om_new") {
+		t.Fatalf("single-message coarse limit result is incorrect")
+	}
+}
+
 func TestRenderParticipantsKeepsIdentity(t *testing.T) {
 	rendered := renderParticipants([]ParticipantContext{
 		{OpenID: "ou_leader", Name: "老板", Role: "leader", IsLeader: true, Title: "负责人"},
@@ -138,7 +172,7 @@ func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
 	// 模型必须填的机器契约字段，以及两条曾经真的回归过的语义边界。散文表述
 	// 不做断言——之前逐句断言的版本被一次正常的措辞调整弄红过。
 	for _, want := range []string{
-		// 机器契约：status 枚举与 schema 要求的八个字段必须出现在提示词里。
+		// 机器契约：准入控制字段与 status 枚举必须出现在系统提示词里；完整输出协议另行验证。
 		"status=extracted",
 		"status=observing",
 		"action_type",
@@ -148,9 +182,9 @@ func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
 		"payload",
 		// 语义边界一：M3 只做准入，不越界到执行阶段。
 		"不制定执行方案",
-		// 语义边界二：principal 直接给 Jarvis 的指令必须绕过价值判断。少了这条，
-		// 强模型会把「让 jarvis 说句话」判成测试信息并丢弃。
-		"principal 直接要求 Jarvis",
+		// 语义边界二：principal 直接给当前助手的指令必须绕过价值判断。名称由
+		// agentidentity 在运行时渲染，原始提示词必须保留统一占位符。
+		"principal 直接要求 {{AGENT_NAME}}",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q", want)

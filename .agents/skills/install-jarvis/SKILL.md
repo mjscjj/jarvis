@@ -38,6 +38,7 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 ```bash
 ./scripts/jarvis-install install-lark-cli
+./scripts/jarvis-install install-bytedcli
 ./scripts/jarvis-install install-traex
 ./scripts/jarvis-install install-cc-connect
 ./scripts/jarvis-install install-qdrant
@@ -46,11 +47,11 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 只有 `validate-dependencies` 返回 `ok=true` 才继续。`install-cc-connect` 从固定 upstream 应用仓库补丁，只构建并验收 binary，不配置或启动 daemon。Qdrant 是依赖服务，可以在这一阶段启动。
 
-如果当前 Agent 没有 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，用官方 lark-cli installer 补齐并重新加载 Agent 能力。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
+如果当前 Agent 没有 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，用官方 lark-cli installer 补齐并重新加载 Agent 能力。安装 bytedcli 后读回版本；其 SSO 登录可在 Jarvis Web 登录页完成，不作为服务启动前置条件。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
 
 ## 3. 使用默认飞书身份、审计能力并绑定 CC Connect
 
-加载并遵循 `lark-shared`。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置或未登录时才初始化和登录该默认身份。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。
+加载并遵循 `lark-shared`。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置或未登录时才初始化和登录该默认身份。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。首次登录的 App 权限申请必须在推荐权限外显式包含卡片回调所需的 `im:message:readonly`：Agent 使用 split-flow 运行 `lark-cli auth login --recommend --scope "im:message:readonly" --no-wait --json`，用户确认后再用同一 `device_code` 完成授权。
 
 一个飞书 App/Bot 是身份根。Jarvis 直接使用 lark-cli 当前默认 App，CC Connect 绑定该 App，不再为 Jarvis 选择第二个 Bot。
 
@@ -58,7 +59,7 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 ```bash
 ./scripts/jarvis-install configure-identity \
-  --open-id <open_id> --git-author <author>
+  --agent-name <name> --open-id <open_id> --git-author <author>
 
 ./scripts/jarvis-install bind-cc
 # 已有且已验证 secret 时才可显式复用：
@@ -67,7 +68,8 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 ./scripts/jarvis-install validate-binding
 ```
 
-绑定校验还必须确认 CC 托管的 Agent 每轮先运行 `scripts/jarvis-tools get-context`，否则 CC 只是进入仓库的普通 Codex，不算和 Jarvis 世界模型一体化。逐项更新清单 C 区；能力审计与默认 App 绑定是两个独立验收项，不能互相代替。
+绑定校验还必须确认 CC 托管的 Agent 每轮先运行 `scripts/jarvis-tools get-context`，否则 CC 只是进入仓库的普通 Codex，不算和 Jarvis 世界模型一体化；并通过 `card.action.trigger` 的 Bot dry-run 验证 App 已申请 `im:message:readonly`、已发布该回调事件。逐项更新清单 C 区；能力审计与默认 App 绑定是两个独立验收项，不能互相代替。
+`bind-cc` 会把 Feishu `allow_from` 收紧为 Principal 本人的 open_id；`validate-binding` 未通过这项检查时不能启动 CC Connect。
 
 ## 4. 启动并验收运行底座
 
@@ -75,8 +77,8 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 - CC daemon 未注册：`./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"`。
 - CC daemon 已属于当前 binary：安全 restart；属于其他 binary/checkout：先取得用户是否替换的决定。
-- Jarvis 主服务未注册：`./scripts/jarvis-install install-server`。
-- Jarvis 已属于当前 checkout：使用 `./scripts/rebuild-server.sh`。
+- fresh clone 的 Jarvis 主服务未注册：`./scripts/jarvis-install install-server`，保留完整依赖与绑定门禁。
+- 用户已确认复用当前 checkout 和既有数据时，无论 Jarvis 服务仍在运行还是 launchd label 已丢失，都使用 `./scripts/rebuild-server.sh`；label 缺失时脚本直接复用签名安装动作恢复注册，不重新进入完整安装或升级 CC Connect。
 - 主服务属于其他 checkout：停止并询问，不自动 bootout。
 
 先启动 CC Connect，再启动 Jarvis。禁止裸 `go build` 覆盖服务 binary。

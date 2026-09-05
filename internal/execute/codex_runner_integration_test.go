@@ -81,5 +81,5 @@ func livePrompt(summary string) string {
 
 不要调用任何工具，不要读写任何文件，不要联网。直接给出最终消息：
 outcome 填 "completed"，summary 填 "` + summary + `"，
-failure_reason 与 needs_followup 填空字符串，enrichments 与 effects 填空数组，waiting 填 null。`
+failure_reason 填空字符串，question 填 null，enrichments 与 effects 填空数组，waiting 填 null。`
 }

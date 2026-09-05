@@ -26,8 +26,8 @@ type AssembleOptions struct {
 }
 
 // Assembler builds one canonical background shape. Assemble serves ordinary
-// Task creation; AssembleConversation adds live scope for CC Connect, backend
-// chat and ScheduledTask wake-ups without duplicating lookup logic.
+// Task creation; AssembleConversation adds conversation scope for backend chat
+// and ScheduledTask wake-ups without duplicating lookup logic.
 type Assembler struct {
 	db              *gorm.DB
 	principalOpenID string
@@ -49,9 +49,9 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 	return a.assemble(ctx, options, false)
 }
 
-// AssembleConversation adds live conversation scope and current work to the
-// common background. It is intentionally reserved for interactive entrypoints
-// and ScheduledTask wake-ups; ordinary Task execution keeps its frozen context.
+// AssembleConversation adds conversation scope to the common background. It is
+// intentionally reserved for backend chat and ScheduledTask wake-ups; ordinary
+// Task execution keeps its frozen context.
 func (a *Assembler) AssembleConversation(ctx context.Context, options AssembleOptions) (json.RawMessage, error) {
 	return a.assemble(ctx, options, true)
 }
@@ -102,23 +102,6 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 	if err != nil {
 		return nil, err
 	}
-	facts, err := a.loadFacts(ctx, projectID, group)
-	if err != nil {
-		return nil, err
-	}
-	var openTodos []OpenTodo
-	var recentTasks []RecentTask
-	if includeLiveContext {
-		openTodos, err = a.loadOpenTodos(ctx, projectID, group)
-		if err != nil {
-			return nil, err
-		}
-		recentTasks, err = a.loadRecentTasks(ctx, projectID, group)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	snapshot := Snapshot{
 		SnapshotVersion:  SnapshotVersion,
 		CapturedAt:       a.now().UTC().Format(time.RFC3339),
@@ -127,9 +110,6 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 		Group:            group,
 		OtherProjects:    otherProjects,
 		ManagedResources: managedResources,
-		Facts:            facts,
-		OpenTodos:        openTodos,
-		RecentTasks:      recentTasks,
 		Memories:         make([]map[string]any, 0),
 		RequestContext:   requestContext,
 	}
@@ -242,106 +222,6 @@ func (a *Assembler) loadManagedResources(ctx context.Context, projectID *uint64)
 			URL: copyString(rows[i].URL), Summary: copyString(rows[i].Summary),
 			ProjectID: copyUint64(rows[i].ProjectID), LinkPrincipal: rows[i].LinkPrincipal,
 			LastActiveAt: rows[i].LastActiveAt.UTC().Format(time.RFC3339),
-		}
-	}
-	return result, nil
-}
-
-// snapshotFactLimit caps how much history rides along in every snapshot. The
-// snapshot is copied onto every Todo and Task, so an unbounded project history
-// would grow the payload of all downstream work forever. Older facts stay in
-// the table and remain queryable by tool.
-const snapshotFactLimit = 50
-
-func (a *Assembler) loadFacts(ctx context.Context, projectID *uint64, group *Group) ([]Fact, error) {
-	if projectID == nil && group == nil {
-		return nil, nil
-	}
-	query := a.db.WithContext(ctx).Model(&domain.Fact{})
-	switch {
-	case projectID != nil && group != nil:
-		query = query.Where("(subject_type = ? AND subject_id = ?) OR (subject_type = ? AND subject_id = ?)",
-			"project", *projectID, "group", group.ID)
-	case projectID != nil:
-		query = query.Where("subject_type = ? AND subject_id = ?", "project", *projectID)
-	default:
-		query = query.Where("subject_type = ? AND subject_id = ?", "group", group.ID)
-	}
-	var rows []domain.Fact
-	if err := query.Order("occurred_at DESC, id DESC").Limit(snapshotFactLimit).Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("assemble context snapshot: load scoped facts: %w", err)
-	}
-	result := make([]Fact, len(rows))
-	for i := range rows {
-		result[i] = Fact{
-			ID: rows[i].ID, SubjectType: rows[i].SubjectType, SubjectID: rows[i].SubjectID,
-			Description: rows[i].Description,
-			OccurredAt:  rows[i].OccurredAt.UTC().Format(time.RFC3339),
-		}
-	}
-	return result, nil
-}
-
-const (
-	snapshotOpenTodoLimit   = 20
-	snapshotRecentTaskLimit = 10
-)
-
-func (a *Assembler) loadOpenTodos(ctx context.Context, projectID *uint64, group *Group) ([]OpenTodo, error) {
-	query := a.db.WithContext(ctx).Model(&domain.Todo{}).
-		Where("status IN ?", []string{"extracted", "observing"})
-	switch {
-	case projectID != nil && group != nil:
-		query = query.Where("group_id = ? OR project_id = ?", group.ID, *projectID)
-	case projectID != nil:
-		query = query.Where("project_id = ?", *projectID)
-	case group != nil:
-		query = query.Where("group_id = ?", group.ID)
-	}
-	var rows []domain.Todo
-	if err := query.Order("last_evidence_at DESC, id DESC").Limit(snapshotOpenTodoLimit).Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("assemble context snapshot: load open todos: %w", err)
-	}
-	result := make([]OpenTodo, len(rows))
-	for i := range rows {
-		result[i] = OpenTodo{ID: rows[i].ID, ActionType: rows[i].ActionType, Title: rows[i].Title, Status: rows[i].Status}
-	}
-	return result, nil
-}
-
-func (a *Assembler) loadRecentTasks(ctx context.Context, projectID *uint64, group *Group) ([]RecentTask, error) {
-	query := a.db.WithContext(ctx).Table("task AS t").
-		Joins("LEFT JOIN todo AS td ON td.id = t.todo_id").
-		Where("t.status IN ?", []string{"pending", "executing", "waiting", "needs_human", "awaiting_approval"})
-	switch {
-	case projectID != nil && group != nil:
-		query = query.Where("t.project_id = ? OR td.group_id = ?", *projectID, group.ID)
-	case projectID != nil:
-		query = query.Where("t.project_id = ?", *projectID)
-	case group != nil:
-		query = query.Where("td.group_id = ?", group.ID)
-	}
-	type taskRow struct {
-		ID             uint64
-		Title          string
-		Status         string
-		Summary        *string
-		LastProgressAt *time.Time
-	}
-	var rows []taskRow
-	if err := query.Select("t.id, t.title, t.status, t.summary, t.last_progress_at").
-		Order("COALESCE(t.last_progress_at, t.created_at) DESC, t.id DESC").
-		Limit(snapshotRecentTaskLimit).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("assemble context snapshot: load recent tasks: %w", err)
-	}
-	result := make([]RecentTask, len(rows))
-	for i := range rows {
-		result[i] = RecentTask{ID: rows[i].ID, Title: rows[i].Title, Status: rows[i].Status}
-		if rows[i].Summary != nil {
-			result[i].Summary = *rows[i].Summary
-		}
-		if rows[i].LastProgressAt != nil {
-			result[i].LastProgressAt = rows[i].LastProgressAt.UTC().Format(time.RFC3339)
 		}
 	}
 	return result, nil

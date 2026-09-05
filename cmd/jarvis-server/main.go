@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"jarvis/internal/agentconfig"
+	"jarvis/internal/agentidentity"
 	"jarvis/internal/api"
 	"jarvis/internal/appmodule"
 	"jarvis/internal/ark"
+	"jarvis/internal/authn"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
-	"jarvis/internal/cardapproval"
+	"jarvis/internal/cardask"
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/dailydigest"
@@ -39,6 +41,7 @@ import (
 	okrAuth "jarvis/internal/okrworkspace/auth"
 	"jarvis/internal/okrworkspace/moduleconfig"
 	"jarvis/internal/pipeline"
+	"jarvis/internal/plugin"
 	"jarvis/internal/proactive"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
@@ -46,7 +49,9 @@ import (
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/store"
+	"jarvis/internal/systemcontrol"
 	"jarvis/internal/taskcreate"
+	"jarvis/internal/taskfeedback"
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
 
@@ -118,6 +123,14 @@ func main() {
 	if err != nil {
 		fatalf("initialize text file service failed: %v", err)
 	}
+	identityRenderer, err := agentidentity.NewRenderer(cfg.Identity.DisplayName)
+	if err != nil {
+		fatalf("initialize agent identity renderer failed: %v", err)
+	}
+	runtimePrompts, err := agentidentity.NewContentReader(textFileService, identityRenderer)
+	if err != nil {
+		fatalf("initialize rendered prompt reader failed: %v", err)
+	}
 	sharedMemoryPath, err := sharedmem.PathForConfig(configPathAbsolute)
 	if err != nil {
 		fatalf("resolve shared memory path failed: %v", err)
@@ -130,7 +143,11 @@ func main() {
 	if err != nil {
 		fatalf("initialize work rule service failed: %v", err)
 	}
-	agentConfigService, err := agentconfig.NewService(textFileService, workRuleService)
+	runtimeWorkRules, err := agentidentity.NewBlockReader(workRuleService, identityRenderer)
+	if err != nil {
+		fatalf("initialize rendered work rule reader failed: %v", err)
+	}
+	agentConfigService, err := agentconfig.NewService(runtimePrompts, runtimeWorkRules)
 	if err != nil {
 		fatalf("initialize agent config service failed: %v", err)
 	}
@@ -160,6 +177,10 @@ func main() {
 	)
 	if err != nil {
 		fatalf("initialize agent skill service failed: %v", err)
+	}
+	runtimeSkills, err := skill.NewRenderingService(skillService, identityRenderer.Render)
+	if err != nil {
+		fatalf("initialize rendered skill reader failed: %v", err)
 	}
 
 	connectCtx, cancel := context.WithTimeout(startupCtx, 10*time.Second)
@@ -236,6 +257,10 @@ func main() {
 		fatalf("initialize Todo materializer failed: %v", err)
 	}
 
+	location, err := time.LoadLocation(cfg.Capture.Timezone)
+	if err != nil {
+		fatalf("load capture timezone failed: %v", err)
+	}
 	larkClient, err := larkcli.New(larkcli.Options{
 		Bin:               cfg.LarkCLI.Bin,
 		RateLimit:         cfg.LarkCLI.RateLimit,
@@ -243,6 +268,7 @@ func main() {
 		Concurrency:       cfg.LarkCLI.Concurrent,
 		Timeout:           time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
 		ExportSecureLabel: cfg.LarkCLI.ExportSecureLabel,
+		Timezone:          location.String(),
 	})
 	if err != nil {
 		fatalf("initialize lark-cli failed: %v", err)
@@ -255,6 +281,7 @@ func main() {
 		Burst:       cfg.LarkCLI.Burst,
 		Concurrency: cfg.LarkCLI.Concurrent,
 		Timeout:     time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+		Timezone:    location.String(),
 	})
 	if err != nil {
 		fatalf("initialize identity lark-cli failed: %v", err)
@@ -267,10 +294,6 @@ func main() {
 		errorf("feishu user identity unusable at startup: %v", err)
 	} else {
 		infof("feishu user identity refreshed at startup: user=%s token=%s", user.UserName, user.TokenStatus)
-	}
-	location, err := time.LoadLocation(cfg.Capture.Timezone)
-	if err != nil {
-		fatalf("load capture timezone failed: %v", err)
 	}
 	captureService, err := capture.NewService(db, larkClient, capture.Options{
 		PageSize:           cfg.Capture.PageSize,
@@ -314,20 +337,10 @@ func main() {
 			MaxMessages: cfg.FactEngine.WindowMaxMessages,
 			Location:    location,
 		},
-		Prompts: textFileService,
+		Prompts: runtimePrompts,
 	})
 	if err != nil {
 		fatalf("initialize fact engine worker failed: %v", err)
-	}
-	factRollupExtractor, err := factengine.NewExtractor(factengine.ExtractorOptions{
-		Bin:           cfg.FactEngine.Bin,
-		Model:         cfg.FactEngine.RollupModel,
-		Sandbox:       "read-only",
-		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
-		Timeout:       time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
-	})
-	if err != nil {
-		fatalf("initialize fact rollup extractor failed: %v", err)
 	}
 	todoStore, err := extract.NewTodoStore(db)
 	if err != nil {
@@ -340,10 +353,6 @@ func main() {
 	contextAssembler, err := contextsnap.NewAssembler(db, cfg.Extract.PrincipalOpenID)
 	if err != nil {
 		fatalf("initialize common context snapshot assembler failed: %v", err)
-	}
-	factRollupWorker, err := factengine.NewRollupWorker(db, factRollupExtractor, progressService, textFileService, contextAssembler, location)
-	if err != nil {
-		fatalf("initialize fact rollup worker failed: %v", err)
 	}
 	taskFactory, err := taskcreate.NewFactory(db, contextAssembler)
 	if err != nil {
@@ -385,7 +394,7 @@ func main() {
 	proactiveWorker, err := proactive.NewWorker(proactive.Options{
 		Runner:        proactiveRunner,
 		Recorder:      proactiveStore,
-		Prompts:       textFileService,
+		Prompts:       runtimePrompts,
 		SharedMemory:  sharedMemoryService,
 		Sandbox:       cfg.Proactive.Sandbox,
 		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
@@ -405,7 +414,7 @@ func main() {
 	}
 	meetingSweepWorker, err := meetingsweep.NewWorker(meetingsweep.Options{
 		Runner:        meetingSweepRunner,
-		Prompts:       textFileService,
+		Prompts:       runtimePrompts,
 		Sandbox:       cfg.MeetingSweep.Sandbox,
 		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
 		Location:      location,
@@ -424,7 +433,7 @@ func main() {
 	}
 	morningBriefWorker, err := morningbrief.NewWorker(morningbrief.Options{
 		Runner:        morningBriefRunner,
-		Prompts:       textFileService,
+		Prompts:       runtimePrompts,
 		Sandbox:       cfg.MorningBrief.Sandbox,
 		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
 		Location:      location,
@@ -436,28 +445,40 @@ func main() {
 	if err != nil {
 		fatalf("initialize morning brief reader failed: %v", err)
 	}
-	var approvalNotifier execute.ApprovalNotifier
+	var questionNotifier execute.QuestionNotifier
+	// questionCards keeps the concrete notifier so the relay handler can
+	// re-render an answered card, which the send-only interface does not expose.
+	var questionCards *cardask.Notifier
 	if cfg.CardApproval.Enabled {
-		approvalClient, err := larkcli.New(larkcli.Options{
+		questionClient, err := larkcli.New(larkcli.Options{
 			Bin:         cfg.LarkCLI.Bin,
 			RateLimit:   cfg.LarkCLI.RateLimit,
 			Burst:       cfg.LarkCLI.Burst,
 			Concurrency: cfg.LarkCLI.Concurrent,
 			Timeout:     time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+			Timezone:    location.String(),
 		})
 		if err != nil {
-			fatalf("initialize approval lark-cli failed: %v", err)
+			fatalf("initialize question card lark-cli failed: %v", err)
 		}
-		approvalNotifier, err = cardapproval.NewNotifier(approvalClient, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
+		questionCards, err = cardask.NewNotifier(questionClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
 		if err != nil {
-			fatalf("initialize approval notifier failed: %v", err)
+			fatalf("initialize question notifier failed: %v", err)
 		}
+		questionNotifier = questionCards
 	}
 	agentExecutor, err := execute.NewAgentExecutor(
-		taskService, codexRunner, sharedMemoryService, workRuleService, textFileService, skillService, approvalNotifier, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
+		taskService, codexRunner, sharedMemoryService, runtimeWorkRules, runtimePrompts, runtimeSkills, questionNotifier, cfg.Execute.RepoRoot, cfg.Execute.RunsDir,
 	)
 	if err != nil {
 		fatalf("initialize agent executor failed: %v", err)
+	}
+	feedbackNotifier, err := taskfeedback.NewNotifier(larkClient)
+	if err != nil {
+		fatalf("initialize Task feedback notifier failed: %v", err)
+	}
+	if err := agentExecutor.SetTaskFeedbackNotifier(feedbackNotifier); err != nil {
+		fatalf("wire Task feedback notifier failed: %v", err)
 	}
 	scheduledTaskService, err := scheduledtask.NewService(
 		db, taskSubmitter, agentExecutor, cfg.ScheduledTask.BatchLimit,
@@ -507,6 +528,15 @@ func main() {
 			fatalf("initialize OKR identity service failed: %v", err)
 		}
 	}
+	pluginRegistry, err := plugin.BuiltinRegistry()
+	if err != nil {
+		fatalf("initialize plugin registry failed: %v", err)
+	}
+	pluginService, err := plugin.NewService(db, pluginRegistry, plugin.NewAuthorizer(), scheduledTaskService)
+	if err != nil {
+		fatalf("initialize plugin service failed: %v", err)
+	}
+	skillService.SetAvailability(pluginService)
 	projectService, err := background.NewProjectService(db)
 	if err != nil {
 		fatalf("initialize project service failed: %v", err)
@@ -569,6 +599,7 @@ func main() {
 	// 每日进度总结：个人与关键群统一复用 execute 段的官方 codex runner，
 	// danger-full-access + 联网自跑 lark-cli/bytedcli/git，并分别注入对应 Skill。
 	dailyDigestService, err := dailydigest.NewService(dailydigest.Options{
+		AgentName:       cfg.Identity.DisplayName,
 		DB:              db,
 		Location:        location,
 		Runner:          dailyDigestRunner,
@@ -672,9 +703,9 @@ func main() {
 			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 			EvidenceRetryMax: cfg.Extract.EvidenceRetryMax,
 			AgentToolCatalog: agentToolCatalog,
-			WorkRules:        workRuleService,
-			Skills:           skillService,
-			SystemPrompts:    textFileService,
+			WorkRules:        runtimeWorkRules,
+			Skills:           runtimeSkills,
+			SystemPrompts:    runtimePrompts,
 		})
 		if err != nil {
 			fatalf("initialize extraction worker failed: %v", err)
@@ -904,7 +935,6 @@ func main() {
 	}
 	// 持续世界建模 cron：跑在关键路径之外，disabled 时 -extract-facts-once 仍可手动跑一轮。
 	stopFactEngine := func() {}
-	stopFactRollup := func() {}
 	if cfg.FactEngine.Enabled {
 		factEngineScheduler, err := factengine.StartScheduler(
 			runtimeCtx, factEngineWorker, cfg.FactEngine.Schedule,
@@ -914,23 +944,15 @@ func main() {
 			fatalf("start fact engine scheduler failed: %v", err)
 		}
 		stopFactEngine = func() { <-factEngineScheduler.Stop().Done() }
-		factRollupScheduler, err := factengine.StartRollupScheduler(
-			runtimeCtx, factRollupWorker, cfg.FactEngine.RollupSchedule,
-			log.New(os.Stderr, "factrollup-cron ", log.LstdFlags|log.Lmicroseconds),
-		)
-		if err != nil {
-			fatalf("start fact rollup scheduler failed: %v", err)
-		}
-		stopFactRollup = func() { <-factRollupScheduler.Stop().Done() }
 	}
-	var cardApprovalProcessor api.CardApprovalProcessor
+	var cardAskProcessor api.CardAskProcessor
 	if cfg.CardApproval.Enabled {
-		cardLogger := log.New(os.Stderr, "card-approval ", log.LstdFlags|log.Lmicroseconds)
-		cardApprovalProcessor, err = cardapproval.NewRelayHandler(
-			agentExecutor, cfg.CardApproval.PrincipalOpenID, cardLogger,
+		cardLogger := log.New(os.Stderr, "card-ask ", log.LstdFlags|log.Lmicroseconds)
+		cardAskProcessor, err = cardask.NewRelayHandler(
+			agentExecutor, agentExecutor, questionCards, cfg.CardApproval.PrincipalOpenID, cardLogger,
 		)
 		if err != nil {
-			fatalf("build CC Connect card approval handler failed: %v", err)
+			fatalf("build CC Connect card ask handler failed: %v", err)
 		}
 	}
 	stopProactive := func() {}
@@ -948,6 +970,7 @@ func main() {
 		stopProactive = proactiveScheduler.Stop
 	}
 	stopMeetingSweep := func() {}
+	var meetingSweepWaker api.MeetingSweepWaker
 	if cfg.MeetingSweep.Enabled {
 		meetingSweepScheduler, err := meetingsweep.StartScheduler(
 			runtimeCtx,
@@ -960,6 +983,7 @@ func main() {
 			fatalf("start meeting sweep scheduler failed: %v", err)
 		}
 		stopMeetingSweep = meetingSweepScheduler.Stop
+		meetingSweepWaker = meetingSweepScheduler
 	}
 	stopMorningBrief := func() {}
 	if cfg.MorningBrief.Enabled {
@@ -982,7 +1006,6 @@ func main() {
 		stopDailyDigest()
 		stopScheduledTasks()
 		stopFactEngine()
-		stopFactRollup()
 		stopProactive()
 		stopMeetingSweep()
 		stopMorningBrief()
@@ -995,12 +1018,22 @@ func main() {
 	)
 	h.Use(observability.Middleware())
 	h.Use(api.StaticAssetCacheHeaders())
+	authService, err := authn.NewService("bytedcli", 12*time.Hour)
+	if err != nil {
+		fatalf("initialize ByteDance SSO service failed: %v", err)
+	}
+	h.Use(authn.BrowserMiddleware(authService))
 	runtimeSettingsService, err := config.NewRuntimeSettingsService(*configPath, cfg)
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
+	systemControlService, err := systemcontrol.NewService(filepath.Join(repoRoot, "scripts", "stop-jarvis.sh"), os.Getpid())
+	if err != nil {
+		fatalf("initialize system control service failed: %v", err)
+	}
 	readinessTargets := api.ReadinessTargets{
 		LarkCLIBin:   cfg.LarkCLI.Bin,
+		BytedCLIBin:  "bytedcli",
 		AgentCLIBin:  cfg.Execute.Bin,
 		LarkIdentity: identityClient,
 	}
@@ -1039,7 +1072,9 @@ func main() {
 		}
 	}
 	if err := api.Register(h, api.Dependencies{
-		DB: db, Todos: todoStore, TodoStatus: todoStore,
+		AgentDisplayName: cfg.Identity.DisplayName,
+		Auth:             authService,
+		DB:               db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,
 		Projects:        projectService, KeyMatters: keyMatterService,
@@ -1055,17 +1090,17 @@ func main() {
 		OKRModule:          okrModuleDeps,
 		WeeklyReportModule: weeklyReportModuleDeps,
 		ScheduledTasks:     scheduledTaskService,
-		Skills:             skillService,
+		Plugins:            pluginService,
+		Skills:             runtimeSkills,
 		Progress:           progressService,
 		FactQueries:        progressService,
 		Overview:           overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
-		MeetingReviews: meetingReviewService,
-		DailyDigests:   dailyDigestService,
-		MorningBriefs:  morningBriefReader,
-		Worklog:        worklogService,
-		FactRollups:    factRollupWorker,
-		FactRollupLoc:  location,
-		Debug:          debugService, Logs: logReader, ChatAddr: func() string {
+		MeetingReviews:  meetingReviewService,
+		DailyDigests:    dailyDigestService,
+		MorningBriefs:   morningBriefReader,
+		Worklog:         worklogService,
+		FactTimelineLoc: location,
+		Debug:           debugService, Logs: logReader, ChatAddr: func() string {
 			if cfg.Chat.Enabled {
 				return cfg.Chat.Addr
 			}
@@ -1074,9 +1109,11 @@ func main() {
 		PublicBaseURL:      cfg.Server.PublicBaseURL,
 		RuntimeSettings:    runtimeSettingsService,
 		ContextAssembler:   contextAssembler,
-		CardApprovals:      cardApprovalProcessor,
+		CardAsks:           cardAskProcessor,
 		CardApprovalSecret: cfg.CardApproval.RelaySecret,
+		MeetingSweep:       meetingSweepWaker,
 		Readiness:          readinessTargets,
+		SystemControl:      systemControlService,
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)
 	}

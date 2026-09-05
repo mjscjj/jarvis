@@ -13,7 +13,7 @@ M3 把新证据和工作背景转成经过准入判断的 Todo。它回答“这
 
 - 本轮新 message、受限会话上下文和工具补查消息；
 - Group、Project、Person、PrincipalProfile、Resource；
-- 既有 open Todos 和按群/项目加载的 Facts；
+- 既有 open Todos；各实体的长期事实页 `summary`，Fact 只给条数不给明细；
 - shared memory、rules、Skills 与工具目录。
 
 写入：
@@ -36,7 +36,7 @@ Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`
 
 至少一条 evidence 必须来自本轮 `[new]` message。模型可以用工具引用同一 chat 中批次外的消息，worker 会补载并校验；`source_quote` 必须逐字命中证据，否则按配置重抽，耗尽后 fail-fast。
 
-## 3. 项目解析与上下文快照
+## 3. 项目解析与冻结交接
 
 项目归属顺序：
 
@@ -44,9 +44,9 @@ Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`
 2. 否则用 `project_hint` 对 code/name 精确匹配；
 3. 一次短查询仍无法确定则记录 unresolved resolution trace，交给 M5 在确有需要时继续调查。
 
-冻结快照包含 principal、group、project、由证据发送者机械推导的 assigner、引用消息、会话上下文、参与人、资源、open Todos、其他项目和 Facts。`extraction_result` 保留完整 Candidate，`resolution` 保留项目/仓库推算轨迹。
+M3 只组装一次 `Todo.content`，稳定外壳为 `source`、`capture`、`annotation`：原始来源和引用证据进入 `source/capture`，Candidate 的准入结论及项目解析轨迹进入 `annotation`。Todo 机械固化为 Task 时，这份完整 JSON 原样复制到 `Task.source_payload`，下游不再查库重建一份“等价背景”。
 
-当前快照不包含 shared memory，也未冻结 ManagedResource；它们可能进入运行时 prompt，但不能笼统写成快照已包含所有背景。
+open Todos、recent Tasks、shared memory 和实体当前页属于运行时世界状态，不冒充冻结证据。M5 每次运行会收到最新的最小当前世界投影，并可用 `get-page`、`list-facts`、`get-task --context` 等工具继续下钻；冻结的 `source_payload` 始终保留，用来回答当时为何准入。
 
 ## 4. 去重与落库
 

@@ -52,8 +52,6 @@ func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *test
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"items":[]}}`)
 		case "/api/resources":
 			fmt.Fprint(w, `{"code":0,"data":{"total":4,"active_total":3,"items":[]}}`)
-		case "/api/relation-facts":
-			fmt.Fprint(w, `{"code":0,"data":{"total":5,"items":[]}}`)
 		case "/api/groups":
 			fmt.Fprint(w, `{"code":0,"data":{"total":0,"items":[]}}`)
 		default:
@@ -90,14 +88,45 @@ exit 9
 		Counts struct {
 			Projects  int `json:"projects"`
 			Resources int `json:"resources"`
-			Relations int `json:"relations"`
 		} `json:"counts"`
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("decode output %q: %v", out, err)
 	}
-	if !result.Ready || result.Observations.RelatedGroup || result.Counts.Projects != 2 || result.Counts.Resources != 4 || result.Counts.Relations != 5 {
+	if !result.Ready || result.Observations.RelatedGroup || result.Counts.Projects != 2 || result.Counts.Resources != 4 {
 		t.Fatalf("validation result = %#v", result)
+	}
+}
+
+func TestJarvisWorldModelValidateDoesNotPassAPIResponsesAsArguments(t *testing.T) {
+	largeFact := strings.Repeat("x", 300_000)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/profile":
+			fmt.Fprintf(w, `{"code":0,"data":{"open_id":"ou_ready","name":"Ready User","saved":true,"large_fact":%q}}`, largeFact)
+		case "/api/projects", "/api/persons", "/api/key-matters", "/api/resources", "/api/groups":
+			fmt.Fprint(w, `{"code":0,"data":{"total":0,"items":[]}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	binDir := t.TempDir()
+	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
+printf '%s' '{"principal_open_id":"ou_ready"}'
+`)
+	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
+printf '%s' '{"verified":true,"identities":{"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready"}}}'
+`)
+
+	out, err := runJarvisWorldModel(t, server.URL, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "validate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"ready":true`) {
+		t.Fatalf("validate output = %q", out)
 	}
 }
 
@@ -135,6 +164,44 @@ func TestJarvisWorldModelCaptureCommandsReuseM2Endpoints(t *testing.T) {
 	want := []string{"POST /api/debug/capture/discover", "POST /api/debug/capture/scan-chat"}
 	if fmt.Sprint(requests) != fmt.Sprint(want) {
 		t.Fatalf("requests = %v, want %v", requests, want)
+	}
+}
+
+func TestJarvisWorldModelResolvesWildcardServerAddressLocally(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/debug/capture/discover" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"action":"discover","ok":true}}`)
+	}))
+	defer server.Close()
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	addr := strings.TrimPrefix(server.URL, "http://")
+	_, port, ok := strings.Cut(addr, ":")
+	if !ok || port == "" {
+		t.Fatalf("test server address = %q", addr)
+	}
+	baseConfig, err := os.ReadFile(filepath.Join("..", "..", "conf", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured := strings.Replace(string(baseConfig), `addr: "0.0.0.0:18800"`, `addr: "0.0.0.0:`+port+`"`, 1)
+	if configured == string(baseConfig) {
+		t.Fatal("test config did not contain the expected baseline server address")
+	}
+	if err := os.WriteFile(configPath, []byte(configured), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runJarvisWorldModel(t, "", nil, "discover", "--config", configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"action":"discover"`) {
+		t.Fatalf("discover output = %q", out)
 	}
 }
 

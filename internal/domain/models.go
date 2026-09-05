@@ -123,28 +123,24 @@ func (Person) TableName() string { return "person" }
 // Todo is an extracted action clue. M3 chooses extracted or observing; extracted
 // clues are mechanically materialized as Tasks.
 type Todo struct {
-	ID                 uint64         `gorm:"column:id;primaryKey;autoIncrement"`
-	Title              string         `gorm:"column:title;not null"`
-	Description        string         `gorm:"column:description;not null"`
-	ActionType         string         `gorm:"column:action_type;not null"`
-	Target             string         `gorm:"column:target;not null"`         // 这件事作用的对象/主题，去重身份
-	Context            string         `gorm:"column:context;not null"`        // M3 主动补全的背景（归属/链接/相关历史）
-	OpenQuestions      datatypes.JSON `gorm:"column:open_questions;not null"` // 只有必须由 principal 拍板/提供的点
-	CommitmentStrength string         `gorm:"column:commitment_strength;not null"`
-	SourceMessageIDs   datatypes.JSON `gorm:"column:source_message_ids;not null"`
-	SourceQuote        string         `gorm:"column:source_quote;not null"`
-	GroupID            *uint64        `gorm:"column:group_id;index:idx_todo_group"`
-	ProjectID          *uint64        `gorm:"column:project_id;index:idx_todo_project"`
-	AssignerOpenID     *string        `gorm:"column:assigner_open_id"`
-	IsLeaderAssigned   bool           `gorm:"column:is_leader_assigned;not null;default:0;index:idx_todo_leader_status,priority:1"`
-	DueAt              *time.Time     `gorm:"column:due_at"`
+	ID               uint64         `gorm:"column:id;primaryKey;autoIncrement"`
+	Title            string         `gorm:"column:title;not null"`
+	Description      string         `gorm:"column:description;not null"`
+	ActionType       string         `gorm:"column:action_type;not null"`
+	Target           string         `gorm:"column:target;not null"` // 这件事作用的对象/主题，去重身份
+	SourceMessageIDs datatypes.JSON `gorm:"column:source_message_ids;not null"`
+	SourceQuote      string         `gorm:"column:source_quote;not null"`
+	GroupID          *uint64        `gorm:"column:group_id;index:idx_todo_group"`
+	ProjectID        *uint64        `gorm:"column:project_id;index:idx_todo_project"`
+	AssignerOpenID   *string        `gorm:"column:assigner_open_id"`
+	IsLeaderAssigned bool           `gorm:"column:is_leader_assigned;not null;default:0;index:idx_todo_leader_status,priority:1"`
+	DueAt            *time.Time     `gorm:"column:due_at"`
 	// Status is extracted while awaiting materialization, then materialized once
 	// a Task exists. Observing clues stay visible without creating a Task.
 	Status           string         `gorm:"column:status;not null;default:extracted;index:idx_todo_status;index:idx_todo_leader_status,priority:2"`
 	DedupFingerprint string         `gorm:"column:dedup_fingerprint;not null;uniqueIndex:uk_todo_fingerprint"`
-	ContextSnapshot  datatypes.JSON `gorm:"column:context_snapshot"`  // M3 固化的背景快照（principal/群/项目/交办人/消息/记忆），Task 与执行环节全链路复用
-	ExtractionResult datatypes.JSON `gorm:"column:extraction_result"` // M3 抽取吐出的完整结论原文（整个 Candidate），Task 与执行环节整块复用
-	Resolution       datatypes.JSON `gorm:"column:resolution"`        // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
+	Content          datatypes.JSON `gorm:"column:content"`    // 原始来源、冻结 capture 与开放 annotation；唯一语义载体
+	Resolution       datatypes.JSON `gorm:"column:resolution"` // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
 	// Revision counts how many times this clue was re-extracted; Version is the
 	// optimistic lock. They are different things and must not be merged.
 	Revision       int32     `gorm:"column:revision;not null;default:1"`
@@ -163,15 +159,15 @@ func (Todo) TableName() string { return "todo" }
 // Task is the executable snapshot materialized from a Todo or another source.
 // M5 owns all semantic judgment during execution.
 type Task struct {
-	ID         uint64         `gorm:"column:id;primaryKey;autoIncrement"`
-	TodoID     *uint64        `gorm:"column:todo_id;uniqueIndex:uk_task_todo"`
-	Title      string         `gorm:"column:title;not null"`
-	ActionType string         `gorm:"column:action_type;not null"`
-	Target     string         `gorm:"column:target;not null;default:''"`
-	Background datatypes.JSON `gorm:"column:background;not null"`
+	ID         uint64  `gorm:"column:id;primaryKey;autoIncrement"`
+	TodoID     *uint64 `gorm:"column:todo_id;uniqueIndex:uk_task_todo"`
+	Title      string  `gorm:"column:title;not null"`
+	ActionType string  `gorm:"column:action_type;not null"`
+	Target     string  `gorm:"column:target;not null;default:''"`
 	// SourcePayload is the source-owned semantic input frozen at Task creation.
 	// Todo, scheduled, manual and proactive Tasks all use this same loose JSON
-	// carrier; M5 treats it as evidence, not as an immutable execution plan.
+	// carrier for source semantics, captured facts and open annotations; M5 treats it as
+	// evidence, not as an immutable execution plan.
 	SourcePayload   datatypes.JSON `gorm:"column:source_payload"`
 	SourceType      string         `gorm:"column:source_type;not null;default:todo;uniqueIndex:uk_task_source_occurrence,priority:1"`
 	SourceID        *uint64        `gorm:"column:source_id;uniqueIndex:uk_task_source_occurrence,priority:2"`
@@ -188,7 +184,7 @@ type Task struct {
 	// findable in one query, which UpdatedAt cannot do (any column write bumps it).
 	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_task_last_progress"`
 	// ExecutionSupplements are M5-only human clarifications/instructions, append-only
-	// and isolated from Todo.context_snapshot.supplements.
+	// and isolated from Todo.content.
 	ExecutionSupplements datatypes.JSON `gorm:"column:execution_supplements"`
 	ProjectID            *uint64        `gorm:"column:project_id;index:idx_task_project"`
 	// RepoPath is an explicitly selected execution working copy. When absent,

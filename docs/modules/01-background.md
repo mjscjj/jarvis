@@ -42,17 +42,17 @@ Task 是独立执行单元，只保留可选 `project_id`，不直接关联 KeyM
 
 字段和 allowlist 以 Go model/service 为准，不在本文复制 DDL。
 
-## 4. Fact 与 RelationFact
+## 4. Fact、Page 与 EntityRelation
 
 - Project 创建、修改、归档会写自然语言 Fact；Fact 也可通过 API 写入。
 - factengine 从 message、TodoEvent 和 TaskEvent 持续蒸馏 Fact，并通过通用 CRUD 工具按需维护当前背景、关系和资料。
-- RelationFact 保存两个既有实体之间的自然语言关系与有效期。
+- EntityRelation 保存两个既有实体之间带证据的通用跨模块映射；Page 保存实体的长期事实正文。
 - M1 不负责从会话批量蒸馏事实。
 - 外部证据先进入 Message/Clue，再由 Agent 写入最小的 Project、KeyMatter 或其它通用实体；Page 继续使用 CAS，Fact 保留来源追溯。
 
 ## 5. API 与初始化
 
-Projects、Key matters、Persons、Groups、Profile、Managed resources、Facts、EntityRelations 和 RelationFacts 的路由见 [HTTP API](../reference/http-api.md)。KeyMatter 的删除接口是闭环，Project 的删除接口是软归档。
+Projects、Key matters、Persons、Groups、Profile、Managed resources、Facts、EntityRelations 和实体长期事实页的路由见 [HTTP API](../reference/http-api.md)。KeyMatter 的删除接口是闭环，Project 的删除接口是软归档。
 
 首次身份、项目、人物、重点事项和群监听统一由仓库级 `bootstrap-jarvis-world-model` Skill 依据当前用户证据建立。M1 不保留任何特定用户的 seed 数据，也不从关键群机械批量导入人物。
 

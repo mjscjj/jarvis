@@ -1,0 +1,19 @@
+[Unit]
+Description=Jarvis CC Connect
+After=network-online.target com.bytedance.jarvis.server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__JARVIS_ROOT__
+Environment=PATH=__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=__JARVIS_ROOT__/bin/cc-connect-jarvis --config __CC_CONFIG__
+# always, not on-failure: an external SIGTERM exits cleanly, which on-failure
+# treats as a finished service. This process is the only WebSocket owner for the
+# Feishu app, so a clean kill silently drops every message until someone
+# notices. Stop it with systemctl, not kill.
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

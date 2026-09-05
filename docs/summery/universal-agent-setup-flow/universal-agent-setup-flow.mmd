@@ -1,0 +1,16 @@
+flowchart LR
+    A["消息 / 事件<br/>外部世界的新变化"] --> B["快脑<br/>快速判断：值不值得继续推进"]
+    B --> C["慢脑<br/>深度调查、决策并形成方案"]
+    C --> D["执行<br/>调用工具、回收结果并验证"]
+
+    R1["领域配置<br/>快脑准入与过滤规则"] -.加载.-> B
+    R2["领域配置<br/>慢脑调查与决策规则"] -.加载.-> C
+
+    classDef input fill:#EDF2F7,stroke:#95A5B9,color:#2D3748,stroke-width:1.5px;
+    classDef brain fill:#D6E4F9,stroke:#5B8DEF,color:#2D3748,stroke-width:1.5px;
+    classDef action fill:#E6F5EC,stroke:#5BA87C,color:#2D3748,stroke-width:1.5px;
+    classDef rule fill:#FFF0E5,stroke:#E29057,color:#2D3748,stroke-width:1.5px;
+    class A input;
+    class B,C brain;
+    class D action;
+    class R1,R2 rule;

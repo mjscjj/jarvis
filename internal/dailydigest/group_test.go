@@ -83,6 +83,7 @@ func TestGroupGenerateUsesCodexSkillAndReportsCoverage(t *testing.T) {
 		}
 	}`}
 	generator := &groupGenerator{
+		agentName:    "小贾",
 		db:           db,
 		runner:       runner,
 		location:     location,
@@ -148,6 +149,7 @@ func TestGroupGenerateStillRunsCodexWhenJarvisHasNoMessages(t *testing.T) {
 		}
 	}`}
 	generator := &groupGenerator{
+		agentName:    "小贾",
 		db:           db,
 		runner:       runner,
 		location:     location,

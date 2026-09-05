@@ -1,0 +1,21 @@
+<h2>通用 Agent 的设置流程</h2>
+<p>通用 Agent 的主流程保持不变：外部消息或事件先进入快脑做低成本判断，值得推进的线索再交给慢脑深入调查和决策，最后由执行层调用工具完成动作。适配一个新业务领域时，主要配置的是快脑与慢脑各自的领域判断规则，而不是重新开发一条执行链路。</p>
+<whiteboard type="mermaid">
+flowchart LR
+    A["消息 / 事件&lt;br/&gt;外部世界的新变化"] --&gt; B["快脑&lt;br/&gt;快速判断：值不值得继续推进"]
+    B --&gt; C["慢脑&lt;br/&gt;深度调查、决策并形成方案"]
+    C --&gt; D["执行&lt;br/&gt;调用工具、回收结果并验证"]
+
+    R1["领域配置&lt;br/&gt;快脑准入与过滤规则"] -.加载.-&gt; B
+    R2["领域配置&lt;br/&gt;慢脑调查与决策规则"] -.加载.-&gt; C
+
+    classDef input fill:#EDF2F7,stroke:#95A5B9,color:#2D3748,stroke-width:1.5px;
+    classDef brain fill:#D6E4F9,stroke:#5B8DEF,color:#2D3748,stroke-width:1.5px;
+    classDef action fill:#E6F5EC,stroke:#5BA87C,color:#2D3748,stroke-width:1.5px;
+    classDef rule fill:#FFF0E5,stroke:#E29057,color:#2D3748,stroke-width:1.5px;
+    class A input;
+    class B,C brain;
+    class D action;
+    class R1,R2 rule;
+</whiteboard>
+<p><b>一句话概括：</b>设置一个新领域，就是配置快脑的准入规则和慢脑的调查、决策规则；Agent 内核与执行工具继续复用。</p>

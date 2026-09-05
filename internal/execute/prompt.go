@@ -7,25 +7,18 @@ import (
 	"strings"
 	"time"
 
-	"jarvis/internal/contextsnap"
+	"jarvis/internal/contextpack"
 	"jarvis/internal/domain"
 	"jarvis/internal/prompttemplate"
 	"jarvis/internal/sharedmem"
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
-const ExecutionPromptVersion = "task-exec-v11-task-state-evidence"
-
-// maxPriorRunsInPrompt caps how many previous execution_run rows ride into the
-// next M5 prompt. Newest runs are kept; older ones are dropped to bound size.
-const maxPriorRunsInPrompt = 5
+const ExecutionPromptVersion = "task-exec-v16-capture"
 
 const (
 	m5PhaseExecute = `BEGIN_M5_PHASE
 phase=execute
-END_M5_PHASE`
-	m5PhaseApply = `BEGIN_M5_PHASE
-phase=apply
 END_M5_PHASE`
 	m5PhaseResumeWaiting = `BEGIN_M5_PHASE
 phase=resume_waiting
@@ -35,25 +28,16 @@ phase=resume_human
 END_M5_PHASE`
 )
 
-// priorRunSummary is a compact view of one earlier execution_run. It is fed into
-// re-run prompts so the agent knows what already happened (side effects, failures,
-// artifacts) instead of starting from a blank slate.
-type priorRunSummary struct {
-	RunID       uint64          `json:"run_id"`
-	Status      string          `json:"status"`
-	Summary     string          `json:"summary,omitempty"`
-	ErrorDetail string          `json:"error_detail,omitempty"`
-	Output      json.RawMessage `json:"output,omitempty"`
-	StartedAt   string          `json:"started_at"`
-	FinishedAt  string          `json:"finished_at,omitempty"`
-}
-
 // executionResultSchema is the JSON schema codex MUST return as its final
 // message, in every stage. It distinguishes completion from a durable wait,
 // human input, failure, and "nobody needs to act" instead of inferring
-// completion from the process exit code, and it always carries the approval
-// verdict: whether a side effect needs review is the model's judgment about what
-// it is about to do, not a property of the Task's declared action_type.
+// completion from the process exit code.
+//
+// Asking the principal anything — including asking permission for a side effect
+// the APPROVAL_POLICY gates — is outcome=needs_human plus a question. There is
+// no separate approval verdict or approval stage: the answer resumes this exact
+// Codex session, so the agent decides what to do with it in context rather than
+// replaying a frozen artifact.
 //
 // outcome=observing exists because execution may discover after investigating
 // that the matter is real but asks nothing of anyone. Forcing that into completed
@@ -61,14 +45,40 @@ type priorRunSummary struct {
 const executionResultSchema = `{
   "type":"object",
   "additionalProperties":false,
-  "required":["needs_approval","outcome","summary","progress_summary","failure_reason","needs_followup","enrichments","effects","proposal","waiting"],
+  "required":["outcome","summary","progress_summary","failure_reason","question","enrichments","effects","waiting"],
   "properties":{
-    "needs_approval":{"type":"boolean","description":"Approval verdict for the next controlled side effect; criteria are defined by APPROVAL_POLICY."},
     "outcome":{"type":"string","enum":["completed","observing","waiting","needs_human","failed"]},
     "summary":{"type":"string","minLength":1},
-    "progress_summary":{"type":"string","description":"Where this whole matter now stands, in a few sentences, written for someone reading it cold weeks later: what is settled, what is still open, what happens next. This spans all runs of the Task, unlike summary which covers only this run. Rewrite it in full each time. Leave it an empty string only when this run changed nothing about where the matter stands."},
+    "progress_summary":{"type":"string","maxLength":1000,"description":"Where this whole matter now stands, in a few sentences, written for someone reading it cold weeks later: what is settled, what is still open, what happens next. This spans all runs of the Task, unlike summary which covers only this run. Rewrite it in full each time, within 1000 characters: when you run out of room, compact finished detail into one conclusion rather than dropping the tail. Leave it an empty string only when this run changed nothing about where the matter stands."},
     "failure_reason":{"type":"string"},
-    "needs_followup":{"type":"string"},
+    "question":{
+      "type":["object","null"],
+      "additionalProperties":false,
+      "description":"Required with outcome=needs_human, null otherwise. The card the principal sees. Put everything needed to decide in body; the answer comes back to this same session as JSON of the field names plus clicked.",
+      "required":["title","body","fields"],
+      "properties":{
+        "title":{"type":"string","minLength":1},
+        "body":{"type":"string","description":"Markdown. Full context and, when you are asking permission, the exact content you would write or send."},
+        "fields":{
+          "type":"array",
+          "minItems":1,
+          "description":"At least one button is required; without it the principal cannot answer.",
+          "items":{
+            "type":"object",
+            "additionalProperties":false,
+            "required":["type","name","label","options","url","style"],
+            "properties":{
+              "type":{"type":"string","enum":["button","select","multi_select","input","link"]},
+              "name":{"type":"string","description":"Key this field answers under. Empty only for link."},
+              "label":{"type":"string","minLength":1},
+              "options":{"type":"array","items":{"type":"string"},"description":"Choices for select/multi_select; empty array otherwise."},
+              "url":{"type":"string","description":"Target for link; empty string otherwise."},
+              "style":{"type":"string","description":"Button emphasis: primary, danger, or empty."}
+            }
+          }
+        }
+      }
+    },
     "enrichments":{
       "type":"array",
       "items":{
@@ -97,16 +107,6 @@ const executionResultSchema = `{
           "preview":{"type":"string"},
           "extra":{"type":"string","description":"Free-form metadata as JSON text (e.g. {\"message_id\":\"om_…\",\"chat_name\":\"…\"}); use empty string when none. Do not invent top-level fields."}
         }
-      }
-    },
-    "proposal":{
-      "type":["object","null"],
-      "additionalProperties":false,
-      "required":["action","target","artifact"],
-      "properties":{
-        "action":{"type":"string"},
-        "target":{"type":"string"},
-        "artifact":{"type":"string"}
       }
     },
     "waiting":{
@@ -151,70 +151,32 @@ func schemaRewritePrompt(err error) string {
 type executionPromptPayload struct {
 	PromptVersion        string                `json:"prompt_version"`
 	Task                 executionTask         `json:"task"`
-	ExecutionContext     executionContext      `json:"execution_context"`
-	BackgroundLookup     string                `json:"background_lookup"`
+	Context              json.RawMessage       `json:"context"`
 	RepoPath             string                `json:"repo_path,omitempty"`
 	ExecutionSupplements []ExecutionSupplement `json:"execution_supplements,omitempty"`
-	PreviousRuns         []priorRunSummary     `json:"previous_runs,omitempty"`
+	History              *runHistory           `json:"history,omitempty"`
 }
 
 type executionTask struct {
+	TodoID         *uint64 `json:"todo_id,omitempty"`
+	SourceType     string  `json:"source_type"`
+	SourceID       *uint64 `json:"source_id,omitempty"`
 	ID             uint64  `json:"id"`
 	TitleHint      string  `json:"title_hint"`
 	TargetHint     string  `json:"target_hint"`
 	CurrentStatus  string  `json:"current_status"`
 	CurrentSummary *string `json:"current_summary,omitempty"`
 	LastProgressAt string  `json:"last_progress_at,omitempty"`
-	// SourcePayload is the source-owned semantic input forwarded verbatim for
-	// every Task source. M5 treats it as evidence, not an execution contract.
-	SourcePayload json.RawMessage `json:"source_payload"`
-}
-
-// executionContext is the small part of the frozen background M5 needs before
-// it starts investigating. The complete immutable Task.background stays in the
-// database and is available through BackgroundLookup when a Task actually needs
-// more of its creation-time world.
-type executionContext struct {
-	Principal      *executionPrincipal   `json:"principal,omitempty"`
-	Project        *executionProject     `json:"project,omitempty"`
-	Group          *executionGroup       `json:"group,omitempty"`
-	Assigner       *executionAssigner    `json:"assigner,omitempty"`
-	SourceMessages []contextsnap.Message `json:"source_messages,omitempty"`
-}
-
-type executionPrincipal struct {
-	OpenID string `json:"open_id,omitempty"`
-	Name   string `json:"name,omitempty"`
-}
-
-type executionProject struct {
-	ID     uint64  `json:"id"`
-	Code   *string `json:"code,omitempty"`
-	Name   string  `json:"name,omitempty"`
-	Role   string  `json:"role,omitempty"`
-	Status string  `json:"status,omitempty"`
-}
-
-type executionGroup struct {
-	ID        uint64  `json:"id"`
-	ChatID    string  `json:"chat_id,omitempty"`
-	Name      *string `json:"name,omitempty"`
+	// ProjectID is the Task's own binding. The snapshot usually carries the
+	// project too, but a Task can be bound without one.
 	ProjectID *uint64 `json:"project_id,omitempty"`
-}
-
-type executionAssigner struct {
-	OpenID   string  `json:"open_id"`
-	Name     *string `json:"name,omitempty"`
-	Role     *string `json:"role,omitempty"`
-	Relation *string `json:"relation,omitempty"`
 }
 
 // buildTaskContext assembles the shared TASK_CONTEXT block. M3 output is a clue,
 // not a confirmed contract; M5 owns the actual goal, scope, action selection,
-// and execution. Source semantics ride through verbatim; the frozen background
-// is projected to the small execution context above and remains queryable in
-// full. Validation is fail-fast.
-func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRunSummary) ([]ExecutionSupplement, []byte, error) {
+// and execution. Source semantics and the frozen background both ride through
+// verbatim. Validation is fail-fast.
+func buildTaskContext(task *domain.Task, repoPath string, history *runHistory) ([]ExecutionSupplement, []byte, error) {
 	if task == nil || task.ID == 0 {
 		return nil, nil, fmt.Errorf("execution prompt Task is invalid")
 	}
@@ -224,7 +186,7 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 	if len(bytes.TrimSpace(task.SourcePayload)) == 0 {
 		return nil, nil, fmt.Errorf("execution prompt Task id=%d missing source_payload", task.ID)
 	}
-	context, err := projectExecutionContext(task)
+	overview, err := contextpack.Read(task.SourcePayload, "", "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -233,20 +195,19 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 		return nil, nil, fmt.Errorf("execution prompt Task id=%d execution_supplements invalid: %w", task.ID, err)
 	}
 	promptTask := executionTask{
-		ID: task.ID, TitleHint: task.Title, TargetHint: task.Target,
+		ID: task.ID, TodoID: task.TodoID, SourceType: task.SourceType, SourceID: task.SourceID, TitleHint: task.Title, TargetHint: task.Target,
 		CurrentStatus: task.Status, CurrentSummary: task.Summary,
-		SourcePayload: rawJSON(task.SourcePayload),
+		ProjectID: task.ProjectID,
 	}
 	if task.LastProgressAt != nil {
 		promptTask.LastProgressAt = task.LastProgressAt.UTC().Format(time.RFC3339)
 	}
 	payload := executionPromptPayload{
 		PromptVersion:        ExecutionPromptVersion,
-		ExecutionContext:     context,
-		BackgroundLookup:     fmt.Sprintf("jarvis-tools get-task --id %d", task.ID),
+		Context:              overview,
 		RepoPath:             repoPath,
 		ExecutionSupplements: supplements,
-		PreviousRuns:         previousRuns,
+		History:              history,
 		Task:                 promptTask,
 	}
 	encoded, err := json.Marshal(payload)
@@ -254,56 +215,6 @@ func buildTaskContext(task *domain.Task, repoPath string, previousRuns []priorRu
 		return nil, nil, fmt.Errorf("encode execution prompt payload task_id=%d: %w", task.ID, err)
 	}
 	return supplements, encoded, nil
-}
-
-func projectExecutionContext(task *domain.Task) (executionContext, error) {
-	snapshot, err := contextsnap.Decode(task.Background)
-	if err != nil {
-		if task.SourceType == "todo" {
-			return executionContext{}, nil
-		}
-		return executionContext{}, fmt.Errorf("execution prompt Task id=%d background invalid: %w", task.ID, err)
-	}
-	result := executionContext{}
-	if snapshot.Principal != nil {
-		result.Principal = &executionPrincipal{
-			OpenID: snapshot.Principal.OpenID,
-			Name:   snapshot.Principal.Name,
-		}
-	}
-	if snapshot.Project != nil {
-		result.Project = &executionProject{
-			ID: snapshot.Project.ID, Code: snapshot.Project.Code, Name: snapshot.Project.Name,
-			Role: snapshot.Project.Role, Status: snapshot.Project.Status,
-		}
-	} else if task.ProjectID != nil {
-		result.Project = &executionProject{ID: *task.ProjectID}
-	}
-	if snapshot.Group != nil {
-		result.Group = &executionGroup{
-			ID: snapshot.Group.ID, ChatID: snapshot.Group.ChatID,
-			Name: snapshot.Group.Name, ProjectID: snapshot.Group.ProjectID,
-		}
-	}
-	if snapshot.Assigner != nil {
-		result.Assigner = &executionAssigner{
-			OpenID: snapshot.Assigner.OpenID, Name: snapshot.Assigner.Name,
-			Role: snapshot.Assigner.Role,
-		}
-	}
-	seen := make(map[string]struct{}, len(snapshot.Messages))
-	for _, message := range snapshot.Messages {
-		id := strings.TrimSpace(message.MessageID)
-		if id == "" {
-			continue
-		}
-		if _, exists := seen[id]; exists {
-			continue
-		}
-		seen[id] = struct{}{}
-		result.SourceMessages = append(result.SourceMessages, message)
-	}
-	return result, nil
 }
 
 // renderPrompt glues the stage instructions, the shared-memory block, the
@@ -327,28 +238,42 @@ func renderPrompt(instructions, toolCatalog, sharedMemory, skills string, supple
 		"\nBEGIN_TASK_CONTEXT\n" + string(encoded) + "\nEND_TASK_CONTEXT"
 }
 
+// executionPromptInput carries everything assembled for one run. It is a struct
+// rather than a parameter list because the two builders need the same nine-plus
+// values and positional arguments stopped being readable.
+type executionPromptInput struct {
+	SystemPrompt   string
+	ApprovalPolicy string
+	Task           *domain.Task
+	RepoPath       string
+	ToolCatalog    string
+	SharedMemory   string
+	WorkRules      string
+	Skills         string
+	History        *runHistory
+}
+
 // buildExecutionPrompt assembles the prompt for a Task's first pass. Every
 // action_type takes this one path: codex investigates, decides the real goal and
 // action, and then judges against the editable approvalPolicy whether the side
 // effect it is about to cause needs human review — code changes included. It
-// gives codex the complete M3 clue, a small projection of frozen context, and
-// the resolved repo. Complete Task.background is loaded only when needed.
+// gives codex trigger evidence, scene/background indexes, current Task state,
+// history availability and the resolved repo.
 // task.execution_supplements (M5-only) are injected as high-priority directives.
-// previousRuns (if any) carry prior attempt results.
-func buildExecutionPrompt(systemPrompt, approvalPolicy string, task *domain.Task, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
-	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, systemPrompt, workRules, approvalPolicy)
+func buildExecutionPrompt(in executionPromptInput) (string, error) {
+	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, in.SystemPrompt, in.WorkRules, in.ApprovalPolicy)
 	if err != nil {
 		return "", fmt.Errorf("render M5 execution system prompt: %w", err)
 	}
-	supplements, encoded, err := buildTaskContext(task, repoPath, previousRuns)
+	supplements, encoded, err := buildTaskContext(in.Task, in.RepoPath, in.History)
 	if err != nil {
 		return "", err
 	}
 
 	instructions := renderedSystemPrompt + "\n\n" + m5PhaseExecute
-	instructions += repoInstruction(repoPath)
+	instructions += repoInstruction(in.RepoPath)
 
-	return renderPrompt(instructions, toolCatalog, sharedMemory, skills, supplements, encoded), nil
+	return renderPrompt(instructions, in.ToolCatalog, in.SharedMemory, in.Skills, supplements, encoded), nil
 }
 
 // repoInstruction only tells codex where the resolved working copy is. Delivery
@@ -358,37 +283,4 @@ func repoInstruction(repoPath string) string {
 		return ""
 	}
 	return "\n\n当前工作目录已切到 repo：" + repoPath + "。"
-}
-
-// buildApplyPrompt assembles the apply-stage prompt after a human approved a
-// proposal. The approved action + full artifact is embedded verbatim and codex is
-// told to land it faithfully for real. Its final message must satisfy
-// executionResultSchema.
-func buildApplyPrompt(systemPrompt, approvalPolicy string, task *domain.Task, proposal *codexProposal, repoPath, toolCatalog, sharedMemory, workRules, skills string, previousRuns []priorRunSummary) (string, error) {
-	if proposal == nil {
-		return "", fmt.Errorf("apply prompt Task id=%d has no approved proposal", task.ID)
-	}
-	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, systemPrompt, workRules, approvalPolicy)
-	if err != nil {
-		return "", fmt.Errorf("render M5 apply system prompt: %w", err)
-	}
-	supplements, encoded, err := buildTaskContext(task, repoPath, previousRuns)
-	if err != nil {
-		return "", err
-	}
-	approved, err := json.Marshal(map[string]string{
-		"action":   proposal.Action,
-		"target":   proposal.Target,
-		"artifact": proposal.Artifact,
-	})
-	if err != nil {
-		return "", fmt.Errorf("encode approved proposal task_id=%d: %w", task.ID, err)
-	}
-
-	instructions := renderedSystemPrompt + "\n\n" + m5PhaseApply + `
-
-APPROVED_PROPOSAL=` + string(approved)
-	instructions += repoInstruction(repoPath)
-
-	return renderPrompt(instructions, toolCatalog, sharedMemory, skills, supplements, encoded), nil
 }

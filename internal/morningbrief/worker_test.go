@@ -30,6 +30,10 @@ func (f *fakeRunner) RunTextSandboxAtStage(_ context.Context, prompt, sandbox, r
 		if err := os.WriteFile(path, []byte("# 晨间作战简报 · "+f.date+"\n"), 0o644); err != nil {
 			return "", err
 		}
+		fresh := time.Now().Add(time.Second)
+		if err := os.Chtimes(path, fresh, fresh); err != nil {
+			return "", err
+		}
 	}
 	return f.result, f.err
 }

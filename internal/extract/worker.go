@@ -123,7 +123,8 @@ func (w *Worker) PendingChatIDs(ctx context.Context) ([]string, error) {
 // Todo rows M3 committed. Duplicate wake-ups are cheap: a chat with no messages
 // beyond its extraction watermark returns zero stats and no Todo references.
 func (w *Worker) ExtractChat(ctx context.Context, chatID string) (stats WorkerStats, todos []TodoRef, retErr error) {
-	batch, err := w.store.LoadPendingChat(ctx, chatID, w.opts.Load)
+	load := w.opts.Load
+	batch, err := w.store.LoadPendingChat(ctx, chatID, load)
 	if err != nil {
 		return WorkerStats{}, nil, err
 	}
@@ -156,7 +157,34 @@ func (w *Worker) ExtractChat(ctx context.Context, chatID string) (stats WorkerSt
 		}
 	}()
 
-	batchStats, persisted, err := w.extractBatch(runCtx, *batch, startedAt)
+	// A backlogged chat can hand M3 hundreds of new messages at once, and the
+	// prompt limit is reached before the model is ever called. Halving the batch
+	// until it fits keeps the watermark moving one bounded slice at a time
+	// instead of retrying the same oversized slice forever.
+	var prompts []Prompt
+	for {
+		if messageCount > load.BatchMessages {
+			return stats, nil, fmt.Errorf("load pending extraction chat_id=%s returned messages=%d above limit=%d", chatID, messageCount, load.BatchMessages)
+		}
+		prompts, err = w.buildBatchPrompts(runCtx, *batch, startedAt, messageCount == 1)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ErrPromptTooLarge) || messageCount <= 1 {
+			return stats, nil, err
+		}
+		load.BatchMessages = max(1, messageCount/2)
+		batch, err = w.store.LoadPendingChat(runCtx, chatID, load)
+		if err != nil {
+			return stats, nil, err
+		}
+		if batch == nil {
+			return stats, nil, fmt.Errorf("reload bounded extraction chat_id=%s limit=%d returned no pending batch", chatID, load.BatchMessages)
+		}
+		messageCount = countNewMessages(*batch)
+	}
+
+	batchStats, persisted, err := w.extractBatch(runCtx, *batch, prompts)
 	if err != nil {
 		return stats, nil, err
 	}
@@ -180,49 +208,62 @@ func countNewMessages(batch ChatBatch) int {
 	return len(seen)
 }
 
-func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, runNow time.Time) (WorkerStats, PersistStats, error) {
-	stats := WorkerStats{}
+func (w *Worker) buildBatchPrompts(ctx context.Context, batch ChatBatch, runNow time.Time, allowSingleNewOverLimit bool) ([]Prompt, error) {
 	workRules, err := w.opts.WorkRules.Block(ctx, workrule.StageExtract)
 	if err != nil {
-		return stats, PersistStats{}, fmt.Errorf("read extract work rules chat_id=%s: %w", batch.Group.ChatID, err)
+		return nil, fmt.Errorf("read extract work rules chat_id=%s: %w", batch.Group.ChatID, err)
 	}
 	skills, err := w.opts.Skills.Catalog(ctx, skill.StageExtract)
 	if err != nil {
-		return stats, PersistStats{}, fmt.Errorf("read extract skills chat_id=%s: %w", batch.Group.ChatID, err)
+		return nil, fmt.Errorf("read extract skills chat_id=%s: %w", batch.Group.ChatID, err)
 	}
 	systemPrompt, err := w.opts.SystemPrompts.Content(ctx, textstore.SystemPromptM3Key)
 	if err != nil {
-		return stats, PersistStats{}, fmt.Errorf("read M3 system prompt chat_id=%s: %w", batch.Group.ChatID, err)
+		return nil, fmt.Errorf("read M3 system prompt chat_id=%s: %w", batch.Group.ChatID, err)
 	}
 	toolCatalog := ""
 	if w.opts.AgentToolCatalog {
 		toolCatalog, err = toolcatalog.Block(toolcatalog.StageExtract)
 		if err != nil {
-			return stats, PersistStats{}, fmt.Errorf("read extract tool catalog chat_id=%s: %w", batch.Group.ChatID, err)
+			return nil, fmt.Errorf("read extract tool catalog chat_id=%s: %w", batch.Group.ChatID, err)
 		}
 	}
 	counts, err := w.loadFactCounts(ctx, batch, runNow)
 	if err != nil {
-		return stats, PersistStats{}, err
+		return nil, err
 	}
-	results := make([]UnitExtraction, 0, len(batch.Units))
+	prompts := make([]Prompt, len(batch.Units))
 	for index := range batch.Units {
 		unit := batch.Units[index]
 		prompt, err := BuildPrompt(batch, unit, counts, runNow, PromptOptions{
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
-			SystemPrompt: systemPrompt, ToolCatalog: toolCatalog,
+			AllowSingleNewOverLimit: allowSingleNewOverLimit,
+			SystemPrompt:            systemPrompt, ToolCatalog: toolCatalog,
 			WorkRules: workRules, Skills: skills,
 		})
 		if err != nil {
-			return stats, PersistStats{}, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+			return nil, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
 		}
+		prompts[index] = prompt
+	}
+	return prompts, nil
+}
+
+func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, prompts []Prompt) (WorkerStats, PersistStats, error) {
+	stats := WorkerStats{}
+	if len(prompts) != len(batch.Units) {
+		return stats, PersistStats{}, fmt.Errorf("extract batch chat_id=%s prompts=%d units=%d", batch.Group.ChatID, len(prompts), len(batch.Units))
+	}
+	results := make([]UnitExtraction, 0, len(batch.Units))
+	for index := range batch.Units {
+		unit := batch.Units[index]
 		box, err := w.toolBox.Build(batch, unit)
 		if err != nil {
 			return stats, PersistStats{}, fmt.Errorf("build extraction tool box chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
 		}
 		// PersistChat re-reads the unit out of batch.Units by key, so hydrated
 		// evidence has to land there and not in a local copy.
-		resolved, candidateCount, err := w.extractUnitWithRetry(ctx, batch, &batch.Units[index], prompt, box)
+		resolved, candidateCount, err := w.extractUnitWithRetry(ctx, batch, &batch.Units[index], prompts[index], box)
 		if err != nil {
 			return stats, PersistStats{}, err
 		}

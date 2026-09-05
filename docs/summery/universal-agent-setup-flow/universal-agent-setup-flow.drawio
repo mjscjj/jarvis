@@ -1,0 +1,84 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="通用 Agent 设置流程" id="universal_agent_setup_001">
+    <mxGraphModel dx="0" dy="0" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1070" pageHeight="340" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title_main" value="同一个 Agent 内核，如何适配不同业务领域" style="text;html=1;fontSize=18;fontColor=#2D3748;align=center;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="40" y="10" width="990" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="业务差异进入判断规则，消息处理、深度决策与工具执行保持通用" style="text;html=1;fontSize=10;fontColor=#68778D;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="90" y="40" width="890" height="24" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="rule_fast" value="领域配置｜快脑准入与过滤规则" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF0E5;strokeColor=#E29057;strokeWidth=1.2;arcSize=10;fontSize=11;fontColor=#2D3748;" parent="1" vertex="1">
+          <mxGeometry x="300" y="78" width="210" height="42" as="geometry"/>
+        </mxCell>
+        <mxCell id="rule_slow" value="领域配置｜慢脑调查与决策规则" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF0E5;strokeColor=#E29057;strokeWidth=1.2;arcSize=10;fontSize=11;fontColor=#2D3748;" parent="1" vertex="1">
+          <mxGeometry x="560" y="78" width="210" height="42" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="node_input" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDF2F7;strokeColor=#95A5B9;strokeWidth=1.2;arcSize=10;" parent="1" vertex="1">
+          <mxGeometry x="40" y="150" width="210" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_input_title" value="&lt;b&gt;消息 / 事件&lt;/b&gt;" style="text;html=1;fontSize=14;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="50" y="160" width="190" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_input_body" value="外部世界出现新变化&lt;br&gt;成为 Agent 的输入" style="text;html=1;fontSize=10;fontColor=#68778D;align=center;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="55" y="192" width="180" height="48" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="node_fast" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D6E4F9;strokeColor=#5B8DEF;strokeWidth=1.2;arcSize=10;" parent="1" vertex="1">
+          <mxGeometry x="300" y="150" width="210" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_fast_title" value="&lt;b&gt;快脑&lt;/b&gt;" style="text;html=1;fontSize=14;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="310" y="160" width="190" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_fast_body" value="加载特定领域判断规则&lt;br&gt;快速判断：值不值得推进" style="text;html=1;fontSize=10;fontColor=#68778D;align=center;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="315" y="192" width="180" height="48" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="node_slow" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D6E4F9;strokeColor=#5B8DEF;strokeWidth=1.2;arcSize=10;" parent="1" vertex="1">
+          <mxGeometry x="560" y="150" width="210" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_slow_title" value="&lt;b&gt;慢脑&lt;/b&gt;" style="text;html=1;fontSize=14;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="570" y="160" width="190" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_slow_body" value="加载特定领域判断规则&lt;br&gt;深度调查、决策并形成方案" style="text;html=1;fontSize=10;fontColor=#68778D;align=center;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="575" y="192" width="180" height="48" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="node_execute" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F5EC;strokeColor=#5BA87C;strokeWidth=1.2;arcSize=10;" parent="1" vertex="1">
+          <mxGeometry x="820" y="150" width="210" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_execute_title" value="&lt;b&gt;执行&lt;/b&gt;" style="text;html=1;fontSize=14;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="830" y="160" width="190" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="node_execute_body" value="复用通用工具完成动作&lt;br&gt;回收结果并验证" style="text;html=1;fontSize=10;fontColor=#68778D;align=center;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="835" y="192" width="180" height="48" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="arr_input_fast" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#8496AE;strokeWidth=0.8;endSize=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_input" target="node_fast" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_fast_slow" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#8496AE;strokeWidth=0.8;endSize=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_fast" target="node_slow" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_slow_execute" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#8496AE;strokeWidth=0.8;endSize=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_slow" target="node_execute" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_rule_fast" value="&lt;span style=&quot;font-size:9px;color:#3F72D9&quot;&gt;加载&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E29057;strokeWidth=0.8;endSize=5;dashed=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="rule_fast" target="node_fast" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arr_rule_slow" value="&lt;span style=&quot;font-size:9px;color:#3F72D9&quot;&gt;加载&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E29057;strokeWidth=0.8;endSize=5;dashed=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="rule_slow" target="node_slow" edge="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="annotation" value="设置一个新领域 = 配置快脑规则 + 配置慢脑规则；不为每个领域重写一条代码链路" style="text;html=1;fontSize=11;fontColor=#3F72D9;align=center;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="120" y="282" width="830" height="28" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

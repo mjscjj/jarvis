@@ -55,11 +55,16 @@ type Reader interface {
 	Catalog(ctx context.Context, stage string) (string, error)
 }
 
+type Availability interface {
+	SkillEnabled(ctx context.Context, name string) (bool, error)
+}
+
 type Service struct {
-	root       string
-	configPath string
-	moduleGate func(context.Context, string) (bool, error)
-	mu         sync.Mutex
+	root         string
+	configPath   string
+	moduleGate   func(context.Context, string) (bool, error)
+	availability Availability
+	mu           sync.Mutex
 }
 
 type Option func(*Service)
@@ -118,6 +123,13 @@ func NewService(root, configPath string, options ...Option) (*Service, error) {
 // create database cache rows or silently add missing configuration.
 func (s *Service) Scan(ctx context.Context) ([]View, error) {
 	return s.List(ctx)
+}
+
+// SetAvailability adds an external capability gate without making the Skill
+// package depend on the owner of that capability. It must be called at startup
+// before the service is exposed to concurrent requests.
+func (s *Service) SetAvailability(availability Availability) {
+	s.availability = availability
 }
 
 func (s *Service) List(ctx context.Context) ([]View, error) {
@@ -210,14 +222,18 @@ func (s *Service) Update(ctx context.Context, name string, input Input) (*View, 
 func (s *Service) applyAvailability(ctx context.Context, views []View) error {
 	for i := range views {
 		views[i].IsAvailable = true
-		if views[i].Module == "" || s.moduleGate == nil {
-			continue
+		if views[i].Module != "" && s.moduleGate != nil {
+			enabled, err := s.moduleGate(ctx, views[i].Module)
+			if err != nil {
+				return fmt.Errorf("check module %q for skill %q: %w", views[i].Module, views[i].Name, err)
+			}
+			views[i].IsAvailable = enabled
 		}
-		enabled, err := s.moduleGate(ctx, views[i].Module)
+		available, err := s.available(ctx, views[i].Name)
 		if err != nil {
-			return fmt.Errorf("check module %q for skill %q: %w", views[i].Module, views[i].Name, err)
+			return err
 		}
-		views[i].IsAvailable = enabled
+		views[i].IsAvailable = views[i].IsAvailable && available
 	}
 	return nil
 }
@@ -229,6 +245,13 @@ func (s *Service) Content(ctx context.Context, name string) (*ContentView, error
 	name = strings.TrimSpace(name)
 	if !skillName.MatchString(name) {
 		return nil, fmt.Errorf("%w: invalid skill name %q", ErrInvalidInput, name)
+	}
+	available, err := s.available(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if !available {
+		return nil, fmt.Errorf("%w: skill %s is unavailable while its plugin is disabled", ErrNotFound, name)
 	}
 	items, err := s.scanMetadata()
 	if err != nil {
@@ -253,6 +276,17 @@ func (s *Service) Content(ctx context.Context, name string) (*ContentView, error
 		return nil, err
 	}
 	return &ContentView{Name: name, Path: path, Content: string(raw)}, nil
+}
+
+func (s *Service) available(ctx context.Context, name string) (bool, error) {
+	if s.availability == nil {
+		return true, nil
+	}
+	available, err := s.availability.SkillEnabled(ctx, name)
+	if err != nil {
+		return false, fmt.Errorf("check skill %s availability: %w", name, err)
+	}
+	return available, nil
 }
 
 func (s *Service) Catalog(ctx context.Context, stage string) (string, error) {

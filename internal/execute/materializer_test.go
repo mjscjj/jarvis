@@ -2,8 +2,10 @@ package execute
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -33,12 +35,10 @@ func TestMaterializeTodoCarriesExtractionAsSourcePayload(t *testing.T) {
 	if err := db.First(&task, result.TaskID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if task.TodoID == nil || *task.TodoID != 7 || string(task.SourcePayload) != `{"desired_outcome":"完成目标"}` || task.RepoPath != nil {
+	if task.TodoID == nil || *task.TodoID != 7 || task.RepoPath != nil {
 		t.Fatalf("task = %#v source_payload=%s", task, task.SourcePayload)
 	}
-	if string(task.Background) != `{"desired_outcome":"完成目标"}` {
-		t.Fatalf("task = %#v background=%s", task, task.Background)
-	}
+	assertSameJSON(t, "task content", task.SourcePayload, frozenTestContent(`{"desired_outcome":"完成目标"}`, materializerTodoContextSnapshot))
 	var todo domain.Todo
 	if err := db.First(&todo, 7).Error; err != nil {
 		t.Fatal(err)
@@ -96,7 +96,6 @@ func TestMaterializeTodoFreshEvidenceRerunsExistingObservingTask(t *testing.T) {
 	todoID := uint64(10)
 	task := domain.Task{
 		ID: 56, TodoID: &todoID, Title: "已有执行任务", ActionType: "investigate", Target: "目标",
-		Background:    datatypes.JSON(`{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z"}`),
 		SourcePayload: datatypes.JSON(`{"original":"evidence"}`), SourceType: "todo", SourceID: &todoID,
 		Status: "observing", ExecutionResult: datatypes.JSON(`{"outcome":"observing"}`), Version: 6,
 	}
@@ -122,8 +121,8 @@ func TestMaterializeTodoFreshEvidenceRerunsExistingObservingTask(t *testing.T) {
 	if reloadedTask.Status != "pending" || reloadedTask.Version != 7 || len(reloadedTask.ExecutionResult) != 0 {
 		t.Fatalf("Task status=%s version=%d execution_result=%s", reloadedTask.Status, reloadedTask.Version, reloadedTask.ExecutionResult)
 	}
-	if string(reloadedTask.SourcePayload) != `{"original":"evidence"}` || string(reloadedTask.Background) != `{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z"}` {
-		t.Fatalf("frozen Task evidence changed: source_payload=%s background=%s", reloadedTask.SourcePayload, reloadedTask.Background)
+	if string(reloadedTask.SourcePayload) != `{"original":"evidence"}` {
+		t.Fatalf("frozen Task evidence changed: source_payload=%s", reloadedTask.SourcePayload)
 	}
 	var todo domain.Todo
 	if err := db.First(&todo, todoID).Error; err != nil {
@@ -168,8 +167,7 @@ func TestMaterializeTodoRejectsExistingNonObservingTask(t *testing.T) {
 	insertMaterializerTodo(t, db, 11, 2)
 	todoID := uint64(11)
 	task := domain.Task{
-		TodoID: &todoID, Title: "正在执行的任务", ActionType: "investigate", Target: "目标",
-		Background: datatypes.JSON(`{}`), SourcePayload: datatypes.JSON(`{}`),
+		TodoID: &todoID, Title: "正在执行的任务", ActionType: "investigate", Target: "目标", SourcePayload: datatypes.JSON(`{}`),
 		SourceType: "todo", SourceID: &todoID, Status: "pending", Version: 3,
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -222,7 +220,7 @@ func newMaterializerTestDB(t *testing.T) *gorm.DB {
 			source_message_ids TEXT NOT NULL DEFAULT '[]', source_quote TEXT NOT NULL DEFAULT '',
 			group_id INTEGER, project_id INTEGER, assigner_open_id TEXT, is_leader_assigned BOOLEAN NOT NULL DEFAULT 0,
 			due_at DATETIME, status TEXT NOT NULL, dedup_fingerprint TEXT NOT NULL,
-			context_snapshot TEXT, extraction_result TEXT, resolution TEXT,
+			content TEXT, resolution TEXT,
 			revision INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL,
 			first_seen_at DATETIME NOT NULL, last_evidence_at DATETIME NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -234,7 +232,7 @@ func newMaterializerTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE task (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, todo_id INTEGER UNIQUE, title TEXT NOT NULL,
-			action_type TEXT NOT NULL, target TEXT NOT NULL, background TEXT NOT NULL,
+			action_type TEXT NOT NULL, target TEXT NOT NULL,
 			source_payload TEXT NOT NULL, source_type TEXT NOT NULL, source_id INTEGER,
 			occurrence_key TEXT, status TEXT NOT NULL,
 			execution_result TEXT, summary TEXT, last_progress_at DATETIME, execution_supplements TEXT,
@@ -256,16 +254,32 @@ func newMaterializerTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+// assertSameJSON compares JSON by value: storage canonicalizes key order, so a
+// byte comparison would fail even when the snapshot travelled through intact.
+func assertSameJSON(t *testing.T, label string, got, want []byte) {
+	t.Helper()
+	var gotValue, wantValue any
+	if err := json.Unmarshal(got, &gotValue); err != nil {
+		t.Fatalf("decode %s: %v", label, err)
+	}
+	if err := json.Unmarshal(want, &wantValue); err != nil {
+		t.Fatalf("decode expected %s: %v", label, err)
+	}
+	if !reflect.DeepEqual(gotValue, wantValue) {
+		t.Fatalf("%s = %s, want %s", label, got, want)
+	}
+}
+
+const materializerTodoContextSnapshot = `{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z","principal":{"open_id":"ou_owner","name":"Owner"},"project":{"id":1,"name":"Jarvis","role":"owner","repos":[{"local_path":"jarvis"}]},"messages":[],"memories":[],"facts":[],"recent_tasks":[],"open_todos":[]}`
+
 func insertMaterializerTodo(t *testing.T, db *gorm.DB, id uint64, version int32) {
 	t.Helper()
 	now := time.Now().UTC()
 	todo := domain.Todo{
 		ID: id, Title: "执行线索", ActionType: "investigate", Target: "目标",
 		Status: "extracted", DedupFingerprint: fmt.Sprintf("fp-%d", id),
-		OpenQuestions:    datatypes.JSON(`[]`),
 		SourceMessageIDs: datatypes.JSON(`[]`),
-		ContextSnapshot:  datatypes.JSON(`{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z","principal":{"open_id":"ou_owner","name":"Owner"},"project":{"id":1,"name":"Jarvis","role":"owner","repos":[{"local_path":"jarvis"}]},"messages":[],"memories":[],"facts":[],"recent_tasks":[],"open_todos":[]}`),
-		ExtractionResult: datatypes.JSON(`{"desired_outcome":"完成目标"}`),
+		Content:          frozenTestContent(`{"desired_outcome":"完成目标"}`, materializerTodoContextSnapshot),
 		Revision:         1, Version: version, FirstSeenAt: now, LastEvidenceAt: now,
 	}
 	if err := db.Create(&todo).Error; err != nil {
