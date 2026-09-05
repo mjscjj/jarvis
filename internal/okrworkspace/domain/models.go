@@ -156,6 +156,52 @@ type KRProgress struct {
 
 func (KRProgress) TableName() string { return "okr_workspace_progress" }
 
+// FollowUpStatus is deliberately narrower than weekly KR progress. A tracker
+// row is either not started, in progress or done; risk judgements remain in the
+// richer OKR progress model instead of leaking into this small coordination
+// surface.
+type FollowUpStatus string
+
+const (
+	FollowUpStatusNotStarted FollowUpStatus = "not_started"
+	FollowUpStatusInProgress FollowUpStatus = "in_progress"
+	FollowUpStatusDone       FollowUpStatus = "done"
+)
+
+func ValidFollowUpStatus(value FollowUpStatus) bool {
+	return value == FollowUpStatusNotStarted || value == FollowUpStatusInProgress || value == FollowUpStatusDone
+}
+
+type FollowUpOwner struct {
+	OpenID string `json:"open_id"`
+	Name   string `json:"name"`
+}
+
+// FollowUpItem is the weekly-report-owned source of truth for Review follow-up
+// rows. Owners stay as one JSON value because the product only reads and edits
+// the row as a whole; there is no owner-indexed query that would justify a
+// second table and a multi-write protocol.
+type FollowUpItem struct {
+	ID            string          `gorm:"primaryKey;size:96"`
+	Quarter       string          `gorm:"not null;index:idx_follow_up_scope,priority:1;size:16"`
+	Week          string          `gorm:"not null;index:idx_follow_up_scope,priority:2;size:16"`
+	Version       int32           `gorm:"not null;default:0"`
+	Topic         string          `gorm:"not null;type:text"`
+	Owners        []FollowUpOwner `gorm:"serializer:json;type:text"`
+	Status        FollowUpStatus  `gorm:"not null;size:24"`
+	AssignDate    string          `gorm:"not null;default:'';size:10"`
+	Update        string          `gorm:"not null;type:text;default:''"`
+	SourceKey     string          `gorm:"not null;default:'';index"`
+	SourcePayload datatypes.JSON  `gorm:"not null;type:text"`
+	SortOrder     int             `gorm:"not null;default:0"`
+	CreatedBy     string          `gorm:"not null;default:''"`
+	UpdatedBy     string          `gorm:"not null;default:''"`
+	CreatedAt     time.Time       `gorm:"not null"`
+	UpdatedAt     time.Time       `gorm:"not null"`
+}
+
+func (FollowUpItem) TableName() string { return "okr_workspace_follow_up" }
+
 type WeekTemplateKey string
 
 const (
@@ -411,5 +457,5 @@ func IdentityModels() []any {
 // names are intentionally preserved so enabling the split never rewrites or
 // loses Emily's historical data.
 func WeeklyReportModels() []any {
-	return []any{&WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}, &WeeklyScore{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+	return []any{&WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

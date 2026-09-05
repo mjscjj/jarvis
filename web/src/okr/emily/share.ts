@@ -30,7 +30,15 @@ export function weeklyShareWorkspaceTab(tab: WeeklyShareTab): WeeklyWorkspaceTab
 
 export function weeklyShareURLForTab(currentURL: string, tab: WeeklyShareTab, publicBaseURL: string): string {
   const url = new URL(publicBaseURL.trim() || currentURL)
-  url.hash = `/weekly-report?tab=${tab}`
+	const current = new URL(currentURL)
+	const [, query = ''] = current.hash.replace(/^#/, '').split('?')
+	const currentParams = new URLSearchParams(query)
+	const params = new URLSearchParams({ tab })
+	for (const key of ['quarter', 'week']) {
+		const value = currentParams.get(key)
+		if (value) params.set(key, value)
+	}
+	url.hash = `/weekly-report?${params}`
   return url.toString()
 }
 

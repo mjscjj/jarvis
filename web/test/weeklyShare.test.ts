@@ -6,19 +6,19 @@ import { isWeeklyShareViewState, WEEKLY_SHARE_NAV, weeklyShareTab, weeklyShareUR
 test('weekly share link keeps only the selected dataset and view', () => {
   assert.equal(
     weeklyShareURL('https://emily.example/path#/okr?quarter=2026-Q3&tab=weekly-fill&week=2026-W36', { dataset: 'weekly', view: 'fill' }, ''),
-    'https://emily.example/path#/weekly-report?tab=weekly-fill',
+    'https://emily.example/path#/weekly-report?tab=weekly-fill&quarter=2026-Q3&week=2026-W36',
   )
   assert.equal(
     weeklyShareURL('https://emily.example/path#/okr?quarter=2026-Q3&tab=weekly-fill&week=2026-W36', { dataset: 'weekly', view: 'meeting' }, ''),
-    'https://emily.example/path#/weekly-report?tab=weekly-meeting',
+    'https://emily.example/path#/weekly-report?tab=weekly-meeting&quarter=2026-Q3&week=2026-W36',
   )
   assert.equal(
     weeklyShareURL('http://10.78.205.9:18802/#/okr?quarter=2026-Q3&tab=review-fill&week=2026-W36', { dataset: 'review', view: 'fill' }, ''),
-    'http://10.78.205.9:18802/#/weekly-report?tab=review-fill',
+    'http://10.78.205.9:18802/#/weekly-report?tab=review-fill&quarter=2026-Q3&week=2026-W36',
   )
   assert.equal(
     weeklyShareURL('http://10.78.205.9:18802/#/okr?quarter=2026-Q3&tab=review-fill&week=2026-W36', { dataset: 'review', view: 'meeting' }, ''),
-    'http://10.78.205.9:18802/#/weekly-report?tab=review-meeting',
+    'http://10.78.205.9:18802/#/weekly-report?tab=review-meeting&quarter=2026-Q3&week=2026-W36',
   )
 })
 

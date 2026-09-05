@@ -125,8 +125,8 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	if input.TargetType == "" {
 		input.TargetType = "page"
 	}
-	if input.TargetType != "page" && input.TargetType != "kr" && input.TargetType != "metric" && input.TargetType != "point" && input.TargetType != "entry" {
-		return CommentView{}, fmt.Errorf("target_type must be page, kr, metric, point or entry")
+	if input.TargetType != "page" && input.TargetType != "kr" && input.TargetType != "metric" && input.TargetType != "point" && input.TargetType != "entry" && input.TargetType != "follow_up" {
+		return CommentView{}, fmt.Errorf("target_type must be page, kr, metric, point, entry or follow_up")
 	}
 	if input.TargetType != "page" && input.TargetID == "" {
 		return CommentView{}, fmt.Errorf("target_id is required for content comments")
@@ -150,6 +150,18 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	}
 	if len([]rune(input.SelectionPrefix)) > maxSelectionContextSize || len([]rune(input.SelectionSuffix)) > maxSelectionContextSize {
 		return CommentView{}, fmt.Errorf("selection context exceeds %d characters", maxSelectionContextSize)
+	}
+	if input.ParentID == "" && input.TargetType == "follow_up" {
+		var followUp domain.FollowUpItem
+		if err := service.db.WithContext(ctx).First(&followUp, "id = ?", input.TargetID).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return CommentView{}, ErrNotFound
+			}
+			return CommentView{}, fmt.Errorf("get follow-up comment target: %w", err)
+		}
+		if followUp.Quarter != input.Quarter || followUp.Week != input.Week {
+			return CommentView{}, fmt.Errorf("follow-up comment target scope does not match comment scope")
+		}
 	}
 	if input.AuthorName == "" {
 		input.AuthorName = "当前用户"

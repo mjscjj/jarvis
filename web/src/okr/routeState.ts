@@ -18,6 +18,14 @@ export function okrPlanDefaultQuarter(date = new Date()): string {
   return `${date.getFullYear()}-Q${quarter + 1}`
 }
 
+export function previousQuarter(quarter: string): string {
+  const matched = /^(\d{4})-Q([1-4])$/.exec(quarter.trim())
+  if (!matched) return ''
+  const year = Number(matched[1])
+  const number = Number(matched[2])
+  return number === 1 ? `${year - 1}-Q4` : `${year}-Q${number - 1}`
+}
+
 export function activeQuarterForViewState(
   viewState: Readonly<Record<string, unknown>>,
   fallbackQuarter: string,

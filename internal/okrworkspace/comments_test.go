@@ -1,8 +1,12 @@
 package okrworkspace
 
-import "testing"
+import (
+	"errors"
+	"testing"
 
-import "jarvis/internal/okrworkspace/domain"
+	"jarvis/internal/datatypes"
+	"jarvis/internal/okrworkspace/domain"
+)
 
 func TestCommentRecordsAuthorUnionIDThroughReadBack(t *testing.T) {
 	db := openWorkspaceTestDB(t)
@@ -118,5 +122,90 @@ func TestCommentContentPatchStillValidatesText(t *testing.T) {
 	empty := "   "
 	if _, err := service.UpdateComment(t.Context(), comment.ID, UpdateCommentInput{Content: &empty}); err == nil {
 		t.Fatal("blank comment content unexpectedly succeeded")
+	}
+}
+
+func TestFollowUpCommentRequiresAnExistingTargetInTheSameScope(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	for _, week := range []string{"2026-W35", "2026-W36"} {
+		if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: week, OpenedBy: "test"}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	followUp, err := service.CreateFollowUp(t.Context(), FollowUpInput{
+		ID: "followup-comment-target", Quarter: "2026-Q3", Week: "2026-W36", Topic: "确认上线节奏",
+		Status: domain.FollowUpStatusNotStarted, SourcePayload: datatypes.JSON(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comment, err := service.CreateComment(t.Context(), CreateCommentInput{
+		Quarter: "2026-Q3", Week: "2026-W36", TargetType: "follow_up", TargetID: followUp.ID,
+		TargetTitle: followUp.Topic, AuthorOpenID: "ou_alice", AuthorName: "Alice", Content: "请补充具体日期",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comment.TargetType != "follow_up" || comment.TargetID != followUp.ID || comment.TargetTitle != followUp.Topic {
+		t.Fatalf("created comment lost its follow-up target: %#v", comment)
+	}
+	if _, err := service.CreateComment(t.Context(), CreateCommentInput{
+		Quarter: "2026-Q3", Week: "2026-W35", TargetType: "follow_up", TargetID: followUp.ID, Content: "跨周评论",
+	}); err == nil {
+		t.Fatal("cross-week follow-up comment unexpectedly created")
+	}
+	if _, err := service.CreateComment(t.Context(), CreateCommentInput{
+		Quarter: "2026-Q3", Week: "2026-W36", TargetType: "follow_up", TargetID: "missing", Content: "不存在",
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing target error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestFollowUpCommentRepliesInheritTargetAndRemainAsHistoryAfterItemDeletion(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W36", OpenedBy: "test"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	followUp, err := service.CreateFollowUp(t.Context(), FollowUpInput{
+		ID: "followup-history", Quarter: "2026-Q3", Week: "2026-W36", Topic: "保留讨论",
+		Status: domain.FollowUpStatusInProgress, SourcePayload: datatypes.JSON(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := service.CreateComment(t.Context(), CreateCommentInput{
+		Quarter: "2026-Q3", Week: "2026-W36", TargetType: "follow_up", TargetID: followUp.ID,
+		TargetTitle: followUp.Topic, Content: "根评论",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := service.CreateComment(t.Context(), CreateCommentInput{
+		Quarter: "2026-Q3", Week: "2026-W36", ParentID: root.ID,
+		TargetType: "kr", TargetID: "wrong-target", Content: "回复",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.TargetType != "follow_up" || reply.TargetID != followUp.ID || reply.TargetTitle != followUp.Topic {
+		t.Fatalf("reply did not inherit follow-up target: %#v", reply)
+	}
+	if err := service.DeleteFollowUp(t.Context(), followUp.ID, DeleteFollowUpInput{ExpectedVersion: followUp.Version}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := service.Comments(t.Context(), "2026-Q3", "2026-W36")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.Count != 2 || len(list.Comments) != 1 || len(list.Comments[0].Replies) != 1 {
+		t.Fatalf("follow-up discussion was not retained as history: %#v", list)
 	}
 }

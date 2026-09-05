@@ -317,7 +317,7 @@ export default function App({
 					    不该看到它们。 */}
 					{!shared && <WeeklyTools onOpenPoint={openPoint} readOnly={view !== 'fill'} />}
             <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
-              <WeeklyFocus comments={comments} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
+              <WeeklyFocus comments={comments} readOnly={view !== 'fill'} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
               <div className={`transition-opacity ${busy ? 'pointer-events-none opacity-55' : ''}`}>
 						{view === 'meeting' ? <MeetingView /> : <KrTable definitionsReadOnly showObjectiveHeader />}
               </div>

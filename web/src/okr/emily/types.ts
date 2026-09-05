@@ -244,7 +244,7 @@ export interface OKRPlanList {
 export interface PageComment {
   id: string
   parentId?: string
-  targetType: 'page' | 'kr' | 'metric' | 'point' | 'entry'
+  targetType: 'page' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'
   targetId?: string
   targetTitle?: string
   selectedText?: string
@@ -267,6 +267,34 @@ export interface PageCommentList {
   week: string
   count: number
   comments: PageComment[]
+}
+
+export type FollowUpStatus = 'not_started' | 'in_progress' | 'done'
+
+export interface FollowUpItem {
+  id: string
+  quarter: string
+  week: string
+  version: number
+  topic: string
+  owners: KrOwner[]
+  status: FollowUpStatus
+  assignDate: string
+  update: string
+  sourceKey?: string
+  sourcePayload: unknown
+  sortOrder: number
+  createdBy: string
+  updatedBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FollowUpList {
+  quarter: string
+  week: string
+  count: number
+  items: FollowUpItem[]
 }
 
 export interface CommentTarget {

@@ -46,6 +46,7 @@ var (
 type DeleteWeekCounts struct {
 	WeeklyCores     int64 `json:"weekly_cores"`
 	Progress        int64 `json:"progress"`
+	FollowUps       int64 `json:"follow_ups"`
 	Scores          int64 `json:"scores"`
 	Comments        int64 `json:"comments"`
 	MeegoSnapshots  int64 `json:"meego_snapshots"`
@@ -150,6 +151,12 @@ func (s *Service) DeleteWeek(ctx context.Context, quarter, week string) (DeleteW
 		return DeleteWeekResult{}, fmt.Errorf("delete weekly report comments: %w", comments.Error)
 	}
 	result.Deleted.Comments = comments.RowsAffected
+
+	followUps := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.FollowUpItem{})
+	if followUps.Error != nil {
+		return DeleteWeekResult{}, fmt.Errorf("delete weekly report follow-ups: %w", followUps.Error)
+	}
+	result.Deleted.FollowUps = followUps.RowsAffected
 
 	if len(pointIDs) > 0 {
 		progress := s.db.WithContext(ctx).Where("point_id IN ? AND week = ?", pointIDs, week).Delete(&domain.KRProgress{})

@@ -35,7 +35,8 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 - 周次与周报事实：`scripts/weekly-report-tools scope|weeks|open-week|delete-week|board|get-weekly-kr`；已知 KR ID 时优先读取该 KR 的指定周事实；
 - 周度核心数据：`replace-weekly-core` 只写指定周的指标值、红绿灯、图片与说明，不得借此改变稳定指标 ID 或定义；先用 `get-weekly-kr` 读取 `weekly_core_version` 和完整指标数组，保留本次目标之外的值；
 - 单条周进展：`create-progress|update-progress|delete-progress`，写入前必须回读 KR 最新 `version`；
-- 评论协作：`comments|create-comment|update-comment|delete-comment`；
+- 评论协作：`comments|create-comment|update-comment|delete-comment`；待跟进事项评论使用 `target_type=follow_up` 和事项稳定 ID，创建前先回读事项并保持季度、周次一致；
+- Review 待跟进事项：`follow-ups|get-follow-up|create-follow-up|update-follow-up|delete-follow-up`；状态只使用 `not_started|in_progress|done`，Owner 使用已解析的飞书 `open_id + name`，写前回读条目版本；
 - Meego 差异：`meego-preview|point-meego-preview|record-meego-observation|confirm-meego-progress`；
 - 催填与材料：`reminder-preview|reminder-batches|create-reminder-batch|create-feishu-document`；
 - 已确认关系、Message、Clue、Fact、Page 和调度：`jarvis-tools`；

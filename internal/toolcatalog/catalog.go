@@ -62,7 +62,7 @@ func okrReviewBlock() string {
 		"当前阶段：" + StageOKRReview,
 		"两个脚本都已在 PATH 中，服务地址由 `JARVIS_API_BASE` 环境变量提供，直接执行即可，不需要自己解析配置或构建任何东西。所有命令输出 JSON。",
 		"- okr-module-tools：季度 OKR 核心数据。`scope` 查当前季度；`board [--quarter Q]` 读整季 O/KR 结构；`find-krs --query TEXT [--quarter Q]` 按关键词跨 O 检索 KR，用于查关联和重叠；`get-kr --id KR_ID` 读单个 KR 详情；`people-search --query TEXT` 查人。",
-		"- weekly-report-tools：按周的进展与评分。`weeks [--quarter Q]` 列周次；`board [--quarter Q] [--week YYYY-Www]` 读某周看板（含 template_key）；`get-weekly-kr --id KR_ID --week YYYY-Www` 读单 KR 的周度核心数据与指标；`comments --quarter Q --week YYYY-Www` 读评论。",
+		"- weekly-report-tools：按周的进展、评分与协作事项。`weeks [--quarter Q]` 列周次；`board [--quarter Q] [--week YYYY-Www]` 读某周看板（含 template_key）；`get-weekly-kr --id KR_ID --week YYYY-Www` 读单 KR 的周度核心数据与指标；`comments --quarter Q --week YYYY-Www` 读评论；`follow-ups --quarter Q --week YYYY-Www` 与 `get-follow-up --id ID` 读取结构化待跟进事项。",
 		"- `find-krs` 单次输出可能上千行。先用它定位 ID，再用 `get-kr` / `get-weekly-kr` 取需要的那一个，不要把整季数据全部读进来。",
 		"END_AVAILABLE_TOOLS",
 	}

@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { activeQuarterForViewState, okrPlanDefaultQuarter, quarterFromViewState } from '../src/okr/routeState.ts'
+import { activeQuarterForViewState, okrPlanDefaultQuarter, previousQuarter, quarterFromViewState } from '../src/okr/routeState.ts'
 
 test('okr route state reads the requested quarter from shared weekly links', () => {
   assert.equal(quarterFromViewState({ share: 'weekly', tab: 'okr-plan', quarter: '2026-Q4', week: '2026-W36' }), '2026-Q4')
   assert.equal(activeQuarterForViewState({ share: 'weekly', tab: 'okr-plan', quarter: '2026-Q4', week: '2026-W36' }, '2026-Q3'), '2026-Q4')
+})
+
+test('shared next-quarter plan maps its Review tabs to the previous quarter', () => {
+  assert.equal(previousQuarter('2026-Q4'), '2026-Q3')
+  assert.equal(previousQuarter('2027-Q1'), '2026-Q4')
+  assert.equal(previousQuarter('invalid'), '')
 })
 
 test('okr route state falls back to the workspace quarter when no route quarter exists outside OKR Plan', () => {

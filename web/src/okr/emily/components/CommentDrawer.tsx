@@ -16,7 +16,7 @@ function displayTime(value: string) {
 }
 
 function targetLabel(type: PageComment['targetType']) {
-  return ({ page: '整页', kr: 'KR', metric: '核心数据', point: '具体 KR', entry: '进展条目' } as const)[type]
+  return ({ page: '整页', kr: 'KR', metric: '核心数据', point: '具体 KR', entry: '进展条目', follow_up: '待跟进事项' } as const)[type]
 }
 
 function Avatar({ name, openId, small = false }: { name: string; openId?: string; small?: boolean }) {

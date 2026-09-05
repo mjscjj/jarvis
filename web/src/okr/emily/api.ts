@@ -1,5 +1,5 @@
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRPlan, OKRPlanContent, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRPlan, OKRPlanContent, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -112,7 +112,7 @@ export interface WeeklyReportWeekList {
 interface APIPageComment {
   id: string
   parent_id?: string
-  target_type: 'page' | 'kr' | 'metric' | 'point' | 'entry'
+  target_type: 'page' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'
   target_id?: string
   target_title?: string
   selected_text?: string
@@ -135,6 +135,32 @@ interface APIPageCommentList {
   week: string
   count: number
   comments: APIPageComment[]
+}
+
+interface APIFollowUpItem {
+  id: string
+  quarter: string
+  week: string
+  version: number
+  topic: string
+  owners: Array<{ open_id: string; name: string }>
+  status: FollowUpStatus
+  assign_date: string
+  update: string
+  source_key?: string
+  source_payload: unknown
+  sort_order: number
+  created_by: string
+  updated_by: string
+  created_at: string
+  updated_at: string
+}
+
+interface APIFollowUpList {
+  quarter: string
+  week: string
+  count: number
+  items: APIFollowUpItem[]
 }
 
 interface APIAuthStatus {
@@ -467,6 +493,7 @@ export interface DeleteWeekResult {
   deleted: {
     weeklyCores: number
     progress: number
+    followUps: number
     scores: number
     comments: number
     meegoSnapshots: number
@@ -515,6 +542,7 @@ export async function deleteWeeklyReportWeek(quarter: string, week: string): Pro
     deleted: {
       weekly_cores: number
       progress: number
+      follow_ups: number
       scores: number
       comments: number
       meego_snapshots: number
@@ -528,6 +556,7 @@ export async function deleteWeeklyReportWeek(quarter: string, week: string): Pro
     deleted: {
       weeklyCores: value.deleted.weekly_cores,
       progress: value.deleted.progress,
+      followUps: value.deleted.follow_ups,
       scores: value.deleted.scores,
       comments: value.deleted.comments,
       meegoSnapshots: value.deleted.meego_snapshots,
@@ -651,6 +680,73 @@ export async function getComments(quarter: string, week: string): Promise<PageCo
   const params = new URLSearchParams({ quarter, week })
   const value = await request<APIPageCommentList>(`/api/weekly-report/comments?${params}`)
   return { quarter: value.quarter, week: value.week, count: value.count, comments: value.comments.map(fromAPIComment) }
+}
+
+function fromAPIFollowUp(value: APIFollowUpItem): FollowUpItem {
+  return {
+    id: value.id,
+    quarter: value.quarter,
+    week: value.week,
+    version: value.version,
+    topic: value.topic,
+    owners: value.owners.map((owner) => ({ openId: owner.open_id, name: owner.name })),
+    status: value.status,
+    assignDate: value.assign_date,
+    update: value.update,
+    sourceKey: value.source_key,
+    sourcePayload: value.source_payload,
+    sortOrder: value.sort_order,
+    createdBy: value.created_by,
+    updatedBy: value.updated_by,
+    createdAt: value.created_at,
+    updatedAt: value.updated_at,
+  }
+}
+
+function followUpBody(item: FollowUpItem) {
+  return {
+    id: item.id,
+    expected_version: item.version,
+    quarter: item.quarter,
+    week: item.week,
+    topic: item.topic,
+    owners: item.owners.map((owner) => ({ open_id: owner.openId, name: owner.name })),
+    status: item.status,
+    assign_date: item.assignDate,
+    update: item.update,
+    source_key: item.sourceKey ?? '',
+    source_payload: item.sourcePayload ?? {},
+    sort_order: item.sortOrder,
+  }
+}
+
+export async function getFollowUps(quarter: string, week: string): Promise<FollowUpList> {
+  const params = new URLSearchParams({ quarter, week })
+  const value = await request<APIFollowUpList>(`/api/weekly-report/follow-ups?${params}`)
+  return { quarter: value.quarter, week: value.week, count: value.count, items: value.items.map(fromAPIFollowUp) }
+}
+
+export async function createFollowUp(item: FollowUpItem): Promise<FollowUpItem> {
+  const value = await request<APIFollowUpItem>('/api/weekly-report/follow-ups', {
+    method: 'POST',
+    body: JSON.stringify(followUpBody({ ...item, version: 0 })),
+  })
+  return fromAPIFollowUp(value)
+}
+
+export async function updateFollowUp(item: FollowUpItem): Promise<FollowUpItem> {
+  const value = await request<APIFollowUpItem>(`/api/weekly-report/follow-ups/${encodeURIComponent(item.id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(followUpBody(item)),
+  })
+  return fromAPIFollowUp(value)
+}
+
+export async function deleteFollowUp(item: FollowUpItem): Promise<void> {
+  await request<{ id: string }>(`/api/weekly-report/follow-ups/${encodeURIComponent(item.id)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ expected_version: item.version }),
+  })
 }
 
 export async function createComment(input: {

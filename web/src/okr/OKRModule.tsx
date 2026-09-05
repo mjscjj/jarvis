@@ -13,7 +13,7 @@ import { isWeeklyWorkspaceTab, okrTabForWeeklyWorkspace, resolveOKRTab, weeklyWo
 import { withOKRScope, withOKRTarget } from './chatContext'
 import { isWeeklyShareViewState, weeklyShareTab, weeklyShareWorkspaceTab, type WeeklyShareTab } from './emily/share'
 import { templateKeyForDataset } from './emily/weekCatalog'
-import { activeQuarterForViewState, okrPlanDefaultQuarter } from './routeState'
+import { activeQuarterForViewState, okrPlanDefaultQuarter, previousQuarter, quarterFromViewState } from './routeState'
 import './emily/index.css'
 
 function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
@@ -61,15 +61,20 @@ function Workspace({ moduleEnablement }: {
 }) {
   const { context, setViewState } = usePageContext()
   const requestedTab = context.view_state.tab
-  const [selectedQuarter, setSelectedQuarter] = useState(() => context.view_state.quarter ?? '')
   const weeklyShare = isWeeklyShareViewState(context.view_state)
+  const [selectedQuarter, setSelectedQuarter] = useState(() => {
+    const routeQuarter = quarterFromViewState(context.view_state)
+    return weeklyShare && requestedTab === 'okr-plan' ? previousQuarter(routeQuarter) : routeQuarter
+  })
   const visibleTab = weeklyShare ? weeklyShareTab(requestedTab) : resolveOKRTab(requestedTab, moduleEnablement)
   const weeklyEnabled = moduleEnablement['weekly-report'] === true
-  const activeQuarter = activeQuarterForViewState(context.view_state, selectedQuarter)
+  const planVisible = visibleTab === 'okr-plan'
+  const activeQuarter = planVisible
+    ? activeQuarterForViewState(context.view_state, selectedQuarter)
+    : selectedQuarter || activeQuarterForViewState(context.view_state, selectedQuarter)
 
   // selectedQuarter 记的是「有数据的看板停在哪个季度」，切回 Review 时要还原成它。
   // Plan 页显示的是下季度草稿，不能让它写进来，否则这份记忆就被覆盖了。
-  const planVisible = visibleTab === 'okr-plan'
   useEffect(() => {
     if (planVisible) return
     if (!activeQuarter || activeQuarter === selectedQuarter) return
