@@ -38,15 +38,11 @@ func GetChatRuntimeConfig(chatAddr string) app.HandlerFunc {
 
 // RegisterChatSidecar exposes only chat and health routes. Live business
 // context is read from the main database; all mutations still use main APIs.
-func RegisterChatSidecar(h *server.Hertz, svc *chat.Service, db *gorm.DB, mainAddr string) error {
+func RegisterChatSidecar(h *server.Hertz, svc *chat.Service, db *gorm.DB) error {
 	if h == nil || svc == nil || db == nil {
 		return fmt.Errorf("chat sidecar dependencies must not be nil")
 	}
-	_, mainPort, err := net.SplitHostPort(strings.TrimSpace(mainAddr))
-	if err != nil {
-		return fmt.Errorf("invalid main server address: %w", err)
-	}
-	h.Use(observability.Middleware(), chatSameHostCORS(mainPort))
+	h.Use(observability.Middleware(), chatSameHostCORS())
 	h.GET("/healthz", HealthForService(db, "jarvis-chat-server"))
 	h.POST("/api/chat", Chat(svc))
 	h.GET("/api/chat", GetChatHistory(svc))
@@ -57,11 +53,11 @@ func RegisterChatSidecar(h *server.Hertz, svc *chat.Service, db *gorm.DB, mainAd
 	return nil
 }
 
-func chatSameHostCORS(mainPort string) app.HandlerFunc {
+func chatSameHostCORS() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		origin := strings.TrimSpace(string(c.Request.Header.Peek("Origin")))
 		if origin != "" {
-			if !allowedChatOrigin(origin, string(c.Host()), mainPort) {
+			if !allowedChatOrigin(origin, string(c.Host())) {
 				c.AbortWithStatus(consts.StatusForbidden)
 				return
 			}
@@ -74,7 +70,7 @@ func chatSameHostCORS(mainPort string) app.HandlerFunc {
 	}
 }
 
-func allowedChatOrigin(origin, requestHost, mainPort string) bool {
+func allowedChatOrigin(origin, requestHost string) bool {
 	parsed, err := url.Parse(origin)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return false
@@ -83,18 +79,5 @@ func allowedChatOrigin(origin, requestHost, mainPort string) bool {
 	if err != nil || requestURL.Hostname() == "" || !strings.EqualFold(parsed.Hostname(), requestURL.Hostname()) {
 		return false
 	}
-	if parsed.Port() == mainPort {
-		return true
-	}
-	return effectiveHTTPPort(parsed.Scheme, parsed.Port()) == effectiveHTTPPort(parsed.Scheme, requestURL.Port())
-}
-
-func effectiveHTTPPort(scheme, port string) string {
-	if port != "" {
-		return port
-	}
-	if scheme == "https" {
-		return "443"
-	}
-	return "80"
+	return true
 }

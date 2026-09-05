@@ -76,9 +76,10 @@ func TestProgressEventsSQLite(t *testing.T) {
 	now := time.Now().UTC()
 	todo := domain.Todo{
 		Title: "实现存储", Description: "实现事件存储", ActionType: "code_change",
-		Target: "jarvis", Context: "integration", OpenQuestions: datatypes.JSON(`[]`),
-		CommitmentStrength: "firm", SourceMessageIDs: datatypes.JSON(`[]`), SourceQuote: "test",
-		Status: "materialized", DedupFingerprint: strings.Repeat("a", 64),
+		Target: "jarvis", SourceMessageIDs: datatypes.JSON(`[]`), SourceQuote: "test",
+		Content:    datatypes.JSON(`{"source":{"request":"integration"},"capture":{},"annotation":{}}`),
+		Resolution: datatypes.JSON(`{}`),
+		Status:     "materialized", DedupFingerprint: strings.Repeat("a", 64),
 		FirstSeenAt: now, LastEvidenceAt: now,
 	}
 	if err := db.Create(&todo).Error; err != nil {
@@ -86,8 +87,8 @@ func TestProgressEventsSQLite(t *testing.T) {
 	}
 	task := domain.Task{
 		TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType,
-		Background: datatypes.JSON(`{}`), SourcePayload: datatypes.JSON(`{"steps":["test"]}`),
-		Status: "pending"}
+		SourcePayload: todo.Content,
+		Status:        "pending"}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create Task: %v", err)
 	}

@@ -163,7 +163,7 @@ KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是�
 
 持续 factengine 消费 `message`、`todo`、`task` 三种来源并保留独立游标。Message 提供原文，Todo/Task 只投影状态与最终产物，不重复携带已经持久化的背景、快照、来源 payload、计划和执行 prompt。每轮把各来源游标之后的材料合成一个世界变化批次，只启动一次 Agent；材料超过配置的粗粒度字符预算时减少候选行重新取批，降到每来源一行仍超限就把装不下的完整来源材料留到下轮，不截断单条材料；只有第一条完整材料自身超限时允许整条通过。Agent 在真实 Jarvis 工作区运行，使用同一套通用工具按需查询并直接维护当前实体、关系、资料和 Fact，最终自然语言只作审计，不承担机器协议。整次 Agent 会话成功后才推进本批来源游标，失败则保留游标供下次重放；Go 不按来源或实体类型编排语义写入。首次接入 Todo/Task 从事件 0 开始消费已有材料，Message 保留从当前时刻起步的历史边界。
 
-每个世界实体有一个 `summary` 页承载它的长期事实，整体读写、有字符上限、写入时 CAS 防覆盖。实体之间的关系用页内 Markdown 引用（形如 `[名字](person:12)`）表达，写入时校验目标存在，反查用 `list-backlinks`；不另建关系表。summary 答「现在是什么」，Fact 答「发生了什么」，详见 `docs/design-entity-summary.md`。
+每个世界实体有一个 `summary` 页承载它的长期事实，整体读写、有字符上限、写入时 CAS 防覆盖。页内 Markdown 引用（形如 `[名字](person:12)`）表达叙述中的关联，反查用 `list-backlinks`；需要由程序查询、过滤和跨模块投影的明确映射写入通用 `EntityRelation` 表。summary 答「现在是什么」，Fact 答「发生了什么」，EntityRelation 答「哪些实体存在可查询的明确关系」，详见 `docs/design-entity-summary.md` 和 `docs/design-temporal-relations-and-progress.md`。
 
 ## 6. 文件化 Agent 配置
 

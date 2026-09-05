@@ -66,7 +66,7 @@ mkdir -p "data/morning-brief/<YYYY-MM-DD>"
 
 用 `jarvis-tools`：
 
-- `list-tasks`：重点看 `awaiting_approval`、`needs_human`、`waiting`、`executing`、未闭环状态
+- `list-tasks`：重点看 `needs_human`、`waiting`、`executing`、未闭环状态
 - `list-todos`：未闭环线索
 - `list-scheduled-tasks`：已到或将到恢复时间的等待
 - `list-projects` / `get-context`：活跃项目背景

@@ -186,9 +186,16 @@ func TestPipelineLive(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	stats, err := worker.ExtractOnce(ctx)
+	chatIDs, err := worker.PendingChatIDs(ctx)
 	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
+		t.Fatalf("PendingChatIDs() error = %v", err)
+	}
+	if len(chatIDs) != 1 || chatIDs[0] != chatID {
+		t.Fatalf("pending chat IDs = %#v, want [%q]", chatIDs, chatID)
+	}
+	stats, _, err := worker.ExtractChat(ctx, chatID)
+	if err != nil {
+		t.Fatalf("ExtractChat() error = %v", err)
 	}
 	if stats.ChatsProcessed != 1 || stats.Units != 1 || stats.Created < 1 {
 		t.Fatalf("stats = %#v", stats)

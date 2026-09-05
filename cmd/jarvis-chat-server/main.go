@@ -114,7 +114,7 @@ func main() {
 		server.WithHostPorts(cfg.Chat.Addr),
 		server.WithMaxRequestBodySize(chat.MaxRequestBodyBytes),
 	)
-	if err := api.RegisterChatSidecar(h, chatService, db, cfg.Server.Addr); err != nil {
+	if err := api.RegisterChatSidecar(h, chatService, db); err != nil {
 		fatalf("register chat sidecar routes failed: %v", err)
 	}
 	hlog.CtxInfof(startupCtx, "jarvis-chat-server listening on %s cli=%s model=%s", cfg.Chat.Addr, cfg.Chat.Bin, cfg.Chat.Model)

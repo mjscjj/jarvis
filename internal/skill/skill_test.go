@@ -221,9 +221,10 @@ func TestRepositoryFeishuApprovalCardIsOwnedByServer(t *testing.T) {
 	skill := string(content)
 	for _, want := range []string{
 		"审批通知不由这个 Skill 发送",
-		"不要用本 Skill 发送审批卡片或纯文字提醒",
-		"先持久化提案",
+		"不要用本 Skill 发送请示卡片或纯文字提醒",
+		"先持久化 `question` 和 `needs_human` 状态",
 		"绑定当前 Task version",
+		"当前是 `resume_human`",
 	} {
 		if !strings.Contains(skill, want) {
 			t.Fatalf("Feishu message skill missing approval-card contract %q:\n%s", want, skill)
@@ -233,6 +234,9 @@ func TestRepositoryFeishuApprovalCardIsOwnedByServer(t *testing.T) {
 		`"action": "jarvis_approval"`,
 		`--msg-type interactive`,
 		"卡片连续发送失败就退回",
+		"awaiting_approval",
+		"APPROVED_PROPOSAL",
+		"当前是 apply 阶段",
 	} {
 		if strings.Contains(skill, obsolete) {
 			t.Fatalf("Feishu message skill still contains obsolete approval-card rule %q:\n%s", obsolete, skill)

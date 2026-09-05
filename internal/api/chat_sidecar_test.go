@@ -30,12 +30,12 @@ func TestGetChatRuntimeConfigReturnsOnlyPort(t *testing.T) {
 	}
 }
 
-func TestAllowedChatOriginAcceptsSameOriginOrMainPortOnSameHost(t *testing.T) {
-	assert.True(t, allowedChatOrigin("http://192.168.3.91:18802", "192.168.3.91:18803", "18802"))
-	assert.True(t, allowedChatOrigin("http://localhost:18802", "localhost:18803", "18802"))
-	assert.True(t, allowedChatOrigin("https://emily.bytedance.net", "emily.bytedance.net", "18802"))
-	assert.True(t, allowedChatOrigin("https://emily.bytedance.net:443", "emily.bytedance.net", "18802"))
-	assert.False(t, allowedChatOrigin("http://attacker.test:18802", "localhost:18803", "18802"))
-	assert.False(t, allowedChatOrigin("http://localhost:5173", "localhost:18803", "18802"))
-	assert.False(t, allowedChatOrigin("file:///tmp/index.html", "localhost:18803", "18802"))
+func TestAllowedChatOriginAcceptsAnyPortOnSameHost(t *testing.T) {
+	assert.True(t, allowedChatOrigin("http://192.168.3.91:18802", "192.168.3.91:18803"))
+	assert.True(t, allowedChatOrigin("http://localhost:18802", "localhost:18803"))
+	assert.True(t, allowedChatOrigin("http://localhost:5173", "localhost:18803"))
+	assert.True(t, allowedChatOrigin("https://emily.bytedance.net", "emily.bytedance.net"))
+	assert.True(t, allowedChatOrigin("https://emily.bytedance.net:443", "emily.bytedance.net"))
+	assert.False(t, allowedChatOrigin("http://attacker.test:18802", "localhost:18803"))
+	assert.False(t, allowedChatOrigin("file:///tmp/index.html", "localhost:18803"))
 }
