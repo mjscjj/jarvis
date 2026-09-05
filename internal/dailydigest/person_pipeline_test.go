@@ -152,7 +152,7 @@ func TestLoadBaselineUsesDayEventsAndIgnoresHistoricalOpenRows(t *testing.T) {
 			id INTEGER PRIMARY KEY, todo_id INTEGER, from_status TEXT, to_status TEXT,
 			actor TEXT, detail TEXT, snapshot TEXT, created_at DATETIME
 		)`,
-		`CREATE TABLE task (id INTEGER PRIMARY KEY, title TEXT, background TEXT, project_id INTEGER)`,
+		`CREATE TABLE task (id INTEGER PRIMARY KEY, title TEXT, project_id INTEGER)`,
 		`CREATE TABLE task_event (
 			id INTEGER PRIMARY KEY, task_id INTEGER, event_type TEXT, from_status TEXT,
 			to_status TEXT, actor_type TEXT, detail TEXT, occurred_at DATETIME
@@ -195,7 +195,7 @@ func TestLoadBaselineUsesDayEventsAndIgnoresHistoricalOpenRows(t *testing.T) {
 		t.Fatalf("insert todo event: %v", err)
 	}
 	if err := db.Exec(
-		`INSERT INTO task(id,title,background) VALUES (1,'历史开放 Task','{}'),(2,'当天 Task','{}')`,
+		`INSERT INTO task(id,title) VALUES (1,'历史开放 Task'),(2,'当天 Task')`,
 	).Error; err != nil {
 		t.Fatalf("insert tasks: %v", err)
 	}

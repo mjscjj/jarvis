@@ -91,7 +91,7 @@ Todo 侧有向量去重，Task 侧没有，重复直接消耗审批注意力。
 项目 43「公会agent基建项目」与 44「公会 Agent 基建」近重复。
 
 **产品含义**：核心用户的心智单位是项目，系统的组织单位是表。项目切换时的"上下文不丢"目前只对 Agent 成立
-（`context_snapshot` 冻结在 Todo 上），对人不成立——人无法在一个地方看到某个项目现在的全貌。
+（`Todo.content.capture` 冻结创建时事实），对人不成立——人无法在一个地方看到某个项目现在的全貌。
 
 ### 2.6 世界模型只能追加，不能收敛
 
@@ -366,8 +366,8 @@ Goal Control 的价值会在主干闭合、任务真正跑起来之后显现。
 | [晨间作战简报](design-morning-brief.md) | 三条节律中的"开工"，正在实现；S0 的投递路径与它复用 |
 | [每日进度总结](design-daily-digest.md) | 三条节律中的"复盘"，已有；是否触达飞书由 A 统一决定 |
 | [长任务 Goal Control](design-long-horizon-agent-goal-control.md) | 主干闭合、任务真正跑起来之后的下一阶段主线 |
-| [世界上下文渐进加载](design-world-context-progressive.md) | E 的技术前提：摘要要可信，事实必须能收敛 |
-| [宽松语义契约](design-loose-semantic-contract.md) | 本方案所有新增语义的默认形态 |
+| [Todo / Task 渐进式上下文](design-context-pipeline.md) | 冻结证据、默认小视图和按需读取的当前实现 |
+| [Agent 开发规范](../AGENTS.md) | 新增语义默认使用宽松载体、只为机器硬消费建立结构 |
 
 ## 11. 最终产品判断
 

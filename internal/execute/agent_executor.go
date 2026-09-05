@@ -89,7 +89,7 @@ type TaskFeedbackNotifier interface {
 }
 
 // AgentExecutor is the execution core. It does not hard-code a per-action
-// workflow: it hands the Task's source payload/background and any resolved repo
+// workflow: it hands the Task's projected frozen context and any resolved repo
 // path to codex and lets codex orchestrate.
 // Whether a side effect needs the principal's go-ahead, and how code is
 // delivered, are the model's judgment — declared via the question it parks on

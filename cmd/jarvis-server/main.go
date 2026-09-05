@@ -59,7 +59,6 @@ import (
 func main() {
 	configPath := flag.String("config", "conf/config.yaml", "配置文件路径")
 	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库迁移，成功后退出")
-	backfillProgressEvents := flag.Bool("backfill-progress-events", false, "为无事件历史的存量 Task 写入一次当前状态快照，成功后退出")
 	discoverOnce := flag.Bool("discover-once", false, "执行一次飞书会话发现，成功后退出")
 	scanChat := flag.String("scan-chat", "", "增量扫描指定飞书 chat_id，成功后退出")
 	setRelatedGroups := flag.String("set-related-groups", "", "用逗号分隔的 chat_id 原子替换 related_group，成功后退出")
@@ -89,7 +88,7 @@ func main() {
 		hlog.CtxInfof(startupCtx, format, args...)
 	}
 	actionCount := 0
-	for _, selected := range []bool{*migrateOnly, *backfillProgressEvents, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *extractFactsOnce, *extractOnce, *proactiveOnce, *openP2P} {
+	for _, selected := range []bool{*migrateOnly, *discoverOnce, *scanChat != "", *setRelatedGroups != "", *extractFactsOnce, *extractOnce, *proactiveOnce, *openP2P} {
 		if selected {
 			actionCount++
 		}
@@ -165,14 +164,6 @@ func main() {
 	}
 	if *migrateOnly {
 		infof("sqlite schema migration completed")
-		return
-	}
-	if *backfillProgressEvents {
-		stats, err := progress.BackfillTaskSnapshots(startupCtx, db, time.Now().UTC())
-		if err != nil {
-			fatalf("backfill task progress snapshots failed: %v", err)
-		}
-		infof("progress event backfill completed: tasks_scanned=%d events_created=%d", stats.TasksScanned, stats.EventsCreated)
 		return
 	}
 	progressService, err := progress.NewService(db)

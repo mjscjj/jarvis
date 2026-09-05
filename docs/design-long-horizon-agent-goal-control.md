@@ -97,7 +97,7 @@ apply 提示词所说的“真正落地成功才填 completed”，在它自己�
 
 ### 2.3 一个额外的信息缺口
 
-当前 [M5 的 `executionTask`](../internal/execute/prompt.go)只把 `title/target` 作为 hint，完整传递 `source_payload` 和整份冻结 `background`。来源证据与可变执行判断已经分开；本方案后续只需讨论长周期目标状态，不应再引入第二套来源计划字段。
+当前 [M5 的 `executionTask`](../internal/execute/prompt.go)只把 `title/target` 作为 hint；完整来源证据冻结在 `source_payload`，首轮 prompt 只投影直接证据和按需读取入口。来源证据与可变执行判断已经分开；本方案后续只需讨论长周期目标状态，不应再引入第二套来源计划字段。
 
 ## 3. 必须先区分的八个概念
 
@@ -252,7 +252,7 @@ Prompt View：这一轮模型需要看到什么，临时编译
 
 所以根目标仍然会在每次 Supervisor 调用中出现，但它不会在上下文里累计成十几份。应该优化的是重复历史和长工具结果，而不是省掉那几百 token 的根目标。模型看不到目标，就不可能稳定围绕目标推理。
 
-这不改变现有 [context snapshot 全链路复用](design-context-pipeline.md)原则。M3 冻结的 `Todo.context_snapshot` 仍是不可丢失的原始业务证据；Context Compiler 只决定本轮从快照、事件和 Evidence 中取哪些内容给模型看，不回写或替换原始快照。换言之，原始上下文负责“证据不丢”，Goal State 负责“进度不丢”，Prompt View 负责“本轮不过载”。
+这不改变现有 [冻结上下文全链路复用](design-context-pipeline.md)原则。M3 写入 `Todo.content` 的 `source + capture + annotation` 仍是不可丢失的原始业务证据；Context Compiler 只决定本轮从冻结内容、事件和 Evidence 中取哪些内容给模型看，不回写或替换原始内容。换言之，原始上下文负责“证据不丢”，Goal State 负责“进度不丢”，Prompt View 负责“本轮不过载”。
 
 ### 5.1 Client-managed context
 

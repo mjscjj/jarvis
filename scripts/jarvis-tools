@@ -407,8 +407,8 @@ usage: jarvis-tools update-task --id ID [--payload JSON|-] [--config PATH]
 Update the mutable current surface of one non-terminal Task. This command is
 only available when JARVIS_AGENT_STAGE=proactive. The payload requires
 expected_version, reason, and at least one of title, target, summary or
-instruction. source_payload/background remain frozen. instruction is appended
-for M5 rather than rewriting source evidence. A needs_human Task only accepts
+instruction. source_payload remains frozen. instruction is appended for M5
+rather than rewriting source evidence. A needs_human Task only accepts
 summary updates so an Agent cannot silently change the goal behind a question
 the principal is already looking at.
 

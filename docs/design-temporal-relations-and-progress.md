@@ -49,10 +49,10 @@ Task 每次版本变化追加一条事件，保留事件类型、前后状态、
 主要事件：
 
 ```text
-created execution_started approval_requested approval_granted
-approval_rejected rerun_requested reapply_started supplemented
-execution_succeeded execution_failed stale_failed snapshot_imported
-execution_observing
+created execution_started rerun_requested supplemented
+execution_succeeded execution_failed execution_observing execution_interrupted
+stale_failed stale_requeued updated closed feishu_message_recalled
+waiting_scheduled resumed human_input_requested human_response_received
 ```
 
 ## 5. Fact

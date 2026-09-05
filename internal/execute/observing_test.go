@@ -54,9 +54,8 @@ func newObservingTestDB(t *testing.T) *gorm.DB {
 			revision INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 0,
 			first_seen_at DATETIME NOT NULL, last_evidence_at DATETIME NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			context_snapshot TEXT, resolution TEXT, target TEXT NOT NULL DEFAULT '',
-			context TEXT NOT NULL DEFAULT '', open_questions TEXT NOT NULL DEFAULT '[]',
-			extraction_result TEXT
+			content TEXT, resolution TEXT, target TEXT NOT NULL DEFAULT '',
+			context TEXT NOT NULL DEFAULT '', open_questions TEXT NOT NULL DEFAULT '[]'
 		)`,
 		`CREATE TABLE todo_event (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, todo_id INTEGER NOT NULL, from_status TEXT,
@@ -66,7 +65,7 @@ func newObservingTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE task (
 			id INTEGER PRIMARY KEY, todo_id INTEGER, title TEXT NOT NULL DEFAULT '',
 			action_type TEXT NOT NULL DEFAULT '', target TEXT NOT NULL DEFAULT '',
-			background TEXT NOT NULL DEFAULT '{}', source_payload TEXT NOT NULL DEFAULT '{}',
+			source_payload TEXT NOT NULL DEFAULT '{}',
 			source_type TEXT NOT NULL DEFAULT 'manual', source_id INTEGER, occurrence_key TEXT,
 			status TEXT NOT NULL,
 			execution_result TEXT, execution_supplements TEXT,
@@ -107,9 +106,9 @@ func insertObservingFixture(t *testing.T, db *gorm.DB, todoStatus string) {
 		t.Fatalf("insert Todo: %v", err)
 	}
 	if err := db.Exec(
-		`INSERT INTO task(id, todo_id, title, action_type, background, source_payload,
+		`INSERT INTO task(id, todo_id, title, action_type, source_payload,
 			status, version, target, source_type)
-		 VALUES (11, 7, '同步口径', 'notify_principal', '{}', '{}',
+		 VALUES (11, 7, '同步口径', 'notify_principal', '{}',
 			'executing', 2, '评测口径', 'todo')`,
 	).Error; err != nil {
 		t.Fatalf("insert Task: %v", err)
@@ -190,9 +189,9 @@ func TestFinishObservingRejectsUnexpectedClueStatus(t *testing.T) {
 func TestFinishObservingWithoutClue(t *testing.T) {
 	db := newObservingTestDB(t)
 	if err := db.Exec(
-		`INSERT INTO task(id, todo_id, title, action_type, background, source_payload,
+		`INSERT INTO task(id, todo_id, title, action_type, source_payload,
 			status, version, target, source_type)
-		 VALUES (12, NULL, '定时巡检', 'investigate', '{}', '{}',
+		 VALUES (12, NULL, '定时巡检', 'investigate', '{}',
 			'executing', 0, '巡检', 'scheduled_task')`,
 	).Error; err != nil {
 		t.Fatalf("insert Task: %v", err)

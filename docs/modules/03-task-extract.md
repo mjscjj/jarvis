@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-08-06
+> Last verified: 2026-09-05
 > Code source: `internal/extract/`, `internal/contextsnap/`
 
 M3 把新证据和工作背景转成经过准入判断的 Todo。它回答“这条线索是否值得启动一次 M5”，只创建/更新 Todo，不创建 Task、不执行外部写操作、不手工写长期 Fact，也不替 M5 制定方案或完成调查。
@@ -36,7 +36,7 @@ Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`
 
 至少一条 evidence 必须来自本轮 `[new]` message。模型可以用工具引用同一 chat 中批次外的消息，worker 会补载并校验；`source_quote` 必须逐字命中证据，否则按配置重抽，耗尽后 fail-fast。
 
-## 3. 项目解析与上下文快照
+## 3. 项目解析与冻结内容
 
 项目归属顺序：
 
@@ -44,9 +44,15 @@ Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`
 2. 否则用 `project_hint` 对 code/name 精确匹配；
 3. 一次短查询仍无法确定则记录 unresolved resolution trace，交给 M5 在确有需要时继续调查。
 
-冻结快照包含 principal、group、project、由证据发送者机械推导的 assigner、引用消息、会话上下文、参与人、资源和其他项目，各实体带自己的 `summary` 页。`extraction_result` 保留完整 Candidate，`resolution` 保留项目/仓库推算轨迹。
+`Todo.content` 是唯一语义载体，使用 [渐进式上下文协议](../design-context-pipeline.md)：
 
-快照不冻结 Fact 明细：`summary` 已经回答「这个实体现在是什么」，历史明细由下游按需用 `list-facts` 下钻。也不冻结 open Todos 和 recent Tasks——它们是世界状态不是证据，本轮实时加载后只进 M3 提示词做去重判断，M5 在执行那一刻另行实时装配（见 [M5 执行](05-execution.md)）。快照同样不包含 shared memory，未冻结 ManagedResource；它们可能进入运行时 prompt，但不能笼统写成快照已包含所有背景。
+- `source`：完整 Candidate，包括已校验的来源消息 ID、原句、准入简报及未知扩展字段；
+- `capture`：程序冻结的 principal、group、project、assigner、完整会话、参与人、资源和其他项目；
+- `annotation`：模型提供的开放说明，默认可包含 brief 和 scene，不承担机器定位。
+
+`source_message_ids` 另投影到 Todo 列上用于查询，`resolution` 单独保留项目解析轨迹。Todo 更新时形成新 revision；事件保留旧修订的来源索引和内容。
+
+capture 不冻结 Fact 明细：实体 `summary` 已回答「创建时是什么」，历史明细由下游按需用 `list-facts` 下钻。也不冻结 open Todos 和 recent Tasks——它们是可变化的世界状态，只进入本轮 M3 提示词辅助去重；M5 在执行时自行查询相关工作。capture 同样不包含 shared memory，M3 也不装配 ManagedResource。
 
 ## 4. 去重与落库
 

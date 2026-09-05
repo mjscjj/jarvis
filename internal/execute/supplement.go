@@ -8,7 +8,7 @@ import (
 )
 
 // ExecutionSupplement is one execution-time clarification/instruction from a
-// human or the proactive Agent. It is isolated from Todo.context_snapshot.
+// human or the proactive Agent. It is isolated from frozen Todo.content.
 type ExecutionSupplement struct {
 	Note    string `json:"note"`
 	At      string `json:"at"` // RFC3339 UTC

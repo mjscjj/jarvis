@@ -177,7 +177,7 @@ close-key-matter    --id
 
 ## 8. 明确不做
 
-- **不进 M3 的 `context_snapshot`。** 快照体积已经不小，而 M3 只做准入判断，关键事项对该判断的价值尚未验证。M5 与巡视按需通过工具查询即可，符合渐进式加载原则。
+- **不进 M3 的 `Todo.content.capture`。** 冻结内容体积已经不小，而 M3 只做准入判断，关键事项对该判断的价值尚未验证。M5 与巡视按需通过工具查询即可，符合渐进式加载原则。
 - **不建通用 entity 表**，不复制既有实体，沿用 `design-temporal-relations-and-progress.md` 的结论。
 - **KeyMatter 不进入执行链路。** 它不会被固化成 Task，也不会被 M5 直接消费。需要对外行动时由巡视或 M5 创建独立 Task。
 - **不为它写数据库事务**，多步写入按顺序执行，出错即 fail-fast（AGENTS.md §5）。
