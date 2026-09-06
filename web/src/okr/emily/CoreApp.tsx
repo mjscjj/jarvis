@@ -21,7 +21,7 @@ export default function CoreApp() {
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
         <div className="mx-auto flex min-h-14 max-w-[1580px] items-center gap-3 px-4 py-2 sm:px-6 lg:px-8">
           <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-600 text-xs font-semibold text-white shadow-sm">O</span>
-          <div className="leading-tight"><h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · Biz OKR</h1><div className="mt-1 text-[10px] text-slate-400">{quarter ? quarter.replace('-', ' ') : 'Biz OKR'} · 目标与拆解</div></div>
+          <div className="leading-tight"><h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · OKR</h1><div className="mt-1 text-[10px] text-slate-400">{quarter ? quarter.replace('-', ' ') : 'OKR'} · 目标与拆解</div></div>
           <span className={`ml-3 text-[10px] ${tone}`} aria-live="polite">{syncState.message}</span>
           <div className="ml-auto flex items-center gap-2">
             <QuarterSelect />

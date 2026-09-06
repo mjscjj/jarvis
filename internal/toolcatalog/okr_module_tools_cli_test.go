@@ -151,7 +151,7 @@ func TestOKRAndBizToolsExposeAtomicWrites(t *testing.T) {
 		{[]string{"follow-ups", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/biz-okr/follow-ups", "quarter=2026-Q3"},
 		{[]string{"get-follow-up", "--id", "follow-up-1"}, http.MethodGet, "/api/biz-okr/follow-ups/follow-up-1", ""},
 		{[]string{"create-follow-up", "--payload", `{"id":"follow-up-1","expected_version":0,"quarter":"2026-Q3","week":"2026-W36","topic":"事项","owners":[{"open_id":"ou_1","name":"负责人"}],"status":"not_started"}`}, http.MethodPost, "/api/biz-okr/follow-ups", ""},
-		{[]string{"update-follow-up", "--id", "follow-up-1", "--payload", `{"expected_version":1,"quarter":"2026-Q3","week":"2026-W36","topic":"事项","owners":[{"open_id":"ou_1","name":"负责人"}],"status":"in_progress"}`}, http.MethodPut, "/api/biz-okr/follow-ups/follow-up-1", ""},
+		{[]string{"update-follow-up", "--id", "follow-up-1", "--payload", `{"expected_version":1,"quarter":"2026-Q3","week":"2026-W36","topic":"事项","owners":[{"open_id":"ou_1","name":"负责人"}],"status":"abandoned"}`}, http.MethodPut, "/api/biz-okr/follow-ups/follow-up-1", ""},
 		{[]string{"delete-follow-up", "--id", "follow-up-1", "--payload", `{"expected_version":2}`}, http.MethodDelete, "/api/biz-okr/follow-ups/follow-up-1", ""},
 		{[]string{"create-progress", "--point-id", "point-1", "--payload", `{"id":"agent-1","expected_version":0,"week":"2026-W36","status":"in_progress","text":"进展"}`}, http.MethodPost, "/api/okr/points/point-1/progress", ""},
 		{[]string{"update-progress", "--id", "agent-1", "--payload", `{"expected_version":2,"week":"2026-W36","status":"done","text":"完成"}`}, http.MethodPut, "/api/okr/progress/agent-1", ""},

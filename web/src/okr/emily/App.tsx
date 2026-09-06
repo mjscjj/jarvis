@@ -108,7 +108,7 @@ export default function App({
 	const meetingLike = view === 'meeting'
 	const managesWeeks = view === 'fill'
 	const lifecycleName = weeklyDatasetLabel(dataset)
-	const pageTitle = reviewDataset ? 'Emily · Biz OKR Review' : 'Emily · Biz OKR 周报协作台'
+	const pageTitle = reviewDataset ? 'Emily · OKR Review' : 'Emily · OKR 周报协作台'
 	const shareLabel = `${lifecycleName}${weeklyViewLabel(view)}`
 
   const submitWeek = async () => {
@@ -317,7 +317,7 @@ export default function App({
 					    不该看到它们。 */}
 					{!shared && <WeeklyTools onOpenPoint={openPoint} readOnly={view !== 'fill'} />}
             <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
-              <WeeklyFocus comments={comments} readOnly={view !== 'fill'} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
+              <WeeklyFocus comments={comments} readOnly={view !== 'fill'} statusEditable={reviewDataset && meetingLike} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
               <div className={`transition-opacity ${busy ? 'pointer-events-none opacity-55' : ''}`}>
 						{view === 'meeting' ? <MeetingView /> : <KrTable definitionsReadOnly showObjectiveHeader />}
               </div>
@@ -326,7 +326,7 @@ export default function App({
 							{view === 'fill'
 								? '停止输入后自动保存；多人修改同一条 KR 时会先请你确认。'
 								: reviewDataset
-									? 'Review 会议只读投屏；评分可以直接在这里改，AI 评审在“Review 填写”里。'
+										? 'Review 会议中可以直接修改评分和 Todo 状态；AI 评审在“Review 填写”里。'
 									: '会议模式沿用同一份数据，只读投屏并保留评论与飞书导出。'}
               <button type="button" onClick={reset} className="ml-1 underline hover:text-slate-600">重新载入</button>
             </div>

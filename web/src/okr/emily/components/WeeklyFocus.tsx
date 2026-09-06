@@ -4,16 +4,10 @@ import { createFollowUp, deleteFollowUp, getFollowUps, updateFollowUp } from '..
 import { useBoard, uid } from '../board'
 import { useCommentInteraction } from '../commenting'
 import { commentTargetKey } from '../comments'
-import { sortFollowUpsByAssignDate } from '../followUps'
+import { canEditFollowUpStatus, FOLLOW_UP_STATUS_OPTIONS, isClosedFollowUp, sortFollowUpsByAssignDate } from '../followUps'
 import { ownerOptions, splitOwnerNames } from '../people'
 import type { CommentTarget, FollowUpItem, FollowUpStatus, KrOwner, PageComment, Point } from '../types'
 import { FeishuPeoplePickerInput } from './FeishuPeoplePicker'
-
-const STATUS_OPTIONS: Array<{ value: FollowUpStatus; label: string }> = [
-  { value: 'not_started', label: 'Not start' },
-  { value: 'in_progress', label: 'In progress' },
-  { value: 'done', label: 'Done' },
-]
 
 function krNeedsUpdate(points: Point[]) {
   return points.length === 0 || points.some((point) => !point.entries.some((entry) => entry.text.trim().length > 0))
@@ -29,10 +23,11 @@ function ownerKey(owner: KrOwner) {
 }
 
 /** Review progress gaps, structured follow-ups, and legacy meeting-comment todo markers. */
-export function WeeklyFocus({ comments, onOpenComment, readOnly = false }: {
+export function WeeklyFocus({ comments, onOpenComment, readOnly = false, statusEditable = false }: {
   comments: PageComment[]
   onOpenComment: (comment: PageComment) => void
   readOnly?: boolean
+  statusEditable?: boolean
 }) {
   const { objectives, quarter, week } = useBoard()
   const commentInteraction = useCommentInteraction()
@@ -57,7 +52,7 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false }: {
       .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, 'zh-Hans-CN'))
   }, [objectives])
   const legacyTodos = useMemo(() => comments.filter((comment) => comment.todo && !comment.resolved), [comments])
-  const visibleItems = useMemo(() => sortFollowUpsByAssignDate(showDone ? items : items.filter((item) => item.status !== 'done')), [items, showDone])
+  const visibleItems = useMemo(() => sortFollowUpsByAssignDate(showDone ? items : items.filter((item) => !isClosedFollowUp(item.status))), [items, showDone])
   const peopleOptions = useMemo(() => {
     const result = new Map<string, KrOwner>()
     for (const owner of [...ownerOptions(objectives), ...items.flatMap((item) => item.owners)]) result.set(ownerKey(owner), owner)
@@ -142,7 +137,7 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false }: {
       <header className="mb-2.5 flex flex-wrap items-end gap-2 border-b border-slate-100 pb-2">
         <div><span className="block text-[9px] font-bold tracking-[0.12em] text-blue-600">WEEKLY FOCUS</span><h2 className="text-[16px] font-semibold text-slate-900">本周重点关注</h2></div>
         <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-500">
-          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={showDone} onChange={(event) => setShowDone(event.target.checked)} />显示 Done</label>
+          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={showDone} onChange={(event) => setShowDone(event.target.checked)} />显示已完成/废弃</label>
           {!readOnly && <button type="button" onClick={() => void add()} disabled={Boolean(savingID)} className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 font-medium text-blue-700 disabled:opacity-40">+ 新增事项</button>}
         </div>
       </header>
@@ -155,7 +150,7 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false }: {
           <h3 className={`flex items-center justify-between gap-2 text-[12px] font-semibold text-slate-700 ${followUpsOpen ? 'mb-2' : ''}`}>
             <span>待跟进事项</span>
             <span className="flex items-center gap-2">
-              <b className="text-[10px] font-medium text-slate-400">{items.filter((item) => item.status !== 'done').length} 待跟进 / {items.length} 全部</b>
+              <b className="text-[10px] font-medium text-slate-400">{items.filter((item) => !isClosedFollowUp(item.status)).length} 待跟进 / {items.length} 全部</b>
               <button
                 type="button"
                 aria-expanded={followUpsOpen}
@@ -180,10 +175,10 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false }: {
                   const commentKey = commentTargetKey(commentTarget)
                   const commentCount = commentInteraction.counts[commentKey] ?? 0
                   const commentSelected = commentInteraction.selected ? commentTargetKey(commentInteraction.selected) === commentKey : false
-                  return <tr key={item.id} className={`${item.status === 'done' ? 'bg-slate-50/70 text-slate-400' : 'bg-white text-slate-700'} align-top`}>
+                  return <tr key={item.id} className={`${isClosedFollowUp(item.status) ? 'bg-slate-50/70 text-slate-400' : 'bg-white text-slate-700'} align-top`}>
                     <td className="border-r border-b border-slate-100 p-1.5">{readOnly ? <span className="whitespace-pre-wrap font-medium">{item.topic}</span> : <textarea aria-label={`Topic ${item.topic}`} value={item.topic} onChange={(event) => patchLocal(item.id, { topic: event.target.value })} onBlur={(event) => void save(item, { topic: event.target.value.trim() })} className="min-h-16 w-full resize-y rounded border border-transparent bg-transparent p-1 font-medium outline-none hover:border-slate-200 focus:border-blue-300"/>}</td>
                     <td className="border-r border-b border-slate-100 p-2">{readOnly ? <span className="flex flex-wrap gap-1">{item.owners.map((owner) => <span key={ownerKey(owner)} className="rounded-full border border-slate-200 bg-white px-2 py-0.5">{owner.name}</span>)}</span> : <FeishuPeoplePickerInput owners={item.owners} options={peopleOptions} onChange={(owners) => void save(item, { owners })}/>}</td>
-                    <td className="border-r border-b border-slate-100 p-1.5"><select aria-label={`Status ${item.topic}`} value={item.status} disabled={readOnly || saving} onChange={(event) => void save(item, { status: event.target.value as FollowUpStatus })} className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] text-slate-600 outline-none disabled:bg-transparent">{STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></td>
+                    <td className="border-r border-b border-slate-100 p-1.5"><select aria-label={`Status ${item.topic}`} value={item.status} disabled={!canEditFollowUpStatus(readOnly, statusEditable) || saving} onChange={(event) => void save(item, { status: event.target.value as FollowUpStatus })} className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] text-slate-600 outline-none disabled:bg-transparent">{FOLLOW_UP_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></td>
                     <td className="border-r border-b border-slate-100 p-1.5">{readOnly ? item.assignDate : <input aria-label={`Assign Date ${item.topic}`} type="date" value={item.assignDate} disabled={saving} onChange={(event) => void save(item, { assignDate: event.target.value })} className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none"/>}</td>
                     <td className="border-r border-b border-slate-100 p-1.5">{readOnly ? <MarkdownReport content={item.update || '—'} className="text-[11px]"/> : <textarea aria-label={`Update ${item.topic}`} value={item.update} onChange={(event) => patchLocal(item.id, { update: event.target.value })} onBlur={(event) => void save(item, { update: event.target.value.trim() })} className="min-h-16 w-full resize-y rounded border border-transparent bg-transparent p-1 outline-none hover:border-slate-200 focus:border-blue-300"/>}</td>
                     <td className="border-b border-slate-100 px-1 py-2 text-center">

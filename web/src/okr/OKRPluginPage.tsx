@@ -334,7 +334,7 @@ export default function OKRPluginPage() {
             label: '进展',
             children: progressLoading ? <Spin /> : !week ? <Empty description="当前季度还没有已开启的周次" /> : (
               <Flex vertical gap={16}>
-                <Alert type="info" showIcon message="正式进展由人在 Biz OKR 填写；Jarvis 世界进展独立保存，只在这里对照展示，不会覆盖人工内容。" />
+                <Alert type="info" showIcon message="正式进展由人在 OKR 页面填写；Jarvis 世界进展独立保存，只在这里对照展示，不会覆盖人工内容。" />
                 {progressBoard?.objectives.map((objective) => (
                   <ObjectiveProgress key={objective.id} objective={objective} worldBySubject={worldBySubject} />
                 ))}

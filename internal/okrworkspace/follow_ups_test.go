@@ -53,6 +53,27 @@ func TestFollowUpLifecycleIsScopedVersionedAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestFollowUpAcceptsAbandonedStatus(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W36", TemplateKey: domain.WeekTemplateOKRPreview, OpenedBy: "test"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateFollowUp(t.Context(), FollowUpInput{
+		ID: "followup-abandoned", Quarter: "2026-Q3", Week: "2026-W36", Topic: "不再推进",
+		Status: domain.FollowUpStatusAbandoned, SourcePayload: datatypes.JSON(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Status != domain.FollowUpStatusAbandoned {
+		t.Fatalf("status = %q, want %q", created.Status, domain.FollowUpStatusAbandoned)
+	}
+}
+
 func TestFollowUpRejectsUnknownStatusAndUnresolvedOwners(t *testing.T) {
 	service, err := NewService(openWorkspaceTestDB(t))
 	if err != nil {

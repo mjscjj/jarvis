@@ -157,19 +157,20 @@ type KRProgress struct {
 func (KRProgress) TableName() string { return "okr_workspace_progress" }
 
 // FollowUpStatus is deliberately narrower than weekly KR progress. A tracker
-// row is either not started, in progress or done; risk judgements remain in the
-// richer OKR progress model instead of leaking into this small coordination
-// surface.
+// row is either not started, in progress, done or abandoned; risk judgements
+// remain in the richer OKR progress model instead of leaking into this small
+// coordination surface.
 type FollowUpStatus string
 
 const (
 	FollowUpStatusNotStarted FollowUpStatus = "not_started"
 	FollowUpStatusInProgress FollowUpStatus = "in_progress"
 	FollowUpStatusDone       FollowUpStatus = "done"
+	FollowUpStatusAbandoned  FollowUpStatus = "abandoned"
 )
 
 func ValidFollowUpStatus(value FollowUpStatus) bool {
-	return value == FollowUpStatusNotStarted || value == FollowUpStatusInProgress || value == FollowUpStatusDone
+	return value == FollowUpStatusNotStarted || value == FollowUpStatusInProgress || value == FollowUpStatusDone || value == FollowUpStatusAbandoned
 }
 
 type FollowUpOwner struct {

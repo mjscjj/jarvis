@@ -16,10 +16,10 @@ const refreshLeeway = 5 * time.Minute
 var (
 	// ErrNoUserToken means this person has no stored grant at all: nobody has
 	// signed in as them, or their file was removed.
-	ErrNoUserToken = errors.New("this person has no stored Feishu token; sign in to Biz OKR again")
+	ErrNoUserToken = errors.New("this person has no stored Feishu token; sign in to OKR again")
 	// ErrUserTokenUnusable means a grant exists but can no longer produce a
 	// working access token, so only a fresh login can fix it.
-	ErrUserTokenUnusable = errors.New("the stored Feishu token can no longer be refreshed; sign in to Biz OKR again")
+	ErrUserTokenUnusable = errors.New("the stored Feishu token can no longer be refreshed; sign in to OKR again")
 )
 
 // UserTokens hands out a currently valid Feishu access token for one person,

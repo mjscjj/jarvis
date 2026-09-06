@@ -31,7 +31,7 @@ const BizOKRModule = lazy(() => import('../okr/OKRModule'))
 export const appModuleRegistry: AppModuleDefinition[] = [
 	{
 		key: 'biz-okr',
-		label: 'Biz OKR',
+		label: 'OKR',
 		icon: <AimOutlined />,
 		Page: BizOKRModule,
 		children: OKR_TAB_DEFINITIONS.map((item) => ({

@@ -1,4 +1,19 @@
-import type { FollowUpItem } from './types'
+import type { FollowUpItem, FollowUpStatus } from './types'
+
+export const FOLLOW_UP_STATUS_OPTIONS: ReadonlyArray<{ value: FollowUpStatus; label: string }> = [
+  { value: 'not_started', label: '未开始' },
+  { value: 'in_progress', label: '进行中' },
+  { value: 'done', label: '已完成' },
+  { value: 'abandoned', label: '废弃' },
+]
+
+export function isClosedFollowUp(status: FollowUpStatus) {
+  return status === 'done' || status === 'abandoned'
+}
+
+export function canEditFollowUpStatus(readOnly: boolean, statusEditable: boolean) {
+  return !readOnly || statusEditable
+}
 
 type SortableFollowUp = Pick<FollowUpItem, 'id' | 'assignDate' | 'sortOrder' | 'createdAt'>
 

@@ -107,7 +107,7 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 			return
 		}
 		if !enabled {
-			writeAPIError(c, consts.StatusNotFound, 40488, fmt.Errorf("Biz OKR module is disabled"))
+			writeAPIError(c, consts.StatusNotFound, 40488, fmt.Errorf("OKR module is disabled"))
 			c.Abort()
 			return
 		}

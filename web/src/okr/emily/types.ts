@@ -269,7 +269,7 @@ export interface PageCommentList {
   comments: PageComment[]
 }
 
-export type FollowUpStatus = 'not_started' | 'in_progress' | 'done'
+export type FollowUpStatus = 'not_started' | 'in_progress' | 'done' | 'abandoned'
 
 export interface FollowUpItem {
   id: string

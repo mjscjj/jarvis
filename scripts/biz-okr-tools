@@ -219,7 +219,7 @@ case "$COMMAND" in
       and (.week | type == "string" and test("^[0-9]{4}-W[0-9]{2}$"))
       and (.topic | type == "string" and length > 0)
       and (.owners | type == "array" and all(.[]; (.open_id | type == "string" and length > 0) and (.name | type == "string" and length > 0)))
-      and (.status == "not_started" or .status == "in_progress" or .status == "done")
+      and (.status == "not_started" or .status == "in_progress" or .status == "done" or .status == "abandoned")
     ' >/dev/null || { echo "create-follow-up payload is invalid" >&2; exit 2; }
     request_post /api/biz-okr/follow-ups "$payload"
     ;;
@@ -232,7 +232,7 @@ case "$COMMAND" in
       and (.week | type == "string" and test("^[0-9]{4}-W[0-9]{2}$"))
       and (.topic | type == "string" and length > 0)
       and (.owners | type == "array" and all(.[]; (.open_id | type == "string" and length > 0) and (.name | type == "string" and length > 0)))
-      and (.status == "not_started" or .status == "in_progress" or .status == "done")
+      and (.status == "not_started" or .status == "in_progress" or .status == "done" or .status == "abandoned")
     ' >/dev/null || { echo "update-follow-up payload is invalid" >&2; exit 2; }
     request_write PUT "/api/biz-okr/follow-ups/$(encoded "$ID")" "$payload"
     ;;

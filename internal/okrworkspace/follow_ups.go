@@ -217,7 +217,7 @@ func validateFollowUpInput(input FollowUpInput, creating bool) error {
 		return fmt.Errorf("id, quarter YYYY-Qn and week YYYY-Www are required")
 	}
 	if input.Topic == "" || !domain.ValidFollowUpStatus(input.Status) {
-		return fmt.Errorf("topic and status not_started, in_progress or done are required")
+		return fmt.Errorf("topic and status not_started, in_progress, done or abandoned are required")
 	}
 	if input.AssignDate != "" {
 		parsed, err := time.Parse("2006-01-02", input.AssignDate)

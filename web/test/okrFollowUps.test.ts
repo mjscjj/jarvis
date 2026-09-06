@@ -1,7 +1,26 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { sortFollowUpsByAssignDate } from '../src/okr/emily/followUps.ts'
+import { canEditFollowUpStatus, FOLLOW_UP_STATUS_OPTIONS, isClosedFollowUp, sortFollowUpsByAssignDate } from '../src/okr/emily/followUps.ts'
+
+test('follow-up statuses include abandoned and use the Review labels', () => {
+  assert.deepEqual(FOLLOW_UP_STATUS_OPTIONS, [
+    { value: 'not_started', label: '未开始' },
+    { value: 'in_progress', label: '进行中' },
+    { value: 'done', label: '已完成' },
+    { value: 'abandoned', label: '废弃' },
+  ])
+  assert.equal(isClosedFollowUp('not_started'), false)
+  assert.equal(isClosedFollowUp('in_progress'), false)
+  assert.equal(isClosedFollowUp('done'), true)
+  assert.equal(isClosedFollowUp('abandoned'), true)
+})
+
+test('Review meeting keeps the row read-only while allowing Todo status edits', () => {
+  assert.equal(canEditFollowUpStatus(false, false), true)
+  assert.equal(canEditFollowUpStatus(true, true), true)
+  assert.equal(canEditFollowUpStatus(true, false), false)
+})
 
 function item(id: string, assignDate: string, sortOrder: number, createdAt = '2026-09-04T00:00:00Z') {
   return { id, assignDate, sortOrder, createdAt }
