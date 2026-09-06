@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +59,7 @@ import (
 
 func main() {
 	configPath := flag.String("config", "conf/config.yaml", "配置文件路径")
+	listenAddress := flag.String("addr", "", "覆盖 server.addr；桌面壳使用 loopback 地址")
 	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库迁移，成功后退出")
 	discoverOnce := flag.Bool("discover-once", false, "执行一次飞书会话发现，成功后退出")
 	scanChat := flag.String("scan-chat", "", "增量扫描指定飞书 chat_id，成功后退出")
@@ -101,6 +103,12 @@ func main() {
 	if err != nil {
 		// fail-fast：配置错误启动即暴露，不带缺陷跑起来
 		fatalf("load config failed: %v", err)
+	}
+	if address := strings.TrimSpace(*listenAddress); address != "" {
+		if _, _, err := net.SplitHostPort(address); err != nil {
+			fatalf("invalid listen address %q: %v", address, err)
+		}
+		cfg.Server.Addr = address
 	}
 	configPathAbsolute, err := filepath.Abs(*configPath)
 	if err != nil {
