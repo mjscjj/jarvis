@@ -43,7 +43,27 @@ lark-cli vc +search \
 
 结果分页时用 `--page-token` 翻完，不要只取第一页。
 
-只保留**已经结束**的会议（有 `end_time` 且已过去）。正在进行中的会先不投递，下一轮再说。
+`vc +search` 只用于发现 `data.items[].id`，它不返回可用于判断结束状态的完整时间和参会人。对每个 `meeting_id` 读取会议事实：
+
+```bash
+lark-cli vc meeting get \
+  --meeting-id "<meeting_id>" \
+  --with-participants \
+  --user-id-type open_id \
+  --as user
+```
+
+只保留 `.data.meeting.status=3` 且 `end_time` 已过去的会议；`1` 是呼叫中，`2` 是进行中。`start_time` / `end_time` 是 Unix 秒字符串，投递前必须按本机时区转换成 RFC3339，禁止直接当 RFC3339 复制或手算。正在进行中的会先不投递，下一轮再说。
+
+`host_user.id` 与 `participants[].id` 是参会人的 open_id。需要姓名时一次批量解析：
+
+```bash
+lark-cli contact +search-user \
+  --user-ids "<逗号分隔的 open_id，最多 100 个>" \
+  --as user
+```
+
+超过 100 个 open_id 时按 100 个一批查询。解析不到姓名就保留 open_id 并写“姓名未返回”，不要猜。
 
 ### 3. 每场会议投递一条线索
 
@@ -67,9 +87,7 @@ jarvis-tools append-clue \
 TXT
 ```
 
-`--content` 里写你**从 `vc +search` / `vc +detail` 直接读到的客观字段**。字段缺失就如实留空或写「未返回」，不要编，也不要为了补齐它去调妙记接口。
-
-参会人名单值得多花一步：`vc +detail --meeting-ids <id> --as user` 能拿到更完整的参会人，姓名可用 `lark-cli contact` 解析。这仍属于「会议本身的客观信息」，可以做。
+`--content` 只写 `vc meeting get --with-participants` 和联系人解析直接返回的客观字段。字段缺失就如实留空或写「未返回」，不要编，也不要为了补齐它去调 `vc +detail`、妙记或其他会后产物接口。
 
 ### 4. 汇报
 

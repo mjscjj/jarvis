@@ -46,12 +46,14 @@ lark-cli calendar +get \
 
 lark-cli calendar event.attendees list \
   --calendar-id primary \
-  --event-id "<event_id>" \
+  --event-id "<+get 返回 recurring_event_id 时用它，否则用实例 event_id>" \
   --user-id-type open_id \
   --page-size 100 \
   --page-all \
   --as user
 ```
+
+`+agenda` 对重复日程返回的是具体实例 `event_id`（通常以实例开始时间结尾），`+get` 会同时返回系列级 `recurring_event_id`（通常以 `_0` 结尾）。`calendar event.attendees list` 对重复日程只接受系列级 ID；不能把实例 ID 直接传给它。非重复日程没有 `recurring_event_id`，此时才使用实例 `event_id`。
 
 保留原始标题、描述、起止时间、时区、组织者、本人 RSVP、参会人及其 RSVP、群聊、会议室、日程链接和视频会议链接。字段没返回就写“未返回”，不要补写推断。
 

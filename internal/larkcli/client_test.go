@@ -66,7 +66,7 @@ func TestRun(t *testing.T) {
 		},
 		{
 			name:       "structured api error on stderr",
-			script:     `printf '%s' '{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","code":99991679,"message":"login required","missing_scopes":["im:chat:read"]}}' >&2; exit 1`,
+			script:     `printf '%s\n' '[page 1] fetching...' >&2; printf '%s' '{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","code":99991679,"message":"login required","missing_scopes":["im:chat:read"]}}' >&2; exit 1`,
 			wantErr:    "missing_scope",
 			wantAPIErr: true,
 			wantCmdErr: true,
@@ -193,6 +193,17 @@ esac`)
 		}
 		if _, err := client.ListChatMembers(context.Background(), "oc_large"); err == nil || !strings.Contains(err.Error(), "incomplete user roster") {
 			t.Fatalf("ListChatMembers() error = %v, want incomplete user roster", err)
+		}
+	})
+
+	t.Run("fails when pagination remains", func(t *testing.T) {
+		body := `printf '%s' '{"ok":true,"data":{"users":[],"user_total":150,"has_more":true,"page_token":"next","truncations":[]}}'`
+		client, err := New(testOptions(writeScript(t, body), fixtureCommandTimeout))
+		if err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		if _, err := client.ListChatMembers(context.Background(), "oc_large"); err == nil || !strings.Contains(err.Error(), "has_more=true") {
+			t.Fatalf("ListChatMembers() error = %v, want has_more incompleteness", err)
 		}
 	})
 }

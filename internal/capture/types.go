@@ -37,8 +37,7 @@ type MessageListResponse struct {
 	} `json:"data"`
 }
 
-// MessageSearchResponse mirrors lark-cli im +messages-search. The shortcut
-// handles server pagination itself when called with --page-all.
+// MessageSearchResponse mirrors one page from lark-cli im +messages-search.
 type MessageSearchResponse struct {
 	OK   bool `json:"ok"`
 	Data struct {

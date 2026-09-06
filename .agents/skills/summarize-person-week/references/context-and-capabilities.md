@@ -113,7 +113,8 @@ The current lark-cli exposes version-matched skills through
 
 - `lark-task`: tasks, task lists, assignees, state, comments, and attachments.
 - `lark-approval`: approval definitions, instances, status, and actions.
-- `lark-okr`: objectives, key results, alignments, and progress.
+- Enterprise policy does not allow the OKR API; collect goal/OKR evidence only
+  from principal-authored documents through `lark-drive` and `lark-doc`.
 
 ### Discovery beyond registered commands
 

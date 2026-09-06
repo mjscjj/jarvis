@@ -503,3 +503,78 @@ func TestMeetingGuidanceUsesUnifiedLarkMeetingSkill(t *testing.T) {
 		}
 	}
 }
+
+func TestMeetingCollectorsUseCurrentLarkCLIFactSources(t *testing.T) {
+	meetingRaw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-meeting-clue", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	meeting := string(meetingRaw)
+	for _, want := range []string{
+		"lark-cli vc meeting get",
+		"--with-participants",
+		"--user-id-type open_id",
+		"status=3",
+		"Unix 秒",
+		"lark-cli contact +search-user",
+	} {
+		if !strings.Contains(meeting, want) {
+			t.Errorf("meeting collector is missing %q", want)
+		}
+	}
+	for _, obsolete := range []string{
+		"只保留**已经结束**的会议（有 `end_time`",
+		"`vc +detail --meeting-ids <id> --as user` 能拿到更完整的参会人",
+		"从 `vc +search` / `vc +detail` 直接读到",
+	} {
+		if strings.Contains(meeting, obsolete) {
+			t.Errorf("meeting collector still contains obsolete contract %q", obsolete)
+		}
+	}
+
+	prepRaw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-meeting-prep-clue", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prep := string(prepRaw)
+	for _, want := range []string{
+		`--event-id "<+get 返回 recurring_event_id 时用它，否则用实例 event_id>"`,
+		"`calendar event.attendees list` 对重复日程只接受系列级 ID",
+	} {
+		if !strings.Contains(prep, want) {
+			t.Errorf("meeting prep collector is missing %q", want)
+		}
+	}
+}
+
+func TestReportCapabilitiesAvoidOKRAPIAndMorningBriefClosesSend(t *testing.T) {
+	for _, path := range []string{
+		filepath.Join("..", "..", ".agents", "skills", "summarize-person-day", "references", "context-and-capabilities.md"),
+		filepath.Join("..", "..", ".agents", "skills", "summarize-person-week", "references", "context-and-capabilities.md"),
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(raw)
+		if strings.Contains(content, "`lark-okr`") || !strings.Contains(content, "does not allow the OKR API") {
+			t.Errorf("%s still exposes the forbidden OKR API", path)
+		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "summarize-morning-brief", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	morning := string(raw)
+	for _, want := range []string{
+		"--idempotency-key",
+		"morning-brief-YYYYMMDD-HHMMSS",
+		"lark-cli im +messages-mget",
+		"读回成功",
+	} {
+		if !strings.Contains(morning, want) {
+			t.Errorf("morning brief send contract is missing %q", want)
+		}
+	}
+}

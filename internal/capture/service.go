@@ -1071,8 +1071,13 @@ func (s *Service) finishChatError(record *domain.ScanRecord, checkpoint *domain.
 func classifyError(err error) string {
 	var apiErr *larkcli.APIError
 	if errors.As(err, &apiErr) {
-		if apiErr.Subtype != "" {
-			return "lark_api_" + apiErr.Subtype
+		subtype := strings.TrimSpace(apiErr.Subtype)
+		if subtype != "" && !strings.EqualFold(subtype, "unknown") {
+			return "lark_api_" + subtype
+		}
+		code := strings.Trim(strings.TrimSpace(string(apiErr.Code)), `"`)
+		if numericCode, parseErr := strconv.ParseInt(code, 10, 64); parseErr == nil && numericCode != 0 {
+			return "lark_api_" + code
 		}
 		return "lark_api"
 	}

@@ -162,6 +162,8 @@ type chatMembersResponse struct {
 	Data struct {
 		Users       []ChatMember `json:"users"`
 		UserTotal   int          `json:"user_total"`
+		HasMore     bool         `json:"has_more"`
+		PageToken   string       `json:"page_token"`
 		Truncations []struct {
 			Limit      int    `json:"limit"`
 			MemberType string `json:"member_type"`
@@ -181,8 +183,8 @@ func (c *Client) ListChatMembers(ctx context.Context, chatID string) ([]ChatMemb
 	if err := c.Run(ctx, &resp, "im", "+chat-members-list", "--chat-id", chatID, "--member-types", "user", "--page-all", "--page-limit", "0", "--as", "user"); err != nil {
 		return nil, fmt.Errorf("lark-cli chat-members-list chat_id=%q: %w", chatID, err)
 	}
-	if len(resp.Data.Truncations) > 0 {
-		return nil, fmt.Errorf("lark-cli chat-members-list chat_id=%q returned an incomplete user roster: user_total=%d truncations=%v", chatID, resp.Data.UserTotal, resp.Data.Truncations)
+	if resp.Data.HasMore || len(resp.Data.Truncations) > 0 {
+		return nil, fmt.Errorf("lark-cli chat-members-list chat_id=%q returned an incomplete user roster: user_total=%d has_more=%t page_token=%q truncations=%v", chatID, resp.Data.UserTotal, resp.Data.HasMore, resp.Data.PageToken, resp.Data.Truncations)
 	}
 	return resp.Data.Users, nil
 }
@@ -258,8 +260,7 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 		if commandCtx.Err() != nil {
 			cause = commandCtx.Err()
 		} else {
-			var errorEnvelope envelope
-			if json.Unmarshal(stderr.Bytes(), &errorEnvelope) == nil && errorEnvelope.Error != nil {
+			if errorEnvelope := parseErrorEnvelope(stderr.Bytes()); errorEnvelope != nil {
 				cause = errorEnvelope.Error
 			}
 		}
@@ -288,6 +289,22 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 			return fmt.Errorf("lark-cli %q returned ok=false without error", commandArgs)
 		}
 		return meta.Error
+	}
+	return nil
+}
+
+func parseErrorEnvelope(raw []byte) *envelope {
+	for offset := bytes.IndexByte(raw, '{'); offset >= 0; {
+		var candidate envelope
+		decoder := json.NewDecoder(bytes.NewReader(raw[offset:]))
+		if decoder.Decode(&candidate) == nil && candidate.Error != nil {
+			return &candidate
+		}
+		next := bytes.IndexByte(raw[offset+1:], '{')
+		if next < 0 {
+			break
+		}
+		offset += next + 1
 	}
 	return nil
 }

@@ -106,7 +106,7 @@ mkdir -p "data/morning-brief/<YYYY-MM-DD>"
 # Morning brief context — YYYY-MM-DD
 
 ## Run
-- run_id: morning-brief-<本地时间戳>
+- run_id: morning-brief-YYYYMMDD-HHMMSS
 - trigger: schedule|manual
 - window_start: <RFC3339>
 - cutoff_at: <RFC3339>
@@ -200,13 +200,16 @@ jarvis-tools get-principal
 lark-cli im +messages-send \
   --user-id "<principal open_id>" \
   --markdown "<飞书正文>" \
+  --idempotency-key "<本轮 run_id>" \
   --as bot
 ```
 
 硬约束：
 
 - 收件人只能是 Principal 本人
-- 成功后把 `message_id` 和时间写入 `00-context.md` 的 `delivered:` 行
+- `run_id` 也是本轮稳定幂等键，必须使用上面的短格式并保持不变；同一轮失败重试不能生成新 key
+- 发送响应递归去重后必须恰好得到一个 `message_id`，随后执行 `lark-cli im +messages-mget --message-ids "<message_id>" --as bot`，确认目标会话和正文与本轮一致
+- 只有退出码为 0 且读回成功后，才把 `message_id` 和时间写入 `00-context.md` 的 `delivered:` 行
 - 失败时保留完整版，在 Coverage/数据说明写原始错误，不换渠道静默重试
 - 生成失败时不发送任何看似成功的简报
 - 已有 `delivered:` 且本轮未要求重投时，不重复发送
