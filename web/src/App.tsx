@@ -52,7 +52,7 @@ const pageLabels: Record<string, string> = {
   tasks: '任务',
   progress: '工作台',
   background: '世界',
-  agents: 'Agent 设置',
+  agents: '工作设定',
   todos: '线索',
   'scheduled-tasks': '任务',
   plugins: '插件',
@@ -125,7 +125,7 @@ function AppShell() {
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     pluginMenu,
-    { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
+    { key: 'agents', label: '工作设定', icon: <RobotOutlined /> },
     { type: 'divider' },
     {
       key: 'management',
