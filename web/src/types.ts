@@ -354,6 +354,15 @@ export interface FactSearchQuery {
 
 export type PageType = 'principal' | 'person' | 'project' | 'key_matter' | 'group' | 'resource'
 
+export interface PageIndexItem {
+  type: PageType
+  id: number
+  name: string
+  index_line: string | null
+  char_count: number
+  last_progress_at: string | null
+}
+
 export interface PageLink {
   type: string
   id: number

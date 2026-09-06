@@ -30,6 +30,7 @@ import type {
   ProfileInput,
   ProfileView,
   PageType,
+  PageIndexItem,
   PageUpdateInput,
   PageView,
   Project,
@@ -244,6 +245,10 @@ export function isPageConflictError(cause: unknown): cause is PageConflictError 
 
 export function getPage(type: PageType, id: number, signal?: AbortSignal): Promise<PageView> {
   return request<PageView>(`/api/pages/${type}/${id}`, { signal })
+}
+
+export function listPages(all = false, signal?: AbortSignal): Promise<PageIndexItem[]> {
+  return request<PageIndexItem[]>(`/api/pages${all ? '?all=true' : ''}`, { signal })
 }
 
 export async function updatePage(type: PageType, id: number, body: PageUpdateInput): Promise<PageView> {

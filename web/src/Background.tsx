@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -16,6 +16,7 @@ import {
   Segmented,
   Select,
   Space,
+  Spin,
   Switch,
   Table,
   Tag,
@@ -94,6 +95,7 @@ import type {
 import './styles/review-memory.css'
 
 const { Text } = Typography
+const WorldMap = lazy(() => import('./world-map/WorldMap'))
 
 const projectRoleLabels: Record<ProjectRole, string> = { owner: '负责人', participant: '参与者' }
 const projectStatusLabels: Record<ProjectStatus, string> = {
@@ -1699,13 +1701,13 @@ function SkillsPanel() {
   </>
 }
 
-type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'facts' | 'profile'
+type MemoryView = 'world-map' | 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'facts' | 'profile'
 
 export default function Background() {
   const { name: agentName } = useAgentIdentity()
   const { context, setViewState } = usePageContext()
   const memoryView = (value: string | undefined): MemoryView => (
-    value === 'projects' || value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'facts' || value === 'profile'
+    value === 'world-map' || value === 'projects' || value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'facts' || value === 'profile'
       ? value
       : 'profile'
   )
@@ -1724,6 +1726,15 @@ export default function Background() {
         onChange={(key) => selectView(key as MemoryView)}
         destroyOnHidden
         items={[
+          {
+            key: 'world-map',
+            label: '世界地图',
+            children: (
+              <Suspense fallback={<div style={{ padding: 72, textAlign: 'center' }}><Spin size="large" /></div>}>
+                <WorldMap />
+              </Suspense>
+            ),
+          },
           {
             key: 'profile',
             label: '我的资料',
