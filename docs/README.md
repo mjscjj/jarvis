@@ -59,6 +59,7 @@
 | [第一阶段产品方案](design-product-stage-1.md) | proposal | 单人本地协作主干的产品主线：飞书触达与就地处置、收件箱对称、项目工作台、阻塞恢复、世界模型卫生；全部未实现，S0 复用晨报投递路径 |
 | [CC Connect 支持飞书文档评论](design-cc-connect-feishu-document-comments.md) | proposal | cc-connect 复用现有 Feishu 长连接接收 `@Bot` 评论，并把 Agent 最终答案写回原评论卡片；尚未实现 |
 | [处理中标记的收尾](design-task-processing-marker.md) | proposal | M5 终态时由 runtime 撤回 `OnIt` reaction；当前只加不撤。含跨轮残留待实测项，以及「撤干净 vs 留结论表情」待 principal 决策 |
+| [世界模型 3D 视图](summery/world-model-3d-plan.md) | proposal | 复用现有 Pages API，以开源 3D 图组件提供活跃全局、全量搜索、一跳聚焦与实体详情；尚未实现 |
 
 ## 研究
 
