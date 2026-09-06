@@ -118,19 +118,20 @@ cd jarvis_bot
 使用 $install-jarvis 检查这台机器并完成 Jarvis 首次安装和验收。
 ```
 
-`$install-jarvis` 是整个项目安装流程：先创建 `var/install/<run-id>/INSTALL_CHECKLIST.md`，再报告机器、配置、旧实例和服务事实，由用户的 Agent 选择依赖安装方式和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把 lark-cli 当前默认 App 绑定到 CC Connect，启动并验收运行底座；服务就绪后转入 `$bootstrap-jarvis-world-model` 建立人物、项目、资料、重点事项和监听群，最后完成消息与 CC 对话的真实端到端验收。
+`$install-jarvis` 是用户唯一需要触发的整个项目安装流程：先创建或恢复 `var/install/<run-id>/INSTALL_CHECKLIST.md`，再报告机器、配置、旧实例和服务事实，由用户的 Agent 选择依赖安装方式和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把 lark-cli 当前默认 App 绑定到 CC Connect，启动并验收运行底座；服务就绪后内部调用 `$bootstrap-jarvis-world-model` 建立人物、项目、资料、重点事项和监听群，最后完成消息与 CC 对话的真实端到端验收。独立重建世界模型时才单独使用后者。
 
 repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills 和仓库基线使用的 traex：
 
 ```bash
 ./scripts/jarvis-install install-lark-cli
+./scripts/jarvis-install install-bytedcli
 ./scripts/jarvis-install install-traex
 ./scripts/jarvis-install install-cc-connect
 ./scripts/jarvis-install install-qdrant
 ./scripts/jarvis-install validate-dependencies
 ```
 
-lark-cli 使用 larksuite 官方 npm installer；traex 使用其 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装支持 macOS arm64 与 Linux x86_64。
+lark-cli 首装使用 larksuite 官方 npm installer，已有版本通过 `lark-cli update` 同步 CLI 与官方 Skills；traex 使用其 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装支持 macOS arm64 与 Linux x86_64。
 
 ## 本地运行
 
@@ -155,14 +156,15 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ### 安装与重建
 
 ```bash
-# clone 后的第一个项目动作：建立整个安装过程的状态页
-./scripts/jarvis-install start
+# clone 后的第一个项目动作：恢复最近的安装状态页；不存在时新建
+./scripts/jarvis-install start --resume-latest
 
 # 推荐让 Agent 先取得事实；fresh clone 的 identity 配置不完整是正常状态
 ./scripts/jarvis-install doctor
 
 # 按 doctor 结果安装运行 CLI；已有且可用时是无修改的验证
 ./scripts/jarvis-install install-lark-cli
+./scripts/jarvis-install install-bytedcli
 ./scripts/jarvis-install install-traex
 ./scripts/jarvis-install install-cc-connect
 
@@ -172,14 +174,15 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 
 # 依赖门通过后登录 lark-cli 当前默认身份，再写本机 identity、绑定 CC：
 ./scripts/jarvis-install configure-identity --agent-name <name> --open-id <open_id> --git-author <author>
-./scripts/jarvis-install bind-cc
+printf '%s\n' '<App Secret>' | ./scripts/jarvis-install bind-cc
 ./scripts/jarvis-install validate-binding
 
-`bind-cc` 会把 CC Connect Feishu `allow_from` 收紧为 Principal 本人；`validate-binding` 会拒绝缺失或通配的访问白名单。需要临时开放给其他人时，应作为当前机器的显式运行决策处理。
+`bind-cc` 会立即验证 App ID/Secret。已有 CC Connect Feishu `allow_from` 不是 Principal 本人时命令会停止；用户确认替换后才可加 `--replace-allow-from`。`validate-binding` 会拒绝缺失或通配的访问白名单。需要临时开放给其他人时，应作为当前机器的显式运行决策处理。
 
 # 启动补丁版 CC Connect 后，fresh clone 安装主服务（Linux 可用
 # scripts/install-cc-systemd.sh <独立配置路径> 避免覆盖别的 CC 项目）：
 ./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"
+# Linux 改用：./scripts/install-cc-systemd.sh "$HOME/.cc-connect/config.toml"
 ./scripts/jarvis-install install-server
 
 # 系统级验收

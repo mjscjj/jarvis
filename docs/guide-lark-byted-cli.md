@@ -2,8 +2,8 @@
 
 > Status: current guide
 > Authority: operational reference; CLI `--help` is source of truth
-> Last verified: 2026-08-02 @ `89fa24b`
-> Verified versions: lark-cli 1.0.72, bytedcli 0.110.0
+> Last verified: 2026-09-06
+> Verified versions: lark-cli 1.0.93, bytedcli 0.110.0
 
 Jarvis 会直接或通过 Agent 调用 `lark-cli`、`bytedcli lark` 和 `bytedcli codebase`。CLI 更新较快；命令报错或父命令只打印 help 时，先以本机 `--help` 重新核对，不要从本文猜兼容写法。
 
@@ -71,7 +71,7 @@ bytedcli --json lark im chat-messages-list \
 发送消息：
 
 ```bash
-lark-cli im messages send \
+lark-cli im +messages-send \
   --chat-id oc_xxx \
   --text "hello" \
   --as bot

@@ -457,3 +457,26 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		}
 	}
 }
+
+func TestFeishuGroupSummaryUsesSupportedThreadPagination(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(
+		"..", "..", ".agents", "skills", "feishu-group-daily-summary", "references", "tool-paths.md",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := string(raw)
+	for _, want := range []string{
+		"lark-cli im +threads-messages-list",
+		"--page-size 50",
+		"--page-all",
+		"--page-limit 1000",
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("thread pagination contract is missing %q", want)
+		}
+	}
+	if strings.Contains(contract, "--page-size 500") {
+		t.Fatal("thread pagination exceeds the lark-cli 1.0.93 maximum page size")
+	}
+}

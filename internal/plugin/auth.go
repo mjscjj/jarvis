@@ -207,10 +207,13 @@ func envelopeSucceeded(payload any) bool {
 }
 
 func hasErrorCode(raw []byte, codes ...string) bool {
-	code := strings.ToUpper(findString(decodeJSONValues(raw), "code", "error_code", "errorCode"))
-	for _, candidate := range codes {
-		if code == candidate {
-			return true
+	payloads := decodeJSONValues(raw)
+	for _, key := range []string{"subtype", "code", "error_code", "errorCode"} {
+		code := strings.ToUpper(findString(payloads, key))
+		for _, candidate := range codes {
+			if code == candidate {
+				return true
+			}
 		}
 	}
 	return false

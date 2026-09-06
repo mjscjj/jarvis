@@ -75,7 +75,7 @@ type SearchedMessage struct {
 	Sender     CLISender `json:"sender"`
 }
 
-// CLIMessage is the rendered message shape returned by lark-cli 1.0.72.
+// CLIMessage is the rendered message shape returned by lark-cli 1.0.93.
 type CLIMessage struct {
 	ChatID        string       `json:"chat_id"`
 	Content       string       `json:"content"`

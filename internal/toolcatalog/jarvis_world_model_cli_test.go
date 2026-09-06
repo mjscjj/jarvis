@@ -53,6 +53,9 @@ func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *test
 		case "/api/resources":
 			fmt.Fprint(w, `{"code":0,"data":{"total":4,"active_total":3,"items":[]}}`)
 		case "/api/groups":
+			if got := r.URL.Query().Get("related_only"); got != "true" {
+				t.Fatalf("groups related_only = %q, want true", got)
+			}
 			fmt.Fprint(w, `{"code":0,"data":{"total":0,"items":[]}}`)
 		default:
 			http.NotFound(w, r)
@@ -64,12 +67,14 @@ func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *test
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
   "run ./cmd/jarvis-config show-principal --config conf/config.yaml")
+    printf '%s\n' 'go: downloading harmless-test-module' >&2
     printf '%s' '{"principal_open_id":"ou_ready","git_author":"ready@example.com"}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
 esac
 `)
 	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
 if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  printf '%s\n' 'auth diagnostic' >&2
   printf '%s' '{"identity":"user","verified":true,"identities":{"bot":{"status":"ready","verified":true},"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready","userName":"Ready User"}}}'
   exit 0
 fi
@@ -164,6 +169,26 @@ func TestJarvisWorldModelCaptureCommandsReuseM2Endpoints(t *testing.T) {
 	want := []string{"POST /api/debug/capture/discover", "POST /api/debug/capture/scan-chat"}
 	if fmt.Sprint(requests) != fmt.Sprint(want) {
 		t.Fatalf("requests = %v, want %v", requests, want)
+	}
+}
+
+func TestJarvisWorldModelCaptureTimeoutIsThirtyMinutes(t *testing.T) {
+	scriptPath, err := filepath.Abs(filepath.Join("..", "..", "scripts", "jarvis-world-model"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(content)
+	for _, want := range []string{
+		`api_call POST /api/debug/capture/discover '{}' 1800`,
+		`api_call POST /api/debug/capture/scan-chat "$(jq -nc --arg chat_id "$CHAT_ID" '{chat_id:$chat_id}')" 1800`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("world-model capture timeout missing %q", want)
+		}
 	}
 }
 

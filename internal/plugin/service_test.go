@@ -365,7 +365,7 @@ func TestLarkIMAuthorizationUsesDeviceFlow(t *testing.T) {
 		commands = append(commands, command)
 		switch {
 		case strings.Contains(command, "im +chat-search"):
-			return []byte(`{"error":{"code":"AUTH_REQUIRED","message":"login required"}}`), errors.New("exit 1")
+			return []byte(`{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","code":99991679,"message":"login required"}}`), errors.New("exit 1")
 		case strings.Contains(command, "--no-wait"):
 			return []byte(`{"data":{"device_code":"device-1","verification_uri":"https://example.test/login","user_code":"ABCD"}}`), nil
 		case strings.Contains(command, "--device-code"):
@@ -395,5 +395,12 @@ func TestFindStringSearchesNestedAuthorizationPayload(t *testing.T) {
 	}
 	if got := findString(payload, "device_code"); got != "x" {
 		t.Fatalf("findString() = %q", got)
+	}
+}
+
+func TestHasErrorCodeChecksSubtypeIndependentlyFromStringCode(t *testing.T) {
+	raw := []byte(`{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","code":"99991679"}}`)
+	if !hasErrorCode(raw, "MISSING_SCOPE") {
+		t.Fatal("hasErrorCode() did not match lark-cli error.subtype")
 	}
 }

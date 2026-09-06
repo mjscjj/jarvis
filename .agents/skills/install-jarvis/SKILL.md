@@ -5,21 +5,21 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 # 安装 Jarvis 整体项目
 
-本 Skill 是从完整仓库 checkout 到最终可用的安装流程所有者，也是 `INSTALL_CHECKLIST.md` 的唯一所有者。世界模型阶段由 `$bootstrap-jarvis-world-model` 执行，但仍是整体安装的一部分；安装 Agent 负责把同一个 `run_dir` 传入、继续维护清单并完成最终验收。可执行实现都在仓库的 `scripts/` 和 `integrations/cc-connect/`，本 Skill 只根据机器事实编排，不进入 Jarvis M3/M5。
+本 Skill 是从完整仓库 checkout 到最终可用的安装流程所有者，也是用户唯一需要触发的安装入口和 `INSTALL_CHECKLIST.md` 的唯一所有者。世界模型阶段内部调用 `$bootstrap-jarvis-world-model`，保留它作为独立重建世界模型时的复用模块；用户不需要再触发第二个安装 Skill。安装 Agent 负责把同一个 `run_dir` 传入、继续维护清单并完成最终验收。可执行实现都在仓库的 `scripts/` 和 `integrations/cc-connect/`，本 Skill 只根据机器事实编排，不进入 Jarvis M3/M5。
 
 执行顺序：**仓库与安装运行 → 机器事实 → 全部依赖 → `validate-dependencies` → lark-cli 当前默认 App → 飞书能力只读审计 → 本机 identity 与 CC 绑定 → 启动 CC Connect/Jarvis → `validate` → `$bootstrap-jarvis-world-model` → 两个真实端到端验收 → `status`**。依赖门通过前不得启动 CC Connect 或 Jarvis；世界模型不是服务启动前置条件，但没有完成或明确标注未做原因时，整个项目安装不能宣称完整。
 
-先完整读取 [installation-boundaries.md](references/installation-boundaries.md)、[feishu-capability-audit.md](references/feishu-capability-audit.md) 和 [cc-connect-binding.md](references/cc-connect-binding.md)。
+先完整读取统一操作说明 [operator-guide.md](references/operator-guide.md)。只有需要诊断机器边界或能力审计时，再读取 [installation-boundaries.md](references/installation-boundaries.md)、[feishu-capability-audit.md](references/feishu-capability-audit.md) 和 [cc-connect-binding.md](references/cc-connect-binding.md)；不要让用户在这些文件之间寻找下一步。
 
 ## 0. 建立整体安装运行
 
-用户先取得完整仓库，并在仓库根目录启动能加载 repo-local Skills 的 Agent。Agent 立即记录当前 remote、branch、commit；若 `jq` 尚不存在，先补齐这个启动脚本依赖，然后执行：
+用户先取得完整仓库，并在仓库根目录启动能加载 repo-local Skills 的 Agent。Agent 立即记录当前 remote、branch、commit；若 `jq` 尚不存在，先补齐这个启动脚本依赖。先尝试恢复最近一次安装运行：
 
 ```bash
-./scripts/jarvis-install start
+./scripts/jarvis-install start --resume-latest
 ```
 
-保存返回的 `run_dir` 和 `checklist`。全过程只维护 `run_dir/INSTALL_CHECKLIST.md`：每完成一项立即打勾并附真实读回；未做、阻塞、不适用保持未勾选并写原因。原始安装和世界模型证据可写入同一个 `run_dir/evidence/`。飞书身份以 lark-cli 当前默认身份为准，安装运行不再另选 Jarvis 专用 Profile。
+返回 `resumed=true` 时先读清单和现有证据继续执行，不创建第二份状态页；确认旧运行不应继续时才显式执行不带 `--resume-latest` 的 `start`。保存返回的 `run_dir` 和 `checklist`。全过程只维护 `run_dir/INSTALL_CHECKLIST.md`：每完成一项立即打勾并附真实读回；未做、阻塞、不适用保持未勾选，并在同一行追加 `原因：未做：...`、`原因：阻塞：...` 或 `原因：不适用：...`。原始安装和世界模型证据可写入同一个 `run_dir/evidence/`。飞书身份以 lark-cli 当前默认身份为准，安装运行不再另选 Jarvis 专用 Profile。
 
 ## 1. 检查机器和旧实例
 
@@ -47,11 +47,15 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 只有 `validate-dependencies` 返回 `ok=true` 才继续。`install-cc-connect` 从固定 upstream 应用仓库补丁，只构建并验收 binary，不配置或启动 daemon。Qdrant 是依赖服务，可以在这一阶段启动。
 
-如果当前 Agent 没有 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，用官方 lark-cli installer 补齐并重新加载 Agent 能力。安装 bytedcli 后读回版本；其 SSO 登录可在 Jarvis Web 登录页完成，不作为服务启动前置条件。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
+如果当前 Agent 没有 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，首次安装用官方 lark-cli installer；已有 CLI 时运行 `lark-cli update` 同步 CLI 与 Skills，然后重新加载 Agent 能力。安装 bytedcli 后读回版本；其 SSO 登录可在 Jarvis Web 登录页完成，不作为服务启动前置条件。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
+
+依赖门还必须确认 lark-cli 支持安装流程使用的卡片回调 dry-run 协议，并确认 CC Connect 固定使用的 `codex` 在 PATH 中。traex 未登录时运行 `traex login --sso-device`，把链接/验证码原样交给用户，完成后重新读取 `traex login status`。
 
 ## 3. 使用默认飞书身份、审计能力并绑定 CC Connect
 
-加载并遵循 `lark-shared`。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置或未登录时才初始化和登录该默认身份。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。首次登录的 App 权限申请必须在推荐权限外显式包含卡片回调所需的 `im:message:readonly`：Agent 使用 split-flow 运行 `lark-cli auth login --recommend --scope "im:message:readonly" --no-wait --json`，用户确认后再用同一 `device_code` 完成授权。
+加载并遵循 `lark-shared`。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置或未登录时才初始化和登录该默认身份。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。
+
+飞书授权分成两个不同主体：user OAuth 用 split-flow 取得用户读取能力；Bot/App 的 `im:message:readonly`、机器人能力、`im.message.receive_v1`、`card.action.trigger` 和应用版本发布在飞书开放平台完成。不能用 user OAuth 成功冒充 Bot/App 已配置。首次 user OAuth 仍运行 `lark-cli auth login --recommend --scope "im:message:readonly" --no-wait --json`；把 URL 和二维码展示给用户并结束当前轮，用户确认后在下一轮用该次返回的 `device_code` 执行 `lark-cli auth login --device-code <device_code>`。若已过期就重新发起，不持久化长期复用授权码。
 
 一个飞书 App/Bot 是身份根。Jarvis 直接使用 lark-cli 当前默认 App，CC Connect 绑定该 App，不再为 Jarvis 选择第二个 Bot。
 
@@ -61,21 +65,25 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 ./scripts/jarvis-install configure-identity \
   --agent-name <name> --open-id <open_id> --git-author <author>
 
-./scripts/jarvis-install bind-cc
+printf '%s\n' '<App Secret>' | ./scripts/jarvis-install bind-cc
 # 已有且已验证 secret 时才可显式复用：
 # ./scripts/jarvis-install bind-cc --reuse-existing-secret
+# 已有 allow_from 不是 Principal 本人且用户确认替换时：
+# printf '%s\n' '<App Secret>' | ./scripts/jarvis-install bind-cc --replace-allow-from
 
 ./scripts/jarvis-install validate-binding
 ```
 
-绑定校验还必须确认 CC 托管的 Agent 每轮先运行 `scripts/jarvis-tools get-context`，否则 CC 只是进入仓库的普通 Codex，不算和 Jarvis 世界模型一体化；并通过 `card.action.trigger` 的 Bot dry-run 验证 App 已申请 `im:message:readonly`、已发布该回调事件。逐项更新清单 C 区；能力审计与默认 App 绑定是两个独立验收项，不能互相代替。
-`bind-cc` 会把 Feishu `allow_from` 收紧为 Principal 本人的 open_id；`validate-binding` 未通过这项检查时不能启动 CC Connect。
+App Secret 从飞书开放平台「凭证与基础信息」复制；`bind-cc` 会立即用这组 App ID/Secret 换取 tenant token 验证，错误凭证不得拖到最终端到端才暴露。已有 `allow_from` 不同于 Principal 时命令会停止，只有用户明确同意后才加 `--replace-allow-from`。
+
+绑定校验还必须确认 CC 托管的 Agent 每轮先运行 `scripts/jarvis-tools get-context`，否则 CC 只是进入仓库的普通 Codex，不算和 Jarvis 世界模型一体化；并通过 `card.action.trigger` 的 Bot dry-run 验证 App 已申请 `im:message:readonly`、已发布该回调事件。逐项更新清单 C 区；能力审计与默认 App 绑定是两个独立验收项，不能互相代替。另一台机器是否仍消费同一 App 无法由本机证明，必须展示为人工确认项，不能伪造机器通过。
 
 ## 4. 启动并验收运行底座
 
 再次运行 doctor，根据真实归属选择动作：
 
-- CC daemon 未注册：`./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"`。
+- macOS CC daemon 未注册：`./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"`。
+- Linux CC daemon 未注册：`./scripts/install-cc-systemd.sh "$HOME/.cc-connect/config.toml"`。
 - CC daemon 已属于当前 binary：安全 restart；属于其他 binary/checkout：先取得用户是否替换的决定。
 - fresh clone 的 Jarvis 主服务未注册：`./scripts/jarvis-install install-server`，保留完整依赖与绑定门禁。
 - 用户已确认复用当前 checkout 和既有数据时，无论 Jarvis 服务仍在运行还是 launchd label 已丢失，都使用 `./scripts/rebuild-server.sh`；label 缺失时脚本直接复用签名安装动作恢复注册，不重新进入完整安装或升级 CC Connect。
@@ -97,7 +105,7 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 ## 6. 真实端到端验收并交付
 
-1. 请用户在一个监听群发送一条新消息，等待正常 M2 扫描后用 `query-messages --chat-id ...` 读回。
+1. 请用户在一个监听群发送一条新消息，随后执行 `./scripts/jarvis-world-model scan --chat-id ...` 走正常 M2 扫描，并用 `query-messages --chat-id ...` 读回，不等待下一次 cron。
 2. 请用户通过绑定的 Jarvis Bot 发起一次 CC Connect 对话，确认该 Agent 先读取当前 Jarvis context 后再回复。
 3. 更新清单 F 区和“最终结果”，然后运行：
 
@@ -105,4 +113,4 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 ./scripts/jarvis-install status --run-dir <run_dir>
 ```
 
-最终交付给出 `INSTALL_CHECKLIST.md` 路径、当前 checkout、默认飞书 App/身份、依赖/绑定/服务/世界模型/端到端结果，以及每个未勾选项的原因和下一步。只有所有应做项通过，或未做项已经明确展示且用户接受当前边界时，才结束本轮安装。
+最终交付给出 `INSTALL_CHECKLIST.md` 路径、当前 checkout、默认飞书 App/身份、依赖/绑定/服务/世界模型/端到端结果，以及每个未勾选项的原因和下一步。`status.complete=true` 表示全部完成；`status.deliverable=true` 表示所有未完成项都已按统一格式解释，可由用户接受边界后结束。两者都为 false 时不得结束本轮安装。

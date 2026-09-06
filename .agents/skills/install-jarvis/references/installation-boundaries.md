@@ -6,7 +6,8 @@
 |---|---|---|
 | 从 checkout 到最终可用的安装运行与清单 | `$install-jarvis` + `var/install/<run-id>/INSTALL_CHECKLIST.md` | 一开始创建，跨依赖、绑定、服务、世界模型和端到端阶段持续更新 |
 | 本机依赖、版本、平台、服务与文件权限事实 | `jarvis-install doctor/validate-dependencies/validate` | 读取 JSON，选择处理方式；依赖门通过前不启动主服务 |
-| lark-cli 与官方 Agent Skills 安装 | larksuite 官方 npm installer | 通过 `install-lark-cli` 调用并读回版本/Skills |
+| lark-cli 与官方 Agent Skills 安装 | larksuite 官方 npm installer / `lark-cli update` | 首装使用 installer，已有 CLI 升级时用 `lark-cli update` 同步 binary 与 Skills，再读回版本/Skills |
+| CC Connect 固定调用的 Codex CLI | 本机 `codex` 安装 | 由 `doctor` / `validate-dependencies` 验收，不能只检查 runtime 配置中的 Agent CLI |
 | traex stable 安装 | TRAE CLI updater 公布的 Code 内网 installer | 通过 `install-traex` 调用并完成 SSO |
 | Jarvis 补丁版 CC Connect binary | `integrations/cc-connect/manifest.sh`、`patches/` 与 `scripts/install-cc-connect.sh` | 通过 `install-cc-connect` 构建验收；此动作不配置、不启动 |
 | lark-cli 默认 App 与 Jarvis Bot 绑定 | `$install-jarvis` + `cc-connect-binding.md` | 将 lark-cli 当前默认 App 绑定到 CC Connect `jarvis-codex`，再跑 `validate-binding` |
@@ -28,6 +29,8 @@
 - Go 版本不得低于 `go.mod`，Node 满足当前 Vite engines，CGO 和 C toolchain 可用。
 - 配置引用的 runtime binary 必须存在；引用 `traex` 时必须已登录。
 - `bin/cc-connect-jarvis` 必须报告固定 Jarvis patch commit；官方未打补丁 binary 不满足依赖门。
+- lark-cli 必须支持绑定验收使用的 `card.action.trigger --dry-run` 协议，世界模型所需五个 Lark Skills 必须全部存在。
+- `codex` 必须存在，因为 CC Connect `jarvis-codex` 固定使用它；仓库 runtime 选择的 Agent CLI 是另一项独立依赖。
 - `conf/config.runtime.yaml` 被 Git 忽略；服务安装前 base/runtime 配置都收紧到 `0600`。
 - identity、模型和 embedding 机器配置不完整时不得注册主服务。
 - principal open_id、lark-cli 当前默认 App、CC Connect `jarvis-codex` App 和 relay secret 必须形成可用绑定；不完整时不得注册主服务。
@@ -39,6 +42,7 @@
 - 即使 program 属于当前 checkout，只要 CC Connect/Jarvis 已在运行，也属于已有实例事实；fresh-install Agent 先报告现状并让用户确认复用或重建，不能把“路径一致”当成重启授权。
 - 系统验收以真实 `/healthz`、`/readyz` 和 Qdrant health 为准，不以进程存在或构建成功代替。
 - 系统验收还要确认服务管理器实际运行当前 checkout 的补丁版 CC Connect；另一条同 App WebSocket 不得并存。
+- 本机只能机器校验当前 service 和端口，不能证明其他机器没有消费同一 App；外部唯一性必须保留为人工确认。
 
 ## 应保留给 Agent 的灵活度
 
