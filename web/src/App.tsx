@@ -21,7 +21,6 @@ import {
   LogoutOutlined,
   UserOutlined,
 } from '@ant-design/icons'
-import Overview from './Overview'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
 import { AuthGate, AuthProvider, useAuth } from './auth'
 import { PageContextProvider, usePageContext } from './pageContext'
@@ -141,7 +140,7 @@ function AppShell() {
   ]
 
   const pages: Record<string, React.ReactNode> = {
-    overview: <Overview />,
+    overview: <Progress />,
     todos: <Todos refreshKey={0} />,
     tasks: <Tasks />,
     'scheduled-tasks': <ScheduledTasks />,
