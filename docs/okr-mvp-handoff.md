@@ -4,15 +4,15 @@
 > Authority: non-normative verification snapshot
 > Last verified: 2026-09-06 @ uncommitted worktree
 
-本轮目标是把通用 OKR 与 Agency 业务包装拆成 Jarvis 的两个内置模块，同时把拆解、同步和催办语义放在工具、Prompt 与 Skill 中。
+本轮目标是把通用 OKR 与 Biz 业务包装拆成 Jarvis 的两个内置模块，同时把拆解、同步和催办语义放在工具、Prompt 与 Skill 中。
 
 ## 已落地边界
 
-- 模块配置：`conf/modules.yaml` 分别控制 `okr` 和 `agency-okr`；Agency OKR 显式依赖通用 OKR，业务配置仍在 `conf/okr-module.yaml`。
-- 生命周期：重启后按模块执行迁移、注册 `/api/okr/*` 或 `/api/agency-okr/*`、暴露对应 Skill；关闭模块不会删除仓库内模块数据。
-- 存储：两层产品事实继续复用 `data/okr/okr.db` 和原表名，资源仍在 `data/okr/assets/`；OAuth/session 和 Jarvis 通用状态仍在本机运行库。`MigrateCore` 拥有 O/KR/Point/Week/Progress，`MigrateAgencyOKR` 拥有标签、Plan、评论、评分、Follow-up、Meego 和催填。
-- 产品：当前完整 UI 作为 Agency OKR 页面组合通用 OKR。通用层维护 Objective、KR、指标、拆解点、负责人、周次和正式 Progress；Agency 层维护业务分类、Focus/P1/P2、Plan、Review、周报展示和四个固定 Agent 行动。
-- 写入：定义写入不改正式 Progress；正式 Progress 走 `/api/okr/*` 的单条 CRUD 和独立 CAS；Agency 页面写入后回读 `/api/agency-okr/*` 组合视图，以保留标签、评分、评论和 Meego 展示。
+- 模块配置：`conf/modules.yaml` 分别控制 `okr` 和 `biz-okr`；Biz OKR 显式依赖通用 OKR，业务配置仍在 `conf/okr-module.yaml`。
+- 生命周期：重启后按模块执行迁移、注册 `/api/okr/*` 或 `/api/biz-okr/*`、暴露对应 Skill；关闭模块不会删除仓库内模块数据。
+- 存储：两层产品事实继续复用 `data/okr/okr.db` 和原表名，资源仍在 `data/okr/assets/`；OAuth/session 和 Jarvis 通用状态仍在本机运行库。`MigrateCore` 拥有 O/KR/Point/Week/Progress，`MigrateBizOKR` 拥有标签、Plan、评论、评分、Follow-up、Meego 和催填。
+- 产品：当前完整 UI 作为 Biz OKR 页面组合通用 OKR。通用层维护 Objective、KR、指标、拆解点、负责人、周次和正式 Progress；Biz 层维护业务分类、Focus/P1/P2、Plan、Review、周报展示和四个固定 Agent 行动。
+- 写入：定义写入不改正式 Progress；正式 Progress 走 `/api/okr/*` 的单条 CRUD 和独立 CAS；Biz 页面写入后回读 `/api/biz-okr/*` 组合视图，以保留标签、评分、评论和 Meego 展示。
 - 世界关系：模块不保存 `world_*_id`，也不在保存时同步世界模型；跨模块映射使用通用 `entity_relation` 和 `/api/relations`。
 - 编排：启动时不投影世界模型、不安装默认定时任务。用户在 Agent 流程页配置四个固定行动的启停和时间；通用 ScheduledTask 只保证每周或间隔触发，`okr-agent-orchestrator` 实时读取行动固定绑定的业务 Prompt 并动态组合原子工具。`okr-world-projector` 只拥有稳定实体投影；`weekly-report-progress-sync`、`weekly-report-reminder` 分别拥有同步和催办操作边界；后端不直接调用 Meego CLI。
 - 证据：已移除 OKR 专用 evidence API/CLI；同步使用通用 `append-clue`、`append-fact`、`get-page`、`update-page` 和关系工具。
@@ -23,7 +23,7 @@
 | 要求 | 实现 | 验证 |
 |---|---|---|
 | 模块开关与依赖 | `internal/appmodule` | appmodule 依赖校验、API strict JSON 单测 |
-| 分层迁移与负责人单一真源 | `MigrateCore`, `MigrateAgencyOKR` | 旧负责人投影迁移回归测试 |
+| 分层迁移与负责人单一真源 | `MigrateCore`, `MigrateBizOKR` | 旧负责人投影迁移回归测试 |
 | 写入所有权 | `ReplaceKRCore`, progress entry CRUD | core/weekly 隔离与独立 CAS 回归测试 |
 | 路由受启用状态保护 | `internal/api/okr_module_routes.go` | API 测试与全量编译 |
 | Skill 不泄漏 | `skill.WithModuleGate` + 各 Skill 的 `module` frontmatter | catalog/content 单测 |
@@ -36,16 +36,16 @@
 
 ## 人工验收
 
-1. 同时启用两个模块后重启，确认 Agency OKR 完整页面与两组 API 可用。
-2. 关闭 `agency-okr` 后重启，确认 `/api/okr/*` 的 O/KR/Point/Week/Progress 仍可用，Agency 页面、路由和三个 Agency Skill 不可用；`data/okr/okr.db` 中已有数据仍存在。
-3. 关闭 `okr` 时若 `agency-okr` 仍启用，配置更新必须被拒绝；先关闭 Agency OKR 后可关闭通用 OKR。
+1. 同时启用两个模块后重启，确认 Biz OKR 完整页面与两组 API 可用。
+2. 关闭 `biz-okr` 后重启，确认 `/api/okr/*` 的 O/KR/Point/Week/Progress 仍可用，Biz 页面、路由和三个 Biz Skill 不可用；`data/okr/okr.db` 中已有数据仍存在。
+3. 关闭 `okr` 时若 `biz-okr` 仍启用，配置更新必须被拒绝；先关闭 Biz OKR 后可关闭通用 OKR。
 4. 读取 `okr-world-projector` Skill，为一个 KR 建立 Project/Person 关系，再用 `list-relations` 回读证据。
-5. 创建带 `{"module":"agency-okr","skill":"weekly-report-progress-sync"}` context 的 ScheduledTask；关闭 Agency OKR 后触发应记录空跑且 Task 数不增加。
+5. 创建带 `{"module":"biz-okr","skill":"weekly-report-progress-sync"}` context 的 ScheduledTask；关闭 Biz OKR 后触发应记录空跑且 Task 数不增加。
 
 ## 验证命令
 
 ```bash
-bash -n scripts/jarvis-tools scripts/okr-agent-tools scripts/okr-module-tools scripts/agency-okr-tools
+bash -n scripts/jarvis-tools scripts/okr-agent-tools scripts/okr-module-tools scripts/biz-okr-tools
 go test ./...
 npm --prefix web run typecheck
 npm --prefix web test -- --run

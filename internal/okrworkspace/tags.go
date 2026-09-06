@@ -54,7 +54,7 @@ func (s *Service) ReplaceKRTags(ctx context.Context, id string, input ReplaceKRT
 			return KRView{}, fmt.Errorf("create KR tag: %w", err)
 		}
 	}
-	return s.GetAgencyCoreKR(ctx, id)
+	return s.GetBizCoreKR(ctx, id)
 }
 
 func (s *Service) GetCoreKRByPointID(ctx context.Context, pointID string) (KRView, error) {
@@ -72,7 +72,7 @@ func (s *Service) GetCoreKRByPointID(ctx context.Context, pointID string) (KRVie
 	return s.GetCoreKR(ctx, point.KRID)
 }
 
-func (s *Service) GetAgencyCoreKRByPointID(ctx context.Context, pointID string) (KRView, error) {
+func (s *Service) GetBizCoreKRByPointID(ctx context.Context, pointID string) (KRView, error) {
 	pointID = strings.TrimSpace(pointID)
 	if pointID == "" {
 		return KRView{}, fmt.Errorf("point_id is required")
@@ -84,7 +84,7 @@ func (s *Service) GetAgencyCoreKRByPointID(ctx context.Context, pointID string) 
 		}
 		return KRView{}, fmt.Errorf("get point: %w", err)
 	}
-	return s.GetAgencyCoreKR(ctx, point.KRID)
+	return s.GetBizCoreKR(ctx, point.KRID)
 }
 
 func (s *Service) ReplacePointTags(ctx context.Context, pointID string, input ReplacePointTagsInput) (KRView, error) {
@@ -121,5 +121,5 @@ func (s *Service) ReplacePointTags(ctx context.Context, pointID string, input Re
 			return KRView{}, fmt.Errorf("create point tag: %w", err)
 		}
 	}
-	return s.GetAgencyCoreKR(ctx, point.KRID)
+	return s.GetBizCoreKR(ctx, point.KRID)
 }

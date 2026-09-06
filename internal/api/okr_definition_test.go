@@ -94,7 +94,7 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 		t.Fatalf("definition metrics must survive a wording edit: %+v", view)
 	}
 	if len(view.Tags) != 0 {
-		t.Fatalf("generic OKR response must not expose Agency tags: %+v", view.Tags)
+		t.Fatalf("generic OKR response must not expose Biz tags: %+v", view.Tags)
 	}
 	var stored domain.KR
 	if err := db.First(&stored, "id = ?", "kr-1").Error; err != nil {
@@ -118,7 +118,7 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	}
 }
 
-func TestGenericKRRouteCanMaintainDecompositionWithoutAgencySchema(t *testing.T) {
+func TestGenericKRRouteCanMaintainDecompositionWithoutBizSchema(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestGenericKRRouteCanMaintainDecompositionWithoutAgencySchema(t *testing.T)
 		t.Fatalf("generic KR = %+v", payload.Data)
 	}
 	if payload.Data.Tags == nil || len(payload.Data.Tags) != 0 || payload.Data.Points[0].Tags == nil || payload.Data.Points[0].MeegoWorkItemID != "" {
-		t.Fatalf("generic KR leaked Agency data: %+v", payload.Data)
+		t.Fatalf("generic KR leaked Biz data: %+v", payload.Data)
 	}
 
 	for _, forbidden := range []string{
@@ -173,7 +173,7 @@ func TestGenericKRRouteCanMaintainDecompositionWithoutAgencySchema(t *testing.T)
 	} {
 		response = ut.PerformRequest(h.Engine, "PUT", "/api/okr/krs/kr-generic", &ut.Body{Body: strings.NewReader(forbidden), Len: len(forbidden)}).Result()
 		if response.StatusCode() != 400 {
-			t.Fatalf("generic route accepted Agency field: status=%d body=%s", response.StatusCode(), response.Body())
+			t.Fatalf("generic route accepted Biz field: status=%d body=%s", response.StatusCode(), response.Body())
 		}
 	}
 }

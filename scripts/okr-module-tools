@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Atomic CLI for reusable OKR definitions and formal progress. Agency-specific
-# labels, review, reminders and integrations live in scripts/agency-okr-tools.
+# Atomic CLI for reusable OKR definitions and formal progress. Biz-specific
+# labels, review, reminders and integrations live in scripts/biz-okr-tools.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,9 +27,9 @@ commands:
   delete-progress --id PROGRESS_ID --payload JSON|-
   upload-image --file PATH
 
-Formal progress writes use optimistic versions and never write Agency labels,
+Formal progress writes use optimistic versions and never write Biz labels,
 scores, comments, reminders or Meego projections. Deleting a whole week is
-agency-okr-tools delete-week, which also clears the Agency records of that week.
+biz-okr-tools delete-week, which also clears the Biz records of that week.
 
 Uses server.addr from conf/config.yaml plus conf/config.runtime.yaml.
 JARVIS_API_BASE or --base-url explicitly selects another instance.

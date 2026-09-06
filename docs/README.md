@@ -35,7 +35,7 @@
 
 ### 业务模块
 
-- [OKR 模块当前实现](modules/06-okr.md)：通用 `okr`、`agency-okr`、正式 Progress 与 WorldProgress 的当前维护边界
+- [OKR 模块当前实现](modules/06-okr.md)：通用 `okr`、`biz-okr`、正式 Progress 与 WorldProgress 的当前维护边界
 
 ### 横切能力
 
@@ -52,7 +52,7 @@
 | [双飞书应用身份](design-dual-app-identity.md) | current | 主应用（owner 对等身份、最大权限）与 OKR 对外登录应用（低敏、每人自授权）的分工，以及为什么用 union_id 认人 |
 | [Jarvis 内置功能模块](design-app-modules.md) | current | 顶层模块注册、启停配置，以及 OKR 产品模块与世界模型的所有权边界 |
 | [OKR 模块解耦验收](okr-mvp-handoff.md) | current | 可选模块生命周期、通用关系、Skill 编排与旧实现清理 |
-| [通用 OKR 插件与 Agency OKR 拆分](design-okr-plugin-and-agency-okr.md) | phase-1-implemented | 已实施拆分的设计依据与后续阶段；当前维护现状见 `modules/06-okr.md` |
+| [通用 OKR 插件与 Biz OKR 拆分](design-okr-plugin-and-biz-okr.md) | phase-1-implemented | 已实施拆分的设计依据与后续阶段；当前维护现状见 `modules/06-okr.md` |
 | [HTTP API](reference/http-api.md) | current | 路由分组；`router.go` 仍为真源 |
 | [运行与部署](reference/operations.md) | current | launchd、端口、签名和重建 |
 | [Lark / bytedcli 指南](guide-lark-byted-cli.md) | guide | 当前 CLI 用法，版本变化时需复核 help |
@@ -78,7 +78,7 @@
 ## 历史与归档
 
 - [`archive/`](archive/)：已被替代、已实施但不再规范当前系统，或明确未采用的方案
-- [旧版 OKR 与世界模型整合方案](summery/okr-jarvis-world-model-integration.md)：已由 `design-okr-plugin-and-agency-okr.md` 取代，保留为设计演进记录
+- [旧版 OKR 与世界模型整合方案](summery/okr-jarvis-world-model-integration.md)：已由 `design-okr-plugin-and-biz-okr.md` 取代，保留为设计演进记录
 - [`superpowers/specs/`](superpowers/specs/) 与 [`superpowers/plans/`](superpowers/plans/)：带日期的实施记录；会议专用链路部分已被通用 clue 流水线推翻
 
 ## 文档状态规则

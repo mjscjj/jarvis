@@ -113,7 +113,7 @@ async function syncWeeklyProgress(remote: Kr, local: Kr, week: string): Promise<
       else if (!sameEntry(previous.entry, current.entry)) await updateProgress(current.entry, week)
     }
     // Formal progress writes deliberately return the generic OKR view. The
-    // Agency product re-reads its composed view so tags, scores and Meego
+    // Biz product re-reads its composed view so tags, scores and Meego
     // metadata remain visible after a save.
     return await getWeeklyKR(local.id, week)
   } catch (error) {

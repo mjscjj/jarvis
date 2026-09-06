@@ -1,7 +1,7 @@
 ---
 name: weekly-report-reminder
 description: 每周检查周报模块本周未填写项，生成可审计催办快照，并通过 Jarvis Bot 给有真实 open_id 的缺失负责人发送一条幂等提醒。仅用于已显式启用的周报催填 ScheduledTask。
-module: agency-okr
+module: biz-okr
 ---
 
 # 周报每周催填
@@ -13,7 +13,7 @@ module: agency-okr
 定时节奏由通用 ScheduledTask 负责，本 Skill 不实现星期门禁或补偿调度。读取催填模板并验证响应 `code=0` 且正文非空：
 
 ```bash
-scripts/agency-okr-tools text-config --key weekly_report_reminder_template
+scripts/biz-okr-tools text-config --key weekly_report_reminder_template
 ```
 
 ## 2. 读取当前范围和预览
@@ -21,8 +21,8 @@ scripts/agency-okr-tools text-config --key weekly_report_reminder_template
 通过模块自有工具读取，不在指令里硬编码季度、周次或 HTTP 路由：
 
 ```bash
-scripts/agency-okr-tools scope
-scripts/agency-okr-tools reminder-preview
+scripts/biz-okr-tools scope
+scripts/biz-okr-tools reminder-preview
 ```
 
 工具默认读取当前仓库基础配置与运行时覆盖中的服务地址；仅在明确操作其它实例时设置 `JARVIS_API_BASE`。必须验证响应 `code=0`，并记录 `quarter`、`week`、待提醒人数、缺失 KR 数。预览失败就结束为失败，不能绕过模块工具查询数据库或自行猜测。
@@ -34,7 +34,7 @@ scripts/agency-okr-tools reminder-preview
 仅在至少一名负责人需要提醒时创建一次批次：
 
 ```bash
-scripts/agency-okr-tools create-reminder-batch --quarter '<quarter>' --week '<week>'
+scripts/biz-okr-tools create-reminder-batch --quarter '<quarter>' --week '<week>'
 ```
 
 批次是本轮预览的不可变快照，不代表已经送达。
@@ -65,7 +65,7 @@ lark-cli im +messages-send \
 ## 完成检查
 
 - 输出范围、应提醒、成功、失败、跳过四个计数和对应人员；
-- 用 `scripts/agency-okr-tools reminder-batches` 回读并确认本轮批次存在；
+- 用 `scripts/biz-okr-tools reminder-batches` 回读并确认本轮批次存在；
 - 没有给无 open_id、未分配、已填完或重复收件人发送；
 - 没有修改 OKR、Meego 或飞书文档；
 - 所有真实发送都有 lark-cli 成功回执，部分失败必须如实标记 `partial`。

@@ -62,18 +62,18 @@
 - Text files：`GET /api/text-files`、`GET/PUT /api/text-files/:text_file_key`
 - Skills：`GET /api/skills`、`POST /api/skills/scan`、`PUT /api/skills/:skill_name`、`GET /api/skills/:skill_name/content`
 - App modules：`GET /api/app-modules`、`PUT /api/app-modules/:module_key`
-- 通用 OKR：`GET /api/okr/scope|enums|board` 读取 Objective、KR、Metric、Point 与负责人；图片、Objective/KR 定义维护也位于 `/api/okr/*`。这些接口不读取 Agency 标签、评分、评论、Meego 或身份表。
-- 定义的窄接口：`PUT /api/okr/krs/:kr_id/definition` 只接受 KR 与已有要点的标题和负责人，收不到指标、灯、标签，也不能增删要点。Agency 周报和 Review 页面手里的指标值属于当周副本，靠这个接口的字段边界保证它们到不了主干定义；改完由前端重新取一次 Agency 组合视图当基线。Agency 完整编辑器走 `PUT /api/agency-okr/krs/:kr_id`，标签走 `/api/agency-okr/.../tags`。
+- 通用 OKR：`GET /api/okr/scope|enums|board` 读取 Objective、KR、Metric、Point 与负责人；图片、Objective/KR 定义维护也位于 `/api/okr/*`。这些接口不读取 Biz 标签、评分、评论、Meego 或身份表。
+- 定义的窄接口：`PUT /api/okr/krs/:kr_id/definition` 只接受 KR 与已有要点的标题和负责人，收不到指标、灯、标签，也不能增删要点。Biz 周报和 Review 页面手里的指标值属于当周副本，靠这个接口的字段边界保证它们到不了主干定义；改完由前端重新取一次 Biz 组合视图当基线。Biz 完整编辑器走 `PUT /api/biz-okr/krs/:kr_id`，标签走 `/api/biz-okr/.../tags`。
 - 排序：`PUT /api/okr/objectives/order`（带 `quarter`）和 `PUT /api/okr/objectives/:objective_id/kr-order` 接收该范围内**全量**兄弟 id，写成 `sort_order` 0..n-1；少给、多给、重复或跨范围都拒绝。位置不是内容，所以不撞 `KR.version`，别处打开的页面不会因为有人调顺序而在下次保存时冲突。
 - 存在周报历史的 KR 或稳定拆解不允许删除，避免留下孤儿历史。
-- 正式 OKR Progress：`GET /api/okr/progress/scope|board`，`GET/POST /api/okr/weeks`，`GET /api/okr/krs/:kr_id/weekly`，`PUT /api/okr/krs/:kr_id/weekly-core`，以及 `/api/okr/points/:point_id/progress`、`/api/okr/progress/:progress_id` 的单条进展 CRUD。通用侧可以开周、读周和逐条改进展，但**没有删整周的入口**：评论、评分、Follow-up 和催填批次都按 `(quarter, week)` 存且没有指向周记录的外键，只删正式时间线会让它们在下次开同名周时复活，所以整周删除只由 `DELETE /api/agency-okr/weeks/:week` 一次性清干净。
-- Agency OKR：`GET /api/agency-okr/scope|board|core-board` 提供当前完整业务组合视图；Plan、标签、Review、评论、评分、Follow-up、催填、Meego 和文档导出均位于 `/api/agency-okr/*`。`DELETE /api/agency-okr/weeks/:week?quarter=...` 保留原有“删除整个业务周次”的完整清理语义。固定四个 Agent 行动仍由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
-- OKR Preview AI 评审：`POST /api/agency-okr/preview-review`，body 为 `{quarter, week, kind: all|kr|point, kr_id, point_id}`，同步返回 `{content}` Markdown。评审只出判断和建议、不写任何东西，所以不建 Task、不进审批链路、没有运行历史可轮询。Agent 按需使用 `okr-module-tools` 与 `agency-okr-tools` 回查。
-- Meego observation：`POST /api/agency-okr/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
-- Agency OKR identity：`GET /api/agency-okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/agency-okr/auth/feishu/device` 发起飞书设备授权、`POST /api/agency-okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。用户 token 仍按 open_id 写到 `identity.token_dir`，`GET /api/agency-okr/feishu-identity?open_id=` 返回与 token 配对的 App ID 和文件位置。身份只服务 Agency 页面、评论署名和用户态文档读取，不进入通用 OKR 插件。
-- Agency OKR people：`GET /api/agency-okr/people/search?q=` 与 `/people/avatars?names=...` 服务 Agency 人员选择和头像展示。
+- 正式 OKR Progress：`GET /api/okr/progress/scope|board`，`GET/POST /api/okr/weeks`，`GET /api/okr/krs/:kr_id/weekly`，`PUT /api/okr/krs/:kr_id/weekly-core`，以及 `/api/okr/points/:point_id/progress`、`/api/okr/progress/:progress_id` 的单条进展 CRUD。通用侧可以开周、读周和逐条改进展，但**没有删整周的入口**：评论、评分、Follow-up 和催填批次都按 `(quarter, week)` 存且没有指向周记录的外键，只删正式时间线会让它们在下次开同名周时复活，所以整周删除只由 `DELETE /api/biz-okr/weeks/:week` 一次性清干净。
+- Biz OKR：`GET /api/biz-okr/scope|board|core-board` 提供当前完整业务组合视图；Plan、标签、Review、评论、评分、Follow-up、催填、Meego 和文档导出均位于 `/api/biz-okr/*`。`DELETE /api/biz-okr/weeks/:week?quarter=...` 保留原有“删除整个业务周次”的完整清理语义。固定四个 Agent 行动仍由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
+- OKR Preview AI 评审：`POST /api/biz-okr/preview-review`，body 为 `{quarter, week, kind: all|kr|point, kr_id, point_id}`，同步返回 `{content}` Markdown。评审只出判断和建议、不写任何东西，所以不建 Task、不进审批链路、没有运行历史可轮询。Agent 按需使用 `okr-module-tools` 与 `biz-okr-tools` 回查。
+- Meego observation：`POST /api/biz-okr/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
+- Biz OKR identity：`GET /api/biz-okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/biz-okr/auth/feishu/device` 发起飞书设备授权、`POST /api/biz-okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。用户 token 仍按 open_id 写到 `identity.token_dir`，`GET /api/biz-okr/feishu-identity?open_id=` 返回与 token 配对的 App ID 和文件位置。身份只服务 Biz 页面、评论署名和用户态文档读取，不进入通用 OKR 插件。
+- Biz OKR people：`GET /api/biz-okr/people/search?q=` 与 `/people/avatars?names=...` 服务 Biz 人员选择和头像展示。
 - OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。
-- 文档导出：`POST /api/agency-okr/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。新建文档继承的租户默认密级不允许组织内链接分享，飞书会以 91012 拒绝，所以创建后先按 `lark_cli.export_secure_label` 的标签名（在 `drive +secure-label-list` 里查 id）打一次密级，再设 `link_share_entity=tenant_editable` 并读回校验。标签没配、租户里查不到这个名字或密级写入失败都直接报错，不退回一篇不可分享的文档。
+- 文档导出：`POST /api/biz-okr/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。新建文档继承的租户默认密级不允许组织内链接分享，飞书会以 91012 拒绝，所以创建后先按 `lark_cli.export_secure_label` 的标签名（在 `drive +secure-label-list` 里查 id）打一次密级，再设 `link_share_entity=tenant_editable` 并读回校验。标签没配、租户里查不到这个名字或密级写入失败都直接报错，不退回一篇不可分享的文档。
 
 Runtime settings 写入后需要重启进程生效；模块开关保存后也需要重启，下一次启动会统一决定迁移、路由、静态资源、Skill 与调度边界。prompts、rules、Skills 按各自 reader 的行为读取。
 
@@ -96,6 +96,6 @@ Runtime settings 写入后需要重启进程生效；模块开关保存后也需
 - 主服务对话发现：`GET /api/chat-config`
 - 前端部署事实：`GET /api/web-config`，返回 `server.public_base_url`。分享链接用它当根地址，作者从 IP 打开页面也能复制出域名链接；配置留空时返回空串，链接沿用当前浏览器地址。
 - 独立 Chat sidecar：`POST /api/chat`（multipart + SSE；`message` 必填，`thread_id`、JSON 字符串 `page_context`、单张 PNG/JPEG `image`、`user_open_id` 可选，图片上限 10 MB）、`GET /api/chat/:thread_id`
-- 带 `user_open_id` 时，sidecar 向主服务的 `/api/agency-okr/feishu-identity` 取该登录用户的飞书凭证位置，并把「用谁的身份 + token 文件路径 + 单条命令注入用法」写进本轮 prompt，让 Agent 用用户自己的权限读他扔进来的文档；token 本身不进 prompt。凭证不可用时把原因写进同一段落，不中断对话。
+- 带 `user_open_id` 时，sidecar 向主服务的 `/api/biz-okr/feishu-identity` 取该登录用户的飞书凭证位置，并把「用谁的身份 + token 文件路径 + 单条命令注入用法」写进本轮 prompt，让 Agent 用用户自己的权限读他扔进来的文档；token 本身不进 prompt。凭证不可用时把原因写进同一段落，不中断对话。
 
 对话只在 `chat.enabled=true` 且依赖构造成功时注册。

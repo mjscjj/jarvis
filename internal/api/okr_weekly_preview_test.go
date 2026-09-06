@@ -89,7 +89,7 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := RegisterAgencyOKRModuleRoutes(h, AgencyOKRModuleDependencies{
+	if err := RegisterBizOKRModuleRoutes(h, BizOKRModuleDependencies{
 		Workspace: workspace, Identity: identity, Documents: weeklyPreviewDocumentStub{},
 		People:        newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}),
 		Enabled:       func(context.Context) (bool, error) { return true, nil },
@@ -105,7 +105,7 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	if response := request("POST", "/api/okr/weeks", `{"quarter":"2026-Q3","week":"2026-W37"}`); response.StatusCode() != 400 {
 		t.Fatalf("missing template status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	if response := request("POST", "/api/agency-okr/comments", `{}`); response.StatusCode() != 401 {
+	if response := request("POST", "/api/biz-okr/comments", `{}`); response.StatusCode() != 401 {
 		t.Fatalf("anonymous comment status=%d body=%s", response.StatusCode(), response.Body())
 	}
 	previewBody := `{"quarter":"2026-Q3","week":"2026-W37","template_key":"okr_weekly_preview_v1"}`
@@ -118,7 +118,7 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	}
 
 	scoreBody := `{"quarter":"2026-Q3","week":"2026-W37","score":0.7,"expected_version":0}`
-	response := request("PUT", "/api/agency-okr/scores/kr/"+kr.ID, scoreBody)
+	response := request("PUT", "/api/biz-okr/scores/kr/"+kr.ID, scoreBody)
 	if response.StatusCode() != 200 {
 		t.Fatalf("score status=%d body=%s", response.StatusCode(), response.Body())
 	}
@@ -132,7 +132,7 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 		t.Fatalf("score response = %+v", payload.Data.Score)
 	}
 	staleBody := `{"quarter":"2026-Q3","week":"2026-W37","score":0.4,"expected_version":1}`
-	if response := request("PUT", "/api/agency-okr/scores/kr/"+kr.ID, staleBody); response.StatusCode() != 409 {
+	if response := request("PUT", "/api/biz-okr/scores/kr/"+kr.ID, staleBody); response.StatusCode() != 409 {
 		t.Fatalf("score conflict status=%d body=%s", response.StatusCode(), response.Body())
 	}
 }

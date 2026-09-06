@@ -177,7 +177,7 @@ type FollowUpOwner struct {
 	Name   string `json:"name"`
 }
 
-// FollowUpItem is the Agency-OKR-owned source of truth for Review follow-up
+// FollowUpItem is the Biz-OKR-owned source of truth for Review follow-up
 // rows. Owners stay as one JSON value because the product only reads and edits
 // the row as a whole; there is no owner-indexed query that would justify a
 // second table and a multi-write protocol.
@@ -437,7 +437,7 @@ type ReminderBatch struct {
 func (ReminderBatch) TableName() string { return "okr_workspace_reminder_batch" }
 
 func Models() []any {
-	return append(CoreModels(), AgencyModels()...)
+	return append(CoreModels(), BizModels()...)
 }
 
 // CoreModels are owned by the reusable OKR module. Existing table names stay
@@ -453,9 +453,9 @@ func IdentityModels() []any {
 	return []any{&AuthSession{}}
 }
 
-// AgencyModels are the organization-specific wrapper around the reusable OKR
+// BizModels are the organization-specific wrapper around the reusable OKR
 // domain. Existing table names are intentionally preserved so enabling the
 // split never rewrites or loses historical data.
-func AgencyModels() []any {
+func BizModels() []any {
 	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

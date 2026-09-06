@@ -67,7 +67,7 @@ function Workspace({ moduleEnablement }: {
     return weeklyShare && requestedTab === 'okr-plan' ? previousQuarter(routeQuarter) : routeQuarter
   })
   const visibleTab = weeklyShare ? weeklyShareTab(requestedTab) : resolveOKRTab(requestedTab, moduleEnablement)
-  const weeklyEnabled = moduleEnablement['agency-okr'] === true
+  const weeklyEnabled = moduleEnablement['biz-okr'] === true
   const planVisible = visibleTab === 'okr-plan'
   const activeQuarter = planVisible
     ? activeQuarterForViewState(context.view_state, selectedQuarter)
@@ -149,9 +149,9 @@ function Workspace({ moduleEnablement }: {
   )
 }
 
-// Agency OKR is the product shell. It composes the generic OKR definition and
-// formal-progress APIs with Agency-owned plans, tags, review and automation.
-export default function OKRModule({ moduleEnablement }: AppModulePageProps) {
+// Biz OKR is the product shell. It composes the generic OKR definition and
+// formal-progress APIs with Biz-owned plans, tags, review and automation.
+export default function BizOKRModule({ moduleEnablement }: AppModulePageProps) {
 	return (
 		<IdentityBoundary>
 			<Workspace moduleEnablement={moduleEnablement} />

@@ -30,7 +30,7 @@ func TestMigrateSkillBindingsPreservesScheduleState(t *testing.T) {
 		t.Fatal(err)
 	}
 	count, err := MigrateSkillBindings(t.Context(), db, []SkillBindingMigration{{
-		FromSkill: "okr-progress-sync", ToSkill: "weekly-report-progress-sync", FromModule: "okr", ToModule: "agency-okr",
+		FromSkill: "okr-progress-sync", ToSkill: "weekly-report-progress-sync", FromModule: "okr", ToModule: "biz-okr",
 	}})
 	if err != nil || count != 1 {
 		t.Fatalf("MigrateSkillBindings() = %d, %v", count, err)
@@ -39,8 +39,39 @@ func TestMigrateSkillBindingsPreservesScheduleState(t *testing.T) {
 	if err := db.First(&result, record.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if result.Enabled || result.Status != "active" || !result.NextRunAt.Equal(next) || !strings.Contains(result.Instruction, "weekly-report-progress-sync") || string(result.ContextSnapshot) != `{"mode":"read_only","module":"agency-okr","skill":"weekly-report-progress-sync"}` {
+	if result.Enabled || result.Status != "active" || !result.NextRunAt.Equal(next) || !strings.Contains(result.Instruction, "weekly-report-progress-sync") || string(result.ContextSnapshot) != `{"mode":"read_only","module":"biz-okr","skill":"weekly-report-progress-sync"}` {
 		t.Fatalf("migrated schedule = %+v context=%s", result, result.ContextSnapshot)
+	}
+}
+
+func TestMigrateSkillBindingsRenamesLegacyBizOKRModule(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&domain.ScheduledTask{}); err != nil {
+		t.Fatal(err)
+	}
+	record := domain.ScheduledTask{
+		Title: "周报催填", Instruction: "执行 weekly-report-reminder Skill", ActionType: "agent_task",
+		ContextSnapshot: datatypes.JSON(`{"module":"agency-okr","skill":"weekly-report-reminder"}`),
+		ScheduleType:    "interval", IntervalMinutes: intPointer(360), NextRunAt: time.Now().UTC(), Enabled: true, Status: "active",
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	count, err := MigrateSkillBindings(t.Context(), db, []SkillBindingMigration{{
+		FromSkill: "weekly-report-reminder", ToSkill: "weekly-report-reminder", FromModule: "agency-okr", ToModule: "biz-okr",
+	}})
+	if err != nil || count != 1 {
+		t.Fatalf("MigrateSkillBindings() = %d, %v", count, err)
+	}
+	var result domain.ScheduledTask
+	if err := db.First(&result, record.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if string(result.ContextSnapshot) != `{"module":"biz-okr","skill":"weekly-report-reminder"}` {
+		t.Fatalf("migrated context = %s", result.ContextSnapshot)
 	}
 }
 

@@ -154,7 +154,7 @@ func TestPromptReportsUnusableFeishuCredentialsWithoutFailingTheTurn(t *testing.
 	if err != nil {
 		t.Fatalf("buildPrompt() error = %v", err)
 	}
-	for _, want := range []string{"ou_alice", "token expired, sign in again", "重新在 OKR 模块登录"} {
+	for _, want := range []string{"ou_alice", "token expired, sign in again", "重新在 Biz OKR 登录"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt is missing %q:\n%s", want, prompt)
 		}

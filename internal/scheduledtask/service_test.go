@@ -282,7 +282,7 @@ func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
 	schedule, err := service.Create(t.Context(), Input{
 		Title: "OKR 只读进展巡检", ActionType: "agent_task",
 		Instruction:     "读取 weekly-report-progress-sync Skill；只读 Meego 和已采集消息，更新 Page/Fact；不发送消息。",
-		ContextSnapshot: json.RawMessage(`{"skill":"weekly-report-progress-sync","module":"agency-okr","mode":"read_only"}`),
+		ContextSnapshot: json.RawMessage(`{"skill":"weekly-report-progress-sync","module":"biz-okr","mode":"read_only"}`),
 		ScheduleType:    "interval", IntervalMinutes: &interval, Enabled: &enabled,
 	})
 	if err != nil {
@@ -299,7 +299,7 @@ func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
 	if input.SourceType != taskcreate.SourceScheduledTask || input.SourceID == nil || *input.SourceID != schedule.ID {
 		t.Fatalf("Task source = %s/%v, want scheduled_task/%d", input.SourceType, input.SourceID, schedule.ID)
 	}
-	if string(input.Background) != `{"mode":"read_only","module":"agency-okr","skill":"weekly-report-progress-sync"}` {
+	if string(input.Background) != `{"mode":"read_only","module":"biz-okr","skill":"weekly-report-progress-sync"}` {
 		t.Fatalf("Task background = %s", input.Background)
 	}
 	if triggered.Status != "active" || triggered.LastTaskID == nil || *triggered.LastTaskID != 77 {
@@ -315,7 +315,7 @@ func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
 	service.SetModuleGate(func(context.Context, string) (bool, error) { return false, nil })
 	disabledSchedule, err := service.Create(t.Context(), Input{
 		Title: "disabled OKR schedule", ActionType: "agent_task", Instruction: "read Skill",
-		ContextSnapshot: json.RawMessage(`{"skill":"weekly-report-progress-sync","module":"agency-okr"}`),
+		ContextSnapshot: json.RawMessage(`{"skill":"weekly-report-progress-sync","module":"biz-okr"}`),
 		ScheduleType:    "interval", IntervalMinutes: &interval, Enabled: &enabled,
 	})
 	if err != nil {
@@ -325,7 +325,7 @@ func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(submitter.inputs) != 1 || disabledResult.LastTaskID != nil || disabledResult.LastResult == nil || !strings.Contains(*disabledResult.LastResult, "模块 agency-okr 已关闭") {
+	if len(submitter.inputs) != 1 || disabledResult.LastTaskID != nil || disabledResult.LastResult == nil || !strings.Contains(*disabledResult.LastResult, "模块 biz-okr 已关闭") {
 		t.Fatalf("disabled module schedule dispatched: submit=%d result=%+v", len(submitter.inputs), disabledResult)
 	}
 }

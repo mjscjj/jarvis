@@ -25,7 +25,7 @@ type Config struct {
 
 // PreviewReviewConfig drives the one-shot OKR Preview review agent. The review
 // is advisory and read-only, but it reaches the module's own data through
-// okr-module-tools / agency-okr-tools, which call the local API — hence a
+// okr-module-tools / biz-okr-tools, which call the local API — hence a
 // sandbox that permits network access rather than read-only.
 type PreviewReviewConfig struct {
 	Bin             string `yaml:"bin"`
@@ -85,18 +85,18 @@ func (c IdentityConfig) AppSecret() string {
 	return strings.TrimSpace(os.Getenv(strings.TrimSpace(c.AppSecretEnv)))
 }
 
-// LoadCore reads only the reusable OKR storage settings. Agency-only identity
-// and review settings remain inert when the agency-okr module is disabled.
+// LoadCore reads only the reusable OKR storage settings. Biz-only identity
+// and review settings remain inert when the biz-okr module is disabled.
 func LoadCore(path string) (Config, error) {
 	return load(path, false)
 }
 
-// Load reads and validates the complete OKR plus Agency OKR configuration.
+// Load reads and validates the complete OKR plus Biz OKR configuration.
 func Load(path string) (Config, error) {
 	return load(path, true)
 }
 
-func load(path string, includeAgency bool) (Config, error) {
+func load(path string, includeBiz bool) (Config, error) {
 	raw, err := fileconfig.Read(path)
 	if err != nil {
 		return Config{}, err
@@ -110,11 +110,11 @@ func load(path string, includeAgency bool) (Config, error) {
 	if err := cfg.validateCore(); err != nil {
 		return Config{}, fmt.Errorf("validate OKR module config %s: %w", path, err)
 	}
-	if !includeAgency {
+	if !includeBiz {
 		return cfg, nil
 	}
-	if err := cfg.validateAgency(); err != nil {
-		return Config{}, fmt.Errorf("validate Agency OKR module config %s: %w", path, err)
+	if err := cfg.validateBiz(); err != nil {
+		return Config{}, fmt.Errorf("validate Biz OKR module config %s: %w", path, err)
 	}
 	if cfg.Identity.Enabled {
 		scopesPath := filepath.Join(filepath.Dir(path), cfg.Identity.ScopesFile)
@@ -161,7 +161,7 @@ func (c Config) Validate() error {
 	if err := c.validateCore(); err != nil {
 		return err
 	}
-	return c.validateAgency()
+	return c.validateBiz()
 }
 
 func (c Config) validateCore() error {
@@ -177,7 +177,7 @@ func (c Config) validateCore() error {
 	return nil
 }
 
-func (c Config) validateAgency() error {
+func (c Config) validateBiz() error {
 	if err := c.PreviewReview.validate(); err != nil {
 		return err
 	}

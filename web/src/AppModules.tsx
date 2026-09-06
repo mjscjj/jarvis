@@ -5,11 +5,21 @@ import type { AppModule } from './types'
 
 const { Text } = Typography
 
+interface AppModulesProps {
+  moduleKeys?: readonly string[]
+  title?: string
+  description?: string
+}
+
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
-export default function AppModules() {
+export default function AppModules({
+  moduleKeys,
+  title = '功能模块',
+  description = '模块代码内置在 Jarvis 中；开关在服务重启后完整生效，关闭不会删除已有业务数据。',
+}: AppModulesProps) {
   const [items, setItems] = useState<AppModule[]>([])
   const [loading, setLoading] = useState(true)
   const [savingKey, setSavingKey] = useState<string>()
@@ -34,6 +44,7 @@ export default function AppModules() {
     try {
       const updated = await updateAppModule(item.key, { is_enabled: isEnabled })
       setItems((current) => current.map((candidate) => candidate.key === updated.key ? updated : candidate))
+      window.dispatchEvent(new Event('jarvis:app-modules-changed'))
       setError(undefined)
     } catch (cause: unknown) {
       setError(errorText(cause))
@@ -42,15 +53,19 @@ export default function AppModules() {
     }
   }
 
+  const visibleItems = moduleKeys
+    ? items.filter((item) => moduleKeys.includes(item.key))
+    : items
+
   return (
     <section className="app-modules-settings">
       <Flex vertical gap={4} className="section-heading">
-        <Text strong>功能模块</Text>
-        <Text type="secondary">模块代码内置在 Jarvis 中；开关在服务重启后完整生效，关闭不会删除已有业务数据。</Text>
+        <Text strong>{title}</Text>
+        <Text type="secondary">{description}</Text>
       </Flex>
       {error && <Alert type="error" showIcon title="模块配置读取失败" description={error} />}
       <div className="app-module-grid">
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           const blockedBy = items.filter((candidate) => candidate.configured_enabled && candidate.requires.includes(item.key))
           const missingRequirements = item.requires.filter((key) => !items.find((candidate) => candidate.key === key)?.configured_enabled)
           return (

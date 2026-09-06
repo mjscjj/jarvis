@@ -160,9 +160,9 @@ func GetProgressBoard(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
-func GetAgencyCoreBoard(service *okrworkspace.Service) app.HandlerFunc {
+func GetBizCoreBoard(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		result, err := service.AgencyCoreBoard(ctx, strings.TrimSpace(c.Query("quarter")))
+		result, err := service.BizCoreBoard(ctx, strings.TrimSpace(c.Query("quarter")))
 		if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40008, err)
 			return
@@ -202,14 +202,14 @@ func GetCoreKR(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
-func GetAgencyCoreKR(service *okrworkspace.Service) app.HandlerFunc {
+func GetBizCoreKR(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		id := strings.TrimSpace(c.Param("kr_id"))
 		if id == "" {
 			writeAPIError(c, consts.StatusBadRequest, 40017, fmt.Errorf("kr_id is required"))
 			return
 		}
-		result, err := service.GetAgencyCoreKR(ctx, id)
+		result, err := service.GetBizCoreKR(ctx, id)
 		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40417, err)
 			return
@@ -247,7 +247,7 @@ func GetWeeklyReportKR(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
-func GetAgencyWeeklyReportKR(service *okrworkspace.Service) app.HandlerFunc {
+func GetBizWeeklyReportKR(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		id := strings.TrimSpace(c.Param("kr_id"))
 		week := strings.TrimSpace(c.Query("week"))
@@ -255,7 +255,7 @@ func GetAgencyWeeklyReportKR(service *okrworkspace.Service) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40042, fmt.Errorf("kr_id and week are required"))
 			return
 		}
-		result, err := service.GetAgencyKR(ctx, id, week)
+		result, err := service.GetBizKR(ctx, id, week)
 		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40442, err)
 			return
@@ -313,7 +313,7 @@ func OpenWeeklyReportWeek(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
-func DeleteAgencyOKRWeek(service *okrworkspace.Service) app.HandlerFunc {
+func DeleteBizOKRWeek(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		result, err := service.DeleteWeek(ctx, strings.TrimSpace(c.Query("quarter")), strings.TrimSpace(c.Param("week")))
 		if errors.Is(err, okrworkspace.ErrWeekNotFound) {
@@ -699,7 +699,7 @@ func writeProgressEntryError(ctx context.Context, c *app.RequestContext, service
 
 func ReplaceCoreKR(service *okrworkspace.Service) app.HandlerFunc {
 	return replaceKRWith(service.ReplaceKRCore, func(ctx context.Context, id string, _ okrworkspace.ReplaceKRInput) (okrworkspace.KRView, error) {
-		return service.GetAgencyCoreKR(ctx, id)
+		return service.GetBizCoreKR(ctx, id)
 	})
 }
 
@@ -858,20 +858,20 @@ func CreateKR(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
-func CreateAgencyKR(service *okrworkspace.Service) app.HandlerFunc {
+func CreateBizKR(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		objectiveID := strings.TrimSpace(c.Param("objective_id"))
 		if objectiveID == "" {
 			writeAPIError(c, consts.StatusBadRequest, 40025, fmt.Errorf("objective_id is required"))
 			return
 		}
-		var input okrworkspace.CreateAgencyKRInput
+		var input okrworkspace.CreateBizKRInput
 		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40025, err)
 			return
 		}
 		input.CreatedBy = currentOKRIdentity(c).OpenID
-		result, err := service.CreateAgencyKR(ctx, objectiveID, input)
+		result, err := service.CreateBizKR(ctx, objectiveID, input)
 		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40425, err)
 			return

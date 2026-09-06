@@ -46,7 +46,7 @@ func TestToolsInheritOwningInstanceAcrossWorkingDirectories(t *testing.T) {
 				for _, args := range [][]string{
 					{"jarvis-tools", "get-principal"},
 					{"okr-module-tools", "scope"},
-					{"agency-okr-tools", "scope"},
+					{"biz-okr-tools", "scope"},
 					{"okr-agent-tools", "prompt", "--key", "okr_agent_principles"},
 					{"jarvis-world-model", "discover"},
 				} {

@@ -191,12 +191,12 @@ export function getWebConfig(signal?: AbortSignal): Promise<WebConfig> {
   return request<WebConfig>('/api/web-config', { signal })
 }
 
-// getSignedInOpenID reports who is signed in through the OKR module's Feishu
+// getSignedInOpenID reports who is signed in through the Biz OKR app's Feishu
 // login, so a conversation can use that person's own Feishu credentials.
 // Returns undefined when the module is disabled or nobody is signed in.
 export async function getSignedInOpenID(signal?: AbortSignal): Promise<string | undefined> {
   try {
-    const me = await request<{ authenticated: boolean; user?: { open_id: string } }>('/api/agency-okr/me', { signal })
+    const me = await request<{ authenticated: boolean; user?: { open_id: string } }>('/api/biz-okr/me', { signal })
     if (!me.authenticated) return undefined
     const openID = me.user?.open_id?.trim()
     // The placeholder identity used when login is not configured is not a real

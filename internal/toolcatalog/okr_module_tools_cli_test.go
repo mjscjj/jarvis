@@ -48,9 +48,9 @@ func TestOKRModuleToolsExposeGenericReads(t *testing.T) {
 	if request.Method != http.MethodGet || request.Path != "/api/okr/krs/kr-1" {
 		t.Fatalf("get-kr request = %+v", request)
 	}
-	runModuleTool(t, "agency-okr-tools", server.URL, "people-search", "--query", "张 三")
+	runModuleTool(t, "biz-okr-tools", server.URL, "people-search", "--query", "张 三")
 	request = <-requests
-	if request.Method != http.MethodGet || request.Path != "/api/agency-okr/people/search" || !strings.Contains(request.Query, "q=") {
+	if request.Method != http.MethodGet || request.Path != "/api/biz-okr/people/search" || !strings.Contains(request.Query, "q=") {
 		t.Fatalf("people-search request = %+v", request)
 	}
 	runModuleTool(t, "okr-module-tools", server.URL, "board")
@@ -84,7 +84,7 @@ func TestOKRTagToolsPreservePayloadAndSurfaceConflicts(t *testing.T) {
 		_, _ = response.Write([]byte(`{"code":40923,"msg":"version conflict","data":{"version":8}}`))
 	}))
 	defer server.Close()
-	path, err := filepath.Abs(filepath.Join("..", "..", "scripts", "agency-okr-tools"))
+	path, err := filepath.Abs(filepath.Join("..", "..", "scripts", "biz-okr-tools"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestOKRTagToolsPreservePayloadAndSurfaceConflicts(t *testing.T) {
 			t.Fatalf("conflict must exit nonzero and preserve response: err=%v output=%s", err, output)
 		}
 		request := <-requests
-		if request.Method != http.MethodPut || request.Path != "/api/agency-okr/krs/kr 标签/tags" || request.Body != payload {
+		if request.Method != http.MethodPut || request.Path != "/api/biz-okr/krs/kr 标签/tags" || request.Body != payload {
 			t.Fatalf("tag request = %+v", request)
 		}
 	}
@@ -106,12 +106,12 @@ func TestOKRTagToolsPreservePayloadAndSurfaceConflicts(t *testing.T) {
 		t.Fatalf("point conflict must exit nonzero and preserve response: err=%v output=%s", err, output)
 	}
 	request := <-requests
-	if request.Method != http.MethodPut || request.Path != "/api/agency-okr/points/策略 要点/tags" || request.Body != payload {
+	if request.Method != http.MethodPut || request.Path != "/api/biz-okr/points/策略 要点/tags" || request.Body != payload {
 		t.Fatalf("point tag request = %+v", request)
 	}
 }
 
-func TestOKRAndAgencyToolsExposeAtomicWrites(t *testing.T) {
+func TestOKRAndBizToolsExposeAtomicWrites(t *testing.T) {
 	requests := make(chan moduleToolRequest, 16)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		body, _ := io.ReadAll(request.Body)
@@ -139,29 +139,29 @@ func TestOKRAndAgencyToolsExposeAtomicWrites(t *testing.T) {
 		query  string
 	}{
 		{[]string{"open-week", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodPost, "/api/okr/weeks", ""},
-		{[]string{"delete-week", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodDelete, "/api/agency-okr/weeks/2026-W36", "quarter=2026-Q3"},
-		{[]string{"get-weekly-kr", "--id", "kr-1", "--week", "2026-W36"}, http.MethodGet, "/api/agency-okr/krs/kr-1/weekly", "week=2026-W36"},
+		{[]string{"delete-week", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodDelete, "/api/biz-okr/weeks/2026-W36", "quarter=2026-Q3"},
+		{[]string{"get-weekly-kr", "--id", "kr-1", "--week", "2026-W36"}, http.MethodGet, "/api/biz-okr/krs/kr-1/weekly", "week=2026-W36"},
 		{[]string{"replace-weekly-core", "--id", "kr-1", "--payload", `{"expected_version":0,"week":"2026-W36","metric_note":"测试","metrics":[]}`}, http.MethodPut, "/api/okr/krs/kr-1/weekly-core", ""},
-		{[]string{"replace-score", "--target-kind", "kr", "--id", "kr-1", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","score":0.7,"expected_version":0}`}, http.MethodPut, "/api/agency-okr/scores/kr/kr-1", ""},
-		{[]string{"delete-score", "--target-kind", "point", "--id", "point-1", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","expected_version":1}`}, http.MethodDelete, "/api/agency-okr/scores/point/point-1", ""},
-		{[]string{"comments", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/agency-okr/comments", ""},
-		{[]string{"create-comment", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","content":"建议"}`}, http.MethodPost, "/api/agency-okr/comments", ""},
-		{[]string{"update-comment", "--id", "comment-1", "--payload", `{"todo":true}`}, http.MethodPut, "/api/agency-okr/comments/comment-1", ""},
-		{[]string{"delete-comment", "--id", "comment-1"}, http.MethodDelete, "/api/agency-okr/comments/comment-1", ""},
-		{[]string{"follow-ups", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/agency-okr/follow-ups", "quarter=2026-Q3"},
-		{[]string{"get-follow-up", "--id", "follow-up-1"}, http.MethodGet, "/api/agency-okr/follow-ups/follow-up-1", ""},
-		{[]string{"create-follow-up", "--payload", `{"id":"follow-up-1","expected_version":0,"quarter":"2026-Q3","week":"2026-W36","topic":"事项","owners":[{"open_id":"ou_1","name":"负责人"}],"status":"not_started"}`}, http.MethodPost, "/api/agency-okr/follow-ups", ""},
-		{[]string{"update-follow-up", "--id", "follow-up-1", "--payload", `{"expected_version":1,"quarter":"2026-Q3","week":"2026-W36","topic":"事项","owners":[{"open_id":"ou_1","name":"负责人"}],"status":"in_progress"}`}, http.MethodPut, "/api/agency-okr/follow-ups/follow-up-1", ""},
-		{[]string{"delete-follow-up", "--id", "follow-up-1", "--payload", `{"expected_version":2}`}, http.MethodDelete, "/api/agency-okr/follow-ups/follow-up-1", ""},
+		{[]string{"replace-score", "--target-kind", "kr", "--id", "kr-1", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","score":0.7,"expected_version":0}`}, http.MethodPut, "/api/biz-okr/scores/kr/kr-1", ""},
+		{[]string{"delete-score", "--target-kind", "point", "--id", "point-1", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","expected_version":1}`}, http.MethodDelete, "/api/biz-okr/scores/point/point-1", ""},
+		{[]string{"comments", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/biz-okr/comments", ""},
+		{[]string{"create-comment", "--payload", `{"quarter":"2026-Q3","week":"2026-W36","content":"建议"}`}, http.MethodPost, "/api/biz-okr/comments", ""},
+		{[]string{"update-comment", "--id", "comment-1", "--payload", `{"todo":true}`}, http.MethodPut, "/api/biz-okr/comments/comment-1", ""},
+		{[]string{"delete-comment", "--id", "comment-1"}, http.MethodDelete, "/api/biz-okr/comments/comment-1", ""},
+		{[]string{"follow-ups", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/biz-okr/follow-ups", "quarter=2026-Q3"},
+		{[]string{"get-follow-up", "--id", "follow-up-1"}, http.MethodGet, "/api/biz-okr/follow-ups/follow-up-1", ""},
+		{[]string{"create-follow-up", "--payload", `{"id":"follow-up-1","expected_version":0,"quarter":"2026-Q3","week":"2026-W36","topic":"事项","owners":[{"open_id":"ou_1","name":"负责人"}],"status":"not_started"}`}, http.MethodPost, "/api/biz-okr/follow-ups", ""},
+		{[]string{"update-follow-up", "--id", "follow-up-1", "--payload", `{"expected_version":1,"quarter":"2026-Q3","week":"2026-W36","topic":"事项","owners":[{"open_id":"ou_1","name":"负责人"}],"status":"in_progress"}`}, http.MethodPut, "/api/biz-okr/follow-ups/follow-up-1", ""},
+		{[]string{"delete-follow-up", "--id", "follow-up-1", "--payload", `{"expected_version":2}`}, http.MethodDelete, "/api/biz-okr/follow-ups/follow-up-1", ""},
 		{[]string{"create-progress", "--point-id", "point-1", "--payload", `{"id":"agent-1","expected_version":0,"week":"2026-W36","status":"in_progress","text":"进展"}`}, http.MethodPost, "/api/okr/points/point-1/progress", ""},
 		{[]string{"update-progress", "--id", "agent-1", "--payload", `{"expected_version":2,"week":"2026-W36","status":"done","text":"完成"}`}, http.MethodPut, "/api/okr/progress/agent-1", ""},
 		{[]string{"delete-progress", "--id", "agent-1", "--payload", `{"expected_version":3}`}, http.MethodDelete, "/api/okr/progress/agent-1", ""},
-		{[]string{"meego-preview", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/agency-okr/meego-preview", ""},
-		{[]string{"point-meego-preview", "--point-id", "point-1", "--week", "2026-W36"}, http.MethodGet, "/api/agency-okr/points/point-1/meego-preview", ""},
-		{[]string{"confirm-meego-progress", "--point-id", "point-1", "--payload", `{"expected_version":3,"week":"2026-W36","meego_work_item_id":"wi-1","status":"done","text":"完成"}`}, http.MethodPost, "/api/agency-okr/points/point-1/meego-confirm", ""},
+		{[]string{"meego-preview", "--quarter", "2026-Q3", "--week", "2026-W36"}, http.MethodGet, "/api/biz-okr/meego-preview", ""},
+		{[]string{"point-meego-preview", "--point-id", "point-1", "--week", "2026-W36"}, http.MethodGet, "/api/biz-okr/points/point-1/meego-preview", ""},
+		{[]string{"confirm-meego-progress", "--point-id", "point-1", "--payload", `{"expected_version":3,"week":"2026-W36","meego_work_item_id":"wi-1","status":"done","text":"完成"}`}, http.MethodPost, "/api/biz-okr/points/point-1/meego-confirm", ""},
 	}
 	for _, test := range tests {
-		script := "agency-okr-tools"
+		script := "biz-okr-tools"
 		switch test.args[0] {
 		case "open-week", "replace-weekly-core", "create-progress", "update-progress", "delete-progress":
 			script = "okr-module-tools"
@@ -182,7 +182,7 @@ func TestOKRAndAgencyToolsExposeAtomicWrites(t *testing.T) {
 	}
 }
 
-// Whole-week deletion is Agency-owned because comments, scores, follow-ups and
+// Whole-week deletion is Biz-owned because comments, scores, follow-ups and
 // reminder batches are keyed by (quarter, week) with no foreign key to the week
 // anchor. A generic half-delete would resurface them on the next week opened
 // under the same key, so the generic tool must not offer the command at all.
@@ -224,7 +224,7 @@ func TestModuleToolsAllowDefaultScopedReads(t *testing.T) {
 	}{
 		{"okr-module-tools", []string{"board"}, "/api/okr/board"},
 		{"okr-module-tools", []string{"weeks"}, "/api/okr/weeks"},
-		{"agency-okr-tools", []string{"board"}, "/api/agency-okr/board"},
+		{"biz-okr-tools", []string{"board"}, "/api/biz-okr/board"},
 	} {
 		runModuleTool(t, call.script, server.URL, call.args...)
 		request := <-requests

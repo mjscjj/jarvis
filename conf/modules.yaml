@@ -1,5 +1,5 @@
 modules:
   - key: okr
     enabled: true
-  - key: agency-okr
+  - key: biz-okr
     enabled: true

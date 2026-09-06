@@ -3,23 +3,31 @@ import test from 'node:test'
 
 import { pageHash, routeFromHash } from '../src/pageRoutes.ts'
 
-test('maps the public OKR hash to the registered Agency OKR page', () => {
-  assert.deepEqual(routeFromHash('#/okr?quarter=2026-Q3&tab=manage', 'overview'), {
-    key: 'agency-okr',
+test('maps the public Biz OKR hash to the registered Biz OKR page', () => {
+  assert.deepEqual(routeFromHash('#/biz-okr?quarter=2026-Q3&tab=manage', 'overview'), {
+    key: 'biz-okr',
     selection: null,
     viewState: { quarter: '2026-Q3', tab: 'manage' },
   })
-  assert.equal(pageHash('agency-okr', null, { quarter: '2026-Q3', tab: 'manage' }), '#/okr?quarter=2026-Q3&tab=manage')
+  assert.equal(pageHash('biz-okr', null, { quarter: '2026-Q3', tab: 'manage' }), '#/biz-okr?quarter=2026-Q3&tab=manage')
 })
 
-test('maps a weekly share hash to the Agency OKR page and preserves its public path', () => {
+test('keeps legacy OKR hashes readable after the Biz OKR rename', () => {
+  assert.deepEqual(routeFromHash('#/okr?quarter=2026-Q3&tab=manage', 'overview'), {
+    key: 'biz-okr',
+    selection: null,
+    viewState: { quarter: '2026-Q3', tab: 'manage' },
+  })
+})
+
+test('maps a weekly share hash to the Biz OKR page and preserves its public path', () => {
   assert.deepEqual(routeFromHash('#/weekly-report?quarter=2026-Q3&week=2026-W36', 'overview'), {
-    key: 'agency-okr',
+    key: 'biz-okr',
     selection: null,
     viewState: { quarter: '2026-Q3', week: '2026-W36', share: 'weekly', tab: 'weekly-fill' },
   })
   assert.equal(
-    pageHash('agency-okr', null, { quarter: '2026-Q3', week: '2026-W36', share: 'weekly', tab: 'weekly-fill' }),
+    pageHash('biz-okr', null, { quarter: '2026-Q3', week: '2026-W36', share: 'weekly', tab: 'weekly-fill' }),
     '#/weekly-report?quarter=2026-Q3&tab=weekly-fill&week=2026-W36',
   )
 })

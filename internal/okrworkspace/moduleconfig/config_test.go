@@ -135,7 +135,7 @@ identity:
 	}
 }
 
-func TestLoadCoreDoesNotRequireAgencySettings(t *testing.T) {
+func TestLoadCoreDoesNotRequireBizSettings(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "okr.yaml")
 	raw := `database_path: data/okr/okr.db
@@ -143,7 +143,7 @@ upload_dir: data/okr/assets
 max_image_bytes: 1024
 identity:
   enabled: true
-  app_secret_env: MISSING_AGENCY_SECRET
+  app_secret_env: MISSING_BIZ_SECRET
 `
 	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
@@ -156,6 +156,6 @@ identity:
 		t.Fatalf("LoadCore() = %+v", cfg)
 	}
 	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "preview_review.") {
-		t.Fatalf("Load() error = %v, want Agency validation failure", err)
+		t.Fatalf("Load() error = %v, want Biz validation failure", err)
 	}
 }

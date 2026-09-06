@@ -25,7 +25,7 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	if err := okrworkspace.MigrateCore(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := okrworkspace.MigrateAgencyOKR(db); err != nil {
+	if err := okrworkspace.MigrateBizOKR(db); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&domain.Objective{ID: "o-official", Quarter: "2026-Q3", Title: "正式 O"}).Error; err != nil {
@@ -44,7 +44,7 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	}
 	enabled := true
 	h := server.New()
-	if err := RegisterAgencyOKRModuleRoutes(h, AgencyOKRModuleDependencies{
+	if err := RegisterBizOKRModuleRoutes(h, BizOKRModuleDependencies{
 		Workspace: workspace, Identity: identity, Documents: weeklyPreviewDocumentStub{},
 		People: newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}), PreviewReview: previewReviewServiceStub(t, workspace),
 		Enabled: func(context.Context) (bool, error) { return enabled, nil },
@@ -61,14 +61,14 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 		{"bad quarter", `{"quarter":"Q3","title":"Plan","content":{"objectives":[]}}`, 400},
 		{"empty title", `{"quarter":"2026-Q3","title":" ","content":{"objectives":[]}}`, 400},
 	} {
-		response := ut.PerformRequest(h.Engine, "POST", "/api/agency-okr/plans", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
+		response := ut.PerformRequest(h.Engine, "POST", "/api/biz-okr/plans", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
 		if response.StatusCode() != test.status {
 			t.Fatalf("%s: status=%d body=%s", test.name, response.StatusCode(), response.Body())
 		}
 	}
 
 	createBody := `{"quarter":"2026-Q3","title":"Q3 Plan","content":{"objectives":[{"id":"plan-o","title":"计划 O","krs":[{"id":"plan-kr","title":"计划 KR","owners":[{"open_id":"ou_a","name":"甲"}],"metric_note":"口径","metrics":[{"id":"plan-m","text":"核心目标","light":"green","images":[]}],"points":[{"id":"plan-p","kind":"product","title":"产品 KR","owners":[],"tags":[]}],"tags":[{"type":"business_category","value":"直播"},{"type":"priority","value":"p1"}]}]}]}}`
-	response := ut.PerformRequest(h.Engine, "POST", "/api/agency-okr/plans", &ut.Body{Body: strings.NewReader(createBody), Len: len(createBody)}).Result()
+	response := ut.PerformRequest(h.Engine, "POST", "/api/biz-okr/plans", &ut.Body{Body: strings.NewReader(createBody), Len: len(createBody)}).Result()
 	if response.StatusCode() != 201 {
 		t.Fatalf("create status=%d body=%s", response.StatusCode(), response.Body())
 	}
@@ -82,7 +82,7 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 		t.Fatalf("created plan = %+v", created.Data)
 	}
 
-	listResponse := ut.PerformRequest(h.Engine, "GET", "/api/agency-okr/plans?quarter=2026-Q3", nil).Result()
+	listResponse := ut.PerformRequest(h.Engine, "GET", "/api/biz-okr/plans?quarter=2026-Q3", nil).Result()
 	if listResponse.StatusCode() != 200 {
 		t.Fatalf("list status=%d body=%s", listResponse.StatusCode(), listResponse.Body())
 	}
@@ -97,16 +97,16 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	}
 
 	updateBody := `{"expected_version":0,"title":"Q3 Plan v2","content":{"objectives":[]}}`
-	updateResponse := ut.PerformRequest(h.Engine, "PUT", "/api/agency-okr/plans/"+created.Data.ID, &ut.Body{Body: strings.NewReader(updateBody), Len: len(updateBody)}).Result()
+	updateResponse := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/plans/"+created.Data.ID, &ut.Body{Body: strings.NewReader(updateBody), Len: len(updateBody)}).Result()
 	if updateResponse.StatusCode() != 200 {
 		t.Fatalf("update status=%d body=%s", updateResponse.StatusCode(), updateResponse.Body())
 	}
-	staleResponse := ut.PerformRequest(h.Engine, "PUT", "/api/agency-okr/plans/"+created.Data.ID, &ut.Body{Body: strings.NewReader(updateBody), Len: len(updateBody)}).Result()
+	staleResponse := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/plans/"+created.Data.ID, &ut.Body{Body: strings.NewReader(updateBody), Len: len(updateBody)}).Result()
 	if staleResponse.StatusCode() != 409 {
 		t.Fatalf("stale status=%d body=%s", staleResponse.StatusCode(), staleResponse.Body())
 	}
 
-	deleteResponse := ut.PerformRequest(h.Engine, "DELETE", "/api/agency-okr/plans/"+created.Data.ID, nil).Result()
+	deleteResponse := ut.PerformRequest(h.Engine, "DELETE", "/api/biz-okr/plans/"+created.Data.ID, nil).Result()
 	if deleteResponse.StatusCode() != 200 {
 		t.Fatalf("delete status=%d body=%s", deleteResponse.StatusCode(), deleteResponse.Body())
 	}
@@ -122,7 +122,7 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	}
 
 	enabled = false
-	disabledResponse := ut.PerformRequest(h.Engine, "GET", "/api/agency-okr/plans?quarter=2026-Q3", nil).Result()
+	disabledResponse := ut.PerformRequest(h.Engine, "GET", "/api/biz-okr/plans?quarter=2026-Q3", nil).Result()
 	if disabledResponse.StatusCode() != 404 {
 		t.Fatalf("disabled status=%d body=%s", disabledResponse.StatusCode(), disabledResponse.Body())
 	}

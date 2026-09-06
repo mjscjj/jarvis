@@ -23,17 +23,17 @@ export interface AppModuleDefinition {
   children?: readonly AppModuleChildDefinition[]
 }
 
-const OKRModule = lazy(() => import('../okr/OKRModule'))
+const BizOKRModule = lazy(() => import('../okr/OKRModule'))
 
 // Code, routes and navigation metadata are registered here. The backend
 // app-module catalog owns only enablement, so config cannot load arbitrary
 // remote code or create a second plugin runtime.
 export const appModuleRegistry: AppModuleDefinition[] = [
 	{
-		key: 'agency-okr',
-		label: 'OKR',
+		key: 'biz-okr',
+		label: 'Biz OKR',
 		icon: <AimOutlined />,
-		Page: OKRModule,
+		Page: BizOKRModule,
 		children: OKR_TAB_DEFINITIONS.map((item) => ({
 			key: item.key,
 			label: item.label,

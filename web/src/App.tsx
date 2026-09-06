@@ -82,7 +82,7 @@ function AppShell() {
   const { name: agentName, shortName: agentShortName, rename: renameAgent } = useAgentIdentity()
   const { enabled: authEnabled, user, logout } = useAuth()
   const { context, navigate } = usePageContext()
-  const weeklyShare = context.active_key === 'agency-okr' && isWeeklyShareViewState(context.view_state)
+  const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
   const runtimeFailures = useRuntimeFailureCount()
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
   const [chatLoaded, setChatLoaded] = useState(chatOpen)

@@ -1,7 +1,7 @@
 ---
 name: weekly-report-progress-sync
 description: 只读巡检已启用周报模块的人工进展、Meego 工作项和已采集飞书消息，经通用关系与 Page/Fact/WorldProgress 工具写回世界模型。用于周进度同步和定时巡检；不发送消息、不修改正式周报，也不把 OKR 物化成 Task。
-module: agency-okr
+module: biz-okr
 ---
 
 # 周报进度巡检
@@ -23,8 +23,8 @@ module: agency-okr
 从模块工具读取本周产品真源，再从通用关系读取已经确认的世界映射：
 
 ```bash
-scripts/agency-okr-tools scope
-scripts/agency-okr-tools board --quarter <quarter> --week <week>
+scripts/biz-okr-tools scope
+scripts/biz-okr-tools board --quarter <quarter> --week <week>
 jarvis-tools list-relations --source-type okr_kr --source-id <kr_id> --limit 100
 ```
 
@@ -43,7 +43,7 @@ bytedcli --json --all-help | rg -i 'meego|work.?item'
 每个页面已明确绑定的工作项，都把本轮只读结果写成模块观察快照。查询失败也要写 `fetch_error`，但不要编造 remote 字段：
 
 ```bash
-scripts/agency-okr-tools record-meego-observation --payload - <<'JSON'
+scripts/biz-okr-tools record-meego-observation --payload - <<'JSON'
 {
   "point_id": "<具体 KR 点 ID>",
   "work_item_id": "<Meego 工作项 ID>",
@@ -149,7 +149,7 @@ jarvis-tools create-scheduled-task --payload - <<'JSON'
   "title": "OKR 只读进展巡检",
   "action_type": "agent_task",
   "instruction": "读取 weekly-report-progress-sync Skill 并执行一次。",
-  "context_snapshot": {"skill": "weekly-report-progress-sync", "module": "agency-okr", "mode": "read_only"},
+  "context_snapshot": {"skill": "weekly-report-progress-sync", "module": "biz-okr", "mode": "read_only"},
   "schedule_type": "interval",
   "interval_minutes": 360,
   "enabled": true

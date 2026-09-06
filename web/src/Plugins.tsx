@@ -26,6 +26,7 @@ import {
   triggerPlugin,
   updatePlugin,
 } from './api'
+import AppModules from './AppModules'
 import PageHeader from './components/PageHeader'
 import { usePageContext } from './pageContext'
 import type { Plugin, PluginAuthorization, PluginState } from './types'
@@ -372,14 +373,27 @@ export default function Plugins() {
   ], [busy])
 
   const managementTable = (
-    <Table<Plugin>
-      rowKey="id"
-      loading={loading}
-      dataSource={items}
-      columns={columns}
-      pagination={false}
-      scroll={{ x: 900 }}
-    />
+    <Space orientation="vertical" size={24} style={{ width: '100%' }}>
+      <AppModules
+        moduleKeys={['okr']}
+        title="OKR 插件"
+        description="提供通用 Objective、KR、Point、周次与正式进展能力；与 Biz OKR 业务应用相互独立。"
+      />
+      <section>
+        <Space orientation="vertical" size={4} style={{ marginBottom: 12 }}>
+          <Text strong>数据源插件</Text>
+          <Text type="secondary">连接外部工作系统，按配置授权并定时采集线索。</Text>
+        </Space>
+        <Table<Plugin>
+          rowKey="id"
+          loading={loading}
+          dataSource={items}
+          columns={columns}
+          pagination={false}
+          scroll={{ x: 900 }}
+        />
+      </section>
+    </Space>
   )
 
   const pluginTab = (item: Plugin) => (
@@ -440,7 +454,7 @@ export default function Plugins() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {messageContext}
-      <PageHeader title="插件" subtitle="按需连接外部工作系统；关闭后不再采集新线索">
+      <PageHeader title="插件" subtitle="管理 OKR 通用能力插件与外部数据源插件">
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>刷新</Button>
       </PageHeader>
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError(undefined)} />}

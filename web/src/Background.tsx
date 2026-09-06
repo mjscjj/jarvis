@@ -1898,7 +1898,16 @@ export function Settings() {
           {
             key: 'extensions',
             label: '扩展',
-            children: <Space orientation="vertical" size={24} style={{ width: '100%' }}><AppModules /><SkillsPanel /></Space>,
+            children: (
+              <Space orientation="vertical" size={24} style={{ width: '100%' }}>
+                <AppModules
+                  moduleKeys={['biz-okr']}
+                  title="业务应用"
+                  description="Biz OKR 组合通用 OKR 插件提供业务打标、Plan、Review、周报与自动化。"
+                />
+                <SkillsPanel />
+              </Space>
+            ),
           },
         ]}
       />

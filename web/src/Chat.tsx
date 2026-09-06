@@ -64,7 +64,7 @@ const PAGE_LABELS: Record<string, string> = {
   memory: '世界',
   background: '世界',
   okr: 'OKR',
-  'agency-okr': 'Agency OKR',
+  'biz-okr': 'Biz OKR',
   automation: '任务',
   'scheduled-tasks': '任务',
   plugins: '插件',
@@ -103,16 +103,16 @@ function errorText(cause: unknown): string {
 }
 
 function pageLabel(context: PageContext): string {
-  if (context.active_key === 'agency-okr') {
+  if (context.active_key === 'biz-okr') {
     const definition = OKR_TAB_DEFINITIONS.find((item) => item.key === context.view_state.tab)
-    return `OKR · ${definition?.label ?? '管理与打标'}`
+    return `Biz OKR · ${definition?.label ?? '管理与打标'}`
   }
   return PAGE_LABELS[context.active_key] ?? '当前页面'
 }
 
 function pageGroup(context: PageContext): string {
-  if (context.active_key === 'agency-okr' && context.view_state.tab === 'agent-flows') return 'automation'
-  if (context.active_key === 'agency-okr' && isOKRTab(context.view_state.tab) && isWeeklyWorkspaceTab(context.view_state.tab)) return 'weekly'
+  if (context.active_key === 'biz-okr' && context.view_state.tab === 'agent-flows') return 'automation'
+  if (context.active_key === 'biz-okr' && isOKRTab(context.view_state.tab) && isWeeklyWorkspaceTab(context.view_state.tab)) return 'weekly'
   if (['management', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
   if (['today', 'overview', 'review', 'progress', 'workbench'].includes(context.active_key)) return 'workbench'
   if (['tasks', 'automation', 'scheduled-tasks'].includes(context.active_key)) return 'tasks'
@@ -386,17 +386,17 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
 
   const currentPageLabel = pageLabel(context)
   const currentSelectionLabel = context.selection?.label
-  const currentActionLabel = context.active_key === 'agency-okr' && context.view_state.tab === 'agent-flows'
+  const currentActionLabel = context.active_key === 'biz-okr' && context.view_state.tab === 'agent-flows'
     ? context.view_state.action_label
     : undefined
-  const currentQuarter = context.active_key === 'agency-okr' ? context.view_state.quarter : undefined
-  const currentWeek = context.active_key === 'agency-okr' ? context.view_state.week : undefined
+  const currentQuarter = context.active_key === 'biz-okr' ? context.view_state.quarter : undefined
+  const currentWeek = context.active_key === 'biz-okr' ? context.view_state.week : undefined
   const currentSelectionType = context.selection
     ? SELECTION_LABELS[context.selection.kind] ?? '对象'
     : null
 
   const suggestions = useMemo(() => {
-    if (context.active_key === 'agency-okr' && context.view_state.tab === 'agent-flows') {
+    if (context.active_key === 'biz-okr' && context.view_state.tab === 'agent-flows') {
       const action = currentActionLabel ? `“${currentActionLabel}”` : '当前自动化流程'
       return [
         `检查${action}的配置和最近执行情况`,

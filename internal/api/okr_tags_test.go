@@ -48,7 +48,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	if err := okrworkspace.MigrateCore(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := okrworkspace.MigrateAgencyOKR(db); err != nil {
+	if err := okrworkspace.MigrateBizOKR(db); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&domain.KR{ID: "kr-1", Title: "保留标题"}).Error; err != nil {
@@ -64,7 +64,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	}
 	enabled := true
 	h := server.New()
-	if err := RegisterAgencyOKRModuleRoutes(h, AgencyOKRModuleDependencies{
+	if err := RegisterBizOKRModuleRoutes(h, BizOKRModuleDependencies{
 		Workspace: workspace, Identity: identity, Documents: weeklyPreviewDocumentStub{},
 		People: newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}), PreviewReview: previewReviewServiceStub(t, workspace),
 		Enabled: func(context.Context) (bool, error) { return enabled, nil },
@@ -84,7 +84,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 		{"kr-1", `{"expected_version":0,"tags":[]}`, 409},
 		{"missing", `{"expected_version":0,"tags":[]}`, 404},
 	} {
-		response := ut.PerformRequest(h.Engine, "PUT", "/api/agency-okr/krs/"+test.id+"/tags", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
+		response := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/krs/"+test.id+"/tags", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
 		if response.StatusCode() != test.status {
 			t.Fatalf("request %s: status=%d body=%s", test.body, response.StatusCode(), response.Body())
 		}
@@ -109,7 +109,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	}
 	enabled = false
 	body := `{"expected_version":1,"tags":[]}`
-	response := ut.PerformRequest(h.Engine, "PUT", "/api/agency-okr/krs/kr-1/tags", &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
+	response := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/krs/kr-1/tags", &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != 404 {
 		t.Fatalf("disabled module status=%d body=%s", response.StatusCode(), response.Body())
 	}
@@ -123,7 +123,7 @@ func TestPointTagsRouteTargetsOnlyStrategyOrProductPoint(t *testing.T) {
 	if err := okrworkspace.MigrateCore(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := okrworkspace.MigrateAgencyOKR(db); err != nil {
+	if err := okrworkspace.MigrateBizOKR(db); err != nil {
 		t.Fatal(err)
 	}
 	kr := domain.KR{ID: "kr-point-route", Title: "保留 KR"}
@@ -142,7 +142,7 @@ func TestPointTagsRouteTargetsOnlyStrategyOrProductPoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := server.New()
-	if err := RegisterAgencyOKRModuleRoutes(h, AgencyOKRModuleDependencies{
+	if err := RegisterBizOKRModuleRoutes(h, BizOKRModuleDependencies{
 		Workspace: workspace, Identity: identity, Documents: weeklyPreviewDocumentStub{},
 		People: newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}), PreviewReview: previewReviewServiceStub(t, workspace),
 		Enabled: func(context.Context) (bool, error) { return true, nil },
@@ -151,7 +151,7 @@ func TestPointTagsRouteTargetsOnlyStrategyOrProductPoint(t *testing.T) {
 	}
 
 	validBody := `{"expected_version":0,"tags":[{"type":"management_focus","value":"这是一条需要完整展示的要点标签"}]}`
-	response := ut.PerformRequest(h.Engine, "PUT", "/api/agency-okr/points/point-1/tags", &ut.Body{Body: strings.NewReader(validBody), Len: len(validBody)}).Result()
+	response := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/points/point-1/tags", &ut.Body{Body: strings.NewReader(validBody), Len: len(validBody)}).Result()
 	if response.StatusCode() != 200 {
 		t.Fatalf("point tags status=%d body=%s", response.StatusCode(), response.Body())
 	}
@@ -175,7 +175,7 @@ func TestPointTagsRouteTargetsOnlyStrategyOrProductPoint(t *testing.T) {
 		{"point-1", `{"expected_version":0,"tags":[]}`, 409},
 		{"missing", `{"expected_version":1,"tags":[]}`, 404},
 	} {
-		response := ut.PerformRequest(h.Engine, "PUT", "/api/agency-okr/points/"+test.id+"/tags", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
+		response := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/points/"+test.id+"/tags", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
 		if response.StatusCode() != test.status {
 			t.Fatalf("point request %s: status=%d body=%s", test.body, response.StatusCode(), response.Body())
 		}

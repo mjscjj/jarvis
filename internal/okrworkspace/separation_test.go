@@ -23,10 +23,10 @@ func openWorkspaceTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// Both quarter boards read the same objectives and KRs; only the Agency one may
+// Both quarter boards read the same objectives and KRs; only the Biz one may
 // carry labels and legacy Meego links. They share one loader, so this pins the
 // projection difference rather than each board's own row assembly.
-func TestCoreAndAgencyBoardsShareDefinitionsAndDifferOnlyByAgencyFields(t *testing.T) {
+func TestCoreAndBizBoardsShareDefinitionsAndDifferOnlyByBizFields(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-board", Title: "增长", Quarter: "2026-Q3"}
 	kr := domain.KR{ID: "kr-board", ObjectiveID: objective.ID, Title: "一级 KR"}
@@ -50,20 +50,20 @@ func TestCoreAndAgencyBoardsShareDefinitionsAndDifferOnlyByAgencyFields(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	agency, err := service.AgencyCoreBoard(t.Context(), "2026-Q3")
+	biz, err := service.BizCoreBoard(t.Context(), "2026-Q3")
 	if err != nil {
 		t.Fatal(err)
 	}
 	coreKR := core.Objectives[0].KRs[0]
-	agencyKR := agency.Objectives[0].KRs[0]
-	if coreKR.ID != agencyKR.ID || coreKR.Title != agencyKR.Title || !reflect.DeepEqual(coreKR.Owners, agencyKR.Owners) {
-		t.Fatalf("boards disagree on the shared definition: core=%+v agency=%+v", coreKR, agencyKR)
+	bizKR := biz.Objectives[0].KRs[0]
+	if coreKR.ID != bizKR.ID || coreKR.Title != bizKR.Title || !reflect.DeepEqual(coreKR.Owners, bizKR.Owners) {
+		t.Fatalf("boards disagree on the shared definition: core=%+v biz=%+v", coreKR, bizKR)
 	}
 	if len(coreKR.Tags) != 0 || len(coreKR.Points[0].Tags) != 0 || coreKR.Points[0].MeegoWorkItemID != "" || coreKR.Points[0].MeegoURL != "" {
-		t.Fatalf("generic core board leaked Agency fields: %+v", coreKR)
+		t.Fatalf("generic core board leaked Biz fields: %+v", coreKR)
 	}
-	if len(agencyKR.Tags) != 1 || len(agencyKR.Points[0].Tags) != 1 || agencyKR.Points[0].MeegoWorkItemID != "wi-7" {
-		t.Fatalf("Agency core board lost Agency fields: %+v", agencyKR)
+	if len(bizKR.Tags) != 1 || len(bizKR.Points[0].Tags) != 1 || bizKR.Points[0].MeegoWorkItemID != "wi-7" {
+		t.Fatalf("Biz core board lost Biz fields: %+v", bizKR)
 	}
 }
 
@@ -476,7 +476,7 @@ func TestMigrateCoreBackfillsHistoricalProgressScopes(t *testing.T) {
 	}
 }
 
-func TestCoreWorkspaceSupportsFormalProgressWithoutAgencySchema(t *testing.T) {
+func TestCoreWorkspaceSupportsFormalProgressWithoutBizSchema(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -489,7 +489,7 @@ func TestCoreWorkspaceSupportsFormalProgressWithoutAgencySchema(t *testing.T) {
 	}
 	for _, model := range []any{&domain.KRTag{}, &domain.PointTag{}, &domain.OKRPlan{}, &domain.WeeklyScore{}, &domain.PageComment{}, &domain.MeegoSyncSnapshot{}, &domain.ReminderBatch{}} {
 		if db.Migrator().HasTable(model) {
-			t.Fatalf("MigrateCore created Agency table for %T", model)
+			t.Fatalf("MigrateCore created Biz table for %T", model)
 		}
 	}
 	service, err := NewService(db)

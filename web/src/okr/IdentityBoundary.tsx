@@ -108,8 +108,8 @@ export default function IdentityBoundary({ children }: { children: ReactNode }) 
       <div className="flex min-h-[520px] items-center justify-center px-6">
         <section className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white px-8 py-9 text-center shadow-sm">
           <span className="mx-auto flex size-11 items-center justify-center rounded-xl bg-indigo-600 text-base font-semibold text-white">O</span>
-          <h1 className="mt-4 text-lg font-semibold text-slate-900">登录 OKR 模块</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500">完成一次飞书登录后即可使用 OKR、周报和 Review。</p>
+          <h1 className="mt-4 text-lg font-semibold text-slate-900">登录 Biz OKR</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">完成一次飞书登录后即可使用 Biz OKR、周报和 Review。</p>
           {activeLogin ? (
             <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-4 text-left">
               <p className="text-sm font-medium text-slate-800">请在飞书授权页确认登录</p>

@@ -3,7 +3,7 @@
 > Status: obsolete
 > Authority: non-normative
 > Last verified: 2026-09-06 @ a7f58a3
-> Superseded by: ../design-okr-plugin-and-agency-okr.md
+> Superseded by: ../design-okr-plugin-and-biz-okr.md
 > Scope: OKR 内置业务插件、稳定定义、周进展、Jarvis 世界实体、跨模块关系、统一读取与可视化
 
 ## 1. 决策摘要

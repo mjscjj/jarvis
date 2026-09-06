@@ -112,11 +112,11 @@ func (s *Service) OpenWeek(ctx context.Context, input OpenWeekInput) (OpenWeekRe
 	return OpenWeekResult{Week: weekView(row), Created: created.RowsAffected == 1}, nil
 }
 
-// DeleteWeek removes one complete Agency OKR weekly scope while preserving the
+// DeleteWeek removes one complete Biz OKR weekly scope while preserving the
 // stable OKR definition and every other week. The week anchor is deleted last
 // so an interrupted deletion remains visible and can be retried safely.
 //
-// Deletion stays whole-week and Agency-owned on purpose. Comments, scores,
+// Deletion stays whole-week and Biz-owned on purpose. Comments, scores,
 // follow-ups and reminder batches are keyed by (quarter, week) with no foreign
 // key to this anchor, so a partial delete would resurface them on the next
 // week opened under the same key.

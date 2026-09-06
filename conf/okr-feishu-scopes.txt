@@ -1,4 +1,4 @@
-# OKR 模块飞书登录申请的 user scope，一行一个，`#` 起头为注释。
+# Biz OKR 飞书登录申请的 user scope，一行一个，`#` 起头为注释。
 #
 # 警告：这份清单只表达意图，不构成约束。实测（2026-09-03 复测）飞书 device flow
 # 忽略请求里的 scope 子集，按 Emily Pro 后台已开通的全集签发 token：这里请求

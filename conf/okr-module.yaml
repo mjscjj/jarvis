@@ -1,12 +1,12 @@
 # Optional OKR module configuration. Storage settings are loaded while `okr` is
 # enabled; identity and Preview Review settings are validated only while
-# `agency-okr` is enabled. Jarvis core has no OKR-specific config fields.
+# `biz-okr` is enabled. Jarvis core has no OKR-specific config fields.
 database_path: "data/okr/okr.db"
 upload_dir: "data/okr/assets"
 max_image_bytes: 10485760
 
 # 一次性 OKR Preview 评审 Agent。只读建议，不建 Task、不进审批链路；沙箱需要
-# 网络以便它用 okr-module-tools / agency-okr-tools 回查本机 API。
+# 网络以便它用 okr-module-tools / biz-okr-tools 回查本机 API。
 preview_review:
   bin: "traex"
   model: "DeepSeek-V4-Pro"
@@ -16,7 +16,7 @@ preview_review:
 
 identity:
   enabled: true
-  # OKR 模块专用登录应用 Emily Pro。只签发登录用户自己的 user token，与
+  # Biz OKR 专用登录应用 Emily Pro。只签发登录用户自己的 user token，与
   # lark-cli 绑定的主应用无关：主应用凭证由 lark-cli 自己保管，不读这里。
   # 换应用后 open_id 会变（按应用隔离），union_id 不变，所以署名锚 union_id。
   app_id: "cli_a96a2422f03bdbd7"

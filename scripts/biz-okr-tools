@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Narrow CLI for deterministic Agency OKR product data. It never performs
+# Narrow CLI for deterministic Biz OKR product data. It never performs
 # semantic matching itself; Skills compose it with generic OKR and external
 # read tools.
 set -euo pipefail
@@ -9,7 +9,7 @@ BASE_URL="${JARVIS_API_BASE:-}"
 
 usage() {
   cat <<'EOF'
-usage: agency-okr-tools [--base-url URL] COMMAND [ARGS]
+usage: biz-okr-tools [--base-url URL] COMMAND [ARGS]
 
 commands:
   text-config --key KEY
@@ -43,7 +43,7 @@ commands:
   confirm-meego-progress --point-id POINT_ID --payload JSON|-
 
 Formal weeks, Weekly KR Core and Progress writes belong to okr-module-tools.
-Agency tags, review, scores, comments, reminders and Meego stay here.
+Biz tags, review, scores, comments, reminders and Meego stay here.
 EOF
 }
 
@@ -139,43 +139,43 @@ case "$COMMAND" in
     request_get "/api/text-files/${KEY}"
     ;;
   scope)
-    request_get /api/agency-okr/scope
+    request_get /api/biz-okr/scope
     ;;
   delete-week)
     [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "delete-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
-    request_with_error_body -X DELETE -G "${BASE_URL}/api/agency-okr/weeks/$(encoded "$WEEK")" --data-urlencode "quarter=$QUARTER"
+    request_with_error_body -X DELETE -G "${BASE_URL}/api/biz-okr/weeks/$(encoded "$WEEK")" --data-urlencode "quarter=$QUARTER"
     ;;
   core-board|board|comments|follow-ups|reminder-preview|reminder-batches|meego-preview)
     args=()
     [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
     [[ -z "$WEEK" ]] || args+=(--data-urlencode "week=$WEEK")
     if [[ ${#args[@]} -eq 0 ]]; then
-      request_get "/api/agency-okr/${COMMAND}"
+      request_get "/api/biz-okr/${COMMAND}"
     else
-      request_get "/api/agency-okr/${COMMAND}" "${args[@]}"
+      request_get "/api/biz-okr/${COMMAND}" "${args[@]}"
     fi
     ;;
   get-weekly-kr)
     [[ -n "$ID" && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "get-weekly-kr requires --id and --week YYYY-Www" >&2; exit 2; }
-    request_get "/api/agency-okr/krs/$(encoded "$ID")/weekly" --data-urlencode "week=$WEEK"
+    request_get "/api/biz-okr/krs/$(encoded "$ID")/weekly" --data-urlencode "week=$WEEK"
     ;;
   get-kr)
     [[ -n "$ID" ]] || { echo "get-kr requires --id" >&2; exit 2; }
-    request_get "/api/agency-okr/krs/$(encoded "$ID")"
+    request_get "/api/biz-okr/krs/$(encoded "$ID")"
     ;;
   replace-kr-tags)
     [[ -n "$ID" ]] || { echo "replace-kr-tags requires --id" >&2; exit 2; }
     payload="$(read_payload)"
-    request_write PUT "/api/agency-okr/krs/$(encoded "$ID")/tags" "$payload"
+    request_write PUT "/api/biz-okr/krs/$(encoded "$ID")/tags" "$payload"
     ;;
   replace-point-tags)
     [[ -n "$POINT_ID" ]] || { echo "replace-point-tags requires --point-id" >&2; exit 2; }
     payload="$(read_payload)"
-    request_write PUT "/api/agency-okr/points/$(encoded "$POINT_ID")/tags" "$payload"
+    request_write PUT "/api/biz-okr/points/$(encoded "$POINT_ID")/tags" "$payload"
     ;;
   people-search)
     [[ -n "$QUERY" ]] || { echo "people-search requires --query" >&2; exit 2; }
-    request_get /api/agency-okr/people/search --data-urlencode "q=$QUERY"
+    request_get /api/biz-okr/people/search --data-urlencode "q=$QUERY"
     ;;
   replace-score|delete-score)
     [[ "$TARGET_KIND" == "kr" || "$TARGET_KIND" == "point" ]] || { echo "$COMMAND requires --target-kind kr|point" >&2; exit 2; }
@@ -191,24 +191,24 @@ case "$COMMAND" in
     " >/dev/null || { echo "$COMMAND payload is invalid" >&2; exit 2; }
     method=PUT
     [[ "$COMMAND" == "replace-score" ]] || method=DELETE
-    request_write "$method" "/api/agency-okr/scores/${TARGET_KIND}/$(encoded "$ID")" "$payload"
+    request_write "$method" "/api/biz-okr/scores/${TARGET_KIND}/$(encoded "$ID")" "$payload"
     ;;
   create-comment)
     payload="$(read_payload)"
-    request_post /api/agency-okr/comments "$payload"
+    request_post /api/biz-okr/comments "$payload"
     ;;
   update-comment)
     [[ -n "$ID" ]] || { echo "update-comment requires --id" >&2; exit 2; }
     payload="$(read_payload)"
-    request_write PUT "/api/agency-okr/comments/$(encoded "$ID")" "$payload"
+    request_write PUT "/api/biz-okr/comments/$(encoded "$ID")" "$payload"
     ;;
   delete-comment)
     [[ -n "$ID" ]] || { echo "delete-comment requires --id" >&2; exit 2; }
-    request_with_error_body -X DELETE "${BASE_URL}/api/agency-okr/comments/$(encoded "$ID")"
+    request_with_error_body -X DELETE "${BASE_URL}/api/biz-okr/comments/$(encoded "$ID")"
     ;;
   get-follow-up)
     [[ -n "$ID" ]] || { echo "get-follow-up requires --id" >&2; exit 2; }
-    request_get "/api/agency-okr/follow-ups/$(encoded "$ID")"
+    request_get "/api/biz-okr/follow-ups/$(encoded "$ID")"
     ;;
   create-follow-up)
     payload="$(read_payload)"
@@ -221,7 +221,7 @@ case "$COMMAND" in
       and (.owners | type == "array" and all(.[]; (.open_id | type == "string" and length > 0) and (.name | type == "string" and length > 0)))
       and (.status == "not_started" or .status == "in_progress" or .status == "done")
     ' >/dev/null || { echo "create-follow-up payload is invalid" >&2; exit 2; }
-    request_post /api/agency-okr/follow-ups "$payload"
+    request_post /api/biz-okr/follow-ups "$payload"
     ;;
   update-follow-up)
     [[ -n "$ID" ]] || { echo "update-follow-up requires --id" >&2; exit 2; }
@@ -234,18 +234,18 @@ case "$COMMAND" in
       and (.owners | type == "array" and all(.[]; (.open_id | type == "string" and length > 0) and (.name | type == "string" and length > 0)))
       and (.status == "not_started" or .status == "in_progress" or .status == "done")
     ' >/dev/null || { echo "update-follow-up payload is invalid" >&2; exit 2; }
-    request_write PUT "/api/agency-okr/follow-ups/$(encoded "$ID")" "$payload"
+    request_write PUT "/api/biz-okr/follow-ups/$(encoded "$ID")" "$payload"
     ;;
   delete-follow-up)
     [[ -n "$ID" ]] || { echo "delete-follow-up requires --id" >&2; exit 2; }
     payload="$(read_payload)"
     printf '%s' "$payload" | jq -e '(.expected_version | type == "number" and . >= 0)' >/dev/null || { echo "delete-follow-up payload is invalid" >&2; exit 2; }
-    request_write DELETE "/api/agency-okr/follow-ups/$(encoded "$ID")" "$payload"
+    request_write DELETE "/api/biz-okr/follow-ups/$(encoded "$ID")" "$payload"
     ;;
   create-reminder-batch)
     [[ -n "$QUARTER" && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "create-reminder-batch requires --quarter and --week YYYY-Www" >&2; exit 2; }
     payload=$(printf '{"quarter":"%s","week":"%s"}' "$QUARTER" "$WEEK")
-    request_post /api/agency-okr/reminder-batches/generate "$payload"
+    request_post /api/biz-okr/reminder-batches/generate "$payload"
     ;;
   create-feishu-document)
 	PAYLOAD="$(read_payload)"
@@ -254,7 +254,7 @@ case "$COMMAND" in
       and (.title | type == "string" and length > 0)
       and (.content | type == "string" and length > 0)
     ' >/dev/null || { echo "create-feishu-document payload is invalid" >&2; exit 2; }
-    request_post /api/agency-okr/feishu-documents "$PAYLOAD"
+    request_post /api/biz-okr/feishu-documents "$PAYLOAD"
     ;;
   record-meego-observation)
 	PAYLOAD="$(read_payload)"
@@ -267,16 +267,16 @@ case "$COMMAND" in
       and ((.remote // {}) | type == "object")
       and ((.fetch_error // "") | type == "string")
     ' >/dev/null || { echo "record-meego-observation payload is invalid" >&2; exit 2; }
-	request_post /api/agency-okr/meego-observations "$PAYLOAD"
+	request_post /api/biz-okr/meego-observations "$PAYLOAD"
 	;;
   point-meego-preview)
     [[ -n "$POINT_ID" && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "point-meego-preview requires --point-id and --week YYYY-Www" >&2; exit 2; }
-    request_get "/api/agency-okr/points/$(encoded "$POINT_ID")/meego-preview" --data-urlencode "week=$WEEK"
+    request_get "/api/biz-okr/points/$(encoded "$POINT_ID")/meego-preview" --data-urlencode "week=$WEEK"
     ;;
   confirm-meego-progress)
     [[ -n "$POINT_ID" ]] || { echo "confirm-meego-progress requires --point-id" >&2; exit 2; }
     payload="$(read_payload)"
-    request_post "/api/agency-okr/points/$(encoded "$POINT_ID")/meego-confirm" "$payload"
+    request_post "/api/biz-okr/points/$(encoded "$POINT_ID")/meego-confirm" "$payload"
     ;;
   *) echo "unknown command: $COMMAND" >&2; usage >&2; exit 2 ;;
 esac

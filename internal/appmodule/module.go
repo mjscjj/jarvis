@@ -35,11 +35,15 @@ var definitions = map[string]definition{
 		Name:        "OKR 插件",
 		Description: "通用目标、KR、负责人、核心指标、拆解、周次与正式进展",
 	},
-	"agency-okr": {
-		Name:        "OKR",
-		Description: "Agency 打标、Plan、Review、周报、催填与业务自动化",
+	"biz-okr": {
+		Name:        "Biz OKR",
+		Description: "Biz 打标、Plan、Review、周报、催填与业务自动化",
 		Requires:    []string{"okr"},
 	},
+}
+
+var legacyKeys = map[string]string{
+	"agency-okr": "biz-okr",
 }
 
 type Input struct {
@@ -77,13 +81,18 @@ func NewService(configPath string) (*Service, error) {
 		return nil, fmt.Errorf("app module config path is empty")
 	}
 	service := &Service{configPath: configPath}
-	cfg, err := service.loadConfig()
+	cfg, migrated, err := service.loadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("validate app module config: %w", err)
 	}
 	views, err := join(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("validate app module config: %w", err)
+	}
+	if migrated {
+		if err := service.writeConfig(cfg); err != nil {
+			return nil, fmt.Errorf("migrate app module config: %w", err)
+		}
 	}
 	service.runtime = make(map[string]bool, len(views))
 	for _, view := range views {
@@ -96,7 +105,7 @@ func (s *Service) List(ctx context.Context) ([]View, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	cfg, err := s.loadConfig()
+	cfg, _, err := s.loadConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +149,7 @@ func (s *Service) Update(ctx context.Context, key string, input Input) (*View, e
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cfg, err := s.loadConfig()
+	cfg, _, err := s.loadConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -161,12 +170,7 @@ func (s *Service) Update(ctx context.Context, key string, input Input) (*View, e
 	if err := validateDependencies(cfg); err != nil {
 		return nil, err
 	}
-	sort.Slice(cfg.Modules, func(i, j int) bool { return cfg.Modules[i].Key < cfg.Modules[j].Key })
-	encoded, err := yaml.Marshal(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("encode app module config: %w", err)
-	}
-	if err := fileconfig.WriteAtomic(s.configPath, encoded); err != nil {
+	if err := s.writeConfig(cfg); err != nil {
 		return nil, err
 	}
 	views, err := join(cfg)
@@ -192,29 +196,61 @@ func (s *Service) decorate(views []View) {
 	}
 }
 
-func (s *Service) loadConfig() (configFile, error) {
+func (s *Service) loadConfig() (configFile, bool, error) {
 	raw, err := fileconfig.Read(s.configPath)
 	if err != nil {
-		return configFile{}, err
+		return configFile{}, false, err
 	}
 	var cfg configFile
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
-		return configFile{}, fmt.Errorf("decode app module config %s: %w", s.configPath, err)
+		return configFile{}, false, fmt.Errorf("decode app module config %s: %w", s.configPath, err)
 	}
+	migrated := false
 	seen := make(map[string]struct{}, len(cfg.Modules))
 	for i := range cfg.Modules {
 		cfg.Modules[i].Key = strings.TrimSpace(cfg.Modules[i].Key)
+		if replacement, exists := legacyKeys[cfg.Modules[i].Key]; exists {
+			cfg.Modules[i].Key = replacement
+			migrated = true
+		}
 		if _, exists := definitions[cfg.Modules[i].Key]; !exists {
-			return configFile{}, fmt.Errorf("%w: unknown configured module %q", ErrInvalidInput, cfg.Modules[i].Key)
+			return configFile{}, false, fmt.Errorf("%w: unknown configured module %q", ErrInvalidInput, cfg.Modules[i].Key)
 		}
 		if _, exists := seen[cfg.Modules[i].Key]; exists {
-			return configFile{}, fmt.Errorf("%w: duplicate configured module %q", ErrInvalidInput, cfg.Modules[i].Key)
+			return configFile{}, false, fmt.Errorf("%w: duplicate configured module %q", ErrInvalidInput, cfg.Modules[i].Key)
 		}
 		seen[cfg.Modules[i].Key] = struct{}{}
 	}
-	return cfg, nil
+	return cfg, migrated, nil
+}
+
+func (s *Service) writeConfig(cfg configFile) error {
+	sort.Slice(cfg.Modules, func(i, j int) bool {
+		return moduleOrder(cfg.Modules[i].Key) < moduleOrder(cfg.Modules[j].Key)
+	})
+	var encoded bytes.Buffer
+	encoder := yaml.NewEncoder(&encoded)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(cfg); err != nil {
+		return fmt.Errorf("encode app module config: %w", err)
+	}
+	if err := encoder.Close(); err != nil {
+		return fmt.Errorf("finish app module config encoding: %w", err)
+	}
+	return fileconfig.WriteAtomic(s.configPath, encoded.Bytes())
+}
+
+func moduleOrder(key string) int {
+	switch key {
+	case "okr":
+		return 0
+	case "biz-okr":
+		return 1
+	default:
+		return len(definitions)
+	}
 }
 
 func join(cfg configFile) ([]View, error) {

@@ -59,7 +59,7 @@ function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; on
         <div className="mx-auto flex min-h-14 max-w-[1580px] flex-wrap items-center gap-3 px-4 py-2 sm:px-6 lg:px-8">
           <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-semibold text-white shadow-sm">P</span>
           <div className="leading-tight">
-            <h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · OKR Plan</h1>
+            <h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · Biz OKR Plan</h1>
             <div className="mt-1 text-[10px] text-slate-400">{quarter.replace('-', ' ')} · 计划草稿</div>
           </div>
           {shared && <WeeklyShareNav currentTab="okr-plan" onChange={(tab) => onShareTabChange?.(tab)} />}

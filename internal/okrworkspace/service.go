@@ -333,7 +333,7 @@ type ReplaceKRInput struct {
 }
 
 // ReplaceGenericKRInput is the reusable OKR aggregate contract. It can add,
-// reorder, update and remove metrics and points, but Agency-owned tags and
+// reorder, update and remove metrics and points, but Biz-owned tags and
 // Meego fields are deliberately not representable.
 type ReplaceGenericKRInput struct {
 	ExpectedVersion int32              `json:"expected_version"`
@@ -358,10 +358,10 @@ type CreateKRInput struct {
 	CreatedBy string      `json:"created_by"`
 }
 
-// CreateAgencyKRInput is the Agency composition contract. Tags are kept out
+// CreateBizKRInput is the Biz composition contract. Tags are kept out
 // of CreateKRInput so the reusable OKR module can be used without migrating
-// any Agency-owned tables.
-type CreateAgencyKRInput struct {
+// any Biz-owned tables.
+type CreateBizKRInput struct {
 	Title     string      `json:"title"`
 	Owners    []OwnerView `json:"owners"`
 	Tags      []TagView   `json:"tags"`
@@ -385,13 +385,13 @@ func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error
 	return s.weeklyBoard(ctx, quarter, week, true)
 }
 
-// ProgressBoard returns the formal OKR timeline without reading Agency-owned
+// ProgressBoard returns the formal OKR timeline without reading Biz-owned
 // labels, scores or external-system projections.
 func (s *Service) ProgressBoard(ctx context.Context, quarter, week string) (Board, error) {
 	return s.weeklyBoard(ctx, quarter, week, false)
 }
 
-func (s *Service) weeklyBoard(ctx context.Context, quarter, week string, includeAgency bool) (Board, error) {
+func (s *Service) weeklyBoard(ctx context.Context, quarter, week string, includeBiz bool) (Board, error) {
 	scope, err := s.resolveWeeklyScope(ctx, quarter, week)
 	if err != nil {
 		return Board{}, err
@@ -425,7 +425,7 @@ func (s *Service) weeklyBoard(ctx context.Context, quarter, week string, include
 		}
 		view := ObjectiveView{ID: objective.ID, Title: objective.Title, KRs: make([]KRView, 0, len(records))}
 		for _, record := range records {
-			krView, err := s.loadKR(ctx, record, quarter, week, previousWeek, includeAgency)
+			krView, err := s.loadKR(ctx, record, quarter, week, previousWeek, includeBiz)
 			if err != nil {
 				return Board{}, err
 			}
@@ -442,14 +442,14 @@ func (s *Service) CoreBoard(ctx context.Context, quarter string) (Board, error) 
 	return s.coreBoard(ctx, quarter, false)
 }
 
-// AgencyCoreBoard is the Agency presentation of stable OKR definitions. It adds
-// Agency-owned labels and legacy Meego links without changing the common OKR
+// BizCoreBoard is the Biz presentation of stable OKR definitions. It adds
+// Biz-owned labels and legacy Meego links without changing the common OKR
 // source of truth.
-func (s *Service) AgencyCoreBoard(ctx context.Context, quarter string) (Board, error) {
+func (s *Service) BizCoreBoard(ctx context.Context, quarter string) (Board, error) {
 	return s.coreBoard(ctx, quarter, true)
 }
 
-func (s *Service) coreBoard(ctx context.Context, quarter string, includeAgency bool) (Board, error) {
+func (s *Service) coreBoard(ctx context.Context, quarter string, includeBiz bool) (Board, error) {
 	quarter = strings.TrimSpace(quarter)
 	if quarter == "" {
 		scope, err := s.LatestCoreScope(ctx)
@@ -477,7 +477,7 @@ func (s *Service) coreBoard(ctx context.Context, quarter string, includeAgency b
 		}
 		view := ObjectiveView{ID: objective.ID, Title: objective.Title, KRs: make([]KRView, 0, len(records))}
 		for _, record := range records {
-			krView, err := s.loadKRDefinition(ctx, record, includeAgency)
+			krView, err := s.loadKRDefinition(ctx, record, includeBiz)
 			if err != nil {
 				return Board{}, err
 			}
@@ -656,18 +656,18 @@ func (s *Service) GetKR(ctx context.Context, id, week string) (KRView, error) {
 	return s.getWeeklyKR(ctx, id, week, true)
 }
 
-// GetProgressKR returns the formal timeline without Agency-owned decorations.
+// GetProgressKR returns the formal timeline without Biz-owned decorations.
 func (s *Service) GetProgressKR(ctx context.Context, id, week string) (KRView, error) {
 	return s.getWeeklyKR(ctx, id, week, false)
 }
 
-// GetAgencyKR names the richer product projection explicitly for new callers.
-// GetKR remains as a compatibility alias for existing Agency services.
-func (s *Service) GetAgencyKR(ctx context.Context, id, week string) (KRView, error) {
+// GetBizKR names the richer product projection explicitly for new callers.
+// GetKR remains as a compatibility alias for existing Biz services.
+func (s *Service) GetBizKR(ctx context.Context, id, week string) (KRView, error) {
 	return s.getWeeklyKR(ctx, id, week, true)
 }
 
-func (s *Service) getWeeklyKR(ctx context.Context, id, week string, includeAgency bool) (KRView, error) {
+func (s *Service) getWeeklyKR(ctx context.Context, id, week string, includeBiz bool) (KRView, error) {
 	var record domain.KR
 	if err := s.db.WithContext(ctx).First(&record, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -683,7 +683,7 @@ func (s *Service) getWeeklyKR(ctx context.Context, id, week string, includeAgenc
 	if err != nil {
 		return KRView{}, err
 	}
-	return s.loadKR(ctx, record, objective.Quarter, week, previousWeek, includeAgency)
+	return s.loadKR(ctx, record, objective.Quarter, week, previousWeek, includeBiz)
 }
 
 func (s *Service) GetCoreKR(ctx context.Context, id string) (KRView, error) {
@@ -697,18 +697,18 @@ func (s *Service) GetCoreKR(ctx context.Context, id string) (KRView, error) {
 	return s.loadKRDefinition(ctx, record, false)
 }
 
-func (s *Service) GetAgencyCoreKR(ctx context.Context, id string) (KRView, error) {
+func (s *Service) GetBizCoreKR(ctx context.Context, id string) (KRView, error) {
 	var record domain.KR
 	if err := s.db.WithContext(ctx).First(&record, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return KRView{}, ErrNotFound
 		}
-		return KRView{}, fmt.Errorf("get Agency KR: %w", err)
+		return KRView{}, fmt.Errorf("get Biz KR: %w", err)
 	}
 	return s.loadKRDefinition(ctx, record, true)
 }
 
-func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includeAgency bool) (KRView, error) {
+func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includeBiz bool) (KRView, error) {
 	var metrics []domain.KRMetric
 	var points []domain.KRPoint
 	var tags []domain.KRTag
@@ -730,12 +730,12 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includ
 			return KRView{}, fmt.Errorf("list point owners: %w", err)
 		}
 	}
-	if includeAgency && len(pointIDs) > 0 {
+	if includeBiz && len(pointIDs) > 0 {
 		if err := s.db.WithContext(ctx).Where("point_id IN ?", pointIDs).Order("point_id, type, value").Find(&pointTags).Error; err != nil {
 			return KRView{}, fmt.Errorf("list point tags: %w", err)
 		}
 	}
-	if includeAgency {
+	if includeBiz {
 		if err := s.db.WithContext(ctx).Where("kr_id = ?", record.ID).Order("type, value").Find(&tags).Error; err != nil {
 			return KRView{}, fmt.Errorf("list tags: %w", err)
 		}
@@ -772,7 +772,7 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includ
 	}
 	for _, point := range points {
 		pointView := PointView{ID: point.ID, Kind: point.Kind, Title: point.Title, Tags: pointTagsByID[point.ID], Owners: pointOwnersByID[point.ID], Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
-		if includeAgency {
+		if includeBiz {
 			pointView.MeegoWorkItemID = point.MeegoWorkItemID
 			pointView.MeegoURL = point.MeegoURL
 		}
@@ -796,8 +796,8 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includ
 	return view, nil
 }
 
-func (s *Service) loadKR(ctx context.Context, record domain.KR, quarter, week, previousWeek string, includeAgency bool) (KRView, error) {
-	view, err := s.loadKRDefinition(ctx, record, includeAgency)
+func (s *Service) loadKR(ctx context.Context, record domain.KR, quarter, week, previousWeek string, includeBiz bool) (KRView, error) {
+	view, err := s.loadKRDefinition(ctx, record, includeBiz)
 	if err != nil {
 		return KRView{}, err
 	}
@@ -813,7 +813,7 @@ func (s *Service) loadKR(ctx context.Context, record domain.KR, quarter, week, p
 		return KRView{}, fmt.Errorf("load weekly core data: %w", err)
 	}
 	pointScores := make(map[string]*ScoreView)
-	if includeAgency {
+	if includeBiz {
 		targetIDs := make([]string, 0, len(view.Points)+1)
 		targetIDs = append(targetIDs, record.ID)
 		for _, point := range view.Points {
@@ -896,7 +896,7 @@ func (s *Service) ReplaceGenericKRCore(ctx context.Context, id string, input Rep
 	return s.replaceKRCore(ctx, id, common, false)
 }
 
-func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRInput, includeAgency bool) (KRView, error) {
+func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRInput, includeBiz bool) (KRView, error) {
 	owners := normalizeOwners(input.Owners)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		weeklySchemaPresent := tx.Migrator().HasTable(&domain.KRProgress{})
@@ -947,21 +947,21 @@ func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRI
 			incomingPointIDs[point.ID] = struct{}{}
 			if _, exists := oldPointByID[point.ID]; exists {
 				values := map[string]any{"kind": point.Kind, "title": point.Title, "sort_order": index}
-				if includeAgency {
+				if includeBiz {
 					values["meego_work_item_id"] = strings.TrimSpace(point.MeegoWorkItemID)
 					values["meego_url"] = strings.TrimSpace(point.MeegoURL)
 				}
 				if err := tx.Model(&domain.KRPoint{}).Where("id = ? AND kr_id = ?", point.ID, id).Updates(values).Error; err != nil {
 					return fmt.Errorf("update point definition: %w", err)
 				}
-				if includeAgency && weeklySchemaPresent && oldPointByID[point.ID].MeegoWorkItemID != strings.TrimSpace(point.MeegoWorkItemID) {
+				if includeBiz && weeklySchemaPresent && oldPointByID[point.ID].MeegoWorkItemID != strings.TrimSpace(point.MeegoWorkItemID) {
 					if err := tx.Where("point_id = ?", point.ID).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
 						return fmt.Errorf("reset changed Meego snapshot: %w", err)
 					}
 				}
 			} else {
 				record := domain.KRPoint{ID: point.ID, KRID: id, Kind: point.Kind, Title: point.Title, SortOrder: index}
-				if includeAgency {
+				if includeBiz {
 					record.MeegoWorkItemID = strings.TrimSpace(point.MeegoWorkItemID)
 					record.MeegoURL = strings.TrimSpace(point.MeegoURL)
 				}
@@ -969,7 +969,7 @@ func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRI
 					return fmt.Errorf("create point definition: %w", err)
 				}
 			}
-			if includeAgency {
+			if includeBiz {
 				if err := tx.Where("point_id = ?", point.ID).Delete(&domain.PointTag{}).Error; err != nil {
 					return fmt.Errorf("replace point tags: %w", err)
 				}
@@ -993,7 +993,7 @@ func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRI
 			return err
 		}
 
-		if includeAgency {
+		if includeBiz {
 			if err := tx.Where("kr_id = ?", id).Delete(&domain.KRTag{}).Error; err != nil {
 				return fmt.Errorf("replace tags: %w", err)
 			}
@@ -1008,8 +1008,8 @@ func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRI
 	if err != nil {
 		return KRView{}, err
 	}
-	if includeAgency {
-		return s.GetAgencyCoreKR(ctx, id)
+	if includeBiz {
+		return s.GetBizCoreKR(ctx, id)
 	}
 	return s.GetCoreKR(ctx, id)
 }
@@ -1106,7 +1106,7 @@ func (s *Service) CreateKR(ctx context.Context, objectiveID string, input Create
 	return s.GetCoreKR(ctx, id)
 }
 
-func (s *Service) CreateAgencyKR(ctx context.Context, objectiveID string, input CreateAgencyKRInput) (KRView, error) {
+func (s *Service) CreateBizKR(ctx context.Context, objectiveID string, input CreateBizKRInput) (KRView, error) {
 	input.Tags = normalizeTags(input.Tags)
 	if err := validateTags(input.Tags); err != nil {
 		return KRView{}, err
@@ -1120,7 +1120,7 @@ func (s *Service) CreateAgencyKR(ctx context.Context, objectiveID string, input 
 			return KRView{}, fmt.Errorf("create KR tag: %w", err)
 		}
 	}
-	return s.GetAgencyCoreKR(ctx, id)
+	return s.GetBizCoreKR(ctx, id)
 }
 
 func (s *Service) createKR(ctx context.Context, objectiveID, title string, owners []OwnerView, createdBy string) (string, error) {
@@ -1521,7 +1521,7 @@ func (s *Service) GetKRByPoint(ctx context.Context, pointID, week string) (KRVie
 }
 
 // GetProgressKRByPoint resolves a point through the reusable OKR view only.
-// Generic progress handlers must not read Agency-owned tag, score or Meego
+// Generic progress handlers must not read Biz-owned tag, score or Meego
 // tables merely to construct an optimistic-lock conflict response.
 func (s *Service) GetProgressKRByPoint(ctx context.Context, pointID, week string) (KRView, error) {
 	var point domain.KRPoint
@@ -1752,7 +1752,7 @@ func validatePointTags(tags []TagView) error {
 	return nil
 }
 
-func validateReplaceInput(id string, input ReplaceKRInput, includeAgency bool) error {
+func validateReplaceInput(id string, input ReplaceKRInput, includeBiz bool) error {
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(input.Title) == "" {
 		return fmt.Errorf("kr id and title are required")
 	}
@@ -1774,16 +1774,16 @@ func validateReplaceInput(id string, input ReplaceKRInput, includeAgency bool) e
 		if len(point.Entries) > 0 || len(point.PreviousEntries) > 0 {
 			return fmt.Errorf("weekly progress cannot be written through the OKR definition endpoint")
 		}
-		if includeAgency && point.Tags == nil {
+		if includeBiz && point.Tags == nil {
 			return fmt.Errorf("point tags are required; use [] for no tags")
 		}
-		if includeAgency {
+		if includeBiz {
 			if err := validatePointTags(point.Tags); err != nil {
 				return fmt.Errorf("invalid tags for point %s: %w", point.ID, err)
 			}
 		}
 	}
-	if includeAgency {
+	if includeBiz {
 		if err := validateTags(input.Tags); err != nil {
 			return err
 		}

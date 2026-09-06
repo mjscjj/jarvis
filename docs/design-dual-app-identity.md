@@ -81,7 +81,7 @@ Jarvis 同时承担两件性质完全不同的事，需要两个飞书应用分�
 
 - **lark-cli 不读这里的配置。** 它用自己的本机登录态（`lark-cli auth status` 仍是 `cli_a96a0c8d82b85cb1`），头像搜索、人员搜索、发消息一律走主应用。`identity.app_id` 只被 OKR 登录流程和 chat sidecar 使用。
 - **没有跨应用的 open_id join。** `updated_by`、`created_by`、`opened_by`、`author_open_id` 都是只写不 join 的审计字段，既不参与鉴权也不与 KR 负责人（主应用命名空间）做匹配。换应用后新记录进入新命名空间，不会与既有数据冲突。
-- **chat sidecar 按值传递配对凭证。** `GET /api/agency-okr/feishu-identity` 在同一个响应里返回 `app_id` 和 token 文件路径，sidecar 原样拼进 `LARKSUITE_CLI_APP_ID=… LARKSUITE_CLI_USER_ACCESS_TOKEN=… lark-cli … --as user`。app_id 与 token 始终成对，不存在拿主应用 id 去配 OKR 应用 token 的可能。
+- **chat sidecar 按值传递配对凭证。** `GET /api/biz-okr/feishu-identity` 在同一个响应里返回 `app_id` 和 token 文件路径，sidecar 原样拼进 `LARKSUITE_CLI_APP_ID=… LARKSUITE_CLI_USER_ACCESS_TOKEN=… lark-cli … --as user`。app_id 与 token 始终成对，不存在拿主应用 id 去配 OKR 应用 token 的可能。
 
 ## 真源
 
@@ -111,18 +111,18 @@ Jarvis 同时承担两件性质完全不同的事，需要两个飞书应用分�
 
 | 环节 | 结果 |
 |---|---|
-| `GET /api/agency-okr/me` 未登录 | `configured: true, authenticated: false` |
-| 未登录 `POST /api/agency-okr/comments` | 401 `40180 请先使用飞书登录` |
-| 只读 `GET /api/agency-okr/comments` | 200，不需要登录 |
+| `GET /api/biz-okr/me` 未登录 | `configured: true, authenticated: false` |
+| 未登录 `POST /api/biz-okr/comments` | 401 `40180 请先使用飞书登录` |
+| 只读 `GET /api/biz-okr/comments` | 200，不需要登录 |
 | device flow 发起与轮询 | 走通，`completed` |
 | 会话落库 | `open_id` 为 Emily Pro 命名空间，`union_id` 为跨应用稳定值 |
 | session cookie | `jarvis_okr_session`，HttpOnly，7 天 |
 | 已登录发评论 | 署名 `储节节` + `author_union_id`，落库并可读回 |
 | token 落盘 | `<新 open_id>.json`，含 `union_id` 与 refresh token |
-| `GET /api/agency-okr/feishu-identity` | 返回 Emily Pro 的 `app_id` 与配对 token 路径 |
+| `GET /api/biz-okr/feishu-identity` | 返回 Emily Pro 的 `app_id` 与配对 token 路径 |
 | lark-cli 吃 Emily Pro 的 user token | 接受，`identity: user`，读到云空间 341 个文件 |
 | 回归：人员搜索、头像 | 正常，返回的仍是主应用 open_id |
 | 主应用身份 | `lark-cli auth status` 仍为 `cli_a96a0c8d82b85cb1`，未受影响 |
-| `POST /api/agency-okr/auth/logout` | 会话失效，`me` 回到未登录，写评论重新 401 |
+| `POST /api/biz-okr/auth/logout` | 会话失效，`me` 回到未登录，写评论重新 401 |
 
 未通过的一项是授权范围：见上文「授权范围的真正生效点是开发者后台」。

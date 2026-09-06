@@ -83,7 +83,7 @@ type Options struct {
 	// SystemPrompts reads the chat role and OKR principles from their Markdown truth sources.
 	SystemPrompts textstore.Reader
 	// FeishuIdentities resolves the signed-in user's own Feishu credentials.
-	// Optional: nil when the OKR module identity is not configured, in which
+	// Optional: nil when the Biz OKR identity is not configured, in which
 	// case conversations keep using the machine's lark-cli identity only.
 	FeishuIdentities FeishuIdentityResolver
 }
@@ -396,7 +396,7 @@ func (s *Service) feishuIdentityBlock(ctx context.Context, req Request) string {
 	if err != nil {
 		b.WriteString(fmt.Sprintf("- open_id：%s\n", openID))
 		b.WriteString(fmt.Sprintf("- 该用户的飞书凭证当前不可用：%v\n", err))
-		b.WriteString("- 需要以该用户身份读取飞书内容时，先告诉他重新在 OKR 模块登录一次飞书；不要改用其它身份替他访问。\n")
+		b.WriteString("- 需要以该用户身份读取飞书内容时，先告诉他重新在 Biz OKR 登录一次飞书；不要改用其它身份替他访问。\n")
 		return strings.TrimSpace(b.String())
 	}
 	b.WriteString(fmt.Sprintf("- 姓名：%s\n", identity.Name))

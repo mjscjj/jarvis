@@ -29,7 +29,7 @@ func NewHTTPFeishuIdentities(mainAddr string, client *http.Client) (FeishuIdenti
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
-	return &httpFeishuIdentities{endpoint: "http://" + mainAddr + "/api/agency-okr/feishu-identity", client: client}, nil
+	return &httpFeishuIdentities{endpoint: "http://" + mainAddr + "/api/biz-okr/feishu-identity", client: client}, nil
 }
 
 func (h *httpFeishuIdentities) Resolve(ctx context.Context, openID string) (FeishuIdentity, error) {

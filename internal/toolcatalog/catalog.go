@@ -56,7 +56,7 @@ func Block(stage string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// okrReviewBlock describes the split between the generic OKR and Agency OKR
+// okrReviewBlock describes the split between the generic OKR and Biz OKR
 // scripts. The Preview review agent only uses their read commands; write
 // commands remain subject to the stage prompt even when their ownership is
 // called out here.
@@ -66,7 +66,7 @@ func okrReviewBlock() string {
 		"当前阶段：" + StageOKRReview,
 		"两个脚本都已在 PATH 中，服务地址由 `JARVIS_API_BASE` 环境变量提供，直接执行即可，不需要自己解析配置或构建任何东西。所有命令输出 JSON。",
 		"- okr-module-tools：通用 OKR 定义、Metric/Point/Owner 拆解和正式进展。`scope` / `board` 读季度结构；`find-krs` / `get-kr` 定位 KR；`weeks`、`progress-board`、`get-weekly-kr` 读取正式周次和进展；`replace-kr` 是通用拆解写入口，当前 Preview review 阶段不调用写命令。",
-		"- agency-okr-tools：Agency 业务组合视图。`board [--quarter Q] [--week YYYY-Www]` 读包含标签、评分与 Meego 信息的周报；`get-kr` / `get-weekly-kr` 读 Agency 组合 KR；`comments`、`follow-ups` 读取协作信息；`people-search` 查人。",
+		"- biz-okr-tools：Biz 业务组合视图。`board [--quarter Q] [--week YYYY-Www]` 读包含标签、评分与 Meego 信息的周报；`get-kr` / `get-weekly-kr` 读 Biz 组合 KR；`comments`、`follow-ups` 读取协作信息；`people-search` 查人。",
 		"- `find-krs` 单次输出可能上千行。先用它定位 ID，再用 `get-kr` / `get-weekly-kr` 取需要的那一个，不要把整季数据全部读进来。",
 		"END_AVAILABLE_TOOLS",
 	}

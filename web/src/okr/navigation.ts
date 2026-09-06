@@ -4,10 +4,10 @@ export const OKR_TAB_DEFINITIONS = [
   { key: 'manage', label: '管理与打标', group: 'okr' },
   { key: 'okr-plan', label: 'OKR Plan', group: 'okr' },
   { key: 'agent-flows', label: '自动化流程', group: 'okr' },
-  { key: 'review-fill', label: 'Review 填写', group: 'review', requiresModule: 'agency-okr' },
-  { key: 'review-meeting', label: 'Review 会议', group: 'review', requiresModule: 'agency-okr' },
-  { key: 'weekly-fill', label: '周报填写', group: 'weekly', requiresModule: 'agency-okr' },
-  { key: 'weekly-meeting', label: '周报会议', group: 'weekly', requiresModule: 'agency-okr' },
+  { key: 'review-fill', label: 'Review 填写', group: 'review', requiresModule: 'biz-okr' },
+  { key: 'review-meeting', label: 'Review 会议', group: 'review', requiresModule: 'biz-okr' },
+  { key: 'weekly-fill', label: '周报填写', group: 'weekly', requiresModule: 'biz-okr' },
+  { key: 'weekly-meeting', label: '周报会议', group: 'weekly', requiresModule: 'biz-okr' },
 ] as const
 
 export type OKRTab = typeof OKR_TAB_DEFINITIONS[number]['key']

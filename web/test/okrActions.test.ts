@@ -55,7 +55,7 @@ test('manual action creates an ordinary Agent Task without requiring a schedule'
   assert.equal(input.title, 'OKR · 周报催填')
   assert.equal(input.action_type, 'agent_task')
   assert.deepEqual(input.background, {
-    module: 'agency-okr',
+    module: 'biz-okr',
     skill: 'okr-agent-orchestrator',
     action_key: 'remind_missing',
     prompt_key: 'okr_agent_weekly_reminder',
@@ -70,7 +70,7 @@ test('stores only fixed action identity and prompt binding in scheduler context'
   assert.equal(input.weekday, 3)
   assert.equal(input.daily_time, '10:30')
   assert.deepEqual(input.context_snapshot, {
-    module: 'agency-okr',
+    module: 'biz-okr',
     skill: 'okr-agent-orchestrator',
     action_key: 'meeting_summary',
     prompt_key: 'okr_agent_report_c',
@@ -85,7 +85,7 @@ test('recognizes fixed schedules and preserves editable timing only', () => {
     weekday: 4,
     daily_time: '11:15',
     context_snapshot: {
-      module: 'agency-okr', skill: 'okr-agent-orchestrator',
+      module: 'biz-okr', skill: 'okr-agent-orchestrator',
       action_key: 'publish_report', prompt_key: 'okr_agent_report_b',
     },
   })

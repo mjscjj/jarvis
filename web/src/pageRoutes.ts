@@ -5,7 +5,7 @@ const pageHashes: Record<string, string> = {
   overview: '/today',
   tasks: '/work',
   progress: '/review',
-  'agency-okr': '/okr',
+  'biz-okr': '/biz-okr',
   background: '/memory',
   agents: '/agents',
   todos: '/manage/clues',
@@ -18,6 +18,10 @@ const pageHashes: Record<string, string> = {
 const pageKeysByHash = Object.fromEntries(
   Object.entries(pageHashes).map(([key, path]) => [path, key]),
 ) as Record<string, string>
+
+const legacyPageKeysByHash: Record<string, string> = {
+  '/okr': 'biz-okr',
+}
 
 export interface HashRoute {
   key: string
@@ -39,12 +43,12 @@ export function routeFromHash(hash: string, initialKey: string): HashRoute {
     const id = Number(todoMatch[1])
     return { key: 'todos', selection: { kind: 'todo', id, label: `线索 #${id}` }, viewState }
   }
-  // Shared weekly-report links use the Agency OKR module while switching its
+  // Shared weekly-report links use the Biz OKR module while switching its
   // surface to the weekly fill, meeting, or Review view.
   if (path === '/weekly-report') {
-    return { key: 'agency-okr', selection: null, viewState: { ...viewState, share: WEEKLY_SHARE_SCOPE, tab: viewState.tab || 'weekly-fill' } }
+    return { key: 'biz-okr', selection: null, viewState: { ...viewState, share: WEEKLY_SHARE_SCOPE, tab: viewState.tab || 'weekly-fill' } }
   }
-  return { key: pageKeysByHash[path] || initialKey, selection: null, viewState }
+  return { key: pageKeysByHash[path] || legacyPageKeysByHash[path] || initialKey, selection: null, viewState }
 }
 
 export function pageHash(
@@ -52,7 +56,7 @@ export function pageHash(
   selection: PageSelection | null,
   viewState: Record<string, string>,
 ): string {
-  const weeklyShare = key === 'agency-okr' && isWeeklyShareViewState(viewState)
+  const weeklyShare = key === 'biz-okr' && isWeeklyShareViewState(viewState)
   const basePath = weeklyShare ? '/weekly-report' : pageHashes[key]
   if (!basePath) throw new Error(`unknown page key: ${key}`)
   let path = basePath
