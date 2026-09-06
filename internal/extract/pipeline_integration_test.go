@@ -191,9 +191,9 @@ func TestPipelineLive(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	stats, err := worker.ExtractOnce(ctx)
+	stats, _, err := worker.ExtractChat(ctx, chatID)
 	if err != nil {
-		t.Fatalf("ExtractOnce() error = %v", err)
+		t.Fatalf("ExtractChat() error = %v", err)
 	}
 	if stats.ChatsProcessed != 1 || stats.Units != 1 || stats.Created < 1 {
 		t.Fatalf("stats = %#v", stats)
