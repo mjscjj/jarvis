@@ -110,9 +110,29 @@ func TestLogoutInvalidatesOnlyJarvisSession(t *testing.T) {
 	}
 }
 
+func TestDisabledAuthenticationDoesNotInvokeByteDanceSSO(t *testing.T) {
+	service, err := NewServiceWithRunner("bytedcli", 12*time.Hour, false, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		t.Fatal("disabled authentication must not invoke bytedcli")
+		return nil, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view := service.Status(""); view.Enabled || view.Status != StatusUnauthenticated || view.User != nil {
+		t.Fatalf("Status() = %#v, want disabled view", view)
+	}
+	result, err := service.Login(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Enabled || result.Status != StatusUnauthenticated || result.SessionToken != "" {
+		t.Fatalf("Login() = %#v, want disabled view without session", result)
+	}
+}
+
 func newTestService(t *testing.T, runner CommandRunner) *Service {
 	t.Helper()
-	service, err := NewServiceWithRunner("bytedcli", 12*time.Hour, runner)
+	service, err := NewServiceWithRunner("bytedcli", 12*time.Hour, true, runner)
 	if err != nil {
 		t.Fatal(err)
 	}

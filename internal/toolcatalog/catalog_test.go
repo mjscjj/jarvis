@@ -19,6 +19,7 @@ func TestEveryStageExposesTheSameMachineCapabilities(t *testing.T) {
 			"同一套工具能力", "参数、环境和权限硬校验", "通用世界实体", "关系",
 			"query-messages", "query-captured-resources", "get-captured-resource",
 			"list-facts", "get-page", "update-page", "list-pages", "yield-until", "JARVIS_TASK_ID",
+			"get-world-progress", "create-world-progress", "update-world-progress",
 			"JARVIS_AGENT_STAGE=proactive",
 		} {
 			if !strings.Contains(block, required) {

@@ -50,7 +50,7 @@ func CompleteByteDanceLogin(service *authn.Service) app.HandlerFunc {
 		if errors.Is(err, authn.ErrPending) {
 			c.JSON(consts.StatusOK, map[string]any{
 				"code": 0,
-				"data": authn.View{Status: authn.StatusPending},
+				"data": authn.View{Enabled: true, Status: authn.StatusPending},
 			})
 			return
 		}
@@ -69,7 +69,7 @@ func LogoutFromJarvis(service *authn.Service) app.HandlerFunc {
 		c.SetCookie(authn.CookieName, "", -1, "/", "", protocol.CookieSameSiteStrictMode, false, true)
 		c.JSON(consts.StatusOK, map[string]any{
 			"code": 0,
-			"data": authn.View{Status: authn.StatusUnauthenticated},
+			"data": service.Status(""),
 		})
 	}
 }

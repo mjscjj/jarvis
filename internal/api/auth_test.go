@@ -24,7 +24,7 @@ func (r authRunner) Run(_ context.Context, bin string, args ...string) ([]byte, 
 }
 
 func TestLoginWithByteDanceSetsJarvisSessionCookie(t *testing.T) {
-	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, authRunner{run: func(_ string, args []string) ([]byte, error) {
+	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, authRunner{run: func(_ string, args []string) ([]byte, error) {
 		if strings.Join(args, " ") != "--json auth status" {
 			t.Fatalf("args = %v", args)
 		}
@@ -46,7 +46,7 @@ func TestLoginWithByteDanceSetsJarvisSessionCookie(t *testing.T) {
 }
 
 func TestCompleteByteDanceLoginRequiresFlowID(t *testing.T) {
-	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, authRunner{run: func(_ string, _ []string) ([]byte, error) {
+	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, authRunner{run: func(_ string, _ []string) ([]byte, error) {
 		return nil, nil
 	}})
 	if err != nil {
@@ -66,5 +66,31 @@ func TestCompleteByteDanceLoginRequiresFlowID(t *testing.T) {
 	var payload map[string]any
 	if err := json.Unmarshal(response.Body(), &payload); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGetAuthStatusReportsDisabledBrowserGate(t *testing.T) {
+	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, false, authRunner{run: func(_ string, _ []string) ([]byte, error) {
+		t.Fatal("disabled authentication must not invoke bytedcli")
+		return nil, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := server.Default()
+	h.GET("/api/auth/status", GetAuthStatus(service))
+
+	response := ut.PerformRequest(h.Engine, "GET", "/api/auth/status", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	var payload struct {
+		Data authn.View `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data.Enabled || payload.Data.Status != authn.StatusUnauthenticated {
+		t.Fatalf("view = %#v, want disabled", payload.Data)
 	}
 }

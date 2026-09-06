@@ -1196,6 +1196,7 @@ export interface AuthUser {
 }
 
 export interface AuthView {
+  enabled: boolean
   status: 'authenticated' | 'unauthenticated' | 'pending'
   user?: AuthUser
   verification_url?: string

@@ -160,6 +160,10 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSettings, err)
 	}
 	override := runtimeOverrideFromSettings(input)
+	// Browser authentication is deployment-local rather than editable on the
+	// settings page. Preserve its active value when that page rewrites the
+	// runtime overlay.
+	override.Auth = cfg.Auth
 	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
 	override.LarkCLI.Bin = cfg.LarkCLI.Bin
 	override.DailyDigest.GitAuthor = cfg.DailyDigest.GitAuthor
@@ -337,6 +341,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 
 type runtimeOverride struct {
 	Identity IdentityConfig `yaml:"identity"`
+	Auth     AuthConfig     `yaml:"auth"`
 	Extract  struct {
 		PrincipalOpenID       string  `yaml:"principal_open_id"`
 		Enabled               bool    `yaml:"enabled"`

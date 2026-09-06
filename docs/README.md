@@ -64,6 +64,7 @@
 | [CC Connect 支持飞书文档评论](design-cc-connect-feishu-document-comments.md) | proposal | cc-connect 复用现有 Feishu 长连接接收 `@Bot` 评论，并把 Agent 最终答案写回原评论卡片；尚未实现 |
 | [处理中标记的收尾](design-task-processing-marker.md) | proposal | M5 终态时由 runtime 撤回 `OnIt` reaction；当前只加不撤。含跨轮残留待实测项，以及「撤干净 vs 留结论表情」待 principal 决策 |
 | [世界模型 3D 视图](summery/world-model-3d-plan.md) | proposal | 复用现有 Pages API，以开源 3D 图组件提供活跃全局、全量搜索、一跳聚焦与实体详情；尚未实现 |
+| [OKR 与 Jarvis 世界模型整合方案](summery/okr-jarvis-world-model-integration.md) | proposal | OKR 内置业务插件、Jarvis 现实执行轴、双进展、跨模块关系和 World Graph 读取层；当前仅模块开关、既有领域表、EntityRelation、Page/Fact 及部分 Skills 已存在 |
 
 ## 研究
 

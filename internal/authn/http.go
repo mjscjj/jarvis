@@ -16,7 +16,7 @@ const CookieName = "jarvis_session"
 func BrowserMiddleware(service *Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		path := string(c.Path())
-		if !strings.HasPrefix(path, "/api/") || isPublicPath(path) || !isBrowserRequest(c) {
+		if !service.Enabled() || !strings.HasPrefix(path, "/api/") || isPublicPath(path) || !isBrowserRequest(c) {
 			c.Next(ctx)
 			return
 		}

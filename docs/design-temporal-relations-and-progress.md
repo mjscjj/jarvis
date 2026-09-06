@@ -6,11 +6,12 @@
 
 ## 1. 目标
 
-Jarvis 已用 `project`、`person`、`feishu_group`、`todo`、`task`、`resource` 等业务表保存实体。本方案补充三类信息：
+Jarvis 已用 `project`、`person`、`feishu_group`、`todo`、`task`、`resource` 等业务表保存实体。本方案补充四类信息：
 
 1. `task_event`：Task 的结构化状态变化。
 2. `fact`：任意主体（项目、群、人……）的自然语言事实流。
 3. `entity_relation`：跨核心实体与可选模块实体的带证据映射。
+4. `world_progress`：Jarvis 对外部主体在某个周期内的证据化判断快照。
 
 实体长期事实仍写入 Page 正文并用 Markdown 引用形成 backlinks；`EntityRelation` 不复制这些叙述，而是服务代码和模块确实需要查询、过滤或投影的通用映射。
 
@@ -95,6 +96,14 @@ created_at
 
 ## 6. API
 
+### 6.1 WorldProgress
+
+`world_progress` 使用 `(subject_type, subject_id, period_key)` 唯一键，保存 `signal`、自然语言 `summary`、宽松 `evidence`、`evidence_until`、`assessed_at` 和 CAS `version`。`signal` 只提供 `unknown/green/yellow/red` 四种机器可筛选颜色；具体处境、变化、风险和下一观察点都写在 summary。`assessed_at` 是 Jarvis 形成判断的时间，`evidence_until` 是本次判断所覆盖证据的截止时间，两者不能混用。
+
+它不是 Fact，不冒充客观事件，也不替代外部产品的正式进展。首个主体适配器只接受 `okr_point`：创建和更新时确认周报模块已启用且 Point 存在；读取历史行不依赖模块当前可用。相同内容更新是 no-op，不递增版本或刷新评估时间。
+
+### 6.2 接口
+
 ```text
 GET    /api/tasks/:task_id/events
 
@@ -109,6 +118,11 @@ GET    /api/pages/:type/:id/backlinks
 GET    /api/relations
 POST   /api/relations
 DELETE /api/relations/:relation_id
+
+GET    /api/world-progress?subject_type=okr_point&subject_id=...&period_key=...
+GET    /api/world-progress/:world_progress_id
+POST   /api/world-progress
+PUT    /api/world-progress/:world_progress_id
 ```
 
 记录事实请求：

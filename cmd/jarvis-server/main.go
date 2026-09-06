@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"net"
@@ -55,6 +56,7 @@ import (
 	"jarvis/internal/taskfeedback"
 	"jarvis/internal/textstore"
 	"jarvis/internal/workrule"
+	"jarvis/internal/worldprogress"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -526,6 +528,28 @@ func main() {
 		if err != nil {
 			fatalf("initialize OKR identity service failed: %v", err)
 		}
+	}
+	worldProgressService, err := worldprogress.NewService(db, func(ctx context.Context, subjectType, subjectID string) error {
+		if subjectType != "okr_point" {
+			return errors.Join(worldprogress.ErrInvalidInput, errors.New("only okr_point subjects are supported"))
+		}
+		enabled, err := appModuleService.Enabled(ctx, "weekly-report")
+		if err != nil {
+			return err
+		}
+		if !enabled || okrWorkspaceService == nil {
+			return worldprogress.ErrSubjectUnavailable
+		}
+		if _, err := okrWorkspaceService.GetCoreKRByPointID(ctx, subjectID); err != nil {
+			if errors.Is(err, okrworkspace.ErrNotFound) {
+				return worldprogress.ErrNotFound
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		fatalf("initialize world progress service failed: %v", err)
 	}
 	pluginRegistry, err := plugin.BuiltinRegistry()
 	if err != nil {
@@ -1023,7 +1047,7 @@ func main() {
 	)
 	h.Use(observability.Middleware())
 	h.Use(api.StaticAssetCacheHeaders())
-	authService, err := authn.NewService("bytedcli", 12*time.Hour)
+	authService, err := authn.NewService("bytedcli", 12*time.Hour, cfg.Auth.IsEnabled())
 	if err != nil {
 		fatalf("initialize ByteDance SSO service failed: %v", err)
 	}
@@ -1100,6 +1124,7 @@ func main() {
 		Skills:             runtimeSkills,
 		Progress:           progressService,
 		FactQueries:        progressService,
+		WorldProgress:      worldProgressService,
 		Overview:           overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		MeetingReviews:  meetingReviewService,
 		DailyDigests:    dailyDigestService,

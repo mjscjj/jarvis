@@ -67,6 +67,25 @@ func TestBrowserMiddlewareAllowsPublicClueEndpoint(t *testing.T) {
 	}
 }
 
+func TestBrowserMiddlewareAllowsBrowserWhenAuthenticationDisabled(t *testing.T) {
+	service, err := NewServiceWithRunner("bytedcli", time.Hour, false, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		t.Fatal("disabled authentication must not invoke bytedcli")
+		return nil, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := server.Default()
+	h.Use(BrowserMiddleware(service))
+	h.GET("/api/tasks", okHandler())
+
+	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks", nil,
+		ut.Header{Key: "Sec-Fetch-Mode", Value: "cors"})
+	if response.Result().StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d, want 200", response.Result().StatusCode())
+	}
+}
+
 func okHandler() app.HandlerFunc {
 	return func(_ context.Context, c *app.RequestContext) {
 		c.Status(consts.StatusOK)

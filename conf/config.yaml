@@ -6,6 +6,11 @@
 identity:
   display_name: "Jarvis"
 
+# Jarvis 管理页面的外层浏览器门禁。只控制 Web 访问，不控制 OKR 等模块
+# 自己使用的飞书身份；本地开发可在 config.runtime.yaml 中覆盖为 false。
+auth:
+  enabled: true
+
 server:
   addr: "0.0.0.0:18800"
   public_base_url: ""                     # 对外可打开的根地址（形如 https://emily.example/）；分享链接用它替换浏览器地址栏里的 IP，留空表示沿用当前地址

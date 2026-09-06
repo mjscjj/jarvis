@@ -14,6 +14,7 @@
 
 ## 当前内容
 
+- [OKR 与 Jarvis 世界模型整合方案](okr-jarvis-world-model-integration.md)
 - [Jarvis 主动式数字分身架构图绘制说明](jarvis-proactive-digital-twin-architecture.md)
 - [SVG 可编辑源图](jarvis-proactive-digital-twin-architecture.svg)
 - [PNG 预览图](jarvis-proactive-digital-twin-architecture.png)

@@ -19,7 +19,7 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "update-page", "list-pages", "list-backlinks", "list-relations", "create-relation"} {
+	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "update-page", "list-pages", "list-backlinks", "list-relations", "create-relation", "get-world-progress", "create-world-progress", "update-world-progress"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
@@ -279,6 +279,8 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"update-page", []string{"--type", "project", "--id", "7", "--content", "hello", "--if-unchanged-since", "2026-08-15T00:00:00Z"}, http.MethodPut, "/api/pages/project/7"},
 		{"create-relation", []string{"--payload", `{"source_type":"okr_kr","source_id":"kr-1","relation_type":"projects_to","target_type":"project","target_id":"7"}`}, http.MethodPost, "/api/relations"},
 		{"append-facts-batch", []string{"--payload", `[{"subject_type":"project","subject_id":1,"description":"d1"},{"subject_type":"project","subject_id":2,"description":"d2"}]`}, http.MethodPost, "/api/facts/batch"},
+		{"create-world-progress", []string{"--payload", `{"expected_version":0,"subject_type":"okr_point","subject_id":"point-1","period_key":"2026-W36","signal":"yellow","summary":"waiting","evidence":{},"evidence_until":"2026-09-06T09:00:00Z"}`}, http.MethodPost, "/api/world-progress"},
+		{"update-world-progress", []string{"--id", "11", "--payload", `{"expected_version":0,"signal":"green","summary":"done","evidence":{},"evidence_until":"2026-09-06T10:00:00Z"}`}, http.MethodPut, "/api/world-progress/11"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {
@@ -298,6 +300,40 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestJarvisToolsWorldProgressUsesExactReadKeysAndAcceptsCreated(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/world-progress/9":
+			fmt.Fprint(w, `{"code":0,"data":{"id":9,"evidence":{"value":9007199254740993}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/world-progress":
+			if r.URL.Query().Get("subject_type") != "okr_point" || r.URL.Query().Get("subject_id") != "point / 1" || r.URL.Query().Get("period_key") != "2026-W36" {
+				t.Fatalf("query = %v", r.URL.Query())
+			}
+			fmt.Fprint(w, `{"code":0,"data":{"id":10}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/world-progress":
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprint(w, `{"code":0,"data":{"id":11}}`)
+		default:
+			t.Fatalf("request = %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	out, err := runJarvisTools(t, server.URL, nil, "get-world-progress", "--id", "9")
+	if err != nil || !strings.Contains(out, "9007199254740993") {
+		t.Fatalf("id read output=%s error=%v", out, err)
+	}
+	out, err = runJarvisTools(t, server.URL, nil, "get-world-progress", "--subject-type", "okr_point", "--subject-id", "point / 1", "--period-key", "2026-W36")
+	if err != nil || !strings.Contains(out, `"id":10`) {
+		t.Fatalf("key read output=%s error=%v", out, err)
+	}
+	out, err = runJarvisTools(t, server.URL, nil, "create-world-progress", "--payload", `{"expected_version":0}`)
+	if err != nil || !strings.Contains(out, `"id":11`) {
+		t.Fatalf("create output=%s error=%v", out, err)
 	}
 }
 

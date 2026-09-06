@@ -40,6 +40,7 @@ func Block(stage string) (string, error) {
 		"- jarvis-tools：查询和维护 Jarvis 的通用世界实体、关系、资源、消息、共享记忆、Skills、线索、任务与定时触发。先运行 `jarvis-tools --help` 看能力分组，再按子命令 `--help` 获取参数和机器约束。可选业务模块的能力只从当前已启用的 Skill 获取。",
 		"- list/query 命令返回紧凑摘要，get 命令返回单个对象详情；大段 prompt、run output、资源正文需要通过对应显式参数或 get 命令加载。",
 		"- 实体的长期事实用 `get-page` / `update-page` 读写，索引用 `list-pages`，历史明细用 `list-facts` 按主体和日期下钻。",
+		"- Jarvis 对外部主体的周期判断用 `get-world-progress` 读取，用 `create-world-progress` / `update-world-progress` 持久化；它不替代外部系统的正式进展。",
 		"- `list-todos` / `list-tasks` 返回摘要和来源消息 ID；用 `--query` 搜索、`--source-message-id` 精确匹配原生消息 ID，可加 `--project-id` / `--group-id`，用 `--page` / `--limit` 翻页。Task 查询覆盖所有来源和完成、失败状态。",
 		"- `get-task` / `get-todo --id ID` 默认给来源原文与简短说明；`--context conversation|background|SECTION` 直接读冻结会话、背景或指定区块，`--message-id ID` 读冻结快照中的单条原文，`--context full` 显式展开全部。Todo 后续读取可带 `--revision` 防止跨修订混读。",
 		"- `list-task-runs --id TASK_ID --page N --limit N` 查历史摘要；`get-task-run --id RUN_ID` 读完整结果和 effects，`--include-prompt` 才加载该 run 的 prompt。",

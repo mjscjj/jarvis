@@ -25,6 +25,7 @@ import (
 	"jarvis/internal/textstore"
 	"jarvis/internal/toolquery"
 	"jarvis/internal/workrule"
+	"jarvis/internal/worldprogress"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"gorm.io/gorm"
@@ -63,6 +64,7 @@ type Dependencies struct {
 	Skills             SkillService
 	Progress           progress.EventService
 	FactQueries        progress.FactQueryService
+	WorldProgress      worldprogress.AssessmentService
 	Overview           *insight.OverviewService
 	Digests            *insight.DigestService
 	DailyDigests       DailyDigestService      // 每日进度总结（个人/关键群均用 codex）；nil 则不注册 /api/daily-digests 路由
@@ -168,6 +170,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.FactQueries == nil {
 		return fmt.Errorf("api fact query service dependency is nil")
 	}
+	if deps.WorldProgress == nil {
+		return fmt.Errorf("api world progress service dependency is nil")
+	}
 	if deps.Overview == nil {
 		return fmt.Errorf("api overview service dependency is nil")
 	}
@@ -269,6 +274,10 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/facts/batch", AppendFacts(deps.Progress))
 	h.GET("/api/facts/timeline", FactTimeline(deps.FactQueries, deps.FactTimelineLoc))
 	h.GET("/api/facts/search", SearchFacts(deps.FactQueries))
+	h.GET("/api/world-progress", GetWorldProgressBySubjectPeriod(deps.WorldProgress))
+	h.GET("/api/world-progress/:world_progress_id", GetWorldProgress(deps.WorldProgress))
+	h.POST("/api/world-progress", CreateWorldProgress(deps.WorldProgress))
+	h.PUT("/api/world-progress/:world_progress_id", UpdateWorldProgress(deps.WorldProgress))
 	h.GET("/api/persons", ListPersons(deps.Persons))
 	h.POST("/api/persons/resolve", ResolvePerson(deps.Resolve))
 	h.POST("/api/persons", CreatePerson(deps.Persons))

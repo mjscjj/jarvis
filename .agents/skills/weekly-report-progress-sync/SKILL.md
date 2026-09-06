@@ -1,6 +1,6 @@
 ---
 name: weekly-report-progress-sync
-description: 只读巡检已启用周报模块相关的 Meego 工作项和已采集飞书消息，经通用关系与 Page/Fact 工具写回世界模型。用于周进度同步和定时巡检；不发送消息，也不把 OKR 物化成 Task。
+description: 只读巡检已启用周报模块的人工进展、Meego 工作项和已采集飞书消息，经通用关系与 Page/Fact/WorldProgress 工具写回世界模型。用于周进度同步和定时巡检；不发送消息、不修改正式周报，也不把 OKR 物化成 Task。
 module: weekly-report
 ---
 
@@ -12,10 +12,11 @@ module: weekly-report
 
 - 外部系统只读。Meego 使用 `bytedcli` 查询；飞书消息只读本地已采集数据，必要时使用 `lark-cli` 查询，但不调用任何发送、更新或删除命令。
 - 不发送真实飞书消息，不催办，不修改 Meego 工作项。
-- 不为来源新建 Go 专用流水线。原始 Meego 证据通过 `jarvis-tools append-clue` 进入统一证据流；确定的实体进展通过 `update-page` 和 `append-fact` 写回。
+- 不为来源新建 Go 专用流水线。原始 Meego 证据通过 `jarvis-tools append-clue` 进入统一证据流；确定的实体进展通过 `update-page` 和 `append-fact` 写回；对 Point 的周期判断通过 WorldProgress 原子工具维护。
 - 没有直接证据就不更新状态。工具输出不完整时记录覆盖缺口，不把“查不到”写成“没有进展”。
 - 只处理未闭环 OKR。已闭环 OKR 的项目仍可独立维护，但不得新建或移动项目到已闭环 OKR。
-- 本固定行动的 Prompt 只要求写通用 Clue、Fact、Page 和 Meego 观察快照，因此本轮不调用 `open-week`、周进展增删改或 `confirm-meego-progress`。这些工具可供其它明确要求写周报的 Prompt 使用，不能因为工具存在就扩张本轮目标。
+- 人工 KRProgress 和 WeeklyKRCore 只作为本轮判断输入，不默认逐条复制成 Clue；只有其中包含尚未采集且值得进入通用证据流的独立外部事实时才投递。
+- 本固定行动的 Prompt 只允许写通用 Clue、Fact、Page、WorldProgress 和 Meego 观察快照，因此本轮不调用 `open-week`、周进展增删改或 `confirm-meego-progress`。这些工具可供其它明确要求写周报的 Prompt 使用，不能因为工具存在就扩张本轮目标。
 
 ## 1. 建立本轮范围
 
@@ -95,7 +96,50 @@ jarvis-tools query-messages --sender-open-id <owner_open_id> --keyword '<项目�
 2. 世界 Page 第一行保持一句话结论，后续写当前状态、风险、下一检查点，并引用已确认的下级实体。
 3. 不调用 `create-task`、`start-task` 或任何消息发送命令。
 
-## 5. 定时巡检
+## 5. 形成 Point 周期判断
+
+只在 Point 与现实证据之间已有可靠映射，或存在其它足够直接的证据时维护 WorldProgress。KeyMatter 是现实事项，不是进展判断本身；不能把它的 status 机械复制成 Point 进展。
+
+先读取同一 Point 和周次：
+
+```bash
+jarvis-tools get-world-progress \
+  --subject-type okr_point --subject-id '<point_id>' --period-key '<YYYY-Www>'
+```
+
+不存在时创建，存在时携带读到的 `version` 更新：
+
+```bash
+jarvis-tools create-world-progress --payload - <<'JSON'
+{
+  "expected_version": 0,
+  "subject_type": "okr_point",
+  "subject_id": "<point_id>",
+  "period_key": "<YYYY-Www>",
+  "signal": "yellow",
+  "summary": "当前：...\n本周变化：...\n风险与缺口：...\n下一观察点：...",
+  "evidence": {"refs": ["fact:12"], "coverage": "..."},
+  "evidence_until": "<RFC3339>"
+}
+JSON
+
+jarvis-tools update-world-progress --id '<world_progress_id>' --payload - <<'JSON'
+{
+  "expected_version": 2,
+  "signal": "green",
+  "summary": "当前：...\n本周变化：...\n风险与缺口：...\n下一观察点：...",
+  "evidence": {"refs": ["fact:12", "task:39"], "coverage": "..."},
+  "evidence_until": "<RFC3339>"
+}
+JSON
+```
+
+- `signal` 只选 `unknown/green/yellow/red`，完整判断写在 summary，不另造状态词。
+- `evidence_until` 是证据覆盖截止时间，不是执行时间；没有新证据时不刷新。
+- 相同内容不重复写；409 冲突时重新读取并根据新内容重新判断。
+- 写后按 ID 回读。WorldProgress 是 Jarvis 独立判断，不创建或更新任何正式 KRProgress。
+
+## 6. 定时巡检
 
 周期执行必须复用 ScheduledTask；每次触发只创建一个普通 Task。不要在业务表或 OKR 上保存 scheduler 状态。
 
@@ -113,7 +157,7 @@ jarvis-tools create-scheduled-task --payload - <<'JSON'
 JSON
 ```
 
-创建前先 `list-scheduled-tasks`，存在同名 active 任务时更新它，不重复创建。定时任务的最后结果必须包含：扫描 OKR 数、Meego/消息证据数、写入 Fact 数、更新 Page 数、跳过原因和覆盖缺口。
+创建前先 `list-scheduled-tasks`，存在同名 active 任务时更新它，不重复创建。定时任务的最后结果必须包含：扫描 OKR 数、人工/Meego/消息证据数、写入 Fact 数、更新 Page 数、创建或更新 WorldProgress 数、跳过原因和覆盖缺口。
 
 ## 完成检查
 
@@ -121,5 +165,6 @@ JSON
 - 已用模块工具回读目标周的完整层级，且读取没有创建 Task。
 - 所有跨模块映射都能通过 `list-relations` 回读，且带来源证据。
 - Page CAS 冲突已经重新读取并合并；没有把历史明细覆盖掉。
+- 每个写入的 WorldProgress 都已回读，证据截止时间真实；没有新证据时没有刷新判断。
 - 没有产生 OKR 专用 Task 关系，也没有发送消息或修改外部系统。
 - 明确列出证据覆盖时间窗、查询锚点、更新项、未确认关联和失败来源。

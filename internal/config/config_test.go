@@ -393,3 +393,24 @@ func TestLoadAcceptsRuntimeOverrideWithoutBaseOnlySections(t *testing.T) {
 		t.Fatalf("sqlite.path = %q, want base config value", cfg.SQLite.Path)
 	}
 }
+
+func TestAuthDefaultsEnabledAndRuntimeOverrideCanDisableIt(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Auth.IsEnabled() {
+		t.Fatal("auth should default to enabled when omitted")
+	}
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("auth:\n  enabled: false\n"), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	cfg, err = Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() with auth override error = %v", err)
+	}
+	if cfg.Auth.IsEnabled() {
+		t.Fatal("runtime auth.enabled=false did not disable browser authentication")
+	}
+}

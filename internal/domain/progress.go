@@ -90,4 +90,28 @@ type PageRevision struct {
 
 func (PageRevision) TableName() string { return "page_revision" }
 
-func ProgressModels() []any { return []any{&TaskEvent{}, &Fact{}, &PageRevision{}} }
+// WorldProgress is Jarvis's latest evidence-backed assessment of one external
+// subject during one period. It is not an objective fact and it is not the
+// external product's official progress record. The owning adapter validates
+// SubjectType/SubjectID on writes; string IDs keep the core independent from
+// optional module tables.
+type WorldProgress struct {
+	ID            uint64         `gorm:"column:id;primaryKey;autoIncrement"`
+	SubjectType   string         `gorm:"column:subject_type;not null;size:64;uniqueIndex:uk_world_progress_subject_period,priority:1"`
+	SubjectID     string         `gorm:"column:subject_id;not null;size:128;uniqueIndex:uk_world_progress_subject_period,priority:2"`
+	PeriodKey     string         `gorm:"column:period_key;not null;size:64;uniqueIndex:uk_world_progress_subject_period,priority:3;index:idx_world_progress_period"`
+	Signal        string         `gorm:"column:signal;not null;size:16;index:idx_world_progress_signal"`
+	Summary       string         `gorm:"column:summary;not null;type:text"`
+	Evidence      datatypes.JSON `gorm:"column:evidence;not null;type:text"`
+	Version       int32          `gorm:"column:version;not null;default:0"`
+	AssessedAt    time.Time      `gorm:"column:assessed_at;not null;index:idx_world_progress_assessed"`
+	EvidenceUntil time.Time      `gorm:"column:evidence_until;not null"`
+	CreatedAt     time.Time      `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt     time.Time      `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+}
+
+func (WorldProgress) TableName() string { return "world_progress" }
+
+func ProgressModels() []any {
+	return []any{&TaskEvent{}, &Fact{}, &PageRevision{}, &WorldProgress{}}
+}

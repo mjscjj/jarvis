@@ -1,6 +1,6 @@
 ---
 name: okr-world-projector
-description: 将已启用 OKR 模块里的 O、KR、负责人和核心指标按证据投影为 Jarvis 通用实体关系；不读取周报进展，不直接访问模块数据库，不按标题相似度硬绑，也不创建 Task。
+description: 将已启用 OKR 模块里的 O、KR、Point 和核心指标按证据投影为 Jarvis 可解析节点与跨模块关系；不复制原生层级和负责人关系，不读取周报进展，不直接访问模块数据库，不按标题相似度硬绑，也不创建 Task。
 module: okr
 ---
 
@@ -21,10 +21,9 @@ scripts/okr-module-tools board --quarter <quarter>
 
 ## 读取世界模型
 
-按负责人 open_id、明确项目代号、已有关系和稳定来源引用逐步查询：
+按明确项目代号、已有关系和稳定来源引用逐步查询：
 
 ```bash
-jarvis-tools list-persons --keyword '<open_id 或姓名>' --limit 20
 jarvis-tools list-projects --keyword '<明确项目代号或名称>' --limit 20
 jarvis-tools list-key-matters --keyword '<明确事项名>' --limit 20
 jarvis-tools list-relations --source-type okr_kr --source-id '<kr_id>' --limit 100
@@ -34,24 +33,26 @@ jarvis-tools list-relations --source-type okr_kr --source-id '<kr_id>' --limit 1
 
 ## 建立通用关系
 
-关系由通用 `entity_relation` 工具持久化，来源使用模块自己的稳定 ID：
+只把需要跨模块查询的强关系写入通用 `entity_relation`，来源使用模块自己的稳定 ID。优先把 Point 映射到现实 KeyMatter：
 
 ```bash
 jarvis-tools create-relation --payload - <<'JSON'
 {
-  "source_type": "okr_kr",
-  "source_id": "<kr_id>",
-  "relation_type": "owned_by",
-  "target_type": "person",
-  "target_id": "<person_id>",
-  "evidence": {"source":"okr-module","owner_open_id":"<open_id>"},
+  "source_type": "okr_point",
+  "source_id": "<point_id>",
+  "relation_type": "maps_to",
+  "target_type": "key_matter",
+  "target_id": "<key_matter_id>",
+  "evidence": {"source":"okr-module","basis":"<直接证据>"},
   "confidence": 1,
   "confirmed_at": "<RFC3339>"
 }
 JSON
 ```
 
-KR 到项目使用 `delivered_by`。不把模块 ID 写入 Project/KeyMatter 专用字段，不修改 `okr_workspace_*` 数据；周报进展到关键事项的证据关系不属于本 Skill。
+现实 KeyMatter 或 Project 对 KR 的明确贡献使用 `advances`；不要默认建立 KR `belongs_to` Project。关系词只从七组核心语义中选择：`belongs_to/contains`、`owned_by/owns`、`participates_in/has_participant`、`depends_on/required_by`、`advances/advanced_by`、`maps_to/mapped_from`、`derived_from/produces`，正反只存一条，由读取层生成反向显示。
+
+OKR 内部的 Objective/KR/Metric/Point 层级和 Owner 已由模块真源表达，读取时直接派生，不能再复制进 EntityRelation。不要为了投影 Owner 创建 Person；只有世界模型本身确需维护该人物时，才按稳定 open_id 解析或创建。不要把模块 ID 写入 Project/KeyMatter 专用字段，也不修改 `okr_workspace_*` 数据；周报进展不属于本 Skill。
 
 ## 更新事实
 
@@ -61,5 +62,6 @@ KR 到项目使用 `delivered_by`。不把模块 ID 写入 Project/KeyMatter 专
 
 - 所有新关系都能用 `list-relations` 回读；
 - 重跑相同关系只更新证据，不产生重复边；
+- 原生 OKR 层级和 Owner 没有被复制到 EntityRelation；
 - 每项映射说明直接证据或保留“未确认”；
 - 没有直接访问模块表、没有直接发消息、没有创建 Task。

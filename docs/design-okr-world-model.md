@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative
-> Last verified: 2026-08-30 @ uncommitted worktree
+> Last verified: 2026-09-06 @ uncommitted worktree
 
 ## 1. 两份状态，各自负责一件事
 
@@ -12,7 +12,7 @@ OKR 模块保存稳定定义：季度、Objective 方向、KR、核心指标、�
 
 Agent 通过 `okr-module-tools replace-kr-tags` 调用 `PUT /api/okr/krs/:kr_id/tags` 维护标签，使用 KR 当前版本和完整标签列表；接口仅更新标签及 KR 版本/编辑者，不改其它定义或周报事实。标签的增删、分类映射和批量编排由 Agent 判断，沿用现有标签表及结构标签校验。O 不独立存标签，需要按子 KR 表达。
 
-Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter、当前 Page、历史 Fact 和它们之间的关系。Task 只是一轮执行单元，不属于任何 OKR 层级。
+Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter、当前 Page、历史 Fact、跨模块关系，以及按主体和周期持久化的 WorldProgress。Task 只是一轮执行单元，不属于任何 OKR 层级。
 
 两者不共享业务表、不互存外键，也不在保存页面时同步写入。需要连接时使用通用 `entity_relation`：模块实体 ID 和世界实体 ID 都以字符串保存，关系类型由 Skill 解释。
 
@@ -36,9 +36,10 @@ Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter
 3. 原始证据用 `append-clue` 幂等进入统一证据流；
 4. 客观变化用 `append-fact` 写入最小世界实体；
 5. 当前结论用 `get-page` + `update-page` CAS 更新。
+6. 证据足够时，用 `get-world-progress` 读取 Point 与周次的现有判断，再用 `create-world-progress` 或 `update-world-progress` 持久化 Jarvis 的独立判断。
 
-不存在 OKR 专用 evidence API，也不为某个来源增加 Go 流水线。新增来源通常只需要工具和 Skill；只有必须机器强制的可靠性约束才进入代码。
+`WorldProgress` 不替代人工维护的正式 `KRProgress`，也不回填周报。当前只为 `okr_point` 写入，写操作要求周报模块已启用且 Point 确实存在；模块关闭后仍可读取历史判断。不存在 OKR 专用 evidence API，也不为某个来源增加 Go 流水线。新增来源通常只需要工具和 Skill；只有必须机器强制的可靠性约束才进入代码。
 
 ## 4. 单一产品入口
 
-OKR 只由可选产品模块拥有。Jarvis 核心没有第二套 OKR 表、领域模型、Project 外键、Page 类型或 CRUD API；模块 Skills 统一使用通用关系、Fact 和 Page 连接世界状态。
+OKR 只由可选产品模块拥有。Jarvis 核心没有第二套 OKR 表、领域模型、Project 外键或 Page 类型；WorldProgress 只保存对模块稳定引用的世界侧评估，不复制 Objective、KR、Point 或人工进展。模块 Skills 统一使用通用关系、Fact、Page 和 WorldProgress 连接世界状态。

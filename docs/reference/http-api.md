@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: reference; `internal/api/router.go` is source of truth
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-09-06 @ uncommitted worktree
 
 本文只按能力分组，不复制 handler 的完整请求/响应结构。新增或删除接口时先改 `internal/api/router.go`，再更新本页。
 
@@ -46,6 +46,7 @@
 - Principal：`GET/PUT /api/profile`
 - Managed resources：`GET/POST /api/resources`、`GET/PUT/DELETE /api/resources/:resource_id`
 - Facts：`GET/POST /api/facts`
+- World progress：`GET /api/world-progress` 按 `subject_type + subject_id + period_key` 精确读取，`GET /api/world-progress/:id` 按 ID 读取，`POST /api/world-progress` 创建，`PUT /api/world-progress/:id` 带 `expected_version` 做 CAS 更新。当前只允许为已启用周报模块中真实存在的 `okr_point` 写入；模块关闭后历史记录仍可读取。它是 Jarvis 的证据化周期判断，不是人工正式周报。
 - Entity relations：`GET/POST /api/relations`、`DELETE /api/relations/:relation_id`，保存带证据的通用跨模块实体映射
 - 实体长期事实页：`GET /api/pages`、`GET/PUT /api/pages/:type/:id`、`GET /api/pages/:type/:id/backlinks`。`PUT` 需带 `if_unchanged_since` 做 CAS，不匹配返回 409 并回带当前全文。
 

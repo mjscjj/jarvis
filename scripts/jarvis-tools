@@ -80,6 +80,9 @@ subcommands:
   append-fact            Record one fact about a project, group, person or other subject
   append-facts-batch     Record multiple facts from one JSON array
   list-facts             Read a subject's recorded facts, optionally for one day
+  get-world-progress     Read one persisted Jarvis progress assessment
+  create-world-progress  Create one persisted Jarvis progress assessment
+  update-world-progress  Update one assessment with optimistic locking
   list-todos             List action clues, optionally for one day
   get-todo               Get one clue with the details omitted from summaries
   list-tasks             List tasks, optionally for one day
@@ -309,6 +312,34 @@ local time; --limit defaults to 20 and must not exceed 100.
 
 example:
   jarvis-tools list-facts --subject-type group --subject-id 12 --date 2026-08-02
+EOF
+      ;;
+    get-world-progress) cat <<'EOF'
+usage: jarvis-tools get-world-progress (--id ID |
+       --subject-type okr_point --subject-id POINT_ID --period-key PERIOD)
+       [--config PATH]
+
+Read Jarvis's persisted evidence-backed assessment for one OKR point and
+period. It is separate from the official human-authored weekly progress.
+Specify either the assessment ID or the complete subject-period key.
+EOF
+      ;;
+    create-world-progress) cat <<'EOF'
+usage: jarvis-tools create-world-progress [--payload JSON|-] [--config PATH]
+
+Create Jarvis's first assessment for an OKR point and period. The payload must
+contain expected_version=0, subject_type=okr_point, subject_id, period_key,
+signal (unknown|green|yellow|red), summary, evidence object and evidence_until.
+Use - or omit --payload to read the JSON object from stdin.
+EOF
+      ;;
+    update-world-progress) cat <<'EOF'
+usage: jarvis-tools update-world-progress --id ID [--payload JSON|-] [--config PATH]
+
+Update one assessment. The payload must contain the version returned by the
+last read as expected_version, plus signal, summary, evidence and
+evidence_until. Subject and period are immutable. Use - or omit --payload to
+read stdin. An unchanged assessment is a no-op and keeps its version.
 EOF
       ;;
     get-page) cat <<'EOF'
@@ -607,7 +638,7 @@ api_write() {
   if [[ "$http_code" == "404" ]]; then
     fail "not found"
   fi
-  if [[ "$http_code" != "200" ]]; then
+  if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
     fail "HTTP ${http_code} from ${url}: ${body}"
   fi
   if [[ -z "$code" || "$code" != "0" ]]; then
@@ -737,6 +768,7 @@ STALE_DAYS=""
 OVER_LIMIT="false"
 IF_UNCHANGED_SINCE=""
 ANCHOR=""
+PERIOD_KEY=""
 
 reset_flags() {
   CONFIG_PATH="$CONFIG_DEFAULT"
@@ -779,6 +811,7 @@ reset_flags() {
   OVER_LIMIT="false"
   IF_UNCHANGED_SINCE=""
   ANCHOR=""
+  PERIOD_KEY=""
   RUN_LIMIT="3"
   EVENT_LIMIT="20"
   INCLUDE_RUN_OUTPUT="false"
@@ -802,7 +835,7 @@ require_command_flag() {
     list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
     get-project) allowed+=" --id --code" ;;
     get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
-    create-project | create-key-matter | update-principal | create-person | create-resource | create-task | create-relation) allowed+=" --payload" ;;
+    create-project | create-key-matter | update-principal | create-person | create-resource | create-task | create-relation | create-world-progress) allowed+=" --payload" ;;
     update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
     archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
@@ -823,6 +856,8 @@ require_command_flag() {
     append-fact) allowed+=" --subject-type --subject-id --description --occurred-at --source --source-id" ;;
     append-facts-batch) allowed+=" --payload" ;;
     list-facts) allowed+=" --subject-type --subject-id --date --limit" ;;
+    get-world-progress) allowed+=" --id --subject-type --subject-id --period-key" ;;
+    update-world-progress) allowed+=" --id --payload" ;;
     get-page | list-backlinks) allowed+=" --type --id" ;;
     update-page) allowed+=" --type --id --content --if-unchanged-since" ;;
     list-pages) allowed+=" --type --all --stale-days --over-limit" ;;
@@ -1183,6 +1218,15 @@ consume_flags() {
         ;;
       --subject-id=*)
         SUBJECT_ID="${1#--subject-id=}"
+        shift
+        ;;
+      --period-key)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        PERIOD_KEY="$2"
+        shift 2
+        ;;
+      --period-key=*)
+        PERIOD_KEY="${1#--period-key=}"
         shift
         ;;
       --description)
@@ -1951,6 +1995,45 @@ cmd_list_facts() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+cmd_get_world_progress() {
+  reset_flags
+  consume_flags "$@"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  if [[ -n "$ID" ]]; then
+    [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-world-progress --id must be a positive integer"
+    [[ -z "$SUBJECT_TYPE" && -z "$SUBJECT_ID" && -z "$PERIOD_KEY" ]] ||
+      fail "get-world-progress --id cannot be combined with subject-period flags"
+    emit_api_data "/api/world-progress/${ID}"
+    return
+  fi
+  [[ -n "$SUBJECT_TYPE" ]] || fail "get-world-progress requires --id or --subject-type"
+  [[ -n "$SUBJECT_ID" ]] || fail "get-world-progress requires --subject-id with --subject-type"
+  [[ -n "$PERIOD_KEY" ]] || fail "get-world-progress requires --period-key with --subject-type"
+  local enc_type enc_id enc_period
+  enc_type="$(jq -rn --arg s "$SUBJECT_TYPE" '$s|@uri')"
+  enc_id="$(jq -rn --arg s "$SUBJECT_ID" '$s|@uri')"
+  enc_period="$(jq -rn --arg s "$PERIOD_KEY" '$s|@uri')"
+  emit_api_data "/api/world-progress?subject_type=${enc_type}&subject_id=${enc_id}&period_key=${enc_period}"
+}
+
+cmd_write_world_progress() {
+  local command_name="$1" method="$2"
+  shift 2
+  reset_flags
+  consume_flags "$@"
+  local path="/api/world-progress"
+  if [[ "$command_name" == "update-world-progress" ]]; then
+    [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "update-world-progress requires positive --id"
+    path="${path}/${ID}"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  payload="$(read_payload_object "$command_name")"
+  body="$(api_write "$method" "$path" "$payload")"
+  command -v node >/dev/null 2>&1 || fail "node is required for exact JSON evidence reads"
+  printf '%s' "$body" | node "${SCRIPT_DIR}/json-api-data.mjs"
+}
+
 cmd_get_page() {
   reset_flags
   consume_flags "$@"
@@ -2451,6 +2534,9 @@ case "$SUBCOMMAND" in
   append-fact)          cmd_append_fact "$@" ;;
   append-facts-batch)   cmd_append_facts_batch "$@" ;;
   list-facts)           cmd_list_facts "$@" ;;
+  get-world-progress)   cmd_get_world_progress "$@" ;;
+  create-world-progress) cmd_write_world_progress create-world-progress POST "$@" ;;
+  update-world-progress) cmd_write_world_progress update-world-progress PUT "$@" ;;
   get-page)             cmd_get_page "$@" ;;
   update-page)          cmd_update_page "$@" ;;
   list-pages)           cmd_list_pages "$@" ;;

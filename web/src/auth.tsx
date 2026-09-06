@@ -7,6 +7,7 @@ import type { AuthUser, AuthView } from './types'
 
 interface AuthContextValue {
   loading: boolean
+  enabled: boolean
   user: AuthUser | null
   pending: AuthView | null
   error: string
@@ -18,6 +19,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
+  const [enabled, setEnabled] = useState(true)
   const [user, setUser] = useState<AuthUser | null>(null)
   const [pending, setPending] = useState<AuthView | null>(null)
   const [error, setError] = useState('')
@@ -25,7 +27,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const controller = new AbortController()
     getAuthStatus(controller.signal)
-      .then((view) => setUser(view.user ?? null))
+      .then((view) => {
+        setEnabled(view.enabled)
+        setUser(view.user ?? null)
+      })
       .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setLoading(false))
     return () => controller.abort()
@@ -85,8 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(() => ({
-    loading, user, pending, error, login, logout,
-  }), [loading, user, pending, error, login, logout])
+    loading, enabled, user, pending, error, login, logout,
+  }), [loading, enabled, user, pending, error, login, logout])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
@@ -98,11 +103,11 @@ export function useAuth(): AuthContextValue {
 }
 
 export function AuthGate({ agentName, children }: { agentName: string; children: ReactNode }) {
-  const { loading, user, pending, error, login } = useAuth()
+  const { loading, enabled, user, pending, error, login } = useAuth()
   if (loading) {
     return <div className="auth-loading"><Spin size="small" /><span>正在验证字节身份...</span></div>
   }
-  if (user) return children
+  if (!enabled || user) return children
 
   return (
     <main className="auth-page">

@@ -141,6 +141,8 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
 server:
   addr: 0.0.0.0:19902
+auth:
+  enabled: false
 card_approval:
   enabled: true
   principal_open_id: ou_principal
@@ -236,6 +238,9 @@ chat:
 		got.PrincipalOpenID != "ou_principal" ||
 		got.RelaySecret != "relay-secret" {
 		t.Fatalf("card approval config was not preserved: %#v", got)
+	}
+	if reloaded.Auth.IsEnabled() {
+		t.Fatal("deployment-local auth.enabled=false was not preserved")
 	}
 	if reloaded.Extract.PrincipalOpenID != "ou_initialized" ||
 		reloaded.LarkCLI.Bin != "custom-lark-cli" ||

@@ -21,6 +21,7 @@ import (
 // Config 是全局配置的根。各子结构对应总纲 §1 技术栈里的外部依赖。
 type Config struct {
 	Identity      IdentityConfig      `yaml:"identity"`
+	Auth          AuthConfig          `yaml:"auth"`
 	Server        ServerConfig        `yaml:"server"`
 	SQLite        SQLiteConfig        `yaml:"sqlite"`
 	Model         ModelConfig         `yaml:"model"`
@@ -38,6 +39,18 @@ type Config struct {
 	Skills        SkillsConfig        `yaml:"skills"`
 	DailyDigest   DailyDigestConfig   `yaml:"dailydigest"`
 	ScheduledTask ScheduledTaskConfig `yaml:"scheduled_task"`
+}
+
+// AuthConfig controls only the outer Jarvis Web browser gate. It does not
+// change Feishu identities owned by app modules or CLI tools. Enabled is a
+// pointer so configurations created before this field existed remain secure:
+// an omitted value means enabled.
+type AuthConfig struct {
+	Enabled *bool `yaml:"enabled"`
+}
+
+func (c AuthConfig) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
 }
 
 // IdentityConfig is the user-selected assistant identity. It is machine-local

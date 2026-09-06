@@ -29,6 +29,7 @@ type User struct {
 }
 
 type View struct {
+	Enabled         bool    `json:"enabled"`
 	Status          string  `json:"status"`
 	User            *User   `json:"user,omitempty"`
 	VerificationURL *string `json:"verification_url,omitempty"`
@@ -63,6 +64,7 @@ type session struct {
 }
 
 type Service struct {
+	enabled    bool
 	bin        string
 	runner     CommandRunner
 	sessionTTL time.Duration
@@ -73,11 +75,11 @@ type Service struct {
 	sessions map[string]session
 }
 
-func NewService(bin string, sessionTTL time.Duration) (*Service, error) {
-	return NewServiceWithRunner(bin, sessionTTL, execRunner{})
+func NewService(bin string, sessionTTL time.Duration, enabled bool) (*Service, error) {
+	return NewServiceWithRunner(bin, sessionTTL, enabled, execRunner{})
 }
 
-func NewServiceWithRunner(bin string, sessionTTL time.Duration, runner CommandRunner) (*Service, error) {
+func NewServiceWithRunner(bin string, sessionTTL time.Duration, enabled bool, runner CommandRunner) (*Service, error) {
 	if strings.TrimSpace(bin) == "" {
 		return nil, fmt.Errorf("authn bytedcli binary is empty")
 	}
@@ -88,6 +90,7 @@ func NewServiceWithRunner(bin string, sessionTTL time.Duration, runner CommandRu
 		return nil, fmt.Errorf("authn command runner is nil")
 	}
 	return &Service{
+		enabled:    enabled,
 		bin:        strings.TrimSpace(bin),
 		runner:     runner,
 		sessionTTL: sessionTTL,
@@ -97,12 +100,19 @@ func NewServiceWithRunner(bin string, sessionTTL time.Duration, runner CommandRu
 	}, nil
 }
 
+func (s *Service) Enabled() bool {
+	return s.enabled
+}
+
 func (s *Service) Status(token string) View {
+	if !s.enabled {
+		return View{Enabled: false, Status: StatusUnauthenticated}
+	}
 	user, ok := s.Authenticate(token)
 	if !ok {
-		return View{Status: StatusUnauthenticated}
+		return View{Enabled: true, Status: StatusUnauthenticated}
 	}
-	return View{Status: StatusAuthenticated, User: &user}
+	return View{Enabled: true, Status: StatusAuthenticated, User: &user}
 }
 
 func (s *Service) SessionMaxAge() int {
@@ -110,6 +120,9 @@ func (s *Service) SessionMaxAge() int {
 }
 
 func (s *Service) Login(ctx context.Context) (LoginResult, error) {
+	if !s.enabled {
+		return LoginResult{View: s.Status("")}, nil
+	}
 	user, authenticated, err := s.probe(ctx)
 	if err != nil {
 		return LoginResult{}, err
@@ -142,12 +155,15 @@ func (s *Service) Login(ctx context.Context) (LoginResult, error) {
 	s.flows[flowID] = flow{token: token, url: url, code: code}
 	s.mu.Unlock()
 	return LoginResult{View: View{
-		Status: StatusPending, VerificationURL: stringPointer(url),
+		Enabled: true, Status: StatusPending, VerificationURL: stringPointer(url),
 		UserCode: optionalString(code), FlowID: stringPointer(flowID),
 	}}, nil
 }
 
 func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, error) {
+	if !s.enabled {
+		return LoginResult{View: s.Status("")}, nil
+	}
 	s.mu.Lock()
 	pendingFlow, ok := s.flows[strings.TrimSpace(flowID)]
 	s.mu.Unlock()
@@ -208,7 +224,7 @@ func (s *Service) startSession(user User) (LoginResult, error) {
 	s.sessions[token] = session{user: user, expiresAt: s.now().Add(s.sessionTTL)}
 	s.mu.Unlock()
 	return LoginResult{
-		View:         View{Status: StatusAuthenticated, User: &user},
+		View:         View{Enabled: true, Status: StatusAuthenticated, User: &user},
 		SessionToken: token,
 	}, nil
 }
