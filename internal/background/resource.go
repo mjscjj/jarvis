@@ -58,6 +58,7 @@ type ResourceView struct {
 	Title          string     `json:"title"`
 	ResourceType   string     `json:"resource_type"`
 	URL            *string    `json:"url"`
+	LocalPath      *string    `json:"local_path"`
 	Summary        *string    `json:"summary"`
 	LastProgressAt *time.Time `json:"last_progress_at"`
 	PersonID       *uint64    `json:"person_id"`
@@ -335,7 +336,7 @@ func applyResourceFilter(query *gorm.DB, filter ResourceFilter) *gorm.DB {
 func toResourceView(resource *domain.ManagedResource) ResourceView {
 	view := ResourceView{
 		ID: resource.ID, Title: resource.Title, ResourceType: resource.ResourceType,
-		URL: resource.URL, Summary: resource.Summary, LastProgressAt: resource.LastProgressAt,
+		URL: resource.URL, LocalPath: resource.LocalPath, Summary: resource.Summary, LastProgressAt: resource.LastProgressAt,
 		PersonID: resource.PersonID, ProjectID: resource.ProjectID,
 		LinkPrincipal: resource.LinkPrincipal, IsActive: resource.IsActive, LastActiveAt: resource.LastActiveAt,
 	}

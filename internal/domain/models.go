@@ -279,6 +279,7 @@ type ManagedResource struct {
 	Title        string  `gorm:"column:title;not null"`
 	ResourceType string  `gorm:"column:resource_type;not null;default:link;index:idx_managed_resource_type"`
 	URL          *string `gorm:"column:url"`
+	LocalPath    *string `gorm:"column:local_path"`
 	// Summary is this entity's long-term truth: what it is and where it stands.
 	// It is read and written whole. Line one is the index line. Detail history
 	// lives in Fact rows; drill down with list-facts.

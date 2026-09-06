@@ -221,7 +221,7 @@ func createAssemblerTables(t *testing.T, db *gorm.DB) {
 		)`,
 		`CREATE TABLE managed_resource (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, resource_type TEXT NOT NULL,
-			url TEXT, summary TEXT, last_progress_at DATETIME, person_id INTEGER, project_id INTEGER,
+			url TEXT, local_path TEXT, summary TEXT, last_progress_at DATETIME, person_id INTEGER, project_id INTEGER,
 			link_principal INTEGER NOT NULL, is_active INTEGER NOT NULL,
 			last_active_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			created_at DATETIME, updated_at DATETIME
