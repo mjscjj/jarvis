@@ -1,11 +1,12 @@
-# Optional OKR module configuration. It is loaded only while modules.yaml
-# enables `okr`; Jarvis core has no OKR-specific config fields.
+# Optional OKR module configuration. Storage settings are loaded while `okr` is
+# enabled; identity and Preview Review settings are validated only while
+# `agency-okr` is enabled. Jarvis core has no OKR-specific config fields.
 database_path: "data/okr/okr.db"
 upload_dir: "data/okr/assets"
 max_image_bytes: 10485760
 
 # 一次性 OKR Preview 评审 Agent。只读建议，不建 Task、不进审批链路；沙箱需要
-# 网络以便它用 okr-module-tools / weekly-report-tools 回查本机 API。
+# 网络以便它用 okr-module-tools / agency-okr-tools 回查本机 API。
 preview_review:
   bin: "traex"
   model: "DeepSeek-V4-Pro"

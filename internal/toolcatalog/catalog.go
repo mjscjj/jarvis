@@ -56,16 +56,17 @@ func Block(stage string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// okrReviewBlock lists the OKR read commands available to the Preview review
-// agent. Both scripts also carry write commands; they are deliberately left
-// undocumented here because the review only forms an opinion.
+// okrReviewBlock describes the split between the generic OKR and Agency OKR
+// scripts. The Preview review agent only uses their read commands; write
+// commands remain subject to the stage prompt even when their ownership is
+// called out here.
 func okrReviewBlock() string {
 	lines := []string{
 		"BEGIN_AVAILABLE_TOOLS（工具能力说明由工具层维护，不属于系统角色提示词。）",
 		"当前阶段：" + StageOKRReview,
 		"两个脚本都已在 PATH 中，服务地址由 `JARVIS_API_BASE` 环境变量提供，直接执行即可，不需要自己解析配置或构建任何东西。所有命令输出 JSON。",
-		"- okr-module-tools：季度 OKR 核心数据。`scope` 查当前季度；`board [--quarter Q]` 读整季 O/KR 结构；`find-krs --query TEXT [--quarter Q]` 按关键词跨 O 检索 KR，用于查关联和重叠；`get-kr --id KR_ID` 读单个 KR 详情；`people-search --query TEXT` 查人。",
-		"- weekly-report-tools：按周的进展、评分与协作事项。`weeks [--quarter Q]` 列周次；`board [--quarter Q] [--week YYYY-Www]` 读某周看板（含 template_key）；`get-weekly-kr --id KR_ID --week YYYY-Www` 读单 KR 的周度核心数据与指标；`comments --quarter Q --week YYYY-Www` 读评论；`follow-ups --quarter Q --week YYYY-Www` 与 `get-follow-up --id ID` 读取结构化待跟进事项。",
+		"- okr-module-tools：通用 OKR 定义、Metric/Point/Owner 拆解和正式进展。`scope` / `board` 读季度结构；`find-krs` / `get-kr` 定位 KR；`weeks`、`progress-board`、`get-weekly-kr` 读取正式周次和进展；`replace-kr` 是通用拆解写入口，当前 Preview review 阶段不调用写命令。",
+		"- agency-okr-tools：Agency 业务组合视图。`board [--quarter Q] [--week YYYY-Www]` 读包含标签、评分与 Meego 信息的周报；`get-kr` / `get-weekly-kr` 读 Agency 组合 KR；`comments`、`follow-ups` 读取协作信息；`people-search` 查人。",
 		"- `find-krs` 单次输出可能上千行。先用它定位 ID，再用 `get-kr` / `get-weekly-kr` 取需要的那一个，不要把整季数据全部读进来。",
 		"END_AVAILABLE_TOOLS",
 	}

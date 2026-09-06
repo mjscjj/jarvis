@@ -58,7 +58,7 @@ type Dependencies struct {
 	AgentConfig        *agentconfig.Service
 	AppModules         *appmodule.Service
 	OKRModule          *OKRModuleDependencies
-	WeeklyReportModule *WeeklyReportModuleDependencies
+	AgencyOKRModule    *AgencyOKRModuleDependencies
 	ScheduledTasks     *scheduledtask.Service
 	Plugins            *plugin.Service
 	Skills             SkillService
@@ -322,8 +322,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 			return err
 		}
 	}
-	if deps.WeeklyReportModule != nil {
-		if err := RegisterWeeklyReportModuleRoutes(h, *deps.WeeklyReportModule); err != nil {
+	if deps.AgencyOKRModule != nil {
+		if err := RegisterAgencyOKRModuleRoutes(h, *deps.AgencyOKRModule); err != nil {
 			return err
 		}
 	}

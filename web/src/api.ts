@@ -196,7 +196,7 @@ export function getWebConfig(signal?: AbortSignal): Promise<WebConfig> {
 // Returns undefined when the module is disabled or nobody is signed in.
 export async function getSignedInOpenID(signal?: AbortSignal): Promise<string | undefined> {
   try {
-    const me = await request<{ authenticated: boolean; user?: { open_id: string } }>('/api/okr/me', { signal })
+    const me = await request<{ authenticated: boolean; user?: { open_id: string } }>('/api/agency-okr/me', { signal })
     if (!me.authenticated) return undefined
     const openID = me.user?.open_id?.trim()
     // The placeholder identity used when login is not configured is not a real

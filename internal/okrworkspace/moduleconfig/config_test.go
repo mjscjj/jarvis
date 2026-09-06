@@ -134,3 +134,28 @@ identity:
 		t.Fatalf("Load() space-separated scopes error = %v", err)
 	}
 }
+
+func TestLoadCoreDoesNotRequireAgencySettings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "okr.yaml")
+	raw := `database_path: data/okr/okr.db
+upload_dir: data/okr/assets
+max_image_bytes: 1024
+identity:
+  enabled: true
+  app_secret_env: MISSING_AGENCY_SECRET
+`
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadCore(path)
+	if err != nil {
+		t.Fatalf("LoadCore() error = %v", err)
+	}
+	if cfg.DatabasePath != "data/okr/okr.db" || cfg.UploadDir != "data/okr/assets" {
+		t.Fatalf("LoadCore() = %+v", cfg)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "preview_review.") {
+		t.Fatalf("Load() error = %v, want Agency validation failure", err)
+	}
+}

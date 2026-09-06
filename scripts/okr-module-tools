@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Narrow CLI for deterministic OKR core data. Weekly progress, reminders and
-# observations are intentionally owned by scripts/weekly-report-tools.
+# Atomic CLI for reusable OKR definitions and formal progress. Agency-specific
+# labels, review, reminders and integrations live in scripts/agency-okr-tools.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,17 +15,21 @@ commands:
   board [--quarter Q]
   find-krs --query TEXT [--quarter Q]
   get-kr --id KR_ID
-  replace-kr-tags --id KR_ID --payload JSON|-
-  replace-point-tags --id POINT_ID --payload JSON|-
-  people-search --query TEXT
+  replace-kr --id KR_ID --payload JSON|-
+  progress-scope
+  weeks [--quarter Q]
+  open-week --quarter Q --week YYYY-Www [--template classic|okr_weekly_preview_v1]
+  delete-week --quarter Q --week YYYY-Www
+  progress-board [--quarter Q] [--week YYYY-Www]
+  get-weekly-kr --id KR_ID --week YYYY-Www
+  replace-weekly-core --id KR_ID --payload JSON|-
+  create-progress --point-id POINT_ID --payload JSON|-
+  update-progress --id PROGRESS_ID --payload JSON|-
+  delete-progress --id PROGRESS_ID --payload JSON|-
   upload-image --file PATH
 
-replace-kr-tags accepts {"expected_version":N,"tags":[{"type":"custom","value":"双周报-官网SEO"}]}.
-replace-point-tags uses the same payload and the parent KR's latest version.
-Read get-kr first and preserve unrelated tags on the selected KR or point; tags
-is the complete replacement list ([] clears all tags). A stale KR version returns
-HTTP 409 with current data. Point tags cannot use business_category or priority.
-Only selected tags are written; definitions and weekly data stay unchanged.
+Formal progress writes use optimistic versions and never write Agency labels,
+scores, comments, reminders or Meego projections.
 
 Uses server.addr from conf/config.yaml plus conf/config.runtime.yaml.
 JARVIS_API_BASE or --base-url explicitly selects another instance.
@@ -46,17 +50,23 @@ COMMAND="${1:-}"
 shift
 
 QUARTER=""
+WEEK=""
 ID=""
+POINT_ID=""
 QUERY=""
 FILE=""
 PAYLOAD=""
+TEMPLATE="classic"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --quarter) QUARTER="${2:-}"; shift 2 ;;
+    --week) WEEK="${2:-}"; shift 2 ;;
     --id) ID="${2:-}"; shift 2 ;;
+    --point-id) POINT_ID="${2:-}"; shift 2 ;;
     --query) QUERY="${2:-}"; shift 2 ;;
     --file) FILE="${2:-}"; shift 2 ;;
     --payload) PAYLOAD="${2:-}"; shift 2 ;;
+    --template) TEMPLATE="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -87,6 +97,27 @@ request_with_error_body() {
   if (( 10#$http_status >= 400 )); then
     return 22
   fi
+}
+
+request_post() {
+  local path="$1" payload="$2"
+  request_with_error_body -X POST "${BASE_URL}${path}" -H 'content-type: application/json' --data-binary "$payload"
+}
+
+request_write() {
+  local method="$1" path="$2" payload="$3"
+  request_with_error_body -X "$method" "${BASE_URL}${path}" -H 'content-type: application/json' --data-binary "$payload"
+}
+
+read_payload() {
+  [[ -n "$PAYLOAD" ]] || { echo "$COMMAND requires --payload JSON|-" >&2; exit 2; }
+  [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
+  printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null || { echo "$COMMAND payload must be a JSON object" >&2; exit 2; }
+  printf '%s' "$PAYLOAD"
+}
+
+encoded() {
+  printf '%s' "$1" | jq -sRr @uri
 }
 
 case "$COMMAND" in
@@ -129,23 +160,53 @@ case "$COMMAND" in
     [[ -n "$ID" ]] || { echo "get-kr requires --id" >&2; exit 2; }
     curl -fsS "${BASE_URL}/api/okr/krs/$(printf '%s' "$ID" | jq -sRr @uri)"
     ;;
-  replace-kr-tags)
-    [[ -n "$ID" && -n "$PAYLOAD" ]] || { echo "replace-kr-tags requires --id and --payload JSON|-" >&2; exit 2; }
-    [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
-    printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null || { echo "replace-kr-tags payload must be a JSON object" >&2; exit 2; }
-    request_with_error_body -X PUT "${BASE_URL}/api/okr/krs/$(printf '%s' "$ID" | jq -sRr @uri)/tags" \
-      -H 'content-type: application/json' --data-binary "$PAYLOAD"
+  replace-kr)
+    [[ -n "$ID" ]] || { echo "replace-kr requires --id" >&2; exit 2; }
+    payload="$(read_payload)"
+    request_write PUT "/api/okr/krs/$(encoded "$ID")" "$payload"
     ;;
-  replace-point-tags)
-    [[ -n "$ID" && -n "$PAYLOAD" ]] || { echo "replace-point-tags requires --id and --payload JSON|-" >&2; exit 2; }
-    [[ "$PAYLOAD" != "-" ]] || PAYLOAD="$(cat)"
-    printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null || { echo "replace-point-tags payload must be a JSON object" >&2; exit 2; }
-    request_with_error_body -X PUT "${BASE_URL}/api/okr/points/$(printf '%s' "$ID" | jq -sRr @uri)/tags" \
-      -H 'content-type: application/json' --data-binary "$PAYLOAD"
+  progress-scope)
+    request_get /api/okr/progress/scope
     ;;
-  people-search)
-    [[ -n "$QUERY" ]] || { echo "people-search requires --query" >&2; exit 2; }
-    request_get /api/okr/people/search --data-urlencode "q=$QUERY"
+  weeks)
+    args=()
+    [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
+    request_get /api/okr/weeks "${args[@]}"
+    ;;
+  open-week)
+    [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "open-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
+    request_post /api/okr/weeks "$(jq -cn --arg quarter "$QUARTER" --arg week "$WEEK" --arg template "$TEMPLATE" '{quarter:$quarter,week:$week,template_key:$template}')"
+    ;;
+  delete-week)
+    [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "delete-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
+    request_with_error_body -X DELETE -G "${BASE_URL}/api/okr/weeks/$(encoded "$WEEK")" --data-urlencode "quarter=$QUARTER"
+    ;;
+  progress-board)
+    args=()
+    [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
+    [[ -z "$WEEK" ]] || args+=(--data-urlencode "week=$WEEK")
+    request_get /api/okr/progress/board "${args[@]}"
+    ;;
+  get-weekly-kr)
+    [[ -n "$ID" && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "get-weekly-kr requires --id and --week YYYY-Www" >&2; exit 2; }
+    request_get "/api/okr/krs/$(encoded "$ID")/weekly" --data-urlencode "week=$WEEK"
+    ;;
+  replace-weekly-core)
+    [[ -n "$ID" ]] || { echo "replace-weekly-core requires --id" >&2; exit 2; }
+    payload="$(read_payload)"
+    request_write PUT "/api/okr/krs/$(encoded "$ID")/weekly-core" "$payload"
+    ;;
+  create-progress)
+    [[ -n "$POINT_ID" ]] || { echo "create-progress requires --point-id" >&2; exit 2; }
+    payload="$(read_payload)"
+    request_post "/api/okr/points/$(encoded "$POINT_ID")/progress" "$payload"
+    ;;
+  update-progress|delete-progress)
+    [[ -n "$ID" ]] || { echo "$COMMAND requires --id" >&2; exit 2; }
+    payload="$(read_payload)"
+    method=PUT
+    [[ "$COMMAND" == "update-progress" ]] || method=DELETE
+    request_write "$method" "/api/okr/progress/$(encoded "$ID")" "$payload"
     ;;
   upload-image)
     [[ -f "$FILE" ]] || { echo "upload-image requires an existing --file" >&2; exit 2; }

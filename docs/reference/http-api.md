@@ -62,17 +62,18 @@
 - Text files：`GET /api/text-files`、`GET/PUT /api/text-files/:text_file_key`
 - Skills：`GET /api/skills`、`POST /api/skills/scan`、`PUT /api/skills/:skill_name`、`GET /api/skills/:skill_name/content`
 - App modules：`GET /api/app-modules`、`PUT /api/app-modules/:module_key`
-- OKR 定义：`GET /api/okr/scope|enums|board`，身份、人员、图片、Objective/KR 创建与 KR 编辑位于 `/api/okr/*`。核心 board 和写接口不读取周报表。
-- 定义的窄接口：`PUT /api/okr/krs/:kr_id/definition` 只接受 KR 与已有要点的标题和负责人，收不到指标、灯、标签，也不能增删要点。周报和 Review 填写页手里的指标值属于当周副本，靠这个接口的字段边界保证它们到不了主干定义；改完由前端重新取一次周视图当基线。整条 KR 覆盖写仍走 `PUT /api/okr/krs/:kr_id`，标签走 `.../tags`。
+- 通用 OKR：`GET /api/okr/scope|enums|board` 读取 Objective、KR、Metric、Point 与负责人；图片、Objective/KR 定义维护也位于 `/api/okr/*`。这些接口不读取 Agency 标签、评分、评论、Meego 或身份表。
+- 定义的窄接口：`PUT /api/okr/krs/:kr_id/definition` 只接受 KR 与已有要点的标题和负责人，收不到指标、灯、标签，也不能增删要点。Agency 周报和 Review 页面手里的指标值属于当周副本，靠这个接口的字段边界保证它们到不了主干定义；改完由前端重新取一次 Agency 组合视图当基线。Agency 完整编辑器走 `PUT /api/agency-okr/krs/:kr_id`，标签走 `/api/agency-okr/.../tags`。
 - 排序：`PUT /api/okr/objectives/order`（带 `quarter`）和 `PUT /api/okr/objectives/:objective_id/kr-order` 接收该范围内**全量**兄弟 id，写成 `sort_order` 0..n-1；少给、多给、重复或跨范围都拒绝。位置不是内容，所以不撞 `KR.version`，别处打开的页面不会因为有人调顺序而在下次保存时冲突。
 - 存在周报历史的 KR 或稳定拆解不允许删除，避免留下孤儿历史。
-- 周报：`GET /api/weekly-report/scope|board|weeks|comments|reminder-preview|reminder-batches|meego-preview`；`POST /api/weekly-report/weeks` 开启空周，`DELETE /api/weekly-report/weeks/:week?quarter=...` 删除该季度下整周的周报事实但保留 O/KR 稳定定义。评论、所选周进展、Meego 观察和催办批次的其它写接口位于 `/api/weekly-report/*`。产品固定提供催填、进展巡检、会议材料和对外提交四个 Agent 行动，并固定绑定可编辑 Prompt；季度草稿、区域对齐和其它 Report Prompt 可由普通 Agent Task 使用。执行统一由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
-- OKR Preview AI 评审：`POST /api/weekly-report/preview-review`，body 为 `{quarter, week, kind: all|kr|point, kr_id, point_id}`，同步返回 `{content}` Markdown。评审只出判断和建议、不写任何东西，所以不建 Task、不进审批链路、没有运行历史可轮询——请求一直挂到 Agent 回答（实测单个 KR 约 20–35 秒）。服务端读 `okr-agent-preview-review` 提示词，把被评审对象的完整内容预先投影进 prompt，另配 `toolcatalog` 的 `okr_review` 阶段目录，让 Agent 在需要判断跨目标关联时自己用 `okr-module-tools` / `weekly-report-tools` 回查。Agent 的 bin、模型、reasoning effort、沙箱和超时由 `conf/okr-module.yaml` 的 `preview_review` 决定；沙箱需要网络，因为这两个工具走本机 API。周次模板不是 `okr_weekly_preview_v1` 时直接报错，不改用普通周报口径。
-- Meego observation：`POST /api/weekly-report/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
-- OKR identity：`GET /api/okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/okr/auth/feishu/device` 发起飞书设备授权、`POST /api/okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。流程不需要 OAuth 回调 URL。用户的 access/refresh token 不落库，而是按 open_id 写到 `identity.token_dir` 下的 `<open_id>.json`（含人名、邮箱、scope 和两个 token 的到期时间），同一人再登录一次即覆盖。申请的 scope 由 `identity.scopes_file`（`conf/okr-feishu-scopes.txt`）逐行列出，只覆盖云文档、云空间、知识库和多维表格，`offline_access` 换取 refresh token；文件缺失或没有有效行时启动即失败。`GET /api/okr/feishu-identity?open_id=` 在需要时用 refresh token 续期该用户的 access token、回写同一文件，并返回 `open_id`、`name`、`app_id`、`token_path` 和到期时间——只给位置不给 token，因为只有主服务持有 app secret。凭证不存在或已无法续期返回 404。前端只在 OKR 模块入口做一次全局门禁，并按服务端返回的到期时间统一退出；内部页面不传递身份状态。新建评论由后端读取 session 记录真人作者，其余 OKR/周报写操作按 `Jarvis` 记账，不做行级权限或可见性过滤。
-- OKR people：`GET /api/okr/people/search?q=` 走 `contact +search-user`，供人员选择器解析 open_id；`GET /api/okr/people/avatars?names=a,b,c` 批量取头像，供已在看板上的负责人、评论作者展示。飞书只有 `/open-apis/search/v1/user` 在当前授权范围内返回头像，且只能按姓名或邮箱查，所以调用方按 open_id 自行认领结果，同名且无 open_id 时前端退回首字母。已解析的头像按姓名写入 SQLite 同目录的 `feishu-avatars.json` 并跨重启复用——一块看板有几十个负责人，而 lark-cli 只允许两个并发调用。
+- 正式 OKR Progress：`GET /api/okr/progress/scope|board`，`GET/POST/DELETE /api/okr/weeks...`，`GET /api/okr/krs/:kr_id/weekly`，`PUT /api/okr/krs/:kr_id/weekly-core`，以及 `/api/okr/points/:point_id/progress`、`/api/okr/progress/:progress_id` 的单条进展 CRUD。通用删除周次只删除正式时间线，不清理 Agency 评论、评分或提醒。
+- Agency OKR：`GET /api/agency-okr/scope|board|core-board` 提供当前完整业务组合视图；Plan、标签、Review、评论、评分、Follow-up、催填、Meego 和文档导出均位于 `/api/agency-okr/*`。`DELETE /api/agency-okr/weeks/:week?quarter=...` 保留原有“删除整个业务周次”的完整清理语义。固定四个 Agent 行动仍由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
+- OKR Preview AI 评审：`POST /api/agency-okr/preview-review`，body 为 `{quarter, week, kind: all|kr|point, kr_id, point_id}`，同步返回 `{content}` Markdown。评审只出判断和建议、不写任何东西，所以不建 Task、不进审批链路、没有运行历史可轮询。Agent 按需使用 `okr-module-tools` 与 `agency-okr-tools` 回查。
+- Meego observation：`POST /api/agency-okr/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
+- Agency OKR identity：`GET /api/agency-okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/agency-okr/auth/feishu/device` 发起飞书设备授权、`POST /api/agency-okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。用户 token 仍按 open_id 写到 `identity.token_dir`，`GET /api/agency-okr/feishu-identity?open_id=` 返回与 token 配对的 App ID 和文件位置。身份只服务 Agency 页面、评论署名和用户态文档读取，不进入通用 OKR 插件。
+- Agency OKR people：`GET /api/agency-okr/people/search?q=` 与 `/people/avatars?names=...` 服务 Agency 人员选择和头像展示。
 - OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。
-- 文档导出：`POST /api/weekly-report/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。新建文档继承的租户默认密级不允许组织内链接分享，飞书会以 91012 拒绝，所以创建后先按 `lark_cli.export_secure_label` 的标签名（在 `drive +secure-label-list` 里查 id）打一次密级，再设 `link_share_entity=tenant_editable` 并读回校验。标签没配、租户里查不到这个名字或密级写入失败都直接报错，不退回一篇不可分享的文档。
+- 文档导出：`POST /api/agency-okr/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。新建文档继承的租户默认密级不允许组织内链接分享，飞书会以 91012 拒绝，所以创建后先按 `lark_cli.export_secure_label` 的标签名（在 `drive +secure-label-list` 里查 id）打一次密级，再设 `link_share_entity=tenant_editable` 并读回校验。标签没配、租户里查不到这个名字或密级写入失败都直接报错，不退回一篇不可分享的文档。
 
 Runtime settings 写入后需要重启进程生效；模块开关保存后也需要重启，下一次启动会统一决定迁移、路由、静态资源、Skill 与调度边界。prompts、rules、Skills 按各自 reader 的行为读取。
 
@@ -95,6 +96,6 @@ Runtime settings 写入后需要重启进程生效；模块开关保存后也需
 - 主服务对话发现：`GET /api/chat-config`
 - 前端部署事实：`GET /api/web-config`，返回 `server.public_base_url`。分享链接用它当根地址，作者从 IP 打开页面也能复制出域名链接；配置留空时返回空串，链接沿用当前浏览器地址。
 - 独立 Chat sidecar：`POST /api/chat`（multipart + SSE；`message` 必填，`thread_id`、JSON 字符串 `page_context`、单张 PNG/JPEG `image`、`user_open_id` 可选，图片上限 10 MB）、`GET /api/chat/:thread_id`
-- 带 `user_open_id` 时，sidecar 向主服务的 `/api/okr/feishu-identity` 取该登录用户的飞书凭证位置，并把「用谁的身份 + token 文件路径 + 单条命令注入用法」写进本轮 prompt，让 Agent 用用户自己的权限读他扔进来的文档；token 本身不进 prompt。凭证不可用时把原因写进同一段落，不中断对话。
+- 带 `user_open_id` 时，sidecar 向主服务的 `/api/agency-okr/feishu-identity` 取该登录用户的飞书凭证位置，并把「用谁的身份 + token 文件路径 + 单条命令注入用法」写进本轮 prompt，让 Agent 用用户自己的权限读他扔进来的文档；token 本身不进 prompt。凭证不可用时把原因写进同一段落，不中断对话。
 
 对话只在 `chat.enabled=true` 且依赖构造成功时注册。

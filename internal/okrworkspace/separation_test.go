@@ -397,7 +397,7 @@ func TestBoardsSwitchQuarterWithoutMixingWeeklyScopes(t *testing.T) {
 	}
 }
 
-func TestMigrateWeeklyReportBackfillsHistoricalProgressScopes(t *testing.T) {
+func TestMigrateCoreBackfillsHistoricalProgressScopes(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-history", Title: "增长", Quarter: "2026-Q3"}
 	kr := domain.KR{ID: "kr-history", ObjectiveID: objective.ID, Title: "历史 KR"}
@@ -409,7 +409,7 @@ func TestMigrateWeeklyReportBackfillsHistoricalProgressScopes(t *testing.T) {
 		}
 	}
 
-	if err := MigrateWeeklyReport(db); err != nil {
+	if err := MigrateCore(db); err != nil {
 		t.Fatal(err)
 	}
 	var week domain.WeeklyReportWeek
@@ -420,7 +420,7 @@ func TestMigrateWeeklyReportBackfillsHistoricalProgressScopes(t *testing.T) {
 		t.Fatalf("backfilled week = %+v", week)
 	}
 
-	if err := MigrateWeeklyReport(db); err != nil {
+	if err := MigrateCore(db); err != nil {
 		t.Fatal(err)
 	}
 	var count int64
@@ -432,7 +432,7 @@ func TestMigrateWeeklyReportBackfillsHistoricalProgressScopes(t *testing.T) {
 	}
 }
 
-func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
+func TestCoreWorkspaceSupportsFormalProgressWithoutAgencySchema(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -442,6 +442,11 @@ func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
 	}
 	if db.Migrator().HasColumn(&domain.KR{}, "priority") {
 		t.Fatal("fresh KR schema still has duplicate priority column")
+	}
+	for _, model := range []any{&domain.KRTag{}, &domain.PointTag{}, &domain.OKRPlan{}, &domain.WeeklyScore{}, &domain.PageComment{}, &domain.MeegoSyncSnapshot{}, &domain.ReminderBatch{}} {
+		if db.Migrator().HasTable(model) {
+			t.Fatalf("MigrateCore created Agency table for %T", model)
+		}
 	}
 	service, err := NewService(db)
 	if err != nil {
@@ -453,7 +458,6 @@ func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
 	}
 	created, err := service.CreateKR(t.Context(), objective.ID, CreateKRInput{
 		Title: "核心模块不依赖周报", CreatedBy: "ou_owner",
-		Tags: []TagView{{Type: domain.TagTypeBusinessCategory, Value: "测试业务"}, {Type: domain.TagTypePriority, Value: "p0"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -475,19 +479,31 @@ func TestCoreWorkspaceStartsWithoutWeeklyReportSchema(t *testing.T) {
 	if board.Quarter != "2026-Q3" || board.Week != "" || len(board.AvailableWeeks) != 0 || len(board.Objectives) != 1 || len(board.Objectives[0].KRs) != 1 {
 		t.Fatalf("core board = %+v", board)
 	}
-	updated, err := service.ReplaceKRCore(t.Context(), created.ID, ReplaceKRInput{
-		ExpectedVersion: 0, Title: created.Title, Tags: created.Tags,
-		Metrics: []MetricView{{ID: "metric-1", Text: "核心指标", Light: domain.LightGreen}},
-		Points:  []PointView{{ID: "point-1", Kind: domain.PointKindStrategy, Title: "关键路径", Tags: []TagView{}}},
+	decomposed, err := service.ReplaceGenericKRCore(t.Context(), created.ID, ReplaceGenericKRInput{
+		ExpectedVersion: 0, Title: "更新后的通用 KR", MetricNote: "季度口径",
+		Metrics: []MetricView{{ID: "metric-core-only", Text: "完成率 100%", Light: domain.LightGreen}},
+		Points:  []GenericPointView{{ID: "point-core-only", Kind: domain.PointKindStrategy, Title: "完成通用拆解", Owners: []OwnerView{{OpenID: "ou_owner", Name: "负责人"}}}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err = service.ReplaceKRCore(t.Context(), created.ID, ReplaceKRInput{ExpectedVersion: updated.Version, Title: created.Title, Tags: updated.Tags})
+	if len(decomposed.Metrics) != 1 || len(decomposed.Points) != 1 || decomposed.Points[0].Tags == nil {
+		t.Fatalf("generic decomposition = %+v", decomposed)
+	}
+	if _, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: "2026-Q3", Week: "2026-W36", TemplateKey: domain.WeekTemplateClassic}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateProgressEntry(t.Context(), "point-core-only", ProgressEntryInput{ID: "progress-core-only", Week: "2026-W36", Status: domain.StatusInProgress, Text: "通用正式进展"}); err != nil {
+		t.Fatal(err)
+	}
+	progress, err := service.ProgressBoard(t.Context(), "2026-Q3", "2026-W36")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.DeleteKR(t.Context(), created.ID, DeleteKRInput{ExpectedVersion: updated.Version}); err != nil {
+	if len(progress.Objectives[0].KRs[0].Points[0].Entries) != 1 || progress.Objectives[0].KRs[0].Points[0].Entries[0].Text != "通用正式进展" {
+		t.Fatalf("generic progress board = %+v", progress)
+	}
+	if err := service.DeleteKR(t.Context(), created.ID, DeleteKRInput{ExpectedVersion: decomposed.Version}); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -67,7 +67,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 - M3 冻结 `Todo.content`（原始来源、冻结事实和模型说明），固化到 `Task.source_payload`；M5 默认读触发原文与现场摘要，其余按需下钻；下游可补证据，但不重建一份“看起来等价”的背景。
 - factengine 是持续世界建模的主要 Agent；主动巡视以看护和推进为主，但调查中可直接维护明确、有用的内部认知，也可把原始证据送入统一线索入口。外部行动统一创建 `source_type=proactive` 的 Task 交给 M5。
 
-各模块的当前实现详见 [`docs/modules/`](docs/README.md#当前实现)。
+各模块的当前实现详见 [`docs/modules/`](docs/README.md#当前实现)；OKR 维护入口见 [OKR 模块当前实现](docs/modules/06-okr.md)。
 
 ## Source of truth
 

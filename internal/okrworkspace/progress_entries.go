@@ -38,7 +38,7 @@ func (s *Service) GetKRByProgress(ctx context.Context, progressID string) (KRVie
 	if err != nil {
 		return KRView{}, err
 	}
-	return s.GetKR(ctx, kr.ID, row.Week)
+	return s.GetProgressKR(ctx, kr.ID, row.Week)
 }
 
 func (s *Service) CreateProgressEntry(ctx context.Context, pointID string, input ProgressEntryInput) (KRView, error) {
@@ -65,7 +65,7 @@ func (s *Service) CreateProgressEntry(ctx context.Context, pointID string, input
 	err = s.db.WithContext(ctx).First(&existing, "id = ?", input.ID).Error
 	if err == nil {
 		if sameProgressEntry(existing, point.ID, input) {
-			return s.GetKR(ctx, kr.ID, input.Week)
+			return s.GetProgressKR(ctx, kr.ID, input.Week)
 		}
 		return KRView{}, fmt.Errorf("progress id %s already exists with different content", input.ID)
 	}
@@ -86,7 +86,7 @@ func (s *Service) CreateProgressEntry(ctx context.Context, pointID string, input
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return KRView{}, fmt.Errorf("create progress entry: %w", err)
 	}
-	return s.GetKR(ctx, kr.ID, input.Week)
+	return s.GetProgressKR(ctx, kr.ID, input.Week)
 }
 
 func (s *Service) UpdateProgressEntry(ctx context.Context, progressID string, input ProgressEntryInput) (KRView, error) {
@@ -131,7 +131,7 @@ func (s *Service) UpdateProgressEntry(ctx context.Context, progressID string, in
 	if result.RowsAffected != 1 {
 		return KRView{}, progressWriteConflict(s.db.WithContext(ctx), progressID)
 	}
-	return s.GetKR(ctx, kr.ID, input.Week)
+	return s.GetProgressKR(ctx, kr.ID, input.Week)
 }
 
 func (s *Service) DeleteProgressEntry(ctx context.Context, progressID string, input DeleteProgressEntryInput) (KRView, error) {
@@ -156,10 +156,12 @@ func (s *Service) DeleteProgressEntry(ctx context.Context, progressID string, in
 	if result.RowsAffected != 1 {
 		return KRView{}, progressWriteConflict(s.db.WithContext(ctx), progressID)
 	}
-	if err := s.db.WithContext(ctx).Where("target_id = ?", progressID).Delete(&domain.PageComment{}).Error; err != nil {
-		return KRView{}, fmt.Errorf("delete progress comments: %w", err)
+	if s.db.Migrator().HasTable(&domain.PageComment{}) {
+		if err := s.db.WithContext(ctx).Where("target_id = ?", progressID).Delete(&domain.PageComment{}).Error; err != nil {
+			return KRView{}, fmt.Errorf("delete progress comments: %w", err)
+		}
 	}
-	return s.GetKR(ctx, kr.ID, row.Week)
+	return s.GetProgressKR(ctx, kr.ID, row.Week)
 }
 
 func progressWriteConflict(db *gorm.DB, progressID string) error {

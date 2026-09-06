@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// WeeklyKRCoreInput is the weekly-report-owned write contract for the core
+// WeeklyKRCoreInput is the reusable OKR write contract for one week's core
 // data shown under one KR. It cannot change the KR title, owners, tags, metric
 // IDs, or decomposition definitions.
 type WeeklyKRCoreInput struct {
@@ -72,7 +72,7 @@ func (s *Service) ReplaceWeeklyKRCore(ctx context.Context, krID string, input We
 		if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 			return KRView{}, fmt.Errorf("create weekly core data: %w", err)
 		}
-		return s.GetKR(ctx, krID, input.Week)
+		return s.GetProgressKR(ctx, krID, input.Week)
 	}
 
 	result := s.db.WithContext(ctx).Model(&domain.WeeklyKRCore{}).
@@ -87,7 +87,7 @@ func (s *Service) ReplaceWeeklyKRCore(ctx context.Context, krID string, input We
 	if result.RowsAffected != 1 {
 		return KRView{}, ErrConflict
 	}
-	return s.GetKR(ctx, krID, input.Week)
+	return s.GetProgressKR(ctx, krID, input.Week)
 }
 
 func (s *Service) weeklyMetricIDs(ctx context.Context, krID string, existing domain.WeeklyKRCore) ([]string, error) {

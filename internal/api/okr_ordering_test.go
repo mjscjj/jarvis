@@ -7,9 +7,7 @@ import (
 	"testing"
 
 	"jarvis/internal/okrworkspace"
-	okrAuth "jarvis/internal/okrworkspace/auth"
 	"jarvis/internal/okrworkspace/domain"
-	"jarvis/internal/okrworkspace/moduleconfig"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/ut"
@@ -23,17 +21,13 @@ func orderingTestRouter(t *testing.T, db *gorm.DB) *server.Hertz {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	images, err := okrworkspace.NewImageStore(t.TempDir(), 1024)
 	if err != nil {
 		t.Fatal(err)
 	}
 	h := server.New()
 	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{
-		Workspace: workspace, Images: images, Identity: identity, People: newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}),
+		Workspace: workspace, Images: images,
 		Enabled: func(context.Context) (bool, error) { return true, nil },
 	}); err != nil {
 		t.Fatal(err)

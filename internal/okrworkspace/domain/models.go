@@ -177,7 +177,7 @@ type FollowUpOwner struct {
 	Name   string `json:"name"`
 }
 
-// FollowUpItem is the weekly-report-owned source of truth for Review follow-up
+// FollowUpItem is the Agency-OKR-owned source of truth for Review follow-up
 // rows. Owners stay as one JSON value because the product only reads and edits
 // the row as a whole; there is no owner-indexed query that would justify a
 // second table and a multi-write protocol.
@@ -437,13 +437,13 @@ type ReminderBatch struct {
 func (ReminderBatch) TableName() string { return "okr_workspace_reminder_batch" }
 
 func Models() []any {
-	return append(CoreModels(), WeeklyReportModels()...)
+	return append(CoreModels(), AgencyModels()...)
 }
 
-// CoreModels are owned by the OKR module. KRPoint is the stable decomposition
-// definition; its week-specific updates are owned by WeeklyReportModels.
+// CoreModels are owned by the reusable OKR module. Existing table names stay
+// unchanged: splitting module ownership must not copy or rewrite user data.
 func CoreModels() []any {
-	return []any{&Objective{}, &OKRPlan{}, &KR{}, &KRMetric{}, &KRPoint{}, &KRTag{}, &PointTag{}, &KROwner{}, &PointOwner{}}
+	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KROwner{}, &PointOwner{}, &WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}}
 }
 
 // IdentityModels are machine-local browser sessions. Pending device grants stay
@@ -453,9 +453,9 @@ func IdentityModels() []any {
 	return []any{&AuthSession{}}
 }
 
-// WeeklyReportModels are owned by the weekly-report module. Existing table
-// names are intentionally preserved so enabling the split never rewrites or
-// loses Emily's historical data.
-func WeeklyReportModels() []any {
-	return []any{&WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+// AgencyModels are the organization-specific wrapper around the reusable OKR
+// domain. Existing table names are intentionally preserved so enabling the
+// split never rewrites or loses historical data.
+func AgencyModels() []any {
+	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

@@ -22,7 +22,7 @@ func ReplaceKRTags(service *okrworkspace.Service) app.HandlerFunc {
 		input.UpdatedBy = currentOKRIdentity(c).OpenID
 		result, err := service.ReplaceKRTags(ctx, id, input)
 		if errors.Is(err, okrworkspace.ErrConflict) {
-			current, currentErr := service.GetCoreKR(ctx, id)
+			current, currentErr := service.GetAgencyCoreKR(ctx, id)
 			if currentErr != nil {
 				writeAPIError(c, consts.StatusInternalServerError, 50023, currentErr)
 				return
@@ -53,7 +53,7 @@ func ReplacePointTags(service *okrworkspace.Service) app.HandlerFunc {
 		input.UpdatedBy = currentOKRIdentity(c).OpenID
 		result, err := service.ReplacePointTags(ctx, id, input)
 		if errors.Is(err, okrworkspace.ErrConflict) {
-			current, currentErr := service.GetCoreKRByPointID(ctx, id)
+			current, currentErr := service.GetAgencyCoreKRByPointID(ctx, id)
 			if currentErr != nil {
 				writeAPIError(c, consts.StatusInternalServerError, 50024, currentErr)
 				return

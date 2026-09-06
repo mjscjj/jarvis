@@ -30,7 +30,7 @@ func TestMigrateSkillBindingsPreservesScheduleState(t *testing.T) {
 		t.Fatal(err)
 	}
 	count, err := MigrateSkillBindings(t.Context(), db, []SkillBindingMigration{{
-		FromSkill: "okr-progress-sync", ToSkill: "weekly-report-progress-sync", FromModule: "okr", ToModule: "weekly-report",
+		FromSkill: "okr-progress-sync", ToSkill: "weekly-report-progress-sync", FromModule: "okr", ToModule: "agency-okr",
 	}})
 	if err != nil || count != 1 {
 		t.Fatalf("MigrateSkillBindings() = %d, %v", count, err)
@@ -39,7 +39,7 @@ func TestMigrateSkillBindingsPreservesScheduleState(t *testing.T) {
 	if err := db.First(&result, record.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if result.Enabled || result.Status != "active" || !result.NextRunAt.Equal(next) || !strings.Contains(result.Instruction, "weekly-report-progress-sync") || string(result.ContextSnapshot) != `{"mode":"read_only","module":"weekly-report","skill":"weekly-report-progress-sync"}` {
+	if result.Enabled || result.Status != "active" || !result.NextRunAt.Equal(next) || !strings.Contains(result.Instruction, "weekly-report-progress-sync") || string(result.ContextSnapshot) != `{"mode":"read_only","module":"agency-okr","skill":"weekly-report-progress-sync"}` {
 		t.Fatalf("migrated schedule = %+v context=%s", result, result.ContextSnapshot)
 	}
 }

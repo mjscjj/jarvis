@@ -30,8 +30,8 @@ const OKRModule = lazy(() => import('../okr/OKRModule'))
 // remote code or create a second plugin runtime.
 export const appModuleRegistry: AppModuleDefinition[] = [
 	{
-		key: 'okr',
-		label: 'OKR',
+		key: 'agency-okr',
+		label: 'Agency OKR',
 		icon: <AimOutlined />,
 		Page: OKRModule,
 		children: OKR_TAB_DEFINITIONS.map((item) => ({

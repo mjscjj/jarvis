@@ -1,7 +1,7 @@
 ---
 name: okr-agent-orchestrator
 description: 根据 OKR 模块中可编辑的业务 Prompt，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成固定 Agent 行动或一次性目标。用于 KR 标签维护与批量打标、季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填、进展巡检和 OKR Preview 评审。
-module: okr
+module: agency-okr
 ---
 
 # OKR Agent 动态流程
@@ -30,12 +30,11 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 
 按本次目标选择最小工具集合，不要求固定顺序：
 
-- OKR 定义查询：`scripts/okr-module-tools scope|board|find-krs|get-kr|people-search`；已知关键词时先用 `find-krs` 缩小范围，不为查一个 KR 把整个季度 board 灌进上下文；图片材料可用 `upload-image` 保存；
-- KR 或策略/产品要点标签：先用 `get-kr` 读取最新 `version` 与目标层级的全部 `tags`。整条 KR 用 `scripts/okr-module-tools replace-kr-tags --id KR_ID --payload JSON|-`；仅针对某条策略/产品要点时，用 `replace-point-tags --id POINT_ID --payload JSON|-`。两者提交 `{"expected_version":父 KR 最新版本,"tags":[{"type":"custom","value":"标签值"}]}`，`tags` 都是所选层级的完整替换列表，必须保留无关标签；显式 `[]` 清空该层级全部标签。业务分类和优先级是 KR 结构标签，不能写到要点；工具只改所选标签并返回最新 KR；
-- 周次与周报事实：`scripts/weekly-report-tools scope|weeks|open-week|delete-week|board|get-weekly-kr`；已知 KR ID 时优先读取该 KR 的指定周事实；
-- 周度核心数据：`replace-weekly-core` 只写指定周的指标值、红绿灯、图片与说明，不得借此改变稳定指标 ID 或定义；先用 `get-weekly-kr` 读取 `weekly_core_version` 和完整指标数组，保留本次目标之外的值；
-- 单条周进展：`create-progress|update-progress|delete-progress`，写入前必须回读 KR 最新 `version`；
-- 评论协作：`comments|create-comment|update-comment|delete-comment`；待跟进事项评论使用 `target_type=follow_up` 和事项稳定 ID，创建前先回读事项并保持季度、周次一致；
+- 通用 OKR 定义查询：`scripts/okr-module-tools scope|board|find-krs|get-kr`；已知关键词时先用 `find-krs` 缩小范围，不为查一个 KR 把整个季度 board 灌进上下文；图片材料可用 `upload-image` 保存；
+- Agency 人员与标签：人员用 `scripts/agency-okr-tools people-search`；打标前用它的 `get-kr` 读取最新 `version` 与全部 `tags`。整条 KR 用 `replace-kr-tags --id KR_ID --payload JSON|-`，具体要点用 `replace-point-tags --point-id POINT_ID --payload JSON|-`；`tags` 是所选层级的完整替换列表；
+- 正式周次与 Progress：`scripts/okr-module-tools progress-scope|weeks|open-week|progress-board|get-weekly-kr|replace-weekly-core|create-progress|update-progress|delete-progress`。正式进展归通用 OKR；写前回读版本，写后回读；
+- Agency 周报组合视图：`scripts/agency-okr-tools scope|board|get-weekly-kr`；删除整周及 Agency 附属记录使用它的 `delete-week`；
+- 评论协作：`scripts/agency-okr-tools comments|create-comment|update-comment|delete-comment`；待跟进事项评论使用 `target_type=follow_up` 和事项稳定 ID，创建前先回读事项并保持季度、周次一致；
 - Review 待跟进事项：`follow-ups|get-follow-up|create-follow-up|update-follow-up|delete-follow-up`；状态只使用 `not_started|in_progress|done`，Owner 使用已解析的飞书 `open_id + name`，写前回读条目版本；
 - Meego 差异：`meego-preview|point-meego-preview|record-meego-observation|confirm-meego-progress`；
 - 催填与材料：`reminder-preview|reminder-batches|create-reminder-batch|create-feishu-document`；

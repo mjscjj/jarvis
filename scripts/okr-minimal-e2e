@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Deterministic, isolated OKR/weekly-report acceptance harness. This is a human
+# Deterministic, isolated OKR/Agency OKR acceptance harness. This is a human
 # test tool, not an Agent capability: it may create O/KR fixtures through the
-# product API, while the Agent-facing scripts intentionally remain read-only
-# for stable OKR definitions.
+# product API. Agent-facing writes remain controlled by the active stage, Skill
+# and prompt; the generic OKR script now also exposes intentional KR breakdown.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -191,10 +191,10 @@ seed() {
 
   objective_response="$(api_write POST /api/okr/objectives '{"quarter":"2026-Q3","title":"E2E：跑通单人季度 OKR"}' | require_code_zero)"
   objective_id="$(jq -er '.data.id' <<<"$objective_response")"
-	kr_response="$(api_write POST "/api/okr/objectives/$objective_id/krs" "$(jq -cn --arg open_id "$OWNER_OPEN_ID" --arg name "$OWNER_NAME" '{title:"E2E：验证一周填写到双周汇总",owners:[{open_id:$open_id,name:$name}],tags:[{type:"business_category",value:"E2E 测试"},{type:"priority",value:"p1"}]}')" | require_code_zero)"
+	kr_response="$(api_write POST "/api/agency-okr/objectives/$objective_id/krs" "$(jq -cn --arg open_id "$OWNER_OPEN_ID" --arg name "$OWNER_NAME" '{title:"E2E：验证一周填写到双周汇总",owners:[{open_id:$open_id,name:$name}],tags:[{type:"business_category",value:"E2E 测试"},{type:"priority",value:"p1"}]}')" | require_code_zero)"
   kr_id="$(jq -er '.data.id' <<<"$kr_response")"
 
-  api_write PUT "/api/okr/krs/$kr_id" "$(jq -cn --arg open_id "$OWNER_OPEN_ID" --arg name "$OWNER_NAME" --arg kr_id "$kr_id" '{
+  api_write PUT "/api/agency-okr/krs/$kr_id" "$(jq -cn --arg open_id "$OWNER_OPEN_ID" --arg name "$OWNER_NAME" --arg kr_id "$kr_id" '{
     expected_version:0,
     title:"E2E：验证一周填写到双周汇总",
 		metric_note:"测试口径：两个拆解点均有周进展即视为当周填写完成。",
@@ -207,13 +207,13 @@ seed() {
     owners:[{open_id:$open_id,name:$name}]
   }')" | require_code_zero >/dev/null
 
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" open-week --quarter 2026-Q3 --week 2026-W35 | require_code_zero >/dev/null
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" open-week --quarter 2026-Q3 --week 2026-W36 | require_code_zero >/dev/null
+  "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" open-week --quarter 2026-Q3 --week 2026-W35 | require_code_zero >/dev/null
+  "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" open-week --quarter 2026-Q3 --week 2026-W36 | require_code_zero >/dev/null
 
   local strategy_point_id="$kr_id-strategy"
   local product_point_id="$kr_id-product"
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" create-progress --point-id "$strategy_point_id" --payload "$(jq -cn '{id:"e2e-w35-strategy",expected_version:0,week:"2026-W35",status:"done",text:"W35 已确认测试目标和验收口径。",docs:[],images:[],source:"manual",needs_review:false}')" | require_code_zero >/dev/null
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" create-progress --point-id "$product_point_id" --payload "$(jq -cn '{id:"e2e-w35-product",expected_version:0,week:"2026-W35",status:"in_progress",text:"W35 已完成隔离环境准备，待 W36 验证完整写入。",docs:[],images:[],source:"manual",needs_review:false}')" | require_code_zero >/dev/null
+  "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" create-progress --point-id "$strategy_point_id" --payload "$(jq -cn '{id:"e2e-w35-strategy",expected_version:0,week:"2026-W35",status:"done",text:"W35 已确认测试目标和验收口径。",docs:[],images:[],source:"manual",needs_review:false}')" | require_code_zero >/dev/null
+  "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" create-progress --point-id "$product_point_id" --payload "$(jq -cn '{id:"e2e-w35-product",expected_version:0,week:"2026-W35",status:"in_progress",text:"W35 已完成隔离环境准备，待 W36 验证完整写入。",docs:[],images:[],source:"manual",needs_review:false}')" | require_code_zero >/dev/null
 
   jq -n \
     --arg objective_id "$objective_id" \
@@ -230,9 +230,9 @@ verify_empty() {
   require_server
   require_fixture
   local board reminder weeks
-  board="$($SCRIPT_DIR/weekly-report-tools --base-url "$BASE_URL" board --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
-  reminder="$($SCRIPT_DIR/weekly-report-tools --base-url "$BASE_URL" reminder-preview --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
-  weeks="$($SCRIPT_DIR/weekly-report-tools --base-url "$BASE_URL" weeks --quarter 2026-Q3 | require_code_zero)"
+  board="$($SCRIPT_DIR/agency-okr-tools --base-url "$BASE_URL" board --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
+  reminder="$($SCRIPT_DIR/agency-okr-tools --base-url "$BASE_URL" reminder-preview --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
+  weeks="$($SCRIPT_DIR/okr-module-tools --base-url "$BASE_URL" weeks --quarter 2026-Q3 | require_code_zero)"
   jq -e '
     (.data.objectives|length)==1
     and ([.data.objectives[].krs[]]|length)==1
@@ -266,8 +266,8 @@ run_reminder() {
     title:"OKR E2E：提醒本人填写 W36 周报",
     action_type:"agent_task",
     target:"读取 okr-agent-orchestrator、weekly-report-reminder 和 feishu-send-message Skill，并执行 okr_agent_weekly_reminder Prompt。范围固定为隔离数据 2026-Q3 / 2026-W36；只允许提醒预览返回的唯一负责人本人。",
-    background:{module:"weekly-report",skill:"okr-agent-orchestrator",prompt_key:"okr_agent_weekly_reminder",quarter:"2026-Q3",week:"2026-W36",test_recipient:"principal"},
-    source_payload:{module:"weekly-report",skill:"okr-agent-orchestrator",prompt_key:"okr_agent_weekly_reminder",quarter:"2026-Q3",week:"2026-W36",acceptance:"创建可回读催填批次；仅给唯一真实负责人本人发送一次；保留飞书成功回执"},
+    background:{module:"agency-okr",skill:"okr-agent-orchestrator",prompt_key:"okr_agent_weekly_reminder",quarter:"2026-Q3",week:"2026-W36",test_recipient:"principal"},
+    source_payload:{module:"agency-okr",skill:"okr-agent-orchestrator",prompt_key:"okr_agent_weekly_reminder",quarter:"2026-Q3",week:"2026-W36",acceptance:"创建可回读催填批次；仅给唯一真实负责人本人发送一次；保留飞书成功回执"},
     source_type:"manual"
   }')" | require_code_zero)"
   task_id="$(jq -er '.data.id' <<<"$response")"
@@ -287,9 +287,9 @@ fill_current() {
   printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl7lS8AAAAASUVORK5CYII=' | openssl base64 -d -A >"$png_path"
   image="$($SCRIPT_DIR/okr-module-tools --base-url "$BASE_URL" upload-image --file "$png_path" | jq -ec 'if .code==0 then .data else error(.msg // "image upload failed") end')"
 
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" create-progress --point-id "$strategy_point_id" --payload "$(jq -cn --argjson image "$image" '{id:"e2e-w36-strategy",expected_version:0,week:"2026-W36",status:"done",text:"W36 已确认最小闭环范围、风险和验收结果。",docs:[{id:"e2e-doc-1",title:"E2E 验收说明",url:"https://example.com/okr-e2e"}],images:[$image],source:"manual",needs_review:false}')" | require_code_zero >/dev/null
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" create-progress --point-id "$product_point_id" --payload "$(jq -cn '{id:"e2e-w36-product",expected_version:0,week:"2026-W36",status:"done",text:"W36 已完成周次、进展、评论、附件和回读验证。",docs:[],images:[],source:"manual",needs_review:false}')" | require_code_zero >/dev/null
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" create-comment --payload "$(jq -cn --arg target_id "$product_point_id" '{quarter:"2026-Q3",week:"2026-W36",parent_id:"",target_type:"point",target_id:$target_id,target_title:"产品：交付一个可回读结果",selected_text:"",selection_start:0,selection_end:0,selection_prefix:"",selection_suffix:"",content:"E2E 评论：已回读确认。"}')" | require_code_zero >/dev/null
+  "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" create-progress --point-id "$strategy_point_id" --payload "$(jq -cn --argjson image "$image" '{id:"e2e-w36-strategy",expected_version:0,week:"2026-W36",status:"done",text:"W36 已确认最小闭环范围、风险和验收结果。",docs:[{id:"e2e-doc-1",title:"E2E 验收说明",url:"https://example.com/okr-e2e"}],images:[$image],source:"manual",needs_review:false}')" | require_code_zero >/dev/null
+  "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" create-progress --point-id "$product_point_id" --payload "$(jq -cn '{id:"e2e-w36-product",expected_version:0,week:"2026-W36",status:"done",text:"W36 已完成周次、进展、评论、附件和回读验证。",docs:[],images:[],source:"manual",needs_review:false}')" | require_code_zero >/dev/null
+  "$SCRIPT_DIR/agency-okr-tools" --base-url "$BASE_URL" create-comment --payload "$(jq -cn --arg target_id "$product_point_id" '{quarter:"2026-Q3",week:"2026-W36",parent_id:"",target_type:"point",target_id:$target_id,target_title:"产品：交付一个可回读结果",selected_text:"",selection_start:0,selection_end:0,selection_prefix:"",selection_suffix:"",content:"E2E 评论：已回读确认。"}')" | require_code_zero >/dev/null
   echo "filled W36 with two progress entries, one document, one image and one comment"
 }
 
@@ -297,9 +297,9 @@ verify_filled() {
   require_server
   require_fixture
   local board reminder comments asset_url
-  board="$($SCRIPT_DIR/weekly-report-tools --base-url "$BASE_URL" board --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
-  reminder="$($SCRIPT_DIR/weekly-report-tools --base-url "$BASE_URL" reminder-preview --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
-  comments="$($SCRIPT_DIR/weekly-report-tools --base-url "$BASE_URL" comments --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
+  board="$($SCRIPT_DIR/agency-okr-tools --base-url "$BASE_URL" board --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
+  reminder="$($SCRIPT_DIR/agency-okr-tools --base-url "$BASE_URL" reminder-preview --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
+  comments="$($SCRIPT_DIR/agency-okr-tools --base-url "$BASE_URL" comments --quarter 2026-Q3 --week 2026-W36 | require_code_zero)"
   jq -e '
     ([.data.objectives[].krs[].points[].entries[]]|length)==2
     and ([.data.objectives[].krs[].points[].entries[].docs[]]|length)==1
@@ -320,12 +320,12 @@ cas_test() {
   kr_id="$(jq -er '.kr_id' "$FIXTURE_PATH")"
   point_id="$(jq -er '.strategy_point_id' "$FIXTURE_PATH")"
   before_version="$($SCRIPT_DIR/okr-module-tools --base-url "$BASE_URL" get-kr --id "$kr_id" | jq -er '.data.version')"
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" create-progress --point-id "$point_id" --payload "$(jq -cn '{id:"e2e-cas-progress",expected_version:0,week:"2026-W36",status:"in_progress",text:"CAS 初始值",docs:[],images:[],source:"agent",needs_review:true}')" | require_code_zero >/dev/null
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" update-progress --id e2e-cas-progress --payload "$(jq -cn '{expected_version:0,week:"2026-W36",status:"done",text:"CAS 更新值",docs:[],images:[],source:"agent",needs_review:false}')" | require_code_zero >/dev/null
-  stale_status="$(curl --silent --output "$RUNTIME_DIR/cas-stale.json" --write-out '%{http_code}' -X PUT "$BASE_URL/api/weekly-report/progress/e2e-cas-progress" -H 'content-type: application/json' --data "$(jq -cn '{expected_version:0,week:"2026-W36",status:"blocked",text:"不应覆盖",docs:[],images:[],source:"agent",needs_review:false}')")"
+  "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" create-progress --point-id "$point_id" --payload "$(jq -cn '{id:"e2e-cas-progress",expected_version:0,week:"2026-W36",status:"in_progress",text:"CAS 初始值",docs:[],images:[],source:"agent",needs_review:true}')" | require_code_zero >/dev/null
+  "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" update-progress --id e2e-cas-progress --payload "$(jq -cn '{expected_version:0,week:"2026-W36",status:"done",text:"CAS 更新值",docs:[],images:[],source:"agent",needs_review:false}')" | require_code_zero >/dev/null
+  stale_status="$(curl --silent --output "$RUNTIME_DIR/cas-stale.json" --write-out '%{http_code}' -X PUT "$BASE_URL/api/okr/progress/e2e-cas-progress" -H 'content-type: application/json' --data "$(jq -cn '{expected_version:0,week:"2026-W36",status:"blocked",text:"不应覆盖",docs:[],images:[],source:"agent",needs_review:false}')")"
   [[ "$stale_status" == 409 ]] || fail "stale progress update returned HTTP $stale_status, want 409"
   jq -e '.code==40938' "$RUNTIME_DIR/cas-stale.json" >/dev/null || fail "stale progress update returned unexpected body"
-  "$SCRIPT_DIR/weekly-report-tools" --base-url "$BASE_URL" delete-progress --id e2e-cas-progress --payload '{"expected_version":1}' | require_code_zero >/dev/null
+  "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" delete-progress --id e2e-cas-progress --payload '{"expected_version":1}' | require_code_zero >/dev/null
   after_version="$($SCRIPT_DIR/okr-module-tools --base-url "$BASE_URL" get-kr --id "$kr_id" | jq -er '.data.version')"
   [[ "$before_version" == "$after_version" ]] || fail "progress CRUD changed stable KR version: $before_version -> $after_version"
   echo "verified: progress CAS returns 409 for stale writes; stable KR version remains $after_version"
@@ -342,8 +342,8 @@ run_report_c() {
     title:"OKR E2E：生成双周会 Report C",
     action_type:"agent_task",
     target:"读取 okr-agent-orchestrator Skill 与 okr_agent_report_c Prompt，基于隔离数据中的 2026-W35 和 2026-W36 生成内部双周会草稿；不得创建外部文档或发送消息。",
-    background:{module:"okr",skill:"okr-agent-orchestrator",prompt_key:"okr_agent_report_c",quarter:"2026-Q3",weeks:["2026-W35","2026-W36"]},
-    source_payload:{module:"okr",skill:"okr-agent-orchestrator",prompt_key:"okr_agent_report_c",quarter:"2026-Q3",weeks:["2026-W35","2026-W36"],acceptance:"必须引用两个不同周次，effects 为空"},
+    background:{module:"agency-okr",skill:"okr-agent-orchestrator",prompt_key:"okr_agent_report_c",quarter:"2026-Q3",weeks:["2026-W35","2026-W36"]},
+    source_payload:{module:"agency-okr",skill:"okr-agent-orchestrator",prompt_key:"okr_agent_report_c",quarter:"2026-Q3",weeks:["2026-W35","2026-W36"],acceptance:"必须引用两个不同周次，effects 为空"},
     source_type:"manual"
   }')" | require_code_zero)"
   task_id="$(jq -er '.data.id' <<<"$response")"
@@ -380,7 +380,7 @@ status() {
   require_server
   echo "health: $(curl --fail --silent --show-error "$BASE_URL/healthz" | jq -c .)"
   echo "okr scope: $(curl --fail --silent --show-error "$BASE_URL/api/okr/scope" | jq -c .)"
-  echo "weekly scope: $(curl --fail --silent --show-error "$BASE_URL/api/weekly-report/scope" | jq -c .)"
+  echo "agency OKR scope: $(curl --fail --silent --show-error "$BASE_URL/api/agency-okr/scope" | jq -c .)"
   if [[ -s "$FIXTURE_PATH" ]]; then
     echo "fixture: $(jq -c . "$FIXTURE_PATH")"
     if jq -e '.reminder_task_id != null' "$FIXTURE_PATH" >/dev/null; then

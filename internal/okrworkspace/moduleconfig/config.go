@@ -25,7 +25,7 @@ type Config struct {
 
 // PreviewReviewConfig drives the one-shot OKR Preview review agent. The review
 // is advisory and read-only, but it reaches the module's own data through
-// okr-module-tools / weekly-report-tools, which call the local API — hence a
+// okr-module-tools / agency-okr-tools, which call the local API — hence a
 // sandbox that permits network access rather than read-only.
 type PreviewReviewConfig struct {
 	Bin             string `yaml:"bin"`
@@ -85,7 +85,18 @@ func (c IdentityConfig) AppSecret() string {
 	return strings.TrimSpace(os.Getenv(strings.TrimSpace(c.AppSecretEnv)))
 }
 
+// LoadCore reads only the reusable OKR storage settings. Agency-only identity
+// and review settings remain inert when the agency-okr module is disabled.
+func LoadCore(path string) (Config, error) {
+	return load(path, false)
+}
+
+// Load reads and validates the complete OKR plus Agency OKR configuration.
 func Load(path string) (Config, error) {
+	return load(path, true)
+}
+
+func load(path string, includeAgency bool) (Config, error) {
 	raw, err := fileconfig.Read(path)
 	if err != nil {
 		return Config{}, err
@@ -96,8 +107,14 @@ func Load(path string) (Config, error) {
 	if err := decoder.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("decode OKR module config %s: %w", path, err)
 	}
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.validateCore(); err != nil {
 		return Config{}, fmt.Errorf("validate OKR module config %s: %w", path, err)
+	}
+	if !includeAgency {
+		return cfg, nil
+	}
+	if err := cfg.validateAgency(); err != nil {
+		return Config{}, fmt.Errorf("validate Agency OKR module config %s: %w", path, err)
 	}
 	if cfg.Identity.Enabled {
 		scopesPath := filepath.Join(filepath.Dir(path), cfg.Identity.ScopesFile)
@@ -141,6 +158,13 @@ func loadScopes(path string) ([]string, error) {
 }
 
 func (c Config) Validate() error {
+	if err := c.validateCore(); err != nil {
+		return err
+	}
+	return c.validateAgency()
+}
+
+func (c Config) validateCore() error {
 	if strings.TrimSpace(c.DatabasePath) == "" {
 		return fmt.Errorf("database_path is required")
 	}
@@ -150,6 +174,10 @@ func (c Config) Validate() error {
 	if c.MaxImageBytes <= 0 {
 		return fmt.Errorf("max_image_bytes must be positive")
 	}
+	return nil
+}
+
+func (c Config) validateAgency() error {
 	if err := c.PreviewReview.validate(); err != nil {
 		return err
 	}

@@ -168,13 +168,18 @@ func main() {
 	if err != nil {
 		fatalf("read OKR module enablement failed: %v", err)
 	}
-	weeklyReportModuleEnabled, err := appModuleService.Enabled(startupCtx, "weekly-report")
+	agencyOKRModuleEnabled, err := appModuleService.Enabled(startupCtx, "agency-okr")
 	if err != nil {
-		fatalf("read weekly report module enablement failed: %v", err)
+		fatalf("read Agency OKR module enablement failed: %v", err)
 	}
 	var okrModuleConfig moduleconfig.Config
 	if okrModuleEnabled {
-		okrModuleConfig, err = moduleconfig.Load(filepath.Join(filepath.Dir(configPathAbsolute), "okr-module.yaml"))
+		okrConfigPath := filepath.Join(filepath.Dir(configPathAbsolute), "okr-module.yaml")
+		if agencyOKRModuleEnabled {
+			okrModuleConfig, err = moduleconfig.Load(okrConfigPath)
+		} else {
+			okrModuleConfig, err = moduleconfig.LoadCore(okrConfigPath)
+		}
 		if err != nil {
 			fatalf("load OKR module config failed: %v", err)
 		}
@@ -221,25 +226,28 @@ func main() {
 		if err := okrworkspace.MigrateCore(okrDB); err != nil {
 			fatalf("migrate OKR module failed: %v", err)
 		}
-		if err := okrworkspace.MigrateIdentity(db); err != nil {
-			fatalf("migrate OKR identity state failed: %v", err)
-		}
 	}
-	if weeklyReportModuleEnabled {
+	if agencyOKRModuleEnabled {
 		if okrDB == nil {
-			fatalf("migrate weekly report module failed: OKR module database is nil")
+			fatalf("migrate Agency OKR module failed: OKR module database is nil")
 		}
-		if err := okrworkspace.MigrateWeeklyReport(okrDB); err != nil {
-			fatalf("migrate weekly report module failed: %v", err)
+		if err := okrworkspace.MigrateAgencyOKR(okrDB); err != nil {
+			fatalf("migrate Agency OKR module failed: %v", err)
+		}
+		if err := okrworkspace.MigrateIdentity(db); err != nil {
+			fatalf("migrate Agency OKR identity state failed: %v", err)
 		}
 	}
 	if migrated, err := scheduledtask.MigrateSkillBindings(startupCtx, db, []scheduledtask.SkillBindingMigration{
-		{FromSkill: "okr-progress-sync", ToSkill: "weekly-report-progress-sync", FromModule: "okr", ToModule: "weekly-report"},
-		{FromSkill: "okr-weekly-reminder", ToSkill: "weekly-report-reminder", FromModule: "okr", ToModule: "weekly-report"},
+		{FromSkill: "okr-progress-sync", ToSkill: "weekly-report-progress-sync", FromModule: "okr", ToModule: "agency-okr"},
+		{FromSkill: "okr-weekly-reminder", ToSkill: "weekly-report-reminder", FromModule: "okr", ToModule: "agency-okr"},
+		{FromSkill: "weekly-report-progress-sync", ToSkill: "weekly-report-progress-sync", FromModule: "weekly-report", ToModule: "agency-okr"},
+		{FromSkill: "weekly-report-reminder", ToSkill: "weekly-report-reminder", FromModule: "weekly-report", ToModule: "agency-okr"},
+		{FromSkill: "okr-agent-orchestrator", ToSkill: "okr-agent-orchestrator", FromModule: "weekly-report", ToModule: "agency-okr"},
 	}); err != nil {
-		fatalf("migrate weekly report scheduled task bindings failed: %v", err)
+		fatalf("migrate Agency OKR scheduled task bindings failed: %v", err)
 	} else if migrated > 0 {
-		infof("migrated weekly report scheduled task bindings: count=%d", migrated)
+		infof("migrated Agency OKR scheduled task bindings: count=%d", migrated)
 	}
 	if *migrateOnly {
 		infof("sqlite schema migration completed")
@@ -502,6 +510,8 @@ func main() {
 		if err != nil {
 			fatalf("initialize OKR image store failed: %v", err)
 		}
+	}
+	if agencyOKRModuleEnabled {
 		var okrIdentityProvider okrAuth.Provider
 		if okrModuleConfig.Identity.Enabled {
 			okrIdentityProvider, err = okrAuth.NewFeishuProvider(
@@ -533,7 +543,7 @@ func main() {
 		if subjectType != "okr_point" {
 			return errors.Join(worldprogress.ErrInvalidInput, errors.New("only okr_point subjects are supported"))
 		}
-		enabled, err := appModuleService.Enabled(ctx, "weekly-report")
+		enabled, err := appModuleService.Enabled(ctx, "okr")
 		if err != nil {
 			return err
 		}
@@ -1072,16 +1082,14 @@ func main() {
 		readinessTargets.VectorIndex = semanticIndex
 	}
 	var okrModuleDeps *api.OKRModuleDependencies
-	var weeklyReportModuleDeps *api.WeeklyReportModuleDependencies
+	var agencyOKRModuleDeps *api.AgencyOKRModuleDependencies
 	if okrModuleEnabled {
 		okrModuleDeps = &api.OKRModuleDependencies{
 			Workspace: okrWorkspaceService, Images: okrImageStore,
-			Identity: okrIdentityService, Documents: larkClient, People: resolveService,
-			Enabled:    func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "okr") },
-			UserTokens: okrUserTokens, Tokens: okrTokenStore, FeishuAppID: okrModuleConfig.Identity.AppID,
+			Enabled: func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "okr") },
 		}
 	}
-	if weeklyReportModuleEnabled {
+	if agencyOKRModuleEnabled {
 		previewReviewService, err := okrreview.NewService(okrreview.Options{
 			Board:           okrWorkspaceService,
 			Prompts:         textFileService,
@@ -1094,10 +1102,11 @@ func main() {
 		if err != nil {
 			fatalf("initialize OKR preview review service failed: %v", err)
 		}
-		weeklyReportModuleDeps = &api.WeeklyReportModuleDependencies{
-			Workspace: okrWorkspaceService, Identity: okrIdentityService, Documents: larkClient,
-			Enabled:       func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "weekly-report") },
+		agencyOKRModuleDeps = &api.AgencyOKRModuleDependencies{
+			Workspace: okrWorkspaceService, Identity: okrIdentityService, Documents: larkClient, People: resolveService,
+			Enabled:       func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "agency-okr") },
 			PreviewReview: previewReviewService,
+			UserTokens:    okrUserTokens, Tokens: okrTokenStore, FeishuAppID: okrModuleConfig.Identity.AppID,
 		}
 	}
 	if err := api.Register(h, api.Dependencies{
@@ -1110,22 +1119,22 @@ func main() {
 		KeyMatters: keyMatterService,
 		Persons:    personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
-		Pages:              pageService,
-		Relations:          relationService,
-		SharedMemory:       sharedMemoryService,
-		WorkRules:          workRuleService,
-		TextFiles:          textFileService,
-		AgentConfig:        agentConfigService,
-		AppModules:         appModuleService,
-		OKRModule:          okrModuleDeps,
-		WeeklyReportModule: weeklyReportModuleDeps,
-		ScheduledTasks:     scheduledTaskService,
-		Plugins:            pluginService,
-		Skills:             runtimeSkills,
-		Progress:           progressService,
-		FactQueries:        progressService,
-		WorldProgress:      worldProgressService,
-		Overview:           overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
+		Pages:           pageService,
+		Relations:       relationService,
+		SharedMemory:    sharedMemoryService,
+		WorkRules:       workRuleService,
+		TextFiles:       textFileService,
+		AgentConfig:     agentConfigService,
+		AppModules:      appModuleService,
+		OKRModule:       okrModuleDeps,
+		AgencyOKRModule: agencyOKRModuleDeps,
+		ScheduledTasks:  scheduledTaskService,
+		Plugins:         pluginService,
+		Skills:          runtimeSkills,
+		Progress:        progressService,
+		FactQueries:     progressService,
+		WorldProgress:   worldProgressService,
+		Overview:        overviewService, Digests: digestService, DigestSummarizer: digestSummarizer,
 		MeetingReviews:  meetingReviewService,
 		DailyDigests:    dailyDigestService,
 		MorningBriefs:   morningBriefReader,

@@ -7,9 +7,7 @@ import (
 	"testing"
 
 	"jarvis/internal/okrworkspace"
-	okrAuth "jarvis/internal/okrworkspace/auth"
 	"jarvis/internal/okrworkspace/domain"
-	"jarvis/internal/okrworkspace/moduleconfig"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/ut"
@@ -30,7 +28,6 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	rows := []any{
 		&domain.KR{ID: "kr-1", Title: "旧 KR 标题", MetricNote: "主干指标说明"},
 		&domain.KRMetric{ID: "metric-1", KRID: "kr-1", Text: "主干核心数据", Light: domain.LightGreen},
-		&domain.KRTag{KRID: "kr-1", Type: "business_category", Value: "公会业务"},
 		&domain.KRPoint{ID: "point-1", KRID: "kr-1", Kind: domain.PointKindStrategy, Title: "旧要点标题"},
 		&domain.KROwner{KRID: "kr-1", OwnerKey: "old", Name: "旧负责人"},
 	}
@@ -43,10 +40,6 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{Enabled: true}, unreachableOKRAuthProvider{}, okrAuthTestTokenStore(t))
-	if err != nil {
-		t.Fatal(err)
-	}
 	images, err := okrworkspace.NewImageStore(t.TempDir(), 1024)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +47,7 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	enabled := true
 	h := server.New()
 	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{
-		Workspace: workspace, Images: images, Identity: identity, People: newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}),
+		Workspace: workspace, Images: images,
 		Enabled: func(context.Context) (bool, error) { return enabled, nil },
 	}); err != nil {
 		t.Fatal(err)
@@ -100,8 +93,8 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	if view.MetricNote != "主干指标说明" || len(view.Metrics) != 1 || view.Metrics[0].Text != "主干核心数据" {
 		t.Fatalf("definition metrics must survive a wording edit: %+v", view)
 	}
-	if len(view.Tags) != 1 || view.Tags[0].Value != "公会业务" {
-		t.Fatalf("labels must survive a wording edit: %+v", view.Tags)
+	if len(view.Tags) != 0 {
+		t.Fatalf("generic OKR response must not expose Agency tags: %+v", view.Tags)
 	}
 	var stored domain.KR
 	if err := db.First(&stored, "id = ?", "kr-1").Error; err != nil {
@@ -122,5 +115,65 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	response = ut.PerformRequest(h.Engine, "PUT", "/api/okr/krs/kr-1/definition", &ut.Body{Body: strings.NewReader(current), Len: len(current)}).Result()
 	if response.StatusCode() != 404 {
 		t.Fatalf("disabled module status=%d body=%s", response.StatusCode(), response.Body())
+	}
+}
+
+func TestGenericKRRouteCanMaintainDecompositionWithoutAgencySchema(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := okrworkspace.MigrateCore(db); err != nil {
+		t.Fatal(err)
+	}
+	objective := domain.Objective{ID: "o-generic", Quarter: "2026-Q3", Title: "通用目标"}
+	kr := domain.KR{ID: "kr-generic", ObjectiveID: objective.ID, Title: "待拆解 KR"}
+	for _, row := range []any{&objective, &kr} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	workspace, err := okrworkspace.NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	images, err := okrworkspace.NewImageStore(t.TempDir(), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := server.New()
+	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{
+		Workspace: workspace, Images: images,
+		Enabled: func(context.Context) (bool, error) { return true, nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"expected_version":0,"title":"已拆解 KR","metric_note":"季度口径","metrics":[{"id":"metric-1","text":"完成率 100%","light":"green","images":[]}],"points":[{"id":"point-1","kind":"strategy","title":"通用拆解点","owners":[{"open_id":"ou_owner","name":"负责人"}]}],"owners":[]}`
+	response := ut.PerformRequest(h.Engine, "PUT", "/api/okr/krs/kr-generic", &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != 200 {
+		t.Fatalf("generic replace status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	var payload struct {
+		Data okrworkspace.KRView `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data.Title != "已拆解 KR" || len(payload.Data.Metrics) != 1 || len(payload.Data.Points) != 1 || len(payload.Data.Points[0].Owners) != 1 {
+		t.Fatalf("generic KR = %+v", payload.Data)
+	}
+	if payload.Data.Tags == nil || len(payload.Data.Tags) != 0 || payload.Data.Points[0].Tags == nil || payload.Data.Points[0].MeegoWorkItemID != "" {
+		t.Fatalf("generic KR leaked Agency data: %+v", payload.Data)
+	}
+
+	for _, forbidden := range []string{
+		`{"expected_version":1,"title":"越界","metric_note":"","metrics":[],"points":[],"owners":[],"tags":[]}`,
+		`{"expected_version":1,"title":"越界","metric_note":"","metrics":[],"points":[{"id":"point-1","kind":"strategy","title":"拆解","owners":[],"meego_url":"https://example.com"}],"owners":[]}`,
+	} {
+		response = ut.PerformRequest(h.Engine, "PUT", "/api/okr/krs/kr-generic", &ut.Body{Body: strings.NewReader(forbidden), Len: len(forbidden)}).Result()
+		if response.StatusCode() != 400 {
+			t.Fatalf("generic route accepted Agency field: status=%d body=%s", response.StatusCode(), response.Body())
+		}
 	}
 }

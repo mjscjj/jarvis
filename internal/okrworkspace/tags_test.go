@@ -97,7 +97,7 @@ func TestReplaceKRTagsValidatesBeforeWriting(t *testing.T) {
 	if _, err := service.ReplaceKRTags(t.Context(), "missing", ReplaceKRTagsInput{Tags: []TagView{}}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing KR error = %v", err)
 	}
-	current, err := service.GetCoreKR(t.Context(), kr.ID)
+	current, err := service.GetAgencyCoreKR(t.Context(), kr.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestReplacePointTagsUsesParentKRVersionAndPreservesDefinitions(t *testing.T
 	if _, err := service.ReplacePointTags(t.Context(), point.ID, ReplacePointTagsInput{ExpectedVersion: 1, Tags: []TagView{{Type: domain.TagTypePriority, Value: "p0"}}}); err == nil {
 		t.Fatal("point tag write accepted a KR structural tag")
 	}
-	current, err := service.GetCoreKR(t.Context(), kr.ID)
+	current, err := service.GetAgencyCoreKR(t.Context(), kr.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

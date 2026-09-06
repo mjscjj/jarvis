@@ -112,10 +112,20 @@ func (s *Service) OpenWeek(ctx context.Context, input OpenWeekInput) (OpenWeekRe
 	return OpenWeekResult{Week: weekView(row), Created: created.RowsAffected == 1}, nil
 }
 
-// DeleteWeek removes one complete weekly-report scope while preserving the
+// DeleteWeek removes one complete Agency OKR weekly scope while preserving the
 // stable OKR definition and every other week. The week anchor is deleted last
 // so an interrupted deletion remains visible and can be retried safely.
 func (s *Service) DeleteWeek(ctx context.Context, quarter, week string) (DeleteWeekResult, error) {
+	return s.deleteWeek(ctx, quarter, week, true)
+}
+
+// DeleteProgressWeek deletes only the reusable OKR module's formal timeline.
+// Agency uses DeleteWeek to preserve its existing whole-page deletion behavior.
+func (s *Service) DeleteProgressWeek(ctx context.Context, quarter, week string) (DeleteWeekResult, error) {
+	return s.deleteWeek(ctx, quarter, week, false)
+}
+
+func (s *Service) deleteWeek(ctx context.Context, quarter, week string, includeAgency bool) (DeleteWeekResult, error) {
 	quarter = strings.TrimSpace(quarter)
 	week = strings.TrimSpace(week)
 	if !quarterPattern.MatchString(quarter) {
@@ -146,17 +156,19 @@ func (s *Service) DeleteWeek(ctx context.Context, quarter, week string) (DeleteW
 	}
 
 	result := DeleteWeekResult{Quarter: quarter, Week: week}
-	comments := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.PageComment{})
-	if comments.Error != nil {
-		return DeleteWeekResult{}, fmt.Errorf("delete weekly report comments: %w", comments.Error)
-	}
-	result.Deleted.Comments = comments.RowsAffected
+	if includeAgency {
+		comments := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.PageComment{})
+		if comments.Error != nil {
+			return DeleteWeekResult{}, fmt.Errorf("delete weekly report comments: %w", comments.Error)
+		}
+		result.Deleted.Comments = comments.RowsAffected
 
-	followUps := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.FollowUpItem{})
-	if followUps.Error != nil {
-		return DeleteWeekResult{}, fmt.Errorf("delete weekly report follow-ups: %w", followUps.Error)
+		followUps := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.FollowUpItem{})
+		if followUps.Error != nil {
+			return DeleteWeekResult{}, fmt.Errorf("delete weekly report follow-ups: %w", followUps.Error)
+		}
+		result.Deleted.FollowUps = followUps.RowsAffected
 	}
-	result.Deleted.FollowUps = followUps.RowsAffected
 
 	if len(pointIDs) > 0 {
 		progress := s.db.WithContext(ctx).Where("point_id IN ? AND week = ?", pointIDs, week).Delete(&domain.KRProgress{})
@@ -165,18 +177,22 @@ func (s *Service) DeleteWeek(ctx context.Context, quarter, week string) (DeleteW
 		}
 		result.Deleted.Progress = progress.RowsAffected
 
-		snapshots := s.db.WithContext(ctx).Where("point_id IN ? AND week = ?", pointIDs, week).Delete(&domain.MeegoSyncSnapshot{})
-		if snapshots.Error != nil {
-			return DeleteWeekResult{}, fmt.Errorf("delete weekly report Meego snapshots: %w", snapshots.Error)
+		if includeAgency {
+			snapshots := s.db.WithContext(ctx).Where("point_id IN ? AND week = ?", pointIDs, week).Delete(&domain.MeegoSyncSnapshot{})
+			if snapshots.Error != nil {
+				return DeleteWeekResult{}, fmt.Errorf("delete weekly report Meego snapshots: %w", snapshots.Error)
+			}
+			result.Deleted.MeegoSnapshots = snapshots.RowsAffected
 		}
-		result.Deleted.MeegoSnapshots = snapshots.RowsAffected
 	}
 
-	scores := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.WeeklyScore{})
-	if scores.Error != nil {
-		return DeleteWeekResult{}, fmt.Errorf("delete weekly report scores: %w", scores.Error)
+	if includeAgency {
+		scores := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.WeeklyScore{})
+		if scores.Error != nil {
+			return DeleteWeekResult{}, fmt.Errorf("delete weekly report scores: %w", scores.Error)
+		}
+		result.Deleted.Scores = scores.RowsAffected
 	}
-	result.Deleted.Scores = scores.RowsAffected
 
 	if len(krIDs) > 0 {
 		cores := s.db.WithContext(ctx).Where("kr_id IN ? AND week = ?", krIDs, week).Delete(&domain.WeeklyKRCore{})
@@ -186,11 +202,13 @@ func (s *Service) DeleteWeek(ctx context.Context, quarter, week string) (DeleteW
 		result.Deleted.WeeklyCores = cores.RowsAffected
 	}
 
-	batches := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.ReminderBatch{})
-	if batches.Error != nil {
-		return DeleteWeekResult{}, fmt.Errorf("delete weekly report reminder batches: %w", batches.Error)
+	if includeAgency {
+		batches := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.ReminderBatch{})
+		if batches.Error != nil {
+			return DeleteWeekResult{}, fmt.Errorf("delete weekly report reminder batches: %w", batches.Error)
+		}
+		result.Deleted.ReminderBatches = batches.RowsAffected
 	}
-	result.Deleted.ReminderBatches = batches.RowsAffected
 
 	anchor := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.WeeklyReportWeek{})
 	if anchor.Error != nil {

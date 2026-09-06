@@ -67,7 +67,7 @@ function Workspace({ moduleEnablement }: {
     return weeklyShare && requestedTab === 'okr-plan' ? previousQuarter(routeQuarter) : routeQuarter
   })
   const visibleTab = weeklyShare ? weeklyShareTab(requestedTab) : resolveOKRTab(requestedTab, moduleEnablement)
-  const weeklyEnabled = moduleEnablement['weekly-report'] === true
+  const weeklyEnabled = moduleEnablement['agency-okr'] === true
   const planVisible = visibleTab === 'okr-plan'
   const activeQuarter = planVisible
     ? activeQuarterForViewState(context.view_state, selectedQuarter)
@@ -149,8 +149,8 @@ function Workspace({ moduleEnablement }: {
   )
 }
 
-// Emily is one Jarvis product module in the navigation. OKR definitions and
-// weekly reporting remain separate backend domains behind the same directory.
+// Agency OKR is the product shell. It composes the generic OKR definition and
+// formal-progress APIs with Agency-owned plans, tags, review and automation.
 export default function OKRModule({ moduleEnablement }: AppModulePageProps) {
 	return (
 		<IdentityBoundary>

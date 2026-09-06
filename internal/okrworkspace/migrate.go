@@ -18,7 +18,7 @@ func Migrate(db *gorm.DB) error {
 	if err := MigrateCore(db); err != nil {
 		return err
 	}
-	return MigrateWeeklyReport(db)
+	return MigrateAgencyOKR(db)
 }
 
 func MigrateCore(db *gorm.DB) error {
@@ -50,7 +50,7 @@ func MigrateCore(db *gorm.DB) error {
 	if err := migrateLegacyKROwnerProjection(db); err != nil {
 		return err
 	}
-	return nil
+	return backfillProgressWeeks(db)
 }
 
 func MigrateIdentity(db *gorm.DB) error {
@@ -120,13 +120,19 @@ func migrateLegacyKROwnerProjection(db *gorm.DB) error {
 	return nil
 }
 
-func MigrateWeeklyReport(db *gorm.DB) error {
+func MigrateAgencyOKR(db *gorm.DB) error {
 	if db == nil {
-		return fmt.Errorf("migrate weekly report module: database is nil")
+		return fmt.Errorf("migrate Agency OKR module: database is nil")
 	}
-	if err := db.AutoMigrate(domain.WeeklyReportModels()...); err != nil {
-		return fmt.Errorf("migrate weekly report module schema: %w", err)
+	if err := db.AutoMigrate(domain.AgencyModels()...); err != nil {
+		return fmt.Errorf("migrate Agency OKR module schema: %w", err)
 	}
+	return nil
+}
+
+// backfillProgressWeeks belongs to the reusable OKR module because Week and
+// KRProgress are part of the formal OKR timeline, not the Agency presentation.
+func backfillProgressWeeks(db *gorm.DB) error {
 	if err := db.Model(&domain.WeeklyReportWeek{}).
 		Where("template_key IS NULL OR template_key = ''").
 		Update("template_key", domain.WeekTemplateClassic).Error; err != nil {

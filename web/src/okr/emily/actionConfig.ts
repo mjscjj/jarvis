@@ -114,7 +114,7 @@ export function scheduledTaskInput(definition: OKRActionDefinition, value: OKRAc
     action_type: 'agent_task',
     instruction: `执行固定行动“${definition.title}”；范围、对象、产出和验收标准以绑定 Prompt 为准。`,
     context_snapshot: {
-      module: 'weekly-report',
+      module: 'agency-okr',
       skill: 'okr-agent-orchestrator',
       action_key: definition.key,
       prompt_key: definition.promptKey,
@@ -130,7 +130,7 @@ export function scheduledTaskInput(definition: OKRActionDefinition, value: OKRAc
 
 export function manualTaskInput(definition: OKRActionDefinition): CreateTaskInput {
   const context = {
-    module: 'weekly-report',
+    module: 'agency-okr',
     skill: 'okr-agent-orchestrator',
     action_key: definition.key,
     prompt_key: definition.promptKey,

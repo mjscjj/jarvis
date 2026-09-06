@@ -32,12 +32,12 @@ type definition struct {
 
 var definitions = map[string]definition{
 	"okr": {
-		Name:        "OKR",
-		Description: "季度目标、KR、负责人、核心指标、标签与世界关系",
+		Name:        "OKR 插件",
+		Description: "通用目标、KR、负责人、核心指标、拆解、周次与正式进展",
 	},
-	"weekly-report": {
-		Name:        "周报",
-		Description: "按周填报、会议视图、评论、历史对比、催填与汇报材料",
+	"agency-okr": {
+		Name:        "Agency OKR",
+		Description: "Agency 打标、Plan、Review、周报、催填与业务自动化",
 		Requires:    []string{"okr"},
 	},
 }

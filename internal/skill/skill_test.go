@@ -384,8 +384,8 @@ func TestRepositoryWeeklyReportProgressSyncSkillKeepsReadOnlyTaskBoundary(t *tes
 	}
 	for _, want := range []string{
 		"外部系统只读",
-		"scripts/weekly-report-tools board",
-		"scripts/weekly-report-tools record-meego-observation",
+		"scripts/agency-okr-tools board",
+		"scripts/agency-okr-tools record-meego-observation",
 		"jarvis-tools append-clue",
 		"jarvis-tools append-fact",
 		"jarvis-tools list-relations",

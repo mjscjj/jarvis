@@ -78,9 +78,20 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	images, err := okrworkspace.NewImageStore(t.TempDir(), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
 	h := server.New()
-	if err := RegisterWeeklyReportModuleRoutes(h, WeeklyReportModuleDependencies{
+	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{
+		Workspace: workspace, Images: images,
+		Enabled: func(context.Context) (bool, error) { return true, nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RegisterAgencyOKRModuleRoutes(h, AgencyOKRModuleDependencies{
 		Workspace: workspace, Identity: identity, Documents: weeklyPreviewDocumentStub{},
+		People:        newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}),
 		Enabled:       func(context.Context) (bool, error) { return true, nil },
 		PreviewReview: previewReviewServiceStub(t, workspace),
 	}); err != nil {
@@ -91,23 +102,23 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 		t.Helper()
 		return ut.PerformRequest(h.Engine, method, path, &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
 	}
-	if response := request("POST", "/api/weekly-report/weeks", `{"quarter":"2026-Q3","week":"2026-W37"}`); response.StatusCode() != 400 {
+	if response := request("POST", "/api/okr/weeks", `{"quarter":"2026-Q3","week":"2026-W37"}`); response.StatusCode() != 400 {
 		t.Fatalf("missing template status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	if response := request("POST", "/api/weekly-report/comments", `{}`); response.StatusCode() != 401 {
+	if response := request("POST", "/api/agency-okr/comments", `{}`); response.StatusCode() != 401 {
 		t.Fatalf("anonymous comment status=%d body=%s", response.StatusCode(), response.Body())
 	}
 	previewBody := `{"quarter":"2026-Q3","week":"2026-W37","template_key":"okr_weekly_preview_v1"}`
-	if response := request("POST", "/api/weekly-report/weeks", previewBody); response.StatusCode() != 201 {
+	if response := request("POST", "/api/okr/weeks", previewBody); response.StatusCode() != 201 {
 		t.Fatalf("open preview status=%d body=%s", response.StatusCode(), response.Body())
 	}
 	classicBody := `{"quarter":"2026-Q3","week":"2026-W37","template_key":"classic"}`
-	if response := request("POST", "/api/weekly-report/weeks", classicBody); response.StatusCode() != 409 {
+	if response := request("POST", "/api/okr/weeks", classicBody); response.StatusCode() != 409 {
 		t.Fatalf("template conflict status=%d body=%s", response.StatusCode(), response.Body())
 	}
 
 	scoreBody := `{"quarter":"2026-Q3","week":"2026-W37","score":0.7,"expected_version":0}`
-	response := request("PUT", "/api/weekly-report/scores/kr/"+kr.ID, scoreBody)
+	response := request("PUT", "/api/agency-okr/scores/kr/"+kr.ID, scoreBody)
 	if response.StatusCode() != 200 {
 		t.Fatalf("score status=%d body=%s", response.StatusCode(), response.Body())
 	}
@@ -121,7 +132,7 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 		t.Fatalf("score response = %+v", payload.Data.Score)
 	}
 	staleBody := `{"quarter":"2026-Q3","week":"2026-W37","score":0.4,"expected_version":1}`
-	if response := request("PUT", "/api/weekly-report/scores/kr/"+kr.ID, staleBody); response.StatusCode() != 409 {
+	if response := request("PUT", "/api/agency-okr/scores/kr/"+kr.ID, staleBody); response.StatusCode() != 409 {
 		t.Fatalf("score conflict status=%d body=%s", response.StatusCode(), response.Body())
 	}
 }

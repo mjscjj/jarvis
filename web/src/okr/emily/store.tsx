@@ -100,18 +100,28 @@ async function syncWeeklyDefinition(remote: Kr, local: Kr, week: string): Promis
 }
 
 async function syncWeeklyProgress(remote: Kr, local: Kr, week: string): Promise<Kr> {
-  const before = entriesById(remote)
-  const after = entriesById(local)
-  let saved = sameWeeklyCore(remote, local) ? remote : await replaceWeeklyKRCore(local, week)
-  for (const [id, current] of before) {
-    if (!after.has(id)) saved = await deleteProgress(current.entry)
+  try {
+    const before = entriesById(remote)
+    const after = entriesById(local)
+    if (!sameWeeklyCore(remote, local)) await replaceWeeklyKRCore(local, week)
+    for (const [id, current] of before) {
+      if (!after.has(id)) await deleteProgress(current.entry)
+    }
+    for (const [id, current] of after) {
+      const previous = before.get(id)
+      if (!previous) await createProgress(current.pointId, current.entry, week)
+      else if (!sameEntry(previous.entry, current.entry)) await updateProgress(current.entry, week)
+    }
+    // Formal progress writes deliberately return the generic OKR view. The
+    // Agency product re-reads its composed view so tags, scores and Meego
+    // metadata remain visible after a save.
+    return await getWeeklyKR(local.id, week)
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409) {
+      throw new APIError(error.message, error.status, error.code, await getWeeklyKR(local.id, week), error.logid)
+    }
+    throw error
   }
-  for (const [id, current] of after) {
-    const previous = before.get(id)
-    if (!previous) saved = await createProgress(current.pointId, current.entry, week)
-    else if (!sameEntry(previous.entry, current.entry)) saved = await updateProgress(current.entry, week)
-  }
-  return saved
 }
 
 export function BoardProvider({
@@ -172,12 +182,8 @@ export function BoardProvider({
       if (!baseline) throw new Error('缺少服务端 KR 基线，请重新载入。')
       let saved: Kr
       if (surface === 'weekly-report') {
-        const definitionChanged = await syncWeeklyDefinition(baseline, snapshot, weekRef.current)
+        await syncWeeklyDefinition(baseline, snapshot, weekRef.current)
         saved = await syncWeeklyProgress(baseline, snapshot, weekRef.current)
-        // The definition write answers with a core view, and the progress calls
-        // may not have run at all, so the week's own view is the only baseline
-        // that still carries this week's progress and scores.
-        if (definitionChanged) saved = await getWeeklyKR(krId, weekRef.current)
       } else {
         saved = await replaceKR(snapshot)
       }

@@ -502,7 +502,7 @@ export interface DeleteWeekResult {
 }
 
 export async function openWeeklyReportWeek(input: { quarter: string; week: string; templateKey: WeekTemplateKey }): Promise<OpenWeekResult> {
-  const value = await request<{ week: APIWeek; created: boolean }>('/api/weekly-report/weeks', {
+  const value = await request<{ week: APIWeek; created: boolean }>('/api/okr/weeks', {
     method: 'POST',
     body: JSON.stringify({ quarter: input.quarter, week: input.week, template_key: input.templateKey }),
   })
@@ -521,7 +521,7 @@ export async function openWeeklyReportWeek(input: { quarter: string; week: strin
 export async function listWeeklyReportWeeks(quarter = ''): Promise<WeeklyReportWeekList> {
   const params = new URLSearchParams()
   if (quarter) params.set('quarter', quarter)
-  const value = await request<{ quarter: string; weeks: APIWeek[] }>(`/api/weekly-report/weeks?${params}`)
+  const value = await request<{ quarter: string; weeks: APIWeek[] }>(`/api/okr/weeks?${params}`)
   return {
     quarter: value.quarter,
     weeks: value.weeks.map((week) => ({
@@ -548,7 +548,7 @@ export async function deleteWeeklyReportWeek(quarter: string, week: string): Pro
       meego_snapshots: number
       reminder_batches: number
     }
-  }>(`/api/weekly-report/weeks/${encodeURIComponent(week)}?quarter=${encodeURIComponent(quarter)}`, { method: 'DELETE' })
+  }>(`/api/agency-okr/weeks/${encodeURIComponent(week)}?quarter=${encodeURIComponent(quarter)}`, { method: 'DELETE' })
   return {
     quarter: value.quarter,
     week: value.week,
@@ -569,7 +569,8 @@ export async function getBoard(quarter: string, week: string, surface: BoardSurf
   const params = new URLSearchParams()
   if (quarter) params.set('quarter', quarter)
   if (surface === 'weekly-report' && week) params.set('week', week)
-  const board = await request<APIBoard>(`/api/${surface}/board?${params}`)
+  const path = surface === 'weekly-report' ? '/api/agency-okr/board' : '/api/agency-okr/core-board'
+  const board = await request<APIBoard>(`${path}?${params}`)
   return {
     quarter: board.quarter,
     week: board.week,
@@ -584,7 +585,7 @@ export async function getBoard(quarter: string, week: string, surface: BoardSurf
 export async function listOKRPlans(quarter = ''): Promise<OKRPlanList> {
   const params = new URLSearchParams()
   if (quarter) params.set('quarter', quarter)
-  const value = await request<APIPlanList>(`/api/okr/plans?${params}`)
+  const value = await request<APIPlanList>(`/api/agency-okr/plans?${params}`)
   return {
     quarter: value.quarter,
     availableQuarters: value.available_quarters,
@@ -593,11 +594,11 @@ export async function listOKRPlans(quarter = ''): Promise<OKRPlanList> {
 }
 
 export async function getOKRPlan(id: string): Promise<OKRPlan> {
-  return fromAPIPlan(await request<APIPlan>(`/api/okr/plans/${encodeURIComponent(id)}`))
+  return fromAPIPlan(await request<APIPlan>(`/api/agency-okr/plans/${encodeURIComponent(id)}`))
 }
 
 export async function createOKRPlan(input: { quarter: string; title: string; content: OKRPlanContent }): Promise<OKRPlan> {
-  return fromAPIPlan(await request<APIPlan>('/api/okr/plans', {
+  return fromAPIPlan(await request<APIPlan>('/api/agency-okr/plans', {
     method: 'POST',
     body: JSON.stringify({
       quarter: input.quarter,
@@ -609,7 +610,7 @@ export async function createOKRPlan(input: { quarter: string; title: string; con
 
 export async function replaceOKRPlan(input: { id: string; expectedVersion: number; title: string; content: OKRPlanContent }): Promise<OKRPlan> {
   try {
-    return fromAPIPlan(await request<APIPlan>(`/api/okr/plans/${encodeURIComponent(input.id)}`, {
+    return fromAPIPlan(await request<APIPlan>(`/api/agency-okr/plans/${encodeURIComponent(input.id)}`, {
       method: 'PUT',
       body: JSON.stringify({
         expected_version: input.expectedVersion,
@@ -626,7 +627,7 @@ export async function replaceOKRPlan(input: { id: string; expectedVersion: numbe
 }
 
 export async function deleteOKRPlan(id: string): Promise<void> {
-  await request<{ id: string }>(`/api/okr/plans/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  await request<{ id: string }>(`/api/agency-okr/plans/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 function fromAPIComment(value: APIPageComment): PageComment {
@@ -662,7 +663,7 @@ export async function runPreviewReview(input: {
   krId?: string
   pointId?: string
 }, signal?: AbortSignal): Promise<string> {
-  const value = await request<{ content: string }>('/api/weekly-report/preview-review', {
+  const value = await request<{ content: string }>('/api/agency-okr/preview-review', {
     method: 'POST',
     body: JSON.stringify({
       quarter: input.quarter,
@@ -678,7 +679,7 @@ export async function runPreviewReview(input: {
 
 export async function getComments(quarter: string, week: string): Promise<PageCommentList> {
   const params = new URLSearchParams({ quarter, week })
-  const value = await request<APIPageCommentList>(`/api/weekly-report/comments?${params}`)
+  const value = await request<APIPageCommentList>(`/api/agency-okr/comments?${params}`)
   return { quarter: value.quarter, week: value.week, count: value.count, comments: value.comments.map(fromAPIComment) }
 }
 
@@ -722,12 +723,12 @@ function followUpBody(item: FollowUpItem) {
 
 export async function getFollowUps(quarter: string, week: string): Promise<FollowUpList> {
   const params = new URLSearchParams({ quarter, week })
-  const value = await request<APIFollowUpList>(`/api/weekly-report/follow-ups?${params}`)
+  const value = await request<APIFollowUpList>(`/api/agency-okr/follow-ups?${params}`)
   return { quarter: value.quarter, week: value.week, count: value.count, items: value.items.map(fromAPIFollowUp) }
 }
 
 export async function createFollowUp(item: FollowUpItem): Promise<FollowUpItem> {
-  const value = await request<APIFollowUpItem>('/api/weekly-report/follow-ups', {
+  const value = await request<APIFollowUpItem>('/api/agency-okr/follow-ups', {
     method: 'POST',
     body: JSON.stringify(followUpBody({ ...item, version: 0 })),
   })
@@ -735,7 +736,7 @@ export async function createFollowUp(item: FollowUpItem): Promise<FollowUpItem> 
 }
 
 export async function updateFollowUp(item: FollowUpItem): Promise<FollowUpItem> {
-  const value = await request<APIFollowUpItem>(`/api/weekly-report/follow-ups/${encodeURIComponent(item.id)}`, {
+  const value = await request<APIFollowUpItem>(`/api/agency-okr/follow-ups/${encodeURIComponent(item.id)}`, {
     method: 'PUT',
     body: JSON.stringify(followUpBody(item)),
   })
@@ -743,7 +744,7 @@ export async function updateFollowUp(item: FollowUpItem): Promise<FollowUpItem> 
 }
 
 export async function deleteFollowUp(item: FollowUpItem): Promise<void> {
-  await request<{ id: string }>(`/api/weekly-report/follow-ups/${encodeURIComponent(item.id)}`, {
+  await request<{ id: string }>(`/api/agency-okr/follow-ups/${encodeURIComponent(item.id)}`, {
     method: 'DELETE',
     body: JSON.stringify({ expected_version: item.version }),
   })
@@ -763,7 +764,7 @@ export async function createComment(input: {
   selectionPrefix?: string
   selectionSuffix?: string
 }): Promise<PageComment> {
-  const value = await request<APIPageComment>('/api/weekly-report/comments', {
+  const value = await request<APIPageComment>('/api/agency-okr/comments', {
     method: 'POST',
     body: JSON.stringify({
       quarter: input.quarter,
@@ -784,7 +785,7 @@ export async function createComment(input: {
 }
 
 export async function getAuthStatus(): Promise<AuthStatus> {
-  const value = await request<APIAuthStatus>('/api/okr/me')
+  const value = await request<APIAuthStatus>('/api/agency-okr/me')
   return {
     authenticated: value.authenticated,
     configured: value.configured,
@@ -799,7 +800,7 @@ export async function getAuthStatus(): Promise<AuthStatus> {
 }
 
 export async function beginFeishuLogin(): Promise<FeishuDeviceLogin> {
-  const value = await request<APIFeishuDeviceLogin>('/api/okr/auth/feishu/device', { method: 'POST' })
+  const value = await request<APIFeishuDeviceLogin>('/api/agency-okr/auth/feishu/device', { method: 'POST' })
   return {
     loginId: value.login_id,
     verificationUrl: value.verification_url,
@@ -810,7 +811,7 @@ export async function beginFeishuLogin(): Promise<FeishuDeviceLogin> {
 }
 
 export async function pollFeishuLogin(loginId: string): Promise<FeishuDeviceLoginPoll> {
-  const value = await request<APIFeishuDeviceLoginPoll>(`/api/okr/auth/feishu/device/${encodeURIComponent(loginId)}/poll`, { method: 'POST' })
+  const value = await request<APIFeishuDeviceLoginPoll>(`/api/agency-okr/auth/feishu/device/${encodeURIComponent(loginId)}/poll`, { method: 'POST' })
   return {
     status: value.status,
     retryAfterSeconds: value.retry_after_seconds,
@@ -824,11 +825,11 @@ export async function pollFeishuLogin(loginId: string): Promise<FeishuDeviceLogi
 }
 
 export async function logout(): Promise<void> {
-  await request<{ logged_out: boolean }>('/api/okr/auth/logout', { method: 'POST' })
+  await request<{ logged_out: boolean }>('/api/agency-okr/auth/logout', { method: 'POST' })
 }
 
 export async function updateComment(id: string, patch: { content?: string; todo?: boolean; resolved?: boolean }): Promise<PageComment> {
-  const value = await request<APIPageComment>(`/api/weekly-report/comments/${encodeURIComponent(id)}`, {
+  const value = await request<APIPageComment>(`/api/agency-okr/comments/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify(patch),
   })
@@ -836,7 +837,7 @@ export async function updateComment(id: string, patch: { content?: string; todo?
 }
 
 export async function deleteComment(id: string): Promise<void> {
-  await request<{ id: string }>(`/api/weekly-report/comments/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  await request<{ id: string }>(`/api/agency-okr/comments/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 export async function getEnums(): Promise<EnumValues> {
@@ -846,7 +847,7 @@ export async function getEnums(): Promise<EnumValues> {
 
 export async function getReminderPreview(quarter: string, week: string): Promise<ReminderPreview> {
   const params = new URLSearchParams({ quarter, week })
-  const value = await request<APIReminderPreview>(`/api/weekly-report/reminder-preview?${params}`)
+  const value = await request<APIReminderPreview>(`/api/agency-okr/reminder-preview?${params}`)
   return {
     quarter: value.quarter,
     week: value.week,
@@ -909,12 +910,12 @@ function fromAPIReminderBatch(value: APIReminderBatch): ReminderBatch {
 
 export async function getReminderBatches(quarter: string, week: string): Promise<ReminderBatchList> {
   const params = new URLSearchParams({ quarter, week })
-  const value = await request<APIReminderBatchList>(`/api/weekly-report/reminder-batches?${params}`)
+  const value = await request<APIReminderBatchList>(`/api/agency-okr/reminder-batches?${params}`)
   return { mode: value.mode, sendEnabled: value.send_enabled, batches: value.batches.map(fromAPIReminderBatch) }
 }
 
 export async function generateReminderBatch(quarter: string, week: string): Promise<ReminderBatch> {
-  const value = await request<APIReminderBatch>('/api/weekly-report/reminder-batches/generate', {
+  const value = await request<APIReminderBatch>('/api/agency-okr/reminder-batches/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ quarter, week }),
@@ -923,7 +924,7 @@ export async function generateReminderBatch(quarter: string, week: string): Prom
 }
 
 export async function createFeishuDocument(title: string, content: string): Promise<FeishuDocumentResult> {
-	const value = await request<{ document_id: string; url: string; warnings?: string[]; link_share_entity: 'tenant_editable' }>('/api/weekly-report/feishu-documents', {
+	const value = await request<{ document_id: string; url: string; warnings?: string[]; link_share_entity: 'tenant_editable' }>('/api/agency-okr/feishu-documents', {
 		method: 'POST',
 		body: JSON.stringify({ title, content }),
 	})
@@ -932,7 +933,7 @@ export async function createFeishuDocument(title: string, content: string): Prom
 
 export async function getMeegoPreview(pointId: string, week: string): Promise<MeegoPreview> {
   const params = new URLSearchParams({ week })
-  const value = await request<APIMeegoPreview>(`/api/weekly-report/points/${encodeURIComponent(pointId)}/meego-preview?${params}`)
+  const value = await request<APIMeegoPreview>(`/api/agency-okr/points/${encodeURIComponent(pointId)}/meego-preview?${params}`)
   return {
     pointId: value.point_id,
     workItemId: value.work_item_id,
@@ -962,7 +963,7 @@ function fromAPIMeegoPreview(value: APIMeegoPreview): MeegoPreview {
 
 export async function getMeegoBatchPreview(quarter: string, week: string): Promise<MeegoBatchPreview> {
   const params = new URLSearchParams({ quarter, week })
-  const value = await request<APIMeegoBatchPreview>(`/api/weekly-report/meego-preview?${params}`)
+  const value = await request<APIMeegoBatchPreview>(`/api/agency-okr/meego-preview?${params}`)
   return fromAPIMeegoBatchPreview(value)
 }
 
@@ -1013,7 +1014,7 @@ export async function confirmMeegoProgress(input: {
   text: string
 }): Promise<Kr> {
   try {
-    const value = await request<APIKr>(`/api/weekly-report/points/${encodeURIComponent(input.pointId)}/meego-confirm`, {
+    const value = await request<APIKr>(`/api/agency-okr/points/${encodeURIComponent(input.pointId)}/meego-confirm`, {
       method: 'POST',
       body: JSON.stringify({
         expected_version: input.expectedVersion,
@@ -1047,21 +1048,21 @@ function progressPayload(entry: Entry, week: string) {
 }
 
 export async function createProgress(pointId: string, entry: Entry, week: string): Promise<Kr> {
-	return progressRequest(`/api/weekly-report/points/${encodeURIComponent(pointId)}/progress`, {
+	return progressRequest(`/api/okr/points/${encodeURIComponent(pointId)}/progress`, {
 		method: 'POST',
 		body: JSON.stringify(progressPayload(entry, week)),
 	})
 }
 
 export async function updateProgress(entry: Entry, week: string): Promise<Kr> {
-	return progressRequest(`/api/weekly-report/progress/${encodeURIComponent(entry.id)}`, {
+	return progressRequest(`/api/okr/progress/${encodeURIComponent(entry.id)}`, {
 		method: 'PUT',
 		body: JSON.stringify(progressPayload(entry, week)),
 	})
 }
 
 export async function deleteProgress(entry: Entry): Promise<Kr> {
-	return progressRequest(`/api/weekly-report/progress/${encodeURIComponent(entry.id)}`, {
+	return progressRequest(`/api/okr/progress/${encodeURIComponent(entry.id)}`, {
 		method: 'DELETE',
 		body: JSON.stringify({ expected_version: entry.version ?? 0 }),
 	})
@@ -1069,7 +1070,7 @@ export async function deleteProgress(entry: Entry): Promise<Kr> {
 
 export async function replaceWeeklyKRCore(kr: Kr, week: string): Promise<Kr> {
 	try {
-		const value = await request<APIKr>(`/api/weekly-report/krs/${encodeURIComponent(kr.id)}/core`, {
+		const value = await request<APIKr>(`/api/okr/krs/${encodeURIComponent(kr.id)}/weekly-core`, {
 			method: 'PUT',
 			body: JSON.stringify({
 				expected_version: kr.weeklyCoreVersion ?? 0,
@@ -1088,14 +1089,14 @@ export async function replaceWeeklyKRCore(kr: Kr, week: string): Promise<Kr> {
 }
 
 export async function replaceWeeklyScore(input: { quarter: string; week: string; targetKind: 'kr' | 'point'; targetId: string; score: number; expectedVersion: number }): Promise<Kr> {
-	return progressRequest(`/api/weekly-report/scores/${encodeURIComponent(input.targetKind)}/${encodeURIComponent(input.targetId)}`, {
+	return progressRequest(`/api/agency-okr/scores/${encodeURIComponent(input.targetKind)}/${encodeURIComponent(input.targetId)}`, {
 		method: 'PUT',
 		body: JSON.stringify({ quarter: input.quarter, week: input.week, score: input.score, expected_version: input.expectedVersion }),
 	})
 }
 
 export async function deleteWeeklyScore(input: { quarter: string; week: string; targetKind: 'kr' | 'point'; targetId: string; expectedVersion: number }): Promise<Kr> {
-	return progressRequest(`/api/weekly-report/scores/${encodeURIComponent(input.targetKind)}/${encodeURIComponent(input.targetId)}`, {
+	return progressRequest(`/api/agency-okr/scores/${encodeURIComponent(input.targetKind)}/${encodeURIComponent(input.targetId)}`, {
 		method: 'DELETE',
 		body: JSON.stringify({ quarter: input.quarter, week: input.week, expected_version: input.expectedVersion }),
 	})
@@ -1133,7 +1134,7 @@ export async function replaceKRDefinition(kr: Kr): Promise<Kr> {
 }
 
 export async function getWeeklyKR(krId: string, week: string): Promise<Kr> {
-	return fromAPIKr(await request<APIKr>(`/api/weekly-report/krs/${encodeURIComponent(krId)}?week=${encodeURIComponent(week)}`))
+	return fromAPIKr(await request<APIKr>(`/api/agency-okr/krs/${encodeURIComponent(krId)}/weekly?week=${encodeURIComponent(week)}`))
 }
 
 export async function replaceKR(kr: Kr): Promise<Kr> {
@@ -1155,7 +1156,7 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
       })),
       tags: kr.tags ?? [],
     }
-	const value = await request<APIKr>(`/api/okr/krs/${encodeURIComponent(kr.id)}`, {
+	const value = await request<APIKr>(`/api/agency-okr/krs/${encodeURIComponent(kr.id)}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     })
@@ -1169,7 +1170,7 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
 }
 
 export async function searchPeople(query: string, signal?: AbortSignal): Promise<PersonSearchResult> {
-  const value = await request<{ users: Array<{ open_id: string; name: string; department: string; email: string; is_external: boolean; has_chatted: boolean }>; has_more: boolean }>(`/api/okr/people/search?q=${encodeURIComponent(query)}`, { signal })
+  const value = await request<{ users: Array<{ open_id: string; name: string; department: string; email: string; is_external: boolean; has_chatted: boolean }>; has_more: boolean }>(`/api/agency-okr/people/search?q=${encodeURIComponent(query)}`, { signal })
   return {
     users: value.users.map((item) => ({
 			openId: item.open_id,
@@ -1184,7 +1185,7 @@ export async function searchPeople(query: string, signal?: AbortSignal): Promise
 }
 
 export async function getPeopleAvatars(names: string[]): Promise<PersonAvatarItem[]> {
-  const value = await request<{ people: Array<{ open_id: string; name: string; avatar_url: string }> }>(`/api/okr/people/avatars?names=${encodeURIComponent(names.join(','))}`)
+  const value = await request<{ people: Array<{ open_id: string; name: string; avatar_url: string }> }>(`/api/agency-okr/people/avatars?names=${encodeURIComponent(names.join(','))}`)
   return value.people.map((item) => ({ openId: item.open_id, name: item.name, avatarUrl: item.avatar_url }))
 }
 
@@ -1224,7 +1225,7 @@ export async function deleteObjective(id: string): Promise<void> {
 }
 
 export async function createKR(objectiveId: string, input: { title: string; owners?: KrOwner[]; businessCategory: string; priority: KrPriority }): Promise<Kr> {
-		const value = await request<APIKr>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {
+		const value = await request<APIKr>(`/api/agency-okr/objectives/${encodeURIComponent(objectiveId)}/krs`, {
 			method: 'POST',
 			body: JSON.stringify({
 				title: normalizeKRTitle(input.title),
