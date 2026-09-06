@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -33,7 +34,14 @@ type commandRunner interface {
 type execRunner struct{}
 
 func (execRunner) Run(ctx context.Context, bin string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, bin, args...).CombinedOutput()
+	command := exec.CommandContext(ctx, bin, args...)
+	if bin == "lark-cli" {
+		command.Env = append(os.Environ(),
+			"LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1",
+			"LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1",
+		)
+	}
+	return command.CombinedOutput()
 }
 
 type authFlow struct {
@@ -81,7 +89,7 @@ func (a *Authorizer) Probe(ctx context.Context, provider string) AuthStatus {
 	if err == nil && probeSucceeded(provider, raw) {
 		return AuthStatus{Status: AuthAuthorized}
 	}
-	if err == nil || hasErrorCode(raw, "AUTH_REQUIRED", "MEEGLE_AUTH_REQUIRED", "MISSING_SCOPE") {
+	if err == nil || hasErrorCode(raw, "AUTH_REQUIRED", "MEEGLE_AUTH_REQUIRED", "MISSING_SCOPE", "TOKEN_MISSING") {
 		return AuthStatus{Status: AuthRequired}
 	}
 	return authError(AuthUnavailable, commandError(raw, err))
@@ -182,7 +190,12 @@ func probeSucceeded(provider string, raw []byte) bool {
 		authenticated, _ := value.(bool)
 		return authenticated
 	case "lark-cli-im":
-		return findValue(payloads, "chats") != nil
+		for _, payload := range payloads {
+			if envelopeSucceeded(payload) {
+				return true
+			}
+		}
+		return false
 	default:
 		for _, payload := range payloads {
 			if envelopeSucceeded(payload) {
@@ -207,10 +220,13 @@ func envelopeSucceeded(payload any) bool {
 }
 
 func hasErrorCode(raw []byte, codes ...string) bool {
-	code := strings.ToUpper(findString(decodeJSONValues(raw), "code", "error_code", "errorCode"))
-	for _, candidate := range codes {
-		if code == candidate {
-			return true
+	payloads := decodeJSONValues(raw)
+	for _, key := range []string{"subtype", "code", "error_code", "errorCode"} {
+		code := strings.ToUpper(findString(payloads, key))
+		for _, candidate := range codes {
+			if code == candidate {
+				return true
+			}
 		}
 	}
 	return false
@@ -218,6 +234,17 @@ func hasErrorCode(raw []byte, codes ...string) bool {
 
 func commandError(raw []byte, err error) string {
 	payloads := decodeJSONValues(raw)
+	for _, payload := range payloads {
+		object, ok := payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		if errorPayload, ok := object["error"]; ok {
+			if message := findString(errorPayload, "message", "detail", "hint"); message != "" {
+				return message
+			}
+		}
+	}
 	if message := findString(payloads, "message", "detail", "hint"); message != "" {
 		return message
 	}

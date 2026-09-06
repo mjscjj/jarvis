@@ -32,6 +32,9 @@ func newFactTestService(t *testing.T) *Service {
 	`).Error; err != nil {
 		t.Fatalf("create fact table: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE message (id INTEGER PRIMARY KEY AUTOINCREMENT)`).Error; err != nil {
+		t.Fatalf("create message table: %v", err)
+	}
 	service, err := NewService(db)
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
@@ -85,7 +88,10 @@ func TestAppendFactReturnsExistingExactFactFromSameSourceUnit(t *testing.T) {
 	service := newFactTestService(t)
 	ctx := context.Background()
 	occurredAt := time.Date(2026, 8, 6, 3, 0, 0, 0, time.UTC)
-	sourceKind := "task"
+	if err := service.db.Exec(`INSERT INTO message(id) VALUES (336)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	sourceKind := "message"
 	sourceID := uint64(336)
 	input := FactInput{
 		SubjectType: "meeting", SubjectID: 9, Description: "评审结论已经确认",

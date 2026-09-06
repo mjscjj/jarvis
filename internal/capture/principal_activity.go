@@ -54,32 +54,45 @@ func (s *Service) SyncPrincipalActivityGroups(ctx context.Context) (err error) {
 		}
 	}()
 
-	var response MessageSearchResponse
-	if err = s.lark.Run(
-		ctx,
-		&response,
-		"im", "+messages-search",
-		"--query", "",
-		"--sender", s.opts.PrincipalOpenID,
-		"--chat-type", "group",
-		"--start", time.UnixMilli(startMS).In(s.opts.Location).Format(time.RFC3339),
-		"--end", now.In(s.opts.Location).Format(time.RFC3339),
-		"--page-size", strconv.Itoa(s.opts.PageSize),
-		"--page-all",
-		"--no-reactions",
-		"--as", "user",
-	); err != nil {
-		return fmt.Errorf("search principal group activity: %w", err)
+	pageToken := ""
+	seenPageTokens := make(map[string]struct{})
+	messages := make([]SearchedMessage, 0)
+	for {
+		var response MessageSearchResponse
+		args := []string{
+			"im", "+messages-search",
+			"--query", "",
+			"--sender", s.opts.PrincipalOpenID,
+			"--chat-type", "group",
+			"--start", time.UnixMilli(startMS).In(s.opts.Location).Format(time.RFC3339),
+			"--end", now.In(s.opts.Location).Format(time.RFC3339),
+			"--page-size", strconv.Itoa(s.opts.PageSize),
+			"--no-reactions",
+			"--as", "user",
+		}
+		if pageToken != "" {
+			args = append(args, "--page-token", pageToken)
+		}
+		if err = s.lark.Run(ctx, &response, args...); err != nil {
+			return fmt.Errorf("search principal group activity page=%d: %w", record.PageCount+1, err)
+		}
+		record.PageCount++
+		record.FetchedCount += int32(len(response.Data.Messages))
+		messages = append(messages, response.Data.Messages...)
+		if !response.Data.HasMore {
+			break
+		}
+		nextPageToken := response.Data.PageToken
+		if nextPageToken == "" {
+			return fmt.Errorf("search principal group activity page=%d has_more=true with empty page_token", record.PageCount)
+		}
+		if _, exists := seenPageTokens[nextPageToken]; exists {
+			return fmt.Errorf("search principal group activity page=%d repeated page_token=%q", record.PageCount, nextPageToken)
+		}
+		seenPageTokens[nextPageToken] = struct{}{}
+		pageToken = nextPageToken
 	}
-	record.PageCount = 1
-	record.FetchedCount = int32(len(response.Data.Messages))
-	if response.Data.HasMore {
-		return fmt.Errorf(
-			"search principal group activity remained paginated after --page-all: page_token=%q",
-			response.Data.PageToken,
-		)
-	}
-	activities, err := s.principalGroupActivities(response.Data.Messages)
+	activities, err := s.principalGroupActivities(messages)
 	if err != nil {
 		return err
 	}

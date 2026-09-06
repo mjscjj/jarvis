@@ -20,15 +20,17 @@ source "${REPO_ROOT}/integrations/cc-connect/manifest.sh"
 CC_CONNECT_PATCH_PATH="${REPO_ROOT}/${CC_CONNECT_PATCH_RELATIVE_PATH}"
 CC_CONNECT_BIN="${REPO_ROOT}/bin/cc-connect-jarvis"
 INSTALL_CHECKLIST_TEMPLATE="${REPO_ROOT}/docs/templates/jarvis-install-checklist.md"
+LARK_CLI_MIN_VERSION="1.0.93"
 
 usage() {
   cat >&2 <<'EOF'
 Usage: jarvis-install <command> [flags]
 
-start           Create the whole-project installation run and checklist.
+start           Create the whole-project installation run and checklist; --resume-latest reuses the newest run.
 doctor          Report machine, configuration, service, and data facts as JSON.
 install-lark-cli Install the official Lark CLI and its Agent Skills.
 install-bytedcli Install the ByteDance CLI used for SSO and engineering integrations.
+install-codex    Install the official Codex CLI required by CC Connect.
 install-traex    Install the stable ByteDance internal TRAE CLI.
 install-cc-connect Build the pinned Jarvis-patched CC Connect binary. It does not configure or start the daemon.
 install-qdrant  Install the pinned Qdrant service for this checkout.
@@ -63,16 +65,61 @@ resolve_install_run_dir() {
   esac
 }
 
+sha256_file() {
+  local path="$1"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+  else
+    fail "shasum or sha256sum is required to fingerprint the installation checklist"
+  fi
+}
+
 start_installation() {
   require_command jq
-  local run_dir="" run_id started_at checklist_path
+  require_command git
+  local run_dir="" run_id started_at checklist_path resume_latest=false latest_checklist=""
+  local source_commit template_sha256
+  [[ -f "$INSTALL_CHECKLIST_TEMPLATE" ]] || fail "installation checklist template is missing: ${INSTALL_CHECKLIST_TEMPLATE}"
+  source_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  template_sha256="$(sha256_file "$INSTALL_CHECKLIST_TEMPLATE")"
   while (( $# > 0 )); do
     case "$1" in
       --run-dir) (( $# >= 2 )) || fail "--run-dir requires a value"; run_dir="$2"; shift 2 ;;
+      --resume-latest) resume_latest=true; shift ;;
       --help|-h) usage; exit 0 ;;
       *) fail "start unknown argument: $1" ;;
     esac
   done
+  if [[ "$resume_latest" == "true" ]]; then
+    [[ -z "$run_dir" ]] || fail "--resume-latest cannot be combined with --run-dir"
+    local candidate
+    shopt -s nullglob
+    for candidate in "${REPO_ROOT}"/var/install/*/INSTALL_CHECKLIST.md; do
+      if [[ -z "$latest_checklist" || "$candidate" -nt "$latest_checklist" ]]; then
+        latest_checklist="$candidate"
+      fi
+    done
+    shopt -u nullglob
+    if [[ -n "$latest_checklist" ]]; then
+      local created_commit created_template_sha256
+      created_commit="$(awk -F'：' '/^- 创建 commit：/ {print $2; exit}' "$latest_checklist" | tr -d '[:space:]')"
+      created_template_sha256="$(awk -F'：' '/^- 清单模板 SHA-256：/ {print $2; exit}' "$latest_checklist" | tr -d '[:space:]')"
+      [[ -n "$created_commit" && -n "$created_template_sha256" ]] || \
+        fail "latest installation checklist predates compatibility metadata; start a new installation run"
+      [[ "$created_commit" == "$source_commit" ]] || \
+        fail "latest installation checklist was created from commit ${created_commit}, current commit is ${source_commit}; start a new installation run"
+      [[ "$created_template_sha256" == "$template_sha256" ]] || \
+        fail "latest installation checklist template no longer matches the current installer; start a new installation run"
+      grep -q '^- \[ \]' "$latest_checklist" || \
+        fail "latest installation checklist is already complete; start a new installation run"
+      run_dir="$(dirname "$latest_checklist")"
+      jq -nc --arg run_dir "$run_dir" --arg checklist "$latest_checklist" --arg evidence_dir "${run_dir}/evidence" \
+        '{ok:true,resumed:true,run_dir:$run_dir,checklist:$checklist,evidence_dir:$evidence_dir}'
+      return
+    fi
+  fi
   run_id="$(date '+%Y%m%d-%H%M%S')"
   started_at="$(date '+%Y-%m-%dT%H:%M:%S%z')"
   if [[ -z "$run_dir" ]]; then
@@ -82,14 +129,21 @@ start_installation() {
     run_id="$(basename "$run_dir")"
   fi
   [[ ! -e "$run_dir" ]] || fail "installation run directory already exists: ${run_dir}"
-  [[ -f "$INSTALL_CHECKLIST_TEMPLATE" ]] || fail "installation checklist template is missing: ${INSTALL_CHECKLIST_TEMPLATE}"
   mkdir -p "${run_dir}/evidence"
   checklist_path="${run_dir}/INSTALL_CHECKLIST.md"
-  awk -v run_id="$run_id" -v started_at="$started_at" -v repo_root="$REPO_ROOT" '
-    { gsub(/\{\{RUN_ID\}\}/, run_id); gsub(/\{\{STARTED_AT\}\}/, started_at); gsub(/\{\{REPO_ROOT\}\}/, repo_root); print }
+  awk -v run_id="$run_id" -v started_at="$started_at" -v repo_root="$REPO_ROOT" \
+    -v source_commit="$source_commit" -v template_sha256="$template_sha256" '
+    {
+      gsub(/\{\{RUN_ID\}\}/, run_id)
+      gsub(/\{\{STARTED_AT\}\}/, started_at)
+      gsub(/\{\{REPO_ROOT\}\}/, repo_root)
+      gsub(/\{\{SOURCE_COMMIT\}\}/, source_commit)
+      gsub(/\{\{TEMPLATE_SHA256\}\}/, template_sha256)
+      print
+    }
   ' "$INSTALL_CHECKLIST_TEMPLATE" >"$checklist_path"
   jq -nc --arg run_dir "$run_dir" --arg checklist "$checklist_path" --arg evidence_dir "${run_dir}/evidence" \
-    '{ok:true,run_dir:$run_dir,checklist:$checklist,evidence_dir:$evidence_dir}'
+    '{ok:true,resumed:false,run_dir:$run_dir,checklist:$checklist,evidence_dir:$evidence_dir}'
 }
 
 installation_status() {
@@ -108,9 +162,10 @@ installation_status() {
   [[ -f "$checklist_path" ]] || fail "installation checklist not found: ${checklist_path}"
   completed="$(awk '/^- \[x\]/{n++} END{print n+0}' "$checklist_path")"
   pending="$(awk '/^- \[ \]/{n++} END{print n+0}' "$checklist_path")"
-  explained="$(awk '/^- \[ \].*(未做|阻塞|不适用)/{n++} END{print n+0}' "$checklist_path")"
+  explained="$(awk '/^- \[ \].*原因：(未做|阻塞|不适用)/{n++} END{print n+0}' "$checklist_path")"
   jq -nc --arg checklist "$checklist_path" --argjson completed "$completed" --argjson pending "$pending" --argjson pending_with_reason "$explained" \
-    '{checklist:$checklist,completed:$completed,pending:$pending,pending_with_reason:$pending_with_reason,complete:($pending == 0)}'
+    '{checklist:$checklist,completed:$completed,pending:$pending,pending_with_reason:$pending_with_reason,
+      complete:($pending == 0),deliverable:($pending == $pending_with_reason)}'
 }
 
 parse_common_flags() {
@@ -218,24 +273,57 @@ service_running() {
   esac
 }
 
-lark_skill_pack_path() {
-  local candidate
+lark_skill_path() {
+  local skill_name="$1" candidate
   if [[ -n "${CODEX_HOME:-}" ]]; then
-    candidate="${CODEX_HOME}/skills/lark-shared/SKILL.md"
+    candidate="${CODEX_HOME}/skills/${skill_name}/SKILL.md"
     if [[ -f "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return 0
     fi
   fi
   for candidate in \
-    "${HOME}/.agents/skills/lark-shared/SKILL.md" \
-    "${HOME}/.codex/skills/lark-shared/SKILL.md"; do
+    "${HOME}/.agents/skills/${skill_name}/SKILL.md" \
+    "${HOME}/.codex/skills/${skill_name}/SKILL.md"; do
     if [[ -f "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return 0
     fi
   done
   return 1
+}
+
+lark_skill_pack_path() {
+  if lark_skill_path lark-suite; then
+    return 0
+  fi
+  lark_skill_path lark-shared
+}
+
+lark_required_skills_ready() {
+  local skill_name
+  if lark_skill_path lark-suite >/dev/null; then
+    return 0
+  fi
+  for skill_name in lark-shared lark-contact lark-drive lark-doc lark-im; do
+    lark_skill_path "$skill_name" >/dev/null || return 1
+  done
+}
+
+lark_cli_protocol_ready() {
+  local binary="$1"
+  "$binary" event consume card.action.trigger --help 2>&1 | grep -q -- '--dry-run'
+}
+
+lark_cli_version_ready() {
+  local binary="$1" version
+  version="$("$binary" --version 2>/dev/null | head -n1)" || return 1
+  semver_at_least "$version" "$LARK_CLI_MIN_VERSION"
+}
+
+codex_login_ready() {
+  local binary="$1"
+  "$binary" login status >/dev/null 2>&1
 }
 
 traex_login_ready() {
@@ -321,6 +409,7 @@ doctor() {
     integrations/cc-connect/manifest.sh \
     integrations/cc-connect/manage.sh \
     .agents/skills/install-jarvis/SKILL.md \
+    .agents/skills/install-jarvis/references/operator-guide.md \
     .agents/skills/bootstrap-jarvis-world-model/SKILL.md \
     "${CC_CONNECT_PATCH_RELATIVE_PATH}"; do
     if [[ ! -e "${REPO_ROOT}/${required_path}" ]]; then
@@ -381,24 +470,29 @@ doctor() {
   local lark_skill_path lark_skill_pack_ready
   lark_skill_path=""
   lark_skill_pack_ready=false
-  if lark_skill_path="$(lark_skill_pack_path)"; then
+  if lark_skill_path="$(lark_skill_pack_path)" && lark_required_skills_ready; then
     lark_skill_pack_ready=true
   fi
 
-  local config_status config_inspection_ok config_error
+  local config_status config_inspection_ok config_error config_error_file
   config_status='null'
   config_inspection_ok=false
   config_error=""
+  config_error_file="$(mktemp "${TMPDIR:-/tmp}/jarvis-install-config.XXXXXX")"
   if command -v go >/dev/null 2>&1 && [[ -f "$CONFIG_PATH" ]]; then
-    if config_status="$(initialization_status 2>&1)"; then
+    if config_status="$(initialization_status 2>"$config_error_file")"; then
       config_inspection_ok=true
     else
-      config_error="$config_status"
+      config_error="$(<"$config_error_file")"
+      if [[ -n "$config_status" ]]; then
+        config_error="${config_error}${config_error:+$'\n'}${config_status}"
+      fi
       config_status='null'
     fi
   else
     config_error="go or config file is missing"
   fi
+  rm -f "$config_error_file"
   local traex_required traex_binary
   traex_required=false
   traex_binary=""
@@ -415,11 +509,19 @@ doctor() {
     done < <(jq -r '.runtime_binaries[]?' <<<"$config_status")
   fi
 
-  local lark_cli_path lark_cli_version bytedcli_path bytedcli_version bytedcli_login_ready traex_path traex_version traex_login_is_ready
+  local lark_cli_path lark_cli_version lark_cli_version_is_ready lark_cli_protocol_is_ready bytedcli_path bytedcli_version bytedcli_login_ready traex_path traex_version traex_login_is_ready codex_path codex_version codex_login_is_ready
   lark_cli_path="$(command -v lark-cli 2>/dev/null || true)"
   lark_cli_version=""
+  lark_cli_version_is_ready=false
+  lark_cli_protocol_is_ready=false
   if [[ -n "$lark_cli_path" ]]; then
     lark_cli_version="$("$lark_cli_path" --version 2>/dev/null | head -n1 || true)"
+    if lark_cli_version_ready "$lark_cli_path"; then
+      lark_cli_version_is_ready=true
+    fi
+    if lark_cli_protocol_ready "$lark_cli_path"; then
+      lark_cli_protocol_is_ready=true
+    fi
   fi
   bytedcli_path="$(command -v bytedcli 2>/dev/null || true)"
   bytedcli_version=""
@@ -428,6 +530,15 @@ doctor() {
     bytedcli_version="$("$bytedcli_path" --version 2>/dev/null | head -n1 || true)"
     if "$bytedcli_path" --json auth status 2>/dev/null | jq -e '.data.authenticated == true' >/dev/null 2>&1; then
       bytedcli_login_ready=true
+    fi
+  fi
+  codex_path="$(command -v codex 2>/dev/null || true)"
+  codex_version=""
+  codex_login_is_ready=false
+  if [[ -n "$codex_path" ]]; then
+    codex_version="$("$codex_path" --version 2>/dev/null | head -n1 || true)"
+    if codex_login_ready "$codex_path"; then
+      codex_login_is_ready=true
     fi
   fi
 
@@ -456,8 +567,8 @@ doctor() {
 
   local qdrant_healthy server_healthy readiness_json
   load_server_instance
-  qdrant_healthy="$(bool_json curl -fsS --max-time 2 "${QDRANT_URL}/healthz" -o /dev/null)"
-  server_healthy="$(bool_json curl -fsS --max-time 2 "${SERVER_URL}/healthz" -o /dev/null)"
+  qdrant_healthy="$(bool_json curl -fsS --max-time 2 "${QDRANT_URL}/healthz" -o /dev/null 2>/dev/null)"
+  server_healthy="$(bool_json curl -fsS --max-time 2 "${SERVER_URL}/healthz" -o /dev/null 2>/dev/null)"
   readiness_json='null'
   if [[ "$server_healthy" == "true" ]]; then
     readiness_json="$(curl -fsS --max-time 4 "${SERVER_URL}/readyz" 2>/dev/null || printf 'null')"
@@ -518,8 +629,9 @@ doctor() {
     machine_ready=false
   fi
   dependencies_ready=false
-  if [[ "$machine_ready" == "true" && -n "$lark_cli_path" && -n "$lark_cli_version" && \
+  if [[ "$machine_ready" == "true" && -n "$lark_cli_path" && -n "$lark_cli_version" && "$lark_cli_version_is_ready" == "true" && "$lark_cli_protocol_is_ready" == "true" && \
     -n "$bytedcli_path" && -n "$bytedcli_version" && \
+    -n "$codex_path" && -n "$codex_version" && "$codex_login_is_ready" == "true" && \
     "$lark_skill_pack_ready" == "true" && "$cc_connect_ready" == "true" && "$qdrant_healthy" == "true" ]]; then
     dependencies_ready=true
   fi
@@ -533,9 +645,12 @@ doctor() {
     --arg actual_go "$actual_go" \
     --arg actual_node "$actual_node" \
     --arg c_compiler "$c_compiler" \
+    --arg lark_cli_min_version "$LARK_CLI_MIN_VERSION" \
     --arg lark_skill_path "$lark_skill_path" \
     --arg lark_cli_path "$lark_cli_path" \
     --arg lark_cli_version "$lark_cli_version" \
+    --arg codex_path "$codex_path" \
+    --arg codex_version "$codex_version" \
     --arg bytedcli_path "$bytedcli_path" \
     --arg bytedcli_version "$bytedcli_version" \
     --arg traex_path "$traex_path" \
@@ -557,7 +672,10 @@ doctor() {
     --argjson c_compiler_ready "$c_compiler_ready" \
     --argjson xcode_tools_ready "$xcode_tools_ready" \
     --argjson lark_skill_pack_ready "$lark_skill_pack_ready" \
+    --argjson lark_cli_version_ready "$lark_cli_version_is_ready" \
+    --argjson lark_cli_protocol_ready "$lark_cli_protocol_is_ready" \
     --argjson bytedcli_login_ready "$bytedcli_login_ready" \
+    --argjson codex_login_ready "$codex_login_is_ready" \
     --argjson traex_required "$traex_required" \
     --argjson traex_login_ready "$traex_login_is_ready" \
     --argjson cc_connect_ready "$cc_connect_ready" \
@@ -580,7 +698,7 @@ doctor() {
       repo:{root:$repo_root,git_dirty_file_count:$git_dirty_count,database_exists:$database_exists},
       platform:{os:$platform,arch:$arch,supported:$platform_supported},
       toolchain:{missing:$missing,go:{required:$required_go,actual:$actual_go,supported:$go_supported},node:{required:"^20.19.0 or >=22.12.0",actual:$actual_node,supported:$node_supported},cgo_ready:$cgo_ready,c_compiler:{command:(if $c_compiler == "" then null else $c_compiler end),ready:$c_compiler_ready},xcode_tools_ready:$xcode_tools_ready},
-      agent_capabilities:{lark_cli:{path:(if $lark_cli_path == "" then null else $lark_cli_path end),version:(if $lark_cli_version == "" then null else $lark_cli_version end)},lark_skill_pack_ready:$lark_skill_pack_ready,lark_skill_pack_path:(if $lark_skill_path == "" then null else $lark_skill_path end),bytedcli:{path:(if $bytedcli_path == "" then null else $bytedcli_path end),version:(if $bytedcli_version == "" then null else $bytedcli_version end),login_ready:$bytedcli_login_ready},traex:{required:$traex_required,path:(if $traex_path == "" then null else $traex_path end),version:(if $traex_version == "" then null else $traex_version end),login_ready:$traex_login_ready},cc_connect:{path:$cc_connect_path,version:(if $cc_connect_version == "" then null else $cc_connect_version end),patched_binary_ready:$cc_connect_ready}},
+      agent_capabilities:{lark_cli:{path:(if $lark_cli_path == "" then null else $lark_cli_path end),version:(if $lark_cli_version == "" then null else $lark_cli_version end),minimum_version:$lark_cli_min_version,version_ready:$lark_cli_version_ready,required_protocol_ready:$lark_cli_protocol_ready},lark_skill_pack_ready:$lark_skill_pack_ready,lark_skill_pack_path:(if $lark_skill_path == "" then null else $lark_skill_path end),bytedcli:{path:(if $bytedcli_path == "" then null else $bytedcli_path end),version:(if $bytedcli_version == "" then null else $bytedcli_version end),login_ready:$bytedcli_login_ready},codex:{path:(if $codex_path == "" then null else $codex_path end),version:(if $codex_version == "" then null else $codex_version end),login_ready:$codex_login_ready},traex:{required:$traex_required,path:(if $traex_path == "" then null else $traex_path end),version:(if $traex_version == "" then null else $traex_version end),login_ready:$traex_login_ready},cc_connect:{path:$cc_connect_path,version:(if $cc_connect_version == "" then null else $cc_connect_version end),patched_binary_ready:$cc_connect_ready}},
       configuration:{path:$config_path,inspection_ok:$config_inspection_ok,error:(if $config_error == "" then null else $config_error end),status:$config,runtime_override_ignored:$runtime_ignored},
       services:{manager:(if $platform == "Linux" then "systemd" else "launchd" end),server:{loaded:$server_loaded,launchd_loaded:$server_loaded,program:(if $server_program == "" then null else $server_program end),belongs_to_checkout:$server_belongs_to_checkout,healthy:$server_healthy,readiness:$readiness},qdrant:{loaded:$qdrant_loaded,launchd_loaded:$qdrant_loaded,program:(if $qdrant_program == "" then null else $qdrant_program end),belongs_to_checkout:$qdrant_belongs_to_checkout,healthy:$qdrant_healthy},cc_connect:{loaded:$cc_connect_loaded,launchd_loaded:$cc_connect_loaded,program:(if $cc_connect_program == "" then null else $cc_connect_program end),belongs_to_checkout:$cc_connect_belongs_to_checkout,running:$cc_connect_daemon_running}},
       warnings:$warnings}'
@@ -602,8 +720,9 @@ validate_dependencies() {
     ok:.dependencies_ready,
     checks:{
       machine_ready:.machine_ready,
-      lark_cli_ready:((.agent_capabilities.lark_cli.path // "") != "" and (.agent_capabilities.lark_cli.version // "") != ""),
+      lark_cli_ready:((.agent_capabilities.lark_cli.path // "") != "" and (.agent_capabilities.lark_cli.version // "") != "" and .agent_capabilities.lark_cli.version_ready and .agent_capabilities.lark_cli.required_protocol_ready),
       bytedcli_ready:((.agent_capabilities.bytedcli.path // "") != "" and (.agent_capabilities.bytedcli.version // "") != ""),
+      codex_ready:((.agent_capabilities.codex.path // "") != "" and (.agent_capabilities.codex.version // "") != "" and .agent_capabilities.codex.login_ready),
       lark_skill_pack_ready:.agent_capabilities.lark_skill_pack_ready,
       agent_cli_login_ready:((.agent_capabilities.traex.required | not) or .agent_capabilities.traex.login_ready),
       cc_connect_patched_binary_ready:.agent_capabilities.cc_connect.patched_binary_ready,
@@ -625,17 +744,28 @@ install_cc_connect() {
 
 install_lark_cli() {
   require_command jq
-  require_command npx
 
-  local changed lark_cli_path lark_cli_version lark_skill_path lark_skill_ready
+  local changed lark_cli_path lark_cli_version lark_skill_path lark_skill_ready protocol_ready version_ready
   changed=false
   lark_skill_path=""
   lark_skill_ready=false
-  if lark_skill_path="$(lark_skill_pack_path)"; then
+  if lark_skill_path="$(lark_skill_pack_path)" && lark_required_skills_ready; then
     lark_skill_ready=true
   fi
-  if ! command -v lark-cli >/dev/null 2>&1 || [[ "$lark_skill_ready" != "true" ]]; then
+  protocol_ready=false
+  version_ready=false
+  if command -v lark-cli >/dev/null 2>&1 && lark_cli_protocol_ready "$(command -v lark-cli)"; then
+    protocol_ready=true
+  fi
+  if command -v lark-cli >/dev/null 2>&1 && lark_cli_version_ready "$(command -v lark-cli)"; then
+    version_ready=true
+  fi
+  if ! command -v lark-cli >/dev/null 2>&1; then
+    require_command npx
     npx --yes @larksuite/cli@latest install >&2
+    changed=true
+  elif [[ "$lark_skill_ready" != "true" || "$protocol_ready" != "true" || "$version_ready" != "true" ]]; then
+    lark-cli update --json >&2
     changed=true
   fi
 
@@ -645,17 +775,21 @@ install_lark_cli() {
   [[ -n "$lark_cli_version" ]] || fail "lark-cli did not return a version after installation"
   lark_skill_path=""
   lark_skill_ready=false
-  if lark_skill_path="$(lark_skill_pack_path)"; then
+  if lark_skill_path="$(lark_skill_pack_path)" && lark_required_skills_ready; then
     lark_skill_ready=true
   fi
+  lark_cli_version_ready "$lark_cli_path" || fail "lark-cli ${lark_cli_version} is older than required ${LARK_CLI_MIN_VERSION}; run lark-cli update"
+  lark_cli_protocol_ready "$lark_cli_path" || fail "lark-cli is installed but lacks the required card.action.trigger --dry-run protocol; run lark-cli update"
+  [[ "$lark_skill_ready" == "true" ]] || fail "the official installer completed but required Lark Agent Skills are missing"
 
   jq -nc \
     --argjson changed "$changed" \
     --arg path "$lark_cli_path" \
     --arg version "$lark_cli_version" \
+    --arg minimum_version "$LARK_CLI_MIN_VERSION" \
     --argjson skill_pack_ready "$lark_skill_ready" \
     --arg skill_pack_path "$lark_skill_path" \
-    '{ok:true,changed:$changed,path:$path,version:$version,agent_skill_pack_detected:$skill_pack_ready,agent_skill_pack_path:(if $skill_pack_path == "" then null else $skill_pack_path end)}'
+    '{ok:true,changed:$changed,path:$path,version:$version,minimum_version:$minimum_version,version_ready:true,required_protocol_ready:true,agent_skill_pack_detected:$skill_pack_ready,agent_skill_pack_path:(if $skill_pack_path == "" then null else $skill_pack_path end)}'
 }
 
 install_bytedcli() {
@@ -697,6 +831,34 @@ install_bytedcli() {
     --argjson changed "$changed" \
     --arg path "$bytedcli_path" \
     --arg version "$bytedcli_version" \
+    --argjson login_ready "$login_ready" \
+    '{ok:true,changed:$changed,path:$path,version:$version,login_ready:$login_ready}'
+}
+
+install_codex() {
+  require_command jq
+  require_command npm
+
+  local changed codex_path codex_version login_ready
+  changed=false
+  codex_path="$(command -v codex 2>/dev/null || true)"
+  if [[ -z "$codex_path" ]]; then
+    npm install --global @openai/codex@latest >&2
+    changed=true
+    codex_path="$(command -v codex 2>/dev/null || true)"
+  fi
+  [[ -n "$codex_path" && -x "$codex_path" ]] || fail "codex is not executable after installation"
+  codex_version="$("$codex_path" --version 2>/dev/null | head -n1 || true)"
+  [[ -n "$codex_version" ]] || fail "codex did not return a version after installation"
+  login_ready=false
+  if codex_login_ready "$codex_path"; then
+    login_ready=true
+  fi
+
+  jq -nc \
+    --argjson changed "$changed" \
+    --arg path "$codex_path" \
+    --arg version "$codex_version" \
     --argjson login_ready "$login_ready" \
     '{ok:true,changed:$changed,path:$path,version:$version,login_ready:$login_ready}'
 }
@@ -796,10 +958,15 @@ install_server() {
   esac
   load_server_instance
 
+  local existing_program
+  existing_program="$(service_program "$SERVER_LABEL" 2>/dev/null || true)"
   if service_loaded "$SERVER_LABEL"; then
     local current_program
-    current_program="$(service_program "$SERVER_LABEL" 2>/dev/null || true)"
+    current_program="$existing_program"
     fail "Jarvis service is already loaded (${current_program:-unknown}); use scripts/rebuild-server.sh for this checkout or ask before replacing another installation"
+  fi
+  if [[ -n "$existing_program" && "$existing_program" != "${REPO_ROOT}/scripts/run-signed-server.sh" && "$existing_program" != "${REPO_ROOT}/bin/jarvis-server" ]]; then
+    fail "Jarvis service definition belongs to another installation (${existing_program}); obtain user approval before replacing it"
   fi
 
   local status
@@ -853,15 +1020,21 @@ validate_installation() {
   require_command go
   load_server_instance
 
-  local status binding binding_ok qdrant_healthy server_healthy cc_connect_running cc_connect_program cc_connect_program_ok readiness readiness_ok permissions_ok agent_cli_auth_ready ok
+  local status binding binding_error binding_ok qdrant_healthy server_healthy cc_connect_running cc_connect_program cc_connect_program_ok cc_connect_binary_ready cc_management_port_ready cc_bridge_port_ready readiness readiness_ok permissions_ok agent_cli_auth_ready ok
   status="$(initialization_status)"
   binding='null'
+  binding_error=""
   binding_ok=false
-  if binding="$(integrated_binding_validation 2>/dev/null)" && jq -e '.ready == true' >/dev/null 2>&1 <<<"$binding"; then
-    binding_ok=true
+  if binding="$(integrated_binding_validation 2>&1)"; then
+    if jq -e '.ready == true' >/dev/null 2>&1 <<<"$binding"; then
+      binding_ok=true
+    fi
+  else
+    binding_error="$binding"
+    binding='null'
   fi
-  qdrant_healthy="$(bool_json curl -fsS --max-time 2 "${QDRANT_URL}/healthz" -o /dev/null)"
-  server_healthy="$(bool_json curl -fsS --max-time 2 "${SERVER_URL}/healthz" -o /dev/null)"
+  qdrant_healthy="$(bool_json curl -fsS --max-time 2 "${QDRANT_URL}/healthz" -o /dev/null 2>/dev/null)"
+  server_healthy="$(bool_json curl -fsS --max-time 2 "${SERVER_URL}/healthz" -o /dev/null 2>/dev/null)"
   cc_connect_running=false
   if service_running "$CC_CONNECT_LABEL"; then
     cc_connect_running=true
@@ -871,6 +1044,16 @@ validate_installation() {
   if [[ "$cc_connect_program" == "$CC_CONNECT_BIN" ]]; then
     cc_connect_program_ok=true
   fi
+  cc_connect_binary_ready=false
+  if [[ -x "$CC_CONNECT_BIN" ]]; then
+    local cc_version
+    cc_version="$("$CC_CONNECT_BIN" --version 2>/dev/null || true)"
+    if [[ "$cc_version" == *"cc-connect ${CC_CONNECT_VERSION}"* && "$cc_version" == *"${CC_CONNECT_PATCH_COMMIT}"* ]]; then
+      cc_connect_binary_ready=true
+    fi
+  fi
+  cc_management_port_ready="$(bool_json bash -c 'exec 3<>"/dev/tcp/127.0.0.1/9810"' 2>/dev/null)"
+  cc_bridge_port_ready="$(bool_json bash -c 'exec 3<>"/dev/tcp/127.0.0.1/9820"' 2>/dev/null)"
   readiness='null'
   readiness_ok=false
   if [[ "$server_healthy" == "true" ]]; then
@@ -893,7 +1076,7 @@ validate_installation() {
   done < <(jq -r '.runtime_binaries[]?' <<<"$status")
   ok=false
   if jq -e '.machine_configuration_ready == true' >/dev/null <<<"$status" && \
-    [[ "$binding_ok" == "true" && "$cc_connect_running" == "true" && "$cc_connect_program_ok" == "true" && "$qdrant_healthy" == "true" && "$server_healthy" == "true" && "$readiness_ok" == "true" && "$permissions_ok" == "true" && "$agent_cli_auth_ready" == "true" ]]; then
+    [[ "$binding_ok" == "true" && "$cc_connect_running" == "true" && "$cc_connect_program_ok" == "true" && "$cc_connect_binary_ready" == "true" && "$cc_management_port_ready" == "true" && "$cc_bridge_port_ready" == "true" && "$qdrant_healthy" == "true" && "$server_healthy" == "true" && "$readiness_ok" == "true" && "$permissions_ok" == "true" && "$agent_cli_auth_ready" == "true" ]]; then
     ok=true
   fi
 
@@ -901,6 +1084,7 @@ validate_installation() {
     --argjson ok "$ok" \
     --argjson configuration "$status" \
     --argjson binding "$binding" \
+    --arg binding_error "$binding_error" \
     --argjson binding_ok "$binding_ok" \
     --argjson permissions_ok "$permissions_ok" \
     --argjson agent_cli_auth_ready "$agent_cli_auth_ready" \
@@ -908,10 +1092,13 @@ validate_installation() {
     --argjson server_healthy "$server_healthy" \
     --argjson cc_connect_running "$cc_connect_running" \
     --argjson cc_connect_program_ok "$cc_connect_program_ok" \
+    --argjson cc_connect_binary_ready "$cc_connect_binary_ready" \
+    --argjson cc_management_port_ready "$cc_management_port_ready" \
+    --argjson cc_bridge_port_ready "$cc_bridge_port_ready" \
     --arg cc_connect_program "$cc_connect_program" \
     --argjson readiness_ok "$readiness_ok" \
     --argjson readiness "$readiness" \
-    '{ok:$ok,configuration:$configuration,integrated_bot_binding:{ok:$binding_ok,details:$binding},permissions_ok:$permissions_ok,agent_cli_auth_ready:$agent_cli_auth_ready,services:{cc_connect:{running:$cc_connect_running,program_matches_patched_binary:$cc_connect_program_ok,program:(if $cc_connect_program == "" then null else $cc_connect_program end)},qdrant_healthy:$qdrant_healthy,server_healthy:$server_healthy,readiness_ok:$readiness_ok,readiness:$readiness}}'
+    '{ok:$ok,configuration:$configuration,integrated_bot_binding:{ok:$binding_ok,details:$binding,error:(if $binding_error == "" then null else $binding_error end)},permissions_ok:$permissions_ok,agent_cli_auth_ready:$agent_cli_auth_ready,services:{cc_connect:{running:$cc_connect_running,program_matches_patched_binary:$cc_connect_program_ok,binary_version_ready:$cc_connect_binary_ready,management_port_9810_ready:$cc_management_port_ready,bridge_port_9820_ready:$cc_bridge_port_ready,program:(if $cc_connect_program == "" then null else $cc_connect_program end)},qdrant_healthy:$qdrant_healthy,server_healthy:$server_healthy,readiness_ok:$readiness_ok,readiness:$readiness}}'
   [[ "$ok" == "true" ]]
 }
 
@@ -948,6 +1135,7 @@ case "$subcommand" in
   doctor) doctor ;;
   install-lark-cli) install_lark_cli ;;
   install-bytedcli) install_bytedcli ;;
+  install-codex) install_codex ;;
   install-traex) install_traex ;;
   install-cc-connect) install_cc_connect ;;
   install-qdrant) install_qdrant ;;

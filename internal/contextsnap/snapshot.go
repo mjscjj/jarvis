@@ -29,10 +29,9 @@ type Snapshot struct {
 	// state, not evidence: a snapshot freezes what was true at creation time,
 	// but "what else is already being worked on" is only useful as of the moment
 	// someone acts on it. M5 queries related work on demand at execution time.
-	Participants  []Participant    `json:"participants,omitempty"`
-	Resources     []Resource       `json:"resources,omitempty"`
-	OtherProjects []ProjectBrief   `json:"other_projects,omitempty"`
-	Memories      []map[string]any `json:"memories"`
+	Participants  []Participant  `json:"participants,omitempty"`
+	Resources     []Resource     `json:"resources,omitempty"`
+	OtherProjects []ProjectBrief `json:"other_projects,omitempty"`
 	// ManagedResources is loaded by the common context assembler for
 	// manual/scheduled tasks. M3 leaves it empty because its own captured
 	// resources are frozen in Resources above.
@@ -44,15 +43,6 @@ type Snapshot struct {
 	// RequestContext preserves caller-supplied manual/scheduled background
 	// without allowing it to replace the authoritative common snapshot.
 	RequestContext json.RawMessage `json:"request_context,omitempty"`
-	// Supplements are human clarifications added after extraction. They are
-	// appended rather than replacing the frozen background.
-	Supplements []Supplement `json:"supplements,omitempty"`
-}
-
-// Supplement is one human clarification added to a Todo after extraction.
-type Supplement struct {
-	Note string `json:"note"`
-	At   string `json:"at"` // RFC3339 UTC
 }
 
 // Principal is the decision-maker ("me"): who I am, what I own, who my leader is.
@@ -156,7 +146,7 @@ type Message struct {
 
 // SnapshotVersion is the current wire version. Bump when the shape changes so
 // stale snapshots are rejected rather than mis-read.
-const SnapshotVersion = "v1"
+const SnapshotVersion = "v2"
 
 // Encode serializes the snapshot to canonical JSON, failing if it is empty of
 // meaningful content (fail-fast: an empty snapshot must never reach the DB).

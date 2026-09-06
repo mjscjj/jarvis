@@ -42,8 +42,9 @@ type ProjectList struct {
 	PageSize int           `json:"page_size"`
 }
 
-// factSourceBackground tags facts this service writes from project CRUD.
-var factSourceBackground = "background"
+// factSourceBackground tags internal state transitions that are themselves the
+// primary record and therefore have no external material pointer.
+var factSourceBackground = progress.FactSourceSystem
 
 // ProjectService is the authoritative CRUD owner of the project table.
 type ProjectService struct {

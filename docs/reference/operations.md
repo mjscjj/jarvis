@@ -38,12 +38,14 @@ Application Support 目录和打包入口见
 
 ## 首次安装
 
-推荐在完整仓库根目录让用户的 Agent 执行 `$install-jarvis`。它拥有从 checkout 到最终可用的整体安装状态，先创建统一清单，再用 doctor 暴露事实，由 Agent 决定依赖安装方式和旧实例处置。所有依赖必须先安装并通过独立验收门，然后把 lark-cli 当前默认 App 绑定到 CC Connect、启动 CC Connect/Jarvis、完成世界模型和真实端到端验收。
+推荐在完整仓库根目录让用户的 Agent 执行 `$install-jarvis`。这是用户唯一需要触发的安装 Skill；它内部调用可独立复用的 `$bootstrap-jarvis-world-model`。它拥有从 checkout 到最终可用的整体安装状态，先恢复或创建统一清单，再用 doctor 暴露事实，由 Agent 决定依赖安装方式和旧实例处置。所有依赖必须先安装并通过独立验收门，然后把 lark-cli 当前默认 App 绑定到 CC Connect、启动 CC Connect/Jarvis、完成世界模型和真实端到端验收。
 
 ```bash
-./scripts/jarvis-install start
+./scripts/jarvis-install start --resume-latest
 ./scripts/jarvis-install doctor
 ./scripts/jarvis-install install-lark-cli
+./scripts/jarvis-install install-bytedcli
+./scripts/jarvis-install install-codex
 ./scripts/jarvis-install install-traex
 ./scripts/jarvis-install install-cc-connect
 ./scripts/jarvis-install install-qdrant
@@ -51,11 +53,12 @@ Application Support 目录和打包入口见
 
 # 依赖门返回 ok=true 后，登录 lark-cli 当前默认身份，写 identity 并绑定 CC：
 ./scripts/jarvis-install configure-identity --agent-name <name> --open-id <open_id> --git-author <author>
-./scripts/jarvis-install bind-cc
+printf '%s\n' '<App Secret>' | ./scripts/jarvis-install bind-cc
 ./scripts/jarvis-install validate-binding
 
 # 先启动补丁版 CC Connect，再启动 Jarvis：
 ./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"
+# Linux 改用：./scripts/install-cc-systemd.sh "$HOME/.cc-connect/config.toml"
 ./scripts/jarvis-install install-server
 ./scripts/jarvis-install validate
 
@@ -70,9 +73,9 @@ curl --fail http://127.0.0.1:6333/healthz
 curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
 ```
 
-顺序是硬边界：创建整体安装清单 → 基础工具链、lark-cli/Lark Skills、traex 登录、补丁版 CC Connect binary 和 Qdrant → `validate-dependencies` → 完成 lark-cli 默认飞书用户登录 → 写 Jarvis runtime identity 与 CC Connect `jarvis-codex` → `validate-binding` → 启动补丁版 CC Connect → 主服务注册 → `$bootstrap-jarvis-world-model` → 真实端到端验收 → `status`。Qdrant 是依赖服务，可以在依赖阶段启动；CC Connect/Jarvis 不能在依赖门前启动。`install-server` 会再次强制通过依赖门和一体化绑定门。
+顺序是硬边界：创建整体安装清单 → 基础工具链、lark-cli/Lark Skills、Codex、traex 登录、补丁版 CC Connect binary 和 Qdrant → `validate-dependencies` → 完成 lark-cli 默认飞书用户登录 → 写 Jarvis runtime identity 与 CC Connect `jarvis-codex` → `validate-binding` → 启动补丁版 CC Connect → 主服务注册 → `$bootstrap-jarvis-world-model` → 真实端到端验收 → 两次 `status`（第一次用于填写最终项，第二次用于交付）。Qdrant 是依赖服务，可以在依赖阶段启动；CC Connect/Jarvis 不能在依赖门前启动。`install-server` 会再次强制通过依赖门和一体化绑定门。
 
-`bind-cc` 会把 CC Connect Feishu `allow_from` 收紧为 Principal 本人；`validate-binding` 会拒绝缺失或通配的访问白名单。需要临时开放给其他人时，应作为当前机器的显式运行决策处理。
+`bind-cc` 会立即验证 App ID/Secret。已有 CC Connect Feishu `allow_from` 不是 Principal 本人时命令会停止；用户确认替换后才可加 `--replace-allow-from`。`validate-binding` 会拒绝缺失或通配的访问白名单。需要临时开放给其他人时，应作为当前机器的显式运行决策处理。
 
 内置安装器支持 macOS arm64 与 Linux x86_64。doctor 会按 `go.mod`、Vite engines、CGO/C 工具链、Lark Skills、已有数据库与实际服务 program 报告当前状态。若服务属于其他 checkout 或发现旧业务数据，Agent 必须先请用户决定复用、迁移或替换。
 
@@ -144,7 +147,6 @@ Jarvis Bot 的飞书长连接由 CC Connect 独占。`jarvis-server` 不启动 F
 ```yaml
 card_approval:
   enabled: true
-  profile: "<已确认的 lark-cli profile>"
   principal_open_id: "ou_xxx"
   relay_secret: "<与 CC Connect 相同的本机共享密钥>"
 ```

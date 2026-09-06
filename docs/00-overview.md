@@ -173,10 +173,12 @@ KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是�
 | 系统 prompts     | `conf/prompts/*.md`，在 `internal/textstore/defaults.go` 注册 | 缺失/空正文 fail-fast           |
 | 工作 rules       | `conf/rules/m3.md`、`conf/rules/m5.md`                        | M3、M5 分阶段读取；正文允许为空 |
 | Skills           | `.agents/skills/*/SKILL.md` + `conf/skills.yaml`              | 正文与启用阶段分离              |
-| Shared memory    | `data/shared-memory.md`                                       | 作为可信指令块注入              |
+| Shared memory    | `data/shared-memory.md`                                       | Principal 明确要求长期记住的行为偏好；最多 2000 字 |
 | Runtime settings | `conf/config.runtime.yaml`                                    | 覆盖基线配置；重启后生效        |
 
 工具说明由 `internal/toolcatalog` 和 Skills 维护，不复制到每个 prompt。
+
+Shared memory 是 Principal 在运行中明确教给 Jarvis 的个性化行为覆盖层，不保存业务事实或机器控制状态。M3、M5、后台对话、主动巡视和 CC Connect 读取同一份内容，并只在各自阶段职责内执行；主动巡视结合原本就在检查的证据合并明确的新要求、撤回和冲突，不为维护记忆扩大调查。
 
 `identity.display_name` 是本机助手名称的唯一真源。初始化必须把用户选择显式写入 runtime overlay；设置页改名同样写该字段并在重启后生效。系统 Prompt、rules 和运行时 Skills 只保留 `{{AGENT_NAME}}`，由 `internal/agentidentity` 的只读装饰器在可信指令进入各 Agent 前统一渲染。事件、Task、Fact 和历史产物不保存或回写名称。`jarvis-tools`、API header、进程 label、路径和数据库键仍是稳定技术标识，不参与改名。
 

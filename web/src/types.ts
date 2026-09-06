@@ -31,47 +31,6 @@ export interface Resolution {
   basis: string | null
 }
 
-// ContextSnapshot is the M3-frozen background that M5 replays unchanged.
-export interface ContextSnapshot {
-  snapshot_version: string
-  captured_at: string
-  principal: {
-    open_id: string
-    name: string
-    department: string | null
-    title: string | null
-    leader_name: string | null
-    summary: string | null
-  } | null
-  project: {
-    id: number
-    code: string | null
-    name: string
-    role: string
-    summary: string | null
-  } | null
-  group: {
-    id: number
-    chat_id: string
-    name: string | null
-    description: string | null
-    summary: string | null
-  } | null
-  assigner: {
-    open_id: string
-    name: string | null
-    role: string | null
-  } | null
-  messages: Array<{
-    message_id: string
-    sender_name: string
-    content: string
-    create_time: number
-  }>
-  memories: Array<Record<string, unknown>>
-  supplements?: Array<{ note: string; at: string }>
-}
-
 export interface Todo {
   id: number
   title: string

@@ -9,6 +9,7 @@ import (
 
 	"jarvis/internal/agentusage"
 	"jarvis/internal/progress"
+	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/textstore"
 	"jarvis/internal/toolcatalog"
@@ -36,6 +37,7 @@ type WorkerOptions struct {
 	EvidenceRetryMax int
 	WorkRules        workrule.Reader
 	Skills           skill.Reader
+	SharedMemory     sharedmem.SharedMemoryReader
 	SystemPrompts    textstore.Reader
 }
 
@@ -86,6 +88,9 @@ func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup
 	}
 	if opts.Skills == nil {
 		return nil, fmt.Errorf("extract worker skill reader is nil")
+	}
+	if opts.SharedMemory == nil {
+		return nil, fmt.Errorf("extract worker shared memory reader is nil")
 	}
 	if opts.SystemPrompts == nil {
 		return nil, fmt.Errorf("extract worker system prompt reader is nil")
@@ -217,6 +222,10 @@ func (w *Worker) buildBatchPrompts(ctx context.Context, batch ChatBatch, runNow 
 	if err != nil {
 		return nil, fmt.Errorf("read extract skills chat_id=%s: %w", batch.Group.ChatID, err)
 	}
+	sharedMemory, err := w.opts.SharedMemory.Text(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read extract shared memory chat_id=%s: %w", batch.Group.ChatID, err)
+	}
 	systemPrompt, err := w.opts.SystemPrompts.Content(ctx, textstore.SystemPromptM3Key)
 	if err != nil {
 		return nil, fmt.Errorf("read M3 system prompt chat_id=%s: %w", batch.Group.ChatID, err)
@@ -239,7 +248,7 @@ func (w *Worker) buildBatchPrompts(ctx context.Context, batch ChatBatch, runNow 
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
 			AllowSingleNewOverLimit: allowSingleNewOverLimit,
 			SystemPrompt:            systemPrompt, ToolCatalog: toolCatalog,
-			WorkRules: workRules, Skills: skills,
+			WorkRules: workRules, SharedMemory: sharedMemory, Skills: skills,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("build extraction prompt chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)

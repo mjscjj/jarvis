@@ -270,7 +270,7 @@ func assertSameJSON(t *testing.T, label string, got, want []byte) {
 	}
 }
 
-const materializerTodoContextSnapshot = `{"snapshot_version":"v1","captured_at":"2026-08-02T12:00:00Z","principal":{"open_id":"ou_owner","name":"Owner"},"project":{"id":1,"name":"Jarvis","role":"owner","repos":[{"local_path":"jarvis"}]},"messages":[],"memories":[],"facts":[],"recent_tasks":[],"open_todos":[]}`
+const materializerTodoContextSnapshot = `{"snapshot_version":"v2","captured_at":"2026-08-02T12:00:00Z","principal":{"open_id":"ou_owner","name":"Owner"},"project":{"id":1,"name":"Jarvis","role":"owner"},"messages":[]}`
 
 func insertMaterializerTodo(t *testing.T, db *gorm.DB, id uint64, version int32) {
 	t.Helper()

@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -312,6 +313,7 @@ func TestClassifyError(t *testing.T) {
 		want string
 	}{
 		{err: &larkcli.APIError{Subtype: "rate_limited"}, want: "lark_api_rate_limited"},
+		{err: &larkcli.APIError{Subtype: "unknown", Code: json.RawMessage("232001")}, want: "lark_api_232001"},
 		{err: &larkcli.CommandError{Cause: errors.New("exit")}, want: "lark_cli_process"},
 		{err: errors.New("plain"), want: "errors.errorString"},
 	}

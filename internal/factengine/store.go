@@ -21,8 +21,8 @@ import (
 // on the source rows.
 const (
 	SourceMessage = "message"
-	SourceTodo    = "todo"
-	SourceTask    = "task"
+	SourceTodo    = "todo_event"
+	SourceTask    = "task_event"
 
 	// Result payloads can still be much larger than chat messages. Split before
 	// a combined unit grows beyond a reliably small agent prompt. A single
@@ -243,6 +243,7 @@ func (s *GORMStore) TodoUnits(ctx context.Context, cursor uint64, limit int, opt
 			return nil, 0, fmt.Errorf("read Todo %d admission: %w", row.Todo.ID, err)
 		}
 		material := todoMaterial{
+			Ref:      fmt.Sprintf("%s:%d", SourceTodo, row.ID),
 			Event:    projectTodoEvent(row),
 			Result:   projectTodoResult(row.Todo, source),
 			subjects: todoSubjects(row.Todo),
@@ -300,6 +301,7 @@ func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opt
 			return nil, 0, fmt.Errorf("task event id=%d references missing execution run id=%d", row.ID, *row.RunID)
 		}
 		material := taskMaterial{
+			Ref:       fmt.Sprintf("%s:%d", SourceTask, row.ID),
 			Event:     projectTaskEvent(row),
 			Result:    projectTaskResult(row.Task),
 			RunResult: projectExecutionRunResult(row.Run),
@@ -334,6 +336,7 @@ func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opt
 }
 
 type todoMaterial struct {
+	Ref         string             `json:"ref"`
 	Event       todoEventMaterial  `json:"event"`
 	Result      todoResultMaterial `json:"todo_result"`
 	subjects    []Subject
@@ -360,6 +363,7 @@ type todoResultMaterial struct {
 }
 
 type taskMaterial struct {
+	Ref         string                      `json:"ref"`
 	Event       taskEventMaterial           `json:"event"`
 	Result      taskResultMaterial          `json:"task_result"`
 	RunResult   *executionRunResultMaterial `json:"run_result,omitempty"`
@@ -481,7 +485,7 @@ func todoMaterialSubjects(materials []todoMaterial) []Subject {
 }
 
 func taskSubjects(task *domain.Task) []Subject {
-	subjects := []Subject{{Type: SourceTask, ID: task.ID, Name: task.Title}}
+	subjects := []Subject{{Type: "task", ID: task.ID, Name: task.Title}}
 	if task.ProjectID != nil {
 		subjects = append(subjects, Subject{Type: "project", ID: *task.ProjectID})
 	}
@@ -694,8 +698,8 @@ func renderMessages(rows []messageRow, location *time.Location) string {
 		content := strings.ReplaceAll(strings.TrimSpace(row.Content), "\r\n", "\n")
 		content = strings.ReplaceAll(content, "\n", "\n    ")
 		at := time.UnixMilli(row.CreateTime).In(location).Format(time.RFC3339)
-		meta := fmt.Sprintf("message_id=%s time=%s sender_open_id=%s sender_name=%q sender_type=%s message_type=%s render_ok=%t",
-			row.MessageID, at, row.SenderOpenID, row.SenderName, row.SenderType, row.MessageType, row.RenderOK)
+		meta := fmt.Sprintf("ref=%s:%d message_id=%s time=%s sender_open_id=%s sender_name=%q sender_type=%s message_type=%s render_ok=%t",
+			SourceMessage, row.ID, row.MessageID, at, row.SenderOpenID, row.SenderName, row.SenderType, row.MessageType, row.RenderOK)
 		for _, ref := range []struct {
 			name  string
 			value *string

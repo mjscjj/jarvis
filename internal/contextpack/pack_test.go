@@ -21,6 +21,25 @@ func TestFrozenCaptureViewsAndAnnotationIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var overviewObject struct {
+		AvailableContext []availableContext `json:"available_context"`
+	}
+	if err := json.Unmarshal(overview, &overviewObject); err != nil {
+		t.Fatalf("decode overview: %v", err)
+	}
+	available := make(map[string]int, len(overviewObject.AvailableContext))
+	for _, item := range overviewObject.AvailableContext {
+		available[item.Name] = item.Bytes
+	}
+	for _, section := range []string{"source", "annotation", "conversation", "background", "project", "future", "full"} {
+		body, err := Read(raw, section, "")
+		if err != nil {
+			t.Fatalf("read available context %q: %v", section, err)
+		}
+		if available[section] != len(body) {
+			t.Fatalf("available_context[%q].bytes = %d, want %d", section, available[section], len(body))
+		}
+	}
 	for _, want := range []string{"原始 MR 链接", "仔细 review 这个", "提交者请求审查"} {
 		if !strings.Contains(string(overview), want) {
 			t.Fatalf("missing %s", want)

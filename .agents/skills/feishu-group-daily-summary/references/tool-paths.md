@@ -83,7 +83,9 @@ lark-cli im +threads-messages-list \
   --as user \
   --thread "<om_xxx_or_omt_xxx>" \
   --order asc \
-  --page-size 500 \
+  --page-size 50 \
+  --page-all \
+  --page-limit 1000 \
   --no-reactions \
   --format json
 ```

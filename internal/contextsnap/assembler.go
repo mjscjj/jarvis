@@ -110,7 +110,6 @@ func (a *Assembler) assemble(ctx context.Context, options AssembleOptions, inclu
 		Group:            group,
 		OtherProjects:    otherProjects,
 		ManagedResources: managedResources,
-		Memories:         make([]map[string]any, 0),
 		RequestContext:   requestContext,
 	}
 	raw, err := snapshot.Encode()

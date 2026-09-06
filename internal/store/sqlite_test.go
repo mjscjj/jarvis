@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,6 +135,33 @@ func TestSQLiteUpdatedAtUsesGORM(t *testing.T) {
 func TestMigrateRejectsNilDatabase(t *testing.T) {
 	if err := Migrate(nil); err == nil {
 		t.Fatal("Migrate(nil) error = nil")
+	}
+}
+
+func TestMigrateRejectsRealLegacyContextSchema(t *testing.T) {
+	db, err := OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "legacy.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = Close(db) })
+	createRealLegacyContextSchema(t, db)
+
+	err = Migrate(db)
+	if err == nil || !strings.Contains(err.Error(), "rebuild the database explicitly") {
+		t.Fatalf("Migrate() error = %v, want explicit rebuild requirement", err)
+	}
+}
+
+func createRealLegacyContextSchema(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	statements := []string{
+		"CREATE TABLE `todo` (`id` integer PRIMARY KEY AUTOINCREMENT,`title` text NOT NULL,`description` text NOT NULL,`action_type` text NOT NULL,`target` text NOT NULL,`context` text NOT NULL,`open_questions` JSON NOT NULL,`commitment_strength` text NOT NULL,`source_message_ids` JSON NOT NULL,`source_quote` text NOT NULL,`group_id` integer,`project_id` integer,`assigner_open_id` text,`is_leader_assigned` numeric NOT NULL DEFAULT false,`due_at` datetime,`status` text NOT NULL DEFAULT \"extracted\",`dedup_fingerprint` text NOT NULL,`context_snapshot` JSON,`extraction_result` JSON,`resolution` JSON,`revision` integer NOT NULL DEFAULT 1,`version` integer NOT NULL DEFAULT 0,`first_seen_at` datetime NOT NULL,`last_evidence_at` datetime NOT NULL,`created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,`updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,`content` JSON)",
+		"CREATE TABLE `task` (`id` integer PRIMARY KEY AUTOINCREMENT,`todo_id` integer,`title` text NOT NULL,`action_type` text NOT NULL,`target` text NOT NULL DEFAULT \"\",`background_old` JSON NOT NULL,`source_clue` JSON,`plan` JSON,`source_type` text NOT NULL DEFAULT \"todo\",`source_id` integer,`occurrence_key` text,`execution_mode` text NOT NULL DEFAULT \"standard\",`status` text NOT NULL DEFAULT \"pending\",`execution_result` JSON,`summary` text,`last_progress_at` datetime,`execution_supplements` JSON,`project_id` integer,`repo_path` text,`version` integer NOT NULL DEFAULT 0,`created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,`updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,`source_payload` JSON,`background` JSON)",
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create real legacy context schema: %v", err)
+		}
 	}
 }
 

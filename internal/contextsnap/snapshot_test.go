@@ -2,6 +2,7 @@ package contextsnap
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +18,9 @@ func TestSnapshotEncodeDecodeRoundTrip(t *testing.T) {
 	raw, err := snap.Encode()
 	if err != nil {
 		t.Fatalf("Encode() error = %v", err)
+	}
+	if strings.Contains(string(raw), `"memories"`) || strings.Contains(string(raw), `"supplements"`) {
+		t.Fatalf("snapshot emitted retired context fields: %s", raw)
 	}
 	got, err := Decode(raw)
 	if err != nil {

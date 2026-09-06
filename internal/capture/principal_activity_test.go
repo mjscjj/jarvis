@@ -93,13 +93,61 @@ func TestPrincipalActivityOpensGroupAndCapturesTriggerMessage(t *testing.T) {
 		"+messages-search",
 		"--sender ou_principal",
 		"--chat-type group",
-		"--page-all",
 		"--no-reactions",
 		"--as user",
 	} {
 		if !strings.Contains(searchArgs, required) {
 			t.Errorf("search args %q do not contain %q", searchArgs, required)
 		}
+	}
+	if strings.Contains(searchArgs, "--page-all") {
+		t.Fatalf("principal activity unexpectedly used capped --page-all: %q", searchArgs)
+	}
+}
+
+func TestPrincipalActivityExhaustsSearchPagesBeforeAdvancingCheckpoint(t *testing.T) {
+	location := mustShanghai(t)
+	now := time.Date(2026, 7, 27, 16, 20, 0, 0, location)
+	db := newCaptureTestDB(t)
+	createDiscoveredGroup(t, db, "oc_page_1", "group", false, now.Add(-24*time.Hour))
+	createDiscoveredGroup(t, db, "oc_page_2", "group", false, now.Add(-24*time.Hour))
+
+	message := func(chatID, messageID string, offset time.Duration) SearchedMessage {
+		return SearchedMessage{
+			ChatID:     chatID,
+			ChatType:   "group",
+			CreateTime: now.Add(offset).Format(cliTimeLayout),
+			MessageID:  messageID,
+			Sender:     CLISender{ID: "ou_principal", Name: "principal", SenderType: "user"},
+		}
+	}
+	runner := &principalActivityFixture{
+		principalOpenID: "ou_principal",
+		searchPages: map[string]principalActivitySearchPage{
+			"":       {messages: []SearchedMessage{message("oc_page_1", "om_page_1", -2*time.Minute)}, hasMore: true, pageToken: "page-2"},
+			"page-2": {messages: []SearchedMessage{message("oc_page_2", "om_page_2", -time.Minute)}},
+		},
+	}
+	service := newPrincipalActivityService(t, db, runner, location)
+	service.now = func() time.Time { return now }
+
+	if err := service.SyncPrincipalActivityGroups(context.Background()); err != nil {
+		t.Fatalf("SyncPrincipalActivityGroups() error = %v", err)
+	}
+	assertActivityRelated(t, db, "oc_page_1", true)
+	assertActivityRelated(t, db, "oc_page_2", true)
+	if len(runner.searchCalls) != 2 {
+		t.Fatalf("search calls = %d, want 2", len(runner.searchCalls))
+	}
+	if got := argValue(runner.searchCalls[1], "--page-token"); got != "page-2" {
+		t.Fatalf("second search page token = %q, want page-2", got)
+	}
+	var scan domain.ScanRecord
+	if err := db.First(&scan, "scan_type = ?", principalActivityScanType).Error; err != nil {
+		t.Fatal(err)
+	}
+	if scan.Status != "ok" || scan.PageCount != 2 || scan.FetchedCount != 2 {
+		t.Fatalf("principal activity scan = %#v, want ok with two pages and messages", scan)
 	}
 }
 
@@ -402,9 +450,17 @@ func assertActivityRelated(t *testing.T, db *gorm.DB, chatID string, want bool) 
 type principalActivityFixture struct {
 	principalOpenID string
 	searchMessages  []SearchedMessage
+	searchPages     map[string]principalActivitySearchPage
 	searchErr       error
 	chatMessages    map[string][]CLIMessage
 	searchArgs      []string
+	searchCalls     [][]string
+}
+
+type principalActivitySearchPage struct {
+	messages  []SearchedMessage
+	hasMore   bool
+	pageToken string
 }
 
 func (f *principalActivityFixture) Run(_ context.Context, out any, args ...string) error {
@@ -414,8 +470,22 @@ func (f *principalActivityFixture) Run(_ context.Context, out any, args ...strin
 		switch response := out.(type) {
 		case *MessageSearchResponse:
 			f.searchArgs = append([]string(nil), args...)
+			f.searchCalls = append(f.searchCalls, append([]string(nil), args...))
 			if f.searchErr != nil {
 				return f.searchErr
+			}
+			if f.searchPages != nil {
+				pageToken := argValue(args, "--page-token")
+				page, ok := f.searchPages[pageToken]
+				if !ok {
+					return fmt.Errorf("unexpected principal activity page token %q", pageToken)
+				}
+				response.OK = true
+				response.Data.Messages = append([]SearchedMessage(nil), page.messages...)
+				response.Data.HasMore = page.hasMore
+				response.Data.PageToken = page.pageToken
+				response.Data.Total = len(page.messages)
+				return nil
 			}
 			response.OK = true
 			response.Data.Messages = append([]SearchedMessage(nil), f.searchMessages...)

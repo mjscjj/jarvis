@@ -65,6 +65,13 @@ func TestRun(t *testing.T) {
 			wantCmdErr: true,
 		},
 		{
+			name:       "structured api error on stderr",
+			script:     `printf '%s\n' '[page 1] fetching...' >&2; printf '%s' '{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","code":99991679,"message":"login required","missing_scopes":["im:chat:read"]}}' >&2; exit 1`,
+			wantErr:    "missing_scope",
+			wantAPIErr: true,
+			wantCmdErr: true,
+		},
+		{
 			name:          "non-zero exit preserves structured stdout",
 			script:        `printf '%s' '{"ok":false,"data":{"item_error":"No read permission"}}'; printf '%s' 'batch failed' >&2; exit 1`,
 			wantErr:       "batch failed",
@@ -219,6 +226,53 @@ esac`)
 	if _, err := client.VerifyUserIdentity(context.Background()); err != nil {
 		t.Fatalf("VerifyUserIdentity() error = %v", err)
 	}
+}
+
+func TestListChatMembersUsesUnlimitedPaginationAndRejectsTruncation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+
+	t.Run("returns complete user roster", func(t *testing.T) {
+		bin := writeScript(t, `
+case " $* " in
+  *" --page-all --page-limit 0 "*) printf '%s' '{"ok":true,"data":{"users":[{"member_id":"ou_1","name":"Alice","tenant_key":"t1"}],"user_total":1,"truncations":[]}}' ;;
+  *) printf '%s' "missing unlimited pagination: $*" >&2; exit 9 ;;
+esac`)
+		client, err := New(testOptions(bin, fixtureCommandTimeout))
+		if err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		members, err := client.ListChatMembers(context.Background(), "oc_1")
+		if err != nil {
+			t.Fatalf("ListChatMembers() error = %v", err)
+		}
+		if len(members) != 1 || members[0].MemberID != "ou_1" {
+			t.Fatalf("ListChatMembers() = %#v", members)
+		}
+	})
+
+	t.Run("fails on server-side truncation", func(t *testing.T) {
+		body := `printf '%s' '{"ok":true,"data":{"users":[],"user_total":150,"truncations":[{"limit":100,"member_type":"user"}]}}'`
+		client, err := New(testOptions(writeScript(t, body), fixtureCommandTimeout))
+		if err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		if _, err := client.ListChatMembers(context.Background(), "oc_large"); err == nil || !strings.Contains(err.Error(), "incomplete user roster") {
+			t.Fatalf("ListChatMembers() error = %v, want incomplete user roster", err)
+		}
+	})
+
+	t.Run("fails when pagination remains", func(t *testing.T) {
+		body := `printf '%s' '{"ok":true,"data":{"users":[],"user_total":150,"has_more":true,"page_token":"next","truncations":[]}}'`
+		client, err := New(testOptions(writeScript(t, body), fixtureCommandTimeout))
+		if err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		if _, err := client.ListChatMembers(context.Background(), "oc_large"); err == nil || !strings.Contains(err.Error(), "has_more=true") {
+			t.Fatalf("ListChatMembers() error = %v, want has_more incompleteness", err)
+		}
+	})
 }
 
 func TestRunRejectsCallerFormat(t *testing.T) {

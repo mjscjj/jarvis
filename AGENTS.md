@@ -33,12 +33,12 @@ Jarvis 的本质不是"规则引擎填表单"，而是一个**靠上下文推断
 
 | 内容 | 唯一真源 | 不应放置的位置 |
 |---|---|---|
-| M3 或 M5 的稳定行为偏好 | `conf/rules/m3.md`、`conf/rules/m5.md` | 跨阶段工作规则文件 |
+| M3 或 M5 的预置阶段行为 | `conf/rules/m3.md`、`conf/rules/m5.md` | 跨阶段工作规则文件 |
 | 阶段角色、目标、停止条件、输出协议 | `conf/prompts/*-system-prompt.md` | rules、Skill、业务上下文 |
 | 工具能力、命令入口、阶段使用方式 | `internal/toolcatalog/` | prompt、rules 中复制工具手册 |
 | 某来源或领域的可复用操作步骤与命令 | 对应 Skill | Go 专用分支、跨阶段规则 |
-| principal 对某类任务的稳定偏好和验收标准 | 适用阶段的 rules | 工具手册、机器状态分支 |
-| principal、项目、人物、群和业务事实 | M1/context/shared memory 等事实载体 | 行为规则和系统提示词 |
+| principal 明确要求长期记住的个性化行为偏好 | `data/shared-memory.md`（最多 2000 字） | 业务事实、机器状态、系统 prompt |
+| principal、项目、人物、群和业务事实 | M1/context、实体事实页与 Fact | 行为规则和系统提示词 |
 | 审批判断尺度 | `conf/prompts/m5-approval-policy.md` | `action_type` 分支或普通 M5 rules |
 | 状态、幂等、权限、调度、工具参数等机器硬边界 | runtime code/schema | 用自然语言规则假装保证 |
 

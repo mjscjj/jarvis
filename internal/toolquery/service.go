@@ -5,6 +5,7 @@ package toolquery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,7 +18,7 @@ import (
 
 var (
 	ErrInvalidInput = errors.New("invalid tool query input")
-	ErrNotFound     = errors.New("captured resource not found")
+	ErrNotFound     = errors.New("tool query item not found")
 )
 
 const maxLimit = 100
@@ -45,6 +46,37 @@ type MessageView struct {
 	ThreadID     *string `json:"thread_id"`
 	CreateTime   int64   `json:"create_time"`
 	Source       string  `json:"source"`
+}
+
+type MessageDetailView struct {
+	MessageView
+	ContentRaw *string `json:"content_raw"`
+}
+
+type TodoEventView struct {
+	ID         uint64          `json:"id"`
+	TodoID     uint64          `json:"todo_id"`
+	FromStatus *string         `json:"from_status"`
+	ToStatus   string          `json:"to_status"`
+	Actor      string          `json:"actor"`
+	Detail     json.RawMessage `json:"detail"`
+	Snapshot   json.RawMessage `json:"snapshot"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
+type TaskEventView struct {
+	ID          uint64          `json:"id"`
+	TaskID      uint64          `json:"task_id"`
+	TaskVersion int32           `json:"task_version"`
+	EventType   string          `json:"event_type"`
+	FromStatus  *string         `json:"from_status"`
+	ToStatus    string          `json:"to_status"`
+	ActorType   string          `json:"actor_type"`
+	ActorRef    *string         `json:"actor_ref"`
+	RunID       *uint64         `json:"run_id"`
+	Detail      json.RawMessage `json:"detail"`
+	OccurredAt  time.Time       `json:"occurred_at"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 type ResourceFilter struct {
@@ -124,6 +156,59 @@ func (s *Service) ListMessages(ctx context.Context, filter MessageFilter) ([]Mes
 	return items, nil
 }
 
+func (s *Service) GetMessage(ctx context.Context, id uint64) (*MessageDetailView, error) {
+	if id == 0 {
+		return nil, fmt.Errorf("%w: message id must be positive", ErrInvalidInput)
+	}
+	var row domain.Message
+	err := s.db.WithContext(ctx).Where("id = ?", id).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get captured message id=%d: %w", id, err)
+	}
+	return &MessageDetailView{MessageView: messageView(&row), ContentRaw: row.ContentRaw}, nil
+}
+
+func (s *Service) GetTodoEvent(ctx context.Context, id uint64) (*TodoEventView, error) {
+	if id == 0 {
+		return nil, fmt.Errorf("%w: todo event id must be positive", ErrInvalidInput)
+	}
+	var row domain.TodoEvent
+	err := s.db.WithContext(ctx).Where("id = ?", id).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get todo event id=%d: %w", id, err)
+	}
+	return &TodoEventView{
+		ID: row.ID, TodoID: row.TodoID, FromStatus: row.FromStatus, ToStatus: row.ToStatus,
+		Actor: row.Actor, Detail: rawJSON(row.Detail), Snapshot: rawJSON(row.Snapshot), CreatedAt: row.CreatedAt,
+	}, nil
+}
+
+func (s *Service) GetTaskEvent(ctx context.Context, id uint64) (*TaskEventView, error) {
+	if id == 0 {
+		return nil, fmt.Errorf("%w: task event id must be positive", ErrInvalidInput)
+	}
+	var row domain.TaskEvent
+	err := s.db.WithContext(ctx).Where("id = ?", id).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get task event id=%d: %w", id, err)
+	}
+	return &TaskEventView{
+		ID: row.ID, TaskID: row.TaskID, TaskVersion: row.TaskVersion, EventType: row.EventType,
+		FromStatus: row.FromStatus, ToStatus: row.ToStatus, ActorType: row.ActorType,
+		ActorRef: row.ActorRef, RunID: row.RunID, Detail: rawJSON(row.Detail),
+		OccurredAt: row.OccurredAt, CreatedAt: row.CreatedAt,
+	}, nil
+}
+
 func (s *Service) ListResources(ctx context.Context, filter ResourceFilter) ([]ResourceSummary, error) {
 	if err := validateLimit(filter.Limit); err != nil {
 		return nil, err
@@ -195,4 +280,11 @@ func resourceSummary(row *domain.Resource) ResourceSummary {
 		MIMEType: row.MIMEType, SizeBytes: row.SizeBytes, SourceMessageID: row.SourceMessageID,
 		GroupID: row.GroupID, Downloaded: row.Downloaded, CreatedAt: row.CreatedAt,
 	}
+}
+
+func rawJSON(value []byte) json.RawMessage {
+	if len(value) == 0 {
+		return json.RawMessage("null")
+	}
+	return json.RawMessage(append([]byte(nil), value...))
 }

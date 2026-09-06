@@ -189,6 +189,62 @@ func TestJarvisToolsGetTaskLoadsLargeRunFieldsOnlyWhenRequested(t *testing.T) {
 	}
 }
 
+func TestJarvisToolsReadsAppendsAndSetsSharedMemory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/shared-memory" && r.URL.Path != "/api/shared-memory/append" {
+			http.NotFound(w, r)
+			return
+		}
+		switch {
+		case r.Method == http.MethodGet:
+			fmt.Fprint(w, `{"code":0,"data":{"content":"已有偏好"}}`)
+		case r.Method == http.MethodPut:
+			var body struct {
+				Content string `json:"content"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Content != "整理后的偏好" {
+				t.Fatalf("set content = %q", body.Content)
+			}
+			fmt.Fprint(w, `{"code":0,"data":{"content":"整理后的偏好"}}`)
+		case r.Method == http.MethodPost:
+			var body struct {
+				Note string `json:"note"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Note != "新增偏好" {
+				t.Fatalf("append note = %q", body.Note)
+			}
+			fmt.Fprint(w, `{"code":0,"data":{"content":"已有偏好\n新增偏好"}}`)
+		default:
+			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"get-shared-memory"}, want: "已有偏好"},
+		{args: []string{"append-shared-memory", "--note", "新增偏好"}, want: "新增偏好"},
+		{args: []string{"set-shared-memory", "--content", "整理后的偏好"}, want: "整理后的偏好"},
+	} {
+		out, err := runJarvisTools(t, server.URL, nil, test.args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, test.want) {
+			t.Fatalf("%v output = %s", test.args, out)
+		}
+	}
+}
+
 func TestJarvisToolsGetScheduledTaskUsesExactEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/scheduled-tasks/17" {
@@ -284,9 +340,12 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"delete-resource", []string{"--id", "10"}, http.MethodDelete, "/api/resources/10"},
 		{"update-page", []string{"--type", "project", "--id", "7", "--content", "hello", "--if-unchanged-since", "2026-08-15T00:00:00Z"}, http.MethodPut, "/api/pages/project/7"},
 		{"create-relation", []string{"--payload", `{"source_type":"okr_kr","source_id":"kr-1","relation_type":"projects_to","target_type":"project","target_id":"7"}`}, http.MethodPost, "/api/relations"},
-		{"append-facts-batch", []string{"--payload", `[{"subject_type":"project","subject_id":1,"description":"d1"},{"subject_type":"project","subject_id":2,"description":"d2"}]`}, http.MethodPost, "/api/facts/batch"},
+		{"append-facts-batch", []string{"--payload", `[{"subject_type":"project","subject_id":1,"description":"d1","source":"system"},{"subject_type":"project","subject_id":2,"description":"d2","source":"system"}]`}, http.MethodPost, "/api/facts/batch"},
 		{"create-world-progress", []string{"--payload", `{"expected_version":0,"subject_type":"okr_point","subject_id":"point-1","period_key":"2026-W36","signal":"yellow","summary":"waiting","evidence":{},"evidence_until":"2026-09-06T09:00:00Z"}`}, http.MethodPost, "/api/world-progress"},
 		{"update-world-progress", []string{"--id", "11", "--payload", `{"expected_version":0,"signal":"green","summary":"done","evidence":{},"evidence_until":"2026-09-06T10:00:00Z"}`}, http.MethodPut, "/api/world-progress/11"},
+		{"get-message", []string{"--id", "11"}, http.MethodGet, "/api/messages/11"},
+		{"get-todo-event", []string{"--id", "12"}, http.MethodGet, "/api/todo-events/12"},
+		{"get-task-event", []string{"--id", "13"}, http.MethodGet, "/api/task-events/13"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {
@@ -294,9 +353,11 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 				if r.Method != tt.method || r.URL.Path != tt.path {
 					t.Fatalf("request = %s %s, want %s %s", r.Method, r.URL.Path, tt.method, tt.path)
 				}
-				body, err := io.ReadAll(r.Body)
-				if err != nil || !json.Valid(body) {
-					t.Fatalf("body = %q, error = %v", body, err)
+				if tt.method != http.MethodGet {
+					body, err := io.ReadAll(r.Body)
+					if err != nil || !json.Valid(body) {
+						t.Fatalf("body = %q, error = %v", body, err)
+					}
 				}
 				w.Header().Set("Content-Type", "application/json")
 				fmt.Fprint(w, `{"code":0,"data":{"ok":true}}`)
@@ -356,8 +417,8 @@ func TestJarvisToolsAppendFactsBatchNormalizesMachinePayload(t *testing.T) {
 			t.Fatalf("payload = %#v", payload)
 		}
 		first := payload[0]
-		if first["source_kind"] != "factengine" || first["source_id"] != nil {
-			t.Fatalf("default provenance = %#v", first)
+		if first["source_kind"] != "message" || first["source_id"] != float64(5) {
+			t.Fatalf("first source pointer = %#v", first)
 		}
 		if _, exists := first["source"]; exists {
 			t.Fatalf("payload leaked CLI source field: %#v", first)
@@ -370,7 +431,7 @@ func TestJarvisToolsAppendFactsBatchNormalizesMachinePayload(t *testing.T) {
 			t.Fatalf("default occurred_at = %q: %v", occurredAt, err)
 		}
 		second := payload[1]
-		if second["source_kind"] != "manual_review" || second["source_id"] != float64(7) ||
+		if second["source_kind"] != "task_event" || second["source_id"] != float64(7) ||
 			second["occurred_at"] != "2026-08-14T12:34:56+08:00" {
 			t.Fatalf("explicit provenance = %#v", second)
 		}
@@ -379,8 +440,8 @@ func TestJarvisToolsAppendFactsBatchNormalizesMachinePayload(t *testing.T) {
 	}))
 	defer server.Close()
 	payload := `[
-		{"subject_type":"project","subject_id":1,"description":"事实 A"},
-		{"subject_type":"task","subject_id":2,"description":"事实 B","occurred_at":"2026-08-14T12:34:56+08:00","source":"manual_review","source_id":7}
+		{"subject_type":"project","subject_id":1,"description":"事实 A","source":"message","source_id":5},
+		{"subject_type":"task","subject_id":2,"description":"事实 B","occurred_at":"2026-08-14T12:34:56+08:00","source":"task_event","source_id":7}
 	]`
 	if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=factengine"},
 		"append-facts-batch", "--payload", payload); err != nil {
@@ -394,7 +455,7 @@ func TestJarvisToolsAppendFactsBatchRejectsInvalidFieldsBeforeRequest(t *testing
 		payload string
 	}{
 		{name: "unknown field", payload: `[{"subject_type":"project","subject_id":1,"description":"事实","fact_type":"decision"}]`},
-		{name: "string source id", payload: `[{"subject_type":"project","subject_id":1,"description":"事实","source":"factengine","source_id":"1"}]`},
+		{name: "string source id", payload: `[{"subject_type":"project","subject_id":1,"description":"事实","source":"message","source_id":"1"}]`},
 		{name: "source id without source", payload: `[{"subject_type":"project","subject_id":1,"description":"事实","source_id":1}]`},
 	}
 	for _, tt := range tests {
@@ -531,13 +592,13 @@ func TestJarvisToolsGenericRelationCommandsAreDiscoverable(t *testing.T) {
 	}
 }
 
-func TestJarvisToolsProvenanceDoesNotBorrowTaskIDForExplicitSource(t *testing.T) {
+func TestJarvisToolsSystemSourceDoesNotBorrowTaskID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload["source_kind"] != "manual_review" || payload["source_id"] != nil {
+		if payload["source_kind"] != "system" || payload["source_id"] != nil {
 			t.Fatalf("provenance = %#v", payload)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -546,7 +607,7 @@ func TestJarvisToolsProvenanceDoesNotBorrowTaskIDForExplicitSource(t *testing.T)
 	defer server.Close()
 	_, err := runJarvisTools(t, server.URL, []string{"JARVIS_TASK_ID=42"},
 		"append-fact", "--subject-type", "project", "--subject-id", "1",
-		"--description", "decision", "--source", "manual_review")
+		"--description", "decision", "--source", "system")
 	if err != nil {
 		t.Fatal(err)
 	}

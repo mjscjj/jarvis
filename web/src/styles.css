@@ -202,15 +202,30 @@ body {
 }
 
 .sider-brand {
+  min-height: 88px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-4) var(--space-3) var(--space-3);
   border-bottom: 1px solid var(--color-border);
 }
 
-.sider-brand h3 {
-  margin: var(--space-1) 0 0 !important;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
+.sider-brand.is-collapsed {
+  justify-content: center;
+  padding-inline: var(--space-2);
+}
+
+.sider-brand-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 13px;
+  object-fit: cover;
+}
+
+.sider-brand-copy {
+  min-width: 0;
+  flex: 1;
 }
 
 .sider-name-row {
@@ -243,14 +258,6 @@ body {
   color: var(--color-text-tertiary);
   font-size: 11px;
   line-height: 1.4;
-}
-
-.sider-tagline {
-  color: var(--color-primary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
 }
 
 .app-menu {

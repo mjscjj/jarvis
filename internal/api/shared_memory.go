@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -44,6 +45,10 @@ func UpdateSharedMemory(svc sharedMemoryReadWriter) app.HandlerFunc {
 		}
 		view, err := svc.Upsert(ctx, in.Content)
 		if err != nil {
+			if errors.Is(err, sharedmem.ErrContentTooLong) {
+				writeAPIError(c, consts.StatusBadRequest, 40070, err)
+				return
+			}
 			writeAPIError(c, consts.StatusInternalServerError, 50070, fmt.Errorf("save shared memory failed: %s", strings.TrimSpace(err.Error())))
 			return
 		}
@@ -67,6 +72,10 @@ func AppendSharedMemory(svc sharedMemoryReadWriter) app.HandlerFunc {
 		}
 		view, err := svc.Append(ctx, in.Note)
 		if err != nil {
+			if errors.Is(err, sharedmem.ErrContentTooLong) {
+				writeAPIError(c, consts.StatusBadRequest, 40070, err)
+				return
+			}
 			writeAPIError(c, consts.StatusInternalServerError, 50070, fmt.Errorf("append shared memory failed: %s", strings.TrimSpace(err.Error())))
 			return
 		}

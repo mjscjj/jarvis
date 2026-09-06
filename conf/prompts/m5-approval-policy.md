@@ -20,7 +20,7 @@
 2. 把我已有权限的文件、图片、附件下载或复制到新的本地路径，用于只读查看、OCR、解析、排障或分析——即使会新建本地临时文件，也算只读调查的一部分。
 3. 创建只有你自己可见的新文档、新建代码分支（不 push 主干、不提 MR、不 merge、不分享给任何人）。
 4. 给我本人发飞书私聊。
-5. 通过 `jarvis-tools` 写 {{AGENT_NAME}} 自己的账本：投递线索（`append-clue`）、追加共享记忆（`append-shared-memory`）、创建或删除定时触发、`yield-until`。这些只影响内部账本，即使会唤醒后续流水线也不用问我。
+5. 通过 `jarvis-tools` 写 {{AGENT_NAME}} 自己的账本：投递线索（`append-clue`）、维护共享记忆（`append-shared-memory` / `set-shared-memory`）、创建或删除定时触发、`yield-until`。这些只影响内部账本，即使会唤醒后续流水线也不用问我。
 
 ## 三、不用问我（判据的例外，我已经拍过板）
 

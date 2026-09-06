@@ -37,8 +37,7 @@ type MessageListResponse struct {
 	} `json:"data"`
 }
 
-// MessageSearchResponse mirrors lark-cli im +messages-search. The shortcut
-// handles server pagination itself when called with --page-all.
+// MessageSearchResponse mirrors one page from lark-cli im +messages-search.
 type MessageSearchResponse struct {
 	OK   bool `json:"ok"`
 	Data struct {
@@ -75,7 +74,7 @@ type SearchedMessage struct {
 	Sender     CLISender `json:"sender"`
 }
 
-// CLIMessage is the rendered message shape returned by lark-cli 1.0.72.
+// CLIMessage is the rendered message shape returned by lark-cli 1.0.93.
 type CLIMessage struct {
 	ChatID        string       `json:"chat_id"`
 	Content       string       `json:"content"`

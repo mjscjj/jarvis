@@ -95,11 +95,9 @@ The current lark-cli exposes version-matched skills through
 ### Calendar and meetings
 
 - `lark-calendar`: schedules, attendees, availability, and meeting discovery.
-- `lark-vc`: ended meetings, meeting detail, participants, summaries, action
-  items, transcript, and recording metadata.
-- `lark-minutes`: search and read Minutes artifacts.
-- `lark-note`: read a known Note and its unified transcript.
-- `lark-vc-agent`: in-meeting events; normally outside a finished-window report.
+- `lark-meeting`: ended and live meetings, meeting detail, participants,
+  Minutes/Note artifacts, summaries, action items, transcripts, and recording
+  metadata.
 
 ### Documents and knowledge assets
 
@@ -115,7 +113,8 @@ The current lark-cli exposes version-matched skills through
 
 - `lark-task`: tasks, task lists, assignees, state, comments, and attachments.
 - `lark-approval`: approval definitions, instances, status, and actions.
-- `lark-okr`: objectives, key results, alignments, and progress.
+- Enterprise policy does not allow the OKR API; collect goal/OKR evidence only
+  from principal-authored documents through `lark-drive` and `lark-doc`.
 
 ### Discovery beyond registered commands
 

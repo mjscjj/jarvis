@@ -81,12 +81,12 @@ resolve_api_base() {
 }
 
 api_call() {
-  local method="$1" path="$2" body="${3:-}" url response http_code
+  local method="$1" path="$2" body="${3:-}" timeout_seconds="${4:-30}" url response http_code
   url="${API_BASE}${path}"
   if [[ "$method" == "GET" ]]; then
-    response="$(curl -sS -w '\n%{http_code}' --max-time 30 "$url")" || fail "curl failed for ${url}"
+    response="$(curl -sS -w '\n%{http_code}' --max-time "$timeout_seconds" "$url")" || fail "curl failed for ${url}"
   else
-    response="$(curl -sS -w '\n%{http_code}' --max-time 30 -X "$method" -H 'Content-Type: application/json' --data "$body" "$url")" || fail "curl failed for ${url}"
+    response="$(curl -sS -w '\n%{http_code}' --max-time "$timeout_seconds" -X "$method" -H 'Content-Type: application/json' --data "$body" "$url")" || fail "curl failed for ${url}"
   fi
   http_code="$(printf '%s\n' "$response" | tail -n1)"
   response="$(printf '%s\n' "$response" | sed '$d')"
@@ -97,28 +97,38 @@ api_call() {
 
 cmd_discover() {
   API_BASE="$(resolve_api_base)"
-  api_call POST /api/debug/capture/discover '{}' | jq -c '.data'
+  api_call POST /api/debug/capture/discover '{}' 1800 | jq -c '.data'
 }
 
 cmd_scan() {
   [[ -n "$CHAT_ID" ]] || fail "scan requires --chat-id"
   API_BASE="$(resolve_api_base)"
-  api_call POST /api/debug/capture/scan-chat "$(jq -nc --arg chat_id "$CHAT_ID" '{chat_id:$chat_id}')" | jq -c '.data'
+  api_call POST /api/debug/capture/scan-chat "$(jq -nc --arg chat_id "$CHAT_ID" '{chat_id:$chat_id}')" 1800 | jq -c '.data'
 }
 
 cmd_validate() {
   command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
   command -v go >/dev/null 2>&1 || fail "go is required but not found in PATH"
   API_BASE="$(resolve_api_base)"
-  local auth configured principal projects persons matters resources groups result
-  auth="$(LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 lark-cli auth status --json --verify)" || fail "lark-cli auth failed"
-  configured="$(cd "$REPO_ROOT" && go run ./cmd/jarvis-config show-principal --config "$CONFIG_PATH")" || fail "load machine identity failed"
+  local auth configured principal projects persons matters resources groups result error_file error_output
+  error_file="$(mktemp "${TMPDIR:-/tmp}/jarvis-world-model-validate.XXXXXX")"
+  if ! auth="$(LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 lark-cli auth status --json --verify 2>"$error_file")"; then
+    error_output="$(<"$error_file")"
+    rm -f "$error_file"
+    fail "lark-cli auth failed${error_output:+: ${error_output}}"
+  fi
+  if ! configured="$(cd "$REPO_ROOT" && go run ./cmd/jarvis-config show-principal --config "$CONFIG_PATH" 2>"$error_file")"; then
+    error_output="$(<"$error_file")"
+    rm -f "$error_file"
+    fail "load machine identity failed${error_output:+: ${error_output}}"
+  fi
+  rm -f "$error_file"
   principal="$(api_call GET /api/profile | jq -c '.data')"
   projects="$(api_call GET '/api/projects?page=1&page_size=1' | jq -c '.data')"
   persons="$(api_call GET '/api/persons?page=1&page_size=1' | jq -c '.data')"
   matters="$(api_call GET '/api/key-matters?page=1&page_size=1' | jq -c '.data')"
   resources="$(api_call GET '/api/resources?page=1&page_size=1' | jq -c '.data')"
-  groups="$(api_call GET '/api/groups?page=1&page_size=100' | jq -c '.data')"
+  groups="$(api_call GET '/api/groups?related_only=true&page=1&page_size=100' | jq -c '.data')"
   result="$(printf '%s\n' "$auth" "$configured" "$principal" "$projects" "$persons" "$matters" "$resources" "$groups" | jq -sc '
       .[0] as $auth |
       .[1] as $configured |

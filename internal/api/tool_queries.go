@@ -16,6 +16,9 @@ import (
 
 type ToolQueryService interface {
 	ListMessages(context.Context, toolquery.MessageFilter) ([]toolquery.MessageView, error)
+	GetMessage(context.Context, uint64) (*toolquery.MessageDetailView, error)
+	GetTodoEvent(context.Context, uint64) (*toolquery.TodoEventView, error)
+	GetTaskEvent(context.Context, uint64) (*toolquery.TaskEventView, error)
 	ListResources(context.Context, toolquery.ResourceFilter) ([]toolquery.ResourceSummary, error)
 	GetResource(context.Context, uint64) (*toolquery.ResourceView, error)
 }
@@ -52,6 +55,54 @@ func ListToolMessages(service ToolQueryService) app.HandlerFunc {
 	}
 }
 
+func GetToolMessage(service ToolQueryService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := positivePathID(c.Param("message_id"), "message_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40071, err)
+			return
+		}
+		view, err := service.GetMessage(ctx, id)
+		if err != nil {
+			writeToolQueryError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
+	}
+}
+
+func GetToolTodoEvent(service ToolQueryService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := positivePathID(c.Param("event_id"), "event_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40071, err)
+			return
+		}
+		view, err := service.GetTodoEvent(ctx, id)
+		if err != nil {
+			writeToolQueryError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
+	}
+}
+
+func GetToolTaskEvent(service ToolQueryService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id, err := positivePathID(c.Param("event_id"), "event_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40071, err)
+			return
+		}
+		view, err := service.GetTaskEvent(ctx, id)
+		if err != nil {
+			writeToolQueryError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
+	}
+}
+
 func ListCapturedResources(service ToolQueryService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		limit, err := positiveQueryInt(c.Query("limit"), 20, "limit")
@@ -76,9 +127,9 @@ func ListCapturedResources(service ToolQueryService) app.HandlerFunc {
 
 func GetCapturedResource(service ToolQueryService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		id, err := strconv.ParseUint(c.Param("resource_id"), 10, 64)
-		if err != nil || id == 0 {
-			writeAPIError(c, consts.StatusBadRequest, 40071, fmt.Errorf("resource_id must be a positive integer"))
+		id, err := positivePathID(c.Param("resource_id"), "resource_id")
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40071, err)
 			return
 		}
 		view, err := service.GetResource(ctx, id)
@@ -88,6 +139,14 @@ func GetCapturedResource(service ToolQueryService) app.HandlerFunc {
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
 	}
+}
+
+func positivePathID(raw, field string) (uint64, error) {
+	id, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || id == 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", field)
+	}
+	return id, nil
 }
 
 func optionalRFC3339(raw, field string) (*time.Time, error) {

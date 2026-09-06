@@ -181,7 +181,7 @@ func TestUpdateConfigPersistsAndRefreshesScheduleInstruction(t *testing.T) {
 		t.Fatal(err)
 	}
 	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
-		return []byte(`{"data":{"chats":[]}}`), nil
+		return []byte(`{"ok":true,"data":{"chats":null,"total":0}}`), nil
 	}})
 	scheduler := newFakeScheduler()
 	service, err := NewService(db, registry, authorizer, scheduler)
@@ -345,7 +345,7 @@ func TestProbeReadsStructuredAuthorizationState(t *testing.T) {
 		case "--json meego status":
 			return []byte(`{"status":"success","data":{"authenticated":false}}`), nil
 		case "im +chat-search --as user --query oncall --disable-search-by-user --chat-modes group,topic --search-types private,public_joined --page-size 1 --page-limit 1 --format json":
-			return []byte(`{"data":{"chats":[]}}`), nil
+			return []byte(`{"ok":true,"identity":"user","data":{"chats":null,"has_more":false,"page_token":"","total":0}}`), nil
 		default:
 			return nil, errors.New("unexpected command")
 		}
@@ -358,6 +358,15 @@ func TestProbeReadsStructuredAuthorizationState(t *testing.T) {
 	}
 }
 
+func TestProbeTreatsLarkTokenMissingAsAuthorizationRequired(t *testing.T) {
+	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		return []byte(`{"ok":false,"error":{"type":"authorization","subtype":"token_missing","message":"user token is missing"}}`), errors.New("exit 1")
+	}})
+	if status := authorizer.Probe(t.Context(), "lark-cli-im"); status.Status != AuthRequired {
+		t.Fatalf("Probe() = %#v, want required", status)
+	}
+}
+
 func TestLarkIMAuthorizationUsesDeviceFlow(t *testing.T) {
 	var commands []string
 	authorizer := newAuthorizer(fakeRunner{run: func(bin string, args []string) ([]byte, error) {
@@ -365,7 +374,7 @@ func TestLarkIMAuthorizationUsesDeviceFlow(t *testing.T) {
 		commands = append(commands, command)
 		switch {
 		case strings.Contains(command, "im +chat-search"):
-			return []byte(`{"error":{"code":"AUTH_REQUIRED","message":"login required"}}`), errors.New("exit 1")
+			return []byte(`{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","code":99991679,"message":"login required"}}`), errors.New("exit 1")
 		case strings.Contains(command, "--no-wait"):
 			return []byte(`{"data":{"device_code":"device-1","verification_uri":"https://example.test/login","user_code":"ABCD"}}`), nil
 		case strings.Contains(command, "--device-code"):
@@ -395,5 +404,19 @@ func TestFindStringSearchesNestedAuthorizationPayload(t *testing.T) {
 	}
 	if got := findString(payload, "device_code"); got != "x" {
 		t.Fatalf("findString() = %q", got)
+	}
+}
+
+func TestHasErrorCodeChecksSubtypeIndependentlyFromStringCode(t *testing.T) {
+	raw := []byte(`{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","code":"99991679"}}`)
+	if !hasErrorCode(raw, "MISSING_SCOPE") {
+		t.Fatal("hasErrorCode() did not match lark-cli error.subtype")
+	}
+}
+
+func TestCommandErrorPrefersErrorOverNoticeMessage(t *testing.T) {
+	raw := []byte(`{"ok":false,"error":{"message":"missing scope"},"_notice":{"update":{"message":"new version available"}}}`)
+	if got := commandError(raw, errors.New("exit 1")); got != "missing scope" {
+		t.Fatalf("commandError() = %q", got)
 	}
 }

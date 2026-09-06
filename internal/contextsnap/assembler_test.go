@@ -172,7 +172,7 @@ func TestAssemblerResolvesChatBackgroundAndCurrentWork(t *testing.T) {
 	// The todos and tasks seeded above must not be frozen here. They are world
 	// state, so M5 loads them fresh on every run; a frozen copy would only tell
 	// it what was true when the snapshot was taken.
-	for _, stale := range []string{"open_todos", "recent_tasks", "排查上下文", "等待下一轮验证"} {
+	for _, stale := range []string{"open_todos", "recent_tasks", "memories", "supplements", "排查上下文", "等待下一轮验证"} {
 		if strings.Contains(string(raw), stale) {
 			t.Fatalf("conversation snapshot froze live world state %q:\n%s", stale, raw)
 		}

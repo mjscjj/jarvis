@@ -71,7 +71,10 @@ func materialSource(name string, maxID uint64, units func(limit int) []SourceUni
 }
 
 func testUnit(source, key string, lastID uint64, body string) SourceUnit {
-	return SourceUnit{Source: source, Key: key, LastID: lastID, OccurredAt: time.Unix(int64(lastID), 0), Body: body}
+	return SourceUnit{
+		Source: source, Key: key, LastID: lastID,
+		OccurredAt: time.Unix(int64(lastID), 0), Body: body,
+	}
 }
 
 func newTestWorker(t *testing.T, store *fakeCursorStore, sources []MaterialSource, maintainer worldMaintainer, maxChars int) *Worker {
@@ -240,7 +243,7 @@ func TestFactEngineSystemPromptOwnsWorldWriteAndExternalQueryPolicy(t *testing.T
 	}
 	system := string(raw)
 	for _, want := range []string{
-		"写入前读取现值", "写入后立即读回", "不得改用逐条写入",
+		"source 指针", "写入后立即读回", "不得改用逐条写入",
 		"不创建、启动、更新或关闭 Todo、Task", "原则上不查询外部系统补证据",
 		"可选业务模块的语义只能从当前已启用的 Skill 获取", "不要在全局阶段提示词里臆造模块层级",
 	} {

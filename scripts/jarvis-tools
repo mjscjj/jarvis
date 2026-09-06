@@ -63,9 +63,13 @@ subcommands:
   touch-resource         Mark an enabled managed resource as freshly active
   delete-resource        Delete a managed resource
   query-messages         Query locally captured Feishu messages
+  get-message            Load one locally captured message by database ID
+  get-todo-event         Load one Todo lifecycle event by database ID
+  get-task-event         Load one Task lifecycle event by database ID
   query-captured-resources List captured attachment/document summaries
   get-captured-resource  Load one captured resource including extracted text
   get-shared-memory      Read shared memory
+  set-shared-memory      Replace shared memory
   list-skills            List locally managed Skills
   get-skill              Read one locally managed Skill
   append-shared-memory   Append one entry to shared memory
@@ -212,6 +216,21 @@ recommended. Content is returned because it is the evidence being queried;
 --limit defaults to 20 and must not exceed 100.
 EOF
       ;;
+    get-message) cat <<'EOF'
+usage: jarvis-tools get-message --id ID [--config PATH]
+Load one locally captured message by its database ID, including original content.
+EOF
+      ;;
+    get-todo-event) cat <<'EOF'
+usage: jarvis-tools get-todo-event --id ID [--config PATH]
+Load one Todo lifecycle event addressed by a Fact source pointer.
+EOF
+      ;;
+    get-task-event) cat <<'EOF'
+usage: jarvis-tools get-task-event --id ID [--config PATH]
+Load one Task lifecycle event addressed by a Fact source pointer.
+EOF
+      ;;
     query-captured-resources) cat <<'EOF'
 usage: jarvis-tools query-captured-resources [--chat-id CHAT_ID]
                                              [--message-id MESSAGE_ID]
@@ -232,6 +251,11 @@ usage: jarvis-tools get-shared-memory [--config PATH]
 Read the complete shared memory Markdown.
 EOF
       ;;
+    set-shared-memory) cat <<'EOF'
+usage: jarvis-tools set-shared-memory [--content TEXT|-] [--config PATH]
+Replace shared memory. The complete content must not exceed 2000 characters.
+EOF
+      ;;
     list-skills) cat <<'EOF'
 usage: jarvis-tools list-skills [--keyword TEXT] [--config PATH]
 List enabled and disabled Skill summaries. Use get-skill for full content.
@@ -244,37 +268,34 @@ EOF
       ;;
     append-shared-memory) cat <<'EOF'
 usage: jarvis-tools append-shared-memory [--note TEXT|-] [--config PATH]
-Atomically append one non-empty entry. Use --note - or omit it to read stdin.
+Atomically append one non-empty entry. The result must not exceed 2000 characters.
+Use --note - or omit it to read stdin.
 EOF
       ;;
     append-fact) cat <<'EOF'
 usage: jarvis-tools append-fact --subject-type TYPE --subject-id ID
                               [--description TEXT|-] [--occurred-at RFC3339]
-                              [--source KIND] [--source-id ID] [--config PATH]
+                              --source KIND [--source-id ID] [--config PATH]
 
-Record one thing that happened, bound to whatever it is about. Facts are read
-back as a subject's recent history and as the evidence behind the daily digests,
-so write one when you learn something worth remembering tomorrow — a decision,
-a delivery, a blocker, a change of direction. Do not write one for every command
-you run.
+Record one evidence index entry. description is a short retrieval anchor, not
+the current conclusion; current knowledge belongs on the entity page.
 
   --subject-type  what the fact is about: project, group, person or task are the
                   types read back today. If the fact genuinely belongs to
                   something else, write that instead of forcing a fit — the type
                   is not a fixed list.
   --subject-id    the numeric id of that subject.
-  --description   the fact itself, in prose, complete enough to make sense weeks
-                  later. Use --description - or omit it to read stdin.
+  --description   at most 200 characters identifying the relevant event and
+                  people. Use --description - or omit it to read stdin.
   --occurred-at   when it happened (defaults to now). Pass it explicitly when
                   recording something you learned after the event.
-  --source        what produced this fact; defaults to the running Task.
-  --source-id     optional numeric id for an explicit --source. An explicit
-                  source never inherits JARVIS_TASK_ID.
+  --source        message, todo_event, task_event, execution_run, resource, or
+                  system.
+  --source-id     required for raw material sources; forbidden for system.
 
 example:
-  jarvis-tools append-fact --subject-type project --subject-id 3 --description - <<'TXT'
-  事实表方案定稿：复用并泛化 project_event，不新建表。按天总结沿用 daily_digest。
-  TXT
+  jarvis-tools append-fact --subject-type project --subject-id 3 \
+    --source message --source-id 91 --description "讨论确认 Fact 只保留证据索引"
 EOF
       ;;
     append-facts-batch) cat <<'EOF'
@@ -283,12 +304,10 @@ usage: jarvis-tools append-facts-batch --payload JSON|- [--config PATH]
 Record one batch of facts in one request.
 
   --payload  JSON array of fact objects. Each fact must include
-             subject_type, subject_id, description.
-             Optional: occurred_at, source, source_id.
-             occurred_at defaults to now. source maps to the API's
-             source_kind; when omitted, the current Agent stage supplies the
-             same provenance default as append-fact. source_id must be a
-             positive JSON integer and requires an explicit source.
+             subject_type, subject_id, description and source.
+             Optional: occurred_at. source_id is required for message,
+             todo_event, task_event, execution_run and resource, and forbidden
+             for system. description is limited to 200 characters.
              Unknown fields are rejected before the request is sent.
 
   --payload - reads from stdin. Omit it to pass --payload text directly.
@@ -296,8 +315,8 @@ Record one batch of facts in one request.
 example:
   cat <<'TXT' | jarvis-tools append-facts-batch --payload -
   [
-    {"subject_type":"project","subject_id":3,"description":"决议：本周验收窗口已冻结"},
-    {"subject_type":"task","subject_id":18,"description":"开发完成，待验收"}
+    {"subject_type":"project","subject_id":3,"description":"消息确认本周验收窗口已冻结","source":"message","source_id":91},
+    {"subject_type":"task","subject_id":18,"description":"执行结果显示开发完成、待验收","source":"execution_run","source_id":52}
   ]
   TXT
 EOF
@@ -306,9 +325,10 @@ EOF
 usage: jarvis-tools list-facts --subject-type TYPE --subject-id ID
                              [--date YYYY-MM-DD] [--limit N] [--config PATH]
 
-Read a subject's facts, newest first. Use it before deciding something to see
-what already happened, instead of assuming. --date narrows to one natural day in
-local time; --limit defaults to 20 and must not exceed 100.
+Read a subject's evidence indexes, newest first. description is only a retrieval
+anchor; follow source_kind/source_id to the raw material before relying on it.
+--date narrows to one natural day in local time; --limit defaults to 20 and must
+not exceed 100.
 
 example:
   jarvis-tools list-facts --subject-type group --subject-id 12 --date 2026-08-02
@@ -860,10 +880,12 @@ require_command_flag() {
     query-resources) allowed+=" --project-id --person-open-id --principal-only --keyword --limit" ;;
     get-resource) allowed+=" --id" ;;
     query-messages) allowed+=" --chat-id --sender-open-id --keyword --date --limit" ;;
+    get-message | get-todo-event | get-task-event) allowed+=" --id" ;;
     query-captured-resources) allowed+=" --chat-id --message-id --resource-type --keyword --limit" ;;
     get-captured-resource) allowed+=" --id" ;;
     list-skills) allowed+=" --keyword" ;;
     get-skill) allowed+=" --name" ;;
+    set-shared-memory) allowed+=" --content" ;;
     append-shared-memory) allowed+=" --note" ;;
     append-clue) allowed+=" --source --external-id --title --content --occurred-at" ;;
     append-fact) allowed+=" --subject-type --subject-id --description --occurred-at --source --source-id" ;;
@@ -1749,6 +1771,30 @@ cmd_query_messages() {
   emit "$(api_get "/api/messages?${query}" | jq -c '.data')"
 }
 
+cmd_get_message() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-message requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  emit "$(api_get "/api/messages/${ID}" | jq -c '.data')"
+}
+
+cmd_get_todo_event() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-todo-event requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  emit "$(api_get "/api/todo-events/${ID}" | jq -c '.data')"
+}
+
+cmd_get_task_event() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-task-event requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  emit "$(api_get "/api/task-events/${ID}" | jq -c '.data')"
+}
+
 cmd_query_captured_resources() {
   reset_flags
   LIMIT="20"
@@ -1789,6 +1835,22 @@ cmd_get_shared_memory() {
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local body
   body="$(api_get /api/shared-memory)"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_set_shared_memory() {
+  reset_flags
+  consume_flags "$@"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local content payload body
+  if [[ "$CONTENT" == "-" ]]; then
+    content="$(cat)"
+  else
+    content="$CONTENT"
+  fi
+  content="${content%$'\n'}"
+  payload="$(jq -cn --arg content "$content" '{content:$content}')"
+  body="$(api_write PUT /api/shared-memory "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
@@ -1877,22 +1939,10 @@ cmd_append_fact() {
   if [[ -z "$occurred_at" ]]; then
     occurred_at="$(date +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
   fi
-  # Default both provenance fields to the running Task. An explicit source is
-  # independent and never accidentally borrows JARVIS_TASK_ID.
-  if [[ -n "$SOURCE_ID" && -z "$SOURCE" ]]; then
-    fail "append-fact --source-id requires --source"
-  fi
   local source_kind="$SOURCE"
   local source_id="null"
-  if [[ -z "$source_kind" && "${JARVIS_TASK_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
-    source_kind="task"
-    source_id="$JARVIS_TASK_ID"
-  elif [[ -z "$source_kind" && "${JARVIS_AGENT_STAGE:-}" == "proactive" ]]; then
-    source_kind="proactive"
-  elif [[ -z "$source_kind" && "${JARVIS_AGENT_STAGE:-}" == "factengine" ]]; then
-    source_kind="factengine"
-  elif [[ -n "$SOURCE_ID" ]]; then
-    [[ -n "$source_kind" ]] || fail "append-fact --source-id requires --source"
+  [[ -n "$source_kind" ]] || fail "append-fact requires --source"
+  if [[ -n "$SOURCE_ID" ]]; then
     [[ "$SOURCE_ID" =~ ^[1-9][0-9]*$ ]] || fail "append-fact --source-id must be a positive integer"
     source_id="$SOURCE_ID"
   fi
@@ -1910,25 +1960,15 @@ cmd_append_fact() {
 cmd_append_facts_batch() {
   reset_flags
   consume_flags "$@"
-  local payload occurred_at default_source_kind="" default_source_id="null" normalized
+  local payload occurred_at normalized
   if [[ "$PAYLOAD" == "-" ]]; then
     payload="$(cat)"
   else
     payload="$PAYLOAD"
   fi
   occurred_at="$(date +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
-  if [[ "${JARVIS_TASK_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
-    default_source_kind="task"
-    default_source_id="$JARVIS_TASK_ID"
-  elif [[ "${JARVIS_AGENT_STAGE:-}" == "proactive" ]]; then
-    default_source_kind="proactive"
-  elif [[ "${JARVIS_AGENT_STAGE:-}" == "factengine" ]]; then
-    default_source_kind="factengine"
-  fi
   normalized="$(printf '%s' "$payload" | jq -ce \
-    --arg occurred_at "$occurred_at" \
-    --arg default_source_kind "$default_source_kind" \
-    --argjson default_source_id "$default_source_id" '
+    --arg occurred_at "$occurred_at" '
       def nonblank: type == "string" and test("[^[:space:]]");
       def positive_integer: type == "number" and . > 0 and floor == .;
       if type != "array" or length == 0 then
@@ -1947,22 +1987,19 @@ cmd_append_facts_batch() {
             error("description must be a non-empty string")
           elif (has("occurred_at") and .occurred_at != null and (.occurred_at | type != "string")) then
             error("occurred_at must be a string or null")
-          elif (has("source") and .source != null and ((.source | nonblank) | not)) then
-            error("source must be a non-empty string or null")
+          elif (.source | nonblank) | not then
+            error("source must be a non-empty string")
           elif (has("source_id") and .source_id != null and ((.source_id | positive_integer) | not)) then
             error("source_id must be a positive integer or null")
-          elif (has("source_id") and .source_id != null and ((.source // "") == "")) then
-            error("source_id requires an explicit source")
           else
-            (.source // "") as $source
-            | {
-                subject_type: .subject_type,
-                subject_id: .subject_id,
-                description: .description,
-                occurred_at: (if ((.occurred_at // "") == "") then $occurred_at else .occurred_at end),
-                source_kind: (if $source != "" then $source elif $default_source_kind != "" then $default_source_kind else null end),
-                source_id: (if $source != "" then (.source_id // null) else $default_source_id end)
-              }
+            {
+              subject_type: .subject_type,
+              subject_id: .subject_id,
+              description: .description,
+              occurred_at: (if ((.occurred_at // "") == "") then $occurred_at else .occurred_at end),
+              source_kind: .source,
+              source_id: (.source_id // null)
+            }
           end
         )
       end
@@ -2540,9 +2577,13 @@ case "$SUBCOMMAND" in
   touch-resource)       cmd_touch_by_id touch-resource /api/resources "$@" ;;
   delete-resource)      cmd_delete_by_id delete-resource /api/resources "$@" ;;
   query-messages)       cmd_query_messages "$@" ;;
+  get-message)           cmd_get_message "$@" ;;
+  get-todo-event)        cmd_get_todo_event "$@" ;;
+  get-task-event)        cmd_get_task_event "$@" ;;
   query-captured-resources) cmd_query_captured_resources "$@" ;;
   get-captured-resource) cmd_get_captured_resource "$@" ;;
   get-shared-memory)    cmd_get_shared_memory "$@" ;;
+  set-shared-memory)    cmd_set_shared_memory "$@" ;;
   list-skills)          cmd_list_skills "$@" ;;
   get-skill)            cmd_get_skill "$@" ;;
   append-shared-memory) cmd_append_shared_memory "$@" ;;

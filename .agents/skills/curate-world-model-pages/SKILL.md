@@ -52,8 +52,11 @@ jarvis-tools list-facts --subject-type project --subject-id 44 --limit 100
 ```
 
 需要控制字段（状态、负责人、仓库、群绑定）时读对应的 `get-project` / `get-person` /
-`get-key-matter` / `get-group` / `get-resource`；关键原文对不上时用 `query-messages`、
-`query-captured-resources` 核实，不靠印象下结论。
+`get-key-matter` / `get-group` / `get-resource`。`list-facts` 返回的是证据索引，不是可直接采信的
+知识：判断页面结论是否过期时，按 `source_kind` / `source_id` 继续读取原始材料——`message` 用
+`get-message`，`todo_event` 用 `get-todo-event`，`task_event` 用 `get-task-event`，
+`execution_run` 用 `get-task-run`，`resource` 用 `get-captured-resource`。原始材料与索引
+`description` 冲突时以原始材料为准。
 
 写回：
 

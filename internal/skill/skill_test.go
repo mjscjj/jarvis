@@ -483,6 +483,11 @@ func TestBootstrapJarvisBuildsAReadBackWorldModel(t *testing.T) {
 		"不生成 `approved-draft.json`、`approval.json` 或 hash 审批状态",
 		"真正的业务真源始终是 M1/M2",
 		"每次写入后立即使用对应 get/list/query 命令读回",
+		"project_id",
+		"related_group: true",
+		"include_in_memory",
+		"./scripts/jarvis-tools update-group --id",
+		"不能回写带 `id/chat_id/name/...` 的完整对象",
 	} {
 		if !strings.Contains(contract, want) {
 			t.Fatalf("world-model initialization contract is missing %q", want)
@@ -522,15 +527,18 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		"世界模型不是服务启动前置条件",
 		"Qdrant 是依赖服务",
 		"`install-server` 必须在调用平台服务安装脚本前再次通过依赖门",
+		"install-codex",
 		"install-cc-connect",
 		"一个飞书 App/Bot 是身份根",
 		"CC Connect 是该 Bot WebSocket 的唯一所有者",
+		"install.cc-exclusive-owner",
 		"validate-binding",
 		"已有 daemon 指向另一 binary/checkout",
 		"初始化只负责“Jarvis 如何理解这个用户的世界”",
 		"不安装或重启 daemon，也不配置 CC",
 		"只更新清单 E 区",
 		"./scripts/jarvis-install status --run-dir <run_dir>",
+		"第二次运行同一命令",
 	} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("dependency-first installation contract is missing %q", want)
@@ -542,6 +550,127 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 	} {
 		if strings.Contains(combined, forbidden) {
 			t.Fatalf("whole-project installation state still belongs to jarvis-world-model: %q", forbidden)
+		}
+	}
+}
+
+func TestFeishuGroupSummaryUsesSupportedThreadPagination(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(
+		"..", "..", ".agents", "skills", "feishu-group-daily-summary", "references", "tool-paths.md",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := string(raw)
+	for _, want := range []string{
+		"lark-cli im +threads-messages-list",
+		"--page-size 50",
+		"--page-all",
+		"--page-limit 1000",
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("thread pagination contract is missing %q", want)
+		}
+	}
+	if strings.Contains(contract, "--page-size 500") {
+		t.Fatal("thread pagination exceeds the lark-cli 1.0.93 maximum page size")
+	}
+}
+
+func TestMeetingGuidanceUsesUnifiedLarkMeetingSkill(t *testing.T) {
+	paths := []string{
+		filepath.Join("..", "..", "conf", "rules", "m5.md"),
+		filepath.Join("..", "..", ".agents", "skills", "summarize-person-day", "references", "context-and-capabilities.md"),
+		filepath.Join("..", "..", ".agents", "skills", "summarize-person-week", "references", "context-and-capabilities.md"),
+	}
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(raw)
+		if !strings.Contains(content, "lark-meeting") {
+			t.Errorf("%s does not reference lark-meeting", path)
+		}
+		for _, redirectStub := range []string{"lark-vc`", "lark-minutes`", "lark-note`", "lark-vc-agent`"} {
+			if strings.Contains(content, redirectStub) {
+				t.Errorf("%s still references redirect stub %q", path, redirectStub)
+			}
+		}
+	}
+}
+
+func TestMeetingCollectorsUseCurrentLarkCLIFactSources(t *testing.T) {
+	meetingRaw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-meeting-clue", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	meeting := string(meetingRaw)
+	for _, want := range []string{
+		"lark-cli vc meeting get",
+		"--with-participants",
+		"--user-id-type open_id",
+		"status=3",
+		"Unix 秒",
+		"lark-cli contact +search-user",
+	} {
+		if !strings.Contains(meeting, want) {
+			t.Errorf("meeting collector is missing %q", want)
+		}
+	}
+	for _, obsolete := range []string{
+		"只保留**已经结束**的会议（有 `end_time`",
+		"`vc +detail --meeting-ids <id> --as user` 能拿到更完整的参会人",
+		"从 `vc +search` / `vc +detail` 直接读到",
+	} {
+		if strings.Contains(meeting, obsolete) {
+			t.Errorf("meeting collector still contains obsolete contract %q", obsolete)
+		}
+	}
+
+	prepRaw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-meeting-prep-clue", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prep := string(prepRaw)
+	for _, want := range []string{
+		`--event-id "<+get 返回 recurring_event_id 时用它，否则用实例 event_id>"`,
+		"`calendar event.attendees list` 对重复日程只接受系列级 ID",
+	} {
+		if !strings.Contains(prep, want) {
+			t.Errorf("meeting prep collector is missing %q", want)
+		}
+	}
+}
+
+func TestReportCapabilitiesAvoidOKRAPIAndMorningBriefClosesSend(t *testing.T) {
+	for _, path := range []string{
+		filepath.Join("..", "..", ".agents", "skills", "summarize-person-day", "references", "context-and-capabilities.md"),
+		filepath.Join("..", "..", ".agents", "skills", "summarize-person-week", "references", "context-and-capabilities.md"),
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(raw)
+		if strings.Contains(content, "`lark-okr`") || !strings.Contains(content, "does not allow the OKR API") {
+			t.Errorf("%s still exposes the forbidden OKR API", path)
+		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "summarize-morning-brief", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	morning := string(raw)
+	for _, want := range []string{
+		"--idempotency-key",
+		"morning-brief-YYYYMMDD-HHMMSS",
+		"lark-cli im +messages-mget",
+		"读回成功",
+	} {
+		if !strings.Contains(morning, want) {
+			t.Errorf("morning brief send contract is missing %q", want)
 		}
 	}
 }

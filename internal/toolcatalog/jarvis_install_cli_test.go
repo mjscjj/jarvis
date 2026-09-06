@@ -23,6 +23,7 @@ func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
 		"doctor",
 		"install-lark-cli",
 		"install-bytedcli",
+		"install-codex",
 		"install-traex",
 		"install-cc-connect",
 		"install-qdrant",
@@ -48,6 +49,29 @@ func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
 	for _, forbidden := range []string{"install-qdrant", "install-server", "initialization-status"} {
 		if strings.Contains(toolsHelp, forbidden) {
 			t.Fatalf("jarvis-tools exposes installation-only command %q:\n%s", forbidden, toolsHelp)
+		}
+	}
+
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	installSkill, err := os.ReadFile(filepath.Join(repoRoot, ".agents", "skills", "install-jarvis", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	operatorGuide, err := os.ReadFile(filepath.Join(repoRoot, ".agents", "skills", "install-jarvis", "references", "operator-guide.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"用户唯一需要触发的安装入口", "operator-guide.md", "内部调用 `$bootstrap-jarvis-world-model`"} {
+		if !strings.Contains(string(installSkill), want) {
+			t.Fatalf("install skill missing unified-entry contract %q", want)
+		}
+	}
+	for _, want := range []string{"会要求用户处理的操作", "一条恢复路径", "原因：阻塞：", "macOS `.app`"} {
+		if !strings.Contains(string(operatorGuide), want) {
+			t.Fatalf("operator guide missing %q", want)
 		}
 	}
 }
@@ -88,6 +112,9 @@ func TestJarvisInstallCreatesOneAuditableProjectChecklist(t *testing.T) {
 		"## F. 真实端到端验收",
 		"## 未完成、未做或不适用",
 		"lark-cli 身份：当前默认身份",
+		"创建 commit：",
+		"清单模板 SHA-256：",
+		"id:install.cc-exclusive-owner",
 		"- [ ]",
 	} {
 		if !strings.Contains(text, want) {
@@ -108,6 +135,139 @@ func TestJarvisInstallCreatesOneAuditableProjectChecklist(t *testing.T) {
 	}
 	if summary.Completed != 0 || summary.Pending == 0 || summary.Complete {
 		t.Fatalf("status = %#v", summary)
+	}
+	resumed, err := runJarvisInstall(t, nil, "start", "--resume-latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resumedRun struct {
+		Resumed   bool   `json:"resumed"`
+		RunDir    string `json:"run_dir"`
+		Checklist string `json:"checklist"`
+	}
+	if err := json.Unmarshal([]byte(resumed), &resumedRun); err != nil {
+		t.Fatal(err)
+	}
+	if !resumedRun.Resumed || resumedRun.RunDir != runDir || resumedRun.Checklist != created.Checklist {
+		t.Fatalf("resumed run = %#v", resumedRun)
+	}
+	currentCommitRaw, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentCommit := strings.TrimSpace(string(currentCommitRaw))
+	staleChecklist := strings.Replace(text, "创建 commit："+currentCommit, "创建 commit：stale-commit", 1)
+	if staleChecklist == text {
+		t.Fatal("created checklist did not record the current commit")
+	}
+	if err := os.WriteFile(created.Checklist, []byte(staleChecklist), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	staleResume, staleErr := runJarvisInstall(t, nil, "start", "--resume-latest")
+	if staleErr == nil || !strings.Contains(staleResume, "current commit") {
+		t.Fatalf("stale checklist resume = %v: %s", staleErr, staleResume)
+	}
+	staleTemplateChecklist := strings.Replace(text, "清单模板 SHA-256：", "清单模板 SHA-256：stale-", 1)
+	if err := os.WriteFile(created.Checklist, []byte(staleTemplateChecklist), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	staleTemplateResume, staleTemplateErr := runJarvisInstall(t, nil, "start", "--resume-latest")
+	if staleTemplateErr == nil || !strings.Contains(staleTemplateResume, "template no longer matches") {
+		t.Fatalf("stale template resume = %v: %s", staleTemplateErr, staleTemplateResume)
+	}
+	explainedChecklist := strings.ReplaceAll(text, "- [ ]", "- [ ] 原因：未做：测试；")
+	if err := os.WriteFile(created.Checklist, []byte(explainedChecklist), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	explainedStatus, err := runJarvisInstall(t, nil, "status", "--run-dir", runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var explainedSummary struct {
+		Complete    bool `json:"complete"`
+		Deliverable bool `json:"deliverable"`
+	}
+	if err := json.Unmarshal([]byte(explainedStatus), &explainedSummary); err != nil {
+		t.Fatal(err)
+	}
+	if explainedSummary.Complete || !explainedSummary.Deliverable {
+		t.Fatalf("explained status = %#v", explainedSummary)
+	}
+	completedChecklist := strings.ReplaceAll(text, "- [ ]", "- [x]")
+	if err := os.WriteFile(created.Checklist, []byte(completedChecklist), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	completedResume, completedErr := runJarvisInstall(t, nil, "start", "--resume-latest")
+	if completedErr == nil || !strings.Contains(completedResume, "already complete") {
+		t.Fatalf("completed checklist resume = %v: %s", completedErr, completedResume)
+	}
+}
+
+func TestJarvisInstallDoctorKeepsGoStderrInsideJSONError(t *testing.T) {
+	binDir := t.TempDir()
+	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
+case "$*" in
+  "env GOVERSION") printf '%s\n' 'go1.26.4' ;;
+  "env CGO_ENABLED") printf '%s\n' '1' ;;
+  "env CC") printf '%s\n' 'cc' ;;
+  *"run ./cmd/jarvis-config instance"*)
+    printf '%s' '{"api_base":"http://127.0.0.1:19452","launchd_label":"com.bytedance.jarvis.server.test"}' ;;
+  *"run ./cmd/jarvis-config initialization-status"*)
+    printf '%s\n' 'go: downloading example.invalid/module' >&2
+    printf '%s\n' 'configuration failed' >&2
+    exit 7 ;;
+  *) exit 9 ;;
+esac
+`)
+	output, err := runJarvisInstall(t, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "doctor")
+	if err == nil {
+		t.Fatalf("doctor unexpectedly reported the machine ready: %s", output)
+	}
+	var report struct {
+		Configuration struct {
+			InspectionOK bool   `json:"inspection_ok"`
+			Error        string `json:"error"`
+		} `json:"configuration"`
+	}
+	if decodeErr := json.Unmarshal([]byte(output), &report); decodeErr != nil {
+		t.Fatalf("doctor mixed stderr into JSON output %q: %v", output, decodeErr)
+	}
+	if report.Configuration.InspectionOK || !strings.Contains(report.Configuration.Error, "go: downloading") {
+		t.Fatalf("doctor configuration report = %#v", report.Configuration)
+	}
+}
+
+func TestJarvisInstallValidateReportsBindingFailureAsJSON(t *testing.T) {
+	binDir := t.TempDir()
+	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
+case "$*" in
+  *"run ./cmd/jarvis-config instance"*) printf '%s' '{"api_base":"http://127.0.0.1:19452","launchd_label":"com.bytedance.jarvis.server.test"}' ;;
+  *"run ./cmd/jarvis-config initialization-status"*) printf '%s' '{"machine_configuration_ready":true,"base_config_mode":"0600","runtime_config_mode":"0600","runtime_binaries":[]}' ;;
+  *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
+esac
+`)
+	writeExecutable(t, filepath.Join(binDir, "curl"), "#!/bin/sh\nexit 1\n")
+	writeExecutable(t, filepath.Join(binDir, "launchctl"), "#!/bin/sh\nexit 1\n")
+	output, err := runJarvisInstall(t, []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+		"HOME=" + t.TempDir(),
+	}, "validate")
+	if err == nil {
+		t.Fatalf("validate unexpectedly passed: %s", output)
+	}
+	var result struct {
+		OK      bool `json:"ok"`
+		Binding struct {
+			OK      bool            `json:"ok"`
+			Details json.RawMessage `json:"details"`
+			Error   string          `json:"error"`
+		} `json:"integrated_bot_binding"`
+	}
+	if decodeErr := json.Unmarshal([]byte(output), &result); decodeErr != nil {
+		t.Fatalf("validate did not return JSON %q: %v", output, decodeErr)
+	}
+	if result.OK || result.Binding.OK || string(result.Binding.Details) != "null" || result.Binding.Error == "" {
+		t.Fatalf("validation result = %#v", result)
 	}
 }
 
@@ -246,17 +406,20 @@ case "$*" in
   *"run ./cmd/jarvis-config instance"*)
     printf '%s' '{"api_base":"http://127.0.0.1:19452","launchd_label":"com.bytedance.jarvis.server.test"}' ;;
   *"run ./cmd/jarvis-config show-principal"*)
+    printf '%s\n' 'go: downloading harmless-test-module' >&2
     printf '%s' '{"principal_open_id":"ou_ready","git_author":"ready@example.com","card_approval_enabled":true,"card_approval_principal_open_id":"ou_ready","relay_secret":"`+relaySecret+`","relay_secret_sha256":"`+relayHash+`"}' ;;
   *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
 esac
 `)
 	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
 if [ "$*" = "config show" ]; then
+  printf '%s\n' 'Config file path: /tmp/test-config.json' >&2
   printf '%s\n' 'resolved profile:'
-  printf '%s' '{"profile":"cli_ready","appId":"cli_app_ready","appSecret":"****"}'
+  printf '%s' '{"profile":"cli_ready","brand":"feishu","appId":"cli_app_ready","appSecret":"****"}'
   exit 0
 fi
 if [ "$*" = "auth status --json --verify" ]; then
+  printf '%s\n' 'auth diagnostic' >&2
   printf '%s' '{"verified":true,"identities":{"bot":{"status":"ready","verified":true},"user":{"status":"ready","verified":true,"tokenStatus":"valid","openId":"ou_ready"}}}'
   exit 0
 fi
@@ -266,6 +429,9 @@ if [ "$*" = "event consume card.action.trigger --as bot --dry-run" ]; then
 fi
 printf '%s' "unexpected lark-cli args: $*" >&2
 exit 9
+`)
+	writeExecutable(t, filepath.Join(binDir, "curl"), `#!/bin/sh
+printf '%s' '{"code":0,"msg":"ok","tenant_access_token":"tenant-ready"}'
 `)
 	out, err := runJarvisInstallWithInput(t, "app-secret-ready\n", []string{
 		"PATH=" + binDir + ":" + os.Getenv("PATH"),
@@ -296,7 +462,7 @@ exit 9
 	for _, want := range []string{
 		`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`,
 		`allow_from = "ou_ready"`,
-		`mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`,
+		`mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`, `scripts/jarvis-tools get-shared-memory`,
 		`agent_identity.display_name`, `overrides any different name in prior session history`, `prior_messages`,
 		`jarvis_approval_url = "http://127.0.0.1:19452/internal/card-approval/callback"`,
 		`jarvis_route_claim_url = "http://127.0.0.1:19452/internal/message-routing/claim"`,
@@ -309,6 +475,25 @@ exit 9
 	if strings.Contains(text, "--profile") {
 		t.Fatalf("CC config must use the default lark-cli identity:\n%s", text)
 	}
+	writeExecutable(t, filepath.Join(binDir, "curl"), `#!/bin/sh
+printf '%s' '{"code":10003,"msg":"invalid app secret"}'
+`)
+	invalidOutput, invalidErr := runJarvisInstallWithInput(t, "wrong-secret\n", []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+	}, "bind-cc", "--cc-config", ccConfigPath)
+	if invalidErr == nil || !strings.Contains(invalidOutput, "invalid app secret") {
+		t.Fatalf("bind-cc accepted invalid credentials: %v\n%s", invalidErr, invalidOutput)
+	}
+	unchanged, err := os.ReadFile(ccConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(unchanged) != text {
+		t.Fatalf("invalid credentials changed CC config:\n%s", unchanged)
+	}
+	writeExecutable(t, filepath.Join(binDir, "curl"), `#!/bin/sh
+printf '%s' '{"code":0,"msg":"ok","tenant_access_token":"tenant-ready"}'
+`)
 
 	// Existing installations may have the old global-context prompt and no
 	// trusted chat coordinate. Rebinding must migrate that same project in
@@ -316,12 +501,25 @@ exit 9
 	legacyText := strings.Replace(text, "inject_sender = true", "inject_sender = false", 1)
 	legacyText = strings.Replace(legacyText, "get-context --chat-id", "get-context", 1)
 	legacyText = strings.Replace(legacyText, `allow_from = "ou_ready"`, `allow_from = "*"`, 1)
+	for _, legacyRelayLine := range []string{
+		`jarvis_event_relay_url = "http://127.0.0.1:18800/internal/meeting-sweep/wake"` + "\n",
+		`jarvis_event_relay_secret = "` + relaySecret + `"` + "\n",
+		`jarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"` + "\n",
+	} {
+		legacyText = strings.Replace(legacyText, legacyRelayLine, "", 1)
+	}
 	if err := os.WriteFile(ccConfigPath, []byte(legacyText), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	refusedOutput, refusedErr := runJarvisInstallWithInput(t, "app-secret-ready\n", []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+	}, "bind-cc", "--cc-config", ccConfigPath)
+	if refusedErr == nil || !strings.Contains(refusedOutput, "--replace-allow-from") {
+		t.Fatalf("bind-cc did not require explicit allow_from replacement: %v\n%s", refusedErr, refusedOutput)
+	}
 	if _, err := runJarvisInstallWithInput(t, "app-secret-ready\n", []string{
 		"PATH=" + binDir + ":" + os.Getenv("PATH"),
-	}, "bind-cc", "--cc-config", ccConfigPath); err != nil {
+	}, "bind-cc", "--replace-allow-from", "--cc-config", ccConfigPath); err != nil {
 		t.Fatalf("rebind legacy CC config: %v", err)
 	}
 	migrated, err := os.ReadFile(ccConfigPath)
@@ -335,8 +533,20 @@ exit 9
 	if !strings.Contains(migratedText, "scripts/jarvis-tools get-context --chat-id") {
 		t.Fatalf("legacy CC config did not migrate to chat-scoped context:\n%s", migratedText)
 	}
+	if !strings.Contains(migratedText, "scripts/jarvis-tools get-shared-memory") {
+		t.Fatalf("legacy CC config did not migrate shared memory injection:\n%s", migratedText)
+	}
 	if strings.Count(migratedText, `allow_from = "ou_ready"`) != 1 || strings.Contains(migratedText, `allow_from = "*"`) {
 		t.Fatalf("legacy CC config did not migrate allow_from to principal-only exactly once:\n%s", migratedText)
+	}
+	for _, want := range []string{
+		`jarvis_event_relay_url = "http://127.0.0.1:19452/internal/meeting-sweep/wake"`,
+		`jarvis_event_relay_secret = "` + relaySecret + `"`,
+		`jarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"`,
+	} {
+		if strings.Count(migratedText, want) != 1 {
+			t.Fatalf("legacy CC config did not restore %q exactly once:\n%s", want, migratedText)
+		}
 	}
 
 	missingAllowFromText := strings.Replace(migratedText, "allow_from = \"ou_ready\"\n", "", 1)
@@ -363,7 +573,11 @@ func TestJarvisInstallReusesReadyLarkCLIAndTraex(t *testing.T) {
 	homeDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
 if [ "$1" = "--version" ]; then
-  printf '%s\n' 'lark-cli version test'
+  printf '%s\n' 'lark-cli version 1.0.93'
+  exit 0
+fi
+if [ "$*" = "event consume card.action.trigger --help" ]; then
+  printf '%s\n' 'usage: lark-cli event consume [--dry-run]'
   exit 0
 fi
 exit 9
@@ -389,12 +603,14 @@ case "$1" in
   *) exit 9 ;;
 esac
 `)
-	skillPath := filepath.Join(homeDir, ".agents", "skills", "lark-shared")
-	if err := os.MkdirAll(skillPath, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte("test"), 0o600); err != nil {
-		t.Fatal(err)
+	for _, skillName := range []string{"lark-shared", "lark-contact", "lark-drive", "lark-doc", "lark-im"} {
+		skillPath := filepath.Join(homeDir, ".agents", "skills", skillName)
+		if err := os.MkdirAll(skillPath, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte("test"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	env := []string{
 		"PATH=" + binDir + ":" + os.Getenv("PATH"),
@@ -433,6 +649,217 @@ esac
 	}
 }
 
+func TestJarvisInstallUpdatesExistingLarkCLIAndSkillsTogether(t *testing.T) {
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "updated")
+	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
+if [ "$1" = "update" ]; then
+  touch "$UPDATE_MARKER"
+  for skill in lark-shared lark-contact lark-drive lark-doc lark-im; do
+    mkdir -p "$HOME/.agents/skills/$skill"
+    printf '%s\n' test >"$HOME/.agents/skills/$skill/SKILL.md"
+  done
+  exit 0
+fi
+if [ "$*" = "event consume card.action.trigger --help" ]; then
+  if [ -f "$UPDATE_MARKER" ]; then
+    printf '%s\n' 'usage: lark-cli event consume [--dry-run]'
+  else
+    printf '%s\n' 'usage: old lark-cli event consume'
+  fi
+  exit 0
+fi
+if [ "$1" = "--version" ]; then
+  if [ -f "$UPDATE_MARKER" ]; then
+    printf '%s\n' 'lark-cli version 1.0.93'
+  else
+    printf '%s\n' 'lark-cli version 1.0.80'
+  fi
+  exit 0
+fi
+exit 9
+`)
+	writeExecutable(t, filepath.Join(binDir, "npx"), "#!/bin/sh\nprintf '%s\\n' 'unexpected npm installer invocation' >&2\nexit 99\n")
+	output, err := runJarvisInstall(t, []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+		"HOME=" + homeDir,
+		"CODEX_HOME=",
+		"UPDATE_MARKER=" + marker,
+	}, "install-lark-cli")
+	if err != nil {
+		t.Fatalf("install-lark-cli update: %v: %s", err, output)
+	}
+	var result struct {
+		Changed       bool `json:"changed"`
+		ProtocolReady bool `json:"required_protocol_ready"`
+		SkillPack     bool `json:"agent_skill_pack_detected"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Changed || !result.ProtocolReady || !result.SkillPack {
+		t.Fatalf("lark update result = %#v", result)
+	}
+}
+
+func TestJarvisInstallUpdatesOldLarkCLIEvenWhenSkillsAndProtocolExist(t *testing.T) {
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "updated")
+	for _, skillName := range []string{"lark-shared", "lark-contact", "lark-drive", "lark-doc", "lark-im"} {
+		skillPath := filepath.Join(homeDir, ".agents", "skills", skillName)
+		if err := os.MkdirAll(skillPath, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte("test\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
+if [ "$*" = "event consume card.action.trigger --help" ]; then
+  printf '%s\n' 'usage: lark-cli event consume [--dry-run]'
+  exit 0
+fi
+if [ "$1" = "--version" ]; then
+  if [ -f "$UPDATE_MARKER" ]; then
+    printf '%s\n' 'lark-cli version 1.0.93'
+  else
+    printf '%s\n' 'lark-cli version 1.0.80'
+  fi
+  exit 0
+fi
+if [ "$1" = "update" ] && [ "$2" = "--json" ]; then
+  touch "$UPDATE_MARKER"
+  exit 0
+fi
+exit 9
+`)
+	output, err := runJarvisInstall(t, []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+		"HOME=" + homeDir,
+		"CODEX_HOME=",
+		"UPDATE_MARKER=" + marker,
+	}, "install-lark-cli")
+	if err != nil {
+		t.Fatalf("install-lark-cli old version: %v: %s", err, output)
+	}
+	var result struct {
+		Changed bool   `json:"changed"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Changed || result.Version != "lark-cli version 1.0.93" {
+		t.Fatalf("old lark-cli update result = %#v", result)
+	}
+}
+
+func TestJarvisInstallAcceptsOfficialLarkSuiteLayout(t *testing.T) {
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	suitePath := filepath.Join(homeDir, ".agents", "skills", "lark-suite")
+	if err := os.MkdirAll(suitePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(suitePath, "SKILL.md"), []byte("test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
+if [ "$*" = "event consume card.action.trigger --help" ]; then
+  printf '%s\n' 'usage: lark-cli event consume [--dry-run]'
+  exit 0
+fi
+if [ "$1" = "--version" ]; then
+  printf '%s\n' 'lark-cli version 1.0.93'
+  exit 0
+fi
+if [ "$1" = "update" ]; then
+  printf '%s\n' 'unexpected update' >&2
+  exit 99
+fi
+exit 9
+`)
+	output, err := runJarvisInstall(t, []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+		"HOME=" + homeDir,
+		"CODEX_HOME=",
+	}, "install-lark-cli")
+	if err != nil {
+		t.Fatalf("install-lark-cli suite layout: %v: %s", err, output)
+	}
+	var result struct {
+		Changed   bool   `json:"changed"`
+		SkillPack bool   `json:"agent_skill_pack_detected"`
+		SkillPath string `json:"agent_skill_pack_path"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Changed || !result.SkillPack || result.SkillPath != filepath.Join(suitePath, "SKILL.md") {
+		t.Fatalf("suite layout result = %#v", result)
+	}
+}
+
+func TestJarvisInstallInstallsOfficialCodexWhenMissing(t *testing.T) {
+	binDir := t.TempDir()
+	for _, name := range []string{"bash", "cat", "chmod", "dirname", "head", "uname"} {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(path, filepath.Join(binDir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	jqPath, err := exec.LookPath("jq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(jqPath, filepath.Join(binDir, "jq")); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(binDir, "npm"), `#!/bin/sh
+if [ "$*" != "install --global @openai/codex@latest" ]; then
+  printf '%s\n' "unexpected npm args: $*" >&2
+  exit 9
+fi
+cat >"$TEST_BIN/codex" <<'SCRIPT'
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '%s\n' 'codex-cli test'
+  exit 0
+fi
+if [ "$1" = "login" ] && [ "$2" = "status" ]; then
+  printf '%s\n' 'Logged in using test credentials'
+  exit 0
+fi
+exit 9
+SCRIPT
+chmod 700 "$TEST_BIN/codex"
+`)
+	output, err := runJarvisInstall(t, []string{
+		"PATH=" + binDir,
+		"TEST_BIN=" + binDir,
+	}, "install-codex")
+	if err != nil {
+		t.Fatalf("install-codex: %v: %s", err, output)
+	}
+	var result struct {
+		Changed    bool   `json:"changed"`
+		Path       string `json:"path"`
+		Version    string `json:"version"`
+		LoginReady bool   `json:"login_ready"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Changed || result.Path != filepath.Join(binDir, "codex") || result.Version != "codex-cli test" || !result.LoginReady {
+		t.Fatalf("codex install result = %#v", result)
+	}
+}
+
 func TestJarvisInstallRunsOfficialInstallersWhenCLIsAreMissing(t *testing.T) {
 	binDir := t.TempDir()
 	homeDir := t.TempDir()
@@ -450,11 +877,17 @@ if [ "$*" != "--yes @larksuite/cli@latest install" ]; then
 fi
 cat >"$TEST_BIN/lark-cli" <<'SCRIPT'
 #!/bin/sh
-printf '%s\n' 'lark-cli version installed-test'
+if [ "$*" = "event consume card.action.trigger --help" ]; then
+  printf '%s\n' 'usage: lark-cli event consume [--dry-run]'
+  exit 0
+fi
+printf '%s\n' 'lark-cli version 1.0.93'
 SCRIPT
 chmod 700 "$TEST_BIN/lark-cli"
-mkdir -p "$HOME/.agents/skills/lark-shared"
-printf '%s\n' test >"$HOME/.agents/skills/lark-shared/SKILL.md"
+for skill in lark-shared lark-contact lark-drive lark-doc lark-im; do
+  mkdir -p "$HOME/.agents/skills/$skill"
+  printf '%s\n' test >"$HOME/.agents/skills/$skill/SKILL.md"
+done
 `)
 	writeExecutable(t, filepath.Join(binDir, "curl"), `#!/bin/sh
 target=""

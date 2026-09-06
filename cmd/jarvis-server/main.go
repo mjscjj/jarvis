@@ -751,6 +751,7 @@ func main() {
 			AgentToolCatalog: agentToolCatalog,
 			WorkRules:        runtimeWorkRules,
 			Skills:           runtimeSkills,
+			SharedMemory:     sharedMemoryService,
 			SystemPrompts:    runtimePrompts,
 		})
 		if err != nil {
