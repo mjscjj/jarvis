@@ -50,7 +50,7 @@
 
 ## Agent 配置面
 
-- Shared memory：`GET/PUT /api/shared-memory`、`POST /api/shared-memory/append`
+- Shared memory：`GET/PUT /api/shared-memory`、`POST /api/shared-memory/append`；整段内容最多 2000 字
 - Runtime settings：`GET/PUT /api/runtime-settings`
 - Work rules：`GET /api/work-rules`、`GET/PUT /api/work-rules/:work_rule_key`
 - Text files：`GET /api/text-files`、`GET/PUT /api/text-files/:text_file_key`

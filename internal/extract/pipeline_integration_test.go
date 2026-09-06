@@ -28,6 +28,10 @@ import (
 	"gorm.io/gorm"
 )
 
+type integrationSharedMemory struct{}
+
+func (integrationSharedMemory) Text(context.Context) (string, error) { return "", nil }
+
 // TestPipelineLive exercises SQLite -> facts -> model -> Todo persistence inside
 // an outer transaction that is always rolled back.
 func TestPipelineLive(t *testing.T) {
@@ -179,6 +183,7 @@ func TestPipelineLive(t *testing.T) {
 		MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 		WorkRules:     workRuleService,
 		Skills:        skillService,
+		SharedMemory:  integrationSharedMemory{},
 		SystemPrompts: textFileService,
 	})
 	if err != nil {

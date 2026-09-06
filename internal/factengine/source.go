@@ -23,7 +23,7 @@ import (
 // window, a Todo, a finished Task run. Body is already-rendered natural
 // language, because the model reads it and Go never parses it back.
 type SourceUnit struct {
-	// Source names the material's origin (message, todo, task today). It is carried into
+	// Source names the material's origin (message, todo_event, task_event). It is carried into
 	// the prompt so the model knows what it is reading, and into fact.source_kind
 	// so a stored fact traces back to what produced it.
 	Source string

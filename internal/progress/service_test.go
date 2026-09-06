@@ -3,12 +3,15 @@ package progress
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
 	"jarvis/internal/store"
+
+	"gorm.io/gorm"
 )
 
 func TestPrepareTaskEvent(t *testing.T) {
@@ -122,9 +125,10 @@ func TestPrepareTaskEventRejectsUnknownActor(t *testing.T) {
 func TestPrepareFactUsesNaturalLanguage(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 22, 8, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	sourceKind := FactSourceSystem
 	fact, err := prepareFact(FactInput{
 		SubjectType: " Project ", SubjectID: 2,
-		Description: "  MVP 已跑通，下一步部署测试环境。  ", OccurredAt: &now,
+		Description: "  MVP 已跑通，下一步部署测试环境。  ", OccurredAt: &now, SourceKind: &sourceKind,
 	})
 	if err != nil {
 		t.Fatalf("prepareFact() error = %v", err)
@@ -150,6 +154,35 @@ func TestPrepareFactRequiresDescriptionAndSubject(t *testing.T) {
 	if _, err := prepareFact(FactInput{SubjectType: "meeting", SubjectID: 1, Description: "x", OccurredAt: &now, SourceID: &sourceID}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("source_id without source_kind error = %v, want ErrInvalidInput", err)
 	}
+	if _, err := prepareFact(FactInput{SubjectType: "meeting", SubjectID: 1, Description: "x", OccurredAt: &now}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("missing source_kind error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestPrepareFactEnforcesEvidenceIndexShape(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	system := FactSourceSystem
+	if _, err := prepareFact(FactInput{
+		SubjectType: "project", SubjectID: 1, Description: strings.Repeat("字", FactDescriptionMaxChars+1),
+		OccurredAt: &now, SourceKind: &system,
+	}); err == nil || !strings.Contains(err.Error(), "证据索引锚点") {
+		t.Fatalf("long description error = %v", err)
+	}
+	message := "message"
+	if _, err := prepareFact(FactInput{
+		SubjectType: "project", SubjectID: 1, Description: "短锚点",
+		OccurredAt: &now, SourceKind: &message,
+	}); err == nil || !strings.Contains(err.Error(), "source_id") {
+		t.Fatalf("missing material id error = %v", err)
+	}
+	unknown := "factengine"
+	if _, err := prepareFact(FactInput{
+		SubjectType: "project", SubjectID: 1, Description: "短锚点",
+		OccurredAt: &now, SourceKind: &unknown,
+	}); err == nil || !strings.Contains(err.Error(), "unsupported source_kind") {
+		t.Fatalf("unknown material source error = %v", err)
+	}
 }
 
 // TestPrepareFactKeepsUnknownSubjectType pins the decision that SubjectType is
@@ -157,8 +190,9 @@ func TestPrepareFactRequiresDescriptionAndSubject(t *testing.T) {
 func TestPrepareFactKeepsUnknownSubjectType(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
+	sourceKind := FactSourceSystem
 	fact, err := prepareFact(FactInput{
-		SubjectType: "meeting", SubjectID: 9, Description: "评审会决定砍掉旁路", OccurredAt: &now,
+		SubjectType: "meeting", SubjectID: 9, Description: "评审会决定砍掉旁路", OccurredAt: &now, SourceKind: &sourceKind,
 	})
 	if err != nil {
 		t.Fatalf("prepareFact() with unknown subject type error = %v, want stored", err)
@@ -188,8 +222,9 @@ func TestServiceAcceptsKeyMatterSubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
+	sourceKind := FactSourceSystem
 	created, err := service.AppendFact(t.Context(), FactInput{
-		SubjectType: "key_matter", SubjectID: matter.ID, Description: "法务已给出第一版口径。",
+		SubjectType: "key_matter", SubjectID: matter.ID, Description: "法务已给出第一版口径。", SourceKind: &sourceKind,
 	})
 	if err != nil {
 		t.Fatalf("AppendFact() error = %v", err)
@@ -198,8 +233,42 @@ func TestServiceAcceptsKeyMatterSubject(t *testing.T) {
 		t.Fatalf("AppendFact() = %+v", created)
 	}
 	if _, err := service.AppendFact(t.Context(), FactInput{
-		SubjectType: "key_matter", SubjectID: matter.ID + 99, Description: "孤儿事实。",
+		SubjectType: "key_matter", SubjectID: matter.ID + 99, Description: "孤儿事实。", SourceKind: &sourceKind,
 	}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("AppendFact() missing key matter error = %v, want ErrNotFound", err)
 	}
+}
+
+func TestServiceRejectsMissingEvidenceSourceRow(t *testing.T) {
+	db := openMigratedProgressDB(t)
+	project := domain.Project{Name: "Jarvis", Role: "owner", Status: "active"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceKind := "message"
+	sourceID := uint64(999)
+	_, err = service.AppendFact(t.Context(), FactInput{
+		SubjectType: "project", SubjectID: project.ID, Description: "某条消息确认了验收口径",
+		SourceKind: &sourceKind, SourceID: &sourceID,
+	})
+	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "source_kind=message source_id=999") {
+		t.Fatalf("missing source error = %v", err)
+	}
+}
+
+func openMigratedProgressDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close(db) })
+	if err := store.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	return db
 }

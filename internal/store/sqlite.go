@@ -63,10 +63,17 @@ func OpenSQLite(ctx context.Context, cfg config.SQLiteConfig) (*gorm.DB, error) 
 	return db, nil
 }
 
-// Migrate creates or updates the current schema.
+// Migrate creates or updates the current schema. Retired context carriers fail
+// fast: this local MVP rebuilds old databases instead of maintaining converters.
 func Migrate(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("migrate schema: db is nil")
+	}
+	if err := rejectRetiredContextSchema(db); err != nil {
+		return err
+	}
+	if err := migrateActivityColumns(db); err != nil {
+		return err
 	}
 	models := append(domain.CoreModels(), domain.CaptureModels()...)
 	models = append(models, domain.ExtractModels()...)
@@ -77,6 +84,49 @@ func Migrate(db *gorm.DB) error {
 	models = append(models, domain.PluginModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+	return nil
+}
+
+func migrateActivityColumns(db *gorm.DB) error {
+	hadKeyMatterActivity := db.Migrator().HasColumn(&domain.KeyMatter{}, "LastActiveAt")
+	hadResourceActivity := db.Migrator().HasColumn(&domain.ManagedResource{}, "LastActiveAt")
+	if db.Migrator().HasTable(&domain.KeyMatter{}) && !hadKeyMatterActivity {
+		if err := db.Exec(`ALTER TABLE key_matter ADD COLUMN last_active_at datetime NOT NULL DEFAULT '1970-01-01 00:00:00'`).Error; err != nil {
+			return fmt.Errorf("add key matter last_active_at: %w", err)
+		}
+		if err := db.Exec(`UPDATE key_matter SET last_active_at = COALESCE(last_progress_at, updated_at, created_at)`).Error; err != nil {
+			return fmt.Errorf("backfill key matter last_active_at: %w", err)
+		}
+	}
+	if db.Migrator().HasTable(&domain.ManagedResource{}) && !hadResourceActivity {
+		if err := db.Exec(`ALTER TABLE managed_resource ADD COLUMN last_active_at datetime NOT NULL DEFAULT '1970-01-01 00:00:00'`).Error; err != nil {
+			return fmt.Errorf("add managed resource last_active_at: %w", err)
+		}
+		if err := db.Exec(`UPDATE managed_resource SET last_active_at = COALESCE(updated_at, created_at)`).Error; err != nil {
+			return fmt.Errorf("backfill managed resource last_active_at: %w", err)
+		}
+	}
+	return nil
+}
+
+func rejectRetiredContextSchema(db *gorm.DB) error {
+	retired := map[string][]string{
+		"todo": {"context", "open_questions", "commitment_strength", "context_snapshot", "extraction_result"},
+		"task": {"background_old", "source_clue", "plan", "execution_mode", "background"},
+	}
+	for _, table := range []string{"todo", "task"} {
+		if !db.Migrator().HasTable(table) {
+			continue
+		}
+		for _, column := range retired[table] {
+			if db.Migrator().HasColumn(table, column) {
+				return fmt.Errorf(
+					"migrate schema: %s.%s is retired; rebuild the database explicitly because current source+capture+annotation semantics cannot be inferred safely",
+					table, column,
+				)
+			}
+		}
 	}
 	return nil
 }

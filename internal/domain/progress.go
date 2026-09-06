@@ -29,14 +29,9 @@ type TaskEvent struct {
 
 func (TaskEvent) TableName() string { return "task_event" }
 
-// Fact is one append-only natural-language observation about some subject:
-// what happened, when, and who noticed. Entity tables keep current structured
-// state; Fact records the stream of things that happened to them.
-//
-// Facts are written as a side channel from wherever the system learns
-// something — M3 while extracting, M5 while executing, background CRUD — and
-// are read back two ways: as recent history for a subject (context snapshots)
-// and as the evidence behind a day's digest.
+// Fact is one append-only evidence index entry: a short subject-bound anchor
+// plus a pointer to the immutable material that supports it. Entity summary
+// pages own current knowledge; Fact only helps a reader find the scene.
 type Fact struct {
 	ID uint64 `gorm:"column:id;primaryKey;autoIncrement"`
 
@@ -47,9 +42,7 @@ type Fact struct {
 	SubjectType string `gorm:"column:subject_type;not null;index:idx_fact_subject_time,priority:1"`
 	SubjectID   uint64 `gorm:"column:subject_id;not null;index:idx_fact_subject_time,priority:2"`
 
-	// Description is the whole fact, in prose. There is no structured payload
-	// beside it on purpose: the previous schema here carried an event_type enum
-	// and had to be torn out. See migrateNaturalLanguageFacts.
+	// Description is a short retrieval anchor, not a mini knowledge page.
 	Description string `gorm:"column:description;not null"`
 
 	// OccurredAt is when the fact happened, not when it was recorded, so a
@@ -59,9 +52,8 @@ type Fact struct {
 	// timezone ever changed.
 	OccurredAt time.Time `gorm:"column:occurred_at;not null;index:idx_fact_subject_time,priority:3;index:idx_fact_occurred_at"`
 
-	// SourceKind and SourceID trace a fact back to what produced it (m3, m5,
-	// task, run, background). Both optional: a fact is still useful when its
-	// origin is a human poking the API.
+	// SourceKind and SourceID identify raw material. Internal state transitions
+	// use source_kind=system without an ID because the Fact row is the event.
 	SourceKind *string `gorm:"column:source_kind"`
 	SourceID   *uint64 `gorm:"column:source_id"`
 

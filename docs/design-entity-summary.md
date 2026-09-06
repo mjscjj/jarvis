@@ -250,7 +250,7 @@ M5 执行完 Task 后可以更新相关实体的 summary——它掌握最新状
 ## 11. 范围之外
 
 - 不建 librarian 巡检 cron（`list-pages --stale-days` / `--over-limit` 已提供数据，第二批再看是否需要自动化）；
-- 不动 `daily_digest`、`mem0`、`Snapshot.Memories`、`data/shared-memory.md`；
+- 不动 `daily_digest`、`mem0`、`data/shared-memory.md`；
 - 不改 `fact` 表结构，不删任何历史 fact；
 - 不解决「什么该独立成 key_matter」的组织权问题——每实体一页不覆盖这一层，属已知局限。
 

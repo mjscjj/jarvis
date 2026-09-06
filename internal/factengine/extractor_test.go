@@ -84,7 +84,7 @@ func TestSourceUnitPromptCarriesSubjectsAndBody(t *testing.T) {
 	}
 }
 
-func TestSourceUnitPromptRejectsOnlyEmptyBody(t *testing.T) {
+func TestSourceUnitPromptRejectsEmptyBody(t *testing.T) {
 	if _, err := (SourceUnit{Source: SourceMessage, Key: "k", Body: "  "}).Prompt(); err == nil {
 		t.Fatal("empty body accepted")
 	}

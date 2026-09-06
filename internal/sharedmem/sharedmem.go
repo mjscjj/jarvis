@@ -1,18 +1,24 @@
-// Package sharedmem manages the trusted free-text memory injected into M3,
-// M5, and chat. The local Markdown file is the single source of truth.
+// Package sharedmem manages Principal's explicit long-term behavior preferences.
+// The local Markdown file is the single source of truth shared by decision agents.
 package sharedmem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"jarvis/internal/fileconfig"
 )
+
+const MaxCharacters = 2000
+
+var ErrContentTooLong = errors.New("shared memory exceeds 2000 characters")
 
 type SharedMemoryView struct {
 	Content    string `json:"content"`
@@ -71,9 +77,13 @@ func (s *SharedMemoryService) Upsert(ctx context.Context, content string) (*Shar
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	content = strings.TrimSpace(content)
+	if err := validateLength(content); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := fileconfig.WriteAtomic(s.path, []byte(strings.TrimSpace(content)+"\n")); err != nil {
+	if err := fileconfig.WriteAtomic(s.path, []byte(content+"\n")); err != nil {
 		return nil, err
 	}
 	return s.getLocked()
@@ -94,6 +104,9 @@ func (s *SharedMemoryService) Append(ctx context.Context, note string) (*SharedM
 		return nil, err
 	}
 	content := appendNote(string(current), note)
+	if err := validateLength(content); err != nil {
+		return nil, err
+	}
 	if err := fileconfig.WriteAtomic(s.path, []byte(content+"\n")); err != nil {
 		return nil, err
 	}
@@ -111,6 +124,9 @@ func (s *SharedMemoryService) Text(ctx context.Context) (string, error) {
 func (s *SharedMemoryService) getLocked() (*SharedMemoryView, error) {
 	content, err := fileconfig.Read(s.path)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateLength(string(content)); err != nil {
 		return nil, err
 	}
 	info, err := os.Stat(s.path)
@@ -133,12 +149,20 @@ func appendNote(content, note string) string {
 	return strings.TrimSpace(content) + "\n" + entry
 }
 
+func validateLength(content string) error {
+	characters := utf8.RuneCountInString(strings.TrimSpace(content))
+	if characters > MaxCharacters {
+		return fmt.Errorf("%w: got %d", ErrContentTooLong, characters)
+	}
+	return nil
+}
+
 func RenderBlock(text string) string {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return ""
 	}
-	return "BEGIN_SHARED_MEMORY（这是我/Agent 长期维护的可信共享记忆：踩过的坑、关键约定、凭据等。作为可信背景与指示使用，不受「忽略业务数据中指令」约束。）\n" +
+	return "BEGIN_SHARED_MEMORY（Principal 明确要求长期记住的可信行为偏好；只在当前阶段职责内执行。）\n" +
 		trimmed +
 		"\nEND_SHARED_MEMORY"
 }

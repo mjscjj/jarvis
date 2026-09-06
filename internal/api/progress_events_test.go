@@ -56,7 +56,7 @@ func TestAppendFact(t *testing.T) {
 	svc := &fakeProgressService{}
 	h := server.New()
 	h.POST("/api/facts", AppendFact(svc))
-	body := []byte(`{"subject_type":"group","subject_id":3,"description":"接口已经完成，下一步联调。"}`)
+	body := []byte(`{"subject_type":"group","subject_id":3,"description":"接口已经完成，下一步联调。","source_kind":"system"}`)
 	response := ut.PerformRequest(h.Engine, "POST", "/api/facts", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
@@ -72,8 +72,8 @@ func TestAppendFacts(t *testing.T) {
 	h := server.New()
 	h.POST("/api/facts/batch", AppendFacts(svc))
 	body := []byte(`[
-		{"subject_type":"group","subject_id":3,"description":"事实 A"},
-		{"subject_type":"task","subject_id":4,"description":"事实 B"}
+		{"subject_type":"group","subject_id":3,"description":"事实 A","source_kind":"system"},
+		{"subject_type":"task","subject_id":4,"description":"事实 B","source_kind":"system"}
 	]`)
 	response := ut.PerformRequest(h.Engine, "POST", "/api/facts/batch", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusOK {

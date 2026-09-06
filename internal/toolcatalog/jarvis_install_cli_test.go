@@ -486,7 +486,7 @@ printf '%s' '{"code":0,"msg":"ok","tenant_access_token":"tenant-ready"}'
 	for _, want := range []string{
 		`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`,
 		`allow_from = "ou_ready"`,
-		`mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`,
+		`mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`, `scripts/jarvis-tools get-shared-memory`,
 		`agent_identity.display_name`, `overrides any different name in prior session history`, `prior_messages`,
 		`jarvis_route_claim_url = "http://127.0.0.1:18800/internal/message-routing/claim"`,
 	} {
@@ -554,6 +554,9 @@ printf '%s' '{"code":0,"msg":"ok","tenant_access_token":"tenant-ready"}'
 	}
 	if !strings.Contains(migratedText, "scripts/jarvis-tools get-context --chat-id") {
 		t.Fatalf("legacy CC config did not migrate to chat-scoped context:\n%s", migratedText)
+	}
+	if !strings.Contains(migratedText, "scripts/jarvis-tools get-shared-memory") {
+		t.Fatalf("legacy CC config did not migrate shared memory injection:\n%s", migratedText)
 	}
 	if strings.Count(migratedText, `allow_from = "ou_ready"`) != 1 || strings.Contains(migratedText, `allow_from = "*"`) {
 		t.Fatalf("legacy CC config did not migrate allow_from to principal-only exactly once:\n%s", migratedText)

@@ -251,6 +251,13 @@ type fakeSkillReader struct{}
 
 func (fakeSkillReader) Catalog(context.Context, string) (string, error) { return "", nil }
 
+type fakeSharedMemoryReader struct {
+	text string
+	err  error
+}
+
+func (f fakeSharedMemoryReader) Text(context.Context) (string, error) { return f.text, f.err }
+
 func TestWorkerPersistsWholeChat(t *testing.T) {
 	projectID := uint64(9)
 	store := &fakePipelineStore{batches: []ChatBatch{{
@@ -264,7 +271,9 @@ func TestWorkerPersistsWholeChat(t *testing.T) {
 	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{}}}
 	facts := &fakeFactReader{}
 	toolBox := &fakeToolBoxBuilder{}
-	worker, err := NewWorker(store, model, facts, &fakeCandidateDeduplicator{}, toolBox, validWorkerOptions())
+	opts := validWorkerOptions()
+	opts.SharedMemory = fakeSharedMemoryReader{text: "Bax 反馈直接进入 M5"}
+	worker, err := NewWorker(store, model, facts, &fakeCandidateDeduplicator{}, toolBox, opts)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -295,6 +304,28 @@ func TestWorkerPersistsWholeChat(t *testing.T) {
 	}
 	if toolBox.built != 1 || len(model.boxes) != 1 || model.boxes[0] == nil {
 		t.Fatalf("tool box wiring: built=%d boxes=%d", toolBox.built, len(model.boxes))
+	}
+	if !strings.Contains(model.prompts[0].System, "Bax 反馈直接进入 M5") {
+		t.Fatalf("M3 prompt missing shared memory:\n%s", model.prompts[0].System)
+	}
+}
+
+func TestWorkerFailsWhenSharedMemoryCannotBeRead(t *testing.T) {
+	store := &fakePipelineStore{batches: []ChatBatch{{
+		Group: GroupContext{ID: 1, ChatID: "oc_1"},
+		Units: []ConversationUnit{{Key: "chat", Messages: []MessageContext{{
+			MessageID: "om_1", Content: "请跟进", IsNew: true, Extractable: true,
+		}}}},
+		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_1", IsNew: true},
+	}}}
+	opts := validWorkerOptions()
+	opts.SharedMemory = fakeSharedMemoryReader{err: errors.New("memory unavailable")}
+	worker, err := NewWorker(store, &fakeModelExtractor{}, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := worker.ExtractChat(t.Context(), "oc_1"); err == nil || !strings.Contains(err.Error(), "memory unavailable") {
+		t.Fatalf("ExtractChat() error = %v", err)
 	}
 }
 
@@ -698,6 +729,7 @@ func validWorkerOptions() WorkerOptions {
 		MaxPromptChars: 60_000, Location: time.UTC,
 		WorkRules:     fakeWorkRuleReader{},
 		Skills:        fakeSkillReader{},
+		SharedMemory:  fakeSharedMemoryReader{},
 		SystemPrompts: fakeSystemPromptReader{},
 	}
 }

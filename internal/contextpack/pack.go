@@ -10,6 +10,11 @@ import (
 
 type Object = map[string]json.RawMessage
 
+type availableContext struct {
+	Name  string `json:"name"`
+	Bytes int    `json:"bytes"`
+}
+
 func object(raw []byte) (Object, error) {
 	var v Object
 	if err := json.Unmarshal(raw, &v); err != nil {
@@ -233,7 +238,21 @@ func Read(raw []byte, section, id string) (json.RawMessage, error) {
 		// request is the atomic primary evidence and must remain visible.
 		result["source"] = packet["source"]
 	}
-	available := []string{"source", "annotation", "conversation", "background", "full"}
+	background := Object{}
+	for key, body := range capture {
+		if key != "messages" {
+			background[key] = body
+		}
+	}
+	conversation := encoded(rows)
+	backgroundBody := encoded(background)
+	available := []availableContext{
+		{Name: "source", Bytes: len(packet["source"])},
+		{Name: "annotation", Bytes: len(packet["annotation"])},
+		{Name: "conversation", Bytes: len(conversation)},
+		{Name: "background", Bytes: len(backgroundBody)},
+		{Name: "full", Bytes: len(raw)},
+	}
 	keys := []string{}
 	for key, body := range capture {
 		if key != "messages" && string(body) != "null" {
@@ -241,7 +260,9 @@ func Read(raw []byte, section, id string) (json.RawMessage, error) {
 		}
 	}
 	sort.Strings(keys)
-	available = append(available, keys...)
+	for _, key := range keys {
+		available = append(available, availableContext{Name: key, Bytes: len(capture[key])})
+	}
 	result["available_context"] = encoded(available)
 	result["conversation_message_count"] = encoded(len(rows))
 	if at, ok := capture["captured_at"]; ok {

@@ -11,7 +11,7 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
-const SUBTITLE = '这段文本会作为可信背景注入所有 Agent（M3 抽取 / M5 执行 / 对话）的提示词，请谨慎编辑；可能含凭据。'
+const SUBTITLE = 'Principal 明确要求长期记住的行为偏好；供 M3、M5、对话和主动巡视使用，最多 2000 字。'
 
 export default function SharedMemory() {
   const [view, setView] = useState<SharedMemoryView>()
@@ -80,7 +80,7 @@ export default function SharedMemory() {
         <Input.TextArea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="这里维护踩过的坑、关键约定、凭据等可信背景……"
+          placeholder="这里只维护 Principal 明确要求长期记住的行为偏好……"
           autoSize={{ minRows: 18, maxRows: 40 }}
           style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}
         />

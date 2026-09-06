@@ -71,7 +71,10 @@ func materialSource(name string, maxID uint64, units func(limit int) []SourceUni
 }
 
 func testUnit(source, key string, lastID uint64, body string) SourceUnit {
-	return SourceUnit{Source: source, Key: key, LastID: lastID, OccurredAt: time.Unix(int64(lastID), 0), Body: body}
+	return SourceUnit{
+		Source: source, Key: key, LastID: lastID,
+		OccurredAt: time.Unix(int64(lastID), 0), Body: body,
+	}
 }
 
 func newTestWorker(t *testing.T, store *fakeCursorStore, sources []MaterialSource, maintainer worldMaintainer, maxChars int) *Worker {
@@ -239,7 +242,7 @@ func TestFactEngineSystemPromptOwnsWorldWriteAndExternalQueryPolicy(t *testing.T
 		t.Fatalf("read FactEngine system prompt: %v", err)
 	}
 	system := string(raw)
-	for _, want := range []string{"写入前读取现值", "写入后立即读回", "不得改用逐条写入", "不创建、启动、更新或关闭 Todo、Task", "原则上不查询外部系统补证据"} {
+	for _, want := range []string{"source 指针", "写入后立即读回", "不得改用逐条写入", "不创建、启动、更新或关闭 Todo、Task", "原则上不查询外部系统补证据"} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("FactEngine system prompt missing owned policy %q", want)
 		}

@@ -73,6 +73,33 @@ func TestBuildPromptInjectsSkills(t *testing.T) {
 	}
 }
 
+func TestBuildPromptInjectsSharedMemoryAsTrustedSystemBlock(t *testing.T) {
+	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
+		MessageID: "om_new", Content: "请跟进", IsNew: true, Extractable: true,
+	}}}
+	prompt, err := BuildPrompt(
+		ChatBatch{Group: GroupContext{ChatID: "oc_1"}},
+		unit,
+		nil,
+		time.Now(),
+		PromptOptions{
+			SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner",
+			Location: time.UTC, MaxChars: 20_000, SharedMemory: "固定验收标准：先核验原文",
+		},
+	)
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+	for _, want := range []string{"BEGIN_SHARED_MEMORY", "固定验收标准：先核验原文", "END_SHARED_MEMORY"} {
+		if !strings.Contains(prompt.System, want) {
+			t.Fatalf("system prompt missing shared memory %q:\n%s", want, prompt.System)
+		}
+	}
+	if strings.Contains(prompt.User, "固定验收标准") {
+		t.Fatalf("shared memory leaked into untrusted user prompt:\n%s", prompt.User)
+	}
+}
+
 func TestBuildPromptTrimsContextBeforeFailing(t *testing.T) {
 	unit := ConversationUnit{
 		Key: "chat",
@@ -314,7 +341,7 @@ func TestBuildPromptRendersSummaryAndFactCountsOnly(t *testing.T) {
 		"公会侧个人 agent 系统，正在收口世界模型。",
 		"这个群跟进公会 Agent 基建。",
 		"群公告：飞书群公告原文",
-		"project:44「公会 Agent 基建」今日 23 条、近 7 天 187 条 —— 需要细节用 list-facts 按主体和日期查。",
+		"project:44「公会 Agent 基建」今日 23 条、近 7 天 187 条 —— 需要细节先用 list-facts 查证据索引，再沿 source 指针读原始材料。",
 	} {
 		if !strings.Contains(prompt.User, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt.User)

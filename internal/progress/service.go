@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"jarvis/internal/domain"
 
@@ -18,6 +19,11 @@ import (
 var (
 	ErrInvalidInput = errors.New("invalid progress event input")
 	ErrNotFound     = errors.New("progress event parent not found")
+)
+
+const (
+	FactDescriptionMaxChars = 200
+	FactSourceSystem        = "system"
 )
 
 var taskEventTypes = map[string]struct{}{
@@ -153,10 +159,8 @@ func (s *Service) ListTaskEvents(ctx context.Context, taskID uint64) ([]TaskEven
 	return views, nil
 }
 
-// AppendFact stores one fact. Subjects whose type the system knows are checked
-// for existence so a typo cannot orphan a fact; an unrecognized SubjectType is
-// stored as-is, because refusing it would throw away an observation in exchange
-// for an enum nobody asked for.
+// AppendFact stores one evidence index item. Known subjects and every raw
+// material pointer are checked before the row is written.
 func (s *Service) AppendFact(ctx context.Context, input FactInput) (*FactView, error) {
 	if input.OccurredAt == nil {
 		now := s.now().UTC()
@@ -170,6 +174,15 @@ func (s *Service) AppendFact(ctx context.Context, input FactInput) (*FactView, e
 	if parent, ok := factSubjectModel(fact.SubjectType); ok {
 		if err := requireParent(db, parent, fact.SubjectID); err != nil {
 			return nil, err
+		}
+	}
+	if fact.SourceKind != nil && *fact.SourceKind != FactSourceSystem {
+		parent, _ := factSourceModel(*fact.SourceKind)
+		if err := requireParent(db, parent, *fact.SourceID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("%w: source_kind=%s source_id=%d does not exist", ErrNotFound, *fact.SourceKind, *fact.SourceID)
+			}
+			return nil, fmt.Errorf("check fact source source_kind=%s source_id=%d: %w", *fact.SourceKind, *fact.SourceID, err)
 		}
 	}
 	// A factengine source unit can be retried after its Agent has already updated
@@ -291,12 +304,37 @@ func prepareFact(input FactInput) (*domain.Fact, error) {
 	input.Description = strings.TrimSpace(input.Description)
 	input.SubjectType = strings.TrimSpace(strings.ToLower(input.SubjectType))
 	input.SourceKind = normalizedOptional(input.SourceKind)
+	if input.SourceKind != nil {
+		normalized := strings.ToLower(*input.SourceKind)
+		input.SourceKind = &normalized
+	}
 	if input.SubjectType == "" || input.SubjectID == 0 || input.Description == "" ||
 		input.OccurredAt == nil || input.OccurredAt.IsZero() {
 		return nil, fmt.Errorf("%w: subject_type, subject_id, description and occurred_at are required", ErrInvalidInput)
 	}
-	if input.SourceID != nil && (*input.SourceID == 0 || input.SourceKind == nil) {
-		return nil, fmt.Errorf("%w: source_id must be positive and requires source_kind", ErrInvalidInput)
+	if chars := utf8.RuneCountInString(input.Description); chars > FactDescriptionMaxChars {
+		return nil, fmt.Errorf(
+			"%w: description 有 %d 字，上限 %d；Fact 是证据索引锚点，不是知识条目：一句话说明是哪件事，结论写进实体页，细节沿 source 指针读取原始材料",
+			ErrInvalidInput, chars, FactDescriptionMaxChars,
+		)
+	}
+	if input.SourceKind == nil {
+		return nil, fmt.Errorf("%w: source_kind is required", ErrInvalidInput)
+	}
+	if *input.SourceKind == FactSourceSystem {
+		if input.SourceID != nil {
+			return nil, fmt.Errorf("%w: source_kind=%s must not carry source_id", ErrInvalidInput, FactSourceSystem)
+		}
+	} else {
+		if _, ok := factSourceModel(*input.SourceKind); !ok {
+			return nil, fmt.Errorf("%w: unsupported source_kind %q", ErrInvalidInput, *input.SourceKind)
+		}
+		if input.SourceID == nil || *input.SourceID == 0 {
+			return nil, fmt.Errorf(
+				"%w: source_kind=%s 的 Fact 必须带正数 source_id，指向材料里给出的 ref",
+				ErrInvalidInput, *input.SourceKind,
+			)
+		}
 	}
 	return &domain.Fact{
 		SubjectType: input.SubjectType, SubjectID: input.SubjectID,
@@ -309,6 +347,8 @@ func prepareFact(input FactInput) (*domain.Fact, error) {
 // A miss is not an error; see AppendFact.
 func factSubjectModel(subjectType string) (any, bool) {
 	switch subjectType {
+	case "principal":
+		return &domain.PrincipalProfile{}, true
 	case "project":
 		return &domain.Project{}, true
 	case "key_matter":
@@ -319,6 +359,29 @@ func factSubjectModel(subjectType string) (any, bool) {
 		return &domain.Person{}, true
 	case "task":
 		return &domain.Task{}, true
+	case "todo":
+		return &domain.Todo{}, true
+	case "resource":
+		return &domain.ManagedResource{}, true
+	default:
+		return nil, false
+	}
+}
+
+// factSourceModel maps machine-readable source kinds to immutable material
+// tables. A Fact with one of these kinds must carry an existing row ID.
+func factSourceModel(sourceKind string) (any, bool) {
+	switch sourceKind {
+	case "message":
+		return &domain.Message{}, true
+	case "todo_event":
+		return &domain.TodoEvent{}, true
+	case "task_event":
+		return &domain.TaskEvent{}, true
+	case "execution_run":
+		return &domain.ExecutionRun{}, true
+	case "resource":
+		return &domain.Resource{}, true
 	default:
 		return nil, false
 	}

@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"jarvis/internal/prompttemplate"
+	"jarvis/internal/sharedmem"
 )
 
 type PromptOptions struct {
@@ -26,6 +27,8 @@ type PromptOptions struct {
 	ToolCatalog string
 	// WorkRules 是已按 extract 阶段过滤并渲染好的可信工作规则 block。
 	WorkRules string
+	// SharedMemory is the same trusted global block M5 and chat receive.
+	SharedMemory string
 	// Skills 是已按 extract 阶段过滤的简短 Skill 目录。
 	Skills string
 }
@@ -109,6 +112,9 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, counts []FactCount, now
 		return Prompt{}, fmt.Errorf("render M3 system prompt: %w", err)
 	}
 	system += "\n\nPRINCIPAL_OPEN_ID=" + opts.PrincipalOpenID
+	if block := sharedmem.RenderBlock(opts.SharedMemory); block != "" {
+		system += "\n\n" + block
+	}
 	if catalog := strings.TrimSpace(opts.ToolCatalog); catalog != "" {
 		system += "\n\n" + catalog
 	}
@@ -254,7 +260,7 @@ func renderFactCounts(counts []FactCount) string {
 		if label == "" {
 			label = fmt.Sprintf("%s:%d", count.SubjectType, count.SubjectID)
 		}
-		lines = append(lines, fmt.Sprintf("%s:%d「%s」今日 %d 条、近 7 天 %d 条 —— 需要细节用 list-facts 按主体和日期查。",
+		lines = append(lines, fmt.Sprintf("%s:%d「%s」今日 %d 条、近 7 天 %d 条 —— 需要细节先用 list-facts 查证据索引，再沿 source 指针读原始材料。",
 			count.SubjectType, count.SubjectID, label, count.Today, count.Last7Days))
 	}
 	return strings.Join(lines, "\n")

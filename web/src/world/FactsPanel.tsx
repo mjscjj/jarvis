@@ -1,19 +1,12 @@
 import { useState } from 'react'
-import { Alert, Button, Card, DatePicker, Empty, Flex, Form, Input, InputNumber, Modal, Pagination, Select, Space, Spin, Tag, Typography } from 'antd'
+import { Alert, Button, Card, DatePicker, Empty, Flex, Input, InputNumber, Pagination, Select, Space, Spin, Tag, Typography } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
-import { appendFact, searchFacts } from '../api'
+import { searchFacts } from '../api'
 import type { FactSearchResult } from '../types'
 import FactTimeline from './FactTimeline'
 
 const { Text } = Typography
-
-interface FactInputFields {
-  subject_type: string
-  subject_id: number
-  description: string
-  occurred_at: Dayjs
-}
 
 export default function FactsPanel() {
   const [keyword, setKeyword] = useState('')
@@ -24,10 +17,6 @@ export default function FactsPanel() {
   const [result, setResult] = useState<FactSearchResult>()
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string>()
-  const [open, setOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [refreshToken, setRefreshToken] = useState(0)
-  const [form] = Form.useForm<FactInputFields>()
 
   const runSearch = async (page = 1) => {
     if (subjectId && !subjectType) {
@@ -64,38 +53,14 @@ export default function FactsPanel() {
     setError(undefined)
   }
 
-  const create = async () => {
-    const values = await form.validateFields()
-    setSaving(true)
-    try {
-      await appendFact({
-        subject_type: values.subject_type,
-        subject_id: values.subject_id,
-        description: values.description,
-        occurred_at: values.occurred_at.toISOString(),
-        source_kind: 'manual',
-      })
-      setOpen(false)
-      form.resetFields()
-      setRefreshToken((value) => value + 1)
-      setError(undefined)
-      if (result) await runSearch()
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setSaving(false)
-    }
-  }
-
   return (
     <Space orientation="vertical" size={16} style={{ width: '100%' }}>
       <Card variant="borderless" className="fact-search-card">
         <Flex justify="space-between" align="center" gap={12} wrap>
           <div>
             <Text strong>全部事实</Text>
-            <div><Text type="secondary">跨主题查看最终压缩结果，也可以展开和搜索每条原始事实。</Text></div>
+            <div><Text type="secondary">跨主题查看证据索引，并按来源追溯原始材料。</Text></div>
           </div>
-          <Button type="primary" onClick={() => { form.setFieldsValue({ occurred_at: dayjs() }); setOpen(true) }}>记录事实</Button>
         </Flex>
         <Flex gap={10} wrap className="fact-search-controls">
           <Input.Search placeholder="搜索事实内容、主体名称或 type/id" value={keyword} onChange={(event) => setKeyword(event.target.value)} onSearch={() => void runSearch()} allowClear style={{ minWidth: 280, flex: 1 }} />
@@ -110,7 +75,7 @@ export default function FactsPanel() {
             options={['project', 'key_matter', 'person', 'group', 'task', 'todo', 'resource', 'managed_resource', 'principal'].map((value) => ({ value, label: value }))}
           />
           <InputNumber min={1} placeholder="主体 ID" value={subjectId} onChange={setSubjectId} style={{ width: 110 }} />
-          <Select allowClear placeholder="来源" value={sourceKind} onChange={setSourceKind} style={{ width: 130 }} options={['manual', 'm3', 'm5', 'message', 'background', 'factengine', 'todo', 'task'].map((value) => ({ value, label: value }))} />
+          <Select allowClear placeholder="来源" value={sourceKind} onChange={setSourceKind} style={{ width: 130 }} options={['system', 'message', 'todo_event', 'task_event', 'execution_run', 'resource'].map((value) => ({ value, label: value }))} />
           <Button type="primary" onClick={() => void runSearch()} loading={searching}>搜索</Button>
           {result && <Button onClick={clearSearch}>回到时间线</Button>}
         </Flex>
@@ -141,22 +106,7 @@ export default function FactsPanel() {
             </Space>
           )}
         </Card>
-      ) : <FactTimeline title="全部事实时间线" refreshToken={refreshToken} />}
-
-      <Modal title="记录事实" open={open} confirmLoading={saving} onOk={() => void create()} onCancel={() => setOpen(false)} okText="记录" destroyOnHidden>
-        <Form form={form} layout="vertical">
-          <Flex gap={12}>
-            <Form.Item name="subject_type" label="主体类型" rules={[{ required: true, message: '请输入主体类型' }]} style={{ flex: 1 }}>
-              <Input placeholder="如 project / person / task" />
-            </Form.Item>
-            <Form.Item name="subject_id" label="主体 ID" rules={[{ required: true, message: '请输入主体 ID' }]} style={{ width: 140 }}>
-              <InputNumber min={1} style={{ width: '100%' }} />
-            </Form.Item>
-          </Flex>
-          <Form.Item name="occurred_at" label="发生时间" rules={[{ required: true }]}><DatePicker showTime style={{ width: '100%' }} /></Form.Item>
-          <Form.Item name="description" label="事实" rules={[{ required: true, whitespace: true, message: '请输入事实' }]}><Input.TextArea rows={6} placeholder="只记录已经发生、可追溯的事实。" /></Form.Item>
-        </Form>
-      </Modal>
+      ) : <FactTimeline title="全部事实时间线" />}
     </Space>
   )
 }

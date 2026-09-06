@@ -29,7 +29,7 @@ func (f *fakeContextAssembler) AssembleConversation(_ context.Context, options c
 	if f.err != nil {
 		return nil, f.err
 	}
-	return json.RawMessage(`{"snapshot_version":"v1","principal":{"open_id":"ou_me","name":"我"},"other_projects":[],"memories":[]}`), nil
+	return json.RawMessage(`{"snapshot_version":"v2","principal":{"open_id":"ou_me","name":"我"},"other_projects":[]}`), nil
 }
 
 func newTestService(t *testing.T) *Service {
