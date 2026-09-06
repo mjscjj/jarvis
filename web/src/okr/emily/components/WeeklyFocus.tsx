@@ -41,6 +41,7 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false }: {
   const [savingID, setSavingID] = useState('')
   const [error, setError] = useState('')
   const [showDone, setShowDone] = useState(true)
+  const [followUpsOpen, setFollowUpsOpen] = useState(true)
 
   const incomplete = useMemo(() => {
     const missing = new Map<string, number>()
@@ -151,9 +152,24 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false }: {
           {incomplete.length > 0 ? <div className="flex flex-wrap gap-1.5">{incomplete.map((item) => <span key={item.name} title={`${item.count} 条 KR 尚未完整填写本周进展`} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pr-2 pl-1 text-[10px] text-slate-600"><span className="flex size-4 items-center justify-center rounded-full bg-slate-200 text-[8px] font-semibold">{item.name.slice(0, 1)}</span>{item.name}{item.count > 1 && <b className="text-blue-600">{item.count}</b>}</span>)}</div> : <div className="text-[11px] text-slate-400">本周具体 KR 均已填写</div>}
         </div>
         <div className="min-w-0 rounded-lg border border-slate-200 bg-white/85 p-2.5">
-          <h3 className="mb-2 flex items-center justify-between text-[12px] font-semibold text-slate-700"><span>待跟进事项</span><b className="text-[10px] font-medium text-slate-400">{items.filter((item) => item.status !== 'done').length} 待跟进 / {items.length} 全部</b></h3>
-          {error && <div className="mb-2 rounded-md bg-red-50 px-2 py-1.5 text-[10px] text-red-700">{error} <button type="button" onClick={() => void load()} className="underline">重试</button></div>}
-          {loading ? <div className="py-4 text-center text-[11px] text-slate-400">正在读取待跟进事项…</div> : visibleItems.length > 0 ? (
+          <h3 className={`flex items-center justify-between gap-2 text-[12px] font-semibold text-slate-700 ${followUpsOpen ? 'mb-2' : ''}`}>
+            <span>待跟进事项</span>
+            <span className="flex items-center gap-2">
+              <b className="text-[10px] font-medium text-slate-400">{items.filter((item) => item.status !== 'done').length} 待跟进 / {items.length} 全部</b>
+              <button
+                type="button"
+                aria-expanded={followUpsOpen}
+                aria-controls="weekly-follow-ups-content"
+                onClick={() => setFollowUpsOpen((open) => !open)}
+                className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500 hover:border-blue-200 hover:text-blue-600"
+              >
+                {followUpsOpen ? '收起' : '展开'}
+              </button>
+            </span>
+          </h3>
+          {followUpsOpen && <div id="weekly-follow-ups-content">
+            {error && <div className="mb-2 rounded-md bg-red-50 px-2 py-1.5 text-[10px] text-red-700">{error} <button type="button" onClick={() => void load()} className="underline">重试</button></div>}
+            {loading ? <div className="py-4 text-center text-[11px] text-slate-400">正在读取待跟进事项…</div> : visibleItems.length > 0 ? (
             <div className="overflow-x-auto rounded-lg border border-slate-200">
               <table className="w-full min-w-[1040px] table-fixed border-collapse text-left text-[11px]">
                 <colgroup><col className="w-[21%]"/><col className="w-[18%]"/><col className="w-[12%]"/><col className="w-[12%]"/><col className="w-[30%]"/><col className="w-[7%]"/></colgroup>
@@ -180,8 +196,9 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false }: {
                 })}</tbody>
               </table>
             </div>
-          ) : <div className="text-[11px] text-slate-400">当前范围暂无待跟进事项</div>}
-          {legacyTodos.length > 0 && <div className="mt-2 border-t border-slate-100 pt-2"><div className="mb-1 text-[10px] font-medium text-slate-500">会议评论待办</div><div className="grid gap-1">{legacyTodos.map((comment) => <button key={comment.id} type="button" title="打开对应评论" onClick={() => onOpenComment(comment)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 rounded-md bg-amber-50 px-2 py-1.5 text-left hover:bg-amber-100"><span className="truncate text-[11px] font-medium text-slate-700">{comment.content}</span><span className="max-w-56 truncate text-[10px] text-slate-400">{targetLabel(comment)}</span></button>)}</div></div>}
+            ) : <div className="text-[11px] text-slate-400">当前范围暂无待跟进事项</div>}
+            {legacyTodos.length > 0 && <div className="mt-2 border-t border-slate-100 pt-2"><div className="mb-1 text-[10px] font-medium text-slate-500">会议评论待办</div><div className="grid gap-1">{legacyTodos.map((comment) => <button key={comment.id} type="button" title="打开对应评论" onClick={() => onOpenComment(comment)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 rounded-md bg-amber-50 px-2 py-1.5 text-left hover:bg-amber-100"><span className="truncate text-[11px] font-medium text-slate-700">{comment.content}</span><span className="max-w-56 truncate text-[10px] text-slate-400">{targetLabel(comment)}</span></button>)}</div></div>}
+          </div>}
         </div>
       </div>
     </section>
