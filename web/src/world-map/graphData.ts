@@ -4,12 +4,12 @@ import type { LayoutMode, SpacingMode } from './settings'
 export const pageTypes: PageType[] = ['principal', 'project', 'key_matter', 'person', 'group', 'resource']
 
 export const pageTypeMeta: Record<PageType, { label: string; color: string; dimColor: string }> = {
-  principal: { label: '我', color: '#f4d06f', dimColor: '#645d42' },
-  project: { label: '项目', color: '#6ee7b7', dimColor: '#315f52' },
-  key_matter: { label: '关键事项', color: '#fb7185', dimColor: '#6b3641' },
-  person: { label: '人物', color: '#70b7ff', dimColor: '#315777' },
-  group: { label: '会话', color: '#b78cff', dimColor: '#503e70' },
-  resource: { label: '资源', color: '#67e8f9', dimColor: '#2c6269' },
+  principal: { label: '我', color: '#e56f50', dimColor: '#c8aaa2' },
+  project: { label: '项目', color: '#4cab8c', dimColor: '#a9c9bf' },
+  key_matter: { label: '关键事项', color: '#d65d86', dimColor: '#cda7b4' },
+  person: { label: '人物', color: '#6385d2', dimColor: '#a8b3cc' },
+  group: { label: '会话', color: '#936bc2', dimColor: '#b9a9ca' },
+  resource: { label: '资源', color: '#d29c35', dimColor: '#cbbd9f' },
 }
 
 export interface WorldNode {
