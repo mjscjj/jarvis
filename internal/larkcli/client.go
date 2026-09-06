@@ -42,10 +42,12 @@ type Client struct {
 
 // APIError is the structured error returned in a lark-cli {ok:false} envelope.
 type APIError struct {
-	Type    string `json:"type"`
-	Subtype string `json:"subtype"`
-	Message string `json:"message"`
-	Hint    string `json:"hint"`
+	Type          string          `json:"type"`
+	Subtype       string          `json:"subtype"`
+	Code          json.RawMessage `json:"code"`
+	Message       string          `json:"message"`
+	Hint          string          `json:"hint"`
+	MissingScopes []string        `json:"missing_scopes"`
 }
 
 func (e *APIError) Error() string {
@@ -158,7 +160,12 @@ type ChatMember struct {
 
 type chatMembersResponse struct {
 	Data struct {
-		Users []ChatMember `json:"users"`
+		Users       []ChatMember `json:"users"`
+		UserTotal   int          `json:"user_total"`
+		Truncations []struct {
+			Limit      int    `json:"limit"`
+			MemberType string `json:"member_type"`
+		} `json:"truncations"`
 	} `json:"data"`
 }
 
@@ -171,8 +178,11 @@ func (c *Client) ListChatMembers(ctx context.Context, chatID string) ([]ChatMemb
 		return nil, fmt.Errorf("lark-cli chat-members-list chat_id is empty")
 	}
 	var resp chatMembersResponse
-	if err := c.Run(ctx, &resp, "im", "+chat-members-list", "--chat-id", chatID, "--member-types", "user", "--page-all", "--as", "user"); err != nil {
+	if err := c.Run(ctx, &resp, "im", "+chat-members-list", "--chat-id", chatID, "--member-types", "user", "--page-all", "--page-limit", "0", "--as", "user"); err != nil {
 		return nil, fmt.Errorf("lark-cli chat-members-list chat_id=%q: %w", chatID, err)
+	}
+	if len(resp.Data.Truncations) > 0 {
+		return nil, fmt.Errorf("lark-cli chat-members-list chat_id=%q returned an incomplete user roster: user_total=%d truncations=%v", chatID, resp.Data.UserTotal, resp.Data.Truncations)
 	}
 	return resp.Data.Users, nil
 }
@@ -247,6 +257,11 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 		cause := err
 		if commandCtx.Err() != nil {
 			cause = commandCtx.Err()
+		} else {
+			var errorEnvelope envelope
+			if json.Unmarshal(stderr.Bytes(), &errorEnvelope) == nil && errorEnvelope.Error != nil {
+				cause = errorEnvelope.Error
+			}
 		}
 		return &CommandError{
 			Args:     commandArgs,
@@ -279,12 +294,18 @@ func (c *Client) Run(ctx context.Context, out any, args ...string) error {
 
 func environmentWithTimezone(timezone string) []string {
 	environment := os.Environ()
-	result := make([]string, 0, len(environment)+1)
+	result := make([]string, 0, len(environment)+3)
 	for _, variable := range environment {
-		if strings.HasPrefix(variable, "TZ=") {
+		if strings.HasPrefix(variable, "TZ=") ||
+			strings.HasPrefix(variable, "LARKSUITE_CLI_NO_UPDATE_NOTIFIER=") ||
+			strings.HasPrefix(variable, "LARKSUITE_CLI_NO_SKILLS_NOTIFIER=") {
 			continue
 		}
 		result = append(result, variable)
 	}
-	return append(result, "TZ="+timezone)
+	return append(result,
+		"TZ="+timezone,
+		"LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1",
+		"LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1",
+	)
 }

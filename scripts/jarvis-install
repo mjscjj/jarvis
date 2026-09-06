@@ -258,11 +258,17 @@ lark_skill_path() {
 }
 
 lark_skill_pack_path() {
+  if lark_skill_path lark-suite; then
+    return 0
+  fi
   lark_skill_path lark-shared
 }
 
 lark_required_skills_ready() {
   local skill_name
+  if lark_skill_path lark-suite >/dev/null; then
+    return 0
+  fi
   for skill_name in lark-shared lark-contact lark-drive lark-doc lark-im; do
     lark_skill_path "$skill_name" >/dev/null || return 1
   done

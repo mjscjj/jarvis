@@ -480,3 +480,26 @@ func TestFeishuGroupSummaryUsesSupportedThreadPagination(t *testing.T) {
 		t.Fatal("thread pagination exceeds the lark-cli 1.0.93 maximum page size")
 	}
 }
+
+func TestMeetingGuidanceUsesUnifiedLarkMeetingSkill(t *testing.T) {
+	paths := []string{
+		filepath.Join("..", "..", "conf", "rules", "m5.md"),
+		filepath.Join("..", "..", ".agents", "skills", "summarize-person-day", "references", "context-and-capabilities.md"),
+		filepath.Join("..", "..", ".agents", "skills", "summarize-person-week", "references", "context-and-capabilities.md"),
+	}
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(raw)
+		if !strings.Contains(content, "lark-meeting") {
+			t.Errorf("%s does not reference lark-meeting", path)
+		}
+		for _, redirectStub := range []string{"lark-vc`", "lark-minutes`", "lark-note`", "lark-vc-agent`"} {
+			if strings.Contains(content, redirectStub) {
+				t.Errorf("%s still references redirect stub %q", path, redirectStub)
+			}
+		}
+	}
+}

@@ -682,6 +682,52 @@ exit 9
 	}
 }
 
+func TestJarvisInstallAcceptsOfficialLarkSuiteLayout(t *testing.T) {
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	suitePath := filepath.Join(homeDir, ".agents", "skills", "lark-suite")
+	if err := os.MkdirAll(suitePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(suitePath, "SKILL.md"), []byte("test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(binDir, "lark-cli"), `#!/bin/sh
+if [ "$*" = "event consume card.action.trigger --help" ]; then
+  printf '%s\n' 'usage: lark-cli event consume [--dry-run]'
+  exit 0
+fi
+if [ "$1" = "--version" ]; then
+  printf '%s\n' 'lark-cli version suite-test'
+  exit 0
+fi
+if [ "$1" = "update" ]; then
+  printf '%s\n' 'unexpected update' >&2
+  exit 99
+fi
+exit 9
+`)
+	output, err := runJarvisInstall(t, []string{
+		"PATH=" + binDir + ":" + os.Getenv("PATH"),
+		"HOME=" + homeDir,
+		"CODEX_HOME=",
+	}, "install-lark-cli")
+	if err != nil {
+		t.Fatalf("install-lark-cli suite layout: %v: %s", err, output)
+	}
+	var result struct {
+		Changed   bool   `json:"changed"`
+		SkillPack bool   `json:"agent_skill_pack_detected"`
+		SkillPath string `json:"agent_skill_pack_path"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Changed || !result.SkillPack || result.SkillPath != filepath.Join(suitePath, "SKILL.md") {
+		t.Fatalf("suite layout result = %#v", result)
+	}
+}
+
 func TestJarvisInstallRunsOfficialInstallersWhenCLIsAreMissing(t *testing.T) {
 	binDir := t.TempDir()
 	homeDir := t.TempDir()

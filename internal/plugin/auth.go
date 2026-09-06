@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -33,7 +34,14 @@ type commandRunner interface {
 type execRunner struct{}
 
 func (execRunner) Run(ctx context.Context, bin string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, bin, args...).CombinedOutput()
+	command := exec.CommandContext(ctx, bin, args...)
+	if bin == "lark-cli" {
+		command.Env = append(os.Environ(),
+			"LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1",
+			"LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1",
+		)
+	}
+	return command.CombinedOutput()
 }
 
 type authFlow struct {
@@ -182,7 +190,12 @@ func probeSucceeded(provider string, raw []byte) bool {
 		authenticated, _ := value.(bool)
 		return authenticated
 	case "lark-cli-im":
-		return findValue(payloads, "chats") != nil
+		for _, payload := range payloads {
+			if envelopeSucceeded(payload) {
+				return true
+			}
+		}
+		return false
 	default:
 		for _, payload := range payloads {
 			if envelopeSucceeded(payload) {
@@ -221,6 +234,17 @@ func hasErrorCode(raw []byte, codes ...string) bool {
 
 func commandError(raw []byte, err error) string {
 	payloads := decodeJSONValues(raw)
+	for _, payload := range payloads {
+		object, ok := payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		if errorPayload, ok := object["error"]; ok {
+			if message := findString(errorPayload, "message", "detail", "hint"); message != "" {
+				return message
+			}
+		}
+	}
 	if message := findString(payloads, "message", "detail", "hint"); message != "" {
 		return message
 	}

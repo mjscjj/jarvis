@@ -47,13 +47,13 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 只有 `validate-dependencies` 返回 `ok=true` 才继续。`install-cc-connect` 从固定 upstream 应用仓库补丁，只构建并验收 binary，不配置或启动 daemon。Qdrant 是依赖服务，可以在这一阶段启动。
 
-如果当前 Agent 没有 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，首次安装用官方 lark-cli installer；已有 CLI 时运行 `lark-cli update` 同步 CLI 与 Skills，然后重新加载 Agent 能力。安装 bytedcli 后读回版本；其 SSO 登录可在 Jarvis Web 登录页完成，不作为服务启动前置条件。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
+如果当前 Agent 既没有官方 `lark-suite`，也没有拆分布局中的 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，首次安装用官方 lark-cli installer；已有 CLI 时运行 `lark-cli update` 同步 CLI 与 Skills，然后重新加载 Agent 能力。两种官方 Skills 布局都可验收。安装 bytedcli 后读回版本；其 SSO 登录可在 Jarvis Web 登录页完成，不作为服务启动前置条件。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
 
 依赖门还必须确认 lark-cli 支持安装流程使用的卡片回调 dry-run 协议，并确认 CC Connect 固定使用的 `codex` 在 PATH 中。traex 未登录时运行 `traex login --sso-device`，把链接/验证码原样交给用户，完成后重新读取 `traex login status`。
 
 ## 3. 使用默认飞书身份、审计能力并绑定 CC Connect
 
-加载并遵循 `lark-shared`。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置或未登录时才初始化和登录该默认身份。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。
+加载并遵循拆分布局的 `lark-shared`，或 suite 布局中对应的 shared 章节。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置或未登录时才初始化和登录该默认身份。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。
 
 飞书授权分成两个不同主体：user OAuth 用 split-flow 取得用户读取能力；Bot/App 的 `im:message:readonly`、机器人能力、`im.message.receive_v1`、`card.action.trigger` 和应用版本发布在飞书开放平台完成。不能用 user OAuth 成功冒充 Bot/App 已配置。首次 user OAuth 仍运行 `lark-cli auth login --recommend --scope "im:message:readonly" --no-wait --json`；把 URL 和二维码展示给用户并结束当前轮，用户确认后在下一轮用该次返回的 `device_code` 执行 `lark-cli auth login --device-code <device_code>`。若已过期就重新发起，不持久化长期复用授权码。
 
