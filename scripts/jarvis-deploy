@@ -119,7 +119,10 @@ write_systemd_unit() {
   unit_dir="${HOME}/.config/systemd/user"
   unit_path="${unit_dir}/${unit}"
   next_path="${unit_path}.next"
-  service_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${HOME}/.local/bin:${REPO_ROOT}/scripts"
+  # User-managed CLIs are upgraded independently of the system packages. Keep
+  # ~/.local/bin first so the deployed service uses the same current binaries
+  # as an interactive Jarvis session instead of stale copies in /usr/bin.
+  service_path="${HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${REPO_ROOT}/scripts"
   case "$binary$stdout_path$stderr_path" in *[[:space:]%]*) fail "MVP systemd deployment does not support whitespace or % in binary/log paths" ;; esac
   mkdir -p "$unit_dir" "$(dirname "$stdout_path")" "$(dirname "$stderr_path")"
   {

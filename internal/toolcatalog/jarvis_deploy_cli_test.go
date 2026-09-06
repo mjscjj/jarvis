@@ -35,6 +35,7 @@ func TestJarvisDeployIsOneCrossPlatformEntry(t *testing.T) {
 		`"${SCRIPT_DIR}/jarvis-install" install-server`,
 		`systemctl --user restart`,
 		`go build -o "$main_next" ./cmd/jarvis-server`,
+		`service_path="${HOME}/.local/bin:`,
 		`$API_BASE/readyz`,
 	} {
 		if !strings.Contains(text, want) {
