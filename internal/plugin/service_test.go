@@ -358,6 +358,15 @@ func TestProbeReadsStructuredAuthorizationState(t *testing.T) {
 	}
 }
 
+func TestProbeTreatsLarkTokenMissingAsAuthorizationRequired(t *testing.T) {
+	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		return []byte(`{"ok":false,"error":{"type":"authorization","subtype":"token_missing","message":"user token is missing"}}`), errors.New("exit 1")
+	}})
+	if status := authorizer.Probe(t.Context(), "lark-cli-im"); status.Status != AuthRequired {
+		t.Fatalf("Probe() = %#v, want required", status)
+	}
+}
+
 func TestLarkIMAuthorizationUsesDeviceFlow(t *testing.T) {
 	var commands []string
 	authorizer := newAuthorizer(fakeRunner{run: func(bin string, args []string) ([]byte, error) {

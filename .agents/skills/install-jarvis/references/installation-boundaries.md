@@ -6,8 +6,8 @@
 |---|---|---|
 | 从 checkout 到最终可用的安装运行与清单 | `$install-jarvis` + `var/install/<run-id>/INSTALL_CHECKLIST.md` | 一开始创建，跨依赖、绑定、服务、世界模型和端到端阶段持续更新 |
 | 本机依赖、版本、平台、服务与文件权限事实 | `jarvis-install doctor/validate-dependencies/validate` | 读取 JSON，选择处理方式；依赖门通过前不启动主服务 |
-| lark-cli 与官方 Agent Skills 安装 | larksuite 官方 npm installer / `lark-cli update` | 首装使用 installer，已有 CLI 升级时用 `lark-cli update` 同步 binary 与 Skills，再读回版本/Skills |
-| CC Connect 固定调用的 Codex CLI | 本机 `codex` 安装 | 由 `doctor` / `validate-dependencies` 验收，不能只检查 runtime 配置中的 Agent CLI |
+| lark-cli 与官方 Agent Skills 安装 | larksuite 官方 npm installer / `lark-cli update` | 首装使用 installer；低于项目最低版本或 Skills/协议不完整时用 `lark-cli update --json` 同步，再读回版本/Skills |
+| CC Connect 固定调用的 Codex CLI | OpenAI 官方 `@openai/codex` npm 包 | 通过 `install-codex` 安装，完成 device auth，再由 `doctor` / `validate-dependencies` 验收；不能只检查 runtime 配置中的 Agent CLI |
 | traex stable 安装 | TRAE CLI updater 公布的 Code 内网 installer | 通过 `install-traex` 调用并完成 SSO |
 | Jarvis 补丁版 CC Connect binary | `integrations/cc-connect/manifest.sh`、`patches/` 与 `scripts/install-cc-connect.sh` | 通过 `install-cc-connect` 构建验收；此动作不配置、不启动 |
 | lark-cli 默认 App 与 Jarvis Bot 绑定 | `$install-jarvis` + `cc-connect-binding.md` | 将 lark-cli 当前默认 App 绑定到 CC Connect `jarvis-codex`，再跑 `validate-binding` |
@@ -19,7 +19,7 @@
 | 飞书初始化能力与权限缺口 | `$install-jarvis` + `feishu-capability-audit.md` | 首次 App 登录申请推荐权限及卡片回调必需的 `im:message:readonly`；随后只读审计核心、可选增强、条件能力和不使用，不在审计中追加权限 |
 | 近 7 天业务证据与世界模型工作稿 | `$bootstrap-jarvis-world-model` | 服务就绪后转交同一个 install run；世界模型 Skill 只更新清单 E 区 |
 | PrincipalProfile、项目、人物、重点事项、群监听 | M1/M2 现有接口 | 只由 `$bootstrap-jarvis-world-model` 编排 |
-| 缺失依赖的具体安装方式 | 用户的 Agent | 按机器选择，不在脚本写死包管理器 |
+| 未内置安装动作的缺失依赖 | 用户的 Agent | 按机器选择，不为未知工具在脚本中猜包管理器 |
 | lark-cli 默认飞书 App 的初始化和登录 | 用户 | Agent 展示当前身份与证据，未配置时再引导初始化 |
 | 旧实例、旧数据库如何处理 | 用户 | 发现后停止，询问复用/迁移/替换 |
 

@@ -395,6 +395,11 @@ func TestBootstrapJarvisBuildsAReadBackWorldModel(t *testing.T) {
 		"不生成 `approved-draft.json`、`approval.json` 或 hash 审批状态",
 		"真正的业务真源始终是 M1/M2",
 		"每次写入后立即使用对应 get/list/query 命令读回",
+		"project_id",
+		"related_group: true",
+		"include_in_memory",
+		"./scripts/jarvis-tools update-group --id",
+		"不能回写带 `id/chat_id/name/...` 的完整对象",
 	} {
 		if !strings.Contains(contract, want) {
 			t.Fatalf("world-model initialization contract is missing %q", want)
@@ -434,15 +439,18 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		"世界模型不是服务启动前置条件",
 		"Qdrant 是依赖服务",
 		"`install-server` 必须在调用平台服务安装脚本前再次通过依赖门",
+		"install-codex",
 		"install-cc-connect",
 		"一个飞书 App/Bot 是身份根",
 		"CC Connect 是该 Bot WebSocket 的唯一所有者",
+		"install.cc-exclusive-owner",
 		"validate-binding",
 		"已有 daemon 指向另一 binary/checkout",
 		"初始化只负责“Jarvis 如何理解这个用户的世界”",
 		"不安装或重启 daemon，也不配置 CC",
 		"只更新清单 E 区",
 		"./scripts/jarvis-install status --run-dir <run_dir>",
+		"第二次运行同一命令",
 	} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("dependency-first installation contract is missing %q", want)

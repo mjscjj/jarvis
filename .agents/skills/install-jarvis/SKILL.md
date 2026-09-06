@@ -47,9 +47,9 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 
 只有 `validate-dependencies` 返回 `ok=true` 才继续。`install-cc-connect` 从固定 upstream 应用仓库补丁，只构建并验收 binary，不配置或启动 daemon。Qdrant 是依赖服务，可以在这一阶段启动。
 
-如果当前 Agent 既没有官方 `lark-suite`，也没有拆分布局中的 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，首次安装用官方 lark-cli installer；已有 CLI 时运行 `lark-cli update` 同步 CLI 与 Skills，然后重新加载 Agent 能力。两种官方 Skills 布局都可验收。安装 bytedcli 后读回版本；其 SSO 登录可在 Jarvis Web 登录页完成，不作为服务启动前置条件。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
+如果当前 Agent 既没有官方 `lark-suite`，也没有拆分布局中的 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，首次安装用官方 lark-cli installer；已有 CLI 低于项目最低版本或 Skills/协议不完整时运行 `lark-cli update --json`，然后重新加载 Agent 能力。两种官方 Skills 布局都可验收。通过 `install-codex` 安装 CC Connect 固定调用的官方 Codex CLI；安装 bytedcli 后读回版本，其 SSO 登录可在 Jarvis Web 登录页完成，不作为服务启动前置条件。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
 
-依赖门还必须确认 lark-cli 支持安装流程使用的卡片回调 dry-run 协议，并确认 CC Connect 固定使用的 `codex` 在 PATH 中。traex 未登录时运行 `traex login --sso-device`，把链接/验证码原样交给用户，完成后重新读取 `traex login status`。
+依赖门还必须确认 lark-cli 支持安装流程使用的卡片回调 dry-run 协议，并确认 CC Connect 固定使用的 `codex` 在 PATH 中且 `codex login status` 已通过。Codex 未登录时运行 `codex login --device-auth`，traex 未登录时运行 `traex login --sso-device`；把链接/验证码原样交给用户，完成后重新读取各自 login status。
 
 ## 3. 使用默认飞书身份、审计能力并绑定 CC Connect
 
@@ -58,6 +58,8 @@ description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安�
 飞书授权分成两个不同主体：user OAuth 用 split-flow 取得用户读取能力；Bot/App 的 `im:message:readonly`、机器人能力、`im.message.receive_v1`、`card.action.trigger` 和应用版本发布在飞书开放平台完成。不能用 user OAuth 成功冒充 Bot/App 已配置。首次 user OAuth 仍运行 `lark-cli auth login --recommend --scope "im:message:readonly" --no-wait --json`；把 URL 和二维码展示给用户并结束当前轮，用户确认后在下一轮用该次返回的 `device_code` 执行 `lark-cli auth login --device-code <device_code>`。若已过期就重新发起，不持久化长期复用授权码。
 
 一个飞书 App/Bot 是身份根。Jarvis 直接使用 lark-cli 当前默认 App，CC Connect 绑定该 App，不再为 Jarvis 选择第二个 Bot。
+
+绑定前必须让用户确认其他机器或进程不再消费同一 App/Bot 的 WebSocket，并单独勾选 `install.cc-exclusive-owner`。本机检查不能代替这项人工事实；未确认时保持阻塞，不启动 CC Connect。
 
 完成登录读回后，按 `feishu-capability-audit.md` 做只读能力审计，将原始证据和 `evidence/feishu-capabilities.md` 写入当前 `run_dir`。安装初始化不运行 `auth login` 补权限，不打开申请流程：核心读取能力缺失就保留原始错误和未完成项；直属上级、职务、部门路径等高级组织字段缺失只记非阻塞未知项，继续后续安装。企业策略下不加载 `lark-okr`，OKR 只走文档证据。
 
@@ -107,7 +109,7 @@ App Secret 从飞书开放平台「凭证与基础信息」复制；`bind-cc` �
 
 1. 请用户在一个监听群发送一条新消息，随后执行 `./scripts/jarvis-world-model scan --chat-id ...` 走正常 M2 扫描，并用 `query-messages --chat-id ...` 读回，不等待下一次 cron。
 2. 请用户通过绑定的 Jarvis Bot 发起一次 CC Connect 对话，确认该 Agent 先读取当前 Jarvis context 后再回复。
-3. 更新清单 F 区和“最终结果”，然后运行：
+3. 先运行一次 `status` 读回当前状态，据此更新“最终结果”和所有未完成原因，再勾选 `e2e.final-status`。勾选后必须第二次运行同一命令，并把第二次结果作为最终状态交付：
 
 ```bash
 ./scripts/jarvis-install status --run-dir <run_dir>

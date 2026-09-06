@@ -48,7 +48,7 @@
 
 当 CC Connect 的 `document_comments=true` 时，只读审计还要检查：
 
-- `validate-binding` 确认文档评论开关、默认 App 和唯一 WebSocket 所有者。
+- `validate-binding` 确认文档评论开关、默认 App 和本机绑定；跨机器 WebSocket 唯一性由清单 `install.cc-exclusive-owner` 的人工确认负责。
 - Bot 身份的 `drive.notice.comment_add_v1` 订阅状态为 `is_subscribe=true`。
 
 `is_subscribe=false` 是功能配置缺口，不是权限申请结果；保持条件能力未完成，并由安装 Agent 把订阅配置作为 CC Connect 绑定的一部分处理。执行前先用 `lark-cli schema drive.user.subscription` 读回当前命令协议。订阅成功不代表 Bot 自动拥有全部文档。目标文档仍需逐篇“添加文档应用”；没有目标文档时不要为了测试制造评论写入。评论回复的真实写入能力留给用户明确参与的端到端验收，不能用 scope 勾选代替。

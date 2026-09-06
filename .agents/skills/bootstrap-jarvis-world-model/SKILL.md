@@ -63,7 +63,22 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 1. `update-principal` 写身份控制位，立即 `get-principal`。
 2. Project、Person、KeyMatter、ManagedResource 逐项查询业务键、创建实体、立即读回；拿到真实 ID 后再处理引用。
 3. 每个实体的长期事实（它是什么、现在到哪一步）用 `update-page` 单独写入，立即 `get-page` 读回。控制位入口不接受这段内容。
-4. `./scripts/jarvis-world-model discover` 触发正常 M2 群发现。`discover` 与逐群 `scan` 是同步操作，脚本允许最长 30 分钟；命令返回前不要把超时当作后台运行。按证据中的 `chat_id` 先 `get-group` 读取完整对象，在原对象上只修改监听控制位后用 `update-group` 写回，避免用最小 payload 覆盖其他字段；再用 `update-page` 写群背景，最后执行 `./scripts/jarvis-world-model scan --chat-id ...` 走正常 checkpoint。
+4. `./scripts/jarvis-world-model discover` 触发正常 M2 群发现。`discover` 与逐群 `scan` 是同步操作，脚本允许最长 30 分钟；命令返回前不要把超时当作后台运行。按证据中的 `chat_id` 先 `get-group`，再把返回对象严格投影为 `project_id`、`related_group`、`pinned`、`include_in_memory`、`is_key_group` 五个控制字段，只修改需要的值后调用 `update-group`。不能回写带 `id/chat_id/name/...` 的完整对象，也不能省略未修改的控制字段，否则严格 API 会拒绝未知字段或把缺失布尔值清零：
+
+   ```bash
+   group="$(./scripts/jarvis-tools get-group --chat-id '<chat_id>')"
+   group_id="$(jq -er '.id' <<<"$group")"
+   payload="$(jq -c '. | {
+     project_id,
+     related_group: true,
+     pinned,
+     include_in_memory,
+     is_key_group
+   }' <<<"$group")"
+   ./scripts/jarvis-tools update-group --id "$group_id" --payload "$payload"
+   ```
+
+   写回后重新 `get-group` 验证五个字段，再用 `update-page` 写群背景，最后执行 `./scripts/jarvis-world-model scan --chat-id ...` 走正常 checkpoint。
 5. 结构化字段表达不了的重要关系写在相关实体的长期事实页正文里，用 `[名称](type:id)` 链接目标实体，随后 `list-backlinks` 读回确认引用解析正确；不要制造重复关系记录。
 6. 只有真实发生时间的决策、交付、阻塞或方向变化才 `append-fact --source initialization`，随后 `list-facts`。
 

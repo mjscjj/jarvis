@@ -18,6 +18,7 @@
 | lark-cli user OAuth | 打开 Agent 展示的 URL 或二维码并确认授权 | 原 `device_code` 完成，`auth status --json --verify` 的 user 身份有效 |
 | 飞书 App/Bot 配置 | 在开放平台开启机器人，授予 `im:message:readonly`，订阅 `im.message.receive_v1` 与 `card.action.trigger`，发布应用版本 | Bot dry-run 逐项返回 ready；这不能由 user OAuth 代替 |
 | App Secret | 从「凭证与基础信息」复制并交给 Agent | `bind-cc` 用 App ID/Secret 成功换取 tenant token；Secret 只落本机明文配置并保持 `0600` |
+| Codex 登录 | 打开 `codex login --device-auth` 给出的地址并确认 | `codex login status` 返回已登录 |
 | traex SSO | 打开 `traex login --sso-device` 给出的地址并输入验证码 | `traex login status` 返回已登录 |
 | 已有 `allow_from` 不是 Principal | 决定是否改为只允许 Principal | 同意后 Agent 才使用 `--replace-allow-from` |
 | 同一 App 可能在其他机器消费 WebSocket | 确认旧消费者已停止或决定接管 | 记录人工确认；本机不能伪造这项证明 |
@@ -35,6 +36,7 @@
 
 - `resumed=true`：读取原清单和证据，从第一个未完成项继续。
 - `resumed=false`：这是新安装运行。
+- 最新清单已完成，或其创建 commit/模板指纹与当前 checkout 不一致时，命令会 fail-fast；向用户说明事实后新建运行，不迁移旧清单状态。
 - 只有用户确认旧运行不再适用时，才执行不带 `--resume-latest` 的 `start` 新建运行。
 
 所有证据和状态都写在返回的 `run_dir`。中途失败不回滚已经验收的步骤；修复原因后重新读回并继续。不要通过重跑整套安装掩盖失败。
@@ -47,7 +49,7 @@
 4. 完成 user OAuth、App/Bot 开放平台配置、Principal identity 与 CC 绑定。
 5. 启动 CC Connect 和 Jarvis，验收 binary、service program、9810/9820、`/healthz`、`/readyz`。
 6. 内部调用 `$bootstrap-jarvis-world-model`，复用同一 `run_dir`。
-7. 完成两条真实端到端验收并交付统一清单。
+7. 完成两条真实端到端验收；第一次读取 status 后填写最终结果并勾选 `e2e.final-status`，再读取第二次 status 作为最终交付。
 
 未完成项必须在清单同一行追加以下一种格式，不能只在聊天中解释：
 

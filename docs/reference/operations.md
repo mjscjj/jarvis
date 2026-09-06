@@ -33,6 +33,7 @@ Application Support 目录和打包入口见
 ./scripts/jarvis-install doctor
 ./scripts/jarvis-install install-lark-cli
 ./scripts/jarvis-install install-bytedcli
+./scripts/jarvis-install install-codex
 ./scripts/jarvis-install install-traex
 ./scripts/jarvis-install install-cc-connect
 ./scripts/jarvis-install install-qdrant
@@ -60,7 +61,7 @@ curl --fail http://127.0.0.1:6333/healthz
 curl -s http://127.0.0.1:18800/readyz | jq
 ```
 
-顺序是硬边界：创建整体安装清单 → 基础工具链、lark-cli/Lark Skills、traex 登录、补丁版 CC Connect binary 和 Qdrant → `validate-dependencies` → 完成 lark-cli 默认飞书用户登录 → 写 Jarvis runtime identity 与 CC Connect `jarvis-codex` → `validate-binding` → 启动补丁版 CC Connect → 主服务注册 → `$bootstrap-jarvis-world-model` → 真实端到端验收 → `status`。Qdrant 是依赖服务，可以在依赖阶段启动；CC Connect/Jarvis 不能在依赖门前启动。`install-server` 会再次强制通过依赖门和一体化绑定门。
+顺序是硬边界：创建整体安装清单 → 基础工具链、lark-cli/Lark Skills、Codex、traex 登录、补丁版 CC Connect binary 和 Qdrant → `validate-dependencies` → 完成 lark-cli 默认飞书用户登录 → 写 Jarvis runtime identity 与 CC Connect `jarvis-codex` → `validate-binding` → 启动补丁版 CC Connect → 主服务注册 → `$bootstrap-jarvis-world-model` → 真实端到端验收 → 两次 `status`（第一次用于填写最终项，第二次用于交付）。Qdrant 是依赖服务，可以在依赖阶段启动；CC Connect/Jarvis 不能在依赖门前启动。`install-server` 会再次强制通过依赖门和一体化绑定门。
 
 `bind-cc` 会立即验证 App ID/Secret。已有 CC Connect Feishu `allow_from` 不是 Principal 本人时命令会停止；用户确认替换后才可加 `--replace-allow-from`。`validate-binding` 会拒绝缺失或通配的访问白名单。需要临时开放给其他人时，应作为当前机器的显式运行决策处理。
 

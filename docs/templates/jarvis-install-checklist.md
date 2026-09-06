@@ -3,6 +3,8 @@
 - 安装运行：`{{RUN_ID}}`
 - 开始时间：`{{STARTED_AT}}`
 - 仓库：`{{REPO_ROOT}}`
+- 创建 commit：{{SOURCE_COMMIT}}
+- 清单模板 SHA-256：{{TEMPLATE_SHA256}}
 - lark-cli 身份：当前默认身份
 
 这是从完整仓库 checkout 到可交付 Jarvis 的唯一安装状态页。完成一项后把 `[ ]` 改成 `[x]`，并在同一行或下一行附上实际读回或验收结果。没有执行、暂时阻塞或不适用的项目保持 `[ ]`，并在该项同一行追加 `原因：未做：...`、`原因：阻塞：...` 或 `原因：不适用：...`。不要只凭命令退出码打勾。
@@ -16,9 +18,9 @@
 ## B. 工具链与全部依赖（`$install-jarvis`）
 
 - [ ] <!-- id:install.machine --> macOS/架构、Go、Node/npm、jq、git、CGO、C 编译器和 Xcode Command Line Tools 已验收。
-- [ ] <!-- id:install.lark-cli --> 官方 lark-cli 与初始化所需 Lark Agent Skills 已安装，版本、卡片 dry-run 协议和 Skills 路径已读回。
+- [ ] <!-- id:install.lark-cli --> 官方 lark-cli 与初始化所需 Lark Agent Skills 已安装，版本不低于 `1.0.93`，卡片 dry-run 协议和 Skills 路径已读回。
 - [ ] <!-- id:install.bytedcli --> bytedcli 已安装且版本已读回；字节 SSO 可由 Jarvis Web 登录页完成。
-- [ ] <!-- id:install.agent-cli --> `codex` 与配置选择的 Agent CLI 已安装；仓库基线使用 traex 时已完成 SSO 并读回状态。
+- [ ] <!-- id:install.agent-cli --> `codex` 与配置选择的 Agent CLI 已安装；Codex 登录已读回，仓库基线使用 traex 时已完成 SSO 并读回状态。
 - [ ] <!-- id:install.cc-binary --> 仓库固定版本和补丁的 `bin/cc-connect-jarvis` 已构建，版本与 patch commit 已验收；此时尚未启动 daemon。
 - [ ] <!-- id:install.qdrant --> Qdrant 已安装或确认复用，healthz 正常。
 - [ ] <!-- id:install.dependencies --> `jarvis-install validate-dependencies` 返回 `ok=true`；在此之前没有启动 CC Connect 或 Jarvis 主服务。
@@ -29,6 +31,7 @@
 - [ ] <!-- id:install.card-callback --> 当前 Bot/App 已授予 `im:message:readonly`、订阅消息与 `card.action.trigger` 并发布应用版本，Bot dry-run 验证通过。
 - [ ] <!-- id:install.feishu-capabilities --> 已完成飞书能力只读审计；核心文档、消息、群和 Bot 读取 API 已验收，无候选数据时已记录覆盖边界，已启用的条件能力已检查；高级组织字段缺失已记录为非阻塞未知项，过程中没有发起权限申请。
 - [ ] <!-- id:install.identity --> Principal open_id 和 Git author 已写入本机 runtime config 并读回。
+- [ ] <!-- id:install.cc-exclusive-owner --> 已人工确认没有其他机器或进程继续消费同一 App/Bot 的 WebSocket；无法确认时保持未勾选并记录阻塞原因。
 - [ ] <!-- id:install.cc-binding --> CC Connect `jarvis-codex` 已绑定同一个 App/Bot；Feishu `allow_from` 只允许 Principal 本人；Agent 每轮先读取 Jarvis context；`validate-binding` 通过。
 
 ## D. 服务启动与运行底座验收（`$install-jarvis`）
@@ -53,7 +56,7 @@
 
 - [ ] <!-- id:e2e.message --> 用户已在一个监听群发送新消息，Jarvis 已从正常 M2 链路读回该消息。
 - [ ] <!-- id:e2e.cc --> 用户已通过绑定的 Jarvis Bot 发起一次 CC Connect 对话，Agent 已读取当前 Jarvis context 并正常回复。
-- [ ] <!-- id:e2e.final-status --> `jarvis-install status` 已读回；所有未勾选项均已按 `原因：未做/阻塞/不适用：...` 写明，最终结果已交付。
+- [ ] <!-- id:e2e.final-status --> 已完成第一次 `jarvis-install status` 读回并据此填写最终结果；所有未勾选项均已按 `原因：未做/阻塞/不适用：...` 写明；勾选本项后必须再次读回 status 作为最终交付。
 
 ## 未完成、未做或不适用
 

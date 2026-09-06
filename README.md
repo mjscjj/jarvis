@@ -120,18 +120,19 @@ cd jarvis_bot
 
 `$install-jarvis` 是用户唯一需要触发的整个项目安装流程：先创建或恢复 `var/install/<run-id>/INSTALL_CHECKLIST.md`，再报告机器、配置、旧实例和服务事实，由用户的 Agent 选择依赖安装方式和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把 lark-cli 当前默认 App 绑定到 CC Connect，启动并验收运行底座；服务就绪后内部调用 `$bootstrap-jarvis-world-model` 建立人物、项目、资料、重点事项和监听群，最后完成消息与 CC 对话的真实端到端验收。独立重建世界模型时才单独使用后者。
 
-repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills 和仓库基线使用的 traex：
+repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills、bytedcli、Codex、仓库配置使用的 Agent CLI、补丁版 CC Connect 和 Qdrant：
 
 ```bash
 ./scripts/jarvis-install install-lark-cli
 ./scripts/jarvis-install install-bytedcli
+./scripts/jarvis-install install-codex
 ./scripts/jarvis-install install-traex
 ./scripts/jarvis-install install-cc-connect
 ./scripts/jarvis-install install-qdrant
 ./scripts/jarvis-install validate-dependencies
 ```
 
-lark-cli 首装使用 larksuite 官方 npm installer，已有版本通过 `lark-cli update` 同步 CLI 与官方 Skills；traex 使用其 updater 公布的 Code 内网 stable installer。两者安装后都要读回版本，traex 还必须完成 SSO 登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装支持 macOS arm64 与 Linux x86_64。
+lark-cli 首装使用 larksuite 官方 npm installer，已有版本低于 `1.0.93` 或 Skills/协议不完整时通过 `lark-cli update --json` 同步；Codex 通过官方 `@openai/codex` npm 包安装；traex 使用其 updater 公布的 Code 内网 stable installer。安装后都要读回版本，Codex 与 traex 还必须分别完成登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装支持 macOS arm64 与 Linux x86_64。
 
 ## 本地运行
 
@@ -165,6 +166,7 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 # 按 doctor 结果安装运行 CLI；已有且可用时是无修改的验证
 ./scripts/jarvis-install install-lark-cli
 ./scripts/jarvis-install install-bytedcli
+./scripts/jarvis-install install-codex
 ./scripts/jarvis-install install-traex
 ./scripts/jarvis-install install-cc-connect
 

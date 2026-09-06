@@ -89,7 +89,7 @@ func (a *Authorizer) Probe(ctx context.Context, provider string) AuthStatus {
 	if err == nil && probeSucceeded(provider, raw) {
 		return AuthStatus{Status: AuthAuthorized}
 	}
-	if err == nil || hasErrorCode(raw, "AUTH_REQUIRED", "MEEGLE_AUTH_REQUIRED", "MISSING_SCOPE") {
+	if err == nil || hasErrorCode(raw, "AUTH_REQUIRED", "MEEGLE_AUTH_REQUIRED", "MISSING_SCOPE", "TOKEN_MISSING") {
 		return AuthStatus{Status: AuthRequired}
 	}
 	return authError(AuthUnavailable, commandError(raw, err))
