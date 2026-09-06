@@ -36,7 +36,7 @@ var definitions = map[string]definition{
 		Description: "通用目标、KR、负责人、核心指标、拆解、周次与正式进展",
 	},
 	"agency-okr": {
-		Name:        "Agency OKR",
+		Name:        "OKR",
 		Description: "Agency 打标、Plan、Review、周报、催填与业务自动化",
 		Requires:    []string{"okr"},
 	},
