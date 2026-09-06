@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Collapse, Empty, Flex, Select, Spin, Statistic, Table, Tabs, Tag, Typography } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
-import { listRelationsBySourceType, listWorldProgress } from '../api'
-import type { EntityRelation, WorldProgress, WorldProgressSignal } from '../types'
+import { listRelations, listWorldProgress } from '../api'
+import type { WorldProgress, WorldProgressSignal } from '../types'
 import { usePageContext } from '../pageContext'
 import { getGenericOKRBoard, getGenericOKRProgressBoard, listWeeklyReportWeeks } from './emily/api'
 import type { BoardData } from './emily/api'
 import type { Entry, Kr, Objective, Point, Status } from './emily/types'
+import { okrRelationTypes, relationsForOKRBoard, type OKRRelationRow } from './relationView'
 
 const { Text, Title, Paragraph } = Typography
 
@@ -176,13 +177,18 @@ export default function OKRPluginPage() {
   const [quarter, setQuarter] = useState(context.view_state.quarter ?? '')
   const [week, setWeek] = useState(context.view_state.week ?? '')
   const [worldBySubject, setWorldBySubject] = useState(new Map<string, WorldProgress | null>())
-  const [relations, setRelations] = useState<EntityRelation[]>([])
+  const [relations, setRelations] = useState<OKRRelationRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [relationsLoading, setRelationsLoading] = useState(false)
   const [progressLoading, setProgressLoading] = useState(false)
-  const [error, setError] = useState<string>()
+  const [progressReloadRevision, setProgressReloadRevision] = useState(0)
+  const [quarterError, setQuarterError] = useState<string>()
+  const [progressError, setProgressError] = useState<string>()
+  const [relationsError, setRelationsError] = useState<string>()
 
   const loadQuarter = useCallback(async (targetQuarter = '') => {
     setLoading(true)
+    setQuarterError(undefined)
     try {
       const nextBoard = await getGenericOKRBoard(targetQuarter)
       const catalog = await listWeeklyReportWeeks(nextBoard.quarter)
@@ -191,9 +197,8 @@ export default function OKRPluginPage() {
       setBoard(nextBoard)
       setQuarter(nextBoard.quarter)
       setWeek(nextWeek)
-      setError(undefined)
     } catch (cause) {
-      setError(errorText(cause))
+      setQuarterError(errorText(cause))
     } finally {
       setLoading(false)
     }
@@ -203,15 +208,34 @@ export default function OKRPluginPage() {
     void loadQuarter(context.view_state.quarter ?? '')
   }, []) // The plugin owns subsequent quarter changes explicitly.
 
-  useEffect(() => {
-    const controller = new AbortController()
-    Promise.all(['okr_objective', 'okr_kr', 'okr_point'].map((type) => listRelationsBySourceType(type, controller.signal)))
-      .then((results) => setRelations(results.flatMap((result) => result.items)))
-      .catch((cause) => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
-      })
-    return () => controller.abort()
+  const loadRelations = useCallback(async (nextBoard: BoardData, signal?: AbortSignal) => {
+    setRelationsLoading(true)
+    setRelations([])
+    setRelationsError(undefined)
+    try {
+      // The relation API has an MVP cap of 200 rows per direction and type.
+      const results = await Promise.all(okrRelationTypes.flatMap((type) => [
+        listRelations({ sourceType: type }, signal),
+        listRelations({ targetType: type }, signal),
+      ]))
+      if (signal?.aborted) return
+      setRelations(relationsForOKRBoard(results.flatMap((result) => result.items), nextBoard.objectives))
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRelationsError(errorText(cause))
+    } finally {
+      if (!signal?.aborted) setRelationsLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    if (!board) {
+      setRelations([])
+      return
+    }
+    const controller = new AbortController()
+    void loadRelations(board, controller.signal)
+    return () => controller.abort()
+  }, [board, loadRelations])
 
   useEffect(() => {
     if (!quarter || !week) {
@@ -221,20 +245,22 @@ export default function OKRPluginPage() {
     }
     const controller = new AbortController()
     setProgressLoading(true)
+    setProgressBoard(undefined)
+    setWorldBySubject(new Map())
+    setProgressError(undefined)
     getGenericOKRProgressBoard(quarter, week)
       .then(async (nextBoard) => {
         const result = await listWorldProgress(week, controller.signal)
         if (controller.signal.aborted) return
         setProgressBoard(nextBoard)
         setWorldBySubject(new Map(result.items.map((item) => [subjectKey(item.subject_type, item.subject_id), item])))
-        setError(undefined)
       })
       .catch((cause) => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setProgressError(errorText(cause))
       })
       .finally(() => { if (!controller.signal.aborted) setProgressLoading(false) })
     return () => controller.abort()
-  }, [quarter, week])
+  }, [quarter, week, progressReloadRevision])
 
   const counts = useMemo(() => {
     const objectives = board?.objectives.length ?? 0
@@ -242,6 +268,7 @@ export default function OKRPluginPage() {
     const points = board?.objectives.flatMap((objective) => objective.krs.flatMap((kr) => kr.points)).length ?? 0
     return { objectives, krs, points }
   }, [board])
+  const error = [quarterError, progressError, relationsError].filter(Boolean).join('；')
 
   const changeRoute = (patch: Record<string, string>) => setViewState({
     ...context.view_state,
@@ -253,9 +280,9 @@ export default function OKRPluginPage() {
   })
 
   const relationColumns = [
-    { title: 'OKR 对象', key: 'source', render: (_: unknown, item: EntityRelation) => `${item.source_type}:${item.source_id}` },
-    { title: '关系', dataIndex: 'relation_type', width: 150 },
-    { title: '世界对象', key: 'target', render: (_: unknown, item: EntityRelation) => `${item.target_type}:${item.target_id}` },
+    { title: 'OKR 对象', dataIndex: 'okr_ref' },
+    { title: '关系', dataIndex: 'display_relation', width: 150 },
+    { title: '世界对象', dataIndex: 'world_ref' },
     { title: '置信度', dataIndex: 'confidence', width: 100, render: (value: number | null) => value == null ? '—' : `${Math.round(value * 100)}%` },
   ]
 
@@ -266,9 +293,9 @@ export default function OKRPluginPage() {
           <Title level={3}>OKR</Title>
           <Text type="secondary">通用 Objective、KR、子 KR、正式进展及其与 Jarvis 世界的连接。</Text>
         </div>
-        <Button icon={<ReloadOutlined />} loading={loading || progressLoading} onClick={() => void loadQuarter(quarter)}>重新载入</Button>
+        <Button icon={<ReloadOutlined />} loading={loading || progressLoading || relationsLoading} onClick={() => { setProgressReloadRevision((value) => value + 1); void loadQuarter(quarter) }}>重新载入</Button>
       </div>
-      {error && <Alert type="error" showIcon closable message={error} onClose={() => setError(undefined)} />}
+      {error && <Alert type="error" showIcon closable message={error} onClose={() => { setQuarterError(undefined); setProgressError(undefined); setRelationsError(undefined) }} />}
       <Flex gap={12} wrap>
         <Select
           value={quarter || undefined}
@@ -317,8 +344,8 @@ export default function OKRPluginPage() {
           {
             key: 'relations',
             label: '世界关联',
-            children: relations.length === 0 ? <Empty description="尚未建立 OKR 到项目、关键事项或人物的强关系" /> : (
-              <Table<EntityRelation> rowKey="id" columns={relationColumns} dataSource={relations} pagination={false} />
+            children: relationsLoading ? <Spin /> : relations.length === 0 ? <Empty description="尚未建立 OKR 到项目、关键事项或人物的强关系" /> : (
+              <Table<OKRRelationRow> rowKey="id" columns={relationColumns} dataSource={relations} pagination={false} />
             ),
           },
         ]}

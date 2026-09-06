@@ -26,7 +26,7 @@ func TestRelationServiceUpsertsCrossModuleEdge(t *testing.T) {
 	}
 	confidence := 0.8
 	input := RelationInput{
-		SourceType: "okr_kr", SourceID: "kr-1", RelationType: "delivered_by",
+		SourceType: "okr_kr", SourceID: "kr-1", RelationType: "maps_to",
 		TargetType: "project", TargetID: "42", Evidence: datatypes.JSON(`{"source":"okr-module"}`),
 		Confidence: &confidence,
 	}

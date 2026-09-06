@@ -48,7 +48,7 @@ subcommands:
   list-groups            Search Feishu groups
   get-group              Get one Feishu group by chat_id
   get-context            Assemble current principal/project/chat work context
-  update-group           Replace one group's control fields
+  update-group           Replace one group's complete control state
   get-principal          Get the assistant owner's profile
   update-principal       Replace the principal's control fields
   list-persons           List important people, optionally by role
@@ -167,7 +167,7 @@ chat resolves through its Jarvis group binding. With neither flag, returns the
 principal-level global context.
 EOF
       ;;
-    update-group) payload_id_help "update-group" "Replace one group's control fields. Long-term facts are written with update-page; this payload does not accept summary." ;;
+    update-group) payload_id_help "update-group" "Replace one group's complete control state. Read it with get-group first, then send project_id, related_group, pinned, include_in_memory and is_key_group. Long-term facts are written with update-page; this payload does not accept summary." ;;
     get-principal) cat <<'EOF'
 usage: jarvis-tools get-principal [--config PATH]
 Get the profile of the person Jarvis assists.
@@ -680,6 +680,19 @@ forbid_summary_payload() {
   local command_name="$1" payload="$2"
   if printf '%s' "$payload" | jq -e 'has("summary")' >/dev/null 2>&1; then
     fail "${command_name} does not accept summary; use update-page for long-term facts"
+  fi
+}
+
+require_complete_group_payload() {
+  local command_name="$1" payload="$2"
+  if ! printf '%s' "$payload" | jq -e '
+    has("project_id") and (.project_id == null or ((.project_id | type) == "number" and .project_id > 0 and .project_id == (.project_id | floor))) and
+    has("related_group") and ((.related_group | type) == "boolean") and
+    has("pinned") and ((.pinned | type) == "boolean") and
+    has("include_in_memory") and ((.include_in_memory | type) == "boolean") and
+    has("is_key_group") and ((.is_key_group | type) == "boolean")
+  ' >/dev/null 2>&1; then
+    fail "${command_name} replaces the complete group control state; first use get-group, then provide project_id (positive integer or null), related_group, pinned, include_in_memory and is_key_group (booleans)"
   fi
 }
 
@@ -1495,6 +1508,9 @@ cmd_payload_by_id() {
       forbid_summary_payload "$command_name" "$payload"
       ;;
   esac
+  if [[ "$command_name" == "update-group" ]]; then
+    require_complete_group_payload "$command_name" "$payload"
+  fi
   body="$(api_write "$method" "${path_prefix}/${ID}" "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
@@ -1537,7 +1553,7 @@ cmd_list_groups() {
   body="$(api_get "/api/groups?${query}")"
   emit "$(printf '%s' "$body" | jq -c '.data | {
     total,page,page_size,broadened,
-    items:[.items[] | {id,chat_id,name,description,project:(if .project == null then null else {id:.project.id,code:.project.code,name:.project.name} end),tier,pinned,is_key_group,related_group,last_active_at,message_count}]
+    items:[.items[] | {id,chat_id,name,description,project_id,project:(if .project == null then null else {id:.project.id,code:.project.code,name:.project.name} end),tier,pinned,include_in_memory,is_key_group,related_group,last_active_at,message_count}]
   }')"
 }
 

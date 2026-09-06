@@ -38,6 +38,8 @@ Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter
 5. 当前结论用 `get-page` + `update-page` CAS 更新。
 6. 证据足够时，用 `get-world-progress` 读取 O、KR 或 Point 与周次的现有判断，再用 `create-world-progress` 或 `update-world-progress` 持久化 Jarvis 的独立判断。
 
+该 Skill 当前属于可选的 `biz-okr` 证据适配器。只启用通用 `okr` 时，`okr-world-projector` 仍能独立建立关系，但不会自动执行 Biz 周报和 Meego 巡检；不能把这种可选能力缺失当成关系投影失败。关系只落一个事实方向，巡检读取 O、KR、Point 的关系时必须同时查询 source 和 target。
+
 `WorldProgress` 不替代人工维护的正式 `KRProgress`，也不自动回填 OKR。当前可为 `okr_objective`、`okr_kr`、`okr_point` 写入，写操作要求通用 `okr` 模块已启用且主体确实存在；模块关闭后仍可读取历史判断。三层判断由 Agent 根据下级进展、指标和现实证据形成，不在 Go 中写死汇总公式。不存在 OKR 专用 evidence API，也不为某个来源增加 Go 流水线。新增来源通常只需要工具和 Skill；只有必须机器强制的可靠性约束才进入代码。
 
 ## 4. 单一产品入口

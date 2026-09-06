@@ -114,6 +114,8 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":5,"open_id":"ou_alice","name":"Alice","en_name":"Alice","department":"Engineering","title":"Staff Engineer","role":"key","summary":"large","priority_weight":0.9,"is_active":true,"updated_at":"2026-08-07T10:00:00Z"}]}}`)
 		case "/api/key-matters":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":4,"title":"matter","status":"跟进中","summary":"current","project_id":1,"due_at":null,"last_progress_at":null,"last_active_at":"2026-08-07T10:00:00Z","closed_at":null,"project":{"large":true}}]}}`)
+		case "/api/groups":
+			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"broadened":false,"items":[{"id":8,"chat_id":"oc_group","name":"Project Group","description":"working group","project_id":3,"project":{"id":3,"code":"p3","name":"Project"},"tier":"warm","pinned":true,"include_in_memory":true,"is_key_group":false,"related_group":true,"last_active_at":1,"message_count":9}]}}`)
 		case "/api/todos":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":1,"title":"todo","description":"large","content":{"large":true},"status":"extracted"}]}}`)
 		case "/api/tasks":
@@ -148,6 +150,10 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 				}
 			}
 		})
+	}
+	groupOut, err := runJarvisTools(t, server.URL, nil, "list-groups")
+	if err != nil || !strings.Contains(groupOut, `"project_id":3`) || !strings.Contains(groupOut, `"include_in_memory":true`) {
+		t.Fatalf("list-groups omitted control fields: output=%s error=%v", groupOut, err)
 	}
 }
 
@@ -267,7 +273,7 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"update-key-matter", []string{"--id", "12", "--payload", `{"title":"m"}`}, http.MethodPut, "/api/key-matters/12"},
 		{"touch-key-matter", []string{"--id", "12"}, http.MethodPost, "/api/key-matters/12/touch"},
 		{"close-key-matter", []string{"--id", "12"}, http.MethodDelete, "/api/key-matters/12"},
-		{"update-group", []string{"--id", "8", "--payload", `{}`}, http.MethodPut, "/api/groups/8"},
+		{"update-group", []string{"--id", "8", "--payload", `{"project_id":null,"related_group":false,"pinned":false,"include_in_memory":false,"is_key_group":false}`}, http.MethodPut, "/api/groups/8"},
 		{"update-principal", []string{"--payload", `{"name":"me"}`}, http.MethodPut, "/api/profile"},
 		{"create-person", []string{"--payload", `{"name":"a"}`}, http.MethodPost, "/api/persons"},
 		{"update-person", []string{"--id", "9", "--payload", `{"name":"a"}`}, http.MethodPut, "/api/persons/9"},
@@ -494,6 +500,19 @@ func TestJarvisToolsUpdateCommandsRejectSummary(t *testing.T) {
 				t.Fatalf("error = %v", err)
 			}
 		})
+	}
+}
+
+func TestJarvisToolsUpdateGroupRequiresCompleteControlState(t *testing.T) {
+	for _, payload := range []string{
+		`{}`,
+		`{"project_id":7,"related_group":true,"pinned":true,"is_key_group":true}`,
+		`{"project_id":0,"related_group":true,"pinned":true,"include_in_memory":true,"is_key_group":true}`,
+	} {
+		_, err := runJarvisTools(t, "http://127.0.0.1:1", nil, "update-group", "--id", "8", "--payload", payload)
+		if err == nil || !strings.Contains(err.Error(), "replaces the complete group control state") {
+			t.Fatalf("payload=%s error=%v", payload, err)
+		}
 	}
 }
 

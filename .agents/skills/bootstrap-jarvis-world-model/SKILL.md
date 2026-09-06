@@ -63,7 +63,7 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 1. `update-principal` 写身份控制位，立即 `get-principal`。
 2. Project、Person、KeyMatter、ManagedResource 逐项查询业务键、创建实体、立即读回；拿到真实 ID 后再处理引用。
 3. 每个实体的长期事实（它是什么、现在到哪一步）用 `update-page` 单独写入，立即 `get-page` 读回。控制位入口不接受这段内容。
-4. `./scripts/jarvis-world-model discover` 触发正常 M2 群发现。按证据中的 `chat_id` 精确选择群，用 `update-group` 写监听标记、`update-page` 写群背景，再 `./scripts/jarvis-world-model scan --chat-id ...` 走正常 checkpoint。
+4. `./scripts/jarvis-world-model discover` 触发正常 M2 群发现。按证据中的 `chat_id` 精确选择群；先用 `get-group --chat-id` 读取完整控制状态，再用 `update-group` 显式携带 `project_id`、`related_group`、`pinned`、`include_in_memory`、`is_key_group` 五个字段完成替换，未决定修改的字段保留原值。随后用 `update-page` 写群背景，再 `./scripts/jarvis-world-model scan --chat-id ...` 走正常 checkpoint。
 5. 结构化字段表达不了的重要关系写在相关实体的长期事实页正文里，用 `[名称](type:id)` 链接目标实体，随后 `list-backlinks` 读回确认引用解析正确；不要制造重复关系记录。
 6. 只有真实发生时间的决策、交付、阻塞或方向变化才 `append-fact --source initialization`，随后 `list-facts`。
 

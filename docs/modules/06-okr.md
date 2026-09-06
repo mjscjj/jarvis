@@ -20,7 +20,7 @@ Jarvis 世界模型
 
 - `okr` 拥有 Objective、KR、Metric、Point、结构化负责人、周次、Weekly KR Core 和正式 Progress。
 - `biz-okr` 拥有标签、OKR Plan、Preview/Review、周报业务展示、评论、评分、Follow-up、催填、Meego、飞书页面身份和业务 Agent 编排。
-- 当前完整业务页面注册为 `Biz OKR`。启用通用 `okr` 后，左侧“插件”下出现独立 `OKR` 页面，展示通用结构、正式进展与 Jarvis 世界进展对照、跨世界关系；它不承载 Biz 标签、Plan、Review、评论或评分。
+- 当前完整业务页面注册为 `Biz OKR`。启用通用 `okr` 后，左侧“插件”下出现独立 `OKR` 页面，展示通用结构、正式进展与 Jarvis 世界进展对照、跨世界关系；关系列表同时读取以 O/KR/Point 为 source 和 target 的边，并只展示当前季度节点。它不承载 Biz 标签、Plan、Review、评论或评分。
 - 两个模块继续复用 `internal/okrworkspace/`、`data/okr/okr.db` 和既有 `okr_workspace_*` 表。本次拆分没有搬库、改表名或复制历史数据。
 - `internal/plugin` 仍只负责 Codebase、Meego、Oncall 等外部线索采集插件；OKR 不进入这套采集器运行时。
 
@@ -92,7 +92,7 @@ Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生�
 
 1. `internal/okrworkspace.Service` 和 `web/src/okr/` 仍是共享实现目录，当前解耦发生在迁移集合、API、DTO、工具、Skill 和模块门禁层；尚未物理拆成 `internal/okr`、`internal/bizokr` 和两套前端目录。
 2. Agent 尚无完整的“现实证据 + WorldProgress → 正式 Progress 候选 → 人确认 → 回填”产品闭环；当前仅具备所需的独立进展存储和正式 Progress 原子写工具。
-3. 统一 World Graph 读取层尚未落地；OKR 插件页当前直接聚合 OKR API、WorldProgress 和 EntityRelation。
+3. 统一 World Graph 读取层尚未落地；OKR 插件页当前直接聚合 OKR API、WorldProgress 和双向 EntityRelation，主世界地图仍只展示核心实体 Page 的显式引用。
 4. `KRPoint` 中仍保留 Meego 字段以兼容现有数据，API 已隔离其所有权，但字段尚未迁出通用模型。
 
 这些后续项的设计依据统一维护在拆分设计文档，不在本文展开实施计划。

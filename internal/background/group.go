@@ -52,7 +52,7 @@ type GroupFilter struct {
 	Tier        string
 }
 
-// GroupBackgroundService patches the human-curated subset of the feishu_group
+// GroupBackgroundService owns the human-curated subset of the feishu_group
 // table. It never creates or deletes a group (capture discovery owns lifecycle).
 type GroupBackgroundService struct {
 	db      *gorm.DB
@@ -215,7 +215,7 @@ func (s *GroupBackgroundService) enrichGroupViews(ctx context.Context, groups []
 	return views, nil
 }
 
-// UpdateBackground patches only the curated columns of one existing group.
+// UpdateBackground replaces the complete curated control state of one existing group.
 // When it flips related_group from false to true, it fires an immediate scan so
 // the newly monitored chat starts capturing without waiting for the scan cron.
 func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64, in GroupBackgroundInput) (*GroupView, error) {

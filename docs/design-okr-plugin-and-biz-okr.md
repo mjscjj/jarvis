@@ -181,12 +181,13 @@ Objective 包含 KR、KR 包含 Metric/Point、Owner 属于哪个 KR，这些已
 例如：
 
 ```text
-okr_kr:kr1       --delivered_by / delivers--> project:7
-okr_point:p1     --tracked_by / tracks-----> key_matter:31
-okr_point:p1     --depends_on / supports----> resource:19
+okr_kr:kr1       --maps_to / mapped_from------> project:7
+okr_point:p1     --maps_to / mapped_from-----> key_matter:31
+project:7        --advances / advanced_by----> okr_kr:kr1
+key_matter:31    --depends_on / required_by--> resource:19
 ```
 
-关系只保存一个方向；查询和 UI 根据关系词典生成反向显示名。每条关系应保留来源、依据、观察时间、置信度和确认时间。
+关系只保存一个方向；查询和 UI 根据以下关系词典生成反向显示名：`belongs_to / contains`、`owned_by / owns`、`participates_in / has_participant`、`depends_on / required_by`、`advances / advanced_by`、`maps_to / mapped_from`、`derived_from / produces`。`maps_to` 表示跨领域对象的明确对应，`advances` 表示现实对象对目标产生了实际推进。数据库仍允许开放 token，未知关系按原始方向显示。每条关系应保留来源、依据、观察时间、置信度和确认时间。
 
 `okr-world-projector` 是 OKR 到世界模型的语义桥，它必须：
 
@@ -197,7 +198,7 @@ okr_point:p1     --depends_on / supports----> resource:19
 - 不读取或同步周报 Progress；
 - 幂等写入并在写后回读。
 
-正式进展与世界进展的调查、对照和候选回填由独立 Skill 负责，不能塞进关系投影 Skill。
+正式进展与世界进展的调查、对照和候选回填由独立 Skill 负责，不能塞进关系投影 Skill。当前该适配器是属于 `biz-okr` 的 `weekly-report-progress-sync`；只启用通用 `okr` 时关系投影仍可独立完成，但不会自动获得 Biz 周报与 Meego 的证据巡检能力。
 
 ### 6.4 Page 引用仍是弱关系
 
@@ -208,6 +209,8 @@ Markdown 中的：
 ```
 
 只表示正文引用。它可以被图谱作为淡色弱边展示，但不能自动解释为 Owner、依赖或交付关系。强关系使用 `EntityRelation`。
+
+当前 Page 引用解析器只支持核心世界实体和正整数 ID；`okr_objective:<stable-id>`、`okr_kr:<stable-id>`、`okr_point:<stable-id>` 现阶段只能作为普通文本标识。OKR 到现实实体的机器可查询连接必须使用 `EntityRelation`；等统一 Entity Resolver 落地后再扩展 Page 引用，不在投影 Skill 中假装已经支持。
 
 ## 7. 模块生命周期与开关
 

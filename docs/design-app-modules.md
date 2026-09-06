@@ -46,10 +46,13 @@ Jarvis 通用 Task、Fact、Page、ScheduledTask 以及 Biz OKR OAuth/session �
 
 ```text
 okr_kr:<module id>
-  --delivered_by--> project:<world id>
+  --maps_to--> project:<world id>
+
+project:<world id>
+  --advances--> okr_kr:<module id>
 ```
 
-OKR 内部层级和负责人由 OKR 原生字段表达，不复制到 `entity_relation`。只有跨模块强关系才带证据写入并可单独审阅、替换或删除。之后进度同步用通用 clue、Fact、Page 和 WorldProgress 工具更新世界状态。Task 始终只表示一次执行，不成为 OKR 层级的一部分。
+`maps_to` 表示两个领域对象明确对应，`advances` 表示现实项目对目标产生了实际推进。OKR 内部层级和负责人由 OKR 原生字段表达，不复制到 `entity_relation`。只有跨模块强关系才带证据写入并可单独审阅、替换或删除。之后进度同步用通用 clue、Fact、Page 和 WorldProgress 工具更新世界状态。Task 始终只表示一次执行，不成为 OKR 层级的一部分。
 
 OKR 只有产品模块这一份领域模型；Jarvis 核心和 Project 不再保存另一套 OKR 结构。产品模块与世界模型之间只通过 `entity_relation` 连接。
 

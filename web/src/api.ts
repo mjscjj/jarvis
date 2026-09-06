@@ -740,11 +740,20 @@ export function listWorldProgress(periodKey: string, signal?: AbortSignal): Prom
   return request<{ items: WorldProgress[] }>(`/api/world-progress/period/${encodeURIComponent(periodKey)}`, { signal })
 }
 
-export function listRelationsBySourceType(
-  sourceType: string,
-  signal?: AbortSignal,
-): Promise<{ items: EntityRelation[] }> {
-  const params = new URLSearchParams({ source_type: sourceType, limit: '200' })
+export interface RelationQuery {
+  sourceType?: string
+  sourceId?: string
+  targetType?: string
+  targetId?: string
+  limit?: number
+}
+
+export function listRelations(query: RelationQuery, signal?: AbortSignal): Promise<{ items: EntityRelation[] }> {
+  const params = new URLSearchParams({ limit: String(query.limit ?? 200) })
+  if (query.sourceType) params.set('source_type', query.sourceType)
+  if (query.sourceId) params.set('source_id', query.sourceId)
+  if (query.targetType) params.set('target_type', query.targetType)
+  if (query.targetId) params.set('target_id', query.targetId)
   return request<{ items: EntityRelation[] }>(`/api/relations?${params.toString()}`, { signal })
 }
 
