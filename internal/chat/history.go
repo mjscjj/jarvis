@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,25 @@ type HistoryMessage struct {
 type History struct {
 	ThreadID string           `json:"thread_id"`
 	Messages []HistoryMessage `json:"messages"`
+}
+
+type ThreadSummary struct {
+	ThreadID  string    `json:"thread_id"`
+	Title     string    `json:"title"`
+	Preview   string    `json:"preview"`
+	MessageAt time.Time `json:"message_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type HistoryWarning struct {
+	ThreadID string `json:"thread_id,omitempty"`
+	File     string `json:"file,omitempty"`
+	Message  string `json:"message"`
+}
+
+type ThreadList struct {
+	Threads  []ThreadSummary  `json:"threads"`
+	Warnings []HistoryWarning `json:"warnings,omitempty"`
 }
 
 // HistoryStore keeps one human-readable Markdown transcript per Agent CLI thread.
@@ -120,6 +140,59 @@ func (s *HistoryStore) Read(threadID string) (History, error) {
 	return History{ThreadID: strings.TrimSpace(threadID), Messages: messages}, nil
 }
 
+func (s *HistoryStore) List(limit int) (ThreadList, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return ThreadList{}, fmt.Errorf("list chat history directory %q: %w", s.dir, err)
+	}
+	threads := make([]ThreadSummary, 0, len(entries))
+	warnings := make([]HistoryWarning, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+		threadID := strings.TrimSuffix(entry.Name(), ".md")
+		if !threadIDPattern.MatchString(threadID) {
+			continue
+		}
+		path := filepath.Join(s.dir, entry.Name())
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			warnings = append(warnings, HistoryWarning{ThreadID: threadID, File: entry.Name(), Message: fmt.Sprintf("read chat history: %s", strings.TrimSpace(err.Error()))})
+			continue
+		}
+		messages, err := parseHistory(raw)
+		if err != nil {
+			warnings = append(warnings, HistoryWarning{ThreadID: threadID, File: entry.Name(), Message: fmt.Sprintf("parse chat history: %s", strings.TrimSpace(err.Error()))})
+			continue
+		}
+		if len(messages) == 0 {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			warnings = append(warnings, HistoryWarning{ThreadID: threadID, File: entry.Name(), Message: fmt.Sprintf("stat chat history: %s", strings.TrimSpace(err.Error()))})
+			continue
+		}
+		threads = append(threads, summarizeThread(threadID, messages, info.ModTime()))
+	}
+	sort.Slice(threads, func(i, j int) bool {
+		if !threads[i].MessageAt.Equal(threads[j].MessageAt) {
+			return threads[i].MessageAt.After(threads[j].MessageAt)
+		}
+		return threads[i].UpdatedAt.After(threads[j].UpdatedAt)
+	})
+	if len(threads) > limit {
+		threads = threads[:limit]
+	}
+	return ThreadList{Threads: threads, Warnings: warnings}, nil
+}
+
 func (s *HistoryStore) path(threadID string) (string, error) {
 	threadID = strings.TrimSpace(threadID)
 	if !threadIDPattern.MatchString(threadID) {
@@ -136,6 +209,46 @@ func escapeHistoryText(text string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func summarizeThread(threadID string, messages []HistoryMessage, updatedAt time.Time) ThreadSummary {
+	summary := ThreadSummary{ThreadID: strings.TrimSpace(threadID), UpdatedAt: updatedAt.UTC()}
+	for _, message := range messages {
+		if summary.MessageAt.IsZero() || message.At.After(summary.MessageAt) {
+			summary.MessageAt = message.At
+		}
+		if summary.Title == "" && message.Role == "user" {
+			summary.Title = summarizeText(message.Text, 34)
+		}
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.TrimSpace(messages[i].Text) != "" {
+			summary.Preview = summarizeText(messages[i].Text, 56)
+			break
+		}
+	}
+	if summary.Title == "" {
+		summary.Title = "未命名对话"
+	}
+	if summary.Preview == "" {
+		summary.Preview = summary.Title
+	}
+	if summary.MessageAt.IsZero() {
+		summary.MessageAt = summary.UpdatedAt
+	}
+	return summary
+}
+
+func summarizeText(text string, limit int) string {
+	text = strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	if text == "" {
+		return ""
+	}
+	runes := []rune(text)
+	if limit > 0 && len(runes) > limit {
+		return string(runes[:limit]) + "..."
+	}
+	return text
 }
 
 func parseHistory(raw []byte) ([]HistoryMessage, error) {

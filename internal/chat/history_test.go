@@ -44,6 +44,75 @@ func TestHistoryStoreWritesAndReadsMarkdownConversation(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreListsConversationSummaries(t *testing.T) {
+	store, err := NewHistoryStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewHistoryStore() error = %v", err)
+	}
+	first := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	second := first.Add(time.Hour)
+	store.now = func() time.Time { return first }
+	if err := store.AppendTurn("thread-old", "第一段很长的用户问题，需要作为标题截断展示", "旧回复"); err != nil {
+		t.Fatalf("AppendTurn(old) error = %v", err)
+	}
+	store.now = func() time.Time { return second }
+	if err := store.AppendTurn("thread-new", "新问题", "更新的回复预览"); err != nil {
+		t.Fatalf("AppendTurn(new) error = %v", err)
+	}
+
+	list, err := store.List(10)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	threads := list.Threads
+	if len(threads) != 2 {
+		t.Fatalf("threads = %#v", threads)
+	}
+	if threads[0].ThreadID != "thread-new" || threads[1].ThreadID != "thread-old" {
+		t.Fatalf("thread order = %#v", threads)
+	}
+	if threads[0].Title != "新问题" || threads[0].Preview != "更新的回复预览" || !threads[0].MessageAt.Equal(second) {
+		t.Fatalf("new summary = %#v", threads[0])
+	}
+	if !strings.HasPrefix(threads[1].Title, "第一段很长的用户问题") {
+		t.Fatalf("old title = %q", threads[1].Title)
+	}
+
+	limitedList, err := store.List(1)
+	if err != nil {
+		t.Fatalf("List(1) error = %v", err)
+	}
+	limited := limitedList.Threads
+	if len(limited) != 1 || limited[0].ThreadID != "thread-new" {
+		t.Fatalf("limited threads = %#v", limited)
+	}
+}
+
+func TestHistoryStoreListSkipsBrokenHistory(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewHistoryStore(dir)
+	if err != nil {
+		t.Fatalf("NewHistoryStore() error = %v", err)
+	}
+	if err := store.AppendTurn("thread-ok", "正常问题", "正常回复"); err != nil {
+		t.Fatalf("AppendTurn() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "thread-broken.md"), []byte("## 用户 · not-a-time\n\n坏历史\n"), 0o600); err != nil {
+		t.Fatalf("write broken history error = %v", err)
+	}
+
+	list, err := store.List(10)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(list.Threads) != 1 || list.Threads[0].ThreadID != "thread-ok" {
+		t.Fatalf("threads = %#v", list.Threads)
+	}
+	if len(list.Warnings) != 1 || list.Warnings[0].ThreadID != "thread-broken" {
+		t.Fatalf("warnings = %#v", list.Warnings)
+	}
+}
+
 func TestHistoryStoreRejectsInvalidThreadAndMissingHistory(t *testing.T) {
 	store, err := NewHistoryStore(t.TempDir())
 	if err != nil {

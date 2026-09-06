@@ -81,6 +81,7 @@ import type {
   SystemTaskRunList,
   ChatHistory,
   ChatRuntimeConfig,
+  ChatThreadList,
   WebConfig,
   AuthView,
 } from './types'
@@ -215,6 +216,10 @@ export function resolveChatBaseURL(pageOrigin: string, chatPort: number): string
 export function getChatHistory(baseURL: string, threadID: string, signal?: AbortSignal): Promise<ChatHistory> {
   const query = new URLSearchParams({ thread_id: threadID })
   return request<ChatHistory>(`${baseURL}/api/chat?${query}`, { signal })
+}
+
+export function listChatThreads(baseURL: string, signal?: AbortSignal): Promise<ChatThreadList> {
+  return request<ChatThreadList>(`${baseURL}/api/chat/threads`, { signal })
 }
 
 export function finishTask(id: number, expectedVersion: number, status: 'done' | 'failed', result: Record<string, unknown>): Promise<Task> {

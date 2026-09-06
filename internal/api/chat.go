@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,28 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
+
+const defaultChatThreadListLimit = 50
+
+func ListChatThreads(svc *chat.Service) app.HandlerFunc {
+	return func(_ context.Context, c *app.RequestContext) {
+		limit := defaultChatThreadListLimit
+		if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 1 || parsed > 100 {
+				writeAPIError(c, 400, 40062, fmt.Errorf("limit must be an integer between 1 and 100"))
+				return
+			}
+			limit = parsed
+		}
+		threads, err := svc.Threads(limit)
+		if err != nil {
+			writeAPIError(c, 500, 50062, err)
+			return
+		}
+		c.JSON(200, map[string]any{"code": 0, "data": threads})
+	}
+}
 
 func GetChatHistory(svc *chat.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
@@ -55,7 +78,7 @@ type chatPageSelection struct {
 //	thread  data={"thread_id":"..."}
 //	delta   data={"text":"..."}
 //	done    data={}
-//	error   data={"message":"..."}
+//	error   data={"message":"...","detail":"...","log_id":"...","recoverable":true}
 //
 // 一旦进入 SSE（响应头已发），出错只能通过 error 事件传达，不能再改 HTTP 状态码。
 // chatHeartbeatInterval 是探活间隔。对端关闭后的第一次写往往还能进 socket 缓冲，
@@ -129,10 +152,15 @@ func Chat(svc *chat.Service) app.HandlerFunc {
 		if err := svc.Stream(streamCtx, req, emit); err != nil {
 			// fail-fast：把错误作为 error 事件发出（此时响应头已发，无法再改状态码）。
 			hlog.CtxErrorf(ctx, "chat stream failed error=%+v", err)
-			data, marshalErr := json.Marshal(map[string]string{"message": err.Error()})
+			data, marshalErr := json.Marshal(map[string]any{
+				"message":     friendlyChatError(err),
+				"detail":      strings.TrimSpace(err.Error()),
+				"log_id":      observability.LogID(ctx),
+				"recoverable": chatErrorRecoverable(err),
+			})
 			if marshalErr != nil {
 				hlog.CtxErrorf(ctx, "marshal chat error event failed original_error=%+v marshal_error=%+v", err, marshalErr)
-				data = []byte(`{"message":"chat failed"}`)
+				data = []byte(`{"message":"这轮没有完成，可以重试或继续发送。","detail":"chat failed","recoverable":true}`)
 			}
 			if writeErr := w.WriteEvent("error", data); writeErr != nil {
 				hlog.CtxErrorf(ctx, "write chat error event failed original_error=%+v write_error=%+v", err, writeErr)
@@ -144,6 +172,29 @@ func Chat(svc *chat.Service) app.HandlerFunc {
 			hlog.CtxErrorf(ctx, "write chat done event failed error=%+v", err)
 		}
 	}
+}
+
+func friendlyChatError(err error) string {
+	text := strings.TrimSpace(err.Error())
+	switch {
+	case text == "":
+		return "这轮没有完成，可以重试或继续发送。"
+	case strings.Contains(text, "no rollout found for thread id"), strings.Contains(text, "missing thread.started"), strings.Contains(text, "belongs to another CLI"):
+		return "这个会话暂时无法继续，已准备切换到新对话。"
+	case strings.Contains(text, "previous chat turn"):
+		return "上一轮还没有完全停止，请稍后重试。"
+	case strings.Contains(text, "context canceled"), strings.Contains(text, "operation was aborted"):
+		return "这轮回复已暂停。"
+	default:
+		return "这轮没有完成，可以重试或继续发送。"
+	}
+}
+
+func chatErrorRecoverable(err error) bool {
+	text := strings.TrimSpace(err.Error())
+	return text != "" && (strings.Contains(text, "no rollout found for thread id") ||
+		strings.Contains(text, "missing thread.started") ||
+		strings.Contains(text, "belongs to another CLI"))
 }
 
 func decodeChatMultipart(c *app.RequestContext) (req chat.Request, cleanup func(), err error) {

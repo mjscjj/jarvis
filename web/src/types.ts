@@ -1286,6 +1286,9 @@ export interface ChatDeltaEvent {
 
 export interface ChatErrorEvent {
   message: string
+  detail?: string
+  log_id?: string
+  recoverable?: boolean
 }
 
 export interface ChatHistoryMessage {
@@ -1297,6 +1300,25 @@ export interface ChatHistoryMessage {
 export interface ChatHistory {
   thread_id: string
   messages: ChatHistoryMessage[]
+}
+
+export interface ChatThreadSummary {
+  thread_id: string
+  title: string
+  preview: string
+  message_at: string
+  updated_at: string
+}
+
+export interface ChatHistoryWarning {
+  thread_id?: string
+  file?: string
+  message: string
+}
+
+export interface ChatThreadList {
+  threads: ChatThreadSummary[]
+  warnings?: ChatHistoryWarning[]
 }
 
 export interface ChatRuntimeConfig {

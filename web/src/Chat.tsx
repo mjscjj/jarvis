@@ -1,24 +1,58 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CloseOutlined, PaperClipOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { CloseOutlined, CopyOutlined, DeleteOutlined, HistoryOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
-import { getChatHistory, getChatRuntimeConfig, getSignedInOpenID, isMissingChatHistoryError, resolveChatBaseURL } from './api'
+import { getChatHistory, getChatRuntimeConfig, getSignedInOpenID, isMissingChatHistoryError, listChatThreads, resolveChatBaseURL } from './api'
 import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
 import { isOKRTab, isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS } from './okr/navigation'
-import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, PageContext } from './types'
+import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, ChatThreadSummary, PageContext } from './types'
 import './styles/chat.css'
 
 const { Text } = Typography
 
+type ChatMessageStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'partial' | 'paused'
+
+interface ChatDiagnostic {
+  message: string
+  detail?: string
+  logId?: string
+  at: string
+  recoverable?: boolean
+}
+
 interface ChatMessage {
+  id: string
   role: 'user' | 'assistant'
   text: string
+  status?: ChatMessageStatus
+  imageName?: string
+  retryText?: string
+  retryImage?: File | null
+  diagnostic?: ChatDiagnostic
+}
+
+interface QueuedChatTurn {
+  id: string
+  userMessageId: string
+  text: string
+  image: File | null
+  pageContext: PageContext
+  createdAt: number
 }
 
 const CHAT_THREAD_STORAGE_KEY = 'jarvis.chat.threadId'
 const CHAT_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 const CHAT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg'])
+const CHAT_THREAD_LIST_LIMIT = 30
+const RUNNING_STATUS_STEPS = ['正在理解页面', '正在查找资料', '正在整理回复']
+
+const threadDateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+})
 
 const PAGE_LABELS: Record<string, string> = {
   today: '今日',
@@ -104,6 +138,7 @@ function isAbortError(cause: unknown): boolean {
 function isStaleThreadError(text: string): boolean {
   return text.includes('no rollout found for thread id')
     || text.includes('missing thread.started')
+    || text.includes('belongs to another CLI')
 }
 
 function chatImageError(file: File): string | undefined {
@@ -113,31 +148,108 @@ function chatImageError(file: File): string | undefined {
   return undefined
 }
 
+function makeClientId(prefix: string): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return `${prefix}-${globalThis.crypto.randomUUID()}`
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function compactText(text: string, limit: number): string {
+  const normalized = text.trim().replace(/\s+/g, ' ')
+  if (normalized.length <= limit) return normalized
+  return `${normalized.slice(0, Math.max(0, limit - 3))}...`
+}
+
+function formatThreadTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return threadDateFormatter.format(date)
+}
+
+function diagnosticFromEvent(event: ChatErrorEvent): ChatDiagnostic {
+  return {
+    message: event.message || '这轮没有完成，可以重试或继续发送。',
+    detail: event.detail,
+    logId: event.log_id,
+    recoverable: event.recoverable,
+    at: new Date().toISOString(),
+  }
+}
+
+async function diagnosticFromResponse(response: Response): Promise<ChatDiagnostic> {
+  let detail = `HTTP ${response.status}`
+  try {
+    const payload = await response.json() as { msg?: string }
+    if (payload.msg) detail = payload.msg
+  } catch {
+    // Keep the HTTP status as the diagnostic detail when the response is not JSON.
+  }
+  return {
+    message: '这轮没有完成，可以重试或继续发送。',
+    detail,
+    at: new Date().toISOString(),
+    recoverable: response.status >= 500,
+  }
+}
+
+function diagnosticFromCause(cause: unknown): ChatDiagnostic {
+  if (typeof cause === 'object' && cause !== null && 'message' in cause && 'at' in cause) return cause as ChatDiagnostic
+  const detail = errorText(cause)
+  return {
+    message: isStaleThreadError(detail) ? '这个会话暂时无法继续，已准备切换到新对话。' : '这轮没有完成，可以重试或继续发送。',
+    detail,
+    at: new Date().toISOString(),
+    recoverable: isStaleThreadError(detail),
+  }
+}
+
+function threadSummaryFromTurn(threadId: string, turn: QueuedChatTurn): ChatThreadSummary {
+  const at = new Date(turn.createdAt).toISOString()
+  return {
+    thread_id: threadId,
+    title: compactText(turn.text, 34) || '新对话',
+    preview: '正在回复...',
+    message_at: at,
+    updated_at: at,
+  }
+}
+
 export default function Chat({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { name: agentName, shortName: agentShortName } = useAgentIdentity()
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [image, setImage] = useState<File | null>(null)
+  const [queue, setQueue] = useState<QueuedChatTurn[]>([])
   const [sending, setSending] = useState(false)
   const [stopping, setStopping] = useState(false)
+  const [queuePaused, setQueuePaused] = useState(false)
   const [paused, setPaused] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [error, setError] = useState<string>()
+  const [threadsLoading, setThreadsLoading] = useState(false)
+  const [threadsOpen, setThreadsOpen] = useState(false)
+  const [threads, setThreads] = useState<ChatThreadSummary[]>([])
+  const [error, setError] = useState<ChatDiagnostic>()
+  const [diagnosticOpen, setDiagnosticOpen] = useState(false)
+  const [runningStatusIndex, setRunningStatusIndex] = useState(0)
   const [notice, setNotice] = useState<string>()
   const [chatBaseURL, setChatBaseURL] = useState<string>()
   const [threadId, setThreadId] = useState<string | null>(() => window.localStorage.getItem(CHAT_THREAD_STORAGE_KEY))
-  const initialThreadId = useRef(threadId).current
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<TextAreaRef>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const processingRef = useRef(false)
+  const threadIdRef = useRef(threadId)
 
   const imagePreviewURL = useMemo(() => image ? URL.createObjectURL(image) : undefined, [image])
 
   useEffect(() => () => {
     if (imagePreviewURL) URL.revokeObjectURL(imagePreviewURL)
   }, [imagePreviewURL])
+
+  useEffect(() => {
+    threadIdRef.current = threadId
+  }, [threadId])
 
   useEffect(() => {
     const el = listRef.current
@@ -147,25 +259,94 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   useEffect(() => () => abortRef.current?.abort(), [])
 
   useEffect(() => {
+    if (!sending) {
+      setRunningStatusIndex(0)
+      return undefined
+    }
+    const timer = window.setInterval(() => {
+      setRunningStatusIndex((index) => (index + 1) % RUNNING_STATUS_STEPS.length)
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [sending])
+
+  useEffect(() => {
     const controller = new AbortController()
     getChatRuntimeConfig(controller.signal)
       .then(({ port }) => {
         setChatBaseURL(resolveChatBaseURL(window.location.origin, port))
       })
       .catch((cause: unknown) => {
-        if (!isAbortError(cause)) setError(`读取对话服务配置失败：${errorText(cause)}`)
+        if (!isAbortError(cause)) {
+          setError({
+            message: '对话服务暂时不可用。',
+            detail: errorText(cause),
+            at: new Date().toISOString(),
+            recoverable: true,
+          })
+        }
       })
     return () => controller.abort()
   }, [])
 
+  const refreshThreads = useCallback((baseURL = chatBaseURL) => {
+    if (!baseURL) return undefined
+    const controller = new AbortController()
+    setThreadsLoading(true)
+    listChatThreads(baseURL, controller.signal)
+      .then((result) => {
+        setThreads(result.threads)
+        if (result.warnings && result.warnings.length > 0) {
+          setError({
+            message: '部分历史对话暂时无法读取。',
+            detail: result.warnings.map((warning) => {
+              const target = warning.thread_id || warning.file || 'unknown'
+              return `${target}: ${warning.message}`
+            }).join('\n'),
+            at: new Date().toISOString(),
+            recoverable: true,
+          })
+        }
+      })
+      .catch((cause: unknown) => {
+        if (!isAbortError(cause)) {
+          setError({
+            message: '暂时无法读取历史对话。',
+            detail: errorText(cause),
+            at: new Date().toISOString(),
+            recoverable: true,
+          })
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setThreadsLoading(false)
+      })
+    return () => controller.abort()
+  }, [chatBaseURL])
+
   useEffect(() => {
-    if (!initialThreadId || !chatBaseURL) return
+    if (!chatBaseURL) return
+    return refreshThreads(chatBaseURL)
+  }, [chatBaseURL, refreshThreads])
+
+  useEffect(() => {
+    if (!chatBaseURL) return
+    if (!threadId) {
+      setHistoryLoading(false)
+      return
+    }
+    if (sending || queue.length > 0) return
     const controller = new AbortController()
     setHistoryLoading(true)
-    getChatHistory(chatBaseURL, initialThreadId, controller.signal)
+    getChatHistory(chatBaseURL, threadId, controller.signal)
       .then((history) => {
-        setMessages(history.messages.map((message) => ({ role: message.role, text: message.text })))
+        setMessages(history.messages.map((message) => ({
+          id: makeClientId(message.role),
+          role: message.role,
+          text: message.text,
+          status: 'sent',
+        })))
         setError(undefined)
+        setDiagnosticOpen(false)
         setNotice(undefined)
       })
       .catch((cause: unknown) => {
@@ -178,13 +359,18 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
           setNotice('上次会话已失效，已自动切换到新会话。')
           return
         }
-        setError(`恢复本地会话失败：${errorText(cause)}`)
+        setError({
+          message: '暂时无法恢复这个会话。',
+          detail: errorText(cause),
+          at: new Date().toISOString(),
+          recoverable: true,
+        })
       })
       .finally(() => {
         if (!controller.signal.aborted) setHistoryLoading(false)
       })
     return () => controller.abort()
-  }, [chatBaseURL, initialThreadId])
+  }, [chatBaseURL, queue.length, sending, threadId])
 
   useEffect(() => {
     if (open) inputRef.current?.focus()
@@ -225,9 +411,19 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     return defaults[pageGroup(context)] ?? defaults.today
   }, [agentName, context, currentActionLabel, currentSelectionType])
 
+  const queueStatusText = useMemo(() => {
+    if (historyLoading) return '正在恢复'
+    if (sending) return RUNNING_STATUS_STEPS[runningStatusIndex]
+    if (queue.length > 0 && queuePaused) return `${queue.length} 条待发送`
+    if (queue.length > 0) return `${queue.length} 条排队中`
+    if (paused) return '已暂停'
+    return '就绪'
+  }, [historyLoading, paused, queue.length, queuePaused, runningStatusIndex, sending])
+
   const stop = useCallback(() => {
     if (!abortRef.current || stopping) return
     setStopping(true)
+    setQueuePaused(true)
     abortRef.current.abort()
   }, [stopping])
 
@@ -237,61 +433,180 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
   }, [])
 
   const startNewChat = useCallback(() => {
+    if (sending || queue.length > 0) {
+      setNotice('当前还有消息在处理，完成或清空队列后再新建对话。')
+      return
+    }
     window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY)
     setThreadId(null)
     setMessages([])
     setImage(null)
+    setQueue([])
+    setQueuePaused(false)
     setError(undefined)
+    setDiagnosticOpen(false)
     setNotice(undefined)
     setPaused(false)
+    setThreadsOpen(false)
     inputRef.current?.focus()
-  }, [])
+  }, [queue.length, sending])
 
   const attachImage = useCallback((file: File) => {
     const validationError = chatImageError(file)
     if (validationError) {
-      setError(validationError)
+      setError({ message: validationError, at: new Date().toISOString(), recoverable: true })
       return
     }
     setImage(file)
     setError(undefined)
   }, [])
 
-  const send = useCallback(async () => {
+  const selectThread = useCallback((nextThreadID: string) => {
+    if (sending || queue.length > 0) {
+      setNotice('当前还有消息在处理，完成或清空队列后再切换对话。')
+      return
+    }
+    const normalized = nextThreadID.trim()
+    if (!normalized || normalized === threadId) {
+      setThreadsOpen(false)
+      return
+    }
+    window.localStorage.setItem(CHAT_THREAD_STORAGE_KEY, normalized)
+    setThreadId(normalized)
+    setImage(null)
+    setError(undefined)
+    setDiagnosticOpen(false)
+    setNotice(undefined)
+    setPaused(false)
+    setThreadsOpen(false)
+  }, [queue.length, sending, threadId])
+
+  const clearQueue = useCallback(() => {
+    setQueue([])
+    setMessages((prev) => prev.filter((message) => message.status !== 'queued'))
+    setQueuePaused(false)
+    setNotice(undefined)
+  }, [])
+
+  const resumeQueue = useCallback(() => {
+    setQueuePaused(false)
+    setPaused(false)
+    setError(undefined)
+    setDiagnosticOpen(false)
+    setNotice(undefined)
+  }, [])
+
+  const enqueueTurn = useCallback((text: string, nextImage: File | null, options?: { reuseMessageId?: string; front?: boolean }) => {
+    const message = text.trim()
+    if (!message) return
+    const userMessageId = options?.reuseMessageId ?? makeClientId('user')
+    const turn: QueuedChatTurn = {
+      id: makeClientId('turn'),
+      userMessageId,
+      text: message,
+      image: nextImage,
+      pageContext: context,
+      createdAt: Date.now(),
+    }
+    if (options?.reuseMessageId) {
+      setMessages((prev) => prev.map((item) => item.id === userMessageId
+        ? { ...item, status: 'queued', diagnostic: undefined, retryText: undefined, retryImage: undefined }
+        : item))
+    } else {
+      setMessages((prev) => [...prev, {
+        id: userMessageId,
+        role: 'user',
+        text: message,
+        status: sending || queue.length > 0 || queuePaused ? 'queued' : 'sending',
+        imageName: nextImage?.name,
+        retryText: message,
+        retryImage: nextImage,
+      }])
+    }
+    setQueue((prev) => options?.front ? [turn, ...prev] : [...prev, turn])
+    setQueuePaused(false)
+    setPaused(false)
+    setError(undefined)
+    setDiagnosticOpen(false)
+  }, [context, queue.length, queuePaused, sending])
+
+  const send = useCallback(() => {
     const message = input.trim()
-    if (!message || sending) return
+    if (!message) return
     if (!chatBaseURL) {
-      setError('独立对话服务地址尚未加载')
+      setError({
+        message: '对话服务还没有准备好。',
+        detail: 'chat runtime config is not loaded',
+        at: new Date().toISOString(),
+        recoverable: true,
+      })
       return
     }
     const imageToSend = image
     setInput('')
     setImage(null)
+    setNotice(undefined)
+    enqueueTurn(message, imageToSend)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [chatBaseURL, enqueueTurn, image, input])
+
+  const copyDiagnostic = useCallback(async (diagnostic: ChatDiagnostic) => {
+    const lines = [
+      `message: ${diagnostic.message}`,
+      diagnostic.detail ? `detail: ${diagnostic.detail}` : '',
+      diagnostic.logId ? `log_id: ${diagnostic.logId}` : '',
+      `at: ${diagnostic.at}`,
+      threadId ? `thread_id: ${threadId}` : '',
+      `page: ${currentPageLabel}`,
+    ].filter(Boolean)
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard API unavailable')
+      await navigator.clipboard.writeText(lines.join('\n'))
+      setNotice('诊断信息已复制。')
+    } catch {
+      setNotice('无法自动复制诊断，可以展开日志后手动复制。')
+    }
+  }, [currentPageLabel, threadId])
+
+  const retryMessage = useCallback((message: ChatMessage) => {
+    const retryText = message.retryText ?? message.text
+    enqueueTurn(retryText, message.retryImage ?? null, { reuseMessageId: message.id, front: true })
+  }, [enqueueTurn])
+
+  const runTurn = useCallback(async (turn: QueuedChatTurn) => {
+    if (!chatBaseURL || processingRef.current) return
+    processingRef.current = true
+    setQueue((prev) => prev.filter((item) => item.id !== turn.id))
     setError(undefined)
+    setDiagnosticOpen(false)
     setNotice(undefined)
     setStopping(false)
     setPaused(false)
     setSending(true)
-    // Append the user bubble and an empty assistant bubble that delta events grow.
-    setMessages((prev) => [...prev, { role: 'user', text: message }, { role: 'assistant', text: '' }])
+    setMessages((prev) => prev.map((item) => item.id === turn.userMessageId
+      ? { ...item, status: 'sending', diagnostic: undefined }
+      : item))
+    const assistantMessageId = makeClientId('assistant')
+    setMessages((prev) => [...prev, { id: assistantMessageId, role: 'assistant', text: '', status: 'sending' }])
 
     const appendDelta = (text: string) => setMessages((prev) => {
       const next = prev.slice()
-      const last = next[next.length - 1]
-      if (last && last.role === 'assistant') next[next.length - 1] = { role: 'assistant', text: last.text + text }
+      const index = next.findIndex((item) => item.id === assistantMessageId)
+      if (index !== -1) next[index] = { ...next[index], text: next[index].text + text }
       return next
     })
 
     const controller = new AbortController()
     abortRef.current = controller
+    const threadAtStart = threadIdRef.current
     try {
       // Read the signed-in identity per turn: the person can log in or out
       // while the conversation stays open.
       const req: ChatRequest = {
-        message,
-        thread_id: threadId,
-        page_context: context,
-        image: imageToSend,
+        message: turn.text,
+        thread_id: threadAtStart,
+        page_context: turn.pageContext,
+        image: turn.image,
         user_open_id: await getSignedInOpenID(controller.signal),
       }
       const form = new FormData()
@@ -305,13 +620,36 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         body: form,
         signal: controller.signal,
       })
-      if (!response.ok) throw new Error(`对话请求失败：HTTP ${response.status}`)
+      if (!response.ok) throw await diagnosticFromResponse(response)
       if (!response.body) throw new Error('对话响应无数据流（response.body 为空）')
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
-      let streamError: string | undefined
+      let streamError: ChatDiagnostic | undefined
+
+      const consumeBlock = (block: string) => {
+        if (!block.trim()) return
+        const { event, data } = parseSSEBlock(block)
+        if (event === 'thread') {
+          const parsed = JSON.parse(data) as ChatThreadEvent
+          setThreadId(parsed.thread_id)
+          threadIdRef.current = parsed.thread_id
+          window.localStorage.setItem(CHAT_THREAD_STORAGE_KEY, parsed.thread_id)
+          setThreads((prev) => {
+            const withoutCurrent = prev.filter((item) => item.thread_id !== parsed.thread_id)
+            return [threadSummaryFromTurn(parsed.thread_id, turn), ...withoutCurrent].slice(0, CHAT_THREAD_LIST_LIMIT)
+          })
+        } else if (event === 'delta') {
+          const parsed = JSON.parse(data) as ChatDeltaEvent
+          appendDelta(parsed.text)
+        } else if (event === 'error') {
+          const parsed = JSON.parse(data) as ChatErrorEvent
+          streamError = diagnosticFromEvent(parsed)
+        } else if (event === 'done') {
+          // Round finished; keep reading until the stream closes.
+        }
+      }
 
       // Manual SSE parse: split the byte stream into `\n\n`-delimited blocks.
       for (;;) {
@@ -322,64 +660,70 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         while ((sep = buffer.indexOf('\n\n')) !== -1) {
           const block = buffer.slice(0, sep)
           buffer = buffer.slice(sep + 2)
-          if (!block.trim()) continue
-          const { event, data } = parseSSEBlock(block)
-          if (event === 'thread') {
-            const parsed = JSON.parse(data) as ChatThreadEvent
-            setThreadId(parsed.thread_id)
-            window.localStorage.setItem(CHAT_THREAD_STORAGE_KEY, parsed.thread_id)
-          } else if (event === 'delta') {
-            const parsed = JSON.parse(data) as ChatDeltaEvent
-            appendDelta(parsed.text)
-          } else if (event === 'error') {
-            const parsed = JSON.parse(data) as ChatErrorEvent
-            streamError = parsed.message
-          } else if (event === 'done') {
-            // Round finished; keep reading until the stream closes.
-          }
+          consumeBlock(block)
         }
       }
-      if (streamError) throw new Error(streamError)
+      if (buffer.trim()) consumeBlock(buffer)
+      if (streamError) throw streamError
+      setMessages((prev) => prev.map((item) => {
+        if (item.id === turn.userMessageId || item.id === assistantMessageId) return { ...item, status: 'sent' }
+        return item
+      }))
+      refreshThreads(chatBaseURL)
       window.dispatchEvent(new Event('jarvis:chat-completed'))
     } catch (cause: unknown) {
       if (isAbortError(cause)) {
         setPaused(true)
+        setQueuePaused(true)
         // Keep any partial reply; drop only a still-empty assistant bubble.
         setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'assistant' && last.text === '') return prev.slice(0, -1)
-          return prev
+          const assistant = prev.find((item) => item.id === assistantMessageId)
+          return prev.flatMap((item) => {
+            if (item.id === turn.userMessageId) return [{ ...item, status: 'sent' as ChatMessageStatus }]
+            if (item.id === assistantMessageId && assistant?.text === '') return []
+            if (item.id === assistantMessageId) return [{ ...item, status: 'paused' as ChatMessageStatus }]
+            return [item]
+          })
         })
         return
       }
-      const text = errorText(cause)
-      if (isStaleThreadError(text) && threadId) {
+      const diagnostic = diagnosticFromCause(cause)
+      if (isStaleThreadError(`${diagnostic.detail ?? ''} ${diagnostic.message}`) && threadAtStart) {
         window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY)
         setThreadId(null)
-        setError('上一会话属于旧的 Agent CLI，已经清空。请再发送一次，会开启新的 Codex 对话。')
-      } else {
-        setError(text)
+        threadIdRef.current = null
+        setNotice('这个会话暂时无法继续，已切换到新对话。你可以继续发送。')
       }
-      setInput((current) => current.trim() ? current : message)
-      if (imageToSend) setImage((current) => current ?? imageToSend)
-      // Drop the trailing empty assistant bubble so a failed round leaves no blank.
+      setQueuePaused(true)
+      setError(diagnostic)
       setMessages((prev) => {
-        const last = prev[prev.length - 1]
-        if (last && last.role === 'assistant' && last.text === '') return prev.slice(0, -1)
-        return prev
+        const assistant = prev.find((item) => item.id === assistantMessageId)
+        return prev.flatMap((item) => {
+          if (item.id === turn.userMessageId) {
+            return [{ ...item, status: 'failed' as ChatMessageStatus, diagnostic, retryText: turn.text, retryImage: turn.image }]
+          }
+          if (item.id === assistantMessageId && assistant?.text === '') return []
+          if (item.id === assistantMessageId) return [{ ...item, status: 'partial' as ChatMessageStatus, diagnostic }]
+          return [item]
+        })
       })
     } finally {
       abortRef.current = null
       setStopping(false)
       setSending(false)
+      processingRef.current = false
     }
-  }, [input, image, sending, context, threadId, chatBaseURL])
+  }, [chatBaseURL, refreshThreads])
+
+  useEffect(() => {
+    if (!chatBaseURL || historyLoading || sending || queuePaused || queue.length === 0 || processingRef.current) return
+    void runTurn(queue[0])
+  }, [chatBaseURL, historyLoading, queue, queuePaused, runTurn, sending])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault()
-      if (!sending) void send()
-    }
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+    event.preventDefault()
+    send()
   }
 
   const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -387,21 +731,55 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
     if (images.length === 0) return
     event.preventDefault()
     if (images.length > 1) {
-      setError('每轮只能附一张截图')
+      setError({ message: '每轮只能附一张截图。', at: new Date().toISOString(), recoverable: true })
       return
     }
     attachImage(images[0])
   }
 
+  const hasPendingQueue = queue.length > 0
+  const canSwitchThread = !sending && !hasPendingQueue && !historyLoading
+  const activeThread = threadId ? threads.find((item) => item.thread_id === threadId) : undefined
+
   return <section className="chat-panel jarvis-chat" aria-label={`${agentName} 对话`}>
     <header className="chat-header">
       <div className="chat-title-row">
-        <Text strong className="chat-title">{agentName} 对话</Text>
-        <span className="chat-ready" aria-label="对话使用当前页面上下文并保存在本地"><span aria-hidden="true" />页面联动 · 本地记忆</span>
-        <Button type="text" size="small" className="chat-close" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
+        <div className="chat-heading">
+          <Text strong className="chat-title">{agentName}</Text>
+          <span className={`chat-status ${sending ? 'is-running' : ''}`} aria-live="polite">
+            <span aria-hidden="true" />
+            {queueStatusText}
+          </span>
+        </div>
+        <div className="chat-header-actions">
+          <Button type="text" size="small" className="chat-icon-button" icon={<HistoryOutlined />} aria-label="查看历史对话" title="历史对话" onClick={() => setThreadsOpen((value) => !value)} />
+          <Button type="text" size="small" className="chat-icon-button" icon={<PlusOutlined />} disabled={!canSwitchThread} aria-label="新建对话" title="新建对话" onClick={startNewChat} />
+          <Button type="text" size="small" className="chat-close chat-icon-button" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
+        </div>
       </div>
+      {threadsOpen && <div className="chat-thread-panel" aria-label="历史对话">
+        <div className="chat-thread-panel-head">
+          <span>历史对话</span>
+          <Button type="text" size="small" icon={<ReloadOutlined />} loading={threadsLoading} aria-label="刷新历史对话" onClick={() => refreshThreads()} />
+        </div>
+        {threadsLoading && threads.length === 0 ? <div className="chat-thread-empty">正在读取...</div> : threads.length === 0 ? <div className="chat-thread-empty">暂无历史对话</div> : <div className="chat-thread-list">
+          {threads.map((thread) => (
+            <button
+              key={thread.thread_id}
+              type="button"
+              className={`chat-thread-item ${thread.thread_id === threadId ? 'is-active' : ''}`}
+              disabled={!canSwitchThread}
+              onClick={() => selectThread(thread.thread_id)}
+            >
+              <span className="chat-thread-title">{thread.title || '未命名对话'}</span>
+              <span className="chat-thread-preview">{thread.preview || '暂无摘要'}</span>
+              <span className="chat-thread-time">{formatThreadTime(thread.message_at || thread.updated_at)}</span>
+            </button>
+          ))}
+        </div>}
+      </div>}
       <div className="chat-context" aria-label="当前对话上下文">
-        <span className="chat-context-page">正在查看「{currentPageLabel}」</span>
+        <span className="chat-context-page">当前页面：{currentPageLabel}</span>
         {currentSelectionLabel && <>
           <span className="chat-context-separator" aria-hidden="true">·</span>
           <span className="chat-context-selection">{currentSelectionType}：{currentSelectionLabel}</span>
@@ -419,10 +797,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
           <span className="chat-context-selection">{currentWeek}</span>
         </>}
       </div>
-      <div className="chat-history-actions">
-        <Text type="secondary" className="chat-context-note">对话记录保存在本地 Markdown；切换执行 CLI 后请新建对话。</Text>
-        <Button size="small" disabled={sending || historyLoading} onClick={startNewChat} title="开始新的 Agent 会话，保留旧的本地记录">新建对话</Button>
-      </div>
+      {activeThread && <div className="chat-active-thread" title={activeThread.title}>{activeThread.title}</div>}
     </header>
     <div
       className="chat-messages"
@@ -450,22 +825,50 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
           ))}
         </div>
       </div>}
-      {messages.map((msg, index) => (
+      {messages.map((msg) => (
         <div
-          key={index}
+          key={msg.id}
           className={`chat-bubble-row ${msg.role}`}
           aria-label={msg.role === 'assistant' ? `${agentName} 的回复` : '你的消息'}
         >
-          <div className={`chat-bubble ${msg.role}`}>
-            {msg.role === 'assistant' && msg.text === '' && sending
-              ? <span className="chat-typing"><span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>{agentName} 正在思考</span>
+          <div className={`chat-bubble ${msg.role} ${msg.status ? `is-${msg.status}` : ''}`}>
+            {msg.imageName && <span className="chat-bubble-attachment">截图：{msg.imageName}</span>}
+            {msg.role === 'assistant' && msg.text === '' && msg.status === 'sending'
+              ? <span className="chat-typing"><span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>{queueStatusText}</span>
               : msg.text}
+            {(msg.status === 'queued' || msg.status === 'failed' || msg.status === 'partial' || msg.status === 'paused') && <div className="chat-bubble-meta">
+              {msg.status === 'queued' && '等待发送'}
+              {msg.status === 'failed' && '这条消息未完成'}
+              {msg.status === 'partial' && '回复未完成'}
+              {msg.status === 'paused' && '已暂停'}
+              {msg.status === 'failed' && <button type="button" onClick={() => retryMessage(msg)}>重试</button>}
+              {msg.diagnostic && <button type="button" onClick={() => { setError(msg.diagnostic); setDiagnosticOpen(true) }}>诊断</button>}
+            </div>}
           </div>
         </div>
       ))}
     </div>
-    {notice && <Alert className="chat-error" type="info" showIcon title="已开始新会话" description={notice} closable onClose={() => setNotice(undefined)} />}
-    {error && <Alert className="chat-error" type="error" showIcon title={`${agentName} 暂时无法回复`} description={error} closable onClose={() => setError(undefined)} />}
+    {notice && <Alert className="chat-error" type="info" showIcon message="提示" description={notice} closable onClose={() => setNotice(undefined)} />}
+    {error && <div className="chat-error-card" role="status" aria-live="polite">
+      <div className="chat-error-main">
+        <strong>{error.message}</strong>
+        <span>对话可以继续；需要排查时复制诊断给 owner。</span>
+        {error.logId && <span>日志 ID：{error.logId}</span>}
+      </div>
+      <div className="chat-error-actions">
+        {queuePaused && queue.length > 0 && <Button size="small" onClick={resumeQueue}>继续队列</Button>}
+        {queue.length > 0 && <Button size="small" icon={<DeleteOutlined />} onClick={clearQueue}>清空待发送</Button>}
+        <Button size="small" icon={<CopyOutlined />} onClick={() => void copyDiagnostic(error)}>复制诊断</Button>
+        <Button size="small" type="text" onClick={() => setDiagnosticOpen((value) => !value)}>{diagnosticOpen ? '收起日志' : '查看日志'}</Button>
+        <Button size="small" type="text" icon={<CloseOutlined />} aria-label="关闭错误提示" onClick={() => { setError(undefined); setDiagnosticOpen(false) }} />
+      </div>
+      {diagnosticOpen && <pre className="chat-diagnostic-log">{[
+        error.detail ? `detail: ${error.detail}` : '',
+        error.logId ? `log_id: ${error.logId}` : '',
+        `time: ${error.at}`,
+        threadId ? `thread_id: ${threadId}` : '',
+      ].filter(Boolean).join('\n')}</pre>}
+    </div>}
     <div className="chat-composer">
       <input
         ref={imageInputRef}
@@ -491,7 +894,7 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         onChange={(event) => setInput(event.target.value)}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
-        disabled={sending || historyLoading}
+        disabled={historyLoading}
         autoSize={{ minRows: 1, maxRows: 6 }}
         maxLength={4000}
         aria-label={`发送给 ${agentName} 的消息`}
@@ -504,20 +907,22 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
             type="text"
             size="small"
             icon={<PaperClipOutlined />}
-            disabled={sending || historyLoading}
+            disabled={historyLoading}
             aria-label="附加截图"
             title="附加 PNG/JPEG 截图（也可直接粘贴）"
             onClick={() => imageInputRef.current?.click()}
           >截图</Button>
           <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite">
-            {stopping ? '正在暂停回复…' : sending ? `${agentName} 正在回复，你可以随时暂停` : paused ? '已暂停；继续发送会恢复同一 Agent 会话' : 'Enter 换行 · ⌘/Ctrl + Enter 发送 · 可粘贴截图'}
+            {stopping ? '正在暂停回复…' : sending ? `正在回复，继续发送会进入队列${queue.length > 0 ? `（${queue.length} 条）` : ''}` : paused ? '已暂停；发送新消息或继续队列即可恢复' : hasPendingQueue ? `${queue.length} 条消息等待发送` : 'Enter 发送 · Shift + Enter 换行 · 可粘贴截图'}
           </Text>
         </div>
-        {sending
-          ? <Button danger icon={<StopOutlined />} disabled={stopping} aria-label={`暂停 ${agentName} 回复`} onClick={stop}>
+        <div className="chat-composer-actions">
+          {sending && <Button danger icon={<StopOutlined />} disabled={stopping} aria-label={`暂停 ${agentName} 回复`} onClick={stop}>
             {stopping ? '正在暂停' : '暂停生成'}
-          </Button>
-          : <Button type="primary" icon={<SendOutlined />} disabled={historyLoading || !input.trim()} aria-label="发送消息" onClick={() => void send()}>发送</Button>}
+          </Button>}
+          {!sending && queuePaused && queue.length > 0 && <Button icon={<ReloadOutlined />} onClick={resumeQueue}>继续队列</Button>}
+          <Button type="primary" icon={<SendOutlined />} disabled={historyLoading || !input.trim()} aria-label="发送消息" onClick={send}>{sending || queue.length > 0 ? '加入队列' : '发送'}</Button>
+        </div>
       </div>
     </div>
   </section>

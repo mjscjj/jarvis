@@ -282,6 +282,10 @@ func (s *Service) History(threadID string) (History, error) {
 	return s.history.Read(threadID)
 }
 
+func (s *Service) Threads(limit int) (ThreadList, error) {
+	return s.history.List(limit)
+}
+
 // buildPrompt 组装首轮 prompt：系统指引（末尾追加可信共享记忆）+ page_context + 用户消息。
 func (s *Service) buildPrompt(ctx context.Context, req Request) (string, error) {
 	sharedMemory, err := s.sharedMem.Text(ctx)
