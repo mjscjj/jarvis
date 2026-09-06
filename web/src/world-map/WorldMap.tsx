@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AimOutlined, CompressOutlined, MinusOutlined, PlusOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
+import { AimOutlined, CompressOutlined, FullscreenExitOutlined, FullscreenOutlined, MinusOutlined, PlusOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
 import { Alert, Button, Empty, Input, Popover, Segmented, Space, Spin, Switch, Tag, Tooltip } from 'antd'
 import type { ForceGraphMethods, NodeObject } from 'react-force-graph-2d'
 import ForceGraph2D from 'react-force-graph-2d'
@@ -31,6 +31,7 @@ import './world-map.css'
 type GraphRef = ForceGraphMethods<WorldNode, WorldLink>
 type NetworkScope = 'primary' | 'all' | 'focus'
 type LabelDensity = 'auto' | 'all' | 'related' | 'hidden'
+type CanvasTheme = 'light' | 'dark'
 
 const emptyGraph: WorldGraph = { nodes: [], links: [] }
 
@@ -74,6 +75,7 @@ function useElementSize<T extends HTMLElement>() {
 }
 
 export default function WorldMap() {
+  const shellRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<GraphRef | undefined>(undefined)
   const forceSignatureRef = useRef('')
   const framedSignatureRef = useRef('')
@@ -89,11 +91,19 @@ export default function WorldMap() {
   const [relationDirection, setRelationDirection] = useState<RelationDirection>('both')
   const [showIsolated, setShowIsolated] = useState(false)
   const [labelDensity, setLabelDensity] = useState<LabelDensity>('auto')
+  const [canvasTheme, setCanvasTheme] = useState<CanvasTheme>('light')
+  const [fullscreen, setFullscreen] = useState(false)
   const [visibleTypes, setVisibleTypes] = useState<Set<PageType>>(() => new Set(pageTypes))
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [selecting, setSelecting] = useState(false)
   const [error, setError] = useState<string>()
+
+  useEffect(() => {
+    const updateFullscreen = () => setFullscreen(document.fullscreenElement === shellRef.current)
+    document.addEventListener('fullscreenchange', updateFullscreen)
+    return () => document.removeEventListener('fullscreenchange', updateFullscreen)
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -176,6 +186,7 @@ export default function WorldMap() {
     setRelationDirection('both')
     setShowIsolated(false)
     setLabelDensity('auto')
+    setCanvasTheme('light')
     clearSelection()
   }, [clearSelection])
 
@@ -205,6 +216,16 @@ export default function WorldMap() {
     if (!selectedId) return
     frameGraph(connections.size > 1 ? connections : new Set([selectedId]), 480)
   }, [connections, frameGraph, selectedId])
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else if (shellRef.current?.requestFullscreen) await shellRef.current.requestFullscreen()
+      else throw new Error('当前浏览器不支持全屏显示')
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    }
+  }, [])
 
   useEffect(() => {
     if (!graph.nodes.length) return
@@ -259,7 +280,7 @@ export default function WorldMap() {
     context.fillStyle = meta.color
     context.fill()
     context.lineWidth = 1.5 / scale
-    context.strokeStyle = selected ? '#18211f' : '#ffffff'
+      context.strokeStyle = selected ? canvasTheme === 'dark' ? '#f7faf8' : '#18211f' : canvasTheme === 'dark' ? '#171b19' : '#ffffff'
     context.stroke()
 
     const important = node.pageType === 'principal' || node.pageType === 'project'
@@ -272,11 +293,11 @@ export default function WorldMap() {
       context.font = `${selected ? 650 : 520} ${fontSize}px Inter, "PingFang SC", sans-serif`
       context.textAlign = 'center'
       context.textBaseline = 'top'
-      context.fillStyle = connected ? '#26302d' : '#9aa19e'
+      context.fillStyle = connected ? canvasTheme === 'dark' ? '#edf2ef' : '#26302d' : canvasTheme === 'dark' ? '#68716d' : '#9aa19e'
       context.fillText(label, node.x!, node.y! + radius + 4 / scale)
     }
     context.restore()
-  }, [connections, labelDensity, selectedId])
+  }, [canvasTheme, connections, labelDensity, selectedId])
 
   const paintNodeArea = useCallback((candidate: NodeObject<WorldNode>, color: string, context: CanvasRenderingContext2D) => {
     const node = candidate as WorldNode
@@ -337,7 +358,7 @@ export default function WorldMap() {
   )
 
   return (
-    <div className="world-map-shell">
+    <div className="world-map-shell" ref={shellRef}>
       <div className="world-map-toolbar">
         <div className="world-map-title-block">
           <strong>关系地图</strong>
@@ -350,19 +371,26 @@ export default function WorldMap() {
             options={[{ label: '主网络', value: 'primary' }, { label: '全局', value: 'all' }, { label: '一跳', value: 'focus', disabled: !selectedPage }]}
           />
           <Popover trigger="click" placement="bottomRight" content={viewOptions}><Button icon={<SettingOutlined />}>视图选项</Button></Popover>
+          <Segmented<CanvasTheme>
+            className="world-map-theme-switch"
+            value={canvasTheme}
+            onChange={setCanvasTheme}
+            options={[{ label: '白色', value: 'light' }, { label: '黑色', value: 'dark' }]}
+          />
           <Space.Compact className="world-map-zoom-controls">
             <Tooltip title="缩小"><Button aria-label="缩小关系图" icon={<MinusOutlined />} onClick={() => changeZoom(0.72)} /></Tooltip>
             <Tooltip title="放大"><Button aria-label="放大关系图" icon={<PlusOutlined />} onClick={() => changeZoom(1.38)} /></Tooltip>
             <Button icon={<AimOutlined />} disabled={!selectedId} onClick={focusSelection}>聚焦</Button>
             <Button icon={<CompressOutlined />} onClick={() => frameGraph()}>适应</Button>
           </Space.Compact>
+          <Button icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />} onClick={() => void toggleFullscreen()}>{fullscreen ? '退出全屏' : '全屏'}</Button>
           <Button onClick={resetView}>重置</Button>
         </div>
       </div>
 
       {error && <Alert type="error" showIcon closable title="关系地图加载失败" description={error} onClose={() => setError(undefined)} />}
 
-      <div className="world-map-layout">
+      <div className={`world-map-layout${canvasTheme === 'dark' ? ' is-dark' : ''}`}>
         <section className="world-map-canvas-card" aria-label="世界模型关系图">
           <div className="world-map-search">
             <Input
@@ -416,15 +444,15 @@ export default function WorldMap() {
                 width={size.width}
                 height={size.height}
                 graphData={graph}
-                backgroundColor="#fbfaf7"
+                backgroundColor={canvasTheme === 'dark' ? '#101310' : '#fbfaf7'}
                 nodeCanvasObject={drawNode}
                 nodePointerAreaPaint={paintNodeArea}
                 nodeLabel={(node) => `${node.name} · ${pageTypeMeta[node.pageType].label}`}
-                linkColor={(link) => selectedId && (linkEndpointId(link.source) === selectedId || linkEndpointId(link.target) === selectedId) ? '#56625e' : selectedId ? '#d9ddda' : '#b9c0bd'}
+                linkColor={(link) => selectedId && (linkEndpointId(link.source) === selectedId || linkEndpointId(link.target) === selectedId) ? canvasTheme === 'dark' ? '#c4cec9' : '#56625e' : selectedId ? canvasTheme === 'dark' ? '#303733' : '#d9ddda' : canvasTheme === 'dark' ? '#4b5550' : '#b9c0bd'}
                 linkWidth={(link) => selectedId && (linkEndpointId(link.source) === selectedId || linkEndpointId(link.target) === selectedId) ? 1.4 : 0.65}
                 linkDirectionalArrowLength={(link) => selectedId && (linkEndpointId(link.source) === selectedId || linkEndpointId(link.target) === selectedId) ? 3.2 : 0}
                 linkDirectionalArrowRelPos={0.82}
-                linkDirectionalArrowColor={() => '#68736f'}
+                linkDirectionalArrowColor={() => canvasTheme === 'dark' ? '#c8d1cd' : '#68736f'}
                 d3AlphaDecay={0.035}
                 d3VelocityDecay={0.34}
                 cooldownTicks={scope === 'focus' ? 0 : 220}
