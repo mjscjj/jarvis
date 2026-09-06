@@ -76,8 +76,8 @@ func (s *PersonService) Get(ctx context.Context, id uint64) (*PersonView, error)
 }
 
 // GetByOpenID looks a person up by their Feishu open_id (the business key). It
-// is used by the jarvis-tools CLI so codex can resolve a participant to their
-// role/relation during extraction.
+// is used by the jarvis-tools CLI so agents can resolve a participant to their
+// maintained person record.
 func (s *PersonService) GetByOpenID(ctx context.Context, openID string) (*PersonView, error) {
 	if strings.TrimSpace(openID) == "" {
 		return nil, invalid(fmt.Errorf("person open_id must not be empty"))

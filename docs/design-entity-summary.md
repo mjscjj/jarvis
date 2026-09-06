@@ -1,8 +1,8 @@
 # 实体长期事实：summary 单页化
 
-> Status: proposed
-> Authority: `docs/00-overview.md` 是总纲；本文只提议实体长期事实页的收敛方式
-> Baseline: 2026-08-15
+> Status: current
+> Authority: normative design；`docs/00-overview.md` 是总纲
+> Last verified: 2026-09-06 @ `250bbdb`
 
 ## 1. 问题
 

@@ -42,7 +42,8 @@
 | [主动巡视 Agent](design-proactive-heartbeat-agent.md) | implemented-history | 实现动机与验收设计；当前边界见总纲 |
 | [文件化文本配置](design-file-backed-text-config.md) | current | prompts、rules 与后台编辑边界 |
 | [Todo / Task 渐进式上下文](design-context-pipeline.md) | current | `source + capture + annotation`、默认概览和按需读取 |
-| [实体关系与进度历史](design-temporal-relations-and-progress.md) | current，部分段落待继续校准 | RelationFact、TaskEvent、Fact |
+| [实体长期事实页](design-entity-summary.md) | current | `summary`、页内实体引用、backlinks 与 Fact 分工 |
+| [实体关系与进度历史](design-temporal-relations-and-progress.md) | current | TaskEvent、Fact；已删除关系表的演进说明 |
 | [KeyMatter 关键事项实体](design-key-matter.md) | implemented-history | 已落地；当前实体边界见总纲，字段与接口以代码真源为准 |
 | [HTTP API](reference/http-api.md) | current | 路由分组；`router.go` 仍为真源 |
 | [运行与部署](reference/operations.md) | current | launchd、端口、签名和重建 |
