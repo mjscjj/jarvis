@@ -42,6 +42,7 @@ type Dependencies struct {
 	Executor           *execute.AgentExecutor
 	MessageRecaller    *effectops.MessageRecaller // 撤回任务已发出的飞书消息
 	Projects           *background.ProjectService
+	ProjectPortability *background.ProjectPortabilityService
 	KeyMatters         *background.KeyMatterService
 	Persons            *background.PersonService
 	Groups             *background.GroupBackgroundService
@@ -250,6 +251,13 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/projects/:project_id", GetProject(deps.Projects))
 	h.PUT("/api/projects/:project_id", UpdateProject(deps.Projects))
 	h.DELETE("/api/projects/:project_id", DeleteProject(deps.Projects))
+	if deps.ProjectPortability != nil {
+		h.POST("/api/projects/import/preview", PreviewProjectImport(deps.ProjectPortability))
+		h.POST("/api/projects/import", ImportProject(deps.ProjectPortability))
+		h.GET("/api/projects/:project_id/export", ExportProject(deps.ProjectPortability))
+		h.POST("/api/projects/:project_id/duplicate", DuplicateProject(deps.ProjectPortability))
+		h.POST("/api/projects/:project_id/repositories/resolve", ResolveProjectRepositories(deps.ProjectPortability))
+	}
 	h.GET("/api/key-matters", ListKeyMatters(deps.KeyMatters))
 	h.POST("/api/key-matters", CreateKeyMatter(deps.KeyMatters))
 	h.GET("/api/key-matters/:key_matter_id", GetKeyMatter(deps.KeyMatters))

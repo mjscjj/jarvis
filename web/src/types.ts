@@ -354,6 +354,15 @@ export interface FactSearchQuery {
 
 export type PageType = 'principal' | 'person' | 'project' | 'key_matter' | 'group' | 'resource'
 
+export interface PageIndexItem {
+  type: PageType
+  id: number
+  name: string
+  index_line: string | null
+  char_count: number
+  last_progress_at: string | null
+}
+
 export interface PageLink {
   type: string
   id: number
@@ -394,6 +403,37 @@ export interface Project {
   created_at: string
   updated_at: string
   key_matters?: KeyMatter[]
+}
+
+export interface SharedProjectResource {
+  title: string
+  resource_type: string
+  url: string | null
+  summary: string | null
+  is_active: boolean
+}
+
+export interface ProjectBundle {
+  schema_version: number
+  project: ProjectInput
+  summary: string
+  resources: SharedProjectResource[]
+  exported_at: string
+}
+
+export interface ProjectImportPreview {
+  valid: boolean
+  action: 'create' | 'conflict'
+  existing_project_id: number | null
+  warnings: string[]
+}
+
+export interface RepositoryBinding {
+  resource_id: number
+  title: string
+  remote_url: string
+  local_path: string | null
+  status: 'matched' | 'unmatched' | 'ambiguous'
 }
 
 export interface KeyMatter {
@@ -913,6 +953,7 @@ export interface Resource {
   title: string
   resource_type: ResourceType
   url: string | null
+  local_path: string | null
   summary: string | null
   last_progress_at: string | null
   person_id: number | null

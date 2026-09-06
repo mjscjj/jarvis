@@ -110,6 +110,8 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/api/persons":
+			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":5,"open_id":"ou_alice","name":"Alice","en_name":"Alice","department":"Engineering","title":"Staff Engineer","role":"key","summary":"large","priority_weight":0.9,"is_active":true,"updated_at":"2026-08-07T10:00:00Z"}]}}`)
 		case "/api/key-matters":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":4,"title":"matter","status":"跟进中","summary":"current","project_id":1,"due_at":null,"last_progress_at":null,"last_active_at":"2026-08-07T10:00:00Z","closed_at":null,"project":{"large":true}}]}}`)
 		case "/api/todos":
@@ -128,6 +130,7 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 		command   string
 		forbidden []string
 	}{
+		{"list-persons", []string{"summary", "priority_weight", "relation"}},
 		{"list-key-matters", []string{"closed_at", "project"}},
 		{"list-todos", []string{"description", "content"}},
 		{"list-tasks", []string{"source_payload", "execution_result"}},

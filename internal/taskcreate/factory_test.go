@@ -3,6 +3,8 @@ package taskcreate
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"jarvis/internal/contextsnap"
@@ -11,6 +13,68 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestProjectRepoPathRequiresOneValidBinding(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "task-repo.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&domain.Project{}, &domain.ManagedResource{}, &domain.Task{}, &domain.TaskEvent{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	project := domain.Project{Name: "Codebase", Role: "owner", Status: "active", Priority: 1}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(path, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	url := "git@code.byted.org:team/repo.git"
+	resource := domain.ManagedResource{
+		Title: "repo", ResourceType: "repo", URL: &url, LocalPath: &path,
+		ProjectID: &project.ID, IsActive: true,
+	}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	factory, err := NewFactory(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := factory.projectRepoPath(t.Context(), project.ID)
+	if err != nil || resolved == nil || *resolved != path {
+		t.Fatalf("projectRepoPath() = %v, %v", resolved, err)
+	}
+	task, err := factory.CreateWithDB(t.Context(), db, Input{
+		Title: "修复代码", ActionType: "code_change", Target: "service",
+		Background: json.RawMessage(`{}`), SourcePayload: json.RawMessage(`{"instruction":"修复"}`),
+		ProjectID: &project.ID, SourceType: SourceManual, ActorType: "user",
+	})
+	if err != nil {
+		t.Fatalf("CreateWithDB() error = %v", err)
+	}
+	if task.RepoPath == nil || *task.RepoPath != path {
+		t.Fatalf("CreateWithDB repo_path = %v", task.RepoPath)
+	}
+	second := filepath.Join(t.TempDir(), "repo-2")
+	if err := os.MkdirAll(filepath.Join(second, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resource2 := domain.ManagedResource{
+		Title: "repo-2", ResourceType: "repo", URL: &url, LocalPath: &second,
+		ProjectID: &project.ID, IsActive: true,
+	}
+	if err := db.Create(&resource2).Error; err != nil {
+		t.Fatal(err)
+	}
+	resolved, err = factory.projectRepoPath(t.Context(), project.ID)
+	if err != nil || resolved != nil {
+		t.Fatalf("ambiguous projectRepoPath() = %v, %v", resolved, err)
+	}
+}
 
 func TestNormalizeInputDefaultsTodoSourceID(t *testing.T) {
 	todoID := uint64(42)
@@ -157,7 +221,7 @@ func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *t
 		)`,
 		`CREATE TABLE managed_resource (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, resource_type TEXT NOT NULL,
-			url TEXT, summary TEXT, last_progress_at DATETIME, person_id INTEGER, project_id INTEGER,
+			url TEXT, local_path TEXT, summary TEXT, last_progress_at DATETIME, person_id INTEGER, project_id INTEGER,
 			link_principal INTEGER NOT NULL, is_active INTEGER NOT NULL,
 			last_active_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			created_at DATETIME, updated_at DATETIME

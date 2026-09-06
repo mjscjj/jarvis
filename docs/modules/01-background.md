@@ -2,8 +2,8 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-08-02 @ `89fa24b`
-> Code source: `internal/background/`, `internal/domain/models.go`, `internal/domain/knowledge.go`
+> Last verified: 2026-09-06 @ `250bbdb`
+> Code source: `internal/background/`, `internal/domain/models.go`, `internal/progress/`
 
 M1 维护 principal 的稳定工作背景，供 M3/M5 和日报读取。SQLite 是真源；不向向量库同步背景，也没有 memory sidecar。
 
@@ -29,24 +29,24 @@ erDiagram
     PROJECT ||--o{ TASK : "project_id"
 ```
 
-Task 是独立执行单元，只保留可选 `project_id`，不直接关联 KeyMatter 或产品模块实体。当前没有 `project_member` 模型或表。跨模块实体映射使用通用 `EntityRelation`；一个 Group 至多直接绑定一个 Project。
+Task 是独立执行单元，只保留可选 `project_id`，不直接关联 KeyMatter 或产品模块实体。当前没有 `project_member` 模型或表。确定性归属优先使用既有外键，跨模块且需要程序查询的实体映射使用通用 `EntityRelation`，叙述性关系写在实体 `summary` 页的 Markdown 引用中；一个 Group 至多直接绑定一个 Project。
 
 ## 3. 关键模型
 
-- Project：`code`、`name`、`role(owner|participant)`、`status(planning|active|paused|archived|done)` 和 `priority`
+- Project：`code`、`name`、`role(owner|participant)`、`status(planning|active|paused|archived|done)`、`priority` 和 `summary`
 - KeyMatter：项目内持续跟进的重要事项，状态保持自由文本，可选截止时间；闭环后保留历史
-- Person：Feishu ID、姓名、`role(leader|key|colleague|other)`、权重、关系、沟通风格、P2P chat、启用状态
-- PrincipalProfile：本人身份、职责、偏好和 leader
-- Group：采集维护会话身份与活跃信息；M1 维护 `project_id` 和 `background_note`。`include_in_memory` 当前只存储/展示，没有 memory sidecar 运行效果
+- Person：Feishu ID、姓名、`role(leader|key|colleague|other)`、权重、P2P chat、`summary` 和启用状态
+- PrincipalProfile：本人身份和 `summary`
+- Group：采集维护会话身份与活跃信息；M1 维护 `project_id`、控制字段和 `summary`。`include_in_memory` 当前只存储/展示，没有 memory sidecar 运行效果
 - ManagedResource：人工维护的文档、链接、仓库或备注，可关联 Person、Project 和 principal
 
 字段和 allowlist 以 Go model/service 为准，不在本文复制 DDL。
 
 ## 4. Fact、Page 与 EntityRelation
 
-- Project 创建、修改、归档会写自然语言 Fact；Fact 也可通过 API 写入。
-- factengine 从 message、TodoEvent 和 TaskEvent 持续蒸馏 Fact，并通过通用 CRUD 工具按需维护当前背景、关系和资料。
-- EntityRelation 保存两个既有实体之间带证据的通用跨模块映射；Page 保存实体的长期事实正文。
+- `summary` Page 保存实体当前长期认知，`Fact` 保存发生过的事情；Fact 可通过 API 写入。
+- factengine 从 message、TodoEvent 和 TaskEvent 持续蒸馏 Fact，并通过通用工具维护当前背景、关系和资料。
+- EntityRelation 保存两个既有实体之间带证据、需要程序查询的跨模块映射；叙述性关系使用 `summary` 中的实体引用表达，读取走 page/backlink API。
 - M1 不负责从会话批量蒸馏事实。
 - 外部证据先进入 Message/Clue，再由 Agent 写入最小的 Project、KeyMatter 或其它通用实体；Page 继续使用 CAS，Fact 保留来源追溯。
 

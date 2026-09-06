@@ -1569,11 +1569,11 @@ cmd_list_persons() {
     fi
     if [[ -n "$KEYWORD" ]]; then
       items="$(printf '%s' "$items" | jq -c --arg keyword "$KEYWORD" '
-        [.[] | select((([.name,.en_name,.department,.title,.role,.relation,.open_id] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase)))]')"
+        [.[] | select((([.name,.en_name,.department,.title,.role,.open_id] | map(. // "") | join(" ")) | ascii_downcase | contains($keyword | ascii_downcase)))]')"
     fi
     total="$(printf '%s' "$items" | jq -r 'length')"
   fi
-  items="$(printf '%s' "$items" | jq -c --argjson limit "$LIMIT" '[.[:$limit][] | {id,open_id,name,en_name,department,title,role,relation,is_active,updated_at}]')"
+  items="$(printf '%s' "$items" | jq -c --argjson limit "$LIMIT" '[.[:$limit][] | {id,open_id,name,en_name,department,title,role,is_active,updated_at}]')"
   emit "$(jq -cn --argjson total "$total" --argjson persons "$items" '{total:$total,persons:$persons}')"
 }
 

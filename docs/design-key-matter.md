@@ -1,12 +1,16 @@
 # KeyMatter：关键事项实体
 
 > Status: implemented-history
-> Authority: normative design
+> Authority: non-normative implementation record
 > Last verified: 2026-08-06 @ `codex/jarvis-workspace-snapshot-20260805`
+>
+> 关系存储部分记录的是当时实现，已被
+> [实体长期事实：summary 单页化](design-entity-summary.md) 取代：当前没有
+> `RelationFact`，自然语言关系使用 `summary` 正文里的实体引用。
 
 ## 1. 缺口
 
-当前世界模型的当前状态载体是 `PrincipalProfile`、`Project`、`Person`、`Group`、`ManagedResource`；历史载体是 `Fact` 和 `RelationFact`。
+当时世界模型的当前状态载体是 `PrincipalProfile`、`Project`、`Person`、`Group`、`ManagedResource`；历史载体是 `Fact` 和当时尚存的 `RelationFact`。
 
 缺少一类实体：**一件持续存在、需要被记住和跟进，但不构成项目的事**。例如「和法务对齐某项合规口径」「某人的入职交接」「一次对外合作谈判」。这类事在现有模型中只能被拆成两种残缺形态：
 
@@ -46,8 +50,7 @@ type KeyMatter struct {
 	// matter is still open is decided by ClosedAt alone.
 	Status  string  `gorm:"column:status;not null;default:''"`
 	Summary *string `gorm:"column:summary"`
-	// ProjectID is the only structured association. Everything else (people,
-	// groups, documents) goes through RelationFact.
+	// ProjectID is the only structured association.
 	ProjectID *uint64    `gorm:"column:project_id;index:idx_key_matter_project"`
 	DueAt     *time.Time `gorm:"column:due_at;index:idx_key_matter_due"`
 	ClosedAt  *time.Time `gorm:"column:closed_at;index:idx_key_matter_closed"`
@@ -69,13 +72,13 @@ func (KeyMatter) TableName() string { return "key_matter" }
 - **`status` 不设枚举。** 模型写短标签供人阅读，不构成状态机。程序判断是否闭环只看 `closed_at IS NULL`，不解析 `status`。这遵循 AGENTS.md §8。
 - **`last_progress_at` 与 `Task.LastProgressAt` 同构。** 只在 `summary` 真实变化时移动，使「哪些关键事项已经失速」可由一条 SQL 查出；`updated_at` 无法承担该职责。
 - **`due_at` 有明确程序消费点。** 晨间简报与主动巡视需要按 SQL 查出临期或逾期的未闭环事项；要求模型逐条解析 `summary` 中的日期既不可靠也不经济。
-- **不引入的字段**：优先级分档（重要程度写在 `summary` 中）、负责人、相关人/群关联表、来源字段。后三者分别由 `RelationFact` 和创建时写入的一条 `Fact` 承担。
+- **不引入的字段**：优先级分档（重要程度写在 `summary` 中）、负责人、相关人/群关联表、来源字段。当时后三者分别由 `RelationFact` 和创建时写入的一条 `Fact` 承担；现行关系表达已改为 `summary` 页内引用。
 
 ### 3.1 关联关系
 
-只有 `project_id` 做成外键，因为它有确定的程序消费点：按项目聚合与过滤。其余关联——相关人、相关群、相关资料——全部走 `RelationFact`，不新建关联表。
+只有 `project_id` 做成外键，因为它有确定的程序消费点：按项目聚合与过滤。其余关联——相关人、相关群、相关资料——不新建关联表；当前写在 `summary` 页内并使用 Markdown 实体引用。
 
-`internal/knowledge/service.go` 的 `validEntityTypes` 是硬校验白名单（`requireEntity` 需要确认实体真实存在），需新增 `EntityKeyMatter EntityType = "key_matter"`，并在 `entityModel` 与 `entityLabel`（返回 `Title`）补对应分支。
+当时通过 `internal/knowledge/service.go` 的 `validEntityTypes` 校验 `RelationFact` 两端实体；该服务已随关系表删除。当前由 `internal/background/reference.go` 校验页内引用目标。
 
 ### 3.2 进度追加
 
@@ -102,8 +105,8 @@ graph LR
   Material[原始材料] --> FactEngine[factengine]
   FactEngine -->|识别并创建| KeyMatter
   FactEngine -->|追加进展| Fact
-  KeyMatter -.RelationFact.- Person
-  KeyMatter -.RelationFact.- Group
+  KeyMatter -.页内引用.- Person
+  KeyMatter -.页内引用.- Group
   KeyMatter -.可空外键.- Project
   Fact -->|subject_type=key_matter| KeyMatter
   Proactive[主动巡视] -->|看护未闭环| KeyMatter
@@ -171,9 +174,9 @@ close-key-matter    --id
 
 ## 7. 前端
 
-`web/src/Background.tsx` 在「项目 / 人物 / 会话 / 资源」之后新增「关键事项」页签。按 `.cursor/rules/list-inline-edit.mdc`，`status`、`summary`、`due_at` 在列表行内编辑并就地落库，不进弹窗；只有「新建」和「关系」使用弹层。详情区复用 `SubjectFactsCard` 展示事实流，复用 `EntityRelations` 展示关系。
+`web/src/Background.tsx` 在「项目 / 人物 / 会话 / 资源」之后新增「关键事项」页签。后续 summary 单页化改造已删除独立关系弹层，当前通过实体页编辑器维护正文和页内引用。
 
-`web/src/types.ts` 增加 `KeyMatter` 类型，`web/src/api.ts` 增加 CRUD 封装，并把 `listSubjectFacts` 的类型联合扩展为包含 `'key_matter'`。`web/src/components/EntityRelations.tsx` 支持 `key_matter` 实体类型。
+`web/src/types.ts` 增加 `KeyMatter` 类型，`web/src/api.ts` 增加 CRUD 封装，并把 `listSubjectFacts` 的类型联合扩展为包含 `'key_matter'`。已删除的 `EntityRelations` 组件属于当时实现。
 
 ## 8. 明确不做
 
@@ -203,7 +206,7 @@ close-key-matter    --id
 
 前端：
 
-12. `web/src/types.ts`、`web/src/api.ts`、`web/src/Background.tsx`、`web/src/components/EntityRelations.tsx`
+12. `web/src/types.ts`、`web/src/api.ts`、`web/src/Background.tsx`（当时还包括后来删除的 `web/src/components/EntityRelations.tsx`）
 
 文档：
 

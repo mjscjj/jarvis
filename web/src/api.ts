@@ -30,10 +30,14 @@ import type {
   ProfileInput,
   ProfileView,
   PageType,
+  PageIndexItem,
   PageUpdateInput,
   PageView,
   Project,
+  ProjectBundle,
+  ProjectImportPreview,
   ProjectInput,
+  RepositoryBinding,
   Resource,
   ResourceInput,
   ResourceList,
@@ -302,6 +306,10 @@ export function getPage(type: PageType, id: number, signal?: AbortSignal): Promi
   return request<PageView>(`/api/pages/${type}/${id}`, { signal })
 }
 
+export function listPages(all = false, signal?: AbortSignal): Promise<PageIndexItem[]> {
+  return request<PageIndexItem[]>(`/api/pages${all ? '?all=true' : ''}`, { signal })
+}
+
 export async function updatePage(type: PageType, id: number, body: PageUpdateInput): Promise<PageView> {
   const response = await fetch(`/api/pages/${type}/${id}`, {
     method: 'PUT',
@@ -337,6 +345,34 @@ export function updateProject(id: number, body: ProjectInput): Promise<Project> 
 
 export function deleteProject(id: number): Promise<{ id: number; archived: boolean }> {
   return request(`/api/projects/${id}`, { method: 'DELETE' })
+}
+
+export function exportProject(id: number): Promise<ProjectBundle> {
+  return request<ProjectBundle>(`/api/projects/${id}/export`)
+}
+
+export function previewProjectImport(bundle: ProjectBundle, name?: string, code?: string | null): Promise<ProjectImportPreview> {
+  return request<ProjectImportPreview>('/api/projects/import/preview', {
+    method: 'POST', body: { bundle, name, code },
+  })
+}
+
+export function importProject(bundle: ProjectBundle, name?: string, code?: string | null): Promise<Project> {
+  return request<Project>('/api/projects/import', {
+    method: 'POST', body: { bundle, name, code },
+  })
+}
+
+export function duplicateProject(id: number, name: string, code: string | null): Promise<Project> {
+  return request<Project>(`/api/projects/${id}/duplicate`, {
+    method: 'POST', body: { name, code },
+  })
+}
+
+export function resolveProjectRepositories(id: number): Promise<{ items: RepositoryBinding[] }> {
+  return request<{ items: RepositoryBinding[] }>(`/api/projects/${id}/repositories/resolve`, {
+    method: 'POST',
+  })
 }
 
 export function listKeyMatters(page = 1, pageSize = 100, includeClosed = false, signal?: AbortSignal): Promise<KeyMatterList> {

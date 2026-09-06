@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -16,6 +16,7 @@ import {
   Segmented,
   Select,
   Space,
+  Spin,
   Switch,
   Table,
   Tag,
@@ -37,6 +38,8 @@ import {
   deletePerson,
   deleteProject,
   deleteResource,
+  duplicateProject,
+  exportProject,
   getProfile,
   getSkillContent,
   listGroups,
@@ -45,6 +48,9 @@ import {
   listProjects,
   listResources,
   listSkills,
+  importProject,
+  previewProjectImport,
+  resolveProjectRepositories,
   resolvePerson,
   scanSkills,
   touchKeyMatter,
@@ -82,7 +88,9 @@ import type {
   ProfileInput,
   ProfileView,
   Project,
+  ProjectBundle,
   ProjectInput,
+  RepositoryBinding,
   ProjectRole,
   ProjectStatus,
   ResolveCandidate,
@@ -95,6 +103,7 @@ import type {
 import './styles/review-memory.css'
 
 const { Text } = Typography
+const WorldMap = lazy(() => import('./world-map/WorldMap'))
 
 const projectRoleLabels: Record<ProjectRole, string> = { owner: '负责人', participant: '参与者' }
 const projectStatusLabels: Record<ProjectStatus, string> = {
@@ -129,6 +138,12 @@ function ProjectsPanel() {
   const [eventDescription, setEventDescription] = useState('')
   const [eventSubmitting, setEventSubmitting] = useState(false)
   const [eventRefresh, setEventRefresh] = useState(0)
+  const [copyOpen, setCopyOpen] = useState(false)
+  const [copying, setCopying] = useState(false)
+  const [copySource, setCopySource] = useState<Project>()
+  const [copyForm] = Form.useForm<{ name: string; code: string | null }>()
+  const [repositories, setRepositories] = useState<RepositoryBinding[]>([])
+  const [resolvingRepositories, setResolvingRepositories] = useState(false)
 
   const reload = useCallback(() => {
     setLoading(true)
@@ -138,6 +153,8 @@ function ProjectsPanel() {
       .finally(() => setLoading(false))
   }, [])
   useEffect(reload, [reload])
+  useEffect(() => setRepositories([]), [detail?.id])
+
   const openCreate = () => {
     setEditing(null)
     form.setFieldsValue({ name: '', role: 'participant', status: 'active', priority: 3, code: null })
@@ -191,6 +208,89 @@ function ProjectsPanel() {
     }
   }
 
+  const downloadProject = async (project: Project) => {
+    try {
+      const bundle = await exportProject(project.id)
+      const href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }))
+      const link = document.createElement('a')
+      link.href = href
+      link.download = `${project.code || project.name}-project.json`
+      link.click()
+      URL.revokeObjectURL(href)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    }
+  }
+
+  const chooseProjectBundle = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json,.json'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      try {
+        const bundle = JSON.parse(await file.text()) as ProjectBundle
+        const preview = await previewProjectImport(bundle)
+        if (!preview.valid) throw new Error(preview.warnings.join('；') || '项目包存在冲突')
+        Modal.confirm({
+          title: `导入项目“${bundle.project.name}”？`,
+          content: `将创建项目并导入 ${bundle.resources.length} 条资源，本机仓库路径不会从分享包导入。`,
+          okText: '导入',
+          cancelText: '取消',
+          onOk: async () => {
+            try {
+              const created = await importProject(bundle)
+              setDetail(created)
+              reload()
+            } catch (cause: unknown) {
+              setError(errorText(cause))
+              throw cause
+            }
+          },
+        })
+      } catch (cause: unknown) {
+        setError(errorText(cause))
+      }
+    }
+    input.click()
+  }
+
+  const openCopy = (project: Project) => {
+    setCopySource(project)
+    copyForm.setFieldsValue({ name: `${project.name} 副本`, code: null })
+    setCopyOpen(true)
+  }
+
+  const copyProject = async () => {
+    if (!copySource) return
+    const values = await copyForm.validateFields()
+    setCopying(true)
+    try {
+      const created = await duplicateProject(copySource.id, values.name, values.code || null)
+      setCopyOpen(false)
+      setDetail(created)
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setCopying(false)
+    }
+  }
+
+  const resolveRepositories = async (project: Project) => {
+    setResolvingRepositories(true)
+    try {
+      const result = await resolveProjectRepositories(project.id)
+      setRepositories(result.items)
+      setError(undefined)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setResolvingRepositories(false)
+    }
+  }
+
   const columns: TableColumnsType<Project> = [
     { title: '项目', dataIndex: 'name', render: (_, p) => <Text strong>{p.name}</Text> },
     { title: '角色', dataIndex: 'role', width: 100, render: (r: ProjectRole) => projectRoleLabels[r] },
@@ -213,7 +313,7 @@ function ProjectsPanel() {
   return <>
     <Flex justify="space-between" align="center" className="section-heading">
       <Text type="secondary">共 {items.length} 个项目</Text>
-      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建项目</Button></Flex>
+      <Flex gap={8}><Button onClick={chooseProjectBundle}>导入项目</Button><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建项目</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="项目操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless"><Table<Project> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(project) => ({ onClick: () => setDetail(project), className: 'clickable-row' })} /></Card>
@@ -236,6 +336,11 @@ function ProjectsPanel() {
     </Modal>
     <Drawer title={detail?.name || '项目详情'} open={Boolean(detail)} size={720} onClose={() => setDetail(undefined)}>
       {detail && <Space orientation="vertical" size={20} style={{ width: '100%' }}>
+        <Flex gap={8}>
+          <Button onClick={() => void downloadProject(detail)}>分享项目</Button>
+          <Button onClick={() => openCopy(detail)}>复制项目</Button>
+          <Button loading={resolvingRepositories} onClick={() => void resolveRepositories(detail)}>扫描 Codebase 仓库</Button>
+        </Flex>
         <Descriptions column={2} size="small">
           <Descriptions.Item label="状态"><Tag>{projectStatusLabels[detail.status]}</Tag></Descriptions.Item>
           <Descriptions.Item label="我的角色">{projectRoleLabels[detail.role]}</Descriptions.Item>
@@ -244,6 +349,17 @@ function ProjectsPanel() {
           <Descriptions.Item label="最近实质进展" span={2}>{detail.last_progress_at ? dayjs(detail.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
         </Descriptions>
         <SummaryPageEditor type="project" id={detail.id} />
+        {repositories.length > 0 && (
+          <Card size="small" title="Codebase 仓库">
+            <Space orientation="vertical">
+              {repositories.map((repository) => (
+                <Text key={repository.resource_id}>
+                  {repository.title} · {repository.status === 'matched' ? repository.local_path : repository.status === 'ambiguous' ? '匹配到多个本地仓库' : '未找到本地仓库'}
+                </Text>
+              ))}
+            </Space>
+          </Card>
+        )}
         <FactTimeline
           subject={{ type: 'project', id: detail.id }}
           title="项目事实"
@@ -252,6 +368,12 @@ function ProjectsPanel() {
         />
       </Space>}
     </Drawer>
+    <Modal title="复制项目" open={copyOpen} confirmLoading={copying} onOk={copyProject} onCancel={() => setCopyOpen(false)} okText="复制">
+      <Form form={copyForm} layout="vertical">
+        <Form.Item name="name" label="新项目名" rules={[{ required: true, message: '请输入项目名' }]}><Input /></Form.Item>
+        <Form.Item name="code" label="新项目代号（可选）"><Input allowClear /></Form.Item>
+      </Form>
+    </Modal>
     <Modal title="记录项目进展" open={eventOpen} confirmLoading={eventSubmitting} onOk={recordEvent} onCancel={() => setEventOpen(false)} okText="记录">
       <Input.TextArea rows={6} value={eventDescription} onChange={(event) => setEventDescription(event.target.value)} placeholder="写清楚发生了什么、当前结果和下一步。" />
     </Modal>
@@ -1699,13 +1821,13 @@ function SkillsPanel() {
   </>
 }
 
-type MemoryView = 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'facts' | 'profile'
+type MemoryView = 'world-map' | 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'facts' | 'profile'
 
 export default function Background() {
   const { name: agentName } = useAgentIdentity()
   const { context, setViewState } = usePageContext()
   const memoryView = (value: string | undefined): MemoryView => (
-    value === 'projects' || value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'facts' || value === 'profile'
+    value === 'world-map' || value === 'projects' || value === 'persons' || value === 'groups' || value === 'resources' || value === 'key-matters' || value === 'facts' || value === 'profile'
       ? value
       : 'profile'
   )
@@ -1724,6 +1846,15 @@ export default function Background() {
         onChange={(key) => selectView(key as MemoryView)}
         destroyOnHidden
         items={[
+          {
+            key: 'world-map',
+            label: '世界地图',
+            children: (
+              <Suspense fallback={<div style={{ padding: 72, textAlign: 'center' }}><Spin size="large" /></div>}>
+                <WorldMap />
+              </Suspense>
+            ),
+          },
           {
             key: 'profile',
             label: '我的资料',
