@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { PageIndexItem, PageView } from '../src/types.ts'
 import { buildActiveGraph, buildFocusGraph, filterGraph, graphCounts, readableSummary } from '../src/world-map/graphData.ts'
-import { focusDistance } from '../src/world-map/camera.ts'
+import { cameraFrameForBounds } from '../src/world-map/camera.ts'
 
 const index: PageIndexItem[] = [
   { type: 'principal', id: 1, name: '我', index_line: '主体', char_count: 100, last_progress_at: null },
@@ -27,6 +27,9 @@ test('focus graph contains exactly the selected page and one-hop references', ()
   const graph = buildFocusGraph(pages[1], index, index)
   assert.deepEqual(new Set(graph.nodes.map((node) => node.id)), new Set(['principal:1', 'project:2', 'person:3']))
   assert.equal(graph.links.length, 2)
+  assert.equal(graph.nodes.find((node) => node.id === 'project:2')?.fx, 0)
+  assert.ok((graph.nodes.find((node) => node.id === 'principal:1')?.fx || 0) < 0)
+  assert.ok((graph.nodes.find((node) => node.id === 'person:3')?.fx || 0) > 0)
 })
 
 test('type filters never discard the selected entity', () => {
@@ -41,8 +44,10 @@ test('nested summary payloads unwrap to readable markdown', () => {
   assert.equal(readableSummary('普通 Markdown'), '普通 Markdown')
 })
 
-test('focus camera stays usable across viewport and node sizes', () => {
-  assert.ok(focusDistance(4, 320) >= 92)
-  assert.ok(focusDistance(12, 1200) <= 290)
-  assert.ok(focusDistance(12, 800) > focusDistance(4, 800))
+test('camera frames the selected neighborhood and respects viewport aspect ratio', () => {
+  const landscape = cameraFrameForBounds({ x: [-80, 80], y: [-60, 60], z: [-8, 8] }, 1000, 650)
+  const portrait = cameraFrameForBounds({ x: [-80, 80], y: [-60, 60], z: [-8, 8] }, 420, 650)
+  assert.deepEqual(landscape.center, { x: 0, y: 0, z: 0 })
+  assert.ok(landscape.distance >= 86)
+  assert.ok(portrait.distance > landscape.distance)
 })

@@ -26,6 +26,9 @@ export interface WorldNode {
   x?: number
   y?: number
   z?: number
+  fx?: number
+  fy?: number
+  fz?: number
 }
 
 export interface WorldLink {
@@ -108,14 +111,14 @@ function nodeFromLink(link: PageLink, activeIds: Set<string>, indexes: Map<strin
     factCount: null,
     updatedAt: item?.last_progress_at || null,
     active: activeIds.has(id),
-    size: 4.2,
+    size: 4.5,
   }
 }
 
 export function nodeSize(page: PageView): number {
-  const semanticWeight = Math.log2(Math.max(1, page.fact_count) + 1) * 0.9 + Math.log2(Math.max(1, page.char_count) + 1) * 0.22
-  const boost = page.type === 'principal' ? 4 : page.type === 'project' ? 1.8 : page.type === 'key_matter' ? 1.1 : 0
-  return Math.min(12, Math.max(4.2, 3.1 + semanticWeight + boost))
+  const semanticWeight = Math.log2(Math.max(1, page.fact_count) + 1) * .34 + Math.log2(Math.max(1, page.char_count) + 1) * .08
+  const boost = page.type === 'principal' ? 1.25 : page.type === 'project' ? .7 : page.type === 'key_matter' ? .4 : 0
+  return Math.min(7.6, Math.max(4.5, 3.4 + semanticWeight + boost))
 }
 
 export function buildActiveGraph(pages: PageView[], activeIndex: PageIndexItem[]): WorldGraph {
@@ -142,7 +145,7 @@ export function buildActiveGraph(pages: PageView[], activeIndex: PageIndexItem[]
 export function buildFocusGraph(page: PageView, activeIndex: PageIndexItem[], fullIndex: PageIndexItem[]): WorldGraph {
   const indexes = indexMap(fullIndex)
   const activeIds = new Set(activeIndex.map((item) => nodeKey(item.type, item.id)))
-  const center = nodeFromPage(page, activeIds, indexes)
+  const center = { ...nodeFromPage(page, activeIds, indexes), fx: 0, fy: 0, fz: 0 }
   const nodes = new Map<string, WorldNode>([[center.id, center]])
   const links: WorldLink[] = []
   const seen = new Set<string>()
@@ -156,8 +159,29 @@ export function buildFocusGraph(page: PageView, activeIndex: PageIndexItem[], fu
     nodes.set(neighbor.id, neighbor)
     links.push({ id, source, target, label: '引用' })
   }
-  for (const outgoing of page.outgoing || []) add(outgoing, center.id, nodeKey(outgoing.type, outgoing.id))
-  for (const backlink of page.backlinks || []) add(backlink, nodeKey(backlink.type, backlink.id), center.id)
+  const outgoing = (page.outgoing || []).slice(0, 12)
+  const backlinks = (page.backlinks || []).filter((item) => !outgoing.some((other) => nodeKey(other.type, other.id) === nodeKey(item.type, item.id))).slice(0, Math.max(0, 24 - outgoing.length))
+  if (outgoing.length + backlinks.length < 24) {
+    outgoing.push(...(page.outgoing || []).slice(outgoing.length, 24 - backlinks.length))
+  }
+  for (const reference of outgoing) add(reference, center.id, nodeKey(reference.type, reference.id))
+  for (const reference of backlinks) add(reference, nodeKey(reference.type, reference.id), center.id)
+
+  const positionSide = (references: PageLink[], side: -1 | 1) => {
+    const unique = references.filter((reference, index) => references.findIndex((candidate) => nodeKey(candidate.type, candidate.id) === nodeKey(reference.type, reference.id)) === index)
+    unique.forEach((reference, index) => {
+      const node = nodes.get(nodeKey(reference.type, reference.id))
+      if (!node) return
+      const column = Math.floor(index / 8)
+      const row = index % 8
+      const rowsInColumn = Math.min(8, unique.length - column * 8)
+      node.fx = side * (78 + column * 54)
+      node.fy = (row - (rowsInColumn - 1) / 2) * 28
+      node.fz = ((row % 3) - 1) * 7
+    })
+  }
+  positionSide(backlinks, -1)
+  positionSide(outgoing, 1)
   return { nodes: [...nodes.values()], links }
 }
 
