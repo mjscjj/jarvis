@@ -28,6 +28,7 @@ import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
 import { listPlugins, shutdownJarvis } from './api'
 import type { Plugin } from './types'
+import jarvisIcon from './assets/jarvis-icon.png'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -61,7 +62,7 @@ const pageLabels: Record<string, string> = {
 }
 
 function AppShell() {
-  const { name: agentName, shortName: agentShortName, rename: renameAgent } = useAgentIdentity()
+  const { name: agentName, rename: renameAgent } = useAgentIdentity()
   const { user, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const runtimeFailures = useRuntimeFailureCount()
@@ -282,12 +283,10 @@ function AppShell() {
       {modalContext}
       {messageContext}
       <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
-        <div className="sider-brand">
-          {!siderCollapsed && <div className="sider-tagline">主动式任务分身</div>}
-          {siderCollapsed ? (
-            <Title level={4}>{agentShortName}</Title>
-          ) : (
-            <>
+        <div className={`sider-brand ${siderCollapsed ? 'is-collapsed' : ''}`}>
+          <img className="sider-brand-icon" src={jarvisIcon} alt={`${agentName} 图标`} />
+          {!siderCollapsed && (
+            <div className="sider-brand-copy">
               <div className="sider-name-row">
                 {editingName ? (
                   <>
@@ -331,7 +330,7 @@ function AppShell() {
                 )}
               </div>
               <div className="sider-agent-caption">你的主动式 Agent</div>
-            </>
+            </div>
           )}
         </div>
         <Menu
