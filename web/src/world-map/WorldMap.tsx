@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Empty, Segmented, Select, Spin, Switch, Tag, Tooltip } from 'antd'
+import { SettingOutlined } from '@ant-design/icons'
+import { Alert, Button, Empty, Popover, Segmented, Select, Spin, Switch, Tag, Tooltip } from 'antd'
 import type { ForceGraphMethods, NodeObject } from 'react-force-graph-3d'
 import ForceGraph3D from 'react-force-graph-3d'
 import SpriteText from 'three-spritetext'
@@ -23,6 +24,16 @@ import {
   type WorldLink,
   type WorldNode,
 } from './graphData'
+import {
+  cameraPaddingValue,
+  defaultWorldMapSettings,
+  labelLengthValue,
+  labelSizeValue,
+  readWorldMapSettings,
+  spacingValue,
+  worldMapSettingsStorageKey,
+  type WorldMapSettings,
+} from './settings'
 import './world-map.css'
 
 type GraphRef = ForceGraphMethods<WorldNode, WorldLink>
@@ -86,7 +97,19 @@ export default function WorldMap() {
   const [loading, setLoading] = useState(true)
   const [selecting, setSelecting] = useState(false)
   const [error, setError] = useState<string>()
-  const [autoRotate, setAutoRotate] = useState(false)
+  const [settings, setSettings] = useState<WorldMapSettings>(() => readWorldMapSettings(typeof window === 'undefined' ? undefined : window.localStorage))
+
+  const updateSetting = <Key extends keyof WorldMapSettings>(key: Key, value: WorldMapSettings[Key]) => {
+    setSettings((current) => ({ ...current, [key]: value }))
+  }
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(worldMapSettingsStorageKey, JSON.stringify(settings))
+    } catch {
+      // Browser storage is optional; settings remain active for this session.
+    }
+  }, [settings])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -134,7 +157,7 @@ export default function WorldMap() {
       window.requestAnimationFrame(() => {
         if (run !== cameraRunRef.current || !graphRef.current) return
         const deterministicNodes = graph.nodes.filter((node) => !targetIds || targetIds.has(node.id))
-        const bounds = mode === 'focus'
+        const bounds = mode === 'focus' && settings.layoutMode === 'relation'
           ? boundsForNodes(deterministicNodes)
           : graphRef.current.getGraphBbox(targetIds ? (node) => targetIds.has(String(node.id)) : undefined)
         if (!bounds) return
@@ -145,7 +168,8 @@ export default function WorldMap() {
           return
         }
         if (!values.every(Number.isFinite)) return
-        const frame = cameraFrameForBounds(bounds, size.width, size.height, 50, mode === 'focus' ? 1.08 : targetIds ? 1.2 : 1.18)
+        const basePadding = cameraPaddingValue(settings.cameraRange)
+        const frame = cameraFrameForBounds(bounds, size.width, size.height, 50, targetIds ? basePadding : Math.max(1.08, basePadding))
         const angleX = mode === 'focus' ? 0 : frame.distance * .12
         const angleY = mode === 'focus' ? 0 : frame.distance * .05
         graphRef.current.cameraPosition(
@@ -156,7 +180,7 @@ export default function WorldMap() {
       })
     }
     attempt(8)
-  }, [graph.nodes, mode, size.height, size.width])
+  }, [graph.nodes, mode, settings.cameraRange, settings.layoutMode, size.height, size.width])
 
   const selectEntity = useCallback(async (type: PageType, id: number, switchToFocus = false) => {
     const key = nodeKey(type, id)
@@ -170,7 +194,7 @@ export default function WorldMap() {
       setSelectedId(key)
       setSelectedPage(page)
       setDetailsExpanded(false)
-      setFocusGraph(buildFocusGraph(page, activeIndex, fullIndex))
+      setFocusGraph(buildFocusGraph(page, activeIndex, fullIndex, settings.layoutMode, settings.spacingMode))
       if (switchToFocus || !activeGraph.nodes.some((node) => node.id === key)) setMode('focus')
       setError(undefined)
     } catch (cause: unknown) {
@@ -178,7 +202,12 @@ export default function WorldMap() {
     } finally {
       setSelecting(false)
     }
-  }, [activeGraph.nodes, activeIndex, fullIndex])
+  }, [activeGraph.nodes, activeIndex, fullIndex, settings.layoutMode, settings.spacingMode])
+
+  useEffect(() => {
+    if (!selectedPage) return
+    setFocusGraph(buildFocusGraph(selectedPage, activeIndex, fullIndex, settings.layoutMode, settings.spacingMode))
+  }, [activeIndex, fullIndex, selectedPage, settings.layoutMode, settings.spacingMode])
 
   const resetView = useCallback(() => {
     setSelectedId(undefined)
@@ -203,16 +232,30 @@ export default function WorldMap() {
   useEffect(() => {
     const controls = graphRef.current?.controls() as { autoRotate?: boolean; autoRotateSpeed?: number } | undefined
     if (!controls) return
-    controls.autoRotate = autoRotate
+    controls.autoRotate = settings.autoRotate
     controls.autoRotateSpeed = 0.38
-  }, [autoRotate, graph])
+  }, [graph, settings.autoRotate])
+
+  useEffect(() => {
+    if (!graphRef.current || settings.layoutMode === 'relation' && mode === 'focus') return
+    const spacing = spacingValue(settings.spacingMode)
+    const linkForce = graphRef.current.d3Force('link') as { distance?: (value: number) => unknown } | undefined
+    const chargeForce = graphRef.current.d3Force('charge') as { strength?: (value: number) => unknown } | undefined
+    linkForce?.distance?.(48 * spacing)
+    chargeForce?.strength?.(-72 * spacing)
+    graphRef.current.d3ReheatSimulation()
+  }, [graph.nodes.length, mode, settings.layoutMode, settings.spacingMode])
+
+  const cameraTargetIds = useMemo(() => {
+    if (!selectedId || settings.focusScope === 'visible') return undefined
+    return settings.focusScope === 'entity' ? new Set([selectedId]) : connections
+  }, [connections, selectedId, settings.focusScope])
 
   useEffect(() => {
     if (!graph.nodes.length) return
-    const targetIds = selectedId ? connections : undefined
-    frameGraph(targetIds)
+    frameGraph(cameraTargetIds)
     return () => { cameraRunRef.current += 1 }
-  }, [connections, frameGraph, graph.nodes.length, mode, selectedId, visibleTypes])
+  }, [cameraTargetIds, frameGraph, graph.nodes.length, mode, visibleTypes])
 
   const nodeObject = useCallback((node: NodeObject<WorldNode>) => {
     const worldNode = node as WorldNode
@@ -221,7 +264,8 @@ export default function WorldMap() {
     const meta = pageTypeMeta[worldNode.pageType]
     const color = connected ? meta.color : meta.dimColor
     const group = new Group()
-    const displayRadius = worldNode.size * (selected ? 1.24 : 1)
+    const baseRadius = settings.nodeSizeMode === 'equal' ? 5.2 : worldNode.size
+    const displayRadius = baseRadius * (selected ? 1.24 : 1)
     const sphere = new Mesh(
       new SphereGeometry(displayRadius, 22, 22),
       new MeshLambertMaterial({ color, transparent: true, opacity: connected ? 0.92 : 0.25 }),
@@ -234,12 +278,13 @@ export default function WorldMap() {
       )
       group.add(halo)
     }
-    const label = new SpriteText(compactLabel(worldNode.name))
+    const label = new SpriteText(compactLabel(worldNode.name, labelLengthValue(settings.labelLength)))
     label.color = connected ? '#f8fbff' : '#8090a8'
     label.backgroundColor = selected ? 'rgba(9, 16, 30, .86)' : 'rgba(9, 16, 30, .58)'
     label.padding = [3, 5]
     label.borderRadius = 3
-    label.textHeight = selected ? 4.2 : 3.5
+    const textScale = labelSizeValue(settings.labelSize)
+    label.textHeight = (selected ? 4.2 : 3.5) * textScale
     label.position.y = displayRadius + 4.5
     label.material.depthWrite = false
     const baseScale = label.scale.clone()
@@ -248,11 +293,12 @@ export default function WorldMap() {
       const distance = camera.position.distanceTo(label.getWorldPosition(worldPosition))
       const screenScale = Math.min(2.35, Math.max(.82, distance / 165))
       label.scale.set(baseScale.x * screenScale, baseScale.y * screenScale, baseScale.z)
-      label.visible = selected || worldNode.pageType === 'principal' || (mode === 'focus' && connected) || (worldNode.pageType === 'project' && distance < 260) || (connected && distance < 170)
+      const relatedVisible = selected || worldNode.pageType === 'principal' || (mode === 'focus' && connected) || (worldNode.pageType === 'project' && distance < 260) || (connected && distance < 170)
+      label.visible = settings.labelMode === 'all' || settings.labelMode === 'related' && relatedVisible
     }
     group.add(label)
     return group
-  }, [connections, mode, selectedId])
+  }, [connections, mode, selectedId, settings.labelLength, settings.labelMode, settings.labelSize, settings.nodeSizeMode])
 
   const toggleType = (type: PageType) => {
     setVisibleTypes((current) => {
@@ -271,6 +317,26 @@ export default function WorldMap() {
     ]
   }, [selectedPage])
 
+  const settingsPanel = (
+    <div className="world-map-settings">
+      <div className="world-map-settings-head"><strong>显示设置</strong><span>保存在当前浏览器</span></div>
+      <label><span>名称显示</span><Segmented<WorldMapSettings['labelMode']> block size="small" value={settings.labelMode} onChange={(value) => updateSetting('labelMode', value)} options={[{ label: '相关', value: 'related' }, { label: '全部', value: 'all' }, { label: '隐藏', value: 'hidden' }]} /></label>
+      <label><span>名称大小</span><Segmented<WorldMapSettings['labelSize']> block size="small" value={settings.labelSize} onChange={(value) => updateSetting('labelSize', value)} options={[{ label: '小', value: 'small' }, { label: '中', value: 'medium' }, { label: '大', value: 'large' }]} /></label>
+      <label><span>名称长度</span><Segmented<WorldMapSettings['labelLength']> block size="small" value={settings.labelLength} onChange={(value) => updateSetting('labelLength', value)} options={[{ label: '短', value: 'short' }, { label: '中', value: 'medium' }, { label: '完整', value: 'full' }]} /></label>
+      <label><span>定位范围</span><Segmented<WorldMapSettings['focusScope']> block size="small" value={settings.focusScope} onChange={(value) => updateSetting('focusScope', value)} options={[{ label: '实体', value: 'entity' }, { label: '一跳', value: 'neighbors' }, { label: '全图', value: 'visible' }]} /></label>
+      <label><span>取景距离</span><Segmented<WorldMapSettings['cameraRange']> block size="small" value={settings.cameraRange} onChange={(value) => updateSetting('cameraRange', value)} options={[{ label: '近', value: 'near' }, { label: '标准', value: 'standard' }, { label: '远', value: 'far' }]} /></label>
+      <label><span>布局方式</span><Segmented<WorldMapSettings['layoutMode']> block size="small" value={settings.layoutMode} onChange={(value) => updateSetting('layoutMode', value)} options={[{ label: '自由 3D', value: 'free3d' }, { label: '平面', value: 'flat2d' }, { label: '左右', value: 'relation' }]} /></label>
+      <label><span>节点间距</span><Segmented<WorldMapSettings['spacingMode']> block size="small" value={settings.spacingMode} onChange={(value) => updateSetting('spacingMode', value)} options={[{ label: '紧凑', value: 'compact' }, { label: '标准', value: 'standard' }, { label: '宽松', value: 'loose' }]} /></label>
+      <label><span>节点大小</span><Segmented<WorldMapSettings['nodeSizeMode']> block size="small" value={settings.nodeSizeMode} onChange={(value) => updateSetting('nodeSizeMode', value)} options={[{ label: '一致', value: 'equal' }, { label: '按事实', value: 'semantic' }]} /></label>
+      <div className="world-map-settings-effects">
+        <label><span>方向箭头</span><Switch size="small" checked={settings.arrows} onChange={(value) => updateSetting('arrows', value)} /></label>
+        <label><span>流动粒子</span><Switch size="small" checked={settings.particles} onChange={(value) => updateSetting('particles', value)} /></label>
+        <label><span>自动漂移</span><Switch size="small" checked={settings.autoRotate} onChange={(value) => updateSetting('autoRotate', value)} /></label>
+      </div>
+      <Button block onClick={() => setSettings(defaultWorldMapSettings)}>恢复默认设置</Button>
+    </div>
+  )
+
   return (
     <div className="world-map-shell">
       <div className="world-map-toolbar">
@@ -281,8 +347,9 @@ export default function WorldMap() {
         </div>
         <div className="world-map-actions">
           <Segmented<ViewMode> value={mode} onChange={setMode} options={[{ label: '活跃全局', value: 'global' }, { label: '一跳关系', value: 'focus', disabled: !selectedPage }]} />
-          <Tooltip title="让星图缓慢旋转"><span className="world-map-switch"><Switch size="small" checked={autoRotate} onChange={setAutoRotate} /> 漂移</span></Tooltip>
-          <Button onClick={() => frameGraph(selectedId ? connections : undefined)}>适配</Button>
+          <Tooltip title="让星图缓慢旋转"><span className="world-map-switch"><Switch size="small" checked={settings.autoRotate} onChange={(value) => updateSetting('autoRotate', value)} /> 漂移</span></Tooltip>
+          <Popover trigger="click" placement="bottomRight" content={settingsPanel}><Button icon={<SettingOutlined />}>显示设置</Button></Popover>
+          <Button onClick={() => frameGraph(cameraTargetIds)}>适配</Button>
           <Button onClick={resetView}>重置</Button>
         </div>
       </div>
@@ -324,7 +391,7 @@ export default function WorldMap() {
             </div>
           )}
 
-          {mode === 'focus' && (
+          {mode === 'focus' && settings.layoutMode === 'relation' && (
             <div className="world-map-direction-guide" aria-hidden="true">
               <span>← 反向引用</span><span>向外引用 →</span>
             </div>
@@ -352,17 +419,18 @@ export default function WorldMap() {
                 linkColor={(link) => !selectedId || connections.has(linkEndpointId(link.source)) && connections.has(linkEndpointId(link.target)) ? '#5f7896' : '#243247'}
                 linkWidth={(link) => selectedId && (linkEndpointId(link.source) === selectedId || linkEndpointId(link.target) === selectedId) ? 1.25 : 0.42}
                 linkOpacity={0.52}
-                linkDirectionalArrowLength={2.8}
+                linkDirectionalArrowLength={settings.arrows ? 2.8 : 0}
                 linkDirectionalArrowRelPos={0.8}
                 linkDirectionalArrowColor={() => '#8ca7c4'}
-                linkDirectionalParticles={(link) => selectedId && (linkEndpointId(link.source) === selectedId || linkEndpointId(link.target) === selectedId) ? 2 : 0}
+                linkDirectionalParticles={(link) => settings.particles ? selectedId && (linkEndpointId(link.source) === selectedId || linkEndpointId(link.target) === selectedId) ? 2 : 1 : 0}
                 linkDirectionalParticleWidth={1.1}
                 linkDirectionalParticleSpeed={0.004}
                 linkDirectionalParticleColor={() => '#d7e8ff'}
                 d3AlphaDecay={0.035}
                 d3VelocityDecay={0.32}
-                warmupTicks={mode === 'focus' ? 0 : 60}
-                cooldownTicks={mode === 'focus' ? 0 : 160}
+                numDimensions={settings.layoutMode === 'flat2d' ? 2 : 3}
+                warmupTicks={mode === 'focus' && settings.layoutMode === 'relation' ? 0 : 60}
+                cooldownTicks={mode === 'focus' && settings.layoutMode === 'relation' ? 0 : 160}
                 showNavInfo={false}
                 onNodeClick={(node) => void selectEntity(node.pageType, node.pageId)}
                 onBackgroundClick={clearEntity}

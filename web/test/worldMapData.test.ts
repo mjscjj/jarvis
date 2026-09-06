@@ -3,6 +3,7 @@ import test from 'node:test'
 import type { PageIndexItem, PageView } from '../src/types.ts'
 import { buildActiveGraph, buildFocusGraph, filterGraph, graphCounts, readableSummary } from '../src/world-map/graphData.ts'
 import { boundsForNodes, cameraFrameForBounds } from '../src/world-map/camera.ts'
+import { cameraPaddingValue, defaultWorldMapSettings, labelLengthValue, normalizeWorldMapSettings, spacingValue } from '../src/world-map/settings.ts'
 
 const index: PageIndexItem[] = [
   { type: 'principal', id: 1, name: '我', index_line: '主体', char_count: 100, last_progress_at: null },
@@ -56,4 +57,15 @@ test('camera frames the selected neighborhood and respects viewport aspect ratio
 test('deterministic bounds prefer fixed focus coordinates over stale simulation positions', () => {
   const bounds = boundsForNodes([{ x: 900, y: 900, z: 900, fx: 0, fy: 0, fz: 0 }, { x: -800, y: -800, z: -800, fx: 100, fy: 50, fz: 10 }], 10)
   assert.deepEqual(bounds, { x: [-10, 110], y: [-10, 60], z: [-10, 20] })
+})
+
+test('world map settings normalize persisted values and preserve safe defaults', () => {
+  const settings = normalizeWorldMapSettings({ labelMode: 'all', cameraRange: 'invalid', arrows: false })
+  assert.equal(settings.labelMode, 'all')
+  assert.equal(settings.cameraRange, defaultWorldMapSettings.cameraRange)
+  assert.equal(settings.arrows, false)
+  assert.equal(settings.particles, defaultWorldMapSettings.particles)
+  assert.equal(labelLengthValue('full'), Number.POSITIVE_INFINITY)
+  assert.ok(cameraPaddingValue('far') > cameraPaddingValue('near'))
+  assert.ok(spacingValue('loose') > spacingValue('compact'))
 })

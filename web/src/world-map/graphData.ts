@@ -1,4 +1,5 @@
 import type { PageIndexItem, PageLink, PageType, PageView } from '../types'
+import type { LayoutMode, SpacingMode } from './settings'
 
 export const pageTypes: PageType[] = ['principal', 'project', 'key_matter', 'person', 'group', 'resource']
 
@@ -142,7 +143,13 @@ export function buildActiveGraph(pages: PageView[], activeIndex: PageIndexItem[]
   return { nodes, links }
 }
 
-export function buildFocusGraph(page: PageView, activeIndex: PageIndexItem[], fullIndex: PageIndexItem[]): WorldGraph {
+export function buildFocusGraph(
+  page: PageView,
+  activeIndex: PageIndexItem[],
+  fullIndex: PageIndexItem[],
+  layoutMode: LayoutMode = 'relation',
+  spacingMode: SpacingMode = 'standard',
+): WorldGraph {
   const indexes = indexMap(fullIndex)
   const activeIds = new Set(activeIndex.map((item) => nodeKey(item.type, item.id)))
   const center = { ...nodeFromPage(page, activeIds, indexes), x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 0 }
@@ -168,6 +175,7 @@ export function buildFocusGraph(page: PageView, activeIndex: PageIndexItem[], fu
   for (const reference of backlinks) add(reference, nodeKey(reference.type, reference.id), center.id)
 
   const positionSide = (references: PageLink[], side: -1 | 1) => {
+    const spacing = spacingMode === 'compact' ? .78 : spacingMode === 'loose' ? 1.35 : 1
     const unique = references.filter((reference, index) => references.findIndex((candidate) => nodeKey(candidate.type, candidate.id) === nodeKey(reference.type, reference.id)) === index)
     unique.forEach((reference, index) => {
       const node = nodes.get(nodeKey(reference.type, reference.id))
@@ -175,12 +183,16 @@ export function buildFocusGraph(page: PageView, activeIndex: PageIndexItem[], fu
       const column = Math.floor(index / 6)
       const row = index % 6
       const rowsInColumn = Math.min(6, unique.length - column * 6)
-      node.fx = side * (105 + column * 108)
-      node.fy = (row - (rowsInColumn - 1) / 2) * 50
-      node.fz = ((row % 3) - 1) * 10
-      node.x = node.fx
-      node.y = node.fy
-      node.z = node.fz
+      node.x = side * (105 + column * 108) * spacing
+      node.y = (row - (rowsInColumn - 1) / 2) * 50 * spacing
+      node.z = layoutMode === 'flat2d' ? 0 : ((row % 3) - 1) * 10 * spacing
+      if (layoutMode === 'relation') {
+        node.fx = node.x
+        node.fy = node.y
+        node.fz = node.z
+      } else if (layoutMode === 'flat2d') {
+        node.fz = 0
+      }
     })
   }
   positionSide(backlinks, -1)
