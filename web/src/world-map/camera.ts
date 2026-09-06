@@ -18,7 +18,7 @@ export interface PositionedNode {
   fz?: number
 }
 
-export function boundsForNodes(nodes: PositionedNode[], margin = 12): GraphBounds | null {
+export function boundsForNodes(nodes: PositionedNode[], margin = 12, trimRatio = 0): GraphBounds | null {
   const positions = nodes.map((node) => ({
     x: node.fx ?? node.x,
     y: node.fy ?? node.y,
@@ -27,10 +27,15 @@ export function boundsForNodes(nodes: PositionedNode[], margin = 12): GraphBound
     Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z)
   ))
   if (!positions.length) return null
+  const edge = (axis: keyof (typeof positions)[number]): [number, number] => {
+    const values = positions.map((position) => position[axis]).sort((left, right) => left - right)
+    const trim = values.length >= 10 ? Math.floor(values.length * Math.min(.2, Math.max(0, trimRatio))) : 0
+    return [values[trim] - margin, values[values.length - 1 - trim] + margin]
+  }
   return {
-    x: [Math.min(...positions.map((position) => position.x)) - margin, Math.max(...positions.map((position) => position.x)) + margin],
-    y: [Math.min(...positions.map((position) => position.y)) - margin, Math.max(...positions.map((position) => position.y)) + margin],
-    z: [Math.min(...positions.map((position) => position.z)) - margin, Math.max(...positions.map((position) => position.z)) + margin],
+    x: edge('x'),
+    y: edge('y'),
+    z: edge('z'),
   }
 }
 

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { PageIndexItem, PageView } from '../src/types.ts'
-import { buildActiveGraph, buildFocusGraph, filterGraph, graphCounts, readableSummary } from '../src/world-map/graphData.ts'
+import { buildActiveGraph, buildFocusGraph, filterGraph, graphCounts, primaryComponentIds, readableSummary } from '../src/world-map/graphData.ts'
 import { boundsForNodes, cameraFrameForBounds } from '../src/world-map/camera.ts'
+import { createBoundingForce } from '../src/world-map/physics.ts'
 import { cameraPaddingValue, defaultWorldMapSettings, labelLengthValue, normalizeWorldMapSettings, spacingValue } from '../src/world-map/settings.ts'
 
 const index: PageIndexItem[] = [
@@ -57,6 +58,32 @@ test('camera frames the selected neighborhood and respects viewport aspect ratio
 test('deterministic bounds prefer fixed focus coordinates over stale simulation positions', () => {
   const bounds = boundsForNodes([{ x: 900, y: 900, z: 900, fx: 0, fy: 0, fz: 0 }, { x: -800, y: -800, z: -800, fx: 100, fy: 50, fz: 10 }], 10)
   assert.deepEqual(bounds, { x: [-10, 110], y: [-10, 60], z: [-10, 20] })
+})
+
+test('trimmed camera bounds ignore a small number of extreme coordinates', () => {
+  const nodes = Array.from({ length: 20 }, (_, index) => ({ x: index * 4, y: index * 2, z: index }))
+  nodes.push({ x: 8000, y: -9000, z: 7000 })
+  const bounds = boundsForNodes(nodes, 0, .05)
+  assert.ok(bounds)
+  assert.deepEqual(bounds.x, [4, 76])
+  assert.deepEqual(bounds.y, [0, 36])
+  assert.deepEqual(bounds.z, [1, 19])
+})
+
+test('primary component excludes disconnected outliers from the default frame', () => {
+  const graph = buildActiveGraph(pages, index)
+  graph.nodes.push({ ...graph.nodes[2], id: 'person:99', pageId: 99, name: '离群节点' })
+  assert.deepEqual(primaryComponentIds(graph), new Set(['principal:1', 'project:2', 'person:3']))
+})
+
+test('bounding force pulls distant nodes inward without moving nearby nodes', () => {
+  const near = { x: 20, y: 0, z: 0, vx: 0, vy: 0, vz: 0 }
+  const far = { x: 200, y: 0, z: 0, vx: 0, vy: 0, vz: 0 }
+  const force = createBoundingForce(100)
+  force.initialize([near, far])
+  force(1)
+  assert.equal(near.vx, 0)
+  assert.ok(far.vx < 0)
 })
 
 test('world map settings normalize persisted values and preserve safe defaults', () => {

@@ -20,10 +20,12 @@ import {
   nodeKey,
   pageTypeMeta,
   pageTypes,
+  primaryComponentIds,
   type WorldGraph,
   type WorldLink,
   type WorldNode,
 } from './graphData'
+import { createBoundingForce } from './physics'
 import {
   cameraPaddingValue,
   defaultWorldMapSettings,
@@ -83,6 +85,8 @@ function useElementSize<T extends HTMLElement>() {
 export default function WorldMap() {
   const graphRef = useRef<GraphRef | undefined>(undefined)
   const cameraRunRef = useRef(0)
+  const forceConfigRef = useRef<{ graph: GraphRef; signature: string } | undefined>(undefined)
+  const settledFrameRef = useRef('')
   const { ref: stageRef, size } = useElementSize<HTMLDivElement>()
   const pageCache = useRef(new Map<string, PageView>())
   const [activeIndex, setActiveIndex] = useState<PageIndexItem[]>([])
@@ -136,6 +140,7 @@ export default function WorldMap() {
     [rawGraph, selectedId, settings.layoutMode, settings.spacingMode, visibleTypes],
   )
   const connections = useMemo(() => connectedIds(graph, selectedId), [graph, selectedId])
+  const primaryIds = useMemo(() => primaryComponentIds(graph), [graph])
   const counts = useMemo(() => graphCounts(graph), [graph])
 
   const entityById = useMemo(() => new Map(fullIndex.map((item) => [nodeKey(item.type, item.id), item])), [fullIndex])
@@ -156,10 +161,10 @@ export default function WorldMap() {
     const attempt = (remaining: number) => {
       window.requestAnimationFrame(() => {
         if (run !== cameraRunRef.current || !graphRef.current) return
-        const deterministicNodes = graph.nodes.filter((node) => !targetIds || targetIds.has(node.id))
-        const bounds = mode === 'focus' && settings.layoutMode === 'relation'
-          ? boundsForNodes(deterministicNodes)
-          : graphRef.current.getGraphBbox(targetIds ? (node) => targetIds.has(String(node.id)) : undefined)
+        const frameIds = targetIds || (mode === 'global' && primaryIds.size > 1 ? primaryIds : undefined)
+        const frameNodes = graph.nodes.filter((node) => !frameIds || frameIds.has(node.id))
+        const trimRatio = mode === 'global' && !targetIds && frameNodes.length >= 20 ? .04 : 0
+        const bounds = boundsForNodes(frameNodes, 12, trimRatio)
         if (!bounds) return
         const values = [...bounds.x, ...bounds.y, ...bounds.z]
         const span = Math.max(bounds.x[1] - bounds.x[0], bounds.y[1] - bounds.y[0], bounds.z[1] - bounds.z[0])
@@ -180,7 +185,7 @@ export default function WorldMap() {
       })
     }
     attempt(8)
-  }, [graph.nodes, mode, settings.cameraRange, settings.layoutMode, size.height, size.width])
+  }, [graph.nodes, mode, primaryIds, settings.cameraRange, size.height, size.width])
 
   const selectEntity = useCallback(async (type: PageType, id: number, switchToFocus = false) => {
     const key = nodeKey(type, id)
@@ -230,20 +235,29 @@ export default function WorldMap() {
   }
 
   useEffect(() => {
-    const controls = graphRef.current?.controls() as { autoRotate?: boolean; autoRotateSpeed?: number } | undefined
+    const controls = graphRef.current?.controls() as { autoRotate?: boolean; autoRotateSpeed?: number; minDistance?: number; maxDistance?: number; zoomSpeed?: number } | undefined
     if (!controls) return
     controls.autoRotate = settings.autoRotate
     controls.autoRotateSpeed = 0.38
-  }, [graph, settings.autoRotate])
+    controls.minDistance = 42
+    controls.maxDistance = mode === 'global' ? 720 : 680
+    controls.zoomSpeed = .62
+  }, [graph, mode, settings.autoRotate])
 
   const configureForces = useCallback(() => {
     if (!graphRef.current || settings.layoutMode === 'relation' && mode === 'focus') return
+    const instance = graphRef.current
     const spacing = spacingValue(settings.spacingMode)
-    const linkForce = graphRef.current.d3Force('link') as { distance?: (value: number) => unknown } | undefined
-    const chargeForce = graphRef.current.d3Force('charge') as { strength?: (value: number) => unknown } | undefined
+    const signature = `${mode}:${settings.layoutMode}:${settings.spacingMode}:${graph.nodes.length}`
+    if (forceConfigRef.current?.graph === instance && forceConfigRef.current.signature === signature) return
+    const linkForce = instance.d3Force('link') as { distance?: (value: number) => unknown } | undefined
+    const chargeForce = instance.d3Force('charge') as { strength?: (value: number) => unknown } | undefined
     linkForce?.distance?.(48 * spacing)
-    chargeForce?.strength?.(-72 * spacing)
-  }, [mode, settings.layoutMode, settings.spacingMode])
+    chargeForce?.strength?.(-38 * spacing)
+    const boundaryRadius = Math.max(145, Math.sqrt(graph.nodes.length) * 18 * spacing)
+    instance.d3Force('worldBoundary', createBoundingForce(boundaryRadius))
+    forceConfigRef.current = { graph: instance, signature }
+  }, [graph.nodes.length, mode, settings.layoutMode, settings.spacingMode])
 
   const cameraTargetIds = useMemo(() => {
     if (!selectedId || settings.focusScope === 'visible') return undefined
@@ -252,9 +266,17 @@ export default function WorldMap() {
 
   useEffect(() => {
     if (!graph.nodes.length) return
+    settledFrameRef.current = ''
     frameGraph(cameraTargetIds)
     return () => { cameraRunRef.current += 1 }
   }, [cameraTargetIds, frameGraph, graph.nodes.length, mode, visibleTypes])
+
+  const handleEngineStop = useCallback(() => {
+    const signature = `${mode}:${settings.layoutMode}:${settings.spacingMode}:${graph.nodes.map((node) => node.id).join('|')}`
+    if (settledFrameRef.current === signature) return
+    settledFrameRef.current = signature
+    frameGraph(cameraTargetIds, 480)
+  }, [cameraTargetIds, frameGraph, graph.nodes, mode, settings.layoutMode, settings.spacingMode])
 
   const nodeObject = useCallback((node: NodeObject<WorldNode>) => {
     const worldNode = node as WorldNode
@@ -348,7 +370,7 @@ export default function WorldMap() {
           <Segmented<ViewMode> value={mode} onChange={setMode} options={[{ label: '活跃全局', value: 'global' }, { label: '一跳关系', value: 'focus', disabled: !selectedPage }]} />
           <Tooltip title="让星图缓慢旋转"><span className="world-map-switch"><Switch size="small" checked={settings.autoRotate} onChange={(value) => updateSetting('autoRotate', value)} /> 漂移</span></Tooltip>
           <Popover trigger="click" placement="bottomRight" content={settingsPanel}><Button icon={<SettingOutlined />}>显示设置</Button></Popover>
-          <Button onClick={() => frameGraph(cameraTargetIds)}>适配</Button>
+          <Tooltip title="回到主要关系网络，少量离群节点不会把主体缩小"><Button onClick={() => frameGraph(cameraTargetIds)}>回到主体</Button></Tooltip>
           <Button onClick={resetView}>重置</Button>
         </div>
       </div>
@@ -429,9 +451,10 @@ export default function WorldMap() {
                 d3AlphaDecay={0.035}
                 d3VelocityDecay={0.32}
                 numDimensions={settings.layoutMode === 'flat2d' ? 2 : 3}
-                warmupTicks={mode === 'focus' && settings.layoutMode === 'relation' ? 0 : 60}
-                cooldownTicks={mode === 'focus' && settings.layoutMode === 'relation' ? 0 : 160}
+                warmupTicks={0}
+                cooldownTicks={mode === 'focus' && settings.layoutMode === 'relation' ? 0 : 220}
                 onEngineTick={configureForces}
+                onEngineStop={handleEngineStop}
                 showNavInfo={false}
                 onNodeClick={(node) => void selectEntity(node.pageType, node.pageId)}
                 onBackgroundClick={clearEntity}

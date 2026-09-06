@@ -220,6 +220,37 @@ export function connectedIds(graph: WorldGraph, selectedId: string | undefined):
   return result
 }
 
+export function primaryComponentIds(graph: WorldGraph): Set<string> {
+  if (!graph.nodes.length) return new Set()
+  const neighbors = new Map(graph.nodes.map((node) => [node.id, new Set<string>()]))
+  for (const link of graph.links) {
+    const source = linkEndpointId(link.source)
+    const target = linkEndpointId(link.target)
+    neighbors.get(source)?.add(target)
+    neighbors.get(target)?.add(source)
+  }
+
+  const visited = new Set<string>()
+  let largest = new Set<string>()
+  for (const node of graph.nodes) {
+    if (visited.has(node.id)) continue
+    const component = new Set<string>()
+    const pending = [node.id]
+    visited.add(node.id)
+    while (pending.length) {
+      const current = pending.pop()!
+      component.add(current)
+      for (const neighbor of neighbors.get(current) || []) {
+        if (visited.has(neighbor)) continue
+        visited.add(neighbor)
+        pending.push(neighbor)
+      }
+    }
+    if (component.size > largest.size) largest = component
+  }
+  return largest
+}
+
 export function graphCounts(graph: WorldGraph): { nodes: number; links: number; facts: number } {
   return {
     nodes: graph.nodes.length,
