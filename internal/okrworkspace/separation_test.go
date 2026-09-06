@@ -23,6 +23,50 @@ func openWorkspaceTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+// Both quarter boards read the same objectives and KRs; only the Agency one may
+// carry labels and legacy Meego links. They share one loader, so this pins the
+// projection difference rather than each board's own row assembly.
+func TestCoreAndAgencyBoardsShareDefinitionsAndDifferOnlyByAgencyFields(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-board", Title: "增长", Quarter: "2026-Q3"}
+	kr := domain.KR{ID: "kr-board", ObjectiveID: objective.ID, Title: "一级 KR"}
+	point := domain.KRPoint{ID: "point-board", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "策略要点", MeegoWorkItemID: "wi-7", MeegoURL: "https://meego.example/wi-7"}
+	for _, value := range []any{
+		&objective, &kr, &point,
+		&domain.KROwner{KRID: kr.ID, OpenID: "ou_owner", Name: "负责人"},
+		&domain.KRTag{KRID: kr.ID, Type: domain.TagTypeBusinessCategory, Value: "公会业务"},
+		&domain.PointTag{PointID: point.ID, Type: "custom", Value: "双周报"},
+	} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	core, err := service.CoreBoard(t.Context(), "2026-Q3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	agency, err := service.AgencyCoreBoard(t.Context(), "2026-Q3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	coreKR := core.Objectives[0].KRs[0]
+	agencyKR := agency.Objectives[0].KRs[0]
+	if coreKR.ID != agencyKR.ID || coreKR.Title != agencyKR.Title || !reflect.DeepEqual(coreKR.Owners, agencyKR.Owners) {
+		t.Fatalf("boards disagree on the shared definition: core=%+v agency=%+v", coreKR, agencyKR)
+	}
+	if len(coreKR.Tags) != 0 || len(coreKR.Points[0].Tags) != 0 || coreKR.Points[0].MeegoWorkItemID != "" || coreKR.Points[0].MeegoURL != "" {
+		t.Fatalf("generic core board leaked Agency fields: %+v", coreKR)
+	}
+	if len(agencyKR.Tags) != 1 || len(agencyKR.Points[0].Tags) != 1 || agencyKR.Points[0].MeegoWorkItemID != "wi-7" {
+		t.Fatalf("Agency core board lost Agency fields: %+v", agencyKR)
+	}
+}
+
 func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-1", Title: "增长", Quarter: "2026-Q3"}

@@ -80,7 +80,7 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	h.GET("/api/okr/progress/board", requireEnabled, GetProgressBoard(deps.Workspace))
 	h.GET("/api/okr/weeks", requireEnabled, GetWeeklyReportWeeks(deps.Workspace))
 	h.POST("/api/okr/weeks", requireEnabled, OpenWeeklyReportWeek(deps.Workspace))
-	h.DELETE("/api/okr/weeks/:week", requireEnabled, DeleteWeeklyReportWeek(deps.Workspace))
+	// Deleting a whole week is Agency-owned. See okrworkspace.DeleteWeek.
 	h.GET("/api/okr/krs/:kr_id/weekly", requireEnabled, GetWeeklyReportKR(deps.Workspace))
 	h.PUT("/api/okr/krs/:kr_id/weekly-core", requireEnabled, ReplaceWeeklyKRCore(deps.Workspace))
 	h.POST("/api/okr/points/:point_id/progress", requireEnabled, CreateWeeklyProgressEntry(deps.Workspace))

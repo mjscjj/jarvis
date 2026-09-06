@@ -19,7 +19,6 @@ commands:
   progress-scope
   weeks [--quarter Q]
   open-week --quarter Q --week YYYY-Www [--template classic|okr_weekly_preview_v1]
-  delete-week --quarter Q --week YYYY-Www
   progress-board [--quarter Q] [--week YYYY-Www]
   get-weekly-kr --id KR_ID --week YYYY-Www
   replace-weekly-core --id KR_ID --payload JSON|-
@@ -29,7 +28,8 @@ commands:
   upload-image --file PATH
 
 Formal progress writes use optimistic versions and never write Agency labels,
-scores, comments, reminders or Meego projections.
+scores, comments, reminders or Meego projections. Deleting a whole week is
+agency-okr-tools delete-week, which also clears the Agency records of that week.
 
 Uses server.addr from conf/config.yaml plus conf/config.runtime.yaml.
 JARVIS_API_BASE or --base-url explicitly selects another instance.
@@ -176,10 +176,6 @@ case "$COMMAND" in
   open-week)
     [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "open-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
     request_post /api/okr/weeks "$(jq -cn --arg quarter "$QUARTER" --arg week "$WEEK" --arg template "$TEMPLATE" '{quarter:$quarter,week:$week,template_key:$template}')"
-    ;;
-  delete-week)
-    [[ "$QUARTER" =~ ^[0-9]{4}-Q[1-4]$ && "$WEEK" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || { echo "delete-week requires --quarter YYYY-Qn and --week YYYY-Www" >&2; exit 2; }
-    request_with_error_body -X DELETE -G "${BASE_URL}/api/okr/weeks/$(encoded "$WEEK")" --data-urlencode "quarter=$QUARTER"
     ;;
   progress-board)
     args=()

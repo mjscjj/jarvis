@@ -121,13 +121,8 @@ func TestOKRAndAgencyToolsExposeAtomicWrites(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runModuleTool(t, "okr-module-tools", server.URL, "delete-week", "--quarter", "2026-Q3", "--week", "2026-W36")
-	request := <-requests
-	if request.Method != http.MethodDelete || request.Path != "/api/okr/weeks/2026-W36" || !strings.Contains(request.Query, "quarter=2026-Q3") {
-		t.Fatalf("generic delete-week request = %+v", request)
-	}
 	runModuleTool(t, "okr-module-tools", server.URL, "get-weekly-kr", "--id", "kr-1", "--week", "2026-W36")
-	request = <-requests
+	request := <-requests
 	if request.Method != http.MethodGet || request.Path != "/api/okr/krs/kr-1/weekly" || !strings.Contains(request.Query, "week=2026-W36") {
 		t.Fatalf("generic get-weekly-kr request = %+v", request)
 	}
@@ -184,6 +179,32 @@ func TestOKRAndAgencyToolsExposeAtomicWrites(t *testing.T) {
 				t.Fatalf("%v sent invalid JSON: %s", test.args, request.Body)
 			}
 		}
+	}
+}
+
+// Whole-week deletion is Agency-owned because comments, scores, follow-ups and
+// reminder batches are keyed by (quarter, week) with no foreign key to the week
+// anchor. A generic half-delete would resurface them on the next week opened
+// under the same key, so the generic tool must not offer the command at all.
+func TestGenericOKRToolsRejectWeekDeletion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		t.Error("okr-module-tools delete-week reached the server")
+		response.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	path, err := filepath.Abs(filepath.Join("..", "..", "scripts", "okr-module-tools"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(t.Context(), "bash", path, "delete-week", "--quarter", "2026-Q3", "--week", "2026-W36")
+	command.Env = append(command.Environ(), "JARVIS_API_BASE="+server.URL)
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("okr-module-tools accepted delete-week: %s", output)
+	}
+	if !strings.Contains(string(output), "unknown command") {
+		t.Fatalf("delete-week rejection = %s", output)
 	}
 }
 

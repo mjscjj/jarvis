@@ -439,6 +439,17 @@ func (s *Service) weeklyBoard(ctx context.Context, quarter, week string, include
 // CoreBoard is the stable OKR projection. It intentionally carries no weekly
 // entries or history, even though the compatibility DTO is shared with Board.
 func (s *Service) CoreBoard(ctx context.Context, quarter string) (Board, error) {
+	return s.coreBoard(ctx, quarter, false)
+}
+
+// AgencyCoreBoard is the Agency presentation of stable OKR definitions. It adds
+// Agency-owned labels and legacy Meego links without changing the common OKR
+// source of truth.
+func (s *Service) AgencyCoreBoard(ctx context.Context, quarter string) (Board, error) {
+	return s.coreBoard(ctx, quarter, true)
+}
+
+func (s *Service) coreBoard(ctx context.Context, quarter string, includeAgency bool) (Board, error) {
 	quarter = strings.TrimSpace(quarter)
 	if quarter == "" {
 		scope, err := s.LatestCoreScope(ctx)
@@ -466,7 +477,7 @@ func (s *Service) CoreBoard(ctx context.Context, quarter string) (Board, error) 
 		}
 		view := ObjectiveView{ID: objective.ID, Title: objective.Title, KRs: make([]KRView, 0, len(records))}
 		for _, record := range records {
-			krView, err := s.loadKRDefinition(ctx, record, false)
+			krView, err := s.loadKRDefinition(ctx, record, includeAgency)
 			if err != nil {
 				return Board{}, err
 			}
@@ -684,30 +695,6 @@ func (s *Service) GetCoreKR(ctx context.Context, id string) (KRView, error) {
 		return KRView{}, fmt.Errorf("get kr: %w", err)
 	}
 	return s.loadKRDefinition(ctx, record, false)
-}
-
-// AgencyCoreBoard is the Agency presentation of stable OKR definitions. It
-// adds Agency-owned labels and legacy Meego links without changing the common
-// OKR source of truth.
-func (s *Service) AgencyCoreBoard(ctx context.Context, quarter string) (Board, error) {
-	board, err := s.CoreBoard(ctx, quarter)
-	if err != nil {
-		return Board{}, err
-	}
-	for objectiveIndex := range board.Objectives {
-		for krIndex := range board.Objectives[objectiveIndex].KRs {
-			record := domain.KR{ID: board.Objectives[objectiveIndex].KRs[krIndex].ID}
-			if err := s.db.WithContext(ctx).First(&record, "id = ?", record.ID).Error; err != nil {
-				return Board{}, fmt.Errorf("get Agency KR: %w", err)
-			}
-			view, err := s.loadKRDefinition(ctx, record, true)
-			if err != nil {
-				return Board{}, err
-			}
-			board.Objectives[objectiveIndex].KRs[krIndex] = view
-		}
-	}
-	return board, nil
 }
 
 func (s *Service) GetAgencyCoreKR(ctx context.Context, id string) (KRView, error) {
