@@ -422,6 +422,12 @@ func main() {
 	if err != nil {
 		fatalf("initialize resource service failed: %v", err)
 	}
+	projectPortabilityService, err := background.NewProjectPortabilityService(
+		db, projectService, resourceService, cfg.Execute.RepoRoot,
+	)
+	if err != nil {
+		fatalf("initialize project portability service failed: %v", err)
+	}
 	pageService, err := background.NewPageService(db)
 	if err != nil {
 		fatalf("initialize page service failed: %v", err)
@@ -918,8 +924,9 @@ func main() {
 		DB:               db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
 		MessageRecaller: messageRecaller,
-		Projects:        projectService, KeyMatters: keyMatterService,
-		Persons: personService, Groups: groupService,
+		Projects:        projectService, ProjectPortability: projectPortabilityService,
+		KeyMatters: keyMatterService,
+		Persons:    personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		Pages:          pageService,
 		SharedMemory:   sharedMemoryService,

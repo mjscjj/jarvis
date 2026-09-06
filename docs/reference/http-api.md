@@ -6,6 +6,16 @@
 
 本文只按能力分组，不复制 handler 的完整请求/响应结构。新增或删除接口时先改 `internal/api/router.go`，再更新本页。
 
+## 项目分享、复制与仓库
+
+- `GET /api/projects/:project_id/export`：导出 `schema_version=1` 项目包。
+- `POST /api/projects/import/preview`：校验项目包，并检查代号和资源容量冲突。
+- `POST /api/projects/import`：从通过预检的项目包创建项目。
+- `POST /api/projects/:project_id/duplicate`：以新名称和代号复制项目、长期摘要及关联资源。
+- `POST /api/projects/:project_id/repositories/resolve`：扫描 `execute.repo_root`，按规范化 Git Remote 唯一匹配并保存本机仓库绑定。
+
+项目包不会包含本机路径、身份、聊天记录或凭证。仓库为零匹配或多匹配时不绑定；创建 Task 时也只有项目存在唯一有效本地绑定才自动设置 `repo_path`。
+
 ## 字节身份
 
 - `GET /api/auth/status`：读取当前 Jarvis 浏览器会话。

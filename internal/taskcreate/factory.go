@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -76,6 +78,12 @@ func (f *Factory) Create(ctx context.Context, input Input) (*domain.Task, error)
 	if err != nil {
 		return nil, err
 	}
+	if prepared.RepoPath == nil && prepared.ProjectID != nil {
+		prepared.RepoPath, err = f.projectRepoPath(ctx, *prepared.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var task *domain.Task
 	err = f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		created, err := f.CreateWithDB(ctx, tx, prepared)
@@ -86,6 +94,37 @@ func (f *Factory) Create(ctx context.Context, input Input) (*domain.Task, error)
 		return nil
 	})
 	return task, err
+}
+
+func (f *Factory) projectRepoPath(ctx context.Context, projectID uint64) (*string, error) {
+	return projectRepoPathWithDB(ctx, f.db, projectID)
+}
+
+func projectRepoPathWithDB(ctx context.Context, db *gorm.DB, projectID uint64) (*string, error) {
+	var rows []domain.ManagedResource
+	if err := db.WithContext(ctx).
+		Where("project_id = ? AND resource_type = ? AND is_active = ? AND local_path IS NOT NULL",
+			projectID, "repo", true).
+		Order("id").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("resolve project repository project_id=%d: %w", projectID, err)
+	}
+	valid := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.LocalPath == nil {
+			continue
+		}
+		path := filepath.Clean(strings.TrimSpace(*row.LocalPath))
+		if path == "." || !filepath.IsAbs(path) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+			valid = append(valid, path)
+		}
+	}
+	if len(valid) != 1 {
+		return nil, nil
+	}
+	return &valid[0], nil
 }
 
 func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, error) {
@@ -128,6 +167,13 @@ func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, e
 func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*domain.Task, error) {
 	if db == nil {
 		return nil, fmt.Errorf("Task factory write db is nil")
+	}
+	if input.RepoPath == nil && input.ProjectID != nil {
+		var err error
+		input.RepoPath, err = projectRepoPathWithDB(ctx, db, *input.ProjectID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	normalized, err := normalizeInput(input)
 	if err != nil {
