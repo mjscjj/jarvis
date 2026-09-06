@@ -75,6 +75,8 @@ import type {
   AgentIdentity,
   Plugin,
   PluginAuthorization,
+  WorldProgress,
+  EntityRelation,
   ProactiveRun,
   ProactiveRunDetail,
   MonitoringSnapshot,
@@ -713,6 +715,37 @@ export function completePluginAuthorization(
 
 export function triggerPlugin(id: string): Promise<Plugin> {
   return request<Plugin>(`/api/plugins/${encodeURIComponent(id)}/trigger`, { method: 'POST' })
+}
+
+export async function findWorldProgress(
+  subjectType: string,
+  subjectId: string,
+  periodKey: string,
+  signal?: AbortSignal,
+): Promise<WorldProgress | null> {
+  const params = new URLSearchParams({
+    subject_type: subjectType,
+    subject_id: subjectId,
+    period_key: periodKey,
+  })
+  try {
+    return await request<WorldProgress>(`/api/world-progress?${params.toString()}`, { signal })
+  } catch (cause) {
+    if (cause instanceof APIRequestError && cause.status === 404) return null
+    throw cause
+  }
+}
+
+export function listWorldProgress(periodKey: string, signal?: AbortSignal): Promise<{ items: WorldProgress[] }> {
+  return request<{ items: WorldProgress[] }>(`/api/world-progress/period/${encodeURIComponent(periodKey)}`, { signal })
+}
+
+export function listRelationsBySourceType(
+  sourceType: string,
+  signal?: AbortSignal,
+): Promise<{ items: EntityRelation[] }> {
+  const params = new URLSearchParams({ source_type: sourceType, limit: '200' })
+  return request<{ items: EntityRelation[] }>(`/api/relations?${params.toString()}`, { signal })
 }
 
 export function shutdownJarvis(): Promise<{ stopping: boolean }> {

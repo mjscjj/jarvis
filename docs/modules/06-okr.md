@@ -20,11 +20,11 @@ Jarvis 世界模型
 
 - `okr` 拥有 Objective、KR、Metric、Point、结构化负责人、周次、Weekly KR Core 和正式 Progress。
 - `biz-okr` 拥有标签、OKR Plan、Preview/Review、周报业务展示、评论、评分、Follow-up、催填、Meego、飞书页面身份和业务 Agent 编排。
-- 当前完整 OKR 页面注册为 `Biz OKR`。通用 `okr` 已有独立数据、API 和 Agent 工具边界，但尚无单独的基础页面。
+- 当前完整业务页面注册为 `Biz OKR`。启用通用 `okr` 后，左侧“插件”下出现独立 `OKR` 页面，展示通用结构、正式进展与 Jarvis 世界进展对照、跨世界关系；它不承载 Biz 标签、Plan、Review、评论或评分。
 - 两个模块继续复用 `internal/okrworkspace/`、`data/okr/okr.db` 和既有 `okr_workspace_*` 表。本次拆分没有搬库、改表名或复制历史数据。
 - `internal/plugin` 仍只负责 Codebase、Meego、Oncall 等外部线索采集插件；OKR 不进入这套采集器运行时。
 
-模块注册和依赖的代码真源是 `internal/appmodule/module.go`，仓库默认开关是 `conf/modules.yaml`。左侧“插件”页把通用 `OKR 插件` 与 Codebase、Meego、Oncall 一起展示；`Biz OKR` 是依赖它的独立业务应用，在左侧有自己的应用入口，并在系统设置中管理启停。`biz-okr=on, okr=off` 是非法组合，会因依赖缺失而失败；关闭模块不会删除数据。旧配置键 `agency-okr` 会在启动时原子迁移为 `biz-okr`。
+模块注册和依赖的代码真源是 `internal/appmodule/module.go`，仓库默认开关是 `conf/modules.yaml`。插件管理页用一张目录同时展示通用 `OKR` 与 Codebase、Meego、Oncall；启用后都在左侧“插件”下出现自己的页面。底层仍按能力区分：OKR 复用 `appmodule` 的业务生命周期，后三者使用 `internal/plugin` 的授权、调度和 Clue 采集运行时。`Biz OKR` 是依赖 OKR 的独立业务应用，在左侧有自己的入口，并在系统设置中管理启停。`biz-okr=on, okr=off` 是非法组合，会因依赖缺失而失败；关闭模块不会删除数据。旧配置键 `agency-okr` 会在启动时原子迁移为 `biz-okr`。
 
 ## 数据所有权
 
@@ -46,7 +46,7 @@ Jarvis 世界模型
 
 - API 前缀：`/api/okr/*`。实际注册见 `internal/api/okr_module_routes.go`。
 - 原子工具：`scripts/okr-module-tools`。
-- 已支持 Objective/KR 维护、Metric/Point/Owner 完整拆解、周次、Weekly KR Core、正式 Progress CRUD、图片上传和乐观版本控制。
+- 已支持 Objective/KR 维护、Metric/Point/Owner 完整拆解、周次、Weekly KR Core、正式 Progress CRUD、图片上传和乐观版本控制。`插件 → OKR` 以只读方式展示结构和分层进展；人工填写仍在 Biz OKR。
 - 通用侧可以开周和逐条改进展，但没有删整周的入口。评论、评分、Follow-up 和催填批次按 `(quarter, week)` 存且不指向周记录，只删正式时间线会让它们在下次开同名周时复活，所以整周删除只归 Biz。
 - `PUT /api/okr/krs/:kr_id` 与 `okr-module-tools replace-kr` 只接受通用拆解数据，不能夹带 Biz 标签、Meego 或周进展。
 - 只启用 `okr` 时，不校验或初始化 Biz SSO、飞书 Secret 和 Preview Review。
@@ -91,10 +91,9 @@ Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生�
 以下内容尚未完成，不应描述成当前已有能力：
 
 1. `internal/okrworkspace.Service` 和 `web/src/okr/` 仍是共享实现目录，当前解耦发生在迁移集合、API、DTO、工具、Skill 和模块门禁层；尚未物理拆成 `internal/okr`、`internal/bizokr` 和两套前端目录。
-2. 通用 `okr` 尚无独立基础 UI。
-3. Agent 尚无完整的“现实证据 + WorldProgress → 正式 Progress 候选 → 人确认 → 回填”产品闭环；当前仅具备所需的独立进展存储和正式 Progress 原子写工具。
-4. 统一 World Graph 读取层尚未落地；现有图谱仍从当前世界模型接口和引用关系组装。
-5. `KRPoint` 中仍保留 Meego 字段以兼容现有数据，API 已隔离其所有权，但字段尚未迁出通用模型。
+2. Agent 尚无完整的“现实证据 + WorldProgress → 正式 Progress 候选 → 人确认 → 回填”产品闭环；当前仅具备所需的独立进展存储和正式 Progress 原子写工具。
+3. 统一 World Graph 读取层尚未落地；OKR 插件页当前直接聚合 OKR API、WorldProgress 和 EntityRelation。
+4. `KRPoint` 中仍保留 Meego 字段以兼容现有数据，API 已隔离其所有权，但字段尚未迁出通用模型。
 
 这些后续项的设计依据统一维护在拆分设计文档，不在本文展开实施计划。
 

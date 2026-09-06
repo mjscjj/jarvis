@@ -23,6 +23,37 @@ func openWorkspaceTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestCoreSubjectExistsSupportsAllOKRLevels(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-subject", Title: "目标", Quarter: "2026-Q3"}
+	kr := domain.KR{ID: "kr-subject", ObjectiveID: objective.ID, Title: "关键结果"}
+	point := domain.KRPoint{ID: "point-subject", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "子 KR"}
+	for _, value := range []any{&objective, &kr, &point} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, testCase := range []struct{ subjectType, subjectID string }{
+		{"okr_objective", objective.ID}, {"okr_kr", kr.ID}, {"okr_point", point.ID},
+	} {
+		exists, err := service.CoreSubjectExists(t.Context(), testCase.subjectType, testCase.subjectID)
+		if err != nil || !exists {
+			t.Fatalf("CoreSubjectExists(%s, %s) = %t, %v", testCase.subjectType, testCase.subjectID, exists, err)
+		}
+	}
+	exists, err := service.CoreSubjectExists(t.Context(), "okr_kr", "missing")
+	if err != nil || exists {
+		t.Fatalf("CoreSubjectExists(missing) = %t, %v", exists, err)
+	}
+	if _, err := service.CoreSubjectExists(t.Context(), "project", "1"); err == nil {
+		t.Fatal("CoreSubjectExists(project) error=nil, want unsupported type")
+	}
+}
+
 // Both quarter boards read the same objectives and KRs; only the Biz one may
 // carry labels and legacy Meego links. They share one loader, so this pins the
 // projection difference rather than each board's own row assembly.

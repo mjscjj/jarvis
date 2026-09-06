@@ -12,7 +12,7 @@ module: biz-okr
 
 - 外部系统只读。Meego 使用 `bytedcli` 查询；飞书消息只读本地已采集数据，必要时使用 `lark-cli` 查询，但不调用任何发送、更新或删除命令。
 - 不发送真实飞书消息，不催办，不修改 Meego 工作项。
-- 不为来源新建 Go 专用流水线。原始 Meego 证据通过 `jarvis-tools append-clue` 进入统一证据流；确定的实体进展通过 `update-page` 和 `append-fact` 写回；对 Point 的周期判断通过 WorldProgress 原子工具维护。
+- 不为来源新建 Go 专用流水线。原始 Meego 证据通过 `jarvis-tools append-clue` 进入统一证据流；确定的实体进展通过 `update-page` 和 `append-fact` 写回；对 O、KR、Point 的周期判断通过 WorldProgress 原子工具维护。
 - 没有直接证据就不更新状态。工具输出不完整时记录覆盖缺口，不把“查不到”写成“没有进展”。
 - 只处理未闭环 OKR。已闭环 OKR 的项目仍可独立维护，但不得新建或移动项目到已闭环 OKR。
 - 人工 KRProgress 和 WeeklyKRCore 只作为本轮判断输入，不默认逐条复制成 Clue；只有其中包含尚未采集且值得进入通用证据流的独立外部事实时才投递。
@@ -96,9 +96,9 @@ jarvis-tools query-messages --sender-open-id <owner_open_id> --keyword '<项目�
 2. 世界 Page 第一行保持一句话结论，后续写当前状态、风险、下一检查点，并引用已确认的下级实体。
 3. 不调用 `create-task`、`start-task` 或任何消息发送命令。
 
-## 5. 形成 Point 周期判断
+## 5. 形成 O、KR、Point 周期判断
 
-只在 Point 与现实证据之间已有可靠映射，或存在其它足够直接的证据时维护 WorldProgress。KeyMatter 是现实事项，不是进展判断本身；不能把它的 status 机械复制成 Point 进展。
+从 Point 开始自下而上判断，再判断 KR 和 Objective。只有现实证据、人工正式进展、指标和下级判断足以支撑对应层级结论时，才维护该层 WorldProgress。KeyMatter 是现实事项，不是进展判断本身；不能把它的 status 机械复制成 Point 进展，也不能把下级灯色按固定公式机械汇总为上级灯色。
 
 先读取同一 Point 和周次：
 
@@ -106,6 +106,8 @@ jarvis-tools query-messages --sender-open-id <owner_open_id> --keyword '<项目�
 jarvis-tools get-world-progress \
   --subject-type okr_point --subject-id '<point_id>' --period-key '<YYYY-Www>'
 ```
+
+读取上级时分别使用 `okr_kr` 和 `okr_objective`。Point 证据不足不妨碍在 KR 或 O 存在直接证据时形成上级判断；反过来，也不能仅因一个 Point 已完成就宣告整个 KR 或 O 完成。
 
 不存在时创建，存在时携带读到的 `version` 更新：
 
@@ -138,6 +140,7 @@ JSON
 - `evidence_until` 是证据覆盖截止时间，不是执行时间；没有新证据时不刷新。
 - 相同内容不重复写；409 冲突时重新读取并根据新内容重新判断。
 - 写后按 ID 回读。WorldProgress 是 Jarvis 独立判断，不创建或更新任何正式 KRProgress。
+- 同一周期最多分别维护一条 O、KR、Point 判断；允许某一层暂无判断，不能为了填满页面编造结论。
 
 ## 6. 定时巡检
 

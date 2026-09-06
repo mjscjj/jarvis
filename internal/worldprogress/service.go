@@ -87,8 +87,25 @@ type View struct {
 type AssessmentService interface {
 	Get(context.Context, uint64) (*View, error)
 	GetBySubjectPeriod(context.Context, Filter) (*View, error)
+	ListByPeriod(context.Context, string) ([]View, error)
 	Create(context.Context, CreateInput) (*View, error)
 	Update(context.Context, uint64, UpdateInput) (*View, error)
+}
+
+func (s *Service) ListByPeriod(ctx context.Context, periodKey string) ([]View, error) {
+	periodKey = strings.TrimSpace(periodKey)
+	if !periodToken.MatchString(periodKey) {
+		return nil, fmt.Errorf("%w: period_key must be a stable period token", ErrInvalidInput)
+	}
+	var rows []domain.WorldProgress
+	if err := s.db.WithContext(ctx).Where("period_key = ?", periodKey).Order("subject_type, subject_id").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list world progress period=%s: %w", periodKey, err)
+	}
+	views := make([]View, 0, len(rows))
+	for i := range rows {
+		views = append(views, toView(&rows[i]))
+	}
+	return views, nil
 }
 
 type Service struct {

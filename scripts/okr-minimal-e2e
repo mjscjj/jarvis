@@ -29,6 +29,7 @@ commands:
   run-reminder   Run one weekly reminder Agent Task against the empty W36
   fill           Fill both W36 points, including a document, image and comment
   verify-filled  Verify W36 persists and no reminder remains
+  verify-world   Persist O/KR/point world progress and one relation, then prove formal progress is unchanged
   cas            Verify progress optimistic locking without changing KR version
   run-report-c   Create one internal Report C Agent Task and print its Task ID
   verify-agents  Verify reminder delivery and two-week Report C Task results
@@ -96,8 +97,11 @@ prepare() {
   ' "$REPO_ROOT/conf/config.yaml" >"$CONFIG_PATH" || fail "conf/config.yaml has no sqlite.path to redirect; update prepare"
   ln -sfn "$REPO_ROOT/conf/prompts" "$CONFIG_DIR/prompts"
   ln -sfn "$REPO_ROOT/conf/rules" "$CONFIG_DIR/rules"
-  ln -sfn "$REPO_ROOT/conf/modules.yaml" "$CONFIG_DIR/modules.yaml"
-  ln -sfn "$REPO_ROOT/conf/skills.yaml" "$CONFIG_DIR/skills.yaml"
+  # These files have write APIs. Copy them so an E2E enablement change cannot
+  # mutate the developer's live configuration through a symlink.
+  rm -f "$CONFIG_DIR/modules.yaml" "$CONFIG_DIR/skills.yaml"
+  cp "$REPO_ROOT/conf/modules.yaml" "$CONFIG_DIR/modules.yaml"
+  cp "$REPO_ROOT/conf/skills.yaml" "$CONFIG_DIR/skills.yaml"
 
   cat >"$CONFIG_DIR/okr-module.yaml" <<'YAML'
 database_path: "var/okr-e2e/okr.db"
@@ -130,6 +134,9 @@ server:
   log_files:
     - "var/okr-e2e/log/server.log"
     - "var/okr-e2e/log/server.error.log"
+
+auth:
+  enabled: false
 
 factengine:
   enabled: false
@@ -180,8 +187,10 @@ build_server() {
   local next_bin="$SERVER_BIN.next"
   "$SCRIPT_DIR/check-build-toolchain.sh"
   (cd "$REPO_ROOT" && go build -o "$next_bin" ./cmd/jarvis-server)
-  "$SCRIPT_DIR/sign-jarvis-server.sh" "$next_bin"
-  "$SCRIPT_DIR/verify-server-signature.sh" "$next_bin"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    "$SCRIPT_DIR/sign-jarvis-server.sh" "$next_bin"
+    "$SCRIPT_DIR/verify-server-signature.sh" "$next_bin"
+  fi
   mv "$next_bin" "$SERVER_BIN"
   echo "built isolated server: $SERVER_BIN"
 }
@@ -189,7 +198,9 @@ build_server() {
 serve() {
   [[ -f "$CONFIG_PATH" && -f "$CONFIG_DIR/config.runtime.yaml" && -f "$CONFIG_DIR/okr-module.yaml" ]] || fail "isolated config is missing; run prepare first"
   [[ -x "$SERVER_BIN" ]] || fail "isolated server binary is missing; run build first"
-  "$SCRIPT_DIR/verify-server-signature.sh" "$SERVER_BIN"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    "$SCRIPT_DIR/verify-server-signature.sh" "$SERVER_BIN"
+  fi
   exec "$SERVER_BIN" -config "$CONFIG_PATH"
 }
 
@@ -328,6 +339,47 @@ verify_filled() {
   echo "verified: W36 persisted; attachment/comment read back; no reminder remains"
 }
 
+ensure_world_progress() {
+  local subject_type="$1" subject_id="$2" summary="$3" current
+  current="$(curl --silent --show-error --get "$BASE_URL/api/world-progress" \
+    --data-urlencode "subject_type=$subject_type" \
+    --data-urlencode "subject_id=$subject_id" \
+    --data-urlencode 'period_key=2026-W36')"
+  if jq -e '.code == 0' <<<"$current" >/dev/null; then
+    jq -e --arg summary "$summary" '.data.summary == $summary' <<<"$current" >/dev/null || fail "existing $subject_type world progress has unexpected content"
+    return
+  fi
+  api_write POST /api/world-progress "$(jq -cn \
+    --arg subject_type "$subject_type" --arg subject_id "$subject_id" --arg summary "$summary" \
+    '{expected_version:0,subject_type:$subject_type,subject_id:$subject_id,period_key:"2026-W36",signal:"yellow",summary:$summary,evidence:{refs:["fact:e2e-world"]},evidence_until:"2026-09-06T12:00:00Z"}')" | require_code_zero >/dev/null
+}
+
+verify_world() {
+  require_server
+  require_fixture
+  local objective_id kr_id point_id relation progress formal
+  objective_id="$(jq -er '.objective_id' "$FIXTURE_PATH")"
+  kr_id="$(jq -er '.kr_id' "$FIXTURE_PATH")"
+  point_id="$(jq -er '.strategy_point_id' "$FIXTURE_PATH")"
+
+  ensure_world_progress okr_objective "$objective_id" "E2E：O 世界进展独立存在"
+  ensure_world_progress okr_kr "$kr_id" "E2E：KR 世界进展独立存在"
+  ensure_world_progress okr_point "$point_id" "E2E：子 KR 世界进展独立存在"
+  relation="$(api_write POST /api/relations "$(jq -cn --arg kr_id "$kr_id" '{source_type:"okr_kr",source_id:$kr_id,relation_type:"drives",target_type:"project",target_id:"e2e-project",evidence:{source:"isolated-e2e"},confidence:1}')" | require_code_zero)"
+  jq -e '.data.source_type == "okr_kr" and .data.relation_type == "drives" and .data.target_type == "project"' <<<"$relation" >/dev/null || fail "relation JSON contract assertion failed"
+
+  progress="$(api_get /api/world-progress/period/2026-W36 | require_code_zero)"
+  jq -e --arg objective_id "$objective_id" --arg kr_id "$kr_id" --arg point_id "$point_id" '
+    ([.data.items[] | select(.subject_type=="okr_objective" and .subject_id==$objective_id)] | length)==1
+    and ([.data.items[] | select(.subject_type=="okr_kr" and .subject_id==$kr_id)] | length)==1
+    and ([.data.items[] | select(.subject_type=="okr_point" and .subject_id==$point_id)] | length)==1
+  ' <<<"$progress" >/dev/null || fail "three-level world progress assertion failed"
+
+  formal="$(api_get /api/okr/progress/board --data-urlencode 'quarter=2026-Q3' --data-urlencode 'week=2026-W36' | require_code_zero)"
+  jq -e '([.data.objectives[].krs[].points[].entries[] | select(.source=="manual")]|length)==2' <<<"$formal" >/dev/null || fail "world writes changed formal progress"
+  echo "verified: O/KR/point world progress and KR→project relation persist without changing two manual progress entries"
+}
+
 cas_test() {
   require_server
   require_fixture
@@ -421,6 +473,7 @@ case "$COMMAND" in
   run-reminder) run_reminder ;;
   fill) fill_current ;;
   verify-filled) verify_filled ;;
+  verify-world) verify_world ;;
   cas) cas_test ;;
   run-report-c) run_report_c ;;
   verify-agents) verify_agents ;;

@@ -9,8 +9,13 @@ import (
 
 	"jarvis/internal/config"
 	"jarvis/internal/datatypes"
+	"jarvis/internal/okrworkspace"
+	okrdomain "jarvis/internal/okrworkspace/domain"
 	"jarvis/internal/store"
 	"jarvis/internal/worldprogress"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestServiceCreateReadUpdateAndNoop(t *testing.T) {
@@ -39,6 +44,10 @@ func TestServiceCreateReadUpdateAndNoop(t *testing.T) {
 	})
 	if err != nil || byKey.ID != created.ID {
 		t.Fatalf("GetBySubjectPeriod() = %#v, %v", byKey, err)
+	}
+	byPeriod, err := service.ListByPeriod(context.Background(), "2026-W36")
+	if err != nil || len(byPeriod) != 1 || byPeriod[0].ID != created.ID {
+		t.Fatalf("ListByPeriod() = %#v, %v", byPeriod, err)
 	}
 
 	version := created.Version
@@ -108,6 +117,84 @@ func TestServiceRejectsDuplicateInvalidEvidenceAndUnavailableSubject(t *testing.
 	}
 	if _, err := service.Get(context.Background(), created.ID); err != nil {
 		t.Fatalf("historical read while subject unavailable: %v", err)
+	}
+}
+
+func TestOKRHierarchyWorldProgressStaysSeparateFromFormalProgress(t *testing.T) {
+	okrDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "okr.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := okrworkspace.Migrate(okrDB); err != nil {
+		t.Fatal(err)
+	}
+	objective := okrdomain.Objective{ID: "o-integration", Quarter: "2026-Q3", Title: "完整世界模型"}
+	kr := okrdomain.KR{ID: "kr-integration", ObjectiveID: objective.ID, Title: "建立 OKR 到世界的映射"}
+	point := okrdomain.KRPoint{ID: "point-integration", KRID: kr.ID, Kind: okrdomain.PointKindStrategy, Title: "完成三层进展展示"}
+	week := okrdomain.WeeklyReportWeek{Quarter: objective.Quarter, Week: "2026-W36", TemplateKey: okrdomain.WeekTemplateClassic, OpenedBy: "human"}
+	formal := okrdomain.KRProgress{ID: "formal-integration", PointID: point.ID, Week: week.Week, Status: okrdomain.StatusInProgress, Text: "人工填写的正式进展", Source: "manual"}
+	for _, row := range []any{&objective, &kr, &point, &week, &formal} {
+		if err := okrDB.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	workspace, err := okrworkspace.NewService(okrDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runtimeDB, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close(runtimeDB) })
+	if err := store.Migrate(runtimeDB); err != nil {
+		t.Fatal(err)
+	}
+	assessments, err := worldprogress.NewService(runtimeDB, func(ctx context.Context, subjectType, subjectID string) error {
+		exists, err := workspace.CoreSubjectExists(ctx, subjectType, subjectID)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return worldprogress.ErrNotFound
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	zero := int32(0)
+	evidenceUntil := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	for _, subject := range []struct {
+		typeName string
+		id       string
+		summary  string
+	}{
+		{"okr_objective", objective.ID, "O 的世界进展"},
+		{"okr_kr", kr.ID, "KR 的世界进展"},
+		{"okr_point", point.ID, "子 KR 的世界进展"},
+	} {
+		if _, err := assessments.Create(t.Context(), worldprogress.CreateInput{
+			ExpectedVersion: &zero, SubjectType: subject.typeName, SubjectID: subject.id, PeriodKey: week.Week,
+			Signal: "yellow", Summary: subject.summary, Evidence: datatypes.JSON(`{"refs":["fact:1"]}`), EvidenceUntil: &evidenceUntil,
+		}); err != nil {
+			t.Fatalf("create %s world progress: %v", subject.typeName, err)
+		}
+	}
+
+	views, err := assessments.ListByPeriod(t.Context(), week.Week)
+	if err != nil || len(views) != 3 {
+		t.Fatalf("ListByPeriod() = %#v, %v", views, err)
+	}
+	board, err := workspace.ProgressBoard(t.Context(), objective.Quarter, week.Week)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := board.Objectives[0].KRs[0].Points[0].Entries
+	if len(entries) != 1 || entries[0].Text != formal.Text || entries[0].Source != "manual" {
+		t.Fatalf("formal progress changed after world assessments: %#v", entries)
 	}
 }
 

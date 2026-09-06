@@ -43,6 +43,17 @@ func GetWorldProgressBySubjectPeriod(service worldprogress.AssessmentService) ap
 	}
 }
 
+func ListWorldProgressByPeriod(service worldprogress.AssessmentService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		items, err := service.ListByPeriod(ctx, c.Param("period_key"))
+		if err != nil {
+			writeWorldProgressError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": items}})
+	}
+}
+
 func CreateWorldProgress(service worldprogress.AssessmentService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var input worldprogress.CreateInput

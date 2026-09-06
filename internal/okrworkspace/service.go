@@ -53,6 +53,33 @@ type CoreScope struct {
 	Quarter string `json:"quarter"`
 }
 
+// CoreSubjectExists resolves the stable OKR subjects that Jarvis may assess
+// through WorldProgress. The OKR module owns existence checks; the world
+// model only keeps the open subject type and ID.
+func (s *Service) CoreSubjectExists(ctx context.Context, subjectType, subjectID string) (bool, error) {
+	subjectType = strings.TrimSpace(subjectType)
+	subjectID = strings.TrimSpace(subjectID)
+	if subjectID == "" {
+		return false, fmt.Errorf("subject_id is required")
+	}
+	var model any
+	switch subjectType {
+	case "okr_objective":
+		model = &domain.Objective{}
+	case "okr_kr":
+		model = &domain.KR{}
+	case "okr_point":
+		model = &domain.KRPoint{}
+	default:
+		return false, fmt.Errorf("unsupported OKR subject type %q", subjectType)
+	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(model).Where("id = ?", subjectID).Count(&count).Error; err != nil {
+		return false, fmt.Errorf("find %s subject %s: %w", subjectType, subjectID, err)
+	}
+	return count > 0, nil
+}
+
 func (s *Service) LatestCoreScope(ctx context.Context) (CoreScope, error) {
 	quarters, err := s.ListQuarters(ctx)
 	if err != nil {

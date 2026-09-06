@@ -275,6 +275,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/facts/timeline", FactTimeline(deps.FactQueries, deps.FactTimelineLoc))
 	h.GET("/api/facts/search", SearchFacts(deps.FactQueries))
 	h.GET("/api/world-progress", GetWorldProgressBySubjectPeriod(deps.WorldProgress))
+	h.GET("/api/world-progress/period/:period_key", ListWorldProgressByPeriod(deps.WorldProgress))
 	h.GET("/api/world-progress/:world_progress_id", GetWorldProgress(deps.WorldProgress))
 	h.POST("/api/world-progress", CreateWorldProgress(deps.WorldProgress))
 	h.PUT("/api/world-progress/:world_progress_id", UpdateWorldProgress(deps.WorldProgress))

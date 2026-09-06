@@ -46,7 +46,7 @@
 - Principal：`GET/PUT /api/profile`
 - Managed resources：`GET/POST /api/resources`、`GET/PUT/DELETE /api/resources/:resource_id`
 - Facts：`GET/POST /api/facts`
-- World progress：`GET /api/world-progress` 按 `subject_type + subject_id + period_key` 精确读取，`GET /api/world-progress/:id` 按 ID 读取，`POST /api/world-progress` 创建，`PUT /api/world-progress/:id` 带 `expected_version` 做 CAS 更新。当前只允许为已启用周报模块中真实存在的 `okr_point` 写入；模块关闭后历史记录仍可读取。它是 Jarvis 的证据化周期判断，不是人工正式周报。
+- World progress：`GET /api/world-progress` 按 `subject_type + subject_id + period_key` 精确读取，`GET /api/world-progress/period/:period_key` 批量读取一个周期，`GET /api/world-progress/:id` 按 ID 读取，`POST /api/world-progress` 创建，`PUT /api/world-progress/:id` 带 `expected_version` 做 CAS 更新。当前允许为已启用 OKR 模块中真实存在的 `okr_objective`、`okr_kr`、`okr_point` 写入；模块关闭后历史记录仍可读取。它是 Jarvis 的证据化周期判断，不是人工正式周报。
 - Entity relations：`GET/POST /api/relations`、`DELETE /api/relations/:relation_id`，保存带证据的通用跨模块实体映射
 - 实体长期事实页：`GET /api/pages`、`GET/PUT /api/pages/:type/:id`、`GET /api/pages/:type/:id/backlinks`。`PUT` 需带 `if_unchanged_since` 做 CAS，不匹配返回 409 并回带当前全文。
 

@@ -582,6 +582,35 @@ export async function getBoard(quarter: string, week: string, surface: BoardSurf
   }
 }
 
+export async function getGenericOKRBoard(quarter = ''): Promise<BoardData> {
+  const params = new URLSearchParams()
+  if (quarter) params.set('quarter', quarter)
+  const board = await request<APIBoard>(`/api/okr/board?${params}`)
+  return {
+    quarter: board.quarter,
+    week: board.week,
+    templateKey: board.template_key,
+    previousWeek: board.previous_week,
+    availableQuarters: board.available_quarters,
+    availableWeeks: board.available_weeks,
+    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, krs: objective.krs.map(fromAPIKr) })),
+  }
+}
+
+export async function getGenericOKRProgressBoard(quarter: string, week: string): Promise<BoardData> {
+  const params = new URLSearchParams({ quarter, week })
+  const board = await request<APIBoard>(`/api/okr/progress/board?${params}`)
+  return {
+    quarter: board.quarter,
+    week: board.week,
+    templateKey: board.template_key,
+    previousWeek: board.previous_week,
+    availableQuarters: board.available_quarters,
+    availableWeeks: board.available_weeks,
+    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, krs: objective.krs.map(fromAPIKr) })),
+  }
+}
+
 export async function listOKRPlans(quarter = ''): Promise<OKRPlanList> {
   const params = new URLSearchParams()
   if (quarter) params.set('quarter', quarter)

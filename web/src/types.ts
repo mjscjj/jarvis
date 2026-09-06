@@ -1237,6 +1237,37 @@ export interface Plugin {
   clue_count: number
 }
 
+export type WorldProgressSignal = 'unknown' | 'green' | 'yellow' | 'red'
+
+export interface WorldProgress {
+  id: number
+  subject_type: string
+  subject_id: string
+  period_key: string
+  signal: WorldProgressSignal
+  summary: string
+  evidence: Record<string, unknown>
+  version: number
+  assessed_at: string
+  evidence_until: string
+  created_at: string
+  updated_at: string
+}
+
+export interface EntityRelation {
+  id: number
+  source_type: string
+  source_id: string
+  relation_type: string
+  target_type: string
+  target_id: string
+  evidence: Record<string, unknown>
+  confidence: number | null
+  confirmed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 // --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---
 
 // PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。

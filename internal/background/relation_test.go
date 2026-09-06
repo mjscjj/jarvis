@@ -2,6 +2,7 @@ package background
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"jarvis/internal/datatypes"
@@ -45,5 +46,26 @@ func TestRelationServiceUpsertsCrossModuleEdge(t *testing.T) {
 	rows, err := service.List(context.Background(), RelationFilter{SourceType: "okr_kr", SourceID: "kr-1", Limit: 10})
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("List() = %+v, %v", rows, err)
+	}
+}
+
+func TestEntityRelationUsesStableSnakeCaseJSON(t *testing.T) {
+	raw, err := json.Marshal(domain.EntityRelation{
+		ID: 7, SourceType: "okr_kr", SourceID: "kr-1", RelationType: "drives", TargetType: "project", TargetID: "3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"id", "source_type", "source_id", "relation_type", "target_type", "target_id"} {
+		if _, ok := decoded[key]; !ok {
+			t.Fatalf("JSON is missing %q: %s", key, raw)
+		}
+	}
+	if _, legacy := decoded["SourceType"]; legacy {
+		t.Fatalf("JSON leaked Go field names: %s", raw)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -543,8 +544,10 @@ func main() {
 		}
 	}
 	worldProgressService, err := worldprogress.NewService(db, func(ctx context.Context, subjectType, subjectID string) error {
-		if subjectType != "okr_point" {
-			return errors.Join(worldprogress.ErrInvalidInput, errors.New("only okr_point subjects are supported"))
+		switch subjectType {
+		case "okr_objective", "okr_kr", "okr_point":
+		default:
+			return errors.Join(worldprogress.ErrInvalidInput, fmt.Errorf("unsupported world progress subject type %q", subjectType))
 		}
 		enabled, err := appModuleService.Enabled(ctx, "okr")
 		if err != nil {
@@ -553,11 +556,12 @@ func main() {
 		if !enabled || okrWorkspaceService == nil {
 			return worldprogress.ErrSubjectUnavailable
 		}
-		if _, err := okrWorkspaceService.GetCoreKRByPointID(ctx, subjectID); err != nil {
-			if errors.Is(err, okrworkspace.ErrNotFound) {
-				return worldprogress.ErrNotFound
-			}
+		exists, err := okrWorkspaceService.CoreSubjectExists(ctx, subjectType, subjectID)
+		if err != nil {
 			return err
+		}
+		if !exists {
+			return worldprogress.ErrNotFound
 		}
 		return nil
 	})

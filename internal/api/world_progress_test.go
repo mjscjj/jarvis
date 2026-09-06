@@ -33,6 +33,11 @@ func (f *fakeWorldProgressService) GetBySubjectPeriod(_ context.Context, filter 
 	return &worldprogress.View{ID: 3, SubjectType: filter.SubjectType, SubjectID: filter.SubjectID, PeriodKey: filter.PeriodKey}, nil
 }
 
+func (f *fakeWorldProgressService) ListByPeriod(_ context.Context, periodKey string) ([]worldprogress.View, error) {
+	f.filter.PeriodKey = periodKey
+	return []worldprogress.View{{ID: 4, SubjectType: "okr_kr", SubjectID: "kr-1", PeriodKey: periodKey}}, nil
+}
+
 func (f *fakeWorldProgressService) Create(_ context.Context, input worldprogress.CreateInput) (*worldprogress.View, error) {
 	f.createInput = input
 	if f.errorOnWrite != nil {
@@ -54,6 +59,7 @@ func TestWorldProgressHandlers(t *testing.T) {
 	service := &fakeWorldProgressService{}
 	h := server.New()
 	h.GET("/api/world-progress", GetWorldProgressBySubjectPeriod(service))
+	h.GET("/api/world-progress/period/:period_key", ListWorldProgressByPeriod(service))
 	h.GET("/api/world-progress/:world_progress_id", GetWorldProgress(service))
 	h.POST("/api/world-progress", CreateWorldProgress(service))
 	h.PUT("/api/world-progress/:world_progress_id", UpdateWorldProgress(service))
@@ -61,6 +67,10 @@ func TestWorldProgressHandlers(t *testing.T) {
 	response := ut.PerformRequest(h.Engine, "GET", "/api/world-progress?subject_type=okr_point&subject_id=point-1&period_key=2026-W36", nil).Result()
 	if response.StatusCode() != consts.StatusOK || service.filter.SubjectID != "point-1" {
 		t.Fatalf("query status=%d filter=%#v body=%s", response.StatusCode(), service.filter, response.Body())
+	}
+	response = ut.PerformRequest(h.Engine, "GET", "/api/world-progress/period/2026-W36", nil).Result()
+	if response.StatusCode() != consts.StatusOK || service.filter.PeriodKey != "2026-W36" {
+		t.Fatalf("list status=%d period=%q body=%s", response.StatusCode(), service.filter.PeriodKey, response.Body())
 	}
 	response = ut.PerformRequest(h.Engine, "GET", "/api/world-progress/3", nil).Result()
 	if response.StatusCode() != consts.StatusOK || service.id != 3 {

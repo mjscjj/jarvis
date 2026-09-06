@@ -25,11 +25,13 @@ import {
   listPlugins,
   triggerPlugin,
   updatePlugin,
+  listAppModules,
+  updateAppModule,
 } from './api'
-import AppModules from './AppModules'
 import PageHeader from './components/PageHeader'
 import { usePageContext } from './pageContext'
-import type { Plugin, PluginAuthorization, PluginState } from './types'
+import type { AppModule, Plugin, PluginAuthorization, PluginState } from './types'
+import OKRPluginPage from './okr/OKRPluginPage'
 
 const { Text, Title } = Typography
 
@@ -59,6 +61,10 @@ function errorText(cause: unknown): string {
 
 const defaultOncallSearchTerms = ['oncall', '值班']
 const defaultMeegoLookbackDays = 30
+
+type CatalogItem =
+  | { kind: 'okr'; id: 'okr'; module: AppModule }
+  | { kind: 'collector'; id: string; plugin: Plugin }
 
 function meegoLookbackDays(item: Plugin): number {
   const configured = item.config.lookback_days
@@ -193,6 +199,7 @@ function OncallSearchConfig({
 export default function Plugins() {
   const { context, setViewState } = usePageContext()
   const [items, setItems] = useState<Plugin[]>([])
+  const [modules, setModules] = useState<AppModule[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string>()
@@ -202,8 +209,9 @@ export default function Plugins() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await listPlugins()
-      setItems(result.items)
+      const [pluginResult, moduleResult] = await Promise.all([listPlugins(), listAppModules()])
+      setItems(pluginResult.items)
+      setModules(moduleResult.items)
       setError(undefined)
     } catch (cause) {
       setError(errorText(cause))
@@ -216,13 +224,15 @@ export default function Plugins() {
     void load()
   }, [load])
 
+  const okrModule = modules.find((item) => item.key === 'okr')
+  const selectedOKR = context.view_state.plugin === 'okr' && okrModule?.is_enabled
   const selectedPlugin = items.find(
     (item) => item.enabled && item.id === context.view_state.plugin,
   )
 
   useEffect(() => {
-    if (!loading && context.view_state.plugin && !selectedPlugin) setViewState({})
-  }, [context.view_state.plugin, loading, selectedPlugin, setViewState])
+    if (!loading && context.view_state.plugin && !selectedPlugin && !selectedOKR) setViewState({})
+  }, [context.view_state.plugin, loading, selectedOKR, selectedPlugin, setViewState])
 
   useEffect(() => {
     const active = Object.entries(flows).filter(([, flow]) => flow.status === 'pending' && flow.flow_id)
@@ -256,6 +266,23 @@ export default function Plugins() {
       else if (context.view_state.plugin === updated.id) setViewState({})
       if (enabled && updated.state === 'needs_auth') messageApi.info(`${updated.name} 已开启，完成授权后开始同步`)
       else messageApi.success(`${updated.name} 已${enabled ? '开启' : '关闭'}`)
+      setError(undefined)
+    } catch (cause) {
+      setError(errorText(cause))
+      await load()
+    } finally {
+      setBusy(undefined)
+    }
+  }
+
+  const toggleOKR = async (item: AppModule, enabled: boolean) => {
+    setBusy(item.key)
+    try {
+      const updated = await updateAppModule(item.key, { is_enabled: enabled })
+      setModules((current) => current.map((entry) => entry.key === updated.key ? updated : entry))
+      window.dispatchEvent(new Event('jarvis:app-modules-changed'))
+      if (updated.restart_required) messageApi.info('OKR 插件配置已保存，重启服务后生效')
+      else messageApi.success(`OKR 插件已${enabled ? '开启' : '关闭'}`)
       setError(undefined)
     } catch (cause) {
       setError(errorText(cause))
@@ -309,91 +336,107 @@ export default function Plugins() {
     )
   }
 
+  const catalogItems = useMemo<CatalogItem[]>(() => [
+    ...(okrModule ? [{ kind: 'okr' as const, id: 'okr' as const, module: okrModule }] : []),
+    ...items.map((plugin): CatalogItem => ({ kind: 'collector', id: plugin.id, plugin })),
+  ], [items, okrModule])
+
   const columns = useMemo(() => [
     {
       title: '插件',
       key: 'plugin',
-      render: (_: unknown, item: Plugin) => (
+      render: (_: unknown, item: CatalogItem) => (
         <Space direction="vertical" size={0}>
-          <Text strong>{item.name}</Text>
-          <Text type="secondary">{item.description}</Text>
+          <Text strong>{item.kind === 'okr' ? 'OKR' : item.plugin.name}</Text>
+          <Text type="secondary">{item.kind === 'okr' ? item.module.description : item.plugin.description}</Text>
         </Space>
       ),
     },
     {
+      title: '类型',
+      key: 'kind',
+      width: 120,
+      render: (_: unknown, item: CatalogItem) => <Tag>{item.kind === 'okr' ? '业务能力' : '数据来源'}</Tag>,
+    },
+    {
       title: '状态',
-      dataIndex: 'state',
+      key: 'state',
       width: 110,
-      render: (state: PluginState) => <Tag color={stateColors[state]}>{stateLabels[state]}</Tag>,
+      render: (_: unknown, item: CatalogItem) => item.kind === 'okr' ? (
+        <Space size={4} wrap>
+          <Tag color={item.module.is_enabled ? 'success' : 'default'}>{item.module.is_enabled ? '运行正常' : '已关闭'}</Tag>
+          {item.module.restart_required && <Tag color="gold">等待重启</Tag>}
+        </Space>
+      ) : <Tag color={stateColors[item.plugin.state]}>{stateLabels[item.plugin.state]}</Tag>,
     },
     {
-      title: '线索',
-      dataIndex: 'clue_count',
-      width: 80,
-      render: (count: number) => `${count} 条`,
+      title: '数据',
+      key: 'data',
+      width: 100,
+      render: (_: unknown, item: CatalogItem) => item.kind === 'okr' ? 'O / KR / 进展' : `${item.plugin.clue_count} 条线索`,
     },
     {
-      title: '最近同步',
-      dataIndex: 'last_finished_at',
+      title: '最近活动',
+      key: 'activity',
       width: 180,
-      render: formatTime,
+      render: (_: unknown, item: CatalogItem) => item.kind === 'okr' ? '业务数据实时读取' : formatTime(item.plugin.last_finished_at),
     },
     {
       title: '操作',
       key: 'actions',
       width: 260,
-      render: (_: unknown, item: Plugin) => (
+      render: (_: unknown, item: CatalogItem) => item.kind === 'okr' ? (
         <Space>
-          {item.enabled && item.authorization.status !== 'authorized' && (
+          <Button disabled={!item.module.is_enabled} onClick={() => setViewState({ plugin: 'okr', plugin_tab: 'structure' })}>打开</Button>
+          <Switch
+            checked={item.module.configured_enabled}
+            loading={busy === item.id}
+            disabled={modules.some((candidate) => candidate.configured_enabled && candidate.requires.includes('okr'))}
+            aria-label={`${item.module.configured_enabled ? '关闭' : '开启'} OKR`}
+            onChange={(checked) => void toggleOKR(item.module, checked)}
+          />
+        </Space>
+      ) : (
+        <Space>
+          {item.plugin.enabled && item.plugin.authorization.status !== 'authorized' && (
             <Button
               icon={<SafetyCertificateOutlined />}
-              loading={busy === item.id}
-              onClick={() => void authorize(item)}
+              loading={busy === item.plugin.id}
+              onClick={() => void authorize(item.plugin)}
             >
               授权
             </Button>
           )}
           <Button
             icon={<SyncOutlined />}
-            disabled={!item.enabled || item.authorization.status !== 'authorized'}
-            loading={busy === item.id}
-            onClick={() => void trigger(item)}
+            disabled={!item.plugin.enabled || item.plugin.authorization.status !== 'authorized'}
+            loading={busy === item.plugin.id}
+            onClick={() => void trigger(item.plugin)}
           >
             立即同步
           </Button>
           <Switch
-            checked={item.enabled}
-            loading={busy === item.id}
-            aria-label={`${item.enabled ? '关闭' : '开启'} ${item.name}`}
-            onChange={(checked) => void toggle(item, checked)}
+            checked={item.plugin.enabled}
+            loading={busy === item.plugin.id}
+            aria-label={`${item.plugin.enabled ? '关闭' : '开启'} ${item.plugin.name}`}
+            onChange={(checked) => void toggle(item.plugin, checked)}
           />
         </Space>
       ),
     },
-  ], [busy])
+  ], [busy, modules, setViewState])
 
   const managementTable = (
-    <Space orientation="vertical" size={24} style={{ width: '100%' }}>
-      <AppModules
-        moduleKeys={['okr']}
-        title="OKR 插件"
-        description="提供通用 Objective、KR、Point、周次与正式进展能力；与 Biz OKR 业务应用相互独立。"
-      />
-      <section>
-        <Space orientation="vertical" size={4} style={{ marginBottom: 12 }}>
-          <Text strong>数据源插件</Text>
-          <Text type="secondary">连接外部工作系统，按配置授权并定时采集线索。</Text>
-        </Space>
-        <Table<Plugin>
+    <section>
+        <Table<CatalogItem>
           rowKey="id"
           loading={loading}
-          dataSource={items}
+          dataSource={catalogItems}
           columns={columns}
           pagination={false}
           scroll={{ x: 900 }}
         />
-      </section>
-    </Space>
+    </section>
   )
 
   const pluginTab = (item: Plugin) => (
@@ -475,7 +518,7 @@ export default function Plugins() {
           }
         />
       ))}
-      {selectedPlugin ? pluginTab(selectedPlugin) : managementTable}
+      {selectedOKR ? <OKRPluginPage /> : selectedPlugin ? pluginTab(selectedPlugin) : managementTable}
     </div>
   )
 }

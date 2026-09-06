@@ -150,14 +150,18 @@ function AppShell() {
     return () => window.removeEventListener('jarvis:plugins-changed', onChanged)
   }, [refreshPlugins])
 
-  const pluginMenu: NonNullable<MenuProps['items']>[number] = enabledPlugins.length > 0
+  const enabledPluginPages = [
+    ...(moduleEnablement?.okr ? [{ id: 'okr', name: 'OKR' }] : []),
+    ...enabledPlugins.map((plugin) => ({ id: plugin.id, name: plugin.name })),
+  ]
+  const pluginMenu: NonNullable<MenuProps['items']>[number] = enabledPluginPages.length > 0
     ? {
         key: 'plugin-group',
         label: '插件',
         icon: <ApiOutlined />,
         children: [
           { key: 'plugins', label: '插件管理' },
-          ...enabledPlugins.map((plugin) => ({ key: `plugin:${plugin.id}`, label: plugin.name })),
+          ...enabledPluginPages.map((plugin) => ({ key: `plugin:${plugin.id}`, label: plugin.name })),
         ],
       }
     : { key: 'plugins', label: '插件', icon: <ApiOutlined /> }

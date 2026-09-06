@@ -47,12 +47,13 @@ scripts/okr-minimal-e2e verify-empty
 reminder_task_id=$(scripts/okr-minimal-e2e run-reminder)
 scripts/okr-minimal-e2e fill
 scripts/okr-minimal-e2e verify-filled
+scripts/okr-minimal-e2e verify-world
 scripts/okr-minimal-e2e cas
 task_id=$(scripts/okr-minimal-e2e run-report-c)
 scripts/okr-minimal-e2e verify-agents
 scripts/okr-minimal-e2e status
 ```
 
-`verify-empty` 证明 W36 已开启但没有进展，并且只催唯一负责人一次；`verify-filled` 证明文档、图片、评论和进展均能回读，填写完成后催填归零；`cas` 证明 Agent 的单条进展写入使用自己的版本锁，不会改变稳定 KR 版本；最后一个 Task 证明 M5 能从两个周次生成内部 Report C。
+`verify-empty` 证明 W36 已开启但没有进展，并且只催唯一负责人一次；`verify-filled` 证明文档、图片、评论和进展均能回读，填写完成后催填归零；`verify-world` 证明 O、KR、子 KR 都能保存独立 WorldProgress，关系 API 使用稳定 snake_case 契约，且不会改动人工正式进展；`cas` 证明 Agent 的单条进展写入使用自己的版本锁，不会改变稳定 KR 版本；最后一个 Task 证明 M5 能从两个周次生成内部 Report C。
 
 若要从头重跑，先停止 18803，然后明确删除 `var/okr-e2e` 与 `.okr-e2e-conf`。脚本不会自动删除或覆盖已有测试数据。
