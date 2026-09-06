@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PageContext, PageSelection } from './types'
-import { isWeeklyShareViewState, WEEKLY_SHARE_SCOPE } from './okr/emily/share'
+import { pageHash, routeFromHash } from './pageRoutes'
 
 // PageContextValue exposes the readable PageContext (active_key + selection) plus
 // the setters left/right panels need: pages write `selection`, App drives
@@ -18,70 +18,13 @@ export interface PageContextValue {
 
 const Context = createContext<PageContextValue | null>(null)
 
-const pageHashes: Record<string, string> = {
-  overview: '/today',
-  tasks: '/work',
-  progress: '/review',
-  okr: '/okr',
-  background: '/memory',
-  agents: '/agents',
-  todos: '/manage/clues',
-  'scheduled-tasks': '/manage/automations',
-  plugins: '/plugins',
-  settings: '/manage/settings',
-  debug: '/manage/runtime',
-}
-
-const pageKeysByHash = Object.fromEntries(
-  Object.entries(pageHashes).map(([key, path]) => [path, key]),
-) as Record<string, string>
-
-interface HashRoute {
-  key: string
-  selection: PageSelection | null
-  viewState: Record<string, string>
-}
-
-function routeFromHash(initialKey: string): HashRoute {
-  const raw = window.location.hash.replace(/^#/, '')
-  const [path, query = ''] = raw.split('?')
-  const viewState = Object.fromEntries(new URLSearchParams(query).entries())
-  const taskMatch = path.match(/^\/work\/task\/(\d+)$/)
-  if (taskMatch) {
-    const id = Number(taskMatch[1])
-    return { key: 'tasks', selection: { kind: 'task', id, label: `Task #${id}` }, viewState }
-  }
-  const todoMatch = path.match(/^\/manage\/clues\/(\d+)$/)
-  if (todoMatch) {
-    const id = Number(todoMatch[1])
-    return { key: 'todos', selection: { kind: 'todo', id, label: `线索 #${id}` }, viewState }
-  }
-  // Shared weekly-report links keep the OKR module data model while switching
-  // the application shell to the weekly fill, meeting, or Review surface.
-  if (path === '/weekly-report') {
-    return { key: 'okr', selection: null, viewState: { ...viewState, share: WEEKLY_SHARE_SCOPE, tab: viewState.tab || 'weekly-fill' } }
-  }
-  return { key: pageKeysByHash[path] || initialKey, selection: null, viewState }
-}
-
 function writePageHash(
   key: string,
   selection: PageSelection | null,
   viewState: Record<string, string>,
   replace = false,
 ) {
-  const weeklyShare = key === 'okr' && isWeeklyShareViewState(viewState)
-  const basePath = weeklyShare ? '/weekly-report' : pageHashes[key]
-  if (!basePath) throw new Error(`unknown page key: ${key}`)
-  let path = basePath
-  if (key === 'tasks' && selection?.kind === 'task') path = `/work/task/${selection.id}`
-  if (key === 'todos' && selection?.kind === 'todo') path = `/manage/clues/${selection.id}`
-  const query = new URLSearchParams(
-    Object.entries(viewState)
-      .filter(([viewKey]) => !(weeklyShare && viewKey === 'share'))
-      .sort(([left], [right]) => left.localeCompare(right)),
-  ).toString()
-  const next = `#${path}${query ? `?${query}` : ''}`
+  const next = pageHash(key, selection, viewState)
   if (window.location.hash === next) return
   if (replace) window.history.replaceState(null, '', next)
   else window.location.hash = next.slice(1)
@@ -100,7 +43,7 @@ export function PageContextProvider({
   initialKey: string
   children: ReactNode
 }) {
-  const initialRoute = useMemo(() => routeFromHash(initialKey), [initialKey])
+  const initialRoute = useMemo(() => routeFromHash(window.location.hash, initialKey), [initialKey])
   const [activeKey, setActiveKeyState] = useState(initialRoute.key)
   const [selection, setSelectionState] = useState<PageSelection | null>(initialRoute.selection)
   const [viewState, setViewStateState] = useState<Record<string, string>>(initialRoute.viewState)
@@ -108,7 +51,7 @@ export function PageContextProvider({
   useEffect(() => {
     if (!window.location.hash) writePageHash(initialKey, null, {}, true)
     const syncFromHash = () => {
-      const route = routeFromHash(initialKey)
+      const route = routeFromHash(window.location.hash, initialKey)
       setActiveKeyState(route.key)
       setSelectionState(route.selection)
       setViewStateState(route.viewState)
