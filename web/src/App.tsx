@@ -6,13 +6,11 @@ import {
   CheckCircleOutlined,
   PlayCircleOutlined,
   SettingOutlined,
-  ReadOutlined,
   ToolOutlined,
   MessageOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   DatabaseOutlined,
-  CalendarOutlined,
   MoreOutlined,
   PoweroffOutlined,
   RobotOutlined,
@@ -23,7 +21,6 @@ import {
   LogoutOutlined,
   UserOutlined,
 } from '@ant-design/icons'
-import Overview from './Overview'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
 import { AuthGate, AuthProvider, useAuth } from './auth'
 import { PageContextProvider, usePageContext } from './pageContext'
@@ -68,13 +65,13 @@ function enabledModuleChildren(
 }
 
 const pageLabels: Record<string, string> = {
-  overview: '今日',
+  overview: '工作台',
   tasks: '任务',
-  progress: '回顾',
+  progress: '工作台',
   background: '世界',
-  agents: 'Agent 设置',
+  agents: '工作设定',
   todos: '线索',
-  'scheduled-tasks': '自动化',
+  'scheduled-tasks': '任务',
   plugins: '插件',
   settings: '系统设置',
   debug: '运行状态',
@@ -166,9 +163,8 @@ function AppShell() {
     : { key: 'plugins', label: '插件', icon: <ApiOutlined /> }
 
   const menuProps: MenuProps['items'] = [
-    { key: 'overview', label: '今日', icon: <HomeOutlined /> },
+    { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
-    { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
     ...enabledModules.map((module) => {
       const children = enabledModuleChildren(module, resolvedModuleEnablement)
       if (children.length === 0) return { key: module.key, label: module.label, icon: module.icon }
@@ -184,9 +180,8 @@ function AppShell() {
       }
     }),
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
-    { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
     pluginMenu,
-    { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
+    { key: 'agents', label: '工作设定', icon: <RobotOutlined /> },
     { type: 'divider' },
     {
       key: 'management',
@@ -201,7 +196,7 @@ function AppShell() {
   ]
 
   const pages: Record<string, React.ReactNode> = {
-    overview: <Overview />,
+    overview: <Progress />,
     todos: <Todos refreshKey={0} />,
     tasks: <Tasks />,
     'scheduled-tasks': <ScheduledTasks />,
@@ -382,9 +377,8 @@ function AppShell() {
     icon: React.ReactNode
     children?: readonly AppModuleChildDefinition[]
   }> = [
-    { key: 'overview', label: '今日', icon: <HomeOutlined /> },
+    { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
-    { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
     ...enabledModules.map((module) => ({
       key: module.key,
       label: module.label,
@@ -392,9 +386,18 @@ function AppShell() {
       children: enabledModuleChildren(module, resolvedModuleEnablement),
     })),
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
-    { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
     { key: 'agents', label: 'Agent', icon: <RobotOutlined /> },
   ]
+  const primaryNavigationKey = context.active_key === 'progress'
+    ? 'overview'
+    : context.active_key === 'scheduled-tasks'
+      ? 'tasks'
+      : selectedMenuKey
+  const mobileNavigationKey = context.active_key === 'progress'
+    ? 'overview'
+    : context.active_key === 'scheduled-tasks'
+      ? 'tasks'
+      : context.active_key
 
   return (
     <Layout
@@ -462,7 +465,7 @@ function AppShell() {
           selectedKeys={[
             context.active_key === 'plugins' && context.view_state.plugin
               ? `plugin:${context.view_state.plugin}`
-              : selectedMenuKey,
+              : primaryNavigationKey,
           ]}
           openKeys={openMenuKeys}
           onOpenChange={(keys) => setOpenMenuKeys(keys.map(String))}
@@ -544,7 +547,7 @@ function AppShell() {
           <button
             key={item.key}
             type="button"
-            className={context.active_key === item.key ? 'is-active' : ''}
+            className={mobileNavigationKey === item.key ? 'is-active' : ''}
             onClick={() => item.children?.length ? setMobileModuleKey(item.key) : goTo(item.key)}
           >
             {item.icon}<span>{item.label}</span>

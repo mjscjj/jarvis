@@ -55,17 +55,17 @@ const threadDateFormatter = new Intl.DateTimeFormat('zh-CN', {
 })
 
 const PAGE_LABELS: Record<string, string> = {
-  today: '今日',
-  overview: '今日',
-  workbench: '任务',
+  today: '工作台',
+  overview: '工作台',
+  workbench: '工作台',
   tasks: '任务',
-  review: '回顾',
-  progress: '回顾',
+  review: '工作台',
+  progress: '工作台',
   memory: '世界',
   background: '世界',
   okr: 'OKR',
-  automation: '自动化',
-  'scheduled-tasks': '自动化',
+  automation: '任务',
+  'scheduled-tasks': '任务',
   plugins: '插件',
   clues: '线索',
   todos: '线索',
@@ -86,8 +86,8 @@ const SELECTION_LABELS: Record<string, string> = {
 
 function pageSuggestions(agentName: string): Record<string, string[]> {
   return {
-    today: ['我现在最需要关注什么？', '帮我排一下今天的优先级', '有哪些事项正在等我决定？'],
-    workbench: ['哪些任务最需要我处理？', '帮我梳理当前的阻塞', '检查进行中的任务是否偏离目标'],
+    workbench: ['我现在最需要关注什么？', '总结今天真正完成的事', '有哪些风险会影响今天交付？'],
+    tasks: ['哪些任务最需要我处理？', '帮我梳理当前的阻塞', '检查进行中的任务是否偏离目标'],
     review: ['总结今天真正完成的事', '哪些承诺还没有闭环？', '帮我找出值得复盘的问题'],
     memory: [`${agentName} 目前是怎么理解我的工作的？`, '检查项目背景有没有过时信息', '帮我找到某个项目的关键上下文'],
     automation: ['哪些自动化即将运行？', '检查自动化之间是否有冲突', '帮我设计一个新的自动化'],
@@ -113,8 +113,11 @@ function pageGroup(context: PageContext): string {
   if (context.active_key === 'okr' && context.view_state.tab === 'agent-flows') return 'automation'
   if (context.active_key === 'okr' && isOKRTab(context.view_state.tab) && isWeeklyWorkspaceTab(context.view_state.tab)) return 'weekly'
   if (['management', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
-  const label = pageLabel(context)
-  return Object.keys(pageSuggestions('')).find((key) => PAGE_LABELS[key] === label) ?? 'today'
+  if (['today', 'overview', 'review', 'progress', 'workbench'].includes(context.active_key)) return 'workbench'
+  if (['tasks', 'automation', 'scheduled-tasks'].includes(context.active_key)) return 'tasks'
+  if (['memory', 'background'].includes(context.active_key)) return 'memory'
+  if (['clues', 'todos'].includes(context.active_key)) return 'clues'
+  return 'workbench'
 }
 
 // parseSSEBlock turns one `event:\ndata:` block into {event, data}. SSE allows

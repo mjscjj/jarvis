@@ -3,7 +3,7 @@ import { Alert, Badge, Button, Card, Form, Input, message, Modal, Select, Space,
 import type { TableColumnsType } from 'antd'
 import { createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Project, Task, TaskEvent, TaskStatus } from './types'
-import PageHeader from './components/PageHeader'
+import MergedPageHeader from './components/MergedPageHeader'
 import StatusBadge from './components/StatusBadge'
 import { taskStatusMeta as statusMeta } from './status'
 import { usePageContext } from './pageContext'
@@ -77,7 +77,7 @@ interface CreateTaskFields {
 
 export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const { name: agentName } = useAgentIdentity()
-  const { context, setSelection, setViewState } = usePageContext()
+  const { context, navigate, setSelection, setViewState } = usePageContext()
   const tabLabels: Record<TaskTab, string> = {
     needs_me: '需要我',
     running: `${agentName} 处理中`,
@@ -460,10 +460,16 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   ]
 
   return <>
-    <PageHeader title="任务" subtitle={`先处理需要你决定的事项，再查看 ${agentName} 的推进、等待和历史结果`}>
+    <MergedPageHeader
+      title="任务"
+      subtitle={`管理你与 ${agentName} 正在推进的工作`}
+      activeKey="tasks"
+      tabs={[{ key: 'tasks', label: '任务' }, { key: 'automations', label: '自动化' }]}
+      onChange={(key) => navigate(key === 'automations' ? 'scheduled-tasks' : 'tasks')}
+    >
       <Button type="primary" onClick={openCreate}>新建任务</Button>
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>
-    </PageHeader>
+    </MergedPageHeader>
     {error && <Alert type="error" showIcon title="Task 操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
       <Tabs

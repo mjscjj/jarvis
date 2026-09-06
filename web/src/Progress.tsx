@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Badge, Button, Card, DatePicker, Empty, Space, Spin, Tabs, Typography } from 'antd'
+import { Alert, Badge, Card, DatePicker, Empty, Space, Spin, Tabs, Typography } from 'antd'
 import {
+  AppstoreOutlined,
   CalendarOutlined,
   CodeOutlined,
+  DownOutlined,
   FileTextOutlined,
   ReadOutlined,
   TeamOutlined,
@@ -11,6 +13,8 @@ import {
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
 import { generateDailyDigest, getDailyDigests, getMorningBriefs, getProfile, listGroups } from './api'
+import PageHeader from './components/PageHeader'
+import Overview from './Overview'
 import DigestCard from './review/DigestCard'
 import MeetingSummaryView from './review/MeetingSummaryView'
 import MorningBriefCard from './review/MorningBriefCard'
@@ -23,16 +27,16 @@ import './styles/review-memory.css'
 const DAILY_DIGEST_POLL_MS = 5000
 const DAILY_DIGEST_RETRY_MS = 10000
 const RECENT_DATE_TABS = 14
-const { Text, Title } = Typography
+const { Text } = Typography
 
-type ReviewView = 'daily' | 'morning' | 'meetings' | 'groups' | 'docs' | 'code'
+type ReviewView = 'overview' | 'daily' | 'meetings' | 'groups' | 'docs' | 'code'
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
 function reviewView(value: string | undefined): ReviewView {
-  return value === 'daily' || value === 'meetings' || value === 'groups' || value === 'docs' || value === 'code' ? value : 'morning'
+  return value === 'daily' || value === 'meetings' || value === 'groups' || value === 'docs' || value === 'code' ? value : 'overview'
 }
 
 function dateTabLabel(date: string) {
@@ -178,7 +182,7 @@ export default function Progress() {
   }, [activeView, date, dailyRefresh])
 
   useEffect(() => {
-    if (activeView !== 'morning') return
+    if (activeView !== 'overview') return
     const controller = new AbortController()
     setMorningLoading(true)
     setMorningError(undefined)
@@ -303,24 +307,19 @@ export default function Progress() {
       </Spin>
     </Space>
   )
-  const dailyTabs = recentDates.map((value) => ({
-    key: value,
-    label: dateTabLabel(value),
-    children: value === date ? dailyContent : null,
-  }))
   const morningBrief = morningItems.find((item) => item.date === date)
-  const morningContent = (
+  const overviewContent = (
     <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+      <Overview onOpenDailySummary={() => selectView('daily')} />
       {morningError && <Alert type="error" showIcon title="晨报加载失败" description={morningError} />}
       <Spin spinning={morningLoading}>
         <MorningBriefCard item={morningBrief} />
       </Spin>
     </Space>
   )
-  const morningTabs = recentDates.map((value) => ({
+  const dateTabs = recentDates.map((value) => ({
     key: value,
     label: dateTabLabel(value),
-    children: value === date ? morningContent : null,
   }))
 
   const activeGroupID = keyGroups.some((group) => String(group.id) === context.view_state.group_id)
@@ -366,53 +365,67 @@ export default function Progress() {
 
   const topLevelTabs = [
     {
-      key: 'morning', label: <span className="review-primary-tab-label"><ReadOutlined />晨报</span>,
-      children: <Tabs className="review-secondary-tabs" activeKey={date} onChange={(value) => selectDate(dayjs(value))} items={morningTabs} tabBarGutter={8} />,
+      key: 'overview', label: <span className="review-primary-tab-label"><AppstoreOutlined />总览</span>,
     },
     {
       key: 'daily', label: <span className="review-primary-tab-label"><ReadOutlined />每日总结</span>,
-      children: <Tabs className="review-secondary-tabs" activeKey={date} onChange={(value) => selectDate(dayjs(value))} items={dailyTabs} tabBarGutter={8} />,
     },
     {
       key: 'meetings', label: <span className="review-primary-tab-label"><VideoCameraOutlined />会议总结</span>,
-      children: <MeetingSummaryView date={date} selectedMeetingID={context.view_state.meeting_id} onSelectMeeting={selectMeeting} />,
     },
-    { key: 'groups', label: <span className="review-primary-tab-label"><TeamOutlined />群总结</span>, children: groupsContent },
-    { key: 'docs', label: <span className="review-primary-tab-label"><FileTextOutlined />文档</span>, children: <DocumentsView date={selectedDate} /> },
-    { key: 'code', label: <span className="review-primary-tab-label"><CodeOutlined />代码</span>, children: <CodeView date={selectedDate} /> },
+    { key: 'groups', label: <span className="review-primary-tab-label"><TeamOutlined />群总结</span> },
+    { key: 'docs', label: <span className="review-primary-tab-label"><FileTextOutlined />文档</span> },
+    { key: 'code', label: <span className="review-primary-tab-label"><CodeOutlined />代码</span> },
   ]
+
+  const activeContent = activeView === 'overview'
+    ? overviewContent
+    : activeView === 'daily'
+      ? dailyContent
+      : activeView === 'meetings'
+        ? <MeetingSummaryView date={date} selectedMeetingID={context.view_state.meeting_id} onSelectMeeting={selectMeeting} />
+        : activeView === 'groups'
+          ? groupsContent
+          : activeView === 'docs'
+            ? <DocumentsView date={selectedDate} />
+            : <CodeView date={selectedDate} />
 
   return (
     <div className="progress review-page">
-      <header className="review-hero">
-        <div className="review-hero-copy">
-          <Text className="review-eyebrow">WORK REVIEW</Text>
-          <Title level={1}>回顾</Title>
-        </div>
-        <div className="review-date-control">
-          <span className="review-date-icon"><CalendarOutlined /></span>
-          <div className="review-date-picker-wrap">
-            <Text>当前日期</Text>
-            <DatePicker
-              value={selectedDate}
-              onChange={(value) => selectDate(value ?? dayjs())}
-              allowClear={false}
-              variant="borderless"
-              format="YYYY年M月D日"
-              disabledDate={(value) => value.isAfter(dayjs(), 'day')}
-            />
-          </div>
-          <Button type="text" onClick={() => selectDate(dayjs())} disabled={selectedDate.isSame(dayjs(), 'day')}>回到今天</Button>
-        </div>
-      </header>
+      <PageHeader title="工作台" subtitle="聚焦今天，回看过去" />
 
       <Tabs
-        className="review-primary-tabs"
+        className="review-primary-tabs review-content-tabs"
         activeKey={activeView}
         onChange={(value) => selectView(value as ReviewView)}
         items={topLevelTabs}
         tabBarGutter={12}
       />
+
+      <Tabs
+        className="review-secondary-tabs workbench-date-tabs"
+        activeKey={date}
+        onChange={(value) => selectDate(dayjs(value))}
+        items={dateTabs}
+        tabBarGutter={8}
+        tabBarExtraContent={(
+          <div className="workbench-date-control">
+            <span className="workbench-date-icon" aria-hidden="true"><CalendarOutlined /></span>
+            <DatePicker
+              className="workbench-date-picker"
+              value={selectedDate}
+              onChange={(value) => selectDate(value ?? dayjs())}
+              allowClear={false}
+              variant="borderless"
+              format="YYYY/MM/DD"
+              suffixIcon={<DownOutlined />}
+              disabledDate={(value) => value.isAfter(dayjs(), 'day')}
+            />
+          </div>
+        )}
+      />
+
+      <div className="workbench-view-content">{activeContent}</div>
     </div>
   )
 }

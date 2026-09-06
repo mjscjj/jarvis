@@ -273,8 +273,8 @@ export default function AgentSettings() {
 
   return (
     <div className="agent-settings-page">
-      <PageHeader title="Agent 设置" subtitle="配置任务执行、线索发现及其他 Agent" />
-      {error && <Alert type="error" showIcon title="Agent 设置操作失败" description={error} closable onClose={() => setError(undefined)} />}
+      <PageHeader title="工作设定" subtitle="配置任务执行、线索发现及其他 Agent" />
+      {error && <Alert type="error" showIcon title="工作设定操作失败" description={error} closable onClose={() => setError(undefined)} />}
       {notice && <Alert type="success" showIcon title={notice} closable onClose={() => setNotice(undefined)} />}
       <Spin spinning={loading}>
         <Tabs
