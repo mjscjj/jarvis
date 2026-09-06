@@ -29,6 +29,11 @@ Linux 日志仍写配置中的 `server.log_files` 和 `var/log/jarvis-chat*.log`
 
 服务定义由 `deploy/*.plist.template` 或 `deploy/*.service.template` 渲染，`conf/qdrant.yaml` 用相对 `WorkingDirectory` 的路径。移动仓库或换用户后重新安装服务即可，不必改仓库文件。
 
+macOS `.app` 不注册上述 launchd 服务。Tauri 启动
+`jarvis-app-service`，由它在应用生命周期内管理 Qdrant 和 Go Server；运行协议、
+Application Support 目录和打包入口见
+[`design-macos-app-runtime.md`](../design-macos-app-runtime.md)。
+
 `conf/config.yaml` 与 `conf/config.runtime.yaml` 都存明文密钥，权限保持 `600`。`config.yaml` 由 git 跟踪，而 git 只记录可执行位，重新 clone 后要再 `chmod 600`。
 
 ## 首次安装
